@@ -1,0 +1,46 @@
+{
+  "name": "SystemLog",
+  "type": "object",
+  "properties": {
+    "level": {
+      "type": "string",
+      "enum": [
+        "info",
+        "warn",
+        "error",
+        "debug"
+      ],
+      "default": "info",
+      "description": "Log level"
+    },
+    "module": {
+      "type": "string",
+      "description": "Which module generated this log (scanner, indicators, alerts, etc)"
+    },
+    "message": {
+      "type": "string",
+      "description": "Log message"
+    },
+    "details": {
+      "type": "object",
+      "description": "Additional structured data"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Related asset symbol if applicable"
+    },
+    "timeframe": {
+      "type": "string",
+      "description": "Related timeframe if applicable"
+    },
+    "duration_ms": {
+      "type": "number",
+      "description": "Execution duration in milliseconds if applicable"
+    }
+  },
+  "required": [
+    "level",
+    "module",
+    "message"
+  ]
+}

@@ -1,0 +1,131 @@
+{
+  "name": "SignalEvent",
+  "type": "object",
+  "properties": {
+    "asset_id": {
+      "type": "string",
+      "description": "Reference to MonitoredAsset id"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair symbol"
+    },
+    "timeframe": {
+      "type": "string",
+      "enum": [
+        "1h",
+        "4h",
+        "1d"
+      ],
+      "description": "Timeframe that generated this signal"
+    },
+    "signal_type": {
+      "type": "string",
+      "enum": [
+        "BUY",
+        "SELL"
+      ],
+      "description": "Signal direction"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "range_filter",
+        "rsi",
+        "macd",
+        "ema_cross",
+        "price_alert",
+        "confluence"
+      ],
+      "description": "Which indicator generated this signal"
+    },
+    "strength": {
+      "type": "string",
+      "enum": [
+        "strong",
+        "moderate",
+        "weak"
+      ],
+      "description": "Signal strength classification"
+    },
+    "alignment": {
+      "type": "string",
+      "enum": [
+        "aligned",
+        "partially_aligned",
+        "against_trend"
+      ],
+      "description": "Alignment with higher timeframe"
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "description": "Alert priority"
+    },
+    "price_at_signal": {
+      "type": "number",
+      "description": "Price when signal was generated"
+    },
+    "candle_time": {
+      "type": "string",
+      "description": "Candle close time that generated this signal"
+    },
+    "context": {
+      "type": "object",
+      "description": "Full technical context at signal time",
+      "properties": {
+        "rf_value": {
+          "type": "number"
+        },
+        "rf_direction": {
+          "type": "number"
+        },
+        "rsi": {
+          "type": "number"
+        },
+        "macd_histogram": {
+          "type": "number"
+        },
+        "ema_short": {
+          "type": "number"
+        },
+        "ema_long": {
+          "type": "number"
+        },
+        "tf_1d_direction": {
+          "type": "number"
+        },
+        "tf_4h_direction": {
+          "type": "number"
+        },
+        "tf_1h_direction": {
+          "type": "number"
+        }
+      }
+    },
+    "reason": {
+      "type": "string",
+      "description": "Human readable reason for the signal"
+    },
+    "dedup_key": {
+      "type": "string",
+      "description": "Unique key for deduplication: symbol+tf+type+source+candle_time"
+    },
+    "is_dismissed": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether user dismissed this alert"
+    }
+  },
+  "required": [
+    "asset_id",
+    "symbol",
+    "timeframe",
+    "signal_type",
+    "source"
+  ]
+}

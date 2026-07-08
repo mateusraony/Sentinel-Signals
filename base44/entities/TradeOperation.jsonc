@@ -1,0 +1,167 @@
+{
+  "name": "TradeOperation",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair symbol"
+    },
+    "asset_id": {
+      "type": "string",
+      "description": "Reference to MonitoredAsset"
+    },
+    "timeframe": {
+      "type": "string",
+      "enum": [
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    "side": {
+      "type": "string",
+      "enum": [
+        "BUY",
+        "SELL"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "SIGNAL_CONFIRMED",
+        "RUNNER_ACTIVE",
+        "TP2_HIT",
+        "STOP_HIT",
+        "INVALIDATED",
+        "CLOSED"
+      ],
+      "default": "SIGNAL_CONFIRMED"
+    },
+    "score": {
+      "type": "number",
+      "description": "Signal score 0-100"
+    },
+    "entry_price": {
+      "type": "number"
+    },
+    "atr_value": {
+      "type": "number"
+    },
+    "initial_stop": {
+      "type": "number"
+    },
+    "current_stop": {
+      "type": "number"
+    },
+    "tp1": {
+      "type": "number"
+    },
+    "tp2": {
+      "type": "number"
+    },
+    "tp1_hit": {
+      "type": "boolean",
+      "default": false
+    },
+    "tp2_hit": {
+      "type": "boolean",
+      "default": false
+    },
+    "tp1_hit_at": {
+      "type": "string",
+      "description": "ISO timestamp when TP1 was hit"
+    },
+    "tp1_hit_price": {
+      "type": "number",
+      "description": "Exact price when TP1 was hit"
+    },
+    "tp2_hit_at": {
+      "type": "string",
+      "description": "ISO timestamp when TP2 was hit"
+    },
+    "tp2_hit_price": {
+      "type": "number",
+      "description": "Exact price when TP2 was hit"
+    },
+    "stop_hit_at": {
+      "type": "string",
+      "description": "ISO timestamp when stop was hit"
+    },
+    "stop_hit_price": {
+      "type": "number",
+      "description": "Exact price when stop was hit"
+    },
+    "closed_at": {
+      "type": "string",
+      "description": "ISO timestamp when operation was closed/invalidated"
+    },
+    "exit_price": {
+      "type": "number",
+      "description": "Actual exit price recorded at close time"
+    },
+    "partial_percent": {
+      "type": "number",
+      "default": 50
+    },
+    "runner_percent": {
+      "type": "number",
+      "default": 50
+    },
+    "exit_mode": {
+      "type": "string",
+      "enum": [
+        "RANGE_FILTER",
+        "ATR_TRAILING",
+        "HYBRID_RF_ATR"
+      ],
+      "default": "HYBRID_RF_ATR"
+    },
+    "candle_open_time": {
+      "type": "string",
+      "description": "ISO timestamp of candle open"
+    },
+    "candle_close_time": {
+      "type": "string",
+      "description": "ISO timestamp of candle close"
+    },
+    "candle_status": {
+      "type": "string",
+      "enum": [
+        "OPEN",
+        "CLOSED"
+      ],
+      "default": "CLOSED"
+    },
+    "data_status": {
+      "type": "string",
+      "enum": [
+        "LIVE",
+        "STALE",
+        "OFFLINE",
+        "ERROR"
+      ],
+      "default": "LIVE"
+    },
+    "signal_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rf_filter_value": {
+      "type": "number"
+    },
+    "invalidates_if": {
+      "type": "string"
+    },
+    "closed_reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "symbol",
+    "timeframe",
+    "side",
+    "entry_price"
+  ]
+}

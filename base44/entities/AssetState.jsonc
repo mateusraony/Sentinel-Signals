@@ -1,0 +1,131 @@
+{
+  "name": "AssetState",
+  "type": "object",
+  "properties": {
+    "asset_id": {
+      "type": "string",
+      "description": "Reference to MonitoredAsset id"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair symbol"
+    },
+    "timeframe": {
+      "type": "string",
+      "enum": [
+        "1h",
+        "4h",
+        "1d"
+      ],
+      "description": "Timeframe of this state"
+    },
+    "last_close": {
+      "type": "number",
+      "description": "Last candle close price"
+    },
+    "last_candle_time": {
+      "type": "string",
+      "description": "ISO timestamp of the last processed candle"
+    },
+    "rf_filter_value": {
+      "type": "number",
+      "description": "Current Range Filter value"
+    },
+    "rf_direction": {
+      "type": "number",
+      "description": "Range Filter direction: 1=up, -1=down, 0=neutral"
+    },
+    "rf_high_band": {
+      "type": "number",
+      "description": "Range Filter high band"
+    },
+    "rf_low_band": {
+      "type": "number",
+      "description": "Range Filter low band"
+    },
+    "rf_signal": {
+      "type": "string",
+      "enum": [
+        "BUY",
+        "SELL",
+        "NONE"
+      ],
+      "default": "NONE",
+      "description": "Current Range Filter signal"
+    },
+    "rf_cond_ini": {
+      "type": "number",
+      "default": 0,
+      "description": "Range Filter CondIni state for signal generation"
+    },
+    "rsi_value": {
+      "type": "number",
+      "description": "Current RSI value"
+    },
+    "rsi_zone": {
+      "type": "string",
+      "enum": [
+        "overbought",
+        "oversold",
+        "neutral"
+      ],
+      "default": "neutral"
+    },
+    "macd_line": {
+      "type": "number",
+      "description": "MACD line value"
+    },
+    "macd_signal_line": {
+      "type": "number",
+      "description": "MACD signal line value"
+    },
+    "macd_histogram": {
+      "type": "number",
+      "description": "MACD histogram value"
+    },
+    "macd_cross": {
+      "type": "string",
+      "enum": [
+        "bullish_cross",
+        "bearish_cross",
+        "none"
+      ],
+      "default": "none"
+    },
+    "ema_short_value": {
+      "type": "number",
+      "description": "Short EMA value"
+    },
+    "ema_long_value": {
+      "type": "number",
+      "description": "Long EMA value"
+    },
+    "ema_cross": {
+      "type": "string",
+      "enum": [
+        "golden_cross",
+        "death_cross",
+        "none"
+      ],
+      "default": "none"
+    },
+    "trend_ema": {
+      "type": "string",
+      "enum": [
+        "bullish",
+        "bearish",
+        "neutral"
+      ],
+      "default": "neutral"
+    },
+    "processed_at": {
+      "type": "string",
+      "description": "ISO timestamp when this state was computed"
+    }
+  },
+  "required": [
+    "asset_id",
+    "symbol",
+    "timeframe"
+  ]
+}

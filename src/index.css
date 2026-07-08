@@ -1,0 +1,357 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+
+    --background: 222 47% 4%;
+    --foreground: 210 40% 96%;
+    --card: 222 40% 6%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 40% 6%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 152 100% 50%;
+    --primary-foreground: 222 47% 4%;
+    --secondary: 222 30% 10%;
+    --secondary-foreground: 210 20% 75%;
+    --muted: 222 30% 10%;
+    --muted-foreground: 215 15% 45%;
+    --accent: 325 100% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 222 25% 12%;
+    --input: 222 25% 12%;
+    --ring: 152 100% 50%;
+    --radius: 0.75rem;
+
+    --sidebar-background: 222 47% 3%;
+    --sidebar-foreground: 210 20% 75%;
+    --sidebar-primary: 152 100% 50%;
+    --sidebar-primary-foreground: 222 47% 4%;
+    --sidebar-accent: 222 30% 8%;
+    --sidebar-accent-foreground: 210 20% 75%;
+    --sidebar-border: 222 25% 10%;
+    --sidebar-ring: 152 100% 50%;
+
+    /* Custom signal colors */
+    --buy-color: 152 100% 50%;
+    --sell-color: 325 100% 55%;
+    --neutral-color: 215 15% 45%;
+
+    /* Aurora colors */
+    --aurora-1: 152 100% 50%;
+    --aurora-2: 280 100% 60%;
+    --aurora-3: 200 100% 55%;
+    --aurora-4: 325 100% 55%;
+  }
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground font-sans; }
+}
+
+/* =============================================
+   AURORA BACKGROUND
+   ============================================= */
+.aurora-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.aurora-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.12;
+  animation: aurora-drift 20s ease-in-out infinite;
+}
+
+.aurora-orb-1 {
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, hsl(152, 100%, 50%), transparent 70%);
+  top: -200px;
+  left: -100px;
+  animation-delay: 0s;
+}
+
+.aurora-orb-2 {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, hsl(280, 100%, 60%), transparent 70%);
+  top: 20%;
+  right: -150px;
+  animation-delay: -7s;
+  animation-duration: 25s;
+}
+
+.aurora-orb-3 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, hsl(200, 100%, 55%), transparent 70%);
+  bottom: 10%;
+  left: 30%;
+  animation-delay: -14s;
+  animation-duration: 18s;
+}
+
+.aurora-orb-4 {
+  width: 350px;
+  height: 350px;
+  background: radial-gradient(circle, hsl(325, 100%, 55%), transparent 70%);
+  bottom: -100px;
+  right: 20%;
+  animation-delay: -5s;
+  animation-duration: 22s;
+}
+
+@keyframes aurora-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -40px) scale(1.05); }
+  50% { transform: translate(-20px, 30px) scale(0.95); }
+  75% { transform: translate(40px, 20px) scale(1.02); }
+}
+
+/* =============================================
+   GRID OVERLAY
+   ============================================= */
+.grid-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(152, 255, 152, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(152, 255, 152, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* =============================================
+   GLASSMORPHISM CARDS
+   ============================================= */
+.glass-card {
+  background: rgba(20, 25, 40, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+.glass-card-glow-buy {
+  border-color: rgba(0, 255, 128, 0.2) !important;
+  box-shadow: 0 0 20px rgba(0, 255, 128, 0.08), 0 4px 24px rgba(0, 0, 0, 0.3) !important;
+}
+
+.glass-card-glow-sell {
+  border-color: rgba(255, 20, 120, 0.2) !important;
+  box-shadow: 0 0 20px rgba(255, 20, 120, 0.08), 0 4px 24px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* =============================================
+   SIGNAL GLOWS
+   ============================================= */
+.buy-glow {
+  color: #00ff80;
+  text-shadow: 0 0 10px rgba(0, 255, 128, 0.8), 0 0 20px rgba(0, 255, 128, 0.4);
+}
+
+.sell-glow {
+  color: #ff1478;
+  text-shadow: 0 0 10px rgba(255, 20, 120, 0.8), 0 0 20px rgba(255, 20, 120, 0.4);
+}
+
+.buy-badge-glow {
+  background: rgba(0, 255, 128, 0.12);
+  border: 1px solid rgba(0, 255, 128, 0.35);
+  color: #00ff80;
+  box-shadow: 0 0 12px rgba(0, 255, 128, 0.25), inset 0 0 8px rgba(0, 255, 128, 0.05);
+}
+
+.sell-badge-glow {
+  background: rgba(255, 20, 120, 0.12);
+  border: 1px solid rgba(255, 20, 120, 0.35);
+  color: #ff1478;
+  box-shadow: 0 0 12px rgba(255, 20, 120, 0.25), inset 0 0 8px rgba(255, 20, 120, 0.05);
+}
+
+/* =============================================
+   PULSING DOT - LIVE INDICATOR
+   ============================================= */
+.live-dot {
+  width: 8px;
+  height: 8px;
+  background: #00ff80;
+  border-radius: 50%;
+  position: relative;
+  box-shadow: 0 0 6px #00ff80;
+}
+
+.live-dot::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: rgba(0, 255, 128, 0.3);
+  animation: ping 1.5s ease-in-out infinite;
+}
+
+@keyframes ping {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* =============================================
+   SCANNING LINE ANIMATION
+   ============================================= */
+.scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #00ff80, transparent);
+  animation: scan 3s linear infinite;
+  opacity: 0.6;
+}
+
+@keyframes scan {
+  0% { top: 0%; opacity: 0; }
+  10% { opacity: 0.6; }
+  90% { opacity: 0.6; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* =============================================
+   NUMBER COUNTER ANIMATION
+   ============================================= */
+.number-glow {
+  font-variant-numeric: tabular-nums;
+}
+
+/* =============================================
+   DIRECTION ARROW PULSE
+   ============================================= */
+.arrow-up-glow {
+  color: #00ff80;
+  filter: drop-shadow(0 0 4px rgba(0, 255, 128, 0.8));
+}
+
+.arrow-down-glow {
+  color: #ff1478;
+  filter: drop-shadow(0 0 4px rgba(255, 20, 120, 0.8));
+}
+
+/* =============================================
+   SIDEBAR ACTIVE GLOW
+   ============================================= */
+.nav-active {
+  background: rgba(0, 255, 128, 0.08);
+  color: #00ff80;
+  border-left: 2px solid #00ff80;
+  box-shadow: inset 0 0 20px rgba(0, 255, 128, 0.05);
+}
+
+/* =============================================
+   TICKER BAR
+   ============================================= */
+.ticker-container {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.ticker-inner {
+  display: inline-flex;
+  animation: ticker-scroll 30s linear infinite;
+}
+
+@keyframes ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* =============================================
+   SHIMMER LOADING
+   ============================================= */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.03) 0%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.03) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* =============================================
+   BORDER GRADIENT ANIMATION
+   ============================================= */
+.animated-border {
+  position: relative;
+}
+
+.animated-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 255, 128, 0.4),
+    rgba(130, 0, 255, 0.2),
+    rgba(0, 200, 255, 0.3),
+    rgba(255, 20, 120, 0.2)
+  );
+  background-size: 300% 300%;
+  animation: gradient-border 4s ease infinite;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: destination-out;
+  mask-composite: exclude;
+}
+
+@keyframes gradient-border {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* =============================================
+   CUSTOM SCROLLBAR
+   ============================================= */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0, 255, 128, 0.2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 255, 128, 0.4); }
+
+/* =============================================
+   RSI / MACD VALUE COLORS
+   ============================================= */
+.value-positive { color: #00ff80; }
+.value-negative { color: #ff1478; }
+.value-neutral { color: #94a3b8; }
+
+/* =============================================
+   TOPBAR SCAN BUTTON PULSE
+   ============================================= */
+@keyframes btn-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 255, 128, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(0, 255, 128, 0); }
+}
+.btn-scan-pulse {
+  animation: btn-pulse 2s ease-in-out infinite;
+}

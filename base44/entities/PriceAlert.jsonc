@@ -1,0 +1,55 @@
+{
+  "name": "PriceAlert",
+  "type": "object",
+  "properties": {
+    "asset_id": {
+      "type": "string",
+      "description": "Reference to MonitoredAsset id"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair symbol"
+    },
+    "alert_type": {
+      "type": "string",
+      "enum": [
+        "above",
+        "below",
+        "cross_up",
+        "cross_down"
+      ],
+      "description": "Type of price alert"
+    },
+    "target_price": {
+      "type": "number",
+      "description": "Target price level"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this alert is active"
+    },
+    "is_triggered": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this alert has been triggered"
+    },
+    "triggered_at": {
+      "type": "string",
+      "description": "When the alert was triggered"
+    },
+    "triggered_price": {
+      "type": "number",
+      "description": "Actual price when triggered"
+    },
+    "note": {
+      "type": "string",
+      "description": "User note for this alert"
+    }
+  },
+  "required": [
+    "symbol",
+    "alert_type",
+    "target_price"
+  ]
+}

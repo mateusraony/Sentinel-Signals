@@ -1,0 +1,135 @@
+{
+  "name": "MonitoredAsset",
+  "type": "object",
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair symbol (e.g. BTCUSDT)"
+    },
+    "display_name": {
+      "type": "string",
+      "description": "Human readable name (e.g. BTC/USDT)"
+    },
+    "exchange": {
+      "type": "string",
+      "enum": [
+        "binance",
+        "bybit",
+        "coinbase"
+      ],
+      "default": "binance",
+      "description": "Data source exchange"
+    },
+    "market": {
+      "type": "string",
+      "enum": [
+        "crypto",
+        "forex",
+        "stocks"
+      ],
+      "default": "crypto",
+      "description": "Market type for future expansion"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this asset is being monitored"
+    },
+    "timeframes_enabled": {
+      "type": "object",
+      "description": "Which timeframes are active for this asset",
+      "properties": {
+        "1h": {
+          "type": "boolean",
+          "default": true
+        },
+        "4h": {
+          "type": "boolean",
+          "default": true
+        },
+        "1d": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "rf_period": {
+      "type": "number",
+      "default": 20,
+      "description": "Range Filter swing period"
+    },
+    "rf_multiplier": {
+      "type": "number",
+      "default": 3.5,
+      "description": "Range Filter swing multiplier"
+    },
+    "rsi_period": {
+      "type": "number",
+      "default": 14,
+      "description": "RSI calculation period"
+    },
+    "rsi_overbought": {
+      "type": "number",
+      "default": 70,
+      "description": "RSI overbought threshold"
+    },
+    "rsi_oversold": {
+      "type": "number",
+      "default": 30,
+      "description": "RSI oversold threshold"
+    },
+    "macd_fast": {
+      "type": "number",
+      "default": 12,
+      "description": "MACD fast period"
+    },
+    "macd_slow": {
+      "type": "number",
+      "default": 26,
+      "description": "MACD slow period"
+    },
+    "macd_signal": {
+      "type": "number",
+      "default": 9,
+      "description": "MACD signal period"
+    },
+    "ema_short": {
+      "type": "number",
+      "default": 9,
+      "description": "Short EMA period"
+    },
+    "ema_long": {
+      "type": "number",
+      "default": 21,
+      "description": "Long EMA period"
+    },
+    "alert_cooldown_minutes": {
+      "type": "number",
+      "default": 60,
+      "description": "Minimum minutes between same type alerts"
+    },
+    "last_scan_at": {
+      "type": "string",
+      "description": "ISO timestamp of last scan"
+    },
+    "scan_status": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "scanning",
+        "success",
+        "error"
+      ],
+      "default": "idle",
+      "description": "Current scan status"
+    },
+    "scan_error": {
+      "type": "string",
+      "description": "Last scan error message if any"
+    }
+  },
+  "required": [
+    "symbol",
+    "display_name"
+  ]
+}
