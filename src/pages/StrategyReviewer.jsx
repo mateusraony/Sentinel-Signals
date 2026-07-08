@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { base44 } from '@/api/entities';
 import { Bot, Plus, MessageSquare, Trash2, Send, Loader2 } from 'lucide-react';
 import MessageBubble from '@/components/agent/MessageBubble';
 import moment from 'moment';

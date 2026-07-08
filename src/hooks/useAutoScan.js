@@ -7,7 +7,7 @@
 
 import { useEffect, useRef } from 'react';
 import { scanAllAssets, priceCheckActiveOps } from '@/lib/scanner';
-import { base44 } from '@/api/base44Client';
+import { base44 } from '@/api/entities';
 
 const PRICE_CHECK_INTERVAL = 2 * 60 * 1000; // 2 min
 const FULL_SCAN_INTERVAL = 60 * 60 * 1000;  // 60 min

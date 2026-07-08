@@ -118,7 +118,7 @@ export function isPineConfigStale(code) {
  * @returns {Promise<number>} count of assets updated
  */
 export async function syncPineToAssets() {
-  const { base44 } = await import('@/api/base44Client');
+  const { base44 } = await import('@/api/entities');
   const config = getPineConfig();
 
   try {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { base44 } from '@/api/entities';
 import {
   Loader2, Target, History, XCircle, Eye,
   TrendingUp, TrendingDown, AlertTriangle, CheckCircle2,

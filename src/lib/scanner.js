@@ -20,7 +20,7 @@ import { analyzeAlignment, calculateSignalStrength, generateSignalDescription } 
 import { calculateATR } from './indicators/atr';
 import { getPineConfig } from './pineParser';
 import { logInfo, logWarn } from './logger';
-import { base44 } from '@/api/base44Client';
+import { base44 } from '@/api/entities';
 import {
   isTelegramConfigured,
   notifyNewSignal,

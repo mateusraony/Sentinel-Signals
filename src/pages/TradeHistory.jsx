@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { base44 } from '@/api/entities';
 import { History, TrendingUp, TrendingDown, Filter, BarChart2, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import PnLChart from '@/components/trades/PnLChart';
 import moment from 'moment';
