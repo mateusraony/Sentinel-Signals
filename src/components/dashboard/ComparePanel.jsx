@@ -44,7 +44,7 @@ function computeOpportunity(states, signal, tradeOp) {
   return { score, reasons, hasActive };
 }
 
-function MetricRow({ label, value, color, highlight }) {
+function MetricRow({ label, value, color }) {
   return (
     <div className="flex items-center justify-between py-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
       <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">{label}</span>

@@ -8,7 +8,6 @@ function FunctionDisplay({ toolCall }) {
   const status = toolCall.status || 'completed';
   const isFailed = ['failed', 'error'].includes(status) ||
     (typeof toolCall.results === 'string' && /error|failed/i.test(toolCall.results));
-  const isSuccess = !isFailed && ['completed', 'success'].includes(status);
   const isPending = ['pending', 'running', 'in_progress'].includes(status);
 
   let statusText = 'Concluído';

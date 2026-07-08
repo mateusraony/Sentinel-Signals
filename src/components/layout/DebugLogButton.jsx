@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { Bug, X, AlertCircle, AlertTriangle, Info, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { Bug, X, Trash2 } from 'lucide-react';
 import moment from 'moment';
 
 const LEVEL_CONFIG = {

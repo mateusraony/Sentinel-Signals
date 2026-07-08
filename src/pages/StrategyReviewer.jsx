@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { backend } from '@/api/entities';
-import { Bot, Plus, MessageSquare, Trash2, Send, Loader2 } from 'lucide-react';
+import { Bot, Plus, MessageSquare, Send, Loader2 } from 'lucide-react';
 import MessageBubble from '@/components/agent/MessageBubble';
 import moment from 'moment';
 
@@ -49,6 +49,7 @@ export default function StrategyReviewer() {
       const full = await backend.agents.getConversation(conv.id);
       setMessages(full.messages || []);
     } catch (err) {
+      console.error('Failed to load conversation:', err);
       setMessages(conv.messages || []);
     }
   };
@@ -60,8 +61,8 @@ export default function StrategyReviewer() {
     setInput('');
     setSending(true);
     try {
-      const updated = await backend.agents.addMessage(activeConv, { role: 'user', content: userMsg.content });
-      // Subscribe handled separately; addMessage triggers agent response
+      // The assistant's reply arrives via the subscribeToConversation listener below.
+      await backend.agents.addMessage(activeConv, { role: 'user', content: userMsg.content });
     } catch (err) {
       console.error('Failed to send message:', err);
     } finally {

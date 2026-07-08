@@ -3,7 +3,6 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 export default function SignalBadge({ signal, size = 'md' }) {
   const isBuy = signal === 'BUY';
-  const isSell = signal === 'SELL';
   const isNone = !signal || signal === 'NONE';
 
   const pad = size === 'sm' ? '2px 8px' : '4px 12px';

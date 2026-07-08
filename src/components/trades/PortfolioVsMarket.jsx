@@ -26,7 +26,7 @@ function calcPortfolioCurve(trades) {
   if (closed.length === 0) return [];
 
   let cumulative = 0;
-  return closed.map((t, i) => {
+  return closed.map((t) => {
     const isBuy = t.side === 'BUY';
     const pnlPct = isBuy
       ? ((t.exit_price - t.entry_price) / t.entry_price) * 100

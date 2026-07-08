@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import moment from 'moment';
-import { CheckCircle2, AlertTriangle, Clock, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Zap } from 'lucide-react';
+import { Clock, TrendingUp, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
 
 const STATUS_CONFIG = {
   SIGNAL_CONFIRMED: {

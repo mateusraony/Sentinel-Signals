@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import {
   Loader2, Target, History, XCircle, Eye,
-  TrendingUp, TrendingDown, AlertTriangle, CheckCircle2,
+  TrendingUp, TrendingDown, AlertTriangle,
   BarChart2, Edit3, X, Search, Calendar
 } from 'lucide-react';
 import TradeCard from '@/components/dashboard/TradeCard';

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sliders, Activity, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { Sliders, Activity, Clock } from 'lucide-react';
 import RFHistoryChart from './RFHistoryChart';
 import moment from 'moment';
 
@@ -110,7 +110,7 @@ function TFStateCard({ tf, state, enabled }) {
   );
 }
 
-export default function AssetDetailPanel({ asset, states, expanded, onToggle }) {
+export default function AssetDetailPanel({ asset, states, expanded }) {
   if (!expanded) return null;
 
   return (

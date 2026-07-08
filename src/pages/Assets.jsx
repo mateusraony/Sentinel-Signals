@@ -3,12 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Plus, Trash2, Loader2, CheckCircle2, XCircle, Settings2, Coins, Clock, Activity, Zap, Search, ChevronDown, ChevronUp, TrendingUp, Crosshair } from 'lucide-react';
+import { Plus, Trash2, Loader2, CheckCircle2, XCircle, Settings2, Coins, Clock, Activity, Search, ChevronDown, ChevronUp, TrendingUp, Crosshair } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import AddAssetForm from '@/components/assets/AddAssetForm';
 import AssetConfigPanel from '@/components/assets/AssetConfigPanel';
 import AssetDetailPanel from '@/components/assets/AssetDetailPanel';
-import RFHistoryChart from '@/components/assets/RFHistoryChart';
 import { calcProximity } from '@/components/dashboard/ProximityBar';
 import moment from 'moment';
 

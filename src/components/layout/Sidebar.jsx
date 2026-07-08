@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Coins, Bell, ScrollText, Zap, Target, BookOpen, Code2, Bot, FileText, Trash2, FilterX, Loader2, ArrowLeftRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { backend } from '@/api/entities';
 
 const NAV_ITEMS = [
