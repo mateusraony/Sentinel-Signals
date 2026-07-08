@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import { Save, Copy, RefreshCw, Code2, AlertTriangle, CheckCircle2, Info, Layers, Zap } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { savePineConfig, getPineConfig, syncPineToAssets, isPineConfigStale } from '@/lib/pineParser';
@@ -308,7 +308,7 @@ export default function PineScript() {
 
   const { data: assets = [] } = useQuery({
     queryKey: ['all-assets'],
-    queryFn: () => base44.entities.MonitoredAsset.list('-created_date'),
+    queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
   });
 
   const handleSave = async () => {

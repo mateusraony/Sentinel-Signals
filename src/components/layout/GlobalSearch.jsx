@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import { Search, Coins, Bell } from 'lucide-react';
 
 export default function GlobalSearch() {
@@ -13,13 +13,13 @@ export default function GlobalSearch() {
 
   const { data: allAssets = [] } = useQuery({
     queryKey: ['monitored-assets'],
-    queryFn: () => base44.entities.MonitoredAsset.list(),
+    queryFn: () => backend.entities.MonitoredAsset.list(),
     staleTime: 60000,
   });
 
   const { data: allSignals = [] } = useQuery({
     queryKey: ['recent-signals'],
-    queryFn: () => base44.entities.SignalEvent.list('-created_date', 50),
+    queryFn: () => backend.entities.SignalEvent.list('-created_date', 50),
     staleTime: 15000,
   });
 

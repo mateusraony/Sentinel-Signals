@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import { Bell, Filter, Trash2, Eye, TrendingUp, TrendingDown, Search, X, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import moment from 'moment';
@@ -29,12 +29,12 @@ export default function Alerts() {
 
   const { data: signals = [], isLoading } = useQuery({
     queryKey: ['all-signals'],
-    queryFn: () => base44.entities.SignalEvent.list('-created_date', 200),
+    queryFn: () => backend.entities.SignalEvent.list('-created_date', 200),
     refetchInterval: 15000,
   });
 
   const dismissMutation = useMutation({
-    mutationFn: (id) => base44.entities.SignalEvent.update(id, { is_dismissed: true }),
+    mutationFn: (id) => backend.entities.SignalEvent.update(id, { is_dismissed: true }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['all-signals'] }),
   });
 

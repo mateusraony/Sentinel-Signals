@@ -32,7 +32,7 @@ function snapshotToArray(snapshot) {
   return snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
 }
 
-// Thin Firestore adapter preserving the base44.entities.<Name>.{list,filter,create,
+// Thin Firestore adapter preserving the backend.entities.<Name>.{list,filter,create,
 // update,delete,bulkCreate,deleteMany} call shape used throughout the app.
 function createEntity(collectionName) {
   return {
@@ -82,7 +82,7 @@ function createEntity(collectionName) {
   };
 }
 
-export const base44 = {
+export const backend = {
   entities: {
     MonitoredAsset: createEntity('monitoredAssets'),
     AssetState: createEntity('assetStates'),

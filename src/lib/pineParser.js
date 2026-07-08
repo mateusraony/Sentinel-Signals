@@ -118,18 +118,18 @@ export function isPineConfigStale(code) {
  * @returns {Promise<number>} count of assets updated
  */
 export async function syncPineToAssets() {
-  const { base44 } = await import('@/api/entities');
+  const { backend } = await import('@/api/entities');
   const config = getPineConfig();
 
   try {
-    const assets = await base44.entities.MonitoredAsset.filter({ is_active: true });
+    const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
     const toUpdate = assets.filter(
       a => a.rf_period !== config.rng_per || a.rf_multiplier !== config.rng_qty
     );
 
     await Promise.all(
       toUpdate.map(a =>
-        base44.entities.MonitoredAsset.update(a.id, {
+        backend.entities.MonitoredAsset.update(a.id, {
           rf_period: config.rng_per,
           rf_multiplier: config.rng_qty,
         })

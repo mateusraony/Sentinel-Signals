@@ -14,7 +14,7 @@ async function fetchMessages(conversationId) {
   return snap.docs.map(toRecord);
 }
 
-// Mirrors the base44.agents.* call shape StrategyReviewer.jsx already uses.
+// Mirrors the backend.agents.* call shape StrategyReviewer.jsx already uses.
 // Message replies are produced server-side by the strategyReviewerChat Cloud
 // Function (which holds the Anthropic API key) — the client never talks to
 // the LLM API directly.

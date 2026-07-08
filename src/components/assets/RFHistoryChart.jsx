@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import { LineChart, Line, ResponsiveContainer, YAxis, Tooltip, XAxis } from 'recharts';
 import { BarChart2 } from 'lucide-react';
 import moment from 'moment';
@@ -20,7 +20,7 @@ function dirColor(dir) {
 export default function RFHistoryChart({ asset }) {
   const { data: signals = [], isLoading } = useQuery({
     queryKey: ['rf-history', asset.id],
-    queryFn: () => base44.entities.SignalEvent.filter({ asset_id: asset.id }),
+    queryFn: () => backend.entities.SignalEvent.filter({ asset_id: asset.id }),
     staleTime: 30000,
   });
 

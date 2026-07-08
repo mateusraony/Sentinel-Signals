@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import { History, TrendingUp, TrendingDown, Filter, BarChart2, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import PnLChart from '@/components/trades/PnLChart';
 import moment from 'moment';
@@ -269,7 +269,7 @@ export default function TradeHistory() {
 
   const { data: operations = [], isLoading } = useQuery({
     queryKey: ['trade-history'],
-    queryFn: () => base44.entities.TradeOperation.list('-created_date', 200),
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', 200),
     refetchInterval: 30000,
   });
 

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Coins, Bell, ScrollText, Zap, Target, BookOpen, Code2, Bot, FileText, Trash2, FilterX, Loader2, ArrowLeftRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 
 const NAV_ITEMS = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -154,7 +154,7 @@ function ClearLogsButton() {
     if (!window.confirm('Limpar TODOS os logs do sistema?')) return;
     setClearing(true);
     try {
-      await base44.entities.SystemLog.deleteMany({});
+      await backend.entities.SystemLog.deleteMany({});
     } catch (e) {
       console.error('Clear logs error:', e);
     } finally {

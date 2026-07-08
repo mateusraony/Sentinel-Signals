@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import { Bell, Coins, TrendingUp, TrendingDown, Target, Clock, Search, ArrowUpDown, Swords } from 'lucide-react';
 import AssetCard from '@/components/dashboard/AssetCard';
 import RecentAlertsList from '@/components/dashboard/RecentAlertsList';
@@ -36,25 +36,25 @@ export default function Dashboard() {
 
   const { data: assets = [], isLoading: loadingAssets } = useQuery({
     queryKey: ['monitored-assets'],
-    queryFn: () => base44.entities.MonitoredAsset.filter({ is_active: true }),
+    queryFn: () => backend.entities.MonitoredAsset.filter({ is_active: true }),
     refetchInterval: 20000,
   });
 
   const { data: states = [] } = useQuery({
     queryKey: ['asset-states'],
-    queryFn: () => base44.entities.AssetState.list(),
+    queryFn: () => backend.entities.AssetState.list(),
     refetchInterval: 15000,
   });
 
   const { data: recentSignals = [] } = useQuery({
     queryKey: ['recent-signals'],
-    queryFn: () => base44.entities.SignalEvent.list('-created_date', 50),
+    queryFn: () => backend.entities.SignalEvent.list('-created_date', 50),
     refetchInterval: 10000,
   });
 
   const { data: tradeOps = [] } = useQuery({
     queryKey: ['trade-operations-dashboard'],
-    queryFn: () => base44.entities.TradeOperation.list('-created_date', 100),
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
     refetchInterval: 10000,
   });
 

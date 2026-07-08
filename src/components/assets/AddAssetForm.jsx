@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,7 +43,7 @@ export default function AddAssetForm({ onSuccess }) {
     setError('');
     const sym = symbol.toUpperCase().trim();
     const name = displayName.trim() || sym.replace('USDT', '/USDT');
-    await base44.entities.MonitoredAsset.create({
+    await backend.entities.MonitoredAsset.create({
       symbol: sym, display_name: name, exchange: 'binance', market: 'crypto',
       is_active: true, timeframes_enabled: { '1h': true, '4h': true, '1d': true },
     });

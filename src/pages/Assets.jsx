@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Plus, Trash2, Loader2, CheckCircle2, XCircle, Settings2, Coins, Clock, Activity, Zap, Search, ChevronDown, ChevronUp, TrendingUp, Crosshair } from 'lucide-react';
@@ -36,35 +36,35 @@ export default function Assets() {
 
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['all-assets'],
-    queryFn: () => base44.entities.MonitoredAsset.list('-created_date'),
+    queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
     refetchInterval: 30000,
   });
 
   const { data: states = [] } = useQuery({
     queryKey: ['asset-states'],
-    queryFn: () => base44.entities.AssetState.list(),
+    queryFn: () => backend.entities.AssetState.list(),
     refetchInterval: 20000,
   });
 
   const { data: recentSignals = [] } = useQuery({
     queryKey: ['recent-signals'],
-    queryFn: () => base44.entities.SignalEvent.list('-created_date', 100),
+    queryFn: () => backend.entities.SignalEvent.list('-created_date', 100),
     refetchInterval: 20000,
   });
 
   const { data: tradeOps = [] } = useQuery({
     queryKey: ['trade-operations-assets'],
-    queryFn: () => base44.entities.TradeOperation.list('-created_date', 100),
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
     refetchInterval: 20000,
   });
 
   const toggleMutation = useMutation({
-    mutationFn: ({ id, is_active }) => base44.entities.MonitoredAsset.update(id, { is_active }),
+    mutationFn: ({ id, is_active }) => backend.entities.MonitoredAsset.update(id, { is_active }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['all-assets'] }),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => base44.entities.MonitoredAsset.delete(id),
+    mutationFn: (id) => backend.entities.MonitoredAsset.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['all-assets'] }),
   });
 

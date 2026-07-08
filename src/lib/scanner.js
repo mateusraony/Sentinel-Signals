@@ -20,7 +20,7 @@ import { analyzeAlignment, calculateSignalStrength, generateSignalDescription } 
 import { calculateATR } from './indicators/atr';
 import { getPineConfig } from './pineParser';
 import { logInfo, logWarn } from './logger';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import {
   isTelegramConfigured,
   notifyNewSignal,
@@ -375,15 +375,15 @@ export async function persistScanResults(scanResult) {
     };
 
     // Check if state exists
-    const existing = await base44.entities.AssetState.filter({ 
+    const existing = await backend.entities.AssetState.filter({ 
       asset_id: asset.id, 
       timeframe: tf 
     });
 
     if (existing.length > 0) {
-      await base44.entities.AssetState.update(existing[0].id, stateData);
+      await backend.entities.AssetState.update(existing[0].id, stateData);
     } else {
-      await base44.entities.AssetState.create(stateData);
+      await backend.entities.AssetState.create(stateData);
     }
   }
 
@@ -391,7 +391,7 @@ export async function persistScanResults(scanResult) {
   let persistedSignals = 0;
   for (const signal of newSignals) {
     // Check dedup_key
-    const existingSignals = await base44.entities.SignalEvent.filter({ 
+    const existingSignals = await backend.entities.SignalEvent.filter({ 
       dedup_key: signal.dedup_key 
     });
 
@@ -400,7 +400,7 @@ export async function persistScanResults(scanResult) {
       const cooldownMinutes = asset.alert_cooldown_minutes || 60;
       const cooldownTime = new Date(Date.now() - cooldownMinutes * 60 * 1000).toISOString();
       
-      const recentSame = await base44.entities.SignalEvent.filter({
+      const recentSame = await backend.entities.SignalEvent.filter({
         symbol: signal.symbol,
         timeframe: signal.timeframe,
         signal_type: signal.signal_type,
@@ -412,7 +412,7 @@ export async function persistScanResults(scanResult) {
       );
 
       if (!hasCooldownConflict) {
-        await base44.entities.SignalEvent.create(signal);
+        await backend.entities.SignalEvent.create(signal);
         persistedSignals++;
         if (isTelegramConfigured()) notifyNewSignal(signal).catch(() => {});
 
@@ -422,7 +422,7 @@ export async function persistScanResults(scanResult) {
         if (signal.source === 'range_filter') {
           if (signal.timeframe !== '4h') {
             // Non-4H signal — block entry, log as ignored
-            await base44.entities.SystemLog.create({
+            await backend.entities.SystemLog.create({
               level: 'debug',
               module: 'scanner',
               message: `${asset.symbol} ${signal.timeframe.toUpperCase()} ${signal.signal_type} — entrada bloqueada (requer tendência 4H confirmada)`,
@@ -439,7 +439,7 @@ export async function persistScanResults(scanResult) {
 
               if (tf4hDir !== sigDir) {
                 // 4H trend not aligned with signal direction — block entry
-                await base44.entities.SystemLog.create({
+                await backend.entities.SystemLog.create({
                   level: 'warn',
                   module: 'scanner',
                   message: `${asset.symbol} 4H ${signal.signal_type} — tendência 4H desalinhada (dir=${tf4hDir}), entrada bloqueada`,
@@ -449,7 +449,7 @@ export async function persistScanResults(scanResult) {
                 });
               } else {
                 // 4H aligned — check for existing active ops
-                const existingOps = await base44.entities.TradeOperation.filter({
+                const existingOps = await backend.entities.TradeOperation.filter({
                   symbol: signal.symbol,
                   asset_id: signal.asset_id,
                 });
@@ -463,14 +463,14 @@ export async function persistScanResults(scanResult) {
 
                   if (confirmed15m) {
                     const opData = buildTradeOpData(signal, tf4hData, pineConfig);
-                    const newOp = await base44.entities.TradeOperation.create(opData);
+                    const newOp = await backend.entities.TradeOperation.create(opData);
                     if (isTelegramConfigured() && newOp) notifyTradeCreated(newOp).catch(() => {});
                     logInfo('scanner', `${signal.symbol} entrada criada — Pine sync ativo`, {
                       score: signal.context?.score, atr_mult: pineConfig.trailAtrMult, tp1R: pineConfig.tp1R,
                     }, { symbol: signal.symbol, timeframe: '15m' });
                   } else {
                     // 15m not aligned — log and wait for retry on next scan
-                    await base44.entities.SystemLog.create({
+                    await backend.entities.SystemLog.create({
                       level: 'info',
                       module: 'scanner',
                       message: `${asset.symbol} 4h ${signal.signal_type} — aguardando confirmação no 15m`,
@@ -492,7 +492,7 @@ export async function persistScanResults(scanResult) {
   // Signals that were saved but didn't create a trade op (15m wasn't aligned)
   // get re-checked on every scan. If 15m aligns now, the trade op is created.
   const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
-  const recent4hSignals = await base44.entities.SignalEvent.filter({
+  const recent4hSignals = await backend.entities.SignalEvent.filter({
     asset_id: asset.id,
     source: 'range_filter',
     timeframe: '4h',
@@ -503,7 +503,7 @@ export async function persistScanResults(scanResult) {
     if (sig.is_dismissed) continue;
 
     // Check if a trade op already exists for this signal
-    const existingOps = await base44.entities.TradeOperation.filter({
+    const existingOps = await backend.entities.TradeOperation.filter({
       symbol: sig.symbol,
       asset_id: sig.asset_id,
     });
@@ -524,11 +524,11 @@ export async function persistScanResults(scanResult) {
     if (!confirmed) continue;
 
     const opData = buildTradeOpData(sig, tfData4h, pineConfig);
-    const newOp = await base44.entities.TradeOperation.create(opData);
+    const newOp = await backend.entities.TradeOperation.create(opData);
 
     if (isTelegramConfigured() && newOp) notifyTradeCreated(newOp).catch(() => {});
 
-    await base44.entities.SystemLog.create({
+    await backend.entities.SystemLog.create({
       level: 'info',
       module: 'scanner',
       message: `${sig.symbol} 4h ${sig.signal_type} — confirmação 15m OK, entrada criada`,
@@ -539,7 +539,7 @@ export async function persistScanResults(scanResult) {
   }
 
   // Update status of existing active TradeOperations
-  const allActiveOps = await base44.entities.TradeOperation.filter({ asset_id: asset.id });
+  const allActiveOps = await backend.entities.TradeOperation.filter({ asset_id: asset.id });
   for (const op of allActiveOps) {
     if (['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)) continue;
     const tfData = results[op.timeframe];
@@ -604,7 +604,7 @@ export async function persistScanResults(scanResult) {
       }
     }
     if (newStatus !== op.status || tp1Hit !== op.tp1_hit || tp2Hit !== op.tp2_hit || newCurrentStop !== op.current_stop) {
-      await base44.entities.TradeOperation.update(op.id, {
+      await backend.entities.TradeOperation.update(op.id, {
         status: newStatus,
         tp1_hit: tp1Hit,
         tp2_hit: tp2Hit,
@@ -620,14 +620,14 @@ export async function persistScanResults(scanResult) {
   }
 
   // Update asset scan status
-  await base44.entities.MonitoredAsset.update(asset.id, {
+  await backend.entities.MonitoredAsset.update(asset.id, {
     last_scan_at: new Date().toISOString(),
     scan_status: errors.length > 0 ? 'error' : 'success',
     scan_error: errors.length > 0 ? errors.map(e => `${e.timeframe}: ${e.error}`).join('; ') : '',
   });
 
   // Log scan
-  await base44.entities.SystemLog.create({
+  await backend.entities.SystemLog.create({
     level: errors.length > 0 ? 'warn' : 'info',
     module: 'scanner',
     message: `Scan completo: ${asset.symbol} — ${persistedSignals} novos sinais, ${errors.length} erros`,
@@ -649,7 +649,7 @@ export async function persistScanResults(scanResult) {
  * Fetches current price per symbol and updates trade op status
  */
 export async function priceCheckActiveOps() {
-  const ops = await base44.entities.TradeOperation.filter({});
+  const ops = await backend.entities.TradeOperation.filter({});
   const activeOps = ops.filter(op => ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'].includes(op.status));
   if (activeOps.length === 0) return;
 
@@ -700,7 +700,7 @@ export async function priceCheckActiveOps() {
     }
 
     if (newStatus !== op.status || tp1Hit !== op.tp1_hit || tp2Hit !== op.tp2_hit || newCurrentStop !== op.current_stop) {
-      await base44.entities.TradeOperation.update(op.id, { status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit, current_stop: newCurrentStop, ...updatePayload });
+      await backend.entities.TradeOperation.update(op.id, { status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit, current_stop: newCurrentStop, ...updatePayload });
       if (isTelegramConfigured()) {
         if (newStatus === 'STOP_HIT') notifyStopHit(op, price).catch(() => {});
         else if (newStatus === 'TP2_HIT') notifyTP2Hit(op, price).catch(() => {});
@@ -714,7 +714,7 @@ export async function priceCheckActiveOps() {
  * Scan all active assets
  */
 export async function scanAllAssets(onProgress) {
-  const assets = await base44.entities.MonitoredAsset.filter({ is_active: true });
+  const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
   
   if (assets.length === 0) {
     return { total: 0, results: [] };
@@ -728,7 +728,7 @@ export async function scanAllAssets(onProgress) {
 
     try {
       // Update status to scanning
-      await base44.entities.MonitoredAsset.update(asset.id, { scan_status: 'scanning' });
+      await backend.entities.MonitoredAsset.update(asset.id, { scan_status: 'scanning' });
       
       const result = await scanAsset(asset);
       const persisted = await persistScanResults(result);
@@ -751,13 +751,13 @@ export async function scanAllAssets(onProgress) {
         error: err.message,
       });
 
-      await base44.entities.MonitoredAsset.update(asset.id, {
+      await backend.entities.MonitoredAsset.update(asset.id, {
         scan_status: 'error',
         scan_error: err.message,
         last_scan_at: new Date().toISOString(),
       });
 
-      await base44.entities.SystemLog.create({
+      await backend.entities.SystemLog.create({
         level: 'error',
         module: 'scanner',
         message: `Erro no scan de ${asset.symbol}: ${err.message}`,

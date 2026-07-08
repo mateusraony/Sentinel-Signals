@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TrendingUp, TrendingDown, Zap } from 'lucide-react';
 import { fetch24hStats } from '@/lib/marketDataProvider';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import moment from 'moment';
 import ProximityBar from '@/components/dashboard/ProximityBar';
 
@@ -110,7 +110,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
 
   // "Activate signal" mutation — creates a TradeOperation from the signal
   const activateMutation = useMutation({
-    mutationFn: (sig) => base44.entities.TradeOperation.create({
+    mutationFn: (sig) => backend.entities.TradeOperation.create({
       symbol: sig.symbol,
       asset_id: sig.asset_id,
       timeframe: sig.timeframe,
