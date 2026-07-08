@@ -13,13 +13,13 @@
 
 import { fetchCandles, fetchCurrentPrice } from './marketDataProvider';
 import { calculateRangeFilter } from './indicators/rangeFilter';
-import { calculateRSI, getRSIZone } from './indicators/rsi';
+import { calculateRSI } from './indicators/rsi';
 import { calculateMACD } from './indicators/macd';
 import { calculateEMAs } from './indicators/movingAverages';
 import { analyzeAlignment, calculateSignalStrength, generateSignalDescription } from './indicators/confluence';
 import { calculateATR } from './indicators/atr';
 import { getPineConfig } from './pineParser';
-import { logInfo, logWarn } from './logger';
+import { logInfo } from './logger';
 import { backend } from '@/api/entities';
 import {
   isTelegramConfigured,
