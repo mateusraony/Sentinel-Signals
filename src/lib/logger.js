@@ -10,7 +10,7 @@
  * floating button. Uses a queue + batch create to avoid blocking the UI.
  */
 
-import { base44 } from '@/api/base44Client';
+import { base44 } from '@/api/entities';
 
 const QUEUE = [];
 let flushing = false;

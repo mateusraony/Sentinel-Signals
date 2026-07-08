@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { base44 } from '@/api/entities';
 import { Bell, Coins, TrendingUp, TrendingDown, Target, Clock, Search, ArrowUpDown, Swords } from 'lucide-react';
 import AssetCard from '@/components/dashboard/AssetCard';
 import RecentAlertsList from '@/components/dashboard/RecentAlertsList';

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
+import { base44 } from '@/api/entities';
 import { Search, Coins, Bell } from 'lucide-react';
 
 export default function GlobalSearch() {

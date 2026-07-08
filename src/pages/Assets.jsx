@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { base44 } from '@/api/entities';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Plus, Trash2, Loader2, CheckCircle2, XCircle, Settings2, Coins, Clock, Activity, Zap, Search, ChevronDown, ChevronUp, TrendingUp, Crosshair } from 'lucide-react';

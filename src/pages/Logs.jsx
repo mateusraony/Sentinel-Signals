@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { base44 } from '@/api/entities';
 import { ScrollText, Filter, RefreshCw, AlertTriangle, Info, Bug, AlertCircle, X, Search, Trash2 } from 'lucide-react';
 import moment from 'moment';
 

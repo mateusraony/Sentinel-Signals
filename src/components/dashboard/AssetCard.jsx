@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TrendingUp, TrendingDown, Zap } from 'lucide-react';
 import { fetch24hStats } from '@/lib/marketDataProvider';
-import { base44 } from '@/api/base44Client';
+import { base44 } from '@/api/entities';
 import moment from 'moment';
 import ProximityBar from '@/components/dashboard/ProximityBar';
 
