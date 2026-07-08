@@ -79,15 +79,15 @@ export default function TelegramSettings({ open, onClose }) {
 
   if (!open) return null;
 
-  const save = () => {
-    setTelegramConfig(cfg);
+  const save = async () => {
+    await setTelegramConfig(cfg);
     setTelegramFilters(filters);
     onClose();
   };
 
   const test = async () => {
     setTesting(true); setTestResult(null);
-    setTelegramConfig(cfg);
+    await setTelegramConfig(cfg);
     const tfStr = filters.timeframes.join(', ').toUpperCase();
     const evStr = EVENT_OPTIONS.filter(e => filters.events.includes(e.id)).map(e => e.label).join('\n• ');
     try {

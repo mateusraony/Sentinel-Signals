@@ -19,13 +19,16 @@ export function getTelegramConfig() {
   catch { return {}; }
 }
 
+// Returns a promise so callers that need the Firestore write to have landed
+// (e.g. before invoking the telegramNotify callable) can await it.
 export function setTelegramConfig(cfg) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
   const uid = auth.currentUser?.uid;
   if (uid && cfg.chatId) {
-    setDoc(doc(db, 'telegramConfig', uid), { chatId: cfg.chatId }, { merge: true })
+    return setDoc(doc(db, 'telegramConfig', uid), { chatId: cfg.chatId }, { merge: true })
       .catch((e) => console.warn('[Telegram] failed to sync chat_id to Firestore:', e.message));
   }
+  return Promise.resolve();
 }
 
 export function isTelegramConfigured() {
@@ -93,6 +96,10 @@ async function send(html) {
   const { chatId } = getTelegramConfig();
   if (!chatId) return;
   try {
+    // Self-heals configs saved before the Cloud Function migration (chatId
+    // was localStorage-only back then): make sure Firestore has it before
+    // the callable — which reads only Firestore — tries to look it up.
+    await setTelegramConfig({ chatId });
     const notify = httpsCallable(functions, 'telegramNotify');
     await notify({ text: html });
   } catch (e) {
