@@ -19,7 +19,7 @@ import { calculateEMAs } from './indicators/movingAverages';
 import { analyzeAlignment, calculateSignalStrength, generateSignalDescription } from './indicators/confluence';
 import { calculateATR } from './indicators/atr';
 import { getPineConfig } from './pineParser';
-import { logInfo } from './logger';
+import { logInfo, logWarn } from './logger';
 import { backend } from '@/api/entities';
 import {
   isTelegramConfigured,
@@ -657,7 +657,7 @@ export async function priceCheckActiveOps() {
   const prices = {};
   await Promise.all(symbols.map(async sym => {
     try { prices[sym] = await fetchCurrentPrice(sym); }
-    catch { /* skip */ }
+    catch (e) { logWarn('scanner', `Falha ao buscar preço de ${sym}`, { error: e.message }, { symbol: sym }); }
   }));
 
   for (const op of activeOps) {

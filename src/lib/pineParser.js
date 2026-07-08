@@ -8,6 +8,8 @@
  * Script are reflected automatically — no manual bot changes needed.
  */
 
+import { logWarn } from './logger';
+
 const PINE_CONFIG_KEY = 'cryptoradar_pine_config';
 
 const DEFAULTS = {
@@ -95,7 +97,9 @@ export function getPineConfig() {
   try {
     const stored = localStorage.getItem(PINE_CONFIG_KEY);
     if (stored) return { ...DEFAULTS, ...JSON.parse(stored) };
-  } catch { /* ignore */ }
+  } catch (e) {
+    logWarn('pineParser', 'Config Pine Script corrompida no localStorage, usando defaults', { error: e.message });
+  }
   return { ...DEFAULTS };
 }
 
@@ -137,7 +141,8 @@ export async function syncPineToAssets() {
     );
 
     return toUpdate.length;
-  } catch {
+  } catch (e) {
+    logWarn('pineParser', 'Falha ao sincronizar parâmetros RF com os ativos monitorados', { error: e.message });
     return 0;
   }
 }

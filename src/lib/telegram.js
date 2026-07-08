@@ -10,13 +10,17 @@
 import { doc, setDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { auth, db, functions } from '@/lib/firebaseClient';
+import { logWarn } from './logger';
 
 const STORAGE_KEY = 'cryptoradar_telegram_cfg';
 const FILTERS_KEY = 'tg_filters';
 
 export function getTelegramConfig() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
-  catch { return {}; }
+  catch (e) {
+    logWarn('telegram', 'Config do Telegram corrompida no localStorage', { error: e.message });
+    return {};
+  }
 }
 
 // Returns a promise so callers that need the Firestore write to have landed
@@ -47,7 +51,10 @@ const DEFAULT_FILTERS = {
 
 export function getTelegramFilters() {
   try { return JSON.parse(localStorage.getItem(FILTERS_KEY)) || DEFAULT_FILTERS; }
-  catch { return DEFAULT_FILTERS; }
+  catch (e) {
+    logWarn('telegram', 'Filtros do Telegram corrompidos no localStorage, usando defaults', { error: e.message });
+    return DEFAULT_FILTERS;
+  }
 }
 
 export function setTelegramFilters(filters) {

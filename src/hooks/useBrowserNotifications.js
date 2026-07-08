@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { logWarn } from '@/lib/logger';
 
 /**
  * Solicita permissão de notificação do navegador e dispara alertas
@@ -48,8 +49,8 @@ export function useBrowserNotifications(signals = []) {
         );
         // Auto-fecha após 6s
         setTimeout(() => n.close(), 6000);
-      } catch {
-        // Silencioso se falhar
+      } catch (e) {
+        logWarn('notifications', 'Falha ao exibir notificação do navegador', { error: e.message, symbol });
       }
     });
   }, [signals]);
