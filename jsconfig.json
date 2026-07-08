@@ -17,11 +17,16 @@
     "types": []
   },
   "include": [
-    "src/components/**/*.{js,jsx}",
-    "src/pages/**/*.{js,jsx}",
-    "src/lib/**/*.{js,jsx}",
-    "src/api/**/*.{js,jsx}",
-    "src/hooks/**/*.{js,jsx}",
+    "src/components/**/*.js",
+    "src/components/**/*.jsx",
+    "src/pages/**/*.js",
+    "src/pages/**/*.jsx",
+    "src/lib/**/*.js",
+    "src/lib/**/*.jsx",
+    "src/api/**/*.js",
+    "src/api/**/*.jsx",
+    "src/hooks/**/*.js",
+    "src/hooks/**/*.jsx",
     "src/Layout.jsx"
   ],
   "exclude": ["node_modules", "dist", "src/components/ui"]
