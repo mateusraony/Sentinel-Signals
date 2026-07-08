@@ -1,0 +1,49 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Business collections: single-tenant app behind login — any authenticated
+    // user may read/write, mirroring the original Base44 admin/user model.
+    match /monitoredAssets/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /assetStates/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /signalEvents/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /tradeOperations/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /priceAlerts/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /systemLogs/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // User profiles: a user may read/create their own profile, but cannot
+    // grant themselves the admin role or edit anyone else's profile.
+    match /users/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.role == 'user';
+      allow update: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.role == resource.data.role;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
