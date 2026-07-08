@@ -12,6 +12,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebaseClient';
+import { strategyReviewerAgent } from '@/api/agents';
 
 function buildQuery(collectionName, filters = {}, sort, limitCount) {
   const constraints = [];
@@ -91,4 +92,5 @@ export const base44 = {
     SystemLog: createEntity('systemLogs'),
     User: createEntity('users'),
   },
+  agents: strategyReviewerAgent,
 };
