@@ -18,6 +18,9 @@ import { calculateMACD } from './indicators/macd';
 import { calculateEMAs } from './indicators/movingAverages';
 import { analyzeAlignment, calculateSignalStrength, generateSignalDescription } from './indicators/confluence';
 import { calculateATR } from './indicators/atr';
+import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
+import { calculateADX } from './indicators/adx';
+import { calculateChoppiness } from './indicators/choppiness';
 import { getPineConfig } from './pineParser';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -38,6 +41,7 @@ const TF_15M = '15m'; // Used for entry confirmation after 4h signal
 // crashed/killed run's lock still expires instead of blocking forever.
 const FULL_SCAN_LOCK_TTL_MS = 10 * 60 * 1000;
 const PRICE_CHECK_LOCK_TTL_MS = 3 * 60 * 1000;
+const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 
 // Fail-open: if the lock itself can't be acquired/released (permission
 // error, network blip), we still let the scan run rather than going
@@ -63,12 +67,30 @@ async function tryReleaseScanLock(lockName, holder) {
 }
 
 /**
+ * Regime gate (ADX + Choppiness, tier-based thresholds) — blocks new
+ * TradeOperations in choppy/weak-trend conditions, matching the Pine's
+ * `regimeOk = adxOk and chopOk`. Only gates entries, never the SignalEvent
+ * itself (kept for history/analytics regardless of regime).
+ */
+function evaluateRegime(tf4hData, pineConfig) {
+  const tier = tf4hData.tier;
+  if (!tier || !tf4hData.adx) return { ok: true, adxOk: true, chopOk: true };
+  const adxOk = pineConfig.useADX === false || tf4hData.adx.adx >= tier.adxMinVal;
+  const chopOk = pineConfig.useChop === false || tf4hData.chop <= tier.chopMaxVal;
+  return { ok: adxOk && chopOk, adxOk, chopOk };
+}
+
+/**
  * Build TradeOperation data from a 4h signal using Pine config parameters.
  * Centralizes entry/stop/TP calculations so Pine Script changes propagate
  * automatically — no manual bot configuration needed.
  */
 function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
-  const ATR_MULT = pineConfig.trailAtrMult ?? 2.0;
+  // Stop multiplier is tier-based (volatility-adjusted), not the global
+  // trailAtrMult — that field is reserved for the runner's ATR trailing
+  // after TP1 (see the post-TP1 update loop), a different parameter with
+  // a different purpose that used to be incorrectly reused here.
+  const ATR_MULT = tf4hData.tier?.atrStopMult ?? 2.0;
   const tp1R = pineConfig.tp1R ?? 1.5;
   const tp2R = (pineConfig.tp1R ?? 1.5) * 2;
   const partialPct = pineConfig.tp1QtyPercent ?? 50;
@@ -106,6 +128,11 @@ function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
     candle_close_time: tf4hData.lastCandleTime,
     entry_candle_time_15m: confirmation15m?.entryCandleTime,
     origin_4h_price: sig.price_at_signal,
+    tier: tf4hData.tier?.tier,
+    adx_at_entry: tf4hData.adx?.adx,
+    chop_at_entry: tf4hData.chop,
+    tier_time_stop_bars: tf4hData.tier?.timeStopBars,
+    source: 'scanner',
     candle_status: 'CLOSED',
     data_status: 'LIVE',
     signal_reasons: sig.context?.reasons || [],
@@ -223,6 +250,24 @@ export async function scanAsset(asset) {
       const atrValue = calculateATR(closedCandles, 14);
       const lastCandle = closedCandles[closedCandles.length - 1];
 
+      // Tier/regime filters (ADX, Choppiness) are only meaningful on the
+      // 4h timeframe — that's where entries/risk are decided (the 4h
+      // signal + 15m confirmation cascade, kept as-is by design).
+      let tier = null, adx = null, chop = null;
+      if (tf === '4h') {
+        const atrPctSmooth = calculateAtrPctSmooth(closedCandles, pineConfig.atrLen ?? 14, 20);
+        tier = classifyTier(atrPctSmooth, {
+          tier2: pineConfig.tier2Threshold ?? 0.8,
+          tier3: pineConfig.tier3Threshold ?? 1.5,
+        }, {
+          T1: pineConfig.timeStopT1,
+          T2: pineConfig.timeStopT2,
+          T3: pineConfig.timeStopT3,
+        });
+        adx = calculateADX(closedCandles, pineConfig.adxLen ?? 14, pineConfig.adxSmooth ?? 14);
+        chop = calculateChoppiness(closedCandles, pineConfig.chopLen ?? 14);
+      }
+
       results[tf] = {
         rf: rfResult,
         rsi: rsiResult,
@@ -230,6 +275,9 @@ export async function scanAsset(asset) {
         ema: emaResult,
         volumeData,
         atrValue,
+        tier,
+        adx,
+        chop,
         lastClose: lastCandle.close,
         lastCandleHigh: lastCandle.high,
         lastCandleLow: lastCandle.low,
@@ -500,6 +548,19 @@ export async function persistScanResults(scanResult) {
               details: { signal_dir: sigDir, tf4h_dir: tf4hDir, score: signal.context?.score },
             });
           } else {
+            const regime = evaluateRegime(tf4hData, pineConfig);
+            if (!regime.ok) {
+              await backend.entities.SystemLog.create({
+                level: 'info',
+                module: 'scanner',
+                message: `${asset.symbol} 4H ${signal.signal_type} — regime bloqueado (${!regime.adxOk ? 'ADX fraco' : ''}${!regime.adxOk && !regime.chopOk ? ' + ' : ''}${!regime.chopOk ? 'mercado lateralizado' : ''})`,
+                symbol: asset.symbol,
+                timeframe: '4h',
+                details: { adx: tf4hData.adx?.adx, chop: tf4hData.chop, tier: tf4hData.tier?.tier, adxOk: regime.adxOk, chopOk: regime.chopOk },
+              });
+              continue;
+            }
+
             // Cheap early-exit query (still racy, just an optimization to
             // skip the 15m candle fetch below) — the real guarantee against
             // duplicate/overlapping operations for this asset comes from
@@ -576,6 +637,11 @@ export async function persistScanResults(scanResult) {
     const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
     if (tf4hDir !== sigDir) continue;
 
+    // Regime gate (ADX + Choppiness) — re-evaluated every retry pass since
+    // conditions may have changed since the signal first fired.
+    const regime = evaluateRegime(tfData4h, pineConfig);
+    if (!regime.ok) continue;
+
     // Re-run 15m confirmation
     const confirmed = await check15mConfirmation(sig.symbol, sig.signal_type, asset);
     if (!confirmed.confirmed) continue;
@@ -628,11 +694,53 @@ export async function persistScanResults(scanResult) {
     if (!tp1Hit) {
       // Check stop first (stop has priority over TP on same candle for safety)
       const stopHit = isBuy ? stopCheckPrice <= op.current_stop : stopCheckPrice >= op.current_stop;
+
+      // Time Stop: close if TP1 hasn't hit within tier.timeStopBars 4h
+      // candles since entry — counted by elapsed time rather than a
+      // scan-incremented counter, so it stays correct across cron gaps.
+      const barsOpen = op.candle_close_time
+        ? Math.floor((Date.now() - new Date(op.candle_close_time).getTime()) / FOUR_HOURS_MS)
+        : 0;
+      const timeStopBars = op.tier_time_stop_bars ?? 48;
+      const timeStopTriggered = pineConfig.useTimeStop !== false && barsOpen >= timeStopBars;
+
+      // Chop Exit — OFF by default (useChopExit), matches the Pine toggle.
+      const chopExitTriggered = pineConfig.useChopExit === true
+        && tfData.chop != null && tfData.tier && tfData.chop > tfData.tier.chopMaxVal;
+
+      // RF invalidation — OFF by default (useInvalidation). Counts
+      // consecutive 4h candles with RF reversed against the position;
+      // the Pine's alternate trigger ("score contrário >= invalidScoreMin")
+      // is intentionally not replicated here — it needs a freshly computed
+      // opposite-direction score not otherwise available in this loop, and
+      // this toggle is off by default in the reference strategy.
+      const reverseBars = (isBuy ? rfDir === -1 : rfDir === 1)
+        ? (op.rf_reverse_bars_count || 0) + 1
+        : 0;
+      updatePayload.rf_reverse_bars_count = reverseBars;
+      const invalidationTriggered = pineConfig.useInvalidation === true
+        && reverseBars >= (pineConfig.invalidRFBars ?? 2);
+
       if (stopHit) {
         newStatus = 'STOP_HIT';
         updatePayload.stop_hit_at = nowIso;
         updatePayload.stop_hit_price = op.current_stop;
         updatePayload.exit_price = op.current_stop;
+        updatePayload.closed_at = nowIso;
+      } else if (invalidationTriggered) {
+        newStatus = 'INVALIDATED';
+        updatePayload.closed_reason = 'INVALIDATION';
+        updatePayload.exit_price = closePrice;
+        updatePayload.closed_at = nowIso;
+      } else if (chopExitTriggered) {
+        newStatus = 'CLOSED';
+        updatePayload.closed_reason = 'CHOP_EXIT';
+        updatePayload.exit_price = closePrice;
+        updatePayload.closed_at = nowIso;
+      } else if (timeStopTriggered) {
+        newStatus = 'CLOSED';
+        updatePayload.closed_reason = 'TIME_STOP';
+        updatePayload.exit_price = closePrice;
         updatePayload.closed_at = nowIso;
       } else if ((isBuy && tpCheckPrice >= op.tp1) || (!isBuy && tpCheckPrice <= op.tp1)) {
         tp1Hit = true;
@@ -642,13 +750,29 @@ export async function persistScanResults(scanResult) {
         updatePayload.tp1_hit_price = op.tp1;
       }
     } else {
-      const runnerStopHit = isBuy ? stopCheckPrice <= op.current_stop : stopCheckPrice >= op.current_stop;
+      // rf_reverse_bars_count only matters pre-TP1 (Chop Exit/Invalidation
+      // gates) — keep it stable post-TP1 so the update-guard below doesn't
+      // trigger a write every pass just because updatePayload didn't set it.
+      updatePayload.rf_reverse_bars_count = op.rf_reverse_bars_count || 0;
+
+      // Advance the runner's stop via ATR trailing (never retreats) before
+      // evaluating exits — mirrors the Pine's same-bar order (runner
+      // conduction happens before the exit checks that use it).
+      if ((op.exit_mode === 'HYBRID_RF_ATR' || op.exit_mode === 'ATR_TRAILING') && tfData.atrValue) {
+        const trailMult = pineConfig.trailAtrMult ?? 2.0;
+        const atrTrailStop = isBuy
+          ? closePrice - tfData.atrValue * trailMult
+          : closePrice + tfData.atrValue * trailMult;
+        newCurrentStop = isBuy ? Math.max(newCurrentStop, atrTrailStop) : Math.min(newCurrentStop, atrTrailStop);
+      }
+
+      const runnerStopHit = isBuy ? stopCheckPrice <= newCurrentStop : stopCheckPrice >= newCurrentStop;
       if (runnerStopHit) {
         newStatus = 'STOP_HIT';
         updatePayload.stop_hit_at = nowIso;
-        updatePayload.stop_hit_price = op.current_stop;
+        updatePayload.stop_hit_price = newCurrentStop;
         // Runner stopped at BE (entry) or current stop
-        updatePayload.exit_price = op.current_stop;
+        updatePayload.exit_price = newCurrentStop;
         updatePayload.closed_at = nowIso;
       } else if ((isBuy && tpCheckPrice >= op.tp2) || (!isBuy && tpCheckPrice <= op.tp2)) {
         tp2Hit = true;
@@ -666,7 +790,8 @@ export async function persistScanResults(scanResult) {
         }
       }
     }
-    if (newStatus !== op.status || tp1Hit !== op.tp1_hit || tp2Hit !== op.tp2_hit || newCurrentStop !== op.current_stop) {
+    if (newStatus !== op.status || tp1Hit !== op.tp1_hit || tp2Hit !== op.tp2_hit || newCurrentStop !== op.current_stop
+        || updatePayload.rf_reverse_bars_count !== (op.rf_reverse_bars_count || 0)) {
       await backend.entities.TradeOperation.update(op.id, {
         status: newStatus,
         tp1_hit: tp1Hit,

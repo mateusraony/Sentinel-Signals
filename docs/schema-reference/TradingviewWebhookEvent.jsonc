@@ -1,0 +1,38 @@
+{
+  "name": "TradingviewWebhookEvent",
+  "type": "object",
+  "description": "Raw alerts received from the real TradingView Pine Script (v13.2, Grupo 10 — Configuração do Bot/Webhook) via POST /webhook/tradingview (server/index.js). Log/notify only — never triggers a real order. Collection: tradingviewWebhookEvents, written exclusively by server/ via the Admin SDK (bypasses firestore.rules; no browser writes). Document id = signal_id (each alert type — OPEN/TP1/SL/RUNNER/RF_EXIT/CHOP_EXIT/TIME_STOP/INVALIDATION — already has its own distinct signal_id from the Pine script, so this is a plain create-if-absent dedup).",
+  "properties": {
+    "signal_id": {
+      "type": "string",
+      "description": "Deterministic id from the Pine script, e.g. SYMBOL_SIDE_TIMEFRAME_REASON_candleCloseISO — also the Firestore document id"
+    },
+    "action": {
+      "type": "string",
+      "enum": ["OPEN", "REDUCE", "CLOSE"]
+    },
+    "symbol": { "type": "string" },
+    "side": { "type": "string", "enum": ["BUY", "SELL"] },
+    "reason": {
+      "type": "string",
+      "description": "Present on non-OPEN alerts: TP1, SL, RUNNER_STOP, RF_EXIT, CHOP_EXIT, TIME_STOP, INVALIDATION"
+    },
+    "timeframe": { "type": "string" },
+    "price": { "type": "number" },
+    "stop_loss": { "type": "number" },
+    "take_profit": { "type": "number" },
+    "level": { "type": "number", "description": "Present on TP1/SL/RUNNER/RF_EXIT alerts — the level that triggered the exit" },
+    "qty_pct": { "type": "number", "description": "Present on REDUCE (TP1) alerts" },
+    "score": { "type": "number" },
+    "tier": { "type": "number", "description": "1/2/3 as sent by the Pine (activeTier), not the T1/T2/T3 string used elsewhere in this app" },
+    "atr_pct": { "type": "number" },
+    "adx": { "type": "number" },
+    "chop": { "type": "number" },
+    "mtf_trend": { "type": "string", "enum": ["UP", "DOWN", "NEUTRAL"] },
+    "candle_open": { "type": "string" },
+    "candle_close": { "type": "string" },
+    "source": { "type": "string", "default": "tradingview_webhook" },
+    "received_at": { "type": "string", "description": "ISO timestamp set by server/index.js on receipt" }
+  },
+  "required": ["signal_id", "action"]
+}

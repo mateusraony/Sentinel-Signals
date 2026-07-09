@@ -81,3 +81,43 @@ caso, no navegador (não no cron — o cron usa Admin SDK e ignora
 **Rode o comando de deploy assim que possível** e confirme no Console do
 Firebase (Firestore → Regras, Firestore → Índices) que `scannerLocks`,
 `assetActiveOps` e `strategyConfig` aparecem nas regras publicadas.
+
+> Atualização: já deployado via `.github/workflows/deploy-firestore.yml`
+> (workflow manual, rodado com sucesso) — as regras/índices novos já estão
+> live no projeto Firebase real.
+
+## 6. Render free tier hiberna após inatividade (webhook do TradingView)
+
+O serviço `sentinel-signals-api` no plano gratuito do Render hiberna após
+~15 min sem tráfego. Um alerta do TradingView pode chegar com atraso de
+30-60s (tempo de "acordar" o serviço) antes de ser processado. Isso não
+causa perda do alerta necessariamente (depende do timeout configurado no
+alerta do TradingView), mas é um atraso real, não só teórico — mitigação
+futura: um ping externo de keep-alive, ou aceitar o atraso como conhecido
+enquanto o projeto for gratuito.
+
+## 7. Webhook do TradingView grava mas não executa ordens
+
+`POST /webhook/tradingview` (`server/index.js`) só registra o alerta em
+`tradingviewWebhookEvents` e notifica Telegram — nenhuma ordem é enviada à
+Binance. Ver risco #3 acima (TP/Stop virtuais) — a mesma ressalva vale
+aqui. Se/quando o projeto evoluir para execução real, essa rota precisará
+de uma revisão completa de segurança (chave de API de trading, validação
+mais forte do payload, idempotência por estado de posição em vez de só
+por `signal_id`).
+
+## 8. Paridade matemática validada por engenharia, não por taxa de acerto
+
+As correções de RSI-crossover, Tier automático, ADX/Choppiness, Time Stop e
+Trailing ATR (alinhando o scanner em JavaScript ao Pine v13.2 real) tornam
+o bot mais fiel ao script do TradingView e operacionalmente mais protegido
+(mais filtros antes de abrir operação, saídas automáticas mais robustas).
+Isso é diferente de garantir uma taxa de acerto alta — a taxa de acerto é
+uma característica da ESTRATÉGIA (o Pine em si), não do código que a
+replica. Bugs de paridade corrigidos aqui reduzem divergência entre o
+painel e o TradingView, mas não alteram se a estratégia em si é lucrativa.
+Pontos que ainda precisam de validação numérica lado a lado com o
+TradingView (não são bugs conhecidos, mas nuances de implementação):
+seeding da EMA no Range Filter, convenções de suavização do ADX/DMI, e a
+contagem do Time Stop por tempo decorrido (em vez do contador nativo de
+barras do Pine).

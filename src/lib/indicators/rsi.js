@@ -56,11 +56,21 @@ export function calculateRSI(candles, period = 14) {
 
   const lastRSI = rsi[n - 1];
   const prevRSI = n >= 2 ? rsi[n - 2] : lastRSI;
+  const prev2RSI = n >= 3 ? rsi[n - 3] : prevRSI;
+
+  // Same crossover-of-50 condition the Pine script uses to score entries
+  // (ta.crossover(rsi,50) or a same-side 2-bar-old cross): a static
+  // "50 < rsi < 70" band check (the previous JS logic) is a different,
+  // looser condition than what the reference strategy actually scores on.
+  const crossedBull50 = (prevRSI <= 50 && lastRSI > 50) || (lastRSI > 50 && prevRSI > 50 && prev2RSI < 50);
+  const crossedBear50 = (prevRSI >= 50 && lastRSI < 50) || (lastRSI < 50 && prevRSI < 50 && prev2RSI > 50);
 
   return {
     value: lastRSI,
     previousValue: prevRSI,
     zone: lastRSI >= 70 ? 'overbought' : lastRSI <= 30 ? 'oversold' : 'neutral',
+    crossedBull50,
+    crossedBear50,
     series: rsi,
   };
 }
