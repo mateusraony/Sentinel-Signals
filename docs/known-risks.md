@@ -46,3 +46,38 @@ preço de entrada podem divergir levemente entre o painel e o scan 24/7
 quando ambos estão ativos ao mesmo tempo. Resolver isso de verdade exige
 infraestrutura fora dos EUA (self-hosted runner ou proxy fixo) — fora de
 escopo enquanto o projeto for 100% gratuito.
+
+## 5. AÇÃO NECESSÁRIA — deploy manual de `firestore.rules`/`firestore.indexes.json`
+
+Estes dois arquivos só têm efeito no banco real depois de rodar, uma vez:
+
+```
+firebase deploy --only firestore:rules,firestore:indexes
+```
+
+Não existe nenhuma automação de CI que faça isso (`ci.yml` só roda lint/build,
+`scan.yml` só roda o scanner) — é sempre um passo manual, documentado em
+`CLAUDE.md`/README. **Se este comando ainda não foi rodado depois da adição
+das coleções `scannerLocks`, `assetActiveOps` e `strategyConfig`**, o projeto
+Firebase real ainda está com as regras antigas, que não conhecem essas três
+coleções e caem no catch-all final (`allow read, write: if false`). Nesse
+caso, no navegador (não no cron — o cron usa Admin SDK e ignora
+`firestore.rules`):
+
+- O lock do scanner falha ao adquirir/liberar (`acquireScanLock`/
+  `releaseScanLock`) — o código foi endurecido para *fail-open* (loga um
+  `logError` em `SystemLog` e prossegue sem lock em vez de abortar o scan
+  inteiro), mas a proteção contra execução concorrente fica inoperante até
+  o deploy ser feito.
+- Leitura/escrita de `strategyConfig/current` falha — o painel cai de volta
+  para os defaults/localStorage (`getPineConfig` tem try/catch e loga um
+  aviso), mas a sincronização painel↔cron não funciona.
+- `createTradeOpIfNoneActive`/`clearActiveOp` (coleção `assetActiveOps`)
+  falham — isso é capturado pelo tratamento de erro por-operação/por-ativo já
+  existente (aparece como `scan_status: 'error'` no ativo ou um `logError`
+  por operação), não derruba o scan inteiro, mas a garantia de "uma única
+  operação ativa por ativo" fica sem o reforço extra da transação.
+
+**Rode o comando de deploy assim que possível** e confirme no Console do
+Firebase (Firestore → Regras, Firestore → Índices) que `scannerLocks`,
+`assetActiveOps` e `strategyConfig` aparecem nas regras publicadas.

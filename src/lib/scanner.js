@@ -19,7 +19,7 @@ import { calculateEMAs } from './indicators/movingAverages';
 import { analyzeAlignment, calculateSignalStrength, generateSignalDescription } from './indicators/confluence';
 import { calculateATR } from './indicators/atr';
 import { getPineConfig } from './pineParser';
-import { logInfo, logWarn } from './logger';
+import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
 import {
   isTelegramConfigured,
@@ -38,6 +38,29 @@ const TF_15M = '15m'; // Used for entry confirmation after 4h signal
 // crashed/killed run's lock still expires instead of blocking forever.
 const FULL_SCAN_LOCK_TTL_MS = 10 * 60 * 1000;
 const PRICE_CHECK_LOCK_TTL_MS = 3 * 60 * 1000;
+
+// Fail-open: if the lock itself can't be acquired/released (permission
+// error, network blip), we still let the scan run rather than going
+// silently dark — losing the concurrency guard for one run is a much
+// smaller risk than the scanner never running signals/price checks again.
+// The failure is logged loudly (SystemLog, visible in the app's Debug Log)
+// instead of only console.warn, so it doesn't go unnoticed.
+async function tryAcquireScanLock(lockName, ttlMs, holder) {
+  try {
+    return await backend.locks.acquireScanLock(lockName, ttlMs, holder);
+  } catch (err) {
+    logError('scanner', `Falha ao adquirir lock "${lockName}" — prosseguindo sem lock (risco de execução concorrente)`, { error: err.message });
+    return true;
+  }
+}
+
+async function tryReleaseScanLock(lockName, holder) {
+  try {
+    await backend.locks.releaseScanLock(lockName, holder);
+  } catch (err) {
+    logWarn('scanner', `Falha ao liberar lock "${lockName}"`, { error: err.message });
+  }
+}
 
 /**
  * Build TradeOperation data from a 4h signal using Pine config parameters.
@@ -580,6 +603,10 @@ export async function persistScanResults(scanResult) {
     if (['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)) continue;
     const tfData = results[op.timeframe];
     if (!tfData) continue;
+    // Isolated per-operation: a failure updating one op's stop/TP status
+    // (e.g. a transient Firestore error) must not stop the remaining active
+    // operations for this asset from being checked in the same pass.
+    try {
     const isBuy = op.side === 'BUY';
     // Use candle high/low for TP/stop checks (more accurate than just close)
     const closePrice = tfData.lastClose;
@@ -657,6 +684,9 @@ export async function persistScanResults(scanResult) {
         else if (tp1Hit && !op.tp1_hit) notifyTP1Hit(op, closePrice).catch(() => {});
       }
     }
+    } catch (err) {
+      logError('scanner', `Falha ao atualizar status da operação ${op.id} (${op.symbol})`, { error: err.message });
+    }
   }
 
   // Update asset scan status
@@ -690,7 +720,7 @@ export async function persistScanResults(scanResult) {
  */
 export async function priceCheckActiveOps() {
   const holder = `price-check_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const acquired = await backend.locks.acquireScanLock('price-check', PRICE_CHECK_LOCK_TTL_MS, holder);
+  const acquired = await tryAcquireScanLock('price-check', PRICE_CHECK_LOCK_TTL_MS, holder);
   if (!acquired) {
     logInfo('scanner', 'Price check ignorado — outra execução já está em andamento (lock ocupado)');
     return;
@@ -699,7 +729,7 @@ export async function priceCheckActiveOps() {
   try {
     await priceCheckActiveOpsInner();
   } finally {
-    await backend.locks.releaseScanLock('price-check', holder);
+    await tryReleaseScanLock('price-check', holder);
   }
 }
 
@@ -718,6 +748,8 @@ async function priceCheckActiveOpsInner() {
   for (const op of activeOps) {
     const price = prices[op.symbol];
     if (!price) continue;
+    // Isolated per-operation — see the same comment in persistScanResults.
+    try {
     const isBuy = op.side === 'BUY';
     let newStatus = op.status;
     let tp1Hit = op.tp1_hit || false;
@@ -765,6 +797,9 @@ async function priceCheckActiveOpsInner() {
         else if (tp1Hit && !op.tp1_hit) notifyTP1Hit(op, price).catch(() => {});
       }
     }
+    } catch (err) {
+      logError('scanner', `Falha ao atualizar status da operação ${op.id} (${op.symbol}) no price check`, { error: err.message });
+    }
   }
 }
 
@@ -773,7 +808,7 @@ async function priceCheckActiveOpsInner() {
  */
 export async function scanAllAssets(onProgress) {
   const holder = `full-scan_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  const acquired = await backend.locks.acquireScanLock('full-scan', FULL_SCAN_LOCK_TTL_MS, holder);
+  const acquired = await tryAcquireScanLock('full-scan', FULL_SCAN_LOCK_TTL_MS, holder);
   if (!acquired) {
     logInfo('scanner', 'Scan completo ignorado — outra execução já está em andamento (lock ocupado)');
     return { total: 0, results: [], skipped: true };
@@ -782,7 +817,7 @@ export async function scanAllAssets(onProgress) {
   try {
     return await scanAllAssetsInner(onProgress);
   } finally {
-    await backend.locks.releaseScanLock('full-scan', holder);
+    await tryReleaseScanLock('full-scan', holder);
   }
 }
 
