@@ -137,6 +137,9 @@ export default function TelegramSettings({ open, onClose }) {
             <li>Telegram → <b className="text-foreground/70">@BotFather</b> → <code className="px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)' }}>/newbot</code> → copie o <b className="text-foreground/70">Token</b></li>
             <li><b className="text-foreground/70">@userinfobot</b> → envie qualquer mensagem → copie o <b className="text-foreground/70">Chat ID</b></li>
           </ol>
+          <p className="text-[9px] text-muted-foreground/70 leading-relaxed pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            Isto liga os avisos <b>só enquanto esta aba fica aberta</b>. Os avisos automáticos 24h (que rodam mesmo com o navegador fechado) usam o mesmo Token/Chat ID, mas configurados separadamente como segredo no GitHub Actions.
+          </p>
         </div>
 
         {/* Connection fields */}
