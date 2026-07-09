@@ -1,17 +1,23 @@
 /**
  * Market Data Provider - Camada de abstração para dados OHLCV
- * 
+ *
  * Provider principal: Binance API pública
  * Arquitetura preparada para adicionar outros providers.
- * 
+ *
  * Notas:
  * - Binance retorna candles com timestamp de abertura em milissegundos
  * - Timezone: UTC
  * - Limite máximo por request: 1000 candles
  * - Rate limit: 1200 requests/min (suficiente para V1)
+ * - Usamos data-api.binance.vision (espelho oficial só-leitura da Binance
+ *   para dados públicos de mercado) em vez de api.binance.com: o domínio
+ *   principal retorna 451 "restricted location" para chamadas partindo de
+ *   datacenters em nuvem nos EUA (ex: runners do GitHub Actions), mesmo
+ *   funcionando normalmente do navegador do usuário. O data-api.binance.vision
+ *   não tem essa restrição geográfica e serve os mesmos endpoints públicos.
  */
 
-const BINANCE_BASE_URL = 'https://api.binance.com/api/v3';
+const BINANCE_BASE_URL = 'https://data-api.binance.vision/api/v3';
 
 const TIMEFRAME_MAP = {
   '15m': '15m',
