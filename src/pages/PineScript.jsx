@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { backend } from '@/api/entities';
 import { Save, Copy, RefreshCw, Code2, AlertTriangle, CheckCircle2, Info, Layers, Zap } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { savePineConfig, getPineConfig, syncPineToAssets } from '@/lib/pineParser';
+import { savePineConfig, getLocalPineConfig, getPineConfig, syncPineToAssets } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
 
 // Full NE RF v12 script stored as raw string — no template literal conflicts
@@ -304,7 +304,17 @@ export default function PineScript() {
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState('editor');
   const [syncStatus, setSyncStatus] = useState(null); // null | 'syncing' | 'synced' | 'error'
-  const [parsedConfig, setParsedConfig] = useState(() => getPineConfig());
+  const [parsedConfig, setParsedConfig] = useState(() => getLocalPineConfig());
+
+  // Refresh with the Firestore-synced business params (minScore/tp1R/...)
+  // once on mount, since getPineConfig() is async (reads strategyConfig).
+  useEffect(() => {
+    let cancelled = false;
+    getPineConfig().then(config => {
+      if (!cancelled) setParsedConfig(config);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const { data: assets = [] } = useQuery({
     queryKey: ['all-assets'],

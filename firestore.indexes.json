@@ -1,4 +1,40 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "signalEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "symbol", "order": "ASCENDING" },
+        { "fieldPath": "timeframe", "order": "ASCENDING" },
+        { "fieldPath": "signal_type", "order": "ASCENDING" },
+        { "fieldPath": "source", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "signalEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "asset_id", "order": "ASCENDING" },
+        { "fieldPath": "source", "order": "ASCENDING" },
+        { "fieldPath": "timeframe", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tradeOperations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "symbol", "order": "ASCENDING" },
+        { "fieldPath": "asset_id", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "assetStates",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "asset_id", "order": "ASCENDING" },
+        { "fieldPath": "timeframe", "order": "ASCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

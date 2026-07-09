@@ -30,6 +30,15 @@
       "default": "crypto",
       "description": "Market type for future expansion"
     },
+    "market_type": {
+      "type": "string",
+      "enum": [
+        "spot",
+        "futures"
+      ],
+      "default": "spot",
+      "description": "Binance market segment for this asset. Defaults to 'spot' so the GitHub Actions cron (which always fetches from Binance Spot, see scripts/adminMarketDataProvider.js) keeps its existing behavior unchanged. The browser panel fetches Binance Futures (src/lib/marketDataProvider.js) regardless of this flag — it's informational metadata for now (tick size / lot size differ between Spot and Futures), not a provider switch."
+    },
     "is_active": {
       "type": "boolean",
       "default": true,
