@@ -1,0 +1,27 @@
+services:
+  - type: web
+    runtime: static
+    name: sentinel-signals
+    plan: free
+    branch: main
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: VITE_FIREBASE_API_KEY
+        value: AIzaSyAjBZlR_r69qAkyPq2Ww0JBaY7F9HSdhpc
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        value: sentinel-signals.firebaseapp.com
+      - key: VITE_FIREBASE_PROJECT_ID
+        value: sentinel-signals
+      - key: VITE_FIREBASE_STORAGE_BUCKET
+        value: sentinel-signals.firebasestorage.app
+      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
+        value: "9439557541"
+      - key: VITE_FIREBASE_APP_ID
+        value: "1:9439557541:web:f92e49ade6d2e69f0dda4c"
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
