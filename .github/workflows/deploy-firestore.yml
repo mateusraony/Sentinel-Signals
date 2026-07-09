@@ -1,0 +1,30 @@
+name: Deploy Firestore rules & indexes
+
+# Manual, on-demand publish of firestore.rules / firestore.indexes.json to
+# the real Firebase project. There's no automatic trigger on push — rules
+# changes go live only when this workflow is run by hand (Actions tab →
+# "Deploy Firestore rules & indexes" → "Run workflow"), reusing the same
+# FIREBASE_SERVICE_ACCOUNT_JSON secret already configured for the scheduled
+# scan job. See docs/known-risks.md, item 5.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Write service account credentials
+        run: echo "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/service-account.json"
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+
+      - name: Deploy firestore.rules and firestore.indexes.json
+        run: npx firebase-tools@latest deploy --only firestore:rules,firestore:indexes --project sentinel-signals --non-interactive
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/service-account.json
