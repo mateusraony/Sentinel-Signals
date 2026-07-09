@@ -112,10 +112,10 @@ export function calculateSignalStrength(rfResult, rsiResult, macdResult, emaResu
   if (isBuy  && emaBull) { score += 20; reasons.push('EMA tendência bullish (+20)'); }
   if (isSell && emaBear) { score += 20; reasons.push('EMA tendência bearish (+20)'); }
 
-  // RSI zone (15pts)
-  const rsi = rsiResult.value;
-  if (isBuy  && rsi > 50 && rsi < 70) { score += 15; reasons.push(`RSI ${rsi.toFixed(1)} em zona favorável compra (+15)`); }
-  if (isSell && rsi < 50 && rsi > 30) { score += 15; reasons.push(`RSI ${rsi.toFixed(1)} em zona favorável venda (+15)`); }
+  // RSI crossover of 50 (15pts) — matches the Pine's rsiCrossedBull/Bear
+  // condition (a 50-line crossover), not a static "favorable band" check.
+  if (isBuy  && rsiResult.crossedBull50) { score += 15; reasons.push(`RSI cruzou 50 para cima (+15)`); }
+  if (isSell && rsiResult.crossedBear50) { score += 15; reasons.push(`RSI cruzou 50 para baixo (+15)`); }
 
   // Volume > MA (10pts)
   if (volumeData && volumeData.current > volumeData.ma) {

@@ -25,7 +25,28 @@ const DEFAULTS = {
   rsiLen: 14,
   volLen: 20,
   pineVersion: 6,
-  strategyTitle: 'NEW ERA - Range Filter Strategy v12',
+  strategyTitle: 'NEW ERA - Range Filter Strategy v13.2',
+  // Auto-Tier (Grupo 03)
+  tier2Threshold: 0.8,
+  tier3Threshold: 1.5,
+  // Regime filters (Grupo 05)
+  useADX: true,
+  adxLen: 14,
+  adxSmooth: 14,
+  useChop: true,
+  chopLen: 14,
+  // Smart exits (Grupo 08)
+  useTimeStop: true,
+  timeStopT1: 48,
+  timeStopT2: 64,
+  timeStopT3: 96,
+  useChopExit: false,
+  useInvalidation: false,
+  invalidRFBars: 2,
+  invalidScoreMin: 75,
+  // Signal confirmation (Grupo 02)
+  confirmBars: 1,
+  onlyClosedCandles: true,
 };
 
 /**
@@ -117,11 +138,17 @@ export function getLocalPineConfig() {
   return { ...DEFAULTS };
 }
 
-// The 4 strategy-business parameters (minScore, tp1R, tp1QtyPercent,
-// trailAtrMult) that must be identical between the browser and the 24/7
-// cron scan. Kept in Firestore so both sides read the same source of truth
-// — see savePineConfig below and scripts/adminPineConfig.js.
-const SYNCED_STRATEGY_KEYS = ['minScore', 'tp1R', 'tp1QtyPercent', 'trailAtrMult'];
+// Strategy-business parameters that must be identical between the browser
+// and the 24/7 cron scan. Kept in Firestore so both sides read the same
+// source of truth — see savePineConfig below and scripts/adminPineConfig.js.
+const SYNCED_STRATEGY_KEYS = [
+  'minScore', 'tp1R', 'tp1QtyPercent', 'trailAtrMult',
+  'tier2Threshold', 'tier3Threshold',
+  'useADX', 'adxLen', 'adxSmooth', 'useChop', 'chopLen',
+  'useTimeStop', 'timeStopT1', 'timeStopT2', 'timeStopT3',
+  'useChopExit', 'useInvalidation', 'invalidRFBars', 'invalidScoreMin',
+  'confirmBars', 'onlyClosedCandles',
+];
 
 /**
  * Read the current Pine config: merges localStorage (all Pine-parsed
@@ -180,11 +207,10 @@ export async function syncPineToAssets() {
   const config = getLocalPineConfig();
 
   try {
+    const syncedPayload = {};
+    for (const key of SYNCED_STRATEGY_KEYS) syncedPayload[key] = config[key];
     await backend.entities.StrategyConfig.set('current', {
-      minScore: config.minScore,
-      tp1R: config.tp1R,
-      tp1QtyPercent: config.tp1QtyPercent,
-      trailAtrMult: config.trailAtrMult,
+      ...syncedPayload,
       updated_at: new Date().toISOString(),
     });
   } catch (e) {

@@ -155,7 +155,48 @@
       "type": "string"
     },
     "closed_reason": {
-      "type": "string"
+      "type": "string",
+      "description": "Set when status is CLOSED/INVALIDATED for a reason other than price hitting stop/TP",
+      "enum": [
+        "TIME_STOP",
+        "CHOP_EXIT",
+        "INVALIDATION"
+      ]
+    },
+    "tier": {
+      "type": "string",
+      "description": "Auto-classified volatility tier at entry (ATR% based, see Pine v13.2 Grupo 03)",
+      "enum": [
+        "T1",
+        "T2",
+        "T3"
+      ]
+    },
+    "adx_at_entry": {
+      "type": "number",
+      "description": "ADX value on the 4h timeframe at the moment of entry"
+    },
+    "chop_at_entry": {
+      "type": "number",
+      "description": "Choppiness Index value on the 4h timeframe at the moment of entry"
+    },
+    "tier_time_stop_bars": {
+      "type": "number",
+      "description": "Time Stop threshold (in 4h candles) locked in at entry from the tier classified at that time — not recalculated later even if the asset's tier changes"
+    },
+    "rf_reverse_bars_count": {
+      "type": "number",
+      "description": "Consecutive 4h candles with Range Filter reversed against the position (pre-TP1 only) — used by the Invalidation toggle",
+      "default": 0
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "scanner",
+        "tradingview_webhook"
+      ],
+      "default": "scanner",
+      "description": "Whether this operation was created by the JS scanner (polling Binance) or logged from a real TradingView webhook alert"
     }
   },
   "required": [

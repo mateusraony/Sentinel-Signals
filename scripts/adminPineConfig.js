@@ -1,11 +1,15 @@
 // Node/GitHub Actions counterpart to src/lib/pineParser.js's getPineConfig().
-// The 4 strategy-business parameters (minScore/tp1R/tp1QtyPercent/
-// trailAtrMult) are read from strategyConfig/current in Firestore — the
-// same document the in-browser Pine Script page writes to via
-// syncPineToAssets() — so the 24/7 scan and the in-browser scan never
-// disagree on those four. rf_period/rf_multiplier don't need this: those
-// are synced per-asset to Firestore already (MonitoredAsset.rf_period/
-// rf_multiplier), read directly by scanner.js from the asset record.
+// The strategy-business parameters below are read from strategyConfig/current
+// in Firestore — the same document the in-browser Pine Script page writes to
+// via syncPineToAssets() — so the 24/7 scan and the in-browser scan never
+// disagree. rf_period/rf_multiplier don't need this: those are synced
+// per-asset to Firestore already (MonitoredAsset.rf_period/rf_multiplier),
+// read directly by scanner.js from the asset record.
+//
+// Keep this DEFAULTS/SYNCED_STRATEGY_KEYS pair mirrored by hand with
+// src/lib/pineParser.js — there's no shared module between the two (the
+// browser file uses browser-only APIs like localStorage), so any new synced
+// parameter added there must be added here too.
 import { getFirestore } from 'firebase-admin/firestore';
 
 const DEFAULTS = {
@@ -21,10 +25,34 @@ const DEFAULTS = {
   rsiLen: 14,
   volLen: 20,
   pineVersion: 6,
-  strategyTitle: 'NEW ERA - Range Filter Strategy v12',
+  strategyTitle: 'NEW ERA - Range Filter Strategy v13.2',
+  tier2Threshold: 0.8,
+  tier3Threshold: 1.5,
+  useADX: true,
+  adxLen: 14,
+  adxSmooth: 14,
+  useChop: true,
+  chopLen: 14,
+  useTimeStop: true,
+  timeStopT1: 48,
+  timeStopT2: 64,
+  timeStopT3: 96,
+  useChopExit: false,
+  useInvalidation: false,
+  invalidRFBars: 2,
+  invalidScoreMin: 75,
+  confirmBars: 1,
+  onlyClosedCandles: true,
 };
 
-const SYNCED_STRATEGY_KEYS = ['minScore', 'tp1R', 'tp1QtyPercent', 'trailAtrMult'];
+const SYNCED_STRATEGY_KEYS = [
+  'minScore', 'tp1R', 'tp1QtyPercent', 'trailAtrMult',
+  'tier2Threshold', 'tier3Threshold',
+  'useADX', 'adxLen', 'adxSmooth', 'useChop', 'chopLen',
+  'useTimeStop', 'timeStopT1', 'timeStopT2', 'timeStopT3',
+  'useChopExit', 'useInvalidation', 'invalidRFBars', 'invalidScoreMin',
+  'confirmBars', 'onlyClosedCandles',
+];
 
 export async function getPineConfig() {
   const config = { ...DEFAULTS };
