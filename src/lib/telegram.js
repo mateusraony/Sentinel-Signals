@@ -1,15 +1,16 @@
 /**
  * Telegram Notification Service
- * The bot token is an app-level Cloud Functions secret — the browser never
- * sees it. Each user only configures their destination chat_id, cached here
- * in localStorage for instant reads and synced to Firestore (telegramConfig)
- * so the telegramNotify Cloud Function can look it up server-side. Filters
- * (timeframes, min_priority, signal_types, events, min_score) are checked
- * before sending — ensuring only configured signals reach Telegram.
+ * The bot token is an app-level secret held by the sentinel-signals-api
+ * Render backend (see src/lib/apiBackend.js) — the browser never sees it.
+ * Each user only configures their destination chat_id, cached here in
+ * localStorage for instant reads and synced to Firestore (telegramConfig)
+ * so the backend can look it up server-side. Filters (timeframes,
+ * min_priority, signal_types, events, min_score) are checked before sending
+ * — ensuring only configured signals reach Telegram.
  */
 import { doc, setDoc } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { auth, db, functions } from '@/lib/firebaseClient';
+import { auth, db } from '@/lib/firebaseClient';
+import { callBackend } from '@/lib/apiBackend';
 import { logWarn } from './logger';
 
 const STORAGE_KEY = 'cryptoradar_telegram_cfg';
@@ -103,12 +104,11 @@ async function send(html) {
   const { chatId } = getTelegramConfig();
   if (!chatId) return;
   try {
-    // Self-heals configs saved before the Cloud Function migration (chatId
-    // was localStorage-only back then): make sure Firestore has it before
-    // the callable — which reads only Firestore — tries to look it up.
+    // Self-heals configs saved before this backend existed (chatId was
+    // localStorage-only back then): make sure Firestore has it before the
+    // backend — which reads only Firestore — tries to look it up.
     await setTelegramConfig({ chatId });
-    const notify = httpsCallable(functions, 'telegramNotify');
-    await notify({ text: html });
+    await callBackend('/api/telegram-notify', { text: html });
   } catch (e) {
     console.warn('[Telegram] send failed:', e.message);
   }

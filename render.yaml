@@ -20,7 +20,30 @@ services:
         value: "9439557541"
       - key: VITE_FIREBASE_APP_ID
         value: "1:9439557541:web:f92e49ade6d2e69f0dda4c"
+      - key: VITE_BACKEND_URL
+        value: https://sentinel-signals-api.onrender.com
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
+
+  # Small backend that holds secrets the browser must never see (Telegram bot
+  # token). Free plan sleeps after 15 min idle — the first request after that
+  # takes ~30-50s to wake up, which is fine for notification delivery.
+  - type: web
+    runtime: node
+    name: sentinel-signals-api
+    plan: free
+    branch: main
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: ALLOWED_ORIGIN
+        value: https://sentinel-signals.onrender.com
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false

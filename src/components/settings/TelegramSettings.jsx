@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { httpsCallable } from 'firebase/functions';
-import { functions } from '@/lib/firebaseClient';
+import { callBackend } from '@/lib/apiBackend';
 import { getTelegramConfig, setTelegramConfig, isTelegramConfigured, getTelegramFilters, setTelegramFilters } from '@/lib/telegram';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -91,12 +90,14 @@ export default function TelegramSettings({ open, onClose }) {
     const tfStr = filters.timeframes.join(', ').toUpperCase();
     const evStr = EVENT_OPTIONS.filter(e => filters.events.includes(e.id)).map(e => e.label).join('\n• ');
     try {
-      const notify = httpsCallable(functions, 'telegramNotify');
-      await notify({
+      await callBackend('/api/telegram-notify', {
         text: `✅ <b>CryptoRadar conectado!</b>\n\n📊 <b>Timeframes:</b> ${tfStr}\n⚡ <b>Prioridade mínima:</b> ${filters.min_priority}\n📋 <b>Eventos ativos:</b>\n• ${evStr}\n\n<i>⚡ Sistema de monitoramento ativo</i>`,
       });
       setTestResult('success');
-    } catch { setTestResult('error'); }
+    } catch (e) {
+      console.warn('[Telegram] test send failed:', e.message);
+      setTestResult('error');
+    }
     finally { setTesting(false); }
   };
 
