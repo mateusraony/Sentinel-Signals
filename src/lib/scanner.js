@@ -33,18 +33,28 @@ import {
 const TIMEFRAMES = ['1h', '4h', '1d'];
 const TF_15M = '15m'; // Used for entry confirmation after 4h signal
 
+// Lock TTLs: comfortably above the slowest realistic run of each operation
+// (the GitHub Actions job has an 8-minute timeout for full scans) so a
+// crashed/killed run's lock still expires instead of blocking forever.
+const FULL_SCAN_LOCK_TTL_MS = 10 * 60 * 1000;
+const PRICE_CHECK_LOCK_TTL_MS = 3 * 60 * 1000;
+
 /**
  * Build TradeOperation data from a 4h signal using Pine config parameters.
  * Centralizes entry/stop/TP calculations so Pine Script changes propagate
  * automatically — no manual bot configuration needed.
  */
-function buildTradeOpData(sig, tf4hData, pineConfig) {
+function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
   const ATR_MULT = pineConfig.trailAtrMult ?? 2.0;
   const tp1R = pineConfig.tp1R ?? 1.5;
   const tp2R = (pineConfig.tp1R ?? 1.5) * 2;
   const partialPct = pineConfig.tp1QtyPercent ?? 50;
   const isBuy = sig.signal_type === 'BUY';
-  const entry = sig.price_at_signal;
+  // Entry must be the real 15m price at confirmation time, not the 4h
+  // signal's price — the 4h signal can be hours old by the time 15m
+  // confirms (see the up-to-4h retry window above), so using
+  // sig.price_at_signal here would record a stale entry price.
+  const entry = confirmation15m?.entryPrice ?? sig.price_at_signal;
   const risk = tf4hData.atrValue * ATR_MULT;
   const initialStop = isBuy ? entry - risk : entry + risk;
   const riskR = Math.abs(entry - initialStop);
@@ -71,6 +81,8 @@ function buildTradeOpData(sig, tf4hData, pineConfig) {
     exit_mode: 'HYBRID_RF_ATR',
     candle_open_time: tf4hData.lastCandleOpenTime,
     candle_close_time: tf4hData.lastCandleTime,
+    entry_candle_time_15m: confirmation15m?.entryCandleTime,
+    origin_4h_price: sig.price_at_signal,
     candle_status: 'CLOSED',
     data_status: 'LIVE',
     signal_reasons: sig.context?.reasons || [],
@@ -85,7 +97,9 @@ function buildTradeOpData(sig, tf4hData, pineConfig) {
  * Check 15m RF direction to confirm a 4h signal before entry.
  * Only requires directional alignment — Range Filter signals fire on state
  * change only, so requiring a fresh signal would block valid entries.
- * Returns true if 15m RF direction matches the 4h signal direction.
+ * Returns { confirmed, entryPrice, entryCandleTime }: entryPrice is the
+ * close of the latest closed 15m candle, used as the real entry price
+ * instead of the (potentially hours-old) 4h signal price.
  */
 async function check15mConfirmation(symbol, direction, asset) {
   try {
@@ -93,7 +107,7 @@ async function check15mConfirmation(symbol, direction, asset) {
     const closed = candles15m.filter(c => c.isClosed);
     if (closed.length < 40) {
       // Not enough data — do NOT allow trade without confirmation
-      return false;
+      return { confirmed: false, entryPrice: null, entryCandleTime: null };
     }
 
     const rf = calculateRangeFilter(
@@ -104,11 +118,20 @@ async function check15mConfirmation(symbol, direction, asset) {
 
     // 15m RF must be pointing in the same direction as the 4h signal
     const aligned = direction === 'BUY' ? rf.direction === 1 : rf.direction === -1;
-    return aligned;
+    if (!aligned) {
+      return { confirmed: false, entryPrice: null, entryCandleTime: null };
+    }
+
+    const lastClosed = closed[closed.length - 1];
+    return {
+      confirmed: true,
+      entryPrice: lastClosed.close,
+      entryCandleTime: new Date(lastClosed.closeTime).toISOString(),
+    };
   } catch (err) {
     // Data fetch error — do NOT allow trade without confirmation
     console.warn(`[15m confirm] ${symbol} fetch failed:`, err.message);
-    return false;
+    return { confirmed: false, entryPrice: null, entryCandleTime: null };
   }
 }
 
@@ -124,7 +147,7 @@ export async function scanAsset(asset) {
   const errors = [];
 
   // Read Pine config — parameters auto-synced from Pine Script editor
-  const pineConfig = getPineConfig();
+  const pineConfig = await getPineConfig();
 
   const enabledTimeframes = TIMEFRAMES.filter(tf => {
     const tfConfig = asset.timeframes_enabled;
@@ -345,7 +368,7 @@ export async function scanAsset(asset) {
  */
 export async function persistScanResults(scanResult) {
   const { asset, results, newSignals, errors, duration } = scanResult;
-  const pineConfig = getPineConfig();
+  const pineConfig = await getPineConfig();
 
   // Update or create asset states
   for (const [tf, data] of Object.entries(results)) {
@@ -390,96 +413,106 @@ export async function persistScanResults(scanResult) {
   // Deduplicate and persist signals
   let persistedSignals = 0;
   for (const signal of newSignals) {
-    // Check dedup_key
-    const existingSignals = await backend.entities.SignalEvent.filter({ 
-      dedup_key: signal.dedup_key 
+    // Cooldown check — a best-effort query, not atomic on its own, but the
+    // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
+    // only one executor (browser or cron) is ever inside this loop at a
+    // time, so the residual race window here is negligible (see
+    // docs/known-risks.md).
+    const cooldownMinutes = asset.alert_cooldown_minutes || 60;
+    const cooldownTime = new Date(Date.now() - cooldownMinutes * 60 * 1000).toISOString();
+
+    const recentSame = await backend.entities.SignalEvent.filter({
+      symbol: signal.symbol,
+      timeframe: signal.timeframe,
+      signal_type: signal.signal_type,
+      source: signal.source,
     });
 
-    if (existingSignals.length === 0) {
-      // Check cooldown
-      const cooldownMinutes = asset.alert_cooldown_minutes || 60;
-      const cooldownTime = new Date(Date.now() - cooldownMinutes * 60 * 1000).toISOString();
-      
-      const recentSame = await backend.entities.SignalEvent.filter({
-        symbol: signal.symbol,
-        timeframe: signal.timeframe,
-        signal_type: signal.signal_type,
-        source: signal.source,
-      });
+    const hasCooldownConflict = recentSame.some(s =>
+      s.created_date > cooldownTime
+    );
 
-      const hasCooldownConflict = recentSame.some(s => 
-        s.created_date > cooldownTime
-      );
+    if (hasCooldownConflict) continue;
 
-      if (!hasCooldownConflict) {
-        await backend.entities.SignalEvent.create(signal);
-        persistedSignals++;
-        if (isTelegramConfigured()) notifyNewSignal(signal).catch(() => {});
+    // Atomic dedup: dedup_key is used as the Firestore document id itself,
+    // so createUnique is a single transaction that can never let two
+    // concurrent callers both persist the same signal (unlike the previous
+    // filter()-then-create() pattern, which had a race window between the
+    // two calls).
+    const dedupResult = await backend.entities.SignalEvent.createUnique(signal.dedup_key, signal);
+    if (!dedupResult.created) continue;
 
-        // ═══ Entry Motor: 4H trend → 15m confirmation only ═══
-        // No operation opens on 15m without prior 4H trend confirmation.
-        // Non-4H RF signals are persisted as alerts but do NOT trigger entries.
-        if (signal.source === 'range_filter') {
-          if (signal.timeframe !== '4h') {
-            // Non-4H signal — block entry, log as ignored
+    persistedSignals++;
+    if (isTelegramConfigured()) notifyNewSignal(signal).catch(() => {});
+
+    // ═══ Entry Motor: 4H trend → 15m confirmation only ═══
+    // No operation opens on 15m without prior 4H trend confirmation.
+    // Non-4H RF signals are persisted as alerts but do NOT trigger entries.
+    if (signal.source === 'range_filter') {
+      if (signal.timeframe !== '4h') {
+        // Non-4H signal — block entry, log as ignored
+        await backend.entities.SystemLog.create({
+          level: 'debug',
+          module: 'scanner',
+          message: `${asset.symbol} ${signal.timeframe.toUpperCase()} ${signal.signal_type} — entrada bloqueada (requer tendência 4H confirmada)`,
+          symbol: asset.symbol,
+          timeframe: signal.timeframe,
+          details: { direction: signal.signal_type, score: signal.context?.score, reason: 'requires_4h_trend' },
+        });
+      } else {
+        // 4H signal — verify 4H trend alignment explicitly before any entry
+        const tf4hData = results['4h'];
+        if (tf4hData && tf4hData.atrValue) {
+          const tf4hDir = tf4hData.rf.direction;
+          const sigDir = signal.signal_type === 'BUY' ? 1 : -1;
+
+          if (tf4hDir !== sigDir) {
+            // 4H trend not aligned with signal direction — block entry
             await backend.entities.SystemLog.create({
-              level: 'debug',
+              level: 'warn',
               module: 'scanner',
-              message: `${asset.symbol} ${signal.timeframe.toUpperCase()} ${signal.signal_type} — entrada bloqueada (requer tendência 4H confirmada)`,
+              message: `${asset.symbol} 4H ${signal.signal_type} — tendência 4H desalinhada (dir=${tf4hDir}), entrada bloqueada`,
               symbol: asset.symbol,
-              timeframe: signal.timeframe,
-              details: { direction: signal.signal_type, score: signal.context?.score, reason: 'requires_4h_trend' },
+              timeframe: '4h',
+              details: { signal_dir: sigDir, tf4h_dir: tf4hDir, score: signal.context?.score },
             });
           } else {
-            // 4H signal — verify 4H trend alignment explicitly before any entry
-            const tf4hData = results['4h'];
-            if (tf4hData && tf4hData.atrValue) {
-              const tf4hDir = tf4hData.rf.direction;
-              const sigDir = signal.signal_type === 'BUY' ? 1 : -1;
+            // Cheap early-exit query (still racy, just an optimization to
+            // skip the 15m candle fetch below) — the real guarantee against
+            // duplicate/overlapping operations for this asset comes from
+            // createTradeOpIfNoneActive's transaction further down.
+            const existingOps = await backend.entities.TradeOperation.filter({
+              symbol: signal.symbol,
+              asset_id: signal.asset_id,
+            });
+            const hasActive = existingOps.some(op =>
+              !['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)
+            );
 
-              if (tf4hDir !== sigDir) {
-                // 4H trend not aligned with signal direction — block entry
-                await backend.entities.SystemLog.create({
-                  level: 'warn',
-                  module: 'scanner',
-                  message: `${asset.symbol} 4H ${signal.signal_type} — tendência 4H desalinhada (dir=${tf4hDir}), entrada bloqueada`,
-                  symbol: asset.symbol,
-                  timeframe: '4h',
-                  details: { signal_dir: sigDir, tf4h_dir: tf4hDir, score: signal.context?.score },
-                });
-              } else {
-                // 4H aligned — check for existing active ops
-                const existingOps = await backend.entities.TradeOperation.filter({
-                  symbol: signal.symbol,
-                  asset_id: signal.asset_id,
-                });
-                const hasActive = existingOps.some(op =>
-                  !['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)
-                );
+            if (!hasActive) {
+              // 15m confirmation required — no entry without it
+              const confirmed15m = await check15mConfirmation(asset.symbol, signal.signal_type, asset);
 
-                if (!hasActive) {
-                  // 15m confirmation required — no entry without it
-                  const confirmed15m = await check15mConfirmation(asset.symbol, signal.signal_type, asset);
-
-                  if (confirmed15m) {
-                    const opData = buildTradeOpData(signal, tf4hData, pineConfig);
-                    const newOp = await backend.entities.TradeOperation.create(opData);
-                    if (isTelegramConfigured() && newOp) notifyTradeCreated(newOp).catch(() => {});
-                    logInfo('scanner', `${signal.symbol} entrada criada — Pine sync ativo`, {
-                      score: signal.context?.score, atr_mult: pineConfig.trailAtrMult, tp1R: pineConfig.tp1R,
-                    }, { symbol: signal.symbol, timeframe: '15m' });
-                  } else {
-                    // 15m not aligned — log and wait for retry on next scan
-                    await backend.entities.SystemLog.create({
-                      level: 'info',
-                      module: 'scanner',
-                      message: `${asset.symbol} 4h ${signal.signal_type} — aguardando confirmação no 15m`,
-                      symbol: asset.symbol,
-                      timeframe: '15m',
-                      details: { signal_tf: '4h', direction: signal.signal_type, score: signal.context?.score },
-                    });
-                  }
+              if (confirmed15m.confirmed) {
+                const opData = buildTradeOpData(signal, tf4hData, pineConfig, confirmed15m);
+                const tradeOpId = `trade_${signal.dedup_key}`;
+                const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
+                if (created.created) {
+                  if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
+                  logInfo('scanner', `${signal.symbol} entrada criada — Pine sync ativo`, {
+                    score: signal.context?.score, atr_mult: pineConfig.trailAtrMult, tp1R: pineConfig.tp1R,
+                  }, { symbol: signal.symbol, timeframe: '15m' });
                 }
+              } else {
+                // 15m not aligned — log and wait for retry on next scan
+                await backend.entities.SystemLog.create({
+                  level: 'info',
+                  module: 'scanner',
+                  message: `${asset.symbol} 4h ${signal.signal_type} — aguardando confirmação no 15m`,
+                  symbol: asset.symbol,
+                  timeframe: '15m',
+                  details: { signal_tf: '4h', direction: signal.signal_type, score: signal.context?.score },
+                });
               }
             }
           }
@@ -502,7 +535,8 @@ export async function persistScanResults(scanResult) {
     if (sig.created_date < fourHoursAgo) continue; // stale, skip
     if (sig.is_dismissed) continue;
 
-    // Check if a trade op already exists for this signal
+    // Cheap early-exit query (see comment above) — createTradeOpIfNoneActive
+    // below is what actually guarantees no duplicate/overlapping operation.
     const existingOps = await backend.entities.TradeOperation.filter({
       symbol: sig.symbol,
       asset_id: sig.asset_id,
@@ -521,12 +555,14 @@ export async function persistScanResults(scanResult) {
 
     // Re-run 15m confirmation
     const confirmed = await check15mConfirmation(sig.symbol, sig.signal_type, asset);
-    if (!confirmed) continue;
+    if (!confirmed.confirmed) continue;
 
-    const opData = buildTradeOpData(sig, tfData4h, pineConfig);
-    const newOp = await backend.entities.TradeOperation.create(opData);
+    const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed);
+    const tradeOpId = `trade_${sig.dedup_key || sig.id}`;
+    const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
+    if (!created.created) continue;
 
-    if (isTelegramConfigured() && newOp) notifyTradeCreated(newOp).catch(() => {});
+    if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
 
     await backend.entities.SystemLog.create({
       level: 'info',
@@ -611,6 +647,10 @@ export async function persistScanResults(scanResult) {
         current_stop: newCurrentStop,
         ...updatePayload,
       });
+      // Frees the asset up for a new entry (see createTradeOpIfNoneActive).
+      if (['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(newStatus)) {
+        await backend.tradeOps.clearActiveOp(op.asset_id, op.id);
+      }
       if (isTelegramConfigured()) {
         if (newStatus === 'STOP_HIT' && op.status !== 'STOP_HIT') notifyStopHit(op, closePrice).catch(() => {});
         else if (newStatus === 'TP2_HIT') notifyTP2Hit(op, closePrice).catch(() => {});
@@ -649,6 +689,21 @@ export async function persistScanResults(scanResult) {
  * Fetches current price per symbol and updates trade op status
  */
 export async function priceCheckActiveOps() {
+  const holder = `price-check_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const acquired = await backend.locks.acquireScanLock('price-check', PRICE_CHECK_LOCK_TTL_MS, holder);
+  if (!acquired) {
+    logInfo('scanner', 'Price check ignorado — outra execução já está em andamento (lock ocupado)');
+    return;
+  }
+
+  try {
+    await priceCheckActiveOpsInner();
+  } finally {
+    await backend.locks.releaseScanLock('price-check', holder);
+  }
+}
+
+async function priceCheckActiveOpsInner() {
   const ops = await backend.entities.TradeOperation.filter({});
   const activeOps = ops.filter(op => ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'].includes(op.status));
   if (activeOps.length === 0) return;
@@ -701,6 +756,9 @@ export async function priceCheckActiveOps() {
 
     if (newStatus !== op.status || tp1Hit !== op.tp1_hit || tp2Hit !== op.tp2_hit || newCurrentStop !== op.current_stop) {
       await backend.entities.TradeOperation.update(op.id, { status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit, current_stop: newCurrentStop, ...updatePayload });
+      if (['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(newStatus)) {
+        await backend.tradeOps.clearActiveOp(op.asset_id, op.id);
+      }
       if (isTelegramConfigured()) {
         if (newStatus === 'STOP_HIT') notifyStopHit(op, price).catch(() => {});
         else if (newStatus === 'TP2_HIT') notifyTP2Hit(op, price).catch(() => {});
@@ -714,8 +772,23 @@ export async function priceCheckActiveOps() {
  * Scan all active assets
  */
 export async function scanAllAssets(onProgress) {
+  const holder = `full-scan_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  const acquired = await backend.locks.acquireScanLock('full-scan', FULL_SCAN_LOCK_TTL_MS, holder);
+  if (!acquired) {
+    logInfo('scanner', 'Scan completo ignorado — outra execução já está em andamento (lock ocupado)');
+    return { total: 0, results: [], skipped: true };
+  }
+
+  try {
+    return await scanAllAssetsInner(onProgress);
+  } finally {
+    await backend.locks.releaseScanLock('full-scan', holder);
+  }
+}
+
+async function scanAllAssetsInner(onProgress) {
   const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
-  
+
   if (assets.length === 0) {
     return { total: 0, results: [] };
   }

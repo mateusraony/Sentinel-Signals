@@ -1,11 +1,13 @@
 // Node/GitHub Actions counterpart to src/lib/pineParser.js's getPineConfig().
-// The real Pine Script config only lives in the browser's localStorage
-// (edited on the Pine Script page) — there's no server-side copy of it. This
-// scheduled job always uses the same defaults the strategy ships with. If
-// you customize minScore/tp1R/tp1QtyPercent/trailAtrMult in the app, update
-// the matching values below too, or the 24/7 scan and the in-browser scan
-// will disagree on those four parameters (rf_period/rf_multiplier don't have
-// this problem — those are synced per-asset to Firestore already).
+// The 4 strategy-business parameters (minScore/tp1R/tp1QtyPercent/
+// trailAtrMult) are read from strategyConfig/current in Firestore — the
+// same document the in-browser Pine Script page writes to via
+// syncPineToAssets() — so the 24/7 scan and the in-browser scan never
+// disagree on those four. rf_period/rf_multiplier don't need this: those
+// are synced per-asset to Firestore already (MonitoredAsset.rf_period/
+// rf_multiplier), read directly by scanner.js from the asset record.
+import { getFirestore } from 'firebase-admin/firestore';
+
 const DEFAULTS = {
   rng_per: 20,
   rng_qty: 3.5,
@@ -22,6 +24,21 @@ const DEFAULTS = {
   strategyTitle: 'NEW ERA - Range Filter Strategy v12',
 };
 
-export function getPineConfig() {
-  return { ...DEFAULTS };
+const SYNCED_STRATEGY_KEYS = ['minScore', 'tp1R', 'tp1QtyPercent', 'trailAtrMult'];
+
+export async function getPineConfig() {
+  const config = { ...DEFAULTS };
+  try {
+    const db = getFirestore();
+    const snap = await db.collection('strategyConfig').doc('current').get();
+    if (snap.exists) {
+      const data = snap.data();
+      for (const key of SYNCED_STRATEGY_KEYS) {
+        if (data[key] !== undefined) config[key] = data[key];
+      }
+    }
+  } catch (e) {
+    console.warn('[adminPineConfig] Falha ao ler strategyConfig, usando defaults:', e.message);
+  }
+  return config;
 }

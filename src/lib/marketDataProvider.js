@@ -1,23 +1,26 @@
 /**
  * Market Data Provider - Camada de abstração para dados OHLCV
  *
- * Provider principal: Binance API pública
+ * Provider principal: Binance Futures API pública (USDT-M perpetual)
  * Arquitetura preparada para adicionar outros providers.
  *
  * Notas:
  * - Binance retorna candles com timestamp de abertura em milissegundos
  * - Timezone: UTC
  * - Limite máximo por request: 1000 candles
- * - Rate limit: 1200 requests/min (suficiente para V1)
- * - Usamos data-api.binance.vision (espelho oficial só-leitura da Binance
- *   para dados públicos de mercado) em vez de api.binance.com: o domínio
- *   principal retorna 451 "restricted location" para chamadas partindo de
- *   datacenters em nuvem nos EUA (ex: runners do GitHub Actions), mesmo
- *   funcionando normalmente do navegador do usuário. O data-api.binance.vision
- *   não tem essa restrição geográfica e serve os mesmos endpoints públicos.
+ * - Rate limit: 2400 requests/min no fapi (suficiente para V1)
+ * - Usamos fapi.binance.com (Futures) aqui porque o painel roda no navegador
+ *   do usuário, que não sofre o bloqueio geográfico que afeta datacenters
+ *   dos EUA. O scan agendado via GitHub Actions (que roda em datacenters
+ *   dos EUA) NÃO pode usar este mesmo endpoint — fapi.binance.com retorna
+ *   451 "restricted location" para esses IPs, e não existe mirror público
+ *   de Futures equivalente ao data-api.binance.vision (que só cobre Spot).
+ *   Por isso o cron usa scripts/adminMarketDataProvider.js (Spot) em vez
+ *   deste arquivo — ver scripts/build-scan.mjs e docs/known-risks.md para
+ *   a divergência aceita entre painel (Futures) e cron 24/7 (Spot).
  */
 
-const BINANCE_BASE_URL = 'https://data-api.binance.vision/api/v3';
+const BINANCE_BASE_URL = 'https://fapi.binance.com/fapi/v1';
 
 const TIMEFRAME_MAP = {
   '15m': '15m',
@@ -110,7 +113,7 @@ export async function validateSymbol(symbol) {
 export async function fetch24hStats(symbol) {
   const url = `${BINANCE_BASE_URL}/ticker/24hr?symbol=${symbol.toUpperCase()}`;
   const response = await fetch(url);
-  
+
   if (!response.ok) return null;
 
   const data = await response.json();
@@ -121,5 +124,26 @@ export async function fetch24hStats(symbol) {
     lowPrice: parseFloat(data.lowPrice),
     volume: parseFloat(data.volume),
     quoteVolume: parseFloat(data.quoteVolume),
+  };
+}
+
+/**
+ * Fetch the mark price for a Futures symbol (used for liquidation/funding
+ * calculations — distinct from the last traded price returned by
+ * fetchCurrentPrice, which is what indicators/signals still use today).
+ */
+export async function fetchMarkPrice(symbol) {
+  const url = `${BINANCE_BASE_URL}/premiumIndex?symbol=${symbol.toUpperCase()}`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Erro ao buscar mark price de ${symbol}`);
+  }
+
+  const data = await response.json();
+  return {
+    markPrice: parseFloat(data.markPrice),
+    lastFundingRate: parseFloat(data.lastFundingRate),
+    nextFundingTime: data.nextFundingTime,
   };
 }

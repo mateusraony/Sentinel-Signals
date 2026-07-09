@@ -54,6 +54,22 @@ function createEntity(collectionName) {
       return { id: ref.id, ...payload };
     },
 
+    // Atomic create-if-absent using a deterministic document id — mirrors
+    // src/api/entities.js's createUnique so scanner.js's dedup logic behaves
+    // identically whether it runs in the browser or in this cron job.
+    async createUnique(id, data) {
+      const ref = col().doc(id);
+      const payload = { ...data, created_date: data.created_date || new Date().toISOString() };
+      return db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (snap.exists) {
+          return { created: false, existing: { id: snap.id, ...snap.data() } };
+        }
+        tx.set(ref, payload);
+        return { created: true, doc: { id, ...payload } };
+      });
+    },
+
     async update(id, data) {
       await col().doc(id).update(data);
       return { id, ...data };
@@ -84,6 +100,64 @@ function createEntity(collectionName) {
   };
 }
 
+// Mirrors src/api/entities.js's acquireScanLock/releaseScanLock — same
+// scannerLocks/{lockName} shape, using the Admin SDK's transaction API.
+async function acquireScanLock(lockName, ttlMs, holder) {
+  const ref = db.collection('scannerLocks').doc(lockName);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const now = Date.now();
+    if (snap.exists && snap.data().expires_at > now) {
+      return false;
+    }
+    tx.set(ref, { locked_by: holder, locked_at: now, expires_at: now + ttlMs });
+    return true;
+  });
+}
+
+async function releaseScanLock(lockName, holder) {
+  const ref = db.collection('scannerLocks').doc(lockName);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists && snap.data().locked_by === holder) {
+      tx.set(ref, { locked_by: null, locked_at: null, expires_at: 0 });
+    }
+  });
+}
+
+// Mirrors src/api/entities.js's createTradeOpIfNoneActive/clearActiveOp —
+// same assetActiveOps/{assetId} tracking doc, so the entry idempotency
+// guarantee is identical whether scanner.js runs in the browser or here.
+async function createTradeOpIfNoneActive(assetId, docId, data) {
+  const activeRef = db.collection('assetActiveOps').doc(assetId);
+  const opRef = db.collection('tradeOperations').doc(docId);
+  const payload = { ...data, created_date: data.created_date || new Date().toISOString() };
+  return db.runTransaction(async (tx) => {
+    const activeSnap = await tx.get(activeRef);
+    if (activeSnap.exists && activeSnap.data().active_trade_op_id) {
+      return { created: false, existingId: activeSnap.data().active_trade_op_id };
+    }
+    const opSnap = await tx.get(opRef);
+    if (opSnap.exists) {
+      tx.set(activeRef, { active_trade_op_id: opRef.id, updated_at: new Date().toISOString() });
+      return { created: false, existing: { id: opRef.id, ...opSnap.data() } };
+    }
+    tx.set(opRef, payload);
+    tx.set(activeRef, { active_trade_op_id: opRef.id, updated_at: new Date().toISOString() });
+    return { created: true, doc: { id: docId, ...payload } };
+  });
+}
+
+async function clearActiveOp(assetId, tradeOpId) {
+  const activeRef = db.collection('assetActiveOps').doc(assetId);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(activeRef);
+    if (snap.exists && snap.data().active_trade_op_id === tradeOpId) {
+      tx.set(activeRef, { active_trade_op_id: null, updated_at: new Date().toISOString() });
+    }
+  });
+}
+
 export const backend = {
   entities: {
     MonitoredAsset: createEntity('monitoredAssets'),
@@ -94,6 +168,8 @@ export const backend = {
     SystemLog: createEntity('systemLogs'),
     User: createEntity('users'),
   },
+  locks: { acquireScanLock, releaseScanLock },
+  tradeOps: { createTradeOpIfNoneActive, clearActiveOp },
 };
 
 export { FieldValue };

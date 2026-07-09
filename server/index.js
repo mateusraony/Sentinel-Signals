@@ -4,6 +4,18 @@ const { initializeApp, cert } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
 
+// Fail fast with a clear message instead of an opaque JSON.parse crash if
+// this ever gets deployed without its secrets configured.
+const REQUIRED_ENV = ['FIREBASE_SERVICE_ACCOUNT_JSON', 'TELEGRAM_BOT_TOKEN'];
+const missingEnv = REQUIRED_ENV.filter((key) => !process.env[key]);
+if (missingEnv.length) {
+  console.error(`Missing required env var(s): ${missingEnv.join(', ')}`);
+  process.exit(1);
+}
+if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
+  console.warn('ALLOWED_ORIGIN is not set in production — CORS will allow any origin ("*").');
+}
+
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
 initializeApp({ credential: cert(serviceAccount) });
 
@@ -16,6 +28,10 @@ app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
 
 app.get('/', (req, res) => {
   res.json({ ok: true, service: 'sentinel-signals-api' });
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
 });
 
 async function requireAuth(req, res, next) {

@@ -2,7 +2,9 @@
  * Auto-scan hook
  * - Price check (lightweight) every 2 min when active trades exist
  * - Full scan every 60 min
- * Both are non-overlapping thanks to the lock in scanner.js
+ * Both acquire a transactional Firestore lock in scanner.js
+ * (acquireScanLock/releaseScanLock) before running, so they never overlap
+ * with each other or with the GitHub Actions cron scan.
  */
 
 import { useEffect, useRef } from 'react';
