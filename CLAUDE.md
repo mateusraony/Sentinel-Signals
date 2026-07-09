@@ -6,11 +6,12 @@ Este projeto foi originalmente gerado pela plataforma no-code **Base44** e expor
 
 ## Stack
 
-- **Frontend**: Vite + React 18 (JSX, não TypeScript — `checkJs` via `jsconfig.json` é só best-effort), Tailwind CSS, shadcn/ui, TanStack Query, React Router.
+- **Frontend**: Vite + React 18 (JSX, não TypeScript — `checkJs` via `jsconfig.json` é só best-effort), Tailwind CSS, shadcn/ui, TanStack Query, React Router. Hospedado como Static Site gratuito no **Render** (`render.yaml`, serviço `sentinel-signals`), build automático a cada push em `main`.
 - **Backend**: Firebase
   - **Firestore** — banco de dados principal (NoSQL orientado a documentos).
-  - **Authentication** — login por email/senha.
-  - **Cloud Functions** (Firebase Functions v2, Node 20, `onCall`) — única superfície onde secrets de API de terceiros (Anthropic, Telegram) existem. **Nunca** chame uma API de terceiros com uma chave/token direto do browser — sempre passe por uma Cloud Function.
+  - **Authentication** — ver aviso abaixo, atualmente anônima temporária.
+  - ~~Cloud Functions~~ — **não usadas.** O usuário recusou explicitamente o plano Blaze (não quer cadastrar cartão, não quer nenhum custo possível). Isso é uma restrição permanente do projeto, não temporária — não sugira Cloud Functions/Blaze de novo sem o usuário pedir. O código em `functions/` existe mas nunca foi (nem será) deployado.
+- **`server/`** — pequeno backend Node/Express (verifica Firebase ID token, lê Firestore com `firebase-admin`), **não está deployado nem referenciado pelo frontend agora**. Foi construído para segurar secrets de API fora do browser, mas o usuário optou explicitamente por configurar o Telegram direto na página (ver "Estado atual — Telegram e Strategy Reviewer" abaixo). Fica reservado para quando o Strategy Reviewer precisar de um lugar para guardar a chave da Anthropic — só nesse momento adicione o serviço de volta a `render.yaml` e aponte o frontend para ele.
 
 ## Arquitetura de dados
 
@@ -28,15 +29,23 @@ Coleções (nome do arquivo em `docs/schema-reference/*.jsonc` → coleção rea
 | `SystemLog.jsonc` | `systemLogs` |
 | `User.jsonc` | `users` (perfil `{ role: 'admin'|'user' }`, chave = uid do Firebase Auth) |
 
-Outras coleções sem `.jsonc` de referência (criadas já pensando em Firestore, sem equivalente Base44): `agentConversations/{id}/messages` (chat do Strategy Reviewer), `telegramConfig/{uid}` (chat_id de destino do Telegram).
+Outras coleções sem `.jsonc` de referência (criadas já pensando em Firestore, sem equivalente Base44): `agentConversations/{id}/messages` (chat do Strategy Reviewer, não usada no momento — ver abaixo), `telegramConfig/{uid}` (também não usada no momento — o chat_id do Telegram vive só no `localStorage` do navegador agora).
 
-`src/api/agents.js` (`strategyReviewerAgent`, exposto como `backend.agents`) segue o mesmo espírito: mesma forma de chamada (`listConversations`, `createConversation`, `getConversation`, `addMessage`, `subscribeToConversation`) que a página `StrategyReviewer.jsx` já usava.
+`src/api/agents.js` (`strategyReviewerAgent`, exposto como `backend.agents`) segue o mesmo espírito: mesma forma de chamada (`listConversations`, `createConversation`, `getConversation`, `addMessage`, `subscribeToConversation`) que a página `StrategyReviewer.jsx` usava — hoje `StrategyReviewer.jsx` está substituída por um placeholder "em breve" (ver aviso abaixo) e não chama mais essas funções.
+
+## ⚠️ Estado atual — auth, Telegram e Strategy Reviewer
+
+A pedido explícito do usuário, três pontos do plano original de segurança (Fases 1 e 4 da migração) foram deliberadamente revertidos ou pausados. Não "corrija" nenhum dos três sem o usuário pedir — cada reversão já foi discutida e é intencional:
+
+1. **Sem tela de login.** `AuthContext.jsx` faz `signInAnonymously()` automaticamente em vez de exigir email/senha — qualquer pessoa com a URL entra sem senha (as regras do Firestore continuam exigindo `isSignedIn()`, então o banco não fica 100% público, mas também não há controle de quem acessa). `Login.jsx` e `UserNotRegisteredError.jsx` continuam no repo, só não são renderizados por `App.jsx`. Reativar exige: voltar a ramificação `isAuthenticated`/`Login` em `App.jsx` (ver histórico do arquivo) e desligar o `signInAnonymously` de `AuthContext.jsx`.
+2. **Telegram configurado direto no navegador.** `src/lib/telegram.js`/`TelegramSettings.jsx` voltaram ao modelo original: Bot Token + Chat ID salvos em `localStorage`, mensagens enviadas direto do browser para `api.telegram.org`. Isso reintroduz o risco de exposição do token via XSS/devtools que a Fase 4 da migração original corrigiu — decisão consciente do usuário, que preferiu simplicidade a essa camada de segurança. `server/` e `src/lib/apiBackend.js` (a versão que mandava tudo por um backend) existem no repo, só não são usados.
+3. **Strategy Reviewer pausado.** `src/pages/StrategyReviewer.jsx` mostra só uma mensagem "em breve" — o chat de IA real (`src/api/agents.js`, tabela `agentConversations`) segue implementado mas não conectado a nenhum backend. Para reativar: adicionar uma rota em `server/` que chame a API da Anthropic (mesmo padrão do `/api/telegram-notify` que já existe lá), colocar o serviço de volta em `render.yaml`, reconectar `StrategyReviewer.jsx` a `backend.agents.*`.
 
 ## Segurança — regras já estabelecidas, não regrida
 
-1. **Secrets só em Cloud Functions.** `ANTHROPIC_API_KEY` e `TELEGRAM_BOT_TOKEN` são secrets do Firebase Functions (`firebase functions:secrets:set NOME`), lidos só dentro de `functions/index.js` via `defineSecret(...).value()`. O client nunca recebe essas chaves.
-2. **`firestore.rules` é a fonte de verdade de autorização**, não confie em checagem client-side. Padrão usado: coleções de negócio liberadas para qualquer usuário `authenticated` (app single-tenant atrás de login); `users/{uid}` só pode ser criado/editado pelo próprio dono e nunca pode setar `role != 'user'` a partir do cliente (promoção a admin é manual, via Firestore console ou Admin SDK — nunca exponha esse caminho no client); `agentConversations/{id}/messages` é somente-leitura para o client (só a Cloud Function, via Admin SDK, escreve, para ninguém conseguir forjar uma resposta do "assistente").
-3. Antes de mudar `firestore.rules`, rode `firebase deploy --only firestore:rules` (ou o script direto via Firebase Rules API se o `firebase-tools` reclamar de permissão — ver seção Deploy) e confira que não sobrou nenhuma regra `allow read, write: if true`.
+1. **Secrets de terceiros nunca no client, quando existirem.** Isso está temporariamente violado para o Telegram (ver item 2 acima, decisão do usuário) — não estenda esse padrão para novas integrações sem perguntar. Se/quando o Strategy Reviewer for religado, a chave da Anthropic vai para `server/` (env var do Render), nunca para o bundle do frontend.
+2. **`firestore.rules` é a fonte de verdade de autorização**, não confie em checagem client-side. Padrão usado: coleções de negócio liberadas para qualquer usuário `authenticated` (inclusive anônimo, ver aviso acima); `users/{uid}` só pode ser criado/editado pelo próprio dono e nunca pode setar `role != 'user'` a partir do cliente (promoção a admin é manual, via Firestore console ou Admin SDK — nunca exponha esse caminho no client); `agentConversations/{id}/messages` é somente-leitura para o client.
+3. Antes de mudar `firestore.rules`, rode `firebase deploy --only firestore:rules` (ou o script direto via Firebase Rules API se o `firebase-tools` reclamar de permissão) e confira que não sobrou nenhuma regra `allow read, write: if true`.
 
 ## Rodando localmente
 
@@ -48,15 +57,15 @@ npm run dev
 
 Scripts: `npm run dev`, `npm run build`, `npm run lint` / `npm run lint:fix`, `npm run typecheck` (ver limitação abaixo), `npm run preview`.
 
-## Deploy (Firebase)
+## Deploy
 
-O projeto Firebase (`sentinel-signals`) precisa estar no **plano Blaze** (pay-as-you-go) para Cloud Functions 2ª geração e Secret Manager — o plano Spark (gratuito) não suporta. A camada gratuita do Blaze é generosa; custo esperado para uso pessoal é ~R$0, mas exige cartão cadastrado.
+**Frontend (Render, 100% gratuito, sem cartão):** `render.yaml` define o Static Site `sentinel-signals`. Um Blueprint do Render conectado ao repo republica automaticamente a cada push em `main`.
 
+**Firestore (Firebase, plano Spark/gratuito — suficiente, não precisa de Blaze):**
 ```
-firebase deploy --only firestore:rules,firestore:indexes,functions
+firebase deploy --only firestore:rules,firestore:indexes
 ```
-
-Se a conta de serviço/CLI usada não tiver as permissões de IAM (`Cloud Functions Admin`, `Cloud Build Editor`, `Secret Manager Admin`, `Service Usage Consumer`, `Service Account User` — ou simplesmente `Editor`/`Owner`), o comando falha com erros de permissão do `serviceusage.googleapis.com`. Isso já aconteceu durante a migração inicial; resolvido concedendo esses papéis à service account no Console GCP (IAM & Admin).
+Se a conta de serviço/CLI usada não tiver permissão (erro de `serviceusage.googleapis.com`), use o script direto via Firebase Rules API em vez do `firebase-tools` (ver histórico do PR de migração para o padrão usado).
 
 ## Limitações conhecidas (não é regressão desta migração)
 

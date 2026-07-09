@@ -1,16 +1,9 @@
 /**
  * Telegram Notification Service
- * The bot token is an app-level secret held by the sentinel-signals-api
- * Render backend (see src/lib/apiBackend.js) — the browser never sees it.
- * Each user only configures their destination chat_id, cached here in
- * localStorage for instant reads and synced to Firestore (telegramConfig)
- * so the backend can look it up server-side. Filters (timeframes,
- * min_priority, signal_types, events, min_score) are checked before sending
- * — ensuring only configured signals reach Telegram.
+ * Config + filters stored in localStorage. Uses Telegram Bot API directly from browser.
+ * Filters (timeframes, min_priority, signal_types, events, min_score) are checked
+ * before sending — ensuring only configured signals reach Telegram.
  */
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebaseClient';
-import { callBackend } from '@/lib/apiBackend';
 import { logWarn } from './logger';
 
 const STORAGE_KEY = 'cryptoradar_telegram_cfg';
@@ -24,21 +17,13 @@ export function getTelegramConfig() {
   }
 }
 
-// Returns a promise so callers that need the Firestore write to have landed
-// (e.g. before invoking the telegramNotify callable) can await it.
 export function setTelegramConfig(cfg) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-  const uid = auth.currentUser?.uid;
-  if (uid && cfg.chatId) {
-    return setDoc(doc(db, 'telegramConfig', uid), { chatId: cfg.chatId }, { merge: true })
-      .catch((e) => console.warn('[Telegram] failed to sync chat_id to Firestore:', e.message));
-  }
-  return Promise.resolve();
 }
 
 export function isTelegramConfigured() {
-  const { chatId } = getTelegramConfig();
-  return !!chatId;
+  const { botToken, chatId } = getTelegramConfig();
+  return !!(botToken && chatId);
 }
 
 // ─── Filter storage (moved here to avoid circular imports) ───
@@ -101,14 +86,14 @@ function shouldSend(event, data) {
 }
 
 async function send(html) {
-  const { chatId } = getTelegramConfig();
-  if (!chatId) return;
+  const { botToken, chatId } = getTelegramConfig();
+  if (!botToken || !chatId) return;
   try {
-    // Self-heals configs saved before this backend existed (chatId was
-    // localStorage-only back then): make sure Firestore has it before the
-    // backend — which reads only Firestore — tries to look it up.
-    await setTelegramConfig({ chatId });
-    await callBackend('/api/telegram-notify', { text: html });
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: 'HTML' }),
+    });
   } catch (e) {
     console.warn('[Telegram] send failed:', e.message);
   }
