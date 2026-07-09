@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/lib/firebaseClient';
 import { getTelegramConfig, setTelegramConfig, isTelegramConfigured, getTelegramFilters, setTelegramFilters } from '@/lib/telegram';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,7 +63,7 @@ function MultiToggle({ options, selected, onChange }) {
 }
 
 export default function TelegramSettings({ open, onClose }) {
-  const [cfg, setCfg] = useState({ botToken: '', chatId: '' });
+  const [cfg, setCfg] = useState({ chatId: '' });
   const [filters, setFilters] = useState(getTelegramFilters());
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -77,33 +79,28 @@ export default function TelegramSettings({ open, onClose }) {
 
   if (!open) return null;
 
-  const save = () => {
-    setTelegramConfig(cfg);
+  const save = async () => {
+    await setTelegramConfig(cfg);
     setTelegramFilters(filters);
     onClose();
   };
 
   const test = async () => {
     setTesting(true); setTestResult(null);
-    setTelegramConfig(cfg);
+    await setTelegramConfig(cfg);
     const tfStr = filters.timeframes.join(', ').toUpperCase();
     const evStr = EVENT_OPTIONS.filter(e => filters.events.includes(e.id)).map(e => e.label).join('\n• ');
     try {
-      const res = await fetch(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: cfg.chatId,
-          text: `✅ <b>CryptoRadar conectado!</b>\n\n📊 <b>Timeframes:</b> ${tfStr}\n⚡ <b>Prioridade mínima:</b> ${filters.min_priority}\n📋 <b>Eventos ativos:</b>\n• ${evStr}\n\n<i>⚡ Sistema de monitoramento ativo</i>`,
-          parse_mode: 'HTML',
-        }),
+      const notify = httpsCallable(functions, 'telegramNotify');
+      await notify({
+        text: `✅ <b>CryptoRadar conectado!</b>\n\n📊 <b>Timeframes:</b> ${tfStr}\n⚡ <b>Prioridade mínima:</b> ${filters.min_priority}\n📋 <b>Eventos ativos:</b>\n• ${evStr}\n\n<i>⚡ Sistema de monitoramento ativo</i>`,
       });
-      setTestResult(res.ok ? 'success' : 'error');
+      setTestResult('success');
     } catch { setTestResult('error'); }
     finally { setTesting(false); }
   };
 
-  const isValid = cfg.botToken?.length > 20 && cfg.chatId?.length >= 5;
+  const isValid = cfg.chatId?.length >= 5;
   const setF = (key, val) => setFilters(f => ({ ...f, [key]: val }));
 
   return (
@@ -134,20 +131,13 @@ export default function TelegramSettings({ open, onClose }) {
         <div className="rounded-xl p-3 space-y-1.5" style={{ background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.1)' }}>
           <p className="text-[10px] font-mono font-bold" style={{ color: '#00e5ff' }}>COMO CONFIGURAR:</p>
           <ol className="text-[10px] text-muted-foreground space-y-1 list-decimal list-inside leading-relaxed">
-            <li>Telegram → <b className="text-foreground/70">@BotFather</b> → <code className="px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)' }}>/newbot</code> → copie o <b className="text-foreground/70">Token</b></li>
-            <li><b className="text-foreground/70">@userinfobot</b> → envie qualquer mensagem → copie o <b className="text-foreground/70">Chat ID</b></li>
+            <li>Telegram → <b className="text-foreground/70">@userinfobot</b> → envie qualquer mensagem → copie o <b className="text-foreground/70">Chat ID</b></li>
+            <li>Cole o Chat ID abaixo. O bot já está configurado no servidor — você só precisa dizer para onde enviar.</li>
           </ol>
         </div>
 
         {/* Connection fields */}
         <div className="space-y-3">
-          <div>
-            <label className="text-[10px] font-mono text-muted-foreground mb-1 block">BOT TOKEN</label>
-            <Input placeholder="1234567890:ABCdefGHI..." value={cfg.botToken || ''}
-              onChange={e => setCfg(c => ({ ...c, botToken: e.target.value }))}
-              className="font-mono text-xs h-9"
-              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
-          </div>
           <div>
             <label className="text-[10px] font-mono text-muted-foreground mb-1 block">CHAT ID</label>
             <Input placeholder="123456789" value={cfg.chatId || ''}
@@ -264,7 +254,7 @@ export default function TelegramSettings({ open, onClose }) {
               : { background: 'rgba(255,20,120,0.08)', color: '#ff1478', border: '1px solid rgba(255,20,120,0.2)' }}>
             {testResult === 'success'
               ? <><CheckCircle className="w-3.5 h-3.5" /> Mensagem enviada! Verifique o Telegram.</>
-              : <><AlertCircle className="w-3.5 h-3.5" /> Erro — verifique o Token e Chat ID.</>}
+              : <><AlertCircle className="w-3.5 h-3.5" /> Erro — verifique o Chat ID.</>}
           </div>
         )}
 

@@ -8,6 +8,8 @@
  * Script are reflected automatically — no manual bot changes needed.
  */
 
+import { logWarn } from './logger';
+
 const PINE_CONFIG_KEY = 'cryptoradar_pine_config';
 
 const DEFAULTS = {
@@ -95,7 +97,9 @@ export function getPineConfig() {
   try {
     const stored = localStorage.getItem(PINE_CONFIG_KEY);
     if (stored) return { ...DEFAULTS, ...JSON.parse(stored) };
-  } catch { /* ignore */ }
+  } catch (e) {
+    logWarn('pineParser', 'Config Pine Script corrompida no localStorage, usando defaults', { error: e.message });
+  }
   return { ...DEFAULTS };
 }
 
@@ -118,18 +122,18 @@ export function isPineConfigStale(code) {
  * @returns {Promise<number>} count of assets updated
  */
 export async function syncPineToAssets() {
-  const { base44 } = await import('@/api/entities');
+  const { backend } = await import('@/api/entities');
   const config = getPineConfig();
 
   try {
-    const assets = await base44.entities.MonitoredAsset.filter({ is_active: true });
+    const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
     const toUpdate = assets.filter(
       a => a.rf_period !== config.rng_per || a.rf_multiplier !== config.rng_qty
     );
 
     await Promise.all(
       toUpdate.map(a =>
-        base44.entities.MonitoredAsset.update(a.id, {
+        backend.entities.MonitoredAsset.update(a.id, {
           rf_period: config.rng_per,
           rf_multiplier: config.rng_qty,
         })
@@ -137,7 +141,8 @@ export async function syncPineToAssets() {
     );
 
     return toUpdate.length;
-  } catch {
+  } catch (e) {
+    logWarn('pineParser', 'Falha ao sincronizar parâmetros RF com os ativos monitorados', { error: e.message });
     return 0;
   }
 }

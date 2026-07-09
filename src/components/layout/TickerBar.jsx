@@ -1,19 +1,19 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function TickerBar() {
   const { data: states = [] } = useQuery({
     queryKey: ['asset-states'],
-    queryFn: () => base44.entities.AssetState.list(),
+    queryFn: () => backend.entities.AssetState.list(),
     refetchInterval: 60000
   });
 
   const { data: assets = [] } = useQuery({
     queryKey: ['all-assets-ticker'],
-    queryFn: () => base44.entities.MonitoredAsset.filter({ is_active: true })
+    queryFn: () => backend.entities.MonitoredAsset.filter({ is_active: true })
   });
 
   const items = assets.map((asset) => {

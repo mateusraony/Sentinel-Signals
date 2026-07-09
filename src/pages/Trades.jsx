@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 import {
   Loader2, Target, History, XCircle, Eye,
-  TrendingUp, TrendingDown, AlertTriangle, CheckCircle2,
+  TrendingUp, TrendingDown, AlertTriangle,
   BarChart2, Edit3, X, Search, Calendar
 } from 'lucide-react';
 import TradeCard from '@/components/dashboard/TradeCard';
@@ -296,28 +296,28 @@ export default function Trades() {
 
   const { data: operations = [], isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['trade-operations'],
-    queryFn: () => base44.entities.TradeOperation.list('-created_date', 100),
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
     refetchInterval: 15000,
   });
 
   const { data: recentSignals = [] } = useQuery({
     queryKey: ['recent-signals'],
-    queryFn: () => base44.entities.SignalEvent.list('-created_date', 50),
+    queryFn: () => backend.entities.SignalEvent.list('-created_date', 50),
     refetchInterval: 30000,
   });
 
   const closeMutation = useMutation({
-    mutationFn: (id) => base44.entities.TradeOperation.update(id, { status: 'CLOSED', closed_reason: 'Encerrado manualmente' }),
+    mutationFn: (id) => backend.entities.TradeOperation.update(id, { status: 'CLOSED', closed_reason: 'Encerrado manualmente' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trade-operations'] }),
   });
 
   const invalidateMutation = useMutation({
-    mutationFn: (id) => base44.entities.TradeOperation.update(id, { status: 'INVALIDATED', closed_reason: 'Invalidado manualmente' }),
+    mutationFn: (id) => backend.entities.TradeOperation.update(id, { status: 'INVALIDATED', closed_reason: 'Invalidado manualmente' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trade-operations'] }),
   });
 
   const editMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.TradeOperation.update(id, data),
+    mutationFn: ({ id, data }) => backend.entities.TradeOperation.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-operations'] });
       setEditingOp(null);

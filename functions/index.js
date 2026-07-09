@@ -7,6 +7,7 @@ initializeApp();
 const db = getFirestore();
 
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+const TELEGRAM_BOT_TOKEN = defineSecret('TELEGRAM_BOT_TOKEN');
 
 const SYSTEM_PROMPT = `Você é o Strategy Reviewer, um assistente que ajuda o operador do Sentinel Signals a revisar a disciplina e a qualidade de execução da própria estratégia de trading — não a prever preços nem dar recomendações financeiras.
 
@@ -125,6 +126,40 @@ exports.strategyReviewerChat = onCall({ secrets: [ANTHROPIC_API_KEY], region: 'u
   }
 
   await messagesRef.add({ role: 'assistant', content: replyText, created_date: now() });
+
+  return { ok: true };
+});
+
+// Sends a Telegram message on behalf of the caller. The bot token is a single
+// app-level secret (this is a single-tenant app); each user only supplies
+// their own destination chat_id (telegramConfig/{uid}), never the token.
+exports.telegramNotify = onCall({ secrets: [TELEGRAM_BOT_TOKEN], region: 'us-central1' }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Login necessário.');
+  }
+
+  const { text } = request.data || {};
+  if (typeof text !== 'string' || !text.trim()) {
+    throw new HttpsError('invalid-argument', 'text é obrigatório.');
+  }
+
+  const cfgSnap = await db.collection('telegramConfig').doc(request.auth.uid).get();
+  const chatId = cfgSnap.exists ? cfgSnap.data().chatId : null;
+  if (!chatId) {
+    throw new HttpsError('failed-precondition', 'Chat ID do Telegram não configurado.');
+  }
+
+  const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN.value()}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error('telegramNotify: Telegram API error', response.status, errText);
+    throw new HttpsError('internal', 'Falha ao enviar mensagem no Telegram.');
+  }
 
   return { ok: true };
 });

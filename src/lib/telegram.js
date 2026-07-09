@@ -1,25 +1,43 @@
 /**
  * Telegram Notification Service
- * Config + filters stored in localStorage. Uses Telegram Bot API directly from browser.
- * Filters (timeframes, min_priority, signal_types, events, min_score) are checked
+ * The bot token is an app-level Cloud Functions secret — the browser never
+ * sees it. Each user only configures their destination chat_id, cached here
+ * in localStorage for instant reads and synced to Firestore (telegramConfig)
+ * so the telegramNotify Cloud Function can look it up server-side. Filters
+ * (timeframes, min_priority, signal_types, events, min_score) are checked
  * before sending — ensuring only configured signals reach Telegram.
  */
+import { doc, setDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { auth, db, functions } from '@/lib/firebaseClient';
+import { logWarn } from './logger';
 
 const STORAGE_KEY = 'cryptoradar_telegram_cfg';
 const FILTERS_KEY = 'tg_filters';
 
 export function getTelegramConfig() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
-  catch { return {}; }
+  catch (e) {
+    logWarn('telegram', 'Config do Telegram corrompida no localStorage', { error: e.message });
+    return {};
+  }
 }
 
+// Returns a promise so callers that need the Firestore write to have landed
+// (e.g. before invoking the telegramNotify callable) can await it.
 export function setTelegramConfig(cfg) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+  const uid = auth.currentUser?.uid;
+  if (uid && cfg.chatId) {
+    return setDoc(doc(db, 'telegramConfig', uid), { chatId: cfg.chatId }, { merge: true })
+      .catch((e) => console.warn('[Telegram] failed to sync chat_id to Firestore:', e.message));
+  }
+  return Promise.resolve();
 }
 
 export function isTelegramConfigured() {
-  const { botToken, chatId } = getTelegramConfig();
-  return !!(botToken && chatId);
+  const { chatId } = getTelegramConfig();
+  return !!chatId;
 }
 
 // ─── Filter storage (moved here to avoid circular imports) ───
@@ -33,7 +51,10 @@ const DEFAULT_FILTERS = {
 
 export function getTelegramFilters() {
   try { return JSON.parse(localStorage.getItem(FILTERS_KEY)) || DEFAULT_FILTERS; }
-  catch { return DEFAULT_FILTERS; }
+  catch (e) {
+    logWarn('telegram', 'Filtros do Telegram corrompidos no localStorage, usando defaults', { error: e.message });
+    return DEFAULT_FILTERS;
+  }
 }
 
 export function setTelegramFilters(filters) {
@@ -79,14 +100,15 @@ function shouldSend(event, data) {
 }
 
 async function send(html) {
-  const { botToken, chatId } = getTelegramConfig();
-  if (!botToken || !chatId) return;
+  const { chatId } = getTelegramConfig();
+  if (!chatId) return;
   try {
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: 'HTML' }),
-    });
+    // Self-heals configs saved before the Cloud Function migration (chatId
+    // was localStorage-only back then): make sure Firestore has it before
+    // the callable — which reads only Firestore — tries to look it up.
+    await setTelegramConfig({ chatId });
+    const notify = httpsCallable(functions, 'telegramNotify');
+    await notify({ text: html });
   } catch (e) {
     console.warn('[Telegram] send failed:', e.message);
   }

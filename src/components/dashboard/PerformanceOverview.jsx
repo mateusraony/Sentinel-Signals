@@ -17,6 +17,8 @@ function calcPnl(op) {
     : ((op.entry_price - exitPrice) / op.entry_price) * 100;
 }
 
+const CLOSED = ['TP2_HIT', 'STOP_HIT', 'INVALIDATED', 'CLOSED'];
+
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
@@ -36,7 +38,6 @@ const CustomTooltip = ({ active, payload }) => {
 };
 
 export default function PerformanceOverview({ tradeOps }) {
-  const CLOSED = ['TP2_HIT', 'STOP_HIT', 'INVALIDATED', 'CLOSED'];
   const history = useMemo(() =>
     (tradeOps || [])
       .filter(o => CLOSED.includes(o.status))

@@ -57,6 +57,12 @@ service cloud.firestore {
       }
     }
 
+    // Telegram delivery config: only the chat_id destination lives here (the
+    // bot token is an app-level Cloud Functions secret, never stored per-user).
+    match /telegramConfig/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

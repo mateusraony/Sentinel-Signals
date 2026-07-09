@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/entities';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { backend } from '@/api/entities';
 import { ScrollText, Filter, RefreshCw, AlertTriangle, Info, Bug, AlertCircle, X, Search, Trash2 } from 'lucide-react';
 import moment from 'moment';
 
@@ -18,14 +18,14 @@ export default function Logs() {
 
   const { data: logs = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ['system-logs'],
-    queryFn: () => base44.entities.SystemLog.list('-created_date', 200),
+    queryFn: () => backend.entities.SystemLog.list('-created_date', 200),
     refetchInterval: 15000,
   });
 
   const clearLogsMutation = useMutation({
     mutationFn: async () => {
       const old = logs.filter(l => moment().diff(moment(l.created_date), 'hours') > 24);
-      await Promise.all(old.map(l => base44.entities.SystemLog.delete(l.id)));
+      await Promise.all(old.map(l => backend.entities.SystemLog.delete(l.id)));
     },
     onSuccess: () => refetch(),
   });

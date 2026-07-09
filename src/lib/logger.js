@@ -10,7 +10,7 @@
  * floating button. Uses a queue + batch create to avoid blocking the UI.
  */
 
-import { base44 } from '@/api/entities';
+import { backend } from '@/api/entities';
 
 const QUEUE = [];
 let flushing = false;
@@ -49,7 +49,7 @@ async function flush() {
   flushing = true;
   const batch = QUEUE.splice(0, QUEUE.length);
   try {
-    await base44.entities.SystemLog.bulkCreate(batch);
+    await backend.entities.SystemLog.bulkCreate(batch);
   } catch {
     // Logging should never break the app — silently retry later
     QUEUE.unshift(...batch.slice(0, 10)); // requeue up to 10
@@ -105,7 +105,7 @@ export function initLogger() {
   // Periodic anomaly detection — every 5 minutes
   setInterval(async () => {
     try {
-      const assets = await base44.entities.MonitoredAsset.filter({ is_active: true });
+      const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
       const now = Date.now();
       let anomalies = 0;
 
@@ -132,7 +132,7 @@ export function initLogger() {
       }
 
       // Check for active trade ops with stale data
-      const activeOps = await base44.entities.TradeOperation.filter({});
+      const activeOps = await backend.entities.TradeOperation.filter({});
       const TERMINAL = ['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'];
       const active = activeOps.filter(op => !TERMINAL.includes(op.status));
       for (const op of active) {

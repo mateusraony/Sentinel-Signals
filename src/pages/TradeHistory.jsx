@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/entities';
-import { History, TrendingUp, TrendingDown, Filter, BarChart2, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { backend } from '@/api/entities';
+import { History, Filter, BarChart2, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import PnLChart from '@/components/trades/PnLChart';
 import moment from 'moment';
 
@@ -42,7 +42,6 @@ function getClosedAt(op) {
 }
 
 function calcRR(op) {
-  const isBuy = op.side === 'BUY';
   if (!op.entry_price || !op.current_stop || !op.tp2) return null;
   const risk = Math.abs(op.entry_price - op.current_stop);
   const reward = Math.abs(op.tp2 - op.entry_price);
@@ -269,7 +268,7 @@ export default function TradeHistory() {
 
   const { data: operations = [], isLoading } = useQuery({
     queryKey: ['trade-history'],
-    queryFn: () => base44.entities.TradeOperation.list('-created_date', 200),
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', 200),
     refetchInterval: 30000,
   });
 
@@ -281,7 +280,6 @@ export default function TradeHistory() {
       if (filterTf !== 'all' && op.timeframe !== filterTf) return false;
       if (filterSide !== 'all' && op.side !== filterSide) return false;
       if (filterResult !== 'all') {
-        const pnl = calcPnl(op);
         if (filterResult === 'win' && !(op.status === 'TP2_HIT')) return false;
         if (filterResult === 'loss' && !(op.status === 'STOP_HIT' && !op.tp1_hit)) return false;
         if (filterResult === 'be' && !(op.status === 'STOP_HIT' && op.tp1_hit)) return false;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BellRing, X, CheckCircle2, AlertCircle } from 'lucide-react';
+import { BellRing, X, AlertCircle } from 'lucide-react';
 import { isTelegramConfigured } from '@/lib/telegram';
 import TelegramSettings from '@/components/settings/TelegramSettings';
 

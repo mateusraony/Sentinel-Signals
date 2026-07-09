@@ -1,40 +1,35 @@
-# Sentinel-Signals
-**Welcome to your Base44 project** 
+# Sentinel Signals
 
-**About**
+Painel de monitoramento de sinais de trading cripto: escaneia pares via API pública da Binance, calcula indicadores (Range Filter, RSI, MACD, EMA) e gerencia o ciclo de vida de operações (entrada, TP1/TP2, stop, invalidação), com alertas via Telegram e um assistente de IA para revisão de estratégia.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+## Stack
 
-This project contains everything you need to run your app locally.
+- **Frontend**: Vite + React 18, Tailwind CSS, shadcn/ui, TanStack Query
+- **Backend**: Firebase — Firestore (dados), Authentication (login por email/senha), Cloud Functions (chat do Strategy Reviewer via API da Anthropic e envio de alertas do Telegram, ambos com secrets só no servidor)
 
-**Edit the code in your local development environment**
+## Rodando localmente
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+1. `npm install`
+2. Crie um Web App no [Console do Firebase](https://console.firebase.google.com/) do seu projeto e copie a config para um `.env.local` (veja `.env.example`):
+   ```
+   VITE_FIREBASE_API_KEY=
+   VITE_FIREBASE_AUTH_DOMAIN=
+   VITE_FIREBASE_PROJECT_ID=
+   VITE_FIREBASE_STORAGE_BUCKET=
+   VITE_FIREBASE_MESSAGING_SENDER_ID=
+   VITE_FIREBASE_APP_ID=
+   ```
+3. `npm run dev`
 
-**Prerequisites:** 
+## Firebase
 
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
+- Schema do Firestore: `firestore.rules` (coleções e regras de segurança) + `docs/schema-reference/` (schema original de cada entidade, como referência).
+- Cloud Functions ficam em `functions/` e exigem o plano Blaze (pay-as-you-go) do Firebase, além dos secrets `ANTHROPIC_API_KEY` e `TELEGRAM_BOT_TOKEN` (`firebase functions:secrets:set <NOME>`).
+- Deploy: `firebase deploy --only firestore,functions`.
 
-```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
+## Scripts
 
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
-```
-
-Run the app: `npm run dev`
-
-**Publish your changes**
-
-Open [Base44.com](http://Base44.com) and click on Publish.
-
-**Docs & Support**
-
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
-
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+- `npm run dev` — servidor de desenvolvimento
+- `npm run build` — build de produção
+- `npm run lint` / `npm run lint:fix` — ESLint
+- `npm run typecheck` — checagem de tipos (JSDoc/TS via `jsconfig.json`)

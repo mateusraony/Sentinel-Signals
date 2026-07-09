@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { base44 } from '@/api/entities';
-import { Bot, Plus, MessageSquare, Trash2, Send, Loader2 } from 'lucide-react';
+import { backend } from '@/api/entities';
+import { Bot, Plus, MessageSquare, Send, Loader2 } from 'lucide-react';
 import MessageBubble from '@/components/agent/MessageBubble';
 import moment from 'moment';
 
@@ -20,7 +20,7 @@ export default function StrategyReviewer() {
   const loadConversations = async () => {
     try {
       setLoading(true);
-      const convs = await base44.agents.listConversations({ agent_name: 'strategy_reviewer' });
+      const convs = await backend.agents.listConversations({ agent_name: 'strategy_reviewer' });
       setConversations(convs || []);
     } catch (err) {
       console.error('Failed to load conversations:', err);
@@ -31,7 +31,7 @@ export default function StrategyReviewer() {
 
   const handleNewConversation = async () => {
     try {
-      const conv = await base44.agents.createConversation({
+      const conv = await backend.agents.createConversation({
         agent_name: 'strategy_reviewer',
         metadata: { name: `Análise ${moment().format('DD/MM HH:mm')}`, description: 'Revisão de estratégia' },
       });
@@ -46,9 +46,10 @@ export default function StrategyReviewer() {
   const handleSelectConv = async (conv) => {
     setActiveConv(conv);
     try {
-      const full = await base44.agents.getConversation(conv.id);
+      const full = await backend.agents.getConversation(conv.id);
       setMessages(full.messages || []);
     } catch (err) {
+      console.error('Failed to load conversation:', err);
       setMessages(conv.messages || []);
     }
   };
@@ -60,8 +61,8 @@ export default function StrategyReviewer() {
     setInput('');
     setSending(true);
     try {
-      const updated = await base44.agents.addMessage(activeConv, { role: 'user', content: userMsg.content });
-      // Subscribe handled separately; addMessage triggers agent response
+      // The assistant's reply arrives via the subscribeToConversation listener below.
+      await backend.agents.addMessage(activeConv, { role: 'user', content: userMsg.content });
     } catch (err) {
       console.error('Failed to send message:', err);
     } finally {
@@ -72,7 +73,7 @@ export default function StrategyReviewer() {
   // Subscribe to active conversation for streaming updates
   useEffect(() => {
     if (!activeConv?.id) return;
-    const unsubscribe = base44.agents.subscribeToConversation(activeConv.id, (data) => {
+    const unsubscribe = backend.agents.subscribeToConversation(activeConv.id, (data) => {
       setMessages(data.messages || []);
     });
     return () => { if (typeof unsubscribe === 'function') unsubscribe(); };

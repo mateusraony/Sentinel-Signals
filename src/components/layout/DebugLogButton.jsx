@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { base44 } from '@/api/entities';
-import { Bug, X, AlertCircle, AlertTriangle, Info, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
+import { backend } from '@/api/entities';
+import { Bug, X, Trash2 } from 'lucide-react';
 import moment from 'moment';
 
 const LEVEL_CONFIG = {
@@ -17,7 +17,7 @@ export default function DebugLogButton() {
 
   const { data: logs = [] } = useQuery({
     queryKey: ['system-logs-debug'],
-    queryFn: () => base44.entities.SystemLog.list('-created_date', 50),
+    queryFn: () => backend.entities.SystemLog.list('-created_date', 50),
     refetchInterval: 10000,
     enabled: open,
   });
@@ -28,7 +28,7 @@ export default function DebugLogButton() {
   const filtered = filter === 'all' ? logs.slice(0, 30) : logs.filter(l => l.level === filter).slice(0, 30);
 
   const deleteLog = useMutation({
-    mutationFn: (id) => base44.entities.SystemLog.delete(id),
+    mutationFn: (id) => backend.entities.SystemLog.delete(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['system-logs-debug'] }),
   });
 
