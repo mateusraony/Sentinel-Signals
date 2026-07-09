@@ -2,7 +2,6 @@ services:
   - type: web
     runtime: static
     name: sentinel-signals
-    plan: free
     branch: main
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
