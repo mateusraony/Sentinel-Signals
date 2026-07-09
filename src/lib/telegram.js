@@ -1,15 +1,9 @@
 /**
  * Telegram Notification Service
- * The bot token is an app-level Cloud Functions secret — the browser never
- * sees it. Each user only configures their destination chat_id, cached here
- * in localStorage for instant reads and synced to Firestore (telegramConfig)
- * so the telegramNotify Cloud Function can look it up server-side. Filters
- * (timeframes, min_priority, signal_types, events, min_score) are checked
+ * Config + filters stored in localStorage. Uses Telegram Bot API directly from browser.
+ * Filters (timeframes, min_priority, signal_types, events, min_score) are checked
  * before sending — ensuring only configured signals reach Telegram.
  */
-import { doc, setDoc } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
-import { auth, db, functions } from '@/lib/firebaseClient';
 import { logWarn } from './logger';
 
 const STORAGE_KEY = 'cryptoradar_telegram_cfg';
@@ -23,21 +17,13 @@ export function getTelegramConfig() {
   }
 }
 
-// Returns a promise so callers that need the Firestore write to have landed
-// (e.g. before invoking the telegramNotify callable) can await it.
 export function setTelegramConfig(cfg) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-  const uid = auth.currentUser?.uid;
-  if (uid && cfg.chatId) {
-    return setDoc(doc(db, 'telegramConfig', uid), { chatId: cfg.chatId }, { merge: true })
-      .catch((e) => console.warn('[Telegram] failed to sync chat_id to Firestore:', e.message));
-  }
-  return Promise.resolve();
 }
 
 export function isTelegramConfigured() {
-  const { chatId } = getTelegramConfig();
-  return !!chatId;
+  const { botToken, chatId } = getTelegramConfig();
+  return !!(botToken && chatId);
 }
 
 // ─── Filter storage (moved here to avoid circular imports) ───
@@ -100,15 +86,14 @@ function shouldSend(event, data) {
 }
 
 async function send(html) {
-  const { chatId } = getTelegramConfig();
-  if (!chatId) return;
+  const { botToken, chatId } = getTelegramConfig();
+  if (!botToken || !chatId) return;
   try {
-    // Self-heals configs saved before the Cloud Function migration (chatId
-    // was localStorage-only back then): make sure Firestore has it before
-    // the callable — which reads only Firestore — tries to look it up.
-    await setTelegramConfig({ chatId });
-    const notify = httpsCallable(functions, 'telegramNotify');
-    await notify({ text: html });
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: 'HTML' }),
+    });
   } catch (e) {
     console.warn('[Telegram] send failed:', e.message);
   }

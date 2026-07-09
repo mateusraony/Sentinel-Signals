@@ -24,3 +24,9 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+
+# server/ (sentinel-signals-api) is not deployed here — Telegram is
+# configured directly in the browser for now (see TelegramSettings.jsx).
+# The server/ backend is kept for when the Strategy Reviewer AI chat needs
+# a place to hold its API key; add its service block back to this file
+# when that's picked up again.
