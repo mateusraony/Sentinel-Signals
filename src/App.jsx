@@ -6,8 +6,6 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
-import UserNotRegisteredError from '@/components/UserNotRegisteredError';
-import Login from '@/pages/Login';
 
 import AppLayout from '@/components/layout/AppLayout';
 import Dashboard from '@/pages/Dashboard';
@@ -21,7 +19,7 @@ import StrategyReviewer from '@/pages/StrategyReviewer';
 import MonthlyReport from '@/pages/MonthlyReport';
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isAuthenticated, authError } = useAuth();
+  const { isLoadingAuth } = useAuth();
 
   if (isLoadingAuth) {
     return (
@@ -32,13 +30,6 @@ const AuthenticatedApp = () => {
         </div>
       </div>
     );
-  }
-
-  if (!isAuthenticated) {
-    if (authError && authError.type === 'user_not_registered') {
-      return <UserNotRegisteredError />;
-    }
-    return <Login />;
   }
 
   return (
