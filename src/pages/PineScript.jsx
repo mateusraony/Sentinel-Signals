@@ -913,7 +913,7 @@ string regimeTxt  = allFilters ? "LIVRE ✓" : "BLOQUEADO ✗"
 string scoreTxt   = str.tostring(buyScore > sellScore ? buyScore : sellScore) + "/100"
 
 if barstate.islast and tableMode != "Oculta"
-    int nRows = tableMode == "Compacta" ? 15 : 28
+    int nRows = tableMode == "Compacta" ? 16 : 28
     var table dbg = table.new(position.top_right, 2, nRows, border_width=1, frame_color=color.new(color.white,80))
 
     table.cell(dbg, 0, 0, "NE RF v13.2 — " + syminfo.ticker + " " + timeframe.period,
