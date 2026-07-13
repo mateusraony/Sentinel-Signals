@@ -123,3 +123,42 @@ TradingView (não são bugs conhecidos, mas nuances de implementação):
 seeding da EMA no Range Filter, convenções de suavização do ADX/DMI, e a
 contagem do Time Stop por tempo decorrido (em vez do contador nativo de
 barras do Pine).
+
+## 9. Cascata SMC/ICT 1h→5m — porte fiel, não validado por taxa de acerto
+
+`src/lib/indicators/smcStructure.js` porta `detect_swings`/`detect_pivot`/
+`detect_structure` (BOS/CHoCH), liquidity sweep e zonas Premium/Discount/
+Equilibrium do Pine real do usuário ("SMC+A Unified v2.3") — validado com
+testes sintéticos (o CHoCH dispara exatamente na barra de rompimento, não
+antes/depois) mas **não** lado a lado com o TradingView real. Desligado por
+padrão (`MonitoredAsset.smc_enabled` e `smc_confirm_4h15m`), então não afeta
+a cascata 4h/15m existente enquanto não for ativado por ativo.
+
+Escopo desta fase: só o núcleo self-contained do indicador (estrutura,
+sweep, zonas PD, PDH/PDL). Order Blocks e Fair Value Gaps (que dependem do
+`track_obs`, uma máquina de estados própria, e do alinhamento com volume
+profile) ficam para uma fase futura.
+
+Parâmetros que ainda não foram calibrados numericamente contra o script
+real: `swing_len` (50 no 1h/4h, igual ao default do Pine; 10 no 5m/15m de
+confirmação — um valor menor escolhido para reagir mais rápido no timeframe
+de entrada, sem equivalente direto no script original) e o Time Stop da
+cascata SMC (96 barras de 1h, valor fixo — não existe um sistema de tier
+próprio para essa cascata ainda).
+
+## 10. Bug de paridade corrigido — Time Stop/Chop Exit/Invalidação/trailing ATR nunca rodavam
+
+Até esta correção, o loop de atualização de `TradeOperation`s ativas
+(`persistScanResults`) buscava os dados do indicador por `results[op.timeframe]`
+— mas `op.timeframe` sempre foi o candle de CONFIRMAÇÃO de entrada ('15m'),
+que nunca existiu como chave em `results` (só '1h'/'4h'/'1d' são buscados).
+Na prática isso significa que Time Stop, Chop Exit, Invalidação por RF e o
+trailing stop via ATR — todos implementados numa sessão anterior — nunca
+executaram de verdade em produção; toda operação ativa só era fechada por
+stop/TP via preço (o outro loop, `priceCheckActiveOpsInner`, que é mais
+simples e não tinha esse bug). Corrigido adicionando `signal_timeframe` a
+cada `TradeOperation` (timeframe do sinal/viés, não da confirmação de
+entrada) e trocando a busca para `results[op.signal_timeframe || '4h']`.
+Operações abertas antes desta correção não têm `signal_timeframe` gravado —
+o fallback para `'4h'` as trata corretamente, já que todas vieram da
+cascata 4h/15m (a única que existia até aqui).

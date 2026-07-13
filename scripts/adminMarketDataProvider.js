@@ -14,6 +14,7 @@
 const BINANCE_BASE_URL = 'https://data-api.binance.vision/api/v3';
 
 const TIMEFRAME_MAP = {
+  '5m': '5m',
   '15m': '15m',
   '1h': '1h',
   '4h': '4h',

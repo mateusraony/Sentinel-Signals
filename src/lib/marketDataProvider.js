@@ -23,6 +23,7 @@
 const BINANCE_BASE_URL = 'https://fapi.binance.com/fapi/v1';
 
 const TIMEFRAME_MAP = {
+  '5m': '5m',
   '15m': '15m',
   '1h': '1h',
   '4h': '4h',
