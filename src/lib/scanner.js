@@ -38,6 +38,11 @@ const TIMEFRAMES = ['1h', '4h', '1d'];
 const TF_15M = '15m'; // Used for entry confirmation after 4h signal
 const TF_5M = '5m'; // Used for entry confirmation after 1h SMC signal
 const ONE_HOUR_MS = 60 * 60 * 1000;
+// Fixed constant, deliberately NOT pineConfig.trailAtrMult — that field is
+// reserved for the RF cascade's post-TP1 trailing (see buildTradeOpData's
+// comment on the same mix-up). The SMC cascade has no tier/regime system to
+// derive its own multiplier from yet, so this stays a plain constant.
+const SMC_INITIAL_STOP_ATR_MULT = 2.0;
 
 // Lock TTLs: comfortably above the slowest realistic run of each operation
 // (the GitHub Actions job has an 8-minute timeout for full scans) so a
@@ -244,13 +249,12 @@ async function check5mSmcConfirmation(symbol, direction) {
  * tier/regime system here (that's specific to the 4h/15m cascade).
  */
 function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
-  const ATR_MULT = pineConfig.trailAtrMult ?? 2.0;
   const tp1R = pineConfig.tp1R ?? 1.5;
   const tp2R = (pineConfig.tp1R ?? 1.5) * 2;
   const partialPct = pineConfig.tp1QtyPercent ?? 50;
   const isBuy = sig.signal_type === 'BUY';
   const entry = confirmation5m?.entryPrice ?? sig.price_at_signal;
-  const risk = tf1hData.atrValue * ATR_MULT;
+  const risk = tf1hData.atrValue * SMC_INITIAL_STOP_ATR_MULT;
   const initialStop = isBuy ? entry - risk : entry + risk;
   const riskR = Math.abs(entry - initialStop);
   const tp1 = isBuy ? entry + riskR * tp1R : entry - riskR * tp1R;
@@ -1069,6 +1073,18 @@ export async function persistScanResults(scanResult) {
         updatePayload.tp2_hit_price = op.tp2;
         updatePayload.exit_price = op.tp2;
         updatePayload.closed_at = nowIso;
+      } else if (op.cascade === '1h_5m') {
+        // SMC cascade: the runner's invalidation must come from the same
+        // structure that opened the trade (CHoCH against the position), not
+        // the RF filter — RF has no bearing on this cascade's thesis, and
+        // using it here (as this branch used to, unconditionally) silently
+        // coupled two cascades documented as independent.
+        const structureReversed = tfData.smc && (isBuy ? tfData.smc.trend === -1 : tfData.smc.trend === 1);
+        if (structureReversed) {
+          newStatus = 'INVALIDATED';
+          updatePayload.exit_price = closePrice;
+          updatePayload.closed_at = nowIso;
+        }
       } else if (rfFilt && op.exit_mode !== 'ATR_TRAILING') {
         const rfInval = isBuy ? (rfDir === -1 && closePrice < rfFilt) : (rfDir === 1 && closePrice > rfFilt);
         if (rfInval) {
