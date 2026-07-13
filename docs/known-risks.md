@@ -89,12 +89,14 @@ Firebase (Firestore → Regras, Firestore → Índices) que `scannerLocks`,
 ## 6. Render free tier hiberna após inatividade (webhook do TradingView)
 
 O serviço `sentinel-signals-api` no plano gratuito do Render hiberna após
-~15 min sem tráfego. Um alerta do TradingView pode chegar com atraso de
-30-60s (tempo de "acordar" o serviço) antes de ser processado. Isso não
-causa perda do alerta necessariamente (depende do timeout configurado no
-alerta do TradingView), mas é um atraso real, não só teórico — mitigação
-futura: um ping externo de keep-alive, ou aceitar o atraso como conhecido
-enquanto o projeto for gratuito.
+~15 min sem tráfego, levando ~30-60s para "acordar" — mais do que o
+TradingView espera antes de desistir da entrega do webhook. Isso já
+causou falhas reais confirmadas ("Entrega do webhook falhou — request
+took too long and timed out").
+
+> Atualização: mitigado por `.github/workflows/keep-warm.yml`, que faz
+> ping em `/health` a cada 10 min (gratuito, GitHub Actions) para manter
+> o serviço sempre acordado.
 
 ## 7. Webhook do TradingView grava mas não executa ordens
 

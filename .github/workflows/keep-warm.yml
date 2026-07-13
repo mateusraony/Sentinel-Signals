@@ -1,0 +1,19 @@
+name: Keep sentinel-signals-api warm
+
+# O plano gratuito do Render hiberna o serviço web depois de ~15 min sem
+# tráfego, e leva ~30-60s para "acordar" — mais tempo do que o TradingView
+# espera antes de desistir da entrega do webhook (ver docs/known-risks.md,
+# item 6). Este workflow só faz um ping público em /health a cada 10 min
+# para manter o serviço sempre acordado. Sem segredos necessários.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping /health
+        run: curl -fsS --max-time 90 https://sentinel-signals-api.onrender.com/health
