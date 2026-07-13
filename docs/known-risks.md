@@ -162,3 +162,39 @@ entrada) e trocando a busca para `results[op.signal_timeframe || '4h']`.
 Operações abertas antes desta correção não têm `signal_timeframe` gravado —
 o fallback para `'4h'` as trata corretamente, já que todas vieram da
 cascata 4h/15m (a única que existia até aqui).
+
+**Atenção operacional**: como essa correção liga o Time Stop/Chop
+Exit/Invalidação/trailing ATR pela primeira vez em produção, qualquer
+`TradeOperation` já aberta há mais tempo que o `tier_time_stop_bars` do seu
+tier pode ser fechada automaticamente já no primeiro scan após o deploy
+desta correção — não é um bug novo, é o Time Stop (que já era `useTimeStop:
+true` por padrão) executando pela primeira vez de verdade. Confira operações
+abertas há muito tempo antes de fazer deploy, se isso importar.
+
+## 11. Bugs corrigidos na saída pós-TP1 da cascata SMC (auditoria independente)
+
+Uma auditoria independente (pesquisa de comunidade + revisão de código)
+encontrou dois problemas reais na cascata SMC 1h→5m, corrigidos nesta
+revisão:
+
+1. **Invalidação pós-TP1 usava o Range Filter do 1h, não a estrutura.** O
+   loop de atualização de operações ativas tinha um único branch de
+   invalidação pós-TP1 (RF-based) compartilhado pelas duas cascatas — uma
+   operação SMC que batesse TP1 podia ser fechada porque o RF do 1h virou,
+   mesmo sem a estrutura (CHoCH) ter revertido, contradizendo o próprio
+   campo `invalidates_if` gravado na operação. Corrigido: operações com
+   `cascade: '1h_5m'` agora invalidam o runner por reversão de estrutura
+   (`tfData.smc.trend` contra a posição), não mais pelo RF.
+2. **`buildSmcTradeOpData` reusava `pineConfig.trailAtrMult` para o stop
+   inicial** — o mesmo erro que o comentário de `buildTradeOpData` já
+   alertava para não cometer (esse campo é reservado para o trailing pós-TP1
+   do runner, não para o stop inicial). Corrigido com uma constante própria
+   (`SMC_INITIAL_STOP_ATR_MULT = 2.0`), desacoplada do parâmetro Pine que
+   controla o trailing da cascata RF.
+
+Ponto de metodologia levantado na mesma auditoria, ainda não alterado (é uma
+decisão de design, não um bug): entradas estilo ICT/SMC tradicionalmente
+usam stop estrutural (abaixo do sweep ou swing oposto), não stop por ATR —
+o stop inicial da cascata SMC aqui continua ATR-based, sem relação direta
+com o nível que de fato invalidaria a tese da entrada. Considerar migrar
+para um stop estrutural numa fase futura.
