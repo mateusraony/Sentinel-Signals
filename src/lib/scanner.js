@@ -475,7 +475,10 @@ export async function scanAsset(asset) {
     // Check for SMC/ICT structure signal (1h bias for the 1h→5m cascade) —
     // fires on a fresh BOS/CHoCH, gated by the Premium/Discount zone rule
     // (only buy from discount/equilibrium, only sell from premium/equilibrium).
-    if (tf === '1h' && r.smc) {
+    // Gated by asset.smc_enabled up front — assets that never opted into
+    // this cascade shouldn't get SMC SignalEvents/alerts at all, not just
+    // have the TradeOperation blocked later.
+    if (tf === '1h' && r.smc && asset.smc_enabled) {
       const bullFired = r.smc.lastBull.bos || r.smc.lastBull.choch;
       const bearFired = r.smc.lastBear.bos || r.smc.lastBear.choch;
       if (bullFired || bearFired) {
@@ -860,6 +863,15 @@ export async function persistScanResults(scanResult) {
     // conditions may have changed since the signal first fired.
     const regime = evaluateRegime(tfData4h, pineConfig);
     if (!regime.ok) continue;
+
+    // Same optional SMC confirmation gate as the initial entry check —
+    // re-evaluated every retry pass since trend/zone may have changed
+    // since the signal first fired.
+    if (asset.smc_confirm_4h15m && tfData4h.smc) {
+      const trendAligned = sigDir === 1 ? tfData4h.smc.trend === 1 : tfData4h.smc.trend === -1;
+      const zoneOk = sigDir === 1 ? tfData4h.smc.pdZone !== 'premium' : tfData4h.smc.pdZone !== 'discount';
+      if (!trendAligned || !zoneOk) continue;
+    }
 
     // Re-run 15m confirmation
     const confirmed = await check15mConfirmation(sig.symbol, sig.signal_type, asset);
