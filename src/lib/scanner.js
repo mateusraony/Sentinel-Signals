@@ -21,6 +21,7 @@ import { calculateATR } from './indicators/atr';
 import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
 import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
+import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './indicators/smcStructure';
 import { getPineConfig } from './pineParser';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -35,6 +36,8 @@ import {
 
 const TIMEFRAMES = ['1h', '4h', '1d'];
 const TF_15M = '15m'; // Used for entry confirmation after 4h signal
+const TF_5M = '5m'; // Used for entry confirmation after 1h SMC signal
+const ONE_HOUR_MS = 60 * 60 * 1000;
 
 // Lock TTLs: comfortably above the slowest realistic run of each operation
 // (the GitHub Actions job has an 8-minute timeout for full scans) so a
@@ -42,6 +45,12 @@ const TF_15M = '15m'; // Used for entry confirmation after 4h signal
 const FULL_SCAN_LOCK_TTL_MS = 10 * 60 * 1000;
 const PRICE_CHECK_LOCK_TTL_MS = 3 * 60 * 1000;
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+
+// Bar duration per signal timeframe — used by the Time Stop calculation,
+// which counts elapsed time in units of the SIGNAL candle (not the
+// entry-confirmation candle). Falls back to 4h for legacy ops that predate
+// the `signal_timeframe` field (all of which came from the 4h/15m cascade).
+const SIGNAL_TF_MS = { '4h': FOUR_HOURS_MS, '1h': ONE_HOUR_MS };
 
 // Fail-open: if the lock itself can't be acquired/released (permission
 // error, network blip), we still let the scan run rather than going
@@ -110,6 +119,8 @@ function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
     symbol: sig.symbol,
     asset_id: sig.asset_id,
     timeframe: '15m',
+    signal_timeframe: '4h',
+    cascade: '4h_15m',
     side: sig.signal_type,
     status: 'SIGNAL_CONFIRMED',
     score: sig.context?.score || 0,
@@ -183,6 +194,105 @@ async function check15mConfirmation(symbol, direction, asset) {
     console.warn(`[15m confirm] ${symbol} fetch failed:`, err.message);
     return { confirmed: false, entryPrice: null, entryCandleTime: null };
   }
+}
+
+/**
+ * Check 5m for an SMC entry trigger confirming the 1h structure bias:
+ * either a liquidity sweep (SSL/BSL) or a fresh BOS/CHoCH in the same
+ * direction. A shorter swing length (10 vs the 1h bias's 50) is used here on
+ * purpose — an LTF entry trigger needs to react within a handful of 5m
+ * candles, not wait for a 50-bar (~4h) structure break on the 5m chart
+ * itself. Returns { confirmed, entryPrice, entryCandleTime, trigger }.
+ */
+async function check5mSmcConfirmation(symbol, direction) {
+  try {
+    const candles5m = await fetchCandles(symbol, TF_5M, 150);
+    const closed = candles5m.filter(c => c.isClosed);
+    if (closed.length < 60) {
+      return { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null };
+    }
+
+    const sweep = calculateLiquiditySweep(closed, 20);
+    const structure = calculateStructure(closed, { swingLen: 10 });
+
+    const sweepAligned = direction === 'BUY' ? sweep.bullishSweep : sweep.bearishSweep;
+    const structureAligned = direction === 'BUY'
+      ? (structure.lastBull.bos || structure.lastBull.choch)
+      : (structure.lastBear.bos || structure.lastBear.choch);
+
+    if (!sweepAligned && !structureAligned) {
+      return { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null };
+    }
+
+    const lastClosed = closed[closed.length - 1];
+    return {
+      confirmed: true,
+      entryPrice: lastClosed.close,
+      entryCandleTime: new Date(lastClosed.closeTime).toISOString(),
+      trigger: sweepAligned ? 'sweep' : 'structure',
+    };
+  } catch (err) {
+    console.warn(`[5m SMC confirm] ${symbol} fetch failed:`, err.message);
+    return { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null };
+  }
+}
+
+/**
+ * Build TradeOperation data for the SMC 1h→5m cascade — same ATR-based
+ * risk/TP model as buildTradeOpData (reusing the same Pine tp1R/tp1QtyPercent
+ * params), but stop/entry basis comes from 1h data and there's no
+ * tier/regime system here (that's specific to the 4h/15m cascade).
+ */
+function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
+  const ATR_MULT = pineConfig.trailAtrMult ?? 2.0;
+  const tp1R = pineConfig.tp1R ?? 1.5;
+  const tp2R = (pineConfig.tp1R ?? 1.5) * 2;
+  const partialPct = pineConfig.tp1QtyPercent ?? 50;
+  const isBuy = sig.signal_type === 'BUY';
+  const entry = confirmation5m?.entryPrice ?? sig.price_at_signal;
+  const risk = tf1hData.atrValue * ATR_MULT;
+  const initialStop = isBuy ? entry - risk : entry + risk;
+  const riskR = Math.abs(entry - initialStop);
+  const tp1 = isBuy ? entry + riskR * tp1R : entry - riskR * tp1R;
+  const tp2 = isBuy ? entry + riskR * tp2R : entry - riskR * tp2R;
+
+  return {
+    symbol: sig.symbol,
+    asset_id: sig.asset_id,
+    timeframe: TF_5M,
+    signal_timeframe: '1h',
+    cascade: '1h_5m',
+    side: sig.signal_type,
+    status: 'SIGNAL_CONFIRMED',
+    score: sig.context?.score || 0,
+    entry_price: entry,
+    atr_value: tf1hData.atrValue,
+    initial_stop: initialStop,
+    current_stop: initialStop,
+    tp1,
+    tp2,
+    tp1_hit: false,
+    tp2_hit: false,
+    partial_percent: partialPct,
+    runner_percent: 100 - partialPct,
+    exit_mode: 'HYBRID_RF_ATR',
+    candle_open_time: tf1hData.lastCandleOpenTime,
+    candle_close_time: tf1hData.lastCandleTime,
+    entry_candle_time_5m: confirmation5m?.entryCandleTime,
+    origin_1h_price: sig.price_at_signal,
+    tier_time_stop_bars: 96, // ~4 dias em barras de 1h — sem sistema de tier próprio nesta cascata
+    bias: sig.signal_type === 'BUY' ? 'bullish' : 'bearish',
+    structure_type: sig.context?.structure_type,
+    pd_zone: sig.context?.pd_zone,
+    sweep_confirmed: confirmation5m?.trigger === 'sweep',
+    source: 'scanner_smc',
+    candle_status: 'CLOSED',
+    data_status: 'LIVE',
+    signal_reasons: sig.context?.reasons || [],
+    invalidates_if: isBuy
+      ? 'Estrutura 1h reverter para baixista (CHoCH bearish)'
+      : 'Estrutura 1h reverter para altista (CHoCH bullish)',
+  };
 }
 
 /**
@@ -268,6 +378,16 @@ export async function scanAsset(asset) {
         chop = calculateChoppiness(closedCandles, pineConfig.chopLen ?? 14);
       }
 
+      // SMC/ICT structure (BOS/CHoCH + Premium/Discount zone) — used both as
+      // the bias for the new 1h→5m cascade and, optionally, as an extra
+      // confirmation gate on the existing 4h→15m cascade (asset.smc_confirm_4h15m).
+      let smc = null;
+      if (tf === '4h' || tf === '1h') {
+        const structure = calculateStructure(closedCandles);
+        const pdZone = calculatePdZone(closedCandles);
+        smc = { trend: structure.trend, lastBull: structure.lastBull, lastBear: structure.lastBear, pdZone: pdZone.zone };
+      }
+
       results[tf] = {
         rf: rfResult,
         rsi: rsiResult,
@@ -278,6 +398,7 @@ export async function scanAsset(asset) {
         tier,
         adx,
         chop,
+        smc,
         lastClose: lastCandle.close,
         lastCandleHigh: lastCandle.high,
         lastCandleLow: lastCandle.low,
@@ -349,6 +470,43 @@ export async function scanAsset(asset) {
         },
         dedup_key: `${asset.symbol}_${tf}_${r.rf.signal}_range_filter_${r.lastCandleTime}`,
       });
+    }
+
+    // Check for SMC/ICT structure signal (1h bias for the 1h→5m cascade) —
+    // fires on a fresh BOS/CHoCH, gated by the Premium/Discount zone rule
+    // (only buy from discount/equilibrium, only sell from premium/equilibrium).
+    if (tf === '1h' && r.smc) {
+      const bullFired = r.smc.lastBull.bos || r.smc.lastBull.choch;
+      const bearFired = r.smc.lastBear.bos || r.smc.lastBear.choch;
+      if (bullFired || bearFired) {
+        const signalType = bullFired ? 'BUY' : 'SELL';
+        const structureType = bullFired
+          ? (r.smc.lastBull.choch ? 'CHoCH' : 'BOS')
+          : (r.smc.lastBear.choch ? 'CHoCH' : 'BOS');
+        const zoneOk = signalType === 'BUY' ? r.smc.pdZone !== 'premium' : r.smc.pdZone !== 'discount';
+
+        if (zoneOk) {
+          newSignals.push({
+            asset_id: asset.id,
+            symbol: asset.symbol,
+            timeframe: tf,
+            signal_type: signalType,
+            source: 'smc_structure',
+            strength: structureType === 'CHoCH' ? 'strong' : 'medium',
+            alignment: strengthResult.alignment,
+            priority: structureType === 'CHoCH' ? 'high' : 'medium',
+            price_at_signal: r.lastClose,
+            candle_time: r.lastCandleTime,
+            reason: `${asset.symbol} 1H ${structureType} ${signalType === 'BUY' ? 'altista' : 'baixista'} — zona ${r.smc.pdZone}`,
+            context: {
+              structure_type: structureType,
+              pd_zone: r.smc.pdZone,
+              reasons: [`Estrutura 1H: ${structureType} ${signalType}`, `Zona: ${r.smc.pdZone}`],
+            },
+            dedup_key: `${asset.symbol}_1h_${signalType}_smc_structure_${r.lastCandleTime}`,
+          });
+        }
+      }
     }
 
     // Check for MACD cross signal
@@ -561,6 +719,26 @@ export async function persistScanResults(scanResult) {
               continue;
             }
 
+            // Optional extra confirmation: SMC 4h structure trend + PD zone
+            // must agree with the RF signal direction. Off by default
+            // (asset.smc_confirm_4h15m) — purely additive, never required
+            // unless the user explicitly opts an asset into it.
+            if (asset.smc_confirm_4h15m && tf4hData.smc) {
+              const trendAligned = sigDir === 1 ? tf4hData.smc.trend === 1 : tf4hData.smc.trend === -1;
+              const zoneOk = sigDir === 1 ? tf4hData.smc.pdZone !== 'premium' : tf4hData.smc.pdZone !== 'discount';
+              if (!trendAligned || !zoneOk) {
+                await backend.entities.SystemLog.create({
+                  level: 'info',
+                  module: 'scanner',
+                  message: `${asset.symbol} 4H ${signal.signal_type} — bloqueado pela confirmação SMC (trend=${tf4hData.smc.trend}, zona=${tf4hData.smc.pdZone})`,
+                  symbol: asset.symbol,
+                  timeframe: '4h',
+                  details: { smc_trend: tf4hData.smc.trend, pd_zone: tf4hData.smc.pdZone, trendAligned, zoneOk },
+                });
+                continue;
+              }
+            }
+
             // Cheap early-exit query (still racy, just an optimization to
             // skip the 15m candle fetch below) — the real guarantee against
             // duplicate/overlapping operations for this asset comes from
@@ -599,6 +777,47 @@ export async function persistScanResults(scanResult) {
                 });
               }
             }
+          }
+        }
+      }
+    }
+
+    // ═══ Entry Motor (SMC): 1H structure bias → 5m confirmation ═══
+    // Independent cascade, parallel to the 4H/15M one above — never touches
+    // its signals/trade ops. Off by default per asset (asset.smc_enabled).
+    if (signal.source === 'smc_structure' && asset.smc_enabled) {
+      const tf1hData = results['1h'];
+      if (tf1hData && tf1hData.atrValue) {
+        const existingOps = await backend.entities.TradeOperation.filter({
+          symbol: signal.symbol,
+          asset_id: signal.asset_id,
+        });
+        const hasActive = existingOps.some(op =>
+          !['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)
+        );
+
+        if (!hasActive) {
+          const confirmed5m = await check5mSmcConfirmation(asset.symbol, signal.signal_type);
+
+          if (confirmed5m.confirmed) {
+            const opData = buildSmcTradeOpData(signal, tf1hData, pineConfig, confirmed5m);
+            const tradeOpId = `trade_smc_${signal.dedup_key}`;
+            const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
+            if (created.created) {
+              if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
+              logInfo('scanner', `${signal.symbol} entrada SMC criada (1h→5m)`, {
+                score: signal.context?.score, structure_type: signal.context?.structure_type, trigger: confirmed5m.trigger,
+              }, { symbol: signal.symbol, timeframe: '5m' });
+            }
+          } else {
+            await backend.entities.SystemLog.create({
+              level: 'info',
+              module: 'scanner',
+              message: `${asset.symbol} 1H SMC ${signal.signal_type} — aguardando confirmação no 5m`,
+              symbol: asset.symbol,
+              timeframe: '5m',
+              details: { signal_tf: '1h', direction: signal.signal_type, structure_type: signal.context?.structure_type },
+            });
           }
         }
       }
@@ -663,11 +882,65 @@ export async function persistScanResults(scanResult) {
     });
   }
 
+  // ─── Retry: re-check 5m SMC confirmation for pending 1h signals ───
+  if (asset.smc_enabled) {
+    const oneHourAgo4x = new Date(Date.now() - 4 * ONE_HOUR_MS).toISOString();
+    const recentSmcSignals = await backend.entities.SignalEvent.filter({
+      asset_id: asset.id,
+      source: 'smc_structure',
+      timeframe: '1h',
+    });
+
+    for (const sig of recentSmcSignals) {
+      if (sig.created_date < oneHourAgo4x) continue; // stale, skip
+      if (sig.is_dismissed) continue;
+
+      const existingOps = await backend.entities.TradeOperation.filter({
+        symbol: sig.symbol,
+        asset_id: sig.asset_id,
+      });
+      const hasActive = existingOps.some(op =>
+        !['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)
+      );
+      if (hasActive) continue;
+
+      // Verify 1h structure bias still aligned (may have reversed since signal fired)
+      const tfData1h = results['1h'];
+      if (!tfData1h || !tfData1h.atrValue || !tfData1h.smc) continue;
+      const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
+      if (tfData1h.smc.trend !== sigDir) continue;
+
+      const confirmed = await check5mSmcConfirmation(sig.symbol, sig.signal_type);
+      if (!confirmed.confirmed) continue;
+
+      const opData = buildSmcTradeOpData(sig, tfData1h, pineConfig, confirmed);
+      const tradeOpId = `trade_smc_${sig.dedup_key || sig.id}`;
+      const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
+      if (!created.created) continue;
+
+      if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
+
+      await backend.entities.SystemLog.create({
+        level: 'info',
+        module: 'scanner',
+        message: `${sig.symbol} 1h SMC ${sig.signal_type} — confirmação 5m OK, entrada criada`,
+        symbol: sig.symbol,
+        timeframe: '5m',
+        details: { signal_tf: '1h', direction: sig.signal_type, trigger: confirmed.trigger, retry: true },
+      });
+    }
+  }
+
   // Update status of existing active TradeOperations
   const allActiveOps = await backend.entities.TradeOperation.filter({ asset_id: asset.id });
   for (const op of allActiveOps) {
     if (['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)) continue;
-    const tfData = results[op.timeframe];
+    // op.timeframe is the ENTRY-confirmation candle (15m/5m), which never
+    // appears in `results` (only 1h/4h/1d are fetched here) — the indicators
+    // this loop needs (RF, ATR, tier) live on the SIGNAL timeframe instead.
+    // signal_timeframe is set on every op created from this point forward;
+    // legacy ops (pre-dating the field) all came from the 4h/15m cascade.
+    const tfData = results[op.signal_timeframe || '4h'];
     if (!tfData) continue;
     // Isolated per-operation: a failure updating one op's stop/TP status
     // (e.g. a transient Firestore error) must not stop the remaining active
@@ -695,11 +968,14 @@ export async function persistScanResults(scanResult) {
       // Check stop first (stop has priority over TP on same candle for safety)
       const stopHit = isBuy ? stopCheckPrice <= op.current_stop : stopCheckPrice >= op.current_stop;
 
-      // Time Stop: close if TP1 hasn't hit within tier.timeStopBars 4h
-      // candles since entry — counted by elapsed time rather than a
-      // scan-incremented counter, so it stays correct across cron gaps.
+      // Time Stop: close if TP1 hasn't hit within tier.timeStopBars candles
+      // of the SIGNAL timeframe since entry — counted by elapsed time rather
+      // than a scan-incremented counter, so it stays correct across cron
+      // gaps. Bar duration depends on the cascade (4h for the RF cascade,
+      // 1h for the SMC cascade).
+      const barMs = SIGNAL_TF_MS[op.signal_timeframe] || FOUR_HOURS_MS;
       const barsOpen = op.candle_close_time
-        ? Math.floor((Date.now() - new Date(op.candle_close_time).getTime()) / FOUR_HOURS_MS)
+        ? Math.floor((Date.now() - new Date(op.candle_close_time).getTime()) / barMs)
         : 0;
       const timeStopBars = op.tier_time_stop_bars ?? 48;
       const timeStopTriggered = pineConfig.useTimeStop !== false && barsOpen >= timeStopBars;

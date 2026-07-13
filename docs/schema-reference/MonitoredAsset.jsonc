@@ -135,6 +135,16 @@
     "scan_error": {
       "type": "string",
       "description": "Last scan error message if any"
+    },
+    "smc_enabled": {
+      "type": "boolean",
+      "default": false,
+      "description": "Turns on the independent SMC/ICT 1h→5m entry cascade (structure BOS/CHoCH bias on 1h, liquidity sweep or 5m BOS/CHoCH as entry trigger) for this asset. Off by default — a fully separate cascade from the 4h/15m Range Filter one, never overrides it."
+    },
+    "smc_confirm_4h15m": {
+      "type": "boolean",
+      "default": false,
+      "description": "When true, adds an extra confirmation gate to the EXISTING 4h/15m Range Filter cascade: the 4h SMC structure trend and Premium/Discount zone must agree with the RF signal direction before a TradeOperation is created. Off by default — purely additive, doesn't change current behavior unless explicitly enabled per asset."
     }
   },
   "required": [

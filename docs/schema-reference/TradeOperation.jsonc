@@ -12,10 +12,29 @@
     },
     "timeframe": {
       "type": "string",
+      "description": "Entry-confirmation candle (15m for the 4h/15m cascade, 5m for the 1h/5m SMC cascade)",
       "enum": [
         "1h",
         "4h",
-        "1d"
+        "1d",
+        "15m",
+        "5m"
+      ]
+    },
+    "signal_timeframe": {
+      "type": "string",
+      "description": "Timeframe of the signal/bias candle that originated this operation (4h for the RF cascade, 1h for the SMC cascade) — used to look up the right indicator data during the TP/stop update loop, since `timeframe` above is the entry-confirmation candle, not the signal candle. Absent on legacy ops created before this field existed (all from the 4h/15m cascade — treat missing as '4h').",
+      "enum": [
+        "4h",
+        "1h"
+      ]
+    },
+    "cascade": {
+      "type": "string",
+      "description": "Which entry cascade created this operation",
+      "enum": [
+        "4h_15m",
+        "1h_5m"
       ]
     },
     "side": {
@@ -182,21 +201,51 @@
     },
     "tier_time_stop_bars": {
       "type": "number",
-      "description": "Time Stop threshold (in 4h candles) locked in at entry from the tier classified at that time — not recalculated later even if the asset's tier changes"
+      "description": "Time Stop threshold, in candles of `signal_timeframe` (4h for the RF cascade, from the tier classified at entry; 1h for the SMC cascade, fixed at 96) — not recalculated later even if the asset's tier changes"
     },
     "rf_reverse_bars_count": {
       "type": "number",
-      "description": "Consecutive 4h candles with Range Filter reversed against the position (pre-TP1 only) — used by the Invalidation toggle",
+      "description": "Consecutive candles of `signal_timeframe` with Range Filter reversed against the position (pre-TP1 only) — used by the Invalidation toggle",
       "default": 0
     },
     "source": {
       "type": "string",
       "enum": [
         "scanner",
+        "scanner_smc",
         "tradingview_webhook"
       ],
       "default": "scanner",
-      "description": "Whether this operation was created by the JS scanner (polling Binance) or logged from a real TradingView webhook alert"
+      "description": "Whether this operation came from the RF 4h/15m scanner cascade, the SMC 1h/5m scanner cascade, or was logged from a real TradingView webhook alert"
+    },
+    "bias": {
+      "type": "string",
+      "description": "SMC cascade only: structure bias that generated the signal",
+      "enum": [
+        "bullish",
+        "bearish"
+      ]
+    },
+    "structure_type": {
+      "type": "string",
+      "description": "SMC cascade only: whether the 1h signal was a Break of Structure or a Change of Character",
+      "enum": [
+        "BOS",
+        "CHoCH"
+      ]
+    },
+    "pd_zone": {
+      "type": "string",
+      "description": "SMC cascade only: Premium/Discount/Equilibrium zone on the 1h at signal time",
+      "enum": [
+        "premium",
+        "discount",
+        "equilibrium"
+      ]
+    },
+    "sweep_confirmed": {
+      "type": "boolean",
+      "description": "SMC cascade only: whether the 5m entry trigger was a liquidity sweep (true) or a 5m BOS/CHoCH (false)"
     }
   },
   "required": [
