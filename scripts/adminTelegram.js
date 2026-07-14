@@ -21,7 +21,8 @@ function shouldSend(event, data) {
   const f = DEFAULT_FILTERS;
   if (f.events && !f.events.includes(event)) return false;
 
-  const tf = data.timeframe;
+  // See src/lib/telegram.js for why signal_timeframe takes priority here.
+  const tf = data.signal_timeframe || data.timeframe;
   if (f.timeframes && tf && !f.timeframes.includes(tf)) return false;
 
   const side = data.signal_type || data.side;

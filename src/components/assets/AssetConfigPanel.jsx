@@ -20,6 +20,8 @@ export default function AssetConfigPanel({ asset, onSave }) {
     ema_short: asset.ema_short || 9,
     ema_long: asset.ema_long || 21,
     alert_cooldown_minutes: asset.alert_cooldown_minutes || 60,
+    smc_enabled: asset.smc_enabled || false,
+    smc_confirm_4h15m: asset.smc_confirm_4h15m || false,
   });
   const [saving, setSaving] = useState(false);
 
@@ -119,6 +121,36 @@ export default function AssetConfigPanel({ asset, onSave }) {
           <div>
             <Label className="text-xs text-muted-foreground">Longa</Label>
             <Input type="number" value={config.ema_long} onChange={e => setConfig({...config, ema_long: Number(e.target.value)})} className="mt-1" />
+          </div>
+        </div>
+      </div>
+
+      {/* SMC/ICT */}
+      <div>
+        <Label className="text-sm font-medium mb-2 block">Cascata SMC/ICT</Label>
+        <p className="text-xs text-muted-foreground mb-2">
+          Padrão de timeframes é sempre automático — 4H/15m para a cascata Range Filter, 1H/5m para a SMC. Não dá pra misturar.
+        </p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="text-sm block">Ativar cascata 1H → 5M</span>
+              <span className="text-xs text-muted-foreground">Entradas próprias por estrutura (BOS/CHoCH) + gatilho de 5m, em paralelo à cascata Range Filter.</span>
+            </div>
+            <Switch
+              checked={config.smc_enabled}
+              onCheckedChange={(v) => setConfig({ ...config, smc_enabled: v })}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="text-sm block">Confirmação SMC na cascata 4H/15m</span>
+              <span className="text-xs text-muted-foreground">Exige estrutura 4H + zona Premium/Discount alinhadas antes de abrir uma entrada Range Filter.</span>
+            </div>
+            <Switch
+              checked={config.smc_confirm_4h15m}
+              onCheckedChange={(v) => setConfig({ ...config, smc_confirm_4h15m: v })}
+            />
           </div>
         </div>
       </div>

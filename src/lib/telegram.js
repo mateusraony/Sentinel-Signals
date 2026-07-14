@@ -62,8 +62,12 @@ function shouldSend(event, data) {
   // Event filter
   if (f.events && !f.events.includes(event)) return false;
 
-  // Timeframe filter
-  const tf = data.timeframe;
+  // Timeframe filter — signal_timeframe (4h/1h) when present, since that's
+  // what the UI lets the user pick from. data.timeframe alone would be the
+  // ENTRY-confirmation candle (15m/5m) for trade-lifecycle events, which
+  // never matches any configured filter and silently drops every
+  // entry/TP/stop notification (only signal_detected has a matching value).
+  const tf = data.signal_timeframe || data.timeframe;
   if (f.timeframes && tf && !f.timeframes.includes(tf)) return false;
 
   // Signal type filter (BUY/SELL)
