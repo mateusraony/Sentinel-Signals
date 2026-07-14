@@ -198,3 +198,39 @@ usam stop estrutural (abaixo do sweep ou swing oposto), não stop por ATR —
 o stop inicial da cascata SMC aqui continua ATR-based, sem relação direta
 com o nível que de fato invalidaria a tese da entrada. Considerar migrar
 para um stop estrutural numa fase futura.
+
+## 12. Testes automatizados (Vitest) e watchdog externo do scan (healthchecks.io)
+
+**Testes**: `src/lib/indicators/*.test.js` cobre as funções puras mais
+críticas para decisão de entrada (RSI crossover-de-50, estrutura SMC
+BOS/CHoCH, liquidity sweep, zonas PD, ADX, Choppiness Index, classificação
+de Tier) com casos de valor conhecido e casos-limite (dados insuficientes,
+candles totalmente planos). Rodam via `npm test` (Vitest — escolhido por já
+reaproveitar `vite.config.js` sem configuração extra) e bloqueiam o merge:
+`ci.yml` roda os testes antes do build, e o job `build` precisa estar
+marcado como "required" em Settings → Branches → Branch protection rules
+pra realmente impedir o merge com teste quebrado (não é automático só por
+existir no workflow). Se um teste falhar, o CI também manda uma mensagem no
+Telegram (usa os mesmos secrets do scan) — assim dá pra saber que algo
+quebrou sem precisar checar o GitHub manualmente. Cobertura inicial é
+parcial por design: ATR/MACD/EMA/RangeFilter/Confluence ainda não têm
+testes commitados, é o próximo passo natural quando houver tempo.
+
+**Watchdog do scan**: nada até aqui alertava se o scan agendado parasse de
+rodar de verdade (silenciосо) — o Telegram só notifica sobre sinais/operações.
+Pesquisa confirmou um risco real do GitHub Actions: workflows agendados
+(`schedule`) são desativados automaticamente depois de ~60 dias sem nenhum
+push no repositório, sem aviso visível na interface. Um "vigia" feito só
+dentro do GitHub sofreria do mesmo problema (se o repo ficar 60 dias
+parado, o próprio vigia seria desligado junto). A solução implementada usa
+um serviço externo e gratuito (healthchecks.io ou compatível,
+`HEALTHCHECKS_PING_URL` como secret opcional): `scripts/run-scan.mjs` avisa
+esse serviço a cada scan bem-sucedido (`pingHealthcheck()`, com timeout de
+5s e falha silenciosa — nunca derruba o scan de verdade) e avisa
+explicitamente via `/fail` se o scan inteiro falhar. O serviço externo, por
+sua vez, manda a mensagem de "scanner parado" pro Telegram se não receber
+sinal de vida dentro da janela configurada — isso roda fora do GitHub, então
+não sofre do mesmo problema dos 60 dias. Erros por-ativo (`scan_status:
+'error'` num ativo específico) não contam como "scan parado" — só uma falha
+completa do `main()` (`scanAllAssets`/`priceCheckActiveOps` lançando exceção)
+interrompe o ping de sucesso.
