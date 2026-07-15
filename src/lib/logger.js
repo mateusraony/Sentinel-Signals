@@ -131,10 +131,10 @@ export function initLogger() {
         }
       }
 
-      // Check for active trade ops with stale data
-      const activeOps = await backend.entities.TradeOperation.filter({});
-      const TERMINAL = ['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'];
-      const active = activeOps.filter(op => !TERMINAL.includes(op.status));
+      // Check for active trade ops with stale data — filtered server-side by
+      // status instead of fetching every TradeOperation ever created (see
+      // the same fix in src/lib/scanner.js's priceCheckActiveOpsInner).
+      const active = await backend.entities.TradeOperation.filter({ status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'] });
       for (const op of active) {
         if (op.data_status === 'STALE' || op.data_status === 'OFFLINE' || op.data_status === 'ERROR') {
           addToQueue('warn', 'monitor',

@@ -596,6 +596,7 @@ export async function scanAsset(asset) {
     newSignals,
     errors,
     duration,
+    pineConfig,
   };
 }
 
@@ -603,8 +604,12 @@ export async function scanAsset(asset) {
  * Persist scan results - states and deduplicated signals
  */
 export async function persistScanResults(scanResult) {
-  const { asset, results, newSignals, errors, duration } = scanResult;
-  const pineConfig = await getPineConfig();
+  // pineConfig is reused from scanAsset's read instead of fetched again here
+  // — this function is always called immediately after scanAsset with its
+  // result, so a second read of the same strategyConfig doc is pure waste
+  // (Firestore quota is billed per read, and this runs for every asset on
+  // every 5-minute pass — see docs/known-risks.md item 13).
+  const { asset, results, newSignals, errors, duration, pineConfig } = scanResult;
 
   // Update or create asset states
   for (const [tf, data] of Object.entries(results)) {
@@ -645,6 +650,21 @@ export async function persistScanResults(scanResult) {
       await backend.entities.AssetState.create(stateData);
     }
   }
+
+  // Whether this asset already has a non-terminal TradeOperation — fetched
+  // ONCE per pass and reused everywhere it's needed below (both cascades'
+  // entry blocks and retry loops), instead of the same TradeOperation
+  // query being re-run up to 4x per asset per pass. This is only ever a
+  // cheap early-exit optimization (skips an unnecessary candle fetch) —
+  // the real duplicate-prevention guarantee is createTradeOpIfNoneActive's
+  // transaction further down, so a value that goes stale mid-function (if
+  // an op is created by an earlier block in this same pass) is harmless;
+  // it's kept fresh anyway by flipping to true right after each successful
+  // creation below.
+  let hasActiveOp = (await backend.entities.TradeOperation.filter({
+    symbol: asset.symbol,
+    asset_id: asset.id,
+  })).some(op => !['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status));
 
   // Deduplicate and persist signals
   let persistedSignals = 0;
@@ -746,19 +766,7 @@ export async function persistScanResults(scanResult) {
               }
             }
 
-            // Cheap early-exit query (still racy, just an optimization to
-            // skip the 15m candle fetch below) — the real guarantee against
-            // duplicate/overlapping operations for this asset comes from
-            // createTradeOpIfNoneActive's transaction further down.
-            const existingOps = await backend.entities.TradeOperation.filter({
-              symbol: signal.symbol,
-              asset_id: signal.asset_id,
-            });
-            const hasActive = existingOps.some(op =>
-              !['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)
-            );
-
-            if (!hasActive) {
+            if (!hasActiveOp) {
               // 15m confirmation required — no entry without it
               const confirmed15m = await check15mConfirmation(asset.symbol, signal.signal_type, asset);
 
@@ -767,6 +775,7 @@ export async function persistScanResults(scanResult) {
                 const tradeOpId = `trade_${signal.dedup_key}`;
                 const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
                 if (created.created) {
+                  hasActiveOp = true;
                   if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
                   logInfo('scanner', `${signal.symbol} entrada criada — Pine sync ativo`, {
                     score: signal.context?.score, atr_mult: pineConfig.trailAtrMult, tp1R: pineConfig.tp1R,
@@ -795,15 +804,7 @@ export async function persistScanResults(scanResult) {
     if (signal.source === 'smc_structure' && asset.smc_enabled) {
       const tf1hData = results['1h'];
       if (tf1hData && tf1hData.atrValue) {
-        const existingOps = await backend.entities.TradeOperation.filter({
-          symbol: signal.symbol,
-          asset_id: signal.asset_id,
-        });
-        const hasActive = existingOps.some(op =>
-          !['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)
-        );
-
-        if (!hasActive) {
+        if (!hasActiveOp) {
           const confirmed5m = await check5mSmcConfirmation(asset.symbol, signal.signal_type);
 
           if (confirmed5m.confirmed) {
@@ -811,6 +812,7 @@ export async function persistScanResults(scanResult) {
             const tradeOpId = `trade_smc_${signal.dedup_key}`;
             const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
             if (created.created) {
+              hasActiveOp = true;
               if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
               logInfo('scanner', `${signal.symbol} entrada SMC criada (1h→5m)`, {
                 score: signal.context?.score, structure_type: signal.context?.structure_type, trigger: confirmed5m.trigger,
@@ -845,16 +847,7 @@ export async function persistScanResults(scanResult) {
     if (sig.created_date < fourHoursAgo) continue; // stale, skip
     if (sig.is_dismissed) continue;
 
-    // Cheap early-exit query (see comment above) — createTradeOpIfNoneActive
-    // below is what actually guarantees no duplicate/overlapping operation.
-    const existingOps = await backend.entities.TradeOperation.filter({
-      symbol: sig.symbol,
-      asset_id: sig.asset_id,
-    });
-    const hasActive = existingOps.some(op =>
-      !['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)
-    );
-    if (hasActive) continue;
+    if (hasActiveOp) continue;
 
     // Verify 4H trend still aligned with signal direction (may have reversed)
     const tfData4h = results['4h'];
@@ -885,6 +878,7 @@ export async function persistScanResults(scanResult) {
     const tradeOpId = `trade_${sig.dedup_key || sig.id}`;
     const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
     if (!created.created) continue;
+    hasActiveOp = true;
 
     if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
 
@@ -911,14 +905,7 @@ export async function persistScanResults(scanResult) {
       if (sig.created_date < oneHourAgo4x) continue; // stale, skip
       if (sig.is_dismissed) continue;
 
-      const existingOps = await backend.entities.TradeOperation.filter({
-        symbol: sig.symbol,
-        asset_id: sig.asset_id,
-      });
-      const hasActive = existingOps.some(op =>
-        !['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)
-      );
-      if (hasActive) continue;
+      if (hasActiveOp) continue;
 
       // Verify 1h structure bias still aligned (may have reversed since signal fired)
       const tfData1h = results['1h'];
@@ -933,6 +920,7 @@ export async function persistScanResults(scanResult) {
       const tradeOpId = `trade_smc_${sig.dedup_key || sig.id}`;
       const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
       if (!created.created) continue;
+      hasActiveOp = true;
 
       if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
 
@@ -1125,20 +1113,27 @@ export async function persistScanResults(scanResult) {
     scan_error: errors.length > 0 ? errors.map(e => `${e.timeframe}: ${e.error}`).join('; ') : '',
   });
 
-  // Log scan
-  await backend.entities.SystemLog.create({
-    level: errors.length > 0 ? 'warn' : 'info',
-    module: 'scanner',
-    message: `Scan completo: ${asset.symbol} — ${persistedSignals} novos sinais, ${errors.length} erros`,
-    symbol: asset.symbol,
-    duration_ms: duration,
-    details: {
-      timeframes_scanned: Object.keys(results),
-      signals_found: newSignals.length,
-      signals_persisted: persistedSignals,
-      errors: errors,
-    },
-  });
+  // Log scan — only when something actually happened (new signal or error).
+  // A routine "nothing changed" pass used to write this unconditionally for
+  // every asset on every 5-minute cron run — pure Firestore write-quota
+  // waste on the free Spark plan (see docs/known-risks.md item 13). Skipped
+  // passes are still fully covered by MonitoredAsset.last_scan_at above and
+  // the watchdog ping in scripts/run-scan.mjs, so nothing goes unobserved.
+  if (persistedSignals > 0 || errors.length > 0) {
+    await backend.entities.SystemLog.create({
+      level: errors.length > 0 ? 'warn' : 'info',
+      module: 'scanner',
+      message: `Scan completo: ${asset.symbol} — ${persistedSignals} novos sinais, ${errors.length} erros`,
+      symbol: asset.symbol,
+      duration_ms: duration,
+      details: {
+        timeframes_scanned: Object.keys(results),
+        signals_found: newSignals.length,
+        signals_persisted: persistedSignals,
+        errors: errors,
+      },
+    });
+  }
 
   return { persistedSignals, errors };
 }
@@ -1163,8 +1158,11 @@ export async function priceCheckActiveOps() {
 }
 
 async function priceCheckActiveOpsInner() {
-  const ops = await backend.entities.TradeOperation.filter({});
-  const activeOps = ops.filter(op => ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'].includes(op.status));
+  // Filtered server-side by status instead of fetching every TradeOperation
+  // ever created and discarding most of it client-side — that unfiltered
+  // read grows with trade history forever and was a real, documented
+  // Firestore-quota risk (see docs/known-risks.md item 13).
+  const activeOps = await backend.entities.TradeOperation.filter({ status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'] });
   if (activeOps.length === 0) return;
 
   const symbols = [...new Set(activeOps.map(op => op.symbol))];
@@ -1301,6 +1299,30 @@ async function scanAllAssetsInner(onProgress) {
         symbol: asset.symbol,
       });
     }
+  }
+
+  // Rough Firestore quota check — extrapolates this pass's read/write count
+  // to a full day assuming the 5-minute cron cadence (the dominant driver of
+  // Firestore usage; the browser's own auto-scan runs full scans far less
+  // often, so this is a conservative/pessimistic estimate there, never an
+  // under-count). Warns via the normal Debug Log (no Firebase Console
+  // literacy needed) if projected usage crosses 80% of the free Spark
+  // plan's daily limits (50k reads / 20k writes) — see known-risks.md #13.
+  const { reads, writes } = backend.quota.getAndResetOpCounts();
+  const PASSES_PER_DAY = 288;
+  const projectedReads = reads * PASSES_PER_DAY;
+  const projectedWrites = writes * PASSES_PER_DAY;
+  const READ_LIMIT = 50000;
+  const WRITE_LIMIT = 20000;
+  if (projectedReads > READ_LIMIT * 0.8 || projectedWrites > WRITE_LIMIT * 0.8) {
+    logWarn('scanner', 'Uso do Firestore projetado perto do limite diário gratuito', {
+      reads_this_pass: reads,
+      writes_this_pass: writes,
+      projected_daily_reads: projectedReads,
+      projected_daily_writes: projectedWrites,
+      read_limit: READ_LIMIT,
+      write_limit: WRITE_LIMIT,
+    });
   }
 
   return { total: assets.length, results: allResults };

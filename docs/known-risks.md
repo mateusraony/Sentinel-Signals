@@ -234,3 +234,64 @@ não sofre do mesmo problema dos 60 dias. Erros por-ativo (`scan_status:
 'error'` num ativo específico) não contam como "scan parado" — só uma falha
 completa do `main()` (`scanAllAssets`/`priceCheckActiveOps` lançando exceção)
 interrompe o ping de sucesso.
+
+## 13. Rede de segurança contra tela branca + corte de desperdício no Firestore
+
+**Error Boundary**: até aqui nenhum componente React tinha proteção contra
+erro de renderização — qualquer exceção durante o render deixava a tela
+inteira em branco, sem nenhuma mensagem. Adicionado `src/components/
+ErrorBoundary.jsx` (classe React simples, sem lib nova) em duas camadas:
+uma em `src/App.jsx` (aplicativo inteiro) e outra em `src/components/
+layout/AppLayout.jsx` (só a página atual, navegação continua funcionando).
+Cada erro capturado é registrado via `logError` (mesmo padrão do Debug
+Log). Testado manualmente (candle de erro proposital + screenshot,
+removido antes do commit) confirmando que o fallback aparece em vez de
+tela branca.
+
+**Uso do Firestore perto do limite gratuito**: auditoria encontrou
+desperdício real de leituras/escritas no plano Spark (gratuito, 50k
+leituras / 20k escritas por dia) — com 10 ativos monitorados, a estimativa
+diária de escrita já passava de 90% do limite. Causas corrigidas:
+- `getPineConfig()` era buscado 2x por ativo por scan (uma vez em
+  `scanAsset`, outra em `persistScanResults`) — agora buscado 1x e
+  reaproveitado.
+- Um log de "scan completo" era gravado incondicionalmente pra cada ativo
+  a cada passada, mesmo quando nada aconteceu — agora só grava quando há
+  sinal novo ou erro (`last_scan_at` no `MonitoredAsset` e o watchdog do
+  item 12 continuam cobrindo o caso "nada aconteceu, sistema ok").
+- A checagem "esse ativo já tem operação ativa?" (`TradeOperation.filter`)
+  rodava até 4x por ativo por passada (blocos de entrada e retry das duas
+  cascatas) — consolidada numa única busca reaproveitada.
+- `priceCheckActiveOpsInner` (checagem de preço) e a checagem periódica de
+  anomalias no navegador (`src/lib/logger.js`) buscavam **todas** as
+  operações já criadas na história do projeto, descartando a maioria no
+  cliente — corrigido pra filtrar direto no Firestore pelos status ativos
+  (`SIGNAL_CONFIRMED`/`RUNNER_ACTIVE`, via `where(..., 'in', [...])`), um
+  custo que não cresce mais junto com o histórico de operações.
+- Aviso automático: o scan agora conta (de forma aproximada, não exata)
+  quantas leituras/escritas usou numa passada e, se a extrapolação para um
+  dia inteiro passar de 80% do limite gratuito, grava um aviso no Debug Log
+  — sem precisar abrir o Console do Firebase pra descobrir.
+
+## 14. Backup diário do Firestore (branch `backups`)
+
+Não existia nenhuma cópia de segurança dos dados — se a conta do Firebase
+tivesse um problema, o histórico de sinais/operações sumiria sem
+recuperação possível. O export oficial do Firestore (`gcloud firestore
+export`) exige um bucket do Cloud Storage, que por sua vez exige o plano
+pago Blaze — não é opção aqui (restrição permanente, sem cartão).
+
+Alternativa gratuita implementada: `.github/workflows/backup.yml` roda
+todo dia de madrugada, chama `scripts/backup-firestore.mjs` (reusa a mesma
+service account do scan agendado) pra ler as coleções de negócio
+(`monitoredAssets`, `assetStates`, `signalEvents`, `tradeOperations`,
+`priceAlerts`, `strategyConfig` — `systemLogs` e `users` ficam de fora, são
+ruído operacional/registros de auth anônima) e publica um snapshot JSON
+numa branch separada (`backups`, não `main`, pra não inchar o histórico
+principal), mantendo os últimos 30 dias.
+
+Restauração é **deliberadamente manual**, não automática — evita
+sobrescrever dado bom por engano numa hora de pânico. Procedimento
+documentado em `docs/restore-firestore.md`, usando
+`scripts/restore-firestore.mjs` (suporta `--dry-run` e pede confirmação
+explícita antes de escrever qualquer coisa).

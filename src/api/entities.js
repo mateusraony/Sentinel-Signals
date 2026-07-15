@@ -20,7 +20,11 @@ import { strategyReviewerAgent } from '@/api/agents';
 function buildQuery(collectionName, filters = {}, sort, limitCount) {
   const constraints = [];
   Object.entries(filters).forEach(([field, value]) => {
-    if (value !== undefined) constraints.push(where(field, '==', value));
+    if (value === undefined) return;
+    // Array value -> Firestore 'in' (max 30 values), so callers can filter
+    // to a small set of statuses server-side instead of fetching every
+    // document and filtering client-side (billed per document read).
+    constraints.push(Array.isArray(value) ? where(field, 'in', value) : where(field, '==', value));
   });
   if (sort) {
     const descending = sort.startsWith('-');
@@ -35,22 +39,38 @@ function snapshotToArray(snapshot) {
   return snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
 }
 
+// Rough, best-effort Firestore read/write counter — not exact (the
+// transaction-based helpers below aren't instrumented, and this doesn't
+// survive a process restart), but good enough to extrapolate a daily
+// estimate and warn before the free Spark plan's daily quota is hit (see
+// docs/known-risks.md item 13). Reads are counted per document returned,
+// matching how Firestore actually bills a query.
+let opCounts = { reads: 0, writes: 0 };
+export function getAndResetOpCounts() {
+  const counts = { ...opCounts };
+  opCounts = { reads: 0, writes: 0 };
+  return counts;
+}
+
 // Thin Firestore adapter preserving the backend.entities.<Name>.{list,filter,create,
 // update,delete,bulkCreate,deleteMany} call shape used throughout the app.
 function createEntity(collectionName) {
   return {
     async list(sort, limitCount) {
       const snapshot = await getDocs(buildQuery(collectionName, {}, sort, limitCount));
+      opCounts.reads += snapshot.docs.length;
       return snapshotToArray(snapshot);
     },
 
     async filter(filters = {}, sort, limitCount) {
       const snapshot = await getDocs(buildQuery(collectionName, filters, sort, limitCount));
+      opCounts.reads += snapshot.docs.length;
       return snapshotToArray(snapshot);
     },
 
     async get(id) {
       const snap = await getDoc(doc(db, collectionName, id));
+      opCounts.reads += 1;
       return snap.exists() ? { id: snap.id, ...snap.data() } : null;
     },
 
@@ -59,12 +79,14 @@ function createEntity(collectionName) {
     async set(id, data) {
       const ref = doc(db, collectionName, id);
       await setDoc(ref, data, { merge: true });
+      opCounts.writes += 1;
       return { id, ...data };
     },
 
     async create(data) {
       const payload = { ...data, created_date: data.created_date || new Date().toISOString() };
       const ref = await addDoc(collection(db, collectionName), payload);
+      opCounts.writes += 1;
       return { id: ref.id, ...payload };
     },
 
@@ -86,11 +108,13 @@ function createEntity(collectionName) {
 
     async update(id, data) {
       await updateDoc(doc(db, collectionName, id), data);
+      opCounts.writes += 1;
       return { id, ...data };
     },
 
     async delete(id) {
       await deleteDoc(doc(db, collectionName, id));
+      opCounts.writes += 1;
     },
 
     async bulkCreate(items) {
@@ -102,14 +126,17 @@ function createEntity(collectionName) {
         return { id: ref.id, ...payload };
       });
       await batch.commit();
+      opCounts.writes += created.length;
       return created;
     },
 
     async deleteMany(filters = {}) {
       const snapshot = await getDocs(buildQuery(collectionName, filters));
+      opCounts.reads += snapshot.docs.length;
       const batch = writeBatch(db);
       snapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
       await batch.commit();
+      opCounts.writes += snapshot.docs.length;
     },
   };
 }
@@ -191,4 +218,5 @@ export const backend = {
   agents: strategyReviewerAgent,
   locks: { acquireScanLock, releaseScanLock },
   tradeOps: { createTradeOpIfNoneActive, clearActiveOp },
+  quota: { getAndResetOpCounts },
 };

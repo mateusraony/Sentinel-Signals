@@ -16,7 +16,8 @@ const db = getFirestore();
 function applyFilters(collectionRef, filters = {}) {
   let q = collectionRef;
   Object.entries(filters).forEach(([field, value]) => {
-    if (value !== undefined) q = q.where(field, '==', value);
+    if (value === undefined) return;
+    q = Array.isArray(value) ? q.where(field, 'in', value) : q.where(field, '==', value);
   });
   return q;
 }
@@ -32,6 +33,15 @@ function snapshotToArray(snapshot) {
   return snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
 }
 
+// Mirrors the same counter in src/api/entities.js — see that file for why
+// (rough daily Firestore quota extrapolation, docs/known-risks.md item 13).
+let opCounts = { reads: 0, writes: 0 };
+export function getAndResetOpCounts() {
+  const counts = { ...opCounts };
+  opCounts = { reads: 0, writes: 0 };
+  return counts;
+}
+
 function createEntity(collectionName) {
   const col = () => db.collection(collectionName);
 
@@ -39,18 +49,23 @@ function createEntity(collectionName) {
     async list(sort, limitCount) {
       let q = applySort(col(), sort);
       if (limitCount) q = q.limit(limitCount);
-      return snapshotToArray(await q.get());
+      const snapshot = await q.get();
+      opCounts.reads += snapshot.docs.length;
+      return snapshotToArray(snapshot);
     },
 
     async filter(filters = {}, sort, limitCount) {
       let q = applySort(applyFilters(col(), filters), sort);
       if (limitCount) q = q.limit(limitCount);
-      return snapshotToArray(await q.get());
+      const snapshot = await q.get();
+      opCounts.reads += snapshot.docs.length;
+      return snapshotToArray(snapshot);
     },
 
     async create(data) {
       const payload = { ...data, created_date: data.created_date || new Date().toISOString() };
       const ref = await col().add(payload);
+      opCounts.writes += 1;
       return { id: ref.id, ...payload };
     },
 
@@ -72,11 +87,13 @@ function createEntity(collectionName) {
 
     async update(id, data) {
       await col().doc(id).update(data);
+      opCounts.writes += 1;
       return { id, ...data };
     },
 
     async delete(id) {
       await col().doc(id).delete();
+      opCounts.writes += 1;
     },
 
     async bulkCreate(items) {
@@ -88,14 +105,17 @@ function createEntity(collectionName) {
         return { id: ref.id, ...payload };
       });
       await batch.commit();
+      opCounts.writes += created.length;
       return created;
     },
 
     async deleteMany(filters = {}) {
       const snapshot = await applyFilters(col(), filters).get();
+      opCounts.reads += snapshot.docs.length;
       const batch = db.batch();
       snapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
       await batch.commit();
+      opCounts.writes += snapshot.docs.length;
     },
   };
 }
@@ -170,6 +190,7 @@ export const backend = {
   },
   locks: { acquireScanLock, releaseScanLock },
   tradeOps: { createTradeOpIfNoneActive, clearActiveOp },
+  quota: { getAndResetOpCounts },
 };
 
 export { FieldValue };

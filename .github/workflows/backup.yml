@@ -1,0 +1,60 @@
+name: Daily Firestore backup
+
+# Backup gratuito e compatível com o plano Spark (o export oficial do
+# Firestore exige um bucket do Cloud Storage, que por sua vez exige o plano
+# pago Blaze — não é opção aqui, ver docs/known-risks.md item 14). Gera um
+# snapshot JSON das coleções de negócio e publica na branch `backups`
+# (separada de `main`, pra não inchar o histórico principal), mantendo os
+# últimos 30 dias. Restauração é manual, ver docs/restore-firestore.md.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Gerar snapshot
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          DATE=$(date -u +%Y-%m-%d)
+          node scripts/backup-firestore.mjs "/tmp/backup-${DATE}.json"
+          echo "BACKUP_DATE=${DATE}" >> "$GITHUB_ENV"
+
+      - name: Publicar na branch backups
+        run: |
+          git config user.name "sentinel-signals-bot"
+          git config user.email "actions@users.noreply.github.com"
+
+          git fetch origin backups || true
+          if git show-ref --verify --quiet refs/remotes/origin/backups; then
+            git checkout -B backups origin/backups
+          else
+            git checkout --orphan backups
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          cp "/tmp/backup-${BACKUP_DATE}.json" "./backup-${BACKUP_DATE}.json"
+          git add "backup-${BACKUP_DATE}.json"
+          git commit -m "Backup ${BACKUP_DATE}" --allow-empty
+
+          # Mantém só os últimos 30 snapshots diários
+          ls -1 backup-*.json 2>/dev/null | sort | head -n -30 | xargs -r git rm -q --ignore-unmatch
+          git diff --cached --quiet || git commit -m "Remove backups antigos (mantém últimos 30)"
+
+          git push origin backups
