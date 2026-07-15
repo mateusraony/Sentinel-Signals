@@ -310,6 +310,10 @@
   inset: 0;
   border-radius: inherit;
   padding: 1px;
+  /* Purely decorative — without this, the pseudo-element's full box (mask
+     only affects paint, not hit-testing) silently swallows clicks on any
+     interactive content placed inside an .animated-border container. */
+  pointer-events: none;
   background: linear-gradient(
     135deg,
     rgba(0, 255, 128, 0.4),
@@ -354,4 +358,55 @@
 }
 .btn-scan-pulse {
   animation: btn-pulse 2s ease-in-out infinite;
+}
+
+/* =============================================
+   ERROR BOUNDARY — "SIGNAL LOST" RADAR
+   ============================================= */
+.signal-lost-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 20, 120, 0.5);
+  animation: signal-lost-ping 2.4s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+.signal-lost-ring:nth-child(2) { animation-delay: 0.8s; }
+.signal-lost-ring:nth-child(3) { animation-delay: 1.6s; }
+
+@keyframes signal-lost-ping {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.signal-lost-sweep {
+  animation: signal-lost-rotate 3s linear infinite;
+  transform-origin: 50% 50%;
+}
+
+@keyframes signal-lost-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Glitchy title flicker — quick RGB-split style jitter, settles most of
+   the time (feels like a corrupted terminal, not a constant annoyance). */
+@keyframes glitch-flicker {
+  0%, 88%, 100% { transform: translate(0, 0); opacity: 1; text-shadow: 0 0 12px rgba(255, 20, 120, 0.5); }
+  90% { transform: translate(-2px, 1px); opacity: 0.85; text-shadow: -2px 0 #00e5ff, 2px 0 #ff1478; }
+  92% { transform: translate(2px, -1px); opacity: 1; text-shadow: 2px 0 #00e5ff, -2px 0 #ff1478; }
+  94% { transform: translate(0, 0); opacity: 1; text-shadow: 0 0 12px rgba(255, 20, 120, 0.5); }
+}
+.glitch-title {
+  animation: glitch-flicker 5s ease-in-out infinite;
+}
+
+/* Flatlining candle bars — a little chart going dark, in-theme with the
+   rest of the app's signal/candle visuals. */
+@keyframes candle-flatline {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(0.15); }
+}
+.candle-flatline-bar {
+  animation: candle-flatline 2.2s ease-in-out infinite;
+  transform-origin: bottom;
 }
