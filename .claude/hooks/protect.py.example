@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""PreToolUse guard PROPOSTO para o Sentinel Signals (camada 4 — hooks).
+
+⚠️ INERTE POR PADRÃO. Este arquivo termina em `.example` e NÃO está ligado a
+nenhum hook. Ativação é um passo consciente do usuário — ver
+`docs/claude/protection-hooks.md`. Isso respeita a diretriz original
+"propor hooks, sem implementá-los ainda".
+
+Quando ativado, roda antes de Bash/Edit/Write. Contrato de hook do Claude Code:
+sair com código 2 e escrever o motivo em stderr = BLOQUEAR a chamada e devolver o
+motivo ao Claude; código 0 = permitir.
+
+Override consciente (uma ação): exportar SENTINEL_ALLOW_DANGEROUS=1 antes de
+repetir a ação. O bloqueio é registrado em stderr mesmo com override.
+
+Leve de propósito: só regex sobre a entrada da ferramenta, sem rodar testes, sem
+rede, sem loop. Não commitar segredo aqui — este arquivo é versionado.
+"""
+import json
+import os
+import re
+import sys
+
+
+def deny(reason: str) -> None:
+    override = os.environ.get("SENTINEL_ALLOW_DANGEROUS") == "1"
+    prefix = "[sentinel-protect]"
+    if override:
+        sys.stderr.write(
+            f"{prefix} AVISO (override ativo via SENTINEL_ALLOW_DANGEROUS=1): {reason}\n"
+        )
+        sys.exit(0)
+    sys.stderr.write(
+        f"{prefix} BLOQUEADO: {reason}\n"
+        "Se for realmente intencional, confirme com o usuário e rode de novo com "
+        "SENTINEL_ALLOW_DANGEROUS=1 nesse comando.\n"
+    )
+    sys.exit(2)
+
+
+def check_bash(command: str) -> None:
+    c = command.strip()
+    low = c.lower()
+
+    # 1) Push / force-push para main
+    if re.search(r"\bgit\s+push\b", low):
+        targets_main = bool(
+            re.search(r"\borigin\s+main\b", low)
+            or re.search(r"[: ]main\b", low)
+            or re.search(r"\bhead:main\b", low)
+        )
+        forced = bool(re.search(r"(--force\b|--force-with-lease\b|\s-f\b)", low))
+        if targets_main:
+            deny("push para a branch main não é permitido (trabalhe na branch de feature + PR).")
+        if forced and "main" in low:
+            deny("force-push envolvendo main não é permitido.")
+
+    # 2) Deleção ampla / destrutiva
+    if re.search(r"\brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r|-r\s+-f|-f\s+-r)\b", low):
+        if re.search(r"(\s|=)(/|~|\$home|\.|\*|\./|\.git)(\s|$|/|\*)", low):
+            deny("rm -rf com alvo amplo (/, ~, ., *, .git) é perigoso.")
+
+    # 3) Instalação global não aprovada
+    if re.search(r"\bnpm\s+(i|install|add)\b.*\s(-g|--global)\b", low) or re.search(
+        r"\b(pnpm|yarn)\s+(global\s+add|add\s+.*--global)\b", low
+    ):
+        deny("instalação global (npm/pnpm/yarn -g) não é permitida sem aprovação.")
+
+    # 4) curl|bash / wget|sh — executar script remoto sem auditoria
+    if re.search(r"\b(curl|wget)\b", low) and re.search(r"\|\s*(sudo\s+)?(bash|sh|zsh)\b", low):
+        deny("baixar e executar script remoto (curl|bash) sem auditoria não é permitido.")
+
+    # 5) Ler/imprimir secrets
+    if re.search(r"\b(cat|less|more|head|tail|bat)\b.*\.env(\.local|\.production)?\b", low):
+        deny("imprimir arquivos .env (possíveis secrets) não é permitido.")
+    if re.search(r"\becho\b.*\$\{?[A-Z_]*(TOKEN|SECRET|KEY|SERVICE_ACCOUNT)", command):
+        deny("imprimir variável de secret (TOKEN/SECRET/KEY/SERVICE_ACCOUNT) não é permitido.")
+
+    # 6) git add de service account / .env
+    if re.search(r"\bgit\s+add\b", low) and re.search(
+        r"(service[-_]?account.*\.json|\.env(\.local|\.production)?\b)", low
+    ):
+        deny("adicionar service account / .env ao git não é permitido.")
+
+
+LIVE_FLAGS = re.compile(
+    r"(PAPER_TRADING\s*=\s*false|LIVE_EXECUTION\s*=\s*true|READ_ONLY\s*=\s*false)",
+    re.IGNORECASE,
+)
+
+
+def check_write(file_path: str, content: str) -> None:
+    path = file_path or ""
+    base = os.path.basename(path)
+
+    # Editar .env real (permitir apenas exemplos)
+    if re.match(r"^\.env", base) and not base.endswith(".example"):
+        deny(f"editar {base} não é permitido (arquivo de secrets; use .env.example).")
+
+    # Habilitar trading real por flag
+    if content and LIVE_FLAGS.search(content):
+        deny("habilitar trading ao vivo (PAPER_TRADING=false / LIVE_EXECUTION=true / "
+             "READ_ONLY=false) exige pedido explícito e fase de segurança própria.")
+
+
+def main() -> None:
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        sys.exit(0)  # sem entrada válida, não bloqueia
+    tool = data.get("tool_name", "")
+    ti = data.get("tool_input", {}) or {}
+
+    if tool == "Bash":
+        check_bash(str(ti.get("command", "")))
+    elif tool in ("Edit", "Write", "MultiEdit"):
+        content = ti.get("content") or ti.get("new_string") or ""
+        if tool == "MultiEdit":
+            content = " ".join(
+                str(e.get("new_string", "")) for e in ti.get("edits", []) or []
+            )
+        check_write(str(ti.get("file_path", "")), str(content))
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
