@@ -5,6 +5,7 @@ import TopBar from './TopBar';
 import TickerBar from './TickerBar';
 import AuroraBg from './AuroraBg';
 import DebugLogButton from './DebugLogButton';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useAutoScan } from '@/hooks/useAutoScan';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -26,7 +27,9 @@ export default function AppLayout() {
           <TickerBar />
           <TopBar />
           <main className="p-4 lg:p-6">
-            <Outlet />
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
           </main>
         </div>
       </div>
