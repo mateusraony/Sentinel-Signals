@@ -1,9 +1,10 @@
-# Hooks de proteção (camada 4) — proposta, INERTE por padrão
+# Hooks de proteção (camada 4) — ATIVOS
 
 Estes hooks bloqueiam ações perigosas que instruções em Markdown não conseguem
-garantir. Seguindo a diretriz original ("propor hooks, sem implementá-los
-ainda"), **nada está ativo**: o script vem como `.claude/hooks/protect.py.example`
-e não está referenciado por nenhum `settings.json`. Ativar é um passo consciente.
+garantir. **Estão ativos neste repositório** a pedido explícito do usuário:
+`.claude/hooks/protect.py` está ligado via `.claude/settings.json` (PreToolUse
+sobre Bash/Edit/Write). O `.claude/hooks/protect.py.example` fica como cópia de
+referência/fonte. Para desligar, ver "Rollback / desativar" abaixo.
 
 ## O que os hooks bloqueiam (PreToolUse)
 
