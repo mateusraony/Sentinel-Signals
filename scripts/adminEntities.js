@@ -7,6 +7,9 @@
 // only when bundling for the scheduled scan job.
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+// Relative (not '@/') so esbuild bundles it for the cron without the Vite alias
+// — see scripts/build-scan.mjs (it only rewrites '@/api/entities').
+import { canApplyTransition, isTerminalStatus } from '../src/lib/opTransition.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) });
@@ -178,6 +181,30 @@ async function clearActiveOp(assetId, tradeOpId) {
   });
 }
 
+// Mirrors src/api/entities.js's transitionTradeOp — same compare-and-set on
+// status + same in-transaction clear of assetActiveOps on terminal states,
+// using the Admin SDK's transaction API. The decision itself lives in the
+// shared src/lib/opTransition.js, so browser and cron can never disagree.
+async function transitionTradeOp(opId, fromStatus, patch, { assetId } = {}) {
+  const opRef = db.collection('tradeOperations').doc(opId);
+  const terminal = isTerminalStatus(patch.status);
+  const activeRef = terminal && assetId ? db.collection('assetActiveOps').doc(assetId) : null;
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(opRef);
+    const activeSnap = activeRef ? await tx.get(activeRef) : null;
+    const current = snap.exists ? { id: snap.id, ...snap.data() } : null;
+    if (!canApplyTransition(current, fromStatus)) {
+      return { applied: false, currentStatus: current ? current.status : null };
+    }
+    tx.update(opRef, patch);
+    if (activeRef && activeSnap && activeSnap.exists
+        && activeSnap.data().active_trade_op_id === opId) {
+      tx.set(activeRef, { active_trade_op_id: null, updated_at: new Date().toISOString() });
+    }
+    return { applied: true };
+  });
+}
+
 export const backend = {
   entities: {
     MonitoredAsset: createEntity('monitoredAssets'),
@@ -189,7 +216,7 @@ export const backend = {
     User: createEntity('users'),
   },
   locks: { acquireScanLock, releaseScanLock },
-  tradeOps: { createTradeOpIfNoneActive, clearActiveOp },
+  tradeOps: { createTradeOpIfNoneActive, clearActiveOp, transitionTradeOp },
   quota: { getAndResetOpCounts },
 };
 

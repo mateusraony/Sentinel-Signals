@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebaseClient';
 import { strategyReviewerAgent } from '@/api/agents';
+import { canApplyTransition, isTerminalStatus } from '@/lib/opTransition';
 
 function buildQuery(collectionName, filters = {}, sort, limitCount) {
   const constraints = [];
@@ -204,6 +205,35 @@ async function clearActiveOp(assetId, tradeOpId) {
   });
 }
 
+// Compare-and-set status write for a TradeOperation. Applies `patch` only if
+// the op's status in Firestore still equals `fromStatus` (and isn't terminal),
+// so a concurrent worker — the browser scan and the cron run under separate
+// locks — can't clobber a newer state, resurrect a terminal op, or cause a
+// duplicate notification (the caller gates notify on `applied`). When the patch
+// lands a terminal status, `assetActiveOps/{assetId}` is cleared in the SAME
+// transaction, closing the window where a crash between the status write and a
+// separate clearActiveOp would strand the asset (blocking any new entry).
+async function transitionTradeOp(opId, fromStatus, patch, { assetId } = {}) {
+  const opRef = doc(db, 'tradeOperations', opId);
+  const terminal = isTerminalStatus(patch.status);
+  const activeRef = terminal && assetId ? doc(db, 'assetActiveOps', assetId) : null;
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(opRef);
+    // All reads must precede writes in a Firestore transaction.
+    const activeSnap = activeRef ? await tx.get(activeRef) : null;
+    const current = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+    if (!canApplyTransition(current, fromStatus)) {
+      return { applied: false, currentStatus: current ? current.status : null };
+    }
+    tx.update(opRef, patch);
+    if (activeRef && activeSnap && activeSnap.exists()
+        && activeSnap.data().active_trade_op_id === opId) {
+      tx.set(activeRef, { active_trade_op_id: null, updated_at: new Date().toISOString() });
+    }
+    return { applied: true };
+  });
+}
+
 export const backend = {
   entities: {
     MonitoredAsset: createEntity('monitoredAssets'),
@@ -217,6 +247,6 @@ export const backend = {
   },
   agents: strategyReviewerAgent,
   locks: { acquireScanLock, releaseScanLock },
-  tradeOps: { createTradeOpIfNoneActive, clearActiveOp },
+  tradeOps: { createTradeOpIfNoneActive, clearActiveOp, transitionTradeOp },
   quota: { getAndResetOpCounts },
 };

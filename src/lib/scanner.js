@@ -1084,18 +1084,20 @@ export async function persistScanResults(scanResult) {
     }
     if (newStatus !== op.status || tp1Hit !== op.tp1_hit || tp2Hit !== op.tp2_hit || newCurrentStop !== op.current_stop
         || updatePayload.rf_reverse_bars_count !== (op.rf_reverse_bars_count || 0)) {
-      await backend.entities.TradeOperation.update(op.id, {
+      // Compare-and-set against the op's current status in Firestore: the
+      // browser scan and the cron run under separate locks, so a plain update
+      // could clobber a newer state or resurrect a terminal op. transitionTradeOp
+      // also folds clearActiveOp into the same transaction on terminal states.
+      const { applied } = await backend.tradeOps.transitionTradeOp(op.id, op.status, {
         status: newStatus,
         tp1_hit: tp1Hit,
         tp2_hit: tp2Hit,
         current_stop: newCurrentStop,
         ...updatePayload,
-      });
-      // Frees the asset up for a new entry (see createTradeOpIfNoneActive).
-      if (['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(newStatus)) {
-        await backend.tradeOps.clearActiveOp(op.asset_id, op.id);
-      }
-      if (isTelegramConfigured()) {
+      }, { assetId: op.asset_id });
+      // Only notify when THIS pass actually applied the transition — prevents
+      // duplicate Telegram messages when both loops race the same op.
+      if (applied && isTelegramConfigured()) {
         if (newStatus === 'STOP_HIT' && op.status !== 'STOP_HIT') notifyStopHit(op, closePrice).catch(() => {});
         else if (newStatus === 'TP2_HIT') notifyTP2Hit(op, closePrice).catch(() => {});
         else if (tp1Hit && !op.tp1_hit) notifyTP1Hit(op, closePrice).catch(() => {});
@@ -1214,11 +1216,11 @@ async function priceCheckActiveOpsInner() {
     }
 
     if (newStatus !== op.status || tp1Hit !== op.tp1_hit || tp2Hit !== op.tp2_hit || newCurrentStop !== op.current_stop) {
-      await backend.entities.TradeOperation.update(op.id, { status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit, current_stop: newCurrentStop, ...updatePayload });
-      if (['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(newStatus)) {
-        await backend.tradeOps.clearActiveOp(op.asset_id, op.id);
-      }
-      if (isTelegramConfigured()) {
+      // Same compare-and-set as persistScanResults — this price-check loop uses
+      // a different lock ('price-check'), so it can race the full scan on the
+      // same op; the transaction serialises the write and folds clearActiveOp.
+      const { applied } = await backend.tradeOps.transitionTradeOp(op.id, op.status, { status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit, current_stop: newCurrentStop, ...updatePayload }, { assetId: op.asset_id });
+      if (applied && isTelegramConfigured()) {
         if (newStatus === 'STOP_HIT') notifyStopHit(op, price).catch(() => {});
         else if (newStatus === 'TP2_HIT') notifyTP2Hit(op, price).catch(() => {});
         else if (tp1Hit && !op.tp1_hit) notifyTP1Hit(op, price).catch(() => {});
