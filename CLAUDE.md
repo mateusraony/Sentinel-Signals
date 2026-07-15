@@ -1,25 +1,43 @@
 # Sentinel Signals
 
-Painel de monitoramento de sinais de trading cripto. Escaneia pares via API pública da Binance, calcula indicadores técnicos (Range Filter, RSI, MACD, EMA), gera sinais de confluência multi-timeframe e gerencia o ciclo de vida de operações (entrada → TP1/TP2/stop → fechamento), com alertas via Telegram e um assistente de IA ("Strategy Reviewer") para revisão de disciplina operacional.
+Painel de monitoramento de sinais de trading cripto. Escaneia pares via API
+pública da Binance, calcula indicadores técnicos (Range Filter, RSI, MACD, EMA,
+ATR, ADX, Choppiness, estrutura SMC/ICT), gera sinais de confluência
+multi-timeframe e gerencia o ciclo de vida de operações (entrada → TP1/TP2/stop
+→ fechamento), com alertas via Telegram. **É um painel de sinalização — nenhuma
+ordem é enviada à exchange (TP/Stop são virtuais).**
 
-Este projeto foi originalmente gerado pela plataforma no-code **Base44** e exportado para o GitHub. Toda a dependência do Base44 (auth, banco de dados, agente de IA, build tooling, branding) foi removida e substituída por **Firebase**. Não reintroduza nenhuma referência a `@base44/*`, `base44.com` ou ao ecossistema Base44.
+Originado na plataforma no-code **Base44** e migrado para **Firebase**. Não
+reintroduza `@base44/*`, `base44.com` nem nada do ecossistema Base44.
+
+> Detalhe por domínio vive em `.claude/rules/`; riscos em `docs/known-risks.md`.
+> Este arquivo é o índice permanente — mantê-lo **abaixo de ~200 linhas**.
 
 ## Stack
 
-- **Frontend**: Vite + React 18 (JSX, não TypeScript — `checkJs` via `jsconfig.json` é só best-effort), Tailwind CSS, shadcn/ui, TanStack Query, React Router. Hospedado como Static Site gratuito no **Render** (`render.yaml`, serviço `sentinel-signals`), build automático a cada push em `main`.
-- **Backend**: Firebase
-  - **Firestore** — banco de dados principal (NoSQL orientado a documentos).
-  - **Authentication** — ver aviso abaixo, atualmente anônima temporária.
-  - ~~Cloud Functions~~ — **não usadas.** O usuário recusou explicitamente o plano Blaze (não quer cadastrar cartão, não quer nenhum custo possível). Isso é uma restrição permanente do projeto, não temporária — não sugira Cloud Functions/Blaze de novo sem o usuário pedir. O código em `functions/` existe mas nunca foi (nem será) deployado.
-- **`server/`** — pequeno backend Node/Express (verifica Firebase ID token, lê Firestore com `firebase-admin`), **não está deployado nem referenciado pelo frontend agora**. Foi construído para segurar secrets de API fora do browser, mas o usuário optou explicitamente por configurar o Telegram direto na página (ver "Estado atual — Telegram e Strategy Reviewer" abaixo). Fica reservado para quando o Strategy Reviewer precisar de um lugar para guardar a chave da Anthropic — só nesse momento adicione o serviço de volta a `render.yaml` e aponte o frontend para ele.
+- **Frontend**: Vite + React 18 (JSX, não TS — `checkJs` é best-effort),
+  Tailwind, shadcn/ui, TanStack Query, React Router. **Static Site gratuito no
+  Render** (`render.yaml`, serviço `sentinel-signals`, deploy a cada push em `main`).
+- **Backend**: Firebase — **apenas Firestore + Authentication**.
+  - **Firestore**: banco principal (NoSQL).
+  - **Auth**: anônima temporária (ver decisões abaixo).
+  - **Sem Cloud Functions / sem Blaze** — restrição **permanente** (o usuário
+    recusou cartão/custo). `functions/` existe mas nunca é deployado. Não sugira
+    Cloud Functions/Blaze de novo sem pedido explícito.
+- **`server/`** (Express + `firebase-admin`): **está deployado** no Render como
+  `sentinel-signals-api`. Recebe `POST /webhook/tradingview` (só loga + notifica
+  Telegram, **nunca envia ordem**), `GET /health`, `POST /api/telegram-notify`
+  (não usado pelo frontend hoje). Secrets via env do Render (nunca no repo).
 
 ## Arquitetura de dados
 
-`src/api/entities.js` exporta `backend`, um adaptador fino sobre o Firestore que espelha `backend.entities.<Nome>.{list,filter,create,update,delete,bulkCreate,deleteMany}`. Ele existe para que ~20 arquivos consumidores (`src/lib/scanner.js`, `src/lib/logger.js`, `src/lib/pineParser.js`, a maioria das páginas/componentes) não precisem conhecer detalhes do Firestore diretamente. Ao adicionar uma nova entidade, siga o mesmo padrão (`createEntity('nomeDaColecao')`) em vez de chamar `firebase/firestore` direto nos componentes.
+`src/api/entities.js` exporta `backend`, um adaptador fino sobre o Firestore
+(`backend.entities.<Nome>.{list,filter,create,update,delete,bulkCreate,deleteMany}`,
+além de `backend.locks` e `backend.tradeOps`). ~20 arquivos consomem isso sem
+conhecer o Firestore direto. Ao adicionar entidade, use `createEntity('colecao')`
+— nunca chame `firebase/firestore` direto nos componentes.
 
-Coleções (nome do arquivo em `docs/schema-reference/*.jsonc` → coleção real):
-
-| Schema de referência | Coleção Firestore |
+| Schema de referência (`docs/schema-reference/*.jsonc`) | Coleção Firestore |
 |---|---|
 | `MonitoredAsset.jsonc` | `monitoredAssets` |
 | `AssetState.jsonc` | `assetStates` |
@@ -27,67 +45,113 @@ Coleções (nome do arquivo em `docs/schema-reference/*.jsonc` → coleção rea
 | `TradeOperation.jsonc` | `tradeOperations` |
 | `PriceAlert.jsonc` | `priceAlerts` |
 | `SystemLog.jsonc` | `systemLogs` |
-| `User.jsonc` | `users` (perfil `{ role: 'admin'|'user' }`, chave = uid do Firebase Auth) |
+| `User.jsonc` | `users` (`{ role }`, chave = uid) |
 
-Outras coleções sem `.jsonc` de referência (criadas já pensando em Firestore, sem equivalente Base44): `agentConversations/{id}/messages` (chat do Strategy Reviewer, não usada no momento — ver abaixo), `telegramConfig/{uid}` (também não usada no momento — o chat_id do Telegram vive só no `localStorage` do navegador agora).
+Sem `.jsonc`: `scannerLocks` (lock de scan), `assetActiveOps/{assetId}` (garante
+1 op ativa por ativo via transação de doc único), `strategyConfig/current`
+(parâmetros de estratégia sincronizados painel↔cron), `agentConversations`
+(Strategy Reviewer, pausado), `telegramConfig/{uid}` (não usado — chat_id vive no
+`localStorage` hoje).
 
-`src/api/agents.js` (`strategyReviewerAgent`, exposto como `backend.agents`) segue o mesmo espírito: mesma forma de chamada (`listConversations`, `createConversation`, `getConversation`, `addMessage`, `subscribeToConversation`) que a página `StrategyReviewer.jsx` usava — hoje `StrategyReviewer.jsx` está substituída por um placeholder "em breve" (ver aviso abaixo) e não chama mais essas funções.
+## ⚠️ Decisões intencionais — não "corrija" sem pedido
 
-## ⚠️ Estado atual — auth, Telegram e Strategy Reviewer
+Revertidas/pausadas de propósito a pedido do usuário (ver `docs/known-risks.md`):
 
-A pedido explícito do usuário, três pontos do plano original de segurança (Fases 1 e 4 da migração) foram deliberadamente revertidos ou pausados. Não "corrija" nenhum dos três sem o usuário pedir — cada reversão já foi discutida e é intencional:
+1. **Sem tela de login.** `AuthContext.jsx` faz `signInAnonymously()` — qualquer
+   URL entra. `firestore.rules` ainda exige `isSignedIn()`. `Login.jsx` existe,
+   só não é renderizado. Reativar exige mexer em `App.jsx` + `AuthContext.jsx`.
+2. **Telegram direto no navegador (canal "ao vivo").** `src/lib/telegram.js` /
+   `TelegramSettings.jsx`: token + chat_id em `localStorage`, envio direto do
+   browser. Só funciona com a aba aberta. O **canal 24h** (scan agendado) é
+   separado e usa o token com segurança, fora do browser.
+3. **Strategy Reviewer pausado.** `src/pages/StrategyReviewer.jsx` é placeholder;
+   `src/api/agents.js` segue implementado mas desconectado.
 
-1. **Sem tela de login.** `AuthContext.jsx` faz `signInAnonymously()` automaticamente em vez de exigir email/senha — qualquer pessoa com a URL entra sem senha (as regras do Firestore continuam exigindo `isSignedIn()`, então o banco não fica 100% público, mas também não há controle de quem acessa). `Login.jsx` e `UserNotRegisteredError.jsx` continuam no repo, só não são renderizados por `App.jsx`. Reativar exige: voltar a ramificação `isAuthenticated`/`Login` em `App.jsx` (ver histórico do arquivo) e desligar o `signInAnonymously` de `AuthContext.jsx`.
-2. **Telegram configurado direto no navegador (canal "ao vivo").** `src/lib/telegram.js`/`TelegramSettings.jsx` voltaram ao modelo original: Bot Token + Chat ID salvos em `localStorage`, mensagens enviadas direto do browser para `api.telegram.org` — só funciona com a aba aberta. Isso reintroduz o risco de exposição do token via XSS/devtools que a Fase 4 da migração original corrigiu — decisão consciente do usuário, que preferiu simplicidade a essa camada de segurança para esse canal específico. `server/` e `src/lib/apiBackend.js` (a versão que mandava tudo por um backend) existem no repo, só não são usados. **O canal 24h (ver seção "Scan agendado" abaixo) é separado e usa o token com segurança, fora do browser.**
-3. **Strategy Reviewer pausado.** `src/pages/StrategyReviewer.jsx` mostra só uma mensagem "em breve" — o chat de IA real (`src/api/agents.js`, tabela `agentConversations`) segue implementado mas não conectado a nenhum backend. Para reativar: adicionar uma rota em `server/` que chame a API da Anthropic (mesmo padrão do `/api/telegram-notify` que já existe lá), colocar o serviço de volta em `render.yaml`, reconectar `StrategyReviewer.jsx` a `backend.agents.*`.
+Outras decisões permanentes: **não** reintroduzir Base44; **não** usar Vercel/
+Netlify (manter GitHub + Render + Firebase); **não** habilitar trading real;
+**não** alterar algo funcional sem necessidade demonstrada.
 
-## Scan agendado (GitHub Actions) — funciona sem navegador aberto
+## Scan agendado (GitHub Actions) — roda sem navegador
 
-O escaneamento de mercado normalmente só roda enquanto alguém tem a aba do app aberta (`src/hooks/useAutoScan.js`, client-side). Para não depender disso, `.github/workflows/scan.yml` roda a cada 5 minutos (mínimo permitido pelo GitHub Actions), gratuito, sem cartão, mesmo com o navegador/computador do usuário desligados.
+`.github/workflows/scan.yml` roda `scripts/run-scan.mjs` a cada 5 min (mínimo do
+GitHub Actions, gratuito). `run-scan.mjs` chama `scanAllAssets()` /
+`priceCheckActiveOps()` **de `src/lib/scanner.js` sem modificação** — mesma
+lógica no browser e no cron. `scripts/build-scan.mjs` empacota com esbuild e
+redireciona 3 imports para versões Node:
 
-- `scripts/run-scan.mjs` chama `scanAllAssets()`/`priceCheckActiveOps()` **de `src/lib/scanner.js` sem modificação** — a mesma lógica de trading roda no browser e no cron job, evitando duas implementações divergindo com o tempo.
-- Isso só é possível porque `scripts/build-scan.mjs` empacota o script com `esbuild` antes de rodar, redirecionando três imports para versões compatíveis com Node (o resto do grafo de dependências — indicadores, `marketDataProvider.js` — já era puro/sem API de browser):
-  - `@/api/entities` → `scripts/adminEntities.js` (mesma forma de chamada de `src/api/entities.js`, mas com `firebase-admin` em vez do SDK client — usa a service account, ignora as `firestore.rules`, como convém a um job de confiança)
-  - `./telegram` → `scripts/adminTelegram.js` (mesmas funções `notify*`, mas lê `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` de variáveis de ambiente em vez de `localStorage`)
-  - `./pineParser` → `scripts/adminPineConfig.js` (retorna os `DEFAULTS` fixos — não existe cópia server-side do Pine Script customizado pelo usuário; se `minScore`/`tp1R`/`tp1QtyPercent`/`trailAtrMult` forem alterados na página Pine Script, atualize os dois lugares manualmente. `rf_period`/`rf_multiplier` não têm esse problema, já ficam salvos por ativo no Firestore via `syncPineToAssets`.)
-- Rodar localmente: `npm run scan` (variáveis de ambiente `FIREBASE_SERVICE_ACCOUNT_JSON`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` — as duas últimas podem ser qualquer string para testar sem enviar mensagem real).
-- Segredos do workflow (GitHub → repo → Settings → Secrets and variables → Actions): `FIREBASE_SERVICE_ACCOUNT_JSON` (chave de service account do Firebase — Console Firebase → Configurações do projeto → Contas de serviço), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`.
-- `scripts/dist/` é o output do esbuild — gitignored (via a entrada genérica `dist` no `.gitignore`), não commitar.
+- `@/api/entities` → `scripts/adminEntities.js` (firebase-admin, ignora rules)
+- `./telegram` → `scripts/adminTelegram.js` (lê token/chat_id de env)
+- `./pineParser` → `scripts/adminPineConfig.js` (**lê `strategyConfig/current` do
+  Firestore** — o mesmo doc que a página Pine Script escreve via `syncPineToAssets`;
+  mantenha o par `DEFAULTS`/`SYNCED_STRATEGY_KEYS` espelhado com `src/lib/pineParser.js`).
 
-## Segurança — regras já estabelecidas, não regrida
+Rodar local: `npm run scan`. Secrets do workflow (Settings → Secrets → Actions):
+`FIREBASE_SERVICE_ACCOUNT_JSON`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
+`HEALTHCHECKS_PING_URL` (opcional, watchdog). `scripts/dist/` é gitignored.
 
-1. **Secrets de terceiros nunca no client, quando existirem.** Isso está temporariamente violado para o Telegram (ver item 2 acima, decisão do usuário) — não estenda esse padrão para novas integrações sem perguntar. Se/quando o Strategy Reviewer for religado, a chave da Anthropic vai para `server/` (env var do Render), nunca para o bundle do frontend.
-2. **`firestore.rules` é a fonte de verdade de autorização**, não confie em checagem client-side. Padrão usado: coleções de negócio liberadas para qualquer usuário `authenticated` (inclusive anônimo, ver aviso acima); `users/{uid}` só pode ser criado/editado pelo próprio dono e nunca pode setar `role != 'user'` a partir do cliente (promoção a admin é manual, via Firestore console ou Admin SDK — nunca exponha esse caminho no client); `agentConversations/{id}/messages` é somente-leitura para o client.
-3. Antes de mudar `firestore.rules`, rode `firebase deploy --only firestore:rules` (ou o script direto via Firebase Rules API se o `firebase-tools` reclamar de permissão) e confira que não sobrou nenhuma regra `allow read, write: if true`.
+**Outros workflows**: `ci.yml` (lint + `npm test` Vitest + build a cada PR/push),
+`backup.yml` (backup diário → branch `backups`), `keep-warm.yml` (ping `/health`
+a cada 10 min p/ não hibernar o Render free), `deploy-firestore.yml` (deploy
+manual de rules/índices).
 
-## Rodando localmente
+## Segurança — não regrida (detalhe em `.claude/rules/security.md`)
 
-```
-npm install
-cp .env.example .env.local   # preencha com o config do Web App (Console Firebase > Configurações do projeto > Seus apps)
-npm run dev
-```
+1. Secrets de terceiros **nunca no client** (exceção temporária consciente: o
+   token do Telegram do canal "ao vivo", decisão do usuário — não estenda).
+2. **`firestore.rules` é a fonte de verdade de autorização.** Coleções de negócio
+   liberadas p/ qualquer `isSignedIn()`; `users/{uid}` não pode setar `role` no
+   client; promoção a admin é manual. Antes de mudar rules, rode
+   `firebase deploy --only firestore:rules` e confira que não sobrou `if true`.
+3. **Trading é read-only/virtual.** Nenhuma skill/ferramenta pode criar/cancelar
+   ordem, mexer em posição/alavancagem ou habilitar live. Ver
+   `.claude/rules/trading-safety.md`.
 
-Scripts: `npm run dev`, `npm run build`, `npm run lint` / `npm run lint:fix`, `npm run typecheck` (ver limitação abaixo), `npm run preview`.
+## Comandos
 
-## Deploy
+`npm run dev` · `npm run build` · `npm run lint` / `lint:fix` · `npm test` ·
+`npm run typecheck` (best-effort) · `npm run scan` · `npm run preview`.
 
-**Frontend (Render, 100% gratuito, sem cartão):** `render.yaml` define o Static Site `sentinel-signals`. Um Blueprint do Render conectado ao repo republica automaticamente a cada push em `main`.
+## Roteador de capacidades (o que carregar por tarefa)
 
-**Firestore (Firebase, plano Spark/gratuito — suficiente, não precisa de Blaze):**
-```
-firebase deploy --only firestore:rules,firestore:indexes
-```
-Se a conta de serviço/CLI usada não tiver permissão (erro de `serviceusage.googleapis.com`), use o script direto via Firebase Rules API em vez do `firebase-tools` (ver histórico do PR de migração para o padrão usado).
+Sempre **considere** todas as capacidades; **carregue/execute** só a relevante.
+Skills em `.claude/skills/`, regras em `.claude/rules/` (carregam pelos
+`CLAUDE.md` aninhados nas pastas de cada domínio).
 
-## Limitações conhecidas (não é regressão desta migração)
+| Tarefa | Ative |
+|---|---|
+| Bug | `sentinel-bug-audit` (reproduzir → teste de regressão → verificar) |
+| Motor de trading | `sentinel-trading-engine-review` + `sentinel-state-machine-test` (concorrência, replay temporal) |
+| Pine/indicador | `sentinel-pine-parity` (comparação barra a barra) |
+| Visual/UI | `sentinel-ui-review` (não tocar lógica de negócio) |
+| Segurança/secrets/exec | `sentinel-security-review` (menor privilégio, blast radius, rollback) |
+| Milestone grande | `sentinel-release-gate` + plan mode |
+| Decisão crítica | `sentinel-council-review` (revisores independentes) |
+| Consulta histórica | `CLAUDE.md` → `.claude/rules/` → memória nativa |
 
-- **`npm run typecheck` não está no CI** e tem ~80 erros pré-existentes — a maioria vem do `checkJs` do TypeScript tentando inferir tipos por cima dos componentes shadcn/ui baseados em `forwardRef` (ex: `Property 'className' does not exist on type '{}'`), mais alguns gaps reais (`import.meta.env` sem os tipos do cliente Vite). Corrigir isso é um projeto separado (converter para `.d.ts`/JSDoc consistente ou migrar para TS de verdade), não algo para resolver ad-hoc.
-- Bundle principal (`dist/assets/index-*.js`) passa de 500kB minificado — Vite avisa mas não falha o build. Rota para melhorar: `build.rollupOptions.output.manualChunks` ou `import()` dinâmico nas páginas mais pesadas (`MonthlyReport.jsx` usa `jspdf`, por exemplo).
-- `react-hooks/exhaustive-deps` está ativo como `warn` (não `error`) — há warnings intencionais (ex: `useAutoScan.js` usa `[]` de propósito para não reiniciar o timer de polling a cada re-render; `AssetCard.jsx` depende só do `.id` do sinal/operação para não disparar a animação de novo a cada refetch). Não "corrija" esses warnings sem entender por que a dependência foi omitida.
+## Limitações conhecidas (não são regressões)
+
+- `npm run typecheck` **não está no CI** e tem ~80 erros pré-existentes (maioria
+  `checkJs` sobre shadcn/ui `forwardRef`). Corrigir é projeto à parte.
+- Bundle principal passa de 500kB (Vite avisa, não falha). Rota: `manualChunks`
+  ou `import()` dinâmico (`MonthlyReport.jsx` usa `jspdf`).
+- `react-hooks/exhaustive-deps` é `warn`; há omissões **intencionais**
+  (`useAutoScan.js`, `AssetCard.jsx`) — não "corrija" sem entender o porquê.
 
 ## Convenções
 
-- Import de módulos internos sempre via alias `@/` → `src/` (configurado em `vite.config.js` `resolve.alias` **e** `jsconfig.json` `paths` — os dois precisam ficar em sincronia, não é automático).
-- Logging estruturado: use `logInfo`/`logWarn`/`logError`/`logDebug` de `src/lib/logger.js` (grava em `SystemLog`, visível no botão de Debug Log da UI) em vez de `console.*` solto ou catches vazios silenciosos.
-- Não adicione dependências novas sem confirmar que serão de fato usadas — este projeto já teve várias dependências mortas removidas (`lodash`, `react-quill`, `three`, `html2canvas`, `canvas-confetti`, `react-leaflet`, pacotes do Stripe) por terem sido scaffolding do template Base44 nunca conectado a nada.
+- Imports internos via alias `@/` → `src/` (sincronizar `vite.config.js` +
+  `jsconfig.json` — não é automático).
+- Logging estruturado: `logInfo`/`logWarn`/`logError`/`logDebug` de
+  `src/lib/logger.js` (grava em `SystemLog`) em vez de `console.*` ou catch vazio.
+- Não adicione dependência nova sem confirmar uso real (este projeto já removeu
+  várias dependências mortas do template Base44).
+
+## Regras sempre carregadas (imports)
+
+Princípios do dia a dia e política de trading valem em toda sessão. As demais
+regras de `.claude/rules/` carregam pelos `CLAUDE.md` aninhados nas pastas de
+cada domínio (`src/lib/`, `src/api/`, `src/pages/`, `src/components/`, `server/`,
+`scripts/`, `.github/workflows/`).
+
+@.claude/rules/operating-principles.md
+@.claude/rules/trading-safety.md

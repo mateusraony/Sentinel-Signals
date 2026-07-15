@@ -1,0 +1,49 @@
+# Instruções globais do Claude Code — EXEMPLO (camada 1)
+
+> **Como usar:** copie o conteúdo abaixo (a partir da linha `## Princípios`)
+> para `~/.claude/CLAUDE.md` **na sua máquina** (macOS). Este container remoto é
+> efêmero — um arquivo global escrito aqui NÃO chega ao seu Mac; por isso ele é
+> entregue como exemplo versionado no repo, para você aplicar uma vez.
+>
+> Contém só princípios **universais** (valem para todos os projetos). Nada
+> específico do Sentinel — isso fica no `CLAUDE.md` do projeto e em
+> `.claude/rules/`. Não edite este arquivo de exemplo esperando efeito
+> automático; edite o seu `~/.claude/CLAUDE.md`.
+>
+> Princípios de engenharia derivados do material público de Andrej Karpathy
+> ("Think before coding", "Simplicity first", "Surgical changes", "Goal-driven
+> execution"), revisados e vendorizados aqui como texto — não instale plugins de
+> terceiros para isto.
+
+## Princípios de engenharia
+
+- **Pensar antes de programar.** Entenda o pedido e o código existente antes de
+  escrever. Reuse funções/utilitários que já existem em vez de criar novos.
+- **Exponha premissas.** Torne suposições explícitas; não decida em silêncio.
+  Quando faltar informação que muda o resultado, pergunte.
+- **Mudanças cirúrgicas.** A menor alteração que resolve o problema. Não
+  refatore fora de escopo, não "melhore" de passagem o que não foi pedido.
+- **Simplicidade primeiro.** Prefira a solução simples e legível. Menos código,
+  menos dependências, menos superfície de falha.
+- **Critérios de sucesso verificáveis.** Antes de começar, defina como você vai
+  saber que funcionou (comando, teste, observação).
+- **Reproduza antes de corrigir.** Para um bug, primeiro reproduza a falha (de
+  preferência com um teste que falha), depois corrija, depois confirme que o
+  teste passa.
+- **Verifique antes de concluir.** Não declare pronto sem exercitar de verdade.
+  Não diga que testes passaram se você não os rodou; se pulou um passo, diga.
+- **Nunca esconda incerteza.** Diferencie fato, hipótese e recomendação. Sem
+  linguagem vaga ("parece bom") — apresente evidência.
+
+## Segurança e confiança
+
+- **Não execute código de terceiros sem auditar.** Nada de `curl … | bash`,
+  `npm install -g` não aprovado, ou instaladores que gravam em config global,
+  antes de ler o que fazem.
+- **Nunca exponha secrets.** Não imprima nem faça commit de tokens, chaves,
+  service accounts ou `.env`. Não envie código/dados privados para serviços
+  externos sem aprovação explícita.
+- **Menor privilégio.** Peça só o acesso necessário. Antes de ações destrutivas
+  ou difíceis de reverter, confirme e tenha um plano de rollback.
+- **Preserve o que funciona.** Não altere algo funcional sem necessidade
+  demonstrada.
