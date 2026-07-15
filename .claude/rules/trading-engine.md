@@ -39,22 +39,30 @@ nunca deve receber nova transição.**
   separados: o CAS por-op protege independentemente do lock (que é fail-open), e
   serializar os dois atrasaria o price-check leve, que é o caminho rápido de
   segurança.
-- **[RESIDUAL — atacar junto com P0-c/d] Precedência stop>TP entre loops.** O
-  CAS resolve a corrida de dados, mas quando os dois loops decidem transições
-  DIFERENTES a partir do mesmo estado, "primeiro a commitar ganha" — não aplica
-  a regra "stop tem prioridade" (hoje só intra-loop, `scanner.js:972`), e um
-  `exit_price` pode ser gravado com stop defasado. Inseparável do candle de
-  entrada retroativo (P0-c) e do trailing look-ahead (P0-d).
-- **Candle de entrada retroativo.** O loop usa high/low do último candle fechado
-  (`scanner.js:956-961`) sem comparar com `candle_close_time`/horário da entrada
-  — o próprio candle de entrada pode "bater" TP/stop com movimento anterior à
-  entrada. Falta guard temporal.
-- **Trailing look-ahead.** O stop de trailing vem do `closePrice`
-  (`scanner.js:1041-1046`) e é testado contra o high/low do MESMO candle
-  (`:1049`).
-- **`rf_reverse_bars_count` por scan, não por candle.** Incrementa `+1` por
-  passada (`scanner.js:998`), não por candle único — cron 5min sobre sinal de 4h
-  conta demais. (Mascarado só porque `useInvalidation` é `false` por default.)
+- **[CORRIGIDO — P0-c] Candle de entrada retroativo.** `persistScanResults` só
+  avalia stop/TP por high/low quando o candle avaliado fechou ESTRITAMENTE
+  depois do candle de sinal (`isCandleUsableForExits` em
+  `src/lib/opExitRules.js`, comparando `tfData.lastCandleTime` com
+  `op.candle_close_time`). Ops legadas sem `candle_close_time` mantêm o
+  comportamento antigo (fallback explícito). O price-check por preço spot cobre
+  o intervalo ao vivo — sem buraco de proteção.
+- **[CORRIGIDO — P0-d] Trailing look-ahead.** As saídas do runner são avaliadas
+  contra o stop ARMAZENADO; o avanço do trailing (`advanceTrailingStop`) só
+  acontece depois, do fechamento, e passa a proteger no candle SEGUINTE. O
+  `exit_price` de stop do runner agora usa o stop armazenado (nunca o avançado
+  no mesmo candle).
+- **[CORRIGIDO — P0-e] `rf_reverse_bars_count` por candle.** Deduplicado por
+  `rf_reverse_last_candle` (`nextRfReverseCount`) — N passadas do cron sobre o
+  mesmo candle contam 1x; reset quando o RF volta a favor; fallback por-passada
+  se o feed não trouxer timestamp.
+- **[RESIDUAL — aguardando dados] Precedência stop>TP entre loops.** O CAS
+  resolve a corrida de dados; com P0-c/d corrigidos, o cenário grave (TP1
+  retroativo vencendo stop real) deixou de existir. O que resta — dois loops
+  decidindo transições legítimas diferentes no mesmo instante — é raro e agora
+  **observável**: toda transição descartada pelo CAS gera `logWarn` em
+  `SystemLog` ("Transição descartada pelo CAS"). Só investir numa regra dura de
+  precedência (stop autoritativo entre loops) se os logs mostrarem ocorrência
+  real.
 
 ## Regras ao mexer aqui
 

@@ -23,6 +23,7 @@ import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './indicators/smcStructure';
 import { getPineConfig } from './pineParser';
+import { isCandleUsableForExits, advanceTrailingStop, nextRfReverseCount } from './opExitRules';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
 import {
@@ -959,6 +960,12 @@ export async function persistScanResults(scanResult) {
     // For SELL: stop checked against high, TPs against low
     const stopCheckPrice = isBuy ? candleLow : candleHigh;
     const tpCheckPrice = isBuy ? candleHigh : candleLow;
+    // P0-c: the signal candle itself (and older candles, on replay) contains
+    // price movement from BEFORE the entry existed — its high/low must not
+    // trigger stop/TP retroactively. Time Stop / Chop / RF state checks are
+    // not intra-candle price action and stay unaffected; live price coverage
+    // continues via priceCheckActiveOps meanwhile.
+    const candleUsable = isCandleUsableForExits(tfData.lastCandleTime, op.candle_close_time);
     const rfFilt = tfData.rf?.filterValue;
     const rfDir = tfData.rf?.direction;
     const nowIso = new Date().toISOString();
@@ -970,7 +977,8 @@ export async function persistScanResults(scanResult) {
 
     if (!tp1Hit) {
       // Check stop first (stop has priority over TP on same candle for safety)
-      const stopHit = isBuy ? stopCheckPrice <= op.current_stop : stopCheckPrice >= op.current_stop;
+      const stopHit = candleUsable
+        && (isBuy ? stopCheckPrice <= op.current_stop : stopCheckPrice >= op.current_stop);
 
       // Time Stop: close if TP1 hasn't hit within tier.timeStopBars candles
       // of the SIGNAL timeframe since entry — counted by elapsed time rather
@@ -994,10 +1002,17 @@ export async function persistScanResults(scanResult) {
       // is intentionally not replicated here — it needs a freshly computed
       // opposite-direction score not otherwise available in this loop, and
       // this toggle is off by default in the reference strategy.
-      const reverseBars = (isBuy ? rfDir === -1 : rfDir === 1)
-        ? (op.rf_reverse_bars_count || 0) + 1
-        : 0;
+      // P0-e: count CANDLES, not scanner passes — the 5-minute cron would
+      // otherwise increment the same 4h/1h candle dozens of times.
+      const rfCounter = nextRfReverseCount({
+        rfReversedAgainst: isBuy ? rfDir === -1 : rfDir === 1,
+        prevCount: op.rf_reverse_bars_count || 0,
+        prevCandleTime: op.rf_reverse_last_candle || null,
+        candleTime: tfData.lastCandleTime || null,
+      });
+      const reverseBars = rfCounter.count;
       updatePayload.rf_reverse_bars_count = reverseBars;
+      updatePayload.rf_reverse_last_candle = rfCounter.lastCandle;
       const invalidationTriggered = pineConfig.useInvalidation === true
         && reverseBars >= (pineConfig.invalidRFBars ?? 2);
 
@@ -1022,7 +1037,7 @@ export async function persistScanResults(scanResult) {
         updatePayload.closed_reason = 'TIME_STOP';
         updatePayload.exit_price = closePrice;
         updatePayload.closed_at = nowIso;
-      } else if ((isBuy && tpCheckPrice >= op.tp1) || (!isBuy && tpCheckPrice <= op.tp1)) {
+      } else if (candleUsable && ((isBuy && tpCheckPrice >= op.tp1) || (!isBuy && tpCheckPrice <= op.tp1))) {
         tp1Hit = true;
         newStatus = 'RUNNER_ACTIVE';
         newCurrentStop = op.entry_price;
@@ -1031,30 +1046,26 @@ export async function persistScanResults(scanResult) {
       }
     } else {
       // rf_reverse_bars_count only matters pre-TP1 (Chop Exit/Invalidation
-      // gates) — keep it stable post-TP1 so the update-guard below doesn't
-      // trigger a write every pass just because updatePayload didn't set it.
+      // gates) — keep it (and its candle marker) stable post-TP1 so the
+      // update-guard below doesn't trigger a write every pass just because
+      // updatePayload didn't set it.
       updatePayload.rf_reverse_bars_count = op.rf_reverse_bars_count || 0;
+      updatePayload.rf_reverse_last_candle = op.rf_reverse_last_candle || null;
 
-      // Advance the runner's stop via ATR trailing (never retreats) before
-      // evaluating exits — mirrors the Pine's same-bar order (runner
-      // conduction happens before the exit checks that use it).
-      if ((op.exit_mode === 'HYBRID_RF_ATR' || op.exit_mode === 'ATR_TRAILING') && tfData.atrValue) {
-        const trailMult = pineConfig.trailAtrMult ?? 2.0;
-        const atrTrailStop = isBuy
-          ? closePrice - tfData.atrValue * trailMult
-          : closePrice + tfData.atrValue * trailMult;
-        newCurrentStop = isBuy ? Math.max(newCurrentStop, atrTrailStop) : Math.min(newCurrentStop, atrTrailStop);
-      }
-
-      const runnerStopHit = isBuy ? stopCheckPrice <= newCurrentStop : stopCheckPrice >= newCurrentStop;
+      // P0-d: exits are evaluated against the STORED stop — a trailing stop
+      // derived from this candle's close only protects from the NEXT candle
+      // on; testing it against the same candle's low/high is look-ahead. The
+      // trail advance happens after the exit checks, at the end of this block.
+      const runnerStopHit = candleUsable
+        && (isBuy ? stopCheckPrice <= op.current_stop : stopCheckPrice >= op.current_stop);
       if (runnerStopHit) {
         newStatus = 'STOP_HIT';
         updatePayload.stop_hit_at = nowIso;
-        updatePayload.stop_hit_price = newCurrentStop;
+        updatePayload.stop_hit_price = op.current_stop;
         // Runner stopped at BE (entry) or current stop
-        updatePayload.exit_price = newCurrentStop;
+        updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
-      } else if ((isBuy && tpCheckPrice >= op.tp2) || (!isBuy && tpCheckPrice <= op.tp2)) {
+      } else if (candleUsable && ((isBuy && tpCheckPrice >= op.tp2) || (!isBuy && tpCheckPrice <= op.tp2))) {
         tp2Hit = true;
         newStatus = 'TP2_HIT';
         updatePayload.tp2_hit_at = nowIso;
@@ -1081,6 +1092,21 @@ export async function persistScanResults(scanResult) {
           updatePayload.closed_at = nowIso;
         }
       }
+
+      // P0-d: only after no exit fired on this candle, advance the ATR trail
+      // from its close — the new stop starts protecting on the next candle.
+      // Gated by candleUsable so a stale (pre-entry/replay) close can never
+      // move the stop.
+      if (newStatus === 'RUNNER_ACTIVE' && candleUsable
+          && (op.exit_mode === 'HYBRID_RF_ATR' || op.exit_mode === 'ATR_TRAILING') && tfData.atrValue) {
+        newCurrentStop = advanceTrailingStop({
+          isBuy,
+          currentStop: newCurrentStop,
+          closePrice,
+          atrValue: tfData.atrValue,
+          trailMult: pineConfig.trailAtrMult ?? 2.0,
+        });
+      }
     }
     if (newStatus !== op.status || tp1Hit !== op.tp1_hit || tp2Hit !== op.tp2_hit || newCurrentStop !== op.current_stop
         || updatePayload.rf_reverse_bars_count !== (op.rf_reverse_bars_count || 0)) {
@@ -1088,13 +1114,19 @@ export async function persistScanResults(scanResult) {
       // browser scan and the cron run under separate locks, so a plain update
       // could clobber a newer state or resurrect a terminal op. transitionTradeOp
       // also folds clearActiveOp into the same transaction on terminal states.
-      const { applied } = await backend.tradeOps.transitionTradeOp(op.id, op.status, {
+      const { applied, currentStatus } = await backend.tradeOps.transitionTradeOp(op.id, op.status, {
         status: newStatus,
         tp1_hit: tp1Hit,
         tp2_hit: tp2Hit,
         current_stop: newCurrentStop,
         ...updatePayload,
       }, { assetId: op.asset_id });
+      // Observability for the cross-loop precedence residual (see
+      // .claude/rules/trading-engine.md): a dropped transition means the other
+      // loop won the race — measure how often before designing a hard rule.
+      if (!applied) {
+        logWarn('scanner', `Transição descartada pelo CAS: op ${op.id} (${op.symbol}) ${op.status}→${newStatus}; status atual ${currentStatus}`, { op_id: op.id, from: op.status, attempted: newStatus, current: currentStatus }, { symbol: op.symbol });
+      }
       // Only notify when THIS pass actually applied the transition — prevents
       // duplicate Telegram messages when both loops race the same op.
       if (applied && isTelegramConfigured()) {
@@ -1219,7 +1251,11 @@ async function priceCheckActiveOpsInner() {
       // Same compare-and-set as persistScanResults — this price-check loop uses
       // a different lock ('price-check'), so it can race the full scan on the
       // same op; the transaction serialises the write and folds clearActiveOp.
-      const { applied } = await backend.tradeOps.transitionTradeOp(op.id, op.status, { status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit, current_stop: newCurrentStop, ...updatePayload }, { assetId: op.asset_id });
+      const { applied, currentStatus } = await backend.tradeOps.transitionTradeOp(op.id, op.status, { status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit, current_stop: newCurrentStop, ...updatePayload }, { assetId: op.asset_id });
+      // Same cross-loop race observability as persistScanResults.
+      if (!applied) {
+        logWarn('scanner', `Transição descartada pelo CAS (price check): op ${op.id} (${op.symbol}) ${op.status}→${newStatus}; status atual ${currentStatus}`, { op_id: op.id, from: op.status, attempted: newStatus, current: currentStatus }, { symbol: op.symbol });
+      }
       if (applied && isTelegramConfigured()) {
         if (newStatus === 'STOP_HIT') notifyStopHit(op, price).catch(() => {});
         else if (newStatus === 'TP2_HIT') notifyTP2Hit(op, price).catch(() => {});
