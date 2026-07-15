@@ -22,15 +22,29 @@ TP2_HIT` / `STOP_HIT` / `INVALIDATED` · saídas `CLOSED` (Time Stop / Chop Exit
 Terminais: `STOP_HIT`, `TP2_HIT`, `INVALIDATED`, `CLOSED`. **Estado terminal
 nunca deve receber nova transição.**
 
-## Riscos P0 confirmados no código — trate antes de features novas
+## Riscos P0 — status atual
 
-- **Escrita não-transacional de `status`.** Ambos os loops fazem
-  read-modify-write (`TradeOperation.update(op.id, {status})`) sem transação nem
-  compare-and-set contra o status atual no banco (`scanner.js:1087` e `:1217`).
-- **Locks diferentes.** `persistScanResults` roda sob o lock do full-scan;
-  `priceCheckActiveOps` usa um lock separado `'price-check'` (`scanner.js:1147`)
-  → os dois podem rodar concorrentes e sobrescrever a mesma op (lost update,
-  regressão de estado, transição a partir de terminal, notificação duplicada).
+- **[CORRIGIDO — P0-a] Escrita não-transacional de `status`.** Os dois loops
+  agora escrevem via `backend.tradeOps.transitionTradeOp(opId, fromStatus,
+  patch)` (`src/api/entities.js` + espelho em `scripts/adminEntities.js`), um
+  compare-and-set transacional sobre o `status` (regra pura compartilhada em
+  `src/lib/opTransition.js`, testada em `opTransition.test.js`). Fecha:
+  lost-update de status, transição a partir de estado terminal e **notificação
+  duplicada** (notify só dispara quando `applied === true`). O `clearActiveOp`
+  foi dobrado para **dentro da mesma transação** nos estados terminais —
+  corrige também o bug pré-existente do ativo travado (crash entre gravar o
+  terminal e limpar `assetActiveOps` bloqueava novas entradas para sempre).
+- **Locks diferentes (mantidos de propósito).** `persistScanResults` (full-scan)
+  e `priceCheckActiveOps` (`'price-check'`, `scanner.js:1147`) seguem com locks
+  separados: o CAS por-op protege independentemente do lock (que é fail-open), e
+  serializar os dois atrasaria o price-check leve, que é o caminho rápido de
+  segurança.
+- **[RESIDUAL — atacar junto com P0-c/d] Precedência stop>TP entre loops.** O
+  CAS resolve a corrida de dados, mas quando os dois loops decidem transições
+  DIFERENTES a partir do mesmo estado, "primeiro a commitar ganha" — não aplica
+  a regra "stop tem prioridade" (hoje só intra-loop, `scanner.js:972`), e um
+  `exit_price` pode ser gravado com stop defasado. Inseparável do candle de
+  entrada retroativo (P0-c) e do trailing look-ahead (P0-d).
 - **Candle de entrada retroativo.** O loop usa high/low do último candle fechado
   (`scanner.js:956-961`) sem comparar com `candle_close_time`/horário da entrada
   — o próprio candle de entrada pode "bater" TP/stop com movimento anterior à
