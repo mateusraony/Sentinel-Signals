@@ -101,7 +101,7 @@ function evaluateRegime(tf4hData, pineConfig) {
  * Centralizes entry/stop/TP calculations so Pine Script changes propagate
  * automatically — no manual bot configuration needed.
  */
-function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
+export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
   // Stop multiplier is tier-based (volatility-adjusted), not the global
   // trailAtrMult — that field is reserved for the runner's ATR trailing
   // after TP1 (see the post-TP1 update loop), a different parameter with
@@ -675,7 +675,8 @@ export async function persistScanResults(scanResult) {
   let hasActiveOp = (await backend.entities.TradeOperation.filter({
     symbol: asset.symbol,
     asset_id: asset.id,
-  })).some(op => !['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status));
+    status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'],
+  })).length > 0;
 
   // Deduplicate and persist signals
   let persistedSignals = 0;
@@ -693,7 +694,7 @@ export async function persistScanResults(scanResult) {
       timeframe: signal.timeframe,
       signal_type: signal.signal_type,
       source: signal.source,
-    });
+    }, '-created_date', 1);
 
     const hasCooldownConflict = recentSame.some(s =>
       s.created_date > cooldownTime
@@ -852,7 +853,7 @@ export async function persistScanResults(scanResult) {
     asset_id: asset.id,
     source: 'range_filter',
     timeframe: '4h',
-  });
+  }, '-created_date', 10);
 
   for (const sig of recent4hSignals) {
     if (sig.created_date < fourHoursAgo) continue; // stale, skip
@@ -910,7 +911,7 @@ export async function persistScanResults(scanResult) {
       asset_id: asset.id,
       source: 'smc_structure',
       timeframe: '1h',
-    });
+    }, '-created_date', 10);
 
     for (const sig of recentSmcSignals) {
       if (sig.created_date < oneHourAgo4x) continue; // stale, skip
@@ -947,8 +948,14 @@ export async function persistScanResults(scanResult) {
   }
 
   // Update status of existing active TradeOperations
-  const allActiveOps = await backend.entities.TradeOperation.filter({ asset_id: asset.id });
+  const allActiveOps = await backend.entities.TradeOperation.filter({
+    asset_id: asset.id,
+    status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'],
+  });
   for (const op of allActiveOps) {
+    // Defense-in-depth: the status filter above already excludes terminal
+    // ops server-side, but this guard stays in case a concurrent transaction
+    // terminated the op between the query above and this iteration.
     if (['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)) continue;
     // op.timeframe is the ENTRY-confirmation candle (15m/5m), which never
     // appears in `results` (only 1h/4h/1d are fetched here) — the indicators
