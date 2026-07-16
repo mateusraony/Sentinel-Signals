@@ -43,31 +43,41 @@ jobs:
           node-version: 20
 
       # O script usa só APIs nativas do Node (fetch/fs/path) — sem npm ci.
+      # Inputs passam por env: (nunca interpolados direto no script) — evita
+      # script injection num job com contents/pull-requests: write, conforme o
+      # guia de security hardening do GitHub Actions.
       - name: Baixar e congelar candles fechados
+        env:
+          SYMBOL: ${{ inputs.symbol }}
+          INTERVALS: ${{ inputs.intervals }}
+          LIMIT: ${{ inputs.limit }}
         run: |
-          for tf in ${{ inputs.intervals }}; do
-            node scripts/fetch-golden-fixture.mjs "${{ inputs.symbol }}" "$tf" "${{ inputs.limit }}"
+          for tf in $INTERVALS; do
+            node scripts/fetch-golden-fixture.mjs "$SYMBOL" "$tf" "$LIMIT"
           done
 
       - name: Commitar em branch própria e abrir PR
         env:
           GH_TOKEN: ${{ github.token }}
+          SYMBOL: ${{ inputs.symbol }}
+          INTERVALS: ${{ inputs.intervals }}
+          RUN_ID: ${{ github.run_id }}
         run: |
           git config user.name "sentinel-signals-bot"
           git config user.email "actions@users.noreply.github.com"
 
-          BRANCH="golden-fixture/${{ inputs.symbol }}-${{ github.run_id }}"
+          BRANCH="golden-fixture/${SYMBOL}-${RUN_ID}"
           git checkout -b "$BRANCH"
           git add src/lib/indicators/__fixtures__/golden/*.json
           if git diff --cached --quiet; then
             echo "Nada novo para commitar (fixtures idênticas)."
             exit 0
           fi
-          git commit -m "chore(parity): congelar fixture golden ${{ inputs.symbol }} (${{ inputs.intervals }})"
+          git commit -m "chore(parity): congelar fixture golden ${SYMBOL} (${INTERVALS})"
           git push origin "$BRANCH"
 
           gh pr create \
             --base main \
             --head "$BRANCH" \
-            --title "Fixture golden: candles reais ${{ inputs.symbol }} (${{ inputs.intervals }})" \
-            --body "Candles FECHADOS da Binance Spot congelados pelo workflow golden-fixture.yml (run ${{ github.run_id }}). O bloco \"fixtures reais congeladas (Binance JSON)\" de goldenParity.test.js valida estes candles no CI deste PR — se o check build passar, a matemática dos indicadores confere em dados reais de mercado."
+            --title "Fixture golden: candles reais ${SYMBOL} (${INTERVALS})" \
+            --body "Candles FECHADOS da Binance Spot congelados pelo workflow golden-fixture.yml (run ${RUN_ID}). O bloco \"fixtures reais congeladas (Binance JSON)\" de goldenParity.test.js valida estes candles no CI deste PR — se o check build passar, a matemática dos indicadores confere em dados reais de mercado."
