@@ -250,6 +250,71 @@ describe('score e tier barra a barra (stateless por barra)', () => {
   });
 });
 
+// ── Fixtures reais congeladas (JSON de scripts/fetch-golden-fixture.mjs) ────
+// Candles reais da Binance Spot (mesma fonte do cron), congelados pelo usuário
+// rodando o script localmente. Não trazem valores esperados de indicador —
+// o valor deles é rodar as MESMAS camadas de validação (prefixo, convenção
+// Pine, no-repaint) sobre dados de mercado reais em vez de sintéticos.
+const GOLDEN_DIR_JSON = path.join(path.dirname(fileURLToPath(import.meta.url)), '__fixtures__/golden');
+const jsonFixtures = existsSync(GOLDEN_DIR_JSON)
+  ? readdirSync(GOLDEN_DIR_JSON).filter((f) => /\.json$/.test(f))
+  : [];
+
+describe.skipIf(jsonFixtures.length === 0)('fixtures reais congeladas (Binance JSON)', () => {
+  for (const file of jsonFixtures) {
+    describe(file, () => {
+      const { candles } = JSON.parse(readFileSync(path.join(GOLDEN_DIR_JSON, file), 'utf8'));
+      const n = candles.length;
+      const closes = candles.map((c) => c.close);
+
+      it('tem barras suficientes p/ warm-up', () => {
+        expect(n).toBeGreaterThanOrEqual(300);
+      });
+
+      it('consistência série×prefixo em dados reais (amostrado)', () => {
+        const rf = calculateRangeFilter(candles).series;
+        const rsi = calculateRSI(candles).series;
+        const atr = calculateATRSeries(candles, 14);
+        for (let i = 90; i < n; i += 29) {
+          const slice = candles.slice(0, i + 1);
+          expectSame(calculateRangeFilter(slice).series.filterValues[i], rf.filterValues[i], `${file} RF @${i}`);
+          expectSame(calculateRSI(slice).series[i], rsi[i], `${file} RSI @${i}`);
+          expectSame(calculateATRSeries(slice, 14)[i], atr[i], `${file} ATR @${i}`);
+        }
+      });
+
+      it('referência cruzada convenção Pine em dados reais (pós warm-up)', () => {
+        const atr = calculateATRSeries(candles, 14);
+        const refAtr = atrRef(candles, 14);
+        const rsi = calculateRSI(candles, 14).series;
+        const refRsi = rsiRef(closes, 14);
+        const adx = calculateADX(candles, 14, 14).series;
+        const refAdx = adxRef(candles, 14, 14);
+        const refChop = chopRef(candles, 14);
+        for (let i = 168; i < n; i++) {
+          expectClose(atr[i], refAtr[i], { atol: 1e-6, rtol: 1e-6 }, `${file} ATR @${i}`);
+          expectClose(rsi[i], refRsi[i], { atol: 0.05, rtol: 1e-3 }, `${file} RSI @${i}`);
+          expectClose(adx.adx[i], refAdx.adx[i], { atol: 0.05, rtol: 1e-3 }, `${file} ADX @${i}`);
+        }
+        for (let i = 168; i < n; i += 29) {
+          expectClose(calculateChoppiness(candles.slice(0, i + 1), 14), refChop[i], { atol: 0.05, rtol: 1e-3 }, `${file} CHOP @${i}`);
+        }
+      });
+
+      it('SMC não-repaint em dados reais (amostrado)', () => {
+        const swingLen = 10;
+        const full = calculateStructure(candles, { swingLen }).series;
+        for (let i = 90; i < n; i += 29) {
+          const pre = calculateStructure(candles.slice(0, i + 1), { swingLen });
+          expect(pre.lastBull.choch).toBe(full.bullChoch[i]);
+          expect(pre.lastBear.choch).toBe(full.bearChoch[i]);
+          expect(pre.trend).toBe(full.trend[i]);
+        }
+      });
+    });
+  }
+});
+
 // ── Padrão-ouro real: CSV exportado do TradingView pelo usuário ─────────────
 // Ativa sozinho quando houver __fixtures__/golden/tv-export-*.csv (ver
 // docs/claude/golden-tv-export.md: gráfico BINANCE:BTCUSDT SPOT, UTC, colunas
