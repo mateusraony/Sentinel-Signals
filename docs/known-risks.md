@@ -416,3 +416,23 @@ asset_id,status]`, `tradeOperations[asset_id,status]` (novo). Se o deploy do
 `scanAllAssetsInner` — o scan não cai inteiro, só aquele ativo marca
 `scan_status: 'error'` até o índice ser criado (Firestore geralmente sugere
 o índice faltante no próprio erro).
+
+## 17. Escrita de `AssetState` a cada passada, mesmo sem mudança — corrigido (P2-2)
+
+`persistScanResults` gravava (`AssetState.update`) um doc por timeframe **a
+cada passada do scan** (a cada 5min via cron), mesmo quando o candle fechado
+mais recente e todos os valores de indicador eram idênticos ao que já estava
+salvo — desperdício que cresce linear com o número de timeframes×ativos
+monitorados, no mesmo espírito do item 13. Corrigido com
+`hasAssetStateChanged` (`src/lib/assetStateDiff.js`, função pura testada em
+`assetStateDiff.test.js`): compara os campos de estado (candle, RF, RSI,
+MACD, EMA) excluindo `processed_at`, e só grava quando algo realmente mudou.
+
+**Nuance de UX aceita (documentada, não é bug):** como `processed_at` só é
+regravado junto de uma mudança real, o rótulo "há quanto tempo" em
+`AssetDetailPanel.jsx` deixa de refletir "a última vez que o scan rodou" e
+passa a refletir "a última vez que este timeframe teve uma mudança real" —
+para timeframes lentos (4h/1d) isso significa mostrar horas em vez de
+minutos mesmo com o scan saudável. Isso não é uma regressão de
+monitoramento: o healthcheck por ativo (item 12, `MonitoredAsset.last_scan_at`)
+é a fonte de verdade sobre se o scan está rodando, independente deste campo.
