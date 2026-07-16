@@ -403,7 +403,9 @@ com a recomendação: um "verde" no Emulator não provaria nada sobre a
 garantia real de concorrência do CAS, e o custo de configurar/manter o
 Emulator (mais uma dependência de CI, mais tempo de execução) não se paga
 para uma prova que ele não consegue dar. A cobertura de concorrência
-adotada em vez disso é um **backend fake em memória**
+adotada em vez disso — introduzida no PR #45 (`src/lib/scannerStateMachine.test.js`),
+independente deste PR (que é só documentação) — é um **backend fake em
+memória**
 (`src/lib/__fixtures__/fakeBackend.js`) que reaproveita a regra pura REAL
 (`canApplyTransition`/`isTerminalStatus` de `src/lib/opTransition.js`) e
 deixa `persistScanResults`/`priceCheckActiveOps` racearem de verdade via
