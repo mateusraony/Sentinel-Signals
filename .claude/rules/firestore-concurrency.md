@@ -51,4 +51,4 @@ Teste de concorrência real deste projeto (CAS de `TradeOperation`, doc-âncora
 (`src/lib/__fixtures__/fakeBackend.js`, introduzido no PR #45) que
 reaproveita a regra pura real (`canApplyTransition`/`isTerminalStatus`), não
 o Firestore Emulator Suite — decisão formal, ver `docs/known-risks.md`
-item 16.
+item 17.
