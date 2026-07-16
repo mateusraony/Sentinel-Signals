@@ -66,6 +66,14 @@ Revertidas/pausadas de propósito a pedido do usuário (ver `docs/known-risks.md
    separado e usa o token com segurança, fora do browser.
 3. **Strategy Reviewer pausado.** `src/pages/StrategyReviewer.jsx` é placeholder;
    `src/api/agents.js` segue implementado mas desconectado.
+4. **Divergência Futures (painel) × Spot (cron) — aceita formalmente.**
+   Pesquisa de comunidade confirmou: não existe workaround gratuito e
+   confiável (proxy é bloqueado pela Binance, self-hosted fora dos EUA e VPN
+   pago violam as restrições do projeto). Ver `docs/known-risks.md` item 4.
+   Não é mais "risco pendente" — é limitação aceita enquanto o projeto for
+   100% gratuito. Trocar a fonte de Futures por outra exchange (Bybit/OKX via
+   ccxt) resolveria isso mas troca uma divergência por outra — é decisão de
+   produto separada, não implementada, não recomende sem pedido explícito.
 
 Outras decisões permanentes: **não** reintroduzir Base44; **não** usar Vercel/
 Netlify (manter GitHub + Render + Firebase); **não** habilitar trading real;

@@ -33,19 +33,40 @@ de ordens: só marcar uma operação como ativa depois de confirmar o fill da
 entrada e o aceite do stop pela exchange; nunca operar sem stop confirmado na
 corretora.
 
-## 4. Dados de mercado divergentes entre painel (Futures) e cron 24h (Spot)
+## 4. Dados de mercado divergentes entre painel (Futures) e cron 24h (Spot) — ACEITO FORMALMENTE
 
-A partir da migração híbrida para Binance Futures (ver `docs/known-risks.md`
-atualizado nesta seção quando implementado), o navegador consulta
+A partir da migração híbrida para Binance Futures, o navegador consulta
 `fapi.binance.com` (Futures) enquanto o scan agendado via GitHub Actions
 continua em `data-api.binance.vision` (Spot) — a API de Futures da Binance
 bloqueia com 451 qualquer IP de datacenter dos EUA (onde os runners do
 GitHub Actions rodam), e não existe mirror público gratuito de Futures
 equivalente ao `data-api.binance.vision`. Isso significa que preço, sinais e
 preço de entrada podem divergir levemente entre o painel e o scan 24/7
-quando ambos estão ativos ao mesmo tempo. Resolver isso de verdade exige
-infraestrutura fora dos EUA (self-hosted runner ou proxy fixo) — fora de
-escopo enquanto o projeto for 100% gratuito.
+quando ambos estão ativos ao mesmo tempo.
+
+> **Atualização (P1, pesquisa de comunidade) — status mudou de "risco
+> pendente" para "limitação conhecida e aceita definitivamente".** Pesquisa
+> em ccxt issues, fóruns da Binance e comunidade de bots cripto confirmou:
+> **não existe workaround gratuito e confiável** dentro das restrições do
+> projeto (sem proxy pago, sem servidor fora dos EUA). Especificamente:
+> - Proxy via Cloudflare Workers (gratuito) é bloqueado pela própria Binance
+>   (a rede da Cloudflare é detectada e recebe 403 — relatos confirmados na
+>   comunidade Cloudflare).
+> - Self-hosted runner fora dos EUA e VPN pago resolveriam, mas violam as
+>   restrições explícitas do projeto (100% gratuito, sem infraestrutura
+>   própria fora do GitHub Actions/Render/Firebase free tier).
+> - A única alternativa tecnicamente viável seria **trocar a fonte de dados
+>   de Futures para outra exchange que não bloqueia IPs dos EUA** (Bybit,
+>   OKX, etc., via bibliotecas como `ccxt`) — mas isso troca uma divergência
+>   por outra (o preço de Futures de outra exchange também não é idêntico ao
+>   da Binance) e é uma **decisão de produto separada**, não uma correção de
+>   infraestrutura. Não implementado; não recomende sem pedido explícito do
+>   usuário.
+>
+> Decisão: aceitar a divergência como limitação permanente enquanto o
+> projeto for 100% gratuito. Não é mais item de backlog — não reabrir sem
+> mudança de contexto (ex.: usuário decidir migrar de exchange ou aceitar
+> custo de infraestrutura).
 
 ## 5. AÇÃO NECESSÁRIA — deploy manual de `firestore.rules`/`firestore.indexes.json`
 
