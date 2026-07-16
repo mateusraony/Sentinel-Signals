@@ -376,3 +376,43 @@ Se um dia fizer sentido revisitar: a única mudança de baixo risco discutida
 manual do `TopBar` intacto — mas isso exigiria decidir e documentar
 explicitamente a perda da visão Futures automática ao vivo, não é um
 cleanup silencioso. Não reabrir sem pedido explícito do usuário.
+
+## 16. Queries Firestore sem corte de histórico — corrigido (P2-1)
+
+Complemento ao item 13 (que já corrigira `priceCheckActiveOpsInner` e a
+checagem de anomalias): sobravam 6 queries que buscavam a coleção inteira
+(ou todo o histórico de um ativo) e filtravam/ordenavam **no cliente**, cujo
+custo de leitura crescia junto com o histórico acumulado:
+
+- `scanner.js` — `hasActiveOp` (`symbol`+`asset_id`) e o loop final de
+  atualização de status (`asset_id`) buscavam TODAS as `TradeOperation` do
+  ativo/símbolo e filtravam status terminal no cliente — agora ambas passam
+  `status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE']` como filtro `in` direto no
+  Firestore (o loop final mantém o `continue` de status terminal como defesa
+  em profundidade contra uma transação concorrente entre a query e a iteração).
+- `scanner.js` — o cooldown de sinal repetido buscava TODOS os `SignalEvent`
+  daquele símbolo/timeframe/tipo/fonte e comparava data no cliente — agora
+  busca só o mais recente (`sort: '-created_date', limit: 1`).
+- `scanner.js` — os dois loops de retry (4h→15m e 1h→5m) buscavam todo o
+  histórico de sinais daquele `asset_id`+fonte+timeframe — agora limitados
+  aos 10 mais recentes (`sort: '-created_date', limit: 10`; o filtro de
+  staleness no cliente continua igual, só a busca ficou limitada).
+- `RFHistoryChart.jsx` — buscava todo o histórico de `SignalEvent` do ativo
+  para desenhar um gráfico de 30 pontos — agora limitado a 60 mais recentes
+  (`sort: '-created_date', limit: 60`; o filtro por `rf_value` presente e o
+  `.slice(-30)` seguem no cliente). Nuance aceita: como o limite de 60 não
+  filtra por presença de `rf_value` no servidor — o adaptador só suporta
+  `==`/`in`, sem operador "existe" — um ativo com muitos sinais SMC
+  intercalados poderia ocasionalmente render menos de 30 pontos no gráfico;
+  degrada de forma graciosa (menos pontos), nunca quebra.
+
+**Índices compostos novos/estendidos** (`firestore.indexes.json`) —
+**exige `firebase deploy --only firestore:indexes` manual** (mesmo passo do
+item 5): `signalEvents[symbol,timeframe,signal_type,source,created_date]`,
+`signalEvents[asset_id,source,timeframe,created_date]`,
+`signalEvents[asset_id,created_date]` (novo), `tradeOperations[symbol,
+asset_id,status]`, `tradeOperations[asset_id,status]` (novo). Se o deploy do
+índice for esquecido, cada asset é isolado por try/catch em
+`scanAllAssetsInner` — o scan não cai inteiro, só aquele ativo marca
+`scan_status: 'error'` até o índice ser criado (Firestore geralmente sugere
+o índice faltante no próprio erro).
