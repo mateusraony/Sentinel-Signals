@@ -135,7 +135,13 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
                           <span className="text-[9px] font-mono text-muted-foreground">{sig.timeframe?.toUpperCase()}</span>
                           <span className="text-[9px] font-mono text-foreground/60">${fmt(sig.price_at_signal)}</span>
                           {sig.context?.score && (
-                            <span className="text-[8px] font-mono" style={{ color: '#ffd166' }}>Score {sig.context.score}</span>
+                            <span
+                              className="text-[8px] font-mono"
+                              style={{ color: '#ffd166' }}
+                              title="Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade."
+                            >
+                              Confl. {sig.context.score}
+                            </span>
                           )}
                         </div>
                         <p className="text-[8px] font-mono text-muted-foreground mt-0.5 leading-tight line-clamp-2">{sig.reason}</p>

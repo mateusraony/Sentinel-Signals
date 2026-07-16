@@ -274,8 +274,12 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
                 )}
               </>
             ) : <span className="text-xs text-muted-foreground">—</span>}
-            <div className="text-[8px] font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.3)' }}>
-              Score: <span style={{ color: score >= 85 ? '#00ff80' : score >= 65 ? '#ffd166' : '#ff9f43' }}>{score}</span>
+            <div
+              className="text-[8px] font-mono mt-0.5"
+              style={{ color: 'rgba(255,255,255,0.3)' }}
+              title="Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade."
+            >
+              Confl.: <span style={{ color: score >= 85 ? '#00ff80' : score >= 65 ? '#ffd166' : '#ff9f43' }}>{score}</span>
             </div>
           </div>
         </div>

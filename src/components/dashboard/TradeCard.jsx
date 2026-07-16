@@ -60,12 +60,17 @@ function ScoreBar({ score }) {
   const color = pct >= 85 ? '#00ff80' : pct >= 65 ? '#ffd166' : '#ff9f43';
   const label = pct >= 85 ? '🔥 Forte' : pct >= 65 ? '⚡ Moderado' : '〰 Fraco';
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color, boxShadow: `0 0 6px ${color}60` }} />
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color, boxShadow: `0 0 6px ${color}60` }} />
+        </div>
+        <span className="text-[10px] font-mono font-bold" style={{ color }}>{pct}/100</span>
+        <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>{label}</span>
       </div>
-      <span className="text-[10px] font-mono font-bold" style={{ color }}>{pct}/100</span>
-      <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>{label}</span>
+      <p className="text-[8px] font-mono leading-tight" style={{ color: 'rgba(255,255,255,0.25)' }}>
+        Confluência de indicadores alinhados — não é uma probabilidade de acerto.
+      </p>
     </div>
   );
 }
