@@ -64,7 +64,7 @@ function detectSwings(highs, lows, length) {
 export function calculateStructure(candles, { swingLen = 50, filterInsignificantInternalBreaks = true } = {}) {
   const n = candles.length;
   if (n < swingLen + 2) {
-    return { trend: null, lastBull: { bos: false, choch: false }, lastBear: { bos: false, choch: false } };
+    return { trend: null, lastBull: { bos: false, choch: false }, lastBear: { bos: false, choch: false }, series: null };
   }
 
   const highs = candles.map(c => c.high);
@@ -86,6 +86,7 @@ export function calculateStructure(candles, { swingLen = 50, filterInsignificant
   let topY = 0, topLvlCross = true;
   let btmY = 0, btmLvlCross = true;
   let trend = 1;
+  const trendSeries = new Array(n).fill(1);
 
   for (let i = 0; i < n; i++) {
     const high = candles[i].high, low = candles[i].low, close = candles[i].close, open = candles[i].open;
@@ -159,6 +160,7 @@ export function calculateStructure(candles, { swingLen = 50, filterInsignificant
     // trend só muda após ambos os pivots desta barra rodarem (mesma ordem
     // do Pine original: os dois detect_pivot primeiro, depois o if de trend)
     trend = curBullChoch ? 1 : curBearChoch ? -1 : trend;
+    trendSeries[i] = trend;
   }
 
   const last = n - 1;
@@ -166,6 +168,9 @@ export function calculateStructure(candles, { swingLen = 50, filterInsignificant
     trend,
     lastBull: { bos: bullBos[last], choch: bullChoch[last] },
     lastBear: { bos: bearBos[last], choch: bearChoch[last] },
+    // Per-bar event/trend series (additive) — used by the golden parity tests
+    // for the no-repaint check; last-bar consumers above are unchanged.
+    series: { bullBos, bullChoch, bearBos, bearChoch, trend: trendSeries },
   };
 }
 

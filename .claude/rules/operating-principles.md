@@ -7,6 +7,13 @@ description: Princípios de engenharia do dia a dia neste repo (sempre válidos)
 Aplicam-se a toda tarefa neste repositório. Complementam o `~/.claude/CLAUDE.md`
 global do usuário (ver `docs/claude/global-CLAUDE.md.example`).
 
+- **Pesquise a comunidade antes de planejar.** Toda tarefa não trivial (novo
+  ticket, decisão de design, adoção de ferramenta, correção do motor) inclui
+  uma etapa de pesquisa externa (Reddit, Stack Overflow, fóruns/documentação
+  oficial, issues de projetos maduros) ANTES do plano — para validar armadilhas
+  conhecidas e práticas consolidadas. Registre no plano/PR o que a pesquisa
+  mudou na decisão (ou que não mudou nada, com fonte). Popularidade não é
+  prova: priorize evidência técnica e docs oficiais.
 - **Menor alteração, maior ganho verificável.** Prefira a mudança cirúrgica que
   resolve o problema; não refatore fora de escopo nem "melhore" de passagem.
 - **Reuse antes de criar.** Este projeto já removeu muita dependência morta —

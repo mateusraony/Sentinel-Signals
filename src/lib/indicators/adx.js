@@ -43,10 +43,14 @@ export function calculateADX(candles, period = 14, smoothing = 14) {
   const rmaMinusDM = rma(minusDM, period, 1);
 
   const dx = new Array(n).fill(0);
+  const plusDISeries = new Array(n).fill(0);
+  const minusDISeries = new Array(n).fill(0);
   for (let i = 0; i < n; i++) {
     if (!rmaTR[i]) continue;
     const plusDI = 100 * (rmaPlusDM[i] / rmaTR[i]);
     const minusDI = 100 * (rmaMinusDM[i] / rmaTR[i]);
+    plusDISeries[i] = plusDI;
+    minusDISeries[i] = minusDI;
     const sum = plusDI + minusDI;
     dx[i] = sum > 0 ? (100 * Math.abs(plusDI - minusDI)) / sum : 0;
   }
@@ -55,9 +59,13 @@ export function calculateADX(candles, period = 14, smoothing = 14) {
   const adxSeries = rma(dx, smoothing, firstDxIndex);
 
   const last = n - 1;
-  const lastRmaTR = rmaTR[last];
-  const plusDI = lastRmaTR ? 100 * (rmaPlusDM[last] / lastRmaTR) : 0;
-  const minusDI = lastRmaTR ? 100 * (rmaMinusDM[last] / lastRmaTR) : 0;
 
-  return { adx: adxSeries[last] || 0, plusDI, minusDI };
+  return {
+    adx: adxSeries[last] || 0,
+    plusDI: plusDISeries[last],
+    minusDI: minusDISeries[last],
+    // Full per-bar series, same convention as the other indicators — used by
+    // the golden parity tests; last-bar consumers above are unchanged.
+    series: { adx: adxSeries, plusDI: plusDISeries, minusDI: minusDISeries },
+  };
 }
