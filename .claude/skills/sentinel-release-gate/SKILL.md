@@ -17,6 +17,9 @@ Correção de uma linha, ajuste de texto, tarefa isolada trivial.
 Depende da mudança; sempre `.claude/rules/*` do(s) domínio(s) tocado(s).
 
 ## Procedimento (portão por fase)
+0. **Pesquisa de comunidade**: antes do plano, buscar armadilhas/práticas em
+   Reddit/Stack Overflow/fóruns/issues de projetos maduros e registrar o que a
+   pesquisa mudou na decisão (`.claude/rules/operating-principles.md`).
 1. **Escopo**: a mudança é a menor que entrega o objetivo? Nada fora de escopo?
 2. **Domínio**: rodar a(s) skill(s) relevante(s) (engine/pine/security/ui).
 3. **Testes**: cobertura adequada rodou e passou? (Não afirmar sem rodar.)

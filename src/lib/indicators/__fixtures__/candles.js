@@ -80,6 +80,37 @@ export function choppyCandles(n, center = 100, amplitude = 3) {
 }
 
 /**
+ * Golden-parity fixture: a long, deterministic series mixing regimes —
+ * uptrend → chop → downtrend → chop → uptrend — with LCG noise on every
+ * candle. Rich enough to exercise crossovers, trend flips, RMA convergence
+ * and SMC structure, while staying fully reproducible (fixed seed, no real
+ * market data → no network, no refetch, stable expected values). Used by
+ * goldenParity.test.js; the real-market variant comes from the user's
+ * TradingView CSV export (see docs/claude/golden-tv-export.md) or from
+ * scripts/fetch-golden-fixture.mjs run locally.
+ */
+export function goldenCandles(n = 500) {
+  const candles = [];
+  let price = 100;
+  let seed = 20260715;
+  const rand = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  // Regime drift per bar: +0.4 / 0 / -0.4 / 0 / +0.4, switching every n/5 bars.
+  const drifts = [0.4, 0, -0.4, 0, 0.4];
+  for (let i = 0; i < n; i++) {
+    const drift = drifts[Math.min(Math.floor(i / (n / 5)), 4)];
+    const open = price;
+    const noise = (rand() - 0.5) * 2.4;
+    let close = open + drift + noise;
+    if (close < 5) close = 5; // never near zero (keeps ratios sane)
+    const high = Math.max(open, close) + rand() * 0.8;
+    const low = Math.min(open, close) - rand() * 0.8;
+    candles.push(mkCandle(open, high, low, close, i));
+    price = close;
+  }
+  return candles;
+}
+
+/**
  * A clean zigzag downtrend (strictly lower highs/lows) followed by a strong
  * bullish breakout candle above the most recent swing high — used to test
  * BOS/CHoCH detection in smcStructure.js. Mirrors the manual scenario

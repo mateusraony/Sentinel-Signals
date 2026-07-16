@@ -20,15 +20,37 @@ Firestore (escrito pela página Pine Script via `syncPineToAssets`). **Ao
 adicionar um parâmetro sincronizado, adicione-o nos DOIS arquivos.**
 `rf_period`/`rf_multiplier` não entram aqui — são por-ativo em `MonitoredAsset`.
 
+## Golden tests (método adotado — `goldenParity.test.js`)
+
+Definido por pesquisa de comunidade (fontes no PR que o introduziu):
+
+- **Consistência série×prefixo**: valor da barra i na série completa ==
+  calculado só com candles 0..i (é o que a produção faz por scan; divergência
+  = look-ahead). Cobre RF, RSI, MACD, EMA, ATR, ADX.
+- **Referência cruzada convenção Pine** (`__fixtures__/pineRef.js`, test-only):
+  RMA/Wilder seed=SMA p/ RSI/ATR/ADX; fórmula fechada p/ Choppiness. Comparar
+  **pós warm-up de ~6× o período** (consenso: EMA/RMA nunca converge exato com
+  histórico diferente) com tolerância `max(atol, rtol·|ref|)` — osciladores
+  0–100: atol 0.05; séries de preço: rtol 1e-3.
+- **Seed da EMA**: o port seeda com o 1º valor; o teste PROVA que pós warm-up a
+  escolha do seed é irrelevante (<1e-3 relativo) — medido, não é problema na
+  profundidade de produção. Veredito final vem do CSV real do TradingView.
+- **SMC (BOS/CHoCH/sweep/PD)**: validar por **eventos + não-repaint** (evento
+  na barra N idêntico com dados até N e com o dataset completo; barras
+  fechadas imutáveis) — nunca por floats.
+- **Padrão-ouro real**: CSV oficial do TradingView do usuário em
+  `__fixtures__/golden/tv-export-*.csv` ativa o bloco de comparação contra o
+  Pine real (procedimento em `docs/claude/golden-tv-export.md`; exige plano
+  pago; scraping viola ToS — rejeitado). Fixture de candles reais opcional via
+  `scripts/fetch-golden-fixture.mjs` (rodar na máquina do usuário — a rede das
+  sessões bloqueia a Binance).
+
 ## Regras ao tocar cálculo
 
-- **Golden tests barra a barra** contra candles conhecidos do TradingView antes
-  de dar por pronto: Range Filter, RSI, MACD, EMA, ATR, ADX, Choppiness, Tier,
-  score, BOS/CHoCH, sweep, zona Premium/Discount, sinal final.
-- Pontos ainda **não** validados numericamente (não são bugs, são nuances —
-  known-risks 8/9): seeding da EMA no Range Filter, suavização ADX/DMI, contagem
-  do Time Stop por tempo decorrido vs contador de barras do Pine, `swing_len` da
-  cascata SMC.
+- Rodar/estender os golden tests acima antes de dar por pronto; novo indicador
+  = nova entrada em cada camada aplicável (prefixo, referência, CSV).
+- Nuance ainda aberta (não é bug): contagem do Time Stop por tempo decorrido vs
+  contador de barras do Pine; `swing_len` da cascata SMC sem equivalente direto.
 - Só candles fechados. Não misture convenção de índice (barra atual vs anterior)
   sem checar o Pine correspondente.
 - Paridade ≠ taxa de acerto: corrigir paridade aproxima do TradingView, não torna
