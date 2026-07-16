@@ -100,7 +100,7 @@ function evaluateRegime(tf4hData, pineConfig) {
  * Centralizes entry/stop/TP calculations so Pine Script changes propagate
  * automatically — no manual bot configuration needed.
  */
-function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
+export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
   // Stop multiplier is tier-based (volatility-adjusted), not the global
   // trailAtrMult — that field is reserved for the runner's ATR trailing
   // after TP1 (see the post-TP1 update loop), a different parameter with
