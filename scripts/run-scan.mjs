@@ -2,6 +2,33 @@
 // Bundled with esbuild (scripts/build-scan.mjs) before running — see that
 // file for why a plain `node scripts/run-scan.mjs` won't work directly.
 import { scanAllAssets, priceCheckActiveOps } from '../src/lib/scanner.js';
+import { backend } from '@/api/entities';
+import { assetHealthcheckReason, shouldAlertStale, shouldClearStaleAlert } from '../src/lib/assetHealthcheck.js';
+import { isTelegramConfigured, notifyAssetStale } from './adminTelegram.js';
+
+// Per-asset dead-man's-switch (docs/known-risks.md item 12): the
+// healthchecks.io ping below only reports the WHOLE scan pass as
+// failed/succeeded — an asset failing every single pass, or silently
+// dropping out entirely, never surfaces. 30 min = 6x this workflow's 5-min
+// cron cadence, matching the "cadence + margin" grace period recommended for
+// dead-man's-switch monitoring (avoids false positives from one transient
+// miss). Never allowed to throw or block the actual scan — see the try/catch
+// around its call in main().
+const ASSET_STALE_GRACE_MS = 30 * 60 * 1000;
+
+async function checkAssetHealthchecks() {
+  const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
+  const now = Date.now();
+  for (const asset of assets) {
+    const reason = assetHealthcheckReason(asset, { now, graceMs: ASSET_STALE_GRACE_MS });
+    if (shouldAlertStale(asset, reason)) {
+      if (isTelegramConfigured()) await notifyAssetStale(asset, reason).catch(() => {});
+      await backend.entities.MonitoredAsset.update(asset.id, { stale_alert_sent_at: new Date().toISOString() });
+    } else if (shouldClearStaleAlert(asset, reason)) {
+      await backend.entities.MonitoredAsset.update(asset.id, { stale_alert_sent_at: null });
+    }
+  }
+}
 
 // Dead-man's-switch heartbeat (healthchecks.io or compatible) — pinged on
 // every successful run so an external, non-GitHub-Actions service can alert
@@ -37,6 +64,12 @@ async function main() {
 
   await priceCheckActiveOps();
   console.log('[scan] priceCheckActiveOps done');
+
+  try {
+    await checkAssetHealthchecks();
+  } catch (err) {
+    console.warn('[scan] per-asset healthcheck failed (non-fatal):', err.message);
+  }
 
   console.log(`[scan] finished in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   await pingHealthcheck();

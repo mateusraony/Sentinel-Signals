@@ -120,6 +120,31 @@ export async function notifyTP2Hit(op, price) {
   );
 }
 
+// System alert (per-asset healthcheck, scripts/run-scan.mjs) — bypasses
+// shouldSend() filtering intentionally: this isn't a trading signal event
+// subject to timeframe/priority/score filters, it's an operational "this
+// asset stopped being scanned properly" warning that must always go through,
+// the same way the healthchecks.io dead-man's-switch ping does for the whole
+// scan pass.
+export async function notifyAssetStale(asset, reason) {
+  const label = asset.symbol?.replace('USDT', '/USDT') || asset.symbol;
+  if (reason === 'persistent_error') {
+    return send(
+      `⚠️ <b>Ativo falhando continuamente</b>\n\n` +
+      `<b>${label}</b>\n` +
+      `🔁 Erro desde: ${asset.scan_error_since || '—'}\n` +
+      `📝 ${asset.scan_error || '—'}\n\n` +
+      `<i>⚡ CryptoRadar — verifique o ativo/Debug Log</i>`
+    );
+  }
+  return send(
+    `⚠️ <b>Ativo sem atualização</b>\n\n` +
+    `<b>${label}</b>\n` +
+    `🔇 Último scan: ${asset.last_scan_at || '—'}\n\n` +
+    `<i>⚡ CryptoRadar — verifique se o ativo segue ativo no painel</i>`
+  );
+}
+
 export async function notifyStopHit(op, price) {
   if (!shouldSend('stop_hit', op)) return;
   const beMsg = op.tp1_hit ? '(breakeven — sem prejuízo)' : '(stop inicial)';
