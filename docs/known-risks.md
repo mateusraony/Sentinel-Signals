@@ -393,9 +393,17 @@ que os 5 minutos configurados.
 a criação do workflow) — um serviço externo gratuito (cron-job.org, pesquisa
 confirma até 60 execuções/hora no plano grátis, headers customizados sem
 cartão) pode chamar esse mesmo endpoint via API na hora exata, sem entrar na
-fila de agendamento do GitHub. Passo a passo completo (PAT de escopo mínimo,
-configuração do serviço, por que manter os dois gatilhos juntos) em
+fila de agendamento do GitHub. Passo a passo completo em
 `docs/claude/external-cron-setup.md` — configuração **fora do repositório**
 (conta pessoal + PAT pessoal do usuário), nada para commitar além do guia.
+
+**Não manter os dois gatilhos a cada 5min** (revisão automática do PR #46
+corrigiu essa recomendação inicial): dobraria as passadas reais/dia (até 576
+em vez de 288), o que o guard de quota do Firestore em `scanner.js`
+(`PASSES_PER_DAY`) não detectaria. O guia documenta a sequência correta:
+confirmar que o disparo externo funciona primeiro, só então reduzir o
+`schedule:` interno para um fallback de baixa frequência (a cada hora) e
+ajustar `PASSES_PER_DAY` de 288 para 312 — nessa ordem, para não deixar o
+scan ao vivo rodando só 1x/hora achando que ainda roda a cada 5min.
 Não substitui o watchdog do item 12 (continua sendo a rede de segurança real
 contra "nenhum scan rodou").

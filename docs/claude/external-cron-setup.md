@@ -78,11 +78,41 @@ curl -L -X POST \
 Uma resposta `204 No Content` confirma que o disparo foi aceito — a run
 aparece em Actions → Scheduled scan em poucos segundos.
 
-### 3. Decidir se mantém o `schedule:` interno junto
+### 3. Depois de confirmar que o disparo externo está funcionando, reduzir o `schedule:` interno para fallback
 
-Recomendado **manter os dois** (não é ou/ou): o `schedule:` interno do GitHub
-continua como fallback caso o serviço externo tenha uma falha própria; o
-disparo externo cobre o caso comum (atraso/drift). `scan.yml` já declara:
+**Não manter os dois gatilhos a cada 5 minutos** — foi cogitado inicialmente,
+mas a revisão automática do PR que introduziu este guia corretamente apontou
+o problema: quando os dois disparam a cada 5min e ambos estão saudáveis, o
+scan roda **~2x mais vezes por dia** (até 576 passadas em vez de 288) do que
+o guard de quota do Firestore em `scanner.js` (`PASSES_PER_DAY`) assume — o
+aviso de "perto do limite gratuito" ficaria cego a esse excesso justamente
+quando ele acontece.
+
+Depois de confirmar (rodando o `curl` do passo 2 algumas vezes, ou deixando o
+cron-job.org rodar por um dia e checando Actions → Scheduled scan) que o
+disparo externo está funcionando de forma confiável, faça as duas edições
+abaixo **juntas, no mesmo PR**, para não deixar o sistema ao vivo rodando só
+1x/hora achando que ainda roda a cada 5min:
+
+1. Em `.github/workflows/scan.yml`, trocar `cron: "*/5 * * * *"` por
+   `cron: "0 * * * *"` (a cada hora) — vira só um fallback de baixa
+   frequência; o disparo externo passa a ser o relógio principal.
+2. Em `src/lib/scanner.js`, ajustar a constante `PASSES_PER_DAY` do guard de
+   quota (linha ~1359) de `288` para `312` (288 do disparo externo + 24 do
+   fallback horário), para o aviso de quota continuar refletindo o volume
+   real.
+
+**Por que esperar confirmar antes de reduzir**: `scan.yml` roda a partir da
+branch `main` assim que o merge acontece. Se a redução para 1x/hora for
+mergeada ANTES do disparo externo estar de fato funcionando, o scan ao vivo
+cai de 5min para 1h de cadência silenciosamente (sem erro, só sinal mais
+velho) até alguém notar. O fallback horário ainda se autocorrige dentro da
+janela de 30min do alerta de staleness por ativo (`docs/known-risks.md` item
+12) se o disparo externo falhar DEPOIS de já estar funcionando — mas o
+período de transição em si (redução mergeada antes da confirmação) é o
+único jeito de cair nesse buraco.
+
+`scan.yml` já declara:
 
 ```yaml
 concurrency:
@@ -90,12 +120,11 @@ concurrency:
   cancel-in-progress: false
 ```
 
-Isso significa que se os dois gatilhos caírem no mesmo minuto, as duas runs
-**enfileiram** (uma espera a outra terminar) em vez de rodar em paralelo ou
-cancelar uma a outra — sem risco de corrupção de dado (o scanner já é seguro
-sob concorrência via `scannerLocks` + CAS transacional, ver
-`.claude/rules/trading-engine.md`), só um uso levemente maior de minutos de
-Actions (dentro do limite gratuito para o volume deste projado).
+Isso significa que se os dois gatilhos caírem no mesmo minuto (raro, já que
+um é horário e o outro a cada 5min), as duas runs **enfileiram** (uma espera
+a outra terminar) em vez de rodar em paralelo ou cancelar uma a outra — sem
+risco de corrupção de dado (o scanner já é seguro sob concorrência via
+`scannerLocks` + CAS transacional, ver `.claude/rules/trading-engine.md`).
 
 ## O que isso NÃO resolve
 
