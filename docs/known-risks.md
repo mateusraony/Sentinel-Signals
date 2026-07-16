@@ -467,3 +467,42 @@ ajustar `PASSES_PER_DAY` de 288 para 312 — nessa ordem, para não deixar o
 scan ao vivo rodando só 1x/hora achando que ainda roda a cada 5min.
 Não substitui o watchdog do item 12 (continua sendo a rede de segurança real
 contra "nenhum scan rodou").
+
+## 19. Firestore Emulator Suite rejeitado para teste de concorrência (P2, decisão do usuário)
+
+Cogitado como forma de testar a concorrência real de `TradeOperation`
+(CAS transacional, doc-âncora `assetActiveOps`) contra um Firestore de
+verdade em vez de um fake em memória. Pesquisa de comunidade + documentação
+oficial confirmam que o Emulator **não reproduz fielmente a semântica de
+transação/concorrência de produção**:
+
+- A [documentação oficial do Google Cloud](https://docs.cloud.google.com/firestore/native/docs/emulator)
+  declara explicitamente: o emulador "não tenta imitar o comportamento de
+  transação visto em produção e usa uma abordagem de lock simples" em vez
+  dos modos de concorrência reais (pessimista/otimista) do serviço de
+  produção.
+- [firebase-tools issue #1624](https://github.com/firebase/firebase-tools/issues/1624)
+  documenta locks de transação do emulador demorando até 30s para liberar
+  sob escritas concorrentes no mesmo documento — ordem de grandeza
+  incompatível com testes rápidos de CI.
+- A própria documentação recomenda testar contra uma instância real do
+  Firestore (não o emulador) quando o comportamento sob teste depende de
+  limites/semântica de produção — exatamente o caso do CAS deste projeto.
+
+**Decisão do usuário: não montar o Emulator Suite.** Concordância explícita
+com a recomendação: um "verde" no Emulator não provaria nada sobre a
+garantia real de concorrência do CAS, e o custo de configurar/manter o
+Emulator (mais uma dependência de CI, mais tempo de execução) não se paga
+para uma prova que ele não consegue dar. A cobertura de concorrência
+adotada em vez disso — introduzida no PR #45 (`src/lib/scannerStateMachine.test.js`),
+independente deste PR (que é só documentação) — é um **backend fake em
+memória**
+(`src/lib/__fixtures__/fakeBackend.js`) que reaproveita a regra pura REAL
+(`canApplyTransition`/`isTerminalStatus` de `src/lib/opTransition.js`) e
+deixa `persistScanResults`/`priceCheckActiveOps` racearem de verdade via
+`Promise.all` sem await individual (interleaving determinístico de
+microtask, sem I/O real) — testa a regra de decisão, não a infraestrutura de
+lock do Firestore em si (essa parte é responsabilidade do SDK/serviço, fora
+do controle deste código). Não reabrir sem mudança de contexto (ex.: um bug
+de concorrência real em produção que só reproduza contra um Firestore de
+verdade).

@@ -43,3 +43,12 @@ passada sem candle novo.
   Regras/índices só valem após deploy (manual — ver `.claude/rules/ci-deploy.md`).
 - Coleções de negócio: `isSignedIn()`. `users/{uid}`: dono only, sem auto-set de
   `role`. `agentConversations/*/messages`: read-only no client.
+
+## Testes de concorrência — sem Firestore Emulator (decisão do usuário)
+
+Teste de concorrência real deste projeto (CAS de `TradeOperation`, doc-âncora
+`assetActiveOps`) usa um **backend fake em memória**
+(`src/lib/__fixtures__/fakeBackend.js`, introduzido no PR #45) que
+reaproveita a regra pura real (`canApplyTransition`/`isTerminalStatus`), não
+o Firestore Emulator Suite — decisão formal, ver `docs/known-risks.md`
+item 19.
