@@ -3,8 +3,23 @@
 Os golden tests (`src/lib/indicators/goldenParity.test.js`) já validam a
 matemática dos indicadores com referências de convenção Pine. O **padrão-ouro
 real** — comparar contra o que o SEU gráfico calculou de fato — ativa sozinho
-quando você commitar um export oficial do TradingView. Requer plano **PRO+ ou
-Premium** (o free não exporta; scraping viola os ToS e foi rejeitado).
+quando você commitar um export oficial do TradingView. Requer plano **Plus ou
+Premium** (Essential/free não exportam; scraping viola os ToS e foi rejeitado).
+
+> **Plano Essential (confirmado do usuário: sem acesso ao export).** Use as
+> duas alternativas gratuitas:
+> 1. **Candles reais via GitHub Actions**: Actions → workflow **"Golden
+>    fixture (candles reais)"** → *Run workflow* (defaults BTCUSDT, 4h 1h).
+>    O runner do GitHub alcança a Binance Spot (mesma API do scan 24/7),
+>    congela os candles e **abre um PR sozinho** — o CI desse PR valida a
+>    matemática dos indicadores em dados reais. Basta mergear.
+> 2. **Spot check por screenshot** (verificação humana contra o SEU gráfico):
+>    no gráfico BINANCE:BTCUSDT (Spot) 4h em UTC, com o indicador "Sentinel
+>    Golden" (script abaixo) aplicado, posicione o cursor sobre uma barra
+>    FECHADA e tire um print mostrando a Data Window (valores + data/hora da
+>    barra). Envie 3–5 prints de barras diferentes numa sessão do Claude —
+>    os valores são comparados com os calculados sobre os candles congelados.
+> O CSV completo continua documentado abaixo para quando/se houver upgrade.
 
 ## Passo a passo (uma vez por timeframe)
 
