@@ -437,7 +437,38 @@ minutos mesmo com o scan saudável. Isso não é uma regressão de
 monitoramento: o healthcheck por ativo (item 12, `MonitoredAsset.last_scan_at`)
 é a fonte de verdade sobre se o scan está rodando, independente deste campo.
 
-## 18. Firestore Emulator Suite rejeitado para teste de concorrência (P2, decisão do usuário)
+## 18. GitHub Actions `schedule:` atrasa sob carga — mitigação opcional documentada (P2, decisão do usuário)
+
+Diferente do item 12 (desativação automática após 60 dias sem push — já
+mitigado pelo watchdog externo), o `schedule:` do GitHub Actions tem um
+segundo problema, menor mas real: pesquisa de comunidade confirma atraso
+consistente sob carga (relatos de ~30min de atraso recorrente e casos de
+drift passando de 4h em cenários piores) — a própria GitHub documenta que
+jobs agendados entram numa fila global sem SLA. Isso significa que o cron
+`*/5 * * * *` deste projeto pode, na prática, rodar com menos frequência do
+que os 5 minutos configurados.
+
+**Decisão do usuário: sim, configurar um disparo externo.**
+`.github/workflows/scan.yml` já expõe `workflow_dispatch: {}` (presente desde
+a criação do workflow) — um serviço externo gratuito (cron-job.org, pesquisa
+confirma até 60 execuções/hora no plano grátis, headers customizados sem
+cartão) pode chamar esse mesmo endpoint via API na hora exata, sem entrar na
+fila de agendamento do GitHub. Passo a passo completo em
+`docs/claude/external-cron-setup.md` — configuração **fora do repositório**
+(conta pessoal + PAT pessoal do usuário), nada para commitar além do guia.
+
+**Não manter os dois gatilhos a cada 5min** (revisão automática do PR #46
+corrigiu essa recomendação inicial): dobraria as passadas reais/dia (até 576
+em vez de 288), o que o guard de quota do Firestore em `scanner.js`
+(`PASSES_PER_DAY`) não detectaria. O guia documenta a sequência correta:
+confirmar que o disparo externo funciona primeiro, só então reduzir o
+`schedule:` interno para um fallback de baixa frequência (a cada hora) e
+ajustar `PASSES_PER_DAY` de 288 para 312 — nessa ordem, para não deixar o
+scan ao vivo rodando só 1x/hora achando que ainda roda a cada 5min.
+Não substitui o watchdog do item 12 (continua sendo a rede de segurança real
+contra "nenhum scan rodou").
+
+## 19. Firestore Emulator Suite rejeitado para teste de concorrência (P2, decisão do usuário)
 
 Cogitado como forma de testar a concorrência real de `TradeOperation`
 (CAS transacional, doc-âncora `assetActiveOps`) contra um Firestore de
