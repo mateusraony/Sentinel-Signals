@@ -417,6 +417,12 @@ asset_id,status]`, `tradeOperations[asset_id,status]` (novo). Se o deploy do
 `scan_status: 'error'` até o índice ser criado (Firestore geralmente sugere
 o índice faltante no próprio erro).
 
+> Atualização: deployado via `.github/workflows/deploy-firestore.yml`
+> (workflow manual, disparado pelo usuário, run #2, commit `704d0e6` — já
+> inclui todos os índices deste item — concluído com sucesso em
+> 2026-07-16). Os índices novos/estendidos já estão live no projeto
+> Firebase real.
+
 ## 17. Escrita de `AssetState` a cada passada, mesmo sem mudança — corrigido (P2-2)
 
 `persistScanResults` gravava (`AssetState.update`) um doc por timeframe **a
