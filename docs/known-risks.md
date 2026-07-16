@@ -376,3 +376,26 @@ Se um dia fizer sentido revisitar: a única mudança de baixo risco discutida
 manual do `TopBar` intacto — mas isso exigiria decidir e documentar
 explicitamente a perda da visão Futures automática ao vivo, não é um
 cleanup silencioso. Não reabrir sem pedido explícito do usuário.
+
+## 16. GitHub Actions `schedule:` atrasa sob carga — mitigação opcional documentada (P2, decisão do usuário)
+
+Diferente do item 12 (desativação automática após 60 dias sem push — já
+mitigado pelo watchdog externo), o `schedule:` do GitHub Actions tem um
+segundo problema, menor mas real: pesquisa de comunidade confirma atraso
+consistente sob carga (relatos de ~30min de atraso recorrente e casos de
+drift passando de 4h em cenários piores) — a própria GitHub documenta que
+jobs agendados entram numa fila global sem SLA. Isso significa que o cron
+`*/5 * * * *` deste projeto pode, na prática, rodar com menos frequência do
+que os 5 minutos configurados.
+
+**Decisão do usuário: sim, configurar um disparo externo.**
+`.github/workflows/scan.yml` já expõe `workflow_dispatch: {}` (presente desde
+a criação do workflow) — um serviço externo gratuito (cron-job.org, pesquisa
+confirma até 60 execuções/hora no plano grátis, headers customizados sem
+cartão) pode chamar esse mesmo endpoint via API na hora exata, sem entrar na
+fila de agendamento do GitHub. Passo a passo completo (PAT de escopo mínimo,
+configuração do serviço, por que manter os dois gatilhos juntos) em
+`docs/claude/external-cron-setup.md` — configuração **fora do repositório**
+(conta pessoal + PAT pessoal do usuário), nada para commitar além do guia.
+Não substitui o watchdog do item 12 (continua sendo a rede de segurança real
+contra "nenhum scan rodou").

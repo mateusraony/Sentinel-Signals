@@ -15,6 +15,10 @@ paths:
 - `scan.yml` — cron `*/5` (mínimo do GitHub Actions), `npm run scan`. **Relógio
   de trading**: pode atrasar e o `schedule` desativa após ~60 dias sem push
   (mitigado pelo watchdog externo `HEALTHCHECKS_PING_URL`, known-risks 12).
+  O atraso sob carga (known-risks 16) tem um workaround opcional já
+  documentado — disparo externo via `workflow_dispatch` (já exposto no
+  workflow), ver `docs/claude/external-cron-setup.md`; configuração fica fora
+  do repo (PAT pessoal do usuário), não requer mudança de código.
 - `keep-warm.yml` — ping `/health` a cada 10 min (Render free não hibernar).
 - `backup.yml` — backup diário das coleções de negócio → branch `backups`.
 - `deploy-firestore.yml` — deploy **manual** de rules/índices.
