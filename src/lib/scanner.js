@@ -24,6 +24,7 @@ import { calculateChoppiness } from './indicators/choppiness';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './indicators/smcStructure';
 import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, advanceTrailingStop, nextRfReverseCount } from './opExitRules';
+import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
 import {
@@ -640,13 +641,22 @@ export async function persistScanResults(scanResult) {
     };
 
     // Check if state exists
-    const existing = await backend.entities.AssetState.filter({ 
-      asset_id: asset.id, 
-      timeframe: tf 
+    const existing = await backend.entities.AssetState.filter({
+      asset_id: asset.id,
+      timeframe: tf
     });
 
     if (existing.length > 0) {
-      await backend.entities.AssetState.update(existing[0].id, stateData);
+      // Skip the write entirely when nothing about the state actually
+      // changed (candle hasn't closed yet, no new indicator values) — this
+      // block otherwise ran unconditionally on every 5-min pass for every
+      // timeframe, most of which are no-ops for slower timeframes like 4h/1d
+      // (see docs/known-risks.md item 17). processed_at is excluded from the
+      // comparison, so it's only refreshed when there's a real change to
+      // persist alongside it.
+      if (hasAssetStateChanged(existing[0], stateData)) {
+        await backend.entities.AssetState.update(existing[0].id, stateData);
+      }
     } else {
       await backend.entities.AssetState.create(stateData);
     }

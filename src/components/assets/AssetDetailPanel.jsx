@@ -101,6 +101,11 @@ function TFStateCard({ tf, state, enabled }) {
         </div>
       </div>
 
+      {/* processed_at only advances when the state actually changes (see
+          src/lib/assetStateDiff.js) — for slow timeframes (4h/1d) this
+          reflects the last closed candle, not the last scan attempt; use
+          the asset's own healthcheck (docs/known-risks.md item 12) to judge
+          whether the scan itself is still running. */}
       {state.processed_at && (
         <div className="text-[7px] font-mono text-muted-foreground/60 text-center">
           {moment(state.processed_at).fromNow()}
