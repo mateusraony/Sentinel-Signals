@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { isTelegramConfigured } from '@/lib/telegram';
 import TelegramSettings from '@/components/settings/TelegramSettings';
 import GlobalSearch from './GlobalSearch';
+import { toast } from '@/components/ui/use-toast';
 
 export default function TopBar() {
   const [scanning, setScanning] = useState(false);
@@ -20,13 +21,39 @@ export default function TopBar() {
     setScanning(true);
     setProgress('Iniciando scan...');
     try {
-      await scanAllAssets((current, total, symbol) => {
+      const result = await scanAllAssets((current, total, symbol) => {
         setProgress(`${symbol} (${current}/${total})`);
       });
-      setLastScan(new Date());
+      // scanAllAssets skips entirely (no assets touched, onProgress never
+      // called) when the 'full-scan' lock is already held — typically the
+      // GitHub Actions cron running the same 5-min job concurrently. Without
+      // this check the button looked like it "finished" instantly with
+      // nothing to show for it, with no way to tell that apart from a
+      // genuine (if unlikely) sub-second scan.
+      if (result?.skipped) {
+        toast({
+          title: 'Scan não executado',
+          description: 'Outra varredura já estava em andamento (provavelmente o cron agendado). Tente de novo em alguns instantes.',
+        });
+      } else {
+        const failed = result?.results?.filter((r) => !r.success).length || 0;
+        setLastScan(new Date());
+        toast({
+          title: 'Scan concluído',
+          description: failed > 0
+            ? `${result.total} ativo(s) verificados, ${failed} com erro — veja o Debug Log.`
+            : `${result?.total ?? 0} ativo(s) verificados com sucesso.`,
+          variant: failed > 0 ? 'destructive' : 'default',
+        });
+      }
       queryClient.invalidateQueries();
     } catch (err) {
       console.error('Scan error:', err);
+      toast({
+        title: 'Erro no scan',
+        description: err.message || 'Falha inesperada — veja o console/Debug Log.',
+        variant: 'destructive',
+      });
     } finally {
       setScanning(false);
       setProgress('');

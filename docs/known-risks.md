@@ -512,3 +512,29 @@ lock do Firestore em si (essa parte é responsabilidade do SDK/serviço, fora
 do controle deste código). Não reabrir sem mudança de contexto (ex.: um bug
 de concorrência real em produção que só reproduza contra um Firestore de
 verdade).
+
+## 20. Botão "Scan" manual dava falsa impressão de sucesso quando pulado pelo lock — corrigido
+
+Reportado pelo usuário usando o painel no celular: apertou "Scan" no
+`TopBar`, o carregamento terminou rápido demais, sem confiança se realmente
+varreu tudo. Causa raiz: `scanAllAssets()` (`scanner.js:1299-1305`) tenta
+adquirir o lock `'full-scan'` — o **mesmo nome de lock** usado pelo cron do
+GitHub Actions — antes de escanear; se estiver ocupado (cron rodando
+naquele instante), a função retorna imediatamente `{ total: 0, results: [],
+skipped: true }`, sem tocar em nenhum ativo e sem nunca chamar a callback de
+progresso. `TopBar.jsx`'s `handleScan` descartava esse retorno por completo:
+atualizava "última atualização" e invalidava as queries mesmo quando nada
+tinha rodado — indistinguível, na UI, de um scan bem-sucedido.
+
+Isso é especialmente sensível porque esse botão é a **única via de
+recuperação manual dentro do painel** quando o cron falha (item 15) — um
+usuário que confiasse na falsa confirmação de sucesso não saberia que
+precisa tentar de novo.
+
+**Correção** (`src/components/layout/TopBar.jsx`, só UI — nenhuma mudança
+em `scanner.js`): captura o retorno de `scanAllAssets` e usa o componente de
+toast que já existia no projeto (mas nunca tinha sido usado —
+`@/components/ui/use-toast` + `<Toaster />` já montado em `App.jsx`) para
+avisar explicitamente cada caso: pulado por lock ocupado (não atualiza
+"última atualização"), concluído com contagem de ativos com erro, ou falha
+inesperada — em vez de silêncio ou falso sucesso.
