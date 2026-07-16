@@ -235,6 +235,21 @@ não sofre do mesmo problema dos 60 dias. Erros por-ativo (`scan_status:
 completa do `main()` (`scanAllAssets`/`priceCheckActiveOps` lançando exceção)
 interrompe o ping de sucesso.
 
+> **Atualização — healthcheck por ativo (P1, pesquisa de comunidade: padrão
+> "dead man's switch" por item).** O gap acima (erro por-ativo não é
+> detectado) foi fechado: `MonitoredAsset.scan_error_since` (novo campo)
+> rastreia desde quando um ativo está falhando **continuamente** — necessário
+> porque `last_scan_at` sozinho não serve, já que é atualizado tanto no
+> sucesso quanto no erro (toda passada "toca" o ativo). `scripts/run-scan.mjs`
+> roda `checkAssetHealthchecks()` após cada passada: se `scan_error_since`
+> (falha persistente) ou `last_scan_at` (silêncio total, ativo parou de ser
+> processado) ultrapassar 30 min (6× o cadenciamento de 5 min do cron), manda
+> um alerta Telegram (`notifyAssetStale`) — deduplicado via
+> `stale_alert_sent_at` para não repetir a cada passada, limpo quando o ativo
+> se recupera. Lógica de decisão pura e testada em
+> `src/lib/assetHealthcheck.js`. Nunca bloqueia o scan principal (try/catch
+> isolado em `run-scan.mjs`).
+
 ## 13. Rede de segurança contra tela branca + corte de desperdício no Firestore
 
 **Error Boundary**: até aqui nenhum componente React tinha proteção contra

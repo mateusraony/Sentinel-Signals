@@ -1140,11 +1140,19 @@ export async function persistScanResults(scanResult) {
     }
   }
 
-  // Update asset scan status
+  // Update asset scan status. scan_error_since tracks how long this asset has
+  // been failing CONTINUOUSLY — last_scan_at alone can't detect that, since
+  // it's refreshed on both success and error (a per-asset healthcheck reading
+  // only last_scan_at would never notice an asset failing every single pass;
+  // see docs/known-risks.md item 12 and scripts/run-scan.mjs's per-asset
+  // healthcheck, which alerts when this has been set for too long).
   await backend.entities.MonitoredAsset.update(asset.id, {
     last_scan_at: new Date().toISOString(),
     scan_status: errors.length > 0 ? 'error' : 'success',
     scan_error: errors.length > 0 ? errors.map(e => `${e.timeframe}: ${e.error}`).join('; ') : '',
+    scan_error_since: errors.length > 0
+      ? (asset.scan_status === 'error' ? (asset.scan_error_since || new Date().toISOString()) : new Date().toISOString())
+      : null,
   });
 
   // Log scan — only when something actually happened (new signal or error).
@@ -1328,6 +1336,7 @@ async function scanAllAssetsInner(onProgress) {
         scan_status: 'error',
         scan_error: err.message,
         last_scan_at: new Date().toISOString(),
+        scan_error_since: asset.scan_status === 'error' ? (asset.scan_error_since || new Date().toISOString()) : new Date().toISOString(),
       });
 
       await backend.entities.SystemLog.create({

@@ -41,19 +41,29 @@ function shouldSend(event, data) {
   return true;
 }
 
+// Returns whether the message was actually delivered (2xx from Telegram) —
+// callers that need to know delivery succeeded (e.g. the per-asset healthcheck
+// dedup marker, see checkAssetHealthchecks in run-scan.mjs) must not assume
+// a resolved promise means the message went out; existing fire-and-forget
+// callers in scanner.js are unaffected, they already ignore the return value.
 async function send(html) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!botToken || !chatId) return;
+  if (!botToken || !chatId) return false;
   try {
     const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: 'HTML' }),
     });
-    if (!res.ok) console.warn('[Telegram] send failed:', res.status, await res.text());
+    if (!res.ok) {
+      console.warn('[Telegram] send failed:', res.status, await res.text());
+      return false;
+    }
+    return true;
   } catch (e) {
     console.warn('[Telegram] send failed:', e.message);
+    return false;
   }
 }
 
@@ -117,6 +127,31 @@ export async function notifyTP2Hit(op, price) {
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)} → TP2: $${fmtP(op.tp2)}\n\n` +
     `<i>✅ Lucro completo realizado — CryptoRadar</i>`
+  );
+}
+
+// System alert (per-asset healthcheck, scripts/run-scan.mjs) — bypasses
+// shouldSend() filtering intentionally: this isn't a trading signal event
+// subject to timeframe/priority/score filters, it's an operational "this
+// asset stopped being scanned properly" warning that must always go through,
+// the same way the healthchecks.io dead-man's-switch ping does for the whole
+// scan pass.
+export async function notifyAssetStale(asset, reason) {
+  const label = asset.symbol?.replace('USDT', '/USDT') || asset.symbol;
+  if (reason === 'persistent_error') {
+    return send(
+      `⚠️ <b>Ativo falhando continuamente</b>\n\n` +
+      `<b>${label}</b>\n` +
+      `🔁 Erro desde: ${asset.scan_error_since || '—'}\n` +
+      `📝 ${asset.scan_error || '—'}\n\n` +
+      `<i>⚡ CryptoRadar — verifique o ativo/Debug Log</i>`
+    );
+  }
+  return send(
+    `⚠️ <b>Ativo sem atualização</b>\n\n` +
+    `<b>${label}</b>\n` +
+    `🔇 Último scan: ${asset.last_scan_at || '—'}\n\n` +
+    `<i>⚡ CryptoRadar — verifique se o ativo segue ativo no painel</i>`
   );
 }
 

@@ -136,6 +136,14 @@
       "type": "string",
       "description": "Last scan error message if any"
     },
+    "scan_error_since": {
+      "type": "string",
+      "description": "ISO timestamp of when scan_status first became 'error' in the current streak (null once it recovers to 'success'). last_scan_at alone can't detect a persistently-failing asset — it's refreshed on every pass regardless of success/error — so this field is what the per-asset healthcheck (scripts/run-scan.mjs) actually alerts on. See docs/known-risks.md item 12."
+    },
+    "stale_alert_sent_at": {
+      "type": "string",
+      "description": "ISO timestamp set by the per-asset healthcheck (scripts/run-scan.mjs) when it sends a Telegram alert for this asset, so the 5-minute cron doesn't repeat the same alert every pass. Cleared back to null once the asset recovers, so a future episode alerts again."
+    },
     "smc_enabled": {
       "type": "boolean",
       "default": false,
