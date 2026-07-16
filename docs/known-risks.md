@@ -295,3 +295,48 @@ sobrescrever dado bom por engano numa hora de pânico. Procedimento
 documentado em `docs/restore-firestore.md`, usando
 `scripts/restore-firestore.mjs` (suporta `--dry-run` e pede confirmação
 explícita antes de escrever qualquer coisa).
+
+## 15. "Dois cérebros" (browser + cron escaneando independentemente) — avaliado, sem mudança
+
+O painel (via `src/hooks/useAutoScan.js`, montado sempre que a aba está
+aberta: full scan a cada 60min, price-check a cada 2min) e o cron do GitHub
+Actions (a cada 5min) chamam as mesmas funções de `src/lib/scanner.js` de
+forma independente. Isso foi levantado como risco P1 e avaliado via
+`sentinel-council-review` (3 revisores locais independentes: arquitetura,
+concorrência, UX/produto+segurança) antes de qualquer mudança de código.
+
+**Veredito: não mexer.** A justificativa original ("consenso de que dois
+escritores só valem a pena com exigência real de latência") mirava a
+corrida perigosa de concorrência entre os dois — que **já foi corrigida**
+pelo CAS transacional (`transitionTradeOp`, ver item P0-a em
+`.claude/rules/trading-engine.md`). O ganho de segurança adicional de tornar
+o browser somente-leitura hoje é ~zero, e o custo é real:
+
+- **`src/components/layout/TopBar.jsx`** tem um botão manual "Scan" que
+  chama as mesmas funções — é a única via de recuperação DENTRO do painel
+  quando o cron falha (não há tela de login, então o usuário do painel pode
+  não ter acesso ao GitHub Actions para disparar `workflow_dispatch`
+  manualmente). Nenhuma versão da proposta considerada remove esse botão.
+- O **canal Telegram "ao vivo"** (decisão intencional #2 do `CLAUDE.md`) está
+  estruturalmente entrelaçado com a escrita do scan no browser
+  (`notifyNewSignal`/etc. disparam logo após a escrita em `persistScanResults`)
+  — removê-lo reverteria uma decisão intencional documentada sem pedido
+  explícito.
+- O browser busca **Futures** (`fapi.binance.com`) enquanto o cron busca
+  **Spot** (item 4 acima) — tornar o painel somente-leitura significa que,
+  com a aba aberta, o usuário deixaria de ver a visão Futures mais fresca e
+  passaria a ver só o que o cron (Spot, a cada 5min) escreveu. Não é um
+  refactor neutro de "só simplificação", é uma troca de característica de
+  produto.
+- O CAS/locks não ficam "código morto" mesmo com o cron como único escritor
+  automático: execuções do cron podem se sobrepor entre si (timeout de 8min
+  do workflow vs cadência de 5min — os TTLs dos locks foram calibrados
+  exatamente para esse cenário) e o botão manual do `TopBar` ainda pode
+  colidir com o cron.
+
+Se um dia fizer sentido revisitar: a única mudança de baixo risco discutida
+(não implementada) seria remover **só** o timer automático silencioso
+(`useAutoScan.js` + `AutoScanRunner` em `AppLayout.jsx`), mantendo o botão
+manual do `TopBar` intacto — mas isso exigiria decidir e documentar
+explicitamente a perda da visão Futures automática ao vivo, não é um
+cleanup silencioso. Não reabrir sem pedido explícito do usuário.
