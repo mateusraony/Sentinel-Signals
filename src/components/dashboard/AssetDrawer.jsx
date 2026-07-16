@@ -118,6 +118,11 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
               <span className="text-xs font-bold text-foreground">Sinais Recentes</span>
               <span className="text-[9px] font-mono text-muted-foreground">({assetSignals.length})</span>
             </div>
+            {assetSignals.length > 0 && (
+              <p className="text-[8px] font-mono mb-2" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                "Confl." = confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
+              </p>
+            )}
             {assetSignals.length === 0 ? (
               <p className="text-[10px] font-mono text-muted-foreground">Nenhum sinal registrado.</p>
             ) : (
@@ -135,11 +140,7 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
                           <span className="text-[9px] font-mono text-muted-foreground">{sig.timeframe?.toUpperCase()}</span>
                           <span className="text-[9px] font-mono text-foreground/60">${fmt(sig.price_at_signal)}</span>
                           {sig.context?.score && (
-                            <span
-                              className="text-[8px] font-mono"
-                              style={{ color: '#ffd166' }}
-                              title="Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade."
-                            >
+                            <span className="text-[8px] font-mono" style={{ color: '#ffd166' }}>
                               Confl. {sig.context.score}
                             </span>
                           )}
