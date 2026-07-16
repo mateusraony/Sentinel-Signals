@@ -140,4 +140,4 @@ risco de corrupção de dado (o scanner já é seguro sob concorrência via
 
 Esta configuração é feita **fora do repositório** (conta pessoal do usuário
 no cron-job.org + um PAT pessoal) — não há nada para commitar além deste
-documento. `docs/known-risks.md` item 18 registra a decisão.
+documento. `docs/known-risks.md` item 16 registra a decisão.

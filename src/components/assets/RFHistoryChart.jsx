@@ -20,7 +20,11 @@ function dirColor(dir) {
 export default function RFHistoryChart({ asset }) {
   const { data: signals = [], isLoading } = useQuery({
     queryKey: ['rf-history', asset.id],
-    queryFn: () => backend.entities.SignalEvent.filter({ asset_id: asset.id }),
+    // Bounded to the 60 most recent signals (not just range_filter — macd
+    // signals also carry rf_value, see scanner.js) so this query doesn't grow
+    // with the asset's whole signal history; the chart itself only needs the
+    // last 30 points with rf_value present (filtered below).
+    queryFn: () => backend.entities.SignalEvent.filter({ asset_id: asset.id }, '-created_date', 60),
     staleTime: 30000,
   });
 

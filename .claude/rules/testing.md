@@ -13,17 +13,34 @@ protection). Falha de teste manda alerta no Telegram.
 
 Cobertura atual: `src/lib/indicators/*.test.js` (RSI, SMC BOS/CHoCH/sweep/PD,
 ADX, Choppiness, Tier) — funções puras, com casos de valor conhecido e limites
-(dados insuficientes, candles planos).
+(dados insuficientes, candles planos). `opTransition.test.js`/
+`opExitRules.test.js`/`assetHealthcheck.test.js`/`assetStateDiff.test.js`
+cobrem as regras puras extraídas do motor (CAS, guard temporal, trailing,
+contador RF, healthcheck, diff de estado).
 
-## Lacunas prioritárias (atacar junto com os P0)
+`scannerStateMachine.test.js` cobre a **máquina de estados fim a fim** contra
+as funções REAIS do `scanner.js` (`persistScanResults`, `priceCheckActiveOps`,
+`buildTradeOpData`), usando um backend fake em memória
+(`src/lib/__fixtures__/fakeBackend.js`, mesma forma de chamada de
+`src/api/entities.js`, reaproveitando o `canApplyTransition`/`isTerminalStatus`
+real) — sem re-implementar as regras, só trocando a persistência. Cobre: todas
+as transições documentadas em `.claude/rules/trading-engine.md`
+(`SIGNAL_CONFIRMED→RUNNER_ACTIVE→TP2_HIT/STOP_HIT/INVALIDATED`, `→CLOSED` por
+Time Stop/Chop Exit), o guard temporal do candle de entrada (P0-c), o trailing
+sem look-ahead (P0-d), o dedup do contador RF por candle (P0-e), e um teste de
+concorrência real (`Promise.all` sem await individual, deixando as duas
+funções racearem de verdade via microtask do fake) provando que o CAS nunca
+resulta em estado misto/corrompido quando os dois loops disputam a mesma op.
 
-- **Máquina de estados**: todas as transições válidas e a proibição de sair de
-  estado terminal (ver transições em `.claude/rules/trading-engine.md`).
-- **Concorrência**: múltiplos workers na mesma op → uma única transição, uma
-  única notificação, uma única op ativa por ativo.
-- **Temporalidade**: candle anterior à entrada, candle de entrada, gap, stop e TP
-  no mesmo candle, trailing criado no fechamento, scans perdidos, replay de
-  candles intermediários.
+## Lacunas restantes
+
+- **Cascata de entrada completa** (`check15mConfirmation`/
+  `check5mSmcConfirmation`, que buscam candles via rede): não coberta por
+  `scannerStateMachine.test.js` (que testa `buildTradeOpData` isoladamente,
+  pulando a etapa de confirmação) — exigiria mockar `fetchCandles` com séries
+  sintéticas; valor incremental baixo (a criação de op em si é só dados, a
+  decisão de "quando confirmar" é o que ficaria sem cobertura, e é lógica de
+  timing, não de máquina de estados).
 - **Paridade Pine×JS** (golden tests): ver `.claude/rules/pine-parity.md`.
 
 ## Convenções
