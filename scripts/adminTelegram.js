@@ -41,19 +41,29 @@ function shouldSend(event, data) {
   return true;
 }
 
+// Returns whether the message was actually delivered (2xx from Telegram) —
+// callers that need to know delivery succeeded (e.g. the per-asset healthcheck
+// dedup marker, see checkAssetHealthchecks in run-scan.mjs) must not assume
+// a resolved promise means the message went out; existing fire-and-forget
+// callers in scanner.js are unaffected, they already ignore the return value.
 async function send(html) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!botToken || !chatId) return;
+  if (!botToken || !chatId) return false;
   try {
     const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: 'HTML' }),
     });
-    if (!res.ok) console.warn('[Telegram] send failed:', res.status, await res.text());
+    if (!res.ok) {
+      console.warn('[Telegram] send failed:', res.status, await res.text());
+      return false;
+    }
+    return true;
   } catch (e) {
     console.warn('[Telegram] send failed:', e.message);
+    return false;
   }
 }
 

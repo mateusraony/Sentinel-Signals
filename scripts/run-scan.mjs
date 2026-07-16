@@ -22,8 +22,14 @@ async function checkAssetHealthchecks() {
   for (const asset of assets) {
     const reason = assetHealthcheckReason(asset, { now, graceMs: ASSET_STALE_GRACE_MS });
     if (shouldAlertStale(asset, reason)) {
-      if (isTelegramConfigured()) await notifyAssetStale(asset, reason).catch(() => {});
-      await backend.entities.MonitoredAsset.update(asset.id, { stale_alert_sent_at: new Date().toISOString() });
+      // Only persist the dedup marker once delivery is CONFIRMED — if Telegram
+      // isn't configured, or the send fails/times out, leave it unset so the
+      // next 5-min pass retries instead of silently suppressing the one alert
+      // that matters most (a real, ongoing outage).
+      const delivered = isTelegramConfigured() && await notifyAssetStale(asset, reason).catch(() => false);
+      if (delivered) {
+        await backend.entities.MonitoredAsset.update(asset.id, { stale_alert_sent_at: new Date().toISOString() });
+      }
     } else if (shouldClearStaleAlert(asset, reason)) {
       await backend.entities.MonitoredAsset.update(asset.id, { stale_alert_sent_at: null });
     }
