@@ -7,7 +7,7 @@
 // temporal guard/trailing/RF counter) by proving scanner.js actually WIRES
 // them together correctly end to end. See .claude/rules/trading-engine.md
 // for the state machine this exercises.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createFakeBackend } from './__fixtures__/fakeBackend.js';
 
 vi.mock('@/api/entities', () => ({ backend: {} }));
@@ -38,6 +38,18 @@ beforeEach(() => {
   backend = createFakeBackend();
   Object.assign(entitiesModule.backend, backend);
   vi.clearAllMocks();
+  // Freeze Date.now() — persistScanResults's Time Stop check compares
+  // op.candle_close_time against the REAL wall clock (barsOpen = elapsed
+  // time / bar duration). Fixtures below use hardcoded ISO timestamps near
+  // this frozen instant; without freezing, every fixture's "recent" candle
+  // eventually crosses the 48-bar (~8 day) Time Stop threshold as real time
+  // passes, silently flipping unrelated tests to CLOSED/TIME_STOP.
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date('2026-07-16T12:00:00.000Z'));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 function makeAsset(overrides = {}) {
@@ -314,11 +326,25 @@ describe('priceCheckActiveOps — price-based transitions', () => {
 });
 
 describe('cross-loop concurrency invariant (persistScanResults vs priceCheckActiveOps)', () => {
-  it('never lands in a corrupted mixed state when both loops race the same op', async () => {
+  it('exactly one of the two racing transitions applies — the CAS rejects the loser, not last-write-wins', async () => {
     backend._seed('TradeOperation', makeOp());
     // Candle-based loop would drive this to STOP_HIT (low touches the stop);
     // price-based loop, racing at the same time, would drive it to
-    // RUNNER_ACTIVE (price crossing tp1). Only one may ever apply.
+    // RUNNER_ACTIVE (price crossing tp1). Only one may ever apply — instrument
+    // transitionTradeOp itself (not just the final stored doc) so a
+    // regression back to plain read-modify-write (both writes "applying",
+    // last one winning) is caught: the final doc alone can't distinguish
+    // "CAS correctly rejected the loser" from "no CAS, last write wins",
+    // since both scenarios can leave a self-consistent single-candidate
+    // status behind.
+    const originalTransition = backend.tradeOps.transitionTradeOp;
+    const appliedLog = [];
+    backend.tradeOps.transitionTradeOp = async (...args) => {
+      const result = await originalTransition(...args);
+      appliedLog.push(result.applied);
+      return result;
+    };
+
     const results = { '4h': makeTfData({ lastCandleHigh: 99, lastCandleLow: 97, lastClose: 98 }) };
     vi.mocked(fetchCurrentPrice).mockResolvedValue(104);
 
@@ -326,6 +352,9 @@ describe('cross-loop concurrency invariant (persistScanResults vs priceCheckActi
       persistScanResults(makeScanResult({ results })),
       priceCheckActiveOps(),
     ]);
+
+    expect(appliedLog).toHaveLength(2); // both loops attempted a transition
+    expect(appliedLog.filter(Boolean)).toHaveLength(1); // exactly one applied
 
     const stored = backend._get('TradeOperation', 'op1');
     expect(['STOP_HIT', 'RUNNER_ACTIVE']).toContain(stored.status);
@@ -335,9 +364,5 @@ describe('cross-loop concurrency invariant (persistScanResults vs priceCheckActi
     } else {
       expect(stored.tp1_hit).toBe(false);
     }
-    // Whichever loop lost the race should have logged it (see
-    // .claude/rules/trading-engine.md's "residual" observability note) —
-    // not asserted strictly since true interleaving may let both apply
-    // cleanly in sequence with no conflict, which is also a valid outcome.
   });
 });
