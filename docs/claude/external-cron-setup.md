@@ -57,26 +57,47 @@ Criar uma conta gratuita e um novo cronjob:
 - **Método**: `POST`
 - **Headers customizados**:
   - `Accept: application/vnd.github+json`
-  - `Authorization: Bearer <TOKEN do passo 1>`
+  - `Authorization: Bearer SEU_TOKEN_AQUI`
   - `X-GitHub-Api-Version: 2022-11-28`
   - `Content-Type: application/json`
 - **Corpo (body)**: `{"ref":"main"}`
 - **Agendamento**: a cada 5 minutos (`*/5 * * * *`) — mesma cadência do
   `schedule:` interno.
 
-Equivalente em `curl`, para testar manualmente antes de configurar o serviço:
+> ⚠️ **Pegadinha comum (causa real de `401 Bad credentials` já vista aqui):**
+> `SEU_TOKEN_AQUI` acima é só um marcador de texto — no campo "Valor" do
+> header `Authorization`, digite `Bearer ` (com um espaço) seguido do token
+> colado **direto**, sem nenhum símbolo `<` `>` ao redor. Se o valor final
+> ficar parecido com `Bearer <github_pat_...` (com um `<` de verdade no
+> meio), o GitHub rejeita como credencial inválida. Depois de colar,
+> confira visualmente que não sobrou nenhum `<`/`>`/espaço extra antes ou
+> depois do token.
+
+Equivalente em `curl`, para testar manualmente antes de configurar o serviço
+(troque `SEU_TOKEN_AQUI` pelo token real, sem `< >`):
 
 ```bash
 curl -L -X POST \
   -H "Accept: application/vnd.github+json" \
-  -H "Authorization: Bearer <TOKEN>" \
+  -H "Authorization: Bearer SEU_TOKEN_AQUI" \
   -H "X-GitHub-Api-Version: 2022-11-28" \
   https://api.github.com/repos/mateusraony/Sentinel-Signals/actions/workflows/scan.yml/dispatches \
   -d '{"ref":"main"}'
 ```
 
 Uma resposta `204 No Content` confirma que o disparo foi aceito — a run
-aparece em Actions → Scheduled scan em poucos segundos.
+aparece em Actions → Scheduled scan em poucos segundos. `401` com
+`"message": "Bad credentials"` é quase sempre o token errado/mal colado (ver
+pegadinha acima) ou um token já revogado — nunca um problema no workflow em
+si.
+>
+> **Se um token vazar** (por exemplo, colado sem querer num chat, print de
+> tela ou log): revogue-o imediatamente em GitHub → Settings → Developer
+> settings → Personal access tokens e gere um novo. Um fine-grained token
+> escopado só a `Actions: read/write` de um único repositório é bem menos
+> grave que vazar uma senha, mas ainda assim deve ser tratado como
+> comprometido assim que exposto — não espere confirmar se foi "realmente"
+> visto por alguém.
 
 ### 3. Depois de confirmar que o disparo externo está funcionando, reduzir o `schedule:` interno para fallback
 

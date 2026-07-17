@@ -474,6 +474,20 @@ scan ao vivo rodando só 1x/hora achando que ainda roda a cada 5min.
 Não substitui o watchdog do item 12 (continua sendo a rede de segurança real
 contra "nenhum scan rodou").
 
+> **Atualização — medido no projeto real (não mais só pesquisa de
+> comunidade).** Analisando o histórico de execuções do `scan.yml` via API
+> do GitHub (30 execuções, todas `event: schedule`, span de 48.2h): intervalo
+> médio real de **~100 minutos** entre passadas (mínimo 55min, máximo
+> quase **3h26**), contra os 5 minutos configurados — uma taxa de execução
+> de **~5% do esperado** (30 rodadas reais contra ~578 esperadas no
+> período). Isso é bem mais grave do que os "~30min de atraso" que a
+> pesquisa de comunidade original sugeria — na prática o `schedule:` deste
+> projeto está rodando na faixa de 1x/hora, não 1x/5min, o que reduz
+> drasticamente a chance de qualquer sinal/evento ser detectado a tempo de
+> gerar notificação. **Reforça a prioridade do disparo externo** — não é
+> mais uma otimização, é a correção do relógio de trading estar
+> efetivamente quebrado.
+
 ## 19. Firestore Emulator Suite rejeitado para teste de concorrência (P2, decisão do usuário)
 
 Cogitado como forma de testar a concorrência real de `TradeOperation`
