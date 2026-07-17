@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isCandleUsableForExits, advanceTrailingStop, nextRfReverseCount } from './opExitRules.js';
+import { isCandleUsableForExits, advanceTrailingStop, nextRfReverseCount, computeStructuralStop } from './opExitRules.js';
 
 const T0 = '2026-07-15T04:00:00.000Z'; // signal/entry candle close
 const T1 = '2026-07-15T08:00:00.000Z'; // next 4h candle close
@@ -99,5 +99,49 @@ describe('nextRfReverseCount (P0-e — contagem por candle, não por scan)', () 
   it('fallback legado: sem candleTime, mantém o incremento por passada antigo', () => {
     const s = nextRfReverseCount({ rfReversedAgainst: true, prevCount: 2, prevCandleTime: null, candleTime: null });
     expect(s.count).toBe(3);
+  });
+});
+
+describe('computeStructuralStop (stop estrutural da cascata SMC)', () => {
+  // Fixture BUY: entry 100, ATR(1h) 2 → buffer 0.2, floor 1.0, cap 4.0.
+  const base = { isBuy: true, entry: 100, atrValue: 2 };
+
+  it('usa o nível estrutural com buffer quando dentro dos limites', () => {
+    const r = computeStructuralStop({ ...base, structuralLevel: 98.5 });
+    expect(r.stop).toBeCloseTo(98.3); // 98.5 − 0.1·ATR
+    expect(r.basis).toBe('structural');
+  });
+
+  it('aplica o piso quando a estrutura está apertada demais (ruído 5m)', () => {
+    const r = computeStructuralStop({ ...base, structuralLevel: 99.8 });
+    expect(r.stop).toBeCloseTo(99.0); // entry − 0.5·ATR
+    expect(r.basis).toBe('structural_floored');
+  });
+
+  it('aplica o cap quando a estrutura está larga demais — nunca pior que o modelo ATR antigo', () => {
+    const r = computeStructuralStop({ ...base, structuralLevel: 95 });
+    expect(r.stop).toBeCloseTo(96.0); // entry − 2.0·ATR (comportamento legado)
+    expect(r.basis).toBe('structural_capped');
+  });
+
+  it('cai para o modelo ATR quando o nível está do lado errado da entrada', () => {
+    const r = computeStructuralStop({ ...base, structuralLevel: 101 });
+    expect(r.stop).toBeCloseTo(96.0);
+    expect(r.basis).toBe('atr_fallback');
+  });
+
+  it('cai para o modelo ATR quando o nível está ausente (op legada / dado incompleto)', () => {
+    const r = computeStructuralStop({ ...base, structuralLevel: null });
+    expect(r.stop).toBeCloseTo(96.0);
+    expect(r.basis).toBe('atr_fallback');
+  });
+
+  it('espelha o cálculo para SELL (stop acima da entrada)', () => {
+    const r = computeStructuralStop({ isBuy: false, entry: 100, atrValue: 2, structuralLevel: 101.5 });
+    expect(r.stop).toBeCloseTo(101.7); // 101.5 + 0.1·ATR
+    expect(r.basis).toBe('structural');
+    const capped = computeStructuralStop({ isBuy: false, entry: 100, atrValue: 2, structuralLevel: 105 });
+    expect(capped.stop).toBeCloseTo(104.0);
+    expect(capped.basis).toBe('structural_capped');
   });
 });

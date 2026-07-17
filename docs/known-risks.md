@@ -213,12 +213,9 @@ revisão:
    (`SMC_INITIAL_STOP_ATR_MULT = 2.0`), desacoplada do parâmetro Pine que
    controla o trailing da cascata RF.
 
-Ponto de metodologia levantado na mesma auditoria, ainda não alterado (é uma
-decisão de design, não um bug): entradas estilo ICT/SMC tradicionalmente
-usam stop estrutural (abaixo do sweep ou swing oposto), não stop por ATR —
-o stop inicial da cascata SMC aqui continua ATR-based, sem relação direta
-com o nível que de fato invalidaria a tese da entrada. Considerar migrar
-para um stop estrutural numa fase futura.
+Ponto de metodologia levantado na mesma auditoria — stop inicial ATR-based
+sem relação com o nível que invalidaria a tese: **migrado para stop
+estrutural** a pedido do usuário (2026-07), ver item 24.
 
 ## 12. Testes automatizados (Vitest) e watchdog externo do scan (healthchecks.io)
 
@@ -672,3 +669,33 @@ Dois resíduos apontados na verificação da auditoria externa (2026-07), itens
    passada por `persistScanResults` — `last_scan_at`/`scan_error_since`, dos
    quais o healthcheck por ativo depende, não mudaram. O valor `'scanning'`
    ficou como legado no enum do schema (`MonitoredAsset.jsonc`).
+
+## 24. Stop estrutural na cascata SMC 1h→5m — implementado (era o item de design pendente do 11)
+
+A pedido do usuário (2026-07), o stop inicial da cascata SMC deixou de ser
+2×ATR(1h) fixo e passou a ser **estrutural**: além do nível que invalida a
+tese do gatilho 5m, com salvaguardas ATR. Pesquisa de comunidade (ICT/SMC)
+validou o desenho: stop **além** do extremo varrido/swing protetor — nunca
+exatamente no nível, que é tocado rotineiramente em spikes de indução — com
+buffer, piso mínimo de ~0.5×ATR contra ruído e cap de risco.
+
+- **Nível estrutural** (calculado em `check5mSmcConfirmation`): gatilho
+  `sweep` → o próprio pavio do candle de sweep (por construção, o extremo
+  além do swing de 20 barras que ele varreu); gatilho `structure`
+  (BOS/CHoCH) → extremo protetor da mesma janela de 10 barras usada pelo
+  cálculo de estrutura 5m.
+- **Regra pura** `computeStructuralStop` (`src/lib/opExitRules.js`, testada):
+  `stop = nível ∓ 0.1×ATR(1h)` (buffer), com piso `0.5×ATR` (ruído 5m não
+  gera stop colável) e cap `2.0×ATR` = `SMC_INITIAL_STOP_ATR_MULT` — **o
+  comportamento antigo virou o pior caso**: o risco nunca excede o modelo
+  pré-migração; nível ausente/do lado errado cai no fallback ATR puro.
+- TP1/TP2 continuam derivados de `riskR` (tp1R/tp2R do Pine), então escalam
+  automaticamente com o stop mais justo. Trailing pós-TP1, invalidação por
+  estrutura e Time Stop não mudam.
+- Observabilidade: a op grava `stop_basis`
+  (`structural|structural_floored|structural_capped|atr_fallback`) e
+  `structural_level` (schema atualizado) — dá para medir depois quanto cada
+  regime de stop contribui em R (via tradeMetrics, item 22).
+- A cascata RF 4h→15m **não muda** (segue tier ATR — é paridade com o Pine
+  v13.2). Nota de paridade: o stop estrutural é decisão de produto local da
+  cascata SMC portada, divergência consciente registrada aqui.

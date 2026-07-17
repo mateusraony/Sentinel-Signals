@@ -246,6 +246,23 @@
     "sweep_confirmed": {
       "type": "boolean",
       "description": "SMC cascade only: whether the 5m entry trigger was a liquidity sweep (true) or a 5m BOS/CHoCH (false)"
+    },
+    "stop_basis": {
+      "type": "string",
+      "enum": [
+        "structural",
+        "structural_floored",
+        "structural_capped",
+        "atr_fallback"
+      ],
+      "description": "SMC cascade only: how the initial stop was derived — structural level with buffer, floored at 0.5×ATR(1h), capped at 2×ATR(1h), or plain ATR fallback (missing/invalid level). See computeStructuralStop in opExitRules.js"
+    },
+    "structural_level": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "SMC cascade only: raw 5m invalidation level the stop was derived from (sweep wick or protective swing extreme), before buffer/floor/cap"
     }
   },
   "required": [
