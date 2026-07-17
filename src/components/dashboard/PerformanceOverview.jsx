@@ -2,22 +2,7 @@ import React, { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { TrendingUp, Award, BarChart2, Target } from 'lucide-react';
 import moment from 'moment';
-
-function calcPnl(op) {
-  const isBuy = op.side === 'BUY';
-  let exitPrice = op.exit_price ?? null;
-  if (!exitPrice) {
-    if (op.status === 'TP2_HIT') exitPrice = op.tp2;
-    else if (op.status === 'STOP_HIT') exitPrice = op.tp1_hit ? op.entry_price : op.current_stop;
-    else if (op.status === 'INVALIDATED' || op.status === 'CLOSED') exitPrice = op.current_stop;
-  }
-  if (!exitPrice || !op.entry_price) return null;
-  return isBuy
-    ? ((exitPrice - op.entry_price) / op.entry_price) * 100
-    : ((op.entry_price - exitPrice) / op.entry_price) * 100;
-}
-
-const CLOSED = ['TP2_HIT', 'STOP_HIT', 'INVALIDATED', 'CLOSED'];
+import { summarizeOps } from '@/lib/tradeMetrics';
 
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
@@ -38,53 +23,40 @@ const CustomTooltip = ({ active, payload }) => {
 };
 
 export default function PerformanceOverview({ tradeOps }) {
-  const history = useMemo(() =>
-    (tradeOps || [])
-      .filter(o => CLOSED.includes(o.status))
-      .sort((a, b) => new Date(a.created_date) - new Date(b.created_date)),
-    [tradeOps]
-  );
+  const { chartData, total, wins, losses, be, totalPnl, winRate, avgWin, avgLoss } = useMemo(() => {
+    const s = summarizeOps(tradeOps);
 
-  const { chartData, wins, losses, be, totalPnl, winRate, avgWin, avgLoss } = useMemo(() => {
-    let cumulative = 0;
-    const data = [];
-    let wins = 0, losses = 0, be = 0;
-    let winSum = 0, lossSum = 0;
-
-    history.forEach(op => {
-      const pnl = calcPnl(op);
-      if (pnl === null) return;
-      cumulative += pnl;
-      const isBE = op.status === 'STOP_HIT' && op.tp1_hit;
-      if (op.status === 'TP2_HIT') { wins++; winSum += pnl; }
-      else if (op.status === 'STOP_HIT' && !isBE) { losses++; lossSum += Math.abs(pnl); }
-      else if (isBE) be++;
-
-      const STATUS_LABELS = {
-        TP2_HIT: '🏆 TP2', STOP_HIT: isBE ? '🔄 BE' : '🛑 Stop',
-        INVALIDATED: '⚠️ Inv.', CLOSED: '✖ Enc.'
-      };
-
-      data.push({
-        label: `${op.symbol?.replace('USDT', '/USDT')} ${op.timeframe?.toUpperCase()} · ${moment(op.created_date).format('DD/MM HH:mm')}`,
-        pnl: parseFloat(pnl.toFixed(2)),
-        cumulative: parseFloat(cumulative.toFixed(2)),
-        status: STATUS_LABELS[op.status] || op.status,
+    // Exit reason still labels each point; the BE tag now follows the
+    // realized outcome, not `STOP_HIT && tp1_hit`.
+    const data = s.curve
+      .filter(p => p.pnlPct !== null)
+      .map(({ op, pnlPct, cumulativePct, outcome }) => {
+        const STATUS_LABELS = {
+          TP2_HIT: '🏆 TP2', STOP_HIT: outcome === 'BE' ? '🔄 BE' : '🛑 Stop',
+          INVALIDATED: '⚠️ Inv.', CLOSED: '✖ Enc.'
+        };
+        return {
+          label: `${op.symbol?.replace('USDT', '/USDT')} ${op.timeframe?.toUpperCase()} · ${moment(op.created_date).format('DD/MM HH:mm')}`,
+          pnl: parseFloat(pnlPct.toFixed(2)),
+          cumulative: parseFloat(cumulativePct.toFixed(2)),
+          status: STATUS_LABELS[op.status] || op.status,
+        };
       });
-    });
 
-    const total = wins + losses + be;
     return {
       chartData: data,
-      wins, losses, be,
-      totalPnl: cumulative,
-      winRate: total > 0 ? Math.round((wins / total) * 100) : 0,
-      avgWin: wins > 0 ? (winSum / wins).toFixed(2) : '0.00',
-      avgLoss: losses > 0 ? (lossSum / losses).toFixed(2) : '0.00',
+      total: s.total,
+      wins: s.wins,
+      losses: s.losses,
+      be: s.be,
+      totalPnl: s.totalPnlPct,
+      winRate: s.counted > 0 ? Math.round(s.winRate) : 0,
+      avgWin: s.avgWinPct.toFixed(2),
+      avgLoss: s.avgLossPct.toFixed(2),
     };
-  }, [history]);
+  }, [tradeOps]);
 
-  if (history.length === 0) return null;
+  if (total === 0) return null;
 
   const pnlColor = totalPnl >= 0 ? '#00ff80' : '#ff1478';
   const wrColor = winRate >= 60 ? '#00ff80' : winRate >= 45 ? '#ffd166' : '#ff1478';
@@ -104,7 +76,7 @@ export default function PerformanceOverview({ tradeOps }) {
         <div className="flex items-center gap-2">
           <BarChart2 className="w-4 h-4" style={{ color: '#00e5ff' }} />
           <span className="text-sm font-bold text-foreground">Performance Consolidada</span>
-          <span className="text-[9px] font-mono text-muted-foreground">— {history.length} trades fechados</span>
+          <span className="text-[9px] font-mono text-muted-foreground">— {total} trades fechados</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#00ff80', boxShadow: '0 0 5px #00ff80' }} />
