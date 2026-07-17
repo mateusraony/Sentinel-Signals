@@ -655,7 +655,11 @@ Dois resíduos apontados na verificação da auditoria externa (2026-07), itens
    elimina boas oportunidades. **Fechado**: os blocos de entrada de
    `persistScanResults` agora gravam `SystemLog` estruturado
    (`reason: 'active_op_exists'`, `candidate_signal`, `candidate_cascade`,
-   `active_op_id`, `active_op_cascade`) — 1 log por sinal novo persistido
+   `active_op_id`, `active_op_cascade`, `confirmation_checked: false` — a
+   confirmação do timeframe menor NÃO é avaliada para candidato bloqueado,
+   de propósito: evita um fetch de candles extra e a op ativa bloqueia a
+   janela de retry inteira; o campo deixa o dado honesto, apontamento do
+   review do Codex no PR) — 1 log por sinal novo persistido
    (o dedup por `createUnique` garante que re-scans do mesmo sinal não
    repetem; os loops de retry permanecem silenciosos de propósito para não
    logar a cada passada de 5 min). Testes em `scannerStateMachine.test.js`.

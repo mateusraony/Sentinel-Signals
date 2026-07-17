@@ -810,21 +810,27 @@ export async function persistScanResults(scanResult) {
                 });
               }
             } else {
-              // Candidate passed every technical gate but the asset already
-              // holds an op (possibly from the OTHER cascade — the two share
-              // the one-op-per-asset anchor). Logged once per new signal so
-              // the cross-cascade arbitration is auditable; the retry loops
-              // below stay silent to avoid repeating this every pass.
+              // Candidate passed every 4H gate but the asset already holds an
+              // op (possibly from the OTHER cascade — the two share the
+              // one-op-per-asset anchor). Logged once per new signal so the
+              // cross-cascade arbitration is auditable; the retry loops below
+              // stay silent to avoid repeating this every pass. The 15m
+              // confirmation is deliberately NOT fetched here (the active op
+              // blocks the whole retry window anyway, and skipping the candle
+              // fetch is the point of the hasActiveOp early-exit), so the log
+              // records that explicitly instead of implying the candidate was
+              // entry-ready.
               await backend.entities.SystemLog.create({
                 level: 'info',
                 module: 'scanner',
-                message: `${asset.symbol} 4H ${signal.signal_type} — entrada descartada: já existe operação ativa no ativo`,
+                message: `${asset.symbol} 4H ${signal.signal_type} — candidato bloqueado por operação ativa (confirmação 15m não avaliada)`,
                 symbol: asset.symbol,
                 timeframe: '4h',
                 details: {
                   reason: 'active_op_exists',
                   candidate_signal: signal.dedup_key,
                   candidate_cascade: '4h_15m',
+                  confirmation_checked: false,
                   active_op_id: activeOp?.id ?? null,
                   active_op_cascade: activeOp?.cascade ?? null,
                 },
@@ -867,18 +873,20 @@ export async function persistScanResults(scanResult) {
             });
           }
         } else {
-          // Same cross-cascade arbitration log as the RF block above —
-          // once per new SMC signal, silent on retries.
+          // Same cross-cascade arbitration log as the RF block above — once
+          // per new SMC signal, silent on retries, 5m confirmation not
+          // fetched (see the RF branch for why).
           await backend.entities.SystemLog.create({
             level: 'info',
             module: 'scanner',
-            message: `${asset.symbol} 1H SMC ${signal.signal_type} — entrada descartada: já existe operação ativa no ativo`,
+            message: `${asset.symbol} 1H SMC ${signal.signal_type} — candidato bloqueado por operação ativa (confirmação 5m não avaliada)`,
             symbol: asset.symbol,
             timeframe: '1h',
             details: {
               reason: 'active_op_exists',
               candidate_signal: signal.dedup_key,
               candidate_cascade: '1h_5m',
+              confirmation_checked: false,
               active_op_id: activeOp?.id ?? null,
               active_op_cascade: activeOp?.cascade ?? null,
             },

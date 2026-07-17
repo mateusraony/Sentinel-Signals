@@ -351,6 +351,9 @@ describe('cross-cascade arbitration log — signal discarded because an op is al
     expect(discard.details.candidate_signal).toBe('sig_rf_1');
     expect(discard.details.active_op_id).toBe('op_active');
     expect(discard.details.active_op_cascade).toBe('1h_5m');
+    // The 15m confirmation is deliberately not fetched for a blocked
+    // candidate — the log must say so instead of implying entry-readiness.
+    expect(discard.details.confirmation_checked).toBe(false);
     // The gate itself still holds: no new op was created.
     const ops = await backend.entities.TradeOperation.filter({});
     expect(ops).toHaveLength(1);
