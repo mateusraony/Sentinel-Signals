@@ -672,11 +672,15 @@ export async function persistScanResults(scanResult) {
   // an op is created by an earlier block in this same pass) is harmless;
   // it's kept fresh anyway by flipping to true right after each successful
   // creation below.
-  let hasActiveOp = (await backend.entities.TradeOperation.filter({
+  const activeOpsAtStart = await backend.entities.TradeOperation.filter({
     symbol: asset.symbol,
     asset_id: asset.id,
     status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'],
-  })).length > 0;
+  });
+  let hasActiveOp = activeOpsAtStart.length > 0;
+  // Kept only to enrich the discard log below (which op blocked the entry) —
+  // hasActiveOp remains the actual gate.
+  let activeOp = activeOpsAtStart[0] || null;
 
   // Deduplicate and persist signals
   let persistedSignals = 0;
@@ -788,6 +792,7 @@ export async function persistScanResults(scanResult) {
                 const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
                 if (created.created) {
                   hasActiveOp = true;
+                  activeOp = created.doc;
                   if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
                   logInfo('scanner', `${signal.symbol} entrada criada — Pine sync ativo`, {
                     score: signal.context?.score, atr_mult: pineConfig.trailAtrMult, tp1R: pineConfig.tp1R,
@@ -804,6 +809,26 @@ export async function persistScanResults(scanResult) {
                   details: { signal_tf: '4h', direction: signal.signal_type, score: signal.context?.score },
                 });
               }
+            } else {
+              // Candidate passed every technical gate but the asset already
+              // holds an op (possibly from the OTHER cascade — the two share
+              // the one-op-per-asset anchor). Logged once per new signal so
+              // the cross-cascade arbitration is auditable; the retry loops
+              // below stay silent to avoid repeating this every pass.
+              await backend.entities.SystemLog.create({
+                level: 'info',
+                module: 'scanner',
+                message: `${asset.symbol} 4H ${signal.signal_type} — entrada descartada: já existe operação ativa no ativo`,
+                symbol: asset.symbol,
+                timeframe: '4h',
+                details: {
+                  reason: 'active_op_exists',
+                  candidate_signal: signal.dedup_key,
+                  candidate_cascade: '4h_15m',
+                  active_op_id: activeOp?.id ?? null,
+                  active_op_cascade: activeOp?.cascade ?? null,
+                },
+              });
             }
           }
         }
@@ -825,6 +850,7 @@ export async function persistScanResults(scanResult) {
             const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
             if (created.created) {
               hasActiveOp = true;
+              activeOp = created.doc;
               if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
               logInfo('scanner', `${signal.symbol} entrada SMC criada (1h→5m)`, {
                 score: signal.context?.score, structure_type: signal.context?.structure_type, trigger: confirmed5m.trigger,
@@ -840,6 +866,23 @@ export async function persistScanResults(scanResult) {
               details: { signal_tf: '1h', direction: signal.signal_type, structure_type: signal.context?.structure_type },
             });
           }
+        } else {
+          // Same cross-cascade arbitration log as the RF block above —
+          // once per new SMC signal, silent on retries.
+          await backend.entities.SystemLog.create({
+            level: 'info',
+            module: 'scanner',
+            message: `${asset.symbol} 1H SMC ${signal.signal_type} — entrada descartada: já existe operação ativa no ativo`,
+            symbol: asset.symbol,
+            timeframe: '1h',
+            details: {
+              reason: 'active_op_exists',
+              candidate_signal: signal.dedup_key,
+              candidate_cascade: '1h_5m',
+              active_op_id: activeOp?.id ?? null,
+              active_op_cascade: activeOp?.cascade ?? null,
+            },
+          });
         }
       }
     }
@@ -1325,9 +1368,12 @@ async function scanAllAssetsInner(onProgress) {
     if (onProgress) onProgress(i + 1, assets.length, asset.symbol);
 
     try {
-      // Update status to scanning
-      await backend.entities.MonitoredAsset.update(asset.id, { scan_status: 'scanning' });
-      
+      // No transient 'scanning' status write here: nothing in the UI ever
+      // read it (progress feedback comes from the onProgress callback), and
+      // it cost one MonitoredAsset write per asset on EVERY pass — ~2.3k
+      // wasted writes/day on the free Spark quota with 8 assets at the
+      // cron's 5-minute cadence. persistScanResults writes the real
+      // success/error status at the end of the pass.
       const result = await scanAsset(asset);
       const persisted = await persistScanResults(result);
       
