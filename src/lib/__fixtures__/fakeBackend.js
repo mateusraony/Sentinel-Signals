@@ -7,7 +7,7 @@
 // decision. Lets scanner.js run completely unmodified against it (see
 // scannerStateMachine.test.js), the same principle already used for the
 // browser/cron split (src/api/entities.js vs scripts/adminEntities.js).
-import { canApplyTransition, isTerminalStatus } from '../opTransition.js';
+import { canApplyTransition, isTerminalStatus, planTradeOpCreation } from '../opTransition.js';
 
 const COLLECTIONS = [
   'MonitoredAsset', 'AssetState', 'SignalEvent', 'TradeOperation',
@@ -88,16 +88,19 @@ export function createFakeBackend() {
   async function releaseScanLock() {}
 
   async function createTradeOpIfNoneActive(assetId, docId, data) {
-    const current = activeOps.get(assetId);
-    if (current) return { created: false, existingId: current };
     const opStore = stores.TradeOperation;
-    if (opStore.has(docId)) {
-      activeOps.set(assetId, docId);
-      return { created: false, existing: opStore.get(docId) };
-    }
+    const pointerOpId = activeOps.get(assetId) || null;
+    const plan = planTradeOpCreation({
+      pointerOpId,
+      pointerOp: pointerOpId ? opStore.get(pointerOpId) || null : null,
+      existingOp: opStore.get(docId) || null,
+    });
+    if (plan.action === 'blocked') return { created: false, existingId: pointerOpId };
+    if (plan.pointer === 'set') activeOps.set(assetId, docId);
+    else if (plan.pointer === 'clear') activeOps.set(assetId, null);
+    if (plan.action === 'reuse') return { created: false, existing: opStore.get(docId) };
     const doc = { created_date: new Date().toISOString(), ...data, id: docId };
     opStore.set(docId, doc);
-    activeOps.set(assetId, docId);
     return { created: true, doc };
   }
 
@@ -131,6 +134,12 @@ export function createFakeBackend() {
     },
     _get(name, id) {
       return stores[name].get(id);
+    },
+    _getActiveOp(assetId) {
+      return activeOps.get(assetId) ?? null;
+    },
+    _setActiveOp(assetId, tradeOpId) {
+      activeOps.set(assetId, tradeOpId);
     },
   };
 }

@@ -565,3 +565,49 @@ toast que já existia no projeto (mas nunca tinha sido usado —
 avisar explicitamente cada caso: pulado por lock ocupado (não atualiza
 "última atualização"), concluído com contagem de ativos com erro, ou falha
 inesperada — em vez de silêncio ou falso sucesso.
+
+## 21. Retry de sinal re-apontava `assetActiveOps` para operação terminal — corrigido (P0-f)
+
+Encontrado ao verificar uma auditoria técnica externa (2026-07): era o único
+P0 dela ainda válido — os demais (candle pré-entrada, corrida entre loops,
+trailing look-ahead, contador RF por scan) já estavam corrigidos (itens
+P0-a/c/d/e em `.claude/rules/trading-engine.md`).
+
+**O bug**: `createTradeOpIfNoneActive` (`src/api/entities.js` + espelho
+`scripts/adminEntities.js`), no ramo em que a operação com ID determinístico
+já existia, regravava o ponteiro `assetActiveOps/{assetId}` para ela **sem
+verificar estado terminal**. Caminho real: sinal → op criada → stop rápido
+via `priceCheckActiveOps` (transição terminal limpa o ponteiro) → o loop de
+retry reprocessa o mesmo sinal dentro da janela de frescor e reusa o mesmo ID
+→ ponteiro volta a apontar para a op terminal. Como `canApplyTransition`
+rejeita qualquer transição em op terminal, a limpeza em-transação do
+`transitionTradeOp` nunca mais roda — o ativo fica **bloqueado para novas
+entradas para sempre**. O fake de teste replicava o comportamento, mascarando.
+
+**Correção** (auto-reparo, sem script one-shot): a decisão foi extraída para
+`planTradeOpCreation` em `src/lib/opTransition.js` (mesmo padrão do
+`canApplyTransition` — uma regra pura compartilhada por browser, cron e fake).
+A transação agora lê também a op apontada pelo ponteiro: ponteiro cujo alvo
+não existe ou é terminal conta como **vago** (auto-reparo — ponteiros já
+corrompidos no banco são consertados na primeira tentativa de entrada
+seguinte); op determinística terminal **nunca** volta a ser apontada como
+ativa; op determinística viva sem ponteiro (janela de crash entre criar a op
+e gravar o ponteiro) continua restaurando o ponteiro como antes. Custo: até
+1 leitura extra por tentativa de entrada com ponteiro setado. Regressão
+coberta em `opTransition.test.js` (regra pura) e
+`scannerStateMachine.test.js` (cenário completo de retry pós-stop — falhava
+antes da correção).
+
+## 22. Win rate inconsistente entre telas — pendência registrada (decisão do usuário: rodada própria)
+
+Apontado pela mesma auditoria externa e confirmado no código: os cards do
+dashboard contam vitória apenas quando `status === 'TP2_HIT'`
+(`PerformanceBar.jsx`, `PerformanceMetricsBar.jsx`, `PerformanceOverview.jsx`,
+`TradeHistory.jsx`, `Trades.jsx` — breakeven pós-TP1 fica fora das vitórias),
+enquanto `MonthlyReport.jsx`/`PerformanceReport.jsx` contam PnL > 0. Nenhuma
+tela incorpora resultado realizado em R, parcial do TP1, taxas ou funding —
+uma op que bateu TP1 (parcial positiva) e saiu no breakeven aparece como
+não-vitória nos cards. O usuário decidiu (2026-07) tratar numa rodada
+dedicada de métricas (resultado em R, padronização entre telas), separada da
+correção do motor. Até lá, ler os percentuais do painel como aproximações
+conservadoras, não como estatística final.

@@ -9,7 +9,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 // Relative (not '@/') so esbuild bundles it for the cron without the Vite alias
 // — see scripts/build-scan.mjs (it only rewrites '@/api/entities').
-import { canApplyTransition, isTerminalStatus } from '../src/lib/opTransition.js';
+import { canApplyTransition, isTerminalStatus, planTradeOpCreation } from '../src/lib/opTransition.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) });
@@ -156,17 +156,31 @@ async function createTradeOpIfNoneActive(assetId, docId, data) {
   const opRef = db.collection('tradeOperations').doc(docId);
   const payload = { ...data, created_date: data.created_date || new Date().toISOString() };
   return db.runTransaction(async (tx) => {
+    // Reads precede writes; the pointed op is read so an orphan pointer (op
+    // gone or terminal) never blocks the asset — decision shared with the
+    // client adapter via planTradeOpCreation.
     const activeSnap = await tx.get(activeRef);
-    if (activeSnap.exists && activeSnap.data().active_trade_op_id) {
-      return { created: false, existingId: activeSnap.data().active_trade_op_id };
-    }
+    const pointerOpId = (activeSnap.exists && activeSnap.data().active_trade_op_id) || null;
+    const pointerSnap = pointerOpId && pointerOpId !== docId
+      ? await tx.get(db.collection('tradeOperations').doc(pointerOpId))
+      : null;
     const opSnap = await tx.get(opRef);
-    if (opSnap.exists) {
+    const existingOp = opSnap.exists ? opSnap.data() : null;
+    const plan = planTradeOpCreation({
+      pointerOpId,
+      pointerOp: pointerOpId === docId
+        ? existingOp
+        : (pointerSnap && pointerSnap.exists ? pointerSnap.data() : null),
+      existingOp,
+    });
+    if (plan.action === 'blocked') return { created: false, existingId: pointerOpId };
+    if (plan.pointer === 'set') {
       tx.set(activeRef, { active_trade_op_id: opRef.id, updated_at: new Date().toISOString() });
-      return { created: false, existing: { id: opRef.id, ...opSnap.data() } };
+    } else if (plan.pointer === 'clear') {
+      tx.set(activeRef, { active_trade_op_id: null, updated_at: new Date().toISOString() });
     }
+    if (plan.action === 'reuse') return { created: false, existing: { id: opRef.id, ...existingOp } };
     tx.set(opRef, payload);
-    tx.set(activeRef, { active_trade_op_id: opRef.id, updated_at: new Date().toISOString() });
     return { created: true, doc: { id: docId, ...payload } };
   });
 }

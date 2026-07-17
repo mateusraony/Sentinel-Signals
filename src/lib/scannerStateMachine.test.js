@@ -325,6 +325,77 @@ describe('priceCheckActiveOps — price-based transitions', () => {
   });
 });
 
+describe('createTradeOpIfNoneActive — assetActiveOps pointer vs terminal ops (P0-f)', () => {
+  // The signal-retry loop reuses the op's deterministic doc ID. If the op
+  // already reached a terminal state (e.g. a quick stop via the price check),
+  // re-pointing assetActiveOps at it would block the asset forever: nothing
+  // ever clears a pointer to an op that is already terminal
+  // (transitionTradeOp's CAS rejects terminal ops, so its in-transaction
+  // clear never runs again).
+  it('retry of a signal whose op already hit a terminal state must NOT re-point the asset at it', async () => {
+    const first = await backend.tradeOps.createTradeOpIfNoneActive('asset1', 'trade_sig1', makeOp({ id: 'trade_sig1' }));
+    expect(first.created).toBe(true);
+    expect(backend._getActiveOp('asset1')).toBe('trade_sig1');
+
+    // Quick stop (price check) — terminal transition clears the pointer.
+    const stop = await backend.tradeOps.transitionTradeOp('trade_sig1', 'SIGNAL_CONFIRMED', { status: 'STOP_HIT' }, { assetId: 'asset1' });
+    expect(stop.applied).toBe(true);
+    expect(backend._getActiveOp('asset1')).toBe(null);
+
+    // Retry loop re-processes the same signal within its freshness window.
+    const retry = await backend.tradeOps.createTradeOpIfNoneActive('asset1', 'trade_sig1', makeOp({ id: 'trade_sig1' }));
+    expect(retry.created).toBe(false);
+    expect(backend._getActiveOp('asset1')).toBe(null);
+
+    // The asset must stay eligible: a NEW signal can still open a new op.
+    const next = await backend.tradeOps.createTradeOpIfNoneActive('asset1', 'trade_sig2', makeOp({ id: 'trade_sig2' }));
+    expect(next.created).toBe(true);
+    expect(backend._getActiveOp('asset1')).toBe('trade_sig2');
+  });
+
+  it('self-heals a pre-existing orphan pointer to a terminal op on the next entry attempt', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'trade_old', status: 'TP2_HIT' }));
+    backend._setActiveOp('asset1', 'trade_old'); // corrupted state left behind by the old bug
+
+    const res = await backend.tradeOps.createTradeOpIfNoneActive('asset1', 'trade_new', makeOp({ id: 'trade_new' }));
+    expect(res.created).toBe(true);
+    expect(backend._getActiveOp('asset1')).toBe('trade_new');
+  });
+
+  it('self-heals a pointer to an op that no longer exists', async () => {
+    backend._setActiveOp('asset1', 'trade_ghost'); // pointer without a backing doc
+
+    const res = await backend.tradeOps.createTradeOpIfNoneActive('asset1', 'trade_new', makeOp({ id: 'trade_new' }));
+    expect(res.created).toBe(true);
+    expect(backend._getActiveOp('asset1')).toBe('trade_new');
+  });
+
+  it('clears an orphan pointer even when the deterministic op is itself terminal (no create)', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'trade_sig1', status: 'STOP_HIT' }));
+    backend._setActiveOp('asset1', 'trade_sig1');
+
+    const res = await backend.tradeOps.createTradeOpIfNoneActive('asset1', 'trade_sig1', makeOp({ id: 'trade_sig1' }));
+    expect(res.created).toBe(false);
+    expect(backend._getActiveOp('asset1')).toBe(null); // repaired, asset eligible again
+  });
+
+  it('restores the pointer for a LIVE op after a crash between op write and pointer write', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'trade_live', status: 'SIGNAL_CONFIRMED' }));
+    // Pointer was never written (crash window) — the retry must re-point.
+    const res = await backend.tradeOps.createTradeOpIfNoneActive('asset1', 'trade_live', makeOp({ id: 'trade_live' }));
+    expect(res.created).toBe(false);
+    expect(backend._getActiveOp('asset1')).toBe('trade_live');
+  });
+
+  it('still blocks a second entry while the pointed op is genuinely active', async () => {
+    await backend.tradeOps.createTradeOpIfNoneActive('asset1', 'trade_sig1', makeOp({ id: 'trade_sig1' }));
+    const res = await backend.tradeOps.createTradeOpIfNoneActive('asset1', 'trade_sig2', makeOp({ id: 'trade_sig2' }));
+    expect(res.created).toBe(false);
+    expect(res.existingId).toBe('trade_sig1');
+    expect(backend._getActiveOp('asset1')).toBe('trade_sig1');
+  });
+});
+
 describe('cross-loop concurrency invariant (persistScanResults vs priceCheckActiveOps)', () => {
   it('exactly one of the two racing transitions applies — the CAS rejects the loser, not last-write-wins', async () => {
     backend._seed('TradeOperation', makeOp());
