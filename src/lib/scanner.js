@@ -239,14 +239,16 @@ async function check5mSmcConfirmation(symbol, direction) {
     // computeStructuralStop in buildSmcTradeOpData:
     // - sweep: the sweep candle's own wick (the extreme that took liquidity —
     //   by construction it is beyond the 20-bar swing it swept);
-    // - structure (BOS/CHoCH): the protective extreme of the same 10-bar
-    //   swing window the 5m structure calc uses.
-    const swingWindow = closed.slice(-10);
+    // - structure (BOS/CHoCH): the OPPOSING protected pivot carried by the
+    //   structure calc itself (lastSwingLow/High = btmY/topY, confirmed with
+    //   swingLen lag) — NOT a fixed recent-candle window, whose extreme can
+    //   sit inside the true invalidation when the protected pivot is older
+    //   (Codex review, PR #55). Missing pivot → null → ATR fallback.
     const structuralLevel = sweepAligned
       ? (direction === 'BUY' ? lastClosed.low : lastClosed.high)
       : (direction === 'BUY'
-        ? Math.min(...swingWindow.map(c => c.low))
-        : Math.max(...swingWindow.map(c => c.high)));
+        ? (structure.lastSwingLow ?? null)
+        : (structure.lastSwingHigh ?? null));
 
     return {
       confirmed: true,

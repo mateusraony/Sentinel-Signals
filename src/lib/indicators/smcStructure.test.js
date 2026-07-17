@@ -41,6 +41,22 @@ describe('calculateStructure', () => {
     expect(result.lastBear.bos || result.lastBear.choch).toBe(false);
   });
 
+  it('exposes the carried protected pivots (lastSwingHigh/Low) the structure breaks against', () => {
+    // Fixture legs: ...96→86, 86→92 (top 92 + 0.3 wick), 92→82 (bottom 82
+    // − 0.3 wick), 82→88, breakout to 104/105. The confirmed pivots carried
+    // to the last bar are exactly those wicks: topY = 92.3 (the level the
+    // bull CHoCH broke), btmY = 81.7 (the protected low a bull entry's
+    // structural stop must sit beyond).
+    const candles = chochBreakoutCandles();
+    const result = calculateStructure(candles, { swingLen: 5 });
+    expect(result.lastSwingHigh).toBeCloseTo(92.3);
+    expect(result.lastSwingLow).toBeCloseTo(81.7);
+    // Not enough data → nulls, matching the null shape of the other fields.
+    const empty = calculateStructure(flatCandles(4), { swingLen: 5 });
+    expect(empty.lastSwingHigh ?? null).toBe(null);
+    expect(empty.lastSwingLow ?? null).toBe(null);
+  });
+
   it('a continuation break in the same direction as the trend is a BOS, not a CHoCH', () => {
     // Once trend is bullish, a further break of a new swing high in the
     // SAME direction should mark bos=true, choch=false (not a reversal).

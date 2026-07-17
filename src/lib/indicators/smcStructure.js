@@ -168,6 +168,14 @@ export function calculateStructure(candles, { swingLen = 50, filterInsignificant
     trend,
     lastBull: { bos: bullBos[last], choch: bullChoch[last] },
     lastBear: { bos: bearBos[last], choch: bearChoch[last] },
+    // Carried confirmed pivot levels (additive) — the protected swing the
+    // structure logic itself breaks against (topY/btmY, confirmed with
+    // swingLen lag and carried across later bars). Consumed by the SMC
+    // structural stop: the true invalidation of a bull structure entry is
+    // the protected LOW (lastSwingLow), which can be much older than any
+    // fixed recent-candle window. 0 means "never set" → null.
+    lastSwingHigh: topY !== 0 ? topY : null,
+    lastSwingLow: btmY !== 0 ? btmY : null,
     // Per-bar event/trend series (additive) — used by the golden parity tests
     // for the no-repaint check; last-bar consumers above are unchanged.
     series: { bullBos, bullChoch, bearBos, bearChoch, trend: trendSeries },
