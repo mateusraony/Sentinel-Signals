@@ -16,7 +16,11 @@ ADX, Choppiness, Tier) — funções puras, com casos de valor conhecido e limit
 (dados insuficientes, candles planos). `opTransition.test.js`/
 `opExitRules.test.js`/`assetHealthcheck.test.js`/`assetStateDiff.test.js`
 cobrem as regras puras extraídas do motor (CAS, guard temporal, trailing,
-contador RF, healthcheck, diff de estado).
+contador RF, healthcheck, diff de estado). `tradeMetrics.test.js` cobre a
+fonte única de métricas de performance (`src/lib/tradeMetrics.js` — PnL
+realizado com parcial, R sobre risco inicial, classificação WIN/LOSS/BE por
+resultado, agregados winRate/profitFactor/expectância/drawdown) com valores
+hand-computed BUY e SELL — ver `docs/known-risks.md` item 22.
 
 `scannerStateMachine.test.js` cobre a **máquina de estados fim a fim** contra
 as funções REAIS do `scanner.js` (`persistScanResults`, `priceCheckActiveOps`,
