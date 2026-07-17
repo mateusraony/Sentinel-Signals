@@ -325,6 +325,54 @@ describe('priceCheckActiveOps — price-based transitions', () => {
   });
 });
 
+describe('cross-cascade arbitration log — signal discarded because an op is already active', () => {
+  function makeRfSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_rf_1',
+      price_at_signal: 100, context: { score: 80 },
+      ...overrides,
+    };
+  }
+
+  it('logs active_op_exists (with the blocking op) instead of dropping the candidate silently', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_active', cascade: '1h_5m' }));
+    // Regime gates off so the candidate passes every technical filter and
+    // reaches the active-op gate itself.
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() }; // rf.direction 1 — aligned with BUY
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const logs = await backend.entities.SystemLog.filter({});
+    const discard = logs.find(l => l.details?.reason === 'active_op_exists');
+    expect(discard).toBeTruthy();
+    expect(discard.details.candidate_cascade).toBe('4h_15m');
+    expect(discard.details.candidate_signal).toBe('sig_rf_1');
+    expect(discard.details.active_op_id).toBe('op_active');
+    expect(discard.details.active_op_cascade).toBe('1h_5m');
+    // The 15m confirmation is deliberately not fetched for a blocked
+    // candidate — the log must say so instead of implying entry-readiness.
+    expect(discard.details.confirmation_checked).toBe(false);
+    // The gate itself still holds: no new op was created.
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+  });
+
+  it('logs once per signal — the dedup makes a re-scan of the same signal silent', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_active' }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() };
+    const scan = () => persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    await scan();
+    await scan(); // same dedup_key → createUnique short-circuits before the entry motor
+
+    const logs = await backend.entities.SystemLog.filter({});
+    expect(logs.filter(l => l.details?.reason === 'active_op_exists')).toHaveLength(1);
+  });
+});
+
 describe('createTradeOpIfNoneActive — assetActiveOps pointer vs terminal ops (P0-f)', () => {
   // The signal-retry loop reuses the op's deterministic doc ID. If the op
   // already reached a terminal state (e.g. a quick stop via the price check),

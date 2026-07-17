@@ -130,7 +130,7 @@
         "error"
       ],
       "default": "idle",
-      "description": "Current scan status"
+      "description": "Current scan status. 'scanning' is legacy: the transient per-pass write was removed (quota waste, no UI consumer) — new docs only ever hold idle/success/error"
     },
     "scan_error": {
       "type": "string",
