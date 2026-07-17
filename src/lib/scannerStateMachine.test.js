@@ -31,7 +31,7 @@ vi.mock('./marketDataProvider', () => ({
 
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice } from './marketDataProvider';
-import { persistScanResults, priceCheckActiveOps, buildTradeOpData } from './scanner.js';
+import { persistScanResults, priceCheckActiveOps, buildTradeOpData, buildSmcTradeOpData } from './scanner.js';
 
 let backend;
 beforeEach(() => {
@@ -152,6 +152,40 @@ describe('buildTradeOpData — entry into SIGNAL_CONFIRMED', () => {
     const op = buildTradeOpData(sig, tf4hData, makePineConfig(), { entryPrice: 100 });
     expect(op.entry_price).toBe(100);
     expect(op.origin_4h_price).toBe(90);
+  });
+});
+
+describe('buildSmcTradeOpData — structural initial stop (1h→5m cascade)', () => {
+  const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 99, context: { score: 70 } };
+  const tf1h = makeTfData({ atrValue: 2 });
+
+  it('places the stop beyond the 5m sweep wick with the ATR buffer, and TPs scale from that risk', () => {
+    const op = buildSmcTradeOpData(sig, tf1h, makePineConfig(), {
+      entryPrice: 100, entryCandleTime: '2026-07-16T11:55:00.000Z', trigger: 'sweep', structuralLevel: 98.5,
+    });
+    expect(op.initial_stop).toBeCloseTo(98.3); // 98.5 − 0.1·ATR(2)
+    expect(op.current_stop).toBeCloseTo(98.3);
+    expect(op.stop_basis).toBe('structural');
+    expect(op.structural_level).toBe(98.5);
+    expect(op.tp1).toBeCloseTo(100 + 1.7 * 1.5); // riskR 1.7 · tp1R
+    expect(op.tp2).toBeCloseTo(100 + 1.7 * 3.0);
+  });
+
+  it('falls back to the legacy 2×ATR stop when the confirmation carries no structural level', () => {
+    const op = buildSmcTradeOpData(sig, tf1h, makePineConfig(), {
+      entryPrice: 100, entryCandleTime: '2026-07-16T11:55:00.000Z', trigger: 'structure',
+    });
+    expect(op.initial_stop).toBeCloseTo(96); // entry − 2.0·ATR — comportamento pré-migração
+    expect(op.stop_basis).toBe('atr_fallback');
+    expect(op.structural_level).toBe(null);
+  });
+
+  it('never risks more than the legacy model: an over-wide structure is capped at 2×ATR', () => {
+    const op = buildSmcTradeOpData(sig, tf1h, makePineConfig(), {
+      entryPrice: 100, entryCandleTime: '2026-07-16T11:55:00.000Z', trigger: 'structure', structuralLevel: 90,
+    });
+    expect(op.initial_stop).toBeCloseTo(96);
+    expect(op.stop_basis).toBe('structural_capped');
   });
 });
 

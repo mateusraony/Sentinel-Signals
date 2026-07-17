@@ -23,7 +23,7 @@ import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './indicators/smcStructure';
 import { getPineConfig } from './pineParser';
-import { isCandleUsableForExits, advanceTrailingStop, nextRfReverseCount } from './opExitRules';
+import { isCandleUsableForExits, advanceTrailingStop, nextRfReverseCount, computeStructuralStop } from './opExitRules';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -44,7 +44,9 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 // reserved for the RF cascade's post-TP1 trailing (see buildTradeOpData's
 // comment on the same mix-up). The SMC cascade has no tier/regime system to
 // derive its own multiplier from yet, so this stays a plain constant.
-const SMC_INITIAL_STOP_ATR_MULT = 2.0;
+const SMC_INITIAL_STOP_ATR_MULT = 2.0; // cap do stop estrutural e fallback ATR puro
+const SMC_STOP_BUFFER_ATR = 0.1; // folga além do nível estrutural (evita toque exato no pavio)
+const SMC_STOP_MIN_ATR = 0.5; // piso — ruído do 5m não pode gerar stop mais apertado que isso
 
 // Lock TTLs: comfortably above the slowest realistic run of each operation
 // (the GitHub Actions job has an 8-minute timeout for full scans) so a
@@ -232,11 +234,26 @@ async function check5mSmcConfirmation(symbol, direction) {
     }
 
     const lastClosed = closed[closed.length - 1];
+
+    // Structural invalidation level of the trigger, consumed by
+    // computeStructuralStop in buildSmcTradeOpData:
+    // - sweep: the sweep candle's own wick (the extreme that took liquidity —
+    //   by construction it is beyond the 20-bar swing it swept);
+    // - structure (BOS/CHoCH): the protective extreme of the same 10-bar
+    //   swing window the 5m structure calc uses.
+    const swingWindow = closed.slice(-10);
+    const structuralLevel = sweepAligned
+      ? (direction === 'BUY' ? lastClosed.low : lastClosed.high)
+      : (direction === 'BUY'
+        ? Math.min(...swingWindow.map(c => c.low))
+        : Math.max(...swingWindow.map(c => c.high)));
+
     return {
       confirmed: true,
       entryPrice: lastClosed.close,
       entryCandleTime: new Date(lastClosed.closeTime).toISOString(),
       trigger: sweepAligned ? 'sweep' : 'structure',
+      structuralLevel,
     };
   } catch (err) {
     console.warn(`[5m SMC confirm] ${symbol} fetch failed:`, err.message);
@@ -245,19 +262,30 @@ async function check5mSmcConfirmation(symbol, direction) {
 }
 
 /**
- * Build TradeOperation data for the SMC 1h→5m cascade — same ATR-based
- * risk/TP model as buildTradeOpData (reusing the same Pine tp1R/tp1QtyPercent
- * params), but stop/entry basis comes from 1h data and there's no
- * tier/regime system here (that's specific to the 4h/15m cascade).
+ * Build TradeOperation data for the SMC 1h→5m cascade — same TP model as
+ * buildTradeOpData (reusing the same Pine tp1R/tp1QtyPercent params), but
+ * the initial stop is STRUCTURAL: beyond the 5m trigger's invalidation
+ * level (sweep wick / protective swing) with an ATR(1h) buffer, floored at
+ * SMC_STOP_MIN_ATR and capped at SMC_INITIAL_STOP_ATR_MULT — the old fixed
+ * 2×ATR stop remains as cap and as fallback for a missing/invalid level
+ * (see computeStructuralStop and known-risks item 11/24). No tier/regime
+ * system here (that's specific to the 4h/15m cascade).
  */
-function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
+export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
   const tp1R = pineConfig.tp1R ?? 1.5;
   const tp2R = (pineConfig.tp1R ?? 1.5) * 2;
   const partialPct = pineConfig.tp1QtyPercent ?? 50;
   const isBuy = sig.signal_type === 'BUY';
   const entry = confirmation5m?.entryPrice ?? sig.price_at_signal;
-  const risk = tf1hData.atrValue * SMC_INITIAL_STOP_ATR_MULT;
-  const initialStop = isBuy ? entry - risk : entry + risk;
+  const { stop: initialStop, basis: stopBasis } = computeStructuralStop({
+    isBuy,
+    entry,
+    structuralLevel: confirmation5m?.structuralLevel,
+    atrValue: tf1hData.atrValue,
+    bufferAtrMult: SMC_STOP_BUFFER_ATR,
+    minAtrMult: SMC_STOP_MIN_ATR,
+    maxAtrMult: SMC_INITIAL_STOP_ATR_MULT,
+  });
   const riskR = Math.abs(entry - initialStop);
   const tp1 = isBuy ? entry + riskR * tp1R : entry - riskR * tp1R;
   const tp2 = isBuy ? entry + riskR * tp2R : entry - riskR * tp2R;
@@ -291,6 +319,8 @@ function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     structure_type: sig.context?.structure_type,
     pd_zone: sig.context?.pd_zone,
     sweep_confirmed: confirmation5m?.trigger === 'sweep',
+    stop_basis: stopBasis,
+    structural_level: confirmation5m?.structuralLevel ?? null,
     source: 'scanner_smc',
     candle_status: 'CLOSED',
     data_status: 'LIVE',
