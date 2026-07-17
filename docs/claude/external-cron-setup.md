@@ -126,9 +126,15 @@ sistema ao vivo rodando só 1x/hora achando que ainda roda a cada 5min:
 `main` assim que o merge acontece. Se a redução para 1x/hora fosse mergeada
 ANTES do disparo externo estar de fato funcionando, o scan ao vivo cairia de
 5min para 1h de cadência silenciosamente (sem erro, só sinal mais velho) até
-alguém notar. O fallback horário se autocorrige dentro da janela de 30min do
-alerta de staleness por ativo (`docs/known-risks.md` item 12) se o disparo
-externo falhar DEPOIS de já estar funcionando.
+alguém notar.
+
+**O fallback horário NÃO garante recuperação em 30min.** Se o disparo externo
+falhar logo depois de um fallback rodar, a próxima chance só vem em ~1h (mais
+o drift já medido do `schedule:` — pode passar disso). O watchdog externo
+(`HEALTHCHECKS_PING_URL`, `docs/known-risks.md` item 12) é quem detecta e
+alerta a falta de scan dentro de ~30min — ele **avisa**, não faz o scan rodar
+mais cedo. Não trate o fallback horário como rede de segurança de 30min; essa
+função é do watchdog.
 
 `scan.yml` já declara:
 

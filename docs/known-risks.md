@@ -478,10 +478,14 @@ contra "nenhum scan rodou").
 > confirmado funcionando pela própria execução **agendada** (não só o teste
 > manual — a run do `scan.yml` disparada pelo cron-job.org apareceu em
 > Actions com sucesso). Passo 3 do guia aplicado: `schedule:` interno
-> reduzido para `0 * * * *` (fallback horário) e `PASSES_PER_DAY` ajustado
-> de 288 para 312. O relógio de trading volta a rodar próximo dos 5min
-> configurados, resolvendo a causa raiz de sinais/notificações raríssimos
-> descrita no parágrafo de medição abaixo.
+> reduzido para `7 * * * *` (fallback horário, minuto 7 — não `0`, que a
+> própria documentação do GitHub aponta como pico de carga/atraso) e
+> `PASSES_PER_DAY` ajustado de 288 para 312. O relógio de trading volta a
+> rodar próximo dos 5min configurados, resolvendo a causa raiz de
+> sinais/notificações raríssimos descrita no parágrafo de medição abaixo.
+> O fallback horário não é rede de segurança de 30min — se o disparo
+> externo falhar logo após uma passada do fallback, a próxima só vem em
+> ~1h; quem detecta/alerta dentro de ~30min é o watchdog do item 12.
 
 > **Atualização — medido no projeto real (não mais só pesquisa de
 > comunidade).** Analisando o histórico de execuções do `scan.yml` via API

@@ -11,8 +11,14 @@ on:
   # once the external dispatch is reliable, silently pushing Firestore usage
   # past the PASSES_PER_DAY estimate in scanner.js — see that constant's
   # comment for the corresponding math.
+  # Minute 7 (not :00) on purpose — GitHub's own docs flag the top of the hour
+  # as the peak-load minute, where scheduled runs are most likely to be
+  # delayed/dropped: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule
+  # Given the severe drift already measured on this repo (see comment above),
+  # targeting the least reliable minute for the only remaining trigger would
+  # be counterproductive.
   schedule:
-    - cron: "0 * * * *"
+    - cron: "7 * * * *"
   workflow_dispatch: {}
 
 concurrency:
