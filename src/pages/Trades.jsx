@@ -12,9 +12,9 @@ import PortfolioVsMarket from '@/components/trades/PortfolioVsMarket';
 import PerformanceReport from '@/components/trades/PerformanceReport';
 import { fetch24hStats } from '@/lib/marketDataProvider';
 import moment from 'moment';
+import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
-const CLOSED_STATUSES = ['TP2_HIT', 'STOP_HIT', 'INVALIDATED', 'CLOSED'];
 
 function fmt(price) {
   if (!price && price !== 0) return '—';
@@ -215,24 +215,13 @@ function MonitoringCard({ signal }) {
 /** History row */
 function HistoryRow({ op }) {
   const isBuy = op.side === 'BUY';
-  // Use real recorded exit_price first, then fallback to derived
-  let exitPrice = op.exit_price ?? null;
-  if (!exitPrice) {
-    if (op.status === 'TP2_HIT') exitPrice = op.tp2;
-    else if (op.status === 'STOP_HIT') exitPrice = op.tp1_hit ? op.entry_price : op.current_stop;
-    else if (op.status === 'INVALIDATED' || op.status === 'CLOSED') exitPrice = op.current_stop;
-  }
-
-  let pnlPct = null;
-  if (exitPrice && op.entry_price) {
-    pnlPct = isBuy
-      ? ((exitPrice - op.entry_price) / op.entry_price) * 100
-      : ((op.entry_price - exitPrice) / op.entry_price) * 100;
-  }
+  const exitPrice = getExitPrice(op);
+  const pnlPct = calcRealizedPnlPct(op);
+  const isBE = classifyOutcome(op) === 'BE';
 
   const STATUS_MAP = {
     TP2_HIT:     { label: '🏆 TP2', color: '#00ff80' },
-    STOP_HIT:    { label: op.tp1_hit ? '🔄 BE' : '🛑 Stop', color: op.tp1_hit ? '#ffd166' : '#ff1478' },
+    STOP_HIT:    { label: isBE ? '🔄 BE' : '🛑 Stop', color: isBE ? '#ffd166' : '#ff1478' },
     INVALIDATED: { label: '⚠ Inv.', color: '#ff9f43' },
     CLOSED:      { label: '✗ Enc.', color: '#64748b' },
   };
@@ -325,7 +314,7 @@ export default function Trades() {
   });
 
   const active  = operations.filter(o => ACTIVE_STATUSES.includes(o.status));
-  const history = operations.filter(o => CLOSED_STATUSES.includes(o.status));
+  const history = operations.filter(isClosedOp);
 
   const activeKey = new Set(active.map(o => `${o.symbol}_${o.timeframe}`));
   const monitoringMap = new Map();
@@ -570,17 +559,14 @@ export default function Trades() {
             {showHistory && (
               <div className="space-y-1.5">
                 {(() => {
-                  const filtered = applyFilters(history);
-                  const wins = filtered.filter(o => o.status === 'TP2_HIT').length;
-                  const losses = filtered.filter(o => o.status === 'STOP_HIT' && !o.tp1_hit).length;
-                  const be = filtered.filter(o => o.status === 'STOP_HIT' && o.tp1_hit).length;
+                  const { wins, losses, be, total } = summarizeOps(applyFilters(history));
                   return (
                     <div className="flex items-center gap-4 px-3 py-2 rounded-lg mb-3 text-[10px] font-mono"
                       style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <span style={{ color: '#00ff80' }}>✓ TP2: {wins}</span>
+                      <span style={{ color: '#00ff80' }}>✓ Win: {wins}</span>
                       <span style={{ color: '#ffd166' }}>↔ BE: {be}</span>
-                      <span style={{ color: '#ff1478' }}>✗ Stop: {losses}</span>
-                      <span className="text-muted-foreground">Total: {filtered.length}</span>
+                      <span style={{ color: '#ff1478' }}>✗ Loss: {losses}</span>
+                      <span className="text-muted-foreground">Total: {total}</span>
                     </div>
                   );
                 })()}
