@@ -4,20 +4,7 @@ import {
   ResponsiveContainer, ReferenceLine, CartesianGrid
 } from 'recharts';
 import moment from 'moment';
-
-function calcPnl(op) {
-  const isBuy = op.side === 'BUY';
-  let exitPrice = op.exit_price ?? null;
-  if (!exitPrice) {
-    if (op.status === 'TP2_HIT') exitPrice = op.tp2;
-    else if (op.status === 'STOP_HIT') exitPrice = op.tp1_hit ? op.entry_price : op.current_stop;
-    else if (op.status === 'INVALIDATED' || op.status === 'CLOSED') exitPrice = op.current_stop;
-  }
-  if (!exitPrice || !op.entry_price) return null;
-  return isBuy
-    ? ((exitPrice - op.entry_price) / op.entry_price) * 100
-    : ((op.entry_price - exitPrice) / op.entry_price) * 100;
-}
+import { calcRealizedPnlPct as calcPnl } from '@/lib/tradeMetrics';
 
 const STATUS_LABELS = {
   TP2_HIT: '🏆 TP2 Hit',
