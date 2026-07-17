@@ -598,16 +598,47 @@ coberta em `opTransition.test.js` (regra pura) e
 `scannerStateMachine.test.js` (cenário completo de retry pós-stop — falhava
 antes da correção).
 
-## 22. Win rate inconsistente entre telas — pendência registrada (decisão do usuário: rodada própria)
+## 22. Win rate inconsistente entre telas — corrigido (rodada de métricas)
 
 Apontado pela mesma auditoria externa e confirmado no código: os cards do
-dashboard contam vitória apenas quando `status === 'TP2_HIT'`
+dashboard contavam vitória apenas quando `status === 'TP2_HIT'`
 (`PerformanceBar.jsx`, `PerformanceMetricsBar.jsx`, `PerformanceOverview.jsx`,
-`TradeHistory.jsx`, `Trades.jsx` — breakeven pós-TP1 fica fora das vitórias),
-enquanto `MonthlyReport.jsx`/`PerformanceReport.jsx` contam PnL > 0. Nenhuma
-tela incorpora resultado realizado em R, parcial do TP1, taxas ou funding —
-uma op que bateu TP1 (parcial positiva) e saiu no breakeven aparece como
-não-vitória nos cards. O usuário decidiu (2026-07) tratar numa rodada
-dedicada de métricas (resultado em R, padronização entre telas), separada da
-correção do motor. Até lá, ler os percentuais do painel como aproximações
-conservadoras, não como estatística final.
+`TradeHistory.jsx`, `Trades.jsx` — breakeven pós-TP1 fora das vitórias),
+enquanto `MonthlyReport.jsx`/`PerformanceReport.jsx` contavam PnL > 0, e
+`PerformanceReport.jsx`/`PortfolioVsMarket.jsx` aplicavam um peso heurístico
+0.5. Uma op que bateu TP1 (parcial positiva) e saiu no breakeven aparecia
+como não-vitória nos cards. Havia 10 cópias inline de `calcPnl`, nenhuma
+usando o `partial_percent` persistido nem o `initial_stop`.
+
+**Atualização — resolvido.** Fonte única em `src/lib/tradeMetrics.js`
+(funções puras, padrão `opExitRules.js`; testes hand-computed em
+`tradeMetrics.test.js`), consumida por todas as 10 superfícies de
+performance. Política adotada (convenção de comunidade R-multiple/expectancy):
+
+- **R = resultado realizado / risco inicial** (`|entry_price −
+  initial_stop|`) — nunca `current_stop`, que pós-TP1 já é breakeven/trailing
+  (isso também corrigiu o `calcRR` de `TradeHistory.jsx`).
+- **Parcial ponderada por perna**: com `tp1_hit`, resultado =
+  `partial_percent`·(TP1 − entry) + runner·(saída − entry), em qualquer
+  status final (incl. INVALIDATED/CLOSED pós-TP1). O preço da perna TP1 é o
+  nível teórico (`tp1_hit_price ?? tp1` — ambos os loops gravam o teórico),
+  proxy sem slippage, coerente com trading virtual.
+- **WIN/LOSS/BE pelo resultado realizado**, nunca pelo status: WIN se
+  R > +0.05, LOSS se R < −0.05, BE no meio (ε parametrizável). Uma
+  INVALIDATED lucrativa é WIN; TP1+breakeven (=+0.75R com 50/50 e tp1R 1.5)
+  é WIN — antes era "BE" em toda tela.
+- **winRate = W/(W+L+BE)** em todas as telas (antes havia 3 denominadores).
+  Curva de capital/drawdown ordenada por data de fechamento.
+- Ops legadas degradam em vez de sumir: sem `initial_stop` → classifica por
+  PnL%; sem `partial_percent` → 50/50; sem `exit_price` → fallback por
+  status; edição manual (`exit_price` editado) é respeitada como verdade.
+
+**Consequência esperada**: os números exibidos mudaram — win rate tende a
+subir (BE-pós-TP1 e INVALIDATED lucrativa viram WIN) e os totais de
+`PerformanceReport`/`PortfolioVsMarket` divergem do histórico (peso 0.5
+removido em favor do modelo por pernas, estritamente mais correto). É
+mudança de metodologia, não bug.
+
+**Limitações mantidas (aceitas)**: sem taxas, funding ou slippage (trading
+virtual, sem fills reais); perna TP1 a preço teórico; `scanner.js` intocado
+nesta rodada (tudo calculado dos campos já persistidos).

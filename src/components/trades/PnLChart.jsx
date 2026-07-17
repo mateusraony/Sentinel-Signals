@@ -1,20 +1,7 @@
 import React, { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import moment from 'moment';
-
-function calcPnl(op) {
-  const isBuy = op.side === 'BUY';
-  let exitPrice = op.exit_price ?? null;
-  if (!exitPrice) {
-    if (op.status === 'TP2_HIT') exitPrice = op.tp2;
-    else if (op.status === 'STOP_HIT') exitPrice = op.tp1_hit ? op.entry_price : op.current_stop;
-    else if (op.status === 'INVALIDATED' || op.status === 'CLOSED') exitPrice = op.current_stop;
-  }
-  if (!exitPrice || !op.entry_price) return null;
-  return isBuy
-    ? ((exitPrice - op.entry_price) / op.entry_price) * 100
-    : ((op.entry_price - exitPrice) / op.entry_price) * 100;
-}
+import { summarizeOps } from '@/lib/tradeMetrics';
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
@@ -38,25 +25,23 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function PnLChart({ history }) {
-  const data = useMemo(() => {
-    const sorted = [...history]
-      .filter(op => calcPnl(op) !== null)
-      .sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
-
-    let cumulative = 0;
-    return sorted.map(op => {
-      const pnl = calcPnl(op);
-      cumulative += pnl;
-      return {
-        date: moment(op.created_date).format('DD/MM'),
-        pnl: parseFloat(pnl.toFixed(2)),
-        cumulative: parseFloat(cumulative.toFixed(2)),
-        symbol: op.symbol?.replace('USDT', '/USDT'),
-        side: op.side,
-        tf: op.timeframe?.toUpperCase(),
-        status: op.status,
-      };
-    });
+  const { data, wins, losses } = useMemo(() => {
+    const s = summarizeOps(history);
+    return {
+      wins: s.wins,
+      losses: s.losses,
+      data: s.curve
+        .filter(p => p.pnlPct !== null)
+        .map(({ op, pnlPct, cumulativePct }) => ({
+          date: moment(op.created_date).format('DD/MM'),
+          pnl: parseFloat(pnlPct.toFixed(2)),
+          cumulative: parseFloat(cumulativePct.toFixed(2)),
+          symbol: op.symbol?.replace('USDT', '/USDT'),
+          side: op.side,
+          tf: op.timeframe?.toUpperCase(),
+          status: op.status,
+        })),
+    };
   }, [history]);
 
   if (data.length === 0) {
@@ -85,9 +70,9 @@ export default function PnLChart({ history }) {
         <div className="text-right">
           <div className="text-[9px] font-mono text-muted-foreground">{data.length} trades</div>
           <div className="text-[9px] font-mono mt-0.5">
-            <span style={{ color: '#00ff80' }}>✓ {data.filter(d => d.pnl >= 0).length} win</span>
+            <span style={{ color: '#00ff80' }}>✓ {wins} win</span>
             <span className="text-muted-foreground mx-1">·</span>
-            <span style={{ color: '#ff1478' }}>✗ {data.filter(d => d.pnl < 0).length} loss</span>
+            <span style={{ color: '#ff1478' }}>✗ {losses} loss</span>
           </div>
         </div>
       </div>

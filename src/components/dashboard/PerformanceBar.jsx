@@ -1,14 +1,14 @@
 import React from 'react';
 import { TrendingUp, Target, Activity, Zap } from 'lucide-react';
+import { summarizeOps } from '@/lib/tradeMetrics';
 
 export default function PerformanceBar({ assets, tradeOps, recentSignals }) {
   const ACTIVE = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
-  const CLOSED = ['TP2_HIT', 'STOP_HIT', 'INVALIDATED', 'CLOSED'];
 
   const activeOps = tradeOps.filter(o => ACTIVE.includes(o.status));
-  const closedOps = tradeOps.filter(o => CLOSED.includes(o.status));
-  const wins = closedOps.filter(o => o.status === 'TP2_HIT').length;
-  const winRate = closedOps.length > 0 ? Math.round((wins / closedOps.length) * 100) : null;
+  const perf = summarizeOps(tradeOps);
+  const wins = perf.wins;
+  const winRate = perf.counted > 0 ? Math.round(perf.winRate) : null;
 
   const buyOps = activeOps.filter(o => o.side === 'BUY').length;
   const sellOps = activeOps.filter(o => o.side === 'SELL').length;
@@ -29,7 +29,7 @@ export default function PerformanceBar({ assets, tradeOps, recentSignals }) {
       icon: TrendingUp,
       label: 'Win Rate',
       value: winRate !== null ? `${winRate}%` : '—',
-      sub: closedOps.length > 0 ? `${wins}/${closedOps.length} trades` : 'sem histórico',
+      sub: perf.counted > 0 ? `${wins}/${perf.counted} trades` : 'sem histórico',
       color: winRate !== null ? (winRate >= 50 ? '#00ff80' : '#ff9f43') : '#64748b',
     },
     {

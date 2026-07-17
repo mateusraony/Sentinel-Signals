@@ -1,19 +1,6 @@
 import React, { useMemo } from 'react';
 import { TrendingUp, TrendingDown, Target, Shield, BarChart2, Zap } from 'lucide-react';
-
-function calcPnl(op) {
-  const isBuy = op.side === 'BUY';
-  let exitPrice = op.exit_price ?? null;
-  if (!exitPrice) {
-    if (op.status === 'TP2_HIT') exitPrice = op.tp2;
-    else if (op.status === 'STOP_HIT') exitPrice = op.tp1_hit ? op.entry_price : op.current_stop;
-    else if (op.status === 'INVALIDATED' || op.status === 'CLOSED') exitPrice = op.current_stop;
-  }
-  if (!exitPrice || !op.entry_price) return null;
-  return isBuy
-    ? ((exitPrice - op.entry_price) / op.entry_price) * 100
-    : ((op.entry_price - exitPrice) / op.entry_price) * 100;
-}
+import { summarizeOps } from '@/lib/tradeMetrics';
 
 function MetricCard({ icon: Icon, label, value, sub, color, glowColor }) {
   return (
@@ -39,49 +26,31 @@ function MetricCard({ icon: Icon, label, value, sub, color, glowColor }) {
 
 export default function PerformanceMetricsBar({ tradeOps }) {
   const metrics = useMemo(() => {
-    const CLOSED = ['TP2_HIT', 'STOP_HIT', 'INVALIDATED', 'CLOSED'];
-    const closed = (tradeOps || []).filter(o => CLOSED.includes(o.status));
+    const s = summarizeOps(tradeOps);
+    if (s.counted === 0) return null;
 
-    if (closed.length === 0) return null;
-
-    // P&L acumulado
-    let totalPnl = 0;
-    let running = 0;
-    let peak = 0;
-    let maxDrawdown = 0;
-    let wins = 0, losses = 0, be = 0;
-    let winPnlSum = 0, lossPnlSum = 0;
-
-    const sorted = [...closed].sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
-
-    sorted.forEach(op => {
-      const pnl = calcPnl(op);
-      if (pnl === null) return;
-      running += pnl;
-      totalPnl = running;
-      if (running > peak) peak = running;
-      const dd = peak - running;
-      if (dd > maxDrawdown) maxDrawdown = dd;
-      const isBE = op.status === 'STOP_HIT' && op.tp1_hit;
-      if (op.status === 'TP2_HIT') { wins++; winPnlSum += pnl; }
-      else if (op.status === 'STOP_HIT' && !isBE) { losses++; lossPnlSum += Math.abs(pnl); }
-      else be++;
-    });
-
-    const total = wins + losses + be;
-    const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
-    const avgWin = wins > 0 ? (winPnlSum / wins) : 0;
-    const avgLoss = losses > 0 ? (lossPnlSum / losses) : 0;
-    const rr = avgLoss > 0 ? (avgWin / avgLoss) : null;
-
+    const rr = s.avgLossPct > 0 ? s.avgWinPct / s.avgLossPct : null;
     const active = (tradeOps || []).filter(o => ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'].includes(o.status));
 
-    return { totalPnl, maxDrawdown, winRate, wins, losses, be, total, avgWin, avgLoss, rr, activeCount: active.length };
+    return {
+      totalPnl: s.totalPnlPct,
+      maxDrawdown: s.maxDrawdownPct,
+      winRate: Math.round(s.winRate),
+      wins: s.wins,
+      losses: s.losses,
+      be: s.be,
+      total: s.counted,
+      avgWin: s.avgWinPct,
+      avgLoss: s.avgLossPct,
+      expectancyR: s.expectancyR,
+      rr,
+      activeCount: active.length,
+    };
   }, [tradeOps]);
 
   if (!metrics) return null;
 
-  const { totalPnl, maxDrawdown, winRate, wins, losses, be, total, avgWin, avgLoss, rr, activeCount } = metrics;
+  const { totalPnl, maxDrawdown, winRate, wins, losses, be, total, avgWin, avgLoss, expectancyR, rr, activeCount } = metrics;
 
   const pnlColor = totalPnl >= 0 ? '#00ff80' : '#ff1478';
   const pnlGlow = totalPnl >= 0 ? 'rgba(0,255,128,0.06)' : 'rgba(255,20,120,0.06)';
@@ -121,7 +90,9 @@ export default function PerformanceMetricsBar({ tradeOps }) {
           icon={Target}
           label="Win Rate"
           value={`${winRate}%`}
-          sub={`Avg win +${avgWin.toFixed(1)}% / loss -${avgLoss.toFixed(1)}%`}
+          sub={expectancyR !== null
+            ? `Expectância ${expectancyR >= 0 ? '+' : ''}${expectancyR.toFixed(2)}R · +${avgWin.toFixed(1)}%/-${avgLoss.toFixed(1)}%`
+            : `Avg win +${avgWin.toFixed(1)}% / loss -${avgLoss.toFixed(1)}%`}
           color={wrColor}
           glowColor={winRate >= 60 ? 'rgba(0,255,128,0.05)' : undefined}
         />

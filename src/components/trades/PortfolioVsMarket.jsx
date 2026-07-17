@@ -7,6 +7,7 @@ import {
 import { TrendingUp, TrendingDown, Activity } from 'lucide-react';
 import { fetchCandles } from '@/lib/marketDataProvider';
 import moment from 'moment';
+import { getClosedAt, summarizeOps } from '@/lib/tradeMetrics';
 
 function fmtPct(v) {
   if (v === null || v === undefined || isNaN(v)) return '—';
@@ -15,41 +16,27 @@ function fmtPct(v) {
 }
 
 /**
- * Calculate cumulative PnL % from closed trade operations.
- * Assumes equal position size per trade (normalized).
+ * Cumulative realized PnL % from closed trade operations (equal position size
+ * per trade). The partial/runner split comes from the shared metrics module —
+ * the old heuristic 0.5 weight and the mandatory exit_price filter are gone,
+ * so legacy ops without exit_price now enter via the per-status fallback.
  */
 function calcPortfolioCurve(trades) {
-  const closed = trades
-    .filter(t => t.closed_at && t.entry_price && t.exit_price)
-    .sort((a, b) => new Date(a.closed_at) - new Date(b.closed_at));
-
-  if (closed.length === 0) return [];
-
-  let cumulative = 0;
-  return closed.map((t) => {
-    const isBuy = t.side === 'BUY';
-    const pnlPct = isBuy
-      ? ((t.exit_price - t.entry_price) / t.entry_price) * 100
-      : ((t.entry_price - t.exit_price) / t.entry_price) * 100;
-
-    // Weight: 50% if TP1 hit only (partial), 100% if TP2, full loss if stop
-    let weight = 1;
-    if (t.status === 'STOP_HIT' && t.tp1_hit) weight = 0.5; // BE on runner
-    else if (t.status === 'STOP_HIT' && !t.tp1_hit) weight = 1;
-    else if (t.status === 'TP2_HIT') weight = 1;
-    else if (t.status === 'INVALIDATED') weight = 0.5;
-
-    cumulative += pnlPct * weight;
-    return {
-      date: moment(t.closed_at).format('DD/MM HH:mm'),
-      timestamp: new Date(t.closed_at).getTime(),
-      tradePnl: pnlPct * weight,
-      portfolio: cumulative,
-      symbol: t.symbol?.replace('USDT', '/USDT'),
-      side: t.side,
-      status: t.status,
-    };
-  });
+  return summarizeOps(trades)
+    .curve
+    .filter(p => p.pnlPct !== null)
+    .map(({ op, pnlPct, cumulativePct }) => {
+      const closedAt = getClosedAt(op);
+      return {
+        date: moment(closedAt).format('DD/MM HH:mm'),
+        timestamp: new Date(closedAt).getTime(),
+        tradePnl: pnlPct,
+        portfolio: cumulativePct,
+        symbol: op.symbol?.replace('USDT', '/USDT'),
+        side: op.side,
+        status: op.status,
+      };
+    });
 }
 
 /**
@@ -147,7 +134,7 @@ export default function PortfolioVsMarket({ trades }) {
           Dados insuficientes para o gráfico comparativo.
         </p>
         <p className="text-xs text-muted-foreground mt-1">
-          É necessário pelo menos 2 trades fechados com preço de saída registrado.
+          É necessário pelo menos 2 trades fechados com resultado calculável.
         </p>
       </div>
     );

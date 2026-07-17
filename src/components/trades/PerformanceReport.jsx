@@ -1,19 +1,6 @@
 import React, { useMemo } from 'react';
 import { TrendingUp, TrendingDown, Target, Activity, AlertTriangle, Award } from 'lucide-react';
-
-function calcPnl(op) {
-  const isBuy = op.side === 'BUY';
-  let exitPrice = op.exit_price ?? null;
-  if (!exitPrice) {
-    if (op.status === 'TP2_HIT') exitPrice = op.tp2;
-    else if (op.status === 'STOP_HIT') exitPrice = op.tp1_hit ? op.entry_price : op.current_stop;
-    else if (op.status === 'INVALIDATED' || op.status === 'CLOSED') exitPrice = op.current_stop;
-  }
-  if (!exitPrice || !op.entry_price) return null;
-  return isBuy
-    ? ((exitPrice - op.entry_price) / op.entry_price) * 100
-    : ((op.entry_price - exitPrice) / op.entry_price) * 100;
-}
+import { summarizeOps } from '@/lib/tradeMetrics';
 
 function fmtPct(v) {
   if (v === null || v === undefined || isNaN(v)) return '—';
@@ -39,55 +26,21 @@ function MetricCard({ icon: Icon, label, value, sublabel, color, glowColor }) {
 
 export default function PerformanceReport({ trades }) {
   const metrics = useMemo(() => {
-    const valid = trades
-      .filter(op => calcPnl(op) !== null && op.created_date && op.closed_at)
-      .sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
-
-    if (valid.length === 0) return { hasData: false };
-
-    const pnls = valid.map(op => {
-      const pnl = calcPnl(op);
-      // Weight: 50% if TP1 hit but stopped on runner (BE), full otherwise
-      let weight = 1;
-      if (op.status === 'STOP_HIT' && op.tp1_hit) weight = 0.5;
-      else if (op.status === 'INVALIDATED') weight = 0.5;
-      return pnl * weight;
-    });
-
-    const totalPnl = pnls.reduce((sum, p) => sum + p, 0);
-    const wins = pnls.filter(p => p > 0);
-    const losses = pnls.filter(p => p < 0);
-    const winRate = (wins.length / valid.length) * 100;
-
-    const grossProfit = wins.reduce((sum, p) => sum + p, 0);
-    const grossLoss = Math.abs(losses.reduce((sum, p) => sum + p, 0));
-    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? 999 : 0);
-
-    const avgWin = wins.length > 0 ? grossProfit / wins.length : 0;
-    const avgLoss = losses.length > 0 ? grossLoss / losses.length : 0;
-
-    // Max drawdown: largest peak-to-trough decline in cumulative P&L
-    let cumulative = 0;
-    let peak = 0;
-    let maxDD = 0;
-    for (const pnl of pnls) {
-      cumulative += pnl;
-      if (cumulative > peak) peak = cumulative;
-      const dd = peak - cumulative;
-      if (dd > maxDD) maxDD = dd;
-    }
+    const s = summarizeOps(trades);
+    if (s.counted === 0) return { hasData: false };
 
     return {
       hasData: true,
-      totalPnl,
-      winRate,
-      maxDrawdown: maxDD,
-      profitFactor,
-      avgWin,
-      avgLoss,
-      totalTrades: valid.length,
-      wins: wins.length,
-      losses: losses.length,
+      totalPnl: s.totalPnlPct,
+      winRate: s.winRate,
+      maxDrawdown: s.maxDrawdownPct,
+      profitFactor: s.profitFactor,
+      avgWin: s.avgWinPct,
+      avgLoss: s.avgLossPct,
+      totalTrades: s.counted,
+      wins: s.wins,
+      losses: s.losses,
+      be: s.be,
     };
   }, [trades]);
 
@@ -101,7 +54,10 @@ export default function PerformanceReport({ trades }) {
     );
   }
 
-  const pfDisplay = metrics.profitFactor >= 999 ? '∞' : metrics.profitFactor.toFixed(2);
+  const pf = metrics.profitFactor;
+  const pfDisplay = pf === null ? (metrics.wins > 0 ? '∞' : '—') : pf.toFixed(2);
+  const pfHealthy = pf === null ? metrics.wins > 0 : pf >= 1.5;
+  const pfMarginal = pf !== null && pf >= 1 && pf < 1.5;
 
   return (
     <div className="space-y-3">
@@ -116,7 +72,7 @@ export default function PerformanceReport({ trades }) {
           icon={TrendingUp}
           label="PnL Acumulado"
           value={fmtPct(metrics.totalPnl)}
-          sublabel={`${metrics.wins}W / ${metrics.losses}L`}
+          sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`}
           color={metrics.totalPnl >= 0 ? '#00ff80' : '#ff1478'}
           glowColor={metrics.totalPnl >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'}
         />
@@ -124,7 +80,7 @@ export default function PerformanceReport({ trades }) {
           icon={Target}
           label="Taxa de Acerto"
           value={`${metrics.winRate.toFixed(1)}%`}
-          sublabel={`${metrics.wins} acertos de ${metrics.totalTrades}`}
+          sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L de ${metrics.totalTrades}`}
           color={metrics.winRate >= 50 ? '#00ff80' : '#ff9f43'}
           glowColor={metrics.winRate >= 50 ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'}
         />
@@ -140,9 +96,9 @@ export default function PerformanceReport({ trades }) {
           icon={Activity}
           label="Profit Factor"
           value={pfDisplay}
-          sublabel={metrics.profitFactor >= 1.5 ? '✓ Saudável' : metrics.profitFactor >= 1 ? '⚠ Marginal' : '✗ Baixo'}
-          color={metrics.profitFactor >= 1.5 ? '#00ff80' : '#ff9f43'}
-          glowColor={metrics.profitFactor >= 1.5 ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'}
+          sublabel={pfHealthy ? '✓ Saudável' : pfMarginal ? '⚠ Marginal' : '✗ Baixo'}
+          color={pfHealthy ? '#00ff80' : '#ff9f43'}
+          glowColor={pfHealthy ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'}
         />
         <MetricCard
           icon={TrendingUp}

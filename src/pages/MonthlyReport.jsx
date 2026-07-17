@@ -4,22 +4,7 @@ import { backend } from '@/api/entities';
 import { FileText, Download, TrendingUp, TrendingDown, Target, Award, Calendar, Loader2 } from 'lucide-react';
 import moment from 'moment';
 import { jsPDF } from 'jspdf';
-
-const CLOSED_STATUSES = ['TP2_HIT', 'STOP_HIT', 'INVALIDATED', 'CLOSED'];
-
-function calcPnl(op) {
-  const isBuy = op.side === 'BUY';
-  let exitPrice = op.exit_price ?? null;
-  if (!exitPrice) {
-    if (op.status === 'TP2_HIT') exitPrice = op.tp2;
-    else if (op.status === 'STOP_HIT') exitPrice = op.tp1_hit ? op.entry_price : op.current_stop;
-    else if (op.status === 'INVALIDATED' || op.status === 'CLOSED') exitPrice = op.current_stop;
-  }
-  if (!exitPrice || !op.entry_price) return null;
-  return isBuy
-    ? ((exitPrice - op.entry_price) / op.entry_price) * 100
-    : ((op.entry_price - exitPrice) / op.entry_price) * 100;
-}
+import { isClosedOp, getExitPrice, calcRealizedPnlPct, summarizeOps } from '@/lib/tradeMetrics';
 
 function fmt(price) {
   if (!price && price !== 0) return '—';
@@ -86,29 +71,27 @@ export default function MonthlyReport() {
 
   const monthOps = useMemo(() => {
     return operations
-      .filter(op => CLOSED_STATUSES.includes(op.status))
+      .filter(isClosedOp)
       .filter(op => moment(op.created_date).format('YYYY-MM') === selectedMonth)
       .sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
   }, [operations, selectedMonth]);
 
   const metrics = useMemo(() => {
     if (monthOps.length === 0) return null;
-    const pnls = monthOps.map(op => calcPnl(op)).filter(p => p !== null);
-    const totalPnl = pnls.reduce((sum, p) => sum + p, 0);
-    const wins = pnls.filter(p => p > 0);
-    const losses = pnls.filter(p => p < 0);
-    const winRate = pnls.length > 0 ? (wins.length / pnls.length) * 100 : 0;
-    const bestTrade = pnls.length > 0 ? Math.max(...pnls) : 0;
-    const worstTrade = pnls.length > 0 ? Math.min(...pnls) : 0;
-    const grossProfit = wins.reduce((s, p) => s + p, 0);
-    const grossLoss = Math.abs(losses.reduce((s, p) => s + p, 0));
-    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? 999 : 0);
-    const avgWin = wins.length > 0 ? grossProfit / wins.length : 0;
-    const avgLoss = losses.length > 0 ? grossLoss / losses.length : 0;
+    const s = summarizeOps(monthOps);
+    const pnls = s.curve.map(p => p.pnlPct).filter(p => p !== null);
     return {
-      totalPnl, winRate, totalTrades: monthOps.length,
-      wins: wins.length, losses: losses.length,
-      bestTrade, worstTrade, profitFactor, avgWin, avgLoss,
+      totalPnl: s.totalPnlPct,
+      winRate: s.winRate,
+      totalTrades: monthOps.length,
+      wins: s.wins,
+      losses: s.losses,
+      be: s.be,
+      bestTrade: pnls.length > 0 ? Math.max(...pnls) : 0,
+      worstTrade: pnls.length > 0 ? Math.min(...pnls) : 0,
+      profitFactor: s.profitFactor,
+      avgWin: s.avgWinPct,
+      avgLoss: s.avgLossPct,
     };
   }, [monthOps]);
 
@@ -154,10 +137,10 @@ export default function MonthlyReport() {
         { label: 'P&L Acumulado:', value: fmtPct(metrics.totalPnl), color: metrics.totalPnl >= 0 ? [0, 128, 0] : [200, 0, 50] },
         { label: 'Taxa de Acerto:', value: `${metrics.winRate.toFixed(1)}%`, color: [0, 100, 200] },
         { label: 'Total de Trades:', value: `${metrics.totalTrades}`, color: [60, 60, 60] },
-        { label: 'Vitórias / Derrotas:', value: `${metrics.wins} / ${metrics.losses}`, color: [60, 60, 60] },
+        { label: 'Vitórias / BE / Derrotas:', value: `${metrics.wins} / ${metrics.be} / ${metrics.losses}`, color: [60, 60, 60] },
         { label: 'Melhor Trade:', value: fmtPct(metrics.bestTrade), color: [0, 128, 0] },
         { label: 'Pior Trade:', value: fmtPct(metrics.worstTrade), color: [200, 0, 50] },
-        { label: 'Profit Factor:', value: metrics.profitFactor >= 999 ? '∞' : metrics.profitFactor.toFixed(2), color: [60, 60, 60] },
+        { label: 'Profit Factor:', value: metrics.profitFactor === null ? '∞' : metrics.profitFactor.toFixed(2), color: [60, 60, 60] },
         { label: 'Ganho Médio:', value: fmtPct(metrics.avgWin), color: [0, 128, 0] },
         { label: 'Perda Média:', value: fmtPct(-metrics.avgLoss), color: [200, 0, 50] },
       ];
@@ -200,8 +183,8 @@ export default function MonthlyReport() {
 
       monthOps.forEach((op, idx) => {
         if (y > 280) { doc.addPage(); y = 20; }
-        const pnl = calcPnl(op);
-        const exitPrice = op.exit_price || (op.status === 'TP2_HIT' ? op.tp2 : op.current_stop);
+        const pnl = calcRealizedPnlPct(op);
+        const exitPrice = getExitPrice(op);
         if (idx % 2 === 0) {
           doc.setFillColor(248, 249, 252);
           doc.rect(14, y - 3, pageWidth - 28, 6, 'F');
@@ -285,12 +268,12 @@ export default function MonthlyReport() {
         <>
           {/* Summary metrics */}
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-            <SummaryCard icon={TrendingUp} label="P&L Acumulado" value={fmtPct(metrics.totalPnl)} sublabel={`${metrics.wins}W / ${metrics.losses}L`} color={metrics.totalPnl >= 0 ? '#00ff80' : '#ff1478'} glowColor={metrics.totalPnl >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'} />
-            <SummaryCard icon={Target} label="Taxa de Acerto" value={`${metrics.winRate.toFixed(1)}%`} sublabel={`${metrics.wins} acertos`} color={metrics.winRate >= 50 ? '#00ff80' : '#ff9f43'} glowColor={metrics.winRate >= 50 ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'} />
+            <SummaryCard icon={TrendingUp} label="P&L Acumulado" value={fmtPct(metrics.totalPnl)} sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`} color={metrics.totalPnl >= 0 ? '#00ff80' : '#ff1478'} glowColor={metrics.totalPnl >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'} />
+            <SummaryCard icon={Target} label="Taxa de Acerto" value={`${metrics.winRate.toFixed(1)}%`} sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`} color={metrics.winRate >= 50 ? '#00ff80' : '#ff9f43'} glowColor={metrics.winRate >= 50 ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'} />
             <SummaryCard icon={FileText} label="Total de Trades" value={`${metrics.totalTrades}`} sublabel="operações fechadas" color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
             <SummaryCard icon={TrendingUp} label="Vitórias" value={`${metrics.wins}`} sublabel="trades lucrativos" color="#00ff80" glowColor="rgba(0,255,128,0.4)" />
             <SummaryCard icon={TrendingDown} label="Derrotas" value={`${metrics.losses}`} sublabel="trades em perda" color="#ff1478" glowColor="rgba(255,20,120,0.4)" />
-            <SummaryCard icon={Award} label="Profit Factor" value={metrics.profitFactor >= 999 ? '∞' : metrics.profitFactor.toFixed(2)} sublabel={metrics.profitFactor >= 1.5 ? '✓ Saudável' : '⚠ Baixo'} color={metrics.profitFactor >= 1.5 ? '#00ff80' : '#ff9f43'} glowColor={metrics.profitFactor >= 1.5 ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'} />
+            <SummaryCard icon={Award} label="Profit Factor" value={metrics.profitFactor === null ? '∞' : metrics.profitFactor.toFixed(2)} sublabel={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? '✓ Saudável' : '⚠ Baixo'} color={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? '#00ff80' : '#ff9f43'} glowColor={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'} />
           </div>
 
           {/* Additional metrics */}
@@ -323,8 +306,8 @@ export default function MonthlyReport() {
                 </thead>
                 <tbody>
                   {monthOps.map((op, i) => {
-                    const pnl = calcPnl(op);
-                    const exitPrice = op.exit_price || (op.status === 'TP2_HIT' ? op.tp2 : op.current_stop);
+                    const pnl = calcRealizedPnlPct(op);
+                    const exitPrice = getExitPrice(op);
                     const isBuy = op.side === 'BUY';
                     return (
                       <tr key={op.id} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)', borderTop: '1px solid rgba(255,255,255,0.03)' }}>

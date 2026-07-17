@@ -4,8 +4,10 @@ import { backend } from '@/api/entities';
 import { History, Filter, BarChart2, ChevronDown, ChevronUp, Search } from 'lucide-react';
 import PnLChart from '@/components/trades/PnLChart';
 import moment from 'moment';
-
-const CLOSED_STATUSES = ['TP2_HIT', 'STOP_HIT', 'INVALIDATED', 'CLOSED'];
+import {
+  isClosedOp, getClosedAt, getExitPrice,
+  calcRealizedPnlPct, calcRealizedR, classifyOutcome, summarizeOps,
+} from '@/lib/tradeMetrics';
 
 function fmt(price) {
   if (!price && price !== 0) return '—';
@@ -15,35 +17,12 @@ function fmt(price) {
   return price.toFixed(6);
 }
 
-function calcPnl(op) {
-  const isBuy = op.side === 'BUY';
-  // Prefer real exit_price recorded at close time; fallback to derived price
-  let exitPrice = op.exit_price ?? null;
-  if (!exitPrice) {
-    if (op.status === 'TP2_HIT') exitPrice = op.tp2;
-    else if (op.status === 'STOP_HIT') exitPrice = op.tp1_hit ? op.entry_price : op.current_stop;
-    else if (op.status === 'INVALIDATED' || op.status === 'CLOSED') exitPrice = op.current_stop;
-  }
-  if (!exitPrice || !op.entry_price) return null;
-  return isBuy
-    ? ((exitPrice - op.entry_price) / op.entry_price) * 100
-    : ((op.entry_price - exitPrice) / op.entry_price) * 100;
-}
-
-function getExitPrice(op) {
-  if (op.exit_price) return op.exit_price;
-  if (op.status === 'TP2_HIT') return op.tp2;
-  if (op.status === 'STOP_HIT') return op.tp1_hit ? op.entry_price : op.current_stop;
-  return op.current_stop;
-}
-
-function getClosedAt(op) {
-  return op.closed_at || op.updated_date;
-}
-
+// Planned risk/reward of the setup — always against the INITIAL stop. The old
+// version divided by current_stop, which post-TP1 is already breakeven and
+// inflated the ratio.
 function calcRR(op) {
-  if (!op.entry_price || !op.current_stop || !op.tp2) return null;
-  const risk = Math.abs(op.entry_price - op.current_stop);
+  if (!op.entry_price || !op.initial_stop || !op.tp2) return null;
+  const risk = Math.abs(op.entry_price - op.initial_stop);
   const reward = Math.abs(op.tp2 - op.entry_price);
   if (risk === 0) return null;
   return (reward / risk).toFixed(2);
@@ -59,11 +38,13 @@ const STATUS_MAP = {
 function HistoryCard({ op }) {
   const [expanded, setExpanded] = useState(false);
   const isBuy = op.side === 'BUY';
-  const pnl = calcPnl(op);
+  const pnl = calcRealizedPnlPct(op);
+  const realizedR = calcRealizedR(op);
   const rr = calcRR(op);
   const s = STATUS_MAP[op.status] || { label: op.status, color: '#64748b', short: '?' };
-  const isWin = pnl !== null && pnl > 0;
-  const isBE = op.status === 'STOP_HIT' && op.tp1_hit;
+  const outcome = classifyOutcome(op);
+  const isWin = outcome === 'WIN';
+  const isBE = outcome === 'BE';
 
   const exitPrice = getExitPrice(op);
   const closedAt = getClosedAt(op);
@@ -118,6 +99,9 @@ function HistoryCard({ op }) {
           {pnl !== null ? (
             <div className="text-base font-mono font-bold" style={{ color: isBE ? '#ffd166' : pnl >= 0 ? '#00ff80' : '#ff1478' }}>
               {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}%
+              {realizedR !== null && (
+                <span className="text-[10px] font-normal opacity-70"> · {realizedR >= 0 ? '+' : ''}{realizedR.toFixed(2)}R</span>
+              )}
             </div>
           ) : <div className="text-sm font-mono text-muted-foreground">—</div>}
           {op.score > 0 && <div className="text-[9px] font-mono text-muted-foreground">score {op.score}/100</div>}
@@ -219,11 +203,8 @@ function HistoryCard({ op }) {
 function DaySummary({ ops }) {
   const today = moment().startOf('day');
   const todayOps = ops.filter(o => moment(o.created_date).isAfter(today));
-  const wins = todayOps.filter(o => o.status === 'TP2_HIT').length;
-  const losses = todayOps.filter(o => o.status === 'STOP_HIT' && !o.tp1_hit).length;
-  const be = todayOps.filter(o => o.status === 'STOP_HIT' && o.tp1_hit).length;
-  const totalPnl = todayOps.reduce((acc, o) => acc + (calcPnl(o) ?? 0), 0);
-  const wr = todayOps.length > 0 ? Math.round((wins / todayOps.length) * 100) : 0;
+  const { wins, losses, be, counted, totalPnlPct: totalPnl } = summarizeOps(todayOps);
+  const wr = counted > 0 ? Math.round((wins / counted) * 100) : 0;
 
   return (
     <div className="rounded-xl p-4" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.07)' }}>
@@ -231,9 +212,9 @@ function DaySummary({ ops }) {
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
           { label: 'Total', value: todayOps.length, color: '#00e5ff' },
-          { label: '🏆 TP2', value: wins, color: '#00ff80' },
+          { label: '🏆 Win', value: wins, color: '#00ff80' },
           { label: '🔄 BE', value: be, color: '#ffd166' },
-          { label: '🛑 Stop', value: losses, color: '#ff1478' },
+          { label: '🛑 Loss', value: losses, color: '#ff1478' },
           { label: 'Win Rate', value: `${wr}%`, color: wr >= 50 ? '#00ff80' : '#ff9f43' },
         ].map(({ label, value, color }) => (
           <div key={label} className="text-center rounded-lg py-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -272,7 +253,7 @@ export default function TradeHistory() {
     refetchInterval: 30000,
   });
 
-  const history = operations.filter(o => CLOSED_STATUSES.includes(o.status));
+  const history = operations.filter(isClosedOp);
 
   const filtered = useMemo(() => {
     let list = history.filter(op => {
@@ -280,13 +261,14 @@ export default function TradeHistory() {
       if (filterTf !== 'all' && op.timeframe !== filterTf) return false;
       if (filterSide !== 'all' && op.side !== filterSide) return false;
       if (filterResult !== 'all') {
-        if (filterResult === 'win' && !(op.status === 'TP2_HIT')) return false;
-        if (filterResult === 'loss' && !(op.status === 'STOP_HIT' && !op.tp1_hit)) return false;
-        if (filterResult === 'be' && !(op.status === 'STOP_HIT' && op.tp1_hit)) return false;
+        const outcome = classifyOutcome(op);
+        if (filterResult === 'win' && outcome !== 'WIN') return false;
+        if (filterResult === 'loss' && outcome !== 'LOSS') return false;
+        if (filterResult === 'be' && outcome !== 'BE') return false;
       }
       if (filterDateFrom && moment(op.created_date).isBefore(moment(filterDateFrom).startOf('day'))) return false;
       if (filterDateTo && moment(op.created_date).isAfter(moment(filterDateTo).endOf('day'))) return false;
-      const pnl = calcPnl(op);
+      const pnl = calcRealizedPnlPct(op);
       if (filterMinPnl !== '' && (pnl === null || pnl < parseFloat(filterMinPnl))) return false;
       if (filterMaxPnl !== '' && (pnl === null || pnl > parseFloat(filterMaxPnl))) return false;
       return true;
@@ -294,18 +276,15 @@ export default function TradeHistory() {
 
     if (sortBy === 'date_desc') list.sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
     else if (sortBy === 'date_asc') list.sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
-    else if (sortBy === 'pnl_desc') list.sort((a, b) => (calcPnl(b) ?? -999) - (calcPnl(a) ?? -999));
-    else if (sortBy === 'pnl_asc') list.sort((a, b) => (calcPnl(a) ?? 999) - (calcPnl(b) ?? 999));
+    else if (sortBy === 'pnl_desc') list.sort((a, b) => (calcRealizedPnlPct(b) ?? -999) - (calcRealizedPnlPct(a) ?? -999));
+    else if (sortBy === 'pnl_asc') list.sort((a, b) => (calcRealizedPnlPct(a) ?? 999) - (calcRealizedPnlPct(b) ?? 999));
     else if (sortBy === 'score') list.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
 
     return list;
   }, [history, filterTf, filterSide, filterResult, filterDateFrom, filterDateTo, filterMinPnl, filterMaxPnl, search, sortBy]);
 
-  const wins = filtered.filter(o => o.status === 'TP2_HIT').length;
-  const losses = filtered.filter(o => o.status === 'STOP_HIT' && !o.tp1_hit).length;
-  const be = filtered.filter(o => o.status === 'STOP_HIT' && o.tp1_hit).length;
-  const totalPnl = filtered.reduce((acc, o) => acc + (calcPnl(o) ?? 0), 0);
-  const wr = filtered.length > 0 ? Math.round((wins / filtered.length) * 100) : 0;
+  const { wins, losses, be, counted, totalPnlPct: totalPnl } = summarizeOps(filtered);
+  const wr = counted > 0 ? Math.round((wins / counted) * 100) : 0;
 
   const inputStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', outline: 'none', fontFamily: 'monospace', fontSize: 10 };
   const filterBtnStyle = (active) => active
