@@ -34,3 +34,29 @@ export function canApplyTransition(currentDoc, fromStatus) {
   if (isTerminalStatus(currentDoc.status)) return false;
   return currentDoc.status === fromStatus;
 }
+
+// Decide what createTradeOpIfNoneActive should do, given what it read inside
+// the transaction: the assetActiveOps pointer, the op that pointer references
+// (null when missing), and the op at the deterministic doc ID (null when
+// missing). A pointer whose op is gone or terminal does NOT count as active —
+// nothing else ever clears such a pointer (transitionTradeOp's CAS rejects
+// terminal ops, so its in-transaction clear can never run again), so treating
+// it as live would block the asset's entries forever. The signal-retry loop
+// reuses deterministic IDs, which is how a terminal op can be re-encountered
+// here; it must never be re-pointed as active.
+// Returns { action: 'blocked'|'reuse'|'create', pointer: 'set'|'clear'|'keep' }.
+export function planTradeOpCreation({ pointerOpId, pointerOp, existingOp }) {
+  if (pointerOpId && pointerOp && !isTerminalStatus(pointerOp.status)) {
+    return { action: 'blocked', pointer: 'keep' };
+  }
+  if (existingOp) {
+    if (isTerminalStatus(existingOp.status)) {
+      // Finished op: don't resurrect it; repair the orphan pointer if present.
+      return { action: 'reuse', pointer: pointerOpId ? 'clear' : 'keep' };
+    }
+    // Live op without a (valid) pointer — crash window between the op write
+    // and the pointer write; restore the pointer.
+    return { action: 'reuse', pointer: 'set' };
+  }
+  return { action: 'create', pointer: 'set' };
+}

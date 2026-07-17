@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canApplyTransition, isTerminalStatus, TERMINAL_STATUSES } from './opTransition.js';
+import { canApplyTransition, isTerminalStatus, planTradeOpCreation, TERMINAL_STATUSES } from './opTransition.js';
 
 describe('isTerminalStatus', () => {
   it('recognises every terminal status', () => {
@@ -35,6 +35,67 @@ describe('canApplyTransition', () => {
       expect(canApplyTransition({ status: s }, s)).toBe(false);
       expect(canApplyTransition({ status: s }, 'RUNNER_ACTIVE')).toBe(false);
     }
+  });
+});
+
+describe('planTradeOpCreation', () => {
+  it('blocks while the pointed op is genuinely live', () => {
+    const plan = planTradeOpCreation({
+      pointerOpId: 'op_a',
+      pointerOp: { status: 'RUNNER_ACTIVE' },
+      existingOp: null,
+    });
+    expect(plan).toEqual({ action: 'blocked', pointer: 'keep' });
+  });
+
+  it('never re-points at a terminal op reused by the retry loop (asset would lock forever)', () => {
+    for (const s of TERMINAL_STATUSES) {
+      const plan = planTradeOpCreation({
+        pointerOpId: null,
+        pointerOp: null,
+        existingOp: { status: s },
+      });
+      expect(plan).toEqual({ action: 'reuse', pointer: 'keep' });
+    }
+  });
+
+  it('treats a pointer to a terminal op as vacant and repairs it', () => {
+    // Orphan pointer + terminal deterministic op: clear, don't resurrect.
+    expect(planTradeOpCreation({
+      pointerOpId: 'op_a',
+      pointerOp: { status: 'STOP_HIT' },
+      existingOp: { status: 'STOP_HIT' },
+    })).toEqual({ action: 'reuse', pointer: 'clear' });
+    // Orphan pointer + no deterministic op: create overwrites the pointer.
+    expect(planTradeOpCreation({
+      pointerOpId: 'op_a',
+      pointerOp: { status: 'TP2_HIT' },
+      existingOp: null,
+    })).toEqual({ action: 'create', pointer: 'set' });
+  });
+
+  it('treats a pointer to a missing op as vacant', () => {
+    expect(planTradeOpCreation({
+      pointerOpId: 'op_ghost',
+      pointerOp: null,
+      existingOp: null,
+    })).toEqual({ action: 'create', pointer: 'set' });
+  });
+
+  it('restores the pointer for a live op (crash window between op write and pointer write)', () => {
+    expect(planTradeOpCreation({
+      pointerOpId: null,
+      pointerOp: null,
+      existingOp: { status: 'SIGNAL_CONFIRMED' },
+    })).toEqual({ action: 'reuse', pointer: 'set' });
+  });
+
+  it('creates op + pointer on a clean slate', () => {
+    expect(planTradeOpCreation({
+      pointerOpId: null,
+      pointerOp: null,
+      existingOp: null,
+    })).toEqual({ action: 'create', pointer: 'set' });
   });
 });
 

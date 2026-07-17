@@ -55,6 +55,17 @@ nunca deve receber nova transição.**
   `rf_reverse_last_candle` (`nextRfReverseCount`) — N passadas do cron sobre o
   mesmo candle contam 1x; reset quando o RF volta a favor; fallback por-passada
   se o feed não trouxer timestamp.
+- **[CORRIGIDO — P0-f] Retry re-apontava `assetActiveOps` para op terminal.**
+  `createTradeOpIfNoneActive`, ao encontrar a op de ID determinístico já
+  existente (retry de sinal), regravava o ponteiro sem checar estado terminal —
+  ativo ficava bloqueado para sempre (a limpeza em-transação só roda numa
+  transição terminal, que o CAS rejeita em op já terminal). Agora a decisão é a
+  regra pura `planTradeOpCreation` (`src/lib/opTransition.js`), compartilhada
+  por `entities.js`/`adminEntities.js`/fake: a transação lê também a op
+  apontada; ponteiro para op inexistente/terminal conta como vago (auto-reparo
+  de ponteiros órfãos legados); op terminal nunca volta a ser apontada; op viva
+  sem ponteiro (janela de crash) continua sendo re-apontada. Ver
+  `docs/known-risks.md` item 21.
 - **[RESIDUAL — aguardando dados] Precedência stop>TP entre loops.** O CAS
   resolve a corrida de dados; com P0-c/d corrigidos, o cenário grave (TP1
   retroativo vencendo stop real) deixou de existir. O que resta — dois loops
