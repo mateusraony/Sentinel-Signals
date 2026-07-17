@@ -642,3 +642,29 @@ mudança de metodologia, não bug.
 **Limitações mantidas (aceitas)**: sem taxas, funding ou slippage (trading
 virtual, sem fills reais); perna TP1 a preço teórico; `scanner.js` intocado
 nesta rodada (tudo calculado dos campos já persistidos).
+
+## 23. Gaps menores da auditoria externa — fechados (arbitragem entre cascatas observável + corte de escrita por passada)
+
+Dois resíduos apontados na verificação da auditoria externa (2026-07), itens
+8 e 12d dela:
+
+1. **Sinal descartado por operação ativa era silencioso.** As duas cascatas
+   (RF 4h→15m e SMC 1h→5m) compartilham o guard de 1 operação por ativo
+   (`assetActiveOps`), então uma bloqueia a entrada da outra — mas o descarte
+   não deixava rastro, impossibilitando avaliar depois se o filtro protege ou
+   elimina boas oportunidades. **Fechado**: os blocos de entrada de
+   `persistScanResults` agora gravam `SystemLog` estruturado
+   (`reason: 'active_op_exists'`, `candidate_signal`, `candidate_cascade`,
+   `active_op_id`, `active_op_cascade`) — 1 log por sinal novo persistido
+   (o dedup por `createUnique` garante que re-scans do mesmo sinal não
+   repetem; os loops de retry permanecem silenciosos de propósito para não
+   logar a cada passada de 5 min). Testes em `scannerStateMachine.test.js`.
+2. **Escrita transitória `scan_status: 'scanning'` a cada passada.** Uma
+   escrita em `MonitoredAsset` por ativo por passada que nenhum componente
+   consumia (o feedback de progresso do botão Scan vem do callback
+   `onProgress`, não do Firestore): ~2.3k escritas/dia desperdiçadas com 8
+   ativos na cadência de 5 min, sobre a cota gratuita de 20k/dia. **Fechado**:
+   escrita removida; o status real (success/error) continua gravado ao fim da
+   passada por `persistScanResults` — `last_scan_at`/`scan_error_since`, dos
+   quais o healthcheck por ativo depende, não mudaram. O valor `'scanning'`
+   ficou como legado no enum do schema (`MonitoredAsset.jsonc`).
