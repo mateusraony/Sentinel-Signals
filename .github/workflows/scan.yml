@@ -1,8 +1,18 @@
 name: Scheduled scan
 
 on:
+  # Low-frequency fallback only — the primary 5-min cadence is driven by an
+  # external dispatch calling workflow_dispatch directly (see
+  # docs/claude/external-cron-setup.md and docs/known-risks.md item 18):
+  # measured over 48h, this schedule: trigger alone averaged ~100min between
+  # runs (worst case ~3h26) instead of the 5min configured here — GitHub's
+  # documented schedule-queue drift under load, not a bug in this workflow.
+  # Keeping this at */5 too (instead of hourly) would double real passes/day
+  # once the external dispatch is reliable, silently pushing Firestore usage
+  # past the PASSES_PER_DAY estimate in scanner.js — see that constant's
+  # comment for the corresponding math.
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch: {}
 
 concurrency:

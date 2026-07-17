@@ -474,6 +474,15 @@ scan ao vivo rodando só 1x/hora achando que ainda roda a cada 5min.
 Não substitui o watchdog do item 12 (continua sendo a rede de segurança real
 contra "nenhum scan rodou").
 
+> **Atualização — concluído.** Disparo externo (cron-job.org) configurado e
+> confirmado funcionando pela própria execução **agendada** (não só o teste
+> manual — a run do `scan.yml` disparada pelo cron-job.org apareceu em
+> Actions com sucesso). Passo 3 do guia aplicado: `schedule:` interno
+> reduzido para `0 * * * *` (fallback horário) e `PASSES_PER_DAY` ajustado
+> de 288 para 312. O relógio de trading volta a rodar próximo dos 5min
+> configurados, resolvendo a causa raiz de sinais/notificações raríssimos
+> descrita no parágrafo de medição abaixo.
+
 > **Atualização — medido no projeto real (não mais só pesquisa de
 > comunidade).** Analisando o histórico de execuções do `scan.yml` via API
 > do GitHub (30 execuções, todas `event: schedule`, span de 48.2h): intervalo

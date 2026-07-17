@@ -99,7 +99,7 @@ si.
 > comprometido assim que exposto — não espere confirmar se foi "realmente"
 > visto por alguém.
 
-### 3. Depois de confirmar que o disparo externo está funcionando, reduzir o `schedule:` interno para fallback
+### 3. `schedule:` interno já reduzido para fallback (feito)
 
 **Não manter os dois gatilhos a cada 5 minutos** — foi cogitado inicialmente,
 mas a revisão automática do PR que introduziu este guia corretamente apontou
@@ -109,29 +109,26 @@ o guard de quota do Firestore em `scanner.js` (`PASSES_PER_DAY`) assume — o
 aviso de "perto do limite gratuito" ficaria cego a esse excesso justamente
 quando ele acontece.
 
-Depois de confirmar (rodando o `curl` do passo 2 algumas vezes, ou deixando o
-cron-job.org rodar por um dia e checando Actions → Scheduled scan) que o
-disparo externo está funcionando de forma confiável, faça as duas edições
-abaixo **juntas, no mesmo PR**, para não deixar o sistema ao vivo rodando só
-1x/hora achando que ainda roda a cada 5min:
+Depois de confirmar (o `curl`/teste manual do passo 2 deu `204`, e a própria
+execução **agendada** do cron-job.org também rodou com sucesso — não só o
+teste manual) que o disparo externo estava funcionando de forma confiável,
+as duas edições abaixo foram feitas juntas, no mesmo PR, para não deixar o
+sistema ao vivo rodando só 1x/hora achando que ainda roda a cada 5min:
 
-1. Em `.github/workflows/scan.yml`, trocar `cron: "*/5 * * * *"` por
-   `cron: "0 * * * *"` (a cada hora) — vira só um fallback de baixa
-   frequência; o disparo externo passa a ser o relógio principal.
-2. Em `src/lib/scanner.js`, ajustar a constante `PASSES_PER_DAY` do guard de
-   quota (linha ~1359) de `288` para `312` (288 do disparo externo + 24 do
-   fallback horário), para o aviso de quota continuar refletindo o volume
-   real.
+1. `.github/workflows/scan.yml`: `cron: "*/5 * * * *"` → `cron: "0 * * * *"`
+   (a cada hora) — vira só um fallback de baixa frequência; o disparo
+   externo é o relógio principal.
+2. `src/lib/scanner.js`: constante `PASSES_PER_DAY` do guard de quota
+   ajustada de `288` para `312` (288 do disparo externo + 24 do fallback
+   horário), para o aviso de quota continuar refletindo o volume real.
 
-**Por que esperar confirmar antes de reduzir**: `scan.yml` roda a partir da
-branch `main` assim que o merge acontece. Se a redução para 1x/hora for
-mergeada ANTES do disparo externo estar de fato funcionando, o scan ao vivo
-cai de 5min para 1h de cadência silenciosamente (sem erro, só sinal mais
-velho) até alguém notar. O fallback horário ainda se autocorrige dentro da
-janela de 30min do alerta de staleness por ativo (`docs/known-risks.md` item
-12) se o disparo externo falhar DEPOIS de já estar funcionando — mas o
-período de transição em si (redução mergeada antes da confirmação) é o
-único jeito de cair nesse buraco.
+**Por que só depois de confirmar**: `scan.yml` roda a partir da branch
+`main` assim que o merge acontece. Se a redução para 1x/hora fosse mergeada
+ANTES do disparo externo estar de fato funcionando, o scan ao vivo cairia de
+5min para 1h de cadência silenciosamente (sem erro, só sinal mais velho) até
+alguém notar. O fallback horário se autocorrige dentro da janela de 30min do
+alerta de staleness por ativo (`docs/known-risks.md` item 12) se o disparo
+externo falhar DEPOIS de já estar funcionando.
 
 `scan.yml` já declara:
 
@@ -159,6 +156,11 @@ risco de corrupção de dado (o scanner já é seguro sob concorrência via
 
 ## Status
 
-Esta configuração é feita **fora do repositório** (conta pessoal do usuário
-no cron-job.org + um PAT pessoal) — não há nada para commitar além deste
-documento. `docs/known-risks.md` item 16 registra a decisão.
+**Concluído.** O disparo externo (cron-job.org) está configurado e
+confirmado funcionando pela própria execução agendada (não só o teste
+manual), e o passo 3 acima (fallback horário do `schedule:` interno +
+ajuste de `PASSES_PER_DAY`) já foi mergeado. A configuração do
+cron-job.org em si é feita **fora do repositório** (conta pessoal do
+usuário + um PAT pessoal) — não há nada para commitar além deste documento.
+`docs/known-risks.md` item 18 registra a decisão e o dado real medido de
+drift antes da correção.

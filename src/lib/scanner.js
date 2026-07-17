@@ -1366,14 +1366,18 @@ async function scanAllAssetsInner(onProgress) {
   }
 
   // Rough Firestore quota check — extrapolates this pass's read/write count
-  // to a full day assuming the 5-minute cron cadence (the dominant driver of
+  // to a full day assuming the cron's real cadence (the dominant driver of
   // Firestore usage; the browser's own auto-scan runs full scans far less
   // often, so this is a conservative/pessimistic estimate there, never an
   // under-count). Warns via the normal Debug Log (no Firebase Console
   // literacy needed) if projected usage crosses 80% of the free Spark
   // plan's daily limits (50k reads / 20k writes) — see known-risks.md #13.
+  // 312 = 288 (external dispatch every 5min, the primary trigger — see
+  // docs/claude/external-cron-setup.md) + 24 (GitHub's own schedule:, kept
+  // as an hourly fallback in scan.yml so it never doubles the 5-min cadence
+  // — doubling it would silently push real usage past this estimate).
   const { reads, writes } = backend.quota.getAndResetOpCounts();
-  const PASSES_PER_DAY = 288;
+  const PASSES_PER_DAY = 312;
   const projectedReads = reads * PASSES_PER_DAY;
   const projectedWrites = writes * PASSES_PER_DAY;
   const READ_LIMIT = 50000;
