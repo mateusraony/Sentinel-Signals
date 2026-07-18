@@ -980,3 +980,24 @@ voltam a passar com a correção restaurada.
 (`TelegramSettings.jsx`) mas segue sem função `notify*` correspondente —
 nunca foi implementado, não é regressão desta rodada, não implementado aqui
 por não ter sido pedido.
+
+> **Atualização (review do Codex, PR #60) — gap real de migração
+> encontrado e corrigido na mesma rodada:** `getTelegramFilters()`
+> (`src/lib/telegram.js`) só aplica `DEFAULT_FILTERS` (com os 3 eventos
+> novos) quando **nada** está salvo em `localStorage`. Um usuário que já
+> tinha salvo filtros do Telegram **antes** desta mudança continuaria com o
+> array `events` antigo — os 3 eventos novos ficariam suprimidos por
+> `shouldSend()` até o usuário abrir Configurações manualmente, mesmo eles
+> sendo "ligados por padrão" na intenção da mudança. Corrigido: na leitura,
+> se o objeto salvo ainda não tem a flag `_migratedEvents20260718`, os
+> eventos novos ausentes são mesclados no array **e a migração é persistida
+> de volta** via `setTelegramFilters` — a flag existe justamente para que
+> essa mesclagem rode uma única vez; sem ela, uma leitura futura veria o
+> evento "ainda ausente" e o adicionaria de novo, tornando impossível
+> desligar `invalidated`/`time_stop`/`chop_exit` depois de ligados uma vez.
+> `scripts/adminTelegram.js` (canal 24h/cron) não precisou do mesmo fix —
+> não tem filtros persistidos, sempre usa `DEFAULT_FILTERS` diretamente.
+> Regressão em `src/lib/telegram.test.js` (novo arquivo): filtros antigos
+> sem os 3 eventos são migrados e persistidos; filtros já migrados onde o
+> usuário desligou um evento não o recebem de volta; confirmado via `git
+> stash` que o teste de migração falha contra o código anterior.

@@ -38,9 +38,29 @@ const DEFAULT_FILTERS = {
   min_score: 0,
 };
 
+// Event IDs added after filters could already be saved in localStorage
+// (known-risks.md item 29, Codex review PR #60) — merged ONCE into old saved
+// filters below so a user who saved BEFORE this change still gets them on by
+// default, matching DEFAULT_FILTERS, instead of silently missing until they
+// open Settings. Guarded by MIGRATION_FLAG and persisted immediately so a
+// later deliberate opt-out (unchecking the toggle) sticks — without the
+// flag, every read would treat the still-missing event as "old data" again
+// and re-add it forever.
+const NEW_EVENTS_2026_07_18 = ['invalidated', 'time_stop', 'chop_exit'];
+const MIGRATION_FLAG = '_migratedEvents20260718';
+
 export function getTelegramFilters() {
-  try { return JSON.parse(localStorage.getItem(FILTERS_KEY)) || DEFAULT_FILTERS; }
-  catch (e) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(FILTERS_KEY));
+    if (!stored) return DEFAULT_FILTERS;
+    if (!stored[MIGRATION_FLAG] && Array.isArray(stored.events)) {
+      const missing = NEW_EVENTS_2026_07_18.filter((e) => !stored.events.includes(e));
+      const migrated = { ...stored, events: [...stored.events, ...missing], [MIGRATION_FLAG]: true };
+      setTelegramFilters(migrated);
+      return migrated;
+    }
+    return stored;
+  } catch (e) {
     logWarn('telegram', 'Filtros do Telegram corrompidos no localStorage, usando defaults', { error: e.message });
     return DEFAULT_FILTERS;
   }
