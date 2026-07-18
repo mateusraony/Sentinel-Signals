@@ -48,6 +48,18 @@ const SMC_INITIAL_STOP_ATR_MULT = 2.0; // cap do stop estrutural e fallback ATR 
 const SMC_STOP_BUFFER_ATR = 0.1; // folga além do nível estrutural (evita toque exato no pavio)
 const SMC_STOP_MIN_ATR = 0.5; // piso — ruído do 5m não pode gerar stop mais apertado que isso
 
+// Review do Codex (PR #58): `??` trata 0/negativo como override "presente",
+// mas um período <= 0 passado pra RSI/EMA produz NaN/lixo — e o próprio
+// AssetConfigPanel pode gravar 0 se o usuário limpar um campo numérico
+// (`Number('') === 0`). firstPositive só aceita candidatos finitos e > 0,
+// pulando qualquer 0/negativo/NaN/ausente até achar um válido.
+export function firstPositive(...candidates) {
+  for (const c of candidates) {
+    if (Number.isFinite(c) && c > 0) return c;
+  }
+  return undefined;
+}
+
 // Pine×scanner unification (2026-07-18, ver known-risks.md item 27): antes,
 // RSI/EMA usavam SÓ o campo do ativo com fallback hardcoded (9/21/14) —
 // divergente do Pine real (20/50/14) — e volume/ATR(stop) eram constantes
@@ -60,12 +72,12 @@ const SMC_STOP_MIN_ATR = 0.5; // piso — ruído do 5m não pode gerar stop mais
 // sem precisar mockar fetchCandles.
 export function resolveIndicatorParams(asset, pineConfig) {
   return {
-    rsiPeriod: asset.rsi_period ?? pineConfig.rsiLen ?? 14,
-    emaFast: asset.ema_short ?? pineConfig.emaFastLen ?? 20,
-    emaSlow: asset.ema_long ?? pineConfig.emaSlowLen ?? 50,
+    rsiPeriod: firstPositive(asset.rsi_period, pineConfig.rsiLen, 14),
+    emaFast: firstPositive(asset.ema_short, pineConfig.emaFastLen, 20),
+    emaSlow: firstPositive(asset.ema_long, pineConfig.emaSlowLen, 50),
     // Sem campo por-ativo hoje — vêm só do Pine (ou do literal de fallback).
-    volPeriod: pineConfig.volLen ?? 20,
-    atrStopPeriod: pineConfig.atrLen ?? 14,
+    volPeriod: firstPositive(pineConfig.volLen, 20),
+    atrStopPeriod: firstPositive(pineConfig.atrLen, 14),
   };
 }
 

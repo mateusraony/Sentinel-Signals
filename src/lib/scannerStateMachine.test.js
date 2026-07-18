@@ -31,7 +31,7 @@ vi.mock('./marketDataProvider', () => ({
 
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice } from './marketDataProvider';
-import { persistScanResults, priceCheckActiveOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams } from './scanner.js';
+import { persistScanResults, priceCheckActiveOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, firstPositive } from './scanner.js';
 
 let backend;
 beforeEach(() => {
@@ -225,6 +225,34 @@ describe('resolveIndicatorParams — Pine×scanner unification (P1, known-risks 
   it('a real signal is unaffected by unrelated pineConfig noise — regression matches the current production shape', () => {
     const p = resolveIndicatorParams({}, pine);
     expect(p).toEqual({ rsiPeriod: 20, emaFast: 20, emaSlow: 50, volPeriod: 20, atrStopPeriod: 14 });
+  });
+
+  // Codex review (PR #58): a cleared number input in AssetConfigPanel saves
+  // 0 (Number('') === 0); `??` alone would treat that as a "real" override
+  // and feed period 0 into RSI/EMA (NaN/garbage). Zero/negative/NaN must
+  // fall through to the next candidate exactly like "unset" does.
+  it('rejects a zero/negative/NaN per-asset override — falls through to Pine, then literal', () => {
+    const zeroed = { rsi_period: 0, ema_short: -5, ema_long: NaN };
+    const p1 = resolveIndicatorParams(zeroed, pine);
+    expect(p1.rsiPeriod).toBe(20); // pine.rsiLen, not 0
+    expect(p1.emaFast).toBe(20); // pine.emaFastLen, not -5
+    expect(p1.emaSlow).toBe(50); // pine.emaSlowLen, not NaN
+
+    const zeroedNoPine = { rsi_period: 0, ema_short: 0, ema_long: 0 };
+    const p2 = resolveIndicatorParams(zeroedNoPine, { rsiLen: 0, emaFastLen: 0, emaSlowLen: 0 });
+    expect(p2.rsiPeriod).toBe(14); // both asset and pine are 0 → literal
+    expect(p2.emaFast).toBe(20);
+    expect(p2.emaSlow).toBe(50);
+  });
+});
+
+describe('firstPositive', () => {
+  it('returns the first finite candidate greater than zero', () => {
+    expect(firstPositive(0, -1, NaN, undefined, null, 5, 10)).toBe(5);
+  });
+
+  it('returns undefined when no candidate qualifies', () => {
+    expect(firstPositive(0, -1, NaN, undefined, null)).toBe(undefined);
   });
 });
 
