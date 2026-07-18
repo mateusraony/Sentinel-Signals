@@ -21,6 +21,9 @@ vi.mock('./telegram', () => ({
   notifyTP1Hit: vi.fn().mockResolvedValue(undefined),
   notifyTP2Hit: vi.fn().mockResolvedValue(undefined),
   notifyStopHit: vi.fn().mockResolvedValue(undefined),
+  notifyInvalidated: vi.fn().mockResolvedValue(undefined),
+  notifyTimeStop: vi.fn().mockResolvedValue(undefined),
+  notifyChopExit: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('./logger', () => ({
   logInfo: vi.fn(),
@@ -34,7 +37,7 @@ vi.mock('./marketDataProvider', () => ({
 
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice } from './marketDataProvider';
-import { isTelegramConfigured, notifyNewSignal } from './telegram';
+import { isTelegramConfigured, notifyNewSignal, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
 import { persistScanResults, priceCheckActiveOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, firstPositive } from './scanner.js';
 
 let backend;
@@ -331,6 +334,7 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
   });
 
   it('CLOSED/TIME_STOP when the position has been open longer than the tier allows', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(true);
     const op = makeOp({ candle_close_time: '2026-07-01T00:00:00.000Z' }); // far in the past
     backend._seed('TradeOperation', op);
     const results = { '4h': makeTfData({ lastCandleHigh: 101, lastCandleLow: 99 }) }; // no stop/TP1 hit
@@ -338,6 +342,10 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('CLOSED');
     expect(stored.closed_reason).toBe('TIME_STOP');
+    // known-risks item 29 — TIME_STOP was previously a silent closure.
+    expect(notifyTimeStop).toHaveBeenCalledTimes(1);
+    expect(notifyTimeStop).toHaveBeenCalledWith(expect.objectContaining({ id: 'op1' }), expect.any(Number));
+    vi.mocked(isTelegramConfigured).mockReturnValue(false);
   });
 
   it('P0-g: Time Stop ages from the REAL entry, not the stale signal candle', async () => {
@@ -358,6 +366,7 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
   });
 
   it('CLOSED/CHOP_EXIT when enabled and choppiness exceeds the tier ceiling', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(true);
     backend._seed('TradeOperation', makeOp());
     const results = {
       '4h': makeTfData({ lastCandleHigh: 101, lastCandleLow: 99, chop: 60, tier: { ...makeTfData().tier, chopMaxVal: 55 } }),
@@ -366,9 +375,14 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('CLOSED');
     expect(stored.closed_reason).toBe('CHOP_EXIT');
+    // known-risks item 29 — CHOP_EXIT was previously a silent closure.
+    expect(notifyChopExit).toHaveBeenCalledTimes(1);
+    expect(notifyChopExit).toHaveBeenCalledWith(expect.objectContaining({ id: 'op1' }), expect.any(Number));
+    vi.mocked(isTelegramConfigured).mockReturnValue(false);
   });
 
   it('rf_reverse_bars_count dedups by candle: repeated passes on the same candle do not double-count', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(true);
     backend._seed('TradeOperation', makeOp());
     const pineConfig = makePineConfig({ useInvalidation: true, invalidRFBars: 2 });
     const tfData = makeTfData({ rf: { filterValue: 90, direction: -1 }, lastCandleHigh: 101, lastCandleLow: 99 });
@@ -389,6 +403,10 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     stored = backend._get('TradeOperation', 'op1');
     expect(stored.rf_reverse_bars_count).toBe(2);
     expect(stored.status).toBe('INVALIDATED');
+    // known-risks item 29 — INVALIDATED was previously a silent closure.
+    expect(notifyInvalidated).toHaveBeenCalledTimes(1);
+    expect(notifyInvalidated).toHaveBeenCalledWith(expect.objectContaining({ id: 'op1' }), expect.any(Number));
+    vi.mocked(isTelegramConfigured).mockReturnValue(false);
   });
 });
 
@@ -427,6 +445,7 @@ describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTI
   });
 
   it('INVALIDATED when RF flips against the position (RF cascade)', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(true);
     backend._seed('TradeOperation', makeRunner({ current_stop: 90, exit_mode: 'HYBRID_RF_ATR' }));
     const results = {
       '4h': makeTfData({ lastCandleHigh: 104, lastCandleLow: 101, lastClose: 104, rf: { filterValue: 105, direction: -1 } }),
@@ -434,9 +453,16 @@ describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTI
     await persistScanResults(makeScanResult({ results }));
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('INVALIDATED');
+    expect(stored.closed_reason).toBe('INVALIDATION');
+    // known-risks item 29 — post-TP1 INVALIDATED (RF cascade) was previously
+    // a silent closure, AND closed_reason was missing on this branch.
+    expect(notifyInvalidated).toHaveBeenCalledTimes(1);
+    expect(notifyInvalidated).toHaveBeenCalledWith(expect.objectContaining({ id: 'op1' }), expect.any(Number));
+    vi.mocked(isTelegramConfigured).mockReturnValue(false);
   });
 
   it('INVALIDATED when the 1h SMC structure reverses (SMC cascade, independent of RF)', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(true);
     backend._seed('TradeOperation', makeRunner({ current_stop: 90, cascade: '1h_5m', signal_timeframe: '1h' }));
     const results = {
       '1h': makeTfData({ lastCandleHigh: 104, lastCandleLow: 101, lastClose: 104, smc: { trend: -1 } }),
@@ -444,6 +470,12 @@ describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTI
     await persistScanResults(makeScanResult({ results }));
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('INVALIDATED');
+    expect(stored.closed_reason).toBe('INVALIDATION');
+    // known-risks item 29 — post-TP1 INVALIDATED (SMC cascade) was previously
+    // a silent closure, AND closed_reason was missing on this branch.
+    expect(notifyInvalidated).toHaveBeenCalledTimes(1);
+    expect(notifyInvalidated).toHaveBeenCalledWith(expect.objectContaining({ id: 'op1' }), expect.any(Number));
+    vi.mocked(isTelegramConfigured).mockReturnValue(false);
   });
 });
 

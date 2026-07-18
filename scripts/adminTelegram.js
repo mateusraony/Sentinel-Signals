@@ -7,7 +7,7 @@ const DEFAULT_FILTERS = {
   timeframes: ['1h', '4h', '1d'],
   min_priority: 'low',
   signal_types: ['BUY', 'SELL'],
-  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit'],
+  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit'],
   min_score: 0,
 };
 
@@ -164,5 +164,39 @@ export async function notifyStopHit(op, price) {
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Stop em: $${fmtP(op.current_stop)}\n\n` +
     `<i>⚡ CryptoRadar</i>`
+  );
+}
+
+export async function notifyInvalidated(op, price) {
+  if (!shouldSend('invalidated', op)) return;
+  const stageMsg = op.tp1_hit ? '(após TP1 — parcial já realizada)' : '(pré-TP1)';
+  return send(
+    `⚠️ <b>Sinal Invalidado ${stageMsg}</b>\n\n` +
+    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `💰 Preço: $${fmtP(price)}\n` +
+    `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
+    `<i>🔄 Estrutura/tendência reverteu — CryptoRadar</i>`
+  );
+}
+
+export async function notifyTimeStop(op, price) {
+  if (!shouldSend('time_stop', op)) return;
+  return send(
+    `⏱️ <b>Time Stop — Operação Encerrada</b>\n\n` +
+    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `💰 Preço: $${fmtP(price)}\n` +
+    `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
+    `<i>⌛ Prazo máximo sem atingir TP1 — CryptoRadar</i>`
+  );
+}
+
+export async function notifyChopExit(op, price) {
+  if (!shouldSend('chop_exit', op)) return;
+  return send(
+    `🌊 <b>Chop Exit — Operação Encerrada</b>\n\n` +
+    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `💰 Preço: $${fmtP(price)}\n` +
+    `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
+    `<i>📉 Mercado lateralizado (choppiness alto) — CryptoRadar</i>`
   );
 }

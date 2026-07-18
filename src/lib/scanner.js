@@ -34,6 +34,9 @@ import {
   notifyTP1Hit,
   notifyTP2Hit,
   notifyStopHit,
+  notifyInvalidated,
+  notifyTimeStop,
+  notifyChopExit,
 } from './telegram';
 
 const TIMEFRAMES = ['1h', '4h', '1d'];
@@ -1243,6 +1246,11 @@ export async function persistScanResults(scanResult) {
         const structureReversed = tfData.smc && (isBuy ? tfData.smc.trend === -1 : tfData.smc.trend === 1);
         if (structureReversed) {
           newStatus = 'INVALIDATED';
+          // Aligned with the pre-TP1 RF-invalidation branch above, which
+          // already set this — was missing here, leaving closed_reason
+          // undefined on a real fraction of INVALIDATED ops (Telegram
+          // notification below and any consumer of closed_reason need it).
+          updatePayload.closed_reason = 'INVALIDATION';
           updatePayload.exit_price = closePrice;
           updatePayload.closed_at = nowIso;
         }
@@ -1250,6 +1258,7 @@ export async function persistScanResults(scanResult) {
         const rfInval = isBuy ? (rfDir === -1 && closePrice < rfFilt) : (rfDir === 1 && closePrice > rfFilt);
         if (rfInval) {
           newStatus = 'INVALIDATED';
+          updatePayload.closed_reason = 'INVALIDATION';
           updatePayload.exit_price = closePrice;
           updatePayload.closed_at = nowIso;
         }
@@ -1294,6 +1303,9 @@ export async function persistScanResults(scanResult) {
       if (applied && isTelegramConfigured()) {
         if (newStatus === 'STOP_HIT' && op.status !== 'STOP_HIT') notifyStopHit(op, closePrice).catch(() => {});
         else if (newStatus === 'TP2_HIT') notifyTP2Hit(op, closePrice).catch(() => {});
+        else if (newStatus === 'INVALIDATED') notifyInvalidated(op, closePrice).catch(() => {});
+        else if (newStatus === 'CLOSED' && updatePayload.closed_reason === 'TIME_STOP') notifyTimeStop(op, closePrice).catch(() => {});
+        else if (newStatus === 'CLOSED' && updatePayload.closed_reason === 'CHOP_EXIT') notifyChopExit(op, closePrice).catch(() => {});
         else if (tp1Hit && !op.tp1_hit) notifyTP1Hit(op, closePrice).catch(() => {});
       }
     }

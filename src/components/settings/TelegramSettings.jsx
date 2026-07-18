@@ -21,7 +21,9 @@ const EVENT_OPTIONS = [
   { id: 'tp2_hit', label: '🏆 TP2 atingido', desc: 'Quando preço toca o alvo final' },
   { id: 'stop_hit', label: '🛑 Stop atingido', desc: 'Quando stop loss é tocado' },
   { id: 'runner_active', label: '⚡ Runner ativado', desc: 'Quando operação entra em modo runner' },
-  { id: 'invalidated', label: '⚠️ Sinal invalidado', desc: 'Quando condição técnica falha' },
+  { id: 'invalidated', label: '⚠️ Sinal invalidado', desc: 'Quando estrutura/tendência reverte contra a operação' },
+  { id: 'time_stop', label: '⏱️ Time Stop', desc: 'Quando o prazo máximo sem atingir TP1 expira' },
+  { id: 'chop_exit', label: '🌊 Chop Exit', desc: 'Quando o mercado fica lateralizado (choppiness alto)' },
 ];
 
 // Filters are now stored/managed centrally in telegram.js — imported above
