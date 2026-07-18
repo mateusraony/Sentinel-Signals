@@ -44,6 +44,10 @@ Definido por pesquisa de comunidade (fontes no PR que o introduziu):
   pago; scraping viola ToS — rejeitado). Fixture de candles reais opcional via
   `scripts/fetch-golden-fixture.mjs` (rodar na máquina do usuário — a rede das
   sessões bloqueia a Binance).
+- **Âncora com valores reais do TV** (`tvSpotCheck.test.js`): 4 barras spot
+  4h (BTC/ETH/PENDLE/FET) transcritas de prints da Data Window do usuário
+  (2026-07-18) — 31/32 valores na precisão exibida; exceção documentada
+  (ADX do PENDLE, ~0,6%). Novo spot check = novos casos nesse arquivo.
 
 ## Regras ao tocar cálculo
 

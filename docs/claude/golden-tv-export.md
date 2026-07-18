@@ -20,6 +20,15 @@ Premium** (Essential/free não exportam; scraping viola os ToS e foi rejeitado).
 >    barra). Envie 3–5 prints de barras diferentes numa sessão do Claude —
 >    os valores são comparados com os calculados sobre os candles congelados.
 > O CSV completo continua documentado abaixo para quando/se houver upgrade.
+>
+> **Spot check EXECUTADO (2026-07-18)** — prints do usuário (BINANCE spot 4h,
+> UTC, Data Window com o "Sentinel Golden") de BTC, ETH, PENDLE e FET foram
+> comparados barra a barra com os candles congelados: OHLC byte-idêntico nas
+> 4 barras (fonte única confirmada) e **31 de 32 valores de indicador
+> batendo na precisão exibida** (vários com 4 casas). Única divergência: ADX
+> do PENDLE (20,145 TV × 20,029 port, ~0,6% — implementação validada pelos
+> outros 3 pares; suspeita de micro-diferença de histórico antigo). Os
+> valores viraram teste permanente: `src/lib/indicators/tvSpotCheck.test.js`.
 
 ## Passo a passo (uma vez por timeframe)
 
