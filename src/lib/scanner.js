@@ -755,33 +755,55 @@ export async function persistScanResults(scanResult) {
     // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
     // only one executor (browser or cron) is ever inside this loop at a
     // time, so the residual race window here is negligible (see
-    // docs/known-risks.md).
+    // docs/known-risks.md). Computed BEFORE persisting this signal so
+    // `recentNotified` naturally excludes it. Gates ONLY the Telegram
+    // notification below (the UI already labels this field "minutos entre
+    // ALERTAS iguais" — alertas means Telegram in this app's vocabulary) —
+    // it must NEVER gate persistence or the entry motor (see known-risks.md
+    // item 28: raising this to reduce notification spam used to silently
+    // drop the SignalEvent and every entry that depended on it existing,
+    // including the retry loop's ability to re-check it later).
     const cooldownMinutes = asset.alert_cooldown_minutes || 60;
     const cooldownTime = new Date(Date.now() - cooldownMinutes * 60 * 1000).toISOString();
 
-    const recentSame = await backend.entities.SignalEvent.filter({
+    // Anchored on `notified: true` only (Codex review, PR #59): every signal
+    // persists now regardless of cooldown, so a query without this filter
+    // would find the most recently PERSISTED same-type signal — which could
+    // itself be one whose notification was suppressed, letting a streak of
+    // frequent signals stretch the "quiet window" indefinitely even though
+    // the last actual alert was long ago. Anchoring on the last NOTIFIED one
+    // makes "N minutes between alerts" mean what it says.
+    const recentNotified = await backend.entities.SignalEvent.filter({
       symbol: signal.symbol,
       timeframe: signal.timeframe,
       signal_type: signal.signal_type,
       source: signal.source,
+      notified: true,
     }, '-created_date', 1);
 
-    const hasCooldownConflict = recentSame.some(s =>
+    const notificationOnCooldown = recentNotified.some(s =>
       s.created_date > cooldownTime
     );
-
-    if (hasCooldownConflict) continue;
+    // Whether THIS signal would actually alert anyone — used both to gate
+    // the Telegram call below and to persist `notified` on the record
+    // itself, so every user-facing alert channel (Telegram, in-app toast/
+    // banner, browser Notification API — see Dashboard.jsx consumers) can
+    // filter on the SAME flag instead of re-deriving cooldown state
+    // independently (Codex review, PR #59).
+    const willNotify = !notificationOnCooldown && isTelegramConfigured();
 
     // Atomic dedup: dedup_key is used as the Firestore document id itself,
     // so createUnique is a single transaction that can never let two
     // concurrent callers both persist the same signal (unlike the previous
     // filter()-then-create() pattern, which had a race window between the
-    // two calls).
-    const dedupResult = await backend.entities.SignalEvent.createUnique(signal.dedup_key, signal);
+    // two calls). Runs regardless of cooldown — the signal is real and
+    // must be recorded/evaluated for entry even while notifications are
+    // suppressed.
+    const dedupResult = await backend.entities.SignalEvent.createUnique(signal.dedup_key, { ...signal, notified: willNotify });
     if (!dedupResult.created) continue;
 
     persistedSignals++;
-    if (isTelegramConfigured()) notifyNewSignal(signal).catch(() => {});
+    if (willNotify) notifyNewSignal(signal).catch(() => {});
 
     // ═══ Entry Motor: 4H trend → 15m confirmation only ═══
     // No operation opens on 15m without prior 4H trend confirmation.

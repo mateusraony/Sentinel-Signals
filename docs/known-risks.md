@@ -873,3 +873,63 @@ for implementada.
 Regressão: `resolveIndicatorParams` testado em `scannerStateMachine.test.js`
 (override por-ativo, fallback pro Pine real, fallback pro literal, campos
 sem override por-ativo, formato de produção).
+
+## 28. Cooldown de alertas bloqueava o sinal inteiro, não só a notificação — corrigido
+
+Segunda auditoria externa (2026-07-18) + verificação: em `persistScanResults`
+(`src/lib/scanner.js`), o `continue` de conflito de cooldown rodava **antes**
+até de `SignalEvent.createUnique` — ou seja, um sinal dentro da janela de
+cooldown não era só silenciado no Telegram: **nunca era gravado**. Isso
+bloqueava, para aquele sinal: o registro do `SignalEvent`, toda a avaliação
+do motor de entrada (confirmação 15m/5m, criação de `TradeOperation`) e a
+elegibilidade do loop de retry (que relê `SignalEvent`s persistidos — um
+sinal nunca gravado nunca pode ser re-tentado). Aumentar
+`alert_cooldown_minutes` no painel para reduzir spam de notificação
+eliminava silenciosamente entradas válidas — o texto da UI ("minutos entre
+**alertas** iguais") já prometia só afetar notificação; era o código que
+quebrava essa promessa.
+
+**Correção**: a checagem de cooldown continua rodando **antes** de persistir
+(mesma query, mesma janela — `recentSame` naturalmente exclui o sinal atual,
+ainda não gravado), mas seu resultado (`notificationOnCooldown`) agora só
+guarda a chamada `notifyNewSignal` — `SignalEvent.createUnique` e todo o
+motor de entrada rodam **incondicionalmente**, independente de cooldown. O
+dedup por `dedup_key` (proteção contra sinal exatamente duplicado) não muda.
+
+Regressão em `scannerStateMachine.test.js`: sinal dentro do cooldown é
+persistido (`persistedSignals === 1`), a notificação é suprimida, e o motor
+de entrada é alcançado (log de "aguardando confirmação 15m"); um segundo
+teste confirma que fora da janela de cooldown a notificação dispara
+normalmente. Confirmado que o primeiro caso falha contra o código antigo
+(`persistedSignals` ficava 0 — o sinal nunca era persistido).
+
+> **Atualização (review do Codex, PR #59) — dois gaps reais encontrados e
+> corrigidos na mesma rodada:**
+>
+> 1. **A âncora do cooldown podia se esticar indefinidamente.** Como todo
+>    sinal passa a persistir independente do resultado do cooldown, a query
+>    "sinal mais recente do mesmo tipo" podia encontrar um sinal
+>    **suprimido** (não notificado) como âncora — numa sequência de sinais
+>    frequentes, isso podia suprimir o Telegram por muito mais tempo do que
+>    os N minutos configurados, mesmo com o último alerta real há muito
+>    tempo. Corrigido: novo campo `notified` (persistido em cada
+>    `SignalEvent`, refletindo `!notificationOnCooldown && isTelegramConfigured()`
+>    no momento da criação) e a query de cooldown passou a filtrar
+>    `notified: true` — a âncora agora é sempre o último alerta **de
+>    verdade**, nunca um sinal só registrado. Índice do Firestore
+>    (`firestore.indexes.json`) atualizado com esse campo — **exige
+>    `firebase deploy --only firestore:indexes`** (mesmo passo manual do
+>    item 5) antes de valer em produção.
+> 2. **Toast, banner e notificação do navegador ignoravam o cooldown.** A
+>    correção original só gateava o `notifyNewSignal` (Telegram) — mas o
+>    Dashboard lê todo `SignalEvent` recente e alimenta `SignalToast`,
+>    `SignalAlertBanner` e `useBrowserNotifications` (API de notificação do
+>    SO) com filtros próprios de frescor/fonte, sem noção de cooldown. Um
+>    sinal suprimido no Telegram ainda geraria toast/banner/notificação do
+>    SO com o painel aberto. Corrigido: os três consumidores agora checam o
+>    mesmo campo `notified` (registros antigos sem o campo contam como
+>    notificados, para não esconder histórico pré-2026-07-18).
+>
+> Resultado: `notified` é hoje a fonte única de "este sinal deveria alertar
+> alguém", consumida por Telegram e por todo canal in-app/OS — nenhum
+> precisa mais re-derivar o estado de cooldown por conta própria.

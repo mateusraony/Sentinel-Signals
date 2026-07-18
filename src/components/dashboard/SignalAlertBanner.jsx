@@ -15,6 +15,10 @@ export default function SignalAlertBanner({ signals = [] }) {
     const fresh = signals.filter(s => {
       if (seenIds.current.has(s.id)) return false;
       if (s.source !== 'range_filter') return false;
+      // Same flag Telegram uses (known-risks.md item 28) — a signal
+      // suppressed by alert_cooldown_minutes shouldn't raise this banner
+      // either; `notified === undefined` (older records) counts as notified.
+      if (s.notified === false) return false;
       if (new Date(s.created_date).getTime() < cutoff) {
         seenIds.current.add(s.id);
         return false;

@@ -74,6 +74,10 @@
       "type": "string",
       "description": "Candle close time that generated this signal"
     },
+    "notified": {
+      "type": "boolean",
+      "description": "Whether this signal actually alerted the user (Telegram sent) when persisted — false when suppressed by alert_cooldown_minutes or Telegram not configured. All user-facing alert channels (Telegram, in-app SignalToast/SignalAlertBanner, useBrowserNotifications) filter on this SAME flag instead of re-deriving cooldown state, and the cooldown query itself anchors on the last notified:true record — not the last persisted one — so a streak of suppressed signals can't stretch the cooldown window indefinitely. Added 2026-07-18, known-risks.md item 28"
+    },
     "context": {
       "type": "object",
       "description": "Full technical context at signal time",
