@@ -933,3 +933,71 @@ normalmente. Confirmado que o primeiro caso falha contra o código antigo
 > Resultado: `notified` é hoje a fonte única de "este sinal deveria alertar
 > alguém", consumida por Telegram e por todo canal in-app/OS — nenhum
 > precisa mais re-derivar o estado de cooldown por conta própria.
+
+## 29. Fechamentos INVALIDATED/TIME_STOP/CHOP_EXIT nunca notificavam no Telegram — corrigido
+
+Segunda auditoria externa (2026-07-18): `persistScanResults` (`src/lib/scanner.js`)
+só tinha branches de notificação para `STOP_HIT`, `TP2_HIT` e TP1 (`tp1Hit`) no
+bloco único de notificação pós-transição. As outras três formas terminais de
+saída de uma operação — `INVALIDATED` (reversão de estrutura/RF), e `CLOSED`
+com `closed_reason` `TIME_STOP` (prazo máximo sem TP1) ou `CHOP_EXIT` (mercado
+lateralizado) — fechavam a operação silenciosamente: o usuário só descobria
+olhando o painel, mesmo essas saídas sendo tão relevantes quanto um stop
+atingido (é dinheiro saindo de uma posição sem alerta).
+
+De quebra, ao investigar o bloco de transição pós-TP1 (`RUNNER_ACTIVE`), as
+duas branches que levam a `INVALIDATED` (reversão de estrutura SMC e reversão
+do RF) não gravavam `updatePayload.closed_reason = 'INVALIDATION'` — só a
+branch pré-TP1 fazia isso. Inconsistência sem efeito visível até agora (nada
+lia `closed_reason` para um `INVALIDATED`), mas corrigida junto por ser a
+mesma superfície de código e por já ter teste de regressão cobrindo o campo.
+
+**Correção**: três novas funções em `src/lib/telegram.js` (espelhadas em
+`scripts/adminTelegram.js`) — `notifyInvalidated`, `notifyTimeStop`,
+`notifyChopExit` — adicionadas a `DEFAULT_FILTERS.events` (ligadas por padrão,
+mesmo critério dos outros eventos de fechamento) e à lista `EVENT_OPTIONS` de
+`TelegramSettings.jsx`. O bloco único de notificação em `persistScanResults`
+ganhou três `else if` novos (INVALIDATED; CLOSED+TIME_STOP; CLOSED+CHOP_EXIT),
+e as duas branches pós-TP1 de INVALIDATED passaram a setar `closed_reason`
+consistentemente com a branch pré-TP1.
+
+`priceCheckActiveOpsInner` (o loop baseado em preço ao vivo) não precisou de
+mudança — confirmado por leitura que esse loop só produz
+`STOP_HIT`/`RUNNER_ACTIVE`/`TP2_HIT`, nunca `INVALIDATED`/`CLOSED` (essas duas
+dependem de indicador de candle — RF, SMC, choppiness, tempo decorrido — só
+disponíveis no loop `persistScanResults`).
+
+Regressão em `scannerStateMachine.test.js`: 5 testes existentes (TIME_STOP,
+CHOP_EXIT, INVALIDATED pré-TP1 via contador RF, INVALIDATED pós-TP1 via RF,
+INVALIDATED pós-TP1 via SMC) ganharam asserções de que a função `notify*`
+correta é chamada com `(op, price)` quando `isTelegramConfigured()` é `true`;
+os dois casos pós-TP1 também passaram a checar `closed_reason === 'INVALIDATION'`.
+Confirmado via `git stash` que os 5 falham contra o código anterior (as 3
+notificações não disparavam; os 2 `closed_reason` vinham `undefined`) e
+voltam a passar com a correção restaurada.
+
+**Fora de escopo**: `runner_active` já existe como opção em `EVENT_OPTIONS`
+(`TelegramSettings.jsx`) mas segue sem função `notify*` correspondente —
+nunca foi implementado, não é regressão desta rodada, não implementado aqui
+por não ter sido pedido.
+
+> **Atualização (review do Codex, PR #60) — gap real de migração
+> encontrado e corrigido na mesma rodada:** `getTelegramFilters()`
+> (`src/lib/telegram.js`) só aplica `DEFAULT_FILTERS` (com os 3 eventos
+> novos) quando **nada** está salvo em `localStorage`. Um usuário que já
+> tinha salvo filtros do Telegram **antes** desta mudança continuaria com o
+> array `events` antigo — os 3 eventos novos ficariam suprimidos por
+> `shouldSend()` até o usuário abrir Configurações manualmente, mesmo eles
+> sendo "ligados por padrão" na intenção da mudança. Corrigido: na leitura,
+> se o objeto salvo ainda não tem a flag `_migratedEvents20260718`, os
+> eventos novos ausentes são mesclados no array **e a migração é persistida
+> de volta** via `setTelegramFilters` — a flag existe justamente para que
+> essa mesclagem rode uma única vez; sem ela, uma leitura futura veria o
+> evento "ainda ausente" e o adicionaria de novo, tornando impossível
+> desligar `invalidated`/`time_stop`/`chop_exit` depois de ligados uma vez.
+> `scripts/adminTelegram.js` (canal 24h/cron) não precisou do mesmo fix —
+> não tem filtros persistidos, sempre usa `DEFAULT_FILTERS` diretamente.
+> Regressão em `src/lib/telegram.test.js` (novo arquivo): filtros antigos
+> sem os 3 eventos são migrados e persistidos; filtros já migrados onde o
+> usuário desligou um evento não o recebem de volta; confirmado via `git
+> stash` que o teste de migração falha contra o código anterior.

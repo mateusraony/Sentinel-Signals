@@ -31,13 +31,36 @@ const DEFAULT_FILTERS = {
   timeframes: ['1h', '4h', '1d'],
   min_priority: 'low',
   signal_types: ['BUY', 'SELL'],
-  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit'],
+  // invalidated/time_stop/chop_exit added 2026-07-18 (known-risks.md item
+  // 29) — a closed/invalidated operation is at least as informative to the
+  // user as a stop hit, so on by default like the other closure events.
+  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit'],
   min_score: 0,
 };
 
+// Event IDs added after filters could already be saved in localStorage
+// (known-risks.md item 29, Codex review PR #60) — merged ONCE into old saved
+// filters below so a user who saved BEFORE this change still gets them on by
+// default, matching DEFAULT_FILTERS, instead of silently missing until they
+// open Settings. Guarded by MIGRATION_FLAG and persisted immediately so a
+// later deliberate opt-out (unchecking the toggle) sticks — without the
+// flag, every read would treat the still-missing event as "old data" again
+// and re-add it forever.
+const NEW_EVENTS_2026_07_18 = ['invalidated', 'time_stop', 'chop_exit'];
+const MIGRATION_FLAG = '_migratedEvents20260718';
+
 export function getTelegramFilters() {
-  try { return JSON.parse(localStorage.getItem(FILTERS_KEY)) || DEFAULT_FILTERS; }
-  catch (e) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(FILTERS_KEY));
+    if (!stored) return DEFAULT_FILTERS;
+    if (!stored[MIGRATION_FLAG] && Array.isArray(stored.events)) {
+      const missing = NEW_EVENTS_2026_07_18.filter((e) => !stored.events.includes(e));
+      const migrated = { ...stored, events: [...stored.events, ...missing], [MIGRATION_FLAG]: true };
+      setTelegramFilters(migrated);
+      return migrated;
+    }
+    return stored;
+  } catch (e) {
     logWarn('telegram', 'Filtros do Telegram corrompidos no localStorage, usando defaults', { error: e.message });
     return DEFAULT_FILTERS;
   }
@@ -175,5 +198,39 @@ export async function notifyStopHit(op, price) {
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Stop em: $${fmtP(op.current_stop)}\n\n` +
     `<i>⚡ CryptoRadar</i>`
+  );
+}
+
+export async function notifyInvalidated(op, price) {
+  if (!shouldSend('invalidated', op)) return;
+  const stageMsg = op.tp1_hit ? '(após TP1 — parcial já realizada)' : '(pré-TP1)';
+  return send(
+    `⚠️ <b>Sinal Invalidado ${stageMsg}</b>\n\n` +
+    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `💰 Preço: $${fmtP(price)}\n` +
+    `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
+    `<i>🔄 Estrutura/tendência reverteu — CryptoRadar</i>`
+  );
+}
+
+export async function notifyTimeStop(op, price) {
+  if (!shouldSend('time_stop', op)) return;
+  return send(
+    `⏱️ <b>Time Stop — Operação Encerrada</b>\n\n` +
+    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `💰 Preço: $${fmtP(price)}\n` +
+    `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
+    `<i>⌛ Prazo máximo sem atingir TP1 — CryptoRadar</i>`
+  );
+}
+
+export async function notifyChopExit(op, price) {
+  if (!shouldSend('chop_exit', op)) return;
+  return send(
+    `🌊 <b>Chop Exit — Operação Encerrada</b>\n\n` +
+    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `💰 Preço: $${fmtP(price)}\n` +
+    `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
+    `<i>📉 Mercado lateralizado (choppiness alto) — CryptoRadar</i>`
   );
 }
