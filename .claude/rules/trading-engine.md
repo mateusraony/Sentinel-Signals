@@ -42,10 +42,28 @@ nunca deve receber nova transição.**
 - **[CORRIGIDO — P0-c] Candle de entrada retroativo.** `persistScanResults` só
   avalia stop/TP por high/low quando o candle avaliado fechou ESTRITAMENTE
   depois do candle de sinal (`isCandleUsableForExits` em
-  `src/lib/opExitRules.js`, comparando `tfData.lastCandleTime` com
-  `op.candle_close_time`). Ops legadas sem `candle_close_time` mantêm o
+  `src/lib/opExitRules.js`). Ops legadas sem referência de entrada mantêm o
   comportamento antigo (fallback explícito). O price-check por preço spot cobre
   o intervalo ao vivo — sem buraco de proteção.
+- **[CORRIGIDO — P0-g] Guarda P0-c comparava contra o candle de SINAL, não o
+  da entrada real — confirmação atrasada (retry) ainda vazava preço
+  pré-entrada.** Auditoria externa (2026-07-18): um sinal 4h fechado às 08:00
+  cuja confirmação 15m só chega às 11:45 (retry) tinha seu primeiro candle
+  "utilizável" (08:00–12:00) julgado seguro pela guarda antiga — o fechamento
+  dele (12:00) é posterior ao fechamento do candle de SINAL (08:00) — mesmo
+  contendo ~3h45 de movimento ANTES da entrada existir; o mesmo horário errado
+  também alimentava o Time Stop (`barsOpen`), fazendo a operação "envelhecer"
+  antes de nascer. `entry_candle_time_15m`/`entry_candle_time_5m` já eram
+  gravados na criação da op mas nunca eram lidos em lugar nenhum. Corrigido:
+  `isCandleUsableForExits` (`src/lib/opExitRules.js`) passou a comparar o
+  **open** do candle candidato (não o close) contra o horário real da entrada
+  (`getEntryReferenceTime`, nova função — prioriza
+  `entry_candle_time_15m`/`_5m`, cai para `candle_close_time` quando ausente);
+  só um candle que COMEÇA no ou após o instante da entrada está livre de
+  contaminação. O Time Stop passou a envelhecer a partir da mesma referência.
+  No caminho rápido (sem atraso de retry) o comportamento é idêntico ao
+  P0-c original — a mudança só afeta confirmações atrasadas, que é
+  exatamente onde o bug existia. Ver `docs/known-risks.md` item 26.
 - **[CORRIGIDO — P0-d] Trailing look-ahead.** As saídas do runner são avaliadas
   contra o stop ARMAZENADO; o avanço do trailing (`advanceTrailingStop`) só
   acontece depois, do fechamento, e passa a proteger no candle SEGUINTE. O

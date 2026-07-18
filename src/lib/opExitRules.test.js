@@ -1,30 +1,78 @@
 import { describe, it, expect } from 'vitest';
-import { isCandleUsableForExits, advanceTrailingStop, nextRfReverseCount, computeStructuralStop } from './opExitRules.js';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop } from './opExitRules.js';
 
-const T0 = '2026-07-15T04:00:00.000Z'; // signal/entry candle close
-const T1 = '2026-07-15T08:00:00.000Z'; // next 4h candle close
-const Tpast = '2026-07-15T00:00:00.000Z'; // candle BEFORE the signal (replay)
+const T0 = '2026-07-15T04:00:00.000Z'; // candle open, at/before the entry
+const T1 = '2026-07-15T08:00:00.000Z'; // candle open, exactly at the entry instant
+const Tafter = '2026-07-15T12:00:00.000Z'; // candle open, strictly after the entry
 
-describe('isCandleUsableForExits (P0-c — guard temporal)', () => {
-  it('rejeita o próprio candle de entrada (high/low contém movimento pré-entrada)', () => {
-    expect(isCandleUsableForExits(T0, T0)).toBe(false);
+describe('isCandleUsableForExits (P0-c/P0-g — guard temporal, candle OPEN vs real entry)', () => {
+  it('rejeita um candle cujo open é anterior à entrada (contém movimento pré-entrada)', () => {
+    expect(isCandleUsableForExits(T0, T1)).toBe(false);
   });
 
-  it('rejeita candle anterior à entrada (replay/backfill)', () => {
-    expect(isCandleUsableForExits(Tpast, T0)).toBe(false);
+  it('aceita um candle cujo open coincide exatamente com o instante da entrada', () => {
+    expect(isCandleUsableForExits(T1, T1)).toBe(true);
   });
 
-  it('aceita o candle estritamente posterior', () => {
-    expect(isCandleUsableForExits(T1, T0)).toBe(true);
+  it('aceita um candle cujo open é estritamente posterior à entrada', () => {
+    expect(isCandleUsableForExits(Tafter, T1)).toBe(true);
   });
 
-  it('fallback legado: sem candle_close_time na op, mantém o comportamento antigo', () => {
+  it('fallback legado: sem referência de entrada, mantém o comportamento antigo', () => {
     expect(isCandleUsableForExits(T1, null)).toBe(true);
     expect(isCandleUsableForExits(T1, undefined)).toBe(true);
   });
 
-  it('fallback legado: feed sem lastCandleTime, mantém o comportamento antigo', () => {
-    expect(isCandleUsableForExits(null, T0)).toBe(true);
+  it('fallback legado: feed sem lastCandleOpenTime, mantém o comportamento antigo', () => {
+    expect(isCandleUsableForExits(null, T1)).toBe(true);
+  });
+
+  // P0-g — reproduz o bug real: sinal 4h fecha às 08:00, mas a confirmação
+  // 15m só chega às 11:45 (retry). O candle 4h seguinte (abre 08:00, fecha
+  // 12:00) contém ~3h45 de movimento ANTES da entrada existir. A referência
+  // antiga (fechamento do candle de SINAL, 08:00) julgava esse candle
+  // "usável" porque seu fechamento (12:00) é posterior a 08:00 — mesmo
+  // contendo preço pré-entrada. A referência correta é o fechamento real da
+  // confirmação (11:45): o candle contaminado (open 08:00) é rejeitado; só o
+  // candle SEGUINTE (open 12:00, inteiramente pós-entrada) é aceito.
+  it('P0-g: candle contaminado por confirmação atrasada (retry) é rejeitado; o próximo é aceito', () => {
+    const signalCandleClose = '2026-07-15T08:00:00.000Z';
+    const realEntryTime = '2026-07-15T11:45:00.000Z'; // confirmação 15m atrasada
+    const contaminatedCandleOpen = '2026-07-15T08:00:00.000Z'; // 08:00–12:00
+    const nextCandleOpen = '2026-07-15T12:00:00.000Z'; // 12:00–16:00, limpo
+
+    // Referência antiga (bug): teria comparado o CLOSE do candle contaminado
+    // (12:00) contra o close do candle de SINAL (08:00) → 12:00 > 08:00 →
+    // "usável" (incorreto). A nova referência é o horário real da entrada:
+    expect(isCandleUsableForExits(contaminatedCandleOpen, realEntryTime)).toBe(false);
+    expect(isCandleUsableForExits(nextCandleOpen, realEntryTime)).toBe(true);
+    // sanity: a referência de sinal por si só não bastaria (prova que a
+    // correção não é só trocar o valor comparado, mas também o que se compara).
+    expect(new Date(contaminatedCandleOpen).getTime() > new Date(signalCandleClose).getTime()).toBe(false);
+  });
+});
+
+describe('getEntryReferenceTime — preferência de campo (P0-g)', () => {
+  it('prefere entry_candle_time_15m (cascata RF) quando presente', () => {
+    expect(getEntryReferenceTime({
+      entry_candle_time_15m: '2026-07-15T11:45:00.000Z',
+      candle_close_time: '2026-07-15T08:00:00.000Z',
+    })).toBe('2026-07-15T11:45:00.000Z');
+  });
+
+  it('usa entry_candle_time_5m (cascata SMC) quando 15m está ausente', () => {
+    expect(getEntryReferenceTime({
+      entry_candle_time_5m: '2026-07-15T09:05:00.000Z',
+      candle_close_time: '2026-07-15T08:00:00.000Z',
+    })).toBe('2026-07-15T09:05:00.000Z');
+  });
+
+  it('cai para candle_close_time quando nenhum campo de confirmação existe (op legada/manual)', () => {
+    expect(getEntryReferenceTime({ candle_close_time: '2026-07-15T08:00:00.000Z' })).toBe('2026-07-15T08:00:00.000Z');
+  });
+
+  it('retorna null quando nada está disponível', () => {
+    expect(getEntryReferenceTime({})).toBe(null);
   });
 });
 

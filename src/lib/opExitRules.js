@@ -4,16 +4,47 @@
 // fixtures — no Firestore, no mocks. The scanner wires these in; the rules
 // themselves never touch I/O.
 
-// P0-c — temporal guard. A candle's high/low may only trigger stop/TP when the
-// candle closed STRICTLY AFTER the operation's signal candle: the signal
-// candle itself (and anything older, e.g. on replay) contains price movement
-// from BEFORE the entry existed, so "hitting" TP/stop on it is retroactive.
-// Legacy fallback: ops created before candle_close_time existed (or a feed
-// that doesn't report lastCandleTime) keep today's behaviour — evaluate —
-// so old open operations are never stranded by the new guard.
-export function isCandleUsableForExits(candleCloseIso, entryCandleCloseIso) {
-  if (!candleCloseIso || !entryCandleCloseIso) return true;
-  return new Date(candleCloseIso).getTime() > new Date(entryCandleCloseIso).getTime();
+// P0-c/P0-g — temporal guard. A candle's high/low may only trigger stop/TP
+// when the candle itself STARTED at or after the moment the position
+// actually existed.
+//
+// P0-c (original): compared the candidate candle's CLOSE against the SIGNAL
+// candle's close. That blocks the signal candle itself, but NOT the very
+// next candle when confirmation is late (a retry): a 4h signal closing at
+// 08:00, confirmed by a 15m candle only at 11:45 (op created then), still
+// let the 08:00–12:00 candle evaluate stop/TP — its close (12:00) is
+// "after" the signal close (08:00) — even though that candle's own price
+// action from 08:00 to 11:45 happened BEFORE the entry existed.
+//
+// P0-g (this fix): compare the candidate candle's OPEN (not close) against
+// the REAL entry reference — the confirming 15m/5m candle's close
+// (entry_candle_time_15m/5m via getEntryReferenceTime below), not the
+// signal candle's close. Only a candle that STARTS at or after the entry is
+// guaranteed free of pre-entry price action. In the common fast-confirm
+// path (no retry delay) this is equivalent to P0-c, since the confirming
+// candle closes at essentially the same instant as the signal candle; the
+// fix only changes behaviour for delayed/retried confirmations, where it
+// additionally excludes the one candle that used to leak pre-entry action.
+// Live price coverage for the deferred window continues via
+// priceCheckActiveOps meanwhile (real-time price, not historical high/low).
+//
+// Legacy fallback: ops missing every reference field (pre-dating these
+// fields, or a feed that doesn't report candle times) keep today's
+// behaviour — evaluate — so old open operations are never stranded.
+export function isCandleUsableForExits(candleOpenIso, entryTimeIso) {
+  if (!candleOpenIso || !entryTimeIso) return true;
+  return new Date(candleOpenIso).getTime() >= new Date(entryTimeIso).getTime();
+}
+
+// Best reference for "when did this operation actually start existing" —
+// prefers the real confirming candle (15m for the RF cascade, 5m for the
+// SMC cascade; mutually exclusive per op) over the signal candle's close,
+// which is what isCandleUsableForExits needs to correctly exclude pre-entry
+// price action (see above). Falls back to candle_close_time for paths where
+// no confirmation candle time was recorded (legacy ops, manual/webhook
+// entries) — the same fallback the guard already tolerated before P0-g.
+export function getEntryReferenceTime(op) {
+  return op.entry_candle_time_15m || op.entry_candle_time_5m || op.candle_close_time || null;
 }
 
 // P0-d — ATR trailing advance, monotonic (a runner stop never retreats).

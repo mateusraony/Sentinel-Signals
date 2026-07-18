@@ -374,6 +374,21 @@ manual do `TopBar` intacto — mas isso exigiria decidir e documentar
 explicitamente a perda da visão Futures automática ao vivo, não é um
 cleanup silencioso. Não reabrir sem pedido explícito do usuário.
 
+> **Adendo (segunda auditoria externa, 2026-07-18) — ângulo específico
+> verificado e confirmado, sem mudança de código.** O `TradeOperation` não
+> grava qual fonte de mercado (Spot/Futures) nem qual executor
+> (browser/cron) o criou — `priceCheckActiveOpsInner` e `persistScanResults`
+> aplicam transições a QUALQUER operação ativa, então uma op criada com
+> dado Spot (cron) pode ter TP1/stop decidido por preço Futures (browser
+> aberto), e vice-versa. O CAS já garante que a transição de ESTADO é
+> atômica (P0-a) — o que não garante é que a fonte de mercado do preço que
+> decide essa transição é a mesma que originou a operação. É decorrência
+> lógica do que este item já aceita (dois escritores independentes, sem
+> fonte canônica); não é um risco novo, mas o ângulo específico não estava
+> escrito em nenhum lugar até agora. Não implementar `market_source`/
+> `manager_source` sem pedido explícito — mudaria o schema e o
+> comportamento de `priceCheckActiveOpsInner` para algo não solicitado.
+
 ## 16. Queries Firestore sem corte de histórico — corrigido (P2-1)
 
 Complemento ao item 13 (que já corrigira `priceCheckActiveOpsInner` e a
@@ -699,3 +714,94 @@ buffer, piso mínimo de ~0.5×ATR contra ruído e cap de risco.
 - A cascata RF 4h→15m **não muda** (segue tier ATR — é paridade com o Pine
   v13.2). Nota de paridade: o stop estrutural é decisão de produto local da
   cascata SMC portada, divergência consciente registrada aqui.
+
+## 25. Backup diário publicava dados de negócio em branch pública — pausado (P0 de segurança)
+
+Encontrado por uma segunda auditoria externa (2026-07-18), verificado no
+código e confirmado ativo: o repositório é **público**, e a branch `backups`
+(item 14 acima) já tinha snapshots diários reais — `backup-2026-07-15.json`
+até `backup-2026-07-18.json` no momento da verificação — publicando
+`monitoredAssets`, `assetStates`, `signalEvents`, `tradeOperations`,
+`priceAlerts` e `strategyConfig` de qualquer forma acessíveis a qualquer
+pessoa. Não é risco preventivo: é exposição ativa há pelo menos 4 dias
+quando encontrada.
+
+Duas ressalvas técnicas importantes, verificadas antes de agir:
+- **Apagar arquivos antigos com `git rm` + commit não purga o histórico.**
+  O workflow (`.github/workflows/backup.yml`) já fazia isso para manter
+  "só os últimos 30 dias" — mas os commits anteriores continuam recuperáveis
+  por qualquer clone (`git show <sha>:backup-X.json`). A retenção de 30 dias
+  nunca foi uma garantia de remoção, só de tamanho da branch.
+- **A sugestão comum de "usar GitHub Actions artifact privado" não funciona
+  aqui** — verificado (pesquisa + docs oficiais): em repositório público, os
+  artifacts de workflow runs também são baixáveis publicamente via API REST
+  sem autenticação. Só um destino verdadeiramente fora do repo público
+  resolve.
+
+**Ação tomada nesta rodada**: o `schedule:` do workflow foi removido
+(`workflow_dispatch` continua disponível para rodar manualmente). Isso para
+novos snapshots de vazarem a partir de agora. A branch `backups` existente
+**não foi apagada** — ela é a única cópia de segurança do Firestore que
+existe hoje, e apagá-la não desfaz a exposição para quem já clonou/viu o
+conteúdo, então removê-la só reduziria a rede de segurança sem reduzir o
+vazamento já ocorrido.
+
+**Limitação desta sessão**: criar um repositório privado novo para receber
+os backups exigiria uma chamada de API (`create_repository`) que retornou
+`403 Resource not accessible by integration` — o app do GitHub desta sessão
+só tem acesso ao repositório já escopado, não pode criar recursos novos na
+conta do usuário. Requer ação manual.
+
+### Passo a passo para reativar com segurança (ação do usuário)
+
+1. Criar um repositório **privado** novo (gratuito, ilimitado no plano
+   free do GitHub) — sugestão de nome: `sentinel-signals-backups`.
+2. Gerar um **fine-grained personal access token** com acesso de escrita
+   (`Contents: write`) restrito só a esse repositório novo.
+3. Adicionar esse token como secret no repositório `Sentinel-Signals`
+   (Settings → Secrets and variables → Actions), sugestão de nome:
+   `BACKUP_REPO_TOKEN`.
+4. Avisar numa sessão do Claude Code — o passo do workflow que faz
+   `git push origin backups` é trocado para clonar/pushar no repositório
+   privado usando esse token, e o `schedule:` é restaurado.
+
+Até esse passo ser concluído, o Firestore fica **sem backup automático**
+(rede de segurança do item 14 temporariamente suspensa) — trade-off
+deliberado: nenhum backup é mais seguro que um backup público.
+
+## 26. Candle pós-sinal-mas-pré-entrada podia gerar TP/stop falso em confirmações atrasadas — corrigido (P0-g)
+
+Achado real de uma segunda auditoria externa (2026-07-18), distinto e mais
+fino que o P0-c já corrigido — verificado no código antes de agir:
+`entry_candle_time_15m`/`entry_candle_time_5m` (o horário real da
+confirmação 15m/5m) já eram gravados na criação de toda operação, mas **não
+eram lidos em lugar nenhum** — a guarda temporal (`isCandleUsableForExits`)
+e o Time Stop (`barsOpen`) usavam `op.candle_close_time`, o candle do
+SINAL (4h/1h), não o da entrada.
+
+**O bug**: um sinal 4h fechado às 08:00 cuja confirmação 15m só chega às
+11:45 (retry — pode levar até ~4h) tem seu primeiro candle "utilizável"
+(08:00–12:00) considerado seguro pela guarda antiga, porque o fechamento
+dele (12:00) é posterior ao fechamento do candle de sinal (08:00) — mesmo
+esse candle contendo ~3h45 de movimento de preço de ANTES da operação
+existir. Um wick nessa janela podia disparar STOP_HIT/TP1 retroativamente.
+O mesmo horário errado também alimentava o Time Stop, fazendo uma entrada
+atrasada "envelhecer" antes de nascer.
+
+**Correção**: `isCandleUsableForExits` (`src/lib/opExitRules.js`) passou a
+comparar o **open** do candle candidato (não o close) contra o horário real
+da entrada via nova função `getEntryReferenceTime` (prioriza
+`entry_candle_time_15m`/`_5m`, cai para `candle_close_time` quando ausente —
+ops legadas/manuais/webhook mantêm o comportamento anterior). Só um candle
+que COMEÇA no ou após o instante da entrada está garantidamente livre de
+contaminação. No caminho rápido (confirmação sem atraso) o resultado é
+idêntico ao P0-c original — a correção só muda o comportamento quando há
+atraso de retry, exatamente onde o bug existia; o intervalo entre o sinal e
+a criação da op continua coberto pelo price-check em tempo real (preço
+spot ao vivo, não histórico), que nunca dependeu desses campos.
+
+Regressão: `opExitRules.test.js` (regra pura, incluindo o cenário exato do
+bug com valores hand-computed) e `scannerStateMachine.test.js` (dois casos
+de integração via `persistScanResults` — candle contaminado por retry e
+Time Stop prematuro — ambos confirmados falhando contra o código antigo
+antes da correção).

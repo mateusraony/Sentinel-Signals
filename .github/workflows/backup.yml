@@ -6,9 +6,16 @@ name: Daily Firestore backup
 # snapshot JSON das coleções de negócio e publica na branch `backups`
 # (separada de `main`, pra não inchar o histórico principal), mantendo os
 # últimos 30 dias. Restauração é manual, ver docs/restore-firestore.md.
+#
+# PAUSADO (2026-07-18, ver docs/known-risks.md item 25): este repositório é
+# público, então a branch `backups` publica dados de negócio reais
+# (sinais/operações/config de estratégia) publicamente — já havia snapshots
+# de 15 a 18/jul quando isso foi percebido. O gatilho automático (`schedule`)
+# foi removido para parar novos vazamentos; `workflow_dispatch` continua
+# disponível só para rodar manualmente se necessário. NÃO reativar o
+# `schedule` sem antes trocar o passo "Publicar na branch backups" abaixo
+# por um destino privado — ver o passo a passo no known-risks item 25.
 on:
-  schedule:
-    - cron: "17 3 * * *"
   workflow_dispatch: {}
 
 permissions:
