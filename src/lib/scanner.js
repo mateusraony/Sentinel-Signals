@@ -23,7 +23,7 @@ import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './indicators/smcStructure';
 import { getPineConfig } from './pineParser';
-import { isCandleUsableForExits, advanceTrailingStop, nextRfReverseCount, computeStructuralStop } from './opExitRules';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop } from './opExitRules';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -1060,12 +1060,16 @@ export async function persistScanResults(scanResult) {
     // For SELL: stop checked against high, TPs against low
     const stopCheckPrice = isBuy ? candleLow : candleHigh;
     const tpCheckPrice = isBuy ? candleHigh : candleLow;
-    // P0-c: the signal candle itself (and older candles, on replay) contains
-    // price movement from BEFORE the entry existed — its high/low must not
-    // trigger stop/TP retroactively. Time Stop / Chop / RF state checks are
-    // not intra-candle price action and stay unaffected; live price coverage
-    // continues via priceCheckActiveOps meanwhile.
-    const candleUsable = isCandleUsableForExits(tfData.lastCandleTime, op.candle_close_time);
+    // P0-c/P0-g: a candle whose OPEN predates the real entry (the confirming
+    // 15m/5m candle, not the signal candle) contains price movement from
+    // BEFORE the entry existed — its high/low must not trigger stop/TP
+    // retroactively. See getEntryReferenceTime/isCandleUsableForExits in
+    // opExitRules.js for why signal-candle-close was not a safe reference on
+    // its own. Time Stop / Chop / RF state checks are not intra-candle price
+    // action and stay unaffected; live price coverage continues via
+    // priceCheckActiveOps meanwhile.
+    const entryRef = getEntryReferenceTime(op);
+    const candleUsable = isCandleUsableForExits(tfData.lastCandleOpenTime, entryRef);
     const rfFilt = tfData.rf?.filterValue;
     const rfDir = tfData.rf?.direction;
     const nowIso = new Date().toISOString();
@@ -1084,10 +1088,12 @@ export async function persistScanResults(scanResult) {
       // of the SIGNAL timeframe since entry — counted by elapsed time rather
       // than a scan-incremented counter, so it stays correct across cron
       // gaps. Bar duration depends on the cascade (4h for the RF cascade,
-      // 1h for the SMC cascade).
+      // 1h for the SMC cascade). Aged from the REAL entry (entryRef, P0-g) —
+      // the signal candle's close used to make a retry-confirmed operation
+      // start "aging" hours before it actually existed.
       const barMs = SIGNAL_TF_MS[op.signal_timeframe] || FOUR_HOURS_MS;
-      const barsOpen = op.candle_close_time
-        ? Math.floor((Date.now() - new Date(op.candle_close_time).getTime()) / barMs)
+      const barsOpen = entryRef
+        ? Math.floor((Date.now() - new Date(entryRef).getTime()) / barMs)
         : 0;
       const timeStopBars = op.tier_time_stop_bars ?? 48;
       const timeStopTriggered = pineConfig.useTimeStop !== false && barsOpen >= timeStopBars;

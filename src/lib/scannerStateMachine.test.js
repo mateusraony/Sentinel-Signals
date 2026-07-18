@@ -221,6 +221,44 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     expect(stored.tp1_hit).toBe(false);
   });
 
+  it('P0-g: a candle contaminated by a delayed (retry) confirmation is never usable, even though its CLOSE is after the signal candle', async () => {
+    // Signal candle closes 08:00; the 15m confirmation only arrives at
+    // 11:45 (a realistic retry delay) — the op is created with BOTH
+    // candle_close_time (the stale signal reference) and
+    // entry_candle_time_15m (the real entry reference).
+    const op = makeOp({
+      candle_close_time: '2026-07-15T08:00:00.000Z',
+      entry_candle_time_15m: '2026-07-15T11:45:00.000Z',
+    });
+    backend._seed('TradeOperation', op);
+
+    // Contaminated candle: opens 08:00 (before the 11:45 entry), closes
+    // 12:00. Under the OLD guard (close > signal close) this would have
+    // been judged "usable" — 12:00 > 08:00 — despite containing price
+    // action from 08:00 to 11:45, BEFORE the position existed. Its low
+    // crosses the stop; if wrongly evaluated this closes the op.
+    const contaminated = makeTfData({
+      lastCandleOpenTime: '2026-07-15T08:00:00.000Z',
+      lastCandleTime: '2026-07-15T12:00:00.000Z',
+      lastCandleLow: 90, lastCandleHigh: 99, lastClose: 95,
+    });
+    await persistScanResults(makeScanResult({ results: { '4h': contaminated } }));
+    let stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED'); // NOT stopped — guard correctly rejects this candle
+    expect(stored.tp1_hit).toBe(false);
+
+    // Next candle: opens 12:00 (after the 11:45 entry) — entirely
+    // post-entry. Same stop-crossing low must now correctly fire.
+    const clean = makeTfData({
+      lastCandleOpenTime: '2026-07-15T12:00:00.000Z',
+      lastCandleTime: '2026-07-15T16:00:00.000Z',
+      lastCandleLow: 90, lastCandleHigh: 99, lastClose: 95,
+    });
+    await persistScanResults(makeScanResult({ results: { '4h': clean } }));
+    stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('STOP_HIT');
+  });
+
   it('CLOSED/TIME_STOP when the position has been open longer than the tier allows', async () => {
     const op = makeOp({ candle_close_time: '2026-07-01T00:00:00.000Z' }); // far in the past
     backend._seed('TradeOperation', op);
@@ -229,6 +267,23 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('CLOSED');
     expect(stored.closed_reason).toBe('TIME_STOP');
+  });
+
+  it('P0-g: Time Stop ages from the REAL entry, not the stale signal candle', async () => {
+    // candle_close_time is far in the past (would already trip Time Stop on
+    // its own — same value the old code used to age the position from),
+    // but entry_candle_time_15m says the position actually only started a
+    // few hours ago (frozen "now" is 2026-07-16T12:00, tier default is 48
+    // bars × 4h = 8 days — nowhere near tripped from a recent entry).
+    const op = makeOp({
+      candle_close_time: '2026-07-01T00:00:00.000Z',
+      entry_candle_time_15m: '2026-07-16T04:00:00.000Z',
+    });
+    backend._seed('TradeOperation', op);
+    const results = { '4h': makeTfData({ lastCandleHigh: 101, lastCandleLow: 99 }) }; // no stop/TP1 hit
+    await persistScanResults(makeScanResult({ results, pineConfig: makePineConfig({ useTimeStop: true }) }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED'); // NOT closed — real entry is recent
   });
 
   it('CLOSED/CHOP_EXIT when enabled and choppiness exceeds the tier ceiling', async () => {
