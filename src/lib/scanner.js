@@ -755,7 +755,14 @@ export async function persistScanResults(scanResult) {
     // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
     // only one executor (browser or cron) is ever inside this loop at a
     // time, so the residual race window here is negligible (see
-    // docs/known-risks.md).
+    // docs/known-risks.md). Computed BEFORE persisting this signal so
+    // `recentSame` naturally excludes it. Gates ONLY the Telegram
+    // notification below (the UI already labels this field "minutos entre
+    // ALERTAS iguais" — alertas means Telegram in this app's vocabulary) —
+    // it must NEVER gate persistence or the entry motor (see known-risks.md
+    // item 28: raising this to reduce notification spam used to silently
+    // drop the SignalEvent and every entry that depended on it existing,
+    // including the retry loop's ability to re-check it later).
     const cooldownMinutes = asset.alert_cooldown_minutes || 60;
     const cooldownTime = new Date(Date.now() - cooldownMinutes * 60 * 1000).toISOString();
 
@@ -766,22 +773,22 @@ export async function persistScanResults(scanResult) {
       source: signal.source,
     }, '-created_date', 1);
 
-    const hasCooldownConflict = recentSame.some(s =>
+    const notificationOnCooldown = recentSame.some(s =>
       s.created_date > cooldownTime
     );
-
-    if (hasCooldownConflict) continue;
 
     // Atomic dedup: dedup_key is used as the Firestore document id itself,
     // so createUnique is a single transaction that can never let two
     // concurrent callers both persist the same signal (unlike the previous
     // filter()-then-create() pattern, which had a race window between the
-    // two calls).
+    // two calls). Runs regardless of cooldown — the signal is real and
+    // must be recorded/evaluated for entry even while notifications are
+    // suppressed.
     const dedupResult = await backend.entities.SignalEvent.createUnique(signal.dedup_key, signal);
     if (!dedupResult.created) continue;
 
     persistedSignals++;
-    if (isTelegramConfigured()) notifyNewSignal(signal).catch(() => {});
+    if (!notificationOnCooldown && isTelegramConfigured()) notifyNewSignal(signal).catch(() => {});
 
     // ═══ Entry Motor: 4H trend → 15m confirmation only ═══
     // No operation opens on 15m without prior 4H trend confirmation.

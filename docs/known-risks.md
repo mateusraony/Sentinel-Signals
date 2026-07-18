@@ -873,3 +873,32 @@ for implementada.
 Regressão: `resolveIndicatorParams` testado em `scannerStateMachine.test.js`
 (override por-ativo, fallback pro Pine real, fallback pro literal, campos
 sem override por-ativo, formato de produção).
+
+## 28. Cooldown de alertas bloqueava o sinal inteiro, não só a notificação — corrigido
+
+Segunda auditoria externa (2026-07-18) + verificação: em `persistScanResults`
+(`src/lib/scanner.js`), o `continue` de conflito de cooldown rodava **antes**
+até de `SignalEvent.createUnique` — ou seja, um sinal dentro da janela de
+cooldown não era só silenciado no Telegram: **nunca era gravado**. Isso
+bloqueava, para aquele sinal: o registro do `SignalEvent`, toda a avaliação
+do motor de entrada (confirmação 15m/5m, criação de `TradeOperation`) e a
+elegibilidade do loop de retry (que relê `SignalEvent`s persistidos — um
+sinal nunca gravado nunca pode ser re-tentado). Aumentar
+`alert_cooldown_minutes` no painel para reduzir spam de notificação
+eliminava silenciosamente entradas válidas — o texto da UI ("minutos entre
+**alertas** iguais") já prometia só afetar notificação; era o código que
+quebrava essa promessa.
+
+**Correção**: a checagem de cooldown continua rodando **antes** de persistir
+(mesma query, mesma janela — `recentSame` naturalmente exclui o sinal atual,
+ainda não gravado), mas seu resultado (`notificationOnCooldown`) agora só
+guarda a chamada `notifyNewSignal` — `SignalEvent.createUnique` e todo o
+motor de entrada rodam **incondicionalmente**, independente de cooldown. O
+dedup por `dedup_key` (proteção contra sinal exatamente duplicado) não muda.
+
+Regressão em `scannerStateMachine.test.js`: sinal dentro do cooldown é
+persistido (`persistedSignals === 1`), a notificação é suprimida, e o motor
+de entrada é alcançado (log de "aguardando confirmação 15m"); um segundo
+teste confirma que fora da janela de cooldown a notificação dispara
+normalmente. Confirmado que o primeiro caso falha contra o código antigo
+(`persistedSignals` ficava 0 — o sinal nunca era persistido).

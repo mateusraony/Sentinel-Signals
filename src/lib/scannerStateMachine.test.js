@@ -12,12 +12,15 @@ import { createFakeBackend } from './__fixtures__/fakeBackend.js';
 
 vi.mock('@/api/entities', () => ({ backend: {} }));
 vi.mock('./telegram', () => ({
-  isTelegramConfigured: () => false,
-  notifyNewSignal: vi.fn(),
-  notifyTradeCreated: vi.fn(),
-  notifyTP1Hit: vi.fn(),
-  notifyTP2Hit: vi.fn(),
-  notifyStopHit: vi.fn(),
+  isTelegramConfigured: vi.fn(() => false),
+  // Production code chains `.catch(() => {})` off these — a bare vi.fn()
+  // returns undefined, not a promise, so any test that actually reaches a
+  // notify call (isTelegramConfigured mocked true) needs it thenable.
+  notifyNewSignal: vi.fn().mockResolvedValue(undefined),
+  notifyTradeCreated: vi.fn().mockResolvedValue(undefined),
+  notifyTP1Hit: vi.fn().mockResolvedValue(undefined),
+  notifyTP2Hit: vi.fn().mockResolvedValue(undefined),
+  notifyStopHit: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('./logger', () => ({
   logInfo: vi.fn(),
@@ -31,6 +34,7 @@ vi.mock('./marketDataProvider', () => ({
 
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice } from './marketDataProvider';
+import { isTelegramConfigured, notifyNewSignal } from './telegram';
 import { persistScanResults, priceCheckActiveOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, firstPositive } from './scanner.js';
 
 let backend;
@@ -526,6 +530,70 @@ describe('cross-cascade arbitration log — signal discarded because an op is al
 
     const logs = await backend.entities.SystemLog.filter({});
     expect(logs.filter(l => l.details?.reason === 'active_op_exists')).toHaveLength(1);
+  });
+});
+
+describe('cooldown gates the Telegram notification only, never persistence/entry (P1, known-risks item 28)', () => {
+  function makeSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_new_1',
+      price_at_signal: 100, context: { score: 80 },
+      ...overrides,
+    };
+  }
+
+  afterEach(() => {
+    // Local override — restore the file-wide default so later describe
+    // blocks aren't affected by what this one sets.
+    vi.mocked(isTelegramConfigured).mockReturnValue(false);
+  });
+
+  it('suppresses the notification during cooldown but still persists the signal and reaches the entry motor', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(true);
+    // A same-type signal already notified/persisted recently (well inside
+    // the 60-min default cooldown, frozen "now" is 12:00) — the NEW
+    // candidate below must still be recorded and evaluated even though its
+    // own notification gets suppressed by that recent one.
+    backend._seed('SignalEvent', {
+      id: 'sig_prev', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_prev', created_date: '2026-07-16T11:30:00.000Z',
+    });
+
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() }; // rf.direction 1 — aligned with BUY
+
+    const { persistedSignals } = await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeSignal()],
+    });
+
+    expect(persistedSignals).toBe(1); // persisted DESPITE the cooldown conflict
+    expect(notifyNewSignal).not.toHaveBeenCalled(); // notification suppressed
+
+    const persisted = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_new_1' });
+    expect(persisted).toHaveLength(1); // really in the store, not just counted
+
+    // Entry motor was reached (not silently skipped because of cooldown) —
+    // check15mConfirmation runs against the mocked (candle-less) fetchCandles
+    // and fails to confirm, logging "aguardando confirmação" — proof the
+    // motor executed instead of being blocked by the cooldown continue.
+    const logs = await backend.entities.SystemLog.filter({});
+    expect(logs.some(l => l.message?.includes('aguardando confirmação no 15m'))).toBe(true);
+  });
+
+  it('does not suppress the notification once the cooldown window has passed', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(true);
+    backend._seed('SignalEvent', {
+      id: 'sig_prev', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_prev', created_date: '2026-07-16T10:00:00.000Z', // 2h before frozen "now" (12:00) — outside the 60-min default cooldown
+    });
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeSignal()] });
+
+    expect(notifyNewSignal).toHaveBeenCalledTimes(1);
   });
 });
 
