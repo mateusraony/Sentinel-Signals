@@ -136,7 +136,7 @@ export default function AssetDetailPanel({ asset, states, expanded }) {
           <ParamCard label="RSI Period" value={asset.rsi_period ?? 14} pineVar="rsiLen" />
           <ParamCard label="RSI OB/OS" value={`${asset.rsi_overbought ?? 70}/${asset.rsi_oversold ?? 30}`} />
           <ParamCard label="MACD" value={`${asset.macd_fast ?? 12}/${asset.macd_slow ?? 26}/${asset.macd_signal ?? 9}`} />
-          <ParamCard label="EMA" value={`${asset.ema_short ?? 9}/${asset.ema_long ?? 21}`} />
+          <ParamCard label="EMA" value={`${asset.ema_short ?? 20}/${asset.ema_long ?? 50}`} />
         </div>
       </div>
 

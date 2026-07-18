@@ -1289,7 +1289,7 @@ export default function PineScript() {
                       { label: 'RF Period', value: asset.rf_period ?? 20, pine: 'rng_per' },
                       { label: 'RF Mult', value: asset.rf_multiplier ?? 3.5, pine: 'rng_qty' },
                       { label: 'RSI Period', value: asset.rsi_period ?? 14, pine: 'rsiLen' },
-                      { label: 'MACD Fast', value: asset.macd_fast ?? 12, pine: 'emaFastLen' },
+                      { label: 'MACD Fast', value: asset.macd_fast ?? 12 },
                       { label: 'EMA Short', value: asset.ema_short ?? 20, pine: 'emaFastLen' },
                       { label: 'EMA Long', value: asset.ema_long ?? 50, pine: 'emaSlowLen' },
                     ].map(p => (

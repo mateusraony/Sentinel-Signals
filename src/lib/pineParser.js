@@ -141,6 +141,22 @@ export function getLocalPineConfig() {
 // Strategy-business parameters that must be identical between the browser
 // and the 24/7 cron scan. Kept in Firestore so both sides read the same
 // source of truth — see savePineConfig below and scripts/adminPineConfig.js.
+//
+// emaFastLen/emaSlowLen/rsiLen/volLen/atrLen were added 2026-07-18 (known-risks
+// item 27) — they existed in DEFAULTS since the start but were never synced,
+// so scanner.js silently used a different, hardcoded fallback (9/21 for EMA)
+// instead of the Pine script's real periods (20/50). See
+// scanner.js's resolveIndicatorParams for how these combine with the
+// (still supported) per-asset override fields.
+//
+// confirmBars/onlyClosedCandles stay synced but are NOT read by scanner.js:
+// onlyClosedCandles is vestigial — the scanner already unconditionally
+// filters to closed candles regardless of this flag's value, so wiring in a
+// `false` would need to newly support unclosed-candle evaluation (a real
+// safety trade-off, not a bugfix); confirmBars would change WHEN a signal
+// fires (require N continuation candles), a materially different feature
+// from a parameter mismatch — deliberately out of scope here, own round if
+// ever implemented.
 const SYNCED_STRATEGY_KEYS = [
   'minScore', 'tp1R', 'tp1QtyPercent', 'trailAtrMult',
   'tier2Threshold', 'tier3Threshold',
@@ -148,14 +164,15 @@ const SYNCED_STRATEGY_KEYS = [
   'useTimeStop', 'timeStopT1', 'timeStopT2', 'timeStopT3',
   'useChopExit', 'useInvalidation', 'invalidRFBars', 'invalidScoreMin',
   'confirmBars', 'onlyClosedCandles',
+  'emaFastLen', 'emaSlowLen', 'rsiLen', 'volLen', 'atrLen',
 ];
 
 /**
  * Read the current Pine config: merges localStorage (all Pine-parsed
  * values, e.g. rng_per/rng_qty) with the Firestore-synced business
- * parameters (minScore/tp1R/tp1QtyPercent/trailAtrMult), so the panel and
- * the 24/7 cron never disagree on those four. Falls back to defaults if
- * neither source has a value yet.
+ * parameters (SYNCED_STRATEGY_KEYS above), so the panel and the 24/7 cron
+ * never disagree on those. Falls back to defaults if neither source has a
+ * value yet.
  * @returns {Promise<Object>}
  */
 export async function getPineConfig() {

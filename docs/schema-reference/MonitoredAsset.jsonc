@@ -75,7 +75,7 @@
     "rsi_period": {
       "type": "number",
       "default": 14,
-      "description": "RSI calculation period"
+      "description": "RSI calculation period. Overrides the Pine-synced rsiLen when set; falls back to it (not a hardcoded literal) when absent — see resolveIndicatorParams in src/lib/scanner.js"
     },
     "rsi_overbought": {
       "type": "number",
@@ -104,13 +104,13 @@
     },
     "ema_short": {
       "type": "number",
-      "default": 9,
-      "description": "Short EMA period"
+      "default": 20,
+      "description": "Short EMA period. Overrides the Pine-synced emaFastLen when set; falls back to it (not a hardcoded literal) when absent — see resolveIndicatorParams in src/lib/scanner.js. Was documented/defaulted as 9 until 2026-07-18 (known-risks item 27), which diverged from the actual Pine script (20)"
     },
     "ema_long": {
       "type": "number",
-      "default": 21,
-      "description": "Long EMA period"
+      "default": 50,
+      "description": "Long EMA period. Overrides the Pine-synced emaSlowLen when set; falls back to it (not a hardcoded literal) when absent — see resolveIndicatorParams in src/lib/scanner.js. Was documented/defaulted as 21 until 2026-07-18 (known-risks item 27), which diverged from the actual Pine script (50)"
     },
     "alert_cooldown_minutes": {
       "type": "number",
