@@ -8,6 +8,7 @@
         { "fieldPath": "timeframe", "order": "ASCENDING" },
         { "fieldPath": "signal_type", "order": "ASCENDING" },
         { "fieldPath": "source", "order": "ASCENDING" },
+        { "fieldPath": "notified", "order": "ASCENDING" },
         { "fieldPath": "created_date", "order": "DESCENDING" }
       ]
     },

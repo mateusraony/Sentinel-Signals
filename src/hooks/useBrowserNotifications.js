@@ -32,6 +32,11 @@ export function useBrowserNotifications(signals = []) {
       if (createdAt < cutoff) return; // Sinal antigo, não notificar
 
       if (sig.source !== 'range_filter') return;
+      // Same flag Telegram uses (known-risks.md item 28) — a signal
+      // suppressed by alert_cooldown_minutes shouldn't fire an OS
+      // notification either; `notified === undefined` (older records)
+      // counts as notified.
+      if (sig.notified === false) return;
 
       const isBuy = sig.signal_type === 'BUY';
       const symbol = sig.symbol?.replace('USDT', '/USDT') || sig.symbol;

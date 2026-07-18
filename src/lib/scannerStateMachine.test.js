@@ -558,6 +558,7 @@ describe('cooldown gates the Telegram notification only, never persistence/entry
     backend._seed('SignalEvent', {
       id: 'sig_prev', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
       source: 'range_filter', dedup_key: 'sig_prev', created_date: '2026-07-16T11:30:00.000Z',
+      notified: true,
     });
 
     const pineConfig = makePineConfig({ useADX: false, useChop: false });
@@ -573,6 +574,7 @@ describe('cooldown gates the Telegram notification only, never persistence/entry
 
     const persisted = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_new_1' });
     expect(persisted).toHaveLength(1); // really in the store, not just counted
+    expect(persisted[0].notified).toBe(false); // persisted AS suppressed, for other alert channels to respect
 
     // Entry motor was reached (not silently skipped because of cooldown) —
     // check15mConfirmation runs against the mocked (candle-less) fetchCandles
@@ -587,6 +589,7 @@ describe('cooldown gates the Telegram notification only, never persistence/entry
     backend._seed('SignalEvent', {
       id: 'sig_prev', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
       source: 'range_filter', dedup_key: 'sig_prev', created_date: '2026-07-16T10:00:00.000Z', // 2h before frozen "now" (12:00) — outside the 60-min default cooldown
+      notified: true,
     });
     const pineConfig = makePineConfig({ useADX: false, useChop: false });
     const results = { '4h': makeTfData() };
@@ -594,6 +597,40 @@ describe('cooldown gates the Telegram notification only, never persistence/entry
     await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeSignal()] });
 
     expect(notifyNewSignal).toHaveBeenCalledTimes(1);
+  });
+
+  // Codex review (PR #59): the cooldown query must anchor on the last
+  // NOTIFIED signal, not the last PERSISTED one — since every signal
+  // persists now regardless of cooldown outcome, anchoring on "most recent
+  // persisted" would let a suppressed signal itself become the new anchor,
+  // potentially stretching the "quiet window" indefinitely through a
+  // streak of frequent same-type signals even though the last actual alert
+  // was long ago.
+  it('does not let a suppressed (unnotified) signal stretch the cooldown window', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(true);
+    // Last ACTUAL alert was 70 minutes ago (outside the 60-min cooldown) —
+    // notifications should fire again NOW, even though a same-type signal
+    // was persisted-but-suppressed only 40 minutes ago (inside the window
+    // measured from ITSELF, but that one was never a real alert).
+    backend._seed('SignalEvent', {
+      id: 'sig_alerted', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_alerted', created_date: '2026-07-16T10:50:00.000Z', // 70min before frozen "now" (12:00)
+      notified: true,
+    });
+    backend._seed('SignalEvent', {
+      id: 'sig_suppressed', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_suppressed', created_date: '2026-07-16T11:20:00.000Z', // 40min before frozen "now"
+      notified: false,
+    });
+
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeSignal()] });
+
+    expect(notifyNewSignal).toHaveBeenCalledTimes(1); // NOT suppressed — anchored on the 70min-old real alert, not the 40min-old suppressed one
+    const persisted = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_new_1' });
+    expect(persisted[0].notified).toBe(true);
   });
 });
 

@@ -902,3 +902,34 @@ de entrada é alcançado (log de "aguardando confirmação 15m"); um segundo
 teste confirma que fora da janela de cooldown a notificação dispara
 normalmente. Confirmado que o primeiro caso falha contra o código antigo
 (`persistedSignals` ficava 0 — o sinal nunca era persistido).
+
+> **Atualização (review do Codex, PR #59) — dois gaps reais encontrados e
+> corrigidos na mesma rodada:**
+>
+> 1. **A âncora do cooldown podia se esticar indefinidamente.** Como todo
+>    sinal passa a persistir independente do resultado do cooldown, a query
+>    "sinal mais recente do mesmo tipo" podia encontrar um sinal
+>    **suprimido** (não notificado) como âncora — numa sequência de sinais
+>    frequentes, isso podia suprimir o Telegram por muito mais tempo do que
+>    os N minutos configurados, mesmo com o último alerta real há muito
+>    tempo. Corrigido: novo campo `notified` (persistido em cada
+>    `SignalEvent`, refletindo `!notificationOnCooldown && isTelegramConfigured()`
+>    no momento da criação) e a query de cooldown passou a filtrar
+>    `notified: true` — a âncora agora é sempre o último alerta **de
+>    verdade**, nunca um sinal só registrado. Índice do Firestore
+>    (`firestore.indexes.json`) atualizado com esse campo — **exige
+>    `firebase deploy --only firestore:indexes`** (mesmo passo manual do
+>    item 5) antes de valer em produção.
+> 2. **Toast, banner e notificação do navegador ignoravam o cooldown.** A
+>    correção original só gateava o `notifyNewSignal` (Telegram) — mas o
+>    Dashboard lê todo `SignalEvent` recente e alimenta `SignalToast`,
+>    `SignalAlertBanner` e `useBrowserNotifications` (API de notificação do
+>    SO) com filtros próprios de frescor/fonte, sem noção de cooldown. Um
+>    sinal suprimido no Telegram ainda geraria toast/banner/notificação do
+>    SO com o painel aberto. Corrigido: os três consumidores agora checam o
+>    mesmo campo `notified` (registros antigos sem o campo contam como
+>    notificados, para não esconder histórico pré-2026-07-18).
+>
+> Resultado: `notified` é hoje a fonte única de "este sinal deveria alertar
+> alguém", consumida por Telegram e por todo canal in-app/OS — nenhum
+> precisa mais re-derivar o estado de cooldown por conta própria.

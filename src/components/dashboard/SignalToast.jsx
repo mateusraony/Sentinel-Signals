@@ -14,6 +14,11 @@ export default function SignalToast({ signals = [] }) {
     const fresh = signals.filter(s => {
       if (seenIds.current.has(s.id)) return false;
       if (s.source !== 'range_filter') return false;
+      // Same flag Telegram uses (known-risks.md item 28) — a signal
+      // suppressed by alert_cooldown_minutes shouldn't pop an in-app toast
+      // either; `notified === undefined` (older records, pre-2026-07-18)
+      // is treated as notified so existing history isn't hidden.
+      if (s.notified === false) return false;
       if (new Date(s.created_date).getTime() < cutoff) {
         seenIds.current.add(s.id);
         return false;
