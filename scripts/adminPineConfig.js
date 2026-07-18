@@ -52,6 +52,7 @@ const SYNCED_STRATEGY_KEYS = [
   'useTimeStop', 'timeStopT1', 'timeStopT2', 'timeStopT3',
   'useChopExit', 'useInvalidation', 'invalidRFBars', 'invalidScoreMin',
   'confirmBars', 'onlyClosedCandles',
+  'emaFastLen', 'emaSlowLen', 'rsiLen', 'volLen', 'atrLen',
 ];
 
 export async function getPineConfig() {

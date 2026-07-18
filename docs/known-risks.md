@@ -805,3 +805,71 @@ bug com valores hand-computed) e `scannerStateMachine.test.js` (dois casos
 de integração via `persistScanResults` — candle contaminado por retry e
 Time Stop prematuro — ambos confirmados falhando contra o código antigo
 antes da correção).
+
+## 27. Pine e scanner podiam divergir silenciosamente em EMA/RSI/volume/ATR — corrigido
+
+Segunda auditoria externa (2026-07-18) + verificação: `pineParser.js`
+tinha `emaFastLen:20, emaSlowLen:50, rsiLen:14, volLen:20, atrLen:14` em
+`DEFAULTS` desde sempre, mas **nenhum desses cinco estava em
+`SYNCED_STRATEGY_KEYS`** — nunca eram escritos em `strategyConfig/current`.
+Enquanto isso, `scanner.js` calculava:
+
+- EMA: `asset.ema_short || 9` / `asset.ema_long || 21` — fallback hardcoded
+  **divergente** do Pine real (20/50), nunca lendo `pineConfig`;
+- RSI: `asset.rsi_period || 14` — mesma desconexão (coincidência numérica
+  com o default do Pine, não conexão real);
+- Volume: `const VOL_PERIOD = 20;` — constante local, surda a `pineConfig`;
+- ATR do stop/TP: `calculateATR(closedCandles, 14)` — hardcoded, também
+  surdo (só o ATR% do Tier já lia `pineConfig.atrLen`, mas essa chave
+  também não estava sincronizada, então só refletia o `DEFAULTS` local).
+
+Ou seja: mudar o EMA/RSI no Pine Script e sincronizar **não alterava** o
+score real calculado pelo scanner — o placar de 20 pontos de EMA e o
+threshold de RSI usados pra decidir sinais reais continuavam nos valores
+antigos. A própria UI já expunha essa divergência sem perceber: telas
+diferentes mostravam fallbacks diferentes para o mesmo campo (20/50 numa,
+9/21 noutra).
+
+Risco adicional descoberto durante a correção (não estava na auditoria):
+`AssetConfigPanel.jsx` pré-preenchia o formulário com os valores errados
+(9/21/14) e `handleSave` grava o objeto inteiro de volta a cada save —
+então abrir o painel de qualquer ativo por qualquer motivo (ex.: só mudar o
+cooldown) e salvar **gravava permanentemente** os valores errados no
+Firestore daquele ativo, o que teria neutralizado a correção do scanner
+para esse ativo especificamente.
+
+**Correção**:
+- `emaFastLen`, `emaSlowLen`, `rsiLen`, `volLen`, `atrLen` adicionados a
+  `SYNCED_STRATEGY_KEYS` em `src/lib/pineParser.js` e
+  `scripts/adminPineConfig.js` (mantidos espelhados à mão, como o resto).
+- Nova função pura `resolveIndicatorParams(asset, pineConfig)`
+  (`src/lib/scanner.js`) resolve cada parâmetro como
+  `asset.campo ?? pineConfig.campo ?? literal` — **preserva a customização
+  por-ativo como recurso** (continua podendo sobrescrever), só corrige o
+  *fallback*, que passou a ser o valor real do Pine em vez de um literal
+  desatualizado. Volume e ATR do stop não têm campo por-ativo — vêm só do
+  Pine ou do literal.
+- `AssetConfigPanel.jsx` passou a inicializar o formulário com
+  `getLocalPineConfig()` (síncrono, mesmo padrão já usado no resto do
+  browser) em vez do literal errado — fecha o loop do risco descrito acima.
+- Displays alinhados: `AssetDetailPanel.jsx` (9/21→20/50); rótulo
+  "MACD Fast" em `PineScript.jsx` tinha `pine: 'emaFastLen'` (cópia-e-cola
+  errada, MACD não é parâmetro sincronizado) — removido.
+- Schema (`MonitoredAsset.jsonc`) atualizado: `ema_short`/`ema_long`
+  documentavam default 9/21 (o valor errado que estava em produção),
+  agora 20/50.
+
+**Deliberadamente não conectados** (mesma auditoria apontou, decisão
+registrada, não bug): `confirmBars` e `onlyClosedCandles` continuam
+sincronizados mas nunca lidos por `scanner.js`. `onlyClosedCandles` é
+vestigial — o scanner já sempre filtra candles fechados incondicionalmente;
+ligar esse parâmetro só faria sentido para permitir `false` (avaliar
+candles não fechados), o que seria uma troca de segurança, não uma
+correção. `confirmBars` mudaria **quando** um sinal dispara (exigir N
+candles de continuação) — feature nova de timing de entrada, não um
+parâmetro desalinhado; merece rodada própria com testes próprios se um dia
+for implementada.
+
+Regressão: `resolveIndicatorParams` testado em `scannerStateMachine.test.js`
+(override por-ativo, fallback pro Pine real, fallback pro literal, campos
+sem override por-ativo, formato de produção).

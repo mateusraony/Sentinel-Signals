@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
+import { getLocalPineConfig, getPineConfig } from '@/lib/pineParser';
+import { firstPositive } from '@/lib/scanner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,23 +10,50 @@ import { Switch } from '@/components/ui/switch';
 import { Loader2 } from 'lucide-react';
 
 export default function AssetConfigPanel({ asset, onSave }) {
+  // handleSave writes this whole object back unconditionally on every save
+  // (even when the user only touched, say, the cooldown) — so pre-filling
+  // rsi_period/ema_short/ema_long with a fallback that DIVERGES from the
+  // Pine script would silently freeze the wrong values into this asset the
+  // next time anyone opens and saves this panel for any reason. Falling
+  // back to the synced Pine config (not a hardcoded literal) closes that
+  // loop — see known-risks.md item 27.
+  const localPine = getLocalPineConfig();
   const [config, setConfig] = useState({
     timeframes_enabled: asset.timeframes_enabled || { '1h': true, '4h': true, '1d': true },
     rf_period: asset.rf_period || 20,
     rf_multiplier: asset.rf_multiplier || 3.5,
-    rsi_period: asset.rsi_period || 14,
+    rsi_period: firstPositive(asset.rsi_period, localPine.rsiLen, 14),
     rsi_overbought: asset.rsi_overbought || 70,
     rsi_oversold: asset.rsi_oversold || 30,
     macd_fast: asset.macd_fast || 12,
     macd_slow: asset.macd_slow || 26,
     macd_signal: asset.macd_signal || 9,
-    ema_short: asset.ema_short || 9,
-    ema_long: asset.ema_long || 21,
+    ema_short: firstPositive(asset.ema_short, localPine.emaFastLen, 20),
+    ema_long: firstPositive(asset.ema_long, localPine.emaSlowLen, 50),
     alert_cooldown_minutes: asset.alert_cooldown_minutes || 60,
     smc_enabled: asset.smc_enabled || false,
     smc_confirm_4h15m: asset.smc_confirm_4h15m || false,
   });
   const [saving, setSaving] = useState(false);
+
+  // Codex review (PR #58): getLocalPineConfig() alone can be stale on a
+  // fresh browser/device (localStorage empty, Pine synced elsewhere) — it
+  // was only used above for an instant first paint. The Firestore-synced
+  // config is the actual source of truth; once it resolves, patch the three
+  // fields IF (and only if) the asset itself never had them set — an
+  // explicit per-asset override (or a value the user has since typed) must
+  // never be silently overwritten here.
+  const { data: syncedPine } = useQuery({ queryKey: ['pine-config-synced'], queryFn: getPineConfig, staleTime: 5 * 60 * 1000 });
+  useEffect(() => {
+    if (!syncedPine) return;
+    setConfig(prev => ({
+      ...prev,
+      rsi_period: asset.rsi_period == null ? firstPositive(syncedPine.rsiLen, prev.rsi_period) : prev.rsi_period,
+      ema_short: asset.ema_short == null ? firstPositive(syncedPine.emaFastLen, prev.ema_short) : prev.ema_short,
+      ema_long: asset.ema_long == null ? firstPositive(syncedPine.emaSlowLen, prev.ema_long) : prev.ema_long,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-derive when the synced config itself resolves/changes, not on every keystroke
+  }, [syncedPine]);
 
   const handleSave = async () => {
     setSaving(true);

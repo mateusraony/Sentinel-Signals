@@ -31,7 +31,7 @@ vi.mock('./marketDataProvider', () => ({
 
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice } from './marketDataProvider';
-import { persistScanResults, priceCheckActiveOps, buildTradeOpData, buildSmcTradeOpData } from './scanner.js';
+import { persistScanResults, priceCheckActiveOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, firstPositive } from './scanner.js';
 
 let backend;
 beforeEach(() => {
@@ -186,6 +186,73 @@ describe('buildSmcTradeOpData — structural initial stop (1h→5m cascade)', ()
     });
     expect(op.initial_stop).toBeCloseTo(96);
     expect(op.stop_basis).toBe('structural_capped');
+  });
+});
+
+describe('resolveIndicatorParams — Pine×scanner unification (P1, known-risks item 27)', () => {
+  const pine = { rsiLen: 20, emaFastLen: 20, emaSlowLen: 50, volLen: 20, atrLen: 14 };
+
+  it('per-asset override wins when set, regardless of Pine', () => {
+    const asset = { rsi_period: 21, ema_short: 8, ema_long: 34 };
+    const p = resolveIndicatorParams(asset, pine);
+    expect(p.rsiPeriod).toBe(21);
+    expect(p.emaFast).toBe(8);
+    expect(p.emaSlow).toBe(34);
+  });
+
+  it('falls back to the REAL Pine value (not the old hardcoded 9/21) when the asset field is unset', () => {
+    const p = resolveIndicatorParams({}, { rsiLen: 20, emaFastLen: 20, emaSlowLen: 50 });
+    expect(p.rsiPeriod).toBe(20);
+    expect(p.emaFast).toBe(20);
+    expect(p.emaSlow).toBe(50);
+  });
+
+  it('falls back to the documented literal when neither the asset nor pineConfig has a value', () => {
+    const p = resolveIndicatorParams({}, {});
+    expect(p.rsiPeriod).toBe(14);
+    expect(p.emaFast).toBe(20);
+    expect(p.emaSlow).toBe(50);
+    expect(p.volPeriod).toBe(20);
+    expect(p.atrStopPeriod).toBe(14);
+  });
+
+  it('volume and stop-ATR periods have no per-asset override — always Pine, else literal', () => {
+    const p = resolveIndicatorParams({ rsi_period: 99 /* unrelated override, must not leak */ }, { volLen: 30, atrLen: 21 });
+    expect(p.volPeriod).toBe(30);
+    expect(p.atrStopPeriod).toBe(21);
+  });
+
+  it('a real signal is unaffected by unrelated pineConfig noise — regression matches the current production shape', () => {
+    const p = resolveIndicatorParams({}, pine);
+    expect(p).toEqual({ rsiPeriod: 20, emaFast: 20, emaSlow: 50, volPeriod: 20, atrStopPeriod: 14 });
+  });
+
+  // Codex review (PR #58): a cleared number input in AssetConfigPanel saves
+  // 0 (Number('') === 0); `??` alone would treat that as a "real" override
+  // and feed period 0 into RSI/EMA (NaN/garbage). Zero/negative/NaN must
+  // fall through to the next candidate exactly like "unset" does.
+  it('rejects a zero/negative/NaN per-asset override — falls through to Pine, then literal', () => {
+    const zeroed = { rsi_period: 0, ema_short: -5, ema_long: NaN };
+    const p1 = resolveIndicatorParams(zeroed, pine);
+    expect(p1.rsiPeriod).toBe(20); // pine.rsiLen, not 0
+    expect(p1.emaFast).toBe(20); // pine.emaFastLen, not -5
+    expect(p1.emaSlow).toBe(50); // pine.emaSlowLen, not NaN
+
+    const zeroedNoPine = { rsi_period: 0, ema_short: 0, ema_long: 0 };
+    const p2 = resolveIndicatorParams(zeroedNoPine, { rsiLen: 0, emaFastLen: 0, emaSlowLen: 0 });
+    expect(p2.rsiPeriod).toBe(14); // both asset and pine are 0 → literal
+    expect(p2.emaFast).toBe(20);
+    expect(p2.emaSlow).toBe(50);
+  });
+});
+
+describe('firstPositive', () => {
+  it('returns the first finite candidate greater than zero', () => {
+    expect(firstPositive(0, -1, NaN, undefined, null, 5, 10)).toBe(5);
+  });
+
+  it('returns undefined when no candidate qualifies', () => {
+    expect(firstPositive(0, -1, NaN, undefined, null)).toBe(undefined);
   });
 });
 

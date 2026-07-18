@@ -48,6 +48,39 @@ const SMC_INITIAL_STOP_ATR_MULT = 2.0; // cap do stop estrutural e fallback ATR 
 const SMC_STOP_BUFFER_ATR = 0.1; // folga além do nível estrutural (evita toque exato no pavio)
 const SMC_STOP_MIN_ATR = 0.5; // piso — ruído do 5m não pode gerar stop mais apertado que isso
 
+// Review do Codex (PR #58): `??` trata 0/negativo como override "presente",
+// mas um período <= 0 passado pra RSI/EMA produz NaN/lixo — e o próprio
+// AssetConfigPanel pode gravar 0 se o usuário limpar um campo numérico
+// (`Number('') === 0`). firstPositive só aceita candidatos finitos e > 0,
+// pulando qualquer 0/negativo/NaN/ausente até achar um válido.
+export function firstPositive(...candidates) {
+  for (const c of candidates) {
+    if (Number.isFinite(c) && c > 0) return c;
+  }
+  return undefined;
+}
+
+// Pine×scanner unification (2026-07-18, ver known-risks.md item 27): antes,
+// RSI/EMA usavam SÓ o campo do ativo com fallback hardcoded (9/21/14) —
+// divergente do Pine real (20/50/14) — e volume/ATR(stop) eram constantes
+// locais surdas ao pineConfig. `emaFastLen`/`emaSlowLen`/`rsiLen`/`volLen`/
+// `atrLen` agora fazem parte de SYNCED_STRATEGY_KEYS (pineParser.js +
+// adminPineConfig.js), então pineConfig traz o valor real do Pine. O campo
+// do ativo continua podendo SOBRESCREVER por-ativo (recurso existente,
+// preservado) — só o FALLBACK deixou de ser um literal errado e passou a
+// ser o valor real do Pine. Extraído como função pura só para ser testável
+// sem precisar mockar fetchCandles.
+export function resolveIndicatorParams(asset, pineConfig) {
+  return {
+    rsiPeriod: firstPositive(asset.rsi_period, pineConfig.rsiLen, 14),
+    emaFast: firstPositive(asset.ema_short, pineConfig.emaFastLen, 20),
+    emaSlow: firstPositive(asset.ema_long, pineConfig.emaSlowLen, 50),
+    // Sem campo por-ativo hoje — vêm só do Pine (ou do literal de fallback).
+    volPeriod: firstPositive(pineConfig.volLen, 20),
+    atrStopPeriod: firstPositive(pineConfig.atrLen, 14),
+  };
+}
+
 // Lock TTLs: comfortably above the slowest realistic run of each operation
 // (the GitHub Actions job has an 8-minute timeout for full scans) so a
 // crashed/killed run's lock still expires instead of blocking forever.
@@ -346,6 +379,7 @@ export async function scanAsset(asset) {
 
   // Read Pine config — parameters auto-synced from Pine Script editor
   const pineConfig = await getPineConfig();
+  const indicatorParams = resolveIndicatorParams(asset, pineConfig);
 
   const enabledTimeframes = TIMEFRAMES.filter(tf => {
     const tfConfig = asset.timeframes_enabled;
@@ -372,8 +406,8 @@ export async function scanAsset(asset) {
         asset.rf_multiplier || 3.5
       );
 
-      const rsiResult = calculateRSI(closedCandles, asset.rsi_period || 14);
-      
+      const rsiResult = calculateRSI(closedCandles, indicatorParams.rsiPeriod);
+
       const macdResult = calculateMACD(
         closedCandles,
         asset.macd_fast || 12,
@@ -383,19 +417,19 @@ export async function scanAsset(asset) {
 
       const emaResult = calculateEMAs(
         closedCandles,
-        asset.ema_short || 9,
-        asset.ema_long || 21
+        indicatorParams.emaFast,
+        indicatorParams.emaSlow
       );
 
-      // Volume SMA(20) para confirmação Pine v2
-      const VOL_PERIOD = 20;
+      // Volume SMA para confirmação Pine v2 — período vem do Pine (volLen),
+      // não mais uma constante local surda ao pineConfig.
       const volumes = closedCandles.map(c => c.volume || 0);
-      const volSlice = volumes.slice(-VOL_PERIOD);
+      const volSlice = volumes.slice(-indicatorParams.volPeriod);
       const volMa = volSlice.reduce((a, b) => a + b, 0) / volSlice.length;
       const volCurrent = volumes[volumes.length - 1];
       const volumeData = { current: volCurrent, ma: volMa };
 
-      const atrValue = calculateATR(closedCandles, 14);
+      const atrValue = calculateATR(closedCandles, indicatorParams.atrStopPeriod);
       const lastCandle = closedCandles[closedCandles.length - 1];
 
       // Tier/regime filters (ADX, Choppiness) are only meaningful on the
@@ -403,7 +437,7 @@ export async function scanAsset(asset) {
       // signal + 15m confirmation cascade, kept as-is by design).
       let tier = null, adx = null, chop = null;
       if (tf === '4h') {
-        const atrPctSmooth = calculateAtrPctSmooth(closedCandles, pineConfig.atrLen ?? 14, 20);
+        const atrPctSmooth = calculateAtrPctSmooth(closedCandles, indicatorParams.atrStopPeriod, 20);
         tier = classifyTier(atrPctSmooth, {
           tier2: pineConfig.tier2Threshold ?? 0.8,
           tier3: pineConfig.tier3Threshold ?? 1.5,
