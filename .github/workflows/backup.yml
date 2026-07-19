@@ -13,10 +13,14 @@ name: Daily Firestore backup
 # dados de negócio reais (sinais/operações/config de estratégia) por pelo
 # menos 4 dias antes de ser percebido. O `schedule` foi removido então para
 # parar novos vazamentos. Corrigido: destino trocado para o repositório
-# privado acima via `BACKUP_REPO_TOKEN` (fine-grained PAT, Contents: write,
-# restrito só a esse repo — nunca com acesso a este repositório).
-# `schedule` só volta depois de uma execução manual bem-sucedida confirmar
-# que o token/repo novo funcionam de ponta a ponta.
+# privado acima. Autenticação via **deploy key SSH** (não token/PAT) — uma
+# chave ed25519 gerada só para isso, com a chave pública cadastrada como
+# Deploy Key (write) SÓ no repositório privado de backup, e a chave privada
+# como secret `BACKUP_DEPLOY_KEY` neste repositório. Deploy key não tem
+# escopos/caixinhas pra confundir (diferente de um PAT): é ligada a UM único
+# repositório, com permissão de leitura ou escrita, ponto. `schedule` só
+# volta depois de uma execução manual bem-sucedida confirmar que a chave
+# funciona de ponta a ponta.
 on:
   workflow_dispatch: {}
 
@@ -45,25 +49,20 @@ jobs:
           node scripts/backup-firestore.mjs "/tmp/backup-${DATE}.json"
           echo "BACKUP_DATE=${DATE}" >> "$GITHUB_ENV"
 
-      - name: Diagnóstico do token (temporário — remover depois que o backup funcionar)
+      - name: Publicar na branch backups (repo privado, via deploy key SSH)
         env:
-          BACKUP_REPO_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
-        run: |
-          echo "Tamanho do BACKUP_REPO_TOKEN: ${#BACKUP_REPO_TOKEN} caracteres"
-          if [ -z "$BACKUP_REPO_TOKEN" ]; then
-            echo "::error::BACKUP_REPO_TOKEN está vazio — o secret não existe neste repositório ou o nome não é exatamente 'BACKUP_REPO_TOKEN'"
-          fi
-          echo "Testando acesso isolado ao repositório (git ls-remote)..."
-          git ls-remote "https://x-access-token:${BACKUP_REPO_TOKEN}@github.com/mateusraony/sentinel-signals-backups.git" && echo "ACESSO OK" || echo "ACESSO FALHOU"
-
-      - name: Publicar na branch backups (repo privado)
-        env:
-          BACKUP_REPO_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
+          BACKUP_DEPLOY_KEY: ${{ secrets.BACKUP_DEPLOY_KEY }}
         run: |
           git config user.name "sentinel-signals-bot"
           git config user.email "actions@users.noreply.github.com"
 
-          git remote add backup-repo "https://x-access-token:${BACKUP_REPO_TOKEN}@github.com/mateusraony/sentinel-signals-backups.git"
+          mkdir -p ~/.ssh
+          echo "$BACKUP_DEPLOY_KEY" > ~/.ssh/backup_deploy_key
+          chmod 600 ~/.ssh/backup_deploy_key
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/backup_deploy_key -o IdentitiesOnly=yes"
+
+          git remote add backup-repo "git@github.com:mateusraony/sentinel-signals-backups.git"
 
           git fetch backup-repo backups || true
           if git show-ref --verify --quiet refs/remotes/backup-repo/backups; then
