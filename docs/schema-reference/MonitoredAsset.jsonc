@@ -147,7 +147,7 @@
     "smc_enabled": {
       "type": "boolean",
       "default": false,
-      "description": "Turns on the independent SMC/ICT 1h→5m entry cascade (structure BOS/CHoCH bias on 1h, liquidity sweep or 5m BOS/CHoCH as entry trigger) for this asset. Off by default — a fully separate cascade from the 4h/15m Range Filter one, never overrides it."
+      "description": "Turns on the independent SMC/ICT 1h→5m entry cascade (structure BOS/CHoCH bias on 1h, liquidity sweep or 5m BOS/CHoCH as entry trigger) for this asset. A fully separate cascade from the 4h/15m Range Filter one, never overrides it. `default: false` here is the fallback when the field is absent (legacy assets, or ones created before 2026-07-19) — AddAssetForm.jsx now explicitly sets this to `true` on every NEW asset, at the user's request. See docs/known-risks.md item 9 for the caveat: engineering-validated (synthetic tests), not yet compared side-by-side with real TradingView output."
     },
     "smc_confirm_4h15m": {
       "type": "boolean",
