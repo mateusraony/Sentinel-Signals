@@ -8,8 +8,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { scanAllAssets, priceCheckActiveOps } from '@/lib/scanner';
-import { backend } from '@/api/entities';
+import { scanAllAssets, priceCheckActiveOps, hasActiveTradeOps } from '@/lib/scanner';
 
 const PRICE_CHECK_INTERVAL = 2 * 60 * 1000; // 2 min
 const FULL_SCAN_INTERVAL = 60 * 60 * 1000;  // 60 min
@@ -38,8 +37,7 @@ export function useAutoScan({ queryClient, onActivity } = {}) {
 
       // Price check if active trades exist
       try {
-        const ops = await backend.entities.TradeOperation.list('-created_date', 50);
-        const hasActive = ops.some(op => ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'].includes(op.status));
+        const hasActive = await hasActiveTradeOps();
         if (hasActive) {
           await priceCheckActiveOps();
           if (queryClient) {

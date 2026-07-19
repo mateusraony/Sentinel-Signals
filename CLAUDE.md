@@ -81,17 +81,21 @@ Netlify (manter GitHub + Render + Firebase); **não** habilitar trading real;
 
 ## Scan agendado (GitHub Actions) — roda sem navegador
 
-`.github/workflows/scan.yml` roda `scripts/run-scan.mjs` a cada 5 min (mínimo do
-GitHub Actions, gratuito). `run-scan.mjs` chama `scanAllAssets()` /
-`priceCheckActiveOps()` **de `src/lib/scanner.js` sem modificação** — mesma
-lógica no browser e no cron. `scripts/build-scan.mjs` empacota com esbuild e
-redireciona 3 imports para versões Node:
+`.github/workflows/scan.yml` roda `scripts/run-scan.mjs`; o `schedule:` interno
+(`7 * * * *`) é só fallback horário — o cadenciamento real de ~5min vem de
+disparo externo (cron-job.org via `workflow_dispatch`), ver
+`.claude/rules/ci-deploy.md` e `docs/known-risks.md` item 18. `run-scan.mjs`
+chama `scanAllAssets()` / `priceCheckActiveOps()` **de `src/lib/scanner.js` sem
+modificação** — mesma lógica no browser e no cron. `scripts/build-scan.mjs`
+empacota com esbuild e redireciona 4 imports para versões Node:
 
 - `@/api/entities` → `scripts/adminEntities.js` (firebase-admin, ignora rules)
 - `./telegram` → `scripts/adminTelegram.js` (lê token/chat_id de env)
 - `./pineParser` → `scripts/adminPineConfig.js` (**lê `strategyConfig/current` do
   Firestore** — o mesmo doc que a página Pine Script escreve via `syncPineToAssets`;
   mantenha o par `DEFAULTS`/`SYNCED_STRATEGY_KEYS` espelhado com `src/lib/pineParser.js`).
+- `./marketDataProvider` → `scripts/adminMarketDataProvider.js` (Binance Spot —
+  Futures dá 451 em datacenters US, ver decisão item 4 abaixo).
 
 Rodar local: `npm run scan`. Secrets do workflow (Settings → Secrets → Actions):
 `FIREBASE_SERVICE_ACCOUNT_JSON`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,

@@ -1001,3 +1001,154 @@ por não ter sido pedido.
 > sem os 3 eventos são migrados e persistidos; filtros já migrados onde o
 > usuário desligou um evento não o recebem de volta; confirmado via `git
 > stash` que o teste de migração falha contra o código anterior.
+
+## 30. `rsi_overbought`/`rsi_oversold` do ativo eram salvos mas nunca lidos — corrigido (P1)
+
+Item restante da segunda auditoria externa (2026-07-18), verificado direto no
+código: `calculateRSI` (`src/lib/indicators/rsi.js`) hardcodava a zona em
+`>=70`/`<=30`. Já existia uma função pura `getRSIZone(value, overbought=70,
+oversold=30)` fazendo essa mesma classificação de forma parametrizada, mas
+**nunca era chamada em lugar nenhum** — código morto duplicando a lógica.
+`scanner.js` chamava `calculateRSI(closedCandles, indicatorParams.rsiPeriod)`
+sem passar limiares. `AssetConfigPanel.jsx` deixa o usuário editar/salvar
+`rsi_overbought`/`rsi_oversold` por ativo — o valor era persistido no
+Firestore, mas nada a jusante o lia para cálculo, só para exibição
+(`AssetDetailPanel.jsx`, `ParamCard`). Configurar esses campos não tinha
+**nenhum** efeito real.
+
+Isso não é cosmético: `r.rsi.zone !== 'neutral'` em `scanner.js` gera um
+`SignalEvent` real (`source: 'rsi'`) que pode virar `TradeOperation` — um
+usuário que configurou limiares mais largos/estreitos para reduzir ruído de
+RSI num ativo mais volátil continuava recebendo sinais na banda 70/30 padrão,
+sem saber.
+
+**Correção**: `calculateRSI(candles, period=14, overbought=70, oversold=30)`
+passou a delegar a classificação para `getRSIZone(lastRSI, overbought,
+oversold)` (reusa a função pura já existente, não duplica lógica). Nova
+função pura `resolveRsiZoneThresholds(asset)` em `scanner.js` — **irmã** de
+`resolveIndicatorParams`, não dentro dela: estes campos não têm equivalente
+sincronizado do Pine (não estão em `SYNCED_STRATEGY_KEYS`), e misturar ali
+mudaria o shape exato que um teste de `scannerStateMachine.test.js` já fixa
+via `toEqual()`. A função guarda o **par** atomicamente — um par inválido
+(invertido, fora de `(0,100)`, ou um lado ausente/NaN) cai inteiro para o
+default 70/30, nunca uma mistura de um lado válido com o outro default, mesmo
+espírito do `firstPositive` já existente no arquivo. `docs/schema-reference/
+MonitoredAsset.jsonc` atualizado para documentar esse fallback.
+
+Regressão: novos testes em `rsi.test.js` (limiar customizado classifica como
+overbought/oversold um valor que os 70/30 padrão classificariam como neutral;
+delegação a `getRSIZone` sem duplicar lógica de fronteira) e em
+`scannerStateMachine.test.js` (`resolveRsiZoneThresholds` — par válido, par
+default quando ausente, par invertido/igual, fora de faixa, parcial, NaN).
+Confirmado via `git stash` que os 9 novos casos falham contra o código
+anterior (zona sempre 70/30 apesar do 3º/4º argumento; função nova
+inexistente) e voltam a passar com a correção restaurada.
+
+## 31. Validação numérica ausente nos formulários de configuração do ativo — corrigido
+
+Confirmado: todo `Input type="number"` em `AssetConfigPanel.jsx` (RF, RSI,
+MACD, EMA, cooldown) usava `Number(e.target.value)` cru a cada tecla, sem
+guarda de NaN/min/max/relação entre campos, e `handleSave` gravava o objeto
+inteiro no Firestore incondicionalmente. No `scanner.js`, `rf_period`/
+`rf_multiplier`/`macd_fast`/`macd_slow`/`macd_signal` ainda usavam `asset.X ||
+default` — isso barra `0`/`NaN` (falsy) mas **não** um valor negativo
+(`-5 || 20` avalia `-5`); só `rsi_period`/`ema_short`/`ema_long` já passavam
+pelo `firstPositive` (guarda de uma revisão anterior).
+
+**Achado adicional confirmado nesta rodada** (além do item já sinalizado pela
+auditoria): se `ema_short > ema_long`, `calculateEMAs` não falha — ainda
+dispara um cruzamento, só que com o rótulo **invertido**
+(`golden_cross`/`death_cross` trocados), e `scanner.js` transforma isso
+diretamente no `signal_type` errado (BUY quando deveria ser SELL). Não havia
+nenhuma guarda de ordem relativa entre `ema_short`/`ema_long` antes desta
+correção — mesma classe de bug do item 30, em outro indicador.
+
+Pesquisa (UX de input numérico em React): consenso é permitir digitação livre
+no `onChange` (inclusive estados transitórios inválidos) e validar/clampar só
+no blur/submit — validar a cada tecla atrapalha o usuário
+([fonte](https://dev.to/akshay_patil_131930887e40/best-way-to-handle-number-input-validation-in-react-18mk)).
+Por isso a validação roda no **Save**, não a cada `onChange`.
+
+**Correção**:
+- Novo módulo `src/lib/assetConfigValidation.js` (padrão `opTransition.js`/
+  `opExitRules.js` — função pura, testável, sem I/O — este repo não tem
+  nenhum teste dentro de `src/components/`, então a lógica precisa viver em
+  `src/lib/`): `validateAssetConfig(config)` retorna um array de erros.
+  Regras: todo período/multiplicador `> 0` e finito; `alert_cooldown_minutes
+  >= 0`; `rsi_overbought > rsi_oversold` com ambos em `(0,100)`; `macd_fast <
+  macd_slow`; **`ema_short < ema_long`** (o achado novo).
+- `AssetConfigPanel.jsx`: `handleSave` chama o validador; havendo erros,
+  mostra (mesmo padrão visual de `AddAssetForm.jsx` — `AlertCircle` + texto
+  `#ff1478`) e **não** grava no Firestore.
+- `scanner.js` (defesa em profundidade, para dado que já esteja salvo errado —
+  linha legada ou edição direta no Firestore): `rf_period`/`rf_multiplier`/
+  `macd_fast`/`macd_slow`/`macd_signal` passaram de `asset.X || default` para
+  `firstPositive(asset.X, default)`, fechando o buraco do valor negativo.
+  `resolveIndicatorParams` ganhou uma guarda de par para EMA (só valores, não
+  muda o shape do retorno): se `emaFast >= emaSlow`, ambos caem para o par
+  Pine/literal.
+
+Regressão: `src/lib/assetConfigValidation.test.js` (uma regra por caso,
+válido/inválido/limite) e um novo teste em `scannerStateMachine.test.js`
+(`resolveIndicatorParams` rejeita par EMA invertido/igual). Confirmado via
+`git stash` que ambos falham contra o código anterior.
+
+> **Atualização (review do Codex, PR #61) — período fracionário passava a
+> validação e quebrava o RSI silenciosamente:** `calculateRSI`
+> (`src/lib/indicators/rsi.js`) e `calculateATR` usam `period` diretamente
+> como índice de array/limite de loop (`avgGain[period]`, `for (let i =
+> period; i < n; i++)`). Um período fracionário como `14.5` nunca cai num
+> índice INTEIRO a partir daquele ponto — a série inteira fica presa no
+> valor de `.fill()` (RSI sempre lê 50/`'neutral'`, para sempre), silencioso,
+> sem erro. `isPositiveNumber` só rejeitava `<=0`/`NaN`, não fracionário —
+> um usuário digitando `14.5` no período do RSI passava pela validação e
+> quebrava o indicador sem aviso.
+>
+> Corrigido: `assetConfigValidation.js` ganhou `isPositiveInteger` (exige
+> `Number.isInteger`), aplicado a todos os campos de período/contagem de
+> barras (`rf_period`, `rsi_period`, `macd_fast/slow/signal`, `ema_short/
+> long`) — `rf_multiplier` continua aceitando fracionário (é multiplicador
+> de verdade, não contagem de barras). Defesa em profundidade espelhada em
+> `scanner.js`: nova `firstPositiveInteger(...)` (mesmo padrão do
+> `firstPositive` já existente, exigindo também `Number.isInteger`),
+> substituindo `firstPositive` nos mesmos campos de período em
+> `resolveIndicatorParams` e nas chamadas diretas de RF/MACD em `scanAsset`
+> — cobre dado legado ou editado direto no Firestore, não só o caminho da UI.
+>
+> Regressão: novo teste "rejects a fractional period on every period/bar-count
+> field" em `assetConfigValidation.test.js`; novo teste em
+> `scannerStateMachine.test.js` confirmando que `resolveIndicatorParams`
+> rejeita um override fracionário (cai para Pine/literal, igual a
+> zero/negativo/NaN); nova `describe('firstPositiveInteger')` espelhando os
+> casos de `firstPositive`. Confirmado via `git stash` que os 6 novos casos
+> falham contra o código anterior.
+
+## 32. Gate "existe operação ativa?" do browser (`useAutoScan.js`) estava errado — corrigido (P1)
+
+Confirmado: `useAutoScan.js` buscava as **50 `TradeOperation` mais recentes
+por `created_date`** (qualquer status) e checava se alguma delas estava ativa
+— se a op ativa genuína fosse **mais antiga** (por criação) que 50 outras
+criadas depois (plausível: usuário monitorando vários ativos, ops
+abrindo/fechando com frequência enquanto uma fica `RUNNER_ACTIVE` dias
+esperando TP2), ela caía fora dessa janela e o gate errava para `false` —
+`priceCheckActiveOps()` (a proteção de stop/TP por preço ao vivo) **parava de
+rodar no browser** para aquela operação, silenciosamente, mesmo com a aba
+aberta. Confirmado que o cron (`scripts/run-scan.mjs`) não tem esse gate —
+chama `priceCheckActiveOps()` sempre —, então o bug era exclusivo do browser.
+`priceCheckActiveOpsInner` já fazia a query certa
+(`TradeOperation.filter({status: [...]})`, `where...in`, sem índice composto
+necessário) — só o gate do hook reimplementava (mal) a mesma pergunta.
+
+**Correção**: nova função `hasActiveTradeOps()` em `scanner.js`, ao lado de
+`priceCheckActiveOpsInner`, reusando o mesmo filtro server-side com
+`limitCount=1` (só precisamos saber se existe — mais barato em leituras
+Firestore que os 50 docs de antes, não só mais correto).  `useAutoScan.js`
+passou a chamar essa função em vez de reimplementar a lógica; o import de
+`backend` (usado só para essa query) foi removido do arquivo.
+
+Regressão em `scannerStateMachine.test.js`: semeadas 55 ops terminais com
+`created_date` recente + 1 op ativa com `created_date` bem mais antiga (fora
+da janela "últimas 50"); confirma que `hasActiveTradeOps()` continua
+enxergando a op ativa. Caso trivial adicional: `false` quando não há nenhuma
+ativa. Confirmado via `git stash` que ambos falham contra o código anterior
+(função nova inexistente).

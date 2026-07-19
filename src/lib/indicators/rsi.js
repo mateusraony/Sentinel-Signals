@@ -7,7 +7,7 @@
  * @param {number} period - RSI period (default: 14)
  * @returns {Object} RSI result
  */
-export function calculateRSI(candles, period = 14) {
+export function calculateRSI(candles, period = 14, overbought = 70, oversold = 30) {
   if (!candles || candles.length < period + 1) {
     throw new Error(`Candles insuficientes para RSI: ${candles?.length || 0}, mínimo: ${period + 1}`);
   }
@@ -68,7 +68,7 @@ export function calculateRSI(candles, period = 14) {
   return {
     value: lastRSI,
     previousValue: prevRSI,
-    zone: lastRSI >= 70 ? 'overbought' : lastRSI <= 30 ? 'oversold' : 'neutral',
+    zone: getRSIZone(lastRSI, overbought, oversold),
     crossedBull50,
     crossedBear50,
     series: rsi,
