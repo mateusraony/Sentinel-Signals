@@ -13,11 +13,19 @@ name: Daily Firestore backup
 # dados de negócio reais (sinais/operações/config de estratégia) por pelo
 # menos 4 dias antes de ser percebido. O `schedule` foi removido então para
 # parar novos vazamentos. Corrigido: destino trocado para o repositório
-# privado acima via `BACKUP_REPO_TOKEN` (fine-grained PAT, Contents: write,
-# restrito só a esse repo — nunca com acesso a este repositório).
-# `schedule` só volta depois de uma execução manual bem-sucedida confirmar
-# que o token/repo novo funcionam de ponta a ponta.
+# privado acima. Autenticação via **deploy key SSH** (não token/PAT) — uma
+# chave ed25519 gerada só para isso, com a chave pública cadastrada como
+# Deploy Key (write) SÓ no repositório privado de backup, e a chave privada
+# como secret `BACKUP_DEPLOY_KEY` neste repositório. Deploy key não tem
+# escopos/caixinhas pra confundir (diferente de um PAT): é ligada a UM único
+# repositório, com permissão de leitura ou escrita, ponto.
+#
+# Confirmado por execução manual bem-sucedida (2026-07-19) — o `schedule`
+# abaixo está de volta, minuto fora do topo da hora de propósito (ver
+# known-risks item 18 sobre o minuto 0 ser o de maior atraso no GitHub).
 on:
+  schedule:
+    - cron: "23 3 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -45,14 +53,29 @@ jobs:
           node scripts/backup-firestore.mjs "/tmp/backup-${DATE}.json"
           echo "BACKUP_DATE=${DATE}" >> "$GITHUB_ENV"
 
-      - name: Publicar na branch backups (repo privado)
+      - name: Publicar na branch backups (repo privado, via deploy key SSH)
         env:
-          BACKUP_REPO_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
+          BACKUP_DEPLOY_KEY: ${{ secrets.BACKUP_DEPLOY_KEY }}
         run: |
           git config user.name "sentinel-signals-bot"
           git config user.email "actions@users.noreply.github.com"
 
-          git remote add backup-repo "https://x-access-token:${BACKUP_REPO_TOKEN}@github.com/mateusraony/sentinel-signals-backups.git"
+          mkdir -p ~/.ssh
+          echo "$BACKUP_DEPLOY_KEY" > ~/.ssh/backup_deploy_key
+          chmod 600 ~/.ssh/backup_deploy_key
+          # Pinned, not scanned: `ssh-keyscan` trusts whatever host key answers
+          # at runtime (TOFU), which a MITM on the runner's network path could
+          # spoof. These are GitHub's own published host keys instead — see
+          # https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
+          cat <<'KNOWN_HOSTS' >> ~/.ssh/known_hosts
+          github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+          github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+          github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+          KNOWN_HOSTS
+          chmod 600 ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/backup_deploy_key -o IdentitiesOnly=yes"
+
+          git remote add backup-repo "git@github.com:mateusraony/sentinel-signals-backups.git"
 
           git fetch backup-repo backups || true
           if git show-ref --verify --quiet refs/remotes/backup-repo/backups; then

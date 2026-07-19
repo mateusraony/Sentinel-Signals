@@ -320,8 +320,10 @@ service account do scan agendado) pra ler as coleções de negócio
 (`monitoredAssets`, `assetStates`, `signalEvents`, `tradeOperations`,
 `priceAlerts`, `strategyConfig` — `systemLogs` e `users` ficam de fora, são
 ruído operacional/registros de auth anônima) e publica um snapshot JSON
-numa branch separada (`backups`, não `main`, pra não inchar o histórico
-principal), mantendo os últimos 30 dias.
+numa branch `backups`, mantendo os últimos 30 dias. Desde o item 25 abaixo,
+o destino é a branch `backups` de um repositório **privado separado**
+(`mateusraony/sentinel-signals-backups`), não mais uma branch do próprio
+`Sentinel-Signals` (que é público).
 
 Restauração é **deliberadamente manual**, não automática — evita
 sobrescrever dado bom por engano numa hora de pânico. Procedimento
@@ -715,7 +717,7 @@ buffer, piso mínimo de ~0.5×ATR contra ruído e cap de risco.
   v13.2). Nota de paridade: o stop estrutural é decisão de produto local da
   cascata SMC portada, divergência consciente registrada aqui.
 
-## 25. Backup diário publicava dados de negócio em branch pública — pausado (P0 de segurança)
+## 25. Backup diário publicava dados de negócio em branch pública — corrigido (P0 de segurança)
 
 Encontrado por uma segunda auditoria externa (2026-07-18), verificado no
 código e confirmado ativo: o repositório é **público**, e a branch `backups`
@@ -768,6 +770,40 @@ conta do usuário. Requer ação manual.
 Até esse passo ser concluído, o Firestore fica **sem backup automático**
 (rede de segurança do item 14 temporariamente suspensa) — trade-off
 deliberado: nenhum backup é mais seguro que um backup público.
+
+> **Atualização (2026-07-19) — concluído.** Repositório privado
+> `mateusraony/sentinel-signals-backups` criado pelo usuário. A autenticação
+> não usou PAT/token — depois de **4 tentativas** com token (fine-grained e
+> depois clássico) falhando com `remote: Repository not found` mesmo com
+> conta, secret e tamanho do token todos conferidos corretos (diagnóstico
+> por um passo temporário no workflow que imprimia só o *tamanho* do token,
+> nunca o valor — confirmou 40 caracteres, ou seja, não vazio/não
+> incompleto), a causa mais provável identificada foi confusão entre a
+> caixinha `repo` (a certa) e `public_repo` (parecida, mas sem acesso a
+> repositório privado) na tela de escopos do GitHub — um erro fácil de
+> cometer e impossível de diagnosticar remotamente, já que ninguém (nem o
+> dono do token) consegue ver de novo quais caixinhas foram marcadas depois
+> de gerado.
+>
+> Trocado para **deploy key SSH** em vez de token: uma chave ed25519 gerada
+> pela sessão do Claude Code (verificada localmente com `ssh-keygen -y`
+> antes de entregar, confirmando que pública/privada batem), com a chave
+> pública cadastrada como Deploy Key (**write**) só no repositório privado
+> de backup, e a privada como secret `BACKUP_DEPLOY_KEY` no `Sentinel-Signals`.
+> Deploy key elimina a classe inteira de erro do PAT — não tem lista de
+> escopos, é só um par leitura/escrita ligado a exatamente um repositório.
+> `.github/workflows/backup.yml` troca a URL de push de
+> `https://x-access-token:$TOKEN@github.com/...` para
+> `git@github.com:mateusraony/sentinel-signals-backups.git`, com
+> `ssh-keyscan` fixando a chave do host antes do push (evita prompt
+> interativo de host desconhecido) e `GIT_SSH_COMMAND` apontando pra chave
+> privada baixada do secret.
+>
+> Confirmado por execução manual (`workflow_dispatch`) bem-sucedida em
+> 2026-07-19 — o snapshot do dia apareceu na branch `backups` do repositório
+> privado no horário esperado. `schedule` reativado (`23 3 * * *`, fora do
+> topo da hora — ver item 18 sobre o minuto 0 ser o de maior atraso).
+> Backup automático diário voltou a rodar, agora com destino privado.
 
 ## 26. Candle pós-sinal-mas-pré-entrada podia gerar TP/stop falso em confirmações atrasadas — corrigido (P0-g)
 
