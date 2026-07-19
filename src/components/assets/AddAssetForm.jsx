@@ -47,6 +47,7 @@ export default function AddAssetForm({ onSuccess }) {
       symbol: sym, display_name: name, exchange: 'binance', market: 'crypto',
       is_active: true, timeframes_enabled: { '1h': true, '4h': true, '1d': true },
       smc_enabled: true,
+      smc_confirm_4h15m: true,
     });
     setSaving(false);
     onSuccess();

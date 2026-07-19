@@ -152,7 +152,7 @@
     "smc_confirm_4h15m": {
       "type": "boolean",
       "default": false,
-      "description": "When true, adds an extra confirmation gate to the EXISTING 4h/15m Range Filter cascade: the 4h SMC structure trend and Premium/Discount zone must agree with the RF signal direction before a TradeOperation is created. Off by default — purely additive, doesn't change current behavior unless explicitly enabled per asset."
+      "description": "When true, adds an extra confirmation gate to the EXISTING 4h/15m Range Filter cascade: the 4h SMC structure trend and Premium/Discount zone must agree with the RF signal direction before a TradeOperation is created. `default: false` here is the fallback when the field is absent (legacy assets, or ones created before 2026-07-19) — AddAssetForm.jsx now explicitly sets this to `true` on every NEW asset, at the user's request. Unlike smc_enabled (purely additive — a separate cascade), this one is NOT additive: it makes the main RF cascade stricter, filtering out RF signals whose 4h SMC structure/zone disagrees — new assets will see fewer RF entries than before this change, not more. Same known-risks.md item 9 caveat applies."
     }
   },
   "required": [
