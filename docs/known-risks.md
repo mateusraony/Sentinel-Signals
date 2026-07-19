@@ -1093,6 +1093,36 @@ válido/inválido/limite) e um novo teste em `scannerStateMachine.test.js`
 (`resolveIndicatorParams` rejeita par EMA invertido/igual). Confirmado via
 `git stash` que ambos falham contra o código anterior.
 
+> **Atualização (review do Codex, PR #61) — período fracionário passava a
+> validação e quebrava o RSI silenciosamente:** `calculateRSI`
+> (`src/lib/indicators/rsi.js`) e `calculateATR` usam `period` diretamente
+> como índice de array/limite de loop (`avgGain[period]`, `for (let i =
+> period; i < n; i++)`). Um período fracionário como `14.5` nunca cai num
+> índice INTEIRO a partir daquele ponto — a série inteira fica presa no
+> valor de `.fill()` (RSI sempre lê 50/`'neutral'`, para sempre), silencioso,
+> sem erro. `isPositiveNumber` só rejeitava `<=0`/`NaN`, não fracionário —
+> um usuário digitando `14.5` no período do RSI passava pela validação e
+> quebrava o indicador sem aviso.
+>
+> Corrigido: `assetConfigValidation.js` ganhou `isPositiveInteger` (exige
+> `Number.isInteger`), aplicado a todos os campos de período/contagem de
+> barras (`rf_period`, `rsi_period`, `macd_fast/slow/signal`, `ema_short/
+> long`) — `rf_multiplier` continua aceitando fracionário (é multiplicador
+> de verdade, não contagem de barras). Defesa em profundidade espelhada em
+> `scanner.js`: nova `firstPositiveInteger(...)` (mesmo padrão do
+> `firstPositive` já existente, exigindo também `Number.isInteger`),
+> substituindo `firstPositive` nos mesmos campos de período em
+> `resolveIndicatorParams` e nas chamadas diretas de RF/MACD em `scanAsset`
+> — cobre dado legado ou editado direto no Firestore, não só o caminho da UI.
+>
+> Regressão: novo teste "rejects a fractional period on every period/bar-count
+> field" em `assetConfigValidation.test.js`; novo teste em
+> `scannerStateMachine.test.js` confirmando que `resolveIndicatorParams`
+> rejeita um override fracionário (cai para Pine/literal, igual a
+> zero/negativo/NaN); nova `describe('firstPositiveInteger')` espelhando os
+> casos de `firstPositive`. Confirmado via `git stash` que os 6 novos casos
+> falham contra o código anterior.
+
 ## 32. Gate "existe operação ativa?" do browser (`useAutoScan.js`) estava errado — corrigido (P1)
 
 Confirmado: `useAutoScan.js` buscava as **50 `TradeOperation` mais recentes

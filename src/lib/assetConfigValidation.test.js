@@ -24,11 +24,32 @@ describe('validateAssetConfig', () => {
   });
 
   it('rejects a zero/negative/NaN period or multiplier (Number(\'\') === 0 from a cleared input)', () => {
-    expect(validateAssetConfig(baseConfig({ rf_period: 0 }))).toContain('Range Filter: período deve ser um número positivo');
+    expect(validateAssetConfig(baseConfig({ rf_period: 0 }))).toContain('Range Filter: período deve ser um número inteiro positivo');
     expect(validateAssetConfig(baseConfig({ rf_multiplier: -1 }))).toContain('Range Filter: multiplicador deve ser um número positivo');
-    expect(validateAssetConfig(baseConfig({ rsi_period: NaN }))).toContain('RSI: período deve ser um número positivo');
-    expect(validateAssetConfig(baseConfig({ macd_fast: 0 }))).toContain('MACD: período fast deve ser um número positivo');
-    expect(validateAssetConfig(baseConfig({ ema_short: -5 }))).toContain('EMA: período curto deve ser um número positivo');
+    expect(validateAssetConfig(baseConfig({ rsi_period: NaN }))).toContain('RSI: período deve ser um número inteiro positivo');
+    expect(validateAssetConfig(baseConfig({ macd_fast: 0 }))).toContain('MACD: período fast deve ser um número inteiro positivo');
+    expect(validateAssetConfig(baseConfig({ ema_short: -5 }))).toContain('EMA: período curto deve ser um número inteiro positivo');
+  });
+
+  // Codex review (PR #61): calculateRSI/calculateATR use `period` as an
+  // array index/loop bound — a fractional period like 14.5 never touches an
+  // integer index at or past that point, so the series silently stays at
+  // its .fill() default (RSI reads 50/'neutral' forever) instead of
+  // erroring. MACD/EMA/RangeFilter treat period as a smoothing constant
+  // (harmless if fractional), but a fractional bar-count is meaningless
+  // either way, so every period field rejects non-integers.
+  it('rejects a fractional period on every period/bar-count field', () => {
+    expect(validateAssetConfig(baseConfig({ rf_period: 20.5 }))).toContain('Range Filter: período deve ser um número inteiro positivo');
+    expect(validateAssetConfig(baseConfig({ rsi_period: 14.5 }))).toContain('RSI: período deve ser um número inteiro positivo');
+    expect(validateAssetConfig(baseConfig({ macd_fast: 12.5 }))).toContain('MACD: período fast deve ser um número inteiro positivo');
+    expect(validateAssetConfig(baseConfig({ macd_slow: 26.5 }))).toContain('MACD: período slow deve ser um número inteiro positivo');
+    expect(validateAssetConfig(baseConfig({ macd_signal: 9.5 }))).toContain('MACD: período signal deve ser um número inteiro positivo');
+    expect(validateAssetConfig(baseConfig({ ema_short: 20.5 }))).toContain('EMA: período curto deve ser um número inteiro positivo');
+    expect(validateAssetConfig(baseConfig({ ema_long: 50.5 }))).toContain('EMA: período longo deve ser um número inteiro positivo');
+  });
+
+  it('still allows a fractional rf_multiplier (a real multiplier, not a bar count)', () => {
+    expect(validateAssetConfig(baseConfig({ rf_multiplier: 3.75 }))).toEqual([]);
   });
 
   it('rejects rsi_overbought <= rsi_oversold (inverted or equal)', () => {

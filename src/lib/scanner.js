@@ -63,6 +63,23 @@ export function firstPositive(...candidates) {
   return undefined;
 }
 
+// Codex review (PR #61): a period/bar-count field isn't just "any positive
+// number" — calculateRSI and calculateATR use `period` directly as an array
+// index/loop bound (`avgGain[period]`, `for (let i = period; i < n; i++)`).
+// A fractional period like 14.5 never lands on an INTEGER index at or past
+// that point, so the whole series silently stays at its `.fill()` default
+// (RSI reads 50/'neutral' forever) instead of erroring — wrong signals, not
+// a crash. Used for every period field below (rf_period, rsi_period,
+// macd_fast/slow/signal, ema_short/long) — MACD/EMA/RangeFilter only use
+// period as a smoothing constant (harmless if fractional), but a fractional
+// bar-count is meaningless for any of them either way.
+export function firstPositiveInteger(...candidates) {
+  for (const c of candidates) {
+    if (Number.isInteger(c) && c > 0) return c;
+  }
+  return undefined;
+}
+
 // Pine×scanner unification (2026-07-18, ver known-risks.md item 27): antes,
 // RSI/EMA usavam SÓ o campo do ativo com fallback hardcoded (9/21/14) —
 // divergente do Pine real (20/50/14) — e volume/ATR(stop) eram constantes
@@ -74,8 +91,8 @@ export function firstPositive(...candidates) {
 // ser o valor real do Pine. Extraído como função pura só para ser testável
 // sem precisar mockar fetchCandles.
 export function resolveIndicatorParams(asset, pineConfig) {
-  let emaFast = firstPositive(asset.ema_short, pineConfig.emaFastLen, 20);
-  let emaSlow = firstPositive(asset.ema_long, pineConfig.emaSlowLen, 50);
+  let emaFast = firstPositiveInteger(asset.ema_short, pineConfig.emaFastLen, 20);
+  let emaSlow = firstPositiveInteger(asset.ema_long, pineConfig.emaSlowLen, 50);
   // known-risks.md item 31: emaFast >= emaSlow doesn't fail calculateEMAs —
   // it still fires a cross, just with an INVERTED label (golden_cross when
   // the fast really crossed below, etc.), which scanner.js turns straight
@@ -83,16 +100,16 @@ export function resolveIndicatorParams(asset, pineConfig) {
   // resolveRsiZoneThresholds guards overbought/oversold below: an invalid
   // pair falls back to the Pine/literal pair entirely, never a partial mix.
   if (!(emaFast < emaSlow)) {
-    emaFast = firstPositive(pineConfig.emaFastLen, 20);
-    emaSlow = firstPositive(pineConfig.emaSlowLen, 50);
+    emaFast = firstPositiveInteger(pineConfig.emaFastLen, 20);
+    emaSlow = firstPositiveInteger(pineConfig.emaSlowLen, 50);
   }
   return {
-    rsiPeriod: firstPositive(asset.rsi_period, pineConfig.rsiLen, 14),
+    rsiPeriod: firstPositiveInteger(asset.rsi_period, pineConfig.rsiLen, 14),
     emaFast,
     emaSlow,
     // Sem campo por-ativo hoje — vêm só do Pine (ou do literal de fallback).
-    volPeriod: firstPositive(pineConfig.volLen, 20),
-    atrStopPeriod: firstPositive(pineConfig.atrLen, 14),
+    volPeriod: firstPositiveInteger(pineConfig.volLen, 20),
+    atrStopPeriod: firstPositiveInteger(pineConfig.atrLen, 14),
   };
 }
 
@@ -437,7 +454,7 @@ export async function scanAsset(asset) {
       // Calculate all indicators
       const rfResult = calculateRangeFilter(
         closedCandles,
-        firstPositive(asset.rf_period, 20),
+        firstPositiveInteger(asset.rf_period, 20),
         firstPositive(asset.rf_multiplier, 3.5)
       );
 
@@ -445,9 +462,9 @@ export async function scanAsset(asset) {
 
       const macdResult = calculateMACD(
         closedCandles,
-        firstPositive(asset.macd_fast, 12),
-        firstPositive(asset.macd_slow, 26),
-        firstPositive(asset.macd_signal, 9)
+        firstPositiveInteger(asset.macd_fast, 12),
+        firstPositiveInteger(asset.macd_slow, 26),
+        firstPositiveInteger(asset.macd_signal, 9)
       );
 
       const emaResult = calculateEMAs(

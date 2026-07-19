@@ -38,7 +38,7 @@ vi.mock('./marketDataProvider', () => ({
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice } from './marketDataProvider';
 import { isTelegramConfigured, notifyNewSignal, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
-import { persistScanResults, priceCheckActiveOps, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, firstPositive } from './scanner.js';
+import { persistScanResults, priceCheckActiveOps, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, firstPositive, firstPositiveInteger } from './scanner.js';
 
 let backend;
 beforeEach(() => {
@@ -270,6 +270,19 @@ describe('resolveIndicatorParams — Pine×scanner unification (P1, known-risks 
     expect(p2.emaFast).toBe(20); // literal, not 30
     expect(p2.emaSlow).toBe(50);
   });
+
+  // Codex review (PR #61): calculateRSI/calculateATR use `period` as an
+  // array index/loop bound — a fractional period like 14.5 never lands on
+  // an integer index at or past that point, silently freezing the series at
+  // its .fill() default instead of erroring. A fractional asset override
+  // must fall through to Pine/literal exactly like zero/negative/NaN already do.
+  it('rejects a fractional per-asset override — falls through to Pine, then literal', () => {
+    const fractional = { rsi_period: 14.5, ema_short: 20.5, ema_long: 50.5 };
+    const p = resolveIndicatorParams(fractional, pine);
+    expect(p.rsiPeriod).toBe(20); // pine.rsiLen, not 14.5
+    expect(p.emaFast).toBe(20); // pine.emaFastLen, not 20.5
+    expect(p.emaSlow).toBe(50); // pine.emaSlowLen, not 50.5
+  });
 });
 
 describe('resolveRsiZoneThresholds — RSI overbought/oversold wiring (P1, known-risks item 30)', () => {
@@ -315,6 +328,23 @@ describe('firstPositive', () => {
 
   it('returns undefined when no candidate qualifies', () => {
     expect(firstPositive(0, -1, NaN, undefined, null)).toBe(undefined);
+  });
+});
+
+describe('firstPositiveInteger', () => {
+  it('returns the first finite integer candidate greater than zero', () => {
+    expect(firstPositiveInteger(0, -1, NaN, undefined, null, 5, 10)).toBe(5);
+  });
+
+  // The bug this exists for: calculateRSI/calculateATR use the period as an
+  // array index, so a fractional candidate must be skipped exactly like
+  // zero/negative/NaN, not accepted as "positive."
+  it('skips a fractional candidate even though it is positive', () => {
+    expect(firstPositiveInteger(14.5, 20)).toBe(20);
+  });
+
+  it('returns undefined when no candidate qualifies', () => {
+    expect(firstPositiveInteger(0, -1, NaN, undefined, null, 14.5)).toBe(undefined);
   });
 });
 

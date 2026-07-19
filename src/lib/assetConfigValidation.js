@@ -18,13 +18,27 @@ function isPositiveNumber(x) {
   return Number.isFinite(x) && x > 0;
 }
 
+// Codex review (PR #61): period/bar-count fields aren't just "any positive
+// number" — calculateRSI (src/lib/indicators/rsi.js) and calculateATR use
+// `period` directly as an array index/loop bound (`avgGain[period]`,
+// `for (let i = period; i < n; i++)`). A fractional period like 14.5 never
+// touches an INTEGER index at or past that point, so the whole series stays
+// at its `.fill()` default (RSI silently reads 50/'neutral' forever) —
+// wrong output, not a thrown error. MACD/EMA/RangeFilter use period only as
+// an exponential-smoothing constant (harmless if fractional), but a
+// fractional bar-count is meaningless for any of them either way, so all
+// period fields require an integer here for consistency.
+function isPositiveInteger(x) {
+  return Number.isInteger(x) && x > 0;
+}
+
 export function validateAssetConfig(config) {
   const errors = [];
 
-  if (!isPositiveNumber(config.rf_period)) errors.push('Range Filter: período deve ser um número positivo');
+  if (!isPositiveInteger(config.rf_period)) errors.push('Range Filter: período deve ser um número inteiro positivo');
   if (!isPositiveNumber(config.rf_multiplier)) errors.push('Range Filter: multiplicador deve ser um número positivo');
 
-  if (!isPositiveNumber(config.rsi_period)) errors.push('RSI: período deve ser um número positivo');
+  if (!isPositiveInteger(config.rsi_period)) errors.push('RSI: período deve ser um número inteiro positivo');
   if (!isPositiveNumber(config.rsi_overbought) || !isPositiveNumber(config.rsi_oversold)) {
     errors.push('RSI: overbought e oversold devem ser números positivos');
   } else {
@@ -33,16 +47,16 @@ export function validateAssetConfig(config) {
     if (config.rsi_overbought <= config.rsi_oversold) errors.push('RSI: overbought deve ser maior que oversold');
   }
 
-  if (!isPositiveNumber(config.macd_fast)) errors.push('MACD: período fast deve ser um número positivo');
-  if (!isPositiveNumber(config.macd_slow)) errors.push('MACD: período slow deve ser um número positivo');
-  if (!isPositiveNumber(config.macd_signal)) errors.push('MACD: período signal deve ser um número positivo');
-  if (isPositiveNumber(config.macd_fast) && isPositiveNumber(config.macd_slow) && config.macd_fast >= config.macd_slow) {
+  if (!isPositiveInteger(config.macd_fast)) errors.push('MACD: período fast deve ser um número inteiro positivo');
+  if (!isPositiveInteger(config.macd_slow)) errors.push('MACD: período slow deve ser um número inteiro positivo');
+  if (!isPositiveInteger(config.macd_signal)) errors.push('MACD: período signal deve ser um número inteiro positivo');
+  if (isPositiveInteger(config.macd_fast) && isPositiveInteger(config.macd_slow) && config.macd_fast >= config.macd_slow) {
     errors.push('MACD: período fast deve ser menor que slow');
   }
 
-  if (!isPositiveNumber(config.ema_short)) errors.push('EMA: período curto deve ser um número positivo');
-  if (!isPositiveNumber(config.ema_long)) errors.push('EMA: período longo deve ser um número positivo');
-  if (isPositiveNumber(config.ema_short) && isPositiveNumber(config.ema_long) && config.ema_short >= config.ema_long) {
+  if (!isPositiveInteger(config.ema_short)) errors.push('EMA: período curto deve ser um número inteiro positivo');
+  if (!isPositiveInteger(config.ema_long)) errors.push('EMA: período longo deve ser um número inteiro positivo');
+  if (isPositiveInteger(config.ema_short) && isPositiveInteger(config.ema_long) && config.ema_short >= config.ema_long) {
     errors.push('EMA: período curto deve ser menor que o longo');
   }
 
