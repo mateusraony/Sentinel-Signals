@@ -121,7 +121,9 @@ manual de rules/índices).
 ## Comandos
 
 `npm run dev` · `npm run build` · `npm run lint` / `lint:fix` · `npm test` ·
-`npm run typecheck` (best-effort) · `npm run scan` · `npm run preview`.
+`npm run typecheck` (best-effort) · `npm run scan` · `npm run backtest`
+(replay histórico local — ver `docs/claude/backtest-usage.md`) ·
+`npm run preview`.
 
 ## Roteador de capacidades (o que carregar por tarefa)
 

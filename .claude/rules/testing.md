@@ -36,15 +36,30 @@ concorrência real (`Promise.all` sem await individual, deixando as duas
 funções racearem de verdade via microtask do fake) provando que o CAS nunca
 resulta em estado misto/corrompido quando os dois loops disputam a mesma op.
 
+`backtestEngine.test.js` cobre o **motor de backtest histórico**
+(`src/lib/backtestEngine.js`, ver `docs/claude/backtest-usage.md` e
+`docs/known-risks.md` item 33) contra as MESMAS funções reais de
+`scanner.js` (`scanAsset`/`persistScanResults`), com candles sintéticos e
+valores de flip derivados empiricamente (não chutados): a propriedade
+central de "sem look-ahead" (nenhum sinal/operação aparece antes do
+instante histórico real da mudança de tendência), o shim de relógio
+simulado (`installSimClock`/`advanceSimClock`/`restoreClock`, incluindo
+restauração garantida mesmo após exceção), o comportamento seguro ao
+esgotar os dados (nunca fecha uma operação à força só por falta de candle
+futuro) e — de quebra — a **cascata de confirmação 15m atrasada**
+(`check15mConfirmation` via o loop de retry de `persistScanResults`), que
+fecha a lacuna descrita abaixo.
+
 ## Lacunas restantes
 
 - **Cascata de entrada completa** (`check15mConfirmation`/
-  `check5mSmcConfirmation`, que buscam candles via rede): não coberta por
-  `scannerStateMachine.test.js` (que testa `buildTradeOpData` isoladamente,
-  pulando a etapa de confirmação) — exigiria mockar `fetchCandles` com séries
-  sintéticas; valor incremental baixo (a criação de op em si é só dados, a
-  decisão de "quando confirmar" é o que ficaria sem cobertura, e é lógica de
-  timing, não de máquina de estados).
+  `check5mSmcConfirmation`, que buscam candles via rede): a confirmação 4h→15m
+  (incluindo o caminho de retry com confirmação atrasada) ganhou cobertura em
+  `backtestEngine.test.js` (ver acima). `check5mSmcConfirmation` (cascata
+  1h→5m SMC) segue sem teste dedicado — mesma lógica de timing, valor
+  incremental baixo pelo mesmo motivo original (a criação de op em si é só
+  dados; `buildSmcTradeOpData` já é testado isoladamente em
+  `scannerStateMachine.test.js`).
 - **Paridade Pine×JS** (golden tests): ver `.claude/rules/pine-parity.md`.
 
 ## Convenções

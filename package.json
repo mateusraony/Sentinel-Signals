@@ -12,7 +12,9 @@
     "test": "vitest run",
     "preview": "vite preview",
     "build:scan": "node scripts/build-scan.mjs",
-    "scan": "npm run build:scan && node scripts/dist/run-scan.mjs"
+    "scan": "npm run build:scan && node scripts/dist/run-scan.mjs",
+    "build:backtest": "node scripts/build-backtest.mjs",
+    "backtest": "npm run build:backtest && node scripts/dist/run-backtest.mjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",

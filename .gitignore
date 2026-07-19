@@ -30,3 +30,8 @@ dist-ssr
 
 .env
 .vite
+
+# Histórico baixado da Binance para o motor de backtest local
+# (scripts/fetch-backtest-data.mjs) — dado do usuário, pode chegar a dezenas
+# de MB, não é fixture congelada como src/lib/indicators/__fixtures__/golden.
+scripts/__fixtures__/backtest/
