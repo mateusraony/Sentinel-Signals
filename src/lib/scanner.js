@@ -74,14 +74,45 @@ export function firstPositive(...candidates) {
 // ser o valor real do Pine. Extraído como função pura só para ser testável
 // sem precisar mockar fetchCandles.
 export function resolveIndicatorParams(asset, pineConfig) {
+  let emaFast = firstPositive(asset.ema_short, pineConfig.emaFastLen, 20);
+  let emaSlow = firstPositive(asset.ema_long, pineConfig.emaSlowLen, 50);
+  // known-risks.md item 31: emaFast >= emaSlow doesn't fail calculateEMAs —
+  // it still fires a cross, just with an INVERTED label (golden_cross when
+  // the fast really crossed below, etc.), which scanner.js turns straight
+  // into the wrong BUY/SELL signal_type. Guard the pair the same way
+  // resolveRsiZoneThresholds guards overbought/oversold below: an invalid
+  // pair falls back to the Pine/literal pair entirely, never a partial mix.
+  if (!(emaFast < emaSlow)) {
+    emaFast = firstPositive(pineConfig.emaFastLen, 20);
+    emaSlow = firstPositive(pineConfig.emaSlowLen, 50);
+  }
   return {
     rsiPeriod: firstPositive(asset.rsi_period, pineConfig.rsiLen, 14),
-    emaFast: firstPositive(asset.ema_short, pineConfig.emaFastLen, 20),
-    emaSlow: firstPositive(asset.ema_long, pineConfig.emaSlowLen, 50),
+    emaFast,
+    emaSlow,
     // Sem campo por-ativo hoje — vêm só do Pine (ou do literal de fallback).
     volPeriod: firstPositive(pineConfig.volLen, 20),
     atrStopPeriod: firstPositive(pineConfig.atrLen, 14),
   };
+}
+
+// known-risks.md item 30: rsi_overbought/rsi_oversold do ativo eram salvos
+// pelo AssetConfigPanel mas NUNCA lidos por calculateRSI (que hardcodava
+// 70/30) — configurá-los não tinha efeito real algum na geração de sinal.
+// Função irmã de resolveIndicatorParams (não dentro dela): estes campos não
+// têm equivalente sincronizado do Pine (SYNCED_STRATEGY_KEYS não inclui
+// overbought/oversold), então não pertencem ao contrato Pine×scanner daquela
+// função — e misturar aqui mudaria o shape exato que
+// scannerStateMachine.test.js já fixa via toEqual(). Guarda o PAR
+// atomicamente: um par inválido (invertido, fora de 0-100, ou um lado
+// ausente) cai inteiro pro default 70/30 — nunca uma mistura de um lado
+// válido com o outro default.
+export function resolveRsiZoneThresholds(asset) {
+  const ob = asset.rsi_overbought;
+  const os = asset.rsi_oversold;
+  const valid = Number.isFinite(ob) && Number.isFinite(os)
+    && ob > 0 && ob < 100 && os > 0 && os < 100 && ob > os;
+  return valid ? { overbought: ob, oversold: os } : { overbought: 70, oversold: 30 };
 }
 
 // Lock TTLs: comfortably above the slowest realistic run of each operation
@@ -383,6 +414,7 @@ export async function scanAsset(asset) {
   // Read Pine config — parameters auto-synced from Pine Script editor
   const pineConfig = await getPineConfig();
   const indicatorParams = resolveIndicatorParams(asset, pineConfig);
+  const rsiZoneThresholds = resolveRsiZoneThresholds(asset);
 
   const enabledTimeframes = TIMEFRAMES.filter(tf => {
     const tfConfig = asset.timeframes_enabled;
@@ -404,18 +436,18 @@ export async function scanAsset(asset) {
 
       // Calculate all indicators
       const rfResult = calculateRangeFilter(
-        closedCandles, 
-        asset.rf_period || 20, 
-        asset.rf_multiplier || 3.5
+        closedCandles,
+        firstPositive(asset.rf_period, 20),
+        firstPositive(asset.rf_multiplier, 3.5)
       );
 
-      const rsiResult = calculateRSI(closedCandles, indicatorParams.rsiPeriod);
+      const rsiResult = calculateRSI(closedCandles, indicatorParams.rsiPeriod, rsiZoneThresholds.overbought, rsiZoneThresholds.oversold);
 
       const macdResult = calculateMACD(
         closedCandles,
-        asset.macd_fast || 12,
-        asset.macd_slow || 26,
-        asset.macd_signal || 9
+        firstPositive(asset.macd_fast, 12),
+        firstPositive(asset.macd_slow, 26),
+        firstPositive(asset.macd_signal, 9)
       );
 
       const emaResult = calculateEMAs(
@@ -1352,6 +1384,21 @@ export async function persistScanResults(scanResult) {
   }
 
   return { persistedSignals, errors };
+}
+
+// known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()
+// on whether any of the 50 MOST RECENTLY CREATED TradeOperations (any
+// status) happened to be active — a genuinely active op older (by creation
+// time) than 50 others created since (plausible with several assets, ops
+// opening/closing while one RUNNER_ACTIVE waits days for TP2) fell outside
+// that window and silently disabled the live price check for it in the
+// browser. This does the correct server-side status-filtered existence
+// check instead — same filter priceCheckActiveOpsInner already uses below,
+// just capped to 1 doc since existence is all that's needed (cheaper than
+// the 50-doc read it replaces, not just more correct).
+export async function hasActiveTradeOps() {
+  const ops = await backend.entities.TradeOperation.filter({ status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'] }, undefined, 1);
+  return ops.length > 0;
 }
 
 /**

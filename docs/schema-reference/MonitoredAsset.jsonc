@@ -80,12 +80,12 @@
     "rsi_overbought": {
       "type": "number",
       "default": 70,
-      "description": "RSI overbought threshold"
+      "description": "RSI overbought threshold. Until 2026-07-19 (known-risks item 30) this field was saved by AssetConfigPanel but never read by calculateRSI, which hardcoded 70 — editing it had zero effect. Now read via resolveRsiZoneThresholds (src/lib/scanner.js), which validates the PAIR atomically: an invalid pair (inverted, out of (0,100), or only one side set) falls back to the full 70/30 default, never a partial mix"
     },
     "rsi_oversold": {
       "type": "number",
       "default": 30,
-      "description": "RSI oversold threshold"
+      "description": "RSI oversold threshold. Same resolveRsiZoneThresholds pair validation as rsi_overbought — see that field's description"
     },
     "macd_fast": {
       "type": "number",

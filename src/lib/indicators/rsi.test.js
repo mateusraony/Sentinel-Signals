@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateRSI } from './rsi';
+import { calculateRSI, getRSIZone } from './rsi';
 import { flatCandles, mkCandle } from './__fixtures__/candles';
 
 describe('calculateRSI', () => {
@@ -89,5 +89,43 @@ describe('calculateRSI', () => {
     expect(result.value).toBeGreaterThan(50);
     expect(result.previousValue).toBeGreaterThan(50);
     expect(result.crossedBull50).toBe(true);
+  });
+});
+
+// known-risks.md item 30: calculateRSI used to hardcode the zone at 70/30 and
+// ignore any custom threshold — a per-asset rsi_overbought/rsi_oversold saved
+// via the UI had zero effect on which zone (and therefore which 'rsi'-source
+// signal) actually fired. These prove the optional 3rd/4th args are honored.
+describe('calculateRSI zone thresholds (known-risks item 30)', () => {
+  function rsi50Candles() {
+    // Same fixture as "matches a hand-computed RSI value" above: alternating
+    // +1/-1 changes make avgGain === avgLoss, so RSI lands exactly on 50 —
+    // 'neutral' under the default 70/30, letting custom thresholds move it.
+    const closes = [100];
+    for (let i = 0; i < 14; i++) closes.push(closes[closes.length - 1] + (i % 2 === 0 ? 1 : -1));
+    return closes.map((c, i) => mkCandle(c, c + 0.5, c - 0.5, c, i));
+  }
+
+  it('defaults to 70/30 when no thresholds are passed', () => {
+    const result = calculateRSI(rsi50Candles(), 14);
+    expect(result.value).toBeCloseTo(50, 5);
+    expect(result.zone).toBe('neutral');
+  });
+
+  it('classifies overbought at a custom threshold the default 70/30 would call neutral', () => {
+    const result = calculateRSI(rsi50Candles(), 14, 40, 20);
+    expect(result.zone).toBe('overbought');
+  });
+
+  it('classifies oversold at a custom threshold the default 70/30 would call neutral', () => {
+    const result = calculateRSI(rsi50Candles(), 14, 80, 60);
+    expect(result.zone).toBe('oversold');
+  });
+
+  it('delegates to getRSIZone instead of duplicating the boundary logic', () => {
+    expect(getRSIZone(70, 70, 30)).toBe('overbought');
+    expect(getRSIZone(69.999, 70, 30)).toBe('neutral');
+    expect(getRSIZone(30, 70, 30)).toBe('oversold');
+    expect(getRSIZone(30.001, 70, 30)).toBe('neutral');
   });
 });

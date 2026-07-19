@@ -3,11 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { getLocalPineConfig, getPineConfig } from '@/lib/pineParser';
 import { firstPositive } from '@/lib/scanner';
+import { validateAssetConfig } from '@/lib/assetConfigValidation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 
 export default function AssetConfigPanel({ asset, onSave }) {
   // handleSave writes this whole object back unconditionally on every save
@@ -35,6 +36,7 @@ export default function AssetConfigPanel({ asset, onSave }) {
     smc_confirm_4h15m: asset.smc_confirm_4h15m || false,
   });
   const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState([]);
 
   // Codex review (PR #58): getLocalPineConfig() alone can be stale on a
   // fresh browser/device (localStorage empty, Pine synced elsewhere) — it
@@ -56,6 +58,15 @@ export default function AssetConfigPanel({ asset, onSave }) {
   }, [syncedPine]);
 
   const handleSave = async () => {
+    // Validate on Save, not on every keystroke — letting the user type
+    // freely (including transient states like a cleared field) is better
+    // UX than fighting each onChange; see known-risks.md item 31.
+    const validationErrors = validateAssetConfig(config);
+    if (validationErrors.length > 0) {
+      setErrors(validationErrors);
+      return;
+    }
+    setErrors([]);
     setSaving(true);
     await backend.entities.MonitoredAsset.update(asset.id, config);
     setSaving(false);
@@ -193,6 +204,16 @@ export default function AssetConfigPanel({ asset, onSave }) {
           <span className="text-xs text-muted-foreground">minutos entre alertas iguais</span>
         </div>
       </div>
+
+      {errors.length > 0 && (
+        <div className="space-y-1">
+          {errors.map(err => (
+            <div key={err} className="flex items-center gap-2 text-xs font-mono" style={{ color: '#ff1478' }}>
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />{err}
+            </div>
+          ))}
+        </div>
+      )}
 
       <Button onClick={handleSave} disabled={saving} className="w-full bg-primary text-primary-foreground">
         {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}

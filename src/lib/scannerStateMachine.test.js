@@ -38,7 +38,7 @@ vi.mock('./marketDataProvider', () => ({
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice } from './marketDataProvider';
 import { isTelegramConfigured, notifyNewSignal, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
-import { persistScanResults, priceCheckActiveOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, firstPositive } from './scanner.js';
+import { persistScanResults, priceCheckActiveOps, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, firstPositive } from './scanner.js';
 
 let backend;
 beforeEach(() => {
@@ -250,6 +250,61 @@ describe('resolveIndicatorParams — Pine×scanner unification (P1, known-risks 
     expect(p2.rsiPeriod).toBe(14); // both asset and pine are 0 → literal
     expect(p2.emaFast).toBe(20);
     expect(p2.emaSlow).toBe(50);
+  });
+
+  // known-risks.md item 31: emaFast >= emaSlow doesn't fail calculateEMAs —
+  // it still fires a cross, just with the golden/death label INVERTED,
+  // which scanner.js turns straight into the wrong BUY/SELL signal_type.
+  // Unlike the zero/negative case above, an inverted-but-otherwise-valid
+  // pair isn't caught by firstPositive (both values are positive) — needs
+  // its own pair-level guard.
+  it('rejects an inverted ema_short/ema_long pair — falls back to the Pine/literal pair entirely', () => {
+    const inverted = { ema_short: 50, ema_long: 20 }; // swapped by mistake
+    const p = resolveIndicatorParams(inverted, pine);
+    expect(p.emaFast).toBe(20); // pine.emaFastLen, not the inverted 50
+    expect(p.emaSlow).toBe(50); // pine.emaSlowLen, not the inverted 20
+
+    // Equal values are just as invalid (no real "fast" side) — same fallback.
+    const equal = { ema_short: 30, ema_long: 30 };
+    const p2 = resolveIndicatorParams(equal, {});
+    expect(p2.emaFast).toBe(20); // literal, not 30
+    expect(p2.emaSlow).toBe(50);
+  });
+});
+
+describe('resolveRsiZoneThresholds — RSI overbought/oversold wiring (P1, known-risks item 30)', () => {
+  it('uses the per-asset pair when both are set and form a valid overbought > oversold band', () => {
+    const t = resolveRsiZoneThresholds({ rsi_overbought: 80, rsi_oversold: 20 });
+    expect(t).toEqual({ overbought: 80, oversold: 20 });
+  });
+
+  it('falls back to 70/30 when neither field is set', () => {
+    expect(resolveRsiZoneThresholds({})).toEqual({ overbought: 70, oversold: 30 });
+  });
+
+  // The bug this whole item exists for: before the fix, calculateRSI never
+  // read these fields at all, so any value here (valid or not) had zero
+  // effect. Once wired, an invalid pair must not silently corrupt every
+  // candle's zone classification — it should fall back to the full default
+  // pair, never a partial mix of one custom side and one default side.
+  it('falls back to the full 70/30 default pair when overbought <= oversold (inverted or equal)', () => {
+    expect(resolveRsiZoneThresholds({ rsi_overbought: 20, rsi_oversold: 80 })).toEqual({ overbought: 70, oversold: 30 });
+    expect(resolveRsiZoneThresholds({ rsi_overbought: 50, rsi_oversold: 50 })).toEqual({ overbought: 70, oversold: 30 });
+  });
+
+  it('falls back to the full default pair when either side is out of the (0,100) range', () => {
+    expect(resolveRsiZoneThresholds({ rsi_overbought: 150, rsi_oversold: 30 })).toEqual({ overbought: 70, oversold: 30 });
+    expect(resolveRsiZoneThresholds({ rsi_overbought: 70, rsi_oversold: 0 })).toEqual({ overbought: 70, oversold: 30 });
+    expect(resolveRsiZoneThresholds({ rsi_overbought: 70, rsi_oversold: -10 })).toEqual({ overbought: 70, oversold: 30 });
+  });
+
+  it('falls back to the full default pair when only one side is set (partial config)', () => {
+    expect(resolveRsiZoneThresholds({ rsi_overbought: 80 })).toEqual({ overbought: 70, oversold: 30 });
+    expect(resolveRsiZoneThresholds({ rsi_oversold: 20 })).toEqual({ overbought: 70, oversold: 30 });
+  });
+
+  it('falls back to the full default pair when a side is NaN', () => {
+    expect(resolveRsiZoneThresholds({ rsi_overbought: NaN, rsi_oversold: 30 })).toEqual({ overbought: 70, oversold: 30 });
   });
 });
 
@@ -514,6 +569,30 @@ describe('priceCheckActiveOps — price-based transitions', () => {
     await priceCheckActiveOps();
     expect(backend._get('TradeOperation', 'op-terminal')).toEqual(terminal); // byte-identical, untouched
     expect(backend._get('TradeOperation', 'op1').status).toBe('RUNNER_ACTIVE');
+  });
+});
+
+describe('hasActiveTradeOps — browser price-check gate (P1, known-risks item 32)', () => {
+  it('finds a genuinely active op even when 50+ newer (terminal) ops were created since', async () => {
+    // Reproduces the bug: useAutoScan.js used to read the 50 MOST RECENTLY
+    // CREATED TradeOperations and check if any were active. An active op
+    // OLDER (by creation) than 50 others created since fell outside that
+    // window and was invisible to the old approach.
+    const active = makeOp({ id: 'op_active', created_date: '2026-07-01T00:00:00.000Z' }); // old
+    backend._seed('TradeOperation', active);
+    for (let i = 0; i < 55; i++) {
+      backend._seed('TradeOperation', makeOp({
+        id: `op_terminal_${i}`,
+        status: 'STOP_HIT',
+        created_date: `2026-07-16T${String(i % 24).padStart(2, '0')}:00:00.000Z`, // all newer than the active op
+      }));
+    }
+    expect(await hasActiveTradeOps()).toBe(true);
+  });
+
+  it('returns false when there are no active ops at all', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_terminal', status: 'TP2_HIT' }));
+    expect(await hasActiveTradeOps()).toBe(false);
   });
 });
 
