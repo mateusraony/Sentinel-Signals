@@ -133,16 +133,36 @@ function fmtP(p) {
   return p.toFixed(6);
 }
 
+// Codex review (PR #65): this used to hardcode "RF" and `context.score` for
+// EVERY signal source — harmless while smc_structure/macd/ema_cross/rsi
+// signals rarely reached here, but enabling the SMC cascade by default
+// (known-risks.md item 9) makes source_structure signals a normal,
+// frequent occurrence. Only 'range_filter' actually carries a real 0-100
+// score (see scanner.js); the others don't, so `|| 0` was silently showing
+// a fake "Score: 0/100" on a real, valid signal — reads as "this is a bad
+// signal" when it's really just a different, non-scored signal type.
+const SOURCE_LABELS = {
+  range_filter: 'RF',
+  smc_structure: 'SMC',
+  macd: 'MACD',
+  ema_cross: 'EMA',
+  rsi: 'RSI',
+};
+
 export async function notifyNewSignal(signal) {
   if (!shouldSend('signal_detected', signal)) return;
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
-  const strength = { strong: '💪 Forte', moderate: '📊 Moderado', weak: '🔹 Fraco' }[signal.strength] || '';
+  const strength = { strong: '💪 Forte', medium: '📊 Médio', moderate: '📊 Moderado', weak: '🔹 Fraco' }[signal.strength] || '';
+  const sourceLabel = SOURCE_LABELS[signal.source] || 'RF';
+  const scoreLine = Number.isFinite(signal.context?.score)
+    ? `📊 Score: ${signal.context.score}/100 ${strength}\n`
+    : (strength ? `📊 Força: ${strength}\n` : '');
   return send(
-    `${emoji} <b>Novo Sinal RF Detectado</b>\n\n` +
+    `${emoji} <b>Novo Sinal ${sourceLabel} Detectado</b>\n\n` +
     `<b>${signal.symbol?.replace('USDT', '/USDT')}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
     `💰 Preço: $${fmtP(signal.price_at_signal)}\n` +
-    `📊 Score: ${signal.context?.score || 0}/100 ${strength}\n` +
+    scoreLine +
     `📝 ${signal.reason || ''}\n\n` +
     `<i>⏳ Aguardando confirmação de entrada — CryptoRadar</i>`
   );
