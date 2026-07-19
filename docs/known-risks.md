@@ -1205,3 +1205,46 @@ da janela "últimas 50"); confirma que `hasActiveTradeOps()` continua
 enxergando a op ativa. Caso trivial adicional: `false` quando não há nenhuma
 ativa. Confirmado via `git stash` que ambos falham contra o código anterior
 (função nova inexistente).
+
+## 33. Pedido de "pelo menos 75% de win" — não é meta saudável; decisão de sequenciar backtest→qualidade (P2, decisão do usuário)
+
+Pedido do usuário: mais acertividade no motor, com meta explícita de **75%+
+de win rate**. Antes de tocar em qualquer parâmetro do motor (score mínimo,
+alinhamento multi-timeframe, filtros de regime ADX/Choppiness), pesquisa de
+comunidade foi feita (fóruns de trading sistemático, material de
+sistemas trend-following, discussões sobre ICT/SMC) para checar se 75% é uma
+meta plausível para a estrutura de R deste projeto (TP1 em 1.5R, TP2 em 3R).
+**Não é.**
+
+- Sistemas trend-following clássicos com R:R favorável tipicamente rodam
+  **30-50% de win rate** e são lucrativos assim mesmo — o caso mais citado
+  (Turtle Trading) operava com **menos de 40%** de acerto e R:R>3:1, ainda
+  assim com retornos anuais reportados acima de 80%.
+- A comunidade ICT/SMC é cética quanto às taxas de 70-80% divulgadas pelo
+  método — relatos reais de praticantes ficam mais perto de 50-65%, com
+  casos documentados de resultados forjados por vendedores de curso.
+- Regra de expectância (`Win% × ganho médio − Loss% × perda média`): a 3:1
+  de R:R, **35% de win rate já dá +0.40R por operação** — lucrativo e
+  saudável, bem abaixo de 75%.
+- Limiares citados por fontes quantitativas como sinal de **overfitting**
+  em backtest: win rate > 75%, Sharpe > 3.5, drawdown < 5%. Perseguir 75%
+  literal empurraria o ajuste de parâmetros exatamente para essa zona de
+  alerta, não para um motor mais robusto.
+
+**Decisão** (explicitamente escolhida pelo usuário entre as opções
+apresentadas): em vez de perseguir os 75% literais — o que exigiria encurtar
+TP1/TP2 e provavelmente pioraria a expectância/robustez do motor — ou ajustar
+parâmetros às cegas, **primeiro construir um motor de backtest histórico**
+(`src/lib/backtestEngine.js` + adaptadores em `scripts/backtest*.js`, ver
+`docs/claude/backtest-usage.md`) que reusa `scanAsset`/`persistScanResults`
+de `scanner.js` sem modificação (mesmo padrão de redirecionamento de import
+do browser/cron), com um relógio simulado e janela de candles sem
+look-ahead. Qualquer ajuste de qualidade de sinal (fase 2, ainda não
+iniciada) deve ser validado contra dados históricos reais produzidos por
+esse motor — não contra achismo — exatamente o oposto do que os sinais de
+overfitting acima recomendam evitar.
+
+Fora de escopo desta rodada (fica para a fase 2, só depois do backtest
+rodar com dado histórico real): subir o score mínimo (75→85+), exigir
+alinhamento forte 1h/4h/1d, apertar ADX/Choppiness, qualquer mudança de
+TP/R.
