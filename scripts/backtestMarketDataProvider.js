@@ -11,13 +11,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sliceClosedAsOf, simNow } from '../src/lib/backtestEngine.js';
 
-const DATA_DIR = process.env.BACKTEST_DATA_DIR || path.join('scripts', '__fixtures__', 'backtest');
+// Read lazily (not at module load) — run-backtest.mjs sets this env var at
+// the start of its own main(), which runs AFTER the whole import graph
+// (including this module) has already been evaluated once; a top-level
+// `const` here would freeze in the default before the CLI ever gets a say.
+function getDataDir() {
+  return process.env.BACKTEST_DATA_DIR || path.join('scripts', '__fixtures__', 'backtest');
+}
 const cache = new Map();
 
 function loadSeries(symbol, timeframe) {
   const key = `${symbol}:${timeframe}`;
   if (cache.has(key)) return cache.get(key);
-  const file = path.join(DATA_DIR, `${symbol}_${timeframe}.json`);
+  const file = path.join(getDataDir(), `${symbol}_${timeframe}.json`);
   let series = [];
   if (fs.existsSync(file)) {
     series = JSON.parse(fs.readFileSync(file, 'utf-8'));
