@@ -3,23 +3,25 @@ name: Daily Firestore backup
 # Backup gratuito e compatível com o plano Spark (o export oficial do
 # Firestore exige um bucket do Cloud Storage, que por sua vez exige o plano
 # pago Blaze — não é opção aqui, ver docs/known-risks.md item 14). Gera um
-# snapshot JSON das coleções de negócio e publica na branch `backups`
-# (separada de `main`, pra não inchar o histórico principal), mantendo os
-# últimos 30 dias. Restauração é manual, ver docs/restore-firestore.md.
+# snapshot JSON das coleções de negócio e publica na branch `backups` de um
+# repositório PRIVADO separado (mateusraony/sentinel-signals-backups),
+# mantendo os últimos 30 dias. Restauração é manual, ver
+# docs/restore-firestore.md (ajustar a origem do clone para o repo privado).
 #
-# PAUSADO (2026-07-18, ver docs/known-risks.md item 25): este repositório é
-# público, então a branch `backups` publica dados de negócio reais
-# (sinais/operações/config de estratégia) publicamente — já havia snapshots
-# de 15 a 18/jul quando isso foi percebido. O gatilho automático (`schedule`)
-# foi removido para parar novos vazamentos; `workflow_dispatch` continua
-# disponível só para rodar manualmente se necessário. NÃO reativar o
-# `schedule` sem antes trocar o passo "Publicar na branch backups" abaixo
-# por um destino privado — ver o passo a passo no known-risks item 25.
+# Histórico (ver docs/known-risks.md item 25): até 2026-07-18 publicava
+# direto na branch `backups` DESTE repositório, que é público — vazando
+# dados de negócio reais (sinais/operações/config de estratégia) por pelo
+# menos 4 dias antes de ser percebido. O `schedule` foi removido então para
+# parar novos vazamentos. Corrigido: destino trocado para o repositório
+# privado acima via `BACKUP_REPO_TOKEN` (fine-grained PAT, Contents: write,
+# restrito só a esse repo — nunca com acesso a este repositório).
+# `schedule` só volta depois de uma execução manual bem-sucedida confirmar
+# que o token/repo novo funcionam de ponta a ponta.
 on:
   workflow_dispatch: {}
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   backup:
@@ -43,14 +45,18 @@ jobs:
           node scripts/backup-firestore.mjs "/tmp/backup-${DATE}.json"
           echo "BACKUP_DATE=${DATE}" >> "$GITHUB_ENV"
 
-      - name: Publicar na branch backups
+      - name: Publicar na branch backups (repo privado)
+        env:
+          BACKUP_REPO_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
         run: |
           git config user.name "sentinel-signals-bot"
           git config user.email "actions@users.noreply.github.com"
 
-          git fetch origin backups || true
-          if git show-ref --verify --quiet refs/remotes/origin/backups; then
-            git checkout -B backups origin/backups
+          git remote add backup-repo "https://x-access-token:${BACKUP_REPO_TOKEN}@github.com/mateusraony/sentinel-signals-backups.git"
+
+          git fetch backup-repo backups || true
+          if git show-ref --verify --quiet refs/remotes/backup-repo/backups; then
+            git checkout -B backups backup-repo/backups
           else
             git checkout --orphan backups
             git rm -rf . >/dev/null 2>&1 || true
@@ -64,4 +70,4 @@ jobs:
           ls -1 backup-*.json 2>/dev/null | sort | head -n -30 | xargs -r git rm -q --ignore-unmatch
           git diff --cached --quiet || git commit -m "Remove backups antigos (mantém últimos 30)"
 
-          git push origin backups
+          git push backup-repo backups
