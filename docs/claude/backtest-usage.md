@@ -1,4 +1,4 @@
-# Motor de backtest histórico — como rodar (só na sua máquina)
+# Motor de backtest histórico — como rodar
 
 O Sentinel ganhou um motor de backtest (`src/lib/backtestEngine.js` +
 adaptadores em `scripts/backtest*.js`) que roda o **mesmo** `scanAsset`/
@@ -11,12 +11,23 @@ multi-timeframe) com dado real, em vez de achismo — ver
 `docs/known-risks.md` item 33 para o porquê disso ser a prioridade antes de
 mexer em parâmetros.
 
-**Só roda na sua máquina.** A rede das sessões deste projeto bloqueia a
-Binance (mesma restrição de `scripts/fetch-golden-fixture.mjs`, ver
-`.claude/rules/pine-parity.md`) — nenhum passo abaixo funciona dentro de uma
-sessão do Claude.
+Duas formas de rodar — mesmo motor, mesmo resultado:
 
-## Passo 1 — baixar o histórico real
+- **Opção A — sua máquina** (passo a passo abaixo): dois comandos npm, você
+  cola o resultado numa sessão do Claude pra analisar junto.
+- **Opção B — GitHub Actions** (`.github/workflows/backtest.yml`, disparo
+  manual): roda no runner do GitHub, que alcança a Binance — diferente das
+  sessões do Claude Code, onde a rede bloqueia (mesma restrição de
+  `scripts/fetch-golden-fixture.mjs`, ver `.claude/rules/pine-parity.md`).
+  Não usa nenhum secret (backend fake em memória, Telegram no-op) e sobe o
+  relatório como artifact do run — sem precisar de Node instalado, e o
+  Claude consegue ler o resultado direto pelas ferramentas de GitHub.
+  Actions → **"Backtest histórico (Sentinel Signals)"** → *Run workflow* →
+  preencha símbolos/período (já vem com defaults) → depois de rodar, veja o
+  resumo na aba **Summary** do run ou baixe o artifact `backtest-report`
+  para o JSON completo.
+
+## Passo 1 — baixar o histórico real (Opção A, sua máquina)
 
 ```bash
 node scripts/fetch-backtest-data.mjs \
@@ -36,7 +47,7 @@ Timeframes: inclua sempre `15m` se algum ativo usar a cascata padrão
 (4h→15m); inclua `5m` também se algum ativo tiver `smc_enabled` (cascata
 1h→5m).
 
-## Passo 2 — rodar o replay
+## Passo 2 — rodar o replay (Opção A, sua máquina)
 
 ```bash
 npm run backtest -- \

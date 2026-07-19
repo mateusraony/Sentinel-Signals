@@ -24,6 +24,11 @@ paths:
 - `keep-warm.yml` — ping `/health` a cada 10 min (Render free não hibernar).
 - `backup.yml` — backup diário das coleções de negócio → branch `backups`.
 - `deploy-firestore.yml` — deploy **manual** de rules/índices.
+- `backtest.yml` — disparo **manual** do motor de backtest histórico
+  (`src/lib/backtestEngine.js`, ver `docs/claude/backtest-usage.md`) no
+  runner do GitHub (alcança a Binance, diferente das sessões do Claude
+  Code). Não usa nenhum secret — backend fake em memória, Telegram no-op —
+  só baixa candles públicos e sobe o relatório como artifact.
 
 ## Deploy
 
