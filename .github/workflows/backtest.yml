@@ -1,0 +1,143 @@
+name: Backtest histórico (Sentinel Signals)
+
+# Roda o motor de backtest histórico (src/lib/backtestEngine.js, ver
+# docs/claude/backtest-usage.md e docs/known-risks.md item 33) na
+# infraestrutura do GitHub Actions — que alcança a Binance Spot
+# (data-api.binance.vision), diferente das sessões do Claude Code (rede
+# bloqueada lá, ver .claude/rules/pine-parity.md). Existe pra permitir rodar
+# e comparar backtests direto pelo GitHub, sem precisar de Node local.
+#
+# NÃO precisa de nenhum secret: o backend é fake em memória
+# (scripts/backtestEntities.js, nunca toca o Firestore de produção) e o
+# Telegram fica em no-op (scripts/backtestTelegram.js) — só faz leitura
+# pública na Binance e devolve um relatório como artifact, sem gravar nada
+# no repo nem em produção.
+#
+# Disparo MANUAL (Actions → "Backtest histórico (Sentinel Signals)" → Run
+# workflow).
+on:
+  workflow_dispatch:
+    inputs:
+      symbols:
+        description: "Símbolos separados por vírgula (Binance Spot)"
+        default: "BTCUSDT,ETHUSDT,PENDLEUSDT,ONDOUSDT,FETUSDT,ZROUSDT,DYDXUSDT"
+        required: true
+      from:
+        description: "Início (YYYY-MM-DD ou ISO) — vazio = 6 meses atrás"
+        default: ""
+        required: false
+      to:
+        description: "Fim (YYYY-MM-DD ou ISO) — vazio = agora"
+        default: ""
+        required: false
+      timeframes:
+        description: "Timeframes a baixar, separados por vírgula"
+        default: "1h,4h,1d,15m"
+        required: true
+      smc:
+        description: "Símbolos com a cascata SMC 1h→5m ativa, separados por vírgula (vazio = nenhum)"
+        default: ""
+        required: false
+      pine_config:
+        description: 'Overrides do pineConfig em JSON, ex.: {"minScore":80} (vazio = defaults)'
+        default: ""
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backtest-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Datas dinâmicas ficam num passo isolado — todo input do
+      # workflow_dispatch passa por env: (nunca interpolado direto no corpo
+      # do script), mesmo cuidado do golden-fixture.yml contra injeção.
+      - name: Resolver intervalo de datas
+        env:
+          FROM_INPUT: ${{ inputs.from }}
+          TO_INPUT: ${{ inputs.to }}
+        run: |
+          FROM="$FROM_INPUT"
+          TO="$TO_INPUT"
+          if [ -z "$FROM" ]; then FROM=$(date -u -d '-6 months' +%Y-%m-%dT00:00:00Z); fi
+          if [ -z "$TO" ]; then TO=$(date -u +%Y-%m-%dT00:00:00Z); fi
+          echo "FROM=$FROM" >> "$GITHUB_ENV"
+          echo "TO=$TO" >> "$GITHUB_ENV"
+          echo "Intervalo: $FROM -> $TO"
+
+      - name: Baixar histórico real (Binance Spot)
+        env:
+          SYMBOLS: ${{ inputs.symbols }}
+          TIMEFRAMES: ${{ inputs.timeframes }}
+        run: |
+          node scripts/fetch-backtest-data.mjs \
+            --symbols "$SYMBOLS" \
+            --from "$FROM" --to "$TO" \
+            --timeframes "$TIMEFRAMES"
+
+      - name: Escrever overrides do pineConfig (se houver)
+        if: ${{ inputs.pine_config != '' }}
+        env:
+          PINE_CONFIG: ${{ inputs.pine_config }}
+        run: echo "$PINE_CONFIG" > pine-config-overrides.json
+
+      - name: Rodar o replay
+        env:
+          SYMBOLS: ${{ inputs.symbols }}
+          SMC: ${{ inputs.smc }}
+          HAS_PINE_CONFIG: ${{ inputs.pine_config != '' }}
+        run: |
+          ARGS=(--symbols "$SYMBOLS" --from "$FROM" --to "$TO" --out backtest-report.json)
+          if [ -n "$SMC" ]; then ARGS+=(--smc "$SMC"); fi
+          if [ "$HAS_PINE_CONFIG" = "true" ]; then ARGS+=(--pine-config pine-config-overrides.json); fi
+          npm run backtest -- "${ARGS[@]}"
+
+      # Resumo direto no job (sem baixar o artifact) — omite a curva
+      # completa de operações fechadas, só os agregados por cascata.
+      - name: Publicar resumo
+        if: always()
+        run: |
+          if [ -f backtest-report.json ]; then
+            {
+              echo "## Backtest — resumo (${FROM} → ${TO})"
+              echo '```json'
+              node -e "
+                const r = JSON.parse(require('fs').readFileSync('backtest-report.json', 'utf-8'));
+                const strip = (s) => s && ({ ...s, curve: undefined });
+                console.log(JSON.stringify({
+                  range: r.range,
+                  totalOps: r.totalOps,
+                  stillOpenAtCutoff: r.stillOpenAtCutoff,
+                  overall: strip(r.overall),
+                  byCascade: Object.fromEntries(Object.entries(r.byCascade).map(([k, v]) => [k, strip(v)])),
+                }, null, 2));
+              "
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Backtest — falhou antes de gerar relatório" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload do relatório completo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-report
+          path: backtest-report.json
+          retention-days: 30
+          if-no-files-found: warn
