@@ -45,6 +45,17 @@ jobs:
           node scripts/backup-firestore.mjs "/tmp/backup-${DATE}.json"
           echo "BACKUP_DATE=${DATE}" >> "$GITHUB_ENV"
 
+      - name: Diagnóstico do token (temporário — remover depois que o backup funcionar)
+        env:
+          BACKUP_REPO_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
+        run: |
+          echo "Tamanho do BACKUP_REPO_TOKEN: ${#BACKUP_REPO_TOKEN} caracteres"
+          if [ -z "$BACKUP_REPO_TOKEN" ]; then
+            echo "::error::BACKUP_REPO_TOKEN está vazio — o secret não existe neste repositório ou o nome não é exatamente 'BACKUP_REPO_TOKEN'"
+          fi
+          echo "Testando acesso isolado ao repositório (git ls-remote)..."
+          git ls-remote "https://x-access-token:${BACKUP_REPO_TOKEN}@github.com/mateusraony/sentinel-signals-backups.git" && echo "ACESSO OK" || echo "ACESSO FALHOU"
+
       - name: Publicar na branch backups (repo privado)
         env:
           BACKUP_REPO_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
