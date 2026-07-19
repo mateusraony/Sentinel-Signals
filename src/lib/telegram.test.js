@@ -10,7 +10,7 @@ vi.mock('./logger', () => ({
   logError: vi.fn(),
 }));
 
-import { getTelegramFilters } from './telegram.js';
+import { getTelegramFilters, notifyNewSignal } from './telegram.js';
 
 function makeLocalStorage() {
   const store = new Map();
@@ -76,5 +76,61 @@ describe('getTelegramFilters', () => {
     const filters = getTelegramFilters();
     expect(filters.events).toBeUndefined();
     expect(filters.min_priority).toBe('high');
+  });
+});
+
+// Codex review (PR #65): notifyNewSignal used to hardcode "Novo Sinal RF
+// Detectado" and `context.score || 0` for EVERY signal source. Harmless
+// while smc_structure signals almost never reached here (smc_enabled
+// defaulted to false) — but PR #65 turns that cascade on by default for
+// new assets, making this a real, frequent mislabeling: an smc_structure
+// signal (which never carries a score) would show "Score: 0/100" under a
+// header claiming it's an RF signal, reading as "bad signal" when it's
+// really just a different, unscored signal type.
+describe('notifyNewSignal — source-aware label and score (Codex review, PR #65)', () => {
+  beforeEach(() => {
+    // isTelegramConfigured()/send() need a configured bot to actually call
+    // fetch — otherwise send() returns before ever building the message.
+    localStorage.setItem('cryptoradar_telegram_cfg', JSON.stringify({ botToken: 'x', chatId: 'y' }));
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+  });
+
+  function baseSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', timeframe: '1h', signal_type: 'BUY',
+      price_at_signal: 100, reason: 'test reason', context: {},
+      ...overrides,
+    };
+  }
+
+  async function sentText(signal) {
+    const before = global.fetch.mock.calls.length;
+    await notifyNewSignal(signal);
+    expect(global.fetch.mock.calls.length).toBe(before + 1);
+    return JSON.parse(global.fetch.mock.calls[before][1].body).text;
+  }
+
+  it('labels a range_filter signal as RF and shows its real score', async () => {
+    const text = await sentText(baseSignal({ source: 'range_filter', strength: 'strong', context: { score: 82 } }));
+    expect(text).toContain('Novo Sinal RF Detectado');
+    expect(text).toContain('Score: 82/100');
+  });
+
+  it('labels an smc_structure signal as SMC and never shows a fake 0/100 score', async () => {
+    const text = await sentText(baseSignal({ source: 'smc_structure', strength: 'medium', context: { structure_type: 'BOS', pd_zone: 'discount' } }));
+    expect(text).toContain('Novo Sinal SMC Detectado');
+    expect(text).not.toContain('RF Detectado');
+    expect(text).not.toContain('Score: 0/100');
+  });
+
+  it('labels macd/ema_cross/rsi signals with their own source instead of RF', async () => {
+    expect(await sentText(baseSignal({ source: 'macd' }))).toContain('Novo Sinal MACD Detectado');
+    expect(await sentText(baseSignal({ source: 'ema_cross' }))).toContain('Novo Sinal EMA Detectado');
+    expect(await sentText(baseSignal({ source: 'rsi' }))).toContain('Novo Sinal RSI Detectado');
+  });
+
+  it('falls back to RF for an unrecognized/legacy source instead of throwing', async () => {
+    const text = await sentText(baseSignal({ source: 'something_new' }));
+    expect(text).toContain('Novo Sinal RF Detectado');
   });
 });
