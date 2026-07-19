@@ -107,6 +107,23 @@ Firebase (Firestore → Regras, Firestore → Índices) que `scannerLocks`,
 > (workflow manual, rodado com sucesso) — as regras/índices novos já estão
 > live no projeto Firebase real.
 
+> **Incidente real (2026-07-19) — confirma o risco descrito acima.** O
+> PR #59 (item 28) adicionou o campo `notified` ao índice composto de
+> `signalEvents` em `firestore.indexes.json`, mas `deploy-firestore.yml` não
+> foi rodado de novo depois desse PR — o índice novo nunca existiu no
+> projeto Firebase real. Sintoma no Telegram: alerta "ativo falhando
+> continuamente" com `9 FAILED_PRECONDITION: The query requires an index`
+> (o "9" é só o código gRPC do Firestore, não algo do app). A criação do
+> índice foi disparada (provavelmente via o link de "criar índice" que o
+> próprio erro do Firestore oferece) e terminou de construir sozinha em
+> menos de uma hora — confirmado comparando os logs do `scan.yml`: passadas
+> antes mostravam falha nesse ativo, a passada das 14:55 (2026-07-19) já
+> mostrou `scanAllAssets: 8 ativo(s), 0 falha(s)`. Nenhum dado foi perdido —
+> só aquele ativo pulou a checagem de cooldown daquele tipo de sinal
+> enquanto o índice não estava pronto. **Lição**: sempre rodar
+> `deploy-firestore.yml` na MESMA sessão em que `firestore.indexes.json`
+> muda, não depois — um índice composto novo não é automático.
+
 ## 6. Render free tier hiberna após inatividade (webhook do TradingView)
 
 O serviço `sentinel-signals-api` no plano gratuito do Render hiberna após
