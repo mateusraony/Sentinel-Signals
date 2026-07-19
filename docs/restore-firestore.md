@@ -8,22 +8,25 @@ bom por engano. Ver `docs/known-risks.md` item 14 para o contexto completo.
 
 ## Onde estão os backups
 
-Branch `backups` deste repositório, um arquivo por dia (`backup-YYYY-MM-DD.json`),
-gerado automaticamente todo dia de madrugada por `.github/workflows/backup.yml`.
-Mantém os últimos 30 dias.
+Branch `backups` do repositório **privado** `mateusraony/sentinel-signals-backups`
+(separado deste repo — ver `docs/known-risks.md` item 25 para o porquê), um
+arquivo por dia (`backup-YYYY-MM-DD.json`), gerado automaticamente todo dia
+de madrugada por `.github/workflows/backup.yml`. Mantém os últimos 30 dias.
 
-Para ver os backups disponíveis:
+Para ver os backups disponíveis, clone o repositório de backup (precisa de
+acesso — é privado) e confira a branch:
 
 ```
-git fetch origin backups
-git log origin/backups --oneline -- 'backup-*.json'
+git clone --branch backups git@github.com:mateusraony/sentinel-signals-backups.git /tmp/sentinel-backups
+cd /tmp/sentinel-backups
+git log --oneline -- 'backup-*.json'
 ```
 
 ## Passo a passo
 
 1. **Baixe o snapshot que você quer restaurar:**
    ```
-   git show origin/backups:backup-2026-07-14.json > /tmp/backup.json
+   cp /tmp/sentinel-backups/backup-2026-07-14.json /tmp/backup.json
    ```
    (troque a data pelo arquivo que você quer)
 

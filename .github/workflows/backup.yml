@@ -18,10 +18,14 @@ name: Daily Firestore backup
 # Deploy Key (write) SÓ no repositório privado de backup, e a chave privada
 # como secret `BACKUP_DEPLOY_KEY` neste repositório. Deploy key não tem
 # escopos/caixinhas pra confundir (diferente de um PAT): é ligada a UM único
-# repositório, com permissão de leitura ou escrita, ponto. `schedule` só
-# volta depois de uma execução manual bem-sucedida confirmar que a chave
-# funciona de ponta a ponta.
+# repositório, com permissão de leitura ou escrita, ponto.
+#
+# Confirmado por execução manual bem-sucedida (2026-07-19) — o `schedule`
+# abaixo está de volta, minuto fora do topo da hora de propósito (ver
+# known-risks item 18 sobre o minuto 0 ser o de maior atraso no GitHub).
 on:
+  schedule:
+    - cron: "23 3 * * *"
   workflow_dispatch: {}
 
 permissions:
