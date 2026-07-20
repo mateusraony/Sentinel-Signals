@@ -43,6 +43,20 @@ const TIMEFRAMES = ['1h', '4h', '1d'];
 const TF_15M = '15m'; // Used for entry confirmation after 4h signal
 const TF_5M = '5m'; // Used for entry confirmation after 1h SMC signal
 const ONE_HOUR_MS = 60 * 60 * 1000;
+
+// Default fetch is enough for the convergent indicators (RF/RSI/MACD/EMA/
+// ATR/ADX/Choppiness — EMA/RMA-based, warm-up of ~6x their period is all
+// they ever need, see .claude/rules/pine-parity.md). calculateStructure
+// (SMC 1h bias, swingLen=50 default matching the user's real Pine script)
+// is path-dependent instead: it recomputes from scratch every scan with no
+// state carried over, so it needs enough raw history in the SAME window to
+// both confirm a swing pivot (>=swingLen bars) AND still see whatever later
+// breaks it — 150 bars leaves so little room for that combination that
+// BOS/CHoCH on 1h almost never fires (measured: docs/known-risks.md item 34,
+// smcStructure.test.js). Only the 1h fetch (the one feeding the SMC bias)
+// gets the larger window; 4h/1d/15m/5m are unaffected.
+const DEFAULT_CANDLE_LIMIT = 150;
+const SMC_1H_STRUCTURE_CANDLE_LIMIT = 500;
 // Fixed constant, deliberately NOT pineConfig.trailAtrMult — that field is
 // reserved for the RF cascade's post-TP1 trailing (see buildTradeOpData's
 // comment on the same mix-up). The SMC cascade has no tier/regime system to
@@ -441,7 +455,8 @@ export async function scanAsset(asset) {
   // Fetch and analyze each timeframe
   for (const tf of enabledTimeframes) {
     try {
-      const candles = await fetchCandles(asset.symbol, tf, 150);
+      const candleLimit = tf === '1h' ? SMC_1H_STRUCTURE_CANDLE_LIMIT : DEFAULT_CANDLE_LIMIT;
+      const candles = await fetchCandles(asset.symbol, tf, candleLimit);
       
       // Only use closed candles for signal calculation
       const closedCandles = candles.filter(c => c.isClosed);

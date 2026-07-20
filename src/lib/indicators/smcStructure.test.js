@@ -1,6 +1,34 @@
 import { describe, it, expect } from 'vitest';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './smcStructure';
-import { chochBreakoutCandles, mkCandle, flatCandles } from './__fixtures__/candles';
+import { chochBreakoutCandles, mkCandle, flatCandles, goldenCandles } from './__fixtures__/candles';
+
+// Counts BOS/CHoCH events across the whole series ('series' field), used
+// only by the windowing investigation below.
+function countStructureEvents(structResult) {
+  if (!structResult.series) return 0;
+  const { bullBos, bullChoch, bearBos, bearChoch } = structResult.series;
+  let n = 0;
+  for (let i = 0; i < bullBos.length; i++) {
+    if (bullBos[i] || bullChoch[i] || bearBos[i] || bearChoch[i]) n++;
+  }
+  return n;
+}
+
+// Mirrors exactly what scanAsset does in production (scanner.js:444,510):
+// fetchCandles(..., limit) returns only the last `limit` closed candles, and
+// calculateStructure is called fresh on that slice every scan — no state
+// carried over from the previous scan. Counts how many of the LAST-bar
+// events (the only ones scanAsset ever reads, via r.smc.lastBull/lastBear)
+// actually fire when the algorithm only ever sees a `windowSize`-candle tail.
+function countWindowedLastBarEvents(candles, swingLen, windowSize) {
+  let total = 0;
+  for (let end = windowSize; end <= candles.length; end++) {
+    const window = candles.slice(end - windowSize, end);
+    const r = calculateStructure(window, { swingLen });
+    if (r.lastBull.bos || r.lastBull.choch || r.lastBear.bos || r.lastBear.choch) total++;
+  }
+  return total;
+}
 
 describe('calculateStructure', () => {
   it('returns the null/false shape when there is not enough data (n < swingLen + 2)', () => {
@@ -82,6 +110,43 @@ describe('calculateStructure', () => {
     if (result.lastBull.bos || result.lastBull.choch) {
       expect(result.lastBull.choch).toBe(false);
     }
+  });
+});
+
+// Root-cause reproduction (docs/known-risks.md item 34): scanAsset only ever
+// gives calculateStructure the last 150 closed candles of a timeframe
+// (scanner.js:444), recomputed from scratch every scan — no state carried
+// over. At swingLen=50 (the real default, scanner.js:510, from the user's
+// own "SMC+A Unified v2.3" Pine script), this discards protected pivot
+// levels (topY/btmY) older than 150 bars, silencing BOS/CHoCH events that a
+// full-history/stateful computation (or the real TradingView chart) would
+// still fire. At swingLen=10 (the value already used for the 5m entry
+// trigger, scanner.js:309) the same 150-candle window is nearly harmless —
+// this is the measured contrast a sentinel-council-review found before this
+// test existed, reproduced here deterministically against the fixed-seed
+// goldenCandles fixture (same series already used by goldenParity.test.js).
+describe('calculateStructure — 150-candle scan window vs. swingLen (root cause of "0 SMC trades")', () => {
+  it('at swingLen=50 (the 1h bias default), a windowed no-state scan misses an event full history would catch', () => {
+    const candles = goldenCandles(800);
+    // Full history / stateful reference: exactly one BOS/CHoCH exists in
+    // this deterministic series at this scale.
+    const fullHistoryEvents = countStructureEvents(calculateStructure(candles, { swingLen: 50 }));
+    expect(fullHistoryEvents).toBe(1);
+
+    // Production's actual behavior: recompute from scratch on only the last
+    // 150 candles, every scan — the protected pivot the real event breaks
+    // against is older than 150 bars by the time the break happens, so it
+    // never fires under this windowing.
+    const windowedEvents = countWindowedLastBarEvents(candles, 50, 150);
+    expect(windowedEvents).toBe(0);
+  });
+
+  it('at swingLen=10 (the 5m confirmation value), the same 150-candle window loses nothing', () => {
+    const candles = goldenCandles(800);
+    const fullHistoryEvents = countStructureEvents(calculateStructure(candles, { swingLen: 10 }));
+    const windowedEvents = countWindowedLastBarEvents(candles, 10, 150);
+    expect(fullHistoryEvents).toBe(6);
+    expect(windowedEvents).toBe(6);
   });
 });
 
