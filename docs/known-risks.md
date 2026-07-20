@@ -1248,3 +1248,75 @@ Fora de escopo desta rodada (fica para a fase 2, só depois do backtest
 rodar com dado histórico real): subir o score mínimo (75→85+), exigir
 alinhamento forte 1h/4h/1d, apertar ADX/Choppiness, qualquer mudança de
 TP/R.
+
+## 34. Cascata SMC 1h→5m nunca disparava na prática — janela de candles insuficiente para `swingLen=50` — corrigido
+
+Rodando o motor de backtest (item 33) em 7 ativos reais (BTCUSDT, ETHUSDT,
+PENDLEUSDT, ONDOUSDT, FETUSDT, ZROUSDT, DYDXUSDT) × 6 meses cada com a
+cascata SMC ligada, o resultado foi **0 operações SMC em todos os 7** — a
+cascata RF 4h/15m gerou dezenas no mesmo período, então não era falha geral
+do motor.
+
+Investigação (conselho de revisão multi-papel, skill `sentinel-council-review`,
+mais pesquisa de comunidade) **confirmou empiricamente** a causa raiz, medida
+rodando `calculateStructure` de verdade contra candles sintéticos (não
+suposição): `scanAsset` busca só os **últimos 150 candles fechados** por
+timeframe (`scanner.js`, antes um único `fetchCandles(asset.symbol, tf,
+150)` para todo o loop). A estrutura SMC do 1h (`calculateStructure`,
+`src/lib/indicators/smcStructure.js`) usa `swingLen=50` (default real do
+Pine do usuário, "SMC+A Unified v2.3") e **não recebe nenhum estado entre
+scans** — recomputa do zero a cada chamada, só com os candles daquela vez.
+
+Medido: numa série sintética de 800 candles (`goldenCandles`, mesma fixture
+determinística já usada por `goldenParity.test.js`), histórico contínuo
+produz exatamente 1 evento BOS/CHoCH com `swingLen=50`; a mesma série
+processada em janela de 150 sem estado (como a produção faz) produz **0** —
+perda total. Com `swingLen=10` (o valor já usado na confirmação 5m,
+`check5mSmcConfirmation`), 6 de 6 eventos sobrevivem — a janela de 150 é
+quase inofensiva lá. Pesquisa de comunidade (docs da LuxAlgo, guias de
+BOS/CHoCH) confirmou que `swingLen=50` é o piso da faixa de "estrutura
+maior" (50-100), deliberadamente rara por design — não é bug do Pine, a
+prática comum em 1h é swing_len~5-10. Produção é ainda mais restritiva que a
+medição acima (o gate só olha a ÚLTIMA barra fechada e ainda precisa
+coincidir com a confirmação 5m no mesmo scan) — zero em 7 ativos × 6 meses
+era o resultado matematicamente esperado, não anomalia de mercado.
+
+**Isso afetava a produção ao vivo, não só o backtest** — `smc_enabled` é
+default `true` pra ativos novos desde a mudança que habilitou a cascata por
+padrão (ver histórico de PRs), então qualquer ativo com essa cascata ligada
+provavelmente nunca a viu disparar de verdade.
+
+**Correção**: só o fetch do timeframe 1h (o que alimenta o viés de estrutura
+SMC) passou a buscar 500 candles em vez de 150
+(`SMC_1H_STRUCTURE_CANDLE_LIMIT`, `scanner.js`) — 4h/1d/15m/5m continuam em
+150, suficiente pros indicadores convergentes (RF/RSI/MACD/EMA/ATR/ADX/
+Choppiness, warm-up de ~6× o período já basta). Não persiste estado entre
+scans (permanece função pura, sem novo risco de concorrência entre
+browser/cron) e cabe numa única chamada da API da Binance (teto documentado
+1000).
+
+**Importante**: essa correção não faz o SMC disparar "muito" —
+`swingLen=50` é deliberadamente raro por design do Pine real. O ganho é
+fazer a cascata se comportar como desenhada (raro, alta convicção) em vez de
+artificialmente quase silenciada por uma limitação de implementação não
+relacionada à estratégia em si.
+
+Regressão: novo `describe` em `src/lib/indicators/smcStructure.test.js`
+reproduz a medição acima como teste determinístico (contínuo vs. janela de
+150, `swingLen=50` perde o único evento / `swingLen=10` não perde nada).
+
+**Observação separada, não corrigida agora**: durante a investigação, os
+eventos BOS/CHoCH naturais gerados em dados sintéticos caíram
+sistematicamente no gate de zona Premium/Discount errado para a própria
+direção do sinal (`zoneOk` em `scanner.js`, ex.: uma quebra de alta
+aterrissando em zona "premium", que o gate rejeita para BUY) — não deu pra
+descartar se é coincidência da amostra sintética ou um padrão real (faz
+sentido geométrico: um rompimento de estrutura tende a empurrar o preço
+para o extremo do range recente, exatamente o que o gate de zona rejeita).
+Não investigado a fundo nem corrigido — fica registrado para uma rodada
+futura se o backtest real (agora com a janela corrigida) mostrar sinais SMC
+sendo gerados mas sistematicamente descartados por esse gate.
+
+**Fora de escopo desta correção**: a estrutura SMC do **4h** (usada só pelo
+gate opcional `smc_confirm_4h15m`, não testado nesta rodada) pode ter uma
+versão mais branda do mesmo problema — não corrigida sem medir primeiro.

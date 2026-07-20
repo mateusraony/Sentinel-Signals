@@ -55,6 +55,13 @@ Definido por pesquisa de comunidade (fontes no PR que o introduziu):
   = nova entrada em cada camada aplicável (prefixo, referência, CSV).
 - Nuance ainda aberta (não é bug): contagem do Time Stop por tempo decorrido vs
   contador de barras do Pine; `swing_len` da cascata SMC sem equivalente direto.
+- **A janela de candles buscada por scan importa para SMC, não só o cálculo.**
+  `calculateStructure` é path-dependent (sem estado entre scans) — com
+  `swingLen=50` (default real do Pine), uma janela curta demais silencia
+  BOS/CHoCH quase por completo (medido, `docs/known-risks.md` item 34). Ao
+  ajustar qualquer parâmetro dessa cascata, considere também quantos candles
+  o `fetchCandles` daquele timeframe está buscando — não é só o cálculo do
+  indicador que precisa de paridade, é o histórico disponível pra ele rodar.
 - Só candles fechados. Não misture convenção de índice (barra atual vs anterior)
   sem checar o Pine correspondente.
 - Paridade ≠ taxa de acerto: corrigir paridade aproxima do TradingView, não torna
