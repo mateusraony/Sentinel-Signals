@@ -61,9 +61,18 @@ Isso empacota `scripts/run-backtest.mjs` com esbuild (mesmo padrão de
 
 - `--data-dir DIR` — se você baixou os dados em outro lugar (default:
   `scripts/__fixtures__/backtest`).
-- `--smc BTCUSDT,ETHUSDT` — ativa a cascata SMC (`smc_enabled` +
-  `smc_confirm_4h15m`) para os símbolos listados; sem essa flag, todo ativo
-  roda só com a cascata padrão 4h/15m Range Filter.
+- `--smc BTCUSDT,ETHUSDT` e `--smc-confirm BTCUSDT,ETHUSDT` — **independentes**
+  (mesma independência de `asset.smc_enabled`/`asset.smc_confirm_4h15m` no
+  app real, ver `MonitoredAsset.jsonc`):
+  - `--smc` liga a cascata **paralela** 1h→5m — nunca interfere na 4h/15m.
+    Como o relatório já separa por cascata (`report.byCascade['4h_15m']` vs.
+    `['1h_5m']`), um único run com `--smc` já compara RF puro contra SMC lado
+    a lado, no mesmo período/ativos — não precisa de dois runs.
+  - `--smc-confirm` torna a cascata 4h/15m **mais rígida** (exige a estrutura
+    SMC do 4h concordar com o sinal) — não precisa de `--smc` junto, e
+    `--smc` não liga isso sozinho.
+  - Sem nenhuma das duas, todo ativo roda só com a cascata padrão 4h/15m
+    Range Filter.
 - `--rf-period`/`--rf-multiplier` — sobrescreve os defaults (20/3.5) para
   todos os ativos do replay.
 - `--pine-config arquivo.json` — sobrescreve parâmetros do "Pine sincronizado"

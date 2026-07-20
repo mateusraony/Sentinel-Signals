@@ -9,8 +9,17 @@
 //     --symbols BTCUSDT,ETHUSDT \
 //     --from 2026-01-01T00:00:00Z --to 2026-06-01T00:00:00Z \
 //     [--data-dir scripts/__fixtures__/backtest] \
-//     [--smc BTCUSDT] [--pine-config ./my-pine-overrides.json] \
+//     [--smc BTCUSDT] [--smc-confirm BTCUSDT] \
+//     [--pine-config ./my-pine-overrides.json] \
 //     [--step-ms 900000] [--out ./backtest-report.json]
+//
+// --smc and --smc-confirm are INDEPENDENT (mirrors asset.smc_enabled vs.
+// asset.smc_confirm_4h15m in scanner.js — see MonitoredAsset.jsonc): --smc
+// turns on the parallel 1h→5m SMC cascade (its own trades show up under
+// report.byCascade['1h_5m'], next to the 4h/15m one, so a single run already
+// compares plain RF vs. SMC side by side); --smc-confirm makes the EXISTING
+// 4h/15m RF cascade stricter (requires 4h SMC structure/zone agreement) —
+// it does not require --smc, and --smc does not imply it.
 import fs from 'node:fs';
 import { runBacktest } from '../src/lib/backtestEngine.js';
 import { backend } from '@/api/entities';
@@ -30,8 +39,7 @@ function parseArgs(argv) {
   return args;
 }
 
-function makeAsset(symbol, { smcSymbols, rfPeriod, rfMultiplier }) {
-  const smcEnabled = smcSymbols.has(symbol);
+function makeAsset(symbol, { smcSymbols, smcConfirmSymbols, rfPeriod, rfMultiplier }) {
   return {
     id: symbol,
     symbol,
@@ -42,10 +50,10 @@ function makeAsset(symbol, { smcSymbols, rfPeriod, rfMultiplier }) {
     rf_multiplier: rfMultiplier,
     // Off by default here (unlike AddAssetForm.jsx's live default for NEW
     // real assets) — a backtest asset list is explicit CLI input, not a
-    // panel action, so it stays opt-in via --smc rather than silently
-    // inheriting the live-panel default.
-    smc_enabled: smcEnabled,
-    smc_confirm_4h15m: smcEnabled,
+    // panel action, so each stays opt-in via its own flag rather than
+    // silently inheriting the live-panel default or each other.
+    smc_enabled: smcSymbols.has(symbol),
+    smc_confirm_4h15m: smcConfirmSymbols.has(symbol),
   };
 }
 
@@ -53,7 +61,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   if (!args.symbols || !args.from || !args.to) {
-    console.error('Uso: run-backtest.mjs --symbols SYM1,SYM2 --from ISO --to ISO [--data-dir DIR] [--smc SYM1,SYM2] [--pine-config FILE] [--step-ms N] [--out FILE]');
+    console.error('Uso: run-backtest.mjs --symbols SYM1,SYM2 --from ISO --to ISO [--data-dir DIR] [--smc SYM1,SYM2] [--smc-confirm SYM1,SYM2] [--pine-config FILE] [--step-ms N] [--out FILE]');
     process.exitCode = 1;
     return;
   }
@@ -67,9 +75,10 @@ async function main() {
 
   const symbols = String(args.symbols).split(',').map((s) => s.trim()).filter(Boolean);
   const smcSymbols = new Set(String(args.smc || '').split(',').map((s) => s.trim()).filter(Boolean));
+  const smcConfirmSymbols = new Set(String(args['smc-confirm'] || '').split(',').map((s) => s.trim()).filter(Boolean));
   const rfPeriod = args['rf-period'] ? Number(args['rf-period']) : 20;
   const rfMultiplier = args['rf-multiplier'] ? Number(args['rf-multiplier']) : 3.5;
-  const assets = symbols.map((symbol) => makeAsset(symbol, { smcSymbols, rfPeriod, rfMultiplier }));
+  const assets = symbols.map((symbol) => makeAsset(symbol, { smcSymbols, smcConfirmSymbols, rfPeriod, rfMultiplier }));
 
   const fromMs = new Date(args.from).getTime();
   const toMs = new Date(args.to).getTime();
