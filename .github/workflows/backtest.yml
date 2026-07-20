@@ -35,7 +35,11 @@ on:
         default: "1h,4h,1d,15m"
         required: true
       smc:
-        description: "Símbolos com a cascata SMC 1h→5m ativa, separados por vírgula (vazio = nenhum)"
+        description: "Símbolos com a cascata SMC 1h→5m ativa, separados por vírgula (vazio = nenhum) — independente de smc_confirm abaixo"
+        default: ""
+        required: false
+      smc_confirm:
+        description: "Símbolos com o gate extra SMC na cascata 4h/15m (mais rígida), separados por vírgula (vazio = nenhum) — independente de smc acima"
         default: ""
         required: false
       pine_config:
@@ -100,10 +104,12 @@ jobs:
         env:
           SYMBOLS: ${{ inputs.symbols }}
           SMC: ${{ inputs.smc }}
+          SMC_CONFIRM: ${{ inputs.smc_confirm }}
           HAS_PINE_CONFIG: ${{ inputs.pine_config != '' }}
         run: |
           ARGS=(--symbols "$SYMBOLS" --from "$FROM" --to "$TO" --out backtest-report.json)
           if [ -n "$SMC" ]; then ARGS+=(--smc "$SMC"); fi
+          if [ -n "$SMC_CONFIRM" ]; then ARGS+=(--smc-confirm "$SMC_CONFIRM"); fi
           if [ "$HAS_PINE_CONFIG" = "true" ]; then ARGS+=(--pine-config pine-config-overrides.json); fi
           npm run backtest -- "${ARGS[@]}"
 
