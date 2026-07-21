@@ -109,6 +109,12 @@ async function main() {
   for (const [cascade, summary] of Object.entries(report.byCascade)) {
     console.log(`[backtest] cascata ${cascade}:`, summary);
   }
+  // Was previously only printed by backtest.yml's separate "Publicar resumo"
+  // step (which writes to $GITHUB_STEP_SUMMARY, not stdout) — invisible to
+  // anything reading the job's console log directly (e.g. get_job_logs).
+  // Same data, now visible from both the CLI and CI without needing GitHub
+  // Summary UI access.
+  console.log('[backtest] smcDiagnostics:', report.smcDiagnostics);
 
   const outPath = args.out || 'backtest-report.json';
   fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
