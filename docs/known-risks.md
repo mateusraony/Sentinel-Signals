@@ -1488,3 +1488,57 @@ stop, só alvo, nenhum, os dois); `scannerStateMachine.test.js` cobre os três
 cenários via `persistScanResults` real (ambíguo pré-TP1, limpo pré-TP1,
 ambíguo pós-TP1 contra TP2) — os três confirmados falhando contra o código
 anterior antes da correção.
+
+## 37. Proposta do usuário — cascata hierárquica de operações independentes por timeframe (1h→4h→1D), NÃO implementada, registrada pra decisão futura
+
+Pedido do usuário (2026-07): em vez de (ou além de) descobrir por que a
+cascata SMC 1h→5m está com 0 operações, ele propôs um formato novo — cada
+timeframe (1h, 4h, 1D) teria sua **própria operação independente**, com sua
+própria confirmação de entrada (1h→5m, 4h→15m, e um 1D→algum timeframe
+menor ainda não definido), e a ideia de continuidade: se a operação de um
+timeframe menor estiver indo bem (volume/cenário favorável), o sistema
+avalia abrir *também* uma operação no timeframe maior seguinte, e assim por
+diante até o 1D. Explicitamente: "cada um tem sua operação em 1h e 4h" —
+rodando **simultaneamente**, não uma substituindo a outra.
+
+**Fato, confrontado com o código antes de registrar** (não é bug, é uma
+mudança de arquitetura que ainda não existe):
+
+- Hoje só existem duas cascatas (`4h_15m` e `1h_5m`), **mutuamente
+  exclusivas por ativo** — `assetActiveOps/{assetId}` trava **uma única
+  operação ativa por ativo**, independente de qual cascata a criou
+  (`createTradeOpIfNoneActive`, ver `.claude/rules/trading-engine.md`). A
+  proposta do usuário exige o oposto: mais de uma operação ativa
+  simultânea no mesmo ativo (uma por timeframe). Isso não é um ajuste de
+  parâmetro — é trocar o invariante central da máquina de estados (viraria
+  algo como "uma operação ativa por ativo **por cascata**", não por
+  ativo), com implicações diretas em concorrência (o CAS/lock atuais
+  assumem 1 operação por ativo) e em risco (duas ou três operações abertas
+  ao mesmo tempo no mesmo ativo multiplicam a exposição, mesmo sendo
+  virtual).
+- **Não existe cascata de 1D hoje.** O 1D só alimenta `analyzeAlignment`
+  (viés macro de leitura, não uma cascata com sinal/entrada/stop/TP
+  próprios). Construir uma cascata 1D do zero — timeframe de confirmação de
+  entrada, cálculo de stop/TP, tier — é trabalho novo, não uma extensão
+  direta do padrão 4h/15m ou 1h/5m.
+- O conceito em si ("pyramiding"/escalonamento de posição por confluência
+  multi-timeframe crescente) é reconhecido na comunidade de trading
+  sistemático, mas **não faz parte do Pine real do usuário** (nem "NEW ERA
+  - Range Filter Strategy v13.2" nem "SMC+A Unified v2.3" têm esse
+  mecanismo) — seria estratégia nova, não port de algo existente.
+
+**Decisão registrada**: **não implementar agora.** Fica gravado aqui como
+proposta explícita do usuário para uma rodada futura dedicada, que antes de
+qualquer código precisa (mesmo padrão de todo o resto deste arquivo):
+pesquisa de comunidade sobre position pyramiding/scaling multi-timeframe
+(o que a prática real usa: tamanho de cada perna, critério de
+"continuidade" — volume, alinhamento de indicador, score mínimo por
+timeframe), desenho explícito de como o invariante de 1-operação-por-ativo
+muda sem reabrir os riscos de concorrência já fechados (P0-a a P0-h), e
+provavelmente uma revisão em conselho (`sentinel-council-review`) dado que
+mexe no núcleo da máquina de estados. Não iniciar essa implementação sem
+pedido explícito e uma rodada de planejamento própria.
+
+**Separado, não confundir**: o pedido imediato do usuário (rodar o
+backtest de novo e olhar `smcDiagnostics`, item 35) é sobre a cascata
+1h→5m **que já existe** — independente desta proposta de arquitetura nova.
