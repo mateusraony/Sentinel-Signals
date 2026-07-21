@@ -895,6 +895,17 @@ export async function persistScanResults(scanResult) {
 
   // Deduplicate and persist signals
   let persistedSignals = 0;
+  // docs/known-risks.md item 38: sampled, not exhaustive — only the entry
+  // motor's FIRST evaluation of a fresh 1h SMC signal pushes here, never the
+  // 5m-retry loop (which stays silent on every rejected tick by the same
+  // deliberate design as the 4h/15m retry loop, to avoid a Firestore write
+  // per pending signal every ~5 minutes over its whole retry window). Real
+  // rejection volume across the full retry window is therefore higher than
+  // this array reports — it answers "did the very first 5m check reject the
+  // candidate", not "was it ever rejected". Good enough to distinguish
+  // item 34 (no structure event) from item 35/38 (event happened, gate
+  // rejected the entry) without adding new write volume.
+  const smc5mZoneRejections = [];
   for (const signal of newSignals) {
     // Cooldown check — a best-effort query, not atomic on its own, but the
     // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
@@ -1115,6 +1126,9 @@ export async function persistScanResults(scanResult) {
                 ote_zone: confirmed5m.oteZone,
               },
             });
+            if (confirmed5m.rejectReason === 'ote_zone_unfavorable') {
+              smc5mZoneRejections.push({ dedup_key: signal.dedup_key, symbol: signal.symbol, signal_type: signal.signal_type, ote_zone: confirmed5m.oteZone });
+            }
           }
         } else {
           // Same cross-cascade arbitration log as the RF block above — once
@@ -1525,7 +1539,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors };
+  return { persistedSignals, errors, smc5mZoneRejections };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()
