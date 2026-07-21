@@ -356,7 +356,19 @@ async function check5mSmcConfirmation(symbol, direction, legBounds) {
     // extended, no pullback yet), SELL rejects only 'discount'. A null zone
     // (leg not evaluable) is treated as favorable — fail-open, not a verdict.
     const { zone: oteZone } = classifyZone(lastClosed.close, legBounds?.legHigh, legBounds?.legLow);
-    const zoneFavorable = oteZone == null || (direction === 'BUY' ? oteZone !== 'premium' : oteZone !== 'discount');
+    // Codex review (PR #77): classifyZone has no upper/lower bound — a close
+    // below legLow (or above legHigh) still reads as 'discount' ('premium')
+    // unboundedly, which is exactly the zone BUY (SELL) favors. That would
+    // confirm an entry after price broke past the PROTECTED pivot side of
+    // the leg (legLow for BUY = lastSwingLow, legHigh for SELL =
+    // lastSwingHigh) — not a pullback into a better price anymore, the
+    // structure itself is invalidated there. Reject explicitly, regardless
+    // of what classifyZone's label says.
+    const brokeProtectedPivot = direction === 'BUY'
+      ? (legBounds?.legLow != null && lastClosed.close < legBounds.legLow)
+      : (legBounds?.legHigh != null && lastClosed.close > legBounds.legHigh);
+    const zoneFavorable = !brokeProtectedPivot
+      && (oteZone == null || (direction === 'BUY' ? oteZone !== 'premium' : oteZone !== 'discount'));
     if (!zoneFavorable) {
       return { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null, oteZone, rejectReason: 'ote_zone_unfavorable' };
     }

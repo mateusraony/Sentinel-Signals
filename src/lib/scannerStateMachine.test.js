@@ -242,6 +242,15 @@ describe('5m OTE zone gate — leg-relative (known-risks item 38)', () => {
     return candles;
   }
 
+  // Mirror of bullishSweepCandles5m for SELL-direction triggers: wicks ABOVE
+  // the recent high and closes back below it, bearish candle.
+  function bearishSweepCandles5m() {
+    const candles = [];
+    for (let i = 0; i < 59; i++) candles.push(mk5m(100, 105, 95, 100, i));
+    candles.push(mk5m(104, 107, 103, 103.5, 59));
+    return candles;
+  }
+
   function makeSmcSignal(overrides = {}) {
     return {
       asset_id: 'asset1', symbol: 'BTCUSDT', signal_type: 'BUY',
@@ -289,6 +298,50 @@ describe('5m OTE zone gate — leg-relative (known-risks item 38)', () => {
     const rejectLog = logs.find(l => l.details?.reason === 'ote_zone_unfavorable');
     expect(rejectLog).toBeDefined();
     expect(rejectLog.details.ote_zone).toBe('premium');
+  });
+
+  // Codex review (PR #77): classifyZone has no upper/lower bound — a close
+  // BELOW legLow still reads as 'discount' (unboundedly), and 'discount' is
+  // the zone BUY favors. That let a candidate confirm even after price broke
+  // BELOW the protected pivot (legLow = lastSwingLow for BUY) that defines
+  // the leg's own validity — not a pullback into a cheaper price anymore,
+  // the bullish structure itself is invalidated at that point. Mirror for
+  // SELL: a close ABOVE legHigh (the protected swing high) reads as
+  // 'premium', which SELL favors, even though the bearish structure is
+  // invalidated there too.
+  it('rejects a BUY entry whose close broke below the protected leg low (out-of-leg, not a pullback)', async () => {
+    fetchCandles.mockImplementation(async () => bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+    // legHigh=200/legLow=100 -> the sweep's entry close (96.5) is BELOW
+    // legLow itself, not merely in the leg's discount portion.
+    const signal = makeSmcSignal({ context: { structure_type: 'BOS', pd_zone: 'premium', ote_leg_high: 200, ote_leg_low: 100 } });
+
+    await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(0);
+    const logs = await backend.entities.SystemLog.filter({ symbol: 'BTCUSDT' });
+    expect(logs.some(l => l.details?.reason === 'ote_zone_unfavorable')).toBe(true);
+  });
+
+  it('rejects a SELL entry whose close broke above the protected leg high (out-of-leg, not a pullback)', async () => {
+    fetchCandles.mockImplementation(async () => bearishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+    // legHigh=100/legLow=0 -> the sweep's entry close (103.5) is ABOVE
+    // legHigh itself, not merely in the leg's premium portion.
+    const signal = makeSmcSignal({
+      signal_type: 'SELL',
+      context: { structure_type: 'BOS', pd_zone: 'discount', ote_leg_high: 100, ote_leg_low: 0 },
+    });
+
+    await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(0);
+    const logs = await backend.entities.SystemLog.filter({ symbol: 'BTCUSDT' });
+    expect(logs.some(l => l.details?.reason === 'ote_zone_unfavorable')).toBe(true);
   });
 
   it('fails open (still confirms) when the leg is not evaluable — missing ote_leg_high/low', async () => {
