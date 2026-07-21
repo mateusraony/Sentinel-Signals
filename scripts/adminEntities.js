@@ -9,7 +9,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 // Relative (not '@/') so esbuild bundles it for the cron without the Vite alias
 // — see scripts/build-scan.mjs (it only rewrites '@/api/entities').
-import { canApplyTransition, isTerminalStatus, planTradeOpCreation } from '../src/lib/opTransition.js';
+import { canApplyTransition, clampMonotonicStop, isTerminalStatus, planTradeOpCreation } from '../src/lib/opTransition.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) });
@@ -210,7 +210,10 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId } = {}) {
     if (!canApplyTransition(current, fromStatus)) {
       return { applied: false, currentStatus: current ? current.status : null };
     }
-    tx.update(opRef, patch);
+    const safePatch = patch.current_stop != null
+      ? { ...patch, current_stop: clampMonotonicStop({ side: current.side, existingStop: current.current_stop, candidateStop: patch.current_stop }) }
+      : patch;
+    tx.update(opRef, safePatch);
     if (activeRef && activeSnap && activeSnap.exists
         && activeSnap.data().active_trade_op_id === opId) {
       tx.set(activeRef, { active_trade_op_id: null, updated_at: new Date().toISOString() });

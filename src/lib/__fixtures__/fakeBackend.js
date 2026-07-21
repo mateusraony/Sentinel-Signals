@@ -7,7 +7,7 @@
 // decision. Lets scanner.js run completely unmodified against it (see
 // scannerStateMachine.test.js), the same principle already used for the
 // browser/cron split (src/api/entities.js vs scripts/adminEntities.js).
-import { canApplyTransition, isTerminalStatus, planTradeOpCreation } from '../opTransition.js';
+import { canApplyTransition, clampMonotonicStop, isTerminalStatus, planTradeOpCreation } from '../opTransition.js';
 
 const COLLECTIONS = [
   'MonitoredAsset', 'AssetState', 'SignalEvent', 'TradeOperation',
@@ -114,7 +114,10 @@ export function createFakeBackend() {
     if (!canApplyTransition(current, fromStatus)) {
       return { applied: false, currentStatus: current ? current.status : null };
     }
-    opStore.set(opId, { ...current, ...patch });
+    const safePatch = patch.current_stop != null
+      ? { ...patch, current_stop: clampMonotonicStop({ side: current.side, existingStop: current.current_stop, candidateStop: patch.current_stop }) }
+      : patch;
+    opStore.set(opId, { ...current, ...safePatch });
     if (isTerminalStatus(patch.status) && assetId && activeOps.get(assetId) === opId) {
       activeOps.set(assetId, null);
     }
