@@ -118,6 +118,16 @@ nunca deve receber nova transição.**
   direção) e pesquisa de comunidade (ICT/LuxAlgo) sugerem mover a checagem
   para o gatilho 5m — só reconsiderar isso se os logs mostrarem
   volume/impacto real. Ver `docs/known-risks.md` item 35.
+- **[OBSERVÁVEL — política já correta] Ambiguidade stop/TP no mesmo
+  candle.** Um candle fechado pode tocar stop e TP1/TP2 sem que o OHLC diga
+  a ordem intrabar real. A política "stop vence" (`scanner.js`, pré e
+  pós-TP1) já era o padrão de mercado (pesquisa de comunidade: backtesting.py,
+  QuantConnect, NinjaTrader). Formalizada em `resolveCandleExit`
+  (`opExitRules.js`) e agora observável via `TradeOperation.exit_ambiguous`
+  — sem mudar nenhuma transição. Reconstrução via timeframe menor fica
+  registrada como opção futura, condicionada a volume real desse campo (dado
+  de 15m/5m não fica disponível no loop de saída hoje — buscar exigiria
+  custo de API recorrente). Ver `docs/known-risks.md` item 36.
 - **[RESIDUAL — aguardando dados] Precedência stop>TP entre loops.** O CAS
   resolve a corrida de dados; com P0-c/d corrigidos, o cenário grave (TP1
   retroativo vencendo stop real) deixou de existir. O que resta — dois loops

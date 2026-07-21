@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop } from './opExitRules.js';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit } from './opExitRules.js';
 
 const T0 = '2026-07-15T04:00:00.000Z'; // candle open, at/before the entry
 const T1 = '2026-07-15T08:00:00.000Z'; // candle open, exactly at the entry instant
@@ -147,6 +147,32 @@ describe('nextRfReverseCount (P0-e — contagem por candle, não por scan)', () 
   it('fallback legado: sem candleTime, mantém o incremento por passada antigo', () => {
     const s = nextRfReverseCount({ rfReversedAgainst: true, prevCount: 2, prevCandleTime: null, candleTime: null });
     expect(s.count).toBe(3);
+  });
+});
+
+// Formaliza a política "stop vence" já usada inline em scanner.js ("Check
+// stop first (stop has priority over TP on same candle for safety") — um
+// candle fechado pode tocar stop E TP no mesmo candle sem que o OHLC diga
+// qual aconteceu primeiro intrabar. Padrão de mercado (backtesting.py,
+// QuantConnect, NinjaTrader — pesquisa de comunidade): assumir o pior caso
+// (stop primeiro). stopWins nunca muda de comportamento; `ambiguous` é o
+// que esta função acrescenta — sinaliza quando a decisão foi uma escolha
+// conservadora sob incerteza real, não um stop inequívoco.
+describe('resolveCandleExit (ambiguidade stop/TP no mesmo candle)', () => {
+  it('só o stop tocado: vence, sem ambiguidade', () => {
+    expect(resolveCandleExit({ stopTouched: true, targetTouched: false })).toEqual({ stopWins: true, ambiguous: false });
+  });
+
+  it('só o alvo tocado: stop não vence', () => {
+    expect(resolveCandleExit({ stopTouched: false, targetTouched: true })).toEqual({ stopWins: false, ambiguous: false });
+  });
+
+  it('nenhum tocado: nada vence, sem ambiguidade', () => {
+    expect(resolveCandleExit({ stopTouched: false, targetTouched: false })).toEqual({ stopWins: false, ambiguous: false });
+  });
+
+  it('os dois tocados no mesmo candle: stop vence (conservador) E fica marcado como ambíguo', () => {
+    expect(resolveCandleExit({ stopTouched: true, targetTouched: true })).toEqual({ stopWins: true, ambiguous: true });
   });
 });
 

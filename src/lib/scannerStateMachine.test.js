@@ -369,6 +369,31 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     expect(op.current_stop).toBe(100); // entry_price
   });
 
+  // Formalizes the "stop wins" policy scanner.js already applied inline —
+  // industry-standard conservative assumption (backtesting.py, QuantConnect,
+  // NinjaTrader) when a closed candle's high AND low both cross the stop
+  // and TP1: OHLC alone can't order the two intrabar. The outcome (STOP_HIT)
+  // is unchanged either way; what's new is exit_ambiguous, distinguishing
+  // this from a clean, unambiguous stop.
+  it('exit_ambiguous: true when the same candle touches BOTH the stop and TP1 — stop still wins', async () => {
+    backend._seed('TradeOperation', makeOp());
+    // stop=98, tp1=103 (makeOp defaults) — candle range covers both.
+    const results = { '4h': makeTfData({ lastCandleLow: 97, lastCandleHigh: 104, lastClose: 100 }) };
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('STOP_HIT'); // policy unchanged
+    expect(op.exit_ambiguous).toBe(true);
+  });
+
+  it('exit_ambiguous: absent on a clean stop that never touched TP1', async () => {
+    backend._seed('TradeOperation', makeOp());
+    const results = { '4h': makeTfData({ lastCandleLow: 97, lastCandleHigh: 99, lastClose: 98 }) }; // tp1=103 out of range
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('STOP_HIT');
+    expect(op.exit_ambiguous).toBeFalsy();
+  });
+
   it('P0-c guard: the entry candle itself never triggers stop/TP retroactively', async () => {
     // candle_close_time === lastCandleTime → this IS the signal candle.
     const op = makeOp({ candle_close_time: '2026-07-16T12:00:00.000Z' });
@@ -516,6 +541,15 @@ describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTI
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('STOP_HIT');
     expect(stored.exit_price).toBe(100); // the stop that was active THIS candle
+  });
+
+  it('exit_ambiguous: true when the same candle touches BOTH the runner stop and TP2', async () => {
+    backend._seed('TradeOperation', makeRunner({ current_stop: 100 })); // tp2=106
+    const results = { '4h': makeTfData({ lastCandleHigh: 107, lastCandleLow: 99, lastClose: 103 }) };
+    await persistScanResults(makeScanResult({ results }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('STOP_HIT'); // policy unchanged
+    expect(stored.exit_ambiguous).toBe(true);
   });
 
   it('advances the trailing stop when no exit fires, without exiting on the newly advanced value the same pass', async () => {

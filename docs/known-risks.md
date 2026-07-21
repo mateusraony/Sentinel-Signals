@@ -1376,3 +1376,55 @@ Regressão: `smcStructure.test.js` reproduz o viés geométrico; três novos
 testes em `scannerStateMachine.test.js` (log único por descarte, dedup entre
 passadas do mesmo candle, nenhum log quando não há descarte) confirmados
 falhando contra o código anterior antes da correção.
+
+## 36. Ambiguidade stop/TP no mesmo candle — política já correta, agora formalizada e observável
+
+Quarto item da lista de lacunas "do motor" (a pedido do usuário). Quando um
+candle fechado toca tanto o stop quanto o TP1 (ou stop e TP2, pós-TP1), o
+OHLC sozinho não diz qual aconteceu primeiro intrabar.
+
+**Confirmado no código**: só o loop baseado em candle (`persistScanResults`)
+tem esse problema — o loop baseado em preço (`priceCheckActiveOpsInner`)
+compara um único preço por tick, sequencialmente, sem essa ambiguidade. A
+política já existente em `scanner.js` ("Check stop first (stop has priority
+over TP on same candle for safety)") é exatamente o padrão de mercado:
+pesquisa de comunidade (backtesting.py, QuantConnect, NinjaTrader) confirma
+que assumir o stop primeiro (postura pessimista/conservadora) é o baseline
+padrão da indústria — reconstrução via dado de granularidade menor é
+refinamento opcional, citado só quando o problema já foi sentido na prática,
+não requisito de baseline.
+
+**O que faltava de fato**: a regra era puramente inline, sem função pura
+testável; nenhum teste cobria o cenário "candle toca os dois níveis"
+(correto por convenção, nunca verificado); e quando a ambiguidade realmente
+ocorria, ficava indistinguível de um stop limpo no registro da operação.
+
+**Achado que restringe a alternativa "reconstruir via timeframe menor"**:
+dado de 15m/5m não fica disponível no momento da avaliação de saída hoje —
+`results` só é populado para `1h/4h/1d`; 15m/5m são buscados só uma vez, na
+confirmação de entrada, nunca guardados para reuso no loop de saída.
+Reconstruir a ordem real exigiria buscar candles novos a cada operação
+ativa, a cada passada — custo de API/latência recorrente, não uma mudança
+pequena.
+
+**Corrigido (formalização + observabilidade, sem mudar o resultado)**: nova
+função pura `resolveCandleExit({ stopTouched, targetTouched })`
+(`src/lib/opExitRules.js`) nomeia e testa a política; `scanner.js` passou a
+computar `tp1Touched`/`tp2Touched` ao lado de `stopHit`/`runnerStopHit` (em
+vez de só na cauda do `else if`) para alimentar essa função nos dois pontos
+(pré-TP1 contra TP1, pós-TP1 contra TP2). Toda operação que hoje fecha em
+STOP_HIT continua fechando no mesmo preço — a única mudança observável é o
+novo campo `exit_ambiguous` (boolean, `TradeOperation.jsonc`), gravado
+`true` só quando o stop venceu por uma escolha conservadora sob ambiguidade
+real, nunca num stop inequívoco.
+
+**Não implementado**: reconstrução via timeframe menor — mesmo critério já
+usado no gate de zona (item 35) e no residual de precedência stop>TP
+(`trading-engine.md`): só investir nisso se `exit_ambiguous` mostrar volume
+real depois que o motor rodar por um tempo, não a partir de suposição.
+
+Regressão: `opExitRules.test.js` cobre `resolveCandleExit` isoladamente (só
+stop, só alvo, nenhum, os dois); `scannerStateMachine.test.js` cobre os três
+cenários via `persistScanResults` real (ambíguo pré-TP1, limpo pré-TP1,
+ambíguo pós-TP1 contra TP2) — os três confirmados falhando contra o código
+anterior antes da correção.
