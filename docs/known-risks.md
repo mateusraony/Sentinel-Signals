@@ -1320,3 +1320,59 @@ sendo gerados mas sistematicamente descartados por esse gate.
 **Fora de escopo desta correção**: a estrutura SMC do **4h** (usada só pelo
 gate opcional `smc_confirm_4h15m`, não testado nesta rodada) pode ter uma
 versão mais branda do mesmo problema — não corrigida sem medir primeiro.
+
+## 35. Gate de zona PD da cascata SMC 1h→5m descartava sinal silenciosamente — agora observável (não redesenhado)
+
+Investigação de continuação da "Observação separada" do item 34, a pedido do
+usuário ("qual das lacunas é do motor, pra que fique tudo perfeito?").
+Confirmado no código (não mais suspeita): `zoneOk` (`scanner.js:628-630`) —
+o gate que decide se uma quebra de estrutura 1h vira `SignalEvent` — usa o
+MESMO `closedCandles` de `calculateStructure`/`calculatePdZone`. Quando
+rejeita, **não deixa rastro nenhum**: sem `SignalEvent`, sem log, sem chance
+de retry (o loop de retry só reprocessa `SignalEvent`s já persistidos) —
+diferente do gate irmão opcional `smc_confirm_4h15m`, que já reavalia
+`zoneOk` a cada passada por até 4h e já loga cada bloqueio
+(`scanner.js:924-937`, `1085-1088`) — só o gate 1h→5m é silencioso e
+definitivo.
+
+**Reproduzido deterministicamente**: no `goldenCandles(800)` já usado pelo
+item 34, o único evento de estrutura em `swingLen=50` (uma quebra SELL) cai
+exatamente na zona `discount` — a zona que `zoneOk` rejeita para SELL
+(`smcStructure.test.js`, describe "calculatePdZone vs calculateStructure —
+signal-direction zone bias"). `calculatePdZone` usa uma janela de 20 barras
+que **exclui o candle atual**, então geometricamente o `close` de um
+rompimento de alta tende a ficar acima do range antigo (→ `premium`,
+rejeitado para BUY) e o de um rompimento de baixa abaixo (→ `discount`,
+rejeitado para SELL) — viés real, medido, ainda que não determinístico (a
+magnitude depende de quão longe o nível de estrutura rompido está da janela
+de 20 barras).
+
+**Pesquisa de comunidade** (LuxAlgo, guias ICT, via WebSearch): o padrão é
+checar a zona PD **depois** de um retracement, no momento do GATILHO de
+entrada — não no candle exato do rompimento de estrutura. O código atual
+checa no lugar errado do pipeline (na barra de viés 1h, não no gatilho 5m).
+
+**Corrigido nesta rodada (observabilidade apenas)**: `scanAsset` agora
+retorna `zoneGateDrops`; `persistScanResults` grava um `SystemLog`
+estruturado por descarte (`reason: 'smc_zone_gate_rejected'`, deduplicado
+por candle via `SystemLog.createUnique`, mesmo padrão do item 23).
+**Nenhum comportamento de trading muda** — o candidato continua sem virar
+`SignalEvent`/`TradeOperation`, exatamente como antes.
+
+**Não corrigido/redesenhado ainda**: mover ou duplicar o gate para o momento
+do gatilho 5m é uma divergência deliberada do porte 1:1 do Pine (mesma
+categoria do stop estrutural, item 24), com decisões de produto em aberto —
+contra qual dado rodar a checagem no 5m (reavaliar o mesmo `pdZone` do 1h,
+quase sempre um no-op dentro da janela de confirmação, ou introduzir um
+`calculatePdZone` em escala 5m sem equivalente no Pine para calibrar); se o
+gate 1h deve virar filtro secundário, ser afrouxado, ou removido; se o gate
+irmão `smc_confirm_4h15m` (mesmo viés geométrico, mas já observável e
+retriável) merece a mesma revisão por simetria. Mesmo critério do item
+"RESIDUAL" de precedência stop>TP em `trading-engine.md`: só investir num
+redesenho quando os logs (`reason: 'smc_zone_gate_rejected'`) mostrarem
+volume/impacto real, não a partir de uma amostra sintética de 800 candles.
+
+Regressão: `smcStructure.test.js` reproduz o viés geométrico; três novos
+testes em `scannerStateMachine.test.js` (log único por descarte, dedup entre
+passadas do mesmo candle, nenhum log quando não há descarte) confirmados
+falhando contra o código anterior antes da correção.

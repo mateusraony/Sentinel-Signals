@@ -150,6 +150,31 @@ describe('calculateStructure — 150-candle scan window vs. swingLen (root cause
   });
 });
 
+// docs/known-risks.md item 35: scanner.js's zoneOk gate (1h SMC structure ->
+// SignalEvent) shares the SAME closedCandles as calculateStructure — a
+// breakout mechanically pushes the close toward the extreme of the PD zone's
+// (excluded-current-bar) lookback window, which is exactly the zone the gate
+// rejects for that direction. Reproduces the finding on the same fixture
+// item 34 already anchors, at the same swingLen=50 default.
+describe('calculatePdZone vs calculateStructure — signal-direction zone bias (known-risks item 35)', () => {
+  it('the single swingLen=50 structural event in goldenCandles lands in the zone its own direction is rejected by', () => {
+    const candles = goldenCandles(800);
+    const full = calculateStructure(candles, { swingLen: 50 });
+
+    let eventIdx = -1;
+    let isBear = false;
+    for (let i = 0; i < full.series.bullBos.length; i++) {
+      if (full.series.bullBos[i] || full.series.bullChoch[i]) { eventIdx = i; isBear = false; break; }
+      if (full.series.bearBos[i] || full.series.bearChoch[i]) { eventIdx = i; isBear = true; break; }
+    }
+    expect(eventIdx).toBeGreaterThan(-1); // sanity: item 34's single event still exists
+
+    const zoneAtEvent = calculatePdZone(candles.slice(0, eventIdx + 1), 20);
+    // scanner.js:628 rejects BUY when zone === 'premium', SELL when zone === 'discount'.
+    expect(zoneAtEvent.zone).toBe(isBear ? 'discount' : 'premium');
+  });
+});
+
 describe('calculateLiquiditySweep', () => {
   it('returns false/false when there is not enough data', () => {
     const result = calculateLiquiditySweep(flatCandles(10), 20);

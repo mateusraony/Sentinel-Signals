@@ -62,6 +62,14 @@ Definido por pesquisa de comunidade (fontes no PR que o introduziu):
   ajustar qualquer parâmetro dessa cascata, considere também quantos candles
   o `fetchCandles` daquele timeframe está buscando — não é só o cálculo do
   indicador que precisa de paridade, é o histórico disponível pra ele rodar.
+- O gate de zona PD (`zoneOk`, `scanner.js`) e `calculateStructure`
+  compartilham o mesmo `closedCandles` — um rompimento de estrutura tende
+  geometricamente a empurrar `close` para o extremo do range recente, a
+  favor da zona que `zoneOk` rejeita para aquela direção (medido,
+  `docs/known-risks.md` item 35). Se algum dia o gate for movido/duplicado
+  para o momento do gatilho 5m (pesquisa de comunidade ICT sugere isso),
+  documente como divergência deliberada do porte 1:1 (mesmo padrão do
+  item 24 — stop estrutural), não como correção silenciosa de paridade.
 - Só candles fechados. Não misture convenção de índice (barra atual vs anterior)
   sem checar o Pine correspondente.
 - Paridade ≠ taxa de acerto: corrigir paridade aproxima do TradingView, não torna
