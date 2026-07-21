@@ -27,12 +27,34 @@ export function isTerminalStatus(status) {
 // Compares ONLY `status` (not tp1_hit/current_stop/etc.) on purpose: a stricter
 // predicate would silently drop legitimate same-status writes (e.g. the runner
 // trailing stop advancing while status stays RUNNER_ACTIVE) and could strand an
-// op. Fields other than status are last-write-wins by design — the trailing
-// stop is monotonic and self-corrects on the next pass.
+// op. `current_stop` gets its own protection below (clampMonotonicStop); the
+// remaining fields (tp1_hit/tp2_hit/rf_reverse_bars_count/...) are
+// last-write-wins because they're already idempotent by construction (one-way
+// flags, per-candle dedup) — a stale write of those can't regress anything.
 export function canApplyTransition(currentDoc, fromStatus) {
   if (!currentDoc) return false;
   if (isTerminalStatus(currentDoc.status)) return false;
   return currentDoc.status === fromStatus;
+}
+
+// Guard `current_stop` against a stale caller overwriting a better stop that
+// another worker already committed. The browser and cron each compute
+// `newCurrentStop` from their OWN candle/price read, BEFORE opening the
+// Firestore transaction — so canApplyTransition's status-only CAS lets a
+// same-status write through (e.g. two concurrent trailing-stop advances on a
+// RUNNER_ACTIVE op) even when the doc's `current_stop` moved between the
+// caller's read and its write. Revised from an earlier "last-write-wins by
+// design, self-corrects on the next pass" assumption: advanceTrailingStop
+// (opExitRules.js) maxes/mins the new trail against the STORED stop, so a
+// regression here only heals once price moves favorably enough again — not
+// immediately — leaving a real (if narrow) window where a worse stop could
+// govern a stop-out. Call with the value read INSIDE the same transaction as
+// `existingStop`, never a value read before the transaction opened.
+export function clampMonotonicStop({ side, existingStop, candidateStop }) {
+  if (candidateStop == null || existingStop == null) return candidateStop;
+  if (side === 'BUY') return Math.max(existingStop, candidateStop);
+  if (side === 'SELL') return Math.min(existingStop, candidateStop);
+  return candidateStop; // unknown/legacy side — pass through, don't strand old ops
 }
 
 // Decide what createTradeOpIfNoneActive should do, given what it read inside

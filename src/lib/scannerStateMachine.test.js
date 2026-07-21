@@ -886,4 +886,27 @@ describe('cross-loop concurrency invariant (persistScanResults vs priceCheckActi
       expect(stored.tp1_hit).toBe(false);
     }
   });
+
+  // Item 20 of the 2026-07 hardening proposal, verified against the REAL
+  // fakeBackend.transitionTradeOp (not a hand-mirrored harness): the status
+  // CAS lets a same-status trailing-stop advance through even when the doc's
+  // current_stop already moved since the caller's own pre-transaction read
+  // (browser and cron each compute their candidate stop BEFORE calling
+  // transitionTradeOp). Without clampMonotonicStop, whichever call commits
+  // LAST wins outright, even carrying a worse stop than one already
+  // committed — a real regression window, not just a theoretical one (see
+  // .claude/rules/trading-engine.md).
+  it('a same-status current_stop write can never regress one a concurrent worker already committed', async () => {
+    backend._seed('TradeOperation', makeOp({ status: 'RUNNER_ACTIVE', current_stop: 100 }));
+
+    // Worker A (e.g. browser, fresher price) commits the better trail first.
+    const workerA = await backend.tradeOps.transitionTradeOp('op1', 'RUNNER_ACTIVE', { status: 'RUNNER_ACTIVE', current_stop: 105 });
+    // Worker B (e.g. cron) computed its candidate from the stop=100 it read
+    // BEFORE worker A committed — its own CAS on `status` still passes.
+    const workerB = await backend.tradeOps.transitionTradeOp('op1', 'RUNNER_ACTIVE', { status: 'RUNNER_ACTIVE', current_stop: 102 });
+
+    expect(workerA.applied).toBe(true);
+    expect(workerB.applied).toBe(true); // CAS on status doesn't reject this — the stop itself must self-protect
+    expect(backend._get('TradeOperation', 'op1').current_stop).toBe(105); // never regresses to 102
+  });
 });

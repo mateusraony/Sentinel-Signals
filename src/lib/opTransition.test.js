@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canApplyTransition, isTerminalStatus, planTradeOpCreation, TERMINAL_STATUSES } from './opTransition.js';
+import { canApplyTransition, clampMonotonicStop, isTerminalStatus, planTradeOpCreation, TERMINAL_STATUSES } from './opTransition.js';
 
 describe('isTerminalStatus', () => {
   it('recognises every terminal status', () => {
@@ -35,6 +35,28 @@ describe('canApplyTransition', () => {
       expect(canApplyTransition({ status: s }, s)).toBe(false);
       expect(canApplyTransition({ status: s }, 'RUNNER_ACTIVE')).toBe(false);
     }
+  });
+});
+
+describe('clampMonotonicStop', () => {
+  it('BUY: rejects a candidate worse (lower) than the existing stop', () => {
+    expect(clampMonotonicStop({ side: 'BUY', existingStop: 105, candidateStop: 102 })).toBe(105);
+  });
+  it('BUY: accepts a candidate better (higher) than the existing stop', () => {
+    expect(clampMonotonicStop({ side: 'BUY', existingStop: 100, candidateStop: 105 })).toBe(105);
+  });
+  it('SELL: rejects a candidate worse (higher) than the existing stop', () => {
+    expect(clampMonotonicStop({ side: 'SELL', existingStop: 95, candidateStop: 98 })).toBe(95);
+  });
+  it('SELL: accepts a candidate better (lower) than the existing stop', () => {
+    expect(clampMonotonicStop({ side: 'SELL', existingStop: 100, candidateStop: 95 })).toBe(95);
+  });
+  it('passes the candidate through unchanged for an unknown/legacy side (never strands old ops)', () => {
+    expect(clampMonotonicStop({ side: undefined, existingStop: 105, candidateStop: 102 })).toBe(102);
+  });
+  it('passes the candidate through when there is nothing to compare against (first write, or no-op patch)', () => {
+    expect(clampMonotonicStop({ side: 'BUY', existingStop: null, candidateStop: 105 })).toBe(105);
+    expect(clampMonotonicStop({ side: 'BUY', existingStop: 100, candidateStop: null })).toBe(null);
   });
 });
 
@@ -107,12 +129,16 @@ describe('concurrent transition (in-memory CAS simulation)', () => {
   function makeStore(initial) {
     const store = { ...initial };
     // Mirrors adapter transitionTradeOp: gate the write on canApplyTransition
-    // against the current (fresh) doc, then apply the patch atomically.
+    // against the current (fresh) doc, clamp current_stop monotonically
+    // against the same fresh doc, then apply the patch atomically.
     return {
       get: () => ({ ...store }),
       transition(fromStatus, patch) {
         if (!canApplyTransition(store, fromStatus)) return { applied: false };
-        Object.assign(store, patch);
+        const safePatch = patch.current_stop != null
+          ? { ...patch, current_stop: clampMonotonicStop({ side: store.side, existingStop: store.current_stop, candidateStop: patch.current_stop }) }
+          : patch;
+        Object.assign(store, safePatch);
         return { applied: true };
       },
     };
@@ -143,5 +169,31 @@ describe('concurrent transition (in-memory CAS simulation)', () => {
     // A late worker still holding the stale RUNNER_ACTIVE view cannot resurrect it.
     expect(s.transition('RUNNER_ACTIVE', { status: 'STOP_HIT' }).applied).toBe(false);
     expect(s.get().status).toBe('TP2_HIT');
+  });
+
+  // Item 20 of the 2026-07 hardening proposal: canApplyTransition only CASes
+  // `status`, so two same-status trailing-stop advances (browser + cron, each
+  // computing current_stop from its OWN pre-transaction read) both pass the
+  // CAS — the second writer's patch used to win outright (Object.assign),
+  // even when it carried a WORSE stop computed before the first writer's
+  // better stop had committed. Reproduces the exact scenario from the plan:
+  // worker A commits 100->105 (BUY) first, worker B's stale patch (still
+  // based on the pre-105 read) arrives after with only 102.
+  it('BUY: a same-status write with a worse current_stop never regresses one already committed', () => {
+    const s = makeStore({ id: 'op1', status: 'RUNNER_ACTIVE', side: 'BUY', current_stop: 100 });
+    const workerA = s.transition('RUNNER_ACTIVE', { status: 'RUNNER_ACTIVE', current_stop: 105 });
+    const workerB = s.transition('RUNNER_ACTIVE', { status: 'RUNNER_ACTIVE', current_stop: 102 }); // stale, computed from stop=100
+    expect(workerA.applied).toBe(true);
+    expect(workerB.applied).toBe(true); // CAS still applies (status unchanged) — but the stop must not regress
+    expect(s.get().current_stop).toBe(105);
+  });
+
+  it('SELL: a same-status write with a worse current_stop never regresses one already committed', () => {
+    const s = makeStore({ id: 'op1', status: 'RUNNER_ACTIVE', side: 'SELL', current_stop: 100 });
+    const workerA = s.transition('RUNNER_ACTIVE', { status: 'RUNNER_ACTIVE', current_stop: 95 });
+    const workerB = s.transition('RUNNER_ACTIVE', { status: 'RUNNER_ACTIVE', current_stop: 98 }); // stale, computed from stop=100
+    expect(workerA.applied).toBe(true);
+    expect(workerB.applied).toBe(true);
+    expect(s.get().current_stop).toBe(95);
   });
 });

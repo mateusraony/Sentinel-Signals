@@ -84,6 +84,30 @@ nunca deve receber nova transição.**
   de ponteiros órfãos legados); op terminal nunca volta a ser apontada; op viva
   sem ponteiro (janela de crash) continua sendo re-apontada. Ver
   `docs/known-risks.md` item 21.
+- **[CORRIGIDO — item 20 da proposta de hardening 2026-07] `current_stop`
+  podia regredir mesmo com o CAS de `status` intacto.** `transitionTradeOp`
+  faz CAS só sobre `status` (`canApplyTransition`) — o resto do `patch`,
+  incluindo `current_stop`, era aplicado com `tx.update` sem checar se o novo
+  valor é realmente melhor que o já salvo. Como o browser e o cron computam
+  `current_stop` ANTES de abrir a transação (a partir da própria leitura de
+  preço/candle), dois avanços de trailing no mesmo status (`RUNNER_ACTIVE`)
+  passam ambos no CAS — o segundo a commitar vencia mesmo carregando um stop
+  pior, calculado antes do primeiro ter sido salvo. Um comentário anterior em
+  `opTransition.js` chamava isso de "last-write-wins by design... self-corrects
+  on the next pass" — verificado: `advanceTrailingStop` usa o `current_stop`
+  ARMAZENADO como piso (`Math.max`/`Math.min`), então uma regressão só se
+  autocorrige quando o preço volta a se mover favoravelmente o bastante — não
+  é imediato, é uma janela real (embora estreita) em que o stop pior poderia
+  encerrar a operação. **Correção**: nova função pura `clampMonotonicStop`
+  (`src/lib/opTransition.js`), usada DENTRO da mesma transação nos três
+  backends (`entities.js`, `adminEntities.js`, `fakeBackend.js`) — o
+  `current_stop` do patch é comparado contra o valor lido na transação
+  (nunca contra o valor pré-transação do chamador) e só aplica se for melhor
+  para o lado (`BUY`: maior; `SELL`: menor). Campos sem risco equivalente
+  (contadores dedupados por candle, flags one-way) continuam last-write-wins,
+  de propósito. Regressão em `opTransition.test.js` (função pura + cenário de
+  corrida via o harness `makeStore`) e `scannerStateMachine.test.js` (mesmo
+  cenário contra o `fakeBackend.transitionTradeOp` real).
 - **[RESIDUAL — aguardando dados] Precedência stop>TP entre loops.** O CAS
   resolve a corrida de dados; com P0-c/d corrigidos, o cenário grave (TP1
   retroativo vencendo stop real) deixou de existir. O que resta — dois loops

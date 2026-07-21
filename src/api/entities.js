@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebaseClient';
 import { strategyReviewerAgent } from '@/api/agents';
-import { canApplyTransition, isTerminalStatus, planTradeOpCreation } from '@/lib/opTransition';
+import { canApplyTransition, clampMonotonicStop, isTerminalStatus, planTradeOpCreation } from '@/lib/opTransition';
 
 function buildQuery(collectionName, filters = {}, sort, limitCount) {
   const constraints = [];
@@ -241,7 +241,10 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId } = {}) {
     if (!canApplyTransition(current, fromStatus)) {
       return { applied: false, currentStatus: current ? current.status : null };
     }
-    tx.update(opRef, patch);
+    const safePatch = patch.current_stop != null
+      ? { ...patch, current_stop: clampMonotonicStop({ side: current.side, existingStop: current.current_stop, candidateStop: patch.current_stop }) }
+      : patch;
+    tx.update(opRef, safePatch);
     if (activeRef && activeSnap && activeSnap.exists()
         && activeSnap.data().active_trade_op_id === opId) {
       tx.set(activeRef, { active_trade_op_id: null, updated_at: new Date().toISOString() });
