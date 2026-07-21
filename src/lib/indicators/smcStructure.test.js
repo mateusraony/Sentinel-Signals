@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateStructure, calculateLiquiditySweep, calculatePdZone, classifyZone } from './smcStructure';
+import { calculateStructure, calculateLiquiditySweep, calculatePdZone, classifyZone, buildOteLeg } from './smcStructure';
 import { chochBreakoutCandles, mkCandle, flatCandles, goldenCandles } from './__fixtures__/candles';
 
 // Counts BOS/CHoCH events across the whole series ('series' field), used
@@ -266,5 +266,36 @@ describe('classifyZone', () => {
     expect(result.zone).toBe('equilibrium');
     expect(result.eqTop).toBe(100);
     expect(result.eqBtm).toBe(100);
+  });
+});
+
+// docs/known-risks.md item 38: buildOteLeg anchors the leg a fresh 1h
+// structure break just confirmed, consumed by the 5m entry trigger to
+// classify a LATER candle's zone against this leg instead of a disconnected
+// window (see check5mSmcConfirmation in scanner.js).
+describe('buildOteLeg', () => {
+  it('BUY: anchors legHigh to the break close and legLow to the protected swing low', () => {
+    const leg = buildOteLeg('BUY', 150, { lastSwingHigh: 140, lastSwingLow: 90 });
+    expect(leg).toEqual({ legHigh: 150, legLow: 90 });
+  });
+
+  it('SELL: anchors legHigh to the protected swing high and legLow to the break close', () => {
+    const leg = buildOteLeg('SELL', 80, { lastSwingHigh: 140, lastSwingLow: 90 });
+    expect(leg).toEqual({ legHigh: 140, legLow: 80 });
+  });
+
+  it('BUY: returns legLow null when the protected swing low is not yet confirmed', () => {
+    const leg = buildOteLeg('BUY', 150, { lastSwingHigh: 140, lastSwingLow: null });
+    expect(leg).toEqual({ legHigh: 150, legLow: null });
+  });
+
+  it('SELL: returns legHigh null when the protected swing high is not yet confirmed', () => {
+    const leg = buildOteLeg('SELL', 80, { lastSwingHigh: null, lastSwingLow: 90 });
+    expect(leg).toEqual({ legHigh: null, legLow: 80 });
+  });
+
+  it('tolerates a missing smc object entirely (defaults to no pivots)', () => {
+    expect(buildOteLeg('BUY', 150)).toEqual({ legHigh: 150, legLow: null });
+    expect(buildOteLeg('SELL', 80)).toEqual({ legHigh: null, legLow: 80 });
   });
 });

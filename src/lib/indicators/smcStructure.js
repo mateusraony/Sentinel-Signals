@@ -252,3 +252,31 @@ export function calculatePdZone(candles, pdSwingLen = 20) {
 
   return { zone, pdSwingHigh, pdSwingLow, eqTop, eqBtm };
 }
+
+/**
+ * Ancora a perna (leg) do impulso que um rompimento de estrutura 1h acabou
+ * de confirmar — usada pelo gatilho de entrada 5m (`check5mSmcConfirmation`
+ * em `scanner.js`) para julgar se uma entrada, mais tarde, está num recuo
+ * favorável dessa perna, em vez de remedir uma janela genérica desconectada
+ * do evento (`docs/known-risks.md` item 38 — substitui o gate de zona
+ * autocontraditório no candle de viés 1h, item 35).
+ *
+ * BUY (rompimento de alta): `legLow` = o fundo protegido de onde o impulso
+ * partiu (`lastSwingLow`); `legHigh` = o close que acabou de confirmar o
+ * rompimento (o topo já alcançado). SELL é o espelho.
+ *
+ * Fixada UMA VEZ, no instante do sinal 1h (quem chama decide isso —
+ * chamar de novo mais tarde recalcularia com um `lastSwingLow`/`lastSwingHigh`
+ * potencialmente diferente, fazendo a perna "derivar" enquanto o candidato
+ * aguarda confirmação 5m).
+ *
+ * Retorna null no lado ainda sem pivô protegido confirmado (`lastSwingHigh`/
+ * `lastSwingLow` ausente) — chamador deve tratar como não avaliável
+ * (fail-open via `classifyZone`), nunca como veredito desfavorável.
+ */
+export function buildOteLeg(signalType, breakClose, { lastSwingHigh, lastSwingLow } = {}) {
+  if (signalType === 'BUY') {
+    return { legHigh: breakClose, legLow: lastSwingLow ?? null };
+  }
+  return { legHigh: lastSwingHigh ?? null, legLow: breakClose };
+}

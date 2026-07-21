@@ -22,7 +22,7 @@ import { calculateATR } from './indicators/atr';
 import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
 import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
-import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './indicators/smcStructure';
+import { calculateStructure, calculateLiquiditySweep, calculatePdZone, buildOteLeg } from './indicators/smcStructure';
 import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit } from './opExitRules';
 import { hasAssetStateChanged } from './assetStateDiff';
@@ -534,7 +534,18 @@ export async function scanAsset(asset) {
       if (tf === '4h' || tf === '1h') {
         const structure = calculateStructure(closedCandles);
         const pdZone = calculatePdZone(closedCandles);
-        smc = { trend: structure.trend, lastBull: structure.lastBull, lastBear: structure.lastBear, pdZone: pdZone.zone };
+        smc = {
+          trend: structure.trend,
+          lastBull: structure.lastBull,
+          lastBear: structure.lastBear,
+          pdZone: pdZone.zone,
+          // Protected pivots carried by the structure calc (docs/known-risks.md
+          // item 38) — the origin of the impulse leg a fresh 1h BOS/CHoCH just
+          // confirmed. Consumed below to anchor the OTE leg passed to the 5m
+          // entry trigger; already reused by the SMC structural stop (item 24).
+          lastSwingHigh: structure.lastSwingHigh,
+          lastSwingLow: structure.lastSwingLow,
+        };
       }
 
       results[tf] = {
@@ -653,6 +664,10 @@ export async function scanAsset(asset) {
         const structureType = bullFired
           ? (r.smc.lastBull.choch ? 'CHoCH' : 'BOS')
           : (r.smc.lastBear.choch ? 'CHoCH' : 'BOS');
+        // Fixed once, here, at the instant of the 1h signal — never
+        // recomputed on retry (item 38). Null legLow/legHigh (missing
+        // protected pivot) is a valid, expected fail-open case.
+        const { legHigh: oteLegHigh, legLow: oteLegLow } = buildOteLeg(signalType, r.lastClose, r.smc);
 
         newSignals.push({
           asset_id: asset.id,
@@ -669,6 +684,8 @@ export async function scanAsset(asset) {
           context: {
             structure_type: structureType,
             pd_zone: r.smc.pdZone,
+            ote_leg_high: oteLegHigh,
+            ote_leg_low: oteLegLow,
             reasons: [`Estrutura 1H: ${structureType} ${signalType}`, `Zona: ${r.smc.pdZone}`],
           },
           dedup_key: `${asset.symbol}_1h_${signalType}_smc_structure_${r.lastCandleTime}`,
