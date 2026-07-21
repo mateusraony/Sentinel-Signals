@@ -945,57 +945,17 @@ describe('cross-loop concurrency invariant (persistScanResults vs priceCheckActi
   });
 });
 
-// docs/known-risks.md item 35: a 1h SMC structure break that failed the
-// zoneOk gate (scanner.js:628-630) used to vanish with zero trace — no
-// SignalEvent, no SystemLog, no retry path (the retry loop only re-reads
-// already-persisted SignalEvents). scanAsset now records the drop in
-// zoneGateDrops; persistScanResults logs it. No trading behavior changes —
-// newSignals is still empty for a rejected candidate either way.
-describe('SMC 1h zone-gate rejection — now observable (known-risks item 35)', () => {
-  function makeZoneDrop(overrides = {}) {
-    return {
-      asset_id: 'asset1',
-      symbol: 'BTCUSDT',
-      timeframe: '1h',
-      signal_type: 'SELL',
-      structure_type: 'CHoCH',
-      pd_zone: 'discount',
-      candle_time: '2026-07-16T12:00:00.000Z',
-      price_at_signal: 100,
-      dedup_key: 'BTCUSDT_1h_SELL_smc_zone_reject_2026-07-16T12:00:00.000Z',
-      ...overrides,
-    };
-  }
-
-  it('logs exactly one SystemLog for a rejected structure break, without creating any SignalEvent', async () => {
-    await persistScanResults({ ...makeScanResult({ results: {} }), zoneGateDrops: [makeZoneDrop()] });
-
-    const signals = await backend.entities.SignalEvent.filter({ source: 'smc_structure' });
-    expect(signals).toHaveLength(0); // trading behavior unchanged — still no signal
-
-    const logs = await backend.entities.SystemLog.filter({ symbol: 'BTCUSDT' });
-    const zoneLogs = logs.filter(l => l.details?.reason === 'smc_zone_gate_rejected');
-    expect(zoneLogs).toHaveLength(1);
-    expect(zoneLogs[0].details).toMatchObject({
-      reason: 'smc_zone_gate_rejected',
-      structure_type: 'CHoCH',
-      pd_zone: 'discount',
-      signal_type: 'SELL',
-    });
-  });
-
-  it('dedups across scan passes within the same 1h candle — never logs the same drop twice', async () => {
-    const scanResult = { ...makeScanResult({ results: {} }), zoneGateDrops: [makeZoneDrop()] };
-    await persistScanResults(scanResult);
-    await persistScanResults(scanResult); // second ~5-minute pass, same still-open 1h candle
-
-    const logs = await backend.entities.SystemLog.filter({ symbol: 'BTCUSDT' });
-    expect(logs.filter(l => l.details?.reason === 'smc_zone_gate_rejected')).toHaveLength(1);
-  });
-
-  it('does not log anything when there is nothing to report', async () => {
-    await persistScanResults(makeScanResult({ results: {} }));
-    const logs = await backend.entities.SystemLog.filter({ symbol: 'BTCUSDT' });
-    expect(logs.filter(l => l.details?.reason === 'smc_zone_gate_rejected')).toHaveLength(0);
-  });
-});
+// docs/known-risks.md item 35/38: the zoneOk gate that used to reject a 1h
+// SMC structure break based on Premium/Discount zone (scanner.js:650, and
+// the zoneGateDrops observability path built on top of it) has been REMOVED,
+// not merely made observable — real backtest data showed it rejected 74/74
+// real structure breaks over 18.5 months (self-contradictory by
+// construction, see item 38). zoneGateDrops/smc_zone_gate_rejected no longer
+// exist anywhere in scanner.js, so the describe block that used to live here
+// (testing persistScanResults' handling of a fake zoneGateDrops payload) has
+// no real mechanism left to test. The actual regression proving a structure
+// break in an unfavorable zone still becomes a SignalEvent now lives in
+// backtestEngine.test.js (runBacktest against the real scanAsset pipeline,
+// goldenCandles(800) bar 418) — this file only exercises persistScanResults
+// with synthetic scanResult objects, not the real candle-driven scanAsset
+// logic where the old gate actually lived.

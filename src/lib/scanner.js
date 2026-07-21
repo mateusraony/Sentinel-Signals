@@ -442,10 +442,6 @@ export async function scanAsset(asset) {
   const results = {};
   const newSignals = [];
   const errors = [];
-  // Structure breaks the SMC 1h zone gate rejected (known-risks.md item 35)
-  // — recorded so persistScanResults can log them; scanAsset itself never
-  // writes to Firestore.
-  const zoneGateDrops = [];
 
   // Read Pine config — parameters auto-synced from Pine Script editor
   const pineConfig = await getPineConfig();
@@ -596,8 +592,8 @@ export async function scanAsset(asset) {
     // Uses the CONFIRMED signal (confirmBars), not the raw flip — at the
     // default confirmBars=1 these are identical (see rangeFilterConfirmation.js).
     // Every other reader of r.rf.signal/.direction (AssetState diagnostics,
-    // regime checks, check15mConfirmation, retry loop, zoneGateDrops) is
-    // intentionally untouched — this block only.
+    // regime checks, check15mConfirmation, retry loop) is intentionally
+    // untouched — this block only.
     if ((r.confirmed.confirmedSignal === 'BUY' || r.confirmed.confirmedSignal === 'SELL') && strengthResult.passed) {
       const reason = generateSignalDescription(
         asset.symbol, tf, r.confirmed.confirmedSignal,
@@ -634,8 +630,18 @@ export async function scanAsset(asset) {
     }
 
     // Check for SMC/ICT structure signal (1h bias for the 1h→5m cascade) —
-    // fires on a fresh BOS/CHoCH, gated by the Premium/Discount zone rule
-    // (only buy from discount/equilibrium, only sell from premium/equilibrium).
+    // fires on any fresh BOS/CHoCH. docs/known-risks.md item 38: the
+    // Premium/Discount zone is NO LONGER a reject gate here — pd_zone stays
+    // as observable metadata only (reason string, context.pd_zone). Gating
+    // on it at this exact candle was self-contradictory by construction: a
+    // structure break's close is, by definition, near the extreme of the
+    // very window pdZone measures over the same closedCandles, so the old
+    // gate rejected almost exactly the event type it was meant to filter
+    // (measured: 74/74 real 1h breaks rejected in an 18.5-month BTCUSDT
+    // backtest — see docs/known-risks.md item 35). Zone-awareness moves to
+    // the 5m entry trigger instead (check5mSmcConfirmation), evaluated
+    // against the LEG of this specific break rather than a disconnected
+    // window — see buildSmcTradeOpData/ote_leg_high/ote_leg_low.
     // Gated by asset.smc_enabled up front — assets that never opted into
     // this cascade shouldn't get SMC SignalEvents/alerts at all, not just
     // have the TradeOperation blocked later.
@@ -647,46 +653,26 @@ export async function scanAsset(asset) {
         const structureType = bullFired
           ? (r.smc.lastBull.choch ? 'CHoCH' : 'BOS')
           : (r.smc.lastBear.choch ? 'CHoCH' : 'BOS');
-        const zoneOk = signalType === 'BUY' ? r.smc.pdZone !== 'premium' : r.smc.pdZone !== 'discount';
 
-        if (zoneOk) {
-          newSignals.push({
-            asset_id: asset.id,
-            symbol: asset.symbol,
-            timeframe: tf,
-            signal_type: signalType,
-            source: 'smc_structure',
-            strength: structureType === 'CHoCH' ? 'strong' : 'medium',
-            alignment: strengthResult.alignment,
-            priority: structureType === 'CHoCH' ? 'high' : 'medium',
-            price_at_signal: r.lastClose,
-            candle_time: r.lastCandleTime,
-            reason: `${asset.symbol} 1H ${structureType} ${signalType === 'BUY' ? 'altista' : 'baixista'} — zona ${r.smc.pdZone}`,
-            context: {
-              structure_type: structureType,
-              pd_zone: r.smc.pdZone,
-              reasons: [`Estrutura 1H: ${structureType} ${signalType}`, `Zona: ${r.smc.pdZone}`],
-            },
-            dedup_key: `${asset.symbol}_1h_${signalType}_smc_structure_${r.lastCandleTime}`,
-          });
-        } else {
-          // known-risks.md item 35: unlike the SignalEvent path, a rejection
-          // here previously left no trace at all — no SignalEvent, no log,
-          // no retry (the retry loop only re-reads already-persisted
-          // SignalEvents). Recorded, not acted on: this does NOT change
-          // zoneOk's effect on newSignals.
-          zoneGateDrops.push({
-            asset_id: asset.id,
-            symbol: asset.symbol,
-            timeframe: tf,
-            signal_type: signalType,
+        newSignals.push({
+          asset_id: asset.id,
+          symbol: asset.symbol,
+          timeframe: tf,
+          signal_type: signalType,
+          source: 'smc_structure',
+          strength: structureType === 'CHoCH' ? 'strong' : 'medium',
+          alignment: strengthResult.alignment,
+          priority: structureType === 'CHoCH' ? 'high' : 'medium',
+          price_at_signal: r.lastClose,
+          candle_time: r.lastCandleTime,
+          reason: `${asset.symbol} 1H ${structureType} ${signalType === 'BUY' ? 'altista' : 'baixista'} — zona ${r.smc.pdZone}`,
+          context: {
             structure_type: structureType,
             pd_zone: r.smc.pdZone,
-            candle_time: r.lastCandleTime,
-            price_at_signal: r.lastClose,
-            dedup_key: `${asset.symbol}_1h_${signalType}_smc_zone_reject_${r.lastCandleTime}`,
-          });
-        }
+            reasons: [`Estrutura 1H: ${structureType} ${signalType}`, `Zona: ${r.smc.pdZone}`],
+          },
+          dedup_key: `${asset.symbol}_1h_${signalType}_smc_structure_${r.lastCandleTime}`,
+        });
       }
     }
 
@@ -768,7 +754,6 @@ export async function scanAsset(asset) {
     results,
     alignment: alignmentResult,
     newSignals,
-    zoneGateDrops,
     errors,
     duration,
     pineConfig,
@@ -784,7 +769,7 @@ export async function persistScanResults(scanResult) {
   // result, so a second read of the same strategyConfig doc is pure waste
   // (Firestore quota is billed per read, and this runs for every asset on
   // every 5-minute pass — see docs/known-risks.md item 13).
-  const { asset, results, newSignals, zoneGateDrops = [], errors, duration, pineConfig } = scanResult;
+  const { asset, results, newSignals, errors, duration, pineConfig } = scanResult;
 
   // Update or create asset states
   for (const [tf, data] of Object.entries(results)) {
@@ -1431,30 +1416,6 @@ export async function persistScanResults(scanResult) {
     } catch (err) {
       logError('scanner', `Falha ao atualizar status da operação ${op.id} (${op.symbol})`, { error: err.message });
     }
-  }
-
-  // Log SMC 1h zone-gate rejections (known-risks.md item 35) — observability
-  // only, no behavior change. createUnique (not create): the 1h candle
-  // doesn't change within the hour, so the same "last bar" event would
-  // otherwise re-fire this on every ~5-minute scan pass until the next 1h
-  // candle closes; dedup_key keys it to the candle, same pattern already
-  // used for SignalEvent.
-  for (const drop of zoneGateDrops) {
-    await backend.entities.SystemLog.createUnique(drop.dedup_key, {
-      level: 'info',
-      module: 'scanner',
-      message: `${drop.symbol} 1H SMC ${drop.structure_type} ${drop.signal_type} — descartado pelo gate de zona (${drop.pd_zone})`,
-      symbol: drop.symbol,
-      timeframe: drop.timeframe,
-      details: {
-        reason: 'smc_zone_gate_rejected',
-        structure_type: drop.structure_type,
-        pd_zone: drop.pd_zone,
-        signal_type: drop.signal_type,
-        candle_time: drop.candle_time,
-        price_at_signal: drop.price_at_signal,
-      },
-    });
   }
 
   // Update asset scan status. scan_error_since tracks how long this asset has
