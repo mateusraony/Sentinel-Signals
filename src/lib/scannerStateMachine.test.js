@@ -36,7 +36,7 @@ vi.mock('./marketDataProvider', () => ({
 }));
 
 import * as entitiesModule from '@/api/entities';
-import { fetchCurrentPrice } from './marketDataProvider';
+import { fetchCurrentPrice, fetchCandles } from './marketDataProvider';
 import { isTelegramConfigured, notifyNewSignal, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
 import { persistScanResults, priceCheckActiveOps, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, firstPositive, firstPositiveInteger } from './scanner.js';
 
@@ -193,6 +193,117 @@ describe('buildSmcTradeOpData — structural initial stop (1h→5m cascade)', ()
     });
     expect(op.initial_stop).toBeCloseTo(96);
     expect(op.stop_basis).toBe('structural_capped');
+  });
+
+  // docs/known-risks.md item 38: additive observability fields — must never
+  // change the stop/TP math asserted above.
+  it('carries the OTE leg and entry zone as observability fields, untouched by stop/TP math', () => {
+    const sigWithLeg = { ...sig, context: { ...sig.context, ote_leg_high: 105, ote_leg_low: 95 } };
+    const op = buildSmcTradeOpData(sigWithLeg, tf1h, makePineConfig(), {
+      entryPrice: 100, entryCandleTime: '2026-07-16T11:55:00.000Z', trigger: 'sweep', structuralLevel: 98.5, oteZone: 'discount',
+    });
+    expect(op.ote_leg_high).toBe(105);
+    expect(op.ote_leg_low).toBe(95);
+    expect(op.ote_zone_at_entry).toBe('discount');
+    expect(op.initial_stop).toBeCloseTo(98.3); // unchanged from the first test in this describe
+  });
+
+  it('defaults the OTE fields to null when the signal/confirmation carry none (legacy data)', () => {
+    const op = buildSmcTradeOpData(sig, tf1h, makePineConfig(), {
+      entryPrice: 100, entryCandleTime: '2026-07-16T11:55:00.000Z', trigger: 'structure',
+    });
+    expect(op.ote_leg_high).toBeNull();
+    expect(op.ote_leg_low).toBeNull();
+    expect(op.ote_zone_at_entry).toBeNull();
+  });
+});
+
+// docs/known-risks.md item 38: the Premium/Discount zone gate now lives at
+// the 5m entry trigger (check5mSmcConfirmation), evaluated against the LEG
+// of the 1h break (SignalEvent.context.ote_leg_high/low) instead of the old
+// self-contradictory 1h-candle gate. Driven through the real
+// persistScanResults entry motor (not the pure function in isolation) to
+// prove the wiring — legBounds actually reaching check5mSmcConfirmation from
+// the signal's context, and the TradeOperation/SystemLog outcome depending
+// on it.
+describe('5m OTE zone gate — leg-relative (known-risks item 38)', () => {
+  function mk5m(open, high, low, close, i) {
+    return { open, high, low, close, openTime: i * 300000, closeTime: (i + 1) * 300000, isClosed: true };
+  }
+
+  // Same recipe as calculateLiquiditySweep's own bullish-sweep test
+  // (smcStructure.test.js): 59 flat candles + 1 that wicks below the recent
+  // low and closes back above it — deterministic bullishSweep=true, entry
+  // close pinned at 96.5 so the OTE leg bounds alone decide the outcome.
+  function bullishSweepCandles5m() {
+    const candles = [];
+    for (let i = 0; i < 59; i++) candles.push(mk5m(100, 105, 95, 100, i));
+    candles.push(mk5m(96, 97, 93, 96.5, 59));
+    return candles;
+  }
+
+  function makeSmcSignal(overrides = {}) {
+    return {
+      asset_id: 'asset1', symbol: 'BTCUSDT', signal_type: 'BUY',
+      timeframe: '1h', source: 'smc_structure', dedup_key: 'smc_sig_1',
+      price_at_signal: 100,
+      context: { structure_type: 'BOS', pd_zone: 'premium' },
+      ...overrides,
+    };
+  }
+
+  afterEach(() => {
+    fetchCandles.mockReset(); // local override — other describes rely on the file-wide no-op default
+  });
+
+  it('confirms and creates a TradeOperation when the 5m entry lands in a favorable zone of the leg', async () => {
+    fetchCandles.mockImplementation(async () => bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+    // legHigh=200/legLow=50 -> eqTop=132.5/eqBtm=117.5; entry close 96.5 is
+    // well below eqBtm -> 'discount', which BUY favors (rejects only 'premium').
+    const signal = makeSmcSignal({ context: { structure_type: 'BOS', pd_zone: 'premium', ote_leg_high: 200, ote_leg_low: 50 } });
+
+    await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].cascade).toBe('1h_5m');
+    expect(ops[0].ote_zone_at_entry).toBe('discount');
+  });
+
+  it('rejects the entry (no TradeOperation) when the 5m trigger lands in the unfavorable zone of the leg', async () => {
+    fetchCandles.mockImplementation(async () => bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+    // legHigh=100/legLow=0 -> eqTop=55; entry close 96.5 is well above it ->
+    // 'premium', which BUY rejects.
+    const signal = makeSmcSignal({ context: { structure_type: 'BOS', pd_zone: 'discount', ote_leg_high: 100, ote_leg_low: 0 } });
+
+    await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(0);
+
+    const logs = await backend.entities.SystemLog.filter({ symbol: 'BTCUSDT' });
+    const rejectLog = logs.find(l => l.details?.reason === 'ote_zone_unfavorable');
+    expect(rejectLog).toBeDefined();
+    expect(rejectLog.details.ote_zone).toBe('premium');
+  });
+
+  it('fails open (still confirms) when the leg is not evaluable — missing ote_leg_high/low', async () => {
+    fetchCandles.mockImplementation(async () => bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+    // No ote_leg_high/low at all — simulates a SignalEvent persisted before
+    // item 38 shipped. Must not block: "not evaluable" is not a verdict.
+    const signal = makeSmcSignal({ context: { structure_type: 'BOS', pd_zone: 'premium' } });
+
+    await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].ote_zone_at_entry).toBeNull();
   });
 });
 
