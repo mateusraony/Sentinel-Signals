@@ -267,6 +267,33 @@
         "null"
       ],
       "description": "SMC cascade only: raw 5m invalidation level the stop was derived from (sweep wick or protective swing extreme), before buffer/floor/cap"
+    },
+    "ote_leg_high": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "SMC cascade only (known-risks.md item 38): high bound of the OTE leg the 1h structure break anchored — the protected swing high (SELL) or the break's own confirming close (BUY). Observability only, does not feed initial_stop/tp1/tp2 (see structural_level for that)."
+    },
+    "ote_leg_low": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "SMC cascade only (known-risks.md item 38): low bound of the OTE leg — mirror of ote_leg_high (the break's own confirming close for SELL, or the protected swing low for BUY)."
+    },
+    "ote_zone_at_entry": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "premium",
+        "discount",
+        "equilibrium",
+        null
+      ],
+      "description": "SMC cascade only (known-risks.md item 38): Premium/Discount/Equilibrium zone the 5m entry candle was classified into against the OTE leg — the gate that replaced the old 1h-candle zone gate (item 35)."
     }
   },
   "required": [

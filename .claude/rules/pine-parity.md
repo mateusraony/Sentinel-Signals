@@ -62,14 +62,17 @@ Definido por pesquisa de comunidade (fontes no PR que o introduziu):
   ajustar qualquer parâmetro dessa cascata, considere também quantos candles
   o `fetchCandles` daquele timeframe está buscando — não é só o cálculo do
   indicador que precisa de paridade, é o histórico disponível pra ele rodar.
-- O gate de zona PD (`zoneOk`, `scanner.js`) e `calculateStructure`
-  compartilham o mesmo `closedCandles` — um rompimento de estrutura tende
-  geometricamente a empurrar `close` para o extremo do range recente, a
-  favor da zona que `zoneOk` rejeita para aquela direção (medido,
-  `docs/known-risks.md` item 35). Se algum dia o gate for movido/duplicado
-  para o momento do gatilho 5m (pesquisa de comunidade ICT sugere isso),
-  documente como divergência deliberada do porte 1:1 (mesmo padrão do
-  item 24 — stop estrutural), não como correção silenciosa de paridade.
+- O gate de zona PD **não vive mais** no candle de viés 1h (`scanner.js`,
+  bloco `smc_structure` de `scanAsset`) — dado real (74/74 rompimentos
+  rejeitados em 18,5 meses de BTCUSDT) confirmou que ele compartilhava o
+  mesmo `closedCandles` de `calculateStructure`, empurrando `close`
+  geometricamente para o extremo do range recente e rejeitando quase todo
+  rompimento por tautologia (não estatística, `docs/known-risks.md` item
+  35). Movido para o gatilho 5m (`check5mSmcConfirmation`), medido contra a
+  perna do próprio rompimento (`buildOteLeg`,
+  `src/lib/indicators/smcStructure.js`) — divergência deliberada do porte
+  1:1 (mesmo padrão do item 24 — stop estrutural), registrada no
+  `docs/known-risks.md` item 38, não uma correção silenciosa de paridade.
 - Só candles fechados. Não misture convenção de índice (barra atual vs anterior)
   sem checar o Pine correspondente.
 - `src/pages/PineScript.jsx` guarda o Pine real do usuário como string/JSX —

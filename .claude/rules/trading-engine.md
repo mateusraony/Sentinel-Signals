@@ -108,16 +108,18 @@ nunca deve receber nova transição.**
   de propósito. Regressão em `opTransition.test.js` (função pura + cenário de
   corrida via o harness `makeStore`) e `scannerStateMachine.test.js` (mesmo
   cenário contra o `fakeBackend.transitionTradeOp` real).
-- **[OBSERVÁVEL — aguardando dados] Gate de zona PD da cascata SMC 1h→5m.**
-  Uma quebra de estrutura 1h só vira `SignalEvent` se `zoneOk`
-  (`scanner.js:628-630`); a rejeição agora grava `SystemLog` (`reason:
-  'smc_zone_gate_rejected'`, deduplicado por candle) em vez de descartar
-  silenciosamente — sem mudança de comportamento de trading. Viés geométrico
-  medido (gate compartilha o `closedCandles` de `calculateStructure`, então
-  um rompimento tende a cair na zona que o gate rejeita para aquela
-  direção) e pesquisa de comunidade (ICT/LuxAlgo) sugerem mover a checagem
-  para o gatilho 5m — só reconsiderar isso se os logs mostrarem
-  volume/impacto real. Ver `docs/known-risks.md` item 35.
+- **[CORRIGIDO — item 38] Gate de zona PD da cascata SMC 1h→5m.** Dado real
+  (74/74 rompimentos 1h rejeitados em 18,5 meses de BTCUSDT) confirmou o
+  viés geométrico medido no item 35: o gate compartilhava o `closedCandles`
+  de `calculateStructure`, então um rompimento cai por construção na zona
+  que o gate rejeita para aquela direção — tautologia, não raridade
+  estatística. Removido do candle de viés 1h (toda quebra de estrutura vira
+  `SignalEvent` incondicionalmente); zona movida para o gatilho de entrada
+  5m (`check5mSmcConfirmation`, `scanner.js`), medida contra a perna
+  (`buildOteLeg`, `src/lib/indicators/smcStructure.js`) do próprio
+  rompimento em vez do range de 20 velas — divergência deliberada do porte
+  1:1 do Pine, mesma categoria do item 24. Ver `docs/known-risks.md`
+  item 38.
 - **[OBSERVÁVEL — política já correta] Ambiguidade stop/TP no mesmo
   candle.** Um candle fechado pode tocar stop e TP1/TP2 sem que o OHLC diga
   a ordem intrabar real. A política "stop vence" (`scanner.js`, pré e

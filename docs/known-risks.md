@@ -1358,6 +1358,13 @@ versão mais branda do mesmo problema — não corrigida sem medir primeiro.
 
 ## 35. Gate de zona PD da cascata SMC 1h→5m descartava sinal silenciosamente — agora observável (não redesenhado)
 
+> **Superseded pelo item 38** (2026-07-21): o redesenho que este item deixava
+> deliberadamente em aberto ("não corrigido/redesenhado ainda") foi
+> implementado — o gate foi removido do candle de viés 1h e movido para o
+> gatilho de entrada 5m, medido contra a perna do rompimento. Este item
+> permanece como registro da investigação/evidência que motivou a decisão
+> (não apagado).
+
 Investigação de continuação da "Observação separada" do item 34, a pedido do
 usuário ("qual das lacunas é do motor, pra que fique tudo perfeito?").
 Confirmado no código (não mais suspeita): `zoneOk` (`scanner.js:628-630`) —
@@ -1542,3 +1549,123 @@ pedido explícito e uma rodada de planejamento própria.
 **Separado, não confundir**: o pedido imediato do usuário (rodar o
 backtest de novo e olhar `smcDiagnostics`, item 35) é sobre a cascata
 1h→5m **que já existe** — independente desta proposta de arquitetura nova.
+
+## 38. Gate de zona PD da cascata SMC 1h→5m — removido do viés 1h, movido para o gatilho 5m (redesenho do item 35)
+
+Continuação direta do item 35. Pedido do usuário (2026-07-21) após rodar o
+backtest real estendido de novo (BTCUSDT, ~18,5 meses,
+`.github/workflows/backtest.yml`, run com o `smcDiagnostics` do item 35 já
+em produção): **74 rompimentos de estrutura 1h reais no período, 74/74
+(100%) rejeitados** pelo gate de zona (`zoneOk`, `scanner.js`). Isso
+substitui a amostra sintética única do item 35 (`goldenCandles(800)`) por
+evidência real e volumosa — o próprio critério que o item 35 definiu para
+reconsiderar o redesenho ("só investir num redesenho... se os logs
+mostrarem volume/impacto real, não a partir de uma amostra sintética") foi
+satisfeito.
+
+**Diagnóstico confirmado (não é falta de sorte estatística, é tautologia
+geométrica)**: `calculatePdZone` (janela genérica de 20 velas, exclui a
+vela atual) e `calculateStructure` (confirma BOS/CHoCH quando o `close`
+ultrapassa um pivô protegido) rodam sobre o **mesmo** `closedCandles`. O
+`close` que confirma um rompimento de alta é, por definição, candidato a
+estar no extremo superior dessa mesma janela de 20 velas — exatamente a
+zona (`premium`) que o gate rejeitava para BUY (simetricamente `discount`/
+SELL). Mais dados nunca resolveria isso.
+
+**Pesquisa de comunidade (ICT/SMC, via WebSearch)** confirmou que a
+checagem estava no lugar errado do pipeline: a prática real é aguardar um
+**recuo (pullback)** para dentro da zona de desconto/premium **da perna do
+próprio movimento**, no momento do **gatilho de entrada** — não rejeitar o
+candle de rompimento em si (conceito OTE — Optimal Trade Entry).
+
+**Nota de paridade** (per `.claude/rules/pine-parity.md`): esta é uma
+**divergência deliberada e documentada** do porte 1:1 do Pine "SMC+A
+Unified v2.3", mesma categoria do stop estrutural (item 24) — não existe
+equivalente no Pine real para "zona sobre a perna do rompimento" nem para o
+discriminador `rejectReason`.
+
+**Redesenho implementado**:
+
+1. **Gate removido do candle de viés 1h** (`scanner.js`, bloco `smc_structure`
+   de `scanAsset`) — não afrouxado, **removido**: nenhum tamanho de banda
+   resolve uma rejeição autorreferente. `pd_zone` continua calculado e vira
+   metadado observável (`context.pd_zone`), nunca mais condição de `if`.
+   Toda quebra de estrutura 1h com `asset.smc_enabled` agora sempre vira
+   `SignalEvent`. `zoneGateDrops` (todo o caminho de observabilidade
+   construído em cima do gate antigo, item 35) foi removido por completo —
+   código morto, não só desativado.
+2. **Zona introduzida no gatilho de entrada 5m** (`check5mSmcConfirmation`,
+   `scanner.js`), medida sobre a **perna (leg)** do próprio rompimento 1h —
+   não uma janela nova desconectada, que reproduziria o mesmo paradoxo
+   agora no gatilho 5m. `buildOteLeg`
+   (`src/lib/indicators/smcStructure.js`) ancora a perna usando os pivôs
+   protegidos que `calculateStructure` já carrega (`lastSwingHigh`/
+   `lastSwingLow`, já reaproveitados pelo stop estrutural do item 24): BUY
+   → `legLow = lastSwingLow` (origem do impulso), `legHigh = close` do
+   rompimento; SELL é o espelho. Fixada **uma única vez**, no instante do
+   sinal 1h (persistida em `SignalEvent.context.ote_leg_high/low`) — nunca
+   recalculada a cada retry, para não "derivar" enquanto o candidato aguarda
+   confirmação 5m. `classifyZone` (extraída de dentro de `calculatePdZone`,
+   que virou wrapper fino) é reaproveitada contra `(legHigh, legLow)` em vez
+   do range de 20 velas — mesma convenção de zona favorável do gate antigo
+   (BUY rejeita só `premium`, SELL só `discount`), só que medida contra algo
+   que não é autorreferente.
+3. **Fail-open sempre que a perna não for avaliável** (pivô protegido
+   ausente, ou `SignalEvent` legado pré-migração sem `ote_leg_high/low`) —
+   "não avaliável" nunca é tratado como veredito desfavorável.
+4. **Gate bloqueante de verdade no 5m** (não "observação apenas" outra vez)
+   — trading é virtual, custo de errar é ruído em paper trading; deixar
+   não-bloqueante repetiria o padrão do item 35 de medir e nunca decidir.
+
+**Alternativas descartadas** (não escondidas):
+- Reavaliar o mesmo `pdZone` 1h no momento do 5m — já era quase sempre um
+  no-op dentro da janela de retry (item 35). Ineficácia já medida.
+- Novo `calculatePdZone` em escala 5m sobre o mesmo `closed` de
+  `calculateStructure(closed, {swingLen:10})` — reproduziria o MESMO
+  acoplamento geométrico self-referente, agora no gatilho `structure` do
+  5m. Risco analítico direto, exatamente o padrão que motivou este item.
+- Flag por-ativo para rollout gradual — contraria o padrão do item 24 (sem
+  flag) e "não introduza um terceiro caminho" de `trading-engine.md`.
+
+**Modelo de dados (aditivo)**: `SignalEvent.context.ote_leg_high/low`;
+`TradeOperation.ote_leg_high/low/ote_zone_at_entry` (só observabilidade,
+não tocam `initial_stop`/`tp1`/`tp2`); `check5mSmcConfirmation` ganha
+`rejectReason` (`null | 'no_trigger' | 'ote_zone_unfavorable'`).
+`report.smcDiagnostics` (backtest): `rejectedByZoneGate` →
+`rejectedByOteZone` (mudança de semântica real — agora é a rejeição no
+gatilho 5m, não mais no viés 1h); `structureEventsTotal` passa a espelhar
+`confirmedSignals` diretamente (sem gate nenhum entre a detecção 1h e a
+criação do `SignalEvent`, os dois são idênticos por construção agora) —
+mantido como campo separado como sinal de regressão: os testes concretos
+em `backtestEngine.test.js` fixam ambos contra uma contagem de evento
+real conhecida (não uma igualdade abstrata), então uma reintrodução futura
+de gate no estágio 1h apareceria como uma queda abaixo dessa contagem.
+
+**Limitação assumida, não corrigida agora**: `persistScanResults` só
+registra uma rejeição de zona no 5m na **primeira** avaliação de um sinal
+1h novo (o caminho de retry de até 4h permanece silencioso em cada
+tentativa rejeitada, mesmo padrão deliberado que a cascata 4h/15m já usa
+para não gerar uma escrita no Firestore a cada ~5 minutos por sinal
+pendente). `smcDiagnostics.rejectedByOteZone` é portanto uma **amostra**
+(primeira tentativa), não o volume exaustivo de rejeições ao longo de toda
+a janela de retry — suficiente para distinguir o item 34 (sem evento) do
+item 35/38 (evento aconteceu, gate rejeitou a entrada) sem adicionar volume
+de escrita novo.
+
+Regressão: `smcStructure.test.js` (`classifyZone`, `buildOteLeg`, casos de
+fronteira); `scannerStateMachine.test.js` (novo describe "5m OTE zone gate
+— leg-relative": favorável cria `TradeOperation`, desfavorável loga
+`SystemLog` com `reason: 'ote_zone_unfavorable'` sem op, fail-open com
+`SignalEvent` sem contexto legado); `backtestEngine.test.js` (dois cenários
+ponta-a-ponta contra `goldenCandles(800)` bar 418 — mesmo evento real já
+conhecido do item 34/35 — com candles 5m sintéticos aterrissando em
+`discount`/rejeitado vs. `premium`/confirmado, usando os limites exatos da
+perna calculados e verificados diretamente contra `calculateStructure`).
+
+**Próximo passo natural** (não feito nesta rodada): rodar o backtest real
+de novo (BTCUSDT e os outros 6 ativos já testados) e comparar
+`smcDiagnostics` antes/depois — esperado `confirmedSignals` permanecer em
+74 (já era, item 35), e `tradeOpsCreated`/`rejectedByOteZone` a medir pela
+primeira vez (não previsível de antemão: depende de quantos dos 74
+tiveram um recuo real para o lado favorável da perna antes do gatilho 5m
+disparar).
