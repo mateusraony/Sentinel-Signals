@@ -110,6 +110,10 @@
       "type": "number",
       "description": "Exact price when stop was hit"
     },
+    "exit_ambiguous": {
+      "type": "boolean",
+      "description": "Set true only on a STOP_HIT whose closed candle ALSO touched the target level (TP1 pre-TP1, TP2 post-TP1) — OHLC alone can't order the two intrabar, so the stop-wins policy (industry-standard conservative assumption, see docs/known-risks.md) was applied under real ambiguity, not as an unambiguous stop. Absent/false on a clean stop."
+    },
     "closed_at": {
       "type": "string",
       "description": "ISO timestamp when operation was closed/invalidated"

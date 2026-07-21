@@ -98,6 +98,20 @@ export function computeStructuralStop({
   return { stop: isBuy ? entry - distance : entry + distance, basis: 'structural' };
 }
 
+// Same-candle stop/target ambiguity (known-risks.md — formalizes what
+// scanner.js already did inline, "stop has priority over TP on same candle
+// for safety"). A closed candle's high AND low can both cross the stop and
+// a target level; OHLC alone can't establish which happened first intrabar.
+// Community convention (backtesting.py, QuantConnect, NinjaTrader — see
+// PR that introduced this) is exactly this: assume the pessimistic case,
+// stop first. stopWins never differs from stopTouched — this function
+// exists to name the policy and to compute `ambiguous` in one place, so
+// callers can flag it on the record instead of the ambiguity vanishing
+// into an indistinguishable "clean" stop.
+export function resolveCandleExit({ stopTouched, targetTouched }) {
+  return { stopWins: stopTouched, ambiguous: Boolean(stopTouched && targetTouched) };
+}
+
 // P0-e — RF-reversal counter that counts CANDLES, not scanner passes. The
 // cron runs every 5 minutes over a 4h/1h signal timeframe, so a naive "+1 per
 // pass while reversed" overcounts the same candle many times. Dedup by the

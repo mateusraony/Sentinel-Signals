@@ -23,7 +23,7 @@ import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './indicators/smcStructure';
 import { getPineConfig } from './pineParser';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop } from './opExitRules';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit } from './opExitRules';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -1228,6 +1228,14 @@ export async function persistScanResults(scanResult) {
       // Check stop first (stop has priority over TP on same candle for safety)
       const stopHit = candleUsable
         && (isBuy ? stopCheckPrice <= op.current_stop : stopCheckPrice >= op.current_stop);
+      // Computed here (not just inline in the tp1 else-if below) so
+      // resolveCandleExit can flag when BOTH levels were touched in this
+      // same candle — the stop still wins either way (policy unchanged),
+      // but now the record can distinguish a clean stop from a conservative
+      // call made under real ambiguity. See opExitRules.js.
+      const tp1Touched = candleUsable
+        && ((isBuy && tpCheckPrice >= op.tp1) || (!isBuy && tpCheckPrice <= op.tp1));
+      const { ambiguous: stopTp1Ambiguous } = resolveCandleExit({ stopTouched: stopHit, targetTouched: tp1Touched });
 
       // Time Stop: close if TP1 hasn't hit within tier.timeStopBars candles
       // of the SIGNAL timeframe since entry — counted by elapsed time rather
@@ -1273,6 +1281,7 @@ export async function persistScanResults(scanResult) {
         updatePayload.stop_hit_price = op.current_stop;
         updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
+        if (stopTp1Ambiguous) updatePayload.exit_ambiguous = true;
       } else if (invalidationTriggered) {
         newStatus = 'INVALIDATED';
         updatePayload.closed_reason = 'INVALIDATION';
@@ -1288,7 +1297,7 @@ export async function persistScanResults(scanResult) {
         updatePayload.closed_reason = 'TIME_STOP';
         updatePayload.exit_price = closePrice;
         updatePayload.closed_at = nowIso;
-      } else if (candleUsable && ((isBuy && tpCheckPrice >= op.tp1) || (!isBuy && tpCheckPrice <= op.tp1))) {
+      } else if (tp1Touched) {
         tp1Hit = true;
         newStatus = 'RUNNER_ACTIVE';
         newCurrentStop = op.entry_price;
@@ -1309,6 +1318,11 @@ export async function persistScanResults(scanResult) {
       // trail advance happens after the exit checks, at the end of this block.
       const runnerStopHit = candleUsable
         && (isBuy ? stopCheckPrice <= op.current_stop : stopCheckPrice >= op.current_stop);
+      // See the pre-TP1 branch above for why this is computed alongside
+      // runnerStopHit instead of only inline in the tp2 else-if.
+      const tp2Touched = candleUsable
+        && ((isBuy && tpCheckPrice >= op.tp2) || (!isBuy && tpCheckPrice <= op.tp2));
+      const { ambiguous: stopTp2Ambiguous } = resolveCandleExit({ stopTouched: runnerStopHit, targetTouched: tp2Touched });
       if (runnerStopHit) {
         newStatus = 'STOP_HIT';
         updatePayload.stop_hit_at = nowIso;
@@ -1316,7 +1330,8 @@ export async function persistScanResults(scanResult) {
         // Runner stopped at BE (entry) or current stop
         updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
-      } else if (candleUsable && ((isBuy && tpCheckPrice >= op.tp2) || (!isBuy && tpCheckPrice <= op.tp2))) {
+        if (stopTp2Ambiguous) updatePayload.exit_ambiguous = true;
+      } else if (tp2Touched) {
         tp2Hit = true;
         newStatus = 'TP2_HIT';
         updatePayload.tp2_hit_at = nowIso;
