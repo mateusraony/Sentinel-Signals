@@ -52,6 +52,7 @@ import {
   sliceClosedAsOf, inferStepMs, runBacktest, buildReport,
 } from './backtestEngine.js';
 import { scanAsset } from './scanner.js';
+import { goldenCandles } from './indicators/__fixtures__/candles.js';
 
 // ─── Candle generators (custom interval spacing, unlike the fixed 1h
 // spacing of src/lib/indicators/__fixtures__/candles.js) ───
@@ -442,5 +443,68 @@ describe('buildReport', () => {
     expect(Object.keys(report.byCascade).sort()).toEqual(['1h_5m', '4h_15m']);
     expect(report.byCascade['4h_15m'].total).toBe(1); // only the closed one
     expect(report.overall.total).toBe(2);
+  });
+
+  it('smcDiagnostics defaults to all-zero when the caller passes nothing (legacy call shape)', () => {
+    const report = buildReport([{ status: 'STOP_HIT', cascade: '4h_15m', entry_price: 100, initial_stop: 90, exit_price: 90, side: 'BUY' }], { fromMs: 0, toMs: 1000 });
+    expect(report.smcDiagnostics).toEqual({
+      structureEventsTotal: 0, rejectedByZoneGate: 0, confirmedSignals: 0, tradeOpsCreated: 0,
+    });
+  });
+
+  it('smcDiagnostics sums the funnel and counts 1h_5m ops regardless of open/closed status', () => {
+    const ops = [
+      { status: 'SIGNAL_CONFIRMED', cascade: '1h_5m' }, // still open — must still count as "created"
+      { status: 'STOP_HIT', cascade: '1h_5m', entry_price: 100, initial_stop: 90, exit_price: 90, side: 'BUY' },
+      { status: 'STOP_HIT', cascade: '4h_15m', entry_price: 100, initial_stop: 90, exit_price: 90, side: 'BUY' }, // different cascade — must not count
+    ];
+    const report = buildReport(ops, { fromMs: 0, toMs: 1000, smcRejectedByZoneGate: 4, smcConfirmedSignals: 2 });
+    expect(report.smcDiagnostics).toEqual({
+      structureEventsTotal: 6, rejectedByZoneGate: 4, confirmedSignals: 2, tradeOpsCreated: 2,
+    });
+  });
+});
+
+// docs/known-risks.md items 34/35: real backtests (BTCUSDT, PENDLEUSDT, ~18
+// months each) keep showing zero 1h_5m operations, and until now there was
+// no way to tell from the report whether that meant "no structure event
+// ever happened" or "one happened and the zone gate silently ate it" — the
+// exact question the user asked. Reproduces the known, already-characterized
+// scenario from smcStructure.test.js's item 34/35 coverage: goldenCandles(800)
+// contains exactly ONE swingLen=50 structure event (a bearChoch at bar 418)
+// whose zone is 'discount' — the zone zoneOk rejects for SELL. Driven through
+// the REAL runBacktest (not just the pure functions) so this proves the
+// counters are wired end to end, not just correct in isolation.
+describe('runBacktest — smcDiagnostics answers "why zero SMC ops?" with real counts', () => {
+  it('counts the one known structure event as rejected-by-zone-gate, not confirmed, no TradeOperation', async () => {
+    const candles = goldenCandles(800);
+    getPineConfig.mockResolvedValue(basePineConfig());
+    const store = new Map([[`TESTUSDT:1h`, candles]]);
+    fetchCandles.mockImplementation(async (sym, tf, limit) =>
+      sliceClosedAsOf(store.get(`${sym}:${tf}`) || [], simNow(), limit));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const asset = makeAsset({
+      symbol: 'TESTUSDT',
+      smc_enabled: true,
+      timeframes_enabled: { '1h': true, '4h': false, '1d': false },
+    });
+
+    // Bar 418 closes at (418+1)*3600000ms — run a little past it so the
+    // event's own tick is definitely inside the replay window.
+    const ONE_H = 60 * 60 * 1000;
+    const report = await runBacktest({
+      assets: [asset], backend,
+      fromMs: 0, toMs: 425 * ONE_H,
+      stepMs: ONE_H, // no need for the 5m default cadence here
+    });
+
+    expect(report.smcDiagnostics).toEqual({
+      structureEventsTotal: 1,
+      rejectedByZoneGate: 1,
+      confirmedSignals: 0,
+      tradeOpsCreated: 0,
+    });
   });
 });

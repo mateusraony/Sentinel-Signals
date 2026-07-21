@@ -1412,6 +1412,31 @@ testes em `scannerStateMachine.test.js` (log único por descarte, dedup entre
 passadas do mesmo candle, nenhum log quando não há descarte) confirmados
 falhando contra o código anterior antes da correção.
 
+> **Atualização — backtests reais confirmam 0 operações SMC, mas o relatório
+> não distinguia "sem evento" de "evento rejeitado pela zona" (2026-07-21).**
+> Rodadas reais via `.github/workflows/backtest.yml` (BTCUSDT e PENDLEUSDT,
+> ~18 meses cada, `--smc` no próprio ativo) continuaram mostrando 0
+> operações na cascata `1h_5m` — mas o `SystemLog` gerado durante um
+> backtest (backend fake em memória) nunca era agregado no relatório final,
+> então não dava pra saber, só olhando o JSON, se a causa era "nenhuma
+> quebra de estrutura no período" (item 34) ou "quebra ocorreu e foi
+> descartada pela zona" (este item). **Corrigido**: `runBacktest`
+> (`src/lib/backtestEngine.js`) agora acumula, a cada passada simulada, o
+> total de `zoneGateDrops` e de `newSignals` com `source: 'smc_structure'`
+> ao longo de todo o replay, e `buildReport` expõe isso como
+> `report.smcDiagnostics` (`structureEventsTotal`, `rejectedByZoneGate`,
+> `confirmedSignals`, `tradeOpsCreated`) — ver `docs/claude/backtest-usage.md`.
+> Regressão reproduz o cenário já conhecido do `goldenCandles(800)` (o único
+> evento em `swingLen=50`, um `bearChoch` na barra 418, cai em zona
+> `discount` — rejeitada pelo gate para SELL) através do `runBacktest` real,
+> não só das funções puras: `smcDiagnostics` bate `{structureEventsTotal: 1,
+> rejectedByZoneGate: 1, confirmedSignals: 0, tradeOpsCreated: 0}`,
+> confirmado falhando contra o código anterior antes da correção. Próximo
+> passo natural: rodar o backtest de novo nos ativos já testados e ler esse
+> campo — se `structureEventsTotal` continuar 0, é o item 34 (raro por
+> design); se vier > 0 com `confirmedSignals: 0`, é este item (gate de zona)
+> acontecendo de verdade, não só em amostra sintética.
+
 ## 36. Ambiguidade stop/TP no mesmo candle — política já correta, agora formalizada e observável
 
 Quarto item da lista de lacunas "do motor" (a pedido do usuário). Quando um
