@@ -205,8 +205,37 @@ export function calculateLiquiditySweep(candles, sweepLookback = 20) {
 }
 
 /**
+ * Classifica `close` como premium/discount/equilibrium dentro do range
+ * [low, high] — banda de equilíbrio de 5% do range ao redor do meio. Função
+ * pura, sem noção de candle/janela: quem decide QUAL range usar (20 velas
+ * genéricas em calculatePdZone, ou a perna de um rompimento de estrutura em
+ * check5mSmcConfirmation, ver docs/known-risks.md item 38) é o chamador.
+ * `high`/`low` nulos ou invertidos (high < low) → não avaliável (`zone:
+ * null`), para que o chamador trate como fail-open em vez de classificar
+ * errado.
+ */
+export function classifyZone(close, high, low) {
+  if (high == null || low == null || high < low) {
+    return { zone: null, eqTop: null, eqBtm: null };
+  }
+  const mid = (high + low) / 2;
+  const range = high - low;
+  const eqBand = range * 0.05;
+  const eqTop = mid + eqBand;
+  const eqBtm = mid - eqBand;
+
+  let zone;
+  if (close > eqTop) zone = 'premium';
+  else if (close < eqBtm) zone = 'discount';
+  else zone = 'equilibrium';
+
+  return { zone, eqTop, eqBtm };
+}
+
+/**
  * Port das zonas Premium/Discount/Equilibrium, avaliadas só na última barra
- * fechada.
+ * fechada. Wrapper fino sobre `classifyZone` — a janela de 20 velas
+ * (excluindo o candle atual) é a única coisa específica desta função.
  */
 export function calculatePdZone(candles, pdSwingLen = 20) {
   const n = candles.length;
@@ -219,16 +248,7 @@ export function calculatePdZone(candles, pdSwingLen = 20) {
 
   const pdSwingHigh = highestInWindow(highs, last - 1, pdSwingLen);
   const pdSwingLow = lowestInWindow(lows, last - 1, pdSwingLen);
-  const pdMid = (pdSwingHigh + pdSwingLow) / 2;
-  const pdRange = pdSwingHigh - pdSwingLow;
-  const eqBand = pdRange * 0.05;
-  const eqTop = pdMid + eqBand;
-  const eqBtm = pdMid - eqBand;
-
-  let zone;
-  if (close > eqTop) zone = 'premium';
-  else if (close < eqBtm) zone = 'discount';
-  else zone = 'equilibrium';
+  const { zone, eqTop, eqBtm } = classifyZone(close, pdSwingHigh, pdSwingLow);
 
   return { zone, pdSwingHigh, pdSwingLow, eqTop, eqBtm };
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './smcStructure';
+import { calculateStructure, calculateLiquiditySweep, calculatePdZone, classifyZone } from './smcStructure';
 import { chochBreakoutCandles, mkCandle, flatCandles, goldenCandles } from './__fixtures__/candles';
 
 // Counts BOS/CHoCH events across the whole series ('series' field), used
@@ -227,5 +227,44 @@ describe('calculatePdZone', () => {
     expect(result.zone).toBe('discount');
     expect(result.pdSwingHigh).toBe(105);
     expect(result.pdSwingLow).toBe(95);
+  });
+});
+
+// docs/known-risks.md item 38: classifyZone extracted from calculatePdZone so
+// the same premium/discount/equilibrium math can be reused against a
+// structure-break LEG (check5mSmcConfirmation) instead of only a generic
+// 20-candle window. Pure regression coverage — calculatePdZone's own tests
+// above already prove the wrapper is byte-identical to the pre-refactor
+// behavior; these cover classifyZone's own boundary cases directly.
+describe('classifyZone', () => {
+  it('classifies above the 5% equilibrium band as premium', () => {
+    expect(classifyZone(96, 100, 0).zone).toBe('premium');
+  });
+
+  it('classifies below the 5% equilibrium band as discount', () => {
+    expect(classifyZone(4, 100, 0).zone).toBe('discount');
+  });
+
+  it('classifies inside the 5% equilibrium band as equilibrium', () => {
+    expect(classifyZone(50, 100, 0).zone).toBe('equilibrium');
+    expect(classifyZone(47, 100, 0).zone).toBe('equilibrium');
+    expect(classifyZone(53, 100, 0).zone).toBe('equilibrium');
+  });
+
+  it('returns null zone when high or low is missing (fail-open contract)', () => {
+    expect(classifyZone(50, null, 0).zone).toBeNull();
+    expect(classifyZone(50, 100, null).zone).toBeNull();
+    expect(classifyZone(50, null, null).zone).toBeNull();
+  });
+
+  it('returns null zone when high < low (inverted/invalid range)', () => {
+    expect(classifyZone(50, 10, 20).zone).toBeNull();
+  });
+
+  it('treats a flat range (high === low) as equilibrium, not a crash', () => {
+    const result = classifyZone(100, 100, 100);
+    expect(result.zone).toBe('equilibrium');
+    expect(result.eqTop).toBe(100);
+    expect(result.eqBtm).toBe(100);
   });
 });
