@@ -51,6 +51,7 @@ import {
   installSimClock, advanceSimClock, restoreClock, simNow,
   sliceClosedAsOf, inferStepMs, runBacktest, buildReport,
 } from './backtestEngine.js';
+import { scanAsset } from './scanner.js';
 
 // ─── Candle generators (custom interval spacing, unlike the fixed 1h
 // spacing of src/lib/indicators/__fixtures__/candles.js) ───
@@ -356,6 +357,51 @@ describe('runBacktest — no-look-ahead (4h Range Filter flip)', () => {
     expect(ops[0].entry_candle_time_15m).toBe(new Date(FLIP_CLOSE_TIME + 4 * FIFTEEN_M).toISOString());
     // The 4h signal itself is unchanged — only the ENTRY was delayed.
     expect(ops[0].candle_close_time).toBe(new Date(FLIP_CLOSE_TIME).toISOString());
+  });
+
+  // confirmBars (docs/known-risks.md item 27) wiring proof: scanAsset must
+  // actually resolve pineConfig.confirmBars and gate newSignals through
+  // calculateConfirmedSignal, not just have the pure function be correct in
+  // isolation (see rangeFilterConfirmation.test.js for that). Reuses this
+  // describe block's own empirically-known flip (BUY at bar index 102 of
+  // build4hCandles(), a clean uptrend the whole way through) — no new candle
+  // fixture needed. minScore:0 (basePineConfig) isolates this from the
+  // unrelated confluence-scoring gate, same reasoning as the sibling tests
+  // above.
+  describe('scanAsset — confirmBars gates the RF signal', () => {
+    it('confirmBars=1 (default, synced today): fires exactly on the flip bar — same as before this feature existed', async () => {
+      getPineConfig.mockResolvedValue(basePineConfig({ confirmBars: 1 }));
+      fetchCandles.mockImplementation(async () => build4hCandles().slice(0, 103)); // ends exactly at bar 102, the flip
+      const result = await scanAsset(makeAsset());
+      const rf = result.newSignals.filter(s => s.source === 'range_filter');
+      expect(rf).toHaveLength(1);
+      expect(rf[0].signal_type).toBe('BUY');
+    });
+
+    it('confirmBars=3: no signal yet exactly on the flip bar (freshBuy needs 2 more bars)', async () => {
+      getPineConfig.mockResolvedValue(basePineConfig({ confirmBars: 3 }));
+      fetchCandles.mockImplementation(async () => build4hCandles().slice(0, 103));
+      const result = await scanAsset(makeAsset());
+      expect(result.newSignals.filter(s => s.source === 'range_filter')).toHaveLength(0);
+    });
+
+    it('confirmBars=3: still nothing 1 bar after the flip — fires exactly 2 bars after, not before/after', async () => {
+      getPineConfig.mockResolvedValue(basePineConfig({ confirmBars: 3 }));
+
+      fetchCandles.mockImplementation(async () => build4hCandles().slice(0, 104)); // flip + 1 bar
+      const oneShort = await scanAsset(makeAsset());
+      expect(oneShort.newSignals.filter(s => s.source === 'range_filter')).toHaveLength(0);
+
+      fetchCandles.mockImplementation(async () => build4hCandles().slice(0, 105)); // flip + 2 bars = confirmBars-1
+      const result = await scanAsset(makeAsset());
+      const rf = result.newSignals.filter(s => s.source === 'range_filter');
+      expect(rf).toHaveLength(1);
+      expect(rf[0].signal_type).toBe('BUY');
+      // Same uptrend continuing cleanly the whole way — the clean uptrend
+      // that follows the flip in build4hCandles() means it never stops being
+      // "fresh" at exactly bar 104; the point under test is that it isn't
+      // fresh any EARLIER than that, proven by the previous assertion.
+    });
   });
 });
 

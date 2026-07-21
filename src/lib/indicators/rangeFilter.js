@@ -143,6 +143,11 @@ export function calculateRangeFilter(candles, period = 20, multiplier = 3.5) {
       direction,
       signals,
       condIni,
+      // Exposed for calculateConfirmedSignal (rangeFilterConfirmation.js),
+      // which needs close[i] alongside filterValues[i]/direction[i] to
+      // replay the Pine confirmBars follow-through loop. Additive — every
+      // other series field is unchanged.
+      closes,
     }
   };
 }

@@ -87,18 +87,27 @@ export function analyzeAlignment(states) {
  * @param {string} timeframe - Current timeframe
  * @param {Object} volumeData - { current, ma } volume data
  * @param {number} minScore - Minimum score threshold (default 75)
+ * @param {Object|null} confirmed - calculateConfirmedSignal() result (rangeFilterConfirmation.js).
+ *   When provided, isBuy/isSell/followThrough derive from the confirmBars-aware
+ *   confirmed signal instead of the raw rfResult.signal/direction — same Pine
+ *   mechanism (buyFollowThrough) feeding both this score and the entry gate in
+ *   scanner.js. Optional/null keeps every existing caller's behavior identical
+ *   (at confirmBars=1 the two paths are mathematically equivalent anyway).
  * @returns {Object} Signal strength, priority, score, reasons
  */
-export function calculateSignalStrength(rfResult, rsiResult, macdResult, emaResult, alignmentResult, timeframe, volumeData = null, minScore = 75) {
-  const isBuy  = rfResult.signal === 'BUY';
-  const isSell = rfResult.signal === 'SELL';
+export function calculateSignalStrength(rfResult, rsiResult, macdResult, emaResult, alignmentResult, timeframe, volumeData = null, minScore = 75, confirmed = null) {
+  const isBuy  = confirmed ? confirmed.confirmedSignal === 'BUY'  : rfResult.signal === 'BUY';
+  const isSell = confirmed ? confirmed.confirmedSignal === 'SELL' : rfResult.signal === 'SELL';
   const reasons = [];
 
   // followThrough: price on correct side of filter with correct direction (25pts)
-  // By definition, when RF emits a signal the condition is met
-  const followThrough = isBuy
-    ? (rfResult.direction === 1)
-    : (rfResult.direction === -1);
+  // By definition, when RF emits a signal the condition is met. With
+  // `confirmed` present, this is the real confirmBars-window check
+  // (buyFollowThrough/sellFollowThrough) instead of the single-bar proxy —
+  // see calculateConfirmedSignal.
+  const followThrough = confirmed
+    ? (isBuy ? confirmed.buyFollowThrough : isSell ? confirmed.sellFollowThrough : false)
+    : (isBuy ? (rfResult.direction === 1) : (rfResult.direction === -1));
   let score = followThrough ? 25 : 0;
   if (followThrough) reasons.push('Follow-through confirmado (+25)');
 

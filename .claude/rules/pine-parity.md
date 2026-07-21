@@ -72,5 +72,13 @@ Definido por pesquisa de comunidade (fontes no PR que o introduziu):
   item 24 — stop estrutural), não como correção silenciosa de paridade.
 - Só candles fechados. Não misture convenção de índice (barra atual vs anterior)
   sem checar o Pine correspondente.
+- `src/pages/PineScript.jsx` guarda o Pine real do usuário como string/JSX —
+  é a fonte primária pra qualquer parâmetro cujo comportamento exato não
+  esteja óbvio só pelo nome (foi assim que `confirmBars` foi implementado,
+  ver `docs/known-risks.md` item 27). `calculateConfirmedSignal`
+  (`src/lib/indicators/rangeFilterConfirmation.js`) é função de séries já
+  causais (`calculateRangeFilter`'s `series`), então herda não-repaint
+  automaticamente — mesmo padrão a seguir pra próximos gates retroativos
+  desse tipo, sem precisar de novo campo persistido.
 - Paridade ≠ taxa de acerto: corrigir paridade aproxima do TradingView, não torna
   a estratégia lucrativa.

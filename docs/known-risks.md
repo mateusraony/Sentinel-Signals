@@ -912,16 +912,51 @@ para esse ativo especificamente.
   documentavam default 9/21 (o valor errado que estava em produção),
   agora 20/50.
 
-**Deliberadamente não conectados** (mesma auditoria apontou, decisão
-registrada, não bug): `confirmBars` e `onlyClosedCandles` continuam
-sincronizados mas nunca lidos por `scanner.js`. `onlyClosedCandles` é
-vestigial — o scanner já sempre filtra candles fechados incondicionalmente;
-ligar esse parâmetro só faria sentido para permitir `false` (avaliar
-candles não fechados), o que seria uma troca de segurança, não uma
-correção. `confirmBars` mudaria **quando** um sinal dispara (exigir N
-candles de continuação) — feature nova de timing de entrada, não um
-parâmetro desalinhado; merece rodada própria com testes próprios se um dia
-for implementada.
+**Deliberadamente não conectado** (mesma auditoria apontou, decisão
+registrada, não bug): `onlyClosedCandles` continua sincronizado mas nunca
+lido por `scanner.js` — vestigial, o scanner já sempre filtra candles
+fechados incondicionalmente; ligar esse parâmetro só faria sentido para
+permitir `false` (avaliar candles não fechados), o que seria uma troca de
+segurança, não uma correção.
+
+> **Atualização — `confirmBars` implementado** (rodada própria, como
+> planejado aqui). `src/pages/PineScript.jsx` contém o Pine real do usuário
+> como string/JSX — a implementação real (`ta.barssince` + um loop
+> `close[i]>filt[i] && fdir[i]==dir` sobre os últimos `confirmBars` candles
+> já fechados) é **retroativa**, não um contador que precisa de estado entre
+> scans: computável inteiramente a partir das séries que
+> `calculateRangeFilter` já produz. Nova função pura `calculateConfirmedSignal`
+> (`src/lib/indicators/rangeFilterConfirmation.js`) porta esse bloco;
+> `scanAsset` resolve `confirmBars` de `pineConfig` (parâmetro global do
+> Pine, sem override por-ativo — decisão preservada) e passa o sinal
+> confirmado para o bloco de geração de `newSignals` e para
+> `calculateSignalStrength` (que já somava +25 de "follow-through", antes
+> derivado só de `rfResult.direction` no candle atual — mesmo mecanismo Pine,
+> agora correto para `confirmBars>1` também).
+>
+> **Provado matematicamente, não só testado**: em `confirmBars=1` (o default
+> sincronizado hoje), `calculateConfirmedSignal` é idêntico ao sinal bruto de
+> sempre — `longCond`/`shortCond` (`rangeFilter.js`) exigem `close>filt &&
+> upward` em ambos os ramos do OR, então sempre que o flip dispara essa
+> condição já vale por construção. Medido sobre 500 candles reais
+> (`goldenCandles(500)`): equivalência bar a bar, sem exceção
+> (`rangeFilterConfirmation.test.js`). **Nenhuma mudança de comportamento até
+> o usuário subir `confirmBars` acima de 1 no editor Pine e sincronizar.**
+>
+> Regressão adicional: casos sintéticos de whipsaw (quebra a confirmação,
+> oportunidade perdida — não adiada) e confirmação limpa (dispara exatamente
+> na N-ésima barra, nem antes nem depois); consistência por prefixo
+> (`goldenParity.test.js`, sem look-ahead); prova de wiring fim a fim contra
+> o `scanAsset` real, reusando o candle de flip já empírico de
+> `backtestEngine.test.js` (BUY na barra 102) — confirmado sem sinal na
+> barra do flip e com sinal exatamente 2 barras depois em `confirmBars=3`.
+> Todos os novos testes confirmados falhando contra o código anterior antes
+> da correção.
+>
+> Fora de escopo desta rodada: campo de observabilidade `rf_confirmed_signal`
+> em `AssetState` (bruto vs. confirmado lado a lado) — aditivo, baixo risco,
+> mas não pedido; clamp de `confirmBars` ao `maxval=5` do input Pine — sem
+> clamp, mesmo padrão de outros campos sincronizados (`minScore`/`tp1R`).
 
 Regressão: `resolveIndicatorParams` testado em `scannerStateMachine.test.js`
 (override por-ativo, fallback pro Pine real, fallback pro literal, campos
