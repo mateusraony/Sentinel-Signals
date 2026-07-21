@@ -104,6 +104,25 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
   }
   const step = stepMs || inferStepMs(assets);
 
+  // Tallies the SMC 1h→5m cascade's structure-event funnel across the whole
+  // replay — answers "why zero SMC trades?" with real counts instead of
+  // silence. rejectedByZoneGate mirrors zoneGateDrops (known-risks.md item
+  // 35: swingLen=50 structure events that failed the Premium/Discount zone
+  // gate); confirmedSignals mirrors newSignals filtered to source ===
+  // 'smc_structure' (events that passed the gate and became a SignalEvent —
+  // still not necessarily a TradeOperation, since check5mSmcConfirmation can
+  // still reject it). Deduplicated by `dedup_key` (same key
+  // SystemLog.createUnique/SignalEvent.createUnique already dedupe by in
+  // persistScanResults) — scanAsset is stateless and re-evaluates the SAME
+  // last-closed 1h candle on every tick until the next one closes, so at the
+  // real default cadence (5min while any asset has smc_enabled,
+  // inferStepMs) a single event would otherwise be tallied once per tick
+  // (~12x/hour) instead of once. Sets, not counters: scanAsset's own
+  // `results`/`newSignals` stay per-tick and discarded after persisting,
+  // same as before this change — only these two key sets survive the loop.
+  const smcZoneGateDropKeys = new Set();
+  const smcConfirmedSignalKeys = new Set();
+
   installSimClock(fromMs);
   try {
     for (let t = fromMs; t <= toMs; t += step) {
@@ -114,6 +133,10 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
         // whole replay or contaminate other assets' results.
         try {
           const result = await scanAsset(asset);
+          for (const drop of (result.zoneGateDrops || [])) smcZoneGateDropKeys.add(drop.dedup_key);
+          for (const sig of (result.newSignals || [])) {
+            if (sig.source === 'smc_structure') smcConfirmedSignalKeys.add(sig.dedup_key);
+          }
           await persistScanResults(result);
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
@@ -126,7 +149,11 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
   }
 
   const allOps = await backend.entities.TradeOperation.filter({});
-  return buildReport(allOps, { fromMs, toMs });
+  return buildReport(allOps, {
+    fromMs, toMs,
+    smcRejectedByZoneGate: smcZoneGateDropKeys.size,
+    smcConfirmedSignals: smcConfirmedSignalKeys.size,
+  });
 }
 
 // Groups closed ops by cascade (4h_15m vs 1h_5m) and feeds each group (plus
@@ -135,7 +162,7 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
 // already trusts, not reinvented here. Ops still non-terminal at the cutoff
 // are reported separately, never force-closed and never counted in win/
 // loss/BE (summarizeOps already excludes them via isTerminalStatus).
-export function buildReport(ops, { fromMs, toMs } = {}) {
+export function buildReport(ops, { fromMs, toMs, smcRejectedByZoneGate = 0, smcConfirmedSignals = 0 } = {}) {
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
 
@@ -159,5 +186,13 @@ export function buildReport(ops, { fromMs, toMs } = {}) {
     stillOpenAtCutoff: stillOpen.length,
     overall: summarizeOps(closed),
     byCascade: cascades,
+    // Answers "why zero SMC (1h_5m) trades?" with real counts instead of an
+    // empty byCascade entry — see docs/known-risks.md items 34/35.
+    smcDiagnostics: {
+      structureEventsTotal: smcRejectedByZoneGate + smcConfirmedSignals,
+      rejectedByZoneGate: smcRejectedByZoneGate,
+      confirmedSignals: smcConfirmedSignals,
+      tradeOpsCreated: ops.filter(op => op.cascade === '1h_5m').length,
+    },
   };
 }

@@ -131,6 +131,7 @@ jobs:
                   stillOpenAtCutoff: r.stillOpenAtCutoff,
                   overall: strip(r.overall),
                   byCascade: Object.fromEntries(Object.entries(r.byCascade).map(([k, v]) => [k, strip(v)])),
+                  smcDiagnostics: r.smcDiagnostics,
                 }, null, 2));
               "
               echo '```'

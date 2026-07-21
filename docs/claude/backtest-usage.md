@@ -89,6 +89,21 @@ os mesmos números de `src/lib/tradeMetrics.js` que o painel já usa). O JSON
 completo (`--out`) inclui a curva de operações fechadas, para comparar
 antes/depois de qualquer mudança de parâmetro.
 
+**`smcDiagnostics`** (no relatório, `report.smcDiagnostics`): quando
+`report.byCascade['1h_5m']` vem vazio/zero, isso sozinho não diz **por quê**
+— pode ser que nenhuma quebra de estrutura 1h tenha ocorrido no período, ou
+que tenha ocorrido e sido descartada pelo gate de zona Premium/Discount
+(`docs/known-risks.md` item 35). Esse campo fecha essa lacuna:
+`structureEventsTotal` (quantas quebras de estrutura 1h aconteceram no
+total), `rejectedByZoneGate` (quantas o gate de zona descartou),
+`confirmedSignals` (quantas viraram `SignalEvent`), `tradeOpsCreated`
+(quantas viraram `TradeOperation` de verdade — pode ser menor que
+`confirmedSignals` se a confirmação 5m não bater). Se `structureEventsTotal`
+for 0, é o `swingLen=50` sendo deliberadamente raro (item 34); se for > 0
+mas `confirmedSignals` for 0, é o gate de zona rejeitando tudo — dois
+diagnósticos diferentes que pareciam a mesma coisa ("0 operações SMC")
+antes desse campo existir.
+
 ## O que o replay NÃO cobre (por design, não é lacuna)
 
 - **Preço em tempo real (`priceCheckActiveOps`)** — não há dado de tick num
