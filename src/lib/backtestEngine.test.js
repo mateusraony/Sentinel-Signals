@@ -507,4 +507,39 @@ describe('runBacktest — smcDiagnostics answers "why zero SMC ops?" with real c
       tradeOpsCreated: 0,
     });
   });
+
+  // Codex review on PR #74: scanAsset is stateless and re-evaluates the SAME
+  // last-closed 1h candle on every tick until the next one closes. At the
+  // REAL default cadence (5min, since asset.smc_enabled — inferStepMs), the
+  // bar-418 event would be re-emitted into zoneGateDrops on every 5m tick
+  // for the rest of that hour (~12x) if not deduplicated by dedup_key. Runs
+  // a narrow window straddling just the event bar (not the full 425h of the
+  // sibling test above) to keep this fast while still exercising the exact
+  // cadence that exposed the bug.
+  it('does not over-count when the same 1h candle is re-evaluated every 5 minutes (default cadence)', async () => {
+    const candles = goldenCandles(800);
+    getPineConfig.mockResolvedValue(basePineConfig());
+    const store = new Map([[`TESTUSDT:1h`, candles]]);
+    fetchCandles.mockImplementation(async (sym, tf, limit) =>
+      sliceClosedAsOf(store.get(`${sym}:${tf}`) || [], simNow(), limit));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const asset = makeAsset({
+      symbol: 'TESTUSDT',
+      smc_enabled: true, // -> inferStepMs picks the real 5-minute default cadence
+      timeframes_enabled: { '1h': true, '4h': false, '1d': false },
+    });
+
+    const ONE_H = 60 * 60 * 1000;
+    const report = await runBacktest({
+      assets: [asset], backend,
+      fromMs: 415 * ONE_H, toMs: 421 * ONE_H, // straddles bar 418's close, ~72 five-minute ticks
+      // no stepMs override — exercises inferStepMs' real default cadence
+    });
+
+    expect(report.smcDiagnostics.rejectedByZoneGate).toBe(1); // not ~12
+    expect(report.smcDiagnostics.confirmedSignals).toBe(0);
+    expect(report.smcDiagnostics.structureEventsTotal).toBe(1);
+  });
 });

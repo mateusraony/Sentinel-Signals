@@ -111,11 +111,17 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
   // gate); confirmedSignals mirrors newSignals filtered to source ===
   // 'smc_structure' (events that passed the gate and became a SignalEvent —
   // still not necessarily a TradeOperation, since check5mSmcConfirmation can
-  // still reject it). scanAsset's own `results` and `newSignals` are
-  // per-tick and discarded after persisting, same as before this change —
-  // only these two running totals survive across the loop.
-  let smcRejectedByZoneGate = 0;
-  let smcConfirmedSignals = 0;
+  // still reject it). Deduplicated by `dedup_key` (same key
+  // SystemLog.createUnique/SignalEvent.createUnique already dedupe by in
+  // persistScanResults) — scanAsset is stateless and re-evaluates the SAME
+  // last-closed 1h candle on every tick until the next one closes, so at the
+  // real default cadence (5min while any asset has smc_enabled,
+  // inferStepMs) a single event would otherwise be tallied once per tick
+  // (~12x/hour) instead of once. Sets, not counters: scanAsset's own
+  // `results`/`newSignals` stay per-tick and discarded after persisting,
+  // same as before this change — only these two key sets survive the loop.
+  const smcZoneGateDropKeys = new Set();
+  const smcConfirmedSignalKeys = new Set();
 
   installSimClock(fromMs);
   try {
@@ -127,8 +133,10 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
         // whole replay or contaminate other assets' results.
         try {
           const result = await scanAsset(asset);
-          smcRejectedByZoneGate += (result.zoneGateDrops || []).length;
-          smcConfirmedSignals += (result.newSignals || []).filter(s => s.source === 'smc_structure').length;
+          for (const drop of (result.zoneGateDrops || [])) smcZoneGateDropKeys.add(drop.dedup_key);
+          for (const sig of (result.newSignals || [])) {
+            if (sig.source === 'smc_structure') smcConfirmedSignalKeys.add(sig.dedup_key);
+          }
           await persistScanResults(result);
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
@@ -141,7 +149,11 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
   }
 
   const allOps = await backend.entities.TradeOperation.filter({});
-  return buildReport(allOps, { fromMs, toMs, smcRejectedByZoneGate, smcConfirmedSignals });
+  return buildReport(allOps, {
+    fromMs, toMs,
+    smcRejectedByZoneGate: smcZoneGateDropKeys.size,
+    smcConfirmedSignals: smcConfirmedSignalKeys.size,
+  });
 }
 
 // Groups closed ops by cascade (4h_15m vs 1h_5m) and feeds each group (plus
