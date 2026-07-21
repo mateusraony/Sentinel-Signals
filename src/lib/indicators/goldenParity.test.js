@@ -21,6 +21,7 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { calculateRangeFilter } from './rangeFilter.js';
+import { calculateConfirmedSignal } from './rangeFilterConfirmation.js';
 import { calculateRSI } from './rsi.js';
 import { calculateMACD } from './macd.js';
 import { calculateEMAs } from './movingAverages.js';
@@ -67,6 +68,21 @@ describe('consistência série×prefixo (causalidade — sem look-ahead)', () =>
       const pre = calculateRangeFilter(CANDLES.slice(0, i + 1)).series;
       expectSame(pre.filterValues[i], full.filterValues[i], `RF filt @${i}`);
       expect(pre.direction[i]).toBe(full.direction[i]);
+    }
+  });
+
+  // calculateConfirmedSignal (confirmBars) is a function of already-causal
+  // series (filterValues/direction/signals/closes), so it inherits
+  // no-look-ahead automatically — proved here the same way as every other
+  // indicator, not just assumed from that reasoning.
+  it('confirmBars: calculateConfirmedSignal por prefixo bate com a série completa', () => {
+    const full = calculateRangeFilter(CANDLES).series;
+    const CONFIRM_BARS = 3;
+    for (const i of SAMPLE) {
+      const pre = calculateRangeFilter(CANDLES.slice(0, i + 1)).series;
+      const fullConfirmed = calculateConfirmedSignal(full, CONFIRM_BARS, i);
+      const preConfirmed = calculateConfirmedSignal(pre, CONFIRM_BARS, i);
+      expect(preConfirmed.confirmedSignal).toBe(fullConfirmed.confirmedSignal);
     }
   });
 

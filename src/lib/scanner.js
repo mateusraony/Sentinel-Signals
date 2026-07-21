@@ -13,6 +13,7 @@
 
 import { fetchCandles, fetchCurrentPrice } from './marketDataProvider';
 import { calculateRangeFilter } from './indicators/rangeFilter';
+import { calculateConfirmedSignal } from './indicators/rangeFilterConfirmation';
 import { calculateRSI } from './indicators/rsi';
 import { calculateMACD } from './indicators/macd';
 import { calculateEMAs } from './indicators/movingAverages';
@@ -477,6 +478,15 @@ export async function scanAsset(asset) {
         firstPositive(asset.rf_multiplier, 3.5)
       );
 
+      // confirmBars — global Pine parameter (docs/known-risks.md item 27:
+      // deliberately no per-asset override, unlike rf_period/rf_multiplier),
+      // so no resolveIndicatorParams entry. Retroactive gate: at the
+      // default (1) this is mathematically identical to rfResult.signal —
+      // see rangeFilterConfirmation.js's header comment and its equivalence
+      // test — so this only changes behavior once confirmBars is raised in
+      // the Pine editor and synced.
+      const confirmed = calculateConfirmedSignal(rfResult.series, firstPositiveInteger(pineConfig.confirmBars, 1) ?? 1);
+
       const rsiResult = calculateRSI(closedCandles, indicatorParams.rsiPeriod, rsiZoneThresholds.overbought, rsiZoneThresholds.oversold);
 
       const macdResult = calculateMACD(
@@ -533,6 +543,7 @@ export async function scanAsset(asset) {
 
       results[tf] = {
         rf: rfResult,
+        confirmed,
         rsi: rsiResult,
         macd: macdResult,
         ema: emaResult,
@@ -573,16 +584,23 @@ export async function scanAsset(asset) {
 
     const r = results[tf];
     
-    // Calculate strength and priority (score from Pine config)
+    // Calculate strength and priority (score from Pine config). r.confirmed
+    // (confirmBars-aware) drives isBuy/isSell/followThrough here — see
+    // rangeFilterConfirmation.js.
     const MIN_SCORE = pineConfig.minScore ?? 75;
     const strengthResult = calculateSignalStrength(
-      r.rf, r.rsi, r.macd, r.ema, alignmentResult, tf, r.volumeData, MIN_SCORE
+      r.rf, r.rsi, r.macd, r.ema, alignmentResult, tf, r.volumeData, MIN_SCORE, r.confirmed
     );
 
-    // Check for Range Filter BUY/SELL signal — only emit if score passes
-    if ((r.rf.signal === 'BUY' || r.rf.signal === 'SELL') && strengthResult.passed) {
+    // Check for Range Filter BUY/SELL signal — only emit if score passes.
+    // Uses the CONFIRMED signal (confirmBars), not the raw flip — at the
+    // default confirmBars=1 these are identical (see rangeFilterConfirmation.js).
+    // Every other reader of r.rf.signal/.direction (AssetState diagnostics,
+    // regime checks, check15mConfirmation, retry loop, zoneGateDrops) is
+    // intentionally untouched — this block only.
+    if ((r.confirmed.confirmedSignal === 'BUY' || r.confirmed.confirmedSignal === 'SELL') && strengthResult.passed) {
       const reason = generateSignalDescription(
-        asset.symbol, tf, r.rf.signal,
+        asset.symbol, tf, r.confirmed.confirmedSignal,
         strengthResult.strength, strengthResult.alignment, strengthResult.reasons
       );
 
@@ -590,7 +608,7 @@ export async function scanAsset(asset) {
         asset_id: asset.id,
         symbol: asset.symbol,
         timeframe: tf,
-        signal_type: r.rf.signal,
+        signal_type: r.confirmed.confirmedSignal,
         source: 'range_filter',
         strength: strengthResult.strength,
         alignment: strengthResult.alignment,
@@ -611,7 +629,7 @@ export async function scanAsset(asset) {
           score: strengthResult.score,
           reasons: strengthResult.reasons,
         },
-        dedup_key: `${asset.symbol}_${tf}_${r.rf.signal}_range_filter_${r.lastCandleTime}`,
+        dedup_key: `${asset.symbol}_${tf}_${r.confirmed.confirmedSignal}_range_filter_${r.lastCandleTime}`,
       });
     }
 
