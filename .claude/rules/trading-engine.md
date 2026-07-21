@@ -108,6 +108,16 @@ nunca deve receber nova transição.**
   de propósito. Regressão em `opTransition.test.js` (função pura + cenário de
   corrida via o harness `makeStore`) e `scannerStateMachine.test.js` (mesmo
   cenário contra o `fakeBackend.transitionTradeOp` real).
+- **[OBSERVÁVEL — aguardando dados] Gate de zona PD da cascata SMC 1h→5m.**
+  Uma quebra de estrutura 1h só vira `SignalEvent` se `zoneOk`
+  (`scanner.js:628-630`); a rejeição agora grava `SystemLog` (`reason:
+  'smc_zone_gate_rejected'`, deduplicado por candle) em vez de descartar
+  silenciosamente — sem mudança de comportamento de trading. Viés geométrico
+  medido (gate compartilha o `closedCandles` de `calculateStructure`, então
+  um rompimento tende a cair na zona que o gate rejeita para aquela
+  direção) e pesquisa de comunidade (ICT/LuxAlgo) sugerem mover a checagem
+  para o gatilho 5m — só reconsiderar isso se os logs mostrarem
+  volume/impacto real. Ver `docs/known-risks.md` item 35.
 - **[RESIDUAL — aguardando dados] Precedência stop>TP entre loops.** O CAS
   resolve a corrida de dados; com P0-c/d corrigidos, o cenário grave (TP1
   retroativo vencendo stop real) deixou de existir. O que resta — dois loops
