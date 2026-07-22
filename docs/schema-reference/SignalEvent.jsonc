@@ -31,13 +31,14 @@
       "type": "string",
       "enum": [
         "range_filter",
+        "smc_structure",
         "rsi",
         "macd",
         "ema_cross",
         "price_alert",
         "confluence"
       ],
-      "description": "Which indicator generated this signal"
+      "description": "Which indicator generated this signal. 'smc_structure' (1h BOS/CHoCH, the 1h/5m cascade's bias signal) was already written by scanner.js but missing from this enum — documentation gap, not a new value."
     },
     "strength": {
       "type": "string",
@@ -108,6 +109,28 @@
         },
         "tf_1h_direction": {
           "type": "number"
+        },
+        "score": {
+          "type": "number",
+          "description": "0-100 confluence score at signal time — calculateSignalStrength (range_filter) or calculateSmcSignalStrength (smc_structure, src/lib/indicators/smcConfluence.js)."
+        },
+        "structure_type": {
+          "type": "string",
+          "enum": ["BOS", "CHoCH"],
+          "description": "smc_structure signals only."
+        },
+        "pd_zone": {
+          "type": "string",
+          "enum": ["premium", "discount", "equilibrium"],
+          "description": "smc_structure signals only — observability metadata, not an emission gate (docs/known-risks.md item 38)."
+        },
+        "ote_leg_high": {
+          "type": ["number", "null"],
+          "description": "smc_structure signals only — see TradeOperation.ote_leg_high."
+        },
+        "ote_leg_low": {
+          "type": ["number", "null"],
+          "description": "smc_structure signals only — see TradeOperation.ote_leg_low."
         }
       }
     },
@@ -123,6 +146,21 @@
       "type": "boolean",
       "default": false,
       "description": "Whether user dismissed this alert"
+    },
+    "market_source": {
+      "type": "string",
+      "enum": ["spot", "futures"],
+      "description": "Which Binance market this signal's data came from — see TradeOperation.market_source."
+    },
+    "data_exchange": {
+      "type": "string",
+      "default": "binance",
+      "description": "Exchange the candle/price data came from."
+    },
+    "executor": {
+      "type": "string",
+      "enum": ["browser", "cron"],
+      "description": "Which process generated this signal."
     }
   },
   "required": [

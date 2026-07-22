@@ -43,6 +43,21 @@ const DEFAULTS = {
   invalidScoreMin: 75,
   confirmBars: 1,
   onlyClosedCandles: true,
+  // Cross-cascade arbitration + R:R gate + SMC score weights (Phase 1 —
+  // see src/lib/signalArbitration.js/opExitRules.js/indicators/smcConfluence.js)
+  arbEnabled: true,
+  arbPromoteMinScore: 75,
+  arbReinforceMinScore: 50,
+  arbInvalidateOnOppositeMajor: false,
+  arbOppositeScorePenalty: 15,
+  minRR: 1.2,
+  smcScoreStructureWeight: 15,
+  smcScoreChochBonus: 10,
+  smcScoreEmaWeight: 20,
+  smcScoreRfWeight: 15,
+  smcScoreVolumeWeight: 15,
+  smcScoreAlignmentWeight: 15,
+  smcScoreSweepWeight: 10,
 };
 
 const SYNCED_STRATEGY_KEYS = [
@@ -53,6 +68,11 @@ const SYNCED_STRATEGY_KEYS = [
   'useChopExit', 'useInvalidation', 'invalidRFBars', 'invalidScoreMin',
   'confirmBars', 'onlyClosedCandles',
   'emaFastLen', 'emaSlowLen', 'rsiLen', 'volLen', 'atrLen',
+  'arbEnabled', 'arbPromoteMinScore', 'arbReinforceMinScore',
+  'arbInvalidateOnOppositeMajor', 'arbOppositeScorePenalty', 'minRR',
+  'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
+  'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
+  'smcScoreSweepWeight',
 ];
 
 export async function getPineConfig() {

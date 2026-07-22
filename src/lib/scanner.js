@@ -11,7 +11,7 @@
  * 7. Persiste estado e sinais
  */
 
-import { fetchCandles, fetchCurrentPrice } from './marketDataProvider';
+import { fetchCandles, fetchCurrentPrice, MARKET_SOURCE, DATA_EXCHANGE, EXECUTOR } from './marketDataProvider';
 import { calculateRangeFilter } from './indicators/rangeFilter';
 import { calculateConfirmedSignal } from './indicators/rangeFilterConfirmation';
 import { calculateRSI } from './indicators/rsi';
@@ -23,8 +23,9 @@ import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
 import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone, buildOteLeg, classifyZone } from './indicators/smcStructure';
+import { calculateSmcSignalStrength, SMC_SCORE_DEFAULTS } from './indicators/smcConfluence';
 import { getPineConfig } from './pineParser';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit } from './opExitRules';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward } from './opExitRules';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -259,6 +260,9 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
     invalidates_if: isBuy
       ? 'Candle fechar abaixo do Range Filter'
       : 'Candle fechar acima do Range Filter',
+    market_source: MARKET_SOURCE,
+    data_exchange: DATA_EXCHANGE,
+    executor: EXECUTOR,
   };
 }
 
@@ -440,7 +444,13 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     cascade: '1h_5m',
     side: sig.signal_type,
     status: 'SIGNAL_CONFIRMED',
-    score: sig.context?.score || 0,
+    // Base score already reflects 1h structure/EMA/RF/volume/alignment
+    // (calculateSmcSignalStrength at signal emission, above); the 5m sweep
+    // trigger is only known now, so its weight is added here instead of
+    // recomputing the whole score from scratch — reuses the same weight
+    // config used at emission.
+    score: Math.min(100, (sig.context?.score || 0)
+      + (confirmation5m?.trigger === 'sweep' ? (pineConfig.smcScoreSweepWeight ?? SMC_SCORE_DEFAULTS.sweepWeight) : 0)),
     entry_price: entry,
     atr_value: tf1hData.atrValue,
     initial_stop: initialStop,
@@ -477,6 +487,9 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     invalidates_if: isBuy
       ? 'Estrutura 1h reverter para baixista (CHoCH bearish)'
       : 'Estrutura 1h reverter para altista (CHoCH bullish)',
+    market_source: MARKET_SOURCE,
+    data_exchange: DATA_EXCHANGE,
+    executor: EXECUTOR,
   };
 }
 
@@ -717,24 +730,48 @@ export async function scanAsset(asset) {
         // protected pivot) is a valid, expected fail-open case.
         const { legHigh: oteLegHigh, legLow: oteLegLow } = buildOteLeg(signalType, r.lastClose, r.smc);
 
+        // Score is advisory (see smcConfluence.js header) — feeds
+        // cross-cascade arbitration/audit, never gates emission. sweepConfirmed
+        // is unknown at this stage (resolved later, at op-creation, once
+        // check5mSmcConfirmation runs) — see buildSmcTradeOpData.
+        const smcScore = calculateSmcSignalStrength({
+          structureType,
+          signalType,
+          rf1hDirection: r.rf.direction,
+          emaTrend: r.ema.trend,
+          volumeData: r.volumeData,
+          alignmentResult,
+          pdZone: r.smc.pdZone,
+          weights: {
+            structureWeight: pineConfig.smcScoreStructureWeight,
+            chochBonus: pineConfig.smcScoreChochBonus,
+            emaWeight: pineConfig.smcScoreEmaWeight,
+            rfWeight: pineConfig.smcScoreRfWeight,
+            volumeWeight: pineConfig.smcScoreVolumeWeight,
+            alignmentWeight: pineConfig.smcScoreAlignmentWeight,
+            sweepWeight: pineConfig.smcScoreSweepWeight,
+          },
+        });
+
         newSignals.push({
           asset_id: asset.id,
           symbol: asset.symbol,
           timeframe: tf,
           signal_type: signalType,
           source: 'smc_structure',
-          strength: structureType === 'CHoCH' ? 'strong' : 'medium',
+          strength: smcScore.strength,
           alignment: strengthResult.alignment,
-          priority: structureType === 'CHoCH' ? 'high' : 'medium',
+          priority: smcScore.priority,
           price_at_signal: r.lastClose,
           candle_time: r.lastCandleTime,
-          reason: `${asset.symbol} 1H ${structureType} ${signalType === 'BUY' ? 'altista' : 'baixista'} — zona ${r.smc.pdZone}`,
+          reason: `${asset.symbol} 1H ${structureType} ${signalType === 'BUY' ? 'altista' : 'baixista'} — zona ${r.smc.pdZone} (score ${smcScore.score})`,
           context: {
             structure_type: structureType,
             pd_zone: r.smc.pdZone,
             ote_leg_high: oteLegHigh,
             ote_leg_low: oteLegLow,
-            reasons: [`Estrutura 1H: ${structureType} ${signalType}`, `Zona: ${r.smc.pdZone}`],
+            score: smcScore.score,
+            reasons: smcScore.reasons,
           },
           dedup_key: `${asset.symbol}_1h_${signalType}_smc_structure_${r.lastCandleTime}`,
         });
@@ -967,7 +1004,13 @@ export async function persistScanResults(scanResult) {
     // two calls). Runs regardless of cooldown — the signal is real and
     // must be recorded/evaluated for entry even while notifications are
     // suppressed.
-    const dedupResult = await backend.entities.SignalEvent.createUnique(signal.dedup_key, { ...signal, notified: willNotify });
+    const dedupResult = await backend.entities.SignalEvent.createUnique(signal.dedup_key, {
+      ...signal,
+      notified: willNotify,
+      market_source: MARKET_SOURCE,
+      data_exchange: DATA_EXCHANGE,
+      executor: EXECUTOR,
+    });
     if (!dedupResult.created) continue;
 
     persistedSignals++;
@@ -1044,15 +1087,29 @@ export async function persistScanResults(scanResult) {
 
               if (confirmed15m.confirmed) {
                 const opData = buildTradeOpData(signal, tf4hData, pineConfig, confirmed15m);
-                const tradeOpId = `trade_${signal.dedup_key}`;
-                const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
-                if (created.created) {
-                  hasActiveOp = true;
-                  activeOp = created.doc;
-                  if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
-                  logInfo('scanner', `${signal.symbol} entrada criada — Pine sync ativo`, {
-                    score: signal.context?.score, atr_mult: pineConfig.trailAtrMult, tp1R: pineConfig.tp1R,
-                  }, { symbol: signal.symbol, timeframe: '15m' });
+                const minRR = pineConfig.minRR ?? 1.2;
+                const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
+                if (!rr.pass) {
+                  await backend.entities.SystemLog.create({
+                    level: 'info',
+                    module: 'scanner',
+                    message: `${asset.symbol} 4h ${signal.signal_type} — entrada bloqueada: R:R ${rr.rr1?.toFixed(2) ?? 'n/d'} abaixo do mínimo ${minRR} (${rr.reason})`,
+                    symbol: asset.symbol,
+                    timeframe: '15m',
+                    details: { reason: rr.reason, rr1: rr.rr1, rr2: rr.rr2, min_rr: minRR },
+                  });
+                } else {
+                  opData.rr_at_entry = rr.rr1;
+                  const tradeOpId = `trade_${signal.dedup_key}`;
+                  const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
+                  if (created.created) {
+                    hasActiveOp = true;
+                    activeOp = created.doc;
+                    if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
+                    logInfo('scanner', `${signal.symbol} entrada criada — Pine sync ativo`, {
+                      score: signal.context?.score, atr_mult: pineConfig.trailAtrMult, tp1R: pineConfig.tp1R, rr: rr.rr1,
+                    }, { symbol: signal.symbol, timeframe: '15m' });
+                  }
                 }
               } else {
                 // 15m not aligned — log and wait for retry on next scan
@@ -1109,15 +1166,29 @@ export async function persistScanResults(scanResult) {
 
           if (confirmed5m.confirmed) {
             const opData = buildSmcTradeOpData(signal, tf1hData, pineConfig, confirmed5m);
-            const tradeOpId = `trade_smc_${signal.dedup_key}`;
-            const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
-            if (created.created) {
-              hasActiveOp = true;
-              activeOp = created.doc;
-              if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
-              logInfo('scanner', `${signal.symbol} entrada SMC criada (1h→5m)`, {
-                score: signal.context?.score, structure_type: signal.context?.structure_type, trigger: confirmed5m.trigger,
-              }, { symbol: signal.symbol, timeframe: '5m' });
+            const minRR = pineConfig.minRR ?? 1.2;
+            const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
+            if (!rr.pass) {
+              await backend.entities.SystemLog.create({
+                level: 'info',
+                module: 'scanner',
+                message: `${asset.symbol} 1H SMC ${signal.signal_type} — entrada bloqueada: R:R ${rr.rr1?.toFixed(2) ?? 'n/d'} abaixo do mínimo ${minRR} (${rr.reason})`,
+                symbol: asset.symbol,
+                timeframe: '5m',
+                details: { reason: rr.reason, rr1: rr.rr1, rr2: rr.rr2, min_rr: minRR },
+              });
+            } else {
+              opData.rr_at_entry = rr.rr1;
+              const tradeOpId = `trade_smc_${signal.dedup_key}`;
+              const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
+              if (created.created) {
+                hasActiveOp = true;
+                activeOp = created.doc;
+                if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
+                logInfo('scanner', `${signal.symbol} entrada SMC criada (1h→5m)`, {
+                  score: signal.context?.score, structure_type: signal.context?.structure_type, trigger: confirmed5m.trigger, rr: rr.rr1,
+                }, { symbol: signal.symbol, timeframe: '5m' });
+              }
             }
           } else {
             // item 38: rejectReason distinguishes "no 5m trigger yet" from

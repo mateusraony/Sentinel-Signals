@@ -11,6 +11,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sliceClosedAsOf, simNow } from '../src/lib/backtestEngine.js';
 
+// Provenance stamped onto every TradeOperation/SignalEvent created during a
+// backtest run — mirrors the cron's Spot/binance path (the historical data
+// fetch-backtest-data.mjs downloads comes from the same Spot source
+// scripts/adminMarketDataProvider.js uses live).
+export const MARKET_SOURCE = 'spot';
+export const DATA_EXCHANGE = 'binance';
+export const EXECUTOR = 'cron';
+
 // Read lazily (not at module load) — run-backtest.mjs sets this env var at
 // the start of its own main(), which runs AFTER the whole import graph
 // (including this module) has already been evaluated once; a top-level

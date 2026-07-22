@@ -47,6 +47,25 @@ const DEFAULTS = {
   // Signal confirmation (Grupo 02)
   confirmBars: 1,
   onlyClosedCandles: true,
+  // Cross-cascade arbitration (src/lib/signalArbitration.js) — not part of
+  // the user's Pine Script (no `input.*()` declaration parses these; they
+  // only change via strategyConfig/current directly), but synced the same
+  // way so the browser and cron agree.
+  arbEnabled: true,
+  arbPromoteMinScore: 75,
+  arbReinforceMinScore: 50,
+  arbInvalidateOnOppositeMajor: false,
+  arbOppositeScorePenalty: 15,
+  // Risk:Reward entry gate (src/lib/opExitRules.js passesRiskReward)
+  minRR: 1.2,
+  // SMC (1h→5m cascade) confluence score weights (src/lib/indicators/smcConfluence.js)
+  smcScoreStructureWeight: 15,
+  smcScoreChochBonus: 10,
+  smcScoreEmaWeight: 20,
+  smcScoreRfWeight: 15,
+  smcScoreVolumeWeight: 15,
+  smcScoreAlignmentWeight: 15,
+  smcScoreSweepWeight: 10,
 };
 
 /**
@@ -165,6 +184,13 @@ const SYNCED_STRATEGY_KEYS = [
   'useChopExit', 'useInvalidation', 'invalidRFBars', 'invalidScoreMin',
   'confirmBars', 'onlyClosedCandles',
   'emaFastLen', 'emaSlowLen', 'rsiLen', 'volLen', 'atrLen',
+  // Cross-cascade arbitration + R:R gate + SMC score weights (Phase 1 —
+  // see signalArbitration.js/opExitRules.js/smcConfluence.js)
+  'arbEnabled', 'arbPromoteMinScore', 'arbReinforceMinScore',
+  'arbInvalidateOnOppositeMajor', 'arbOppositeScorePenalty', 'minRR',
+  'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
+  'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
+  'smcScoreSweepWeight',
 ];
 
 /**

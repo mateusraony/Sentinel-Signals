@@ -124,3 +124,35 @@ export function nextRfReverseCount({ rfReversedAgainst, prevCount, prevCandleTim
   if (prevCandleTime === candleTime) return { count: prevCount, lastCandle: candleTime };
   return { count: prevCount + 1, lastCandle: candleTime };
 }
+
+// Risk:Reward entry gate — rejects a candidate entry whose reward (distance
+// to the chosen target) doesn't clear `minRR` times its risk (distance to
+// the initial stop). Evaluated once, before createTradeOpIfNoneActive, on
+// both cascades' already-computed entry/stop/tp1/tp2 (never recomputes them).
+//
+// Honesty note (see docs/known-risks.md): under BOTH cascades' current TP
+// model, tp1/tp2 are derived AS `entry ± riskDistance * tp1R/tp2R` — i.e. as
+// a multiple of the very risk distance this function divides by. That makes
+// rr1 mathematically equal to pineConfig.tp1R (and rr2 to tp2R) for every
+// real entry today: this gate cannot reject a real candidate unless tp1R
+// itself is misconfigured below minRR, or a future structural (non-risk-
+// derived) target replaces the current model. It still guards that
+// misconfiguration and gives future structural TPs a real gate to plug into
+// — kept honest rather than pretending it's an active filter today.
+export function passesRiskReward({ entry, stop, tp1, tp2, minRR = 1.2, target = 'tp1' }) {
+  if (![entry, stop, tp1].every(Number.isFinite)) {
+    return { pass: false, rr1: null, rr2: null, reason: 'missing_fields' };
+  }
+  const riskDistance = Math.abs(entry - stop);
+  if (riskDistance <= 0) {
+    return { pass: false, rr1: null, rr2: null, reason: 'invalid_stop_distance' };
+  }
+  const rr1 = Math.abs(tp1 - entry) / riskDistance;
+  const rr2 = Number.isFinite(tp2) ? Math.abs(tp2 - entry) / riskDistance : null;
+  const chosen = target === 'tp2' ? rr2 : rr1;
+  if (chosen == null) {
+    return { pass: false, rr1, rr2, reason: 'missing_target' };
+  }
+  const pass = chosen >= minRR;
+  return { pass, rr1, rr2, reason: pass ? null : 'rr_below_min' };
+}
