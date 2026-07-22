@@ -470,6 +470,29 @@ describe('buildReport', () => {
       structureEventsTotal: 2, confirmedSignals: 2, rejectedByOteZone: 4, tradeOpsCreated: 2,
     });
   });
+
+  it('arbitration defaults to empty/all-zero when the caller passes nothing (legacy call shape)', () => {
+    const report = buildReport([], { fromMs: 0, toMs: 1000 });
+    expect(report.arbitration).toEqual({ total: 0, byOutcome: {}, byCascade: {} });
+  });
+
+  it('arbitration counts outcomes by outcome and by the CANDIDATE cascade that triggered each decision', () => {
+    const arbitrationOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', outcome: 'promoted' },
+      { dedup_key: 'b', cascade: '4h_15m', outcome: 'reinforcement_rejected' },
+      { dedup_key: 'c', cascade: '1h_5m', outcome: 'continuation_confirmation' },
+      { dedup_key: 'd', cascade: '1h_5m', outcome: 'continuation_confirmation' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, arbitrationOutcomes });
+    expect(report.arbitration.total).toBe(4);
+    expect(report.arbitration.byOutcome).toEqual({
+      promoted: 1, reinforcement_rejected: 1, continuation_confirmation: 2,
+    });
+    expect(report.arbitration.byCascade).toEqual({
+      '4h_15m': { promoted: 1, reinforcement_rejected: 1 },
+      '1h_5m': { continuation_confirmation: 2 },
+    });
+  });
 });
 
 // docs/known-risks.md items 34/35/38: real backtests (BTCUSDT, PENDLEUSDT,

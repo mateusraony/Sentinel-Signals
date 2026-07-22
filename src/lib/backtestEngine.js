@@ -126,6 +126,13 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
   // same as before this change — only these key sets survive the loop.
   const smcConfirmedSignalKeys = new Set();
   const smcOteZoneRejectionKeys = new Set();
+  // Cross-cascade arbitration outcomes (src/lib/signalArbitration.js),
+  // surfaced so a replay makes the new "intelligent" blocking/promotion
+  // visible instead of only inferable from op counts. Keyed by dedup_key —
+  // a given signal reaches handleActiveOpArbitration at most once across the
+  // whole replay (same SignalEvent.createUnique dedup smcConfirmedSignalKeys
+  // above relies on), so a Map is defensive rather than strictly required.
+  const arbitrationOutcomesByKey = new Map();
 
   installSimClock(fromMs);
   try {
@@ -144,6 +151,9 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
           for (const rejection of (persistResult.smc5mZoneRejections || [])) {
             smcOteZoneRejectionKeys.add(rejection.dedup_key);
           }
+          for (const outcome of (persistResult.arbitrationOutcomes || [])) {
+            arbitrationOutcomesByKey.set(outcome.dedup_key, outcome);
+          }
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
         }
@@ -159,6 +169,7 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
     fromMs, toMs,
     smcConfirmedSignals: smcConfirmedSignalKeys.size,
     smcRejectedByOteZone: smcOteZoneRejectionKeys.size,
+    arbitrationOutcomes: [...arbitrationOutcomesByKey.values()],
   });
 }
 
@@ -168,7 +179,7 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
 // already trusts, not reinvented here. Ops still non-terminal at the cutoff
 // are reported separately, never force-closed and never counted in win/
 // loss/BE (summarizeOps already excludes them via isTerminalStatus).
-export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0 } = {}) {
+export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [] } = {}) {
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
 
@@ -208,5 +219,20 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
       rejectedByOteZone: smcRejectedByOteZone,
       tradeOpsCreated: ops.filter(op => op.cascade === '1h_5m').length,
     },
+    // Cross-cascade arbitration (src/lib/signalArbitration.js) — counts by
+    // outcome and by the CANDIDATE cascade that triggered each decision
+    // (not the active op's cascade). Empty/all-zero when no competing
+    // signal ever arrived during the replay, which is the common case for a
+    // short window or a single-cascade asset — not itself a sign of a bug.
+    arbitration: (() => {
+      const byOutcome = {};
+      const byCascade = {};
+      for (const { cascade, outcome } of arbitrationOutcomes) {
+        byOutcome[outcome] = (byOutcome[outcome] || 0) + 1;
+        (byCascade[cascade] ||= {});
+        byCascade[cascade][outcome] = (byCascade[cascade][outcome] || 0) + 1;
+      }
+      return { total: arbitrationOutcomes.length, byOutcome, byCascade };
+    })(),
   };
 }
