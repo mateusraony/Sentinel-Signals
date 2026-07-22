@@ -448,35 +448,42 @@ describe('buildReport', () => {
   it('smcDiagnostics defaults to all-zero when the caller passes nothing (legacy call shape)', () => {
     const report = buildReport([{ status: 'STOP_HIT', cascade: '4h_15m', entry_price: 100, initial_stop: 90, exit_price: 90, side: 'BUY' }], { fromMs: 0, toMs: 1000 });
     expect(report.smcDiagnostics).toEqual({
-      structureEventsTotal: 0, rejectedByZoneGate: 0, confirmedSignals: 0, tradeOpsCreated: 0,
+      structureEventsTotal: 0, confirmedSignals: 0, rejectedByOteZone: 0, tradeOpsCreated: 0,
     });
   });
 
-  it('smcDiagnostics sums the funnel and counts 1h_5m ops regardless of open/closed status', () => {
+  // docs/known-risks.md item 38: structureEventsTotal now mirrors
+  // confirmedSignals directly (no gate left between 1h detection and
+  // SignalEvent creation) — rejectedByOteZone is a separate, later-stage
+  // counter (the 5m entry trigger), not subtracted from the total.
+  it('smcDiagnostics mirrors confirmedSignals as structureEventsTotal and counts 1h_5m ops regardless of open/closed status', () => {
     const ops = [
       { status: 'SIGNAL_CONFIRMED', cascade: '1h_5m' }, // still open — must still count as "created"
       { status: 'STOP_HIT', cascade: '1h_5m', entry_price: 100, initial_stop: 90, exit_price: 90, side: 'BUY' },
       { status: 'STOP_HIT', cascade: '4h_15m', entry_price: 100, initial_stop: 90, exit_price: 90, side: 'BUY' }, // different cascade — must not count
     ];
-    const report = buildReport(ops, { fromMs: 0, toMs: 1000, smcRejectedByZoneGate: 4, smcConfirmedSignals: 2 });
+    const report = buildReport(ops, { fromMs: 0, toMs: 1000, smcConfirmedSignals: 2, smcRejectedByOteZone: 4 });
     expect(report.smcDiagnostics).toEqual({
-      structureEventsTotal: 6, rejectedByZoneGate: 4, confirmedSignals: 2, tradeOpsCreated: 2,
+      structureEventsTotal: 2, confirmedSignals: 2, rejectedByOteZone: 4, tradeOpsCreated: 2,
     });
   });
 });
 
-// docs/known-risks.md items 34/35: real backtests (BTCUSDT, PENDLEUSDT, ~18
-// months each) keep showing zero 1h_5m operations, and until now there was
-// no way to tell from the report whether that meant "no structure event
-// ever happened" or "one happened and the zone gate silently ate it" — the
-// exact question the user asked. Reproduces the known, already-characterized
-// scenario from smcStructure.test.js's item 34/35 coverage: goldenCandles(800)
-// contains exactly ONE swingLen=50 structure event (a bearChoch at bar 418)
-// whose zone is 'discount' — the zone zoneOk rejects for SELL. Driven through
-// the REAL runBacktest (not just the pure functions) so this proves the
-// counters are wired end to end, not just correct in isolation.
+// docs/known-risks.md items 34/35/38: real backtests (BTCUSDT, PENDLEUSDT,
+// ~18 months each) kept showing zero 1h_5m operations. smcDiagnostics (item
+// 35) revealed why: 74/74 real 1h structure breaks over 18.5 months of
+// BTCUSDT were rejected by the zoneOk gate — not an occasional miss, a
+// structural tautology (a break's close is, by definition, near the extreme
+// of the same window the gate measures it against). Item 38 removed that
+// gate outright instead of tuning it — no threshold fixes a self-referential
+// rejection. Reproduces the known, already-characterized scenario from
+// smcStructure.test.js's item 34/35 coverage: goldenCandles(800) contains
+// exactly ONE swingLen=50 structure event (a bearChoch at bar 418, zone
+// 'discount' — what the OLD gate rejected for SELL). Driven through the REAL
+// runBacktest (not just the pure functions) so this proves the counters are
+// wired end to end, not just correct in isolation.
 describe('runBacktest — smcDiagnostics answers "why zero SMC ops?" with real counts', () => {
-  it('counts the one known structure event as rejected-by-zone-gate, not confirmed, no TradeOperation', async () => {
+  it('counts the one known structure event as a confirmed signal now that the 1h zone gate is gone (item 38)', async () => {
     const candles = goldenCandles(800);
     getPineConfig.mockResolvedValue(basePineConfig());
     const store = new Map([[`TESTUSDT:1h`, candles]]);
@@ -500,10 +507,13 @@ describe('runBacktest — smcDiagnostics answers "why zero SMC ops?" with real c
       stepMs: ONE_H, // no need for the 5m default cadence here
     });
 
+    // No candles5m store is set up here, so the 5m entry trigger never
+    // fires — tradeOpsCreated stays 0 for a reason unrelated to zone (no
+    // 5m confirmation data), not because of the removed 1h gate.
     expect(report.smcDiagnostics).toEqual({
       structureEventsTotal: 1,
-      rejectedByZoneGate: 1,
-      confirmedSignals: 0,
+      confirmedSignals: 1,
+      rejectedByOteZone: 0,
       tradeOpsCreated: 0,
     });
   });
@@ -511,11 +521,13 @@ describe('runBacktest — smcDiagnostics answers "why zero SMC ops?" with real c
   // Codex review on PR #74: scanAsset is stateless and re-evaluates the SAME
   // last-closed 1h candle on every tick until the next one closes. At the
   // REAL default cadence (5min, since asset.smc_enabled — inferStepMs), the
-  // bar-418 event would be re-emitted into zoneGateDrops on every 5m tick
-  // for the rest of that hour (~12x) if not deduplicated by dedup_key. Runs
-  // a narrow window straddling just the event bar (not the full 425h of the
-  // sibling test above) to keep this fast while still exercising the exact
-  // cadence that exposed the bug.
+  // bar-418 event would be re-emitted into newSignals on every 5m tick for
+  // the rest of that hour (~12x) if not deduplicated by dedup_key — the same
+  // risk that used to apply to zoneGateDrops (item 35) now applies to
+  // confirmedSignals instead, same dedup mechanism. Runs a narrow window
+  // straddling just the event bar (not the full 425h of the sibling test
+  // above) to keep this fast while still exercising the exact cadence that
+  // exposed the original bug.
   it('does not over-count when the same 1h candle is re-evaluated every 5 minutes (default cadence)', async () => {
     const candles = goldenCandles(800);
     getPineConfig.mockResolvedValue(basePineConfig());
@@ -538,8 +550,83 @@ describe('runBacktest — smcDiagnostics answers "why zero SMC ops?" with real c
       // no stepMs override — exercises inferStepMs' real default cadence
     });
 
-    expect(report.smcDiagnostics.rejectedByZoneGate).toBe(1); // not ~12
-    expect(report.smcDiagnostics.confirmedSignals).toBe(0);
+    expect(report.smcDiagnostics.confirmedSignals).toBe(1); // not ~12
+    expect(report.smcDiagnostics.rejectedByOteZone).toBe(0);
     expect(report.smcDiagnostics.structureEventsTotal).toBe(1);
+  });
+
+  // docs/known-risks.md item 38: proves rejectedByOteZone (and, in the
+  // sibling test below, tradeOpsCreated) are wired end to end through the
+  // real persistScanResults→runBacktest plumbing (not just buildReport's
+  // pure param passthrough, covered above) — a 1h structure event whose 5m
+  // entry trigger lands in the unfavorable/favorable leg zone must be
+  // counted/created here, deduplicated by the signal's own dedup_key so a
+  // retried rejection across ticks doesn't inflate the count (see the "does
+  // not over-count" test above for the equivalent proof on
+  // confirmedSignals). bar 418 in goldenCandles(800) is a bearChoch (SELL)
+  // with lastSwingHigh≈166.802/breakClose≈98.435 (verified against
+  // calculateStructure directly) — the OTE leg for a SELL anchors legHigh to
+  // the swing high and legLow to the break's own close, giving
+  // eqTop≈136.037/eqBtm≈129.201. SELL rejects only 'discount' (close <
+  // eqBtm) and accepts 'premium'/'equilibrium'.
+  const ONE_H = 60 * 60 * 1000;
+  const FIVE_M = 5 * 60 * 1000;
+  const eventCloseMs = 419 * ONE_H; // bar 418 closes at (418+1)*ONE_H
+
+  // Bearish sweep recipe (matches SELL): flat baseline then one candle that
+  // wicks above the recent 20-bar 5m high and closes back below it, bearish
+  // (close < open) — deterministic bearishSweep=true, with `closeAt` free to
+  // choose since only classifyZone against the FIXED 1h leg decides the
+  // outcome here, not the 5m window itself.
+  function bearishSweepCandles5m(baseline, closeAt) {
+    const candles = [];
+    for (let i = 0; i < 60; i++) {
+      const t = eventCloseMs - (60 - i) * FIVE_M;
+      candles.push({ open: baseline, high: baseline + 5, low: baseline - 5, close: baseline, openTime: t - FIVE_M, closeTime: t, isClosed: true });
+    }
+    const t = eventCloseMs;
+    candles.push({ open: baseline + 4, high: baseline + 7, low: closeAt - 0.5, close: closeAt, openTime: t - FIVE_M, closeTime: t, isClosed: true });
+    return candles;
+  }
+
+  async function runWithCandles5m(candles5m) {
+    getPineConfig.mockResolvedValue(basePineConfig());
+    const store = new Map([[`TESTUSDT:1h`, goldenCandles(800)], [`TESTUSDT:5m`, candles5m]]);
+    fetchCandles.mockImplementation(async (sym, tf, limit) =>
+      sliceClosedAsOf(store.get(`${sym}:${tf}`) || [], simNow(), limit));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const asset = makeAsset({
+      symbol: 'TESTUSDT',
+      smc_enabled: true,
+      timeframes_enabled: { '1h': true, '4h': false, '1d': false },
+    });
+
+    return runBacktest({
+      assets: [asset], backend,
+      fromMs: 418 * ONE_H, toMs: 420 * ONE_H,
+      stepMs: FIVE_M,
+    });
+  }
+
+  it('counts a real 5m OTE zone rejection through the full backtest pipeline (close in discount)', async () => {
+    // Baseline ~100, sweep candle closes at 103.5 — comfortably below
+    // eqBtm≈129.201, so 'discount': rejected for the SELL signal.
+    const report = await runWithCandles5m(bearishSweepCandles5m(100, 103.5));
+
+    expect(report.smcDiagnostics.confirmedSignals).toBe(1);
+    expect(report.smcDiagnostics.rejectedByOteZone).toBe(1);
+    expect(report.smcDiagnostics.tradeOpsCreated).toBe(0);
+  });
+
+  it('confirms and creates a TradeOperation when the 5m entry lands in a favorable zone (premium)', async () => {
+    // Baseline ~140, sweep candle closes at 138 — above eqTop≈136.037, so
+    // 'premium': favorable for SELL (only 'discount' is rejected).
+    const report = await runWithCandles5m(bearishSweepCandles5m(140, 138));
+
+    expect(report.smcDiagnostics.confirmedSignals).toBe(1);
+    expect(report.smcDiagnostics.rejectedByOteZone).toBe(0);
+    expect(report.smcDiagnostics.tradeOpsCreated).toBe(1);
   });
 });

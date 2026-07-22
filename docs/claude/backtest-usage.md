@@ -92,17 +92,21 @@ antes/depois de qualquer mudança de parâmetro.
 **`smcDiagnostics`** (no relatório, `report.smcDiagnostics`): quando
 `report.byCascade['1h_5m']` vem vazio/zero, isso sozinho não diz **por quê**
 — pode ser que nenhuma quebra de estrutura 1h tenha ocorrido no período, ou
-que tenha ocorrido e sido descartada pelo gate de zona Premium/Discount
-(`docs/known-risks.md` item 35). Esse campo fecha essa lacuna:
-`structureEventsTotal` (quantas quebras de estrutura 1h aconteceram no
-total), `rejectedByZoneGate` (quantas o gate de zona descartou),
-`confirmedSignals` (quantas viraram `SignalEvent`), `tradeOpsCreated`
-(quantas viraram `TradeOperation` de verdade — pode ser menor que
-`confirmedSignals` se a confirmação 5m não bater). Se `structureEventsTotal`
-for 0, é o `swingLen=50` sendo deliberadamente raro (item 34); se for > 0
-mas `confirmedSignals` for 0, é o gate de zona rejeitando tudo — dois
-diagnósticos diferentes que pareciam a mesma coisa ("0 operações SMC")
-antes desse campo existir.
+que o gatilho de entrada 5m nunca tenha confirmado. Esse campo fecha essa
+lacuna: `structureEventsTotal` (quantas quebras de estrutura 1h aconteceram
+— idêntico a `confirmedSignals` desde o item 38: toda quebra 1h sempre vira
+`SignalEvent`, sem gate nenhum entre os dois), `confirmedSignals` (quantas
+viraram `SignalEvent`), `rejectedByOteZone` (amostra — só a primeira
+avaliação de cada sinal no gatilho 5m, não o volume exaustivo de retries;
+ver item 38 para o porquê), `tradeOpsCreated` (quantas viraram
+`TradeOperation` de verdade — pode ser menor que `confirmedSignals` se o
+gatilho 5m nunca confirmar dentro da janela de retry, seja por falta de
+sweep/estrutura 5m ou pela zona da perna ainda desfavorável). Se
+`structureEventsTotal` for 0, é o `swingLen=50` sendo deliberadamente raro
+(item 34); `rejectedByOteZone > 0` mostra que o novo gate de zona (item 38,
+medido contra a perna do rompimento, não mais contra o candle de viés 1h)
+está de fato filtrando algumas entradas — esperado por design, diferente do
+item 35 (gate antigo rejeitava praticamente tudo por tautologia geométrica).
 
 ## O que o replay NÃO cobre (por design, não é lacuna)
 

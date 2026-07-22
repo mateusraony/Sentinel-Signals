@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './smcStructure';
+import { calculateStructure, calculateLiquiditySweep, calculatePdZone, classifyZone, buildOteLeg } from './smcStructure';
 import { chochBreakoutCandles, mkCandle, flatCandles, goldenCandles } from './__fixtures__/candles';
 
 // Counts BOS/CHoCH events across the whole series ('series' field), used
@@ -227,5 +227,75 @@ describe('calculatePdZone', () => {
     expect(result.zone).toBe('discount');
     expect(result.pdSwingHigh).toBe(105);
     expect(result.pdSwingLow).toBe(95);
+  });
+});
+
+// docs/known-risks.md item 38: classifyZone extracted from calculatePdZone so
+// the same premium/discount/equilibrium math can be reused against a
+// structure-break LEG (check5mSmcConfirmation) instead of only a generic
+// 20-candle window. Pure regression coverage — calculatePdZone's own tests
+// above already prove the wrapper is byte-identical to the pre-refactor
+// behavior; these cover classifyZone's own boundary cases directly.
+describe('classifyZone', () => {
+  it('classifies above the 5% equilibrium band as premium', () => {
+    expect(classifyZone(96, 100, 0).zone).toBe('premium');
+  });
+
+  it('classifies below the 5% equilibrium band as discount', () => {
+    expect(classifyZone(4, 100, 0).zone).toBe('discount');
+  });
+
+  it('classifies inside the 5% equilibrium band as equilibrium', () => {
+    expect(classifyZone(50, 100, 0).zone).toBe('equilibrium');
+    expect(classifyZone(47, 100, 0).zone).toBe('equilibrium');
+    expect(classifyZone(53, 100, 0).zone).toBe('equilibrium');
+  });
+
+  it('returns null zone when high or low is missing (fail-open contract)', () => {
+    expect(classifyZone(50, null, 0).zone).toBeNull();
+    expect(classifyZone(50, 100, null).zone).toBeNull();
+    expect(classifyZone(50, null, null).zone).toBeNull();
+  });
+
+  it('returns null zone when high < low (inverted/invalid range)', () => {
+    expect(classifyZone(50, 10, 20).zone).toBeNull();
+  });
+
+  it('treats a flat range (high === low) as equilibrium, not a crash', () => {
+    const result = classifyZone(100, 100, 100);
+    expect(result.zone).toBe('equilibrium');
+    expect(result.eqTop).toBe(100);
+    expect(result.eqBtm).toBe(100);
+  });
+});
+
+// docs/known-risks.md item 38: buildOteLeg anchors the leg a fresh 1h
+// structure break just confirmed, consumed by the 5m entry trigger to
+// classify a LATER candle's zone against this leg instead of a disconnected
+// window (see check5mSmcConfirmation in scanner.js).
+describe('buildOteLeg', () => {
+  it('BUY: anchors legHigh to the break close and legLow to the protected swing low', () => {
+    const leg = buildOteLeg('BUY', 150, { lastSwingHigh: 140, lastSwingLow: 90 });
+    expect(leg).toEqual({ legHigh: 150, legLow: 90 });
+  });
+
+  it('SELL: anchors legHigh to the protected swing high and legLow to the break close', () => {
+    const leg = buildOteLeg('SELL', 80, { lastSwingHigh: 140, lastSwingLow: 90 });
+    expect(leg).toEqual({ legHigh: 140, legLow: 80 });
+  });
+
+  it('BUY: returns legLow null when the protected swing low is not yet confirmed', () => {
+    const leg = buildOteLeg('BUY', 150, { lastSwingHigh: 140, lastSwingLow: null });
+    expect(leg).toEqual({ legHigh: 150, legLow: null });
+  });
+
+  it('SELL: returns legHigh null when the protected swing high is not yet confirmed', () => {
+    const leg = buildOteLeg('SELL', 80, { lastSwingHigh: null, lastSwingLow: 90 });
+    expect(leg).toEqual({ legHigh: null, legLow: 80 });
+  });
+
+  it('tolerates a missing smc object entirely (defaults to no pivots)', () => {
+    expect(buildOteLeg('BUY', 150)).toEqual({ legHigh: 150, legLow: null });
+    expect(buildOteLeg('SELL', 80)).toEqual({ legHigh: null, legLow: 80 });
   });
 });

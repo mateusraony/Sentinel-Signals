@@ -205,8 +205,37 @@ export function calculateLiquiditySweep(candles, sweepLookback = 20) {
 }
 
 /**
+ * Classifica `close` como premium/discount/equilibrium dentro do range
+ * [low, high] — banda de equilíbrio de 5% do range ao redor do meio. Função
+ * pura, sem noção de candle/janela: quem decide QUAL range usar (20 velas
+ * genéricas em calculatePdZone, ou a perna de um rompimento de estrutura em
+ * check5mSmcConfirmation, ver docs/known-risks.md item 38) é o chamador.
+ * `high`/`low` nulos ou invertidos (high < low) → não avaliável (`zone:
+ * null`), para que o chamador trate como fail-open em vez de classificar
+ * errado.
+ */
+export function classifyZone(close, high, low) {
+  if (high == null || low == null || high < low) {
+    return { zone: null, eqTop: null, eqBtm: null };
+  }
+  const mid = (high + low) / 2;
+  const range = high - low;
+  const eqBand = range * 0.05;
+  const eqTop = mid + eqBand;
+  const eqBtm = mid - eqBand;
+
+  let zone;
+  if (close > eqTop) zone = 'premium';
+  else if (close < eqBtm) zone = 'discount';
+  else zone = 'equilibrium';
+
+  return { zone, eqTop, eqBtm };
+}
+
+/**
  * Port das zonas Premium/Discount/Equilibrium, avaliadas só na última barra
- * fechada.
+ * fechada. Wrapper fino sobre `classifyZone` — a janela de 20 velas
+ * (excluindo o candle atual) é a única coisa específica desta função.
  */
 export function calculatePdZone(candles, pdSwingLen = 20) {
   const n = candles.length;
@@ -219,16 +248,35 @@ export function calculatePdZone(candles, pdSwingLen = 20) {
 
   const pdSwingHigh = highestInWindow(highs, last - 1, pdSwingLen);
   const pdSwingLow = lowestInWindow(lows, last - 1, pdSwingLen);
-  const pdMid = (pdSwingHigh + pdSwingLow) / 2;
-  const pdRange = pdSwingHigh - pdSwingLow;
-  const eqBand = pdRange * 0.05;
-  const eqTop = pdMid + eqBand;
-  const eqBtm = pdMid - eqBand;
-
-  let zone;
-  if (close > eqTop) zone = 'premium';
-  else if (close < eqBtm) zone = 'discount';
-  else zone = 'equilibrium';
+  const { zone, eqTop, eqBtm } = classifyZone(close, pdSwingHigh, pdSwingLow);
 
   return { zone, pdSwingHigh, pdSwingLow, eqTop, eqBtm };
+}
+
+/**
+ * Ancora a perna (leg) do impulso que um rompimento de estrutura 1h acabou
+ * de confirmar — usada pelo gatilho de entrada 5m (`check5mSmcConfirmation`
+ * em `scanner.js`) para julgar se uma entrada, mais tarde, está num recuo
+ * favorável dessa perna, em vez de remedir uma janela genérica desconectada
+ * do evento (`docs/known-risks.md` item 38 — substitui o gate de zona
+ * autocontraditório no candle de viés 1h, item 35).
+ *
+ * BUY (rompimento de alta): `legLow` = o fundo protegido de onde o impulso
+ * partiu (`lastSwingLow`); `legHigh` = o close que acabou de confirmar o
+ * rompimento (o topo já alcançado). SELL é o espelho.
+ *
+ * Fixada UMA VEZ, no instante do sinal 1h (quem chama decide isso —
+ * chamar de novo mais tarde recalcularia com um `lastSwingLow`/`lastSwingHigh`
+ * potencialmente diferente, fazendo a perna "derivar" enquanto o candidato
+ * aguarda confirmação 5m).
+ *
+ * Retorna null no lado ainda sem pivô protegido confirmado (`lastSwingHigh`/
+ * `lastSwingLow` ausente) — chamador deve tratar como não avaliável
+ * (fail-open via `classifyZone`), nunca como veredito desfavorável.
+ */
+export function buildOteLeg(signalType, breakClose, { lastSwingHigh, lastSwingLow } = {}) {
+  if (signalType === 'BUY') {
+    return { legHigh: breakClose, legLow: lastSwingLow ?? null };
+  }
+  return { legHigh: lastSwingHigh ?? null, legLow: breakClose };
 }

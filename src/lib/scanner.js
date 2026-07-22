@@ -22,7 +22,7 @@ import { calculateATR } from './indicators/atr';
 import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
 import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
-import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './indicators/smcStructure';
+import { calculateStructure, calculateLiquiditySweep, calculatePdZone, buildOteLeg, classifyZone } from './indicators/smcStructure';
 import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit } from './opExitRules';
 import { hasAssetStateChanged } from './assetStateDiff';
@@ -310,14 +310,31 @@ async function check15mConfirmation(symbol, direction, asset) {
  * direction. A shorter swing length (10 vs the 1h bias's 50) is used here on
  * purpose — an LTF entry trigger needs to react within a handful of 5m
  * candles, not wait for a 50-bar (~4h) structure break on the 5m chart
- * itself. Returns { confirmed, entryPrice, entryCandleTime, trigger }.
+ * itself.
+ *
+ * docs/known-risks.md item 38: the Premium/Discount zone gate now lives
+ * HERE, not on the 1h bias candle — evaluated against `legBounds` (the leg
+ * of THIS specific 1h break, from SignalEvent.context.ote_leg_high/low),
+ * never against a fresh window measured off `closed`. Reusing `closed` for
+ * the zone (the same candles the `structure` trigger is computed from) would
+ * reproduce the exact self-referential paradox this item removed at the 1h
+ * stage — see buildOteLeg. `legBounds` missing/null on either side means
+ * "not evaluable" and fails OPEN (never blocks) — only an explicit
+ * unfavorable zone rejects.
+ *
+ * Returns { confirmed, entryPrice, entryCandleTime, trigger, oteZone,
+ * rejectReason }. `rejectReason` is null when confirmed, `'no_trigger'` when
+ * neither sweep nor structure fired (or data was unavailable), or
+ * `'ote_zone_unfavorable'` when a trigger fired but the zone check rejected
+ * it.
  */
-async function check5mSmcConfirmation(symbol, direction) {
+async function check5mSmcConfirmation(symbol, direction, legBounds) {
+  const noTrigger = { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null, oteZone: null, rejectReason: 'no_trigger' };
   try {
     const candles5m = await fetchCandles(symbol, TF_5M, 150);
     const closed = candles5m.filter(c => c.isClosed);
     if (closed.length < 60) {
-      return { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null };
+      return noTrigger;
     }
 
     const sweep = calculateLiquiditySweep(closed, 20);
@@ -329,10 +346,32 @@ async function check5mSmcConfirmation(symbol, direction) {
       : (structure.lastBear.bos || structure.lastBear.choch);
 
     if (!sweepAligned && !structureAligned) {
-      return { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null };
+      return noTrigger;
     }
 
     const lastClosed = closed[closed.length - 1];
+
+    // Same favorable-zone convention the old 1h gate used (only the range it
+    // measures against changed): BUY rejects only 'premium' (still fully
+    // extended, no pullback yet), SELL rejects only 'discount'. A null zone
+    // (leg not evaluable) is treated as favorable — fail-open, not a verdict.
+    const { zone: oteZone } = classifyZone(lastClosed.close, legBounds?.legHigh, legBounds?.legLow);
+    // Codex review (PR #77): classifyZone has no upper/lower bound — a close
+    // below legLow (or above legHigh) still reads as 'discount' ('premium')
+    // unboundedly, which is exactly the zone BUY (SELL) favors. That would
+    // confirm an entry after price broke past the PROTECTED pivot side of
+    // the leg (legLow for BUY = lastSwingLow, legHigh for SELL =
+    // lastSwingHigh) — not a pullback into a better price anymore, the
+    // structure itself is invalidated there. Reject explicitly, regardless
+    // of what classifyZone's label says.
+    const brokeProtectedPivot = direction === 'BUY'
+      ? (legBounds?.legLow != null && lastClosed.close < legBounds.legLow)
+      : (legBounds?.legHigh != null && lastClosed.close > legBounds.legHigh);
+    const zoneFavorable = !brokeProtectedPivot
+      && (oteZone == null || (direction === 'BUY' ? oteZone !== 'premium' : oteZone !== 'discount'));
+    if (!zoneFavorable) {
+      return { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null, oteZone, rejectReason: 'ote_zone_unfavorable' };
+    }
 
     // Structural invalidation level of the trigger, consumed by
     // computeStructuralStop in buildSmcTradeOpData:
@@ -355,10 +394,12 @@ async function check5mSmcConfirmation(symbol, direction) {
       entryCandleTime: new Date(lastClosed.closeTime).toISOString(),
       trigger: sweepAligned ? 'sweep' : 'structure',
       structuralLevel,
+      oteZone,
+      rejectReason: null,
     };
   } catch (err) {
     console.warn(`[5m SMC confirm] ${symbol} fetch failed:`, err.message);
-    return { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null };
+    return noTrigger;
   }
 }
 
@@ -419,6 +460,13 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     bias: sig.signal_type === 'BUY' ? 'bullish' : 'bearish',
     structure_type: sig.context?.structure_type,
     pd_zone: sig.context?.pd_zone,
+    // Observability only (item 38) — the leg the 1h break anchored, and the
+    // zone the 5m entry candle was actually classified into against it.
+    // Never consumed by stop/TP math (that stays computeStructuralStop's
+    // structuralLevel, unrelated field).
+    ote_leg_high: sig.context?.ote_leg_high ?? null,
+    ote_leg_low: sig.context?.ote_leg_low ?? null,
+    ote_zone_at_entry: confirmation5m?.oteZone ?? null,
     sweep_confirmed: confirmation5m?.trigger === 'sweep',
     stop_basis: stopBasis,
     structural_level: confirmation5m?.structuralLevel ?? null,
@@ -442,10 +490,6 @@ export async function scanAsset(asset) {
   const results = {};
   const newSignals = [];
   const errors = [];
-  // Structure breaks the SMC 1h zone gate rejected (known-risks.md item 35)
-  // — recorded so persistScanResults can log them; scanAsset itself never
-  // writes to Firestore.
-  const zoneGateDrops = [];
 
   // Read Pine config — parameters auto-synced from Pine Script editor
   const pineConfig = await getPineConfig();
@@ -538,7 +582,18 @@ export async function scanAsset(asset) {
       if (tf === '4h' || tf === '1h') {
         const structure = calculateStructure(closedCandles);
         const pdZone = calculatePdZone(closedCandles);
-        smc = { trend: structure.trend, lastBull: structure.lastBull, lastBear: structure.lastBear, pdZone: pdZone.zone };
+        smc = {
+          trend: structure.trend,
+          lastBull: structure.lastBull,
+          lastBear: structure.lastBear,
+          pdZone: pdZone.zone,
+          // Protected pivots carried by the structure calc (docs/known-risks.md
+          // item 38) — the origin of the impulse leg a fresh 1h BOS/CHoCH just
+          // confirmed. Consumed below to anchor the OTE leg passed to the 5m
+          // entry trigger; already reused by the SMC structural stop (item 24).
+          lastSwingHigh: structure.lastSwingHigh,
+          lastSwingLow: structure.lastSwingLow,
+        };
       }
 
       results[tf] = {
@@ -596,8 +651,8 @@ export async function scanAsset(asset) {
     // Uses the CONFIRMED signal (confirmBars), not the raw flip — at the
     // default confirmBars=1 these are identical (see rangeFilterConfirmation.js).
     // Every other reader of r.rf.signal/.direction (AssetState diagnostics,
-    // regime checks, check15mConfirmation, retry loop, zoneGateDrops) is
-    // intentionally untouched — this block only.
+    // regime checks, check15mConfirmation, retry loop) is intentionally
+    // untouched — this block only.
     if ((r.confirmed.confirmedSignal === 'BUY' || r.confirmed.confirmedSignal === 'SELL') && strengthResult.passed) {
       const reason = generateSignalDescription(
         asset.symbol, tf, r.confirmed.confirmedSignal,
@@ -634,8 +689,18 @@ export async function scanAsset(asset) {
     }
 
     // Check for SMC/ICT structure signal (1h bias for the 1h→5m cascade) —
-    // fires on a fresh BOS/CHoCH, gated by the Premium/Discount zone rule
-    // (only buy from discount/equilibrium, only sell from premium/equilibrium).
+    // fires on any fresh BOS/CHoCH. docs/known-risks.md item 38: the
+    // Premium/Discount zone is NO LONGER a reject gate here — pd_zone stays
+    // as observable metadata only (reason string, context.pd_zone). Gating
+    // on it at this exact candle was self-contradictory by construction: a
+    // structure break's close is, by definition, near the extreme of the
+    // very window pdZone measures over the same closedCandles, so the old
+    // gate rejected almost exactly the event type it was meant to filter
+    // (measured: 74/74 real 1h breaks rejected in an 18.5-month BTCUSDT
+    // backtest — see docs/known-risks.md item 35). Zone-awareness moves to
+    // the 5m entry trigger instead (check5mSmcConfirmation), evaluated
+    // against the LEG of this specific break rather than a disconnected
+    // window — see buildSmcTradeOpData/ote_leg_high/ote_leg_low.
     // Gated by asset.smc_enabled up front — assets that never opted into
     // this cascade shouldn't get SMC SignalEvents/alerts at all, not just
     // have the TradeOperation blocked later.
@@ -647,46 +712,32 @@ export async function scanAsset(asset) {
         const structureType = bullFired
           ? (r.smc.lastBull.choch ? 'CHoCH' : 'BOS')
           : (r.smc.lastBear.choch ? 'CHoCH' : 'BOS');
-        const zoneOk = signalType === 'BUY' ? r.smc.pdZone !== 'premium' : r.smc.pdZone !== 'discount';
+        // Fixed once, here, at the instant of the 1h signal — never
+        // recomputed on retry (item 38). Null legLow/legHigh (missing
+        // protected pivot) is a valid, expected fail-open case.
+        const { legHigh: oteLegHigh, legLow: oteLegLow } = buildOteLeg(signalType, r.lastClose, r.smc);
 
-        if (zoneOk) {
-          newSignals.push({
-            asset_id: asset.id,
-            symbol: asset.symbol,
-            timeframe: tf,
-            signal_type: signalType,
-            source: 'smc_structure',
-            strength: structureType === 'CHoCH' ? 'strong' : 'medium',
-            alignment: strengthResult.alignment,
-            priority: structureType === 'CHoCH' ? 'high' : 'medium',
-            price_at_signal: r.lastClose,
-            candle_time: r.lastCandleTime,
-            reason: `${asset.symbol} 1H ${structureType} ${signalType === 'BUY' ? 'altista' : 'baixista'} — zona ${r.smc.pdZone}`,
-            context: {
-              structure_type: structureType,
-              pd_zone: r.smc.pdZone,
-              reasons: [`Estrutura 1H: ${structureType} ${signalType}`, `Zona: ${r.smc.pdZone}`],
-            },
-            dedup_key: `${asset.symbol}_1h_${signalType}_smc_structure_${r.lastCandleTime}`,
-          });
-        } else {
-          // known-risks.md item 35: unlike the SignalEvent path, a rejection
-          // here previously left no trace at all — no SignalEvent, no log,
-          // no retry (the retry loop only re-reads already-persisted
-          // SignalEvents). Recorded, not acted on: this does NOT change
-          // zoneOk's effect on newSignals.
-          zoneGateDrops.push({
-            asset_id: asset.id,
-            symbol: asset.symbol,
-            timeframe: tf,
-            signal_type: signalType,
+        newSignals.push({
+          asset_id: asset.id,
+          symbol: asset.symbol,
+          timeframe: tf,
+          signal_type: signalType,
+          source: 'smc_structure',
+          strength: structureType === 'CHoCH' ? 'strong' : 'medium',
+          alignment: strengthResult.alignment,
+          priority: structureType === 'CHoCH' ? 'high' : 'medium',
+          price_at_signal: r.lastClose,
+          candle_time: r.lastCandleTime,
+          reason: `${asset.symbol} 1H ${structureType} ${signalType === 'BUY' ? 'altista' : 'baixista'} — zona ${r.smc.pdZone}`,
+          context: {
             structure_type: structureType,
             pd_zone: r.smc.pdZone,
-            candle_time: r.lastCandleTime,
-            price_at_signal: r.lastClose,
-            dedup_key: `${asset.symbol}_1h_${signalType}_smc_zone_reject_${r.lastCandleTime}`,
-          });
-        }
+            ote_leg_high: oteLegHigh,
+            ote_leg_low: oteLegLow,
+            reasons: [`Estrutura 1H: ${structureType} ${signalType}`, `Zona: ${r.smc.pdZone}`],
+          },
+          dedup_key: `${asset.symbol}_1h_${signalType}_smc_structure_${r.lastCandleTime}`,
+        });
       }
     }
 
@@ -768,7 +819,6 @@ export async function scanAsset(asset) {
     results,
     alignment: alignmentResult,
     newSignals,
-    zoneGateDrops,
     errors,
     duration,
     pineConfig,
@@ -784,7 +834,7 @@ export async function persistScanResults(scanResult) {
   // result, so a second read of the same strategyConfig doc is pure waste
   // (Firestore quota is billed per read, and this runs for every asset on
   // every 5-minute pass — see docs/known-risks.md item 13).
-  const { asset, results, newSignals, zoneGateDrops = [], errors, duration, pineConfig } = scanResult;
+  const { asset, results, newSignals, errors, duration, pineConfig } = scanResult;
 
   // Update or create asset states
   for (const [tf, data] of Object.entries(results)) {
@@ -857,6 +907,17 @@ export async function persistScanResults(scanResult) {
 
   // Deduplicate and persist signals
   let persistedSignals = 0;
+  // docs/known-risks.md item 38: sampled, not exhaustive — only the entry
+  // motor's FIRST evaluation of a fresh 1h SMC signal pushes here, never the
+  // 5m-retry loop (which stays silent on every rejected tick by the same
+  // deliberate design as the 4h/15m retry loop, to avoid a Firestore write
+  // per pending signal every ~5 minutes over its whole retry window). Real
+  // rejection volume across the full retry window is therefore higher than
+  // this array reports — it answers "did the very first 5m check reject the
+  // candidate", not "was it ever rejected". Good enough to distinguish
+  // item 34 (no structure event) from item 35/38 (event happened, gate
+  // rejected the entry) without adding new write volume.
+  const smc5mZoneRejections = [];
   for (const signal of newSignals) {
     // Cooldown check — a best-effort query, not atomic on its own, but the
     // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
@@ -1043,7 +1104,8 @@ export async function persistScanResults(scanResult) {
       const tf1hData = results['1h'];
       if (tf1hData && tf1hData.atrValue) {
         if (!hasActiveOp) {
-          const confirmed5m = await check5mSmcConfirmation(asset.symbol, signal.signal_type);
+          const legBounds = { legHigh: signal.context?.ote_leg_high, legLow: signal.context?.ote_leg_low };
+          const confirmed5m = await check5mSmcConfirmation(asset.symbol, signal.signal_type, legBounds);
 
           if (confirmed5m.confirmed) {
             const opData = buildSmcTradeOpData(signal, tf1hData, pineConfig, confirmed5m);
@@ -1058,14 +1120,27 @@ export async function persistScanResults(scanResult) {
               }, { symbol: signal.symbol, timeframe: '5m' });
             }
           } else {
+            // item 38: rejectReason distinguishes "no 5m trigger yet" from
+            // "trigger fired but the OTE leg zone rejected it" — the latter
+            // is the new gate's own rejection, worth telling apart from mere
+            // waiting when reading SystemLog later.
             await backend.entities.SystemLog.create({
               level: 'info',
               module: 'scanner',
               message: `${asset.symbol} 1H SMC ${signal.signal_type} — aguardando confirmação no 5m`,
               symbol: asset.symbol,
               timeframe: '5m',
-              details: { signal_tf: '1h', direction: signal.signal_type, structure_type: signal.context?.structure_type },
+              details: {
+                signal_tf: '1h',
+                direction: signal.signal_type,
+                structure_type: signal.context?.structure_type,
+                reason: confirmed5m.rejectReason,
+                ote_zone: confirmed5m.oteZone,
+              },
             });
+            if (confirmed5m.rejectReason === 'ote_zone_unfavorable') {
+              smc5mZoneRejections.push({ dedup_key: signal.dedup_key, symbol: signal.symbol, signal_type: signal.signal_type, ote_zone: confirmed5m.oteZone });
+            }
           }
         } else {
           // Same cross-cascade arbitration log as the RF block above — once
@@ -1171,7 +1246,13 @@ export async function persistScanResults(scanResult) {
       const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
       if (tfData1h.smc.trend !== sigDir) continue;
 
-      const confirmed = await check5mSmcConfirmation(sig.symbol, sig.signal_type);
+      // Legacy SignalEvents predating item 38 have no ote_leg_high/low —
+      // legBounds resolves to {legHigh: undefined, legLow: undefined},
+      // which classifyZone (via check5mSmcConfirmation) already treats as
+      // not-evaluable and fails OPEN, same as a freshly-created signal whose
+      // protected pivot wasn't confirmed yet.
+      const legBounds = { legHigh: sig.context?.ote_leg_high, legLow: sig.context?.ote_leg_low };
+      const confirmed = await check5mSmcConfirmation(sig.symbol, sig.signal_type, legBounds);
       if (!confirmed.confirmed) continue;
 
       const opData = buildSmcTradeOpData(sig, tfData1h, pineConfig, confirmed);
@@ -1433,30 +1514,6 @@ export async function persistScanResults(scanResult) {
     }
   }
 
-  // Log SMC 1h zone-gate rejections (known-risks.md item 35) — observability
-  // only, no behavior change. createUnique (not create): the 1h candle
-  // doesn't change within the hour, so the same "last bar" event would
-  // otherwise re-fire this on every ~5-minute scan pass until the next 1h
-  // candle closes; dedup_key keys it to the candle, same pattern already
-  // used for SignalEvent.
-  for (const drop of zoneGateDrops) {
-    await backend.entities.SystemLog.createUnique(drop.dedup_key, {
-      level: 'info',
-      module: 'scanner',
-      message: `${drop.symbol} 1H SMC ${drop.structure_type} ${drop.signal_type} — descartado pelo gate de zona (${drop.pd_zone})`,
-      symbol: drop.symbol,
-      timeframe: drop.timeframe,
-      details: {
-        reason: 'smc_zone_gate_rejected',
-        structure_type: drop.structure_type,
-        pd_zone: drop.pd_zone,
-        signal_type: drop.signal_type,
-        candle_time: drop.candle_time,
-        price_at_signal: drop.price_at_signal,
-      },
-    });
-  }
-
   // Update asset scan status. scan_error_since tracks how long this asset has
   // been failing CONTINUOUSLY — last_scan_at alone can't detect that, since
   // it's refreshed on both success and error (a per-asset healthcheck reading
@@ -1494,7 +1551,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors };
+  return { persistedSignals, errors, smc5mZoneRejections };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()
