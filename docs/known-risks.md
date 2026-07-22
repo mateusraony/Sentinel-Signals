@@ -184,6 +184,16 @@ de entrada, sem equivalente direto no script original) e o Time Stop da
 cascata SMC (96 barras de 1h, valor fixo — não existe um sistema de tier
 próprio para essa cascata ainda).
 
+**Atualização (2026-07-22):** o Pine real "SMC+A Unified v2.3" — antes
+citado só de nome, nunca salvo no repositório — foi fornecido pelo usuário e
+está em `docs/reference-pine/smc-a-unified-v2.3.pine` (núcleo de lógica:
+`detect_structure`/BOS-CHoCH, `track_obs`/Order Block, `fvgs_objects`/FVG,
+Equal High/Low; regiões puramente visuais do script original omitidas, ver
+nota no próprio arquivo). Isso fecha a lacuna "segundo Pine Script não está
+no repo" para futura paridade — mas **não muda o escopo atual**: Order
+Block e FVG continuam fora de `smcStructure.js`, para uma fase futura com
+sua própria suíte de testes de paridade (`.claude/rules/pine-parity.md`).
+
 ## 10. Bug de paridade corrigido — Time Stop/Chop Exit/Invalidação/trailing ATR nunca rodavam
 
 Até esta correção, o loop de atualização de `TradeOperation`s ativas

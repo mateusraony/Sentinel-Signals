@@ -1,0 +1,948 @@
+// SMC+A Unified [v2.3]
+// v2.3: trend confirma só no close | ob_broken_by configurável | compatibilidade total todos mercados
+import TradingView/ta/8
+import robbatt/lib_plot_objects/56 as D
+import robbatt/lib_profile/44 as PF
+import robbatt/lib_no_delay/18 as ND
+import robbatt/lib_math/2 as M
+
+//@version=6
+indicator("SMC+A Unified [v2.3]", "SMC+A2", overlay=true, max_bars_back=500, max_lines_count=500, max_boxes_count=500, max_labels_count=500)
+
+/////////////////////////////////////////////////////////////////////////////////
+//#region LIB SMC (inline)
+/////////////////////////////////////////////////////////////////////////////////
+
+enum LevelBreakMode
+    CLOSE   = 'candle close price'
+    HIGHLOW = 'high/low (live)'
+
+type OrderBlock
+    int    id
+    int    dir
+    chart.point left_top
+    chart.point right_bottom
+    float  break_price
+    LevelBreakMode break_mode = LevelBreakMode.CLOSE
+    float[] ltf_open
+    float[] ltf_high
+    float[] ltf_low
+    float[] ltf_close
+    float[] ltf_volume
+    D.Box   plot
+    PF.Profile profile
+    float  probability                             = 0
+    bool   trailing                                = false
+    bool   extending                               = false
+    bool   awaiting_confirmation                   = false
+    bool   touched_break_price_before_confirmation = false
+    bool   soft_confirmed                          = false
+    bool   has_fvg_out                             = false
+    bool   has_big_candle                          = false
+    bool   hidden                                  = false
+    bool   broken                                  = false
+    int    broken_time                             = na
+    int    broken_index                            = na
+
+type OrderBlockConfig
+    bool   show                = true
+    int    show_last           = 5
+    bool   show_id             = false
+    bool   show_profile        = true
+    bool   show_text           = true
+    bool   show_fvg_out        = true
+    bool   show_probability    = false
+    bool   extend_until_broken = true
+    D.BoxArgs     args
+    string txt                 = 'OB'
+    D.BoxTextArgs txt_args
+    bool   use_profile         = false
+    PF.ProfileConfig profile_config = na
+
+method init(OrderBlockConfig this) =>
+    if not na(this)
+        if na(this.args)
+            this.args := D.BoxArgs.new(#00000000, bg_color=color.new(chart.fg_color,95), xloc=xloc.bar_time)
+        if na(this.txt_args)
+            this.txt_args := D.BoxTextArgs.new(chart.fg_color, size.tiny, text_halign=text.align_right)
+        if na(this.profile_config)
+            this.profile_config := PF.ProfileConfig.new().init()
+
+method delete(OrderBlock this) =>
+    if not na(this)
+        this.plot.delete()
+        this.profile.delete()
+        this.hidden := false
+    this
+
+method delete(OrderBlock[] blocks) =>
+    if not na(blocks)
+        for block in blocks
+            block.delete()
+    blocks
+
+create_ob(int id, int mode, int start_t, int start_i, float top, int end_t, int end_i, float bottom, float break_price=na, simple LevelBreakMode break_mode=LevelBreakMode.CLOSE) =>
+    OrderBlock.new(id, mode,
+     chart.point.new(start_t, start_i, top),
+     chart.point.new(end_t, end_i, bottom),
+     not na(break_price) ? break_price : mode==1 ? top : bottom,
+     break_mode,
+     array.new<float>(0), array.new<float>(0),
+     array.new<float>(0), array.new<float>(0), array.new<float>(0))
+
+method align_to_profile(OrderBlock block, bool align_edge=false, bool align_break_price=false) =>
+    if not na(block.profile)
+        if align_edge and not na(block.profile.vah)
+            block.left_top.price     := block.profile.vah
+            block.right_bottom.price := block.profile.val
+        if align_break_price and not na(block.profile.poc)
+            block.break_price := block.profile.poc
+    block
+
+method _create_profile(OrderBlock block, float[] opens, float[] tops, float[] bottoms, float[] closes, float[] values, int resolution=20, float vah_pc=80, float val_pc=20, bool init_calculated=true, simple int use_open_close_data_for_blocks_shorter_than_bars=4) =>
+    if na(block.profile)
+        block.profile := PF.create_profile(opens, tops, bottoms, closes, values, resolution, vah_pc, val_pc, block.left_top.index, init_calculated, use_open_close_data_for_blocks_shorter_than_bars)
+    else
+        block.profile.update(opens, tops, bottoms, closes, values)
+    block
+
+method create_profile(OrderBlock block, float[] opens, float[] tops, float[] bottoms, float[] closes, float[] values, int resolution=20, float vah_pc=80, float val_pc=20, bool init_calculated=true, simple int use_open_close_data_for_blocks_shorter_than_bars=4) =>
+    if barstate.isconfirmed and not na(block)
+        block._create_profile(opens, tops, bottoms, closes, values, resolution, vah_pc, val_pc, init_calculated, use_open_close_data_for_blocks_shorter_than_bars)
+    block
+
+method create_profile(OrderBlock block, int resolution=20, float vah_pc=80, float val_pc=20, bool init_calculated=true, simple int use_open_close_data_for_blocks_shorter_than_bars=4) =>
+    block.create_profile(block.ltf_open, block.ltf_high, block.ltf_low, block.ltf_close, block.ltf_volume, resolution, vah_pc, val_pc, init_calculated, use_open_close_data_for_blocks_shorter_than_bars)
+
+method overlaps_range(OrderBlock this, float range_top=0, float range_btm=0) =>
+    na(this) ? false : M.range_overlap(this.left_top.price, this.right_bottom.price, range_top, range_btm)
+
+method last_overlaps(OrderBlock[] this, float range_top, float range_btm) =>
+    na(this) ? false : this.size()>0 ? this.last().overlaps_range(range_top, range_btm) : false
+
+update_broken(int mode, OrderBlock[] tracking_blocks, OrderBlock[] broken_blocks, OrderBlock[] broken_blocks_new, simple LevelBreakMode broken_by=LevelBreakMode.HIGHLOW, int keep_broken_max=5, OrderBlock[] discarded_buffer=na) =>
+    var broken_by_close = broken_by==LevelBreakMode.CLOSE
+    broken_blocks_new.clear()
+    tracking_size = tracking_blocks.size()
+    if tracking_size > 0
+        break_src = broken_by_close ? close : mode==1 ? low : high
+        for i = tracking_size-1 to 0
+            block = tracking_blocks.get(i)
+            if broken_by != LevelBreakMode.CLOSE or barstate.isconfirmed
+                if mode==1 ? block.break_price > break_src : block.break_price < break_src
+                    block.broken       := true
+                    block.broken_time  := time_close
+                    block.broken_index := bar_index+1
+                    broken_blocks.push(block)
+                    broken_blocks_new.push(block)
+                    tracking_blocks.remove(i)
+                    while broken_blocks.size() > keep_broken_max
+                        if not na(discarded_buffer)
+                            discarded_buffer.push(broken_blocks.shift())
+                        else
+                            broken_blocks.shift()
+                else
+                    break
+    true
+
+method reset_tracking(OrderBlock this) =>
+    this.ltf_high.clear()
+    this.ltf_low.clear()
+    this.ltf_open.clear()
+    this.ltf_close.clear()
+    this.ltf_volume.clear()
+    this.trailing                                := true
+    this.extending                               := false
+    this.awaiting_confirmation                   := false
+    this.touched_break_price_before_confirmation := false
+    this.soft_confirmed  := false
+    this.has_fvg_out     := false
+    this.broken          := false
+    this.left_top        := chart.point.now(high)
+    this.right_bottom    := chart.point.now(low)
+    this.break_price     := hl2
+
+method remove_insignificant(OrderBlock[] blocks, float min_size, float max_size, OrderBlock[] removed_buffer=na) =>
+    if blocks.size() > 0
+        for i = blocks.size()-1 to 0
+            block = blocks.get(i)
+            sz    = block.left_top.price - block.right_bottom.price
+            if sz < min_size or max_size < sz
+                if not na(removed_buffer)
+                    removed_buffer.push(block)
+                block.plot    := na
+                block.profile := na
+                blocks.remove(i)
+    blocks
+
+track_obs(int swing_len, float swing_high_confirmed, float swing_low_confirmed, bool bull_bos_alert, bool bull_choch_alert, bool bear_bos_alert, bool bear_choch_alert, float min_block_size, float max_block_size, bool enabled=true, simple bool include_consecutive_bars=true, simple bool capture_profile=false, simple bool align_edge_to_value_area=false, simple bool align_break_price_to_poc=false, simple bool use_soft_confirm=true, float soft_confirm_offset=0, simple bool use_soft_confirm_big_candle=true, simple bool use_retracements_with_FVG_out=true, simple LevelBreakMode broken_by=LevelBreakMode.HIGHLOW, simple int keep_broken_max=5, simple int gc_cycle=na) =>
+    var OrderBlock[] tracking_blocks_bull   = array.new<OrderBlock>(0)
+    var OrderBlock[] tracking_blocks_bear   = array.new<OrderBlock>(0)
+    var OrderBlock[] broken_blocks_bull     = array.new<OrderBlock>(0)
+    var OrderBlock[] broken_blocks_bear     = array.new<OrderBlock>(0)
+    var OrderBlock[] broken_blocks_new_bull = array.new<OrderBlock>(0)
+    var OrderBlock[] broken_blocks_new_bear = array.new<OrderBlock>(0)
+    var OrderBlock[] discarded_blocks_bull  = array.new<OrderBlock>(0)
+    var OrderBlock[] discarded_blocks_bear  = array.new<OrderBlock>(0)
+    float atr_ob         = ND.atr(200)
+    float fvg_min_size   = atr_ob * 0.2
+    float big_ass_candle = atr_ob * 3
+    var int next_id      = 0
+    var OrderBlock bull_ob = create_ob(0,  1, time, bar_index, high, time, bar_index, low, hl2, broken_by)
+    var OrderBlock bear_ob = create_ob(0, -1, time, bar_index, high, time, bar_index, low, hl2, broken_by)
+    if barstate.isfirst
+        bull_ob.reset_tracking()
+        bear_ob.reset_tracking()
+    var float ob_size_min_bull = min_block_size
+    var float ob_size_min_bear = min_block_size
+    var float ob_size_max_bull = max_block_size
+    var float ob_size_max_bear = max_block_size
+    bool is_green      = open < close
+    bool is_red        = close < open
+    bool is_fvg_up     = low - high[2] > fvg_min_size
+    bool is_fvg_down   = low[2] - high > fvg_min_size
+    float c_top        = math.max(open, close)
+    float c_btm        = math.min(open, close)
+    float c_body       = math.abs(open - close)
+    bool is_bac        = c_body >= big_ass_candle
+    bool is_indecision = M.in_range(high, low, high[1], low[1]) and c_body[1] > c_body
+     or M.in_range(c_top, c_btm, c_top[1], c_btm[1])
+     or open == close
+    OrderBlock bull_ob_confirmed = na
+    OrderBlock bear_ob_confirmed = na
+    var bool reset_bull_next_bar = false
+    var bool reset_bear_next_bar = false
+    if enabled
+        update_broken( 1, tracking_blocks_bull, broken_blocks_bull, broken_blocks_new_bull, broken_by, keep_broken_max, discarded_blocks_bull)
+        update_broken(-1, tracking_blocks_bear, broken_blocks_bear, broken_blocks_new_bear, broken_by, keep_broken_max, discarded_blocks_bear)
+        if gc_cycle > 0 and bar_index % gc_cycle == 0
+            tracking_blocks_bull.remove_insignificant(min_block_size, max_block_size, discarded_blocks_bull)
+            tracking_blocks_bear.remove_insignificant(min_block_size, max_block_size, discarded_blocks_bear)
+        if reset_bull_next_bar
+            reset_bull_next_bar := false
+            bull_ob.reset_tracking()
+        if reset_bear_next_bar
+            reset_bear_next_bar := false
+            bear_ob.reset_tracking()
+        if bull_ob.trailing
+            if capture_profile or align_edge_to_value_area or align_break_price_to_poc
+                bull_ob.ltf_open.push(open)
+                bull_ob.ltf_high.push(high)
+                bull_ob.ltf_low.push(low)
+                bull_ob.ltf_close.push(close)
+                bull_ob.ltf_volume.push(volume)
+            _cst = bull_ob.left_top.time
+            _csi = bull_ob.left_top.index
+            _cet = bull_ob.right_bottom.time
+            _cei = bull_ob.right_bottom.index
+            _ct  = bull_ob.left_top.price
+            _cb  = bull_ob.right_bottom.price
+            _cbr = math.avg(_ct, _cb)
+            _cex = bull_ob.extending
+            if bull_ob.right_bottom.price > low
+                if barstate.isconfirmed and _csi < bar_index-1 and use_retracements_with_FVG_out and is_fvg_down
+                    if not _cex[2] and not tracking_blocks_bear.last_overlaps(_ct[2], _cb[2]) and not bear_ob.overlaps_range(_ct[2], _cb[2])
+                        next_id += 1
+                        bear_ob_confirmed := create_ob(next_id, 1, _cst[2], _csi[2], _ct[2], _cet[2], _cei[2], _cb[2], _cbr[2], broken_by)
+                        bear_ob_confirmed.has_fvg_out := true
+                        if barstate.isconfirmed and (align_edge_to_value_area or align_break_price_to_poc)
+                            bear_ob_confirmed.ltf_open   := bull_ob.ltf_open.copy()
+                            bear_ob_confirmed.ltf_high   := bull_ob.ltf_high.copy()
+                            bear_ob_confirmed.ltf_low    := bull_ob.ltf_low.copy()
+                            bear_ob_confirmed.ltf_close  := bull_ob.ltf_close.copy()
+                            bear_ob_confirmed.ltf_volume := bull_ob.ltf_volume.copy()
+                            if na(bull_ob.profile)
+                                bear_ob_confirmed.create_profile()
+                            else
+                                bear_ob_confirmed.profile := bull_ob.profile
+                            bear_ob_confirmed.align_to_profile(align_edge_to_value_area, align_break_price_to_poc)
+                        bear_ob_confirmed.right_bottom.index := bar_index
+                        bear_ob_confirmed.right_bottom.time  := time
+                        tracking_blocks_bear.push(bear_ob_confirmed)
+                if is_green
+                    bull_ob.reset_tracking()
+                else
+                    reset_bull_next_bar := true
+                if barstate.isconfirmed
+                    bull_ob.profile := na
+            else if bull_ob.left_top.index == bar_index-1 and include_consecutive_bars
+                bull_ob.extending := true
+            if bull_ob.extending and is_green and bull_ob.left_top.price < high
+                bull_ob.left_top.price := high
+                bull_ob.right_bottom   := chart.point.now(bull_ob.right_bottom.price)
+                bull_ob.touched_break_price_before_confirmation := false
+                bull_ob.soft_confirmed := false
+                if is_bac
+                    bull_ob.has_big_candle := true
+        if bear_ob.trailing
+            if capture_profile or align_edge_to_value_area or align_break_price_to_poc
+                bear_ob.ltf_open.push(open)
+                bear_ob.ltf_high.push(high)
+                bear_ob.ltf_low.push(low)
+                bear_ob.ltf_close.push(close)
+                bear_ob.ltf_volume.push(volume)
+            _cst = bear_ob.left_top.time
+            _csi = bear_ob.left_top.index
+            _cet = bear_ob.right_bottom.time
+            _cei = bear_ob.right_bottom.index
+            _ct  = bear_ob.left_top.price
+            _cb  = bear_ob.right_bottom.price
+            _cbr = math.avg(_ct, _cb)
+            _cex = bear_ob.extending
+            if bear_ob.left_top.price < high
+                if barstate.isconfirmed and use_retracements_with_FVG_out and is_fvg_up
+                    if not _cex[2] and not tracking_blocks_bull.last_overlaps(_ct[2], _cb[2]) and not bull_ob.overlaps_range(_ct[2], _cb[2])
+                        next_id += 1
+                        bull_ob_confirmed := create_ob(next_id, 1, _cst[2], _csi[2], _ct[2], _cet[2], _cei[2], _cb[2], _cbr[2], broken_by)
+                        bull_ob_confirmed.has_fvg_out := true
+                        if barstate.isconfirmed and (align_edge_to_value_area or align_break_price_to_poc)
+                            bull_ob_confirmed.ltf_open   := bear_ob.ltf_open.copy()
+                            bull_ob_confirmed.ltf_high   := bear_ob.ltf_high.copy()
+                            bull_ob_confirmed.ltf_low    := bear_ob.ltf_low.copy()
+                            bull_ob_confirmed.ltf_close  := bear_ob.ltf_close.copy()
+                            bull_ob_confirmed.ltf_volume := bear_ob.ltf_volume.copy()
+                            if na(bear_ob.profile)
+                                bull_ob_confirmed.create_profile()
+                            else
+                                bull_ob_confirmed.profile := bear_ob.profile
+                            bull_ob_confirmed.align_to_profile(align_edge_to_value_area, align_break_price_to_poc)
+                        bull_ob_confirmed.right_bottom.index := bar_index
+                        bull_ob_confirmed.right_bottom.time  := time
+                        tracking_blocks_bull.push(bull_ob_confirmed)
+                if is_red
+                    bear_ob.reset_tracking()
+                else
+                    reset_bear_next_bar := true
+                if barstate.isconfirmed
+                    bear_ob.profile := na
+            else if bear_ob.left_top.index == bar_index-1 and include_consecutive_bars
+                bear_ob.extending := true
+            if bear_ob.extending and is_red
+                bear_ob.right_bottom := chart.point.now(math.min(bear_ob.right_bottom.price, low))
+                bear_ob.touched_break_price_before_confirmation := false
+                bear_ob.soft_confirmed := false
+                if is_bac
+                    bear_ob.has_big_candle := true
+        if barstate.isconfirmed
+            if bull_ob.trailing and bull_ob.extending and bull_ob.left_top.index < bar_index and is_red and not is_indecision and M.in_range(close, bull_ob.left_top.price, bull_ob.right_bottom.price)
+                bull_ob.left_top.price  := math.max(open, bull_ob.left_top.price)
+                bull_ob.right_bottom    := chart.point.new(time[1], bar_index[1], bull_ob.right_bottom.price)
+                bull_ob.extending       := false
+                bull_ob.awaiting_confirmation := true
+                ob_length               = bull_ob.right_bottom.index - bull_ob.left_top.index + 1
+                ob_size_min_bull        := math.round_to_mintick(min_block_size)
+                ob_size_max_bull        := math.round_to_mintick(max_block_size * ob_length)
+                if align_edge_to_value_area or align_break_price_to_poc
+                    bull_ob.create_profile()
+                    bull_ob.align_to_profile(align_break_price=true)
+                if not bear_ob.awaiting_confirmation and not bear_ob.extending
+                    bear_ob.reset_tracking()
+            if bear_ob.trailing and bear_ob.extending and bear_ob.left_top.index < bar_index and is_green and not is_indecision and M.in_range(close, bear_ob.left_top.price, bear_ob.right_bottom.price)
+                bear_ob.left_top.price  := math.max(open, bear_ob.left_top.price)
+                bear_ob.right_bottom    := chart.point.new(time[1], bar_index[1], bear_ob.right_bottom.price)
+                bear_ob.extending       := false
+                bear_ob.awaiting_confirmation := true
+                ob_length               = bear_ob.right_bottom.index - bear_ob.left_top.index + 1
+                ob_size_min_bear        := min_block_size
+                ob_size_max_bear        := max_block_size * ob_length
+                if align_edge_to_value_area or align_break_price_to_poc
+                    bear_ob.create_profile()
+                    bear_ob.align_to_profile(align_break_price=true)
+                if not bull_ob.awaiting_confirmation and not bull_ob.extending
+                    bull_ob.reset_tracking()
+        if bull_ob.trailing and bull_ob.awaiting_confirmation
+            if barstate.isconfirmed and not bull_ob.soft_confirmed
+                if not bull_ob.touched_break_price_before_confirmation
+                    if bull_ob.break_price > low and bull_ob.right_bottom.index < bar_index
+                        bull_ob.touched_break_price_before_confirmation := true
+                if bull_ob.touched_break_price_before_confirmation and bull_ob.left_top.price + soft_confirm_offset < close
+                    bull_ob.soft_confirmed := true
+                else if use_soft_confirm_big_candle and is_bac and is_green and close - bull_ob.left_top.price >= big_ass_candle / 2
+                    bull_ob.soft_confirmed := true
+            if bull_ob.left_top.price + soft_confirm_offset < close and barstate.isconfirmed
+             and (bull_ob.soft_confirmed and use_soft_confirm
+              or not na(swing_low_confirmed)
+              or bull_bos_alert
+              or bull_choch_alert
+              or bar_index - bull_ob.right_bottom.index >= swing_len)
+                if align_edge_to_value_area and not na(bull_ob.profile)
+                 ? M.in_range(math.round_to_mintick(bull_ob.profile.vah - bull_ob.profile.val), ob_size_max_bull, ob_size_min_bull)
+                 : M.in_range(math.round_to_mintick(bull_ob.left_top.price - bull_ob.right_bottom.price), ob_size_max_bull, ob_size_min_bull)
+                    bull_ob.trailing        := false
+                    bull_ob_confirmed       := bull_ob.copy()
+                    bull_ob_confirmed.left_top     := bull_ob.left_top.copy()
+                    bull_ob_confirmed.right_bottom := bull_ob.right_bottom.copy()
+                    if align_edge_to_value_area or align_break_price_to_poc
+                        bull_ob_confirmed.profile := bull_ob.profile
+                        bull_ob_confirmed.align_to_profile(align_edge_to_value_area, align_break_price_to_poc)
+                    if not align_break_price_to_poc
+                        bull_ob_confirmed.break_price := math.avg(bull_ob.left_top.price, bull_ob.right_bottom.price)
+                    bull_ob.profile := na
+                    if is_fvg_up and high[2] < bull_ob_confirmed.left_top.price and bull_ob_confirmed.left_top.price < low
+                        bull_ob_confirmed.has_fvg_out := true
+                    tracking_blocks_bull.push(bull_ob_confirmed)
+                    if barstate.isconfirmed
+                        bull_ob.reset_tracking()
+                    next_id += 1
+                    bull_ob.id := next_id
+                else
+                    bull_ob.reset_tracking()
+        if bear_ob.trailing and bear_ob.awaiting_confirmation
+            if barstate.isconfirmed and not bear_ob.soft_confirmed
+                if not bear_ob.touched_break_price_before_confirmation
+                    if bear_ob.break_price < high and bear_ob.right_bottom.index < bar_index
+                        bear_ob.touched_break_price_before_confirmation := true
+                if bear_ob.touched_break_price_before_confirmation and bear_ob.right_bottom.price - soft_confirm_offset > close
+                    bear_ob.soft_confirmed := true
+                else if use_soft_confirm_big_candle and is_bac and is_red and bear_ob.right_bottom.price - close >= big_ass_candle / 2
+                    bear_ob.soft_confirmed := true
+            if bear_ob.right_bottom.price - soft_confirm_offset > close and barstate.isconfirmed
+             and (bear_ob.soft_confirmed and use_soft_confirm
+              or not na(swing_high_confirmed)
+              or bear_bos_alert
+              or bear_choch_alert
+              or bar_index - bear_ob.right_bottom.index >= swing_len)
+                if align_edge_to_value_area and not na(bear_ob.profile)
+                 ? M.in_range(math.round_to_mintick(bear_ob.profile.vah - bear_ob.profile.val), ob_size_max_bear, ob_size_min_bear)
+                 : M.in_range(math.round_to_mintick(bear_ob.left_top.price - bear_ob.right_bottom.price), ob_size_max_bear, ob_size_min_bear)
+                    bear_ob.trailing        := false
+                    bear_ob_confirmed       := bear_ob.copy()
+                    bear_ob_confirmed.left_top     := bear_ob.left_top.copy()
+                    bear_ob_confirmed.right_bottom := bear_ob.right_bottom.copy()
+                    if align_edge_to_value_area or align_break_price_to_poc
+                        bear_ob_confirmed.profile := bear_ob.profile
+                        bear_ob_confirmed.align_to_profile(align_edge_to_value_area, align_break_price_to_poc)
+                    if not align_break_price_to_poc
+                        bear_ob_confirmed.break_price := math.avg(bear_ob.left_top.price, bear_ob.right_bottom.price)
+                    bear_ob.profile := na
+                    if is_fvg_down and low[2] < bear_ob_confirmed.right_bottom.price and bear_ob_confirmed.right_bottom.price < high
+                        bear_ob_confirmed.has_fvg_out := true
+                    tracking_blocks_bear.push(bear_ob_confirmed)
+                    if barstate.isconfirmed
+                        bear_ob.reset_tracking()
+                    next_id += 1
+                    bear_ob.id := next_id
+                else
+                    bear_ob.reset_tracking()
+    [tracking_blocks_bull, tracking_blocks_bear, bull_ob_confirmed, bear_ob_confirmed, broken_blocks_bull, broken_blocks_bear, broken_blocks_new_bull, broken_blocks_new_bear, discarded_blocks_bull, discarded_blocks_bear]
+
+method draw(OrderBlock this, OrderBlockConfig config, bool extend_only=true, simple bool force_overlay=false, int left_override=na, int right_override=na) =>
+    var tf_ms = timeframe.in_seconds() * 1000
+    if barstate.islast and not na(this) and config.show
+        txt_fvg  = config.show_fvg_out and this.has_fvg_out ? '+FVG' : ''
+        txt_prob = config.show_probability and this.probability > 0 ? str.format(' ({0,number,percent})', this.probability) : ''
+        txt_id   = config.show_id ? ' #' + str.tostring(this.id) : ''
+        txt      = config.show_text ? config.show_profile and config.profile_config.show_poc and config.profile_config.show_labels ? str.format('{0}{1}{2}', config.txt, txt_fvg, txt_id) : str.format('{0}{1}{2}{3}', config.txt, txt_fvg, txt_prob, txt_id) : ''
+        xloc_bt  = config.args.xloc == xloc.bar_time
+        int lft  = not na(left_override)  ? left_override  : xloc_bt ? this.left_top.time  : this.left_top.index
+        int rgt  = not na(right_override) ? right_override : config.extend_until_broken ? this.broken ? xloc_bt ? this.broken_time - tf_ms : this.broken_index - 1 : xloc_bt ? time : bar_index : xloc_bt ? this.right_bottom.time : this.right_bottom.index
+        chart.point plt = D.create_point(lft, this.left_top.price,     config.args.xloc)
+        chart.point prb = D.create_point(rgt, this.right_bottom.price, config.args.xloc)
+        if config.show
+            if na(this.plot)
+                this.plot := D.Box.new(plt, prb, txt)
+            else
+                this.plot.left_top     := plt
+                this.plot.right_bottom := prb
+            this.plot.draw(config.args, config.txt_args, extend_only, force_overlay)
+            if this.broken or this.has_fvg_out
+                this.plot.plot.set_text(txt)
+            if config.show_profile and not na(this.profile)
+                poc_txt = config.show_probability and config.profile_config.show_poc and config.profile_config.show_labels ? config.profile_config.poc_label_text + txt_fvg + txt_prob : na
+                this.profile.draw(config.profile_config, lft, rgt, extend_only, force_overlay, poc_txt)
+            if this.broken and this.broken_time <= time_close
+                this.plot.apply_style(config.args, config.txt_args)
+                if na(this.profile) ? false : config.show_profile
+                    this.profile.apply_style(config.profile_config)
+        this.hidden := false
+    this
+
+method hide(OrderBlock this) =>
+    if not na(this) and not this.hidden
+        this.plot.hide()
+        this.profile.hide()
+        this.hidden := true
+
+method draw(OrderBlock[] blocks, OrderBlockConfig config, bool extend_only=true, simple bool force_overlay=false, int left_override=na, int right_override=na) =>
+    if na(blocks) ? false : config.show and blocks.size() > 0
+        count = 0
+        for i = blocks.size()-1 to 0
+            block = blocks.get(i)
+            if count < config.show_last
+                block.draw(config, extend_only, force_overlay, left_override, right_override)
+                count += 1
+            else
+                if not na(block.plot) and not block.hidden
+                    block.hide()
+                else
+                    break
+    blocks
+
+type FVGConfig
+    bool   show_box            = true
+    bool   show_target         = true
+    bool   show_target_label   = true
+    int    show_last           = 5
+    bool   show_text           = true
+    bool   show_probability    = false
+    D.BoxArgs      box_args    = na
+    D.BoxTextArgs  box_text_args = na
+    D.LineArgs     line_args   = na
+    D.LabelArgs    label_args  = na
+    string txt                 = na
+    int    extend_bars         = 1
+    bool   extend_until_filled = false
+
+type FVG
+    int    dir
+    LevelBreakMode fill_mode
+    chart.point left_top
+    chart.point right_bottom
+    float  fvg_fill_target_ratio
+    float  fill_target_level
+    float  fill_current_ratio
+    float  fill_current_level
+    float  total_volume
+    float  probability         = na
+    bool   filled              = false
+    int    fill_time           = na
+    int    fill_index          = na
+    D.Box   plot_box           = na
+    D.Line  plot_fill_target_level = na
+    D.Label plot_fill_target_label = na
+    bool   hidden              = false
+
+_detect_fvg_object(int mode, bool enabled, float size_threshold=0, LevelBreakMode fill_mode=LevelBreakMode.CLOSE, float fill_target_ratio=0.5) =>
+    float top = low [mode==1 ? 0 : 2]
+    float btm = high[mode==1 ? 2 : 0]
+    float sz  = top - btm
+    if enabled and barstate.isconfirmed and sz > size_threshold
+        [true, FVG.new(mode, fill_mode,
+         left_top             = chart.point.new(time[2], bar_index[2], top),
+         right_bottom         = chart.point.new(time, bar_index, btm),
+         fvg_fill_target_ratio= fill_target_ratio,
+         fill_target_level    = mode==1 ? top - fill_target_ratio*sz : btm + fill_target_ratio*sz,
+         fill_current_ratio   = 0,
+         fill_current_level   = mode==1 ? top : btm,
+         total_volume         = volume[2] + volume[1] + volume)]
+    else
+        [false, na]
+
+method hide(FVG this) =>
+    if not na(this) and not this.hidden
+        this.plot_box.hide()
+        this.plot_fill_target_label.hide()
+        this.plot_fill_target_label.plot.set_text(na)
+        this.hidden := true
+    this
+
+method delete(FVG this) =>
+    if not na(this)
+        this.plot_box.delete()
+        this.plot_fill_target_level.delete()
+        this.plot_fill_target_label.delete()
+        this.plot_box               := na
+        this.plot_fill_target_level := na
+        this.plot_fill_target_label := na
+        this.hidden := false
+    this
+
+method delete(FVG[] fvgs) =>
+    if not na(fvgs)
+        for fvg in fvgs
+            fvg.delete()
+    fvgs
+
+method remove_insignificant(FVG[] fvgs, float size_threshold, FVG[] removed_buffer=na) =>
+    if fvgs.size() > 0
+        for i = fvgs.size()-1 to 0
+            fvg = fvgs.get(i)
+            sz  = fvg.left_top.price - fvg.right_bottom.price
+            if sz < size_threshold
+                if not na(removed_buffer)
+                    removed_buffer.push(fvg)
+                fvgs.remove(i)
+    fvgs
+
+method update(FVG this) =>
+    var fbc = this.fill_mode == LevelBreakMode.CLOSE
+    if not this.filled and (not fbc or barstate.isconfirmed)
+        if this.dir == 1
+            fs = fbc ? close : low
+            if this.fill_current_level > fs
+                this.filled             := this.fill_target_level > fs
+                this.fill_current_level := math.min(this.fill_current_level, fs)
+                this.fill_current_ratio := (this.left_top.price - this.fill_current_level) / (this.left_top.price - this.right_bottom.price)
+                if this.filled
+                    this.fill_time  := time_close
+                    this.fill_index := bar_index + 1
+                true
+            else
+                false
+        else
+            fs = fbc ? close : high
+            if this.fill_current_level < fs
+                this.filled             := this.fill_target_level < fs
+                this.fill_current_level := math.max(this.fill_current_level, fs)
+                this.fill_current_ratio := (this.fill_current_level - this.right_bottom.price) / (this.left_top.price - this.right_bottom.price)
+                if this.filled
+                    this.fill_time  := time_close
+                    this.fill_index := bar_index + 1
+                true
+            else
+                false
+    else
+        false
+
+method update(FVG[] fvgs) =>
+    if fvgs.size() > 0
+        for i = fvgs.size()-1 to 0
+            fvg = fvgs.get(i)
+            if not fvg.update()
+                break
+    fvgs
+
+method clear_filled(FVG[] fvgs, FVG[] filled_buffer, FVG[] filled_new_buffer, int keep_history=5, FVG[] discard_buffer=na) =>
+    filled_new_buffer.clear()
+    if na(keep_history) or keep_history <= 0
+        filled_buffer.clear()
+    if fvgs.size() > 0 and not na(filled_buffer)
+        for i = fvgs.size()-1 to 0
+            fvg = fvgs.get(i)
+            if fvg.filled
+                filled_buffer.push(fvgs.remove(i))
+                filled_new_buffer.push(filled_buffer.last())
+            else
+                break
+    if keep_history > 0
+        while filled_buffer.size() > keep_history
+            if not na(discard_buffer)
+                discard_buffer.push(filled_buffer.shift())
+            else
+                filled_buffer.shift()
+    fvgs
+
+fvgs_objects(simple LevelBreakMode fill_mode=LevelBreakMode.CLOSE, float fill_target_ratio=0.5, float size_threshold=0, simple bool enabled=true, simple int filled_max_keep=5, simple int gc_cycle=na) =>
+    var FVG[] buf_bull    = array.new<FVG>(0)
+    var FVG[] buf_bear    = array.new<FVG>(0)
+    var FVG[] buf_bull_f  = array.new<FVG>(0)
+    var FVG[] buf_bear_f  = array.new<FVG>(0)
+    var FVG[] buf_bull_fn = array.new<FVG>(0)
+    var FVG[] buf_bear_fn = array.new<FVG>(0)
+    var FVG[] buf_bull_d  = array.new<FVG>(0)
+    var FVG[] buf_bear_d  = array.new<FVG>(0)
+    if barstate.isfirst and not M.in_range(fill_target_ratio, 1, 0)
+        runtime.error("FVG fill_target_ratio not in [0-1]")
+    [ba, nb] = _detect_fvg_object( 1, enabled, size_threshold, fill_mode, fill_target_ratio)
+    [ea, ne] = _detect_fvg_object(-1, enabled, size_threshold, fill_mode, fill_target_ratio)
+    buf_bull.update()
+    buf_bear.update()
+    buf_bull.clear_filled(buf_bull_f, buf_bull_fn, filled_max_keep, buf_bull_d)
+    buf_bear.clear_filled(buf_bear_f, buf_bear_fn, filled_max_keep, buf_bear_d)
+    if gc_cycle > 0 and bar_index % gc_cycle == 0
+        buf_bull.remove_insignificant(size_threshold, buf_bull_d)
+        buf_bear.remove_insignificant(size_threshold, buf_bear_d)
+    if ba
+        buf_bull.push(nb)
+    if ea
+        buf_bear.push(ne)
+    [ba, ea, buf_bull, buf_bear, nb, ne, buf_bull_f, buf_bear_f, buf_bull_fn, buf_bear_fn, buf_bull_d, buf_bear_d]
+
+method draw(FVG this, FVGConfig config, bool extend_only=true, simple bool force_overlay=false, int left_override=na, int right_override=na) =>
+    var tf_ms = timeframe.in_seconds() * 1000
+    if barstate.islast and not na(this) and (config.show_box or config.show_target)
+        txt_prob = config.show_probability and this.probability > 0 ? str.format('({0,number,percent})', this.probability) : ''
+        txt      = str.format('{0}{1}', config.show_text ? config.txt + ' ' : '', config.show_target_label ? '' : txt_prob)
+        xloc_bt  = config.box_args.xloc == xloc.bar_time
+        int lft  = not na(left_override) ? left_override : xloc_bt ? this.left_top.time : this.left_top.index
+        int rgt  = not na(right_override) ? right_override : config.extend_until_filled ? this.filled ? xloc_bt ? this.fill_time - tf_ms : this.fill_index - 1 : xloc_bt ? math.max(this.left_top.time + config.extend_bars * tf_ms, time) : math.max(this.left_top.index + config.extend_bars, bar_index) : this.filled ? xloc_bt ? math.min(this.fill_time - tf_ms, math.max(this.left_top.time + config.extend_bars * tf_ms, this.right_bottom.time)) : math.min(this.fill_index - 1, math.max(this.left_top.index + config.extend_bars, this.right_bottom.index)) : xloc_bt ? math.max(this.left_top.time + config.extend_bars * tf_ms, this.right_bottom.time) : math.max(this.left_top.index + config.extend_bars, this.right_bottom.index)
+        plt = D.create_point(lft, this.left_top.price,     config.box_args.xloc)
+        prb = D.create_point(rgt, this.right_bottom.price, config.box_args.xloc)
+        if config.show_box
+            if na(this.plot_box)
+                this.plot_box := D.Box.new(plt, prb, config.show_target_label ? '' : txt)
+            else
+                this.plot_box.left_top     := plt
+                this.plot_box.right_bottom := prb
+            this.plot_box.draw(config.box_args, config.box_text_args, extend_only, force_overlay)
+            if this.filled
+                this.plot_box.plot.set_text(txt)
+        if config.show_target
+            if na(this.plot_fill_target_level)
+                this.plot_fill_target_level := D.create_line(lft, this.fill_target_level, rgt, this.fill_target_level, config.line_args.xloc)
+            else
+                this.plot_fill_target_level.start.update(lft, this.fill_target_level, config.line_args.xloc)
+                this.plot_fill_target_level.end.update  (rgt, this.fill_target_level, config.line_args.xloc)
+            this.plot_fill_target_level.draw(config.line_args, extend_only, force_overlay)
+        if config.show_target_label
+            txt_tgt = str.format('{0}{1}', config.show_text ? config.txt + ' ' : '', txt_prob)
+            if na(this.plot_fill_target_label)
+                this.plot_fill_target_label := D.create_label(rgt, this.fill_target_level, config.label_args.xloc, txt_tgt)
+            else
+                this.plot_fill_target_label.point.update(rgt, this.fill_target_level, config.label_args.xloc)
+                this.plot_fill_target_label.txt := txt_tgt
+            this.plot_fill_target_label.draw(config.label_args, force_overlay)
+        if this.filled and this.fill_time <= time_close
+            this.plot_box.apply_style(config.box_args, config.box_text_args)
+            this.plot_fill_target_level.apply_style(config.line_args)
+            this.plot_fill_target_label.apply_style(config.label_args)
+        this.hidden := false
+    this
+
+method draw(FVG[] fvgs, FVGConfig config, bool extend_only=true, simple bool force_overlay=false, int left_override=na, int right_override=na) =>
+    if na(fvgs) ? false : (config.show_box or config.show_target) and fvgs.size() > 0
+        count = 0
+        for i = fvgs.size()-1 to 0
+            fvg = fvgs.get(i)
+            if count < config.show_last
+                fvg.draw(config, extend_only, force_overlay, left_override, right_override)
+                count += 1
+            else
+                if not na(fvg.plot_box) and not fvg.hidden
+                    fvg.hide()
+                else
+                    break
+    fvgs
+
+fvgs_objects_htf(FVG new_bull, FVG new_bear, bool htf_is_confirmed, float size_threshold, simple LevelBreakMode fill_mode=LevelBreakMode.CLOSE, simple float fill_target_ratio=0.5, simple int filled_max_keep=5, simple int gc_cycle=na) =>
+    var FVG[] buf_bull    = array.new<FVG>(0)
+    var FVG[] buf_bear    = array.new<FVG>(0)
+    var FVG[] buf_bull_f  = array.new<FVG>(0)
+    var FVG[] buf_bear_f  = array.new<FVG>(0)
+    var FVG[] buf_bull_fn = array.new<FVG>(0)
+    var FVG[] buf_bear_fn = array.new<FVG>(0)
+    var FVG[] buf_bull_d  = array.new<FVG>(0)
+    var FVG[] buf_bear_d  = array.new<FVG>(0)
+    if fill_mode == LevelBreakMode.CLOSE ? htf_is_confirmed : true
+        buf_bull.update()
+        buf_bear.update()
+        buf_bull.clear_filled(buf_bull_f, buf_bull_fn, filled_max_keep, buf_bull_d)
+        buf_bear.clear_filled(buf_bear_f, buf_bear_fn, filled_max_keep, buf_bear_d)
+    if gc_cycle > 0 and bar_index % gc_cycle == 0
+        buf_bull.remove_insignificant(size_threshold, buf_bull_d)
+        buf_bear.remove_insignificant(size_threshold, buf_bear_d)
+    if not na(new_bull)
+        buf_bull.push(new_bull)
+    if not na(new_bear)
+        buf_bear.push(new_bear)
+    [buf_bull, buf_bear, buf_bull_f, buf_bear_f, buf_bull_fn, buf_bear_fn, buf_bull_d, buf_bear_d]
+
+detect_swings(simple int length=10) =>
+    var os   = 0
+    float hh = na
+    float ll = na
+    int   idx= na
+    h_sw  = high[length]
+    l_sw  = low[length]
+    upper = ta.highest(high, length)
+    lower = ta.lowest (low,  length)
+    os  := h_sw > upper ? 0 : l_sw < lower ? 1 : os[1]
+    hh  := os == 0 and os[1] != 0 ? h_sw : na
+    ll  := os == 1 and os[1] != 1 ? l_sw : na
+    idx := not na(hh) or not na(ll) ? bar_index - length : na
+    [idx, hh, ll]
+
+// ── CORREÇÃO v2.3 — detect_pivot: trend só muda em barstate.isconfirmed ──
+detect_pivot(simple int mode, int trend, int hhll_x, float hhll, float super_hhll=na, bool filter_insignificant_internal_breaks=false) =>
+    mode_high = mode ==  1
+    mode_low  = mode == -1
+    var sy    = 0.
+    var x     = 0
+    var y     = 0.
+    var trail_x = 0
+    var trail_y = mode_high ? high : mode_low ? low : na
+    var lvl_cross = true
+    bool choch_alert = false
+    bool bos_alert   = false
+    if not na(super_hhll)
+        sy := super_hhll
+    if not na(hhll)
+        lvl_cross := true
+        y         := hhll
+        x         := hhll_x
+        trail_y   := hhll
+        trail_x   := hhll_x
+    trail_y := mode_high ? math.max(high, trail_y) : math.min(low, trail_y)
+    trail_x := (mode_high and trail_y == high) or (mode_low and trail_y == low) ? bar_index : trail_x
+    var trend_concordant = true
+    atr_piv = ta.atr(3)
+    sd = switch mode
+        1  => ta.crossover (close, y)
+        -1 => ta.crossunder(close, y)
+        => false
+    if sd and lvl_cross and y != sy
+        lvl_cross := false
+        if filter_insignificant_internal_breaks
+            body  = math.abs(open - close)
+            dtl   = math.abs(open - y)
+            big_c = body > 2 * dtl or body > atr_piv
+            tw    = high - math.max(close, open)
+            bw    = math.min(close, open) - low
+            iw    = switch mode
+                1  => tw > bw
+                -1 => tw < bw
+                => false
+            trend_concordant := big_c or iw
+        if trend_concordant
+            _t          = trend != 1 and trend != -1 ? 1 : trend
+            choch_alert := mode == _t * -1
+            bos_alert   := mode == _t
+    [x, y, trail_x, trail_y, bos_alert, choch_alert]
+
+detect_structure(simple int swing_len=50, float super_hh=na, float super_ll=na, bool filter_insignificant_internal_breaks=true) =>
+    var trend = 1
+    [hhll_x, hh, ll] = detect_swings(swing_len)
+    [top_x, top_y, trail_up_x, trail_up, bull_bos_alert, bull_choch_alert] = detect_pivot( 1, trend, hhll_x, hh, super_hh, filter_insignificant_internal_breaks)
+    [btm_x, btm_y, trail_dn_x, trail_dn, bear_bos_alert, bear_choch_alert] = detect_pivot(-1, trend, hhll_x, ll, super_ll, filter_insignificant_internal_breaks)
+    // CORREÇÃO v2.3: trend só muda após fechamento confirmado — elimina repainting intrabar
+    if barstate.isconfirmed
+        trend := bull_choch_alert ? 1 : bear_choch_alert ? -1 : trend
+    [trend, bull_bos_alert, bull_choch_alert, top_x, top_y, trail_up_x, trail_up, hh, bear_bos_alert, bear_choch_alert, btm_x, btm_y, trail_dn_x, trail_dn, ll, hhll_x]
+
+plot_pivot_points(int mode, int x, float y, bool enabled, D.LabelArgs args, bool keep_history) =>
+    if enabled and not na(x)
+        txt = mode == 1 ? (y > y[1] ? 'HH' : 'LH') : mode == -1 ? (y < y[1] ? 'LL' : 'HL') : na
+        lbl = label.new(x, y, txt, color=args.bg_color, textcolor=args.text_color, style=args.style, size=args.size)
+        if not keep_history
+            label.delete(lbl[1])
+
+plot_swing_levels(int mode, int trail_x, float trail_y, int trend, bool enabled, D.LabelArgs largs, D.LineArgs liargs, int override_right_index=na) =>
+    var label lls = label.new(na, na, color=#00000000, textcolor=largs.text_color, style=largs.style, size=largs.size)
+    var line  lln = line.new (na, na, na, na, color=liargs.line_color, style=liargs.style)
+    if enabled
+        if trail_x != lln.get_x1() or na(lln.get_x1())
+            lln.set_xy1(trail_x, trail_y)
+        else
+            lln.set_y1(trail_y)
+        if barstate.islast
+            htxt = mode ==  1 ? (trend < 0 ? 'Strong High' : 'Weak High') : mode == -1 ? (trend > 0 ? 'Strong Low' : 'Weak Low') : na
+            rgt  = not na(override_right_index) ? override_right_index : bar_index + 20
+            lln.set_xy2(rgt, trail_y)
+            lls.set_xy(rgt, trail_y)
+            lls.set_text(htxt)
+
+plot_structure(int x, float y, bool is_bos=false, bool is_choch=false, D.LabelArgs largs, D.LineArgs liargs, bool keep_history) =>
+    if is_bos or is_choch
+        txt = is_choch ? 'CHoCH' : 'BOS'
+        sl  = line.new (x, y, bar_index, y, color=liargs.line_color, style=liargs.style)
+        lb  = label.new(int(math.avg(x, bar_index)), y, txt, color=#00000000, textcolor=largs.text_color, style=largs.style, size=largs.size)
+        if not keep_history
+            line.delete(sl[1])
+            label.delete(lb[1])
+
+detect_equal_level(int mode, int len, float eq_threshold, bool enabled=true) =>
+    mode_high = mode == 1
+    var int   x1 = 0
+    var float y1 = 0.
+    var int   x2 = 0
+    var float y2 = 0.
+    ea = false
+    ph = ta.pivothigh(len, len)
+    pl = ta.pivotlow (len, len)
+    if enabled
+        el = mode_high ? ph : pl
+        if not na(el)
+            x1 := x2, y1 := y2
+            x2 := bar_index - len
+            y2 := el
+            mx = math.max(el, y1)
+            mn = math.min(el, y1)
+            if mode_high and (mx < mn + eq_threshold) or not mode_high and (mn > mx - eq_threshold)
+                ea := true
+    [ea, ea ? x1 : na, ea ? y1 : na, ea ? x2 : na, ea ? y2 : na]
+
+detect_equal_levels(int len, float threshold, bool enabled=true) =>
+    [ea_h, ex1h, ey1h, ex2h, ey2h] = detect_equal_level( 1, len, threshold, enabled)
+    [ea_l, ex1l, ey1l, ex2l, ey2l] = detect_equal_level(-1, len, threshold, enabled)
+    [ea_h, ex1h, ey1h, ex2h, ey2h, ea_l, ex1l, ey1l, ex2l, ey2l]
+
+plot_equal_level(bool show_eq, int x1, float y1, int x2, float y2, string label_txt, D.LabelArgs largs, D.LineArgs liargs, bool keep_history=true) =>
+    if show_eq and not na(x1) and not na(x2) and not na(y1) and not na(y2)
+        el = line.new (x1, y1, x2, y2, color=liargs.line_color, style=liargs.style)
+        lb = label.new(int(math.avg(x1, x2)), math.avg(y1, y2), label_txt, largs.xloc, largs.yloc, largs.bg_color, largs.style, largs.text_color, largs.size, largs.text_align, largs.text_font_family)
+        if not keep_history
+            line.delete(el[1])
+            label.delete(lb[1])
+
+/////////////////////////////////////////////////////////////////////////////////
+//#endregion LIB SMC
+/////////////////////////////////////////////////////////////////////////////////
+
+/////////////////////////////////////////////////////////////////////////////////
+//#region ADAPTIVE HELPERS
+/////////////////////////////////////////////////////////////////////////////////
+
+clamp01(x) => math.max(0.0, math.min(1.0, x))
+
+lineStyle(txt) =>
+    switch txt
+        "Solid"  => line.style_solid
+        "Dashed" => line.style_dashed
+        =>          line.style_dotted
+
+labelSize(txt) =>
+    switch txt
+        "Tiny"   => size.tiny
+        "Small"  => size.small
+        "Normal" => size.normal
+        "Large"  => size.large
+        =>          size.huge
+
+structText(os, isBull) =>
+    isBull ? (os == -1 ? "ChoCH" : "BOS") : (os == 1 ? "ChoCH" : "BOS")
+
+strengthText(score, isHigh, medTh, strTh) =>
+    prefix = score >= strTh ? "Strong" : score >= medTh ? "Medium" : "Weak"
+    prefix + (isHigh ? " High" : " Low")
+
+structCalc(pLen, swHi, swLo, swHiBar, swLoBar) =>
+    ph = ta.pivothigh(high, pLen, pLen)
+    pl = ta.pivotlow (low,  pLen, pLen)
+    hi    = swHi
+    lo    = swLo
+    hiBar = swHiBar
+    loBar = swLoBar
+    if not na(ph)
+        hi    := ph
+        hiBar := bar_index - pLen
+    if not na(pl)
+        lo    := pl
+        loBar := bar_index - pLen
+    bullBos = not na(hi) and close > hi and close[1] <= hi
+    bearBos = not na(lo) and close < lo and close[1] >= lo
+    [ph, pl, hi, lo, hiBar, loBar, bullBos, bearBos]
+
+drawStruct(isBull, trig, sBar, sPx, txt, lnCol, lbCol, lnSty, lnWid, showLn, showLb, actLb, actPx, actBar, lbSz) =>
+    newLb  = actLb
+    newPx  = actPx
+    newBar = actBar
+    if trig and not na(sBar)
+        if showLn
+            line.new(sBar, sPx, bar_index, sPx, color=lnCol, style=lnSty, width=lnWid)
+        if showLb
+            same = not na(actPx) and not na(actBar) and math.abs(actPx - sPx) < syminfo.mintick and actBar == sBar
+            if same and not na(actLb)
+                label.delete(actLb)
+            newLb  := label.new(int(math.avg(bar_index, sBar)), sPx, txt, color=color(na), textcolor=lbCol, style=isBull ? label.style_label_down : label.style_label_up, size=lbSz)
+            newPx  := sPx
+            newBar := sBar
+    [newLb, newPx, newBar]
+
+/////////////////////////////////////////////////////////////////////////////////
+//#endregion ADAPTIVE HELPERS
+/////////////////////////////////////////////////////////////////////////////////
+
+// NOTA (docs/reference-pine/README implícito): as regiões de #INPUTS em
+// diante (parâmetros visuais, SMC CORE de plotagem, Premium/Discount,
+// Liquidity Sweep, PDH/PDL, Adaptive Average, Confluence Score visual,
+// Sessions/Kill Zones, Candle Coloring, Alertas) foram omitidas deste
+// arquivo de referência por serem puramente de VISUALIZAÇÃO no TradingView
+// (inputs de cor/estilo, table.cell, plotshape, bgcolor, plotcandle) — sem
+// contrapartida de decisão de trading. As regiões acima (LIB SMC, ADAPTIVE
+// HELPERS: detect_swings/detect_pivot/detect_structure, track_obs/OrderBlock,
+// fvgs_objects/FVG, detect_equal_level) contêm TODA a lógica de estrutura,
+// Order Block e FVG que uma futura fase de paridade (OB/FVG) precisaria
+// portar. Se a paridade completa do arquivo original (com plotagem) for
+// necessária no futuro, peça a fonte completa ao usuário novamente — este
+// arquivo é a referência funcional, não faz jus a menção como cópia
+// byte-a-byte do script publicado no TradingView.
