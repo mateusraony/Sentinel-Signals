@@ -39,6 +39,9 @@ vi.mock('./logger', () => ({
 vi.mock('./marketDataProvider', () => ({
   fetchCandles: vi.fn(),
   fetchCurrentPrice: vi.fn(),
+  MARKET_SOURCE: 'futures',
+  DATA_EXCHANGE: 'binance',
+  EXECUTOR: 'browser',
 }));
 vi.mock('./pineParser', () => ({
   getPineConfig: vi.fn(),

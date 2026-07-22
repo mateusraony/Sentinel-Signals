@@ -1279,6 +1279,21 @@ export async function persistScanResults(scanResult) {
     if (!confirmed.confirmed) continue;
 
     const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed);
+    const minRR = pineConfig.minRR ?? 1.2;
+    const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
+    if (!rr.pass) {
+      await backend.entities.SystemLog.create({
+        level: 'info',
+        module: 'scanner',
+        message: `${sig.symbol} 4h ${sig.signal_type} — entrada bloqueada (retry): R:R ${rr.rr1?.toFixed(2) ?? 'n/d'} abaixo do mínimo ${minRR} (${rr.reason})`,
+        symbol: sig.symbol,
+        timeframe: '15m',
+        details: { reason: rr.reason, rr1: rr.rr1, rr2: rr.rr2, min_rr: minRR, retry: true },
+      });
+      continue;
+    }
+    opData.rr_at_entry = rr.rr1;
+
     const tradeOpId = `trade_${sig.dedup_key || sig.id}`;
     const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
     if (!created.created) continue;
@@ -1292,7 +1307,7 @@ export async function persistScanResults(scanResult) {
       message: `${sig.symbol} 4h ${sig.signal_type} — confirmação 15m OK, entrada criada`,
       symbol: sig.symbol,
       timeframe: '15m',
-      details: { signal_tf: '4h', direction: sig.signal_type, score: sig.context?.score, retry: true },
+      details: { signal_tf: '4h', direction: sig.signal_type, score: sig.context?.score, rr: rr.rr1, retry: true },
     });
   }
 
@@ -1327,6 +1342,21 @@ export async function persistScanResults(scanResult) {
       if (!confirmed.confirmed) continue;
 
       const opData = buildSmcTradeOpData(sig, tfData1h, pineConfig, confirmed);
+      const minRR = pineConfig.minRR ?? 1.2;
+      const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
+      if (!rr.pass) {
+        await backend.entities.SystemLog.create({
+          level: 'info',
+          module: 'scanner',
+          message: `${sig.symbol} 1h SMC ${sig.signal_type} — entrada bloqueada (retry): R:R ${rr.rr1?.toFixed(2) ?? 'n/d'} abaixo do mínimo ${minRR} (${rr.reason})`,
+          symbol: sig.symbol,
+          timeframe: '5m',
+          details: { reason: rr.reason, rr1: rr.rr1, rr2: rr.rr2, min_rr: minRR, retry: true },
+        });
+        continue;
+      }
+      opData.rr_at_entry = rr.rr1;
+
       const tradeOpId = `trade_smc_${sig.dedup_key || sig.id}`;
       const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
       if (!created.created) continue;
@@ -1340,7 +1370,7 @@ export async function persistScanResults(scanResult) {
         message: `${sig.symbol} 1h SMC ${sig.signal_type} — confirmação 5m OK, entrada criada`,
         symbol: sig.symbol,
         timeframe: '5m',
-        details: { signal_tf: '1h', direction: sig.signal_type, trigger: confirmed.trigger, retry: true },
+        details: { signal_tf: '1h', direction: sig.signal_type, trigger: confirmed.trigger, rr: rr.rr1, retry: true },
       });
     }
   }

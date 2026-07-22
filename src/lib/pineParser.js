@@ -193,6 +193,27 @@ const SYNCED_STRATEGY_KEYS = [
   'smcScoreSweepWeight',
 ];
 
+// Subset of SYNCED_STRATEGY_KEYS that has no `input.*()` counterpart in the
+// user's Pine script — parsePineScript() never touches these, so the locally
+// parsed config always holds their plain DEFAULTS, never a real edited value.
+// Codex review (PR #78): syncPineToAssets() used to write EVERY
+// SYNCED_STRATEGY_KEYS value (including these) to strategyConfig/current on
+// every Pine Script save. Since StrategyConfig.set() merges (setDoc with
+// merge:true), a key simply ABSENT from the write payload is left untouched —
+// but these keys WERE present (holding DEFAULTS), so any value an operator
+// tuned directly in Firestore (there's no UI for them yet) was silently
+// clobbered back to DEFAULTS by the next unrelated Pine save. Excluded from
+// the WRITE payload only (see syncPineToAssets below) — still read normally
+// via SYNCED_STRATEGY_KEYS in getPineConfig, so both sides keep agreeing on
+// whatever IS stored in Firestore.
+const NON_PINE_SYNCED_KEYS = new Set([
+  'arbEnabled', 'arbPromoteMinScore', 'arbReinforceMinScore',
+  'arbInvalidateOnOppositeMajor', 'arbOppositeScorePenalty', 'minRR',
+  'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
+  'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
+  'smcScoreSweepWeight',
+]);
+
 /**
  * Read the current Pine config: merges localStorage (all Pine-parsed
  * values, e.g. rng_per/rng_qty) with the Firestore-synced business
@@ -251,7 +272,10 @@ export async function syncPineToAssets() {
 
   try {
     const syncedPayload = {};
-    for (const key of SYNCED_STRATEGY_KEYS) syncedPayload[key] = config[key];
+    for (const key of SYNCED_STRATEGY_KEYS) {
+      if (NON_PINE_SYNCED_KEYS.has(key)) continue;
+      syncedPayload[key] = config[key];
+    }
     await backend.entities.StrategyConfig.set('current', {
       ...syncedPayload,
       updated_at: new Date().toISOString(),
