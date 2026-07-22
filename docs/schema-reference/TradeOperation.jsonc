@@ -294,6 +294,71 @@
         null
       ],
       "description": "SMC cascade only (known-risks.md item 38): Premium/Discount/Equilibrium zone the 5m entry candle was classified into against the OTE leg — the gate that replaced the old 1h-candle zone gate (item 35)."
+    },
+    "arbitration_outcome": {
+      "type": "string",
+      "description": "Result of the most recent cross-cascade arbitration decision (src/lib/signalArbitration.js) evaluated against this operation, when a competing signal from the other cascade arrived while this op was active. Absent when no competing signal has ever arrived.",
+      "enum": [
+        "promoted",
+        "reinforcement_accepted",
+        "reinforcement_rejected",
+        "continuation_confirmation",
+        "correction_warning",
+        "critical_opposite",
+        "no_change"
+      ]
+    },
+    "arbitration_reason": {
+      "type": "string",
+      "description": "Human-readable explanation of the most recent arbitration_outcome (candidate cascade/side/score, active op score, R:R where relevant)."
+    },
+    "arbitration_at": {
+      "type": "string",
+      "description": "ISO timestamp of the most recent arbitration decision applied to this operation."
+    },
+    "promoted_at": {
+      "type": "string",
+      "description": "ISO timestamp when this operation was promoted (conservative promotion only — management upgrade of this SAME operation, never a second operation). Absent if never promoted."
+    },
+    "promoted_from_cascade": {
+      "type": "string",
+      "description": "Cascade this operation originated from, before promotion. Only 1h_5m can be promoted in this phase (promotion is one-directional: 1h op + aligned 4h signal).",
+      "enum": [
+        "1h_5m"
+      ]
+    },
+    "score_at_promotion_1h": {
+      "type": "number",
+      "description": "This operation's own score (SMC cascade) at the moment of promotion."
+    },
+    "score_at_promotion_4h": {
+      "type": "number",
+      "description": "The promoting 4h candidate signal's score at the moment of promotion."
+    },
+    "rr_at_entry": {
+      "type": "number",
+      "description": "Risk:Reward ratio (distance to TP1 / distance to stop) computed by passesRiskReward (src/lib/opExitRules.js) at entry time."
+    },
+    "market_source": {
+      "type": "string",
+      "description": "Which Binance market this operation's data came from — 'futures' when created by the browser panel, 'spot' when created by the 24h cron (see docs/known-risks.md item 4's accepted Spot/Futures divergence). Makes explicit what was previously only implicit in which executor ran.",
+      "enum": [
+        "spot",
+        "futures"
+      ]
+    },
+    "data_exchange": {
+      "type": "string",
+      "description": "Exchange the candle/price data came from.",
+      "default": "binance"
+    },
+    "executor": {
+      "type": "string",
+      "description": "Which process created this operation.",
+      "enum": [
+        "browser",
+        "cron"
+      ]
     }
   },
   "required": [

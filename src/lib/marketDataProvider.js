@@ -22,6 +22,14 @@
 
 const BINANCE_BASE_URL = 'https://fapi.binance.com/fapi/v1';
 
+// Provenance stamped onto every TradeOperation/SignalEvent created while this
+// provider is the active './marketDataProvider' import (browser). Makes the
+// Spot/Futures divergence already documented in docs/known-risks.md item 4
+// explicit and persisted, instead of only implicit in which file ran.
+export const MARKET_SOURCE = 'futures';
+export const DATA_EXCHANGE = 'binance';
+export const EXECUTOR = 'browser';
+
 const TIMEFRAME_MAP = {
   '5m': '5m',
   '15m': '15m',

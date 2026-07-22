@@ -11,7 +11,7 @@
  * 7. Persiste estado e sinais
  */
 
-import { fetchCandles, fetchCurrentPrice } from './marketDataProvider';
+import { fetchCandles, fetchCurrentPrice, MARKET_SOURCE, DATA_EXCHANGE, EXECUTOR } from './marketDataProvider';
 import { calculateRangeFilter } from './indicators/rangeFilter';
 import { calculateConfirmedSignal } from './indicators/rangeFilterConfirmation';
 import { calculateRSI } from './indicators/rsi';
@@ -23,8 +23,10 @@ import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
 import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone, buildOteLeg, classifyZone } from './indicators/smcStructure';
+import { calculateSmcSignalStrength, SMC_SCORE_DEFAULTS } from './indicators/smcConfluence';
+import { planSignalArbitration } from './signalArbitration';
 import { getPineConfig } from './pineParser';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit } from './opExitRules';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward } from './opExitRules';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -259,6 +261,9 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
     invalidates_if: isBuy
       ? 'Candle fechar abaixo do Range Filter'
       : 'Candle fechar acima do Range Filter',
+    market_source: MARKET_SOURCE,
+    data_exchange: DATA_EXCHANGE,
+    executor: EXECUTOR,
   };
 }
 
@@ -440,7 +445,13 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     cascade: '1h_5m',
     side: sig.signal_type,
     status: 'SIGNAL_CONFIRMED',
-    score: sig.context?.score || 0,
+    // Base score already reflects 1h structure/EMA/RF/volume/alignment
+    // (calculateSmcSignalStrength at signal emission, above); the 5m sweep
+    // trigger is only known now, so its weight is added here instead of
+    // recomputing the whole score from scratch — reuses the same weight
+    // config used at emission.
+    score: Math.min(100, (sig.context?.score || 0)
+      + (confirmation5m?.trigger === 'sweep' ? (pineConfig.smcScoreSweepWeight ?? SMC_SCORE_DEFAULTS.sweepWeight) : 0)),
     entry_price: entry,
     atr_value: tf1hData.atrValue,
     initial_stop: initialStop,
@@ -477,7 +488,116 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     invalidates_if: isBuy
       ? 'Estrutura 1h reverter para baixista (CHoCH bearish)'
       : 'Estrutura 1h reverter para altista (CHoCH bullish)',
+    market_source: MARKET_SOURCE,
+    data_exchange: DATA_EXCHANGE,
+    executor: EXECUTOR,
   };
+}
+
+/**
+ * Central cross-cascade arbitration — the ONLY place scanner.js reacts to a
+ * new candidate signal arriving while the asset already has an active
+ * TradeOperation (from either cascade). Replaces the old pure-block-and-log
+ * behavior (docs/known-risks.md item 23) with the decision matrix in
+ * src/lib/signalArbitration.js. Never creates a second TradeOperation or a
+ * second assetActiveOps pointer — every op-touching action here goes through
+ * transitionTradeOp (a same-status CAS patch, or a terminal one for
+ * 'invalidate'), which also structurally guarantees the stop never regresses
+ * (clampMonotonicStop, src/api/entities.js).
+ *
+ * Write economy: SignalEvent.createUnique's dedup (in the caller, before this
+ * runs) means a given signal reaches here at most ONCE — repeated scan passes
+ * over an already-persisted signal never get this far again (dedupResult.created
+ * is false, the caller `continue`s earlier). So a 'none'-action outcome
+ * (reinforcement_accepted/rejected, continuation_confirmation, no_change) is
+ * logged to SystemLog for the audit trail but does NOT write to the
+ * TradeOperation itself — nothing there actually changed, and the decision is
+ * already recoverable from the log; every real management change (promote,
+ * reduce_confidence, invalidate) does write, exactly once.
+ *
+ * Logs via a direct backend.entities.SystemLog.create — not logInfo/logWarn
+ * (src/lib/logger.js) — deliberately: that logger batches/dedups/delays up to
+ * 3s before flushing, which risks losing the entry entirely if the short-lived
+ * cron process (scripts/run-scan.mjs) exits first. This matches the existing
+ * local convention in this same function (the "aguardando confirmação"/R:R
+ * block messages a few lines up all use direct SystemLog.create too) and
+ * keeps `reason: 'active_op_exists'` for continuity with the field the panel
+ * and prior audits already query on, extended with the richer arbitration_*
+ * fields.
+ */
+async function handleActiveOpArbitration({ signal, candidateCascade, activeOp, results, pineConfig }) {
+  const candidateScore = signal.context?.score ?? 0;
+  const decision = planSignalArbitration({
+    candidateCascade,
+    candidateSide: signal.signal_type,
+    candidateScore,
+    activeOp,
+    pineConfig,
+  });
+
+  await backend.entities.SystemLog.create({
+    level: decision.logLevel === 'warn' ? 'warn' : 'info',
+    module: 'scanner',
+    message: `${signal.symbol} ${candidateCascade} ${signal.signal_type} (score ${candidateScore}) vs. operação ativa ${activeOp?.cascade ?? '?'} ${activeOp?.side ?? '?'} (score ${activeOp?.score ?? 0}) — ${decision.outcome} (${decision.reason})`,
+    symbol: signal.symbol,
+    timeframe: candidateCascade === '4h_15m' ? '4h' : '1h',
+    details: {
+      reason: 'active_op_exists',
+      candidate_signal: signal.dedup_key,
+      candidate_cascade: candidateCascade,
+      candidate_side: signal.signal_type,
+      candidate_score: candidateScore,
+      confirmation_checked: false,
+      active_op_id: activeOp?.id ?? null,
+      active_op_cascade: activeOp?.cascade ?? null,
+      active_op_side: activeOp?.side ?? null,
+      active_op_score: activeOp?.score ?? null,
+      arbitration_outcome: decision.outcome,
+      arbitration_reason: decision.reason,
+    },
+  });
+
+  if (decision.action === 'none' || !activeOp) {
+    return { dedup_key: signal.dedup_key, cascade: candidateCascade, outcome: decision.outcome };
+  }
+
+  const now = new Date().toISOString();
+  const patch = {
+    arbitration_outcome: decision.outcome,
+    arbitration_reason: decision.reason,
+    arbitration_at: now,
+  };
+
+  if (decision.action === 'promote') {
+    const tf4h = results['4h'];
+    // tier_time_stop_bars is counted in the OP's OWN signal_timeframe bar
+    // units (1h here) — never flip signal_timeframe to '4h' on promotion,
+    // that would repoint the update loop's results[...] lookup and change
+    // the exit basis for an op whose entry/stop/tp are still 5m/1h-derived.
+    // Convert the 4h tier's bar count to ~equivalent 1h bars (×4) and only
+    // ever LENGTHEN, never shorten, the existing time stop.
+    patch.promoted_at = now;
+    patch.promoted_from_cascade = activeOp.cascade;
+    patch.score_at_promotion_1h = activeOp.score ?? 0;
+    patch.score_at_promotion_4h = candidateScore;
+    patch.tier_time_stop_bars = tf4h?.tier?.timeStopBars != null
+      ? Math.max(activeOp.tier_time_stop_bars ?? 96, tf4h.tier.timeStopBars * 4)
+      : activeOp.tier_time_stop_bars;
+  } else if (decision.action === 'reduce_confidence') {
+    patch.score = Math.max(0, (activeOp.score ?? 0) - decision.scorePenalty);
+  } else if (decision.action === 'invalidate') {
+    patch.status = 'INVALIDATED';
+    patch.closed_reason = 'INVALIDATION';
+    patch.closed_at = now;
+    patch.exit_price = signal.price_at_signal ?? activeOp.entry_price;
+  }
+
+  const { applied, currentStatus } = await backend.tradeOps.transitionTradeOp(activeOp.id, activeOp.status, patch, { assetId: activeOp.asset_id });
+  if (!applied) {
+    logWarn('scanner', `Arbitragem (${decision.outcome}) descartada pelo CAS: op ${activeOp.id} (${signal.symbol}) já mudou de ${activeOp.status} para ${currentStatus}`, { ...logPayload, current_status: currentStatus }, { symbol: signal.symbol });
+  }
+
+  return { dedup_key: signal.dedup_key, cascade: candidateCascade, outcome: decision.outcome };
 }
 
 /**
@@ -717,24 +837,48 @@ export async function scanAsset(asset) {
         // protected pivot) is a valid, expected fail-open case.
         const { legHigh: oteLegHigh, legLow: oteLegLow } = buildOteLeg(signalType, r.lastClose, r.smc);
 
+        // Score is advisory (see smcConfluence.js header) — feeds
+        // cross-cascade arbitration/audit, never gates emission. sweepConfirmed
+        // is unknown at this stage (resolved later, at op-creation, once
+        // check5mSmcConfirmation runs) — see buildSmcTradeOpData.
+        const smcScore = calculateSmcSignalStrength({
+          structureType,
+          signalType,
+          rf1hDirection: r.rf.direction,
+          emaTrend: r.ema.trend,
+          volumeData: r.volumeData,
+          alignmentResult,
+          pdZone: r.smc.pdZone,
+          weights: {
+            structureWeight: pineConfig.smcScoreStructureWeight,
+            chochBonus: pineConfig.smcScoreChochBonus,
+            emaWeight: pineConfig.smcScoreEmaWeight,
+            rfWeight: pineConfig.smcScoreRfWeight,
+            volumeWeight: pineConfig.smcScoreVolumeWeight,
+            alignmentWeight: pineConfig.smcScoreAlignmentWeight,
+            sweepWeight: pineConfig.smcScoreSweepWeight,
+          },
+        });
+
         newSignals.push({
           asset_id: asset.id,
           symbol: asset.symbol,
           timeframe: tf,
           signal_type: signalType,
           source: 'smc_structure',
-          strength: structureType === 'CHoCH' ? 'strong' : 'medium',
+          strength: smcScore.strength,
           alignment: strengthResult.alignment,
-          priority: structureType === 'CHoCH' ? 'high' : 'medium',
+          priority: smcScore.priority,
           price_at_signal: r.lastClose,
           candle_time: r.lastCandleTime,
-          reason: `${asset.symbol} 1H ${structureType} ${signalType === 'BUY' ? 'altista' : 'baixista'} — zona ${r.smc.pdZone}`,
+          reason: `${asset.symbol} 1H ${structureType} ${signalType === 'BUY' ? 'altista' : 'baixista'} — zona ${r.smc.pdZone} (score ${smcScore.score})`,
           context: {
             structure_type: structureType,
             pd_zone: r.smc.pdZone,
             ote_leg_high: oteLegHigh,
             ote_leg_low: oteLegLow,
-            reasons: [`Estrutura 1H: ${structureType} ${signalType}`, `Zona: ${r.smc.pdZone}`],
+            score: smcScore.score,
+            reasons: smcScore.reasons,
           },
           dedup_key: `${asset.symbol}_1h_${signalType}_smc_structure_${r.lastCandleTime}`,
         });
@@ -918,6 +1062,11 @@ export async function persistScanResults(scanResult) {
   // item 34 (no structure event) from item 35/38 (event happened, gate
   // rejected the entry) without adding new write volume.
   const smc5mZoneRejections = [];
+  // Collected from handleActiveOpArbitration below — surfaced in the return
+  // value (used by the backtest report, buildReport's `arbitration` section)
+  // and left otherwise unused by the live scanner itself (audit trail is
+  // SystemLog, this array is just for a single-pass summary).
+  const arbitrationOutcomes = [];
   for (const signal of newSignals) {
     // Cooldown check — a best-effort query, not atomic on its own, but the
     // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
@@ -967,7 +1116,13 @@ export async function persistScanResults(scanResult) {
     // two calls). Runs regardless of cooldown — the signal is real and
     // must be recorded/evaluated for entry even while notifications are
     // suppressed.
-    const dedupResult = await backend.entities.SignalEvent.createUnique(signal.dedup_key, { ...signal, notified: willNotify });
+    const dedupResult = await backend.entities.SignalEvent.createUnique(signal.dedup_key, {
+      ...signal,
+      notified: willNotify,
+      market_source: MARKET_SOURCE,
+      data_exchange: DATA_EXCHANGE,
+      executor: EXECUTOR,
+    });
     if (!dedupResult.created) continue;
 
     persistedSignals++;
@@ -1044,15 +1199,29 @@ export async function persistScanResults(scanResult) {
 
               if (confirmed15m.confirmed) {
                 const opData = buildTradeOpData(signal, tf4hData, pineConfig, confirmed15m);
-                const tradeOpId = `trade_${signal.dedup_key}`;
-                const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
-                if (created.created) {
-                  hasActiveOp = true;
-                  activeOp = created.doc;
-                  if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
-                  logInfo('scanner', `${signal.symbol} entrada criada — Pine sync ativo`, {
-                    score: signal.context?.score, atr_mult: pineConfig.trailAtrMult, tp1R: pineConfig.tp1R,
-                  }, { symbol: signal.symbol, timeframe: '15m' });
+                const minRR = pineConfig.minRR ?? 1.2;
+                const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
+                if (!rr.pass) {
+                  await backend.entities.SystemLog.create({
+                    level: 'info',
+                    module: 'scanner',
+                    message: `${asset.symbol} 4h ${signal.signal_type} — entrada bloqueada: R:R ${rr.rr1?.toFixed(2) ?? 'n/d'} abaixo do mínimo ${minRR} (${rr.reason})`,
+                    symbol: asset.symbol,
+                    timeframe: '15m',
+                    details: { reason: rr.reason, rr1: rr.rr1, rr2: rr.rr2, min_rr: minRR },
+                  });
+                } else {
+                  opData.rr_at_entry = rr.rr1;
+                  const tradeOpId = `trade_${signal.dedup_key}`;
+                  const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
+                  if (created.created) {
+                    hasActiveOp = true;
+                    activeOp = created.doc;
+                    if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
+                    logInfo('scanner', `${signal.symbol} entrada criada — Pine sync ativo`, {
+                      score: signal.context?.score, atr_mult: pineConfig.trailAtrMult, tp1R: pineConfig.tp1R, rr: rr.rr1,
+                    }, { symbol: signal.symbol, timeframe: '15m' });
+                  }
                 }
               } else {
                 // 15m not aligned — log and wait for retry on next scan
@@ -1068,29 +1237,15 @@ export async function persistScanResults(scanResult) {
             } else {
               // Candidate passed every 4H gate but the asset already holds an
               // op (possibly from the OTHER cascade — the two share the
-              // one-op-per-asset anchor). Logged once per new signal so the
-              // cross-cascade arbitration is auditable; the retry loops below
-              // stay silent to avoid repeating this every pass. The 15m
-              // confirmation is deliberately NOT fetched here (the active op
-              // blocks the whole retry window anyway, and skipping the candle
-              // fetch is the point of the hasActiveOp early-exit), so the log
-              // records that explicitly instead of implying the candidate was
-              // entry-ready.
-              await backend.entities.SystemLog.create({
-                level: 'info',
-                module: 'scanner',
-                message: `${asset.symbol} 4H ${signal.signal_type} — candidato bloqueado por operação ativa (confirmação 15m não avaliada)`,
-                symbol: asset.symbol,
-                timeframe: '4h',
-                details: {
-                  reason: 'active_op_exists',
-                  candidate_signal: signal.dedup_key,
-                  candidate_cascade: '4h_15m',
-                  confirmation_checked: false,
-                  active_op_id: activeOp?.id ?? null,
-                  active_op_cascade: activeOp?.cascade ?? null,
-                },
+              // one-op-per-asset anchor). The 15m confirmation is deliberately
+              // NOT fetched here (the active op blocks the whole retry window
+              // anyway, and skipping the candle fetch is the point of the
+              // hasActiveOp early-exit) — arbitration reacts to the candidate
+              // signal itself, never to a hypothetical confirmed entry.
+              const outcome = await handleActiveOpArbitration({
+                signal, candidateCascade: '4h_15m', activeOp, results, pineConfig,
               });
+              arbitrationOutcomes.push(outcome);
             }
           }
         }
@@ -1109,15 +1264,29 @@ export async function persistScanResults(scanResult) {
 
           if (confirmed5m.confirmed) {
             const opData = buildSmcTradeOpData(signal, tf1hData, pineConfig, confirmed5m);
-            const tradeOpId = `trade_smc_${signal.dedup_key}`;
-            const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
-            if (created.created) {
-              hasActiveOp = true;
-              activeOp = created.doc;
-              if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
-              logInfo('scanner', `${signal.symbol} entrada SMC criada (1h→5m)`, {
-                score: signal.context?.score, structure_type: signal.context?.structure_type, trigger: confirmed5m.trigger,
-              }, { symbol: signal.symbol, timeframe: '5m' });
+            const minRR = pineConfig.minRR ?? 1.2;
+            const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
+            if (!rr.pass) {
+              await backend.entities.SystemLog.create({
+                level: 'info',
+                module: 'scanner',
+                message: `${asset.symbol} 1H SMC ${signal.signal_type} — entrada bloqueada: R:R ${rr.rr1?.toFixed(2) ?? 'n/d'} abaixo do mínimo ${minRR} (${rr.reason})`,
+                symbol: asset.symbol,
+                timeframe: '5m',
+                details: { reason: rr.reason, rr1: rr.rr1, rr2: rr.rr2, min_rr: minRR },
+              });
+            } else {
+              opData.rr_at_entry = rr.rr1;
+              const tradeOpId = `trade_smc_${signal.dedup_key}`;
+              const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
+              if (created.created) {
+                hasActiveOp = true;
+                activeOp = created.doc;
+                if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
+                logInfo('scanner', `${signal.symbol} entrada SMC criada (1h→5m)`, {
+                  score: signal.context?.score, structure_type: signal.context?.structure_type, trigger: confirmed5m.trigger, rr: rr.rr1,
+                }, { symbol: signal.symbol, timeframe: '5m' });
+              }
             }
           } else {
             // item 38: rejectReason distinguishes "no 5m trigger yet" from
@@ -1143,24 +1312,12 @@ export async function persistScanResults(scanResult) {
             }
           }
         } else {
-          // Same cross-cascade arbitration log as the RF block above — once
-          // per new SMC signal, silent on retries, 5m confirmation not
-          // fetched (see the RF branch for why).
-          await backend.entities.SystemLog.create({
-            level: 'info',
-            module: 'scanner',
-            message: `${asset.symbol} 1H SMC ${signal.signal_type} — candidato bloqueado por operação ativa (confirmação 5m não avaliada)`,
-            symbol: asset.symbol,
-            timeframe: '1h',
-            details: {
-              reason: 'active_op_exists',
-              candidate_signal: signal.dedup_key,
-              candidate_cascade: '1h_5m',
-              confirmation_checked: false,
-              active_op_id: activeOp?.id ?? null,
-              active_op_cascade: activeOp?.cascade ?? null,
-            },
+          // Same cross-cascade arbitration as the RF block above — 5m
+          // confirmation not fetched (see the RF branch for why).
+          const outcome = await handleActiveOpArbitration({
+            signal, candidateCascade: '1h_5m', activeOp, results, pineConfig,
           });
+          arbitrationOutcomes.push(outcome);
         }
       }
     }
@@ -1208,6 +1365,21 @@ export async function persistScanResults(scanResult) {
     if (!confirmed.confirmed) continue;
 
     const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed);
+    const minRR = pineConfig.minRR ?? 1.2;
+    const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
+    if (!rr.pass) {
+      await backend.entities.SystemLog.create({
+        level: 'info',
+        module: 'scanner',
+        message: `${sig.symbol} 4h ${sig.signal_type} — entrada bloqueada (retry): R:R ${rr.rr1?.toFixed(2) ?? 'n/d'} abaixo do mínimo ${minRR} (${rr.reason})`,
+        symbol: sig.symbol,
+        timeframe: '15m',
+        details: { reason: rr.reason, rr1: rr.rr1, rr2: rr.rr2, min_rr: minRR, retry: true },
+      });
+      continue;
+    }
+    opData.rr_at_entry = rr.rr1;
+
     const tradeOpId = `trade_${sig.dedup_key || sig.id}`;
     const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
     if (!created.created) continue;
@@ -1221,7 +1393,7 @@ export async function persistScanResults(scanResult) {
       message: `${sig.symbol} 4h ${sig.signal_type} — confirmação 15m OK, entrada criada`,
       symbol: sig.symbol,
       timeframe: '15m',
-      details: { signal_tf: '4h', direction: sig.signal_type, score: sig.context?.score, retry: true },
+      details: { signal_tf: '4h', direction: sig.signal_type, score: sig.context?.score, rr: rr.rr1, retry: true },
     });
   }
 
@@ -1256,6 +1428,21 @@ export async function persistScanResults(scanResult) {
       if (!confirmed.confirmed) continue;
 
       const opData = buildSmcTradeOpData(sig, tfData1h, pineConfig, confirmed);
+      const minRR = pineConfig.minRR ?? 1.2;
+      const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
+      if (!rr.pass) {
+        await backend.entities.SystemLog.create({
+          level: 'info',
+          module: 'scanner',
+          message: `${sig.symbol} 1h SMC ${sig.signal_type} — entrada bloqueada (retry): R:R ${rr.rr1?.toFixed(2) ?? 'n/d'} abaixo do mínimo ${minRR} (${rr.reason})`,
+          symbol: sig.symbol,
+          timeframe: '5m',
+          details: { reason: rr.reason, rr1: rr.rr1, rr2: rr.rr2, min_rr: minRR, retry: true },
+        });
+        continue;
+      }
+      opData.rr_at_entry = rr.rr1;
+
       const tradeOpId = `trade_smc_${sig.dedup_key || sig.id}`;
       const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
       if (!created.created) continue;
@@ -1269,7 +1456,7 @@ export async function persistScanResults(scanResult) {
         message: `${sig.symbol} 1h SMC ${sig.signal_type} — confirmação 5m OK, entrada criada`,
         symbol: sig.symbol,
         timeframe: '5m',
-        details: { signal_tf: '1h', direction: sig.signal_type, trigger: confirmed.trigger, retry: true },
+        details: { signal_tf: '1h', direction: sig.signal_type, trigger: confirmed.trigger, rr: rr.rr1, retry: true },
       });
     }
   }
@@ -1551,7 +1738,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors, smc5mZoneRejections };
+  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit } from './opExitRules.js';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward } from './opExitRules.js';
 
 const T0 = '2026-07-15T04:00:00.000Z'; // candle open, at/before the entry
 const T1 = '2026-07-15T08:00:00.000Z'; // candle open, exactly at the entry instant
@@ -217,5 +217,60 @@ describe('computeStructuralStop (stop estrutural da cascata SMC)', () => {
     const capped = computeStructuralStop({ isBuy: false, entry: 100, atrValue: 2, structuralLevel: 105 });
     expect(capped.stop).toBeCloseTo(104.0);
     expect(capped.basis).toBe('structural_capped');
+  });
+});
+
+describe('passesRiskReward — checagem de R:R na entrada', () => {
+  it('aprova quando o alvo (tp1) rende pelo menos minRR vezes o risco', () => {
+    // entry 100, stop 98 (risco 2), tp1 103 (recompensa 3) → RR 1.5
+    const r = passesRiskReward({ entry: 100, stop: 98, tp1: 103, tp2: 106, minRR: 1.2 });
+    expect(r.pass).toBe(true);
+    expect(r.rr1).toBeCloseTo(1.5);
+    expect(r.rr2).toBeCloseTo(3.0);
+    expect(r.reason).toBeNull();
+  });
+
+  it('rejeita quando o RR fica abaixo do mínimo', () => {
+    const r = passesRiskReward({ entry: 100, stop: 98, tp1: 100.5, tp2: 101, minRR: 1.2 });
+    expect(r.pass).toBe(false);
+    expect(r.reason).toBe('rr_below_min');
+  });
+
+  it('usa distância absoluta — funciona igual para SELL (stop acima, alvo abaixo)', () => {
+    const r = passesRiskReward({ entry: 100, stop: 102, tp1: 97, tp2: 94, minRR: 1.2 });
+    expect(r.pass).toBe(true);
+    expect(r.rr1).toBeCloseTo(1.5);
+  });
+
+  it('target="tp2" avalia contra tp2 em vez de tp1', () => {
+    const r = passesRiskReward({ entry: 100, stop: 99, tp1: 100.5, tp2: 103, minRR: 2, target: 'tp2' });
+    expect(r.pass).toBe(true); // rr2 = 3.0 >= 2, mesmo com rr1 = 0.5 < 2
+    expect(r.rr1).toBeCloseTo(0.5);
+    expect(r.rr2).toBeCloseTo(3.0);
+  });
+
+  it('rejeita com motivo explícito quando faltam campos obrigatórios', () => {
+    const r = passesRiskReward({ entry: 100, stop: null, tp1: 103 });
+    expect(r.pass).toBe(false);
+    expect(r.reason).toBe('missing_fields');
+  });
+
+  it('rejeita quando a distância do stop é zero ou inválida (não pode dividir por zero)', () => {
+    const r = passesRiskReward({ entry: 100, stop: 100, tp1: 103 });
+    expect(r.pass).toBe(false);
+    expect(r.reason).toBe('invalid_stop_distance');
+  });
+
+  it('documenta a tautologia atual: quando tp1 é derivado como entry ± riskDistance*tp1R, rr1 == tp1R sempre', () => {
+    // Mesmo modelo usado por buildTradeOpData/buildSmcTradeOpData hoje —
+    // ver o comentário em opExitRules.js sobre por que este gate não rejeita
+    // entradas reais no modelo de TP atual.
+    const entry = 100, stop = 95, tp1R = 1.5, tp2R = 3.0;
+    const riskDistance = Math.abs(entry - stop);
+    const tp1 = entry + riskDistance * tp1R;
+    const tp2 = entry + riskDistance * tp2R;
+    const r = passesRiskReward({ entry, stop, tp1, tp2, minRR: 1.2 });
+    expect(r.rr1).toBeCloseTo(tp1R);
+    expect(r.rr2).toBeCloseTo(tp2R);
   });
 });

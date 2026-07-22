@@ -33,6 +33,9 @@ vi.mock('./logger', () => ({
 vi.mock('./marketDataProvider', () => ({
   fetchCandles: vi.fn(),
   fetchCurrentPrice: vi.fn(),
+  MARKET_SOURCE: 'futures',
+  DATA_EXCHANGE: 'binance',
+  EXECUTOR: 'browser',
 }));
 
 import * as entitiesModule from '@/api/entities';
@@ -870,6 +873,155 @@ describe('cross-cascade arbitration log — signal discarded because an op is al
     const logs = await backend.entities.SystemLog.filter({});
     expect(logs.filter(l => l.details?.reason === 'active_op_exists')).toHaveLength(1);
   });
+});
+
+describe('cross-cascade arbitration — promoção conservadora, continuidade e risco crítico', () => {
+  function makeRfSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_rf_arb',
+      price_at_signal: 100, context: { score: 80 },
+      ...overrides,
+    };
+  }
+  function makeSmcSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '1h', source: 'smc_structure', dedup_key: 'sig_smc_arb',
+      price_at_signal: 100, context: { score: 80, structure_type: 'BOS' },
+      ...overrides,
+    };
+  }
+
+  it('promoção (1h_5m ativa + 4h_15m mesma direção, score alto) nunca cria uma segunda TradeOperation', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_1h', cascade: '1h_5m', side: 'BUY', score: 60 }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbPromoteMinScore: 75 });
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ context: { score: 80 } })] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].id).toBe('op_1h');
+    expect(ops[0].arbitration_outcome).toBe('promoted');
+    expect(ops[0].promoted_from_cascade).toBe('1h_5m');
+    expect(ops[0].score_at_promotion_1h).toBe(60);
+    expect(ops[0].score_at_promotion_4h).toBe(80);
+    expect(ops[0].promoted_at).toBeTruthy();
+  });
+
+  it('promoção nunca mexe no stop e só alonga o time stop (nunca encurta)', async () => {
+    // 4h tier.timeStopBars=48 -> equivalente em barras de 1h = 48*4 = 192,
+    // maior que os 96 atuais -> deve alongar para 192.
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_1h', cascade: '1h_5m', side: 'BUY', score: 60,
+      current_stop: 97, tier_time_stop_bars: 96,
+    }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbPromoteMinScore: 75 });
+    const results = { '4h': makeTfData({ tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48 } }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ context: { score: 80 } })] });
+
+    const op = backend._get('TradeOperation', 'op_1h');
+    expect(op.current_stop).toBe(97); // nunca tocado pela promoção
+    expect(op.tier_time_stop_bars).toBe(192); // alongado (48*4), nunca encurtaria os 96 originais
+  });
+
+  it('promoção NUNCA encurta um time stop já maior que o equivalente 4h', async () => {
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_1h', cascade: '1h_5m', side: 'BUY', score: 60, tier_time_stop_bars: 300,
+    }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbPromoteMinScore: 75 });
+    const results = { '4h': makeTfData({ tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48 } }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ context: { score: 80 } })] });
+
+    expect(backend._get('TradeOperation', 'op_1h').tier_time_stop_bars).toBe(300); // 48*4=192 < 300, mantém 300
+  });
+
+  it('4h_15m ativa + 1h_5m mesma direção (menor) -> continuation_confirmation, nunca abre nem toca a operação', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_4h', cascade: '4h_15m', side: 'BUY', current_stop: 98 }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig();
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].id).toBe('op_4h');
+    expect(ops[0].current_stop).toBe(98); // intocado — continuation_confirmation não escreve na op
+    expect(ops[0].arbitration_outcome).toBeUndefined(); // action 'none' nunca grava na op
+
+    const logs = await backend.entities.SystemLog.filter({});
+    const entry = logs.find(l => l.details?.arbitration_outcome === 'continuation_confirmation');
+    expect(entry).toBeTruthy();
+  });
+
+  it('4h_15m ativa + 1h_5m direção oposta (menor) -> correction_warning, reduz confiança sem fechar', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_4h', cascade: '4h_15m', side: 'BUY', score: 50 }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ arbOppositeScorePenalty: 15 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({
+      ...makeScanResult({ asset, results, pineConfig }),
+      newSignals: [makeSmcSignal({ signal_type: 'SELL', dedup_key: 'sig_smc_opp' })],
+    });
+
+    const op = backend._get('TradeOperation', 'op_4h');
+    expect(op.status).toBe('SIGNAL_CONFIRMED'); // nunca fecha sozinho por um único sinal oposto
+    expect(op.score).toBe(35); // 50 - 15
+    expect(op.arbitration_outcome).toBe('correction_warning');
+
+    const logs = await backend.entities.SystemLog.filter({});
+    const entry = logs.find(l => l.details?.arbitration_outcome === 'correction_warning');
+    expect(entry.level).toBe('warn');
+  });
+
+  it('1h_5m ativa + 4h_15m direção oposta (maior) -> critical_opposite, NUNCA promove, por padrão só alerta', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_1h', cascade: '1h_5m', side: 'BUY', status: 'SIGNAL_CONFIRMED' }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false }); // arbInvalidateOnOppositeMajor não definido -> default false
+    // rf.direction=-1 para bater com o signal_type SELL do candidato — o
+    // gate de alinhamento 4h/sinal (scanner.js) roda ANTES da arbitragem.
+    const results = { '4h': makeTfData({ rf: { filterValue: 90, direction: -1, signal: 'none', highBand: 105, lowBand: 95, condIni: false } }) };
+
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeRfSignal({ signal_type: 'SELL', dedup_key: 'sig_rf_opp' })],
+    });
+
+    const op = backend._get('TradeOperation', 'op_1h');
+    expect(op.status).toBe('SIGNAL_CONFIRMED'); // não invalida por padrão
+    expect(op.arbitration_outcome).toBeUndefined(); // action 'none' -> nunca grava na op
+
+    const logs = await backend.entities.SystemLog.filter({});
+    const entry = logs.find(l => l.details?.arbitration_outcome === 'critical_opposite');
+    expect(entry).toBeTruthy();
+    expect(entry.level).toBe('warn');
+  });
+
+  it('1h_5m ativa + 4h_15m direção oposta (maior), com arbInvalidateOnOppositeMajor:true -> invalida a operação', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_1h', cascade: '1h_5m', side: 'BUY', status: 'SIGNAL_CONFIRMED' }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbInvalidateOnOppositeMajor: true });
+    const results = { '4h': makeTfData({ rf: { filterValue: 90, direction: -1, signal: 'none', highBand: 105, lowBand: 95, condIni: false } }) };
+
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeRfSignal({ signal_type: 'SELL', dedup_key: 'sig_rf_opp_inv' })],
+    });
+
+    const op = backend._get('TradeOperation', 'op_1h');
+    expect(op.status).toBe('INVALIDATED');
+    expect(op.closed_reason).toBe('INVALIDATION');
+    expect(op.arbitration_outcome).toBe('critical_opposite');
+  });
+
+  // Regressão do comportamento sem sinal concorrente (sem operação ativa):
+  // já coberta extensivamente pelo resto da suíte (ex.: "buildTradeOpData —
+  // entry into SIGNAL_CONFIRMED" e os describes de criação de op logo
+  // acima) — todos continuam passando sem alteração, provando que a
+  // arbitragem só entra em jogo quando hasActiveOp já é true.
 });
 
 describe('cooldown gates the Telegram notification only, never persistence/entry (P1, known-risks item 28)', () => {

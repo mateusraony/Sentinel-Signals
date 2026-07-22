@@ -47,6 +47,25 @@ const DEFAULTS = {
   // Signal confirmation (Grupo 02)
   confirmBars: 1,
   onlyClosedCandles: true,
+  // Cross-cascade arbitration (src/lib/signalArbitration.js) — not part of
+  // the user's Pine Script (no `input.*()` declaration parses these; they
+  // only change via strategyConfig/current directly), but synced the same
+  // way so the browser and cron agree.
+  arbEnabled: true,
+  arbPromoteMinScore: 75,
+  arbReinforceMinScore: 50,
+  arbInvalidateOnOppositeMajor: false,
+  arbOppositeScorePenalty: 15,
+  // Risk:Reward entry gate (src/lib/opExitRules.js passesRiskReward)
+  minRR: 1.2,
+  // SMC (1h→5m cascade) confluence score weights (src/lib/indicators/smcConfluence.js)
+  smcScoreStructureWeight: 15,
+  smcScoreChochBonus: 10,
+  smcScoreEmaWeight: 20,
+  smcScoreRfWeight: 15,
+  smcScoreVolumeWeight: 15,
+  smcScoreAlignmentWeight: 15,
+  smcScoreSweepWeight: 10,
 };
 
 /**
@@ -165,7 +184,35 @@ const SYNCED_STRATEGY_KEYS = [
   'useChopExit', 'useInvalidation', 'invalidRFBars', 'invalidScoreMin',
   'confirmBars', 'onlyClosedCandles',
   'emaFastLen', 'emaSlowLen', 'rsiLen', 'volLen', 'atrLen',
+  // Cross-cascade arbitration + R:R gate + SMC score weights (Phase 1 —
+  // see signalArbitration.js/opExitRules.js/smcConfluence.js)
+  'arbEnabled', 'arbPromoteMinScore', 'arbReinforceMinScore',
+  'arbInvalidateOnOppositeMajor', 'arbOppositeScorePenalty', 'minRR',
+  'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
+  'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
+  'smcScoreSweepWeight',
 ];
+
+// Subset of SYNCED_STRATEGY_KEYS that has no `input.*()` counterpart in the
+// user's Pine script — parsePineScript() never touches these, so the locally
+// parsed config always holds their plain DEFAULTS, never a real edited value.
+// Codex review (PR #78): syncPineToAssets() used to write EVERY
+// SYNCED_STRATEGY_KEYS value (including these) to strategyConfig/current on
+// every Pine Script save. Since StrategyConfig.set() merges (setDoc with
+// merge:true), a key simply ABSENT from the write payload is left untouched —
+// but these keys WERE present (holding DEFAULTS), so any value an operator
+// tuned directly in Firestore (there's no UI for them yet) was silently
+// clobbered back to DEFAULTS by the next unrelated Pine save. Excluded from
+// the WRITE payload only (see syncPineToAssets below) — still read normally
+// via SYNCED_STRATEGY_KEYS in getPineConfig, so both sides keep agreeing on
+// whatever IS stored in Firestore.
+const NON_PINE_SYNCED_KEYS = new Set([
+  'arbEnabled', 'arbPromoteMinScore', 'arbReinforceMinScore',
+  'arbInvalidateOnOppositeMajor', 'arbOppositeScorePenalty', 'minRR',
+  'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
+  'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
+  'smcScoreSweepWeight',
+]);
 
 /**
  * Read the current Pine config: merges localStorage (all Pine-parsed
@@ -225,7 +272,10 @@ export async function syncPineToAssets() {
 
   try {
     const syncedPayload = {};
-    for (const key of SYNCED_STRATEGY_KEYS) syncedPayload[key] = config[key];
+    for (const key of SYNCED_STRATEGY_KEYS) {
+      if (NON_PINE_SYNCED_KEYS.has(key)) continue;
+      syncedPayload[key] = config[key];
+    }
     await backend.entities.StrategyConfig.set('current', {
       ...syncedPayload,
       updated_at: new Date().toISOString(),

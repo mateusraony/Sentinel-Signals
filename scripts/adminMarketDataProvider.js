@@ -13,6 +13,13 @@
 
 const BINANCE_BASE_URL = 'https://data-api.binance.vision/api/v3';
 
+// Provenance stamped onto every TradeOperation/SignalEvent created while this
+// provider is the active './marketDataProvider' redirect target (cron). See
+// src/lib/marketDataProvider.js for the browser-side counterpart.
+export const MARKET_SOURCE = 'spot';
+export const DATA_EXCHANGE = 'binance';
+export const EXECUTOR = 'cron';
+
 const TIMEFRAME_MAP = {
   '5m': '5m',
   '15m': '15m',
