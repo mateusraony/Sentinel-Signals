@@ -295,6 +295,31 @@
       ],
       "description": "SMC cascade only (known-risks.md item 38): Premium/Discount/Equilibrium zone the 5m entry candle was classified into against the OTE leg — the gate that replaced the old 1h-candle zone gate (item 35)."
     },
+    "retest_gate_enabled": {
+      "type": "boolean",
+      "description": "Fase 2 rodada 1 (known-risks.md item 40): true only when the opt-in retest confirmation gate (pineConfig.retestEnabled, off by default) actually participated in this entry — retest.js's detectRetest confirmed a pullback to the broken level before check15mConfirmation/check5mSmcConfirmation ran. Absent/undefined on every op created before this field existed or with the gate off — never mutates entry_price/initial_stop/tp1/tp2, observability only."
+    },
+    "retest_anchor_level": {
+      "type": ["number", "null"],
+      "description": "Fase 2 rodada 1: the level retested — SignalEvent.context.rf_value for the RF cascade, SignalEvent.context.smc_broken_level for the SMC cascade. Only present when retest_gate_enabled is true."
+    },
+    "retest_price": {
+      "type": ["number", "null"],
+      "description": "Fase 2 rodada 1: close (or wick, per retest_touch_mode) of the candle that satisfied the retest, on the confirmation timeframe (15m/5m)."
+    },
+    "retest_candle_time": {
+      "type": ["string", "null"],
+      "description": "Fase 2 rodada 1: closeTime of the retest candle (epoch ms, matches the raw candle field — not the ISO strings used elsewhere in this schema)."
+    },
+    "retest_bars_to_confirm": {
+      "type": ["number", "null"],
+      "description": "Fase 2 rodada 1: number of confirmation-timeframe candles (15m/5m) after the signal candle it took for the retest to confirm — the metric to look at when calibrating retestToleranceAtrMult/timeout via backtest."
+    },
+    "retest_touch_mode": {
+      "type": ["string", "null"],
+      "enum": ["close", "wick", null],
+      "description": "Fase 2 rodada 1: pineConfig.retestTouchMode value used for this entry's retest evaluation — recorded per-op since the config can change over time."
+    },
     "arbitration_outcome": {
       "type": "string",
       "description": "Result of the most recent cross-cascade arbitration decision (src/lib/signalArbitration.js) that actually WROTE to this operation — 'none'-action outcomes (reinforcement_accepted/rejected, continuation_confirmation, candidate_below_arbitration_threshold, no_change) are logged to SystemLog but deliberately do NOT appear here (write economy — nothing on the op changed). Absent when no arbitration decision has ever written to this operation.",

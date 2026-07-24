@@ -1830,3 +1830,103 @@ sem `asset_id`) e `scannerStateMachine.test.js` (`priceCheckActiveOps` real
 contra o `fakeBackend` — nenhuma mutação em op duplicada, outro ativo
 continua sendo processado, log único criado, mesmo conjunto de IDs não
 repete o log, conjunto diferente gera log novo).
+
+## 40. Gatilho de reteste — Fase 2 rodada 1 (`retestEnabled`), DESLIGADO por padrão — não ativar sem comparar backtest antes
+
+**Status: DESLIGADO.** `pineConfig.retestEnabled = false` por padrão nos três
+arquivos de config sincronizada. **Não ative sem antes rodar `npm run
+backtest` duas vezes (com e sem `retestEnabled`, via `--pine-config` —
+`docs/claude/backtest-usage.md`) e comparar as métricas de win rate/R:R/
+expectância entre as duas rodadas.** Este item é o lembrete: qualquer sessão
+(humana ou Claude Code) que for tocar o motor de entrada esbarra nele antes
+de decidir ligar o flag.
+
+Fase 1 (arbitragem, item 39) está congelada — esta é a primeira rodada da
+Fase 2 (novos gatilhos de confirmação). O roadmap original listava "reteste
+simples" e "rompimento+reteste" como dois itens separados; investigando o
+código, são o MESMO mecanismo aqui dentro — o único nível disponível para
+retestar, nas duas cascatas, é sempre o nível que o próprio sinal candidato
+acabou de romper (não existe, nem está no escopo criar, um detector de nível
+genérico independente do sinal). Uma rodada fecha os dois itens do roadmap.
+O 3º item (candle de "deslocamento" com volume) **não foi implementado** —
+mecanismo diferente (classifica UM candle por corpo/range/volume, não espera
+um nível ser retestado), sem termo equivalente no Pine de referência do
+projeto nem consenso numérico na comunidade ICT — fica para uma rodada
+própria futura. **A Fase 2 não está completa** até essa rodada acontecer.
+
+**Pesquisa antes de implementar** (3 agentes em paralelo — mapeamento de
+código real, pesquisa de comunidade sobre reteste/rompimento+reteste,
+pesquisa sobre displacement/volume ICT): o achado mais forte foi estatístico,
+não de opinião de blog — Bulkowski (thepatternsite.com, dados reais de
+milhares de padrões em ações/gráfico diário, não cripto/intraday) mede que em
+91–97% dos casos o padrão teria tido desempenho MELHOR sem esperar o reteste,
+e que 42–57% dos rompimentos válidos nunca retestam. Isso contraria a
+"sabedoria" comum de trading de varejo de que reteste = entrada mais segura.
+Não há como transferir esse número 1:1 para cripto intradiário, mas é
+evidência real o suficiente para justificar por que o gatilho nasce desligado
+e adicional (nunca substitui a confirmação 15m/5m já existente) em vez de já
+vir ativo por padrão.
+
+Um primeiro desenho (antes da verificação linha a linha) presumiu que
+`structuralLevel` — já retornado por `check5mSmcConfirmation` — poderia ser
+reaproveitado como "nível a retestar" na cascata SMC. **Isso estava errado**:
+`structuralLevel` (`scanner.js`, dentro de `check5mSmcConfirmation`) é o pivô
+PROTEGIDO OPOSTO (`lastSwingLow` para BUY / `lastSwingHigh` para SELL) —
+já consumido como STOP em `buildSmcTradeOpData`. O nível de fato rompido
+(`lastSwingHigh` para BUY / `lastSwingLow` para SELL) já era calculado em
+`scanner.js` (bloco `smc_structure` de `scanAsset`) mas nunca tinha sido
+persistido — exigiu 1 campo novo, `SignalEvent.context.smc_broken_level`.
+Registrado aqui porque é exatamente o tipo de erro que a etapa de
+pesquisa/verificação existe para pegar antes de virar código — foi pego e
+corrigido antes do merge, não depois.
+
+**Design**: nova função pura `detectRetest` (`src/lib/indicators/retest.js`,
+sem I/O, sem paridade Pine a manter — não porta nada do Pine real do
+usuário). Chamada por um helper novo em `scanner.js`, `evaluateRetestGate`
+(faz o próprio `fetchCandles` do timeframe de confirmação, calcula
+`tolerancePrice = retestToleranceAtrMult × ATR(14)` desse mesmo timeframe),
+posicionado como um gate ADICIONAL, ANTES de `check15mConfirmation`/
+`check5mSmcConfirmation` — que continuam 100% intocadas — nos 4 pontos de
+chamada existentes (1ª passada + retry, RF e SMC). Quando
+`pineConfig.retestEnabled` é `false` (o padrão), o gate é pulado
+inteiramente: zero `fetchCandles` extra, comportamento byte-idêntico ao
+anterior a esta rodada. Nível-âncora por cascata: RF usa
+`SignalEvent.context.rf_value` (já existente, o valor do próprio filtro RF no
+instante do sinal); SMC usa o novo `context.smc_broken_level`, com fail
+**fechado** quando ausente (sinal legado, ou pivô ainda não confirmado) —
+diferente do fail-open do gate de zona OTE (item 38): aqui "nível
+desconhecido" não tem o mesmo risco de tautologia geométrica, e falhar
+fechado é mais conservador (o sinal só continua sendo re-tentado até expirar
+pela janela de 4h já existente, nunca entra sem checagem).
+
+**Campos novos** (aditivos, nunca alteram `entry_price`/`initial_stop`/
+`tp1`/`tp2` — só auditoria): `TradeOperation.retest_gate_enabled/
+retest_anchor_level/retest_price/retest_candle_time/
+retest_bars_to_confirm/retest_touch_mode`; `SignalEvent.context.
+smc_broken_level` (SMC apenas). `retestTouchMode` ('close'|'wick') resolve
+explicitamente a divergência real que a pesquisa encontrou (comunidade sem
+consenso sobre se um pavio já conta como toque válido, ou só o fechamento) —
+deixado configurável em vez de escolher uma regra só, default `'close'` (mais
+conservador).
+
+**Backtest**: nova seção `retest` em `buildReport`
+(`src/lib/backtestEngine.js`, mesmo padrão da seção `arbitration` da Fase 1)
+— `{enabled, total, confirmed, pending, avgBarsToConfirm, byCascade}`.
+`enabled` é inferido de `retestOutcomes` não estar vazio (nada é empurrado
+enquanto o flag está desligado), sem precisar de um import redirecionado
+novo em `backtestEngine.js`. Esta seção é o mecanismo central de "não deixar
+cair no esquecimento": qualquer comparação de dois relatórios já mostra se o
+reteste estava ligado em cada um, e `avgBarsToConfirm` é o dado real pra
+calibrar `retestToleranceAtrMult`/timeout depois — nenhum dos dois é
+validado nesta rodada, só implementados com defaults de partida.
+
+Regressão: `src/lib/indicators/retest.test.js` (11 testes — função pura:
+confirmação por close/wick, direção-consciência do pavio, exclusão da vela
+do próprio sinal, fronteira de tolerância, entradas inválidas, primeira vela
+qualificada); `scannerStateMachine.test.js` (6 testes — flag desligado sem
+mudança de comportamento nem fetch extra, RF e SMC aguardando/confirmando
+reteste, nível SMC correto — não `structural_level`/`ote_leg_low` —, fail
+fechado sem `smc_broken_level`, confirmação via loop de retry sem duplicar
+operação); `backtestEngine.test.js` (2 testes — seção `retest` do
+relatório, contagem por cascata, média de `barsToConfirm` só sobre
+confirmados).

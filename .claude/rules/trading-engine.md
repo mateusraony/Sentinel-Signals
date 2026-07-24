@@ -159,6 +159,16 @@ nunca deve receber nova transição.**
   `SystemLog.createUnique` (dedupado pelo conjunto de IDs, para não
   spammar a cada tick) e só processa `[...validGroups.values()]`. Ver
   `docs/known-risks.md` item 39.1.
+- **Gatilho de reteste** (`src/lib/indicators/retest.js` +
+  `scanner.js:evaluateRetestGate`) — Fase 2 rodada 1, **`pineConfig.
+  retestEnabled` desligado por padrão**. Gate adicional ANTES de
+  `check15mConfirmation`/`check5mSmcConfirmation` (intocadas) nos 4 pontos de
+  chamada — exige que o preço volte a tocar o nível que o sinal candidato
+  rompeu antes de confirmar a entrada. Com o flag desligado é um passthrough
+  total (zero fetch extra). **Não ativar sem comparar relatórios de backtest
+  com/sem primeiro** — ver `docs/known-risks.md` item 40 para a justificativa
+  estatística e o desenho completo. Fase 2 segue incompleta até a próxima
+  rodada (candle de deslocamento + volume, não implementada).
 
 ## Regras ao mexer aqui
 

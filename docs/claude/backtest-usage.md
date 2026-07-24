@@ -108,6 +108,31 @@ medido contra a perna do rompimento, não mais contra o candle de viés 1h)
 está de fato filtrando algumas entradas — esperado por design, diferente do
 item 35 (gate antigo rejeitava praticamente tudo por tautologia geométrica).
 
+**`report.retest`** (Fase 2 rodada 1, `docs/known-risks.md` item 40) —
+`{enabled, total, confirmed, pending, avgBarsToConfirm, byCascade}`. O
+gatilho de reteste nasce **desligado** (`retestEnabled: false`); antes de
+ativá-lo, compare dois runs do MESMO período/ativos:
+
+```bash
+echo '{"retestEnabled": false}' > /tmp/no-retest.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --from 2025-02-01T00:00:00Z \
+  --to 2025-12-01T00:00:00Z --pine-config /tmp/no-retest.json \
+  --out ./report-sem-reteste.json
+
+echo '{"retestEnabled": true, "retestToleranceAtrMult": 0.3, "retestTouchMode": "close"}' > /tmp/with-retest.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --from 2025-02-01T00:00:00Z \
+  --to 2025-12-01T00:00:00Z --pine-config /tmp/with-retest.json \
+  --out ./report-com-reteste.json
+```
+
+Compare `report.retest` (com o flag ligado, `enabled:true`; desligado,
+`enabled:false, total:0` — nada é avaliado) e principalmente as métricas de
+`byCascade`/`overall` (win rate, profit factor, expectância em R) entre os
+dois arquivos — essa comparação é o critério real para decidir ativar, não
+uma suposição. `avgBarsToConfirm` (só sobre sinais que retestaram) é o dado a
+olhar para calibrar `retestToleranceAtrMult`/o quanto vale a pena esperar,
+antes de mudar os defaults.
+
 ## O que o replay NÃO cobre (por design, não é lacuna)
 
 - **Preço em tempo real (`priceCheckActiveOps`)** — não há dado de tick num

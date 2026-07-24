@@ -66,6 +66,14 @@ const DEFAULTS = {
   smcScoreVolumeWeight: 15,
   smcScoreAlignmentWeight: 15,
   smcScoreSweepWeight: 10,
+  // Retest confirmation gate (Fase 2 rodada 1, src/lib/indicators/retest.js)
+  // — also not from any `input.*()` in the Pine, same reasoning as the
+  // arbitration keys above. Master flag OFF by default: see
+  // docs/known-risks.md item 40 — do not flip without comparing backtest
+  // reports with/without it first.
+  retestEnabled: false,
+  retestToleranceAtrMult: 0.3,
+  retestTouchMode: 'close',
 };
 
 /**
@@ -191,6 +199,8 @@ const SYNCED_STRATEGY_KEYS = [
   'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
   'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
   'smcScoreSweepWeight',
+  // Retest confirmation gate (Fase 2 rodada 1 — retest.js)
+  'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
 ];
 
 // Subset of SYNCED_STRATEGY_KEYS that has no `input.*()` counterpart in the
@@ -212,6 +222,7 @@ const NON_PINE_SYNCED_KEYS = new Set([
   'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
   'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
   'smcScoreSweepWeight',
+  'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
 ]);
 
 /**

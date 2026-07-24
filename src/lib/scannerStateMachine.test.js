@@ -1558,6 +1558,182 @@ describe('cross-cascade arbitration — operações ativas duplicadas (anomalia 
   });
 });
 
+describe('Fase 2 rodada 1 — gatilho de reteste (opt-in, docs/known-risks.md item 40)', () => {
+  // Same reasoning as the arbitration/OTE-zone describes above: several
+  // tests here configure fetchCandles with mockImplementationOnce chains,
+  // which must not leak into unrelated tests elsewhere in this file.
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  function mk15m(open, high, low, close, i) {
+    return { open, high, low, close, openTime: i * 900000, closeTime: (i + 1) * 900000, isClosed: true };
+  }
+  function mk5m(open, high, low, close, i) {
+    return { open, high, low, close, openTime: i * 300000, closeTime: (i + 1) * 300000, isClosed: true };
+  }
+
+  // Stays within a hair of `level` from the very first candle — retests
+  // immediately (barsToConfirm=1). A generous retestToleranceAtrMult in the
+  // tests below makes the exact ATR derived from these candles irrelevant to
+  // the assertions (only the sign/order of the touch matters).
+  const retestingCandles15m = (level = 100) =>
+    Array.from({ length: 20 }, (_, i) => mk15m(level, level + 0.3, level - 0.3, level + i * 0.01, i));
+  const retestingCandles5m = (level = 100) =>
+    Array.from({ length: 20 }, (_, i) => mk5m(level, level + 0.3, level - 0.3, level + i * 0.01, i));
+  // Stays far from level=100 for the whole series — never retests.
+  const neverRetestingCandles15m = () =>
+    Array.from({ length: 20 }, (_, i) => mk15m(200, 200.3, 199.7, 200 + i, i));
+
+  const ALIGNED_15M = () => uptrendCandles(60, 100, 1);
+
+  // Same known-good recipe as the "5m OTE zone gate" describe above:
+  // 59 flat candles + 1 bullish-sweep candle, entry close pinned at 96.5.
+  function bullishSweepCandles5m() {
+    const candles = [];
+    for (let i = 0; i < 59; i++) candles.push(mk5m(100, 105, 95, 100, i));
+    candles.push(mk5m(96, 97, 93, 96.5, 59));
+    return candles;
+  }
+
+  // candle_time = epoch 0 so every synthetic candle above (closeTime > 0)
+  // reads as strictly after the signal — real production signals carry a
+  // 2026-dated ISO string, but these fixtures use small epoch-relative
+  // closeTime values (same convention as every other candle fixture in this
+  // file), so anchoring the signal at epoch 0 keeps the "after the signal"
+  // ordering correct without needing 2026-scale synthetic candles.
+  function makeRfSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_rf_retest',
+      price_at_signal: 100, candle_time: new Date(0).toISOString(),
+      context: { score: 80, rf_value: 100 },
+      ...overrides,
+    };
+  }
+  function makeSmcSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '1h', source: 'smc_structure', dedup_key: 'sig_smc_retest',
+      price_at_signal: 100, candle_time: new Date(0).toISOString(),
+      context: { score: 80, structure_type: 'BOS', smc_broken_level: 100, ote_leg_high: 200, ote_leg_low: 50 },
+      ...overrides,
+    };
+  }
+
+  it('flag desligado (default): comportamento idêntico ao anterior, sem campos retest_* na op nem fetch extra', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false }); // retestEnabled ausente -> falsy
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].retest_gate_enabled).toBeUndefined();
+    expect(fetchCandles).toHaveBeenCalledTimes(1); // só check15mConfirmation — nenhum fetch do gate
+  });
+
+  it('RF: gate ligado sem reteste ainda -> nenhuma operação criada, log de espera com o nível certo', async () => {
+    // Persistent (not "once"): a signal that never confirms in the 1st-pass
+    // loop is immediately re-evaluated by the retry loop within this SAME
+    // persistScanResults call (it already exists as a SignalEvent within the
+    // 4h window by the time that loop runs) — so the gate genuinely fires
+    // more than once per call here. mockResolvedValue makes every one of
+    // those calls see the same "never retests" data instead of only the
+    // first.
+    fetchCandles.mockResolvedValue(neverRetestingCandles15m());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, retestEnabled: true });
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(0);
+
+    const logs = await backend.entities.SystemLog.filter({});
+    const waiting = logs.find(l => l.details?.reason === 'awaiting_retest');
+    expect(waiting).toBeTruthy();
+    expect(waiting.details.anchor_level).toBe(100);
+  });
+
+  it('RF: gate ligado com reteste confirmado -> operação criada com os 6 campos de auditoria corretos', async () => {
+    fetchCandles
+      .mockImplementationOnce(async () => retestingCandles15m(100))
+      .mockImplementationOnce(async () => ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, retestEnabled: true, retestToleranceAtrMult: 5 });
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    const op = ops[0];
+    expect(op.retest_gate_enabled).toBe(true);
+    expect(op.retest_anchor_level).toBe(100);
+    expect(op.retest_touch_mode).toBe('close');
+    expect(op.retest_bars_to_confirm).toBe(1);
+    expect(op.retest_price).toBeCloseTo(100, 5);
+    expect(op.retest_candle_time).toBeTruthy();
+  });
+
+  it('SMC: gate ligado usa smc_broken_level como âncora — NÃO structural_level (93, o stop) nem ote_leg_low (50)', async () => {
+    fetchCandles
+      .mockImplementationOnce(async () => retestingCandles5m(100))
+      .mockImplementationOnce(async () => bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ retestEnabled: true, retestToleranceAtrMult: 5 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    const op = ops[0];
+    expect(op.retest_gate_enabled).toBe(true);
+    expect(op.retest_anchor_level).toBe(100);
+  });
+
+  it('SMC: smc_broken_level ausente (sinal legado) falha FECHADO — nunca reteste, mesmo com o 5m favorável', async () => {
+    fetchCandles.mockImplementation(async () => bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ retestEnabled: true });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+    const signal = makeSmcSignal({
+      context: { score: 80, structure_type: 'BOS', ote_leg_high: 200, ote_leg_low: 50 }, // sem smc_broken_level
+    });
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [signal] });
+
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+  });
+
+  it('RF: confirma pelo loop de retry (não só na 1a passada), sem duplicar operação', async () => {
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, retestEnabled: true, retestToleranceAtrMult: 5 });
+    const results = { '4h': makeTfData() };
+
+    // Passada 1: reteste ainda não aconteceu — sinal persiste, sem op. Uses
+    // a persistent mock (see the previous test's comment) since this same
+    // signal is evaluated by both the 1st-pass loop and the retry loop
+    // within this one persistScanResults call.
+    fetchCandles.mockResolvedValue(neverRetestingCandles15m());
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+
+    // Passada 2 (retry): preço já retestou — confirma via o loop de retry.
+    // newSignals é vazio aqui, então só o loop de retry roda (uma única
+    // avaliação) — a sequência gate->confirmação de exatamente 2 respostas
+    // é segura.
+    fetchCandles.mockReset();
+    fetchCandles
+      .mockImplementationOnce(async () => retestingCandles15m(100))
+      .mockImplementationOnce(async () => ALIGNED_15M());
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].retest_gate_enabled).toBe(true);
+  });
+});
+
 describe('cooldown gates the Telegram notification only, never persistence/entry (P1, known-risks item 28)', () => {
   function makeSignal(overrides = {}) {
     return {

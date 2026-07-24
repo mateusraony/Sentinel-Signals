@@ -59,6 +59,12 @@ const DEFAULTS = {
   smcScoreVolumeWeight: 15,
   smcScoreAlignmentWeight: 15,
   smcScoreSweepWeight: 10,
+  // Retest confirmation gate (Fase 2 rodada 1, src/lib/indicators/retest.js)
+  // — master flag OFF by default, see docs/known-risks.md item 40. Override
+  // via --pine-config to compare backtest reports with/without it.
+  retestEnabled: false,
+  retestToleranceAtrMult: 0.3,
+  retestTouchMode: 'close',
 };
 
 let overrides = {};
