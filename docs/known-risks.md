@@ -1679,3 +1679,111 @@ de novo (BTCUSDT e os outros 6 ativos já testados) e comparar
 primeira vez (não previsível de antemão: depende de quantos dos 74
 tiveram um recuo real para o lado favorável da perna antes do gatilho 5m
 disparar).
+
+## 39. Arbitragem entre cascatas `4h_15m`/`1h_5m` — Fase 1 (PR #78), fechada após auditoria externa encontrar 7 problemas reais
+
+Substitui o bloqueio cego do item 23 (candidato descartado sem comparação
+quando já existe operação ativa) por uma função central de decisão
+(`src/lib/signalArbitration.js` + `scanner.js:handleActiveOpArbitration`).
+**Nunca** duplica operação nem reabre a proposta do item 37 (operações
+simultâneas por timeframe) — só ajusta a gestão da operação já existente,
+sempre via a mesma transação CAS (`transitionTradeOp`) que já protegia o
+resto do motor.
+
+PR #78 mergeado em `main` implementou a base (score real para a cascata
+SMC antes sempre 0, checagem de risco:retorno, proveniência de
+dado — `market_source`/`data_exchange`/`executor`). Uma auditoria
+externa em seguida encontrou **7 problemas reais** (nenhum refutado após
+checar contra o código), corrigidos numa segunda rodada antes de dar a
+Fase 1 por encerrada:
+
+1. **Bug real — `ReferenceError`**: o log de rejeição de CAS referenciava
+   uma variável (`logPayload`) nunca declarada no escopo — lançava exceção
+   exatamente no caminho que deveria só registrar que a proteção de
+   concorrência funcionou. Corrigido com um payload local explícito;
+   regressão coberta em `scannerStateMachine.test.js`.
+2. **Promoção virou dois estágios.** A versão original "promovia" uma
+   operação `1h_5m` só porque um sinal 4H qualificado chegou — sem nunca
+   checar se o 15m (a confirmação que a própria cascata `4h_15m` exige)
+   realmente confirmava aquele contexto. Redesenhado: um sinal 4H
+   qualificado (`score >= arbPromoteMinScore`) só abre
+   `promotion_status: PENDING_15M` (Estágio A). Uma nova retry step em
+   `persistScanResults` resolve o pendente reaproveitando a MESMA
+   `check15mConfirmation` da cascata nativa — `CONFIRMED` (Estágio B, só
+   aqui `trade_mode` vira `PROMOTED_4H` e o Time Stop alonga) ou `EXPIRED`
+   (janela de 4h sem confirmação, operação segue `TACTICAL_1H`). Um sinal
+   oposto de timeframe maior chegando com o pendente aberto cancela para
+   `REJECTED` em vez de deixá-lo solto. `EXPIRED`/`REJECTED` permitem um
+   novo ciclo a partir de um sinal novo — não travam a operação para
+   sempre.
+3. **Score de entrada agora é imutável.** A versão original decrementava
+   `score` diretamente quando um sinal oposto menor chegava, misturando
+   "qualidade da entrada" com "confiança atual" — e um histórico de
+   correções ficava impossível de auditar. `entry_score` (imutável,
+   herdado do `score` legado na criação) nunca mais muda; sinais opostos
+   só reduzem `current_confidence_score` (piso 0, teto 100), com
+   `confidence_penalty_total` acumulando o histórico. `score` continua
+   existindo só por compatibilidade com leitores antigos (UI/backtest),
+   também nunca mais alterado.
+4. **Duplicidade de operação ativa nunca era detectada.**
+   `activeOpsAtStart[0] || null` escolhia silenciosamente a primeira
+   operação ativa encontrada — se por corrupção histórica, bug antigo ou
+   edição manual existisse mais de uma (violando a invariante central do
+   motor), a arbitragem agiria sobre uma escolha arbitrária. Agora, quando
+   `activeOpsAtStart.length > 1`, o scanner suspende arbitragem, criação
+   de novas entradas E o loop de atualização de stop/TP para aquele ativo,
+   e grava `SystemLog` nível `error` com `reason:
+   'duplicate_active_ops_detected'` listando todos os IDs/status/cascatas
+   — nunca corrige automaticamente (política de reconciliação fica de fora
+   de propósito, é decisão para um humano).
+5. **Reforço/correção sem piso de score.** `continuation_confirmation`
+   (mesma direção, timeframe menor) e `correction_warning` (direção
+   oposta) processavam qualquer candidato, mesmo com score baixíssimo.
+   Agora exigem `candidateScore >= arbReinforceMinScore` — abaixo disso,
+   `candidate_below_arbitration_threshold`: o `SignalEvent` continua
+   persistido (observabilidade preservada), mas a operação ativa não é
+   tocada. `critical_opposite` (direção oposta, timeframe MAIOR) fica
+   deliberadamente isento desse piso — uma reversão de contexto maior
+   sempre gera alerta, mesmo vindo de um candidato de score baixo.
+6. **R:R documentado honestamente.** `passesRiskReward` já documentava no
+   código a limitação (ver item anterior sobre TP1/TP2 serem múltiplos
+   configurados do próprio risco, não distância real até uma barreira de
+   mercado) — mas nada no schema/painel deixava isso visível. Novos campos
+   `rr_gate_mode: 'CONFIGURED_MULTIPLE'` e `rr_target_basis: 'R_MULTIPLE'`
+   em cada `TradeOperation`, ao lado de `rr_at_entry`. `passesRiskReward`
+   não foi removido — segue útil como proteção contra `tp1R` configurado
+   abaixo do mínimo e como gate pronto para um futuro alvo estrutural.
+7. **Logs sem ID correlacionável.** Cada decisão de arbitragem agora carrega
+   `arbitration_version` (versão da matriz de decisão) e
+   `arbitration_event_id` (`dedup_key::op_id`), além de
+   `relation_direction`/`relation_tf`, score de entrada e confiança atual —
+   não depende só do texto da mensagem para reconstruir o que aconteceu
+   numa análise posterior.
+
+**Modelo de dados (aditivo, com fallback seguro para operações legadas)**:
+`TradeOperation.promotion_status/promotion_candidate_at/score_4h/signal_id`,
+`promotion_confirmed_at/confirm_candle_time`, `trade_mode`,
+`management_timeframe`, `origin_cascade`, `entry_score`,
+`current_confidence_score`, `confidence_penalty_total`,
+`last_opposing_signal_at`, `rr_gate_mode`, `rr_target_basis`. Leitores de
+operações antigas (sem esses campos) caem em `entry_score ?? score` /
+`current_confidence_score ?? entry_score ?? score` — nunca quebram.
+
+**Não implementado nesta rodada, permanece Fase 1 dentro do escopo
+combinado** (registrado para não ser esquecido, não é um problema):
+promoção não recalcula TP1/TP2/runner automaticamente (só prazo/gestão —
+documentado explicitamente no plano); `priceCheckActiveOpsInner` (o outro
+loop mutador) não tem a mesma guarda de operações duplicadas que
+`persistScanResults` ganhou aqui — se o cenário (já raro por construção)
+ocorrer, o price-check ainda escolheria a primeira op encontrada. Vale
+revisitar se os logs de `duplicate_active_ops_detected` mostrarem
+ocorrência real.
+
+Regressão: `signalArbitration.test.js` (32 testes — matriz de decisão pura,
+todas as combinações direção×timeframe, os dois estágios de promoção,
+piso de score, cancelamento de pendente); `scannerStateMachine.test.js`
+(91 testes no arquivo, ~30 novos nesta rodada — dois estágios ponta-a-
+ponta com `check15mConfirmation` real via `fetchCandles` mockado,
+CAS-rejeitado sem exceção, duplicidade de operação ativa, imutabilidade
+do score de entrada, piso de gestão, correlação de logs, concorrência via
+`Promise.all`).

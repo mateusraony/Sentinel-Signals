@@ -138,7 +138,10 @@ export function nextRfReverseCount({ rfReversedAgainst, prevCount, prevCandleTim
 // itself is misconfigured below minRR, or a future structural (non-risk-
 // derived) target replaces the current model. It still guards that
 // misconfiguration and gives future structural TPs a real gate to plug into
-// — kept honest rather than pretending it's an active filter today.
+// — kept honest rather than pretending it's an active filter today. scanner.js
+// stamps this honesty onto every TradeOperation too (rr_gate_mode:
+// 'CONFIGURED_MULTIPLE', rr_target_basis: 'R_MULTIPLE', next to rr_at_entry)
+// so the panel/audit trail never implies more than this validates.
 export function passesRiskReward({ entry, stop, tp1, tp2, minRR = 1.2, target = 'tp1' }) {
   if (![entry, stop, tp1].every(Number.isFinite)) {
     return { pass: false, rr1: null, rr2: null, reason: 'missing_fields' };

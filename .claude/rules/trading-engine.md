@@ -138,6 +138,14 @@ nunca deve receber nova transição.**
   `SystemLog` ("Transição descartada pelo CAS"). Só investir numa regra dura de
   precedência (stop autoritativo entre loops) se os logs mostrarem ocorrência
   real.
+- **Arbitragem entre cascatas** (`src/lib/signalArbitration.js` +
+  `scanner.js:handleActiveOpArbitration`) — decide o que fazer quando um
+  sinal candidato chega com a outra cascata já ativa (promoção em dois
+  estágios `PENDING_15M`→`CONFIRMED`/`EXPIRED`/`REJECTED`, continuidade,
+  correção de confiança, risco crítico). Nunca cria uma segunda
+  `TradeOperation`; toda escrita passa por `transitionTradeOp` (mesma CAS
+  acima). Detalhe completo, os 7 problemas corrigidos após auditoria externa
+  do PR #78, e os campos novos: `docs/known-risks.md` item 39.
 
 ## Regras ao mexer aqui
 
