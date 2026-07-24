@@ -146,6 +146,19 @@ nunca deve receber nova transição.**
   `TradeOperation`; toda escrita passa por `transitionTradeOp` (mesma CAS
   acima). Detalhe completo, os 7 problemas corrigidos após auditoria externa
   do PR #78, e os campos novos: `docs/known-risks.md` item 39.
+- **[CORRIGIDO — item 39.1] Guarda de operações duplicadas agora cobre os
+  DOIS loops mutadores.** `persistScanResults` já suspendia
+  arbitragem/entrada/stop-TP quando detectava mais de uma operação ativa
+  para o mesmo ativo; `priceCheckActiveOpsInner` não tinha a mesma guarda —
+  escolhia implicitamente a primeira op da lista. Extraída função pura
+  compartilhada `groupActiveOpsByAsset` (`src/lib/opTransition.js`, sem
+  I/O) — agrupa por `asset_id` (fallback por `symbol` para op legada sem o
+  campo), devolve `{ validGroups, duplicateGroups }`, independente da ordem
+  de retorno do backend. Os dois loops agora usam a mesma regra;
+  `priceCheckActiveOpsInner` loga o grupo duplicado via
+  `SystemLog.createUnique` (dedupado pelo conjunto de IDs, para não
+  spammar a cada tick) e só processa `[...validGroups.values()]`. Ver
+  `docs/known-risks.md` item 39.1.
 
 ## Regras ao mexer aqui
 

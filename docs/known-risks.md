@@ -1772,12 +1772,7 @@ operações antigas (sem esses campos) caem em `entry_score ?? score` /
 **Não implementado nesta rodada, permanece Fase 1 dentro do escopo
 combinado** (registrado para não ser esquecido, não é um problema):
 promoção não recalcula TP1/TP2/runner automaticamente (só prazo/gestão —
-documentado explicitamente no plano); `priceCheckActiveOpsInner` (o outro
-loop mutador) não tem a mesma guarda de operações duplicadas que
-`persistScanResults` ganhou aqui — se o cenário (já raro por construção)
-ocorrer, o price-check ainda escolheria a primeira op encontrada. Vale
-revisitar se os logs de `duplicate_active_ops_detected` mostrarem
-ocorrência real.
+documentado explicitamente no plano).
 
 Regressão: `signalArbitration.test.js` (32 testes — matriz de decisão pura,
 todas as combinações direção×timeframe, os dois estágios de promoção,
@@ -1787,3 +1782,51 @@ ponta com `check15mConfirmation` real via `fetchCandles` mockado,
 CAS-rejeitado sem exceção, duplicidade de operação ativa, imutabilidade
 do score de entrada, piso de gestão, correlação de logs, concorrência via
 `Promise.all`).
+
+### 39.1 Guarda de operações duplicadas estendida ao `priceCheckActiveOpsInner` (último hardening da Fase 1)
+
+Fechamento da limitação residual registrada acima: até aqui, a guarda de
+operações ativas duplicadas só existia em `persistScanResults` —
+`priceCheckActiveOpsInner` (o loop baseado em preço, mais leve e mais
+frequente — ver `.claude/rules/trading-engine.md`) seguia fazendo
+`filter({status:[...]})` sem agrupar por ativo, então uma corrupção
+histórica que já deixasse o full scan suspenso para um ativo ainda teria
+seu stop/TP mutado pelo price check, escolhendo implicitamente a primeira
+op da lista.
+
+**Correção**: a regra de agrupamento/detecção foi extraída para uma função
+pura nova, `groupActiveOpsByAsset(ops)` (`src/lib/opTransition.js`, mesmo
+módulo puro e compartilhado — sem I/O — de `canApplyTransition`/
+`clampMonotonicStop`/`planTradeOpCreation`). Ela descarta ops terminais
+defensivamente, agrupa por `asset_id` (com fallback por `symbol` para
+operações legadas sem esse campo, para que ainda agrupem com segurança em
+vez de escapar da checagem) e devolve `{ validGroups, duplicateGroups }` —
+independente da ordem em que o backend devolveu os documentos.
+`persistScanResults` foi refatorado para consumir a mesma função (a query
+já filtra por `asset_id` daquele ativo, então o comportamento observável
+não muda — só a regra passou a viver num único lugar).
+`priceCheckActiveOpsInner` agora chama a mesma função sobre a lista
+completa de ops ativas (todos os ativos, é o formato da sua query), loga
+cada grupo duplicado e só processa `[...validGroups.values()]` no loop de
+preço/stop/TP/trailing — nunca mais escolhe `activeOps[0]` implicitamente
+para um ativo corrompido; ativos sem duplicidade continuam processados
+normalmente na mesma passada.
+
+**Log sem spam**: o price check roda com frequência muito maior que o
+scan completo, então o log crítico usa
+`SystemLog.createUnique(dedupKey, {...})` (mesmo mecanismo atômico já
+usado por `SignalEvent.createUnique` para o dedup de sinal) com
+`dedupKey = 'duplicate_active_ops::<asset_id>::<ids ordenados>'` — enquanto
+o mesmo conjunto de IDs duplicados persistir, `createUnique` só retorna o
+doc já existente (nenhuma escrita nova); qualquer mudança no conjunto
+(uma op resolvida, adicionada ou removida) muda a chave e gera um evento
+novo. O log inclui IDs, status, cascata, **lado** (`op_sides` — campo novo
+nesta rodada, não existia no log irmão de `persistScanResults`) e datas de
+criação de todas as ops envolvidas.
+
+Regressão: `opTransition.test.js` (função pura — agrupamento simples,
+duplicidade, ordem irrelevante, exclusão de op terminal, fallback legado
+sem `asset_id`) e `scannerStateMachine.test.js` (`priceCheckActiveOps` real
+contra o `fakeBackend` — nenhuma mutação em op duplicada, outro ativo
+continua sendo processado, log único criado, mesmo conjunto de IDs não
+repete o log, conjunto diferente gera log novo).

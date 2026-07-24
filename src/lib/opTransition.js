@@ -82,3 +82,53 @@ export function planTradeOpCreation({ pointerOpId, pointerOp, existingOp }) {
   }
   return { action: 'create', pointer: 'set' };
 }
+
+// Group a list of TradeOperations by asset, defensively excluding anything
+// already terminal (a caller that queried by a broad status list — or a
+// stale in-memory snapshot — must not have a finished op counted toward the
+// "more than one active op" invariant). Structurally, `assetActiveOps`'s CAS
+// should make more than one active op per asset impossible, but historical
+// corruption or a manual Firestore edit can still produce it — this is the
+// shared detector both mutator loops (persistScanResults,
+// priceCheckActiveOpsInner, .claude/rules/trading-engine.md) use to find it.
+// Pure/no I/O on purpose: callers decide how to log and how to interrupt
+// their own flow. Order-independent — grouped by key, not by first-seen, so
+// the order Firestore hands back docs in never changes the outcome. Legacy
+// ops missing `asset_id` fall back to a symbol-keyed group so they still
+// group safely instead of silently skipping the check.
+// Returns { validGroups: Map<key, op>, duplicateGroups: Map<key, op[]> }.
+export function groupActiveOpsByAsset(ops) {
+  const byKey = new Map();
+  for (const op of ops) {
+    if (!op || isTerminalStatus(op.status)) continue;
+    const key = op.asset_id ?? `symbol:${op.symbol}`;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(op);
+  }
+
+  // Merge a symbol-fallback group (legacy op missing asset_id) into any
+  // asset-id-keyed group for the SAME symbol. Without this, a legacy op and
+  // a current-schema op for the same underlying asset land under two
+  // different keys (`symbol:BTCUSDT` vs `asset1`) and both read as lone,
+  // "valid" groups — exactly the mixed legacy/current duplicate the symbol
+  // fallback exists to catch (Codex review, PR #80).
+  for (const [key, group] of [...byKey]) {
+    if (!key.startsWith('symbol:')) continue;
+    const symbol = group[0]?.symbol;
+    const assetKey = [...byKey.keys()].find(
+      (k) => k !== key && !k.startsWith('symbol:') && byKey.get(k).some((o) => o.symbol === symbol)
+    );
+    if (assetKey) {
+      byKey.set(assetKey, [...byKey.get(assetKey), ...group]);
+      byKey.delete(key);
+    }
+  }
+
+  const validGroups = new Map();
+  const duplicateGroups = new Map();
+  for (const [key, group] of byKey) {
+    if (group.length > 1) duplicateGroups.set(key, group);
+    else validGroups.set(key, group[0]);
+  }
+  return { validGroups, duplicateGroups };
+}
