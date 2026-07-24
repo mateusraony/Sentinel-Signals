@@ -674,7 +674,14 @@ async function handleActiveOpArbitration({ signal, candidateCascade, activeOp, r
     });
   }
 
-  return { dedup_key: signal.dedup_key, cascade: candidateCascade, outcome: decision.outcome };
+  // Codex review (PR #79): returning the applied patch lets the caller
+  // refresh its local `activeOp` snapshot. Without this, two opposing
+  // candidates landing in the SAME pass (e.g. a 4h_15m one and a 1h_5m one,
+  // both targeting the same active op) would both compute reduce_confidence's
+  // `base`/`confidence_penalty_total` from the same stale pre-pass values —
+  // the second write would overwrite the first's penalty instead of
+  // compounding it, understating how many opposing signals actually fired.
+  return { dedup_key: signal.dedup_key, cascade: candidateCascade, outcome: decision.outcome, applied, patch: applied ? patch : null };
 }
 
 /**
@@ -1353,6 +1360,9 @@ export async function persistScanResults(scanResult) {
                 signal, candidateCascade: '4h_15m', activeOp, results, pineConfig,
               });
               arbitrationOutcomes.push(outcome);
+              // Keep the local snapshot fresh for any FURTHER signal this
+              // same pass (see handleActiveOpArbitration's return comment).
+              if (outcome.applied && outcome.patch) activeOp = { ...activeOp, ...outcome.patch };
             }
           }
         }
@@ -1427,25 +1437,22 @@ export async function persistScanResults(scanResult) {
             signal, candidateCascade: '1h_5m', activeOp, results, pineConfig,
           });
           arbitrationOutcomes.push(outcome);
+          if (outcome.applied && outcome.patch) activeOp = { ...activeOp, ...outcome.patch };
         }
       }
     }
   }
 
   // ─── Retry: resolve a pending 4h→1h promotion (Stage B) ───
-  // `activeOp` here is the value captured at the TOP of this function,
-  // before this pass's own arbitration ran — a promotion that just went
-  // PENDING_15M this same pass is picked up starting the NEXT pass, not
-  // immediately. Deliberate simplicity (avoids re-reading the op mid-
-  // function) over same-pass reaction; the 15m confirmation window is hours
-  // wide, one extra ~5min pass of latency doesn't change the outcome.
+  // `activeOp` is kept fresh across this pass — the two arbitration call
+  // sites above merge their applied patch back into it (Codex review,
+  // PR #79) — so a promotion that just went PENDING_15M earlier in THIS
+  // same pass is visible here immediately, not deferred to the next pass.
   //
-  // Skip entirely if a critical_opposite candidate ALSO fired this exact
-  // pass: `activeOp.promotion_status` above is the pre-pass snapshot, so it
-  // still reads PENDING_15M even after handleActiveOpArbitration already
-  // wrote REJECTED for it earlier in this same function call — without this
-  // guard, this block would go on to confirm the very promotion the larger-
-  // timeframe reversal just cancelled, using an equally-stale read.
+  // rejectedPendingThisPass stays as a defensive fallback for the one case
+  // the merge can't cover: a critical_opposite write that itself got
+  // rejected by the CAS (activeOp.promotion_status would still legitimately
+  // read PENDING_15M then, since the REJECTED patch never actually landed).
   const rejectedPendingThisPass = arbitrationOutcomes.some(o => o.outcome === 'critical_opposite');
   if (!duplicateActiveOps && !rejectedPendingThisPass && activeOp?.promotion_status === 'PENDING_15M') {
     const candidateAtMs = activeOp.promotion_candidate_at ? new Date(activeOp.promotion_candidate_at).getTime() : null;
@@ -1470,50 +1477,73 @@ export async function persistScanResults(scanResult) {
         },
       });
     } else {
-      const confirmed15m = await check15mConfirmation(activeOp.symbol, activeOp.side, asset);
-      if (confirmed15m.confirmed) {
-        const tf4h = results['4h'];
-        const now = new Date().toISOString();
-        // Only NOW — Stage B, real 15m confirmation in hand — does the
-        // promotion actually take effect: trade_mode/management_timeframe
-        // flip, and the time stop lengthens (never shortens, see the
-        // Math.max below). signal_timeframe is deliberately left untouched
-        // (still '1h') — the update loop uses it to locate results[...] for
-        // this op's own entry/stop/tp math, which stays 5m/1h-derived.
-        const { applied } = await backend.tradeOps.transitionTradeOp(activeOp.id, activeOp.status, {
-          promotion_status: 'CONFIRMED',
-          trade_mode: 'PROMOTED_4H',
-          management_timeframe: '4h',
-          arbitration_outcome: 'promoted',
-          promoted_at: now,
-          promoted_from_cascade: activeOp.cascade,
-          score_at_promotion_1h: activeOp.entry_score ?? activeOp.score ?? 0,
-          score_at_promotion_4h: activeOp.promotion_candidate_score_4h ?? null,
-          promotion_confirmed_at: now,
-          promotion_confirm_candle_time: confirmed15m.entryCandleTime,
-          tier_time_stop_bars: tf4h?.tier?.timeStopBars != null
-            ? Math.max(activeOp.tier_time_stop_bars ?? 96, tf4h.tier.timeStopBars * 4)
-            : activeOp.tier_time_stop_bars,
-        }, { assetId: activeOp.asset_id });
-        if (applied) {
-          await backend.entities.SystemLog.create({
-            level: 'info',
-            module: 'scanner',
-            message: `${activeOp.symbol} promoção 4H confirmada no 15m — gestão passa a ser PROMOTED_4H`,
-            symbol: activeOp.symbol,
-            timeframe: '15m',
-            details: {
-              reason: 'promotion_confirmed',
-              arbitration_version: ARBITRATION_VERSION,
-              op_id: activeOp.id,
-              promotion_candidate_signal_id: activeOp.promotion_candidate_signal_id ?? null,
-              confirm_candle_time: confirmed15m.entryCandleTime,
-            },
-          });
+      // Codex review (PR #79): re-validate the 4h context ITSELF before
+      // confirming, the same way the sibling "pending 4h signal" retry loop
+      // below does (tf4hDir match + regime gate) — this block used to check
+      // ONLY 15m alignment. A genuine directional flip normally also fires a
+      // fresh opposing 4h SignalEvent, already caught above by
+      // critical_opposite/reject_pending_promotion — but a regime-only
+      // failure (ADX weak / Choppiness high) never does, since Range Filter
+      // only emits a signal on a direction CHANGE, not on "conditions
+      // stopped supporting a confident entry". Without this, a stale
+      // qualifying context from hours ago could still confirm a promotion
+      // off a coincidental later 15m bounce, even though the NATIVE
+      // 4h_15m cascade's own gates would reject a fresh entry right now.
+      const tf4h = results['4h'];
+      const sigDir = activeOp.side === 'BUY' ? 1 : -1;
+      const tf4hStillAligned = Boolean(tf4h?.atrValue) && tf4h.rf?.direction === sigDir;
+      const regimeStillOk = tf4hStillAligned && evaluateRegime(tf4h, pineConfig).ok;
+
+      if (tf4hStillAligned && regimeStillOk) {
+        const confirmed15m = await check15mConfirmation(activeOp.symbol, activeOp.side, asset);
+        if (confirmed15m.confirmed) {
+          const now = new Date().toISOString();
+          // Only NOW — Stage B, real 4h context AND 15m confirmation both in
+          // hand — does the promotion actually take effect:
+          // trade_mode/management_timeframe flip, and the time stop
+          // lengthens (never shortens, see the Math.max below).
+          // signal_timeframe is deliberately left untouched (still '1h') —
+          // the update loop uses it to locate results[...] for this op's own
+          // entry/stop/tp math, which stays 5m/1h-derived.
+          const { applied } = await backend.tradeOps.transitionTradeOp(activeOp.id, activeOp.status, {
+            promotion_status: 'CONFIRMED',
+            trade_mode: 'PROMOTED_4H',
+            management_timeframe: '4h',
+            arbitration_outcome: 'promoted',
+            promoted_at: now,
+            promoted_from_cascade: activeOp.cascade,
+            score_at_promotion_1h: activeOp.entry_score ?? activeOp.score ?? 0,
+            score_at_promotion_4h: activeOp.promotion_candidate_score_4h ?? null,
+            promotion_confirmed_at: now,
+            promotion_confirm_candle_time: confirmed15m.entryCandleTime,
+            tier_time_stop_bars: tf4h?.tier?.timeStopBars != null
+              ? Math.max(activeOp.tier_time_stop_bars ?? 96, tf4h.tier.timeStopBars * 4)
+              : activeOp.tier_time_stop_bars,
+          }, { assetId: activeOp.asset_id });
+          if (applied) {
+            await backend.entities.SystemLog.create({
+              level: 'info',
+              module: 'scanner',
+              message: `${activeOp.symbol} promoção 4H confirmada no 15m — gestão passa a ser PROMOTED_4H`,
+              symbol: activeOp.symbol,
+              timeframe: '15m',
+              details: {
+                reason: 'promotion_confirmed',
+                arbitration_version: ARBITRATION_VERSION,
+                op_id: activeOp.id,
+                promotion_candidate_signal_id: activeOp.promotion_candidate_signal_id ?? null,
+                confirm_candle_time: confirmed15m.entryCandleTime,
+              },
+            });
+          }
         }
+        // Not confirmed yet and still within the window: silent retry, same
+        // write economy as the RF/SMC signal-confirmation retry loops below.
       }
-      // Not confirmed yet and still within the window: silent retry, same
-      // write economy as the RF/SMC signal-confirmation retry loops below.
+      // 4h context no longer aligned/regime-valid: treated exactly like "not
+      // confirmed yet" — stays PENDING_15M, re-evaluated next pass. Never
+      // confirms on stale context, but doesn't reject on a single regime
+      // blip either (ADX/Chop can flicker pass to pass).
     }
   }
 

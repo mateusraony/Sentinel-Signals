@@ -1017,6 +1017,36 @@ describe('cross-cascade arbitration — promoção em dois estágios, continuida
       expect(backend._get('TradeOperation', 'op_1h').promotion_status).not.toBe('CONFIRMED');
     });
 
+    it('NÃO confirma se o regime do 4h deixou de ser válido, mesmo com o 15m alinhado (Codex review, PR #79)', async () => {
+      // Reproduz o gap: este retry checava só o 15m, nunca o contexto 4h em
+      // si — diferente do retry irmão pra sinais 4h novos, que reavalia
+      // direção + regime a cada passada. Uma reversão de DIREÇÃO dispara um
+      // SignalEvent novo (já coberto por critical_opposite), mas uma falha
+      // só de regime (ADX fraco/Choppiness alto) nunca dispara sinal nenhum
+      // — o RF só emite em mudança de direção. Sem essa checagem, um 15m
+      // coincidente confirmaria a promoção mesmo com o mercado tendo ficado
+      // choppy — algo que a própria cascata nativa 4h_15m bloquearia numa
+      // entrada nova agora.
+      backend._seed('TradeOperation', makeOp({
+        id: 'op_1h', cascade: '1h_5m', side: 'BUY', promotion_status: 'PENDING_15M',
+        promotion_candidate_at: '2026-07-16T11:00:00.000Z',
+        trade_mode: 'TACTICAL_1H', management_timeframe: '1h',
+      }));
+      fetchCandles.mockResolvedValue(ALIGNED_15M()); // 15m alinhado — sozinho, confirmaria
+      const pineConfig = makePineConfig({ useADX: true, useChop: false }); // regime ADX ligado
+      const results = {
+        // Direção 4h ainda BUY (1) — não é uma reversão — mas ADX (5) fica
+        // abaixo do mínimo do tier (25): regime reprovado.
+        '4h': makeTfData({ adx: { adx: 5 }, tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48, adxMinVal: 25 } }),
+      };
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+      const op = backend._get('TradeOperation', 'op_1h');
+      expect(op.promotion_status).toBe('PENDING_15M'); // NÃO confirmou — continua pendente, não vira CONFIRMED nem REJECTED
+      expect(op.trade_mode).toBe('TACTICAL_1H'); // gestão não mudou
+    });
+
     it('expira sem confirmação dentro da janela -> promotion_status=EXPIRED, opção segue TACTICAL_1H', async () => {
       backend._seed('TradeOperation', makeOp({
         id: 'op_1h', cascade: '1h_5m', side: 'BUY', promotion_status: 'PENDING_15M',
@@ -1149,6 +1179,37 @@ describe('cross-cascade arbitration — promoção em dois estágios, continuida
     const op = backend._get('TradeOperation', 'op_4h');
     expect(op.entry_score).toBe(80); // ainda imutável após 2 penalidades
     expect(op.current_confidence_score).toBe(50); // 80 - 15 - 15
+    expect(op.confidence_penalty_total).toBe(30);
+  });
+
+  it('dois candidatos opostos na MESMA passada acumulam penalidade em vez de a segunda sobrescrever a primeira (Codex review, PR #79)', async () => {
+    // Reproduz o bug: sem refrescar `activeOp` localmente após cada escrita
+    // aplicada dentro da mesma passada, as duas chamadas de arbitragem
+    // calculariam `base`/`confidence_penalty_total` a partir do MESMO
+    // snapshot pré-passada — a segunda escrita venceria e "apagaria" a
+    // primeira penalidade em vez de somar (current_confidence_score
+    // terminaria em 65, não 50).
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_4h', cascade: '4h_15m', side: 'BUY', score: 80, entry_score: 80, current_confidence_score: 80, confidence_penalty_total: 0,
+    }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbOppositeScorePenalty: 15, arbReinforceMinScore: 50 });
+    const results = {
+      '4h': makeTfData({ rf: { filterValue: 90, direction: -1, signal: 'none', highBand: 105, lowBand: 95, condIni: false } }),
+      '1h': makeTfData({ atrValue: 2 }),
+    };
+
+    await persistScanResults({
+      ...makeScanResult({ asset, results, pineConfig }),
+      newSignals: [
+        { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'SELL', timeframe: '4h', source: 'range_filter', dedup_key: 'sig_rf_opp_same_pass', price_at_signal: 100, context: { score: 90 } },
+        makeSmcSignal({ signal_type: 'SELL', dedup_key: 'sig_smc_opp_same_pass', context: { score: 90, structure_type: 'BOS' } }),
+      ],
+    });
+
+    const op = backend._get('TradeOperation', 'op_4h');
+    expect(op.entry_score).toBe(80); // imutável
+    expect(op.current_confidence_score).toBe(50); // 80 - 15 - 15, nunca 65
     expect(op.confidence_penalty_total).toBe(30);
   });
 
