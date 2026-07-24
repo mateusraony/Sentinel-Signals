@@ -58,7 +58,7 @@
     },
     "score": {
       "type": "number",
-      "description": "Signal score 0-100"
+      "description": "LEGACY field, kept for backward-compat readers (existing UI/backtest code). Set once at creation to the same value as entry_score and NEVER modified afterward by arbitration — see entry_score/current_confidence_score (further down this schema) for the current split between immutable entry quality and mutable current confidence."
     },
     "entry_price": {
       "type": "number"
@@ -297,47 +297,129 @@
     },
     "arbitration_outcome": {
       "type": "string",
-      "description": "Result of the most recent cross-cascade arbitration decision (src/lib/signalArbitration.js) evaluated against this operation, when a competing signal from the other cascade arrived while this op was active. Absent when no competing signal has ever arrived.",
+      "description": "Result of the most recent cross-cascade arbitration decision (src/lib/signalArbitration.js) that actually WROTE to this operation — 'none'-action outcomes (reinforcement_accepted/rejected, continuation_confirmation, candidate_below_arbitration_threshold, no_change) are logged to SystemLog but deliberately do NOT appear here (write economy — nothing on the op changed). Absent when no arbitration decision has ever written to this operation.",
       "enum": [
         "promoted",
-        "reinforcement_accepted",
-        "reinforcement_rejected",
-        "continuation_confirmation",
         "correction_warning",
-        "critical_opposite",
-        "no_change"
+        "critical_opposite"
       ]
     },
     "arbitration_reason": {
       "type": "string",
-      "description": "Human-readable explanation of the most recent arbitration_outcome (candidate cascade/side/score, active op score, R:R where relevant)."
+      "description": "Machine-readable reason code for the most recent arbitration_outcome (see src/lib/signalArbitration.js's `reason` values, e.g. candidate_score_meets_promotion_threshold, smaller_timeframe_opposes_active_op)."
     },
     "arbitration_at": {
       "type": "string",
       "description": "ISO timestamp of the most recent arbitration decision applied to this operation."
     },
+    "promotion_status": {
+      "type": "string",
+      "description": "1h_5m cascade only — two-stage promotion state machine (external audit of PR #78: a qualifying 4h candidate alone is NOT sufficient to promote, since arbitration never fetches the 15m candle itself — see src/lib/signalArbitration.js's module doc). NONE/absent until a same-direction 4h candidate scores >= arbPromoteMinScore (-> PENDING_15M); scanner.js's promotion-confirmation retry step then resolves it to CONFIRMED (via the SAME check15mConfirmation the native 4h_15m cascade requires) or EXPIRED (window elapsed, default 4h, without confirmation). A critical_opposite arbitration event (larger-timeframe reversal) while PENDING_15M moves it to REJECTED instead. EXPIRED/REJECTED both allow a fresh PENDING_15M cycle from a NEW candidate signal — they do not permanently block promotion.",
+      "enum": [
+        "NONE",
+        "PENDING_15M",
+        "CONFIRMED",
+        "REJECTED",
+        "EXPIRED"
+      ]
+    },
+    "promotion_candidate_at": {
+      "type": "string",
+      "description": "1h_5m cascade only — ISO timestamp when promotion_status entered PENDING_15M (the qualifying 4h candidate's arrival). Used to compute the confirmation window's expiry."
+    },
+    "promotion_candidate_score_4h": {
+      "type": "number",
+      "description": "1h_5m cascade only — the qualifying 4h candidate signal's score at the moment promotion_status entered PENDING_15M."
+    },
+    "promotion_candidate_signal_id": {
+      "type": "string",
+      "description": "1h_5m cascade only — dedup_key of the SignalEvent that started the current/most recent PENDING_15M cycle."
+    },
+    "promotion_confirmed_at": {
+      "type": "string",
+      "description": "1h_5m cascade only — ISO timestamp when promotion_status reached CONFIRMED (Stage B, the real 15m confirmation)."
+    },
+    "promotion_confirm_candle_time": {
+      "type": "string",
+      "description": "1h_5m cascade only — close time of the 15m candle that confirmed the promotion (from check15mConfirmation's entryCandleTime)."
+    },
+    "trade_mode": {
+      "type": "string",
+      "description": "1h_5m cascade only — which timeframe's context is currently managing this operation. TACTICAL_1H from creation; flips to PROMOTED_4H only once promotion_status reaches CONFIRMED. The 4h_15m cascade has no equivalent (already the largest timeframe) and leaves this field absent.",
+      "enum": [
+        "TACTICAL_1H",
+        "PROMOTED_4H"
+      ]
+    },
+    "management_timeframe": {
+      "type": "string",
+      "description": "1h_5m cascade only — mirrors trade_mode as the actual timeframe whose context governs management ('1h' or '4h' once promoted). Absent on 4h_15m-origin operations.",
+      "enum": [
+        "1h",
+        "4h"
+      ]
+    },
+    "origin_cascade": {
+      "type": "string",
+      "description": "Immutable marker of which cascade created this operation — set once at creation and NEVER changed afterward (unlike `cascade`, which is also never mutated today, but this field exists as an explicit, decoupled guarantee independent of `cascade`'s own semantics).",
+      "enum": [
+        "4h_15m",
+        "1h_5m"
+      ]
+    },
     "promoted_at": {
       "type": "string",
-      "description": "ISO timestamp when this operation was promoted (conservative promotion only — management upgrade of this SAME operation, never a second operation). Absent if never promoted."
+      "description": "ISO timestamp when this operation was promoted (Stage B / CONFIRMED — conservative promotion only, a management upgrade of this SAME operation, never a second operation). Absent if never promoted. Equivalent to promotion_confirmed_at, kept as a separate field for continuity with earlier tooling."
     },
     "promoted_from_cascade": {
       "type": "string",
-      "description": "Cascade this operation originated from, before promotion. Only 1h_5m can be promoted in this phase (promotion is one-directional: 1h op + aligned 4h signal).",
+      "description": "Cascade this operation originated from, before promotion. Only 1h_5m can be promoted in this phase (promotion is one-directional: 1h op + aligned, 15m-confirmed 4h signal).",
       "enum": [
         "1h_5m"
       ]
     },
     "score_at_promotion_1h": {
       "type": "number",
-      "description": "This operation's own score (SMC cascade) at the moment of promotion."
+      "description": "This operation's own entry_score (SMC cascade) at the moment of promotion."
     },
     "score_at_promotion_4h": {
       "type": "number",
-      "description": "The promoting 4h candidate signal's score at the moment of promotion."
+      "description": "The promoting 4h candidate signal's score at the moment its PENDING_15M cycle started (promotion_candidate_score_4h)."
+    },
+    "entry_score": {
+      "type": "number",
+      "description": "0-100 confluence score AT ENTRY — immutable for audit, never modified after creation by anything (including cross-cascade arbitration's reduce_confidence action). Mirrors the legacy `score` field's value at creation time. Absent on operations created before this field existed — readers should fall back to `score`."
+    },
+    "current_confidence_score": {
+      "type": "number",
+      "description": "0-100, starts equal to entry_score at creation — the ONLY score field cross-cascade arbitration's reduce_confidence action is allowed to move (clamped 0-100). Represents current confidence, distinct from the immutable entry_score. Absent on operations created before this field existed — readers should fall back to entry_score, then score."
+    },
+    "confidence_penalty_total": {
+      "type": "number",
+      "description": "Cumulative sum of all confidence penalties ever applied to this operation via reduce_confidence, for audit (entry_score - current_confidence_score should equal this, modulo the 0-floor clamp).",
+      "default": 0
+    },
+    "last_opposing_signal_at": {
+      "type": "string",
+      "description": "ISO timestamp of the most recent opposing-signal arbitration event that reduced current_confidence_score."
     },
     "rr_at_entry": {
       "type": "number",
-      "description": "Risk:Reward ratio (distance to TP1 / distance to stop) computed by passesRiskReward (src/lib/opExitRules.js) at entry time."
+      "description": "Risk:Reward ratio (distance to the chosen target / distance to stop) computed by passesRiskReward (src/lib/opExitRules.js) at entry time. See rr_gate_mode for what this number actually measures today."
+    },
+    "rr_gate_mode": {
+      "type": "string",
+      "description": "Honesty label for rr_at_entry/passesRiskReward (external audit of PR #78): under BOTH cascades' current TP model, tp1/tp2 are derived as a CONFIGURED multiple of the risk distance (entry ± riskDistance*tp1R/tp2R), not a distance to any real chart level — so rr_at_entry is mathematically ~equal to pineConfig.tp1R/tp2R for every real entry today. This field exists so the panel/audit trail never implies more than that. A future structural (support/resistance/liquidity/swing/FVG/OB-derived) target model would introduce a different value here.",
+      "enum": [
+        "CONFIGURED_MULTIPLE"
+      ]
+    },
+    "rr_target_basis": {
+      "type": "string",
+      "description": "Companion to rr_gate_mode — what rr_at_entry's target distance is actually derived from.",
+      "enum": [
+        "R_MULTIPLE"
+      ]
     },
     "market_source": {
       "type": "string",

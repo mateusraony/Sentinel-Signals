@@ -9,6 +9,7 @@
 // for the state machine this exercises.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createFakeBackend } from './__fixtures__/fakeBackend.js';
+import { uptrendCandles, downtrendCandles } from './indicators/__fixtures__/candles.js';
 
 vi.mock('@/api/entities', () => ({ backend: {} }));
 vi.mock('./telegram', () => ({
@@ -875,7 +876,15 @@ describe('cross-cascade arbitration log — signal discarded because an op is al
   });
 });
 
-describe('cross-cascade arbitration — promoção conservadora, continuidade e risco crítico', () => {
+describe('cross-cascade arbitration — promoção em dois estágios, continuidade e risco crítico', () => {
+  // vi.clearAllMocks() (global beforeEach) clears call history but NOT a
+  // configured mockResolvedValue/mockImplementation — several tests below
+  // configure fetchCandles for Stage B confirmation checks, which would
+  // otherwise leak into every later test in the file (including unrelated
+  // ones elsewhere in this suite). Local afterEach keeps that leakage
+  // contained to this describe block.
+  afterEach(() => { fetchCandles.mockReset(); });
+
   function makeRfSignal(overrides = {}) {
     return {
       symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
@@ -892,49 +901,196 @@ describe('cross-cascade arbitration — promoção conservadora, continuidade e 
       ...overrides,
     };
   }
+  // check15mConfirmation needs >=40 closed candles whose Range Filter
+  // direction actually reflects the trend — reusing the same synthetic
+  // generators backtestEngine.test.js derives its flip instants from
+  // (uptrend -> RF direction 1 -> aligns with BUY), not hand-picked values.
+  const ALIGNED_15M = () => uptrendCandles(60, 100, 1);
+  const MISALIGNED_15M = () => downtrendCandles(60, 100, 1);
 
-  it('promoção (1h_5m ativa + 4h_15m mesma direção, score alto) nunca cria uma segunda TradeOperation', async () => {
-    backend._seed('TradeOperation', makeOp({ id: 'op_1h', cascade: '1h_5m', side: 'BUY', score: 60 }));
-    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbPromoteMinScore: 75 });
-    const results = { '4h': makeTfData() };
+  describe('Estágio A — sinal 4H alinhado só abre um PENDING, nunca promove direto', () => {
+    it('cria promotion_status=PENDING_15M, NÃO altera trade_mode/management_timeframe/time_stop ainda', async () => {
+      backend._seed('TradeOperation', makeOp({
+        id: 'op_1h', cascade: '1h_5m', side: 'BUY', score: 60, entry_score: 60, current_confidence_score: 60,
+        trade_mode: 'TACTICAL_1H', management_timeframe: '1h', promotion_status: 'NONE',
+        current_stop: 97, tier_time_stop_bars: 96,
+      }));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false, arbPromoteMinScore: 75 });
+      const results = { '4h': makeTfData({ tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48 } }) };
 
-    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ context: { score: 80 } })] });
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ context: { score: 80 } })] });
 
-    const ops = await backend.entities.TradeOperation.filter({});
-    expect(ops).toHaveLength(1);
-    expect(ops[0].id).toBe('op_1h');
-    expect(ops[0].arbitration_outcome).toBe('promoted');
-    expect(ops[0].promoted_from_cascade).toBe('1h_5m');
-    expect(ops[0].score_at_promotion_1h).toBe(60);
-    expect(ops[0].score_at_promotion_4h).toBe(80);
-    expect(ops[0].promoted_at).toBeTruthy();
+      const ops = await backend.entities.TradeOperation.filter({});
+      expect(ops).toHaveLength(1); // nunca duplica
+      const op = ops[0];
+      expect(op.id).toBe('op_1h');
+      expect(op.promotion_status).toBe('PENDING_15M');
+      expect(op.promotion_candidate_score_4h).toBe(80);
+      expect(op.promotion_candidate_signal_id).toBe('sig_rf_arb');
+      expect(op.promotion_candidate_at).toBeTruthy();
+      // Stage A must NOT yet touch management — that's Stage B's job.
+      expect(op.trade_mode).toBe('TACTICAL_1H');
+      expect(op.management_timeframe).toBe('1h');
+      expect(op.tier_time_stop_bars).toBe(96); // intocado
+      expect(op.current_stop).toBe(97); // intocado
+      expect(op.arbitration_outcome).not.toBe('promoted'); // ainda não é uma promoção concluída
+    });
+
+    it('score abaixo do mínimo de promoção mas acima do de reforço -> reinforcement_accepted, sem PENDING', async () => {
+      backend._seed('TradeOperation', makeOp({ id: 'op_1h', cascade: '1h_5m', side: 'BUY', score: 60 }));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false, arbPromoteMinScore: 75, arbReinforceMinScore: 50 });
+      const results = { '4h': makeTfData() };
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ context: { score: 60 } })] });
+
+      const op = backend._get('TradeOperation', 'op_1h');
+      expect(op.promotion_status).toBeUndefined();
+    });
   });
 
-  it('promoção nunca mexe no stop e só alonga o time stop (nunca encurta)', async () => {
-    // 4h tier.timeStopBars=48 -> equivalente em barras de 1h = 48*4 = 192,
-    // maior que os 96 atuais -> deve alongar para 192.
-    backend._seed('TradeOperation', makeOp({
-      id: 'op_1h', cascade: '1h_5m', side: 'BUY', score: 60,
-      current_stop: 97, tier_time_stop_bars: 96,
-    }));
-    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbPromoteMinScore: 75 });
-    const results = { '4h': makeTfData({ tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48 } }) };
+  describe('Estágio B — confirmação 15m resolve o pendente (reaproveita check15mConfirmation)', () => {
+    it('15m alinhado dentro da janela conclui a promoção: PROMOTED_4H, gestão 4h, time stop alongado', async () => {
+      backend._seed('TradeOperation', makeOp({
+        id: 'op_1h', cascade: '1h_5m', side: 'BUY', signal_timeframe: '1h',
+        entry_score: 60, current_confidence_score: 60,
+        trade_mode: 'TACTICAL_1H', management_timeframe: '1h',
+        promotion_status: 'PENDING_15M',
+        promotion_candidate_at: '2026-07-16T11:00:00.000Z', // 1h antes do relógio congelado do teste (12:00)
+        promotion_candidate_score_4h: 80,
+        promotion_candidate_signal_id: 'sig_rf_arb',
+        current_stop: 97, tier_time_stop_bars: 96,
+        entry_price: 100, partial_percent: 50, runner_percent: 50,
+      }));
+      fetchCandles.mockResolvedValue(ALIGNED_15M());
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const results = { '4h': makeTfData({ tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48 } }) };
 
-    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ context: { score: 80 } })] });
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
 
-    const op = backend._get('TradeOperation', 'op_1h');
-    expect(op.current_stop).toBe(97); // nunca tocado pela promoção
-    expect(op.tier_time_stop_bars).toBe(192); // alongado (48*4), nunca encurtaria os 96 originais
+      const op = backend._get('TradeOperation', 'op_1h');
+      expect(op.promotion_status).toBe('CONFIRMED');
+      expect(op.trade_mode).toBe('PROMOTED_4H');
+      expect(op.management_timeframe).toBe('4h');
+      expect(op.arbitration_outcome).toBe('promoted');
+      expect(op.promoted_at).toBeTruthy();
+      expect(op.score_at_promotion_1h).toBe(60);
+      expect(op.score_at_promotion_4h).toBe(80);
+      // Nunca duplica, nunca altera a origem, nunca mexe no stop/posição:
+      expect((await backend.entities.TradeOperation.filter({}))).toHaveLength(1);
+      expect(op.signal_timeframe).toBe('1h'); // NUNCA vira '4h' — usado p/ localizar results[] no loop de saída
+      expect(op.cascade).toBe('1h_5m'); // origem imutável
+      expect(op.current_stop).toBe(97); // promoção nunca afasta o stop
+      expect(op.entry_price).toBe(100); // nunca recalcula a entrada
+      expect(op.partial_percent).toBe(50);
+      expect(op.runner_percent).toBe(50); // nunca aumenta posição/runner
+      expect(op.tier_time_stop_bars).toBe(192); // alongado (48*4), nunca encurtaria os 96 originais
+    });
+
+    it('sem confirmação 15m ainda (nem alinhado nem expirado) permanece PENDING_15M — não conclui promoção', async () => {
+      backend._seed('TradeOperation', makeOp({
+        id: 'op_1h', cascade: '1h_5m', side: 'BUY', promotion_status: 'PENDING_15M',
+        promotion_candidate_at: '2026-07-16T11:00:00.000Z',
+        trade_mode: 'TACTICAL_1H', management_timeframe: '1h',
+      }));
+      fetchCandles.mockResolvedValue(MISALIGNED_15M()); // 15m contrário — não confirma
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const results = { '4h': makeTfData() };
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+      const op = backend._get('TradeOperation', 'op_1h');
+      expect(op.promotion_status).toBe('PENDING_15M'); // ainda pendente
+      expect(op.trade_mode).toBe('TACTICAL_1H'); // gestão não mudou
+    });
+
+    it('confirmação 15m CONTRÁRIA à direção da operação nunca promove (não confirma, só)', async () => {
+      backend._seed('TradeOperation', makeOp({
+        id: 'op_1h', cascade: '1h_5m', side: 'BUY', promotion_status: 'PENDING_15M',
+        promotion_candidate_at: '2026-07-16T11:00:00.000Z',
+      }));
+      fetchCandles.mockResolvedValue(MISALIGNED_15M()); // 15m aponta para baixo, op é BUY
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const results = { '4h': makeTfData() };
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+      expect(backend._get('TradeOperation', 'op_1h').promotion_status).not.toBe('CONFIRMED');
+    });
+
+    it('NÃO confirma se o regime do 4h deixou de ser válido, mesmo com o 15m alinhado (Codex review, PR #79)', async () => {
+      // Reproduz o gap: este retry checava só o 15m, nunca o contexto 4h em
+      // si — diferente do retry irmão pra sinais 4h novos, que reavalia
+      // direção + regime a cada passada. Uma reversão de DIREÇÃO dispara um
+      // SignalEvent novo (já coberto por critical_opposite), mas uma falha
+      // só de regime (ADX fraco/Choppiness alto) nunca dispara sinal nenhum
+      // — o RF só emite em mudança de direção. Sem essa checagem, um 15m
+      // coincidente confirmaria a promoção mesmo com o mercado tendo ficado
+      // choppy — algo que a própria cascata nativa 4h_15m bloquearia numa
+      // entrada nova agora.
+      backend._seed('TradeOperation', makeOp({
+        id: 'op_1h', cascade: '1h_5m', side: 'BUY', promotion_status: 'PENDING_15M',
+        promotion_candidate_at: '2026-07-16T11:00:00.000Z',
+        trade_mode: 'TACTICAL_1H', management_timeframe: '1h',
+      }));
+      fetchCandles.mockResolvedValue(ALIGNED_15M()); // 15m alinhado — sozinho, confirmaria
+      const pineConfig = makePineConfig({ useADX: true, useChop: false }); // regime ADX ligado
+      const results = {
+        // Direção 4h ainda BUY (1) — não é uma reversão — mas ADX (5) fica
+        // abaixo do mínimo do tier (25): regime reprovado.
+        '4h': makeTfData({ adx: { adx: 5 }, tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48, adxMinVal: 25 } }),
+      };
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+      const op = backend._get('TradeOperation', 'op_1h');
+      expect(op.promotion_status).toBe('PENDING_15M'); // NÃO confirmou — continua pendente, não vira CONFIRMED nem REJECTED
+      expect(op.trade_mode).toBe('TACTICAL_1H'); // gestão não mudou
+    });
+
+    it('expira sem confirmação dentro da janela -> promotion_status=EXPIRED, opção segue TACTICAL_1H', async () => {
+      backend._seed('TradeOperation', makeOp({
+        id: 'op_1h', cascade: '1h_5m', side: 'BUY', promotion_status: 'PENDING_15M',
+        promotion_candidate_at: '2026-07-16T07:00:00.000Z', // 5h antes do relógio congelado (12:00) — além da janela de 4h
+        trade_mode: 'TACTICAL_1H', management_timeframe: '1h',
+      }));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const results = { '4h': makeTfData() };
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+      const op = backend._get('TradeOperation', 'op_1h');
+      expect(op.promotion_status).toBe('EXPIRED');
+      expect(op.trade_mode).toBe('TACTICAL_1H'); // nunca chegou a ser promovida
+
+      const logs = await backend.entities.SystemLog.filter({});
+      expect(logs.find(l => l.details?.reason === 'promotion_expired')).toBeTruthy();
+    });
+
+    it('promoção expirada NÃO reaparece sozinha sem um novo sinal 4H', async () => {
+      backend._seed('TradeOperation', makeOp({
+        id: 'op_1h', cascade: '1h_5m', side: 'BUY', promotion_status: 'EXPIRED',
+      }));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const results = { '4h': makeTfData() };
+
+      // Nenhum newSignals — nenhum candidato 4H novo chegou.
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+      expect(backend._get('TradeOperation', 'op_1h').promotion_status).toBe('EXPIRED'); // continua EXPIRED, não volta a PENDING sozinho
+      expect(fetchCandles).not.toHaveBeenCalled(); // sem PENDING_15M, o retry de confirmação nem roda
+    });
   });
 
-  it('promoção NUNCA encurta um time stop já maior que o equivalente 4h', async () => {
+  it('promoção não mexe no stop mesmo quando o time stop já era maior que o equivalente 4h (nunca encurta)', async () => {
     backend._seed('TradeOperation', makeOp({
-      id: 'op_1h', cascade: '1h_5m', side: 'BUY', score: 60, tier_time_stop_bars: 300,
+      id: 'op_1h', cascade: '1h_5m', side: 'BUY', promotion_status: 'PENDING_15M',
+      promotion_candidate_at: '2026-07-16T11:00:00.000Z', tier_time_stop_bars: 300,
     }));
-    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbPromoteMinScore: 75 });
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
     const results = { '4h': makeTfData({ tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48 } }) };
 
-    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ context: { score: 80 } })] });
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
 
     expect(backend._get('TradeOperation', 'op_1h').tier_time_stop_bars).toBe(300); // 48*4=192 < 300, mantém 300
   });
@@ -958,10 +1114,30 @@ describe('cross-cascade arbitration — promoção conservadora, continuidade e 
     expect(entry).toBeTruthy();
   });
 
-  it('4h_15m ativa + 1h_5m direção oposta (menor) -> correction_warning, reduz confiança sem fechar', async () => {
-    backend._seed('TradeOperation', makeOp({ id: 'op_4h', cascade: '4h_15m', side: 'BUY', score: 50 }));
+  it('candidato de reforço/correção abaixo do piso de gestão não altera a operação (candidate_below_arbitration_threshold)', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_4h', cascade: '4h_15m', side: 'BUY', current_stop: 98, score: 50 }));
     const asset = makeAsset({ smc_enabled: true });
-    const pineConfig = makePineConfig({ arbOppositeScorePenalty: 15 });
+    const pineConfig = makePineConfig({ arbReinforceMinScore: 50 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({
+      ...makeScanResult({ asset, results, pineConfig }),
+      newSignals: [makeSmcSignal({ context: { score: 20, structure_type: 'BOS' } })],
+    });
+
+    const op = backend._get('TradeOperation', 'op_4h');
+    expect(op.current_stop).toBe(98);
+    expect(op.score).toBe(50); // não mudou
+    const logs = await backend.entities.SystemLog.filter({});
+    expect(logs.find(l => l.details?.arbitration_outcome === 'candidate_below_arbitration_threshold')).toBeTruthy();
+  });
+
+  it('4h_15m ativa + 1h_5m direção oposta (menor) -> correction_warning: reduz SÓ a confiança atual, nunca o score de entrada', async () => {
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_4h', cascade: '4h_15m', side: 'BUY', score: 50, entry_score: 50, current_confidence_score: 50,
+    }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ arbOppositeScorePenalty: 15, arbReinforceMinScore: 50 });
     const results = { '1h': makeTfData({ atrValue: 2 }) };
 
     await persistScanResults({
@@ -971,7 +1147,11 @@ describe('cross-cascade arbitration — promoção conservadora, continuidade e 
 
     const op = backend._get('TradeOperation', 'op_4h');
     expect(op.status).toBe('SIGNAL_CONFIRMED'); // nunca fecha sozinho por um único sinal oposto
-    expect(op.score).toBe(35); // 50 - 15
+    expect(op.score).toBe(50); // score de entrada É IMUTÁVEL
+    expect(op.entry_score).toBe(50); // idem
+    expect(op.current_confidence_score).toBe(35); // 50 - 15 — só a confiança atual muda
+    expect(op.confidence_penalty_total).toBe(15);
+    expect(op.last_opposing_signal_at).toBeTruthy();
     expect(op.arbitration_outcome).toBe('correction_warning');
 
     const logs = await backend.entities.SystemLog.filter({});
@@ -979,7 +1159,94 @@ describe('cross-cascade arbitration — promoção conservadora, continuidade e 
     expect(entry.level).toBe('warn');
   });
 
-  it('1h_5m ativa + 4h_15m direção oposta (maior) -> critical_opposite, NUNCA promove, por padrão só alerta', async () => {
+  it('múltiplos sinais opostos acumulam penalidade em current_confidence_score sem nunca tocar o score de entrada', async () => {
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_4h', cascade: '4h_15m', side: 'BUY', score: 80, entry_score: 80, current_confidence_score: 80, confidence_penalty_total: 0,
+    }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ arbOppositeScorePenalty: 15, arbReinforceMinScore: 50 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({
+      ...makeScanResult({ asset, results, pineConfig }),
+      newSignals: [makeSmcSignal({ signal_type: 'SELL', dedup_key: 'sig_smc_opp_1' })],
+    });
+    await persistScanResults({
+      ...makeScanResult({ asset, results, pineConfig }),
+      newSignals: [makeSmcSignal({ signal_type: 'SELL', dedup_key: 'sig_smc_opp_2' })],
+    });
+
+    const op = backend._get('TradeOperation', 'op_4h');
+    expect(op.entry_score).toBe(80); // ainda imutável após 2 penalidades
+    expect(op.current_confidence_score).toBe(50); // 80 - 15 - 15
+    expect(op.confidence_penalty_total).toBe(30);
+  });
+
+  it('dois candidatos opostos na MESMA passada acumulam penalidade em vez de a segunda sobrescrever a primeira (Codex review, PR #79)', async () => {
+    // Reproduz o bug: sem refrescar `activeOp` localmente após cada escrita
+    // aplicada dentro da mesma passada, as duas chamadas de arbitragem
+    // calculariam `base`/`confidence_penalty_total` a partir do MESMO
+    // snapshot pré-passada — a segunda escrita venceria e "apagaria" a
+    // primeira penalidade em vez de somar (current_confidence_score
+    // terminaria em 65, não 50).
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_4h', cascade: '4h_15m', side: 'BUY', score: 80, entry_score: 80, current_confidence_score: 80, confidence_penalty_total: 0,
+    }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbOppositeScorePenalty: 15, arbReinforceMinScore: 50 });
+    const results = {
+      '4h': makeTfData({ rf: { filterValue: 90, direction: -1, signal: 'none', highBand: 105, lowBand: 95, condIni: false } }),
+      '1h': makeTfData({ atrValue: 2 }),
+    };
+
+    await persistScanResults({
+      ...makeScanResult({ asset, results, pineConfig }),
+      newSignals: [
+        { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'SELL', timeframe: '4h', source: 'range_filter', dedup_key: 'sig_rf_opp_same_pass', price_at_signal: 100, context: { score: 90 } },
+        makeSmcSignal({ signal_type: 'SELL', dedup_key: 'sig_smc_opp_same_pass', context: { score: 90, structure_type: 'BOS' } }),
+      ],
+    });
+
+    const op = backend._get('TradeOperation', 'op_4h');
+    expect(op.entry_score).toBe(80); // imutável
+    expect(op.current_confidence_score).toBe(50); // 80 - 15 - 15, nunca 65
+    expect(op.confidence_penalty_total).toBe(30);
+  });
+
+  it('current_confidence_score nunca fica abaixo de 0', async () => {
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_4h', cascade: '4h_15m', side: 'BUY', score: 10, entry_score: 10, current_confidence_score: 10,
+    }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ arbOppositeScorePenalty: 30, arbReinforceMinScore: 50 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({
+      ...makeScanResult({ asset, results, pineConfig }),
+      newSignals: [makeSmcSignal({ signal_type: 'SELL', dedup_key: 'sig_smc_opp_floor' })],
+    });
+
+    expect(backend._get('TradeOperation', 'op_4h').current_confidence_score).toBe(0);
+  });
+
+  it('operação legada sem entry_score/current_confidence_score ainda recebe a penalidade (fallback em score)', async () => {
+    // Simula uma TradeOperation criada ANTES desta correção — só tem `score`.
+    backend._seed('TradeOperation', makeOp({ id: 'op_legacy', cascade: '4h_15m', side: 'BUY', score: 50 }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ arbOppositeScorePenalty: 15, arbReinforceMinScore: 50 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({
+      ...makeScanResult({ asset, results, pineConfig }),
+      newSignals: [makeSmcSignal({ signal_type: 'SELL', dedup_key: 'sig_smc_legacy' })],
+    });
+
+    const op = backend._get('TradeOperation', 'op_legacy');
+    expect(op.current_confidence_score).toBe(35); // 50 (fallback de entry_score) - 15
+    expect(op.score).toBe(50); // legado nunca mexido
+  });
+
+  it('1h_5m ativa + 4h_15m direção oposta (maior) -> critical_opposite, NUNCA promove, por padrão só alerta (mesmo com score baixo)', async () => {
     backend._seed('TradeOperation', makeOp({ id: 'op_1h', cascade: '1h_5m', side: 'BUY', status: 'SIGNAL_CONFIRMED' }));
     const pineConfig = makePineConfig({ useADX: false, useChop: false }); // arbInvalidateOnOppositeMajor não definido -> default false
     // rf.direction=-1 para bater com o signal_type SELL do candidato — o
@@ -988,7 +1255,7 @@ describe('cross-cascade arbitration — promoção conservadora, continuidade e 
 
     await persistScanResults({
       ...makeScanResult({ results, pineConfig }),
-      newSignals: [makeRfSignal({ signal_type: 'SELL', dedup_key: 'sig_rf_opp' })],
+      newSignals: [makeRfSignal({ signal_type: 'SELL', dedup_key: 'sig_rf_opp', context: { score: 5 } })],
     });
 
     const op = backend._get('TradeOperation', 'op_1h');
@@ -997,7 +1264,7 @@ describe('cross-cascade arbitration — promoção conservadora, continuidade e 
 
     const logs = await backend.entities.SystemLog.filter({});
     const entry = logs.find(l => l.details?.arbitration_outcome === 'critical_opposite');
-    expect(entry).toBeTruthy();
+    expect(entry).toBeTruthy(); // sempre alerta, mesmo com score de candidato baixo (isento do piso de gestão)
     expect(entry.level).toBe('warn');
   });
 
@@ -1017,11 +1284,180 @@ describe('cross-cascade arbitration — promoção conservadora, continuidade e 
     expect(op.arbitration_outcome).toBe('critical_opposite');
   });
 
+  it('oposto maior cancela uma promoção PENDENTE (reject_pending_promotion) em vez de deixá-la solta', async () => {
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_1h', cascade: '1h_5m', side: 'BUY', status: 'SIGNAL_CONFIRMED', promotion_status: 'PENDING_15M',
+      promotion_candidate_at: '2026-07-16T11:00:00.000Z',
+    }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData({ rf: { filterValue: 90, direction: -1, signal: 'none', highBand: 105, lowBand: 95, condIni: false } }) };
+
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeRfSignal({ signal_type: 'SELL', dedup_key: 'sig_rf_opp_pending' })],
+    });
+
+    const op = backend._get('TradeOperation', 'op_1h');
+    expect(op.status).toBe('SIGNAL_CONFIRMED'); // não invalida
+    expect(op.promotion_status).toBe('REJECTED');
+  });
+
+  it('CAS rejeitado durante a arbitragem não lança ReferenceError e não corrompe a operação', async () => {
+    // Reproduz o bug relatado em auditoria externa: quando transitionTradeOp
+    // retorna applied:false (outro worker venceu a corrida entre a leitura
+    // de activeOp e esta escrita), o log da rejeição usava uma variável
+    // (`logPayload`) nunca declarada no escopo, lançando ReferenceError bem
+    // no caminho que deveria só REGISTRAR a rejeição. Força a rejeição
+    // deterministicamente substituindo transitionTradeOp, em vez de tentar
+    // cronometrar uma corrida real.
+    backend._seed('TradeOperation', makeOp({ id: 'op_1h', cascade: '1h_5m', side: 'BUY', status: 'RUNNER_ACTIVE', score: 60 }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbPromoteMinScore: 75 });
+    const results = { '4h': makeTfData() };
+
+    const realTransition = backend.tradeOps.transitionTradeOp;
+    backend.tradeOps.transitionTradeOp = vi.fn(async () => ({ applied: false, currentStatus: 'TP2_HIT' }));
+    try {
+      await expect(
+        persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ context: { score: 80 } })] })
+      ).resolves.not.toThrow();
+    } finally {
+      backend.tradeOps.transitionTradeOp = realTransition;
+    }
+
+    // Nenhuma segunda operação foi criada (a arbitragem nunca cria op).
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+
+    const logs = await backend.entities.SystemLog.filter({});
+    const casLog = logs.find(l => l.details?.reason === 'arbitration_cas_rejected');
+    expect(casLog).toBeTruthy(); // o log de rejeição foi produzido com sucesso, sem exceção
+    expect(casLog.details.candidate_signal).toBe('sig_rf_arb'); // logPayload real, não undefined
+    expect(casLog.details.current_status).toBe('TP2_HIT');
+  });
+
+  it('operação que virou terminal antes do CAS de confirmação nunca recebe promoção (guarda estrutural — CAS)', async () => {
+    // Simula "encerrada durante o retry": ativeOp foi lido como
+    // SIGNAL_CONFIRMED+PENDING_15M, mas um price-check concorrente já
+    // fechou a operação (STOP_HIT) antes do write de confirmação da
+    // promoção. Exercita a mesma garantia genérica de opTransition.test.js,
+    // mas contra o formato exato do patch de promoção.
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_1h', cascade: '1h_5m', side: 'BUY', status: 'STOP_HIT',
+      promotion_status: 'PENDING_15M',
+    }));
+    const result = await backend.tradeOps.transitionTradeOp('op_1h', 'SIGNAL_CONFIRMED', {
+      promotion_status: 'CONFIRMED', trade_mode: 'PROMOTED_4H', management_timeframe: '4h',
+    }, { assetId: 'asset1' });
+
+    expect(result.applied).toBe(false);
+    const op = backend._get('TradeOperation', 'op_1h');
+    expect(op.status).toBe('STOP_HIT'); // não regride
+    expect(op.promotion_status).toBe('PENDING_15M'); // nunca virou CONFIRMED numa op já terminal
+  });
+
+  it('duas execuções concorrentes (dois candidatos 4H diferentes) nunca criam uma segunda operação', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_1h', cascade: '1h_5m', side: 'BUY', score: 60 }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbPromoteMinScore: 75 });
+    const results = { '4h': makeTfData() };
+
+    // Duas passadas "simultâneas" do scanner (ex.: browser + cron), cada
+    // uma vendo um candidato 4H diferente qualificado para promoção. Como o
+    // CAS do transitionTradeOp protege por `status` (que este patch não
+    // altera), ambas as escritas podem passar — last-write-wins nos
+    // METADADOS do pendente, igual ao já documentado para current_stop em
+    // opTransition.js. O que nunca pode acontecer é uma segunda operação.
+    await Promise.all([
+      persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ dedup_key: 'sig_rf_race_a', context: { score: 80 } })] }),
+      persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ dedup_key: 'sig_rf_race_b', context: { score: 85 } })] }),
+    ]);
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1); // nunca duplica, não importa a corrida
+    expect(['PENDING_15M']).toContain(ops[0].promotion_status); // estado único e válido, não corrompido
+  });
+
+  it('retry do mesmo sinal 4H é deduplicado — não reinicia a janela do pendente', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_1h', cascade: '1h_5m', side: 'BUY', score: 60 }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbPromoteMinScore: 75 });
+    const results = { '4h': makeTfData() };
+    const signal = makeRfSignal({ context: { score: 80 } });
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal] });
+    const firstCandidateAt = backend._get('TradeOperation', 'op_1h').promotion_candidate_at;
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal] }); // mesmo dedup_key
+    const secondCandidateAt = backend._get('TradeOperation', 'op_1h').promotion_candidate_at;
+
+    expect(secondCandidateAt).toBe(firstCandidateAt); // a segunda passada nem chegou a re-avaliar (SignalEvent.createUnique bloqueia antes)
+  });
+
+  it('logs de arbitragem incluem IDs correlacionáveis (arbitration_version/arbitration_event_id)', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_4h', cascade: '4h_15m', side: 'BUY' }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig();
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const logs = await backend.entities.SystemLog.filter({});
+    const entry = logs.find(l => l.details?.arbitration_outcome === 'continuation_confirmation');
+    expect(entry.details.arbitration_version).toBe(1);
+    expect(entry.details.arbitration_event_id).toBe('sig_smc_arb::op_4h');
+    expect(entry.details.relation_direction).toBe('same');
+    expect(entry.details.relation_tf).toBe('smaller');
+  });
+
+  it('uma entrada nova (sem operação ativa) registra rr_gate_mode/rr_target_basis honestamente', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, minRR: 1.2 });
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].rr_gate_mode).toBe('CONFIGURED_MULTIPLE');
+    expect(ops[0].rr_target_basis).toBe('R_MULTIPLE');
+    expect(ops[0].rr_at_entry).toBeGreaterThan(0);
+  });
+
   // Regressão do comportamento sem sinal concorrente (sem operação ativa):
   // já coberta extensivamente pelo resto da suíte (ex.: "buildTradeOpData —
   // entry into SIGNAL_CONFIRMED" e os describes de criação de op logo
   // acima) — todos continuam passando sem alteração, provando que a
   // arbitragem só entra em jogo quando hasActiveOp já é true.
+});
+
+describe('cross-cascade arbitration — operações ativas duplicadas (anomalia crítica)', () => {
+  it('mais de uma operação ativa para o mesmo ativo suspende arbitragem e criação de novas entradas', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_a', cascade: '1h_5m', side: 'BUY', status: 'SIGNAL_CONFIRMED' }));
+    backend._seed('TradeOperation', makeOp({ id: 'op_b', cascade: '4h_15m', side: 'SELL', status: 'RUNNER_ACTIVE' }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData(), '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({
+      ...makeScanResult({ asset, results, pineConfig }),
+      newSignals: [
+        { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', timeframe: '4h', source: 'range_filter', dedup_key: 'sig_rf_dup', price_at_signal: 100, context: { score: 90 } },
+      ],
+    });
+
+    // Nem op_a nem op_b foram alteradas — nenhuma arbitragem rodou.
+    expect(backend._get('TradeOperation', 'op_a').status).toBe('SIGNAL_CONFIRMED');
+    expect(backend._get('TradeOperation', 'op_a').arbitration_outcome).toBeUndefined();
+    expect(backend._get('TradeOperation', 'op_b').status).toBe('RUNNER_ACTIVE');
+    expect(backend._get('TradeOperation', 'op_b').arbitration_outcome).toBeUndefined();
+    // Nenhuma terceira operação foi criada.
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(2);
+
+    const logs = await backend.entities.SystemLog.filter({});
+    const critical = logs.find(l => l.details?.reason === 'duplicate_active_ops_detected');
+    expect(critical).toBeTruthy();
+    expect(critical.level).toBe('error');
+    expect(critical.details.op_ids.sort()).toEqual(['op_a', 'op_b']);
+  });
 });
 
 describe('cooldown gates the Telegram notification only, never persistence/entry (P1, known-risks item 28)', () => {

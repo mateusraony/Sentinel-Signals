@@ -24,7 +24,7 @@ import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone, buildOteLeg, classifyZone } from './indicators/smcStructure';
 import { calculateSmcSignalStrength, SMC_SCORE_DEFAULTS } from './indicators/smcConfluence';
-import { planSignalArbitration } from './signalArbitration';
+import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward } from './opExitRules';
 import { hasAssetStateChanged } from './assetStateDiff';
@@ -67,6 +67,16 @@ const SMC_1H_STRUCTURE_CANDLE_LIMIT = 500;
 const SMC_INITIAL_STOP_ATR_MULT = 2.0; // cap do stop estrutural e fallback ATR puro
 const SMC_STOP_BUFFER_ATR = 0.1; // folga além do nível estrutural (evita toque exato no pavio)
 const SMC_STOP_MIN_ATR = 0.5; // piso — ruído do 5m não pode gerar stop mais apertado que isso
+
+// Honest labeling for passesRiskReward (opExitRules.js): under BOTH cascades'
+// current TP model, tp1/tp2 are derived AS `entry ± riskDistance * tp1R/tp2R`
+// — i.e. as a configured multiple of the very risk distance the gate divides
+// by, not a distance to any real chart level (support/resistance/liquidity/
+// swing/FVG/OB). Stamped onto every TradeOperation next to rr_at_entry so the
+// panel/audit trail never implies more than this validates today — see
+// docs/known-risks.md and opExitRules.js's own comment on passesRiskReward.
+const RR_GATE_MODE = 'CONFIGURED_MULTIPLE';
+const RR_TARGET_BASIS = 'R_MULTIPLE';
 
 // Review do Codex (PR #58): `??` trata 0/negativo como override "presente",
 // mas um período <= 0 passado pra RSI/EMA produz NaN/lixo — e o próprio
@@ -225,15 +235,26 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
   const tp1 = isBuy ? entry + riskR * tp1R : entry - riskR * tp1R;
   const tp2 = isBuy ? entry + riskR * tp2R : entry - riskR * tp2R;
 
+  const entryScore = sig.context?.score || 0;
+
   return {
     symbol: sig.symbol,
     asset_id: sig.asset_id,
     timeframe: '15m',
     signal_timeframe: '4h',
     cascade: '4h_15m',
+    origin_cascade: '4h_15m',
     side: sig.signal_type,
     status: 'SIGNAL_CONFIRMED',
-    score: sig.context?.score || 0,
+    // score kept for backward compat (existing UI/backtest readers) —
+    // entry_score is the same value under its unambiguous name, immutable
+    // for audit; current_confidence_score is the ONLY field cross-cascade
+    // arbitration (reduce_confidence) is allowed to move. See
+    // docs/known-risks.md and handleActiveOpArbitration below.
+    score: entryScore,
+    entry_score: entryScore,
+    current_confidence_score: entryScore,
+    confidence_penalty_total: 0,
     entry_price: entry,
     atr_value: tf4hData.atrValue,
     initial_stop: initialStop,
@@ -436,6 +457,13 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
   const riskR = Math.abs(entry - initialStop);
   const tp1 = isBuy ? entry + riskR * tp1R : entry - riskR * tp1R;
   const tp2 = isBuy ? entry + riskR * tp2R : entry - riskR * tp2R;
+  // Base score already reflects 1h structure/EMA/RF/volume/alignment
+  // (calculateSmcSignalStrength at signal emission, above); the 5m sweep
+  // trigger is only known now, so its weight is added here instead of
+  // recomputing the whole score from scratch — reuses the same weight
+  // config used at emission.
+  const entryScore = Math.min(100, (sig.context?.score || 0)
+    + (confirmation5m?.trigger === 'sweep' ? (pineConfig.smcScoreSweepWeight ?? SMC_SCORE_DEFAULTS.sweepWeight) : 0));
 
   return {
     symbol: sig.symbol,
@@ -443,15 +471,24 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     timeframe: TF_5M,
     signal_timeframe: '1h',
     cascade: '1h_5m',
+    origin_cascade: '1h_5m',
     side: sig.signal_type,
     status: 'SIGNAL_CONFIRMED',
-    // Base score already reflects 1h structure/EMA/RF/volume/alignment
-    // (calculateSmcSignalStrength at signal emission, above); the 5m sweep
-    // trigger is only known now, so its weight is added here instead of
-    // recomputing the whole score from scratch — reuses the same weight
-    // config used at emission.
-    score: Math.min(100, (sig.context?.score || 0)
-      + (confirmation5m?.trigger === 'sweep' ? (pineConfig.smcScoreSweepWeight ?? SMC_SCORE_DEFAULTS.sweepWeight) : 0)),
+    // score kept for backward compat; entry_score/current_confidence_score
+    // split per docs/known-risks.md — see buildTradeOpData's comment.
+    score: entryScore,
+    entry_score: entryScore,
+    current_confidence_score: entryScore,
+    confidence_penalty_total: 0,
+    // Promotion state machine (1h_5m cascade only — the RF/4h_15m cascade is
+    // already the largest timeframe, nothing "promotes" it). TACTICAL_1H/1h
+    // until a same-direction 4h candidate scores high enough to start
+    // PENDING_15M, and the SAME 15m confirmation the native 4h_15m cascade
+    // requires actually confirms it (scanner.js's promotion-confirmation
+    // retry) — see signalArbitration.js's two-stage promotion doc comment.
+    trade_mode: 'TACTICAL_1H',
+    management_timeframe: '1h',
+    promotion_status: 'NONE',
     entry_price: entry,
     atr_value: tf1hData.atrValue,
     initial_stop: initialStop,
@@ -505,15 +542,26 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
  * 'invalidate'), which also structurally guarantees the stop never regresses
  * (clampMonotonicStop, src/api/entities.js).
  *
+ * "promote" is Stage A only (external audit of PR #78): a qualifying 4h
+ * candidate starts PENDING_15M — it does NOT confirm the promotion, since
+ * this function deliberately never fetches the 15m candle (the active op
+ * blocks the whole retry window anyway, and skipping that candle fetch is
+ * the point of the hasActiveOp early-exit). Stage B (CONFIRMED/EXPIRED) is
+ * resolved separately by the promotion-confirmation retry step in
+ * persistScanResults, which reuses check15mConfirmation — the SAME function
+ * the native 4h_15m cascade requires for a real entry. See
+ * signalArbitration.js's module doc comment for the full two-stage design.
+ *
  * Write economy: SignalEvent.createUnique's dedup (in the caller, before this
  * runs) means a given signal reaches here at most ONCE — repeated scan passes
  * over an already-persisted signal never get this far again (dedupResult.created
  * is false, the caller `continue`s earlier). So a 'none'-action outcome
- * (reinforcement_accepted/rejected, continuation_confirmation, no_change) is
- * logged to SystemLog for the audit trail but does NOT write to the
- * TradeOperation itself — nothing there actually changed, and the decision is
- * already recoverable from the log; every real management change (promote,
- * reduce_confidence, invalidate) does write, exactly once.
+ * (reinforcement_accepted/rejected, continuation_confirmation, no_change,
+ * candidate_below_arbitration_threshold) is logged to SystemLog for the audit
+ * trail but does NOT write to the TradeOperation itself — nothing there
+ * actually changed, and the decision is already recoverable from the log;
+ * every real management change (start_promotion_pending, reduce_confidence,
+ * invalidate, reject_pending_promotion) does write, exactly once.
  *
  * Logs via a direct backend.entities.SystemLog.create — not logInfo/logWarn
  * (src/lib/logger.js) — deliberately: that logger batches/dedups/delays up to
@@ -535,26 +583,42 @@ async function handleActiveOpArbitration({ signal, candidateCascade, activeOp, r
     pineConfig,
   });
 
+  // Built BEFORE the CAS write, and reused (not redeclared) if that write is
+  // rejected below — the exact bug an external audit of PR #78 caught: the
+  // CAS-rejection log used to reference a `logPayload` variable that was
+  // never declared in this function's scope, so the ONE path meant to record
+  // "arbitration lost the race, here's why" instead threw a ReferenceError.
+  const entryScore = activeOp?.entry_score ?? activeOp?.score ?? null;
+  const currentConfidence = activeOp?.current_confidence_score ?? activeOp?.score ?? null;
+  const logPayload = {
+    reason: 'active_op_exists',
+    arbitration_version: ARBITRATION_VERSION,
+    arbitration_event_id: `${signal.dedup_key}::${activeOp?.id ?? 'none'}`,
+    candidate_signal: signal.dedup_key,
+    candidate_cascade: candidateCascade,
+    candidate_side: signal.signal_type,
+    candidate_score: candidateScore,
+    confirmation_checked: false,
+    active_op_id: activeOp?.id ?? null,
+    active_op_cascade: activeOp?.cascade ?? null,
+    active_op_side: activeOp?.side ?? null,
+    active_op_status: activeOp?.status ?? null,
+    active_op_score: activeOp?.score ?? null,
+    active_op_entry_score: entryScore,
+    active_op_current_confidence: currentConfidence,
+    relation_direction: decision.direction,
+    relation_tf: decision.tfRelation,
+    arbitration_outcome: decision.outcome,
+    arbitration_reason: decision.reason,
+  };
+
   await backend.entities.SystemLog.create({
     level: decision.logLevel === 'warn' ? 'warn' : 'info',
     module: 'scanner',
     message: `${signal.symbol} ${candidateCascade} ${signal.signal_type} (score ${candidateScore}) vs. operação ativa ${activeOp?.cascade ?? '?'} ${activeOp?.side ?? '?'} (score ${activeOp?.score ?? 0}) — ${decision.outcome} (${decision.reason})`,
     symbol: signal.symbol,
     timeframe: candidateCascade === '4h_15m' ? '4h' : '1h',
-    details: {
-      reason: 'active_op_exists',
-      candidate_signal: signal.dedup_key,
-      candidate_cascade: candidateCascade,
-      candidate_side: signal.signal_type,
-      candidate_score: candidateScore,
-      confirmation_checked: false,
-      active_op_id: activeOp?.id ?? null,
-      active_op_cascade: activeOp?.cascade ?? null,
-      active_op_side: activeOp?.side ?? null,
-      active_op_score: activeOp?.score ?? null,
-      arbitration_outcome: decision.outcome,
-      arbitration_reason: decision.reason,
-    },
+    details: logPayload,
   });
 
   if (decision.action === 'none' || !activeOp) {
@@ -568,36 +632,56 @@ async function handleActiveOpArbitration({ signal, candidateCascade, activeOp, r
     arbitration_at: now,
   };
 
-  if (decision.action === 'promote') {
-    const tf4h = results['4h'];
-    // tier_time_stop_bars is counted in the OP's OWN signal_timeframe bar
-    // units (1h here) — never flip signal_timeframe to '4h' on promotion,
-    // that would repoint the update loop's results[...] lookup and change
-    // the exit basis for an op whose entry/stop/tp are still 5m/1h-derived.
-    // Convert the 4h tier's bar count to ~equivalent 1h bars (×4) and only
-    // ever LENGTHEN, never shorten, the existing time stop.
-    patch.promoted_at = now;
-    patch.promoted_from_cascade = activeOp.cascade;
-    patch.score_at_promotion_1h = activeOp.score ?? 0;
-    patch.score_at_promotion_4h = candidateScore;
-    patch.tier_time_stop_bars = tf4h?.tier?.timeStopBars != null
-      ? Math.max(activeOp.tier_time_stop_bars ?? 96, tf4h.tier.timeStopBars * 4)
-      : activeOp.tier_time_stop_bars;
+  if (decision.action === 'start_promotion_pending') {
+    // Stage A only — records that the 4h context qualified, WITHOUT
+    // lengthening the time stop or touching trade_mode/management_timeframe
+    // yet. Those only change once Stage B (the retry step below, in
+    // persistScanResults) actually confirms the 15m entry.
+    patch.promotion_status = 'PENDING_15M';
+    patch.promotion_candidate_at = now;
+    patch.promotion_candidate_score_4h = candidateScore;
+    patch.promotion_candidate_signal_id = signal.dedup_key;
   } else if (decision.action === 'reduce_confidence') {
-    patch.score = Math.max(0, (activeOp.score ?? 0) - decision.scorePenalty);
+    // Only current_confidence_score moves — entry_score (and the legacy
+    // `score` alias) stay exactly what they were at entry, forever, for
+    // audit. See docs/known-risks.md and buildTradeOpData's comment.
+    const base = activeOp.current_confidence_score ?? activeOp.entry_score ?? activeOp.score ?? 0;
+    patch.current_confidence_score = Math.min(100, Math.max(0, base - decision.scorePenalty));
+    patch.confidence_penalty_total = (activeOp.confidence_penalty_total ?? 0) + decision.scorePenalty;
+    patch.last_opposing_signal_at = now;
   } else if (decision.action === 'invalidate') {
     patch.status = 'INVALIDATED';
     patch.closed_reason = 'INVALIDATION';
     patch.closed_at = now;
     patch.exit_price = signal.price_at_signal ?? activeOp.entry_price;
+  } else if (decision.action === 'reject_pending_promotion') {
+    // The larger-timeframe context that would have confirmed a pending
+    // promotion just reversed — cancel the pending stage. The operation
+    // itself (status, stop, targets) is untouched; only the promotion state
+    // machine moves, matching the "não invalidar automaticamente" carve-out
+    // for a candidate that isn't opted into arbInvalidateOnOppositeMajor.
+    patch.promotion_status = 'REJECTED';
   }
 
   const { applied, currentStatus } = await backend.tradeOps.transitionTradeOp(activeOp.id, activeOp.status, patch, { assetId: activeOp.asset_id });
   if (!applied) {
-    logWarn('scanner', `Arbitragem (${decision.outcome}) descartada pelo CAS: op ${activeOp.id} (${signal.symbol}) já mudou de ${activeOp.status} para ${currentStatus}`, { ...logPayload, current_status: currentStatus }, { symbol: signal.symbol });
+    await backend.entities.SystemLog.create({
+      level: 'warn',
+      module: 'scanner',
+      message: `Arbitragem (${decision.outcome}) descartada pelo CAS: op ${activeOp.id} (${signal.symbol}) já mudou de ${activeOp.status} para ${currentStatus}`,
+      symbol: signal.symbol,
+      details: { ...logPayload, reason: 'arbitration_cas_rejected', current_status: currentStatus },
+    });
   }
 
-  return { dedup_key: signal.dedup_key, cascade: candidateCascade, outcome: decision.outcome };
+  // Codex review (PR #79): returning the applied patch lets the caller
+  // refresh its local `activeOp` snapshot. Without this, two opposing
+  // candidates landing in the SAME pass (e.g. a 4h_15m one and a 1h_5m one,
+  // both targeting the same active op) would both compute reduce_confidence's
+  // `base`/`confidence_penalty_total` from the same stale pre-pass values —
+  // the second write would overwrite the first's penalty instead of
+  // compounding it, understating how many opposing signals actually fired.
+  return { dedup_key: signal.dedup_key, cascade: candidateCascade, outcome: decision.outcome, applied, patch: applied ? patch : null };
 }
 
 /**
@@ -1049,6 +1133,34 @@ export async function persistScanResults(scanResult) {
   // hasActiveOp remains the actual gate.
   let activeOp = activeOpsAtStart[0] || null;
 
+  // Invariant guard (external audit of PR #78): the whole system is built
+  // around exactly ONE active op per asset (assetActiveOps' single-doc CAS
+  // anchor, src/api/entities.js), so this should be structurally impossible
+  // in normal operation — but a pre-CAS historical record, manual Firestore
+  // edit, or an as-yet-unknown bug could still produce it. Silently picking
+  // activeOpsAtStart[0] in that case would let arbitration/promotion act on
+  // an arbitrary one of several operations nobody chose. Instead: suspend
+  // BOTH arbitration and new-entry creation for this asset (hasActiveOp
+  // already blocks new entries below since it's true whenever length > 0)
+  // and surface it loudly — resolving which op is "real" is a policy
+  // decision for a human, not something this loop should guess at.
+  const duplicateActiveOps = activeOpsAtStart.length > 1;
+  if (duplicateActiveOps) {
+    await backend.entities.SystemLog.create({
+      level: 'error',
+      module: 'scanner',
+      message: `${asset.symbol}: ${activeOpsAtStart.length} operações ativas simultâneas detectadas — invariante de 1 operação por ativo violada. Arbitragem e novas entradas suspensas até resolução manual.`,
+      symbol: asset.symbol,
+      details: {
+        reason: 'duplicate_active_ops_detected',
+        op_ids: activeOpsAtStart.map(o => o.id),
+        op_statuses: activeOpsAtStart.map(o => o.status),
+        op_cascades: activeOpsAtStart.map(o => o.cascade),
+        op_created_dates: activeOpsAtStart.map(o => o.created_date),
+      },
+    });
+  }
+
   // Deduplicate and persist signals
   let persistedSignals = 0;
   // docs/known-risks.md item 38: sampled, not exhaustive — only the entry
@@ -1212,6 +1324,8 @@ export async function persistScanResults(scanResult) {
                   });
                 } else {
                   opData.rr_at_entry = rr.rr1;
+                  opData.rr_gate_mode = RR_GATE_MODE;
+                  opData.rr_target_basis = RR_TARGET_BASIS;
                   const tradeOpId = `trade_${signal.dedup_key}`;
                   const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
                   if (created.created) {
@@ -1234,7 +1348,7 @@ export async function persistScanResults(scanResult) {
                   details: { signal_tf: '4h', direction: signal.signal_type, score: signal.context?.score },
                 });
               }
-            } else {
+            } else if (!duplicateActiveOps) {
               // Candidate passed every 4H gate but the asset already holds an
               // op (possibly from the OTHER cascade — the two share the
               // one-op-per-asset anchor). The 15m confirmation is deliberately
@@ -1246,6 +1360,9 @@ export async function persistScanResults(scanResult) {
                 signal, candidateCascade: '4h_15m', activeOp, results, pineConfig,
               });
               arbitrationOutcomes.push(outcome);
+              // Keep the local snapshot fresh for any FURTHER signal this
+              // same pass (see handleActiveOpArbitration's return comment).
+              if (outcome.applied && outcome.patch) activeOp = { ...activeOp, ...outcome.patch };
             }
           }
         }
@@ -1277,6 +1394,8 @@ export async function persistScanResults(scanResult) {
               });
             } else {
               opData.rr_at_entry = rr.rr1;
+              opData.rr_gate_mode = RR_GATE_MODE;
+              opData.rr_target_basis = RR_TARGET_BASIS;
               const tradeOpId = `trade_smc_${signal.dedup_key}`;
               const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
               if (created.created) {
@@ -1311,15 +1430,120 @@ export async function persistScanResults(scanResult) {
               smc5mZoneRejections.push({ dedup_key: signal.dedup_key, symbol: signal.symbol, signal_type: signal.signal_type, ote_zone: confirmed5m.oteZone });
             }
           }
-        } else {
+        } else if (!duplicateActiveOps) {
           // Same cross-cascade arbitration as the RF block above — 5m
           // confirmation not fetched (see the RF branch for why).
           const outcome = await handleActiveOpArbitration({
             signal, candidateCascade: '1h_5m', activeOp, results, pineConfig,
           });
           arbitrationOutcomes.push(outcome);
+          if (outcome.applied && outcome.patch) activeOp = { ...activeOp, ...outcome.patch };
         }
       }
+    }
+  }
+
+  // ─── Retry: resolve a pending 4h→1h promotion (Stage B) ───
+  // `activeOp` is kept fresh across this pass — the two arbitration call
+  // sites above merge their applied patch back into it (Codex review,
+  // PR #79) — so a promotion that just went PENDING_15M earlier in THIS
+  // same pass is visible here immediately, not deferred to the next pass.
+  //
+  // rejectedPendingThisPass stays as a defensive fallback for the one case
+  // the merge can't cover: a critical_opposite write that itself got
+  // rejected by the CAS (activeOp.promotion_status would still legitimately
+  // read PENDING_15M then, since the REJECTED patch never actually landed).
+  const rejectedPendingThisPass = arbitrationOutcomes.some(o => o.outcome === 'critical_opposite');
+  if (!duplicateActiveOps && !rejectedPendingThisPass && activeOp?.promotion_status === 'PENDING_15M') {
+    const candidateAtMs = activeOp.promotion_candidate_at ? new Date(activeOp.promotion_candidate_at).getTime() : null;
+    const expired = candidateAtMs == null || (Date.now() - candidateAtMs) > 4 * ONE_HOUR_MS;
+
+    if (expired) {
+      await backend.tradeOps.transitionTradeOp(activeOp.id, activeOp.status, {
+        promotion_status: 'EXPIRED',
+      }, { assetId: activeOp.asset_id });
+      await backend.entities.SystemLog.create({
+        level: 'info',
+        module: 'scanner',
+        message: `${activeOp.symbol} promoção 4H pendente expirou sem confirmação 15m — operação segue TACTICAL_1H`,
+        symbol: activeOp.symbol,
+        timeframe: '15m',
+        details: {
+          reason: 'promotion_expired',
+          arbitration_version: ARBITRATION_VERSION,
+          op_id: activeOp.id,
+          promotion_candidate_signal_id: activeOp.promotion_candidate_signal_id ?? null,
+          promotion_candidate_at: activeOp.promotion_candidate_at ?? null,
+        },
+      });
+    } else {
+      // Codex review (PR #79): re-validate the 4h context ITSELF before
+      // confirming, the same way the sibling "pending 4h signal" retry loop
+      // below does (tf4hDir match + regime gate) — this block used to check
+      // ONLY 15m alignment. A genuine directional flip normally also fires a
+      // fresh opposing 4h SignalEvent, already caught above by
+      // critical_opposite/reject_pending_promotion — but a regime-only
+      // failure (ADX weak / Choppiness high) never does, since Range Filter
+      // only emits a signal on a direction CHANGE, not on "conditions
+      // stopped supporting a confident entry". Without this, a stale
+      // qualifying context from hours ago could still confirm a promotion
+      // off a coincidental later 15m bounce, even though the NATIVE
+      // 4h_15m cascade's own gates would reject a fresh entry right now.
+      const tf4h = results['4h'];
+      const sigDir = activeOp.side === 'BUY' ? 1 : -1;
+      const tf4hStillAligned = Boolean(tf4h?.atrValue) && tf4h.rf?.direction === sigDir;
+      const regimeStillOk = tf4hStillAligned && evaluateRegime(tf4h, pineConfig).ok;
+
+      if (tf4hStillAligned && regimeStillOk) {
+        const confirmed15m = await check15mConfirmation(activeOp.symbol, activeOp.side, asset);
+        if (confirmed15m.confirmed) {
+          const now = new Date().toISOString();
+          // Only NOW — Stage B, real 4h context AND 15m confirmation both in
+          // hand — does the promotion actually take effect:
+          // trade_mode/management_timeframe flip, and the time stop
+          // lengthens (never shortens, see the Math.max below).
+          // signal_timeframe is deliberately left untouched (still '1h') —
+          // the update loop uses it to locate results[...] for this op's own
+          // entry/stop/tp math, which stays 5m/1h-derived.
+          const { applied } = await backend.tradeOps.transitionTradeOp(activeOp.id, activeOp.status, {
+            promotion_status: 'CONFIRMED',
+            trade_mode: 'PROMOTED_4H',
+            management_timeframe: '4h',
+            arbitration_outcome: 'promoted',
+            promoted_at: now,
+            promoted_from_cascade: activeOp.cascade,
+            score_at_promotion_1h: activeOp.entry_score ?? activeOp.score ?? 0,
+            score_at_promotion_4h: activeOp.promotion_candidate_score_4h ?? null,
+            promotion_confirmed_at: now,
+            promotion_confirm_candle_time: confirmed15m.entryCandleTime,
+            tier_time_stop_bars: tf4h?.tier?.timeStopBars != null
+              ? Math.max(activeOp.tier_time_stop_bars ?? 96, tf4h.tier.timeStopBars * 4)
+              : activeOp.tier_time_stop_bars,
+          }, { assetId: activeOp.asset_id });
+          if (applied) {
+            await backend.entities.SystemLog.create({
+              level: 'info',
+              module: 'scanner',
+              message: `${activeOp.symbol} promoção 4H confirmada no 15m — gestão passa a ser PROMOTED_4H`,
+              symbol: activeOp.symbol,
+              timeframe: '15m',
+              details: {
+                reason: 'promotion_confirmed',
+                arbitration_version: ARBITRATION_VERSION,
+                op_id: activeOp.id,
+                promotion_candidate_signal_id: activeOp.promotion_candidate_signal_id ?? null,
+                confirm_candle_time: confirmed15m.entryCandleTime,
+              },
+            });
+          }
+        }
+        // Not confirmed yet and still within the window: silent retry, same
+        // write economy as the RF/SMC signal-confirmation retry loops below.
+      }
+      // 4h context no longer aligned/regime-valid: treated exactly like "not
+      // confirmed yet" — stays PENDING_15M, re-evaluated next pass. Never
+      // confirms on stale context, but doesn't reject on a single regime
+      // blip either (ADX/Chop can flicker pass to pass).
     }
   }
 
@@ -1379,6 +1603,8 @@ export async function persistScanResults(scanResult) {
       continue;
     }
     opData.rr_at_entry = rr.rr1;
+    opData.rr_gate_mode = RR_GATE_MODE;
+    opData.rr_target_basis = RR_TARGET_BASIS;
 
     const tradeOpId = `trade_${sig.dedup_key || sig.id}`;
     const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
@@ -1442,6 +1668,8 @@ export async function persistScanResults(scanResult) {
         continue;
       }
       opData.rr_at_entry = rr.rr1;
+      opData.rr_gate_mode = RR_GATE_MODE;
+      opData.rr_target_basis = RR_TARGET_BASIS;
 
       const tradeOpId = `trade_smc_${sig.dedup_key || sig.id}`;
       const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
@@ -1461,8 +1689,12 @@ export async function persistScanResults(scanResult) {
     }
   }
 
-  // Update status of existing active TradeOperations
-  const allActiveOps = await backend.entities.TradeOperation.filter({
+  // Update status of existing active TradeOperations. Skipped entirely when
+  // duplicateActiveOps is true — "não alterar nenhuma das operações" applies
+  // here too, not just to entry creation/arbitration above: with more than
+  // one active op for this asset, this loop can't tell which one is real
+  // either, so touching stop/TP on any of them would be guessing.
+  const allActiveOps = duplicateActiveOps ? [] : await backend.entities.TradeOperation.filter({
     asset_id: asset.id,
     status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'],
   });
