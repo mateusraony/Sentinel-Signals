@@ -133,6 +133,15 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
   // whole replay (same SignalEvent.createUnique dedup smcConfirmedSignalKeys
   // above relies on), so a Map is defensive rather than strictly required.
   const arbitrationOutcomesByKey = new Map();
+  // Fase 2 rodada 1 retest gate (docs/known-risks.md item 40) — same
+  // dedup-by-key/last-write-wins convention as arbitrationOutcomesByKey
+  // above, so a later "retested:true" recorded by the retry loop correctly
+  // overwrites the "pending" outcome the 1st pass recorded for the same
+  // signal. Empty for the whole replay whenever pineConfig.retestEnabled is
+  // off (the default) — nothing ever pushes into it — which is also how the
+  // report below infers whether the flag was on, without backtestEngine.js
+  // needing its own redirected pineParser import.
+  const retestOutcomesByKey = new Map();
 
   installSimClock(fromMs);
   try {
@@ -154,6 +163,9 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
           for (const outcome of (persistResult.arbitrationOutcomes || [])) {
             arbitrationOutcomesByKey.set(outcome.dedup_key, outcome);
           }
+          for (const outcome of (persistResult.retestOutcomes || [])) {
+            retestOutcomesByKey.set(outcome.dedup_key, outcome);
+          }
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
         }
@@ -170,6 +182,7 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
     smcConfirmedSignals: smcConfirmedSignalKeys.size,
     smcRejectedByOteZone: smcOteZoneRejectionKeys.size,
     arbitrationOutcomes: [...arbitrationOutcomesByKey.values()],
+    retestOutcomes: [...retestOutcomesByKey.values()],
   });
 }
 
@@ -179,7 +192,7 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
 // already trusts, not reinvented here. Ops still non-terminal at the cutoff
 // are reported separately, never force-closed and never counted in win/
 // loss/BE (summarizeOps already excludes them via isTerminalStatus).
-export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [] } = {}) {
+export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [] } = {}) {
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
 
@@ -233,6 +246,34 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
         byCascade[cascade][outcome] = (byCascade[cascade][outcome] || 0) + 1;
       }
       return { total: arbitrationOutcomes.length, byOutcome, byCascade };
+    })(),
+    // Fase 2 rodada 1 retest gate (src/lib/indicators/retest.js,
+    // docs/known-risks.md item 40) — opt-in, off by default. `enabled` is
+    // inferred from retestOutcomes being non-empty (nothing is ever pushed
+    // while pineConfig.retestEnabled is false), so a report from a replay
+    // with the flag off reads `{enabled:false, total:0, ...}` — matching the
+    // no-op guarantee the gate has in production. This section is the whole
+    // point of the "compare before activating" workflow: run twice
+    // (--pine-config with/without retestEnabled) and diff this block against
+    // the win-rate/R:R numbers above, per known-risks.md item 40 / the
+    // backtest-usage.md recipe.
+    retest: (() => {
+      const confirmed = retestOutcomes.filter(o => o.retested).length;
+      const barsSum = retestOutcomes.reduce((sum, o) => sum + (o.retested ? (o.barsToConfirm || 0) : 0), 0);
+      const byCascade = {};
+      for (const { cascade, retested } of retestOutcomes) {
+        (byCascade[cascade] ||= { total: 0, confirmed: 0, pending: 0 });
+        byCascade[cascade].total += 1;
+        byCascade[cascade][retested ? 'confirmed' : 'pending'] += 1;
+      }
+      return {
+        enabled: retestOutcomes.length > 0,
+        total: retestOutcomes.length,
+        confirmed,
+        pending: retestOutcomes.length - confirmed,
+        avgBarsToConfirm: confirmed > 0 ? +(barsSum / confirmed).toFixed(1) : null,
+        byCascade,
+      };
     })(),
   };
 }

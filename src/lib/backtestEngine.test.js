@@ -493,6 +493,38 @@ describe('buildReport', () => {
       '1h_5m': { continuation_confirmation: 2 },
     });
   });
+
+  // Fase 2 rodada 1 (docs/known-risks.md item 40) — retest.enabled is
+  // inferred from retestOutcomes being non-empty (nothing is ever pushed by
+  // persistScanResults while pineConfig.retestEnabled is off), so a report
+  // from a replay with the flag off reads exactly like the pre-Fase-2
+  // shape — no separate "enabled" flag needs to be threaded through
+  // buildReport's own params.
+  it('retest defaults to disabled/all-zero when the caller passes nothing (legacy call shape, flag off)', () => {
+    const report = buildReport([], { fromMs: 0, toMs: 1000 });
+    expect(report.retest).toEqual({
+      enabled: false, total: 0, confirmed: 0, pending: 0, avgBarsToConfirm: null, byCascade: {},
+    });
+  });
+
+  it('retest counts confirmed vs pending by cascade and averages barsToConfirm over CONFIRMED outcomes only', () => {
+    const retestOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', retested: true, barsToConfirm: 2 },
+      { dedup_key: 'b', cascade: '4h_15m', retested: true, barsToConfirm: 4 },
+      { dedup_key: 'c', cascade: '4h_15m', retested: false, barsToConfirm: null },
+      { dedup_key: 'd', cascade: '1h_5m', retested: false, barsToConfirm: null },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, retestOutcomes });
+    expect(report.retest.enabled).toBe(true);
+    expect(report.retest.total).toBe(4);
+    expect(report.retest.confirmed).toBe(2);
+    expect(report.retest.pending).toBe(2);
+    expect(report.retest.avgBarsToConfirm).toBe(3); // (2+4)/2 — the pending entries don't dilute the average
+    expect(report.retest.byCascade).toEqual({
+      '4h_15m': { total: 3, confirmed: 2, pending: 1 },
+      '1h_5m': { total: 1, confirmed: 0, pending: 1 },
+    });
+  });
 });
 
 // docs/known-risks.md items 34/35/38: real backtests (BTCUSDT, PENDLEUSDT,

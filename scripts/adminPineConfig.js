@@ -58,6 +58,11 @@ const DEFAULTS = {
   smcScoreVolumeWeight: 15,
   smcScoreAlignmentWeight: 15,
   smcScoreSweepWeight: 10,
+  // Retest confirmation gate (Fase 2 rodada 1, src/lib/indicators/retest.js)
+  // — master flag OFF by default, see docs/known-risks.md item 40.
+  retestEnabled: false,
+  retestToleranceAtrMult: 0.3,
+  retestTouchMode: 'close',
 };
 
 const SYNCED_STRATEGY_KEYS = [
@@ -73,6 +78,7 @@ const SYNCED_STRATEGY_KEYS = [
   'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
   'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
   'smcScoreSweepWeight',
+  'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
 ];
 
 export async function getPineConfig() {

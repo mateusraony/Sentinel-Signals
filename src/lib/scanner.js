@@ -24,6 +24,7 @@ import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone, buildOteLeg, classifyZone } from './indicators/smcStructure';
 import { calculateSmcSignalStrength, SMC_SCORE_DEFAULTS } from './indicators/smcConfluence';
+import { detectRetest } from './indicators/retest';
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward } from './opExitRules';
@@ -428,6 +429,55 @@ async function check5mSmcConfirmation(symbol, direction, legBounds) {
     console.warn(`[5m SMC confirm] ${symbol} fetch failed:`, err.message);
     return noTrigger;
   }
+}
+
+// ─── Fase 2 rodada 1: retest confirmation gate (opt-in, off by default) ───
+// docs/known-risks.md item 40. Called from the 4 entry points below (RF 1st
+// pass + retry, SMC 1st pass + retry) ONLY when pineConfig.retestEnabled is
+// true — the caller is responsible for that check, so the flag stays a true
+// passthrough (zero extra fetchCandles) at every call site when off. Own
+// fetch, independent of check15mConfirmation/check5mSmcConfirmation (same
+// pattern those two already use) — the gate must resolve BEFORE those run,
+// and skips them entirely on this pass when it hasn't confirmed yet, so a
+// pending signal never pays for two fetches on a tick that's going to bail
+// anyway. tolerancePrice is measured in ATR of the CONFIRMATION timeframe
+// (15m/5m), not the signal timeframe (4h/1h) — using the coarser TF's ATR
+// here would produce a disproportionately wide band relative to the candles
+// detectRetest actually scans.
+async function evaluateRetestGate({ symbol, direction, level, signalCandleTime, timeframe, pineConfig }) {
+  const touchMode = pineConfig.retestTouchMode ?? 'close';
+  const notRetested = {
+    retested: false, retestPrice: null, retestCandleTime: null, barsToConfirm: null,
+    reason: 'invalid_params', anchorLevel: level, touchMode,
+  };
+  if (level == null) return notRetested;
+  try {
+    const tfConst = timeframe === '15m' ? TF_15M : TF_5M;
+    const candles = await fetchCandles(symbol, tfConst, 100);
+    const closed = candles.filter(c => c.isClosed);
+    if (closed.length < 15) return { ...notRetested, reason: 'insufficient_data' };
+    const atrValue = calculateATR(closed, pineConfig.atrLen ?? 14);
+    if (!atrValue) return { ...notRetested, reason: 'insufficient_data' };
+    const tolerancePrice = (pineConfig.retestToleranceAtrMult ?? 0.3) * atrValue;
+    const result = detectRetest(closed, { direction, level, signalCandleTime, tolerancePrice, touchMode });
+    return { ...result, anchorLevel: level, touchMode };
+  } catch (err) {
+    console.warn(`[retest gate] ${symbol} fetch failed:`, err.message);
+    return { ...notRetested, reason: 'fetch_error' };
+  }
+}
+
+// Stamps the 6 audit fields onto an already-built opData object (never
+// consumed by stop/TP math — see docs/schema-reference/TradeOperation.jsonc)
+// right before createTradeOpIfNoneActive. Only called on the path where the
+// retest gate actually participated in this entry.
+function stampRetestFields(opData, gate) {
+  opData.retest_gate_enabled = true;
+  opData.retest_anchor_level = gate.anchorLevel;
+  opData.retest_price = gate.retestPrice;
+  opData.retest_candle_time = gate.retestCandleTime;
+  opData.retest_bars_to_confirm = gate.barsToConfirm;
+  opData.retest_touch_mode = gate.touchMode;
 }
 
 /**
@@ -964,6 +1014,20 @@ export async function scanAsset(asset) {
             ote_leg_low: oteLegLow,
             score: smcScore.score,
             reasons: smcScore.reasons,
+            // The level THIS break actually crossed — the protected pivot on
+            // the SAME side as the move (lastSwingHigh for a bullish
+            // BOS/CHoCH, lastSwingLow for bearish). NOT the same value as
+            // structuralLevel in check5mSmcConfirmation (that's the OPPOSITE,
+            // protected pivot used as the stop) nor buildOteLeg's legHigh/Low
+            // (that's the extended breakClose side for the direction that
+            // fired). Fixed once, here, at signal time — same "never
+            // recompute on retry" rule as oteLegHigh/oteLegLow above, so the
+            // Fase 2 rodada 1 retest gate (retest.js) always retests the
+            // level THIS candidate broke, not a level that drifted while it
+            // waited. Null when the protected pivot on that side isn't
+            // confirmed yet (retest gate fails closed on null — see
+            // docs/known-risks.md item 40).
+            smc_broken_level: signalType === 'BUY' ? (r.smc.lastSwingHigh ?? null) : (r.smc.lastSwingLow ?? null),
           },
           dedup_key: `${asset.symbol}_1h_${signalType}_smc_structure_${r.lastCandleTime}`,
         });
@@ -1187,6 +1251,14 @@ export async function persistScanResults(scanResult) {
   // and left otherwise unused by the live scanner itself (audit trail is
   // SystemLog, this array is just for a single-pass summary).
   const arbitrationOutcomes = [];
+  // Fase 2 rodada 1 (docs/known-risks.md item 40) — same purpose/shape
+  // convention as arbitrationOutcomes above, feeding buildReport's `retest`
+  // section (backtestEngine.js). Only pushed from the 1st-pass call sites
+  // (RF/SMC), where the gate is actually evaluated with a fresh dedup_key —
+  // the retry loops re-check the SAME signal's gate silently and don't push
+  // again, so this stays "one entry per candidate signal that ever went
+  // through the gate", not "one per tick".
+  const retestOutcomes = [];
   for (const signal of newSignals) {
     // Cooldown check — a best-effort query, not atomic on its own, but the
     // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
@@ -1314,11 +1386,37 @@ export async function persistScanResults(scanResult) {
             }
 
             if (!hasActiveOp) {
+              // Fase 2 rodada 1 (docs/known-risks.md item 40): off by
+              // default — pineConfig.retestEnabled === false skips this
+              // entirely (retestGate stays null, no extra fetchCandles), and
+              // the block below is byte-identical to pre-Fase-2 behaviour.
+              const retestGate = pineConfig.retestEnabled
+                ? await evaluateRetestGate({
+                    symbol: asset.symbol,
+                    direction: signal.signal_type,
+                    level: signal.context?.rf_value,
+                    signalCandleTime: signal.candle_time,
+                    timeframe: '15m',
+                    pineConfig,
+                  })
+                : null;
+              if (retestGate) retestOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm });
+              if (retestGate && !retestGate.retested) {
+                await backend.entities.SystemLog.create({
+                  level: 'info',
+                  module: 'scanner',
+                  message: `${asset.symbol} 4h ${signal.signal_type} — aguardando reteste do nível ${retestGate.anchorLevel ?? 'n/d'} antes de confirmar no 15m`,
+                  symbol: asset.symbol,
+                  timeframe: '15m',
+                  details: { reason: 'awaiting_retest', retest_reason: retestGate.reason, anchor_level: retestGate.anchorLevel },
+                });
+              } else {
               // 15m confirmation required — no entry without it
               const confirmed15m = await check15mConfirmation(asset.symbol, signal.signal_type, asset);
 
               if (confirmed15m.confirmed) {
                 const opData = buildTradeOpData(signal, tf4hData, pineConfig, confirmed15m);
+                if (retestGate) stampRetestFields(opData, retestGate);
                 const minRR = pineConfig.minRR ?? 1.2;
                 const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
                 if (!rr.pass) {
@@ -1356,6 +1454,7 @@ export async function persistScanResults(scanResult) {
                   details: { signal_tf: '4h', direction: signal.signal_type, score: signal.context?.score },
                 });
               }
+              }
             } else if (!duplicateActiveOps) {
               // Candidate passed every 4H gate but the asset already holds an
               // op (possibly from the OTHER cascade — the two share the
@@ -1384,11 +1483,40 @@ export async function persistScanResults(scanResult) {
       const tf1hData = results['1h'];
       if (tf1hData && tf1hData.atrValue) {
         if (!hasActiveOp) {
+          // Fase 2 rodada 1 (docs/known-risks.md item 40) — same passthrough
+          // guarantee as the RF block above: off by default, zero extra
+          // fetch, byte-identical behaviour when pineConfig.retestEnabled is
+          // false. Anchor is context.smc_broken_level (the swing this
+          // specific BOS/CHoCH crossed) — NOT ote_leg_high/low (the leg's
+          // extended/protected sides) nor structuralLevel from
+          // check5mSmcConfirmation (the OPPOSITE pivot, used as the stop).
+          const retestGate = pineConfig.retestEnabled
+            ? await evaluateRetestGate({
+                symbol: asset.symbol,
+                direction: signal.signal_type,
+                level: signal.context?.smc_broken_level,
+                signalCandleTime: signal.candle_time,
+                timeframe: '5m',
+                pineConfig,
+              })
+            : null;
+          if (retestGate) retestOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm });
+          if (retestGate && !retestGate.retested) {
+            await backend.entities.SystemLog.create({
+              level: 'info',
+              module: 'scanner',
+              message: `${asset.symbol} 1H SMC ${signal.signal_type} — aguardando reteste do nível ${retestGate.anchorLevel ?? 'n/d'} antes de confirmar no 5m`,
+              symbol: asset.symbol,
+              timeframe: '5m',
+              details: { reason: 'awaiting_retest', retest_reason: retestGate.reason, anchor_level: retestGate.anchorLevel },
+            });
+          } else {
           const legBounds = { legHigh: signal.context?.ote_leg_high, legLow: signal.context?.ote_leg_low };
           const confirmed5m = await check5mSmcConfirmation(asset.symbol, signal.signal_type, legBounds);
 
           if (confirmed5m.confirmed) {
             const opData = buildSmcTradeOpData(signal, tf1hData, pineConfig, confirmed5m);
+            if (retestGate) stampRetestFields(opData, retestGate);
             const minRR = pineConfig.minRR ?? 1.2;
             const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
             if (!rr.pass) {
@@ -1437,6 +1565,7 @@ export async function persistScanResults(scanResult) {
             if (confirmed5m.rejectReason === 'ote_zone_unfavorable') {
               smc5mZoneRejections.push({ dedup_key: signal.dedup_key, symbol: signal.symbol, signal_type: signal.signal_type, ote_zone: confirmed5m.oteZone });
             }
+          }
           }
         } else if (!duplicateActiveOps) {
           // Same cross-cascade arbitration as the RF block above — 5m
@@ -1592,11 +1721,36 @@ export async function persistScanResults(scanResult) {
       if (!trendAligned || !zoneOk) continue;
     }
 
+    // Fase 2 rodada 1 (docs/known-risks.md item 40) — off by default, same
+    // passthrough guarantee as the 1st-pass block above. Silent on a miss
+    // (no SystemLog), matching this retry loop's own established pattern
+    // just below (!confirmed.confirmed -> continue with no log) — the 1st
+    // pass already wrote the "awaiting_retest" record once; logging again on
+    // every ~5min retry tick would be exactly the write-per-pending-signal
+    // spam this loop was built to avoid.
+    const retestGate = pineConfig.retestEnabled
+      ? await evaluateRetestGate({
+          symbol: sig.symbol,
+          direction: sig.signal_type,
+          level: sig.context?.rf_value,
+          signalCandleTime: sig.candle_time,
+          timeframe: '15m',
+          pineConfig,
+        })
+      : null;
+    // In-memory only (no Firestore write) — cheap to push every retry tick,
+    // unlike the SystemLog above. backtestEngine.js dedupes by dedup_key,
+    // last-write-wins, so a later "retested:true" here correctly overwrites
+    // the "pending" outcome the 1st pass recorded.
+    if (retestGate) retestOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm });
+    if (retestGate && !retestGate.retested) continue;
+
     // Re-run 15m confirmation
     const confirmed = await check15mConfirmation(sig.symbol, sig.signal_type, asset);
     if (!confirmed.confirmed) continue;
 
     const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed);
+    if (retestGate) stampRetestFields(opData, retestGate);
     const minRR = pineConfig.minRR ?? 1.2;
     const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
     if (!rr.pass) {
@@ -1652,6 +1806,27 @@ export async function persistScanResults(scanResult) {
       const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
       if (tfData1h.smc.trend !== sigDir) continue;
 
+      // Fase 2 rodada 1 (docs/known-risks.md item 40) — off by default;
+      // silent on a miss, same reasoning as the RF retry loop above (the 1st
+      // pass already logged "awaiting_retest" once). Anchor is
+      // context.smc_broken_level, same field the 1st-pass SMC block reads —
+      // legacy signals predating this round have no such field and fail
+      // closed (evaluateRetestGate/detectRetest both return retested:false
+      // on a null level), unlike legBounds' fail-open just below.
+      const retestGate = pineConfig.retestEnabled
+        ? await evaluateRetestGate({
+            symbol: sig.symbol,
+            direction: sig.signal_type,
+            level: sig.context?.smc_broken_level,
+            signalCandleTime: sig.candle_time,
+            timeframe: '5m',
+            pineConfig,
+          })
+        : null;
+      // In-memory only — see the RF retry loop's comment above.
+      if (retestGate) retestOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm });
+      if (retestGate && !retestGate.retested) continue;
+
       // Legacy SignalEvents predating item 38 have no ote_leg_high/low —
       // legBounds resolves to {legHigh: undefined, legLow: undefined},
       // which classifyZone (via check5mSmcConfirmation) already treats as
@@ -1662,6 +1837,7 @@ export async function persistScanResults(scanResult) {
       if (!confirmed.confirmed) continue;
 
       const opData = buildSmcTradeOpData(sig, tfData1h, pineConfig, confirmed);
+      if (retestGate) stampRetestFields(opData, retestGate);
       const minRR = pineConfig.minRR ?? 1.2;
       const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
       if (!rr.pass) {
@@ -1978,7 +2154,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes };
+  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()

@@ -131,6 +131,10 @@
         "ote_leg_low": {
           "type": ["number", "null"],
           "description": "smc_structure signals only — see TradeOperation.ote_leg_low."
+        },
+        "smc_broken_level": {
+          "type": ["number", "null"],
+          "description": "smc_structure signals only — Fase 2 rodada 1 (docs/known-risks.md item 40). The level THIS break actually crossed: lastSwingHigh for a bullish BOS/CHoCH, lastSwingLow for bearish. Different from both ote_leg_high/low (the leg's extended/protected sides, buildOteLeg) and TradeOperation.structural_level (the OPPOSITE protected pivot, used as the stop) — this is the anchor the opt-in retest confirmation gate (src/lib/indicators/retest.js) retests against. Fixed once at signal time, same as ote_leg_high/low; null when the protected pivot on that side wasn't confirmed yet (retest gate fails closed on null, unlike the OTE zone gate's fail-open)."
         }
       }
     },
