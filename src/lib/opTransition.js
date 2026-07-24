@@ -105,6 +105,25 @@ export function groupActiveOpsByAsset(ops) {
     if (!byKey.has(key)) byKey.set(key, []);
     byKey.get(key).push(op);
   }
+
+  // Merge a symbol-fallback group (legacy op missing asset_id) into any
+  // asset-id-keyed group for the SAME symbol. Without this, a legacy op and
+  // a current-schema op for the same underlying asset land under two
+  // different keys (`symbol:BTCUSDT` vs `asset1`) and both read as lone,
+  // "valid" groups — exactly the mixed legacy/current duplicate the symbol
+  // fallback exists to catch (Codex review, PR #80).
+  for (const [key, group] of [...byKey]) {
+    if (!key.startsWith('symbol:')) continue;
+    const symbol = group[0]?.symbol;
+    const assetKey = [...byKey.keys()].find(
+      (k) => k !== key && !k.startsWith('symbol:') && byKey.get(k).some((o) => o.symbol === symbol)
+    );
+    if (assetKey) {
+      byKey.set(assetKey, [...byKey.get(assetKey), ...group]);
+      byKey.delete(key);
+    }
+  }
+
   const validGroups = new Map();
   const duplicateGroups = new Map();
   for (const [key, group] of byKey) {

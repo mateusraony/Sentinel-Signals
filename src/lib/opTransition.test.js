@@ -253,4 +253,25 @@ describe('groupActiveOpsByAsset', () => {
     const { duplicateGroups } = groupActiveOpsByAsset([opA, opB]);
     expect(duplicateGroups.get('symbol:BTCUSDT')).toEqual([opA, opB]);
   });
+
+  // Codex review, PR #80: a legacy op (no asset_id) and a current-schema op
+  // for the SAME symbol used to land under different keys (`symbol:BTCUSDT`
+  // vs `asset1`) and both came back as lone "valid" groups — the mixed
+  // legacy/current duplicate the symbol fallback is supposed to catch.
+  it('merges a legacy symbol-fallback group into an asset-id group for the same symbol', () => {
+    const legacy = { id: 'op_legacy', symbol: 'BTCUSDT', status: 'SIGNAL_CONFIRMED' };
+    const current = { id: 'op_current', asset_id: 'asset1', symbol: 'BTCUSDT', status: 'RUNNER_ACTIVE' };
+    const { validGroups, duplicateGroups } = groupActiveOpsByAsset([legacy, current]);
+    expect(validGroups.size).toBe(0);
+    expect(duplicateGroups.get('asset1').map(o => o.id).sort()).toEqual(['op_current', 'op_legacy']);
+  });
+
+  it('does not merge a legacy symbol group into an unrelated asset-id group for a different symbol', () => {
+    const legacy = { id: 'op_legacy', symbol: 'BTCUSDT', status: 'SIGNAL_CONFIRMED' };
+    const current = { id: 'op_current', asset_id: 'asset1', symbol: 'ETHUSDT', status: 'RUNNER_ACTIVE' };
+    const { validGroups, duplicateGroups } = groupActiveOpsByAsset([legacy, current]);
+    expect(validGroups.get('symbol:BTCUSDT')).toBe(legacy);
+    expect(validGroups.get('asset1')).toBe(current);
+    expect(duplicateGroups.size).toBe(0);
+  });
 });
