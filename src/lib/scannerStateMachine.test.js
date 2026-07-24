@@ -804,6 +804,104 @@ describe('priceCheckActiveOps — price-based transitions', () => {
   });
 });
 
+describe('priceCheckActiveOps — operações ativas duplicadas (guarda estendida, known-risks item 39.1)', () => {
+  it('uma única operação ativa continua sendo processada normalmente', async () => {
+    backend._seed('TradeOperation', makeOp());
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(104);
+    await priceCheckActiveOps();
+    expect(backend._get('TradeOperation', 'op1').status).toBe('RUNNER_ACTIVE');
+  });
+
+  it('duas operações ativas do mesmo ativo não são processadas', async () => {
+    const opA = makeOp({ id: 'op_a', status: 'SIGNAL_CONFIRMED' });
+    const opB = makeOp({ id: 'op_b', status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100 });
+    backend._seed('TradeOperation', opA);
+    backend._seed('TradeOperation', opB);
+    // Preço cruzaria TP1/TP2/stop de qualquer uma das duas — prova que a
+    // ausência de mudança é pela guarda, não por acaso do preço escolhido.
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(200);
+    await priceCheckActiveOps();
+    expect(backend._get('TradeOperation', 'op_a')).toEqual(opA);
+    expect(backend._get('TradeOperation', 'op_b')).toEqual(opB);
+  });
+
+  it('nenhuma das duas duplicadas recebe stop, TP ou mudança de status', async () => {
+    const opA = makeOp({ id: 'op_a', status: 'SIGNAL_CONFIRMED', current_stop: 98 });
+    const opB = makeOp({ id: 'op_b', status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100 });
+    backend._seed('TradeOperation', opA);
+    backend._seed('TradeOperation', opB);
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(97); // cruzaria o stop de op_a
+    await priceCheckActiveOps();
+    const storedA = backend._get('TradeOperation', 'op_a');
+    const storedB = backend._get('TradeOperation', 'op_b');
+    expect(storedA.status).toBe('SIGNAL_CONFIRMED');
+    expect(storedA.current_stop).toBe(98);
+    expect(storedB.status).toBe('RUNNER_ACTIVE');
+    expect(storedB.current_stop).toBe(100);
+  });
+
+  it('outro ativo válido continua sendo processado normalmente na mesma passada', async () => {
+    const opA = makeOp({ id: 'op_a', status: 'SIGNAL_CONFIRMED' });
+    const opB = makeOp({ id: 'op_b', status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100 });
+    const opValid = makeOp({ id: 'op_c', asset_id: 'asset2', symbol: 'ETHUSDT' });
+    backend._seed('TradeOperation', opA);
+    backend._seed('TradeOperation', opB);
+    backend._seed('TradeOperation', opValid);
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(104);
+    await priceCheckActiveOps();
+    expect(backend._get('TradeOperation', 'op_a')).toEqual(opA);
+    expect(backend._get('TradeOperation', 'op_b')).toEqual(opB);
+    expect(backend._get('TradeOperation', 'op_c').status).toBe('RUNNER_ACTIVE');
+  });
+
+  it('grava um log crítico com todos os IDs, status, cascatas e lados envolvidos', async () => {
+    const opA = makeOp({ id: 'op_a', cascade: '4h_15m', side: 'BUY', status: 'SIGNAL_CONFIRMED' });
+    const opB = makeOp({ id: 'op_b', cascade: '1h_5m', side: 'SELL', status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100 });
+    backend._seed('TradeOperation', opA);
+    backend._seed('TradeOperation', opB);
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(104);
+    await priceCheckActiveOps();
+    const logs = await backend.entities.SystemLog.filter({});
+    const critical = logs.find(l => l.details?.reason === 'duplicate_active_ops_detected' && l.details?.source === 'price_check');
+    expect(critical).toBeTruthy();
+    expect(critical.level).toBe('error');
+    expect(critical.details.op_ids.sort()).toEqual(['op_a', 'op_b']);
+    expect(critical.details.op_statuses.sort()).toEqual(['RUNNER_ACTIVE', 'SIGNAL_CONFIRMED']);
+    expect(critical.details.op_cascades.sort()).toEqual(['1h_5m', '4h_15m']);
+    expect(critical.details.op_sides.sort()).toEqual(['BUY', 'SELL']);
+  });
+
+  it('o mesmo conjunto de duplicidade não gera log repetido em passadas seguidas (sem spam)', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_a' }));
+    backend._seed('TradeOperation', makeOp({ id: 'op_b', status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100 }));
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(104);
+    await priceCheckActiveOps();
+    await priceCheckActiveOps();
+    await priceCheckActiveOps();
+    const logs = await backend.entities.SystemLog.filter({});
+    const criticalLogs = logs.filter(l => l.details?.reason === 'duplicate_active_ops_detected' && l.details?.source === 'price_check');
+    expect(criticalLogs).toHaveLength(1);
+  });
+
+  it('um novo conjunto de IDs duplicados (op resolvida manualmente) gera um novo evento', async () => {
+    backend._seed('TradeOperation', makeOp({ id: 'op_a' }));
+    backend._seed('TradeOperation', makeOp({ id: 'op_b', status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100 }));
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(104);
+    await priceCheckActiveOps();
+
+    // "Resolução manual": op_b passa a terminal, uma nova op_c ativa surge —
+    // o conjunto duplicado do ativo1 passa a ser {op_a, op_c}.
+    backend._seed('TradeOperation', { ...backend._get('TradeOperation', 'op_b'), status: 'CLOSED' });
+    backend._seed('TradeOperation', makeOp({ id: 'op_c' }));
+    await priceCheckActiveOps();
+
+    const logs = await backend.entities.SystemLog.filter({});
+    const criticalLogs = logs.filter(l => l.details?.reason === 'duplicate_active_ops_detected' && l.details?.source === 'price_check');
+    expect(criticalLogs).toHaveLength(2);
+    expect(criticalLogs[1].details.op_ids.sort()).toEqual(['op_a', 'op_c']);
+  });
+});
+
 describe('hasActiveTradeOps — browser price-check gate (P1, known-risks item 32)', () => {
   it('finds a genuinely active op even when 50+ newer (terminal) ops were created since', async () => {
     // Reproduces the bug: useAutoScan.js used to read the 50 MOST RECENTLY

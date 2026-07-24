@@ -27,6 +27,7 @@ import { calculateSmcSignalStrength, SMC_SCORE_DEFAULTS } from './indicators/smc
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward } from './opExitRules';
+import { groupActiveOpsByAsset } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -1129,9 +1130,16 @@ export async function persistScanResults(scanResult) {
     status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'],
   });
   let hasActiveOp = activeOpsAtStart.length > 0;
+  // Shared detector (src/lib/opTransition.js) — this query already filters
+  // by this asset's symbol+id, so at most one group ever comes back; the
+  // helper still runs here (rather than a plain length check) so the
+  // duplicate-op RULE lives in exactly one place, shared with
+  // priceCheckActiveOpsInner below.
+  const { validGroups, duplicateGroups } = groupActiveOpsByAsset(activeOpsAtStart);
   // Kept only to enrich the discard log below (which op blocked the entry) —
-  // hasActiveOp remains the actual gate.
-  let activeOp = activeOpsAtStart[0] || null;
+  // hasActiveOp remains the actual gate. null whenever duplicated (see guard
+  // below) — no branch that runs in that case ever reads it.
+  let activeOp = validGroups.size > 0 ? [...validGroups.values()][0] : null;
 
   // Invariant guard (external audit of PR #78): the whole system is built
   // around exactly ONE active op per asset (assetActiveOps' single-doc CAS
@@ -1144,7 +1152,7 @@ export async function persistScanResults(scanResult) {
   // already blocks new entries below since it's true whenever length > 0)
   // and surface it loudly — resolving which op is "real" is a policy
   // decision for a human, not something this loop should guess at.
-  const duplicateActiveOps = activeOpsAtStart.length > 1;
+  const duplicateActiveOps = duplicateGroups.size > 0;
   if (duplicateActiveOps) {
     await backend.entities.SystemLog.create({
       level: 'error',
@@ -2007,6 +2015,36 @@ export async function priceCheckActiveOps() {
   }
 }
 
+// Same duplicate-active-ops invariant as persistScanResults
+// (groupActiveOpsByAsset, src/lib/opTransition.js) applied to this — the
+// OTHER TradeOperation mutator (.claude/rules/trading-engine.md) — loop, so
+// a corrupted asset never gets its price/stop/TP mutated here either, even
+// when the full scan already suspended it. This runs far more often than
+// the full scan (every price-check tick, not ~5min), so the log is written
+// via SystemLog.createUnique keyed by the exact duplicate id set: the same
+// unresolved anomaly returns the existing doc (no new write) tick after
+// tick, and only a CHANGED id set (an op resolved, added, or removed)
+// produces a fresh log entry.
+async function logDuplicateActiveOpsPriceCheck(assetKey, ops) {
+  const sorted = [...ops].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const dedupKey = `duplicate_active_ops::${assetKey}::${sorted.map(o => o.id).join(',')}`;
+  await backend.entities.SystemLog.createUnique(dedupKey, {
+    level: 'error',
+    module: 'scanner',
+    message: `${sorted[0]?.symbol ?? assetKey}: ${sorted.length} operações ativas simultâneas detectadas no price check — atualização de preço/stop/TP suspensa até resolução manual.`,
+    symbol: sorted[0]?.symbol ?? null,
+    details: {
+      reason: 'duplicate_active_ops_detected',
+      source: 'price_check',
+      op_ids: sorted.map(o => o.id),
+      op_statuses: sorted.map(o => o.status),
+      op_cascades: sorted.map(o => o.cascade),
+      op_sides: sorted.map(o => o.side),
+      op_created_dates: sorted.map(o => o.created_date),
+    },
+  });
+}
+
 async function priceCheckActiveOpsInner() {
   // Filtered server-side by status instead of fetching every TradeOperation
   // ever created and discarding most of it client-side — that unfiltered
@@ -2015,14 +2053,26 @@ async function priceCheckActiveOpsInner() {
   const activeOps = await backend.entities.TradeOperation.filter({ status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'] });
   if (activeOps.length === 0) return;
 
-  const symbols = [...new Set(activeOps.map(op => op.symbol))];
+  // Invariant guard (docs/known-risks.md item 39 residual limitation, now
+  // closed): group by asset and never let a duplicated asset's ops reach the
+  // mutation loop below — mirrors persistScanResults exactly, via the same
+  // pure helper, so the two mutator loops can't disagree on what "duplicate"
+  // means. Other (non-duplicated) assets keep being processed normally.
+  const { validGroups, duplicateGroups } = groupActiveOpsByAsset(activeOps);
+  for (const [assetKey, ops] of duplicateGroups) {
+    await logDuplicateActiveOpsPriceCheck(assetKey, ops);
+  }
+  const opsToProcess = [...validGroups.values()];
+  if (opsToProcess.length === 0) return;
+
+  const symbols = [...new Set(opsToProcess.map(op => op.symbol))];
   const prices = {};
   await Promise.all(symbols.map(async sym => {
     try { prices[sym] = await fetchCurrentPrice(sym); }
     catch (e) { logWarn('scanner', `Falha ao buscar preço de ${sym}`, { error: e.message }, { symbol: sym }); }
   }));
 
-  for (const op of activeOps) {
+  for (const op of opsToProcess) {
     const price = prices[op.symbol];
     if (!price) continue;
     // Isolated per-operation — see the same comment in persistScanResults.

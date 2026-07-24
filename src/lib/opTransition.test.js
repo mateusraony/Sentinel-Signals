@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canApplyTransition, clampMonotonicStop, isTerminalStatus, planTradeOpCreation, TERMINAL_STATUSES } from './opTransition.js';
+import { canApplyTransition, clampMonotonicStop, groupActiveOpsByAsset, isTerminalStatus, planTradeOpCreation, TERMINAL_STATUSES } from './opTransition.js';
 
 describe('isTerminalStatus', () => {
   it('recognises every terminal status', () => {
@@ -195,5 +195,62 @@ describe('concurrent transition (in-memory CAS simulation)', () => {
     expect(workerA.applied).toBe(true);
     expect(workerB.applied).toBe(true);
     expect(s.get().current_stop).toBe(95);
+  });
+});
+
+// Shared duplicate-active-op detector — src/lib/opTransition.js, used by both
+// TradeOperation mutator loops (persistScanResults and
+// priceCheckActiveOpsInner, docs/known-risks.md item 39.1). Pure/no I/O:
+// these tests cover the grouping rule itself; scannerStateMachine.test.js
+// covers each loop's own reaction (logging, suspension) to the result.
+describe('groupActiveOpsByAsset', () => {
+  it('puts a single active op for an asset in validGroups, with no duplicates', () => {
+    const op = { id: 'op_a', asset_id: 'asset_1', status: 'SIGNAL_CONFIRMED' };
+    const { validGroups, duplicateGroups } = groupActiveOpsByAsset([op]);
+    expect(validGroups.get('asset_1')).toBe(op);
+    expect(duplicateGroups.size).toBe(0);
+  });
+
+  it('flags two active ops of the same asset as a duplicate group instead of picking one', () => {
+    const opA = { id: 'op_a', asset_id: 'asset_1', status: 'SIGNAL_CONFIRMED' };
+    const opB = { id: 'op_b', asset_id: 'asset_1', status: 'RUNNER_ACTIVE' };
+    const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB]);
+    expect(validGroups.has('asset_1')).toBe(false);
+    expect(duplicateGroups.get('asset_1')).toEqual([opA, opB]);
+  });
+
+  it('never mixes different assets into the same group', () => {
+    const opA = { id: 'op_a', asset_id: 'asset_1', status: 'SIGNAL_CONFIRMED' };
+    const opB = { id: 'op_b', asset_id: 'asset_2', status: 'SIGNAL_CONFIRMED' };
+    const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB]);
+    expect(validGroups.get('asset_1')).toBe(opA);
+    expect(validGroups.get('asset_2')).toBe(opB);
+    expect(duplicateGroups.size).toBe(0);
+  });
+
+  it('produces the same grouping regardless of input order', () => {
+    const opA = { id: 'op_a', asset_id: 'asset_1', status: 'SIGNAL_CONFIRMED' };
+    const opB = { id: 'op_b', asset_id: 'asset_1', status: 'RUNNER_ACTIVE' };
+    const opC = { id: 'op_c', asset_id: 'asset_2', status: 'SIGNAL_CONFIRMED' };
+    const forward = groupActiveOpsByAsset([opA, opB, opC]);
+    const reversed = groupActiveOpsByAsset([opC, opB, opA]);
+    expect([...forward.duplicateGroups.get('asset_1')].map(o => o.id).sort())
+      .toEqual([...reversed.duplicateGroups.get('asset_1')].map(o => o.id).sort());
+    expect(forward.validGroups.get('asset_2')).toEqual(reversed.validGroups.get('asset_2'));
+  });
+
+  it('excludes terminal ops from the active count (a terminal op never counts toward a duplicate)', () => {
+    const live = { id: 'op_a', asset_id: 'asset_1', status: 'SIGNAL_CONFIRMED' };
+    const terminal = { id: 'op_b', asset_id: 'asset_1', status: 'STOP_HIT' };
+    const { validGroups, duplicateGroups } = groupActiveOpsByAsset([live, terminal]);
+    expect(validGroups.get('asset_1')).toBe(live);
+    expect(duplicateGroups.size).toBe(0);
+  });
+
+  it('groups legacy ops missing asset_id safely, by symbol, instead of skipping the check', () => {
+    const opA = { id: 'op_a', symbol: 'BTCUSDT', status: 'SIGNAL_CONFIRMED' };
+    const opB = { id: 'op_b', symbol: 'BTCUSDT', status: 'RUNNER_ACTIVE' };
+    const { duplicateGroups } = groupActiveOpsByAsset([opA, opB]);
+    expect(duplicateGroups.get('symbol:BTCUSDT')).toEqual([opA, opB]);
   });
 });
