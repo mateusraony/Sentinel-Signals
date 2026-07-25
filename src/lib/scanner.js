@@ -502,7 +502,16 @@ function evaluateDisplacementGate({ closedCandles, entryCandleTime, pineConfig }
   const minVolumeRatio = pineConfig.displacementMinVolumeRatio ?? null;
   const triggerCandle = closedCandles?.find(c => c.closeTime === new Date(entryCandleTime).getTime())
     ?? closedCandles?.[closedCandles.length - 1] ?? null;
-  const atrValue = closedCandles ? calculateATR(closedCandles, pineConfig.atrLen ?? 14) : null;
+  // Clamp to what closedCandles actually holds: check5mSmcConfirmation
+  // fetches a fixed ~150-candle window sized for its OWN sweep/structure
+  // needs, not for an arbitrary configured ATR period. calculateATR needs
+  // period+1 candles and silently returns 0 otherwise, which detectDisplacement
+  // then reads as invalid_params — rejecting every entry regardless of body
+  // size whenever pineConfig.atrLen exceeds what's available (plausible: the
+  // project's own Pine reference uses ATR(200) for Order Block confirmation
+  // elsewhere). Codex review, PR #82.
+  const atrPeriod = closedCandles ? Math.min(pineConfig.atrLen ?? 14, closedCandles.length - 1) : null;
+  const atrValue = closedCandles && atrPeriod ? calculateATR(closedCandles, atrPeriod) : null;
   let volumeMa = null;
   if (minVolumeRatio != null && closedCandles) {
     const volPeriod = pineConfig.volLen ?? 20;

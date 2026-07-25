@@ -1817,6 +1817,27 @@ describe('Fase 2 rodada 2 — gatilho de deslocamento (opt-in, SMC 1h→5m only,
     expect(op.displacement_min_volume_ratio).toBeNull();
   });
 
+  // Codex review (PR #82): check5mSmcConfirmation fetches a fixed
+  // ~150-candle window sized for its OWN sweep/structure needs — a
+  // pineConfig.atrLen configured larger than that (plausible: the project's
+  // own Pine reference uses ATR(200) for Order Block confirmation
+  // elsewhere) used to make calculateATR silently return 0, which
+  // detectDisplacement read as invalid_params — rejecting every SMC entry
+  // regardless of body size. evaluateDisplacementGate must clamp the
+  // period to what closedCandles actually holds instead.
+  it('atrLen maior que o histórico disponível não trava o gate em invalid_params (clampado ao que o candle set tem)', async () => {
+    fetchCandles.mockResolvedValue(displacementCandles5m({ finalBody: 3.6 }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ displacementEnabled: true, displacementBodyAtrMult: 1.5, atrLen: 200 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].displacement_gate_enabled).toBe(true);
+  });
+
   it('gate ligado com volume exigido: corpo ok mas volume insuficiente -> nenhuma operação criada', async () => {
     fetchCandles.mockResolvedValue(displacementCandles5m({ finalBody: 3.6, finalVolume: 50 })); // volume abaixo da média (100)
     const asset = makeAsset({ smc_enabled: true });
