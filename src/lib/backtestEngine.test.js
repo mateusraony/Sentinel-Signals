@@ -565,6 +565,32 @@ describe('buildReport', () => {
     });
   });
 
+  // Fase 4 (docs/known-risks.md item 43) — mesma convenção enabled-inferido-
+  // de-array-não-vazio. Com os pesos do score em 0, ESTA seção é o único
+  // efeito observável de ligar smcObFvgEnabled.
+  it('smcObFvg defaults to disabled/all-zero when the caller passes nothing (legacy call shape, flag off)', () => {
+    const report = buildReport([], { fromMs: 0, toMs: 1000 });
+    expect(report.smcObFvg).toEqual({
+      enabled: false, total: 0, obActive: 0, fvgActive: 0, both: 0, neither: 0,
+    });
+  });
+
+  it('smcObFvg conta OB/FVG ativos, a interseção e os sinais sem nenhum dos dois', () => {
+    const smcObFvgOutcomes = [
+      { dedup_key: 'a', cascade: '1h_5m', obActive: true, fvgActive: true },
+      { dedup_key: 'b', cascade: '1h_5m', obActive: true, fvgActive: false },
+      { dedup_key: 'c', cascade: '1h_5m', obActive: false, fvgActive: true },
+      { dedup_key: 'd', cascade: '1h_5m', obActive: false, fvgActive: false },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, smcObFvgOutcomes });
+    expect(report.smcObFvg.enabled).toBe(true);
+    expect(report.smcObFvg.total).toBe(4);
+    expect(report.smcObFvg.obActive).toBe(2);
+    expect(report.smcObFvg.fvgActive).toBe(2);
+    expect(report.smcObFvg.both).toBe(1);
+    expect(report.smcObFvg.neither).toBe(1);
+  });
+
   it('smcRegime counts passed vs rejected and tallies rejection reasons (adx-only, chop-only, both)', () => {
     const smcRegimeOutcomes = [
       { dedup_key: 'a', cascade: '1h_5m', ok: true, adxOk: true, chopOk: true },
@@ -629,6 +655,76 @@ describe('runBacktest — smcDiagnostics answers "why zero SMC ops?" with real c
       rejectedByOteZone: 0,
       tradeOpsCreated: 0,
     });
+  });
+
+  // Fase 4 (docs/known-risks.md item 43) — prova de wiring fim a fim contra o
+  // scanAsset/persistScanResults REAIS, reusando o mesmo evento de estrutura
+  // conhecido (barra 418) do teste acima: com smcObFvgEnabled ligado, o sinal
+  // emitido tem que carregar ob_active/fvg_active e alimentar report.smcObFvg.
+  it('smcObFvg: com o flag ligado, o sinal SMC emitido carrega ob_active/fvg_active', async () => {
+    const candles = goldenCandles(800);
+    getPineConfig.mockResolvedValue({ ...basePineConfig(), smcObFvgEnabled: true });
+    const store = new Map([[`TESTUSDT:1h`, candles]]);
+    fetchCandles.mockImplementation(async (sym, tf, limit) =>
+      sliceClosedAsOf(store.get(`${sym}:${tf}`) || [], simNow(), limit));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const asset = makeAsset({
+      symbol: 'TESTUSDT',
+      smc_enabled: true,
+      timeframes_enabled: { '1h': true, '4h': false, '1d': false },
+    });
+
+    const ONE_H = 60 * 60 * 1000;
+    const report = await runBacktest({
+      assets: [asset], backend, fromMs: 0, toMs: 425 * ONE_H, stepMs: ONE_H,
+    });
+
+    // O mesmo evento único do teste irmão acima, agora medido pela lente da
+    // Fase 4: `enabled` é inferido do array não vazio, e os campos booleanos
+    // são de fato populados (não null) — que é o que o flag entrega.
+    expect(report.smcObFvg.enabled).toBe(true);
+    expect(report.smcObFvg.total).toBe(1);
+
+    const smcSignals = await backend.entities.SignalEvent.filter({ source: 'smc_structure' });
+    expect(smcSignals).toHaveLength(1);
+    const ctx = smcSignals[0].context;
+    // Booleanos de verdade (não null): é isso que ligar o flag entrega.
+    expect(typeof ctx.ob_active).toBe('boolean');
+    expect(typeof ctx.fvg_active).toBe('boolean');
+    // E o relatório tem que refletir exatamente o que o sinal carrega.
+    expect(report.smcObFvg.obActive).toBe(ctx.ob_active ? 1 : 0);
+    expect(report.smcObFvg.fvgActive).toBe(ctx.fvg_active ? 1 : 0);
+    expect(report.smcObFvg.neither).toBe(!ctx.ob_active && !ctx.fvg_active ? 1 : 0);
+  });
+
+  it('smcObFvg: com o flag DESLIGADO (default), nada é medido e os campos ficam null', async () => {
+    const candles = goldenCandles(800);
+    getPineConfig.mockResolvedValue(basePineConfig()); // smcObFvgEnabled ausente
+    const store = new Map([[`TESTUSDT:1h`, candles]]);
+    fetchCandles.mockImplementation(async (sym, tf, limit) =>
+      sliceClosedAsOf(store.get(`${sym}:${tf}`) || [], simNow(), limit));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const asset = makeAsset({
+      symbol: 'TESTUSDT',
+      smc_enabled: true,
+      timeframes_enabled: { '1h': true, '4h': false, '1d': false },
+    });
+
+    const ONE_H = 60 * 60 * 1000;
+    const report = await runBacktest({
+      assets: [asset], backend, fromMs: 0, toMs: 425 * ONE_H, stepMs: ONE_H,
+    });
+
+    expect(report.smcObFvg.enabled).toBe(false);
+    expect(report.smcObFvg.total).toBe(0);
+    const smcSignals = await backend.entities.SignalEvent.filter({ source: 'smc_structure' });
+    expect(smcSignals).toHaveLength(1);
+    expect(smcSignals[0].context.ob_active).toBeNull();
+    expect(smcSignals[0].context.fvg_active).toBeNull();
   });
 
   // Codex review on PR #74: scanAsset is stateless and re-evaluates the SAME

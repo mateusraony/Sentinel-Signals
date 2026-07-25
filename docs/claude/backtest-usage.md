@@ -184,6 +184,28 @@ globais, afetam as duas cascatas) em vez de `smcTierEnabled` inteiro. Se
 por `closed_reason` — o Chop Exit passa a valer pra operações SMC junto
 (efeito colateral documentado no item 42, não um bug).
 
+**`report.smcObFvg`** (Fase 4, `docs/known-risks.md` item 43) —
+`{enabled, total, obActive, fvgActive, both, neither}`, só cascata SMC
+(`1h_5m`), medido no momento da EMISSÃO do sinal. **Este relatório é o único
+efeito observável de ligar `smcObFvgEnabled`** — com os pesos de score no
+default (0), o score sai numericamente idêntico ao de antes da Fase 4, de
+propósito (ativação em dois estágios, ver item 43).
+
+```bash
+echo '{"smcObFvgEnabled": true}' > /tmp/with-obfvg.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --smc BTCUSDT,ETHUSDT \
+  --from 2025-02-01T00:00:00Z --to 2025-12-01T00:00:00Z \
+  --pine-config /tmp/with-obfvg.json --out ./report-obfvg.json
+```
+
+Uma rodada só já responde a pergunta do estágio 1: **de quantos sinais SMC o
+OB/FVG estava a favor?** Se `obActive`/`fvgActive` forem ~0% ou ~100% do
+`total`, o componente não discrimina nada e não vale peso. Se ficar num meio
+termo, aí sim compensa o estágio 2 — rodar de novo com
+`smcScoreObWeight`/`smcScoreFvgWeight` > 0 (redistribuindo os outros pesos pra
+continuar somando 100) e comparar win rate/profit factor/expectância de
+`report.byCascade['1h_5m']` contra a rodada de peso 0.
+
 ## O que o replay NÃO cobre (por design, não é lacuna)
 
 - **Preço em tempo real (`priceCheckActiveOps`)** — não há dado de tick num

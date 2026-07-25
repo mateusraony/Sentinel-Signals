@@ -24,6 +24,18 @@ export const SMC_SCORE_DEFAULTS = {
   volumeWeight: 15,
   alignmentWeight: 15,
   sweepWeight: 10,
+  // Fase 4 (docs/known-risks.md item 43) — Order Block / Fair Value Gap.
+  // Nascem em 0 DE PROPÓSITO, não por esquecimento: os 7 pesos acima já somam
+  // exatamente 100 e o score termina em Math.min(100, ...), então qualquer
+  // peso novo sem redistribuir comprime o topo da distribuição — e este score
+  // JÁ é consumido em produção pelos limiares de arbitragem da Fase 1
+  // (arbPromoteMinScore: 75, arbReinforceMinScore: 50). Com peso 0, ligar
+  // pineConfig.smcObFvgEnabled dá medição pura (campos de auditoria + a seção
+  // do backtest) com score byte-idêntico; subir o peso, redistribuindo os
+  // demais para somar 100, é uma segunda decisão deliberada, informada pelo
+  // backtest — mesma cultura "medir antes de ativar" dos itens 40/41/42.
+  obWeight: 0,
+  fvgWeight: 0,
 };
 
 /**
@@ -37,6 +49,11 @@ export const SMC_SCORE_DEFAULTS = {
  * @param {string|null} [params.pdZone] - 'premium'|'discount'|'equilibrium'
  * @param {boolean|null} [params.sweepConfirmed] - null at 1h signal emission
  *   (not known yet), boolean once the 5m confirmation trigger resolves.
+ * @param {boolean|null} [params.obActive] - Fase 4: preço dentro de um Order
+ *   Block válido na direção do sinal. null quando pineConfig.smcObFvgEnabled
+ *   está desligado (não avaliado), diferente de false (avaliado, não ativo).
+ * @param {boolean|null} [params.fvgActive] - Fase 4: existe um Fair Value Gap
+ *   não preenchido na direção do sinal. Mesma convenção null/false acima.
  * @param {Object} [params.weights] - partial override of SMC_SCORE_DEFAULTS
  * @returns {{score:number, strength:string, priority:string, reasons:string[], pdZone:string|null}}
  */
@@ -49,6 +66,8 @@ export function calculateSmcSignalStrength({
   alignmentResult = null,
   pdZone = null,
   sweepConfirmed = null,
+  obActive = null,
+  fvgActive = null,
   weights = {},
 }) {
   // Merged per-key with `??` (not object spread) — a caller passing
@@ -62,6 +81,8 @@ export function calculateSmcSignalStrength({
     volumeWeight: weights.volumeWeight ?? SMC_SCORE_DEFAULTS.volumeWeight,
     alignmentWeight: weights.alignmentWeight ?? SMC_SCORE_DEFAULTS.alignmentWeight,
     sweepWeight: weights.sweepWeight ?? SMC_SCORE_DEFAULTS.sweepWeight,
+    obWeight: weights.obWeight ?? SMC_SCORE_DEFAULTS.obWeight,
+    fvgWeight: weights.fvgWeight ?? SMC_SCORE_DEFAULTS.fvgWeight,
   };
 
   const isBuy = signalType === 'BUY';
@@ -111,6 +132,20 @@ export function calculateSmcSignalStrength({
   if (sweepConfirmed === true) {
     score += w.sweepWeight;
     reasons.push(`Sweep de liquidez confirmado no 5m (+${w.sweepWeight})`);
+  }
+
+  // Order Block / FVG (Fase 4) — dois componentes independentes, espelhando o
+  // Pine real do usuário, que conta ob_*_active e fvg_*_active como 2 dos 7
+  // pontos do seu próprio Confluence Score. Com os pesos no default (0) estes
+  // dois blocos são no-ops aritméticos e nem entram em `reasons` — o score
+  // fica byte-idêntico ao de antes da Fase 4.
+  if (obActive === true && w.obWeight > 0) {
+    score += w.obWeight;
+    reasons.push(`Preço dentro de Order Block (+${w.obWeight})`);
+  }
+  if (fvgActive === true && w.fvgWeight > 0) {
+    score += w.fvgWeight;
+    reasons.push(`Fair Value Gap não preenchido a favor (+${w.fvgWeight})`);
   }
 
   score = Math.min(100, Math.round(score));

@@ -43,6 +43,7 @@ import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice, fetchCandles } from './marketDataProvider';
 import { isTelegramConfigured, notifyNewSignal, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
 import { persistScanResults, priceCheckActiveOps, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, firstPositive, firstPositiveInteger } from './scanner.js';
+import { calculateSmcSignalStrength } from './indicators/smcConfluence.js';
 
 let backend;
 beforeEach(() => {
@@ -2139,6 +2140,77 @@ describe('Fase 3 — tier/regime na cascata SMC (opt-in, docs/known-risks.md ite
     expect(opData.adx_at_entry).toBeUndefined();
     expect(opData.chop_at_entry).toBeNull();
     expect(opData.tier_time_stop_bars).toBe(96);
+  });
+});
+
+// Fase 4 (docs/known-risks.md item 43) — OB/FVG entram no score SMC como
+// informação, nunca como gate. O teste mais importante do bloco é o de
+// ATIVAÇÃO EM DOIS ESTÁGIOS: ligar o flag sozinho (pesos no default 0) tem que
+// deixar o score NUMERICAMENTE IDÊNTICO, só produzindo campos de auditoria.
+describe('Fase 4 — Order Block / FVG no score SMC (opt-in, docs/known-risks.md item 43)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  // buildSmcTradeOpData/persistScanResults leem sinais já prontos; para
+  // exercitar a EMISSÃO (onde OB/FVG entram) o caminho é scanAsset, que é
+  // testado em backtestEngine.test.js. Aqui validamos o contrato do score
+  // diretamente — é onde a regra de peso 0 vive.
+  const baseArgs = {
+    structureType: 'BOS',
+    signalType: 'BUY',
+    rf1hDirection: 1,
+    emaTrend: 'bullish',
+    volumeData: { current: 200, ma: 100 },
+    alignmentResult: { alignment: 'aligned', direction: 'bullish' },
+    pdZone: 'discount',
+  };
+
+  it('flag desligado (obActive/fvgActive null): score idêntico ao de antes da Fase 4', () => {
+    const before = calculateSmcSignalStrength({ ...baseArgs });
+    const withNulls = calculateSmcSignalStrength({ ...baseArgs, obActive: null, fvgActive: null });
+    expect(withNulls.score).toBe(before.score);
+    expect(withNulls.reasons).toEqual(before.reasons);
+  });
+
+  it('ativação em 2 estágios: flag ligado com pesos 0 -> score IDÊNTICO, sem poluir reasons', () => {
+    const off = calculateSmcSignalStrength({ ...baseArgs, obActive: null, fvgActive: null });
+    const measuring = calculateSmcSignalStrength({ ...baseArgs, obActive: true, fvgActive: true });
+    expect(measuring.score).toBe(off.score);
+    expect(measuring.reasons).toEqual(off.reasons);
+  });
+
+  it('com peso configurado, cada componente soma exatamente o seu peso', () => {
+    const base = calculateSmcSignalStrength({ ...baseArgs, obActive: false, fvgActive: false });
+    const withOb = calculateSmcSignalStrength({
+      ...baseArgs, obActive: true, fvgActive: false, weights: { obWeight: 7, fvgWeight: 5 },
+    });
+    const withBoth = calculateSmcSignalStrength({
+      ...baseArgs, obActive: true, fvgActive: true, weights: { obWeight: 7, fvgWeight: 5 },
+    });
+    // baseArgs soma 15+20+15+15+15 = 80, com folga até o teto de 100.
+    expect(withOb.score).toBe(base.score + 7);
+    expect(withBoth.score).toBe(base.score + 12);
+    expect(withBoth.reasons.some(r => r.includes('Order Block'))).toBe(true);
+    expect(withBoth.reasons.some(r => r.includes('Fair Value Gap'))).toBe(true);
+  });
+
+  it('obActive/fvgActive false não somam nada mesmo com peso configurado', () => {
+    const base = calculateSmcSignalStrength({ ...baseArgs, obActive: null, fvgActive: null });
+    const inactive = calculateSmcSignalStrength({
+      ...baseArgs, obActive: false, fvgActive: false, weights: { obWeight: 7, fvgWeight: 5 },
+    });
+    expect(inactive.score).toBe(base.score);
+  });
+
+  it('o teto de 100 continua valendo com os pesos novos', () => {
+    const maxed = calculateSmcSignalStrength({
+      ...baseArgs,
+      structureType: 'CHoCH',
+      sweepConfirmed: true,
+      obActive: true,
+      fvgActive: true,
+      weights: { obWeight: 40, fvgWeight: 40 },
+    });
+    expect(maxed.score).toBe(100);
   });
 });
 

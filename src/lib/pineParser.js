@@ -87,6 +87,24 @@ const DEFAULTS = {
   // too, reusing the same threshold table (no separate 1h calibration).
   // Master flag OFF by default, see docs/known-risks.md item 42.
   smcTierEnabled: false,
+  // Order Block / Fair Value Gap (Fase 4, src/lib/indicators/orderBlock.js +
+  // fvg.js) — informational score inputs, never a gate (the user's own Pine
+  // consumes them the same way, as 2 of 7 components in its Confluence Score).
+  // Master flag OFF by default; the numeric params below mirror the real
+  // Pine's own values. See docs/known-risks.md item 43.
+  smcObFvgEnabled: false,
+  obFvgAtrLen: 50,           // = ND.atr(50) do Pine
+  obMinAtrMult: 0.5,         // = ob_thresh_min (ATR × 0.5)
+  obMaxAtrMult: 2.5,         // = ob_thresh_max (ATR × 2.5)
+  fvgMinAtrMult: 0.5,        // = min_fvg_atr_mult
+  fvgFillTargetRatio: 0.6,   // = fvg_fill_target_ratio (60%, não 50% nem total)
+  // Pesos no score SMC — nascem em 0 DE PROPÓSITO: os 7 pesos existentes já
+  // somam 100 e o score é consumido pelos limiares de arbitragem da Fase 1
+  // (arbPromoteMinScore/arbReinforceMinScore). Ligar o flag primeiro dá
+  // medição pura com score idêntico; subir o peso é decisão separada,
+  // depois de comparar backtests (item 43).
+  smcScoreObWeight: 0,
+  smcScoreFvgWeight: 0,
 };
 
 /**
@@ -218,6 +236,9 @@ const SYNCED_STRATEGY_KEYS = [
   'displacementEnabled', 'displacementBodyAtrMult', 'displacementMinVolumeRatio',
   // SMC tier/regime gate (Fase 3 — tier.js)
   'smcTierEnabled',
+  // Order Block / FVG (Fase 4 — orderBlock.js + fvg.js)
+  'smcObFvgEnabled', 'obFvgAtrLen', 'obMinAtrMult', 'obMaxAtrMult',
+  'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
 ];
 
 // Subset of SYNCED_STRATEGY_KEYS that has no `input.*()` counterpart in the
@@ -242,6 +263,8 @@ const NON_PINE_SYNCED_KEYS = new Set([
   'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
   'displacementEnabled', 'displacementBodyAtrMult', 'displacementMinVolumeRatio',
   'smcTierEnabled',
+  'smcObFvgEnabled', 'obFvgAtrLen', 'obMinAtrMult', 'obMaxAtrMult',
+  'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
 ]);
 
 /**

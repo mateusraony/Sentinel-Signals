@@ -189,6 +189,16 @@ nunca deve receber nova transição.**
   relatórios de backtest com/sem primeiro** — ver `docs/known-risks.md`
   item 42 para o efeito colateral no Chop Exit e a suposição não validada
   sobre a tabela de limiares em 1h.
+- **Order Block / Fair Value Gap** (`src/lib/indicators/orderBlock.js` +
+  `fvg.js`) — Fase 4, **`pineConfig.smcObFvgEnabled` desligado por padrão**.
+  **Informativos: entram no score SMC, NUNCA são gate** — o próprio Pine do
+  usuário os consome assim (4 dos 7 componentes do seu Confluence Score).
+  **Ativação em dois estágios**: ligar o flag com os pesos no default (0) dá
+  medição pura com score byte-idêntico; dar peso é decisão separada, porque os
+  7 pesos existentes já somam 100 e o score alimenta os limiares de arbitragem
+  da Fase 1. FVG é porte fiel; **Order Block é aproximação deliberada** (o
+  original depende de perfil de volume via biblioteca externa inacessível) —
+  ver `docs/known-risks.md` item 43.
 
 ## Regras ao mexer aqui
 

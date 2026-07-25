@@ -38,6 +38,15 @@ Definido por pesquisa de comunidade (fontes no PR que o introduziu):
 - **SMC (BOS/CHoCH/sweep/PD)**: validar por **eventos + não-repaint** (evento
   na barra N idêntico com dados até N e com o dataset completo; barras
   fechadas imutáveis) — nunca por floats.
+- **Order Block / FVG (Fase 4) — NÃO são candidatos a paridade com o
+  TradingView.** FVG é porte fiel da lógica, mas o Order Block é aproximação
+  geométrica **deliberada**: o `track_obs` real roda com
+  `align_edge_to_value_area`/`align_break_price_to_poc`, derivando bordas e
+  nível de invalidação de um perfil de volume (`robbatt/lib_profile/44`)
+  inacessível a este repositório — parte da divergência é impossível de
+  fechar, não questão de esforço. Os testes em `goldenParity.test.js` para
+  esses dois validam causalidade/não-repaint da lógica simplificada contra
+  ela mesma, com `toBe` booleano. Ver `docs/known-risks.md` item 43.
 - **Padrão-ouro real**: CSV oficial do TradingView do usuário em
   `__fixtures__/golden/tv-export-*.csv` ativa o bloco de comparação contra o
   Pine real (procedimento em `docs/claude/golden-tv-export.md`; exige plano
