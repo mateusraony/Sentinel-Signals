@@ -555,6 +555,31 @@ describe('buildReport', () => {
     });
     expect(report.displacement.byReason).toEqual({ body_too_small: 1 });
   });
+
+  // Fase 3 (docs/known-risks.md item 42) — same enabled-inferred-from-non-
+  // empty convention as retest/displacement above.
+  it('smcRegime defaults to disabled/all-zero when the caller passes nothing (legacy call shape, flag off)', () => {
+    const report = buildReport([], { fromMs: 0, toMs: 1000 });
+    expect(report.smcRegime).toEqual({
+      enabled: false, total: 0, passed: 0, rejected: 0, byReason: {},
+    });
+  });
+
+  it('smcRegime counts passed vs rejected and tallies rejection reasons (adx-only, chop-only, both)', () => {
+    const smcRegimeOutcomes = [
+      { dedup_key: 'a', cascade: '1h_5m', ok: true, adxOk: true, chopOk: true },
+      { dedup_key: 'b', cascade: '1h_5m', ok: true, adxOk: true, chopOk: true },
+      { dedup_key: 'c', cascade: '1h_5m', ok: false, adxOk: false, chopOk: true },
+      { dedup_key: 'd', cascade: '1h_5m', ok: false, adxOk: true, chopOk: false },
+      { dedup_key: 'e', cascade: '1h_5m', ok: false, adxOk: false, chopOk: false },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, smcRegimeOutcomes });
+    expect(report.smcRegime.enabled).toBe(true);
+    expect(report.smcRegime.total).toBe(5);
+    expect(report.smcRegime.passed).toBe(2);
+    expect(report.smcRegime.rejected).toBe(3);
+    expect(report.smcRegime.byReason).toEqual({ adx_weak: 1, choppy: 1, adx_and_chop: 1 });
+  });
 });
 
 // docs/known-risks.md items 34/35/38: real backtests (BTCUSDT, PENDLEUSDT,

@@ -145,6 +145,9 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
   // Fase 2 rodada 2 displacement gate (docs/known-risks.md item 41) — same
   // convention as retestOutcomesByKey above. SMC 1h_5m only.
   const displacementOutcomesByKey = new Map();
+  // Fase 3 SMC tier/regime gate (docs/known-risks.md item 42) — same
+  // convention as retestOutcomesByKey above. SMC 1h_5m only.
+  const smcRegimeOutcomesByKey = new Map();
 
   installSimClock(fromMs);
   try {
@@ -172,6 +175,9 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
           for (const outcome of (persistResult.displacementOutcomes || [])) {
             displacementOutcomesByKey.set(outcome.dedup_key, outcome);
           }
+          for (const outcome of (persistResult.smcRegimeOutcomes || [])) {
+            smcRegimeOutcomesByKey.set(outcome.dedup_key, outcome);
+          }
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
         }
@@ -190,6 +196,7 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
     arbitrationOutcomes: [...arbitrationOutcomesByKey.values()],
     retestOutcomes: [...retestOutcomesByKey.values()],
     displacementOutcomes: [...displacementOutcomesByKey.values()],
+    smcRegimeOutcomes: [...smcRegimeOutcomesByKey.values()],
   });
 }
 
@@ -199,7 +206,7 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
 // already trusts, not reinvented here. Ops still non-terminal at the cutoff
 // are reported separately, never force-closed and never counted in win/
 // loss/BE (summarizeOps already excludes them via isTerminalStatus).
-export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [] } = {}) {
+export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [] } = {}) {
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
 
@@ -313,6 +320,28 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
         pending: displacementOutcomes.length - confirmedD,
         avgBodyRatio: confirmedD > 0 ? +(bodyRatioSum / confirmedD).toFixed(2) : null,
         byCascade,
+        byReason,
+      };
+    })(),
+    // Fase 3 SMC tier/regime gate (src/lib/indicators/tier.js,
+    // docs/known-risks.md item 42) — opt-in, off by default, SMC 1h_5m
+    // cascade only. Same `enabled`-inferred-from-non-empty convention as
+    // `retest`/`displacement` above — the number to diff between two
+    // --pine-config runs (with/without smcTierEnabled) before deciding to
+    // activate.
+    smcRegime: (() => {
+      const passed = smcRegimeOutcomes.filter(o => o.ok).length;
+      const byReason = {};
+      for (const { ok, adxOk, chopOk } of smcRegimeOutcomes) {
+        if (ok) continue;
+        const reason = !adxOk && !chopOk ? 'adx_and_chop' : !adxOk ? 'adx_weak' : 'choppy';
+        byReason[reason] = (byReason[reason] || 0) + 1;
+      }
+      return {
+        enabled: smcRegimeOutcomes.length > 0,
+        total: smcRegimeOutcomes.length,
+        passed,
+        rejected: smcRegimeOutcomes.length - passed,
         byReason,
       };
     })(),

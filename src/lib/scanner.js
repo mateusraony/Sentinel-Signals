@@ -65,8 +65,11 @@ const DEFAULT_CANDLE_LIMIT = 150;
 const SMC_1H_STRUCTURE_CANDLE_LIMIT = 500;
 // Fixed constant, deliberately NOT pineConfig.trailAtrMult — that field is
 // reserved for the RF cascade's post-TP1 trailing (see buildTradeOpData's
-// comment on the same mix-up). The SMC cascade has no tier/regime system to
-// derive its own multiplier from yet, so this stays a plain constant.
+// comment on the same mix-up). Fase 3 (known-risks item 42) gave the SMC
+// cascade a tier/regime system too, but deliberately did NOT wire
+// tier.atrStopMult in here — SMC's stop stays structural, tier only feeds
+// entry-gating and tier_time_stop_bars (buildSmcTradeOpData). Stays a plain
+// constant on purpose, not an oversight.
 const SMC_INITIAL_STOP_ATR_MULT = 2.0; // cap do stop estrutural e fallback ATR puro
 const SMC_STOP_BUFFER_ATR = 0.1; // folga além do nível estrutural (evita toque exato no pavio)
 const SMC_STOP_MIN_ATR = 0.5; // piso — ruído do 5m não pode gerar stop mais apertado que isso
@@ -550,8 +553,10 @@ function stampDisplacementFields(opData, gate) {
  * level (sweep wick / protective swing) with an ATR(1h) buffer, floored at
  * SMC_STOP_MIN_ATR and capped at SMC_INITIAL_STOP_ATR_MULT — the old fixed
  * 2×ATR stop remains as cap and as fallback for a missing/invalid level
- * (see computeStructuralStop and known-risks item 11/24). No tier/regime
- * system here (that's specific to the 4h/15m cascade).
+ * (see computeStructuralStop and known-risks item 11/24). Tier/regime
+ * (Fase 3, pineConfig.smcTierEnabled, off by default — known-risks item 42)
+ * feeds ONLY entry-gating and tier_time_stop_bars here — deliberately NOT
+ * this stop calculation, which stays structural regardless of tier.
  */
 export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
   const tp1R = pineConfig.tp1R ?? 1.5;
@@ -618,7 +623,16 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     candle_close_time: tf1hData.lastCandleTime,
     entry_candle_time_5m: confirmation5m?.entryCandleTime,
     origin_1h_price: sig.price_at_signal,
-    tier_time_stop_bars: 96, // ~4 dias em barras de 1h — sem sistema de tier próprio nesta cascata
+    // Fase 3 (docs/known-risks.md item 42): tier/adx_at_entry/chop_at_entry
+    // are the SAME fields buildTradeOpData (RF) already stamps — not new
+    // fields, just also populated here when pineConfig.smcTierEnabled
+    // populated tf1hData.tier in scanAsset. `?? 96` preserves today's exact
+    // literal when the flag is off or tier is unavailable — buildTradeOpData
+    // doesn't need this fallback because tier on 4h is unconditional.
+    tier: tf1hData.tier?.tier,
+    adx_at_entry: tf1hData.adx?.adx,
+    chop_at_entry: tf1hData.chop,
+    tier_time_stop_bars: tf1hData.tier?.timeStopBars ?? 96,
     bias: sig.signal_type === 'BUY' ? 'bullish' : 'bearish',
     structure_type: sig.context?.structure_type,
     pd_zone: sig.context?.pd_zone,
@@ -875,11 +889,17 @@ export async function scanAsset(asset) {
       const atrValue = calculateATR(closedCandles, indicatorParams.atrStopPeriod);
       const lastCandle = closedCandles[closedCandles.length - 1];
 
-      // Tier/regime filters (ADX, Choppiness) are only meaningful on the
-      // 4h timeframe — that's where entries/risk are decided (the 4h
-      // signal + 15m confirmation cascade, kept as-is by design).
+      // Tier/regime filters (ADX, Choppiness) are unconditional on 4h (the
+      // RF cascade's signal timeframe) and, opt-in via pineConfig.smcTierEnabled
+      // (off by default, docs/known-risks.md item 42), on 1h too (the SMC
+      // cascade's signal timeframe) — same functions/threshold table reused
+      // as-is, no separate calibration invented for 1h. Guarded behind the
+      // flag to keep this file's "flag off = zero extra cost" discipline
+      // (retest/displacement follow the same rule) even though this is
+      // CPU-only — 1h candles are already fetched regardless, for the SMC
+      // structure block just below.
       let tier = null, adx = null, chop = null;
-      if (tf === '4h') {
+      if (tf === '4h' || (tf === '1h' && pineConfig.smcTierEnabled)) {
         const atrPctSmooth = calculateAtrPctSmooth(closedCandles, indicatorParams.atrStopPeriod, 20);
         tier = classifyTier(atrPctSmooth, {
           tier2: pineConfig.tier2Threshold ?? 0.8,
@@ -1325,6 +1345,9 @@ export async function persistScanResults(scanResult) {
   // Fase 2 rodada 2 (docs/known-risks.md item 41) — same convention, feeding
   // buildReport's `displacement` section. SMC 1h_5m cascade only.
   const displacementOutcomes = [];
+  // Fase 3 (docs/known-risks.md item 42) — same convention, feeding
+  // buildReport's `smcRegime` section. SMC 1h_5m cascade only.
+  const smcRegimeOutcomes = [];
   for (const signal of newSignals) {
     // Cooldown check — a best-effort query, not atomic on its own, but the
     // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
@@ -1548,6 +1571,26 @@ export async function persistScanResults(scanResult) {
     if (signal.source === 'smc_structure' && asset.smc_enabled) {
       const tf1hData = results['1h'];
       if (tf1hData && tf1hData.atrValue) {
+        // Fase 3 (docs/known-risks.md item 42) — off by default. Reuses the
+        // SAME evaluateRegime the RF cascade already gates entries with
+        // (scanner.js:207-213), now also reading tf1hData.tier/.adx/.chop
+        // (populated in scanAsset only when pineConfig.smcTierEnabled is on —
+        // see the guard change there). Positioned BEFORE hasActiveOp, same as
+        // the RF block above, so a blocked regime also skips cross-cascade
+        // arbitration for this signal — mirrors RF's own behavior exactly.
+        const regime = pineConfig.smcTierEnabled ? evaluateRegime(tf1hData, pineConfig) : { ok: true, adxOk: true, chopOk: true };
+        if (pineConfig.smcTierEnabled) smcRegimeOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk });
+        if (!regime.ok) {
+          await backend.entities.SystemLog.create({
+            level: 'info',
+            module: 'scanner',
+            message: `${asset.symbol} 1H SMC ${signal.signal_type} — regime bloqueado (${!regime.adxOk ? 'ADX fraco' : ''}${!regime.adxOk && !regime.chopOk ? ' + ' : ''}${!regime.chopOk ? 'mercado lateralizado' : ''})`,
+            symbol: asset.symbol,
+            timeframe: '1h',
+            details: { adx: tf1hData.adx?.adx, chop: tf1hData.chop, tier: tf1hData.tier?.tier, adxOk: regime.adxOk, chopOk: regime.chopOk },
+          });
+          continue;
+        }
         if (!hasActiveOp) {
           // Fase 2 rodada 1 (docs/known-risks.md item 40) — same passthrough
           // guarantee as the RF block above: off by default, zero extra
@@ -1896,6 +1939,13 @@ export async function persistScanResults(scanResult) {
       if (!tfData1h || !tfData1h.atrValue || !tfData1h.smc) continue;
       const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
       if (tfData1h.smc.trend !== sigDir) continue;
+
+      // Fase 3 (docs/known-risks.md item 42) — off by default; silent on
+      // reject, same reasoning as the retest/displacement retry loops below
+      // (no SystemLog per ~5min retry tick, 1st pass already logged it once).
+      const regime = pineConfig.smcTierEnabled ? evaluateRegime(tfData1h, pineConfig) : { ok: true, adxOk: true, chopOk: true };
+      if (pineConfig.smcTierEnabled) smcRegimeOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk });
+      if (!regime.ok) continue;
 
       // Fase 2 rodada 1 (docs/known-risks.md item 40) — off by default;
       // silent on a miss, same reasoning as the RF retry loop above (the 1st
@@ -2261,7 +2311,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes };
+  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()

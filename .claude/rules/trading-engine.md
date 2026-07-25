@@ -177,6 +177,18 @@ nunca deve receber nova transição.**
   gate reaproveitar sem `fetchCandles` redundante), ANTES de criar a op.
   **Não ativar sem comparar relatórios de backtest com/sem primeiro** — ver
   `docs/known-risks.md` item 41. Com as duas rodadas, a Fase 2 está completa.
+- **Tier/regime na cascata SMC** (`src/lib/indicators/tier.js` +
+  `scanner.js:evaluateRegime`) — Fase 3, **`pineConfig.smcTierEnabled`
+  desligado por padrão**. Reaproveita o MESMO sistema de tier/ADX/Choppiness
+  que a cascata RF já usa (mesma tabela de limiares, sem calibração nova pra
+  1h) — não é um mecanismo novo, fecha uma assimetria real entre as duas
+  cascatas (SMC nunca teve regime nem tier próprio). Gate posicionado ANTES
+  de `hasActiveOp`, igual à RF, então também bloqueia arbitragem cross-
+  cascade quando reprova. `tier.atrStopMult` continua sem uso em SMC — o
+  stop segue estrutural, nunca ATR-multiple. **Não ativar sem comparar
+  relatórios de backtest com/sem primeiro** — ver `docs/known-risks.md`
+  item 42 para o efeito colateral no Chop Exit e a suposição não validada
+  sobre a tabela de limiares em 1h.
 
 ## Regras ao mexer aqui
 

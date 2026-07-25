@@ -197,15 +197,15 @@
     },
     "adx_at_entry": {
       "type": "number",
-      "description": "ADX value on the 4h timeframe at the moment of entry"
+      "description": "ADX value on the signal timeframe at the moment of entry (4h for the RF cascade, always computed; 1h for the SMC cascade, only when pineConfig.smcTierEnabled is on — Fase 3, docs/known-risks.md item 42, off by default)"
     },
     "chop_at_entry": {
       "type": "number",
-      "description": "Choppiness Index value on the 4h timeframe at the moment of entry"
+      "description": "Choppiness Index value on the signal timeframe at the moment of entry (4h for the RF cascade, always computed; 1h for the SMC cascade, only when pineConfig.smcTierEnabled is on — Fase 3, docs/known-risks.md item 42, off by default)"
     },
     "tier_time_stop_bars": {
       "type": "number",
-      "description": "Time Stop threshold, in candles of `signal_timeframe` (4h for the RF cascade, from the tier classified at entry; 1h for the SMC cascade, fixed at 96) — not recalculated later even if the asset's tier changes"
+      "description": "Time Stop threshold, in candles of `signal_timeframe` (4h for the RF cascade, from the tier classified at entry; 1h for the SMC cascade, tier-derived when pineConfig.smcTierEnabled is on — Fase 3, docs/known-risks.md item 42 — fixed at 96 otherwise) — not recalculated later even if the asset's tier changes"
     },
     "rf_reverse_bars_count": {
       "type": "number",

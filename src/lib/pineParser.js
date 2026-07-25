@@ -82,6 +82,11 @@ const DEFAULTS = {
   displacementEnabled: false,
   displacementBodyAtrMult: 1.5,
   displacementMinVolumeRatio: null,
+  // SMC tier/regime gate (Fase 3, src/lib/indicators/tier.js) — extends the
+  // RF cascade's existing classifyTier/evaluateRegime to the 1h→5m cascade
+  // too, reusing the same threshold table (no separate 1h calibration).
+  // Master flag OFF by default, see docs/known-risks.md item 42.
+  smcTierEnabled: false,
 };
 
 /**
@@ -211,6 +216,8 @@ const SYNCED_STRATEGY_KEYS = [
   'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
   // Displacement candle gate (Fase 2 rodada 2 — displacement.js)
   'displacementEnabled', 'displacementBodyAtrMult', 'displacementMinVolumeRatio',
+  // SMC tier/regime gate (Fase 3 — tier.js)
+  'smcTierEnabled',
 ];
 
 // Subset of SYNCED_STRATEGY_KEYS that has no `input.*()` counterpart in the
@@ -234,6 +241,7 @@ const NON_PINE_SYNCED_KEYS = new Set([
   'smcScoreSweepWeight',
   'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
   'displacementEnabled', 'displacementBodyAtrMult', 'displacementMinVolumeRatio',
+  'smcTierEnabled',
 ]);
 
 /**

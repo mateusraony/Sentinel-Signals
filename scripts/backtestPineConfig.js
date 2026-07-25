@@ -71,6 +71,9 @@ const DEFAULTS = {
   displacementEnabled: false,
   displacementBodyAtrMult: 1.5,
   displacementMinVolumeRatio: null,
+  // SMC tier/regime gate (Fase 3, src/lib/indicators/tier.js) — master flag
+  // OFF by default, see docs/known-risks.md item 42.
+  smcTierEnabled: false,
 };
 
 let overrides = {};
