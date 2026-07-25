@@ -13,13 +13,126 @@
 //   R          = realized / risk;  WIN/LOSS/BE decided by realized result
 //                with an epsilon band (default 0.05R), NEVER by status —
 //                an INVALIDATED op that closed in profit is a WIN.
-// Limitations (accepted — virtual trading, no real fills): no fees, funding
-// or slippage; tp1_hit_price is written by both scanner loops as the
-// THEORETICAL tp1 level, so the partial leg is a no-slippage proxy. A
+// Costs (Fase 5, docs/known-risks.md item 44): fees, slippage and funding ARE
+// deducted, by default, on every surface — panel and backtest alike. Before
+// Fase 5 this module deducted nothing, which made every "compare the backtest
+// before activating" gate in items 40-43 optimistic. The default is the real
+// cost (not zero) on purpose: this module is the single source of truth, and a
+// zero default that each caller had to override would eventually leave one
+// screen showing gross while another shows net — the exact divergence item 22
+// created this module to kill. Pass ZERO_COST explicitly for gross figures.
+// tp1_hit_price is still the THEORETICAL tp1 level written by both scanner
+// loops, so the partial leg carries modelled slippage, not a measured fill. A
 // manually edited exit_price is respected as the user's declared truth.
 import { isTerminalStatus } from './opTransition.js';
 
 const isFinitePrice = (v) => Number.isFinite(v) && v > 0;
+
+const BPS = 10000;
+const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
+
+// Defaults anchored on the user's OWN Pine strategy declaration
+// (src/pages/PineScript.jsx: commission_value = 0.05, slippage = 1) and on
+// Binance USDⓈ-M VIP0 taker (0.05%). Keeping them aligned also keeps the JS
+// replay comparable to the TradingView backtest (.claude/rules/pine-parity.md).
+//
+// Taker on BOTH sides is deliberate and conservative: a signal that fires on
+// candle close and wants to be in the market now is a market order (taker),
+// and a stop triggers into a market order (taker). Only a take-profit is
+// genuinely a resting limit order that could earn the 0.02% maker rate —
+// exposed as feeBpsExit for whoever wants to model it, never assumed.
+//
+// slippageBpsPerSide has NO industry default to inherit: backtesting.py,
+// vectorbt, Backtrader, QuantConnect and freqtrade all default to zero
+// slippage. 1 bp/side is a registered choice for BTC/ETH-class liquidity
+// (~20% of the fee cost), not a convention.
+export const DEFAULT_COST_MODEL = {
+  feeBpsEntry: 5,
+  feeBpsExit: 5,
+  slippageBpsPerSide: 1,
+  fundingBpsPer8h: 1,
+};
+
+// Explicit opt-out — yields the pre-Fase-5 gross numbers. Used by the tests
+// that document the gross formula and by the backtest's --no-costs A/B run.
+export const ZERO_COST = {
+  feeBpsEntry: 0,
+  feeBpsExit: 0,
+  slippageBpsPerSide: 0,
+  fundingBpsPer8h: 0,
+};
+
+function resolveCostModel(model) {
+  if (!model) return DEFAULT_COST_MODEL;
+  return {
+    feeBpsEntry: Number.isFinite(model.feeBpsEntry) ? model.feeBpsEntry : DEFAULT_COST_MODEL.feeBpsEntry,
+    feeBpsExit: Number.isFinite(model.feeBpsExit) ? model.feeBpsExit : DEFAULT_COST_MODEL.feeBpsExit,
+    slippageBpsPerSide: Number.isFinite(model.slippageBpsPerSide)
+      ? model.slippageBpsPerSide : DEFAULT_COST_MODEL.slippageBpsPerSide,
+    fundingBpsPer8h: Number.isFinite(model.fundingBpsPer8h)
+      ? model.fundingBpsPer8h : DEFAULT_COST_MODEL.fundingBpsPer8h,
+  };
+}
+
+// Funding settles at fixed wall-clock boundaries (00:00/08:00/16:00 UTC on
+// Binance) and is charged ONLY if the position is open at that exact instant —
+// close at 07:59 and you pay nothing. So this counts boundaries crossed, it
+// does not prorate by duration. Research (item 44): for positions lasting
+// hours this is 2.5-10% of the fee cost — reported for telemetry, not because
+// it moves a decision. Returns 0 when either timestamp is unusable.
+export function countFundingSettlements(op) {
+  const openedAt = op?.entry_candle_time_15m ?? op?.entry_candle_time_5m ?? op?.candle_close_time ?? op?.created_date;
+  const closedAt = getClosedAt(op);
+  if (!openedAt || !closedAt) return 0;
+  const startMs = new Date(openedAt).getTime();
+  const endMs = new Date(closedAt).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return 0;
+  return Math.floor(endMs / EIGHT_HOURS_MS) - Math.floor(startMs / EIGHT_HOURS_MS);
+}
+
+// Total round-trip cost in PRICE units (always >= 0 — a cost never helps the
+// trader, regardless of side). Fee and slippage are charged per fill on that
+// fill's own notional; the module has no position size, so notional is the
+// fill price and every leg is weighted by its share of the position.
+//
+// Fill count follows the same tp1_hit branch calcRealizedDelta uses: 3 fills
+// with a TP1 partial (entry + partial + runner), 2 without.
+export function calcTradeCost(op, costModel) {
+  const zero = { total: 0, entryCost: 0, exitCost: 0, fundingCost: 0, fills: 0, fundingSettlements: 0 };
+  if (!isClosedOp(op) || !isFinitePrice(op.entry_price)) return zero;
+  const exit = getExitPrice(op);
+  if (exit === null) return zero;
+
+  const m = resolveCostModel(costModel);
+  const entryRate = (m.feeBpsEntry + m.slippageBpsPerSide) / BPS;
+  const exitRate = (m.feeBpsExit + m.slippageBpsPerSide) / BPS;
+
+  const entryCost = op.entry_price * entryRate;
+
+  let exitCost;
+  let fills;
+  const tp1Price = op.tp1_hit ? getTp1Price(op) : null;
+  if (tp1Price !== null) {
+    const { partial, runner } = getWeights(op);
+    exitCost = (partial * tp1Price + runner * exit) * exitRate;
+    fills = 3;
+  } else {
+    exitCost = exit * exitRate;
+    fills = 2;
+  }
+
+  const fundingSettlements = m.fundingBpsPer8h > 0 ? countFundingSettlements(op) : 0;
+  const fundingCost = fundingSettlements * (m.fundingBpsPer8h / BPS) * op.entry_price;
+
+  return {
+    total: entryCost + exitCost + fundingCost,
+    entryCost,
+    exitCost,
+    fundingCost,
+    fills,
+    fundingSettlements,
+  };
+}
 
 export function isClosedOp(op) {
   return isTerminalStatus(op?.status);
@@ -71,46 +184,61 @@ export function getWeights(op) {
 // breakeven, invalidated or time-stopped still keeps the banked partial. If
 // the TP1 price is unrecoverable (corrupted doc) the op degrades to a plain
 // 100%-at-exit result instead of dropping out of the stats entirely.
-function calcRealizedDelta(op) {
+// `costModel` defaults to the real cost (see DEFAULT_COST_MODEL's comment);
+// pass ZERO_COST for the gross result. The cost is subtracted AFTER the signed
+// gross delta, so it always works against the trader on both sides.
+function calcRealizedDelta(op, costModel) {
   if (!isClosedOp(op) || !isFinitePrice(op.entry_price)) return null;
   const exit = getExitPrice(op);
   if (exit === null) return null;
   const sign = op.side === 'SELL' ? -1 : 1;
-  if (op.tp1_hit) {
-    const tp1Price = getTp1Price(op);
-    if (tp1Price !== null) {
-      const { partial, runner } = getWeights(op);
-      return sign * (partial * (tp1Price - op.entry_price) + runner * (exit - op.entry_price));
-    }
+  let gross;
+  const tp1Price = op.tp1_hit ? getTp1Price(op) : null;
+  if (tp1Price !== null) {
+    const { partial, runner } = getWeights(op);
+    gross = sign * (partial * (tp1Price - op.entry_price) + runner * (exit - op.entry_price));
+  } else {
+    gross = sign * (exit - op.entry_price);
   }
-  return sign * (exit - op.entry_price);
+  return gross - calcTradeCost(op, costModel).total;
 }
 
-export function calcRealizedPnlPct(op) {
-  const delta = calcRealizedDelta(op);
+export function calcRealizedPnlPct(op, costModel) {
+  const delta = calcRealizedDelta(op, costModel);
   return delta === null ? null : (delta / op.entry_price) * 100;
 }
 
-export function calcRealizedR(op) {
-  const delta = calcRealizedDelta(op);
+export function calcRealizedR(op, costModel) {
+  const delta = calcRealizedDelta(op, costModel);
   if (delta === null || !isFinitePrice(op.initial_stop)) return null;
   const risk = Math.abs(op.entry_price - op.initial_stop);
   return risk === 0 ? null : delta / risk;
+}
+
+// Cost expressed in R — THE number that decides whether an edge was ever real.
+// A config showing +0.15R expectancy with 0.20R of cost per trade is negative,
+// and before Fase 5 that fact was invisible. Uses the SAME initial-stop risk
+// denominator as calcRealizedR so the two are directly comparable.
+export function calcCostR(op, costModel) {
+  if (!isClosedOp(op) || !isFinitePrice(op.entry_price) || !isFinitePrice(op.initial_stop)) return null;
+  const risk = Math.abs(op.entry_price - op.initial_stop);
+  if (risk === 0) return null;
+  return calcTradeCost(op, costModel).total / risk;
 }
 
 // WIN/LOSS/BE by realized result, preferring R (epsilon band: |r| ≤ 0.05R is
 // a scratch trade). Ops without a usable R (legacy docs missing initial_stop,
 // zero risk) fall back to the same rule over PnL% — never to status-based
 // classification, which is the inconsistency this module removes.
-export function classifyOutcome(op, { epsilonR = 0.05, epsilonPct = 0.1 } = {}) {
+export function classifyOutcome(op, { epsilonR = 0.05, epsilonPct = 0.1, costModel } = {}) {
   if (!isClosedOp(op)) return 'OPEN';
-  const r = calcRealizedR(op);
+  const r = calcRealizedR(op, costModel);
   if (r !== null) {
     if (r > epsilonR) return 'WIN';
     if (r < -epsilonR) return 'LOSS';
     return 'BE';
   }
-  const pnl = calcRealizedPnlPct(op);
+  const pnl = calcRealizedPnlPct(op, costModel);
   if (pnl !== null) {
     if (pnl > epsilonPct) return 'WIN';
     if (pnl < -epsilonPct) return 'LOSS';
@@ -124,7 +252,9 @@ export function classifyOutcome(op, { epsilonR = 0.05, epsilonPct = 0.1 } = {}) 
 // win-rate definition — no per-screen denominators. The equity curve orders
 // by close time (sortBy 'created' opts back into creation order); profitFactor
 // is null when there are no losses (render '∞').
-export function summarizeOps(ops, { epsilonR = 0.05, epsilonPct = 0.1, sortBy = 'closed' } = {}) {
+export function summarizeOps(ops, {
+  epsilonR = 0.05, epsilonPct = 0.1, sortBy = 'closed', costModel, minTrades = 30,
+} = {}) {
   const closed = (ops || []).filter(isClosedOp);
   const keyOf = sortBy === 'created'
     ? (op) => op.created_date ?? ''
@@ -138,11 +268,22 @@ export function summarizeOps(ops, { epsilonR = 0.05, epsilonPct = 0.1, sortBy = 
   let sumWinR = 0; let sumLossR = 0; let winsWithR = 0; let lossesWithR = 0;
   let sumR = 0; let rCounted = 0;
   let cumulativePct = 0; let peak = 0; let maxDrawdownPct = 0;
+  let totalCostPct = 0; let sumCostR = 0; let costRCounted = 0;
+  let sumGrossR = 0; let grossRCounted = 0;
+  const rSamples = [];
 
   for (const op of closed) {
-    const outcome = classifyOutcome(op, { epsilonR, epsilonPct });
-    const pnlPct = calcRealizedPnlPct(op);
-    const r = calcRealizedR(op);
+    const outcome = classifyOutcome(op, { epsilonR, epsilonPct, costModel });
+    const pnlPct = calcRealizedPnlPct(op, costModel);
+    const r = calcRealizedR(op, costModel);
+    // Custo e resultado bruto, medidos em paralelo ao líquido — é a comparação
+    // que mostra quanto da "vantagem" era só ausência de custo (item 44).
+    const cost = calcTradeCost(op, costModel);
+    if (isFinitePrice(op.entry_price)) totalCostPct += (cost.total / op.entry_price) * 100;
+    const costR = calcCostR(op, costModel);
+    if (costR !== null) { sumCostR += costR; costRCounted += 1; }
+    const grossR = calcRealizedR(op, ZERO_COST);
+    if (grossR !== null) { sumGrossR += grossR; grossRCounted += 1; }
     if (outcome === 'UNKNOWN') {
       unknown += 1;
       curve.push({ op, pnlPct: null, r: null, cumulativePct, outcome });
@@ -160,6 +301,7 @@ export function summarizeOps(ops, { epsilonR = 0.05, epsilonPct = 0.1, sortBy = 
     if (r !== null) {
       sumR += r;
       rCounted += 1;
+      rSamples.push(r);
       if (outcome === 'WIN') { sumWinR += r; winsWithR += 1; }
       if (outcome === 'LOSS') { sumLossR += -r; lossesWithR += 1; }
     }
@@ -170,6 +312,29 @@ export function summarizeOps(ops, { epsilonR = 0.05, epsilonPct = 0.1, sortBy = 
   }
 
   const counted = wins + losses + be;
+  const expectancyR = rCounted > 0 ? sumR / rCounted : null;
+
+  // Gate de amostra (Fase 5, item 44). Precisão de uma média escala com 1/√N e
+  // não existe técnica que escape disso: detectar expectância de 0.25R exige
+  // ~181 operações; 0.10R exige ~1.130 (cálculo de poder em known-risks 44).
+  // minTrades=30 é APENAS o limiar do Teorema Central do Limite — o ponto em
+  // que a média amostral fica aproximadamente normal e um IC PODE ser
+  // calculado. NÃO é o ponto em que o IC fica estreito o bastante para
+  // decidir. Um relatório com counted >= 30 e IC cruzando zero continua
+  // inconclusivo, e é isso que `conclusive` reporta.
+  let expectancyRStdErr = null;
+  let expectancyRCI95 = null;
+  if (rCounted > 1 && expectancyR !== null) {
+    const variance = rSamples.reduce((acc, x) => acc + (x - expectancyR) ** 2, 0) / (rCounted - 1);
+    expectancyRStdErr = Math.sqrt(variance / rCounted);
+    expectancyRCI95 = [expectancyR - 1.96 * expectancyRStdErr, expectancyR + 1.96 * expectancyRStdErr];
+  }
+
+  let inconclusiveReason = null;
+  if (counted < minTrades) inconclusiveReason = 'sample_too_small';
+  else if (expectancyRCI95 === null) inconclusiveReason = 'no_r_samples';
+  else if (expectancyRCI95[0] <= 0 && expectancyRCI95[1] >= 0) inconclusiveReason = 'ci_straddles_zero';
+
   return {
     total: closed.length,
     counted,
@@ -183,10 +348,19 @@ export function summarizeOps(ops, { epsilonR = 0.05, epsilonPct = 0.1, sortBy = 
     avgLossPct: losses > 0 ? sumLossPct / losses : 0,
     avgWinR: winsWithR > 0 ? sumWinR / winsWithR : null,
     avgLossR: lossesWithR > 0 ? sumLossR / lossesWithR : null,
-    expectancyR: rCounted > 0 ? sumR / rCounted : null,
+    expectancyR,
     rCounted,
     profitFactor: grossLoss > 0 ? grossProfit / grossLoss : null,
     maxDrawdownPct,
+    // Fase 5 — custo e honestidade estatística.
+    totalCostPct,
+    avgCostR: costRCounted > 0 ? sumCostR / costRCounted : null,
+    grossExpectancyR: grossRCounted > 0 ? sumGrossR / grossRCounted : null,
+    expectancyRStdErr,
+    expectancyRCI95,
+    conclusive: inconclusiveReason === null,
+    inconclusiveReason,
+    minTrades,
     curve,
   };
 }

@@ -14,11 +14,19 @@
 // NOT driven here — there's no tick data in a candle-only backtest, and
 // persistScanResults' candle-based exits are already a conservative
 // approximation of it (worst-case bar range, never faster to exit than live
-// would be). That's a feature for this use case, not a gap: it can only
-// make a backtested win rate look WORSE than live, never inflate it.
+// would be). That specific approximation can only make a backtested win rate
+// look WORSE than live, never inflate it.
+//
+// CORREÇÃO (Fase 5, docs/known-risks.md item 44): a frase acima já foi escrita
+// aqui como se valesse para o replay INTEIRO ("só pode parecer pior, nunca
+// inflado") — e isso era falso. Ela vale só quanto à granularidade de candle.
+// Até a Fase 5 o replay não descontava taxa, slippage nem funding, o que
+// empurra na direção OPOSTA: inflava o resultado. Custos agora são
+// descontados por padrão (tradeMetrics.js DEFAULT_COST_MODEL) e a seção
+// `costs` do relatório mostra o quanto pesam, em % e em R.
 import { scanAsset, persistScanResults } from './scanner.js';
 import { isTerminalStatus } from './opTransition.js';
-import { summarizeOps } from './tradeMetrics.js';
+import { summarizeOps, DEFAULT_COST_MODEL, ZERO_COST } from './tradeMetrics.js';
 
 const RealDate = Date;
 let originalDate = null;
@@ -94,7 +102,7 @@ export function inferStepMs(assets) {
   return (anySmc ? 5 : 15) * 60 * 1000;
 }
 
-export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onStep } = {}) {
+export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onStep, costModel, minTrades } = {}) {
   if (!Array.isArray(assets) || assets.length === 0) {
     throw new Error('runBacktest: assets must be a non-empty array');
   }
@@ -204,6 +212,8 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
     displacementOutcomes: [...displacementOutcomesByKey.values()],
     smcRegimeOutcomes: [...smcRegimeOutcomesByKey.values()],
     smcObFvgOutcomes: [...smcObFvgOutcomesByKey.values()],
+    costModel,
+    minTrades,
   });
 }
 
@@ -213,7 +223,16 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
 // already trusts, not reinvented here. Ops still non-terminal at the cutoff
 // are reported separately, never force-closed and never counted in win/
 // loss/BE (summarizeOps already excludes them via isTerminalStatus).
-export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], smcObFvgOutcomes = [] } = {}) {
+// Ecoa no relatório o modelo de custo efetivamente aplicado, para o JSON ser
+// autoexplicativo meses depois ("este run foi com ou sem custo?").
+function resolveReportCostModel(costModel) {
+  if (!costModel) return { ...DEFAULT_COST_MODEL, applied: true };
+  const isZero = ['feeBpsEntry', 'feeBpsExit', 'slippageBpsPerSide', 'fundingBpsPer8h']
+    .every(k => (costModel[k] ?? DEFAULT_COST_MODEL[k]) === ZERO_COST[k]);
+  return { ...DEFAULT_COST_MODEL, ...costModel, applied: !isZero };
+}
+
+export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], smcObFvgOutcomes = [], costModel, minTrades } = {}) {
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
 
@@ -224,8 +243,12 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
   }
   const cascades = {};
   for (const [cascade, group] of Object.entries(byCascade)) {
-    cascades[cascade] = summarizeOps(group);
+    cascades[cascade] = summarizeOps(group, { costModel, minTrades });
   }
+  // Calculado uma vez e reusado em `overall` e na seção `costs` — as duas
+  // precisam vir do MESMO agregado, senão o veredito de amostra poderia
+  // descrever um conjunto diferente do que o relatório mostra.
+  const overallSummary = summarizeOps(closed, { costModel, minTrades });
 
   return {
     range: {
@@ -235,7 +258,7 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
     },
     totalOps: ops.length,
     stillOpenAtCutoff: stillOpen.length,
-    overall: summarizeOps(closed),
+    overall: overallSummary,
     byCascade: cascades,
     // Answers "why zero SMC (1h_5m) trades?" with real counts instead of an
     // empty byCascade entry — see docs/known-risks.md items 34/35/38.
@@ -375,5 +398,22 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
         neither,
       };
     })(),
+    // Fase 5 (docs/known-risks.md item 44) — o custo que o replay descontou e,
+    // mais importante, o veredito de amostra. `avgCostR` é a linha decisiva:
+    // se ela for da mesma ordem que `overall.expectancyR`, a "vantagem" era
+    // só ausência de custo. `conclusive:false` significa que NENHUMA conclusão
+    // deve ser tirada deste relatório, por mais bonito que o win rate esteja.
+    costs: {
+      model: resolveReportCostModel(costModel),
+      avgCostR: overallSummary.avgCostR,
+      totalCostPct: overallSummary.totalCostPct,
+      grossExpectancyR: overallSummary.grossExpectancyR,
+      netExpectancyR: overallSummary.expectancyR,
+      conclusive: overallSummary.conclusive,
+      inconclusiveReason: overallSummary.inconclusiveReason,
+      expectancyRCI95: overallSummary.expectancyRCI95,
+      countedTrades: overallSummary.counted,
+      minTrades: overallSummary.minTrades,
+    },
   };
 }

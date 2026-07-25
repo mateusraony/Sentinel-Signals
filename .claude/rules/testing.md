@@ -21,6 +21,11 @@ fonte única de métricas de performance (`src/lib/tradeMetrics.js` — PnL
 realizado com parcial, R sobre risco inicial, classificação WIN/LOSS/BE por
 resultado, agregados winRate/profitFactor/expectância/drawdown) com valores
 hand-computed BUY e SELL — ver `docs/known-risks.md` item 22.
+**Desde a Fase 5 (item 44) esse módulo desconta taxa/slippage/funding POR
+PADRÃO**, no painel e no backtest; os testes que documentam a fórmula BRUTA
+passam `ZERO_COST` explicitamente. Ao escrever teste novo ali, decida
+conscientemente qual regime está afirmando — um valor hand-computed sem
+`ZERO_COST` é líquido, não bruto.
 
 `scannerStateMachine.test.js` cobre a **máquina de estados fim a fim** contra
 as funções REAIS do `scanner.js` (`persistScanResults`, `priceCheckActiveOps`,

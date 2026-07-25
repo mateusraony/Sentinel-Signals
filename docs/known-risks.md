@@ -680,9 +680,17 @@ subir (BE-pós-TP1 e INVALIDATED lucrativa viram WIN) e os totais de
 removido em favor do modelo por pernas, estritamente mais correto). É
 mudança de metodologia, não bug.
 
-**Limitações mantidas (aceitas)**: sem taxas, funding ou slippage (trading
-virtual, sem fills reais); perna TP1 a preço teórico; `scanner.js` intocado
-nesta rodada (tudo calculado dos campos já persistidos).
+**Limitações mantidas (aceitas)**: perna TP1 a preço teórico; `scanner.js`
+intocado nesta rodada (tudo calculado dos campos já persistidos).
+
+**SUPERADO pela Fase 5 (item 44)**: este item declarava "sem taxas, funding ou
+slippage (trading virtual, sem fills reais)" como limitação aceita. Deixou de
+valer — `tradeMetrics.js` passou a descontar taxa, slippage e funding **por
+padrão**, no painel e no backtest. A justificativa original ("trading virtual,
+sem fills reais") era coerente enquanto o módulo servia só para exibir
+histórico; deixou de ser quando os relatórios de backtest viraram o critério
+de ativação das Fases 2-4 e o custo omitido passou a inflar exatamente o
+número que decide. Ver item 44.
 
 ## 23. Gaps menores da auditoria externa — fechados (arbitragem entre cascatas observável + corte de escrita por passada)
 
@@ -2364,3 +2372,144 @@ contrato do score — flag off idêntico, **ativação em 2 estágios com score
 idêntico**, peso somando exatamente, `false` não somando, teto de 100);
 `backtestEngine.test.js` (4 testes — seção do relatório vazia/populada e 2 de
 wiring fim a fim contra `scanAsset` real, com o flag ligado e desligado).
+
+## 44. Custos reais (taxa/slippage/funding) e gate de amostra — Fase 5, LIGADO por padrão no painel E no backtest
+
+**Status: LIGADO por padrão** — diferente das Fases 2-4, esta rodada NÃO nasce
+desligada, e por um motivo específico: ela não adiciona um mecanismo novo de
+trading, ela **corrige uma medição que estava errada**. Um flag que deixasse o
+custo desligado por padrão manteria a medição errada como default.
+
+### O problema que motivou a fase
+
+Toda Fase 2, 3 e 4 terminou com a mesma instrução: *"não ative sem comparar os
+relatórios de backtest antes"*. Mas o backtest **não descontava nenhum custo** —
+entrada e saída eram registradas no preço cru do candle. Ou seja: o número que
+decidia toda ativação estava sistematicamente otimista.
+
+**O número que torna isso concreto**: taxa taker Binance USDⓈ-M VIP0 = 0,05% por
+lado → 10 bps de ida e volta. Isso só vira decisão quando expresso **em R**:
+com stop a 1% do preço de entrada são 0,10 R por operação; com stop a 0,5%
+(entradas apertadas de 5m) são **0,20 R**. Uma configuração mostrando +0,15 R de
+expectância no backtest antigo é, na prática, **negativa**. Daí `avgCostR` ser a
+métrica central desta fase, e não o custo em %.
+
+### Pesquisa antes de implementar
+
+- **Taxas**: Binance USDⓈ-M VIP0 taker 0,05% / maker 0,02%; Spot 0,1%. Taker
+  nos dois lados é o default **conservador e correto**: entrada em fechamento
+  de candle é ordem a mercado, e stop dispara a mercado. Só o TP é
+  genuinamente uma ordem limite em repouso — `feeBpsExit` fica exposto para
+  quem quiser modelar maker, mas nunca assumido. ⚠️ **Verificação pendente**: o
+  agente de pesquisa não conseguiu abrir binance.com direto (bloqueio de
+  egress) e encontrou o LEAN da QuantConnect ainda carregando 0,04% para
+  futures. **Confirmar a taxa vigente na página oficial antes de considerar a
+  constante fechada** — 0,04 vs 0,05 é 25% de diferença no maior termo.
+- **Slippage**: *nenhum* framework tem default diferente de zero
+  (backtesting.py, vectorbt, Backtrader, QuantConnect, freqtrade — todos zero).
+  Não existe convenção a herdar. 1 bp/lado para BTC/ETH é **escolha registrada
+  deste projeto**, não padrão de mercado. É ~20% do custo de taxa: segunda
+  ordem, mas custa uma constante implementar.
+- **Funding**: cobrado só se a posição está aberta **no instante exato** da
+  liquidação (00/08/16 UTC) — fecha 07:59 e não paga nada. Para posições de
+  horas, o esperado é 2,5% a 10% do custo de taxa. Por isso é **contado e
+  reportado como constante**, e **não** existe pipeline de funding histórico:
+  seria trabalho real por um termo de 1/20 da taxa, sem virar decisão. Se o
+  relatório mostrar funding acima de ~20% do custo de taxa, é sinal de que as
+  posições estão durando mais que o previsto — telemetria útil, e aí sim vira
+  caso para pipeline.
+- **Ordem importa (Bajgrowicz & Scaillet, *Journal of Financial Economics*
+  2012** — 7.846 regras técnicas em 110+ anos de DJIA): a vantagem in-sample foi
+  *"completamente anulada pela introdução de custos de transação"*. Corolário
+  operacional adotado como regra: **congelar os custos ANTES de calibrar
+  qualquer parâmetro**, nunca calibrar a custo zero e recalibrar depois — isso
+  dobra a contagem de tentativas e contamina a segunda busca.
+  **Consequência direta**: os pesos de OB/FVG da Fase 4 (item 43, hoje em 0)
+  só devem ser calibrados **depois** desta fase.
+
+### Onde o custo entra
+
+`calcRealizedDelta` (`src/lib/tradeMetrics.js`) é o chokepoint único de todo
+PnL — `calcRealizedPnlPct`, `calcRealizedR`, `classifyOutcome` e `summarizeOps`
+derivam dele, então o custo propaga sozinho para win rate, drawdown e profit
+factor. Modelo: taxa e slippage cobrados **por fill, sobre o preço do próprio
+fill**, ponderados pela fração da posição (3 fills com parcial no TP1: entrada +
+parcial + runner; 2 sem). Funding conta **fronteiras de 8h cruzadas**, não
+duração.
+
+**Por que o default é o custo real e não zero**: este módulo é a fonte única de
+métricas, consumido por 10 superfícies do painel. Um default zero que cada tela
+tivesse que sobrescrever acabaria com uma tela mostrando bruto e outra líquido
+— exatamente a divergência de 6 implementações copiadas que o **item 22** criou
+este módulo para matar. `ZERO_COST` é o opt-out explícito.
+
+### Mudança de metodologia visível no painel (decisão do usuário)
+
+Perguntado se o custo deveria valer só no backtest ou também no painel, o
+usuário escolheu **nos dois**. Consequência: win rate, curva de PnL e relatório
+mensal passam a mostrar resultado **líquido**. Nenhuma operação mudou — mudou a
+metodologia. Mesmo tipo de mudança que o item 22 já registrou uma vez.
+
+### Gate de amostra — o conserto do processo de decisão
+
+`summarizeOps` passou a devolver `expectancyRStdErr`, `expectancyRCI95`,
+`conclusive` e `inconclusiveReason`. O CLI imprime **RESULTADO INCONCLUSIVO** em
+destaque quando o veredito é negativo, em vez de deixar um win rate de aparência
+normal calculado sobre 3 operações embasar uma decisão.
+
+`minTrades = 30` é **apenas** o limiar do Teorema Central do Limite — o ponto em
+que a média amostral fica aproximadamente normal e um IC *pode* ser calculado.
+**Não** é o ponto em que o IC fica estreito o bastante para decidir. O cálculo
+de poder (não folclore — deriva do erro-padrão da média, `sd(R)/√N`, mesma base
+de Lo, *Financial Analysts Journal* 2002):
+
+| Expectância real | Operações necessárias (80% de poder, 5%) |
+|---|---|
+| 0,50 R (excepcional) | ~45 |
+| 0,25 R (muito boa) | ~181 |
+| 0,10 R (boa realista) | ~1.130 |
+| 0,05 R (marginal) | ~4.500 |
+
+Um relatório com 30 operações e IC cruzando zero continua inconclusivo, e é isso
+que `conclusive` reporta. O "mínimo de 200-500 operações" que circula em blogs
+não foi rastreável a nenhuma publicação de López de Prado — é folclore; a tabela
+acima é a versão defensável.
+
+### Correções de registro (documentation-truth)
+
+Duas afirmações do repositório ficaram **falsas** e foram corrigidas, não
+apagadas: `backtestEngine.js` e `docs/claude/backtest-usage.md` diziam que o
+replay *"só pode fazer o win rate parecer pior que ao vivo, nunca
+melhor/inflado"*. Isso vale só quanto à granularidade de candle — a ausência de
+custos empurrava na direção oposta. O item **22** também declarava "sem taxas,
+funding ou slippage" como limitação aceita; deixou de valer.
+
+### Fora de escopo, com justificativa
+
+- **Walk-forward / WFE**: estatisticamente sem sentido abaixo de ~100 operações
+  (ver tabela). Com as ~0-5 operações que os backtests reais deste projeto
+  produziram (itens 34/35), cada janela teria ~1 operação — produziria número
+  bonito e sem informação, o que é **pior** que não ter, porque um gate que não
+  mede nada lava decisão ruim. Revisitar quando alguma configuração produzir
+  100+ operações de forma confiável.
+- **Deflated Sharpe / PBO / CSCV**: mecanicamente inaplicáveis nesta escala —
+  exigem estimar 3º e 4º momentos de uma série de retornos, ou uma matriz
+  N configurações × T períodos. Com poucas operações, retornariam número
+  calculado de ruído. O valor aproveitável da literatura é o *hábito* (contar
+  tentativas, reportar intervalo, congelar custo), implementado aqui.
+- **Pipeline de funding histórico**: ~5% do custo (ver acima).
+- **Slippage por fração de ATR**: fica como cenário de sensibilidade futuro,
+  não como base — conflaria volatilidade com custo de liquidez.
+- **Recalibrar pesos existentes**: proibido nesta rodada pela própria regra
+  "congelar custo antes de calibrar".
+
+Regressão: `tradeMetrics.test.js` (41 testes — as ~28 asserções de valor
+existentes passaram a receber `ZERO_COST` **explicitamente**, preservadas como
+documentação da fórmula bruta, mais 13 novos: fills com/sem parcial, custo
+sempre contra o trader em BUY e SELL, operação marginalmente vencedora virando
+LOSS por causa do custo, `calcCostR` crescendo quando o stop aperta, funding
+contando fronteiras e não duração, fronteira de `minTrades` 29 vs 30, IC
+cruzando zero com amostra suficiente); `backtestEngine.test.js` (4 testes —
+modelo ecoado no relatório, `--no-costs` reproduzindo exatamente o bruto,
+líquido = bruto − custo, e o veredito inconclusivo descrevendo o mesmo agregado
+que `overall`).

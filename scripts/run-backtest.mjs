@@ -11,7 +11,16 @@
 //     [--data-dir scripts/__fixtures__/backtest] \
 //     [--smc BTCUSDT] [--smc-confirm BTCUSDT] \
 //     [--pine-config ./my-pine-overrides.json] \
-//     [--step-ms 900000] [--out ./backtest-report.json]
+//     [--step-ms 900000] [--out ./backtest-report.json] \
+//     [--no-costs] [--fee-bps 5] [--slippage-bps 1] [--funding-bps 1] \
+//     [--min-trades 30] [--trial-label "ob-weight-7"]
+//
+// Custos (Fase 5, docs/known-risks.md item 44): taxa, slippage e funding
+// são descontados POR PADRÃO. --no-costs roda a custo zero e serve para o
+// A/B "quanto o custo comeu" — é também o modo que reproduz exatamente os
+// números de antes da Fase 5. --trial-label só é gravado no JSON: serve
+// para você contar quantas configurações já testou, que é o número que
+// torna qualquer conclusão futura interpretável (overfitting).
 //
 // --smc and --smc-confirm are INDEPENDENT (mirrors asset.smc_enabled vs.
 // asset.smc_confirm_4h15m in scanner.js — see MonitoredAsset.jsonc): --smc
@@ -22,6 +31,7 @@
 // it does not require --smc, and --smc does not imply it.
 import fs from 'node:fs';
 import { runBacktest } from '../src/lib/backtestEngine.js';
+import { ZERO_COST } from '../src/lib/tradeMetrics.js';
 import { backend } from '@/api/entities';
 import { setPineConfigOverrides } from './backtestPineConfig.js';
 
@@ -61,7 +71,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   if (!args.symbols || !args.from || !args.to) {
-    console.error('Uso: run-backtest.mjs --symbols SYM1,SYM2 --from ISO --to ISO [--data-dir DIR] [--smc SYM1,SYM2] [--smc-confirm SYM1,SYM2] [--pine-config FILE] [--step-ms N] [--out FILE]');
+    console.error('Uso: run-backtest.mjs --symbols SYM1,SYM2 --from ISO --to ISO [--data-dir DIR] [--smc SYM1,SYM2] [--smc-confirm SYM1,SYM2] [--pine-config FILE] [--step-ms N] [--out FILE] [--no-costs] [--fee-bps N] [--slippage-bps N] [--funding-bps N] [--min-trades N] [--trial-label TXT]');
     process.exitCode = 1;
     return;
   }
@@ -84,12 +94,25 @@ async function main() {
   const toMs = new Date(args.to).getTime();
   const stepMs = args['step-ms'] ? Number(args['step-ms']) : undefined;
 
+  // Modelo de custo. Sem flag nenhuma => DEFAULT_COST_MODEL (taxa real).
+  // --no-costs => ZERO_COST, que reproduz os números pré-Fase-5.
+  const costModel = args['no-costs']
+    ? ZERO_COST
+    : {
+        ...(args['fee-bps'] !== undefined
+          ? { feeBpsEntry: Number(args['fee-bps']), feeBpsExit: Number(args['fee-bps']) }
+          : {}),
+        ...(args['slippage-bps'] !== undefined ? { slippageBpsPerSide: Number(args['slippage-bps']) } : {}),
+        ...(args['funding-bps'] !== undefined ? { fundingBpsPer8h: Number(args['funding-bps']) } : {}),
+      };
+  const minTrades = args['min-trades'] ? Number(args['min-trades']) : undefined;
+
   console.log(`[backtest] ${symbols.join(', ')} de ${new Date(fromMs).toISOString()} a ${new Date(toMs).toISOString()}`);
 
   const started = Date.now();
   let lastLoggedPct = -1;
   const report = await runBacktest({
-    assets, backend, fromMs, toMs, stepMs,
+    assets, backend, fromMs, toMs, stepMs, costModel, minTrades,
     onStep(t, err) {
       if (err) {
         console.warn(`[backtest] ${err.asset} falhou em ${new Date(t).toISOString()}: ${err.error}`);
@@ -115,9 +138,33 @@ async function main() {
   // Same data, now visible from both the CLI and CI without needing GitHub
   // Summary UI access.
   console.log('[backtest] smcDiagnostics:', report.smcDiagnostics);
+  console.log('[backtest] custos:', report.costs);
+
+  // O veredito de amostra fica DEPOIS de tudo e em destaque de propósito: um
+  // relatório com poucas operações produz win rate e profit factor de aparência
+  // perfeitamente normal, e é exatamente aí que uma decisão errada nasce.
+  if (!report.costs.conclusive) {
+    const { countedTrades, minTrades: min, inconclusiveReason, expectancyRCI95 } = report.costs;
+    const motivo = inconclusiveReason === 'sample_too_small'
+      ? `amostra pequena demais (${countedTrades} operações fechadas, mínimo ${min})`
+      : inconclusiveReason === 'ci_straddles_zero'
+        ? `o intervalo de confiança da expectância cruza zero [${expectancyRCI95.map((v) => v.toFixed(3)).join(', ')}]`
+        : 'não há operações com R calculável';
+    console.log('');
+    console.log('  ⚠️  RESULTADO INCONCLUSIVO — não tire conclusão deste relatório.');
+    console.log(`      Motivo: ${motivo}.`);
+    console.log('      Win rate e profit factor acima são ruído nesta amostra.');
+    console.log('');
+  } else {
+    console.log(`[backtest] amostra suficiente: ${report.costs.countedTrades} operações, expectância líquida ${report.costs.netExpectancyR?.toFixed(3)}R`);
+  }
 
   const outPath = args.out || 'backtest-report.json';
-  fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
+  // trialLabel/trialArgs: o "conte suas tentativas" da literatura de
+  // overfitting reduzido ao mínimo — sem isso, comparar N relatórios meses
+  // depois vira arqueologia.
+  const enriched = { ...report, trialLabel: args['trial-label'] || null, trialArgs: process.argv.slice(2).join(' ') };
+  fs.writeFileSync(outPath, JSON.stringify(enriched, null, 2));
   console.log(`[backtest] relatório completo salvo em ${outPath}`);
 }
 
