@@ -320,6 +320,26 @@
       "enum": ["close", "wick", null],
       "description": "Fase 2 rodada 1: pineConfig.retestTouchMode value used for this entry's retest evaluation — recorded per-op since the config can change over time."
     },
+    "displacement_gate_enabled": {
+      "type": "boolean",
+      "description": "Fase 2 rodada 2 (known-risks.md item 41): true only when the opt-in displacement gate (pineConfig.displacementEnabled, off by default, SMC 1h→5m cascade only) actually participated in this entry — detectDisplacement (src/lib/indicators/displacement.js) classified the entry trigger candle as a displacement candle before the operation was created. Absent/undefined on every op created before this field existed, with the gate off, or on the RF 4h_15m cascade (out of scope for this round) — never mutates entry_price/initial_stop/tp1/tp2, observability only."
+    },
+    "displacement_body_ratio": {
+      "type": ["number", "null"],
+      "description": "Fase 2 rodada 2: entry candle's |close-open| divided by ATR(pineConfig.atrLen) on the 5m confirmation timeframe. Only present when displacement_gate_enabled is true."
+    },
+    "displacement_volume_ratio": {
+      "type": ["number", "null"],
+      "description": "Fase 2 rodada 2: entry candle's volume divided by the volLen-period volume average, only computed when pineConfig.displacementMinVolumeRatio is set (non-null) for this entry — null when the volume requirement was off (pure price-action mode, the default)."
+    },
+    "displacement_min_body_atr_mult": {
+      "type": ["number", "null"],
+      "description": "Fase 2 rodada 2: pineConfig.displacementBodyAtrMult value used for this entry's evaluation — recorded per-op since the config can change over time."
+    },
+    "displacement_min_volume_ratio": {
+      "type": ["number", "null"],
+      "description": "Fase 2 rodada 2: pineConfig.displacementMinVolumeRatio value used for this entry's evaluation (null = volume wasn't required for this entry)."
+    },
     "arbitration_outcome": {
       "type": "string",
       "description": "Result of the most recent cross-cascade arbitration decision (src/lib/signalArbitration.js) that actually WROTE to this operation — 'none'-action outcomes (reinforcement_accepted/rejected, continuation_confirmation, candidate_below_arbitration_threshold, no_change) are logged to SystemLog but deliberately do NOT appear here (write economy — nothing on the op changed). Absent when no arbitration decision has ever written to this operation.",

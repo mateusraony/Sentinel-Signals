@@ -167,8 +167,16 @@ nunca deve receber nova transição.**
   rompeu antes de confirmar a entrada. Com o flag desligado é um passthrough
   total (zero fetch extra). **Não ativar sem comparar relatórios de backtest
   com/sem primeiro** — ver `docs/known-risks.md` item 40 para a justificativa
-  estatística e o desenho completo. Fase 2 segue incompleta até a próxima
-  rodada (candle de deslocamento + volume, não implementada).
+  estatística e o desenho completo.
+- **Gatilho de candle de deslocamento** (`src/lib/indicators/displacement.js`
+  + `scanner.js:evaluateDisplacementGate`) — Fase 2 rodada 2, **`pineConfig.
+  displacementEnabled` desligado por padrão, só cascata SMC (1h→5m)**.
+  Diferente do reteste: classifica um único candle já conhecido (o gatilho
+  que `check5mSmcConfirmation` já achou), roda DEPOIS da confirmação 5m
+  (intocada — ganhou só 1 campo aditivo no retorno, `closedCandles`, para o
+  gate reaproveitar sem `fetchCandles` redundante), ANTES de criar a op.
+  **Não ativar sem comparar relatórios de backtest com/sem primeiro** — ver
+  `docs/known-risks.md` item 41. Com as duas rodadas, a Fase 2 está completa.
 
 ## Regras ao mexer aqui
 

@@ -1734,6 +1734,155 @@ describe('Fase 2 rodada 1 — gatilho de reteste (opt-in, docs/known-risks.md it
   });
 });
 
+describe('Fase 2 rodada 2 — gatilho de deslocamento (opt-in, SMC 1h→5m only, docs/known-risks.md item 41)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  function mk5m(open, high, low, close, i, volume = 100) {
+    return { open, high, low, close, openTime: i * 300000, closeTime: (i + 1) * 300000, isClosed: true, volume };
+  }
+
+  // 59 low-range flat candles (keeps ATR small and predictable) + 1 bullish
+  // sweep candle whose body is controllable — same sweep/OTE-zone recipe
+  // proven in the "5m OTE zone gate" describe above (ote_leg_high:200,
+  // ote_leg_low:50 -> discount, which BUY favors), just with a smaller flat
+  // range so a moderate body still clears a displacementBodyAtrMult of 1.5.
+  function displacementCandles5m({ finalBody = 6.6, finalVolume = 100 } = {}) {
+    const candles = [];
+    for (let i = 0; i < 59; i++) candles.push(mk5m(100, 100.5, 99.5, 100, i));
+    // close must clear swLow (99.5, the flat candles' low) for
+    // calculateLiquiditySweep to register a bullish sweep — same recipe as
+    // bullishSweepCandles5m in the "5m OTE zone gate" describe above, just
+    // with a controllable body (open varies, close fixed just above swLow).
+    const close = 99.6;
+    const open = close - finalBody;
+    candles.push(mk5m(open, 100, 92, close, 59, finalVolume));
+    return candles;
+  }
+
+  function makeSmcSignal(overrides = {}) {
+    return {
+      asset_id: 'asset1', symbol: 'BTCUSDT', signal_type: 'BUY',
+      timeframe: '1h', source: 'smc_structure', dedup_key: 'smc_sig_displacement',
+      price_at_signal: 100,
+      context: { structure_type: 'BOS', ote_leg_high: 200, ote_leg_low: 50 },
+      ...overrides,
+    };
+  }
+
+  it('flag desligado (default): comportamento idêntico ao anterior, sem campos displacement_* na op', async () => {
+    fetchCandles.mockResolvedValue(displacementCandles5m({ finalBody: 0.1 })); // corpo pequeno — irrelevante com o flag off
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig(); // displacementEnabled ausente -> falsy
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].displacement_gate_enabled).toBeUndefined();
+  });
+
+  it('gate ligado, corpo abaixo do limiar -> nenhuma operação criada, log de rejeição', async () => {
+    fetchCandles.mockResolvedValue(displacementCandles5m({ finalBody: 0.1 })); // persistente: 1a passada + retry-na-mesma-chamada
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ displacementEnabled: true, displacementBodyAtrMult: 1.5 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(0);
+
+    const logs = await backend.entities.SystemLog.filter({});
+    const rejected = logs.find(l => l.details?.reason === 'displacement_gate_rejected');
+    expect(rejected).toBeTruthy();
+    expect(rejected.details.displacement_reason).toBe('body_too_small');
+  });
+
+  it('gate ligado, corpo suficiente, sem exigência de volume -> operação criada com os campos de auditoria', async () => {
+    fetchCandles.mockResolvedValue(displacementCandles5m({ finalBody: 3.6 }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ displacementEnabled: true, displacementBodyAtrMult: 1.5 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    const op = ops[0];
+    expect(op.displacement_gate_enabled).toBe(true);
+    expect(op.displacement_body_ratio).toBeGreaterThanOrEqual(1.5);
+    expect(op.displacement_volume_ratio).toBeNull(); // nunca exigido nesta config
+    expect(op.displacement_min_body_atr_mult).toBe(1.5);
+    expect(op.displacement_min_volume_ratio).toBeNull();
+  });
+
+  // Codex review (PR #82): check5mSmcConfirmation fetches a fixed
+  // ~150-candle window sized for its OWN sweep/structure needs — a
+  // pineConfig.atrLen configured larger than that (plausible: the project's
+  // own Pine reference uses ATR(200) for Order Block confirmation
+  // elsewhere) used to make calculateATR silently return 0, which
+  // detectDisplacement read as invalid_params — rejecting every SMC entry
+  // regardless of body size. evaluateDisplacementGate must clamp the
+  // period to what closedCandles actually holds instead.
+  it('atrLen maior que o histórico disponível não trava o gate em invalid_params (clampado ao que o candle set tem)', async () => {
+    fetchCandles.mockResolvedValue(displacementCandles5m({ finalBody: 3.6 }));
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ displacementEnabled: true, displacementBodyAtrMult: 1.5, atrLen: 200 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].displacement_gate_enabled).toBe(true);
+  });
+
+  it('gate ligado com volume exigido: corpo ok mas volume insuficiente -> nenhuma operação criada', async () => {
+    fetchCandles.mockResolvedValue(displacementCandles5m({ finalBody: 3.6, finalVolume: 50 })); // volume abaixo da média (100)
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ displacementEnabled: true, displacementBodyAtrMult: 1.5, displacementMinVolumeRatio: 1.2 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+  });
+
+  it('gate ligado com volume exigido: corpo e volume ok -> operação criada com displacement_volume_ratio correto', async () => {
+    fetchCandles.mockResolvedValue(displacementCandles5m({ finalBody: 3.6, finalVolume: 200 })); // 2x a média (100)
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ displacementEnabled: true, displacementBodyAtrMult: 1.5, displacementMinVolumeRatio: 1.2 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].displacement_volume_ratio).toBeGreaterThanOrEqual(1.2);
+  });
+
+  it('confirma pelo loop de retry (não só na 1a passada), sem duplicar operação', async () => {
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ displacementEnabled: true, displacementBodyAtrMult: 1.5 });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    // Passada 1: candle de gatilho com corpo pequeno — sinal persiste, sem op.
+    fetchCandles.mockResolvedValue(displacementCandles5m({ finalBody: 0.1 }));
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+
+    // Passada 2 (retry): candle de gatilho já tem corpo suficiente.
+    fetchCandles.mockReset();
+    fetchCandles.mockResolvedValue(displacementCandles5m({ finalBody: 3.6 }));
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].displacement_gate_enabled).toBe(true);
+  });
+});
+
 describe('cooldown gates the Telegram notification only, never persistence/entry (P1, known-risks item 28)', () => {
   function makeSignal(overrides = {}) {
     return {

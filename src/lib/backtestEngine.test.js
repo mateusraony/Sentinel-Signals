@@ -525,6 +525,32 @@ describe('buildReport', () => {
       '1h_5m': { total: 1, confirmed: 0, pending: 1 },
     });
   });
+
+  // Fase 2 rodada 2 (docs/known-risks.md item 41) — same enabled-inferred-
+  // from-non-empty convention as retest.
+  it('displacement defaults to disabled/all-zero when the caller passes nothing (legacy call shape, flag off)', () => {
+    const report = buildReport([], { fromMs: 0, toMs: 1000 });
+    expect(report.displacement).toEqual({
+      enabled: false, total: 0, confirmed: 0, pending: 0, avgBodyRatio: null, byCascade: {},
+    });
+  });
+
+  it('displacement counts confirmed vs pending by cascade and averages bodyRatio over CONFIRMED outcomes only', () => {
+    const displacementOutcomes = [
+      { dedup_key: 'a', cascade: '1h_5m', isDisplacement: true, bodyRatio: 2 },
+      { dedup_key: 'b', cascade: '1h_5m', isDisplacement: true, bodyRatio: 4 },
+      { dedup_key: 'c', cascade: '1h_5m', isDisplacement: false, bodyRatio: 0.5 },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, displacementOutcomes });
+    expect(report.displacement.enabled).toBe(true);
+    expect(report.displacement.total).toBe(3);
+    expect(report.displacement.confirmed).toBe(2);
+    expect(report.displacement.pending).toBe(1);
+    expect(report.displacement.avgBodyRatio).toBe(3); // (2+4)/2 — the rejected entry doesn't dilute the average
+    expect(report.displacement.byCascade).toEqual({
+      '1h_5m': { total: 3, confirmed: 2, pending: 1 },
+    });
+  });
 });
 
 // docs/known-risks.md items 34/35/38: real backtests (BTCUSDT, PENDLEUSDT,

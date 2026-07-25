@@ -133,6 +133,31 @@ uma suposição. `avgBarsToConfirm` (só sobre sinais que retestaram) é o dado 
 olhar para calibrar `retestToleranceAtrMult`/o quanto vale a pena esperar,
 antes de mudar os defaults.
 
+**`report.displacement`** (Fase 2 rodada 2, `docs/known-risks.md` item 41) —
+`{enabled, total, confirmed, pending, avgBodyRatio, byCascade}`, só cascata
+SMC (`1h_5m`). Mesma receita de comparação do reteste acima:
+
+```bash
+echo '{"displacementEnabled": false}' > /tmp/no-displacement.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --smc BTCUSDT,ETHUSDT \
+  --from 2025-02-01T00:00:00Z --to 2025-12-01T00:00:00Z \
+  --pine-config /tmp/no-displacement.json --out ./report-sem-deslocamento.json
+
+echo '{"displacementEnabled": true, "displacementBodyAtrMult": 1.5, "displacementMinVolumeRatio": null}' > /tmp/with-displacement.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --smc BTCUSDT,ETHUSDT \
+  --from 2025-02-01T00:00:00Z --to 2025-12-01T00:00:00Z \
+  --pine-config /tmp/with-displacement.json --out ./report-com-deslocamento.json
+```
+
+`--smc` é obrigatório nos dois runs (o gate só existe na cascata SMC — sem
+ela ligada, `report.byCascade['1h_5m']` já vem vazio e a comparação não diz
+nada). Compare `report.displacement` e `report.byCascade['1h_5m']` (win
+rate/profit factor/expectância) entre os dois arquivos. `avgBodyRatio` (só
+sobre entradas confirmadas) é o dado para calibrar
+`displacementBodyAtrMult`; para testar a exigência opcional de volume, rode
+uma terceira vez com `displacementMinVolumeRatio` definido (ex.: `1.2`) e
+compare contra a rodada sem volume.
+
 ## O que o replay NÃO cobre (por design, não é lacuna)
 
 - **Preço em tempo real (`priceCheckActiveOps`)** — não há dado de tick num
