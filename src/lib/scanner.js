@@ -25,6 +25,7 @@ import { calculateChoppiness } from './indicators/choppiness';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone, buildOteLeg, classifyZone } from './indicators/smcStructure';
 import { calculateSmcSignalStrength, SMC_SCORE_DEFAULTS } from './indicators/smcConfluence';
 import { detectRetest } from './indicators/retest';
+import { detectDisplacement } from './indicators/displacement';
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward } from './opExitRules';
@@ -424,6 +425,12 @@ async function check5mSmcConfirmation(symbol, direction, legBounds) {
       structuralLevel,
       oteZone,
       rejectReason: null,
+      // Fase 2 rodada 2 (docs/known-risks.md item 41): the closed 5m series
+      // already fetched above, exposed so the opt-in displacement gate
+      // (evaluateDisplacementGate) can evaluate the SAME trigger candle
+      // without a redundant fetchCandles call — additive only, no existing
+      // decision above is affected by this field's presence.
+      closedCandles: closed,
     };
   } catch (err) {
     console.warn(`[5m SMC confirm] ${symbol} fetch failed:`, err.message);
@@ -478,6 +485,40 @@ function stampRetestFields(opData, gate) {
   opData.retest_candle_time = gate.retestCandleTime;
   opData.retest_bars_to_confirm = gate.barsToConfirm;
   opData.retest_touch_mode = gate.touchMode;
+}
+
+// ─── Fase 2 rodada 2: displacement candle gate (opt-in, off by default,
+// SMC 1h→5m only) — docs/known-risks.md item 41. Unlike the retest gate,
+// this evaluates a SINGLE known candle (the entry trigger check5mSmcConfirmation
+// already found), not a window search — so it runs AFTER confirmation
+// succeeds, reusing the closedCandles that call already fetched (see the
+// additive field added to its return value above) instead of a redundant
+// fetchCandles. Caller passes confirmation.closedCandles/confirmation.entryCandleTime
+// straight through; the ATR/volume-MA baseline is computed here with the
+// same pineConfig.atrLen/volLen defaults the rest of the scanner already
+// uses (no new period knobs invented for this round).
+function evaluateDisplacementGate({ closedCandles, entryCandleTime, pineConfig }) {
+  const bodyAtrMult = pineConfig.displacementBodyAtrMult ?? 1.5;
+  const minVolumeRatio = pineConfig.displacementMinVolumeRatio ?? null;
+  const triggerCandle = closedCandles?.find(c => c.closeTime === new Date(entryCandleTime).getTime())
+    ?? closedCandles?.[closedCandles.length - 1] ?? null;
+  const atrValue = closedCandles ? calculateATR(closedCandles, pineConfig.atrLen ?? 14) : null;
+  let volumeMa = null;
+  if (minVolumeRatio != null && closedCandles) {
+    const volPeriod = pineConfig.volLen ?? 20;
+    const volumes = closedCandles.map(c => c.volume || 0).slice(-volPeriod);
+    volumeMa = volumes.length ? volumes.reduce((a, b) => a + b, 0) / volumes.length : null;
+  }
+  const result = detectDisplacement(triggerCandle, { atrValue, bodyAtrMult, minVolumeRatio, volumeMa });
+  return { ...result, bodyAtrMult, minVolumeRatio };
+}
+
+function stampDisplacementFields(opData, gate) {
+  opData.displacement_gate_enabled = true;
+  opData.displacement_body_ratio = gate.bodyRatio;
+  opData.displacement_volume_ratio = gate.volumeRatio;
+  opData.displacement_min_body_atr_mult = gate.bodyAtrMult;
+  opData.displacement_min_volume_ratio = gate.minVolumeRatio;
 }
 
 /**
@@ -1253,12 +1294,15 @@ export async function persistScanResults(scanResult) {
   const arbitrationOutcomes = [];
   // Fase 2 rodada 1 (docs/known-risks.md item 40) — same purpose/shape
   // convention as arbitrationOutcomes above, feeding buildReport's `retest`
-  // section (backtestEngine.js). Only pushed from the 1st-pass call sites
-  // (RF/SMC), where the gate is actually evaluated with a fresh dedup_key —
-  // the retry loops re-check the SAME signal's gate silently and don't push
-  // again, so this stays "one entry per candidate signal that ever went
-  // through the gate", not "one per tick".
+  // section (backtestEngine.js). Pushed from BOTH the 1st-pass call sites
+  // AND the retry loops (in-memory only, no Firestore write — cheap to push
+  // every retry tick) — backtestEngine.js dedupes by dedup_key, last-write-
+  // wins, so a later "retested:true" from a retry correctly overwrites the
+  // "pending" outcome the 1st pass recorded for the same signal.
   const retestOutcomes = [];
+  // Fase 2 rodada 2 (docs/known-risks.md item 41) — same convention, feeding
+  // buildReport's `displacement` section. SMC 1h_5m cascade only.
+  const displacementOutcomes = [];
   for (const signal of newSignals) {
     // Cooldown check — a best-effort query, not atomic on its own, but the
     // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
@@ -1515,8 +1559,27 @@ export async function persistScanResults(scanResult) {
           const confirmed5m = await check5mSmcConfirmation(asset.symbol, signal.signal_type, legBounds);
 
           if (confirmed5m.confirmed) {
+            // Fase 2 rodada 2 (docs/known-risks.md item 41) — off by default,
+            // SMC only. Evaluated on the SAME closedCandles/trigger candle
+            // check5mSmcConfirmation just found (no extra fetchCandles) —
+            // see evaluateDisplacementGate's own comment above.
+            const displacementGate = pineConfig.displacementEnabled
+              ? evaluateDisplacementGate({ closedCandles: confirmed5m.closedCandles, entryCandleTime: confirmed5m.entryCandleTime, pineConfig })
+              : null;
+            if (displacementGate) displacementOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', isDisplacement: displacementGate.isDisplacement, bodyRatio: displacementGate.bodyRatio });
+            if (displacementGate && !displacementGate.isDisplacement) {
+              await backend.entities.SystemLog.create({
+                level: 'info',
+                module: 'scanner',
+                message: `${asset.symbol} 1H SMC ${signal.signal_type} — candle de entrada não atende ao gatilho de deslocamento (${displacementGate.reason})`,
+                symbol: asset.symbol,
+                timeframe: '5m',
+                details: { reason: 'displacement_gate_rejected', displacement_reason: displacementGate.reason, body_ratio: displacementGate.bodyRatio, volume_ratio: displacementGate.volumeRatio },
+              });
+            } else {
             const opData = buildSmcTradeOpData(signal, tf1hData, pineConfig, confirmed5m);
             if (retestGate) stampRetestFields(opData, retestGate);
+            if (displacementGate) stampDisplacementFields(opData, displacementGate);
             const minRR = pineConfig.minRR ?? 1.2;
             const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
             if (!rr.pass) {
@@ -1542,6 +1605,7 @@ export async function persistScanResults(scanResult) {
                   score: signal.context?.score, structure_type: signal.context?.structure_type, trigger: confirmed5m.trigger, rr: rr.rr1,
                 }, { symbol: signal.symbol, timeframe: '5m' });
               }
+            }
             }
           } else {
             // item 38: rejectReason distinguishes "no 5m trigger yet" from
@@ -1836,8 +1900,19 @@ export async function persistScanResults(scanResult) {
       const confirmed = await check5mSmcConfirmation(sig.symbol, sig.signal_type, legBounds);
       if (!confirmed.confirmed) continue;
 
+      // Fase 2 rodada 2 (docs/known-risks.md item 41) — off by default;
+      // silent on a miss, same reasoning as the retest gate above (no
+      // SystemLog per ~5min retry tick). Reuses confirmed.closedCandles —
+      // no extra fetchCandles.
+      const displacementGate = pineConfig.displacementEnabled
+        ? evaluateDisplacementGate({ closedCandles: confirmed.closedCandles, entryCandleTime: confirmed.entryCandleTime, pineConfig })
+        : null;
+      if (displacementGate) displacementOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', isDisplacement: displacementGate.isDisplacement, bodyRatio: displacementGate.bodyRatio });
+      if (displacementGate && !displacementGate.isDisplacement) continue;
+
       const opData = buildSmcTradeOpData(sig, tfData1h, pineConfig, confirmed);
       if (retestGate) stampRetestFields(opData, retestGate);
+      if (displacementGate) stampDisplacementFields(opData, displacementGate);
       const minRR = pineConfig.minRR ?? 1.2;
       const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
       if (!rr.pass) {
@@ -2154,7 +2229,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes };
+  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()

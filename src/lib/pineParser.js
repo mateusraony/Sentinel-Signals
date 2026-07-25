@@ -74,6 +74,14 @@ const DEFAULTS = {
   retestEnabled: false,
   retestToleranceAtrMult: 0.3,
   retestTouchMode: 'close',
+  // Displacement candle gate (Fase 2 rodada 2, SMC 1h→5m only,
+  // src/lib/indicators/displacement.js) — same reasoning as retest above:
+  // master flag OFF by default, see docs/known-risks.md item 41.
+  // displacementMinVolumeRatio null = volume never required (pure
+  // price-action mode, the canonical-ICT reading found by research).
+  displacementEnabled: false,
+  displacementBodyAtrMult: 1.5,
+  displacementMinVolumeRatio: null,
 };
 
 /**
@@ -201,6 +209,8 @@ const SYNCED_STRATEGY_KEYS = [
   'smcScoreSweepWeight',
   // Retest confirmation gate (Fase 2 rodada 1 — retest.js)
   'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
+  // Displacement candle gate (Fase 2 rodada 2 — displacement.js)
+  'displacementEnabled', 'displacementBodyAtrMult', 'displacementMinVolumeRatio',
 ];
 
 // Subset of SYNCED_STRATEGY_KEYS that has no `input.*()` counterpart in the
@@ -223,6 +233,7 @@ const NON_PINE_SYNCED_KEYS = new Set([
   'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
   'smcScoreSweepWeight',
   'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
+  'displacementEnabled', 'displacementBodyAtrMult', 'displacementMinVolumeRatio',
 ]);
 
 /**

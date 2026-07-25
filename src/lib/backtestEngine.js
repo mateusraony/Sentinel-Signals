@@ -142,6 +142,9 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
   // report below infers whether the flag was on, without backtestEngine.js
   // needing its own redirected pineParser import.
   const retestOutcomesByKey = new Map();
+  // Fase 2 rodada 2 displacement gate (docs/known-risks.md item 41) — same
+  // convention as retestOutcomesByKey above. SMC 1h_5m only.
+  const displacementOutcomesByKey = new Map();
 
   installSimClock(fromMs);
   try {
@@ -166,6 +169,9 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
           for (const outcome of (persistResult.retestOutcomes || [])) {
             retestOutcomesByKey.set(outcome.dedup_key, outcome);
           }
+          for (const outcome of (persistResult.displacementOutcomes || [])) {
+            displacementOutcomesByKey.set(outcome.dedup_key, outcome);
+          }
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
         }
@@ -183,6 +189,7 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
     smcRejectedByOteZone: smcOteZoneRejectionKeys.size,
     arbitrationOutcomes: [...arbitrationOutcomesByKey.values()],
     retestOutcomes: [...retestOutcomesByKey.values()],
+    displacementOutcomes: [...displacementOutcomesByKey.values()],
   });
 }
 
@@ -192,7 +199,7 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
 // already trusts, not reinvented here. Ops still non-terminal at the cutoff
 // are reported separately, never force-closed and never counted in win/
 // loss/BE (summarizeOps already excludes them via isTerminalStatus).
-export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [] } = {}) {
+export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [] } = {}) {
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
 
@@ -272,6 +279,31 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
         confirmed,
         pending: retestOutcomes.length - confirmed,
         avgBarsToConfirm: confirmed > 0 ? +(barsSum / confirmed).toFixed(1) : null,
+        byCascade,
+      };
+    })(),
+    // Fase 2 rodada 2 displacement gate (src/lib/indicators/displacement.js,
+    // docs/known-risks.md item 41) — opt-in, off by default, SMC 1h_5m
+    // cascade only. Same `enabled`-inferred-from-non-empty convention as
+    // `retest` above, and the same purpose: the number to diff between two
+    // --pine-config runs (with/without displacementEnabled) before deciding
+    // to activate. avgBodyRatio is only over CONFIRMED outcomes — the
+    // metric to look at when calibrating displacementBodyAtrMult.
+    displacement: (() => {
+      const confirmedD = displacementOutcomes.filter(o => o.isDisplacement).length;
+      const bodyRatioSum = displacementOutcomes.reduce((sum, o) => sum + (o.isDisplacement ? (o.bodyRatio || 0) : 0), 0);
+      const byCascade = {};
+      for (const { cascade, isDisplacement } of displacementOutcomes) {
+        (byCascade[cascade] ||= { total: 0, confirmed: 0, pending: 0 });
+        byCascade[cascade].total += 1;
+        byCascade[cascade][isDisplacement ? 'confirmed' : 'pending'] += 1;
+      }
+      return {
+        enabled: displacementOutcomes.length > 0,
+        total: displacementOutcomes.length,
+        confirmed: confirmedD,
+        pending: displacementOutcomes.length - confirmedD,
+        avgBodyRatio: confirmedD > 0 ? +(bodyRatioSum / confirmedD).toFixed(2) : null,
         byCascade,
       };
     })(),

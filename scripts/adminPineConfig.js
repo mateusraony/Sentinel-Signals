@@ -63,6 +63,11 @@ const DEFAULTS = {
   retestEnabled: false,
   retestToleranceAtrMult: 0.3,
   retestTouchMode: 'close',
+  // Displacement candle gate (Fase 2 rodada 2, SMC 1h→5m only) — master flag
+  // OFF by default, see docs/known-risks.md item 41.
+  displacementEnabled: false,
+  displacementBodyAtrMult: 1.5,
+  displacementMinVolumeRatio: null,
 };
 
 const SYNCED_STRATEGY_KEYS = [
@@ -79,6 +84,7 @@ const SYNCED_STRATEGY_KEYS = [
   'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
   'smcScoreSweepWeight',
   'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
+  'displacementEnabled', 'displacementBodyAtrMult', 'displacementMinVolumeRatio',
 ];
 
 export async function getPineConfig() {

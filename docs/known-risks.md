@@ -1848,11 +1848,9 @@ código, são o MESMO mecanismo aqui dentro — o único nível disponível para
 retestar, nas duas cascatas, é sempre o nível que o próprio sinal candidato
 acabou de romper (não existe, nem está no escopo criar, um detector de nível
 genérico independente do sinal). Uma rodada fecha os dois itens do roadmap.
-O 3º item (candle de "deslocamento" com volume) **não foi implementado** —
-mecanismo diferente (classifica UM candle por corpo/range/volume, não espera
-um nível ser retestado), sem termo equivalente no Pine de referência do
-projeto nem consenso numérico na comunidade ICT — fica para uma rodada
-própria futura. **A Fase 2 não está completa** até essa rodada acontecer.
+O 3º item (candle de "deslocamento" com volume) foi implementado na rodada
+seguinte — ver item 41. Com as duas rodadas fechadas, a Fase 2 pode ser
+considerada completa.
 
 **Pesquisa antes de implementar** (3 agentes em paralelo — mapeamento de
 código real, pesquisa de comunidade sobre reteste/rompimento+reteste,
@@ -1930,3 +1928,83 @@ fechado sem `smc_broken_level`, confirmação via loop de retry sem duplicar
 operação); `backtestEngine.test.js` (2 testes — seção `retest` do
 relatório, contagem por cascata, média de `barsToConfirm` só sobre
 confirmados).
+
+## 41. Gatilho de candle de deslocamento — Fase 2 rodada 2 (`displacementEnabled`), DESLIGADO por padrão, só cascata SMC — fecha a Fase 2
+
+**Status: DESLIGADO.** `pineConfig.displacementEnabled = false` por padrão
+nos três arquivos de config sincronizada, aplicado **só à cascata SMC
+(1h→5m)** — a cascata Range Filter (4h→15m) não tem nenhum conceito análogo
+no seu Pine de referência, então não recebeu este gatilho. **Não ative sem
+antes rodar `npm run backtest` duas vezes (com e sem `displacementEnabled`,
+via `--pine-config`) e comparar as métricas de win rate/R:R/expectância entre
+as duas rodadas** — mesma disciplina do item 40.
+
+Segunda (e última planejada) rodada da Fase 2 — fecha o 3º item do roadmap
+original (item 40 registrava que "reteste simples"/"rompimento+reteste" eram
+o mesmo mecanismo; este item é o 3º item distinto, "candle de deslocamento
+com volume"). Com as duas rodadas fechadas, **a Fase 2 pode ser considerada
+completa**.
+
+**Pesquisa já feita antes de planejar** (mesma rodada de pesquisa do item 40):
+nem o Pine de referência do projeto
+(`docs/reference-pine/smc-a-unified-v2.3.pine`) usa o termo "displacement" —
+tem um filtro de corpo/ATR(200)×3 só para confirmar Order Block (`is_bac`,
+sem checagem de pavio nem de volume) e um filtro de momentum via
+corpo/ATR(3) OU assimetria de pavio para validar BOS/CHoCH
+(`filter_insignificant_internal_breaks`) — nenhum dos dois ligado a volume ou
+a FVG. A comunidade ICT externa também não tem número consenso (razão
+corpo/range citada em 60%, 60–70% ou 80%; múltiplo de ATR de 2× a 3–5×;
+divergência real sobre exigir 1 candle vs. sequência de 2–3). Volume **não é
+parte da definição canônica ICT** — o conceito nasceu em Forex, mercado sem
+dado de volume real — tratado por implementações mais algorítmicas como
+upgrade opcional, não regra. Cripto tem volume real disponível, então este
+projeto expõe a checagem de volume como **opcional** (`displacementMinVolumeRatio`,
+`null` por padrão = nunca exigido, modo puramente price-action — a leitura
+mais "purista" do ICT), não como parte obrigatória do gatilho.
+
+**Design**: nova função pura `detectDisplacement`
+(`src/lib/indicators/displacement.js`, sem I/O, sem paridade Pine a manter —
+não porta nada do Pine real). Diferente do gatilho de reteste (item 40, que
+varre uma JANELA de candles futuros procurando um toque de nível),
+displacement classifica **um único candle já conhecido** — o candle de
+gatilho que `check5mSmcConfirmation` já identificou (sweep ou BOS/CHoCH) —
+então não precisa de busca por janela nem de estado de retry próprio: roda
+DEPOIS que a confirmação 5m já confirmou, ANTES de criar a `TradeOperation`.
+`check5mSmcConfirmation` ganhou 1 campo aditivo no retorno
+(`closedCandles`, a mesma série de candles 5m que a função já buscou) para
+que o novo gate reaproveite os dados já obtidos em vez de fazer um
+`fetchCandles` redundante — nenhuma linha de decisão existente dentro de
+`check5mSmcConfirmation` foi alterada. Quando `pineConfig.displacementEnabled`
+é `false` (o padrão), o gate é pulado inteiramente: zero custo extra,
+comportamento byte-idêntico ao anterior a esta rodada. Se o candle de
+gatilho não atende ao limiar de corpo/ATR (e, se configurado, de volume), a
+operação **não é criada nesta passada** — o sinal continua sendo
+re-avaliado pelo loop de retry já existente (silencioso a cada tick, mesmo
+padrão do item 40) até um candle de gatilho qualificado aparecer ou a
+janela de 4h expirar.
+
+**Campos novos** (aditivos, nunca alteram `entry_price`/`initial_stop`/
+`tp1`/`tp2` — só auditoria, SMC apenas): `TradeOperation.
+displacement_gate_enabled/displacement_body_ratio/displacement_volume_ratio/
+displacement_min_body_atr_mult/displacement_min_volume_ratio`.
+`displacement_volume_ratio` fica `null` sempre que
+`displacementMinVolumeRatio` não estiver configurado para aquela entrada
+(modo price-action puro).
+
+**Backtest**: nova seção `displacement` em `buildReport`
+(`src/lib/backtestEngine.js`, mesmo padrão de `retest`/`arbitration`) —
+`{enabled, total, confirmed, pending, avgBodyRatio, byCascade}`, `enabled`
+inferido de `displacementOutcomes` não estar vazio. `avgBodyRatio` (só sobre
+confirmados) é o dado real para calibrar `displacementBodyAtrMult` — não
+validado nesta rodada, só implementado com um default de partida (1.5).
+
+Regressão: `src/lib/indicators/displacement.test.js` (9 testes — função
+pura: corpo abaixo/acima do limiar, fronteira inclusiva, volume exigido
+abaixo/acima do mínimo, fronteira de volume, dado de volume ausente quando
+exigido, parâmetros inválidos sem lançar exceção); `scannerStateMachine.test.js`
+(6 testes — flag desligado sem mudança de comportamento, corpo insuficiente
+rejeitado com log, corpo suficiente sem exigir volume confirma com os 5
+campos corretos, volume insuficiente rejeita mesmo com corpo ok, volume
+suficiente confirma, confirmação via loop de retry sem duplicar operação);
+`backtestEngine.test.js` (2 testes — seção `displacement` do relatório,
+contagem por cascata, média de `bodyRatio` só sobre confirmados).
