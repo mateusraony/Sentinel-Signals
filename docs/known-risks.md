@@ -2095,3 +2095,111 @@ de configurações/walk-forward — não é alegação de bug, é validação de
 estratégia em si, e continua **estruturalmente impossível** nesta sessão
 (Binance inacessível a partir de sessões do Claude Code) — a pendência já
 estava registrada e continua registrada, nenhum resultado foi fabricado.
+
+## 42. Tier/regime na cascata SMC 1h→5m — Fase 3 (`smcTierEnabled`), DESLIGADO por padrão — fecha a assimetria RF vs SMC
+
+**Status: DESLIGADO.** `pineConfig.smcTierEnabled = false` por padrão nos três
+arquivos de config sincronizada. **Não ative sem antes rodar `npm run
+backtest` duas vezes (com e sem `smcTierEnabled`, via `--pine-config`) e
+comparar `report.smcRegime` e as métricas de win rate/R:R/expectância entre
+as duas rodadas** — mesma disciplina dos itens 40/41.
+
+**Contexto**: o roadmap original da Fase 3 era "timeframe de confirmação
+adaptativo" — trocar QUAL timeframe menor confirma a entrada (ex. 15m↔30m,
+5m↔15m) conforme volatilidade. Pesquisa de comunidade (fóruns quant,
+QuantConnect, ICT/SMC, documentação de repaint do Pine Script) não achou
+nenhum precedente real pra essa técnica específica — a comunidade ICT/SMC
+mantém o timeframe de confirmação FIXO por convenção (pares padrão
+5m→1h/15m→4h/1h→D; a única coisa "adaptativa" que usam é horário/sessão —
+"kill zones" —, não volatilidade); achou riscos concretos (overfitting —
+QuantConnect forum "Rage Against the Regimes"; repaint/look-ahead no
+indicador de volatilidade se ele ler dados de uma vela ainda não fechada,
+documentado nos próprios docs do Pine Script sobre `request.security`); e
+não achou nenhuma evidência de backtest real a favor OU contra. Diante
+disso, optou-se por uma versão mais estreita e mais segura: em vez de
+trocar timeframe, levar pra cascata SMC o sistema de tier/regime que a
+cascata RF já tem e já usa há tempo — sem inventar mecanismo novo.
+
+**O problema real que motivou esta rodada**: a cascata RF (4h→15m) já
+classifica cada ativo num tier de volatilidade (T1/T2/T3, via
+`classifyTier`/`calculateAtrPctSmooth`, `src/lib/indicators/tier.js`) e usa
+isso pra bloquear entrada em mercado sem tendência/lateralizado (ADX fraco
+ou Choppiness alto, `evaluateRegime`) e pra definir o prazo do Time Stop. A
+cascata SMC (1h→5m) nunca teve nada disso — `tier_time_stop_bars` era um
+literal fixo `96` (`scanner.js`, `buildSmcTradeOpData`), sem ADX/Choppiness
+computados pra 1h em lugar nenhum. Assimetria real entre as duas cascatas,
+confirmada por leitura direta do código antes deste plano.
+
+**Design**: reuso total — `classifyTier`/`calculateAtrPctSmooth`/
+`calculateADX`/`calculateChoppiness` (já testadas, já usadas pra 4h) passam
+a rodar também pra `tf === '1h'` dentro de `scanAsset`, guardado atrás do
+flag (`if (tf === '4h' || (tf === '1h' && pineConfig.smcTierEnabled))`) —
+mesma tabela de limiares da RF, sem calibração nova pra 1h (decisão
+deliberada, sem evidência pra inventar limiares próprios). `evaluateRegime`
+(`scanner.js`) já era agnóstica de timeframe (só lê `.tier`/`.adx`/`.chop`
+do objeto que recebe, retorna passthrough `{ok:true}` quando `tier`/`adx`
+são `null`) — reaproveitada tal qual, chamada com `tf1hData` nos 2 pontos de
+entrada da cascata SMC (1ª passada + retry), na MESMA posição relativa que
+a RF já usa: ANTES do `if (!hasActiveOp)`, não dentro — consequência
+deliberada e simétrica com a RF: quando o regime SMC reprova, a arbitragem
+cross-cascade (`handleActiveOpArbitration`) também é pulada pra esse sinal,
+igual já acontece com a RF hoje.
+
+**Campos**: `tier`/`adx_at_entry`/`chop_at_entry` NÃO são campos novos — são
+os MESMOS 3 campos que `buildTradeOpData` (RF) já stampa; só passam a ser
+preenchidos pela SMC também, quando o flag populou `tf1hData.tier`.
+`tier_time_stop_bars` deixa de ser o literal `96` e passa a ler
+`tf1hData.tier?.timeStopBars ?? 96` — o `?? 96` preserva exatamente o
+comportamento de hoje quando o flag está desligado ou tier indisponível.
+
+**`tier.atrStopMult` continua sem uso em SMC — decisão explícita, não
+esquecimento.** O stop da SMC é estrutural (nível de rompimento + buffer/
+piso/teto em ATR via `computeStructuralStop`), nunca um multiplicador ATR
+puro por tier como a RF. Conectar `tier.atrStopMult` ao cálculo de preço do
+stop seria um mecanismo novo, matemática de preço diferente — fora do
+escopo aprovado nesta rodada. `SMC_INITIAL_STOP_ATR_MULT` continua uma
+constante fixa, documentado no próprio código pra não ser reaberto por
+engano.
+
+**Efeito colateral real, verificado e testado — Chop Exit passa a valer pra
+SMC "de graça".** O loop de gestão de operações ativas dentro de
+`persistScanResults` já lê `tfData = results[op.signal_timeframe || '4h']`
+de forma genérica, tanto pro Time Stop quanto pro Chop Exit
+(`pineConfig.useChopExit === true && tfData.chop != null && tfData.tier &&
+tfData.chop > tfData.tier.chopMaxVal`). No momento em que `smcTierEnabled`
+popular `results['1h'].tier`/`.chop`, se `useChopExit` (flag independente,
+já existe, default `false`) TAMBÉM estiver ligado, o Chop Exit passa a
+valer pra operações SMC sem nenhuma linha de código nova — puro efeito
+colateral de popular o dado que já era lido de forma genérica. Não é bug —
+é coerente com "fechar a assimetria RF vs SMC" — mas fica documentado aqui
+pra não ser redescoberto por acidente em produção. Coberto por par de
+testes (`scannerStateMachine.test.js`) provando que o efeito acontece só
+quando `tier` está de fato populado.
+
+**`useADX`/`useChop` são toggles globais, não exclusivos da RF.** Ligar
+`smcTierEnabled` sem tocar neles já ativa os dois sub-gates (ADX e
+Choppiness) pra SMC simultaneamente, herdando o estado global atual — não
+há flag independente "só ADX" ou "só Chop" por cascata.
+
+**Suposição não validada**: a mesma tabela de limiares da RF (thresholds de
+`atrPctSmooth`, `adxMinVal`, `chopMaxVal` por tier) aplicada a candles de 1h
+é uma hipótese razoável, não uma calibração provada — ATR% num candle de 1h
+tem magnitude diferente de um candle de 4h pro mesmo ativo. A classificação
+RELATIVA entre ativos deve se manter razoável, mas isso não foi validado.
+Mesma disciplina da Fase 2: default de partida, comparar via backtest antes
+de ativar.
+
+**Backtest**: nova seção `smcRegime` em `buildReport`
+(`src/lib/backtestEngine.js`, mesmo padrão de `retest`/`displacement`) —
+`{enabled, total, passed, rejected, byReason}`, `enabled` inferido de
+`smcRegimeOutcomes` não estar vazio. `byReason` separa `adx_weak`/`choppy`/
+`adx_and_chop`.
+
+Regressão: `scannerStateMachine.test.js` (8 testes novos — flag desligado
+sem mudança de comportamento nem log; regime reprovado bloqueia entrada E
+arbitragem cross-cascade; regime aprovado stampa os 4 campos corretos;
+confirmação via loop de retry sem duplicar operação; par de testes do
+efeito colateral do Chop Exit; 2 testes unitários diretos de
+`buildSmcTradeOpData` com/sem `tf1hData.tier`); `backtestEngine.test.js` (2
+testes — seção `smcRegime` do relatório, contagem de `passed`/`rejected`,
+`byReason` com as 3 combinações adx/chop).

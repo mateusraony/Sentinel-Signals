@@ -1968,6 +1968,180 @@ describe('Fase 2 — reteste + deslocamento combinados (hardening pós-auditoria
   });
 });
 
+describe('Fase 3 — tier/regime na cascata SMC (opt-in, docs/known-risks.md item 42)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  function mk5m(open, high, low, close, i) {
+    return { open, high, low, close, openTime: i * 300000, closeTime: (i + 1) * 300000, isClosed: true };
+  }
+  // Same known-good recipe as the other SMC describes above: 59 flat candles
+  // + 1 bullish-sweep candle, entry close pinned at 96.5.
+  function bullishSweepCandles5m() {
+    const candles = [];
+    for (let i = 0; i < 59; i++) candles.push(mk5m(100, 105, 95, 100, i));
+    candles.push(mk5m(96, 97, 93, 96.5, 59));
+    return candles;
+  }
+
+  function makeSmcSignal(overrides = {}) {
+    return {
+      asset_id: 'asset1', symbol: 'BTCUSDT', signal_type: 'BUY',
+      timeframe: '1h', source: 'smc_structure', dedup_key: 'smc_sig_tier',
+      price_at_signal: 100, candle_time: new Date(0).toISOString(),
+      context: { structure_type: 'BOS', ote_leg_high: 200, ote_leg_low: 50 },
+      ...overrides,
+    };
+  }
+
+  const TIER_T1 = { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48, adxMinVal: 25 };
+  const TIER_T2 = { tier: 'T2', atrStopMult: 2.5, chopMaxVal: 58, timeStopBars: 64, adxMinVal: 22 };
+
+  it('flag desligado (default): comportamento idêntico ao anterior — tier_time_stop_bars=96, sem tier/adx_at_entry novos, sem log de regime', async () => {
+    fetchCandles.mockResolvedValue(bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig(); // smcTierEnabled ausente -> falsy
+    // Replica fielmente o que scanAsset produziria com o flag desligado — o
+    // guard em scanAsset:882 nem roda o bloco de tier/adx/chop pra 1h.
+    const results = { '1h': makeTfData({ atrValue: 2, tier: null, adx: null, chop: null }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    const op = ops[0];
+    expect(op.tier).toBeUndefined();
+    expect(op.adx_at_entry).toBeUndefined();
+    expect(op.chop_at_entry).toBeNull();
+    expect(op.tier_time_stop_bars).toBe(96);
+    const logs = await backend.entities.SystemLog.filter({});
+    expect(logs.some(l => l.message?.includes('regime bloqueado'))).toBe(false);
+  });
+
+  it('flag ligado, regime reprovado (ADX fraco) -> nenhuma operação criada, log correto, arbitragem cross-cascade também pulada', async () => {
+    fetchCandles.mockResolvedValue(bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ smcTierEnabled: true });
+    const results = {
+      '1h': makeTfData({ atrValue: 2, tier: { ...TIER_T2 }, adx: { adx: 5 }, chop: 40 }), // ADX 5 < mínimo 22; chop 40 <= 58 (ok)
+    };
+    // Op ativa de OUTRA cascata (RF) — prova que o gate fica ANTES de
+    // hasActiveOp, mesma posição da RF: quando o regime reprova, a
+    // arbitragem cross-cascade nem chega a ser avaliada pra esse sinal.
+    backend._seed('TradeOperation', makeOp({ id: 'op_rf', cascade: '4h_15m', side: 'SELL' }));
+
+    const result = await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(1); // só a op seedada, nenhuma nova
+    expect(result.arbitrationOutcomes).toHaveLength(0); // handleActiveOpArbitration nunca foi chamado
+    expect(result.smcRegimeOutcomes).toEqual([
+      { dedup_key: 'smc_sig_tier', cascade: '1h_5m', ok: false, adxOk: false, chopOk: true },
+    ]);
+
+    const logs = await backend.entities.SystemLog.filter({});
+    const rejected = logs.find(l => l.message?.includes('regime bloqueado'));
+    expect(rejected).toBeTruthy();
+    expect(rejected.message).toContain('ADX fraco');
+    expect(rejected.details.adx).toBe(5);
+    expect(rejected.details.tier).toBe('T2');
+  });
+
+  it('flag ligado, regime aprovado -> operação criada com tier/adx_at_entry/chop_at_entry/tier_time_stop_bars corretos', async () => {
+    fetchCandles.mockResolvedValue(bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ smcTierEnabled: true });
+    const results = {
+      '1h': makeTfData({ atrValue: 2, tier: { ...TIER_T2 }, adx: { adx: 30 }, chop: 45 }), // ambos ok
+    };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    const op = ops[0];
+    expect(op.tier).toBe('T2');
+    expect(op.adx_at_entry).toBe(30);
+    expect(op.chop_at_entry).toBe(45);
+    expect(op.tier_time_stop_bars).toBe(64);
+  });
+
+  it('confirma pelo loop de retry (não só na 1a passada) quando o regime só recupera depois, sem duplicar operação', async () => {
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({ smcTierEnabled: true });
+
+    // Passada 1: ADX fraco — sinal persiste, sem op.
+    fetchCandles.mockResolvedValue(bullishSweepCandles5m());
+    let results = { '1h': makeTfData({ atrValue: 2, tier: { ...TIER_T1 }, adx: { adx: 5 }, chop: 40 }) };
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+
+    // Passada 2 (retry): ADX já recuperou acima do mínimo do tier.
+    fetchCandles.mockReset();
+    fetchCandles.mockResolvedValue(bullishSweepCandles5m());
+    results = { '1h': makeTfData({ atrValue: 2, tier: { ...TIER_T1 }, adx: { adx: 30 }, chop: 40 }) };
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].tier).toBe('T1');
+  });
+
+  // Achado da investigação de código (não hipótese): o loop de gestão de ops
+  // ativas já lê `results[op.signal_timeframe]` de forma genérica pro Chop
+  // Exit (scanner.js) — populando results['1h'].tier via smcTierEnabled faz
+  // o Chop Exit (useChopExit, flag independente e já existente) passar a
+  // valer pra operações SMC "de graça", sem nenhuma linha de código nova
+  // além da própria populaçao do tier. Par de testes prova que o efeito
+  // fica isolado ao estado real de `tier` no resultado — não ao flag em si.
+  it('Chop Exit passa a valer pra operações SMC quando results[1h].tier está populado (efeito colateral documentado, known-risks item 42)', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(true);
+    backend._seed('TradeOperation', makeOp({ signal_timeframe: '1h', cascade: '1h_5m' }));
+    const results = {
+      '1h': makeTfData({ lastCandleHigh: 101, lastCandleLow: 99, chop: 60, tier: { ...TIER_T1, chopMaxVal: 55 } }),
+    };
+    await persistScanResults(makeScanResult({ results, pineConfig: makePineConfig({ useChopExit: true, smcTierEnabled: true }) }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('CLOSED');
+    expect(stored.closed_reason).toBe('CHOP_EXIT');
+    vi.mocked(isTelegramConfigured).mockReturnValue(false);
+  });
+
+  it('sem tier populado (flag desligado), Chop Exit NÃO afeta operações SMC', async () => {
+    backend._seed('TradeOperation', makeOp({ signal_timeframe: '1h', cascade: '1h_5m' }));
+    const results = {
+      '1h': makeTfData({ lastCandleHigh: 101, lastCandleLow: 99, chop: 60, tier: null, adx: null }),
+    };
+    await persistScanResults(makeScanResult({ results, pineConfig: makePineConfig({ useChopExit: true }) })); // smcTierEnabled ausente
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED'); // não fechou
+  });
+
+  it('buildSmcTradeOpData: tier/adx_at_entry/chop_at_entry/tier_time_stop_bars refletem tf1hData.tier quando presente', () => {
+    const sig = makeSmcSignal();
+    const tf1hData = makeTfData({ atrValue: 2, tier: { ...TIER_T2 }, adx: { adx: 30 }, chop: 45 });
+    const confirmation5m = { entryPrice: 100, entryCandleTime: '2026-07-16T12:00:00.000Z', structuralLevel: 95, trigger: 'sweep', oteZone: 'discount' };
+
+    const opData = buildSmcTradeOpData(sig, tf1hData, makePineConfig(), confirmation5m);
+
+    expect(opData.tier).toBe('T2');
+    expect(opData.adx_at_entry).toBe(30);
+    expect(opData.chop_at_entry).toBe(45);
+    expect(opData.tier_time_stop_bars).toBe(64);
+  });
+
+  it('buildSmcTradeOpData: tier_time_stop_bars cai pro literal 96 quando tf1hData.tier está ausente', () => {
+    const sig = makeSmcSignal();
+    const tf1hData = makeTfData({ atrValue: 2, tier: null, adx: null, chop: null });
+    const confirmation5m = { entryPrice: 100, entryCandleTime: '2026-07-16T12:00:00.000Z', structuralLevel: 95, trigger: 'sweep', oteZone: 'discount' };
+
+    const opData = buildSmcTradeOpData(sig, tf1hData, makePineConfig(), confirmation5m);
+
+    expect(opData.tier).toBeUndefined();
+    expect(opData.adx_at_entry).toBeUndefined();
+    expect(opData.chop_at_entry).toBeNull();
+    expect(opData.tier_time_stop_bars).toBe(96);
+  });
+});
+
 describe('cooldown gates the Telegram notification only, never persistence/entry (P1, known-risks item 28)', () => {
   function makeSignal(overrides = {}) {
     return {

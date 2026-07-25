@@ -158,6 +158,32 @@ sobre entradas confirmadas) é o dado para calibrar
 uma terceira vez com `displacementMinVolumeRatio` definido (ex.: `1.2`) e
 compare contra a rodada sem volume.
 
+**`report.smcRegime`** (Fase 3, `docs/known-risks.md` item 42) —
+`{enabled, total, passed, rejected, byReason}`, só cascata SMC (`1h_5m`).
+Mesma receita de comparação das duas rodadas de Fase 2 acima:
+
+```bash
+echo '{"smcTierEnabled": false}' > /tmp/no-smc-tier.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --smc BTCUSDT,ETHUSDT \
+  --from 2025-02-01T00:00:00Z --to 2025-12-01T00:00:00Z \
+  --pine-config /tmp/no-smc-tier.json --out ./report-sem-tier-smc.json
+
+echo '{"smcTierEnabled": true}' > /tmp/with-smc-tier.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --smc BTCUSDT,ETHUSDT \
+  --from 2025-02-01T00:00:00Z --to 2025-12-01T00:00:00Z \
+  --pine-config /tmp/with-smc-tier.json --out ./report-com-tier-smc.json
+```
+
+`--smc` é obrigatório nos dois runs, mesma razão do displacement acima.
+Compare `report.smcRegime` e `report.byCascade['1h_5m']` (win rate/profit
+factor/expectância) entre os dois arquivos. `byReason` (`adx_weak`/`choppy`/
+`adx_and_chop`) mostra qual sub-gate está de fato rejeitando entradas — útil
+pra decidir se vale a pena também desligar `useADX`/`useChop` (toggles
+globais, afetam as duas cascatas) em vez de `smcTierEnabled` inteiro. Se
+`useChopExit` também estiver ligado, observe `report.byCascade['1h_5m']`
+por `closed_reason` — o Chop Exit passa a valer pra operações SMC junto
+(efeito colateral documentado no item 42, não um bug).
+
 ## O que o replay NÃO cobre (por design, não é lacuna)
 
 - **Preço em tempo real (`priceCheckActiveOps`)** — não há dado de tick num
