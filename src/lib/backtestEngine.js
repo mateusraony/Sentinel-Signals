@@ -268,10 +268,15 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
       const confirmed = retestOutcomes.filter(o => o.retested).length;
       const barsSum = retestOutcomes.reduce((sum, o) => sum + (o.retested ? (o.barsToConfirm || 0) : 0), 0);
       const byCascade = {};
-      for (const { cascade, retested } of retestOutcomes) {
+      const byReason = {};
+      for (const { cascade, retested, reason } of retestOutcomes) {
         (byCascade[cascade] ||= { total: 0, confirmed: 0, pending: 0 });
         byCascade[cascade].total += 1;
         byCascade[cascade][retested ? 'confirmed' : 'pending'] += 1;
+        // Auditoria pós-#81/#82: "pending" sozinho conflava motivos distintos
+        // (ainda aguardando vs. parâmetros inválidos vs. sem candles) num só
+        // número — byReason separa cada `reason` de detectRetest.
+        if (!retested) byReason[reason] = (byReason[reason] || 0) + 1;
       }
       return {
         enabled: retestOutcomes.length > 0,
@@ -280,6 +285,7 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
         pending: retestOutcomes.length - confirmed,
         avgBarsToConfirm: confirmed > 0 ? +(barsSum / confirmed).toFixed(1) : null,
         byCascade,
+        byReason,
       };
     })(),
     // Fase 2 rodada 2 displacement gate (src/lib/indicators/displacement.js,
@@ -293,10 +299,12 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
       const confirmedD = displacementOutcomes.filter(o => o.isDisplacement).length;
       const bodyRatioSum = displacementOutcomes.reduce((sum, o) => sum + (o.isDisplacement ? (o.bodyRatio || 0) : 0), 0);
       const byCascade = {};
-      for (const { cascade, isDisplacement } of displacementOutcomes) {
+      const byReason = {};
+      for (const { cascade, isDisplacement, reason } of displacementOutcomes) {
         (byCascade[cascade] ||= { total: 0, confirmed: 0, pending: 0 });
         byCascade[cascade].total += 1;
         byCascade[cascade][isDisplacement ? 'confirmed' : 'pending'] += 1;
+        if (!isDisplacement) byReason[reason] = (byReason[reason] || 0) + 1;
       }
       return {
         enabled: displacementOutcomes.length > 0,
@@ -305,6 +313,7 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
         pending: displacementOutcomes.length - confirmedD,
         avgBodyRatio: confirmedD > 0 ? +(bodyRatioSum / confirmedD).toFixed(2) : null,
         byCascade,
+        byReason,
       };
     })(),
   };

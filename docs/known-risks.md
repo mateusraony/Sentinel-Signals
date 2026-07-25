@@ -1918,7 +1918,7 @@ reteste estava ligado em cada um, e `avgBarsToConfirm` é o dado real pra
 calibrar `retestToleranceAtrMult`/timeout depois — nenhum dos dois é
 validado nesta rodada, só implementados com defaults de partida.
 
-Regressão: `src/lib/indicators/retest.test.js` (11 testes — função pura:
+Regressão: `src/lib/indicators/retest.test.js` (14 testes — função pura:
 confirmação por close/wick, direção-consciência do pavio, exclusão da vela
 do próprio sinal, fronteira de tolerância, entradas inválidas, primeira vela
 qualificada); `scannerStateMachine.test.js` (6 testes — flag desligado sem
@@ -1928,6 +1928,28 @@ fechado sem `smc_broken_level`, confirmação via loop de retry sem duplicar
 operação); `backtestEngine.test.js` (2 testes — seção `retest` do
 relatório, contagem por cascata, média de `barsToConfirm` só sobre
 confirmados).
+
+**Rodada de hardening (pós-auditoria externa das PRs #81/#82)**: uma
+auditoria externa apontou 10 problemas; cada um foi confrontado com o código
+real antes de decidir corrigir ou refutar (nunca aceito às cegas). Bug real
+confirmado e corrigido em `retest.js`: o modo `touchMode: 'wick'` comparava
+só UM ponto (`candle.low` para BUY / `candle.high` para SELL) contra a banda
+`[level±tolerancePrice]` — um pavio que atravessa a banda inteira (ex.:
+low=98 com banda [99,101]) tinha esse ponto fora da banda e o toque não era
+reconhecido, mesmo o candle tendo cruzado fisicamente a zona. Corrigido para
+interseção de faixa (`candle.high >= lowerBound && candle.low <= upperBound`);
+a resolução da direção (`resumedDirection`) continua julgada pelo `close`,
+intocada. Bug **dormente em produção** — `retestTouchMode` default é
+`'close'`, que nunca exercitava esse ramo. `report.retest` (backtest) ganhou
+`byReason` (contagem por `reason` dentre os pendentes — antes só existia
+`pending` agregado, misturando "ainda aguardando" com "parâmetro inválido"/
+"dados insuficientes"). Itens da auditoria refutados para este gate
+(justificativa completa no item 41, que os compartilha): helper de
+normalização de timestamp (todo o pipeline já usa `new Date(x).getTime()`
+consistentemente, sem caso real divergente); estados explícitos
+`RETESTED/NOT_YET/INVALIDATED` (não duplica proteção que
+`check5mSmcConfirmation`/OTE já fazem contra estrutura invalidada, mesmo
+princípio do item 38).
 
 ## 41. Gatilho de candle de deslocamento — Fase 2 rodada 2 (`displacementEnabled`), DESLIGADO por padrão, só cascata SMC — fecha a Fase 2
 
@@ -1998,13 +2020,78 @@ inferido de `displacementOutcomes` não estar vazio. `avgBodyRatio` (só sobre
 confirmados) é o dado real para calibrar `displacementBodyAtrMult` — não
 validado nesta rodada, só implementado com um default de partida (1.5).
 
-Regressão: `src/lib/indicators/displacement.test.js` (9 testes — função
+Regressão: `src/lib/indicators/displacement.test.js` (16 testes — função
 pura: corpo abaixo/acima do limiar, fronteira inclusiva, volume exigido
 abaixo/acima do mínimo, fronteira de volume, dado de volume ausente quando
-exigido, parâmetros inválidos sem lançar exceção); `scannerStateMachine.test.js`
-(6 testes — flag desligado sem mudança de comportamento, corpo insuficiente
-rejeitado com log, corpo suficiente sem exigir volume confirma com os 5
-campos corretos, volume insuficiente rejeita mesmo com corpo ok, volume
-suficiente confirma, confirmação via loop de retry sem duplicar operação);
-`backtestEngine.test.js` (2 testes — seção `displacement` do relatório,
-contagem por cascata, média de `bodyRatio` só sobre confirmados).
+exigido, parâmetros inválidos sem lançar exceção, direção errada/doji
+rejeitados, `bodyAtrMult<=0` inválido); `scannerStateMachine.test.js`
+(6 testes específicos do gate + 2 testes combinados com o reteste — flag
+desligado sem mudança de comportamento, corpo insuficiente rejeitado com
+log, corpo suficiente sem exigir volume confirma com os 5 campos corretos,
+volume insuficiente rejeita mesmo com corpo ok, volume suficiente confirma,
+confirmação via loop de retry sem duplicar operação, os dois gates juntos
+aprovando, reteste aprova mas deslocamento reprova); `backtestEngine.test.js`
+(2 testes — seção `displacement` do relatório, contagem por cascata, média
+de `bodyRatio` só sobre confirmados).
+
+**Rodada de hardening (pós-auditoria externa das PRs #81/#82)**: cada
+alegação da auditoria foi confrontada com o código real antes de decidir
+corrigir ou refutar. Três bugs reais confirmados e corrigidos:
+
+1. **Direção do candle não validada.** `detectDisplacement` media só
+   `Math.abs(close-open)`, sem checar se o candle é líquido a favor da
+   direção do sinal. Alcançável de verdade no gatilho por ESTRUTURA
+   (BOS/CHoCH): `calculateStructure` só exige que o `close` cruze um pivô
+   relativo ao close anterior, sem exigir `close > open`/`close < open` no
+   próprio candle — um candle que abre em gap, vende ao longo do candle mas
+   fecha acima do pivô (BOS de alta) tinha corpo líquido de baixa e ainda
+   passava como deslocamento válido para uma entrada BUY. Corrigido: novo
+   parâmetro obrigatório `direction` (`'BUY'|'SELL'`), checagem
+   `close > open` (BUY) / `close < open` (SELL) ANTES de qualquer outra
+   verificação, novo `reason: 'wrong_direction'` (doji reprova nos dois
+   lados de graça). `bodyAtrMult` também passou a rejeitar `<= 0` (não só
+   `< 0`) — um valor `0` deixava qualquer candle, inclusive doji, passar.
+2. **ATR do gate incluía o próprio candle avaliado (self-normalization).**
+   `evaluateDisplacementGate` calculava `calculateATR(closedCandles, ...)`
+   sobre a série completa, que termina no próprio candle-gatilho — um
+   candle grande inflava seu próprio denominador, reduzindo artificialmente
+   seu `bodyRatio`.
+3. **Média de volume do gate incluía o próprio candle avaliado** — mesmo
+   padrão do item 2, a fatia usada para `volumeMa` incluía o candle-gatilho.
+
+Os itens 2 e 3 foram corrigidos juntos: `evaluateDisplacementGate` agora
+localiza o candle-gatilho por `findIndex` (não mais `.find() ?? último`),
+falha **fechado** com `reason: 'trigger_candle_not_found'` se não achar, e
+fatia `history = closedCandles.slice(0, triggerIndex)` — ATR e média de
+volume passam a ser calculados só sobre `history` (nunca sobre o
+candle-gatilho nem candles futuros), mesmo princípio de
+`isCandleUsableForExits` (P0-g, `.claude/rules/trading-engine.md`) — nunca
+deixar o candle sendo julgado contaminar sua própria régua. Essa mesma
+correção também fechou de graça um item **parcialmente confirmado** da
+auditoria (fallback silencioso para o último candle quando o gatilho não é
+encontrado): verificado que hoje é inalcançável na prática
+(`entryCandleTime` sempre vem do mesmo array que gera `closedCandles`), mas
+o `findIndex`+fail-closed deixa o comportamento explícito e correto mesmo
+se essa garantia mudar no futuro. `report.displacement` (backtest) ganhou
+`byReason` (mesmo padrão do item 40).
+
+**Itens da auditoria refutados ou fora de escopo, com justificativa**:
+helper de normalização de timestamp compartilhado (todo o pipeline —
+retest.js, displacement, scanner.js — já usa `new Date(x).getTime()` de
+forma consistente ponta a ponta; sem caso real de formato divergente,
+só hipotético); validação exaustiva `Number.isFinite`/NaN/Infinity em todo
+parâmetro (desproporcional — nenhuma outra função pura do projeto faz esse
+nível de guarda, e candle real da Binance não produz NaN/Infinity na
+prática; só o ponto concreto e barato achado — `bodyAtrMult<=0` — foi
+corrigido); campos extras de auditoria (`atr_baseline`, `volume_ma_baseline`,
+`displacement_candle_direction`) — valor marginal (o candle confirmado
+SEMPRE tem direção alinhada, por construção do gate — persistir isso é
+sempre `true`) frente ao custo de mais campos de schema; matriz de 14
+testes combinados — 2 testes focados cobrem a interação NOVA de verdade
+(os dois gates juntos aprovando; reteste aprova mas deslocamento reprova),
+o resto (CAS, concorrência, duplicidade de operação) já está coberto por
+testes da Fase 1 não relacionados a esta feature; backtest real com matriz
+de configurações/walk-forward — não é alegação de bug, é validação de
+estratégia em si, e continua **estruturalmente impossível** nesta sessão
+(Binance inacessível a partir de sessões do Claude Code) — a pendência já
+estava registrada e continua registrada, nenhum resultado foi fabricado.

@@ -35,10 +35,18 @@ export function detectRetest(candles, { direction, level, signalCandleTime, tole
     if (signalMs != null && candleMs <= signalMs) continue;
     barsSeen += 1;
 
-    const touchPrice = touchMode === 'wick'
-      ? (direction === 'BUY' ? candle.low : candle.high)
-      : candle.close;
-    const touchedLevel = touchPrice >= lowerBound && touchPrice <= upperBound;
+    // touchMode 'wick': a touch is any overlap between the candle's full
+    // [low, high] range and the tolerance band — NOT just whether a single
+    // extreme (low for BUY, high for SELL) lands inside it. A candle whose
+    // wick blows straight through the whole band (e.g. low well below
+    // lowerBound, high well above upperBound) still physically crossed the
+    // level; picking only one extreme missed that case entirely (external
+    // audit of PR #81/#82, confirmed against this code before fixing —
+    // dormant in production since touchMode defaults to 'close', which
+    // never used this branch).
+    const touchedLevel = touchMode === 'wick'
+      ? (candle.high >= lowerBound && candle.low <= upperBound)
+      : (candle.close >= lowerBound && candle.close <= upperBound);
     // Resumption in the breakout direction is judged on the CLOSE regardless
     // of touchMode — a wick that dips into the retest band but closes back
     // away from the level isn't a confirmed retest, just a longer wick.

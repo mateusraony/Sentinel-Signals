@@ -497,28 +497,41 @@ function stampRetestFields(opData, gate) {
 // straight through; the ATR/volume-MA baseline is computed here with the
 // same pineConfig.atrLen/volLen defaults the rest of the scanner already
 // uses (no new period knobs invented for this round).
-function evaluateDisplacementGate({ closedCandles, entryCandleTime, pineConfig }) {
+function evaluateDisplacementGate({ closedCandles, entryCandleTime, direction, pineConfig }) {
   const bodyAtrMult = pineConfig.displacementBodyAtrMult ?? 1.5;
   const minVolumeRatio = pineConfig.displacementMinVolumeRatio ?? null;
-  const triggerCandle = closedCandles?.find(c => c.closeTime === new Date(entryCandleTime).getTime())
-    ?? closedCandles?.[closedCandles.length - 1] ?? null;
-  // Clamp to what closedCandles actually holds: check5mSmcConfirmation
-  // fetches a fixed ~150-candle window sized for its OWN sweep/structure
-  // needs, not for an arbitrary configured ATR period. calculateATR needs
-  // period+1 candles and silently returns 0 otherwise, which detectDisplacement
-  // then reads as invalid_params — rejecting every entry regardless of body
-  // size whenever pineConfig.atrLen exceeds what's available (plausible: the
+  const triggerIndex = closedCandles?.findIndex(c => c.closeTime === new Date(entryCandleTime).getTime()) ?? -1;
+  if (triggerIndex === -1) {
+    return {
+      isDisplacement: false, bodyRatio: null, volumeRatio: null, reason: 'trigger_candle_not_found', bodyAtrMult, minVolumeRatio,
+    };
+  }
+  const triggerCandle = closedCandles[triggerIndex];
+  // ATR and volume MA are baselines the trigger candle is measured AGAINST —
+  // computing them from a series that ends WITH the trigger candle lets a
+  // large candle inflate its own yardstick (self-normalization), silently
+  // pulling its bodyRatio/volumeRatio down. Slice the history to everything
+  // strictly BEFORE the trigger candle, same principle as isCandleUsableForExits
+  // (.claude/rules/trading-engine.md, P0-g) — never let the candle being
+  // judged contaminate its own baseline.
+  const history = closedCandles.slice(0, triggerIndex);
+  // Clamp to what history actually holds: check5mSmcConfirmation fetches a
+  // fixed ~150-candle window sized for its OWN sweep/structure needs, not
+  // for an arbitrary configured ATR period. calculateATR needs period+1
+  // candles and silently returns 0 otherwise, which detectDisplacement then
+  // reads as invalid_params — rejecting every entry regardless of body size
+  // whenever pineConfig.atrLen exceeds what's available (plausible: the
   // project's own Pine reference uses ATR(200) for Order Block confirmation
   // elsewhere). Codex review, PR #82.
-  const atrPeriod = closedCandles ? Math.min(pineConfig.atrLen ?? 14, closedCandles.length - 1) : null;
-  const atrValue = closedCandles && atrPeriod ? calculateATR(closedCandles, atrPeriod) : null;
+  const atrPeriod = Math.min(pineConfig.atrLen ?? 14, Math.max(history.length - 1, 0));
+  const atrValue = atrPeriod ? calculateATR(history, atrPeriod) : null;
   let volumeMa = null;
-  if (minVolumeRatio != null && closedCandles) {
+  if (minVolumeRatio != null) {
     const volPeriod = pineConfig.volLen ?? 20;
-    const volumes = closedCandles.map(c => c.volume || 0).slice(-volPeriod);
+    const volumes = history.map(c => c.volume || 0).slice(-volPeriod);
     volumeMa = volumes.length ? volumes.reduce((a, b) => a + b, 0) / volumes.length : null;
   }
-  const result = detectDisplacement(triggerCandle, { atrValue, bodyAtrMult, minVolumeRatio, volumeMa });
+  const result = detectDisplacement(triggerCandle, { direction, atrValue, bodyAtrMult, minVolumeRatio, volumeMa });
   return { ...result, bodyAtrMult, minVolumeRatio };
 }
 
@@ -1453,7 +1466,7 @@ export async function persistScanResults(scanResult) {
                     pineConfig,
                   })
                 : null;
-              if (retestGate) retestOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm });
+              if (retestGate) retestOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm, reason: retestGate.reason });
               if (retestGate && !retestGate.retested) {
                 await backend.entities.SystemLog.create({
                   level: 'info',
@@ -1553,7 +1566,7 @@ export async function persistScanResults(scanResult) {
                 pineConfig,
               })
             : null;
-          if (retestGate) retestOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm });
+          if (retestGate) retestOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm, reason: retestGate.reason });
           if (retestGate && !retestGate.retested) {
             await backend.entities.SystemLog.create({
               level: 'info',
@@ -1573,9 +1586,14 @@ export async function persistScanResults(scanResult) {
             // check5mSmcConfirmation just found (no extra fetchCandles) —
             // see evaluateDisplacementGate's own comment above.
             const displacementGate = pineConfig.displacementEnabled
-              ? evaluateDisplacementGate({ closedCandles: confirmed5m.closedCandles, entryCandleTime: confirmed5m.entryCandleTime, pineConfig })
+              ? evaluateDisplacementGate({
+                  closedCandles: confirmed5m.closedCandles,
+                  entryCandleTime: confirmed5m.entryCandleTime,
+                  direction: signal.signal_type,
+                  pineConfig,
+                })
               : null;
-            if (displacementGate) displacementOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', isDisplacement: displacementGate.isDisplacement, bodyRatio: displacementGate.bodyRatio });
+            if (displacementGate) displacementOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', isDisplacement: displacementGate.isDisplacement, bodyRatio: displacementGate.bodyRatio, reason: displacementGate.reason });
             if (displacementGate && !displacementGate.isDisplacement) {
               await backend.entities.SystemLog.create({
                 level: 'info',
@@ -1815,7 +1833,7 @@ export async function persistScanResults(scanResult) {
     // unlike the SystemLog above. backtestEngine.js dedupes by dedup_key,
     // last-write-wins, so a later "retested:true" here correctly overwrites
     // the "pending" outcome the 1st pass recorded.
-    if (retestGate) retestOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm });
+    if (retestGate) retestOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm, reason: retestGate.reason });
     if (retestGate && !retestGate.retested) continue;
 
     // Re-run 15m confirmation
@@ -1897,7 +1915,7 @@ export async function persistScanResults(scanResult) {
           })
         : null;
       // In-memory only — see the RF retry loop's comment above.
-      if (retestGate) retestOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm });
+      if (retestGate) retestOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm, reason: retestGate.reason });
       if (retestGate && !retestGate.retested) continue;
 
       // Legacy SignalEvents predating item 38 have no ote_leg_high/low —
@@ -1914,9 +1932,14 @@ export async function persistScanResults(scanResult) {
       // SystemLog per ~5min retry tick). Reuses confirmed.closedCandles —
       // no extra fetchCandles.
       const displacementGate = pineConfig.displacementEnabled
-        ? evaluateDisplacementGate({ closedCandles: confirmed.closedCandles, entryCandleTime: confirmed.entryCandleTime, pineConfig })
+        ? evaluateDisplacementGate({
+            closedCandles: confirmed.closedCandles,
+            entryCandleTime: confirmed.entryCandleTime,
+            direction: sig.signal_type,
+            pineConfig,
+          })
         : null;
-      if (displacementGate) displacementOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', isDisplacement: displacementGate.isDisplacement, bodyRatio: displacementGate.bodyRatio });
+      if (displacementGate) displacementOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', isDisplacement: displacementGate.isDisplacement, bodyRatio: displacementGate.bodyRatio, reason: displacementGate.reason });
       if (displacementGate && !displacementGate.isDisplacement) continue;
 
       const opData = buildSmcTradeOpData(sig, tfData1h, pineConfig, confirmed);

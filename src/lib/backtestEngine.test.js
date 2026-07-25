@@ -503,16 +503,16 @@ describe('buildReport', () => {
   it('retest defaults to disabled/all-zero when the caller passes nothing (legacy call shape, flag off)', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
     expect(report.retest).toEqual({
-      enabled: false, total: 0, confirmed: 0, pending: 0, avgBarsToConfirm: null, byCascade: {},
+      enabled: false, total: 0, confirmed: 0, pending: 0, avgBarsToConfirm: null, byCascade: {}, byReason: {},
     });
   });
 
-  it('retest counts confirmed vs pending by cascade and averages barsToConfirm over CONFIRMED outcomes only', () => {
+  it('retest counts confirmed vs pending by cascade, averages barsToConfirm over CONFIRMED outcomes only, and tallies pending reasons', () => {
     const retestOutcomes = [
-      { dedup_key: 'a', cascade: '4h_15m', retested: true, barsToConfirm: 2 },
-      { dedup_key: 'b', cascade: '4h_15m', retested: true, barsToConfirm: 4 },
-      { dedup_key: 'c', cascade: '4h_15m', retested: false, barsToConfirm: null },
-      { dedup_key: 'd', cascade: '1h_5m', retested: false, barsToConfirm: null },
+      { dedup_key: 'a', cascade: '4h_15m', retested: true, barsToConfirm: 2, reason: null },
+      { dedup_key: 'b', cascade: '4h_15m', retested: true, barsToConfirm: 4, reason: null },
+      { dedup_key: 'c', cascade: '4h_15m', retested: false, barsToConfirm: null, reason: 'not_yet' },
+      { dedup_key: 'd', cascade: '1h_5m', retested: false, barsToConfirm: null, reason: 'invalid_params' },
     ];
     const report = buildReport([], { fromMs: 0, toMs: 1000, retestOutcomes });
     expect(report.retest.enabled).toBe(true);
@@ -524,6 +524,9 @@ describe('buildReport', () => {
       '4h_15m': { total: 3, confirmed: 2, pending: 1 },
       '1h_5m': { total: 1, confirmed: 0, pending: 1 },
     });
+    // Auditoria pós-#81/#82: um único "pending" conflava motivos distintos
+    // (ainda aguardando vs. parâmetro inválido) — byReason os separa.
+    expect(report.retest.byReason).toEqual({ not_yet: 1, invalid_params: 1 });
   });
 
   // Fase 2 rodada 2 (docs/known-risks.md item 41) — same enabled-inferred-
@@ -531,15 +534,15 @@ describe('buildReport', () => {
   it('displacement defaults to disabled/all-zero when the caller passes nothing (legacy call shape, flag off)', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
     expect(report.displacement).toEqual({
-      enabled: false, total: 0, confirmed: 0, pending: 0, avgBodyRatio: null, byCascade: {},
+      enabled: false, total: 0, confirmed: 0, pending: 0, avgBodyRatio: null, byCascade: {}, byReason: {},
     });
   });
 
-  it('displacement counts confirmed vs pending by cascade and averages bodyRatio over CONFIRMED outcomes only', () => {
+  it('displacement counts confirmed vs pending by cascade, averages bodyRatio over CONFIRMED outcomes only, and tallies pending reasons', () => {
     const displacementOutcomes = [
-      { dedup_key: 'a', cascade: '1h_5m', isDisplacement: true, bodyRatio: 2 },
-      { dedup_key: 'b', cascade: '1h_5m', isDisplacement: true, bodyRatio: 4 },
-      { dedup_key: 'c', cascade: '1h_5m', isDisplacement: false, bodyRatio: 0.5 },
+      { dedup_key: 'a', cascade: '1h_5m', isDisplacement: true, bodyRatio: 2, reason: null },
+      { dedup_key: 'b', cascade: '1h_5m', isDisplacement: true, bodyRatio: 4, reason: null },
+      { dedup_key: 'c', cascade: '1h_5m', isDisplacement: false, bodyRatio: 0.5, reason: 'body_too_small' },
     ];
     const report = buildReport([], { fromMs: 0, toMs: 1000, displacementOutcomes });
     expect(report.displacement.enabled).toBe(true);
@@ -550,6 +553,7 @@ describe('buildReport', () => {
     expect(report.displacement.byCascade).toEqual({
       '1h_5m': { total: 3, confirmed: 2, pending: 1 },
     });
+    expect(report.displacement.byReason).toEqual({ body_too_small: 1 });
   });
 });
 
