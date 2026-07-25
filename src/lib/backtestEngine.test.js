@@ -55,6 +55,7 @@ import {
   sliceClosedAsOf, inferStepMs, runBacktest, buildReport,
 } from './backtestEngine.js';
 import { scanAsset } from './scanner.js';
+import { ZERO_COST } from './tradeMetrics.js';
 import { goldenCandles } from './indicators/__fixtures__/candles.js';
 
 // ─── Candle generators (custom interval spacing, unlike the fixed 1h
@@ -434,6 +435,15 @@ describe('runBacktest — input validation', () => {
 });
 
 describe('buildReport', () => {
+  // Op fechada mínima com risco = 10 (entry 100, stop 90) — os testes de
+  // custo da Fase 5 usam este shape para valores calculáveis à mão.
+  const closedOp = (o = {}) => ({
+    status: 'STOP_HIT', cascade: '4h_15m', side: 'BUY',
+    entry_price: 100, initial_stop: 90, current_stop: 90,
+    closed_at: '2026-07-16T09:00:00.000Z', candle_close_time: '2026-07-16T08:00:00.000Z',
+    ...o,
+  });
+
   it('separates still-open ops from closed ones and groups closed ops by cascade', () => {
     const ops = [
       { status: 'SIGNAL_CONFIRMED', cascade: '4h_15m' },
@@ -563,6 +573,44 @@ describe('buildReport', () => {
     expect(report.smcRegime).toEqual({
       enabled: false, total: 0, passed: 0, rejected: 0, byReason: {},
     });
+  });
+
+  // Fase 5 (docs/known-risks.md item 44) — custo real e gate de amostra.
+  it('costs: ecoa o modelo aplicado e marca applied:true no default', () => {
+    const report = buildReport([], { fromMs: 0, toMs: 1000 });
+    expect(report.costs.model.applied).toBe(true);
+    expect(report.costs.model.feeBpsEntry).toBe(5); // 0.05% taker
+    expect(report.costs.model.slippageBpsPerSide).toBe(1);
+  });
+
+  it('costs: --no-costs (ZERO_COST) marca applied:false e zera o custo', () => {
+    const ops = [closedOp({ exit_price: 95 })];
+    const report = buildReport(ops, { fromMs: 0, toMs: 1000, costModel: ZERO_COST });
+    expect(report.costs.model.applied).toBe(false);
+    expect(report.costs.totalCostPct).toBe(0);
+    expect(report.costs.avgCostR).toBe(0);
+    // REGRESSÃO: com custo zero o resultado tem que ser o bruto de sempre.
+    expect(report.costs.netExpectancyR).toBeCloseTo(report.costs.grossExpectancyR, 10);
+  });
+
+  it('costs: com o default, o líquido é PIOR que o bruto exatamente pelo custo', () => {
+    const ops = [closedOp({ exit_price: 95 })];
+    const report = buildReport(ops, { fromMs: 0, toMs: 1000 });
+    expect(report.costs.avgCostR).toBeGreaterThan(0);
+    expect(report.costs.netExpectancyR).toBeCloseTo(
+      report.costs.grossExpectancyR - report.costs.avgCostR, 10,
+    );
+  });
+
+  it('costs: poucas operações -> relatório INCONCLUSIVO', () => {
+    const ops = [closedOp({ exit_price: 95 })];
+    const report = buildReport(ops, { fromMs: 0, toMs: 1000 });
+    expect(report.costs.conclusive).toBe(false);
+    expect(report.costs.inconclusiveReason).toBe('sample_too_small');
+    expect(report.costs.countedTrades).toBe(1);
+    expect(report.costs.minTrades).toBe(30);
+    // O veredito tem que descrever o MESMO agregado que `overall`.
+    expect(report.costs.countedTrades).toBe(report.overall.counted);
   });
 
   // Fase 4 (docs/known-risks.md item 43) — mesma convenção enabled-inferido-

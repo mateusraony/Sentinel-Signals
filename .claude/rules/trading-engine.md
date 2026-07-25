@@ -200,6 +200,18 @@ nunca deve receber nova transição.**
   original depende de perfil de volume via biblioteca externa inacessível) —
   ver `docs/known-risks.md` item 43.
 
+- **Custos reais e gate de amostra** (`src/lib/tradeMetrics.js`) — Fase 5,
+  **LIGADO por padrão** (não é opt-in como as Fases 2-4: corrige uma medição
+  errada, não adiciona mecanismo). Taxa/slippage/funding descontados no
+  chokepoint `calcRealizedDelta`, propagando para win rate, drawdown e profit
+  factor — no painel E no backtest. `ZERO_COST` é o opt-out explícito.
+  **`avgCostR` é a métrica que decide**: custo em R, comparável direto com
+  `expectancyR`. `summarizeOps` também devolve IC da expectância e
+  `conclusive` — relatório com amostra insuficiente diz INCONCLUSIVO em vez de
+  exibir win rate. **Regra herdada da literatura: congele os custos ANTES de
+  calibrar qualquer parâmetro** (calibrar a custo zero e recalibrar depois
+  dobra as tentativas e contamina a busca). Ver `docs/known-risks.md` item 44.
+
 ## Regras ao mexer aqui
 
 - **Não** introduza um terceiro caminho de mutação de op. Consolidar/serializar

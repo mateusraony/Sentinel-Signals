@@ -206,13 +206,71 @@ termo, aí sim compensa o estágio 2 — rodar de novo com
 continuar somando 100) e comparar win rate/profit factor/expectância de
 `report.byCascade['1h_5m']` contra a rodada de peso 0.
 
+**`report.costs`** (Fase 5, `docs/known-risks.md` item 44) —
+`{model, avgCostR, totalCostPct, grossExpectancyR, netExpectancyR, conclusive,
+inconclusiveReason, expectancyRCI95, countedTrades, minTrades}`. **Taxa,
+slippage e funding são descontados POR PADRÃO** (diferente de todas as outras
+seções, que são opt-in): esta fase não adicionou um mecanismo, corrigiu uma
+medição que estava otimista.
+
+**A linha que decide é `avgCostR`** — o custo expresso em múltiplos do risco,
+comparável direto com `netExpectancyR`. Exemplo concreto: taxa taker de 0,05%
+por lado dá 10 bps de ida e volta; com stop a 0,5% do preço de entrada isso é
+**0,20 R por operação**. Uma configuração com expectância de +0,15 R é, na
+prática, negativa. Se `avgCostR` for da mesma ordem que `netExpectancyR`, a
+"vantagem" era só ausência de custo.
+
+Para medir quanto o custo comeu, rode o A/B:
+
+```bash
+npm run backtest -- --symbols BTCUSDT --from 2025-02-01T00:00:00Z \
+  --to 2025-12-01T00:00:00Z --out ./report-com-custo.json
+
+npm run backtest -- --symbols BTCUSDT --from 2025-02-01T00:00:00Z \
+  --to 2025-12-01T00:00:00Z --no-costs --out ./report-sem-custo.json
+```
+
+`--no-costs` reproduz **exatamente** os números de antes da Fase 5 — é a
+referência para ver o delta. Outras flags: `--fee-bps N` (default 5 = 0,05%
+taker), `--slippage-bps N` (default 1), `--funding-bps N` (default 1, por
+janela de 8h), `--min-trades N` (default 30), `--trial-label TXT` (gravado no
+JSON — serve para você contar quantas configurações já testou).
+
+**⚠️ `conclusive: false` significa que o relatório não sustenta conclusão
+nenhuma** — o CLI imprime **RESULTADO INCONCLUSIVO** em destaque. Isso conserta
+o problema real do processo: um backtest com 3 operações produz win rate e
+profit factor de aparência perfeitamente normal, e é exatamente aí que uma
+decisão errada nasce.
+
+`minTrades = 30` é **só** o limiar do Teorema Central do Limite (quando um
+intervalo de confiança *pode* ser calculado), **não** quando ele fica estreito
+o bastante para decidir. Quantas operações são realmente necessárias, por
+expectância real:
+
+| Expectância | Operações (80% de poder, 5%) |
+|---|---|
+| 0,50 R | ~45 |
+| 0,25 R | ~181 |
+| 0,10 R | ~1.130 |
+
+**Regra de ordem, herdada da literatura de overfitting** (Bajgrowicz &
+Scaillet, JFE 2012): **congele os custos antes de calibrar qualquer
+parâmetro**. Calibrar a custo zero e recalibrar depois dobra a contagem de
+tentativas e contamina a segunda busca. Na prática: os pesos de OB/FVG da
+Fase 4 só devem ser calibrados com o custo já ligado — que é o default.
+
 ## O que o replay NÃO cobre (por design, não é lacuna)
 
 - **Preço em tempo real (`priceCheckActiveOps`)** — não há dado de tick num
   backtest só de candle. As saídas usam o high/low de cada candle fechado
   (`persistScanResults`), que é uma aproximação **conservadora** do preço ao
-  vivo (pior caso do range da barra) — isso só pode fazer o win rate
-  replayado parecer **pior** que ao vivo, nunca melhor/inflado.
+  vivo (pior caso do range da barra) — **essa aproximação específica** só pode
+  fazer o win rate replayado parecer pior que ao vivo, nunca melhor.
+  ⚠️ **Correção (Fase 5, known-risks item 44)**: esta frase já esteve escrita
+  aqui como se valesse para o replay INTEIRO. Era falsa. Até a Fase 5 o replay
+  não descontava taxa/slippage/funding, o que empurra na direção oposta —
+  inflava o resultado. Custos agora são descontados por padrão; ver
+  `report.costs` abaixo.
 - **Notificações Telegram** — desligadas (`scripts/backtestTelegram.js` é
   no-op) para não gerar spam/rate-limit reprocessando meses de sinais de
   uma vez.
