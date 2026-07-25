@@ -74,6 +74,17 @@ const DEFAULTS = {
   // SMC tier/regime gate (Fase 3, src/lib/indicators/tier.js) — master flag
   // OFF by default, see docs/known-risks.md item 42.
   smcTierEnabled: false,
+  // Order Block / FVG (Fase 4) — informational score inputs, never a gate.
+  // Master flag OFF by default; weights start at 0. Use --pine-config to
+  // compare backtest reports with/without. See docs/known-risks.md item 43.
+  smcObFvgEnabled: false,
+  obFvgAtrLen: 50,
+  obMinAtrMult: 0.5,
+  obMaxAtrMult: 2.5,
+  fvgMinAtrMult: 0.5,
+  fvgFillTargetRatio: 0.6,
+  smcScoreObWeight: 0,
+  smcScoreFvgWeight: 0,
 };
 
 let overrides = {};

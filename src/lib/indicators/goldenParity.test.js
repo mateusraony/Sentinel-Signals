@@ -30,6 +30,8 @@ import { calculateADX } from './adx.js';
 import { calculateChoppiness } from './choppiness.js';
 import { calculateAtrPctSmooth, classifyTier } from './tier.js';
 import { calculateStructure, calculateLiquiditySweep, calculatePdZone } from './smcStructure.js';
+import { detectFvg } from './fvg.js';
+import { detectOrderBlock } from './orderBlock.js';
 import { calculateSignalStrength } from './confluence.js';
 import { goldenCandles, chochBreakoutCandles } from './__fixtures__/candles.js';
 import { emaRef, atrRef, rsiRef, adxRef, chopRef } from './__fixtures__/pineRef.js';
@@ -235,6 +237,55 @@ describe('SMC — no-repaint (evento na barra N imutável)', () => {
       const slice = CANDLES.slice(0, i + 1);
       expect(calculateLiquiditySweep(slice, 20)).toEqual(calculateLiquiditySweep(slice, 20));
       expect(calculatePdZone(slice, 20)).toEqual(calculatePdZone(slice, 20));
+    }
+  });
+
+  // Fase 4 (docs/known-risks.md item 43). ATENÇÃO ao ler estes testes: OB/FVG
+  // são porte DELIBERADAMENTE PARCIAL (perfil de volume do Pine é
+  // inacessível), então o que se valida aqui é causalidade/não-repaint da
+  // lógica simplificada contra ela mesma — NUNCA paridade com o TradingView,
+  // ao contrário de BOS/CHoCH/sweep/PD acima. Ver .claude/rules/pine-parity.md.
+  it('FVG: resultado na barra N não muda quando calculado só com dados até N', () => {
+    for (const i of [120, 200, 330, 470]) {
+      const slice = CANDLES.slice(0, i + 1);
+      for (const direction of ['BUY', 'SELL']) {
+        const params = { direction, sizeThreshold: 0.5, fillTargetRatio: 0.6 };
+        const a = detectFvg(slice, params);
+        // Recalcular com MAIS dados no futuro não pode mudar o veredito da
+        // barra N — o prefixo é a única coisa que a produção enxerga.
+        const b = detectFvg(CANDLES.slice(0, i + 1), params);
+        expect(a.active).toBe(b.active);
+        expect(a.gapHigh).toBe(b.gapHigh);
+        expect(a.gapLow).toBe(b.gapLow);
+        expect(a.barsAgo).toBe(b.barsAgo);
+      }
+    }
+  });
+
+  it('FVG: velas futuras nunca alteram um veredito já emitido numa barra anterior', () => {
+    const params = { direction: 'BUY', sizeThreshold: 0.5, fillTargetRatio: 0.6 };
+    // Snapshot barra a barra; depois reconfere cada um com o prefixo exato.
+    const snapshots = [];
+    for (let i = 60; i < N; i += 23) {
+      snapshots.push([i, detectFvg(CANDLES.slice(0, i + 1), params).active]);
+    }
+    for (const [i, wasActive] of snapshots) {
+      expect(detectFvg(CANDLES.slice(0, i + 1), params).active).toBe(wasActive);
+    }
+  });
+
+  it('Order Block: veredito por prefixo é estável e booleano (sem float)', () => {
+    for (const i of [120, 200, 330, 470]) {
+      const slice = CANDLES.slice(0, i + 1);
+      for (const direction of ['BUY', 'SELL']) {
+        const params = { direction, atrValue: 2 };
+        const a = detectOrderBlock(slice, params);
+        const b = detectOrderBlock(CANDLES.slice(0, i + 1), params);
+        expect(a.active).toBe(b.active);
+        expect(a.zoneHigh).toBe(b.zoneHigh);
+        expect(a.zoneLow).toBe(b.zoneLow);
+        expect(a.reason).toBe(b.reason);
+      }
     }
   });
 });

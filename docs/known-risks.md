@@ -2203,3 +2203,164 @@ efeito colateral do Chop Exit; 2 testes unitários diretos de
 `buildSmcTradeOpData` com/sem `tf1hData.tier`); `backtestEngine.test.js` (2
 testes — seção `smcRegime` do relatório, contagem de `passed`/`rejected`,
 `byReason` com as 3 combinações adx/chop).
+
+## 43. Order Block / Fair Value Gap — Fase 4 (`smcObFvgEnabled`), DESLIGADO por padrão, informativos e nunca gate
+
+**Status: DESLIGADO, e com pesos de score em 0 mesmo quando ligado** (ativação
+em dois estágios, explicada abaixo). **Não suba peso nenhum sem antes rodar
+`npm run backtest` com `smcObFvgEnabled: true` e olhar `report.smcObFvg`** —
+esse relatório é literalmente o único efeito observável do estágio 1, e é o
+dado que responde "vale a pena dar peso a isso?".
+
+### Correção de registro — a nota anterior estava errada
+
+O arquivo `docs/reference-pine/smc-a-unified-v2.3.pine` era **parcial** (só as
+regiões `LIB SMC` e `ADAPTIVE HELPERS`) e trazia uma nota afirmando que as
+regiões omitidas — inclusive Order Block, FVG e os alertas — eram "puramente de
+VISUALIZAÇÃO no TradingView, sem contrapartida de decisão de trading". O usuário
+forneceu o script COMPLETO nesta rodada e **essa afirmação foi refutada**: existe
+uma região `#region CONFLUENCE SCORE` onde `ob_bull_active`, `ob_bear_active`,
+`fvg_bull_active` e `fvg_bear_active` são **4 dos 7 componentes** de um score
+0–7 (`bull_score`/`bear_score`) exibido em tabela. A nota tinha sido escrita por
+uma sessão anterior que não tinha o arquivo inteiro — exatamente o caso que
+`.claude/rules/documentation-truth.md` manda confrontar com a fonte antes de
+registrar. O arquivo de referência foi **substituído pelo script completo** e a
+nota corrigida, fechando de vez a lacuna do item 9.
+
+O que a correção NÃO muda: o script continua sendo um `indicator()`, não um
+`strategy()` — não há `strategy.entry()`/`strategy.exit()` em lugar nenhum dele.
+OB/FVG alimentam um score e disparam `alertcondition()`, nunca uma ordem. E o
+scanner do Sentinel não consome alertas do TradingView (recomputa tudo a partir
+de candles da Binance), então a região de alertas não gera obrigação de porte.
+Ou seja: a descoberta **confirma** o escopo escolhido (OB/FVG como entrada de
+score) em vez de ampliá-lo.
+
+### Pesquisa antes de implementar
+
+Três agentes em paralelo (extração literal do Pine, mapeamento do JS existente,
+pesquisa de comunidade ICT/SMC):
+
+- **Definição de FVG tem consenso real** (3 velas, wick a wick) — porte fiel é
+  possível e foi feito.
+- **Definição de Order Block NÃO tem consenso**: a pesquisa achou pelo menos 3
+  variantes legítimas (qualquer última vela contrária × exigir FVG associado ×
+  detecção por pico de volume) e **nenhum limiar numérico canônico** para "OB
+  válido" — diferente de ADX 25 (Wilder, 1978) ou Choppiness 61.8 (Dreiss,
+  1992), que têm autor e origem rastreáveis. Por isso os múltiplos usados aqui
+  são os do **próprio Pine do usuário** (ATR(50) × [0.5, 2.5]), única âncora
+  defensável.
+- **Evidência empírica de que OB/FVG funcionam como gatilho é fraca** e o campo
+  é dominado por fontes de baixa qualidade (SEO/content farm; o único "estudo
+  acadêmico" localizado é de periódico sinalizado como predatório). A crítica
+  metodológica mais substantiva encontrada aponta o problema real: SMC/ICT não
+  tem definição objetiva/falsificável, então dois analistas rotulam o mesmo
+  gráfico de formas diferentes. Isso não invalida usar como **informação de
+  confluência** — que é como o próprio Pine do usuário usa — mas invalida
+  tratar como gatilho, e é a razão dos pesos nascerem em 0.
+
+### O que foi portado, o que foi simplificado e o que é IMPOSSÍVEL
+
+**FVG (`src/lib/indicators/fvg.js`) — porte fiel da lógica.** Condição de 3
+velas idêntica (`low[0] - high[2]` / `low[2] - high[0]`), filtro de tamanho
+`ATR(50) × 0.5` (o `min_fvg_atr_mult` real), preenchimento a **60%** por
+FECHAMENTO (`fvg_fill_target_ratio = 60/100`, `LevelBreakMode.CLOSE` — não é
+preenchimento total, não é 50%, não é por pavio). Única divergência: o Pine
+acumula FVGs num array `var` desde o início do gráfico; aqui não há estado entre
+scans, então a varredura é limitada a `lookback` (default 60 velas). Registrado,
+não é falha de paridade.
+
+**Correção pós-review do Codex (PR #85) — limiar por barra de formação.** A
+primeira versão passava um `sizeThreshold` escalar (ATR da última barra) e o
+aplicava a TODOS os candidatos da janela de 60 velas. O Pine faz diferente, e a
+diferença é observável: `fvg_size_threshold` é série por barra, a checagem
+`sz > size_threshold` ocorre no instante da **formação**, e o objeto criado vive
+até ser preenchido — `remove_insignificant` só re-testaria tamanho com
+`gc_cycle > 0`, e a chamada real **omite** esse argumento (fica `na`,
+desligado). Com o escalar, um gap antigo aparecia e sumia conforme o ATR de hoje
+oscilava: gap válido formado em baixa volatilidade desaparecia quando o ATR
+subia, e gap reprovado em alta volatilidade reaparecia quando caía. Isso enviesa
+justamente `report.smcObFvg`, que é o único entregável do estágio 1. Corrigido:
+`detectFvg` aceita `sizeThreshold` como **array alinhado a `candles`** e julga
+cada candidato pelo limiar da sua própria barra; `scanner.js` passa
+`calculateATRSeries(closedCandles, obFvgAtrLen) × fvgMinAtrMult`. O escalar
+segue aceito por conveniência em teste de limiar fixo. 4 testes novos, incluindo
+a contraprova de que o escalar de fato falharia.
+
+**O Order Block não tem esse problema**: é avaliado uma única vez, na barra do
+rompimento (`candles[n-1]`), então o ATR corrente É o de formação — o escalar
+está correto ali e foi mantido.
+
+**Order Block (`src/lib/indicators/orderBlock.js`) — aproximação geométrica
+deliberada.** Porta a definição mainstream ("última vela contrária antes do
+impulso que rompe estrutura") e o filtro de tamanho do Pine real. **Não** porta:
+a máquina de estados `trailing→extending→awaiting_confirmation→confirmed` (o
+Pine rastreia candidatos barra a barra com estado `var`, incompatível com um
+scanner que recalcula tudo do zero a cada passada), as 5 vias alternativas de
+confirmação, `soft_confirm`, `has_fvg_out`, `is_bac`, e os arrays
+`tracking_blocks_*`/`broken_blocks_*`.
+
+**E parte é IMPOSSÍVEL, não questão de esforço**: a chamada real do usuário usa
+`align_edge_to_value_area=true` e `align_break_price_to_poc=true`, ou seja, as
+bordas do bloco e o `break_price` (nível de invalidação) vêm de um **perfil de
+volume** (VAH/VAL/POC) calculado pela biblioteca externa `robbatt/lib_profile/44`,
+cujo código não existe neste repositório nem é acessível. Por isso a invalidação
+aqui é uma regra única e explicável (fechamento além da zona no sentido
+contrário ao rompimento) em vez do `update_broken` original.
+
+**Consequência para paridade**: OB/FVG **não são candidatos a golden test contra
+o TradingView**, diferente de BOS/CHoCH/sweep/PD (porte fiel). Os testes de
+`goldenParity.test.js` para eles validam causalidade/não-repaint da lógica
+simplificada contra ela mesma. Registrado também em
+`.claude/rules/pine-parity.md`.
+
+### Ativação em dois estágios (decisão central desta rodada)
+
+Os 7 pesos do score SMC somam exatamente 100 e o score termina em
+`Math.min(100, ...)`. Adicionar peso novo sem redistribuir comprime o topo da
+distribuição — e esse score **já é consumido em produção** pelos limiares de
+arbitragem da Fase 1 (`arbPromoteMinScore: 75`, `arbReinforceMinScore: 50`).
+Mexer nos pesos existentes seria mudança de comportamento real, não aditiva.
+Daí o desenho:
+
+1. **Estágio 1 — medir**: ligar `smcObFvgEnabled` com os pesos no default (0)
+   produz os campos de auditoria (`SignalEvent.context.ob_active`/`fvg_active`)
+   e a seção `report.smcObFvg` do backtest, com o **score numericamente
+   idêntico** ao de antes da Fase 4. Coberto por teste dedicado.
+2. **Estágio 2 — dar peso**: subir `smcScoreObWeight`/`smcScoreFvgWeight`,
+   redistribuindo os demais para continuar somando 100, é decisão separada e
+   deliberada, informada pelo backtest do estágio 1. **Não feita nesta rodada.**
+
+### Campos e configuração
+
+`SignalEvent.context.ob_active` / `context.fvg_active` (`boolean|null`) —
+observacionais, nunca consumidos por stop/TP nem por gate. `null` = não avaliado
+(flag desligado ou sem rompimento naquela vela), `false` = avaliado e não ativo.
+Nada novo em `TradeOperation` (o score já carrega o efeito — sem redundância).
+
+Config sincronizada nos 3 arquivos: `smcObFvgEnabled: false`, `obFvgAtrLen: 50`,
+`obMinAtrMult: 0.5`, `obMaxAtrMult: 2.5`, `fvgMinAtrMult: 0.5`,
+`fvgFillTargetRatio: 0.6`, `smcScoreObWeight: 0`, `smcScoreFvgWeight: 0` — todos
+os numéricos espelhando o Pine real.
+
+**Custo**: zero `fetchCandles` extra (o 1h já é buscado com 500 velas para a
+estrutura SMC). O cálculo só roda quando a última vela 1h de fato rompeu
+estrutura — isto é, só nos scans em que um sinal SMC nasce.
+
+### Backtest
+
+Nova seção `smcObFvg` em `buildReport` — `{enabled, total, obActive, fvgActive,
+both, neither}`, `enabled` inferido de array não vazio (mesma convenção de
+`retest`/`displacement`/`smcRegime`).
+
+Regressão: `fvg.test.js` (16 testes — bordas do gap nas duas direções, fronteira
+estrita do limiar, alvo de 60%, preenchimento sim/não, pavio que entra e fecha
+fora não preenche, mais recente vence, lookback, entradas inválidas);
+`orderBlock.test.js` (11 testes — acha a vela contrária certa nas duas direções,
+pula velas da mesma cor, filtro de tamanho nas duas fronteiras, ativo/inativo
+pelo close, invalidação nas duas direções, sem vela contrária, maxLookback,
+entradas inválidas); `goldenParity.test.js` (3 testes de não-repaint/prefixo,
+booleanos com `toBe`, nunca float); `scannerStateMachine.test.js` (5 testes do
+contrato do score — flag off idêntico, **ativação em 2 estágios com score
+idêntico**, peso somando exatamente, `false` não somando, teto de 100);
+`backtestEngine.test.js` (4 testes — seção do relatório vazia/populada e 2 de
+wiring fim a fim contra `scanAsset` real, com o flag ligado e desligado).

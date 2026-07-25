@@ -71,6 +71,17 @@ const DEFAULTS = {
   // SMC tier/regime gate (Fase 3, src/lib/indicators/tier.js) — master flag
   // OFF by default, see docs/known-risks.md item 42.
   smcTierEnabled: false,
+  // Order Block / FVG (Fase 4) — informational score inputs, never a gate.
+  // Numeric params mirror the real Pine; score weights start at 0 on purpose.
+  // Master flag OFF by default, see docs/known-risks.md item 43.
+  smcObFvgEnabled: false,
+  obFvgAtrLen: 50,
+  obMinAtrMult: 0.5,
+  obMaxAtrMult: 2.5,
+  fvgMinAtrMult: 0.5,
+  fvgFillTargetRatio: 0.6,
+  smcScoreObWeight: 0,
+  smcScoreFvgWeight: 0,
 };
 
 const SYNCED_STRATEGY_KEYS = [
@@ -89,6 +100,8 @@ const SYNCED_STRATEGY_KEYS = [
   'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
   'displacementEnabled', 'displacementBodyAtrMult', 'displacementMinVolumeRatio',
   'smcTierEnabled',
+  'smcObFvgEnabled', 'obFvgAtrLen', 'obMinAtrMult', 'obMaxAtrMult',
+  'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
 ];
 
 export async function getPineConfig() {

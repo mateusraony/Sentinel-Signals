@@ -18,7 +18,7 @@ import { calculateRSI } from './indicators/rsi';
 import { calculateMACD } from './indicators/macd';
 import { calculateEMAs } from './indicators/movingAverages';
 import { analyzeAlignment, calculateSignalStrength, generateSignalDescription } from './indicators/confluence';
-import { calculateATR } from './indicators/atr';
+import { calculateATR, calculateATRSeries } from './indicators/atr';
 import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
 import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
@@ -26,6 +26,8 @@ import { calculateStructure, calculateLiquiditySweep, calculatePdZone, buildOteL
 import { calculateSmcSignalStrength, SMC_SCORE_DEFAULTS } from './indicators/smcConfluence';
 import { detectRetest } from './indicators/retest';
 import { detectDisplacement } from './indicators/displacement';
+import { detectFvg } from './indicators/fvg';
+import { detectOrderBlock } from './indicators/orderBlock';
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward } from './opExitRules';
@@ -920,11 +922,55 @@ export async function scanAsset(asset) {
       if (tf === '4h' || tf === '1h') {
         const structure = calculateStructure(closedCandles);
         const pdZone = calculatePdZone(closedCandles);
+
+        // Fase 4 (docs/known-risks.md item 43) — Order Block / Fair Value Gap,
+        // off by default. Informativos: alimentam o score SMC (como o próprio
+        // Pine do usuário faz no seu Confluence Score), nunca bloqueiam nem
+        // liberam entrada. Só 1h (a cascata que consome) e só quando a última
+        // vela ROMPEU estrutura — que é exatamente quando um sinal SMC
+        // dispara, e a âncora que detectOrderBlock assume (candles[n-1]).
+        // closedCandles já está em memória: zero fetchCandles extra.
+        let obActive = null, fvgActive = null;
+        if (tf === '1h' && pineConfig.smcObFvgEnabled) {
+          const breakDir = (structure.lastBull.bos || structure.lastBull.choch) ? 'BUY'
+            : (structure.lastBear.bos || structure.lastBear.choch) ? 'SELL' : null;
+          if (breakDir) {
+            const obFvgAtrLen = pineConfig.obFvgAtrLen ?? 50;
+            // Order Block: avaliado UMA vez, na barra do rompimento (n-1), então
+            // o ATR corrente É o ATR de formação — escalar está correto aqui.
+            obActive = detectOrderBlock(closedCandles, {
+              direction: breakDir,
+              atrValue: calculateATR(closedCandles, obFvgAtrLen),
+              minAtrMult: pineConfig.obMinAtrMult ?? 0.5,
+              maxAtrMult: pineConfig.obMaxAtrMult ?? 2.5,
+            }).active;
+            // FVG: varre uma JANELA de candidatos históricos, então cada gap
+            // precisa ser julgado pelo limiar da SUA barra de formação — é o
+            // que o Pine faz (`sz > size_threshold` no instante da criação, e
+            // o objeto vive até ser preenchido; `remove_insignificant` fica
+            // desligado porque a chamada real omite `gc_cycle`). Passar um
+            // escalar faria um gap antigo aparecer/sumir conforme o ATR de
+            // hoje oscila — revisão do Codex, PR #85.
+            const fvgMult = pineConfig.fvgMinAtrMult ?? 0.5;
+            const fvgThresholds = calculateATRSeries(closedCandles, obFvgAtrLen)
+              .map(a => (a > 0 ? a * fvgMult : -1));
+            fvgActive = detectFvg(closedCandles, {
+              direction: breakDir,
+              sizeThreshold: fvgThresholds,
+              fillTargetRatio: pineConfig.fvgFillTargetRatio ?? 0.6,
+            }).active;
+          }
+        }
+
         smc = {
           trend: structure.trend,
           lastBull: structure.lastBull,
           lastBear: structure.lastBear,
           pdZone: pdZone.zone,
+          // null = não avaliado (flag off / sem rompimento nesta vela),
+          // diferente de false (avaliado, não ativo).
+          obActive,
+          fvgActive,
           // Protected pivots carried by the structure calc (docs/known-risks.md
           // item 38) — the origin of the impulse leg a fresh 1h BOS/CHoCH just
           // confirmed. Consumed below to anchor the OTE leg passed to the 5m
@@ -1067,6 +1113,12 @@ export async function scanAsset(asset) {
           volumeData: r.volumeData,
           alignmentResult,
           pdZone: r.smc.pdZone,
+          // Fase 4 (item 43) — null quando smcObFvgEnabled está desligado.
+          // Com os pesos no default (0) não alteram o score; ligar o flag
+          // sozinho serve para MEDIR (campos de auditoria + seção do backtest)
+          // antes de decidir dar peso.
+          obActive: r.smc.obActive,
+          fvgActive: r.smc.fvgActive,
           weights: {
             structureWeight: pineConfig.smcScoreStructureWeight,
             chochBonus: pineConfig.smcScoreChochBonus,
@@ -1075,6 +1127,8 @@ export async function scanAsset(asset) {
             volumeWeight: pineConfig.smcScoreVolumeWeight,
             alignmentWeight: pineConfig.smcScoreAlignmentWeight,
             sweepWeight: pineConfig.smcScoreSweepWeight,
+            obWeight: pineConfig.smcScoreObWeight,
+            fvgWeight: pineConfig.smcScoreFvgWeight,
           },
         });
 
@@ -1111,6 +1165,11 @@ export async function scanAsset(asset) {
             // confirmed yet (retest gate fails closed on null — see
             // docs/known-risks.md item 40).
             smc_broken_level: signalType === 'BUY' ? (r.smc.lastSwingHigh ?? null) : (r.smc.lastSwingLow ?? null),
+            // Fase 4 (item 43) — observacionais, nunca consumidos por
+            // stop/TP nem por gate de entrada. null = não avaliado
+            // (smcObFvgEnabled desligado), false = avaliado e não ativo.
+            ob_active: r.smc.obActive ?? null,
+            fvg_active: r.smc.fvgActive ?? null,
           },
           dedup_key: `${asset.symbol}_1h_${signalType}_smc_structure_${r.lastCandleTime}`,
         });
@@ -1348,6 +1407,12 @@ export async function persistScanResults(scanResult) {
   // Fase 3 (docs/known-risks.md item 42) — same convention, feeding
   // buildReport's `smcRegime` section. SMC 1h_5m cascade only.
   const smcRegimeOutcomes = [];
+  // Fase 4 (docs/known-risks.md item 43) — same convention, feeding
+  // buildReport's `smcObFvg` section. Recorded at SIGNAL EMISSION (not at
+  // entry): the question this answers is "quantos sinais SMC tinham OB/FVG a
+  // favor no momento em que nasceram", que é o dado necessário pra decidir se
+  // vale dar peso a eles no score. Empurrado abaixo, ao percorrer newSignals.
+  const smcObFvgOutcomes = [];
   for (const signal of newSignals) {
     // Cooldown check — a best-effort query, not atomic on its own, but the
     // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
@@ -1361,6 +1426,19 @@ export async function persistScanResults(scanResult) {
     // item 28: raising this to reduce notification spam used to silently
     // drop the SignalEvent and every entry that depended on it existing,
     // including the retry loop's ability to re-check it later).
+    // Fase 4 (item 43) — in-memory only, no Firestore write; nada é empurrado
+    // enquanto smcObFvgEnabled está desligado (os campos ficam null), que é
+    // como o relatório de backtest infere se o flag estava ligado.
+    if (signal.source === 'smc_structure'
+      && (signal.context?.ob_active != null || signal.context?.fvg_active != null)) {
+      smcObFvgOutcomes.push({
+        dedup_key: signal.dedup_key,
+        cascade: '1h_5m',
+        obActive: signal.context.ob_active === true,
+        fvgActive: signal.context.fvg_active === true,
+      });
+    }
+
     const cooldownMinutes = asset.alert_cooldown_minutes || 60;
     const cooldownTime = new Date(Date.now() - cooldownMinutes * 60 * 1000).toISOString();
 
@@ -2311,7 +2389,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes };
+  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes, smcObFvgOutcomes };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()

@@ -148,6 +148,9 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
   // Fase 3 SMC tier/regime gate (docs/known-risks.md item 42) — same
   // convention as retestOutcomesByKey above. SMC 1h_5m only.
   const smcRegimeOutcomesByKey = new Map();
+  // Fase 4 Order Block / FVG (docs/known-risks.md item 43) — same convention.
+  // SMC 1h_5m only, recorded at signal emission.
+  const smcObFvgOutcomesByKey = new Map();
 
   installSimClock(fromMs);
   try {
@@ -178,6 +181,9 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
           for (const outcome of (persistResult.smcRegimeOutcomes || [])) {
             smcRegimeOutcomesByKey.set(outcome.dedup_key, outcome);
           }
+          for (const outcome of (persistResult.smcObFvgOutcomes || [])) {
+            smcObFvgOutcomesByKey.set(outcome.dedup_key, outcome);
+          }
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
         }
@@ -197,6 +203,7 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
     retestOutcomes: [...retestOutcomesByKey.values()],
     displacementOutcomes: [...displacementOutcomesByKey.values()],
     smcRegimeOutcomes: [...smcRegimeOutcomesByKey.values()],
+    smcObFvgOutcomes: [...smcObFvgOutcomesByKey.values()],
   });
 }
 
@@ -206,7 +213,7 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
 // already trusts, not reinvented here. Ops still non-terminal at the cutoff
 // are reported separately, never force-closed and never counted in win/
 // loss/BE (summarizeOps already excludes them via isTerminalStatus).
-export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [] } = {}) {
+export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], smcObFvgOutcomes = [] } = {}) {
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
 
@@ -343,6 +350,29 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
         passed,
         rejected: smcRegimeOutcomes.length - passed,
         byReason,
+      };
+    })(),
+    // Fase 4 Order Block / FVG (src/lib/indicators/orderBlock.js + fvg.js,
+    // docs/known-risks.md item 43) — opt-in, off by default, SMC 1h_5m only,
+    // medido no momento da EMISSÃO do sinal. Mesma convenção
+    // `enabled`-inferido-de-array-não-vazio das seções acima. Com os pesos no
+    // default (0) esta seção é o ÚNICO efeito observável de ligar o flag — é
+    // exatamente o dado pra decidir se vale dar peso a OB/FVG no score.
+    smcObFvg: (() => {
+      let obActive = 0, fvgActive = 0, both = 0, neither = 0;
+      for (const o of smcObFvgOutcomes) {
+        if (o.obActive) obActive += 1;
+        if (o.fvgActive) fvgActive += 1;
+        if (o.obActive && o.fvgActive) both += 1;
+        if (!o.obActive && !o.fvgActive) neither += 1;
+      }
+      return {
+        enabled: smcObFvgOutcomes.length > 0,
+        total: smcObFvgOutcomes.length,
+        obActive,
+        fvgActive,
+        both,
+        neither,
       };
     })(),
   };
