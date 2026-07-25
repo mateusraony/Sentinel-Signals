@@ -112,6 +112,58 @@ describe('detectFvg', () => {
     expect(result.reason).toBe('no_unfilled_gap');
   });
 
+  // Revisão do Codex (PR #85): o Pine avalia `sz > size_threshold` no instante
+  // da FORMAÇÃO e o objeto vive até ser preenchido (`remove_insignificant` só
+  // re-testaria tamanho com `gc_cycle > 0`, que a chamada real omite). Aplicar
+  // um único limiar "de hoje" a todos os candidatos históricos fazia um gap
+  // antigo aparecer e sumir conforme o ATR oscilava — viés direto em
+  // report.smcObFvg, que é justamente o entregável do estágio 1.
+  describe('limiar por barra de formação (não o limiar corrente)', () => {
+    // Gap de 2 formado nas velas 0-2, seguido de 3 velas de alta volatilidade.
+    const withVolatileTail = () => bullGapSeries({
+      gap: 2,
+      after: [
+        mkCandle(105, 106, 104, 105.5, 3),
+        mkCandle(105.5, 107, 104.5, 106, 4),
+        mkCandle(106, 108, 105, 107, 5),
+      ],
+    });
+
+    it('um gap que passou na formação NÃO some quando o ATR sobe depois', () => {
+      const candles = withVolatileTail();
+      // Limiar baixo (1) nas barras 0-2 (formação) e alto (5) depois.
+      const series = candles.map((_, i) => (i <= 2 ? 1 : 5));
+      const result = detectFvg(candles, { direction: 'BUY', sizeThreshold: series });
+      expect(result.active).toBe(true);
+      expect(result.gapSize).toBe(2);
+
+      // Contraprova: com o escalar "de hoje" (5), o mesmo gap desapareceria —
+      // era exatamente o bug reportado.
+      expect(detectFvg(candles, { direction: 'BUY', sizeThreshold: 5 }).active).toBe(false);
+    });
+
+    it('um gap reprovado na formação NÃO reaparece quando o ATR cai depois', () => {
+      const candles = withVolatileTail();
+      // Limiar ALTO (5) na formação -> reprovado; baixo (1) depois.
+      const series = candles.map((_, i) => (i <= 2 ? 5 : 1));
+      expect(detectFvg(candles, { direction: 'BUY', sizeThreshold: series }).active).toBe(false);
+    });
+
+    it('limiar negativo (ATR em warm-up) descarta a barra sem lançar', () => {
+      const candles = withVolatileTail();
+      const series = candles.map(() => -1);
+      const result = detectFvg(candles, { direction: 'BUY', sizeThreshold: series });
+      expect(result.active).toBe(false);
+      expect(result.reason).toBe('no_unfilled_gap');
+    });
+
+    it('série de tamanho diferente do array de candles é invalid_params', () => {
+      const candles = withVolatileTail();
+      expect(detectFvg(candles, { direction: 'BUY', sizeThreshold: [1, 2] }).reason)
+        .toBe('invalid_params');
+    });
+  });
+
   it('entradas inválidas não lançam exceção', () => {
     const candles = bullGapSeries({ gap: 2 });
     expect(detectFvg(candles, { direction: 'UP', sizeThreshold: 1 }).reason).toBe('invalid_params');

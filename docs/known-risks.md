@@ -2269,6 +2269,27 @@ acumula FVGs num array `var` desde o início do gráfico; aqui não há estado e
 scans, então a varredura é limitada a `lookback` (default 60 velas). Registrado,
 não é falha de paridade.
 
+**Correção pós-review do Codex (PR #85) — limiar por barra de formação.** A
+primeira versão passava um `sizeThreshold` escalar (ATR da última barra) e o
+aplicava a TODOS os candidatos da janela de 60 velas. O Pine faz diferente, e a
+diferença é observável: `fvg_size_threshold` é série por barra, a checagem
+`sz > size_threshold` ocorre no instante da **formação**, e o objeto criado vive
+até ser preenchido — `remove_insignificant` só re-testaria tamanho com
+`gc_cycle > 0`, e a chamada real **omite** esse argumento (fica `na`,
+desligado). Com o escalar, um gap antigo aparecia e sumia conforme o ATR de hoje
+oscilava: gap válido formado em baixa volatilidade desaparecia quando o ATR
+subia, e gap reprovado em alta volatilidade reaparecia quando caía. Isso enviesa
+justamente `report.smcObFvg`, que é o único entregável do estágio 1. Corrigido:
+`detectFvg` aceita `sizeThreshold` como **array alinhado a `candles`** e julga
+cada candidato pelo limiar da sua própria barra; `scanner.js` passa
+`calculateATRSeries(closedCandles, obFvgAtrLen) × fvgMinAtrMult`. O escalar
+segue aceito por conveniência em teste de limiar fixo. 4 testes novos, incluindo
+a contraprova de que o escalar de fato falharia.
+
+**O Order Block não tem esse problema**: é avaliado uma única vez, na barra do
+rompimento (`candles[n-1]`), então o ATR corrente É o de formação — o escalar
+está correto ali e foi mantido.
+
 **Order Block (`src/lib/indicators/orderBlock.js`) — aproximação geométrica
 deliberada.** Porta a definição mainstream ("última vela contrária antes do
 impulso que rompe estrutura") e o filtro de tamanho do Pine real. **Não** porta:
@@ -2331,7 +2352,7 @@ Nova seção `smcObFvg` em `buildReport` — `{enabled, total, obActive, fvgActi
 both, neither}`, `enabled` inferido de array não vazio (mesma convenção de
 `retest`/`displacement`/`smcRegime`).
 
-Regressão: `fvg.test.js` (12 testes — bordas do gap nas duas direções, fronteira
+Regressão: `fvg.test.js` (16 testes — bordas do gap nas duas direções, fronteira
 estrita do limiar, alvo de 60%, preenchimento sim/não, pavio que entra e fecha
 fora não preenche, mais recente vence, lookback, entradas inválidas);
 `orderBlock.test.js` (11 testes — acha a vela contrária certa nas duas direções,

@@ -18,7 +18,7 @@ import { calculateRSI } from './indicators/rsi';
 import { calculateMACD } from './indicators/macd';
 import { calculateEMAs } from './indicators/movingAverages';
 import { analyzeAlignment, calculateSignalStrength, generateSignalDescription } from './indicators/confluence';
-import { calculateATR } from './indicators/atr';
+import { calculateATR, calculateATRSeries } from './indicators/atr';
 import { calculateAtrPctSmooth, classifyTier } from './indicators/tier';
 import { calculateADX } from './indicators/adx';
 import { calculateChoppiness } from './indicators/choppiness';
@@ -935,16 +935,28 @@ export async function scanAsset(asset) {
           const breakDir = (structure.lastBull.bos || structure.lastBull.choch) ? 'BUY'
             : (structure.lastBear.bos || structure.lastBear.choch) ? 'SELL' : null;
           if (breakDir) {
-            const obFvgAtr = calculateATR(closedCandles, pineConfig.obFvgAtrLen ?? 50);
+            const obFvgAtrLen = pineConfig.obFvgAtrLen ?? 50;
+            // Order Block: avaliado UMA vez, na barra do rompimento (n-1), então
+            // o ATR corrente É o ATR de formação — escalar está correto aqui.
             obActive = detectOrderBlock(closedCandles, {
               direction: breakDir,
-              atrValue: obFvgAtr,
+              atrValue: calculateATR(closedCandles, obFvgAtrLen),
               minAtrMult: pineConfig.obMinAtrMult ?? 0.5,
               maxAtrMult: pineConfig.obMaxAtrMult ?? 2.5,
             }).active;
+            // FVG: varre uma JANELA de candidatos históricos, então cada gap
+            // precisa ser julgado pelo limiar da SUA barra de formação — é o
+            // que o Pine faz (`sz > size_threshold` no instante da criação, e
+            // o objeto vive até ser preenchido; `remove_insignificant` fica
+            // desligado porque a chamada real omite `gc_cycle`). Passar um
+            // escalar faria um gap antigo aparecer/sumir conforme o ATR de
+            // hoje oscila — revisão do Codex, PR #85.
+            const fvgMult = pineConfig.fvgMinAtrMult ?? 0.5;
+            const fvgThresholds = calculateATRSeries(closedCandles, obFvgAtrLen)
+              .map(a => (a > 0 ? a * fvgMult : -1));
             fvgActive = detectFvg(closedCandles, {
               direction: breakDir,
-              sizeThreshold: obFvgAtr * (pineConfig.fvgMinAtrMult ?? 0.5),
+              sizeThreshold: fvgThresholds,
               fillTargetRatio: pineConfig.fvgFillTargetRatio ?? 0.6,
             }).active;
           }

@@ -27,7 +27,15 @@
  * @param {Array<{open:number,high:number,low:number,close:number}>} candles
  * @param {Object} params
  * @param {'BUY'|'SELL'} params.direction
- * @param {number} params.sizeThreshold - tamanho mínimo do gap (ATR × mult)
+ * @param {number|number[]} params.sizeThreshold - tamanho mínimo do gap
+ *   (ATR × mult). **Passe um ARRAY alinhado a `candles` em produção**: o Pine
+ *   avalia `sz > size_threshold` no instante da FORMAÇÃO do gap e, uma vez
+ *   criado, o objeto vive até ser preenchido — `remove_insignificant` só
+ *   re-testaria o tamanho se `gc_cycle > 0`, e a chamada real do usuário
+ *   omite esse argumento (fica `na`, desligado). Um escalar aplica o MESMO
+ *   limiar a todos os candidatos históricos, o que faz um gap antigo aparecer
+ *   e sumir conforme o ATR de hoje oscila (revisão do Codex, PR #85). O
+ *   escalar segue aceito por conveniência em testes de limiar fixo.
  * @param {number} [params.fillTargetRatio=0.6] - fração do gap que, uma vez
  *   ultrapassada por um FECHAMENTO posterior, marca o FVG como preenchido
  *   (0.6 = o default real do Pine, `fvg_fill_target_ratio = 60/100` — não é
@@ -44,7 +52,12 @@ export function detectFvg(candles, { direction, sizeThreshold, fillTargetRatio =
   };
 
   if (direction !== 'BUY' && direction !== 'SELL') return { ...none, reason: 'invalid_params' };
-  if (sizeThreshold == null || !(sizeThreshold >= 0)) return { ...none, reason: 'invalid_params' };
+  const thresholdIsSeries = Array.isArray(sizeThreshold);
+  if (thresholdIsSeries) {
+    if (sizeThreshold.length !== (candles?.length ?? -1)) return { ...none, reason: 'invalid_params' };
+  } else if (sizeThreshold == null || !(sizeThreshold >= 0)) {
+    return { ...none, reason: 'invalid_params' };
+  }
   if (fillTargetRatio == null || fillTargetRatio < 0 || fillTargetRatio > 1) {
     return { ...none, reason: 'invalid_params' };
   }
@@ -62,7 +75,11 @@ export function detectFvg(candles, { direction, sizeThreshold, fillTargetRatio =
     const gapLow = isBuy ? far.high : near.high;
     const gapHigh = isBuy ? near.low : far.low;
     const gapSize = gapHigh - gapLow;
-    if (!(gapSize > sizeThreshold)) continue;
+    // Limiar da barra de FORMAÇÃO do gap (i), não o de hoje — ver o doc do
+    // parâmetro acima. Com escalar, cai no comportamento uniforme antigo.
+    const threshold = thresholdIsSeries ? sizeThreshold[i] : sizeThreshold;
+    if (!(threshold >= 0)) continue; // ATR ainda em warm-up nessa barra
+    if (!(gapSize > threshold)) continue;
 
     const fillTargetLevel = isBuy
       ? gapHigh - fillTargetRatio * gapSize
