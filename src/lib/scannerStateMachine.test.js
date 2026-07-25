@@ -1883,6 +1883,91 @@ describe('Fase 2 rodada 2 — gatilho de deslocamento (opt-in, SMC 1h→5m only,
   });
 });
 
+// Hardening round (resposta à auditoria externa da Fase 2, PRs #81/#82) —
+// os dois gates novos nunca foram exercitados JUNTOS antes: o reteste roda
+// ANTES de check5mSmcConfirmation, o deslocamento DEPOIS — só um teste de
+// integração real prova que a saída de um alimenta corretamente a entrada
+// do outro (e que uma rejeição do segundo ainda impede a operação mesmo
+// com o primeiro já satisfeito).
+describe('Fase 2 — reteste + deslocamento combinados (hardening pós-auditoria)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  function mk5m(open, high, low, close, i, volume = 100) {
+    return { open, high, low, close, openTime: i * 300000, closeTime: (i + 1) * 300000, isClosed: true, volume };
+  }
+  // Same recipe as the retest-only describe above — stays within a hair of
+  // level=100 from the first candle, retests immediately.
+  const retestingCandles5m = (level = 100) =>
+    Array.from({ length: 20 }, (_, i) => mk5m(level, level + 0.3, level - 0.3, level + i * 0.01, i));
+  // Same recipe as the displacement-only describe above — 59 flat candles +
+  // 1 controllable-body bullish-sweep candle.
+  function displacementSweepCandles5m({ finalBody = 3.6 } = {}) {
+    const candles = [];
+    for (let i = 0; i < 59; i++) candles.push(mk5m(100, 100.5, 99.5, 100, i));
+    const close = 99.6;
+    const open = close - finalBody;
+    candles.push(mk5m(open, 100, 92, close, 59));
+    return candles;
+  }
+
+  function makeSmcSignal(overrides = {}) {
+    return {
+      asset_id: 'asset1', symbol: 'BTCUSDT', signal_type: 'BUY',
+      timeframe: '1h', source: 'smc_structure', dedup_key: 'smc_sig_combined',
+      price_at_signal: 100, candle_time: new Date(0).toISOString(),
+      context: { structure_type: 'BOS', smc_broken_level: 100, ote_leg_high: 200, ote_leg_low: 50 },
+      ...overrides,
+    };
+  }
+
+  // evaluateRetestGate fetches limit=100 (scanner.js:463); check5mSmcConfirmation
+  // fetches limit=150 (scanner.js:363) — distinguishing by that argument
+  // (rather than call order) keeps this correct across both the 1st-pass
+  // evaluation AND the same-call retry loop, which re-fetches everything for
+  // any signal that didn't yet produce an op (see the "persistent, not once"
+  // comments in the two describes above).
+  function mockCandlesByLimit({ retestLevel = 100, finalBody = 3.6 } = {}) {
+    fetchCandles.mockImplementation(async (_symbol, _tf, limit) =>
+      (limit === 100 ? retestingCandles5m(retestLevel) : displacementSweepCandles5m({ finalBody })));
+  }
+
+  it('os dois gates ligados e ambos aprovando -> operação criada com os campos de auditoria dos DOIS', async () => {
+    mockCandlesByLimit({ finalBody: 3.6 }); // corpo suficiente para displacementBodyAtrMult:1.5
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({
+      retestEnabled: true, retestToleranceAtrMult: 5, displacementEnabled: true, displacementBodyAtrMult: 1.5,
+    });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    const op = ops[0];
+    expect(op.retest_gate_enabled).toBe(true);
+    expect(op.retest_anchor_level).toBe(100);
+    expect(op.displacement_gate_enabled).toBe(true);
+    expect(op.displacement_body_ratio).toBeGreaterThanOrEqual(1.5);
+  });
+
+  it('reteste confirma mas deslocamento reprova -> nenhuma operação criada', async () => {
+    mockCandlesByLimit({ finalBody: 0.1 }); // reteste ok, corpo insuficiente pro deslocamento
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = makePineConfig({
+      retestEnabled: true, retestToleranceAtrMult: 5, displacementEnabled: true, displacementBodyAtrMult: 1.5,
+    });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+
+    await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()] });
+
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+    const logs = await backend.entities.SystemLog.filter({});
+    const rejected = logs.find(l => l.details?.reason === 'displacement_gate_rejected');
+    expect(rejected).toBeTruthy();
+    expect(rejected.details.displacement_reason).toBe('body_too_small');
+  });
+});
+
 describe('cooldown gates the Telegram notification only, never persistence/entry (P1, known-risks item 28)', () => {
   function makeSignal(overrides = {}) {
     return {

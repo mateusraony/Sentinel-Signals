@@ -16,10 +16,22 @@
 // already identified), not a window — displacement is a property of one
 // bar, unlike a retest which is a multi-bar search (src/lib/indicators/retest.js).
 
-export function detectDisplacement(candle, { atrValue, bodyAtrMult, minVolumeRatio = null, volumeMa = null }) {
+export function detectDisplacement(candle, { direction, atrValue, bodyAtrMult, minVolumeRatio = null, volumeMa = null }) {
   const invalid = { isDisplacement: false, bodyRatio: null, volumeRatio: null, reason: 'invalid_params' };
-  if (!candle || atrValue == null || atrValue <= 0 || bodyAtrMult == null || bodyAtrMult < 0) {
+  if (!candle || (direction !== 'BUY' && direction !== 'SELL') ||
+    atrValue == null || atrValue <= 0 || bodyAtrMult == null || bodyAtrMult <= 0) {
     return invalid;
+  }
+
+  // A structure-break entry (BOS/CHoCH) only requires the CLOSE to cross a
+  // prior pivot — it doesn't require the candle itself to be net bullish/
+  // bearish by open×close. A candle that gaps up, sells off intrabar, but
+  // still closes above the pivot would pass the structure gate as a valid
+  // BUY signal while its own body is net bearish. Checked here, before the
+  // body/ATR ratio, so a doji (open === close) fails on both sides too.
+  const alignedWithDirection = direction === 'BUY' ? candle.close > candle.open : candle.close < candle.open;
+  if (!alignedWithDirection) {
+    return { isDisplacement: false, bodyRatio: null, volumeRatio: null, reason: 'wrong_direction' };
   }
 
   const body = Math.abs(candle.close - candle.open);

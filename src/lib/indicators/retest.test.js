@@ -38,7 +38,7 @@ describe('detectRetest', () => {
     expect(result.retestPrice).toBe(99.8);
   });
 
-  it('touchMode "wick": confirms when the correct-side wick touches the band and the close resumes favorably', () => {
+  it('touchMode "wick": confirms when the low dips into the band and the close resumes favorably', () => {
     const candles = [
       // BUY: low dips into [99.7, 100.3], close resumes well above the band.
       mkCandle(103, 104, 99.9, 103.5, 0),
@@ -50,15 +50,47 @@ describe('detectRetest', () => {
     expect(result.retestPrice).toBe(103.5);
   });
 
-  it('touchMode "wick": the WRONG-side wick touching the band does not confirm a BUY retest', () => {
+  it('touchMode "wick": a candle whose range never reaches the band does not confirm', () => {
     const candles = [
-      // BUY checks candle.low, not candle.high — high dips into band, low never does.
-      mkCandle(103, 100.1, 102, 103.2, 0),
+      // Entire [low, high] range stays above the [99.7, 100.3] band.
+      mkCandle(105, 106, 104, 105.5, 0),
     ];
     const result = detectRetest(candles, {
       direction: 'BUY', level: 100, signalCandleTime: -1, tolerancePrice: 0.3, touchMode: 'wick',
     });
     expect(result.retested).toBe(false);
+  });
+
+  // External audit of PR #81/#82 (confirmed against the code before fixing):
+  // the original implementation picked a single extreme (candle.low for BUY)
+  // and required THAT point to land inside the band — a wick that blows
+  // straight through the whole band (low well below lowerBound, high well
+  // above upperBound) was missed entirely, even though the candle's range
+  // physically covers the zone. Dormant in production since touchMode
+  // defaults to 'close', which never exercised this branch.
+  it('touchMode "wick": a BUY wick that crosses straight through the entire band still confirms', () => {
+    const candles = [mkCandle(102, 103, 98, 102.5, 0)]; // low=98 < lowerBound, high=103 > upperBound
+    const result = detectRetest(candles, {
+      direction: 'BUY', level: 100, signalCandleTime: -1, tolerancePrice: 0.3, touchMode: 'wick',
+    });
+    expect(result.retested).toBe(true);
+  });
+
+  it('touchMode "wick": a SELL wick that crosses straight through the entire band still confirms', () => {
+    const candles = [mkCandle(98, 103, 97, 98.5, 0)]; // low=97 < lowerBound, high=103 > upperBound
+    const result = detectRetest(candles, {
+      direction: 'SELL', level: 100, signalCandleTime: -1, tolerancePrice: 0.3, touchMode: 'wick',
+    });
+    expect(result.retested).toBe(true);
+  });
+
+  it('touchMode "wick": treats the range-intersection boundary as inclusive', () => {
+    // high sits exactly on lowerBound, low is well below it — single-point overlap.
+    const candles = [mkCandle(99.7, 99.7, 90, 99.7, 0)];
+    const result = detectRetest(candles, {
+      direction: 'BUY', level: 100, signalCandleTime: -1, tolerancePrice: 0.3, touchMode: 'wick',
+    });
+    expect(result.retested).toBe(true);
   });
 
   it('excludes the signal candle itself from counting as its own retest', () => {
