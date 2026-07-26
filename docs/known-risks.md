@@ -2565,6 +2565,29 @@ seção ("se o funding passar de ~20% do custo de taxa, as posições estão
 durando mais que o previsto"). Confirmar decompondo `calcTradeCost` por
 operação no artifact antes de tratar como fato.
 
+✅ **CONFIRMADA (2026-07-26)** pelo diagnóstico rodado no runner
+([run 30210747843](https://github.com/mateusraony/Sentinel-Signals/actions/runs/30210747843)
+e o de 12 meses): **funding é 57,9% do custo** (61,2% no recorte de 6 meses),
+contra 35,1% de taxa e 7,0% de slippage — ou seja **1,65× o custo de taxa**, não
+os 2,5-10% que a pesquisa desta seção assumiu. Errou por um fator de ~20. A
+causa está na mesma tabela: **18,1 fronteiras de 8h atravessadas por operação**,
+tempo médio em posição de **5,9 dias** (mediana 4,5, máximo 17,5). A pesquisa
+raciocinou sobre "posições de horas"; esta cascata segura por dias.
+
+**Consequência para o modelo de custo**: `fundingBpsPer8h: 1` é a taxa-base da
+Binance, não o funding realizado de cada período — e num regime em que o funding
+domina, essa aproximação passa a ser o maior termo de erro do modelo, não o
+menor. Não muda nada hoje (a estratégia é negativa antes do custo), mas invalida
+a justificativa "é 5% do custo, não vale pipeline" caso alguma configuração
+sobreviva ao gate de amostra. Registrado em `docs/roadmap.md`, Bloco 3.
+
+**Hipótese vizinha REFUTADA no mesmo diagnóstico**: a de que o prejuízo poderia
+estar concentrado no Time Stop, caso em que a alavanca seria a regra de saída
+por tempo. Não está — `CLOSED:TIME_STOP` é o balde mais bem comportado da
+tabela, **positivo** nos dois recortes (11W/1L e 5W/0L, contribuição +0,041 e
++0,026). O prejuízo está em `STOP_HIT`, e a matemática por trás dele é
+estrutural: 43,1% de acerto com payoff 1,08 quando 1,32 seria o empate.
+
 ### Ferramenta de diagnóstico (`src/lib/backtestAnalysis.js`)
 
 A hipótese acima — e a pergunta maior, "de onde vem o −0,061 R?" — deixaram de

@@ -10,7 +10,8 @@ ordem é enviada à exchange (TP/Stop são virtuais).**
 Originado na plataforma no-code **Base44** e migrado para **Firebase**. Não
 reintroduza `@base44/*`, `base44.com` nem nada do ecossistema Base44.
 
-> Detalhe por domínio vive em `.claude/rules/`; riscos em `docs/known-risks.md`.
+> Detalhe por domínio vive em `.claude/rules/`; riscos em `docs/known-risks.md`;
+> **o que está pendente e em que ordem em `docs/roadmap.md`**.
 > Este arquivo é o índice permanente — mantê-lo **abaixo de ~200 linhas**.
 
 ## Stack
