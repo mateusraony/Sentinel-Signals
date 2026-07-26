@@ -201,7 +201,12 @@ jobs:
                 }, null, 2));
               "
               echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+            # tee, não `>>`: o summary é renderizado só na UI e não sai por
+            # nenhuma API de logs, então redirecionar tudo para lá tirava o
+            # resultado do alcance de quem lê o run programaticamente (uma
+            # sessão do Claude Code, por exemplo). Com tee o mesmo texto vai
+            # para os dois lugares.
+            } | tee -a "$GITHUB_STEP_SUMMARY"
           else
             echo "## Backtest — falhou antes de gerar relatório" >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -220,7 +225,7 @@ jobs:
               echo '```'
               node scripts/analyze-backtest.mjs --report backtest-report.json
               echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
+            } | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload do relatório completo
