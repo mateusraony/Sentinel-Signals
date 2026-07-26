@@ -46,6 +46,31 @@ on:
         description: 'Overrides do pineConfig em JSON, ex.: {"minScore":80} (vazio = defaults)'
         default: ""
         required: false
+      no_costs:
+        description: "Rodar SEM custos (taxa/slippage/funding) — reproduz os números pré-Fase-5, para o A/B de quanto o custo come"
+        type: boolean
+        default: false
+        required: false
+      fee_bps:
+        description: "Taxa por lado em bps (vazio = 5, ou seja 0,05% taker USDⓈ-M VIP0 — confirmado em binance.com/en/fee/futureFee)"
+        default: ""
+        required: false
+      slippage_bps:
+        description: "Slippage por lado em bps (vazio = 1)"
+        default: ""
+        required: false
+      funding_bps:
+        description: "Funding por janela de 8h em bps (vazio = 1). Só é cobrado nas fronteiras 00/08/16 UTC que a posição atravessar"
+        default: ""
+        required: false
+      min_trades:
+        description: "Mínimo de operações para o relatório não ser marcado INCONCLUSIVO (vazio = 30)"
+        default: ""
+        required: false
+      trial_label:
+        description: "Rótulo desta tentativa (só gravado no JSON) — serve para você contar quantas configurações já testou"
+        default: ""
+        required: false
 
 permissions:
   contents: read
@@ -106,11 +131,26 @@ jobs:
           SMC: ${{ inputs.smc }}
           SMC_CONFIRM: ${{ inputs.smc_confirm }}
           HAS_PINE_CONFIG: ${{ inputs.pine_config != '' }}
+          NO_COSTS: ${{ inputs.no_costs }}
+          FEE_BPS: ${{ inputs.fee_bps }}
+          SLIPPAGE_BPS: ${{ inputs.slippage_bps }}
+          FUNDING_BPS: ${{ inputs.funding_bps }}
+          MIN_TRADES: ${{ inputs.min_trades }}
+          TRIAL_LABEL: ${{ inputs.trial_label }}
         run: |
           ARGS=(--symbols "$SYMBOLS" --from "$FROM" --to "$TO" --out backtest-report.json)
           if [ -n "$SMC" ]; then ARGS+=(--smc "$SMC"); fi
           if [ -n "$SMC_CONFIRM" ]; then ARGS+=(--smc-confirm "$SMC_CONFIRM"); fi
           if [ "$HAS_PINE_CONFIG" = "true" ]; then ARGS+=(--pine-config pine-config-overrides.json); fi
+          # Custos (Fase 5, docs/known-risks.md item 44): ligados por padrão.
+          # --no-costs existe para o A/B "quanto o custo comeu" e reproduz
+          # exatamente os números de antes da Fase 5.
+          if [ "$NO_COSTS" = "true" ]; then ARGS+=(--no-costs); fi
+          if [ -n "$FEE_BPS" ]; then ARGS+=(--fee-bps "$FEE_BPS"); fi
+          if [ -n "$SLIPPAGE_BPS" ]; then ARGS+=(--slippage-bps "$SLIPPAGE_BPS"); fi
+          if [ -n "$FUNDING_BPS" ]; then ARGS+=(--funding-bps "$FUNDING_BPS"); fi
+          if [ -n "$MIN_TRADES" ]; then ARGS+=(--min-trades "$MIN_TRADES"); fi
+          if [ -n "$TRIAL_LABEL" ]; then ARGS+=(--trial-label "$TRIAL_LABEL"); fi
           npm run backtest -- "${ARGS[@]}"
 
       # Resumo direto no job (sem baixar o artifact) — omite a curva
@@ -121,6 +161,27 @@ jobs:
           if [ -f backtest-report.json ]; then
             {
               echo "## Backtest — resumo (${FROM} → ${TO})"
+              # O VEREDITO vem primeiro, antes de qualquer win rate: um
+              # relatório com amostra insuficiente (ou IC cruzando zero)
+              # produz números de aparência perfeitamente normal, e é aí que
+              # uma decisão errada nasce. Ver docs/known-risks.md item 44.
+              node -e "
+                const r = JSON.parse(require('fs').readFileSync('backtest-report.json', 'utf-8'));
+                const c = r.costs || {};
+                if (c.conclusive === false) {
+                  const motivo = c.inconclusiveReason === 'sample_too_small'
+                    ? \`amostra pequena demais (\${c.countedTrades} operações, mínimo \${c.minTrades})\`
+                    : c.inconclusiveReason === 'ci_straddles_zero'
+                      ? \`o IC 95% da expectância cruza zero [\${(c.expectancyRCI95 || []).map((v) => v.toFixed(3)).join(', ')}]\`
+                      : 'não há operações com R calculável';
+                  console.log('> ### ⚠️ RESULTADO INCONCLUSIVO');
+                  console.log('> **Não tire conclusão deste relatório.** Motivo: ' + motivo + '.');
+                  console.log('> Win rate e profit factor abaixo são ruído nesta amostra.');
+                } else {
+                  console.log(\`> ### ✅ Amostra suficiente — \${c.countedTrades} operações, expectância líquida \${(c.netExpectancyR ?? 0).toFixed(3)}R\`);
+                }
+                console.log('');
+              "
               echo '```json'
               node -e "
                 const r = JSON.parse(require('fs').readFileSync('backtest-report.json', 'utf-8'));
@@ -129,6 +190,11 @@ jobs:
                   range: r.range,
                   totalOps: r.totalOps,
                   stillOpenAtCutoff: r.stillOpenAtCutoff,
+                  trialLabel: r.trialLabel,
+                  // costs é a seção que decide (item 44): avgCostR comparável
+                  // direto com netExpectancyR, e grossExpectancyR ao lado
+                  // mostrando quanto do resultado era só ausência de custo.
+                  costs: r.costs,
                   overall: strip(r.overall),
                   byCascade: Object.fromEntries(Object.entries(r.byCascade).map(([k, v]) => [k, strip(v)])),
                   smcDiagnostics: r.smcDiagnostics,

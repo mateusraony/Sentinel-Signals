@@ -2400,11 +2400,15 @@ métrica central desta fase, e não o custo em %.
   nos dois lados é o default **conservador e correto**: entrada em fechamento
   de candle é ordem a mercado, e stop dispara a mercado. Só o TP é
   genuinamente uma ordem limite em repouso — `feeBpsExit` fica exposto para
-  quem quiser modelar maker, mas nunca assumido. ⚠️ **Verificação pendente**: o
-  agente de pesquisa não conseguiu abrir binance.com direto (bloqueio de
-  egress) e encontrou o LEAN da QuantConnect ainda carregando 0,04% para
-  futures. **Confirmar a taxa vigente na página oficial antes de considerar a
-  constante fechada** — 0,04 vs 0,05 é 25% de diferença no maior termo.
+  quem quiser modelar maker, mas nunca assumido. ✅ **CONFIRMADO pelo usuário
+  (2026-07-26)** direto nas páginas oficiais, que nem a sessão nem o agente de
+  pesquisa conseguem abrir (403 no proxy para todo o domínio Binance):
+  [`/en/fee/futureFee`](https://www.binance.com/en/fee/futureFee) →
+  **0,0200% / 0,0500%** (maker/taker USDⓈ-M) e
+  [`/en/fee/schedule`](https://www.binance.com/en/fee/schedule) →
+  **0,100% / 0,100%** (Spot). O default `feeBpsEntry/Exit: 5` está **correto**;
+  o 0,04% que aparecia no LEAN da QuantConnect é valor desatualizado de lá.
+  Pendência encerrada.
 - **Slippage**: *nenhum* framework tem default diferente de zero
   (backtesting.py, vectorbt, Backtrader, QuantConnect, freqtrade — todos zero).
   Não existe convenção a herdar. 1 bp/lado para BTC/ETH é **escolha registrada
@@ -2513,3 +2517,50 @@ cruzando zero com amostra suficiente); `backtestEngine.test.js` (4 testes —
 modelo ecoado no relatório, `--no-costs` reproduzindo exatamente o bruto,
 líquido = bruto − custo, e o veredito inconclusivo descrevendo o mesmo agregado
 que `overall`).
+
+### PRIMEIRA MEDIÇÃO REAL (2026-07-26) — o achado que muda a prioridade do projeto
+
+Primeiro backtest com dado real já com custos ligados
+([run 30179598343](https://github.com/mateusraony/Sentinel-Signals/actions/runs/30179598343)):
+**12 meses** (2025-07-25 → 2026-07-25), **7 símbolos**, cascata RF 4h→15m
+(SMC desligada — `smcDiagnostics` zerado), **109 operações fechadas**.
+
+```
+avgCostR:          0.0422        grossExpectancyR: -0.0611
+totalCostPct:     32.56%         netExpectancyR:   -0.1034
+countedTrades:      109          CI 95%: [-0.3136, +0.1069]
+conclusive: false (ci_straddles_zero)
+```
+
+**Três conclusões, e a segunda reordena o roadmap:**
+
+1. **Amostra é suficiente** — 109 operações, muito acima do mínimo de 30. A
+   premissa que motivou adiar o walk-forward ("~0-5 operações") vale para a
+   cascata **SMC**, não para a **RF**. Se algum dia houver walk-forward, é na
+   RF que ele tem material.
+2. **A expectância já era NEGATIVA antes do custo** (−0,061 R). Este é o
+   achado central: a Fase 5 foi construída sob a hipótese de que o custo
+   omitido poderia estar escondendo uma vantagem real. **Não havia vantagem
+   para o custo esconder.** O custo agravou (−0,061 → −0,103), não causou.
+3. **O IC cruza zero** mesmo com 109 operações — não dá para afirmar com rigor
+   que a estratégia perde, mas muito menos que ganha. A estimativa pontual é
+   negativa e é a melhor informação disponível.
+
+**Consequência prática — a prioridade mudou.** Calibrar os pesos de OB/FVG
+(item 43) ou ligar os gates das Fases 2-3 são otimizações *em cima de uma base
+com expectância negativa*. Otimizar parâmetro numa estratégia sem vantagem
+demonstrada é exatamente a busca que Bailey/López de Prado descrevem: com
+tentativas suficientes você **vai** achar uma configuração que parece boa
+in-sample, e ela não sobrevive. A pergunta que passou a ser prioritária é
+"esta estratégia tem vantagem?", não "qual parâmetro ajustar?".
+
+**Hipótese sobre a composição do custo (não confirmada, exige o JSON por
+operação)**: `avgCostR` deu 0,042, mas taxa+slippage (12 bps ida e volta)
+sobre stops desta largura (as perdas na curva vão de −7% a −15%, logo o risco
+é ~10-15% do preço) daria ~0,010 R. A diferença sugere que **o funding é o
+maior componente aqui** — a cascata RF segura posição por dias (Time Stop de
+48 barras de 4h = 8 dias), não por horas como a pesquisa assumiu, então cruza
+muitas fronteiras de 8h. É literalmente o caso de alerta previsto nesta
+seção ("se o funding passar de ~20% do custo de taxa, as posições estão
+durando mais que o previsto"). Confirmar decompondo `calcTradeCost` por
+operação no artifact antes de tratar como fato.
