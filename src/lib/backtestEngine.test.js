@@ -53,6 +53,7 @@ import { getPineConfig } from './pineParser';
 import {
   installSimClock, advanceSimClock, restoreClock, simNow,
   sliceClosedAsOf, inferStepMs, runBacktest, buildReport,
+  summarizeAttempts, EMPTY_ATTEMPTS,
 } from './backtestEngine.js';
 import { scanAsset } from './scanner.js';
 import { ZERO_COST } from './tradeMetrics.js';
@@ -483,7 +484,7 @@ describe('buildReport', () => {
 
   it('arbitration defaults to empty/all-zero when the caller passes nothing (legacy call shape)', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
-    expect(report.arbitration).toEqual({ total: 0, byOutcome: {}, byCascade: {} });
+    expect(report.arbitration).toEqual({ total: 0, attempts: EMPTY_ATTEMPTS, byOutcome: {}, byCascade: {} });
   });
 
   it('arbitration counts outcomes by outcome and by the CANDIDATE cascade that triggered each decision', () => {
@@ -513,7 +514,7 @@ describe('buildReport', () => {
   it('retest defaults to disabled/all-zero when the caller passes nothing (legacy call shape, flag off)', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
     expect(report.retest).toEqual({
-      enabled: false, total: 0, confirmed: 0, pending: 0, avgBarsToConfirm: null, byCascade: {}, byReason: {},
+      enabled: false, total: 0, attempts: EMPTY_ATTEMPTS, confirmed: 0, pending: 0, avgBarsToConfirm: null, byCascade: {}, byReason: {},
     });
   });
 
@@ -544,7 +545,7 @@ describe('buildReport', () => {
   it('displacement defaults to disabled/all-zero when the caller passes nothing (legacy call shape, flag off)', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
     expect(report.displacement).toEqual({
-      enabled: false, total: 0, confirmed: 0, pending: 0, avgBodyRatio: null, byCascade: {}, byReason: {},
+      enabled: false, total: 0, attempts: EMPTY_ATTEMPTS, confirmed: 0, pending: 0, avgBodyRatio: null, byCascade: {}, byReason: {},
     });
   });
 
@@ -571,7 +572,7 @@ describe('buildReport', () => {
   it('smcRegime defaults to disabled/all-zero when the caller passes nothing (legacy call shape, flag off)', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
     expect(report.smcRegime).toEqual({
-      enabled: false, total: 0, passed: 0, rejected: 0, byReason: {},
+      enabled: false, total: 0, attempts: EMPTY_ATTEMPTS, passed: 0, rejected: 0, byReason: {},
     });
   });
 
@@ -616,10 +617,43 @@ describe('buildReport', () => {
   // Fase 4 (docs/known-risks.md item 43) — mesma convenção enabled-inferido-
   // de-array-não-vazio. Com os pesos do score em 0, ESTA seção é o único
   // efeito observável de ligar smcObFvgEnabled.
+  // Achado da revisão externa (documento de arquitetura quantitativa, §10.3),
+  // confirmado contra o código: os outcomes eram acumulados num Map por
+  // dedup_key, último-escreve-ganha, então N avaliações do MESMO sinal (o loop
+  // de retry recomputa cada gate do zero a cada passada) colapsavam em 1 e o
+  // relatório não conseguia distinguir "1 sinal que tentou 5x e falhou" de
+  // "1 sinal que falhou 1x".
+  it('summarizeAttempts separa avaliações de sinais únicos', () => {
+    const attempts = new Map([['a', 1], ['b', 5], ['c', 3]]);
+    expect(summarizeAttempts(attempts)).toEqual({ evaluations: 9, retried: 2, maxAttempts: 5 });
+  });
+
+  it('summarizeAttempts devolve tudo zero para mapa vazio ou ausente', () => {
+    expect(summarizeAttempts(new Map())).toEqual(EMPTY_ATTEMPTS);
+    expect(summarizeAttempts(null)).toEqual(EMPTY_ATTEMPTS);
+    expect(summarizeAttempts(undefined)).toEqual(EMPTY_ATTEMPTS);
+  });
+
+  it('attempts sobrevive ao colapso por dedup_key — o número que estava invisível', () => {
+    // 3 sinais únicos, 7 avaliações. Antes desta mudança o relatório só
+    // conseguia dizer "3" e as outras 4 passadas sumiam sem deixar rastro.
+    const attemptStats = {
+      retest: summarizeAttempts(new Map([['a', 4], ['b', 2], ['c', 1]])),
+    };
+    const retestOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', retested: true, barsToConfirm: 3, reason: null },
+      { dedup_key: 'b', cascade: '4h_15m', retested: false, barsToConfirm: null, reason: 'not_yet' },
+      { dedup_key: 'c', cascade: '4h_15m', retested: false, barsToConfirm: null, reason: 'not_yet' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, retestOutcomes, attemptStats });
+    expect(report.retest.total).toBe(3); // sinais únicos
+    expect(report.retest.attempts).toEqual({ evaluations: 7, retried: 2, maxAttempts: 4 });
+  });
+
   it('smcObFvg defaults to disabled/all-zero when the caller passes nothing (legacy call shape, flag off)', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
     expect(report.smcObFvg).toEqual({
-      enabled: false, total: 0, obActive: 0, fvgActive: 0, both: 0, neither: 0,
+      enabled: false, total: 0, attempts: EMPTY_ATTEMPTS, obActive: 0, fvgActive: 0, both: 0, neither: 0,
     });
   });
 

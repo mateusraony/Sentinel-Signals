@@ -160,6 +160,27 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
   // SMC 1h_5m only, recorded at signal emission.
   const smcObFvgOutcomesByKey = new Map();
 
+  // Contagem de TENTATIVAS, paralela aos Maps acima. O loop de retry recomputa
+  // cada gate do zero a cada passada, dentro da janela de 4h do sinal — então
+  // um mesmo dedup_key pode ser avaliado muitas vezes. O Map por chave guarda o
+  // estado FINAL (correto para confirmado/pendente), mas apagava o fato de ter
+  // havido N avaliações: o relatório não distinguia "1 sinal que tentou 5x e
+  // falhou" de "1 sinal que falhou 1x". São coisas operacionalmente
+  // diferentes — custo de API, tempo em espera, e quantas vezes o gate quase
+  // deixou passar. Achado de revisão externa (o documento de arquitetura
+  // quantitativa, §10.3), confirmado contra o código.
+  const attemptsByKey = {
+    arbitration: new Map(),
+    retest: new Map(),
+    displacement: new Map(),
+    smcRegime: new Map(),
+    smcObFvg: new Map(),
+  };
+  const recordOutcome = (byKey, attempts, outcome) => {
+    byKey.set(outcome.dedup_key, outcome);
+    attempts.set(outcome.dedup_key, (attempts.get(outcome.dedup_key) || 0) + 1);
+  };
+
   installSimClock(fromMs);
   try {
     for (let t = fromMs; t <= toMs; t += step) {
@@ -178,19 +199,19 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
             smcOteZoneRejectionKeys.add(rejection.dedup_key);
           }
           for (const outcome of (persistResult.arbitrationOutcomes || [])) {
-            arbitrationOutcomesByKey.set(outcome.dedup_key, outcome);
+            recordOutcome(arbitrationOutcomesByKey, attemptsByKey.arbitration, outcome);
           }
           for (const outcome of (persistResult.retestOutcomes || [])) {
-            retestOutcomesByKey.set(outcome.dedup_key, outcome);
+            recordOutcome(retestOutcomesByKey, attemptsByKey.retest, outcome);
           }
           for (const outcome of (persistResult.displacementOutcomes || [])) {
-            displacementOutcomesByKey.set(outcome.dedup_key, outcome);
+            recordOutcome(displacementOutcomesByKey, attemptsByKey.displacement, outcome);
           }
           for (const outcome of (persistResult.smcRegimeOutcomes || [])) {
-            smcRegimeOutcomesByKey.set(outcome.dedup_key, outcome);
+            recordOutcome(smcRegimeOutcomesByKey, attemptsByKey.smcRegime, outcome);
           }
           for (const outcome of (persistResult.smcObFvgOutcomes || [])) {
-            smcObFvgOutcomesByKey.set(outcome.dedup_key, outcome);
+            recordOutcome(smcObFvgOutcomesByKey, attemptsByKey.smcObFvg, outcome);
           }
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
@@ -212,9 +233,29 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
     displacementOutcomes: [...displacementOutcomesByKey.values()],
     smcRegimeOutcomes: [...smcRegimeOutcomesByKey.values()],
     smcObFvgOutcomes: [...smcObFvgOutcomesByKey.values()],
+    attemptStats: Object.fromEntries(
+      Object.entries(attemptsByKey).map(([name, map]) => [name, summarizeAttempts(map)]),
+    ),
     costModel,
     minTrades,
   });
+}
+
+// Forma estável para as seções do relatório: `evaluations` é quantas vezes o
+// gate rodou, `total` (na própria seção) é quantos sinais únicos existiram.
+// `retried` responde "quantos precisaram de mais de uma passada" — o número
+// que estava invisível antes.
+export const EMPTY_ATTEMPTS = { evaluations: 0, retried: 0, maxAttempts: 0 };
+
+export function summarizeAttempts(attemptsMap) {
+  if (!attemptsMap || attemptsMap.size === 0) return { ...EMPTY_ATTEMPTS };
+  let evaluations = 0; let retried = 0; let maxAttempts = 0;
+  for (const count of attemptsMap.values()) {
+    evaluations += count;
+    if (count > 1) retried += 1;
+    if (count > maxAttempts) maxAttempts = count;
+  }
+  return { evaluations, retried, maxAttempts };
 }
 
 // Groups closed ops by cascade (4h_15m vs 1h_5m) and feeds each group (plus
@@ -232,7 +273,8 @@ function resolveReportCostModel(costModel) {
   return { ...DEFAULT_COST_MODEL, ...costModel, applied: !isZero };
 }
 
-export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], smcObFvgOutcomes = [], costModel, minTrades } = {}) {
+export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], smcObFvgOutcomes = [], attemptStats = {}, costModel, minTrades } = {}) {
+  const attemptsOf = (name) => attemptStats[name] ?? { ...EMPTY_ATTEMPTS };
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
 
@@ -289,7 +331,7 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
         (byCascade[cascade] ||= {});
         byCascade[cascade][outcome] = (byCascade[cascade][outcome] || 0) + 1;
       }
-      return { total: arbitrationOutcomes.length, byOutcome, byCascade };
+      return { total: arbitrationOutcomes.length, attempts: attemptsOf('arbitration'), byOutcome, byCascade };
     })(),
     // Fase 2 rodada 1 retest gate (src/lib/indicators/retest.js,
     // docs/known-risks.md item 40) — opt-in, off by default. `enabled` is
@@ -318,6 +360,7 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
       return {
         enabled: retestOutcomes.length > 0,
         total: retestOutcomes.length,
+        attempts: attemptsOf('retest'),
         confirmed,
         pending: retestOutcomes.length - confirmed,
         avgBarsToConfirm: confirmed > 0 ? +(barsSum / confirmed).toFixed(1) : null,
@@ -346,6 +389,7 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
       return {
         enabled: displacementOutcomes.length > 0,
         total: displacementOutcomes.length,
+        attempts: attemptsOf('displacement'),
         confirmed: confirmedD,
         pending: displacementOutcomes.length - confirmedD,
         avgBodyRatio: confirmedD > 0 ? +(bodyRatioSum / confirmedD).toFixed(2) : null,
@@ -370,6 +414,7 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
       return {
         enabled: smcRegimeOutcomes.length > 0,
         total: smcRegimeOutcomes.length,
+        attempts: attemptsOf('smcRegime'),
         passed,
         rejected: smcRegimeOutcomes.length - passed,
         byReason,
@@ -392,6 +437,7 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
       return {
         enabled: smcObFvgOutcomes.length > 0,
         total: smcObFvgOutcomes.length,
+        attempts: attemptsOf('smcObFvg'),
         obActive,
         fvgActive,
         both,

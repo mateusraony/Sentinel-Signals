@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeOps, analyzeReport, exitReasonKey, holdHours, opsFromReport } from './backtestAnalysis.js';
+import { analyzeOps, analyzeReport, exitReasonKey, holdHours, opsFromReport, periodKey } from './backtestAnalysis.js';
 import { DEFAULT_COST_MODEL, ZERO_COST, calcCostR, summarizeOps } from './tradeMetrics.js';
 
 // Mesma base do tradeMetrics.test.js: risco = 5 (entrada 100, stop 95),
@@ -154,6 +154,54 @@ describe('analyzeOps — buckets', () => {
     expect(analyzeOps(null).expectancyR).toBeNull();
     expect(analyzeOps([]).holdHours.median).toBeNull();
     expect(analyzeOps([]).cost.avgCostR).toBeNull();
+  });
+});
+
+describe('periodKey / byPeriod — estabilidade temporal', () => {
+  it('agrupa por ano-trimestre UTC do fechamento', () => {
+    expect(periodKey(makeOp({ closed_at: '2026-01-31T23:59:59.000Z' }))).toBe('2026-Q1');
+    expect(periodKey(makeOp({ closed_at: '2026-04-01T00:00:00.000Z' }))).toBe('2026-Q2');
+    expect(periodKey(makeOp({ closed_at: '2025-12-31T23:00:00.000Z' }))).toBe('2025-Q4');
+    expect(periodKey({})).toBe('UNKNOWN');
+    expect(periodKey(makeOp({ closed_at: 'não é data', updated_date: null, created_date: null }))).toBe('UNKNOWN');
+  });
+
+  const spread = [
+    makeOp({ id: 'q1a', closed_at: '2026-01-10T12:00:00.000Z' }),
+    makeOp({ id: 'q1b', closed_at: '2026-02-10T12:00:00.000Z' }),
+    winOp({ id: 'q2a', closed_at: '2026-04-10T12:00:00.000Z' }),
+    winOp({ id: 'q3a', closed_at: '2026-07-10T12:00:00.000Z' }),
+  ];
+
+  it('as contribuições por período somam a expectância geral', () => {
+    const analysis = analyzeOps(spread, { costModel: ZERO_COST });
+    const soma = analysis.byPeriod.reduce((acc, b) => acc + b.contributionR, 0);
+    expect(soma).toBeCloseTo(analysis.expectancyR, 10);
+  });
+
+  it('sai em ordem CRONOLÓGICA, não por contribuição — a sequência é a informação', () => {
+    const analysis = analyzeOps(spread, { costModel: ZERO_COST });
+    expect(analysis.byPeriod.map((b) => b.period)).toEqual(['2026-Q1', '2026-Q2', '2026-Q3']);
+    // O pior trimestre é o primeiro da série, não é o que a ordenação escolheu:
+    // se estivesse ordenado por contribuição, 2026-Q1 viria primeiro por acaso.
+    // Este par prova que a ordem é temporal — inverter os dados não muda a saída.
+    const invertido = analyzeOps([...spread].reverse(), { costModel: ZERO_COST });
+    expect(invertido.byPeriod.map((b) => b.period)).toEqual(['2026-Q1', '2026-Q2', '2026-Q3']);
+  });
+
+  it('positivePeriodsShare mede concentração — resultado de um trimestre só não é estratégia', () => {
+    const analysis = analyzeOps(spread, { costModel: ZERO_COST });
+    // Q1 negativo (2 stops), Q2 e Q3 positivos (1 TP2 cada) = 2 de 3.
+    expect(analysis.positivePeriodsShare).toBeCloseTo(2 / 3);
+    expect(analyzeOps([], { costModel: ZERO_COST }).positivePeriodsShare).toBeNull();
+  });
+
+  it('conta operações e resultados por trimestre', () => {
+    const analysis = analyzeOps(spread, { costModel: ZERO_COST });
+    const q1 = analysis.byPeriod.find((b) => b.period === '2026-Q1');
+    expect(q1.count).toBe(2);
+    expect(q1.losses).toBe(2);
+    expect(q1.avgR).toBeCloseTo(-1);
   });
 });
 

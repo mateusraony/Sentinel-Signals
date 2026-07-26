@@ -82,7 +82,13 @@ concurrency:
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 90 min não comportava janela longa: o run de 12 meses gastou 6,5 min de
+    # download + 28 min de replay, então 4 anos projeta ~2,3 h. Janela longa é
+    # o que dá amostra suficiente para o gate estatístico (docs/known-risks.md
+    # item 44) — a 109 operações/ano, 12 meses nunca chegam nas ~300 que um
+    # veredito exige. Teto do GitHub para repo público é 6 h; 350 min deixa
+    # folga sem virar job infinito em caso de travamento.
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v5
 

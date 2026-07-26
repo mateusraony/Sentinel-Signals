@@ -2602,3 +2602,55 @@ motivo — a lógica de fallback vive num lugar só.
 continua inconclusivo depois de decomposto, e o CLI reimprime o veredito no
 fim justamente para uma tabela bem formatada não passar a sensação de que o
 resultado virou decisão.
+
+### Janela longa e estabilidade temporal (2026-07-26)
+
+Avaliação de um documento externo de arquitetura quantitativa (27 seções,
+propondo motor de dados versionado, feature store, motor de regimes, 5
+estratégias novas, portfólio, paper/shadow, meta-modelo). Veredito registrado
+porque a decisão de NÃO adotar a maior parte dele precisa de justificativa
+rastreável — e porque três achados dele eram reais.
+
+**Confirmado contra o código e corrigido**: os outcomes dos gates eram
+acumulados em `Map` por `dedup_key` (`backtestEngine.js`), último-escreve-ganha.
+Como o loop de retry recomputa cada gate do zero a cada passada dentro da janela
+de 4h, N avaliações do mesmo sinal colapsavam em 1 — o relatório não distinguia
+"1 sinal que tentou 5× e falhou" de "1 sinal que falhou 1×". Agora cada seção
+carrega `attempts: {evaluations, retried, maxAttempts}` ao lado de `total`
+(sinais únicos). O `Map` continua guardando o estado final, que é o correto para
+as contagens de confirmado/pendente.
+
+**Refutado contra o código**: a crítica de que o Time Stop contaria barras
+compartilhadas entre timeframes. `scanner.js` já converte por
+`SIGNAL_TF_MS[op.signal_timeframe]` e conta tempo decorrido real — 48 barras de
+4h já valem 8 dias e 48 de 1h já valem 2 dias, por construção. Custos,
+look-ahead e ambiguidade intrabar também já estavam resolvidos (Fases 5 e 1,
+item 36).
+
+**Fora de escopo por colisão com restrição permanente**: o documento assume
+`usdm-futures` para sinal, backtest e execução, e pede funding/open
+interest/basis/liquidações — todos bloqueados por 451 de datacenter US (item 4).
+Paper trading, shadow mode, kill switch, reconciliação e circuit breakers
+pressupõem processo persistente e ordens reais (sem Cloud Functions por decisão
+permanente; trading real proibido por `.claude/rules/trading-safety.md`).
+
+**A tensão que decidiu o escopo**: os critérios de aprovação do próprio
+documento (300 operações, expectância ≥ +0,10 R, profit factor ≥ 1,20) reprovam
+a estratégia atual (109, −0,103, 0,808) sem construir nada. E o motivo de haver
+só 109 operações é a **janela de 12 meses**, não a estratégia. Daí a ordem
+adotada: medir com amostra de verdade ANTES de construir aparato para medir.
+
+**Mudanças desta rodada**:
+- `backtest.yml` `timeout-minutes` 90 → 350 (o run de 12 meses gastou ~35 min;
+  4 anos projeta ~2,3 h; teto do GitHub para repo público é 6 h).
+- `backtestAnalysis.js` ganhou `byPeriod` (ano-trimestre do fechamento) e
+  `positivePeriodsShare`. Única tabela do diagnóstico em ordem **cronológica**,
+  não por contribuição: aqui a sequência é a informação. Responde ao veto
+  "resultado não pode depender de uma janela curta" sem construir walk-forward.
+- Trimestre e não mês de propósito: a 109 operações/ano, buckets mensais dariam
+  ~9 operações cada — ruído puro.
+
+**Ressalva ao ler um run longo**: ONDO (listada ~2024), ZRO (~2024) e PENDLE
+(~2023) não existem no começo de uma janela de 4 anos, então o recorte pesa
+BTC/ETH/FET/DYDX. O `bySymbol` do diagnóstico expõe isso, mas comparar um run de
+4 anos com o de 12 meses como se fossem a mesma carteira seria erro de leitura.

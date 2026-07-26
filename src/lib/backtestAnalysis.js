@@ -42,6 +42,21 @@ export function exitReasonKey(op) {
   return status;
 }
 
+// Bucket temporal do resultado: ano-trimestre do FECHAMENTO (o instante em que
+// o R foi realizado, mesma referência que summarizeOps usa para ordenar a
+// curva). Trimestre e não mês: a 109 operações/ano, buckets mensais dariam ~9
+// operações cada — ruído puro. Existe para responder "o resultado depende de
+// uma janela curta?", que é um veto explícito de qualquer critério de
+// aprovação sério, sem precisar construir walk-forward.
+export function periodKey(op) {
+  const closedAt = getClosedAt(op);
+  if (!closedAt) return 'UNKNOWN';
+  const date = new Date(closedAt);
+  const ms = date.getTime();
+  if (!Number.isFinite(ms)) return 'UNKNOWN';
+  return `${date.getUTCFullYear()}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
+}
+
 export function holdHours(op) {
   const openedAt = getOpenedAt(op);
   const closedAt = getClosedAt(op);
@@ -131,6 +146,7 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 }
 
   const byExitReason = new Map();
   const bySymbol = new Map();
+  const byPeriod = new Map();
   for (const row of rows) {
     const exitKey = exitReasonKey(row.op);
     if (!byExitReason.has(exitKey)) {
@@ -145,6 +161,10 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 }
     const symbol = row.op.symbol ?? 'UNKNOWN';
     if (!bySymbol.has(symbol)) bySymbol.set(symbol, emptyBucket({ symbol }));
     tallyBucket(bySymbol.get(symbol), row);
+
+    const period = periodKey(row.op);
+    if (!byPeriod.has(period)) byPeriod.set(period, emptyBucket({ period }));
+    tallyBucket(byPeriod.get(period), row);
   }
 
   // Pior contribuição primeiro: a primeira linha é literalmente "de onde vem
@@ -152,6 +172,14 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 }
   const finish = (map) => [...map.values()]
     .map((bucket) => finishBucket(bucket, closed.length, rCountedTotal))
     .sort((a, b) => a.contributionR - b.contributionR);
+
+  // Exceção deliberada à ordenação acima: período é o único eixo em que a
+  // ORDEM CRONOLÓGICA é a informação. Ordenar por contribuição esconderia
+  // justamente o que se quer ver — se o resultado degrada, se está
+  // concentrado num trimestre, ou se é estável ao longo do tempo.
+  const finishChronological = (map) => [...map.values()]
+    .map((bucket) => finishBucket(bucket, closed.length, rCountedTotal))
+    .sort((a, b) => (a.period > b.period ? 1 : a.period < b.period ? -1 : 0));
 
   // Fronteira atravessada != funding pago. calcTradeCost gateia as liquidações
   // pela taxa (`fundingBpsPer8h > 0 ? ... : 0`) e aqui vale o mesmo: num run
@@ -187,6 +215,12 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 }
     expectancyR: mean(sumRTotal, rCountedTotal),
     byExitReason: finish(byExitReason),
     bySymbol: finish(bySymbol),
+    byPeriod: finishChronological(byPeriod),
+    // Fração dos trimestres com contribuição >= 0. Resultado que vem de um
+    // único trimestre bom não é estratégia, é sorte datada.
+    positivePeriodsShare: byPeriod.size > 0
+      ? [...byPeriod.values()].filter((b) => b.sumR >= 0).length / byPeriod.size
+      : null,
     cost: {
       avgCostR: mean(sumCostR, costRCount),
       avgFeeR: mean(sumFeeR, costRCount),

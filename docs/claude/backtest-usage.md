@@ -278,13 +278,18 @@ overfitting. Quatro saídas:
 1. **Por motivo de saída** (`STOP_HIT`, `TP2_HIT`, `INVALIDATED`,
    `CLOSED:TIME_STOP`, `CLOSED:CHOP_EXIT`).
 2. **Por símbolo**.
-3. **Composição do custo** — taxa vs slippage vs funding, em R, mais quantas
+3. **Estabilidade no tempo** — contribuição por trimestre, em ordem
+   **cronológica** (é a única tabela que não sai ordenada por contribuição:
+   aqui a sequência é a informação — degradação, concentração num período, ou
+   estabilidade). Mais `positivePeriodsShare`: resultado que vem de um
+   trimestre bom não é estratégia, é sorte datada.
+4. **Composição do custo** — taxa vs slippage vs funding, em R, mais quantas
    fronteiras de 8h cada operação atravessou. Atravessar a fronteira e pagar
    funding são coisas separadas na saída: num run `--no-costs` a contagem de
    fronteiras continua sendo mostrada (é telemetria de duração, o número por
    trás da hipótese "o funding domina o custo"), mas nenhuma operação aparece
    como tendo pago.
-4. **Tempo em posição** — média, mediana, mínimo, máximo.
+5. **Tempo em posição** — média, mediana, mínimo, máximo.
 
 A coluna que importa é **`contrib R`**: quantos R da expectância final vieram
 daquele balde. As linhas somam **exatamente** a expectância geral, porque
