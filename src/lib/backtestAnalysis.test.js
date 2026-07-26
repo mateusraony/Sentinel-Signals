@@ -175,8 +175,9 @@ describe('analyzeOps — decomposição do custo', () => {
     const { cost } = analyzeOps([op], { costModel: DEFAULT_COST_MODEL });
     expect(cost.avgCostR).toBeCloseTo(calcCostR(op, DEFAULT_COST_MODEL), 12);
     expect(cost.avgFundingR).toBeCloseTo(0.002, 12);
-    expect(cost.avgFundingSettlements).toBeCloseTo(1);
+    expect(cost.avgBoundariesCrossed).toBeCloseTo(1);
     expect(cost.opsWithFunding).toBe(1);
+    expect(cost.fundingCharged).toBe(true);
   });
 
   it('posição que não cruza fronteira de 8h não paga funding', () => {
@@ -189,6 +190,39 @@ describe('analyzeOps — decomposição do custo', () => {
     expect(cost.avgFundingR).toBe(0);
     expect(cost.fundingShare).toBe(0);
     expect(cost.opsWithFunding).toBe(0);
+    expect(cost.avgBoundariesCrossed).toBe(0);
+  });
+
+  it('taxa de funding zero: fronteira atravessada não vira operação que pagou', () => {
+    // Achado da revisão externa (Codex, PR #88): countFundingSettlements conta
+    // geometria e não conhece o modelo de custo, então um run --no-costs
+    // reportava operações "que pagaram funding" com custo zero. calcTradeCost
+    // já gateava pela taxa; este módulo não gateava.
+    const op = makeOp({
+      candle_close_time: '2026-07-16T07:00:00.000Z',
+      created_date: '2026-07-16T07:00:00.000Z',
+      closed_at: '2026-07-17T01:00:00.000Z', // cruza 08:00, 16:00 e 00:00
+    });
+    const semCusto = analyzeOps([op], { costModel: ZERO_COST }).cost;
+    expect(semCusto.avgBoundariesCrossed).toBe(3); // geometria continua medida
+    expect(semCusto.opsWithFunding).toBe(0); // mas ninguém pagou
+    expect(semCusto.fundingCharged).toBe(false);
+    expect(semCusto.avgFundingR).toBe(0);
+
+    const comCusto = analyzeOps([op], { costModel: DEFAULT_COST_MODEL }).cost;
+    expect(comCusto.avgBoundariesCrossed).toBe(3);
+    expect(comCusto.opsWithFunding).toBe(1);
+    expect(comCusto.fundingCharged).toBe(true);
+  });
+
+  it('taxa de funding zerada isoladamente (custo de taxa ligado) também não cobra', () => {
+    const { cost } = analyzeOps([makeOp({ closed_at: '2026-07-24T08:00:00.000Z' })], {
+      costModel: { ...DEFAULT_COST_MODEL, fundingBpsPer8h: 0 },
+    });
+    expect(cost.avgBoundariesCrossed).toBe(24);
+    expect(cost.opsWithFunding).toBe(0);
+    expect(cost.avgFundingR).toBe(0);
+    expect(cost.avgCostR).toBeGreaterThan(0); // taxa e slippage seguem cobrados
   });
 
   it('run --no-costs: custo zero em todos os componentes, sem divisão por zero', () => {
@@ -205,7 +239,7 @@ describe('analyzeOps — decomposição do custo', () => {
     // assumiu ao classificar funding como custo de segunda ordem.
     const op = makeOp({ closed_at: '2026-07-24T08:00:00.000Z' });
     const { cost } = analyzeOps([op], { costModel: DEFAULT_COST_MODEL });
-    expect(cost.avgFundingSettlements).toBe(24);
+    expect(cost.avgBoundariesCrossed).toBe(24);
     expect(cost.fundingShare).toBeGreaterThan(cost.feeShare);
   });
 });
