@@ -95,10 +95,16 @@ export function renderAnalysis(analysis) {
   }, {
     componente: 'TOTAL',
     'R por op': fmt(cost.avgCostR, 4),
-    'fatia': cost.avgCostR === null ? '—' : '100.0%',
+    // '—' também quando o custo total é zero: 100% de nada é enganoso.
+    'fatia': cost.feeShare === null ? '—' : '100.0%',
   }]));
-  out.push(`Liquidações de funding por operação: ${fmt(cost.avgFundingSettlements, 1)} `
-    + `(${cost.opsWithFunding} de ${analysis.totalClosed} operações pagaram alguma)`);
+  // Duas frases separadas de propósito: atravessar a fronteira é geometria da
+  // duração, pagar depende da taxa configurada. Num run --no-costs a primeira
+  // continua informativa e a segunda tem que dizer zero.
+  out.push(`Fronteiras de 8h atravessadas por operação: ${fmt(cost.avgBoundariesCrossed, 1)}`);
+  out.push(cost.fundingCharged
+    ? `Operações que pagaram funding: ${cost.opsWithFunding} de ${analysis.totalClosed}`
+    : 'Funding não cobrado neste run (taxa 0) — nenhuma operação pagou.');
   out.push('');
 
   out.push('TEMPO EM POSIÇÃO');

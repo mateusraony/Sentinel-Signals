@@ -153,12 +153,20 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 }
     .map((bucket) => finishBucket(bucket, closed.length, rCountedTotal))
     .sort((a, b) => a.contributionR - b.contributionR);
 
+  // Fronteira atravessada != funding pago. calcTradeCost gateia as liquidações
+  // pela taxa (`fundingBpsPer8h > 0 ? ... : 0`) e aqui vale o mesmo: num run
+  // --no-costs ninguém pagou nada. Mas a CONTAGEM de fronteiras continua sendo
+  // medida nos dois regimes de propósito — ela é telemetria de duração (quantas
+  // janelas de 8h a posição atravessa), que é exatamente o número por trás da
+  // hipótese "o funding domina o custo" do item 44, e some justo no run
+  // --no-costs que serve para o A/B.
   let sumFeeR = 0; let sumSlippageR = 0; let sumFundingR = 0; let sumCostR = 0;
-  let costRCount = 0; let sumSettlements = 0; let opsWithFunding = 0;
+  let costRCount = 0; let sumBoundaries = 0; let opsWithFunding = 0;
+  const fundingCharged = models.resolved.fundingBpsPer8h > 0;
   for (const { op, costR } of rows) {
-    const settlements = countFundingSettlements(op);
-    sumSettlements += settlements;
-    if (settlements > 0) opsWithFunding += 1;
+    const boundaries = countFundingSettlements(op);
+    sumBoundaries += boundaries;
+    if (fundingCharged && boundaries > 0) opsWithFunding += 1;
     if (costR === null) continue;
     costRCount += 1;
     sumCostR += costR;
@@ -187,8 +195,10 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 }
       feeShare: share(sumFeeR),
       slippageShare: share(sumSlippageR),
       fundingShare: share(sumFundingR),
-      avgFundingSettlements: mean(sumSettlements, closed.length),
+      // Geometria (sempre medida) vs. pagamento (só quando a taxa é > 0).
+      avgBoundariesCrossed: mean(sumBoundaries, closed.length),
       opsWithFunding,
+      fundingCharged,
       costRCount,
     },
     holdHours: {
