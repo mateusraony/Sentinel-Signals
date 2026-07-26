@@ -27,6 +27,15 @@ passam `ZERO_COST` explicitamente. Ao escrever teste novo ali, decida
 conscientemente qual regime está afirmando — um valor hand-computed sem
 `ZERO_COST` é líquido, não bruto.
 
+`backtestAnalysis.test.js` cobre o **diagnóstico pós-backtest**
+(`src/lib/backtestAnalysis.js` — decomposição do resultado por motivo de saída,
+símbolo, componente de custo e tempo em posição). O teste que importa ali é o
+de **aditividade**: as contribuições dos baldes têm que somar exatamente a
+expectância geral, e taxa+slippage+funding têm que reconstruir o custo total —
+é isso que separa uma decomposição de uma comparação de médias entre grupos de
+tamanhos diferentes. Ao estender, prefira asserções sobre essa invariante a
+valores absolutos por balde.
+
 `scannerStateMachine.test.js` cobre a **máquina de estados fim a fim** contra
 as funções REAIS do `scanner.js` (`persistScanResults`, `priceCheckActiveOps`,
 `buildTradeOpData`), usando um backend fake em memória

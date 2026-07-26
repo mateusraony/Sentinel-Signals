@@ -206,6 +206,23 @@ jobs:
             echo "## Backtest — falhou antes de gerar relatório" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      # Decomposição do resultado (scripts/analyze-backtest.mjs) — publicada
+      # no job porque `overall.curve`, de onde ela sai, só existe no artifact
+      # completo; sem isso, responder "de onde vem o prejuízo?" exigiria
+      # baixar o zip. Não roda replay nenhum e não toca em parâmetro: é
+      # leitura do relatório que acabou de ser gerado. Ver known-risks item 44.
+      - name: Publicar diagnóstico
+        if: always()
+        run: |
+          if [ -f backtest-report.json ]; then
+            {
+              echo "## Diagnóstico — de onde vem o resultado"
+              echo '```'
+              node scripts/analyze-backtest.mjs --report backtest-report.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload do relatório completo
         if: always()
         uses: actions/upload-artifact@v4

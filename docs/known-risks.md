@@ -2564,3 +2564,41 @@ muitas fronteiras de 8h. É literalmente o caso de alerta previsto nesta
 seção ("se o funding passar de ~20% do custo de taxa, as posições estão
 durando mais que o previsto"). Confirmar decompondo `calcTradeCost` por
 operação no artifact antes de tratar como fato.
+
+### Ferramenta de diagnóstico (`src/lib/backtestAnalysis.js`)
+
+A hipótese acima — e a pergunta maior, "de onde vem o −0,061 R?" — deixaram de
+depender de análise manual. `npm run analyze-backtest -- --report <json>` lê um
+relatório **já gerado** e o decompõe por motivo de saída, por símbolo, por
+componente de custo (taxa/slippage/funding separados) e por tempo em posição.
+O workflow `backtest.yml` publica a mesma saída no resumo do job, então o
+diagnóstico não exige baixar o artifact.
+
+**Não consome tentativa.** Não roda replay, não altera parâmetro, não escolhe
+configuração — é leitura do que já foi medido. Essa é a diferença que importa
+frente a varrer combinações de flags: são 4 flags opcionais (`retestEnabled`,
+`displacementEnabled`, `smcTierEnabled`, `smcObFvgEnabled`), 16 combinações, e
+cada uma corta a amostra por ser filtro. Com o `sd(R) ≈ 1,1` derivado do IC
+medido neste run e ~55 operações após um filtro, o **máximo de 16 tentativas
+totalmente inúteis ainda é esperado em torno de +0,2 R** — indistinguível de
+uma descoberta real. Testar flags antes de saber onde está o problema é
+comprar esse falso positivo.
+
+Métrica central: **`contributionR` = `sumR` do balde ÷ operações com R do
+conjunto TODO**. Os baldes somam **exatamente** a expectância geral
+(propriedade testada), o que torna a decomposição aditiva em vez de uma
+comparação de médias entre grupos de tamanhos diferentes — um balde de 3
+operações com média −2 R chama atenção e contribui menos que um de 60 com
+média −0,1 R.
+
+A decomposição do custo usa três chamadas isoladas a `calcCostR` (só taxa, só
+slippage, só funding) em vez de reimplementar a fórmula: o custo é linear em
+cada termo de bps, então os componentes reconstroem o total exato e a
+decomposição nunca pode divergir do custo que o relatório cobrou.
+`resolveCostModel` passou a ser exportado de `tradeMetrics.js` pelo mesmo
+motivo — a lógica de fallback vive num lugar só.
+
+**O que o diagnóstico NÃO faz**: não valida nada. Um relatório inconclusivo
+continua inconclusivo depois de decomposto, e o CLI reimprime o veredito no
+fim justamente para uma tabela bem formatada não passar a sensação de que o
+resultado virou decisão.

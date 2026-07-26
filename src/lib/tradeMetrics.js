@@ -62,7 +62,11 @@ export const ZERO_COST = {
   fundingBpsPer8h: 0,
 };
 
-function resolveCostModel(model) {
+// Exportada para src/lib/backtestAnalysis.js poder montar modelos isolados
+// (só taxa, só slippage, só funding) a partir dos MESMOS valores efetivos que
+// este módulo usa — se a lógica de fallback vivesse em dois lugares, a
+// decomposição do custo poderia divergir do custo que o relatório cobrou.
+export function resolveCostModel(model) {
   if (!model) return DEFAULT_COST_MODEL;
   return {
     feeBpsEntry: Number.isFinite(model.feeBpsEntry) ? model.feeBpsEntry : DEFAULT_COST_MODEL.feeBpsEntry,
@@ -80,8 +84,16 @@ function resolveCostModel(model) {
 // does not prorate by duration. Research (item 44): for positions lasting
 // hours this is 2.5-10% of the fee cost — reported for telemetry, not because
 // it moves a decision. Returns 0 when either timestamp is unusable.
+// Melhor "quando a posição passou a existir" disponível. Difere de propósito
+// de opExitRules.getEntryReferenceTime, que PARA em candle_close_time: aquela
+// guarda protege contra candle contaminado e precisa falhar para o lado
+// conservador, esta aqui só mede duração e prefere um fallback a devolver 0.
+export function getOpenedAt(op) {
+  return op?.entry_candle_time_15m ?? op?.entry_candle_time_5m ?? op?.candle_close_time ?? op?.created_date ?? null;
+}
+
 export function countFundingSettlements(op) {
-  const openedAt = op?.entry_candle_time_15m ?? op?.entry_candle_time_5m ?? op?.candle_close_time ?? op?.created_date;
+  const openedAt = getOpenedAt(op);
   const closedAt = getClosedAt(op);
   if (!openedAt || !closedAt) return 0;
   const startMs = new Date(openedAt).getTime();

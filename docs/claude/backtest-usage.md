@@ -265,6 +265,55 @@ parâmetro**. Calibrar a custo zero e recalibrar depois dobra a contagem de
 tentativas e contamina a segunda busca. Na prática: os pesos de OB/FVG da
 Fase 4 só devem ser calibrados com o custo já ligado — que é o default.
 
+## Passo 3 — diagnosticar de ONDE vem o resultado
+
+```bash
+npm run analyze-backtest -- --report ./backtest-report.json
+```
+
+Lê um relatório já gerado e o decompõe — **sem rodar replay nenhum e sem
+tocar em parâmetro**, então não consome nenhuma "tentativa" no sentido de
+overfitting. Quatro saídas:
+
+1. **Por motivo de saída** (`STOP_HIT`, `TP2_HIT`, `INVALIDATED`,
+   `CLOSED:TIME_STOP`, `CLOSED:CHOP_EXIT`).
+2. **Por símbolo**.
+3. **Composição do custo** — taxa vs slippage vs funding, em R, mais quantas
+   liquidações de funding cada operação atravessou.
+4. **Tempo em posição** — média, mediana, mínimo, máximo.
+
+A coluna que importa é **`contrib R`**: quantos R da expectância final vieram
+daquele balde. As linhas somam **exatamente** a expectância geral, porque
+todas usam o mesmo denominador (o total de operações com R). Isso é diferente
+de comparar médias entre grupos: um balde de 3 operações com média −2 R
+parece catastrófico e contribui menos que um balde de 60 operações com média
+−0,1 R. A tabela sai ordenada da pior contribuição para a melhor, então a
+primeira linha é literalmente a fonte do prejuízo.
+
+**Por que isso vem antes de testar flags.** Cada gate opcional (`retestEnabled`,
+`displacementEnabled`, `smcTierEnabled`, `smcObFvgEnabled`) é um filtro: corta
+a amostra e alarga o intervalo de confiança. São 4 flags, ou seja 16
+combinações — e com `sd(R) ≈ 1,1` e ~55 operações após um filtro, o **máximo
+de 16 tentativas inúteis ainda é esperado em torno de +0,2 R**, só por sorte.
+Um filtro também não cria vantagem, só concentra a que já existe. O
+diagnóstico é o que diz se existe algo concentrado para filtrar — e, quando
+diz, aponta a alavanca certa, que frequentemente **não** é um filtro de
+entrada:
+
+| Se o prejuízo se concentra em… | A alavanca é |
+|---|---|
+| `CLOSED:TIME_STOP` | a regra de **saída** (prazo, trailing), não a entrada |
+| 1-2 símbolos | **quais ativos** são monitorados |
+| funding (fatia alta do custo) | **quanto tempo** a posição fica aberta |
+| nada — espalhado por igual | aí sim a entrada, e o A/B de flags fica justificado |
+
+`--json` imprime a mesma análise como JSON, para diffar dois relatórios.
+Precisa do **JSON completo** (o `--out` local ou o artifact `backtest-report`
+do run) — o resumo publicado na aba Summary remove `overall.curve`, que é
+onde cada operação vive. Na **Opção B** isso já vem pronto: o workflow publica
+o diagnóstico no próprio job, na seção "Diagnóstico — de onde vem o
+resultado", sem precisar baixar nada.
+
 ## O que o replay NÃO cobre (por design, não é lacuna)
 
 - **Preço em tempo real (`priceCheckActiveOps`)** — não há dado de tick num
