@@ -236,6 +236,12 @@ taker), `--slippage-bps N` (default 1), `--funding-bps N` (default 1, por
 janela de 8h), `--min-trades N` (default 30), `--trial-label TXT` (gravado no
 JSON — serve para você contar quantas configurações já testou).
 
+As mesmas seis flags existem como campos do formulário na **Opção B**
+(`backtest.yml` → *Run workflow*), com os mesmos defaults: deixar em branco usa
+o default, e o `no_costs` é uma caixa de seleção. O resumo do run imprime o
+veredito (INCONCLUSIVO ou "amostra suficiente") **antes** de qualquer win rate,
+pelo mesmo motivo do aviso abaixo.
+
 **⚠️ `conclusive: false` significa que o relatório não sustenta conclusão
 nenhuma** — o CLI imprime **RESULTADO INCONCLUSIVO** em destaque. Isso conserta
 o problema real do processo: um backtest com 3 operações produz win rate e
