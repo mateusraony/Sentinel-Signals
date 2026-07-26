@@ -79,6 +79,23 @@ export function renderAnalysis(analysis) {
   }))));
   out.push('');
 
+  out.push('ESTABILIDADE NO TEMPO — por trimestre');
+  out.push('(ordem cronológica, não por contribuição — aqui o que informa é a');
+  out.push(' sequência: degradação, concentração num período, ou estabilidade)');
+  out.push(...table(analysis.byPeriod.map((b) => ({
+    trimestre: b.period,
+    ops: b.count,
+    'W/L/BE': `${b.wins}/${b.losses}/${b.be}`,
+    'contrib R': fmt(b.contributionR),
+    'média R': fmt(b.avgR),
+  }))));
+  // As duas linhas juntas, sempre: concentração máxima (tudo num trimestre
+  // lucrativo) dá 100% na primeira, e só a segunda denuncia.
+  out.push(`Dos trimestres que operaram, positivos: ${pct(analysis.positivePeriodsShare)}`);
+  out.push(`Trimestres com alguma operação: ${analysis.activePeriods} de ${analysis.totalPeriods}`
+    + `${analysis.activePeriodsShare === null ? ' (janela desconhecida)' : ` (${pct(analysis.activePeriodsShare)} da janela)`}`);
+  out.push('');
+
   out.push('CUSTO — de que é feito');
   out.push(...table([{
     componente: 'taxa',

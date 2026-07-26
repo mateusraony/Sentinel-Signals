@@ -42,6 +42,40 @@ export function exitReasonKey(op) {
   return status;
 }
 
+// Bucket temporal do resultado: ano-trimestre do FECHAMENTO (o instante em que
+// o R foi realizado, mesma referência que summarizeOps usa para ordenar a
+// curva). Trimestre e não mês: a 109 operações/ano, buckets mensais dariam ~9
+// operações cada — ruído puro. Existe para responder "o resultado depende de
+// uma janela curta?", que é um veto explícito de qualquer critério de
+// aprovação sério, sem precisar construir walk-forward.
+export function periodKey(op) {
+  const closedAt = getClosedAt(op);
+  if (!closedAt) return 'UNKNOWN';
+  const date = new Date(closedAt);
+  const ms = date.getTime();
+  if (!Number.isFinite(ms)) return 'UNKNOWN';
+  return `${date.getUTCFullYear()}-Q${Math.floor(date.getUTCMonth() / 3) + 1}`;
+}
+
+// Todos os trimestres do intervalo PEDIDO, inclusive os sem nenhuma operação.
+// Sem isto, `byPeriod` só conteria os trimestres que tiveram operação — e a
+// concentração máxima (tudo num trimestre só, dele positivo) leria como "100%
+// dos trimestres positivos", exatamente o oposto do que a métrica existe para
+// detectar. Achado de revisão externa (Codex, PR #91).
+export function enumeratePeriods(fromMs, toMs) {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) return [];
+  const periods = [];
+  const cursor = new Date(fromMs);
+  cursor.setUTCDate(1);
+  cursor.setUTCHours(0, 0, 0, 0);
+  cursor.setUTCMonth(Math.floor(cursor.getUTCMonth() / 3) * 3);
+  while (cursor.getTime() <= toMs) {
+    periods.push(`${cursor.getUTCFullYear()}-Q${Math.floor(cursor.getUTCMonth() / 3) + 1}`);
+    cursor.setUTCMonth(cursor.getUTCMonth() + 3);
+  }
+  return periods;
+}
+
 export function holdHours(op) {
   const openedAt = getOpenedAt(op);
   const closedAt = getClosedAt(op);
@@ -114,7 +148,7 @@ function costComponentModels(costModel) {
  * operações sem R calculável entram na contagem do balde mas não na soma de R
  * — nunca são silenciosamente contadas como zero.
  */
-export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 } = {}) {
+export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, rangeMs } = {}) {
   const closed = (ops || []).filter(isClosedOp);
   const models = costComponentModels(costModel);
 
@@ -131,6 +165,11 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 }
 
   const byExitReason = new Map();
   const bySymbol = new Map();
+  const byPeriod = new Map();
+  // Semeia os trimestres do intervalo pedido ANTES de contar, para os sem
+  // operação aparecerem com count 0 em vez de sumirem da tabela.
+  const windowPeriods = enumeratePeriods(rangeMs?.fromMs, rangeMs?.toMs);
+  for (const period of windowPeriods) byPeriod.set(period, emptyBucket({ period }));
   for (const row of rows) {
     const exitKey = exitReasonKey(row.op);
     if (!byExitReason.has(exitKey)) {
@@ -145,6 +184,10 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 }
     const symbol = row.op.symbol ?? 'UNKNOWN';
     if (!bySymbol.has(symbol)) bySymbol.set(symbol, emptyBucket({ symbol }));
     tallyBucket(bySymbol.get(symbol), row);
+
+    const period = periodKey(row.op);
+    if (!byPeriod.has(period)) byPeriod.set(period, emptyBucket({ period }));
+    tallyBucket(byPeriod.get(period), row);
   }
 
   // Pior contribuição primeiro: a primeira linha é literalmente "de onde vem
@@ -152,6 +195,14 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 }
   const finish = (map) => [...map.values()]
     .map((bucket) => finishBucket(bucket, closed.length, rCountedTotal))
     .sort((a, b) => a.contributionR - b.contributionR);
+
+  // Exceção deliberada à ordenação acima: período é o único eixo em que a
+  // ORDEM CRONOLÓGICA é a informação. Ordenar por contribuição esconderia
+  // justamente o que se quer ver — se o resultado degrada, se está
+  // concentrado num trimestre, ou se é estável ao longo do tempo.
+  const finishChronological = (map) => [...map.values()]
+    .map((bucket) => finishBucket(bucket, closed.length, rCountedTotal))
+    .sort((a, b) => (a.period > b.period ? 1 : a.period < b.period ? -1 : 0));
 
   // Fronteira atravessada != funding pago. calcTradeCost gateia as liquidações
   // pela taxa (`fundingBpsPer8h > 0 ? ... : 0`) e aqui vale o mesmo: num run
@@ -177,6 +228,7 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 }
   const share = (part) => (sumCostR > 0 ? part / sumCostR : null);
 
   const hoursList = rows.map((row) => row.hours).filter((h) => h !== null);
+  const activeCount = [...byPeriod.values()].filter((b) => b.count > 0).length;
 
   return {
     costModel: models.resolved,
@@ -187,6 +239,26 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1 }
     expectancyR: mean(sumRTotal, rCountedTotal),
     byExitReason: finish(byExitReason),
     bySymbol: finish(bySymbol),
+    byPeriod: finishChronological(byPeriod),
+    // DUAS medidas, e é preciso ler as duas juntas — separadas de propósito
+    // porque cada uma sozinha engana:
+    //
+    // `positivePeriodsShare` = positivos ÷ trimestres COM operação. Responde
+    // "quando operou, operou bem?".
+    // `activePeriodsShare` = trimestres com operação ÷ trimestres da JANELA.
+    // Responde "operou o tempo todo, ou só num pedaço?".
+    //
+    // O caso que motivou a separação: tudo concentrado num trimestre lucrativo
+    // dá positivePeriodsShare = 100% — que lido sozinho parece estabilidade
+    // perfeita e é o oposto disso. Com activePeriodsShare = 1/16 ao lado, a
+    // concentração fica visível. `null` quando a janela é desconhecida
+    // (chamada direta a analyzeOps sem rangeMs) — nunca um número inventado.
+    positivePeriodsShare: activeCount > 0
+      ? [...byPeriod.values()].filter((b) => b.count > 0 && b.sumR >= 0).length / activeCount
+      : null,
+    activePeriodsShare: windowPeriods.length > 0 ? activeCount / windowPeriods.length : null,
+    activePeriods: activeCount,
+    totalPeriods: windowPeriods.length || byPeriod.size,
     cost: {
       avgCostR: mean(sumCostR, costRCount),
       avgFeeR: mean(sumFeeR, costRCount),
@@ -235,5 +307,16 @@ export function analyzeReport(report, { costModel } = {}) {
   // --no-costs tem que continuar sendo lido como custo zero aqui.
   return analyzeOps(opsFromReport(report), {
     costModel: costModel ?? fromReport ?? DEFAULT_COST_MODEL,
+    // A janela vem do relatório, não das operações: é a diferença entre
+    // "trimestres que operaram" e "trimestres que existiam para operar".
+    // `fromMs`/`toMs` são o que buildReport grava; as strings ISO são fallback
+    // para relatório editado à mão ou truncado — sem isso a janela viraria
+    // "desconhecida" em silêncio, que é pior que estar errada de forma visível.
+    rangeMs: report?.range
+      ? {
+        fromMs: report.range.fromMs ?? Date.parse(report.range.from),
+        toMs: report.range.toMs ?? Date.parse(report.range.to),
+      }
+      : undefined,
   });
 }
