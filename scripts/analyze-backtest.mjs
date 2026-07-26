@@ -89,7 +89,11 @@ export function renderAnalysis(analysis) {
     'contrib R': fmt(b.contributionR),
     'média R': fmt(b.avgR),
   }))));
-  out.push(`Trimestres com resultado >= 0: ${pct(analysis.positivePeriodsShare)}`);
+  // As duas linhas juntas, sempre: concentração máxima (tudo num trimestre
+  // lucrativo) dá 100% na primeira, e só a segunda denuncia.
+  out.push(`Dos trimestres que operaram, positivos: ${pct(analysis.positivePeriodsShare)}`);
+  out.push(`Trimestres com alguma operação: ${analysis.activePeriods} de ${analysis.totalPeriods}`
+    + `${analysis.activePeriodsShare === null ? ' (janela desconhecida)' : ` (${pct(analysis.activePeriodsShare)} da janela)`}`);
   out.push('');
 
   out.push('CUSTO — de que é feito');

@@ -1426,18 +1426,6 @@ export async function persistScanResults(scanResult) {
     // item 28: raising this to reduce notification spam used to silently
     // drop the SignalEvent and every entry that depended on it existing,
     // including the retry loop's ability to re-check it later).
-    // Fase 4 (item 43) — in-memory only, no Firestore write; nada é empurrado
-    // enquanto smcObFvgEnabled está desligado (os campos ficam null), que é
-    // como o relatório de backtest infere se o flag estava ligado.
-    if (signal.source === 'smc_structure'
-      && (signal.context?.ob_active != null || signal.context?.fvg_active != null)) {
-      smcObFvgOutcomes.push({
-        dedup_key: signal.dedup_key,
-        cascade: '1h_5m',
-        obActive: signal.context.ob_active === true,
-        fvgActive: signal.context.fvg_active === true,
-      });
-    }
 
     const cooldownMinutes = asset.alert_cooldown_minutes || 60;
     const cooldownTime = new Date(Date.now() - cooldownMinutes * 60 * 1000).toISOString();
@@ -1486,6 +1474,30 @@ export async function persistScanResults(scanResult) {
 
     persistedSignals++;
     if (willNotify) notifyNewSignal(signal).catch(() => {});
+
+    // Fase 4 (item 43) — in-memory only, no Firestore write; nada é empurrado
+    // enquanto smcObFvgEnabled está desligado (os campos ficam null), que é
+    // como o relatório de backtest infere se o flag estava ligado.
+    //
+    // A POSIÇÃO importa: tem que ser DEPOIS do `if (!dedupResult.created)
+    // continue` acima. `scanAsset` é stateless e reemite o MESMO evento de
+    // estrutura da última vela 1h fechada a cada tick (~12x/hora na cadência
+    // de 5min do replay), então empurrar antes do gate de dedup fazia a
+    // contagem de avaliações medir a cadência do replay em vez do que
+    // aconteceu com o sinal. Diferente dos gates de reteste/deslocamento/
+    // regime, que são reavaliados de verdade pelo loop de retry, OB/FVG é
+    // registrado uma vez, no nascimento do sinal — achado de revisão externa
+    // (Codex, PR #91). O `total` da seção não muda (o relatório já deduplicava
+    // por dedup_key); o que muda é `attempts` deixar de ser ruído.
+    if (signal.source === 'smc_structure'
+      && (signal.context?.ob_active != null || signal.context?.fvg_active != null)) {
+      smcObFvgOutcomes.push({
+        dedup_key: signal.dedup_key,
+        cascade: '1h_5m',
+        obActive: signal.context.ob_active === true,
+        fvgActive: signal.context.fvg_active === true,
+      });
+    }
 
     // ═══ Entry Motor: 4H trend → 15m confirmation only ═══
     // No operation opens on 15m without prior 4H trend confirmation.
