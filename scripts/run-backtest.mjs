@@ -121,7 +121,23 @@ async function main() {
       const pct = Math.floor(((t - fromMs) / (toMs - fromMs)) * 100);
       if (pct >= lastLoggedPct + 10) {
         lastLoggedPct = pct;
-        console.log(`[backtest] ${pct}% (${new Date(t).toISOString()})`);
+        // Decorrido + projeção, não só a porcentagem. O run de 4 anos rodou
+        // 5h25min e só se revelou impossível quando o job foi cortado no
+        // timeout — o log mostrava percentuais avançando e nada dizia se ia
+        // terminar. Com isto, o marco de 10% já permite decidir entre deixar
+        // rodar e cancelar.
+        //
+        // A projeção é LINEAR e por isso OTIMISTA: o replay tem termo
+        // superlinear conhecido (fakeBackend.filter fica mais caro conforme o
+        // store de SignalEvent cresce — docs/roadmap.md, Bloco 0), então o
+        // total real tende a passar do projetado. O rótulo "mínimo" existe
+        // para a projeção não ser lida como promessa.
+        const decorridoMin = (Date.now() - started) / 60000;
+        const projecao = pct > 0 ? (decorridoMin / pct) * 100 : null;
+        const sufixo = projecao === null
+          ? ''
+          : ` — ${decorridoMin.toFixed(1)}min decorridos, projeção ≥${projecao.toFixed(0)}min`;
+        console.log(`[backtest] ${pct}% (${new Date(t).toISOString()})${sufixo}`);
       }
     },
   });
