@@ -19,8 +19,15 @@ on:
   workflow_dispatch:
     inputs:
       symbols:
+        # Carteira de referência de 20 símbolos. Ampliar em ATIVOS (e não em
+        # anos) é o que dá amostra sem misturar regimes de mercado
+        # incompatíveis — ver docs/roadmap.md, Bloco 0. ONDOUSDT e DYDXUSDT
+        # continuam aqui de propósito: ONDO foi o pior ativo da medição de
+        # 12 meses, e removê-lo depois de ver isso seria escolher o resultado.
+        # PAXGUSDT (ouro tokenizado) é o único com correlação baixa com BTC,
+        # então é o que mais adiciona amostra independente de verdade.
         description: "Símbolos separados por vírgula (Binance Spot)"
-        default: "BTCUSDT,ETHUSDT,PENDLEUSDT,ONDOUSDT,FETUSDT,ZROUSDT,DYDXUSDT"
+        default: "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,DOTUSDT,NEARUSDT,ARBUSDT,OPUSDT,AAVEUSDT,SUIUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,ONDOUSDT,DYDXUSDT,PAXGUSDT"
         required: true
       from:
         description: "Início (YYYY-MM-DD ou ISO) — vazio = 6 meses atrás"

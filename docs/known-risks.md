@@ -2677,3 +2677,45 @@ adotada: medir com amostra de verdade ANTES de construir aparato para medir.
 (~2023) não existem no começo de uma janela de 4 anos, então o recorte pesa
 BTC/ETH/FET/DYDX. O `bySymbol` do diagnóstico expõe isso, mas comparar um run de
 4 anos com o de 12 meses como se fossem a mesma carteira seria erro de leitura.
+
+### Replay superlinear — por que o run de 4 anos não terminou (2026-07-27)
+
+O run de 4 anos × 7 símbolos
+([30218382227](https://github.com/mateusraony/Sentinel-Signals/actions/runs/30218382227))
+**não falhou: foi cancelado ao bater o `timeout-minutes: 350`**. Download 24,6
+min (ok), replay 5h25min sem terminar. A projeção era 2,3 h — erro de ~5×, o
+segundo erro grande de estimativa de tempo de replay nesta linha de trabalho.
+Por isso o gargalo foi **medido**, não deduzido.
+
+**Termo dominante: `fakeBackend.filter`** (`src/lib/__fixtures__/fakeBackend.js`)
+materializa a coleção inteira (`[...store.values()]`), filtra e **ordena**, a
+cada chamada. `scanner.js:1915` (e 1440, 2015) chamam isso por ativo a cada
+passo do replay, sobre um store de `SignalEvent` que só cresce. Medição direta:
+
+| Store de SignalEvent | custo por `filter()` |
+|---|---|
+| 1.000 | 0,39 ms |
+| 5.000 | 1,68 ms |
+| 20.000 | 6,72 ms |
+| 50.000 | 17,04 ms |
+
+Linear no tamanho do store × chamado a cada passo (cujo número também cresce
+com a janela) = **quadrático no período**.
+
+**Termo secundário, corrigido**: `sliceClosedAsOf` localizava o candle corrente
+varrendo o array de trás para frente — ~137 mil iterações por chamada com 4
+anos de 15m. Trocado por busca binária (o array já é ordenado por `closeTime`,
+pré-condição que a versão linear também assumia). Benchmark: 5× mais rápido na
+função. **Não era o termo dominante** — a cópia dos 500 candles do resultado
+domina o custo restante — mas era defeito real e o teste de equivalência
+exaustiva contra a implementação linear está em `backtestEngine.test.js`.
+
+**O `fakeBackend` NÃO foi indexado, de propósito.** 12 meses × 20 símbolos cabe
+no timeout, e esse fake é compartilhado com `scannerStateMachine.test.js` — a
+suíte que protege a máquina de estados. Mexer nele para acelerar um run que já
+cabe seria risco sem necessidade demonstrada. Quando uma janela longa voltar à
+mesa, a correção é índice secundário por `asset_id` (campo de toda consulta
+quente). Registrado em `docs/roadmap.md`, Bloco 0.
+
+**Nota de produção**: nada disto afeta o app. `fakeBackend` só existe em teste e
+backtest; em produção as mesmas consultas vão para o Firestore, que é indexado.

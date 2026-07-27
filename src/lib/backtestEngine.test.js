@@ -145,6 +145,67 @@ describe('sliceClosedAsOf', () => {
     const sliced = sliceClosedAsOf(candles, 4000, 2);
     expect(sliced.map(c => c.closeTime)).toEqual([3000, 4000]);
   });
+
+  // A implementação virou busca binária porque a varredura linear de trás para
+  // frente tornava o replay QUADRÁTICO no período (run 30218382227: 4 anos
+  // bateram o timeout de 350 min). Este bloco existe para provar que a troca
+  // mudou só a velocidade — o resultado tem que ser idêntico ao do laço
+  // original, em toda posição possível do cursor.
+  describe('equivalência com a varredura linear original', () => {
+    // Referência: exatamente o algoritmo que estava em produção antes.
+    const linearRef = (candles, asOfMs, limit) => {
+      let end = candles.length;
+      while (end > 0 && candles[end - 1].closeTime > asOfMs) end--;
+      const start = limit ? Math.max(0, end - limit) : 0;
+      return candles.slice(start, end).map(c => ({ ...c, isClosed: true }));
+    };
+
+    it('idêntica em TODA posição do cursor, inclusive fora das bordas', () => {
+      const candles = [0, 1000, 2000, 3000, 4000, 5000]
+        .map((t) => mkCandle(1, 1, 1, 1, t, t + 1000));
+      // Varre exaustivamente: antes do 1º candle, exatamente em cada closeTime,
+      // entre cada par, e depois do último. É mais forte que casos escolhidos
+      // a dedo — se houver um off-by-one, ele aparece aqui.
+      for (let cursor = -500; cursor <= 7000; cursor += 250) {
+        for (const limit of [undefined, 1, 2, 100]) {
+          expect(sliceClosedAsOf(candles, cursor, limit).map(c => c.closeTime))
+            .toEqual(linearRef(candles, cursor, limit).map(c => c.closeTime));
+        }
+      }
+    });
+
+    it('idêntica em arrays degenerados (vazio, um elemento)', () => {
+      expect(sliceClosedAsOf([], 1000)).toEqual(linearRef([], 1000));
+      const um = [mkCandle(1, 1, 1, 1, 0, 1000)];
+      for (const cursor of [-1, 0, 999, 1000, 1001]) {
+        expect(sliceClosedAsOf(um, cursor).map(c => c.closeTime))
+          .toEqual(linearRef(um, cursor).map(c => c.closeTime));
+      }
+    });
+
+    it('candles com closeTime repetido não quebram a fronteira', () => {
+      // Não deveria acontecer com dado real da Binance, mas a busca binária
+      // precisa ser estável se acontecer — a fronteira é o PRIMEIRO índice com
+      // closeTime > cursor, e duplicatas não podem fazer o resultado divergir.
+      const candles = [1000, 1000, 2000, 2000, 3000]
+        .map((t) => mkCandle(1, 1, 1, 1, t - 1000, t));
+      for (const cursor of [500, 1000, 1500, 2000, 2500, 3000, 3500]) {
+        expect(sliceClosedAsOf(candles, cursor).map(c => c.closeTime))
+          .toEqual(linearRef(candles, cursor).map(c => c.closeTime));
+      }
+    });
+
+    it('a garantia anti-look-ahead vale para qualquer cursor', () => {
+      const candles = Array.from({ length: 200 }, (_, i) => mkCandle(1, 1, 1, 1, i * 60, (i + 1) * 60));
+      for (let cursor = 0; cursor <= 12100; cursor += 37) {
+        const visiveis = sliceClosedAsOf(candles, cursor);
+        // A propriedade que todo o replay depende: nenhuma vela do futuro.
+        expect(visiveis.every(c => c.closeTime <= cursor)).toBe(true);
+        // E nenhuma vela do passado deixada de fora.
+        expect(visiveis.length).toBe(candles.filter(c => c.closeTime <= cursor).length);
+      }
+    });
+  });
 });
 
 describe('sim clock', () => {
