@@ -83,9 +83,31 @@ export function restoreClock() {
 // which is meaningless here (every historical bar is trivially "in the
 // past" relative to REAL wall-clock time; only the simulated cursor matters,
 // and this function already only returns bars at or before it).
+// BUSCA BINÁRIA, não varredura linear — e isso não é micro-otimização.
+// A versão anterior caminhava do FIM do array para trás
+// (`while (end > 0 && candles[end-1].closeTime > asOfMs) end--`). Com o cursor
+// simulado no começo de uma janela longa, isso percorre quase o array inteiro
+// a CADA chamada — e a função é chamada por ativo, por timeframe, a cada passo
+// do replay. Como o número de passos também cresce com a janela, o custo total
+// vira QUADRÁTICO no período: 4× o período = 16× o custo.
+//
+// Medido (run 30218382227): 4 anos × 7 símbolos rodou 5h25min sem terminar e
+// bateu o timeout, contra 28 min para 12 meses — exatamente o 16× previsto.
+// Com ~140 mil candles de 15m, são ~17 comparações aqui em vez de ~137 mil.
+//
+// `candles` DEVE estar ordenado de forma crescente por closeTime (pré-condição
+// que já existia e da qual a versão linear também dependia).
 export function sliceClosedAsOf(candles, asOfMs, limit) {
-  let end = candles.length;
-  while (end > 0 && candles[end - 1].closeTime > asOfMs) end--;
+  // Primeiro índice cujo closeTime > asOfMs — ou seja, o fim exclusivo da
+  // janela visível. É a MESMA fronteira que o laço linear encontrava.
+  let lo = 0;
+  let hi = candles.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (candles[mid].closeTime > asOfMs) hi = mid;
+    else lo = mid + 1;
+  }
+  const end = lo;
   const start = limit ? Math.max(0, end - limit) : 0;
   return candles.slice(start, end).map(c => ({ ...c, isClosed: true }));
 }

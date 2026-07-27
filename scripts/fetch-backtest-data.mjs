@@ -41,6 +41,64 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Um 429/5xx transitório não pode matar o download inteiro. Com 7 símbolos
+// eram ~340 requisições; com a carteira de 20 são ~980, e o passo leva ~18 min
+// — perder tudo por uma resposta ruim no meio é caro e evitável. Só erro
+// transitório é retentado: 4xx que não seja 429 (símbolo inexistente, par
+// deslistado, parâmetro inválido) falha na hora, como deve.
+const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
+const MAX_RETRIES = 3;
+// Teto para o Retry-After do servidor: honrar o header é o certo, mas um valor
+// absurdo (ou malformado em segundos vs. data) não pode pendurar o job.
+const MAX_RETRY_AFTER_MS = 120_000;
+
+// A janela de rate limit da Binance é por MINUTO. Um backoff exponencial de
+// 500/1000/2000 ms soma 3,5 s e queimaria as três tentativas ainda dentro da
+// janela — falhando exatamente no cenário para o qual o retry existe. Por isso
+// o `Retry-After` do servidor tem precedência; o exponencial só entra quando o
+// header não vem (5xx, falha de rede).
+function esperaAntesDeRetentar(res, tentativa) {
+  const header = res?.headers?.get?.('retry-after');
+  if (header) {
+    const segundos = Number(header);
+    if (Number.isFinite(segundos) && segundos >= 0) {
+      return Math.min(segundos * 1000, MAX_RETRY_AFTER_MS);
+    }
+    // A RFC também permite uma data HTTP em vez de segundos.
+    const quando = Date.parse(header);
+    if (Number.isFinite(quando)) {
+      return Math.min(Math.max(quando - Date.now(), 0), MAX_RETRY_AFTER_MS);
+    }
+  }
+  return PAGE_DELAY_MS * 2 ** (tentativa + 1);
+}
+
+async function fetchWithRetry(url, contexto) {
+  let ultimoErro;
+  for (let tentativa = 0; tentativa <= MAX_RETRIES; tentativa++) {
+    let res;
+    try {
+      res = await fetch(url);
+    } catch (err) {
+      // Falha de rede (DNS, socket) — mesma política dos 5xx.
+      ultimoErro = err;
+      if (tentativa === MAX_RETRIES) break;
+      await sleep(PAGE_DELAY_MS * 2 ** (tentativa + 1));
+      continue;
+    }
+    if (res.ok) return res;
+    const corpo = await res.text();
+    if (!RETRY_STATUSES.has(res.status) || tentativa === MAX_RETRIES) {
+      throw new Error(`Binance API error (${res.status}) em ${contexto}: ${corpo}`);
+    }
+    ultimoErro = new Error(`Binance API error (${res.status}) em ${contexto}: ${corpo}`);
+    const espera = esperaAntesDeRetentar(res, tentativa);
+    console.warn(`[fetch-backtest-data] ${contexto}: HTTP ${res.status}, retentando em ${espera}ms (${tentativa + 1}/${MAX_RETRIES})`);
+    await sleep(espera);
+  }
+  throw ultimoErro;
+}
+
 // Only bars that have ACTUALLY closed relative to real wall-clock time are
 // meaningful for a historical replay — a still-forming candle at fetch time
 // would otherwise get baked into the fixture as if it were a closed bar.
@@ -51,10 +109,7 @@ async function fetchRange(symbol, interval, startMs, endMs) {
 
   while (cursor < endMs) {
     const url = `${BASE}/klines?symbol=${symbol}&interval=${interval}&startTime=${cursor}&endTime=${endMs}&limit=${MAX_LIMIT}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error(`Binance API error (${res.status}) em ${symbol} ${interval}: ${await res.text()}`);
-    }
+    const res = await fetchWithRetry(url, `${symbol} ${interval}`);
     const raw = await res.json();
     if (!Array.isArray(raw) || raw.length === 0) break;
 

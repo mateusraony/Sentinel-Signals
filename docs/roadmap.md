@@ -19,21 +19,61 @@ que**. Um bloco só começa quando o anterior fecha.
 
 ## Bloco 0 — o gate (é o que está aberto agora)
 
-**Rodar `backtest.yml` com janela de ~4 anos** (`from: 2022-07-01`,
-`trial_label: 4y-baseline`, resto no default).
+**Rodar `backtest.yml` com 12 meses e a carteira de 20 símbolos** (default do
+workflow; `trial_label: 20sym-baseline`).
 
-A ~109 operações/ano isso dá ~350-450 — o volume mínimo para qualquer teste
-posterior significar alguma coisa. O `timeout-minutes` do workflow já foi subido
-para 350 justamente para caber.
+### Por que ampliar em ATIVOS e não em anos
+
+A primeira ideia foi janela de 4 anos. Foi **descartada a pedido do usuário, com
+razão**: 2022 (Luna, FTX, bear) e 2026 são regimes estruturalmente diferentes, e
+três dos sete ativos originais nem existiam em 2022 — não seria a mesma carteira
+em períodos diferentes. Agregar isso num único número de expectância seria média
+de mercados incompatíveis.
+
+Mas aceitar amostra insuficiente também não resolve: a 109 operações,
+`sd(R) ≈ 1,1` e erro-padrão 0,107, **um ano só enxerga vantagem de ~0,3 R ou
+maior**, e o medido é −0,06 R. Um ano não distingue "levemente negativo" de
+"levemente positivo", que é exatamente onde estamos.
+
+Ampliar em ativos resolve os dois: ~20 símbolos nos mesmos 12 meses recentes
+dão ~300 operações **no mesmo regime**.
+
+**Ressalva que não pode ser esquecida ao ler o resultado**: altcoins são
+fortemente correlacionadas com BTC, então 20 símbolos **não são 20 amostras
+independentes** — a amostra efetiva é menor que a nominal. PAXGUSDT (ouro
+tokenizado) está na carteira justamente por ser o único de correlação baixa.
+O `bySymbol` do diagnóstico é o que expõe concentração.
 
 Nada dos blocos seguintes deve começar antes disto. E o resultado pode encerrar
 vários deles de uma vez: se a base não tem vantagem com amostra real, calibrar
 filtro em cima dela é otimizar ruído.
 
-**Ressalva de leitura**: ONDO (listada ~2024), ZRO (~2024) e PENDLE (~2023) não
-existem no começo da janela — o recorte longo pesa BTC/ETH/FET/DYDX. O
-`bySymbol` do diagnóstico expõe isso; comparar com o run de 12 meses como se
-fosse a mesma carteira é erro de leitura.
+### Limite de performance conhecido (medido, não estimado)
+
+O replay é **superlinear no tamanho da janela**, e o gargalo está no backend
+fake em memória, não no motor: `fakeBackend.filter`
+(`src/lib/__fixtures__/fakeBackend.js`) materializa e **ordena a coleção
+inteira** a cada chamada, e `scanner.js` a chama por ativo a cada passo sobre um
+store de `SignalEvent` que só cresce durante o replay. Medido:
+
+| Store de SignalEvent | custo por `filter()` |
+|---|---|
+| 1.000 | 0,39 ms |
+| 5.000 | 1,68 ms |
+| 20.000 | 6,72 ms |
+| 50.000 | 17,04 ms |
+
+Consequência real: o run de 4 anos × 7 símbolos rodou **5h25min sem terminar** e
+bateu o `timeout-minutes: 350`
+([run 30218382227](https://github.com/mateusraony/Sentinel-Signals/actions/runs/30218382227)).
+
+**Não corrigido de propósito.** 12 meses × 20 símbolos cabe no timeout, e o
+`fakeBackend` é compartilhado com `scannerStateMachine.test.js` — mexer nele
+para ganhar tempo num run que já cabe seria risco sem necessidade demonstrada.
+Se algum dia uma janela mais longa voltar à mesa, **é aqui que se mexe**: índice
+secundário por `asset_id`, que é o campo de toda consulta quente.
+`sliceClosedAsOf` já foi convertido para busca binária (era varredura linear de
+trás para frente) — ajuda, mas não era o termo dominante.
 
 ---
 
@@ -88,6 +128,13 @@ escrito antes, contada no `trial_label`.
 
 Registrado em "Fora de escopo, com justificativa" do item 44:
 
+- **Janela histórica longa (4 anos), lida POR TRIMESTRE.** Desceu do Bloco 0
+  para cá quando a amostra passou a vir de ativos em vez de anos. Responde uma
+  pergunta **diferente** da do Bloco 0 — não "existe vantagem hoje?", mas "isso
+  já funcionou em algum regime, e em qual?". Só faz sentido lida trimestre a
+  trimestre (`byPeriod`), nunca agregada num número só, pelo mesmo motivo que a
+  tirou do gate. Exige antes o índice por `asset_id` no `fakeBackend`
+  (ver Bloco 0, limite de performance).
 - **Walk-forward / separação treino-validação-holdout.** Adiado por falta de
   amostra, com a tabela de poder estatístico como justificativa. Se o Bloco 0
   entregar ~400 operações, isso passa a ter material — mas continua marginal:

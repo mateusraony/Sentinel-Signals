@@ -19,11 +19,22 @@ on:
   workflow_dispatch:
     inputs:
       symbols:
+        # Carteira de referência de 20 símbolos. Ampliar em ATIVOS (e não em
+        # anos) é o que dá amostra sem misturar regimes de mercado
+        # incompatíveis — ver docs/roadmap.md, Bloco 0. ONDOUSDT e DYDXUSDT
+        # continuam aqui de propósito: ONDO foi o pior ativo da medição de
+        # 12 meses, e removê-lo depois de ver isso seria escolher o resultado.
+        # PAXGUSDT (ouro tokenizado) é o único com correlação baixa com BTC,
+        # então é o que mais adiciona amostra independente de verdade.
         description: "Símbolos separados por vírgula (Binance Spot)"
-        default: "BTCUSDT,ETHUSDT,PENDLEUSDT,ONDOUSDT,FETUSDT,ZROUSDT,DYDXUSDT"
+        default: "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,DOTUSDT,NEARUSDT,ARBUSDT,OPUSDT,AAVEUSDT,SUIUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,ONDOUSDT,DYDXUSDT,PAXGUSDT"
         required: true
       from:
-        description: "Início (YYYY-MM-DD ou ISO) — vazio = 6 meses atrás"
+        # 12 meses, não 6: com a carteira de 20 símbolos, 6 meses entregariam
+        # ~150 operações — metade do mínimo que o gate de amostra exige, e o
+        # run "tudo no default" é justamente o baseline. Ver docs/roadmap.md,
+        # Bloco 0.
+        description: "Início (YYYY-MM-DD ou ISO) — vazio = 12 meses atrás"
         default: ""
         required: false
       to:
@@ -109,7 +120,7 @@ jobs:
         run: |
           FROM="$FROM_INPUT"
           TO="$TO_INPUT"
-          if [ -z "$FROM" ]; then FROM=$(date -u -d '-6 months' +%Y-%m-%dT00:00:00Z); fi
+          if [ -z "$FROM" ]; then FROM=$(date -u -d '-12 months' +%Y-%m-%dT00:00:00Z); fi
           if [ -z "$TO" ]; then TO=$(date -u +%Y-%m-%dT00:00:00Z); fi
           echo "FROM=$FROM" >> "$GITHUB_ENV"
           echo "TO=$TO" >> "$GITHUB_ENV"
