@@ -48,6 +48,30 @@ function sleep(ms) {
 // deslistado, parâmetro inválido) falha na hora, como deve.
 const RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 const MAX_RETRIES = 3;
+// Teto para o Retry-After do servidor: honrar o header é o certo, mas um valor
+// absurdo (ou malformado em segundos vs. data) não pode pendurar o job.
+const MAX_RETRY_AFTER_MS = 120_000;
+
+// A janela de rate limit da Binance é por MINUTO. Um backoff exponencial de
+// 500/1000/2000 ms soma 3,5 s e queimaria as três tentativas ainda dentro da
+// janela — falhando exatamente no cenário para o qual o retry existe. Por isso
+// o `Retry-After` do servidor tem precedência; o exponencial só entra quando o
+// header não vem (5xx, falha de rede).
+function esperaAntesDeRetentar(res, tentativa) {
+  const header = res?.headers?.get?.('retry-after');
+  if (header) {
+    const segundos = Number(header);
+    if (Number.isFinite(segundos) && segundos >= 0) {
+      return Math.min(segundos * 1000, MAX_RETRY_AFTER_MS);
+    }
+    // A RFC também permite uma data HTTP em vez de segundos.
+    const quando = Date.parse(header);
+    if (Number.isFinite(quando)) {
+      return Math.min(Math.max(quando - Date.now(), 0), MAX_RETRY_AFTER_MS);
+    }
+  }
+  return PAGE_DELAY_MS * 2 ** (tentativa + 1);
+}
 
 async function fetchWithRetry(url, contexto) {
   let ultimoErro;
@@ -68,7 +92,7 @@ async function fetchWithRetry(url, contexto) {
       throw new Error(`Binance API error (${res.status}) em ${contexto}: ${corpo}`);
     }
     ultimoErro = new Error(`Binance API error (${res.status}) em ${contexto}: ${corpo}`);
-    const espera = PAGE_DELAY_MS * 2 ** (tentativa + 1);
+    const espera = esperaAntesDeRetentar(res, tentativa);
     console.warn(`[fetch-backtest-data] ${contexto}: HTTP ${res.status}, retentando em ${espera}ms (${tentativa + 1}/${MAX_RETRIES})`);
     await sleep(espera);
   }
