@@ -109,7 +109,15 @@ async function main() {
 
   console.log(`[backtest] ${symbols.join(', ')} de ${new Date(fromMs).toISOString()} a ${new Date(toMs).toISOString()}`);
 
-  const started = Date.now();
+  // performance.now(), NÃO Date.now(): runBacktest instala um relógio simulado
+  // (installSimClock troca o `Date` global) antes de chamar onStep, então
+  // `Date.now()` DENTRO do callback devolve o cursor do replay, não a hora de
+  // parede — e numa janela histórica a subtração dá NEGATIVO. Achado por
+  // revisão externa (Codex, PR #93) depois de eu cair exatamente nisso.
+  // `performance.now()` é monotônico e independente do `Date` global.
+  // Regressão em backtestEngine.test.js ("onStep roda com o relógio simulado
+  // ativo"), que documenta a armadilha para o próximo callback.
+  const started = performance.now();
   let lastLoggedPct = -1;
   const report = await runBacktest({
     assets, backend, fromMs, toMs, stepMs, costModel, minTrades,
@@ -121,12 +129,28 @@ async function main() {
       const pct = Math.floor(((t - fromMs) / (toMs - fromMs)) * 100);
       if (pct >= lastLoggedPct + 10) {
         lastLoggedPct = pct;
-        console.log(`[backtest] ${pct}% (${new Date(t).toISOString()})`);
+        // Decorrido + projeção, não só a porcentagem. O run de 4 anos rodou
+        // 5h25min e só se revelou impossível quando o job foi cortado no
+        // timeout — o log mostrava percentuais avançando e nada dizia se ia
+        // terminar. Com isto, o marco de 10% já permite decidir entre deixar
+        // rodar e cancelar.
+        //
+        // A projeção é LINEAR e por isso OTIMISTA: o replay tem termo
+        // superlinear conhecido (fakeBackend.filter fica mais caro conforme o
+        // store de SignalEvent cresce — docs/roadmap.md, Bloco 0), então o
+        // total real tende a passar do projetado. O rótulo "mínimo" existe
+        // para a projeção não ser lida como promessa.
+        const decorridoMin = (performance.now() - started) / 60000;
+        const projecao = pct > 0 ? (decorridoMin / pct) * 100 : null;
+        const sufixo = projecao === null
+          ? ''
+          : ` — ${decorridoMin.toFixed(1)}min decorridos, projeção ≥${projecao.toFixed(0)}min`;
+        console.log(`[backtest] ${pct}% (${new Date(t).toISOString()})${sufixo}`);
       }
     },
   });
 
-  console.log(`[backtest] concluído em ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  console.log(`[backtest] concluído em ${((performance.now() - started) / 1000).toFixed(1)}s`);
   console.log(`[backtest] total de operações: ${report.totalOps} (ainda abertas no corte: ${report.stillOpenAtCutoff})`);
   console.log('[backtest] geral:', report.overall);
   for (const [cascade, summary] of Object.entries(report.byCascade)) {

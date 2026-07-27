@@ -247,6 +247,37 @@ describe('sim clock', () => {
     expect(globalThis.Date).toBe(RealDateRef);
   });
 
+  // Armadilha real, encontrada por revisão externa depois de eu cair nela
+  // (Codex, PR #93): `onStep` roda DENTRO do escopo do relógio simulado, então
+  // `Date.now()` ali devolve o cursor do replay, não a hora de parede. Um
+  // callback que tente medir tempo decorrido com `Date.now()` produz valor
+  // negativo numa janela histórica. Este teste existe para a próxima pessoa
+  // que escrever um onStep descobrir isso por um teste e não por um log com
+  // número absurdo.
+  it('onStep roda com o relógio simulado ativo — Date.now() ali é o cursor, não a hora real', async () => {
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+    const amostras = [];
+    const fromMs = Date.parse('2020-01-01T00:00:00Z');
+    await runBacktest({
+      assets: [makeAsset()], backend,
+      fromMs, toMs: fromMs + 3 * FIFTEEN_M, stepMs: FIFTEEN_M,
+      onStep: (t, err) => { if (!err) amostras.push({ t, dateNow: Date.now(), perf: performance.now() }); },
+    });
+
+    expect(amostras.length).toBeGreaterThan(0);
+    for (const { t, dateNow, perf } of amostras) {
+      // Date.now() dentro do onStep É o cursor simulado.
+      expect(dateNow).toBe(t);
+      // performance.now() não é afetado pela troca do Date global — conta ms
+      // desde o início do processo, então fica em ordem de grandeza
+      // completamente diferente de um timestamp epoch (~1.5e12). É a fonte
+      // que um callback deve usar para medir tempo decorrido de verdade.
+      expect(perf).toBeGreaterThan(0);
+      expect(perf).toBeLessThan(1e9);
+    }
+  });
+
   it('restoreClock() runs even when an asset callback keeps throwing (onStep reports it, loop continues)', async () => {
     const RealDateRef = Date;
     // Deliberately missing SignalEvent/AssetState/SystemLog — persistScanResults'
