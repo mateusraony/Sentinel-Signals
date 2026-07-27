@@ -109,7 +109,15 @@ async function main() {
 
   console.log(`[backtest] ${symbols.join(', ')} de ${new Date(fromMs).toISOString()} a ${new Date(toMs).toISOString()}`);
 
-  const started = Date.now();
+  // performance.now(), NÃO Date.now(): runBacktest instala um relógio simulado
+  // (installSimClock troca o `Date` global) antes de chamar onStep, então
+  // `Date.now()` DENTRO do callback devolve o cursor do replay, não a hora de
+  // parede — e numa janela histórica a subtração dá NEGATIVO. Achado por
+  // revisão externa (Codex, PR #93) depois de eu cair exatamente nisso.
+  // `performance.now()` é monotônico e independente do `Date` global.
+  // Regressão em backtestEngine.test.js ("onStep roda com o relógio simulado
+  // ativo"), que documenta a armadilha para o próximo callback.
+  const started = performance.now();
   let lastLoggedPct = -1;
   const report = await runBacktest({
     assets, backend, fromMs, toMs, stepMs, costModel, minTrades,
@@ -132,7 +140,7 @@ async function main() {
         // store de SignalEvent cresce — docs/roadmap.md, Bloco 0), então o
         // total real tende a passar do projetado. O rótulo "mínimo" existe
         // para a projeção não ser lida como promessa.
-        const decorridoMin = (Date.now() - started) / 60000;
+        const decorridoMin = (performance.now() - started) / 60000;
         const projecao = pct > 0 ? (decorridoMin / pct) * 100 : null;
         const sufixo = projecao === null
           ? ''
@@ -142,7 +150,7 @@ async function main() {
     },
   });
 
-  console.log(`[backtest] concluído em ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  console.log(`[backtest] concluído em ${((performance.now() - started) / 1000).toFixed(1)}s`);
   console.log(`[backtest] total de operações: ${report.totalOps} (ainda abertas no corte: ${report.stillOpenAtCutoff})`);
   console.log('[backtest] geral:', report.overall);
   for (const [cascade, summary] of Object.entries(report.byCascade)) {
