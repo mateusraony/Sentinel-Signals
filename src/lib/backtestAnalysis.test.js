@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  analyzeOps, analyzeReport, arbitrationWarningKey, enumeratePeriods,
+  analyzeOps, analyzeReport, arbitrationOutcomeKey, enumeratePeriods,
   exitReasonKey, holdHours, opsFromReport, periodKey, sideKey, tierKey,
 } from './backtestAnalysis.js';
 import { DEFAULT_COST_MODEL, ZERO_COST, calcCostR, summarizeOps } from './tradeMetrics.js';
@@ -181,7 +181,7 @@ describe('eixos de verificação — lado, tier e aviso de oposição', () => {
 
   it('as contribuições somam a expectância em TODOS os eixos novos', () => {
     const a = analyzeOps(carteira, { costModel: ZERO_COST });
-    for (const eixo of ['bySide', 'byTier', 'bySideTier', 'byArbitrationWarning']) {
+    for (const eixo of ['bySide', 'byTier', 'bySideTier', 'byArbitration']) {
       const soma = a[eixo].reduce((acc, b) => acc + b.contributionR, 0);
       expect(soma, `eixo ${eixo}`).toBeCloseTo(a.expectancyR, 10);
     }
@@ -232,13 +232,40 @@ describe('eixos de verificação — lado, tier e aviso de oposição', () => {
     expect(sideKey(null)).toBe('UNKNOWN');
   });
 
-  it('separa operações que receberam aviso de oposição', () => {
-    const comAviso = makeOp({ id: 'aviso', confidence_penalty_total: 15 });
-    const a = analyzeOps([...carteira, comAviso], { costModel: ZERO_COST });
-    expect(arbitrationWarningKey(comAviso)).toBe('COM_AVISO');
-    expect(arbitrationWarningKey(carteira[0])).toBe('SEM_AVISO');
-    expect(a.byArbitrationWarning.find((b) => b.key === 'COM_AVISO').count).toBe(1);
-    expect(a.byArbitrationWarning.find((b) => b.key === 'SEM_AVISO').count).toBe(4);
+  it('separa por resultado de arbitragem, lido do campo persistido', () => {
+    const avisada = makeOp({ id: 'aviso', arbitration_outcome: 'correction_warning', confidence_penalty_total: 15 });
+    const a = analyzeOps([...carteira, avisada], { costModel: ZERO_COST });
+    expect(arbitrationOutcomeKey(avisada)).toBe('correction_warning');
+    expect(arbitrationOutcomeKey(carteira[0])).toBe('SEM_ARBITRAGEM');
+    expect(a.byArbitration.find((b) => b.key === 'correction_warning').count).toBe(1);
+    expect(a.byArbitration.find((b) => b.key === 'SEM_ARBITRAGEM').count).toBe(4);
+  });
+
+  // Regressão do achado externo (Codex, PR #94): a versão anterior inferia
+  // "recebeu aviso" de `confidence_penalty_total > 0`. Mas a penalidade vem de
+  // `arbOppositeScorePenalty ?? 15`, configurável para 0, e `critical_opposite`
+  // em modo log-only não penaliza. Nos dois casos a operação FOI avisada e a
+  // soma fica zero — o proxy classificava errado, em silêncio.
+  it('operação avisada com penalidade ZERO ainda é contada como avisada', () => {
+    const penalidadeZero = makeOp({
+      id: 'pen0', arbitration_outcome: 'correction_warning', confidence_penalty_total: 0,
+    });
+    const criticoLogOnly = makeOp({
+      id: 'crit', arbitration_outcome: 'critical_opposite', confidence_penalty_total: 0,
+    });
+    const a = analyzeOps([penalidadeZero, criticoLogOnly], { costModel: ZERO_COST });
+
+    expect(arbitrationOutcomeKey(penalidadeZero)).toBe('correction_warning');
+    expect(arbitrationOutcomeKey(criticoLogOnly)).toBe('critical_opposite');
+    expect(a.byArbitration.find((b) => b.key === 'SEM_ARBITRAGEM')).toBeUndefined();
+    expect(a.byArbitration).toHaveLength(2);
+  });
+
+  it('outcome ausente, vazio ou não-string vira SEM_ARBITRAGEM', () => {
+    expect(arbitrationOutcomeKey({})).toBe('SEM_ARBITRAGEM');
+    expect(arbitrationOutcomeKey({ arbitration_outcome: '' })).toBe('SEM_ARBITRAGEM');
+    expect(arbitrationOutcomeKey({ arbitration_outcome: 42 })).toBe('SEM_ARBITRAGEM');
+    expect(arbitrationOutcomeKey(null)).toBe('SEM_ARBITRAGEM');
   });
 });
 

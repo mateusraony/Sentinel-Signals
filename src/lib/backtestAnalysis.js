@@ -92,12 +92,18 @@ export function tierKey(op) {
   return tier === 'T1' || tier === 'T2' || tier === 'T3' ? tier : 'SEM_TIER';
 }
 
-// Operações que receberam aviso de oposição cross-cascade (Fase 1, item 39):
-// `confidence_penalty_total` só é incrementado por `correction_warning` /
-// `critical_opposite`. Zero significa que nenhum sinal oposto chegou enquanto
-// a operação estava viva.
-export function arbitrationWarningKey(op) {
-  return (op?.confidence_penalty_total ?? 0) > 0 ? 'COM_AVISO' : 'SEM_AVISO';
+// Resultado da arbitragem cross-cascade (Fase 1, item 39), lido do campo que o
+// scanner de fato persiste (`arbitration_outcome`, `scanner.js:741`).
+//
+// NÃO usar `confidence_penalty_total > 0` como proxy de "recebeu aviso" —
+// achado de revisão externa (Codex, PR #94), confirmado: a penalidade vem de
+// `pineConfig.arbOppositeScorePenalty ?? 15` (`signalArbitration.js:97`), que é
+// configurável e pode ser 0; e `critical_opposite` no modo log-only não aplica
+// penalidade nenhuma. Nos dois casos a operação FOI avisada e a soma continua
+// zero, então o proxy classificaria errado, em silêncio.
+export function arbitrationOutcomeKey(op) {
+  const outcome = op?.arbitration_outcome;
+  return typeof outcome === 'string' && outcome ? outcome : 'SEM_ARBITRAGEM';
 }
 
 export function holdHours(op) {
@@ -222,7 +228,7 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
     (op) => `${sideKey(op)} ${tierKey(op)}`,
     (key) => ({ key, side: key.split(' ')[0], tier: key.split(' ')[1] }),
   );
-  const byArbitrationWarning = bucketRows(arbitrationWarningKey, (key) => ({ key }));
+  const byArbitration = bucketRows(arbitrationOutcomeKey, (key) => ({ key }));
 
   // Pior contribuição primeiro: a primeira linha é literalmente "de onde vem
   // o prejuízo". Ordenar por avgR colocaria um balde de 2 operações no topo.
@@ -280,7 +286,7 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
     bySide: finish(bySide),
     byTier: finish(byTier),
     bySideTier: finish(bySideTier),
-    byArbitrationWarning: finish(byArbitrationWarning),
+    byArbitration: finish(byArbitration),
     byPeriod: finishChronological(byPeriod),
     // DUAS medidas, e é preciso ler as duas juntas — separadas de propósito
     // porque cada uma sozinha engana:

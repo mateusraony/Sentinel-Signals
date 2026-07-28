@@ -98,9 +98,13 @@ operações seria 4,6 σ, que sobrevive a Bonferroni para 6 comparações. Confi
 nessa ordem de grandeza = efeito real. Em 1-2 σ = seleção post-hoc, descartar.
 
 E a auditoria encontrou algo que talvez importe mais que as três: **a cascata SMC
-é código morto** — 75 eventos de estrutura produziram 0 operações, por um
-conflito geométrico entre o gatilho e a zona no mesmo candle de 5m (item 45.2).
-Isso é defeito verificado no código, não alegação.
+é código morto na prática** — 75 eventos de estrutura produziram 0 operações
+(item 45.1). Isso é **medição**, não alegação. A causa provável é a tensão
+geométrica entre o gatilho e a zona no mesmo candle de 5m (item 45.2), mas isso
+é **hipótese**: o gatilho de 5m cruza um pivô local, não o `legHigh` fixo de 1h,
+então as duas condições são negativamente correlacionadas, não excludentes.
+Confirmar exige antes instrumentar o funil (item 45.3) — hoje o loop de retry
+descarta o sinal sem registrar o motivo.
 
 ---
 

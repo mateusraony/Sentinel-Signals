@@ -2734,21 +2734,41 @@ Run [29883950343](https://github.com/mateusraony/Sentinel-Signals/actions/runs/2
 rejectedByOteZone: 0, tradeOpsCreated: 0`. A cascata SMC é, na prática, **código
 morto em produção** — não por estar desligada, mas por não conseguir confirmar.
 
-### 45.2 A causa é geométrica, não "filtros demais"
+### 45.2 Hipótese de causa: tensão geométrica entre gatilho e zona
 
 `check5mSmcConfirmation` (`scanner.js:374-408`) exige, **no mesmo candle de 5m**:
 
 1. um **gatilho** — sweep ou BOS/CHoCH (`swingLen=10`) disparando exatamente na
    última barra fechada daquela passada (evento pontual, não estado);
-2. uma **zona favorável** — o close dessa mesma barra em retração de **45% a
-   100%** da perna 1h (`buildOteLeg` + `classifyZone`).
+2. uma **zona favorável** — o close dessa mesma barra em retração de **≥45%** da
+   perna 1h (`buildOteLeg` + `classifyZone`, banda de equilíbrio de 5% do range),
+   e sem ter rompido o pivô protegido do outro lado.
 
-Um gatilho de alta é, por construção, preço subindo — o que empurra o close na
-direção de `legHigh`, que é a zona `premium` que BUY rejeita. **As duas condições
-se anulam.** É a tautologia dos itens 35/38 atenuada, não eliminada: o item 38
-tirou o caso extremo do viés 1h, mas a perna ainda tem `legHigh` = o próprio
-close do rompimento. O único gatilho geometricamente compatível é o *sweep*, que
-é raro e ainda exige retração ≥45% já ocorrida.
+A perna é **fixa** no instante da emissão: para BUY, `legHigh` = o close do
+rompimento de 1h, `legLow` = `lastSwingLow` de 1h (`smcStructure.js:277-282`).
+Ela não acompanha o 5m.
+
+**O que é fato:** na **1ª passada**, o close de 5m é praticamente o próprio close
+do rompimento de 1h — retração ≈ 0% ⟹ `premium` ⟹ BUY rejeita. Aí a rejeição é
+quase certa por construção, e isso é a tautologia dos itens 35/38 atenuada (o
+item 38 tirou o caso extremo do viés 1h, mas `legHigh` continua sendo o close do
+próprio rompimento).
+
+**O que NÃO é fato — correção de uma afirmação forte demais** (revisão externa do
+PR #94): uma versão anterior deste item dizia que as duas condições "se anulam por
+construção". **Não se anulam.** Um BOS/CHoCH de 5m só significa que o close
+cruzou um **pivô local de 5m** (`swingLen=10`, ~50 min) — não que o close esteja
+perto do `legHigh` de 1h. Ao longo da janela de retry (4h), o preço pode recuar
+50-60% da perna e ali produzir um BOS de alta local **estando em `discount`**, que
+é exatamente a zona que BUY aceita. O correto é dizer que as duas condições são
+**negativamente correlacionadas**, não mutuamente exclusivas: o gatilho empurra o
+close na direção que a zona penaliza, mas o limiar do gatilho é local e o da zona
+é fixo em 1h — não há impossibilidade geométrica.
+
+Consequência metodológica: os 75 → 0 do 45.1 são **medição**; este mecanismo é
+**hipótese**. Distinguir "gatilho nunca dispara no retry" de "dispara e a zona
+rejeita" exige a instrumentação do 45.3 (hoje o retry faz `continue` mudo) — não
+se resolve por argumento geométrico.
 
 ### 45.3 `rejectedByOteZone` é cego (mede 0 com 75 eventos perdidos)
 

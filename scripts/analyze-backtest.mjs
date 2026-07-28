@@ -104,7 +104,7 @@ export function renderAnalysis(analysis) {
     out.push('   de propósito — não são T3.');
     out.push('');
   }
-  eixo('POR AVISO DE OPOSIÇÃO (arbitragem cross-cascade)', analysis.byArbitrationWarning, 'aviso', 'key');
+  eixo('POR RESULTADO DE ARBITRAGEM cross-cascade', analysis.byArbitration, 'resultado', 'key');
 
   out.push('ESTABILIDADE NO TEMPO — por trimestre');
   out.push('(ordem cronológica, não por contribuição — aqui o que informa é a');
