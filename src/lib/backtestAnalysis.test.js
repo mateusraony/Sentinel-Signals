@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeOps, analyzeReport, enumeratePeriods, exitReasonKey, holdHours, opsFromReport, periodKey } from './backtestAnalysis.js';
+import {
+  analyzeOps, analyzeReport, arbitrationWarningKey, enumeratePeriods,
+  exitReasonKey, holdHours, opsFromReport, periodKey, sideKey, tierKey,
+} from './backtestAnalysis.js';
 import { DEFAULT_COST_MODEL, ZERO_COST, calcCostR, summarizeOps } from './tradeMetrics.js';
 
 // Mesma base do tradeMetrics.test.js: risco = 5 (entrada 100, stop 95),
@@ -154,6 +157,88 @@ describe('analyzeOps — buckets', () => {
     expect(analyzeOps(null).expectancyR).toBeNull();
     expect(analyzeOps([]).holdHours.median).toBeNull();
     expect(analyzeOps([]).cost.avgCostR).toBeNull();
+  });
+});
+
+describe('eixos de verificação — lado, tier e aviso de oposição', () => {
+  // Vencedor de VENDA espelhado: entrada 100, stop 105 (risco 5), tp1 92.5,
+  // tp2 85. Não dá para reaproveitar `winOp` trocando só o `side` — o R é
+  // assinado pelo lado (`tradeMetrics.js:206`), então um vencedor de compra
+  // com side SELL vira perdedor de -2.25R. Aqui: 0.5·(92.5−100) + 0.5·(85−100)
+  // = −11.25, invertido pelo sinal = +11.25 sobre risco 5 = +2.25R.
+  const sellWin = (overrides = {}) => makeOp({
+    side: 'SELL', status: 'TP2_HIT', tp1_hit: true,
+    initial_stop: 105, current_stop: 105, tp1: 92.5, tp2: 85, exit_price: 85,
+    ...overrides,
+  });
+
+  const carteira = [
+    makeOp({ id: 'b3a', side: 'BUY', tier: 'T3' }), // -1R
+    makeOp({ id: 'b3b', side: 'BUY', tier: 'T3' }), // -1R
+    sellWin({ id: 's3a', tier: 'T3' }), // +2.25R
+    sellWin({ id: 's1a', tier: 'T1' }), // +2.25R
+  ];
+
+  it('as contribuições somam a expectância em TODOS os eixos novos', () => {
+    const a = analyzeOps(carteira, { costModel: ZERO_COST });
+    for (const eixo of ['bySide', 'byTier', 'bySideTier', 'byArbitrationWarning']) {
+      const soma = a[eixo].reduce((acc, b) => acc + b.contributionR, 0);
+      expect(soma, `eixo ${eixo}`).toBeCloseTo(a.expectancyR, 10);
+    }
+  });
+
+  it('separa BUY de SELL', () => {
+    const a = analyzeOps(carteira, { costModel: ZERO_COST });
+    const buy = a.bySide.find((b) => b.side === 'BUY');
+    const sell = a.bySide.find((b) => b.side === 'SELL');
+    expect(buy.count).toBe(2);
+    expect(buy.avgR).toBeCloseTo(-1);
+    expect(sell.count).toBe(2);
+    expect(sell.avgR).toBeCloseTo(2.25);
+  });
+
+  it('cruza lado × tier — é o corte que os eixos isolados não dão', () => {
+    const a = analyzeOps(carteira, { costModel: ZERO_COST });
+    const buyT3 = a.bySideTier.find((b) => b.key === 'BUY T3');
+    expect(buyT3.count).toBe(2);
+    expect(buyT3.avgR).toBeCloseTo(-1);
+    expect(buyT3.side).toBe('BUY');
+    expect(buyT3.tier).toBe('T3');
+    // T3 sozinho mistura o BUY ruim com o SELL bom e esconde o efeito.
+    const t3 = a.byTier.find((b) => b.tier === 'T3');
+    expect(t3.count).toBe(3);
+    expect(t3.avgR).toBeCloseTo((-1 - 1 + 2.25) / 3);
+  });
+
+  // A armadilha: op da cascata SMC não recebe `tier` quando smcTierEnabled está
+  // desligado (default), e `tier_time_stop_bars` cai em 96 — o MESMO valor de
+  // T3. Inferir tier daí produziria uma tabela de aparência completa e errada.
+  it('operação sem tier vai para balde próprio e NUNCA é inferida como T3', () => {
+    const semTier = makeOp({ id: 'smc', side: 'BUY', tier_time_stop_bars: 96 });
+    delete semTier.tier;
+    const a = analyzeOps([...carteira, semTier], { costModel: ZERO_COST });
+
+    expect(tierKey(semTier)).toBe('SEM_TIER');
+    const t3 = a.byTier.find((b) => b.tier === 'T3');
+    expect(t3.count).toBe(3); // as 3 originais, não 4
+    const sem = a.byTier.find((b) => b.tier === 'SEM_TIER');
+    expect(sem.count).toBe(1);
+    expect(a.bySideTier.find((b) => b.key === 'BUY SEM_TIER').count).toBe(1);
+  });
+
+  it('lado ausente ou inválido também vira balde próprio', () => {
+    expect(sideKey({ side: 'LONG' })).toBe('UNKNOWN');
+    expect(sideKey({})).toBe('UNKNOWN');
+    expect(sideKey(null)).toBe('UNKNOWN');
+  });
+
+  it('separa operações que receberam aviso de oposição', () => {
+    const comAviso = makeOp({ id: 'aviso', confidence_penalty_total: 15 });
+    const a = analyzeOps([...carteira, comAviso], { costModel: ZERO_COST });
+    expect(arbitrationWarningKey(comAviso)).toBe('COM_AVISO');
+    expect(arbitrationWarningKey(carteira[0])).toBe('SEM_AVISO');
+    expect(a.byArbitrationWarning.find((b) => b.key === 'COM_AVISO').count).toBe(1);
+    expect(a.byArbitrationWarning.find((b) => b.key === 'SEM_AVISO').count).toBe(4);
   });
 });
 

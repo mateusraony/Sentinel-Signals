@@ -76,6 +76,30 @@ export function enumeratePeriods(fromMs, toMs) {
   return periods;
 }
 
+export function sideKey(op) {
+  const side = op?.side;
+  return side === 'BUY' || side === 'SELL' ? side : 'UNKNOWN';
+}
+
+// ARMADILHA que este balde existe para evitar: operação da cascata SMC tem
+// `tier` AUSENTE quando `smcTierEnabled` está desligado — que é o default
+// (`scanner.js:634`). E `tier_time_stop_bars` cai no literal 96, que é
+// exatamente o valor de T3 sem ser T3 (`scanner.js:637`). Inferir o tier a
+// partir dele produziria uma tabela de aparência completa e errada, atribuindo
+// a T3 operações que nunca foram classificadas. Ausente vira balde próprio.
+export function tierKey(op) {
+  const tier = op?.tier;
+  return tier === 'T1' || tier === 'T2' || tier === 'T3' ? tier : 'SEM_TIER';
+}
+
+// Operações que receberam aviso de oposição cross-cascade (Fase 1, item 39):
+// `confidence_penalty_total` só é incrementado por `correction_warning` /
+// `critical_opposite`. Zero significa que nenhum sinal oposto chegou enquanto
+// a operação estava viva.
+export function arbitrationWarningKey(op) {
+  return (op?.confidence_penalty_total ?? 0) > 0 ? 'COM_AVISO' : 'SEM_AVISO';
+}
+
 export function holdHours(op) {
   const openedAt = getOpenedAt(op);
   const closedAt = getClosedAt(op);
@@ -163,32 +187,42 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
   const rCountedTotal = rows.filter((row) => row.r !== null).length;
   const sumRTotal = rows.reduce((acc, row) => acc + (row.r ?? 0), 0);
 
-  const byExitReason = new Map();
-  const bySymbol = new Map();
-  const byPeriod = new Map();
+  // Um eixo de decomposição = uma função de chave. Extraído quando o número de
+  // eixos passou de 3 para 7: além de matar a repetição, deixa num lugar só a
+  // garantia que realmente importa — TODO balde, de todo eixo, passa pelo mesmo
+  // `tallyBucket` e pelo mesmo `finishBucket`, então a propriedade aditiva
+  // (contribuições somam a expectância) vale em todos por construção, não por
+  // sete implementações que por acaso concordam.
+  const bucketRows = (keyFn, extraFn, seedKeys = []) => {
+    const map = new Map();
+    for (const key of seedKeys) map.set(key, emptyBucket(extraFn(key, null)));
+    for (const row of rows) {
+      const key = keyFn(row.op);
+      if (!map.has(key)) map.set(key, emptyBucket(extraFn(key, row.op)));
+      tallyBucket(map.get(key), row);
+    }
+    return map;
+  };
+
+  const byExitReason = bucketRows(exitReasonKey, (key, op) => ({
+    key,
+    status: op?.status ?? 'UNKNOWN',
+    closedReason: op?.closed_reason ?? null,
+  }));
+  const bySymbol = bucketRows((op) => op.symbol ?? 'UNKNOWN', (symbol) => ({ symbol }));
   // Semeia os trimestres do intervalo pedido ANTES de contar, para os sem
   // operação aparecerem com count 0 em vez de sumirem da tabela.
   const windowPeriods = enumeratePeriods(rangeMs?.fromMs, rangeMs?.toMs);
-  for (const period of windowPeriods) byPeriod.set(period, emptyBucket({ period }));
-  for (const row of rows) {
-    const exitKey = exitReasonKey(row.op);
-    if (!byExitReason.has(exitKey)) {
-      byExitReason.set(exitKey, emptyBucket({
-        key: exitKey,
-        status: row.op.status ?? 'UNKNOWN',
-        closedReason: row.op.closed_reason ?? null,
-      }));
-    }
-    tallyBucket(byExitReason.get(exitKey), row);
-
-    const symbol = row.op.symbol ?? 'UNKNOWN';
-    if (!bySymbol.has(symbol)) bySymbol.set(symbol, emptyBucket({ symbol }));
-    tallyBucket(bySymbol.get(symbol), row);
-
-    const period = periodKey(row.op);
-    if (!byPeriod.has(period)) byPeriod.set(period, emptyBucket({ period }));
-    tallyBucket(byPeriod.get(period), row);
-  }
+  const byPeriod = bucketRows(periodKey, (period) => ({ period }), windowPeriods);
+  const bySide = bucketRows(sideKey, (side) => ({ side }));
+  const byTier = bucketRows(tierKey, (tier) => ({ tier }));
+  // O cruzamento é onde a afirmação "BUY Tier 3 destrói o resultado" vive —
+  // nenhum dos dois eixos isolados a responde.
+  const bySideTier = bucketRows(
+    (op) => `${sideKey(op)} ${tierKey(op)}`,
+    (key) => ({ key, side: key.split(' ')[0], tier: key.split(' ')[1] }),
+  );
+  const byArbitrationWarning = bucketRows(arbitrationWarningKey, (key) => ({ key }));
 
   // Pior contribuição primeiro: a primeira linha é literalmente "de onde vem
   // o prejuízo". Ordenar por avgR colocaria um balde de 2 operações no topo.
@@ -239,6 +273,14 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
     expectancyR: mean(sumRTotal, rCountedTotal),
     byExitReason: finish(byExitReason),
     bySymbol: finish(bySymbol),
+    // Eixos de verificação das afirmações da auditoria externa (2026-07-28).
+    // Mesma propriedade aditiva dos demais: as contribuições de cada eixo somam
+    // exatamente a expectância geral, então cada linha diz quantos R vieram
+    // dali — não é comparação de médias entre grupos de tamanhos diferentes.
+    bySide: finish(bySide),
+    byTier: finish(byTier),
+    bySideTier: finish(bySideTier),
+    byArbitrationWarning: finish(byArbitrationWarning),
     byPeriod: finishChronological(byPeriod),
     // DUAS medidas, e é preciso ler as duas juntas — separadas de propósito
     // porque cada uma sozinha engana:

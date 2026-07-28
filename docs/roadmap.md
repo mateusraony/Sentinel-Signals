@@ -77,6 +77,33 @@ trás para frente) — ajuda, mas não era o termo dominante.
 
 ---
 
+## Bloco 0.1 — verificar os achados da auditoria externa (aberto agora)
+
+Auditoria de 2026-07-28 (item 45) trouxe três afirmações empíricas de um
+documento externo que **não pude verificar** — vêm do artifact, e o blob storage
+é inalcançável desta sessão:
+
+| Afirmação | Como verificar |
+|---|---|
+| BUY Tier 3 = −65,8 R; sem ele, +0,214 R | `bySideTier` no diagnóstico |
+| SELL isolado é positivo (+0,199 R) | `bySide` |
+| Operações com `correction_warning` = −0,709 R | `byArbitrationWarning` |
+
+Os quatro eixos já existem em `backtestAnalysis.js`. **Não precisa de novo
+backtest**: baixar o artifact do run 30278687522 e rodar
+`npm run analyze-backtest -- --report <arquivo>`.
+
+**Critério escrito antes do número** (item 45.8): BUY T3 a −0,414 R sobre ~159
+operações seria 4,6 σ, que sobrevive a Bonferroni para 6 comparações. Confirmado
+nessa ordem de grandeza = efeito real. Em 1-2 σ = seleção post-hoc, descartar.
+
+E a auditoria encontrou algo que talvez importe mais que as três: **a cascata SMC
+é código morto** — 75 eventos de estrutura produziram 0 operações, por um
+conflito geométrico entre o gatilho e a zona no mesmo candle de 5m (item 45.2).
+Isso é defeito verificado no código, não alegação.
+
+---
+
 ## Bloco 1 — os quatro flags dormentes (o maior débito acumulado)
 
 Fases 2, 3 e 4 construíram quatro mecanismos completos, testados e documentados.
