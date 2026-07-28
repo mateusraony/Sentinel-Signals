@@ -2719,3 +2719,132 @@ quente). Registrado em `docs/roadmap.md`, Bloco 0.
 
 **Nota de produção**: nada disto afeta o app. `fakeBackend` só existe em teste e
 backtest; em produção as mesmas consultas vão para o Firestore, que é indexado.
+
+## 45. Auditoria do funil SMC e da composição do score (2026-07-28)
+
+Auditoria em resposta a um documento externo de reestruturação. Registra seis
+achados **verificados no código**, separados das alegações do documento que não
+pude verificar. O documento em si tinha erro de premissa relevante (descreve o
+projeto como Python; é JavaScript) e ~60% de sobreposição com o que já existe.
+
+### 45.1 Medição: 75 eventos de estrutura → 0 operações
+
+Run [29883950343](https://github.com/mateusraony/Sentinel-Signals/actions/runs/29883950343)
+(2025-01-01 → 2026-07-22): `structureEventsTotal: 75, confirmedSignals: 75,
+rejectedByOteZone: 0, tradeOpsCreated: 0`. A cascata SMC é, na prática, **código
+morto em produção** — não por estar desligada, mas por não conseguir confirmar.
+
+### 45.2 Hipótese de causa: tensão geométrica entre gatilho e zona
+
+`check5mSmcConfirmation` (`scanner.js:374-408`) exige, **no mesmo candle de 5m**:
+
+1. um **gatilho** — sweep ou BOS/CHoCH (`swingLen=10`) disparando exatamente na
+   última barra fechada daquela passada (evento pontual, não estado);
+2. uma **zona favorável** — o close dessa mesma barra em retração de **≥45%** da
+   perna 1h (`buildOteLeg` + `classifyZone`, banda de equilíbrio de 5% do range),
+   e sem ter rompido o pivô protegido do outro lado.
+
+A perna é **fixa** no instante da emissão: para BUY, `legHigh` = o close do
+rompimento de 1h, `legLow` = `lastSwingLow` de 1h (`smcStructure.js:277-282`).
+Ela não acompanha o 5m.
+
+**O que é fato:** na **1ª passada**, o close de 5m é praticamente o próprio close
+do rompimento de 1h — retração ≈ 0% ⟹ `premium` ⟹ BUY rejeita. Aí a rejeição é
+quase certa por construção, e isso é a tautologia dos itens 35/38 atenuada (o
+item 38 tirou o caso extremo do viés 1h, mas `legHigh` continua sendo o close do
+próprio rompimento).
+
+**O que NÃO é fato — correção de uma afirmação forte demais** (revisão externa do
+PR #94): uma versão anterior deste item dizia que as duas condições "se anulam por
+construção". **Não se anulam.** Um BOS/CHoCH de 5m só significa que o close
+cruzou um **pivô local de 5m** (`swingLen=10`, ~50 min) — não que o close esteja
+perto do `legHigh` de 1h. Ao longo da janela de retry (4h), o preço pode recuar
+50-60% da perna e ali produzir um BOS de alta local **estando em `discount`**, que
+é exatamente a zona que BUY aceita. O correto é dizer que as duas condições são
+**negativamente correlacionadas**, não mutuamente exclusivas: o gatilho empurra o
+close na direção que a zona penaliza, mas o limiar do gatilho é local e o da zona
+é fixo em 1h — não há impossibilidade geométrica.
+
+Consequência metodológica: os 75 → 0 do 45.1 são **medição**; este mecanismo é
+**hipótese**. Distinguir "gatilho nunca dispara no retry" de "dispara e a zona
+rejeita" exige a instrumentação do 45.3 (hoje o retry faz `continue` mudo) — não
+se resolve por argumento geométrico.
+
+### 45.3 `rejectedByOteZone` é cego (mede 0 com 75 eventos perdidos)
+
+Só amostra a **1ª passada**; o loop de retry (`scanner.js:2068`) faz `continue`
+sem empurrar nada em `smc5mZoneRejections`. E na 1ª passada a rejeição por zona é
+quase certa (no instante do rompimento a retração é ~0% ⟹ premium), então o
+contador mede justamente o caso menos informativo. O relatório é cego onde o
+funil aperta.
+
+Agravante: `no_trigger` (`scanner.js:366`) colapsa três causas distintas — sem
+gatilho, histórico 5m < 60 candles, e exceção no fetch. Num replay longo, falha
+de dado é indistinguível de ausência de sinal.
+
+### 45.4 Expiração silenciosa na cascata SMC
+
+Um `SignalEvent` SMC deixa de ser re-tentado ao completar 4h (`scanner.js:2022`)
+— sem transição, sem log, sem contador. Um sinal que tentou ~48 vezes e falhou é
+indistinguível de um nunca tentado. A cascata RF tem `promotion_status: EXPIRED`
+com log; a SMC não tem equivalente.
+
+### 45.5 Defeito latente: `smc_confirm_4h15m` usa o gate de zona ANTIGO
+
+`scanner.js:1551-1565` ainda calcula `zoneOk` com `calculatePdZone` sobre o mesmo
+`closedCandles` de `calculateStructure` — **exatamente o mecanismo que o item 35
+provou tautológico e que o item 38 removeu do viés 1h**. A migração do item 38 não
+alcançou este gate. Se `smc_confirm_4h15m` estiver ligado em algum ativo, está
+estrangulando a cascata RF por um caminho já comprovadamente defeituoso.
+Flag off por padrão — por isso é latente, não ativo.
+
+### 45.6 Única assimetria BUY/SELL real do motor
+
+`smcStructure.js:88` (`let trend = 1;`) semeia a estrutura como **altista** no
+início de cada janela, e `calculateStructure` é path-dependent sem estado entre
+scans. Enquanto nenhum CHoCH ocorrer na janela, um rompimento de alta é rotulado
+**BOS** e um de baixa **CHoCH** — e `structure_type` alimenta `chochBonus` em
+`smcConfluence.js`. Isso é diferença de score entre BUY e SELL.
+
+Pode ser fidelidade ao `var trend = 1` do Pine; é assimetria de fato de qualquer
+modo. **No resto, BUY e SELL são espelhos exatos** — verificado em `rangeFilter.js`,
+`confluence.js`, `opExitRules.js` e nos pontos de saída de `scanner.js`. A tabela
+de tier não tem dimensão de lado, e `evaluateRegime` não consulta `side`.
+
+### 45.7 A redundância do score é maior do que "componentes correlacionados"
+
+`calculateSignalStrength` (`confluence.js:98-156`) soma follow-through 25, MACD
+20, EMA 20, RSI 15, volume 10, preço-vs-RF 10 = 100. **Sem teto por família e sem
+tratamento de redundância.** E:
+
+- **`followThrough` (25) e `preço vs Range Filter` (10) são a MESMA condição.**
+  No caminho sem `confirmed` (`confluence.js:110`), `followThrough` é literalmente
+  `isBuy ? direction === 1 : direction === -1` — byte-idêntico à condição dos 10
+  pontos (`:136-137`). No caminho com `confirmed`, a de 25 **contém** a de 10.
+  São **35 pontos de uma variável booleana** — a mesma que gerou o sinal.
+- MACD (20) e EMA (20) derivam ambos de cruzamento de EMAs.
+- Consequência: com `minScore=75`, um sinal passa com RF(35) + EMA(20) + MACD(20)
+  = **duas famílias de informação**, uma delas tautológica em relação à emissão.
+
+Isso explica por que score 75, 80 e 100 tiveram desempenho parecido: acima de um
+certo ponto o score mede a mesma coisa várias vezes.
+
+### 45.8 Eixos de verificação adicionados (esta rodada)
+
+`backtestAnalysis.js` ganhou `bySide`, `byTier`, `bySideTier` e
+`byArbitrationWarning`, mesma propriedade aditiva dos eixos existentes. Servem
+para verificar as três afirmações empíricas do documento externo — que vêm do
+artifact e **não puderam ser confirmadas** nesta sessão (blob storage bloqueado).
+
+**Armadilha codificada explicitamente**: operação da cascata SMC não recebe
+`tier` quando `smcTierEnabled` está desligado (`scanner.js:634`, o default), e
+`tier_time_stop_bars` cai no literal `96` — o mesmo valor de T3 sem ser T3
+(`scanner.js:637`). `tierKey` devolve `SEM_TIER` nesses casos e o CLI avisa.
+Inferir tier daí produziria uma tabela de aparência completa e errada.
+
+**Critério declarado ANTES de olhar o resultado**: `bySideTier` cria 6 baldes
+sobre a mesma janela; escolher o pior e removê-lo melhora o resultado in-sample
+por construção. Pela conta do documento, BUY T3 seria −0,414 R sobre ~159
+operações = **4,6 erros-padrão**, o que sobrevive à correção de Bonferroni para
+6 comparações (limiar 2,64). Se a medição confirmar essa ordem de grandeza, é
+efeito real; se vier em 1-2 σ, é seleção e deve ser descartado.

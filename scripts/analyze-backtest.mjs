@@ -79,6 +79,33 @@ export function renderAnalysis(analysis) {
   }))));
   out.push('');
 
+  // Eixos de verificação (auditoria 2026-07-28). O cruzamento lado × tier é o
+  // que decide a afirmação "BUY Tier 3 destrói o resultado" — os eixos isolados
+  // não respondem, porque um BUY ruim em T3 aparece diluído nos dois.
+  const eixo = (titulo, linhas, rotulo, campo) => {
+    out.push(titulo);
+    out.push(...table(linhas.map((b) => ({
+      [rotulo]: b[campo],
+      ops: b.count,
+      'W/L/BE': `${b.wins}/${b.losses}/${b.be}`,
+      'contrib R': fmt(b.contributionR),
+      'média R': fmt(b.avgR),
+    }))));
+    out.push('');
+  };
+
+  eixo('POR LADO', analysis.bySide, 'lado', 'side');
+  eixo('POR TIER', analysis.byTier, 'tier', 'tier');
+  eixo('POR LADO × TIER — o cruzamento que decide', analysis.bySideTier, 'lado/tier', 'key');
+  if (analysis.byTier.some((b) => b.tier === 'SEM_TIER' && b.count > 0)) {
+    out.push('⚠️  Há operações SEM_TIER. Operação da cascata SMC não recebe tier');
+    out.push('   quando smcTierEnabled está desligado (o default), e o valor 96 de');
+    out.push('   tier_time_stop_bars parece T3 sem ser. Elas ficam em balde próprio');
+    out.push('   de propósito — não são T3.');
+    out.push('');
+  }
+  eixo('POR RESULTADO DE ARBITRAGEM cross-cascade', analysis.byArbitration, 'resultado', 'key');
+
   out.push('ESTABILIDADE NO TEMPO — por trimestre');
   out.push('(ordem cronológica, não por contribuição — aqui o que informa é a');
   out.push(' sequência: degradação, concentração num período, ou estabilidade)');
