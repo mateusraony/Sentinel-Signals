@@ -597,6 +597,31 @@ describe('buildReport', () => {
     });
   });
 
+  // docs/known-risks.md item 46 — a seção diz QUAL gestão o run usou (não
+  // quanto ela rendeu; isso é do diagnóstico). Sem ela, dois relatórios podem
+  // ser comparados sem notar que a geometria de saída mudou entre eles, o que
+  // atribuiria à estratégia uma diferença que veio da gestão.
+  it('runner é inferido das operações, não do pineConfig — reflete a gestão realmente aplicada', () => {
+    const comRunner = { status: 'STOP_HIT', partial_percent: 50 };
+    const sem = { status: 'CLOSED', closed_reason: 'TP1_FULL', partial_percent: 100 };
+    const legada = { status: 'TP2_HIT' }; // sem partial_percent → fallback 50%
+
+    expect(buildReport([], { fromMs: 0, toMs: 1000 }).runner).toEqual({
+      enabled: false, opsWithRunner: 0, opsFullyClosedAtTp1: 0, closedByTp1Full: 0,
+    });
+    expect(buildReport([comRunner, legada], { fromMs: 0, toMs: 1000 }).runner).toEqual({
+      enabled: true, opsWithRunner: 2, opsFullyClosedAtTp1: 0, closedByTp1Full: 0,
+    });
+    expect(buildReport([sem, sem], { fromMs: 0, toMs: 1000 }).runner).toEqual({
+      enabled: false, opsWithRunner: 0, opsFullyClosedAtTp1: 2, closedByTp1Full: 2,
+    });
+    // Run em que o flag virou no meio: as duas gestões aparecem lado a lado em
+    // vez de o relatório afirmar uma só.
+    expect(buildReport([comRunner, sem], { fromMs: 0, toMs: 1000 }).runner).toEqual({
+      enabled: true, opsWithRunner: 1, opsFullyClosedAtTp1: 1, closedByTp1Full: 1,
+    });
+  });
+
   // Fase 2 rodada 1 (docs/known-risks.md item 40) — retest.enabled is
   // inferred from retestOutcomes being non-empty (nothing is ever pushed by
   // persistScanResults while pineConfig.retestEnabled is off), so a report

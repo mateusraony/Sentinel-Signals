@@ -122,6 +122,10 @@
       "type": "number",
       "description": "Actual exit price recorded at close time"
     },
+    // Frozen at creation. partial_percent is the SINGLE source both the engine
+    // (closesFullyAtTp1, opExitRules.js) and the metrics (getWeights,
+    // tradeMetrics.js) read — 100 means no runner, so TP1 closes the position
+    // (closed_reason TP1_FULL). See docs/known-risks.md item 46.
     "partial_percent": {
       "type": "number",
       "default": 50
@@ -179,11 +183,12 @@
     },
     "closed_reason": {
       "type": "string",
-      "description": "Set when status is CLOSED/INVALIDATED for a reason other than price hitting stop/TP",
+      "description": "Set when status is CLOSED/INVALIDATED for a reason other than price hitting stop/TP. TP1_FULL is the exception: price DID hit TP1, and it closed the whole position because the op was created with no runner (partial_percent 100 — runnerEnabled off or tp1QtyPercent 100). See docs/known-risks.md item 46.",
       "enum": [
         "TIME_STOP",
         "CHOP_EXIT",
-        "INVALIDATION"
+        "INVALIDATION",
+        "TP1_FULL"
       ]
     },
     "tier": {

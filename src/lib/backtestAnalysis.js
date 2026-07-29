@@ -20,7 +20,9 @@
 // (scripts/analyze-backtest.mjs) e o workflow só formatam o que sai daqui.
 import {
   DEFAULT_COST_MODEL,
+  ZERO_COST,
   calcCostR,
+  calcRAtTp1,
   calcRealizedR,
   classifyOutcome,
   countFundingSettlements,
@@ -186,6 +188,11 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
     op,
     outcome: classifyOutcome(op, { epsilonR, epsilonPct, costModel }),
     r: calcRealizedR(op, costModel),
+    // BRUTO, sempre — a atribuição do runner compara duas geometrias de saída,
+    // e o cenário "fechou no TP1" não tem custo calculável (a operação não
+    // existiu). Descontar custo de um lado só infla o resultado a favor da
+    // hipótese em ~0,045 R. Ver known-risks item 46.
+    grossR: calcRealizedR(op, ZERO_COST),
     costR: calcCostR(op, costModel),
     hours: holdHours(op),
   }));
@@ -267,6 +274,34 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
   }
   const share = (part) => (sumCostR > 0 ? part / sumCostR : null);
 
+  // ATRIBUIÇÃO DO RUNNER — a única peça da geometria de saída que nenhuma fase
+  // mediu. Não é um eixo de baldes: é uma subtração entre dois cenários sobre
+  // as MESMAS operações.
+  //
+  // Não há look-ahead: só entram operações que comprovadamente atingiram o TP1
+  // (`tp1_hit` é fato observado) e o TP1 é um nível conhecido na entrada. O
+  // contrafactual é sobre GESTÃO, nunca sobre preço — não pergunta "e se o
+  // preço tivesse ido a outro lugar", pergunta "e se tivéssemos fechado tudo no
+  // nível que o preço comprovadamente tocou".
+  //
+  // `avgContributionR` divide pelo MESMO `rCountedTotal` dos demais eixos, para
+  // ser somável/comparável com `expectancyR` em vez de ser uma média sobre um
+  // subconjunto (que é o erro que a decomposição inteira existe para evitar).
+  let sumGrossR = 0; let sumGrossAtTp1 = 0;
+  let opsWithTp1 = 0; let reachedTp2 = 0; let betterAtTp1 = 0; let worseAtTp1 = 0;
+  for (const { op, grossR } of rows) {
+    if (grossR === null) continue;
+    sumGrossR += grossR;
+    const atTp1 = calcRAtTp1(op);
+    // TP1 irrecuperável (doc corrompido) degrada para "runner não avaliável" —
+    // contribui 0 para a atribuição em vez de sumir da expectância bruta.
+    if (atTp1 === null) { sumGrossAtTp1 += grossR; continue; }
+    sumGrossAtTp1 += atTp1;
+    opsWithTp1 += 1;
+    if (op.status === 'TP2_HIT') reachedTp2 += 1;
+    if (atTp1 > grossR) betterAtTp1 += 1; else if (atTp1 < grossR) worseAtTp1 += 1;
+  }
+
   const hoursList = rows.map((row) => row.hours).filter((h) => h !== null);
   const activeCount = [...byPeriod.values()].filter((b) => b.count > 0).length;
 
@@ -320,6 +355,17 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
       opsWithFunding,
       fundingCharged,
       costRCount,
+    },
+    runner: {
+      opsWithTp1,
+      reachedTp2,
+      betterAtTp1,
+      worseAtTp1,
+      // Invariante testada: avgContributionR === grossExpectancyR - grossExpectancyRAtTp1.
+      grossExpectancyR: mean(sumGrossR, rCountedTotal),
+      grossExpectancyRAtTp1: mean(sumGrossAtTp1, rCountedTotal),
+      totalContributionR: sumGrossR - sumGrossAtTp1,
+      avgContributionR: mean(sumGrossR - sumGrossAtTp1, rCountedTotal),
     },
     holdHours: {
       counted: hoursList.length,

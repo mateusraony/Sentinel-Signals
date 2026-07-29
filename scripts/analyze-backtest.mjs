@@ -49,7 +49,7 @@ function table(rows) {
 // com o outro.
 export function renderAnalysis(analysis) {
   const out = [];
-  const { cost, holdHours: hold } = analysis;
+  const { cost, holdHours: hold, runner } = analysis;
 
   out.push(`Operações fechadas: ${analysis.totalClosed} (com R calculável: ${analysis.rCounted})`);
   out.push(`Expectância líquida: ${fmt(analysis.expectancyR)} R`);
@@ -149,6 +149,32 @@ export function renderAnalysis(analysis) {
   out.push(cost.fundingCharged
     ? `Operações que pagaram funding: ${cost.opsWithFunding} de ${analysis.totalClosed}`
     : 'Funding não cobrado neste run (taxa 0) — nenhuma operação pagou.');
+  out.push('');
+
+  // A única peça da geometria de SAÍDA que é medida aqui. Os demais eixos
+  // decompõem o resultado; este compara o resultado real com o que teria sido
+  // fechando 100% no TP1 — sobre as mesmas operações, sem look-ahead (só entram
+  // as que comprovadamente atingiram o TP1). Ver docs/known-risks.md item 46.
+  out.push('O RUNNER PAGOU? — resultado real vs. fechar 100% no TP1');
+  out.push('(bruto contra bruto: o cenário TP1 não tem custo calculável, então');
+  out.push(' descontar custo de um lado só enviesaria a comparação)');
+  if (runner.opsWithTp1 === 0) {
+    out.push('(nenhuma operação atingiu TP1 — nada a atribuir)');
+  } else {
+    out.push(...table([{
+      cenário: 'real (com runner)',
+      'expectância bruta': fmt(runner.grossExpectancyR),
+    }, {
+      cenário: '100% no TP1',
+      'expectância bruta': fmt(runner.grossExpectancyRAtTp1),
+    }, {
+      cenário: 'CONTRIBUIÇÃO DO RUNNER',
+      'expectância bruta': fmt(runner.avgContributionR),
+    }]));
+    out.push(`Operações que atingiram TP1: ${runner.opsWithTp1} · destas, chegaram ao TP2: ${runner.reachedTp2}`);
+    out.push(`Fechar no TP1 teria sido melhor em ${runner.betterAtTp1}, pior em ${runner.worseAtTp1}`);
+    out.push(`Total que o runner adicionou (ou tirou): ${fmt(runner.totalContributionR, 1)} R`);
+  }
   out.push('');
 
   out.push('TEMPO EM POSIÇÃO');

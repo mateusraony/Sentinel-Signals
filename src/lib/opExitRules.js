@@ -112,6 +112,33 @@ export function resolveCandleExit({ stopTouched, targetTouched }) {
   return { stopWins: stopTouched, ambiguous: Boolean(stopTouched && targetTouched) };
 }
 
+// Does hitting TP1 close the WHOLE position, or leave a runner?
+//
+// Read from the op, never from pineConfig, for three reasons:
+//   1. `priceCheckActiveOpsInner` has no pineConfig in scope, and loading it
+//      there would put a Firestore read on the fast safety path;
+//   2. management must be frozen at entry — flipping a strategy flag should
+//      govern the NEXT operation, never retroactively abandon a live runner;
+//   3. it makes the op self-describing: the record itself says how it was
+//      managed, which is what the audit needs years later.
+//   `buildTradeOpData`/`buildSmcTradeOpData` stamp `partial_percent: 100` when
+//   `pineConfig.runnerEnabled === false`.
+//
+// Reads `partial_percent` — the SAME single source `getWeights`
+// (`tradeMetrics.js`) uses to weight the two legs, with the same 50% fallback.
+// This is load-bearing: if the engine closed fully at TP1 while the metrics
+// still weighted a 50% runner, the reported R would describe a position that
+// never existed. Duplicated here (2 lines) instead of imported so this module
+// stays dependency-free and the scan bundle doesn't pull in the cost model.
+//
+// Also closes a latent inconsistency that predates the flag: `tp1QtyPercent:
+// 100` already produced `runner_percent: 0`, yet TP1 still moved the op to
+// RUNNER_ACTIVE — holding the asset blocked for days on 0% of a position.
+export function closesFullyAtTp1(op) {
+  const partialPct = Number.isFinite(op?.partial_percent) ? op.partial_percent : 50;
+  return partialPct >= 100;
+}
+
 // P0-e — RF-reversal counter that counts CANDLES, not scanner passes. The
 // cron runs every 5 minutes over a 4h/1h signal timeframe, so a naive "+1 per
 // pass while reversed" overcounts the same candle many times. Dedup by the

@@ -5,6 +5,15 @@ cada item aponta para a seção canônica em `docs/known-risks.md`. Existe porqu
 pendência estava espalhada em cinco itens numerados e num plano de sessão, e
 plano de sessão morre com a sessão.
 
+> **Estado em 2026-07-29.** O gate de amostra do Bloco 0 **foi executado**: 344
+> operações, 12 meses, 20 símbolos. Resultado: expectância líquida −0,076 R,
+> **bruta −0,031 R ± 0,061 — indistinguível de zero**, IC cruzando zero, custo
+> (0,045 R/op) maior que o déficit bruto. Ou seja: **nenhuma vantagem
+> demonstrada**. E a janela inteira foi um bear market (BTC −37%, ETH −52%,
+> SOL −61% — item 46.1), então tudo que foi medido está contaminado por regime.
+> Os blocos abaixo continuam válidos como ordem, mas leia-os sabendo disso:
+> nenhum deles cria vantagem, todos medem melhor.
+
 ## A regra que ordena tudo: amostra
 
 Toda pendência abaixo é uma decisão de "ligar ou não ligar X". Nenhuma dessas
@@ -17,10 +26,43 @@ que**. Um bloco só começa quando o anterior fecha.
 
 ---
 
-## Bloco 0 — o gate (é o que está aberto agora)
+## Bloco 0 — a janela de ALTA (é o que está aberto agora)
 
-**Rodar `backtest.yml` com 12 meses e a carteira de 20 símbolos** (default do
-workflow; `trial_label: 20sym-baseline`).
+**Rodar `backtest.yml` com `from: 2024-07-27`, `to: 2025-07-27`, a mesma carteira
+de 20 símbolos, `trial_label: bull-baseline`.** Zero código: só duas datas
+diferentes no `workflow_dispatch`.
+
+### A pergunta que só isto responde
+
+O baseline de 12 meses já rodou e mediu −0,076 R líquido / −0,031 R bruto em 344
+operações. Mas a janela inteira foi de **queda** (BTC −37%, ETH −52%, SOL −61% —
+item 46.1), e nesse regime "comprar perde, vender ganha" é o que qualquer sistema
+produziria. A pergunta em aberto é binária:
+
+> **O motor tem vantagem, ou apenas seguiu o mercado?**
+
+Uma janela de alta, mesma carteira e mesma duração, separa as duas. 2024-07 →
+2025-07 é o período imediatamente anterior ao já medido (o BTC sai de ~60k e
+chega aos 118k que abrem a janela atual), com todos os 20 símbolos já listados —
+mesma carteira, sem viés de sobrevivência.
+
+**Critério escrito ANTES do número** (a disciplina de sempre):
+
+- Se BUY vier positivo e SELL negativo, espelhando o que medimos — o sistema é
+  **direcional puro, sem vantagem**: ele ganha do lado que o mercado favorece.
+  Isso encerra a linha de otimização de estratégia.
+- Se a expectância líquida for positiva nas DUAS janelas, aí sim existe algo
+  independente de regime, e vale continuar.
+- Se vier negativa nas duas, a resposta também está dada.
+
+Nenhum flag deve ser ligado antes disto. Ligar filtro para consertar um número
+contaminado por regime é otimizar ruído com passos extras.
+
+### Histórico: o gate de amostra (CONCLUÍDO)
+
+O que ocupava este bloco era rodar 12 meses × 20 símbolos para sair de 109
+operações. Feito — 344 operações, run 30278687522. Fica registrado o raciocínio
+porque ele continua valendo para qualquer run futuro.
 
 ### Por que ampliar em ATIVOS e não em anos
 
@@ -77,34 +119,30 @@ trás para frente) — ajuda, mas não era o termo dominante.
 
 ---
 
-## Bloco 0.1 — verificar os achados da auditoria externa (aberto agora)
+## Bloco 0.1 — auditoria externa: VERIFICADO (fechado em 2026-07-29)
 
-Auditoria de 2026-07-28 (item 45) trouxe três afirmações empíricas de um
-documento externo que **não pude verificar** — vêm do artifact, e o blob storage
-é inalcançável desta sessão:
+As três afirmações do documento externo bateram no número até a terceira casa,
+mas o critério escrito antes reprova duas — detalhe completo no item **45.9**:
 
-| Afirmação | Como verificar |
-|---|---|
-| BUY Tier 3 = −65,8 R; sem ele, +0,214 R | `bySideTier` no diagnóstico |
-| SELL isolado é positivo (+0,199 R) | `bySide` |
-| Operações com `correction_warning` = −0,709 R | `byArbitrationWarning` |
+| Afirmação | σ medido | Veredito |
+|---|---|---|
+| BUY Tier 3 = −0,414 R | −5,35 | passa o limiar (2,64), mas o rótulo "Tier 3" é enganoso: T3 é 87,5% da amostra, então "BUY T3" ≈ "BUY" |
+| SELL isolado positivo | +2,17 | **reprova** — e a vantagem está concentrada num único trimestre |
+| `correction_warning` = −0,709 R | −8,52 | passa, mas é **inutilizável**: o aviso chega DEPOIS da entrada em 82 de 82 casos |
 
-Os quatro eixos já existem em `backtestAnalysis.js`. **Não precisa de novo
-backtest**: baixar o artifact do run 30278687522 e rodar
-`npm run analyze-backtest -- --report <arquivo>`.
+E o achado que sobrevive a tudo isso é de regime, não de motor: a janela inteira
+foi um bear market (item 46.1), o que explica BUY × SELL sem defeito nenhum e
+manda a decisão para o Bloco 0 acima.
 
-**Critério escrito antes do número** (item 45.8): BUY T3 a −0,414 R sobre ~159
-operações seria 4,6 σ, que sobrevive a Bonferroni para 6 comparações. Confirmado
-nessa ordem de grandeza = efeito real. Em 1-2 σ = seleção post-hoc, descartar.
-
-E a auditoria encontrou algo que talvez importe mais que as três: **a cascata SMC
-é código morto na prática** — 75 eventos de estrutura produziram 0 operações
-(item 45.1). Isso é **medição**, não alegação. A causa provável é a tensão
-geométrica entre o gatilho e a zona no mesmo candle de 5m (item 45.2), mas isso
-é **hipótese**: o gatilho de 5m cruza um pivô local, não o `legHigh` fixo de 1h,
-então as duas condições são negativamente correlacionadas, não excludentes.
-Confirmar exige antes instrumentar o funil (item 45.3) — hoje o loop de retry
-descarta o sinal sem registrar o motivo.
+**Continua aberto deste bloco**: a cascata SMC é **código morto na prática** —
+75 eventos de estrutura → 0 operações (item 45.1). Isso é **medição**. A causa
+provável é a tensão geométrica entre gatilho e zona no candle de 5m (item 45.2),
+mas isso é **hipótese**: o gatilho de 5m cruza um pivô local, não o `legHigh`
+fixo de 1h, então as duas condições são negativamente correlacionadas, não
+excludentes. Confirmar exige antes instrumentar o funil (item 45.3) — hoje o
+loop de retry descarta o sinal sem registrar o motivo. Depende do Bloco 0: se o
+motor não tiver vantagem em regime nenhum, consertar a cascata SMC é ampliar um
+gerador de operações sem vantagem.
 
 ---
 
@@ -138,20 +176,33 @@ posterior, e mexe em score já consumido pelos limiares de arbitragem da Fase 1.
 
 ---
 
-## Bloco 2 — geometria de saída (nunca testada, e é onde o dado aponta)
+## Bloco 2 — geometria de saída (parcialmente atacada)
 
-Os quatro flags acima são todos **filtros de entrada**. O déficit medido é de
-**payoff**: 43,1% de acerto com razão ganho/perda 1,08, quando 1,32 seria o
-empate. E `TP2` é atingido em 6 de 109 operações (5,5%) — zero nos últimos 6
-meses — enquanto 29 dos stops são operações que bateram TP1 e foram estopadas
-depois.
+Os quatro flags do Bloco 1 são todos **filtros de entrada**. O déficit medido é
+de **payoff**: 41,3% de acerto com razão ganho/perda 1,22, quando 1,42 seria o
+empate.
 
-Isso aponta para a alavanca que nenhuma fase tocou: `tp1R`/`tp2R` (1,5/3,0) e
-`trailAtrMult` (2,0). **É hipótese, não fato** — o dado não diz se aqueles 29
-chegariam a 3R; isso é contrafactual e exige rodar com outra configuração.
+### Runner do TP1 — FEITO e medido (item 46)
 
-Mesma disciplina do Bloco 1: uma hipótese declarada antes, critério de sucesso
-escrito antes, contada no `trial_label`.
+Deixou de ser hipótese. Sobre as 344 operações, o runner custou **−0,040 R/op
+(−13,9 R)**, e fechar 100% no TP1 teria sido melhor em **95 das 121** que o
+atingiram. `pineConfig.runnerEnabled` existe (default `true` = comportamento de
+sempre) e o diagnóstico imprime a atribuição em qualquer relatório, sem rodar
+backtest.
+
+**Não virou default** porque a medição é de um regime só — a mesma crítica que
+derrubou a proposta de desligar as compras, aplicada ao próprio achado. A
+decisão de ligar depende do Bloco 0.
+
+**E não salva a estratégia**: mesmo eliminando o runner inteiro, o bruto vai a
++0,009 R contra 0,045 R de custo.
+
+### Ainda aberto: `tp1R`/`tp2R`/`trailAtrMult`
+
+TP2 é atingido em 18 de 344 (5,2%). Mexer em `tp1R` (1,5), `tp2R` (3,0) e
+`trailAtrMult` (2,0) continua **não testado** — e é busca de 3 parâmetros, com
+todo o risco de sobreajuste que isso traz. Mesma disciplina do Bloco 1: uma
+hipótese declarada antes, critério escrito antes, contada no `trial_label`.
 
 ---
 

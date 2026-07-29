@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward } from './opExitRules.js';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules.js';
+import { getWeights } from './tradeMetrics.js';
 
 const T0 = '2026-07-15T04:00:00.000Z'; // candle open, at/before the entry
 const T1 = '2026-07-15T08:00:00.000Z'; // candle open, exactly at the entry instant
@@ -272,5 +273,34 @@ describe('passesRiskReward — checagem de R:R na entrada', () => {
     const r = passesRiskReward({ entry, stop, tp1, tp2, minRR: 1.2 });
     expect(r.rr1).toBeCloseTo(tp1R);
     expect(r.rr2).toBeCloseTo(tp2R);
+  });
+});
+
+describe('closesFullyAtTp1 — o TP1 encerra a posição? (known-risks item 46)', () => {
+  it('a regra é o COMPLEMENTO exato de getWeights().runner — as duas não podem divergir', () => {
+    // Invariante load-bearing: se o motor fechasse tudo no TP1 enquanto as
+    // métricas ainda pesassem um runner de 50%, o R reportado descreveria uma
+    // posição que nunca existiu. Varre os casos de fronteira e os legados.
+    for (const partial of [undefined, null, 0, 30, 50, 99.9, 100, 150, NaN, 'cem']) {
+      const op = { partial_percent: partial };
+      expect(closesFullyAtTp1(op)).toBe(getWeights(op).runner <= 0);
+    }
+  });
+
+  it('só 100% ou mais encerra — 99.9% ainda deixa runner', () => {
+    expect(closesFullyAtTp1({ partial_percent: 100 })).toBe(true);
+    expect(closesFullyAtTp1({ partial_percent: 99.9 })).toBe(false);
+  });
+
+  it('op legada sem o campo cai no default de 50% e MANTÉM o runner', () => {
+    expect(closesFullyAtTp1({})).toBe(false);
+    expect(closesFullyAtTp1(null)).toBe(false);
+    expect(closesFullyAtTp1(undefined)).toBe(false);
+  });
+
+  it('valor inválido nunca encerra a posição por acidente (falha para o lado seguro)', () => {
+    for (const ruim of [NaN, Infinity, 'muito', {}, []]) {
+      expect(closesFullyAtTp1({ partial_percent: ruim })).toBe(false);
+    }
   });
 });

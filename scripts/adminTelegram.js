@@ -3,6 +3,13 @@
 // GitHub Actions secrets (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) instead of
 // browser localStorage. Filters match telegram.js's own defaults (no UI to
 // customize them here — this is the "don't miss anything" 24/7 channel).
+//
+// Único import deste espelho: a regra pura que decide se o TP1 encerra a
+// posição. Compartilhada com telegram.js de propósito — se cada canal
+// decidisse por conta, o do navegador e o das 24h anunciariam gestões
+// diferentes para a MESMA operação. opExitRules já está no bundle do scan.
+import { closesFullyAtTp1 } from '../src/lib/opExitRules.js';
+
 const DEFAULT_FILTERS = {
   timeframes: ['1h', '4h', '1d'],
   min_priority: 'low',
@@ -132,10 +139,12 @@ export async function notifyTP1Hit(op, price) {
     `🎯 <b>TP1 Atingido!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     `💰 Preço atual: $${fmtP(price)}\n` +
-    `✅ ${op.partial_percent || 50}% da posição realizada\n` +
-    `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n` +
-    `🏃 Runner ${op.runner_percent || 50}% ativo — aguardando TP2: $${fmtP(op.tp2)}\n\n` +
-    `<i>⚡ CryptoRadar — gerencie o runner</i>`
+    (closesFullyAtTp1(op)
+      ? `✅ Posição encerrada 100% no TP1\n\n<i>⚡ CryptoRadar — operação fechada</i>`
+      : `✅ ${op.partial_percent || 50}% da posição realizada\n`
+        + `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n`
+        + `🏃 Runner ${op.runner_percent || 50}% ativo — aguardando TP2: $${fmtP(op.tp2)}\n\n`
+        + `<i>⚡ CryptoRadar — gerencie o runner</i>`)
   );
 }
 

@@ -30,7 +30,7 @@ import { detectFvg } from './indicators/fvg';
 import { detectOrderBlock } from './indicators/orderBlock';
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward } from './opExitRules';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
 import { groupActiveOpsByAsset } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
@@ -230,7 +230,11 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
   const ATR_MULT = tf4hData.tier?.atrStopMult ?? 2.0;
   const tp1R = pineConfig.tp1R ?? 1.5;
   const tp2R = (pineConfig.tp1R ?? 1.5) * 2;
-  const partialPct = pineConfig.tp1QtyPercent ?? 50;
+  // runnerEnabled: false congela a gestão como "100% no TP1" NA CRIAÇÃO, em vez
+  // de consultar o flag no momento da saída. Assim o flag governa a próxima
+  // operação e nunca abandona um runner já vivo, e os dois loops de saída
+  // decidem lendo só a op (closesFullyAtTp1). Ver known-risks item 46.
+  const partialPct = pineConfig.runnerEnabled === false ? 100 : (pineConfig.tp1QtyPercent ?? 50);
   const isBuy = sig.signal_type === 'BUY';
   // Entry must be the real 15m price at confirmation time, not the 4h
   // signal's price — the 4h signal can be hours old by the time 15m
@@ -563,7 +567,11 @@ function stampDisplacementFields(opData, gate) {
 export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
   const tp1R = pineConfig.tp1R ?? 1.5;
   const tp2R = (pineConfig.tp1R ?? 1.5) * 2;
-  const partialPct = pineConfig.tp1QtyPercent ?? 50;
+  // runnerEnabled: false congela a gestão como "100% no TP1" NA CRIAÇÃO, em vez
+  // de consultar o flag no momento da saída. Assim o flag governa a próxima
+  // operação e nunca abandona um runner já vivo, e os dois loops de saída
+  // decidem lendo só a op (closesFullyAtTp1). Ver known-risks item 46.
+  const partialPct = pineConfig.runnerEnabled === false ? 100 : (pineConfig.tp1QtyPercent ?? 50);
   const isBuy = sig.signal_type === 'BUY';
   const entry = confirmation5m?.entryPrice ?? sig.price_at_signal;
   const { stop: initialStop, basis: stopBasis } = computeStructuralStop({
@@ -2248,10 +2256,20 @@ export async function persistScanResults(scanResult) {
         updatePayload.closed_at = nowIso;
       } else if (tp1Touched) {
         tp1Hit = true;
-        newStatus = 'RUNNER_ACTIVE';
-        newCurrentStop = op.entry_price;
         updatePayload.tp1_hit_at = nowIso;
         updatePayload.tp1_hit_price = op.tp1;
+        if (closesFullyAtTp1(op)) {
+          // Sem runner: TP1 é saída TERMINAL. CLOSED (não um status novo)
+          // porque já é terminal, então o clearActiveOp DENTRO da transação
+          // libera o ativo de graça — ver known-risks item 46.
+          newStatus = 'CLOSED';
+          updatePayload.closed_reason = 'TP1_FULL';
+          updatePayload.exit_price = op.tp1;
+          updatePayload.closed_at = nowIso;
+        } else {
+          newStatus = 'RUNNER_ACTIVE';
+          newCurrentStop = op.entry_price;
+        }
       }
     } else {
       // rf_reverse_bars_count only matters pre-TP1 (Chop Exit/Invalidation
@@ -2516,9 +2534,20 @@ async function priceCheckActiveOpsInner() {
         updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
       } else if ((isBuy && price >= op.tp1) || (!isBuy && price <= op.tp1)) {
-        tp1Hit = true; newStatus = 'RUNNER_ACTIVE'; newCurrentStop = op.entry_price;
+        tp1Hit = true;
         updatePayload.tp1_hit_at = nowIso;
         updatePayload.tp1_hit_price = op.tp1;
+        // Mesma regra pura do loop por candle — os dois loops NÃO podem
+        // divergir sobre isto (a lição do item 39.1).
+        if (closesFullyAtTp1(op)) {
+          newStatus = 'CLOSED';
+          updatePayload.closed_reason = 'TP1_FULL';
+          updatePayload.exit_price = op.tp1;
+          updatePayload.closed_at = nowIso;
+        } else {
+          newStatus = 'RUNNER_ACTIVE';
+          newCurrentStop = op.entry_price;
+        }
       }
     } else {
       if (isBuy ? price <= op.current_stop : price >= op.current_stop) {

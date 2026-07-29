@@ -59,6 +59,10 @@ const DEFAULTS = {
   smcScoreVolumeWeight: 15,
   smcScoreAlignmentWeight: 15,
   smcScoreSweepWeight: 10,
+  // Runner do TP1 (known-risks item 46). LIGADO por padrão = comportamento de
+  // sempre. Com `false`, o TP1 fecha 100% e vira saída terminal. Override via
+  // --pine-config para comparar relatórios com/sem.
+  runnerEnabled: true,
   // Retest confirmation gate (Fase 2 rodada 1, src/lib/indicators/retest.js)
   // — master flag OFF by default, see docs/known-risks.md item 40. Override
   // via --pine-config to compare backtest reports with/without it.
