@@ -26,7 +26,7 @@
 // `costs` do relatório mostra o quanto pesam, em % e em R.
 import { scanAsset, persistScanResults } from './scanner.js';
 import { isTerminalStatus } from './opTransition.js';
-import { summarizeOps, DEFAULT_COST_MODEL, ZERO_COST } from './tradeMetrics.js';
+import { summarizeOps, DEFAULT_COST_MODEL, ZERO_COST, getOpenedAt } from './tradeMetrics.js';
 import { closesFullyAtTp1 } from './opExitRules.js';
 
 const RealDate = Date;
@@ -125,7 +125,9 @@ export function inferStepMs(assets) {
   return (anySmc ? 5 : 15) * 60 * 1000;
 }
 
-export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onStep, costModel, minTrades } = {}) {
+export async function runBacktest({
+  assets, backend, fromMs, toMs, evaluationFromMs, evaluationToMs, stepMs, onStep, costModel, minTrades,
+} = {}) {
   if (!Array.isArray(assets) || assets.length === 0) {
     throw new Error('runBacktest: assets must be a non-empty array');
   }
@@ -134,6 +136,20 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
     throw new Error('runBacktest: fromMs/toMs must form a valid range (toMs > fromMs)');
   }
   const step = stepMs || inferStepMs(assets);
+
+  // Warm-up (docs/known-risks.md item 47.2). fromMs/toMs continue a ser a
+  // janela de DADOS — o relógio simulado corre por ela inteira, sem isso os
+  // indicadores nunca convergiriam (RF/EMA/RSI/ATR/ADX/Choppiness precisam de
+  // ~6× o próprio período, .claude/rules/pine-parity.md). evaluationFromMs/
+  // evaluationToMs, quando passados, é a janela AVALIADA — só operações
+  // abertas dentro dela entram no relatório. Ambos default para fromMs/toMs
+  // (retrocompat total: sem os novos parâmetros o comportamento é idêntico a
+  // antes desta mudança — nenhum relatório existente muda de número).
+  const evalFromMs = Number.isFinite(evaluationFromMs) ? evaluationFromMs : fromMs;
+  const evalToMs = Number.isFinite(evaluationToMs) ? evaluationToMs : toMs;
+  if (evalFromMs < fromMs || evalToMs > toMs || evalToMs <= evalFromMs) {
+    throw new Error('runBacktest: evaluationFromMs/evaluationToMs devem estar dentro de [fromMs, toMs] e formar um intervalo válido');
+  }
 
   // Tallies the SMC 1h→5m cascade's structure-event funnel across the whole
   // replay — answers "why zero SMC trades?" with real counts instead of
@@ -247,8 +263,24 @@ export async function runBacktest({ assets, backend, fromMs, toMs, stepMs, onSte
   }
 
   const allOps = await backend.entities.TradeOperation.filter({});
-  return buildReport(allOps, {
-    fromMs, toMs,
+  // Operações abertas durante o aquecimento (antes de evalFromMs) ficaram só
+  // pra dar histórico aos indicadores — nunca deveriam contar como resultado
+  // avaliado. getOpenedAt (tradeMetrics.js) já é a referência única de
+  // "quando a op começou a existir"; ausência dela (doc corrompido/legado)
+  // não filtra — fail-open, mesmo espírito dos outros fallbacks deste módulo.
+  const warmingUp = evalFromMs > fromMs || evalToMs < toMs;
+  const evaluatedOps = warmingUp
+    ? allOps.filter((op) => {
+      const openedAtIso = getOpenedAt(op);
+      if (!openedAtIso) return true;
+      const openedAtMs = new Date(openedAtIso).getTime();
+      return !Number.isFinite(openedAtMs) || (openedAtMs >= evalFromMs && openedAtMs <= evalToMs);
+    })
+    : allOps;
+
+  return buildReport(evaluatedOps, {
+    fromMs: evalFromMs, toMs: evalToMs,
+    dataRangeMs: warmingUp ? { fromMs, toMs } : null,
     smcConfirmedSignals: smcConfirmedSignalKeys.size,
     smcRejectedByOteZone: smcOteZoneRejectionKeys.size,
     arbitrationOutcomes: [...arbitrationOutcomesByKey.values()],
@@ -296,7 +328,7 @@ function resolveReportCostModel(costModel) {
   return { ...DEFAULT_COST_MODEL, ...costModel, applied: !isZero };
 }
 
-export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], smcObFvgOutcomes = [], attemptStats = {}, costModel, minTrades } = {}) {
+export function buildReport(ops, { fromMs, toMs, dataRangeMs = null, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], smcObFvgOutcomes = [], attemptStats = {}, costModel, minTrades } = {}) {
   const attemptsOf = (name) => attemptStats[name] ?? { ...EMPTY_ATTEMPTS };
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
@@ -321,6 +353,12 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
       from: new Date(fromMs).toISOString(),
       to: new Date(toMs).toISOString(),
     },
+    // Presente só quando evaluationFromMs/evaluationToMs restringiu a janela
+    // avaliada pra menos que a janela de dados (item 47.2/warm-up) — a
+    // diferença entre `range` (o que foi CONTADO) e `dataRangeMs` (o que o
+    // relógio simulado efetivamente percorreu) é exatamente o buffer de
+    // aquecimento.
+    dataRangeMs,
     totalOps: ops.length,
     stillOpenAtCutoff: stillOpen.length,
     overall: overallSummary,

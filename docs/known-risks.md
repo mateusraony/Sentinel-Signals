@@ -3141,3 +3141,148 @@ o `asset` para `notifyNewSignal`.
 **Fora de escopo, mesma decisão do item 47**: os demais eixos
 (prioridade/score) continuam globais; 15m/1W/1M como timeframe de sinal
 independente; limiar configurável de força do cruzamento MACD.
+
+## 47.2. Avaliação de proposta externa de reforma do motor + PR-1 (2026-07-29)
+
+O usuário colou uma proposta técnica externa de 20 seções (gestão de
+TP1/runner, fonte de dados Futures, warm-up, funding, preço de execução,
+resolução de stop/TP, honestidade do R:R, quarentena SMC, redundância do
+score, tier vs. regime, contexto macro, `correction_warning`, MFE/MAE,
+concentração de resultado, protocolo de experimentos) e pediu avaliação com
+pesquisa antes de decidir. Rodei 3 agentes Explore em paralelo pra verificar
+CADA afirmação contra o código real (arquivo:linha) em vez de aceitar a
+proposta como fato — plano completo em
+`/root/.claude/plans/veja-se-o-relat-rio-wild-hickey.md` (histórico de
+sessão). Veredito condensado, e o que este PR (PR-1: telemetria e dados
+limpos, **zero mudança de geração de sinal**) implementou:
+
+### Já implementado, não refeito
+`runnerEnabled`/`closesFullyAtTp1` (item 46) já resolvia a gestão do TP1; o
+gate de amostra/IC95%/`conclusive` (item 44) já existia; `bySymbol` (aditivo)
+já existia em `backtestAnalysis.js`; `smc_enabled`/`smc_confirm_4h15m` já são
+`default: false` — a "quarentena SMC" pedida já é o comportamento estrutural
+padrão. `passesRiskReward` (`opExitRules.js`) já documenta a própria
+tautologia em comentário e grava `rr_gate_mode: 'CONFIGURED_MULTIPLE'` na op;
+não achei nenhuma tela mostrando esse número como se fosse estrutural (o
+widget "Risk/Reward" do dashboard mede outra coisa — `avgWin/avgLoss`
+REALIZADO — e está correto).
+
+### Conflita com decisão já pesquisada — não implementado sem validar a premissa
+A proposta pedia trocar a fonte de dados do backtest pra Binance Futures
+(candles+funding+taxa todos Futures, hoje é Spot). `CLAUDE.md` item 4 já
+documenta que o bloqueio 451 da Futures API bloqueia qualquer IP de
+datacenter dos EUA — a pesquisa desta rodada confirmou que isso vale
+IGUALMENTE pro `backtest.yml` (mesmo `ubuntu-latest` do `scan.yml`,
+`scripts/fetch-backtest-data.mjs` já hardcoda Spot,
+`scripts/backtestMarketDataProvider.js` já documenta em comentário que
+espelha o Spot do cron de propósito). A premissa da proposta (bastaria trocar
+a fonte) está incorreta como descrita. Achado novo, NÃO testado: o endpoint
+estático de histórico em lote `data.binance.vision` (diferente da API de
+trading ao vivo `fapi.binance.com`) pode ou não escapar do bloqueio por IP —
+ninguém verificou. Tentei um spike descartável (workflow temporário
+`workflow_dispatch` fazendo um `curl -I` nesse endpoint a partir do runner do
+GitHub) mas **não consegui disparar via API** — o token desta sessão não tem
+permissão de `workflow_dispatch` (`403 Resource not accessible by
+integration`). Removido do repo sem rodar. Se o usuário quiser testar: um
+`curl -I "https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1h/BTCUSDT-1h-2024-01.zip"`
+rodado de dentro de um job do GitHub Actions (não da sessão do Claude Code —
+essa rede bloqueia Binance por completo) responde o HTTP status; 200 =
+endpoint acessível (spike vira PR de verdade), 403/451/timeout = decisão do
+item 4 permanece como está.
+
+### Gaps reais, alto risco/blast radius — NÃO entram neste PR
+Resolução de stop/TP no candle de SINAL (4h/1h) em vez do candle de EXECUÇÃO
+(15m/5m) — toca os invariantes P0-c/P0-d/P0-g; entrada causal 15m ("Fresh RF
+Flip"): o código mostra que o alinhamento simples é **decisão deliberada**
+(`scanner.js`, comentário: "requiring a fresh signal would block valid
+entries"), não omissão — precisa do mesmo tratamento de qualquer gate novo
+(flag off + A/B de backtest); tier (volatilidade) vs. regime (permissão de
+entrada) conflados na mesma tabela — redesenho de risco, não telemetria;
+`correction_warning` como saída causal — exige que o motor de backtest saiba
+simular "fechar no próximo preço executável", escopo de feature nova; Score
+V2 — a redundância follow-through/preço-vs-RF já estava documentada
+(item 2820-2824 desta mesma tabela), fica pra depois de MFE/MAE existir
+(dado que faltava pro "feature ablation" que a proposta pede). Runner default
+`true→false` + Shadow Runner: decisão tomada (ver abaixo), mas isso muda
+comportamento de operação real — fica pra um PR-2 dedicado, não entra aqui.
+
+### Gaps reais fechados neste PR (aditivos, zero mudança de sinal)
+- **MFE/MAE por operação** (`mfe_r`/`mae_r`/`bars_to_mfe`/`bars_to_mae`,
+  `docs/schema-reference/TradeOperation.jsonc`). Rastreado incrementalmente
+  em `persistScanResults` (candle-based loop, `scanner.js`) a partir do
+  high/low do candle de gerenciamento — recomputado a cada passada mas
+  ESTÁVEL dentro do mesmo candle (só muda quando um candle NOVO chega), então
+  só gera escrita no mesmo ritmo que o resto do loop já grava, não um novo
+  spam por-passada. Gated pelo mesmo guard `candleUsable` do P0-c/P0-g — um
+  candle pré-entrada nunca conta. **Deliberadamente NÃO** rastreado em
+  `priceCheckActiveOpsInner` (o loop de preço em tempo real) — ali o preço
+  muda a cada 5min de verdade, então a mesma lógica viraria fonte de escrita
+  quase contínua; resolução de candle, não de tick, é a troca consciente.
+  `bars_to_tp1`/`bars_to_stop` usam o mesmo proxy de tempo decorrido que o
+  Time Stop já usa (`barsOpen`), reaproveitado (`barsSinceEntry`), não um
+  contador novo. Simplificação deliberada da proposta original:
+  `mfe_before_mae_r`/`mae_before_mfe_r` não foram implementados —
+  `bars_to_mfe`/`bars_to_mae` já respondem a mesma pergunta de ordem sem
+  precisar de dois campos derivados a mais.
+- **Funding ponderado pela fração pós-TP1** (`tradeMetrics.js`,
+  `countFundingSettlementsByLeg`). Antes, `calcTradeCost` cobrava TODA
+  fronteira de 8h atravessada ao notional CHEIO de entrada, mesmo depois do
+  TP1 reduzir a posição ao `runner_percent` — diferente de fee/slippage, que
+  já eram ponderados por perna via `getWeights`. Agora fronteiras
+  pré-TP1 cobram 100%, pós-TP1 cobram só a fração do runner. Sem TP1, o
+  comportamento é idêntico ao de antes (regressão coberta em teste).
+- **Warm-up do backtest** (`runBacktest`, `backtestEngine.js`): novos
+  parâmetros opcionais `evaluationFromMs`/`evaluationToMs` (retrocompat total
+  — omitidos, comportamento idêntico a antes). `fromMs`/`toMs` continuam
+  sendo a janela de DADOS (o relógio simulado corre por ela inteira, pros
+  indicadores convergirem); a janela AVALIADA passa a poder ser um
+  subconjunto — operações abertas fora dela são criadas mecanicamente (o
+  replay não muda) mas excluídas do relatório. CLI:
+  `--evaluation-from`/`--evaluation-to` em `run-backtest.mjs`. O relatório
+  ganha `dataRangeMs` (a janela de dados completa) quando os dois divergem.
+- **Expiração/rejeição silenciosa de sinal** (`scanner.js`, ambas as
+  cascatas). Antes, um `SignalEvent` que nunca confirmava entrada dentro da
+  janela de retry (4h pra RF, 4×1h pra SMC) expirava mudo — sem
+  `TradeOperation`, sem `SystemLog`, indistinguível de um sinal que nunca foi
+  tentado (known-risks item 45.4 só documentava o lado SMC; o lado RF tinha
+  o mesmo problema). Novo campo `SignalEvent.expired_logged` (booleano,
+  `docs/schema-reference/SignalEvent.jsonc`) — gravado uma única vez, lido do
+  MESMO objeto que o retry loop já busca a cada passada (zero leitura extra
+  no Firestore), evitando o custo de `SystemLog.createUnique` (que exigiria
+  uma leitura por passada por sinal parado, incompatível com a disciplina de
+  quota de `.claude/rules/firestore-concurrency.md`).
+- **Bug do contexto macro morto**: `analyzeAlignment` já calculava
+  `tf_1d/4h/1h_direction` e gravava em `SignalEvent.context`, mas
+  `buildTradeOpData`/`buildSmcTradeOpData` nunca copiavam isso pra
+  `TradeOperation` — `TradeCard.jsx` já lê `op.tf_1d_direction` etc. e sempre
+  recebia `null` numa operação ativa. Corrigido nos dois `buildXTradeOpData`;
+  a cascata SMC também passou a gravar os mesmos 3 campos no `context` do seu
+  próprio `SignalEvent` (antes só a cascata RF gravava).
+- **Concentração de resultado** (`backtestAnalysis.js`, seção
+  `concentration`): contribuição dos 5/10 melhores trades (por R, não por
+  ordem cronológica) e maior contribuição por símbolo/trimestre/lado —
+  mesmo padrão aditivo de `bySymbol`/`runner`. O motor não deve ser aprovado
+  só porque poucas operações excepcionais compensaram o resto.
+- **Reprodutibilidade do relatório** (`run-backtest.mjs`): novo bloco
+  `reproducibility` — `commitSha` (`git rev-parse HEAD`, `null` se
+  indisponível, nunca bloqueia o run), `configHash` (hash do `pineConfig`
+  EFETIVO já mesclado com `--pine-config`, não só o caminho do arquivo),
+  `runStartedAt`, `pineConfig` completo. `docs/experiments/registry.json`
+  (array vazio versionado) — convenção documentada em
+  `docs/claude/backtest-usage.md` pra rodadas que decidem algo virarem uma
+  entrada (hipótese, baseline×teste, janela dev×holdout, critério de
+  aceite, status) em vez de só prosa espalhada.
+
+### Skill externa avaliada (`multica-ai/andrej-karpathy-skills`)
+Pesquisada via `WebFetch`: guia genérico de disciplina de código pra LLMs
+(pensar antes de codar, simplicidade, mudança cirúrgica), sem nenhuma relação
+com trading/backtest/ML. Sobrepõe quase 1:1 com
+`.claude/rules/operating-principles.md` já existente (mais específico ao
+domínio). **Não instalada** — redundante.
+
+### Verificação
+`npm run lint && npm test` (692 passando, incluindo os novos testes desta
+rodada) `&& npm run build && npm run build:scan && npm run build:backtest`.
+Smoke test manual do CLI (`node scripts/dist/run-backtest.mjs` contra candles
+sintéticos locais, sem rede): `reproducibility`/`dataRangeMs`/janela avaliada
+via `--evaluation-from` todos confirmados no JSON de saída.

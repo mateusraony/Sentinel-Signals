@@ -501,6 +501,59 @@ describe('runBacktest — no-look-ahead (4h Range Filter flip)', () => {
       // fresh any EARLIER than that, proven by the previous assertion.
     });
   });
+
+  // known-risks item 47.2 -- warm-up: uma op aberta ANTES de evaluationFromMs
+  // (aquecimento dos indicadores) e criada mecanicamente, mas excluida do
+  // relatorio avaliado. Reusa o mesmo flip deterministico (BUY em
+  // FLIP_CLOSE_TIME) dos testes acima.
+  describe('runBacktest - warm-up (evaluationFromMs/evaluationToMs)', () => {
+    it('op aberta antes de evaluationFromMs e criada (mecanicamente) mas some do relatorio', async () => {
+      setCandles('TESTUSDT', build15mCandlesAligned);
+      const backend = createFakeBackend();
+      Object.assign(entitiesModule.backend, backend);
+
+      const report = await runBacktest({
+        assets: [makeAsset()], backend,
+        fromMs: FLIP_CLOSE_TIME - 2 * FOUR_H,
+        toMs: FLIP_CLOSE_TIME + FOUR_H,
+        evaluationFromMs: FLIP_CLOSE_TIME + FIFTEEN_M, // logo depois da entrada -- vira "aquecimento"
+        stepMs: FIFTEEN_M,
+      });
+
+      // A op existe de verdade no backend -- so nao conta no relatorio.
+      const ops = await backend.entities.TradeOperation.filter({});
+      expect(ops).toHaveLength(1);
+      expect(report.totalOps).toBe(0);
+      expect(report.range.fromMs).toBe(FLIP_CLOSE_TIME + FIFTEEN_M);
+      expect(report.dataRangeMs).toEqual({ fromMs: FLIP_CLOSE_TIME - 2 * FOUR_H, toMs: FLIP_CLOSE_TIME + FOUR_H });
+    });
+
+    it('sem evaluationFromMs/evaluationToMs, comportamento identico a antes desta flag (retrocompat)', async () => {
+      setCandles('TESTUSDT', build15mCandlesAligned);
+      const backend = createFakeBackend();
+      Object.assign(entitiesModule.backend, backend);
+
+      const report = await runBacktest({
+        assets: [makeAsset()], backend,
+        fromMs: FLIP_CLOSE_TIME - 2 * FOUR_H,
+        toMs: FLIP_CLOSE_TIME,
+        stepMs: FIFTEEN_M,
+      });
+
+      expect(report.totalOps).toBe(1);
+      expect(report.dataRangeMs).toBeNull();
+      expect(report.range.fromMs).toBe(FLIP_CLOSE_TIME - 2 * FOUR_H);
+    });
+
+    it('rejeita evaluationFromMs/evaluationToMs fora de [fromMs, toMs]', async () => {
+      const backend = createFakeBackend();
+      await expect(runBacktest({
+        assets: [makeAsset()], backend,
+        fromMs: FLIP_CLOSE_TIME, toMs: FLIP_CLOSE_TIME + FOUR_H,
+        evaluationFromMs: FLIP_CLOSE_TIME - FIFTEEN_M, // antes de fromMs
+      })).rejects.toThrow();
+    });
+  });
 });
 
 describe('inferStepMs', () => {

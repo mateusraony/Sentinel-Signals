@@ -225,6 +225,17 @@ nunca deve receber nova transição.**
   das 121 que o atingiram — mas **num regime só** (bear market), por isso não
   virou default. Primeira rodada a tocar a SAÍDA e não a entrada.
 
+- **MFE/MAE por operação** (item 47.2) — `mfe_r`/`mae_r`/`bars_to_mfe`/
+  `bars_to_mae` rastreados incrementalmente em `persistScanResults` (candle-
+  based) a partir do high/low do candle de gerenciamento, gated pelo mesmo
+  `candleUsable` de P0-c/P0-g. Recomputado toda passada mas estável dentro do
+  mesmo candle — só gera escrita quando um candle NOVO chega, mesmo ritmo do
+  resto do loop. **Deliberadamente não** rastreado em
+  `priceCheckActiveOpsInner` (preço muda a cada tick, viraria fonte de
+  escrita quase contínua) — resolução de candle, não de tick.
+  `bars_to_tp1`/`bars_to_stop` reusam o mesmo proxy de tempo decorrido que o
+  Time Stop (`barsOpen`), não um contador novo.
+
 ## Regras ao mexer aqui
 
 - **Não** introduza um terceiro caminho de mutação de op. Consolidar/serializar

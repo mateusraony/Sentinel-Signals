@@ -14,6 +14,7 @@ import {
   calcCostR,
   calcRAtTp1,
   countFundingSettlements,
+  countFundingSettlementsByLeg,
 } from './tradeMetrics.js';
 
 // Base BUY fixture: risk = 5 (entry 100, stop 95), tp1 = +1.5R (107.5),
@@ -373,6 +374,45 @@ describe('custo de transação (Fase 5)', () => {
     const c = calcTradeCost(op);
     expect(c.fundingSettlements).toBe(3);
     expect(c.fundingCost).toBeCloseTo(3 * 0.0001 * 100, 6); // 0.03
+  });
+
+  // known-risks item 47.2 — funding pós-TP1 só cobra a fração do runner, não
+  // o notional cheio. Mesmas 3 fronteiras do teste acima (08, 16, 00), mas
+  // agora com TP1 batido no meio da janela (16:00) — 1 fronteira antes
+  // (08:00, 100% do notional) e 2 depois (16:00 e 00:00, só os 50% do
+  // runner, partial_percent=50 default do fixture).
+  describe('funding ponderado pela fração pós-TP1 (item 47.2)', () => {
+    it('countFundingSettlementsByLeg divide corretamente em beforeTp1/afterTp1', () => {
+      const op = makeOp({
+        tp1_hit: true, tp1_hit_at: '2026-07-16T15:00:00.000Z',
+        candle_close_time: '2026-07-16T07:00:00.000Z', closed_at: '2026-07-17T01:00:00.000Z',
+      });
+      expect(countFundingSettlementsByLeg(op)).toEqual({ beforeTp1: 1, afterTp1: 2 });
+    });
+
+    it('sem tp1_hit, todas as fronteiras ficam em beforeTp1 (comportamento idêntico a antes do split)', () => {
+      const op = makeOp({
+        candle_close_time: '2026-07-16T07:00:00.000Z', closed_at: '2026-07-17T01:00:00.000Z',
+      });
+      expect(countFundingSettlementsByLeg(op)).toEqual({ beforeTp1: 3, afterTp1: 0 });
+    });
+
+    it('calcTradeCost cobra menos funding numa op com parcial do que uma idêntica sem TP1', () => {
+      const withoutTp1 = makeOp({
+        exit_price: 95,
+        candle_close_time: '2026-07-16T07:00:00.000Z', closed_at: '2026-07-17T01:00:00.000Z',
+      });
+      const withTp1 = makeOp({
+        status: 'TP2_HIT', tp1_hit: true, tp1_hit_at: '2026-07-16T15:00:00.000Z', exit_price: 115,
+        candle_close_time: '2026-07-16T07:00:00.000Z', closed_at: '2026-07-17T01:00:00.000Z',
+      });
+      const costWithout = calcTradeCost(withoutTp1);
+      const costWith = calcTradeCost(withTp1);
+      // 1 fronteira a 100% (100) + 2 a 50% (50 cada) = 200 de notional-fronteira,
+      // contra 3 fronteiras a 100% (300) sem parcial — 2/3 do funding.
+      expect(costWith.fundingCost).toBeCloseTo(costWithout.fundingCost * (2 / 3), 6);
+      expect(costWith.fundingSettlements).toBe(3); // contagem de fronteiras não muda, só o peso
+    });
   });
 });
 

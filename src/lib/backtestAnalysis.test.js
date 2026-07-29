@@ -532,6 +532,103 @@ describe('analyzeOps — decomposição do custo', () => {
   });
 });
 
+// known-risks item 47.2 — o motor não deve ser aprovado só porque poucas
+// operações excepcionais compensaram o resto. ZERO_COST em todos os testes
+// pra isolar os valores de R do modelo de custo (já coberto em outro bloco).
+describe('analyzeOps — concentração do resultado (item 47.2)', () => {
+  // R = (exit_price - 100) / 5 (risco), tp1_hit:false em todas (100% no exit).
+  // symbols distintos pra também exercitar largestSymbol; mesmo closed_at/
+  // side em todas pra largestPeriod/largestSide terem um balde só (contribui
+  // exatamente sumRTotal, fácil de conferir à mão).
+  function concentrationOps() {
+    return [
+      makeOp({ id: 'a', symbol: 'BTCUSDT', exit_price: 110 }), // R=2.0
+      makeOp({ id: 'b', symbol: 'BTCUSDT', exit_price: 108 }), // R=1.6
+      makeOp({ id: 'c', symbol: 'ETHUSDT', exit_price: 102.5 }), // R=0.5
+      makeOp({ id: 'd', symbol: 'SOLUSDT', exit_price: 95 }), // R=-1.0
+      makeOp({ id: 'e', symbol: 'XRPUSDT', exit_price: 85 }), // R=-3.0
+      makeOp({ id: 'f', symbol: 'ADAUSDT', exit_price: 100.5 }), // R=0.1
+      makeOp({ id: 'g', symbol: 'DOGEUSDT', exit_price: 99.5 }), // R=-0.1
+    ];
+  }
+
+  it('top5/top10 somam os N melhores R, não os N mais recentes', () => {
+    const { concentration, expectancyR, rCounted } = analyzeOps(concentrationOps(), { costModel: ZERO_COST });
+    expect(rCounted).toBe(7);
+    expect(expectancyR).toBeCloseTo(0.1 / 7, 6); // sumRTotal = 0.1, 7 ops
+    // 5 maiores: 2.0+1.6+0.5+0.1-0.1 = 4.1 (não a soma das 5 primeiras da lista)
+    expect(concentration.top5ContributionR).toBeCloseTo(4.1, 6);
+    // 10 pedidos, só 7 existem — soma tudo, share = 100% do total.
+    expect(concentration.top10ContributionR).toBeCloseTo(0.1, 6);
+    expect(concentration.top10Share).toBeCloseTo(1.0, 6);
+  });
+
+  it('largestSymbol aponta o símbolo de maior |contribuição|, não o de mais operações', () => {
+    const { concentration } = analyzeOps(concentrationOps(), { costModel: ZERO_COST });
+    // BTCUSDT: (2.0+1.6)/7 ≈ 0.514 — maior em módulo que XRPUSDT sozinho (-3.0/7 ≈ -0.429).
+    expect(concentration.largestSymbol.key).toBe('BTCUSDT');
+    expect(concentration.largestSymbol.contributionR).toBeCloseTo(3.6 / 7, 6);
+  });
+
+  it('largestPeriod/largestSide — balde único (mesmo closed_at/side) contribui a expectância inteira', () => {
+    const { concentration, expectancyR } = analyzeOps(concentrationOps(), { costModel: ZERO_COST });
+    // Um balde só contendo TODAS as 7 operações — sua contribuição é
+    // exatamente a expectância geral (sumR / rCountedTotal), a mesma
+    // propriedade aditiva que o resto do módulo garante.
+    expect(concentration.largestPeriod.contributionR).toBeCloseTo(expectancyR, 6);
+    expect(concentration.largestSide.key).toBe('BUY');
+    expect(concentration.largestSide.contributionR).toBeCloseTo(expectancyR, 6);
+  });
+
+  it('sem operações com R, share vira null em vez de dividir por zero', () => {
+    const { concentration } = analyzeOps([], { costModel: ZERO_COST });
+    expect(concentration.top5ContributionR).toBe(0);
+    expect(concentration.top5Share).toBeNull();
+    expect(concentration.largestSymbol).toBeNull();
+  });
+});
+
+// known-risks item 47.2 — mfe_r/mae_r são lidos direto do campo já persistido
+// pelo scanner (candle-resolution), não recalculados aqui.
+describe('analyzeOps — excursão máxima MFE/MAE (item 47.2)', () => {
+  it('agrega mfe_r/mae_r/bars_to_tp1/bars_to_stop e a taxa de "ficou positiva antes de parar"', () => {
+    const ops = [
+      makeOp({ id: 'a', status: 'TP2_HIT', tp1_hit: true, mfe_r: 1.5, mae_r: -0.3, bars_to_tp1: 2 }),
+      makeOp({ id: 'b', status: 'STOP_HIT', mfe_r: 0.8, mae_r: -0.6, bars_to_stop: 3 }),
+      makeOp({ id: 'c', status: 'STOP_HIT', mfe_r: -0.1, mae_r: -1.0, bars_to_stop: 1 }),
+    ];
+    const { excursion } = analyzeOps(ops, { costModel: ZERO_COST });
+    expect(excursion.counted).toBe(3);
+    expect(excursion.avgMfeR).toBeCloseTo((1.5 + 0.8 - 0.1) / 3, 6);
+    expect(excursion.medianMfeR).toBeCloseTo(0.8, 6);
+    expect(excursion.avgMaeR).toBeCloseTo((-0.3 - 0.6 - 1.0) / 3, 6);
+    expect(excursion.avgBarsToTp1).toBeCloseTo(2, 6);
+    expect(excursion.avgBarsToStop).toBeCloseTo(2, 6); // (3+1)/2
+    expect(excursion.stoppedCount).toBe(2);
+    // Só op 'b' parou depois de ter ficado favorável (mfe_r>0); 'c' nunca chegou a ficar positiva.
+    expect(excursion.stoppedAfterProfitCount).toBe(1);
+    expect(excursion.stoppedAfterProfitShare).toBeCloseTo(0.5, 6);
+  });
+
+  it('operações sem mfe_r/mae_r (anteriores a este campo) não quebram a agregação', () => {
+    // makeOp() default já é STOP_HIT (fixture padrão do arquivo) — cobre o
+    // caso real: uma op antiga sem os campos novos ainda conta em
+    // stoppedCount, só não em stoppedAfterProfitCount (mfe_r ausente).
+    const { excursion } = analyzeOps([makeOp()], { costModel: ZERO_COST });
+    expect(excursion.counted).toBe(0);
+    expect(excursion.avgMfeR).toBeNull();
+    expect(excursion.stoppedCount).toBe(1);
+    expect(excursion.stoppedAfterProfitCount).toBe(0);
+    expect(excursion.stoppedAfterProfitShare).toBe(0);
+  });
+
+  it('sem NENHUMA operação, stoppedAfterProfitShare vira null em vez de dividir por zero', () => {
+    const { excursion } = analyzeOps([], { costModel: ZERO_COST });
+    expect(excursion.stoppedCount).toBe(0);
+    expect(excursion.stoppedAfterProfitShare).toBeNull();
+  });
+});
+
 describe('opsFromReport / analyzeReport', () => {
   const report = {
     costs: { model: { ...DEFAULT_COST_MODEL, applied: true } },

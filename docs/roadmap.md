@@ -204,6 +204,26 @@ TP2 é atingido em 18 de 344 (5,2%). Mexer em `tp1R` (1,5), `tp2R` (3,0) e
 todo o risco de sobreajuste que isso traz. Mesma disciplina do Bloco 1: uma
 hipótese declarada antes, critério escrito antes, contada no `trial_label`.
 
+### PR-1 (item 47.2): dados limpos + telemetria nova, sem mexer em sinal
+
+Avaliação de uma proposta externa de reforma (2026-07-29, detalhe completo em
+`docs/known-risks.md` item 47.2) separou o que já existia, o que conflitava
+com uma decisão já pesquisada (fonte Futures no backtest — mesmo bloqueio 451
+do cron, confirmado desta vez para o `backtest.yml` também) e o que era gap
+real de baixo risco: **implementado** — MFE/MAE por operação, funding
+ponderado pela fração pós-TP1 (diferente do "pipeline de funding histórico"
+do Bloco 3 — aqui é só notional, não taxa real), warm-up opcional
+(`--evaluation-from`/`--evaluation-to`), expiração de sinal logada (RF+SMC),
+bug do contexto macro morto (`tf_1d/4h/1h_direction` nunca chegava na
+`TradeOperation`), concentração top-N no diagnóstico, `reproducibility` no
+relatório (commit/config hash). **Candidatos pra rodadas futuras, cada um com
+seu próprio A/B e sem entrar no Bloco 0**: resolução de stop/TP no timeframe
+de EXECUÇÃO (15m/5m) em vez do de sinal (4h/1h) — o achado tecnicamente mais
+sério, toca os invariantes P0; entrada causal 15m ("Fresh RF Flip" — hoje é
+decisão deliberada, não bug); separar tier (volatilidade) de regime
+(permissão de entrada); runner default `true→false` + Shadow Runner
+(rastreamento virtual pós-TP1, mecanismo de validação contínua pro Bloco 2).
+
 ---
 
 ## Bloco 3 — o que a Fase 5 adiou explicitamente
