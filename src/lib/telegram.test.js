@@ -239,3 +239,65 @@ describe('setTelegramFilters — sincroniza a origem com o canal 24h via Firesto
     expect(JSON.parse(localStorage.getItem('tg_filters')).sources).toEqual(['rsi']);
   });
 });
+
+describe('shouldSend — override por ativo (known-risks item 47)', () => {
+  beforeEach(() => {
+    localStorage.setItem('cryptoradar_telegram_cfg', JSON.stringify({ botToken: 'x', chatId: 'y' }));
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+  });
+
+  function baseSignal(overrides = {}) {
+    return {
+      symbol: 'ETHUSDT', timeframe: '1h', signal_type: 'BUY', source: 'macd',
+      price_at_signal: 100, reason: 'x', context: {},
+      ...overrides,
+    };
+  }
+
+  it('asset.notify_sources SUBSTITUI o filtro global (não combina) — global permite tudo, ativo restringe', async () => {
+    // Filtro global: tudo liberado (default). O ativo restringe sozinho.
+    await notifyNewSignal(baseSignal({ source: 'macd' }), { notify_sources: ['range_filter'] });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('asset.notify_sources pode LIBERAR uma origem que o filtro global bloqueia', async () => {
+    localStorage.setItem('tg_filters', JSON.stringify({
+      timeframes: ['1h', '4h', '1d'], min_priority: 'low', signal_types: ['BUY', 'SELL'],
+      events: ['signal_detected'], min_score: 0, sources: ['range_filter'], // global só RF
+    }));
+    await notifyNewSignal(baseSignal({ source: 'macd' }), { notify_sources: ['macd'] }); // ativo libera MACD
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('asset.notify_signal_types SUBSTITUI o filtro global de lado, também', async () => {
+    await notifyNewSignal(baseSignal({ signal_type: 'BUY' }), { notify_signal_types: ['SELL'] });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('sem asset (ou sem os campos), continua herdando 100% do filtro global — regressão', async () => {
+    await notifyNewSignal(baseSignal({ source: 'macd' }));
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    global.fetch.mockClear();
+    await notifyNewSignal(baseSignal({ source: 'macd' }), {}); // asset existe mas sem os 2 campos
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('array vazio é um estado válido — silencia o ativo por completo, de propósito ("nada do ETH")', async () => {
+    await notifyNewSignal(baseSignal(), { notify_sources: [] });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('o override por ativo NÃO vaza para eventos de operação (entry/TP/stop) — só rege o alerta de novo sinal', async () => {
+    localStorage.setItem('tg_filters', JSON.stringify({
+      timeframes: ['1h', '4h', '1d'], min_priority: 'low', signal_types: ['BUY', 'SELL'],
+      events: ['entry_confirmed'], min_score: 0,
+    }));
+    // asset.notify_signal_types restringe a BUY — mas isto é uma notificação
+    // de operação (SELL), que deve ignorar o override do ativo por completo.
+    await notifyTradeCreated({
+      symbol: 'ETHUSDT', side: 'SELL', timeframe: '15m', signal_timeframe: '4h', entry_price: 100,
+      initial_stop: 105, tp1: 95, tp2: 90, score: 80, source: 'manual',
+    }, { notify_signal_types: ['BUY'] });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});

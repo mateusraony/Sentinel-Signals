@@ -8,7 +8,20 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import MultiToggle from '@/components/ui/multi-toggle';
 import { Loader2, AlertCircle } from 'lucide-react';
+
+const NOTIFY_SOURCE_OPTIONS = [
+  { id: 'range_filter', label: 'RF' },
+  { id: 'smc_structure', label: 'SMC' },
+  { id: 'macd', label: 'MACD' },
+  { id: 'ema_cross', label: 'EMA Cross' },
+  { id: 'rsi', label: 'RSI' },
+];
+const NOTIFY_SIDE_OPTIONS = [
+  { id: 'BUY', label: '🟢 BUY' },
+  { id: 'SELL', label: '🔴 SELL' },
+];
 
 export default function AssetConfigPanel({ asset, onSave }) {
   // handleSave writes this whole object back unconditionally on every save
@@ -34,6 +47,12 @@ export default function AssetConfigPanel({ asset, onSave }) {
     alert_cooldown_minutes: asset.alert_cooldown_minutes || 60,
     smc_enabled: asset.smc_enabled || false,
     smc_confirm_4h15m: asset.smc_confirm_4h15m || false,
+    // Pré-preenchido com "tudo ligado" quando o ativo nunca foi customizado
+    // — visualmente idêntico ao comportamento herdado do filtro global
+    // (known-risks item 47). Ao salvar, grava explícito (deixa de herdar);
+    // mesma convenção de rsi_overbought/oversold.
+    notify_sources: asset.notify_sources ?? NOTIFY_SOURCE_OPTIONS.map(o => o.id),
+    notify_signal_types: asset.notify_signal_types ?? NOTIFY_SIDE_OPTIONS.map(o => o.id),
   });
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState([]);
@@ -202,6 +221,33 @@ export default function AssetConfigPanel({ asset, onSave }) {
         <div className="flex items-center gap-2">
           <Input type="number" value={config.alert_cooldown_minutes} onChange={e => setConfig({...config, alert_cooldown_minutes: Number(e.target.value)})} className="w-24" />
           <span className="text-xs text-muted-foreground">minutos entre alertas iguais</span>
+        </div>
+      </div>
+
+      {/* Notificações por ativo — known-risks item 47 */}
+      <div>
+        <Label className="text-sm font-medium mb-2 block">Notificações deste ativo</Label>
+        <p className="text-xs text-muted-foreground mb-3">
+          Sobrescreve o filtro geral (Configurações → Alertas Telegram) só para
+          este ativo — vale para os dois canais, ao vivo e o automático 24h.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Origem do sinal</Label>
+            <MultiToggle
+              options={NOTIFY_SOURCE_OPTIONS}
+              selected={config.notify_sources}
+              onChange={v => setConfig({ ...config, notify_sources: v })}
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Lado</Label>
+            <MultiToggle
+              options={NOTIFY_SIDE_OPTIONS}
+              selected={config.notify_signal_types}
+              onChange={v => setConfig({ ...config, notify_signal_types: v })}
+            />
+          </div>
         </div>
       </div>
 

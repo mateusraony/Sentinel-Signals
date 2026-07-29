@@ -59,7 +59,9 @@ export function isTelegramConfigured() {
   return !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
 }
 
-async function shouldSend(event, data) {
+// @param {Object} [asset] MonitoredAsset, only used for signal_detected —
+// see notify_sources/notify_signal_types (docs/known-risks.md item 47).
+async function shouldSend(event, data, asset) {
   const f = DEFAULT_FILTERS;
   if (f.events && !f.events.includes(event)) return false;
 
@@ -67,8 +69,12 @@ async function shouldSend(event, data) {
   // signal_detected usa este vocabulário de `source` (RF/SMC/MACD/EMA/RSI);
   // os demais eventos carregam uma TradeOperation, cujo `source` é um enum
   // não relacionado (scanner/scanner_smc/tradingview_webhook/manual).
+  //
+  // asset.notify_sources, quando definido, SUBSTITUI o filtro global (não
+  // combina) — mesma convenção de rsi_overbought/oversold. Só lê o
+  // Firestore (loadTelegramSources) quando não há override por-ativo.
   if (event === 'signal_detected' && KNOWN_SOURCES.includes(data.source)) {
-    const sources = await loadTelegramSources();
+    const sources = asset?.notify_sources ?? await loadTelegramSources();
     if (!sources.includes(data.source)) return false;
   }
 
@@ -77,7 +83,8 @@ async function shouldSend(event, data) {
   if (f.timeframes && tf && !f.timeframes.includes(tf)) return false;
 
   const side = data.signal_type || data.side;
-  if (f.signal_types && side && !f.signal_types.includes(side)) return false;
+  const signalTypes = (event === 'signal_detected' && asset?.notify_signal_types) || f.signal_types;
+  if (signalTypes && side && !signalTypes.includes(side)) return false;
 
   if (f.min_priority && f.min_priority !== 'low') {
     const dataPriority = data.priority || (data.score >= 85 ? 'high' : data.score >= 75 ? 'medium' : 'low');
@@ -141,8 +148,8 @@ const SOURCE_LABELS = {
   rsi: 'RSI',
 };
 
-export async function notifyNewSignal(signal) {
-  if (!(await shouldSend('signal_detected', signal))) return;
+export async function notifyNewSignal(signal, asset) {
+  if (!(await shouldSend('signal_detected', signal, asset))) return;
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
   const strength = { strong: '💪 Forte', medium: '📊 Médio', moderate: '📊 Moderado', weak: '🔹 Fraco' }[signal.strength] || '';

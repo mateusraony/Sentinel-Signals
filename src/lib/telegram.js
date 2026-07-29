@@ -101,9 +101,12 @@ const KNOWN_SOURCES = ['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rs
  * Check if a notification should be sent based on configured filters.
  * @param {string} event - 'signal_detected' | 'entry_confirmed' | 'tp1_hit' | 'tp2_hit' | 'stop_hit'
  * @param {Object} data - signal or trade operation data
+ * @param {Object} [asset] - MonitoredAsset the signal belongs to, only used
+ *   (and only needed) for signal_detected — see notify_sources/
+ *   notify_signal_types below. Omitted entirely for trade-lifecycle events.
  * @returns {boolean}
  */
-function shouldSend(event, data) {
+function shouldSend(event, data, asset) {
   const f = getTelegramFilters();
 
   // Event filter
@@ -117,7 +120,15 @@ function shouldSend(event, data) {
   // docs/schema-reference/TradeOperation.jsonc). Checking data.source
   // unconditionally would collide with that field and silently drop every
   // entry/TP/stop notification.
-  if (event === 'signal_detected' && f.sources && KNOWN_SOURCES.includes(data.source) && !f.sources.includes(data.source)) return false;
+  //
+  // Per-asset override (known-risks item 47): asset.notify_sources, when
+  // set, REPLACES the global f.sources for this asset entirely (not
+  // intersected) — same "explicit per-asset value wins" convention already
+  // used by rsi_overbought/rsi_oversold. Absent = inherit the global filter.
+  if (event === 'signal_detected') {
+    const sources = asset?.notify_sources ?? f.sources;
+    if (sources && KNOWN_SOURCES.includes(data.source) && !sources.includes(data.source)) return false;
+  }
 
   // Timeframe filter — signal_timeframe (4h/1h) when present, since that's
   // what the UI lets the user pick from. data.timeframe alone would be the
@@ -127,9 +138,13 @@ function shouldSend(event, data) {
   const tf = data.signal_timeframe || data.timeframe;
   if (f.timeframes && tf && !f.timeframes.includes(tf)) return false;
 
-  // Signal type filter (BUY/SELL)
+  // Signal type filter (BUY/SELL). Per-asset override, signal_detected only
+  // — same reasoning and precedence as the source filter above: a muted
+  // side for THIS asset's new-signal alerts must never also silence a
+  // legitimately open position's TP/stop notifications on that same asset.
   const side = data.signal_type || data.side;
-  if (f.signal_types && side && !f.signal_types.includes(side)) return false;
+  const signalTypes = (event === 'signal_detected' && asset?.notify_signal_types) || f.signal_types;
+  if (signalTypes && side && !signalTypes.includes(side)) return false;
 
   // Priority filter
   if (f.min_priority && f.min_priority !== 'low') {
@@ -183,8 +198,8 @@ const SOURCE_LABELS = {
   rsi: 'RSI',
 };
 
-export async function notifyNewSignal(signal) {
-  if (!shouldSend('signal_detected', signal)) return;
+export async function notifyNewSignal(signal, asset) {
+  if (!shouldSend('signal_detected', signal, asset)) return;
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
   const strength = { strong: '💪 Forte', medium: '📊 Médio', moderate: '📊 Moderado', weak: '🔹 Fraco' }[signal.strength] || '';

@@ -117,6 +117,16 @@
       "default": 60,
       "description": "Minimum minutes between same type alerts"
     },
+    "notify_sources": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["range_filter", "smc_structure", "macd", "ema_cross", "rsi"] },
+      "description": "Per-asset override of which signal sources notify for THIS asset — takes full precedence over the global telegramFilters/current sources when set (not merged/intersected). Absent/null = inherit the global filter, same non-breaking default as every other flag in this project. Read in src/lib/telegram.js and scripts/adminTelegram.js's shouldSend, only for the signal_detected event. See docs/known-risks.md item 47."
+    },
+    "notify_signal_types": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["BUY", "SELL"] },
+      "description": "Per-asset override of which side (BUY/SELL) notifies for THIS asset — same precedence/scope rules as notify_sources. Absent/null = inherit the global signal_types filter."
+    },
     "last_scan_at": {
       "type": "string",
       "description": "ISO timestamp of last scan"

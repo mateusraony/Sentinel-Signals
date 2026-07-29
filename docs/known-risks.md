@@ -3075,3 +3075,69 @@ MACD, não pedido com clareza suficiente.
 
 **Pendente fora desta sessão**: `firebase deploy --only firestore:rules` —
 sem esse passo manual a regra nova de `telegramFilters` não vale.
+
+### 47.1 Override por ativo (2026-07-29)
+
+Depois do filtro global, o usuário esclareceu o pedido real: granularidade
+**por ativo**, não só global — ex. "MACD do BTC sim, do ETH não". No mesmo
+turno também pediu (e foi corrigido sobre) dois pontos factuais antes de
+qualquer código:
+
+- **MACD não tem escala 0–100.** O usuário usou "70/30" para os dois
+  indicadores, mas isso só existe pro RSI (`SignalEvent.source: 'rsi'`); MACD
+  neste projeto é cruzamento de linha/sinal (`macdLine`/`signalLine`/`cross`),
+  sem limiar comparável. Esclarecido antes de desenhar — não construído nada
+  em cima da confusão.
+- **Timeframes 15m/1W/1M não existem como alvo de scan.** `TIMEFRAMES =
+  ['1h','4h','1d']` em `scanner.js`; 15m/5m só existem como candle de
+  *confirmação* das cascatas RF/SMC, nunca como timeframe de sinal
+  independente. Estender isso é uma capacidade nova (mais chamadas à API da
+  Binance, provavelmente **mais** notificação, não menos) — escopo separado,
+  maior e mais arriscado, explicitamente fora desta rodada (confirmado com o
+  usuário via pergunta direta antes de implementar).
+
+**Decomposição do pedido em cima do que já existe** — via `AskUserQuestion`,
+usuário confirmou "Sim, seguir assim": granularidade por **ativo**, por
+**direção** (= `signal_type` BUY/SELL, campo que todo sinal já carrega — não é
+conceito novo) e por **origem**, restrito aos timeframes existentes (1h/4h/1d).
+
+**Implementação — reaproveita o mecanismo do item 47, não cria um novo**:
+
+- `MonitoredAsset.notify_sources` / `MonitoredAsset.notify_signal_types`
+  (`docs/schema-reference/MonitoredAsset.jsonc`) — arrays opcionais.
+  **Semântica de substituição total, não merge/interseção** — mesma
+  convenção já usada por `rsi_overbought`/`rsi_oversold`: quando presente,
+  o override do ativo vale sozinho; ausente/`null` = herda 100% do filtro
+  global `telegramFilters/current`. Um array vazio (`[]`) é um estado válido
+  de propósito — silencia o ativo por completo ("nada do ETH agora").
+- `shouldSend(event, data, asset)` (`src/lib/telegram.js` e
+  `scripts/adminTelegram.js`) ganha o terceiro parâmetro opcional; o override
+  do ativo tem precedência total sobre o filtro global quando presente, nos
+  dois eixos, **restrito ao mesmo guard de evento do item 47**
+  (`event === 'signal_detected'`) — o override nunca vaza para notificação de
+  entrada/TP/stop, que carrega `TradeOperation` (vocabulário de `source`
+  diferente e não relacionado).
+- **Zero leitura extra no Firestore**: `scanner.js` já tem `asset`
+  (`MonitoredAsset`) em escopo no loop de scan (usado ali mesmo para
+  `alert_cooldown_minutes`) — passar o mesmo objeto pro
+  `notifyNewSignal(signal, asset)` não custa nada. Em
+  `scripts/adminTelegram.js`, quando o override do ativo sozinho já decide o
+  resultado, `loadTelegramSources()` (a leitura memoizada do Firestore) nem
+  chega a ser chamada.
+- UI: nova seção "Notificações deste ativo" em `AssetConfigPanel.jsx`, reusa o
+  `MultiToggle` (agora extraído para `src/components/ui/multi-toggle.jsx`,
+  compartilhado com `TelegramSettings.jsx` em vez de duplicado).
+
+**Testes**: `src/lib/telegram.test.js` e `scripts/adminTelegram.test.js`
+(novo arquivo) cobrem, em espelho: override substitui (não combina) o filtro
+global nos dois eixos; override pode LIBERAR uma origem/lado que o global
+bloqueia (não só restringir); array vazio silencia por completo; sem `asset`
+(ou sem os campos) continua herdando 100% do global — regressão; override não
+vaza para eventos de operação; e no lado admin, que o override sozinho evita
+a leitura do Firestore. `scannerStateMachine.test.js` ganhou uma asserção
+(`toHaveBeenCalledWith`) confirmando que `persistScanResults` de fato repassa
+o `asset` para `notifyNewSignal`.
+
+**Fora de escopo, mesma decisão do item 47**: os demais eixos
+(prioridade/score) continuam globais; 15m/1W/1M como timeframe de sinal
+independente; limiar configurável de força do cruzamento MACD.

@@ -1481,7 +1481,10 @@ export async function persistScanResults(scanResult) {
     if (!dedupResult.created) continue;
 
     persistedSignals++;
-    if (willNotify) notifyNewSignal(signal).catch(() => {});
+    // `asset` já está em escopo neste loop (usado acima em
+    // asset.alert_cooldown_minutes) — passar direto evita qualquer leitura
+    // extra no Firestore só para o filtro por-ativo (known-risks item 47).
+    if (willNotify) notifyNewSignal(signal, asset).catch(() => {});
 
     // Fase 4 (item 43) — in-memory only, no Firestore write; nada é empurrado
     // enquanto smcObFvgEnabled está desligado (os campos ficam null), que é

@@ -99,3 +99,42 @@ describe('adminTelegram — filtro de origem do sinal (lido de telegramFilters/c
     expect(firestoreGetMock).not.toHaveBeenCalled();
   });
 });
+
+describe('adminTelegram — override por ativo (known-risks item 47)', () => {
+  it('asset.notify_sources SUBSTITUI o filtro global, e evita ler o Firestore', async () => {
+    firestoreGetMock.mockResolvedValue(snap(['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi'])); // global libera tudo
+    const { notifyNewSignal } = await import('./adminTelegram.js');
+    await notifyNewSignal(baseSignal({ source: 'macd' }), { notify_sources: ['range_filter'] });
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(firestoreGetMock).not.toHaveBeenCalled(); // override por ativo decide sozinho, sem precisar do doc global
+  });
+
+  it('asset.notify_sources pode LIBERAR uma origem que o Firestore global bloqueia', async () => {
+    firestoreGetMock.mockResolvedValue(snap(['range_filter'])); // global só RF
+    const { notifyNewSignal } = await import('./adminTelegram.js');
+    await notifyNewSignal(baseSignal({ source: 'macd' }), { notify_sources: ['macd'] });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('asset.notify_signal_types SUBSTITUI o filtro global de lado', async () => {
+    firestoreGetMock.mockResolvedValue(snap(['macd']));
+    const { notifyNewSignal } = await import('./adminTelegram.js');
+    await notifyNewSignal(baseSignal({ source: 'macd', signal_type: 'BUY' }), { notify_signal_types: ['SELL'] });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('sem asset, continua herdando 100% do filtro global lido do Firestore — regressão', async () => {
+    firestoreGetMock.mockResolvedValue(snap(['macd']));
+    const { notifyNewSignal } = await import('./adminTelegram.js');
+    await notifyNewSignal(baseSignal({ source: 'macd' }));
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('array vazio silencia o ativo por completo — estado válido, não erro', async () => {
+    firestoreGetMock.mockResolvedValue(snap(['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi']));
+    const { notifyNewSignal } = await import('./adminTelegram.js');
+    await notifyNewSignal(baseSignal(), { notify_sources: [] });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
