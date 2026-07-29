@@ -1,0 +1,25 @@
+name: "SPIKE (temporário): alcance a data.binance.vision Futures"
+
+# Diagnóstico descartável — NÃO faz parte do produto. Existe só para
+# responder uma pergunta antes de qualquer código de pipeline: o bloqueio
+# 451 da Binance Futures em IP de datacenter dos EUA (CLAUDE.md item 4,
+# docs/known-risks.md item 4) também bloqueia o arquivo estático de
+# histórico em lote (data.binance.vision, endpoint diferente da API de
+# trading ao vivo fapi.binance.com/data-api.binance.vision/api), ou só a API
+# de trading ao vivo é afetada? Ver docs/known-risks.md item 47.2.
+#
+# Removido do repo depois de rodar uma vez — não é workflow permanente.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: curl data.binance.vision (Futures USDⓈ-M, klines mensais)
+        run: |
+          set -x
+          curl -sS -o /dev/null -w "HTTP %{http_code}\n" \
+            "https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1h/BTCUSDT-1h-2024-01.zip" \
+            || echo "curl falhou (rede/DNS/timeout)"
