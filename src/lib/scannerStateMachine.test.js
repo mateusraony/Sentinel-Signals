@@ -42,7 +42,7 @@ vi.mock('./marketDataProvider', () => ({
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice, fetchCandles } from './marketDataProvider';
 import { isTelegramConfigured, notifyNewSignal, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
-import { persistScanResults, priceCheckActiveOps, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, firstPositive, firstPositiveInteger } from './scanner.js';
+import { persistScanResults, priceCheckActiveOps, activateSignalManually, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, firstPositive, firstPositiveInteger } from './scanner.js';
 import { calculateSmcSignalStrength } from './indicators/smcConfluence.js';
 import { closesFullyAtTp1 } from './opExitRules.js';
 
@@ -919,6 +919,114 @@ describe('TP1 sem runner — saída terminal (item 46)', () => {
     const op = buildTradeOpData(sig, tf4hData, makePineConfig({ tp1QtyPercent: 100 }), { entryPrice: 100, entryCandleTime: '2026-07-16T08:15:00.000Z' });
     expect(op.runner_percent).toBe(0);
     expect(closesFullyAtTp1(op)).toBe(true); // antes: seguia para RUNNER_ACTIVE
+  });
+});
+
+// Codex, PR #95 (known-risks item 46.5). O botão "Ativar agora" do painel
+// criava a operação com TradeOperation.create cru: sem stop, sem alvo e sem o
+// ponteiro assetActiveOps. Estes testes provam que os três defeitos sumiram.
+describe('activateSignalManually — ativação pelo painel passa pelo motor', () => {
+  const sinal = (o = {}) => ({
+    id: 'sig_manual_1',
+    symbol: 'BTCUSDT',
+    asset_id: 'asset1',
+    timeframe: '4h',
+    signal_type: 'BUY',
+    price_at_signal: 90, // deliberadamente DEFASADO em relação ao preço atual
+    reason: 'RF virou para cima',
+    context: { score: 80, rf_value: 88, reasons: ['rf'] },
+    ...o,
+  });
+
+  // activateSignalManually chama scanAsset de verdade — precisa de candles
+  // suficientes para o ATR do 4h existir. É justamente esse ATR que o botão
+  // antigo não tinha e por isso criava operação sem stop.
+  beforeEach(() => {
+    vi.mocked(fetchCandles).mockImplementation(async () => uptrendCandles(200));
+  });
+
+  // `vi.clearAllMocks()` do beforeEach global limpa CHAMADAS, não
+  // IMPLEMENTAÇÕES — sem este reset a implementação acima vaza para os
+  // describes seguintes (o de arbitragem passou a promover direto para
+  // CONFIRMED porque a confirmação 15m encontrava candles sempre).
+  afterEach(() => {
+    vi.mocked(fetchCandles).mockReset();
+  });
+
+  it('cria com stop, alvos e tier — o defeito central era a operação nascer inoperável', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    const res = await activateSignalManually(sinal(), makeAsset());
+
+    expect(res.created).toBe(true);
+    const op = backend._get('TradeOperation', res.opId);
+    expect(op.initial_stop).toBeGreaterThan(0);
+    expect(op.current_stop).toBe(op.initial_stop);
+    expect(op.tp1).toBeGreaterThan(op.entry_price);
+    expect(op.tp2).toBeGreaterThan(op.tp1);
+    expect(op.tier).toBeTruthy();
+    expect(op.source).toBe('manual');
+  });
+
+  it('usa o preço ATUAL como entrada, não o preço defasado do sinal', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    const res = await activateSignalManually(sinal({ price_at_signal: 90 }), makeAsset());
+    expect(backend._get('TradeOperation', res.opId).entry_price).toBe(100);
+  });
+
+  it('grava o ponteiro assetActiveOps — sem ele o scanner abriria uma segunda op no mesmo ativo', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    const res = await activateSignalManually(sinal(), makeAsset());
+    expect(backend._getActiveOp('asset1')).toBe(res.opId);
+
+    // A consequência concreta: uma segunda criação no mesmo ativo é recusada,
+    // em vez de gerar o par duplicado que suspende a gestão (item 39.1).
+    const segunda = await activateSignalManually(sinal({ id: 'sig_manual_2' }), makeAsset());
+    expect(segunda.created).toBe(false);
+    expect(segunda.reason).toBe('active_op_exists');
+  });
+
+  // `runnerEnabled` chega à operação manual porque activateSignalManually
+  // chama buildTradeOpData — a MESMA função da cascata automática. O
+  // threading do flag já é provado direto ali, no describe do item 46
+  // ("buildTradeOpData congela a gestão na criação"); aqui basta garantir que
+  // a gestão vem daquela função e não de um literal, como era antes.
+  it('a gestão vem de buildTradeOpData, não de um 50/50 hardcoded no componente', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    const res = await activateSignalManually(sinal(), makeAsset());
+    const op = backend._get('TradeOperation', res.opId);
+    expect(op.partial_percent + op.runner_percent).toBe(100);
+    expect(op.exit_mode).toBe('HYBRID_RF_ATR');
+    expect(op.cascade).toBe('4h_15m'); // gerida pelas regras do 4h, declarado
+  });
+
+  it('a entrada é carimbada AGORA — nenhum candle já em andamento pode disparar stop/TP (P0-g)', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    const antes = Date.now();
+    const res = await activateSignalManually(sinal(), makeAsset());
+    const t = new Date(backend._get('TradeOperation', res.opId).entry_candle_time_15m).getTime();
+    expect(t).toBeGreaterThanOrEqual(antes);
+  });
+
+  it('falha FECHADO quando não há ATR no 4h — nunca cria operação sem stop', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    vi.mocked(fetchCandles).mockImplementation(async () => uptrendCandles(5)); // curto demais para ATR
+    const res = await activateSignalManually(sinal(), makeAsset());
+    expect(res.created).toBe(false);
+    expect(res.reason).toBe('no_4h_atr');
+    expect(backend._getActiveOp('asset1')).toBe(null);
+  });
+
+  it('sem preço atual também falha fechado', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(null);
+    const res = await activateSignalManually(sinal(), makeAsset());
+    expect(res.created).toBe(false);
+    expect(res.reason).toBe('no_price');
+    expect(backend._getActiveOp('asset1')).toBe(null);
+  });
+
+  it('entrada inválida não lança', async () => {
+    expect((await activateSignalManually(null, makeAsset())).created).toBe(false);
+    expect((await activateSignalManually(sinal(), null)).created).toBe(false);
   });
 });
 

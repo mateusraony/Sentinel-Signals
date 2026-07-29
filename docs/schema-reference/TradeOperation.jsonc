@@ -222,10 +222,11 @@
       "enum": [
         "scanner",
         "scanner_smc",
-        "tradingview_webhook"
+        "tradingview_webhook",
+        "manual"
       ],
       "default": "scanner",
-      "description": "Whether this operation came from the RF 4h/15m scanner cascade, the SMC 1h/5m scanner cascade, or was logged from a real TradingView webhook alert"
+      "description": "Whether this operation came from the RF 4h/15m scanner cascade, the SMC 1h/5m scanner cascade, was logged from a real TradingView webhook alert, or was opened by hand from the dashboard's 'Ativar agora' button (activateSignalManually — managed by the RF 4h rules regardless of which signal prompted it, see docs/known-risks.md item 46.5)"
     },
     "bias": {
       "type": "string",

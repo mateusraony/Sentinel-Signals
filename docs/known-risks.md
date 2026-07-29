@@ -2984,3 +2984,43 @@ bloqueado por dias segurando 0% de posição.
 - **Para testar o flag**: `runnerEnabled: false` via `--pine-config`, mesma
   janela. A expectância líquida deve subir ~0,040 R e continuar negativa; muito
   mais que isso indica erro no gate.
+
+### 46.5 Ativação manual pelo painel — corrigida (Codex, PR #95)
+
+O botão "Ativar agora" (`AssetCard.jsx`) criava a operação com
+`TradeOperation.create` **cru**. A revisão externa apontou o sintoma menor
+(`partial_percent: 50` fixo, ignorando `runnerEnabled`); a verificação no código
+mostrou dois defeitos maiores no mesmo caminho:
+
+1. **Sem `initial_stop`, `current_stop`, `tp1`, `tp2`.** Nenhum dos dois loops de
+   saída tinha o que comparar — a operação ficava em `SIGNAL_CONFIRMED` para
+   sempre, sem stop e sem alvo. Corrigir só o `partial_percent` seria cosmético:
+   ela nunca chegaria ao TP1 porque não tinha TP1.
+2. **Sem passar por `createTradeOpIfNoneActive`**, então `assetActiveOps`
+   continuava vazio e o scanner abria a operação DELE para o mesmo ativo. Duas
+   ativas no mesmo ativo é exatamente o que a guarda do item 39.1 detecta — e a
+   reação dela é **suspender toda a gestão de stop/TP daquele ativo** até
+   resolução manual. Era um caminho para travar um ativo com dois cliques.
+
+**Correção**: `activateSignalManually` (`scanner.js`), chamada pelo componente.
+Reusa `scanAsset` para obter ATR/tier do 4h (em vez de recalcular e arriscar
+divergir do scanner) e `buildTradeOpData` para o resto — a MESMA função da
+cascata RF, então a operação manual nasce com a mesma forma e a mesma gestão de
+uma automática, incluindo `runnerEnabled`. Cria pelo caminho transacional único.
+
+Decisões explícitas dentro dela:
+
+- **Entrada pelo preço ATUAL**, não pelo `price_at_signal`: um sinal pode ter
+  horas de idade, e registrar o preço antigo falsificaria o R desde o começo.
+- **`entry_candle_time_15m` = instante do clique**, o que faz a guarda temporal
+  P0-g rejeitar toda vela já em andamento — nenhum candle anterior à entrada
+  pode disparar stop/TP.
+- **Gestão pela cascata RF 4h** (stop ATR×tier do 4h, trailing 4h, Time Stop em
+  barras de 4h) qualquer que seja o sinal que motivou o clique. É a única gestão
+  que o motor sabe aplicar a partir de um clique, e o `window.confirm` do botão
+  diz isso antes de criar. `cascade` permanece `4h_15m` (o enum não ganhou valor
+  novo); o que distingue a origem é `source: 'manual'`.
+- **Falha fechado** sem ATR do 4h ou sem preço — nunca cria operação sem stop,
+  que é o defeito que a função existe para eliminar.
+
+Não fecha o `partial_percent` do webhook (`server/`), que não cria operação.

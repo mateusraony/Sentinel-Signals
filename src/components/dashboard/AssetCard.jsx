@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TrendingUp, TrendingDown, Zap } from 'lucide-react';
 import { fetch24hStats } from '@/lib/marketDataProvider';
-import { backend } from '@/api/entities';
+import { activateSignalManually } from '@/lib/scanner';
+import { logError } from '@/lib/logger';
 import moment from 'moment';
 import ProximityBar from '@/components/dashboard/ProximityBar';
 
@@ -108,26 +109,34 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
     staleTime: 30000,
   });
 
-  // "Activate signal" mutation — creates a TradeOperation from the signal
+  // "Activate signal" mutation — delega ao motor (activateSignalManually).
+  //
+  // Antes criava a TradeOperation aqui, com `TradeOperation.create` cru e
+  // 50/50 fixos: a operação nascia SEM stop, SEM tp1/tp2 e SEM o ponteiro
+  // `assetActiveOps`, ou seja, inoperável pelos loops de saída e capaz de
+  // colidir com uma operação do scanner no mesmo ativo — o que suspende a
+  // gestão daquele ativo (guarda do item 39.1). Ver known-risks item 46.5.
+  //
+  // Regra desta pasta: componente não implementa lógica de trading. O motor
+  // calcula stop/alvo/tier e cria pelo caminho transacional único.
   const activateMutation = useMutation({
-    mutationFn: (sig) => backend.entities.TradeOperation.create({
-      symbol: sig.symbol,
-      asset_id: sig.asset_id,
-      timeframe: sig.timeframe,
-      side: sig.signal_type,
-      status: 'SIGNAL_CONFIRMED',
-      score: sig.context?.score || 0,
-      entry_price: sig.price_at_signal,
-      signal_reasons: sig.reason ? [sig.reason] : [],
-      candle_status: 'CLOSED',
-      data_status: 'LIVE',
-      partial_percent: 50,
-      runner_percent: 50,
-      exit_mode: 'HYBRID_RF_ATR',
-    }),
-    onSuccess: () => {
+    mutationFn: (sig) => activateSignalManually(sig, asset),
+    onSuccess: (res) => {
+      if (!res?.created) {
+        const msg = res?.reason === 'no_4h_atr'
+          ? 'Não foi possível ativar: sem dados de ATR no 4h para calcular o stop.'
+          : res?.reason === 'active_op_exists'
+            ? 'Não foi possível ativar: já existe uma operação ativa neste ativo.'
+            : 'Não foi possível ativar a operação.';
+        window.alert(msg);
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ['trade-operations'] });
       queryClient.invalidateQueries({ queryKey: ['trade-operations-dashboard'] });
+    },
+    onError: (err) => {
+      logError('AssetCard', `Falha ao ativar operação manual em ${asset.symbol}`, { error: err.message });
+      window.alert('Falha ao ativar a operação. Veja o Debug Log.');
     },
   });
 
@@ -374,8 +383,16 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
           <button
             onClick={(e) => {
               e.stopPropagation();
-              if (window.confirm(`Ativar operação ${sigSide} em ${asset.display_name}?`))
-                activateMutation.mutate(latestSignal);
+              // O aviso diz a verdade sobre a gestão: qualquer que seja o
+              // sinal que motivou o clique, a operação é gerida pelas regras
+              // da cascata RF 4h (stop ATR×tier do 4h, Time Stop em barras de
+              // 4h) — é a única gestão que o motor sabe aplicar a partir de um
+              // clique. Ver known-risks item 46.5.
+              if (window.confirm(
+                `Ativar operação ${sigSide} em ${asset.display_name}?\n\n`
+                + 'A entrada usa o preço ATUAL de mercado, e a operação será gerida '
+                + 'pelas regras da cascata 4h (stop por ATR/tier, TP1/TP2 e Time Stop).'
+              )) activateMutation.mutate(latestSignal);
             }}
             disabled={activateMutation.isPending}
             className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-mono font-bold mt-1 transition-all"
