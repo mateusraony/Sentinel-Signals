@@ -52,7 +52,9 @@ Sem `.jsonc`: `scannerLocks` (lock de scan), `assetActiveOps/{assetId}` (garante
 1 op ativa por ativo via transação de doc único), `strategyConfig/current`
 (parâmetros de estratégia sincronizados painel↔cron), `agentConversations`
 (Strategy Reviewer, pausado), `telegramConfig/{uid}` (não usado — chat_id vive no
-`localStorage` hoje).
+`localStorage` hoje), `telegramFilters/current` (filtro de origem do sinal —
+RF/SMC/MACD/EMA/RSI — sincronizado painel↔cron, ver `docs/known-risks.md`
+item 47).
 
 ## ⚠️ Decisões intencionais — não "corrija" sem pedido
 

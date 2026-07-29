@@ -51,6 +51,13 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // Telegram signal-source filter (RF/SMC/MACD/EMA Cross/RSI), kept in sync
+    // between the in-browser Settings and the 24/7 cron the same way
+    // strategyConfig is — see src/lib/telegram.js and scripts/adminTelegram.js.
+    match /telegramFilters/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
     // User profiles: a user may read/create their own profile, but cannot
     // grant themselves the admin role or edit anyone else's profile.
     match /users/{uid} {
