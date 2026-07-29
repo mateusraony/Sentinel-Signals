@@ -381,6 +381,70 @@ describe('periodKey / byPeriod — estabilidade temporal', () => {
   });
 });
 
+describe('analyzeOps — atribuição do runner (geometria de saída)', () => {
+  // Sobre a base: TP1 = +1.5R. Fechar 100% ali = +1.5R sempre.
+  // Runner até o TP2 (115): 0.5·1.5 + 0.5·3 = +2.25R  → runner rendeu +0.75R.
+  // Runner estopado no breakeven (100): 0.5·1.5 + 0 = +0.75R → runner custou -0.75R.
+  const runnerAoTp2 = (o = {}) => makeOp({ status: 'TP2_HIT', tp1_hit: true, exit_price: 115, ...o });
+  const runnerNoBreakeven = (o = {}) => makeOp({ tp1_hit: true, current_stop: 100, exit_price: 100, ...o });
+
+  it('a atribuição é EXATAMENTE a diferença entre os dois cenários brutos', () => {
+    const { runner } = analyzeOps([runnerAoTp2({ id: 'a' }), runnerNoBreakeven({ id: 'b' }), makeOp({ id: 'c' })]);
+    expect(runner.avgContributionR)
+      .toBeCloseTo(runner.grossExpectancyR - runner.grossExpectancyRAtTp1, 12);
+  });
+
+  it('mede o custo real do runner: um ganha 0.75R, outro perde 0.75R, sobra 0 em 3 ops', () => {
+    const { runner } = analyzeOps([runnerAoTp2({ id: 'a' }), runnerNoBreakeven({ id: 'b' }), makeOp({ id: 'c' })]);
+    expect(runner.totalContributionR).toBeCloseTo(0, 12);
+    expect(runner.opsWithTp1).toBe(2);
+    expect(runner.reachedTp2).toBe(1);
+    expect(runner.betterAtTp1).toBe(1);
+    expect(runner.worseAtTp1).toBe(1);
+  });
+
+  it('runner que só perde: atribuição negativa e denominador do conjunto TODO', () => {
+    // 2 estopadas no breakeven (-0.75R cada) + 2 que nunca chegaram ao TP1.
+    const ops = [
+      runnerNoBreakeven({ id: 'a' }), runnerNoBreakeven({ id: 'b' }),
+      makeOp({ id: 'c' }), makeOp({ id: 'd' }),
+    ];
+    const { runner } = analyzeOps(ops);
+    expect(runner.totalContributionR).toBeCloseTo(-1.5, 12);
+    // -1.5 / 4 operações contadas (não / 2, que é o subconjunto com TP1) — é
+    // isso que a torna somável com expectancyR.
+    expect(runner.avgContributionR).toBeCloseTo(-0.375, 12);
+  });
+
+  it('é imune ao modelo de custo — sempre bruto contra bruto', () => {
+    const ops = [runnerNoBreakeven({ id: 'a' }), makeOp({ id: 'b' })];
+    const comCusto = analyzeOps(ops, { costModel: DEFAULT_COST_MODEL }).runner;
+    const semCusto = analyzeOps(ops, { costModel: ZERO_COST }).runner;
+    expect(comCusto.avgContributionR).toBeCloseTo(semCusto.avgContributionR, 12);
+    expect(comCusto.grossExpectancyR).toBeCloseTo(semCusto.grossExpectancyR, 12);
+  });
+
+  it('operação que nunca atingiu TP1 não entra na conta', () => {
+    const { runner } = analyzeOps([makeOp({ id: 'a' }), makeOp({ id: 'b' })]);
+    expect(runner.opsWithTp1).toBe(0);
+    expect(runner.totalContributionR).toBe(0);
+  });
+
+  it('TP1 irrecuperável degrada para "não avaliável" em vez de sumir da expectância', () => {
+    const corrompida = makeOp({ id: 'x', tp1_hit: true, tp1: null, tp1_hit_price: null, exit_price: 100 });
+    const { runner } = analyzeOps([corrompida, makeOp({ id: 'y' })]);
+    expect(runner.opsWithTp1).toBe(0);
+    expect(runner.totalContributionR).toBeCloseTo(0, 12);
+    // A operação continua contando na expectância bruta — só não é atribuída.
+    expect(runner.grossExpectancyR).toBeCloseTo(runner.grossExpectancyRAtTp1, 12);
+  });
+
+  it('não lança em conjunto vazio', () => {
+    expect(analyzeOps([]).runner.opsWithTp1).toBe(0);
+    expect(analyzeOps([]).runner.avgContributionR).toBeNull();
+  });
+});
+
 describe('analyzeOps — decomposição do custo', () => {
   it('taxa + slippage + funding reconstroem o custo total em R', () => {
     const ops = [makeOp({ id: 'a' }), winOp({ id: 'b' }), makeOp({ id: 'c', closed_at: '2026-07-20T12:00:00.000Z' })];

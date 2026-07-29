@@ -30,7 +30,7 @@ import { detectFvg } from './indicators/fvg';
 import { detectOrderBlock } from './indicators/orderBlock';
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward } from './opExitRules';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
 import { groupActiveOpsByAsset } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
@@ -230,7 +230,11 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
   const ATR_MULT = tf4hData.tier?.atrStopMult ?? 2.0;
   const tp1R = pineConfig.tp1R ?? 1.5;
   const tp2R = (pineConfig.tp1R ?? 1.5) * 2;
-  const partialPct = pineConfig.tp1QtyPercent ?? 50;
+  // runnerEnabled: false congela a gestão como "100% no TP1" NA CRIAÇÃO, em vez
+  // de consultar o flag no momento da saída. Assim o flag governa a próxima
+  // operação e nunca abandona um runner já vivo, e os dois loops de saída
+  // decidem lendo só a op (closesFullyAtTp1). Ver known-risks item 46.
+  const partialPct = pineConfig.runnerEnabled === false ? 100 : (pineConfig.tp1QtyPercent ?? 50);
   const isBuy = sig.signal_type === 'BUY';
   // Entry must be the real 15m price at confirmation time, not the 4h
   // signal's price — the 4h signal can be hours old by the time 15m
@@ -563,7 +567,11 @@ function stampDisplacementFields(opData, gate) {
 export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
   const tp1R = pineConfig.tp1R ?? 1.5;
   const tp2R = (pineConfig.tp1R ?? 1.5) * 2;
-  const partialPct = pineConfig.tp1QtyPercent ?? 50;
+  // runnerEnabled: false congela a gestão como "100% no TP1" NA CRIAÇÃO, em vez
+  // de consultar o flag no momento da saída. Assim o flag governa a próxima
+  // operação e nunca abandona um runner já vivo, e os dois loops de saída
+  // decidem lendo só a op (closesFullyAtTp1). Ver known-risks item 46.
+  const partialPct = pineConfig.runnerEnabled === false ? 100 : (pineConfig.tp1QtyPercent ?? 50);
   const isBuy = sig.signal_type === 'BUY';
   const entry = confirmation5m?.entryPrice ?? sig.price_at_signal;
   const { stop: initialStop, basis: stopBasis } = computeStructuralStop({
@@ -2248,10 +2256,20 @@ export async function persistScanResults(scanResult) {
         updatePayload.closed_at = nowIso;
       } else if (tp1Touched) {
         tp1Hit = true;
-        newStatus = 'RUNNER_ACTIVE';
-        newCurrentStop = op.entry_price;
         updatePayload.tp1_hit_at = nowIso;
         updatePayload.tp1_hit_price = op.tp1;
+        if (closesFullyAtTp1(op)) {
+          // Sem runner: TP1 é saída TERMINAL. CLOSED (não um status novo)
+          // porque já é terminal, então o clearActiveOp DENTRO da transação
+          // libera o ativo de graça — ver known-risks item 46.
+          newStatus = 'CLOSED';
+          updatePayload.closed_reason = 'TP1_FULL';
+          updatePayload.exit_price = op.tp1;
+          updatePayload.closed_at = nowIso;
+        } else {
+          newStatus = 'RUNNER_ACTIVE';
+          newCurrentStop = op.entry_price;
+        }
       }
     } else {
       // rf_reverse_bars_count only matters pre-TP1 (Chop Exit/Invalidation
@@ -2420,6 +2438,75 @@ export async function hasActiveTradeOps() {
 }
 
 /**
+ * Ativação MANUAL de um sinal, a partir do painel ("Ativar agora" no
+ * AssetCard). Existe porque aquele botão criava a operação com
+ * `TradeOperation.create` cru (Codex, PR #95) — e o resultado era uma operação
+ * inoperável, não só mal configurada:
+ *
+ *   - sem `initial_stop`/`current_stop`/`tp1`/`tp2`, então NENHUM dos dois
+ *     loops de saída tinha o que comparar: a operação ficava em
+ *     `SIGNAL_CONFIRMED` para sempre, sem stop e sem alvo;
+ *   - sem passar por `createTradeOpIfNoneActive`, então o ponteiro
+ *     `assetActiveOps` continuava vazio e o scanner abria a operação DELE para
+ *     o mesmo ativo. Duas ativas no mesmo ativo é exatamente o que a guarda do
+ *     item 39.1 detecta — e a reação dela é **suspender toda a gestão de
+ *     stop/TP daquele ativo** até resolução manual;
+ *   - `partial_percent`/`runner_percent` fixos em 50, ignorando `runnerEnabled`
+ *     (o achado literal do revisor — o menor dos três).
+ *
+ * A correção é rotear pelo caminho único de criação, reusando `scanAsset` para
+ * obter ATR/tier do 4h (em vez de recalcular e arriscar divergir) e
+ * `buildTradeOpData` para o resto — a MESMA função que a cascata RF usa, então
+ * a operação manual nasce com a mesma forma e a mesma gestão de uma automática.
+ *
+ * **A operação passa a ser gerida pelas regras da cascata RF 4h** (stop ATR×tier
+ * do 4h, trailing no 4h, Time Stop em barras de 4h), qualquer que seja o sinal
+ * que a motivou. Isso é escolha explícita, não efeito colateral: é a única
+ * gestão que o motor sabe aplicar a partir de um clique, e é melhor do que a
+ * alternativa anterior (nenhuma). O botão do painel avisa isso antes de criar.
+ *
+ * `entry_candle_time_15m` é o instante do clique, o que faz a guarda temporal
+ * P0-g rejeitar todo candle já em andamento — nenhuma vela anterior à entrada
+ * pode disparar stop/TP nesta operação.
+ */
+export async function activateSignalManually(signal, asset) {
+  if (!signal || !asset) return { created: false, reason: 'missing_input' };
+
+  const { results, pineConfig } = await scanAsset(asset);
+  const tf4hData = results['4h'];
+  // Fail-fechado: sem ATR não há stop calculável, e criar operação sem stop é
+  // precisamente o defeito que esta função existe para eliminar.
+  if (!tf4hData || !tf4hData.atrValue) {
+    return { created: false, reason: 'no_4h_atr' };
+  }
+
+  // Preço do clique, não o do sinal: um sinal pode ter horas de idade, e
+  // registrar o preço antigo como entrada falsificaria o R desde o começo.
+  const entryPrice = await fetchCurrentPrice(asset.symbol);
+  if (!entryPrice) return { created: false, reason: 'no_price' };
+
+  const opData = {
+    ...buildTradeOpData(signal, tf4hData, pineConfig, {
+      entryPrice,
+      entryCandleTime: new Date().toISOString(),
+    }),
+    source: 'manual',
+    signal_reasons: signal.reason ? [signal.reason] : (signal.context?.reasons || []),
+  };
+
+  const tradeOpId = `trade_manual_${signal.id || signal.dedup_key || Date.now()}`;
+  const res = await backend.tradeOps.createTradeOpIfNoneActive(asset.id, tradeOpId, opData);
+
+  if (res.created) {
+    logInfo('scanner', `${asset.symbol} — operação criada MANUALMENTE pelo painel (${signal.signal_type}) @ ${entryPrice}`, {
+      op_id: tradeOpId, entry: entryPrice, stop: opData.initial_stop, tp1: opData.tp1, tier: opData.tier,
+    }, { symbol: asset.symbol });
+    if (isTelegramConfigured()) notifyTradeCreated({ ...opData, id: tradeOpId }).catch(() => {});
+  }
+  return { created: res.created, reason: res.created ? null : 'active_op_exists', opId: tradeOpId };
+}
+
+/**
  * Lightweight price check for active TradeOperations only
  * Fetches current price per symbol and updates trade op status
  */
@@ -2516,9 +2603,20 @@ async function priceCheckActiveOpsInner() {
         updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
       } else if ((isBuy && price >= op.tp1) || (!isBuy && price <= op.tp1)) {
-        tp1Hit = true; newStatus = 'RUNNER_ACTIVE'; newCurrentStop = op.entry_price;
+        tp1Hit = true;
         updatePayload.tp1_hit_at = nowIso;
         updatePayload.tp1_hit_price = op.tp1;
+        // Mesma regra pura do loop por candle — os dois loops NÃO podem
+        // divergir sobre isto (a lição do item 39.1).
+        if (closesFullyAtTp1(op)) {
+          newStatus = 'CLOSED';
+          updatePayload.closed_reason = 'TP1_FULL';
+          updatePayload.exit_price = op.tp1;
+          updatePayload.closed_at = nowIso;
+        } else {
+          newStatus = 'RUNNER_ACTIVE';
+          newCurrentStop = op.entry_price;
+        }
       }
     } else {
       if (isBuy ? price <= op.current_stop : price >= op.current_stop) {

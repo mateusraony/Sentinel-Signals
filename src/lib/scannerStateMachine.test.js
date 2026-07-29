@@ -42,8 +42,9 @@ vi.mock('./marketDataProvider', () => ({
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice, fetchCandles } from './marketDataProvider';
 import { isTelegramConfigured, notifyNewSignal, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
-import { persistScanResults, priceCheckActiveOps, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, firstPositive, firstPositiveInteger } from './scanner.js';
+import { persistScanResults, priceCheckActiveOps, activateSignalManually, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, firstPositive, firstPositiveInteger } from './scanner.js';
 import { calculateSmcSignalStrength } from './indicators/smcConfluence.js';
+import { closesFullyAtTp1 } from './opExitRules.js';
 
 let backend;
 beforeEach(() => {
@@ -802,6 +803,230 @@ describe('priceCheckActiveOps — price-based transitions', () => {
     await priceCheckActiveOps();
     expect(backend._get('TradeOperation', 'op-terminal')).toEqual(terminal); // byte-identical, untouched
     expect(backend._get('TradeOperation', 'op1').status).toBe('RUNNER_ACTIVE');
+  });
+});
+
+// docs/known-risks.md item 46. A gestão é congelada NA CRIAÇÃO
+// (partial_percent), não lida do pineConfig na saída — por isso todo teste
+// aqui manipula a op, nunca o config, exceto os dois de buildTradeOpData.
+describe('TP1 sem runner — saída terminal (item 46)', () => {
+  const semRunner = (o = {}) => makeOp({ partial_percent: 100, runner_percent: 0, ...o });
+
+  // O TESTE MAIS IMPORTANTE DO LOTE: o default não pode mudar nada. Um `it`
+  // por caso (e não um laço com 4 ops semeadas) porque 4 operações ativas no
+  // MESMO ativo disparam a guarda de duplicidade do item 39.1 — que suspende o
+  // loop inteiro e faria este teste passar/falhar pelo motivo errado.
+  it.each([
+    ['ausente (op legada)', undefined],
+    ['50 (o default)', 50],
+    ['30', 30],
+    ['99.9 — abaixo de 100 ainda deixa runner', 99.9],
+  ])('REGRESSÃO — partial_percent %s mantém TP1 → RUNNER_ACTIVE com stop no breakeven', async (_label, partial) => {
+    backend._seed('TradeOperation', makeOp({ partial_percent: partial }));
+    const results = { '4h': makeTfData({ lastCandleHigh: 104, lastCandleLow: 99, lastClose: 103 }) };
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('RUNNER_ACTIVE');
+    expect(op.current_stop).toBe(100);
+    expect(op.closed_reason).toBeUndefined();
+  });
+
+  it('loop por CANDLE: fecha em CLOSED/TP1_FULL no preço do TP1, não em RUNNER_ACTIVE', async () => {
+    backend._seed('TradeOperation', semRunner());
+    const results = { '4h': makeTfData({ lastCandleHigh: 104, lastCandleLow: 99, lastClose: 103 }) };
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('CLOSED');
+    expect(op.closed_reason).toBe('TP1_FULL');
+    expect(op.tp1_hit).toBe(true);
+    expect(op.exit_price).toBe(103); // o TP1, não o high do candle (104)
+    expect(op.closed_at).toBeTruthy();
+    // Nunca move o stop para breakeven: não sobrou posição para proteger.
+    expect(op.current_stop).toBe(98);
+  });
+
+  it('loop por PREÇO: mesma decisão — os dois loops não podem divergir (lição do item 39.1)', async () => {
+    backend._seed('TradeOperation', semRunner());
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(104);
+    await priceCheckActiveOps();
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('CLOSED');
+    expect(op.closed_reason).toBe('TP1_FULL');
+    expect(op.exit_price).toBe(103);
+  });
+
+  it('libera o ponteiro assetActiveOps na MESMA transação — o ativo volta a poder operar', async () => {
+    const created = await backend.tradeOps.createTradeOpIfNoneActive('asset1', 'op1', semRunner());
+    expect(created.created).toBe(true);
+    expect(backend._getActiveOp('asset1')).toBe('op1');
+
+    const results = { '4h': makeTfData({ lastCandleHigh: 104, lastCandleLow: 99, lastClose: 103 }) };
+    await persistScanResults(makeScanResult({ results }));
+
+    expect(backend._get('TradeOperation', 'op1').status).toBe('CLOSED');
+    expect(backend._getActiveOp('asset1')).toBe(null);
+    // É este o ganho concreto sobre o bug latente: com RUNNER_ACTIVE em 0% de
+    // posição o ativo ficava bloqueado por dias sem nada aberto.
+    const next = await backend.tradeOps.createTradeOpIfNoneActive('asset1', 'op2', semRunner({ id: 'op2' }));
+    expect(next.created).toBe(true);
+  });
+
+  it('CLOSED é terminal — uma segunda passada não re-transiciona a op', async () => {
+    backend._seed('TradeOperation', semRunner());
+    const results = { '4h': makeTfData({ lastCandleHigh: 104, lastCandleLow: 99, lastClose: 103 }) };
+    await persistScanResults(makeScanResult({ results }));
+    const depoisDaPrimeira = { ...backend._get('TradeOperation', 'op1') };
+    await persistScanResults(makeScanResult({ results }));
+    expect(backend._get('TradeOperation', 'op1')).toEqual(depoisDaPrimeira);
+  });
+
+  it('op JÁ em RUNNER_ACTIVE segue sendo gerida — o flag nunca abandona posição viva', async () => {
+    // Cenário do deploy: a op nasceu com runner e o flag virou depois. Como a
+    // decisão é lida da op (partial_percent 50), ela continua no fluxo antigo.
+    backend._seed('TradeOperation', makeOp({ status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100 }));
+    const results = { '4h': makeTfData({ lastCandleHigh: 107, lastCandleLow: 101, lastClose: 106 }) };
+    await persistScanResults(makeScanResult({ results }));
+    expect(backend._get('TradeOperation', 'op1').status).toBe('TP2_HIT');
+  });
+
+  it('stop vence TP1 também sem runner (a política de ambiguidade não muda)', async () => {
+    backend._seed('TradeOperation', semRunner());
+    const results = { '4h': makeTfData({ lastCandleHigh: 104, lastCandleLow: 97, lastClose: 100 }) };
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('STOP_HIT');
+    expect(op.exit_ambiguous).toBe(true);
+  });
+
+  it('buildTradeOpData congela a gestão na criação quando runnerEnabled é false', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: { score: 80, rf_value: 90, reasons: [] } };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48 } });
+    const conf = { entryPrice: 100, entryCandleTime: '2026-07-16T08:15:00.000Z' };
+
+    const comRunner = buildTradeOpData(sig, tf4hData, makePineConfig(), conf);
+    expect(comRunner.partial_percent).toBe(50);
+    expect(closesFullyAtTp1(comRunner)).toBe(false);
+
+    const semRunnerOp = buildTradeOpData(sig, tf4hData, makePineConfig({ runnerEnabled: false }), conf);
+    expect(semRunnerOp.partial_percent).toBe(100);
+    expect(semRunnerOp.runner_percent).toBe(0);
+    expect(closesFullyAtTp1(semRunnerOp)).toBe(true);
+  });
+
+  it('bug latente: tp1QtyPercent 100 já produzia runner de 0% e mesmo assim ia para RUNNER_ACTIVE', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: { score: 80, rf_value: 90, reasons: [] } };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48 } });
+    const op = buildTradeOpData(sig, tf4hData, makePineConfig({ tp1QtyPercent: 100 }), { entryPrice: 100, entryCandleTime: '2026-07-16T08:15:00.000Z' });
+    expect(op.runner_percent).toBe(0);
+    expect(closesFullyAtTp1(op)).toBe(true); // antes: seguia para RUNNER_ACTIVE
+  });
+});
+
+// Codex, PR #95 (known-risks item 46.5). O botão "Ativar agora" do painel
+// criava a operação com TradeOperation.create cru: sem stop, sem alvo e sem o
+// ponteiro assetActiveOps. Estes testes provam que os três defeitos sumiram.
+describe('activateSignalManually — ativação pelo painel passa pelo motor', () => {
+  const sinal = (o = {}) => ({
+    id: 'sig_manual_1',
+    symbol: 'BTCUSDT',
+    asset_id: 'asset1',
+    timeframe: '4h',
+    signal_type: 'BUY',
+    price_at_signal: 90, // deliberadamente DEFASADO em relação ao preço atual
+    reason: 'RF virou para cima',
+    context: { score: 80, rf_value: 88, reasons: ['rf'] },
+    ...o,
+  });
+
+  // activateSignalManually chama scanAsset de verdade — precisa de candles
+  // suficientes para o ATR do 4h existir. É justamente esse ATR que o botão
+  // antigo não tinha e por isso criava operação sem stop.
+  beforeEach(() => {
+    vi.mocked(fetchCandles).mockImplementation(async () => uptrendCandles(200));
+  });
+
+  // `vi.clearAllMocks()` do beforeEach global limpa CHAMADAS, não
+  // IMPLEMENTAÇÕES — sem este reset a implementação acima vaza para os
+  // describes seguintes (o de arbitragem passou a promover direto para
+  // CONFIRMED porque a confirmação 15m encontrava candles sempre).
+  afterEach(() => {
+    vi.mocked(fetchCandles).mockReset();
+  });
+
+  it('cria com stop, alvos e tier — o defeito central era a operação nascer inoperável', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    const res = await activateSignalManually(sinal(), makeAsset());
+
+    expect(res.created).toBe(true);
+    const op = backend._get('TradeOperation', res.opId);
+    expect(op.initial_stop).toBeGreaterThan(0);
+    expect(op.current_stop).toBe(op.initial_stop);
+    expect(op.tp1).toBeGreaterThan(op.entry_price);
+    expect(op.tp2).toBeGreaterThan(op.tp1);
+    expect(op.tier).toBeTruthy();
+    expect(op.source).toBe('manual');
+  });
+
+  it('usa o preço ATUAL como entrada, não o preço defasado do sinal', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    const res = await activateSignalManually(sinal({ price_at_signal: 90 }), makeAsset());
+    expect(backend._get('TradeOperation', res.opId).entry_price).toBe(100);
+  });
+
+  it('grava o ponteiro assetActiveOps — sem ele o scanner abriria uma segunda op no mesmo ativo', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    const res = await activateSignalManually(sinal(), makeAsset());
+    expect(backend._getActiveOp('asset1')).toBe(res.opId);
+
+    // A consequência concreta: uma segunda criação no mesmo ativo é recusada,
+    // em vez de gerar o par duplicado que suspende a gestão (item 39.1).
+    const segunda = await activateSignalManually(sinal({ id: 'sig_manual_2' }), makeAsset());
+    expect(segunda.created).toBe(false);
+    expect(segunda.reason).toBe('active_op_exists');
+  });
+
+  // `runnerEnabled` chega à operação manual porque activateSignalManually
+  // chama buildTradeOpData — a MESMA função da cascata automática. O
+  // threading do flag já é provado direto ali, no describe do item 46
+  // ("buildTradeOpData congela a gestão na criação"); aqui basta garantir que
+  // a gestão vem daquela função e não de um literal, como era antes.
+  it('a gestão vem de buildTradeOpData, não de um 50/50 hardcoded no componente', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    const res = await activateSignalManually(sinal(), makeAsset());
+    const op = backend._get('TradeOperation', res.opId);
+    expect(op.partial_percent + op.runner_percent).toBe(100);
+    expect(op.exit_mode).toBe('HYBRID_RF_ATR');
+    expect(op.cascade).toBe('4h_15m'); // gerida pelas regras do 4h, declarado
+  });
+
+  it('a entrada é carimbada AGORA — nenhum candle já em andamento pode disparar stop/TP (P0-g)', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    const antes = Date.now();
+    const res = await activateSignalManually(sinal(), makeAsset());
+    const t = new Date(backend._get('TradeOperation', res.opId).entry_candle_time_15m).getTime();
+    expect(t).toBeGreaterThanOrEqual(antes);
+  });
+
+  it('falha FECHADO quando não há ATR no 4h — nunca cria operação sem stop', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(100);
+    vi.mocked(fetchCandles).mockImplementation(async () => uptrendCandles(5)); // curto demais para ATR
+    const res = await activateSignalManually(sinal(), makeAsset());
+    expect(res.created).toBe(false);
+    expect(res.reason).toBe('no_4h_atr');
+    expect(backend._getActiveOp('asset1')).toBe(null);
+  });
+
+  it('sem preço atual também falha fechado', async () => {
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(null);
+    const res = await activateSignalManually(sinal(), makeAsset());
+    expect(res.created).toBe(false);
+    expect(res.reason).toBe('no_price');
+    expect(backend._getActiveOp('asset1')).toBe(null);
+  });
+
+  it('entrada inválida não lança', async () => {
+    expect((await activateSignalManually(null, makeAsset())).created).toBe(false);
+    expect((await activateSignalManually(sinal(), null)).created).toBe(false);
   });
 });
 

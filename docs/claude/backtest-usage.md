@@ -206,6 +206,41 @@ termo, aí sim compensa o estágio 2 — rodar de novo com
 continuar somando 100) e comparar win rate/profit factor/expectância de
 `report.byCascade['1h_5m']` contra a rodada de peso 0.
 
+**`report.runner`** (`docs/known-risks.md` item 46) —
+`{enabled, opsWithRunner, opsFullyClosedAtTp1, closedByTp1Full}`. Diferente das
+seções acima, registra **qual gestão de saída o run usou**, não um gate de
+entrada — e é inferido das próprias operações (`partial_percent`), não do
+`pineConfig`, então reflete a gestão de fato aplicada mesmo se o flag mudou no
+meio. Serve para impedir o erro de comparar dois relatórios sem notar que a
+SAÍDA mudou entre eles, o que atribuiria à estratégia uma diferença que veio da
+gestão.
+
+**Quanto o runner rendeu não está aqui, de propósito** — está no diagnóstico,
+que roda sobre qualquer relatório **sem backtest novo**:
+
+```bash
+npm run analyze-backtest -- --report ./report.json
+# seção "O RUNNER PAGOU? — resultado real vs. fechar 100% no TP1"
+```
+
+Ele compara a expectância bruta real contra a que teria saído fechando 100% no
+TP1, **bruto contra bruto** (o cenário TP1 não tem custo calculável, então
+descontar de um lado só enviesaria em ~0,045 R). Sem look-ahead: só entram
+operações que comprovadamente atingiram o TP1.
+
+Para testar o flag em si (default é `true` = comportamento de sempre):
+
+```bash
+echo '{"runnerEnabled": false}' > /tmp/no-runner.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT \
+  --from 2025-02-01T00:00:00Z --to 2025-12-01T00:00:00Z \
+  --pine-config /tmp/no-runner.json --out ./report-no-runner.json
+```
+
+A expectância líquida deve subir aproximadamente o valor que o diagnóstico
+atribuiu ao runner na rodada com ele ligado. Muito mais que isso indica erro no
+gate, não vantagem descoberta.
+
 **`report.costs`** (Fase 5, `docs/known-risks.md` item 44) —
 `{model, avgCostR, totalCostPct, grossExpectancyR, netExpectancyR, conclusive,
 inconclusiveReason, expectancyRCI95, countedTrades, minTrades}`. **Taxa,

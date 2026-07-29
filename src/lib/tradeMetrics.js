@@ -227,6 +227,28 @@ export function calcRealizedR(op, costModel) {
   return risk === 0 ? null : delta / risk;
 }
 
+// R the op WOULD have realized closing 100% of the position at TP1, for ops
+// that provably reached it. Not a hypothetical price path: `tp1_hit` is an
+// observed fact and TP1 is a known level, so this is a counterfactual on
+// position management only — never on price, and never look-ahead.
+//
+// Exists because the runner (the leg left running past TP1) is the one piece
+// of exit geometry no phase ever measured. Comparing this against
+// calcRealizedR(op, ZERO_COST) — gross against gross, the ONLY honest pairing
+// — attributes exactly what the runner added or subtracted. See
+// backtestAnalysis.js `runner` and docs/known-risks.md item 46.
+//
+// Same risk denominator as calcRealizedR so the two are directly comparable.
+export function calcRAtTp1(op) {
+  if (!op?.tp1_hit || !isFinitePrice(op.entry_price) || !isFinitePrice(op.initial_stop)) return null;
+  const tp1Price = getTp1Price(op);
+  if (tp1Price === null) return null;
+  const risk = Math.abs(op.entry_price - op.initial_stop);
+  if (risk === 0) return null;
+  const sign = op.side === 'SELL' ? -1 : 1;
+  return (sign * (tp1Price - op.entry_price)) / risk;
+}
+
 // Cost expressed in R — THE number that decides whether an edge was ever real.
 // A config showing +0.15R expectancy with 0.20R of cost per trade is negative,
 // and before Fase 5 that fact was invisible. Uses the SAME initial-stop risk

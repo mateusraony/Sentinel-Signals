@@ -58,6 +58,10 @@ const DEFAULTS = {
   smcScoreVolumeWeight: 15,
   smcScoreAlignmentWeight: 15,
   smcScoreSweepWeight: 10,
+  // Runner do TP1 (known-risks item 46). LIGADO por padrão = comportamento de
+  // sempre. Com `false`, o TP1 fecha 100% e vira saída terminal — medido em
+  // -0,040 R por operação, mas num regime só. Espelha src/lib/pineParser.js.
+  runnerEnabled: true,
   // Retest confirmation gate (Fase 2 rodada 1, src/lib/indicators/retest.js)
   // — master flag OFF by default, see docs/known-risks.md item 40.
   retestEnabled: false,
@@ -97,6 +101,7 @@ const SYNCED_STRATEGY_KEYS = [
   'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
   'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
   'smcScoreSweepWeight',
+  'runnerEnabled',
   'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
   'displacementEnabled', 'displacementBodyAtrMult', 'displacementMinVolumeRatio',
   'smcTierEnabled',

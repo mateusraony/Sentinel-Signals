@@ -12,6 +12,7 @@ import {
   ZERO_COST,
   calcTradeCost,
   calcCostR,
+  calcRAtTp1,
   countFundingSettlements,
 } from './tradeMetrics.js';
 
@@ -88,6 +89,45 @@ describe('calcRealizedR — SELL mirrors the sign', () => {
     expect(calcRealizedR(op, ZERO_COST)).toBeCloseTo(-1.0);
     expect(calcRealizedPnlPct(op, ZERO_COST)).toBeCloseTo(-5);
     expect(classifyOutcome(op, { costModel: ZERO_COST })).toBe('LOSS');
+  });
+});
+
+describe('calcRAtTp1 — o contrafactual "fechou tudo no TP1"', () => {
+  it('BUY: (107.5 - 100) / 5 = +1.5R, independente de onde o runner saiu', () => {
+    // Mesma op, três desfechos MUITO diferentes do runner — o R no TP1 é o
+    // mesmo nos três, porque só depende de entrada/stop/TP1. É isso que torna
+    // a atribuição do runner uma subtração limpa.
+    for (const exit of [100, 104, 115]) {
+      expect(calcRAtTp1(makeOp({ tp1_hit: true, exit_price: exit }))).toBeCloseTo(1.5);
+    }
+  });
+
+  it('SELL espelha o sinal: (100 - 92.5) / 5 = +1.5R, nunca negativo', () => {
+    const op = makeOp({ side: 'SELL', initial_stop: 105, tp1: 92.5, tp2: 85, tp1_hit: true, exit_price: 100 });
+    expect(calcRAtTp1(op)).toBeCloseTo(1.5);
+  });
+
+  it('quantifica o runner: BUY parado no breakeven perdeu 0.75R por deixar correr', () => {
+    // Bruto contra bruto — a ÚNICA comparação honesta (misturar líquido com
+    // bruto infla o resultado a favor da hipótese, ver known-risks item 46).
+    const op = makeOp({ tp1_hit: true, current_stop: 100, exit_price: 100 });
+    expect(calcRealizedR(op, ZERO_COST) - calcRAtTp1(op)).toBeCloseTo(-0.75);
+  });
+
+  it('quando o runner PAGA, a atribuição é positiva (TP2 = +0.75R sobre o TP1)', () => {
+    const op = makeOp({ status: 'TP2_HIT', tp1_hit: true, exit_price: 115 });
+    expect(calcRealizedR(op, ZERO_COST) - calcRAtTp1(op)).toBeCloseTo(0.75);
+  });
+
+  it('op que nunca atingiu TP1 não entra na conta', () => {
+    expect(calcRAtTp1(makeOp({ exit_price: 95 }))).toBeNull();
+  });
+
+  it('risco zero, stop ausente ou TP1 irrecuperável devolvem null sem lançar', () => {
+    expect(calcRAtTp1(makeOp({ tp1_hit: true, initial_stop: 100, exit_price: 100 }))).toBeNull();
+    expect(calcRAtTp1(makeOp({ tp1_hit: true, initial_stop: undefined, exit_price: 100 }))).toBeNull();
+    expect(calcRAtTp1(makeOp({ tp1_hit: true, tp1: null, tp1_hit_price: null, exit_price: 100 }))).toBeNull();
+    expect(calcRAtTp1(null)).toBeNull();
   });
 });
 

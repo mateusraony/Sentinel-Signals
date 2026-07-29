@@ -66,6 +66,13 @@ const DEFAULTS = {
   smcScoreVolumeWeight: 15,
   smcScoreAlignmentWeight: 15,
   smcScoreSweepWeight: 10,
+  // Runner do TP1 (known-risks item 46). LIGADO por padrão = comportamento de
+  // sempre (parcial no TP1 + runner até TP2/trailing). Com `false`, o TP1 fecha
+  // 100% da posição e vira saída terminal. Medido em 344 operações: o runner
+  // custou -0,040 R por operação (-13,9 R no total), e fechar no TP1 teria sido
+  // melhor em 95 das 121 que o atingiram. NÃO virou default porque a medição é
+  // de UM regime (bear market) — comparar backtests antes de ligar.
+  runnerEnabled: true,
   // Retest confirmation gate (Fase 2 rodada 1, src/lib/indicators/retest.js)
   // — also not from any `input.*()` in the Pine, same reasoning as the
   // arbitration keys above. Master flag OFF by default: see
@@ -230,6 +237,8 @@ const SYNCED_STRATEGY_KEYS = [
   'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
   'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
   'smcScoreSweepWeight',
+  // Runner do TP1 (known-risks item 46)
+  'runnerEnabled',
   // Retest confirmation gate (Fase 2 rodada 1 — retest.js)
   'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
   // Displacement candle gate (Fase 2 rodada 2 — displacement.js)
@@ -260,6 +269,7 @@ const NON_PINE_SYNCED_KEYS = new Set([
   'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
   'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
   'smcScoreSweepWeight',
+  'runnerEnabled',
   'retestEnabled', 'retestToleranceAtrMult', 'retestTouchMode',
   'displacementEnabled', 'displacementBodyAtrMult', 'displacementMinVolumeRatio',
   'smcTierEnabled',

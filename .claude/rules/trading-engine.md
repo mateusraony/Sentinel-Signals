@@ -212,6 +212,19 @@ nunca deve receber nova transição.**
   calibrar qualquer parâmetro** (calibrar a custo zero e recalibrar depois
   dobra as tentativas e contamina a busca). Ver `docs/known-risks.md` item 44.
 
+- **Runner do TP1** (`opExitRules.js:closesFullyAtTp1`) — item 46, **LIGADO por
+  padrão** (`pineConfig.runnerEnabled: true` = o comportamento de sempre). Com
+  `false`, o TP1 vira saída TERMINAL (`CLOSED`/`closed_reason: TP1_FULL`) em vez
+  de `RUNNER_ACTIVE`. **A decisão é congelada na CRIAÇÃO** (`partial_percent:
+  100`) e lida da OPERAÇÃO nos dois loops, nunca do `pineConfig` — porque
+  `priceCheckActiveOpsInner` não tem config em escopo, e porque virar um flag
+  não pode abandonar um runner já vivo. `partial_percent` é a fonte única
+  compartilhada com `getWeights` (`tradeMetrics.js`): se os dois divergirem, o R
+  reportado descreve uma posição que não existiu. Medido em 344 operações: o
+  runner custou −0,040 R/op (−13,9 R), e fechar no TP1 teria sido melhor em 95
+  das 121 que o atingiram — mas **num regime só** (bear market), por isso não
+  virou default. Primeira rodada a tocar a SAÍDA e não a entrada.
+
 ## Regras ao mexer aqui
 
 - **Não** introduza um terceiro caminho de mutação de op. Consolidar/serializar

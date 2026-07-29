@@ -5,6 +5,7 @@
  * before sending — ensuring only configured signals reach Telegram.
  */
 import { logWarn } from './logger';
+import { closesFullyAtTp1 } from './opExitRules';
 
 const STORAGE_KEY = 'cryptoradar_telegram_cfg';
 const FILTERS_KEY = 'tg_filters';
@@ -180,7 +181,7 @@ export async function notifyTradeCreated(op) {
     `🛑 Stop: $${fmtP(op.initial_stop)}\n` +
     `🎯 TP1: $${fmtP(op.tp1)}  |  TP2: $${fmtP(op.tp2)}\n` +
     `📊 Score: ${op.score}/100\n` +
-    `🔒 Gestão: ${op.partial_percent || 50}% no TP1, runner ${op.runner_percent || 50}%\n\n` +
+    `🔒 Gestão: ${op.partial_percent ?? 50}% no TP1, runner ${op.runner_percent ?? 50}%\n\n` +
     `<i>⚡ CryptoRadar</i>`
   );
 }
@@ -191,10 +192,14 @@ export async function notifyTP1Hit(op, price) {
     `🎯 <b>TP1 Atingido!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     `💰 Preço atual: $${fmtP(price)}\n` +
-    `✅ ${op.partial_percent || 50}% da posição realizada\n` +
-    `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n` +
-    `🏃 Runner ${op.runner_percent || 50}% ativo — aguardando TP2: $${fmtP(op.tp2)}\n\n` +
-    `<i>⚡ CryptoRadar — gerencie o runner</i>`
+    // Sem runner (known-risks item 46) o TP1 é saída TERMINAL — anunciar
+    // "runner ativo, aguardando TP2" seria mentira no canal.
+    (closesFullyAtTp1(op)
+      ? `✅ Posição encerrada 100% no TP1\n\n<i>⚡ CryptoRadar — operação fechada</i>`
+      : `✅ ${op.partial_percent ?? 50}% da posição realizada\n`
+        + `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n`
+        + `🏃 Runner ${op.runner_percent ?? 50}% ativo — aguardando TP2: $${fmtP(op.tp2)}\n\n`
+        + `<i>⚡ CryptoRadar — gerencie o runner</i>`)
   );
 }
 

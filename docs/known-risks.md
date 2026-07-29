@@ -2848,3 +2848,179 @@ por construção. Pela conta do documento, BUY T3 seria −0,414 R sobre ~159
 operações = **4,6 erros-padrão**, o que sobrevive à correção de Bonferroni para
 6 comparações (limiar 2,64). Se a medição confirmar essa ordem de grandeza, é
 efeito real; se vier em 1-2 σ, é seleção e deve ser descartado.
+
+### 45.9 RESULTADO da verificação (2026-07-29) — 1 passa, 2 reprovam
+
+Diagnóstico rodado sobre o artifact do run 30278687522 (344 operações,
+2025-07-27 → 2026-07-27). Os três números do documento externo bateram **até a
+terceira casa** — quem o escreveu rodou esta mesma análise. O que não sobrevive
+é a interpretação. σ medidos com o desvio-padrão REAL de cada balde, não com o
+1,13 assumido no critério:
+
+| Afirmação | Medido | σ | Veredito (limiar 2,64) |
+|---|---|---|---|
+| BUY Tier 3 = −0,414 R | −0,414 (N=159, sd 0,976) | **−5,35** | passa |
+| SELL isolado positivo | +0,199 (N=166, sd 1,184) | **+2,17** | **reprova** |
+| `correction_warning` = −0,709 R | −0,709 (N=82, sd 0,753) | −8,52 | passa, mas inutilizável |
+
+**Por que o `correction_warning` é inutilizável como filtro**: o aviso chega
+**depois** da entrada em **82 de 82** casos (mediana 64 h, máximo 420 h). Filtrar
+por ele é selecionar operações com informação que não existia no momento de
+decidir. Pior, a causalidade é provavelmente invertida — o aviso dispara quando a
+cascata de 1h emite sinal contrário, o que acontece quando o preço anda contra a
+posição: 92,7% das avisadas terminaram em stop contra 81,7% das não avisadas. É
+indicador **coincidente de operação perdendo**, não preditor. Hoje ele só reduz
+`current_confidence_score` (`signalArbitration.js:137`) e não existe flag para
+fechar nele (`arbInvalidateOnOppositeMajor` só vale para `critical_opposite`).
+
+**Por que "BUY Tier 3" é o rótulo errado para um achado real**: T3 é **87,5%** da
+amostra (301/344) e **89,3%** de todos os BUY; só 19 operações BUY não são T3. O
+eixo tier não separa nada dentro de BUY. O achado robusto é mais simples —
+**BUY −0,332 R (t=−4,32) × SELL +0,199 R (t=+2,17)** — e apontar para tier
+mandaria mexer na alavanca errada.
+
+**E a causa dessa assimetria é regime, não defeito** — ver item 46.1.
+
+## 46. Geometria de saída: o runner do TP1 (2026-07-29)
+
+Primeira rodada a mexer na saída, e não na entrada. As Fases 2-4 construíram
+quatro filtros de ENTRADA; o déficit medido sempre foi de **payoff**. Este item
+registra o que a medição mostrou e o que foi (e não foi) mudado.
+
+### 46.1 A janela medida foi um bear market profundo — e isso muda a leitura
+
+Reconstruído a partir dos preços de entrada das próprias 344 operações (não é
+dado externo: `entry_price` ordenado por data desenha o caminho do ativo):
+
+| Ativo | início | fim | variação |
+|---|---|---|---|
+| BTCUSDT | 118.257 | 74.418 | **−37,1%** |
+| ETHUSDT | 3.649 | 1.735 | **−52,5%** |
+| SOLUSDT | 185,55 | 72,07 | **−61,2%** |
+| PAXGUSDT (ouro) | 3.720 | 4.078 | +9,6% |
+
+PAXG foi o **melhor** ativo da carteira (+0,490 R) e é o único que subiu. O
+motor emitiu ~50% de compras em todos os trimestres, sem nunca "perceber" a
+queda.
+
+**Consequência**: a assimetria BUY × SELL do item 45.9 é explicada pelo regime
+sem precisar de defeito no motor. E **desqualifica a proposta de desligar as
+compras**: seria calibrar um sistema só-vendido ao único regime em que se mediu,
+o mesmo erro metodológico que o roadmap proíbe. Leitura desconfortável que vem
+junto: mesmo vendendo num mercado que caiu 37-61% — a condição mais favorável
+possível — o acerto foi 54% e a expectância +0,199 R.
+
+**O que separa "tem vantagem" de "seguiu o mercado"** é rodar a MESMA carteira
+numa janela de alta. Isso virou o Bloco 0 do `docs/roadmap.md`, e não exige
+código nenhum: só outras duas datas no `workflow_dispatch`.
+
+### 46.2 O runner perde dinheiro — medido, não hipótese
+
+Contrafactual limpo: para toda operação que **comprovadamente** atingiu o TP1
+(`tp1_hit` é fato observado, o TP1 é nível conhecido na entrada), qual seria o R
+fechando 100% ali. É contrafactual de **gestão**, nunca de preço — sem
+look-ahead.
+
+| | valor |
+|---|---|
+| expectância BRUTA atual (com runner) | −0,031 R |
+| expectância BRUTA fechando 100% no TP1 | **+0,009 R** |
+| custo do runner | **−0,040 R/op · −13,9 R no total** |
+| das 121 que atingiram TP1, fechar ali seria melhor em | **95** (pior em 26) |
+| vendas que bateram TP1 e não chegaram ao TP2 | **59 — as 59 terminaram em stop** |
+
+O último número é o mais forte: o bear market era a condição mais favorável
+possível para um runner vendido, e nenhum dos 59 sobreviveu.
+
+**Bruto contra bruto é a única comparação honesta.** Na primeira passada desta
+análise comparei o líquido atual contra o bruto do contrafactual, o que inflou o
+ganho de +0,040 para +0,061 R — o custo (~0,045 R) aparecia de um lado só. Fica
+registrado porque é um erro fácil de repetir, e `analyzeOps` agora passa
+`ZERO_COST` explicitamente nos dois lados para torná-lo impossível.
+
+**O que isto NÃO resolve**: mesmo eliminando o runner por inteiro, o bruto vai a
++0,009 R e o custo medido é 0,045 R/op. A estratégia continua negativa. Isto é
+remoção de um defeito medido, **não** uma correção que a torna lucrativa.
+
+### 46.3 Implementação — `runnerEnabled`, LIGADO por padrão
+
+`pineConfig.runnerEnabled` (3 arquivos espelhados). **Default `true` = o
+comportamento de sempre.** Não virou default porque a medição é de UM regime, o
+que é exatamente a crítica feita à proposta de desligar as compras — aplicá-la a
+si mesmo é o mínimo.
+
+Com `false`, o TP1 vira saída **terminal**: `status: CLOSED`,
+`closed_reason: 'TP1_FULL'`, `exit_price: op.tp1`. Reusa `CLOSED` (já terminal)
+em vez de criar status novo, então o `clearActiveOp` **dentro da mesma
+transação** libera o ativo de graça, e `.claude/rules/trading-engine.md`
+continua com dois — e só dois — caminhos de mutação.
+
+**A decisão é congelada NA CRIAÇÃO, não lida na saída.** `buildTradeOpData`/
+`buildSmcTradeOpData` gravam `partial_percent: 100` quando o flag está off, e os
+dois loops decidem via `closesFullyAtTp1(op)` (`opExitRules.js`), lendo só a
+operação. Três motivos: `priceCheckActiveOpsInner` não tem `pineConfig` em
+escopo (carregá-lo poria uma leitura do Firestore no caminho rápido de
+segurança); virar o flag não pode abandonar um runner já vivo; e a operação
+passa a se autodescrever para auditoria.
+
+`closesFullyAtTp1` lê `partial_percent` — a **mesma** fonte única que
+`getWeights` (`tradeMetrics.js`) usa para pesar as pernas. Isso é load-bearing:
+se o motor fechasse tudo no TP1 enquanto as métricas ainda pesassem 50% de
+runner, o R reportado descreveria uma posição que nunca existiu. Há teste
+varrendo os casos de fronteira contra `getWeights().runner <= 0`.
+
+**Bug latente fechado de graça**: `tp1QtyPercent: 100` já produzia
+`runner_percent: 0` e mesmo assim mandava a op para `RUNNER_ACTIVE` — ativo
+bloqueado por dias segurando 0% de posição.
+
+### 46.4 Como medir e como comparar
+
+- **Sem rodar backtest**: `npm run analyze-backtest -- --report <arquivo>` agora
+  imprime a seção "O RUNNER PAGOU?" em QUALQUER relatório, inclusive nos já
+  existentes. É a mesma conta desta seção, reproduzível.
+- **Comparando dois runs**: `report.runner` registra a gestão que de fato foi
+  aplicada (inferida das operações, não do config) — impede comparar dois
+  relatórios sem perceber que a saída mudou entre eles.
+- **Para testar o flag**: `runnerEnabled: false` via `--pine-config`, mesma
+  janela. A expectância líquida deve subir ~0,040 R e continuar negativa; muito
+  mais que isso indica erro no gate.
+
+### 46.5 Ativação manual pelo painel — corrigida (Codex, PR #95)
+
+O botão "Ativar agora" (`AssetCard.jsx`) criava a operação com
+`TradeOperation.create` **cru**. A revisão externa apontou o sintoma menor
+(`partial_percent: 50` fixo, ignorando `runnerEnabled`); a verificação no código
+mostrou dois defeitos maiores no mesmo caminho:
+
+1. **Sem `initial_stop`, `current_stop`, `tp1`, `tp2`.** Nenhum dos dois loops de
+   saída tinha o que comparar — a operação ficava em `SIGNAL_CONFIRMED` para
+   sempre, sem stop e sem alvo. Corrigir só o `partial_percent` seria cosmético:
+   ela nunca chegaria ao TP1 porque não tinha TP1.
+2. **Sem passar por `createTradeOpIfNoneActive`**, então `assetActiveOps`
+   continuava vazio e o scanner abria a operação DELE para o mesmo ativo. Duas
+   ativas no mesmo ativo é exatamente o que a guarda do item 39.1 detecta — e a
+   reação dela é **suspender toda a gestão de stop/TP daquele ativo** até
+   resolução manual. Era um caminho para travar um ativo com dois cliques.
+
+**Correção**: `activateSignalManually` (`scanner.js`), chamada pelo componente.
+Reusa `scanAsset` para obter ATR/tier do 4h (em vez de recalcular e arriscar
+divergir do scanner) e `buildTradeOpData` para o resto — a MESMA função da
+cascata RF, então a operação manual nasce com a mesma forma e a mesma gestão de
+uma automática, incluindo `runnerEnabled`. Cria pelo caminho transacional único.
+
+Decisões explícitas dentro dela:
+
+- **Entrada pelo preço ATUAL**, não pelo `price_at_signal`: um sinal pode ter
+  horas de idade, e registrar o preço antigo falsificaria o R desde o começo.
+- **`entry_candle_time_15m` = instante do clique**, o que faz a guarda temporal
+  P0-g rejeitar toda vela já em andamento — nenhum candle anterior à entrada
+  pode disparar stop/TP.
+- **Gestão pela cascata RF 4h** (stop ATR×tier do 4h, trailing 4h, Time Stop em
+  barras de 4h) qualquer que seja o sinal que motivou o clique. É a única gestão
+  que o motor sabe aplicar a partir de um clique, e o `window.confirm` do botão
+  diz isso antes de criar. `cascade` permanece `4h_15m` (o enum não ganhou valor
+  novo); o que distingue a origem é `source: 'manual'`.
+- **Falha fechado** sem ATR do 4h ou sem preço — nunca cria operação sem stop,
+  que é o defeito que a função existe para eliminar.
+
+Não fecha o `partial_percent` do webhook (`server/`), que não cria operação.

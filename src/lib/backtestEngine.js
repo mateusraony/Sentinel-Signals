@@ -27,6 +27,7 @@
 import { scanAsset, persistScanResults } from './scanner.js';
 import { isTerminalStatus } from './opTransition.js';
 import { summarizeOps, DEFAULT_COST_MODEL, ZERO_COST } from './tradeMetrics.js';
+import { closesFullyAtTp1 } from './opExitRules.js';
 
 const RealDate = Date;
 let originalDate = null;
@@ -464,6 +465,27 @@ export function buildReport(ops, { fromMs, toMs, smcConfirmedSignals = 0, smcRej
         fvgActive,
         both,
         neither,
+      };
+    })(),
+    // Geometria de saída (docs/known-risks.md item 46) — QUAL gestão este run
+    // usou. Só o estado, não a atribuição: quanto o runner rendeu já sai no
+    // diagnóstico (`analyze-backtest`, seção "O RUNNER PAGOU?"), que o workflow
+    // publica no mesmo resumo — duplicar aqui seria duas fontes para o mesmo
+    // número. O que esta seção impede é o erro de comparar dois relatórios sem
+    // perceber que a GESTÃO mudou entre eles, o que atribuiria à estratégia uma
+    // diferença que veio da saída.
+    runner: (() => {
+      let withRunner = 0, fullyClosedAtTp1 = 0;
+      for (const op of closed) {
+        if (closesFullyAtTp1(op)) fullyClosedAtTp1 += 1; else withRunner += 1;
+      }
+      return {
+        // Inferido das próprias operações, não lido do pineConfig: é a gestão
+        // que de fato foi aplicada, mesmo que o flag tenha mudado no meio.
+        enabled: withRunner > 0,
+        opsWithRunner: withRunner,
+        opsFullyClosedAtTp1: fullyClosedAtTp1,
+        closedByTp1Full: closed.filter(op => op.closed_reason === 'TP1_FULL').length,
       };
     })(),
     // Fase 5 (docs/known-risks.md item 44) — o custo que o replay descontou e,
