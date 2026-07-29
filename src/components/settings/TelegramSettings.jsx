@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { getTelegramConfig, setTelegramConfig, isTelegramConfigured, getTelegramFilters, setTelegramFilters } from '@/lib/telegram';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import MultiToggle from '@/components/ui/multi-toggle';
 import { BellRing, X, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 
 const TF_OPTIONS = ['1h', '4h', '1d'];
@@ -44,29 +45,6 @@ function Toggle({ checked, onChange }) {
       <span className="absolute top-0.5 w-3 h-3 rounded-full transition-all"
         style={{ background: checked ? '#00ff80' : 'rgba(255,255,255,0.3)', left: checked ? '1px' : '1px', transform: checked ? 'translateX(16px)' : 'none' }} />
     </button>
-  );
-}
-
-function MultiToggle({ options, selected, onChange }) {
-  const toggle = (id) => {
-    if (selected.includes(id)) onChange(selected.filter(x => x !== id));
-    else onChange([...selected, id]);
-  };
-  return (
-    <div className="flex flex-wrap gap-1.5">
-      {options.map(o => {
-        const on = selected.includes(o.id);
-        return (
-          <button key={o.id} onClick={() => toggle(o.id)}
-            className="text-[10px] font-mono px-2 py-1 rounded-md transition-all"
-            style={on
-              ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.35)', color: '#00e5ff' }
-              : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.35)' }}>
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 

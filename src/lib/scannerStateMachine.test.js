@@ -2503,6 +2503,10 @@ describe('cooldown gates the Telegram notification only, never persistence/entry
     await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeSignal()] });
 
     expect(notifyNewSignal).toHaveBeenCalledTimes(1);
+    // known-risks item 47 — the asset already in scope must be forwarded so
+    // shouldSend can apply its per-asset notify_sources/notify_signal_types
+    // override without an extra Firestore read.
+    expect(notifyNewSignal).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: 'asset1' }));
   });
 
   // Codex review (PR #59): the cooldown query must anchor on the last
