@@ -19,15 +19,17 @@ on:
   workflow_dispatch:
     inputs:
       symbols:
-        # Carteira de referência de 20 símbolos. Ampliar em ATIVOS (e não em
-        # anos) é o que dá amostra sem misturar regimes de mercado
-        # incompatíveis — ver docs/roadmap.md, Bloco 0. ONDOUSDT e DYDXUSDT
-        # continuam aqui de propósito: ONDO foi o pior ativo da medição de
-        # 12 meses, e removê-lo depois de ver isso seria escolher o resultado.
-        # PAXGUSDT (ouro tokenizado) é o único com correlação baixa com BTC,
-        # então é o que mais adiciona amostra independente de verdade.
+        # Default reduzido a pedido do usuário (2026-07-29) pra runs manuais
+        # rápidas de sanity-check. ATENÇÃO: isto é MENOR que a carteira de
+        # referência de 20 símbolos que docs/roadmap.md Bloco 0 documenta como
+        # necessária pro veredito real do gate de amostra ("amplitude em
+        # ATIVOS, não anos" — 7 símbolos dão amostra bem menor e mais sujeita
+        # a regime de um punhado de ativos só). Pra um run que decide algo de
+        # verdade (não só conferir se o motor roda), troque manualmente pela
+        # lista de 20 símbolos do histórico deste arquivo (git log) ou peça
+        # pro Claude relembrar.
         description: "Símbolos separados por vírgula (Binance Spot)"
-        default: "BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,AVAXUSDT,LINKUSDT,DOTUSDT,NEARUSDT,ARBUSDT,OPUSDT,AAVEUSDT,SUIUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,ONDOUSDT,DYDXUSDT,PAXGUSDT"
+        default: "BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT"
         required: true
       from:
         # 12 meses, não 6: com a carteira de 20 símbolos, 6 meses entregariam
@@ -42,8 +44,13 @@ on:
         default: ""
         required: false
       timeframes:
+        # 1h/4h/1d são sempre buscados por scanAsset (alinhamento
+        # multi-timeframe); 15m é a confirmação da cascata RF (4h→15m); 5m é a
+        # confirmação da cascata SMC (1h→5m). Com os 5 por padrão, nenhum
+        # símbolo/cascata fica sem dado independente do que --smc/--smc-confirm
+        # ligar no run.
         description: "Timeframes a baixar, separados por vírgula"
-        default: "1h,4h,1d,15m"
+        default: "5m,15m,1h,4h,1d"
         required: true
       smc:
         description: "Símbolos com a cascata SMC 1h→5m ativa, separados por vírgula (vazio = nenhum) — independente de smc_confirm abaixo"
