@@ -2,13 +2,17 @@
 // functions scanner.js calls, but the bot token and chat id come from
 // GitHub Actions secrets (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) instead of
 // browser localStorage. Filters match telegram.js's own defaults (no UI to
-// customize them here — this is the "don't miss anything" 24/7 channel).
+// customize them here — this is the "don't miss anything" 24/7 channel),
+// EXCEPT signal source, which the user CAN configure from the browser
+// Settings screen — see loadTelegramSources below.
 //
-// Único import deste espelho: a regra pura que decide se o TP1 encerra a
-// posição. Compartilhada com telegram.js de propósito — se cada canal
-// decidisse por conta, o do navegador e o das 24h anunciariam gestões
-// diferentes para a MESMA operação. opExitRules já está no bundle do scan.
+// Imports deste espelho: a regra pura que decide se o TP1 encerra a posição
+// (compartilhada com telegram.js de propósito — se cada canal decidisse por
+// conta, o do navegador e o das 24h anunciariam gestões diferentes para a
+// MESMA operação; opExitRules já está no bundle do scan) e o cliente
+// firebase-admin, mesmo padrão de scripts/adminPineConfig.js.
 import { closesFullyAtTp1 } from '../src/lib/opExitRules.js';
+import { getFirestore } from 'firebase-admin/firestore';
 
 const DEFAULT_FILTERS = {
   timeframes: ['1h', '4h', '1d'],
@@ -18,15 +22,55 @@ const DEFAULT_FILTERS = {
   min_score: 0,
 };
 
+const DEFAULT_SOURCES = ['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi'];
+// Fail-open for any source outside this list — mirrors src/lib/telegram.js's
+// KNOWN_SOURCES: filtering only applies to sources the user actually had a
+// toggle for; an unrecognized/future value must keep reaching the "don't
+// miss anything" channel, never be silently dropped.
+const KNOWN_SOURCES = DEFAULT_SOURCES;
+
+// Lido de telegramFilters/current — o mesmo doc que a tela de Configurações
+// do navegador escreve (src/lib/telegram.js:setTelegramFilters). Memoizado
+// por PROCESSO (não por-passada): cada `npm run scan` é uma execução curta e
+// isolada do GitHub Actions, então uma leitura por execução é correta e não
+// fica desatualizada. Falha ao ler = fail-open para TODAS as origens — nunca
+// silenciar o canal "não perder nada" por um erro transitório de rede/Firestore,
+// mesmo espírito do fail-open de adminPineConfig.js:getPineConfig.
+let sourcesPromise = null;
+async function loadTelegramSources() {
+  if (!sourcesPromise) {
+    sourcesPromise = (async () => {
+      try {
+        const snap = await getFirestore().collection('telegramFilters').doc('current').get();
+        const sources = snap.exists && Array.isArray(snap.data().sources) ? snap.data().sources : null;
+        return sources ?? DEFAULT_SOURCES;
+      } catch (e) {
+        console.warn('[adminTelegram] Falha ao ler telegramFilters, notificando todas as origens:', e.message);
+        return DEFAULT_SOURCES;
+      }
+    })();
+  }
+  return sourcesPromise;
+}
+
 const PRIORITY_RANK = { low: 0, medium: 1, high: 2 };
 
 export function isTelegramConfigured() {
   return !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
 }
 
-function shouldSend(event, data) {
+async function shouldSend(event, data) {
   const f = DEFAULT_FILTERS;
   if (f.events && !f.events.includes(event)) return false;
+
+  // Signal-source filter — mesmo guard de evento de src/lib/telegram.js: só
+  // signal_detected usa este vocabulário de `source` (RF/SMC/MACD/EMA/RSI);
+  // os demais eventos carregam uma TradeOperation, cujo `source` é um enum
+  // não relacionado (scanner/scanner_smc/tradingview_webhook/manual).
+  if (event === 'signal_detected' && KNOWN_SOURCES.includes(data.source)) {
+    const sources = await loadTelegramSources();
+    if (!sources.includes(data.source)) return false;
+  }
 
   // See src/lib/telegram.js for why signal_timeframe takes priority here.
   const tf = data.signal_timeframe || data.timeframe;
@@ -98,7 +142,7 @@ const SOURCE_LABELS = {
 };
 
 export async function notifyNewSignal(signal) {
-  if (!shouldSend('signal_detected', signal)) return;
+  if (!(await shouldSend('signal_detected', signal))) return;
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
   const strength = { strong: '💪 Forte', medium: '📊 Médio', moderate: '📊 Moderado', weak: '🔹 Fraco' }[signal.strength] || '';
@@ -117,7 +161,7 @@ export async function notifyNewSignal(signal) {
 }
 
 export async function notifyTradeCreated(op) {
-  if (!shouldSend('entry_confirmed', op)) return;
+  if (!(await shouldSend('entry_confirmed', op))) return;
   const emoji = op.side === 'BUY' ? '✅🟢' : '✅🔴';
   const dir = op.side === 'BUY' ? 'COMPRA' : 'VENDA';
   const tfLabel = op.timeframe === '15m' ? '15m (entrada 4h)' : op.timeframe?.toUpperCase();
@@ -134,7 +178,7 @@ export async function notifyTradeCreated(op) {
 }
 
 export async function notifyTP1Hit(op, price) {
-  if (!shouldSend('tp1_hit', op)) return;
+  if (!(await shouldSend('tp1_hit', op))) return;
   return send(
     `🎯 <b>TP1 Atingido!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
@@ -149,7 +193,7 @@ export async function notifyTP1Hit(op, price) {
 }
 
 export async function notifyTP2Hit(op, price) {
-  if (!shouldSend('tp2_hit', op)) return;
+  if (!(await shouldSend('tp2_hit', op))) return;
   return send(
     `🏆 <b>TP2 Atingido — Operação Completa!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
@@ -185,7 +229,7 @@ export async function notifyAssetStale(asset, reason) {
 }
 
 export async function notifyStopHit(op, price) {
-  if (!shouldSend('stop_hit', op)) return;
+  if (!(await shouldSend('stop_hit', op))) return;
   const beMsg = op.tp1_hit ? '(breakeven — sem prejuízo)' : '(stop inicial)';
   return send(
     `🛑 <b>Stop Atingido ${beMsg}</b>\n\n` +
@@ -197,7 +241,7 @@ export async function notifyStopHit(op, price) {
 }
 
 export async function notifyInvalidated(op, price) {
-  if (!shouldSend('invalidated', op)) return;
+  if (!(await shouldSend('invalidated', op))) return;
   const stageMsg = op.tp1_hit ? '(após TP1 — parcial já realizada)' : '(pré-TP1)';
   return send(
     `⚠️ <b>Sinal Invalidado ${stageMsg}</b>\n\n` +
@@ -209,7 +253,7 @@ export async function notifyInvalidated(op, price) {
 }
 
 export async function notifyTimeStop(op, price) {
-  if (!shouldSend('time_stop', op)) return;
+  if (!(await shouldSend('time_stop', op))) return;
   return send(
     `⏱️ <b>Time Stop — Operação Encerrada</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
@@ -220,7 +264,7 @@ export async function notifyTimeStop(op, price) {
 }
 
 export async function notifyChopExit(op, price) {
-  if (!shouldSend('chop_exit', op)) return;
+  if (!(await shouldSend('chop_exit', op))) return;
   return send(
     `🌊 <b>Chop Exit — Operação Encerrada</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +

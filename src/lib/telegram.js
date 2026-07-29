@@ -37,6 +37,12 @@ const DEFAULT_FILTERS = {
   // user as a stop hit, so on by default like the other closure events.
   events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit'],
   min_score: 0,
+  // Signal SOURCE (as opposed to the events above, which are trade-lifecycle
+  // moments). Only matters for signal_detected — see shouldSend. No migration
+  // flag needed for pre-existing saved filters missing this key: `f.sources
+  // && ...` in shouldSend already short-circuits to "unfiltered" on absence,
+  // which IS the non-breaking default.
+  sources: ['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi'],
 };
 
 // Event IDs added after filters could already be saved in localStorage
@@ -67,12 +73,29 @@ export function getTelegramFilters() {
   }
 }
 
-export function setTelegramFilters(filters) {
+// Mirrors filters.sources to Firestore (telegramFilters/current) so the 24/7
+// cron channel (scripts/adminTelegram.js — no localStorage there) can honor
+// the same signal-source preference the browser Settings screen sets. Same
+// sync pattern already used for strategyConfig/current (pineParser.js), and
+// the same dynamic import to avoid a static circular import.
+export async function setTelegramFilters(filters) {
   localStorage.setItem(FILTERS_KEY, JSON.stringify(filters));
+  try {
+    const { backend } = await import('@/api/entities');
+    await backend.entities.TelegramFilters.set('current', { sources: filters.sources ?? DEFAULT_FILTERS.sources });
+  } catch (e) {
+    logWarn('telegram', 'Falha ao sincronizar filtro de origem com o canal 24h', { error: e.message });
+  }
 }
 
 // ─── Filter evaluation ───
 const PRIORITY_RANK = { low: 0, medium: 1, high: 2 };
+// Fail-open for any source outside this list — mirrors the pre-existing
+// SOURCE_LABELS fallback (unrecognized/future source → generic "RF" label,
+// never silently dropped). Filtering only applies to KNOWN sources the user
+// actually had a toggle for; an unrecognized value must keep reaching the
+// user, the same way it already keeps reaching them today, unlabeled.
+const KNOWN_SOURCES = ['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi'];
 
 /**
  * Check if a notification should be sent based on configured filters.
@@ -85,6 +108,16 @@ function shouldSend(event, data) {
 
   // Event filter
   if (f.events && !f.events.includes(event)) return false;
+
+  // Signal-source filter (RF/SMC/MACD/EMA Cross/RSI) — gated to
+  // signal_detected on purpose. That's the only event whose payload is a
+  // SignalEvent using this source vocabulary; every other event's payload is
+  // a TradeOperation, whose OWN `source` field is a different, unrelated
+  // enum (scanner/scanner_smc/tradingview_webhook/manual — see
+  // docs/schema-reference/TradeOperation.jsonc). Checking data.source
+  // unconditionally would collide with that field and silently drop every
+  // entry/TP/stop notification.
+  if (event === 'signal_detected' && f.sources && KNOWN_SOURCES.includes(data.source) && !f.sources.includes(data.source)) return false;
 
   // Timeframe filter — signal_timeframe (4h/1h) when present, since that's
   // what the UI lets the user pick from. data.timeframe alone would be the

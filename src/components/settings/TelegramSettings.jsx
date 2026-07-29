@@ -14,6 +14,14 @@ const SIGNAL_TYPES = [
   { id: 'BUY', label: '🟢 BUY', desc: 'Sinais de compra' },
   { id: 'SELL', label: '🔴 SELL', desc: 'Sinais de venda' },
 ];
+const SOURCE_OPTIONS = [
+  { id: 'range_filter', label: 'RF' },
+  { id: 'smc_structure', label: 'SMC' },
+  { id: 'macd', label: 'MACD' },
+  { id: 'ema_cross', label: 'EMA Cross' },
+  { id: 'rsi', label: 'RSI' },
+];
+const DEFAULT_SOURCES = SOURCE_OPTIONS.map(s => s.id);
 const EVENT_OPTIONS = [
   { id: 'signal_detected', label: '🔔 Novo sinal detectado', desc: 'Quando RF gera um novo sinal' },
   { id: 'entry_confirmed', label: '✅ Entrada confirmada', desc: 'Quando candle fecha confirmando entrada' },
@@ -81,7 +89,7 @@ export default function TelegramSettings({ open, onClose }) {
 
   const save = async () => {
     await setTelegramConfig(cfg);
-    setTelegramFilters(filters);
+    await setTelegramFilters(filters);
     onClose();
   };
 
@@ -194,6 +202,19 @@ export default function TelegramSettings({ open, onClose }) {
                 selected={filters.signal_types}
                 onChange={v => setF('signal_types', v)}
               />
+            </div>
+
+            {/* Signal source */}
+            <div>
+              <p className="text-[10px] font-mono text-muted-foreground mb-2">🔍 ORIGEM DO SINAL</p>
+              <MultiToggle
+                options={SOURCE_OPTIONS}
+                selected={filters.sources ?? DEFAULT_SOURCES}
+                onChange={v => setF('sources', v)}
+              />
+              <p className="text-[9px] font-mono text-muted-foreground mt-1">
+                Vale para os dois canais — ao vivo e o automático 24h.
+              </p>
             </div>
 
             {/* Min priority */}

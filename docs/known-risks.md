@@ -3024,3 +3024,54 @@ Decisões explícitas dentro dela:
   que é o defeito que a função existe para eliminar.
 
 Não fecha o `partial_percent` do webhook (`server/`), que não cria operação.
+
+## 47. Filtro de origem do sinal nas notificações Telegram (2026-07-29)
+
+Usuário relatou notificações indesejadas de MACD/RSI vindas do canal 24h (o
+robô automático via GitHub Actions, não o "ao vivo" do navegador — confirmado
+explicitamente antes de desenhar a correção). Não existia nenhum eixo de
+filtro por **origem do sinal** (`SignalEvent.source`: `range_filter`,
+`smc_structure`, `macd`, `ema_cross`, `rsi`) em lugar nenhum, e o canal 24h em
+particular (`scripts/adminTelegram.js`) não tinha nenhuma forma de enxergar
+preferência nenhuma do usuário — token/chat_id vêm de secret fixo do GitHub,
+sem doc de config compartilhado, ao contrário do `pineConfig`.
+
+**Verificado, não precisou de código**: o usuário também queria configurar o
+RSI 70/30. Já existe — `rsi_overbought`/`rsi_oversold` são campos por-ativo
+(`AssetConfigPanel.jsx:126-130`, validados em `assetConfigValidation.js`).
+
+**Correção**: novo doc Firestore compartilhado `telegramFilters/current`,
+replicando **exatamente** o padrão já usado para `strategyConfig/current`
+(escrito pelo navegador, lido pelo cron) — não é mecanismo novo. Shape mínimo:
+`{ sources: string[] }`. Default = todas as 5 origens (comportamento atual,
+sem migração destrutiva).
+
+- `src/lib/telegram.js`: `DEFAULT_FILTERS.sources`; `setTelegramFilters`
+  passa a também escrever no Firestore (localStorage continua a fonte para o
+  canal ao vivo); `shouldSend` ganha o check, **restrito ao evento
+  `signal_detected`** — os demais eventos carregam uma `TradeOperation`, cujo
+  `source` é um enum não relacionado (`scanner`/`scanner_smc`/
+  `tradingview_webhook`/`manual`); sem esse guard o filtro colidiria e
+  derrubaria silenciosamente toda notificação de entrada/TP/stop.
+- `scripts/adminTelegram.js`: lê o doc via `firebase-admin/firestore` direto
+  (mesmo padrão de `adminPineConfig.js`), memoizado por processo (uma leitura
+  por execução do `npm run scan`, nunca desatualiza dentro de uma execução
+  curta). Falha ao ler = **fail-open para todas as origens** — nunca
+  silenciar o canal "não perder nada" por erro transitório.
+- **Bug pego pelos próprios testes durante a implementação**: a primeira
+  versão filtrava qualquer `source` fora da lista de 5 conhecidos, o que
+  quebrava o fallback pré-existente de rótulo genérico para origem
+  desconhecida/futura — um `source` novo (ainda sem toggle na UI) seria
+  descartado silenciosamente em vez de notificado sem filtro, como sempre foi.
+  Corrigido: o filtro só se aplica a origens **conhecidas**
+  (`KNOWN_SOURCES`); origem fora dessa lista sempre passa.
+- `TelegramSettings.jsx`: seção "🔍 ORIGEM DO SINAL", mesmo componente
+  `MultiToggle` já usado para `SIGNAL_TYPES`.
+
+**Fora de escopo, decisão explícita**: os demais filtros já existentes
+(timeframe/lado/prioridade/score/eventos) continuam browser-only — o canal
+24h segue "não perder nada" nesses eixos; limiar de força do cruzamento de
+MACD, não pedido com clareza suficiente.
+
+**Pendente fora desta sessão**: `firebase deploy --only firestore:rules` —
+sem esse passo manual a regra nova de `telegramFilters` não vale.

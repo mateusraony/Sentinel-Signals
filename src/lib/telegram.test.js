@@ -10,7 +10,17 @@ vi.mock('./logger', () => ({
   logError: vi.fn(),
 }));
 
-import { getTelegramFilters, notifyNewSignal } from './telegram.js';
+// setTelegramFilters syncs to Firestore (telegramFilters/current) via a
+// dynamic import of '@/api/entities', mirroring pineParser.js's getPineConfig.
+// vi.hoisted so the mock fn is assertable from test bodies below (a plain
+// closure variable referenced inside vi.mock's factory would be hoisted out
+// from under it).
+const { telegramFiltersSetMock } = vi.hoisted(() => ({ telegramFiltersSetMock: vi.fn() }));
+vi.mock('@/api/entities', () => ({
+  backend: { entities: { TelegramFilters: { set: telegramFiltersSetMock } } },
+}));
+
+import { getTelegramFilters, notifyNewSignal, notifyTradeCreated, setTelegramFilters } from './telegram.js';
 
 function makeLocalStorage() {
   const store = new Map();
@@ -132,5 +142,100 @@ describe('notifyNewSignal — source-aware label and score (Codex review, PR #65
   it('falls back to RF for an unrecognized/legacy source instead of throwing', async () => {
     const text = await sentText(baseSignal({ source: 'something_new' }));
     expect(text).toContain('Novo Sinal RF Detectado');
+  });
+});
+
+describe('shouldSend — filtro de origem do sinal (RF/SMC/MACD/EMA/RSI)', () => {
+  beforeEach(() => {
+    localStorage.setItem('cryptoradar_telegram_cfg', JSON.stringify({ botToken: 'x', chatId: 'y' }));
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+  });
+
+  function baseSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', timeframe: '1h', signal_type: 'BUY', source: 'macd',
+      price_at_signal: 100, reason: 'x', context: {},
+      ...overrides,
+    };
+  }
+
+  function saveFilters(overrides = {}) {
+    localStorage.setItem('tg_filters', JSON.stringify({
+      timeframes: ['1h', '4h', '1d'], min_priority: 'low', signal_types: ['BUY', 'SELL'],
+      events: ['signal_detected', 'entry_confirmed'], min_score: 0,
+      ...overrides,
+    }));
+  }
+
+  it('não envia quando a origem do sinal está fora do filtro salvo', async () => {
+    saveFilters({ sources: ['range_filter', 'smc_structure'] });
+    await notifyNewSignal(baseSignal({ source: 'macd' }));
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('envia quando a origem está dentro do filtro salvo', async () => {
+    saveFilters({ sources: ['macd'] });
+    await notifyNewSignal(baseSignal({ source: 'macd' }));
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('REGRESSÃO — config salva ANTES desta feature (sem a chave sources) continua notificando todas as origens', async () => {
+    saveFilters(); // sem 'sources' — exatamente o formato salvo antes desta mudança
+    for (const source of ['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi']) {
+      global.fetch.mockClear();
+      await notifyNewSignal(baseSignal({ source }));
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('sem NENHUM filtro salvo (DEFAULT_FILTERS), as 5 origens notificam', async () => {
+    for (const source of ['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi']) {
+      global.fetch.mockClear();
+      await notifyNewSignal(baseSignal({ source }));
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('origem DESCONHECIDA nunca é filtrada, mesmo com um filtro restritivo salvo — fail-open, igual ao fallback de rótulo já existente', async () => {
+    saveFilters({ sources: ['range_filter'] }); // só RF liberado
+    await notifyNewSignal(baseSignal({ source: 'um_source_futuro_que_ainda_nao_existe' }));
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('o filtro de origem NÃO se aplica a eventos de operação — TradeOperation.source é um vocabulário diferente', async () => {
+    // op.source aqui é 'manual' (enum de TradeOperation) — não pode colidir
+    // com um filtro de 'sources' pensado para SignalEvent.source.
+    saveFilters({ sources: ['range_filter'], events: ['entry_confirmed'] });
+    await notifyTradeCreated({
+      symbol: 'BTCUSDT', side: 'BUY', timeframe: '15m', signal_timeframe: '4h', entry_price: 100,
+      initial_stop: 95, tp1: 105, tp2: 110, score: 80, source: 'manual',
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('setTelegramFilters — sincroniza a origem com o canal 24h via Firestore', () => {
+  beforeEach(() => {
+    telegramFiltersSetMock.mockReset();
+    telegramFiltersSetMock.mockResolvedValue(undefined);
+  });
+
+  it('grava no localStorage e chama TelegramFilters.set com os sources', async () => {
+    await setTelegramFilters({ timeframes: ['1h'], sources: ['macd', 'rsi'] });
+    expect(JSON.parse(localStorage.getItem('tg_filters')).sources).toEqual(['macd', 'rsi']);
+    expect(telegramFiltersSetMock).toHaveBeenCalledWith('current', { sources: ['macd', 'rsi'] });
+  });
+
+  it('usa o default (todas as 5 origens) quando filters.sources está ausente', async () => {
+    await setTelegramFilters({ timeframes: ['1h'] });
+    expect(telegramFiltersSetMock).toHaveBeenCalledWith('current', {
+      sources: expect.arrayContaining(['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi']),
+    });
+  });
+
+  it('falha ao sincronizar com o Firestore não impede o localStorage de ser gravado', async () => {
+    telegramFiltersSetMock.mockRejectedValueOnce(new Error('offline'));
+    await setTelegramFilters({ sources: ['rsi'] });
+    expect(JSON.parse(localStorage.getItem('tg_filters')).sources).toEqual(['rsi']);
   });
 });
