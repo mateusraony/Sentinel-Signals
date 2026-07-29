@@ -180,6 +180,35 @@ export function renderAnalysis(analysis) {
   out.push('TEMPO EM POSIÇÃO');
   out.push(`média ${hours(hold.avg)} · mediana ${hours(hold.median)} `
     + `· mínimo ${hours(hold.min)} · máximo ${hours(hold.max)} (${hold.counted} operações medidas)`);
+  out.push('');
+
+  // known-risks item 47.2 — o motor não deve ser aprovado só porque poucas
+  // operações excepcionais compensaram o resto.
+  const { concentration: conc } = analysis;
+  out.push('CONCENTRAÇÃO DO RESULTADO');
+  out.push(`Top 5 operações: ${fmt(conc.top5ContributionR, 1)} R (${pct(conc.top5Share)} do total)`);
+  out.push(`Top 10 operações: ${fmt(conc.top10ContributionR, 1)} R (${pct(conc.top10Share)} do total)`);
+  const maiorEixo = (rotulo, entry) => entry
+    ? `Maior contribuição ${rotulo}: ${entry.key} com ${fmt(entry.contributionR)} R (${pct(entry.share)})`
+    : `Maior contribuição ${rotulo}: (sem dado)`;
+  out.push(maiorEixo('por símbolo', conc.largestSymbol));
+  out.push(maiorEixo('por trimestre', conc.largestPeriod));
+  out.push(maiorEixo('por lado', conc.largestSide));
+  out.push('');
+
+  // MFE/MAE — known-risks item 47.2. Só populado em operações passadas pelo
+  // motor DEPOIS desta mudança (campo aditivo, sem backfill em ops antigas).
+  const { excursion: exc } = analysis;
+  out.push('EXCURSÃO MÁXIMA (MFE/MAE)');
+  if (exc.counted === 0) {
+    out.push('(nenhuma operação com mfe_r/mae_r — todas anteriores a este campo)');
+  } else {
+    out.push(`MFE médio ${fmt(exc.avgMfeR)} R (mediana ${fmt(exc.medianMfeR)}) · `
+      + `MAE médio ${fmt(exc.avgMaeR)} R (mediana ${fmt(exc.medianMaeR)}) — ${exc.counted} operações`);
+    out.push(`Bars até TP1 (média): ${fmt(exc.avgBarsToTp1, 1)} · Bars até stop (média): ${fmt(exc.avgBarsToStop, 1)}`);
+    out.push(`Das que pararam no stop, chegaram a ficar positivas antes: `
+      + `${exc.stoppedAfterProfitCount} de ${exc.stoppedCount} (${pct(exc.stoppedAfterProfitShare)})`);
+  }
 
   return out;
 }

@@ -286,6 +286,13 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
     adx_at_entry: tf4hData.adx?.adx,
     chop_at_entry: tf4hData.chop,
     tier_time_stop_bars: tf4hData.tier?.timeStopBars,
+    // Observability only — o alinhamento macro que o sinal já calculou
+    // (analyzeAlignment) nunca era copiado pra cá; TradeCard.jsx sempre lia
+    // null numa operação ativa apesar de exibir esses campos. Ver
+    // docs/known-risks.md item 47.2.
+    tf_1d_direction: sig.context?.tf_1d_direction ?? null,
+    tf_4h_direction: sig.context?.tf_4h_direction ?? null,
+    tf_1h_direction: sig.context?.tf_1h_direction ?? null,
     source: 'scanner',
     candle_status: 'CLOSED',
     data_status: 'LIVE',
@@ -643,6 +650,12 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     adx_at_entry: tf1hData.adx?.adx,
     chop_at_entry: tf1hData.chop,
     tier_time_stop_bars: tf1hData.tier?.timeStopBars ?? 96,
+    // Observability only — mesmo campo/motivo do buildTradeOpData (RF) acima;
+    // o sinal SMC agora também grava tf_1d/4h/1h_direction no context (ver o
+    // push do SignalEvent smc_structure em scanAsset). Ver known-risks 47.2.
+    tf_1d_direction: sig.context?.tf_1d_direction ?? null,
+    tf_4h_direction: sig.context?.tf_4h_direction ?? null,
+    tf_1h_direction: sig.context?.tf_1h_direction ?? null,
     bias: sig.signal_type === 'BUY' ? 'bullish' : 'bearish',
     structure_type: sig.context?.structure_type,
     pd_zone: sig.context?.pd_zone,
@@ -1178,6 +1191,12 @@ export async function scanAsset(asset) {
             // (smcObFvgEnabled desligado), false = avaliado e não ativo.
             ob_active: r.smc.obActive ?? null,
             fvg_active: r.smc.fvgActive ?? null,
+            // Mesmo contexto macro que o sinal RF já grava (mesmo
+            // statesForAlignment do loop) — sem isso buildSmcTradeOpData não
+            // tinha nada pra copiar pra TradeOperation (ver known-risks item 47.2).
+            tf_1d_direction: statesForAlignment['1d']?.rf_direction || 0,
+            tf_4h_direction: statesForAlignment['4h']?.rf_direction || 0,
+            tf_1h_direction: statesForAlignment['1h']?.rf_direction || 0,
           },
           dedup_key: `${asset.symbol}_1h_${signalType}_smc_structure_${r.lastCandleTime}`,
         });
@@ -1930,7 +1949,25 @@ export async function persistScanResults(scanResult) {
   }, '-created_date', 10);
 
   for (const sig of recent4hSignals) {
-    if (sig.created_date < fourHoursAgo) continue; // stale, skip
+    if (sig.created_date < fourHoursAgo) {
+      // known-risks item 47.2 — antes disso a expiração era muda: sem
+      // TradeOperation e sem SystemLog, indistinguível de um sinal que nunca
+      // chegou a ser tentado. `expired_logged` já veio junto com `sig` no
+      // fetch acima — não custa leitura extra, só grava (uma vez) quando
+      // ainda não gravou.
+      if (!sig.expired_logged) {
+        await backend.entities.SignalEvent.update(sig.id, { expired_logged: true });
+        await backend.entities.SystemLog.create({
+          level: 'info',
+          module: 'scanner',
+          message: `${sig.symbol} 4h ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (4h)`,
+          symbol: sig.symbol,
+          timeframe: '4h',
+          details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '4h_15m' },
+        });
+      }
+      continue; // stale, skip
+    }
     if (sig.is_dismissed) continue;
 
     if (hasActiveOp) continue;
@@ -2030,7 +2067,21 @@ export async function persistScanResults(scanResult) {
     }, '-created_date', 10);
 
     for (const sig of recentSmcSignals) {
-      if (sig.created_date < oneHourAgo4x) continue; // stale, skip
+      if (sig.created_date < oneHourAgo4x) {
+        // Mesmo mecanismo do retry RF acima — known-risks item 45.4/47.2.
+        if (!sig.expired_logged) {
+          await backend.entities.SignalEvent.update(sig.id, { expired_logged: true });
+          await backend.entities.SystemLog.create({
+            level: 'info',
+            module: 'scanner',
+            message: `${sig.symbol} 1h SMC ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (5m)`,
+            symbol: sig.symbol,
+            timeframe: '1h',
+            details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '1h_5m' },
+          });
+        }
+        continue; // stale, skip
+      }
       if (sig.is_dismissed) continue;
 
       if (hasActiveOp) continue;
@@ -2184,6 +2235,42 @@ export async function persistScanResults(scanResult) {
     let newCurrentStop = op.current_stop;
     const updatePayload = {};
 
+    // Bars since entry, in units of the SIGNAL timeframe — same elapsed-time
+    // proxy the Time Stop already uses below (barsOpen), lifted up here so
+    // both branches (pre/post TP1) and the MFE/MAE block can share it.
+    const barMs = SIGNAL_TF_MS[op.signal_timeframe] || FOUR_HOURS_MS;
+    const barsSinceEntry = entryRef && tfData.lastCandleTime
+      ? Math.round((new Date(tfData.lastCandleTime).getTime() - new Date(entryRef).getTime()) / barMs)
+      : null;
+
+    // MFE/MAE — known-risks item 47.2. Recomputed every pass from THIS
+    // candle's high/low, which is unchanged pass-to-pass until a new candle
+    // closes — so mfe_r/mae_r naturally stabilize within a candle and only
+    // (therefore only ever WRITE, via the guard below) change when a
+    // genuinely new extreme candle arrives, the same write cadence as
+    // everything else in this loop, not a new source of per-pass writes.
+    // Gated by candleUsable for the same P0-c/P0-g reason as stop/TP: a
+    // pre-entry candle's range must never count as this operation's
+    // excursion.
+    let mfeR = op.mfe_r;
+    let maeR = op.mae_r;
+    let barsToMfe = op.bars_to_mfe ?? null;
+    let barsToMae = op.bars_to_mae ?? null;
+    if (candleUsable && Number.isFinite(op.entry_price) && Number.isFinite(op.initial_stop)) {
+      const excursionRisk = Math.abs(op.entry_price - op.initial_stop);
+      if (excursionRisk > 0) {
+        const favorableExtreme = isBuy ? candleHigh : candleLow;
+        const adverseExtreme = isBuy ? candleLow : candleHigh;
+        const sign = isBuy ? 1 : -1;
+        const favorableR = (sign * (favorableExtreme - op.entry_price)) / excursionRisk;
+        const adverseR = (sign * (adverseExtreme - op.entry_price)) / excursionRisk;
+        if (!Number.isFinite(mfeR) || favorableR > mfeR) { mfeR = favorableR; barsToMfe = barsSinceEntry; }
+        if (!Number.isFinite(maeR) || adverseR < maeR) { maeR = adverseR; barsToMae = barsSinceEntry; }
+      }
+    }
+    if (mfeR !== op.mfe_r) { updatePayload.mfe_r = mfeR; updatePayload.bars_to_mfe = barsToMfe; }
+    if (maeR !== op.mae_r) { updatePayload.mae_r = maeR; updatePayload.bars_to_mae = barsToMae; }
+
     if (!tp1Hit) {
       // Check stop first (stop has priority over TP on same candle for safety)
       const stopHit = candleUsable
@@ -2204,7 +2291,6 @@ export async function persistScanResults(scanResult) {
       // 1h for the SMC cascade). Aged from the REAL entry (entryRef, P0-g) —
       // the signal candle's close used to make a retry-confirmed operation
       // start "aging" hours before it actually existed.
-      const barMs = SIGNAL_TF_MS[op.signal_timeframe] || FOUR_HOURS_MS;
       const barsOpen = entryRef
         ? Math.floor((Date.now() - new Date(entryRef).getTime()) / barMs)
         : 0;
@@ -2241,6 +2327,7 @@ export async function persistScanResults(scanResult) {
         updatePayload.stop_hit_price = op.current_stop;
         updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
+        updatePayload.bars_to_stop = barsSinceEntry;
         if (stopTp1Ambiguous) updatePayload.exit_ambiguous = true;
       } else if (invalidationTriggered) {
         newStatus = 'INVALIDATED';
@@ -2261,6 +2348,7 @@ export async function persistScanResults(scanResult) {
         tp1Hit = true;
         updatePayload.tp1_hit_at = nowIso;
         updatePayload.tp1_hit_price = op.tp1;
+        updatePayload.bars_to_tp1 = barsSinceEntry;
         if (closesFullyAtTp1(op)) {
           // Sem runner: TP1 é saída TERMINAL. CLOSED (não um status novo)
           // porque já é terminal, então o clearActiveOp DENTRO da transação
@@ -2300,6 +2388,7 @@ export async function persistScanResults(scanResult) {
         // Runner stopped at BE (entry) or current stop
         updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
+        updatePayload.bars_to_stop = barsSinceEntry;
         if (stopTp2Ambiguous) updatePayload.exit_ambiguous = true;
       } else if (tp2Touched) {
         tp2Hit = true;
@@ -2351,7 +2440,8 @@ export async function persistScanResults(scanResult) {
       }
     }
     if (newStatus !== op.status || tp1Hit !== op.tp1_hit || tp2Hit !== op.tp2_hit || newCurrentStop !== op.current_stop
-        || updatePayload.rf_reverse_bars_count !== (op.rf_reverse_bars_count || 0)) {
+        || updatePayload.rf_reverse_bars_count !== (op.rf_reverse_bars_count || 0)
+        || updatePayload.mfe_r !== undefined || updatePayload.mae_r !== undefined) {
       // Compare-and-set against the op's current status in Firestore: the
       // browser scan and the cron run under separate locks, so a plain update
       // could clobber a newer state or resurrect a terminal op. transitionTradeOp

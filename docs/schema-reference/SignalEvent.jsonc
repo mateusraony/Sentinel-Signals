@@ -159,6 +159,11 @@
       "default": false,
       "description": "Whether user dismissed this alert"
     },
+    "expired_logged": {
+      "type": "boolean",
+      "default": false,
+      "description": "Set once, the first time the retry loop (scanner.js) notices this signal aged past its confirmation window (4h for range_filter/4h, 4x1h for smc_structure/1h) without ever creating a TradeOperation — the trigger for the one-time SystemLog entry documenting the expiry. Before this field, an expired signal was silent and indistinguishable from one that never attempted confirmation (docs/known-risks.md item 47.2/45.4). Written via SignalEvent.update, not createUnique — the field is read off the SAME already-fetched signal object every retry pass, so gating on it costs zero extra Firestore reads."
+    },
     "market_source": {
       "type": "string",
       "enum": ["spot", "futures"],

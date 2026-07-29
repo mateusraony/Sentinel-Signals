@@ -8,12 +8,23 @@
 //   node scripts/dist/run-backtest.mjs \
 //     --symbols BTCUSDT,ETHUSDT \
 //     --from 2026-01-01T00:00:00Z --to 2026-06-01T00:00:00Z \
+//     [--evaluation-from 2026-02-01T00:00:00Z] [--evaluation-to 2026-06-01T00:00:00Z] \
 //     [--data-dir scripts/__fixtures__/backtest] \
 //     [--smc BTCUSDT] [--smc-confirm BTCUSDT] \
 //     [--pine-config ./my-pine-overrides.json] \
 //     [--step-ms 900000] [--out ./backtest-report.json] \
 //     [--no-costs] [--fee-bps 5] [--slippage-bps 1] [--funding-bps 1] \
 //     [--min-trades 30] [--trial-label "ob-weight-7"]
+//
+// --evaluation-from/--evaluation-to (docs/known-risks.md item 47.2, both
+// optional, default = --from/--to): --from/--to continue to be the DATA
+// window the simulated clock runs over (indicators need it to warm up —
+// ~6x their own period, .claude/rules/pine-parity.md); --evaluation-from/-to
+// is the SCORED window — only operations opened inside it count toward the
+// report. Fetch data starting well before --evaluation-from (same practice
+// docs/claude/backtest-usage.md already recommends manually) and this flag
+// makes the engine actually exclude the cold-start trades instead of
+// silently scoring them.
 //
 // Custos (Fase 5, docs/known-risks.md item 44): taxa, slippage e funding
 // são descontados POR PADRÃO. --no-costs roda a custo zero e serve para o
@@ -30,10 +41,12 @@
 // 4h/15m RF cascade stricter (requires 4h SMC structure/zone agreement) —
 // it does not require --smc, and --smc does not imply it.
 import fs from 'node:fs';
+import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { runBacktest } from '../src/lib/backtestEngine.js';
 import { ZERO_COST } from '../src/lib/tradeMetrics.js';
 import { backend } from '@/api/entities';
-import { setPineConfigOverrides } from './backtestPineConfig.js';
+import { setPineConfigOverrides, getPineConfig } from './backtestPineConfig.js';
 
 function parseArgs(argv) {
   const args = {};
@@ -71,7 +84,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   if (!args.symbols || !args.from || !args.to) {
-    console.error('Uso: run-backtest.mjs --symbols SYM1,SYM2 --from ISO --to ISO [--data-dir DIR] [--smc SYM1,SYM2] [--smc-confirm SYM1,SYM2] [--pine-config FILE] [--step-ms N] [--out FILE] [--no-costs] [--fee-bps N] [--slippage-bps N] [--funding-bps N] [--min-trades N] [--trial-label TXT]');
+    console.error('Uso: run-backtest.mjs --symbols SYM1,SYM2 --from ISO --to ISO [--evaluation-from ISO] [--evaluation-to ISO] [--data-dir DIR] [--smc SYM1,SYM2] [--smc-confirm SYM1,SYM2] [--pine-config FILE] [--step-ms N] [--out FILE] [--no-costs] [--fee-bps N] [--slippage-bps N] [--funding-bps N] [--min-trades N] [--trial-label TXT]');
     process.exitCode = 1;
     return;
   }
@@ -93,6 +106,13 @@ async function main() {
   const fromMs = new Date(args.from).getTime();
   const toMs = new Date(args.to).getTime();
   const stepMs = args['step-ms'] ? Number(args['step-ms']) : undefined;
+  // Warm-up (docs/known-risks.md item 47.2) — opcional, default = --from/--to
+  // (comportamento idêntico a antes desta flag existir). Passe --from/--to
+  // com um buffer de aquecimento ANTES da janela que você quer medir de
+  // verdade, e diga onde ela começa/termina com estas duas flags — só
+  // operações abertas dentro delas entram no relatório.
+  const evaluationFromMs = args['evaluation-from'] ? new Date(args['evaluation-from']).getTime() : undefined;
+  const evaluationToMs = args['evaluation-to'] ? new Date(args['evaluation-to']).getTime() : undefined;
 
   // Modelo de custo. Sem flag nenhuma => DEFAULT_COST_MODEL (taxa real).
   // --no-costs => ZERO_COST, que reproduz os números pré-Fase-5.
@@ -108,6 +128,22 @@ async function main() {
   const minTrades = args['min-trades'] ? Number(args['min-trades']) : undefined;
 
   console.log(`[backtest] ${symbols.join(', ')} de ${new Date(fromMs).toISOString()} a ${new Date(toMs).toISOString()}`);
+  if (evaluationFromMs !== undefined || evaluationToMs !== undefined) {
+    console.log(`[backtest] janela avaliada (warm-up): ${new Date(evaluationFromMs ?? fromMs).toISOString()} a ${new Date(evaluationToMs ?? toMs).toISOString()}`);
+  }
+
+  // Reprodutibilidade (docs/known-risks.md item 47.2) — antes disso, comparar
+  // dois relatórios meses depois exigia lembrar de cabeça qual commit/config
+  // gerou cada um. commitSha ausente (checkout raso, sem .git) não bloqueia o
+  // run — fica null, honesto sobre o que não deu pra capturar.
+  const runStartedAt = new Date().toISOString();
+  let commitSha = null;
+  try {
+    commitSha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+  } catch (e) {
+    console.warn(`[backtest] não foi possível capturar o commit SHA: ${e.message}`);
+  }
+  const effectivePineConfig = await getPineConfig();
 
   // performance.now(), NÃO Date.now(): runBacktest instala um relógio simulado
   // (installSimClock troca o `Date` global) antes de chamar onStep, então
@@ -120,7 +156,7 @@ async function main() {
   const started = performance.now();
   let lastLoggedPct = -1;
   const report = await runBacktest({
-    assets, backend, fromMs, toMs, stepMs, costModel, minTrades,
+    assets, backend, fromMs, toMs, evaluationFromMs, evaluationToMs, stepMs, costModel, minTrades,
     onStep(t, err) {
       if (err) {
         console.warn(`[backtest] ${err.asset} falhou em ${new Date(t).toISOString()}: ${err.error}`);
@@ -186,8 +222,29 @@ async function main() {
   const outPath = args.out || 'backtest-report.json';
   // trialLabel/trialArgs: o "conte suas tentativas" da literatura de
   // overfitting reduzido ao mínimo — sem isso, comparar N relatórios meses
-  // depois vira arqueologia.
-  const enriched = { ...report, trialLabel: args['trial-label'] || null, trialArgs: process.argv.slice(2).join(' ') };
+  // depois vira arqueologia. reproducibility (item 47.2) complementa: hash do
+  // CONFIG EFETIVO (não só o caminho do arquivo --pine-config), commit e
+  // instante do run — o que faltava pra distinguir "mesmos argumentos, código
+  // diferente" de "mesmo código, config diferente".
+  const configHash = createHash('sha256').update(JSON.stringify({
+    pineConfig: effectivePineConfig,
+    costModel,
+    assets: assets.map((a) => ({
+      symbol: a.symbol, smc_enabled: a.smc_enabled, smc_confirm_4h15m: a.smc_confirm_4h15m,
+      rf_period: a.rf_period, rf_multiplier: a.rf_multiplier,
+    })),
+  })).digest('hex').slice(0, 16);
+  const enriched = {
+    ...report,
+    trialLabel: args['trial-label'] || null,
+    trialArgs: process.argv.slice(2).join(' '),
+    reproducibility: {
+      commitSha,
+      configHash,
+      runStartedAt,
+      pineConfig: effectivePineConfig,
+    },
+  };
   fs.writeFileSync(outPath, JSON.stringify(enriched, null, 2));
   console.log(`[backtest] relatório completo salvo em ${outPath}`);
 }

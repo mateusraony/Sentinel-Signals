@@ -271,6 +271,17 @@ taker), `--slippage-bps N` (default 1), `--funding-bps N` (default 1, por
 janela de 8h), `--min-trades N` (default 30), `--trial-label TXT` (gravado no
 JSON — serve para você contar quantas configurações já testou).
 
+Cada relatório também grava um bloco `reproducibility` (`commitSha`,
+`configHash` — hash do `pineConfig` EFETIVO já mesclado com `--pine-config`,
+não só o caminho do arquivo — `runStartedAt`, `pineConfig`) — ver
+`docs/known-risks.md` item 47.2. Serve para responder, meses depois, "esse
+relatório é do código de hoje ou de antes de tal mudança?" sem depender de
+memória. Para uma rodada que decide algo (ativa/desativa flag, muda
+parâmetro), registre a comparação em `docs/experiments/registry.json`
+(hipótese, baseline × teste, janela de desenvolvimento × holdout, critério de
+aceite, status) em vez de só narrar em prosa — evita o mesmo experimento ser
+renomeado e repetido até dar um resultado favorável por acaso.
+
 As mesmas seis flags existem como campos do formulário na **Opção B**
 (`backtest.yml` → *Run workflow*), com os mesmos defaults: deixar em branco usa
 o default, e o `no_costs` é uma caixa de seleção. O resumo do run imprime o

@@ -690,6 +690,99 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
   });
 });
 
+// known-risks item 47.2 — MFE/MAE tracked incrementally from THIS candle's
+// high/low, gated by the same candleUsable guard as stop/TP (P0-c/P0-g).
+// Default makeOp: BUY, entry 100, initial_stop 98 -> risk 2. Default
+// makeTfData: lastCandleTime 2026-07-16T12:00, op's candle_close_time
+// 2026-07-16T08:00 (no entry_candle_time_15m/5m set) -> entryRef falls back
+// to candle_close_time -> barsSinceEntry = (12:00-08:00)/4h = 1.
+describe('persistScanResults — MFE/MAE (item 47.2)', () => {
+  it('computes mfe_r/mae_r/bars_to_mfe/bars_to_mae from the candle range and never regresses on a smaller excursion', async () => {
+    backend._seed('TradeOperation', makeOp());
+    // high 102 (below tp1=103, no TP1), low 99 (above stop=98, no stop hit).
+    await persistScanResults(makeScanResult({
+      results: { '4h': makeTfData({ lastCandleHigh: 102, lastCandleLow: 99 }) },
+    }));
+    let stored = backend._get('TradeOperation', 'op1');
+    expect(stored.mfe_r).toBeCloseTo(1.0, 6); // (102-100)/2
+    expect(stored.mae_r).toBeCloseTo(-0.5, 6); // (99-100)/2
+    expect(stored.bars_to_mfe).toBe(1);
+    expect(stored.bars_to_mae).toBe(1);
+
+    // Bigger favorable excursion on a LATER candle — mfe_r advances, bars_to_mfe updates.
+    await persistScanResults(makeScanResult({
+      results: {
+        '4h': makeTfData({ lastCandleHigh: 102.5, lastCandleLow: 99.5, lastCandleTime: '2026-07-16T16:00:00.000Z' }),
+      },
+    }));
+    stored = backend._get('TradeOperation', 'op1');
+    expect(stored.mfe_r).toBeCloseTo(1.25, 6); // (102.5-100)/2
+    expect(stored.bars_to_mfe).toBe(2);
+    expect(stored.mae_r).toBeCloseTo(-0.5, 6); // unchanged — this candle's low is a SMALLER adverse move
+
+    // Smaller favorable excursion on the NEXT candle — mfe_r must NOT regress.
+    await persistScanResults(makeScanResult({
+      results: {
+        '4h': makeTfData({ lastCandleHigh: 100.5, lastCandleLow: 99.8, lastCandleTime: '2026-07-16T20:00:00.000Z' }),
+      },
+    }));
+    stored = backend._get('TradeOperation', 'op1');
+    expect(stored.mfe_r).toBeCloseTo(1.25, 6); // still the previous high, never regresses
+    expect(stored.bars_to_mfe).toBe(2); // unchanged — no new extreme
+  });
+
+  it('never counts a pre-entry (not candleUsable) candle toward MFE/MAE', async () => {
+    // Same P0-g contaminated-candle setup as the guard's own test above:
+    // signal candle closes 08:00, real entry (15m confirmation) only at
+    // 11:45; a candle opening 08:00/closing 12:00 contains pre-entry action
+    // and must not move mfe_r/mae_r even though its range is favorable.
+    const op = makeOp({
+      candle_close_time: '2026-07-15T08:00:00.000Z',
+      entry_candle_time_15m: '2026-07-15T11:45:00.000Z',
+    });
+    backend._seed('TradeOperation', op);
+    const contaminated = makeTfData({
+      lastCandleOpenTime: '2026-07-15T08:00:00.000Z',
+      lastCandleTime: '2026-07-15T12:00:00.000Z',
+      lastCandleLow: 99, lastCandleHigh: 102, lastClose: 100,
+    });
+    await persistScanResults(makeScanResult({ results: { '4h': contaminated } }));
+    let stored = backend._get('TradeOperation', 'op1');
+    expect(stored.mfe_r).toBeUndefined();
+    expect(stored.mae_r).toBeUndefined();
+
+    // Next (clean, post-entry) candle — now it counts.
+    const clean = makeTfData({
+      lastCandleOpenTime: '2026-07-15T12:00:00.000Z',
+      lastCandleTime: '2026-07-15T16:00:00.000Z',
+      lastCandleLow: 99, lastCandleHigh: 102, lastClose: 100,
+    });
+    await persistScanResults(makeScanResult({ results: { '4h': clean } }));
+    stored = backend._get('TradeOperation', 'op1');
+    expect(stored.mfe_r).toBeCloseTo(1.0, 6);
+  });
+
+  it('stamps bars_to_tp1 once, at the TP1 transition', async () => {
+    backend._seed('TradeOperation', makeOp());
+    await persistScanResults(makeScanResult({
+      results: { '4h': makeTfData({ lastCandleHigh: 103, lastCandleLow: 99 }) }, // touches tp1 exactly
+    }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.tp1_hit).toBe(true);
+    expect(stored.bars_to_tp1).toBe(1);
+  });
+
+  it('stamps bars_to_stop once, at the STOP_HIT transition (pre-TP1)', async () => {
+    backend._seed('TradeOperation', makeOp());
+    await persistScanResults(makeScanResult({
+      results: { '4h': makeTfData({ lastCandleHigh: 99, lastCandleLow: 97 }) }, // touches stop (98)
+    }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('STOP_HIT');
+    expect(stored.bars_to_stop).toBe(1);
+  });
+});
+
 describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTIVE)', () => {
   function makeRunner(overrides = {}) {
     return makeOp({ status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100, ...overrides });
@@ -2541,6 +2634,55 @@ describe('cooldown gates the Telegram notification only, never persistence/entry
     expect(notifyNewSignal).toHaveBeenCalledTimes(1); // NOT suppressed — anchored on the 70min-old real alert, not the 40min-old suppressed one
     const persisted = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_new_1' });
     expect(persisted[0].notified).toBe(true);
+  });
+});
+
+// known-risks item 47.2/45.4 — antes disso, um sinal que nunca confirmou
+// entrada dentro da janela de retry (4h pra RF, 4x1h pra SMC) expirava
+// mudo: sem TradeOperation, sem SystemLog, indistinguível de um sinal que
+// nunca chegou a ser tentado.
+describe('persistScanResults — expiração silenciosa de sinal (item 47.2)', () => {
+  it('loga uma vez quando um sinal RF expira sem nunca confirmar entrada, e não repete no scan seguinte', async () => {
+    backend._seed('SignalEvent', {
+      id: 'sig_stale', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_stale',
+      created_date: '2026-07-16T07:00:00.000Z', // 5h antes do "now" congelado (12:00) — passou da janela de 4h
+    });
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults(makeScanResult({ results, pineConfig }));
+
+    const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_stale' });
+    expect(stored[0].expired_logged).toBe(true);
+    const logs = await backend.entities.SystemLog.filter({});
+    const expiryLogs = logs.filter((l) => l.message?.includes('sinal expirou sem nunca confirmar entrada'));
+    expect(expiryLogs).toHaveLength(1);
+
+    // Segunda passada (o sinal continua no top-10 mais recente) — não deve
+    // logar de novo, só porque expired_logged já é true.
+    await persistScanResults(makeScanResult({ results, pineConfig }));
+    const logsAfter = await backend.entities.SystemLog.filter({});
+    const expiryLogsAfter = logsAfter.filter((l) => l.message?.includes('sinal expirou sem nunca confirmar entrada'));
+    expect(expiryLogsAfter).toHaveLength(1);
+  });
+
+  it('loga uma vez quando um sinal SMC expira sem nunca confirmar entrada (4x1h)', async () => {
+    const asset = makeAsset({ smc_enabled: true });
+    backend._seed('SignalEvent', {
+      id: 'sig_smc_stale', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '1h', signal_type: 'BUY',
+      source: 'smc_structure', dedup_key: 'sig_smc_stale',
+      created_date: '2026-07-16T07:00:00.000Z', // 5h antes do "now" (12:00) — passou da janela de 4x1h
+    });
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '1h': makeTfData() };
+
+    await persistScanResults(makeScanResult({ asset, results, pineConfig }));
+
+    const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_smc_stale' });
+    expect(stored[0].expired_logged).toBe(true);
+    const logs = await backend.entities.SystemLog.filter({});
+    expect(logs.some((l) => l.message?.includes('sinal expirou sem nunca confirmar entrada'))).toBe(true);
   });
 });
 

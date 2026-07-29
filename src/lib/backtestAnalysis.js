@@ -305,6 +305,44 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
   const hoursList = rows.map((row) => row.hours).filter((h) => h !== null);
   const activeCount = [...byPeriod.values()].filter((b) => b.count > 0).length;
 
+  // Concentração do resultado (proposta externa 2026-07-29, docs/known-risks
+  // item 47.2) — quantos R vieram de poucas operações/símbolo/trimestre/lado.
+  // O motor não deve ser aprovado só porque poucas operações excepcionais
+  // compensaram o resto. `rSorted` usa só rows com R calculável, igual ao
+  // resto do módulo. Compartilhado com os eixos abaixo — computados uma vez
+  // aqui em vez de duas (return já os chama via `finish`).
+  const finishedBySymbol = finish(bySymbol);
+  const finishedByPeriod = finishChronological(byPeriod);
+  const finishedBySide = finish(bySide);
+  const rSorted = rows.filter((row) => row.r !== null).map((row) => row.r).sort((a, b) => b - a);
+  const sumTopN = (n) => rSorted.slice(0, n).reduce((acc, r) => acc + r, 0);
+  const shareOfTotal = (part) => (sumRTotal !== 0 ? part / sumRTotal : null);
+  // Maior |contribuição| de um único balde do eixo — pode ser o maior driver
+  // positivo OU o maior driver negativo, ambos igualmente relevantes pra
+  // "o resultado depende de um símbolo/período/lado só?".
+  const largestBucket = (bucketList) => {
+    const withCount = bucketList.filter((b) => b.count > 0);
+    if (withCount.length === 0) return null;
+    const largest = withCount.reduce((max, b) => (Math.abs(b.contributionR) > Math.abs(max.contributionR) ? b : max));
+    return {
+      key: largest.symbol ?? largest.period ?? largest.side ?? largest.key,
+      contributionR: largest.contributionR,
+      share: shareOfTotal(largest.contributionR),
+    };
+  };
+
+  // MFE/MAE (known-risks item 47.2) — lidos direto do campo já persistido
+  // pelo scanner (candle-resolution, não tick — ver TradeOperation.jsonc),
+  // não recalculados aqui. `stoppedAfterProfitShare` responde diretamente
+  // "dos trades que pararam no stop, quantos chegaram a ficar positivos
+  // antes?" — a pergunta que motivou esse campo.
+  const mfeList = rows.map((row) => row.op.mfe_r).filter(Number.isFinite);
+  const maeList = rows.map((row) => row.op.mae_r).filter(Number.isFinite);
+  const barsToTp1List = rows.map((row) => row.op.bars_to_tp1).filter(Number.isFinite);
+  const barsToStopList = rows.map((row) => row.op.bars_to_stop).filter(Number.isFinite);
+  const stoppedRows = rows.filter((row) => row.op.status === 'STOP_HIT');
+  const stoppedAfterProfit = stoppedRows.filter((row) => Number.isFinite(row.op.mfe_r) && row.op.mfe_r > 0).length;
+
   return {
     costModel: models.resolved,
     totalClosed: closed.length,
@@ -313,16 +351,16 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
     // só para a soma das contribuições poder ser conferida contra ele.
     expectancyR: mean(sumRTotal, rCountedTotal),
     byExitReason: finish(byExitReason),
-    bySymbol: finish(bySymbol),
+    bySymbol: finishedBySymbol,
     // Eixos de verificação das afirmações da auditoria externa (2026-07-28).
     // Mesma propriedade aditiva dos demais: as contribuições de cada eixo somam
     // exatamente a expectância geral, então cada linha diz quantos R vieram
     // dali — não é comparação de médias entre grupos de tamanhos diferentes.
-    bySide: finish(bySide),
+    bySide: finishedBySide,
     byTier: finish(byTier),
     bySideTier: finish(bySideTier),
     byArbitration: finish(byArbitration),
-    byPeriod: finishChronological(byPeriod),
+    byPeriod: finishedByPeriod,
     // DUAS medidas, e é preciso ler as duas juntas — separadas de propósito
     // porque cada uma sozinha engana:
     //
@@ -373,6 +411,30 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
       median: median(hoursList),
       min: hoursList.length > 0 ? Math.min(...hoursList) : null,
       max: hoursList.length > 0 ? Math.max(...hoursList) : null,
+    },
+    // known-risks item 47.2. top5/top10 usam as operações de MAIOR R (não as
+    // mais recentes) — "quanto do resultado depende de poucas operações
+    // excepcionais", não uma amostra de conveniência.
+    concentration: {
+      top5ContributionR: sumTopN(5),
+      top5Share: shareOfTotal(sumTopN(5)),
+      top10ContributionR: sumTopN(10),
+      top10Share: shareOfTotal(sumTopN(10)),
+      largestSymbol: largestBucket(finishedBySymbol),
+      largestPeriod: largestBucket(finishedByPeriod),
+      largestSide: largestBucket(finishedBySide),
+    },
+    excursion: {
+      counted: mfeList.length,
+      avgMfeR: mean(mfeList.reduce((a, b) => a + b, 0), mfeList.length),
+      medianMfeR: median(mfeList),
+      avgMaeR: mean(maeList.reduce((a, b) => a + b, 0), maeList.length),
+      medianMaeR: median(maeList),
+      avgBarsToTp1: mean(barsToTp1List.reduce((a, b) => a + b, 0), barsToTp1List.length),
+      avgBarsToStop: mean(barsToStopList.reduce((a, b) => a + b, 0), barsToStopList.length),
+      stoppedCount: stoppedRows.length,
+      stoppedAfterProfitCount: stoppedAfterProfit,
+      stoppedAfterProfitShare: stoppedRows.length > 0 ? stoppedAfterProfit / stoppedRows.length : null,
     },
   };
 }

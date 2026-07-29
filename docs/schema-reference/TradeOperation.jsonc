@@ -217,6 +217,42 @@
       "description": "Consecutive candles of `signal_timeframe` with Range Filter reversed against the position (pre-TP1 only) — used by the Invalidation toggle",
       "default": 0
     },
+    "mfe_r": {
+      "type": "number",
+      "description": "Maximum Favorable Excursion, in R (same risk denominator as calcRealizedR: |entry_price - initial_stop|). Recomputed on every closed candle of signal_timeframe from that candle's high/low (persistScanResults only — priceCheckActiveOpsInner does NOT update this, candle resolution not tick resolution, a deliberate precision tradeoff to avoid turning a live-price loop into a near-continuous write source). Gated by the same P0-c/P0-g candleUsable guard as stop/TP — a pre-entry candle can never count. known-risks item 47.2."
+    },
+    "mae_r": {
+      "type": "number",
+      "description": "Maximum Adverse Excursion, in R — same denominator/source/gating as mfe_r, but tracking the worst point against the position (a negative number). known-risks item 47.2."
+    },
+    "bars_to_mfe": {
+      "type": "number",
+      "description": "Bars (of signal_timeframe, elapsed-time proxy — same convention as the Time Stop's barsOpen) since entry when the current mfe_r was set."
+    },
+    "bars_to_mae": {
+      "type": "number",
+      "description": "Same as bars_to_mfe, for mae_r."
+    },
+    "bars_to_tp1": {
+      "type": "number",
+      "description": "Bars since entry when TP1 was hit — same elapsed-time proxy as bars_to_mfe, stamped once at the tp1_hit transition."
+    },
+    "bars_to_stop": {
+      "type": "number",
+      "description": "Bars since entry when the operation stopped out (pre or post TP1) — stamped once at the STOP_HIT transition, absent on ops that never stopped."
+    },
+    "tf_1d_direction": {
+      "type": "number",
+      "description": "Multi-timeframe macro alignment (analyzeAlignment's rf_direction, -1/0/1) copied from the originating SignalEvent.context at entry — purely observational, never a gate. Fixed known-risks item 47.2: buildTradeOpData/buildSmcTradeOpData never copied this before, so TradeCard.jsx's existing read of these 3 fields always resolved null on an active operation."
+    },
+    "tf_4h_direction": {
+      "type": "number",
+      "description": "Same as tf_1d_direction, 4h timeframe."
+    },
+    "tf_1h_direction": {
+      "type": "number",
+      "description": "Same as tf_1d_direction, 1h timeframe."
+    },
     "source": {
       "type": "string",
       "enum": [

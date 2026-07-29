@@ -102,6 +102,35 @@ export function countFundingSettlements(op) {
   return Math.floor(endMs / EIGHT_HOURS_MS) - Math.floor(startMs / EIGHT_HOURS_MS);
 }
 
+// Same boundary count as countFundingSettlements, split at TP1 — a
+// settlement crossed AFTER TP1 only applies to whatever fraction of the
+// position the runner leg still holds, not the full notional. Before this
+// split, calcTradeCost billed every settlement at 100% of entry_price even
+// after a partial close reduced exposure, the one cost component fee/
+// slippage already avoid (they're weighted per-leg via getWeights). No
+// TP1 (or an unusable tp1_hit_at) falls back to "whole duration at full
+// notional" — identical to the pre-split behaviour, so ops without a
+// partial exit are unaffected.
+export function countFundingSettlementsByLeg(op) {
+  const openedAt = getOpenedAt(op);
+  const closedAt = getClosedAt(op);
+  if (!openedAt || !closedAt) return { beforeTp1: 0, afterTp1: 0 };
+  const startMs = new Date(openedAt).getTime();
+  const endMs = new Date(closedAt).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return { beforeTp1: 0, afterTp1: 0 };
+  }
+  const tp1Ms = op.tp1_hit && op.tp1_hit_at ? new Date(op.tp1_hit_at).getTime() : NaN;
+  if (!Number.isFinite(tp1Ms) || tp1Ms <= startMs || tp1Ms >= endMs) {
+    const total = Math.floor(endMs / EIGHT_HOURS_MS) - Math.floor(startMs / EIGHT_HOURS_MS);
+    return { beforeTp1: total, afterTp1: 0 };
+  }
+  return {
+    beforeTp1: Math.floor(tp1Ms / EIGHT_HOURS_MS) - Math.floor(startMs / EIGHT_HOURS_MS),
+    afterTp1: Math.floor(endMs / EIGHT_HOURS_MS) - Math.floor(tp1Ms / EIGHT_HOURS_MS),
+  };
+}
+
 // Total round-trip cost in PRICE units (always >= 0 — a cost never helps the
 // trader, regardless of side). Fee and slippage are charged per fill on that
 // fill's own notional; the module has no position size, so notional is the
@@ -133,8 +162,15 @@ export function calcTradeCost(op, costModel) {
     fills = 2;
   }
 
-  const fundingSettlements = m.fundingBpsPer8h > 0 ? countFundingSettlements(op) : 0;
-  const fundingCost = fundingSettlements * (m.fundingBpsPer8h / BPS) * op.entry_price;
+  let fundingSettlements = 0;
+  let fundingCost = 0;
+  if (m.fundingBpsPer8h > 0) {
+    const { beforeTp1, afterTp1 } = countFundingSettlementsByLeg(op);
+    fundingSettlements = beforeTp1 + afterTp1;
+    const rate = m.fundingBpsPer8h / BPS;
+    const { runner } = getWeights(op);
+    fundingCost = (beforeTp1 * op.entry_price + afterTp1 * runner * op.entry_price) * rate;
+  }
 
   return {
     total: entryCost + exitCost + fundingCost,
