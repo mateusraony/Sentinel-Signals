@@ -5,14 +5,18 @@ cada item aponta para a seção canônica em `docs/known-risks.md`. Existe porqu
 pendência estava espalhada em cinco itens numerados e num plano de sessão, e
 plano de sessão morre com a sessão.
 
-> **Estado em 2026-07-29.** O gate de amostra do Bloco 0 **foi executado**: 344
-> operações, 12 meses, 20 símbolos. Resultado: expectância líquida −0,076 R,
-> **bruta −0,031 R ± 0,061 — indistinguível de zero**, IC cruzando zero, custo
-> (0,045 R/op) maior que o déficit bruto. Ou seja: **nenhuma vantagem
-> demonstrada**. E a janela inteira foi um bear market (BTC −37%, ETH −52%,
-> SOL −61% — item 46.1), então tudo que foi medido está contaminado por regime.
-> Os blocos abaixo continuam válidos como ordem, mas leia-os sabendo disso:
-> nenhum deles cria vantagem, todos medem melhor.
+> **Estado em 2026-07-30.** As DUAS janelas do Bloco 0 já rodaram. Baixa
+> (2025-07→2026-07, 344 ops): expectância líquida −0,076 R, IC cruzando zero —
+> **nenhuma vantagem demonstrada**, janela inteira em bear market (item 46.1).
+> Alta (2024-07→2025-07, 288 ops, `bull-baseline`): expectância líquida
+> **+0,294 R, CONCLUSIVA** (IC 0,153 a 0,435) — a primeira janela, de qualquer
+> regime, a fechar conclusiva. Mas o critério escrito antes (positivo nas
+> DUAS janelas) não foi satisfeito ao pé da letra, e BUY continua mais forte
+> que SELL na alta, espelhando (mais suave) a assimetria oposta da baixa —
+> ainda tem cheiro de regime, não é vantagem provada como independente dele.
+> Detalhe completo: item 48. **O Bloco 1 não foi desbloqueado** com base
+> nisso — decisão de como prosseguir está em aberto, não tomada
+> unilateralmente.
 
 ## A regra que ordena tudo: amostra
 
@@ -26,11 +30,20 @@ que**. Um bloco só começa quando o anterior fecha.
 
 ---
 
-## Bloco 0 — a janela de ALTA (é o que está aberto agora)
+## Bloco 0 — a janela de ALTA (RODADA — resultado ambíguo, ver item 48)
 
 **Rodar `backtest.yml` com `from: 2024-07-27`, `to: 2025-07-27`, a mesma carteira
 de 20 símbolos, `trial_label: bull-baseline`.** Zero código: só duas datas
 diferentes no `workflow_dispatch`.
+
+**Resultado (2026-07-30, detalhe em `docs/known-risks.md` item 48)**:
++0,294 R líquido, CONCLUSIVO (288 operações) — a primeira janela do projeto a
+fechar assim. Mas não bate exatamente com nenhum dos três desfechos do
+critério abaixo: os dois lados (BUY e SELL) vieram positivos (derruba o
+cenário "puramente direcional"), mas a janela de baixa continua líquida
+negativa (ainda que inconclusiva), então "positivo nas duas janelas" também
+não se sustenta ao pé da letra. **O Bloco 1 não foi desbloqueado** com base
+nisso — fica em aberto até o usuário decidir como interpretar a ambiguidade.
 
 ### A pergunta que só isto responde
 

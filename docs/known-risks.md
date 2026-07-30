@@ -3286,3 +3286,62 @@ rodada) `&& npm run build && npm run build:scan && npm run build:backtest`.
 Smoke test manual do CLI (`node scripts/dist/run-backtest.mjs` contra candles
 sintéticos locais, sem rede): `reproducibility`/`dataRangeMs`/janela avaliada
 via `--evaluation-from` todos confirmados no JSON de saída.
+
+## 48. Bloco 0 — janela de ALTA: resultado (2026-07-30)
+
+`docs/roadmap.md` Bloco 0 pedia um run com a mesma carteira de 20 símbolos e
+mesma duração da baseline de baixa (344 operações, 12 meses,
+2025-07-27→2026-07-27, expectância líquida −0,076 R, IC cruzando zero), mas
+numa janela de ALTA (2024-07-27→2025-07-27), com um critério escrito **antes**
+de olhar o número. O usuário rodou (`trial_label: Bull-baseline`, artifact
+enviado, commit `cc0bb94`). Resultado, via `analyze-backtest.mjs` sobre o
+relatório completo:
+
+| | Baixa (baseline, item 44/46.1) | Alta (este run) |
+|---|---|---|
+| Operações fechadas | 344 | 288 |
+| Expectância líquida | −0,076 R | **+0,294 R** |
+| IC 95% | cruza zero (INCONCLUSIVO) | **[0,153; 0,435] — CONCLUSIVO** |
+| BUY | −0,332 R (t=−4,32, item 45.9) | **+0,396 R** (159 ops) |
+| SELL | +0,199 R (não sobrevive Bonferroni, item 45.9) | +0,169 R (129 ops) |
+
+### Nenhum dos três desfechos escritos antes bateu exatamente
+
+O critério prometia três baldes — (a) BUY positivo/SELL negativo = puramente
+direcional, sem vantagem, encerra a linha; (b) líquido positivo nas DUAS
+janelas = vantagem real, independente de regime; (c) negativo nas duas.
+**O resultado real não cai em nenhum dos três**: os dois lados vieram
+positivos na alta (derruba com força o cenário (a) — se fosse puramente
+direcional, SELL devia ter ficado negativo numa alta forte, e não ficou), mas
+a baixa continua líquida negativa (mesmo que estatisticamente indistinguível
+de zero), então (b) também não se sustenta ao pé da letra.
+
+**Leitura honesta**: existe vantagem real e estatisticamente confirmada em
+regime de ALTA (a primeira janela, de qualquer regime, que fechou
+CONCLUSIVA desde que o gate de amostra começou). BUY continuar mais forte que
+SELL, espelhando a assimetria oposta da baixa, mostra que o resultado ainda
+**acompanha o regime** — só que de forma mais suave do que "só ganha do lado
+favorecido e perde do outro". A pergunta "o motor sobrevive numa queda de
+verdade?" continua sem resposta — a única medição de queda que existe é
+inconclusiva, não é uma prova de perda.
+
+### Achado que se repete em regime diferente — reforça, não muda o veredito
+
+`correction_warning` (item 45.9: inutilizável como filtro, causalidade
+invertida) voltou a aparecer com desempenho muito pior que a média nesta
+janela também: 46 operações, −0,414 R médio, contra +0,429 R médio das
+operações sem arbitragem envolvida. Mesma contagem de 46 operações que na
+baixa (provavelmente coincidência de amostra, não investigado) — o padrão
+qualitativo se replica em dois regimes, o que é evidência a mais de que é um
+efeito real (ainda que inútil como gate, pelo mesmo motivo já documentado).
+
+### Decisão
+
+**Não desbloqueei o Bloco 1 (os quatro flags dormentes) com base só nisto** —
+o critério original pedia positivo nas DUAS janelas para essa conclusão, e a
+baixa não bateu esse bar (mesmo inconclusiva, não é a mesma coisa que
+provada positiva). Fica registrado como a melhor evidência de vantagem que o
+projeto já produziu, mas com a ressalva de regime explícita — decisão de
+como prosseguir (aceitar a ambiguidade e destravar o Bloco 1, esperar mais
+uma janela, ou outra alternativa) fica para quando o usuário decidir, não
+tomada aqui.
