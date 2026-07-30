@@ -19,15 +19,13 @@ on:
   workflow_dispatch:
     inputs:
       symbols:
-        # Default reduzido a pedido do usuário (2026-07-29) pra runs manuais
-        # rápidas de sanity-check. ATENÇÃO: isto é MENOR que a carteira de
-        # referência de 20 símbolos que docs/roadmap.md Bloco 0 documenta como
-        # necessária pro veredito real do gate de amostra ("amplitude em
-        # ATIVOS, não anos" — 7 símbolos dão amostra bem menor e mais sujeita
-        # a regime de um punhado de ativos só). Pra um run que decide algo de
-        # verdade (não só conferir se o motor roda), troque manualmente pela
-        # lista de 20 símbolos do histórico deste arquivo (git log) ou peça
-        # pro Claude relembrar.
+        # Preferência PERMANENTE do usuário (confirmada 2026-07-30, não é só
+        # "default de conveniência"): só estes 7 pares, sempre. Ver
+        # docs/claude/backtest-usage.md para a ressalva que continua valendo —
+        # é MENOR que a carteira de referência de 20 símbolos que
+        # docs/roadmap.md Bloco 0 pede para o veredito real do gate de amostra
+        # ("amplitude em ATIVOS, não anos"). Não troque para 20 "pra ajudar"
+        # sem o usuário pedir explicitamente para aquele run específico.
         description: "Símbolos separados por vírgula (Binance Spot)"
         default: "BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT"
         required: true
@@ -86,9 +84,17 @@ on:
         default: ""
         required: false
       trial_label:
-        description: "Rótulo desta tentativa (só gravado no JSON) — serve para você contar quantas configurações já testou"
+        # Sem default fixo POSSÍVEL de verdade: é texto livre que descreve O
+        # QUE ESTE RUN especificamente está testando (ex.: "bull-baseline",
+        # "bear-baseline", "smc-on") — um valor fixo (tipo "manual-run" toda
+        # vez) destruiria a única coisa que o campo serve pra fazer, que é
+        # diferenciar uma tentativa da outra depois (docs/roadmap.md, "conte
+        # suas tentativas" contra overfitting). obrigatório=true força você a
+        # escrever ALGO em vez de deixar em branco sem querer — é o mais perto
+        # de "ligado por padrão" que um campo de texto livre permite.
+        description: "Rótulo desta tentativa, OBRIGATÓRIO (só gravado no JSON) — descreva o que este run testa, ex.: bull-baseline"
         default: ""
-        required: false
+        required: true
 
 permissions:
   contents: read
