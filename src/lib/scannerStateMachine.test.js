@@ -2725,6 +2725,15 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
   function flatCandles5m(n) {
     return Array.from({ length: n }, (_, i) => mk5m(100, 100, 100, 100, i));
   }
+  // Same known-good recipe as the other SMC describes in this file: 59 flat
+  // candles + 1 that wicks below the recent low and closes back above it —
+  // deterministic bullishSweep=true, entry close pinned at 96.5.
+  function bullishSweepCandles5m() {
+    const candles = [];
+    for (let i = 0; i < 59; i++) candles.push(mk5m(100, 105, 95, 100, i));
+    candles.push(mk5m(96, 97, 93, 96.5, 59));
+    return candles;
+  }
 
   describe('RF (4h_15m)', () => {
     it('retry grava last_rejection_reason já na 1ª passada (1º pass e retry avaliam o mesmo sinal no mesmo scan) e não regrava enquanto o motivo não mudar', async () => {
@@ -2784,6 +2793,25 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
       expect(stored[0].last_rejection_reason).toBeUndefined();
     });
 
+    // Codex review (PR #102, P1): a signal that just confirmed and created
+    // its own op is re-evaluated by this SAME retry loop within this SAME
+    // persistScanResults call (it's already a SignalEvent by the time the
+    // retry loop's query runs) — hasActiveOp is true because of the op IT
+    // ITSELF just created, not because a DIFFERENT op is blocking it. That
+    // must never count as active_op_exists — it isn't a rejection.
+    it('active_op_exists NÃO é contado pro sinal que acabou de criar a própria op (mesmo scan, retry reavalia o mesmo sinal)', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 1)); // aligned 15m confirmation
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const results = { '4h': makeTfData() }; // trend aligned, regime ok
+      const signal = makeRfSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal] });
+
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(1); // confirmou
+      const active = result.entryFunnelOutcomes.filter((o) => o.reason === 'active_op_exists');
+      expect(active).toHaveLength(0);
+    });
+
     it('sinal RF expira carregando o último motivo de rejeição gravado por um retry anterior', async () => {
       const pineConfig = makePineConfig({ useADX: false, useChop: false });
       backend._seed('SignalEvent', {
@@ -2812,6 +2840,22 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
   });
 
   describe('SMC (1h_5m)', () => {
+    // Codex review (PR #102, P1) — mesmo raciocínio do teste equivalente na
+    // seção RF acima: o sinal que acabou de confirmar não pode contar como
+    // active_op_exists só porque o retry loop o reavalia no mesmo scan.
+    it('active_op_exists NÃO é contado pro sinal que acabou de criar a própria op (mesmo scan, retry reavalia o mesmo sinal)', async () => {
+      fetchCandles.mockResolvedValue(bullishSweepCandles5m());
+      const asset = makeAsset({ smc_enabled: true });
+      const results = { '1h': makeTfData({ atrValue: 2 }) };
+      const signal = makeSmcSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(1); // confirmou
+      const active = result.entryFunnelOutcomes.filter((o) => o.reason === 'active_op_exists');
+      expect(active).toHaveLength(0);
+    });
+
     it('insufficient_data quando há menos de 60 candles 5m fechados — registrado no funil e gravado no sinal', async () => {
       fetchCandles.mockResolvedValue(flatCandles5m(30));
       const asset = makeAsset({ smc_enabled: true });

@@ -261,9 +261,18 @@ export async function runBacktest({
           for (const outcome of (persistResult.smcObFvgOutcomes || [])) {
             recordOutcome(smcObFvgOutcomesByKey, attemptsByKey.smcObFvg, outcome);
           }
-          for (const outcome of (persistResult.entryFunnelOutcomes || [])) {
-            const bucket = (entryFunnelCounts[outcome.cascade] ||= {});
-            bucket[outcome.reason] = (bucket[outcome.reason] || 0) + 1;
+          // Codex review (PR #102): unlike the Maps above (which only ever
+          // hold the FINAL outcome per dedup_key, so a warm-up-only entry is
+          // naturally overwritten once real evaluation starts), this is a
+          // running SUM across every tick — counting warm-up/post-evaluation
+          // ticks here would silently inflate byReason with rejections
+          // outside the window the rest of the report (evaluatedOps, costs)
+          // is scoped to. Gate on the same evalFromMs/evalToMs boundary.
+          if (t >= evalFromMs && t <= evalToMs) {
+            for (const outcome of (persistResult.entryFunnelOutcomes || [])) {
+              const bucket = (entryFunnelCounts[outcome.cascade] ||= {});
+              bucket[outcome.reason] = (bucket[outcome.reason] || 0) + 1;
+            }
           }
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });

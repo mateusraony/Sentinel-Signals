@@ -462,6 +462,40 @@ describe('runBacktest — no-look-ahead (4h Range Filter flip)', () => {
     expect(ops[0].candle_close_time).toBe(new Date(FLIP_CLOSE_TIME).toISOString());
   });
 
+  // Codex review (PR #102, P2): entryFunnelCounts summed across EVERY replay
+  // tick from fromMs..toMs, while the rest of the report (evaluatedOps,
+  // costs) is scoped to [evaluationFromMs, evaluationToMs] — so warm-up-only
+  // rejections were inflating a report that claims to describe just the
+  // evaluated window. Reuses the exact build15mDelayed fixture/timing from
+  // the test above (misaligned for ticks 0-3, aligns at tick 4): this time
+  // evaluationFromMs starts AT the alignment instant, so the 4 real
+  // confirmation_15m_not_aligned rejections that genuinely happened during
+  // ticks 0-3 must not appear in report.entryFunnel.
+  it('rejeições do funil que aconteceram SÓ durante o aquecimento não contam em report.entryFunnel', async () => {
+    function build15mDelayed() {
+      const downStart = FLIP_CLOSE_TIME - 200 * FIFTEEN_M;
+      const down = downtrendCandles(200, 300, 0.5, downStart, FIFTEEN_M);
+      const up = uptrendCandles(40, down[down.length - 1].close, 1, FLIP_CLOSE_TIME, FIFTEEN_M);
+      return [...down, ...up];
+    }
+    setCandles('TESTUSDT', build15mDelayed);
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const report = await runBacktest({
+      assets: [makeAsset()], backend,
+      fromMs: FLIP_CLOSE_TIME,
+      toMs: FLIP_CLOSE_TIME + 5 * FIFTEEN_M,
+      evaluationFromMs: FLIP_CLOSE_TIME + 4 * FIFTEEN_M, // ticks 0-3 (misaligned) viram aquecimento
+      stepMs: FIFTEEN_M,
+    });
+
+    expect(report.entryFunnel['4h_15m'].byReason.confirmation_15m_not_aligned ?? 0).toBe(0);
+    // A confirmação em si (tick 4, dentro da janela avaliada) não foi afetada
+    // pelo corte — a op segue existindo e contando no relatório normalmente.
+    expect(report.totalOps).toBe(1);
+  });
+
   // confirmBars (docs/known-risks.md item 27) wiring proof: scanAsset must
   // actually resolve pineConfig.confirmBars and gate newSignals through
   // calculateConfirmedSignal, not just have the pure function be correct in

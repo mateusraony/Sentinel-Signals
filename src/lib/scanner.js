@@ -2011,7 +2011,24 @@ export async function persistScanResults(scanResult) {
     }
     if (sig.is_dismissed) continue;
 
-    if (hasActiveOp) { entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', reason: 'active_op_exists' }); continue; }
+    if (hasActiveOp) {
+      // Codex review (PR #102): this same signal is re-evaluated by this
+      // retry loop on every scan while ITS OWN op stays open (it stays in
+      // the `recent4hSignals` lookback until 9 newer signals bump it out or
+      // it ages past the 4h window) — including the very same
+      // persistScanResults call that just created the op via the 1st-pass
+      // block above. That is not a rejection, it is the signal that
+      // SUCCEEDED; counting it as `active_op_exists` would make every
+      // successful RF entry pollute the funnel with a false rejection each
+      // pass. tradeOpId mirrors the deterministic id the 1st-pass/retry
+      // creation blocks both use (`trade_${dedup_key}`), so this only
+      // suppresses the count for the signal that actually owns activeOp —
+      // a genuinely different pending signal blocked by another op still
+      // counts normally.
+      const ownsActiveOp = activeOp?.id === `trade_${sig.dedup_key}`;
+      if (!ownsActiveOp) entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', reason: 'active_op_exists' });
+      continue;
+    }
 
     // Verify 4H trend still aligned with signal direction (may have reversed)
     const tfData4h = results['4h'];
@@ -2126,7 +2143,14 @@ export async function persistScanResults(scanResult) {
       }
       if (sig.is_dismissed) continue;
 
-      if (hasActiveOp) { entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', reason: 'active_op_exists' }); continue; }
+      if (hasActiveOp) {
+        // Codex review (PR #102) — same reasoning as the RF retry loop above:
+        // don't count the signal that OWNS the currently active op as a
+        // false `active_op_exists` rejection.
+        const ownsActiveOp = activeOp?.id === `trade_smc_${sig.dedup_key}`;
+        if (!ownsActiveOp) entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', reason: 'active_op_exists' });
+        continue;
+      }
 
       // Verify 1h structure bias still aligned (may have reversed since signal fired)
       const tfData1h = results['1h'];
