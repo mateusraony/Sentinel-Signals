@@ -27,6 +27,16 @@ Duas formas de rodar — mesmo motor, mesmo resultado:
   resumo na aba **Summary** do run ou baixe o artifact `backtest-report`
   para o JSON completo.
 
+**Preferência permanente do usuário (2026-07-30)**: o campo `symbols` do
+workflow já vem preenchido com os 7 pares que o usuário decidiu usar —
+`BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT`. **Não troque
+para a carteira de referência de 20 símbolos "pra ajudar"** — isso reduz a
+amostra e mistura menos ativos independentes (ver `docs/roadmap.md`, "Por que
+ampliar em ATIVOS e não em anos"), mas foi uma escolha explícita, não um
+esquecimento. Se algum teste específico (como o Bloco 0 — janela de alta)
+precisar da carteira maior pra ter poder estatístico, isso é uma exceção
+pontual a **pedir confirmação antes**, não um "corrigir" silencioso.
+
 ## Passo 1 — baixar o histórico real (Opção A, sua máquina)
 
 ```bash
