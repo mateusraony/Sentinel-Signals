@@ -3345,3 +3345,78 @@ projeto já produziu, mas com a ressalva de regime explícita — decisão de
 como prosseguir (aceitar a ambiguidade e destravar o Bloco 1, esperar mais
 uma janela, ou outra alternativa) fica para quando o usuário decidir, não
 tomada aqui.
+
+## 49. Funil de confirmação de entrada instrumentado — fecha 45.3/45.4 (2026-07-30)
+
+O usuário reportou o problema real por trás de "fechar o processo do motor":
+o painel ao vivo produziu só **3 operações** em mais de um mês rodando os
+mesmos 7 símbolos, apesar de "bastante sinal" — pergunta confirmada:
+"bastante sinal, mas poucas viram operação", com `minScore=75` (padrão,
+descarta configuração de score como causa). Isso aponta pro **funil de
+confirmação de entrada** (RF 4h→15m e SMC 1h→5m), que nunca teve
+instrumentação agregável — cada gate só fazia `continue` mudo (RF) ou
+colapsava 3 causas num `no_trigger` só (SMC, item 45.3). Fecha 45.3 e 45.4.
+
+### O mecanismo
+
+Novo campo `SignalEvent.last_rejection_reason` (ver
+`docs/schema-reference/SignalEvent.jsonc`), escrito **só pelos loops de
+RETRY** de `persistScanResults` (`scanner.js`) — o 1º pass de cada sinal já
+loga verboso pro `SystemLog` uma vez, não precisa do campo persistido.
+**Write-on-change**: um sinal preso no MESMO gate por N passadas de retry
+custa zero escrita extra — só uma MUDANÇA de motivo grava (mesma convenção
+de `expired_logged`/`rf_reverse_bars_count`, item 47.2/P0-e). Cada avaliação
+(mude o campo ou não) também empurra pra `entryFunnelOutcomes`, um array em
+memória sem custo de I/O que `persistScanResults` devolve — vira insumo pro
+histograma `entryFunnel` do relatório de backtest (abaixo). O log de
+expiração (RF e SMC) passou a incluir o último motivo conhecido na mensagem
+e em `details.last_rejection_reason`, então mesmo um sinal que nunca
+converteu deixa rastro de ONDE parou.
+
+`check5mSmcConfirmation` (cascata SMC) teve seu `no_trigger` colapsado
+dividido em três causas reais, fechando o item 45.3: `insufficient_data`
+(menos de 60 candles 5m fechados), `no_trigger` (dado suficiente, gatilho
+genuinamente nunca disparou), `fetch_error` (exceção no fetch). Antes,
+"sem dado" e "sem sinal" eram indistinguíveis num replay longo.
+
+Motivos possíveis (11 no total — ver enum em `SignalEvent.jsonc`):
+`trend_reversed`, `regime_rejected`, `smc_confirm_zone_rejected`,
+`retest_pending`, `displacement_gate_rejected`, `confirmation_15m_not_aligned`,
+`insufficient_data`, `no_trigger`, `ote_zone_unfavorable`, `fetch_error`,
+`rr_below_min`. `active_op_exists` também é contado em `entryFunnelOutcomes`
+(pra não sumir do histograma), mas nunca grava o campo — não é uma rejeição
+do próprio gate, é o asset já estar ocupado por outra operação.
+
+### Backtest — seção `entryFunnel`
+
+`backtestEngine.js` agrega `entryFunnelOutcomes` num histograma simples por
+cascata (`{'4h_15m': {...}, '1h_5m': {...}}`), **diferente** dos Maps por
+`dedup_key` que `retest`/`displacement`/`smcRegime` usam (que guardam o
+motivo FINAL de cada sinal): aqui é a soma de TODAS as avaliações que
+rejeitaram algo ao longo do replay inteiro — responde "qual gate barra mais
+no funil", não "qual foi o motivo final de cada sinal" (um sinal que falha
+3x e confirma na 4ª conta 3 rejeições reais que aconteceram). Nova seção
+`report.entryFunnel` (`totalRejections` + `byReason` por cascata), impressa
+por `scripts/run-backtest.mjs` e no resumo de `backtest.yml`.
+
+### Por que backtest em vez de esperar dado ao vivo
+
+O motor de backtest roda a MESMA `scanAsset`/`persistScanResults` do painel
+ao vivo, sem modificação — instrumentar uma vez e rodar UM backtest dá a
+distribuição real de motivos de rejeição sobre centenas de tentativas
+históricas em minutos, em vez de esperar semanas de dado ao vivo acumular.
+Essa é a Rodada 2 do plano de "fechar o processo do motor": o usuário roda
+`trial_label: entry-funnel-diagnostico` com os 7 símbolos de sempre, e a
+seção `entryFunnel` do relatório responde com número qual gate rejeita mais
+em cada cascata — inclusive se a hipótese geométrica do item 45.2 (tensão
+entre gatilho 5m e zona OTE da perna 1h) se confirma como a causa dominante
+do lado SMC.
+
+### Verificação
+
+11 testes novos em `scannerStateMachine.test.js` (write-on-change nas duas
+cascatas, `active_op_exists` sem escrita, os 3 motivos novos de
+`check5mSmcConfirmation`, enriquecimento do log de expiração) e 3 em
+`backtestEngine.test.js` (`entryFunnel` default zerado, agregação por
+cascata/motivo, prova de wiring ponta a ponta via `runBacktest` real) — 703
+testes passando no total, sem regressão.

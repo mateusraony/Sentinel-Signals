@@ -236,6 +236,23 @@ nunca deve receber nova transição.**
   `bars_to_tp1`/`bars_to_stop` reusam o mesmo proxy de tempo decorrido que o
   Time Stop (`barsOpen`), não um contador novo.
 
+- **Funil de confirmação de entrada instrumentado** (item 45.3/45.4/49) —
+  `SignalEvent.last_rejection_reason` registra qual gate rejeitou a última
+  tentativa de entrada, escrito **só pelos loops de RETRY** de
+  `persistScanResults` (o 1º pass já loga verboso pro `SystemLog` uma vez por
+  sinal), write-on-change (mesma convenção de `expired_logged`/
+  `rf_reverse_bars_count` — motivo igual entre passadas custa zero escrita
+  extra). Cada avaliação (mude o campo ou não) também empurra pra
+  `entryFunnelOutcomes`, devolvido por `persistScanResults` e agregado num
+  histograma por cascata (`report.entryFunnel`) no backtest — responde "qual
+  gate barra mais no funil inteiro", não só o motivo final de cada sinal. O
+  log de expiração (RF e SMC) inclui o último motivo conhecido. Fechou o
+  `no_trigger` colapsado de `check5mSmcConfirmation` (item 45.3) em três
+  causas distintas: `insufficient_data` (< 60 candles 5m fechados),
+  `no_trigger` (dado suficiente, gatilho nunca disparou), `fetch_error`.
+  `active_op_exists` conta no histograma mas nunca grava o campo — não é
+  rejeição do gate, é o asset já estar ocupado.
+
 ## Regras ao mexer aqui
 
 - **Não** introduza um terceiro caminho de mutação de op. Consolidar/serializar

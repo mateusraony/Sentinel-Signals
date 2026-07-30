@@ -228,6 +228,9 @@ jobs:
                   overall: strip(r.overall),
                   byCascade: Object.fromEntries(Object.entries(r.byCascade).map(([k, v]) => [k, strip(v)])),
                   smcDiagnostics: r.smcDiagnostics,
+                  // known-risks item 45.3/49 — qual gate do funil de
+                  // confirmação rejeita mais, nas duas cascatas.
+                  entryFunnel: r.entryFunnel,
                 }, null, 2));
               "
               echo '```'

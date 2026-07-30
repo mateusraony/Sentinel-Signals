@@ -164,6 +164,23 @@
       "default": false,
       "description": "Set once, the first time the retry loop (scanner.js) notices this signal aged past its confirmation window (4h for range_filter/4h, 4x1h for smc_structure/1h) without ever creating a TradeOperation — the trigger for the one-time SystemLog entry documenting the expiry. Before this field, an expired signal was silent and indistinguishable from one that never attempted confirmation (docs/known-risks.md item 47.2/45.4). Written via SignalEvent.update, not createUnique — the field is read off the SAME already-fetched signal object every retry pass, so gating on it costs zero extra Firestore reads."
     },
+    "last_rejection_reason": {
+      "type": "string",
+      "enum": [
+        "trend_reversed",
+        "regime_rejected",
+        "smc_confirm_zone_rejected",
+        "retest_pending",
+        "displacement_gate_rejected",
+        "confirmation_15m_not_aligned",
+        "insufficient_data",
+        "no_trigger",
+        "ote_zone_unfavorable",
+        "fetch_error",
+        "rr_below_min"
+      ],
+      "description": "Round 1 do funil de confirmação de entrada (docs/known-risks.md item 45.3/49). Which gate rejected this signal's entry attempt, last time the RETRY loop (scanner.js, not the 1st-pass block — that one already logs verbosely to SystemLog once per signal) re-evaluated it. Write-on-change only: a signal stuck on the SAME gate across many retry passes costs zero extra Firestore writes, same convention as expired_logged/rf_reverse_bars_count. Surfaces in the expiry SystemLog message/details when the signal ages out without ever confirming. `insufficient_data`/`no_trigger`/`fetch_error` (smc_structure only, from check5mSmcConfirmation) were a single collapsed `no_trigger` value before this round — split so 'no real 5m data' is distinguishable from 'data available, gate genuinely never fired'."
+    },
     "market_source": {
       "type": "string",
       "enum": ["spot", "futures"],

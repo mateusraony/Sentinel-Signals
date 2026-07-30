@@ -432,7 +432,7 @@ describe('runBacktest — no-look-ahead (4h Range Filter flip)', () => {
 
     // Stop just short of the alignment instant — confirms the retry loop
     // genuinely hasn't created the op yet (misaligned every tick so far).
-    await runBacktest({
+    const firstReport = await runBacktest({
       assets: [makeAsset()], backend,
       fromMs: FLIP_CLOSE_TIME,
       toMs: FLIP_CLOSE_TIME + 3 * FIFTEEN_M,
@@ -441,6 +441,11 @@ describe('runBacktest — no-look-ahead (4h Range Filter flip)', () => {
     expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
     const pending = await backend.entities.SignalEvent.filter({ source: 'range_filter', signal_type: 'BUY', timeframe: '4h' });
     expect(pending).toHaveLength(1); // the 4h signal was persisted even though entry hasn't confirmed
+    // known-risks item 45.3/49 — wiring proof: the retry loop's rejections
+    // (misaligned 15m, every tick so far) actually reach report.entryFunnel
+    // through runBacktest's own aggregation, not just persistScanResults's
+    // in-memory return value.
+    expect(firstReport.entryFunnel['4h_15m'].byReason.confirmation_15m_not_aligned).toBeGreaterThan(0);
 
     // Continue the SAME backend/candle state past the alignment instant.
     await runBacktest({
@@ -857,6 +862,29 @@ describe('buildReport', () => {
     expect(report.smcRegime.passed).toBe(2);
     expect(report.smcRegime.rejected).toBe(3);
     expect(report.smcRegime.byReason).toEqual({ adx_weak: 1, choppy: 1, adx_and_chop: 1 });
+  });
+
+  // known-risks item 45.3/49 — "muitos sinais, poucas operações": diferente
+  // das seções acima (Map por dedup_key, último-escreve-ganha), entryFunnel é
+  // um histograma simples — soma TODAS as rejeições ao longo do replay, não
+  // só o motivo final de cada sinal (ver comentário de entryFunnelCounts em
+  // runBacktest). Por isso não há campo "attempts"/"confirmed" aqui.
+  it('entryFunnel defaults to zero for both cascades when the caller passes nothing (legacy call shape)', () => {
+    const report = buildReport([], { fromMs: 0, toMs: 1000 });
+    expect(report.entryFunnel).toEqual({
+      '4h_15m': { totalRejections: 0, byReason: {} },
+      '1h_5m': { totalRejections: 0, byReason: {} },
+    });
+  });
+
+  it('entryFunnel aggregates rejection counts per cascade and reason, totalRejections summing byReason', () => {
+    const entryFunnelCounts = {
+      '4h_15m': { trend_reversed: 3, regime_rejected: 1 },
+      '1h_5m': { insufficient_data: 2, no_trigger: 5, ote_zone_unfavorable: 1 },
+    };
+    const report = buildReport([], { fromMs: 0, toMs: 1000, entryFunnelCounts });
+    expect(report.entryFunnel['4h_15m']).toEqual({ totalRejections: 4, byReason: { trend_reversed: 3, regime_rejected: 1 } });
+    expect(report.entryFunnel['1h_5m']).toEqual({ totalRejections: 8, byReason: { insufficient_data: 2, no_trigger: 5, ote_zone_unfavorable: 1 } });
   });
 });
 
