@@ -198,6 +198,15 @@ export async function runBacktest({
   // Fase 4 Order Block / FVG (docs/known-risks.md item 43) — same convention.
   // SMC 1h_5m only, recorded at signal emission.
   const smcObFvgOutcomesByKey = new Map();
+  // known-risks item 45.3/49 — "muitos sinais, poucas operações". Diferente
+  // dos Maps acima (que guardam o estado FINAL por sinal), este é um
+  // histograma de TODAS as avaliações que rejeitaram algo, nas duas
+  // cascatas — responde "qual gate barra mais ao longo do funil inteiro",
+  // não "qual foi o motivo final de cada sinal". Um sinal que falha 3x e
+  // confirma na 4ª tentativa conta 3 rejeições reais que aconteceram — não
+  // seria correto (nem mais simples) tentar reconstruir só o motivo final
+  // por sinal aqui, que exigiria cruzar de volta com TradeOperation.
+  const entryFunnelCounts = { '4h_15m': {}, '1h_5m': {} };
 
   // Contagem de TENTATIVAS, paralela aos Maps acima. O loop de retry recomputa
   // cada gate do zero a cada passada, dentro da janela de 4h do sinal — então
@@ -252,6 +261,19 @@ export async function runBacktest({
           for (const outcome of (persistResult.smcObFvgOutcomes || [])) {
             recordOutcome(smcObFvgOutcomesByKey, attemptsByKey.smcObFvg, outcome);
           }
+          // Codex review (PR #102): unlike the Maps above (which only ever
+          // hold the FINAL outcome per dedup_key, so a warm-up-only entry is
+          // naturally overwritten once real evaluation starts), this is a
+          // running SUM across every tick — counting warm-up/post-evaluation
+          // ticks here would silently inflate byReason with rejections
+          // outside the window the rest of the report (evaluatedOps, costs)
+          // is scoped to. Gate on the same evalFromMs/evalToMs boundary.
+          if (t >= evalFromMs && t <= evalToMs) {
+            for (const outcome of (persistResult.entryFunnelOutcomes || [])) {
+              const bucket = (entryFunnelCounts[outcome.cascade] ||= {});
+              bucket[outcome.reason] = (bucket[outcome.reason] || 0) + 1;
+            }
+          }
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
         }
@@ -288,6 +310,7 @@ export async function runBacktest({
     displacementOutcomes: [...displacementOutcomesByKey.values()],
     smcRegimeOutcomes: [...smcRegimeOutcomesByKey.values()],
     smcObFvgOutcomes: [...smcObFvgOutcomesByKey.values()],
+    entryFunnelCounts,
     attemptStats: Object.fromEntries(
       Object.entries(attemptsByKey).map(([name, map]) => [name, summarizeAttempts(map)]),
     ),
@@ -328,7 +351,7 @@ function resolveReportCostModel(costModel) {
   return { ...DEFAULT_COST_MODEL, ...costModel, applied: !isZero };
 }
 
-export function buildReport(ops, { fromMs, toMs, dataRangeMs = null, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], smcObFvgOutcomes = [], attemptStats = {}, costModel, minTrades } = {}) {
+export function buildReport(ops, { fromMs, toMs, dataRangeMs = null, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], smcObFvgOutcomes = [], entryFunnelCounts = { '4h_15m': {}, '1h_5m': {} }, attemptStats = {}, costModel, minTrades } = {}) {
   const attemptsOf = (name) => attemptStats[name] ?? { ...EMPTY_ATTEMPTS };
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
@@ -526,6 +549,20 @@ export function buildReport(ops, { fromMs, toMs, dataRangeMs = null, smcConfirme
         closedByTp1Full: closed.filter(op => op.closed_reason === 'TP1_FULL').length,
       };
     })(),
+    // Funil de confirmação de entrada (docs/known-risks.md item 45.3/49) —
+    // "muitos sinais, poucas operações": quantas vezes cada gate rejeitou uma
+    // tentativa de confirmar entrada, nas duas cascatas, ao longo do replay
+    // inteiro (1ª passada + todas as passadas de retry). `totalRejections` é
+    // a soma de `byReason` — NÃO é "quantos sinais únicos", é quantas
+    // avaliações rejeitaram algo (ver comentário de entryFunnelCounts em
+    // runBacktest). Vazio nas duas cascatas é normal se nenhum sinal chegou
+    // a ser avaliado nesse período.
+    entryFunnel: Object.fromEntries(
+      Object.entries(entryFunnelCounts).map(([cascade, byReason]) => [
+        cascade,
+        { totalRejections: Object.values(byReason).reduce((a, b) => a + b, 0), byReason },
+      ]),
+    ),
     // Fase 5 (docs/known-risks.md item 44) — o custo que o replay descontou e,
     // mais importante, o veredito de amostra. `avgCostR` é a linha decisiva:
     // se ela for da mesma ordem que `overall.expectancyR`, a "vantagem" era

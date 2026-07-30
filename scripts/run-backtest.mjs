@@ -198,6 +198,10 @@ async function main() {
   // Same data, now visible from both the CLI and CI without needing GitHub
   // Summary UI access.
   console.log('[backtest] smcDiagnostics:', report.smcDiagnostics);
+  // known-risks item 45.3/49 — "muitos sinais, poucas operações": qual gate
+  // do funil de confirmação rejeita mais, nas duas cascatas.
+  console.log('[backtest] entryFunnel 4h_15m:', report.entryFunnel['4h_15m']);
+  console.log('[backtest] entryFunnel 1h_5m:', report.entryFunnel['1h_5m']);
   console.log('[backtest] custos:', report.costs);
 
   // O veredito de amostra fica DEPOIS de tudo e em destaque de propósito: um

@@ -368,18 +368,21 @@ async function check15mConfirmation(symbol, direction, asset) {
  * unfavorable zone rejects.
  *
  * Returns { confirmed, entryPrice, entryCandleTime, trigger, oteZone,
- * rejectReason }. `rejectReason` is null when confirmed, `'no_trigger'` when
- * neither sweep nor structure fired (or data was unavailable), or
- * `'ote_zone_unfavorable'` when a trigger fired but the zone check rejected
- * it.
+ * rejectReason }. `rejectReason` is null when confirmed, or one of three
+ * distinct causes previously collapsed into a single `'no_trigger'` (known-
+ * risks item 45.3/49 — indistinguishable causes made "gatilho nunca dispara"
+ * and "sem dado" impossible to tell apart in the funnel): `'no_trigger'`
+ * (neither sweep nor structure fired, real data available), `'insufficient_data'`
+ * (fewer than 60 closed 5m candles), `'fetch_error'` (candle fetch threw).
+ * `'ote_zone_unfavorable'` when a trigger fired but the zone check rejected it.
  */
 async function check5mSmcConfirmation(symbol, direction, legBounds) {
-  const noTrigger = { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null, oteZone: null, rejectReason: 'no_trigger' };
+  const noTriggerBase = { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null, oteZone: null };
   try {
     const candles5m = await fetchCandles(symbol, TF_5M, 150);
     const closed = candles5m.filter(c => c.isClosed);
     if (closed.length < 60) {
-      return noTrigger;
+      return { ...noTriggerBase, rejectReason: 'insufficient_data' };
     }
 
     const sweep = calculateLiquiditySweep(closed, 20);
@@ -391,7 +394,7 @@ async function check5mSmcConfirmation(symbol, direction, legBounds) {
       : (structure.lastBear.bos || structure.lastBear.choch);
 
     if (!sweepAligned && !structureAligned) {
-      return noTrigger;
+      return { ...noTriggerBase, rejectReason: 'no_trigger' };
     }
 
     const lastClosed = closed[closed.length - 1];
@@ -450,7 +453,7 @@ async function check5mSmcConfirmation(symbol, direction, legBounds) {
     };
   } catch (err) {
     console.warn(`[5m SMC confirm] ${symbol} fetch failed:`, err.message);
-    return noTrigger;
+    return { ...noTriggerBase, rejectReason: 'fetch_error' };
   }
 }
 
@@ -557,6 +560,22 @@ function stampDisplacementFields(opData, gate) {
   opData.displacement_volume_ratio = gate.volumeRatio;
   opData.displacement_min_body_atr_mult = gate.bodyAtrMult;
   opData.displacement_min_volume_ratio = gate.minVolumeRatio;
+}
+
+// known-risks item 45.3/49 — "muitos sinais, poucas operações": nenhum gate
+// do funil de confirmação registrava, de forma agregável, QUAL motivo
+// bloqueou uma tentativa. Usado só nos loops de RETRY (o 1º pass já loga
+// verboso pro SystemLog a cada sinal novo, uma vez por sinal — não precisa
+// do campo persistido). Write-on-change: um sinal preso no MESMO gate por
+// muitas passadas de retry custa zero escrita extra; só uma mudança de
+// motivo grava. `entryFunnelOutcomes` é sempre empurrado (em memória, sem
+// custo) — é o que alimenta a seção `entryFunnel` do relatório de backtest.
+async function recordRejection(sig, cascade, reason, entryFunnelOutcomes) {
+  entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade, reason });
+  if (sig.last_rejection_reason !== reason) {
+    await backend.entities.SignalEvent.update(sig.id, { last_rejection_reason: reason });
+    sig.last_rejection_reason = reason;
+  }
 }
 
 /**
@@ -1440,6 +1459,15 @@ export async function persistScanResults(scanResult) {
   // favor no momento em que nasceram", que é o dado necessário pra decidir se
   // vale dar peso a eles no score. Empurrado abaixo, ao percorrer newSignals.
   const smcObFvgOutcomes = [];
+  // known-risks item 45.3/49 — "muitos sinais, poucas operações": nenhuma
+  // seção existente respondia QUAL gate rejeita mais ao longo de TODO o
+  // funil (1ª passada + retry), nas duas cascatas — smc5mZoneRejections
+  // acima só amostra a 1ª passada da zona OTE, e cada gate loga pro
+  // SystemLog isoladamente sem nenhum agregado. Mesma convenção
+  // in-memory/last-write-wins dos arrays acima, mas UM balde por
+  // dedup_key+cascade com o motivo do gate que rejeitou — feeding
+  // buildReport's `entryFunnel` section.
+  const entryFunnelOutcomes = [];
   for (const signal of newSignals) {
     // Cooldown check — a best-effort query, not atomic on its own, but the
     // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
@@ -1552,6 +1580,7 @@ export async function persistScanResults(scanResult) {
 
           if (tf4hDir !== sigDir) {
             // 4H trend not aligned with signal direction — block entry
+            entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'trend_reversed' });
             await backend.entities.SystemLog.create({
               level: 'warn',
               module: 'scanner',
@@ -1563,6 +1592,7 @@ export async function persistScanResults(scanResult) {
           } else {
             const regime = evaluateRegime(tf4hData, pineConfig);
             if (!regime.ok) {
+              entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'regime_rejected' });
               await backend.entities.SystemLog.create({
                 level: 'info',
                 module: 'scanner',
@@ -1582,6 +1612,7 @@ export async function persistScanResults(scanResult) {
               const trendAligned = sigDir === 1 ? tf4hData.smc.trend === 1 : tf4hData.smc.trend === -1;
               const zoneOk = sigDir === 1 ? tf4hData.smc.pdZone !== 'premium' : tf4hData.smc.pdZone !== 'discount';
               if (!trendAligned || !zoneOk) {
+                entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'smc_confirm_zone_rejected' });
                 await backend.entities.SystemLog.create({
                   level: 'info',
                   module: 'scanner',
@@ -1611,6 +1642,7 @@ export async function persistScanResults(scanResult) {
                 : null;
               if (retestGate) retestOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm, reason: retestGate.reason });
               if (retestGate && !retestGate.retested) {
+                entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'retest_pending' });
                 await backend.entities.SystemLog.create({
                   level: 'info',
                   module: 'scanner',
@@ -1629,6 +1661,7 @@ export async function persistScanResults(scanResult) {
                 const minRR = pineConfig.minRR ?? 1.2;
                 const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
                 if (!rr.pass) {
+                  entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'rr_below_min' });
                   await backend.entities.SystemLog.create({
                     level: 'info',
                     module: 'scanner',
@@ -1654,6 +1687,7 @@ export async function persistScanResults(scanResult) {
                 }
               } else {
                 // 15m not aligned — log and wait for retry on next scan
+                entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'confirmation_15m_not_aligned' });
                 await backend.entities.SystemLog.create({
                   level: 'info',
                   module: 'scanner',
@@ -1701,6 +1735,7 @@ export async function persistScanResults(scanResult) {
         const regime = pineConfig.smcTierEnabled ? evaluateRegime(tf1hData, pineConfig) : { ok: true, adxOk: true, chopOk: true };
         if (pineConfig.smcTierEnabled) smcRegimeOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk });
         if (!regime.ok) {
+          entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', reason: 'regime_rejected' });
           await backend.entities.SystemLog.create({
             level: 'info',
             module: 'scanner',
@@ -1731,6 +1766,7 @@ export async function persistScanResults(scanResult) {
             : null;
           if (retestGate) retestOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm, reason: retestGate.reason });
           if (retestGate && !retestGate.retested) {
+            entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', reason: 'retest_pending' });
             await backend.entities.SystemLog.create({
               level: 'info',
               module: 'scanner',
@@ -1758,6 +1794,7 @@ export async function persistScanResults(scanResult) {
               : null;
             if (displacementGate) displacementOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', isDisplacement: displacementGate.isDisplacement, bodyRatio: displacementGate.bodyRatio, reason: displacementGate.reason });
             if (displacementGate && !displacementGate.isDisplacement) {
+              entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', reason: 'displacement_gate_rejected' });
               await backend.entities.SystemLog.create({
                 level: 'info',
                 module: 'scanner',
@@ -1773,6 +1810,7 @@ export async function persistScanResults(scanResult) {
             const minRR = pineConfig.minRR ?? 1.2;
             const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
             if (!rr.pass) {
+              entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', reason: 'rr_below_min' });
               await backend.entities.SystemLog.create({
                 level: 'info',
                 module: 'scanner',
@@ -1801,7 +1839,10 @@ export async function persistScanResults(scanResult) {
             // item 38: rejectReason distinguishes "no 5m trigger yet" from
             // "trigger fired but the OTE leg zone rejected it" — the latter
             // is the new gate's own rejection, worth telling apart from mere
-            // waiting when reading SystemLog later.
+            // waiting when reading SystemLog later. item 45.3/49: rejectReason
+            // now also distinguishes insufficient_data/fetch_error from a
+            // genuine no_trigger (check5mSmcConfirmation).
+            entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', reason: confirmed5m.rejectReason });
             await backend.entities.SystemLog.create({
               level: 'info',
               module: 'scanner',
@@ -1960,29 +2001,46 @@ export async function persistScanResults(scanResult) {
         await backend.entities.SystemLog.create({
           level: 'info',
           module: 'scanner',
-          message: `${sig.symbol} 4h ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (4h)`,
+          message: `${sig.symbol} 4h ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (4h)${sig.last_rejection_reason ? ` — último motivo: ${sig.last_rejection_reason}` : ''}`,
           symbol: sig.symbol,
           timeframe: '4h',
-          details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '4h_15m' },
+          details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '4h_15m', last_rejection_reason: sig.last_rejection_reason ?? null },
         });
       }
       continue; // stale, skip
     }
     if (sig.is_dismissed) continue;
 
-    if (hasActiveOp) continue;
+    if (hasActiveOp) {
+      // Codex review (PR #102): this same signal is re-evaluated by this
+      // retry loop on every scan while ITS OWN op stays open (it stays in
+      // the `recent4hSignals` lookback until 9 newer signals bump it out or
+      // it ages past the 4h window) — including the very same
+      // persistScanResults call that just created the op via the 1st-pass
+      // block above. That is not a rejection, it is the signal that
+      // SUCCEEDED; counting it as `active_op_exists` would make every
+      // successful RF entry pollute the funnel with a false rejection each
+      // pass. tradeOpId mirrors the deterministic id the 1st-pass/retry
+      // creation blocks both use (`trade_${dedup_key}`), so this only
+      // suppresses the count for the signal that actually owns activeOp —
+      // a genuinely different pending signal blocked by another op still
+      // counts normally.
+      const ownsActiveOp = activeOp?.id === `trade_${sig.dedup_key}`;
+      if (!ownsActiveOp) entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', reason: 'active_op_exists' });
+      continue;
+    }
 
     // Verify 4H trend still aligned with signal direction (may have reversed)
     const tfData4h = results['4h'];
     if (!tfData4h || !tfData4h.atrValue) continue;
     const tf4hDir = tfData4h.rf.direction;
     const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
-    if (tf4hDir !== sigDir) continue;
+    if (tf4hDir !== sigDir) { await recordRejection(sig, '4h_15m', 'trend_reversed', entryFunnelOutcomes); continue; }
 
     // Regime gate (ADX + Choppiness) — re-evaluated every retry pass since
     // conditions may have changed since the signal first fired.
     const regime = evaluateRegime(tfData4h, pineConfig);
-    if (!regime.ok) continue;
+    if (!regime.ok) { await recordRejection(sig, '4h_15m', 'regime_rejected', entryFunnelOutcomes); continue; }
 
     // Same optional SMC confirmation gate as the initial entry check —
     // re-evaluated every retry pass since trend/zone may have changed
@@ -1990,7 +2048,7 @@ export async function persistScanResults(scanResult) {
     if (asset.smc_confirm_4h15m && tfData4h.smc) {
       const trendAligned = sigDir === 1 ? tfData4h.smc.trend === 1 : tfData4h.smc.trend === -1;
       const zoneOk = sigDir === 1 ? tfData4h.smc.pdZone !== 'premium' : tfData4h.smc.pdZone !== 'discount';
-      if (!trendAligned || !zoneOk) continue;
+      if (!trendAligned || !zoneOk) { await recordRejection(sig, '4h_15m', 'smc_confirm_zone_rejected', entryFunnelOutcomes); continue; }
     }
 
     // Fase 2 rodada 1 (docs/known-risks.md item 40) — off by default, same
@@ -2015,17 +2073,18 @@ export async function persistScanResults(scanResult) {
     // last-write-wins, so a later "retested:true" here correctly overwrites
     // the "pending" outcome the 1st pass recorded.
     if (retestGate) retestOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm, reason: retestGate.reason });
-    if (retestGate && !retestGate.retested) continue;
+    if (retestGate && !retestGate.retested) { await recordRejection(sig, '4h_15m', 'retest_pending', entryFunnelOutcomes); continue; }
 
     // Re-run 15m confirmation
     const confirmed = await check15mConfirmation(sig.symbol, sig.signal_type, asset);
-    if (!confirmed.confirmed) continue;
+    if (!confirmed.confirmed) { await recordRejection(sig, '4h_15m', 'confirmation_15m_not_aligned', entryFunnelOutcomes); continue; }
 
     const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed);
     if (retestGate) stampRetestFields(opData, retestGate);
     const minRR = pineConfig.minRR ?? 1.2;
     const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
     if (!rr.pass) {
+      await recordRejection(sig, '4h_15m', 'rr_below_min', entryFunnelOutcomes);
       await backend.entities.SystemLog.create({
         level: 'info',
         module: 'scanner',
@@ -2074,30 +2133,37 @@ export async function persistScanResults(scanResult) {
           await backend.entities.SystemLog.create({
             level: 'info',
             module: 'scanner',
-            message: `${sig.symbol} 1h SMC ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (5m)`,
+            message: `${sig.symbol} 1h SMC ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (5m)${sig.last_rejection_reason ? ` — último motivo: ${sig.last_rejection_reason}` : ''}`,
             symbol: sig.symbol,
             timeframe: '1h',
-            details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '1h_5m' },
+            details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '1h_5m', last_rejection_reason: sig.last_rejection_reason ?? null },
           });
         }
         continue; // stale, skip
       }
       if (sig.is_dismissed) continue;
 
-      if (hasActiveOp) continue;
+      if (hasActiveOp) {
+        // Codex review (PR #102) — same reasoning as the RF retry loop above:
+        // don't count the signal that OWNS the currently active op as a
+        // false `active_op_exists` rejection.
+        const ownsActiveOp = activeOp?.id === `trade_smc_${sig.dedup_key}`;
+        if (!ownsActiveOp) entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', reason: 'active_op_exists' });
+        continue;
+      }
 
       // Verify 1h structure bias still aligned (may have reversed since signal fired)
       const tfData1h = results['1h'];
       if (!tfData1h || !tfData1h.atrValue || !tfData1h.smc) continue;
       const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
-      if (tfData1h.smc.trend !== sigDir) continue;
+      if (tfData1h.smc.trend !== sigDir) { await recordRejection(sig, '1h_5m', 'trend_reversed', entryFunnelOutcomes); continue; }
 
       // Fase 3 (docs/known-risks.md item 42) — off by default; silent on
       // reject, same reasoning as the retest/displacement retry loops below
       // (no SystemLog per ~5min retry tick, 1st pass already logged it once).
       const regime = pineConfig.smcTierEnabled ? evaluateRegime(tfData1h, pineConfig) : { ok: true, adxOk: true, chopOk: true };
       if (pineConfig.smcTierEnabled) smcRegimeOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk });
-      if (!regime.ok) continue;
+      if (!regime.ok) { await recordRejection(sig, '1h_5m', 'regime_rejected', entryFunnelOutcomes); continue; }
 
       // Fase 2 rodada 1 (docs/known-risks.md item 40) — off by default;
       // silent on a miss, same reasoning as the RF retry loop above (the 1st
@@ -2118,7 +2184,7 @@ export async function persistScanResults(scanResult) {
         : null;
       // In-memory only — see the RF retry loop's comment above.
       if (retestGate) retestOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm, reason: retestGate.reason });
-      if (retestGate && !retestGate.retested) continue;
+      if (retestGate && !retestGate.retested) { await recordRejection(sig, '1h_5m', 'retest_pending', entryFunnelOutcomes); continue; }
 
       // Legacy SignalEvents predating item 38 have no ote_leg_high/low —
       // legBounds resolves to {legHigh: undefined, legLow: undefined},
@@ -2127,7 +2193,7 @@ export async function persistScanResults(scanResult) {
       // protected pivot wasn't confirmed yet.
       const legBounds = { legHigh: sig.context?.ote_leg_high, legLow: sig.context?.ote_leg_low };
       const confirmed = await check5mSmcConfirmation(sig.symbol, sig.signal_type, legBounds);
-      if (!confirmed.confirmed) continue;
+      if (!confirmed.confirmed) { await recordRejection(sig, '1h_5m', confirmed.rejectReason, entryFunnelOutcomes); continue; }
 
       // Fase 2 rodada 2 (docs/known-risks.md item 41) — off by default;
       // silent on a miss, same reasoning as the retest gate above (no
@@ -2142,7 +2208,7 @@ export async function persistScanResults(scanResult) {
           })
         : null;
       if (displacementGate) displacementOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', isDisplacement: displacementGate.isDisplacement, bodyRatio: displacementGate.bodyRatio, reason: displacementGate.reason });
-      if (displacementGate && !displacementGate.isDisplacement) continue;
+      if (displacementGate && !displacementGate.isDisplacement) { await recordRejection(sig, '1h_5m', 'displacement_gate_rejected', entryFunnelOutcomes); continue; }
 
       const opData = buildSmcTradeOpData(sig, tfData1h, pineConfig, confirmed);
       if (retestGate) stampRetestFields(opData, retestGate);
@@ -2150,6 +2216,7 @@ export async function persistScanResults(scanResult) {
       const minRR = pineConfig.minRR ?? 1.2;
       const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
       if (!rr.pass) {
+        await recordRejection(sig, '1h_5m', 'rr_below_min', entryFunnelOutcomes);
         await backend.entities.SystemLog.create({
           level: 'info',
           module: 'scanner',
@@ -2512,7 +2579,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes, smcObFvgOutcomes };
+  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes, smcObFvgOutcomes, entryFunnelOutcomes };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()

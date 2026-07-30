@@ -2686,6 +2686,268 @@ describe('persistScanResults — expiração silenciosa de sinal (item 47.2)', (
   });
 });
 
+// known-risks item 45.3/49 — Round 1 do plano "fechar o processo do motor":
+// nenhum gate do funil de confirmação registrava, de forma agregável, QUAL
+// motivo bloqueou uma tentativa (o R:R já logava isolado, os demais gates só
+// faziam `continue` mudo). Cobre: `last_rejection_reason` write-on-change
+// (recordRejection, só usado nos loops de RETRY), `active_op_exists` sem
+// I/O extra, a divisão de `no_trigger` em 3 causas em
+// `check5mSmcConfirmation` (SMC), e o enriquecimento do log de expiração com
+// o último motivo — nas duas cascatas.
+describe('funil de confirmação de entrada — last_rejection_reason + entryFunnelOutcomes (known-risks item 45.3/49)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  function makeRfSignal(overrides = {}) {
+    return {
+      asset_id: 'asset1', symbol: 'BTCUSDT', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_funnel_rf',
+      price_at_signal: 100, candle_time: new Date(0).toISOString(),
+      context: { score: 80, rf_value: 100 },
+      ...overrides,
+    };
+  }
+  function makeSmcSignal(overrides = {}) {
+    return {
+      asset_id: 'asset1', symbol: 'BTCUSDT', signal_type: 'BUY',
+      timeframe: '1h', source: 'smc_structure', dedup_key: 'sig_funnel_smc',
+      price_at_signal: 100, candle_time: new Date(0).toISOString(),
+      context: { structure_type: 'BOS', ote_leg_high: 200, ote_leg_low: 50 },
+      ...overrides,
+    };
+  }
+  function mk5m(open, high, low, close, i) {
+    return { open, high, low, close, openTime: i * 300000, closeTime: (i + 1) * 300000, isClosed: true };
+  }
+  // Completely flat series (open=high=low=close for all bars) — no wick ever
+  // breaks a swing extreme (calculateLiquiditySweep) and no swing high/low
+  // ever forms (calculateStructure), so neither trigger fires. Length is the
+  // only thing that varies between the insufficient_data and no_trigger cases.
+  function flatCandles5m(n) {
+    return Array.from({ length: n }, (_, i) => mk5m(100, 100, 100, 100, i));
+  }
+  // Same known-good recipe as the other SMC describes in this file: 59 flat
+  // candles + 1 that wicks below the recent low and closes back above it —
+  // deterministic bullishSweep=true, entry close pinned at 96.5.
+  function bullishSweepCandles5m() {
+    const candles = [];
+    for (let i = 0; i < 59; i++) candles.push(mk5m(100, 105, 95, 100, i));
+    candles.push(mk5m(96, 97, 93, 96.5, 59));
+    return candles;
+  }
+
+  describe('RF (4h_15m)', () => {
+    it('retry grava last_rejection_reason já na 1ª passada (1º pass e retry avaliam o mesmo sinal no mesmo scan) e não regrava enquanto o motivo não mudar', async () => {
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const reversedResults = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) }; // tf4hDir=-1, sigDir(BUY)=1
+      const signal = makeRfSignal();
+
+      const r1 = await persistScanResults({ ...makeScanResult({ results: reversedResults, pineConfig }), newSignals: [signal] });
+
+      expect(r1.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_funnel_rf', cascade: '4h_15m', reason: 'trend_reversed' });
+      const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf' });
+      expect(stored[0].last_rejection_reason).toBe('trend_reversed');
+
+      const updateSpy = vi.spyOn(backend.entities.SignalEvent, 'update');
+      // Passada 2 (só retry, newSignals vazio): motivo idêntico -> zero escrita nova.
+      const r2 = await persistScanResults({ ...makeScanResult({ results: reversedResults, pineConfig }), newSignals: [] });
+      expect(updateSpy).not.toHaveBeenCalled();
+      expect(r2.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_funnel_rf', cascade: '4h_15m', reason: 'trend_reversed' });
+    });
+
+    it('retry: motivo muda entre passadas -> nova escrita com o motivo novo', async () => {
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const signal = makeRfSignal();
+      const reversedResults = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+      await persistScanResults({ ...makeScanResult({ results: reversedResults, pineConfig }), newSignals: [signal] });
+
+      const updateSpy = vi.spyOn(backend.entities.SignalEvent, 'update');
+      // Trend agora alinhado (direction default = 1), mas o regime reprova
+      // (ADX 5 abaixo do adxMinVal 25 do tier, com useADX ligado).
+      const regimeRejectedResults = {
+        '4h': makeTfData({ adx: { adx: 5 }, chop: 40, tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48, adxMinVal: 25 } }),
+      };
+      const pineConfigAdxOn = makePineConfig({ useADX: true, useChop: false });
+      await persistScanResults({ ...makeScanResult({ results: regimeRejectedResults, pineConfig: pineConfigAdxOn }), newSignals: [] });
+
+      const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf' });
+      expect(stored[0].last_rejection_reason).toBe('regime_rejected');
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('active_op_exists no retry: conta no funil mas nunca escreve o campo (sem I/O extra)', async () => {
+      backend._seed('TradeOperation', makeOp({ id: 'op_other', side: 'SELL' })); // qualquer op ativa no ativo já bloqueia
+      backend._seed('SignalEvent', {
+        id: 'sig_funnel_rf', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+        source: 'range_filter', dedup_key: 'sig_funnel_rf',
+        created_date: '2026-07-16T09:00:00.000Z', // dentro da janela de 4h
+      });
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const results = { '4h': makeTfData() };
+
+      const updateSpy = vi.spyOn(backend.entities.SignalEvent, 'update');
+      const result = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+      expect(result.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_funnel_rf', cascade: '4h_15m', reason: 'active_op_exists' });
+      expect(updateSpy).not.toHaveBeenCalled();
+      const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf' });
+      expect(stored[0].last_rejection_reason).toBeUndefined();
+    });
+
+    // Codex review (PR #102, P1): a signal that just confirmed and created
+    // its own op is re-evaluated by this SAME retry loop within this SAME
+    // persistScanResults call (it's already a SignalEvent by the time the
+    // retry loop's query runs) — hasActiveOp is true because of the op IT
+    // ITSELF just created, not because a DIFFERENT op is blocking it. That
+    // must never count as active_op_exists — it isn't a rejection.
+    it('active_op_exists NÃO é contado pro sinal que acabou de criar a própria op (mesmo scan, retry reavalia o mesmo sinal)', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 1)); // aligned 15m confirmation
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const results = { '4h': makeTfData() }; // trend aligned, regime ok
+      const signal = makeRfSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal] });
+
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(1); // confirmou
+      const active = result.entryFunnelOutcomes.filter((o) => o.reason === 'active_op_exists');
+      expect(active).toHaveLength(0);
+    });
+
+    it('sinal RF expira carregando o último motivo de rejeição gravado por um retry anterior', async () => {
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      backend._seed('SignalEvent', {
+        id: 'sig_funnel_rf', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+        source: 'range_filter', dedup_key: 'sig_funnel_rf',
+        created_date: '2026-07-16T09:00:00.000Z', // 3h antes do relógio congelado (12:00) — dentro da janela
+      });
+      const reversedResults = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+
+      // Passada 1: ainda dentro da janela — grava o motivo via o retry.
+      await persistScanResults({ ...makeScanResult({ results: reversedResults, pineConfig }), newSignals: [] });
+      let stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf' });
+      expect(stored[0].last_rejection_reason).toBe('trend_reversed');
+
+      // Passada 2: relógio avança além da janela de 4h -> expira.
+      vi.setSystemTime(new Date('2026-07-16T14:00:00.000Z'));
+      await persistScanResults({ ...makeScanResult({ results: reversedResults, pineConfig }), newSignals: [] });
+
+      stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf' });
+      expect(stored[0].expired_logged).toBe(true);
+      const logs = await backend.entities.SystemLog.filter({});
+      const expiryLog = logs.find((l) => l.message?.includes('sinal expirou sem nunca confirmar entrada'));
+      expect(expiryLog.message).toContain('último motivo: trend_reversed');
+      expect(expiryLog.details.last_rejection_reason).toBe('trend_reversed');
+    });
+  });
+
+  describe('SMC (1h_5m)', () => {
+    // Codex review (PR #102, P1) — mesmo raciocínio do teste equivalente na
+    // seção RF acima: o sinal que acabou de confirmar não pode contar como
+    // active_op_exists só porque o retry loop o reavalia no mesmo scan.
+    it('active_op_exists NÃO é contado pro sinal que acabou de criar a própria op (mesmo scan, retry reavalia o mesmo sinal)', async () => {
+      fetchCandles.mockResolvedValue(bullishSweepCandles5m());
+      const asset = makeAsset({ smc_enabled: true });
+      const results = { '1h': makeTfData({ atrValue: 2 }) };
+      const signal = makeSmcSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(1); // confirmou
+      const active = result.entryFunnelOutcomes.filter((o) => o.reason === 'active_op_exists');
+      expect(active).toHaveLength(0);
+    });
+
+    it('insufficient_data quando há menos de 60 candles 5m fechados — registrado no funil e gravado no sinal', async () => {
+      fetchCandles.mockResolvedValue(flatCandles5m(30));
+      const asset = makeAsset({ smc_enabled: true });
+      const results = { '1h': makeTfData({ atrValue: 2 }) };
+      const signal = makeSmcSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+      expect(result.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_funnel_smc', cascade: '1h_5m', reason: 'insufficient_data' });
+      const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_smc' });
+      expect(stored[0].last_rejection_reason).toBe('insufficient_data');
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+    });
+
+    it('no_trigger quando há dado suficiente (60 candles) mas nenhum gatilho dispara — distinto de insufficient_data', async () => {
+      fetchCandles.mockResolvedValue(flatCandles5m(60));
+      const asset = makeAsset({ smc_enabled: true });
+      const results = { '1h': makeTfData({ atrValue: 2 }) };
+      const signal = makeSmcSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+      expect(result.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_funnel_smc', cascade: '1h_5m', reason: 'no_trigger' });
+      const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_smc' });
+      expect(stored[0].last_rejection_reason).toBe('no_trigger');
+    });
+
+    it('fetch_error quando fetchCandles lança — distinto de no_trigger/insufficient_data', async () => {
+      fetchCandles.mockRejectedValue(new Error('network down'));
+      const asset = makeAsset({ smc_enabled: true });
+      const results = { '1h': makeTfData({ atrValue: 2 }) };
+      const signal = makeSmcSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+      expect(result.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_funnel_smc', cascade: '1h_5m', reason: 'fetch_error' });
+      const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_smc' });
+      expect(stored[0].last_rejection_reason).toBe('fetch_error');
+    });
+
+    it('retry: write-on-change — mesmo motivo não regrava, motivo novo regrava com o rejectReason exato de check5mSmcConfirmation', async () => {
+      const asset = makeAsset({ smc_enabled: true });
+      const results = { '1h': makeTfData({ atrValue: 2 }) };
+      const signal = makeSmcSignal();
+
+      fetchCandles.mockResolvedValue(flatCandles5m(30)); // insufficient_data
+      await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+      let stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_smc' });
+      expect(stored[0].last_rejection_reason).toBe('insufficient_data');
+
+      const updateSpy = vi.spyOn(backend.entities.SignalEvent, 'update');
+      // Passada 2 (só retry): mesmo motivo -> zero escrita nova.
+      await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [] });
+      expect(updateSpy).not.toHaveBeenCalled();
+
+      // Passada 3: motivo muda (dado agora suficiente, mas sem gatilho).
+      fetchCandles.mockResolvedValue(flatCandles5m(60));
+      await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [] });
+      stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_smc' });
+      expect(stored[0].last_rejection_reason).toBe('no_trigger');
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('sinal SMC expira carregando o último motivo de rejeição gravado por um retry anterior', async () => {
+      const asset = makeAsset({ smc_enabled: true });
+      backend._seed('SignalEvent', {
+        id: 'sig_funnel_smc', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '1h', signal_type: 'BUY',
+        source: 'smc_structure', dedup_key: 'sig_funnel_smc',
+        created_date: '2026-07-16T09:00:00.000Z', // 3h antes do relógio (12:00) — dentro da janela de 4x1h
+        context: { structure_type: 'BOS', ote_leg_high: 200, ote_leg_low: 50 },
+      });
+      const results = { '1h': makeTfData({ atrValue: 2 }) };
+      fetchCandles.mockResolvedValue(flatCandles5m(30)); // insufficient_data
+
+      await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [] });
+      let stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_smc' });
+      expect(stored[0].last_rejection_reason).toBe('insufficient_data');
+
+      // Relógio avança além da janela de 4x1h -> expira.
+      vi.setSystemTime(new Date('2026-07-16T17:00:00.000Z'));
+      await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [] });
+
+      stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_smc' });
+      expect(stored[0].expired_logged).toBe(true);
+      const logs = await backend.entities.SystemLog.filter({});
+      const expiryLog = logs.find((l) => l.message?.includes('sinal expirou sem nunca confirmar entrada'));
+      expect(expiryLog.message).toContain('último motivo: insufficient_data');
+      expect(expiryLog.details.last_rejection_reason).toBe('insufficient_data');
+    });
+  });
+});
+
 describe('createTradeOpIfNoneActive — assetActiveOps pointer vs terminal ops (P0-f)', () => {
   // The signal-retry loop reuses the op's deterministic doc ID. If the op
   // already reached a terminal state (e.g. a quick stop via the price check),

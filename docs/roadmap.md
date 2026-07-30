@@ -152,10 +152,12 @@ manda a decisão para o Bloco 0 acima.
 provável é a tensão geométrica entre gatilho e zona no candle de 5m (item 45.2),
 mas isso é **hipótese**: o gatilho de 5m cruza um pivô local, não o `legHigh`
 fixo de 1h, então as duas condições são negativamente correlacionadas, não
-excludentes. Confirmar exige antes instrumentar o funil (item 45.3) — hoje o
-loop de retry descarta o sinal sem registrar o motivo. Depende do Bloco 0: se o
-motor não tiver vantagem em regime nenhum, consertar a cascata SMC é ampliar um
-gerador de operações sem vantagem.
+excludentes. O funil de confirmação (RF e SMC) já está instrumentado (item
+49, `last_rejection_reason` + seção `entryFunnel` no backtest) — falta rodar
+UM backtest (`trial_label: entry-funnel-diagnostico`) pra ler a distribuição
+real de motivos de rejeição e confirmar ou descartar a hipótese do item 45.2.
+Depende do Bloco 0: se o motor não tiver vantagem em regime nenhum, consertar
+a cascata SMC é ampliar um gerador de operações sem vantagem.
 
 ---
 
