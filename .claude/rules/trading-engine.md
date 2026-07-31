@@ -252,6 +252,23 @@ nunca deve receber nova transição.**
   `no_trigger` (dado suficiente, gatilho nunca disparou), `fetch_error`.
   `active_op_exists` conta no histograma mas nunca grava o campo — não é
   rejeição do gate, é o asset já estar ocupado.
+- **Instrumentação granular RF regime + gatilho SMC 5m** (item 50) — dado
+  real (12 meses/7 símbolos) mostrou `regime_rejected` como 69% das
+  rejeições RF e `no_trigger` como 70% das rejeições SMC, mas nenhuma das
+  duas cascatas tem um threshold "solto" pra recalibrar (RF usa a tabela de
+  tier copiada do Pine real do usuário; o gatilho 5m SMC não existe no Pine
+  — é desenho original do Sentinel). `rfRegimeOutcomes` (novo, simétrico a
+  `smcRegimeOutcomes` da Fase 3 — os dois agora gravam `adx`/`chop`/`tier`
+  reais, não só ok/not-ok) e `wrong_direction_trigger` (novo valor de
+  `last_rejection_reason` — sweep/estrutura dispararam, só no lado OPOSTO
+  ao sinal, antes indistinguível de "nenhum evento") fecham a lacuna de
+  instrumentação, sem mudar nenhum critério de confirmação/rejeição.
+  `smcTriggerOutcomes`/`attemptsByKey.smcTrigger` trocam a inferência
+  aritmética agregada (346 sinais × ~48 avaliações ≈ 17.024) por contagem
+  real de tentativas por sinal. Novas seções no backtest: `report.rfRegime`,
+  `report.smcTrigger`, e `report.smcRegime` (existia, nunca era impressa) —
+  todas via `scripts/analyze-backtest.mjs`. Decisão de mudar algum
+  threshold fica para depois, com este dado em mãos.
 
 ## Regras ao mexer aqui
 

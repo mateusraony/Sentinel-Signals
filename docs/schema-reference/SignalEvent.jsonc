@@ -175,11 +175,12 @@
         "confirmation_15m_not_aligned",
         "insufficient_data",
         "no_trigger",
+        "wrong_direction_trigger",
         "ote_zone_unfavorable",
         "fetch_error",
         "rr_below_min"
       ],
-      "description": "Round 1 do funil de confirmação de entrada (docs/known-risks.md item 45.3/49). Which gate rejected this signal's entry attempt, last time the RETRY loop (scanner.js, not the 1st-pass block — that one already logs verbosely to SystemLog once per signal) re-evaluated it. Write-on-change only: a signal stuck on the SAME gate across many retry passes costs zero extra Firestore writes, same convention as expired_logged/rf_reverse_bars_count. Surfaces in the expiry SystemLog message/details when the signal ages out without ever confirming. `insufficient_data`/`no_trigger`/`fetch_error` (smc_structure only, from check5mSmcConfirmation) were a single collapsed `no_trigger` value before this round — split so 'no real 5m data' is distinguishable from 'data available, gate genuinely never fired'."
+      "description": "Round 1 do funil de confirmação de entrada (docs/known-risks.md item 45.3/49). Which gate rejected this signal's entry attempt, last time the RETRY loop (scanner.js, not the 1st-pass block — that one already logs verbosely to SystemLog once per signal) re-evaluated it. Write-on-change only: a signal stuck on the SAME gate across many retry passes costs zero extra Firestore writes, same convention as expired_logged/rf_reverse_bars_count. Surfaces in the expiry SystemLog message/details when the signal ages out without ever confirming. `insufficient_data`/`no_trigger`/`fetch_error` (smc_structure only, from check5mSmcConfirmation) were a single collapsed `no_trigger` value before this round — split so 'no real 5m data' is distinguishable from 'data available, gate genuinely never fired'. `wrong_direction_trigger` (docs/known-risks.md item 50) further splits `no_trigger`: sweep/structure fired, just on the OPPOSITE side of the signal's direction — previously indistinguishable from 'no event at all' since only the requested direction was ever read."
     },
     "market_source": {
       "type": "string",
