@@ -238,6 +238,18 @@ export async function runBacktest({
     attempts.set(outcome.dedup_key, (attempts.get(outcome.dedup_key) || 0) + 1);
   };
 
+  // Codex review (PR #104, P2): rfRegimeOutcomesByKey/smcRegimeOutcomesByKey
+  // above are last-write-wins — buildRegimeSection's adxStats/chopStats read
+  // from them, so a signal rejected at ADX 5 then 24 only ever contributed
+  // its LAST rejection (24), and a signal that eventually PASSES contributes
+  // none of its earlier rejections at all. Same histogram-not-Map pattern as
+  // entryFunnelCounts above (every evaluation counts, not just the final
+  // state) — these two plain arrays accumulate every regime evaluation,
+  // independent of the per-signal Maps, so buildRegimeSection can compute
+  // stats over every real rejection instead of only final signal states.
+  const rfRegimeAllOutcomes = [];
+  const smcRegimeAllOutcomes = [];
+
   installSimClock(fromMs);
   try {
     for (let t = fromMs; t <= toMs; t += step) {
@@ -270,6 +282,16 @@ export async function runBacktest({
           for (const outcome of (persistResult.smcObFvgOutcomes || [])) {
             recordOutcome(smcObFvgOutcomesByKey, attemptsByKey.smcObFvg, outcome);
           }
+          // Codex review (PR #104, P2): plain running array (like
+          // entryFunnelCounts below), NOT deduped by dedup_key — every
+          // regime evaluation for the SMC cascade counts, so a signal
+          // rejected 3 times before finally passing doesn't lose those 3
+          // real rejections from the stats the way smcRegimeOutcomesByKey
+          // (last-write-wins) does. Left OUTSIDE the eval-window gate below
+          // on purpose, matching smcRegimeOutcomesByKey's own (pre-existing,
+          // documented, deferred) lack of windowing — see known-risks.md
+          // item 51's "not corrected" list.
+          smcRegimeAllOutcomes.push(...(persistResult.smcRegimeOutcomes || []));
           // Codex review (PR #102): unlike the Maps above (which only ever
           // hold the FINAL outcome per dedup_key, so a warm-up-only entry is
           // naturally overwritten once real evaluation starts), this is a
@@ -292,11 +314,15 @@ export async function runBacktest({
             // start. retestOutcomes/displacementOutcomes/smcRegimeOutcomes/
             // arbitrationOutcomes/smcObFvgOutcomes above share this same
             // pre-existing gap (Fase 2/3) — NOT fixed here, see
-            // docs/known-risks.md item 50 for why that's a separate,
+            // docs/known-risks.md item 51 for why that's a separate,
             // broader change left for its own round.
             for (const outcome of (persistResult.rfRegimeOutcomes || [])) {
               recordOutcome(rfRegimeOutcomesByKey, attemptsByKey.rfRegime, outcome);
             }
+            // Codex review (PR #104, P2) — same running-array reasoning as
+            // smcRegimeAllOutcomes above, kept correctly windowed here since
+            // rfRegimeOutcomesByKey itself already is (Fix 1 above).
+            rfRegimeAllOutcomes.push(...(persistResult.rfRegimeOutcomes || []));
             for (const outcome of (persistResult.smcTriggerOutcomes || [])) {
               recordOutcome(smcTriggerOutcomesByKey, attemptsByKey.smcTrigger, outcome);
             }
@@ -336,7 +362,9 @@ export async function runBacktest({
     retestOutcomes: [...retestOutcomesByKey.values()],
     displacementOutcomes: [...displacementOutcomesByKey.values()],
     smcRegimeOutcomes: [...smcRegimeOutcomesByKey.values()],
+    smcRegimeAllOutcomes,
     rfRegimeOutcomes: [...rfRegimeOutcomesByKey.values()],
+    rfRegimeAllOutcomes,
     smcObFvgOutcomes: [...smcObFvgOutcomesByKey.values()],
     smcTriggerOutcomes: [...smcTriggerOutcomesByKey.values()],
     entryFunnelCounts,
@@ -384,15 +412,26 @@ function numericStats(values) {
 // regime-gate sections (rfRegime, smcRegime): identical shape and byReason
 // bucketing, only the outcomes array/cascade differ. Extracted so the two
 // sections can't silently drift apart.
-function buildRegimeSection(outcomes, attempts) {
+//
+// `outcomes` is the last-write-wins Map's values (one entry per unique
+// signal — drives total/passed/rejected/byReason, consistent with every
+// other Map-based section in this file). `allOutcomes` is the separate,
+// non-deduped running array of EVERY evaluation (Codex review, PR #104,
+// P2): adxStats/chopStats read from THIS one, not `outcomes` — a signal
+// rejected at ADX 5 then 24 before finally passing would otherwise
+// contribute nothing (final state is ok:true) or only its last rejection
+// (24, not the true 5-then-24 spread) to the calibration stats.
+function buildRegimeSection(outcomes, attempts, allOutcomes = outcomes) {
   const passed = outcomes.filter(o => o.ok).length;
   const byReason = {};
-  const adxRejectedValues = [];
-  const chopRejectedValues = [];
-  for (const { ok, adxOk, chopOk, adx, chop } of outcomes) {
+  for (const { ok, adxOk, chopOk } of outcomes) {
     if (ok) continue;
     const reason = !adxOk && !chopOk ? 'adx_and_chop' : !adxOk ? 'adx_weak' : 'choppy';
     byReason[reason] = (byReason[reason] || 0) + 1;
+  }
+  const adxRejectedValues = [];
+  const chopRejectedValues = [];
+  for (const { adxOk, chopOk, adx, chop } of allOutcomes) {
     if (!adxOk) adxRejectedValues.push(adx);
     if (!chopOk) chopRejectedValues.push(chop);
   }
@@ -427,7 +466,14 @@ function resolveReportCostModel(costModel) {
   return { ...DEFAULT_COST_MODEL, ...costModel, applied: !isZero };
 }
 
-export function buildReport(ops, { fromMs, toMs, dataRangeMs = null, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], rfRegimeOutcomes = [], smcObFvgOutcomes = [], smcTriggerOutcomes = [], entryFunnelCounts = { '4h_15m': {}, '1h_5m': {} }, attemptStats = {}, costModel, minTrades } = {}) {
+export function buildReport(ops, {
+  fromMs, toMs, dataRangeMs = null, smcConfirmedSignals = 0, smcRejectedByOteZone = 0,
+  arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [],
+  smcRegimeOutcomes = [], smcRegimeAllOutcomes = smcRegimeOutcomes,
+  rfRegimeOutcomes = [], rfRegimeAllOutcomes = rfRegimeOutcomes,
+  smcObFvgOutcomes = [], smcTriggerOutcomes = [],
+  entryFunnelCounts = { '4h_15m': {}, '1h_5m': {} }, attemptStats = {}, costModel, minTrades,
+} = {}) {
   const attemptsOf = (name) => attemptStats[name] ?? { ...EMPTY_ATTEMPTS };
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
@@ -563,7 +609,7 @@ export function buildReport(ops, { fromMs, toMs, dataRangeMs = null, smcConfirme
     // `retest`/`displacement` above — the number to diff between two
     // --pine-config runs (with/without smcTierEnabled) before deciding to
     // activate.
-    smcRegime: buildRegimeSection(smcRegimeOutcomes, attemptsOf('smcRegime')),
+    smcRegime: buildRegimeSection(smcRegimeOutcomes, attemptsOf('smcRegime'), smcRegimeAllOutcomes),
     // Round 3 (docs/known-risks.md item 50) — same shape as smcRegime above,
     // mirrored for the RF 4h_15m cascade. Unlike SMC's opt-in
     // smcTierEnabled, evaluateRegime always runs for RF — `enabled` here
@@ -572,7 +618,7 @@ export function buildReport(ops, { fromMs, toMs, dataRangeMs = null, smcConfirme
     // by the entryFunnel section (item 49): `regime_rejected` was 69% of
     // 4h_15m rejections with zero visibility into the actual adx/chop
     // values that produced them.
-    rfRegime: buildRegimeSection(rfRegimeOutcomes, attemptsOf('rfRegime')),
+    rfRegime: buildRegimeSection(rfRegimeOutcomes, attemptsOf('rfRegime'), rfRegimeAllOutcomes),
     // Fase 4 Order Block / FVG (src/lib/indicators/orderBlock.js + fvg.js,
     // docs/known-risks.md item 43) — opt-in, off by default, SMC 1h_5m only,
     // medido no momento da EMISSÃO do sinal. Mesma convenção

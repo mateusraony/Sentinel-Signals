@@ -3568,13 +3568,42 @@ depois do merge — conferidos linha a linha contra o código, todos reais:
    de resumo (`attempts.evaluations`), só a tabela usava o rótulo errado.
    **Corrigido**: coluna renomeada de `avaliações` pra `sinais`.
 
+O PR deste hardening (#104) recebeu um 4º achado, também real, do mesmo
+processo de revisão automática:
+
+4. **P2 — `adxStats`/`chopStats` (item 2 acima) liam do Map last-write-wins,
+   não de todas as rejeições reais.** `buildRegimeSection` calculava as
+   estatísticas a partir de `outcomes` (o mesmo array deduped que já
+   alimenta `byReason`/`total`/`passed`) — um sinal rejeitado com ADX 5 e
+   depois 24 antes de finalmente confirmar contribuía só a 3ª avaliação
+   (`ok:true`, nada) pras estatísticas; se expirasse ainda rejeitado,
+   contribuía só a ÚLTIMA rejeição (24), perdendo a primeira (5). Isso
+   enviesava exatamente a métrica que o item 2 foi corrigido pra fornecer.
+   **Corrigido**: dois arrays novos, `rfRegimeAllOutcomes`/
+   `smcRegimeAllOutcomes` — histograma tipo `entryFunnelCounts` (toda
+   avaliação conta, não só o estado final por `dedup_key`), usados
+   exclusivamente por `adxStats`/`chopStats`; `byReason`/`total`/`passed`/
+   `rejected` continuam vindo do Map deduped, sem mudança de significado.
+   `rfRegimeAllOutcomes` ganhou o mesmo gate de janela avaliada do item 1
+   (adicionado desde já, não uma 2ª rodada de correção); `smcRegimeAllOutcomes`
+   ficou fora do gate de propósito, espelhando a lacuna já sinalizada (e
+   ainda não corrigida) de `smcRegimeOutcomes` no item 1 acima — evita criar
+   uma nova inconsistência entre a tabela por motivo e as estatísticas
+   numéricas dessa mesma seção.
+
 ### Verificação
 
-3 testes novos em `backtestEngine.test.js` (sinal avaliado só no
+Itens 1-3: 3 testes novos em `backtestEngine.test.js` (sinal avaliado só no
 aquecimento fica fora de `report.rfRegime`/`report.smcTrigger` quando
 `evaluationFrom`/`To` recorta a janela — um por seção — e `adxStats`/
 `chopStats` calculados corretamente, incluindo o caso de `null` ignorado
 em vez de virar 0) + 2 testes existentes atualizados (shape de
 `report.smcRegime`/`report.rfRegime` ganhou `adxStats`/`chopStats`) — 723
+testes passando no total, sem regressão.
+
+Item 4: 2 testes novos (reproduz o cenário exato do achado — sinal
+retried 3x com ADX 5/24/30-e-passa, `adxStats` vê as 2 rejeições reais
+mesmo com o Map final marcando `ok:true`; chamador legado sem
+`rfRegimeAllOutcomes` explícito continua funcionando via fallback) — 725
 testes passando no total, sem regressão. `npm run lint && npm run build &&
 npm run build:scan && npm run build:backtest` OK.

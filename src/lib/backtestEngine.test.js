@@ -981,6 +981,44 @@ describe('buildReport', () => {
     expect(report.rfRegime.chopStats).toBeNull(); // nenhuma reprovou por chop
   });
 
+  // Codex review (PR #104, P2): reproduz o cenário exato do achado — um
+  // sinal reavaliado várias vezes (retry) tem SÓ o estado FINAL no Map
+  // (rfRegimeOutcomes), mas adxStats/chopStats precisam ver TODAS as
+  // rejeições reais que aconteceram no caminho, não só a última (ou
+  // nenhuma, se a passada final passar).
+  it('rfRegime.adxStats agrega TODAS as rejeições de um sinal retried, não só o estado final do Map', () => {
+    // Mesmo dedup_key 'a', 3 avaliações reais: ADX 5, depois 24 (ambas
+    // rejeitadas), depois 30 (finalmente passa). O Map (rfRegimeOutcomes)
+    // só guarda a 3ª (ok:true) — sem allOutcomes, adxStats ficaria null.
+    const rfRegimeOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', ok: true, adxOk: true, chopOk: true, adx: 30, chop: 40, tier: 'T1' },
+    ];
+    const rfRegimeAllOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: 5, chop: 40, tier: 'T1' },
+      { dedup_key: 'a', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: 24, chop: 40, tier: 'T1' },
+      { dedup_key: 'a', cascade: '4h_15m', ok: true, adxOk: true, chopOk: true, adx: 30, chop: 40, tier: 'T1' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, rfRegimeOutcomes, rfRegimeAllOutcomes });
+    // O Map continua reportando "1 sinal, passou" (total/passed inalterados).
+    expect(report.rfRegime.total).toBe(1);
+    expect(report.rfRegime.passed).toBe(1);
+    expect(report.rfRegime.byReason).toEqual({});
+    // Mas adxStats vê as 2 rejeições reais que aconteceram — (5+24)/2=14.5,
+    // não null (que seria o resultado de olhar só o Map final).
+    expect(report.rfRegime.adxStats).toEqual({ avgRejected: 14.5, minRejected: 5, maxRejected: 24 });
+  });
+
+  it('buildReport sem rfRegimeAllOutcomes explícito usa rfRegimeOutcomes como fallback (retrocompat)', () => {
+    // Chamador legado que só passa o array deduped continua funcionando —
+    // rfRegimeAllOutcomes default é rfRegimeOutcomes (mesmo comportamento
+    // de antes deste fix para quem não tem o array separado).
+    const rfRegimeOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: 10, chop: 40, tier: 'T1' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, rfRegimeOutcomes });
+    expect(report.rfRegime.adxStats).toEqual({ avgRejected: 10, minRejected: 10, maxRejected: 10 });
+  });
+
   // Round 3 (docs/known-risks.md item 50) — smcTrigger section. Unlike
   // retest/displacement/smcRegime/smcObFvg above, no `enabled` field: the
   // gate is never opt-in (no pineConfig flag), so an inferred-from-non-empty
