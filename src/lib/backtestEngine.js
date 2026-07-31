@@ -267,12 +267,6 @@ export async function runBacktest({
           for (const outcome of (persistResult.smcRegimeOutcomes || [])) {
             recordOutcome(smcRegimeOutcomesByKey, attemptsByKey.smcRegime, outcome);
           }
-          for (const outcome of (persistResult.rfRegimeOutcomes || [])) {
-            recordOutcome(rfRegimeOutcomesByKey, attemptsByKey.rfRegime, outcome);
-          }
-          for (const outcome of (persistResult.smcTriggerOutcomes || [])) {
-            recordOutcome(smcTriggerOutcomesByKey, attemptsByKey.smcTrigger, outcome);
-          }
           for (const outcome of (persistResult.smcObFvgOutcomes || [])) {
             recordOutcome(smcObFvgOutcomesByKey, attemptsByKey.smcObFvg, outcome);
           }
@@ -287,6 +281,24 @@ export async function runBacktest({
             for (const outcome of (persistResult.entryFunnelOutcomes || [])) {
               const bucket = (entryFunnelCounts[outcome.cascade] ||= {});
               bucket[outcome.reason] = (bucket[outcome.reason] || 0) + 1;
+            }
+            // Codex review (PR #103): rfRegimeOutcomes/smcTriggerOutcomes are
+            // brand new this round — unlike the "naturally overwritten"
+            // assumption above (which the SAME review disproved: a
+            // warm-up-only signal that's never touched again just sits in
+            // the Map as its own entry, and a post-cutoff retry can
+            // overwrite an in-window signal's true final state), these two
+            // get the SAME window gate as entryFunnelOutcomes from the
+            // start. retestOutcomes/displacementOutcomes/smcRegimeOutcomes/
+            // arbitrationOutcomes/smcObFvgOutcomes above share this same
+            // pre-existing gap (Fase 2/3) — NOT fixed here, see
+            // docs/known-risks.md item 50 for why that's a separate,
+            // broader change left for its own round.
+            for (const outcome of (persistResult.rfRegimeOutcomes || [])) {
+              recordOutcome(rfRegimeOutcomesByKey, attemptsByKey.rfRegime, outcome);
+            }
+            for (const outcome of (persistResult.smcTriggerOutcomes || [])) {
+              recordOutcome(smcTriggerOutcomesByKey, attemptsByKey.smcTrigger, outcome);
             }
           }
         } catch (err) {
@@ -353,6 +365,21 @@ export function summarizeAttempts(attemptsMap) {
   return { evaluations, retried, maxAttempts };
 }
 
+// Codex review (PR #103, P2): min/avg/max over the RAW adx/chop values from
+// evaluations where that specific sub-gate rejected — answers "how close to
+// the threshold" without dumping every raw sample into the JSON. null values
+// (legacy outcomes / not computed) are skipped, not coerced to 0.
+function numericStats(values) {
+  const nums = values.filter((v) => v != null);
+  if (nums.length === 0) return null;
+  const sum = nums.reduce((a, b) => a + b, 0);
+  return {
+    avgRejected: +(sum / nums.length).toFixed(2),
+    minRejected: Math.min(...nums),
+    maxRejected: Math.max(...nums),
+  };
+}
+
 // Round 3 (docs/known-risks.md item 50) — shared aggregation for the two
 // regime-gate sections (rfRegime, smcRegime): identical shape and byReason
 // bucketing, only the outcomes array/cascade differ. Extracted so the two
@@ -360,10 +387,14 @@ export function summarizeAttempts(attemptsMap) {
 function buildRegimeSection(outcomes, attempts) {
   const passed = outcomes.filter(o => o.ok).length;
   const byReason = {};
-  for (const { ok, adxOk, chopOk } of outcomes) {
+  const adxRejectedValues = [];
+  const chopRejectedValues = [];
+  for (const { ok, adxOk, chopOk, adx, chop } of outcomes) {
     if (ok) continue;
     const reason = !adxOk && !chopOk ? 'adx_and_chop' : !adxOk ? 'adx_weak' : 'choppy';
     byReason[reason] = (byReason[reason] || 0) + 1;
+    if (!adxOk) adxRejectedValues.push(adx);
+    if (!chopOk) chopRejectedValues.push(chop);
   }
   return {
     enabled: outcomes.length > 0,
@@ -372,6 +403,12 @@ function buildRegimeSection(outcomes, attempts) {
     passed,
     rejected: outcomes.length - passed,
     byReason,
+    // Codex review (PR #103, P2): before this, adx/chop/tier were collected
+    // on every outcome (Round 3) but never surfaced anywhere in the
+    // aggregated report — a future threshold-calibration decision had no way
+    // to see whether rejections were near-miss or nowhere close.
+    adxStats: numericStats(adxRejectedValues),
+    chopStats: numericStats(chopRejectedValues),
   };
 }
 

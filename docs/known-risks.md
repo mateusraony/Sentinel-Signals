@@ -3525,3 +3525,56 @@ distinto de `no_trigger` genuíno, `smcTriggerOutcomes` confirmado/rejeitado),
 agregação, `attempts` sobrevive ao colapso por `dedup_key`, prova de wiring
 via `runBacktest` real com `attempts.evaluations > 1`), 3 em `tier.test.js`
 (paridade Pine) — 720 testes passando no total, sem regressão.
+
+## 51. Hardening do item 50 — achados do Codex review pós-merge (2026-07-31)
+
+O PR do item 50 (#103) mergeou antes da revisão automática externa
+(`chatgpt-codex-connector`) terminar de comentar. Três achados chegaram
+depois do merge — conferidos linha a linha contra o código, todos reais:
+
+1. **P1 — `rfRegimeOutcomes`/`smcTriggerOutcomes` não respeitavam a janela
+   avaliada.** `entryFunnelOutcomes` já era gravado só dentro de
+   `if (t >= evalFromMs && t <= evalToMs)` (correção de uma revisão externa
+   anterior no PR #102) — os dois arrays novos do item 50 não tinham esse
+   gate. O comentário que justificava isso ("Maps guardam só o estado
+   FINAL, um sinal de aquecimento é naturalmente sobrescrito") está
+   **errado em geral**: um sinal avaliado só durante o aquecimento (nunca
+   mais tocado depois) fica como entrada própria no Map pra sempre, e um
+   retry que acontece DEPOIS de `evalToMs` pode sobrescrever o estado final
+   de um sinal que era válido dentro da janela. **Corrigido** para
+   `rfRegimeOutcomes`/`smcTriggerOutcomes` — movidos pra dentro do mesmo
+   gate de `entryFunnelOutcomes` (`backtestEngine.js`, loop de
+   `runBacktest`). **Não corrigido** (lacuna sinalizada, mais ampla e mais
+   antiga — Fase 2/3, não introduzida por este round): `retestOutcomes`/
+   `displacementOutcomes`/`smcRegimeOutcomes`/`arbitrationOutcomes`/
+   `smcObFvgOutcomes` compartilham exatamente o mesmo problema. Consertar
+   as 5 de uma vez é auditoria própria (muda comportamento de seções já em
+   produção com relatórios/testes existentes) — fica para uma rodada
+   futura dedicada, não misturada com este hardening pontual.
+2. **P2 — `buildRegimeSection` descartava os valores numéricos.** Só lia
+   `{ok, adxOk, chopOk}` — os campos `adx`/`chop`/`tier` que o item 50
+   passou a coletar (o objetivo inteiro do round: "não só ok/not-ok") nunca
+   chegavam no relatório agregado, o que inviabilizava a decisão futura de
+   calibração ("as rejeições ficam perto do threshold ou longe?").
+   **Corrigido**: nova função `numericStats` + campos `adxStats`/
+   `chopStats` (`{avgRejected, minRejected, maxRejected}`, calculados só
+   sobre as avaliações em que aquele sub-gate especificamente reprovou) em
+   `report.rfRegime`/`report.smcRegime`. Impressos também no
+   `scripts/analyze-backtest.mjs`.
+3. **P2 — rótulo `avaliações` enganava em `analyze-backtest.mjs`.** A
+   tabela por motivo das seções por Map (`rfRegime`/`smcRegime`/
+   `smcTrigger`) conta SINAIS com aquele motivo FINAL (último-escreve-
+   ganha), não quantas vezes o gate rodou — isso já estava certo na linha
+   de resumo (`attempts.evaluations`), só a tabela usava o rótulo errado.
+   **Corrigido**: coluna renomeada de `avaliações` pra `sinais`.
+
+### Verificação
+
+3 testes novos em `backtestEngine.test.js` (sinal avaliado só no
+aquecimento fica fora de `report.rfRegime`/`report.smcTrigger` quando
+`evaluationFrom`/`To` recorta a janela — um por seção — e `adxStats`/
+`chopStats` calculados corretamente, incluindo o caso de `null` ignorado
+em vez de virar 0) + 2 testes existentes atualizados (shape de
+`report.smcRegime`/`report.rfRegime` ganhou `adxStats`/`chopStats`) — 723
+testes passando no total, sem regressão. `npm run lint && npm run build &&
+npm run build:scan && npm run build:backtest` OK.
