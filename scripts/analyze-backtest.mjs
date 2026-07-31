@@ -213,6 +213,29 @@ export function renderAnalysis(analysis) {
   return out;
 }
 
+// Round 3 (docs/known-risks.md item 50) — imprime as 3 seções de funil que
+// buildReport já calcula mas que, até este round, nenhuma superfície
+// imprimia (nem o CLI, nem o resumo do workflow): rfRegime (novo),
+// smcRegime (existia desde a Fase 3, nunca impresso) e smcTrigger (novo).
+// Lê o `report` bruto, não o `analysis` derivado de analyzeReport — essas
+// seções são sobre TENTATIVAS de entrada, não sobre operações fechadas, que
+// é o escopo fechado de backtestAnalysis.js (ver cabeçalho do arquivo).
+function renderGateSection(title, section) {
+  const out = [title];
+  const okCount = section.passed ?? section.confirmed ?? 0;
+  out.push(`total: ${section.total} · ok: ${okCount} · rejeitado: ${section.rejected ?? 0} · `
+    + `avaliações: ${section.attempts.evaluations} · sinais com retry: ${section.attempts.retried} · `
+    + `máx. tentativas por sinal: ${section.attempts.maxAttempts}`);
+  if (section.byTrigger) {
+    out.push(...table(Object.entries(section.byTrigger).map(([trigger, count]) => ({ gatilho: trigger, confirmados: count }))));
+  }
+  const reasonEntries = Object.entries(section.byReason || {});
+  out.push(...(reasonEntries.length > 0
+    ? table(reasonEntries.map(([reason, count]) => ({ motivo: reason, avaliações: count })))
+    : ['(sem rejeições)']));
+  return out;
+}
+
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -236,6 +259,19 @@ function main() {
   }
   console.log('');
   console.log(renderAnalysis(analysis).join('\n'));
+
+  if (report.rfRegime) {
+    console.log('');
+    console.log(renderGateSection('FUNIL DE REGIME — RF (4h_15m)', report.rfRegime).join('\n'));
+  }
+  if (report.smcRegime) {
+    console.log('');
+    console.log(renderGateSection('FUNIL DE REGIME — SMC (1h_5m, opt-in smcTierEnabled)', report.smcRegime).join('\n'));
+  }
+  if (report.smcTrigger) {
+    console.log('');
+    console.log(renderGateSection('GATILHO DE ENTRADA — SMC 5m (1h_5m)', report.smcTrigger).join('\n'));
+  }
 
   // O diagnóstico descreve a amostra; não a torna conclusiva. Repetir o
   // veredito aqui evita que uma tabela bem formatada passe a sensação de que

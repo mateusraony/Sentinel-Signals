@@ -194,6 +194,23 @@ globais, afetam as duas cascatas) em vez de `smcTierEnabled` inteiro. Se
 por `closed_reason` — o Chop Exit passa a valer pra operações SMC junto
 (efeito colateral documentado no item 42, não um bug).
 
+**`report.rfRegime`** (Round 3, `docs/known-risks.md` item 50) —
+`{enabled, total, attempts, passed, rejected, byReason}`, cascata RF
+(`4h_15m`). Mesmo shape de `report.smcRegime` acima (aditivo, sempre ligado —
+`evaluateRegime` não é opt-in na RF), agora com `adx`/`chop`/`tier` reais
+disponíveis por avaliação (não só ok/not-ok) nos dois arrays
+(`rfRegimeOutcomes`/`smcRegimeOutcomes`). Não precisa de comparação com/sem
+flag — é diagnóstico puro, não um gate opt-in.
+
+**`report.smcTrigger`** (Round 3, `docs/known-risks.md` item 50) —
+`{total, attempts, confirmed, rejected, byTrigger, byReason}`, cascata SMC
+(`1h_5m`), sobre o gatilho de entrada 5m (`check5mSmcConfirmation`). Sem
+`enabled` (o gatilho nunca é opt-in). `attempts.evaluations` é o número que
+prova, por sinal, se ele esgota a janela de retry de 4h sem disparar — antes
+só dava pra inferir por aritmética agregada (sinais × avaliações-teto).
+`byReason` inclui `wrong_direction_trigger` (sweep/estrutura dispararam, só
+do lado oposto ao sinal) — distinto de `no_trigger` genuíno.
+
 **`report.smcObFvg`** (Fase 4, `docs/known-risks.md` item 43) —
 `{enabled, total, obActive, fvgActive, both, neither}`, só cascata SMC
 (`1h_5m`), medido no momento da EMISSÃO do sinal. **Este relatório é o único

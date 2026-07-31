@@ -195,6 +195,13 @@ export async function runBacktest({
   // Fase 3 SMC tier/regime gate (docs/known-risks.md item 42) — same
   // convention as retestOutcomesByKey above. SMC 1h_5m only.
   const smcRegimeOutcomesByKey = new Map();
+  // Round 3 (docs/known-risks.md item 50) — same convention, mirrors
+  // smcRegimeOutcomesByKey for the RF 4h_15m regime gate (evaluateRegime is
+  // always on for RF, unlike SMC's opt-in smcTierEnabled).
+  const rfRegimeOutcomesByKey = new Map();
+  // Round 3 (docs/known-risks.md item 50) — same convention, for the SMC 5m
+  // entry trigger (check5mSmcConfirmation). Also always-on (not opt-in).
+  const smcTriggerOutcomesByKey = new Map();
   // Fase 4 Order Block / FVG (docs/known-risks.md item 43) — same convention.
   // SMC 1h_5m only, recorded at signal emission.
   const smcObFvgOutcomesByKey = new Map();
@@ -222,7 +229,9 @@ export async function runBacktest({
     retest: new Map(),
     displacement: new Map(),
     smcRegime: new Map(),
+    rfRegime: new Map(),
     smcObFvg: new Map(),
+    smcTrigger: new Map(),
   };
   const recordOutcome = (byKey, attempts, outcome) => {
     byKey.set(outcome.dedup_key, outcome);
@@ -257,6 +266,12 @@ export async function runBacktest({
           }
           for (const outcome of (persistResult.smcRegimeOutcomes || [])) {
             recordOutcome(smcRegimeOutcomesByKey, attemptsByKey.smcRegime, outcome);
+          }
+          for (const outcome of (persistResult.rfRegimeOutcomes || [])) {
+            recordOutcome(rfRegimeOutcomesByKey, attemptsByKey.rfRegime, outcome);
+          }
+          for (const outcome of (persistResult.smcTriggerOutcomes || [])) {
+            recordOutcome(smcTriggerOutcomesByKey, attemptsByKey.smcTrigger, outcome);
           }
           for (const outcome of (persistResult.smcObFvgOutcomes || [])) {
             recordOutcome(smcObFvgOutcomesByKey, attemptsByKey.smcObFvg, outcome);
@@ -309,7 +324,9 @@ export async function runBacktest({
     retestOutcomes: [...retestOutcomesByKey.values()],
     displacementOutcomes: [...displacementOutcomesByKey.values()],
     smcRegimeOutcomes: [...smcRegimeOutcomesByKey.values()],
+    rfRegimeOutcomes: [...rfRegimeOutcomesByKey.values()],
     smcObFvgOutcomes: [...smcObFvgOutcomesByKey.values()],
+    smcTriggerOutcomes: [...smcTriggerOutcomesByKey.values()],
     entryFunnelCounts,
     attemptStats: Object.fromEntries(
       Object.entries(attemptsByKey).map(([name, map]) => [name, summarizeAttempts(map)]),
@@ -336,6 +353,28 @@ export function summarizeAttempts(attemptsMap) {
   return { evaluations, retried, maxAttempts };
 }
 
+// Round 3 (docs/known-risks.md item 50) — shared aggregation for the two
+// regime-gate sections (rfRegime, smcRegime): identical shape and byReason
+// bucketing, only the outcomes array/cascade differ. Extracted so the two
+// sections can't silently drift apart.
+function buildRegimeSection(outcomes, attempts) {
+  const passed = outcomes.filter(o => o.ok).length;
+  const byReason = {};
+  for (const { ok, adxOk, chopOk } of outcomes) {
+    if (ok) continue;
+    const reason = !adxOk && !chopOk ? 'adx_and_chop' : !adxOk ? 'adx_weak' : 'choppy';
+    byReason[reason] = (byReason[reason] || 0) + 1;
+  }
+  return {
+    enabled: outcomes.length > 0,
+    total: outcomes.length,
+    attempts,
+    passed,
+    rejected: outcomes.length - passed,
+    byReason,
+  };
+}
+
 // Groups closed ops by cascade (4h_15m vs 1h_5m) and feeds each group (plus
 // the overall set) into tradeMetrics.summarizeOps — the exact same win
 // rate/profit factor/expectancy-in-R/drawdown calculation the app's own UI
@@ -351,7 +390,7 @@ function resolveReportCostModel(costModel) {
   return { ...DEFAULT_COST_MODEL, ...costModel, applied: !isZero };
 }
 
-export function buildReport(ops, { fromMs, toMs, dataRangeMs = null, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], smcObFvgOutcomes = [], entryFunnelCounts = { '4h_15m': {}, '1h_5m': {} }, attemptStats = {}, costModel, minTrades } = {}) {
+export function buildReport(ops, { fromMs, toMs, dataRangeMs = null, smcConfirmedSignals = 0, smcRejectedByOteZone = 0, arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [], smcRegimeOutcomes = [], rfRegimeOutcomes = [], smcObFvgOutcomes = [], smcTriggerOutcomes = [], entryFunnelCounts = { '4h_15m': {}, '1h_5m': {} }, attemptStats = {}, costModel, minTrades } = {}) {
   const attemptsOf = (name) => attemptStats[name] ?? { ...EMPTY_ATTEMPTS };
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
   const closed = ops.filter(op => isTerminalStatus(op.status));
@@ -487,23 +526,16 @@ export function buildReport(ops, { fromMs, toMs, dataRangeMs = null, smcConfirme
     // `retest`/`displacement` above — the number to diff between two
     // --pine-config runs (with/without smcTierEnabled) before deciding to
     // activate.
-    smcRegime: (() => {
-      const passed = smcRegimeOutcomes.filter(o => o.ok).length;
-      const byReason = {};
-      for (const { ok, adxOk, chopOk } of smcRegimeOutcomes) {
-        if (ok) continue;
-        const reason = !adxOk && !chopOk ? 'adx_and_chop' : !adxOk ? 'adx_weak' : 'choppy';
-        byReason[reason] = (byReason[reason] || 0) + 1;
-      }
-      return {
-        enabled: smcRegimeOutcomes.length > 0,
-        total: smcRegimeOutcomes.length,
-        attempts: attemptsOf('smcRegime'),
-        passed,
-        rejected: smcRegimeOutcomes.length - passed,
-        byReason,
-      };
-    })(),
+    smcRegime: buildRegimeSection(smcRegimeOutcomes, attemptsOf('smcRegime')),
+    // Round 3 (docs/known-risks.md item 50) — same shape as smcRegime above,
+    // mirrored for the RF 4h_15m cascade. Unlike SMC's opt-in
+    // smcTierEnabled, evaluateRegime always runs for RF — `enabled` here
+    // just means "at least one 4h regime evaluation happened during the
+    // window", not a feature flag. This closed the biggest blind spot found
+    // by the entryFunnel section (item 49): `regime_rejected` was 69% of
+    // 4h_15m rejections with zero visibility into the actual adx/chop
+    // values that produced them.
+    rfRegime: buildRegimeSection(rfRegimeOutcomes, attemptsOf('rfRegime')),
     // Fase 4 Order Block / FVG (src/lib/indicators/orderBlock.js + fvg.js,
     // docs/known-risks.md item 43) — opt-in, off by default, SMC 1h_5m only,
     // medido no momento da EMISSÃO do sinal. Mesma convenção
@@ -526,6 +558,33 @@ export function buildReport(ops, { fromMs, toMs, dataRangeMs = null, smcConfirme
         fvgActive,
         both,
         neither,
+      };
+    })(),
+    // Round 3 (docs/known-risks.md item 50) — gatilho de entrada 5m da
+    // cascata SMC (check5mSmcConfirmation). Unlike retest/displacement/
+    // smcRegime/smcObFvg above, this is NEVER opt-in (no pineConfig flag
+    // gates it — it runs whenever asset.smc_enabled is set), so `enabled`
+    // would be misleading here (it'd almost always read true without
+    // meaning "a flag is on") — deliberately omitted. `attempts.evaluations`
+    // is what turns "signals seem to exhaust the whole 4h retry window"
+    // (previously only an aggregate-arithmetic inference: 346 signals × ~48
+    // evaluations ≈ 17,024, matching the measured entryFunnel total) into a
+    // real per-signal count.
+    smcTrigger: (() => {
+      const confirmedCount = smcTriggerOutcomes.filter(o => o.confirmed).length;
+      const byReason = {};
+      const byTrigger = { sweep: 0, structure: 0 };
+      for (const o of smcTriggerOutcomes) {
+        if (o.confirmed) { if (o.trigger) byTrigger[o.trigger] = (byTrigger[o.trigger] || 0) + 1; continue; }
+        byReason[o.rejectReason] = (byReason[o.rejectReason] || 0) + 1;
+      }
+      return {
+        total: smcTriggerOutcomes.length,
+        attempts: attemptsOf('smcTrigger'),
+        confirmed: confirmedCount,
+        rejected: smcTriggerOutcomes.length - confirmedCount,
+        byTrigger,
+        byReason,
       };
     })(),
     // Geometria de saída (docs/known-risks.md item 46) — QUAL gestão este run

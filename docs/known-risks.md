@@ -3420,3 +3420,108 @@ cascatas, `active_op_exists` sem escrita, os 3 motivos novos de
 `backtestEngine.test.js` (`entryFunnel` default zerado, agregação por
 cascata/motivo, prova de wiring ponta a ponta via `runBacktest` real) — 703
 testes passando no total, sem regressão.
+
+## 50. Instrumentação granular do funil de entrada (RF regime + gatilho SMC 5m) (2026-07-31)
+
+O backtest de 12 meses/7 símbolos do item 49 respondeu "qual gate rejeita
+mais" com número: `regime_rejected` (ADX+Choppiness) é 69,4% das rejeições
+da cascata RF (3.750/5.404); `no_trigger` é 70,3% das rejeições da cascata
+SMC (11.969/17.024), com `ote_zone_unfavorable` (a hipótese do item 45.2)
+em só 1,7% — **refutando** a hipótese de que a zona OTE geométrica é o
+gargalo dominante do SMC.
+
+Dois agentes Explore investigaram separadamente se algum threshold estava
+mal calibrado antes de propor mudança — achado principal: **nenhuma das
+duas cascatas tem hoje um número solto pra recalibrar**.
+
+- **RF**: `evaluateRegime` (`scanner.js`) usa a tabela de tier
+  (`src/lib/indicators/tier.js` — ADX 25/22/18, Choppiness 55/58/62 por
+  T1/T2/T3) que é **cópia literal** do Pine real do usuário
+  (`src/pages/PineScript.jsx:269-271,89-90`, valores idênticos). Mudar isso
+  sem o usuário mudar o Pine real seria divergência deliberada de paridade,
+  não uma correção.
+- **SMC**: `swingLen=10` do gatilho 5m (`check5mSmcConfirmation`,
+  `scanner.js`) **não** é do Pine real (que usa 50 como default) — é o
+  `minval` do input, escolha do próprio Sentinel. Mais relevante ainda: o
+  Pine real (`docs/reference-pine/smc-a-unified-v2.3.pine`) é um
+  `indicator()`, sem NENHUM conceito de confirmação em timeframe menor — a
+  cascata 1h→5m inteira (viés 1h + gatilho 5m) é desenho original do
+  projeto. Não existe "valor certo do Pine" pra restaurar aqui.
+
+O que as duas cascatas TÊM em comum é uma lacuna de **instrumentação**, não
+de calibração — fechada nesta rodada, sem mudar nenhum critério de
+confirmação/rejeição:
+
+### RF — `rfRegimeOutcomes` simétrico a `smcRegimeOutcomes`
+
+A cascata SMC já gravava `{ok, adxOk, chopOk}` por avaliação de regime
+desde a Fase 3 (item 42, `smcRegimeOutcomes`); a cascata RF só gravava a
+string `'regime_rejected'` em `entryFunnelOutcomes`, nunca o ADX/Choppiness/
+tier reais. `rfRegimeOutcomes` fecha essa assimetria (`scanner.js`, mesmos
+2 call sites de `evaluateRegime` que já existiam), e os dois arrays
+(`rfRegimeOutcomes`/`smcRegimeOutcomes`) ganharam os mesmos 3 campos novos
+(`adx`, `chop`, `tier`) pra simetria real. `backtestEngine.js` extraiu um
+helper puro `buildRegimeSection` (Map por `dedup_key`, `attemptsByKey`,
+mesmo padrão de `retest`/`displacement`) reaproveitado pelas duas novas
+seções do relatório: `report.rfRegime` (nova) e `report.smcRegime` (shape
+enriquecido, nome mantido — renomear quebraria comparabilidade com
+relatórios/testes antigos).
+
+Novo teste de paridade em `tier.test.js` (lê `PineScript.jsx` como texto,
+mesmo padrão de `goldenParity.test.js` pros CSVs golden — não importa o
+componente React) comparando os literais do Pine contra `TIER_PARAMS`
+(agora exportado) — protege contra os dois arquivos divergirem em silêncio
+no futuro, lacuna que não tinha teste nenhum antes desta rodada.
+
+### SMC — `wrong_direction_trigger` e `smcTriggerOutcomes`
+
+`check5mSmcConfirmation` já calcula sweep/estrutura para os dois lados
+(bullish e bearish) — só o lado pedido pela direção do sinal era lido. Um
+`no_trigger` hoje é indistinguível entre "nenhum evento ocorreu" e "um
+evento ocorreu, no lado ERRADO". Novo valor de `rejectReason`,
+`wrong_direction_trigger` (mesma operação que já dividiu `no_trigger` em 3
+causas no item 49/45.3 — não um mecanismo novo), checando o lado oposto
+só quando nenhum dos dois lados pedidos disparou (zero fetch extra).
+Adicionado ao enum de `SignalEvent.last_rejection_reason`
+(`docs/schema-reference/SignalEvent.jsonc`).
+
+Também novo: `smcTriggerOutcomes` (`{dedup_key, cascade, confirmed, trigger,
+rejectReason}`, empurrado nos mesmos 2 call sites de
+`check5mSmcConfirmation`), com `attemptsByKey` genérico igual a
+`retest`/`displacement` — nova seção `report.smcTrigger` (`total`,
+`attempts.{evaluations,retried,maxAttempts}`, `confirmed`, `byTrigger`,
+`byReason`). Diferente das seções acima, **sem** campo `enabled`:
+`check5mSmcConfirmation` nunca é opt-in (roda sempre que `asset.smc_enabled`
+está ligado, sem flag própria de `pineConfig`), então um `enabled` inferido
+de array-não-vazio seria enganoso ali. Essa seção troca a inferência
+aritmética agregada que sustentava "sinal esgota a janela de 4h sem
+disparar" (346 sinais × ~48 avaliações/sinal ≈ 17.024, batendo com o real,
+mas só por soma) por uma contagem real por-sinal
+(`attempts.evaluations`/`retried`/`maxAttempts`).
+
+### Backtest — impressão
+
+`scripts/analyze-backtest.mjs` ganhou `renderGateSection`, chamada pra
+`report.rfRegime` (novo), `report.smcRegime` (existia desde a Fase 3, nunca
+tinha sido impresso em lugar nenhum) e `report.smcTrigger` (novo) — lê o
+`report` bruto, não o `analysis` derivado de `analyzeReport`
+(`backtestAnalysis.js` é escopo fechado sobre operações fechadas; estas
+seções são sobre tentativas de entrada).
+
+### Fora de escopo — decisão fica para depois
+
+Esta rodada não decide se algum threshold/parâmetro deveria mudar — é
+exatamente o dado que ela produz que vai informar essa decisão numa rodada
+futura (ex.: threshold do gate de regime RF, calibração do `swingLen`/
+lookback do gatilho 5m SMC), com o mesmo cuidado do Bloco 0 (critério
+escrito antes do número).
+
+### Verificação
+
+9 testes novos em `scannerStateMachine.test.js` (rfRegimeOutcomes na 1ª
+passada e no retry com adx/chop/tier reais, `wrong_direction_trigger`
+distinto de `no_trigger` genuíno, `smcTriggerOutcomes` confirmado/rejeitado),
+7 em `backtestEngine.test.js` (`rfRegime`/`smcTrigger` default zerado e
+agregação, `attempts` sobrevive ao colapso por `dedup_key`, prova de wiring
+via `runBacktest` real com `attempts.evaluations > 1`), 3 em `tier.test.js`
+(paridade Pine) — 720 testes passando no total, sem regressão.

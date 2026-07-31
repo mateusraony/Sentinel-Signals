@@ -394,7 +394,17 @@ async function check5mSmcConfirmation(symbol, direction, legBounds) {
       : (structure.lastBear.bos || structure.lastBear.choch);
 
     if (!sweepAligned && !structureAligned) {
-      return { ...noTriggerBase, rejectReason: 'no_trigger' };
+      // Round 3 (docs/known-risks.md item 50): sweep/structure already
+      // compute BOTH sides (bullish/bearish) — only the requested direction
+      // was ever read above. entryFunnel's 70.3% 'no_trigger' rate was
+      // indistinguishable between "genuinely no event happened" and "an
+      // event fired, just on the OPPOSITE side" until now. Zero extra fetch.
+      const sweepOpposite = direction === 'BUY' ? sweep.bearishSweep : sweep.bullishSweep;
+      const structureOpposite = direction === 'BUY'
+        ? (structure.lastBear.bos || structure.lastBear.choch)
+        : (structure.lastBull.bos || structure.lastBull.choch);
+      const reason = (sweepOpposite || structureOpposite) ? 'wrong_direction_trigger' : 'no_trigger';
+      return { ...noTriggerBase, rejectReason: reason };
     }
 
     const lastClosed = closed[closed.length - 1];
@@ -1453,6 +1463,19 @@ export async function persistScanResults(scanResult) {
   // Fase 3 (docs/known-risks.md item 42) — same convention, feeding
   // buildReport's `smcRegime` section. SMC 1h_5m cascade only.
   const smcRegimeOutcomes = [];
+  // Round 3 (docs/known-risks.md item 50) — same convention, mirrors
+  // smcRegimeOutcomes for the RF 4h_15m cascade (which never had this
+  // granularity: entryFunnelOutcomes only records the string reason
+  // 'regime_rejected', never the actual adx/chop/tier that produced it).
+  // Feeds buildReport's `rfRegime` section.
+  const rfRegimeOutcomes = [];
+  // Round 3 (docs/known-risks.md item 50) — same convention, pushed on
+  // EVERY check5mSmcConfirmation call (confirmed or not — check5mSmcConfirmation
+  // is never opt-in, so unlike retest/displacement there's no flag gating
+  // this). Turns "sinal esgota a janela de 4h sem disparar" from an
+  // aggregate-arithmetic inference into a real per-signal attempt count.
+  // Feeds buildReport's `smcTrigger` section.
+  const smcTriggerOutcomes = [];
   // Fase 4 (docs/known-risks.md item 43) — same convention, feeding
   // buildReport's `smcObFvg` section. Recorded at SIGNAL EMISSION (not at
   // entry): the question this answers is "quantos sinais SMC tinham OB/FVG a
@@ -1591,6 +1614,11 @@ export async function persistScanResults(scanResult) {
             });
           } else {
             const regime = evaluateRegime(tf4hData, pineConfig);
+            rfRegimeOutcomes.push({
+              dedup_key: signal.dedup_key, cascade: '4h_15m',
+              ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
+              adx: tf4hData.adx?.adx ?? null, chop: tf4hData.chop ?? null, tier: tf4hData.tier?.tier ?? null,
+            });
             if (!regime.ok) {
               entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'regime_rejected' });
               await backend.entities.SystemLog.create({
@@ -1733,7 +1761,11 @@ export async function persistScanResults(scanResult) {
         // the RF block above, so a blocked regime also skips cross-cascade
         // arbitration for this signal — mirrors RF's own behavior exactly.
         const regime = pineConfig.smcTierEnabled ? evaluateRegime(tf1hData, pineConfig) : { ok: true, adxOk: true, chopOk: true };
-        if (pineConfig.smcTierEnabled) smcRegimeOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk });
+        if (pineConfig.smcTierEnabled) smcRegimeOutcomes.push({
+          dedup_key: signal.dedup_key, cascade: '1h_5m',
+          ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
+          adx: tf1hData.adx?.adx ?? null, chop: tf1hData.chop ?? null, tier: tf1hData.tier?.tier ?? null,
+        });
         if (!regime.ok) {
           entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', reason: 'regime_rejected' });
           await backend.entities.SystemLog.create({
@@ -1778,6 +1810,11 @@ export async function persistScanResults(scanResult) {
           } else {
           const legBounds = { legHigh: signal.context?.ote_leg_high, legLow: signal.context?.ote_leg_low };
           const confirmed5m = await check5mSmcConfirmation(asset.symbol, signal.signal_type, legBounds);
+          smcTriggerOutcomes.push({
+            dedup_key: signal.dedup_key, cascade: '1h_5m',
+            confirmed: confirmed5m.confirmed, trigger: confirmed5m.trigger ?? null,
+            rejectReason: confirmed5m.rejectReason ?? null,
+          });
 
           if (confirmed5m.confirmed) {
             // Fase 2 rodada 2 (docs/known-risks.md item 41) — off by default,
@@ -2040,6 +2077,11 @@ export async function persistScanResults(scanResult) {
     // Regime gate (ADX + Choppiness) — re-evaluated every retry pass since
     // conditions may have changed since the signal first fired.
     const regime = evaluateRegime(tfData4h, pineConfig);
+    rfRegimeOutcomes.push({
+      dedup_key: sig.dedup_key, cascade: '4h_15m',
+      ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
+      adx: tfData4h.adx?.adx ?? null, chop: tfData4h.chop ?? null, tier: tfData4h.tier?.tier ?? null,
+    });
     if (!regime.ok) { await recordRejection(sig, '4h_15m', 'regime_rejected', entryFunnelOutcomes); continue; }
 
     // Same optional SMC confirmation gate as the initial entry check —
@@ -2162,7 +2204,11 @@ export async function persistScanResults(scanResult) {
       // reject, same reasoning as the retest/displacement retry loops below
       // (no SystemLog per ~5min retry tick, 1st pass already logged it once).
       const regime = pineConfig.smcTierEnabled ? evaluateRegime(tfData1h, pineConfig) : { ok: true, adxOk: true, chopOk: true };
-      if (pineConfig.smcTierEnabled) smcRegimeOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk });
+      if (pineConfig.smcTierEnabled) smcRegimeOutcomes.push({
+        dedup_key: sig.dedup_key, cascade: '1h_5m',
+        ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
+        adx: tfData1h.adx?.adx ?? null, chop: tfData1h.chop ?? null, tier: tfData1h.tier?.tier ?? null,
+      });
       if (!regime.ok) { await recordRejection(sig, '1h_5m', 'regime_rejected', entryFunnelOutcomes); continue; }
 
       // Fase 2 rodada 1 (docs/known-risks.md item 40) — off by default;
@@ -2193,6 +2239,11 @@ export async function persistScanResults(scanResult) {
       // protected pivot wasn't confirmed yet.
       const legBounds = { legHigh: sig.context?.ote_leg_high, legLow: sig.context?.ote_leg_low };
       const confirmed = await check5mSmcConfirmation(sig.symbol, sig.signal_type, legBounds);
+      smcTriggerOutcomes.push({
+        dedup_key: sig.dedup_key, cascade: '1h_5m',
+        confirmed: confirmed.confirmed, trigger: confirmed.trigger ?? null,
+        rejectReason: confirmed.rejectReason ?? null,
+      });
       if (!confirmed.confirmed) { await recordRejection(sig, '1h_5m', confirmed.rejectReason, entryFunnelOutcomes); continue; }
 
       // Fase 2 rodada 2 (docs/known-risks.md item 41) — off by default;
@@ -2579,7 +2630,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes, smcObFvgOutcomes, entryFunnelOutcomes };
+  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes, rfRegimeOutcomes, smcObFvgOutcomes, smcTriggerOutcomes, entryFunnelOutcomes };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()

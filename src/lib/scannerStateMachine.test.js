@@ -2353,7 +2353,7 @@ describe('Fase 3 — tier/regime na cascata SMC (opt-in, docs/known-risks.md ite
     expect(await backend.entities.TradeOperation.filter({})).toHaveLength(1); // só a op seedada, nenhuma nova
     expect(result.arbitrationOutcomes).toHaveLength(0); // handleActiveOpArbitration nunca foi chamado
     expect(result.smcRegimeOutcomes).toEqual([
-      { dedup_key: 'smc_sig_tier', cascade: '1h_5m', ok: false, adxOk: false, chopOk: true },
+      { dedup_key: 'smc_sig_tier', cascade: '1h_5m', ok: false, adxOk: false, chopOk: true, adx: 5, chop: 40, tier: 'T2' },
     ]);
 
     const logs = await backend.entities.SystemLog.filter({});
@@ -2734,6 +2734,15 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
     candles.push(mk5m(96, 97, 93, 96.5, 59));
     return candles;
   }
+  // Mirror of bullishSweepCandles5m for the opposite (bearish) side: wicks
+  // ABOVE the recent high and closes back below it — deterministic
+  // bearishSweep=true/bullishSweep=false, for wrong_direction_trigger below.
+  function bearishSweepCandles5m() {
+    const candles = [];
+    for (let i = 0; i < 59; i++) candles.push(mk5m(100, 105, 95, 100, i));
+    candles.push(mk5m(104, 107, 103, 103.5, 59));
+    return candles;
+  }
 
   describe('RF (4h_15m)', () => {
     it('retry grava last_rejection_reason já na 1ª passada (1º pass e retry avaliam o mesmo sinal no mesmo scan) e não regrava enquanto o motivo não mudar', async () => {
@@ -2772,6 +2781,46 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
       const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf' });
       expect(stored[0].last_rejection_reason).toBe('regime_rejected');
       expect(updateSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // Round 3 (docs/known-risks.md item 50) — rfRegimeOutcomes mirrors
+    // smcRegimeOutcomes (Fase 3) for the RF cascade: unlike entryFunnelOutcomes
+    // (only the string reason), this carries the actual adx/chop/tier that
+    // produced the verdict, on BOTH the 1st pass and the retry loop.
+    it('1ª passada grava rfRegimeOutcomes com adx/chop/tier reais (regime reprovado) — 1º pass + retry avaliam o mesmo sinal no mesmo scan', async () => {
+      const pineConfig = makePineConfig({ useADX: true, useChop: false });
+      const results = {
+        '4h': makeTfData({ adx: { adx: 5 }, chop: 40, tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48, adxMinVal: 25 } }),
+      };
+      const signal = makeRfSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal] });
+
+      const expectedOutcome = { dedup_key: 'sig_funnel_rf', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: 5, chop: 40, tier: 'T1' };
+      // Mesma duplicidade já documentada pro last_rejection_reason (linha
+      // acima): o 1º pass push e o retry loop (que também recolhe o mesmo
+      // SignalEvent recém-criado dentro do MESMO scan) ambos avaliam
+      // evaluateRegime e empurram pra rfRegimeOutcomes.
+      expect(result.rfRegimeOutcomes).toEqual([expectedOutcome, expectedOutcome]);
+    });
+
+    it('retry grava rfRegimeOutcomes com adx/chop/tier reais quando o regime já recuperou', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 1));
+      const pineConfig = makePineConfig({ useADX: true, useChop: false });
+      backend._seed('SignalEvent', {
+        id: 'sig_funnel_rf', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+        source: 'range_filter', dedup_key: 'sig_funnel_rf',
+        created_date: '2026-07-16T09:00:00.000Z', // dentro da janela de 4h
+      });
+      const results = {
+        '4h': makeTfData({ adx: { adx: 30 }, chop: 40, tier: { tier: 'T2', atrStopMult: 2.5, chopMaxVal: 58, timeStopBars: 64, adxMinVal: 22 } }),
+      };
+
+      const result = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+      expect(result.rfRegimeOutcomes).toEqual([
+        { dedup_key: 'sig_funnel_rf', cascade: '4h_15m', ok: true, adxOk: true, chopOk: true, adx: 30, chop: 40, tier: 'T2' },
+      ]);
     });
 
     it('active_op_exists no retry: conta no funil mas nunca escreve o campo (sem I/O extra)', async () => {
@@ -2881,6 +2930,60 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
       expect(result.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_funnel_smc', cascade: '1h_5m', reason: 'no_trigger' });
       const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_smc' });
       expect(stored[0].last_rejection_reason).toBe('no_trigger');
+    });
+
+    // Round 3 (docs/known-risks.md item 50): sweep/structure already compute
+    // BOTH sides — a signal asking for BUY that only sees a BEARISH sweep
+    // fire now gets a distinct reason from "genuinely nothing happened"
+    // (the no_trigger test right above, on flatCandles5m, is the regression
+    // proving that case is unaffected).
+    it('wrong_direction_trigger quando o sweep dispara, mas do lado OPOSTO ao sinal — distinto de no_trigger genuíno', async () => {
+      fetchCandles.mockResolvedValue(bearishSweepCandles5m()); // bearishSweep=true, bullishSweep=false
+      const asset = makeAsset({ smc_enabled: true });
+      const results = { '1h': makeTfData({ atrValue: 2 }) };
+      const signal = makeSmcSignal({ signal_type: 'BUY' }); // pede o lado bullish; só o bearish disparou
+
+      const result = await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+      expect(result.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_funnel_smc', cascade: '1h_5m', reason: 'wrong_direction_trigger' });
+      const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_smc' });
+      expect(stored[0].last_rejection_reason).toBe('wrong_direction_trigger');
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+    });
+
+    // Round 3 (docs/known-risks.md item 50): smcTriggerOutcomes records
+    // confirmed/trigger/rejectReason on EVERY check5mSmcConfirmation call —
+    // the raw material buildReport's attemptsByKey.smcTrigger uses to prove
+    // "signal exhausts the whole 4h retry window" instead of the aggregate
+    // arithmetic inference (346 signals × 48 evaluations ≈ 17,024) that was
+    // the only evidence for it before this round.
+    it('smcTriggerOutcomes grava confirmed:true/trigger:sweep quando o gatilho dispara alinhado', async () => {
+      fetchCandles.mockResolvedValue(bullishSweepCandles5m());
+      const asset = makeAsset({ smc_enabled: true });
+      const results = { '1h': makeTfData({ atrValue: 2 }) };
+      const signal = makeSmcSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(1);
+      expect(result.smcTriggerOutcomes.length).toBeGreaterThanOrEqual(1);
+      for (const outcome of result.smcTriggerOutcomes) {
+        expect(outcome).toEqual({ dedup_key: 'sig_funnel_smc', cascade: '1h_5m', confirmed: true, trigger: 'sweep', rejectReason: null });
+      }
+    });
+
+    it('smcTriggerOutcomes grava confirmed:false/trigger:null/rejectReason quando rejeitado (no_trigger)', async () => {
+      fetchCandles.mockResolvedValue(flatCandles5m(60));
+      const asset = makeAsset({ smc_enabled: true });
+      const results = { '1h': makeTfData({ atrValue: 2 }) };
+      const signal = makeSmcSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+
+      expect(result.smcTriggerOutcomes.length).toBeGreaterThanOrEqual(1);
+      for (const outcome of result.smcTriggerOutcomes) {
+        expect(outcome).toEqual({ dedup_key: 'sig_funnel_smc', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'no_trigger' });
+      }
     });
 
     it('fetch_error quando fetchCandles lança — distinto de no_trigger/insufficient_data', async () => {

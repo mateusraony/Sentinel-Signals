@@ -9,7 +9,7 @@
 
 import { calculateATRSeries } from './atr';
 
-const TIER_PARAMS = {
+export const TIER_PARAMS = {
   T1: { atrStopMult: 2.0, adxMinVal: 25, chopMaxVal: 55, timeStopBars: 48 },
   T2: { atrStopMult: 2.5, adxMinVal: 22, chopMaxVal: 58, timeStopBars: 64 },
   T3: { atrStopMult: 3.0, adxMinVal: 18, chopMaxVal: 62, timeStopBars: 96 },

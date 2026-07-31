@@ -898,6 +898,75 @@ describe('buildReport', () => {
     expect(report.smcRegime.byReason).toEqual({ adx_weak: 1, choppy: 1, adx_and_chop: 1 });
   });
 
+  // Round 3 (docs/known-risks.md item 50) — mirror of the smcRegime tests
+  // above, for the RF 4h_15m cascade (evaluateRegime is always on there,
+  // unlike SMC's opt-in smcTierEnabled — but the section shape/aggregation
+  // is byte-identical, shared via buildRegimeSection).
+  it('rfRegime defaults to disabled/all-zero when the caller passes nothing (legacy call shape)', () => {
+    const report = buildReport([], { fromMs: 0, toMs: 1000 });
+    expect(report.rfRegime).toEqual({
+      enabled: false, total: 0, attempts: EMPTY_ATTEMPTS, passed: 0, rejected: 0, byReason: {},
+    });
+  });
+
+  it('rfRegime counts passed vs rejected and tallies rejection reasons (adx-only, chop-only, both)', () => {
+    const rfRegimeOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', ok: true, adxOk: true, chopOk: true, adx: 30, chop: 40, tier: 'T1' },
+      { dedup_key: 'b', cascade: '4h_15m', ok: true, adxOk: true, chopOk: true, adx: 28, chop: 45, tier: 'T2' },
+      { dedup_key: 'c', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: 10, chop: 40, tier: 'T1' },
+      { dedup_key: 'd', cascade: '4h_15m', ok: false, adxOk: true, chopOk: false, adx: 30, chop: 70, tier: 'T2' },
+      { dedup_key: 'e', cascade: '4h_15m', ok: false, adxOk: false, chopOk: false, adx: 10, chop: 70, tier: 'T3' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, rfRegimeOutcomes });
+    expect(report.rfRegime.enabled).toBe(true);
+    expect(report.rfRegime.total).toBe(5);
+    expect(report.rfRegime.passed).toBe(2);
+    expect(report.rfRegime.rejected).toBe(3);
+    expect(report.rfRegime.byReason).toEqual({ adx_weak: 1, choppy: 1, adx_and_chop: 1 });
+  });
+
+  // Round 3 (docs/known-risks.md item 50) — smcTrigger section. Unlike
+  // retest/displacement/smcRegime/smcObFvg above, no `enabled` field: the
+  // gate is never opt-in (no pineConfig flag), so an inferred-from-non-empty
+  // flag would be misleading.
+  it('smcTrigger defaults to all-zero when the caller passes nothing (legacy call shape)', () => {
+    const report = buildReport([], { fromMs: 0, toMs: 1000 });
+    expect(report.smcTrigger).toEqual({
+      total: 0, attempts: EMPTY_ATTEMPTS, confirmed: 0, rejected: 0, byTrigger: { sweep: 0, structure: 0 }, byReason: {},
+    });
+  });
+
+  it('smcTrigger counts confirmed by trigger type and rejected by reason', () => {
+    const smcTriggerOutcomes = [
+      { dedup_key: 'a', cascade: '1h_5m', confirmed: true, trigger: 'sweep', rejectReason: null },
+      { dedup_key: 'b', cascade: '1h_5m', confirmed: true, trigger: 'sweep', rejectReason: null },
+      { dedup_key: 'c', cascade: '1h_5m', confirmed: true, trigger: 'structure', rejectReason: null },
+      { dedup_key: 'd', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'no_trigger' },
+      { dedup_key: 'e', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'wrong_direction_trigger' },
+      { dedup_key: 'f', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'insufficient_data' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, smcTriggerOutcomes });
+    expect(report.smcTrigger.total).toBe(6);
+    expect(report.smcTrigger.confirmed).toBe(3);
+    expect(report.smcTrigger.rejected).toBe(3);
+    expect(report.smcTrigger.byTrigger).toEqual({ sweep: 2, structure: 1 });
+    expect(report.smcTrigger.byReason).toEqual({ no_trigger: 1, wrong_direction_trigger: 1, insufficient_data: 1 });
+  });
+
+  it('smcTrigger attempts sobrevive ao colapso por dedup_key — mesma propriedade de retest/displacement/smcRegime', () => {
+    const attemptStats = {
+      smcTrigger: summarizeAttempts(new Map([['a', 12], ['b', 3], ['c', 1]])),
+    };
+    const smcTriggerOutcomes = [
+      { dedup_key: 'a', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'no_trigger' },
+      { dedup_key: 'b', cascade: '1h_5m', confirmed: true, trigger: 'sweep', rejectReason: null },
+      { dedup_key: 'c', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'insufficient_data' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, smcTriggerOutcomes, attemptStats });
+    expect(report.smcTrigger.total).toBe(3); // sinais únicos
+    expect(report.smcTrigger.attempts).toEqual({ evaluations: 16, retried: 2, maxAttempts: 12 });
+  });
+
   // known-risks item 45.3/49 — "muitos sinais, poucas operações": diferente
   // das seções acima (Map por dedup_key, último-escreve-ganha), entryFunnel é
   // um histograma simples — soma TODAS as rejeições ao longo do replay, não
@@ -969,6 +1038,48 @@ describe('runBacktest — smcDiagnostics answers "why zero SMC ops?" with real c
       rejectedByOteZone: 0,
       tradeOpsCreated: 0,
     });
+  });
+
+  // Round 3 (docs/known-risks.md item 50) — same setup as the test above (one
+  // known structure event, no 5m candle store so check5mSmcConfirmation
+  // never gets enough data to confirm) but run PAST the signal's creation
+  // for several hourly ticks, inside its 4x1h retry window. Proves
+  // report.smcTrigger.attempts.evaluations > 1 for a REAL retried signal —
+  // the per-signal count that was previously only an aggregate-arithmetic
+  // inference (see docs/known-risks.md item 50 for the 346×48≈17,024 math).
+  it('smcTrigger.attempts.evaluations > 1 quando o mesmo sinal é reavaliado em passadas de retry sucessivas', async () => {
+    const candles = goldenCandles(800);
+    getPineConfig.mockResolvedValue(basePineConfig());
+    const store = new Map([[`TESTUSDT:1h`, candles]]);
+    fetchCandles.mockImplementation(async (sym, tf, limit) =>
+      sliceClosedAsOf(store.get(`${sym}:${tf}`) || [], simNow(), limit));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const asset = makeAsset({
+      symbol: 'TESTUSDT',
+      smc_enabled: true,
+      timeframes_enabled: { '1h': true, '4h': false, '1d': false },
+    });
+
+    const ONE_H = 60 * 60 * 1000;
+    // Same window as the sibling test — the signal fires at bar 418 and gets
+    // retried every hourly tick (stepMs: ONE_H) until it expires 4x1h later.
+    const report = await runBacktest({
+      assets: [asset], backend,
+      fromMs: 0, toMs: 425 * ONE_H,
+      stepMs: ONE_H,
+    });
+
+    // No 5m store -> every evaluation is insufficient_data (never confirms),
+    // so this is purely counting how many times check5mSmcConfirmation ran
+    // for the one signal — never zero (1st pass) and never just one (the
+    // hourly ticks after creation, inside the 4h window, retry it too).
+    expect(report.smcTrigger.total).toBe(1); // 1 sinal único (Map por dedup_key)
+    expect(report.smcTrigger.confirmed).toBe(0);
+    expect(report.smcTrigger.byReason).toEqual({ insufficient_data: 1 });
+    expect(report.smcTrigger.attempts.evaluations).toBeGreaterThan(1);
+    expect(report.smcTrigger.attempts.retried).toBe(1);
   });
 
   // Fase 4 (docs/known-risks.md item 43) — prova de wiring fim a fim contra o
