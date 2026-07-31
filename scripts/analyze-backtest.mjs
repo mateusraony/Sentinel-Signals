@@ -229,10 +229,17 @@ function renderGateSection(title, section) {
   if (section.byTrigger) {
     out.push(...table(Object.entries(section.byTrigger).map(([trigger, count]) => ({ gatilho: trigger, confirmados: count }))));
   }
+  // Codex review (PR #103, P2): rfRegime/smcRegime/smcTrigger são Maps por
+  // dedup_key (último-escreve-ganha, mesma convenção de retest/displacement)
+  // — byReason conta SINAIS cujo motivo FINAL foi aquele, não quantas vezes
+  // o gate rodou (isso já está em `attempts.evaluations` na linha acima).
+  // Rotular a coluna como "avaliações" sugeria o contrário.
   const reasonEntries = Object.entries(section.byReason || {});
   out.push(...(reasonEntries.length > 0
-    ? table(reasonEntries.map(([reason, count]) => ({ motivo: reason, avaliações: count })))
+    ? table(reasonEntries.map(([reason, count]) => ({ motivo: reason, sinais: count })))
     : ['(sem rejeições)']));
+  if (section.adxStats) out.push(`ADX nas rejeições por ADX fraco — média ${section.adxStats.avgRejected} (mín ${section.adxStats.minRejected}, máx ${section.adxStats.maxRejected})`);
+  if (section.chopStats) out.push(`Choppiness nas rejeições por mercado lateralizado — média ${section.chopStats.avgRejected} (mín ${section.chopStats.minRejected}, máx ${section.chopStats.maxRejected})`);
   return out;
 }
 

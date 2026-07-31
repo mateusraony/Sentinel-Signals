@@ -496,6 +496,42 @@ describe('runBacktest — no-look-ahead (4h Range Filter flip)', () => {
     expect(report.totalOps).toBe(1);
   });
 
+  // Codex review (PR #103, P1): rfRegimeOutcomes (Round 3) is a Map by
+  // dedup_key, not a running sum like entryFunnelOutcomes above — but the
+  // "warm-up entries get naturally overwritten" assumption that justified
+  // NOT gating Map-based sections (PR #102's comment on the sibling Maps)
+  // is false for a signal that's ONLY ever evaluated during warm-up: it
+  // never gets touched again, so it just sits in the Map as its own entry.
+  // Same fixture/timing as the test above — evaluateRegime runs on EVERY
+  // retry pass regardless of what it returns, so ticks 0-3 (before
+  // evaluationFromMs) push entries into rfRegimeOutcomes just like they push
+  // into entryFunnelOutcomes.
+  it('avaliações de regime RF que aconteceram SÓ durante o aquecimento não contam em report.rfRegime', async () => {
+    function build15mDelayed() {
+      const downStart = FLIP_CLOSE_TIME - 200 * FIFTEEN_M;
+      const down = downtrendCandles(200, 300, 0.5, downStart, FIFTEEN_M);
+      const up = uptrendCandles(40, down[down.length - 1].close, 1, FLIP_CLOSE_TIME, FIFTEEN_M);
+      return [...down, ...up];
+    }
+    setCandles('TESTUSDT', build15mDelayed);
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const report = await runBacktest({
+      assets: [makeAsset()], backend,
+      fromMs: FLIP_CLOSE_TIME,
+      toMs: FLIP_CLOSE_TIME + 5 * FIFTEEN_M,
+      evaluationFromMs: FLIP_CLOSE_TIME + 4 * FIFTEEN_M, // ticks 0-3 viram aquecimento
+      stepMs: FIFTEEN_M,
+    });
+
+    // Sem o gate, os retries de aquecimento (ticks 0-3, todos reavaliando o
+    // mesmo dedup_key) inflariam report.rfRegime.total além de 1 — com o
+    // gate, só a avaliação do tick 4 (dentro da janela) conta.
+    expect(report.rfRegime.total).toBe(1);
+    expect(report.rfRegime.attempts.evaluations).toBe(1);
+  });
+
   // confirmBars (docs/known-risks.md item 27) wiring proof: scanAsset must
   // actually resolve pineConfig.confirmBars and gate newSignals through
   // calculateConfirmedSignal, not just have the pure function be correct in
@@ -782,6 +818,7 @@ describe('buildReport', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
     expect(report.smcRegime).toEqual({
       enabled: false, total: 0, attempts: EMPTY_ATTEMPTS, passed: 0, rejected: 0, byReason: {},
+      adxStats: null, chopStats: null,
     });
   });
 
@@ -906,6 +943,7 @@ describe('buildReport', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
     expect(report.rfRegime).toEqual({
       enabled: false, total: 0, attempts: EMPTY_ATTEMPTS, passed: 0, rejected: 0, byReason: {},
+      adxStats: null, chopStats: null,
     });
   });
 
@@ -923,6 +961,62 @@ describe('buildReport', () => {
     expect(report.rfRegime.passed).toBe(2);
     expect(report.rfRegime.rejected).toBe(3);
     expect(report.rfRegime.byReason).toEqual({ adx_weak: 1, choppy: 1, adx_and_chop: 1 });
+    // Codex review (PR #103, P2): adx/chop values were collected on every
+    // outcome since Round 3 but never surfaced anywhere — adxStats/chopStats
+    // only look at evaluations where THAT specific sub-gate failed (c+e for
+    // adx: 10,10; d+e for chop: 70,70), not the whole rejected set.
+    expect(report.rfRegime.adxStats).toEqual({ avgRejected: 10, minRejected: 10, maxRejected: 10 });
+    expect(report.rfRegime.chopStats).toEqual({ avgRejected: 70, minRejected: 70, maxRejected: 70 });
+  });
+
+  it('rfRegime.adxStats/chopStats mistura valores diferentes corretamente (min/avg/max) e ignora null', () => {
+    const rfRegimeOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: 5, chop: 40, tier: 'T1' },
+      { dedup_key: 'b', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: 24, chop: 40, tier: 'T1' },
+      { dedup_key: 'c', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: null, chop: 40, tier: 'T1' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, rfRegimeOutcomes });
+    // (5 + 24) / 2 = 14.5 — o null é ignorado, não vira 0.
+    expect(report.rfRegime.adxStats).toEqual({ avgRejected: 14.5, minRejected: 5, maxRejected: 24 });
+    expect(report.rfRegime.chopStats).toBeNull(); // nenhuma reprovou por chop
+  });
+
+  // Codex review (PR #104, P2): reproduz o cenário exato do achado — um
+  // sinal reavaliado várias vezes (retry) tem SÓ o estado FINAL no Map
+  // (rfRegimeOutcomes), mas adxStats/chopStats precisam ver TODAS as
+  // rejeições reais que aconteceram no caminho, não só a última (ou
+  // nenhuma, se a passada final passar).
+  it('rfRegime.adxStats agrega TODAS as rejeições de um sinal retried, não só o estado final do Map', () => {
+    // Mesmo dedup_key 'a', 3 avaliações reais: ADX 5, depois 24 (ambas
+    // rejeitadas), depois 30 (finalmente passa). O Map (rfRegimeOutcomes)
+    // só guarda a 3ª (ok:true) — sem allOutcomes, adxStats ficaria null.
+    const rfRegimeOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', ok: true, adxOk: true, chopOk: true, adx: 30, chop: 40, tier: 'T1' },
+    ];
+    const rfRegimeAllOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: 5, chop: 40, tier: 'T1' },
+      { dedup_key: 'a', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: 24, chop: 40, tier: 'T1' },
+      { dedup_key: 'a', cascade: '4h_15m', ok: true, adxOk: true, chopOk: true, adx: 30, chop: 40, tier: 'T1' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, rfRegimeOutcomes, rfRegimeAllOutcomes });
+    // O Map continua reportando "1 sinal, passou" (total/passed inalterados).
+    expect(report.rfRegime.total).toBe(1);
+    expect(report.rfRegime.passed).toBe(1);
+    expect(report.rfRegime.byReason).toEqual({});
+    // Mas adxStats vê as 2 rejeições reais que aconteceram — (5+24)/2=14.5,
+    // não null (que seria o resultado de olhar só o Map final).
+    expect(report.rfRegime.adxStats).toEqual({ avgRejected: 14.5, minRejected: 5, maxRejected: 24 });
+  });
+
+  it('buildReport sem rfRegimeAllOutcomes explícito usa rfRegimeOutcomes como fallback (retrocompat)', () => {
+    // Chamador legado que só passa o array deduped continua funcionando —
+    // rfRegimeAllOutcomes default é rfRegimeOutcomes (mesmo comportamento
+    // de antes deste fix para quem não tem o array separado).
+    const rfRegimeOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: 10, chop: 40, tier: 'T1' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, rfRegimeOutcomes });
+    expect(report.rfRegime.adxStats).toEqual({ avgRejected: 10, minRejected: 10, maxRejected: 10 });
   });
 
   // Round 3 (docs/known-risks.md item 50) — smcTrigger section. Unlike
@@ -1080,6 +1174,39 @@ describe('runBacktest — smcDiagnostics answers "why zero SMC ops?" with real c
     expect(report.smcTrigger.byReason).toEqual({ insufficient_data: 1 });
     expect(report.smcTrigger.attempts.evaluations).toBeGreaterThan(1);
     expect(report.smcTrigger.attempts.retried).toBe(1);
+  });
+
+  // Codex review (PR #103, P1): same fixture as the test above, but this
+  // time evaluationFromMs starts AFTER the signal already expired (created
+  // ~bar 419, expires 4x1h later ~bar 423) — every evaluation of it happened
+  // during warm-up. Without the fix, this Map entry would still show up in
+  // report.smcTrigger even though nothing about it happened inside the
+  // evaluated window.
+  it('avaliações do gatilho SMC que aconteceram SÓ durante o aquecimento não contam em report.smcTrigger', async () => {
+    const candles = goldenCandles(800);
+    getPineConfig.mockResolvedValue(basePineConfig());
+    const store = new Map([[`TESTUSDT:1h`, candles]]);
+    fetchCandles.mockImplementation(async (sym, tf, limit) =>
+      sliceClosedAsOf(store.get(`${sym}:${tf}`) || [], simNow(), limit));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const asset = makeAsset({
+      symbol: 'TESTUSDT',
+      smc_enabled: true,
+      timeframes_enabled: { '1h': true, '4h': false, '1d': false },
+    });
+
+    const ONE_H = 60 * 60 * 1000;
+    const report = await runBacktest({
+      assets: [asset], backend,
+      fromMs: 0, toMs: 425 * ONE_H,
+      evaluationFromMs: 424 * ONE_H, // bem depois do sinal expirar (~423h)
+      stepMs: ONE_H,
+    });
+
+    expect(report.smcTrigger.total).toBe(0);
+    expect(report.smcTrigger.attempts.evaluations).toBe(0);
   });
 
   // Fase 4 (docs/known-risks.md item 43) — prova de wiring fim a fim contra o
