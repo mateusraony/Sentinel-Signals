@@ -35,3 +35,8 @@ global do usuário (ver `docs/claude/global-CLAUDE.md.example`).
 - **Prioridade P0.** Não proponha novos indicadores/estratégias/execução real
   antes de resolver ou aceitar formalmente os riscos P0 do motor de trading
   (ver `.claude/rules/trading-engine.md`).
+- **Nome que o usuário vê, não o interno.** Ao instruir o usuário sobre um
+  campo de UI (ex.: `workflow_dispatch` do GitHub Actions, um input do
+  painel), refira-se ao rótulo/label visível na tela — nunca ao nome
+  técnico da chave/variável por trás dele. O usuário não é dev; peça e
+  descreva os campos pelo texto que ele efetivamente lê.
