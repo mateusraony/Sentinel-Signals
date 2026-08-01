@@ -20,6 +20,8 @@
  *   a divergência aceita entre painel (Futures) e cron 24/7 (Spot).
  */
 
+import { fetchWithRetry } from './httpRetry';
+
 const BINANCE_BASE_URL = 'https://fapi.binance.com/fapi/v1';
 
 // Provenance stamped onto every TradeOperation/SignalEvent created while this
@@ -59,8 +61,8 @@ export async function fetchCandles(symbol, timeframe, limit = MIN_CANDLES) {
 
   const url = `${BINANCE_BASE_URL}/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&limit=${limit}`;
 
-  const response = await fetch(url);
-  
+  const response = await fetchWithRetry(url, { context: `${symbol} ${timeframe}` });
+
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Binance API error (${response.status}): ${errorText}`);
@@ -97,8 +99,8 @@ function normalizeCandles(rawCandles) {
  */
 export async function fetchCurrentPrice(symbol) {
   const url = `${BINANCE_BASE_URL}/ticker/price?symbol=${symbol.toUpperCase()}`;
-  const response = await fetch(url);
-  
+  const response = await fetchWithRetry(url, { context: `${symbol} price` });
+
   if (!response.ok) {
     throw new Error(`Erro ao buscar preço de ${symbol}`);
   }
@@ -112,7 +114,7 @@ export async function fetchCurrentPrice(symbol) {
  */
 export async function validateSymbol(symbol) {
   const url = `${BINANCE_BASE_URL}/ticker/price?symbol=${symbol.toUpperCase()}`;
-  const response = await fetch(url);
+  const response = await fetchWithRetry(url, { context: `${symbol} validate` });
   return response.ok;
 }
 
@@ -121,7 +123,7 @@ export async function validateSymbol(symbol) {
  */
 export async function fetch24hStats(symbol) {
   const url = `${BINANCE_BASE_URL}/ticker/24hr?symbol=${symbol.toUpperCase()}`;
-  const response = await fetch(url);
+  const response = await fetchWithRetry(url, { context: `${symbol} 24hStats` });
 
   if (!response.ok) return null;
 
@@ -143,7 +145,7 @@ export async function fetch24hStats(symbol) {
  */
 export async function fetchMarkPrice(symbol) {
   const url = `${BINANCE_BASE_URL}/premiumIndex?symbol=${symbol.toUpperCase()}`;
-  const response = await fetch(url);
+  const response = await fetchWithRetry(url, { context: `${symbol} markPrice` });
 
   if (!response.ok) {
     throw new Error(`Erro ao buscar mark price de ${symbol}`);
