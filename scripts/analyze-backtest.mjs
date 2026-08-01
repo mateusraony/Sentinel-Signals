@@ -243,6 +243,19 @@ function renderGateSection(title, section) {
   return out;
 }
 
+// docs/known-risks.md items 53/54 — opt-in pineConfig.preTp1StopProtectionEnabled.
+// Shape is per-operation (like report.runner), not a Map-of-outcomes gate
+// section, so it doesn't fit renderGateSection above.
+function renderPreTp1StopProtection(section) {
+  const out = ['PROTEÇÃO DE STOP PRÉ-TP1 (opt-in, preTp1StopProtectionEnabled)'];
+  out.push(`operações com o flag ligado: ${section.total} · gate disparou (avançou p/ breakeven): ${section.advanced}`);
+  if (section.advanced > 0) {
+    out.push(`dos que dispararam — chegaram ao TP1 mesmo assim: ${section.reachedTp1AfterAdvance} · `
+      + `pararam no breakeven (pré-TP1): ${section.stoppedAtBreakevenPreTp1} · outra saída: ${section.otherExitAfterAdvance}`);
+  }
+  return out;
+}
+
 function main() {
   const args = parseArgs(process.argv);
   if (args.help) {
@@ -278,6 +291,10 @@ function main() {
   if (report.smcTrigger) {
     console.log('');
     console.log(renderGateSection('GATILHO DE ENTRADA — SMC 5m (1h_5m)', report.smcTrigger).join('\n'));
+  }
+  if (report.preTp1StopProtection && report.preTp1StopProtection.enabled) {
+    console.log('');
+    console.log(renderPreTp1StopProtection(report.preTp1StopProtection).join('\n'));
   }
 
   // O diagnóstico descreve a amostra; não a torna conclusiva. Repetir o

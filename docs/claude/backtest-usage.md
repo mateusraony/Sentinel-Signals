@@ -268,6 +268,35 @@ A expectância líquida deve subir aproximadamente o valor que o diagnóstico
 atribuiu ao runner na rodada com ele ligado. Muito mais que isso indica erro no
 gate, não vantagem descoberta.
 
+**`report.preTp1StopProtection`** (`docs/known-risks.md` itens 53/54) —
+`{enabled, total, advanced, reachedTp1AfterAdvance, stoppedAtBreakevenPreTp1,
+otherExitAfterAdvance}`, opt-in (`pineConfig.preTp1StopProtectionEnabled`,
+default `false`), as duas cascatas. Mesmo princípio do `report.runner`
+acima: inferido das próprias operações
+(`pre_tp1_stop_protection_enabled`/`pre_tp1_stop_advanced_at`), não do
+`pineConfig`, então reflete a proteção de fato aplicada mesmo se o flag
+mudou no meio.
+
+```bash
+echo '{"preTp1StopProtectionEnabled": false}' > /tmp/no-pretp1-protection.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --smc BTCUSDT,ETHUSDT \
+  --from 2025-02-01T00:00:00Z --to 2025-12-01T00:00:00Z \
+  --pine-config /tmp/no-pretp1-protection.json --out ./report-sem-protecao.json
+
+echo '{"preTp1StopProtectionEnabled": true, "preTp1StopProtectionAtrMult": 1.0}' > /tmp/with-pretp1-protection.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --smc BTCUSDT,ETHUSDT \
+  --from 2025-02-01T00:00:00Z --to 2025-12-01T00:00:00Z \
+  --pine-config /tmp/with-pretp1-protection.json --out ./report-com-protecao.json
+```
+
+Compare `report.preTp1StopProtection` e `overall.expectancyR`/`expectancyRCI95`
+entre os dois arquivos. Dentro da rodada COM o flag, o sinal de alerta de
+whipsaw (a armadilha que a pesquisa de comunidade documentou no item 53) é
+`reachedTp1AfterAdvance` alto em relação a `advanced` — significa que o gate
+está cortando operações que teriam chegado ao TP1 de qualquer forma, trocando
+lucro por uma saída antecipada desnecessária. `stoppedAtBreakevenPreTp1` é o
+cenário que o mecanismo pretende produzir (perda cheia virando scratch).
+
 **`report.costs`** (Fase 5, `docs/known-risks.md` item 44) —
 `{model, avgCostR, totalCostPct, grossExpectancyR, netExpectancyR, conclusive,
 inconclusiveReason, expectancyRCI95, countedTrades, minTrades}`. **Taxa,

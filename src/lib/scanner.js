@@ -30,7 +30,7 @@ import { detectFvg } from './indicators/fvg';
 import { detectOrderBlock } from './indicators/orderBlock';
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
 import { groupActiveOpsByAsset } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
@@ -304,6 +304,14 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
     market_source: MARKET_SOURCE,
     data_exchange: DATA_EXCHANGE,
     executor: EXECUTOR,
+    // Proteção de stop pré-TP1 (opt-in, known-risks.md item 53/54) — frozen
+    // at creation like partial_percent/runnerEnabled above: whether the
+    // mechanism CAN apply to this op is decided once, so a later pineConfig
+    // flip governs only the NEXT operation. pre_tp1_stop_advanced_at stays
+    // absent until (if ever) the gate actually fires — stamped by
+    // persistScanResults, not here.
+    pre_tp1_stop_protection_enabled: pineConfig.preTp1StopProtectionEnabled === true,
+    pre_tp1_stop_advance_trigger_atr_mult: pineConfig.preTp1StopProtectionAtrMult ?? 1.0,
   };
 }
 
@@ -708,6 +716,10 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     market_source: MARKET_SOURCE,
     data_exchange: DATA_EXCHANGE,
     executor: EXECUTOR,
+    // Proteção de stop pré-TP1 (opt-in, known-risks.md item 53/54) — mesmo
+    // motivo do buildTradeOpData (RF) acima.
+    pre_tp1_stop_protection_enabled: pineConfig.preTp1StopProtectionEnabled === true,
+    pre_tp1_stop_advance_trigger_atr_mult: pineConfig.preTp1StopProtectionAtrMult ?? 1.0,
   };
 }
 
@@ -2478,6 +2490,31 @@ export async function persistScanResults(scanResult) {
         } else {
           newStatus = 'RUNNER_ACTIVE';
           newCurrentStop = op.entry_price;
+        }
+      }
+
+      // Pre-TP1 stop protection (opt-in, docs/known-risks.md items 53/54) —
+      // only after no exit fired on THIS candle. Reads the DECISION frozen
+      // on the op at creation (pre_tp1_stop_protection_enabled/
+      // _trigger_atr_mult), not pineConfig directly — same reasoning as
+      // closesFullyAtTp1/runnerEnabled: a later flag flip must govern only
+      // the NEXT operation, never silently start (or stop) protecting a
+      // position already in flight. Computed from THIS candle's close but,
+      // per advancePreTp1StopProtection's own contract, only protects
+      // starting the NEXT candle — same look-ahead discipline as P0-d's
+      // post-TP1 trailing below.
+      if (newStatus === op.status && op.pre_tp1_stop_protection_enabled === true
+          && candleUsable && tfData.atrValue) {
+        newCurrentStop = advancePreTp1StopProtection({
+          isBuy,
+          currentStop: newCurrentStop,
+          entry: op.entry_price,
+          closePrice,
+          atrValue: tfData.atrValue,
+          triggerAtrMult: op.pre_tp1_stop_advance_trigger_atr_mult ?? 1.0,
+        });
+        if (newCurrentStop !== op.current_stop && !op.pre_tp1_stop_advanced_at) {
+          updatePayload.pre_tp1_stop_advanced_at = nowIso;
         }
       }
     } else {

@@ -269,6 +269,24 @@ nunca deve receber nova transição.**
   `report.smcTrigger`, e `report.smcRegime` (existia, nunca era impressa) —
   todas via `scripts/analyze-backtest.mjs`. Decisão de mudar algum
   threshold fica para depois, com este dado em mãos.
+- **Proteção de stop pré-TP1** (`opExitRules.js:advancePreTp1StopProtection`
+  + `scanner.js`, branch pré-TP1 de `persistScanResults`) — item 53/54,
+  **`pineConfig.preTp1StopProtectionEnabled` desligado por padrão**. Achado
+  que motivou: 61 de 117 operações de um backtest real ficaram positivas
+  cedo (MFE médio +0,578R) e depois erodiram sem NENHUMA proteção
+  intermediária até o `initial_stop` original (`advanceTrailingStop` só
+  roda pós-TP1). Quando ligado, avança o stop pra breakeven (nunca além)
+  uma vez que o preço se move a favor por `preTp1StopProtectionAtrMult ×
+  ATR` (default 1.0×, múltiplo generoso de propósito — pesquisa de
+  comunidade documenta whipsaw em breakeven prematuro). **Decisão congelada
+  na CRIAÇÃO** (`pre_tp1_stop_protection_enabled`/
+  `pre_tp1_stop_advance_trigger_atr_mult` na operação), lida da OPERAÇÃO no
+  loop de saída, nunca do `pineConfig` ao vivo — mesmo raciocínio do
+  runner (item 46): um flag virando no meio não pode abandonar/introduzir
+  proteção numa posição já em andamento. Só em `persistScanResults` — igual
+  a `advanceTrailingStop` e ao MFE/MAE, ausente de
+  `priceCheckActiveOpsInner`. **Não ativar sem comparar relatórios de
+  backtest com/sem primeiro** — ver `docs/known-risks.md` itens 53/54.
 
 ## Regras ao mexer aqui
 

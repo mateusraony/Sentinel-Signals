@@ -691,6 +691,40 @@ export function buildReport(ops, {
         closedByTp1Full: closed.filter(op => op.closed_reason === 'TP1_FULL').length,
       };
     })(),
+    // Proteção de stop pré-TP1 (docs/known-risks.md items 53/54) — opt-in,
+    // off by default (pineConfig.preTp1StopProtectionEnabled). Diferente de
+    // retest/displacement/smcRegime acima, não precisou de um array de
+    // outcomes novo threaded pelo scanner: os 3 campos que a decisão precisa
+    // (pre_tp1_stop_protection_enabled/_advance_trigger_atr_mult/_advanced_at)
+    // já ficam gravados NA PRÓPRIA operação (mesmo padrão do `runner` acima
+    // — inferido de `closed`, não de um outcomes array). `advanced` é quantas
+    // ops tiveram o gate DISPARADO (não só habilitado); dos disparados,
+    // `reachedTp1AfterAdvance` é quem seguiu até o TP1 mesmo assim (contra-
+    // evidência de corte prematuro — o risco de whipsaw que a pesquisa de
+    // comunidade documentou), `stoppedAtBreakevenPreTp1` é quem parou no
+    // stop já protegido (o cenário que o mecanismo pretende evitar virar
+    // perda cheia), `otherExitAfterAdvance` cobre Time Stop/Chop Exit/
+    // Invalidation depois do avanço. Comparar este bloco entre dois relatórios
+    // (--pine-config com/sem o flag) é o mesmo fluxo "compare antes de ativar"
+    // de retest/displacement/smcTier — ver known-risks.md item 54.
+    preTp1StopProtection: (() => {
+      const enabledOps = closed.filter(op => op.pre_tp1_stop_protection_enabled === true);
+      const advancedOps = enabledOps.filter(op => op.pre_tp1_stop_advanced_at);
+      let reachedTp1 = 0, stoppedAtBreakeven = 0, otherExit = 0;
+      for (const op of advancedOps) {
+        if (op.tp1_hit) reachedTp1 += 1;
+        else if (op.status === 'STOP_HIT') stoppedAtBreakeven += 1;
+        else otherExit += 1;
+      }
+      return {
+        enabled: enabledOps.length > 0,
+        total: enabledOps.length,
+        advanced: advancedOps.length,
+        reachedTp1AfterAdvance: reachedTp1,
+        stoppedAtBreakevenPreTp1: stoppedAtBreakeven,
+        otherExitAfterAdvance: otherExit,
+      };
+    })(),
     // Funil de confirmação de entrada (docs/known-risks.md item 45.3/49) —
     // "muitos sinais, poucas operações": quantas vezes cada gate rejeitou uma
     // tentativa de confirmar entrada, nas duas cascatas, ao longo do replay

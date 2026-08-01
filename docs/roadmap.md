@@ -212,6 +212,22 @@ decisão de ligar depende do Bloco 0.
 **E não salva a estratégia**: mesmo eliminando o runner inteiro, o bruto vai a
 +0,009 R contra 0,045 R de custo.
 
+### Proteção de stop pré-TP1 — IMPLEMENTADO, opt-in, aguardando A/B (item 53/54)
+
+Achado de 2026-08-01: das 96 operações que terminaram em `STOP_HIT` num
+backtest real (12 meses/7 símbolos), 61 (52% do total) nunca tiveram TP1
+batido — e 98,4% dessas 61 chegaram a ficar positivas (MFE médio +0,578R)
+antes de erodir de volta ao `initial_stop` original, sem NENHUMA proteção
+intermediária (`advanceTrailingStop` só roda pós-TP1). `pineConfig.
+preTp1StopProtectionEnabled` (default `false`) avança o stop pra breakeven
+(nunca além) quando o preço se move a favor por `preTp1StopProtectionAtrMult
+× ATR` (default 1.0×) — threshold generoso de propósito, pesquisa de
+comunidade documenta whipsaw quando o breakeven é prematuro/apertado demais.
+Falta rodar o A/B (`--pine-config` com/sem o flag) e comparar
+`report.preTp1StopProtection` + `overall.expectancyR` contra o baseline —
+mesma disciplina do Bloco 1, nenhum default mudou ainda. Ver
+`docs/known-risks.md` itens 53/54.
+
 ### Ainda aberto: `tp1R`/`tp2R`/`trailAtrMult`
 
 TP2 é atingido em 18 de 344 (5,2%). Mexer em `tp1R` (1,5), `tp2R` (3,0) e

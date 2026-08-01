@@ -750,6 +750,40 @@ describe('buildReport', () => {
     });
   });
 
+  // docs/known-risks.md items 53/54 — mesmo padrão do runner acima: inferido
+  // de `closed`, não de um outcomes array novo, porque a decisão (enabled/
+  // trigger_atr_mult) e o resultado (advanced_at) já ficam gravados na
+  // própria operação por persistScanResults.
+  it('preTp1StopProtection é inferido das operações e separa quem chegou ao TP1 mesmo assim de quem escapou com scratch', () => {
+    const flagOff = { status: 'STOP_HIT', pre_tp1_stop_protection_enabled: false };
+    const enabledNeverFired = { status: 'STOP_HIT', pre_tp1_stop_protection_enabled: true }; // sem advanced_at
+    const advancedThenTp1 = {
+      status: 'TP2_HIT', pre_tp1_stop_protection_enabled: true, pre_tp1_stop_advanced_at: '2026-07-16T12:00:00.000Z', tp1_hit: true,
+    };
+    const advancedThenScratched = {
+      status: 'STOP_HIT', pre_tp1_stop_protection_enabled: true, pre_tp1_stop_advanced_at: '2026-07-16T12:00:00.000Z', tp1_hit: false,
+    };
+    const advancedThenTimeStop = {
+      status: 'CLOSED', closed_reason: 'TIME_STOP', pre_tp1_stop_protection_enabled: true, pre_tp1_stop_advanced_at: '2026-07-16T12:00:00.000Z', tp1_hit: false,
+    };
+
+    expect(buildReport([], { fromMs: 0, toMs: 1000 }).preTp1StopProtection).toEqual({
+      enabled: false, total: 0, advanced: 0, reachedTp1AfterAdvance: 0, stoppedAtBreakevenPreTp1: 0, otherExitAfterAdvance: 0,
+    });
+    expect(buildReport([flagOff], { fromMs: 0, toMs: 1000 }).preTp1StopProtection).toEqual({
+      enabled: false, total: 0, advanced: 0, reachedTp1AfterAdvance: 0, stoppedAtBreakevenPreTp1: 0, otherExitAfterAdvance: 0,
+    });
+    expect(buildReport([enabledNeverFired], { fromMs: 0, toMs: 1000 }).preTp1StopProtection).toEqual({
+      enabled: true, total: 1, advanced: 0, reachedTp1AfterAdvance: 0, stoppedAtBreakevenPreTp1: 0, otherExitAfterAdvance: 0,
+    });
+    expect(buildReport(
+      [advancedThenTp1, advancedThenScratched, advancedThenTimeStop],
+      { fromMs: 0, toMs: 1000 },
+    ).preTp1StopProtection).toEqual({
+      enabled: true, total: 3, advanced: 3, reachedTp1AfterAdvance: 1, stoppedAtBreakevenPreTp1: 1, otherExitAfterAdvance: 1,
+    });
+  });
+
   // Fase 2 rodada 1 (docs/known-risks.md item 40) — retest.enabled is
   // inferred from retestOutcomes being non-empty (nothing is ever pushed by
   // persistScanResults while pineConfig.retestEnabled is off), so a report
