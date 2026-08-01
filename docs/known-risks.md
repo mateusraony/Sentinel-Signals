@@ -3622,13 +3622,25 @@ genuíno — `adxStats.avgRejected = 16,52`, bem abaixo até do limiar mais
 frouxo (T3 = 18). Não há sinal de rejeição "quase passando" nesta amostra;
 não há indício de que o threshold esteja mal calibrado.
 
-**Achado novo**: das 10 confirmações da cascata SMC no ano inteiro,
-`report.smcTrigger.byTrigger = { sweep: 10, structure: 0 }` — **100% sweep,
-0% estrutura (BOS/CHoCH)**. Primeira medição real desse número no projeto
-(nem o item 45.2 nem o item 50 tinham `byTrigger` reportado de nenhuma
-rodada).
+**Achado novo, com uma ressalva séria (Codex review, PR #105 — corrigida
+aqui)**: das 10 confirmações da cascata SMC no ano inteiro,
+`report.smcTrigger.byTrigger = { sweep: 10, structure: 0 }`. A leitura
+inicial deste item ("100% sweep, 0% estrutura, prova que BOS/CHoCH quase
+nunca contribui") **estava errada** — `check5mSmcConfirmation` grava
+`trigger: sweepAligned ? 'sweep' : 'structure'` (`scanner.js:453`), ou
+seja, sempre que `sweepAligned` é `true` o rótulo vira `'sweep'`
+**independente de `structureAligned` também ser `true` na mesma vela**
+(um candle "externo" que varre um extremo E fecha além do nível estrutural
+oposto satisfaz os dois ao mesmo tempo — cenário plausível, não hipotético).
+O que o dado prova de fato: as 10 confirmações tinham `sweepAligned=true`.
+**Não** prova que `structureAligned` era `false` nelas — isso exigiria
+instrumentar os dois booleanos brutos separadamente (não só o rótulo final
+de precedência), o que não existe hoje. Primeira medição real de
+`byTrigger` no projeto (nem o item 45.2 nem o item 50 tinham isso
+reportado), mas a conclusão original que ela sustentava não se sustenta
+sozinha.
 
-### Mecanismo (investigado, não é bug)
+### Mecanismo (investigado, continua válido — independente da ressalva acima)
 
 `check5mSmcConfirmation` (`scanner.js:389`) chama
 `calculateStructure(closed, {swingLen: 10})` sem sobrescrever
@@ -3646,8 +3658,12 @@ só marca BOS/CHoCH quando `trendConcordant`. **Não depende de `swingLen`**
 `smcStructure.js:37-54`), não a severidade do filtro. `calculateLiquiditySweep`
 (`smcStructure.js:189-205`) é geometria pura (`low < swLow && close > swLow
 && close > open`) — **sem esse filtro em nenhum dos dois lados** (JS e
-Pine). A assimetria de rigor entre os dois gatilhos explica a assimetria
-de disparo observada.
+Pine). Essa assimetria de rigor entre os dois gatilhos é uma explicação
+plausível e sustentada por evidência independente (paridade Pine, prática
+de comunidade) pra estrutura ser mais rara que sweep **em geral** — mas,
+por causa da ressalva acima, não dá pra atribuir a ela, com este dado,
+a proporção exata `{sweep:10, structure:0}` observada nesta amostra
+específica.
 
 ### Paridade e comunidade
 
@@ -3671,15 +3687,28 @@ rompimento falso — bate com o filtro já existente no projeto. Fontes:
 
 ### Recomendação
 
-**Não mexer** no filtro nem em `swingLen`. Afrouxar o filtro trocaria
-qualidade de sinal por quantidade sem nenhuma evidência de que isso
-melhora o resultado, e a cascata SMC como um todo ainda não provou ter
-vantagem (11 operações no ano, `expectancyRCI95 = [-1.791, 0.235]`,
-`sample_too_small`). Decisão de reconsiderar o filtro fica em aberto para
-quando houver dado suficiente sobre a lucratividade do SMC em geral — não
-antecipar com a amostra atual.
+**Não mexer** no filtro nem em `swingLen` — isso continua de pé mesmo com
+a ressalva acima, mas agora por um motivo mais simples: a amostra (11
+operações) já era pequena demais pra justificar mexer em parâmetro antes
+da ressalva; com ela, a única coisa que a amostra prova com segurança é
+"sweep contribui" — não dá pra comparar a contribuição de estrutura contra
+sweep, então não há base nenhuma pra decidir se vale a pena mexer no
+filtro de estrutura especificamente.
+
+**Instrumentação futura, não feita aqui** (esta é uma PR só de
+documentação): pra responder "estrutura contribui de verdade ou é sempre
+sombreada pelo sweep?" seria preciso gravar `sweepAligned`/
+`structureAligned` brutos em `smcTriggerOutcomes` (`scanner.js`, os 2 call
+sites de `check5mSmcConfirmation`), não só o `trigger` de precedência —
+mesmo padrão já usado pra outros campos desta seção
+(`docs/known-risks.md` item 50). Registrado aqui como possível próximo
+passo, não decidido se vale a pena antes de mais dado de SMC em geral.
 
 ### Verificação
 
 Nenhuma — item é só registro de investigação (2 agentes Explore
-read-only + pesquisa externa), zero mudança de código/comportamento.
+read-only + pesquisa externa), zero mudança de código/comportamento. A
+revisão externa (Codex, PR #105) encontrou uma leitura errada do dado
+`byTrigger` (precedência `sweep`/`structure` no rótulo confundida com
+exclusividade) — corrigida no mesmo PR antes do merge, texto acima já
+reflete a versão corrigida.
