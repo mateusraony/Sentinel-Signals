@@ -3930,3 +3930,145 @@ gatilho exato desta rodada bem mais provável na prática. Não investigado
 nem corrigido nesta PR (fora de escopo — mexeria num mecanismo já
 shippado sem o mesmo tipo de reprodução concreta que motivou a correção
 acima); sinalizado aqui para quando alguém retomar `advanceTrailingStop`.
+
+## 55. A/B real do stop pré-TP1: expectância igual, drawdown pior — mantido desligado (2026-08-01)
+
+Usuário rodou as 2 rodadas do `backtest.yml` recomendadas no item 54
+(`pretp1-stop-protection-off-baseline` e `pretp1-stop-protection-on-1.0atr`,
+mesmos 7 símbolos, mesma janela 2025-08-01→2026-08-01).
+
+### Resultado
+
+**Sem a proteção**: 116 operações, `expectancyR` -0,0452R (bruta
++0,0658R), IC 95% `[-0,269; 0,178]` (cruza zero, inconclusivo),
+`profitFactor` 0,917, `maxDrawdownPct` 111,73%, `be: 0`.
+
+**Com a proteção**: 129 operações, `expectancyR` -0,0446R (bruta
++0,0516R), IC 95% `[-0,222; 0,132]` (também inconclusivo), `profitFactor`
+0,874, `maxDrawdownPct` 137,76%, `be: 39`.
+
+`report.preTp1StopProtection` (rodada "com"): `total: 129, advanced: 81,
+stoppedAtBreakevenPreTp1: 49, reachedTp1AfterAdvance: 29,
+otherExitAfterAdvance: 3`. De 81 operações em que o gate disparou, 49
+(60%) escaparam de virar perda cheia — mas **29 (36%) teriam chegado ao
+TP1 mesmo sem a proteção**, cortadas cedo demais pela sacudida que a
+pesquisa de comunidade do item 53 já tinha avisado ser o risco principal.
+
+`totalOps` foi de 116 para 129 (+13, todas na cascata 4h_15m — a SMC
+ficou idêntica, 11 nas duas rodadas). Não é erro: saídas mais cedo liberam
+o slot de 1-operação-ativa-por-ativo mais rápido, permitindo mais entradas
+dentro da mesma janela de 12 meses (efeito colateral esperado do
+invariante `active_op_exists`, ver também item 56).
+
+### Conclusão
+
+Expectância ficou estatisticamente igual entre as duas rodadas (a
+diferença é ruído, não sinal real), mas o drawdown piorou de forma visível
+e o padrão de corte prematuro de vencedores apareceu com peso real (36%
+dos disparos). **Recomendação: manter `pineConfig.
+preTp1StopProtectionEnabled` desligado por padrão.** Os dados não mostram
+ganho, e mostram um custo real e mensurável.
+
+### Verificação
+
+Nenhuma mudança de código a partir desta análise — o flag já nasceu
+desligado no PR #106 e continua assim. Dado vem de 2 rodadas reais do
+workflow `backtest.yml`, fornecidas pelo usuário (não um backtest novo
+rodado nesta sessão).
+
+## 56. Por que tão poucas entradas ao vivo — conselho de 5 papéis independentes (2026-08-01)
+
+Usuário relatou frustração recorrente: painel ao vivo com pouquíssimas
+entradas, zero operações ativas no momento, apesar de toda a instrumentação
+já feita nas rodadas anteriores. Perguntou explicitamente se o timeframe,
+a combinação de gates, ou gatilhos demais são a causa, e se um conselho de
+agentes já tinha sido consultado.
+
+### Metodologia
+
+`sentinel-council-review` — 5 papéis independentes (Arquiteto, Trading,
+Concorrência, Risco/Overfitting, Testes/Evidência), cada um com o mesmo
+contexto factual e instrução de tentar refutar leituras superficiais,
+citando `arquivo:linha`. Nenhum dado saiu da máquina (subagentes locais).
+
+### Onde os 5 papéis convergiram sem ressalva
+
+- **Não é ADX/Choppiness (RF) nem o filtro de estrutura/swingLen (SMC)
+  mal calibrados.** São cópia literal do Pine real do usuário (protegida
+  por golden test, `src/lib/indicators/tier.test.js:55-69`) ou desenho
+  original já investigado com dado real (item 52). ADX médio das rejeições
+  (16,5) está longe do limiar mais frouxo (18) — mercado genuinamente sem
+  tendência na maior parte do tempo avaliado, não um limiar apertado
+  demais.
+- **Não há bug de concorrência ativo.** Os 3 defeitos que produziriam
+  esse sintoma (operação travada, ponteiro órfão, Time Stop que nunca
+  dispara) estão `[CORRIGIDO]` e confirmados por leitura direta do código
+  atual (`src/api/entities.js:176-253`, `src/lib/opTransition.js:70-134`).
+  Zero operações ativas num instante qualquer **não é**, por si, sinal de
+  algo quebrado.
+- **A causa real de `active_op_exists` (25-28% das rejeições nas duas
+  cascatas) é concorrência por design, não regime de mercado.** RF e SMC
+  compartilham o MESMO slot por ativo (`assetActiveOps`, sem distinção de
+  `cascade`, `src/lib/scanner.js:1401-1405`), e o Time Stop mantém uma
+  operação ocupando esse slot por 8 a 16 dias dependendo do tier
+  (`src/lib/indicators/tier.js:13-15`).
+- **Essa folga (slot por cascata, não por ativo) já está registrada como
+  decisão de arquitetura deliberadamente adiada** (item 37 / roadmap
+  Bloco 4) — bloqueada atrás do Bloco 0 (vantagem direcional da
+  estratégia, ainda ambíguo desde 2026-07-30) por desenho, não por
+  esquecimento.
+
+### Dados novos que a síntese trouxe
+
+- **Cálculo de Poisson** (papel Testes/Evidência): taxa histórica medida
+  ≈0,32 operação/dia (7 símbolos juntos, 117 ops/365 dias). Um dia com
+  zero operações tem **≈73% de probabilidade de acontecer mesmo com o
+  sistema saudável**. "Hoje zero" não é evidência de nada quebrado — é o
+  comportamento esperado da própria taxa já medida.
+- **Comparação entre 2 backtests já existentes** (não um novo): 7 símbolos
+  ≈0,0458 op/símbolo/dia vs. 20 símbolos (cesta do Bloco 0) ≈0,0471
+  op/símbolo/dia — taxas por-símbolo praticamente idênticas. Mais símbolos
+  aumenta volume quase linearmente, sem tocar nenhum limiar — com a
+  ressalva já registrada de que altcoins são correlacionadas com BTC (a
+  amostra efetiva é menor que a nominal).
+- **Achado colateral do Arquiteto**: o gate de R:R (`passesRiskReward`) é
+  matematicamente vestigial hoje — `tp1` é derivado como
+  `entry ± riskR × tp1R`, então `rr1 == tp1R` sempre; com os defaults
+  (`tp1R=1,5`/`minRR=1,2`), **o gate nunca rejeita nada** (já rotulado
+  honestamente no código como `CONFIGURED_MULTIPLE`,
+  `src/lib/scanner.js:79-87`). Não explica a escassez (contribui ~0% das
+  rejeições), é só dívida de clareza arquitetural — parece um filtro ativo
+  e não é.
+
+### Refutação real entre papéis
+
+O especialista de Trading propôs desligar a cascata SMC (11 ops/ano,
+expectância -0,778R, nunca teve equivalente no Pine) para liberar o slot
+compartilhado com a RF. Arquiteto e Risco/Overfitting alertaram que
+qualquer alavanca que *aumente* volume/exposição atrelada à "vantagem
+ainda não provada" (Bloco 0 ambíguo) repetiria o erro metodológico que o
+próprio roadmap já nomeou noutro contexto. **Avaliação: os dois
+argumentos não colidem de fato** — desligar SMC **reduz** exposição a um
+componente já com expectância negativa medida (risco a menos, não a
+mais), diferente de "abrir o Bloco 4" (que aumentaria exposição
+simultânea por ativo, essa sim bloqueada até o Bloco 0 fechar).
+
+### Recomendação final
+
+Não tocar em ADX/Choppiness/estrutura SMC/swingLen; não abrir o Bloco 4
+antes do Bloco 0 fechar; não ativar mais de um flag do Bloco 1 de uma vez.
+Como próximo passo de baixo custo: (1) rodar 1 backtest dos últimos 60-90
+dias com os mesmos 7 símbolos/flags do `regime-trigger-diagnostico` e
+comparar `rfRegime.byReason`/`adxStats.avgRejected` contra o baseline de
+12 meses — decide se o regime atual está excepcionalmente fraco ou é
+"business as usual"; (2) checar `SystemLog` (erro/warn, 48h) por
+`duplicate_active_ops_detected`/locks sobrepostos, só pra descartar bug
+sem indício ativo; (3) considerar desligar a cascata SMC por padrão
+(código pequeno, reversível, reduz risco); (4) considerar reabrir a
+preferência de 7 símbolos fixos, dado o item de comparação acima — decisão
+do usuário, não recomendação unilateral. Nenhuma dessas 4 ações foi
+executada nesta sessão — ficam para quando o usuário autorizar cada uma.
+
+### Verificação
+
+Nenhuma mudança de código — item é só registro da síntese do conselho.

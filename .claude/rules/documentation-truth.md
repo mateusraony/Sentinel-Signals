@@ -24,3 +24,9 @@ e que `adminPineConfig` retornava defaults fixos). Regras:
   trading virtual). Documente o estado real, não o desejado.
 - A cada plano/rodada relevante, **atualize** o doc afetado em vez de criar um
   paralelo — mantenha fonte única.
+- **Registrar análise é padrão, não pergunta.** Toda análise/investigação real
+  concluída (backtest interpretado, achado de código, causa-raiz determinada,
+  síntese de conselho de agentes) vai para `docs/known-risks.md` **sem
+  perguntar antes** — pedido explícito do usuário, 2026-08-01. A pergunta
+  "quer que eu registre?" fica reservada só para MUDANÇA DE CÓDIGO/
+  COMPORTAMENTO, que continua exigindo confirmação como sempre.
