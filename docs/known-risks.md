@@ -3607,3 +3607,79 @@ mesmo com o Map final marcando `ok:true`; chamador legado sem
 `rfRegimeAllOutcomes` explícito continua funcionando via fallback) — 725
 testes passando no total, sem regressão. `npm run lint && npm run build &&
 npm run build:scan && npm run build:backtest` OK.
+
+## 52. Gatilho SMC 5m: 100% das confirmações vêm de sweep, 0% de estrutura — não é bug (2026-08-01)
+
+O usuário rodou o primeiro backtest real com a instrumentação do item 50
+(`trial_label: regime-trigger-diagnostico`, 12 meses, 7 símbolos,
+2025-07-31→2026-07-31). Resultado bate quase exato com o item 49 (117 ops
+vs. 116, RF `netExpectancyR` +0,036 vs. +0,035, SMC -0,778 idêntico) —
+confirma que a instrumentação do item 50 não mudou comportamento nenhum,
+só mediu.
+
+**RF regime**: 97% das rejeições (`rfRegime.byReason`) são `adx_weak`
+genuíno — `adxStats.avgRejected = 16,52`, bem abaixo até do limiar mais
+frouxo (T3 = 18). Não há sinal de rejeição "quase passando" nesta amostra;
+não há indício de que o threshold esteja mal calibrado.
+
+**Achado novo**: das 10 confirmações da cascata SMC no ano inteiro,
+`report.smcTrigger.byTrigger = { sweep: 10, structure: 0 }` — **100% sweep,
+0% estrutura (BOS/CHoCH)**. Primeira medição real desse número no projeto
+(nem o item 45.2 nem o item 50 tinham `byTrigger` reportado de nenhuma
+rodada).
+
+### Mecanismo (investigado, não é bug)
+
+`check5mSmcConfirmation` (`scanner.js:389`) chama
+`calculateStructure(closed, {swingLen: 10})` sem sobrescrever
+`filterInsignificantInternalBreaks` — fica `true` (default). A fórmula
+(idêntica pro topo e pro fundo, `smcStructure.js:108-116`/`141-148`):
+
+```
+bigC = body > 2×dtl || body > ATR(3)
+trendConcordant = bigC || (assimetria de pavio a favor)
+```
+
+só marca BOS/CHoCH quando `trendConcordant`. **Não depende de `swingLen`**
+— usa só dados da vela do cruzamento (corpo, distância ao nível) + ATR(3);
+`swingLen` só decide ONDE o nível se forma (`detectSwings`,
+`smcStructure.js:37-54`), não a severidade do filtro. `calculateLiquiditySweep`
+(`smcStructure.js:189-205`) é geometria pura (`low < swLow && close > swLow
+&& close > open`) — **sem esse filtro em nenhum dos dois lados** (JS e
+Pine). A assimetria de rigor entre os dois gatilhos explica a assimetria
+de disparo observada.
+
+### Paridade e comunidade
+
+O filtro é porte fiel, fórmula símbolo-por-símbolo, de `detect_pivot`
+(`smc-a-unified-v2.3.pine:778-822`, bloco do filtro em `:807-817`). O Pine
+real roda com `swing_length=50` por padrão (`:978`) — sem evidência de que
+o usuário usa 10 de fato; é só o `minval` permitido pela UI do indicador.
+A cascata 1h→5m inteira já é desenho original do Sentinel (item 50), sem
+equivalente de confirmação LTF no Pine real.
+
+Pesquisa externa (WebSearch, 2026-08-01, buscas "ICT SMC break of
+structure BOS CHoCH minimum candle body size filter false break lower
+timeframe" e "smart money concepts pivot swing length lower timeframe
+confirmation entry trigger"): exigir fechamento de CORPO além do nível
+estrutural (não só pavio) para validar BOS/CHoCH é prática padrão
+documentada na comunidade ICT/SMC, especificamente para filtrar
+rompimento falso — bate com o filtro já existente no projeto. Fontes:
+[Day 3: SMC & ICT Market Structure Explained](https://tradingstrategyguides.com/day-3-smc-ict-market-structure-explained-bos-choch-swing-points-2026/),
+[Break of Structure (BOS) Explained](https://www.fluxcharts.com/articles/break-of-structure-bos-explained),
+[A Practical Guide to Smart Money Concepts](https://myfundedcapital.com/smart-money-concepts/).
+
+### Recomendação
+
+**Não mexer** no filtro nem em `swingLen`. Afrouxar o filtro trocaria
+qualidade de sinal por quantidade sem nenhuma evidência de que isso
+melhora o resultado, e a cascata SMC como um todo ainda não provou ter
+vantagem (11 operações no ano, `expectancyRCI95 = [-1.791, 0.235]`,
+`sample_too_small`). Decisão de reconsiderar o filtro fica em aberto para
+quando houver dado suficiente sobre a lucratividade do SMC em geral — não
+antecipar com a amostra atual.
+
+### Verificação
+
+Nenhuma — item é só registro de investigação (2 agentes Explore
+read-only + pesquisa externa), zero mudança de código/comportamento.
