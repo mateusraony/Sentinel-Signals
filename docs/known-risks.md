@@ -3886,3 +3886,47 @@ Fase 2-4. Fica para quando o usuário rodar essa comparação.
 `npm run lint && npm test && npm run build && npm run build:scan && npm
 run build:backtest`, `sentinel-trading-engine-review` (toca
 `scanner.js`/`opExitRules.js`, invariante P0 de saída).
+
+### Correção pós-review (Codex, PR #106, P1) — look-ahead em passes repetidos na mesma vela
+
+O cron roda `persistScanResults` a cada ~5min enquanto uma vela de
+timeframe de sinal (4h/1h) pode continuar sendo "a última fechada" por
+horas — o mesmo motivo pelo qual `rf_reverse_bars_count` precisa de dedup
+por vela própria. Sem proteção, um avanço do stop pré-TP1 na passagem N
+(usando o close desta vela) seria testado de novo na passagem N+1 contra
+o `low`/`high` da MESMA vela, agora usando o stop JÁ avançado — um
+look-ahead que produz `STOP_HIT` falso usando dado já avaliado com
+segurança contra o stop ANTIGO uma passagem antes.
+
+**Reproduzido antes de corrigir** (`entry=100, initial_stop=98,
+atrValue=2`, vela `low=99/high=102.5/close=102.5`): passagem 1 não bate
+stop (99 > 98), avança para breakeven (100); passagem 2, mesma vela,
+99 ≤ 100 → `STOP_HIT` falso.
+
+**Correção**: novo campo `pre_tp1_stop_advanced_candle_time` (grava
+`tfData.lastCandleTime` da vela que causou o avanço, só na primeira vez —
+mesmo guard de `pre_tp1_stop_advanced_at`). A checagem de `stopHit`
+pré-TP1 passa a excluir essa vela específica (`stopAdvancedThisCandle`,
+mesmo espírito do `candleUsable` — "vela já resolvida, não relitigar").
+Operações que nunca usam o mecanismo (`pre_tp1_stop_advanced_candle_time`
+sempre `undefined`) ficam byte-idênticas ao comportamento anterior — a
+comparação `undefined !== lastCandleTime` é sempre verdadeira. Uma vela
+GENUINAMENTE nova (timestamp diferente) continua testada normalmente
+contra o stop já avançado, exatamente como a política "protege a partir
+da vela seguinte" já documentada pretendia.
+
+Teste de regressão em `scannerStateMachine.test.js` reproduz o cenário
+exato (2 passagens sobre a mesma vela — 2ª não bate stop; 3ª passagem com
+vela genuinamente nova e `low` abaixo do breakeven bate stop
+corretamente no breakeven, não no stop original). 738 testes passando.
+
+**Nota para investigação futura, não feita aqui**: o mesmo padrão
+estrutural (avançar um stop a partir do close de uma vela, sem excluir
+essa vela de passagens seguintes) existe no trailing PÓS-TP1
+(`advanceTrailingStop`, P0-d, já em produção) — mas o breakeven pré-TP1
+fica muito mais perto do meio do range típico de uma vela (a entrada em
+si) do que um trail de `trailAtrMult=2.0×ATR` abaixo do close, tornando o
+gatilho exato desta rodada bem mais provável na prática. Não investigado
+nem corrigido nesta PR (fora de escopo — mexeria num mecanismo já
+shippado sem o mesmo tipo de reprodução concreta que motivou a correção
+acima); sinalizado aqui para quando alguém retomar `advanceTrailingStop`.

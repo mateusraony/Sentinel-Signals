@@ -776,6 +776,47 @@ describe('persistScanResults — pre-TP1 stop protection (opt-in, docs/known-ris
     expect(stored.status).toBe('SIGNAL_CONFIRMED'); // not stopped — 99 never crossed the stored stop 98
     expect(stored.current_stop).toBe(100); // advance applied for the NEXT candle only
   });
+
+  // Codex review (PR #106, P1) — the cron re-runs persistScanResults every
+  // ~5 minutes while a 4h/1h candle stays the "latest closed" one for hours
+  // (same reason rf_reverse_bars_count needs its own candle dedup). Without
+  // excluding the candle that caused the advance, a SECOND pass over the
+  // exact same still-latest candle would re-test its low against the just-
+  // advanced breakeven stop and produce a false STOP_HIT — using data
+  // already safely evaluated against the OLD stop one pass earlier.
+  it('a repeated pass over the SAME still-latest candle never re-tests it against the just-advanced stop', async () => {
+    backend._seed('TradeOperation', makeOp({
+      pre_tp1_stop_protection_enabled: true,
+      pre_tp1_stop_advance_trigger_atr_mult: 1.0,
+    }));
+    const sameCandle = makeTfData({ lastCandleHigh: 102.5, lastCandleLow: 99, lastClose: 102.5 });
+
+    // Pass 1: advances to breakeven (100), correctly not stopped (99 > 98).
+    await persistScanResults(makeScanResult({ results: { '4h': sameCandle } }));
+    let stored = backend._get('TradeOperation', 'op1');
+    expect(stored.current_stop).toBe(100);
+    expect(stored.status).toBe('SIGNAL_CONFIRMED');
+
+    // Pass 2: cron re-runs 5 minutes later — SAME candle (identical object)
+    // is still the latest closed one. Without the fix, low(99) <= newly
+    // stored stop(100) would falsely fire STOP_HIT here.
+    await persistScanResults(makeScanResult({ results: { '4h': sameCandle } }));
+    stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED'); // still open — the bug this test guards against
+    expect(stored.current_stop).toBe(100); // unchanged, still monotonic
+
+    // A genuinely NEW candle (later timestamp) whose low is below the
+    // breakeven stop must still fire normally — the fix only protects the
+    // specific candle that caused the advance, not stop-hits in general.
+    const nextCandle = makeTfData({
+      lastCandleTime: '2026-07-16T16:00:00.000Z', lastCandleOpenTime: '2026-07-16T12:00:00.000Z',
+      lastCandleHigh: 101, lastCandleLow: 99, lastClose: 99.5,
+    });
+    await persistScanResults(makeScanResult({ results: { '4h': nextCandle } }));
+    stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('STOP_HIT');
+    expect(stored.exit_price).toBe(100); // breakeven, not the original stop
+  });
 });
 
 // known-risks item 47.2 — MFE/MAE tracked incrementally from THIS candle's

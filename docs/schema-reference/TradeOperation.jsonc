@@ -540,6 +540,10 @@
     "pre_tp1_stop_advanced_at": {
       "type": "string",
       "description": "known-risks.md items 53/54 — ISO timestamp when advancePreTp1StopProtection first moved current_stop to breakeven, pre-TP1. Absent when the gate never fired (flag off, or price never moved favorably enough before TP1/stop)."
+    },
+    "pre_tp1_stop_advanced_candle_time": {
+      "type": "string",
+      "description": "known-risks.md items 53/54 (Codex review, PR #106, P1) — raw closeTime (epoch ms, matches tfData.lastCandleTime) of the candle whose close triggered the last pre-TP1 stop advance. The cron re-evaluates the SAME still-latest-closed candle many times before a genuinely new one closes; excluding this candle from the stop-hit check on repeat passes prevents a look-ahead false STOP_HIT against the just-advanced stop using data already safely evaluated against the OLD stop. Absent when the gate never fired."
     }
   },
   "required": [

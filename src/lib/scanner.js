@@ -2402,8 +2402,26 @@ export async function persistScanResults(scanResult) {
     if (maeR !== op.mae_r) { updatePayload.mae_r = maeR; updatePayload.bars_to_mae = barsToMae; }
 
     if (!tp1Hit) {
+      // Codex review (PR #106, P1): the cron re-runs persistScanResults every
+      // ~5 minutes while the signal timeframe's candle (4h/1h) can stay the
+      // "latest closed" one for hours — so the SAME candle is re-evaluated
+      // many times before a genuinely new one closes (same reason
+      // rf_reverse_bars_count dedups by candle below). If the pre-TP1 stop
+      // protection gate (docs/known-risks.md items 53/54) advances
+      // current_stop on pass N using THIS candle's close, pass N+1 would
+      // test this SAME candle's low/high against the NEWLY advanced stop —
+      // a look-ahead false STOP_HIT using data already safely evaluated
+      // against the OLD stop in pass N. Reproduced: entry 100, stop 98,
+      // candle low 99/high 102.5/close 102.5 — pass 1 doesn't stop (99 > 98),
+      // advances to breakeven 100; pass 2 (same candle) would read
+      // 99 <= 100 = true. Excluding the candle that caused the LAST advance
+      // from the stop check (mirrors candleUsable's "already settled, don't
+      // re-litigate" contract) closes this — `undefined !== lastCandleTime`
+      // keeps every op that never used the gate byte-identical to before.
+      const stopAdvancedThisCandle = op.pre_tp1_stop_advanced_candle_time != null
+        && op.pre_tp1_stop_advanced_candle_time === tfData.lastCandleTime;
       // Check stop first (stop has priority over TP on same candle for safety)
-      const stopHit = candleUsable
+      const stopHit = candleUsable && !stopAdvancedThisCandle
         && (isBuy ? stopCheckPrice <= op.current_stop : stopCheckPrice >= op.current_stop);
       // Computed here (not just inline in the tp1 else-if below) so
       // resolveCandleExit can flag when BOTH levels were touched in this
@@ -2515,6 +2533,11 @@ export async function persistScanResults(scanResult) {
         });
         if (newCurrentStop !== op.current_stop && !op.pre_tp1_stop_advanced_at) {
           updatePayload.pre_tp1_stop_advanced_at = nowIso;
+          // See the stopAdvancedThisCandle guard above (Codex PR #106, P1) —
+          // marks THIS candle as already-settled so a repeat pass over it
+          // (same still-latest-closed candle, next cron tick) never tests it
+          // against the just-advanced stop.
+          updatePayload.pre_tp1_stop_advanced_candle_time = tfData.lastCandleTime;
         }
       }
     } else {
