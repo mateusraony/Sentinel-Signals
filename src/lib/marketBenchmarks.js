@@ -81,7 +81,14 @@ async function fetchBcbAccrualCurve(seriesCode, fromMs, toMs) {
     throw new Error(`BCB API error (${response.status}) série ${seriesCode}`);
   }
   const json = await response.json();
-  return computeAccrualCurve(parseBcbSeries(json));
+  const curve = computeAccrualCurve(parseBcbSeries(json));
+  // Codex review (PR #108, P2): the SGS query already includes an
+  // observation dated at/near fromMs, and computeAccrualCurve compounds it
+  // straight away — so the curve's first point was already non-zero instead
+  // of representing "0% at the start of the window", unlike fetchBtcCurve
+  // below (whose baseIdx candle is an explicit 0% reference point). Prepend
+  // one here for the same guarantee, without an extra fetch.
+  return [{ timestamp: fromMs, market: 0 }, ...curve];
 }
 
 async function fetchBtcCurve(fromMs, toMs) {

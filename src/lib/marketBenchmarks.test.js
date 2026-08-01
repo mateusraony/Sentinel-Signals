@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { parseBcbSeries, computeAccrualCurve, computePriceChangeCurve, BCB_SERIES, BENCHMARK_OPTIONS } from './marketBenchmarks.js';
 
 describe('parseBcbSeries', () => {
@@ -74,6 +74,30 @@ describe('computePriceChangeCurve', () => {
   it('returns [] when basePrice is invalid or zero (avoids divide-by-zero)', () => {
     expect(computePriceChangeCurve([{ timestamp: 1, close: 100 }], 0)).toEqual([]);
     expect(computePriceChangeCurve([{ timestamp: 1, close: 100 }], null)).toEqual([]);
+  });
+});
+
+describe('BCB benchmarks (CDI/Selic/IPCA) fetchCurve — Codex review PR #108', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('prepends a true 0% point at fromMs instead of starting already-compounded', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { data: '01/08/2026', valor: '0.04' },
+        { data: '02/08/2026', valor: '0.05' },
+      ],
+    }));
+    const cdi = BENCHMARK_OPTIONS.find((o) => o.key === 'CDI');
+    const fromMs = Date.UTC(2026, 7, 1);
+    const curve = await cdi.fetchCurve(fromMs, Date.UTC(2026, 7, 2));
+
+    expect(curve[0]).toEqual({ timestamp: fromMs, market: 0 }); // the regression Codex caught
+    expect(curve).toHaveLength(3); // synthetic zero point + the 2 real observations
+    expect(curve[1].market).toBeCloseTo(0.04, 6);
+    expect(curve[2].market).toBeCloseTo((1.0004 * 1.0005 - 1) * 100, 6);
   });
 });
 

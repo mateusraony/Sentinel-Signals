@@ -93,26 +93,26 @@ export default function PortfolioVsMarket({ trades }) {
 
   const firstTs = portfolioCurve[0]?.timestamp;
   const lastTs = portfolioCurve[portfolioCurve.length - 1]?.timestamp;
-  const { data: marketCurve = [] } = useMarketBenchmark(benchmarkKey, firstTs, lastTs);
+  const { data: marketCurve = [], isFetching: marketFetching } = useMarketBenchmark(benchmarkKey, firstTs, lastTs);
 
-  // Merge portfolio and market data by closest timestamp
+  // Merge portfolio and market data by "as-of" timestamp — never a future one.
   const mergedData = useMemo(() => {
     if (portfolioCurve.length === 0) return [];
 
-    // For each portfolio point, find the closest market point
+    // Codex review (PR #108, P2): pick the LATEST market point at-or-before
+    // this trade's timestamp, not just the nearest by absolute distance — a
+    // trade late in a month could otherwise be matched to next month's IPCA
+    // observation (sparse monthly series), showing data from the future.
     return portfolioCurve.map(p => {
-      let closestMarket = null;
-      let minDiff = Infinity;
+      let latestMarket = null;
       for (const m of marketCurve) {
-        const diff = Math.abs(m.timestamp - p.timestamp);
-        if (diff < minDiff) {
-          minDiff = diff;
-          closestMarket = m;
+        if (m.timestamp <= p.timestamp && (!latestMarket || m.timestamp > latestMarket.timestamp)) {
+          latestMarket = m;
         }
       }
       return {
         ...p,
-        market: closestMarket?.market ?? null,
+        market: latestMarket?.market ?? null,
       };
     });
   }, [portfolioCurve, marketCurve]);
@@ -132,8 +132,16 @@ export default function PortfolioVsMarket({ trades }) {
   }
 
   const finalPnl = portfolioCurve[portfolioCurve.length - 1]?.portfolio || 0;
-  const finalMarket = mergedData[mergedData.length - 1]?.market || 0;
-  const outperform = finalPnl > finalMarket;
+  const lastMarketPoint = mergedData[mergedData.length - 1]?.market;
+  // Codex review (PR #108, P2): a pending/failed/empty benchmark query used
+  // to fall through `|| 0`, rendering as a real "+0.00%" and letting the
+  // portfolio look like it's "Superando" a benchmark that never actually
+  // loaded — routine for IPCA when the filtered trades fall between its
+  // monthly observation dates. Track availability explicitly instead of
+  // treating absence as a flat 0% benchmark.
+  const hasMarketData = lastMarketPoint !== null && lastMarketPoint !== undefined;
+  const finalMarket = hasMarketData ? lastMarketPoint : 0;
+  const outperform = hasMarketData && finalPnl > finalMarket;
 
   return (
     <div className="rounded-xl p-4"
@@ -155,8 +163,8 @@ export default function PortfolioVsMarket({ trades }) {
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full" style={{ background: '#ff9f43' }} />
             <span style={{ color: 'rgba(255,255,255,0.5)' }}>{benchmarkOption.label}</span>
-            <span className="font-bold" style={{ color: finalMarket >= 0 ? '#00ff80' : '#ff1478' }}>
-              {fmtPct(finalMarket)}
+            <span className="font-bold" style={{ color: !hasMarketData ? 'rgba(255,255,255,0.3)' : finalMarket >= 0 ? '#00ff80' : '#ff1478' }}>
+              {marketFetching ? '…' : hasMarketData ? fmtPct(finalMarket) : '—'}
             </span>
           </span>
           {outperform && (
@@ -165,7 +173,7 @@ export default function PortfolioVsMarket({ trades }) {
               <TrendingUp className="w-3 h-3" /> Superando
             </span>
           )}
-          {!outperform && finalMarket !== 0 && (
+          {hasMarketData && !outperform && (
             <span className="flex items-center gap-1 px-2 py-0.5 rounded"
               style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.25)', color: '#ff1478' }}>
               <TrendingDown className="w-3 h-3" /> Atrás
