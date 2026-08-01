@@ -1,13 +1,13 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ReferenceLine,
 } from 'recharts';
 import { TrendingUp, TrendingDown, Activity } from 'lucide-react';
-import { fetchCandles } from '@/lib/marketDataProvider';
 import moment from 'moment';
 import { getClosedAt, summarizeOps } from '@/lib/tradeMetrics';
+import { BENCHMARK_OPTIONS } from '@/lib/marketBenchmarks';
 
 function fmtPct(v) {
   if (v === null || v === undefined || isNaN(v)) return '—';
@@ -40,37 +40,26 @@ function calcPortfolioCurve(trades) {
 }
 
 /**
- * Fetch BTC daily candles as market benchmark and normalize to % change
- * over the same period as the trades.
+ * Fetch the selected benchmark's curve (src/lib/marketBenchmarks.js) and
+ * normalize to % change over the same period as the trades. BTC keeps the
+ * original behavior (Binance candles); CDI/Selic/IPCA come from the Banco
+ * Central (BCB SGS, taxa acumulada via juros compostos) — same "fetch direct
+ * from the browser, no backend" pattern as BTC already used.
  */
-function useMarketBenchmark(firstTradeTs, lastTradeTs) {
+function useMarketBenchmark(benchmarkKey, firstTradeTs, lastTradeTs) {
   return useQuery({
-    queryKey: ['market-benchmark', firstTradeTs, lastTradeTs],
+    queryKey: ['market-benchmark', benchmarkKey, firstTradeTs, lastTradeTs],
     queryFn: async () => {
-      // Fetch enough daily candles to cover the trade period
-      const candles = await fetchCandles('BTCUSDT', '1d', 60);
-      const closed = candles.filter(c => c.isClosed);
-      if (closed.length < 2) return [];
-
-      // Find the candle closest to the first trade
-      const startIdx = closed.findIndex(c => c.closeTime >= firstTradeTs);
-      const baseIdx = startIdx > 0 ? startIdx - 1 : 0;
-      const basePrice = closed[baseIdx].close;
-
-      return closed
-        .filter(c => c.closeTime >= closed[baseIdx].closeTime)
-        .map(c => ({
-          timestamp: c.closeTime,
-          date: moment(c.closeTime).format('DD/MM HH:mm'),
-          market: ((c.close - basePrice) / basePrice) * 100,
-        }));
+      const option = BENCHMARK_OPTIONS.find((o) => o.key === benchmarkKey) ?? BENCHMARK_OPTIONS[0];
+      const curve = await option.fetchCurve(firstTradeTs, lastTradeTs);
+      return curve.map((point) => ({ ...point, date: moment(point.timestamp).format('DD/MM HH:mm') }));
     },
     enabled: !!firstTradeTs && !!lastTradeTs,
     staleTime: 5 * 60 * 1000,
   });
 }
 
-function CustomTooltip({ active, payload }) {
+function CustomTooltip({ active, payload, marketLabel }) {
   if (!active || !payload?.length) return null;
   const data = payload[0]?.payload;
   return (
@@ -81,7 +70,7 @@ function CustomTooltip({ active, payload }) {
         <div key={i} className="flex items-center justify-between gap-4">
           <span className="flex items-center gap-1.5" style={{ color: entry.color }}>
             <span className="w-2 h-2 rounded-full" style={{ background: entry.color }} />
-            {entry.name === 'portfolio' ? 'Minha Carteira' : entry.name === 'market' ? 'BTC (Mercado)' : entry.name}
+            {entry.name === 'portfolio' ? 'Minha Carteira' : entry.name === 'market' ? `${marketLabel} (Mercado)` : entry.name}
           </span>
           <span className="font-bold" style={{ color: entry.value >= 0 ? '#00ff80' : '#ff1478' }}>
             {fmtPct(entry.value)}
@@ -98,11 +87,13 @@ function CustomTooltip({ active, payload }) {
 }
 
 export default function PortfolioVsMarket({ trades }) {
+  const [benchmarkKey, setBenchmarkKey] = useState('BTC');
+  const benchmarkOption = BENCHMARK_OPTIONS.find((o) => o.key === benchmarkKey) ?? BENCHMARK_OPTIONS[0];
   const portfolioCurve = useMemo(() => calcPortfolioCurve(trades), [trades]);
 
   const firstTs = portfolioCurve[0]?.timestamp;
   const lastTs = portfolioCurve[portfolioCurve.length - 1]?.timestamp;
-  const { data: marketCurve = [] } = useMarketBenchmark(firstTs, lastTs);
+  const { data: marketCurve = [] } = useMarketBenchmark(benchmarkKey, firstTs, lastTs);
 
   // Merge portfolio and market data by closest timestamp
   const mergedData = useMemo(() => {
@@ -148,10 +139,10 @@ export default function PortfolioVsMarket({ trades }) {
     <div className="rounded-xl p-4"
       style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Activity className="w-4 h-4" style={{ color: '#00e5ff' }} />
-          <h3 className="text-sm font-bold text-foreground">Carteira vs Mercado (BTC)</h3>
+          <h3 className="text-sm font-bold text-foreground">Carteira vs Mercado ({benchmarkOption.label})</h3>
         </div>
         <div className="flex items-center gap-3 text-[10px] font-mono">
           <span className="flex items-center gap-1.5">
@@ -163,7 +154,7 @@ export default function PortfolioVsMarket({ trades }) {
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full" style={{ background: '#ff9f43' }} />
-            <span style={{ color: 'rgba(255,255,255,0.5)' }}>BTC</span>
+            <span style={{ color: 'rgba(255,255,255,0.5)' }}>{benchmarkOption.label}</span>
             <span className="font-bold" style={{ color: finalMarket >= 0 ? '#00ff80' : '#ff1478' }}>
               {fmtPct(finalMarket)}
             </span>
@@ -181,6 +172,19 @@ export default function PortfolioVsMarket({ trades }) {
             </span>
           )}
         </div>
+      </div>
+
+      {/* Benchmark selector */}
+      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+        {BENCHMARK_OPTIONS.map((option) => (
+          <button key={option.key} onClick={() => setBenchmarkKey(option.key)}
+            className="text-[10px] font-mono px-2.5 py-1 rounded-md transition-all"
+            style={benchmarkKey === option.key
+              ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
+              : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+            {option.label}
+          </button>
+        ))}
       </div>
 
       {/* Chart */}
@@ -208,7 +212,7 @@ export default function PortfolioVsMarket({ trades }) {
             width={48}
           />
           <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip marketLabel={benchmarkOption.label} />} />
           <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'monospace' }} />
           <Area
             type="monotone"
