@@ -4072,3 +4072,123 @@ executada nesta sessão — ficam para quando o usuário autorizar cada uma.
 ### Verificação
 
 Nenhuma mudança de código — item é só registro da síntese do conselho.
+
+## 57. Causa raiz do volume baixo ao vivo: busca de candle sem retry (2026-08-01)
+
+O item 56 explicava o volume baixo de operações por Poisson/regime — dado
+consistente, mas insuficiente: o usuário reportou só **3 operações desde
+que o painel existe (1 delas ativada manualmente)**, um número
+concretamente baixo demais mesmo pra explicação estatística. Investigação
+completa nesta sessão, cada hipótese testada com dado real antes da
+próxima:
+
+1. **`scan.yml` parado/quebrado?** Não — GitHub Actions API: 4.787
+   execuções desde 2026-07-10 (~22 dias), 100% sucesso em toda amostra
+   conferida (recente, intermediária, próxima do início).
+2. **RF período/multiplicador customizado por ativo, divergindo do
+   backtest?** Não — usuário confirmou todos os ativos no padrão de
+   fábrica (20/3,5).
+3. **Configuração da estratégia mudou no meio do período?** Não — usuário
+   confirmou que não mexeu em nada na tela "Pine Script".
+4. **Lista de ativos instável?** Revelou um fato novo: o painel real roda
+   com **9 ativos** (BTCUSDT, ETHUSDT, FETUSDT, PENDLEUSDT, ZROUSDT,
+   DYDXUSDT, PAXGUSDT, SOLUSDT, METISUSDT), não os 7 que todo backtest
+   deste projeto testava até agora — SOL e METIS nunca tinham sido
+   incluídos em nenhuma rodada. Backtest repetido com os 9 reais
+   (`trial_label: verificacao-9-ativos-reais-10jul-01ago`, mesma janela
+   2026-07-10→2026-08-01): ainda previa **9 operações** (RF confirmou 7
+   sinais, SMC 2 — SOL/METIS foram avaliados mas nenhum sinal deles passou
+   o gate de regime). `rfRegime.adxStats.avgRejected` = 18,26 — **normal**
+   frente ao baseline histórico de 12 meses (16,5), descartando regime
+   anormalmente fraco no período.
+5. Com cron saudável, config idêntica ao backtest e regime normal, o
+   número ainda não batia: 9 operações previstas pelo backtest contra ~2
+   automáticas reais. Checagem da tela **"Logs"** do painel (filtro
+   ERR/WARN, recomendação 2 do item 56) revelou o problema real.
+
+### Mecanismo confirmado
+
+Os logs mostraram `"Failed to fetch"` recorrente nos timeframes `1h`/`4h`
+(os que RF e SMC precisam pra gerar sinal) para vários ativos — ZROUSDT,
+FETUSDT, ETHUSDT, PAXGUSDT, BTCUSDT, DYDXUSDT. Em alguns casos (ZRO, FET,
+DYDX) **nenhum timeframe necessário** foi buscado com sucesso naquela
+passada (`"timeframes_scanned": ["1d"]` só) — a avaliação do sinal nem
+rodou naquele ciclo. Um log do módulo `monitor` ("DYDXUSDT em estado de
+erro") indicou falha sustentada em pelo menos um ativo, não só um blip
+isolado.
+
+Confirmado no código: `src/lib/marketDataProvider.js` (browser, Binance
+Futures) e `scripts/adminMarketDataProvider.js` (cron, Binance Spot) faziam
+**um único `fetch(url)` sem nenhum retry** em todas as suas funções
+(`fetchCandles`, `fetchCurrentPrice`, `validateSymbol`, `fetch24hStats`,
+mais `fetchMarkPrice` no browser). Uma falha de rede transitória — a mesma
+classe de erro vista nos logs — derrubava a busca daquele timeframe na
+hora, sem segunda tentativa; a próxima chance só vinha no próximo scan
+(~5min depois via `scan.yml`, ou no próximo ciclo do `useAutoScan.js` no
+browser).
+
+Isso contrasta com o próprio downloader do motor de backtest
+(`scripts/fetch-backtest-data.mjs`, tarefa concluída no item 90 desta
+sessão), que **já tinha** retry com backoff exponencial + respeito ao
+header `Retry-After`, até 3 tentativas, só em erro transitório
+(429/5xx/falha de rede — um 4xx real como símbolo inválido falha na hora,
+como deve). **O backtest nunca via esse problema porque baixa os dados uma
+vez com retry; o painel ao vivo tentava uma vez só, toda vez, pra sempre.**
+Sinais que o próprio motor confirma (mesmos dados, mesmo código, via
+backtest) que deveriam ter virado operação estavam sendo perdidos porque o
+dado necessário simplesmente não chegava naquela janela de 5 minutos.
+
+### Correção
+
+Extraído o padrão de retry já provado em `fetch-backtest-data.mjs` para um
+módulo novo e compartilhado, `src/lib/httpRetry.js` — JS puro (`fetch`/
+`setTimeout`, nativos no browser e no Node 20), sem precisar de
+redirecionamento novo em `scripts/build-scan.mjs`. `fetchWithRetry(url,
+{ context, maxRetries=3, retryStatuses={429,500,502,503,504},
+baseDelayMs=250, maxRetryAfterMs=120000 })`: retenta erro de rede puro e
+status transitório, honra `Retry-After` do servidor (segundos ou data
+HTTP) com precedência sobre o backoff exponencial, nunca retenta um 4xx
+que não seja 429. Ao esgotar as tentativas, devolve a `Response` não-ok
+(deixando o chamador formatar sua própria mensagem de erro, igual antes) —
+só falha de rede pura (todas as tentativas lançando exceção) propaga o
+erro lançado, preservando o contrato que `scanner.js` já tratava por
+try/catch antes desta mudança. Todos os `fetch()` de
+`src/lib/marketDataProvider.js` e `scripts/adminMarketDataProvider.js`
+passaram a usar esse wrapper — zero mudança em qualquer gate, threshold ou
+transição de estado, só na confiabilidade da busca do dado que alimenta
+todos eles.
+
+### Divergência de documentação encontrada (efeito colateral)
+
+`docs/claude/backtest-usage.md`, o comentário do `.github/workflows/
+backtest.yml` ("preferência PERMANENTE do usuário... só estes 7 pares,
+sempre") e referências à carteira "de sempre" em itens anteriores deste
+arquivo descreviam 7 símbolos — o painel real roda com 9 desde antes desta
+sessão (SOL e METIS nunca testados em nenhum backtest do projeto). Não
+corrigido nesta rodada (é desatualização de doc, não decisão errada) —
+registrado para quando alguém for atualizar esses arquivos ou rodar um
+"backtest padrão" pensando que cobre a carteira real.
+
+### Testes
+
+`src/lib/httpRetry.test.js` — sucesso na 1ª tentativa (zero delay); sucesso
+após falha transitória (500) via backoff exponencial; desiste após
+`maxRetries` numa falha persistente e devolve a resposta não-ok sem lançar;
+NÃO retenta 404; retenta falha de rede lançada (`TypeError: Failed to
+fetch`) e sucede depois; esgota tentativas numa falha de rede persistente e
+relança o erro; honra `Retry-After` em segundos; honra `Retry-After` como
+data HTTP. Timers falsos (`vi.useFakeTimers`/`advanceTimersByTimeAsync`,
+mesmo padrão de `scannerStateMachine.test.js`) para não esperar o backoff
+de verdade.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run build:scan && npm run
+build:backtest` — todos passando, incluindo a resolução do novo import em
+`src/lib/httpRetry.js` pelos dois bundles (Vite e esbuild).
+`sentinel-trading-engine-review` rodado (não toca gate/threshold/máquina de
+estados, só confiabilidade de I/O que o motor inteiro depende). Não foi
+possível validar contra a Binance real nesta sessão (rede da sessão
+bloqueia, `.claude/rules/pine-parity.md`) — a prova real vem depois,
+olhando a tela "Logs" em produção pra confirmar queda de `"Failed to
+fetch"` e comparando o volume de operações do próximo período.

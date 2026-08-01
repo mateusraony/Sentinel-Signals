@@ -287,6 +287,17 @@ nunca deve receber nova transição.**
   a `advanceTrailingStop` e ao MFE/MAE, ausente de
   `priceCheckActiveOpsInner`. **Não ativar sem comparar relatórios de
   backtest com/sem primeiro** — ver `docs/known-risks.md` itens 53/54.
+- **Retry na busca de candle ao vivo** (`src/lib/httpRetry.js`,
+  `fetchWithRetry`) — item 57. Causa raiz confirmada do volume baixo de
+  operações ao vivo: `src/lib/marketDataProvider.js` (browser) e
+  `scripts/adminMarketDataProvider.js` (cron) faziam um único `fetch()` sem
+  retry — uma falha transitória de rede (`"Failed to fetch"`, visto em
+  produção) derrubava a busca de 1h/4h/5m/15m daquele ativo naquela passada
+  inteira, sem segunda tentativa até o próximo scan. Mesmo padrão de retry
+  (backoff exponencial, respeita `Retry-After`, só erro transitório) que já
+  existia em `scripts/fetch-backtest-data.mjs` — por isso o backtest nunca
+  via esse problema. Puro I/O: não toca gate, threshold nem transição de
+  estado, só a confiabilidade do dado que alimenta todos eles.
 
 ## Regras ao mexer aqui
 
