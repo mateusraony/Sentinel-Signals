@@ -86,6 +86,10 @@ const DEFAULTS = {
   fvgFillTargetRatio: 0.6,
   smcScoreObWeight: 0,
   smcScoreFvgWeight: 0,
+  // Proteção de stop pré-TP1 (known-risks.md item 53/54) — master flag OFF
+  // por padrão. Espelha src/lib/pineParser.js.
+  preTp1StopProtectionEnabled: false,
+  preTp1StopProtectionAtrMult: 1.0,
 };
 
 const SYNCED_STRATEGY_KEYS = [
@@ -107,6 +111,7 @@ const SYNCED_STRATEGY_KEYS = [
   'smcTierEnabled',
   'smcObFvgEnabled', 'obFvgAtrLen', 'obMinAtrMult', 'obMaxAtrMult',
   'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
+  'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
 ];
 
 export async function getPineConfig() {

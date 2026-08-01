@@ -166,6 +166,26 @@ describe('buildTradeOpData — entry into SIGNAL_CONFIRMED', () => {
     expect(op.entry_price).toBe(100);
     expect(op.origin_4h_price).toBe(90);
   });
+
+  // docs/known-risks.md items 53/54 — decision frozen at creation, same
+  // reasoning as partial_percent/runnerEnabled: pineConfig read here, never
+  // again at exit time (see persistScanResults reading op.* instead).
+  it('stamps pre_tp1_stop_protection_enabled/_trigger_atr_mult from pineConfig, defaulting off', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { atrStopMult: 2.0 } });
+
+    const offByDefault = buildTradeOpData(sig, tf4hData, makePineConfig(), { entryPrice: 100 });
+    expect(offByDefault.pre_tp1_stop_protection_enabled).toBe(false);
+    expect(offByDefault.pre_tp1_stop_advance_trigger_atr_mult).toBe(1.0);
+
+    const explicitlyOn = buildTradeOpData(
+      sig, tf4hData,
+      makePineConfig({ preTp1StopProtectionEnabled: true, preTp1StopProtectionAtrMult: 1.5 }),
+      { entryPrice: 100 },
+    );
+    expect(explicitlyOn.pre_tp1_stop_protection_enabled).toBe(true);
+    expect(explicitlyOn.pre_tp1_stop_advance_trigger_atr_mult).toBe(1.5);
+  });
 });
 
 describe('buildSmcTradeOpData — structural initial stop (1h→5m cascade)', () => {
@@ -687,6 +707,115 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     expect(notifyInvalidated).toHaveBeenCalledTimes(1);
     expect(notifyInvalidated).toHaveBeenCalledWith(expect.objectContaining({ id: 'op1' }), expect.any(Number));
     vi.mocked(isTelegramConfigured).mockReturnValue(false);
+  });
+});
+
+// docs/known-risks.md items 53/54 — opt-in pre-TP1 stop protection. Default
+// op: BUY, entry 100, initial_stop 98 (risk 2), tp1 103. Default tfData
+// atrValue 2 -> with the default trigger 1.0x, breakeven fires once price
+// closes >= entry + 2 = 102 (still short of tp1's 103).
+describe('persistScanResults — pre-TP1 stop protection (opt-in, docs/known-risks.md items 53/54)', () => {
+  it('off by default: a favorable candle short of TP1 never moves current_stop', async () => {
+    backend._seed('TradeOperation', makeOp()); // pre_tp1_stop_protection_enabled absent -> falsy
+    const favorable = makeTfData({ lastCandleHigh: 102.5, lastCandleLow: 99, lastClose: 102.5 });
+    await persistScanResults(makeScanResult({ results: { '4h': favorable } }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED');
+    expect(stored.current_stop).toBe(98); // unchanged — today's default behavior preserved
+    expect(stored.pre_tp1_stop_advanced_at).toBeUndefined();
+  });
+
+  it('enabled: advances current_stop to breakeven once price clears the ATR threshold, before TP1', async () => {
+    backend._seed('TradeOperation', makeOp({
+      pre_tp1_stop_protection_enabled: true,
+      pre_tp1_stop_advance_trigger_atr_mult: 1.0,
+    }));
+    // High 102.5 clears entry(100) + 1.0*ATR(2) = 102, but stays short of tp1 (103).
+    const favorable = makeTfData({ lastCandleHigh: 102.5, lastCandleLow: 99, lastClose: 102.5 });
+    await persistScanResults(makeScanResult({ results: { '4h': favorable } }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED'); // still pre-TP1, no exit fired
+    expect(stored.tp1_hit).toBe(false);
+    expect(stored.current_stop).toBe(100); // breakeven, not the original 98
+    expect(stored.pre_tp1_stop_advanced_at).toBeTruthy();
+  });
+
+  it('enabled: a subsequent reversal stops at breakeven instead of the original stop (the scenario the mechanism targets)', async () => {
+    backend._seed('TradeOperation', makeOp({
+      pre_tp1_stop_protection_enabled: true,
+      pre_tp1_stop_advance_trigger_atr_mult: 1.0,
+    }));
+    const favorable = makeTfData({ lastCandleHigh: 102.5, lastCandleLow: 99, lastClose: 102.5 });
+    await persistScanResults(makeScanResult({ results: { '4h': favorable } }));
+    expect(backend._get('TradeOperation', 'op1').current_stop).toBe(100);
+
+    // Next candle reverses hard: low 99 is BELOW the new breakeven stop (100)
+    // but still ABOVE the original stop (98) — only fires because of the advance.
+    const reversal = makeTfData({
+      lastCandleHigh: 101, lastCandleLow: 99, lastClose: 99.5,
+      lastCandleTime: '2026-07-16T16:00:00.000Z', lastCandleOpenTime: '2026-07-16T12:00:00.000Z',
+    });
+    await persistScanResults(makeScanResult({ results: { '4h': reversal } }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('STOP_HIT');
+    expect(stored.exit_price).toBe(100); // scratched at breakeven, not a full loss at 98
+  });
+
+  it('P0-d discipline: the advance is calculated from THIS close but only protects starting the NEXT candle (no look-ahead)', async () => {
+    backend._seed('TradeOperation', makeOp({
+      pre_tp1_stop_protection_enabled: true,
+      pre_tp1_stop_advance_trigger_atr_mult: 1.0,
+    }));
+    // Single candle: low 99 dips toward (but not below) initial_stop(98), high
+    // 102.5 clears the breakeven threshold in the SAME candle. Stop must be
+    // evaluated against the STORED stop (98) first — the candle's own low
+    // (99) never crosses it — before the advance to breakeven is computed.
+    const sameCandle = makeTfData({ lastCandleHigh: 102.5, lastCandleLow: 99, lastClose: 102.5 });
+    await persistScanResults(makeScanResult({ results: { '4h': sameCandle } }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED'); // not stopped — 99 never crossed the stored stop 98
+    expect(stored.current_stop).toBe(100); // advance applied for the NEXT candle only
+  });
+
+  // Codex review (PR #106, P1) — the cron re-runs persistScanResults every
+  // ~5 minutes while a 4h/1h candle stays the "latest closed" one for hours
+  // (same reason rf_reverse_bars_count needs its own candle dedup). Without
+  // excluding the candle that caused the advance, a SECOND pass over the
+  // exact same still-latest candle would re-test its low against the just-
+  // advanced breakeven stop and produce a false STOP_HIT — using data
+  // already safely evaluated against the OLD stop one pass earlier.
+  it('a repeated pass over the SAME still-latest candle never re-tests it against the just-advanced stop', async () => {
+    backend._seed('TradeOperation', makeOp({
+      pre_tp1_stop_protection_enabled: true,
+      pre_tp1_stop_advance_trigger_atr_mult: 1.0,
+    }));
+    const sameCandle = makeTfData({ lastCandleHigh: 102.5, lastCandleLow: 99, lastClose: 102.5 });
+
+    // Pass 1: advances to breakeven (100), correctly not stopped (99 > 98).
+    await persistScanResults(makeScanResult({ results: { '4h': sameCandle } }));
+    let stored = backend._get('TradeOperation', 'op1');
+    expect(stored.current_stop).toBe(100);
+    expect(stored.status).toBe('SIGNAL_CONFIRMED');
+
+    // Pass 2: cron re-runs 5 minutes later — SAME candle (identical object)
+    // is still the latest closed one. Without the fix, low(99) <= newly
+    // stored stop(100) would falsely fire STOP_HIT here.
+    await persistScanResults(makeScanResult({ results: { '4h': sameCandle } }));
+    stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED'); // still open — the bug this test guards against
+    expect(stored.current_stop).toBe(100); // unchanged, still monotonic
+
+    // A genuinely NEW candle (later timestamp) whose low is below the
+    // breakeven stop must still fire normally — the fix only protects the
+    // specific candle that caused the advance, not stop-hits in general.
+    const nextCandle = makeTfData({
+      lastCandleTime: '2026-07-16T16:00:00.000Z', lastCandleOpenTime: '2026-07-16T12:00:00.000Z',
+      lastCandleHigh: 101, lastCandleLow: 99, lastClose: 99.5,
+    });
+    await persistScanResults(makeScanResult({ results: { '4h': nextCandle } }));
+    stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('STOP_HIT');
+    expect(stored.exit_price).toBe(100); // breakeven, not the original stop
   });
 });
 

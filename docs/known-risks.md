@@ -3712,3 +3712,221 @@ revisão externa (Codex, PR #105) encontrou uma leitura errada do dado
 `byTrigger` (precedência `sweep`/`structure` no rótulo confundida com
 exclusividade) — corrigida no mesmo PR antes do merge, texto acima já
 reflete a versão corrigida.
+
+## 53. Stop pré-TP1 nunca avança — 61 operações erodem de MFE positivo até o stop original (2026-08-01)
+
+Detalhamento do relatório de backtest (`trial_label:
+regime-trigger-diagnostico`, 12 meses, 7 símbolos) já usado no item 52,
+desta vez sobre `overall.curve` (dado por-operação, não precisou de
+backtest novo). Das 117 operações, 96 terminaram em `STOP_HIT` —
+recomputado nesta sessão diretamente do relatório, não só do resumo
+agregado, em duas populações bem diferentes conforme já tinham (ou não)
+batido o TP1:
+
+**Pré-TP1 (stop cheio, 61 ops, 52% do total)**: resultado final médio
+-1,131R; MFE médio +0,578R — **98,4% delas (60 de 61) chegaram a ficar
+positivas** antes de estourar o stop; giveback médio (MFE − resultado
+final) 1,709R; tempo médio até o MFE 5,9 barras vs. 18,1 barras até o
+stop. Perfil: ficam positivas cedo e erodem devagar até o stop original,
+que nunca se move. Assimetria por lado: BUY termina em stop cheio pré-TP1
+em 75% dos seus `STOP_HIT` (39/52) vs. SELL 50% (22/44) — plausível viés
+de regime do período do backtest (mesma limitação já aceita no item 46,
+bear/bull), não investigada a fundo aqui.
+
+**Pós-TP1 (giveback do runner, 35 ops, 30% do total)**: resultado final
+médio ainda POSITIVO (+1,177R, porque o TP1 já foi bancado) mas devolve
+parte do lucro flutuante: MFE médio 1,962R, giveback médio 0,785R — este
+lado já tem proteção parcial, o trailing ATR pós-TP1.
+
+### Mecanismo (confirmado por leitura de código)
+
+`advanceTrailingStop` (`src/lib/opExitRules.js:55`) só é chamado em
+`scanner.js:2549`, gated por `newStatus === 'RUNNER_ACTIVE'` — ou seja, só
+depois do TP1. Antes disso, no branch pré-TP1 de `persistScanResults`
+(`scanner.js:2392-2482`, `if (!tp1Hit)`), `newCurrentStop` nunca é
+reatribuído — o stop fica travado no `initial_stop` da criação da operação
+até (a) o preço bater nele (`STOP_HIT`) ou (b) o TP1 ser atingido, quando
+vira breakeven NAQUELE instante (`scanner.js:2480`) e só a partir daí passa
+a poder avançar. Não existe função de breakeven em `opExitRules.js` —
+exports confirmados por grep: `isCandleUsableForExits`,
+`getEntryReferenceTime`, `advanceTrailingStop`, `computeStructuralStop`,
+`resolveCandleExit`, `closesFullyAtTp1`, `nextRfReverseCount`,
+`passesRiskReward` — nenhuma mexe no stop pré-TP1. Também não existe no
+Pine real (`src/pages/PineScript.jsx`, grep por "breakeven"/"BE" sem
+match) — não é um conceito que o usuário já usa no TradingView.
+
+### Comunidade (pesquisa externa, WebSearch, 2026-08-01)
+
+Confirma armadilha bem documentada: mover o stop pro breakeven cedo demais
+mata sistematicamente os vencedores de tendência via whipsaw normal de
+mercado — precisa de um threshold não-trivial (múltiplo de ATR ou R
+generoso), nunca um valor fixo pequeno. Estratégias de timeframe mais
+longo se beneficiam mais (menos suscetíveis a whipsaw) — relevante aqui
+porque a cascata RF, que concentra 104 das 117 operações, opera em
+4h/15m, não em timeframe curto.
+
+### Recomendação
+
+Dado o giveback médio de 1,709R nas 61 operações pré-TP1 — a maior
+população de perda isolada do sistema — vale desenhar e medir (não
+decidir de antemão) se algum mecanismo de proteção parcial pré-TP1 ajuda,
+com a mesma disciplina de todo flag deste projeto (Fases 2-4 do roadmap):
+opt-in, desligado por padrão, comparação A/B via backtest antes de
+considerar ativar. Desenho completo do mecanismo candidato registrado no
+item 54.
+
+### Verificação
+
+Nenhuma nesta etapa — item é só registro de achado (recomputado e
+verificado a partir de `overall.curve` do relatório já em mãos), zero
+mudança de código/comportamento.
+
+## 54. Proteção de stop pré-TP1 — mecanismo opt-in, desligado por padrão (2026-08-01)
+
+Desenho e implementação do mecanismo candidato proposto no item 53, seguindo
+a mesma disciplina de todo flag deste projeto (Fases 2-4 do roadmap):
+opt-in, desligado por padrão, comparação A/B via backtest antes de
+considerar ativar. Nenhum critério de confirmação/rejeição de entrada muda;
+só o comportamento de saída PRÉ-TP1, e só quando o flag está ligado.
+
+### Mecanismo
+
+`advancePreTp1StopProtection` (`src/lib/opExitRules.js`) — função pura,
+mesmo estilo de `advanceTrailingStop` (P0-d): monotônica (nunca regride),
+nunca avança além do breakeven (`entry`) — um trailing pré-TP1 completo
+seria um mecanismo diferente, não implementado aqui. Move o stop pra
+breakeven quando o preço já se moveu a favor por `triggerAtrMult × ATR`
+além da entrada (default 1.0× — múltiplo generoso de ATR, não um R fixo
+pequeno, por causa da armadilha de whipsaw documentada no item 53).
+
+Dois parâmetros novos em `pineConfig` (`src/lib/pineParser.js` +
+`scripts/adminPineConfig.js`, mesmo par `DEFAULTS`/`SYNCED_STRATEGY_KEYS`
+de sempre, também adicionados a `NON_PINE_SYNCED_KEYS` — não são
+`input.*()` do Pine, mesma categoria de `runnerEnabled`/`retestEnabled`):
+`preTp1StopProtectionEnabled` (default `false`) e
+`preTp1StopProtectionAtrMult` (default `1.0`).
+
+**Decisão congelada na CRIAÇÃO, não lida do `pineConfig` no momento da
+saída** — mesmo raciocínio de `closesFullyAtTp1`/`runnerEnabled` (item 46):
+`buildTradeOpData`/`buildSmcTradeOpData` gravam
+`pre_tp1_stop_protection_enabled` e `pre_tp1_stop_advance_trigger_atr_mult`
+na operação a partir do `pineConfig` vigente na entrada; o loop de saída
+(`persistScanResults`, branch pré-TP1 de `scanner.js`) lê esses dois campos
+DA OPERAÇÃO, nunca do `pineConfig` ao vivo — uma mudança de flag no meio do
+caminho governa só a PRÓXIMA operação, nunca começa (ou para) de proteger
+uma posição já em andamento. `pre_tp1_stop_advanced_at` (timestamp) é
+gravado só na primeira vez que o gate dispara.
+
+**Posição no loop**: dentro do `if (!tp1Hit)` de `persistScanResults`
+(`scanner.js`), logo depois da cadeia stop/invalidação/chop/time-stop/TP1 —
+só avança se NENHUMA saída disparou nesta passada
+(`newStatus === op.status`). Mesma disciplina de look-ahead do P0-d/
+`advanceTrailingStop`: o stop desta vela é testado contra o valor
+ARMAZENADO primeiro; o avanço, calculado a partir do close desta vela, só
+passa a proteger a partir da vela SEGUINTE. Gated por `candleUsable`
+(P0-c/P0-g), igual a todo o resto do loop. **Só em `persistScanResults`**
+— igual a `advanceTrailingStop` e ao rastreio de MFE/MAE (item 47.2),
+deliberadamente ausente de `priceCheckActiveOpsInner` (preço muda a cada
+tick, viraria fonte de escrita quase contínua se baseado em resolução de
+tick em vez de candle).
+
+### Auditoria (schema)
+
+3 campos novos em `TradeOperation`
+(`docs/schema-reference/TradeOperation.jsonc`):
+`pre_tp1_stop_protection_enabled` (bool, congelado na criação),
+`pre_tp1_stop_advance_trigger_atr_mult` (número, congelado na criação —
+mesmo padrão de `retest_touch_mode`/`displacement_min_body_atr_mult`),
+`pre_tp1_stop_advanced_at` (timestamp, ausente se o gate nunca disparou).
+
+### Backtest
+
+Nova seção `report.preTp1StopProtection`
+(`src/lib/backtestEngine.js:buildReport`) — diferente de
+`retest`/`displacement`/`smcRegime`/`smcTrigger`, não precisou de um array
+de outcomes novo threaded pelo scanner: os 3 campos de auditoria acima já
+ficam gravados NA PRÓPRIA operação, então a seção é inferida de `closed`
+(mesmo padrão do `runner`, item 46 — "gestão realmente aplicada", não uma
+inferência do `pineConfig`). Campos: `total` (operações com o flag ligado
+na criação), `advanced` (quantas o gate de fato disparou),
+`reachedTp1AfterAdvance` (seguiram até o TP1 mesmo depois do avanço —
+contra-evidência de corte prematuro, o risco de whipsaw da pesquisa),
+`stoppedAtBreakevenPreTp1` (pararam no stop já protegido — o cenário que o
+mecanismo pretende evitar virar perda cheia), `otherExitAfterAdvance`
+(Time Stop/Chop Exit/Invalidation depois do avanço). Impresso em
+`scripts/analyze-backtest.mjs` (`renderPreTp1StopProtection`) só quando
+`enabled` — comparar este bloco entre dois relatórios (`--pine-config`
+com/sem o flag) é o mesmo fluxo "compare antes de ativar" de
+retest/displacement/smcTier.
+
+### Testes
+
+`opExitRules.test.js`: função pura — não avança abaixo do threshold, para
+exatamente em breakeven mesmo com preço bem além, nunca regride, espelha
+BUY/SELL, dados inválidos devolvem o stop atual sem alterar.
+`scannerStateMachine.test.js`: flag desligado (default) não move o stop;
+flag ligado avança pra breakeven antes do TP1; uma reversão subsequente
+para no breakeven em vez do stop original (o cenário-alvo); disciplina
+P0-d — avanço e teste de stop no mesmo candle não causam look-ahead;
+`buildTradeOpData` grava os 2 campos congelados a partir do `pineConfig`.
+`backtestEngine.test.js`: seção nova inferida corretamente das operações
+(desligado, ligado-mas-nunca-disparou, e as 3 categorias de resultado
+depois de disparar).
+
+### Status
+
+**Implementado, desligado por padrão.** Nenhuma decisão de ativação foi
+tomada — falta rodar 2 backtests (`--pine-config` com/sem
+`preTp1StopProtectionEnabled`) e comparar `preTp1StopProtection` +
+`overall.expectancyR`/IC contra o baseline, mesmo fluxo de todo flag
+Fase 2-4. Fica para quando o usuário rodar essa comparação.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run build:scan && npm
+run build:backtest`, `sentinel-trading-engine-review` (toca
+`scanner.js`/`opExitRules.js`, invariante P0 de saída).
+
+### Correção pós-review (Codex, PR #106, P1) — look-ahead em passes repetidos na mesma vela
+
+O cron roda `persistScanResults` a cada ~5min enquanto uma vela de
+timeframe de sinal (4h/1h) pode continuar sendo "a última fechada" por
+horas — o mesmo motivo pelo qual `rf_reverse_bars_count` precisa de dedup
+por vela própria. Sem proteção, um avanço do stop pré-TP1 na passagem N
+(usando o close desta vela) seria testado de novo na passagem N+1 contra
+o `low`/`high` da MESMA vela, agora usando o stop JÁ avançado — um
+look-ahead que produz `STOP_HIT` falso usando dado já avaliado com
+segurança contra o stop ANTIGO uma passagem antes.
+
+**Reproduzido antes de corrigir** (`entry=100, initial_stop=98,
+atrValue=2`, vela `low=99/high=102.5/close=102.5`): passagem 1 não bate
+stop (99 > 98), avança para breakeven (100); passagem 2, mesma vela,
+99 ≤ 100 → `STOP_HIT` falso.
+
+**Correção**: novo campo `pre_tp1_stop_advanced_candle_time` (grava
+`tfData.lastCandleTime` da vela que causou o avanço, só na primeira vez —
+mesmo guard de `pre_tp1_stop_advanced_at`). A checagem de `stopHit`
+pré-TP1 passa a excluir essa vela específica (`stopAdvancedThisCandle`,
+mesmo espírito do `candleUsable` — "vela já resolvida, não relitigar").
+Operações que nunca usam o mecanismo (`pre_tp1_stop_advanced_candle_time`
+sempre `undefined`) ficam byte-idênticas ao comportamento anterior — a
+comparação `undefined !== lastCandleTime` é sempre verdadeira. Uma vela
+GENUINAMENTE nova (timestamp diferente) continua testada normalmente
+contra o stop já avançado, exatamente como a política "protege a partir
+da vela seguinte" já documentada pretendia.
+
+Teste de regressão em `scannerStateMachine.test.js` reproduz o cenário
+exato (2 passagens sobre a mesma vela — 2ª não bate stop; 3ª passagem com
+vela genuinamente nova e `low` abaixo do breakeven bate stop
+corretamente no breakeven, não no stop original). 738 testes passando.
+
+**Nota para investigação futura, não feita aqui**: o mesmo padrão
+estrutural (avançar um stop a partir do close de uma vela, sem excluir
+essa vela de passagens seguintes) existe no trailing PÓS-TP1
+(`advanceTrailingStop`, P0-d, já em produção) — mas o breakeven pré-TP1
+fica muito mais perto do meio do range típico de uma vela (a entrada em
+si) do que um trail de `trailAtrMult=2.0×ATR` abaixo do close, tornando o
+gatilho exato desta rodada bem mais provável na prática. Não investigado
+nem corrigido nesta PR (fora de escopo — mexeria num mecanismo já
+shippado sem o mesmo tipo de reprodução concreta que motivou a correção
+acima); sinalizado aqui para quando alguém retomar `advanceTrailingStop`.

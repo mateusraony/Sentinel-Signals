@@ -528,6 +528,22 @@
         "browser",
         "cron"
       ]
+    },
+    "pre_tp1_stop_protection_enabled": {
+      "type": "boolean",
+      "description": "known-risks.md items 53/54 — true only when the opt-in pre-TP1 stop protection gate (pineConfig.preTp1StopProtectionEnabled, off by default) was on when this operation was created. Frozen at creation (same reasoning as partial_percent/runnerEnabled) — read by persistScanResults instead of pineConfig directly, so a later flag flip governs only the NEXT operation, never a position already in flight. When true, advancePreTp1StopProtection (src/lib/opExitRules.js) may move current_stop to breakeven BEFORE TP1 once price has moved favorably by pre_tp1_stop_advance_trigger_atr_mult × ATR — otherwise the pre-TP1 stop stays exactly at initial_stop, today's default behavior."
+    },
+    "pre_tp1_stop_advance_trigger_atr_mult": {
+      "type": "number",
+      "description": "known-risks.md items 53/54 — pineConfig.preTp1StopProtectionAtrMult value used for this entry's evaluation, recorded per-op since the config can change over time (same pattern as retest_touch_mode/displacement_min_body_atr_mult). Only meaningful when pre_tp1_stop_protection_enabled is true."
+    },
+    "pre_tp1_stop_advanced_at": {
+      "type": "string",
+      "description": "known-risks.md items 53/54 — ISO timestamp when advancePreTp1StopProtection first moved current_stop to breakeven, pre-TP1. Absent when the gate never fired (flag off, or price never moved favorably enough before TP1/stop)."
+    },
+    "pre_tp1_stop_advanced_candle_time": {
+      "type": "string",
+      "description": "known-risks.md items 53/54 (Codex review, PR #106, P1) — raw closeTime (epoch ms, matches tfData.lastCandleTime) of the candle whose close triggered the last pre-TP1 stop advance. The cron re-evaluates the SAME still-latest-closed candle many times before a genuinely new one closes; excluding this candle from the stop-hit check on repeat passes prevents a look-ahead false STOP_HIT against the just-advanced stop using data already safely evaluated against the OLD stop. Absent when the gate never fired."
     }
   },
   "required": [

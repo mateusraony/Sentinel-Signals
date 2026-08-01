@@ -112,6 +112,17 @@ const DEFAULTS = {
   // depois de comparar backtests (item 43).
   smcScoreObWeight: 0,
   smcScoreFvgWeight: 0,
+  // Proteção de stop pré-TP1 (known-risks.md item 53/54) — não é do Pine,
+  // mesmo padrão dos outros flags de mecanismo (arbEnabled/runnerEnabled/
+  // retestEnabled/etc). Master flag OFF por padrão: 61 das 117 operações de
+  // um backtest real (12 meses/7 símbolos) ficaram positivas cedo (MFE médio
+  // +0,578R) e depois erodiram até o stop original sem NENHUMA proteção
+  // intermediária (advanceTrailingStop só roda pós-TP1). Threshold em
+  // múltiplo de ATR (não um R fixo pequeno) por causa da armadilha de
+  // whipsaw documentada na pesquisa de comunidade — ver item 54. NÃO ativar
+  // sem comparar relatórios de backtest com/sem primeiro.
+  preTp1StopProtectionEnabled: false,
+  preTp1StopProtectionAtrMult: 1.0,
 };
 
 /**
@@ -248,6 +259,8 @@ const SYNCED_STRATEGY_KEYS = [
   // Order Block / FVG (Fase 4 — orderBlock.js + fvg.js)
   'smcObFvgEnabled', 'obFvgAtrLen', 'obMinAtrMult', 'obMaxAtrMult',
   'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
+  // Proteção de stop pré-TP1 (known-risks.md item 53/54)
+  'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
 ];
 
 // Subset of SYNCED_STRATEGY_KEYS that has no `input.*()` counterpart in the
@@ -275,6 +288,7 @@ const NON_PINE_SYNCED_KEYS = new Set([
   'smcTierEnabled',
   'smcObFvgEnabled', 'obFvgAtrLen', 'obMinAtrMult', 'obMaxAtrMult',
   'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
+  'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
 ]);
 
 /**

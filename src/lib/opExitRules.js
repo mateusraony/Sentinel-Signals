@@ -59,6 +59,29 @@ export function advanceTrailingStop({ isBuy, currentStop, closePrice, atrValue, 
   return isBuy ? Math.max(currentStop, atrTrailStop) : Math.min(currentStop, atrTrailStop);
 }
 
+// Pre-TP1 stop protection (opt-in, docs/known-risks.md items 53/54). Unlike
+// advanceTrailingStop (which only runs post-TP1, once RUNNER_ACTIVE), the
+// stop before TP1 is otherwise static from entry — 61 of 117 ops in a real
+// backtest went positive early (avg MFE +0.578R) and eroded all the way back
+// to the original stop with zero intermediate protection. Moves the stop to
+// breakeven (entry) once price has moved favourably by `triggerAtrMult ×
+// ATR` beyond entry — a deliberately generous, ATR-based threshold (not a
+// small fixed R) per community research on premature-breakeven whipsaw.
+// Monotonic like advanceTrailingStop: never regresses past whatever is
+// already stored, and never moves past breakeven itself (this function only
+// ever returns entry or currentStop — a full ATR trail pre-TP1 is a
+// different, not-yet-built mechanism). Caller must evaluate THIS candle's
+// stop-hit against the stop BEFORE calling this (same look-ahead rule as
+// advanceTrailingStop/P0-d) — the advance only protects from the next candle.
+export function advancePreTp1StopProtection({ isBuy, currentStop, entry, closePrice, atrValue, triggerAtrMult }) {
+  if (!Number.isFinite(entry) || !Number.isFinite(closePrice) || !Number.isFinite(atrValue) || !Number.isFinite(triggerAtrMult)) {
+    return currentStop;
+  }
+  const favorableMove = isBuy ? closePrice - entry : entry - closePrice;
+  if (favorableMove < atrValue * triggerAtrMult) return currentStop;
+  return isBuy ? Math.max(currentStop, entry) : Math.min(currentStop, entry);
+}
+
 // Structural initial stop for the SMC 1h→5m cascade (known-risks item 11's
 // pending design point, community-validated: stop goes BEYOND the sweep
 // wick / protective swing with a buffer — never exactly at the level, which

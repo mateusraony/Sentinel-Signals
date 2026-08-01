@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules.js';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules.js';
 import { getWeights } from './tradeMetrics.js';
 
 const T0 = '2026-07-15T04:00:00.000Z'; // candle open, at/before the entry
@@ -90,6 +90,54 @@ describe('advanceTrailingStop (P0-d — trailing monotônico)', () => {
     expect(dn).toBe(90); // 80 + 10
     const upMove = advanceTrailingStop({ isBuy: false, currentStop: 90, closePrice: 95, atrValue: 5, trailMult: 2 });
     expect(upMove).toBe(90); // 95+10=105 > 90 → mantém
+  });
+});
+
+describe('advancePreTp1StopProtection (opt-in, docs/known-risks.md items 53/54)', () => {
+  it('BUY: não avança abaixo do threshold (favorableMove < triggerAtrMult × ATR)', () => {
+    // entry 100, ATR 5, threshold 1.0x = 5 — close 104 é só +4, abaixo do gatilho
+    const stop = advancePreTp1StopProtection({
+      isBuy: true, currentStop: 90, entry: 100, closePrice: 104, atrValue: 5, triggerAtrMult: 1.0,
+    });
+    expect(stop).toBe(90); // stop original, intocado
+  });
+
+  it('BUY: avança para breakeven (entry) exatamente ao cruzar o threshold', () => {
+    const stop = advancePreTp1StopProtection({
+      isBuy: true, currentStop: 90, entry: 100, closePrice: 105, atrValue: 5, triggerAtrMult: 1.0,
+    });
+    expect(stop).toBe(100); // = entry, nunca além
+  });
+
+  it('BUY: continua em breakeven mesmo se o preço avançar muito mais (nunca vira trailing completo)', () => {
+    const stop = advancePreTp1StopProtection({
+      isBuy: true, currentStop: 100, entry: 100, closePrice: 130, atrValue: 5, triggerAtrMult: 1.0,
+    });
+    expect(stop).toBe(100); // só entry — um trailing pré-TP1 completo é outro mecanismo, não implementado
+  });
+
+  it('BUY: nunca regride mesmo se o preço voltar antes do próximo candle', () => {
+    // Já em breakeven (100); candle seguinte fecha abaixo do threshold de novo.
+    const stop = advancePreTp1StopProtection({
+      isBuy: true, currentStop: 100, entry: 100, closePrice: 101, atrValue: 5, triggerAtrMult: 1.0,
+    });
+    expect(stop).toBe(100); // Math.max mantém o breakeven já alcançado
+  });
+
+  it('SELL: espelha o comportamento BUY (favorável = preço caindo)', () => {
+    const belowThreshold = advancePreTp1StopProtection({
+      isBuy: false, currentStop: 110, entry: 100, closePrice: 96, atrValue: 5, triggerAtrMult: 1.0,
+    });
+    expect(belowThreshold).toBe(110); // só -4, abaixo do gatilho de 5
+    const atThreshold = advancePreTp1StopProtection({
+      isBuy: false, currentStop: 110, entry: 100, closePrice: 95, atrValue: 5, triggerAtrMult: 1.0,
+    });
+    expect(atThreshold).toBe(100); // = entry
+  });
+
+  it('dados inválidos (ATR/entry/close ausentes) devolvem o stop atual sem alterar', () => {
+    expect(advancePreTp1StopProtection({ isBuy: true, currentStop: 90, entry: 100, closePrice: 105, atrValue: null, triggerAtrMult: 1.0 })).toBe(90);
+    expect(advancePreTp1StopProtection({ isBuy: true, currentStop: 90, entry: null, closePrice: 105, atrValue: 5, triggerAtrMult: 1.0 })).toBe(90);
   });
 });
 
