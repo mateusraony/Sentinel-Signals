@@ -90,6 +90,9 @@ const DEFAULTS = {
   // por padrão. Espelha src/lib/pineParser.js.
   preTp1StopProtectionEnabled: false,
   preTp1StopProtectionAtrMult: 1.0,
+  // Gate de padrão de vela (engolfo) na cascata RF — master flag OFF por
+  // padrão. Espelha src/lib/pineParser.js.
+  candlePatternEnabled: false,
 };
 
 const SYNCED_STRATEGY_KEYS = [
@@ -112,6 +115,7 @@ const SYNCED_STRATEGY_KEYS = [
   'smcObFvgEnabled', 'obFvgAtrLen', 'obMinAtrMult', 'obMaxAtrMult',
   'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
   'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
+  'candlePatternEnabled',
 ];
 
 export async function getPineConfig() {

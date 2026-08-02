@@ -953,6 +953,29 @@ describe('buildReport', () => {
     expect(report.smcObFvg.neither).toBe(1);
   });
 
+  it('candlePattern defaults to disabled/all-zero when the caller passes nothing (flag off)', () => {
+    const report = buildReport([], { fromMs: 0, toMs: 1000 });
+    expect(report.candlePattern).toEqual({
+      enabled: false, total: 0, attempts: EMPTY_ATTEMPTS, passed: 0, rejected: 0, byPattern: {}, byReason: {},
+    });
+  });
+
+  it('candlePattern conta confirmados por padrão e rejeitados por motivo', () => {
+    const candlePatternOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', ok: true, pattern: 'bullish_engulfing', reason: null },
+      { dedup_key: 'b', cascade: '4h_15m', ok: true, pattern: 'bullish_engulfing', reason: null },
+      { dedup_key: 'c', cascade: '4h_15m', ok: false, pattern: null, reason: 'previous_not_opposite' },
+      { dedup_key: 'd', cascade: '4h_15m', ok: false, pattern: null, reason: 'wrong_direction' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, candlePatternOutcomes });
+    expect(report.candlePattern.enabled).toBe(true);
+    expect(report.candlePattern.total).toBe(4);
+    expect(report.candlePattern.passed).toBe(2);
+    expect(report.candlePattern.rejected).toBe(2);
+    expect(report.candlePattern.byPattern).toEqual({ bullish_engulfing: 2 });
+    expect(report.candlePattern.byReason).toEqual({ previous_not_opposite: 1, wrong_direction: 1 });
+  });
+
   it('smcRegime counts passed vs rejected and tallies rejection reasons (adx-only, chop-only, both)', () => {
     const smcRegimeOutcomes = [
       { dedup_key: 'a', cascade: '1h_5m', ok: true, adxOk: true, chopOk: true },

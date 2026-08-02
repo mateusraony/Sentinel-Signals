@@ -123,6 +123,14 @@ const DEFAULTS = {
   // sem comparar relatórios de backtest com/sem primeiro.
   preTp1StopProtectionEnabled: false,
   preTp1StopProtectionAtrMult: 1.0,
+  // Gate de padrão de vela (engolfo) na cascata RF 4h→15m — não é do Pine
+  // (mesma categoria de mecanismo próprio do reteste/deslocamento/tier
+  // acima), pedido explícito do usuário, 2026-08-02. Master flag OFF por
+  // padrão: exige que o candle 4h que gerou o sinal também mostre um
+  // engolfo válido na direção do sinal (src/lib/indicators/candlePatterns.js),
+  // ANTES do 15m/5m — não substitui a Range Filter, só exige mais dela.
+  // Não ativar sem comparar relatórios de backtest com/sem primeiro.
+  candlePatternEnabled: false,
 };
 
 /**
@@ -261,6 +269,8 @@ const SYNCED_STRATEGY_KEYS = [
   'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
   // Proteção de stop pré-TP1 (known-risks.md item 53/54)
   'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
+  // Gate de padrão de vela na cascata RF (candlePatterns.js)
+  'candlePatternEnabled',
 ];
 
 // Subset of SYNCED_STRATEGY_KEYS that has no `input.*()` counterpart in the
@@ -289,6 +299,7 @@ const NON_PINE_SYNCED_KEYS = new Set([
   'smcObFvgEnabled', 'obFvgAtrLen', 'obMinAtrMult', 'obMaxAtrMult',
   'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
   'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
+  'candlePatternEnabled',
 ]);
 
 /**

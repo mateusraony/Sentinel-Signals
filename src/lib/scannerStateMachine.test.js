@@ -3330,3 +3330,92 @@ describe('cross-loop concurrency invariant (persistScanResults vs priceCheckActi
 // goldenCandles(800) bar 418) — this file only exercises persistScanResults
 // with synthetic scanResult objects, not the real candle-driven scanAsset
 // logic where the old gate actually lived.
+
+describe('Gate de padrão de vela (opt-in, RF 4h_15m only, pedido do usuário 2026-08-02)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  const ALIGNED_15M = () => uptrendCandles(60, 100, 1);
+
+  function makeRfSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_rf_candle_pattern',
+      price_at_signal: 100, candle_time: new Date(0).toISOString(),
+      context: { score: 80, rf_value: 100 },
+      ...overrides,
+    };
+  }
+
+  // Previous candle bearish (110 -> 100), current candle bullish and its
+  // body fully covers the previous one (99 -> 112) — valid bullish engulfing.
+  const BULLISH_ENGULFING = [
+    { open: 110, high: 111, low: 99, close: 100, openTime: 0, closeTime: 14400000, isClosed: true },
+    { open: 99, high: 113, low: 98, close: 112, openTime: 14400000, closeTime: 28800000, isClosed: true },
+  ];
+  // Both candles bullish — no reversal context, fails previous_not_opposite.
+  const NO_ENGULFING = [
+    { open: 100, high: 108, low: 99, close: 106, openTime: 0, closeTime: 14400000, isClosed: true },
+    { open: 106, high: 110, low: 105, close: 109, openTime: 14400000, closeTime: 28800000, isClosed: true },
+  ];
+
+  it('flag desligado (default): comportamento idêntico ao anterior — entry_candle_pattern null, sem log de padrão de vela', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false }); // candlePatternEnabled ausente -> falsy
+    const results = { '4h': makeTfData({ last2Candles: NO_ENGULFING }) }; // mesmo sem padrão válido, o flag off ignora isso
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].entry_candle_pattern).toBeNull();
+    const logs = await backend.entities.SystemLog.filter({});
+    expect(logs.some(l => l.message?.includes('padrão de vela'))).toBe(false);
+  });
+
+  it('flag ligado com engolfo válido -> operação criada com entry_candle_pattern correto', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, candlePatternEnabled: true });
+    const results = { '4h': makeTfData({ last2Candles: BULLISH_ENGULFING }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].entry_candle_pattern).toBe('bullish_engulfing');
+  });
+
+  it('flag ligado sem padrão válido -> nenhuma operação criada, log com o motivo certo', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, candlePatternEnabled: true });
+    const results = { '4h': makeTfData({ last2Candles: NO_ENGULFING }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+    const logs = await backend.entities.SystemLog.filter({});
+    const rejected = logs.find(l => l.message?.includes('padrão de vela não confirmado'));
+    expect(rejected).toBeTruthy();
+    expect(rejected.details.reason).toBe('previous_not_opposite');
+  });
+
+  it('confirma pelo loop de retry (não só na 1a passada), sem duplicar operação', async () => {
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, candlePatternEnabled: true });
+    const results = { '4h': makeTfData({ last2Candles: BULLISH_ENGULFING }) };
+
+    // Passada 1: 15m ainda não confirma (candle desalinhado) — sinal
+    // persiste como SignalEvent, sem op, mesmo com padrão de vela válido.
+    fetchCandles.mockResolvedValue(downtrendCandles(60, 100, 1));
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+
+    // Passada 2 (retry): 15m agora alinha — confirma via o loop de retry,
+    // reavaliando o MESMO gate de padrão de vela (que continua válido).
+    fetchCandles.mockReset();
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].entry_candle_pattern).toBe('bullish_engulfing');
+  });
+});

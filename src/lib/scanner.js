@@ -28,6 +28,7 @@ import { detectRetest } from './indicators/retest';
 import { detectDisplacement } from './indicators/displacement';
 import { detectFvg } from './indicators/fvg';
 import { detectOrderBlock } from './indicators/orderBlock';
+import { detectEngulfing } from './indicators/candlePatterns';
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
@@ -218,6 +219,23 @@ function evaluateRegime(tf4hData, pineConfig) {
 }
 
 /**
+ * Candlestick pattern gate (engolfo) — additional confirmation ON TOP OF
+ * the RF signal, opt-in (pineConfig.candlePatternEnabled), RF 4h_15m
+ * cascade only. Requires the signal candle itself (the latest closed 4h
+ * candle) to show a valid engulfing pattern in the signal direction against
+ * the candle immediately before it. Returns null when the flag is off —
+ * same convention as retestGate, so callers skip pushing an outcome
+ * (candlePatternOutcomes) for the common passthrough case.
+ */
+function evaluateCandlePatternGate(tf4hData, direction, pineConfig) {
+  if (pineConfig.candlePatternEnabled !== true) return null;
+  const candles = tf4hData?.last2Candles;
+  if (!candles || candles.length < 2) return { ok: false, pattern: null, reason: 'insufficient_data' };
+  const result = detectEngulfing(candles[1], candles[0], direction);
+  return { ok: result.isEngulfing, pattern: result.pattern, reason: result.reason };
+}
+
+/**
  * Build TradeOperation data from a 4h signal using Pine config parameters.
  * Centralizes entry/stop/TP calculations so Pine Script changes propagate
  * automatically — no manual bot configuration needed.
@@ -248,6 +266,14 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
   const tp2 = isBuy ? entry + riskR * tp2R : entry - riskR * tp2R;
 
   const entryScore = sig.context?.score || 0;
+
+  // Recomputed here (cheap, pure 2-candle comparison) rather than threading
+  // evaluateCandlePatternGate's result through every caller just for this
+  // one audit field — null when the gate is off, matching the other opt-in
+  // audit fields below (pre_tp1_stop_*).
+  const candlePattern = pineConfig.candlePatternEnabled === true
+    ? detectEngulfing(tf4hData.last2Candles?.[1], tf4hData.last2Candles?.[0], sig.signal_type)
+    : null;
 
   return {
     symbol: sig.symbol,
@@ -286,6 +312,9 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
     adx_at_entry: tf4hData.adx?.adx,
     chop_at_entry: tf4hData.chop,
     tier_time_stop_bars: tf4hData.tier?.timeStopBars,
+    // Padrão de vela que confirmou a entrada (opt-in, pineConfig.
+    // candlePatternEnabled) — null quando o gate está desligado.
+    entry_candle_pattern: candlePattern?.pattern ?? null,
     // Observability only — o alinhamento macro que o sinal já calculou
     // (analyzeAlignment) nunca era copiado pra cá; TradeCard.jsx sempre lia
     // null numa operação ativa apesar de exibir esses campos. Ver
@@ -1060,6 +1089,10 @@ export async function scanAsset(asset) {
         lastCandleTime: new Date(lastCandle.closeTime).toISOString(),
         lastCandleOpenTime: new Date(lastCandle.openTime).toISOString(),
         candleCount: closedCandles.length,
+        // Last 2 closed candles (full OHLC), for the candle-pattern gate
+        // (evaluateCandlePatternGate) — bounded slice, not the whole
+        // series, since that's all a 2-candle pattern like engulfing needs.
+        last2Candles: closedCandles.slice(-2),
       };
 
     } catch (err) {
@@ -1481,6 +1514,12 @@ export async function persistScanResults(scanResult) {
   // 'regime_rejected', never the actual adx/chop/tier that produced it).
   // Feeds buildReport's `rfRegime` section.
   const rfRegimeOutcomes = [];
+  // Padrão de vela (engolfo), pedido do usuário 2026-08-02 — mesma
+  // convenção de retestOutcomes: só pushed quando pineConfig.
+  // candlePatternEnabled === true (evaluateCandlePatternGate devolve null
+  // com o flag desligado, mesmo padrão de retestGate). Feeds buildReport's
+  // `candlePattern` section. RF 4h_15m cascade only.
+  const candlePatternOutcomes = [];
   // Round 3 (docs/known-risks.md item 50) — same convention, pushed on
   // EVERY check5mSmcConfirmation call (confirmed or not — check5mSmcConfirmation
   // is never opt-in, so unlike retest/displacement there's no flag gating
@@ -1642,6 +1681,23 @@ export async function persistScanResults(scanResult) {
                 details: { adx: tf4hData.adx?.adx, chop: tf4hData.chop, tier: tf4hData.tier?.tier, adxOk: regime.adxOk, chopOk: regime.chopOk },
               });
               continue;
+            }
+
+            const candlePattern = evaluateCandlePatternGate(tf4hData, signal.signal_type, pineConfig);
+            if (candlePattern) {
+              candlePatternOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', ok: candlePattern.ok, pattern: candlePattern.pattern, reason: candlePattern.reason });
+              if (!candlePattern.ok) {
+                entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'candle_pattern_rejected' });
+                await backend.entities.SystemLog.create({
+                  level: 'info',
+                  module: 'scanner',
+                  message: `${asset.symbol} 4H ${signal.signal_type} — padrão de vela não confirmado (${candlePattern.reason})`,
+                  symbol: asset.symbol,
+                  timeframe: '4h',
+                  details: { reason: candlePattern.reason },
+                });
+                continue;
+              }
             }
 
             // Optional extra confirmation: SMC 4h structure trend + PD zone
@@ -2095,6 +2151,15 @@ export async function persistScanResults(scanResult) {
       adx: tfData4h.adx?.adx ?? null, chop: tfData4h.chop ?? null, tier: tfData4h.tier?.tier ?? null,
     });
     if (!regime.ok) { await recordRejection(sig, '4h_15m', 'regime_rejected', entryFunnelOutcomes); continue; }
+
+    // Candle pattern gate (engolfo) — re-evaluated every retry pass, same
+    // reasoning as regime above: the signal candle doesn't change, but the
+    // flag/config could between passes.
+    const candlePattern = evaluateCandlePatternGate(tfData4h, sig.signal_type, pineConfig);
+    if (candlePattern) {
+      candlePatternOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', ok: candlePattern.ok, pattern: candlePattern.pattern, reason: candlePattern.reason });
+      if (!candlePattern.ok) { await recordRejection(sig, '4h_15m', 'candle_pattern_rejected', entryFunnelOutcomes); continue; }
+    }
 
     // Same optional SMC confirmation gate as the initial entry check —
     // re-evaluated every retry pass since trend/zone may have changed
@@ -2690,7 +2755,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes, rfRegimeOutcomes, smcObFvgOutcomes, smcTriggerOutcomes, entryFunnelOutcomes };
+  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes, rfRegimeOutcomes, smcObFvgOutcomes, smcTriggerOutcomes, entryFunnelOutcomes, candlePatternOutcomes };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()

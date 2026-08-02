@@ -229,6 +229,9 @@ function renderGateSection(title, section) {
   if (section.byTrigger) {
     out.push(...table(Object.entries(section.byTrigger).map(([trigger, count]) => ({ gatilho: trigger, confirmados: count }))));
   }
+  if (section.byPattern) {
+    out.push(...table(Object.entries(section.byPattern).map(([pattern, count]) => ({ padrão: pattern, confirmados: count }))));
+  }
   // Codex review (PR #103, P2): rfRegime/smcRegime/smcTrigger são Maps por
   // dedup_key (último-escreve-ganha, mesma convenção de retest/displacement)
   // — byReason conta SINAIS cujo motivo FINAL foi aquele, não quantas vezes
@@ -291,6 +294,10 @@ function main() {
   if (report.smcTrigger) {
     console.log('');
     console.log(renderGateSection('GATILHO DE ENTRADA — SMC 5m (1h_5m)', report.smcTrigger).join('\n'));
+  }
+  if (report.candlePattern && report.candlePattern.enabled) {
+    console.log('');
+    console.log(renderGateSection('PADRÃO DE VELA — RF (4h_15m, opt-in candlePatternEnabled)', report.candlePattern).join('\n'));
   }
   if (report.preTp1StopProtection && report.preTp1StopProtection.enabled) {
     console.log('');
