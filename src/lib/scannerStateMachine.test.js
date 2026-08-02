@@ -3357,6 +3357,20 @@ describe('Gate de padrão de vela (opt-in, RF 4h_15m only, pedido do usuário 20
     { open: 100, high: 108, low: 99, close: 106, openTime: 0, closeTime: 14400000, isClosed: true },
     { open: 106, high: 110, low: 105, close: 109, openTime: 14400000, closeTime: 28800000, isClosed: true },
   ];
+  // Previous bullish (fails engulfing's previous_not_opposite on purpose) —
+  // current is a valid hammer (long lower wick, small body/upper wick) that
+  // does NOT engulf the previous candle's body, so only pin bar matches.
+  const HAMMER_ONLY = [
+    { open: 100, high: 101, low: 99, close: 100.5, openTime: 0, closeTime: 14400000, isClosed: true },
+    { open: 101, high: 103, low: 90, close: 102, openTime: 14400000, closeTime: 28800000, isClosed: true },
+  ];
+  // Previous bullish (same reason) — current is a valid bullish marubozu
+  // (body ~96% of range) whose tiny wicks fail pin bar's 2x ratio, so only
+  // marubozu matches.
+  const MARUBOZU_ONLY = [
+    { open: 95, high: 99.5, low: 94.5, close: 99, openTime: 0, closeTime: 14400000, isClosed: true },
+    { open: 100, high: 110.2, low: 99.8, close: 110, openTime: 14400000, closeTime: 28800000, isClosed: true },
+  ];
 
   it('flag desligado (default): comportamento idêntico ao anterior — entry_candle_pattern null, sem log de padrão de vela', async () => {
     fetchCandles.mockResolvedValue(ALIGNED_15M());
@@ -3396,6 +3410,30 @@ describe('Gate de padrão de vela (opt-in, RF 4h_15m only, pedido do usuário 20
     const rejected = logs.find(l => l.message?.includes('padrão de vela não confirmado'));
     expect(rejected).toBeTruthy();
     expect(rejected.details.reason).toBe('previous_not_opposite');
+  });
+
+  it('flag ligado com martelo (sem engolfo) -> operação criada via pin bar', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, candlePatternEnabled: true });
+    const results = { '4h': makeTfData({ last2Candles: HAMMER_ONLY }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].entry_candle_pattern).toBe('hammer');
+  });
+
+  it('flag ligado com marubozu (sem engolfo nem pin bar) -> operação criada via marubozu', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, candlePatternEnabled: true });
+    const results = { '4h': makeTfData({ last2Candles: MARUBOZU_ONLY }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].entry_candle_pattern).toBe('bullish_marubozu');
   });
 
   it('confirma pelo loop de retry (não só na 1a passada), sem duplicar operação', async () => {
