@@ -655,8 +655,24 @@ export function buildReport(ops, {
       const confirmedCount = smcTriggerOutcomes.filter(o => o.confirmed).length;
       const byReason = {};
       const byTrigger = { sweep: 0, structure: 0 };
+      // docs/known-risks.md item 52 (atualização 2026-08-02): byTrigger
+      // acima só reflete o rótulo de PRECEDÊNCIA (sweep sempre vence
+      // quando os dois alinham) — não prova se estrutura confirma sozinha.
+      // byRawAlignment lê os 2 booleanos brutos (sweepAligned/
+      // structureAligned) só sobre confirmações reais, onde ambos são
+      // significativos: `both` = sweep venceu o rótulo mas estrutura
+      // também estava alinhada (sombreamento); `structureOnly` = estrutura
+      // confirmou sem sweep nenhum (independência real); `sweepOnly` =
+      // inverso.
+      const byRawAlignment = { sweepOnly: 0, structureOnly: 0, both: 0 };
       for (const o of smcTriggerOutcomes) {
-        if (o.confirmed) { if (o.trigger) byTrigger[o.trigger] = (byTrigger[o.trigger] || 0) + 1; continue; }
+        if (o.confirmed) {
+          if (o.trigger) byTrigger[o.trigger] = (byTrigger[o.trigger] || 0) + 1;
+          if (o.sweepAligned && o.structureAligned) byRawAlignment.both++;
+          else if (o.sweepAligned) byRawAlignment.sweepOnly++;
+          else if (o.structureAligned) byRawAlignment.structureOnly++;
+          continue;
+        }
         byReason[o.rejectReason] = (byReason[o.rejectReason] || 0) + 1;
       }
       return {
@@ -665,6 +681,7 @@ export function buildReport(ops, {
         confirmed: confirmedCount,
         rejected: smcTriggerOutcomes.length - confirmedCount,
         byTrigger,
+        byRawAlignment,
         byReason,
       };
     })(),

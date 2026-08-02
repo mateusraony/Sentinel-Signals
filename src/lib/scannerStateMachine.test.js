@@ -3137,7 +3137,11 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
       expect(await backend.entities.TradeOperation.filter({})).toHaveLength(1);
       expect(result.smcTriggerOutcomes.length).toBeGreaterThanOrEqual(1);
       for (const outcome of result.smcTriggerOutcomes) {
-        expect(outcome).toEqual({ dedup_key: 'sig_funnel_smc', cascade: '1h_5m', confirmed: true, trigger: 'sweep', rejectReason: null });
+        // 59 flat candles + 1 sweep candle (bullishSweepCandles5m) never
+        // produces a structural swing to break — sweepAligned:true,
+        // structureAligned:false is the deterministic outcome of this
+        // fixture (docs/known-risks.md item 52, atualização 2026-08-02).
+        expect(outcome).toEqual({ dedup_key: 'sig_funnel_smc', cascade: '1h_5m', confirmed: true, trigger: 'sweep', rejectReason: null, sweepAligned: true, structureAligned: false });
       }
     });
 
@@ -3151,7 +3155,9 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
 
       expect(result.smcTriggerOutcomes.length).toBeGreaterThanOrEqual(1);
       for (const outcome of result.smcTriggerOutcomes) {
-        expect(outcome).toEqual({ dedup_key: 'sig_funnel_smc', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'no_trigger' });
+        // 60 perfectly flat candles: no wick beyond a swing (no sweep), no
+        // structural break (no BOS/CHoCH) — both false by construction.
+        expect(outcome).toEqual({ dedup_key: 'sig_funnel_smc', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'no_trigger', sweepAligned: false, structureAligned: false });
       }
     });
 

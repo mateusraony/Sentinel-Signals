@@ -431,7 +431,7 @@ async function check15mConfirmation(symbol, direction, asset) {
  * `'ote_zone_unfavorable'` when a trigger fired but the zone check rejected it.
  */
 async function check5mSmcConfirmation(symbol, direction, legBounds) {
-  const noTriggerBase = { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null, oteZone: null };
+  const noTriggerBase = { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null, oteZone: null, sweepAligned: null, structureAligned: null };
   try {
     const candles5m = await fetchCandles(symbol, TF_5M, 150);
     const closed = candles5m.filter(c => c.isClosed);
@@ -458,7 +458,12 @@ async function check5mSmcConfirmation(symbol, direction, legBounds) {
         ? (structure.lastBear.bos || structure.lastBear.choch)
         : (structure.lastBull.bos || structure.lastBull.choch);
       const reason = (sweepOpposite || structureOpposite) ? 'wrong_direction_trigger' : 'no_trigger';
-      return { ...noTriggerBase, rejectReason: reason };
+      // docs/known-risks.md item 52 (atualização 2026-08-02): expõe os 2
+      // booleanos brutos já computados acima, não só o rótulo de
+      // precedência — aqui os dois valem false para a direção pedida (é
+      // por isso que caiu neste branch), mas o registro fica consistente
+      // com os outros retornos que também os expõem.
+      return { ...noTriggerBase, rejectReason: reason, sweepAligned, structureAligned };
     }
 
     const lastClosed = closed[closed.length - 1];
@@ -482,7 +487,7 @@ async function check5mSmcConfirmation(symbol, direction, legBounds) {
     const zoneFavorable = !brokeProtectedPivot
       && (oteZone == null || (direction === 'BUY' ? oteZone !== 'premium' : oteZone !== 'discount'));
     if (!zoneFavorable) {
-      return { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null, oteZone, rejectReason: 'ote_zone_unfavorable' };
+      return { confirmed: false, entryPrice: null, entryCandleTime: null, trigger: null, oteZone, rejectReason: 'ote_zone_unfavorable', sweepAligned, structureAligned };
     }
 
     // Structural invalidation level of the trigger, consumed by
@@ -508,6 +513,12 @@ async function check5mSmcConfirmation(symbol, direction, legBounds) {
       structuralLevel,
       oteZone,
       rejectReason: null,
+      // docs/known-risks.md item 52 (atualização 2026-08-02): booleanos
+      // brutos, além do rótulo de precedência acima — responde se
+      // structureAligned também era true quando sweep levou o rótulo
+      // (sombreamento) ou se confirmou sozinho (independência real).
+      sweepAligned,
+      structureAligned,
       // Fase 2 rodada 2 (docs/known-risks.md item 41): the closed 5m series
       // already fetched above, exposed so the opt-in displacement gate
       // (evaluateDisplacementGate) can evaluate the SAME trigger candle
@@ -1899,6 +1910,7 @@ export async function persistScanResults(scanResult) {
             dedup_key: signal.dedup_key, cascade: '1h_5m',
             confirmed: confirmed5m.confirmed, trigger: confirmed5m.trigger ?? null,
             rejectReason: confirmed5m.rejectReason ?? null,
+            sweepAligned: confirmed5m.sweepAligned ?? null, structureAligned: confirmed5m.structureAligned ?? null,
           });
 
           if (confirmed5m.confirmed) {
@@ -2337,6 +2349,7 @@ export async function persistScanResults(scanResult) {
         dedup_key: sig.dedup_key, cascade: '1h_5m',
         confirmed: confirmed.confirmed, trigger: confirmed.trigger ?? null,
         rejectReason: confirmed.rejectReason ?? null,
+        sweepAligned: confirmed.sweepAligned ?? null, structureAligned: confirmed.structureAligned ?? null,
       });
       if (!confirmed.confirmed) { await recordRejection(sig, '1h_5m', confirmed.rejectReason, entryFunnelOutcomes); continue; }
 

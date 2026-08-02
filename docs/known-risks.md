@@ -3789,6 +3789,39 @@ revisão externa (Codex, PR #105) encontrou uma leitura errada do dado
 exclusividade) — corrigida no mesmo PR antes do merge, texto acima já
 reflete a versão corrigida.
 
+> **Atualização (2026-08-02) — instrumentação implementada.** A
+> "instrumentação futura" descrita acima ("gravar `sweepAligned`/
+> `structureAligned` brutos em `smcTriggerOutcomes`") foi feita:
+> `check5mSmcConfirmation` (`scanner.js`) agora devolve os 2 booleanos
+> brutos em todo retorno onde já são computados (`confirmed: true`,
+> `no_trigger`/`wrong_direction_trigger`, `ote_zone_unfavorable`; ficam
+> `null` nos retornos anteriores ao cálculo — `insufficient_data`/
+> `fetch_error`), os 2 call sites que fazem `smcTriggerOutcomes.push`
+> propagam os campos, e `report.smcTrigger.byRawAlignment` (novo,
+> `backtestEngine.js`) agrega em `{sweepOnly, structureOnly, both}` —
+> só sobre confirmações reais, onde os booleanos são significativos.
+> `both` responde a pergunta original: quantas confirmações tinham
+> `structureAligned=true` mesmo com sweep levando o rótulo por
+> precedência (sombreamento); `structureOnly` mede independência real
+> (estrutura confirmou sem nenhum sweep). **Confirmado por leitura de
+> código**: `smcTriggerOutcomes` não é lido em nenhum lugar do caminho
+> ao vivo (`scripts/run-scan.mjs` — zero match), só alimenta o relatório
+> de backtest — a precedência `trigger: sweepAligned ? 'sweep' :
+> 'structure'` que decide o resto do fluxo (stop estrutural, etc.)
+> **não mudou**; isso é observabilidade pura, mesma categoria dos itens
+> 49-51. Impresso também em `scripts/analyze-backtest.mjs`
+> (`renderGateSection`, tabela nova ao lado de `byTrigger`). Testes:
+> `backtestEngine.test.js` (fixture com os 3 casos —
+> `sweepOnly`/`structureOnly`/`both`) e 2 testes existentes em
+> `scannerStateMachine.test.js` atualizados (fixtures determinísticas de
+> `bullishSweepCandles5m`/`flatCandles5m` produzem
+> `structureAligned:false` em ambos os casos — nenhuma delas tem
+> estrutura suficiente pra gerar BOS/CHoCH, só sweep ou nada). 790
+> testes passando, sem regressão. **Resultado real de
+> `byRawAlignment` ainda não medido** — depende de um novo backtest do
+> usuário; quando vier, é achado separado, registrado à parte desta
+> entrada.
+
 ## 53. Stop pré-TP1 nunca avança — 61 operações erodem de MFE positivo até o stop original (2026-08-01)
 
 Detalhamento do relatório de backtest (`trial_label:

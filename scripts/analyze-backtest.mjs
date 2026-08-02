@@ -229,6 +229,12 @@ function renderGateSection(title, section) {
   if (section.byTrigger) {
     out.push(...table(Object.entries(section.byTrigger).map(([trigger, count]) => ({ gatilho: trigger, confirmados: count }))));
   }
+  // docs/known-risks.md item 52 (atualização 2026-08-02): byTrigger acima só
+  // mostra o rótulo de precedência (sweep sempre vence quando os dois
+  // alinham) — byRawAlignment desambigua se estrutura confirmou sozinha.
+  if (section.byRawAlignment) {
+    out.push(...table(Object.entries(section.byRawAlignment).map(([alignment, count]) => ({ 'alinhamento bruto': alignment, confirmados: count }))));
+  }
   if (section.byPattern) {
     out.push(...table(Object.entries(section.byPattern).map(([pattern, count]) => ({ padrão: pattern, confirmados: count }))));
   }

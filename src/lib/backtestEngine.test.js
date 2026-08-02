@@ -1083,24 +1083,34 @@ describe('buildReport', () => {
   it('smcTrigger defaults to all-zero when the caller passes nothing (legacy call shape)', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
     expect(report.smcTrigger).toEqual({
-      total: 0, attempts: EMPTY_ATTEMPTS, confirmed: 0, rejected: 0, byTrigger: { sweep: 0, structure: 0 }, byReason: {},
+      total: 0, attempts: EMPTY_ATTEMPTS, confirmed: 0, rejected: 0,
+      byTrigger: { sweep: 0, structure: 0 }, byRawAlignment: { sweepOnly: 0, structureOnly: 0, both: 0 }, byReason: {},
     });
   });
 
-  it('smcTrigger counts confirmed by trigger type and rejected by reason', () => {
+  // docs/known-risks.md item 52 (atualização 2026-08-02): byTrigger só
+  // mostra o rótulo de PRECEDÊNCIA (sweep sempre vence quando os dois
+  // alinham na mesma vela) — byRawAlignment lê os 2 booleanos brutos e
+  // desambigua os 3 casos: 'a' confirma só por sweep (sweepOnly), 'b'
+  // confirma por sweep MAS estrutura também estava alinhada (both —
+  // sombreamento, é a pergunta que o item 52 deixou em aberto), 'c'
+  // confirma só por estrutura, sem sweep nenhum (structureOnly —
+  // independência real).
+  it('smcTrigger counts confirmed by trigger type, raw sweep/structure alignment, and rejected by reason', () => {
     const smcTriggerOutcomes = [
-      { dedup_key: 'a', cascade: '1h_5m', confirmed: true, trigger: 'sweep', rejectReason: null },
-      { dedup_key: 'b', cascade: '1h_5m', confirmed: true, trigger: 'sweep', rejectReason: null },
-      { dedup_key: 'c', cascade: '1h_5m', confirmed: true, trigger: 'structure', rejectReason: null },
-      { dedup_key: 'd', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'no_trigger' },
-      { dedup_key: 'e', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'wrong_direction_trigger' },
-      { dedup_key: 'f', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'insufficient_data' },
+      { dedup_key: 'a', cascade: '1h_5m', confirmed: true, trigger: 'sweep', rejectReason: null, sweepAligned: true, structureAligned: false },
+      { dedup_key: 'b', cascade: '1h_5m', confirmed: true, trigger: 'sweep', rejectReason: null, sweepAligned: true, structureAligned: true },
+      { dedup_key: 'c', cascade: '1h_5m', confirmed: true, trigger: 'structure', rejectReason: null, sweepAligned: false, structureAligned: true },
+      { dedup_key: 'd', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'no_trigger', sweepAligned: false, structureAligned: false },
+      { dedup_key: 'e', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'wrong_direction_trigger', sweepAligned: false, structureAligned: false },
+      { dedup_key: 'f', cascade: '1h_5m', confirmed: false, trigger: null, rejectReason: 'insufficient_data', sweepAligned: null, structureAligned: null },
     ];
     const report = buildReport([], { fromMs: 0, toMs: 1000, smcTriggerOutcomes });
     expect(report.smcTrigger.total).toBe(6);
     expect(report.smcTrigger.confirmed).toBe(3);
     expect(report.smcTrigger.rejected).toBe(3);
     expect(report.smcTrigger.byTrigger).toEqual({ sweep: 2, structure: 1 });
+    expect(report.smcTrigger.byRawAlignment).toEqual({ sweepOnly: 1, structureOnly: 1, both: 1 });
     expect(report.smcTrigger.byReason).toEqual({ no_trigger: 1, wrong_direction_trigger: 1, insufficient_data: 1 });
   });
 
