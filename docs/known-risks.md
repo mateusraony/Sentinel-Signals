@@ -1959,6 +1959,56 @@ consistentemente, sem caso real divergente); estados explícitos
 `check5mSmcConfirmation`/OTE já fazem contra estrutura invalidada, mesmo
 princípio do item 38).
 
+### Primeiro A/B real: gate praticamente mata a cascata RF nos parâmetros default (2026-08-02)
+
+Contexto: Bloco 0 (item 48) ficou ambíguo — critério "positivo nas duas
+janelas" não bateu ao pé da letra. Discutido com o usuário um caminho de
+meio-termo (nem aceitar a ambiguidade e destravar tudo, nem esperar uma 3ª
+janela): desbloquear só o flag do Bloco 1 que toca a cascata RF —
+`retestEnabled` é o único dos quatro (os outros três são só SMC, componente
+já desincentivado por expectância negativa, item 56) — usando o dado JÁ
+medido em vez de esperar mais amostra. Usuário autorizou o teste.
+
+Backtest real (`trial_label: com-reteste`, mesmo período/símbolos do item
+58: fev-dez/2025, 7 símbolos, `retestEnabled: true`, tolerância/touchMode no
+default): **0 operações fechadas** (contra 87 no baseline sem reteste, mesmo
+período). `report.retest`: 105 sinais confirmados pela RF entraram na fila
+de reteste, só **1 (0,95%)** alguma vez teve o reteste confirmado dentro da
+janela de retry (máx. 18 tentativas) — e mesmo esse não virou operação.
+`entryFunnel['4h_15m'].byReason.retest_pending = 1729` — de longe o maior
+motivo de rejeição do funil inteiro, muito acima de `regime_rejected`
+(1000).
+
+**Leitura**: não é bug — `detectRetest` é função pura, determinística, já
+teve auditoria externa e regressão (14 casos). É o parâmetro. Com
+`retestToleranceAtrMult: 0.3` (banda estreita) e `retestTouchMode: 'close'`
+(exige o candle FECHAR dentro da banda, não só tocar por pavio), a exigência
+é: depois que a RF confirma um rompimento — que por definição já se afastou
+decisivamente do nível — o preço precisa voltar e FECHAR dentro de 0,3×ATR
+do nível original, dentro de no máximo 18 tentativas de retry. Nos dados
+reais isso quase nunca acontece. Consistente com (e mais extremo que) a
+pesquisa de comunidade já citada acima (Bulkowski: 42–57% dos rompimentos
+válidos nunca retestam, em ações/diário — aqui a fração que retesta E fica
+dentro da janela de retry é ~1%, não ~50%).
+
+**Decisão**: `retestEnabled` **não ativado** com os parâmetros default —
+não é "amostra pequena demais pra confiar" (como o padrão de vela), é "o
+gate mata quase toda a cascata que estava sendo testada". Testar de novo
+exigiria parâmetros bem diferentes (tolerância maior e/ou
+`retestTouchMode: 'wick'`) — um experimento novo, não uma confirmação do
+que já está configurado. Não decidido se vale a pena perseguir essa
+recalibração agora.
+
+**Gap de ferramental encontrado nesta investigação**: `scripts/
+analyze-backtest.mjs` nunca ganhou uma seção pra imprimir `report.retest`
+(diferente de `report.candlePattern`/`smcRegime`/`smcTrigger`, que têm
+`renderXSection`) — `docs/claude/backtest-usage.md` descreve `report.retest`
+como se fosse inspecionável pelo fluxo normal, mas o diagnóstico impresso no
+Summary do `backtest.yml` nunca mostra essa seção. Só foi possível
+diagnosticar este resultado baixando o artifact `backtest-report.json` bruto
+e lendo o JSON direto. **Não corrigido nesta rodada** — registrado para
+quando alguém for estender `analyze-backtest.mjs` de novo.
+
 ## 41. Gatilho de candle de deslocamento — Fase 2 rodada 2 (`displacementEnabled`), DESLIGADO por padrão, só cascata SMC — fecha a Fase 2
 
 **Status: DESLIGADO.** `pineConfig.displacementEnabled = false` por padrão
