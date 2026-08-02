@@ -4192,3 +4192,93 @@ possível validar contra a Binance real nesta sessão (rede da sessão
 bloqueia, `.claude/rules/pine-parity.md`) — a prova real vem depois,
 olhando a tela "Logs" em produção pra confirmar queda de `"Failed to
 fetch"` e comparando o volume de operações do próximo período.
+
+## 58. Gate de padrão de vela (engolfo) na cascata RF — mecanismo opt-in, desligado por padrão (2026-08-02)
+
+Pedido explícito do usuário, na sequência da conversa sobre volume/qualidade
+de entrada: "tem como usar o padrão de Price Action? [...] se fez uma vela
+de engolfo nos 4h daí reduz pra fazer a entrada em 15m ou 5m". Confirmado
+com o usuário que o papel do padrão é **adicionar** uma exigência a mais em
+cima do sinal Range Filter já existente — não virar um gatilho alternativo
+de entrada (isso seria uma estratégia paralela nova, categoria da cascata
+SMC, que não tem equivalente no Pine real do usuário — fora de escopo aqui).
+
+### Pesquisa de comunidade (WebSearch, 2026-08-02)
+
+- **Engolfo tem edge real medido em backtest**, mas contexto-dependente —
+  funciona melhor combinado com tendência/estrutura do que sozinho, e o
+  nome do padrão nem sempre bate com o comportamento estatístico (alguns
+  backtests mostram "engolfo de baixa" performando melhor como sinal de
+  alta do que a leitura tradicional sugere). Fontes:
+  [quantifiedstrategies.com](https://www.quantifiedstrategies.com/engulfing-trading-candlestick-pattern-backtest/),
+  [LedgerMind](https://theledgermind.com/candlestick-patterns-reddit/).
+- **A técnica "indicador no timeframe maior pro viés, price action no menor
+  pro timing de entrada" é padrão reconhecido**, não uma ideia isolada —
+  bate exatamente com a estrutura que RF (4h→15m) e SMC (1h→5m) já usam,
+  só que a confirmação de 15m/5m hoje é a mesma RF (alinhamento de
+  direção), não um padrão de vela dedicado. Fontes:
+  [tradingwithrayner.com](https://www.tradingwithrayner.com/multi-timeframe-analysis/),
+  [acy.com](https://acy.com/en/market-news/education/power-of-multi-timeframe-analysis-in-smart-money-concepts-j-o-134004/).
+
+### Mecanismo
+
+`src/lib/indicators/candlePatterns.js` (novo, função pura) —
+`detectEngulfing(currentCandle, previousCandle, direction)`: engolfo de
+alta/baixa, corpo-a-corpo (open/close, não o range high/low completo),
+exige o candle anterior na cor OPOSTA (contexto de reversão) e o candle
+atual alinhado com a direção do sinal (doji reprova nos dois lados, mesma
+guarda que `displacement.js` já usa). Sem equivalente no Pine real
+(`docs/reference-pine/`, grep por nomes de padrão sem match) — mecanismo
+original do Sentinel, sem obrigação de golden test
+(`.claude/rules/pine-parity.md`).
+
+`pineConfig.candlePatternEnabled` (novo, `false` por padrão, mesma
+convenção de todo flag Fase 2+). `evaluateCandlePatternGate` (`scanner.js`,
+ao lado de `evaluateRegime`) compara os **dois últimos candles 4h
+fechados** — `results['4h'].last2Candles`, campo novo (bounded slice de 2
+candles, não a série inteira) alimentado no loop principal de
+`scanAsset`. Rodando nos **2 pontos** da cascata RF (1ª passada e retry) —
+**não** na cascata SMC nesta rodada, escopo explicitamente pedido pelo
+usuário como só 4h→15m. Novo motivo `candle_pattern_rejected` no funil de
+rejeição já existente (`entryFunnelOutcomes`/`last_rejection_reason`-style
+log), sem inventar mecanismo de log novo.
+
+Auditoria: `TradeOperation.entry_candle_pattern` (`'bullish_engulfing'` |
+`'bearish_engulfing'` | `null`) — recomputado dentro de `buildTradeOpData`
+(barato, comparação pura de 2 candles) em vez de threadear o resultado do
+gate por todos os call sites só por esse campo.
+
+Backtest: nova seção `report.candlePattern` (`enabled`, `total`, `attempts`,
+`passed`, `rejected`, `byPattern`, `byReason`) — ao contrário de
+`smcTrigger` (sempre ligado), aqui `enabled` É informativo: `total: 0` pode
+genuinamente significar "flag desligado neste run". Impressão em
+`scripts/analyze-backtest.mjs` via `renderGateSection` (estendido com um
+branch `byPattern`, mesmo formato de `byTrigger`).
+
+### Testes
+
+`candlePatterns.test.js` (função pura — engolfo válido dos dois lados,
+direção errada, doji, candle anterior não-oposto, corpo que não engolfa,
+parâmetros inválidos). `scannerStateMachine.test.js` — flag desligado:
+comportamento idêntico ao anterior (`entry_candle_pattern` null, sem log);
+flag ligado com padrão válido: operação criada com o campo correto; flag
+ligado sem padrão válido: nenhuma operação, log com o motivo certo; confirma
+pelo loop de retry, não só na 1ª passada. `backtestEngine.test.js` — seção
+nova default desligada/zerada quando nada é passado (compat de chamada
+legada); conta confirmados por padrão e rejeitados por motivo corretamente.
+
+### Status
+
+**Implementado, desligado por padrão.** Não ativar sem comparar relatórios
+de backtest com/sem o flag primeiro — mesma disciplina de todo flag deste
+projeto (nenhum dos flags Fase 2+ foi ativado por default sem essa etapa).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run build:scan && npm run
+build:backtest` — 771 testes passando. `sentinel-trading-engine-review`
+rodado antes de considerar pronto (toca os 2 pontos de entrada da cascata
+RF) — sem achado: não introduz look-ahead (compara candles JÁ fechados, o
+mesmo par em toda a janela de retry de um sinal), erro propagado idêntico
+ao anterior para os chamadores, sem novo risco de concorrência (comparação
+pura, sem I/O extra).

@@ -212,6 +212,11 @@
       "type": "number",
       "description": "Time Stop threshold, in candles of `signal_timeframe` (4h for the RF cascade, from the tier classified at entry; 1h for the SMC cascade, tier-derived when pineConfig.smcTierEnabled is on — Fase 3, docs/known-risks.md item 42 — fixed at 96 otherwise) — not recalculated later even if the asset's tier changes"
     },
+    "entry_candle_pattern": {
+      "type": ["string", "null"],
+      "enum": ["bullish_engulfing", "bearish_engulfing", null],
+      "description": "Candlestick pattern (src/lib/indicators/candlePatterns.js) that confirmed the signal candle, RF cascade only. Null when pineConfig.candlePatternEnabled is off (the default) — additional gate on top of the RF signal, not a replacement for it. Requested by the user, 2026-08-02."
+    },
     "rf_reverse_bars_count": {
       "type": "number",
       "description": "Consecutive candles of `signal_timeframe` with Range Filter reversed against the position (pre-TP1 only) — used by the Invalidation toggle",

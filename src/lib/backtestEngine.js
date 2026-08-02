@@ -205,6 +205,9 @@ export async function runBacktest({
   // Fase 4 Order Block / FVG (docs/known-risks.md item 43) — same convention.
   // SMC 1h_5m only, recorded at signal emission.
   const smcObFvgOutcomesByKey = new Map();
+  // Gate de padrão de vela (engolfo), RF 4h_15m only, opt-in via
+  // pineConfig.candlePatternEnabled — same convention as retestOutcomesByKey.
+  const candlePatternOutcomesByKey = new Map();
   // known-risks item 45.3/49 — "muitos sinais, poucas operações". Diferente
   // dos Maps acima (que guardam o estado FINAL por sinal), este é um
   // histograma de TODAS as avaliações que rejeitaram algo, nas duas
@@ -232,6 +235,7 @@ export async function runBacktest({
     rfRegime: new Map(),
     smcObFvg: new Map(),
     smcTrigger: new Map(),
+    candlePattern: new Map(),
   };
   const recordOutcome = (byKey, attempts, outcome) => {
     byKey.set(outcome.dedup_key, outcome);
@@ -326,6 +330,12 @@ export async function runBacktest({
             for (const outcome of (persistResult.smcTriggerOutcomes || [])) {
               recordOutcome(smcTriggerOutcomesByKey, attemptsByKey.smcTrigger, outcome);
             }
+            // Gate de padrão de vela — brand new this round, correctly
+            // windowed from the start (same as rfRegimeOutcomes/
+            // smcTriggerOutcomes just above).
+            for (const outcome of (persistResult.candlePatternOutcomes || [])) {
+              recordOutcome(candlePatternOutcomesByKey, attemptsByKey.candlePattern, outcome);
+            }
           }
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
@@ -367,6 +377,7 @@ export async function runBacktest({
     rfRegimeAllOutcomes,
     smcObFvgOutcomes: [...smcObFvgOutcomesByKey.values()],
     smcTriggerOutcomes: [...smcTriggerOutcomesByKey.values()],
+    candlePatternOutcomes: [...candlePatternOutcomesByKey.values()],
     entryFunnelCounts,
     attemptStats: Object.fromEntries(
       Object.entries(attemptsByKey).map(([name, map]) => [name, summarizeAttempts(map)]),
@@ -471,7 +482,7 @@ export function buildReport(ops, {
   arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [],
   smcRegimeOutcomes = [], smcRegimeAllOutcomes = smcRegimeOutcomes,
   rfRegimeOutcomes = [], rfRegimeAllOutcomes = rfRegimeOutcomes,
-  smcObFvgOutcomes = [], smcTriggerOutcomes = [],
+  smcObFvgOutcomes = [], smcTriggerOutcomes = [], candlePatternOutcomes = [],
   entryFunnelCounts = { '4h_15m': {}, '1h_5m': {} }, attemptStats = {}, costModel, minTrades,
 } = {}) {
   const attemptsOf = (name) => attemptStats[name] ?? { ...EMPTY_ATTEMPTS };
@@ -667,6 +678,30 @@ export function buildReport(ops, {
         confirmed: confirmedCount,
         rejected: smcTriggerOutcomes.length - confirmedCount,
         byTrigger,
+        byReason,
+      };
+    })(),
+    // Gate de padrão de vela (engolfo) — pedido do usuário, 2026-08-02.
+    // Opt-in (pineConfig.candlePatternEnabled, off por padrão), RF 4h_15m
+    // only — `enabled` aqui SIM é significativo (ao contrário de smcTrigger
+    // acima, que nunca é opt-in): total 0 pode genuinamente significar
+    // "flag desligado neste run", não só "nenhum sinal passou pelas
+    // avaliações anteriores".
+    candlePattern: (() => {
+      const passed = candlePatternOutcomes.filter(o => o.ok).length;
+      const byPattern = {};
+      const byReason = {};
+      for (const o of candlePatternOutcomes) {
+        if (o.ok) { if (o.pattern) byPattern[o.pattern] = (byPattern[o.pattern] || 0) + 1; continue; }
+        byReason[o.reason] = (byReason[o.reason] || 0) + 1;
+      }
+      return {
+        enabled: candlePatternOutcomes.length > 0,
+        total: candlePatternOutcomes.length,
+        attempts: attemptsOf('candlePattern'),
+        passed,
+        rejected: candlePatternOutcomes.length - passed,
+        byPattern,
         byReason,
       };
     })(),
