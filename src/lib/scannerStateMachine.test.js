@@ -953,6 +953,46 @@ describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTI
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('RUNNER_ACTIVE');
     expect(stored.current_stop).toBe(103); // 105 - 1*2, advanced above old stop(100)
+    expect(stored.runner_stop_advanced_candle_time).toBe(results['4h'].lastCandleTime);
+  });
+
+  // known-risks.md item 59 — the post-TP1 trailing stop had the identical
+  // multi-pass-same-candle vulnerability that PR #106/P1 fixed for the
+  // pre-TP1 gate above, but was never given the same guard. Same shape as
+  // that regression test: pass 1 advances the trail; pass 2 re-runs over the
+  // SAME still-latest candle and must not re-test its low against the
+  // newly-tightened stop; a genuinely new candle stops normally.
+  it('a repeated pass over the SAME still-latest candle never re-tests the runner against the just-advanced trail (known-risks item 59)', async () => {
+    backend._seed('TradeOperation', makeRunner({ current_stop: 100 }));
+    const sameCandle = makeTfData({ lastCandleHigh: 105, lastCandleLow: 103, lastClose: 105, atrValue: 1 });
+    const pineConfig = makePineConfig({ trailAtrMult: 2.0 });
+
+    // Pass 1: advances the trail to 103 (105 - 1*2), correctly not stopped
+    // (low 103 > old stop 100).
+    await persistScanResults(makeScanResult({ results: { '4h': sameCandle }, pineConfig }));
+    let stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('RUNNER_ACTIVE');
+    expect(stored.current_stop).toBe(103);
+
+    // Pass 2: cron re-runs 5 minutes later — SAME candle (identical object)
+    // is still the latest closed one. Without the fix, low(103) <= newly
+    // stored stop(103) would falsely fire STOP_HIT here.
+    await persistScanResults(makeScanResult({ results: { '4h': sameCandle }, pineConfig }));
+    stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('RUNNER_ACTIVE'); // still open — the bug this test guards against
+    expect(stored.current_stop).toBe(103); // unchanged, still monotonic
+
+    // A genuinely NEW candle (later timestamp) whose low is below the
+    // advanced stop must still fire normally — the fix only protects the
+    // specific candle that caused the advance, not stop-hits in general.
+    const nextCandle = makeTfData({
+      lastCandleTime: '2026-07-16T16:00:00.000Z', lastCandleOpenTime: '2026-07-16T12:00:00.000Z',
+      lastCandleHigh: 104, lastCandleLow: 101, lastClose: 101.5,
+    });
+    await persistScanResults(makeScanResult({ results: { '4h': nextCandle }, pineConfig }));
+    stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('STOP_HIT');
+    expect(stored.exit_price).toBe(103); // the advanced stop, not the original 100
   });
 
   it('INVALIDATED when RF flips against the position (RF cascade)', async () => {
@@ -3313,6 +3353,37 @@ describe('cross-loop concurrency invariant (persistScanResults vs priceCheckActi
     expect(workerA.applied).toBe(true);
     expect(workerB.applied).toBe(true); // CAS on status doesn't reject this — the stop itself must self-protect
     expect(backend._get('TradeOperation', 'op1').current_stop).toBe(105); // never regresses to 102
+  });
+
+  // docs/known-risks.md item 59 addendum (external review, PR #116): the
+  // candle-time marker paired with a stop advance must name the candle that
+  // produced the STORED stop, not whichever candle the losing worker read.
+  // Same race as the test above, but checking runner_stop_advanced_candle_time
+  // instead of current_stop — without this fix, worker B's stale T1 marker
+  // would overwrite worker A's correct T2 one even though current_stop
+  // correctly stays at worker A's 105, un-defeating the same-candle
+  // look-ahead guard the marker exists for (scanner.js's runnerStopHit).
+  it('a losing candidate stop must not overwrite the candle-time marker with its own stale candle', async () => {
+    backend._seed('TradeOperation', makeOp({ status: 'RUNNER_ACTIVE', current_stop: 100 }));
+
+    // Worker A (fresher candle T2) commits the better trail first, tagging
+    // the candle that produced it.
+    const workerA = await backend.tradeOps.transitionTradeOp('op1', 'RUNNER_ACTIVE', {
+      status: 'RUNNER_ACTIVE', current_stop: 105, runner_stop_advanced_candle_time: 'T2',
+    }, { stopAdvanceMarkerField: 'runner_stop_advanced_candle_time' });
+
+    // Worker B (stale — computed from the stop=100 it read BEFORE worker A
+    // committed, off an OLDER candle T1) proposes a worse stop; its own CAS
+    // on `status` still passes, and clampMonotonicStop correctly keeps 105.
+    const workerB = await backend.tradeOps.transitionTradeOp('op1', 'RUNNER_ACTIVE', {
+      status: 'RUNNER_ACTIVE', current_stop: 102, runner_stop_advanced_candle_time: 'T1',
+    }, { stopAdvanceMarkerField: 'runner_stop_advanced_candle_time' });
+
+    expect(workerA.applied).toBe(true);
+    expect(workerB.applied).toBe(true);
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.current_stop).toBe(105); // never regresses to 102 (already covered above)
+    expect(stored.runner_stop_advanced_candle_time).toBe('T2'); // marker matches the stop actually stored, not worker B's losing candle
   });
 });
 

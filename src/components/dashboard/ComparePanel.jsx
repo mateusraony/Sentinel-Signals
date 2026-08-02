@@ -135,7 +135,7 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
           return (
             <>
               <MetricRow label="RF Valor (4h)" value={s4h ? `$${fmt(s4h.rf_filter_value)}` : '—'} color="rgba(0,229,255,0.7)" />
-              <MetricRow label="RSI (1h)" value={s1h?.rsi_value ? s1h.rsi_value.toFixed(0) : '—'}
+              <MetricRow label="RSI (1h)" value={Number.isFinite(s1h?.rsi_value) ? s1h.rsi_value.toFixed(0) : '—'}
                 color={s1h?.rsi_zone === 'overbought' ? '#ff1478' : s1h?.rsi_zone === 'oversold' ? '#00ff80' : 'rgba(255,255,255,0.7)'} />
               <MetricRow label="MACD Hist" value={s1h?.macd_histogram !== undefined ? (s1h.macd_histogram > 0 ? '▲ Pos' : '▼ Neg') : '—'}
                 color={s1h?.macd_histogram > 0 ? '#00ff80' : s1h?.macd_histogram < 0 ? '#ff1478' : '#64748b'} />

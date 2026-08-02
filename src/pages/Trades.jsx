@@ -13,6 +13,7 @@ import PerformanceReport from '@/components/trades/PerformanceReport';
 import { fetch24hStats } from '@/lib/marketDataProvider';
 import moment from 'moment';
 import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
+import { logError } from '@/lib/logger';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
@@ -149,12 +150,13 @@ function EditModal({ op, onClose, onSave }) {
           </button>
           <button
             onClick={() => {
-              const data = {
-                status,
-                current_stop: stop ? parseFloat(stop) : undefined,
-                tp1: tp1 ? parseFloat(tp1) : undefined,
-                tp2: tp2 ? parseFloat(tp2) : undefined,
-              };
+              // Firestore's updateDoc rejects `undefined` field values and
+              // throws — clearing a field must omit the key entirely, not
+              // send it as undefined (was silently failing the whole save).
+              const data = { status };
+              if (stop) data.current_stop = parseFloat(stop);
+              if (tp1) data.tp1 = parseFloat(tp1);
+              if (tp2) data.tp2 = parseFloat(tp2);
               if (exitPrice) data.exit_price = parseFloat(exitPrice);
               if (['TP2_HIT','STOP_HIT','INVALIDATED','CLOSED'].includes(status)) {
                 data.closed_at = new Date().toISOString();
@@ -310,6 +312,10 @@ export default function Trades() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-operations'] });
       setEditingOp(null);
+    },
+    onError: (err) => {
+      logError('Trades', 'Falha ao salvar edição manual de operação', { error: err.message });
+      window.alert('Falha ao salvar. Veja o Debug Log.');
     },
   });
 
