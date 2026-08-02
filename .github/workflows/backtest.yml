@@ -26,6 +26,10 @@ on:
         # docs/roadmap.md Bloco 0 pede para o veredito real do gate de amostra
         # ("amplitude em ATIVOS, não anos"). Não troque para 20 "pra ajudar"
         # sem o usuário pedir explicitamente para aquele run específico.
+        # Não é a carteira real: o painel ao vivo monitora 9 ativos hoje
+        # (+ SOLUSDT/METISUSDT, fora dos backtests padrão de 7 símbolos —
+        # foram avaliados numa rodada de verificação ad-hoc, ver
+        # known-risks.md item 57).
         description: "Símbolos separados por vírgula (Binance Spot)"
         default: "BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT"
         required: true
