@@ -84,7 +84,7 @@ function TFStateCard({ tf, state, enabled }) {
         <div>
           <div className="text-[7px] font-mono text-muted-foreground">RSI</div>
           <div className="text-[10px] font-mono font-bold" style={{ color: rsiColor }}>
-            {state.rsi_value ? state.rsi_value.toFixed(0) : '—'}
+            {Number.isFinite(state.rsi_value) ? state.rsi_value.toFixed(0) : '—'}
           </div>
         </div>
         <div>

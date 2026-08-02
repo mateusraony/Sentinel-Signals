@@ -38,7 +38,7 @@ function IndicatorDots({ state }) {
   const emaColor = emaTrend === 'bullish' ? '#00ff80' : emaTrend === 'bearish' ? '#ff1478' : '#ffd166';
   const rsiZone = state.rsi_zone;
   const rsiColor = rsiZone === 'overbought' ? '#ff1478' : rsiZone === 'oversold' ? '#00ff80' : '#64748b';
-  const rsiVal = state.rsi_value ? state.rsi_value.toFixed(0) : '—';
+  const rsiVal = Number.isFinite(state.rsi_value) ? state.rsi_value.toFixed(0) : '—';
 
   return (
     <div className="flex items-center gap-3 sm:gap-2 flex-wrap">

@@ -68,7 +68,14 @@ nunca deve receber nova transição.**
   contra o stop ARMAZENADO; o avanço do trailing (`advanceTrailingStop`) só
   acontece depois, do fechamento, e passa a proteger no candle SEGUINTE. O
   `exit_price` de stop do runner agora usa o stop armazenado (nunca o avançado
-  no mesmo candle).
+  no mesmo candle). **Hardening (item 59, 2026-08-02)**: a proteção acima só
+  cobria a ordem DENTRO de uma passagem — não excluía a vela do avanço de
+  passagens SEGUINTES sobre a mesma vela ainda não fechada (o cron roda a
+  cada ~5min; uma vela de 4h/1h pode ficar "a última fechada" por horas).
+  Mesma classe de bug que o item 54 já tinha corrigido no pré-TP1
+  (`pre_tp1_stop_advanced_candle_time`), nunca replicada aqui até esta
+  rodada — `runner_stop_advanced_candle_time` fecha a mesma lacuna no
+  trailing pós-TP1, já em produção.
 - **[CORRIGIDO — P0-e] `rf_reverse_bars_count` por candle.** Deduplicado por
   `rf_reverse_last_candle` (`nextRfReverseCount`) — N passadas do cron sobre o
   mesmo candle contam 1x; reset quando o RF volta a favor; fallback por-passada

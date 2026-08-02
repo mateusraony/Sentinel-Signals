@@ -549,6 +549,10 @@
     "pre_tp1_stop_advanced_candle_time": {
       "type": "string",
       "description": "known-risks.md items 53/54 (Codex review, PR #106, P1) — raw closeTime (epoch ms, matches tfData.lastCandleTime) of the candle whose close triggered the last pre-TP1 stop advance. The cron re-evaluates the SAME still-latest-closed candle many times before a genuinely new one closes; excluding this candle from the stop-hit check on repeat passes prevents a look-ahead false STOP_HIT against the just-advanced stop using data already safely evaluated against the OLD stop. Absent when the gate never fired."
+    },
+    "runner_stop_advanced_candle_time": {
+      "type": "string",
+      "description": "known-risks.md item 59 — same look-ahead fix as pre_tp1_stop_advanced_candle_time (Codex PR #106, P1), applied to the POST-TP1 ATR trailing stop (P0-d, advanceTrailingStop), which had never received it despite sharing the identical multi-pass-same-candle vulnerability. Raw closeTime (epoch ms, matches tfData.lastCandleTime) of the candle whose close last advanced current_stop while the op was RUNNER_ACTIVE; excludes that candle from the runner's stop-hit check on repeat passes within the same candle. Unlike the pre-TP1 field (fires once, then stays at breakeven), this overwrites on every genuine advance since the trail can tighten repeatedly over the op's life. Absent on ops that never used ATR trailing (exit_mode HYBRID_RF_ATR/ATR_TRAILING) or whose stop never advanced post-TP1."
     }
   },
   "required": [

@@ -4461,3 +4461,121 @@ RF) — sem achado: não introduz look-ahead (compara candles JÁ fechados, o
 mesmo par em toda a janela de retry de um sinal), erro propagado idêntico
 ao anterior para os chamadores, sem novo risco de concorrência (comparação
 pura, sem I/O extra).
+
+## 59. Auditoria pedida pelo usuário: bug P0 real no trailing pós-TP1 + 2 bugs de UI (2026-08-02)
+
+Usuário pediu uma auditoria ampla ("tudo já foi feito? tem bug em outras
+telas?") — 2 Explore agents em paralelo (páginas/componentes fora do motor;
+varredura de `known-risks.md`/`roadmap.md` por pendências sem correção) mais
+investigação própria depois que um dos agentes sinalizou uma possibilidade
+sem confirmar. Achados abaixo, todos corrigidos e testados nesta rodada.
+
+### P0 real: trailing stop pós-TP1 tinha o mesmo look-ahead multi-passagem já corrigido no pré-TP1
+
+Item 54 (PR #106, P1) corrigiu um bug real: o cron roda `persistScanResults`
+a cada ~5min enquanto uma vela de 4h/1h pode continuar "a última fechada"
+por horas — múltiplas passagens sobre a MESMA vela. Sem proteção, a
+proteção de stop pré-TP1 podia avançar o stop na passagem N (usando o close
+desta vela) e a passagem N+1 testava a MESMA vela contra o stop JÁ
+avançado — `STOP_HIT` falso usando dado já avaliado com segurança contra o
+stop ANTIGO uma passagem antes. Corrigido lá com
+`pre_tp1_stop_advanced_candle_time`, que exclui essa vela específica de
+recheck.
+
+O item 54 registrou uma "nota para investigação futura" apontando que o
+trailing PÓS-TP1 (`advanceTrailingStop`, P0-d, já em produção desde antes
+desta sessão) tinha a mesma estrutura de código, mas nunca foi confirmado
+nem corrigido. **Confirmado por leitura direta do código nesta rodada**:
+`runnerStopHit` (`scanner.js`) testava `stopCheckPrice` contra
+`op.current_stop` só gated por `candleUsable`, sem nenhum guard de "vela já
+usada pra avançar antes" — exatamente a mesma classe de bug, só que no
+mecanismo que já roda ao vivo para toda operação com `exit_mode`
+`HYBRID_RF_ATR`/`ATR_TRAILING` depois do TP1.
+
+**Cenário reproduzido** (mesmo padrão do item 54): operação RUNNER_ACTIVE,
+vela ainda não fechou uma nova. Passagem N: preço não bate o stop antigo,
+`advanceTrailingStop` avança o stop a partir do close desta vela, grava em
+`current_stop`. Passagem N+1 (mesma vela, cron rodou de novo): sem a
+correção, `runnerStopHit` testaria o `low`/`high` dessa MESMA vela contra o
+stop JÁ avançado — podendo fechar a operação com `STOP_HIT` falso, cortando
+um runner que na realidade nunca tocou aquele nível.
+
+**Correção** (espelha exatamente `pre_tp1_stop_advanced_candle_time`): novo
+campo `TradeOperation.runner_stop_advanced_candle_time` (schema em
+`docs/schema-reference/TradeOperation.jsonc`) — grava
+`tfData.lastCandleTime` toda vez que `advanceTrailingStop` muda o stop
+nesta vela (diferente do campo pré-TP1, que dispara uma vez só e fica
+parado no breakeven, este sobrescreve a cada avanço genuíno, porque o
+trailing pode apertar repetidamente ao longo da vida da operação —
+`advanceTrailingStop` é idempotente contra o mesmo close, então uma
+passagem repetida sobre a mesma vela nunca dispara o branch com valor
+mudado, então o campo nunca é reescrito à toa). `runnerStopHit` passa a
+excluir essa vela específica, mesmo padrão de `stopAdvancedThisCandle`.
+
+Teste de regressão novo em `scannerStateMachine.test.js` (mesma forma do
+teste do item 54): passagem 1 avança o trail e não para; passagem 2 sobre a
+MESMA vela não re-testa (seria o `STOP_HIT` falso); uma vela genuinamente
+nova volta a testar normalmente e para no stop avançado, não no original.
+
+### Bug real, alcançável pela UI: editar operação com campo vazio falhava silenciosamente
+
+`src/pages/Trades.jsx` (modal "Editar"): limpar o campo Stop/TP1/TP2 e
+salvar mandava `undefined` pro Firestore (`updateDoc` via
+`backend.entities.TradeOperation.update`) — o SDK do Firestore rejeita
+valor `undefined` e lança exceção. `editMutation` não tinha `onError`,
+chamado via `.mutate()` sem tratamento — a falha era engolida, o modal não
+fechava, o botão "Salvar Alterações" parecia travado, sem mensagem de erro
+nenhuma.
+
+**Corrigido**: campo vazio agora simplesmente não entra no payload (em vez
+de entrar como `undefined`) — mesmo padrão que o campo `exitPrice` já
+usava no mesmo componente. `editMutation` ganhou `onError` (`logError` +
+alerta ao usuário), mesmo padrão já usado em `AssetCard.jsx`. Escopo: só o
+call site em `Trades.jsx` — o adaptador genérico `backend.entities.*.update`
+(`src/api/entities.js:110-114`) é usado por muitos outros callers; endurecer
+ali (ex.: filtrar `undefined` do payload por padrão) resolveria a classe
+inteira do bug de uma vez, mas é mudança de escopo maior no adaptador
+compartilhado — não feito nesta rodada, registrado como possível
+hardening futuro se aparecer em outro call site.
+
+### Bug menor, repetido em 3 componentes: RSI = 0 aparecia como "sem dado"
+
+`src/components/dashboard/AssetCard.jsx`,
+`src/components/assets/AssetDetailPanel.jsx`,
+`src/components/dashboard/ComparePanel.jsx` usavam
+`state.rsi_value ? state.rsi_value.toFixed(0) : '—'`. RSI genuinamente pode
+computar `0` (sobrevendido extremo) — nesse caso a tela mostrava "—" (sem
+dado) em vez de "0", escondendo um valor real do indicador. **Corrigido**:
+`Number.isFinite(state.rsi_value)` nos 3 lugares.
+
+### Outros achados da auditoria — já conhecidos, sem ação nesta rodada
+
+- Toggle "Runner ativado" no Telegram (`TelegramSettings.jsx`) sem função
+  `notify*` correspondente — já registrado (nunca implementado), baixa
+  prioridade.
+- Item 51: bug de janela de avaliação corrigido só em
+  `rfRegimeOutcomes`/`smcTriggerOutcomes`, deixado sem correção nas outras 5
+  seções (retest/displacement/smcRegime/arbitration/smcObFvg) — reconhecido
+  no próprio item, não urgente (afeta só precisão de diagnóstico de
+  backtest).
+- Possível gap não verificável daqui: `firestore.rules` da coleção
+  `telegramFilters` (item 47) marcado "pendente fora da sessão" sem
+  confirmação posterior de deploy — usuário precisa confirmar se já rodou
+  `firebase deploy --only firestore:rules`.
+- `docs/roadmap.md` ainda descreve a proteção pré-TP1 como "falta rodar o
+  A/B", mas o item 55 já rodou e fechou isso — só desatualização de texto,
+  não corrigido nesta rodada.
+
+### Status
+
+**Corrigido e testado** (trailing pós-TP1, edição de operação, exibição de
+RSI). Os "outros achados" ficam registrados, sem ação — nenhum afeta
+dinheiro real hoje.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run build:scan && npm run
+build:backtest`, `sentinel-trading-engine-review` (toca `scanner.js`,
+máquina de estados, P0). Teste de regressão dedicado pro achado do
+trailing (reproduz o cenário exato antes de corrigir, como manda
+`.claude/rules/operating-principles.md`).
