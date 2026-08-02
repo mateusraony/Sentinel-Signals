@@ -4191,7 +4191,10 @@ todos eles.
 backtest.yml` ("preferência PERMANENTE do usuário... só estes 7 pares,
 sempre") e referências à carteira "de sempre" em itens anteriores deste
 arquivo descreviam 7 símbolos — o painel real roda com 9 desde antes desta
-sessão (SOL e METIS nunca testados em nenhum backtest do projeto).
+sessão (SOL e METIS ficam fora dos backtests padrão de 7 símbolos que a
+maioria dos itens deste arquivo usa; foram incluídos numa única rodada de
+verificação ad-hoc, ver passo 4 acima, `verificacao-9-ativos-reais-10jul-01ago`
+— avaliados, mas nenhum sinal deles passou o gate de regime).
 
 **Corrigido em 2026-08-02**: `docs/claude/backtest-usage.md` (nota logo
 após o parágrafo "Preferência permanente") e o comentário do campo
