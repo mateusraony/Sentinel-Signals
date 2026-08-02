@@ -4311,6 +4311,47 @@ com o motivo certo; confirma pelo loop de retry, não só na 1ª passada.
 é passado (compat de chamada legada); conta confirmados por padrão e
 rejeitados por motivo corretamente.
 
+### Primeiro backtest exploratório (2026-08-02) — A/B sem × com o filtro
+
+Usuário rodou os dois backtests recomendados pelo GitHub Actions
+(`sem-padrao-vela` × `com-padrao-vela`, mesmo período fev-dez/2025, mesmos 7
+símbolos) e colou os dois diagnósticos completos.
+
+| | sem-padrao-vela | com-padrao-vela |
+|---|---|---|
+| Operações fechadas | 87 | 22 |
+| Expectância líquida | 0,223R | 0,452R |
+| Veredito do gate estatístico | **INCONCLUSIVO** (`ci_straddles_zero`) | **INCONCLUSIVO** (`sample_too_small`) |
+| STOP_HIT (W/L) | 37/35 (quase 50/50) | 10/6 (62,5%) |
+
+O gate avaliou 105 sinais e confirmou só 26 (24,8%) — a queda de 87 para 22
+operações bate com essa taxa de aprovação. `byPattern` saiu equilibrado (3 a
+6 confirmações por rótulo, nenhum padrão isolado domina a amostra pequena).
+Sinal de alerta extra: as 10 melhores operações do run com filtro somam
+**130% do resultado total** (as outras 12 operações são líquidas negativas)
+— concentração mais extrema que o baseline (top10 = 88,4%), assinatura
+típica de resultado pequeno carregado por poucos trades de sorte.
+
+**Leitura**: direcionalmente positivo (expectância ~2x maior, win rate
+melhor nos dois lados) mas **nenhum dos dois relatórios é conclusivo** — o
+baseline tem amostra grande mas estatisticamente indistinguível de zero; o
+filtro tem resultado melhor mas amostra pequena demais pra confiar, com a
+concentração de topo que costuma diluir numa amostra maior. Confirma
+exatamente a cautela já registrada abaixo (`byPattern` é hipótese, não
+decisão). **Flag não ativado a partir deste resultado.**
+
+Trade-off para virar conclusivo: o filtro corta ~75% da amostra, então só
+para cruzar o piso de 30 operações (o mínimo que o próprio gate estatístico
+deste projeto exige, item 44) seria preciso ~14 meses de janela (30 ÷ 2,2
+op/mês observado nesta amostra); para o padrão de confiança que este
+projeto já usa em outros gates (ordem de centenas de operações,
+`docs/roadmap.md` Bloco 0), precisaria de vários anos de histórico com o
+filtro ligado — vale checar antes se os símbolos mais novos da carteira
+(FET/PENDLE/ZRO) têm dado suficiente na Binance pra uma janela tão longa.
+Não decidido se vale rodar de novo com janela maior ou aceitar a leitura
+direcional atual como insuficiente por ora — decisão do usuário, não
+antecipada.
+
 ### Status
 
 **Implementado, desligado por padrão.** Não ativar sem comparar relatórios
@@ -4319,7 +4360,9 @@ projeto (nenhum dos flags Fase 2+ foi ativado por default sem essa etapa).
 O `byPattern` do primeiro backtest exploratório deve ser tratado como
 **hipótese**, não decisão — qual padrão "ganha" numa amostra pequena e
 única não é motivo suficiente pra ativar só aquele, mesma disciplina que
-motivou recusar "todos os padrões" acima.
+motivou recusar "todos os padrões" acima. Primeiro A/B real rodado (ver
+subseção acima): direcionalmente positivo, mas ambos os lados
+INCONCLUSIVOS — segue desligado.
 
 ### Verificação
 
