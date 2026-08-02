@@ -1082,10 +1082,14 @@ Confirmado via `git stash` que os 5 falham contra o código anterior (as 3
 notificações não disparavam; os 2 `closed_reason` vinham `undefined`) e
 voltam a passar com a correção restaurada.
 
-**Fora de escopo**: `runner_active` já existe como opção em `EVENT_OPTIONS`
-(`TelegramSettings.jsx`) mas segue sem função `notify*` correspondente —
-nunca foi implementado, não é regressão desta rodada, não implementado aqui
-por não ter sido pedido.
+> **Atualização (2026-08-02, limpeza de achados "já conhecidos"):**
+> `runner_active` (opção em `EVENT_OPTIONS`, `TelegramSettings.jsx`) nunca
+> teve função `notify*` correspondente — ficava na tela sem fazer nada se
+> marcado. Não era uma implementação faltando, era um toggle morto:
+> **removido** de `EVENT_OPTIONS` nesta rodada (pedido explícito do
+> usuário, decisão de limpeza, não implementação da notificação).
+> Usuários com esse id salvo em `localStorage` não são afetados — o id só
+> deixa de aparecer na UI, sem efeito em nenhum outro filtro.
 
 > **Atualização (review do Codex, PR #60) — gap real de migração
 > encontrado e corrigido na mesma rodada:** `getTelegramFilters()`
@@ -3657,6 +3661,28 @@ mesmo com o Map final marcando `ok:true`; chamador legado sem
 `rfRegimeAllOutcomes` explícito continua funcionando via fallback) — 725
 testes passando no total, sem regressão. `npm run lint && npm run build &&
 npm run build:scan && npm run build:backtest` OK.
+
+> **Atualização (2026-08-02, limpeza de achados "já conhecidos" da
+> auditoria item 59):** as 5 seções deixadas de fora do item 1
+> (`retestOutcomes`/`displacementOutcomes`/`smcRegimeOutcomes`/
+> `arbitrationOutcomes`/`smcObFvgOutcomes`) e o histograma
+> `smcRegimeAllOutcomes` foram movidos para dentro do mesmo
+> `if (t >= evalFromMs && t <= evalToMs)` que já protegia
+> `entryFunnelOutcomes`/`rfRegimeOutcomes`/`rfRegimeAllOutcomes`/
+> `smcTriggerOutcomes`/`candlePatternOutcomes` (`backtestEngine.js`, loop
+> de `runBacktest`) — código-motion mecânico, mesmo `if` existente, sem
+> lógica nova. Fecha a lacuna que este item deixou aberta de propósito.
+> **Sem teste e2e novo desta vez** — construir uma fixture de candle
+> completa pra disparar reteste/displacement/regime SMC/arbitragem/OB-FVG
+> via `runBacktest` (em vez de chamar `buildReport` direto, como os testes
+> existentes dessas 5 seções já fazem) seria uma fixture nova e não
+> trivial, desproporcional a uma limpeza de baixo risco; o próprio
+> mecanismo do gate (`if (t >= evalFromMs && t <= evalToMs)`) já está
+> provado por 3 testes (item 1 acima) contra a mesma estrutura de código
+> (`recordOutcome` num Map por `dedup_key`) que as 5 seções movidas usam
+> — a mudança é reposicionar chamadas já testadas pra dentro de um gate já
+> testado, não lógica nova. 790 testes passando, sem regressão
+> (`npm test`).
 
 ## 52. Gatilho SMC 5m: 100% das confirmações vêm de sweep, 0% de estrutura — não é bug (2026-08-01)
 

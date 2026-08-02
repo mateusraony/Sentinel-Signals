@@ -212,7 +212,7 @@ decisão de ligar depende do Bloco 0.
 **E não salva a estratégia**: mesmo eliminando o runner inteiro, o bruto vai a
 +0,009 R contra 0,045 R de custo.
 
-### Proteção de stop pré-TP1 — IMPLEMENTADO, opt-in, aguardando A/B (item 53/54)
+### Proteção de stop pré-TP1 — IMPLEMENTADO, opt-in, A/B rodado e fechado (item 53/54/55)
 
 Achado de 2026-08-01: das 96 operações que terminaram em `STOP_HIT` num
 backtest real (12 meses/7 símbolos), 61 (52% do total) nunca tiveram TP1
@@ -223,10 +223,14 @@ preTp1StopProtectionEnabled` (default `false`) avança o stop pra breakeven
 (nunca além) quando o preço se move a favor por `preTp1StopProtectionAtrMult
 × ATR` (default 1.0×) — threshold generoso de propósito, pesquisa de
 comunidade documenta whipsaw quando o breakeven é prematuro/apertado demais.
-Falta rodar o A/B (`--pine-config` com/sem o flag) e comparar
-`report.preTp1StopProtection` + `overall.expectancyR` contra o baseline —
-mesma disciplina do Bloco 1, nenhum default mudou ainda. Ver
-`docs/known-risks.md` itens 53/54.
+
+**A/B rodado (2026-08-01)**: 116 operações sem a proteção vs. 129 com —
+expectância estatisticamente igual (-0,0452R vs -0,0446R, ambas
+inconclusivas), mas `maxDrawdownPct` piorou (111,73% → 137,76%) e 36% das
+81 operações em que o gate disparou teriam batido TP1 mesmo sem ele
+(cortadas cedo pela sacudida que a pesquisa do item 53 já alertava).
+**Mantido `preTp1StopProtectionEnabled: false` por padrão** — dado não
+mostra ganho e mostra um custo real. Ver `docs/known-risks.md` item 55.
 
 ### Ainda aberto: `tp1R`/`tp2R`/`trailAtrMult`
 
