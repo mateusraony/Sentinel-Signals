@@ -28,7 +28,7 @@ import { detectRetest } from './indicators/retest';
 import { detectDisplacement } from './indicators/displacement';
 import { detectFvg } from './indicators/fvg';
 import { detectOrderBlock } from './indicators/orderBlock';
-import { detectEngulfing } from './indicators/candlePatterns';
+import { detectEngulfing, detectPinBar, detectMarubozu } from './indicators/candlePatterns';
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
@@ -219,20 +219,39 @@ function evaluateRegime(tf4hData, pineConfig) {
 }
 
 /**
- * Candlestick pattern gate (engolfo) — additional confirmation ON TOP OF
- * the RF signal, opt-in (pineConfig.candlePatternEnabled), RF 4h_15m
- * cascade only. Requires the signal candle itself (the latest closed 4h
- * candle) to show a valid engulfing pattern in the signal direction against
- * the candle immediately before it. Returns null when the flag is off —
- * same convention as retestGate, so callers skip pushing an outcome
- * (candlePatternOutcomes) for the common passthrough case.
+ * Candlestick pattern gate — additional confirmation ON TOP OF the RF
+ * signal, opt-in (pineConfig.candlePatternEnabled), RF 4h_15m cascade only.
+ * Requires the signal candle (the latest closed 4h candle) to show ANY ONE
+ * of three genuinely distinct patterns (checked in this priority order —
+ * first match wins, since a candle could technically satisfy more than one):
+ * engulfing (2-candle reversal) -> pin bar (wick-rejection reversal) ->
+ * marubozu (single-candle momentum). See docs/known-risks.md item 58 for
+ * why these three and not an exhaustive port of every named pattern.
+ * Returns null when the flag is off — same convention as retestGate, so
+ * callers skip pushing an outcome (candlePatternOutcomes) for the common
+ * passthrough case. When none match, `reason` reports engulfing's specific
+ * rejection (the most information-dense of the three); `allReasons` carries
+ * all three for SystemLog debugging, never persisted to TradeOperation.
  */
 function evaluateCandlePatternGate(tf4hData, direction, pineConfig) {
   if (pineConfig.candlePatternEnabled !== true) return null;
   const candles = tf4hData?.last2Candles;
   if (!candles || candles.length < 2) return { ok: false, pattern: null, reason: 'insufficient_data' };
-  const result = detectEngulfing(candles[1], candles[0], direction);
-  return { ok: result.isEngulfing, pattern: result.pattern, reason: result.reason };
+  const [previous, current] = candles;
+
+  const engulfing = detectEngulfing(current, previous, direction);
+  if (engulfing.isEngulfing) return { ok: true, pattern: engulfing.pattern, reason: null };
+  const pinBar = detectPinBar(current, direction);
+  if (pinBar.isPinBar) return { ok: true, pattern: pinBar.pattern, reason: null };
+  const marubozu = detectMarubozu(current, direction);
+  if (marubozu.isMarubozu) return { ok: true, pattern: marubozu.pattern, reason: null };
+
+  return {
+    ok: false,
+    pattern: null,
+    reason: engulfing.reason,
+    allReasons: { engulfing: engulfing.reason, pinBar: pinBar.reason, marubozu: marubozu.reason },
+  };
 }
 
 /**
@@ -267,13 +286,11 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
 
   const entryScore = sig.context?.score || 0;
 
-  // Recomputed here (cheap, pure 2-candle comparison) rather than threading
-  // evaluateCandlePatternGate's result through every caller just for this
-  // one audit field — null when the gate is off, matching the other opt-in
-  // audit fields below (pre_tp1_stop_*).
-  const candlePattern = pineConfig.candlePatternEnabled === true
-    ? detectEngulfing(tf4hData.last2Candles?.[1], tf4hData.last2Candles?.[0], sig.signal_type)
-    : null;
+  // Recomputed here (cheap, pure candle comparison, no I/O) rather than
+  // threading the gate's result through every caller just for this one
+  // audit field — returns null when the gate is off, matching the other
+  // opt-in audit fields below (pre_tp1_stop_*).
+  const candlePattern = evaluateCandlePatternGate(tf4hData, sig.signal_type, pineConfig);
 
   return {
     symbol: sig.symbol,
@@ -1694,7 +1711,7 @@ export async function persistScanResults(scanResult) {
                   message: `${asset.symbol} 4H ${signal.signal_type} — padrão de vela não confirmado (${candlePattern.reason})`,
                   symbol: asset.symbol,
                   timeframe: '4h',
-                  details: { reason: candlePattern.reason },
+                  details: { reason: candlePattern.reason, allReasons: candlePattern.allReasons },
                 });
                 continue;
               }

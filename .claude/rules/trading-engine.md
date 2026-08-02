@@ -298,19 +298,24 @@ nunca deve receber nova transição.**
   existia em `scripts/fetch-backtest-data.mjs` — por isso o backtest nunca
   via esse problema. Puro I/O: não toca gate, threshold nem transição de
   estado, só a confiabilidade do dado que alimenta todos eles.
-- **Gate de padrão de vela (engolfo)** (`src/lib/indicators/
-  candlePatterns.js`, `evaluateCandlePatternGate` ao lado de
-  `evaluateRegime`) — item 58, **`pineConfig.candlePatternEnabled` desligado
-  por padrão**. Pedido explícito do usuário: exige que o candle 4h que
-  gerou o sinal também mostre um engolfo válido (corpo-a-corpo, candle
-  anterior na cor oposta) na direção do sinal — camada A MAIS sobre a RF,
-  nunca a substitui. Só cascata RF (4h→15m), nos mesmos 2 pontos de
-  `evaluateRegime` (1ª passada e retry). Novo campo `results['4h'].
-  last2Candles` (bounded slice de 2 candles fechados) alimenta o gate; sem
-  equivalente no Pine real, sem obrigação de golden test. Auditoria em
-  `TradeOperation.entry_candle_pattern`. **Não ativar sem comparar
-  relatórios de backtest com/sem primeiro** — ver `docs/known-risks.md`
-  item 58.
+- **Gate de padrão de vela** (`src/lib/indicators/candlePatterns.js`,
+  `evaluateCandlePatternGate` ao lado de `evaluateRegime`) — item 58,
+  **`pineConfig.candlePatternEnabled` desligado por padrão**. Pedido
+  explícito do usuário: exige que o candle 4h que gerou o sinal também
+  mostre um de 3 padrões válidos na direção do sinal — engolfo (corpo-a-
+  corpo, candle anterior na cor oposta), pin bar/martelo-estrela-cadente
+  (pavio dominante >= 2× o corpo) ou marubozu (corpo >= 90% do range) —
+  checados nessa ordem de prioridade, combinados por OU. Camada A MAIS
+  sobre a RF, nunca a substitui — deliberadamente não é "todos os padrões
+  que existem" (decisão registrada no item 58: mais padrões testados no
+  mesmo histórico curto é o problema de múltiplas comparações que a
+  pesquisa de comunidade do próprio item alerta). Só cascata RF (4h→15m),
+  nos mesmos 2 pontos de `evaluateRegime` (1ª passada e retry). Novo campo
+  `results['4h'].last2Candles` (bounded slice de 2 candles fechados)
+  alimenta o gate; sem equivalente no Pine real, sem obrigação de golden
+  test. Auditoria em `TradeOperation.entry_candle_pattern`. **Não ativar
+  sem comparar relatórios de backtest com/sem primeiro** — ver
+  `docs/known-risks.md` item 58.
 
 ## Regras ao mexer aqui
 

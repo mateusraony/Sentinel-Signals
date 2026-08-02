@@ -4193,7 +4193,7 @@ bloqueia, `.claude/rules/pine-parity.md`) — a prova real vem depois,
 olhando a tela "Logs" em produção pra confirmar queda de `"Failed to
 fetch"` e comparando o volume de operações do próximo período.
 
-## 58. Gate de padrão de vela (engolfo) na cascata RF — mecanismo opt-in, desligado por padrão (2026-08-02)
+## 58. Gate de padrão de vela na cascata RF — mecanismo opt-in, desligado por padrão (2026-08-02)
 
 Pedido explícito do usuário, na sequência da conversa sobre volume/qualidade
 de entrada: "tem como usar o padrão de Price Action? [...] se fez uma vela
@@ -4220,63 +4220,111 @@ SMC, que não tem equivalente no Pine real do usuário — fora de escopo aqui).
   [tradingwithrayner.com](https://www.tradingwithrayner.com/multi-timeframe-analysis/),
   [acy.com](https://acy.com/en/market-news/education/power-of-multi-timeframe-analysis-in-smart-money-concepts-j-o-134004/).
 
+**Continuação (mesmo dia)**: usuário pediu inicialmente "todos os padrões que
+existem" pra poder comparar tudo num backtest só. Avaliei e **recomendei
+contra** — motivo registrado aqui porque é uma decisão de escopo, não só
+técnica: testar muitos padrões contra o mesmo histórico curto (~2-3 anos
+reais de Binance, já limitado pela discussão de walk-forward desta sessão) é
+o problema de múltiplas comparações/data-mining que a própria pesquisa de
+comunidade alerta — "estabeleça a hipótese ANTES de rodar o backtest, não
+desenhe a estratégia depois de ver o que funcionou" — e vários padrões
+clássicos (estrela da manhã/tarde, três soldados/corvos, doji-gravestone)
+dependem de contexto de tendência ou do conceito de "gap" entre candles, que
+não existe do mesmo jeito em candles de cripto 24/7. Fonte adicional:
+[quantifiedstrategies.com — ranking de 75 padrões](https://www.quantifiedstrategies.com/candlestick-patterns-ranked-by-backtest/)
+(top performers: Inverted Hammer 60%, Bearish Marubozu 56,1%, Gravestone
+Doji 57%, Bearish Engulfing 57%).
+
+Acordo final com o usuário: **3 padrões, não "todos"** — engolfo (já
+implementado) + martelo/estrela cadente (pin bar) + marubozu. Inverted
+Hammer do ranking foi deliberadamente descartado por ser a MESMA geometria
+de pavio do pin bar, só lida no extremo oposto — testar separado seria medir
+a mesma forma duas vezes sob outro nome, não uma ideia genuinamente nova.
+
 ### Mecanismo
 
-`src/lib/indicators/candlePatterns.js` (novo, função pura) —
-`detectEngulfing(currentCandle, previousCandle, direction)`: engolfo de
-alta/baixa, corpo-a-corpo (open/close, não o range high/low completo),
-exige o candle anterior na cor OPOSTA (contexto de reversão) e o candle
-atual alinhado com a direção do sinal (doji reprova nos dois lados, mesma
-guarda que `displacement.js` já usa). Sem equivalente no Pine real
-(`docs/reference-pine/`, grep por nomes de padrão sem match) — mecanismo
-original do Sentinel, sem obrigação de golden test
-(`.claude/rules/pine-parity.md`).
+`src/lib/indicators/candlePatterns.js` (função pura, 3 detectores):
+- `detectEngulfing(currentCandle, previousCandle, direction)`: engolfo de
+  alta/baixa, corpo-a-corpo (open/close, não o range high/low completo),
+  exige o candle anterior na cor OPOSTA (contexto de reversão) e o candle
+  atual alinhado com a direção do sinal (doji reprova nos dois lados, mesma
+  guarda que `displacement.js` já usa).
+- `detectPinBar(candle, direction, {wickToBodyRatio=2})`: martelo (BUY)/
+  estrela cadente (SELL) — pavio dominante (do lado da direção pedida) >=
+  2× o corpo, pavio oposto <= o corpo. Deliberadamente NÃO exige que o
+  candle feche na direção do sinal (a definição canônica é sobre rejeição
+  de preço pelo pavio, não pela cor do fechamento — muitos martelos reais
+  fecham levemente vermelhos e continuam válidos).
+- `detectMarubozu(candle, direction, {minBodyToRangeRatio=0.9})`: corpo
+  domina quase todo o range (pavios quase nulos), ESSE exige fechamento
+  alinhado com a direção (marubozu é definido pela cor). `0.9` é limiar
+  convencional da literatura — decisão de julgamento sem dado próprio pra
+  calibrar, mesma categoria do `bodyAtrMult` do `displacement.js`.
 
-`pineConfig.candlePatternEnabled` (novo, `false` por padrão, mesma
-convenção de todo flag Fase 2+). `evaluateCandlePatternGate` (`scanner.js`,
-ao lado de `evaluateRegime`) compara os **dois últimos candles 4h
-fechados** — `results['4h'].last2Candles`, campo novo (bounded slice de 2
-candles, não a série inteira) alimentado no loop principal de
-`scanAsset`. Rodando nos **2 pontos** da cascata RF (1ª passada e retry) —
-**não** na cascata SMC nesta rodada, escopo explicitamente pedido pelo
-usuário como só 4h→15m. Novo motivo `candle_pattern_rejected` no funil de
-rejeição já existente (`entryFunnelOutcomes`/`last_rejection_reason`-style
-log), sem inventar mecanismo de log novo.
+Nenhum tem equivalente no Pine real (`docs/reference-pine/`, grep por nomes
+de padrão sem match) — mecanismo original do Sentinel, sem obrigação de
+golden test (`.claude/rules/pine-parity.md`).
+
+`pineConfig.candlePatternEnabled` (`false` por padrão, mesma convenção de
+todo flag Fase 2+). `evaluateCandlePatternGate` (`scanner.js`, ao lado de
+`evaluateRegime`) compara os **dois últimos candles 4h fechados** —
+`results['4h'].last2Candles`, campo novo (bounded slice de 2 candles, não a
+série inteira) alimentado no loop principal de `scanAsset`. Os 3 padrões
+são checados em ordem de prioridade — **engolfo → pin bar → marubozu**,
+primeiro que validar ganha (um candle pode tecnicamente satisfazer mais de
+um) — e combinados por OU: qualquer um dos três confirma. Rodando nos **2
+pontos** da cascata RF (1ª passada e retry) — **não** na cascata SMC nesta
+rodada, escopo explicitamente pedido pelo usuário como só 4h→15m. Novo
+motivo `candle_pattern_rejected` no funil de rejeição já existente
+(`entryFunnelOutcomes`/`last_rejection_reason`-style log); quando nenhum dos
+3 valida, o `reason` do funil reporta o motivo do engolfo (o mais
+informativo dos três) e o `SystemLog` da 1ª passada grava os 3 motivos
+completos (`details.allReasons`) para debug.
 
 Auditoria: `TradeOperation.entry_candle_pattern` (`'bullish_engulfing'` |
-`'bearish_engulfing'` | `null`) — recomputado dentro de `buildTradeOpData`
-(barato, comparação pura de 2 candles) em vez de threadear o resultado do
+`'bearish_engulfing'` | `'hammer'` | `'shooting_star'` |
+`'bullish_marubozu'` | `'bearish_marubozu'` | `null`) — recomputado dentro
+de `buildTradeOpData` chamando a mesma `evaluateCandlePatternGate` (barato,
+comparação pura de candles, sem I/O) em vez de threadear o resultado do
 gate por todos os call sites só por esse campo.
 
 Backtest: nova seção `report.candlePattern` (`enabled`, `total`, `attempts`,
 `passed`, `rejected`, `byPattern`, `byReason`) — ao contrário de
 `smcTrigger` (sempre ligado), aqui `enabled` É informativo: `total: 0` pode
-genuinamente significar "flag desligado neste run". Impressão em
-`scripts/analyze-backtest.mjs` via `renderGateSection` (estendido com um
-branch `byPattern`, mesmo formato de `byTrigger`).
+genuinamente significar "flag desligado neste run". `byPattern` já separa
+os 6 rótulos automaticamente, então UM backtest com o flag ligado já dá a
+comparação entre os 3 padrões que o usuário queria, sem precisar rodar 3
+vezes. Impressão em `scripts/analyze-backtest.mjs` via `renderGateSection`
+(estendido com um branch `byPattern`, mesmo formato de `byTrigger`).
 
 ### Testes
 
-`candlePatterns.test.js` (função pura — engolfo válido dos dois lados,
-direção errada, doji, candle anterior não-oposto, corpo que não engolfa,
-parâmetros inválidos). `scannerStateMachine.test.js` — flag desligado:
+`candlePatterns.test.js` (20 casos — função pura, os 3 detectores: válido
+dos dois lados, direção errada, doji, candle anterior não-oposto, corpo que
+não engolfa/não domina o range, pavio curto/longo demais, parâmetros
+inválidos). `scannerStateMachine.test.js` (6 casos) — flag desligado:
 comportamento idêntico ao anterior (`entry_candle_pattern` null, sem log);
-flag ligado com padrão válido: operação criada com o campo correto; flag
-ligado sem padrão válido: nenhuma operação, log com o motivo certo; confirma
-pelo loop de retry, não só na 1ª passada. `backtestEngine.test.js` — seção
-nova default desligada/zerada quando nada é passado (compat de chamada
-legada); conta confirmados por padrão e rejeitados por motivo corretamente.
+confirma via engolfo, via pin bar (sem engolfo), via marubozu (sem engolfo
+nem pin bar); flag ligado sem padrão nenhum válido: nenhuma operação, log
+com o motivo certo; confirma pelo loop de retry, não só na 1ª passada.
+`backtestEngine.test.js` — seção nova default desligada/zerada quando nada
+é passado (compat de chamada legada); conta confirmados por padrão e
+rejeitados por motivo corretamente.
 
 ### Status
 
 **Implementado, desligado por padrão.** Não ativar sem comparar relatórios
 de backtest com/sem o flag primeiro — mesma disciplina de todo flag deste
 projeto (nenhum dos flags Fase 2+ foi ativado por default sem essa etapa).
+O `byPattern` do primeiro backtest exploratório deve ser tratado como
+**hipótese**, não decisão — qual padrão "ganha" numa amostra pequena e
+única não é motivo suficiente pra ativar só aquele, mesma disciplina que
+motivou recusar "todos os padrões" acima.
 
 ### Verificação
 
 `npm run lint && npm test && npm run build && npm run build:scan && npm run
-build:backtest` — 771 testes passando. `sentinel-trading-engine-review`
+build:backtest` — 786 testes passando. `sentinel-trading-engine-review`
 rodado antes de considerar pronto (toca os 2 pontos de entrada da cascata
 RF) — sem achado: não introduz look-ahead (compara candles JÁ fechados, o
 mesmo par em toda a janela de retry de um sinal), erro propagado idêntico
