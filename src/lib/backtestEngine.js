@@ -271,55 +271,45 @@ export async function runBacktest({
           for (const rejection of (persistResult.smc5mZoneRejections || [])) {
             smcOteZoneRejectionKeys.add(rejection.dedup_key);
           }
-          for (const outcome of (persistResult.arbitrationOutcomes || [])) {
-            recordOutcome(arbitrationOutcomesByKey, attemptsByKey.arbitration, outcome);
-          }
-          for (const outcome of (persistResult.retestOutcomes || [])) {
-            recordOutcome(retestOutcomesByKey, attemptsByKey.retest, outcome);
-          }
-          for (const outcome of (persistResult.displacementOutcomes || [])) {
-            recordOutcome(displacementOutcomesByKey, attemptsByKey.displacement, outcome);
-          }
-          for (const outcome of (persistResult.smcRegimeOutcomes || [])) {
-            recordOutcome(smcRegimeOutcomesByKey, attemptsByKey.smcRegime, outcome);
-          }
-          for (const outcome of (persistResult.smcObFvgOutcomes || [])) {
-            recordOutcome(smcObFvgOutcomesByKey, attemptsByKey.smcObFvg, outcome);
-          }
-          // Codex review (PR #104, P2): plain running array (like
-          // entryFunnelCounts below), NOT deduped by dedup_key — every
-          // regime evaluation for the SMC cascade counts, so a signal
-          // rejected 3 times before finally passing doesn't lose those 3
-          // real rejections from the stats the way smcRegimeOutcomesByKey
-          // (last-write-wins) does. Left OUTSIDE the eval-window gate below
-          // on purpose, matching smcRegimeOutcomesByKey's own (pre-existing,
-          // documented, deferred) lack of windowing — see known-risks.md
-          // item 51's "not corrected" list.
-          smcRegimeAllOutcomes.push(...(persistResult.smcRegimeOutcomes || []));
-          // Codex review (PR #102): unlike the Maps above (which only ever
-          // hold the FINAL outcome per dedup_key, so a warm-up-only entry is
-          // naturally overwritten once real evaluation starts), this is a
-          // running SUM across every tick — counting warm-up/post-evaluation
-          // ticks here would silently inflate byReason with rejections
-          // outside the window the rest of the report (evaluatedOps, costs)
-          // is scoped to. Gate on the same evalFromMs/evalToMs boundary.
+          // known-risks.md item 51: unlike a plain last-write-wins Map
+          // that would "naturally" drop a warm-up-only entry once real
+          // evaluation starts, that assumption doesn't hold — a
+          // warm-up-only signal never touched again just sits in the Map
+          // forever, and a post-evalToMs retry can overwrite an in-window
+          // signal's true final state. entryFunnelOutcomes/
+          // rfRegimeOutcomes/smcTriggerOutcomes were windowed first (item
+          // 51 P1); this gate now covers every outcome recording below,
+          // closing the gap item 51 flagged and deferred (arbitration/
+          // retest/displacement/smcRegime/smcObFvg + the smcRegimeAllOutcomes
+          // histogram, see known-risks.md item 51's 2026-08-02 update).
           if (t >= evalFromMs && t <= evalToMs) {
+            for (const outcome of (persistResult.arbitrationOutcomes || [])) {
+              recordOutcome(arbitrationOutcomesByKey, attemptsByKey.arbitration, outcome);
+            }
+            for (const outcome of (persistResult.retestOutcomes || [])) {
+              recordOutcome(retestOutcomesByKey, attemptsByKey.retest, outcome);
+            }
+            for (const outcome of (persistResult.displacementOutcomes || [])) {
+              recordOutcome(displacementOutcomesByKey, attemptsByKey.displacement, outcome);
+            }
+            for (const outcome of (persistResult.smcRegimeOutcomes || [])) {
+              recordOutcome(smcRegimeOutcomesByKey, attemptsByKey.smcRegime, outcome);
+            }
+            // Codex review (PR #104, P2): plain running array (like
+            // entryFunnelCounts below), NOT deduped by dedup_key — every
+            // regime evaluation for the SMC cascade counts, so a signal
+            // rejected 3 times before finally passing doesn't lose those 3
+            // real rejections from the stats the way smcRegimeOutcomesByKey
+            // (last-write-wins) does. Now windowed same as
+            // rfRegimeAllOutcomes below (2026-08-02, closes item 51's gap).
+            smcRegimeAllOutcomes.push(...(persistResult.smcRegimeOutcomes || []));
+            for (const outcome of (persistResult.smcObFvgOutcomes || [])) {
+              recordOutcome(smcObFvgOutcomesByKey, attemptsByKey.smcObFvg, outcome);
+            }
             for (const outcome of (persistResult.entryFunnelOutcomes || [])) {
               const bucket = (entryFunnelCounts[outcome.cascade] ||= {});
               bucket[outcome.reason] = (bucket[outcome.reason] || 0) + 1;
             }
-            // Codex review (PR #103): rfRegimeOutcomes/smcTriggerOutcomes are
-            // brand new this round — unlike the "naturally overwritten"
-            // assumption above (which the SAME review disproved: a
-            // warm-up-only signal that's never touched again just sits in
-            // the Map as its own entry, and a post-cutoff retry can
-            // overwrite an in-window signal's true final state), these two
-            // get the SAME window gate as entryFunnelOutcomes from the
-            // start. retestOutcomes/displacementOutcomes/smcRegimeOutcomes/
-            // arbitrationOutcomes/smcObFvgOutcomes above share this same
-            // pre-existing gap (Fase 2/3) — NOT fixed here, see
-            // docs/known-risks.md item 51 for why that's a separate,
-            // broader change left for its own round.
             for (const outcome of (persistResult.rfRegimeOutcomes || [])) {
               recordOutcome(rfRegimeOutcomesByKey, attemptsByKey.rfRegime, outcome);
             }
@@ -330,9 +320,6 @@ export async function runBacktest({
             for (const outcome of (persistResult.smcTriggerOutcomes || [])) {
               recordOutcome(smcTriggerOutcomesByKey, attemptsByKey.smcTrigger, outcome);
             }
-            // Gate de padrão de vela — brand new this round, correctly
-            // windowed from the start (same as rfRegimeOutcomes/
-            // smcTriggerOutcomes just above).
             for (const outcome of (persistResult.candlePatternOutcomes || [])) {
               recordOutcome(candlePatternOutcomesByKey, attemptsByKey.candlePattern, outcome);
             }
