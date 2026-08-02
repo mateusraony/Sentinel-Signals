@@ -2446,6 +2446,11 @@ export async function persistScanResults(scanResult) {
     let tp2Hit = op.tp2_hit || false;
     let newCurrentStop = op.current_stop;
     const updatePayload = {};
+    // Set below (RUNNER_ACTIVE branch only) when a trailing advance happens
+    // this pass — passed to transitionTradeOp so it can drop the marker
+    // transactionally if a racing worker's fresher stop wins the clamp
+    // instead (docs/known-risks.md item 59 addendum).
+    let stopAdvanceMarkerField = null;
 
     // Bars since entry, in units of the SIGNAL timeframe — same elapsed-time
     // proxy the Time Stop already uses below (barsOpen), lifted up here so
@@ -2716,9 +2721,12 @@ export async function persistScanResults(scanResult) {
         // genuinely new favourable candle, so this overwrites each time
         // (advanceTrailingStop is monotonic/idempotent against the same
         // close, so a repeat pass over the same candle never re-triggers
-        // this branch with a changed value).
+        // this branch with a changed value). The actual write is decided
+        // transactionally (stopAdvanceMarkerField below) — this candidate
+        // value only lands if clampMonotonicStop keeps THIS worker's stop.
         if (newCurrentStop !== op.current_stop) {
           updatePayload.runner_stop_advanced_candle_time = tfData.lastCandleTime;
+          stopAdvanceMarkerField = 'runner_stop_advanced_candle_time';
         }
       }
     }
@@ -2735,7 +2743,7 @@ export async function persistScanResults(scanResult) {
         tp2_hit: tp2Hit,
         current_stop: newCurrentStop,
         ...updatePayload,
-      }, { assetId: op.asset_id });
+      }, { assetId: op.asset_id, stopAdvanceMarkerField });
       // Observability for the cross-loop precedence residual (see
       // .claude/rules/trading-engine.md): a dropped transition means the other
       // loop won the race — measure how often before designing a hard rule.

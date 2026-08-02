@@ -3354,6 +3354,37 @@ describe('cross-loop concurrency invariant (persistScanResults vs priceCheckActi
     expect(workerB.applied).toBe(true); // CAS on status doesn't reject this — the stop itself must self-protect
     expect(backend._get('TradeOperation', 'op1').current_stop).toBe(105); // never regresses to 102
   });
+
+  // docs/known-risks.md item 59 addendum (external review, PR #116): the
+  // candle-time marker paired with a stop advance must name the candle that
+  // produced the STORED stop, not whichever candle the losing worker read.
+  // Same race as the test above, but checking runner_stop_advanced_candle_time
+  // instead of current_stop — without this fix, worker B's stale T1 marker
+  // would overwrite worker A's correct T2 one even though current_stop
+  // correctly stays at worker A's 105, un-defeating the same-candle
+  // look-ahead guard the marker exists for (scanner.js's runnerStopHit).
+  it('a losing candidate stop must not overwrite the candle-time marker with its own stale candle', async () => {
+    backend._seed('TradeOperation', makeOp({ status: 'RUNNER_ACTIVE', current_stop: 100 }));
+
+    // Worker A (fresher candle T2) commits the better trail first, tagging
+    // the candle that produced it.
+    const workerA = await backend.tradeOps.transitionTradeOp('op1', 'RUNNER_ACTIVE', {
+      status: 'RUNNER_ACTIVE', current_stop: 105, runner_stop_advanced_candle_time: 'T2',
+    }, { stopAdvanceMarkerField: 'runner_stop_advanced_candle_time' });
+
+    // Worker B (stale — computed from the stop=100 it read BEFORE worker A
+    // committed, off an OLDER candle T1) proposes a worse stop; its own CAS
+    // on `status` still passes, and clampMonotonicStop correctly keeps 105.
+    const workerB = await backend.tradeOps.transitionTradeOp('op1', 'RUNNER_ACTIVE', {
+      status: 'RUNNER_ACTIVE', current_stop: 102, runner_stop_advanced_candle_time: 'T1',
+    }, { stopAdvanceMarkerField: 'runner_stop_advanced_candle_time' });
+
+    expect(workerA.applied).toBe(true);
+    expect(workerB.applied).toBe(true);
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.current_stop).toBe(105); // never regresses to 102 (already covered above)
+    expect(stored.runner_stop_advanced_candle_time).toBe('T2'); // marker matches the stop actually stored, not worker B's losing candle
+  });
 });
 
 // docs/known-risks.md item 35/38: the zoneOk gate that used to reject a 1h

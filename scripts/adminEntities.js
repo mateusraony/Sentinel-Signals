@@ -9,7 +9,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 // Relative (not '@/') so esbuild bundles it for the cron without the Vite alias
 // — see scripts/build-scan.mjs (it only rewrites '@/api/entities').
-import { canApplyTransition, clampMonotonicStop, isTerminalStatus, planTradeOpCreation } from '../src/lib/opTransition.js';
+import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation } from '../src/lib/opTransition.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) });
@@ -199,7 +199,7 @@ async function clearActiveOp(assetId, tradeOpId) {
 // status + same in-transaction clear of assetActiveOps on terminal states,
 // using the Admin SDK's transaction API. The decision itself lives in the
 // shared src/lib/opTransition.js, so browser and cron can never disagree.
-async function transitionTradeOp(opId, fromStatus, patch, { assetId } = {}) {
+async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField } = {}) {
   const opRef = db.collection('tradeOperations').doc(opId);
   const terminal = isTerminalStatus(patch.status);
   const activeRef = terminal && assetId ? db.collection('assetActiveOps').doc(assetId) : null;
@@ -210,9 +210,16 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId } = {}) {
     if (!canApplyTransition(current, fromStatus)) {
       return { applied: false, currentStatus: current ? current.status : null };
     }
-    const safePatch = patch.current_stop != null
-      ? { ...patch, current_stop: clampMonotonicStop({ side: current.side, existingStop: current.current_stop, candidateStop: patch.current_stop }) }
-      : patch;
+    let safePatch = patch;
+    if (patch.current_stop != null) {
+      const clampedStop = clampMonotonicStop({ side: current.side, existingStop: current.current_stop, candidateStop: patch.current_stop });
+      safePatch = { ...patch, current_stop: clampedStop };
+      // docs/known-risks.md item 59 addendum — see src/api/entities.js's
+      // mirror of this function for the full comment.
+      if (stopAdvanceMarkerField && !stopAdvanceCandidateWon({ clampedStop, candidateStop: patch.current_stop })) {
+        delete safePatch[stopAdvanceMarkerField];
+      }
+    }
     tx.update(opRef, safePatch);
     if (activeRef && activeSnap && activeSnap.exists
         && activeSnap.data().active_trade_op_id === opId) {

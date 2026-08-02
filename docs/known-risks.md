@@ -4566,16 +4566,50 @@ dado) em vez de "0", escondendo um valor real do indicador. **Corrigido**:
   A/B", mas o item 55 já rodou e fechou isso — só desatualização de texto,
   não corrigido nesta rodada.
 
+### Addendum (review externa, Codex, PR #116, P1): o marcador da vela também precisava de proteção transacional
+
+O PR original escrevia `runner_stop_advanced_candle_time` fora da proteção
+de `clampMonotonicStop` — só `current_stop` era protegido contra regressão
+entre workers concorrentes (browser/cron), o marcador não. Cenário real:
+Worker A (candle T2, mais recente) commita stop 105 com marcador T2; Worker
+B (stale — leu o estado ANTES do commit de A, ainda enxergando a vela T1
+mais antiga) propõe stop 102 com marcador T1. `clampMonotonicStop` corrige
+o `current_stop` (fica 105, não regride) — mas sem a correção, o marcador
+de B (T1) sobrescreveria o de A (T2) mesmo assim, porque só o campo
+`current_stop` passava pelo clamp. Resultado: `current_stop=105` (correto)
+com `runner_stop_advanced_candle_time=T1` (errado) — a próxima passagem
+sobre a vela T2 (que continua sendo "a última fechada") não reconheceria
+T2 como a vela que produziu o stop armazenado, e o guard de
+`runnerStopHit` deixaria de excluí-la — reabrindo exatamente o `STOP_HIT`
+falso que este item existe pra fechar.
+
+**Correção**: nova função pura `stopAdvanceCandidateWon`
+(`src/lib/opTransition.js`) — só true quando o `candidateStop` deste worker
+é o valor que `clampMonotonicStop` de fato manteve. `transitionTradeOp`
+(nos 3 backends — `entities.js`, `adminEntities.js`, `fakeBackend.js`)
+ganhou um parâmetro `stopAdvanceMarkerField`: quando o candidato deste
+worker PERDE o clamp, o campo do marcador é removido do patch antes do
+`tx.update` (nunca sobrescreve o marcador de quem realmente venceu).
+`scanner.js` passa a computar `stopAdvanceMarkerField` localmente (só
+quando o avanço realmente aconteceu nesta passada) em vez de gravar o
+marcador direto em `updatePayload`.
+
+Teste de regressão novo em `scannerStateMachine.test.js` reproduz o
+cenário exato de Codex (Worker A commita 105/T2, Worker B tenta 102/T1
+depois) e confirma `current_stop=105` **e** `runner_stop_advanced_candle_time=T2`
+— não T1. `opTransition.test.js` cobre `stopAdvanceCandidateWon`
+isoladamente (função pura).
+
 ### Status
 
-**Corrigido e testado** (trailing pós-TP1, edição de operação, exibição de
-RSI). Os "outros achados" ficam registrados, sem ação — nenhum afeta
-dinheiro real hoje.
+**Corrigido e testado** (trailing pós-TP1 — incluindo o addendum de
+concorrência acima —, edição de operação, exibição de RSI). Os "outros
+achados" ficam registrados, sem ação — nenhum afeta dinheiro real hoje.
 
 ### Verificação
 
 `npm run lint && npm test && npm run build && npm run build:scan && npm run
 build:backtest`, `sentinel-trading-engine-review` (toca `scanner.js`,
 máquina de estados, P0). Teste de regressão dedicado pro achado do
-trailing (reproduz o cenário exato antes de corrigir, como manda
-`.claude/rules/operating-principles.md`).
+trailing e pro addendum de concorrência (reproduz cada cenário exato antes
+de corrigir, como manda `.claude/rules/operating-principles.md`).

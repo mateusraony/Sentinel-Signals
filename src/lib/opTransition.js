@@ -57,6 +57,25 @@ export function clampMonotonicStop({ side, existingStop, candidateStop }) {
   return candidateStop; // unknown/legacy side — pass through, don't strand old ops
 }
 
+// docs/known-risks.md item 59 addendum (external review, PR #116): a
+// "candle time" marker paired with a stop advance (e.g.
+// runner_stop_advanced_candle_time) exists so a repeat pass over the SAME
+// still-latest candle doesn't re-test it against a stop that candle's own
+// close just advanced — see the guard next to detectRetest's caller in
+// scanner.js. That marker is only correct if it names the candle whose
+// close produced the stop value actually STORED. Without this check, a
+// stale worker (racing across a candle boundary — e.g. cron still
+// evaluating candle T1 after the browser already committed a fresher
+// stop from candle T2) has its worse candidate clamped away by
+// clampMonotonicStop, but would otherwise still overwrite the marker with
+// T1 — leaving `current_stop` correctly at the T2-derived value while the
+// marker falsely claims T1 caused it, un-defeating the exact same-candle
+// look-ahead guard the marker exists for. Call with the value read INSIDE
+// the same transaction as clampMonotonicStop, on its result.
+export function stopAdvanceCandidateWon({ clampedStop, candidateStop }) {
+  return clampedStop === candidateStop;
+}
+
 // Decide what createTradeOpIfNoneActive should do, given what it read inside
 // the transaction: the assetActiveOps pointer, the op that pointer references
 // (null when missing), and the op at the deterministic doc ID (null when

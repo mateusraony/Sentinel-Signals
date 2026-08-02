@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canApplyTransition, clampMonotonicStop, groupActiveOpsByAsset, isTerminalStatus, planTradeOpCreation, TERMINAL_STATUSES } from './opTransition.js';
+import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, groupActiveOpsByAsset, isTerminalStatus, planTradeOpCreation, TERMINAL_STATUSES } from './opTransition.js';
 
 describe('isTerminalStatus', () => {
   it('recognises every terminal status', () => {
@@ -57,6 +57,21 @@ describe('clampMonotonicStop', () => {
   it('passes the candidate through when there is nothing to compare against (first write, or no-op patch)', () => {
     expect(clampMonotonicStop({ side: 'BUY', existingStop: null, candidateStop: 105 })).toBe(105);
     expect(clampMonotonicStop({ side: 'BUY', existingStop: 100, candidateStop: null })).toBe(null);
+  });
+});
+
+// docs/known-risks.md item 59 addendum (external review, PR #116).
+describe('stopAdvanceCandidateWon', () => {
+  it('true when clampMonotonicStop kept this candidate unchanged (the common, non-racing case)', () => {
+    const candidateStop = 105;
+    const clampedStop = clampMonotonicStop({ side: 'BUY', existingStop: 100, candidateStop });
+    expect(stopAdvanceCandidateWon({ clampedStop, candidateStop })).toBe(true);
+  });
+  it('false when a fresher committed stop clamped this worker\'s worse candidate away', () => {
+    const candidateStop = 102; // this worker's own read, now stale
+    const clampedStop = clampMonotonicStop({ side: 'BUY', existingStop: 105, candidateStop }); // 105 already committed by another worker
+    expect(clampedStop).toBe(105);
+    expect(stopAdvanceCandidateWon({ clampedStop, candidateStop })).toBe(false);
   });
 });
 

@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebaseClient';
 import { strategyReviewerAgent } from '@/api/agents';
-import { canApplyTransition, clampMonotonicStop, isTerminalStatus, planTradeOpCreation } from '@/lib/opTransition';
+import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation } from '@/lib/opTransition';
 
 function buildQuery(collectionName, filters = {}, sort, limitCount) {
   const constraints = [];
@@ -229,7 +229,7 @@ async function clearActiveOp(assetId, tradeOpId) {
 // lands a terminal status, `assetActiveOps/{assetId}` is cleared in the SAME
 // transaction, closing the window where a crash between the status write and a
 // separate clearActiveOp would strand the asset (blocking any new entry).
-async function transitionTradeOp(opId, fromStatus, patch, { assetId } = {}) {
+async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField } = {}) {
   const opRef = doc(db, 'tradeOperations', opId);
   const terminal = isTerminalStatus(patch.status);
   const activeRef = terminal && assetId ? doc(db, 'assetActiveOps', assetId) : null;
@@ -241,9 +241,18 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId } = {}) {
     if (!canApplyTransition(current, fromStatus)) {
       return { applied: false, currentStatus: current ? current.status : null };
     }
-    const safePatch = patch.current_stop != null
-      ? { ...patch, current_stop: clampMonotonicStop({ side: current.side, existingStop: current.current_stop, candidateStop: patch.current_stop }) }
-      : patch;
+    let safePatch = patch;
+    if (patch.current_stop != null) {
+      const clampedStop = clampMonotonicStop({ side: current.side, existingStop: current.current_stop, candidateStop: patch.current_stop });
+      safePatch = { ...patch, current_stop: clampedStop };
+      // docs/known-risks.md item 59 addendum — a losing candidate (clamped
+      // away by a fresher value another worker already committed) must not
+      // overwrite the candle-time marker with the candle IT read; that
+      // would misidentify which candle produced the value actually stored.
+      if (stopAdvanceMarkerField && !stopAdvanceCandidateWon({ clampedStop, candidateStop: patch.current_stop })) {
+        delete safePatch[stopAdvanceMarkerField];
+      }
+    }
     tx.update(opRef, safePatch);
     if (activeRef && activeSnap && activeSnap.exists()
         && activeSnap.data().active_trade_op_id === opId) {

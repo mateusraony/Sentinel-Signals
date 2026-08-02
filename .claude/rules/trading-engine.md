@@ -75,7 +75,11 @@ nunca deve receber nova transição.**
   Mesma classe de bug que o item 54 já tinha corrigido no pré-TP1
   (`pre_tp1_stop_advanced_candle_time`), nunca replicada aqui até esta
   rodada — `runner_stop_advanced_candle_time` fecha a mesma lacuna no
-  trailing pós-TP1, já em produção.
+  trailing pós-TP1, já em produção. Review externa (Codex, PR #116) pegou
+  uma 2ª lacuna: o marcador também precisava de proteção transacional
+  contra um worker concorrente perdendo o `clampMonotonicStop` mas ainda
+  sobrescrevendo o marcador com a própria vela (stale) — ver item 59
+  addendum.
 - **[CORRIGIDO — P0-e] `rf_reverse_bars_count` por candle.** Deduplicado por
   `rf_reverse_last_candle` (`nextRfReverseCount`) — N passadas do cron sobre o
   mesmo candle contam 1x; reset quando o RF volta a favor; fallback por-passada

@@ -7,7 +7,7 @@
 // decision. Lets scanner.js run completely unmodified against it (see
 // scannerStateMachine.test.js), the same principle already used for the
 // browser/cron split (src/api/entities.js vs scripts/adminEntities.js).
-import { canApplyTransition, clampMonotonicStop, isTerminalStatus, planTradeOpCreation } from '../opTransition.js';
+import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation } from '../opTransition.js';
 
 const COLLECTIONS = [
   'MonitoredAsset', 'AssetState', 'SignalEvent', 'TradeOperation',
@@ -108,15 +108,22 @@ export function createFakeBackend() {
     if (activeOps.get(assetId) === tradeOpId) activeOps.set(assetId, null);
   }
 
-  async function transitionTradeOp(opId, fromStatus, patch, { assetId } = {}) {
+  async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField } = {}) {
     const opStore = stores.TradeOperation;
     const current = opStore.get(opId) || null;
     if (!canApplyTransition(current, fromStatus)) {
       return { applied: false, currentStatus: current ? current.status : null };
     }
-    const safePatch = patch.current_stop != null
-      ? { ...patch, current_stop: clampMonotonicStop({ side: current.side, existingStop: current.current_stop, candidateStop: patch.current_stop }) }
-      : patch;
+    let safePatch = patch;
+    if (patch.current_stop != null) {
+      const clampedStop = clampMonotonicStop({ side: current.side, existingStop: current.current_stop, candidateStop: patch.current_stop });
+      safePatch = { ...patch, current_stop: clampedStop };
+      // docs/known-risks.md item 59 addendum — see src/api/entities.js's
+      // mirror of this function for the full comment.
+      if (stopAdvanceMarkerField && !stopAdvanceCandidateWon({ clampedStop, candidateStop: patch.current_stop })) {
+        delete safePatch[stopAdvanceMarkerField];
+      }
+    }
     opStore.set(opId, { ...current, ...safePatch });
     if (isTerminalStatus(patch.status) && assetId && activeOps.get(assetId) === opId) {
       activeOps.set(assetId, null);
