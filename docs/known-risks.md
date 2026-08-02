@@ -4191,10 +4191,18 @@ todos eles.
 backtest.yml` ("preferência PERMANENTE do usuário... só estes 7 pares,
 sempre") e referências à carteira "de sempre" em itens anteriores deste
 arquivo descreviam 7 símbolos — o painel real roda com 9 desde antes desta
-sessão (SOL e METIS nunca testados em nenhum backtest do projeto). Não
-corrigido nesta rodada (é desatualização de doc, não decisão errada) —
-registrado para quando alguém for atualizar esses arquivos ou rodar um
-"backtest padrão" pensando que cobre a carteira real.
+sessão (SOL e METIS nunca testados em nenhum backtest do projeto).
+
+**Corrigido em 2026-08-02**: `docs/claude/backtest-usage.md` (nota logo
+após o parágrafo "Preferência permanente") e o comentário do campo
+`symbols` em `.github/workflows/backtest.yml` agora deixam explícito que
+os 7 símbolos são só o default deliberado deste workflow, não a carteira
+completa monitorada (9 ativos) — sem mudar o default em si, que continua
+sendo decisão separada do usuário (pendência 5 do plano de sessão, não
+pedida). Referências históricas a "7 símbolos" em `docs/roadmap.md`
+(descrevendo backtests já rodados) não foram tocadas — são factualmente
+corretas sobre o que aquele run específico cobriu, não afirmam ser a
+carteira real.
 
 ### Testes
 

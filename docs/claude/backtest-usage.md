@@ -37,6 +37,13 @@ esquecimento. Se algum teste específico (como o Bloco 0 — janela de alta)
 precisar da carteira maior pra ter poder estatístico, isso é uma exceção
 pontual a **pedir confirmação antes**, não um "corrigir" silencioso.
 
+**Não confunda com a carteira real do painel**: o painel ao vivo hoje
+monitora **9 ativos** (os 7 acima + `SOLUSDT`/`METISUSDT`) — nenhum
+backtest deste projeto testou os dois ainda. Os 7 continuam sendo o
+default deste workflow por escolha deliberada (amostra menor, ativos mais
+independentes), não porque representem a carteira completa monitorada.
+Ver `docs/known-risks.md` item 57.
+
 ## Passo 1 — baixar o histórico real (Opção A, sua máquina)
 
 ```bash
