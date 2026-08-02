@@ -4073,6 +4073,33 @@ executada nesta sessão — ficam para quando o usuário autorizar cada uma.
 
 Nenhuma mudança de código — item é só registro da síntese do conselho.
 
+### Ação 3 executada: cascata SMC desligada por padrão em ativos novos (2026-08-02)
+
+Usuário autorizou explicitamente ("Sim eu autorizo") a ação (3) da
+recomendação acima, depois de eu comparar as 3 pendências abertas na sessão
+e recomendar esta como a de maior retorno esperado: reduz exposição ao
+componente com expectância negativa medida acima E libera o slot
+compartilhado `assetActiveOps` (RF e SMC disputam o mesmo slot por ativo,
+`src/lib/scanner.js:1401-1405`; uma operação SMC ocupa esse slot por 8-16
+dias via Time Stop) — é a única alavanca das três discutidas com chance
+real de aumentar o volume de operações RF ao vivo, o problema original
+deste item.
+
+**Mudança**: `src/components/assets/AddAssetForm.jsx:49` —
+`smc_enabled: true` → `smc_enabled: false` para todo ativo NOVO criado a
+partir de agora. `smc_confirm_4h15m` (linha seguinte, mecanismo diferente
+— gate extra sobre a cascata RF, sem evidência negativa medida) não foi
+tocado, fora de escopo desta ação. Schema (`MonitoredAsset.jsonc`)
+atualizado para refletir o novo default.
+
+**O que NÃO muda**: ativos criados entre 2026-07-19 (quando o default
+passou a ser `true`) e 2026-08-02 mantêm o valor gravado na criação — esta
+mudança não é retroativa, é só o valor pré-preenchido no formulário de
+"Adicionar ativo" daqui pra frente. Para desligar num ativo já existente,
+o usuário precisa ir em "Configurar ativo" → seção "Cascata SMC/ICT" →
+desligar o toggle "Ativar cascata 1H → 5M" manualmente por ativo (nenhuma
+escrita em Firestore de produção foi feita nesta rodada).
+
 ## 57. Causa raiz do volume baixo ao vivo: busca de candle sem retry (2026-08-01)
 
 O item 56 explicava o volume baixo de operações por Poisson/regime — dado
