@@ -4493,17 +4493,28 @@ passo abaixo, não fechada nesta rodada.
 existe um `SignalEvent` real** (já passou no `minScore`) sem
 `TradeOperation` ativa ainda — não "esperando pontuação". A causa
 dominante de um sinal ficar preso aí, já medida com dado real duas vezes
-neste projeto (itens 50 e 52): **regime rejeitado** — 69% a 97% das
-rejeições RF são `adx_weak`, com ADX médio das rejeições (16,5-18,26)
-**abaixo até do limiar mais frouxo da tabela de tier**. Isso não é "gate
-apertado demais" — é mercado genuinamente sem tendência na maior parte do
-tempo avaliado, e a tabela ADX/Choppiness é cópia literal do Pine real do
-usuário (protegida por golden test), não um número que o Sentinel inventou
-e pode simplesmente afrouxar sem divergir do TradingView real.
+neste projeto (itens 50 e 52): **regime rejeitado** — `regime_rejected`
+é o motivo mais citado entre as rejeições RF já registradas (69,4% delas,
+item 50, 3.750/5.404 avaliações rejeitadas); e, dentro só das rejeições
+de regime, 97% são especificamente `adx_weak` (item 52) — com ADX médio
+das rejeições (16,5-18,26) **abaixo até do limiar mais frouxo da tabela
+de tier**. Isso não é "gate apertado demais" — é mercado genuinamente sem
+tendência na maior parte do tempo avaliado, e a tabela ADX/Choppiness é
+cópia literal do Pine real do usuário (protegida por golden test), não um
+número que o Sentinel inventou e pode simplesmente afrouxar sem divergir
+do TradingView real.
+
+**Ressalva de precisão (Codex, PR #126)**: o parágrafo acima juntava as
+duas medições numa faixa única "69-97% das rejeições RF são `adx_weak`"
+— impreciso, porque são dois recortes diferentes (69,4% é a fatia de
+TODAS as rejeições que são regime; 97% é a fatia só DENTRO das rejeições
+de regime que são `adx_weak`), e o denominador (avaliações rejeitadas,
+não candidatos únicos nem conversões bem-sucedidas) não sustenta uma
+leitura de "mortalidade de candidato". Corrigido acima.
 
 **Ressalva real, apontada por review externa (Codex, PR #124) e
-confirmada por leitura de código**: os 69-97% acima descrevem o que
-acontece com um sinal **durante a janela ativa de retry** — não
+confirmada por leitura de código**: o que está medido acima descreve o
+que acontece com um sinal **durante a janela ativa de retry** — não
 necessariamente por que um card ESPECÍFICO ainda mostra "Observando"
 agora. Um sinal RF que envelhece além da janela de retry (4h) só ganha
 `expired_logged: true` (item 47.2); nem `Dashboard.jsx:324`
@@ -4620,14 +4631,20 @@ no Firestore, não uma janela desenhada):
 
 | Timeframe | Total | Janela | Símbolos | Sinal/símbolo/dia |
 |---|---|---|---|---|
-| RF 1h | 86 | ~25,0 dias (2026-07-09→2026-08-03) | 9 (todos) | ≈0,382 |
-| RF 4h | 20 | ~22,3 dias (2026-07-10→2026-08-01) | 7 (BTC/DYDX/ETH/FET/METIS/PAXG/SOL — PENDLE e ZRO com ZERO sinal 4h nessa janela) | ≈0,129 |
+| RF 1h | 86 | ~25,0 dias (2026-07-09→2026-08-03) | 9 (todos monitorados) | ≈0,382 |
+| RF 4h | 20 | ~22,3 dias (2026-07-10→2026-08-01) | 9 (todos monitorados — só 7 produziram sinal; PENDLE e ZRO ficaram em ZERO, mas estavam sendo escaneados o período inteiro) | ≈0,100 |
 
 Razão bruta (total/total, sem normalizar): 4,3x. Razão normalizada por
-símbolo-dia (mais correta — corrige o 1h ter 9 símbolos contra 7 do 4h e
-janelas de tamanho ligeiramente diferente): **≈3,0x**. Por símbolo
-individual (só os 7 em comum): de 2,25x (METIS) a 8x (DYDX) — variação
-grande, sem um padrão único.
+símbolo-dia (mais correta): **≈3,8x** (`20 ÷ (9 × 22,3)` vs. `86 ÷ (9 ×
+25,0)`) — **correção de revisão externa (Codex, PR #126)**: a 1ª versão
+deste texto dividia o total de 4h só pelos 7 símbolos que produziram
+ALGUM sinal na janela, e não pelos 9 efetivamente monitorados/expostos ao
+período inteiro (PENDLE/ZRO continuavam sendo escaneados, só não geraram
+sinal 4h) — usar denominadores diferentes por timeframe inflava
+artificialmente a taxa do 4h e subestimava a razão real (dava ≈3,0x em
+vez de ≈3,8x). Por símbolo individual (só os 7 que produziram sinal nos
+dois lados): de 2,25x (METIS) a 8x (DYDX) — variação grande, sem um
+padrão único.
 
 **Fato**: existe volume de sinal bruto 1h suficiente pra justificar
 prosseguir pra uma Fase 1 (backtest experimental) — não é um "quase
@@ -4636,15 +4653,29 @@ nada a mais" que 4h.
 **Ressalva importante, mesma disciplina do `minTrades=30` que este
 projeto já usa em outros lugares (item 44)**: a amostra é pequena (n=20
 sinais 4h, só ~3 semanas de histórico ao vivo) — é direcional, não
-conclusiva. E é contagem de **sinal bruto**, não de operação: o item
-50/52 já mediu que 69-97% dos candidatos RF morrem no gate de regime
-(ADX/Choppiness) depois de nascer. Como o 1h é intrinsecamente mais
-ruidoso que o 4h (movimentos de preço mais curtos sustentam tendência
-por menos tempo), é esperado que a taxa de sobrevivência no gate de
-regime seja MENOR em 1h do que em 4h — então o multiplicador real de
-OPERAÇÕES (depois de confirmação + regime) tende a ser menor que o
-~3x de sinal bruto medido aqui. Isso não está medido — é exatamente a
-pergunta que uma Fase 1 responderia.
+conclusiva. E é contagem de **sinal bruto**, não de operação.
+
+**Correção de revisão externa (Codex, PR #126)**: a 1ª versão deste texto
+dizia "69-97% dos candidatos RF morrem no gate de regime", citando os
+itens 50/52 — **isso não é o que esses itens medem**. Item 50:
+`regime_rejected` é 69,4% das REJEIÇÕES já registradas (3.750/5.404
+avaliações rejeitadas — denominador é avaliação, não candidato único;
+retry do mesmo sinal em passadas sucessivas pode contar mais de uma vez;
+não inclui os candidatos que viraram operação com sucesso). Item 52: 97%
+é a fatia DENTRO das rejeições de regime que são especificamente
+`adx_weak` — um recorte do mesmo grupo, não uma segunda taxa de
+mortalidade independente. Misturar os dois numa faixa "69-97%" e chamar
+de mortalidade de candidato foi impreciso. **O que dá pra afirmar com o
+que já está medido**: regime (ADX/Choppiness) é, disparadamente, o motivo
+de rejeição mais citado entre as rejeições que o funil já registrou — não
+dá pra converter isso num percentual exato de "candidato nasce → morre no
+regime" sem contar também os candidatos que nunca foram rejeitados
+(viraram operação). Como o 1h é intrinsecamente mais ruidoso que o 4h
+(movimentos de preço mais curtos sustentam tendência por menos tempo), a
+expectativa direcional continua a mesma — sobreviver menos ao gate de
+regime, não mais —, mas o tamanho exato do efeito não está medido. Isso
+é exatamente a pergunta que uma Fase 1 responderia, com o denominador
+certo desde o início.
 
 **Recomendação**: o número já é suficiente pra justificar avançar pra
 Fase 1 se o usuário quiser seguir essa linha — não fechou a porta. Não
