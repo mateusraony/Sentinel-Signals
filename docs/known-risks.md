@@ -4839,6 +4839,49 @@ reusando `src/lib/opTransition.js`) que a produção. **Antes do 1º disparo**
 isso o workflow falha. Depois: disparo manual (`workflow_dispatch`) uma vez
 pra confirmar que roda limpo antes de deixar o `schedule:` cuidar do resto.
 
+### Braço exploratório — backtest retrospectivo pré-2023 (critério registrado ANTES de rodar, 2026-08-03)
+
+Usuário pediu para rodar o 3º braço da validação (rotulado EXPLORATÓRIO em
+todo lugar, nunca decisório — o braço que decide é o modo sombra acima).
+Mesma disciplina de registrar critério/desenho antes do resultado.
+
+**Janela**: `2022-07-27 → 2023-07-27`. As 3 janelas do Bloco 0 já cobrem
+`2023-07-27` até hoje (item 48: `2025-07-27→2026-07-27`,
+`2024-07-27→2025-07-27`, `2023-07-27→2024-07-27` — a mais antiga,
+`bloco0-janela3-2023`) — esta janela é a imediatamente anterior, sem
+sobreposição nem buraco entre as duas.
+
+**Ativos**: os mesmos 7 símbolos default do workflow
+(`BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT`) — "mesma
+carteira da run de controle 4h", igual ao que `bloco0-janela3-2023` já usou.
+**Ressalva de qualidade de dado** (verificado em `scripts/fetch-backtest-data.mjs`
+antes de rodar, não assumido): a API da Binance devolve candles a partir de
+quando o símbolo realmente começou a negociar quando a janela pedida começa
+antes disso — não lança erro nem trava o download. Símbolos mais novos da
+carteira (ZRO, possivelmente PENDLE) podem contribuir pouco ou nada no
+início/toda a janela — **esperado, não bug** — a leitura por símbolo do
+relatório (`analyze-backtest.mjs`) mostra isso explicitamente.
+
+**Configuração**: `pine_config: {"rf1hCondEnabled": true}` — a única
+mudança necessária em relação a um run "de controle" padrão. Como
+`buildReport` (`src/lib/backtestEngine.js:517-523`) agrupa `report.byCascade`
+dinamicamente pelo `cascade` real de cada operação (auto-vivifica chave
+nova, mesmo padrão de `entryFunnelCounts`), um único run já produz
+`report.byCascade['4h_15m']` (nativo) E `report.byCascade['rf1h_cond4h_15m']`
+(experimental) lado a lado, sem nenhuma mudança de código — mesmo desenho
+"controle sombreado de graça" do modo sombra. Sem SMC (`smc`/`smc_confirm`
+em branco), mesmos custos (não usa `--no-costs`) — mesma configuração base
+de `bloco0-janela3-2023`.
+
+**Rótulo da tentativa**: `fase1-exploratorio-pre2023`.
+
+**Como este resultado é usado**: leitura rápida enquanto o modo sombra
+acumula (semanas) — NUNCA decide sozinho, mesmo se vier positivo. Uma
+única janela adicional (agora 4 no total: 3 do Bloco 0 + esta) continua
+sendo evidência incremental, não os ~300 operações que o próprio
+`docs/roadmap.md` já define como padrão de confiança. Resultado registrado
+aqui como subseção separada quando o usuário rodar e colar o relatório.
+
 ## 57. Causa raiz do volume baixo ao vivo: busca de candle sem retry (2026-08-01)
 
 O item 56 explicava o volume baixo de operações por Poisson/regime — dado
