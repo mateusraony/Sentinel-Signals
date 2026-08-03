@@ -3542,6 +3542,96 @@ evidência incremental real, e o recorte BUY-vs-SELL desta rodada é
 informação nova o bastante pra valer a pena antes de comprometer a próxima
 rodada de dado.
 
+### 3ª janela independente — resultado (2026-08-03)
+
+Usuário rodou a janela recomendada (`bloco0-janela3-2023`,
+2023-07-27→2024-07-27, 7 símbolos originais, sem SMC, mesmos custos).
+
+**Fato**: 78 operações fechadas, expectância líquida +0,062R,
+**INCONCLUSIVO** (`ci_straddles_zero`). Por lado (via diagnóstico
+`analyze-backtest.mjs`, sem CI/t-stat por lado nesta impressão — só
+contagem e R médio): BUY 46 ops, R médio 0,003 (essencialmente zero);
+SELL 32 ops, R médio 0,147 (positivo).
+
+**As 3 janelas lado a lado, SELL vs BUY**:
+
+| Janela | Regime | BUY (R médio) | SELL (R médio) |
+|---|---|---|---|
+| 2025-07→2026-07 (baseline) | baixa | -0,332 (`t=-4,32`) | +0,199 (não sobrevive Bonferroni) |
+| 2024-07→2025-07 | alta | +0,396 | +0,169 |
+| 2023-07→2024-07 (esta) | misto | +0,003 | +0,147 |
+
+**SELL ficou positivo nas 3 janelas independentes, numa faixa estreita
+(0,147 a 0,199)** — o padrão mais estável medido neste projeto até agora
+para qualquer corte do motor. **BUY oscilou de fortemente negativo pra
+fortemente positivo pra neutro**, seguindo o regime de cada janela, sem
+nenhum sinal de estabilidade própria.
+
+> **Ressalva (review externa, Codex, PR #122) — carteira NÃO controlada
+> entre as 3 janelas.** A baixa e a alta (item 48, linha 3443) rodaram
+> com a **carteira de 20 símbolos**; esta 3ª janela rodou de propósito só
+> com os **7 símbolos originais** (recomendação desta sessão, pra não
+> truncar histórico dos tokens mais novos). Trocar 13 símbolos entre as
+> janelas é uma variável não controlada — a faixa estreita do SELL PODE
+> vir da composição da carteira, não (só) da estabilidade de regime.
+> **Não dá pra isolar isso com o dado disponível nesta sessão** (só o
+> resumo impresso das 2 janelas anteriores foi colado, sem o
+> `overall.curve` operação-a-operação pra recalcular um corte de 7
+> símbolos sobre elas). Tratar a leitura "SELL estável" como hipótese
+> ainda mais preliminar até alguém rodar a baixa/alta de novo só com os
+> 7 símbolos, ou recomputar a partir do artifact completo se ele ainda
+> estiver disponível.
+
+**Outros padrões desta janela reconfirmam achados de janelas anteriores**
+(review externa, Codex, PR #122: a contagem de "3 amostras" abaixo estava
+inflada — só `correction_warning` tem dado das 3 janelas; os outros 3
+comparam só esta janela contra a baixa original, 2 pontos, porque o
+relatório da alta — item 48 — nunca imprimiu essas métricas):
+- `correction_warning` (arbitragem cross-cascade, item 45.9/48): -0,394R
+  médio (14 ops) contra +0,162R sem arbitragem — mesmo padrão qualitativo
+  nas **3** janelas (única métrica com dado nas 3).
+- Runner do TP1 (item 46): contribuição -0,024R bruto nesta janela
+  (fechar 100% no TP1 teria sido melhor em 20 de 30 operações que
+  bateram TP1) — mesma direção do achado original da baixa; **2**
+  janelas com este dado (a alta/item 48 não reportou runner).
+- Erosão de MFE positivo até o stop (item 53): 63 de 64 `STOP_HIT`
+  (98,4%) chegaram a ficar positivas antes de estourar o stop — **2**
+  janelas com este dado. **Ressalva adicional (Codex): não é comparável
+  1:1 ao 60/61 original.** O 60/61 do item 53 filtrava só operações
+  PRÉ-TP1 (nunca chegaram a bater TP1); o 63/64 desta janela vem da
+  seção genérica de MFE/MAE do `analyze-backtest.mjs`
+  (`backtestAnalysis.js:343`, `stoppedRows = rows.filter(status ===
+  'STOP_HIT')`), que inclui QUALQUER `STOP_HIT`, inclusive runners que já
+  bateram TP1 antes de estourar o stop depois — e um runner pós-TP1 tem
+  MFE positivo quase por construção (só chegou a virar runner porque já
+  tinha ficado positivo). A semelhança dos dois percentuais pode ser
+  coincidência de populações diferentes, não replicação do mesmo
+  fenômeno — não dá pra recalcular o corte pré-TP1-only desta janela sem
+  o `overall.curve` completo.
+- RF regime: rejeições dominadas por `adx_weak` (42/51, 82%), ADX médio
+  nas rejeições 16,99 — **2** janelas com este dado (item 52 também é
+  baseado na mesma rodada de diagnóstico da baixa original, não da alta).
+
+**Hipótese reforçada, ainda não formalmente testada** (esta janela não
+teve CI/t-stat por lado impresso, só R médio — não dá pra cravar
+significância estatística desta janela isolada, e a ressalva de carteira
+não controlada acima pesa contra tratar isso como comparação limpa entre
+regimes): a vantagem menos dependente de regime deste motor está
+concentrada no lado SELL. Com 3 janelas independentes, todas com SELL
+positivo numa faixa estreita e BUY oscilando com o regime, o padrão
+aponta nessa direção — mas continua sendo 3 pontos, não uma amostra
+formal (~300 operações seria o padrão de confiança que outros gates
+deste projeto exigem, `docs/roadmap.md` Bloco 0), **e** a diferença de
+carteira (20 símbolos × 7 símbolos) entre esta janela e as 2 anteriores
+não permite descartar composição de carteira como explicação alternativa
+ainda.
+
+**Decisão**: não tomada aqui — fica registrada a favor do usuário
+decidir o próximo passo (aceitar a leitura SELL-específica como
+suficiente pra alguma ação, rodar uma 4ª janela, calcular CI/t-stat por
+lado sobre as 3 janelas já coletadas antes de decidir, ou outra
+alternativa). Ver também a recomendação de 2026-08-02 acima.
+
 ## 49. Funil de confirmação de entrada instrumentado — fecha 45.3/45.4 (2026-07-30)
 
 O usuário reportou o problema real por trás de "fechar o processo do motor":
