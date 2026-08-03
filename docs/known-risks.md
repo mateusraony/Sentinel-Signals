@@ -3127,8 +3127,12 @@ sem migração destrutiva).
 24h segue "não perder nada" nesses eixos; limiar de força do cruzamento de
 MACD, não pedido com clareza suficiente.
 
-**Pendente fora desta sessão**: `firebase deploy --only firestore:rules` —
-sem esse passo manual a regra nova de `telegramFilters` não vale.
+> **Atualização (2026-08-02) — deploy confirmado.** Usuário colou o
+> conteúdo da aba "Regras" do console do Firebase (a versão REALMENTE
+> publicada). Comparado linha a linha contra `firestore.rules` do repo:
+> **idêntico, byte a byte** — inclui o bloco `telegramFilters`, sem
+> nenhum `if true` sobrando. O deploy manual já tinha sido feito; nada
+> pendente nesta frente.
 
 ### 47.1 Override por ativo (2026-07-29)
 
