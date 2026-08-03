@@ -362,7 +362,18 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
     tier: tf4hData.tier?.tier,
     adx_at_entry: tf4hData.adx?.adx,
     chop_at_entry: tf4hData.chop,
-    tier_time_stop_bars: tf4hData.tier?.timeStopBars,
+    // tf4hData.tier.timeStopBars is always calibrated in 4h bars (tier.js).
+    // The native path stamps signal_timeframe:'4h', so the exit loop's
+    // SIGNAL_TF_MS[op.signal_timeframe] lookup (scanner.js ~2663) already
+    // reads it as 4h bars — no conversion needed there. The 1h-conditional
+    // cascade (Fase 1) stamps signal_timeframe:'1h' instead, which would
+    // make that SAME lookup treat this 4h-calibrated count as 1h bars —
+    // firing the Time Stop 4x too early (48/64/96h instead of the intended
+    // 192/256/384h). Convert by 4 here, same precedent as the existing
+    // SMC->4h promotion (scanner.js ~2192-2194: tf4h.tier.timeStopBars * 4).
+    tier_time_stop_bars: signalTimeframe === '1h' && tf4hData.tier?.timeStopBars != null
+      ? tf4hData.tier.timeStopBars * 4
+      : tf4hData.tier?.timeStopBars,
     // Padrão de vela que confirmou a entrada (opt-in, pineConfig.
     // candlePatternEnabled) — null quando o gate está desligado.
     entry_candle_pattern: candlePattern?.pattern ?? null,

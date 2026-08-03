@@ -186,6 +186,32 @@ describe('buildTradeOpData — entry into SIGNAL_CONFIRMED', () => {
     expect(explicitlyOn.pre_tp1_stop_protection_enabled).toBe(true);
     expect(explicitlyOn.pre_tp1_stop_advance_trigger_atr_mult).toBe(1.5);
   });
+
+  // Codex review (PR #128, P1) — tf4hData.tier.timeStopBars is always
+  // calibrated in 4h bars. The exit loop's SIGNAL_TF_MS[op.signal_timeframe]
+  // lookup reads this raw count against whatever unit signal_timeframe
+  // implies, so stamping signal_timeframe:'1h' (Fase 1 cascade) without
+  // converting the count would fire the Time Stop 4x too early. Same
+  // precedent already used by the SMC->4h promotion (scanner.js ~2192-2194).
+  it('tier_time_stop_bars stays unconverted when cascadeInfo is absent (native 4h path, byte-identical)', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { tier: 'T1', atrStopMult: 2.0, timeStopBars: 48 } });
+
+    const op = buildTradeOpData(sig, tf4hData, makePineConfig(), { entryPrice: 100 });
+
+    expect(op.signal_timeframe).toBe('4h');
+    expect(op.tier_time_stop_bars).toBe(48); // NOT multiplied
+  });
+
+  it('tier_time_stop_bars is multiplied by 4 when cascadeInfo.signalTimeframe is 1h (Fase 1, rf1hCondEnabled)', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { tier: 'T1', atrStopMult: 2.0, timeStopBars: 48 } });
+
+    const op = buildTradeOpData(sig, tf4hData, makePineConfig(), { entryPrice: 100 }, { cascade: 'rf1h_cond4h_15m', signalTimeframe: '1h' });
+
+    expect(op.signal_timeframe).toBe('1h');
+    expect(op.tier_time_stop_bars).toBe(192); // 48 * 4 — real duration stays 192h, matching the 4h-calibrated tier
+  });
 });
 
 describe('buildSmcTradeOpData — structural initial stop (1h→5m cascade)', () => {
@@ -3214,6 +3240,12 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
       expect(ops[0].origin_cascade).toBe(RF_1H_COND_CASCADE);
       expect(ops[0].signal_timeframe).toBe('1h');
       expect(ops[0].entry_price).toBeCloseTo(100.6, 5); // vem do close 15m de confirmação (uptrendCandles), não do preço do sinal 1h
+      // Codex review (PR #128, P1): tier.timeStopBars é calibrado em barras
+      // de 4h (makeTfData() default: 48); com signal_timeframe:'1h', o loop
+      // de saída (SIGNAL_TF_MS[op.signal_timeframe]) leria esse número como
+      // barras de 1h se não fosse convertido — Time Stop dispararia 4x cedo
+      // demais. tier_time_stop_bars precisa ser 48*4=192, não 48.
+      expect(ops[0].tier_time_stop_bars).toBe(192);
     });
 
     it('flag LIGADA + 4h DESALINHADO com a direção do sinal 1h ⇒ bloqueado, nenhuma operação', async () => {
