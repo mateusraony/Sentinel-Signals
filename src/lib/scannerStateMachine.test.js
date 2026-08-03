@@ -42,7 +42,7 @@ vi.mock('./marketDataProvider', () => ({
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice, fetchCandles } from './marketDataProvider';
 import { isTelegramConfigured, notifyNewSignal, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
-import { persistScanResults, priceCheckActiveOps, activateSignalManually, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, firstPositive, firstPositiveInteger } from './scanner.js';
+import { persistScanResults, priceCheckActiveOps, activateSignalManually, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, resolveRangeFilterParams, firstPositive, firstPositiveInteger } from './scanner.js';
 import { calculateSmcSignalStrength } from './indicators/smcConfluence.js';
 import { closesFullyAtTp1 } from './opExitRules.js';
 
@@ -535,6 +535,43 @@ describe('firstPositiveInteger', () => {
 
   it('returns undefined when no candidate qualifies', () => {
     expect(firstPositiveInteger(0, -1, NaN, undefined, null, 14.5)).toBe(undefined);
+  });
+});
+
+// docs/known-risks.md item 6 (2026-08-03): antes desta função, o cálculo RF
+// principal (scanAsset) e a confirmação 15m (check15mConfirmation)
+// resolviam rf_period/rf_multiplier por caminhos diferentes — o principal
+// já usava firstPositiveInteger/firstPositive, a confirmação usava um
+// `asset.rf_period || 20` simples (só bloqueia falsy — aceita -10, 14.5).
+describe('resolveRangeFilterParams', () => {
+  it('usa os valores do ativo quando válidos', () => {
+    expect(resolveRangeFilterParams({ rf_period: 50, rf_multiplier: 2.5 })).toEqual({ period: 50, multiplier: 2.5 });
+  });
+
+  it('cai pros defaults 20/3.5 quando ausente', () => {
+    expect(resolveRangeFilterParams({})).toEqual({ period: 20, multiplier: 3.5 });
+    expect(resolveRangeFilterParams(undefined)).toEqual({ period: 20, multiplier: 3.5 });
+  });
+
+  // O bug real: `asset.rf_period || 20` aceitava -10/14.5 (só bloqueia
+  // falsy), diferente de firstPositiveInteger/firstPositive usados no
+  // cálculo RF principal. resolveRangeFilterParams tem que rejeitar os
+  // MESMOS valores que o caminho principal já rejeitava.
+  it('rejeita rf_period negativo/fracionário/NaN, cai pro default 20', () => {
+    expect(resolveRangeFilterParams({ rf_period: -10 }).period).toBe(20);
+    expect(resolveRangeFilterParams({ rf_period: 14.5 }).period).toBe(20);
+    expect(resolveRangeFilterParams({ rf_period: NaN }).period).toBe(20);
+    expect(resolveRangeFilterParams({ rf_period: 0 }).period).toBe(20);
+  });
+
+  it('rejeita rf_multiplier negativo/NaN, cai pro default 3.5', () => {
+    expect(resolveRangeFilterParams({ rf_multiplier: -1 }).multiplier).toBe(3.5);
+    expect(resolveRangeFilterParams({ rf_multiplier: NaN }).multiplier).toBe(3.5);
+    expect(resolveRangeFilterParams({ rf_multiplier: 0 }).multiplier).toBe(3.5);
+  });
+
+  it('multiplier fracionário É válido (RF usa como constante de suavização, não índice)', () => {
+    expect(resolveRangeFilterParams({ rf_multiplier: 2.75 }).multiplier).toBe(2.75);
   });
 });
 
@@ -3054,6 +3091,50 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
       expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0); // não confirmou
       expect(result.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_funnel_rf', cascade: '4h_15m', reason: 'invalid_stop_distance' });
       expect(result.entryFunnelOutcomes).not.toContainEqual(expect.objectContaining({ reason: 'rr_below_min' }));
+    });
+
+    // docs/known-risks.md item 6 (2026-08-03): check15mConfirmation buscava
+    // um limite FIXO de 100 candles e checava um piso hardcoded de 40,
+    // cegos ao rf_period real. calculateRangeFilter exige
+    // candles.length >= period + 10 (rangeFilter.js) e LANÇA exceção se não
+    // tiver — capturada pelo catch de check15mConfirmation, virando
+    // confirmed:false silenciosamente, indistinguível de "ainda não
+    // confirmou". Com rf_period=95 (>90), o limite fixo de 100 nunca
+    // bastava (95+10=105 > 100). Prova que o limite pedido agora escala com
+    // o período: Math.max(100, period+10) = 105, não mais 100.
+    it('busca candles 15m suficientes pro rf_period real, não mais o limite fixo de 100 (rf_period=95)', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(500, 100, 1)); // bem além do warm-up de period=95
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const asset = makeAsset({ rf_period: 95 });
+      const results = { '4h': makeTfData() };
+      const signal = makeRfSignal();
+
+      await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [signal] });
+
+      const [, , limitRequested] = fetchCandles.mock.calls.find((call) => call[1] === '15m');
+      expect(limitRequested).toBe(105); // Math.max(100, 95 + 10), não mais o 100 fixo de antes
+    });
+
+    // mockResolvedValue simples (como o teste acima) devolve o MESMO array
+    // não importa o limite pedido — não diferencia "código antigo pedindo
+    // 100" de "código novo pedindo 105" na prática. mockImplementation
+    // fatiando pelo limite pedido é o que reproduz o bug de verdade: com o
+    // código ANTIGO (limite fixo 100), este teste falharia (100 < 105,
+    // calculateRangeFilter lança, confirmed:false) mesmo com um provedor
+    // que TINHA histórico de sobra (200 candles) — a exchange nunca chegou
+    // a ser perguntada por eles.
+    it('rf_period=95 (>90) confirma normalmente quando o provedor tem candles de sobra — não falha mais silenciosamente', async () => {
+      const fullHistory = uptrendCandles(200, 100, 1); // provedor TEM de sobra — a pergunta é quanto o código PEDE
+      fetchCandles.mockImplementation(async (symbol, tf, limit) => fullHistory.slice(0, limit));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const asset = makeAsset({ rf_period: 95 });
+      const results = { '4h': makeTfData() };
+      const signal = makeRfSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ asset, results, pineConfig }), newSignals: [signal] });
+
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(1); // confirmou
+      expect(result.entryFunnelOutcomes.some((o) => o.reason === 'confirmation_15m_not_aligned')).toBe(false);
     });
 
     it('sinal RF expira carregando o último motivo de rejeição gravado por um retry anterior', async () => {
