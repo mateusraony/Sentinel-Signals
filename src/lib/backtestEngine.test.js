@@ -852,7 +852,7 @@ describe('buildReport', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
     expect(report.smcRegime).toEqual({
       enabled: false, total: 0, attempts: EMPTY_ATTEMPTS, passed: 0, rejected: 0, byReason: {},
-      adxStats: null, chopStats: null,
+      adxStats: null, chopStats: null, byCascade: {},
     });
   });
 
@@ -1000,7 +1000,7 @@ describe('buildReport', () => {
     const report = buildReport([], { fromMs: 0, toMs: 1000 });
     expect(report.rfRegime).toEqual({
       enabled: false, total: 0, attempts: EMPTY_ATTEMPTS, passed: 0, rejected: 0, byReason: {},
-      adxStats: null, chopStats: null,
+      adxStats: null, chopStats: null, byCascade: {},
     });
   });
 
@@ -1024,6 +1024,35 @@ describe('buildReport', () => {
     // adx: 10,10; d+e for chop: 70,70), not the whole rejected set.
     expect(report.rfRegime.adxStats).toEqual({ avgRejected: 10, minRejected: 10, maxRejected: 10 });
     expect(report.rfRegime.chopStats).toEqual({ avgRejected: 70, minRejected: 70, maxRejected: 70 });
+  });
+
+  // Fase 1 (docs/known-risks.md item 56 "Fase 1") — achado do conselho (papel
+  // de Arquiteto): antes desta rodada, rfRegimeOutcomes só tinha UM valor de
+  // cascade possível, então agregar tudo num balde só era inofensivo por
+  // acidente. Com uma 2ª cascata RF (ex. rf1h_cond4h_15m, experimental),
+  // isso precisa ficar separado — senão ADX/Chop de timeframes diferentes se
+  // misturam no mesmo número, exatamente o dado que decidiria se a tabela de
+  // tier faz sentido no timeframe novo.
+  it('rfRegime.byCascade separa ADX/Chop de duas cascatas RF diferentes — nunca mistura números', () => {
+    const rfRegimeOutcomes = [
+      { dedup_key: 'a', cascade: '4h_15m', ok: true, adxOk: true, chopOk: true, adx: 30, chop: 40, tier: 'T1' },
+      { dedup_key: 'b', cascade: '4h_15m', ok: false, adxOk: false, chopOk: true, adx: 10, chop: 40, tier: 'T1' },
+      { dedup_key: 'c', cascade: 'rf1h_cond4h_15m', ok: false, adxOk: false, chopOk: true, adx: 50, chop: 20, tier: 'T2' },
+      { dedup_key: 'd', cascade: 'rf1h_cond4h_15m', ok: false, adxOk: false, chopOk: true, adx: 60, chop: 20, tier: 'T2' },
+    ];
+    const report = buildReport([], { fromMs: 0, toMs: 1000, rfRegimeOutcomes });
+
+    // Overall (top-level) continua agregando tudo — comportamento antigo
+    // preservado (aditivo, não substitutivo).
+    expect(report.rfRegime.total).toBe(4);
+    expect(report.rfRegime.rejected).toBe(3);
+
+    // byCascade separa: a cascata 1h condicionada nunca contamina os
+    // números da 4h nativa, e vice-versa.
+    expect(report.rfRegime.byCascade['4h_15m']).toMatchObject({ total: 2, passed: 1, rejected: 1 });
+    expect(report.rfRegime.byCascade['4h_15m'].adxStats).toEqual({ avgRejected: 10, minRejected: 10, maxRejected: 10 });
+    expect(report.rfRegime.byCascade['rf1h_cond4h_15m']).toMatchObject({ total: 2, passed: 0, rejected: 2 });
+    expect(report.rfRegime.byCascade['rf1h_cond4h_15m'].adxStats).toEqual({ avgRejected: 55, minRejected: 50, maxRejected: 60 });
   });
 
   it('rfRegime.adxStats/chopStats mistura valores diferentes corretamente (min/avg/max) e ignora null', () => {

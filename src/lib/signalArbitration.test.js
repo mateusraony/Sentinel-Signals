@@ -31,6 +31,21 @@ describe('classifyCascadeRelation', () => {
   it('CASCADE_RANK reflete 1h_5m < 4h_15m', () => {
     expect(CASCADE_RANK['1h_5m']).toBeLessThan(CASCADE_RANK['4h_15m']);
   });
+
+  // Fase 1 (docs/known-risks.md item 56 "Fase 1") — achado do conselho
+  // (papel de Concorrência): sem uma entrada explícita, um candidato de
+  // OUTRA cascata (ex. SMC 1h_5m) encontrando essa cascata já ativa cairia
+  // no fallback silencioso 'same' — indistinguível de "rank desconhecido"
+  // vs "genuinamente do mesmo tamanho". Trava o rank ESCOLHIDO (igual a
+  // 4h_15m — reusa o MESMO tf4hData/regime como autoridade de tendência).
+  it('rf1h_cond4h_15m tem rank explícito, igual a 4h_15m (mesma autoridade de tendência)', () => {
+    expect(CASCADE_RANK['rf1h_cond4h_15m']).toBe(CASCADE_RANK['4h_15m']);
+  });
+
+  it('candidato 1h_5m contra ativa rf1h_cond4h_15m -> smaller (rank explícito, não cai no fallback same)', () => {
+    const r = classifyCascadeRelation('1h_5m', 'BUY', { cascade: 'rf1h_cond4h_15m', side: 'BUY' });
+    expect(r.tfRelation).toBe('smaller');
+  });
 });
 
 describe('planSignalArbitration — interruptor e casos degenerados', () => {

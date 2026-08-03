@@ -89,6 +89,18 @@ const DEFAULTS = {
   fvgFillTargetRatio: 0.6,
   smcScoreObWeight: 0,
   smcScoreFvgWeight: 0,
+  // RF 1h condicionado ao 4h (Fase 1, docs/known-risks.md item 56 "Fase 1")
+  // — master flag OFF by default. INTENTIONALLY NOT mirrored to
+  // src/lib/pineParser.js / scripts/adminPineConfig.js (breaks the usual
+  // "add to all 3" convention on purpose): those two feed
+  // strategyConfig/current in Firestore, writable by any anonymous session
+  // (no login screen, CLAUDE.md decision item 1) — a key there is a live
+  // production toggle with zero code-review gate. This experiment must stay
+  // backtest-only, so it can only ever be set via --pine-config here. See
+  // src/lib/pineParser.js/scripts/adminPineConfig.js DEFAULTS comments (same
+  // note, mirrored) and the tripwire test in scannerStateMachine.test.js
+  // that fails if this key ever appears in either of those two files.
+  rf1hCondEnabled: false,
 };
 
 let overrides = {};

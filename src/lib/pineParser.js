@@ -131,6 +131,15 @@ const DEFAULTS = {
   // ANTES do 15m/5m — não substitui a Range Filter, só exige mais dela.
   // Não ativar sem comparar relatórios de backtest com/sem primeiro.
   candlePatternEnabled: false,
+  // NOTA (não é omissão): `rf1hCondEnabled` (Fase 1, docs/known-risks.md
+  // item 56 "Fase 1") existe SÓ em scripts/backtestPineConfig.js —
+  // deliberadamente NÃO espelhado aqui, ao contrário da convenção padrão
+  // acima ("adicione nos dois arquivos"). Esta chave sincroniza com
+  // strategyConfig/current no Firestore, gravável por qualquer sessão
+  // anônima (sem tela de login, CLAUDE.md decisão item 1) — mirroring
+  // criaria um toggle de produção sem gate de revisão. O experimento deve
+  // ficar restrito ao motor de backtest. Tripwire test em
+  // scannerStateMachine.test.js falha se essa chave aparecer aqui.
 };
 
 /**

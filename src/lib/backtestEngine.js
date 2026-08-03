@@ -216,6 +216,9 @@ export async function runBacktest({
   // confirma na 4ª tentativa conta 3 rejeições reais que aconteceram — não
   // seria correto (nem mais simples) tentar reconstruir só o motivo final
   // por sinal aqui, que exigiria cruzar de volta com TradeOperation.
+  // Seed com as 2 cascatas conhecidas hoje — só documentação, não uma lista
+  // fechada: o bucket de qualquer cascade novo (ex. 'rf1h_cond4h_15m', Fase
+  // 1) já se auto-cria via `||=` abaixo, sem mudança necessária aqui.
   const entryFunnelCounts = { '4h_15m': {}, '1h_5m': {} };
 
   // Contagem de TENTATIVAS, paralela aos Maps acima. O loop de retry recomputa
@@ -419,7 +422,7 @@ function numericStats(values) {
 // rejected at ADX 5 then 24 before finally passing would otherwise
 // contribute nothing (final state is ok:true) or only its last rejection
 // (24, not the true 5-then-24 spread) to the calibration stats.
-function buildRegimeSection(outcomes, attempts, allOutcomes = outcomes) {
+function computeRegimeCounts(outcomes) {
   const passed = outcomes.filter(o => o.ok).length;
   const byReason = {};
   for (const { ok, adxOk, chopOk } of outcomes) {
@@ -427,25 +430,60 @@ function buildRegimeSection(outcomes, attempts, allOutcomes = outcomes) {
     const reason = !adxOk && !chopOk ? 'adx_and_chop' : !adxOk ? 'adx_weak' : 'choppy';
     byReason[reason] = (byReason[reason] || 0) + 1;
   }
+  return { total: outcomes.length, passed, rejected: outcomes.length - passed, byReason };
+}
+
+function computeRegimeValueStats(allOutcomes) {
   const adxRejectedValues = [];
   const chopRejectedValues = [];
   for (const { adxOk, chopOk, adx, chop } of allOutcomes) {
     if (!adxOk) adxRejectedValues.push(adx);
     if (!chopOk) chopRejectedValues.push(chop);
   }
+  return { adxStats: numericStats(adxRejectedValues), chopStats: numericStats(chopRejectedValues) };
+}
+
+function groupByCascade(items) {
+  const map = new Map();
+  for (const item of items) {
+    const key = item.cascade || 'unknown';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(item);
+  }
+  return map;
+}
+
+// Fase 1 (docs/known-risks.md item 56 "Fase 1") — achado do conselho (papel
+// de Arquiteto): antes desta mudança, rfRegimeOutcomes/smcRegimeOutcomes só
+// tinham UM valor de `cascade` possível cada, então agregar tudo num balde
+// só (sem olhar `.cascade`) era inofensivo por ACIDENTE, não por design. No
+// instante em que uma 2ª cascata RF existir (ex. rf1h_cond4h_15m, backtest-
+// only), o balde único misturaria ADX/Chop de timeframes diferentes — o
+// próprio dado que decidiria se a tabela de tier faz sentido nesse
+// timeframe. `byCascade` é aditivo (não remove/renomeia nenhum campo do
+// shape top-level existente) — cada cascata recebe a MESMA decomposição
+// (total/passed/rejected/byReason/adxStats/chopStats), sem `attempts`
+// (esse contador não é rastreado por cascata hoje).
+function buildRegimeSection(outcomes, attempts, allOutcomes = outcomes) {
+  const outcomesByCascade = groupByCascade(outcomes);
+  const allByCascade = groupByCascade(allOutcomes);
+  const byCascade = {};
+  for (const cascade of new Set([...outcomesByCascade.keys(), ...allByCascade.keys()])) {
+    byCascade[cascade] = {
+      ...computeRegimeCounts(outcomesByCascade.get(cascade) || []),
+      ...computeRegimeValueStats(allByCascade.get(cascade) || []),
+    };
+  }
   return {
     enabled: outcomes.length > 0,
-    total: outcomes.length,
     attempts,
-    passed,
-    rejected: outcomes.length - passed,
-    byReason,
+    ...computeRegimeCounts(outcomes),
     // Codex review (PR #103, P2): before this, adx/chop/tier were collected
     // on every outcome (Round 3) but never surfaced anywhere in the
     // aggregated report — a future threshold-calibration decision had no way
     // to see whether rejections were near-miss or nowhere close.
-    adxStats: numericStats(adxRejectedValues),
-    chopStats: numericStats(chopRejectedValues),
+    ...computeRegimeValueStats(allOutcomes),
+    byCascade,
   };
 }
 
