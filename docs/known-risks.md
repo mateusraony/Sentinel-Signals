@@ -3404,6 +3404,51 @@ como prosseguir (aceitar a ambiguidade e destravar o Bloco 1, esperar mais
 uma janela, ou outra alternativa) fica para quando o usuário decidir, não
 tomada aqui.
 
+### Recomendação (2026-08-02, a pedido do usuário — "vou seguir sua recomendação")
+
+**Fato**: a evidência é assimétrica, não simétrica. A janela de alta é
+CONCLUSIVA positiva; a de baixa é INCONCLUSIVA (cruza zero), mas o corte por
+lado dela (item 45.9) tem um resultado que NÃO é ambíguo — BUY negativo com
+`t=-4,32` (estatisticamente significativo isolado, mesmo que o líquido do
+portfólio inteiro não sobreviva à correção). O padrão mais nítido que emerge
+comparando os dois cortes por lado **não é** "portfólio ganha/perde" — é que
+**SELL ficou positivo nos DOIS regimes** (+0,199R baixa, não sobrevive
+Bonferroni / +0,169R alta) enquanto **BUY inverteu de sinal com força**
+(-0,332R baixa, `t=-4,32` / +0,396R alta). Isso não bateu em nenhum dos 3
+desfechos escritos antes do run (a própria seção acima já registra isso) —
+mas essa assimetria BUY-vs-SELL é um 4º padrão, não antecipado, que os 3
+desfechos originais não cobriam.
+
+**Hipótese**: se existe uma vantagem menos dependente de regime no motor,
+ela está concentrada no lado SELL, não distribuída igualmente nos dois
+lados. BUY parece ser o lado que "seguiu o regime" (perde na baixa, ganha
+na alta); SELL parece mais estável através dos dois regimes testados —
+embora nenhum dos dois lados isolados tenha amostra que sobreviva a correção
+estatística por si só ainda.
+
+**Recomendação**: **não desbloquear o Bloco 1 ainda** — a mesma disciplina
+que este projeto já aplicou em outras decisões (candle pattern item 58,
+retest item 40): uma janela conclusiva positiva contra uma inconclusiva
+negativa-tendente não é o mesmo que "provado nos dois regimes", e o corte
+por lado mostra que a força do resultado positivo na alta vem
+desproporcionalmente do BUY — exatamente o lado que já tinha o pior
+resultado significativo na baixa. Próximo passo concreto, mais barato que
+esperar anos de dado ao vivo: rodar uma **3ª janela independente**, não
+sobreposta às 2 já testadas (`2024-07-27→2025-07-27` e
+`2025-07-27→2026-07-27` cobrem os últimos 2 anos completos) — ex.
+`2023-07-27→2024-07-27`. **Ressalva que não dá pra verificar desta sessão**
+(rede bloqueia a Binance): checar antes se os símbolos mais recentes da
+carteira de 20 (PENDLE/ZRO, possivelmente outros) têm histórico de candles
+suficiente na Binance até essa data — se não tiverem, rodar só com os 7
+símbolos originais (mais antigos, história mais longa) em vez da carteira
+de 20, para não truncar a janela silenciosamente. Mesmo assim, 3 janelas
+seguem sendo 3 pontos, não os "~300 operações" que o próprio
+`docs/roadmap.md` (Bloco 0) já registra como o padrão de confiança que
+outros gates deste projeto exigem — mas cada janela independente é
+evidência incremental real, e o recorte BUY-vs-SELL desta rodada é
+informação nova o bastante pra valer a pena antes de comprometer a próxima
+rodada de dado.
+
 ## 49. Funil de confirmação de entrada instrumentado — fecha 45.3/45.4 (2026-07-30)
 
 O usuário reportou o problema real por trás de "fechar o processo do motor":
