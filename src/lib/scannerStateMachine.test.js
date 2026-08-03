@@ -3030,6 +3030,32 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
       expect(active).toHaveLength(0);
     });
 
+    // docs/known-risks.md item 6 (2026-08-03): antes desta correção, os 4
+    // call sites de passesRiskReward gravavam o literal 'rr_below_min' em
+    // entryFunnelOutcomes/last_rejection_reason mesmo quando o motivo real
+    // era outro (missing_fields/invalid_stop_distance) — só o SystemLog
+    // tinha o motivo certo. atrStopMult:0 no tier zera o risco calculado
+    // (buildTradeOpData: risk = atrValue * ATR_MULT, ATR_MULT vem do tier)
+    // sem zerar atrValue em si — scanner.js:1679 trata atrValue:0 como
+    // "sem dado 4h" e pula o bloco inteiro, então o zero tem que vir do
+    // multiplicador, não do ATR bruto. Com risk=0, initial_stop ===
+    // entry_price e passesRiskReward cai no branch riskDistance <= 0 ->
+    // reason: 'invalid_stop_distance', nunca 'rr_below_min'. Reproduz o
+    // bug antes da correção (falharia contra o código anterior, que
+    // hardcodeava 'rr_below_min' aqui).
+    it('R:R rejeitado por distância de stop inválida grava o motivo REAL (invalid_stop_distance), não rr_below_min hardcoded', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 1)); // aligned 15m confirmation
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const results = { '4h': makeTfData({ tier: { tier: 'T1', atrStopMult: 0, chopMaxVal: 55, timeStopBars: 48 } }) }; // risk=0 -> initial_stop === entry_price
+      const signal = makeRfSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal] });
+
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0); // não confirmou
+      expect(result.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_funnel_rf', cascade: '4h_15m', reason: 'invalid_stop_distance' });
+      expect(result.entryFunnelOutcomes).not.toContainEqual(expect.objectContaining({ reason: 'rr_below_min' }));
+    });
+
     it('sinal RF expira carregando o último motivo de rejeição gravado por um retry anterior', async () => {
       const pineConfig = makePineConfig({ useADX: false, useChop: false });
       backend._seed('SignalEvent', {
