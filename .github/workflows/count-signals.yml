@@ -1,0 +1,31 @@
+name: Diagnóstico — contagem de sinais RF por timeframe
+
+# Disparo manual só. Não é o relógio de trading (scan.yml) nem o backtest
+# histórico (backtest.yml) — é uma leitura pontual do Firestore real
+# (scripts/count-1h-signals.mjs) pra apoiar uma decisão de produto: vale a
+# pena investir em destravar o 1h como cascata de entrada? Ver
+# docs/known-risks.md item 56, subseção "Retomada (2026-08-03)".
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  count:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Contar SignalEvent RF por timeframe
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: node scripts/count-1h-signals.mjs | tee -a "$GITHUB_STEP_SUMMARY"
