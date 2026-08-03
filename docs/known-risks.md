@@ -4599,6 +4599,62 @@ Nenhuma — rodada de análise pura, sem mudança de código (convenção já
 vigente, `.claude/rules/documentation-truth.md`: registrar análise
 concluída não pede confirmação prévia, só mudança de comportamento pede).
 
+### Fase 0 — contagem real de sinal bruto RF 1h vs. 4h (2026-08-03)
+
+Usuário pediu plano e execução para as opções acima; aprovado rodar a
+"Fase 0" da opção "baixar/adicionar timeframe": medir quantos `SignalEvent`
+RF em 1h já existem no Firestore real antes de investir em qualquer
+backtest experimental — o cálculo é barato porque `scanner.js` já computa e
+persiste RF em 1h/4h/1d pra todo ativo (`scanner.js:981-988`), só o Entry
+Motor bloqueia entrada fora do 4h (`scanner.js:1696`).
+
+**Mecânica**: `scripts/count-1h-signals.mjs` (novo, read-only, PR #125) +
+`.github/workflows/count-signals.yml` (disparo manual — a integração do
+GitHub usada nesta sessão não tem permissão pra disparar `workflow_dispatch`
+via API, o usuário rodou manualmente pela aba Actions). Conta
+`SignalEvent{source: range_filter}` por timeframe via `backend.entities.
+SignalEvent.filter(...)` (query de igualdade, sem índice composto novo).
+
+**Resultado real** (rodado 2026-08-03, janela = todo o histórico existente
+no Firestore, não uma janela desenhada):
+
+| Timeframe | Total | Janela | Símbolos | Sinal/símbolo/dia |
+|---|---|---|---|---|
+| RF 1h | 86 | ~25,0 dias (2026-07-09→2026-08-03) | 9 (todos) | ≈0,382 |
+| RF 4h | 20 | ~22,3 dias (2026-07-10→2026-08-01) | 7 (BTC/DYDX/ETH/FET/METIS/PAXG/SOL — PENDLE e ZRO com ZERO sinal 4h nessa janela) | ≈0,129 |
+
+Razão bruta (total/total, sem normalizar): 4,3x. Razão normalizada por
+símbolo-dia (mais correta — corrige o 1h ter 9 símbolos contra 7 do 4h e
+janelas de tamanho ligeiramente diferente): **≈3,0x**. Por símbolo
+individual (só os 7 em comum): de 2,25x (METIS) a 8x (DYDX) — variação
+grande, sem um padrão único.
+
+**Fato**: existe volume de sinal bruto 1h suficiente pra justificar
+prosseguir pra uma Fase 1 (backtest experimental) — não é um "quase
+nada a mais" que 4h.
+
+**Ressalva importante, mesma disciplina do `minTrades=30` que este
+projeto já usa em outros lugares (item 44)**: a amostra é pequena (n=20
+sinais 4h, só ~3 semanas de histórico ao vivo) — é direcional, não
+conclusiva. E é contagem de **sinal bruto**, não de operação: o item
+50/52 já mediu que 69-97% dos candidatos RF morrem no gate de regime
+(ADX/Choppiness) depois de nascer. Como o 1h é intrinsecamente mais
+ruidoso que o 4h (movimentos de preço mais curtos sustentam tendência
+por menos tempo), é esperado que a taxa de sobrevivência no gate de
+regime seja MENOR em 1h do que em 4h — então o multiplicador real de
+OPERAÇÕES (depois de confirmação + regime) tende a ser menor que o
+~3x de sinal bruto medido aqui. Isso não está medido — é exatamente a
+pergunta que uma Fase 1 responderia.
+
+**Recomendação**: o número já é suficiente pra justificar avançar pra
+Fase 1 se o usuário quiser seguir essa linha — não fechou a porta. Não
+implementada nesta rodada, aguardando decisão do usuário.
+
+#### Verificação
+
+`node --check` no script + `npm run lint` (PR #125). Sem mudança em
+`scanner.js`/gate/threshold/timeframe ao vivo — só leitura.
+
 ## 57. Causa raiz do volume baixo ao vivo: busca de candle sem retry (2026-08-01)
 
 O item 56 explicava o volume baixo de operações por Poisson/regime — dado
