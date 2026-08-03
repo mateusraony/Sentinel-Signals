@@ -4441,6 +4441,120 @@ o usuário precisa ir em "Configurar ativo" → seção "Cascata SMC/ICT" →
 desligar o toggle "Ativar cascata 1H → 5M" manualmente por ativo (nenhuma
 escrita em Firestore de produção foi feita nesta rodada).
 
+### Retomada (2026-08-03) — `minScore` é o gargalo? O timeframe 4h/1h é grande demais?
+
+Usuário voltou a perguntar, com duas hipóteses novas e específicas: (1) o
+timeframe 4h/1h escolhido pode estar errado — poucas operações em meses/
+anos de dado significa nunca fechar um "ciclo" de validação; (2) ativos
+que ficam "em observação" no Dashboard sem virar BUY/SELL podem estar
+presos porque `minScore` é exigente demais. Pediu pesquisa de comunidade
+real e uma resposta honesta, não concordância automática. Rodei 2 agentes
+em paralelo: 1 leitura de código (fatos internos que faltavam) + 1
+pesquisa externa (WebSearch — comunidade quant/algo trading).
+
+#### Hipótese do score — refutada, de novo, com mais detalhe
+
+Já tinha sido descartada uma vez (item 49: usuário testou com
+`minScore=75`, padrão, e não resolveu). Desta vez o motivo estrutural veio
+à tona: `MIN_SCORE` (`src/lib/scanner.js:1182`) é aplicado **antes** de
+qualquer `SignalEvent` existir (decide se o candidato nasce,
+`scanner.js:1193/1199`) — o gate de regime (ADX/Chop, `evaluateRegime`) só
+roda **depois**, quando o motor já tenta converter um `SignalEvent`
+existente em operação (`scanner.js:1725`/`2206` RF, `1889`/`2342` SMC). São
+etapas sequenciais, não concorrentes. E bater 75 é estruturalmente fácil:
+o item 45.7 já tinha medido que `followThrough` (25 pontos) e "preço vs
+filtro RF" (10 pontos) em `calculateSignalStrength`
+(`src/lib/indicators/confluence.js:98-156`) são **a mesma condição
+booleana** que gerou o sinal — 35 dos 100 pontos vêm de uma variável só,
+tautológica em relação à própria emissão. `score`/`minScore` também **não
+aparece em nenhum motivo do enum `last_rejection_reason`** (confirmado por
+grep) — porque o funil de rejeição só existe para sinais que já nasceram,
+e nascer já exige ter passado no score. **Não é o gargalo. Confirmado
+duas vezes, por dois métodos diferentes (teste real do usuário; leitura
+estrutural do cálculo).**
+
+#### O que realmente prende um sinal em "Observando"
+
+`👀 Observando BUY/SELL` no `AssetCard.jsx:198-200` significa que **já
+existe um `SignalEvent` real** (já passou no `minScore`) sem
+`TradeOperation` ativa ainda — não "esperando pontuação". A causa
+dominante de um sinal ficar preso aí, já medida com dado real duas vezes
+neste projeto (itens 50 e 52): **regime rejeitado** — 69% a 97% das
+rejeições RF são `adx_weak`, com ADX médio das rejeições (16,5-18,26)
+**abaixo até do limiar mais frouxo da tabela de tier**. Isso não é "gate
+apertado demais" — é mercado genuinamente sem tendência na maior parte do
+tempo avaliado, e a tabela ADX/Choppiness é cópia literal do Pine real do
+usuário (protegida por golden test), não um número que o Sentinel inventou
+e pode simplesmente afrouxar sem divergir do TradingView real.
+
+#### A hipótese do timeframe — parcialmente procedente, mas não como o usuário formulou
+
+Pesquisa de comunidade (QuantPedia, Ernie Chan, AQR, guias de forward-
+testing — Reddit bloqueado nesta sessão, ver ressalva na pesquisa
+completa) converge sem exceção: **timeframe mais alto produzindo menos
+operações é o comportamento ESPERADO de um filtro de tendência, não
+sintoma de mal ajuste.** Nenhuma fonte tratou ~11-17 operações/ativo/ano
+(o que o Sentinel já mede) como volume anormalmente baixo pra 4h.
+
+A parte que É procedente: a preocupação sobre nunca fechar um "ciclo" de
+validação é real e tem base na própria literatura de backtesting — os
+patamares citados (≈30 = piso estatístico, ≈100 = "confiabilidade
+limitada", 200-500 = "padrão institucional") batem com o que este projeto
+já usa (`docs/known-risks.md` item 44, `minTrades=30`; roadmap Bloco 0,
+~300 operações). No ritmo medido do Sentinel (~0,047 op/símbolo/dia,
+praticamente igual em carteiras de 7 e 20 símbolos — item 56 acima).
+Portfólio de 9 ativos ao vivo: ≈12-13 op/mês → ≈30 operações em 2-3 meses,
+≈100 em 8-10 meses, 200-500 (o patamar "institucional") em **1,5 a 4
+anos**. Isso é real e vale levar em conta — mas é uma característica
+estrutural de QUALQUER estratégia de tendência em timeframe alto, medida
+e documentada por múltiplas fontes independentes, não uma falha de
+configuração deste projeto.
+
+**Ressalva própria da pesquisa** (não fonte externa, extrapolação lógica
+documentada como tal): operações em cripto multi-ativo tendem a ser mais
+correlacionadas entre si (beta com BTC) do que trades de ativos
+verdadeiramente independentes — a amostra EFETIVA do portfólio pode ser
+menor que a contagem bruta sugere. Não há fonte específica pra cripto
+confirmando isso, é inferência a partir do princípio geral "trades no
+mesmo regime reduzem amostra efetiva".
+
+#### Recomendação (nenhuma executada nesta rodada — decisão do usuário)
+
+1. **Não afrouxar ADX/Choppiness/estrutura SMC** — evidência direta contra
+   (ADX médio das rejeições já abaixo do limiar mais frouxo; mexer aqui
+   diverge do Pine real do usuário no TradingView, não é ajuste de
+   parâmetro solto).
+2. **Mais símbolos escaneados é a alavanca já medida como quase-linear**
+   (0,0458 vs. 0,0471 op/símbolo/dia entre 7 e 20 símbolos, item 56) —
+   aumenta a amostra sem tocar em nenhum limiar. Ressalva: correlação
+   entre altcoins reduz o ganho de amostra EFETIVA (ver acima).
+3. **Baixar o timeframe (ex.: 1h→15m em vez de 4h→15m) aumentaria a
+   frequência de verdade, mas é uma mudança de ESTRATÉGIA, não uma
+   correção** — diverge do Pine real do usuário (hoje definido em 4h no
+   TradingView), exigiria repensar paridade Pine
+   (`.claude/rules/pine-parity.md`) e vem com o trade-off oposto e bem
+   documentado: mais ruído, mais whipsaw, sinal de qualidade pior por
+   operação. Decisão de produto, não bug fix — não recomendo sem o
+   usuário decidir isso conscientemente, ciente do trade-off.
+4. **Aceitar o horizonte de validação mais longo** é a opção de menor
+   risco — é o que o próprio Bloco 0 já está fazendo (múltiplas janelas
+   independentes em vez de esperar uma amostra ao vivo gigante).
+
+**Conclusão direta**: a hipótese do score estava errada (já tinha sido
+testada e descartada; agora também explicada estruturalmente). A
+preocupação sobre timeframe/ciclo de validação é legítima e baseada em
+evidência real — mas a causa não é um bug ou um limiar mal calibrado, é
+uma característica inerente à combinação timeframe-alto + filtro de
+regime que este projeto escolheu deliberadamente (e que é literalmente o
+Pine real do usuário). Mudar isso é possível, mas é reabrir a estratégia
+em si, não consertar algo quebrado.
+
+#### Verificação
+
+Nenhuma — rodada de análise pura, sem mudança de código (convenção já
+vigente, `.claude/rules/documentation-truth.md`: registrar análise
+concluída não pede confirmação prévia, só mudança de comportamento pede).
+
 ## 57. Causa raiz do volume baixo ao vivo: busca de candle sem retry (2026-08-01)
 
 O item 56 explicava o volume baixo de operações por Poisson/regime — dado
