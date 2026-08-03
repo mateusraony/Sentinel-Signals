@@ -1568,6 +1568,99 @@ provavelmente uma revisão em conselho (`sentinel-council-review`) dado que
 mexe no núcleo da máquina de estados. Não iniciar essa implementação sem
 pedido explícito e uma rodada de planejamento própria.
 
+### Pesquisa (2026-08-03) — insumo para uma rodada futura, decisão de sequenciamento reafirmada
+
+Usuário pediu pra avançar a pesquisa (Explore agent, código + WebSearch).
+**A própria pesquisa é o motivo pra não ir além disso agora**: já existe
+uma decisão de sequenciamento formal, de uma revisão de conselho anterior
+(item 56, "Ação 3"/Arquiteto) — abrir este "Bloco 4" está **bloqueado
+atrás do Bloco 0** (vantagem direcional da estratégia) **por desenho, não
+esquecimento**, porque multiplicar operações simultâneas por ativo
+multiplica exposição numa estratégia cuja vantagem direcional ainda não
+está provada. O Bloco 0 **continua aberto** (item 48, recomendação mais
+recente registrada 2026-08-02: não desbloquear ainda, aguardando 3ª janela
+independente de backtest). Avançar um desenho detalhado do item 37 agora
+contradiria essa sequência já decidida — por isso esta rodada ficou só em
+pesquisa/registro, sem desenho final nem código.
+
+**Fatos confirmados por leitura de código** (não estavam documentados com
+este nível de detalhe antes):
+- O invariante "1 operação ativa por ativo" está estrutural, não é um
+  parâmetro solto: o doc-âncora `assetActiveOps/{assetId}` guarda 1 ID
+  escalar (`active_trade_op_id`), nunca lista — confirmado nos dois
+  backends espelhados (`src/api/entities.js:176-222`,
+  `scripts/adminEntities.js:154-196`). `groupActiveOpsByAsset`
+  (`src/lib/opTransition.js:105-153`) trata hoje **mais de 1 operação
+  ativa por ativo como corrupção de dado**, não como caso válido — e o
+  scanner já **suspende arbitragem e novas entradas no ativo inteiro**
+  quando detecta isso (`scanner.js:1479-1505`/`:2963-2972`). Habilitar a
+  proposta do usuário exigiria trocar esse invariante pra "1 por (ativo,
+  cascata)" — mudança estrutural real, com risco de regressão silenciosa
+  se `groupActiveOpsByAsset` não mudar junto (o próprio guard que hoje
+  protege contra corrupção passaria a suspender todo ativo com 2+
+  cascatas ativas, exatamente o estado que a proposta quer tornar normal).
+- `TradeOperation.cascade` já existe e já é usado pra logging/arbitragem —
+  o dado pra particionar por cascata já existe na operação, só o mecanismo
+  de trava (`assetActiveOps`) e o gate (`hasActiveOp`, hoje uma única
+  variável compartilhada pelas 2 cascatas, `scanner.js:1462-1467`) não o
+  usam.
+- **Não existe cascata 1D hoje**, confirmado ponto a ponto: `TIMEFRAMES =
+  ['1h','4h','1d']` busca 1D, mas ele só alimenta `analyzeAlignment` (viés
+  macro) — o Entry Motor bloqueia explicitamente qualquer sinal RF
+  não-4h (`scanner.js:1662-1675`, comentário "Non-4H RF signals ... do NOT
+  trigger entries"). Sem confirmação de entrada, stop, TP ou tier próprios
+  pra 1D — seria trabalho novo, não extensão do padrão 4h/15m ou 1h/5m.
+
+**Pesquisa de comunidade (WebSearch, 2026-08-03)** — pyramiding/scaling
+multi-timeframe:
+- É estritamente trend-following: adiciona posição só a favor do
+  movimento, nunca pra promediar perda ([TradersPost](https://blog.traderspost.io/article/pyramiding-trading-strategies-guide),
+  [LuxAlgo](https://www.luxalgo.com/blog/pyramiding-strategies-scaling-into-trades-to-boost-returns/)).
+- Cada perna adicional deve ser **progressivamente MENOR** que a
+  anterior (forma de pirâmide de fato), tipicamente 3-5 camadas
+  ([QuantStrategy](https://quantstrategy.io/blog/the-3-golden-rules-for-pyramiding-success-entry-points/)).
+- Critério de "continuidade" documentado: alinhamento com o timeframe
+  MAIOR antes de adicionar camada (não só o timeframe da perna em si),
+  confirmação de volume/estrutura ([LuxAlgo](https://www.luxalgo.com/blog/pyramiding-strategies-scaling-into-trades-to-boost-returns/)).
+- **Risco central pra esta proposta especificamente**: a prática trata
+  posições correlacionadas do MESMO ativo (mesmo em timeframes
+  diferentes) como **um único bucket de risco agregado** ("portfolio
+  heat"), não como riscos somáveis independentes
+  ([journalplus](https://journalplus.co/metrics/portfolio-heat/),
+  [Lunaro](https://lunaro.com/the-desk/desk-briefings/correlation-and-portfolio-risk-in-multi-asset-trading/)).
+  **Esse conceito não existe hoje** em nenhuma forma no motor — cada
+  operação só conhece o próprio risco (`initial_stop`/`entry_price`),
+  nada soma risco entre operações do mesmo ativo. Se 2-3 cascatas
+  passassem a operar simultaneamente, as métricas de `tradeMetrics.js`/
+  relatórios de backtest que hoje assumem "1 operação = 1 risco isolado
+  por ativo" subestimariam risco agregado correlacionado.
+
+**Perguntas em aberto pra uma eventual `sentinel-council-review`** (não
+resolvidas aqui, de propósito):
+1. O invariante vira "1 op ativa por (ativo, cascata)" simples, ou a
+   "continuidade" pedida exige um bucket de risco agregado unificado
+   (stop compartilhado entre pernas, como a pesquisa de pyramiding
+   recomenda) — modelagem de dado bem mais profunda que só trocar a
+   chave do doc-âncora?
+2. A arbitragem entre cascatas (item 39, já fechada e testada) precisa
+   ser preservada intacta DENTRO de cada cascata, e a continuidade vira
+   uma camada nova por cima — ou o modelo de arbitragem inteiro precisa
+   ser redesenhado porque a premissa "só existe 1 op ativa pra arbitrar
+   contra" deixa de valer?
+3. Critério de "continuidade" (volume? alinhamento de indicador? score
+   mínimo?) — qual escolher, e isso precisa de validação por backtest
+   ANTES de virar gate, mesma disciplina das Fases 2-4.
+4. Como Time Stop/MFE-MAE/custo real (`tradeMetrics.js`, já em produção)
+   se comportam com múltiplas operações simultâneas no mesmo ativo, sem
+   sub-relatar risco agregado.
+5. Qual timeframe de confirmação de entrada pra uma eventual cascata 1D
+   (ainda não definido no pedido original do usuário) — bloqueia
+   qualquer desenho de stop/TP/tier pra ela.
+
+**Reafirmado**: continua bloqueado atrás do Bloco 0. Não avançar desenho
+final nem código sem o usuário decidir explicitamente prosseguir mesmo
+com essa sequência em aberto, ou sem o Bloco 0 fechar primeiro.
+
 **Separado, não confundir**: o pedido imediato do usuário (rodar o
 backtest de novo e olhar `smcDiagnostics`, item 35) é sobre a cascata
 1h→5m **que já existe** — independente desta proposta de arquitetura nova.

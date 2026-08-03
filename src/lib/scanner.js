@@ -1785,7 +1785,7 @@ export async function persistScanResults(scanResult) {
                 const minRR = pineConfig.minRR ?? 1.2;
                 const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
                 if (!rr.pass) {
-                  entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'rr_below_min' });
+                  entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: rr.reason });
                   await backend.entities.SystemLog.create({
                     level: 'info',
                     module: 'scanner',
@@ -1944,7 +1944,7 @@ export async function persistScanResults(scanResult) {
             const minRR = pineConfig.minRR ?? 1.2;
             const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
             if (!rr.pass) {
-              entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', reason: 'rr_below_min' });
+              entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', reason: rr.reason });
               await backend.entities.SystemLog.create({
                 level: 'info',
                 module: 'scanner',
@@ -2232,7 +2232,7 @@ export async function persistScanResults(scanResult) {
     const minRR = pineConfig.minRR ?? 1.2;
     const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
     if (!rr.pass) {
-      await recordRejection(sig, '4h_15m', 'rr_below_min', entryFunnelOutcomes);
+      await recordRejection(sig, '4h_15m', rr.reason, entryFunnelOutcomes);
       await backend.entities.SystemLog.create({
         level: 'info',
         module: 'scanner',
@@ -2374,7 +2374,7 @@ export async function persistScanResults(scanResult) {
       const minRR = pineConfig.minRR ?? 1.2;
       const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
       if (!rr.pass) {
-        await recordRejection(sig, '1h_5m', 'rr_below_min', entryFunnelOutcomes);
+        await recordRejection(sig, '1h_5m', rr.reason, entryFunnelOutcomes);
         await backend.entities.SystemLog.create({
           level: 'info',
           module: 'scanner',
