@@ -1,0 +1,37 @@
+name: Shadow scan (Fase 1 — RF 1h condicionado ao 4h)
+
+# Braço decisório do modo sombra prospectivo (docs/known-risks.md item 56
+# "Modo sombra") — roda src/lib/scanner.js SEM modificação, com
+# pineConfig.rf1hCondEnabled forçado a true (scripts/adminPineConfigShadow.js)
+# e todo write redirecionado para coleções Firestore isoladas, prefixadas
+# 'experimentalRf1hShadow' (scripts/adminEntitiesShadow.js) — nunca abre uma
+# TradeOperation real, nunca notifica Telegram. Cadência horária (não os
+# ~5min do scan real): é só observação, e o próprio sinal é de 1h — o candle
+# só fecha 1x/hora mesmo, e a janela de retry da cascata tolera até 4h de
+# atraso sem perder o sinal. Ver scripts/CLAUDE.md e trading-engine.md.
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: scheduled-scan-shadow-rf1h
+  cancel-in-progress: false
+
+jobs:
+  scan-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run scan:shadow
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
