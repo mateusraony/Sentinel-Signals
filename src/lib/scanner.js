@@ -116,6 +116,24 @@ export function firstPositiveInteger(...candidates) {
   return undefined;
 }
 
+// docs/known-risks.md item 6 (2026-08-03): o cálculo RF principal (scanAsset)
+// e a confirmação 15m (check15mConfirmation) resolviam rf_period/rf_multiplier
+// por caminhos diferentes — o principal já usava firstPositiveInteger/
+// firstPositive (defensivo contra negativo/fracionário/NaN), a confirmação
+// usava um `asset.rf_period || 20` simples (só bloqueia falsy — aceita
+// -10, 14.5). Um resolvedor único, chamado dos dois lugares com o MESMO
+// asset, garante que os dois caminhos nunca divirjam sobre o que é um
+// parâmetro válido — mesma disciplina de firstPositive/firstPositiveInteger
+// acima, sem introduzir uma fonte de verdade nova (ainda lê só
+// asset.rf_period/rf_multiplier, os campos já sincronizados por
+// syncPineToAssets — ver .claude/rules/pine-parity.md).
+export function resolveRangeFilterParams(asset) {
+  return {
+    period: firstPositiveInteger(asset?.rf_period, 20),
+    multiplier: firstPositive(asset?.rf_multiplier, 3.5),
+  };
+}
+
 // Pine×scanner unification (2026-07-18, ver known-risks.md item 27): antes,
 // RSI/EMA usavam SÓ o campo do ativo com fallback hardcoded (9/21/14) —
 // divergente do Pine real (20/50/14) — e volume/ATR(stop) eram constantes
@@ -370,18 +388,29 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m) {
  * instead of the (potentially hours-old) 4h signal price.
  */
 async function check15mConfirmation(symbol, direction, asset) {
+  // docs/known-risks.md item 6 (2026-08-03): mesmo resolvedor do cálculo RF
+  // principal (scanAsset) — antes esta função usava `asset.rf_period || 20`,
+  // que aceita valores que firstPositiveInteger/firstPositive rejeitariam
+  // (ex. -10, 14.5). calculateRangeFilter também exige
+  // `candles.length >= period + 10` (rangeFilter.js) e lança exceção se não
+  // tiver — o limite de busca fixo de 100 e o piso de 40 abaixo eram cegos
+  // ao período real, então qualquer rf_period acima de ~90 fazia a
+  // confirmação falhar sempre, silenciosamente (exceção capturada no catch),
+  // indistinguível de "ainda não confirmou".
+  const rfParams = resolveRangeFilterParams(asset);
   try {
-    const candles15m = await fetchCandles(symbol, TF_15M, 100);
+    const candleLimit = Math.max(100, rfParams.period + 10);
+    const candles15m = await fetchCandles(symbol, TF_15M, candleLimit);
     const closed = candles15m.filter(c => c.isClosed);
-    if (closed.length < 40) {
+    if (closed.length < rfParams.period + 10) {
       // Not enough data — do NOT allow trade without confirmation
       return { confirmed: false, entryPrice: null, entryCandleTime: null };
     }
 
     const rf = calculateRangeFilter(
       closed,
-      asset.rf_period || 20,
-      asset.rf_multiplier || 3.5
+      rfParams.period,
+      rfParams.multiplier
     );
 
     // 15m RF must be pointing in the same direction as the 4h signal
@@ -969,10 +998,11 @@ export async function scanAsset(asset) {
       }
 
       // Calculate all indicators
+      const rfParams = resolveRangeFilterParams(asset);
       const rfResult = calculateRangeFilter(
         closedCandles,
-        firstPositiveInteger(asset.rf_period, 20),
-        firstPositive(asset.rf_multiplier, 3.5)
+        rfParams.period,
+        rfParams.multiplier
       );
 
       // confirmBars — global Pine parameter (docs/known-risks.md item 27:
