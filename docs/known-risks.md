@@ -3542,6 +3542,63 @@ evidência incremental real, e o recorte BUY-vs-SELL desta rodada é
 informação nova o bastante pra valer a pena antes de comprometer a próxima
 rodada de dado.
 
+### 3ª janela independente — resultado (2026-08-03)
+
+Usuário rodou a janela recomendada (`bloco0-janela3-2023`,
+2023-07-27→2024-07-27, 7 símbolos originais, sem SMC, mesmos custos).
+
+**Fato**: 78 operações fechadas, expectância líquida +0,062R,
+**INCONCLUSIVO** (`ci_straddles_zero`). Por lado (via diagnóstico
+`analyze-backtest.mjs`, sem CI/t-stat por lado nesta impressão — só
+contagem e R médio): BUY 46 ops, R médio 0,003 (essencialmente zero);
+SELL 32 ops, R médio 0,147 (positivo).
+
+**As 3 janelas lado a lado, SELL vs BUY**:
+
+| Janela | Regime | BUY (R médio) | SELL (R médio) |
+|---|---|---|---|
+| 2025-07→2026-07 (baseline) | baixa | -0,332 (`t=-4,32`) | +0,199 (não sobrevive Bonferroni) |
+| 2024-07→2025-07 | alta | +0,396 | +0,169 |
+| 2023-07→2024-07 (esta) | misto | +0,003 | +0,147 |
+
+**SELL ficou positivo nas 3 janelas independentes, numa faixa estreita
+(0,147 a 0,199)** — o padrão mais estável medido neste projeto até agora
+para qualquer corte do motor. **BUY oscilou de fortemente negativo pra
+fortemente positivo pra neutro**, seguindo o regime de cada janela, sem
+nenhum sinal de estabilidade própria.
+
+**Outros padrões desta janela reconfirmam achados de janelas anteriores,
+agora em 3 (não 2) amostras independentes**:
+- `correction_warning` (arbitragem cross-cascade, item 45.9/48):
+  -0,394R médio (14 ops) contra +0,162R sem arbitragem — mesmo padrão
+  qualitativo nas 3 janelas.
+- Runner do TP1 (item 46): contribuição -0,024R bruto nesta janela
+  (fechar 100% no TP1 teria sido melhor em 20 de 30 operações que
+  bateram TP1) — mesma direção do achado original (regime de baixa),
+  agora replicado num regime diferente.
+- Erosão de MFE positivo até o stop (item 53): 63 de 64 `STOP_HIT`
+  (98,4%) chegaram a ficar positivas antes de estourar o stop —
+  **quase idêntico** ao 60/61 (98,4%) da janela de baixa original.
+- RF regime: rejeições dominadas por `adx_weak` (42/51, 82%), ADX médio
+  nas rejeições 16,99 — mesmo padrão de "regime genuinamente fraco, não
+  threshold mal calibrado" já visto nas outras janelas (item 52).
+
+**Hipótese reforçada, ainda não formalmente testada** (esta janela não
+teve CI/t-stat por lado impresso, só R médio — não dá pra cravar
+significância estatística desta janela isolada): a vantagem menos
+dependente de regime deste motor está concentrada no lado SELL. Com 3
+janelas independentes, todas com SELL positivo numa faixa estreita e BUY
+oscilando com o regime, o padrão está mais forte do que com 2 janelas,
+mas continua sendo 3 pontos, não uma amostra formal (~300 operações
+seria o padrão de confiança que outros gates deste projeto exigem,
+`docs/roadmap.md` Bloco 0).
+
+**Decisão**: não tomada aqui — fica registrada a favor do usuário
+decidir o próximo passo (aceitar a leitura SELL-específica como
+suficiente pra alguma ação, rodar uma 4ª janela, calcular CI/t-stat por
+lado sobre as 3 janelas já coletadas antes de decidir, ou outra
+alternativa). Ver também a recomendação de 2026-08-02 acima.
+
 ## 49. Funil de confirmação de entrada instrumentado — fecha 45.3/45.4 (2026-07-30)
 
 O usuário reportou o problema real por trás de "fechar o processo do motor":
