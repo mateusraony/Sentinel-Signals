@@ -15,6 +15,7 @@ import {
   calcRAtTp1,
   countFundingSettlements,
   countFundingSettlementsByLeg,
+  expectancyCIAtZ,
 } from './tradeMetrics.js';
 
 // Base BUY fixture: risk = 5 (entry 100, stop 95), tp1 = +1.5R (107.5),
@@ -221,6 +222,26 @@ describe('getExitPrice — legacy fallbacks by status (no exit_price persisted)'
   it('CLOSED/INVALIDATED fall back to current_stop', () => {
     expect(getExitPrice(makeOp({ status: 'CLOSED' }))).toBe(95);
     expect(getExitPrice(makeOp({ status: 'INVALIDATED', current_stop: 101 }))).toBe(101);
+  });
+});
+
+describe('expectancyCIAtZ', () => {
+  it('hand-computed: matches the 1.96 CI summarizeOps already returns, at the same z', () => {
+    // expectancyR=0.5, stdErr=0.2 -> [0.5 - 1.96*0.2, 0.5 + 1.96*0.2]
+    expect(expectancyCIAtZ(0.5, 0.2, 1.96)).toEqual([0.5 - 0.392, 0.5 + 0.392]);
+  });
+
+  it('a larger z (Bonferroni-corrected, e.g. 2.24 for m=2) widens the interval', () => {
+    const [lo95, hi95] = expectancyCIAtZ(0.5, 0.2, 1.96);
+    const [loBonf, hiBonf] = expectancyCIAtZ(0.5, 0.2, 2.24);
+    expect(loBonf).toBeLessThan(lo95);
+    expect(hiBonf).toBeGreaterThan(hi95);
+  });
+
+  it('returns null when expectancyR or expectancyRStdErr is null (matches summarizeOps output for rCounted<=1)', () => {
+    expect(expectancyCIAtZ(null, 0.2, 1.96)).toBeNull();
+    expect(expectancyCIAtZ(0.5, null, 1.96)).toBeNull();
+    expect(expectancyCIAtZ(null, null, 1.96)).toBeNull();
   });
 });
 

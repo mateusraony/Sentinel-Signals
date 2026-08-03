@@ -317,6 +317,20 @@ export function classifyOutcome(op, { epsilonR = 0.05, epsilonPct = 0.1, costMod
   return 'UNKNOWN';
 }
 
+// Additive helper, not used by summarizeOps itself (which keeps the fixed
+// z=1.96 95% CI used everywhere else in the project — see expectancyRCI95
+// below). Lets a caller recompute the same expectancyR/expectancyRStdErr at
+// a DIFFERENT confidence level without re-deriving the samples — e.g. a
+// Bonferroni-corrected z for a report that's really m>1 simultaneous
+// comparisons of the same underlying hypothesis (docs/known-risks.md item
+// 56 "Modo sombra": the RF-1h-conditional cascade's shadow expectancy
+// competes with the still-open Bloco 0 question about native RF, so m=2 →
+// two-sided z≈2.24 at alpha=0.05/2 instead of the usual 1.96).
+export function expectancyCIAtZ(expectancyR, expectancyRStdErr, z) {
+  if (expectancyR === null || expectancyRStdErr === null) return null;
+  return [expectancyR - z * expectancyRStdErr, expectancyR + z * expectancyRStdErr];
+}
+
 // Aggregate a raw op list (open ops are filtered out here) into the numbers
 // every performance surface renders. winRate = wins/(wins+losses+be) is THE
 // win-rate definition — no per-screen denominators. The equity curve orders

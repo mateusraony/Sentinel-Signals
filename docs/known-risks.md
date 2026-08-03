@@ -4686,6 +4686,159 @@ implementada nesta rodada, aguardando decisão do usuário.
 `node --check` no script + `npm run lint` (PR #125). Sem mudança em
 `scanner.js`/gate/threshold/timeframe ao vivo — só leitura.
 
+### Fase 1 — mecanismo "RF 1h condicionado ao 4h" (PR #128, mergeado 2026-08-03)
+
+Registro retroativo — o mecanismo em si foi implementado e mergeado
+(PR #128), mas a documentação desta subseção nunca foi escrita naquela
+rodada (gap fechado agora, junto com o modo sombra abaixo). Usuário
+aprovou avançar da Fase 0 pra Fase 1 ("sim pode começar a fase 1, siga as
+diretrizes e os agentes... que fique perfeito e blindado") — desenho
+produzido por um `sentinel-council-review` de 5 papéis (Arquiteto, Trading,
+Concorrência, Testes/Evidência, Segurança), com 2 decisões do usuário via
+`AskUserQuestion`:
+
+1. **Desenho: "1h condicionado ao 4h"** (não "1h substitui o 4h") — um
+   sinal RF 1h só vira candidato de entrada quando o RF 4h já está na
+   MESMA direção, reusando o gate de regime (ADX/Choppiness/tier) **já
+   avaliado no 4h** — nunca recalcula regime em dado de 1h, evitando abrir
+   a pergunta não-validada de recalibrar esses limiares pra esse timeframe.
+2. **Rigor: "sombra + retrospectivo exploratório"** (não só um backtest
+   retrospectivo rápido) — as 3 janelas retrospectivas 2023-2026 já foram
+   "gastas" pelo Bloco 0 (`docs/roadmap.md`), então o braço que realmente
+   decide é observação prospectiva ao vivo (ver subseção "Modo sombra"
+   abaixo), não mais um backtest na mesma janela.
+
+**O que foi implementado** (`src/lib/scanner.js`): `pineConfig.
+rf1hCondEnabled` (default `false`) existe **só** em
+`scripts/backtestPineConfig.js` — deliberadamente **não espelhado** em
+`src/lib/pineParser.js`/`scripts/adminPineConfig.js` (os 2 arquivos que
+alimentam `strategyConfig/current` no Firestore, gravável por qualquer
+sessão anônima, `CLAUDE.md` decisão item 1) — travado por 3 testes de
+tripwire (`rf1hCondTripwire.test.js`) que leem o texto-fonte dos 3
+arquivos. Cascade novo e distinto `'rf1h_cond4h_15m'` (nunca `'1h_5m'`
+SMC nem `'4h_15m'` nativo — rótulo errado rodaria a lógica de saída
+errada). `buildTradeOpData` ganhou um `cascadeInfo` opcional (default
+`null`, byte-idêntico pros 2 call sites de produção existentes).
+`signalArbitration.js`'s `CASCADE_RANK` e `backtestEngine.js`'s
+`buildRegimeSection` (bucketização `byCascade`) atualizados pra não
+misturar diagnóstico das 2 cascatas RF. Codex (PR #128) pegou um P1 real
+no primeiro commit — `tier_time_stop_bars` (calibrado em barras de 4h)
+não era convertido ao stampar `signal_timeframe:'1h'`, fazendo o Time Stop
+disparar 4x cedo demais — corrigido no mesmo PR (`* 4`, mesmo precedente
+já usado na promoção SMC→4h).
+
+### Modo sombra prospectivo — braço decisório da Fase 1 (2026-08-03)
+
+Por desenho do conselho, o mecanismo acima sozinho não decide nada — é
+backtest-only por construção. O braço que decide é observação prospectiva
+ao vivo, log-only, por semanas, nunca abrindo `TradeOperation` real.
+Usuário pediu para começar ("pode começar o modo sombra").
+
+**Implementação** (detalhe técnico completo no plano de sessão, resumo
+aqui): novo workflow `.github/workflows/scan-shadow.yml` (cadência de
+15min, `workflow_dispatch` manual disponível) roda `src/lib/scanner.js`
+**sem nenhuma modificação**, com `pineConfig.rf1hCondEnabled` forçado a
+`true` (`scripts/adminPineConfigShadow.js`, único lugar do projeto inteiro
+que liga essa flag fora de teste/backtest) e todo write redirecionado para
+coleções Firestore isoladas, prefixadas `experimentalRf1hShadow*`
+(`scripts/adminEntitiesShadow.js`) — nunca a coleção real de produção.
+Telegram mutado (`scripts/adminTelegramShadow.js`). `MonitoredAsset` é a
+única exceção: lê a coleção REAL (`monitoredAssets`, pra observar o
+universo real de ativos monitorados) mas nunca escreve nela (os 2 write
+sites de bookkeeping de `scanAsset`/`scanAllAssetsInner` viram no-op) —
+achado desta rodada que evitou um desenho ingênuo de "só duplicar
+`adminEntities.js` com prefixo". Isolamento travado por
+`adminEntitiesShadowTripwire.test.js` (lê o texto-fonte, falha se qualquer
+nome de coleção real sem prefixo aparecer como argumento de
+`db.collection(...)`/`createEntity(...)`), e reforçado pelo fato de
+`scanner.js` ficar 100% intocado nesta rodada — um bug nos módulos sombra
+só pode afetar as coleções sombra.
+
+**Efeito colateral positivo do desenho**: como `scanner.js` não filtra por
+cascade, a cascata RF **nativa** (`'4h_15m'`) fica sombreada de graça, na
+MESMA janela/mesmos ativos — dando um controle direto pra comparar volume
+de operações entre as 2 cascatas sem precisar de um segundo experimento.
+
+**Critério de decisão — registrado ANTES de qualquer leitura contar como
+decisão** (`scripts/analyze-shadow-rf1h.mjs`, rodável sob demanda, nunca
+decide sozinho — só formata o dado):
+
+- **Amostra mínima**: n≥30 operações fechadas na cascata experimental
+  (piso do CLT, mesmo `minTrades` usado em todo o resto do projeto, item
+  44). **Amostra-alvo**: n≈100 antes de qualquer leitura contar como
+  decisão-grade.
+- **Correção estatística**: como esta cascata compete com a MESMA pergunta
+  ainda aberta do Bloco 0 (vantagem direcional do RF, hoje 4h,
+  `docs/roadmap.md`) — não é um teste independente — o IC da expectância
+  usa correção de Bonferroni pra m=2 comparações: z=2.24 (alpha=0.05/2
+  two-sided) em vez do z=1.96 padrão. `expectancyCIAtZ` (novo, aditivo, em
+  `src/lib/tradeMetrics.js`) calcula esse IC sem tocar `summarizeOps` (que
+  mantém o 1.96 fixo usado em todo o resto do projeto).
+- **Comparação secundária** (o objetivo original — aumentar volume):
+  operações/mês de `rf1h_cond4h_15m` vs `4h_15m`, medidas em paralelo na
+  mesma janela sombra (`buildShadowComparison` calcula os 2 números e a
+  razão entre eles — **sem** um multiplicador hard-coded de "meaningfully",
+  de propósito: é leitura humana dos 2 números, não um limiar automático).
+- **Condição de sucesso**: n≥100, IC-Bonferroni não cruza zero, contagem
+  de operações/mês meaningfully maior que a nativa — as DUAS partes juntas,
+  nunca só a primeira. `scripts/analyze-shadow-rf1h.mjs` nunca rotula
+  "decisão-grade" sozinho a partir de amostra+IC — o veredito da cascata
+  experimental diz explicitamente "falta confirmar volume/mês" até esse
+  segundo número ser lido junto (achado de revisão externa, Codex, PR #129,
+  P2 — a 1ª versão declarava decisão-grade só com o critério estatístico).
+  Só então uma conversa sobre produção (decisão do usuário, não automática).
+- **Condição de parada antecipada**: achado estrutural que invalide o
+  desenho (confirmação 15m nunca disponível, regime sempre reprova, bug
+  real) — reportar na hora, não esperar n=30.
+- **Leitura parcial (n<30) é só debug** (confirmar que o mecanismo está
+  funcionando), nunca avaliação de performance.
+
+**Correções de revisão externa (Codex, PR #129) antes do merge**:
+
+1. **P1 — cadência horária amostrava só 1 de cada 4 fechamentos de 15m.**
+   `check15mConfirmation` (`src/lib/scanner.js`) só examina o ÚLTIMO
+   candle 15m fechado no instante da chamada — um alinhamento que aparece
+   e reverte dentro da mesma hora ficava permanentemente invisível pro
+   scan sombra, mesmo com a janela de retry de 4h (ela reavalia o SINAL,
+   não os candles 15m intermediários perdidos), enviesando pra baixo tanto
+   a contagem de operações/mês quanto a composição da amostra de
+   expectância. Corrigido: cadência de **15min** (`*/15 * * * *`), alinhada
+   1:1 com o próprio candle de confirmação — nenhum fechamento de 15m fica
+   sem chance de ser visto. Ainda ~21x mais leve que a cadência real de
+   ~5min (96 passadas/dia vs ~312) — compromisso deliberado com a quota
+   compartilhada do Firestore (Spark gratuito, todo o projeto, real +
+   sombra), reversível sem custo se os logs mostrarem aperto de quota.
+2. **P1 — faltavam os índices compostos das coleções sombra.** Firestore
+   indexa por nome exato de coleção; os 5 índices compostos que
+   `firestore.indexes.json` já tinha pras coleções reais
+   (`signalEvents`/`tradeOperations`/`assetStates`) não cobrem
+   `experimentalRf1hShadow*` — sem os equivalentes, toda query composta que
+   `scanner.js` faz (ex.: `TradeOperation.filter({symbol, asset_id,
+   status:[...]})`, `SignalEvent.filter({asset_id, source, timeframe},
+   '-created_date')`) falharia com `FAILED_PRECONDITION` assim que o
+   workflow rodasse — o modo sombra nunca acumularia nada. Corrigido:
+   5 entradas espelhadas em `firestore.indexes.json`. **Ação pendente do
+   usuário**: rodar o deploy manual (tela "Actions" → workflow "Deploy
+   Firestore rules & indexes" → botão "Run workflow") ANTES da primeira
+   execução real do scan sombra — mesmo passo manual que rules já exige
+   (item 5), sem o qual o workflow falha na primeira tentativa.
+3. **P2 — veredito "decisão-grade" ignorava o critério de volume.** Ver
+   "Condição de sucesso" acima.
+
+**Fora de escopo desta rodada**: backtest retrospectivo exploratório
+pré-2023 (braço separado, ainda não começado); UI/dashboard de progresso;
+qualquer decisão sobre produção — esta rodada só COMEÇA o acúmulo.
+
+#### Verificação
+
+`npm run lint && npm test && npm run build && npm run build:scan-shadow`.
+`sentinel-trading-engine-review` — mesmo sem tocar `scanner.js`, os
+módulos sombra implementam a mesma garantia transacional (CAS/idempotência,
+reusando `src/lib/opTransition.js`) que a produção. **Antes do 1º disparo**
+(manual ou agendado): rodar o deploy de índices (ver item 2 acima) — sem
+isso o workflow falha. Depois: disparo manual (`workflow_dispatch`) uma vez
+pra confirmar que roda limpo antes de deixar o `schedule:` cuidar do resto.
+
 ## 57. Causa raiz do volume baixo ao vivo: busca de candle sem retry (2026-08-01)
 
 O item 56 explicava o volume baixo de operações por Poisson/regime — dado

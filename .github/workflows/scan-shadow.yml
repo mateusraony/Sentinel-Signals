@@ -1,0 +1,50 @@
+name: Shadow scan (Fase 1 — RF 1h condicionado ao 4h)
+
+# Braço decisório do modo sombra prospectivo (docs/known-risks.md item 56
+# "Modo sombra") — roda src/lib/scanner.js SEM modificação, com
+# pineConfig.rf1hCondEnabled forçado a true (scripts/adminPineConfigShadow.js)
+# e todo write redirecionado para coleções Firestore isoladas, prefixadas
+# 'experimentalRf1hShadow' (scripts/adminEntitiesShadow.js) — nunca abre uma
+# TradeOperation real, nunca notifica Telegram.
+#
+# Cadência de 15min (não hora em hora, não os ~5min do scan real) — achado
+# de revisão (Codex, PR #129, P1): check15mConfirmation só examina o ÚLTIMO
+# candle 15m fechado no instante da chamada (src/lib/scanner.js), então
+# cadência horária amostra só 1 de cada 4 fechamentos de 15m — um alinhamento
+# que aparece e reverte dentro da mesma hora fica permanentemente invisível
+# pro scan sombra, mesmo com a janela de retry de 4h (ela reavalia o sinal,
+# não os candles 15m intermediários perdidos). 15min alinha 1:1 com o próprio
+# candle de confirmação (nenhum fechamento de 15m fica sem chance de ser
+# visto). Ainda ~21x mais leve que a cadência real de ~5min (96 passadas/dia
+# vs ~312) — compromisso deliberado com a quota compartilhada do Firestore
+# (Spark gratuito, ~50k leituras/20k escritas por dia, projeto inteiro,
+# trading-engine.md/scanner.js PASSES_PER_DAY) já usada pela produção real.
+# Se depois de alguns dias a tela "Logs" mostrar aviso de quota perto do
+# limite, apertar de volta pra hora em hora é reversível sem custo (só o
+# `cron:` abaixo) — nenhum estado de produção pra desfazer.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: scheduled-scan-shadow-rf1h
+  cancel-in-progress: false
+
+jobs:
+  scan-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run scan:shadow
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
