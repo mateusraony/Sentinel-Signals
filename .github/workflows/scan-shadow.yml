@@ -5,13 +5,26 @@ name: Shadow scan (Fase 1 — RF 1h condicionado ao 4h)
 # pineConfig.rf1hCondEnabled forçado a true (scripts/adminPineConfigShadow.js)
 # e todo write redirecionado para coleções Firestore isoladas, prefixadas
 # 'experimentalRf1hShadow' (scripts/adminEntitiesShadow.js) — nunca abre uma
-# TradeOperation real, nunca notifica Telegram. Cadência horária (não os
-# ~5min do scan real): é só observação, e o próprio sinal é de 1h — o candle
-# só fecha 1x/hora mesmo, e a janela de retry da cascata tolera até 4h de
-# atraso sem perder o sinal. Ver scripts/CLAUDE.md e trading-engine.md.
+# TradeOperation real, nunca notifica Telegram.
+#
+# Cadência de 15min (não hora em hora, não os ~5min do scan real) — achado
+# de revisão (Codex, PR #129, P1): check15mConfirmation só examina o ÚLTIMO
+# candle 15m fechado no instante da chamada (src/lib/scanner.js), então
+# cadência horária amostra só 1 de cada 4 fechamentos de 15m — um alinhamento
+# que aparece e reverte dentro da mesma hora fica permanentemente invisível
+# pro scan sombra, mesmo com a janela de retry de 4h (ela reavalia o sinal,
+# não os candles 15m intermediários perdidos). 15min alinha 1:1 com o próprio
+# candle de confirmação (nenhum fechamento de 15m fica sem chance de ser
+# visto). Ainda ~21x mais leve que a cadência real de ~5min (96 passadas/dia
+# vs ~312) — compromisso deliberado com a quota compartilhada do Firestore
+# (Spark gratuito, ~50k leituras/20k escritas por dia, projeto inteiro,
+# trading-engine.md/scanner.js PASSES_PER_DAY) já usada pela produção real.
+# Se depois de alguns dias a tela "Logs" mostrar aviso de quota perto do
+# limite, apertar de volta pra hora em hora é reversível sem custo (só o
+# `cron:` abaixo) — nenhum estado de produção pra desfazer.
 on:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 concurrency:

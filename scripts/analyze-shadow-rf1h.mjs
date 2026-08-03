@@ -31,6 +31,7 @@ const NATIVE_CASCADE = '4h_15m';
 const BONFERRONI_Z_M2 = 2.24;
 const MIN_TRADES = 30;
 const TARGET_TRADES = 100;
+const MS_PER_MONTH = 30 * 24 * 60 * 60 * 1000;
 
 function parseArgs(argv) {
   const args = { json: false };
@@ -46,28 +47,80 @@ function parseArgs(argv) {
 const fmt = (value, digits = 3) => (value === null || value === undefined ? '—' : value.toFixed(digits));
 const ciStr = (ci) => (ci ? `[${fmt(ci[0])}, ${fmt(ci[1])}]` : '—');
 
+// Janela compartilhada (min..max created_date de TODAS as ops, das 2
+// cascatas juntas) — as 2 cascatas são amostradas pelo MESMO scan sombra
+// contínuo, então usar uma janela por-cascade enviesaria a taxa se uma
+// delas começou a produzir operação depois da outra. Retorna null quando
+// não há dado suficiente pra medir um intervalo (0 ou 1 timestamp).
+function sharedWindowMonths(allOps) {
+  const timestamps = allOps
+    .map((op) => new Date(op.created_date).getTime())
+    .filter((t) => Number.isFinite(t));
+  if (timestamps.length < 2) return null;
+  const spanMs = Math.max(...timestamps) - Math.min(...timestamps);
+  return spanMs > 0 ? spanMs / MS_PER_MONTH : null;
+}
+
 // Exportado para poder ser testado sem Firestore — recebe os grupos de ops
 // já separados por cascade e devolve o mesmo shape que main() imprime.
+//
+// Codex review (PR #129, P2): a versão anterior declarava veredito
+// "decisão-grade" só com amostra+IC, sem checar a condição de volume que
+// docs/known-risks.md item 56 também exige ("operações/mês do experimental
+// meaningfully maior que a nativa"). Corrigido: o rótulo "decisão-grade"
+// nunca é emitido sozinho — o critério de volume é numérico (operationsPerMonth
+// por cascade, janela compartilhada) e sempre reportado ao lado, mas a
+// palavra "meaningfully" fica deliberadamente sem um multiplicador
+// hard-coded aqui (evita trocar um número arbitrário do achado por outro) —
+// quem lê o relatório compara os 2 números e decide, mesmo espírito de
+// "nunca decide sozinho, só formata" do resto deste script.
 export function buildShadowComparison(opsByCascade) {
+  const allOps = Object.values(opsByCascade).flat();
+  const windowMonths = sharedWindowMonths(allOps);
+
   const result = {};
   for (const [cascade, ops] of Object.entries(opsByCascade)) {
     const summary = summarizeOps(ops, { minTrades: MIN_TRADES });
     const bonferroniCI = cascade === EXPERIMENTAL_CASCADE
       ? expectancyCIAtZ(summary.expectancyR, summary.expectancyRStdErr, BONFERRONI_Z_M2)
       : null;
+    const operationsPerMonth = windowMonths ? summary.total / windowMonths : null;
+
     let verdict = 'INCONCLUSIVO (amostra < mínimo)';
     if (summary.counted >= MIN_TRADES) {
       const ciToCheck = bonferroniCI ?? summary.expectancyRCI95;
       if (ciToCheck && !(ciToCheck[0] <= 0 && ciToCheck[1] >= 0)) {
-        verdict = summary.counted >= TARGET_TRADES
-          ? (summary.expectancyR > 0 ? 'SINAL POSITIVO (decisão-grade)' : 'SINAL NEGATIVO (decisão-grade)')
-          : `SINAL (${summary.expectancyR > 0 ? 'positivo' : 'negativo'}), mas amostra ainda abaixo do alvo (${TARGET_TRADES})`;
+        const direction = summary.expectancyR > 0 ? 'positivo' : 'negativo';
+        if (summary.counted >= TARGET_TRADES) {
+          // Estatisticamente decisivo (amostra+IC) — mas isso NUNCA é o
+          // critério de sucesso completo pra cascade === EXPERIMENTAL_CASCADE
+          // sozinho: known-risks item 56 exige TAMBÉM volume/mês > nativa.
+          verdict = cascade === EXPERIMENTAL_CASCADE
+            ? `SINAL ESTATÍSTICO ${direction.toUpperCase()} (amostra+IC) — falta confirmar volume/mês vs cascade nativa (ver comparação abaixo, known-risks item 56) antes de chamar de decisão-grade`
+            : `SINAL ${direction.toUpperCase()} (decisão-grade)`;
+        } else {
+          verdict = `SINAL (${direction}), mas amostra ainda abaixo do alvo (${TARGET_TRADES})`;
+        }
       } else {
         verdict = 'INCONCLUSIVO (IC cruza zero)';
       }
     }
-    result[cascade] = { ...summary, bonferroniCI, bonferroniZ: bonferroniCI ? BONFERRONI_Z_M2 : null, verdict };
+    result[cascade] = {
+      ...summary, bonferroniCI, bonferroniZ: bonferroniCI ? BONFERRONI_Z_M2 : null, operationsPerMonth, verdict,
+    };
   }
+
+  // Comparação de volume explícita — número, não veredito. null quando
+  // qualquer um dos 2 lados não tem janela mensurável ainda (amostra cedo
+  // demais pra ter um intervalo created_date com span > 0).
+  const expRate = result[EXPERIMENTAL_CASCADE]?.operationsPerMonth ?? null;
+  const nativeRate = result[NATIVE_CASCADE]?.operationsPerMonth ?? null;
+  result.volumeComparison = {
+    experimentalOperationsPerMonth: expRate,
+    nativeOperationsPerMonth: nativeRate,
+    ratio: expRate !== null && nativeRate !== null && nativeRate > 0 ? expRate / nativeRate : null,
+  };
+
   return result;
 }
 
@@ -77,6 +130,7 @@ function renderComparison(comparison) {
   out.push('Nunca decide sozinho — critério completo em docs/known-risks.md item 56.');
   out.push('');
   for (const [cascade, s] of Object.entries(comparison)) {
+    if (cascade === 'volumeComparison') continue; // renderizado à parte, abaixo
     const label = cascade === EXPERIMENTAL_CASCADE ? `${cascade} (EXPERIMENTAL)`
       : cascade === NATIVE_CASCADE ? `${cascade} (controle nativo, sombreado de graça)`
         : `${cascade} (fora do veredito — reportado por completude)`;
@@ -85,7 +139,17 @@ function renderComparison(comparison) {
     out.push(`expectância líquida: ${fmt(s.expectancyR)} R`);
     out.push(`IC 95% (z=1.96): ${ciStr(s.expectancyRCI95)}`);
     if (s.bonferroniCI) out.push(`IC Bonferroni (z=${s.bonferroniZ}, m=2): ${ciStr(s.bonferroniCI)}`);
+    out.push(`operações/mês (janela compartilhada com a outra cascade): ${fmt(s.operationsPerMonth, 2)}`);
     out.push(`veredito: ${s.verdict}`);
+    out.push('');
+  }
+  const vc = comparison.volumeComparison;
+  if (vc) {
+    out.push('--- Comparação de volume (o objetivo original — aumentar operações/mês) ---');
+    out.push(`experimental: ${fmt(vc.experimentalOperationsPerMonth, 2)} op/mês · nativa: ${fmt(vc.nativeOperationsPerMonth, 2)} op/mês`
+      + ` · razão: ${vc.ratio !== null ? `${fmt(vc.ratio, 2)}x` : '—'}`);
+    out.push('Sem multiplicador fixo aqui de propósito — "meaningfully maior" (known-risks');
+    out.push('item 56) é julgamento humano sobre estes 2 números, não um limiar automático.');
     out.push('');
   }
   return out;
