@@ -4754,10 +4754,30 @@ nome de coleção real sem prefixo aparecer como argumento de
 `scanner.js` ficar 100% intocado nesta rodada — um bug nos módulos sombra
 só pode afetar as coleções sombra.
 
-**Efeito colateral positivo do desenho**: como `scanner.js` não filtra por
-cascade, a cascata RF **nativa** (`'4h_15m'`) fica sombreada de graça, na
-MESMA janela/mesmos ativos — dando um controle direto pra comparar volume
-de operações entre as 2 cascatas sem precisar de um segundo experimento.
+**Efeito colateral do desenho — corrigido (review externa, Codex, PR #130,
+2026-08-03)**: a frase original aqui dizia que a cascata RF **nativa**
+(`'4h_15m'`) ficava "sombreada de graça" dando um "controle direto" pra
+comparar volume entre as 2 cascatas. **Isso está incompleto**: as 2
+cascatas disputam o MESMO slot `assetActiveOps` por ativo
+(`rf1h_cond4h_15m` tem `CASCADE_RANK` igual a `4h_15m`,
+`src/lib/signalArbitration.js:46` — mesmo rank faz
+`classifyCascadeRelation` devolver `tfRelation:'same'`, e
+`planSignalArbitration` trata isso como reforço/no-op, nunca abre uma 2ª
+operação). Ou seja: se a cascata nativa já tem uma operação ativa num
+ativo, um candidato experimental na mesma direção é absorvido (não conta
+pra `byCascade['rf1h_cond4h_15m']`) — e vice-versa. **O bucket nativo
+sombreado NÃO é um controle limpo** (o que teria acontecido só com a
+nativa, sem a experimental competindo pelo slot) — é o que sobrou depois
+da disputa pelo slot compartilhado. Isso enviesa a "Comparação secundária"
+abaixo na direção de UNDERSTATE a vantagem real de volume (operações
+nativas que a experimental "roubou" o slot não aparecem em nenhum dos dois
+buckets como um ganho líquido claro) — mas na direção OPOSTA de qualquer
+alegação de que os 2 buckets são independentes. **Não implementado nesta
+rodada** (exigiria uma 2ª instância do modo sombra rodando só com a
+cascata nativa, infraestrutura nova): a comparação real e mais confiável
+de "quantas operações a nativa produziria sozinha" continua sendo a
+produção real (`tradeOperations`/`signalEvents` de verdade, sem
+`rf1hCondEnabled`) — não o bucket nativo dentro do próprio scan sombra.
 
 **Critério de decisão — registrado ANTES de qualquer leitura contar como
 decisão** (`scripts/analyze-shadow-rf1h.mjs`, rodável sob demanda, nunca
@@ -4779,6 +4799,11 @@ decide sozinho — só formata o dado):
   mesma janela sombra (`buildShadowComparison` calcula os 2 números e a
   razão entre eles — **sem** um multiplicador hard-coded de "meaningfully",
   de propósito: é leitura humana dos 2 números, não um limiar automático).
+  **Ressalva (Codex, PR #130)**: os 2 buckets NÃO são independentes — ver
+  "Efeito colateral do desenho" acima. Ler como `total combinado
+  (nativa+experimental) vs o que a produção real vem gerando só com a
+  nativa` (a fonte de comparação mais limpa), não como os 2 sub-buckets
+  do próprio scan sombra competindo entre si.
 - **Condição de sucesso**: n≥100, IC-Bonferroni não cruza zero, contagem
   de operações/mês meaningfully maior que a nativa — as DUAS partes juntas,
   nunca só a primeira. `scripts/analyze-shadow-rf1h.mjs` nunca rotula
@@ -4838,6 +4863,73 @@ reusando `src/lib/opTransition.js`) que a produção. **Antes do 1º disparo**
 (manual ou agendado): rodar o deploy de índices (ver item 2 acima) — sem
 isso o workflow falha. Depois: disparo manual (`workflow_dispatch`) uma vez
 pra confirmar que roda limpo antes de deixar o `schedule:` cuidar do resto.
+
+### Braço exploratório — backtest retrospectivo pré-2023 (critério registrado ANTES de rodar, 2026-08-03)
+
+Usuário pediu para rodar o 3º braço da validação (rotulado EXPLORATÓRIO em
+todo lugar, nunca decisório — o braço que decide é o modo sombra acima).
+Mesma disciplina de registrar critério/desenho antes do resultado.
+
+**Janela**: `2022-07-27 → 2023-07-27`. As 3 janelas do Bloco 0 já cobrem
+`2023-07-27` até hoje (item 48: `2025-07-27→2026-07-27`,
+`2024-07-27→2025-07-27`, `2023-07-27→2024-07-27` — a mais antiga,
+`bloco0-janela3-2023`) — esta janela é a imediatamente anterior, sem
+sobreposição nem buraco entre as duas.
+
+**Ativos**: os mesmos 7 símbolos default do workflow
+(`BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT`) — "mesma
+carteira da run de controle 4h", igual ao que `bloco0-janela3-2023` já usou.
+**Ressalva de qualidade de dado** (verificado em `scripts/fetch-backtest-data.mjs`
+antes de rodar, não assumido): a API da Binance devolve candles a partir de
+quando o símbolo realmente começou a negociar quando a janela pedida começa
+antes disso — não lança erro nem trava o download. Símbolos mais novos da
+carteira (ZRO, possivelmente PENDLE) podem contribuir pouco ou nada no
+início/toda a janela — **esperado, não bug** — a leitura por símbolo do
+relatório (`analyze-backtest.mjs`) mostra isso explicitamente.
+
+**Configuração — DOIS runs, não um** (corrigido, review externa Codex,
+PR #130, 2026-08-03: a 1ª versão deste texto propunha comparar
+`report.byCascade['4h_15m']` contra `['rf1h_cond4h_15m']` de um único run
+com a flag ligada — **inválido**, porque as 2 cascatas disputam o MESMO
+slot `assetActiveOps` por ativo — mesmo `CASCADE_RANK`, mesma classe de
+"reforço absorvido sem abrir 2ª operação" que o modo sombra tem, ver
+subseção "Modo sombra" acima. O bucket `4h_15m` DENTRO de um run com a
+flag ligada não é o mesmo que rodar só a nativa):
+
+1. **Run de controle** — pineConfig padrão, SEM `rf1hCondEnabled` (deixar
+   "Overrides do pineConfig em JSON" em branco). Só a cascata nativa
+   `4h_15m` roda; `report.overall`/`report.byCascade['4h_15m']` é a
+   contagem-baseline real desta janela.
+2. **Run combinado** — `pine_config: {"rf1hCondEnabled": true}`. Produz
+   `report.byCascade['4h_15m']` E `['rf1h_cond4h_15m']` juntos (auto-
+   vivificado por `buildReport`, `src/lib/backtestEngine.js:517-523` —
+   sem mudança de código), mas os 2 sub-buckets internos deste run
+   **não são um contraste limpo entre si** — só o **total combinado**
+   (`report.overall`, soma das 2 cascatas) é comparável de forma válida
+   contra o Run 1.
+
+**Comparação válida**: Run 2 `report.overall.total`/`expectancyR` vs Run 1
+`report.overall.total`/`expectancyR` — responde "ligar isso aumenta o
+volume/muda a expectância combinada desta janela?". A composição interna
+do Run 2 (quanto veio de cada cascata) é informativa mas secundária —
+não é o número que decide.
+
+Mesmos ativos nos dois runs
+(`BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT`, default do
+workflow), mesma janela, sem SMC (`smc`/`smc_confirm` em branco), mesmos
+custos (não usa `--no-costs`) — mesma configuração base de
+`bloco0-janela3-2023`, exceto pelo par de runs.
+
+**Rótulos das tentativas**: `fase1-exploratorio-pre2023-controle` (Run 1) e
+`fase1-exploratorio-pre2023-combinado` (Run 2).
+
+**Como este resultado é usado**: leitura rápida enquanto o modo sombra
+acumula (semanas) — NUNCA decide sozinho, mesmo se vier positivo. Uma
+única janela adicional (agora 4 no total: 3 do Bloco 0 + esta) continua
+sendo evidência incremental, não os ~300 operações que o próprio
+`docs/roadmap.md` já define como padrão de confiança. Resultado registrado
+aqui como subseção separada quando o usuário rodar os 2 e colar os
+relatórios.
 
 ## 57. Causa raiz do volume baixo ao vivo: busca de candle sem retry (2026-08-01)
 
