@@ -4469,9 +4469,23 @@ booleana** que gerou o sinal — 35 dos 100 pontos vêm de uma variável só,
 tautológica em relação à própria emissão. `score`/`minScore` também **não
 aparece em nenhum motivo do enum `last_rejection_reason`** (confirmado por
 grep) — porque o funil de rejeição só existe para sinais que já nasceram,
-e nascer já exige ter passado no score. **Não é o gargalo. Confirmado
-duas vezes, por dois métodos diferentes (teste real do usuário; leitura
-estrutural do cálculo).**
+e nascer já exige ter passado no score.
+
+**Ressalva real, apontada por review externa (Codex, PR #124) e
+confirmada por leitura de código**: os 35 pontos garantidos não tornam 75
+"fácil de bater" por si só — ainda faltam 40 dos 65 pontos restantes
+(MACD 20 + EMA 20 + RSI 15 + Volume 10 + gate RF residual 10), e
+`scanner.js:1193` descarta o candidato **silenciosamente** quando
+`strengthResult.passed` é `false` — nenhum contador, nenhum log, nenhuma
+entrada em `entryFunnelOutcomes` para esse caso (confirmado por grep, zero
+ocorrência). Ou seja: **não existe hoje nenhuma medição de quantos flips
+RF confirmados (`r.confirmed.confirmedSignal`) são descartados só pelo
+score antes de virar `SignalEvent`.** O argumento estrutural acima (por
+que bater 75 tende a ser alcançável quando o sinal já existe) e o teste
+real do usuário (item 49, `minScore=75` não resolveu o volume baixo)
+seguem de pé, mas **não são a mesma coisa que medir a taxa de rejeição
+bruta** — essa lacuna de instrumentação é real e listada como próximo
+passo abaixo, não fechada nesta rodada.
 
 #### O que realmente prende um sinal em "Observando"
 
@@ -4486,6 +4500,23 @@ apertado demais" — é mercado genuinamente sem tendência na maior parte do
 tempo avaliado, e a tabela ADX/Choppiness é cópia literal do Pine real do
 usuário (protegida por golden test), não um número que o Sentinel inventou
 e pode simplesmente afrouxar sem divergir do TradingView real.
+
+**Ressalva real, apontada por review externa (Codex, PR #124) e
+confirmada por leitura de código**: os 69-97% acima descrevem o que
+acontece com um sinal **durante a janela ativa de retry** — não
+necessariamente por que um card ESPECÍFICO ainda mostra "Observando"
+agora. Um sinal RF que envelhece além da janela de retry (4h) só ganha
+`expired_logged: true` (item 47.2); nem `Dashboard.jsx:324`
+(`recentSignals.find(...)`, sem checar idade/`expired_logged`/
+`is_dismissed`) nem `AssetCard.jsx:198-200` (`else if (latestSignal)`,
+mesma ausência de filtro) descartam esse sinal morto — ele continua sendo
+o "último sinal" exibido até outro `SignalEvent` do mesmo ativo entrar
+nos 50 mais recentes (`SignalEvent.list('-created_date', 50)`,
+`Dashboard.jsx:49-52`) e substituí-lo. Ou seja: um card em "Observando"
+pode estar exibindo um sinal que **nenhum gate está mais avaliando** —
+as porcentagens de regime acima explicam o funil enquanto o sinal está
+vivo, não garantem que é a explicação para o que a tela mostra num
+instante qualquer.
 
 #### A hipótese do timeframe — parcialmente procedente, mas não como o usuário formulou
 
@@ -4539,15 +4570,28 @@ mesmo regime reduzem amostra efetiva".
 4. **Aceitar o horizonte de validação mais longo** é a opção de menor
    risco — é o que o próprio Bloco 0 já está fazendo (múltiplas janelas
    independentes em vez de esperar uma amostra ao vivo gigante).
+5. **Fechar as 2 lacunas de instrumentação que a review externa (Codex,
+   PR #124) encontrou** (não implementado nesta rodada): (a) um contador
+   de flips RF confirmados descartados só pelo score, ao lado de
+   `entryFunnelOutcomes` — responde de fato "quantos candidatos o score
+   mata" em vez de inferir por estrutura; (b) filtrar `Dashboard.jsx`/
+   `AssetCard.jsx` por `expired_logged`/idade antes de rotular
+   "Observando", pra não confundir sinal morto com sinal ainda em
+   avaliação ativa. Nenhuma muda decisão de entrada/saída — só
+   observabilidade, mesma categoria dos itens 49-52.
 
-**Conclusão direta**: a hipótese do score estava errada (já tinha sido
-testada e descartada; agora também explicada estruturalmente). A
-preocupação sobre timeframe/ciclo de validação é legítima e baseada em
-evidência real — mas a causa não é um bug ou um limiar mal calibrado, é
-uma característica inerente à combinação timeframe-alto + filtro de
-regime que este projeto escolheu deliberadamente (e que é literalmente o
-Pine real do usuário). Mudar isso é possível, mas é reabrir a estratégia
-em si, não consertar algo quebrado.
+**Conclusão direta**: a hipótese do score continua sem evidência a favor
+(já tinha sido testada e descartada pelo usuário; a explicação estrutural
+segue de pé), mas **a medição direta que fecharia essa dúvida em
+definitivo não existe hoje** — ver ressalva acima. A preocupação sobre
+timeframe/ciclo de validação é legítima e baseada em evidência real — mas
+a causa não é um bug ou um limiar mal calibrado, é uma característica
+inerente à combinação timeframe-alto + filtro de regime que este projeto
+escolheu deliberadamente (e que é literalmente o Pine real do usuário).
+Mudar isso é possível, mas é reabrir a estratégia em si, não consertar
+algo quebrado. E o diagnóstico de "Observando" precisa da ressalva de
+sinal expirado/não filtrado acima antes de ser tomado como prova completa
+do que uma tela específica está mostrando num instante qualquer.
 
 #### Verificação
 
