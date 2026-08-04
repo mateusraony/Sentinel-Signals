@@ -3458,6 +3458,41 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
       expect(stored[0].last_rejection_reason).toBe('fetch_error');
     });
 
+    // .claude/rules/testing.md, "Lacunas restantes": check5mSmcConfirmation
+    // não tinha teste dedicado pra "mesma lógica de timing" que
+    // check15mConfirmation já tem (backtestEngine.test.js, "cascata de
+    // confirmação 15m atrasada") — os testes acima cobrem cada rejectReason
+    // isoladamente e a troca de motivo entre passadas, mas nenhum prova que
+    // o gatilho 5m em si pode ficar sem confirmar na 1ª passada e SÓ
+    // confirmar (criando a TradeOperation) num retry posterior, dentro da
+    // janela de 4x1h — o caminho positivo real, não só o de expiração.
+    it('SMC: check5mSmcConfirmation rejeita (no_trigger) na 1a passada e confirma pelo retry, sem duplicar operação', async () => {
+      const asset = makeAsset({ smc_enabled: true });
+      const results = { '1h': makeTfData({ atrValue: 2 }) };
+      const signal = makeSmcSignal();
+
+      // Passada 1: 5m ainda sem gatilho (candles planos) — sinal persiste,
+      // sem op.
+      fetchCandles.mockResolvedValue(flatCandles5m(60));
+      await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [signal] });
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+      let stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_smc' });
+      expect(stored[0].last_rejection_reason).toBe('no_trigger');
+
+      // Passada 2 (retry): o sweep bullish já aconteceu — confirma via o
+      // loop de retry (newSignals vazio: só o retry reavalia o sinal já
+      // persistido).
+      fetchCandles.mockReset();
+      fetchCandles.mockResolvedValue(bullishSweepCandles5m());
+      await persistScanResults({ ...makeScanResult({ asset, results }), newSignals: [] });
+
+      const ops = await backend.entities.TradeOperation.filter({});
+      expect(ops).toHaveLength(1);
+      expect(ops[0].cascade).toBe('1h_5m');
+      stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_smc' });
+      expect(stored[0].last_rejection_reason).toBe('no_trigger'); // write-on-change: motivo antigo não é limpo, a op já existe
+    });
+
     it('retry: write-on-change — mesmo motivo não regrava, motivo novo regrava com o rejectReason exato de check5mSmcConfirmation', async () => {
       const asset = makeAsset({ smc_enabled: true });
       const results = { '1h': makeTfData({ atrValue: 2 }) };
