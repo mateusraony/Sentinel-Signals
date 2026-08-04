@@ -4931,6 +4931,94 @@ sendo evidência incremental, não os ~300 operações que o próprio
 aqui como subseção separada quando o usuário rodar os 2 e colar os
 relatórios.
 
+#### Resultado — os 2 runs (2026-08-04)
+
+Usuário rodou os 2 runs recomendados e colou os diagnósticos completos.
+
+| | Run 1 controle (só nativa) | Run 2 combinado (+ experimental) |
+|---|---|---|
+| Operações fechadas | 75 | 157 |
+| Expectância líquida | **+0,215 R** | **−0,028 R** |
+| Veredito | INCONCLUSIVO (`ci_straddles_zero`) | INCONCLUSIVO (`ci_straddles_zero`) |
+| STOP_HIT | 76,0% (22W/35L) | 83,4% (42W/89L) |
+| TP2_HIT | 16,0% (12/12 win) | 10,2% (16/16 win) |
+| SELL (contrib/média) | +0,092R / +0,230R | **−0,075R / −0,159R** |
+| BUY (contrib/média) | +0,123R / +0,205R | +0,047R / +0,090R |
+| Tier T3 (contrib/média) | +0,178R / +0,284R | **−0,057R / −0,087R** |
+| `correction_warning` (contrib/média) | −0,107R / −0,619R (13 ops) | −0,105R / −0,782R (21 ops) |
+
+**Fato**: ligar `rf1hCondEnabled` **mais que dobrou** o volume de
+operações na mesma janela/ativos (75→157, 2,09x) — confirma
+direcionalmente o achado de Fase 0 (RF 1h gera ~3,8x mais sinal bruto).
+Mas a expectância combinada **inverteu de sinal**, positiva pra negativa.
+
+**Correção de leitura (review externa, Codex, PR #131, 2026-08-04)** — a
+1ª versão deste texto dizia "decompondo os +82 operações incrementais,
+74 delas (90%) caíram em STOP_HIT", tratando a subtração simples dos
+totais (131−57=74) como se fosse a contagem de quantas das operações
+"novas" pararam no stop. **Inválido pelo mesmo motivo já registrado
+acima**: como as 2 cascatas disputam o mesmo slot `assetActiveOps`, o
+Run 2 não é "o Run 1 + 82 operações extras" — um candidato experimental
+pode ocupar o slot de um ativo ANTES de um sinal nativo que teria
+disparado no Run 1, trocando qual operação existe ali (e com que
+entrada/duração), não só adicionando uma a mais. A subtração de totais
+por balde não decompõe "quais operações são as incrementais" — só mostra
+a variação agregada de cada balde entre 2 simulações independentes.
+
+**O que os números REALMENTE sustentam** (proporção dentro de cada run,
+não decomposição entre runs): a fatia de `STOP_HIT` subiu de 76,0% pra
+83,4% dos fechamentos (+7,4pp); a fatia de `TP2_HIT` (o desfecho de
+maior qualidade) caiu de 16,0% pra 10,2% (−5,8pp) — e cresceu bem mais
+devagar em contagem bruta (12→16, 1,33x) que o volume total (75→157,
+2,09x). SELL, que no Run 1 tinha a melhor média (+0,230R), tem a pior
+média no Run 2 (−0,159R); T3 (tier dominante em volume nos dois runs)
+segue o mesmo padrão. Essas são comparações agregadas válidas (média/
+proporção de cada run, cada um medido de forma independente) — não uma
+alegação sobre quais operações específicas mudaram de resultado.
+`correction_warning` (já documentado, item 45.9, como cohort negativo e
+inútil como gate) se manteve consistentemente negativo nos dois runs,
+sem virar achado novo.
+
+**Hipótese**: a cascata experimental está entregando exatamente o padrão
+que a Fase 0 já antecipava por texto ("o 1h é intrinsecamente mais
+ruidoso... sobreviver menos ao gate de regime, não mais") — mais volume,
+mas de qualidade sistematicamente pior, concentrado em stop. Não é
+"volume que se soma de graça" — é volume que, nesta janela específica,
+comeu a vantagem que a cascata nativa sozinha tinha (mesmo essa vantagem
+nativa sendo ela mesma INCONCLUSIVA, `ci_straddles_zero`).
+
+**Ressalva de honestidade estatística — por que isto NÃO decide nada**:
+(1) os DOIS runs são individualmente inconclusivos — a leitura acima é
+sobre a DIREÇÃO da mudança (positiva→negativa), não um resultado provado
+em nenhum dos dois lados; (2) é uma única janela exploratória (a 4ª
+independente do projeto, mas ainda longe das ~300 operações que o padrão
+de confiança do projeto exige); (3) mesmo problema de múltiplas
+comparações já registrado — testar esta cascata numa janela histórica
+compete com a mesma pergunta do Bloco 0. **Não muda a decisão de manter
+`rf1hCondEnabled` desligado em produção** (já era o caso) — mas é o
+primeiro dado concreto (embora não conclusivo) que aponta na direção
+OPOSTA à esperança original de "mais volume sem custo de qualidade", e
+deveria pesar contra otimismo precipitado quando o modo sombra (o braço
+que realmente decide) começar a produzir leitura.
+
+**Achado colateral, não decisório — ressalva de leitura em `bars_to_tp1`/
+`bars_to_stop`**: no Run 2, essas colunas saltam de ~23/32 (Run 1) para
+~82/79 barras — parece "operações demoram 4x mais", mas **não é real**:
+o "tempo em posição" em dias reais (a métrica confiável) foi
+praticamente igual nos dois runs (5,9d → 5,3d, Run 2 até um pouco mais
+rápido). `barsOpen` (a métrica por trás de `bars_to_tp1`/`bars_to_stop`)
+usa `SIGNAL_TF_MS[op.signal_timeframe]` como unidade — 4h pra cascata
+nativa, 1h pra experimental — então uma "barra" da experimental vale 1/4
+de uma barra nativa. Misturar as duas num único cálculo de média (Run 2
+combina as 2 cascatas) produz um número sem significado direto — não é
+bug de trading (o Time Stop em si já está corretamente convertido por
+cascata, ver correção anterior desta rodada), é só um artefato de
+exibição do diagnóstico quando 2 cascatas com timeframes diferentes são
+somadas na mesma métrica de "barras". Não corrigido nesta rodada — fica
+registrado pra não interpretar mal esse par de colunas numa leitura
+futura; correção (normalizar pra horas reais, ou separar por cascata em
+`backtestAnalysis.js`) fica pra quando/se o usuário pedir.
+
 ## 57. Causa raiz do volume baixo ao vivo: busca de candle sem retry (2026-08-01)
 
 O item 56 explicava o volume baixo de operações por Poisson/regime — dado
