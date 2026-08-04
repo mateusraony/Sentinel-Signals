@@ -5,18 +5,31 @@ cada item aponta para a seção canônica em `docs/known-risks.md`. Existe porqu
 pendência estava espalhada em cinco itens numerados e num plano de sessão, e
 plano de sessão morre com a sessão.
 
-> **Estado em 2026-07-30.** As DUAS janelas do Bloco 0 já rodaram. Baixa
-> (2025-07→2026-07, 344 ops): expectância líquida −0,076 R, IC cruzando zero —
-> **nenhuma vantagem demonstrada**, janela inteira em bear market (item 46.1).
-> Alta (2024-07→2025-07, 288 ops, `bull-baseline`): expectância líquida
-> **+0,294 R, CONCLUSIVA** (IC 0,153 a 0,435) — a primeira janela, de qualquer
-> regime, a fechar conclusiva. Mas o critério escrito antes (positivo nas
-> DUAS janelas) não foi satisfeito ao pé da letra, e BUY continua mais forte
-> que SELL na alta, espelhando (mais suave) a assimetria oposta da baixa —
-> ainda tem cheiro de regime, não é vantagem provada como independente dele.
-> Detalhe completo: item 48. **O Bloco 1 não foi desbloqueado** com base
-> nisso — decisão de como prosseguir está em aberto, não tomada
+> **Estado em 2026-08-04.** TRÊS janelas do Bloco 0 já rodaram, mais 2
+> reprocessamentos controlados. Baixa (2025-07→2026-07, 344 ops, 20
+> símbolos): −0,076 R, INCONCLUSIVA. Alta (2024-07→2025-07, 288 ops, 20
+> símbolos, `bull-baseline`): **+0,294 R, CONCLUSIVA** (IC 0,153 a 0,435) —
+> a primeira janela do projeto a fechar assim. Janela 3 (2023-07→2024-07,
+> 78 ops, 7 símbolos, `bloco0-janela3-2023`): +0,062 R, INCONCLUSIVA. Review
+> externa (Codex, PR #122) apontou confound: as 2 primeiras rodaram com
+> carteira de 20 símbolos, a 3ª só com 7 — variável não controlada.
+> Reprocessando baixa e alta restritas aos mesmos 7 símbolos da janela 3
+> (2026-08-04): a baixa **inverteu de sinal** nessa mesma janela de tempo
+> (−0,076 R → +0,141 R, ainda INCONCLUSIVA — IC cruza zero), a alta deu
+> +0,250 R. **SELL ficou positivo nas 5 medições feitas até hoje** (0,147 a
+> 0,401 R, 3 regimes, 2 composições de carteira) — o padrão mais consistente
+> já medido neste projeto. BUY segue acompanhando o regime, com oscilação
+> bem menor controlando o confound. Detalhe completo: item 48 (inclui a
+> subseção "Confound controlado"). **O Bloco 1 não foi desbloqueado** com
+> base nisso — decisão de como prosseguir está em aberto, não tomada
 > unilateralmente.
+>
+> **Fase 1 — RF 1h condicionado ao 4h (esforço paralelo, fora da numeração
+> de Blocos abaixo)**: mecanismo backtest-only pronto e testado (nunca em
+> produção), modo sombra prospectivo rodando ao vivo (coleções isoladas,
+> nunca abre operação real), acumulando amostra rumo ao piso n≥30/alvo
+> n≈100 — avisa sozinho quando bater. Backtest exploratório numa janela
+> pré-2023 já rodado, inconclusivo. Detalhe: `docs/known-risks.md` item 56.
 
 ## A regra que ordena tudo: amostra
 
