@@ -4951,14 +4951,33 @@ Usuário rodou os 2 runs recomendados e colou os diagnósticos completos.
 operações na mesma janela/ativos (75→157, 2,09x) — confirma
 direcionalmente o achado de Fase 0 (RF 1h gera ~3,8x mais sinal bruto).
 Mas a expectância combinada **inverteu de sinal**, positiva pra negativa.
-Decompondo os +82 operações incrementais: **74 delas (90%) caíram em
-STOP_HIT** — TP2_HIT (o desfecho de maior qualidade) cresceu só 12→16,
-quase nada, enquanto o volume total mais que dobrou. SELL, que no Run 1
-era o lado mais forte (+0,230R médio), foi o que mais degradou —
-inverteu pra −0,159R médio; T3 (tier dominante em volume nos dois runs)
-seguiu o mesmo padrão. `correction_warning` (já documentado, item 45.9,
-como cohort negativo e inútil como gate) se manteve consistentemente
-negativo nos dois runs, sem virar achado novo.
+
+**Correção de leitura (review externa, Codex, PR #131, 2026-08-04)** — a
+1ª versão deste texto dizia "decompondo os +82 operações incrementais,
+74 delas (90%) caíram em STOP_HIT", tratando a subtração simples dos
+totais (131−57=74) como se fosse a contagem de quantas das operações
+"novas" pararam no stop. **Inválido pelo mesmo motivo já registrado
+acima**: como as 2 cascatas disputam o mesmo slot `assetActiveOps`, o
+Run 2 não é "o Run 1 + 82 operações extras" — um candidato experimental
+pode ocupar o slot de um ativo ANTES de um sinal nativo que teria
+disparado no Run 1, trocando qual operação existe ali (e com que
+entrada/duração), não só adicionando uma a mais. A subtração de totais
+por balde não decompõe "quais operações são as incrementais" — só mostra
+a variação agregada de cada balde entre 2 simulações independentes.
+
+**O que os números REALMENTE sustentam** (proporção dentro de cada run,
+não decomposição entre runs): a fatia de `STOP_HIT` subiu de 76,0% pra
+83,4% dos fechamentos (+7,4pp); a fatia de `TP2_HIT` (o desfecho de
+maior qualidade) caiu de 16,0% pra 10,2% (−5,8pp) — e cresceu bem mais
+devagar em contagem bruta (12→16, 1,33x) que o volume total (75→157,
+2,09x). SELL, que no Run 1 tinha a melhor média (+0,230R), tem a pior
+média no Run 2 (−0,159R); T3 (tier dominante em volume nos dois runs)
+segue o mesmo padrão. Essas são comparações agregadas válidas (média/
+proporção de cada run, cada um medido de forma independente) — não uma
+alegação sobre quais operações específicas mudaram de resultado.
+`correction_warning` (já documentado, item 45.9, como cohort negativo e
+inútil como gate) se manteve consistentemente negativo nos dois runs,
+sem virar achado novo.
 
 **Hipótese**: a cascata experimental está entregando exatamente o padrão
 que a Fase 0 já antecipava por texto ("o 1h é intrinsecamente mais
