@@ -21,6 +21,14 @@ paths:
   `HEALTHCHECKS_PING_URL` (known-risks 12). Atraso sob carga do `schedule` do
   GitHub Actions em geral, e a medição real feita neste projeto antes do
   disparo externo: known-risks **item 18**.
+- `scan-shadow.yml` — braço decisório do modo sombra prospectivo (Fase 1, RF
+  1h condicionado ao 4h, `docs/known-risks.md` item 56): roda `npm run
+  scan:shadow` a cada 15min, escreve só em coleções Firestore isoladas
+  (`experimentalRf1hShadow*`), nunca abre operação real nem notifica Telegram.
+- `analyze-shadow.yml` — relatório **só leitura** do acúmulo do modo sombra
+  acima: `npm run analyze-shadow-rf1h` 1x/dia (+ `workflow_dispatch` manual),
+  publica no Job Summary (humano) e em JSON no log do job (leitura
+  programática). Mesmo secret de `scan-shadow.yml`, nunca escreve nada.
 - `keep-warm.yml` — ping `/health` a cada 10 min (Render free não hibernar).
 - `backup.yml` — backup diário das coleções de negócio → branch `backups`.
 - `deploy-firestore.yml` — deploy **manual** de rules/índices.
