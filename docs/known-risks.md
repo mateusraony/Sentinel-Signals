@@ -5543,3 +5543,108 @@ build:backtest`, `sentinel-trading-engine-review` (toca `scanner.js`,
 máquina de estados, P0). Teste de regressão dedicado pro achado do
 trailing e pro addendum de concorrência (reproduz cada cenário exato antes
 de corrigir, como manda `.claude/rules/operating-principles.md`).
+
+## 60. Investigação ao vivo: 14 dias sem operação + causa raiz do "lock ocupado" (2026-08-04)
+
+### Contexto
+
+Usuário notou 0 operações ativas e pediu confirmação se o mercado estava
+"parado" (BTC e os demais ativos cadastrados). Durante a investigação
+apareceu um achado colateral — proporção alta de `"Scan completo
+ignorado — outra execução já está em andamento (lock ocupado)"` nos logs
+recentes — e o usuário pediu para ir a fundo nisso também e corrigir o
+que fosse necessário.
+
+### Capacidade nova desta sessão — leitura direta do Firestore de produção
+
+Confirmado por teste real: a rede desta sessão alcança os servidores do
+Firebase (`firestore.googleapis.com`/`identitytoolkit.googleapis.com`),
+ao contrário da Binance (que segue bloqueada). A config pública do app
+(`VITE_FIREBASE_API_KEY`/etc., já commitada em `render.yaml` — não é
+secret, é a mesma coisa que qualquer visitante do site vê) +
+`signInAnonymously()` (mesmo mecanismo que o app real usa, decisão
+intencional "sem tela de login") dá acesso de LEITURA (e, pelas mesmas
+`firestore.rules`, também escrita) às coleções de negócio, sem precisar
+da chave de admin do GitHub Actions (`FIREBASE_SERVICE_ACCOUNT_JSON`) —
+essa chave, mais poderosa (ignora `firestore.rules` **e** o código de
+proteção de concorrência de `opTransition.js`), continua reservada só
+aos scripts já revisados por PR (`scripts/adminEntities.js`), não usada
+nesta sessão — só leitura foi feita aqui, nenhuma escrita.
+
+### Achado 1 — só 3 operações desde sempre, 14 dias sem nenhuma nova
+
+Confirmado por leitura direta: 3 `TradeOperation` fechadas ao todo (2
+STOP_HIT — ETHUSDT 2026-07-17, FETUSDT 2026-07-21 —, 1
+CLOSED/TIME_STOP — METISUSDT 2026-07-10), nenhuma ativa. 14 dias sem
+nenhuma operação nova até a data desta investigação. O scan em si está
+saudável — `last_scan_at` dos 9 ativos com poucos minutos de atraso,
+`scan_status: success`, zero `scan_error` — **não** é o bug do item 57
+(fetch sem retry) se repetindo.
+
+### Achado 2 — viés de baixa correlacionado, não "sem tendência" no sentido ADX/Chop
+
+`AssetState` (4h e 1D) mostra `trend_ema: bearish` em 8 dos 9 ativos
+monitorados, nos DOIS timeframes (só ETHUSDT em alta no 1D) — viés de
+baixa correlacionado no portfólio inteiro. **Ressalva importante**:
+ADX/Choppiness (as métricas que o gate de regime realmente usa) não
+ficam persistidas em produção — só o backtest grava esse número — então
+não dá pra confirmar "ADX fraco" a partir do Firestore ao vivo, só
+inferir indiretamente pela tendência EMA.
+
+### Achado 3 — os bloqueios reais observados nas últimas ~9h não foram regime
+
+`SystemLog`/`SignalEvent` recentes mostram: (a) sinal 1h bloqueado por
+desenho (cascata "RF 1h condicionado ao 4h" ainda desligada em produção
+— não é sintoma de mercado, é o flag `rf1hCondEnabled` mesmo); (b)
+gatilho SMC 5m não disparando (padrão antigo já conhecido, item
+45.1/45.2 — não é novidade); (c) 1 candidato real da cascata principal
+(METISUSDT, RF 4h) bloqueado por `smc_confirm_zone_rejected` (gate extra
+que esse ativo tem ligado), não por regime fraco. Nenhum
+`regime_rejected` apareceu na amostra observada.
+
+### Achado 4 — causa raiz do "lock ocupado": comportamento por desenho, NÃO é bug
+
+- `scannerLocks/full-scan` tem TTL de 10 min (`FULL_SCAN_LOCK_TTL_MS`,
+  `scanner.js`) — só o teto de segurança contra crash; em operação
+  normal o lock é liberado no `finally` assim que o scan termina
+  (segundos, não minutos).
+- Histórico real do workflow `scan.yml` (GitHub Actions API, 20 runs
+  mais recentes): dispara precisamente a cada 5 min, cada execução leva
+  30-90s — **as execuções do cron nunca se sobrepõem entre si** (folga de
+  ~4 min entre o fim de uma e o início da próxima).
+- A causa real: `src/hooks/useAutoScan.js` roda um full scan pelo
+  NAVEGADOR a cada 60 min quando o painel está aberto — usando o MESMO
+  lock (comentário no próprio arquivo: "so they never overlap with each
+  other or with the GitHub Actions cron scan"). Mas o contador
+  (`lastFullScan.current`) começa zerado a cada MONTAGEM do componente —
+  então qualquer reload/nova aba do painel dispara um full-scan do
+  navegador 90s depois, independente de quanto tempo fazia desde o
+  último. Esse full-scan do navegador ocasionalmente cai no mesmo
+  instante do disparo do cron (a cada 5 min) e um dos dois perde a
+  corrida pelo lock — daí o "lock ocupado".
+- **Por que isso não é bug**: o lock existe EXATAMENTE pra tornar essa
+  corrida segura (`entities.js:145-146`: "Prevents two concurrent scan
+  runs (browser auto-scan + GitHub Actions cron) from processing the
+  same batch at once"). Mais importante — **quem vence a corrida faz o
+  MESMO trabalho completo** (`scanAllAssetsInner` avalia os 9 ativos
+  igual, venha do navegador ou do cron) — o "perdedor" só deixa de
+  duplicar o trabalho; nenhum ativo fica de fora de avaliação naquele
+  ciclo. **Não reduz a frequência efetiva de detecção de sinal** — a
+  preocupação original que motivou a investigação.
+
+### Conclusão
+
+**Nada para corrigir** — nem o "lock ocupado" (comportamento seguro e
+por desenho) nem o volume atual de operações (motor saudável, portfólio
+com viés de baixa correlacionado, sem evidência de bug). Efeito
+colateral menor, não urgente: o full-scan do navegador reseta a cada
+reload em vez de lembrar quando foi a última passada real — gasta
+alguma leitura/escrita extra de Firestore em alguns casos, mas não causa
+erro nem perda de sinal. Fica registrado como nota, não como pendência —
+não alterado sem necessidade demonstrada (`CLAUDE.md`).
+
+### Verificação
+
+Investigação foi só leitura (Firestore de produção via cliente anônimo,
+API do GitHub Actions, leitura de código) — zero mudança de código,
+zero escrita em produção.
