@@ -3632,6 +3632,67 @@ suficiente pra alguma ação, rodar uma 4ª janela, calcular CI/t-stat por
 lado sobre as 3 janelas já coletadas antes de decidir, ou outra
 alternativa). Ver também a recomendação de 2026-08-02 acima.
 
+### Confound controlado — reprocessar baixa e alta só com os 7 símbolos (2026-08-04)
+
+A leitura "SELL estável nas 3 janelas" acima tinha um confound real
+(Codex, PR #122): baixa/alta rodaram com a carteira de 20 símbolos, a
+janela 3 rodou só com os 7 originais — trocar 13 símbolos entre janelas é
+variável não controlada. Usuário rodou os 2 reprocessamentos recomendados
+nesta sessão: MESMAS datas de baixa (`2025-07-27→2026-07-27`) e alta
+(`2024-07-27→2025-07-27`), restritas aos mesmos 7 símbolos da janela 3
+(`bloco0-baixa-7symbols-confound-check`, `bloco0-alta-7symbols-confound-check`).
+
+**Fato** — os 5 pontos de dado agora comparáveis:
+
+| Janela | Carteira | Ops | Líquido | BUY | SELL |
+|---|---|---|---|---|---|
+| Alta 2024-25 | 20 símbolos (original) | 288 | +0,294R (CONCLUSIVO) | +0,396R | +0,169R |
+| Alta 2024-25 | 7 símbolos (controlado) | 101 | +0,250R | +0,197R | +0,321R |
+| Baixa 2025-26 | 20 símbolos (original) | 344 | −0,076R (INCONCLUSIVO) | −0,332R (t=−4,32) | +0,199R (não sobrevive Bonferroni) |
+| Baixa 2025-26 | 7 símbolos (controlado) | 105 | +0,141R (INCONCLUSIVO — IC cruza zero) | −0,104R | +0,401R |
+| Janela 3 2023-24 | 7 símbolos | 78 | +0,062R (INCONCLUSIVO) | +0,003R | +0,147R |
+
+**O confound era real e material, não cosmético.** Restringir a baixa aos
+7 símbolos originais inverteu o sinal do portfólio inteiro nessa MESMA
+janela de tempo/regime: de −0,076R (20 símbolos) para +0,141R (7
+símbolos) — só a lista de ativos mudou. Parte do resultado negativo
+original vinha especificamente dos 13 símbolos extras da carteira de 20
+(ex. SOLUSDT, que caiu −61,2% nesse período, item 46.1), não da
+estratégia em si.
+
+**SELL positivo nas 5 medições feitas até hoje** (0,147R a 0,401R), em 3
+regimes diferentes (baixa/alta/misto) e 2 composições de carteira (7/20
+símbolos) — o padrão mais consistente já medido neste projeto para
+qualquer corte do motor.
+
+**BUY segue direcionalmente o regime nas 5 medições** (negativo nos 2
+reads de baixa, positivo nos 2 de alta, ~zero no misto) — mas a
+oscilação é bem menor controlando o confound (baixa: −0,332R→−0,104R;
+alta: +0,396R→+0,197R), sugerindo que parte da oscilação extrema
+original também vinha da composição da carteira, não só do regime.
+
+**O critério original do roadmap ("positivo nas duas janelas ⇒ vantagem
+independente de regime") bate, no ponto estimado, com a carteira
+controlada** — baixa +0,141R e alta +0,250R, ambas positivas. **Ressalva
+que pesa**: a baixa continua estatisticamente INCONCLUSIVA (IC cruza
+zero) — o ponto estimado virou positivo, a confiança estatística não. O
+IC exato da alta 7-símbolos não foi conferido (não veio no diagnóstico
+colado) — não afirmar "CONCLUSIVO" sem visto o número.
+
+**Ressalva de honestidade estatística**: esta é a 5ª/6ª leitura tirada
+dos mesmos ~3 anos de histórico (baixa, alta, janela 3, mais estas 2
+reprocessadas) — múltiplas comparações sobre dado adjacente/sobreposto
+no tempo aumenta o risco de um padrão que pareça bonito por acaso. Não
+invalida o achado, mas ele ainda não é prova formal — é a leitura mais
+forte e mais limpa (confound controlado) que o projeto já produziu, não
+uma certeza.
+
+**Decisão**: continua não tomada aqui (mesma reserva de sempre) — mas a
+leitura mudou o suficiente pra valer a pena o usuário revisitar as 3
+opções (aceitar dependência de regime / esperar janela nova / viés
+adaptativo) com este dado mais limpo em mãos, em vez do dado confundido
+por carteira que motivou a hesitação original.
+
 ## 49. Funil de confirmação de entrada instrumentado — fecha 45.3/45.4 (2026-07-30)
 
 O usuário reportou o problema real por trás de "fechar o processo do motor":
