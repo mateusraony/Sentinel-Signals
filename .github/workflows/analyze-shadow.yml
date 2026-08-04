@@ -1,0 +1,66 @@
+name: Modo sombra — relatório de amostra (Fase 1)
+
+# Relatório periódico, só leitura, do acúmulo do modo sombra prospectivo
+# (Fase 1 — RF 1h condicionado ao 4h, docs/known-risks.md item 56 "Modo
+# sombra — critério de decisão"). Roda scripts/analyze-shadow-rf1h.mjs
+# contra as coleções Firestore ISOLADAS que scan-shadow.yml já escreve
+# (experimentalRf1hShadow*, nunca as coleções reais de produção) — mesmo
+# secret que scan-shadow.yml já usa (FIREBASE_SERVICE_ACCOUNT_JSON), sem
+# escrever nada em lugar nenhum.
+#
+# Existe porque nenhuma sessão do Claude Code tem acesso direto ao
+# Firestore para checar o progresso do piso de amostra (n>=30, alvo
+# n~=100) sem depender do usuário colar o relatório manualmente a cada
+# vez — este workflow deixa o relatório disponível via Job Summary (para
+# humano) e via log bruto em JSON (para leitura programática por uma
+# sessão, usando get_job_logs). Nunca decide nada sozinho — mesma regra do
+# próprio script: o critério de decisão completo vive em
+# docs/known-risks.md item 56.
+on:
+  schedule:
+    # 1x/dia — o acúmulo é lento (sinal 1h, cadência de scan de 15min,
+    # piso de 30 operações fechadas), não precisa de cadência maior; muito
+    # mais barato que reusar os 15min do scan-shadow.yml para algo que só
+    # LÊ o que já foi escrito.
+    - cron: "0 13 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scheduled-analyze-shadow-rf1h
+  cancel-in-progress: false
+
+jobs:
+  analyze-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Publicar relatório (Job Summary)
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          {
+            echo "## Modo sombra — relatório de amostra (Fase 1)"
+            echo '```'
+            npm run analyze-shadow-rf1h --silent
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Separado da publicação acima (não vai para o Summary, só para o log
+      # do job) — JSON bruto para uma sessão do Claude Code ler via
+      # get_job_logs sem precisar fazer parsing de texto humano formatado.
+      - name: Imprimir JSON (leitura programática via log do job)
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: npm run analyze-shadow-rf1h --silent -- --json
