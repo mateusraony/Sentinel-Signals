@@ -13,12 +13,18 @@ const LINE_COLORS = ['#00e5ff', '#ffd166', '#00ff80', '#ff1478', '#a78bfa', '#ff
 function pearsonCorrelation(a, b) {
   const n = Math.min(a.length, b.length);
   if (n < 2) return null;
+  // Alinha pela janela mais RECENTE de cada série, não pelas primeiras n
+  // amostras — se um símbolo tem histórico mais curto (recém-listado), as
+  // primeiras n amostras do símbolo mais longo seriam de um período bem mais
+  // antigo, comparando janelas de tempo diferentes.
+  const xs = a.slice(a.length - n);
+  const ys = b.slice(b.length - n);
   let sumX = 0; let sumY = 0;
-  for (let i = 0; i < n; i++) { sumX += a[i]; sumY += b[i]; }
+  for (let i = 0; i < n; i++) { sumX += xs[i]; sumY += ys[i]; }
   const meanX = sumX / n; const meanY = sumY / n;
   let num = 0; let denX = 0; let denY = 0;
   for (let i = 0; i < n; i++) {
-    const dx = a[i] - meanX; const dy = b[i] - meanY;
+    const dx = xs[i] - meanX; const dy = ys[i] - meanY;
     num += dx * dy; denX += dx * dx; denY += dy * dy;
   }
   if (denX === 0 || denY === 0) return null;
@@ -75,10 +81,16 @@ export default function CorrelationWidget() {
     const validSymbols = symbols.filter(s => normalized[s]);
     if (validSymbols.length < 2 || !Number.isFinite(minLen)) return null;
 
+    // Mesmo alinhamento pela janela mais recente usado em pearsonCorrelation
+    // — evita misturar candles antigos de um símbolo com candles recentes de
+    // outro quando o histórico fetchado tem tamanhos diferentes.
     const chartData = [];
     for (let i = 0; i < minLen; i++) {
       const point = { i };
-      for (const sym of validSymbols) point[sym] = +normalized[sym][i].toFixed(2);
+      for (const sym of validSymbols) {
+        const series = normalized[sym];
+        point[sym] = +series[series.length - minLen + i].toFixed(2);
+      }
       chartData.push(point);
     }
 

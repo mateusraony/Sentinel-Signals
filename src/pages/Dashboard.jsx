@@ -173,7 +173,7 @@ export default function Dashboard() {
         </div>
 
         {/* Weekly summary */}
-        <WeeklySummary tradeOps={tradeOps} recentSignals={recentSignals} />
+        <WeeklySummary />
 
         {/* Signal alert banner */}
         <SignalAlertBanner signals={recentSignals} />

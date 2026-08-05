@@ -101,18 +101,25 @@ export default function MonthlyReport() {
 
   const dailyPnlData = useMemo(() => {
     if (monthOps.length === 0) return [];
+    // Chave ordenável (YYYY-MM-DD) — monthOps está ordenado por created_date,
+    // não por data de fechamento, então inserir no Map na ordem de iteração
+    // não garante ordem cronológica de fechamento (uma op aberta antes pode
+    // fechar depois de uma aberta mais tarde). Ordenar pela chave antes de
+    // acumular é o que mantém a curva e o P&L diário na ordem certa.
     const byDay = new Map();
     for (const op of monthOps) {
       const closedAt = getClosedAt(op) || op.created_date;
-      const dayKey = moment(closedAt).format('DD/MM');
+      const dayKey = moment(closedAt).format('YYYY-MM-DD');
       const pnl = calcRealizedPnlPct(op) || 0;
       byDay.set(dayKey, (byDay.get(dayKey) || 0) + pnl);
     }
     let cumulative = 0;
-    return [...byDay.entries()].map(([day, pnlPct]) => {
-      cumulative += pnlPct;
-      return { day, pnlPct: +pnlPct.toFixed(2), cumulativePct: +cumulative.toFixed(2) };
-    });
+    return [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dayKey, pnlPct]) => {
+        cumulative += pnlPct;
+        return { day: moment(dayKey).format('DD/MM'), pnlPct: +pnlPct.toFixed(2), cumulativePct: +cumulative.toFixed(2) };
+      });
   }, [monthOps]);
 
   const statusDistribution = useMemo(() => {

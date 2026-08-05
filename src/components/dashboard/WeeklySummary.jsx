@@ -1,12 +1,32 @@
 import React, { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { backend } from '@/api/entities';
 import { CalendarDays, TrendingUp, TrendingDown, Target, Zap } from 'lucide-react';
 import { BarChart, Bar, ResponsiveContainer, Tooltip, Cell } from 'recharts';
 import moment from 'moment';
 import { isClosedOp, getClosedAt, calcRealizedPnlPct, summarizeOps } from '@/lib/tradeMetrics';
 
 const WEEKDAY_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+// Consulta própria, dedicada — não reaproveita os feeds do Dashboard
+// (limitados a 100 ops / 50 sinais para a lista de atividade recente, que
+// numa semana de alto volume já não cobre a semana inteira). Mesmo limite
+// de TradeOperation que MonthlyReport.jsx já usa para agregações mensais.
+const WEEK_OPS_LIMIT = 500;
+const WEEK_SIGNALS_LIMIT = 300;
 
-export default function WeeklySummary({ tradeOps, recentSignals }) {
+export default function WeeklySummary() {
+  const { data: tradeOps = [] } = useQuery({
+    queryKey: ['weekly-summary-ops'],
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', WEEK_OPS_LIMIT),
+    staleTime: 60000,
+  });
+
+  const { data: recentSignals = [] } = useQuery({
+    queryKey: ['weekly-summary-signals'],
+    queryFn: () => backend.entities.SignalEvent.list('-created_date', WEEK_SIGNALS_LIMIT),
+    staleTime: 60000,
+  });
+
   const data = useMemo(() => {
     const weekStart = moment().startOf('isoWeek');
     const weekOps = (tradeOps || []).filter(op => {
