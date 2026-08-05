@@ -18,6 +18,8 @@ import TradeHistory from '@/pages/TradeHistory';
 import PineScript from '@/pages/PineScript';
 import StrategyReviewer from '@/pages/StrategyReviewer';
 import MonthlyReport from '@/pages/MonthlyReport';
+import Settings from '@/pages/Settings';
+import Backtest from '@/pages/Backtest';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth } = useAuth();
@@ -45,6 +47,8 @@ const AuthenticatedApp = () => {
         <Route path="/pine" element={<PineScript />} />
         <Route path="/reviewer" element={<StrategyReviewer />} />
         <Route path="/monthly-report" element={<MonthlyReport />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="/backtest" element={<Backtest />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

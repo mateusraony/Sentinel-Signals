@@ -250,7 +250,7 @@ export function getLocalPineConfig() {
 // fires (require N continuation candles), a materially different feature
 // from a parameter mismatch — deliberately out of scope here, own round if
 // ever implemented.
-const SYNCED_STRATEGY_KEYS = [
+export const SYNCED_STRATEGY_KEYS = [
   'minScore', 'tp1R', 'tp1QtyPercent', 'trailAtrMult',
   'tier2Threshold', 'tier3Threshold',
   'useADX', 'adxLen', 'adxSmooth', 'useChop', 'chopLen',

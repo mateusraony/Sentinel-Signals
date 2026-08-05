@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Coins, Bell, ScrollText, Zap, Target, BookOpen, Code2, Bot, FileText, Trash2, FilterX, Loader2, ArrowLeftRight } from 'lucide-react';
+import { LayoutDashboard, Coins, Bell, ScrollText, Zap, Target, BookOpen, Code2, Bot, FileText, Trash2, FilterX, Loader2, ArrowLeftRight, SlidersHorizontal, FlaskConical } from 'lucide-react';
 import { backend } from '@/api/entities';
 
 const NAV_ITEMS = [
@@ -11,6 +11,8 @@ const NAV_ITEMS = [
   { path: '/alerts', icon: Bell, label: 'Alertas' },
   { path: '/logs', icon: ScrollText, label: 'Logs' },
   { path: '/pine', icon: Code2, label: 'Pine Script' },
+  { path: '/backtest', icon: FlaskConical, label: 'Backtest' },
+  { path: '/settings', icon: SlidersHorizontal, label: 'Ajustes' },
   { path: '/reviewer', icon: Bot, label: 'Revisor' },
   { path: '/monthly-report', icon: FileText, label: 'Relatório' },
 ];
