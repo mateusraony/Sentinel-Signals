@@ -1,14 +1,39 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Rocket, Loader2, CheckCircle2, AlertTriangle, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { Rocket, Loader2, CheckCircle2, AlertTriangle, ExternalLink, ChevronDown, ChevronUp, XCircle } from 'lucide-react';
 import { callBackend } from '@/lib/apiBackend';
 
 const STATUS_POLL_MS = 10000;
+const STORAGE_KEY = 'sentinel_backtest_trigger_v1';
+
+function loadPersistedTrigger() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedTrigger(data) {
+  try {
+    if (data) localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // localStorage indisponível (modo privado/quota) — degrada sem persistência.
+  }
+}
 
 // Dispara o workflow .github/workflows/backtest.yml (já isolado — backend
 // fake em memória, Telegram no-op, só leitura pública na Binance) via
 // server/index.js, acompanha o status e carrega o relatório pronto sozinho
 // quando o job termina. Não roda simulação nenhuma aqui no navegador — só
 // aciona e lê o run no GitHub.
+//
+// O runId em andamento é persistido em localStorage: sem isso, sair da
+// página ou atualizar o navegador antes do run terminar perdia o polling
+// (só existia em memória) e o relatório nunca aparecia — mesmo o run tendo
+// terminado com sucesso no GitHub. Ao montar, retoma o acompanhamento de
+// qualquer run ainda pendente.
 export default function TriggerBacktestPanel({ onReportReady }) {
   const [expanded, setExpanded] = useState(false);
   const [trialLabel, setTrialLabel] = useState('');
@@ -26,8 +51,6 @@ export default function TriggerBacktestPanel({ onReportReady }) {
 
   const pollRef = useRef(null);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
-
   const stopPolling = () => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   };
@@ -37,34 +60,69 @@ export default function TriggerBacktestPanel({ onReportReady }) {
     try {
       const report = await callBackend(`/api/backtest/artifact/${id}`);
       setStatus('success');
+      savePersistedTrigger(null);
       onReportReady(report);
     } catch (e) {
       setStatus('error');
       setErrorMsg(e.message);
+      // Mantém persistido de propósito — pode ser falha transitória buscando
+      // o artifact logo após o run fechar; reabrir a página tenta de novo.
     }
   };
 
-  const pollStatus = (id) => {
-    pollRef.current = setInterval(async () => {
-      try {
-        const data = await callBackend(`/api/backtest/status/${id}`, undefined, { method: 'GET' });
-        if (data.status === 'completed') {
-          stopPolling();
-          if (data.conclusion === 'success') {
-            fetchArtifact(id);
-          } else {
-            setStatus('failure');
-            setErrorMsg(`Run terminou com "${data.conclusion}" — veja os logs no GitHub.`);
-          }
-        } else {
-          setStatus(data.status); // 'queued' | 'in_progress'
-        }
-      } catch (e) {
+  // Retorna se o run ainda está em andamento (true) ou já resolveu (false) —
+  // quem chama usa isso pra decidir se inicia/mantém o polling recorrente.
+  const checkStatusOnce = async (id) => {
+    try {
+      const data = await callBackend(`/api/backtest/status/${id}`, undefined, { method: 'GET' });
+      if (data.status === 'completed') {
         stopPolling();
-        setStatus('error');
-        setErrorMsg(e.message);
+        if (data.conclusion === 'success') {
+          await fetchArtifact(id);
+        } else {
+          setStatus('failure');
+          setErrorMsg(`Run terminou com "${data.conclusion}" — veja os logs no GitHub.`);
+          savePersistedTrigger(null);
+        }
+        return false;
       }
-    }, STATUS_POLL_MS);
+      setStatus(data.status); // 'queued' | 'in_progress'
+      return true;
+    } catch (e) {
+      stopPolling();
+      setStatus('error');
+      setErrorMsg(e.message);
+      return false;
+    }
+  };
+
+  const startPolling = (id) => {
+    stopPolling();
+    pollRef.current = setInterval(() => checkStatusOnce(id), STATUS_POLL_MS);
+  };
+
+  useEffect(() => {
+    const persisted = loadPersistedTrigger();
+    if (persisted?.runId) {
+      setRunId(persisted.runId);
+      setHtmlUrl(persisted.htmlUrl || null);
+      if (persisted.trialLabel) setTrialLabel(persisted.trialLabel);
+      setStatus('queued');
+      checkStatusOnce(persisted.runId).then((stillRunning) => {
+        if (stillRunning) startPolling(persisted.runId);
+      });
+    }
+    return () => stopPolling();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleCancelTracking = () => {
+    stopPolling();
+    savePersistedTrigger(null);
+    setStatus('idle');
+    setRunId(null);
+    setHtmlUrl(null);
+    setErrorMsg(null);
   };
 
   const handleTrigger = async () => {
@@ -103,7 +161,8 @@ export default function TriggerBacktestPanel({ onReportReady }) {
       setRunId(data.runId);
       setHtmlUrl(data.htmlUrl);
       setStatus('queued');
-      pollStatus(data.runId);
+      savePersistedTrigger({ runId: data.runId, htmlUrl: data.htmlUrl, trialLabel: trialLabel.trim() });
+      startPolling(data.runId);
     } catch (e) {
       setStatus('error');
       setErrorMsg(e.message);
@@ -131,7 +190,8 @@ export default function TriggerBacktestPanel({ onReportReady }) {
       </div>
       <p className="text-[10px] font-mono text-muted-foreground">
         Roda o workflow <code>backtest.yml</code> direto no GitHub Actions (mesmo motor isolado de sempre — sem gravar nada
-        em produção, sem Telegram real) e carrega o relatório aqui sozinho quando terminar.
+        em produção, sem Telegram real) e carrega o relatório aqui sozinho quando terminar — inclusive se você fechar e
+        reabrir esta página no meio do caminho.
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -192,12 +252,21 @@ export default function TriggerBacktestPanel({ onReportReady }) {
         </div>
       )}
 
-      <button onClick={handleTrigger} disabled={isBusy}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-mono font-bold transition-all disabled:opacity-50"
-        style={{ background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }}>
-        {isBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
-        {isBusy ? STATUS_LABELS[status] : 'Disparar backtest'}
-      </button>
+      <div className="flex items-center gap-2">
+        <button onClick={handleTrigger} disabled={isBusy}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-mono font-bold transition-all disabled:opacity-50"
+          style={{ background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }}>
+          {isBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+          {isBusy ? STATUS_LABELS[status] : 'Disparar backtest'}
+        </button>
+        {isBusy && runId && (
+          <button onClick={handleCancelTracking} title="Parar de acompanhar este run (não cancela o run no GitHub)"
+            className="shrink-0 px-3 py-2.5 rounded-lg text-[10px] font-mono transition-all"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
+            <XCircle className="w-4 h-4" />
+          </button>
+        )}
+      </div>
 
       {status === 'success' && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-mono" style={{ background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }}>

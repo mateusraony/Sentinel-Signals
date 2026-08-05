@@ -5869,4 +5869,60 @@ verificação visual no navegador (mesma limitação de ambiente já registrada
 no item 61 — sem credenciais reais de Firebase nesta sessão).
 
 ---
-achar qual gate deveria ter disparado, em vez de abrir mecanismo novo.
+
+## 63. Backtest — 2ª rodada: bug do polling perdido + aba instantânea "Ajuste Fino (What-If)" (2026-08-05)
+
+### Contexto
+
+Usuário disparou um backtest pelo painel (item 62) e relatou que "terminou e
+não apareceu lá" — o relatório nunca carregou no painel mesmo o run tendo
+concluído no GitHub. Na mesma leva, mostrou prints de outra implementação
+(Base44 — plataforma de origem deste projeto, nunca reconectada como
+infraestrutura, ver `CLAUDE.md`) com um fluxo de backtest **instantâneo,
+single-asset/single-timeframe**, e pediu para replicar esse design aqui
+(inspiração de layout/UX, não reintrodução da plataforma).
+
+### Achado 1 — bug real: polling do backtest não sobrevivia a reload/navegação
+
+`TriggerBacktestPanel.jsx` guardava `runId`/status **só em memória**
+(`useState`). Runs de backtest podem levar de minutos a horas — se o usuário
+saísse da página ou atualizasse o navegador antes do job terminar, o
+`setInterval` de polling era destruído (cleanup do componente) e nunca mais
+retomado; o relatório ficava pronto no GitHub, mas o painel voltava a mostrar
+"Disparar backtest" como se nada tivesse acontecido. **Corrigido**:
+`runId`/`htmlUrl`/`trialLabel` agora persistem em `localStorage`
+(`sentinel_backtest_trigger_v1`); ao montar, o componente faz uma checagem
+imediata de status e retoma o polling se o run ainda estiver em andamento.
+Adicionado botão "Cancelar acompanhamento" para o usuário abandonar um run
+travado/obsoleto sem precisar limpar o `localStorage` manualmente.
+
+### Achado 2 — nova aba "Ajuste Fino (What-If)": simulação client-side, NÃO é o motor real
+
+Novo módulo `src/lib/quickBacktest.js` — simulação single-asset/
+single-timeframe, 100% no navegador, sem GitHub Actions, sem gravar nada.
+Reaproveita as MESMAS funções puras de indicador que o motor real usa
+(`calculateRangeFilter`, `calculateATRSeries`, `calculateRSI`, `calculateMACD`,
+`calculateEMAs`) e — o mais importante — o **score real de 0-100**
+(`calculateSignalStrength`, `src/lib/indicators/confluence.js`) que o motor
+usa pra filtrar sinais ao vivo, não um score inventado pro sandbox.
+**Deliberadamente uma aproximação, não paridade de motor** (ver
+`.claude/rules/pine-parity.md`): decide entrada num único timeframe, sem
+alinhamento multi-TF, sem arbitragem entre cascatas, sem SMC — documentado
+como tal no topo do arquivo. Ops simuladas são montadas no MESMO formato que
+`tradeMetrics.js` espera de uma `TradeOperation` real (entry_price,
+initial_stop, tp1/tp2, tp1_hit, partial_percent, exit_price, status
+STOP_HIT/TP2_HIT), o que permite reusar `summarizeOps()`/`ReportBody` sem
+duplicar nenhuma conta de P&L/R/drawdown. Testado (`quickBacktest.test.js`):
+rejeita candles insuficientes, produz operações não-vazias num fixture
+determinístico, e confirma que score mínimo mais alto nunca abre mais
+operações que um mais baixo.
+
+`/settings` reorganizado no layout de 3 colunas (Range Filter / Gestão de
+Risco / Confirmação) com barra "Configuração Ativa" — mesma lógica/campos já
+existentes, só reorganização visual.
+
+### Verificação
+
+`npm run lint`, `npm test` (831 testes, +3 novos) e `npm run build` limpos.
+Sem verificação visual no navegador (mesma limitação de ambiente dos itens
+61/62).
