@@ -4,7 +4,11 @@ import { backend } from '@/api/entities';
 import { FileText, Download, TrendingUp, TrendingDown, Target, Award, Calendar, Loader2 } from 'lucide-react';
 import moment from 'moment';
 import { jsPDF } from 'jspdf';
-import { isClosedOp, getExitPrice, calcRealizedPnlPct, summarizeOps } from '@/lib/tradeMetrics';
+import {
+  ComposedChart, Bar, Line, PieChart, Pie, Cell,
+  ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+} from 'recharts';
+import { isClosedOp, getExitPrice, getClosedAt, calcRealizedPnlPct, summarizeOps } from '@/lib/tradeMetrics';
 
 function fmt(price) {
   if (!price && price !== 0) return '—';
@@ -94,6 +98,49 @@ export default function MonthlyReport() {
       avgLoss: s.avgLossPct,
     };
   }, [monthOps]);
+
+  const dailyPnlData = useMemo(() => {
+    if (monthOps.length === 0) return [];
+    // Chave ordenável (YYYY-MM-DD) — monthOps está ordenado por created_date,
+    // não por data de fechamento, então inserir no Map na ordem de iteração
+    // não garante ordem cronológica de fechamento (uma op aberta antes pode
+    // fechar depois de uma aberta mais tarde). Ordenar pela chave antes de
+    // acumular é o que mantém a curva e o P&L diário na ordem certa.
+    const byDay = new Map();
+    for (const op of monthOps) {
+      const closedAt = getClosedAt(op) || op.created_date;
+      const dayKey = moment(closedAt).format('YYYY-MM-DD');
+      const pnl = calcRealizedPnlPct(op) || 0;
+      byDay.set(dayKey, (byDay.get(dayKey) || 0) + pnl);
+    }
+    let cumulative = 0;
+    return [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dayKey, pnlPct]) => {
+        cumulative += pnlPct;
+        return { day: moment(dayKey).format('DD/MM'), pnlPct: +pnlPct.toFixed(2), cumulativePct: +cumulative.toFixed(2) };
+      });
+  }, [monthOps]);
+
+  const statusDistribution = useMemo(() => {
+    if (monthOps.length === 0) return [];
+    const counts = {};
+    for (const op of monthOps) counts[op.status] = (counts[op.status] || 0) + 1;
+    return Object.entries(counts).map(([status, value]) => ({
+      name: STATUS_LABELS[status] || status,
+      value,
+      color: STATUS_COLORS[status] || '#64748b',
+    }));
+  }, [monthOps]);
+
+  const outcomePie = useMemo(() => {
+    if (!metrics) return [];
+    return [
+      { name: 'Vitórias', value: metrics.wins, color: '#00ff80' },
+      { name: 'Derrotas', value: metrics.losses, color: '#ff1478' },
+      { name: 'Empate (BE)', value: metrics.be, color: '#64748b' },
+    ].filter(d => d.value > 0);
+  }, [metrics]);
 
   const monthOptions = useMemo(() => {
     const months = [];
@@ -282,6 +329,56 @@ export default function MonthlyReport() {
             <MiniMetric label="Pior Trade" value={fmtPct(metrics.worstTrade)} color="#ff1478" />
             <MiniMetric label="Ganho Médio" value={fmtPct(metrics.avgWin)} color="#00ff80" />
             <MiniMetric label="Perda Média" value={fmtPct(-metrics.avgLoss)} color="#ff1478" />
+          </div>
+
+          {/* Charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 rounded-xl p-4 space-y-2" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <h2 className="text-sm font-bold text-foreground">Evolução de P&L (acumulado + diário)</h2>
+              <div style={{ height: 240 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={dailyPnlData} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                    <XAxis dataKey="day" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
+                    <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
+                    <Tooltip
+                      contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
+                      formatter={(value, name) => [`${value}%`, name === 'pnlPct' ? 'P&L do dia' : 'Acumulado']}
+                    />
+                    <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'monospace' }} />
+                    <Bar dataKey="pnlPct" name="P&L do dia" radius={[3, 3, 0, 0]}>
+                      {dailyPnlData.map((d, i) => <Cell key={i} fill={d.pnlPct >= 0 ? '#00ff80' : '#ff1478'} />)}
+                    </Bar>
+                    <Line type="monotone" dataKey="cumulativePct" name="Acumulado" stroke="#00e5ff" strokeWidth={2} dot={false} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div className="rounded-xl p-4 space-y-2" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <h2 className="text-sm font-bold text-foreground">Taxa de acerto</h2>
+              <div style={{ height: 110 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={outcomePie} dataKey="value" nameKey="name" innerRadius={26} outerRadius={45} paddingAngle={2}>
+                      {outcomePie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }} />
+                    <Legend wrapperStyle={{ fontSize: 9, fontFamily: 'monospace' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div style={{ height: 110 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={statusDistribution} dataKey="value" nameKey="name" innerRadius={26} outerRadius={45} paddingAngle={2}>
+                      {statusDistribution.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }} />
+                    <Legend wrapperStyle={{ fontSize: 9, fontFamily: 'monospace' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
 
           {/* Trade table */}

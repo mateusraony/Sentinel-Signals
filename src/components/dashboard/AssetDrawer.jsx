@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, TrendingUp, TrendingDown, Clock, Activity } from 'lucide-react';
 import moment from 'moment';
+import SignalChecklist from './SignalChecklist';
 
 function fmt(price) {
   if (!price && price !== 0) return '—';
@@ -149,6 +150,7 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
                         <div className="text-[8px] font-mono text-muted-foreground/60 mt-0.5">
                           {moment(sig.created_date).fromNow()}
                         </div>
+                        <SignalChecklist asset={asset} signal={sig} tradeOps={tradeOps} />
                       </div>
                     </div>
                   );

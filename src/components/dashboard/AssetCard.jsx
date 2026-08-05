@@ -5,7 +5,7 @@ import { fetch24hStats } from '@/lib/marketDataProvider';
 import { activateSignalManually } from '@/lib/scanner';
 import { logError } from '@/lib/logger';
 import moment from 'moment';
-import ProximityBar from '@/components/dashboard/ProximityBar';
+import ProximityBar, { calcProximity } from '@/components/dashboard/ProximityBar';
 
 function fmt(price) {
   if (!price && price !== 0) return '—';
@@ -200,6 +200,11 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
     statusColor = sigSide === 'BUY' ? 'rgba(0,255,128,0.65)' : 'rgba(255,20,120,0.65)';
   }
 
+  // Proximidade à zona de entrada só faz sentido antes de já ter posição
+  // aberta — uma vez com operação ativa, "distância até o filtro" deixa de
+  // ser informação acionável.
+  const proximity = !hasActiveOp && primaryState ? calcProximity(primaryState) : null;
+
   const showBadge = hasActiveOp ? opSide : (latestSignal ? sigSide : null);
   const strengthMap = { strong: '🔥 Forte', moderate: '⚡ Mod.', weak: '〰 Fraco' };
   const strengthLabel = strengthMap[latestSignal?.strength] || '⚡ Mod.';
@@ -212,11 +217,21 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
   let cardBorder = 'rgba(255,255,255,0.06)';
   let cardGlow = 'none';
   let flashStyle = '';
+  let zonePulseVars = {};
   if (flashing || sigFlashing) {
     const fc = isBuy ? '#00ff80' : '#ff1478';
     cardBorder = fc;
     cardGlow = `0 0 30px ${fc}60, 0 0 60px ${fc}30`;
     flashStyle = isBuy ? 'flash-buy' : 'flash-sell';
+  } else if (proximity?.level === 'very_close') {
+    // Marcador vibrante: ativo entrando na zona de sinal do Range Filter
+    // (preço a <1% do filtro) — mesma cor do lado (BUY/SELL) que a
+    // ProximityBar já usa, via signal-zone-pulse (src/index.css).
+    const zc = proximity.side === 'BUY' ? '#00ff80' : '#ff1478';
+    cardBorder = `${zc}55`;
+    cardGlow = `0 0 16px ${zc}25`;
+    flashStyle = 'signal-zone-pulse';
+    zonePulseVars = { '--zone-glow-color': `${zc}70` };
   } else if (hasActiveOp && isBuy) {
     cardBorder = 'rgba(0,255,128,0.22)'; cardGlow = '0 0 20px rgba(0,255,128,0.07)';
   } else if (hasActiveOp && isSell) {
@@ -251,7 +266,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
       <div
         className={`rounded-xl p-4 relative overflow-hidden transition-all duration-300 cursor-pointer hover:scale-[1.01] ${flashStyle}`}
         onClick={onClick}
-        style={{ background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)', border: `1px solid ${cardBorder}`, boxShadow: cardGlow }}>
+        style={{ background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)', border: `1px solid ${cardBorder}`, boxShadow: cardGlow, ...zonePulseVars }}>
 
         {/* Row 1: Symbol + Price */}
         <div className="flex items-start justify-between mb-2">
@@ -340,8 +355,10 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
           )}
         </div>
 
-        {/* Proximity indicator — yellow, shows when no signal/op but price near entry zone */}
-        {!hasActiveOp && !latestSignal && primaryState && (
+        {/* Proximity indicator — mostra sempre que há proximidade e ainda não
+            existe posição aberta, mesmo com um sinal pendente (latestSignal),
+            para destacar a zona de sinal em vez de escondê-la. */}
+        {!hasActiveOp && primaryState && (
           <ProximityBar state={primaryState} />
         )}
 

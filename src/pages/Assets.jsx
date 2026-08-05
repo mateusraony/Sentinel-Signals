@@ -79,16 +79,24 @@ export default function Assets() {
     tradeOps.filter(o => ACTIVE_STATUSES.includes(o.status)).map(o => o.asset_id)
   );
 
+  // Mapa id → proximidade mais próxima entre os timeframes do ativo (não só
+  // um Set de presença) — usado tanto pelo filtro "🎯 Próximos" quanto pelo
+  // glow vibrante da linha (a cor/intensidade do glow depende do nível e do
+  // lado BUY/SELL retornados por calcProximity).
+  const PROXIMITY_RANK = { very_close: 0, close: 1, watching: 2 };
   const assetsNearEntry = useMemo(() => {
-    const nearSet = new Set();
+    const nearMap = new Map();
     for (const a of assets) {
       if (!a.is_active) continue;
       const aStates = states.filter(s => s.asset_id === a.id);
+      let best = null;
       for (const s of aStates) {
-        if (calcProximity(s)) { nearSet.add(a.id); break; }
+        const prox = calcProximity(s);
+        if (prox && (!best || PROXIMITY_RANK[prox.level] < PROXIMITY_RANK[best.level])) best = prox;
       }
+      if (best) nearMap.set(a.id, best);
     }
-    return nearSet;
+    return nearMap;
   }, [assets, states]);
 
   const filtered = assets.filter(a => {
@@ -193,11 +201,20 @@ export default function Assets() {
             const isStale = lastScanMs && lastScanMs > 2 * 60 * 60 * 1000;
             const liveColor = isStale ? '#ff9f43' : asset.is_active ? '#00ff80' : '#64748b';
             const liveLabel = isStale ? 'STALE' : asset.is_active ? 'LIVE' : 'OFF';
+            const proximity = assetsNearEntry.get(asset.id);
+            const zoneColor = proximity?.side === 'SELL' ? '#ff1478' : '#00ff80';
+            const zoneStyle = proximity
+              ? {
+                background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)',
+                border: `1px solid ${zoneColor}55`,
+                ...(proximity.level === 'very_close' ? { '--zone-glow-color': `${zoneColor}80` } : {}),
+              }
+              : { background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)', border: asset.is_active ? '1px solid rgba(0,255,128,0.1)' : '1px solid rgba(255,255,255,0.05)' };
 
             return (
               <div key={asset.id}
-                className="rounded-xl px-4 py-3.5 transition-all duration-300 group hover:scale-[1.005]"
-                style={{ background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)', border: asset.is_active ? '1px solid rgba(0,255,128,0.1)' : '1px solid rgba(255,255,255,0.05)' }}>
+                className={`rounded-xl px-4 py-3.5 transition-all duration-300 group hover:scale-[1.005] ${proximity?.level === 'very_close' ? 'signal-zone-pulse' : ''}`}
+                style={zoneStyle}>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0 flex-1">
                     <Switch checked={asset.is_active} onCheckedChange={(checked) => toggleMutation.mutate({ id: asset.id, is_active: checked })} />

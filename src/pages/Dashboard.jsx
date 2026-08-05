@@ -13,6 +13,8 @@ import PerformanceOverview from '@/components/dashboard/PerformanceOverview';
 import ComparePanel from '@/components/dashboard/ComparePanel';
 import TelegramStatusBanner from '@/components/dashboard/TelegramStatusBanner';
 import PerformanceMetricsBar from '@/components/dashboard/PerformanceMetricsBar';
+import WeeklySummary from '@/components/dashboard/WeeklySummary';
+import CorrelationWidget from '@/components/dashboard/CorrelationWidget';
 import { useBrowserNotifications } from '@/hooks/useBrowserNotifications';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
@@ -170,6 +172,9 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* Weekly summary */}
+        <WeeklySummary />
+
         {/* Signal alert banner */}
         <SignalAlertBanner signals={recentSignals} />
 
@@ -217,6 +222,9 @@ export default function Dashboard() {
 
         {/* Consolidated performance chart — appears only when there's history */}
         <PerformanceOverview tradeOps={tradeOps} />
+
+        {/* Cross-asset price correlation */}
+        <CorrelationWidget />
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
