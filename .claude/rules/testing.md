@@ -70,10 +70,13 @@ fecha a lacuna descrita abaixo.
   `check5mSmcConfirmation`, que buscam candles via rede): a confirmação 4h→15m
   (incluindo o caminho de retry com confirmação atrasada) ganhou cobertura em
   `backtestEngine.test.js` (ver acima). `check5mSmcConfirmation` (cascata
-  1h→5m SMC) segue sem teste dedicado — mesma lógica de timing, valor
-  incremental baixo pelo mesmo motivo original (a criação de op em si é só
-  dados; `buildSmcTradeOpData` já é testado isoladamente em
-  `scannerStateMachine.test.js`).
+  1h→5m SMC) já tem cobertura extensa em `scannerStateMachine.test.js`
+  (`insufficient_data`/`no_trigger`/`wrong_direction_trigger`/`fetch_error`/
+  `ote_zone_unfavorable`, write-on-change entre retries, expiração 4x1h) —
+  incluindo, desde 2026-08-04, o caminho de timing que faltava: um sinal que
+  rejeita (`no_trigger`) na 1ª passada e só confirma (cria a `TradeOperation`)
+  numa passada de retry posterior (`SMC: check5mSmcConfirmation rejeita
+  (no_trigger) na 1a passada e confirma pelo retry`). Fechado.
 - **Paridade Pine×JS** (golden tests): ver `.claude/rules/pine-parity.md`.
 
 ## Convenções
