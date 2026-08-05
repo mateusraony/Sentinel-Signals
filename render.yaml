@@ -20,6 +20,8 @@ services:
         value: "9439557541"
       - key: VITE_FIREBASE_APP_ID
         value: "1:9439557541:web:f92e49ade6d2e69f0dda4c"
+      - key: VITE_BACKEND_URL
+        value: https://sentinel-signals-api.onrender.com
     routes:
       - type: rewrite
         source: /*
@@ -49,6 +51,20 @@ services:
       - key: TELEGRAM_CHAT_ID
         sync: false
       - key: WEBHOOK_SECRET
+        sync: false
+      # PAT fine-grained do GitHub, escopado SÓ a este repositório, com
+      # permissão "Actions: Read and write" e nada mais — usado por
+      # /api/backtest/{trigger,status,artifact} (server/index.js) para
+      # disparar/ler o workflow backtest.yml pelo painel. Sem este secret,
+      # essas rotas respondem 503 (ver o warning de boot em index.js).
+      # ATENÇÃO: o GitHub não permite escopar um PAT a um único workflow —
+      # "Actions: Read and write" vale para TODOS os workflows do repo. Se
+      # este token vazar, dá pra disparar/ler qualquer workflow (backtest,
+      # scan, backup, deploy-firestore), mas NÃO dá pra ler secrets, alterar
+      # código (sem "Contents: write") nem promover admin. Risco aceito e
+      # documentado, não uma falha de desenho — é o limite de granularidade
+      # que a plataforma oferece.
+      - key: GITHUB_ACTIONS_TOKEN
         sync: false
       - key: ALLOWED_ORIGIN
         value: https://sentinel-signals.onrender.com
