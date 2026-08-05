@@ -361,6 +361,20 @@
 }
 
 /* =============================================
+   SIGNAL ZONE PULSE — glow vibrante quando o ativo
+   está em zona de proximidade de sinal (Assets.jsx,
+   AssetCard.jsx). Cor vem de --zone-glow-color, setado
+   inline conforme o lado (BUY/SELL) de calcProximity.
+   ============================================= */
+@keyframes signal-zone-pulse {
+  0%, 100% { box-shadow: 0 0 6px var(--zone-glow-color, rgba(0,255,128,0.25)); }
+  50% { box-shadow: 0 0 20px var(--zone-glow-color, rgba(0,255,128,0.65)), 0 0 40px var(--zone-glow-color, rgba(0,255,128,0.2)); }
+}
+.signal-zone-pulse {
+  animation: signal-zone-pulse 1.6s ease-in-out infinite;
+}
+
+/* =============================================
    ERROR BOUNDARY — "SIGNAL LOST" RADAR
    ============================================= */
 .signal-lost-ring {

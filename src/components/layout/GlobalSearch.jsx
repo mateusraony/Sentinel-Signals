@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { backend } from '@/api/entities';
-import { Search, Coins, Bell } from 'lucide-react';
+import { Search, Coins, Bell, History } from 'lucide-react';
 
 export default function GlobalSearch() {
   const [search, setSearch] = useState('');
@@ -23,8 +23,14 @@ export default function GlobalSearch() {
     staleTime: 15000,
   });
 
+  const { data: allTradeOps = [] } = useQuery({
+    queryKey: ['trade-operations-search'],
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
+    staleTime: 15000,
+  });
+
   const results = useMemo(() => {
-    if (!search.trim()) return { assets: [], alerts: [] };
+    if (!search.trim()) return { assets: [], alerts: [], history: [] };
     const q = search.trim().toLowerCase();
     return {
       assets: allAssets.filter(a =>
@@ -35,8 +41,13 @@ export default function GlobalSearch() {
         s.reason?.toLowerCase().includes(q) ||
         s.signal_type?.toLowerCase().includes(q)
       ).slice(0, 5),
+      history: allTradeOps.filter(op =>
+        op.symbol?.toLowerCase().includes(q) ||
+        op.side?.toLowerCase().includes(q) ||
+        op.status?.toLowerCase().includes(q)
+      ).slice(0, 5),
     };
-  }, [search, allAssets, allSignals]);
+  }, [search, allAssets, allSignals, allTradeOps]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -58,7 +69,12 @@ export default function GlobalSearch() {
     setSearch(''); setShowSearch(false); setShowDropdown(false);
   };
 
-  const hasResults = results.assets.length > 0 || results.alerts.length > 0;
+  const handleSelectHistory = () => {
+    navigate('/trades');
+    setSearch(''); setShowSearch(false); setShowDropdown(false);
+  };
+
+  const hasResults = results.assets.length > 0 || results.alerts.length > 0 || results.history.length > 0;
 
   return (
     <div ref={containerRef} className="relative hidden sm:flex items-center">
@@ -73,6 +89,7 @@ export default function GlobalSearch() {
               if (e.key === 'Enter' && search.trim()) {
                 if (results.assets.length > 0) handleSelectAsset(results.assets[0]);
                 else if (results.alerts.length > 0) handleSelectAlert();
+                else if (results.history.length > 0) handleSelectHistory();
                 else { navigate(`/assets?search=${search.trim().toUpperCase()}`); setSearch(''); setShowSearch(false); setShowDropdown(false); }
               }
               if (e.key === 'Escape') { setSearch(''); setShowSearch(false); setShowDropdown(false); }
@@ -115,6 +132,24 @@ export default function GlobalSearch() {
                         <span className="text-[9px] font-mono ml-1.5" style={{ color: s.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>{s.signal_type}</span>
                       </div>
                       <span className="text-[9px] font-mono text-muted-foreground truncate ml-2">{s.timeframe?.toUpperCase()}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {results.history.length > 0 && (
+                <div>
+                  <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <History className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">Histórico</span>
+                  </div>
+                  {results.history.map(op => (
+                    <button key={op.id} onClick={handleSelectHistory}
+                      className="flex items-center justify-between w-full px-3 py-2 text-left transition-colors hover:bg-white/[0.04]">
+                      <div className="min-w-0">
+                        <span className="text-xs font-mono text-foreground">{op.symbol?.replace('USDT', '/USDT')}</span>
+                        <span className="text-[9px] font-mono ml-1.5" style={{ color: op.side === 'BUY' ? '#00ff80' : '#ff1478' }}>{op.side}</span>
+                      </div>
+                      <span className="text-[9px] font-mono text-muted-foreground truncate ml-2">{op.status}</span>
                     </button>
                   ))}
                 </div>
