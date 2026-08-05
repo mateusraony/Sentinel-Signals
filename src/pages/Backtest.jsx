@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import moment from 'moment';
 import {
@@ -7,12 +7,15 @@ import {
 } from 'recharts';
 import {
   FlaskConical, Upload, TrendingUp, TrendingDown, Target, Award,
-  AlertTriangle, CheckCircle2, Rocket, Loader2, Calendar, History, Zap,
+  AlertTriangle, CheckCircle2, Rocket, Loader2, Calendar, History, Zap, Sparkles,
 } from 'lucide-react';
 import { backend } from '@/api/entities';
-import { SYNCED_STRATEGY_KEYS } from '@/lib/pineParser';
+import { SYNCED_STRATEGY_KEYS, getPineConfig } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
-import { isClosedOp, getClosedAt, summarizeOps } from '@/lib/tradeMetrics';
+import { isClosedOp, getClosedAt, summarizeOps, calcRealizedPnlPct, getExitPrice, classifyOutcome } from '@/lib/tradeMetrics';
+import { fetchCandles } from '@/lib/marketDataProvider';
+import { runQuickBacktest } from '@/lib/quickBacktest';
+import { Slider } from '@/components/ui/slider';
 import TriggerBacktestPanel from '@/components/backtest/TriggerBacktestPanel';
 
 function fmtPct(v, digits = 2) {
@@ -92,7 +95,7 @@ function buildReportFromOps(ops) {
 // Corpo compartilhado de visualização — usado tanto pelo relatório de
 // simulação (JSON) quanto pelo desempenho real por período, que produzem o
 // mesmo formato (overall/byCascade/costs vêm de summarizeOps nos dois casos).
-function ReportBody({ report }) {
+function ReportBody({ report, hideCascadeTable = false }) {
   const { overall, costs } = report;
 
   const equityCurve = useMemo(() => {
@@ -202,7 +205,7 @@ function ReportBody({ report }) {
         </Section>
       </div>
 
-      {cascadeRows.length > 0 && (
+      {!hideCascadeTable && cascadeRows.length > 0 && (
         <Section title="Por cascata (4h→15m RF vs 1h→5m SMC)">
           <div className="overflow-x-auto">
             <table className="w-full text-[10px] font-mono">
@@ -249,6 +252,231 @@ function ReportBody({ report }) {
             </ResponsiveContainer>
           </div>
         </Section>
+      )}
+    </div>
+  );
+}
+
+const STATUS_ICON_COLOR = { TP2_HIT: ['🏆 TP2', '#00ff80'], STOP_HIT: ['🛑 Stop', '#ff1478'] };
+
+// Tabela de operações individuais da simulação instantânea — o relatório de
+// simulação (JSON/CI) e o de desempenho real não mostram isso (já têm a
+// curva de equity + quebra por cascata), mas aqui o usuário quer ver cada
+// trade que a simulação abriu, já que é um teste rápido sobre um único
+// ativo/timeframe.
+function SimulatedTradesTable({ ops }) {
+  if (!ops || ops.length === 0) return null;
+  const rows = [...ops].sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
+
+  return (
+    <Section title="Operações Simuladas">
+      <div className="overflow-x-auto">
+        <table className="w-full text-[10px] font-mono">
+          <thead>
+            <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+              <th className="text-left px-3 py-2 text-muted-foreground font-medium">Entrada</th>
+              <th className="text-left px-3 py-2 text-muted-foreground font-medium">Side</th>
+              <th className="text-right px-3 py-2 text-muted-foreground font-medium">Entry</th>
+              <th className="text-right px-3 py-2 text-muted-foreground font-medium">Stop</th>
+              <th className="text-right px-3 py-2 text-muted-foreground font-medium">TP1</th>
+              <th className="text-right px-3 py-2 text-muted-foreground font-medium">TP2</th>
+              <th className="text-right px-3 py-2 text-muted-foreground font-medium">Exit</th>
+              <th className="text-right px-3 py-2 text-muted-foreground font-medium">P&L</th>
+              <th className="text-left px-3 py-2 text-muted-foreground font-medium">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((op, i) => {
+              const pnl = calcRealizedPnlPct(op);
+              const exitPrice = getExitPrice(op);
+              const outcome = classifyOutcome(op);
+              const [label, color] = outcome === 'BE'
+                ? ['🛡️ BE', '#64748b']
+                : (STATUS_ICON_COLOR[op.status] || [op.status, '#64748b']);
+              const isBuy = op.side === 'BUY';
+              return (
+                <tr key={op.id} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
+                  <td className="px-3 py-2 text-muted-foreground">{moment(op.created_date).format('DD/MM HH:mm')}</td>
+                  <td className="px-3 py-2 font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</td>
+                  <td className="px-3 py-2 text-right text-muted-foreground">${op.entry_price?.toFixed(6)}</td>
+                  <td className="px-3 py-2 text-right" style={{ color: '#ff1478' }}>${op.initial_stop?.toFixed(6)}</td>
+                  <td className="px-3 py-2 text-right" style={{ color: '#ffd166' }}>${op.tp1?.toFixed(6)}</td>
+                  <td className="px-3 py-2 text-right" style={{ color: '#00ff80' }}>${op.tp2?.toFixed(6)}</td>
+                  <td className="px-3 py-2 text-right text-muted-foreground">{exitPrice != null ? `$${exitPrice.toFixed(6)}` : '—'}</td>
+                  <td className="px-3 py-2 text-right font-bold" style={{ color: pnl >= 0 ? '#00ff80' : '#ff1478' }}>{pnl != null ? fmtPct(pnl) : '—'}</td>
+                  <td className="px-3 py-2" style={{ color }}>{label}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Section>
+  );
+}
+
+const QBT_TIMEFRAMES = [
+  { id: '1h', label: '1H', minutes: 60 },
+  { id: '4h', label: '4H', minutes: 240 },
+  { id: '1d', label: '1D', minutes: 1440 },
+];
+const QBT_CANDLE_OPTIONS = [200, 500, 1000];
+const QBT_SLIDERS = [
+  { key: 'atrMult', label: 'ATR Mult', min: 0.5, max: 5, step: 0.1, color: '#ff1478' },
+  { key: 'tp1R', label: 'TP1 (R)', min: 0.5, max: 4, step: 0.1, color: '#ffd166' },
+  { key: 'rfPeriod', label: 'RF Period', min: 5, max: 50, step: 1, color: '#00e5ff' },
+  { key: 'rfMult', label: 'RF Mult', min: 0.5, max: 8, step: 0.1, color: '#00ff80' },
+  { key: 'minScore', label: 'Min Score', min: 50, max: 100, step: 1, color: '#a78bfa' },
+];
+
+// Simulação instantânea single-asset/single-timeframe — ver
+// src/lib/quickBacktest.js para o porquê de ser uma aproximação simplificada
+// e não o mesmo motor de scanner.js/backtestEngine.js. Roda 100% no
+// navegador, sem GitHub Actions, sem gravar nada — é o "e se eu mudasse
+// este parâmetro?" imediato.
+function QuickBacktestTab() {
+  const [assetId, setAssetId] = useState('');
+  const [timeframe, setTimeframe] = useState('4h');
+  const [candleCount, setCandleCount] = useState(500);
+  const [sliders, setSliders] = useState({ atrMult: 2, tp1R: 1.5, rfPeriod: 20, rfMult: 3.5, minScore: 75 });
+  const [baseConfig, setBaseConfig] = useState({ atrLen: 14, tp1QtyPercent: 50 });
+  const [result, setResult] = useState(null); // { report, ops, candleCount, from, to }
+  const [status, setStatus] = useState('idle'); // idle | running | error
+  const [errorMsg, setErrorMsg] = useState(null);
+
+  const { data: assets = [] } = useQuery({
+    queryKey: ['all-assets'],
+    queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
+    staleTime: 60000,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    getPineConfig().then(config => {
+      if (cancelled) return;
+      setBaseConfig({ atrLen: config.atrLen, tp1QtyPercent: config.tp1QtyPercent });
+      setSliders(s => ({ ...s, atrMult: config.trailAtrMult ?? s.atrMult, tp1R: config.tp1R ?? s.tp1R, minScore: config.minScore ?? s.minScore }));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const asset = assets.find(a => a.id === assetId);
+  const tfMeta = QBT_TIMEFRAMES.find(t => t.id === timeframe);
+  const approxDays = Math.round((tfMeta.minutes * candleCount) / (60 * 24));
+
+  const handleRun = async () => {
+    if (!asset) return;
+    setStatus('running');
+    setErrorMsg(null);
+    try {
+      const candles = await fetchCandles(asset.symbol, timeframe, candleCount);
+      const closed = candles.filter(c => c.isClosed);
+      const { ops, stillOpen } = runQuickBacktest(closed, { ...sliders, ...baseConfig }, {
+        symbol: asset.symbol, timeframe,
+      });
+      const allOps = stillOpen ? [...ops, { ...stillOpen, status: 'SIGNAL_CONFIRMED' }] : ops;
+      const report = buildReportFromOps(allOps);
+      setResult({
+        report, ops,
+        candleCount: closed.length,
+        from: closed[0]?.closeTime, to: closed[closed.length - 1]?.closeTime,
+      });
+      setStatus('idle');
+    } catch (e) {
+      setStatus('error');
+      setErrorMsg(e.message);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Section title="Configuração do Backtest">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="text-[9px] font-mono text-muted-foreground block mb-1">Ativo</label>
+            <select value={assetId} onChange={e => setAssetId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg text-[11px] font-mono outline-none"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
+              <option value="">Selecione...</option>
+              {assets.map(a => <option key={a.id} value={a.id}>{a.display_name || a.symbol}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[9px] font-mono text-muted-foreground block mb-1">Timeframe</label>
+            <div className="flex items-center gap-1.5">
+              {QBT_TIMEFRAMES.map(tf => (
+                <button key={tf.id} onClick={() => setTimeframe(tf.id)}
+                  className="flex-1 px-3 py-2 rounded-lg text-[11px] font-mono font-bold transition-all"
+                  style={timeframe === tf.id
+                    ? { background: 'rgba(0,229,255,0.15)', border: '1px solid rgba(0,229,255,0.4)', color: '#00e5ff' }
+                    : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)' }}>
+                  {tf.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[8px] font-mono text-muted-foreground/60 mt-1">~{approxDays} dias</p>
+          </div>
+          <div>
+            <label className="text-[9px] font-mono text-muted-foreground block mb-1">Período (candles)</label>
+            <select value={candleCount} onChange={e => setCandleCount(Number(e.target.value))}
+              className="w-full px-3 py-2 rounded-lg text-[11px] font-mono outline-none"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
+              {QBT_CANDLE_OPTIONS.map(n => <option key={n} value={n}>{n} candles</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="flex items-center gap-1.5 mb-3">
+            <Sparkles className="w-3.5 h-3.5" style={{ color: '#ffd166' }} />
+            <span className="text-[10px] font-mono font-bold" style={{ color: '#ffd166' }}>AJUSTE FINO (WHAT-IF)</span>
+            <span className="text-[9px] font-mono text-muted-foreground">— altere para testar cenários sem afetar o scanner</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {QBT_SLIDERS.map(s => (
+              <div key={s.key} className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[9px] font-mono text-muted-foreground">{s.label}</span>
+                  <span className="text-xs font-mono font-bold" style={{ color: s.color }}>{sliders[s.key]}</span>
+                </div>
+                <Slider value={[sliders[s.key]]} min={s.min} max={s.max} step={s.step}
+                  onValueChange={([v]) => setSliders(prev => ({ ...prev, [s.key]: v }))} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 pt-1">
+          <button onClick={handleRun} disabled={!asset || status === 'running'}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-[11px] font-mono font-bold transition-all disabled:opacity-40"
+            style={{ background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }}>
+            {status === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+            {status === 'running' ? 'Simulando...' : 'Executar Backtest'}
+          </button>
+          {asset && (
+            <span className="text-[9px] font-mono text-muted-foreground">
+              {asset.symbol} · {timeframe.toUpperCase()} · {candleCount} candles
+            </span>
+          )}
+        </div>
+
+        {status === 'error' && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-mono" style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{errorMsg}
+          </div>
+        )}
+      </Section>
+
+      {result && (
+        <>
+          <p className="text-[9px] font-mono text-muted-foreground">
+            📅 {moment(result.from).format('DD/MM/YYYY')} → {moment(result.to).format('DD/MM/YYYY')}
+            &nbsp;&nbsp;{result.candleCount} candles processados
+            &nbsp;&nbsp;RF {sliders.rfPeriod}/{sliders.rfMult} · ATR {sliders.atrMult}x · TP1 {sliders.tp1R}R
+          </p>
+          <ReportBody report={result.report} hideCascadeTable />
+          <SimulatedTradesTable ops={result.ops} />
+        </>
       )}
     </div>
   );
@@ -494,7 +722,8 @@ function JsonReportTab() {
 
 const TABS = [
   { id: 'real', label: 'Desempenho Real', icon: History },
-  { id: 'json', label: 'Simulação (Backtest)', icon: Zap },
+  { id: 'quick', label: 'Ajuste Fino (What-If)', icon: Sparkles },
+  { id: 'json', label: 'Simulação (GitHub)', icon: Zap },
 ];
 
 export default function Backtest() {
@@ -520,7 +749,9 @@ export default function Backtest() {
         </div>
       </div>
 
-      {tab === 'real' ? <RealPeriodTab /> : <JsonReportTab />}
+      {tab === 'real' && <RealPeriodTab />}
+      {tab === 'quick' && <QuickBacktestTab />}
+      {tab === 'json' && <JsonReportTab />}
     </div>
   );
 }

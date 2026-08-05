@@ -1,27 +1,55 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { getPineConfig, getLocalPineConfig } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
 import { Slider } from '@/components/ui/slider';
-import { SlidersHorizontal, Save, CheckCircle2, RotateCcw } from 'lucide-react';
+import { SlidersHorizontal, Save, CheckCircle2, RotateCcw, AlertTriangle, BarChart3, ShieldAlert, Zap } from 'lucide-react';
 
 // Cada slider: chave no pineConfig, alvo de gravação ('strategyConfig' ou
-// 'assets'), faixa e passo. Os 5 primeiros já são sincronizados via
-// strategyConfig/current (mesmo doc que a aba "Parâmetros Ativos" do Pine
-// Script lê) — rng_per/rng_qty são por-ativo (MonitoredAsset.rf_period/
-// rf_multiplier), mesma exceção documentada em pineParser.js.
-const FIELDS = [
-  { key: 'minScore', label: 'Score mínimo', target: 'strategyConfig', min: 0, max: 100, step: 1, suffix: '' },
-  { key: 'tp1R', label: 'TP1 (em R)', target: 'strategyConfig', min: 0.5, max: 5, step: 0.1, suffix: 'R' },
-  { key: 'tp1QtyPercent', label: '% de realização no TP1', target: 'strategyConfig', min: 10, max: 100, step: 5, suffix: '%' },
-  { key: 'trailAtrMult', label: 'Multiplicador de ATR (trailing)', target: 'strategyConfig', min: 0.5, max: 5, step: 0.1, suffix: '×' },
-  { key: 'atrLen', label: 'Período do ATR', target: 'strategyConfig', min: 5, max: 50, step: 1, suffix: ' velas' },
-  { key: 'rng_per', label: 'Período do Range Filter', target: 'assets', min: 5, max: 100, step: 1, suffix: ' velas' },
-  { key: 'rng_qty', label: 'Multiplicador do Range Filter', target: 'assets', min: 0.5, max: 10, step: 0.1, suffix: '×' },
+// 'assets'), faixa e passo. Agrupados em 3 colunas (Range Filter / Gestão de
+// Risco / Confirmação) — mesma separação conceitual que já existia, só
+// reorganizada visualmente. rng_per/rng_qty são por-ativo (MonitoredAsset.
+// rf_period/rf_multiplier), os demais sincronizam via strategyConfig/current
+// (mesmo doc que a aba "Parâmetros Ativos" do Pine Script lê).
+const GROUPS = [
+  {
+    id: 'range_filter', label: 'Range Filter', icon: BarChart3, color: '#00ff80',
+    fields: [
+      { key: 'rng_per', label: 'Swing Period', target: 'assets', min: 5, max: 50, step: 1, suffix: '' },
+      { key: 'rng_qty', label: 'Swing Multiplier', target: 'assets', min: 0.5, max: 8, step: 0.1, suffix: '' },
+    ],
+  },
+  {
+    id: 'risk', label: 'Gestão de Risco', icon: ShieldAlert, color: '#ff1478',
+    fields: [
+      { key: 'trailAtrMult', label: 'ATR Multiplicador (Stop)', target: 'strategyConfig', min: 0.5, max: 5, step: 0.1, suffix: 'x' },
+      { key: 'tp1R', label: 'TP1 em R', target: 'strategyConfig', min: 0.5, max: 4, step: 0.1, suffix: 'R' },
+      { key: 'tp1QtyPercent', label: '% Realizar no TP1', target: 'strategyConfig', min: 10, max: 90, step: 5, suffix: '%' },
+    ],
+  },
+  {
+    id: 'confirmation', label: 'Confirmação', icon: Zap, color: '#ffd166',
+    fields: [
+      { key: 'minScore', label: 'Score Mínimo', target: 'strategyConfig', min: 50, max: 100, step: 1, suffix: '' },
+      { key: 'atrLen', label: 'ATR Periodo', target: 'strategyConfig', min: 5, max: 30, step: 1, suffix: '' },
+    ],
+  },
 ];
 
+const FIELDS = GROUPS.flatMap(g => g.fields);
 const STRATEGY_KEYS = FIELDS.filter(f => f.target === 'strategyConfig').map(f => f.key);
+
+const ACTIVE_CONFIG_PILLS = [
+  { key: 'rng_per', label: 'RF Period' },
+  { key: 'rng_qty', label: 'RF Mult' },
+  { key: 'trailAtrMult', label: 'ATR Mult' },
+  { key: 'tp1R', label: 'TP1 R' },
+  { key: 'tp1QtyPercent', label: 'TP1 %' },
+  { key: 'minScore', label: 'Min Score' },
+  { key: 'atrLen', label: 'ATR Len' },
+];
 
 function fmtValue(value, suffix) {
   if (value == null) return '—';
@@ -102,61 +130,98 @@ export default function Settings() {
   }
 
   return (
-    <div className="space-y-5 max-w-3xl mx-auto">
+    <div className="space-y-5 max-w-6xl mx-auto">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Estratégia</p>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">Ajustes Finos</h1>
+          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Configuração</p>
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Ajuste Fino</h1>
           <p className="text-[10px] font-mono text-muted-foreground mt-1">
-            Multiplicadores de ATR, alvos de lucro e parâmetros do Range Filter — sincronizados com o scanner ao vivo.
+            Altere multiplicadores de ATR, alvos de lucro e parâmetros do Range Filter sem tocar no código.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleReset}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all"
-            style={{ background: 'rgba(255,159,67,0.07)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
-            <RotateCcw className="w-3 h-3" />Restaurar
-          </button>
-          <button onClick={handleSave} disabled={saveStatus === 'saving'}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all disabled:opacity-50"
-            style={{
-              background: saveStatus === 'saved' ? 'rgba(0,255,128,0.15)' : 'rgba(0,255,128,0.08)',
-              border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80',
-            }}>
-            {saveStatus === 'saved' ? <CheckCircle2 className="w-3 h-3" /> : <Save className="w-3 h-3" />}
-            {saveStatus === 'saving' ? 'Salvando...' : saveStatus === 'saved' ? 'Salvo!' : saveStatus === 'error' ? 'Erro ao salvar' : 'Salvar e sincronizar'}
-          </button>
+        <div className="flex items-center gap-1.5 text-[9px] font-mono px-2.5 py-1.5 rounded-lg"
+          style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
+          <SlidersHorizontal className="w-3 h-3" />Aplicado instantaneamente no próximo scan
         </div>
       </div>
 
-      <div className="rounded-xl p-5 space-y-6" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="flex items-center gap-2 pb-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <SlidersHorizontal className="w-4 h-4" style={{ color: '#00e5ff' }} />
-          <h2 className="text-sm font-bold text-foreground">Parâmetros de entrada e saída</h2>
+      <div className="rounded-xl p-5 space-y-5" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="flex items-center justify-between flex-wrap gap-3 pb-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal className="w-4 h-4" style={{ color: '#00e5ff' }} />
+            <div>
+              <h2 className="text-sm font-bold text-foreground">Ajuste Fino de Parâmetros</h2>
+              <p className="text-[9px] font-mono text-muted-foreground">Otimize o motor para diferentes níveis de risco</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={handleReset}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all"
+              style={{ background: 'rgba(255,159,67,0.07)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
+              <RotateCcw className="w-3 h-3" />Restaurar
+            </button>
+            <button onClick={handleSave} disabled={saveStatus === 'saving'}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all disabled:opacity-50"
+              style={{
+                background: saveStatus === 'saved' ? 'rgba(0,255,128,0.15)' : 'rgba(0,255,128,0.08)',
+                border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80',
+              }}>
+              {saveStatus === 'saved' ? <CheckCircle2 className="w-3 h-3" /> : <Save className="w-3 h-3" />}
+              {saveStatus === 'saving' ? 'Salvando...' : saveStatus === 'saved' ? 'Salvo!' : saveStatus === 'error' ? 'Erro ao salvar' : 'Salvar & Sincronizar'}
+            </button>
+          </div>
         </div>
 
-        {FIELDS.map(field => (
-          <div key={field.key} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-mono text-muted-foreground">{field.label}</span>
-              <span className="text-xs font-mono font-bold" style={{ color: '#00e5ff' }}>
-                {fmtValue(values[field.key], field.suffix)}
-              </span>
-            </div>
-            <Slider
-              value={[values[field.key] ?? field.min]}
-              min={field.min}
-              max={field.max}
-              step={field.step}
-              onValueChange={([v]) => setValues(prev => ({ ...prev, [field.key]: v }))}
-            />
-          </div>
-        ))}
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-[10px] font-mono" style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>
+            Alterações são aplicadas instantaneamente ao scanner no próximo scan. Use o{' '}
+            <Link to="/backtest" className="font-bold underline underline-offset-2">Backtest</Link> para validar antes.
+          </span>
+        </div>
 
-        <p className="text-[9px] font-mono text-muted-foreground/70 pt-1">
-          Score mínimo, TP1, % de realização, ATR e período do trailing gravam em <code>strategyConfig/current</code> (o mesmo
-          documento que o cron de scan lê). Período e multiplicador do Range Filter aplicam a todos os ativos monitorados ativos.
-        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {GROUPS.map(group => (
+            <div key={group.id} className="rounded-xl p-4 space-y-4" style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${group.color}25` }}>
+              <div className="flex items-center gap-1.5">
+                <group.icon className="w-3.5 h-3.5" style={{ color: group.color }} />
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider" style={{ color: group.color }}>{group.label}</span>
+              </div>
+              {group.fields.map(field => (
+                <div key={field.key} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-muted-foreground">{field.label}</span>
+                    <span className="text-xs font-mono font-bold" style={{ color: group.color }}>
+                      {fmtValue(values[field.key], field.suffix)}
+                    </span>
+                  </div>
+                  <Slider
+                    value={[values[field.key] ?? field.min]}
+                    min={field.min}
+                    max={field.max}
+                    step={field.step}
+                    onValueChange={([v]) => setValues(prev => ({ ...prev, [field.key]: v }))}
+                  />
+                  <div className="flex items-center justify-between text-[8px] font-mono text-muted-foreground/50">
+                    <span>{field.min}</span><span>{field.max}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        <div className="pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <p className="text-[9px] font-mono text-muted-foreground mb-2">Configuração Ativa (lida pelo scanner):</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {ACTIVE_CONFIG_PILLS.map(p => (
+              <span key={p.key} className="text-[9px] font-mono px-2.5 py-1 rounded-md"
+                style={{ background: 'rgba(0,255,128,0.06)', border: '1px solid rgba(0,255,128,0.2)', color: '#00ff80' }}>
+                {p.label}: {fmtValue(values[p.key], '')}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
