@@ -5714,3 +5714,90 @@ não alterado sem necessidade demonstrada (`CLAUDE.md`).
 Investigação foi só leitura (Firestore de produção via cliente anônimo,
 API do GitHub Actions, leitura de código) — zero mudança de código,
 zero escrita em produção.
+
+---
+
+## 61. Auditoria de uma lista de "melhorias" — texto descrevia código que não existe (2026-08-05)
+
+### Contexto
+
+Usuário colou uma lista longa de features (RFHistoryChart enriquecido,
+trava de segurança `check15mConfirmation` de 4h→15m, WeeklySummary,
+GlobalSearch com histórico, backtest com página e "Aplicar ao Scanner",
+página `/settings` de ajuste fino, marcadores vibrantes, widget de
+correlação BTC/ETH/SOL, checklist no `AssetDrawer`), redigida em boa
+parte como se já estivesse implementada ("já busca", "já mostra", "já
+existe"), e pediu opinião sobre valor e o que falta. Auditoria de código
+(sem alterar nada) confirmou divergência real entre o texto e o repo.
+
+### Achado 1 — `check15mConfirmation` já existe, mas faz o oposto do descrito
+
+`scanner.js:417-460` já roda em produção (não atrás de flag) nos 4
+pontos da cascata nativa 4h→15m. Mas ele **confirma um sinal 4h
+checando o RF de 15m** — não "bloqueia entrada 15m por desalinhamento
+de tendência macro 4h" como o texto descrevia. Os reason codes citados
+(`4h_trend_mismatch`, `4h_trend_neutral`) não existem em lugar nenhum
+do repo; os reais são `regime_rejected`, `confirmation_15m_not_aligned`,
+`trend_reversed`, `active_op_exists`. O mecanismo que de fato condiciona
+4h→1h com validação estatística própria é `rf1hCondEnabled` (Fase 1 do
+roadmap), **corretamente ainda restrito a backtest + shadow mode**,
+nunca em produção — é uma peça separada que reusa `check15mConfirmation`
+internamente, não a mesma coisa. Risco identificado: implementar "a
+trava de 4h" como se fosse pedido novo, tomando a descrição do usuário
+como verdade, teria criado um segundo mecanismo de bloqueio duplicando
+lógica já existente e colidindo com o gate estatístico do Bloco 1
+(nenhum flag novo entra em produção sem A/B declarado antes).
+
+### Achado 2 — o resto da lista: só 1 de 10 itens existe como descrito
+
+| Item | Estado real |
+|---|---|
+| Expansão ChevronDown em Assets.jsx | EXISTE |
+| `RFHistoryChart` | PARCIAL — sparkline só do RF, sem preço combinado/bandas/filtro de timeframe |
+| `GlobalSearch` | PARCIAL — busca Ativos+Alertas, sem seção "Histórico"/`TradeOperation` |
+| Backtest | PARCIAL — motor roda via CI/CLI (`backtestEngine.js`), sem rota `/backtest`, sem "Aplicar ao Scanner" |
+| `WeeklySummary` | NÃO EXISTE |
+| Página `/settings` dedicada | NÃO EXISTE — só modal de Telegram e textarea de Pine Script |
+| Marcadores vibrantes / `signal-zone-pulse` | NÃO EXISTE |
+| Widget de correlação BTC/ETH/SOL | NÃO EXISTE |
+| Checklist de veredito no `AssetDrawer` | NÃO EXISTE |
+
+### Conclusão
+
+Nada corrigido — achado é de documentação/percepção, não de código.
+Fica registrado porque o texto original (se reaproveitado numa sessão
+futura) levaria a assumir trabalho já feito que não foi, e a implementar
+`check15mConfirmation` "do zero" duplicando o que já roda em produção.
+Antes de qualquer uma dessas features virar tarefa de implementação,
+tratar como pedido novo com escopo verificado no código atual — não como
+enriquecimento de algo pronto.
+
+### Conselho (5 papéis independentes, 2026-08-05): trava de 4h→15m nova — NÃO recomendada
+
+Rodado via `sentinel-council-review` sobre a pergunta "faz sentido uma trava
+de 4h→15m nova e distinta de `rf1hCondEnabled`?". Veredito unânime, sem
+divergência real entre papéis:
+
+- **Arquiteto**: a cascata nativa (`scanner.js:1784-1859`) já bloqueia sinal
+  não-4h incondicionalmente e já rejeita por `trend_reversed`/
+  `confirmation_15m_not_aligned` — é duplicação literal criar mecanismo novo.
+- **Trading**: os três gates existentes (`trend_reversed`, `regime_rejected`,
+  `confirmation_15m_not_aligned`) já cobrem a superfície de risco que o
+  usuário quer proteger; medir o quanto cada um já filtra (`entry-funnel-
+  diagnostico`, roadmap.md) vem antes de qualquer trava nova.
+- **Concorrência**: seguro **só se** reusar `results['4h']` já computado no
+  mesmo passe (`scanner.js:1014-1020`); um mecanismo separado com leitura
+  própria introduziria risco real de inconsistência entre ticks de cron.
+- **Segurança/governança**: `rf1hCondEnabled` já foi medido em A/B real e
+  **piorou** a expectância (+0,215R → −0,028R, item 58/60 nesta faixa de
+  linhas do arquivo) — motivo real, não burocrático, para não generalizar
+  o padrão sem o mesmo rigor.
+- **Testes**: `4h_trend_neutral` não é representável no modelo atual
+  (`rf.direction` só tem `1`/`-1`, sem terceiro estado) — seria feature nova,
+  não bug de reason code faltando; staleness de fetch 4h↔15m não tem teste
+  dedicado hoje.
+
+**Recomendação final**: não construir nada agora. Se uma operação real
+específica motivou o pedido (entrada ruim numa reversão), investigar essa
+operação via `last_rejection_reason`/`entryFunnelOutcomes` (item 49) para
+achar qual gate deveria ter disparado, em vez de abrir mecanismo novo.
