@@ -4115,6 +4115,72 @@ reflete a versão corrigida.
 > usuário; quando vier, é achado separado, registrado à parte desta
 > entrada.
 
+### Resultado real de `byRawAlignment` — medido (2026-08-05)
+
+Usuário rodou o backtest (`trial_label: byRawAlignment-diagnostico`,
+2025-08-05→2026-08-05, 7 símbolos, `smc` ligado nos 7 pra gerar amostra).
+
+**Fato**:
+
+```
+GATILHO DE ENTRADA — SMC 5m (1h_5m)
+total: 256 · ok: 9 · rejeitado: 247
+
+gatilho    confirmados
+sweep      9
+structure  0
+
+alinhamento bruto  confirmados
+sweepOnly          9
+structureOnly      0
+both               0
+
+motivo                   sinais
+no_trigger               231
+wrong_direction_trigger  7
+ote_zone_unfavorable     9
+```
+
+**As 3 perguntas que este item deixou em aberto, respondidas**:
+
+1. **Taxa de confirmação real do gatilho 5m: 3,5%** (9 de 256 sinais
+   avaliados) — quantifica com precisão o que o item 45.1 já descrevia
+   qualitativamente como "código morto na prática".
+2. **`both: 0`** — nenhuma das 9 confirmações teve `structureAligned`
+   também `true` (nem por sombreamento). **`structureOnly: 0`** —
+   estrutura nunca confirmou sozinha. Em 12 meses de dado real, o
+   componente de estrutura (BOS/CHoCH) do gatilho 5m **não contribuiu
+   nem uma vez**, isolado ou em conjunto com sweep. Todas as 9
+   confirmações reais vieram exclusivamente de sweep.
+3. **A hipótese do item 45.2 (tensão geométrica gatilho×zona) não é a
+   explicação dominante.** `ote_zone_unfavorable` é só 9 das 247
+   rejeições (3,6%); `wrong_direction_trigger` é 7 (2,8%). A esmagadora
+   maioria — 231 de 247 (93,5%) — é `no_trigger` puro: nem sweep nem
+   estrutura sequer dispararam na direção pedida, independente da zona.
+   O funil trava porque os eventos raramente acontecem, não porque a
+   zona rejeita eventos que aconteceram.
+
+**Recomendação**: os dois achados sustentam a leitura que a rodada de
+2026-08-04 já antecipava — os flags do Bloco 1 relacionados a SMC
+(`displacementEnabled`, `smcTierEnabled`, `smcObFvgEnabled`) não têm
+como consertar isso, porque nenhum deles ataca "os dois eventos-base
+raramente disparam". Se algum dia fizer sentido investir mais nessa
+cascata, o alvo certo (não implementado, não decidido) seria revisar o
+gatilho de estrutura em si (`calculateStructure`/`swingLen: 10` no 5m —
+talvez curto demais pra formar swing com regularidade) ou aceitar que a
+independente 1h→5m não é um caminho produtivo e concentrar esforço em
+`smc_confirm_4h15m` (mecanismo diferente, sem essa evidência negativa) e
+na Fase 1 (RF 1h condicionado ao 4h, já em modo sombra).
+
+**Nota lateral, fora do escopo deste item**: o resultado agregado do run
+(116 operações, líquido +0,025R, INCONCLUSIVO — IC cruza zero) teve SMC
+ligado nos 7 símbolos, então **não é comparável** aos runs do Bloco 0
+(que rodam sem SMC) — não usar este número pra alimentar aquela
+discussão. Por curiosidade, o mesmo padrão BUY-fraco/SELL-forte do
+Bloco 0 apareceu de novo aqui (BUY −0,290R, SELL +0,340R), mas com
+composição de amostra diferente (inclui as 9 operações SMC) — não é
+evidência adicional formal para aquele item.
+
 ## 53. Stop pré-TP1 nunca avança — 61 operações erodem de MFE positivo até o stop original (2026-08-01)
 
 Detalhamento do relatório de backtest (`trial_label:
