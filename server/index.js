@@ -217,6 +217,13 @@ app.post('/api/backtest/trigger', requireAuth, requireGithubToken, async (req, r
     }
   }
 
+  // 4000, não 2000: um pine_config real (overrides de vários campos da
+  // estratégia, não só um {"minScore":80} minúsculo) pode passar de 2000
+  // caracteres com facilidade. Rejeitar com 400 em vez de truncar — um
+  // corte silencioso depois do JSON.parse acima devolveria JSON quebrado
+  // pro workflow, que falharia minutos depois no GitHub sem nenhuma pista
+  // de que a causa foi um limite de tamanho aqui.
+  const MAX_INPUT_LEN = 4000;
   const inputs = { trial_label: trialLabel };
   for (const key of BACKTEST_INPUT_KEYS) {
     if (key === 'trial_label') continue;
@@ -225,7 +232,11 @@ app.post('/api/backtest/trigger', requireAuth, requireGithubToken, async (req, r
     // workflow_dispatch sempre recebe string no payload da API, mesmo pros
     // inputs `type: boolean` do YAML — a Actions API coage pelo nome do
     // input declarado, não pelo tipo JS enviado aqui.
-    inputs[key] = String(value).slice(0, 2000);
+    const str = String(value);
+    if (str.length > MAX_INPUT_LEN) {
+      return res.status(400).json({ error: `Campo "${key}" excede o tamanho máximo (${MAX_INPUT_LEN} caracteres).` });
+    }
+    inputs[key] = str;
   }
 
   try {

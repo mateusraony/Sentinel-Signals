@@ -264,6 +264,15 @@ const PERIOD_PRESETS = [
   { id: 'all', label: 'Tudo' },
 ];
 
+// Teto alto o bastante pra cobrir anos de operação real neste projeto (item
+// 46/60 de docs/known-risks.md: ~344 operações/ano num backtest de 20
+// símbolos, 3 operações reais na produção até hoje) sem buscar o histórico
+// inteiro sem limite (a leitura cresceria com o histórico, o que
+// .claude/rules/firestore-concurrency.md pede pra evitar). Se algum dia isso
+// não for suficiente, o aviso abaixo (allOps.length === REAL_OPS_LIMIT)
+// avisa em vez de mostrar métricas erradas silenciosamente.
+const REAL_OPS_LIMIT = 3000;
+
 // Desempenho REAL por período — nada de simulação, só as TradeOperation que
 // já existem no Firestore, filtradas por data (mesmo padrão de presets já
 // usado em Trades.jsx). Zero risco novo: não toca scanner.js nem dispara
@@ -289,7 +298,7 @@ function RealPeriodTab() {
 
   const { data: allOps = [], isLoading } = useQuery({
     queryKey: ['backtest-real-ops'],
-    queryFn: () => backend.entities.TradeOperation.list('-created_date', 1000),
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', REAL_OPS_LIMIT),
     staleTime: 60000,
   });
 
@@ -317,6 +326,14 @@ function RealPeriodTab() {
           </button>
         ))}
       </div>
+
+      {!isLoading && allOps.length === REAL_OPS_LIMIT && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-mono" style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.3)', color: '#ff9f43' }}>
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          Mostrando só as {REAL_OPS_LIMIT} operações mais recentes — pode haver operações mais antigas fora deste limite,
+          então períodos longos ("Tudo", "Ano") podem estar incompletos.
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
