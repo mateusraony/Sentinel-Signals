@@ -5801,3 +5801,72 @@ divergência real entre papéis:
 específica motivou o pedido (entrada ruim numa reversão), investigar essa
 operação via `last_rejection_reason`/`entryFunnelOutcomes` (item 49) para
 achar qual gate deveria ter disparado, em vez de abrir mecanismo novo.
+
+---
+
+## 62. Backtest: desempenho real por período + disparo do backtest.yml pelo painel (2026-08-05)
+
+### Contexto
+
+Depois do PR #139 (visualizador de relatório JSON), o usuário pediu duas
+funções adicionais na página `/backtest`, as duas juntas: (1) ver o
+desempenho REAL por período (sem simular nada) e (2) disparar o workflow
+`backtest.yml` do GitHub Actions direto pelo painel, sem precisar abrir o
+GitHub manualmente.
+
+### O que foi feito
+
+- **Aba "Desempenho Real"**: filtra `TradeOperation` reais do Firestore por
+  preset de período (Hoje/Semana/Mês/Mês Passado/Trimestre/Ano/Tudo, mesmo
+  padrão de `Trades.jsx`), agregando com `summarizeOps()` — a MESMA função
+  que `backtestEngine.js` usa para o relatório de simulação, então o corpo
+  de visualização (`ReportBody`, extraído do que antes era só o JSON viewer)
+  é 100% compartilhado entre os dois modos, sem duplicar conta nenhuma. Zero
+  risco novo — não toca `scanner.js`, só lê Firestore via o adaptador
+  `backend` de sempre.
+- **Disparo do `backtest.yml` pelo painel**: 3 rotas novas em `server/index.js`
+  (`POST /api/backtest/trigger`, `GET /api/backtest/status/:runId`,
+  `GET /api/backtest/artifact/:runId`) usando um novo secret
+  `GITHUB_ACTIONS_TOKEN` (PAT fine-grained, permissão "Actions: Read and
+  write", escopado só a este repositório) para disparar o `workflow_dispatch`
+  do `backtest.yml`, consultar status e baixar+extrair (`adm-zip`, nova
+  dependência de `server/`) o artifact `backtest-report.json`. Frontend:
+  `TriggerBacktestPanel.jsx` (formulário + polling automático) e
+  `apiBackend.js` ganhou suporte a GET (antes só POST). `render.yaml` ganhou
+  `VITE_BACKEND_URL` (público, aponta para `sentinel-signals-api.onrender.com`
+  — sem essa variável o cliente do backend nunca funcionou em produção,
+  lacuna pré-existente desde que `apiBackend.js` foi criado) e o secret
+  `GITHUB_ACTIONS_TOKEN` (`sync: false`).
+
+### Revisão de segurança (rodada antes de finalizar, per `.claude/rules/security.md`)
+
+- **Confirmado por leitura de código**: nenhuma das 3 rotas toca
+  `scanner.js`, Firestore de produção ou Telegram real — só chamam a API do
+  GitHub e devolvem o resultado ao cliente.
+- **Repo confirmado público** (`visibility: public` via API do GitHub) — sem
+  risco de custo de minutos do Actions por abuso, só ruído/fila, que o
+  cooldown de 60s em memória (`server/index.js`) já cobre razoavelmente.
+- **302 do artifact tratado corretamente**: o download redireciona para uma
+  URL assinada (Azure Blob) e o header `Authorization` NÃO é reenviado nesse
+  2º request — padrão correto (a URL já carrega autenticação própria via
+  query string).
+- **Achado real, corrigido**: `pine_config`/`from`/`to` só eram validados no
+  cliente (`TriggerBacktestPanel.jsx`), contornável chamando a API direto —
+  adicionada validação server-side (JSON.parse de `pine_config`, `Date`
+  parseável de `from`/`to`) antes de repassar ao GitHub.
+- **Limitação aceita e documentada** (não é falha de desenho): o GitHub não
+  permite escopar um PAT fine-grained a um único workflow — "Actions: Read
+  and write" vale para todos os workflows do repo. Um vazamento do token
+  permite disparar/ler qualquer workflow (backtest, scan, backup,
+  deploy-firestore), mas não lê secrets nem altera código (exigiria
+  "Contents: write", não concedido). Documentado em `render.yaml`/
+  `.env.example`.
+
+### Verificação
+
+`npm run lint`, `npm test` (828 testes) e `npm run build` limpos. Sem
+verificação visual no navegador (mesma limitação de ambiente já registrada
+no item 61 — sem credenciais reais de Firebase nesta sessão).
+
+---
+achar qual gate deveria ter disparado, em vez de abrir mecanismo novo.

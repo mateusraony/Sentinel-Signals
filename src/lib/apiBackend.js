@@ -8,7 +8,10 @@ import { auth } from '@/lib/firebaseClient';
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
-export async function callBackend(path, body) {
+// method defaults to GET when no body is passed, POST otherwise — existing
+// callers (all POST-with-body) keep working unchanged; new GET-only callers
+// (e.g. polling a job's status) just omit body.
+export async function callBackend(path, body, { method } = {}) {
   if (!BASE_URL) {
     throw new Error('VITE_BACKEND_URL não configurado.');
   }
@@ -16,13 +19,14 @@ export async function callBackend(path, body) {
     throw new Error('Não autenticado.');
   }
   const idToken = await auth.currentUser.getIdToken();
+  const httpMethod = method || (body !== undefined ? 'POST' : 'GET');
   const response = await fetch(`${BASE_URL}${path}`, {
-    method: 'POST',
+    method: httpMethod,
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
     },
-    body: JSON.stringify(body || {}),
+    ...(httpMethod === 'GET' ? {} : { body: JSON.stringify(body || {}) }),
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {

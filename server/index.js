@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const AdmZip = require('adm-zip');
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
@@ -17,6 +18,9 @@ if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
 }
 if (!process.env.WEBHOOK_SECRET) {
   console.warn('WEBHOOK_SECRET is not set — POST /webhook/tradingview will reject every request with 401.');
+}
+if (!process.env.GITHUB_ACTIONS_TOKEN) {
+  console.warn('GITHUB_ACTIONS_TOKEN is not set — /api/backtest/* routes will reject every request with 503.');
 }
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
@@ -133,6 +137,211 @@ app.post('/webhook/tradingview', async (req, res) => {
   } catch (e) {
     console.error('tradingview webhook failed:', e.message);
     res.status(500).json({ error: 'Internal error.' });
+  }
+});
+
+// --- Backtest dispatch (GitHub Actions) -------------------------------
+// Deixa o painel disparar o workflow .github/workflows/backtest.yml (que já
+// roda isolado — backend fake em memória, Telegram no-op, ver o próprio
+// arquivo do workflow) em vez de exigir abrir o GitHub manualmente. Esta
+// rota só DISPARA e lê esse workflow via API — nunca roda o motor aqui,
+// nunca toca Firestore de produção nem manda Telegram real.
+// GITHUB_ACTIONS_TOKEN deve ser um PAT fine-grained escopado só a este
+// repositório, com permissão "Actions: Read and write" e nada mais.
+const GITHUB_OWNER = 'mateusraony';
+const GITHUB_REPO = 'Sentinel-Signals';
+const WORKFLOW_FILE = 'backtest.yml';
+const GITHUB_API = 'https://api.github.com';
+
+// Únicas chaves repassadas para o workflow_dispatch — qualquer outro campo
+// do corpo da requisição é ignorado, nunca encaminhado à API do GitHub.
+const BACKTEST_INPUT_KEYS = [
+  'symbols', 'from', 'to', 'timeframes', 'smc', 'smc_confirm',
+  'pine_config', 'no_costs', 'fee_bps', 'slippage_bps', 'funding_bps',
+  'min_trades', 'trial_label',
+];
+
+function githubHeaders() {
+  return {
+    Authorization: `Bearer ${process.env.GITHUB_ACTIONS_TOKEN}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+}
+
+function requireGithubToken(req, res, next) {
+  if (!process.env.GITHUB_ACTIONS_TOKEN) {
+    return res.status(503).json({ error: 'GITHUB_ACTIONS_TOKEN não configurado neste servidor.' });
+  }
+  next();
+}
+
+// Sem fila/DB — só evita clique duplo/disparo repetido acidental. Reinicia a
+// cada deploy do server; é um freio de cortesia, não uma garantia forte.
+let lastTriggerAt = 0;
+const TRIGGER_COOLDOWN_MS = 60_000;
+
+app.post('/api/backtest/trigger', requireAuth, requireGithubToken, async (req, res) => {
+  const now = Date.now();
+  if (now - lastTriggerAt < TRIGGER_COOLDOWN_MS) {
+    return res.status(429).json({ error: 'Aguarde um pouco antes de disparar outro backtest.' });
+  }
+
+  const body = req.body || {};
+  const trialLabel = typeof body.trial_label === 'string' ? body.trial_label.trim() : '';
+  if (!trialLabel) {
+    return res.status(400).json({ error: 'trial_label é obrigatório.' });
+  }
+  if (trialLabel.length > 200) {
+    return res.status(400).json({ error: 'trial_label muito longo (máx. 200 caracteres).' });
+  }
+
+  // from/to e pine_config viram argumentos de scripts Node/valores lidos no
+  // workflow (nunca interpolados direto num script — ver os comentários de
+  // backtest.yml), então não há risco de injeção de comando aqui. Ainda
+  // assim validamos formato: falhar cedo com erro claro é melhor do que
+  // disparar um run que só vai falhar minutos depois no GitHub. Checagem
+  // client-side existe (TriggerBacktestPanel.jsx), mas não é confiável — só
+  // ela permitiria contornar validando direto na API.
+  for (const dateField of ['from', 'to']) {
+    const value = body[dateField];
+    if (value && Number.isNaN(new Date(value).getTime())) {
+      return res.status(400).json({ error: `Campo "${dateField}" não é uma data válida.` });
+    }
+  }
+  if (body.pine_config) {
+    try {
+      JSON.parse(body.pine_config);
+    } catch {
+      return res.status(400).json({ error: 'pine_config precisa ser um JSON válido.' });
+    }
+  }
+
+  // 4000, não 2000: um pine_config real (overrides de vários campos da
+  // estratégia, não só um {"minScore":80} minúsculo) pode passar de 2000
+  // caracteres com facilidade. Rejeitar com 400 em vez de truncar — um
+  // corte silencioso depois do JSON.parse acima devolveria JSON quebrado
+  // pro workflow, que falharia minutos depois no GitHub sem nenhuma pista
+  // de que a causa foi um limite de tamanho aqui.
+  const MAX_INPUT_LEN = 4000;
+  const inputs = { trial_label: trialLabel };
+  for (const key of BACKTEST_INPUT_KEYS) {
+    if (key === 'trial_label') continue;
+    const value = body[key];
+    if (value === undefined || value === null || value === '') continue;
+    // workflow_dispatch sempre recebe string no payload da API, mesmo pros
+    // inputs `type: boolean` do YAML — a Actions API coage pelo nome do
+    // input declarado, não pelo tipo JS enviado aqui.
+    const str = String(value);
+    if (str.length > MAX_INPUT_LEN) {
+      return res.status(400).json({ error: `Campo "${key}" excede o tamanho máximo (${MAX_INPUT_LEN} caracteres).` });
+    }
+    inputs[key] = str;
+  }
+
+  try {
+    const dispatchRes = await fetch(
+      `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`,
+      {
+        method: 'POST',
+        headers: { ...githubHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: 'main', inputs }),
+      },
+    );
+    if (!dispatchRes.ok) {
+      const errText = await dispatchRes.text();
+      console.error('backtest dispatch failed:', dispatchRes.status, errText);
+      return res.status(502).json({ error: 'Falha ao disparar o workflow no GitHub.' });
+    }
+    lastTriggerAt = now;
+
+    // O dispatch não devolve o run criado — localiza pelo mais recente
+    // workflow_dispatch da lista, com pequenas tentativas (leva ~1-2s para
+    // aparecer na listagem depois do 204 do dispatch).
+    let matchedRun = null;
+    for (let attempt = 0; attempt < 5 && !matchedRun; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const runsRes = await fetch(
+        `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${WORKFLOW_FILE}/runs?event=workflow_dispatch&per_page=5`,
+        { headers: githubHeaders() },
+      );
+      if (!runsRes.ok) continue;
+      const runsData = await runsRes.json();
+      matchedRun = (runsData.workflow_runs || []).find((r) => new Date(r.created_at).getTime() >= now - 5000);
+    }
+
+    if (!matchedRun) {
+      return res.json({ ok: true, runId: null, warning: 'Workflow disparado, mas não foi possível localizar o run automaticamente — confira em github.com.' });
+    }
+    res.json({ ok: true, runId: matchedRun.id, htmlUrl: matchedRun.html_url });
+  } catch (e) {
+    console.error('backtest trigger failed:', e.message);
+    res.status(500).json({ error: 'Erro interno ao disparar o backtest.' });
+  }
+});
+
+app.get('/api/backtest/status/:runId', requireAuth, requireGithubToken, async (req, res) => {
+  const { runId } = req.params;
+  if (!/^\d+$/.test(runId)) {
+    return res.status(400).json({ error: 'runId inválido.' });
+  }
+  try {
+    const runRes = await fetch(`${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/runs/${runId}`, { headers: githubHeaders() });
+    if (!runRes.ok) {
+      return res.status(runRes.status === 404 ? 404 : 502).json({ error: 'Falha ao consultar o status do run.' });
+    }
+    const run = await runRes.json();
+    res.json({ status: run.status, conclusion: run.conclusion, htmlUrl: run.html_url });
+  } catch (e) {
+    console.error('backtest status failed:', e.message);
+    res.status(500).json({ error: 'Erro interno ao consultar status.' });
+  }
+});
+
+app.get('/api/backtest/artifact/:runId', requireAuth, requireGithubToken, async (req, res) => {
+  const { runId } = req.params;
+  if (!/^\d+$/.test(runId)) {
+    return res.status(400).json({ error: 'runId inválido.' });
+  }
+  try {
+    const listRes = await fetch(`${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/runs/${runId}/artifacts`, { headers: githubHeaders() });
+    if (!listRes.ok) {
+      return res.status(502).json({ error: 'Falha ao listar artifacts do run.' });
+    }
+    const { artifacts } = await listRes.json();
+    const artifact = (artifacts || []).find((a) => a.name === 'backtest-report');
+    if (!artifact) {
+      return res.status(404).json({ error: 'Artifact "backtest-report" não encontrado neste run — ele só existe depois que o job termina.' });
+    }
+
+    // GitHub responde com um 302 para uma URL assinada — o header
+    // Authorization NÃO deve ir no 2º request (a URL já carrega sua própria
+    // autenticação via query string; alguns storages rejeitam um
+    // Authorization extra).
+    const downloadRes = await fetch(
+      `${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/artifacts/${artifact.id}/zip`,
+      { headers: githubHeaders(), redirect: 'manual' },
+    );
+    const redirectUrl = downloadRes.headers.get('location');
+    if (downloadRes.status !== 302 || !redirectUrl) {
+      return res.status(502).json({ error: 'Falha ao obter link de download do artifact.' });
+    }
+    const zipRes = await fetch(redirectUrl);
+    if (!zipRes.ok) {
+      return res.status(502).json({ error: 'Falha ao baixar o artifact.' });
+    }
+    const zipBuffer = Buffer.from(await zipRes.arrayBuffer());
+
+    const zip = new AdmZip(zipBuffer);
+    const entry = zip.getEntry('backtest-report.json');
+    if (!entry) {
+      return res.status(502).json({ error: 'backtest-report.json não encontrado dentro do artifact.' });
+    }
+    const reportJson = JSON.parse(entry.getData().toString('utf-8'));
+    res.json(reportJson);
+  } catch (e) {
+    console.error('backtest artifact failed:', e.message);
+    res.status(500).json({ error: 'Erro interno ao buscar o relatório.' });
   }
 });
 
