@@ -6053,3 +6053,17 @@ fictício nas coleções reais.
 
 `npm run lint`, `npm test` (831, sem novos) e `npm run build` limpos. Sem
 verificação visual no navegador (mesma limitação de ambiente).
+
+### Correção pós-review (Codex, PR #143)
+
+O texto original do achado 1 estava impreciso: dizia que "o painel vem da
+Binance Futures", mas o que `AssetCard.jsx` renderiza é o `AssetState`
+**persistido** no Firestore por `persistScanResults` — não uma leitura ao
+vivo no navegador. Como o cron roda a cada ~5min via Spot e o full-scan do
+próprio navegador (`useAutoScan.js`) só roda a cada 60min via Futures, o
+valor exibido é quase sempre Spot, só ocasionalmente Futures (se a aba
+ficar aberta por mais de 1h). Tooltip reescrito pra descrever o mecanismo
+real. Também trocado o `title` (só hover, invisível a teclado/touch) pelo
+componente `Tooltip` do shadcn/Radix já existente no projeto (nunca usado
+até então) — abre no foco também, não só no hover; `TooltipProvider`
+adicionado em `App.jsx`.
