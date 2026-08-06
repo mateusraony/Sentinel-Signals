@@ -6,7 +6,7 @@ import moment from 'moment';
 
 const LEVEL_CONFIG = {
   info:  { icon: Info,          color: 'rgba(0,229,255,0.8)',   bg: 'rgba(0,229,255,0.08)',   border: 'rgba(0,229,255,0.2)',   label: 'INFO' },
-  warn:  { icon: AlertTriangle, color: 'rgba(255,180,0,0.9)',   bg: 'rgba(255,180,0,0.08)',   border: 'rgba(255,180,0,0.25)',  label: 'WARN' },
+  warn:  { icon: AlertTriangle, color: '#ff9f43',               bg: 'rgba(255,159,67,0.08)',  border: 'rgba(255,159,67,0.25)', label: 'WARN' },
   error: { icon: AlertCircle,   color: '#ff1478',               bg: 'rgba(255,20,120,0.08)',  border: 'rgba(255,20,120,0.25)', label: 'ERR'  },
   debug: { icon: Bug,           color: 'rgba(255,255,255,0.3)', bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.07)',label: 'DBG'  },
 };

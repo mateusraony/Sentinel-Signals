@@ -5,7 +5,6 @@ import { Bell, Coins, TrendingUp, TrendingDown, Target, Clock, Search, ArrowUpDo
 import AssetCard from '@/components/dashboard/AssetCard';
 import RecentAlertsList from '@/components/dashboard/RecentAlertsList';
 import StatsCard from '@/components/dashboard/StatsCard';
-import PerformanceBar from '@/components/dashboard/PerformanceBar';
 import AssetDrawer from '@/components/dashboard/AssetDrawer';
 import SignalToast from '@/components/dashboard/SignalToast';
 import SignalAlertBanner from '@/components/dashboard/SignalAlertBanner';
@@ -217,9 +216,6 @@ export default function Dashboard() {
         {/* Real performance metrics */}
         <PerformanceMetricsBar tradeOps={tradeOps} />
 
-        {/* Performance bar */}
-        <PerformanceBar assets={assets} tradeOps={tradeOps} recentSignals={recentSignals} />
-
         {/* Consolidated performance chart — appears only when there's history */}
         <PerformanceOverview tradeOps={tradeOps} />
 
@@ -229,7 +225,7 @@ export default function Dashboard() {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
           <StatsCard icon={Coins} label="Monitorados" value={assets.length} color="#00e5ff" glowColor="rgba(0,229,255,0.1)" />
-          <StatsCard icon={Bell} label="Alta Prioridade" value={highPriorityCount} color="#ff1478" glowColor="rgba(255,20,120,0.1)" />
+          <StatsCard icon={Bell} label="Alta Prioridade" value={highPriorityCount} color="#ff9f43" glowColor="rgba(255,159,67,0.1)" />
           <StatsCard icon={Target} label="Operações Ativas" value={activeOpsCount} color="#00ff80" glowColor="rgba(0,255,128,0.1)" />
           <StatsCard icon={Clock} label="Aguardando" value={waitingCount} color="#ffd166" glowColor="rgba(255,209,102,0.1)" />
           <StatsCard icon={TrendingUp} label="Sinais BUY" value={buySignals} color="#00ff80" glowColor="rgba(0,255,128,0.1)" />
@@ -263,7 +259,7 @@ export default function Dashboard() {
                 { id: 'all', label: 'Todos', color: '#00e5ff' },
                 { id: 'BUY', label: '↑ BUY', color: '#00ff80' },
                 { id: 'SELL', label: '↓ SELL', color: '#ff1478' },
-                { id: 'high', label: '★ Alta Prio', color: '#ffd166' },
+                { id: 'high', label: '★ Alta Prio', color: '#ff9f43' },
               ].map(f => (
                 <button key={f.id} onClick={() => setFilterSignal(f.id)}
                   className="text-[9px] font-mono px-2 py-1 rounded-md transition-all"

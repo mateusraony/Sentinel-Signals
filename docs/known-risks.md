@@ -5926,3 +5926,87 @@ existentes, só reorganização visual.
 `npm run lint`, `npm test` (831 testes, +3 novos) e `npm run build` limpos.
 Sem verificação visual no navegador (mesma limitação de ambiente dos itens
 61/62).
+
+---
+
+## 64. Revisão de harmonia visual do painel (2026-08-06)
+
+### Contexto
+
+Usuário pediu uma revisão do painel focada em harmonia visual e utilidade da
+informação, usando agentes especialistas, com explicação em linguagem
+simples. Dois agentes `Explore` varreram todas as páginas
+(`src/pages/*.jsx`) e os componentes de `src/components/dashboard/` +
+`src/components/assets/`; achados relevantes foram verificados manualmente
+lendo os arquivos apontados antes de qualquer mudança. Escopo 100% visual —
+nenhuma lógica de trading/scanner/Firestore foi tocada
+(`.claude/rules/frontend-ui.md`).
+
+### Achado 1 (bug real) — badge "Breakeven" com cor de perda
+
+`TradeHistory.jsx`'s `HistoryCard` trocava o LABEL do badge de status pra
+"🔄 Breakeven" quando `classifyOutcome(op) === 'BE'`, mas mantinha a COR
+vinda de `STATUS_MAP[op.status]` (`STOP_HIT` → rosa `#ff1478`, cor de
+perda) — o número de P&L no mesmo card já usava a cor certa (amarelo
+`#ffd166`, neutro), criando um badge rosa (parece perda) ao lado de um P&L
+amarelo (neutro) pro mesmo trade. `Trades.jsx:226` já resolvia o caso
+equivalente trocando cor e label juntos. **Corrigido**: `badgeColor`
+condicionado a `isBE` no mesmo padrão.
+
+### Achado 2 — "Alta Prioridade" com 3 cores diferentes
+
+Mesmo conceito com 3 cores diferentes: `Dashboard.jsx` StatsCard usava rosa
+`#ff1478`, o chip de filtro do Dashboard usava amarelo `#ffd166`, e
+`Alerts.jsx` (página dedicada ao assunto, 3 ocorrências internas
+consistentes) usava laranja `#ff9f43`. **Corrigido**: as duas ocorrências do
+Dashboard alinhadas para `#ff9f43`, usando `Alerts.jsx` como referência.
+
+### Achado 3 — card duplicado no Dashboard (`PerformanceBar`)
+
+`PerformanceBar.jsx`, `PerformanceMetricsBar.jsx` e a grade de `StatsCard`
+do próprio `Dashboard.jsx` mostravam, todos, os mesmos números empilhados na
+mesma tela: Win Rate (idêntico ao de `PerformanceMetricsBar`, mesmo
+`summarizeOps(tradeOps)`), "Ops Ativas" (duplicava a StatsCard "Operações
+Ativas") e "Monitorados" (duplicava a StatsCard "Monitorados"). Só "Sinais
+24h" era informação exclusiva, e de valor secundário. **Corrigido**:
+`PerformanceBar` removido do Dashboard (import + render); o arquivo do
+componente foi deixado no repo, sem uso, por segurança de rollback. Efeito
+colateral positivo: o ícone `Target` tinha dois significados na mesma tela
+("Ops Ativas" no `PerformanceBar` vs "Win Rate" nos demais) — resolvido de
+graça. `PerformanceOverview` (gráfico de equity curve) e
+`PerformanceMetricsBar` (drawdown + risk/reward) continuam os dois — cada um
+traz algo exclusivo que o outro não tem, então a sobreposição residual de
+win rate/P&L entre eles ficou registrada como observação, não como ação.
+
+### Achado 4 — "Score" sem explicação nos pop-ups de sinal novo
+
+`AssetCard`/`AssetDrawer`/`TradeCard` já explicam via tooltip que o Score
+"não é uma probabilidade de acerto do trade" — só os dois avisos mais
+chamativos (`SignalToast.jsx`, toast flutuante; `SignalAlertBanner.jsx`,
+banner do topo do Dashboard) mostravam "Score X/100" cru, exatamente onde um
+usuário tem mais chance de ler errado (achar que é % de chance de ganhar).
+**Corrigido**: mesmo texto de disclaimer adicionado como `title` (tooltip
+nativo) nos dois.
+
+### Achado 5 (polimento menor) — laranja "quase certo" em `Logs.jsx`
+
+Nível "WARN" usava `rgba(255,180,0,0.9)`, tom de laranja ligeiramente
+diferente do `#ff9f43` usado como "aviso/atenção" em todo o resto do app.
+**Corrigido**: alinhado ao hex padrão, mesma opacidade de `bg`/`border`.
+
+### Fora de escopo (registrado, não implementado)
+
+Duplicação de código do componente `SummaryCard` entre `Backtest.jsx` e
+`MonthlyReport.jsx` (mesmo visual, dois lugares no código — manutenção, não
+bug visível); `AlignmentBanner.jsx`/`DirectionIndicator.jsx` usam paleta
+Tailwind (`emerald`/`rose`) fora do padrão hex do resto do app, mas nenhum
+dos dois é importado em lugar nenhum hoje (código morto, sem efeito
+visível); sobreposição residual `PerformanceOverview` × `PerformanceMetricsBar`
+(ver achado 3).
+
+### Verificação
+
+`npm run lint`, `npm test` (831 testes, sem novos — mudança é só cor/prop,
+nenhum comportamento novo a testar) e `npm run build` limpos. Sem
+verificação visual no navegador (mesma limitação de ambiente dos itens
+61-63).
