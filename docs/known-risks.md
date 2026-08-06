@@ -6010,3 +6010,46 @@ visível); sobreposição residual `PerformanceOverview` × `PerformanceMetricsB
 nenhum comportamento novo a testar) e `npm run build` limpos. Sem
 verificação visual no navegador (mesma limitação de ambiente dos itens
 61-63).
+
+---
+
+## 65. Auditoria "existe dado fake/mock escondido?" (2026-08-06)
+
+### Contexto
+
+Usuário perguntou diretamente se havia dado falso/mockado em algum lugar do
+app que pudesse confundir. Auditoria por grep em todo `src/`, `server/` e
+`scripts/` por `mock`/`fake`/`dummy`/`hardcoded`/`Math.random()` +
+verificação manual de cada ocorrência em código de produção (não-teste).
+
+### Achado — nenhum dado falso disfarçado de real
+
+Todas as ocorrências são benignas: geração de ID de lock (`Math.random()` em
+`tryAcquireScanLock`), relógio simulado usado só dentro dos testes
+(`installSimClock`), e o backend em memória do `backtest.yml` (GitHub
+Actions) — que é **deliberadamente** isolado (nunca escreve no Firestore
+real nem manda Telegram real) e já aparece rotulado como simulação na aba
+"Simulação (GitHub)" do Backtest. Nenhum script de seed/demo popula dado
+fictício nas coleções reais.
+
+### Achado — 2 lacunas de transparência (não são dado falso, mas confundem)
+
+1. **Divergência de fonte de preço não avisada na tela.** `marketDataProvider.js`
+   (painel, browser) usa Binance **Futures** (`fapi.binance.com`);
+   `adminMarketDataProvider.js` (cron, que decide as operações de verdade)
+   usa Binance **Spot** (`data-api.binance.vision`) — limitação de rede já
+   aceita formalmente (item 4 do `CLAUDE.md`), mas até agora só documentada
+   internamente. `market_source` é gravado em `SignalEvent`/`TradeOperation`
+   mas nunca lido/exibido em nenhum componente. **Corrigido**: tooltip no
+   badge "Dados em tempo real" do `Dashboard.jsx` explicando a divergência.
+2. **"Ajuste Fino (What-If)" não avisava ser uma aproximação simplificada.**
+   O texto na tela só dizia "sem afetar o scanner" (deixa claro que é
+   seguro), mas não que é uma simulação single-asset/single-timeframe sem a
+   cascata completa (multi-timeframe + SMC) do motor real — só o comentário
+   no código (`quickBacktest.js`) explicava isso, não a UI.
+   **Corrigido**: nota abaixo do cabeçalho da seção em `Backtest.jsx`.
+
+### Verificação
+
+`npm run lint`, `npm test` (831, sem novos) e `npm run build` limpos. Sem
+verificação visual no navegador (mesma limitação de ambiente).

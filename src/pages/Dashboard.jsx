@@ -150,7 +150,8 @@ export default function Dashboard() {
             <h1 className="text-3xl font-bold text-foreground tracking-tight">Dashboard</h1>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
+            <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground cursor-help"
+              title="Preços e indicadores aqui no painel vêm da Binance Futures. O scan automático (que decide as operações de verdade) usa a Binance Spot — os dois preços costumam ser muito próximos, mas podem divergir um pouco.">
               <div className="live-dot" style={{ width: 6, height: 6 }} />
               <span>Dados em tempo real</span>
             </div>
