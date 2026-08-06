@@ -66,7 +66,8 @@ export default function SignalAlertBanner({ signals = [] }) {
                 {sig.timeframe?.toUpperCase()}
               </span>
               {score > 0 && (
-                <span className="text-[9px] font-mono" style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                <span className="text-[9px] font-mono" style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}
+                  title="Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.">
                   🔥 Score {score}/100
                 </span>
               )}

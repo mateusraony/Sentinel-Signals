@@ -45,6 +45,10 @@ function HistoryCard({ op }) {
   const outcome = classifyOutcome(op);
   const isWin = outcome === 'WIN';
   const isBE = outcome === 'BE';
+  // BE reclassifica cor E label juntos — antes só o label mudava, deixando o
+  // badge rosa (cor de STOP_HIT) ao lado de um P&L amarelo (neutro) no mesmo
+  // card. Mesmo padrão que Trades.jsx:226 já usa pro caso equivalente.
+  const badgeColor = isBE ? '#ffd166' : s.color;
 
   const exitPrice = getExitPrice(op);
   const closedAt = getClosedAt(op);
@@ -78,7 +82,7 @@ function HistoryCard({ op }) {
               {isBuy ? '▲' : '▼'} {op.side}
             </span>
             <span className="text-[9px] font-mono font-semibold px-2 py-0.5 rounded"
-              style={{ background: `${s.color}15`, color: s.color, border: `1px solid ${s.color}30` }}>
+              style={{ background: `${badgeColor}15`, color: badgeColor, border: `1px solid ${badgeColor}30` }}>
               {isBE ? '🔄 Breakeven' : s.label}
             </span>
           </div>

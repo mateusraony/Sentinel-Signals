@@ -89,7 +89,8 @@ export default function SignalToast({ signals = [] }) {
                       {sig.signal_type}
                     </span>
                   </div>
-                  <div className="text-[9px] font-mono mt-0.5" style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                  <div className="text-[9px] font-mono mt-0.5" style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}
+                    title="Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.">
                     Score {score}/100 · Sinal Confirmado
                   </div>
                 </div>
