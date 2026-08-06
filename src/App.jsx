@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Toaster } from "@/components/ui/toaster"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { QueryClientProvider } from '@tanstack/react-query'
 import { initLogger } from '@/lib/logger'
 import { queryClientInstance } from '@/lib/query-client'
@@ -61,10 +62,12 @@ function App() {
     <ErrorBoundary fullPage title="O aplicativo encontrou um erro inesperado" message="Seus dados estão seguros no banco de dados — nada foi perdido. Isso foi só um problema ao mostrar a tela.">
       <AuthProvider>
         <QueryClientProvider client={queryClientInstance}>
-          <Router>
-            <AuthenticatedApp />
-          </Router>
-          <Toaster />
+          <TooltipProvider>
+            <Router>
+              <AuthenticatedApp />
+            </Router>
+            <Toaster />
+          </TooltipProvider>
         </QueryClientProvider>
       </AuthProvider>
     </ErrorBoundary>

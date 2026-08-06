@@ -15,6 +15,7 @@ import PerformanceMetricsBar from '@/components/dashboard/PerformanceMetricsBar'
 import WeeklySummary from '@/components/dashboard/WeeklySummary';
 import CorrelationWidget from '@/components/dashboard/CorrelationWidget';
 import { useBrowserNotifications } from '@/hooks/useBrowserNotifications';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
@@ -150,10 +151,19 @@ export default function Dashboard() {
             <h1 className="text-3xl font-bold text-foreground tracking-tight">Dashboard</h1>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
-              <div className="live-dot" style={{ width: 6, height: 6 }} />
-              <span>Dados em tempo real</span>
-            </div>
+            <Tooltip>
+              <TooltipTrigger type="button" className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground cursor-help">
+                <div className="live-dot" style={{ width: 6, height: 6 }} />
+                <span>Dados em tempo real</span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                Preços e indicadores vêm da última leitura salva no banco — normalmente do
+                scan automático (a cada ~5min, via Binance Spot). Se esta aba ficar aberta
+                por mais de 1h, o próprio navegador também roda um scan (Binance Futures)
+                que pode atualizar por último. As duas fontes costumam ficar bem próximas,
+                mas podem divergir um pouco.
+              </TooltipContent>
+            </Tooltip>
             <button onClick={() => {
               if (!compareMode && assets.length >= 2) {
                 setCompareAId(assets[0].id);

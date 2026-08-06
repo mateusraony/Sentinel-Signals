@@ -427,11 +427,15 @@ function QuickBacktestTab() {
         </div>
 
         <div className="pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <div className="flex items-center gap-1.5 mb-3">
+          <div className="flex items-center gap-1.5 mb-1">
             <Sparkles className="w-3.5 h-3.5" style={{ color: '#ffd166' }} />
             <span className="text-[10px] font-mono font-bold" style={{ color: '#ffd166' }}>AJUSTE FINO (WHAT-IF)</span>
             <span className="text-[9px] font-mono text-muted-foreground">— altere para testar cenários sem afetar o scanner</span>
           </div>
+          <p className="text-[9px] font-mono text-muted-foreground/70 mb-3">
+            Simulação simplificada de 1 ativo/1 timeframe por vez — não reproduz a cascata completa
+            (múltiplos prazos + SMC) que o scanner real usa. Bom pra explorar rápido, não é o resultado exato do motor de verdade.
+          </p>
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {QBT_SLIDERS.map(s => (
               <div key={s.key} className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
