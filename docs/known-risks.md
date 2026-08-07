@@ -6111,3 +6111,76 @@ real. Também trocado o `title` (só hover, invisível a teclado/touch) pelo
 componente `Tooltip` do shadcn/Radix já existente no projeto (nunca usado
 até então) — abre no foco também, não só no hover; `TooltipProvider`
 adicionado em `App.jsx`.
+
+---
+
+## 66. Auditoria geral pedida pelo usuário: 1H ativo? dados reais? bugs? "posso confiar?" (2026-08-07)
+
+### Contexto
+
+Usuário pediu uma auditoria ampla e direta do motor: confirmar se operações
+em 1H estão ativas, procurar bugs/erros/lacunas, e confirmar se os dados são
+reais e o sistema é confiável. Rodei 3 agentes Explore em paralelo (motor/
+`scanner.js`, `docs/known-risks.md`/roadmap, dados reais vs. mock) e cruzei
+com leitura direta de `scanner.js`, `pineParser.js`, `AddAssetForm.jsx`,
+`scan-shadow.yml`.
+
+### Achado 1 — 1H está ativo como dado/contexto, mas travado como gatilho de entrada RF
+
+1H é sempre buscado/calculado por padrão (`timeframes_enabled` default
+`{'1h':true,'4h':true,'1d':true}`, `AddAssetForm.jsx:48`) e alimenta a
+confluência multi-timeframe de todo sinal. Mas como gatilho de ENTRADA: a
+cascata RF nativa só abre operação a partir de 4h (`scanner.js:1784`, sinal
+1h vira só alerta); o mecanismo dedicado `pineConfig.rf1hCondEnabled`
+**nunca existe** em `pineParser.js`/`adminPineConfig.js` (só em
+`backtestPineConfig.js`, travado por `rf1hCondTripwire.test.js`) — em
+produção real é sempre falsy. Único caminho real de operação 1H é a cascata
+SMC 1h→5m (`asset.smc_enabled`, opt-in, default `false` para ativos novos
+desde 2026-08-02). O modo sombra (item 56, ativo desde 2026-08-04) testa o
+`rf1hCondEnabled` ao vivo mas só em coleções isoladas — nunca abre operação
+real; leitura mais recente do próprio item 56 (2026-08-07) mostra zero
+operações fechadas em ambas as cascatas do modo sombra até agora. Nenhum
+achado novo — confirmação independente do que já estava registrado nos
+itens 56/60/61.
+
+### Achado 2 — nenhum dado fake/mockado encontrado (segunda confirmação independente do item 65)
+
+Grep completo por `mock`/`fake`/`dummy`/`hardcoded`/`Math.random`/`TODO`/
+`FIXME`/`placeholder` em `src/lib/` e `scripts/` (produção): todas as
+ocorrências são benignas (nonce de lock, comentários de changelog de bugs
+já corrigidos, ou o motor de backtest — ferramenta separada e rotulada).
+`marketDataProvider.js`/`adminMarketDataProvider.js` batem em endpoints
+reais da Binance (Futures/Spot), sem fallback sintético; `adminEntities.js`
+grava em Firestore real via `firebase-admin`; `run-scan.mjs` nunca esconde
+falha (exitCode 1 + ping `/fail` do Healthchecks.io). Mesmo veredito do
+item 65, sem achado novo.
+
+### Achado 3 — nenhum bug novo no motor
+
+Todos os P0 de concorrência (`opTransition.js`/CAS transacional) seguem
+`[CORRIGIDO]` com teste de regressão, confirmado por leitura do código
+atual. Nenhuma regressão encontrada em `scanner.js`, `entities.js`/
+`adminEntities.js`, `run-scan.mjs`. Itens residuais (locks separados,
+ambiguidade stop/TP no mesmo candle, precedência stop>TP entre loops) são
+aceitos por desenho, já documentados em `.claude/rules/trading-engine.md`,
+não bugs.
+
+### Limitações desta rodada
+
+Sem acesso ao Firestore de produção nesta sessão — não confirmei ao vivo
+quantos ativos têm `smc_enabled: true` hoje nem se há alguma
+`TradeOperation` 1H aberta no momento (conferir no painel). Sem
+`node_modules` instalado nesta sessão — não rodei `npm run lint && npm
+test && npm run build` para confirmar que a suíte (831 testes na última
+rodada, item 65) segue verde; recomendo rodar numa sessão normal.
+
+### Verificação
+
+Leitura completa/dirigida de `scanner.js`, `marketDataProvider.js`,
+`adminMarketDataProvider.js`, `adminEntities.js`, `run-scan.mjs`,
+`build-scan.mjs`, `pineParser.js`, `AddAssetForm.jsx`, `scan.yml`,
+`scan-shadow.yml`, `docs/known-risks.md` (integral), `docs/roadmap.md`
+(integral), `.claude/rules/trading-engine.md`, `.claude/rules/pine-parity.md`.
+3 agentes Explore independentes + leitura direta própria, achados
+cruzados e consistentes entre si. Nenhuma mudança de código/comportamento
+nesta rodada — só documentação da análise.
