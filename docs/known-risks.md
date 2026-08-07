@@ -6205,7 +6205,7 @@ nesta rodada — só documentação da análise.
 
 ---
 
-## 67. Sinal 4h real do FETUSDT no TradingView não virava operação no Sentinel — causa raiz: confirmação de 15m que o Pine real não tem (2026-08-07)
+## 67. Sinal 4h real do FETUSDT no TradingView não virava operação no Sentinel — hipótese investigada: confirmação de 15m que o Pine real não tem (2026-08-07)
 
 ### Contexto
 
@@ -6219,21 +6219,30 @@ PineScript.jsx`) e autorizou tentativa de leitura direta do Firestore de
 produção — bloqueada pelo classificador de segurança do ambiente desta
 sessão, mesmo com autorização explícita; não foi contornada.
 
-### Achado — causa raiz confirmada por leitura de código
+### Achado — hipótese forte por leitura de código, NÃO confirmada por dado (ver correção abaixo)
 
 O Pine real do usuário entra IMEDIATAMENTE no fechamento do candle de 4h que
 gera o sinal — `finalBuy`/`finalSell` dependem só de `candleConfirmed` (o
 próprio candle do sinal ter fechado), `freshBuy`/`freshSell`,
 `buyFollowThrough`, `score >= minScore`, filtros de regime e do filtro MTF
 (auto-referente quando aplicado direto no gráfico de 4h). Não existe
-timeframe de confirmação separado em lugar nenhum do Pine real.
+timeframe de confirmação separado em lugar nenhum do Pine real. Esse fato
+sobre o Pine é 100% confirmado (leitura direta do script colado pelo
+usuário).
 
 O Sentinel, por desenho deliberado (não bug, já registrado no roadmap —
 "entrada causal 15m 'Fresh RF Flip'"), exige uma confirmação ADICIONAL no
 candle de 15m antes de abrir a operação (`check15mConfirmation`,
 `src/lib/scanner.js`). Na prática isso faz o Sentinel entrar depois do
 TradingView, ou às vezes nunca entrar (se o 15m não realinhar dentro da
-janela de retry de 4h) — bate exatamente com o sintoma relatado.
+janela de retry de 4h) — bate com o sintoma relatado. **Essa era a leitura
+inicial de causa raiz, mas o A/B real (subseção mais abaixo) NÃO confirma
+que essa é a explicação do caso do FETUSDT especificamente** — a contagem
+de operações do FETUSDT ficou idêntica com o flag ligado e desligado.
+Continua sendo uma hipótese plausível para o comportamento GERAL do motor
+(atraso sistemático vs. TradingView), só não está provada como a causa do
+episódio relatado no Contexto. Ver a subseção do A/B para o detalhe e o que
+ainda falta investigar.
 
 Parâmetros comparados byte-a-byte com o Pine colado e confirmados OK (não
 eram a causa): `rf_period`/`rf_multiplier` (20/3,5), pesos do score
@@ -6334,29 +6343,36 @@ rejeitava de fato (15m tende a concordar com o 4h logo após o sinal), ela
 principalmente ATRASAVA a entrada, não a impedia.
 
 **Expectância**: 0,053R (desligado) → 0,118R (ligado), +0,065R — os dois
-relatórios continuam **INCONCLUSIVOS** (IC 95% cruza zero nos dois). A
-melhora fica ABAIXO do limiar de ~0,10R que o próprio projeto já usa para
-"não é sorte" num teste de flag isolado (`docs/roadmap.md`, Bloco 1,
-aritmética do erro-padrão com `sd(R)≈1,1`).
+relatórios continuam **INCONCLUSIVOS** individualmente (IC 95% de cada
+expectância cruza zero). **Correção (Codex review, PR #148)**: a versão
+original desta seção comparava esse +0,065R contra o limiar de ~0,10R do
+roadmap.md — errado, esse limiar é a correção pra testar 4 ablações
+(múltiplas comparações), não pra um único A/B pré-registrado como este. E
+"cada run é inconclusivo isoladamente" não é o mesmo teste que "a
+DIFERENÇA entre os dois runs é real" — nenhum teste formal da diferença
+(IC pareado/bootstrap) foi feito aqui. Honesto: não dá pra afirmar que
++0,065R é ruído nem que é sinal real — só temos os dois números brutos,
+sem teste estatístico da diferença entre eles.
 
-**Achado mais relevante — não confirma a hipótese original**: FETUSDT (o
-ativo que motivou toda a investigação do item 67) teve exatamente 18
-operações nos DOIS runs, zero diferença. A confirmação de 15m não era o
-gargalo do FETUSDT especificamente nesta janela (que cobre as duas datas
-relatadas pelo usuário) — sugere que a causa do que ele viu ao vivo no
-TradingView é outra (divergência Spot(cron)/Futures(painel), item 4, ou
-config do ativo em produção — `rf_period`/`rf_multiplier`/`smc_confirm_4h15m`
-específicos do FETUSDT, nunca confirmados ao vivo por falta de acesso ao
-Firestore de produção nesta sessão), não coberta por este flag.
+**Achado mais relevante — complica a hipótese original, mas ainda não
+está totalmente investigado**: FETUSDT (o ativo que motivou toda a
+investigação do item 67) teve exatamente 18 operações nos DOIS runs — MESMA
+CONTAGEM. **Correção (Codex review, PR #148)**: contagem igual não prova
+"zero diferença" — o flag pode trocar uma operação por outra (horário/
+candle de entrada diferente) mantendo o total igual, especialmente com
+gates de operação-ativa envolvidos. Ainda não comparei as operações
+individuais (identidade/horário) do FETUSDT entre os dois runs — pedi ao
+usuário os dados por-operação (`overall.curve` do artifact completo,
+inacessível a esta sessão por bloqueio de rede no armazenamento de blob do
+GitHub Actions) e a comparação real fica **pendente** dessa resposta.
 
 **Recomendação**: não ligar `skip15mConfirmationEnabled` em produção com
-este dado — nem pelo critério de expectância (não passa o limiar de
-evidência), nem pelo objetivo original de volume (ganho pequeno e não
-explica o caso do FETUSDT). Flag permanece implementado e testado
-(desligado por padrão), disponível para um A/B melhor no futuro se a
-amostra crescer ou se outra hipótese justificar. Próximo passo sugerido,
-não decidido: investigar por que FETUSDT ficou idêntico nos dois runs —
-provavelmente é isso que explica o caso original, não a confirmação de 15m.
+este dado — a expectância não tem teste de significância da diferença, e o
+volume subiu pouco. Flag permanece implementado e testado (desligado por
+padrão), disponível para um A/B melhor no futuro. Próximo passo, já em
+andamento: comparar as operações do FETUSDT individualmente entre os dois
+runs (não só a contagem) antes de aceitar ou descartar a hipótese da
+confirmação de 15m para o caso original.
 
 Verificação: leitura dos 2 relatórios completos colados pelo usuário
 (`backtest-report.json`/diagnóstico via `analyze-backtest.mjs`), nenhuma
