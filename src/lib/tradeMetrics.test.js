@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isClosedOp,
   getClosedAt,
+  getOpenedAt,
   getExitPrice,
   getTp1Price,
   getWeights,
@@ -504,5 +505,18 @@ describe('small helpers', () => {
     expect(getClosedAt(makeOp())).toBe('2026-07-16T12:00:00.000Z');
     expect(getClosedAt(makeOp({ closed_at: undefined, updated_date: 'u' }))).toBe('u');
     expect(getClosedAt(makeOp({ closed_at: undefined }))).toBe('2026-07-16T08:00:00.000Z');
+  });
+
+  // known-risks.md item 67 (Codex review, PR #147) — getOpenedAt must
+  // recognize entry_candle_time_4h the same way opExitRules.getEntryReferenceTime
+  // does, or funding-settlement counts / holding-duration / the backtest
+  // warm-up filter silently fall back to candle_close_time (the stale signal
+  // candle) for every skip15mConfirmationEnabled operation.
+  it('getOpenedAt prefers entry_candle_time_15m/5m, then entry_candle_time_4h, then candle_close_time, then created_date', () => {
+    expect(getOpenedAt(makeOp({ entry_candle_time_15m: 'a' }))).toBe('a');
+    expect(getOpenedAt(makeOp({ entry_candle_time_5m: 'b' }))).toBe('b');
+    expect(getOpenedAt(makeOp({ entry_candle_time_4h: 'c' }))).toBe('c');
+    expect(getOpenedAt(makeOp({ candle_close_time: 'd' }))).toBe('d');
+    expect(getOpenedAt(makeOp({ candle_close_time: undefined }))).toBe('2026-07-16T08:00:00.000Z'); // created_date
   });
 });

@@ -474,14 +474,21 @@ async function check15mConfirmation(symbol, direction, asset) {
  * smaller-timeframe confirmation anywhere in the real Pine. Off by default
  * (today's behaviour, unchanged; zero extra fetch either way).
  *
- * When bypassed, the synthetic confirmation is built from what the
- * SignalEvent already recorded at signal birth (entryPrice/entryCandleTime
- * params, sourced by the caller from sig.price_at_signal/sig.candle_time) —
- * never from a fresh re-read of results['4h'], which in the retry loop can
- * already point at a NEWER 4h candle than the one that produced the signal
- * (RF only emits a signal on a direction CHANGE, so a same-direction
- * continuation candle closing during the retry window doesn't raise a new
- * signal to warn about that drift).
+ * When bypassed, the synthetic confirmation is built entirely from the
+ * caller-supplied entryPrice/entryCandleTime — this function never fetches
+ * anything itself, so the caller decides the source:
+ * - 1st-pass call sites use sig.price_at_signal/sig.candle_time — entry
+ *   happens in the SAME pass the signal was born, so the signal candle IS
+ *   the current candle, no staleness.
+ * - Retry call sites use the CURRENT pass's tfData4h.lastClose/lastCandleTime
+ *   instead (Codex review, PR #147, P1) — a retry can fire hours after the
+ *   signal was born (that's the whole reason the retry loop exists: a gate
+ *   blocked entry earlier and conditions may since have changed), so reusing
+ *   the original signal price would open a position at a price that's no
+ *   longer executable, mixing an hours-old entry with the current pass's
+ *   ATR/stop/tp math. Each retry call site already re-validates tfData4h is
+ *   still same-direction as the signal (trend_reversed guard) before calling
+ *   this, so it's a safe, causal substitute.
  */
 function resolveEntryConfirmation15m({ symbol, direction, asset, pineConfig, entryPrice, entryCandleTime }) {
   if (pineConfig.skip15mConfirmationEnabled === true) {
@@ -2388,10 +2395,20 @@ export async function persistScanResults(scanResult) {
     if (retestGate) retestOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm, reason: retestGate.reason });
     if (retestGate && !retestGate.retested) { await recordRejection(sig, '4h_15m', 'retest_pending', entryFunnelOutcomes); continue; }
 
-    // Re-run 15m confirmation (or bypass it — pineConfig.skip15mConfirmationEnabled, item 67)
+    // Re-run 15m confirmation (or bypass it — pineConfig.skip15mConfirmationEnabled,
+    // item 67). Codex review (PR #147, P1): a retry can fire hours after the
+    // signal was born (blocked earlier by active_op_exists/regime/retest —
+    // this loop's own reason for existing). Bypassed, this must use the
+    // CURRENT pass's tfData4h.lastClose/lastCandleTime as entry — a stale
+    // sig.price_at_signal here would open the position at a price that may
+    // no longer be executable, mixing an hours-old entry with THIS pass's
+    // current ATR/stop/tp math. tfData4h is guaranteed same-direction as the
+    // signal at this point (the trend_reversed guard above already checked
+    // it), so it's a safe, causal substitute — same pattern already used by
+    // the promotion confirmation above (tf4h.lastClose/lastCandleTime).
     const confirmed = await resolveEntryConfirmation15m({
       symbol: sig.symbol, direction: sig.signal_type, asset, pineConfig,
-      entryPrice: sig.price_at_signal, entryCandleTime: sig.candle_time,
+      entryPrice: tfData4h.lastClose, entryCandleTime: tfData4h.lastCandleTime,
     });
     if (!confirmed.confirmed) { await recordRejection(sig, '4h_15m', 'confirmation_15m_not_aligned', entryFunnelOutcomes); continue; }
 
@@ -2484,9 +2501,14 @@ export async function persistScanResults(scanResult) {
       });
       if (!regime.ok) { await recordRejection(sig, RF_1H_COND_CASCADE, 'regime_rejected', entryFunnelOutcomes); continue; }
 
+      // Codex review (PR #147, P1) — same reasoning as the native retry loop
+      // above: a retry here can fire hours after the signal was born, so a
+      // bypassed confirmation must use the CURRENT tfData4h (causal,
+      // executable), never the stale sig.price_at_signal. tfData4h is
+      // confirmed same-direction by the trend_reversed guard just above.
       const confirmed = await resolveEntryConfirmation15m({
         symbol: sig.symbol, direction: sig.signal_type, asset, pineConfig,
-        entryPrice: sig.price_at_signal, entryCandleTime: sig.candle_time,
+        entryPrice: tfData4h.lastClose, entryCandleTime: tfData4h.lastCandleTime,
       });
       if (!confirmed.confirmed) { await recordRejection(sig, RF_1H_COND_CASCADE, 'confirmation_15m_not_aligned', entryFunnelOutcomes); continue; }
 

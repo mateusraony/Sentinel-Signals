@@ -2401,26 +2401,49 @@ describe('Bypass da confirmação 15m (opt-in, RF 4h_15m only, docs/known-risks.
     expect(fetchCandles).toHaveBeenCalledTimes(0); // nenhuma busca de 15m — bypass real, não "passa mais fácil"
   });
 
-  it('flag ligado no loop de retry: entry_price/entry_candle_time_4h vêm do SignalEvent original, não de results["4h"] mais novo', async () => {
+  // Codex review (PR #147, P1) — a retry can fire hours after the signal was
+  // born (blocked earlier by some other gate; that delay is the retry loop's
+  // whole reason for existing). Reusing the stale sig.price_at_signal would
+  // open a position at a price that's no longer executable. Correct: use the
+  // CURRENT pass's 4h candle (causal/executable), not the original signal.
+  it('flag ligado no loop de retry: entry_price/entry_candle_time_4h vêm do candle 4h ATUAL da passada, nunca do preço obsoleto do sinal original', async () => {
     const pineConfig = makePineConfig({ useADX: false, useChop: false, skip15mConfirmationEnabled: true });
     backend._seed('SignalEvent', {
       id: 'sig_skip15m', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
       source: 'range_filter', dedup_key: 'sig_skip15m',
       created_date: '2026-07-16T09:00:00.000Z', // dentro da janela de retry de 4h
-      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z', // obsoleto por design deste teste
       context: { score: 80 },
     });
-    // Um candle 4h de retry MAIS NOVO que o do sinal original (mesma direção
-    // — RF não emitiria um novo sinal só por continuar na mesma direção).
+    // Candle 4h ATUAL desta passada, mesma direção (uptrendCandles) — é o
+    // que deve virar entry_price/entry_candle_time_4h, não os 100/08:00 acima.
     const results = { '4h': makeTfData({ lastClose: 999, lastCandleTime: '2026-07-16T12:00:00.000Z' }) };
 
     await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
 
     const ops = await backend.entities.TradeOperation.filter({});
     expect(ops).toHaveLength(1);
-    expect(ops[0].entry_price).toBe(100); // do SignalEvent original, não 999
-    expect(ops[0].entry_candle_time_4h).toBe('2026-07-16T08:00:00.000Z'); // idem
+    expect(ops[0].entry_price).toBe(999); // do candle 4h ATUAL, não do sinal (100)
+    expect(ops[0].entry_candle_time_4h).toBe('2026-07-16T12:00:00.000Z'); // idem
     expect(fetchCandles).toHaveBeenCalledTimes(0);
+  });
+
+  it('flag ligado no loop de retry: rejeita (trend_reversed) em vez de abrir com preço obsoleto quando o 4h atual já reverteu', async () => {
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, skip15mConfirmationEnabled: true });
+    backend._seed('SignalEvent', {
+      id: 'sig_skip15m', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_skip15m',
+      created_date: '2026-07-16T09:00:00.000Z',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80 },
+    });
+    // 4h atual já reverteu (direction: -1) — o guard trend_reversed, que já
+    // existia antes desta mudança, deve continuar barrando a entrada.
+    const results = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
   });
 });
 

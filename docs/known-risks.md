@@ -6274,10 +6274,10 @@ direto:
 - 7 testes novos (`opExitRules.test.js`, `scannerStateMachine.test.js`):
   fallback de `getEntryReferenceTime`, `buildTradeOpData` grava os campos
   certos conforme `bypassed15m`, flag desligado é byte-idêntico ao
-  comportamento anterior, flag ligado abre sem nenhum fetch de 15m com
-  preço/horário vindos do sinal original (1ª passada E retry), e as duas
-  proteções P0 (guarda temporal, Time Stop) continuam corretas lendo
-  `entry_candle_time_4h`.
+  comportamento anterior, flag ligado abre sem nenhum fetch de 15m
+  (1ª passada E retry — ver correção abaixo sobre a fonte do preço no
+  retry), e as duas proteções P0 (guarda temporal, Time Stop) continuam
+  corretas lendo `entry_candle_time_4h`.
 
 ### Verificação
 
@@ -6289,3 +6289,32 @@ Documentado o A/B recomendado via `backtest.yml` em
 `confirmation_15m_not_aligned` com o flag ligado — e `report.byCascade
 ['4h_15m']`/`overall` antes de qualquer decisão de ligar em produção). A/B
 real ainda não rodado nesta sessão — próximo passo, sob decisão do usuário.
+
+### Correção pós-review (Codex, PR #147) — 2 achados reais
+
+1. **P2 — `getOpenedAt` (`src/lib/tradeMetrics.js`) não reconhecia
+   `entry_candle_time_4h`.** Só olhava `entry_candle_time_15m`/`_5m` antes de
+   cair para `candle_close_time` — contagem de settlement de funding,
+   duração em posição e o filtro de warm-up/janela de avaliação do backtest
+   (`backtestEngine.js`/`backtestAnalysis.js`, ambos reusam `getOpenedAt`)
+   ficavam usando a referência errada (o candle de sinal, potencialmente
+   obsoleto) para toda operação criada com `skip15mConfirmationEnabled`.
+   Corrigido: mesmo terceiro fallback já adicionado em
+   `opExitRules.getEntryReferenceTime`. Teste novo em `tradeMetrics.test.js`.
+2. **P1 — o loop de retry podia reabrir um sinal de até 4h atrás usando o
+   preço OBSOLETO do sinal original.** Os 2 pontos de retry (cascata nativa
+   `4h_15m` e a experimental `rf1h_cond4h_15m`) usavam
+   `sig.price_at_signal`/`sig.candle_time` na confirmação sintética — correto
+   na 1ª passada (mesmo candle do sinal, sem obsolescência), mas errado no
+   retry: um sinal bloqueado antes por outro gate (`active_op_exists`,
+   regime, reteste) e só liberado horas depois abriria a operação num preço
+   que já não é executável, misturando uma entrada antiga com o ATR/stop/tp
+   calculados na passada ATUAL. Corrigido: os dois pontos de retry agora usam
+   `tfData4h.lastClose`/`tfData4h.lastCandleTime` (o candle 4h da passada
+   ATUAL, já revalidado como mesma direção pelo guard `trend_reversed`
+   pré-existente) — mesmo padrão que o ponto de confirmação de promoção
+   SMC→4h já usava corretamente desde o início. 2 testes reescritos/novos em
+   `scannerStateMachine.test.js` provando o preço causal no retry e a
+   rejeição por `trend_reversed` continuando a barrar entrada com preço
+   obsoleto quando o 4h já reverteu. `npm run lint && npm test && npm run
+   build` (+ os 3 alvos esbuild) limpos de novo após a correção (840 testes).
