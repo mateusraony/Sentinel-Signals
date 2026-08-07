@@ -357,7 +357,14 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
     exit_mode: 'HYBRID_RF_ATR',
     candle_open_time: tf4hData.lastCandleOpenTime,
     candle_close_time: tf4hData.lastCandleTime,
-    entry_candle_time_15m: confirmation15m?.entryCandleTime,
+    // skip15mConfirmationEnabled (known-risks.md item 67): the confirmation
+    // is synthetic (bypassed15m), not a real 15m confirming candle — record
+    // it under its own field so getEntryReferenceTime's callers (P0-g guard,
+    // Time Stop) and any future reader can tell "confirmed by a dedicated
+    // 15m candle" apart from "confirmed by skipping that step entirely".
+    entry_candle_time_15m: confirmation15m?.bypassed15m ? undefined : confirmation15m?.entryCandleTime,
+    entry_candle_time_4h: confirmation15m?.bypassed15m ? confirmation15m?.entryCandleTime : undefined,
+    skip_15m_confirmation: confirmation15m?.bypassed15m === true,
     origin_4h_price: sig.price_at_signal,
     tier: tf4hData.tier?.tier,
     adx_at_entry: tf4hData.adx?.adx,
@@ -457,6 +464,30 @@ async function check15mConfirmation(symbol, direction, asset) {
     console.warn(`[15m confirm] ${symbol} fetch failed:`, err.message);
     return { confirmed: false, entryPrice: null, entryCandleTime: null };
   }
+}
+
+/**
+ * pineConfig.skip15mConfirmationEnabled (docs/known-risks.md item 67) —
+ * bypasses check15mConfirmation entirely, replicating the user's real Pine
+ * strategy: strategy.entry runs inside `if finalBuy`, which is only true
+ * once candleConfirmed (the SIGNAL candle itself closed) — there is no
+ * smaller-timeframe confirmation anywhere in the real Pine. Off by default
+ * (today's behaviour, unchanged; zero extra fetch either way).
+ *
+ * When bypassed, the synthetic confirmation is built from what the
+ * SignalEvent already recorded at signal birth (entryPrice/entryCandleTime
+ * params, sourced by the caller from sig.price_at_signal/sig.candle_time) —
+ * never from a fresh re-read of results['4h'], which in the retry loop can
+ * already point at a NEWER 4h candle than the one that produced the signal
+ * (RF only emits a signal on a direction CHANGE, so a same-direction
+ * continuation candle closing during the retry window doesn't raise a new
+ * signal to warn about that drift).
+ */
+function resolveEntryConfirmation15m({ symbol, direction, asset, pineConfig, entryPrice, entryCandleTime }) {
+  if (pineConfig.skip15mConfirmationEnabled === true) {
+    return Promise.resolve({ confirmed: true, entryPrice, entryCandleTime, bypassed15m: true });
+  }
+  return check15mConfirmation(symbol, direction, asset);
 }
 
 /**
@@ -1753,7 +1784,10 @@ export async function persistScanResults(scanResult) {
             } else if (hasActiveOp) {
               entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: RF_1H_COND_CASCADE, reason: 'active_op_exists' });
             } else {
-              const confirmed15m = await check15mConfirmation(asset.symbol, signal.signal_type, asset);
+              const confirmed15m = await resolveEntryConfirmation15m({
+                symbol: asset.symbol, direction: signal.signal_type, asset, pineConfig,
+                entryPrice: signal.price_at_signal, entryCandleTime: signal.candle_time,
+              });
               if (!confirmed15m.confirmed) {
                 entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: RF_1H_COND_CASCADE, reason: 'confirmation_15m_not_aligned' });
               } else {
@@ -1894,8 +1928,12 @@ export async function persistScanResults(scanResult) {
                   details: { reason: 'awaiting_retest', retest_reason: retestGate.reason, anchor_level: retestGate.anchorLevel },
                 });
               } else {
-              // 15m confirmation required — no entry without it
-              const confirmed15m = await check15mConfirmation(asset.symbol, signal.signal_type, asset);
+              // 15m confirmation required — no entry without it (unless
+              // pineConfig.skip15mConfirmationEnabled, item 67, bypasses it)
+              const confirmed15m = await resolveEntryConfirmation15m({
+                symbol: asset.symbol, direction: signal.signal_type, asset, pineConfig,
+                entryPrice: signal.price_at_signal, entryCandleTime: signal.candle_time,
+              });
 
               if (confirmed15m.confirmed) {
                 const opData = buildTradeOpData(signal, tf4hData, pineConfig, confirmed15m);
@@ -2179,7 +2217,16 @@ export async function persistScanResults(scanResult) {
       const regimeStillOk = tf4hStillAligned && evaluateRegime(tf4h, pineConfig).ok;
 
       if (tf4hStillAligned && regimeStillOk) {
-        const confirmed15m = await check15mConfirmation(activeOp.symbol, activeOp.side, asset);
+        // entryPrice/entryCandleTime here are only ever used for the
+        // promotion_confirm_candle_time audit field below — never for
+        // op.entry_price (already set at the op's original SMC creation) —
+        // so a fresh results['4h'] read (this pass, not stale) is fine, no
+        // need for the sig.price_at_signal-based drift guard the other call
+        // sites need.
+        const confirmed15m = await resolveEntryConfirmation15m({
+          symbol: activeOp.symbol, direction: activeOp.side, asset, pineConfig,
+          entryPrice: tf4h?.lastClose, entryCandleTime: tf4h?.lastCandleTime,
+        });
         if (confirmed15m.confirmed) {
           const now = new Date().toISOString();
           // Only NOW — Stage B, real 4h context AND 15m confirmation both in
@@ -2341,8 +2388,11 @@ export async function persistScanResults(scanResult) {
     if (retestGate) retestOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', retested: retestGate.retested, barsToConfirm: retestGate.barsToConfirm, reason: retestGate.reason });
     if (retestGate && !retestGate.retested) { await recordRejection(sig, '4h_15m', 'retest_pending', entryFunnelOutcomes); continue; }
 
-    // Re-run 15m confirmation
-    const confirmed = await check15mConfirmation(sig.symbol, sig.signal_type, asset);
+    // Re-run 15m confirmation (or bypass it — pineConfig.skip15mConfirmationEnabled, item 67)
+    const confirmed = await resolveEntryConfirmation15m({
+      symbol: sig.symbol, direction: sig.signal_type, asset, pineConfig,
+      entryPrice: sig.price_at_signal, entryCandleTime: sig.candle_time,
+    });
     if (!confirmed.confirmed) { await recordRejection(sig, '4h_15m', 'confirmation_15m_not_aligned', entryFunnelOutcomes); continue; }
 
     const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed);
@@ -2434,7 +2484,10 @@ export async function persistScanResults(scanResult) {
       });
       if (!regime.ok) { await recordRejection(sig, RF_1H_COND_CASCADE, 'regime_rejected', entryFunnelOutcomes); continue; }
 
-      const confirmed = await check15mConfirmation(sig.symbol, sig.signal_type, asset);
+      const confirmed = await resolveEntryConfirmation15m({
+        symbol: sig.symbol, direction: sig.signal_type, asset, pineConfig,
+        entryPrice: sig.price_at_signal, entryCandleTime: sig.candle_time,
+      });
       if (!confirmed.confirmed) { await recordRejection(sig, RF_1H_COND_CASCADE, 'confirmation_15m_not_aligned', entryFunnelOutcomes); continue; }
 
       const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed, { cascade: RF_1H_COND_CASCADE, signalTimeframe: '1h' });

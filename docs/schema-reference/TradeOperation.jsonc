@@ -63,6 +63,22 @@
     "entry_price": {
       "type": "number"
     },
+    "entry_candle_time_15m": {
+      "type": "string",
+      "description": "ISO timestamp of the close of the real 15m candle that confirmed a 4h RF signal (native 4h_15m cascade). Read by getEntryReferenceTime (src/lib/opExitRules.js) as the P0-c/P0-g temporal guard's entry reference and by the Time Stop. Mutually exclusive with entry_candle_time_5m/entry_candle_time_4h — an op has at most one of the three. Absent when pineConfig.skip15mConfirmationEnabled (known-risks.md item 67) bypassed the 15m step for this op — see entry_candle_time_4h instead."
+    },
+    "entry_candle_time_5m": {
+      "type": "string",
+      "description": "ISO timestamp of the close of the real 5m candle that confirmed a 1h SMC structure signal (1h_5m cascade). Same role as entry_candle_time_15m, for the SMC cascade."
+    },
+    "entry_candle_time_4h": {
+      "type": "string",
+      "description": "known-risks.md item 67 — ISO timestamp of the close of the 4h signal candle itself, recorded ONLY when pineConfig.skip15mConfirmationEnabled bypassed check15mConfirmation for this op (mirrors the user's real Pine strategy, which enters at the signal candle's own close, with no smaller-timeframe confirmation). Read by the same getEntryReferenceTime fallback as entry_candle_time_15m/_5m — a less precise entry reference (the signal candle itself, not a dedicated confirming candle), by design."
+    },
+    "skip_15m_confirmation": {
+      "type": "boolean",
+      "description": "known-risks.md item 67 — true only when this op was created with pineConfig.skip15mConfirmationEnabled on (frozen at creation, same pattern as partial_percent/runnerEnabled — a later flag flip governs only the NEXT operation). Absent/undefined on every op created before this field existed or with the gate off."
+    },
     "atr_value": {
       "type": "number"
     },

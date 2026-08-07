@@ -89,6 +89,11 @@ const DEFAULTS = {
   fvgFillTargetRatio: 0.6,
   smcScoreObWeight: 0,
   smcScoreFvgWeight: 0,
+  // Bypassa check15mConfirmation na cascata RF nativa 4h→15m (known-risks.md
+  // item 67) — master flag OFF by default. Override via --pine-config to
+  // compare backtest reports with/without it. Espelha src/lib/pineParser.js/
+  // scripts/adminPineConfig.js.
+  skip15mConfirmationEnabled: false,
   // RF 1h condicionado ao 4h (Fase 1, docs/known-risks.md item 56 "Fase 1")
   // — master flag OFF by default. INTENTIONALLY NOT mirrored to
   // src/lib/pineParser.js / scripts/adminPineConfig.js (breaks the usual

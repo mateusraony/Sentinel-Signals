@@ -6202,3 +6202,90 @@ Leitura completa/dirigida de `scanner.js`, `marketDataProvider.js`,
 3 agentes Explore independentes + leitura direta própria, achados
 cruzados e consistentes entre si. Nenhuma mudança de código/comportamento
 nesta rodada — só documentação da análise.
+
+---
+
+## 67. Sinal 4h real do FETUSDT no TradingView não virava operação no Sentinel — causa raiz: confirmação de 15m que o Pine real não tem (2026-08-07)
+
+### Contexto
+
+Usuário relatou: FETUSDT deu sinal de compra 4h às 17h de 05/08 no
+TradingView (rodando bem, perto do take) e outro de venda 27/07 09h que
+bateu take em 28/07 21h — mas o Sentinel não mostrava essas entradas.
+Confirmado por ele: o painel VIA o ativo (aba 1h mostrava "aguardando", aba
+4h mostrava "próximo"), só nunca convertia em operação de verdade. Usuário
+colou o Pine real completo (v13.2, o mesmo guardado em `src/pages/
+PineScript.jsx`) e autorizou tentativa de leitura direta do Firestore de
+produção — bloqueada pelo classificador de segurança do ambiente desta
+sessão, mesmo com autorização explícita; não foi contornada.
+
+### Achado — causa raiz confirmada por leitura de código
+
+O Pine real do usuário entra IMEDIATAMENTE no fechamento do candle de 4h que
+gera o sinal — `finalBuy`/`finalSell` dependem só de `candleConfirmed` (o
+próprio candle do sinal ter fechado), `freshBuy`/`freshSell`,
+`buyFollowThrough`, `score >= minScore`, filtros de regime e do filtro MTF
+(auto-referente quando aplicado direto no gráfico de 4h). Não existe
+timeframe de confirmação separado em lugar nenhum do Pine real.
+
+O Sentinel, por desenho deliberado (não bug, já registrado no roadmap —
+"entrada causal 15m 'Fresh RF Flip'"), exige uma confirmação ADICIONAL no
+candle de 15m antes de abrir a operação (`check15mConfirmation`,
+`src/lib/scanner.js`). Na prática isso faz o Sentinel entrar depois do
+TradingView, ou às vezes nunca entrar (se o 15m não realinhar dentro da
+janela de retry de 4h) — bate exatamente com o sintoma relatado.
+
+Parâmetros comparados byte-a-byte com o Pine colado e confirmados OK (não
+eram a causa): `rf_period`/`rf_multiplier` (20/3,5), pesos do score
+(25/20/20/15/10/10), limiares por tier (T3 Altcoin — ADX min 18, Chop max
+62, ATR stop 3.0x, Time Stop 96 candles). `src/pages/PineScript.jsx` já
+guardava a v13.2, mesma versão colada pelo usuário — não era cópia
+desatualizada.
+
+### Decisão e implementação
+
+Usuário escolheu testar remover/afrouxar a confirmação de 15m para bater
+1:1 com o TradingView, ciente do trade-off (perde a proteção contra
+reversão rápida que o 15m dava). Implementado como mecanismo **opt-in**
+(`pineConfig.skip15mConfirmationEnabled`, default `false` — preserva o
+comportamento de hoje), seguindo o mesmo padrão dos 6 mecanismos
+experimentais anteriores do projeto — nunca virou o comportamento padrão
+direto:
+
+- Bypassa `check15mConfirmation` nos 5 pontos de chamada (`src/lib/
+  scanner.js`) via novo helper `resolveEntryConfirmation15m` — quando
+  ligado, monta a confirmação a partir do que o `SignalEvent` já gravou no
+  nascimento do sinal (`price_at_signal`/`candle_time`), nunca de
+  `results['4h']` relido na passada atual (que no loop de retry pode já
+  apontar para um candle 4h mais novo que o do sinal original — RF só emite
+  sinal em MUDANÇA de direção). Zero fetch de candle 15m quando ligado.
+- Novo campo `entry_candle_time_4h` (em vez de reaproveitar
+  `entry_candle_time_15m` com semântica trocada) — `getEntryReferenceTime`
+  (`src/lib/opExitRules.js`) ganhou um terceiro fallback, então as duas
+  proteções P0 que dependem dela (guarda temporal contra candle pré-entrada
+  e Time Stop) continuam corretas. Novo campo de auditoria
+  `skip_15m_confirmation` na operação, congelado na criação.
+- Flag sincronizado nos 3 arquivos de config (`src/lib/pineParser.js`,
+  `scripts/adminPineConfig.js`, `scripts/backtestPineConfig.js`) — categoria
+  "produção futura" (como `retestEnabled`/`smcTierEnabled`/etc.), não
+  backtest-only como `rf1hCondEnabled`: aqui o objetivo é bater com uma
+  estratégia real já operada pelo usuário, então depois de validado é
+  esperado ir a produção.
+- 7 testes novos (`opExitRules.test.js`, `scannerStateMachine.test.js`):
+  fallback de `getEntryReferenceTime`, `buildTradeOpData` grava os campos
+  certos conforme `bypassed15m`, flag desligado é byte-idêntico ao
+  comportamento anterior, flag ligado abre sem nenhum fetch de 15m com
+  preço/horário vindos do sinal original (1ª passada E retry), e as duas
+  proteções P0 (guarda temporal, Time Stop) continuam corretas lendo
+  `entry_candle_time_4h`.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` limpos (838 testes, 7 novos, 0
+regressão). `npm run build:scan`/`build:scan-shadow`/`build:backtest`
+(os 3 alvos que empacotam `scanner.js` via esbuild) também compilam limpos.
+Documentado o A/B recomendado via `backtest.yml` em
+`docs/claude/backtest-usage.md` (comparar `report.entryFunnel` — deve zerar
+`confirmation_15m_not_aligned` com o flag ligado — e `report.byCascade
+['4h_15m']`/`overall` antes de qualquer decisão de ligar em produção). A/B
+real ainda não rodado nesta sessão — próximo passo, sob decisão do usuário.

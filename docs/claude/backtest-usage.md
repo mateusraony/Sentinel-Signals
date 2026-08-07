@@ -178,6 +178,33 @@ sobre entradas confirmadas) é o dado para calibrar
 uma terceira vez com `displacementMinVolumeRatio` definido (ex.: `1.2`) e
 compare contra a rodada sem volume.
 
+**Bypass da confirmação 15m** (`docs/known-risks.md` item 67), cascata RF
+`4h_15m` — `skip15mConfirmationEnabled` nasce **desligado** (comportamento de
+hoje: exige que o Range Filter de 15m confirme antes de abrir a operação).
+Ligado, replica o Pine real do usuário — que entra no fechamento do próprio
+candle de 4h, sem confirmação de timeframe menor nenhum. Não existe seção de
+relatório dedicada (não é necessária): compare `report.entryFunnel` — o
+motivo `confirmation_15m_not_aligned` deve zerar inteiramente com o flag
+ligado — e `report.byCascade['4h_15m']`/`overall` (win rate, profit factor,
+expectância em R, e `conclusive`/amostra) entre os dois runs:
+
+```bash
+echo '{"skip15mConfirmationEnabled": false}' > /tmp/com-15m.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT,FETUSDT \
+  --from 2025-02-01T00:00:00Z --to 2025-12-01T00:00:00Z \
+  --pine-config /tmp/com-15m.json --out ./report-com-15m.json
+
+echo '{"skip15mConfirmationEnabled": true}' > /tmp/sem-15m.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT,FETUSDT \
+  --from 2025-02-01T00:00:00Z --to 2025-12-01T00:00:00Z \
+  --pine-config /tmp/sem-15m.json --out ./report-sem-15m.json
+```
+
+O objetivo declarado é aumentar o volume de operações (bater com o
+TradingView, que não perde/atrasa entrada nenhuma) — então além do
+critério de expectância de sempre, olhe também se o total de operações
+criadas realmente subiu, e por quanto.
+
 **`report.smcRegime`** (Fase 3, `docs/known-risks.md` item 42) —
 `{enabled, total, passed, rejected, byReason}`, só cascata SMC (`1h_5m`).
 Mesma receita de comparação das duas rodadas de Fase 2 acima:
