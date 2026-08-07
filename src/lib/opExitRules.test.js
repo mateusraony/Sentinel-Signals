@@ -68,6 +68,13 @@ describe('getEntryReferenceTime — preferência de campo (P0-g)', () => {
     })).toBe('2026-07-15T09:05:00.000Z');
   });
 
+  it('usa entry_candle_time_4h (skip15mConfirmationEnabled) quando 15m/5m estão ausentes', () => {
+    expect(getEntryReferenceTime({
+      entry_candle_time_4h: '2026-08-05T17:00:00.000Z',
+      candle_close_time: '2026-08-05T13:00:00.000Z',
+    })).toBe('2026-08-05T17:00:00.000Z');
+  });
+
   it('cai para candle_close_time quando nenhum campo de confirmação existe (op legada/manual)', () => {
     expect(getEntryReferenceTime({ candle_close_time: '2026-07-15T08:00:00.000Z' })).toBe('2026-07-15T08:00:00.000Z');
   });

@@ -93,6 +93,9 @@ const DEFAULTS = {
   // Gate de padrão de vela (engolfo) na cascata RF — master flag OFF por
   // padrão. Espelha src/lib/pineParser.js.
   candlePatternEnabled: false,
+  // Bypassa check15mConfirmation na cascata RF nativa 4h→15m (known-risks.md
+  // item 67) — master flag OFF por padrão. Espelha src/lib/pineParser.js.
+  skip15mConfirmationEnabled: false,
   // NOTA (não é omissão): `rf1hCondEnabled` (Fase 1, docs/known-risks.md
   // item 56 "Fase 1") existe SÓ em scripts/backtestPineConfig.js —
   // deliberadamente NÃO espelhado aqui, ao contrário da convenção padrão
@@ -125,6 +128,7 @@ const SYNCED_STRATEGY_KEYS = [
   'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
   'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
   'candlePatternEnabled',
+  'skip15mConfirmationEnabled',
 ];
 
 export async function getPineConfig() {

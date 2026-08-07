@@ -89,7 +89,7 @@ export function resolveCostModel(model) {
 // guarda protege contra candle contaminado e precisa falhar para o lado
 // conservador, esta aqui só mede duração e prefere um fallback a devolver 0.
 export function getOpenedAt(op) {
-  return op?.entry_candle_time_15m ?? op?.entry_candle_time_5m ?? op?.candle_close_time ?? op?.created_date ?? null;
+  return op?.entry_candle_time_15m ?? op?.entry_candle_time_5m ?? op?.entry_candle_time_4h ?? op?.candle_close_time ?? op?.created_date ?? null;
 }
 
 export function countFundingSettlements(op) {

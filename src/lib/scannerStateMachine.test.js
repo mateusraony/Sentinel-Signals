@@ -212,6 +212,29 @@ describe('buildTradeOpData — entry into SIGNAL_CONFIRMED', () => {
     expect(op.signal_timeframe).toBe('1h');
     expect(op.tier_time_stop_bars).toBe(192); // 48 * 4 — real duration stays 192h, matching the 4h-calibrated tier
   });
+
+  // known-risks.md item 67 — resolveEntryConfirmation15m's synthetic
+  // confirmation object carries bypassed15m:true; buildTradeOpData must
+  // record entry_candle_time_4h (not entry_candle_time_15m) and the
+  // skip_15m_confirmation audit flag when it sees that marker.
+  it('records entry_candle_time_4h/skip_15m_confirmation, not entry_candle_time_15m, when confirmation15m.bypassed15m is true (item 67)', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { atrStopMult: 2.0 } });
+
+    const bypassed = buildTradeOpData(sig, tf4hData, makePineConfig(), {
+      entryPrice: 100, entryCandleTime: '2026-07-16T08:00:00.000Z', bypassed15m: true,
+    });
+    expect(bypassed.entry_candle_time_4h).toBe('2026-07-16T08:00:00.000Z');
+    expect(bypassed.entry_candle_time_15m).toBeUndefined();
+    expect(bypassed.skip_15m_confirmation).toBe(true);
+
+    const real15m = buildTradeOpData(sig, tf4hData, makePineConfig(), {
+      entryPrice: 100, entryCandleTime: '2026-07-16T08:15:00.000Z',
+    });
+    expect(real15m.entry_candle_time_15m).toBe('2026-07-16T08:15:00.000Z');
+    expect(real15m.entry_candle_time_4h).toBeUndefined();
+    expect(real15m.skip_15m_confirmation).toBe(false);
+  });
 });
 
 describe('buildSmcTradeOpData — structural initial stop (1h→5m cascade)', () => {
@@ -720,6 +743,49 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     const op = makeOp({
       candle_close_time: '2026-07-01T00:00:00.000Z',
       entry_candle_time_15m: '2026-07-16T04:00:00.000Z',
+    });
+    backend._seed('TradeOperation', op);
+    const results = { '4h': makeTfData({ lastCandleHigh: 101, lastCandleLow: 99 }) }; // no stop/TP1 hit
+    await persistScanResults(makeScanResult({ results, pineConfig: makePineConfig({ useTimeStop: true }) }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED'); // NOT closed — real entry is recent
+  });
+
+  // known-risks.md item 67 — entry_candle_time_4h must feed the exact same
+  // getEntryReferenceTime fallback as entry_candle_time_15m/_5m, for both
+  // protections that read it (the temporal guard above and Time Stop here).
+  it('P0-g guard also honours entry_candle_time_4h (skip15mConfirmationEnabled ops)', async () => {
+    const op = makeOp({
+      candle_close_time: '2026-07-15T08:00:00.000Z',
+      entry_candle_time_4h: '2026-07-15T08:00:00.000Z', // same instant here (no dedicated confirming candle)
+    });
+    backend._seed('TradeOperation', op);
+
+    // Contaminated candle: opens BEFORE the entry reference — must stay unusable.
+    const contaminated = makeTfData({
+      lastCandleOpenTime: '2026-07-15T04:00:00.000Z',
+      lastCandleTime: '2026-07-15T08:00:00.000Z',
+      lastCandleLow: 90, lastCandleHigh: 99, lastClose: 95,
+    });
+    await persistScanResults(makeScanResult({ results: { '4h': contaminated } }));
+    let stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED');
+
+    // Clean candle: opens AT/after the entry reference — must fire.
+    const clean = makeTfData({
+      lastCandleOpenTime: '2026-07-15T08:00:00.000Z',
+      lastCandleTime: '2026-07-15T12:00:00.000Z',
+      lastCandleLow: 90, lastCandleHigh: 99, lastClose: 95,
+    });
+    await persistScanResults(makeScanResult({ results: { '4h': clean } }));
+    stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('STOP_HIT');
+  });
+
+  it('Time Stop ages from entry_candle_time_4h (skip15mConfirmationEnabled ops)', async () => {
+    const op = makeOp({
+      candle_close_time: '2026-07-01T00:00:00.000Z', // far in the past
+      entry_candle_time_4h: '2026-07-16T04:00:00.000Z', // recent real entry
     });
     backend._seed('TradeOperation', op);
     const results = { '4h': makeTfData({ lastCandleHigh: 101, lastCandleLow: 99 }) }; // no stop/TP1 hit
@@ -2282,6 +2348,102 @@ describe('Fase 2 rodada 1 — gatilho de reteste (opt-in, docs/known-risks.md it
     const ops = await backend.entities.TradeOperation.filter({});
     expect(ops).toHaveLength(1);
     expect(ops[0].retest_gate_enabled).toBe(true);
+  });
+});
+
+describe('Bypass da confirmação 15m (opt-in, RF 4h_15m only, docs/known-risks.md item 67)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  function makeRfSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_skip15m',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80 },
+      ...overrides,
+    };
+  }
+
+  it('flag desligado (default): fetchCandles chamado para 15m, entry_candle_time_4h/skip_15m_confirmation ausentes', async () => {
+    fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 1));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false }); // skip15mConfirmationEnabled ausente -> falsy
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].skip_15m_confirmation).toBe(false);
+    expect(ops[0].entry_candle_time_4h).toBeUndefined();
+    expect(ops[0].entry_candle_time_15m).toBeTruthy();
+    expect(fetchCandles).toHaveBeenCalledTimes(1); // check15mConfirmation buscou candles de 15m
+  });
+
+  it('flag ligado: abre na 1a passada sem nenhum fetch de candle 15m; entry_price/entry_candle_time_4h vêm do sinal original', async () => {
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, skip15mConfirmationEnabled: true });
+    // results['4h'] tem um lastClose DIFERENTE do price_at_signal do sinal —
+    // prova que o preço de entrada vem do sinal (a referência estável), não
+    // de uma releitura de results['4h'] nesta passada.
+    const results = { '4h': makeTfData({ lastClose: 999 }) };
+
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeRfSignal({ price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z' })],
+    });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    const op = ops[0];
+    expect(op.entry_price).toBe(100);
+    expect(op.entry_candle_time_4h).toBe('2026-07-16T08:00:00.000Z');
+    expect(op.entry_candle_time_15m).toBeUndefined();
+    expect(op.skip_15m_confirmation).toBe(true);
+    expect(fetchCandles).toHaveBeenCalledTimes(0); // nenhuma busca de 15m — bypass real, não "passa mais fácil"
+  });
+
+  // Codex review (PR #147, P1) — a retry can fire hours after the signal was
+  // born (blocked earlier by some other gate; that delay is the retry loop's
+  // whole reason for existing). Reusing the stale sig.price_at_signal would
+  // open a position at a price that's no longer executable. Correct: use the
+  // CURRENT pass's 4h candle (causal/executable), not the original signal.
+  it('flag ligado no loop de retry: entry_price/entry_candle_time_4h vêm do candle 4h ATUAL da passada, nunca do preço obsoleto do sinal original', async () => {
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, skip15mConfirmationEnabled: true });
+    backend._seed('SignalEvent', {
+      id: 'sig_skip15m', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_skip15m',
+      created_date: '2026-07-16T09:00:00.000Z', // dentro da janela de retry de 4h
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z', // obsoleto por design deste teste
+      context: { score: 80 },
+    });
+    // Candle 4h ATUAL desta passada, mesma direção (uptrendCandles) — é o
+    // que deve virar entry_price/entry_candle_time_4h, não os 100/08:00 acima.
+    const results = { '4h': makeTfData({ lastClose: 999, lastCandleTime: '2026-07-16T12:00:00.000Z' }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].entry_price).toBe(999); // do candle 4h ATUAL, não do sinal (100)
+    expect(ops[0].entry_candle_time_4h).toBe('2026-07-16T12:00:00.000Z'); // idem
+    expect(fetchCandles).toHaveBeenCalledTimes(0);
+  });
+
+  it('flag ligado no loop de retry: rejeita (trend_reversed) em vez de abrir com preço obsoleto quando o 4h atual já reverteu', async () => {
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, skip15mConfirmationEnabled: true });
+    backend._seed('SignalEvent', {
+      id: 'sig_skip15m', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_skip15m',
+      created_date: '2026-07-16T09:00:00.000Z',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80 },
+    });
+    // 4h atual já reverteu (direction: -1) — o guard trend_reversed, que já
+    // existia antes desta mudança, deve continuar barrando a entrada.
+    const results = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
   });
 });
 

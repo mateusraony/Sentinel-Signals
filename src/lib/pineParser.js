@@ -131,6 +131,15 @@ const DEFAULTS = {
   // ANTES do 15m/5m — não substitui a Range Filter, só exige mais dela.
   // Não ativar sem comparar relatórios de backtest com/sem primeiro.
   candlePatternEnabled: false,
+  // Bypassa check15mConfirmation na cascata RF nativa 4h→15m (known-risks.md
+  // item 67) — não é do Pine, mas ao contrário dos outros flags acima, o
+  // OBJETIVO é bater 1:1 com uma estratégia real que o usuário já opera no
+  // TradingView: o Pine dele entra no fechamento do próprio candle 4h, sem
+  // nenhuma confirmação de timeframe menor. Master flag OFF por padrão
+  // (preserva o comportamento de hoje — mais seguro contra reversão rápida,
+  // mas sistematicamente atrasado/perdido vs. o TradingView). Não ativar em
+  // produção sem comparar relatórios de backtest com/sem primeiro.
+  skip15mConfirmationEnabled: false,
   // NOTA (não é omissão): `rf1hCondEnabled` (Fase 1, docs/known-risks.md
   // item 56 "Fase 1") existe SÓ em scripts/backtestPineConfig.js —
   // deliberadamente NÃO espelhado aqui, ao contrário da convenção padrão
@@ -280,6 +289,8 @@ export const SYNCED_STRATEGY_KEYS = [
   'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
   // Gate de padrão de vela na cascata RF (candlePatterns.js)
   'candlePatternEnabled',
+  // Bypass da confirmação 15m na cascata RF nativa (known-risks.md item 67)
+  'skip15mConfirmationEnabled',
 ];
 
 // Subset of SYNCED_STRATEGY_KEYS that has no `input.*()` counterpart in the
@@ -309,6 +320,7 @@ const NON_PINE_SYNCED_KEYS = new Set([
   'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
   'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
   'candlePatternEnabled',
+  'skip15mConfirmationEnabled',
 ]);
 
 /**

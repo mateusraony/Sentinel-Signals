@@ -40,11 +40,16 @@ export function isCandleUsableForExits(candleOpenIso, entryTimeIso) {
 // prefers the real confirming candle (15m for the RF cascade, 5m for the
 // SMC cascade; mutually exclusive per op) over the signal candle's close,
 // which is what isCandleUsableForExits needs to correctly exclude pre-entry
-// price action (see above). Falls back to candle_close_time for paths where
-// no confirmation candle time was recorded (legacy ops, manual/webhook
+// price action (see above). entry_candle_time_4h (docs/known-risks.md item
+// 67, skip15mConfirmationEnabled) is the RF-cascade signal candle's own
+// close, recorded only when the 15m confirmation step was bypassed — same
+// role as the 15m/5m fields, just a different (and less precise, since it's
+// the signal candle itself rather than a dedicated confirming candle)
+// source. Falls back to candle_close_time for paths where no
+// confirmation/entry candle time was recorded (legacy ops, manual/webhook
 // entries) — the same fallback the guard already tolerated before P0-g.
 export function getEntryReferenceTime(op) {
-  return op.entry_candle_time_15m || op.entry_candle_time_5m || op.candle_close_time || null;
+  return op.entry_candle_time_15m || op.entry_candle_time_5m || op.entry_candle_time_4h || op.candle_close_time || null;
 }
 
 // P0-d — ATR trailing advance, monotonic (a runner stop never retreats).
