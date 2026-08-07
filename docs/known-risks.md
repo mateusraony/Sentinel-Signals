@@ -6158,13 +6158,18 @@ achado novo.
 "`run-scan.mjs` nunca esconde falha real do cron" — isso é impreciso.
 `main()` (`run-scan.mjs:84-88`) só marca `exitCode=1` + ping `/fail` quando
 o processo INTEIRO rejeita (ex.: `priceCheckActiveOps()` lançar). Uma falha
-de UM ativo dentro de `scanAllAssetsInner` é capturada, só logada
-(`console.error`, `run-scan.mjs:67-69`) — o scan continua e o ping normal de
-sucesso ainda é enviado. Isso não é um achado novo desta auditoria: é o
-próprio comportamento já documentado no item 12 ("o ping abaixo só reporta
-a passada INTEIRA como falha/sucesso — um ativo falhando toda passada, ou
-saindo silenciosamente, nunca aparece"), mitigado ali pelo healthcheck
-por-ativo (`checkAssetHealthchecks`, alerta Telegram de ativo "stale"),
+de UM ativo dentro de `scanAllAssetsInner` é capturada e **registrada como
+erro do ativo** — `MonitoredAsset.scan_status/scan_error/scan_error_since` +
+um `SystemLog` (`scanner.js:3310-3329`), não só `console.error` — mas **não
+é propagada** para tornar a execução inteira malsucedida: o scan continua e
+o ping normal de sucesso do Healthchecks.io ainda é enviado (correção de
+review, Codex, PR #146 — a 1ª versão deste parágrafo dizia "só logada",
+subestimando a observabilidade real). Isso não é um achado novo desta
+auditoria: é o próprio comportamento já documentado no item 12 ("o ping
+abaixo só reporta a passada INTEIRA como falha/sucesso — um ativo falhando
+toda passada, ou saindo silenciosamente, nunca aparece"), mitigado ali pelo
+healthcheck por-ativo (`checkAssetHealthchecks`, que lê exatamente esses
+campos persistidos e dispara alerta Telegram de ativo "stale"),
 não pelo ping de processo. O texto original desta seção conflitava com o
 item 12 em vez de referenciá-lo — corrigido.
 
