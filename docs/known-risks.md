@@ -4991,6 +4991,50 @@ reusando `src/lib/opTransition.js`) que a produção. **Antes do 1º disparo**
 isso o workflow falha. Depois: disparo manual (`workflow_dispatch`) uma vez
 pra confirmar que roda limpo antes de deixar o `schedule:` cuidar do resto.
 
+#### Leitura de progresso (2026-08-07) — tempo/consumo e amostra até agora
+
+Usuário perguntou quanto tempo/consumo o modo sombra já teve e quantos dados
+já foram coletados. Fato, direto da fonte (GitHub Actions + relatório diário
+`analyze-shadow.yml`, não estimado):
+
+- **Tempo rodando**: 1º disparo de `scan-shadow.yml` em 2026-08-04T00:12Z;
+  39 disparos completados até 2026-08-07T11:33Z (~3d 11h de janela).
+- **Cadência real ≠ configurada**: `*/15 * * * *` previa ~336 disparos nessa
+  janela; só 39 aconteceram — gap médio real de ~132min (mín. 56min, máx.
+  6h07min) entre disparos, não 15min. **Mesmo fenômeno do item 18** (fila
+  global de `schedule:` do GitHub Actions sem SLA), agora confirmado também
+  no cron do modo sombra, não só no `scan.yml` de produção — o disparo
+  externo via cron-job.org (mitigação do item 18) cobre só `scan.yml`, não
+  `scan-shadow.yml`.
+- **2 dos 39 disparos foram cancelados pelo próprio GitHub** (2026-08-06,
+  18:11Z e 16:22Z) — mesmo padrão diagnosticado no PR #142 (`runner_id: 0`,
+  sem log, cancelado após ~1h preso na fila sem runner atribuído): fila de
+  runner, não bug do código do modo sombra.
+- **Consumo de Actions**: irrelevante — cada disparo bem-sucedido leva
+  ~50s de execução real; 37 disparos × ~50s ≈ 31min de compute total até
+  agora. Repositório público = minutos de GitHub Actions gratuitos/
+  ilimitados, sem custo. Cota do Firestore (Spark grátis) não é medível
+  daqui (sem acesso ao console do Firebase nesta sessão) — desenhada por
+  construção pra ficar dentro do plano gratuito (ver cadência 15min acima).
+- **Amostra coletada até o último relatório (2026-08-06T15:18Z,
+  `analyze-shadow.yml` run #3)**: **zero** operações fechadas nas duas
+  cascatas — `rf1h_cond4h_15m` (experimental) `total:0, counted:0` e
+  `4h_15m` (controle nativo sombreado) `total:0, counted:0`. As duas
+  seguem `INCONCLUSIVO (amostra < mínimo)`; nem o piso n≥30 foi tocado,
+  muito menos o alvo n≈100.
+
+**Hipótese (não fato)**: a leitura zero bate com a seca de mercado já
+registrada — item 60 (2026-08-04: 8 de 9 ativos monitorados com viés de
+baixa correlacionado, 14 dias sem operação nova na produção real). Como o
+modo sombra observa o mesmo mercado ao vivo, ausência de sinal na produção
+tende a significar ausência de sinal também no braço experimental — não é
+evidência de bug no desenho do modo sombra em si.
+
+**Sem decisão a tomar aqui** — critério completo (n≥30 piso, n≈100 alvo,
+IC-Bonferroni, comparação de volume) continua em "Critério de decisão"
+acima; com amostra em zero, é cedo demais até pra leitura parcial de debug.
+Registrado apenas como leitura de progresso, a pedido do usuário.
+
 ### Braço exploratório — backtest retrospectivo pré-2023 (critério registrado ANTES de rodar, 2026-08-03)
 
 Usuário pediu para rodar o 3º braço da validação (rotulado EXPLORATÓRIO em
