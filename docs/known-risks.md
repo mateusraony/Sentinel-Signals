@@ -6151,9 +6151,22 @@ ocorrências são benignas (nonce de lock, comentários de changelog de bugs
 já corrigidos, ou o motor de backtest — ferramenta separada e rotulada).
 `marketDataProvider.js`/`adminMarketDataProvider.js` batem em endpoints
 reais da Binance (Futures/Spot), sem fallback sintético; `adminEntities.js`
-grava em Firestore real via `firebase-admin`; `run-scan.mjs` nunca esconde
-falha (exitCode 1 + ping `/fail` do Healthchecks.io). Mesmo veredito do
-item 65, sem achado novo.
+grava em Firestore real via `firebase-admin`. Mesmo veredito do item 65, sem
+achado novo.
+
+**Correção (Codex review, PR #145)**: a frase original aqui dizia que
+"`run-scan.mjs` nunca esconde falha real do cron" — isso é impreciso.
+`main()` (`run-scan.mjs:84-88`) só marca `exitCode=1` + ping `/fail` quando
+o processo INTEIRO rejeita (ex.: `priceCheckActiveOps()` lançar). Uma falha
+de UM ativo dentro de `scanAllAssetsInner` é capturada, só logada
+(`console.error`, `run-scan.mjs:67-69`) — o scan continua e o ping normal de
+sucesso ainda é enviado. Isso não é um achado novo desta auditoria: é o
+próprio comportamento já documentado no item 12 ("o ping abaixo só reporta
+a passada INTEIRA como falha/sucesso — um ativo falhando toda passada, ou
+saindo silenciosamente, nunca aparece"), mitigado ali pelo healthcheck
+por-ativo (`checkAssetHealthchecks`, alerta Telegram de ativo "stale"),
+não pelo ping de processo. O texto original desta seção conflitava com o
+item 12 em vez de referenciá-lo — corrigido.
 
 ### Achado 3 — nenhum bug novo no motor
 
