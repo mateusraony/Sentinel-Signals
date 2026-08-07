@@ -6318,3 +6318,46 @@ real ainda não rodado nesta sessão — próximo passo, sob decisão do usuári
    rejeição por `trend_reversed` continuando a barrar entrada com preço
    obsoleto quando o 4h já reverteu. `npm run lint && npm test && npm run
    build` (+ os 3 alvos esbuild) limpos de novo após a correção (840 testes).
+
+### A/B real via `backtest.yml` — resultado (2026-08-07)
+
+Usuário rodou os 2 backtests recomendados (7 símbolos padrão, 12 meses,
+2025-08-07→2026-08-07 — janela que cobre as duas datas relatadas no
+Contexto, 27/07 e 05/08) e colou os dois diagnósticos
+(`scripts/analyze-backtest.mjs`).
+
+**Volume — o objetivo original — subiu pouco, e não como a hipótese
+esperava**: 103 → 108 operações fechadas (+5, +4,9%). O funil de regime
+(ADX/Choppiness) é quase idêntico nos dois runs (~128 vs ~127 candidatos
+aprovados em regime, de 207 sinais totais) — a confirmação de 15m raramente
+rejeitava de fato (15m tende a concordar com o 4h logo após o sinal), ela
+principalmente ATRASAVA a entrada, não a impedia.
+
+**Expectância**: 0,053R (desligado) → 0,118R (ligado), +0,065R — os dois
+relatórios continuam **INCONCLUSIVOS** (IC 95% cruza zero nos dois). A
+melhora fica ABAIXO do limiar de ~0,10R que o próprio projeto já usa para
+"não é sorte" num teste de flag isolado (`docs/roadmap.md`, Bloco 1,
+aritmética do erro-padrão com `sd(R)≈1,1`).
+
+**Achado mais relevante — não confirma a hipótese original**: FETUSDT (o
+ativo que motivou toda a investigação do item 67) teve exatamente 18
+operações nos DOIS runs, zero diferença. A confirmação de 15m não era o
+gargalo do FETUSDT especificamente nesta janela (que cobre as duas datas
+relatadas pelo usuário) — sugere que a causa do que ele viu ao vivo no
+TradingView é outra (divergência Spot(cron)/Futures(painel), item 4, ou
+config do ativo em produção — `rf_period`/`rf_multiplier`/`smc_confirm_4h15m`
+específicos do FETUSDT, nunca confirmados ao vivo por falta de acesso ao
+Firestore de produção nesta sessão), não coberta por este flag.
+
+**Recomendação**: não ligar `skip15mConfirmationEnabled` em produção com
+este dado — nem pelo critério de expectância (não passa o limiar de
+evidência), nem pelo objetivo original de volume (ganho pequeno e não
+explica o caso do FETUSDT). Flag permanece implementado e testado
+(desligado por padrão), disponível para um A/B melhor no futuro se a
+amostra crescer ou se outra hipótese justificar. Próximo passo sugerido,
+não decidido: investigar por que FETUSDT ficou idêntico nos dois runs —
+provavelmente é isso que explica o caso original, não a confirmação de 15m.
+
+Verificação: leitura dos 2 relatórios completos colados pelo usuário
+(`backtest-report.json`/diagnóstico via `analyze-backtest.mjs`), nenhuma
+mudança de código nesta rodada — só registro do resultado.
