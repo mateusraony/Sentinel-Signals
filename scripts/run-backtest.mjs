@@ -47,6 +47,7 @@ import { runBacktest } from '../src/lib/backtestEngine.js';
 import { ZERO_COST } from '../src/lib/tradeMetrics.js';
 import { backend } from '@/api/entities';
 import { setPineConfigOverrides, getPineConfig } from './backtestPineConfig.js';
+import { loadSeries } from './backtestMarketDataProvider.js';
 
 function parseArgs(argv) {
   const args = {};
@@ -155,8 +156,26 @@ async function main() {
   // ativo"), que documenta a armadilha para o próximo callback.
   const started = performance.now();
   let lastLoggedPct = -1;
+  // docs/known-risks.md item 69 (Fase 1) — busca binária pelo primeiro
+  // candle com closeTime ESTRITAMENTE depois do sinal, igual ao espírito de
+  // sliceClosedAsOf (backtestEngine.js) mas na direção oposta (candles
+  // FUTUROS ao instante, não passados). limit generoso (200) cobre até o
+  // maior Time Stop configurável (T3 default 96 barras de 4h) com folga —
+  // só corta uma cauda que o simulador nunca chegaria a usar mesmo assim.
+  function getFutureCandles(symbol, timeframe, afterMs, limit = 200) {
+    const series = loadSeries(symbol, timeframe);
+    let lo = 0, hi = series.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (series[mid].closeTime > afterMs) hi = mid;
+      else lo = mid + 1;
+    }
+    return series.slice(lo, lo + limit);
+  }
   const report = await runBacktest({
     assets, backend, fromMs, toMs, evaluationFromMs, evaluationToMs, stepMs, costModel, minTrades,
+    pineConfig: effectivePineConfig,
+    getFutureCandles,
     onStep(t, err) {
       if (err) {
         console.warn(`[backtest] ${err.asset} falhou em ${new Date(t).toISOString()}: ${err.error}`);

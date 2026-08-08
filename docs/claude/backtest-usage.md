@@ -404,6 +404,32 @@ parâmetro**. Calibrar a custo zero e recalibrar depois dobra a contagem de
 tentativas e contamina a segunda busca. Na prática: os pesos de OB/FVG da
 Fase 4 só devem ser calibrados com o custo já ligado — que é o default.
 
+**`report.indicatorAttribution`** (Fase 1, `docs/known-risks.md` item 69) —
+simulador de operação-fantasma: para CADA flip de RF confirmado em 4h
+(aprovado ou não pelo score/regime de hoje), simula entrada/stop/TP1/TP2
+como se fosse uma operação real e anda pelos candles futuros até um
+resultado em R. Objetivo: medir a contribuição de cada componente do score
+sem o viés de amostra de "só quem já passou em todos os filtros" — nunca
+abre operação real, é leitura estatística pura.
+
+`{totalRawSignals, resolvedOutcomes, stillOpenOrInsufficient, by, records}`.
+`by.{follow_through,macd,ema,rsi,volume_above_ma}` — cada um
+`{agrees, disagrees}` (`n`/`expectancyR`/`stdErr`/`ci95`/`conclusive`),
+agrupado pela concordância DIRECIONAL do indicador com o lado do sinal
+(não um corte absoluto bullish/bearish — misturaria BUY e SELL). Ex.:
+`by.ema.agrees.expectancyR` vs. `by.ema.disagrees.expectancyR` responde
+"quando a EMA concorda com a direção do sinal, o resultado muda?".
+`records` é o array bruto completo — cada indicador em campo separado
+(nunca agregado), para qualquer corte adicional (tier, ADX, Chop) sem
+precisar rodar o backtest de novo.
+
+**Não aplica correção Bonferroni por padrão** — comparar os 5 buckets entre
+si (ou contra outra flag/experimento) exige a mesma disciplina manual já
+usada nos itens 56/68 deste projeto. E como qualquer seção deste relatório,
+`conclusive: false`/`ci95` cruzando zero significa que aquele bucket
+específico não sustenta conclusão — não é diferente do resto do relatório
+nesse critério.
+
 ## Passo 3 — diagnosticar de ONDE vem o resultado
 
 ```bash

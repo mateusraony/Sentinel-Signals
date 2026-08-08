@@ -6613,3 +6613,114 @@ PR #153 apontar 2 achados procedentes sobre correção de comparações
 múltiplas e contaminação de sub-buckets — ambos já tinham precedente
 documentado neste mesmo arquivo, itens 56/PR#130, que eu não tinha
 reaplicado aqui).
+
+## 69. Simulador de operação-fantasma para atribuição de contribuição por indicador — Fase 1, backtest-only (2026-08-08)
+
+### Contexto
+
+Depois da revisão de um documento externo de "veredito técnico" sobre o
+Sentinel (proposta de "Feature/Edge Attribution Engine" — medir a
+contribuição marginal de cada indicador do score em vez de só olhar
+operações que já passaram em todos os filtros de hoje), o usuário pediu
+para começar, com uma condição explícita: manter os dados de CADA
+indicador sempre em campo separado, nunca agregados num blob, para
+permitir análise posterior sem precisar rodar o backtest de novo.
+
+Dividido em 2 fases. **Fase 2 (funding real histórico) foi avaliada e
+descartada por ora**: já estava registrado (linhas acima, item 4/seção "Fora
+de escopo por colisão com restrição permanente") que funding/open
+interest/basis são bloqueados pela mesma restrição 451/datacenter-US que
+afeta o resto de dados de Futures — não é viável sem trocar de exchange ou
+pagar infraestrutura fora dos EUA, nenhuma decisão que se tome sem pedido
+explícito. Este item cobre só a **Fase 1**.
+
+### Mecanismo
+
+**Captura do sinal bruto** (`src/lib/scanner.js`, dentro de `scanAsset`,
+ANTES do gate de score de `calculateSignalStrength`): novo array
+`rawSignalSnapshots`, devolvido junto com `newSignals` no retorno de
+`scanAsset`. Para todo flip de RF confirmado em 4h (aprovado ou não pelo
+score/regime de hoje — a cascata nativa é a única que abre operação real a
+partir de RF, ver itens 66/68), grava o estado de CADA indicador em campo
+separado (`follow_through`, `macd_bullish`/`macd_bearish`, `ema_bull`/
+`ema_bear`, `rsi_crossed_bull50`/`crossed_bear50`, `volume_above_ma`,
+`adx_value`, `chop_value`, `tier`, mais `score_real`/`passed_real` para
+cross-check contra o comportamento atual). Duplica as MESMAS condições que
+`calculateSignalStrength` (`confluence.js`) já usa internamente, em vez de
+mudar a assinatura dela — zero risco de regressão no caminho ao vivo, que
+nunca lê este campo (confirmado por grep no bundle: `rawSignalSnapshots`
+aparece no `run-scan.mjs`, mas `buildShadowOp`/`simulateShadowOutcome`
+aparecem ZERO vezes nele — só em `run-backtest.mjs`).
+
+**Simulador puro** (`src/lib/indicatorAttribution.js`, novo arquivo):
+`buildShadowOp` replica a fórmula de entry/stop/TP1/TP2 de
+`buildTradeOpData` (duplicada deliberadamente, não importada — os formatos
+de input divergem e a fórmula é curta); `simulateShadowOutcome` anda
+candle a candle reaproveitando a MESMA ordem de decisão de
+`persistScanResults` (stop tem prioridade sobre TP no mesmo candle, Time
+Stop por tempo decorrido, TP1 move pro breakeven + runner, trailing ATR
+pós-TP1 nunca regride) e a mesma fórmula de MFE/MAE (extraída, não
+reinventada). Simplificações deliberadas, documentadas no próprio arquivo:
+ATR fica constante durante a simulação (não recalcula a série pra cada
+candle futuro); gates opt-in desligados por padrão no motor real (Chop
+Exit, Invalidação RF, proteção pré-TP1) ficam de fora — omiti-los reproduz
+o comportamento DEFAULT, não diverge dele; sem confirmação de 15m (entrada
+= fechamento do candle de sinal) — deliberado, o objetivo é isolar o
+indicador, não retestar a confirmação 15m (já medida à parte, item 67).
+
+**Wiring no backtest** (`src/lib/backtestEngine.js`): `runBacktest` ganha 2
+parâmetros OPCIONAIS — `pineConfig` (passado pelo caller, NÃO importado
+direto de `./pineParser` aqui dentro; achado durante a implementação:
+`scripts/build-backtest.mjs` só redireciona `./pineParser`→
+`backtestPineConfig.js` quando o IMPORTER é `scanner.js` — um import direto
+em `backtestEngine.js` bundlaria o `pineParser.js` REAL do browser, com
+Firebase, por engano) e `getFutureCandles(symbol, timeframe, afterMs)`
+(callback que devolve candles cronológicos depois do instante do sinal,
+sem o corte de `simNow()` — única exceção deliberada à janela causal do
+resto do motor, segura porque só roda dentro do replay histórico). Ausente
+= simulador desligado, sem quebrar nenhum caller existente
+(`backtestEngine.test.js`). `scripts/run-backtest.mjs` fornece a
+implementação real via `loadSeries` (exportado de
+`scripts/backtestMarketDataProvider.js`, Node-only, nunca alcançado pelo
+bundle ao vivo).
+
+**Novo relatório** `report.indicatorAttribution`: array bruto `records`
+(snapshot + outcome de cada sinal, TODOS os campos de indicador
+preservados separados — atende o pedido explícito do usuário) mais um
+resumo `by.{follow_through,macd,ema,rsi,volume_above_ma}` agrupado pela
+concordância DIRECIONAL do indicador com o lado do sinal (a mesma pergunta
+que `calculateSignalStrength` já faz para pontuar — não um corte absoluto
+bullish/bearish, que misturaria BUY e SELL sem sentido). Cada bucket usa
+`summarizeRList` (novo, local — `n`/`expectancyR`/`stdErr`/`ci95`/
+`conclusive`, z=1,96 fixo, mesmo `minTrades` do resto do projeto);
+**deliberadamente NÃO** aplica a correção Bonferroni de comparações
+múltiplas por padrão — comparar os 5 buckets entre si exige a mesma
+disciplina manual já registrada nos itens 56/68 (2ª correção do Codex no
+PR #153), não fica automática aqui. ADX/Chop (contínuos, não booleanos)
+ficam só no array bruto por enquanto — bucketing por faixa é extensão
+futura, não construída nesta rodada (evitar escopo além do pedido).
+
+### Verificação
+
+`npm test`: 863 passando (+12: `indicatorAttribution.test.js` novo,
+funções puras — STOP_HIT pré/pós-TP1, TP1→TP2, TP1_FULL sem runner,
+ambiguidade no mesmo candle, Time Stop, trailing monotônico nunca regride,
+dados insuficientes, still-open-at-cutoff, MFE/MAE). `npm run lint` limpo.
+`npm run build` + os 3 alvos esbuild (`build:scan` 190,8kb, `build:scan-shadow`
+181,2kb, `build:backtest` 219,3kb) compilando sem erro. Grep de isolamento
+no bundle: `buildShadowOp`/`simulateShadowOutcome`/`indicatorAttribution`
+ausentes em `run-scan.mjs`/`run-scan-shadow.mjs`, presentes só em
+`run-backtest.mjs`. Backtest de fumaça local (sem candle real disponível
+nesta sessão — sem acesso à Binance) confirmou que o código compila e roda
+sem crashar, com `report.indicatorAttribution` no formato esperado
+(`totalRawSignals: 0` no estado vazio).
+
+### Pendente
+
+Rodar o backtest de verdade (usuário, via `backtest.yml`, mesma janela/
+símbolos já usados nos experimentos anteriores) para ver os números reais
+de `report.indicatorAttribution.by.*` — nenhuma leitura de contribuição
+por indicador foi feita ainda, só a infraestrutura está pronta. Bucketing
+de ADX/Chop por faixa contínua, e cruzamento de contribuição MARGINAL
+(RF+EMA vs. RF sozinho, controlando por correlação entre indicadores) são
+extensões registradas mas não construídas nesta rodada.
