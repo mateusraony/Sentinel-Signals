@@ -1045,6 +1045,14 @@ export async function scanAsset(asset) {
   const startTime = Date.now();
   const results = {};
   const newSignals = [];
+  // Todo flip de RF 4h confirmado, ANTES do gate de score (docs/known-risks.md
+  // item 69) — captura o estado de CADA indicador separadamente, aprovado ou
+  // não pelos filtros de hoje. Aditivo/read-only: nenhum I/O, nenhuma escrita
+  // no Firestore a partir daqui, custo desprezível no scan ao vivo (só monta
+  // um objeto a mais). Consumido só pelo simulador de operação-fantasma do
+  // backtest (src/lib/indicatorAttribution.js) — nenhum caller ao vivo lê
+  // este campo hoje.
+  const rawSignalSnapshots = [];
   const errors = [];
 
   // Read Pine config — parameters auto-synced from Pine Script editor
@@ -1257,6 +1265,44 @@ export async function scanAsset(asset) {
     const strengthResult = calculateSignalStrength(
       r.rf, r.rsi, r.macd, r.ema, alignmentResult, tf, r.volumeData, MIN_SCORE, r.confirmed
     );
+
+    // docs/known-risks.md item 69 — captura TODO flip de RF em 4h confirmado
+    // (aprovado ou não pelo gate de score abaixo), com o estado de CADA
+    // indicador em campo SEPARADO — nunca um blob combinado, pra permitir
+    // medir a contribuição marginal de cada um depois sem o viés de amostra
+    // de "só quem já passou em todos os filtros". Duplica as MESMAS condições
+    // que calculateSignalStrength usa internamente (confluence.js) em vez de
+    // mudar a assinatura dela — zero risco pro caminho ao vivo, que nunca lê
+    // este array. Só timeframe 4h: é a única cascata nativa que abre operação
+    // real a partir de RF hoje (ver known-risks item 66/68).
+    if (tf === '4h' && (r.confirmed.confirmedSignal === 'BUY' || r.confirmed.confirmedSignal === 'SELL')) {
+      const isBuySnap = r.confirmed.confirmedSignal === 'BUY';
+      rawSignalSnapshots.push({
+        asset_id: asset.id,
+        symbol: asset.symbol,
+        direction: r.confirmed.confirmedSignal,
+        candle_time: r.lastCandleTime,
+        entry_price_ref: r.lastClose,
+        atr_value: r.atrValue,
+        tier: r.tier?.tier ?? null,
+        tier_atr_stop_mult: r.tier?.atrStopMult ?? null,
+        tier_time_stop_bars: r.tier?.timeStopBars ?? null,
+        follow_through: isBuySnap ? r.confirmed.buyFollowThrough : r.confirmed.sellFollowThrough,
+        macd_bullish: r.macd.histogram > 0,
+        macd_bearish: r.macd.histogram < 0,
+        ema_bull: r.ema.trend === 'bullish',
+        ema_bear: r.ema.trend === 'bearish',
+        rsi_crossed_bull50: r.rsi.crossedBull50,
+        rsi_crossed_bear50: r.rsi.crossedBear50,
+        volume_above_ma: !!(r.volumeData && r.volumeData.current > r.volumeData.ma),
+        adx_value: r.adx?.adx ?? null,
+        chop_value: r.chop ?? null,
+        rf_direction: r.rf.direction,
+        score_real: strengthResult.score,
+        passed_real: strengthResult.passed,
+        dedup_key: `${asset.symbol}_4h_${r.confirmed.confirmedSignal}_raw_${r.lastCandleTime}`,
+      });
+    }
 
     // Check for Range Filter BUY/SELL signal — only emit if score passes.
     // Uses the CONFIRMED signal (confirmBars), not the raw flip — at the
@@ -1487,6 +1533,7 @@ export async function scanAsset(asset) {
     results,
     alignment: alignmentResult,
     newSignals,
+    rawSignalSnapshots,
     errors,
     duration,
     pineConfig,

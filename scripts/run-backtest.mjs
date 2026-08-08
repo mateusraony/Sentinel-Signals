@@ -47,6 +47,7 @@ import { runBacktest } from '../src/lib/backtestEngine.js';
 import { ZERO_COST } from '../src/lib/tradeMetrics.js';
 import { backend } from '@/api/entities';
 import { setPineConfigOverrides, getPineConfig } from './backtestPineConfig.js';
+import { loadSeries } from './backtestMarketDataProvider.js';
 
 function parseArgs(argv) {
   const args = {};
@@ -155,8 +156,35 @@ async function main() {
   // ativo"), que documenta a armadilha para o próximo callback.
   const started = performance.now();
   let lastLoggedPct = -1;
+  // docs/known-risks.md item 69 (Fase 1) — busca binária pelo primeiro
+  // candle com closeTime ESTRITAMENTE depois do sinal, igual ao espírito de
+  // sliceClosedAsOf (backtestEngine.js) mas na direção oposta (candles
+  // FUTUROS ao instante, não passados). O único limite é `toMs` — o
+  // fechamento declarado deste replay — NUNCA uma contagem arbitrária de
+  // candles. Codex review (PR #154): (P2) um `limit` fixo de 200 candles
+  // fechava runners "vivos" há mais de ~33 dias como STILL_OPEN_AT_CUTOFF
+  // mesmo quando o candle de saída real já estava carregado logo depois;
+  // (P1) sem clampar em `toMs`, um diretório de dados mais amplo que a
+  // janela pedida (`docs/claude/backtest-usage.md` recomenda baixar uma vez
+  // e reusar em replays menores) vazava candles de FORA do replay declarado
+  // pro simulador — contaminação de janela, exatamente o tipo de furo que a
+  // guarda de holdout deste projeto existe para evitar.
+  function getFutureCandles(symbol, timeframe, afterMs) {
+    const series = loadSeries(symbol, timeframe);
+    let lo = 0, hi = series.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (series[mid].closeTime > afterMs) hi = mid;
+      else lo = mid + 1;
+    }
+    let end = lo;
+    while (end < series.length && series[end].closeTime <= toMs) end++;
+    return series.slice(lo, end);
+  }
   const report = await runBacktest({
     assets, backend, fromMs, toMs, evaluationFromMs, evaluationToMs, stepMs, costModel, minTrades,
+    pineConfig: effectivePineConfig,
+    getFutureCandles,
     onStep(t, err) {
       if (err) {
         console.warn(`[backtest] ${err.asset} falhou em ${new Date(t).toISOString()}: ${err.error}`);

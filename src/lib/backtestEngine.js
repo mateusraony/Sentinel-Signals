@@ -28,6 +28,7 @@ import { scanAsset, persistScanResults } from './scanner.js';
 import { isTerminalStatus } from './opTransition.js';
 import { summarizeOps, DEFAULT_COST_MODEL, ZERO_COST, getOpenedAt } from './tradeMetrics.js';
 import { closesFullyAtTp1 } from './opExitRules.js';
+import { buildShadowOp, simulateShadowOutcome } from './indicatorAttribution.js';
 
 const RealDate = Date;
 let originalDate = null;
@@ -127,6 +128,30 @@ export function inferStepMs(assets) {
 
 export async function runBacktest({
   assets, backend, fromMs, toMs, evaluationFromMs, evaluationToMs, stepMs, onStep, costModel, minTrades,
+  // docs/known-risks.md item 69 (Fase 1) — pineConfig efetivo, só para o
+  // simulador de operação-fantasma (tp1R/runnerEnabled/trailAtrMult). NÃO
+  // importado daqui via './pineParser': o redirect de build-backtest.mjs só
+  // dispara quando o IMPORTER é src/lib/scanner.js — um import direto aqui
+  // bundlaria o pineParser.js REAL do browser (Firebase) por engano. O
+  // caller (scripts/run-backtest.mjs) já tem o valor correto (getPineConfig
+  // de scripts/backtestPineConfig.js) e passa por parâmetro, mesmo padrão
+  // de costModel/minTrades logo acima. `{}` = usa os defaults do próprio
+  // buildShadowOp (tp1R 1.5, runnerEnabled true, trailAtrMult 2.0).
+  pineConfig = {},
+  // callback OPCIONAL, injetado pelo
+  // composition root (scripts/run-backtest.mjs), nunca importado direto
+  // daqui: backtestEngine.js não sabe (e não deveria saber) que os candles
+  // vêm de arquivo JSON local — isso é detalhe do adapter Node
+  // (scripts/backtestMarketDataProvider.js), mesma separação já usada pelo
+  // resto do motor (scanAsset/persistScanResults nunca sabem se o dado vem
+  // de Binance real ou de fixture). Ausente = simulador de operação-fantasma
+  // fica DESLIGADO (report.indicatorAttribution vem vazio), sem quebrar
+  // nenhum caller existente (backtestEngine.test.js, por exemplo).
+  // Assinatura: (symbol, timeframe, afterMs) => candle[] (ordem cronológica,
+  // closeTime > afterMs, sem limite de simNow() — é a ÚNICA exceção
+  // deliberada à janela causal do resto do motor, e só porque este caminho
+  // roda inteiramente dentro do replay histórico, nunca ao vivo).
+  getFutureCandles,
 } = {}) {
   if (!Array.isArray(assets) || assets.length === 0) {
     throw new Error('runBacktest: assets must be a non-empty array');
@@ -136,6 +161,12 @@ export async function runBacktest({
     throw new Error('runBacktest: fromMs/toMs must form a valid range (toMs > fromMs)');
   }
   const step = stepMs || inferStepMs(assets);
+  // Chave = snapshot.dedup_key — mesmo sinal bruto pode ser recapturado em
+  // passadas seguintes até o candle 4h realmente mudar (mesma convenção de
+  // dedup_key das outras seções deste arquivo); last-write-wins é suficiente
+  // aqui porque o resultado da simulação não muda entre passadas (é função
+  // pura do snapshot + candles futuros já fechados).
+  const indicatorAttributionByKey = new Map();
 
   // Warm-up (docs/known-risks.md item 47.2). fromMs/toMs continue a ser a
   // janela de DADOS — o relógio simulado corre por ela inteira, sem isso os
@@ -270,6 +301,21 @@ export async function runBacktest({
           for (const sig of (result.newSignals || [])) {
             if (sig.source === 'smc_structure') smcConfirmedSignalKeys.add(sig.dedup_key);
           }
+          // docs/known-risks.md item 69 — simulador de operação-fantasma.
+          // Roda ANTES de persistScanResults de propósito: não depende dele
+          // nem interfere nele (rawSignalSnapshots inclui sinais que o
+          // gate de score vai rejeitar logo abaixo) — leitura pura sobre o
+          // que scanAsset já calculou nesta passada.
+          if (getFutureCandles && t >= evalFromMs && t <= evalToMs) {
+            for (const snapshot of (result.rawSignalSnapshots || [])) {
+              if (indicatorAttributionByKey.has(snapshot.dedup_key)) continue;
+              const afterMs = new Date(snapshot.candle_time).getTime();
+              const futureCandles = await getFutureCandles(asset.symbol, '4h', afterMs);
+              const shadowOp = buildShadowOp(snapshot, pineConfig);
+              const outcome = simulateShadowOutcome(shadowOp, futureCandles);
+              indicatorAttributionByKey.set(snapshot.dedup_key, { snapshot, outcome });
+            }
+          }
           const persistResult = await persistScanResults(result);
           for (const rejection of (persistResult.smc5mZoneRejections || [])) {
             smcOteZoneRejectionKeys.add(rejection.dedup_key);
@@ -368,6 +414,7 @@ export async function runBacktest({
     smcObFvgOutcomes: [...smcObFvgOutcomesByKey.values()],
     smcTriggerOutcomes: [...smcTriggerOutcomesByKey.values()],
     candlePatternOutcomes: [...candlePatternOutcomesByKey.values()],
+    indicatorAttributionRecords: [...indicatorAttributionByKey.values()],
     entryFunnelCounts,
     attemptStats: Object.fromEntries(
       Object.entries(attemptsByKey).map(([name, map]) => [name, summarizeAttempts(map)]),
@@ -443,6 +490,91 @@ function computeRegimeValueStats(allOutcomes) {
   return { adxStats: numericStats(adxRejectedValues), chopStats: numericStats(chopRejectedValues) };
 }
 
+// docs/known-risks.md item 69 (Fase 1) — sumário simples (n/expectância/IC95)
+// sobre uma lista PLANA de resultados em R, não reaproveitando summarizeOps
+// (que espera TradeOperation reais com entry/exit_price/partial_percent para
+// calcular custo real — os sinais-fantasma não têm fill nem custo real, só
+// o R bruto simulado). z=1.96 fixo (mesmo padrão de summarizeOps) — NÃO
+// aplica a correção Bonferroni que outras seções deste projeto já usam para
+// comparações múltiplas (docs/known-risks.md item 56/68); comparar mais de
+// 2 buckets aqui exige a mesma disciplina manual já registrada nesses itens.
+function summarizeRList(rValues, minTrades = 30) {
+  const n = rValues.length;
+  if (n === 0) return { n: 0, expectancyR: null, stdErr: null, ci95: null, conclusive: false, inconclusiveReason: 'no_data' };
+  const mean = rValues.reduce((a, b) => a + b, 0) / n;
+  if (n < 2) {
+    return { n, expectancyR: +mean.toFixed(4), stdErr: null, ci95: null, conclusive: false, inconclusiveReason: 'insufficient_sample' };
+  }
+  const variance = rValues.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1);
+  const stdErr = Math.sqrt(variance / n);
+  const lo = mean - 1.96 * stdErr;
+  const hi = mean + 1.96 * stdErr;
+  const meetsMin = n >= minTrades;
+  const straddlesZero = lo <= 0 && hi >= 0;
+  const conclusive = meetsMin && !straddlesZero;
+  return {
+    n,
+    expectancyR: +mean.toFixed(4),
+    stdErr: +stdErr.toFixed(4),
+    ci95: [+lo.toFixed(4), +hi.toFixed(4)],
+    conclusive,
+    inconclusiveReason: conclusive ? null : (!meetsMin ? 'sample_below_min' : 'ci_straddles_zero'),
+  };
+}
+
+// Agrupa CADA indicador SEPARADAMENTE (pedido explícito do usuário) pela
+// direção-RELATIVA de concordância — "este indicador concorda com o LADO do
+// sinal?", a MESMA pergunta que calculateSignalStrength (confluence.js) já
+// faz pra pontuar (ex.: MACD conta pontos só quando concorda com isBuy/
+// isSell) — não um corte absoluto bullish/bearish que misturaria BUY e SELL
+// sem sentido. `rResult` presente (não null: exclui insufficient_data e
+// STILL_OPEN_AT_CUTOFF, que não têm resultado real ainda) é a amostra usada
+// em todos os buckets. Volume não é relativo à direção (é um estado do
+// mercado, não do indicador de tendência) — mantém o corte absoluto.
+function buildIndicatorAttributionSection(records, minTrades) {
+  const resolved = records.filter(r => Number.isFinite(r.outcome?.rResult));
+  const bucket = (predicate) => {
+    const yes = [], no = [];
+    for (const { snapshot, outcome } of resolved) {
+      (predicate(snapshot) ? yes : no).push(outcome.rResult);
+    }
+    return { agrees: summarizeRList(yes, minTrades), disagrees: summarizeRList(no, minTrades) };
+  };
+  const isBuy = (s) => s.direction === 'BUY';
+  return {
+    totalRawSignals: records.length,
+    resolvedOutcomes: resolved.length,
+    stillOpenOrInsufficient: records.length - resolved.length,
+    // `follow_through` FICOU FORA de propósito (Codex review, PR #154, P2):
+    // calculateConfirmedSignal (rangeFilterConfirmation.js) só produz
+    // confirmedSignal !== null quando o followThrough correspondente já é
+    // true — todo snapshot capturado em scanner.js (que só existe quando
+    // confirmedSignal é BUY/SELL) tem follow_through:true por construção.
+    // Um bucket "agrees vs. disagrees" sempre com disagrees vazio (n=0)
+    // mediria ruído, não o componente. O campo `follow_through` continua
+    // no snapshot bruto (records abaixo) para o dia em que a captura migrar
+    // para ANTES do gate de follow-through (útil com confirmBars > 1,
+    // onde candidatos com follow-through falho existem de verdade).
+    by: {
+      macd: bucket(s => (isBuy(s) ? s.macd_bullish : s.macd_bearish) === true),
+      ema: bucket(s => (isBuy(s) ? s.ema_bull : s.ema_bear) === true),
+      rsi: bucket(s => (isBuy(s) ? s.rsi_crossed_bull50 : s.rsi_crossed_bear50) === true),
+      volume_above_ma: bucket(s => s.volume_above_ma === true),
+    },
+    // Array bruto COMPLETO (Codex review, PR #154, P2: antes filtrava só os
+    // resolvidos, escondendo sinais still-open/insufficient_data do
+    // consumidor) — pedido explícito do usuário: "sempre tenha separado os
+    // dados de cada indicador pra eu poder analisar com calma tudo". Cada
+    // indicador já vem em campo próprio no snapshot, nada agregado aqui;
+    // permite qualquer corte adicional fora dos 4 acima (ex.: por tier, por
+    // faixa de ADX/Chop, ou reconstruir o bucket de follow_through quando a
+    // captura migrar) sem precisar rodar o backtest de novo. `outcome.rResult
+    // == null` distingue still-open/insufficient_data (consumidor decide o
+    // que fazer com eles) dos resolvidos usados em `by` acima.
+    records,
+  };
+}
+
 function groupByCascade(items) {
   const map = new Map();
   for (const item of items) {
@@ -508,6 +640,7 @@ export function buildReport(ops, {
   smcRegimeOutcomes = [], smcRegimeAllOutcomes = smcRegimeOutcomes,
   rfRegimeOutcomes = [], rfRegimeAllOutcomes = rfRegimeOutcomes,
   smcObFvgOutcomes = [], smcTriggerOutcomes = [], candlePatternOutcomes = [],
+  indicatorAttributionRecords = [],
   entryFunnelCounts = { '4h_15m': {}, '1h_5m': {} }, attemptStats = {}, costModel, minTrades,
 } = {}) {
   const attemptsOf = (name) => attemptStats[name] ?? { ...EMPTY_ATTEMPTS };
@@ -816,6 +949,11 @@ export function buildReport(ops, {
         { totalRejections: Object.values(byReason).reduce((a, b) => a + b, 0), byReason },
       ]),
     ),
+    // Simulador de operação-fantasma (docs/known-risks.md item 69, Fase 1) —
+    // vazio (`totalRawSignals: 0`) quando runBacktest rodou sem
+    // `getFutureCandles` (o comportamento padrão até agora). Nunca gate,
+    // nunca abre TradeOperation real — só leitura estatística.
+    indicatorAttribution: buildIndicatorAttributionSection(indicatorAttributionRecords, minTrades),
     // Fase 5 (docs/known-risks.md item 44) — o custo que o replay descontou e,
     // mais importante, o veredito de amostra. `avgCostR` é a linha decisiva:
     // se ela for da mesma ordem que `overall.expectancyR`, a "vantagem" era

@@ -28,7 +28,15 @@ function getDataDir() {
 }
 const cache = new Map();
 
-function loadSeries(symbol, timeframe) {
+// Exportado (docs/known-risks.md item 69) para o simulador de operação-
+// fantasma (src/lib/indicatorAttribution.js, invocado só por
+// backtestEngine.js) andar para a FRENTE no tempo a partir de um sinal —
+// diferente de fetchCandles, que sempre corta em simNow() (causal para o
+// scanner ao vivo). Só faz sentido aqui: este arquivo é Node-only, redirect
+// exclusivo de scripts/build-backtest.mjs — build-scan.mjs (scanner ao vivo)
+// nunca o importa, então expor a série inteira não vaza look-ahead pro
+// caminho de produção.
+export function loadSeries(symbol, timeframe) {
   const key = `${symbol}:${timeframe}`;
   if (cache.has(key)) return cache.get(key);
   const file = path.join(getDataDir(), `${symbol}_${timeframe}.json`);
