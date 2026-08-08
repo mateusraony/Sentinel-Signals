@@ -6376,6 +6376,25 @@ praticamente igual. **Veredito**: o flag tem efeito real no FETUSDT, só que
 pequeno e raro (2 de 18) — não é "zero impacto" como a 1ª leitura sugeria,
 mas também está longe de "resolve o problema relatado".
 
+**Por que o efeito é tão raro — mecanismo (observação do usuário,
+confirmada lendo o código)**: `check15mConfirmation` (`src/lib/
+scanner.js:424-467`) busca "a vela de 15m mais recente que já fechou" no
+momento em que o scan roda. Todo fechamento de vela de 4h **também é**,
+por construção, um fechamento de vela de 15m (4h = 16 × 15m) — então,
+quando o scan avalia o sinal de 4h na MESMA passada em que ele nasceu, a
+"vela de 15m mais recente" já é a que fechou junto com a de 4h, não uma
+vela nova 15 minutos depois. **Medido nos dados**: 16 das 18 operações do
+FETUSDT entraram no MESMO instante exato do fechamento do candle de 4h
+(`entry_candle_time_15m === candle_close_time`) — zero espera real. Só 2
+de 18 esperaram uma vela de 15m a mais (exatamente 15min, quando a 1ª
+checagem pegou o 15m ainda não realinhado). Ou seja: na prática, a
+"confirmação de 15m" quase nunca é uma espera de verdade — é um cheque
+quase-instantâneo que só ocasionalmente pega o mercado no meio de uma
+reversão. Isso é consistente com o funil agregado dos 7 símbolos
+(`entryFunnel['4h_15m'].byReason.confirmation_15m_not_aligned = 109` de
+1986 rejeições totais, ~5,5%) — a confirmação raramente é o gate que
+decide.
+
 **As duas datas do Contexto, verificadas contra os dados**:
 - **27/07 (venda)**: aparece IDÊNTICA nos dois runs — candle de sinal abre
   12:00 UTC = 09:00 Brasília (bate com o relatado). Mas o backtest fecha
