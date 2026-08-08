@@ -6443,7 +6443,7 @@ Verificação: leitura direta dos 2 `backtest-report.json` completos
 `symbol === 'FETUSDT'`), comparação campo a campo das 18 operações de cada
 run. Nenhuma mudança de código nesta rodada — só registro do resultado.
 
-## 68. RF 1h TOTALMENTE independente do 4h — novo mecanismo experimental (`rf1hUncondEnabled`), A/B pendente (2026-08-08)
+## 68. RF 1h TOTALMENTE independente do 4h — A/B real: expectância negativa e conclusiva, mantido desligado (2026-08-08)
 
 ### Contexto
 
@@ -6508,14 +6508,82 @@ presente só em `backtestPineConfig.js` + 1 backtest de fumaça local (sem
 dado de candle disponível nesta sessão — sem acesso à Binance — mas
 confirmou que o código compila e roda sem crashar).
 
-### Pendente
+### A/B real (2026-08-08) — 3 disparos do `backtest.yml`, mesma janela/símbolos
 
-O A/B real (3 disparos manuais do `backtest.yml`: baseline 4h nativo,
-`rf1hCondEnabled`, `rf1hUncondEnabled`, mesma janela/símbolos) ainda não foi
-rodado — precisa ser disparado manualmente pelo usuário pela UI do GitHub
-Actions (esta sessão não tem permissão para `workflow_dispatch` via API,
-confirmado 403 em tentativa anterior nesta mesma sessão). Este item será
-atualizado com o resultado real (`report.byCascade`, `report.entryFunnel`,
-`report.rfRegime`, `report.costs.conclusive`) assim que os 3 relatórios
-estiverem disponíveis — sem essa comparação, nenhuma recomendação sobre
-ligar/não ligar a flag pode ser feita ainda.
+3 rodadas disparadas manualmente pelo usuário (`workflow_dispatch`, 12 meses,
+7 símbolos: BTCUSDT/ETHUSDT/FETUSDT/PENDLEUSDT/ZROUSDT/DYDXUSDT/PAXGUSDT,
+2025-08-08→2026-08-08): `{}` (`rf1h-ab-baseline-4h`), `{"rf1hCondEnabled":
+true}` (`rf1h-ab-cond`), `{"rf1hUncondEnabled": true}` (`rf1h-ab-uncond`).
+Análise pelos 3 `backtest-report.json` brutos (não só o texto do
+`analyze-backtest.mjs`, que agrega TODAS as cascatas juntas e teria
+escondido o achado principal abaixo).
+
+**Achado 1 — o número "geral" (todas as cascatas somadas) é inconclusivo
+nos 3 runs, mas esconde um resultado real dentro de uma cascata
+específica.** `report.costs` (agregado): baseline 0,053R (n=103,
+CI95 [-0,180; 0,286]), cond 0,085R (n=221, CI95 [-0,077; 0,248]), uncond
+−0,073R (n=281, CI95 [-0,213; 0,068]) — os 3 com `conclusive: false`
+(`ci_straddles_zero`). Olhar só esse número (o que `analyze-backtest.mjs`
+imprime) sugeriria "tudo inconclusivo, nada a concluir". `report.byCascade`
+conta uma história diferente.
+
+**Achado 2 — a cascata `rf1h_uncond_15m` ISOLADA tem expectância negativa
+e CONCLUSIVA.** `report.byCascade['rf1h_uncond_15m']` no run `uncond`:
+228 operações, `expectancyR: -0,159`, `expectancyRStdErr: 0,078` → CI95 ≈
+[-0,313; -0,006] — **não cruza zero**, `conclusive: true`. É o único
+resultado conclusivo dos 3 runs, e é negativo. Responde diretamente a
+pergunta original do usuário ("1h puro dá mais operações e mais
+resultado?"): **mais operações, sim** (228 numa cascata só, mais que o
+dobro do baseline de 103); **melhor resultado, não** — o oposto,
+estatisticamente sustentado. Para comparação, `rf1h_cond4h_15m` isolada no
+run `cond` teve 139 operações, expectância +0,074R, mas **inconclusiva**
+(CI95 [-0,135; 0,282], cruza zero) — remover o gate de concordância com o
+4h não só não ajudou, piorou a ponto de virar estatisticamente
+significativo na direção errada.
+
+**Achado 3 — efeito colateral não previsto pelas 2 decisões de design:
+a cascata nova DESLOCA operações da cascata nativa 4h, via o slot
+compartilhado `assetActiveOps`.** A contagem de operações da cascata
+nativa `4h_15m` caiu conforme mais cascatas de 1h competem pelo mesmo
+slot por ativo: 103 (baseline, sem nenhuma cascata de 1h) → 82 (cond) →
+53 (uncond). `report.entryFunnel['4h_15m'].byReason.active_op_exists`
+confirma a causa: 441 (baseline) → 964 (cond) → 1.786 (uncond) — como o
+sinal de 1h dispara com muito mais frequência que o de 4h, ele
+frequentemente já ocupa o slot do ativo quando o sinal 4h nativo chega,
+empurrando o candidato 4h para arbitragem em vez de abrir sua própria
+operação. Isso **não invalida** a Decisão de design 1 (ATR/tier/regime
+seguem vindo de `results['4h']` sem recalcular nada em 1h — confirmado:
+`report.rfRegime.byCascade['4h_15m'].total` é 208 nos 3 runs, idêntico,
+zero divergência de regime introduzida pelas flags novas), mas explica
+por que a expectância da cascata NATIVA parece subir nos runs com mais
+cascatas ligadas (0,053R n=103 → 0,105R n=82 → 0,300R n=53, todas
+inconclusivas por CI) — é mais provável ser efeito de seleção/amostra
+menor (só os sinais 4h que "furam" a concorrência pelo slot abrem
+operação) do que uma melhora real de qualidade; nenhuma dessas 3 é
+conclusiva, então nenhuma conclusão de causalidade é sustentada por elas.
+
+**Achado 4 — confirmação do desenho.**
+`report.entryFunnel['rf1h_uncond_15m'].byReason` não tem `trend_reversed`
+(zero, ausente da lista) — confirma que o gate de concordância com o 4h
+realmente saiu, como pretendido; a mesma chave aparece com 4.387 rejeições
+(35% do funil) em `rf1h_cond4h_15m` no run `cond`, mostrando o quanto
+aquele gate filtra quando está ligado.
+
+### Recomendação final
+
+**Não ligar `rf1hUncondEnabled` em produção** — é a pior das 3 variantes
+medidas: a única com resultado estatisticamente conclusivo, e negativo
+(−0,159R/operação isolada, CI95 exclui zero), além de deslocar operações
+da cascata nativa 4h via contenção do slot `assetActiveOps` (efeito
+colateral de arquitetura, não de estratégia). `rf1hCondEnabled` continua
+sem evidência de melhora (+0,074R isolado, mas inconclusivo) — mantém a
+recomendação já registrada no item 56 de não ativar. Nenhuma mudança de
+comportamento em produção nesta rodada: as duas flags já eram
+backtest-only por isolamento deliberado (tripwire tests), sem caminho de
+chegar a `strategyConfig/current`.
+
+Verificação: leitura direta dos 3 `backtest-report.json` brutos
+(`report.byCascade`, `report.entryFunnel`, `report.rfRegime.byCascade`,
+`report.costs`, `report.arbitration`) — não só o texto agregado do
+`analyze-backtest.mjs`, que teria escondido o Achado 2. Nenhuma mudança de
+código nesta rodada — só registro do resultado.
