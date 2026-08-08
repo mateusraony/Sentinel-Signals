@@ -6354,26 +6354,54 @@ DIFERENÇA entre os dois runs é real" — nenhum teste formal da diferença
 +0,065R é ruído nem que é sinal real — só temos os dois números brutos,
 sem teste estatístico da diferença entre eles.
 
-**Achado mais relevante — complica a hipótese original, mas ainda não
-está totalmente investigado**: FETUSDT (o ativo que motivou toda a
-investigação do item 67) teve exatamente 18 operações nos DOIS runs — MESMA
-CONTAGEM. **Correção (Codex review, PR #148)**: contagem igual não prova
-"zero diferença" — o flag pode trocar uma operação por outra (horário/
-candle de entrada diferente) mantendo o total igual, especialmente com
-gates de operação-ativa envolvidos. Ainda não comparei as operações
-individuais (identidade/horário) do FETUSDT entre os dois runs — pedi ao
-usuário os dados por-operação (`overall.curve` do artifact completo,
-inacessível a esta sessão por bloqueio de rede no armazenamento de blob do
-GitHub Actions) e a comparação real fica **pendente** dessa resposta.
+### Comparação operação-a-operação do FETUSDT — resultado (2026-08-08)
 
-**Recomendação**: não ligar `skip15mConfirmationEnabled` em produção com
-este dado — a expectância não tem teste de significância da diferença, e o
-volume subiu pouco. Flag permanece implementado e testado (desligado por
-padrão), disponível para um A/B melhor no futuro. Próximo passo, já em
-andamento: comparar as operações do FETUSDT individualmente entre os dois
-runs (não só a contagem) antes de aceitar ou descartar a hipótese da
-confirmação de 15m para o caso original.
+Usuário conseguiu baixar e anexar os 2 `backtest-report.json` completos
+(a mesma coisa que eu tinha pedido, mas via upload direto — o download do
+artifact continuava bloqueado pra esta sessão). Comparei as 18 operações
+de `overall.curve` do FETUSDT nos dois runs, uma a uma (`side`,
+`candle_close_time`, `entry_price`, `closed_reason`, `closed_at`, `r`).
 
-Verificação: leitura dos 2 relatórios completos colados pelo usuário
-(`backtest-report.json`/diagnóstico via `analyze-backtest.mjs`), nenhuma
-mudança de código nesta rodada — só registro do resultado.
+**Confirma o que o Codex apontou (achado 2 do PR #148): contagem igual NÃO
+era "zero diferença".** 16 das 18 operações são byte-idênticas (mesmo
+sinal, mesmo preço de entrada, mesmo resultado) — nesses casos o RF do
+15m já estava alinhado no exato instante do fechamento do candle de 4h,
+então a confirmação não atrasou nada. Mas **2 operações divergem de
+verdade**: no sinal de 2025-12-11, a confirmação de 15m atrasou a entrada
+em 15min e mudou o preço (0,2378 vs 0,2356) o suficiente pra mudar o
+desfecho — `STOP_HIT` com **+1,22R** (desligado) vs `TIME_STOP` com
+**+0,64R** (ligado), mesma direção, resultado bem menor. A outra (sinal de
+2026-07-21) teve diferença de preço mínima (0,1602 vs 0,1599), resultado
+praticamente igual. **Veredito**: o flag tem efeito real no FETUSDT, só que
+pequeno e raro (2 de 18) — não é "zero impacto" como a 1ª leitura sugeria,
+mas também está longe de "resolve o problema relatado".
+
+**As duas datas do Contexto, verificadas contra os dados**:
+- **27/07 (venda)**: aparece IDÊNTICA nos dois runs — candle de sinal abre
+  12:00 UTC = 09:00 Brasília (bate com o relatado). Mas o backtest fecha
+  essa operação em **30/07 20:00 UTC** (via `STOP_HIT` favorável, +1,25R —
+  o trailing do runner pós-TP1), não 28/07 21h como o usuário viu ao vivo —
+  ~2 dias de diferença no fechamento. Isso é IGUAL nos dois runs (não tem
+  nada a ver com a confirmação de 15m) — aponta pra divergência de preço
+  entre a fonte que o backtest/cron usa (Binance Spot) e o que o usuário
+  via no TradingView, afetando quando o trailing stop realmente dispara.
+- **05/08 (compra)**: **não aparece em NENHUM dos dois runs.** A operação
+  mais recente do FETUSDT na janela inteira de 12 meses é a de 27/07 — nada
+  depois disso, com ou sem a confirmação de 15m. Isso **descarta
+  definitivamente** a confirmação de 15m como causa desse caso específico
+  (removê-la não trouxe o sinal de volta) — a explicação mais provável é a
+  mesma divergência Spot×TradingView acima, agora afetando se o próprio RF
+  chegou a virar/passar no regime (ADX/Choppiness) usando o dado que o
+  motor vê, não o que o usuário via na tela.
+
+**Recomendação final**: não ligar `skip15mConfirmationEnabled` em
+produção — efeito pequeno, não resolve o caso que motivou a investigação.
+A causa raiz real do episódio relatado é, com boa confiança agora, a
+divergência de fonte de dado (Binance Spot no motor vs. o que o TradingView
+mostra) — já é uma limitação conhecida e aceita do projeto (item 4), não
+um bug corrigível por flag. Não há ação de código adicional proposta aqui.
+
+Verificação: leitura direta dos 2 `backtest-report.json` completos
+(103/104 e 108/109 operações totais, `overall.curve` filtrado por
+`symbol === 'FETUSDT'`), comparação campo a campo das 18 operações de cada
+run. Nenhuma mudança de código nesta rodada — só registro do resultado.
