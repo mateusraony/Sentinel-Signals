@@ -3503,6 +3503,153 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
     });
   });
 
+  // docs/known-risks.md item 68 — RF 1h TOTALMENTE independente do 4h,
+  // backtest-only (pineConfig.rf1hUncondEnabled só existe em
+  // scripts/backtestPineConfig.js). Mesmo padrão de teste da seção 'RF 1h
+  // condicionado ao 4h' acima — a diferença central é o teste 2, que prova
+  // que o 4h desalinhado NÃO bloqueia mais (era exatamente o que o teste
+  // 'flag LIGADA + 4h DESALINHADO ⇒ bloqueado' do rf1hCondEnabled provava
+  // no sentido oposto).
+  describe('RF 1h TOTALMENTE independente do 4h (item 68, rf1hUncondEnabled)', () => {
+    const RF_1H_UNCOND_CASCADE = 'rf1h_uncond_15m';
+
+    function make1hUncondSignal(overrides = {}) {
+      return makeRfSignal({ timeframe: '1h', dedup_key: 'sig_funnel_rf1h_uncond', ...overrides });
+    }
+
+    it('com a flag DESLIGADA (default), sinal 1h continua bloqueado exatamente como hoje — nenhum outcome da cascata nova', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 1));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false }); // rf1hUncondEnabled ausente
+      const results = { '4h': makeTfData() };
+      const signal = make1hUncondSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal] });
+
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+      expect(result.entryFunnelOutcomes.filter((o) => o.cascade === RF_1H_UNCOND_CASCADE)).toHaveLength(0);
+      expect(result.rfRegimeOutcomes.filter((o) => o.cascade === RF_1H_UNCOND_CASCADE)).toHaveLength(0);
+      const logs = await backend.entities.SystemLog.filter({});
+      expect(logs.some((l) => l.details?.reason === 'requires_4h_trend')).toBe(true); // caminho antigo intacto
+    });
+
+    it('flag LIGADA + 4h DESALINHADO com a direção do sinal 1h ⇒ CRIA operação mesmo assim (prova que o gate de concordância saiu)', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 0.01)); // 15m alinhado (BUY) — mesma fixture do teste positivo do cond
+      const pineConfig = makePineConfig({ useADX: false, useChop: false, useTimeStop: false, rf1hUncondEnabled: true });
+      const results = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) }; // tf4hDir=-1, sinal é BUY — desalinhado de propósito
+      const signal = make1hUncondSignal();
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal] });
+
+      const ops = await backend.entities.TradeOperation.filter({});
+      expect(ops).toHaveLength(1);
+      expect(ops[0].cascade).toBe(RF_1H_UNCOND_CASCADE);
+      expect(ops[0].origin_cascade).toBe(RF_1H_UNCOND_CASCADE);
+      expect(ops[0].signal_timeframe).toBe('1h');
+      expect(ops[0].tier_time_stop_bars).toBe(192); // mesma conversão ×4 do cond (via buildTradeOpData, não copiada à mão)
+    });
+
+    it('flag LIGADA + 4h ALINHADO ⇒ também cria (alinhamento deixou de ser condição, não passou a ser proibido)', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 0.01));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false, useTimeStop: false, rf1hUncondEnabled: true });
+      const results = { '4h': makeTfData() }; // direction:1, alinhado com BUY
+      const signal = make1hUncondSignal();
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal] });
+
+      const ops = await backend.entities.TradeOperation.filter({});
+      expect(ops).toHaveLength(1);
+      expect(ops[0].cascade).toBe(RF_1H_UNCOND_CASCADE);
+    });
+
+    it('flag LIGADA + regime reprovado (ADX fraco no 4h) ⇒ bloqueado, rfRegimeOutcomes com o cascade novo, nunca misturado com os outros 2 RF', async () => {
+      const pineConfig = makePineConfig({ useADX: true, useChop: false, rf1hUncondEnabled: true });
+      const results = {
+        '4h': makeTfData({ adx: { adx: 5 }, chop: 40, tier: { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48, adxMinVal: 25 } }),
+      };
+      const signal = make1hUncondSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal] });
+
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+      expect(result.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_funnel_rf1h_uncond', cascade: RF_1H_UNCOND_CASCADE, reason: 'regime_rejected' });
+      const uncond = result.rfRegimeOutcomes.filter((o) => o.cascade === RF_1H_UNCOND_CASCADE);
+      expect(uncond).toHaveLength(2); // 1º pass + retry reavaliando o mesmo SignalEvent, mesma duplicidade documentada no cond
+      for (const outcome of uncond) expect(outcome).toMatchObject({ ok: false, adxOk: false, adx: 5 });
+      expect(result.rfRegimeOutcomes.some((o) => o.cascade === '4h_15m' || o.cascade === 'rf1h_cond4h_15m')).toBe(false);
+    });
+
+    it('retry: sinal 1h expira após a janela de 4 barras (4h absolutas), mesmo mecanismo de expired_logged das outras cascatas RF de 1h', async () => {
+      const pineConfig = makePineConfig({ useADX: false, useChop: false, rf1hUncondEnabled: true });
+      backend._seed('SignalEvent', {
+        id: 'sig_funnel_rf1h_uncond', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '1h', signal_type: 'BUY',
+        source: 'range_filter', dedup_key: 'sig_funnel_rf1h_uncond',
+        created_date: '2026-07-16T07:00:00.000Z', // 5h antes do relógio congelado (12:00) — fora da janela de 4h
+      });
+      const results = { '4h': makeTfData() };
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+      const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf1h_uncond' });
+      expect(stored[0].expired_logged).toBe(true);
+      const logs = await backend.entities.SystemLog.filter({});
+      expect(logs.some((l) => l.message?.includes('sinal expirou sem nunca confirmar entrada (15m, independente do 4h, experimental)'))).toBe(true);
+    });
+
+    it('retry: sinal 1h dentro da janela de 4h ainda é reavaliado normalmente (não expira cedo demais)', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 1));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false, rf1hUncondEnabled: true });
+      backend._seed('SignalEvent', {
+        id: 'sig_funnel_rf1h_uncond', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '1h', signal_type: 'BUY',
+        source: 'range_filter', dedup_key: 'sig_funnel_rf1h_uncond',
+        created_date: '2026-07-16T09:00:00.000Z', // 3h antes do relógio congelado (12:00) — dentro da janela de 4h
+      });
+      const results = { '4h': makeTfData() };
+
+      const result = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+      const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf1h_uncond' });
+      expect(stored[0].expired_logged).toBeFalsy();
+      expect(result.rfRegimeOutcomes.some((o) => o.cascade === RF_1H_UNCOND_CASCADE)).toBe(true);
+    });
+
+    it('RF 4h nativa e RF 1h independente disputando o mesmo ativo concorrentemente nunca criam 2 operações', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 0.01));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false, useTimeStop: false, rf1hUncondEnabled: true });
+      const results = { '4h': makeTfData() };
+
+      await Promise.all([
+        persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal({ dedup_key: 'sig_race_4h_u', context: { score: 80 } })] }),
+        persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [make1hUncondSignal({ dedup_key: 'sig_race_1h_u', context: { score: 80 } })] }),
+      ]);
+
+      const ops = await backend.entities.TradeOperation.filter({});
+      expect(ops).toHaveLength(1);
+      expect(['4h_15m', RF_1H_UNCOND_CASCADE]).toContain(ops[0].cascade);
+    });
+
+    // Convenção documentada, não validada em runtime (comentário no
+    // scanner.js) — este teste prova que, mesmo se alguém ligar os dois
+    // flags juntos por engano, o sinal é processado só 1x (a cadeia
+    // if/else-if do Bloco A garante isso na 1ª passada).
+    it('cond + uncond ligados juntos no mesmo pineConfig: sinal 1h processado só 1x (cadeia if/else-if), nunca os dois cascades', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 0.01));
+      const pineConfig = makePineConfig({
+        useADX: false, useChop: false, useTimeStop: false,
+        rf1hCondEnabled: true, rf1hUncondEnabled: true,
+      });
+      const results = { '4h': makeTfData() }; // alinhado — cond teria aceitado de qualquer forma
+      const signal = make1hUncondSignal();
+
+      const result = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal] });
+
+      const ops = await backend.entities.TradeOperation.filter({});
+      expect(ops).toHaveLength(1);
+      expect(ops[0].cascade).toBe('rf1h_cond4h_15m'); // cond vem primeiro na cadeia if/else-if
+      const uncondOutcomes = result.entryFunnelOutcomes.filter((o) => o.cascade === RF_1H_UNCOND_CASCADE);
+      expect(uncondOutcomes).toHaveLength(0); // ramo uncond nunca chega a avaliar este sinal na 1ª passada
+    });
+  });
+
   describe('SMC (1h_5m)', () => {
     // Codex review (PR #102, P1) — mesmo raciocínio do teste equivalente na
     // seção RF acima: o sinal que acabou de confirmar não pode contar como

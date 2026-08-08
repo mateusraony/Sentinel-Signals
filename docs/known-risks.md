@@ -6442,3 +6442,80 @@ Verificação: leitura direta dos 2 `backtest-report.json` completos
 (103/104 e 108/109 operações totais, `overall.curve` filtrado por
 `symbol === 'FETUSDT'`), comparação campo a campo das 18 operações de cada
 run. Nenhuma mudança de código nesta rodada — só registro do resultado.
+
+## 68. RF 1h TOTALMENTE independente do 4h — novo mecanismo experimental (`rf1hUncondEnabled`), A/B pendente (2026-08-08)
+
+### Contexto
+
+Usuário perguntou se o mecanismo de entrada em 1h é igual ao de 4h, e se já
+existia um "1h puro" testado — sem SMC, sem exigir concordância do 4h. Já
+havia 2 mecanismos de 1h medidos: **RF 1h condicionado ao 4h**
+(`rf1hCondEnabled`, item 56 "Fase 1" — exige que o RF do 4h concorde com a
+direção do sinal de 1h antes de considerar entrada; medido: volume 75→157
+operações mas expectância +0,215R→−0,028R, piorou) e **SMC 1h→5m**
+(indicador de estrutura de mercado, não Range Filter; expectância −0,778R,
+item 56). Faltava testar RF de 1h **sem** o gate de concordância com o
+4h — mesmo indicador, mesmo regime, só sem essa exigência direcional.
+Usuário confirmou que queria testar.
+
+### Mecanismo implementado
+
+Nova flag `pineConfig.rf1hUncondEnabled` (default `false`) e nova cascata
+`'rf1h_uncond_15m'` (`RF_1H_UNCOND_CASCADE`, `src/lib/scanner.js`) — mesma
+mecânica do `rf1hCondEnabled` (ATR/tier/regime continuam vindo de
+`results['4h']`, mesma `check15mConfirmation`, mesma janela de retry de 4
+barras de 1h) com a ÚNICA diferença: **não** existe o gate
+`tf4hDir !== sigDir` que o `_cond` tem — um sinal RF de 1h pode abrir
+operação mesmo com o 4h discordando ou sem posição definida. Duas decisões
+de design validadas antes de implementar:
+
+1. **ATR/tier/regime continuam vindo de `results['4h']`**, não recalcula
+   nada em dado de 1h — isola exatamente 1 variável em relação ao
+   `rf1hCondEnabled` já testado (mesma metodologia, resultado comparável) e
+   evita reabrir a calibração ADX/Choppiness em 1h (nunca validada, item 42).
+2. **`CASCADE_RANK` da nova cascata = 2** (`src/lib/signalArbitration.js`),
+   igual a `4h_15m`/`rf1h_cond4h_15m`, não 1 (como SMC) — rank 1 dispararia
+   promoção em dois estágios contra a RF nativa (hoje só existe entre SMC e
+   RF), uma 2ª variável indesejada no experimento.
+
+**Isolamento backtest-only** (mesmo padrão do `rf1hCondEnabled`): a flag
+existe SÓ em `scripts/backtestPineConfig.js` — deliberadamente NUNCA
+espelhada em `src/lib/pineParser.js`/`scripts/adminPineConfig.js` (os dois
+arquivos que alimentam `strategyConfig/current` no Firestore, gravável por
+qualquer sessão anônima, CLAUDE.md decisão item 1 — uma chave viva ali
+seria toggle de produção sem gate de revisão de código). Reforçado por
+tripwire test (`src/lib/rf1hUncondTripwire.test.js`, mesmo padrão do
+`rf1hCondTripwire.test.js`) que falha se a chave aparecer como entrada de
+objeto em qualquer um dos 2 arquivos de produção. **Convenção, não validada
+em runtime**: nunca ligar `rf1hCondEnabled` e `rf1hUncondEnabled` juntos no
+mesmo run — se ambos vierem `true`, o `if/else-if` do bloco de 1ª passada
+processa o sinal só pelo `_cond` (vem primeiro na cadeia); coberto por
+teste em `scannerStateMachine.test.js` (describe do item 68) que documenta
+esse comportamento em vez de bloquear no código.
+
+### Verificação (feita nesta rodada, sem A/B real ainda)
+
+`npm test` (851 testes, +11 desde antes: 3 do tripwire novo + 8 do describe
+novo em `scannerStateMachine.test.js` cobrindo flag desligada, 4h
+desalinhado ainda assim cria operação — prova de que o gate saiu —, 4h
+alinhado também cria, regime reprovado bloqueia, expiração/retry em 4
+barras, concorrência com a RF nativa pelo mesmo slot, e os dois flags
+`cond`+`uncond` juntos processando o sinal só 1x) + `npm run lint` limpo +
+`npm run build` + os 3 alvos esbuild que empacotam `scanner.js`
+(`build:scan`, `build:scan-shadow`, `build:backtest`) compilando sem erro +
+grep de isolamento confirmando a chave ausente nos 2 arquivos de produção e
+presente só em `backtestPineConfig.js` + 1 backtest de fumaça local (sem
+dado de candle disponível nesta sessão — sem acesso à Binance — mas
+confirmou que o código compila e roda sem crashar).
+
+### Pendente
+
+O A/B real (3 disparos manuais do `backtest.yml`: baseline 4h nativo,
+`rf1hCondEnabled`, `rf1hUncondEnabled`, mesma janela/símbolos) ainda não foi
+rodado — precisa ser disparado manualmente pelo usuário pela UI do GitHub
+Actions (esta sessão não tem permissão para `workflow_dispatch` via API,
+confirmado 403 em tentativa anterior nesta mesma sessão). Este item será
+atualizado com o resultado real (`report.byCascade`, `report.entryFunnel`,
+`report.rfRegime`, `report.costs.conclusive`) assim que os 3 relatórios
+estiverem disponíveis — sem essa comparação, nenhuma recomendação sobre
+ligar/não ligar a flag pode ser feita ainda.
