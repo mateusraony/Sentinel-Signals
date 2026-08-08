@@ -6443,7 +6443,7 @@ Verificação: leitura direta dos 2 `backtest-report.json` completos
 `symbol === 'FETUSDT'`), comparação campo a campo das 18 operações de cada
 run. Nenhuma mudança de código nesta rodada — só registro do resultado.
 
-## 68. RF 1h TOTALMENTE independente do 4h — novo mecanismo experimental (`rf1hUncondEnabled`), A/B pendente (2026-08-08)
+## 68. RF 1h TOTALMENTE independente do 4h — A/B real: expectância negativa e conclusiva, mantido desligado (2026-08-08)
 
 ### Contexto
 
@@ -6508,14 +6508,108 @@ presente só em `backtestPineConfig.js` + 1 backtest de fumaça local (sem
 dado de candle disponível nesta sessão — sem acesso à Binance — mas
 confirmou que o código compila e roda sem crashar).
 
-### Pendente
+### A/B real (2026-08-08) — 3 disparos do `backtest.yml`, mesma janela/símbolos
 
-O A/B real (3 disparos manuais do `backtest.yml`: baseline 4h nativo,
-`rf1hCondEnabled`, `rf1hUncondEnabled`, mesma janela/símbolos) ainda não foi
-rodado — precisa ser disparado manualmente pelo usuário pela UI do GitHub
-Actions (esta sessão não tem permissão para `workflow_dispatch` via API,
-confirmado 403 em tentativa anterior nesta mesma sessão). Este item será
-atualizado com o resultado real (`report.byCascade`, `report.entryFunnel`,
-`report.rfRegime`, `report.costs.conclusive`) assim que os 3 relatórios
-estiverem disponíveis — sem essa comparação, nenhuma recomendação sobre
-ligar/não ligar a flag pode ser feita ainda.
+3 rodadas disparadas manualmente pelo usuário (`workflow_dispatch`, 12 meses,
+7 símbolos: BTCUSDT/ETHUSDT/FETUSDT/PENDLEUSDT/ZROUSDT/DYDXUSDT/PAXGUSDT,
+2025-08-08→2026-08-08): `{}` (`rf1h-ab-baseline-4h`), `{"rf1hCondEnabled":
+true}` (`rf1h-ab-cond`), `{"rf1hUncondEnabled": true}` (`rf1h-ab-uncond`).
+Análise pelos 3 `backtest-report.json` brutos (não só o texto do
+`analyze-backtest.mjs`, que agrega TODAS as cascatas juntas e teria
+escondido o achado principal abaixo).
+
+**Achado 1 — o número "geral" (todas as cascatas somadas) é inconclusivo
+nos 3 runs, mas esconde um resultado real dentro de uma cascata
+específica.** `report.costs` (agregado): baseline 0,053R (n=103,
+CI95 [-0,180; 0,286]), cond 0,085R (n=221, CI95 [-0,077; 0,248]), uncond
+−0,073R (n=281, CI95 [-0,213; 0,068]) — os 3 com `conclusive: false`
+(`ci_straddles_zero`). Olhar só esse número (o que `analyze-backtest.mjs`
+imprime) sugeriria "tudo inconclusivo, nada a concluir". `report.byCascade`
+conta uma história diferente.
+
+**Achado 2 — a leitura "conclusiva" da cascata `rf1h_uncond_15m` isolada NÃO
+se sustenta (correção, Codex review PR #153).** A 1ª versão deste registro
+citava `report.byCascade['rf1h_uncond_15m']` (228 operações, `expectancyR:
+-0,159`, `expectancyRStdErr: 0,078`) como resultado "conclusivo" usando o
+IC95 padrão (z=1,96 → [-0,313; -0,006], não cruza zero,
+`report.byCascade.*.conclusive: true` cru). Dois problemas, ambos já
+documentados em precedente no próprio arquivo:
+
+1. **Falta a correção de comparações múltiplas.** Esta cascata compete com
+   a mesma pergunta em aberto do `rf1hCondEnabled` sobre dado histórico
+   sobreposto — o mesmo raciocínio que já levou o modo sombra (item 56) a
+   exigir Bonferroni m=2 (z=2,24) em vez do z=1,96 padrão (ver linhas
+   4917-4923 acima). Recalculando com z=2,24: CI95 ≈ [-0,334; +0,016] —
+   **cruza zero**. Sob o próprio critério que este projeto já usa nesse
+   exato contexto, o resultado NÃO é decisão-grade.
+2. **Comparar sub-buckets de `byCascade` entre si (ou entre runs) não é um
+   contraste limpo.** Já registrado como achado do Codex no PR #130 (ver
+   linhas 5061-5086 acima): `4h_15m` e a cascata experimental disputam o
+   MESMO slot `assetActiveOps` por ativo — qual operação histórica cai em
+   qual bucket depende de quem "venceu a corrida" pelo slot, não de uma
+   divisão limpa condicional/incondicional. Comparar -0,159R (bucket
+   uncond) contra +0,074R (bucket `rf1h_cond4h_15m` do run `cond`) como se
+   fosse teste isolado de qualidade de cascata reabre o mesmo erro já
+   corrigido ali — os buckets ficam como leitura **descritiva**, não como
+   prova de diferença.
+
+A leitura válida que sobra é a do Achado 1: os 3 `report.overall`
+continuam todos inconclusivos, sem teste formal da diferença entre eles —
+o run `uncond` tem o único ponto estimado negativo (-0,073R) dos 3, mas
+isso é direção, não prova.
+
+**Achado 3 — efeito colateral não previsto pelas 2 decisões de design:
+a cascata nova DESLOCA operações da cascata nativa 4h, via o slot
+compartilhado `assetActiveOps`.** A contagem de operações da cascata
+nativa `4h_15m` caiu conforme mais cascatas de 1h competem pelo mesmo
+slot por ativo: 103 (baseline, sem nenhuma cascata de 1h) → 82 (cond) →
+53 (uncond). `report.entryFunnel['4h_15m'].byReason.active_op_exists`
+confirma a causa: 441 (baseline) → 964 (cond) → 1.786 (uncond) — como o
+sinal de 1h dispara com muito mais frequência que o de 4h, ele
+frequentemente já ocupa o slot do ativo quando o sinal 4h nativo chega,
+empurrando o candidato 4h para arbitragem em vez de abrir sua própria
+operação. Isso **não invalida** a Decisão de design 1 (ATR/tier/regime
+seguem vindo de `results['4h']` sem recalcular nada em 1h — confirmado:
+`report.rfRegime.byCascade['4h_15m'].total` é 208 nos 3 runs, idêntico,
+zero divergência de regime introduzida pelas flags novas), mas explica
+por que a expectância da cascata NATIVA parece subir nos runs com mais
+cascatas ligadas (0,053R n=103 → 0,105R n=82 → 0,300R n=53, todas
+inconclusivas por CI) — é mais provável ser efeito de seleção/amostra
+menor (só os sinais 4h que "furam" a concorrência pelo slot abrem
+operação) do que uma melhora real de qualidade; nenhuma dessas 3 é
+conclusiva, então nenhuma conclusão de causalidade é sustentada por elas.
+
+**Achado 4 — confirmação do desenho.**
+`report.entryFunnel['rf1h_uncond_15m'].byReason` não tem `trend_reversed`
+(zero, ausente da lista) — confirma que o gate de concordância com o 4h
+realmente saiu, como pretendido; a mesma chave aparece com 4.387 rejeições
+(35% do funil) em `rf1h_cond4h_15m` no run `cond`, mostrando o quanto
+aquele gate filtra quando está ligado.
+
+### Recomendação final
+
+**Não ligar `rf1hUncondEnabled` em produção** — mas por **ausência de
+evidência de benefício + custo arquitetural real**, não por "prova
+estatística de que piora" (correção acima: essa prova não se sustenta).
+Os 3 `report.overall` seguem todos inconclusivos, então não há suporte
+estatístico para afirmar que qualquer uma das 3 variantes é melhor ou
+pior que as outras. O que É um achado sólido (não depende de IC — é
+contagem/funil, Achado 3 acima): a cascata desloca operações reais da
+cascata nativa 4h via contenção do slot `assetActiveOps`
+(`active_op_exists`: 441→964→1.786), um efeito colateral de arquitetura
+que já teria custo mesmo que a cascata nova fosse neutra em qualidade.
+Sem ganho demonstrado que justifique esse custo, a flag continua
+desligada. `rf1hCondEnabled` também segue sem evidência de melhora — mantém
+a recomendação já registrada no item 56 de não ativar. Nenhuma mudança de
+comportamento em produção nesta rodada: as duas flags já eram
+backtest-only por isolamento deliberado (tripwire tests), sem caminho de
+chegar a `strategyConfig/current`.
+
+Verificação: leitura direta dos 3 `backtest-report.json` brutos
+(`report.byCascade`, `report.entryFunnel`, `report.rfRegime.byCascade`,
+`report.costs`, `report.arbitration`). Nenhuma mudança de código nesta
+rodada — só registro do resultado (corrigido após review do Codex no
+PR #153 apontar 2 achados procedentes sobre correção de comparações
+múltiplas e contaminação de sub-buckets — ambos já tinham precedente
+documentado neste mesmo arquivo, itens 56/PR#130, que eu não tinha
+reaplicado aqui).
