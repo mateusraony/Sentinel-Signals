@@ -413,17 +413,23 @@ sem o viés de amostra de "só quem já passou em todos os filtros" — nunca
 abre operação real, é leitura estatística pura.
 
 `{totalRawSignals, resolvedOutcomes, stillOpenOrInsufficient, by, records}`.
-`by.{follow_through,macd,ema,rsi,volume_above_ma}` — cada um
-`{agrees, disagrees}` (`n`/`expectancyR`/`stdErr`/`ci95`/`conclusive`),
-agrupado pela concordância DIRECIONAL do indicador com o lado do sinal
-(não um corte absoluto bullish/bearish — misturaria BUY e SELL). Ex.:
+`by.{macd,ema,rsi,volume_above_ma}` — cada um `{agrees, disagrees}`
+(`n`/`expectancyR`/`stdErr`/`ci95`/`conclusive`), agrupado pela
+concordância DIRECIONAL do indicador com o lado do sinal (não um corte
+absoluto bullish/bearish — misturaria BUY e SELL). Ex.:
 `by.ema.agrees.expectancyR` vs. `by.ema.disagrees.expectancyR` responde
 "quando a EMA concorda com a direção do sinal, o resultado muda?".
-`records` é o array bruto completo — cada indicador em campo separado
+`follow_through` FICA FORA de `by` de propósito (Codex review, PR #154):
+`calculateConfirmedSignal` só produz um sinal confirmado quando o
+follow-through já é `true`, então todo snapshot capturado tem
+`follow_through: true` por construção — o campo continua no snapshot bruto
+em `records`, só não teria bucket `disagrees` com dado nenhum. `records` é
+o array bruto COMPLETO (inclusive sinais ainda em aberto/sem dado
+suficiente, `outcome.rResult == null`) — cada indicador em campo separado
 (nunca agregado), para qualquer corte adicional (tier, ADX, Chop) sem
 precisar rodar o backtest de novo.
 
-**Não aplica correção Bonferroni por padrão** — comparar os 5 buckets entre
+**Não aplica correção Bonferroni por padrão** — comparar os buckets entre
 si (ou contra outra flag/experimento) exige a mesma disciplina manual já
 usada nos itens 56/68 deste projeto. E como qualquer seção deste relatório,
 `conclusive: false`/`ci95` cruzando zero significa que aquele bucket

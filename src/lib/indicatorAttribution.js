@@ -35,6 +35,15 @@ export function buildShadowOp(snapshot, pineConfig = {}) {
   const tp2R = tp1R * 2;
   const tp1 = isBuy ? entry + riskR * tp1R : entry - riskR * tp1R;
   const tp2 = isBuy ? entry + riskR * tp2R : entry - riskR * tp2R;
+  // Mesma fórmula de buildTradeOpData (scanner.js:317) — partialPct é
+  // 100 quando o runner está desligado (TP1 fecha tudo), senão
+  // pineConfig.tp1QtyPercent (default 50). Codex review (PR #154, P1):
+  // sem isso, um resultado TP1→TP2 media só a perna do runner (3R) em vez
+  // do resultado REAL da posição (50%@1,5R + 50%@3R = 2,25R) — a mesma
+  // ponderação que tradeMetrics.calcRealizedDelta já usa para operações
+  // reais (getWeights/partial_percent).
+  const runnerEnabled = pineConfig.runnerEnabled !== false;
+  const partialPct = runnerEnabled ? (pineConfig.tp1QtyPercent ?? 50) : 100;
   return {
     isBuy,
     entry,
@@ -45,7 +54,12 @@ export function buildShadowOp(snapshot, pineConfig = {}) {
     tp2R,
     atrValue,
     timeStopBars: snapshot.tier_time_stop_bars ?? 48,
-    runnerEnabled: pineConfig.runnerEnabled !== false,
+    // Codex review (PR #154, P2): scanner.js só aplica o Time Stop quando
+    // `pineConfig.useTimeStop !== false` — sem isso o simulador media uma
+    // estratégia diferente da que o replay foi configurado para testar.
+    useTimeStop: pineConfig.useTimeStop !== false,
+    runnerEnabled,
+    partialPct,
     trailAtrMult: pineConfig.trailAtrMult ?? 2.0,
   };
 }
@@ -92,11 +106,20 @@ function trackExcursion({ isBuy, entry, riskR, candleHigh, candleLow, mfeR, maeR
  * @returns {Object} outcome
  */
 export function simulateShadowOutcome(shadowOp, futureCandles) {
-  const { isBuy, entry, initialStop, tp1, tp2, timeStopBars, runnerEnabled, atrValue, trailAtrMult } = shadowOp;
+  const { isBuy, entry, initialStop, tp1, tp2, timeStopBars, useTimeStop, runnerEnabled, partialPct, atrValue, trailAtrMult } = shadowOp;
   const riskR = Math.abs(entry - initialStop);
   if (!(riskR > 0) || !Array.isArray(futureCandles) || futureCandles.length === 0) {
     return { outcome: 'insufficient_data', exitReason: null, rResult: null, mfeR: null, maeR: null, barsToExit: null };
   }
+
+  // Codex review (PR #154, P1) — mesma ponderação de tradeMetrics.
+  // calcRealizedDelta/getWeights: uma vez que TP1 bateu, o resultado final
+  // combina a perna JÁ REALIZADA em tp1R com a perna do runner
+  // (`legR`, o que a saída pós-TP1 valeria sozinha). Só se aplica quando
+  // tp1Hit=true — antes disso o resultado é de 100% da posição, sem pesos.
+  const partial = partialPct / 100;
+  const runner = 1 - partial;
+  const weightedResult = (legR) => partial * shadowOp.tp1R + runner * legR;
 
   let currentStop = initialStop;
   let tp1Hit = false;
@@ -118,7 +141,7 @@ export function simulateShadowOutcome(shadowOp, futureCandles) {
     if (!tp1Hit) {
       const stopHit = isBuy ? stopCheckPrice <= currentStop : stopCheckPrice >= currentStop;
       const tp1Touched = isBuy ? tpCheckPrice >= tp1 : tpCheckPrice <= tp1;
-      const timeStopTriggered = barsSinceEntry >= timeStopBars;
+      const timeStopTriggered = useTimeStop && barsSinceEntry >= timeStopBars;
 
       if (stopHit) {
         return { outcome: 'STOP_HIT', exitReason: 'STOP_HIT', rResult: (isBuy ? 1 : -1) * (currentStop - entry) / riskR, mfeR, maeR, barsToExit: barsSinceEntry };
@@ -138,10 +161,11 @@ export function simulateShadowOutcome(shadowOp, futureCandles) {
       const tp2Touched = isBuy ? tpCheckPrice >= tp2 : tpCheckPrice <= tp2;
 
       if (stopHit) {
-        return { outcome: 'STOP_HIT', exitReason: 'STOP_HIT', rResult: (isBuy ? 1 : -1) * (currentStop - entry) / riskR, mfeR, maeR, barsToExit: barsSinceEntry };
+        const legR = (isBuy ? 1 : -1) * (currentStop - entry) / riskR;
+        return { outcome: 'STOP_HIT', exitReason: 'STOP_HIT', rResult: weightedResult(legR), mfeR, maeR, barsToExit: barsSinceEntry };
       }
       if (tp2Touched) {
-        return { outcome: 'TP2_HIT', exitReason: 'TP2_HIT', rResult: shadowOp.tp2R, mfeR, maeR, barsToExit: barsSinceEntry };
+        return { outcome: 'TP2_HIT', exitReason: 'TP2_HIT', rResult: weightedResult(shadowOp.tp2R), mfeR, maeR, barsToExit: barsSinceEntry };
       }
       // P0-d: avança só depois de checar contra o stop ARMAZENADO — mesma
       // ordem do motor real (opExitRules.js:advanceTrailingStop).

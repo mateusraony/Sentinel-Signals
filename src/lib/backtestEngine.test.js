@@ -374,6 +374,60 @@ describe('runBacktest — no-look-ahead (4h Range Filter flip)', () => {
     expect(report.overall.total).toBe(0); // summarizeOps only counts CLOSED ops
   });
 
+  it('report.indicatorAttribution (item 69): simulador de operação-fantasma resolve o sinal sem look-ahead quando getFutureCandles é injetado', async () => {
+    setCandles('TESTUSDT', build15mCandlesAligned);
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    // getFutureCandles lê a MESMA série 4h usada pelo replay causal
+    // (fetchCandles/sliceClosedAsOf) — é a única exceção deliberada à janela
+    // de simNow(), documentada em backtestEngine.js/run-backtest.mjs, e só
+    // é alcançável por este parâmetro OPCIONAL (ausente = comportamento
+    // idêntico a antes desta feature, ver os outros testes deste describe).
+    const all4h = build4hCandles();
+    async function getFutureCandles(symbol, timeframe, afterMs) {
+      if (timeframe !== '4h') return [];
+      return all4h.filter(c => c.closeTime > afterMs);
+    }
+
+    const report = await runBacktest({
+      assets: [makeAsset()], backend,
+      fromMs: FLIP_CLOSE_TIME - 2 * FOUR_H,
+      toMs: FLIP_CLOSE_TIME + 60 * FOUR_H, // dá tempo do candle-fantasma resolver
+      evaluationFromMs: FLIP_CLOSE_TIME - 2 * FOUR_H,
+      evaluationToMs: FLIP_CLOSE_TIME + 60 * FOUR_H,
+      stepMs: FOUR_H,
+      pineConfig: basePineConfig(),
+      getFutureCandles,
+    });
+
+    // O sinal bruto de 4h existiu (o flip aconteceu) e foi resolvido — nunca
+    // insufficient_data quando há candles futuros de sobra na série.
+    expect(report.indicatorAttribution.totalRawSignals).toBeGreaterThanOrEqual(1);
+    expect(report.indicatorAttribution.resolvedOutcomes).toBeGreaterThanOrEqual(1);
+    const [record] = report.indicatorAttribution.records;
+    expect(record.snapshot.direction).toBe('BUY');
+    expect(record.snapshot.candle_time).toBe(new Date(FLIP_CLOSE_TIME).toISOString());
+    // Não-look-ahead: o resultado simulado só pode vir de candles cujo
+    // closeTime é ESTRITAMENTE posterior ao instante do próprio sinal.
+    expect(new Date(record.snapshot.candle_time).getTime()).toBeLessThan(FLIP_CLOSE_TIME + FOUR_H);
+  });
+
+  it('sem getFutureCandles (comportamento padrão): report.indicatorAttribution vem vazio, sem quebrar o replay', async () => {
+    setCandles('TESTUSDT', build15mCandlesAligned);
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const report = await runBacktest({
+      assets: [makeAsset()], backend,
+      fromMs: FLIP_CLOSE_TIME - 2 * FOUR_H,
+      toMs: FLIP_CLOSE_TIME,
+      stepMs: FIFTEEN_M,
+    });
+
+    expect(report.indicatorAttribution).toEqual(expect.objectContaining({ totalRawSignals: 0, resolvedOutcomes: 0 }));
+  });
+
   it('running well past the last available candle does not crash or duplicate the op', async () => {
     // Dedicated short-tail series: the 4h data ends AT the flip bar itself
     // (only 3 uptrend bars — the minimum needed for the flip to occur inside

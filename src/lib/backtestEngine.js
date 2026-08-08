@@ -545,20 +545,33 @@ function buildIndicatorAttributionSection(records, minTrades) {
     totalRawSignals: records.length,
     resolvedOutcomes: resolved.length,
     stillOpenOrInsufficient: records.length - resolved.length,
+    // `follow_through` FICOU FORA de propósito (Codex review, PR #154, P2):
+    // calculateConfirmedSignal (rangeFilterConfirmation.js) só produz
+    // confirmedSignal !== null quando o followThrough correspondente já é
+    // true — todo snapshot capturado em scanner.js (que só existe quando
+    // confirmedSignal é BUY/SELL) tem follow_through:true por construção.
+    // Um bucket "agrees vs. disagrees" sempre com disagrees vazio (n=0)
+    // mediria ruído, não o componente. O campo `follow_through` continua
+    // no snapshot bruto (records abaixo) para o dia em que a captura migrar
+    // para ANTES do gate de follow-through (útil com confirmBars > 1,
+    // onde candidatos com follow-through falho existem de verdade).
     by: {
-      follow_through: bucket(s => s.follow_through === true),
       macd: bucket(s => (isBuy(s) ? s.macd_bullish : s.macd_bearish) === true),
       ema: bucket(s => (isBuy(s) ? s.ema_bull : s.ema_bear) === true),
       rsi: bucket(s => (isBuy(s) ? s.rsi_crossed_bull50 : s.rsi_crossed_bear50) === true),
       volume_above_ma: bucket(s => s.volume_above_ma === true),
     },
-    // Array bruto completo (pedido explícito do usuário: "sempre tenha
-    // separado os dados de cada indicador pra eu poder analisar com calma
-    // tudo") — cada indicador já vem em campo próprio no snapshot, nada
-    // agregado aqui; permite qualquer corte adicional fora dos 5 acima
-    // (ex.: por tier, por faixa de ADX/Chop) sem precisar rodar o backtest
-    // de novo.
-    records: resolved,
+    // Array bruto COMPLETO (Codex review, PR #154, P2: antes filtrava só os
+    // resolvidos, escondendo sinais still-open/insufficient_data do
+    // consumidor) — pedido explícito do usuário: "sempre tenha separado os
+    // dados de cada indicador pra eu poder analisar com calma tudo". Cada
+    // indicador já vem em campo próprio no snapshot, nada agregado aqui;
+    // permite qualquer corte adicional fora dos 4 acima (ex.: por tier, por
+    // faixa de ADX/Chop, ou reconstruir o bucket de follow_through quando a
+    // captura migrar) sem precisar rodar o backtest de novo. `outcome.rResult
+    // == null` distingue still-open/insufficient_data (consumidor decide o
+    // que fazer com eles) dos resolvidos usados em `by` acima.
+    records,
   };
 }
 

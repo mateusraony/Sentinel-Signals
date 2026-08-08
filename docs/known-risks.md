@@ -6687,28 +6687,69 @@ bundle ao vivo).
 **Novo relatório** `report.indicatorAttribution`: array bruto `records`
 (snapshot + outcome de cada sinal, TODOS os campos de indicador
 preservados separados — atende o pedido explícito do usuário) mais um
-resumo `by.{follow_through,macd,ema,rsi,volume_above_ma}` agrupado pela
-concordância DIRECIONAL do indicador com o lado do sinal (a mesma pergunta
-que `calculateSignalStrength` já faz para pontuar — não um corte absoluto
+resumo `by.{macd,ema,rsi,volume_above_ma}` agrupado pela concordância
+DIRECIONAL do indicador com o lado do sinal (a mesma pergunta que
+`calculateSignalStrength` já faz para pontuar — não um corte absoluto
 bullish/bearish, que misturaria BUY e SELL sem sentido). Cada bucket usa
 `summarizeRList` (novo, local — `n`/`expectancyR`/`stdErr`/`ci95`/
 `conclusive`, z=1,96 fixo, mesmo `minTrades` do resto do projeto);
 **deliberadamente NÃO** aplica a correção Bonferroni de comparações
-múltiplas por padrão — comparar os 5 buckets entre si exige a mesma
+múltiplas por padrão — comparar os buckets entre si exige a mesma
 disciplina manual já registrada nos itens 56/68 (2ª correção do Codex no
 PR #153), não fica automática aqui. ADX/Chop (contínuos, não booleanos)
 ficam só no array bruto por enquanto — bucketing por faixa é extensão
 futura, não construída nesta rodada (evitar escopo além do pedido).
 
+**Correções do Codex review (PR #154, todas aplicadas)**:
+1. **P1 — perna do TP1 não ponderada.** A 1ª versão reportava só o R da
+   perna final (runner) em operações que passaram por TP1 — um TP1→TP2
+   saía como 3R em vez do resultado REAL da posição (50%@1,5R + 50%@3R =
+   2,25R). Corrigido reaplicando a MESMA ponderação de
+   `tradeMetrics.calcRealizedDelta`/`getWeights` (`partial_percent`/
+   `tp1QtyPercent`) — viesava TODO bucket que contivesse uma operação com
+   TP1 batido.
+2. **P1 — candles do sinal-fantasma vazavam a janela do replay.**
+   `getFutureCandles` não clampava em `toMs` — um diretório de dados mais
+   amplo que a janela pedida (prática recomendada por
+   `docs/claude/backtest-usage.md`, baixar uma vez e reusar) contaminava a
+   simulação com candles de FORA do replay declarado. Corrigido: o único
+   limite agora é `toMs`, nunca uma contagem arbitrária.
+3. **P2 — limite de 200 candles cortava runners vivos há mais de ~33
+   dias**, marcando-os `STILL_OPEN_AT_CUTOFF` mesmo com o candle de saída
+   real já carregado logo depois. Removido junto com a correção #2 acima —
+   o limite natural já é `toMs`.
+4. **P2 — `useTimeStop: false` não era respeitado.** O simulador aplicava
+   o Time Stop incondicionalmente; `scanner.js` só aplica quando
+   `pineConfig.useTimeStop !== false`. Corrigido — o simulador agora mede
+   a MESMA estratégia configurada no replay, não outra.
+5. **P2 — bucket `follow_through` sempre com `disagrees` vazio.**
+   `calculateConfirmedSignal` só produz `confirmedSignal` quando o
+   follow-through correspondente já é `true` — todo snapshot capturado
+   (que só existe quando `confirmedSignal` é BUY/SELL) tinha
+   `follow_through: true` por construção, tornando o bucket incapaz de
+   medir esse componente. Removido do resumo `by` (o campo `follow_through`
+   continua no snapshot bruto, `records`, para uma futura captura ANTES do
+   gate de follow-through).
+6. **P2 — `records` filtrava sinais não resolvidos.** A 1ª versão só
+   guardava sinais com resultado calculado, escondendo `insufficient_data`/
+   `STILL_OPEN_AT_CUTOFF` do consumidor — contradizia o próprio objetivo
+   ("array bruto completo"). Corrigido: `records` agora tem TODOS os
+   sinais capturados; só os buckets de `by` filtram para os resolvidos.
+
 ### Verificação
 
-`npm test`: 863 passando (+12: `indicatorAttribution.test.js` novo,
-funções puras — STOP_HIT pré/pós-TP1, TP1→TP2, TP1_FULL sem runner,
-ambiguidade no mesmo candle, Time Stop, trailing monotônico nunca regride,
-dados insuficientes, still-open-at-cutoff, MFE/MAE). `npm run lint` limpo.
-`npm run build` + os 3 alvos esbuild (`build:scan` 190,8kb, `build:scan-shadow`
-181,2kb, `build:backtest` 219,3kb) compilando sem erro. Grep de isolamento
-no bundle: `buildShadowOp`/`simulateShadowOutcome`/`indicatorAttribution`
+`npm test`: 867 passando (+16 desde antes desta feature: 14 em
+`indicatorAttribution.test.js` — STOP_HIT pré/pós-TP1 com e sem
+ponderação do TP1, TP1→TP2 ponderado, TP1_FULL sem runner, ambiguidade no
+mesmo candle, Time Stop e o bypass via `useTimeStop:false`, trailing
+monotônico nunca regride, dados insuficientes, still-open-at-cutoff,
+MFE/MAE — mais 2 em `backtestEngine.test.js`, integração fim a fim: o
+sinal-fantasma resolve sem look-ahead quando `getFutureCandles` é
+injetado, e `report.indicatorAttribution` vem vazio sem quebrar o replay
+quando o parâmetro está ausente). `npm run lint` limpo. `npm run build` +
+os 3 alvos esbuild (`build:scan` 190,8kb, `build:scan-shadow` 181,2kb,
+`build:backtest` 221,0kb) compilando sem erro. Grep de isolamento no
+bundle: `buildShadowOp`/`simulateShadowOutcome`/`indicatorAttribution`
 ausentes em `run-scan.mjs`/`run-scan-shadow.mjs`, presentes só em
 `run-backtest.mjs`. Backtest de fumaça local (sem candle real disponível
 nesta sessão — sem acesso à Binance) confirmou que o código compila e roda

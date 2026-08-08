@@ -58,15 +58,38 @@ describe('simulateShadowOutcome', () => {
     expect(result.barsToExit).toBe(1);
   });
 
-  it('TP1 toca, runner ligado -> vira RUNNER_ACTIVE (não fecha), stop vai pro breakeven; TP2 fecha em +tp2R', () => {
-    const shadow = buildShadowOp(makeBuySnapshot(), { tp1R: 1.5, runnerEnabled: true });
+  it('TP1 toca, runner ligado -> vira RUNNER_ACTIVE (não fecha), stop vai pro breakeven; TP2 fecha ponderado (50%@tp1R + 50%@tp2R)', () => {
+    const shadow = buildShadowOp(makeBuySnapshot(), { tp1R: 1.5, runnerEnabled: true, tp1QtyPercent: 50 });
     const result = simulateShadowOutcome(shadow, [
       candle({ high: 106, low: 99, close: 106 }), // toca TP1
       candle({ high: 112, low: 105, close: 112 }), // toca TP2
     ]);
     expect(result.outcome).toBe('TP2_HIT');
-    expect(result.rResult).toBe(3.0);
+    // Codex review (PR #154, P1): mesma ponderação de tradeMetrics.getWeights
+    // — 50% já realizado em tp1R (1,5), 50% na perna do runner (tp2R, 3,0).
+    expect(result.rResult).toBeCloseTo(0.5 * 1.5 + 0.5 * 3.0, 6); // 2.25
     expect(result.barsToExit).toBe(2);
+  });
+
+  it('ponderação do TP1 também vale pra STOP_HIT pós-TP1 (runner parou no breakeven)', () => {
+    const shadow = buildShadowOp(makeBuySnapshot(), { tp1R: 1.5, runnerEnabled: true, tp1QtyPercent: 50 });
+    const result = simulateShadowOutcome(shadow, [
+      candle({ high: 106, low: 99, close: 106 }), // toca TP1, stop -> breakeven (100)
+      candle({ high: 101, low: 99, close: 100 }), // recua e bate o stop no breakeven
+    ]);
+    expect(result.outcome).toBe('STOP_HIT');
+    // legR do breakeven = 0; ponderado = 0,5*1,5 + 0,5*0 = 0,75 (nunca 0R puro,
+    // porque os 50% do TP1 já ficaram banked antes do runner devolver tudo)
+    expect(result.rResult).toBeCloseTo(0.5 * 1.5, 6);
+  });
+
+  it('useTimeStop: false desliga o Time Stop (mesmo guard de scanner.js)', () => {
+    const shadow = buildShadowOp(makeBuySnapshot({ tier_time_stop_bars: 1 }), { useTimeStop: false });
+    const flat = candle({ high: 101, low: 99, close: 100 });
+    const result = simulateShadowOutcome(shadow, [flat, flat, flat]);
+    // sem Time Stop e sem nenhum toque de stop/TP, fica em aberto até os
+    // candles acabarem — nunca fecha por tempo decorrido.
+    expect(result.outcome).toBe('STILL_OPEN_AT_CUTOFF');
   });
 
   it('TP1 toca, runnerEnabled false -> fecha TERMINAL em +tp1R (TP1_FULL)', () => {
