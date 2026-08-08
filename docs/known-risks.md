@@ -6527,19 +6527,36 @@ CI95 [-0,180; 0,286]), cond 0,085R (n=221, CI95 [-0,077; 0,248]), uncond
 imprime) sugeriria "tudo inconclusivo, nada a concluir". `report.byCascade`
 conta uma história diferente.
 
-**Achado 2 — a cascata `rf1h_uncond_15m` ISOLADA tem expectância negativa
-e CONCLUSIVA.** `report.byCascade['rf1h_uncond_15m']` no run `uncond`:
-228 operações, `expectancyR: -0,159`, `expectancyRStdErr: 0,078` → CI95 ≈
-[-0,313; -0,006] — **não cruza zero**, `conclusive: true`. É o único
-resultado conclusivo dos 3 runs, e é negativo. Responde diretamente a
-pergunta original do usuário ("1h puro dá mais operações e mais
-resultado?"): **mais operações, sim** (228 numa cascata só, mais que o
-dobro do baseline de 103); **melhor resultado, não** — o oposto,
-estatisticamente sustentado. Para comparação, `rf1h_cond4h_15m` isolada no
-run `cond` teve 139 operações, expectância +0,074R, mas **inconclusiva**
-(CI95 [-0,135; 0,282], cruza zero) — remover o gate de concordância com o
-4h não só não ajudou, piorou a ponto de virar estatisticamente
-significativo na direção errada.
+**Achado 2 — a leitura "conclusiva" da cascata `rf1h_uncond_15m` isolada NÃO
+se sustenta (correção, Codex review PR #153).** A 1ª versão deste registro
+citava `report.byCascade['rf1h_uncond_15m']` (228 operações, `expectancyR:
+-0,159`, `expectancyRStdErr: 0,078`) como resultado "conclusivo" usando o
+IC95 padrão (z=1,96 → [-0,313; -0,006], não cruza zero,
+`report.byCascade.*.conclusive: true` cru). Dois problemas, ambos já
+documentados em precedente no próprio arquivo:
+
+1. **Falta a correção de comparações múltiplas.** Esta cascata compete com
+   a mesma pergunta em aberto do `rf1hCondEnabled` sobre dado histórico
+   sobreposto — o mesmo raciocínio que já levou o modo sombra (item 56) a
+   exigir Bonferroni m=2 (z=2,24) em vez do z=1,96 padrão (ver linhas
+   4917-4923 acima). Recalculando com z=2,24: CI95 ≈ [-0,334; +0,016] —
+   **cruza zero**. Sob o próprio critério que este projeto já usa nesse
+   exato contexto, o resultado NÃO é decisão-grade.
+2. **Comparar sub-buckets de `byCascade` entre si (ou entre runs) não é um
+   contraste limpo.** Já registrado como achado do Codex no PR #130 (ver
+   linhas 5061-5086 acima): `4h_15m` e a cascata experimental disputam o
+   MESMO slot `assetActiveOps` por ativo — qual operação histórica cai em
+   qual bucket depende de quem "venceu a corrida" pelo slot, não de uma
+   divisão limpa condicional/incondicional. Comparar -0,159R (bucket
+   uncond) contra +0,074R (bucket `rf1h_cond4h_15m` do run `cond`) como se
+   fosse teste isolado de qualidade de cascata reabre o mesmo erro já
+   corrigido ali — os buckets ficam como leitura **descritiva**, não como
+   prova de diferença.
+
+A leitura válida que sobra é a do Achado 1: os 3 `report.overall`
+continuam todos inconclusivos, sem teste formal da diferença entre eles —
+o run `uncond` tem o único ponto estimado negativo (-0,073R) dos 3, mas
+isso é direção, não prova.
 
 **Achado 3 — efeito colateral não previsto pelas 2 decisões de design:
 a cascata nova DESLOCA operações da cascata nativa 4h, via o slot
@@ -6571,19 +6588,28 @@ aquele gate filtra quando está ligado.
 
 ### Recomendação final
 
-**Não ligar `rf1hUncondEnabled` em produção** — é a pior das 3 variantes
-medidas: a única com resultado estatisticamente conclusivo, e negativo
-(−0,159R/operação isolada, CI95 exclui zero), além de deslocar operações
-da cascata nativa 4h via contenção do slot `assetActiveOps` (efeito
-colateral de arquitetura, não de estratégia). `rf1hCondEnabled` continua
-sem evidência de melhora (+0,074R isolado, mas inconclusivo) — mantém a
-recomendação já registrada no item 56 de não ativar. Nenhuma mudança de
+**Não ligar `rf1hUncondEnabled` em produção** — mas por **ausência de
+evidência de benefício + custo arquitetural real**, não por "prova
+estatística de que piora" (correção acima: essa prova não se sustenta).
+Os 3 `report.overall` seguem todos inconclusivos, então não há suporte
+estatístico para afirmar que qualquer uma das 3 variantes é melhor ou
+pior que as outras. O que É um achado sólido (não depende de IC — é
+contagem/funil, Achado 3 acima): a cascata desloca operações reais da
+cascata nativa 4h via contenção do slot `assetActiveOps`
+(`active_op_exists`: 441→964→1.786), um efeito colateral de arquitetura
+que já teria custo mesmo que a cascata nova fosse neutra em qualidade.
+Sem ganho demonstrado que justifique esse custo, a flag continua
+desligada. `rf1hCondEnabled` também segue sem evidência de melhora — mantém
+a recomendação já registrada no item 56 de não ativar. Nenhuma mudança de
 comportamento em produção nesta rodada: as duas flags já eram
 backtest-only por isolamento deliberado (tripwire tests), sem caminho de
 chegar a `strategyConfig/current`.
 
 Verificação: leitura direta dos 3 `backtest-report.json` brutos
 (`report.byCascade`, `report.entryFunnel`, `report.rfRegime.byCascade`,
-`report.costs`, `report.arbitration`) — não só o texto agregado do
-`analyze-backtest.mjs`, que teria escondido o Achado 2. Nenhuma mudança de
-código nesta rodada — só registro do resultado.
+`report.costs`, `report.arbitration`). Nenhuma mudança de código nesta
+rodada — só registro do resultado (corrigido após review do Codex no
+PR #153 apontar 2 achados procedentes sobre correção de comparações
+múltiplas e contaminação de sub-buckets — ambos já tinham precedente
+documentado neste mesmo arquivo, itens 56/PR#130, que eu não tinha
+reaplicado aqui).
