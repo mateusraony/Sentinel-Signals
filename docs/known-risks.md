@@ -6381,25 +6381,43 @@ mas também está longe de "resolve o problema relatado".
   12:00 UTC = 09:00 Brasília (bate com o relatado). Mas o backtest fecha
   essa operação em **30/07 20:00 UTC** (via `STOP_HIT` favorável, +1,25R —
   o trailing do runner pós-TP1), não 28/07 21h como o usuário viu ao vivo —
-  ~2 dias de diferença no fechamento. Isso é IGUAL nos dois runs (não tem
-  nada a ver com a confirmação de 15m) — aponta pra divergência de preço
-  entre a fonte que o backtest/cron usa (Binance Spot) e o que o usuário
-  via no TradingView, afetando quando o trailing stop realmente dispara.
+  ~2 dias de diferença no fechamento, IGUAL nos dois runs (não tem nada a
+  ver com a confirmação de 15m). **Correção (Codex review, PR #149): não dá
+  pra atribuir isso só à divergência de preço Spot×TradingView** —
+  `src/lib/backtestEngine.js:13-18` documenta que o replay histórico
+  NUNCA roda `priceCheckActiveOpsInner` (o loop de preço ao vivo, tick a
+  tick); ele só aproxima saídas via candle fechado
+  (`persistScanResults`), que é estruturalmente mais grosseiro que o
+  price-check contínuo que a produção usa de verdade. Ou seja: mesmo com
+  dado de preço IDÊNTICO ao vivo, o backtest já fecharia essa operação
+  mais tarde só pela granularidade candle-a-candle vs. tick-a-tick — uma
+  explicação alternativa que não tinha sido considerada, e que não dá pra
+  descartar sem comparar contra dado equivalente. Duas hipóteses em
+  aberto (não excludentes), nenhuma confirmada: divergência de fonte de
+  preço, e/ou a aproximação por candle do próprio motor de backtest.
 - **05/08 (compra)**: **não aparece em NENHUM dos dois runs.** A operação
   mais recente do FETUSDT na janela inteira de 12 meses é a de 27/07 — nada
   depois disso, com ou sem a confirmação de 15m. Isso **descarta
   definitivamente** a confirmação de 15m como causa desse caso específico
-  (removê-la não trouxe o sinal de volta) — a explicação mais provável é a
-  mesma divergência Spot×TradingView acima, agora afetando se o próprio RF
-  chegou a virar/passar no regime (ADX/Choppiness) usando o dado que o
-  motor vê, não o que o usuário via na tela.
+  (removê-la não trouxe o sinal de volta). **Correção (Codex review, PR
+  #149)**: isso mostra só que o replay sobre dado Spot não gerou/confirmou
+  esse candidato — não prova QUE gate rejeitou nem que a causa seja
+  divergência de fonte de dado; sem o funil de rejeição desagregado por
+  símbolo (`report.rfRegime`/`entryFunnel` deste relatório são agregados
+  dos 7 símbolos juntos, não dá pra isolar o FETUSDT), continua sendo
+  hipótese, não fato confirmado.
 
 **Recomendação final**: não ligar `skip15mConfirmationEnabled` em
 produção — efeito pequeno, não resolve o caso que motivou a investigação.
-A causa raiz real do episódio relatado é, com boa confiança agora, a
-divergência de fonte de dado (Binance Spot no motor vs. o que o TradingView
-mostra) — já é uma limitação conhecida e aceita do projeto (item 4), não
-um bug corrigível por flag. Não há ação de código adicional proposta aqui.
+A causa do episódio relatado **não está confirmada** — as hipóteses mais
+plausíveis com o dado atual são divergência de fonte de preço
+(Spot×TradingView, item 4, limitação já aceita) e/ou a aproximação por
+candle fechado do motor de backtest (`backtestEngine.js`) vs. o
+price-check contínuo da produção real — nenhuma delas verificada contra
+dado equivalente. Não há ação de código adicional proposta aqui; investigar
+mais a fundo exigiria rodar o SCAN REAL (não o backtest) sobre esse
+período, ou comparar candles Spot vs. a fonte que o TradingView usa
+diretamente — nenhum dos dois foi feito nesta rodada.
 
 Verificação: leitura direta dos 2 `backtest-report.json` completos
 (103/104 e 108/109 operações totais, `overall.curve` filtrado por
