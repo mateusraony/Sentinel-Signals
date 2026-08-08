@@ -43,7 +43,17 @@
 // candidato de OUTRA cascata (ex. SMC 1h_5m) que encontrasse essa cascata
 // já ativa cairia no fallback silencioso 'same' (classifyCascadeRelation
 // abaixo) — achado do conselho (papel de Concorrência).
-export const CASCADE_RANK = { '1h_5m': 1, '4h_15m': 2, 'rf1h_cond4h_15m': 2 };
+// 'rf1h_uncond_15m' = RF 1h TOTALMENTE independente do 4h (docs/known-risks.md
+// item 68 — o valor literal aqui PRECISA bater com RF_1H_UNCOND_CASCADE em
+// scanner.js). Rank 2 igual às demais cascatas RF, MAS pelo motivo oposto ao
+// 'rf1h_cond4h_15m' acima: essa cascata NÃO herda autoridade de tendência do
+// 4h (não exige concordância) — rank 2 é escolha de isolamento experimental
+// (mantém a MESMA lógica de arbitragem já testada com as outras 2 cascatas
+// RF competindo pelo mesmo slot), não uma dedução de "ela é grande como a
+// 4h nativa". Rank 1 (como SMC) mudaria o comportamento de arbitragem
+// cross-cascade (dispararia promoção em 2 estágios contra a RF nativa) —
+// 2ª variável indesejada no experimento A/B do item 68.
+export const CASCADE_RANK = { '1h_5m': 1, '4h_15m': 2, 'rf1h_cond4h_15m': 2, 'rf1h_uncond_15m': 2 };
 
 // Bumped whenever the decision matrix's shape changes (new outcome/action
 // values, changed thresholds semantics) — stamped onto SystemLog entries and

@@ -106,6 +106,18 @@ const DEFAULTS = {
   // note, mirrored) and the tripwire test in scannerStateMachine.test.js
   // that fails if this key ever appears in either of those two files.
   rf1hCondEnabled: false,
+  // RF 1h TOTALMENTE independente do 4h (docs/known-risks.md item 68) —
+  // mesma mecânica do rf1hCondEnabled acima (mesmo tf4hData pra ATR/tier/
+  // regime, mesma check15mConfirmation), SEM o gate de concordância
+  // direcional com o 4h. Isola exatamente essa variável em relação ao
+  // condicionado, pra comparação A/B direta. Master flag OFF by default.
+  // INTENTIONALLY NOT mirrored to src/lib/pineParser.js /
+  // scripts/adminPineConfig.js — mesmo motivo do rf1hCondEnabled (chave
+  // viva em strategyConfig/current seria toggle de produção sem
+  // code-review). Backtest-only, só via --pine-config aqui. Ver o tripwire
+  // test em src/lib/rf1hUncondTripwire.test.js. Nunca ligar junto com
+  // rf1hCondEnabled no mesmo run — convenção, não validado em runtime.
+  rf1hUncondEnabled: false,
 };
 
 let overrides = {};

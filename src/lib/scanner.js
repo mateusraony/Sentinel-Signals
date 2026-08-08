@@ -60,6 +60,15 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
 // nativa. Rótulo distinto: nunca '1h_5m' (cascata SMC, lógica de invalidação
 // diferente, scanner.js ~L2720) nem '4h_15m' (cascata RF nativa).
 const RF_1H_COND_CASCADE = 'rf1h_cond4h_15m';
+// docs/known-risks.md item 68 — RF 1h TOTALMENTE independente do 4h.
+// pineConfig.rf1hUncondEnabled (backtest-only, ver scripts/backtestPineConfig.js)
+// é a mesma mecânica do RF_1H_COND_CASCADE acima (mesmo regime via tf4hData,
+// mesma check15mConfirmation, mesmo ATR/tier pra risk sizing) com a ÚNICA
+// diferença: NÃO exige que o RF do 4h concorde com a direção do sinal de 1h
+// (o gate `tf4hDir !== sigDir` do _COND simplesmente não existe aqui). Nunca
+// ligar rf1hCondEnabled e rf1hUncondEnabled juntos no mesmo run — convenção,
+// não validado em runtime (mesmo padrão dos demais flags opt-in do projeto).
+const RF_1H_UNCOND_CASCADE = 'rf1h_uncond_15m';
 
 // Default fetch is enough for the convergent indicators (RF/RSI/MACD/EMA/
 // ATR/ADX/Choppiness — EMA/RMA-based, warm-up of ~6x their period is all
@@ -1822,6 +1831,62 @@ export async function persistScanResults(scanResult) {
             }
           }
         }
+      } else if (signal.timeframe === '1h' && pineConfig.rf1hUncondEnabled === true) {
+        // docs/known-risks.md item 68 — RF 1h TOTALMENTE independente do 4h,
+        // backtest-only (rf1hUncondEnabled só existe em
+        // scripts/backtestPineConfig.js, nunca em pineParser.js/
+        // adminPineConfig.js — nunca alcança produção). Mesma mecânica do
+        // ramo rf1hCondEnabled acima (reusa tf4hData pra ATR/tier/regime,
+        // nunca recalcula regime em dado de 1h, mesma check15mConfirmation)
+        // com a ÚNICA diferença: SEM o gate de concordância direcional com
+        // o 4h — um sinal de 1h vira candidato mesmo com o 4h em direção
+        // oposta ou neutra. Isola exatamente essa variável em relação ao
+        // ramo condicionado (mesma metodologia, resultado comparável).
+        // Rótulo de cascade distinto (RF_1H_UNCOND_CASCADE) — nunca '1h_5m'
+        // (SMC), '4h_15m' (RF nativa) nem RF_1H_COND_CASCADE.
+        const tf4hData = results['4h'];
+        if (tf4hData && tf4hData.atrValue) {
+          const regime = evaluateRegime(tf4hData, pineConfig);
+          rfRegimeOutcomes.push({
+            dedup_key: signal.dedup_key, cascade: RF_1H_UNCOND_CASCADE,
+            ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
+            adx: tf4hData.adx?.adx ?? null, chop: tf4hData.chop ?? null, tier: tf4hData.tier?.tier ?? null,
+          });
+          if (!regime.ok) {
+            entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: RF_1H_UNCOND_CASCADE, reason: 'regime_rejected' });
+          } else if (hasActiveOp) {
+            entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: RF_1H_UNCOND_CASCADE, reason: 'active_op_exists' });
+          } else {
+            const confirmed15m = await resolveEntryConfirmation15m({
+              symbol: asset.symbol, direction: signal.signal_type, asset, pineConfig,
+              entryPrice: signal.price_at_signal, entryCandleTime: signal.candle_time,
+            });
+            if (!confirmed15m.confirmed) {
+              entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: RF_1H_UNCOND_CASCADE, reason: 'confirmation_15m_not_aligned' });
+            } else {
+              const opData = buildTradeOpData(signal, tf4hData, pineConfig, confirmed15m, { cascade: RF_1H_UNCOND_CASCADE, signalTimeframe: '1h' });
+              const minRR = pineConfig.minRR ?? 1.2;
+              const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
+              if (!rr.pass) {
+                entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: RF_1H_UNCOND_CASCADE, reason: rr.reason });
+              } else {
+                opData.rr_at_entry = rr.rr1;
+                opData.rr_gate_mode = RR_GATE_MODE;
+                opData.rr_target_basis = RR_TARGET_BASIS;
+                const tradeOpId = `trade_${signal.dedup_key}`;
+                const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
+                if (created.created) {
+                  hasActiveOp = true;
+                  activeOp = created.doc;
+                  if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
+                  logInfo('scanner', `${signal.symbol} entrada criada (RF 1h independente do 4h) — experimental`, {
+                    score: signal.context?.score, rr: rr.rr1,
+                  }, { symbol: signal.symbol, timeframe: '15m' });
+                }
+              }
+            }
+          }
+        }
       } else if (signal.timeframe !== '4h') {
         // Non-4H signal — block entry, log as ignored
         await backend.entities.SystemLog.create({
@@ -2535,6 +2600,101 @@ export async function persistScanResults(scanResult) {
         level: 'info',
         module: 'scanner',
         message: `${sig.symbol} 1h RF ${sig.signal_type} — confirmação 15m OK, entrada criada (condicionado ao 4h, experimental)`,
+        symbol: sig.symbol,
+        timeframe: '15m',
+        details: { signal_tf: '1h', direction: sig.signal_type, score: sig.context?.score, rr: rr.rr1, retry: true },
+      });
+    }
+  }
+
+  // ─── Retry: re-check 15m confirmation for pending 1h signals (RF 1h
+  // TOTALMENTE independente do 4h, docs/known-risks.md item 68) ───
+  // Backtest-only (pineConfig.rf1hUncondEnabled) — skip entirely when off,
+  // zero extra Firestore read. Bloco IRMÃO do retry rf1hCondEnabled acima
+  // (não aninhado) — mesma query de SignalEvent, mesma janela de retry de
+  // 4 barras de 1h; a única diferença é a ausência do gate `tf4hDir !==
+  // sigDir`. createTradeOpIfNoneActive dedupa por tradeOpId determinístico
+  // (`trade_${dedup_key}`), então não há risco de dupla-criação mesmo que
+  // os dois blocos avaliem o mesmo sinal na mesma passada (convenção do
+  // projeto: nunca ligar os dois flags juntos, mas o dedup protege mesmo
+  // assim).
+  if (pineConfig.rf1hUncondEnabled === true) {
+    const oneHourAgo4xRfUncond = new Date(Date.now() - 4 * ONE_HOUR_MS).toISOString();
+    const recent1hRfSignalsUncond = await backend.entities.SignalEvent.filter({
+      asset_id: asset.id,
+      source: 'range_filter',
+      timeframe: '1h',
+    }, '-created_date', 10);
+
+    for (const sig of recent1hRfSignalsUncond) {
+      if (sig.created_date < oneHourAgo4xRfUncond) {
+        if (!sig.expired_logged) {
+          await backend.entities.SignalEvent.update(sig.id, { expired_logged: true });
+          await backend.entities.SystemLog.create({
+            level: 'info',
+            module: 'scanner',
+            message: `${sig.symbol} 1h RF ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (15m, independente do 4h, experimental)${sig.last_rejection_reason ? ` — último motivo: ${sig.last_rejection_reason}` : ''}`,
+            symbol: sig.symbol,
+            timeframe: '1h',
+            details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: RF_1H_UNCOND_CASCADE, last_rejection_reason: sig.last_rejection_reason ?? null },
+          });
+        }
+        continue;
+      }
+      if (sig.is_dismissed) continue;
+
+      if (hasActiveOp) {
+        const ownsActiveOp = activeOp?.id === `trade_${sig.dedup_key}`;
+        if (!ownsActiveOp) entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: RF_1H_UNCOND_CASCADE, reason: 'active_op_exists' });
+        continue;
+      }
+
+      const tfData4hUncond = results['4h'];
+      if (!tfData4hUncond || !tfData4hUncond.atrValue) continue;
+
+      const regime = evaluateRegime(tfData4hUncond, pineConfig);
+      rfRegimeOutcomes.push({
+        dedup_key: sig.dedup_key, cascade: RF_1H_UNCOND_CASCADE,
+        ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
+        adx: tfData4hUncond.adx?.adx ?? null, chop: tfData4hUncond.chop ?? null, tier: tfData4hUncond.tier?.tier ?? null,
+      });
+      if (!regime.ok) { await recordRejection(sig, RF_1H_UNCOND_CASCADE, 'regime_rejected', entryFunnelOutcomes); continue; }
+
+      // Mesmo raciocínio do retry rf1hCondEnabled (Codex PR #147, P1): usar
+      // o candle 4h ATUAL (causal/executável) como entrada, nunca o
+      // sig.price_at_signal obsoleto — aqui não há guard de trend_reversed
+      // pra confirmar direção antes (não existe mais essa checagem), mas
+      // tfData4hUncond ainda é a referência de risk sizing (ATR/tier),
+      // igual ao bloco A — não a fonte de direção do sinal.
+      const confirmed = await resolveEntryConfirmation15m({
+        symbol: sig.symbol, direction: sig.signal_type, asset, pineConfig,
+        entryPrice: tfData4hUncond.lastClose, entryCandleTime: tfData4hUncond.lastCandleTime,
+      });
+      if (!confirmed.confirmed) { await recordRejection(sig, RF_1H_UNCOND_CASCADE, 'confirmation_15m_not_aligned', entryFunnelOutcomes); continue; }
+
+      const opData = buildTradeOpData(sig, tfData4hUncond, pineConfig, confirmed, { cascade: RF_1H_UNCOND_CASCADE, signalTimeframe: '1h' });
+      const minRR = pineConfig.minRR ?? 1.2;
+      const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
+      if (!rr.pass) {
+        await recordRejection(sig, RF_1H_UNCOND_CASCADE, rr.reason, entryFunnelOutcomes);
+        continue;
+      }
+      opData.rr_at_entry = rr.rr1;
+      opData.rr_gate_mode = RR_GATE_MODE;
+      opData.rr_target_basis = RR_TARGET_BASIS;
+
+      const tradeOpId = `trade_${sig.dedup_key || sig.id}`;
+      const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
+      if (!created.created) continue;
+      hasActiveOp = true;
+      activeOp = created.doc;
+
+      if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
+
+      await backend.entities.SystemLog.create({
+        level: 'info',
+        module: 'scanner',
+        message: `${sig.symbol} 1h RF ${sig.signal_type} — confirmação 15m OK, entrada criada (independente do 4h, experimental)`,
         symbol: sig.symbol,
         timeframe: '15m',
         details: { signal_tf: '1h', direction: sig.signal_type, score: sig.context?.score, rr: rr.rr1, retry: true },
