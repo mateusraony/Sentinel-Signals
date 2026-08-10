@@ -176,6 +176,14 @@ a cascata SMC é ampliar um gerador de operações sem vantagem.
 
 ## Bloco 1 — os quatro flags dormentes (o maior débito acumulado)
 
+> **Recomendação do conselho de revisão (2026-08-10, detalhe em
+> `docs/known-risks.md` item 73): não abrir este bloco agora.** A base
+> (cascata RF nativa) não tem edge demonstrado após o item 71 não
+> confirmar fora da amostra — testar filtros em cima de ruído reproduziria
+> o mesmo padrão. Duas alternativas de maior valor: Bloco 4 (mudança
+> estrutural) ou um teste pooled walk-forward único em vez de mais
+> ablação fragmentada. Decisão de como prosseguir segue com o usuário.
+
 Fases 2, 3 e 4 construíram quatro mecanismos completos, testados e documentados.
 **Nenhum deles jamais foi medido.** Os quatro seguem `false` nos três arquivos de
 config, e cada item termina com "não ativar sem comparar backtest antes":

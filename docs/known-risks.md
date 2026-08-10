@@ -7219,3 +7219,68 @@ Teste manual no navegador (forçar um sinal de alta prioridade e conferir
 widget/página/Telegram/aba preditiva com dado real) não foi feito nesta
 sessão — fora do alcance de um ambiente sem acesso à Binance/Firestore de
 produção.
+
+## 73. Conselho de revisão — o que fazer depois do item 71 não confirmar (2026-08-10)
+
+### Contexto
+
+Usuário perguntou diretamente, depois de muitas rodadas de teste sem
+resultado satisfatório: "o que será que precisamos fazer?", sugerindo
+pesquisa de comunidade (Reddit/X). Rodei `sentinel-council-review` (3 papéis
+independentes — Arquiteto, Especialista em trading, Especialista em
+testes/estatística — via subagentes locais, nada enviado a provedor
+externo) com a pergunta: dado o histórico completo (Bloco 0 ambíguo, item 71
+encerrado sem confirmação, Bloco 1 com 4 flags nunca medidos), qual o
+caminho recomendado agora?
+
+Antes de rodar o conselho, fiz uma pesquisa rápida de comunidade (WebSearch)
+sobre por que estratégias técnicas de indicador único costumam falhar em
+produzir edge real e o que a literatura de algotrading recomenda. Achado:
+overfitting via múltiplos testes ablation-by-ablation é a armadilha mais
+citada, e o antídoto padrão (holdout/walk-forward) é exatamente o que este
+projeto já pratica (Bloco 0 alta/baixa, item 71 holdout) — não havia uma
+"receita" óbvia sendo ignorada. A lista de "o que funciona" (filtro de
+regime via ADX, stop por ATR, confluência multi-indicador) já é a
+arquitetura do Sentinel.
+
+### Achados do conselho (3 papéis convergiram, com 1 refutação real)
+
+- **Arquiteto**: continuar o Bloco 1 sem fechar o Bloco 0 é dívida se
+  acumulando, não coerência arquitetural (`roadmap.md:58,223` já reconhece
+  isso ao recusar desbloquear). O Bloco 4 (cascata hierárquica por
+  timeframe, nunca implementada) é a mudança estrutural real ainda não
+  tentada. Como painel sem execução real, a urgência é operacional, não de
+  segurança financeira — a decisão pode ser deliberada, não forçada.
+- **Especialista em trading** (refutou a leitura inicial mais branda):
+  "**Não testar os 4 flags do Bloco 1 agora**" — a base (cascata RF nativa)
+  não tem edge demonstrado, e testar filtros em cima de ruído é exatamente
+  o padrão que o item 71 acabou de reproduzir e refutar (achado forte
+  in-sample → não sobrevive holdout). "SELL positivo" (item 48/71) é
+  evidência de **regime** (mercado do período testado), não de vantagem do
+  motor — o próprio holdout do item 71 já chegou a essa conclusão.
+  Recomenda realocar esforço para o Bloco 2 (geometria de saída, já com
+  achados negativos mensuráveis, ex. runner do TP1) ou o Bloco 4, não mais
+  ablação de entrada.
+- **Especialista em testes/estatística** (achado novo, não previsto):
+  o projeto aplica Bonferroni corretamente **dentro** de cada rodada, mas
+  nunca contabilizou um orçamento-alfa **acumulado** ao longo dos ~10-15
+  testes de hipótese já feitos desde o item 44 — risco de mascarar tanto
+  falsos positivos quanto um efeito real pequeno mas consistente. Propõe,
+  em vez de 4 ablações fragmentadas de baixo poder, **um teste pooled
+  único**: walk-forward com múltiplas janelas não sobrepostas (2-3 anos) e
+  estimativa de efeito combinada (meta-análise ponderada por erro-padrão)
+  contra a pergunta única "o motor tem vantagem independente de regime?" —
+  mais poder estatístico que N testes fragmentados, sem inflar o número de
+  comparações.
+
+### Recomendação final (avaliador)
+
+**Não abrir o Bloco 1 agora.** As duas opções de maior valor, na ordem que
+o usuário priorizar: (a) desenho estrutural diferente (Bloco 4 — cascata
+hierárquica por timeframe, exige `sentinel-council-review` própria antes de
+código, conforme o roadmap já determina) ou (b) um teste estatístico único
+e bem desenhado (pooled walk-forward multi-janela) em vez de mais ablação
+1-a-1. Decisão de qual seguir — ou de pausar otimização de estratégia e
+aceitar o painel como ferramenta de sinalização, seu propósito declarado
+desde sempre (`CLAUDE.md`) — fica com o usuário, não decidida
+unilateralmente aqui (mesmo padrão do Bloco 0 desde 2026-08-04).
