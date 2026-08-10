@@ -1661,6 +1661,21 @@ resolvidas aqui, de propósito):
 final nem código sem o usuário decidir explicitamente prosseguir mesmo
 com essa sequência em aberto, ou sem o Bloco 0 fechar primeiro.
 
+### Destravado explicitamente pelo usuário (2026-08-10)
+
+Depois do conselho do item 73 recomendar não abrir o Bloco 1 e apresentar
+o Bloco 4 como alternativa de maior valor, expliquei ao usuário os 3 riscos
+concretos desta seção (guard de corrupção virando o problema, ausência de
+bucket de risco agregado, cascata 1D inexistente) e o escopo real (maior
+que qualquer coisa testada até agora). **Usuário decidiu explicitamente
+destravar e seguir com o Bloco 4**, ciente do risco de métricas
+subestimarem risco agregado por ora. Isso satisfaz a condição que este item
+e o item 56 (Ação 3) já exigiam ("não iniciar sem pedido explícito do
+usuário"). Próximo passo: pesquisa de comunidade adicional (foco no bucket
+de risco agregado, que é a lacuna central) + `sentinel-council-review`
+dedicada ao desenho técnico (não mais "se fazer", já decidido — "como
+fazer"), antes de qualquer código, conforme já determinado acima.
+
 **Separado, não confundir**: o pedido imediato do usuário (rodar o
 backtest de novo e olhar `smcDiagnostics`, item 35) é sobre a cascata
 1h→5m **que já existe** — independente desta proposta de arquitetura nova.
