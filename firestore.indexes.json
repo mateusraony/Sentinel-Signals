@@ -48,6 +48,22 @@
       ]
     },
     {
+      "collectionGroup": "tradeOperations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "created_date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "verificationTasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "priority", "order": "ASCENDING" },
+        { "fieldPath": "created_date", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "verificationTasks",
       "queryScope": "COLLECTION",
       "fields": [
