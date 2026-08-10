@@ -6795,8 +6795,12 @@ memória.
 
 `indicator-attribution-20symbols-12m` completou normalmente. 1.020 sinais
 brutos, 1.007 resolvidos, 13 em aberto. Amostras por bucket bem maiores
-(339-962) mas **ainda nenhum conclusivo** — IC95 continua cruzando zero em
-todos os 8 buckets. Comparação com o run 1 (mesma tabela, ver histórico
+que o run 1 — os 8 valores reais: MACD 962/45, EMA 339/668, RSI 385/622,
+Volume 752/255 (**correção, Codex review PR #155**: a versão anterior
+citava "339-962" como faixa, mas os 8 buckets não formam uma faixa única —
+cada par concorda/discorda soma o total de 1.007; o menor bucket real é 45
+(MACD discorda), não 339) — mas **ainda nenhum conclusivo**, IC95 continua
+cruzando zero nos 8. Comparação com o run 1 (mesma tabela, ver histórico
 git para os números completos):
 
 - **EMA e Volume mantiveram a mesma DIREÇÃO** com 3x mais dado (concordar
@@ -6839,11 +6843,23 @@ experimental A/B.
 
 ### Achado — a hipótese estava errada em dois pontos, ambos confirmados por leitura de código
 
-1. **`analyzeAlignment`/`strengthResult.alignment` NUNCA gateia nada em
-   `scanner.js`** (confirmado por grep — só aparece como metadado
+1. **Na cascata RF NATIVA — a única comparável ao Pine real, já que SMC é
+   desenho original do Sentinel sem equivalente no Pine — `analyzeAlignment`/
+   `strengthResult.alignment` nunca gateia nada em `scanner.js`**
+   (confirmado por grep — só aparece como metadado
    (`alignment: strengthResult.alignment`) gravado no `SignalEvent`/
-   descrição do sinal). Não é o port do filtro MTF do Pine — é um campo
-   informativo do Sentinel sem equivalente funcional no Pine real.
+   descrição do sinal, via `calculateSignalStrength`). Não é o port do
+   filtro MTF do Pine — é um campo informativo do Sentinel sem
+   equivalente funcional no Pine real. **Correção (Codex review, PR
+   #155)**: essa afirmação NÃO vale para a cascata SMC 1h→5m —
+   `calculateSmcSignalStrength` (`src/lib/indicators/smcConfluence.js:
+   119-128`) SOMA pontos reais de `alignmentResult.alignment` no score
+   SMC (crédito cheio ou parcial), que alimenta `signalArbitration.js`
+   (limiares de promoção/redução de confiança entre cascatas,
+   `scanner.js:1425`). Isso não reabre a hipótese fechada abaixo — o
+   filtro MTF do Pine só tem correspondência conceitual com a cascata
+   RF nativa (a que o Pine real implementa); a SMC nunca teve
+   equivalente no Pine pra comparar em primeiro lugar.
 2. **O filtro MTF real do Pine (`src/pages/PineScript.jsx`, grupo "04.
    Filtro Timeframe Superior") não compara contra 1D/1H** — `mtfTF`
    default é `"240"` (**o próprio 4h**). Quando `mtfTF` é igual ou menor
