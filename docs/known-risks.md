@@ -7019,6 +7019,28 @@ mesmo padrão inofensivo de `rf1hCondEnabled`/`rf1hUncondEnabled`, sempre
 `undefined`/falsy em produção porque os configs admin nunca setam a
 chave).
 
+**Tentativas de A/B falharam por JSON inválido no campo do GitHub Actions
+(2026-08-10), corrigido.** As 4 primeiras tentativas de disparo (runs
+31360283059, 31360450236, 31363651347, 31363820483) falharam com
+`SyntaxError: Expected property name or '}' in JSON at position 1` — não é
+bug no motor: o campo "Overrides do pineConfig em JSON" foi digitado (não
+colado) com aspas tipográficas/curvas (`" "`) em vez de retas (`"`), ex.
+`{"allowedSide "​:"BUY"}` em vez de `{"allowedSide":"BUY"}` (confirmado lendo
+o log real do job, variável `PINE_CONFIG`). `JSON.parse` rejeita aspas
+curvas. Duas correções aplicadas:
+1. **Falha cedo.** A etapa "Escrever overrides do pineConfig" rodava
+   DEPOIS do download de candles da Binance (~20min pra 20 símbolos) — um
+   JSON quebrado só era detectado depois de gastar esse tempo à toa (foi o
+   que aconteceu nas 4 tentativas). Movida para ANTES do download, com
+   validação (`JSON.parse` explícito) que falha em segundos.
+2. **Mensagem acionável.** Tanto o workflow (`.github/workflows/
+   backtest.yml`) quanto o CLI local (`scripts/run-backtest.mjs`) agora
+   capturam o erro de parse e apontam a causa mais provável (aspas
+   curvas/espaço sobrando no nome do campo) em vez de só repassar o
+   `SyntaxError` cru do V8. Reproduzido localmente com o mesmo JSON quebrado
+   do log real — mensagem nova confirmada. `npm test` (877 passando, sem
+   regressão), `npm run lint`, `npm run build` + `build:backtest` limpos.
+
 ### Pendente
 
 A/B real (usuário, via `backtest.yml`, 3 disparos): baseline (`{}`),

@@ -143,6 +143,29 @@ jobs:
           echo "TO=$TO" >> "$GITHUB_ENV"
           echo "Intervalo: $FROM -> $TO"
 
+      # Roda ANTES do download (que sozinho já leva ~20min pra 20 símbolos):
+      # um JSON inválido aqui falhava só na etapa "Rodar o replay", DEPOIS do
+      # download completo — desperdiçando a espera toda por um erro que já
+      # dava pra pegar em segundos. Causa mais comum observada na prática
+      # (4 disparos falhos em 2026-08-10): aspas tipográficas/curvas (" ")
+      # em vez de retas (") — acontece quando o campo é digitado (não
+      # colado) em algo com autocorreção de texto ligada.
+      - name: Escrever e validar overrides do pineConfig (se houver)
+        if: ${{ inputs.pine_config != '' }}
+        env:
+          PINE_CONFIG: ${{ inputs.pine_config }}
+        run: |
+          echo "$PINE_CONFIG" > pine-config-overrides.json
+          node -e "
+            try {
+              JSON.parse(require('fs').readFileSync('pine-config-overrides.json', 'utf-8'));
+            } catch (err) {
+              console.error('::error::Overrides do pineConfig não é JSON válido: ' + err.message);
+              console.error('Causa mais comum: aspas tipográficas/curvas (“ ”) em vez de aspas retas (\"), ou espaço sobrando dentro do nome do campo — acontece ao DIGITAR o valor em vez de COLAR. Apague o campo e cole de novo (Ctrl+V/Cmd+V) a partir de um editor de texto simples, sem autocorreção. Exemplo válido: {\"allowedSide\":\"SELL\"}');
+              process.exit(1);
+            }
+          "
+
       - name: Baixar histórico real (Binance Spot)
         env:
           SYMBOLS: ${{ inputs.symbols }}
@@ -152,12 +175,6 @@ jobs:
             --symbols "$SYMBOLS" \
             --from "$FROM" --to "$TO" \
             --timeframes "$TIMEFRAMES"
-
-      - name: Escrever overrides do pineConfig (se houver)
-        if: ${{ inputs.pine_config != '' }}
-        env:
-          PINE_CONFIG: ${{ inputs.pine_config }}
-        run: echo "$PINE_CONFIG" > pine-config-overrides.json
 
       - name: Rodar o replay
         env:

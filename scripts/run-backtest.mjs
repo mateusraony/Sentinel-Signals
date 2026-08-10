@@ -93,7 +93,19 @@ async function main() {
   if (args['data-dir']) process.env.BACKTEST_DATA_DIR = args['data-dir'];
 
   if (args['pine-config']) {
-    const overrides = JSON.parse(fs.readFileSync(args['pine-config'], 'utf-8'));
+    const raw = fs.readFileSync(args['pine-config'], 'utf-8');
+    let overrides;
+    try {
+      overrides = JSON.parse(raw);
+    } catch (err) {
+      // Causa mais comum na prática (docs/claude/backtest-usage.md): aspas
+      // tipográficas/curvas em vez de retas, coladas de um editor com
+      // autocorreção de texto ligada.
+      console.error(`[backtest] --pine-config não é JSON válido: ${err.message}`);
+      console.error('Causa mais comum: aspas tipográficas/curvas (“ ”) em vez de aspas retas ("). Regrave o arquivo com um editor de texto simples. Exemplo válido: {"allowedSide":"SELL"}');
+      process.exitCode = 1;
+      return;
+    }
     setPineConfigOverrides(overrides);
   }
 
