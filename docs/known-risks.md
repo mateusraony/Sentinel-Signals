@@ -7134,3 +7134,74 @@ NUNCA viu** — candidato natural: os 12 meses imediatamente anteriores
 run já usado nos itens 69/71). Só um resultado assim — dado que a hipótese
 não influenciou — conta como confirmação de verdade. Não ligar `allowedSide`
 em produção antes disso.
+
+## 72. Tarefas de verificação automáticas + Análise Preditiva no Dashboard — feature nova, dois PRs de achado externo corrigidos (2026-08-10)
+
+### Contexto
+
+Pedido do usuário: nunca perder a revisão de um sinal de alta prioridade
+(registro que sobrevive a fechar o navegador, sincronizado em três
+lugares — widget, página dedicada, Telegram) e, ao lado disso, uma aba de
+análise preditiva que compara o sinal atual com padrões históricos
+similares. Entidade nova `VerificationTask` (`docs/schema-reference/
+VerificationTask.jsonc`), criada em `persistScanResults` (`scanner.js`)
+para todo sinal `priority === 'high'` — mesmo loop que já roda idêntico
+no browser e no cron, sem hook client-side (que só funcionaria com o
+navegador aberto). PR #159.
+
+### Achados da revisão externa (Codex) + investigação própria — PR #160
+
+O Codex revisou o merge commit do #159 e encontrou 5 problemas reais,
+todos corrigidos no #160:
+
+1. **Build do modo sombra quebrado (confirmado reproduzindo antes de
+   corrigir).** `scripts/adminTelegramShadow.js`/`adminEntitiesShadow.js`
+   não tinham `notifyVerificationTask`/`VerificationTask` espelhados —
+   `npm run build:scan-shadow` falhava (`No matching export`) e o scan
+   sombra crasharia em runtime no primeiro sinal de alta prioridade.
+2. **Falha na 2ª escrita podia abortar o ativo inteiro na passada** — achado
+   por investigação própria, não estava no relatório do Codex: confirmado
+   em `scanAllAssetsInner` que o `try/catch` que envolve `persistScanResults`
+   é POR-ATIVO, não por-sinal — uma exceção não capturada no bloco da
+   `VerificationTask` abortaria também o motor de entrada de outros sinais
+   do mesmo ativo na mesma passada. Corrigido com `try/catch` dedicado
+   (`logWarn`, nunca propaga).
+3. **`telegram_notified` gravado antes do envio real acontecer** —
+   `send()` (`src/lib/telegram.js`) não retornava nada; passou a retornar
+   boolean de entrega real (2xx), mesmo contrato que `scripts/
+   adminTelegram.js` já tinha. Mantido fire-and-forget (não bloqueia os
+   gates de confirmação de entrada que rodam logo depois no mesmo loop) —
+   o `.then()` grava `telegram_notified` só quando a entrega é confirmada.
+4. **Página `/verification` podia esconder pendências antigas** acima de
+   200 documentos — filtro de status/prioridade passou a rodar no
+   servidor.
+5. **Análise Preditiva enviesada** pelo `tradeOps` do Dashboard (capado em
+   100, misturando ativas+fechadas) — passou a buscar seu próprio
+   histórico de operações fechadas (até 500).
+
+Uma 2ª rodada do Codex sobre o próprio #160 encontrou mais 2 achados reais
+— faltavam os índices compostos Firestore para as duas novas formas de
+query dos itens 4 e 5 (`tradeOperations` `status+created_date`;
+`verificationTasks` `priority+created_date` sozinho, sem `status`). Sem
+eles a query é rejeitada pelo Firestore e o erro fica engolido pelo
+default de array vazio do `useQuery` — a lista simplesmente aparece vazia
+em vez de mostrar o erro real. Corrigido no mesmo PR; deploy manual
+(`firebase deploy --only firestore:rules,firestore:indexes`, workflow
+`deploy-firestore.yml`) confirmado com sucesso (run 31406451055).
+
+### Estado atual — o que ficou pendente, de propósito
+
+Escopo combinado explicitamente com o usuário antes de implementar
+(ver PR #159): botão "Executar Trade" (em qualquer versão) e feedback
+automático de outcome (win/loss) na própria tarefa ficaram de fora —
+hoje nenhuma tela cria `TradeOperation` manualmente, só o scanner após os
+gates de confirmação; um botão manual precisaria fabricar esses campos
+sem os gates, escopo maior e mais arriscado do que o pedido original.
+Também adiados: ações em lote, auto-expiração de tarefas antigas, filtro
+de símbolo por lista (em vez de texto livre), estatísticas de conversão
+sinal→trade. Nenhum desses campos/fluxos foi construído especulativamente.
+
+Teste manual no navegador (forçar um sinal de alta prioridade e conferir
+widget/página/Telegram/aba preditiva com dado real) não foi feito nesta
+sessão — fora do alcance de um ambiente sem acesso à Binance/Firestore de
+produção.
