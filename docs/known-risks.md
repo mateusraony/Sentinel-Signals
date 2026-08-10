@@ -7041,17 +7041,96 @@ curvas. Duas correções aplicadas:
    do log real — mensagem nova confirmada. `npm test` (877 passando, sem
    regressão), `npm run lint`, `npm run build` + `build:backtest` limpos.
 
+### A/B real — resultado (2026-08-10, 20 símbolos/12 meses, mesma janela dos 3 runs)
+
+3 disparos concluídos (`trial_label`: `allowedside-ab-baseline`,
+`allowedside-ab-sell-only`, `allowedside-ab-buy-only`), mesmos 20 símbolos e
+janela `2025-08-10T00:00:00Z → 2026-08-10T00:00:00Z` do run de referência
+(item 69). `report.costs`/`report.byCascade['4h_15m']` de cada run (idênticos
+entre si aqui — só a cascata nativa estava ativa):
+
+| Run | n (fechadas) | Expectância líquida | IC95 (z=1,96) | `conclusive` | Win rate | Profit factor |
+|---|---|---|---|---|---|---|
+| Baseline | 322 | −0,030R | [-0,161; 0,101] | **não** (cruza zero) | 41,6% | 0,85 |
+| SELL-only | 175 | **+0,202R** | [0,023; 0,381] | **sim** | 52,6% | 1,37 |
+| BUY-only | 181 | **−0,344R** | [-0,501; -0,188] | **sim** | 28,7% | 0,44 |
+
+Lido cru (z=1,96 padrão), SELL-only bateria o critério "conclusivo e
+positivo" descrito acima — mas 2 problemas mais sérios que esse critério
+sozinho precisam ser corrigidos antes de aceitar isso como confirmação.
+Ambos apontados pelo Codex review (PR #158) e verificados aqui contra os
+dados reais — os dois são procedentes.
+
+**Problema mais grave: esta NÃO é uma confirmação fora da amostra — é
+quase a mesma janela que gerou a hipótese.** A hipótese BUY-negativo/
+SELL-positivo nasceu (achado acima nesta mesma seção) separando por lado os
+resultados do run de referência do item 69 — mesmos 20 símbolos, janela
+`2025-08-09T00:00:00Z → 2026-08-09T00:00:00Z`. Os 3 disparos deste A/B usam
+`2025-08-10T00:00:00Z → 2026-08-10T00:00:00Z` — deslocada só 1 dia, ~99,7%
+de sobreposição com a janela que originou o achado. Chamar isso de "critério
+pré-registrado" e "1ª vantagem real comprovada" superestima a evidência: é
+essencialmente a mesma massa de dados que gerou o padrão sendo usada de
+novo para "confirmá-lo" — o oposto do desenho que o item 48 deste projeto já
+usou corretamente (janela de ALTA **inédita**, nunca vista antes, pra testar
+se o motor tem vantagem real ou só segue o regime). SELL-only aqui é, na
+melhor leitura, uma re-medição em amostra correlacionada — não confirmação
+independente.
+
+**Correção de Bonferroni (aplicada por cima do problema acima, não no lugar
+dele).** Mesmo ignorando a circularidade de amostra, este run testa 2
+afirmações direcionais da MESMA pergunta (SELL-only positivo, BUY-only
+negativo) — mesma situação que os itens 56/68 já definiram como exigindo
+correção pra m=2 comparações (z=2,24 em vez de 1,96, `docs/known-risks.md`
+linhas ~4917-4923/6541-6542). Este projeto já tem, inclusive, um precedente
+específico de achado SELL positivo que **não sobreviveu** a essa mesma
+correção (item 45.9/48, "+0,199R não sobrevive Bonferroni"). Recalculando
+com z=2,24:
+
+- **SELL-only**: IC95-Bonferroni ≈ **[-0,003; 0,407] — cruza zero.** Não
+  sobrevive à correção, mesmo padrão do precedente acima.
+- **BUY-only**: IC95-Bonferroni ≈ [-0,523; -0,165] — **continua sem cruzar
+  zero.** Esse lado sobrevive à correção com folga.
+
+**Leitura honesta, com os dois problemas descontados**: a evidência contra
+BUY é a única parte sólida — conclusiva mesmo com Bonferroni, reforçada por
+win rate 28,7%/PF 0,44 (pior que o baseline em toda métrica) — mas ainda
+assim medida na MESMA janela da descoberta, então também carece de
+confirmação fora da amostra antes de virar decisão de produto. A "evidência"
+a favor de SELL isoladamente não é evidência real ainda: nem sobrevive à
+correção de múltiplas comparações, nem é medição independente da hipótese
+que a gerou. **Não é seguro afirmar "SELL não é pior que o mercado"** a
+partir de um IC que cruza zero — isso testaria só se a expectância de SELL
+difere de zero, não se SELL é não-inferior ao baseline (exigiria margem de
+não-inferioridade e um teste de contraste SELL-vs-baseline definidos à
+parte, que este run não fez).
+
+**Achado mecânico secundário (contagem, não IC — não precisa de correção
+estatística)**: `side_filter_blocked` ficou em 561 (SELL-only) e 569
+(BUY-only) — próximos entre si, como esperado (mesmo universo de sinais,
+split BUY/SELL parecido nos dois runs; também confirma que o fix write-once
+do PR #156 está funcionando, sem inflar por retry). `active_op_exists` caiu
+de 1.457 (baseline) para 879 (SELL-only) e 808 (BUY-only) — mas isso sozinho
+não isola o mecanismo de liberação de slot, já que rodar só um lado
+naturalmente reduz o número de candidatos disputando pela metade. Mais
+sugestivo: a SOMA de operações fechadas dos dois runs isolados (175+181=356)
+supera o total do baseline (322) — 34 operações a mais no total quando os
+lados não competem pelo mesmo slot do ativo, consistente com (mas não prova
+formal de) o mecanismo de arbitragem cross-side descrito acima.
+
 ### Pendente
 
-A/B real (usuário, via `backtest.yml`, 3 disparos): baseline (`{}`),
-`{"allowedSide":"SELL"}`, `{"allowedSide":"BUY"}` — mesma janela/símbolos
-já usados (20 símbolos/12 meses). Critério pré-registrado: se
-`report.overall`/`report.costs` do run SELL-only vier conclusivo e
-positivo, é a primeira vantagem realmente comprovada (com custo, gates
-reais) que este projeto mediu — não só "segue o mercado". Comparar
-também `report.entryFunnel['4h_15m'].byReason.side_filter_blocked` (deve
-bater aproximadamente com a contagem de sinais do lado bloqueado) e
-observar se o volume de operações do lado permitido AUMENTA em relação
-ao baseline (evidência do mecanismo de liberação de slot descrito acima)
-ou fica igual (evidência de que a contenção de slot não era relevante na
-prática).
+**Não** "ampliar amostra até o IC parar de cruzar zero" — Codex (PR #158)
+apontou corretamente que isso é olhar repetidamente e esticar a amostra até
+achar significância, o que invalida o IC-Bonferroni nominal por optional
+stopping (o mesmo problema, em miniatura, que a pesquisa sobre múltiplas
+comparações já alertava neste projeto — parar de coletar dado só quando o
+número "dá certo" infla a taxa de falso-positivo além do alpha nominal,
+mesmo corrigido). Em vez disso, definir o próximo teste ANTES de rodá-lo, do
+mesmo jeito que o item 48 já fez pra validar a hipótese original: **1 disparo
+adicional (`allowedSide: SELL`), tamanho de amostra fixado com antecedência
+(mesmos 20 símbolos, mesma janela de 12 meses), numa janela que a hipótese
+NUNCA viu** — candidato natural: os 12 meses imediatamente anteriores
+(`2024-08-10T00:00:00Z → 2025-08-10T00:00:00Z`, sem sobreposição com nenhum
+run já usado nos itens 69/71). Só um resultado assim — dado que a hipótese
+não influenciou — conta como confirmação de verdade. Não ligar `allowedSide`
+em produção antes disso.
