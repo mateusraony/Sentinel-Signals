@@ -6756,12 +6756,147 @@ nesta sessão — sem acesso à Binance) confirmou que o código compila e roda
 sem crashar, com `report.indicatorAttribution` no formato esperado
 (`totalRawSignals: 0` no estado vazio).
 
-### Pendente
+### Resultado real — run 1 (7 símbolos, 12 meses, 2026-08-09)
 
-Rodar o backtest de verdade (usuário, via `backtest.yml`, mesma janela/
-símbolos já usados nos experimentos anteriores) para ver os números reais
-de `report.indicatorAttribution.by.*` — nenhuma leitura de contribuição
-por indicador foi feita ainda, só a infraestrutura está pronta. Bucketing
-de ADX/Chop por faixa contínua, e cruzamento de contribuição MARGINAL
-(RF+EMA vs. RF sozinho, controlando por correlação entre indicadores) são
-extensões registradas mas não construídas nesta rodada.
+Usuário disparou o `backtest.yml` padrão (7 símbolos, 12 meses). 356 sinais
+brutos capturados, 351 resolvidos, 5 ainda em aberto no fim da janela.
+Nenhum dos 4 buckets (`by.macd/ema/rsi/volume_above_ma`) foi conclusivo
+(IC95 cruza zero em todos — amostra pequena por bucket, 23-328 conforme o
+indicador). Leituras pontuais (não prova): EMA concordando +0,194R (n=121)
+vs. discordando +0,024R (n=230); Volume concordando +0,118R (n=260) vs.
+discordando −0,017R (n=91); RSI concordando +0,017R (n=130) vs. discordando
++0,121R (n=221, direção contraintuitiva); MACD quase sem diferença
+(+0,084R n=328 vs. +0,061R n=23, bucket "discorda" bem abaixo do mínimo).
+Cruzamento extra (fora do `by`, feito lendo `records` direto): sinais que
+JÁ passam no score real (≥75) tiveram expectância +0,154R (n=203) vs.
+−0,015R (n=148) nos rejeitados — inconclusivo, mas direção plausível.
+
+### Incidente de performance — run com 20 símbolos × 18 meses travou (2026-08-09)
+
+Tentativa de ampliar a amostra para 20 símbolos × 18 meses
+(`indicator-attribution-primeiro-run`, [run 31308336248](https://github.com/mateusraony/Sentinel-Signals/actions/runs/31308336248))
+rodou quase 6h e foi **cancelada sem gerar relatório** — travou no step
+"Rodar o replay" (11:07 → 16:16). **Causa, não é bug**: erro de
+recomendação minha. O motor já tem uma limitação documentada e deliberada
+(`docs/roadmap.md`, "Limite de performance conhecido"): o backend fake em
+memória usado no backtest reordena a coleção inteira de `SignalEvent` a
+cada consulta, custo que cresce de forma superlinear com o tamanho do
+store — e o próprio roadmap já registrava que **"12 meses × 20 símbolos
+cabe no timeout"**, mas não janelas maiores. Recomendei 18 meses em vez de
+manter a janela nos 12 meses já validados como seguros — empurrei
+justamente a variável (duração) que esse gargalo mais penaliza. Corrigido
+recomendando voltar a janela para 12 meses (ver run 2 abaixo, que
+completou normalmente) — não há indício de que o simulador de
+operação-fantasma (item 69) em si tenha contribuído para o travamento: ele
+não toca o backend fake (`fakeBackend.filter`), só processa candles já em
+memória.
+
+### Resultado real — run 2 (20 símbolos, 12 meses, 2026-08-09)
+
+`indicator-attribution-20symbols-12m` completou normalmente. 1.020 sinais
+brutos, 1.007 resolvidos, 13 em aberto. Amostras por bucket bem maiores
+que o run 1 — os 8 valores reais: MACD 962/45, EMA 339/668, RSI 385/622,
+Volume 752/255 (**correção, Codex review PR #155**: a versão anterior
+citava "339-962" como faixa, mas os 8 buckets não formam uma faixa única —
+cada par concorda/discorda soma o total de 1.007; o menor bucket real é 45
+(MACD discorda), não 339) — mas **ainda nenhum conclusivo**, IC95 continua
+cruzando zero nos 8. Comparação com o run 1 (mesma tabela, ver histórico
+git para os números completos):
+
+- **EMA e Volume mantiveram a mesma DIREÇÃO** com 3x mais dado (concordar
+  continua melhor que discordar nos dois), embora o tamanho do efeito
+  medido tenha encolhido (EMA: +0,194R→+0,101R "concorda"; Volume:
+  +0,118R→+0,023R "concorda") — sobreviveu ao teste de mais amostra, o que
+  é mais informativo que o número absoluto isolado.
+- **RSI e MACD não sobreviveram.** A diferença "contraintuitiva" do RSI
+  (concordar +0,017R vs. discordar +0,121R no run 1) encolheu para quase
+  nada (−0,008R vs. +0,010R no run 2) — exemplo concreto, dentro do
+  próprio projeto, de achado de amostra pequena que era ruído, não sinal.
+  MACD seguiu o mesmo padrão (+0,084R/+0,061R → +0,002R/+0,012R).
+- Cruzamento score real passa/rejeita também sobreviveu na direção
+  (+0,040R n=588 vs. −0,049R n=419) mas encolheu bastante (era
+  +0,154R/−0,015R no run 1).
+- `report.costs` do run 2 (portfólio de 20 símbolos inteiro): bruto
+  +0,020R, líquido **−0,030R**, INCONCLUSIVO — mais fraco que o run de 7
+  símbolos, consistente com a ressalva já registrada no roadmap.md ("20
+  símbolos não são 20 amostras independentes — correlação com BTC").
+
+**Recomendação**: pausar a busca de mais amostra aqui — o efeito que
+sobrou (EMA/Volume) encolheu com mais dado, então a amostra necessária pra
+prová-lo é maior do que o cálculo inicial (baseado no run 1) sugeria, e o
+custo de cada rodada é real (ver incidente de performance acima). Leitura
+honesta com o dado disponível: **RSI e MACD isolados não parecem agregar
+nada ao score; EMA e Volume têm um sinal fraco mas consistente, não
+provado**. Não editar os pesos do score com este resultado.
+
+## 70. Filtro MTF do Pine real — matematicamente inerte na configuração do usuário, hipótese fechada sem precisar de backtest (2026-08-09)
+
+### Contexto
+
+Ao desenhar o próximo teste depois do item 69 (medir a contribuição de
+cada indicador do score), a hipótese cogitada era: o Sentinel usa
+`analyzeAlignment` (`src/lib/indicators/confluence.js`) comparando o RF
+real de 1h/4h/1d como um suposto equivalente ao "filtro MTF" do Pine real
+mencionado no item 67 — e que esse seria mais um ponto de divergência
+entre o painel e o TradingView, candidato a virar um novo flag
+experimental A/B.
+
+### Achado — a hipótese estava errada em dois pontos, ambos confirmados por leitura de código
+
+1. **Na cascata RF NATIVA — a única comparável ao Pine real, já que SMC é
+   desenho original do Sentinel sem equivalente no Pine — `analyzeAlignment`/
+   `strengthResult.alignment` nunca gateia nada em `scanner.js`**
+   (confirmado por grep — só aparece como metadado
+   (`alignment: strengthResult.alignment`) gravado no `SignalEvent`/
+   descrição do sinal, via `calculateSignalStrength`). Não é o port do
+   filtro MTF do Pine — é um campo informativo do Sentinel sem
+   equivalente funcional no Pine real. **Correção (Codex review, PR
+   #155)**: essa afirmação NÃO vale para a cascata SMC 1h→5m —
+   `calculateSmcSignalStrength` (`src/lib/indicators/smcConfluence.js:
+   119-128`) SOMA pontos reais de `alignmentResult.alignment` no score
+   SMC (crédito cheio ou parcial), que alimenta `signalArbitration.js`
+   (limiares de promoção/redução de confiança entre cascatas,
+   `scanner.js:1425`). Isso não reabre a hipótese fechada abaixo — o
+   filtro MTF do Pine só tem correspondência conceitual com a cascata
+   RF nativa (a que o Pine real implementa); a SMC nunca teve
+   equivalente no Pine pra comparar em primeiro lugar.
+2. **O filtro MTF real do Pine (`src/pages/PineScript.jsx`, grupo "04.
+   Filtro Timeframe Superior") não compara contra 1D/1H** — `mtfTF`
+   default é `"240"` (**o próprio 4h**). Quando `mtfTF` é igual ou menor
+   que o timeframe do gráfico onde a estratégia roda (`mtfSameOrLowerTF`,
+   verdadeiro quando aplicado direto no gráfico de 4h, como o usuário
+   faz), `mtfDir = mtfDirLocal = getMtfDir(mtfRngQty, mtfRngPer)` — uma
+   SEGUNDA instância do MESMO `rng_filt` que calcula o RF principal
+   (`rng_filt(x, r)` com `var float rf`, mesma fórmula, mesma recorrência
+   `fdir := filt > filt[1] ? 1 : filt < filt[1] ? -1 : nz(fdir[1], 0)`),
+   rodando sobre a MESMA série de preço. Com `mtfRngQty`/`mtfRngPer`
+   iguais a `rng_qty`/`rng_per` (ambos 20/3,5 por padrão — **confirmado
+   que é a configuração real do usuário em todos os ativos**, item 57), as
+   duas instâncias produzem o **mesmo valor, barra a barra, por
+   construção matemática** (mesma recorrência, mesma entrada, mesma
+   condição inicial). `mtfLongOk`/`mtfShortOk` (que gateiam `finalBuy`/
+   `finalSell` no Pine) nunca podem discordar da direção que o sinal
+   principal já exige — o filtro é um no-op certificado nesta
+   configuração, não uma fonte de divergência.
+
+### Por que registrar sem rodar backtest nenhum
+
+Diferente dos outros itens deste arquivo, esta conclusão não depende de
+dado empírico — é uma prova matemática direta da leitura do Pine real
+(mesma função, mesmos parâmetros, mesma série ⇒ mesmo resultado sempre).
+Rodar um A/B custaria uma rodada inteira (e o item 69 acabou de mostrar
+que cada rodada não é barata) para confirmar algo que já está decidido
+pelo próprio código-fonte. Pesquisa antes de planejar (princípio do
+projeto) evitou esse gasto.
+
+### Conclusão
+
+Hipótese fechada, **não vira flag experimental**. O filtro MTF nunca foi e
+não é uma fonte real de divergência entre o painel e o TradingView para
+este usuário — nem pra melhor nem pra pior. Se algum dia o usuário mudar
+`rf_period`/`rf_multiplier` de um ativo pra um valor diferente do padrão
+de fábrica (20/3,5) SEM também mudar os parâmetros do grupo MTF no
+próprio Pine (algo que só ele controla, fora do Sentinel), aí sim o
+filtro deixaria de ser no-op no TradingView — mas isso não é algo que o
+Sentinel precisa ou consegue replicar (o Sentinel não tem esse grupo de
+parâmetros MTF separado hoje, e não há evidência de que devesse ter).
