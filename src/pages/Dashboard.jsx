@@ -370,7 +370,7 @@ export default function Dashboard() {
           </TabsContent>
 
           <TabsContent value="predictive" className="mt-4">
-            <PredictiveAnalysis recentSignals={recentSignals} tradeOps={tradeOps} />
+            <PredictiveAnalysis recentSignals={recentSignals} />
           </TabsContent>
         </Tabs>
       </div>

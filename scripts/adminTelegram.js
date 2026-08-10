@@ -171,7 +171,7 @@ export async function notifyNewSignal(signal, asset) {
 // SignalEvent that triggered the VerificationTask (same shape notifyNewSignal
 // receives above).
 export async function notifyVerificationTask(signal, asset) {
-  if (!(await shouldSend('verification_task_created', signal, asset))) return;
+  if (!(await shouldSend('verification_task_created', signal, asset))) return false;
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
   const sourceLabel = SOURCE_LABELS[signal.source] || 'RF';

@@ -4308,13 +4308,20 @@ describe('VerificationTask automática para sinais de alta prioridade', () => {
     expect(await backend.entities.VerificationTask.filter({})).toHaveLength(1);
   });
 
-  it('dispara notifyVerificationTask quando o Telegram está configurado', async () => {
+  it('dispara notifyVerificationTask e só grava telegram_notified quando a entrega foi confirmada', async () => {
     vi.mocked(isTelegramConfigured).mockReturnValue(true);
+    vi.mocked(notifyVerificationTask).mockResolvedValueOnce(true);
     await blockedScan([makeHighPrioritySignal({ dedup_key: 'sig_vt_4' })]);
 
     expect(notifyVerificationTask).toHaveBeenCalledTimes(1);
-    const tasks = await backend.entities.VerificationTask.filter({});
-    expect(tasks[0].telegram_notified).toBe(true);
+    // notifyVerificationTask é fire-and-forget (não bloqueia o motor de
+    // entrada) — o update de telegram_notified acontece num microtask
+    // seguinte, por isso o poll em vez de checar sincronamente.
+    await vi.waitFor(async () => {
+      const tasks = await backend.entities.VerificationTask.filter({});
+      expect(tasks[0].telegram_notified).toBe(true);
+      expect(tasks[0].telegram_notified_at).toBeTruthy();
+    });
   });
 
   it('não dispara notifyVerificationTask quando o Telegram não está configurado', async () => {
@@ -4324,5 +4331,54 @@ describe('VerificationTask automática para sinais de alta prioridade', () => {
     expect(notifyVerificationTask).not.toHaveBeenCalled();
     const tasks = await backend.entities.VerificationTask.filter({});
     expect(tasks[0].telegram_notified).toBe(false);
+  });
+
+  // Codex review (PR #159 follow-up): telegram_notified antes gravava true
+  // só por isTelegramConfigured() ser true, mesmo quando o filtro de
+  // evento/score/timeframe descartava o envio (notifyVerificationTask
+  // resolvendo false/undefined) — a tarefa ficava marcada "enviada" sem
+  // nunca ter sido.
+  it('não grava telegram_notified quando o Telegram está configurado mas o envio é descartado pelo filtro (resolve false)', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(true);
+    vi.mocked(notifyVerificationTask).mockResolvedValueOnce(false);
+    await blockedScan([makeHighPrioritySignal({ dedup_key: 'sig_vt_6' })]);
+
+    expect(notifyVerificationTask).toHaveBeenCalledTimes(1);
+    const tasks = await backend.entities.VerificationTask.filter({});
+    expect(tasks[0].telegram_notified).toBe(false);
+    expect(tasks[0].telegram_notified_at).toBe(null);
+  });
+
+  // Codex review (PR #159 follow-up): sem try/catch dedicado, uma falha
+  // nesta escrita aditiva propagava e abortava TODO o restante de
+  // persistScanResults para o ativo na passada — inclusive a criação da
+  // TradeOperation de outro sinal do MESMO ativo na mesma passada.
+  it('uma falha ao criar a VerificationTask não impede a criação da TradeOperation de outro sinal do mesmo ativo na mesma passada', async () => {
+    const originalCreateUnique = backend.entities.VerificationTask.createUnique;
+    backend.entities.VerificationTask.createUnique = async () => { throw new Error('Firestore indisponível (simulado)'); };
+
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() };
+    const rfSignal = {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_vt_coexist',
+      price_at_signal: 100, context: { score: 90 },
+    };
+    // Sem op ativa seedada — ao contrário de blockedScan, este teste PRECISA
+    // que o motor de entrada tente confirmar/criar a TradeOperation de
+    // verdade, para provar que o try/catch isolou a falha só ao bloco da
+    // VerificationTask.
+    fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 1));
+
+    await expect(
+      persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [rfSignal] })
+    ).resolves.not.toThrow();
+
+    expect(await backend.entities.VerificationTask.filter({})).toHaveLength(0);
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].symbol).toBe('BTCUSDT');
+
+    backend.entities.VerificationTask.createUnique = originalCreateUnique;
   });
 });

@@ -1797,29 +1797,54 @@ export async function persistScanResults(scanResult) {
     // persistir mesmo quando o Telegram do sinal está em cooldown ou não
     // configurado — só o ENVIO da notificação (abaixo) depende de
     // isTelegramConfigured().
+    //
+    // try/catch dedicado (Codex review, PR #159 follow-up): sem isso, uma
+    // falha transitória nesta escrita aditiva propagaria e abortaria TODO o
+    // restante de persistScanResults para este ativo nesta passada (o
+    // try/catch de scanAllAssetsInner que envolve a chamada é por-ATIVO, não
+    // por-sinal) — inclusive o motor de entrada de outros sinais do mesmo
+    // ativo. Uma tarefa de verificação perdida é aceitável (lembrete
+    // best-effort, mesmo status de risco do notifyNewSignal fire-and-forget
+    // logo acima); abortar a avaliação de entrada do ativo por causa dela
+    // não é.
     if (signal.priority === 'high') {
-      const notifyTelegram = isTelegramConfigured();
-      const verificationCreated = await backend.entities.VerificationTask.createUnique(signal.dedup_key, {
-        signal_event_id: signal.dedup_key,
-        asset_id: signal.asset_id,
-        symbol: signal.symbol,
-        signal_type: signal.signal_type,
-        timeframe: signal.timeframe,
-        source: signal.source,
-        priority: signal.priority,
-        score: signal.context?.score,
-        signal_context: signal.context,
-        reason: signal.reason,
-        status: 'pending',
-        notes: '',
-        // Same "pre-send decision" convention as SignalEvent.notified above —
-        // records whether Telegram WOULD have been called, not a delivery
-        // confirmation (send() is fire-and-forget, same as notifyNewSignal).
-        telegram_notified: notifyTelegram,
-        telegram_notified_at: notifyTelegram ? new Date().toISOString() : null,
-      });
-      if (verificationCreated.created && notifyTelegram) {
-        notifyVerificationTask(signal, asset).catch(() => {});
+      try {
+        const verificationCreated = await backend.entities.VerificationTask.createUnique(signal.dedup_key, {
+          signal_event_id: signal.dedup_key,
+          asset_id: signal.asset_id,
+          symbol: signal.symbol,
+          signal_type: signal.signal_type,
+          timeframe: signal.timeframe,
+          source: signal.source,
+          priority: signal.priority,
+          score: signal.context?.score,
+          signal_context: signal.context,
+          reason: signal.reason,
+          status: 'pending',
+          notes: '',
+          telegram_notified: false,
+          telegram_notified_at: null,
+        });
+        if (verificationCreated.created && isTelegramConfigured()) {
+          // Fire-and-forget, como notifyNewSignal acima — NÃO aguardado,
+          // para não atrasar os gates de confirmação de entrada
+          // (check15mConfirmation/check5mSmcConfirmation) que rodam logo
+          // depois neste mesmo loop com uma chamada de rede ao Telegram.
+          // telegram_notified só deve significar "de fato enviado", não
+          // "tentaríamos enviar" (Codex review: o valor anterior gravava
+          // true mesmo quando o filtro de evento/score/timeframe descartava
+          // o envio, ou quando send() engolia uma falha de rede) — por isso
+          // o update fica condicionado ao retorno real de notifyVerificationTask,
+          // só que de forma assíncrona/eventual em vez de bloquear a passada.
+          notifyVerificationTask(signal, asset)
+            .then((delivered) => delivered && backend.entities.VerificationTask.update(verificationCreated.doc.id, {
+              telegram_notified: true,
+              telegram_notified_at: new Date().toISOString(),
+            }))
+            .catch((e) => logWarn('scanner', `Falha ao notificar/gravar entrega da tarefa de verificação de ${signal.symbol}`, { error: e.message, dedup_key: signal.dedup_key }));
+        }
+      } catch (e) {
+        logWarn('scanner', `Falha ao criar tarefa de verificação para ${signal.symbol}`, { error: e.message, dedup_key: signal.dedup_key });
       }
     }
 

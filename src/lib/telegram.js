@@ -175,17 +175,30 @@ function shouldSend(event, data, asset) {
   return true;
 }
 
+// Returns whether the message was actually delivered (2xx from Telegram) —
+// mirrors scripts/adminTelegram.js's send(), which already has this contract.
+// Existing callers here just `return send(...)` or `.catch(() => {})` the
+// promise without inspecting the resolved value, so adding a real boolean
+// (instead of always resolving undefined) doesn't change their behavior —
+// only notifyVerificationTask's caller (scanner.js) reads it, to avoid
+// recording a delivery that didn't happen (Codex review, PR #159 follow-up).
 async function send(html) {
   const { botToken, chatId } = getTelegramConfig();
-  if (!botToken || !chatId) return;
+  if (!botToken || !chatId) return false;
   try {
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: 'HTML' }),
     });
+    if (!res.ok) {
+      console.warn('[Telegram] send failed:', res.status, await res.text());
+      return false;
+    }
+    return true;
   } catch (e) {
     console.warn('[Telegram] send failed:', e.message);
+    return false;
   }
 }
 
@@ -235,7 +248,7 @@ export async function notifyNewSignal(signal, asset) {
 // shape notifyNewSignal receives) — used both on automatic creation
 // (scanner.js) and on manual resend from the dedicated Verification page.
 export async function notifyVerificationTask(signal, asset) {
-  if (!shouldSend('verification_task_created', signal, asset)) return;
+  if (!shouldSend('verification_task_created', signal, asset)) return false;
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
   const sourceLabel = SOURCE_LABELS[signal.source] || 'RF';
