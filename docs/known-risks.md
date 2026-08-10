@@ -7055,32 +7055,54 @@ entre si aqui — só a cascata nativa estava ativa):
 | SELL-only | 175 | **+0,202R** | [0,023; 0,381] | **sim** | 52,6% | 1,37 |
 | BUY-only | 181 | **−0,344R** | [-0,501; -0,188] | **sim** | 28,7% | 0,44 |
 
-Lido cru (z=1,96 padrão), SELL-only bate exatamente o critério
-pré-registrado acima ("conclusivo e positivo") — pareceria ser a 1ª vantagem
-real já medida neste projeto.
+Lido cru (z=1,96 padrão), SELL-only bateria o critério "conclusivo e
+positivo" descrito acima — mas 2 problemas mais sérios que esse critério
+sozinho precisam ser corrigidos antes de aceitar isso como confirmação.
+Ambos apontados pelo Codex review (PR #158) e verificados aqui contra os
+dados reais — os dois são procedentes.
 
-**Correção de Bonferroni aplicada antes de aceitar o resultado.** Este run
-testa 2 afirmações direcionais da MESMA pergunta (SELL-only positivo, BUY-only
+**Problema mais grave: esta NÃO é uma confirmação fora da amostra — é
+quase a mesma janela que gerou a hipótese.** A hipótese BUY-negativo/
+SELL-positivo nasceu (achado acima nesta mesma seção) separando por lado os
+resultados do run de referência do item 69 — mesmos 20 símbolos, janela
+`2025-08-09T00:00:00Z → 2026-08-09T00:00:00Z`. Os 3 disparos deste A/B usam
+`2025-08-10T00:00:00Z → 2026-08-10T00:00:00Z` — deslocada só 1 dia, ~99,7%
+de sobreposição com a janela que originou o achado. Chamar isso de "critério
+pré-registrado" e "1ª vantagem real comprovada" superestima a evidência: é
+essencialmente a mesma massa de dados que gerou o padrão sendo usada de
+novo para "confirmá-lo" — o oposto do desenho que o item 48 deste projeto já
+usou corretamente (janela de ALTA **inédita**, nunca vista antes, pra testar
+se o motor tem vantagem real ou só segue o regime). SELL-only aqui é, na
+melhor leitura, uma re-medição em amostra correlacionada — não confirmação
+independente.
+
+**Correção de Bonferroni (aplicada por cima do problema acima, não no lugar
+dele).** Mesmo ignorando a circularidade de amostra, este run testa 2
+afirmações direcionais da MESMA pergunta (SELL-only positivo, BUY-only
 negativo) — mesma situação que os itens 56/68 já definiram como exigindo
 correção pra m=2 comparações (z=2,24 em vez de 1,96, `docs/known-risks.md`
 linhas ~4917-4923/6541-6542). Este projeto já tem, inclusive, um precedente
 específico de achado SELL positivo que **não sobreviveu** a essa mesma
-correção (item 45.9/48, "+0,199R não sobrevive Bonferroni") — motivo a mais
-pra aplicar aqui antes de comemorar. Recalculando com z=2,24:
+correção (item 45.9/48, "+0,199R não sobrevive Bonferroni"). Recalculando
+com z=2,24:
 
 - **SELL-only**: IC95-Bonferroni ≈ **[-0,003; 0,407] — cruza zero.** Não
-  sobrevive à correção — mesmo padrão do precedente acima. A leitura correta
-  é "não conclusivo ainda", não "provado", apesar de bater o critério com
-  z=1,96 cru.
+  sobrevive à correção, mesmo padrão do precedente acima.
 - **BUY-only**: IC95-Bonferroni ≈ [-0,523; -0,165] — **continua sem cruzar
-  zero.** Esse lado da afirmação sobrevive à correção com folga.
+  zero.** Esse lado sobrevive à correção com folga.
 
-**Leitura honesta**: a evidência contra BUY é sólida (conclusiva mesmo
-corrigida, reforçada por win rate 28,7%/PF 0,44 — pior que o baseline em
-TODAS as métricas). A evidência a favor de SELL isoladamente é real e na
-direção certa (win rate 52,6%/PF 1,37, melhor que baseline em toda métrica),
-mas o IC da expectância fica bem na fronteira sob a correção correta — não é
-prova estatística ainda, é sinal forte pedindo mais amostra.
+**Leitura honesta, com os dois problemas descontados**: a evidência contra
+BUY é a única parte sólida — conclusiva mesmo com Bonferroni, reforçada por
+win rate 28,7%/PF 0,44 (pior que o baseline em toda métrica) — mas ainda
+assim medida na MESMA janela da descoberta, então também carece de
+confirmação fora da amostra antes de virar decisão de produto. A "evidência"
+a favor de SELL isoladamente não é evidência real ainda: nem sobrevive à
+correção de múltiplas comparações, nem é medição independente da hipótese
+que a gerou. **Não é seguro afirmar "SELL não é pior que o mercado"** a
+partir de um IC que cruza zero — isso testaria só se a expectância de SELL
+difere de zero, não se SELL é não-inferior ao baseline (exigiria margem de
+não-inferioridade e um teste de contraste SELL-vs-baseline definidos à
+parte, que este run não fez).
 
 **Achado mecânico secundário (contagem, não IC — não precisa de correção
 estatística)**: `side_filter_blocked` ficou em 561 (SELL-only) e 569
@@ -7097,10 +7119,18 @@ formal de) o mecanismo de arbitragem cross-side descrito acima.
 
 ### Pendente
 
-Ampliar amostra do braço SELL-only especificamente (mais símbolos e/ou
-janela mais longa, respeitando o limite de performance conhecido do
-`fakeBackend` — `docs/roadmap.md`) até o IC-Bonferroni não cruzar mais zero,
-ou aceitar formalmente "SELL não é pior que o mercado, BUY é pior que o
-mercado" como a conclusão atual (mais fraca que "SELL tem edge provado", mas
-já suficiente pra justificar não ligar `allowedSide` em produção sem mais
-dado). Não ligar em produção com o dado atual.
+**Não** "ampliar amostra até o IC parar de cruzar zero" — Codex (PR #158)
+apontou corretamente que isso é olhar repetidamente e esticar a amostra até
+achar significância, o que invalida o IC-Bonferroni nominal por optional
+stopping (o mesmo problema, em miniatura, que a pesquisa sobre múltiplas
+comparações já alertava neste projeto — parar de coletar dado só quando o
+número "dá certo" infla a taxa de falso-positivo além do alpha nominal,
+mesmo corrigido). Em vez disso, definir o próximo teste ANTES de rodá-lo, do
+mesmo jeito que o item 48 já fez pra validar a hipótese original: **1 disparo
+adicional (`allowedSide: SELL`), tamanho de amostra fixado com antecedência
+(mesmos 20 símbolos, mesma janela de 12 meses), numa janela que a hipótese
+NUNCA viu** — candidato natural: os 12 meses imediatamente anteriores
+(`2024-08-10T00:00:00Z → 2025-08-10T00:00:00Z`, sem sobreposição com nenhum
+run já usado nos itens 69/71). Só um resultado assim — dado que a hipótese
+não influenciou — conta como confirmação de verdade. Não ligar `allowedSide`
+em produção antes disso.
