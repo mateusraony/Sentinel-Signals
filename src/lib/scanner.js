@@ -1948,6 +1948,21 @@ export async function persistScanResults(scanResult) {
         // 4H signal — verify 4H trend alignment explicitly before any entry
         const tf4hData = results['4h'];
         if (tf4hData && tf4hData.atrValue) {
+          // docs/known-risks.md item 71 — pineConfig.allowedSide
+          // ('SELL'|'BUY'|ausente, backtest-only). Bloqueia o lado NÃO
+          // permitido na cascata nativa ANTES de qualquer outro gate — mais
+          // barato (sem I/O) e mais fundamental (decisão de lado, não de
+          // qualidade do sinal). Um parâmetro só (não 2 flags booleanas
+          // separadas) evita o caso os-dois-ligados-ao-mesmo-tempo sem
+          // precisar validar mutex — e permite testar SELL-only e BUY-only
+          // pela MESMA mecânica, pro contraste pedido pelo usuário. Achado
+          // que motivou: nas operações reais já medidas, BUY teve
+          // expectância negativa CONCLUSIVA (-0,324R, IC95 não cruza zero)
+          // e SELL positiva CONCLUSIVA (+0,271R) — ver item 71.
+          if (pineConfig.allowedSide && signal.signal_type !== pineConfig.allowedSide) {
+            entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'side_filter_blocked' });
+            continue;
+          }
           const tf4hDir = tf4hData.rf.direction;
           const sigDir = signal.signal_type === 'BUY' ? 1 : -1;
 
@@ -2451,6 +2466,22 @@ export async function persistScanResults(scanResult) {
     // Verify 4H trend still aligned with signal direction (may have reversed)
     const tfData4h = results['4h'];
     if (!tfData4h || !tfData4h.atrValue) continue;
+    // docs/known-risks.md item 71 — mesmo gate do 1º passo, aqui no retry.
+    // Codex review (PR #156): diferente de trend_reversed/regime_rejected
+    // (que podem genuinely mudar de passada pra passada), o LADO de um
+    // sinal é decidido no nascimento e nunca muda dentro do run — usar
+    // recordRejection aqui empurraria uma rejeição nova (em memória) a
+    // CADA passada de retry até o sinal expirar (~48x numa janela de 4h a
+    // cada 5min), inflando `report.entryFunnel...side_filter_blocked` bem
+    // além da contagem real de sinais bloqueados. Grava/conta só na 1ª vez.
+    if (pineConfig.allowedSide && sig.signal_type !== pineConfig.allowedSide) {
+      if (sig.last_rejection_reason !== 'side_filter_blocked') {
+        entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', reason: 'side_filter_blocked' });
+        await backend.entities.SignalEvent.update(sig.id, { last_rejection_reason: 'side_filter_blocked' });
+        sig.last_rejection_reason = 'side_filter_blocked';
+      }
+      continue;
+    }
     const tf4hDir = tfData4h.rf.direction;
     const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
     if (tf4hDir !== sigDir) { await recordRejection(sig, '4h_15m', 'trend_reversed', entryFunnelOutcomes); continue; }

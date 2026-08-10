@@ -118,6 +118,21 @@ const DEFAULTS = {
   // test em src/lib/rf1hUncondTripwire.test.js. Nunca ligar junto com
   // rf1hCondEnabled no mesmo run — convenção, não validado em runtime.
   rf1hUncondEnabled: false,
+  // Filtro de lado na cascata RF nativa (docs/known-risks.md item 71) —
+  // 'SELL', 'BUY' ou ausente/null (default, os dois lados, comportamento de
+  // sempre). Motivado por achado real: nas operações reais já medidas
+  // (20 símbolos/12 meses), BUY teve expectância -0,324R (CONCLUSIVA, IC95
+  // não cruza zero) e SELL +0,271R (também CONCLUSIVA) — o padrão mais forte
+  // já medido neste projeto. Um parâmetro só (não 2 flags booleanas) evita
+  // precisar validar mutex e permite testar SELL-only e BUY-only pela MESMA
+  // mecânica, pro contraste que a comparação pede. INTENTIONALLY NOT
+  // mirrored to src/lib/pineParser.js/scripts/adminPineConfig.js — mesmo
+  // motivo dos outros flags backtest-only acima (chave viva em
+  // strategyConfig/current seria toggle de produção sem code-review, e uma
+  // mudança de ESTRATÉGIA dessa magnitude exige A/B real antes de cogitar
+  // produção). Backtest-only, só via --pine-config. Ver o tripwire test em
+  // src/lib/allowedSideTripwire.test.js.
+  allowedSide: null,
 };
 
 let overrides = {};
@@ -127,6 +142,15 @@ let overrides = {};
 // compare parameter sets (fase 2 of the user's request) without editing this
 // file. Never mutates DEFAULTS itself.
 export function setPineConfigOverrides(next = {}) {
+  // Codex review (PR #156): um valor inválido (typo, caixa errada, ou não
+  // string truthy como `true`) passaria incólume até scanner.js, onde a
+  // comparação `signal_type !== allowedSide` rejeitaria os DOIS lados sem
+  // erro nenhum — um backtest caro terminaria com zero operações da
+  // cascata nativa, parecendo um resultado real em vez de config quebrada.
+  // Falha CEDO e alto, antes do replay começar, em vez de silenciosamente.
+  if (next.allowedSide != null && next.allowedSide !== 'BUY' && next.allowedSide !== 'SELL') {
+    throw new Error(`setPineConfigOverrides: allowedSide inválido (${JSON.stringify(next.allowedSide)}) — só aceita 'BUY', 'SELL' ou ausente/null`);
+  }
   overrides = { ...next };
 }
 
