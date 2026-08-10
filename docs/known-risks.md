@@ -7117,23 +7117,37 @@ supera o total do baseline (322) — 34 operações a mais no total quando os
 lados não competem pelo mesmo slot do ativo, consistente com (mas não prova
 formal de) o mecanismo de arbitragem cross-side descrito acima.
 
-### Pendente
+### Confirmação fora da amostra (holdout) — resultado (2026-08-10): hipótese NÃO se sustenta
 
-**Não** "ampliar amostra até o IC parar de cruzar zero" — Codex (PR #158)
-apontou corretamente que isso é olhar repetidamente e esticar a amostra até
-achar significância, o que invalida o IC-Bonferroni nominal por optional
-stopping (o mesmo problema, em miniatura, que a pesquisa sobre múltiplas
-comparações já alertava neste projeto — parar de coletar dado só quando o
-número "dá certo" infla a taxa de falso-positivo além do alpha nominal,
-mesmo corrigido). Em vez disso, definir o próximo teste ANTES de rodá-lo, do
-mesmo jeito que o item 48 já fez pra validar a hipótese original: **1 disparo
-adicional (`allowedSide: SELL`), tamanho de amostra fixado com antecedência
-(mesmos 20 símbolos, mesma janela de 12 meses), numa janela que a hipótese
-NUNCA viu** — candidato natural: os 12 meses imediatamente anteriores
-(`2024-08-10T00:00:00Z → 2025-08-10T00:00:00Z`, sem sobreposição com nenhum
-run já usado nos itens 69/71). Só um resultado assim — dado que a hipótese
-não influenciou — conta como confirmação de verdade. Não ligar `allowedSide`
-em produção antes disso.
+Disparo pré-especificado (`trial_label: allowedside-holdout-sell-only`),
+`{"allowedSide":"SELL"}`, mesmos 20 símbolos, janela
+`2024-08-10T00:00:00Z → 2025-08-10T00:00:00Z` — os 12 meses IMEDIATAMENTE
+ANTERIORES ao já usado, sem nenhuma sobreposição com a janela que originou a
+hipótese (item 69) nem com o A/B anterior (acima). O critério já estava
+definido antes de rodar: conclusivo e positivo = confirma; inconclusivo ou
+negativo = encerra a linha.
+
+`report.costs`: n=150 fechadas, expectância líquida **+0,078R**, IC95
+**[-0,115; 0,270] — cruza zero. INCONCLUSIVO** (`ci_straddles_zero`), mesmo
+com z=1,96 padrão, sem precisar nem chegar a aplicar Bonferroni — já não
+sobrevive ao teste mais fraco possível. Win rate 46,7%/PF 1,27 (positivo em
+direção, igual às vezes anteriores) mas a amostra dessa janela específica
+(150 operações, menos que as 175 do run anterior) não separa o sinal do
+ruído. `side_filter_blocked` = 555 (mesma ordem de grandeza dos runs
+anteriores — funil se comportando como esperado).
+
+**Conclusão, pelo próprio critério pré-registrado**: a hipótese SELL-only
+**não se sustenta** em dado que ela nunca influenciou. A direção continua
+sempre positiva nas 3 medições de SELL isolado já feitas (item 69 shadow,
+A/B mesma janela, holdout) — nunca inverteu de sinal — mas nenhuma delas
+prova o efeito com rigor (a primeira é sinal-fantasma sem gates reais, a
+segunda é a mesma amostra da descoberta, a terceira é a confirmação de
+verdade e saiu inconclusiva). Consistente com um padrão mais fraco:
+"mercado historicamente mais favorável a SELL nesse conjunto de ativos", não
+necessariamente uma vantagem do MOTOR sobre esse viés. **Não ligar
+`allowedSide` em produção.** Esta linha de investigação (item 71) está
+encerrada — reabrir exigiria evidência nova (ex. mais anos de holdout,
+símbolos adicionais), não mais reanálise dos mesmos dados.
 
 ## 72. Tarefas de verificação automáticas + Análise Preditiva no Dashboard — feature nova, dois PRs de achado externo corrigidos (2026-08-10)
 
