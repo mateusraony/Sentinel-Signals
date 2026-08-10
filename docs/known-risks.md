@@ -6900,3 +6900,92 @@ próprio Pine (algo que só ele controla, fora do Sentinel), aí sim o
 filtro deixaria de ser no-op no TradingView — mas isso não é algo que o
 Sentinel precisa ou consegue replicar (o Sentinel não tem esse grupo de
 parâmetros MTF separado hoje, e não há evidência de que devesse ter).
+
+## 71. Filtro de lado na cascata RF nativa — `allowedSide`, backtest-only, achado real de BUY/SELL (2026-08-09)
+
+### Contexto
+
+Ao analisar os dados brutos do item 69 (run de 20 símbolos/12 meses),
+separei os resultados por lado (BUY vs. SELL) — tanto nos sinais-fantasma
+quanto nas operações REAIS já fechadas nesse mesmo run. O padrão já tinha
+aparecido antes com amostra bem menor (item 48: SELL positivo em 5
+medições, BUY seguindo o regime), mas agora com a maior amostra já medida
+neste projeto para esse corte específico:
+
+- **Sinais-fantasma** (`indicatorAttribution`, R bruto sem custo): BUY
+  n=507, expectância −0,157R (IC95 [-0,258; -0,057], CONCLUSIVO); SELL
+  n=500, expectância +0,165R (IC95 [0,057; 0,273], CONCLUSIVO).
+- **Operações REAIS fechadas** (`report.overall.curve`, com custo
+  aplicado, gates reais): BUY n=163, expectância **−0,324R** (IC95
+  [-0,493; -0,155], CONCLUSIVO); SELL n=159, expectância **+0,271R** (IC95
+  [0,082; 0,461], CONCLUSIVO) — todas as 322 operações desse run vieram da
+  cascata nativa `4h_15m`.
+- **Achado mecânico adicional**: 74 das 322 operações reais (23%) foram
+  atingidas por arbitragem de sinal oposto (`arbitration_reason:
+  'same_cascade_opposite_direction'`, `signalArbitration.js`) — um sinal
+  do lado contrário chegou enquanto uma operação já estava ativa no MESMO
+  ativo (o slot `assetActiveOps` é compartilhado entre BUY/SELL da mesma
+  cascata) e, em vez de abrir sua própria operação, só reduziu a
+  confiança da operação ativa em 15 pontos. Ou seja: hoje BUY e SELL
+  competem pelo mesmo slot por ativo — um sinal SELL bom pode nunca virar
+  operação porque um BUY (mesmo que ruim) já estava ocupando o ativo, e
+  vice-versa.
+
+### Mecanismo implementado
+
+Novo parâmetro `pineConfig.allowedSide` (`'SELL'`, `'BUY'` ou ausente —
+default, ambos os lados, comportamento de sempre). **Um parâmetro só, não
+2 flags booleanas independentes** — decisão deliberada (usuário pediu
+explicitamente uma forma que "um não atrapalhe a análise do outro"): evita
+o estado ambíguo de os dois lados desligados/ligados ao mesmo tempo sem
+precisar validar mutex, e permite testar SELL-only e BUY-only pela MESMA
+mecânica, cada um num run de backtest separado — nunca no mesmo run, então
+as duas amostras nunca se misturam.
+
+Bloqueio aplicado só na cascata RF nativa (`4h_15m`, `src/lib/scanner.js`)
+— a que gerou 100% das operações reais medidas acima — em 2 pontos: 1ª
+passada (logo após confirmar que `results['4h']` existe, ANTES até do
+gate de tendência — mais barato, sem I/O, e mais fundamental que os
+outros gates) e no loop de retry (mesma posição relativa). Sinal do lado
+bloqueado gera `entryFunnelOutcomes` com `reason: 'side_filter_blocked'`
+(mesmo padrão de instrumentação dos outros gates, item 45.3/49) — nunca
+silencioso.
+
+**Isolamento backtest-only** (mesmo padrão dos outros mecanismos
+experimentais): `allowedSide` existe só em `scripts/backtestPineConfig.js`
+— deliberadamente NUNCA espelhado em `src/lib/pineParser.js`/
+`scripts/adminPineConfig.js` (os dois arquivos que alimentam
+`strategyConfig/current` no Firestore, gravável por qualquer sessão
+anônima, CLAUDE.md decisão item 1). Reforçado por tripwire test
+(`src/lib/allowedSideTripwire.test.js`, mesmo padrão dos outros). Esta é
+uma mudança de ESTRATÉGIA (não um detalhe de mecanismo como confirmação
+15m ou trailing) — exige A/B real e decisão explícita do usuário antes de
+qualquer cogitação de produção, mais ainda que os outros flags.
+
+### Verificação
+
+`npm test`: 874 passando (+7: 3 do tripwire novo + 4 do describe novo em
+`scannerStateMachine.test.js` — ambos os lados abrem normalmente com o
+parâmetro ausente; `allowedSide: 'SELL'` bloqueia BUY mas deixa SELL
+passar; `allowedSide: 'BUY'` bloqueia SELL mas deixa BUY passar, mesma
+mecânica espelhada; retry loop respeita o mesmo gate). `npm run lint`
+limpo. `npm run build` + os 3 alvos esbuild (`build:scan` 191,3kb,
+`build:scan-shadow` 181,6kb, `build:backtest` 222,5kb) compilando sem
+erro. Grep de isolamento: `allowedSide` ausente em `pineParser.js`/
+`adminPineConfig.js`, presente só em `backtestPineConfig.js`. Backtest de
+fumaça local confirmou que o código roda sem crashar.
+
+### Pendente
+
+A/B real (usuário, via `backtest.yml`, 3 disparos): baseline (`{}`),
+`{"allowedSide":"SELL"}`, `{"allowedSide":"BUY"}` — mesma janela/símbolos
+já usados (20 símbolos/12 meses). Critério pré-registrado: se
+`report.overall`/`report.costs` do run SELL-only vier conclusivo e
+positivo, é a primeira vantagem realmente comprovada (com custo, gates
+reais) que este projeto mediu — não só "segue o mercado". Comparar
+também `report.entryFunnel['4h_15m'].byReason.side_filter_blocked` (deve
+bater aproximadamente com a contagem de sinais do lado bloqueado) e
+observar se o volume de operações do lado permitido AUMENTA em relação
+ao baseline (evidência do mecanismo de liberação de slot descrito acima)
+ou fica igual (evidência de que a contenção de slot não era relevante na
+prática).

@@ -2447,6 +2447,99 @@ describe('Bypass da confirmação 15m (opt-in, RF 4h_15m only, docs/known-risks.
   });
 });
 
+describe('Filtro de lado — allowedSide (opt-in, RF 4h_15m only, docs/known-risks.md item 71)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  function makeRfSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_side',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80 },
+      ...overrides,
+    };
+  }
+  // skip15mConfirmationEnabled:true isola este teste do mecanismo de
+  // confirmação 15m (já coberto à parte, item 67) — só a decisão de lado
+  // importa aqui.
+  function sidePineConfig(overrides = {}) {
+    return makePineConfig({ useADX: false, useChop: false, skip15mConfirmationEnabled: true, ...overrides });
+  }
+
+  it('allowedSide ausente (default): BUY e SELL abrem operação normalmente', async () => {
+    const buyResults = { '4h': makeTfData() }; // direction:1, alinhado com BUY
+    await persistScanResults({
+      ...makeScanResult({ results: buyResults, pineConfig: sidePineConfig() }),
+      newSignals: [makeRfSignal({ dedup_key: 'sig_side_buy', signal_type: 'BUY' })],
+    });
+    const sellResults = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+    await persistScanResults({
+      ...makeScanResult({ asset: makeAsset({ id: 'asset2', symbol: 'ETHUSDT' }), results: sellResults, pineConfig: sidePineConfig() }),
+      newSignals: [makeRfSignal({ dedup_key: 'sig_side_sell', symbol: 'ETHUSDT', asset_id: 'asset2', signal_type: 'SELL' })],
+    });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops.map(o => o.side).sort()).toEqual(['BUY', 'SELL']);
+  });
+
+  it("allowedSide: 'SELL' bloqueia BUY (side_filter_blocked no funil) mas deixa SELL abrir normalmente", async () => {
+    const pineConfig = sidePineConfig({ allowedSide: 'SELL' });
+    const buyResults = { '4h': makeTfData() };
+    const rBuy = await persistScanResults({
+      ...makeScanResult({ results: buyResults, pineConfig }),
+      newSignals: [makeRfSignal({ dedup_key: 'sig_side_buy', signal_type: 'BUY' })],
+    });
+    expect(rBuy.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_side_buy', cascade: '4h_15m', reason: 'side_filter_blocked' });
+
+    const sellResults = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+    await persistScanResults({
+      ...makeScanResult({ asset: makeAsset({ id: 'asset2', symbol: 'ETHUSDT' }), results: sellResults, pineConfig }),
+      newSignals: [makeRfSignal({ dedup_key: 'sig_side_sell', symbol: 'ETHUSDT', asset_id: 'asset2', signal_type: 'SELL' })],
+    });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].side).toBe('SELL');
+  });
+
+  it("allowedSide: 'BUY' bloqueia SELL mas deixa BUY abrir normalmente (mesma mecânica, lado espelhado)", async () => {
+    const pineConfig = sidePineConfig({ allowedSide: 'BUY' });
+    const sellResults = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+    const rSell = await persistScanResults({
+      ...makeScanResult({ results: sellResults, pineConfig }),
+      newSignals: [makeRfSignal({ dedup_key: 'sig_side_sell', signal_type: 'SELL' })],
+    });
+    expect(rSell.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_side_sell', cascade: '4h_15m', reason: 'side_filter_blocked' });
+
+    const buyResults = { '4h': makeTfData() };
+    await persistScanResults({
+      ...makeScanResult({ asset: makeAsset({ id: 'asset2', symbol: 'ETHUSDT' }), results: buyResults, pineConfig }),
+      newSignals: [makeRfSignal({ dedup_key: 'sig_side_buy', symbol: 'ETHUSDT', asset_id: 'asset2', signal_type: 'BUY' })],
+    });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].side).toBe('BUY');
+  });
+
+  it('retry loop respeita o mesmo gate — sinal pendente do lado bloqueado nunca confirma via retry', async () => {
+    const pineConfig = sidePineConfig({ allowedSide: 'SELL' });
+    backend._seed('SignalEvent', {
+      id: 'sig_side_buy', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_side_buy',
+      created_date: '2026-07-16T09:00:00.000Z', // dentro da janela de retry de 4h
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80 },
+    });
+    const buyResults = { '4h': makeTfData() }; // 4h ainda alinhado com BUY — só o lado bloqueia
+
+    const r = await persistScanResults({ ...makeScanResult({ results: buyResults, pineConfig }), newSignals: [] });
+
+    expect(r.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_side_buy', cascade: '4h_15m', reason: 'side_filter_blocked' });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+  });
+});
+
 describe('Fase 2 rodada 2 — gatilho de deslocamento (opt-in, SMC 1h→5m only, docs/known-risks.md item 41)', () => {
   afterEach(() => { fetchCandles.mockReset(); });
 

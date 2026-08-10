@@ -436,6 +436,17 @@ usada nos itens 56/68 deste projeto. E como qualquer seção deste relatório,
 específico não sustenta conclusão — não é diferente do resto do relatório
 nesse critério.
 
+**`--pine-config '{"allowedSide":"SELL"}'`** (`docs/known-risks.md` item
+71) — filtro de lado na cascata RF nativa (`4h_15m`), backtest-only.
+Valores: `"SELL"`, `"BUY"` ou ausente (default, os dois lados). Motivado
+por achado real: nas operações reais já medidas (20 símbolos/12 meses),
+BUY teve expectância −0,324R (CONCLUSIVA) e SELL +0,271R (também
+CONCLUSIVA) — o padrão mais forte já medido neste projeto. Rode os 3
+cenários (baseline, SELL-only, BUY-only) como 3 disparos separados —
+nunca os dois valores no mesmo run, o parâmetro só aceita um por vez.
+Compare `report.overall`/`report.costs` (com custo real aplicado) e
+`report.entryFunnel['4h_15m'].byReason.side_filter_blocked`.
+
 ## Passo 3 — diagnosticar de ONDE vem o resultado
 
 ```bash

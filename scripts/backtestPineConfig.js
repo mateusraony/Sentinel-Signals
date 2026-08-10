@@ -118,6 +118,21 @@ const DEFAULTS = {
   // test em src/lib/rf1hUncondTripwire.test.js. Nunca ligar junto com
   // rf1hCondEnabled no mesmo run — convenção, não validado em runtime.
   rf1hUncondEnabled: false,
+  // Filtro de lado na cascata RF nativa (docs/known-risks.md item 71) —
+  // 'SELL', 'BUY' ou ausente/null (default, os dois lados, comportamento de
+  // sempre). Motivado por achado real: nas operações reais já medidas
+  // (20 símbolos/12 meses), BUY teve expectância -0,324R (CONCLUSIVA, IC95
+  // não cruza zero) e SELL +0,271R (também CONCLUSIVA) — o padrão mais forte
+  // já medido neste projeto. Um parâmetro só (não 2 flags booleanas) evita
+  // precisar validar mutex e permite testar SELL-only e BUY-only pela MESMA
+  // mecânica, pro contraste que a comparação pede. INTENTIONALLY NOT
+  // mirrored to src/lib/pineParser.js/scripts/adminPineConfig.js — mesmo
+  // motivo dos outros flags backtest-only acima (chave viva em
+  // strategyConfig/current seria toggle de produção sem code-review, e uma
+  // mudança de ESTRATÉGIA dessa magnitude exige A/B real antes de cogitar
+  // produção). Backtest-only, só via --pine-config. Ver o tripwire test em
+  // src/lib/allowedSideTripwire.test.js.
+  allowedSide: null,
 };
 
 let overrides = {};
