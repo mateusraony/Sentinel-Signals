@@ -14,6 +14,7 @@ export function isTelegramConfigured() {
 async function noop() {}
 
 export const notifyNewSignal = noop;
+export const notifyVerificationTask = noop;
 export const notifyTradeCreated = noop;
 export const notifyTP1Hit = noop;
 export const notifyTP2Hit = noop;

@@ -83,9 +83,28 @@ export default function Verification() {
   const [sortBy, setSortBy] = useState('date'); // 'date' | 'score'
   const [resendingId, setResendingId] = useState(null);
 
+  // Filtra status/prioridade no SERVIDOR (não só no cliente) — com mais de
+  // 200 tarefas no total, um `.list()` sem filtro cortaria nas mais recentes
+  // e poderia esconder pendências antigas da lista inteira (Codex review, PR
+  // #159 follow-up). `filter()` já ignora chaves `undefined`, então "Todas"
+  // (undefined) se comporta como o `.list()` de antes; os índices compostos
+  // status+created_date / status+priority+created_date já existem para os
+  // dois casos.
   const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ['verification-tasks-all'],
-    queryFn: () => backend.entities.VerificationTask.list('-created_date', 200),
+    queryKey: ['verification-tasks-all', statusFilter, priorityFilter],
+    queryFn: () => backend.entities.VerificationTask.filter({
+      status: statusFilter !== 'all' ? statusFilter : undefined,
+      priority: priorityFilter !== 'all' ? priorityFilter : undefined,
+    }, '-created_date', 200),
+    refetchInterval: 15000,
+  });
+
+  // Contagem do badge do cabeçalho é independente do filtro ativo — sem isso,
+  // trocar para a aba "Revisadas"/"Puladas" faria o número de pendentes
+  // sumir ou ficar desatualizado.
+  const { data: pendingTasks = [] } = useQuery({
+    queryKey: ['verification-tasks-pending-count'],
+    queryFn: () => backend.entities.VerificationTask.filter({ status: 'pending' }, '-created_date', 200),
     refetchInterval: 15000,
   });
 
@@ -102,25 +121,26 @@ export default function Verification() {
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => backend.entities.VerificationTask.update(id, data),
     onSuccess: () => {
+      // Prefix match invalidates every statusFilter/priorityFilter variant.
       queryClient.invalidateQueries({ queryKey: ['verification-tasks-all'] });
+      queryClient.invalidateQueries({ queryKey: ['verification-tasks-pending-count'] });
       queryClient.invalidateQueries({ queryKey: ['verification-tasks-recent'] });
     },
   });
 
+  // status/priority já vêm filtrados do servidor (query acima) — só busca
+  // por símbolo e ordenação continuam client-side.
   const filtered = useMemo(() => {
-    let list = tasks.filter(t => {
-      if (statusFilter !== 'all' && t.status !== statusFilter) return false;
-      if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
-      if (search && !t.symbol?.toLowerCase().includes(search.toLowerCase())) return false;
-      return true;
-    });
+    let list = search
+      ? tasks.filter(t => t.symbol?.toLowerCase().includes(search.toLowerCase()))
+      : tasks;
     if (sortBy === 'score') {
       list = [...list].sort((a, b) => (b.score || 0) - (a.score || 0));
     }
     return list;
-  }, [tasks, statusFilter, priorityFilter, search, sortBy]);
+  }, [tasks, search, sortBy]);
 
-  const pendingCount = tasks.filter(t => t.status === 'pending').length;
+  const pendingCount = pendingTasks.length;
 
   const setStatus = (task, status) => updateMutation.mutate({
     id: task.id,
@@ -132,8 +152,14 @@ export default function Verification() {
     try {
       const signal = { symbol: task.symbol, timeframe: task.timeframe, signal_type: task.signal_type, source: task.source, reason: task.reason, context: task.signal_context };
       const asset = assets.find(a => a.id === task.asset_id);
-      await notifyVerificationTask(signal, asset);
-      await updateMutation.mutateAsync({ id: task.id, data: { telegram_notified: true, telegram_notified_at: new Date().toISOString() } });
+      const delivered = await notifyVerificationTask(signal, asset);
+      // Só grava "enviado" quando send() de fato confirmou 2xx do Telegram —
+      // antes gravava incondicionalmente, mesmo quando o filtro de
+      // evento/score/timeframe descartava o envio ou a chamada falhava
+      // (Codex review, PR #159 follow-up).
+      if (delivered) {
+        await updateMutation.mutateAsync({ id: task.id, data: { telegram_notified: true, telegram_notified_at: new Date().toISOString() } });
+      }
     } finally {
       setResendingId(null);
     }

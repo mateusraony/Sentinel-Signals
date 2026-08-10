@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Sparkles, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
-import { classifyOutcome, calcRealizedR, isClosedOp } from '@/lib/tradeMetrics';
+import { backend } from '@/api/entities';
+import { classifyOutcome, calcRealizedR } from '@/lib/tradeMetrics';
 
 // Below this many historical matches, a win rate is noise, not signal — same
 // posture as tradeMetrics.summarizeOps'/indicatorAttribution.js's "conclusive"
@@ -10,6 +12,12 @@ import { classifyOutcome, calcRealizedR, isClosedOp } from '@/lib/tradeMetrics';
 const MIN_SAMPLE = 8;
 const SCORE_TOLERANCE = 15;
 const SCORE_BUCKET_SIZE = 20;
+// Terminal TradeOperation statuses (.claude/rules/trading-engine.md) — the
+// only ones classifyOutcome can score.
+const TERMINAL_STATUSES = ['TP2_HIT', 'STOP_HIT', 'INVALIDATED', 'CLOSED'];
+// Explicit, documented cap (not unbounded) — consistent with the project's
+// Firestore quota posture (.claude/rules/firestore-concurrency.md).
+const HISTORY_LIMIT = 500;
 
 // TradeOperation does NOT store rsi/macd_histogram at entry (only
 // SignalEvent.context does) — those fields don't exist to match against
@@ -51,7 +59,21 @@ function outcomeStats(ops) {
   };
 }
 
-export default function PredictiveAnalysis({ recentSignals = [], tradeOps = [] }) {
+export default function PredictiveAnalysis({ recentSignals = [] }) {
+  // Dedicated query instead of reusing the Dashboard's `tradeOps` prop — that
+  // list is capped at 100 most-recently-CREATED operations and mixes
+  // active+closed, so with more than ~100 operations total it could hand
+  // this feature a closed-operation sample that's small and skewed toward
+  // recent history, silently misreporting "amostra insuficiente" or a biased
+  // win rate as if it were the full historical picture (Codex review, PR
+  // #159 follow-up). Filtering by terminal status server-side also means
+  // isClosedOp doesn't need to be re-applied client-side.
+  const { data: historicalClosed = [] } = useQuery({
+    queryKey: ['trade-operations-history-predictive'],
+    queryFn: () => backend.entities.TradeOperation.filter({ status: TERMINAL_STATUSES }, '-created_date', HISTORY_LIMIT),
+    staleTime: 60000,
+  });
+
   const candidates = useMemo(() => {
     // Most recent RF signal per asset, highest score first — same "alta
     // prioridade" candidates the Dashboard/Telegram already surface.
@@ -76,8 +98,6 @@ export default function PredictiveAnalysis({ recentSignals = [], tradeOps = [] }
       return (b.context?.score || 0) - (a.context?.score || 0);
     })[0] || null;
   }, [candidates, selectedId]);
-
-  const historicalClosed = useMemo(() => tradeOps.filter(isClosedOp), [tradeOps]);
 
   const { sameShape, matches, headline } = useMemo(() => {
     if (!selected) return { sameShape: [], matches: [], headline: null };
