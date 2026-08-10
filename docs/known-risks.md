@@ -7041,17 +7041,66 @@ curvas. Duas correções aplicadas:
    do log real — mensagem nova confirmada. `npm test` (877 passando, sem
    regressão), `npm run lint`, `npm run build` + `build:backtest` limpos.
 
+### A/B real — resultado (2026-08-10, 20 símbolos/12 meses, mesma janela dos 3 runs)
+
+3 disparos concluídos (`trial_label`: `allowedside-ab-baseline`,
+`allowedside-ab-sell-only`, `allowedside-ab-buy-only`), mesmos 20 símbolos e
+janela `2025-08-10T00:00:00Z → 2026-08-10T00:00:00Z` do run de referência
+(item 69). `report.costs`/`report.byCascade['4h_15m']` de cada run (idênticos
+entre si aqui — só a cascata nativa estava ativa):
+
+| Run | n (fechadas) | Expectância líquida | IC95 (z=1,96) | `conclusive` | Win rate | Profit factor |
+|---|---|---|---|---|---|---|
+| Baseline | 322 | −0,030R | [-0,161; 0,101] | **não** (cruza zero) | 41,6% | 0,85 |
+| SELL-only | 175 | **+0,202R** | [0,023; 0,381] | **sim** | 52,6% | 1,37 |
+| BUY-only | 181 | **−0,344R** | [-0,501; -0,188] | **sim** | 28,7% | 0,44 |
+
+Lido cru (z=1,96 padrão), SELL-only bate exatamente o critério
+pré-registrado acima ("conclusivo e positivo") — pareceria ser a 1ª vantagem
+real já medida neste projeto.
+
+**Correção de Bonferroni aplicada antes de aceitar o resultado.** Este run
+testa 2 afirmações direcionais da MESMA pergunta (SELL-only positivo, BUY-only
+negativo) — mesma situação que os itens 56/68 já definiram como exigindo
+correção pra m=2 comparações (z=2,24 em vez de 1,96, `docs/known-risks.md`
+linhas ~4917-4923/6541-6542). Este projeto já tem, inclusive, um precedente
+específico de achado SELL positivo que **não sobreviveu** a essa mesma
+correção (item 45.9/48, "+0,199R não sobrevive Bonferroni") — motivo a mais
+pra aplicar aqui antes de comemorar. Recalculando com z=2,24:
+
+- **SELL-only**: IC95-Bonferroni ≈ **[-0,003; 0,407] — cruza zero.** Não
+  sobrevive à correção — mesmo padrão do precedente acima. A leitura correta
+  é "não conclusivo ainda", não "provado", apesar de bater o critério com
+  z=1,96 cru.
+- **BUY-only**: IC95-Bonferroni ≈ [-0,523; -0,165] — **continua sem cruzar
+  zero.** Esse lado da afirmação sobrevive à correção com folga.
+
+**Leitura honesta**: a evidência contra BUY é sólida (conclusiva mesmo
+corrigida, reforçada por win rate 28,7%/PF 0,44 — pior que o baseline em
+TODAS as métricas). A evidência a favor de SELL isoladamente é real e na
+direção certa (win rate 52,6%/PF 1,37, melhor que baseline em toda métrica),
+mas o IC da expectância fica bem na fronteira sob a correção correta — não é
+prova estatística ainda, é sinal forte pedindo mais amostra.
+
+**Achado mecânico secundário (contagem, não IC — não precisa de correção
+estatística)**: `side_filter_blocked` ficou em 561 (SELL-only) e 569
+(BUY-only) — próximos entre si, como esperado (mesmo universo de sinais,
+split BUY/SELL parecido nos dois runs; também confirma que o fix write-once
+do PR #156 está funcionando, sem inflar por retry). `active_op_exists` caiu
+de 1.457 (baseline) para 879 (SELL-only) e 808 (BUY-only) — mas isso sozinho
+não isola o mecanismo de liberação de slot, já que rodar só um lado
+naturalmente reduz o número de candidatos disputando pela metade. Mais
+sugestivo: a SOMA de operações fechadas dos dois runs isolados (175+181=356)
+supera o total do baseline (322) — 34 operações a mais no total quando os
+lados não competem pelo mesmo slot do ativo, consistente com (mas não prova
+formal de) o mecanismo de arbitragem cross-side descrito acima.
+
 ### Pendente
 
-A/B real (usuário, via `backtest.yml`, 3 disparos): baseline (`{}`),
-`{"allowedSide":"SELL"}`, `{"allowedSide":"BUY"}` — mesma janela/símbolos
-já usados (20 símbolos/12 meses). Critério pré-registrado: se
-`report.overall`/`report.costs` do run SELL-only vier conclusivo e
-positivo, é a primeira vantagem realmente comprovada (com custo, gates
-reais) que este projeto mediu — não só "segue o mercado". Comparar
-também `report.entryFunnel['4h_15m'].byReason.side_filter_blocked` (deve
-bater aproximadamente com a contagem de sinais do lado bloqueado) e
-observar se o volume de operações do lado permitido AUMENTA em relação
-ao baseline (evidência do mecanismo de liberação de slot descrito acima)
-ou fica igual (evidência de que a contenção de slot não era relevante na
-prática).
+Ampliar amostra do braço SELL-only especificamente (mais símbolos e/ou
+janela mais longa, respeitando o limite de performance conhecido do
+`fakeBackend` — `docs/roadmap.md`) até o IC-Bonferroni não cruzar mais zero,
+ou aceitar formalmente "SELL não é pior que o mercado, BUY é pior que o
+mercado" como a conclusão atual (mais fraca que "SELL tem edge provado", mas
+já suficiente pra justificar não ligar `allowedSide` em produção sem mais
+dado). Não ligar em produção com o dado atual.
