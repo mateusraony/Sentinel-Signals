@@ -1,0 +1,92 @@
+{
+  "name": "VerificationTask",
+  "type": "object",
+  "properties": {
+    "signal_event_id": {
+      "type": "string",
+      "description": "Reference to the SignalEvent (its dedup_key, used as document id) that triggered this task."
+    },
+    "asset_id": {
+      "type": "string",
+      "description": "Reference to MonitoredAsset id"
+    },
+    "symbol": {
+      "type": "string",
+      "description": "Trading pair symbol"
+    },
+    "signal_type": {
+      "type": "string",
+      "enum": ["BUY", "SELL"],
+      "description": "Signal direction, copied from the triggering SignalEvent"
+    },
+    "timeframe": {
+      "type": "string",
+      "description": "Timeframe that generated the signal, copied from the triggering SignalEvent"
+    },
+    "source": {
+      "type": "string",
+      "description": "Which indicator generated the signal (same enum as SignalEvent.source), copied at creation time"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["high", "medium", "low"],
+      "description": "Alert priority, copied from the triggering SignalEvent. Only 'high' signals create a VerificationTask (persistScanResults, scanner.js) — kept here anyway so the field is self-describing without a join back to SignalEvent."
+    },
+    "score": {
+      "type": "number",
+      "description": "0-100 confluence score at signal time, copied from SignalEvent.context.score"
+    },
+    "signal_context": {
+      "type": "object",
+      "description": "Snapshot of SignalEvent.context at creation time (rf_value/rf_direction/rsi/macd_histogram/ema_short/ema_long/tf_1d_direction/tf_4h_direction/tf_1h_direction) — copied instead of referenced so the UI can display the technical picture without an extra fetch/join.",
+      "properties": {
+        "rf_value": { "type": "number" },
+        "rf_direction": { "type": "number" },
+        "rsi": { "type": "number" },
+        "macd_histogram": { "type": "number" },
+        "ema_short": { "type": "number" },
+        "ema_long": { "type": "number" },
+        "tf_1d_direction": { "type": "number" },
+        "tf_4h_direction": { "type": "number" },
+        "tf_1h_direction": { "type": "number" }
+      }
+    },
+    "reason": {
+      "type": "string",
+      "description": "Human readable reason for the signal, copied from SignalEvent.reason"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "reviewed", "skipped"],
+      "default": "pending",
+      "description": "pending = aguardando revisão humana. reviewed = usuário conferiu e marcou OK. skipped = usuário decidiu pular/ignorar este sinal."
+    },
+    "reviewed_at": {
+      "type": ["string", "null"],
+      "description": "Timestamp de quando status saiu de 'pending' (reviewed ou skipped)"
+    },
+    "notes": {
+      "type": "string",
+      "default": "",
+      "description": "Anotação manual do usuário sobre a revisão deste sinal, editável na UI (widget e página dedicada)"
+    },
+    "telegram_notified": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the Telegram notification (notifyVerificationTask) was sent successfully when this task was created"
+    },
+    "telegram_notified_at": {
+      "type": ["string", "null"],
+      "description": "Timestamp of the last successful Telegram send for this task — updated both on creation and on manual resend from the dedicated page"
+    }
+  },
+  "required": [
+    "signal_event_id",
+    "asset_id",
+    "symbol",
+    "signal_type",
+    "timeframe",
+    "priority",
+    "status"
+  ]
+}

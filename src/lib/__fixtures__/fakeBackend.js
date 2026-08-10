@@ -11,7 +11,7 @@ import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerm
 
 const COLLECTIONS = [
   'MonitoredAsset', 'AssetState', 'SignalEvent', 'TradeOperation',
-  'PriceAlert', 'SystemLog', 'User',
+  'PriceAlert', 'SystemLog', 'User', 'VerificationTask',
 ];
 
 function matches(doc, filters) {

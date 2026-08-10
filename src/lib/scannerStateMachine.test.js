@@ -18,6 +18,7 @@ vi.mock('./telegram', () => ({
   // returns undefined, not a promise, so any test that actually reaches a
   // notify call (isTelegramConfigured mocked true) needs it thenable.
   notifyNewSignal: vi.fn().mockResolvedValue(undefined),
+  notifyVerificationTask: vi.fn().mockResolvedValue(undefined),
   notifyTradeCreated: vi.fn().mockResolvedValue(undefined),
   notifyTP1Hit: vi.fn().mockResolvedValue(undefined),
   notifyTP2Hit: vi.fn().mockResolvedValue(undefined),
@@ -41,7 +42,7 @@ vi.mock('./marketDataProvider', () => ({
 
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice, fetchCandles } from './marketDataProvider';
-import { isTelegramConfigured, notifyNewSignal, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
+import { isTelegramConfigured, notifyNewSignal, notifyVerificationTask, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
 import { persistScanResults, priceCheckActiveOps, activateSignalManually, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, resolveRangeFilterParams, firstPositive, firstPositiveInteger } from './scanner.js';
 import { calculateSmcSignalStrength } from './indicators/smcConfluence.js';
 import { closesFullyAtTp1 } from './opExitRules.js';
@@ -4253,5 +4254,75 @@ describe('Gate de padrão de vela (opt-in, RF 4h_15m only, pedido do usuário 20
     const ops = await backend.entities.TradeOperation.filter({});
     expect(ops).toHaveLength(1);
     expect(ops[0].entry_candle_pattern).toBe('bullish_engulfing');
+  });
+});
+
+describe('VerificationTask automática para sinais de alta prioridade', () => {
+  function makeHighPrioritySignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_vt_1',
+      priority: 'high', price_at_signal: 100, reason: 'RF cruzou para cima',
+      context: { score: 90, rf_value: 90, rf_direction: 1, rsi: 60, macd_histogram: 0.5 },
+      ...overrides,
+    };
+  }
+
+  // Seeds an already-active op for the asset so the entry motor
+  // short-circuits at the active_op_exists gate (same technique as the
+  // "cross-cascade arbitration log" describe above) — isolates these tests
+  // from needing a real 15m-confirmation candle fetch, since only the
+  // SignalEvent/VerificationTask persistence step (BEFORE the entry motor)
+  // is under test here.
+  function blockedScan(newSignals) {
+    backend._seed('TradeOperation', makeOp({ id: 'op_active' }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() };
+    return persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals });
+  }
+
+  it('cria uma VerificationTask pendente para um sinal de prioridade alta', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(false);
+    const signal = makeHighPrioritySignal();
+    await blockedScan([signal]);
+
+    const tasks = await backend.entities.VerificationTask.filter({});
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].id).toBe('sig_vt_1');
+    expect(tasks[0].status).toBe('pending');
+    expect(tasks[0].symbol).toBe('BTCUSDT');
+    expect(tasks[0].priority).toBe('high');
+    expect(tasks[0].signal_context).toEqual(signal.context);
+  });
+
+  it('não cria VerificationTask para prioridade média/baixa', async () => {
+    await blockedScan([makeHighPrioritySignal({ dedup_key: 'sig_vt_2', priority: 'medium' })]);
+    expect(await backend.entities.VerificationTask.filter({})).toHaveLength(0);
+  });
+
+  it('é idempotente sob múltiplas passadas do cron — o mesmo dedup_key nunca cria duas tarefas', async () => {
+    const signal = makeHighPrioritySignal({ dedup_key: 'sig_vt_3' });
+    await blockedScan([signal]);
+    await blockedScan([signal]); // retry pass reprocessando o mesmo sinal já persistido
+
+    expect(await backend.entities.VerificationTask.filter({})).toHaveLength(1);
+  });
+
+  it('dispara notifyVerificationTask quando o Telegram está configurado', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(true);
+    await blockedScan([makeHighPrioritySignal({ dedup_key: 'sig_vt_4' })]);
+
+    expect(notifyVerificationTask).toHaveBeenCalledTimes(1);
+    const tasks = await backend.entities.VerificationTask.filter({});
+    expect(tasks[0].telegram_notified).toBe(true);
+  });
+
+  it('não dispara notifyVerificationTask quando o Telegram não está configurado', async () => {
+    vi.mocked(isTelegramConfigured).mockReturnValue(false);
+    await blockedScan([makeHighPrioritySignal({ dedup_key: 'sig_vt_5' })]);
+
+    expect(notifyVerificationTask).not.toHaveBeenCalled();
+    const tasks = await backend.entities.VerificationTask.filter({});
+    expect(tasks[0].telegram_notified).toBe(false);
   });
 });

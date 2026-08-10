@@ -39,6 +39,7 @@ import { backend } from '@/api/entities';
 import {
   isTelegramConfigured,
   notifyNewSignal,
+  notifyVerificationTask,
   notifyTradeCreated,
   notifyTP1Hit,
   notifyTP2Hit,
@@ -1785,6 +1786,42 @@ export async function persistScanResults(scanResult) {
     // asset.alert_cooldown_minutes) — passar direto evita qualquer leitura
     // extra no Firestore só para o filtro por-ativo (known-risks item 47).
     if (willNotify) notifyNewSignal(signal, asset).catch(() => {});
+
+    // Tarefa de verificação automática — um lembrete que sobrevive a fechar o
+    // navegador para todo sinal de alta prioridade, já que este loop roda
+    // idêntico no browser e no cron (scripts/build-scan.mjs).
+    // createUnique com o MESMO dedup_key do SignalEvent garante 1 tarefa por
+    // sinal mesmo sob múltiplas passadas do cron (~5min) — nenhum lock extra
+    // necessário, mesma garantia que já protege o SignalEvent contra
+    // duplicata. Independente de `willNotify`/cooldown: a tarefa deve
+    // persistir mesmo quando o Telegram do sinal está em cooldown ou não
+    // configurado — só o ENVIO da notificação (abaixo) depende de
+    // isTelegramConfigured().
+    if (signal.priority === 'high') {
+      const notifyTelegram = isTelegramConfigured();
+      const verificationCreated = await backend.entities.VerificationTask.createUnique(signal.dedup_key, {
+        signal_event_id: signal.dedup_key,
+        asset_id: signal.asset_id,
+        symbol: signal.symbol,
+        signal_type: signal.signal_type,
+        timeframe: signal.timeframe,
+        source: signal.source,
+        priority: signal.priority,
+        score: signal.context?.score,
+        signal_context: signal.context,
+        reason: signal.reason,
+        status: 'pending',
+        notes: '',
+        // Same "pre-send decision" convention as SignalEvent.notified above —
+        // records whether Telegram WOULD have been called, not a delivery
+        // confirmation (send() is fire-and-forget, same as notifyNewSignal).
+        telegram_notified: notifyTelegram,
+        telegram_notified_at: notifyTelegram ? new Date().toISOString() : null,
+      });
+      if (verificationCreated.created && notifyTelegram) {
+        notifyVerificationTask(signal, asset).catch(() => {});
+      }
+    }
 
     // Fase 4 (item 43) — in-memory only, no Firestore write; nada é empurrado
     // enquanto smcObFvgEnabled está desligado (os campos ficam null), que é

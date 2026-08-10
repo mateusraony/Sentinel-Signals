@@ -18,7 +18,7 @@ const DEFAULT_FILTERS = {
   timeframes: ['1h', '4h', '1d'],
   min_priority: 'low',
   signal_types: ['BUY', 'SELL'],
-  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit'],
+  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit', 'verification_task_created'],
   min_score: 0,
 };
 
@@ -164,6 +164,27 @@ export async function notifyNewSignal(signal, asset) {
     scoreLine +
     `📝 ${signal.reason || ''}\n\n` +
     `<i>⏳ Aguardando confirmação de entrada — CryptoRadar</i>`
+  );
+}
+
+// Mirrors src/lib/telegram.js's notifyVerificationTask — signal is the
+// SignalEvent that triggered the VerificationTask (same shape notifyNewSignal
+// receives above).
+export async function notifyVerificationTask(signal, asset) {
+  if (!(await shouldSend('verification_task_created', signal, asset))) return;
+  const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
+  const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
+  const sourceLabel = SOURCE_LABELS[signal.source] || 'RF';
+  const scoreLine = Number.isFinite(signal.context?.score)
+    ? `📊 Score: ${signal.context.score}/100\n`
+    : '';
+  return send(
+    `✅ ${emoji} <b>Tarefa de Verificação Criada — ${sourceLabel}</b>\n\n` +
+    `<b>${signal.symbol?.replace('USDT', '/USDT')}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
+    `⭐ Prioridade: ALTA\n` +
+    scoreLine +
+    `📝 ${signal.reason || ''}\n\n` +
+    `<i>🔎 Revise em /verification — CryptoRadar</i>`
   );
 }
 

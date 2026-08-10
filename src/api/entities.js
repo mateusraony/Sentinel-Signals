@@ -273,6 +273,7 @@ export const backend = {
     User: createEntity('users'),
     StrategyConfig: createEntity('strategyConfig'),
     TelegramFilters: createEntity('telegramFilters'),
+    VerificationTask: createEntity('verificationTasks'),
   },
   agents: strategyReviewerAgent,
   locks: { acquireScanLock, releaseScanLock },

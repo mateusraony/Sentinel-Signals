@@ -238,6 +238,7 @@ export const backend = {
     PriceAlert: createEntity('priceAlerts'),
     SystemLog: createEntity('systemLogs'),
     User: createEntity('users'),
+    VerificationTask: createEntity('verificationTasks'),
   },
   locks: { acquireScanLock, releaseScanLock },
   tradeOps: { createTradeOpIfNoneActive, clearActiveOp, transitionTradeOp },

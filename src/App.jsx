@@ -21,6 +21,7 @@ import StrategyReviewer from '@/pages/StrategyReviewer';
 import MonthlyReport from '@/pages/MonthlyReport';
 import Settings from '@/pages/Settings';
 import Backtest from '@/pages/Backtest';
+import Verification from '@/pages/Verification';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth } = useAuth();
@@ -45,6 +46,7 @@ const AuthenticatedApp = () => {
         <Route path="/logs" element={<Logs />} />
         <Route path="/trades" element={<Trades />} />
         <Route path="/history" element={<TradeHistory />} />
+        <Route path="/verification" element={<Verification />} />
         <Route path="/pine" element={<PineScript />} />
         <Route path="/reviewer" element={<StrategyReviewer />} />
         <Route path="/monthly-report" element={<MonthlyReport />} />

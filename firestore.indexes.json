@@ -48,6 +48,23 @@
       ]
     },
     {
+      "collectionGroup": "verificationTasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "priority", "order": "ASCENDING" },
+        { "fieldPath": "created_date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "verificationTasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "created_date", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "assetStates",
       "queryScope": "COLLECTION",
       "fields": [
