@@ -2467,8 +2467,19 @@ export async function persistScanResults(scanResult) {
     const tfData4h = results['4h'];
     if (!tfData4h || !tfData4h.atrValue) continue;
     // docs/known-risks.md item 71 — mesmo gate do 1º passo, aqui no retry.
+    // Codex review (PR #156): diferente de trend_reversed/regime_rejected
+    // (que podem genuinely mudar de passada pra passada), o LADO de um
+    // sinal é decidido no nascimento e nunca muda dentro do run — usar
+    // recordRejection aqui empurraria uma rejeição nova (em memória) a
+    // CADA passada de retry até o sinal expirar (~48x numa janela de 4h a
+    // cada 5min), inflando `report.entryFunnel...side_filter_blocked` bem
+    // além da contagem real de sinais bloqueados. Grava/conta só na 1ª vez.
     if (pineConfig.allowedSide && sig.signal_type !== pineConfig.allowedSide) {
-      await recordRejection(sig, '4h_15m', 'side_filter_blocked', entryFunnelOutcomes);
+      if (sig.last_rejection_reason !== 'side_filter_blocked') {
+        entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', reason: 'side_filter_blocked' });
+        await backend.entities.SignalEvent.update(sig.id, { last_rejection_reason: 'side_filter_blocked' });
+        sig.last_rejection_reason = 'side_filter_blocked';
+      }
       continue;
     }
     const tf4hDir = tfData4h.rf.direction;

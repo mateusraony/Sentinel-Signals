@@ -142,6 +142,15 @@ let overrides = {};
 // compare parameter sets (fase 2 of the user's request) without editing this
 // file. Never mutates DEFAULTS itself.
 export function setPineConfigOverrides(next = {}) {
+  // Codex review (PR #156): um valor inválido (typo, caixa errada, ou não
+  // string truthy como `true`) passaria incólume até scanner.js, onde a
+  // comparação `signal_type !== allowedSide` rejeitaria os DOIS lados sem
+  // erro nenhum — um backtest caro terminaria com zero operações da
+  // cascata nativa, parecendo um resultado real em vez de config quebrada.
+  // Falha CEDO e alto, antes do replay começar, em vez de silenciosamente.
+  if (next.allowedSide != null && next.allowedSide !== 'BUY' && next.allowedSide !== 'SELL') {
+    throw new Error(`setPineConfigOverrides: allowedSide inválido (${JSON.stringify(next.allowedSide)}) — só aceita 'BUY', 'SELL' ou ausente/null`);
+  }
   overrides = { ...next };
 }
 

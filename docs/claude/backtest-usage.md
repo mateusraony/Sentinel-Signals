@@ -436,13 +436,24 @@ usada nos itens 56/68 deste projeto. E como qualquer seção deste relatório,
 específico não sustenta conclusão — não é diferente do resto do relatório
 nesse critério.
 
-**`--pine-config '{"allowedSide":"SELL"}'`** (`docs/known-risks.md` item
-71) — filtro de lado na cascata RF nativa (`4h_15m`), backtest-only.
-Valores: `"SELL"`, `"BUY"` ou ausente (default, os dois lados). Motivado
-por achado real: nas operações reais já medidas (20 símbolos/12 meses),
-BUY teve expectância −0,324R (CONCLUSIVA) e SELL +0,271R (também
-CONCLUSIVA) — o padrão mais forte já medido neste projeto. Rode os 3
-cenários (baseline, SELL-only, BUY-only) como 3 disparos separados —
+**`allowedSide`** (`docs/known-risks.md` item 71) — filtro de lado na
+cascata RF nativa (`4h_15m`), backtest-only. Valores: `"SELL"`, `"BUY"` ou
+ausente (default, os dois lados). Motivado por achado real: nas operações
+reais já medidas (20 símbolos/12 meses), BUY teve expectância −0,324R
+(CONCLUSIVA) e SELL +0,271R (também CONCLUSIVA) — o padrão mais forte já
+medido neste projeto. Na Opção A local, `--pine-config` recebe um
+**caminho de arquivo** (não o JSON inline):
+
+```bash
+echo '{"allowedSide":"SELL"}' > /tmp/sell-only.json
+npm run backtest -- --symbols BTCUSDT,ETHUSDT --from 2025-08-09T00:00:00Z \
+  --to 2026-08-09T00:00:00Z --pine-config /tmp/sell-only.json \
+  --trial-label sell-only --out ./report-sell-only.json
+```
+
+Na Opção B (`backtest.yml`), o campo "Overrides do pineConfig em JSON"
+aceita o JSON direto: `{"allowedSide":"SELL"}`. Rode os 3 cenários
+(baseline, SELL-only, BUY-only) como 3 disparos separados —
 nunca os dois valores no mesmo run, o parâmetro só aceita um por vez.
 Compare `report.overall`/`report.costs` (com custo real aplicado) e
 `report.entryFunnel['4h_15m'].byReason.side_filter_blocked`.

@@ -6975,6 +6975,50 @@ erro. Grep de isolamento: `allowedSide` ausente em `pineParser.js`/
 `adminPineConfig.js`, presente só em `backtestPineConfig.js`. Backtest de
 fumaça local confirmou que o código roda sem crashar.
 
+**Correções do Codex review (PR #156, todas aplicadas)**:
+1. **P1 — valor inválido de `allowedSide` bloqueava os DOIS lados em
+   silêncio.** `setPineConfigOverrides` só espalhava `next` sem validar —
+   um typo, caixa errada (`'sell'`) ou valor não-string truthy (`true`)
+   chegava incólume até `scanner.js`, onde `signal_type !== allowedSide`
+   rejeitaria BUY e SELL igualmente sem erro nenhum. Um backtest caro
+   (12 meses/20 símbolos) terminaria com zero operações da cascata nativa,
+   parecendo um resultado real ("SELL-only não gera nada") em vez de
+   config quebrada. Corrigido: `setPineConfigOverrides` agora lança
+   `Error` se `allowedSide` não for exatamente `'BUY'`, `'SELL'` ou
+   ausente/`null` — falha cedo e alto, antes do replay começar. Novo
+   `scripts/backtestPineConfig.test.js` cobre os 3 casos (ausente/null
+   aceito, `'BUY'`/`'SELL'` aceitos, typo/caixa errada/não-string
+   rejeitados).
+2. **P2 — loop de retry recontava `side_filter_blocked` a cada passada.**
+   Diferente de `trend_reversed`/`regime_rejected` (que podem genuinely
+   mudar de passada pra passada), o LADO de um sinal é decidido no
+   nascimento e nunca muda dentro do run. A 1ª versão usava
+   `recordRejection` (o mesmo helper dos outros gates do retry) — que
+   empurra pra `entryFunnelOutcomes` em TODA avaliação, mudando o motivo
+   ou não. Isso inflava `report.entryFunnel['4h_15m'].byReason.
+   side_filter_blocked` em até ~48× por sinal bloqueado (retry a cada
+   ~5min numa janela de expiração de 4h), tornando essa contagem
+   incomparável com as dos outros motivos do funil. Corrigido: lógica
+   manual write-on-change no retry (grava/conta só quando
+   `sig.last_rejection_reason` ainda não é `'side_filter_blocked'`),
+   igual ao padrão já usado por `expired_logged`/`rf_reverse_bars_count`.
+3. **P2 — exemplo de CLI em `docs/claude/backtest-usage.md` usava JSON
+   inline inválido** onde o parser só aceita caminho de arquivo
+   (`--pine-config`). Corrigido para `echo '{"allowedSide":"SELL"}' >
+   /tmp/sell-only.json` seguido de `--pine-config /tmp/sell-only.json`,
+   com nota de que o campo da UI do GitHub Actions aceita JSON inline
+   diretamente (só a flag de linha de comando exige arquivo).
+
+Verificação desta rodada de correções: `npm test` 877 passando (+3 do
+`backtestPineConfig.test.js` novo), `npm run lint` limpo, `npm run build`
++ os 3 alvos esbuild sem erro, grep de isolamento confirmado de novo
+(`allowedSide` ausente em `pineParser.js`/`adminPineConfig.js`; presente
+nos bundles `run-scan.mjs`/`run-scan-shadow.mjs` só como o texto da
+CONDIÇÃO `pineConfig.allowedSide` dentro do `scanner.js` compartilhado —
+mesmo padrão inofensivo de `rf1hCondEnabled`/`rf1hUncondEnabled`, sempre
+`undefined`/falsy em produção porque os configs admin nunca setam a
+chave).
+
 ### Pendente
 
 A/B real (usuário, via `backtest.yml`, 3 disparos): baseline (`{}`),
