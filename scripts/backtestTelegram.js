@@ -19,3 +19,4 @@ export const notifyStopHit = noop;
 export const notifyInvalidated = noop;
 export const notifyTimeStop = noop;
 export const notifyChopExit = noop;
+export const notifyVerificationTask = noop;
