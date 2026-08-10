@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Coins, Bell, ScrollText, Zap, Target, BookOpen, Code2, Bot, FileText, Trash2, FilterX, Loader2, ArrowLeftRight, SlidersHorizontal, FlaskConical } from 'lucide-react';
+import { LayoutDashboard, Coins, Bell, ScrollText, Zap, Target, BookOpen, Code2, Bot, FileText, Trash2, FilterX, Loader2, ArrowLeftRight, SlidersHorizontal, FlaskConical, ClipboardCheck } from 'lucide-react';
 import { backend } from '@/api/entities';
 
 const NAV_ITEMS = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/trades', icon: Target, label: 'Trades' },
   { path: '/history', icon: BookOpen, label: 'Histórico' },
+  { path: '/verification', icon: ClipboardCheck, label: 'Verificação' },
   { path: '/assets', icon: Coins, label: 'Ativos' },
   { path: '/alerts', icon: Bell, label: 'Alertas' },
   { path: '/logs', icon: ScrollText, label: 'Logs' },

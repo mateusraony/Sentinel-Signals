@@ -35,7 +35,7 @@ const DEFAULT_FILTERS = {
   // invalidated/time_stop/chop_exit added 2026-07-18 (known-risks.md item
   // 29) — a closed/invalidated operation is at least as informative to the
   // user as a stop hit, so on by default like the other closure events.
-  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit'],
+  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit', 'verification_task_created'],
   min_score: 0,
   // Signal SOURCE (as opposed to the events above, which are trade-lifecycle
   // moments). Only matters for signal_detected — see shouldSend. No migration
@@ -56,17 +56,31 @@ const DEFAULT_FILTERS = {
 const NEW_EVENTS_2026_07_18 = ['invalidated', 'time_stop', 'chop_exit'];
 const MIGRATION_FLAG = '_migratedEvents20260718';
 
+// Same one-time merge, for the verification-task notification added later —
+// a user who saved filters BEFORE this change must still get it by default,
+// like DEFAULT_FILTERS, instead of silently missing it until they reopen
+// Settings. Separate flag so it runs independently of the 2026-07-18 batch.
+const NEW_EVENTS_2026_08_10 = ['verification_task_created'];
+const MIGRATION_FLAG_2 = '_migratedEvents20260810';
+
 export function getTelegramFilters() {
   try {
     const stored = JSON.parse(localStorage.getItem(FILTERS_KEY));
     if (!stored) return DEFAULT_FILTERS;
-    if (!stored[MIGRATION_FLAG] && Array.isArray(stored.events)) {
-      const missing = NEW_EVENTS_2026_07_18.filter((e) => !stored.events.includes(e));
-      const migrated = { ...stored, events: [...stored.events, ...missing], [MIGRATION_FLAG]: true };
-      setTelegramFilters(migrated);
-      return migrated;
+    let result = stored;
+    let changed = false;
+    if (!result[MIGRATION_FLAG] && Array.isArray(result.events)) {
+      const missing = NEW_EVENTS_2026_07_18.filter((e) => !result.events.includes(e));
+      result = { ...result, events: [...result.events, ...missing], [MIGRATION_FLAG]: true };
+      changed = true;
     }
-    return stored;
+    if (!result[MIGRATION_FLAG_2] && Array.isArray(result.events)) {
+      const missing = NEW_EVENTS_2026_08_10.filter((e) => !result.events.includes(e));
+      result = { ...result, events: [...result.events, ...missing], [MIGRATION_FLAG_2]: true };
+      changed = true;
+    }
+    if (changed) setTelegramFilters(result);
+    return result;
   } catch (e) {
     logWarn('telegram', 'Filtros do Telegram corrompidos no localStorage, usando defaults', { error: e.message });
     return DEFAULT_FILTERS;
@@ -214,6 +228,27 @@ export async function notifyNewSignal(signal, asset) {
     scoreLine +
     `📝 ${signal.reason || ''}\n\n` +
     `<i>⏳ Aguardando confirmação de entrada — CryptoRadar</i>`
+  );
+}
+
+// signal here is the SignalEvent that triggered the VerificationTask (same
+// shape notifyNewSignal receives) — used both on automatic creation
+// (scanner.js) and on manual resend from the dedicated Verification page.
+export async function notifyVerificationTask(signal, asset) {
+  if (!shouldSend('verification_task_created', signal, asset)) return;
+  const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
+  const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
+  const sourceLabel = SOURCE_LABELS[signal.source] || 'RF';
+  const scoreLine = Number.isFinite(signal.context?.score)
+    ? `📊 Score: ${signal.context.score}/100\n`
+    : '';
+  return send(
+    `✅ ${emoji} <b>Tarefa de Verificação Criada — ${sourceLabel}</b>\n\n` +
+    `<b>${signal.symbol?.replace('USDT', '/USDT')}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
+    `⭐ Prioridade: ALTA\n` +
+    scoreLine +
+    `📝 ${signal.reason || ''}\n\n` +
+    `<i>🔎 Revise em /verification — CryptoRadar</i>`
   );
 }
 

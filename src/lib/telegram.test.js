@@ -20,7 +20,7 @@ vi.mock('@/api/entities', () => ({
   backend: { entities: { TelegramFilters: { set: telegramFiltersSetMock } } },
 }));
 
-import { getTelegramFilters, notifyNewSignal, notifyTradeCreated, setTelegramFilters } from './telegram.js';
+import { getTelegramFilters, notifyNewSignal, notifyVerificationTask, notifyTradeCreated, setTelegramFilters } from './telegram.js';
 
 function makeLocalStorage() {
   const store = new Map();
@@ -51,6 +51,7 @@ describe('getTelegramFilters', () => {
       signal_types: ['BUY', 'SELL'],
       events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit'], // pre-2026-07-18 shape
       min_score: 0,
+      _migratedEvents20260810: true, // isolates this test to the 07-18 migration only
     }));
 
     const filters = getTelegramFilters();
@@ -86,6 +87,86 @@ describe('getTelegramFilters', () => {
     const filters = getTelegramFilters();
     expect(filters.events).toBeUndefined();
     expect(filters.min_priority).toBe('high');
+  });
+
+  // Same one-time-migration mechanism as the 2026-07-18 batch above, added
+  // when verification_task_created shipped — a filter set saved BEFORE this
+  // event existed must still get it enabled by default.
+  it('merges verification_task_created into a pre-existing saved filter set that predates it, and persists the migration', () => {
+    localStorage.setItem('tg_filters', JSON.stringify({
+      timeframes: ['1h', '4h', '1d'],
+      min_priority: 'low',
+      signal_types: ['BUY', 'SELL'],
+      events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit'],
+      min_score: 0,
+      _migratedEvents20260718: true, // already past the earlier migration
+    }));
+
+    const filters = getTelegramFilters();
+    expect(filters.events).toContain('verification_task_created');
+
+    const persisted = JSON.parse(localStorage.getItem('tg_filters'));
+    expect(persisted._migratedEvents20260810).toBe(true);
+  });
+
+  it('does not re-add verification_task_created if the user explicitly removed it after the migration ran', () => {
+    localStorage.setItem('tg_filters', JSON.stringify({
+      timeframes: ['1h', '4h', '1d'],
+      min_priority: 'low',
+      signal_types: ['BUY', 'SELL'],
+      events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit'],
+      min_score: 0,
+      _migratedEvents20260718: true,
+      _migratedEvents20260810: true,
+    }));
+
+    const filters = getTelegramFilters();
+    expect(filters.events).not.toContain('verification_task_created');
+  });
+});
+
+describe('notifyVerificationTask', () => {
+  beforeEach(() => {
+    localStorage.setItem('cryptoradar_telegram_cfg', JSON.stringify({ botToken: 'x', chatId: 'y' }));
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+  });
+
+  function baseSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter',
+      priority: 'high', reason: 'RF cruzou para cima', context: { score: 88 },
+      ...overrides,
+    };
+  }
+
+  it('envia a notificação com símbolo, direção e score quando o Telegram está configurado', async () => {
+    await notifyVerificationTask(baseSignal());
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Tarefa de Verificação Criada');
+    expect(text).toContain('BTC/USDT');
+    expect(text).toContain('COMPRA');
+    expect(text).toContain('Score: 88/100');
+  });
+
+  it('não envia quando o Telegram não está configurado', async () => {
+    localStorage.clear();
+    await notifyVerificationTask(baseSignal());
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('respeita o filtro de evento — desligar verification_task_created silencia o envio', async () => {
+    // _migratedEvents20260810: true marca que a migração já rodou e o
+    // usuário deliberadamente deixou o evento fora — sem a flag, a própria
+    // migração reintroduziria o evento nesta mesma leitura (comportamento
+    // testado acima), mascarando o que este teste quer provar.
+    localStorage.setItem('tg_filters', JSON.stringify({
+      timeframes: ['1h', '4h', '1d'], min_priority: 'low', signal_types: ['BUY', 'SELL'],
+      events: ['signal_detected'], min_score: 0,
+      _migratedEvents20260718: true, _migratedEvents20260810: true,
+    }));
+    await notifyVerificationTask(baseSignal());
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
 

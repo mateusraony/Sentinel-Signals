@@ -32,6 +32,14 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // Verification tasks: reminder created automatically when the scanner
+    // detects a high-priority signal (persistScanResults, scanner.js) so a
+    // human review never gets lost — see src/pages/Verification.jsx and
+    // src/components/dashboard/VerificationWidget.jsx.
+    match /verificationTasks/{docId} {
+      allow read, write: if isSignedIn();
+    }
+
     // Scanner concurrency lock: prevents the browser auto-scan and the
     // GitHub Actions cron from processing the same batch at the same time.
     match /scannerLocks/{lockName} {
