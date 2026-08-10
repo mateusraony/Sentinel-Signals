@@ -309,12 +309,18 @@ Registrado em "Fora de escopo, com justificativa" do item 44:
 
 ---
 
-## Bloco 4 — decisão de arquitetura, nunca aberta
+## Bloco 4 — decisão de arquitetura, DESTRAVADA pelo usuário (2026-08-10)
 
 **Cascata 1D / operações independentes por timeframe** (item 37). Registrada
-como proposta do usuário e explicitamente **não implementada** — é incompatível
-com a invariante "uma operação ativa por ativo" sem uma decisão de arquitetura
-própria. Exige `sentinel-council-review` antes de qualquer código.
+como proposta do usuário e, até 2026-08-10, explicitamente **não
+implementada** — incompatível com a invariante "uma operação ativa por
+ativo" sem uma decisão de arquitetura própria. **Usuário decidiu
+explicitamente destravar** (detalhe em `docs/known-risks.md` item 37,
+subseção "Destravado explicitamente pelo usuário"), ciente do risco de
+métricas subestimarem risco agregado por ora — a pergunta que resta é
+**como** implementar, não **se**. `sentinel-council-review` técnica (o
+"como") já rodou (item 37, subseção "Conselho técnico"); ainda **nenhum
+código escrito** — falta o plano formal antes de codar.
 
 ---
 
