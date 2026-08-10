@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, groupActiveOpsByAsset, isTerminalStatus, planTradeOpCreation, TERMINAL_STATUSES } from './opTransition.js';
+import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, groupActiveOpsByAsset, isTerminalStatus, planTradeOpCreation, buildActiveOpsAnchorId, TERMINAL_STATUSES } from './opTransition.js';
 
 describe('isTerminalStatus', () => {
   it('recognises every terminal status', () => {
@@ -288,5 +288,63 @@ describe('groupActiveOpsByAsset', () => {
     expect(validGroups.get('symbol:BTCUSDT')).toBe(legacy);
     expect(validGroups.get('asset1')).toBe(current);
     expect(duplicateGroups.size).toBe(0);
+  });
+
+  // docs/known-risks.md item 37 (Bloco 4 Fase 1) — coexistingCascades lets
+  // two ops of the SAME asset be valid simultaneously, but only for
+  // cascades explicitly opted in — never a blanket relaxation.
+  describe('coexistingCascades (Bloco 4 Fase 1)', () => {
+    it('a lone allowlisted op groups under the (asset, cascade) composite key', () => {
+      const op = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', status: 'SIGNAL_CONFIRMED' };
+      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([op], ['4h_15m', '1h_5m']);
+      expect(validGroups.get('asset_1::4h_15m')).toBe(op);
+      expect(duplicateGroups.size).toBe(0);
+    });
+
+    it('two DIFFERENT allowlisted cascades on the same asset are both valid, not a duplicate', () => {
+      const opA = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', status: 'SIGNAL_CONFIRMED' };
+      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: '1h_5m', status: 'RUNNER_ACTIVE' };
+      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB], ['4h_15m', '1h_5m']);
+      expect(validGroups.get('asset_1::4h_15m')).toBe(opA);
+      expect(validGroups.get('asset_1::1h_5m')).toBe(opB);
+      expect(duplicateGroups.size).toBe(0);
+    });
+
+    it('two ops of the SAME allowlisted cascade on the same asset are STILL a duplicate', () => {
+      const opA = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', status: 'SIGNAL_CONFIRMED' };
+      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: '4h_15m', status: 'RUNNER_ACTIVE' };
+      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB], ['4h_15m', '1h_5m']);
+      expect(validGroups.has('asset_1::4h_15m')).toBe(false);
+      expect(duplicateGroups.get('asset_1::4h_15m')).toEqual([opA, opB]);
+    });
+
+    it('an allowlisted cascade mixed with a NON-allowlisted cascade on the same asset is still a duplicate (opting one cascade in never weakens protection for the others)', () => {
+      const opA = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', status: 'SIGNAL_CONFIRMED' };
+      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: 'rf1h_cond4h_15m', status: 'RUNNER_ACTIVE' };
+      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB], ['4h_15m', '1h_5m']);
+      expect(validGroups.has('asset_1')).toBe(false);
+      expect(duplicateGroups.get('asset_1')).toEqual([opA, opB]);
+    });
+
+    it('without coexistingCascades, a cascade field present is irrelevant — same asset always groups together (default behavior unchanged)', () => {
+      const opA = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', status: 'SIGNAL_CONFIRMED' };
+      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: '1h_5m', status: 'RUNNER_ACTIVE' };
+      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB]);
+      expect(validGroups.has('asset_1')).toBe(false);
+      expect(duplicateGroups.get('asset_1')).toEqual([opA, opB]);
+    });
+  });
+});
+
+describe('buildActiveOpsAnchorId (Bloco 4 Fase 1)', () => {
+  it('returns the bare assetId when cascade is absent (default, unchanged doc for every existing caller)', () => {
+    expect(buildActiveOpsAnchorId('asset_1')).toBe('asset_1');
+    expect(buildActiveOpsAnchorId('asset_1', null)).toBe('asset_1');
+    expect(buildActiveOpsAnchorId('asset_1', undefined)).toBe('asset_1');
+  });
+
+  it('returns a composite id scoped to the cascade when provided', () => {
+    expect(buildActiveOpsAnchorId('asset_1', '4h_15m')).toBe('asset_1__4h_15m');
+    expect(buildActiveOpsAnchorId('asset_1', '1h_5m')).toBe('asset_1__1h_5m');
   });
 });

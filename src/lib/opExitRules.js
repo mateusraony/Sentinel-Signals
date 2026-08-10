@@ -87,6 +87,25 @@ export function advancePreTp1StopProtection({ isBuy, currentStop, entry, closePr
   return isBuy ? Math.max(currentStop, entry) : Math.min(currentStop, entry);
 }
 
+// docs/known-risks.md item 37 (Bloco 4 Fase 1) — coupling risk between
+// simultaneously active legs of the SAME asset (hierarchical cascades):
+// when a sibling cascade opens its own operation on an asset that already
+// has one active, move the ALREADY-active leg's stop to breakeven (never
+// past it), so opening a 2nd leg can't raise the worst-case COMBINED loss
+// beyond what the 1st leg alone already risked. Community precedent
+// (pyramiding/scaling literature): moving earlier legs to breakeven when a
+// new layer opens is how real systems keep total open risk roughly
+// constant, instead of maintaining a separate aggregated-risk metric this
+// project doesn't have. Same shape as advancePreTp1StopProtection above,
+// minus the price-move gate — the trigger here is the sibling opening, not
+// price. The caller's transactional write still runs through
+// clampMonotonicStop (src/lib/opTransition.js), so this only ever computes
+// the CANDIDATE — it can never regress an already-better stop.
+export function advanceToBreakevenOnSiblingOpen({ isBuy, currentStop, entry }) {
+  if (!Number.isFinite(currentStop) || !Number.isFinite(entry)) return currentStop;
+  return isBuy ? Math.max(currentStop, entry) : Math.min(currentStop, entry);
+}
+
 // Structural initial stop for the SMC 1h→5m cascade (known-risks item 11's
 // pending design point, community-validated: stop goes BEYOND the sweep
 // wick / protective swing with a buffer — never exactly at the level, which

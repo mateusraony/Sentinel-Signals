@@ -9,7 +9,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 // Relative (not '@/') so esbuild bundles it for the cron without the Vite alias
 // — see scripts/build-scan.mjs (it only rewrites '@/api/entities').
-import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation } from '../src/lib/opTransition.js';
+import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation, buildActiveOpsAnchorId } from '../src/lib/opTransition.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) });
@@ -151,8 +151,8 @@ async function releaseScanLock(lockName, holder) {
 // Mirrors src/api/entities.js's createTradeOpIfNoneActive/clearActiveOp —
 // same assetActiveOps/{assetId} tracking doc, so the entry idempotency
 // guarantee is identical whether scanner.js runs in the browser or here.
-async function createTradeOpIfNoneActive(assetId, docId, data) {
-  const activeRef = db.collection('assetActiveOps').doc(assetId);
+async function createTradeOpIfNoneActive(assetId, docId, data, cascade) {
+  const activeRef = db.collection('assetActiveOps').doc(buildActiveOpsAnchorId(assetId, cascade));
   const opRef = db.collection('tradeOperations').doc(docId);
   const payload = { ...data, created_date: data.created_date || new Date().toISOString() };
   return db.runTransaction(async (tx) => {
@@ -185,8 +185,8 @@ async function createTradeOpIfNoneActive(assetId, docId, data) {
   });
 }
 
-async function clearActiveOp(assetId, tradeOpId) {
-  const activeRef = db.collection('assetActiveOps').doc(assetId);
+async function clearActiveOp(assetId, tradeOpId, cascade) {
+  const activeRef = db.collection('assetActiveOps').doc(buildActiveOpsAnchorId(assetId, cascade));
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(activeRef);
     if (snap.exists && snap.data().active_trade_op_id === tradeOpId) {
@@ -199,10 +199,10 @@ async function clearActiveOp(assetId, tradeOpId) {
 // status + same in-transaction clear of assetActiveOps on terminal states,
 // using the Admin SDK's transaction API. The decision itself lives in the
 // shared src/lib/opTransition.js, so browser and cron can never disagree.
-async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField } = {}) {
+async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField, cascade } = {}) {
   const opRef = db.collection('tradeOperations').doc(opId);
   const terminal = isTerminalStatus(patch.status);
-  const activeRef = terminal && assetId ? db.collection('assetActiveOps').doc(assetId) : null;
+  const activeRef = terminal && assetId ? db.collection('assetActiveOps').doc(buildActiveOpsAnchorId(assetId, cascade)) : null;
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(opRef);
     const activeSnap = activeRef ? await tx.get(activeRef) : null;

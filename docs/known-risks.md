@@ -1743,13 +1743,71 @@ exatamente o que a skill pede):
   (nunca espelhar em `pineParser.js`/`adminPineConfig.js` até promoção
   explícita com A/B + holdout).
 
+### Plano formal aprovado + Fase 1 infraestrutura implementada (2026-08-10)
+
+Plano escrito e aprovado pelo usuário (modo plano) com o escopo reduzido já
+recomendado pelo conselho técnico: só as 2 cascatas que já existem (`4h_15m`,
+`1h_5m`) rodando como operações independentes no mesmo ativo — sem cascata
+1D, sem gatilho de "continuidade" cross-timeframe (fora de escopo, ver
+conselho técnico acima). Master flag `pineConfig.hierarchicalCascadesEnabled`
+(backtest-only, `scripts/backtestPineConfig.js`, DEFAULT `false`).
+
+**Camada de infraestrutura implementada e testada** (ainda **não** ligada em
+lugar nenhum do `scanner.js` — zero mudança de comportamento com o flag
+ausente, que é o estado de todo caller hoje):
+
+- `buildActiveOpsAnchorId(assetId, cascade)` (`src/lib/opTransition.js`) —
+  doc-âncora `assetActiveOps/{assetId}` sem mudança quando `cascade` é
+  omitido (todo caller existente); `assetActiveOps/{assetId}__{cascade}`
+  quando fornecido. Espelhado nos 3 backends
+  (`src/api/entities.js`/`scripts/adminEntities.js`/
+  `src/lib/__fixtures__/fakeBackend.js`) via um 4º parâmetro opcional
+  `cascade` em `createTradeOpIfNoneActive`/`clearActiveOp` e uma chave
+  `cascade` na options de `transitionTradeOp` — reusa as MESMAS 3 funções
+  já testadas em vez de criar um caminho de mutação novo.
+- `groupActiveOpsByAsset(ops, coexistingCascades)` — 2 passadas: agrupa por
+  ativo (igual sempre); só quando TODOS os ops vivos daquele ativo têm
+  `cascade` no allowlist, subdivide por `(ativo, cascade)` — um op de
+  cascata NÃO listada (ex. `rf1h_cond4h_15m` combinado por engano com o
+  flag novo) faz o ativo inteiro cair de volta na checagem antiga de
+  duplicata, nunca perde proteção. Achado durante os próprios testes
+  (2 casos que eu tinha escrito errado revelaram esse requisito — corrigido
+  antes de commitar, não depois).
+- `advanceToBreakevenOnSiblingOpen({isBuy, currentStop, entry})`
+  (`src/lib/opExitRules.js`) — mesma forma de `advancePreTp1StopProtection`
+  (item 53/54), sem o gate de movimento de preço: avança o stop da perna JÁ
+  ativa pra breakeven quando a cascata irmã abre a própria operação no
+  mesmo ativo. `clampMonotonicStop` (já usado por `transitionTradeOp`)
+  garante que nunca regride.
+- Tripwire (`src/lib/hierarchicalCascadeTripwire.test.js`, mesmo padrão dos
+  outros) + 904 testes passando (suíte inteira) + lint limpo + `npm run
+  build` + os 3 alvos esbuild.
+- **Achado incidental, não relacionado ao Bloco 4**: `npm run build:backtest`
+  estava quebrado em `main` (export `notifyVerificationTask` ausente em
+  `scripts/backtestTelegram.js`, deixado pela feature de VerificationTask/
+  item 72) — confirmado via `git stash` que o bug já existia antes desta
+  sessão. Corrigido (no-op, mesmo padrão dos outros exports do arquivo) pra
+  poder verificar este trabalho.
+
 ### Próximo passo
 
-Escrever o plano formal de implementação (schema `(assetId, cascade)`,
-`groupActiveOpsByAsset` com chave composta, padrão stop-to-breakeven
-reusando `clampMonotonicStop`, cascata 1D construída do zero,
-`sentinel-release-gate` antes de considerar concluído) — ainda **nenhum
-código escrito**.
+Ligar o mecanismo em `src/lib/scanner.js`: os pontos de criação de operação
+das cascatas `4h_15m` (1ª passada + retry) e `1h_5m` passam a checar
+`pineConfig.hierarchicalCascadesEnabled` e, quando ligado, chamam
+`createTradeOpIfNoneActive`/`transitionTradeOp` com o `cascade` da própria
+cascata (destrava o anchor isolado) + o acoplamento de risco
+(`advanceToBreakevenOnSiblingOpen` na perna irmã já ativa, se houver) — e os
+2 `groupActiveOpsByAsset` já existentes nos dois loops passam a receber
+`['4h_15m', '1h_5m']` como `coexistingCascades` só quando o flag está
+ligado. Requer entender primeiro o gate `hasActiveOp` atual (ainda não
+mapeado nesta rodada) — provavelmente o ponto onde as duas cascatas hoje se
+excluem mutuamente ANTES mesmo de chegar em `createTradeOpIfNoneActive`.
+Depois: casos novos em `scannerStateMachine.test.js` (flag desligado =
+comportamento idêntico; flag ligado = as 2 cascatas abrem operações
+independentes + stop da 1ª vai pra breakeven quando a 2ª abre + duplicata
+real dentro da MESMA cascata continua sendo pega) + registrar isolamento no
+`known-risks.md` + backtest de fumaça local antes de dar por concluída a
+Fase 1.
 
 ## 38. Gate de zona PD da cascata SMC 1h→5m — removido do viés 1h, movido para o gatilho 5m (redesenho do item 35)
 

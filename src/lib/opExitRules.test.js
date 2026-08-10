@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules.js';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, advanceToBreakevenOnSiblingOpen, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules.js';
 import { getWeights } from './tradeMetrics.js';
 
 const T0 = '2026-07-15T04:00:00.000Z'; // candle open, at/before the entry
@@ -145,6 +145,32 @@ describe('advancePreTp1StopProtection (opt-in, docs/known-risks.md items 53/54)'
   it('dados inválidos (ATR/entry/close ausentes) devolvem o stop atual sem alterar', () => {
     expect(advancePreTp1StopProtection({ isBuy: true, currentStop: 90, entry: 100, closePrice: 105, atrValue: null, triggerAtrMult: 1.0 })).toBe(90);
     expect(advancePreTp1StopProtection({ isBuy: true, currentStop: 90, entry: null, closePrice: 105, atrValue: 5, triggerAtrMult: 1.0 })).toBe(90);
+  });
+});
+
+describe('advanceToBreakevenOnSiblingOpen (docs/known-risks.md item 37, Bloco 4 Fase 1)', () => {
+  it('BUY: avança o stop pra breakeven (entry) quando o stop atual está pior', () => {
+    expect(advanceToBreakevenOnSiblingOpen({ isBuy: true, currentStop: 90, entry: 100 })).toBe(100);
+  });
+
+  it('BUY: nunca regride um stop já melhor que breakeven', () => {
+    expect(advanceToBreakevenOnSiblingOpen({ isBuy: true, currentStop: 110, entry: 100 })).toBe(110);
+  });
+
+  it('SELL: espelha o comportamento BUY (breakeven = entry, nunca regride um stop já melhor)', () => {
+    expect(advanceToBreakevenOnSiblingOpen({ isBuy: false, currentStop: 110, entry: 100 })).toBe(100);
+    expect(advanceToBreakevenOnSiblingOpen({ isBuy: false, currentStop: 90, entry: 100 })).toBe(90);
+  });
+
+  it('sem gatilho de preço (diferente de advancePreTp1StopProtection) — o trigger é a cascata irmã abrir, não o preço se mover', () => {
+    // mesmo entry/currentStop de "nunca avança abaixo do threshold" acima,
+    // mas aqui não há closePrice/ATR nenhum — avança de qualquer forma.
+    expect(advanceToBreakevenOnSiblingOpen({ isBuy: true, currentStop: 90, entry: 100 })).toBe(100);
+  });
+
+  it('dados inválidos (stop/entry ausentes) devolvem o stop atual sem alterar', () => {
+    expect(advanceToBreakevenOnSiblingOpen({ isBuy: true, currentStop: 90, entry: null })).toBe(90);
+    expect(advanceToBreakevenOnSiblingOpen({ isBuy: true, currentStop: null, entry: 100 })).toBe(null);
   });
 });
 
