@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebaseClient';
 import { strategyReviewerAgent } from '@/api/agents';
-import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation } from '@/lib/opTransition';
+import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation, buildActiveOpsAnchorId } from '@/lib/opTransition';
 
 function buildQuery(collectionName, filters = {}, sort, limitCount) {
   const constraints = [];
@@ -173,8 +173,8 @@ async function releaseScanLock(lockName, holder) {
 // this asset already have an active TradeOperation" is tracked in a single
 // side document (`assetActiveOps/{assetId}`) instead of a filtered query,
 // which lets create-if-none-active be a single atomic transaction.
-async function createTradeOpIfNoneActive(assetId, docId, data) {
-  const activeRef = doc(db, 'assetActiveOps', assetId);
+async function createTradeOpIfNoneActive(assetId, docId, data, cascade) {
+  const activeRef = doc(db, 'assetActiveOps', buildActiveOpsAnchorId(assetId, cascade));
   const opRef = doc(db, 'tradeOperations', docId);
   const payload = { ...data, created_date: data.created_date || new Date().toISOString() };
   return runTransaction(db, async (tx) => {
@@ -211,8 +211,8 @@ async function createTradeOpIfNoneActive(assetId, docId, data) {
 
 // Called when a TradeOperation reaches a terminal status (STOP_HIT, TP2_HIT,
 // INVALIDATED, CLOSED) so the asset becomes eligible for a new entry again.
-async function clearActiveOp(assetId, tradeOpId) {
-  const activeRef = doc(db, 'assetActiveOps', assetId);
+async function clearActiveOp(assetId, tradeOpId, cascade) {
+  const activeRef = doc(db, 'assetActiveOps', buildActiveOpsAnchorId(assetId, cascade));
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(activeRef);
     if (snap.exists() && snap.data().active_trade_op_id === tradeOpId) {
@@ -229,10 +229,10 @@ async function clearActiveOp(assetId, tradeOpId) {
 // lands a terminal status, `assetActiveOps/{assetId}` is cleared in the SAME
 // transaction, closing the window where a crash between the status write and a
 // separate clearActiveOp would strand the asset (blocking any new entry).
-async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField } = {}) {
+async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField, cascade } = {}) {
   const opRef = doc(db, 'tradeOperations', opId);
   const terminal = isTerminalStatus(patch.status);
-  const activeRef = terminal && assetId ? doc(db, 'assetActiveOps', assetId) : null;
+  const activeRef = terminal && assetId ? doc(db, 'assetActiveOps', buildActiveOpsAnchorId(assetId, cascade)) : null;
   return runTransaction(db, async (tx) => {
     const snap = await tx.get(opRef);
     // All reads must precede writes in a Firestore transaction.

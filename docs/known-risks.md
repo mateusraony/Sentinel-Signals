@@ -1661,9 +1661,153 @@ resolvidas aqui, de propósito):
 final nem código sem o usuário decidir explicitamente prosseguir mesmo
 com essa sequência em aberto, ou sem o Bloco 0 fechar primeiro.
 
+### Destravado explicitamente pelo usuário (2026-08-10)
+
+Depois do conselho do item 73 recomendar não abrir o Bloco 1 e apresentar
+o Bloco 4 como alternativa de maior valor, expliquei ao usuário os 3 riscos
+concretos desta seção (guard de corrupção virando o problema, ausência de
+bucket de risco agregado, cascata 1D inexistente) e o escopo real (maior
+que qualquer coisa testada até agora). **Usuário decidiu explicitamente
+destravar e seguir com o Bloco 4**, ciente do risco de métricas
+subestimarem risco agregado por ora. Isso satisfaz a condição que este item
+e o item 56 (Ação 3) já exigiam ("não iniciar sem pedido explícito do
+usuário"). Próximo passo: pesquisa de comunidade adicional (foco no bucket
+de risco agregado, que é a lacuna central) + `sentinel-council-review`
+dedicada ao desenho técnico (não mais "se fazer", já decidido — "como
+fazer"), antes de qualquer código, conforme já determinado acima.
+
 **Separado, não confundir**: o pedido imediato do usuário (rodar o
 backtest de novo e olhar `smcDiagnostics`, item 35) é sobre a cascata
 1h→5m **que já existe** — independente desta proposta de arquitetura nova.
+
+### Pesquisa adicional (2026-08-10) — o padrão real resolve a lacuna de risco agregado
+
+Buscando especificamente a lacuna central (bucket de risco agregado que
+não existe hoje): a prática de pyramiding real não calcula um número de
+risco agregado separado — ela **move o stop das pernas já abertas para
+breakeven (ou melhor) quando uma nova perna abre**, mantendo o risco total
+aberto aproximadamente CONSTANTE por construção, em vez de crescente. Isso
+é potencialmente mais simples de implementar que inventar um subsistema de
+risco agregado novo — o Sentinel já tem o precedente mecânico
+(`advancePreTp1StopProtection`, item 53/54: mover stop pra breakeven
+condicionado a um gatilho, nunca regredir, via `clampMonotonicStop`).
+
+### Conselho técnico — "como fazer" (2026-08-10)
+
+Com o "se fazer" já decidido pelo usuário, rodei `sentinel-council-review`
+de novo (3 papéis independentes, subagentes locais) focado no desenho
+técnico. **Refutação real entre papéis** (não convergência automática —
+exatamente o que a skill pede):
+
+- **Arquiteto**: propôs migrar `assetActiveOps/{assetId}.active_trade_op_id`
+  (hoje 1 ID escalar, `src/api/entities.js:172-208`) para um MAPA
+  `{cascade: opId}` no MESMO documento — preserva o padrão "1 leitura + 1
+  escrita, mesma transação" do CAS atual. Arbitragem cross-cascade
+  (`signalArbitration.js`) continuaria intocada para as 4 cascatas que já
+  competem hoje pelo mesmo slot; as pernas novas de timeframe (Bloco 4)
+  virariam chaves NOVAS e distintas no mapa, sem arbitrar entre si.
+- **Especialista em concorrência REFUTOU o desenho do Arquiteto**: um doc-mapa
+  único cria uma janela de corrupção pior que a de hoje durante deploy —
+  uma aba do browser com bundle ANTIGO (schema escalar, Render Static Site
+  sem invalidação de versão) continuaria escrevendo `active_trade_op_id`
+  enquanto o código novo (cron, sempre fresco) já ignora esse campo e lê o
+  mapa. Resultado: uma 2ª operação pode nascer sem ser detectada como
+  duplicata — pior que a corrupção atual, que pelo menos é pega e suspende
+  o ativo. **Recomendação vencedora**: doc SEPARADO por `(assetId,
+  cascade)` (ex.: `assetActiveOps/{assetId}__{cascade}`), nunca reescrever
+  o doc escalar existente — elimina a contenção/ambiguidade de schema por
+  construção, ao custo de mais documentos no Firestore (irrelevante no
+  plano Spark gratuito nesta escala).
+- **Especialista em trading refutou o enquadramento como "pyramiding
+  clássico"**: as 3 cascatas propostas (1h/4h/1D) têm sinal/indicador/
+  entrada PRÓPRIOS — não são a mesma posição escalando, são 3 estratégias
+  tecnicamente independentes que só coincidem no ativo. Aplicar regras de
+  pyramiding "de livro" (perna maior primeiro) seria a categoria errada; o
+  que importa é o risco correlacionado (item já coberto pela pesquisa
+  acima), não a mecânica de escalonamento por si. Apontou um risco
+  concreto adicional: usar o sinal do 1h como PRÉ-CONDIÇÃO pra abrir uma
+  operação 4h inverteria a hierarquia de confiabilidade já medida —
+  `rf1hCondEnabled` (exigir concordância do 4h com o 1h, mecanismo
+  inverso mas correlato) já foi testado e **piorou** a expectância
+  (STOP_HIT 76%→83,4%, TP2_HIT 16%→10,2%, ver seção RF 1h condicionado
+  acima). Recomendação: o gatilho de promoção deve ser o 4h ter seu
+  próprio sinal nativo válido de forma independente — "1h indo bem" no
+  máximo aumenta confiança/tamanho de uma operação 4h que já abriria
+  sozinha, nunca deveria ser o gatilho que a cria.
+- **Convergência dos 3 papéis**: manter o mecanismo **desligado por
+  padrão/backtest-only** até (a) pelo menos uma cascata isolada confirmar
+  edge fora da amostra (nenhuma confirmou até hoje — item 71 encerrado sem
+  confirmação, Bloco 0 ainda ambíguo) e (b) o padrão de
+  stop-para-breakeven-ao-escalar estar implementado e testado — mesmo
+  padrão de todo mecanismo experimental já construído neste projeto
+  (nunca espelhar em `pineParser.js`/`adminPineConfig.js` até promoção
+  explícita com A/B + holdout).
+
+### Plano formal aprovado + Fase 1 infraestrutura implementada (2026-08-10)
+
+Plano escrito e aprovado pelo usuário (modo plano) com o escopo reduzido já
+recomendado pelo conselho técnico: só as 2 cascatas que já existem (`4h_15m`,
+`1h_5m`) rodando como operações independentes no mesmo ativo — sem cascata
+1D, sem gatilho de "continuidade" cross-timeframe (fora de escopo, ver
+conselho técnico acima). Master flag `pineConfig.hierarchicalCascadesEnabled`
+(backtest-only, `scripts/backtestPineConfig.js`, DEFAULT `false`).
+
+**Camada de infraestrutura implementada e testada** (ainda **não** ligada em
+lugar nenhum do `scanner.js` — zero mudança de comportamento com o flag
+ausente, que é o estado de todo caller hoje):
+
+- `buildActiveOpsAnchorId(assetId, cascade)` (`src/lib/opTransition.js`) —
+  doc-âncora `assetActiveOps/{assetId}` sem mudança quando `cascade` é
+  omitido (todo caller existente); `assetActiveOps/{assetId}__{cascade}`
+  quando fornecido. Espelhado nos 3 backends
+  (`src/api/entities.js`/`scripts/adminEntities.js`/
+  `src/lib/__fixtures__/fakeBackend.js`) via um 4º parâmetro opcional
+  `cascade` em `createTradeOpIfNoneActive`/`clearActiveOp` e uma chave
+  `cascade` na options de `transitionTradeOp` — reusa as MESMAS 3 funções
+  já testadas em vez de criar um caminho de mutação novo.
+- `groupActiveOpsByAsset(ops, coexistingCascades)` — 2 passadas: agrupa por
+  ativo (igual sempre); só quando TODOS os ops vivos daquele ativo têm
+  `cascade` no allowlist, subdivide por `(ativo, cascade)` — um op de
+  cascata NÃO listada (ex. `rf1h_cond4h_15m` combinado por engano com o
+  flag novo) faz o ativo inteiro cair de volta na checagem antiga de
+  duplicata, nunca perde proteção. Achado durante os próprios testes
+  (2 casos que eu tinha escrito errado revelaram esse requisito — corrigido
+  antes de commitar, não depois).
+- `advanceToBreakevenOnSiblingOpen({isBuy, currentStop, entry})`
+  (`src/lib/opExitRules.js`) — mesma forma de `advancePreTp1StopProtection`
+  (item 53/54), sem o gate de movimento de preço: avança o stop da perna JÁ
+  ativa pra breakeven quando a cascata irmã abre a própria operação no
+  mesmo ativo. `clampMonotonicStop` (já usado por `transitionTradeOp`)
+  garante que nunca regride.
+- Tripwire (`src/lib/hierarchicalCascadeTripwire.test.js`, mesmo padrão dos
+  outros) + 904 testes passando (suíte inteira) + lint limpo + `npm run
+  build` + os 3 alvos esbuild.
+- **Achado incidental, não relacionado ao Bloco 4**: `npm run build:backtest`
+  estava quebrado em `main` (export `notifyVerificationTask` ausente em
+  `scripts/backtestTelegram.js`, deixado pela feature de VerificationTask/
+  item 72) — confirmado via `git stash` que o bug já existia antes desta
+  sessão. Corrigido (no-op, mesmo padrão dos outros exports do arquivo) pra
+  poder verificar este trabalho.
+
+### Próximo passo
+
+Ligar o mecanismo em `src/lib/scanner.js`: os pontos de criação de operação
+das cascatas `4h_15m` (1ª passada + retry) e `1h_5m` passam a checar
+`pineConfig.hierarchicalCascadesEnabled` e, quando ligado, chamam
+`createTradeOpIfNoneActive`/`transitionTradeOp` com o `cascade` da própria
+cascata (destrava o anchor isolado) + o acoplamento de risco
+(`advanceToBreakevenOnSiblingOpen` na perna irmã já ativa, se houver) — e os
+2 `groupActiveOpsByAsset` já existentes nos dois loops passam a receber
+`['4h_15m', '1h_5m']` como `coexistingCascades` só quando o flag está
+ligado. Requer entender primeiro o gate `hasActiveOp` atual (ainda não
+mapeado nesta rodada) — provavelmente o ponto onde as duas cascatas hoje se
+excluem mutuamente ANTES mesmo de chegar em `createTradeOpIfNoneActive`.
+Depois: casos novos em `scannerStateMachine.test.js` (flag desligado =
+comportamento idêntico; flag ligado = as 2 cascatas abrem operações
+independentes + stop da 1ª vai pra breakeven quando a 2ª abre + duplicata
+real dentro da MESMA cascata continua sendo pega) + registrar isolamento no
+`known-risks.md` + backtest de fumaça local antes de dar por concluída a
+Fase 1.
 
 ## 38. Gate de zona PD da cascata SMC 1h→5m — removido do viés 1h, movido para o gatilho 5m (redesenho do item 35)
 

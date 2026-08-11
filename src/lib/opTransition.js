@@ -102,6 +102,19 @@ export function planTradeOpCreation({ pointerOpId, pointerOp, existingOp }) {
   return { action: 'create', pointer: 'set' };
 }
 
+// docs/known-risks.md item 37 (Bloco 4 Fase 1) — the doc-anchor ID for
+// `assetActiveOps`. Cascades that never opt into hierarchical coexistence
+// (the default, and every cascade until Fase 1 wires it in) keep the
+// original scalar-per-asset doc (`assetId`, unchanged since P0-a) — only a
+// caller that explicitly passes `cascade` gets a doc scoped to that one
+// cascade (`assetId__cascade`), letting two cascades hold independent
+// anchors for the SAME asset without touching the shared doc at all. Pure
+// string formatting shared by all 3 backends (entities.js/adminEntities.js/
+// fakeBackend.js) so they can never disagree on the doc ID.
+export function buildActiveOpsAnchorId(assetId, cascade) {
+  return cascade ? `${assetId}__${cascade}` : assetId;
+}
+
 // Group a list of TradeOperations by asset, defensively excluding anything
 // already terminal (a caller that queried by a broad status list — or a
 // stale in-memory snapshot — must not have a finished op counted toward the
@@ -115,14 +128,29 @@ export function planTradeOpCreation({ pointerOpId, pointerOp, existingOp }) {
 // the order Firestore hands back docs in never changes the outcome. Legacy
 // ops missing `asset_id` fall back to a symbol-keyed group so they still
 // group safely instead of silently skipping the check.
+//
+// `coexistingCascades` (docs/known-risks.md item 37, Bloco 4 Fase 1):
+// optional iterable of cascade names allowed to have simultaneous active ops
+// on the SAME asset — defaults to none, so every existing caller (both
+// mutator loops today) keeps the original "2+ ops on one asset is always
+// corruption" behavior unchanged. Grouping happens in two passes so a
+// hierarchical op can NEVER weaken the duplicate check for a cascade that
+// never opted in: pass 1 buckets by bare asset (exactly as before, cascade
+// ignored); pass 2 only splits an asset's bucket by `(asset, cascade)` when
+// EVERY live op in that bucket has a cascade in the allowlist — one
+// non-allowlisted op sharing the asset (e.g. a backtest-only variant like
+// `rf1h_cond4h_15m` combined with this flag, a combination Fase 1 never
+// intended to run together) falls back to the original single-group
+// duplicate check for the WHOLE asset, same as if the allowlist were absent.
 // Returns { validGroups: Map<key, op>, duplicateGroups: Map<key, op[]> }.
-export function groupActiveOpsByAsset(ops) {
-  const byKey = new Map();
+export function groupActiveOpsByAsset(ops, coexistingCascades) {
+  const coexisting = coexistingCascades ? new Set(coexistingCascades) : null;
+  const byAsset = new Map();
   for (const op of ops) {
     if (!op || isTerminalStatus(op.status)) continue;
-    const key = op.asset_id ?? `symbol:${op.symbol}`;
-    if (!byKey.has(key)) byKey.set(key, []);
-    byKey.get(key).push(op);
+    const assetKey = op.asset_id ?? `symbol:${op.symbol}`;
+    if (!byAsset.has(assetKey)) byAsset.set(assetKey, []);
+    byAsset.get(assetKey).push(op);
   }
 
   // Merge a symbol-fallback group (legacy op missing asset_id) into any
@@ -131,23 +159,40 @@ export function groupActiveOpsByAsset(ops) {
   // different keys (`symbol:BTCUSDT` vs `asset1`) and both read as lone,
   // "valid" groups — exactly the mixed legacy/current duplicate the symbol
   // fallback exists to catch (Codex review, PR #80).
-  for (const [key, group] of [...byKey]) {
+  for (const [key, group] of [...byAsset]) {
     if (!key.startsWith('symbol:')) continue;
     const symbol = group[0]?.symbol;
-    const assetKey = [...byKey.keys()].find(
-      (k) => k !== key && !k.startsWith('symbol:') && byKey.get(k).some((o) => o.symbol === symbol)
+    const assetKey = [...byAsset.keys()].find(
+      (k) => k !== key && !k.startsWith('symbol:') && byAsset.get(k).some((o) => o.symbol === symbol)
     );
     if (assetKey) {
-      byKey.set(assetKey, [...byKey.get(assetKey), ...group]);
-      byKey.delete(key);
+      byAsset.set(assetKey, [...byAsset.get(assetKey), ...group]);
+      byAsset.delete(key);
     }
   }
 
   const validGroups = new Map();
   const duplicateGroups = new Map();
-  for (const [key, group] of byKey) {
-    if (group.length > 1) duplicateGroups.set(key, group);
-    else validGroups.set(key, group[0]);
+  for (const [assetKey, group] of byAsset) {
+    const allAllowlisted = coexisting && group.every((op) => coexisting.has(op.cascade));
+    if (!allAllowlisted) {
+      if (group.length > 1) duplicateGroups.set(assetKey, group);
+      else validGroups.set(assetKey, group[0]);
+      continue;
+    }
+    // Every op in this asset's bucket opted into coexistence — safe to
+    // split by cascade, but a 2nd op of the SAME cascade is still a real
+    // duplicate (the anchor-per-cascade doc should have prevented it).
+    const byCascade = new Map();
+    for (const op of group) {
+      const cascadeKey = `${assetKey}::${op.cascade}`;
+      if (!byCascade.has(cascadeKey)) byCascade.set(cascadeKey, []);
+      byCascade.get(cascadeKey).push(op);
+    }
+    for (const [cascadeKey, cGroup] of byCascade) {
+      if (cGroup.length > 1) duplicateGroups.set(cascadeKey, cGroup);
+      else validGroups.set(cascadeKey, cGroup[0]);
+    }
   }
   return { validGroups, duplicateGroups };
 }

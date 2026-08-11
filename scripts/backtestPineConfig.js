@@ -133,6 +133,24 @@ const DEFAULTS = {
   // produção). Backtest-only, só via --pine-config. Ver o tripwire test em
   // src/lib/allowedSideTripwire.test.js.
   allowedSide: null,
+  // Bloco 4 Fase 1 (docs/known-risks.md item 37) — permite as cascatas
+  // `4h_15m` (RF nativa) e `1h_5m` (SMC) manterem operações INDEPENDENTES
+  // simultâneas no mesmo ativo, em vez de compartilhar 1 slot único
+  // (comportamento de sempre). Master flag OFF por padrão — destravado
+  // pelo usuário (item 37, "Destravado explicitamente"), mas o conselho
+  // técnico recomendou manter desligado até uma cascata isolada confirmar
+  // vantagem fora da amostra (nenhuma confirmou até hoje — item 71). Sem
+  // gatilho de promoção cross-timeframe nesta fase: cada cascata abre só
+  // com o próprio sinal nativo; a única mudança de comportamento quando
+  // ligada é o slot deixar de ser compartilhado + o stop da perna já ativa
+  // avançar pra breakeven quando a outra abre (acoplamento de risco,
+  // `advanceToBreakevenOnSiblingOpen`, src/lib/opExitRules.js). 1D e
+  // "continuidade" (usar sinal de timeframe menor pra promover abertura do
+  // maior) ficam FORA do escopo desta fase — deliberado, ver item 37. NÃO
+  // mirror pra src/lib/pineParser.js/scripts/adminPineConfig.js, mesmo
+  // motivo dos outros flags backtest-only acima. Ver tripwire test em
+  // src/lib/hierarchicalCascadeTripwire.test.js.
+  hierarchicalCascadesEnabled: false,
 };
 
 let overrides = {};

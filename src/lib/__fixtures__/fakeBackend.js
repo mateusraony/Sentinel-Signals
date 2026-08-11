@@ -7,7 +7,7 @@
 // decision. Lets scanner.js run completely unmodified against it (see
 // scannerStateMachine.test.js), the same principle already used for the
 // browser/cron split (src/api/entities.js vs scripts/adminEntities.js).
-import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation } from '../opTransition.js';
+import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation, buildActiveOpsAnchorId } from '../opTransition.js';
 
 const COLLECTIONS = [
   'MonitoredAsset', 'AssetState', 'SignalEvent', 'TradeOperation',
@@ -87,28 +87,30 @@ export function createFakeBackend() {
   }
   async function releaseScanLock() {}
 
-  async function createTradeOpIfNoneActive(assetId, docId, data) {
+  async function createTradeOpIfNoneActive(assetId, docId, data, cascade) {
     const opStore = stores.TradeOperation;
-    const pointerOpId = activeOps.get(assetId) || null;
+    const anchorId = buildActiveOpsAnchorId(assetId, cascade);
+    const pointerOpId = activeOps.get(anchorId) || null;
     const plan = planTradeOpCreation({
       pointerOpId,
       pointerOp: pointerOpId ? opStore.get(pointerOpId) || null : null,
       existingOp: opStore.get(docId) || null,
     });
     if (plan.action === 'blocked') return { created: false, existingId: pointerOpId };
-    if (plan.pointer === 'set') activeOps.set(assetId, docId);
-    else if (plan.pointer === 'clear') activeOps.set(assetId, null);
+    if (plan.pointer === 'set') activeOps.set(anchorId, docId);
+    else if (plan.pointer === 'clear') activeOps.set(anchorId, null);
     if (plan.action === 'reuse') return { created: false, existing: opStore.get(docId) };
     const doc = { created_date: new Date().toISOString(), ...data, id: docId };
     opStore.set(docId, doc);
     return { created: true, doc };
   }
 
-  async function clearActiveOp(assetId, tradeOpId) {
-    if (activeOps.get(assetId) === tradeOpId) activeOps.set(assetId, null);
+  async function clearActiveOp(assetId, tradeOpId, cascade) {
+    const anchorId = buildActiveOpsAnchorId(assetId, cascade);
+    if (activeOps.get(anchorId) === tradeOpId) activeOps.set(anchorId, null);
   }
 
-  async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField } = {}) {
+  async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField, cascade } = {}) {
     const opStore = stores.TradeOperation;
     const current = opStore.get(opId) || null;
     if (!canApplyTransition(current, fromStatus)) {
@@ -125,8 +127,9 @@ export function createFakeBackend() {
       }
     }
     opStore.set(opId, { ...current, ...safePatch });
-    if (isTerminalStatus(patch.status) && assetId && activeOps.get(assetId) === opId) {
-      activeOps.set(assetId, null);
+    const anchorId = buildActiveOpsAnchorId(assetId, cascade);
+    if (isTerminalStatus(patch.status) && assetId && activeOps.get(anchorId) === opId) {
+      activeOps.set(anchorId, null);
     }
     return { applied: true };
   }
@@ -145,11 +148,11 @@ export function createFakeBackend() {
     _get(name, id) {
       return stores[name].get(id);
     },
-    _getActiveOp(assetId) {
-      return activeOps.get(assetId) ?? null;
+    _getActiveOp(assetId, cascade) {
+      return activeOps.get(buildActiveOpsAnchorId(assetId, cascade)) ?? null;
     },
-    _setActiveOp(assetId, tradeOpId) {
-      activeOps.set(assetId, tradeOpId);
+    _setActiveOp(assetId, tradeOpId, cascade) {
+      activeOps.set(buildActiveOpsAnchorId(assetId, cascade), tradeOpId);
     },
   };
 }
