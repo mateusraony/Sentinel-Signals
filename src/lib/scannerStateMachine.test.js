@@ -4382,3 +4382,162 @@ describe('VerificationTask automática para sinais de alta prioridade', () => {
     backend.entities.VerificationTask.createUnique = originalCreateUnique;
   });
 });
+
+// docs/known-risks.md item 37 (Bloco 4 Fase 1) — pineConfig.
+// hierarchicalCascadesEnabled (opt-in, backtest-only) lets the 4h_15m (RF
+// native) and 1h_5m (SMC) cascades hold INDEPENDENT active operations on
+// the same asset instead of sharing one slot. Driven through the real
+// persistScanResults entry motor (both cascades' 1st-pass blocks in the
+// SAME call) to prove the wiring end to end, not just the pure
+// groupActiveOpsByAsset/opExitRules functions already covered in isolation.
+describe('Bloco 4 Fase 1 — operações independentes por cascata (hierarchicalCascadesEnabled, docs/known-risks.md item 37)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  function mk5m(open, high, low, close, i) {
+    return { open, high, low, close, openTime: i * 300000, closeTime: (i + 1) * 300000, isClosed: true };
+  }
+  // Same recipe as the "5m OTE zone gate" describe above: 59 flat candles +
+  // 1 that wicks below the recent low and closes back above it —
+  // deterministic bullishSweep=true confirmation for a BUY SMC signal.
+  function bullishSweepCandles5m() {
+    const candles = [];
+    for (let i = 0; i < 59; i++) candles.push(mk5m(100, 105, 95, 100, i));
+    candles.push(mk5m(96, 97, 93, 96.5, 59));
+    return candles;
+  }
+
+  function makeRfSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_hier_rf',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80 },
+      ...overrides,
+    };
+  }
+  function makeSmcSignal(overrides = {}) {
+    return {
+      asset_id: 'asset1', symbol: 'BTCUSDT', signal_type: 'BUY',
+      timeframe: '1h', source: 'smc_structure', dedup_key: 'sig_hier_smc',
+      price_at_signal: 100,
+      // legHigh=200/legLow=50 -> discount zone, which BUY favors — same
+      // bounds as the "5m OTE zone gate" describe's passing case above.
+      context: { structure_type: 'BOS', pd_zone: 'premium', ote_leg_high: 200, ote_leg_low: 50 },
+      ...overrides,
+    };
+  }
+  // useTimeStop:false — the mocked 5m candles (bullishSweepCandles5m, below)
+  // use epoch-relative offsets unrelated to this file's frozen system clock
+  // (2026-07-16), so entry_candle_time_5m lands near 1970 and the SAME-pass
+  // tail loop's Time Stop check (elapsed bars since entry) would close the
+  // SMC leg instantly — a fixture artifact of that shared helper, not
+  // something these tests are about.
+  function hierPineConfig(overrides = {}) {
+    return makePineConfig({ useADX: false, useChop: false, skip15mConfirmationEnabled: true, useTimeStop: false, ...overrides });
+  }
+  // lastCandleLow/High kept safely between each op's (post-breakeven) stop
+  // and its own TP1 — makeTfData's default flat candle (low=high=close=100)
+  // coincides exactly with the RF entry_price, so the SAME-candle stop
+  // check the tail loop legitimately runs after this pass's breakeven
+  // coupling (candle open >= entry reference => usable, P0-c) would
+  // otherwise read a breakeven stop of 100 as touching a low of 100 — a
+  // fixture artifact, not a real signal. RF: entry 100, stop 96→100
+  // (breakeven), tp1 106 — 100.5/101 stays clear of both. SMC: entry 96.5,
+  // stop 92.8 (structural, never coupled here), tp1 ~102.05 — 95/97 stays
+  // clear of both.
+  function hierResults(overrides = {}) {
+    return {
+      '4h': makeTfData({ lastCandleLow: 100.5, lastCandleHigh: 101 }),
+      '1h': makeTfData({ atrValue: 2, lastCandleLow: 95, lastCandleHigh: 97 }),
+      ...overrides,
+    };
+  }
+
+  it('flag desligado (default): a cascata SMC não abre operação própria enquanto o slot compartilhado está ocupado pela RF (comportamento de sempre)', async () => {
+    fetchCandles.mockImplementation(async () => bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = hierPineConfig(); // hierarchicalCascadesEnabled ausente
+    await persistScanResults({
+      ...makeScanResult({ asset, results: hierResults(), pineConfig }),
+      newSignals: [makeRfSignal(), makeSmcSignal()],
+    });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    // A RF abre; a SMC encontra hasActiveOp=true e cai em arbitragem (não
+    // cria uma 2ª operação) — mesmo slot único de sempre.
+    expect(ops).toHaveLength(1);
+    expect(ops[0].cascade).toBe('4h_15m');
+    expect(ops[0].hierarchical_cascade).toBeUndefined();
+  });
+
+  it('flag ligado: RF (4h_15m) e SMC (1h_5m) abrem operações INDEPENDENTES no mesmo ativo, ambas marcadas hierarchical_cascade', async () => {
+    fetchCandles.mockImplementation(async () => bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = hierPineConfig({ hierarchicalCascadesEnabled: true });
+    await persistScanResults({
+      ...makeScanResult({ asset, results: hierResults(), pineConfig }),
+      newSignals: [makeRfSignal(), makeSmcSignal()],
+    });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(2);
+    const byCascade = Object.fromEntries(ops.map(o => [o.cascade, o]));
+    expect(byCascade['4h_15m']).toBeDefined();
+    expect(byCascade['1h_5m']).toBeDefined();
+    expect(byCascade['4h_15m'].status).toBe('SIGNAL_CONFIRMED');
+    expect(byCascade['1h_5m'].status).toBe('SIGNAL_CONFIRMED');
+    expect(byCascade['4h_15m'].hierarchical_cascade).toBe(true);
+    expect(byCascade['1h_5m'].hierarchical_cascade).toBe(true);
+  });
+
+  it('flag ligado: abrir a 2ª perna avança o stop da perna JÁ ativa para breakeven (acoplamento de risco)', async () => {
+    fetchCandles.mockImplementation(async () => bullishSweepCandles5m());
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = hierPineConfig({ hierarchicalCascadesEnabled: true });
+    // RF (4h_15m) processada PRIMEIRO no array -> abre antes da SMC.
+    await persistScanResults({
+      ...makeScanResult({ asset, results: hierResults(), pineConfig }),
+      newSignals: [makeRfSignal(), makeSmcSignal()],
+    });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    const rfOp = ops.find(o => o.cascade === '4h_15m');
+    // BUY: initial_stop nasce ABAIXO do entry (entry - ATR*mult = 100-4=96)
+    // — a operação teria ficado com esse risco se estivesse sozinha.
+    expect(rfOp.initial_stop).toBeLessThan(rfOp.entry_price);
+    // A 2ª perna (SMC) abriu DEPOIS na MESMA passada (activeOp4h15m mantido
+    // fresco entre as duas iterações do loop de sinais) — o stop da perna
+    // RF já ativa deveria ter avançado para breakeven (nunca além — mesma
+    // proteção de advancePreTp1StopProtection/clampMonotonicStop).
+    expect(rfOp.current_stop).toBe(rfOp.entry_price);
+    expect(rfOp.current_stop).toBeGreaterThan(rfOp.initial_stop);
+  });
+
+  it('flag ligado: 2 operações da MESMA cascata no mesmo ativo continuam sendo tratadas como duplicata real (proteção preservada)', async () => {
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_hier_a', asset_id: 'asset1', cascade: '4h_15m', hierarchical_cascade: true,
+      status: 'SIGNAL_CONFIRMED', side: 'BUY',
+    }));
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_hier_b', asset_id: 'asset1', cascade: '4h_15m', hierarchical_cascade: true,
+      status: 'RUNNER_ACTIVE', side: 'BUY',
+    }));
+
+    const asset = makeAsset({ smc_enabled: true });
+    const pineConfig = hierPineConfig({ hierarchicalCascadesEnabled: true });
+    await persistScanResults({
+      ...makeScanResult({ asset, results: hierResults(), pineConfig }),
+      newSignals: [makeRfSignal({ dedup_key: 'sig_hier_rf_dup' })],
+    });
+
+    // Nenhuma 3ª operação criada, nenhuma das duas alterada — duplicata real
+    // detectada mesmo com as duas marcadas hierarchical_cascade (mesma
+    // cascata, não cascatas diferentes).
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(2);
+    expect(backend._get('TradeOperation', 'op_hier_a').status).toBe('SIGNAL_CONFIRMED');
+    expect(backend._get('TradeOperation', 'op_hier_b').status).toBe('RUNNER_ACTIVE');
+    const logs = await backend.entities.SystemLog.filter({});
+    expect(logs.some(l => l.details?.reason === 'duplicate_active_ops_detected')).toBe(true);
+  });
+});

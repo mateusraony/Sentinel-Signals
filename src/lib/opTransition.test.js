@@ -293,42 +293,50 @@ describe('groupActiveOpsByAsset', () => {
   // docs/known-risks.md item 37 (Bloco 4 Fase 1) — coexistingCascades lets
   // two ops of the SAME asset be valid simultaneously, but only for
   // cascades explicitly opted in — never a blanket relaxation.
-  describe('coexistingCascades (Bloco 4 Fase 1)', () => {
-    it('a lone allowlisted op groups under the (asset, cascade) composite key', () => {
-      const op = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', status: 'SIGNAL_CONFIRMED' };
-      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([op], ['4h_15m', '1h_5m']);
+  describe('hierarchical_cascade stamp (Bloco 4 Fase 1)', () => {
+    it('a lone hierarchical op groups under the (asset, cascade) composite key', () => {
+      const op = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', hierarchical_cascade: true, status: 'SIGNAL_CONFIRMED' };
+      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([op]);
       expect(validGroups.get('asset_1::4h_15m')).toBe(op);
       expect(duplicateGroups.size).toBe(0);
     });
 
-    it('two DIFFERENT allowlisted cascades on the same asset are both valid, not a duplicate', () => {
-      const opA = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', status: 'SIGNAL_CONFIRMED' };
-      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: '1h_5m', status: 'RUNNER_ACTIVE' };
-      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB], ['4h_15m', '1h_5m']);
+    it('two DIFFERENT cascades on the same asset, BOTH stamped hierarchical, are both valid — not a duplicate', () => {
+      const opA = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', hierarchical_cascade: true, status: 'SIGNAL_CONFIRMED' };
+      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: '1h_5m', hierarchical_cascade: true, status: 'RUNNER_ACTIVE' };
+      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB]);
       expect(validGroups.get('asset_1::4h_15m')).toBe(opA);
       expect(validGroups.get('asset_1::1h_5m')).toBe(opB);
       expect(duplicateGroups.size).toBe(0);
     });
 
-    it('two ops of the SAME allowlisted cascade on the same asset are STILL a duplicate', () => {
-      const opA = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', status: 'SIGNAL_CONFIRMED' };
-      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: '4h_15m', status: 'RUNNER_ACTIVE' };
-      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB], ['4h_15m', '1h_5m']);
+    it('two ops of the SAME cascade on the same asset, both stamped hierarchical, are STILL a duplicate', () => {
+      const opA = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', hierarchical_cascade: true, status: 'SIGNAL_CONFIRMED' };
+      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: '4h_15m', hierarchical_cascade: true, status: 'RUNNER_ACTIVE' };
+      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB]);
       expect(validGroups.has('asset_1::4h_15m')).toBe(false);
       expect(duplicateGroups.get('asset_1::4h_15m')).toEqual([opA, opB]);
     });
 
-    it('an allowlisted cascade mixed with a NON-allowlisted cascade on the same asset is still a duplicate (opting one cascade in never weakens protection for the others)', () => {
+    // The regression this test guards against: an EARLIER design keyed
+    // relaxation off cascade NAME alone (an "allowlist" of '4h_15m'/
+    // '1h_5m'), which broke scannerStateMachine.test.js's pre-existing
+    // "operações ativas duplicadas" suite — 2 legacy/corrupted ops that
+    // happen to carry those cascade names, but were NEVER created via the
+    // anchor-per-cascade scheme (hierarchicalCascadesEnabled off), must
+    // still be caught as a real duplicate. Per-op stamp fixes this: only an
+    // op ACTUALLY created hierarchical carries the stamp.
+    it('two DIFFERENT cascades on the same asset, NEITHER stamped hierarchical, are still a duplicate (today\'s default — nothing opted in)', () => {
       const opA = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', status: 'SIGNAL_CONFIRMED' };
-      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: 'rf1h_cond4h_15m', status: 'RUNNER_ACTIVE' };
-      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB], ['4h_15m', '1h_5m']);
+      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: '1h_5m', status: 'RUNNER_ACTIVE' };
+      const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB]);
       expect(validGroups.has('asset_1')).toBe(false);
       expect(duplicateGroups.get('asset_1')).toEqual([opA, opB]);
     });
 
-    it('without coexistingCascades, a cascade field present is irrelevant — same asset always groups together (default behavior unchanged)', () => {
-      const opA = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', status: 'SIGNAL_CONFIRMED' };
-      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: '1h_5m', status: 'RUNNER_ACTIVE' };
+    it('a stamped hierarchical op mixed with an UNSTAMPED op on the same asset is still a duplicate (one stamped op never weakens protection for the other)', () => {
+      const opA = { id: 'op_a', asset_id: 'asset_1', cascade: '4h_15m', hierarchical_cascade: true, status: 'SIGNAL_CONFIRMED' };
+      const opB = { id: 'op_b', asset_id: 'asset_1', cascade: 'rf1h_cond4h_15m', status: 'RUNNER_ACTIVE' };
       const { validGroups, duplicateGroups } = groupActiveOpsByAsset([opA, opB]);
       expect(validGroups.has('asset_1')).toBe(false);
       expect(duplicateGroups.get('asset_1')).toEqual([opA, opB]);
