@@ -31,8 +31,8 @@ import { detectOrderBlock } from './indicators/orderBlock';
 import { detectEngulfing, detectPinBar, detectMarubozu } from './indicators/candlePatterns';
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
-import { groupActiveOpsByAsset } from './opTransition';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, advanceToBreakevenOnSiblingOpen, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
+import { groupActiveOpsByAsset, isTerminalStatus } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -755,6 +755,47 @@ async function recordRejection(sig, cascade, reason, entryFunnelOutcomes) {
     await backend.entities.SignalEvent.update(sig.id, { last_rejection_reason: reason });
     sig.last_rejection_reason = reason;
   }
+}
+
+// docs/known-risks.md item 37 (Bloco 4 Fase 1) — called right after a
+// hierarchical leg (4h_15m or 1h_5m) successfully opens, when the SIBLING
+// cascade already holds its own active leg on the same asset: moves the
+// sibling's stop to breakeven (never past it — advanceToBreakevenOnSiblingOpen
+// + the transactional clampMonotonicStop inside transitionTradeOp both
+// guard against regressing an already-better stop), so opening a 2nd leg
+// never raises the worst-case COMBINED loss beyond what the 1st leg alone
+// already risked (community pyramiding precedent — see item 37). A 2nd,
+// SEQUENTIAL transitionTradeOp call, not a multi-doc transaction with the
+// creation above — deliberately: this project's rule against a 3rd op-
+// mutation path (`.claude/rules/trading-engine.md`) is about not inventing
+// a NEW way to write `status`/`current_stop`; this reuses the exact same
+// transitionTradeOp everything else already goes through, just called
+// twice. If it fails to apply (a concurrent worker already moved the
+// sibling's status), that's logged and non-blocking — the leg that just
+// opened is unaffected either way.
+async function coupleSiblingRiskOnOpen(siblingOp, siblingCascade) {
+  if (!siblingOp || isTerminalStatus(siblingOp.status)) return siblingOp;
+  const candidateStop = advanceToBreakevenOnSiblingOpen({
+    isBuy: siblingOp.side === 'BUY',
+    currentStop: siblingOp.current_stop,
+    entry: siblingOp.entry_price,
+  });
+  if (candidateStop === siblingOp.current_stop) return siblingOp;
+  const result = await backend.tradeOps.transitionTradeOp(
+    siblingOp.id, siblingOp.status, { current_stop: candidateStop },
+    { assetId: siblingOp.asset_id, cascade: siblingCascade },
+  );
+  if (!result.applied) {
+    await backend.entities.SystemLog.create({
+      level: 'warn',
+      module: 'scanner',
+      message: `${siblingOp.symbol}: não foi possível avançar o stop da perna ${siblingCascade} para breakeven ao abrir a cascata irmã — transição descartada pelo CAS (concorrência).`,
+      symbol: siblingOp.symbol,
+      details: { reason: 'sibling_breakeven_cas_rejected', op_id: siblingOp.id, cascade: siblingCascade, attempted_stop: candidateStop },
+    });
+    return siblingOp;
+  }
+  return { ...siblingOp, current_stop: candidateStop };
 }
 
 /**
@@ -1618,15 +1659,31 @@ export async function persistScanResults(scanResult) {
   });
   let hasActiveOp = activeOpsAtStart.length > 0;
   // Shared detector (src/lib/opTransition.js) — this query already filters
-  // by this asset's symbol+id, so at most one group ever comes back; the
-  // helper still runs here (rather than a plain length check) so the
+  // by this asset's symbol+id, so at most one group ever comes back UNLESS
+  // both ops carry the hierarchical_cascade stamp (Bloco 4 Fase 1, below) —
+  // the helper still runs here (rather than a plain length check) so the
   // duplicate-op RULE lives in exactly one place, shared with
   // priceCheckActiveOpsInner below.
   const { validGroups, duplicateGroups } = groupActiveOpsByAsset(activeOpsAtStart);
   // Kept only to enrich the discard log below (which op blocked the entry) —
   // hasActiveOp remains the actual gate. null whenever duplicated (see guard
-  // below) — no branch that runs in that case ever reads it.
+  // below) — no branch that runs in that case ever reads it. When BOTH
+  // hierarchical legs are active, this arbitrarily picks one of the two —
+  // harmless, because every hierarchical-mode branch below reads
+  // activeOp4h15m/activeOp1h5m instead, never this shared `activeOp`.
   let activeOp = validGroups.size > 0 ? [...validGroups.values()][0] : null;
+  // docs/known-risks.md item 37 (Bloco 4 Fase 1) — per-cascade tracking,
+  // used ONLY by the 4h_15m/1h_5m blocks below when
+  // pineConfig.hierarchicalCascadesEnabled is on. Independent of
+  // hasActiveOp/activeOp above, which keep gating every OTHER cascade
+  // (rf1h_cond4h_15m/rf1h_uncond_15m) exactly as before — those never
+  // migrate to a per-cascade anchor, so mixing them with a hierarchical run
+  // is an unsupported combination (documented limitation, not validated
+  // here).
+  let hasActiveOp4h15m = activeOpsAtStart.some((op) => op.cascade === '4h_15m');
+  let hasActiveOp1h5m = activeOpsAtStart.some((op) => op.cascade === '1h_5m');
+  let activeOp4h15m = activeOpsAtStart.find((op) => op.cascade === '4h_15m') ?? null;
+  let activeOp1h5m = activeOpsAtStart.find((op) => op.cascade === '1h_5m') ?? null;
 
   // Invariant guard (external audit of PR #78): the whole system is built
   // around exactly ONE active op per asset (assetActiveOps' single-doc CAS
@@ -2097,7 +2154,10 @@ export async function persistScanResults(scanResult) {
               }
             }
 
-            if (!hasActiveOp) {
+            // docs/known-risks.md item 37 (Bloco 4 Fase 1) — with the flag
+            // on, this cascade's own slot (never the shared one) decides
+            // whether it's free.
+            if (pineConfig.hierarchicalCascadesEnabled ? !hasActiveOp4h15m : !hasActiveOp) {
               // Fase 2 rodada 1 (docs/known-risks.md item 40): off by
               // default — pineConfig.retestEnabled === false skips this
               // entirely (retestGate stays null, no extra fetchCandles), and
@@ -2150,10 +2210,22 @@ export async function persistScanResults(scanResult) {
                   opData.rr_at_entry = rr.rr1;
                   opData.rr_gate_mode = RR_GATE_MODE;
                   opData.rr_target_basis = RR_TARGET_BASIS;
+                  // docs/known-risks.md item 37 (Bloco 4 Fase 1) — stamped
+                  // on the op itself, read back by groupActiveOpsByAsset.
+                  if (pineConfig.hierarchicalCascadesEnabled) opData.hierarchical_cascade = true;
                   const tradeOpId = `trade_${signal.dedup_key}`;
-                  const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
+                  const created = await backend.tradeOps.createTradeOpIfNoneActive(
+                    signal.asset_id, tradeOpId, opData,
+                    pineConfig.hierarchicalCascadesEnabled ? '4h_15m' : undefined,
+                  );
                   if (created.created) {
-                    hasActiveOp = true;
+                    if (pineConfig.hierarchicalCascadesEnabled) {
+                      hasActiveOp4h15m = true;
+                      activeOp4h15m = created.doc;
+                      activeOp1h5m = await coupleSiblingRiskOnOpen(activeOp1h5m, '1h_5m');
+                    } else {
+                      hasActiveOp = true;
+                    }
                     activeOp = created.doc;
                     if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
                     logInfo('scanner', `${signal.symbol} entrada criada — Pine sync ativo`, {
@@ -2174,6 +2246,13 @@ export async function persistScanResults(scanResult) {
                 });
               }
               }
+            } else if (pineConfig.hierarchicalCascadesEnabled) {
+              // docs/known-risks.md item 37 (Bloco 4 Fase 1) — hierarchical
+              // mode never arbitrates 4h_15m against 1h_5m (each cascade's
+              // slot is independent now); reaching here means the 4h_15m
+              // slot ITSELF is already occupied by an earlier 4h_15m op —
+              // nothing to arbitrate against.
+              if (!duplicateActiveOps) entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'active_op_exists' });
             } else if (!duplicateActiveOps) {
               // Candidate passed every 4H gate but the asset already holds an
               // op (possibly from the OTHER cascade — the two share the
@@ -2226,7 +2305,9 @@ export async function persistScanResults(scanResult) {
           });
           continue;
         }
-        if (!hasActiveOp) {
+        // docs/known-risks.md item 37 (Bloco 4 Fase 1) — same per-cascade
+        // gate as the RF block above.
+        if (pineConfig.hierarchicalCascadesEnabled ? !hasActiveOp1h5m : !hasActiveOp) {
           // Fase 2 rodada 1 (docs/known-risks.md item 40) — same passthrough
           // guarantee as the RF block above: off by default, zero extra
           // fetch, byte-identical behaviour when pineConfig.retestEnabled is
@@ -2309,10 +2390,22 @@ export async function persistScanResults(scanResult) {
               opData.rr_at_entry = rr.rr1;
               opData.rr_gate_mode = RR_GATE_MODE;
               opData.rr_target_basis = RR_TARGET_BASIS;
+              // docs/known-risks.md item 37 (Bloco 4 Fase 1) — stamped on
+              // the op itself, read back by groupActiveOpsByAsset.
+              if (pineConfig.hierarchicalCascadesEnabled) opData.hierarchical_cascade = true;
               const tradeOpId = `trade_smc_${signal.dedup_key}`;
-              const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
+              const created = await backend.tradeOps.createTradeOpIfNoneActive(
+                signal.asset_id, tradeOpId, opData,
+                pineConfig.hierarchicalCascadesEnabled ? '1h_5m' : undefined,
+              );
               if (created.created) {
-                hasActiveOp = true;
+                if (pineConfig.hierarchicalCascadesEnabled) {
+                  hasActiveOp1h5m = true;
+                  activeOp1h5m = created.doc;
+                  activeOp4h15m = await coupleSiblingRiskOnOpen(activeOp4h15m, '4h_15m');
+                } else {
+                  hasActiveOp = true;
+                }
                 activeOp = created.doc;
                 if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
                 logInfo('scanner', `${signal.symbol} entrada SMC criada (1h→5m)`, {
@@ -2348,6 +2441,11 @@ export async function persistScanResults(scanResult) {
             }
           }
           }
+        } else if (pineConfig.hierarchicalCascadesEnabled) {
+          // docs/known-risks.md item 37 (Bloco 4 Fase 1) — same reasoning as
+          // the RF block above: no cross-cascade arbitration in hierarchical
+          // mode, this just means the 1h_5m slot itself is already occupied.
+          if (!duplicateActiveOps) entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '1h_5m', reason: 'active_op_exists' });
         } else if (!duplicateActiveOps) {
           // Same cross-cascade arbitration as the RF block above — 5m
           // confirmation not fetched (see the RF branch for why).
@@ -2506,7 +2604,11 @@ export async function persistScanResults(scanResult) {
     }
     if (sig.is_dismissed) continue;
 
-    if (hasActiveOp) {
+    // docs/known-risks.md item 37 (Bloco 4 Fase 1) — same per-cascade gate
+    // as the 1st pass above; activeOp4h15m (not the shared activeOp) is the
+    // right reference in hierarchical mode since a same-pass 1h_5m creation
+    // never touches it.
+    if (pineConfig.hierarchicalCascadesEnabled ? hasActiveOp4h15m : hasActiveOp) {
       // Codex review (PR #102): this same signal is re-evaluated by this
       // retry loop on every scan while ITS OWN op stays open (it stays in
       // the `recent4hSignals` lookback until 9 newer signals bump it out or
@@ -2520,7 +2622,7 @@ export async function persistScanResults(scanResult) {
       // suppresses the count for the signal that actually owns activeOp —
       // a genuinely different pending signal blocked by another op still
       // counts normally.
-      const ownsActiveOp = activeOp?.id === `trade_${sig.dedup_key}`;
+      const ownsActiveOp = (pineConfig.hierarchicalCascadesEnabled ? activeOp4h15m : activeOp)?.id === `trade_${sig.dedup_key}`;
       if (!ownsActiveOp) entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', reason: 'active_op_exists' });
       continue;
     }
@@ -2636,11 +2738,23 @@ export async function persistScanResults(scanResult) {
     opData.rr_at_entry = rr.rr1;
     opData.rr_gate_mode = RR_GATE_MODE;
     opData.rr_target_basis = RR_TARGET_BASIS;
+    // docs/known-risks.md item 37 (Bloco 4 Fase 1) — stamped on the op
+    // itself, read back by groupActiveOpsByAsset.
+    if (pineConfig.hierarchicalCascadesEnabled) opData.hierarchical_cascade = true;
 
     const tradeOpId = `trade_${sig.dedup_key || sig.id}`;
-    const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
+    const created = await backend.tradeOps.createTradeOpIfNoneActive(
+      sig.asset_id, tradeOpId, opData,
+      pineConfig.hierarchicalCascadesEnabled ? '4h_15m' : undefined,
+    );
     if (!created.created) continue;
-    hasActiveOp = true;
+    if (pineConfig.hierarchicalCascadesEnabled) {
+      hasActiveOp4h15m = true;
+      activeOp4h15m = created.doc;
+      activeOp1h5m = await coupleSiblingRiskOnOpen(activeOp1h5m, '1h_5m');
+    } else {
+      hasActiveOp = true;
+    }
 
     if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
 
@@ -2869,11 +2983,13 @@ export async function persistScanResults(scanResult) {
       }
       if (sig.is_dismissed) continue;
 
-      if (hasActiveOp) {
+      // docs/known-risks.md item 37 (Bloco 4 Fase 1) — same per-cascade gate
+      // as the 1st pass above.
+      if (pineConfig.hierarchicalCascadesEnabled ? hasActiveOp1h5m : hasActiveOp) {
         // Codex review (PR #102) — same reasoning as the RF retry loop above:
         // don't count the signal that OWNS the currently active op as a
         // false `active_op_exists` rejection.
-        const ownsActiveOp = activeOp?.id === `trade_smc_${sig.dedup_key}`;
+        const ownsActiveOp = (pineConfig.hierarchicalCascadesEnabled ? activeOp1h5m : activeOp)?.id === `trade_smc_${sig.dedup_key}`;
         if (!ownsActiveOp) entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', reason: 'active_op_exists' });
         continue;
       }
@@ -2966,11 +3082,23 @@ export async function persistScanResults(scanResult) {
       opData.rr_at_entry = rr.rr1;
       opData.rr_gate_mode = RR_GATE_MODE;
       opData.rr_target_basis = RR_TARGET_BASIS;
+      // docs/known-risks.md item 37 (Bloco 4 Fase 1) — stamped on the op
+      // itself, read back by groupActiveOpsByAsset.
+      if (pineConfig.hierarchicalCascadesEnabled) opData.hierarchical_cascade = true;
 
       const tradeOpId = `trade_smc_${sig.dedup_key || sig.id}`;
-      const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
+      const created = await backend.tradeOps.createTradeOpIfNoneActive(
+        sig.asset_id, tradeOpId, opData,
+        pineConfig.hierarchicalCascadesEnabled ? '1h_5m' : undefined,
+      );
       if (!created.created) continue;
-      hasActiveOp = true;
+      if (pineConfig.hierarchicalCascadesEnabled) {
+        hasActiveOp1h5m = true;
+        activeOp1h5m = created.doc;
+        activeOp4h15m = await coupleSiblingRiskOnOpen(activeOp4h15m, '4h_15m');
+      } else {
+        hasActiveOp = true;
+      }
 
       if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
 

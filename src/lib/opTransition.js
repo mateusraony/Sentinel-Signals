@@ -129,22 +129,27 @@ export function buildActiveOpsAnchorId(assetId, cascade) {
 // ops missing `asset_id` fall back to a symbol-keyed group so they still
 // group safely instead of silently skipping the check.
 //
-// `coexistingCascades` (docs/known-risks.md item 37, Bloco 4 Fase 1):
-// optional iterable of cascade names allowed to have simultaneous active ops
-// on the SAME asset — defaults to none, so every existing caller (both
-// mutator loops today) keeps the original "2+ ops on one asset is always
-// corruption" behavior unchanged. Grouping happens in two passes so a
-// hierarchical op can NEVER weaken the duplicate check for a cascade that
-// never opted in: pass 1 buckets by bare asset (exactly as before, cascade
-// ignored); pass 2 only splits an asset's bucket by `(asset, cascade)` when
-// EVERY live op in that bucket has a cascade in the allowlist — one
-// non-allowlisted op sharing the asset (e.g. a backtest-only variant like
-// `rf1h_cond4h_15m` combined with this flag, a combination Fase 1 never
-// intended to run together) falls back to the original single-group
-// duplicate check for the WHOLE asset, same as if the allowlist were absent.
+// `op.hierarchical_cascade` (docs/known-risks.md item 37, Bloco 4 Fase 1):
+// a boolean stamped on the OPERATION ITSELF at creation time, only when it
+// was actually created via the per-cascade anchor scheme
+// (buildActiveOpsAnchorId with a cascade) — never read from a live config
+// flag here. This is deliberately a per-OP fact, not a cascade-name
+// allowlist: an allowlist keyed only by cascade name (e.g. "4h_15m and
+// 1h_5m may always coexist") would ALSO relax the check for two ops that
+// happen to carry those cascade names but were never actually created
+// under the anchor-per-cascade scheme — exactly the legacy/corrupted
+// "2 different-cascade ops sharing one asset" scenario this detector
+// exists to catch (regression caught by
+// scannerStateMachine.test.js's pre-existing "operações ativas duplicadas"
+// suite while building this). Grouping happens in two passes so one
+// stamped op can never weaken the duplicate check for an unstamped one:
+// pass 1 buckets by bare asset (exactly as before, cascade ignored); pass 2
+// only splits an asset's bucket by `(asset, cascade)` when EVERY live op in
+// that bucket carries the stamp — one unstamped op sharing the asset falls
+// back to the original single-group duplicate check for the WHOLE asset,
+// same as if the stamp didn't exist.
 // Returns { validGroups: Map<key, op>, duplicateGroups: Map<key, op[]> }.
-export function groupActiveOpsByAsset(ops, coexistingCascades) {
-  const coexisting = coexistingCascades ? new Set(coexistingCascades) : null;
+export function groupActiveOpsByAsset(ops) {
   const byAsset = new Map();
   for (const op of ops) {
     if (!op || isTerminalStatus(op.status)) continue;
@@ -174,15 +179,16 @@ export function groupActiveOpsByAsset(ops, coexistingCascades) {
   const validGroups = new Map();
   const duplicateGroups = new Map();
   for (const [assetKey, group] of byAsset) {
-    const allAllowlisted = coexisting && group.every((op) => coexisting.has(op.cascade));
-    if (!allAllowlisted) {
+    const allHierarchical = group.every((op) => op.hierarchical_cascade === true);
+    if (!allHierarchical) {
       if (group.length > 1) duplicateGroups.set(assetKey, group);
       else validGroups.set(assetKey, group[0]);
       continue;
     }
-    // Every op in this asset's bucket opted into coexistence — safe to
-    // split by cascade, but a 2nd op of the SAME cascade is still a real
-    // duplicate (the anchor-per-cascade doc should have prevented it).
+    // Every op in this asset's bucket was stamped as hierarchical at
+    // creation — safe to split by cascade, but a 2nd op of the SAME
+    // cascade is still a real duplicate (the anchor-per-cascade doc should
+    // have prevented it).
     const byCascade = new Map();
     for (const op of group) {
       const cascadeKey = `${assetKey}::${op.cascade}`;
