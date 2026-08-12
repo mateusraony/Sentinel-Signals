@@ -81,6 +81,15 @@
       ]
     },
     {
+      "collectionGroup": "verificationTasks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "asset_id", "order": "ASCENDING" },
+        { "fieldPath": "timeframe", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "assetStates",
       "queryScope": "COLLECTION",
       "fields": [

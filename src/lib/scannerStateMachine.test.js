@@ -4349,6 +4349,37 @@ describe('VerificationTask automática para sinais de alta prioridade', () => {
     expect(tasks[0].telegram_notified_at).toBe(null);
   });
 
+  // Achado do usuário (item 76): um sinal SELL de 2 dias atrás ficava
+  // "Pendente"/"Entrada liberada" na aba Verificação para sempre, mesmo
+  // depois do RF já ter flipado pra BUY — a aba Trades só mostra o sinal
+  // mais recente por ativo+timeframe, mas a Verificação nunca marcava as
+  // tarefas antigas como superadas. As duas telas divergiam sem aviso.
+  it('marca uma VerificationTask pending antiga do MESMO ativo+timeframe como superseded quando um sinal mais novo chega', async () => {
+    await blockedScan([makeHighPrioritySignal({ dedup_key: 'sig_vt_old', signal_type: 'SELL' })]);
+    await blockedScan([makeHighPrioritySignal({ dedup_key: 'sig_vt_new', signal_type: 'BUY' })]);
+
+    const tasks = await backend.entities.VerificationTask.filter({});
+    const oldTask = tasks.find(t => t.id === 'sig_vt_old');
+    const newTask = tasks.find(t => t.id === 'sig_vt_new');
+    expect(oldTask.status).toBe('superseded');
+    expect(oldTask.reviewed_at).toBeTruthy();
+    expect(newTask.status).toBe('pending');
+  });
+
+  it('só marca como superseded tarefas do MESMO ativo+timeframe — ativos/timeframes diferentes ficam intocados', async () => {
+    await blockedScan([makeHighPrioritySignal({ dedup_key: 'sig_vt_same_old' })]); // asset1/4h
+    await blockedScan([makeHighPrioritySignal({ dedup_key: 'sig_vt_other_asset', asset_id: 'asset2', symbol: 'ETHUSDT' })]); // asset2/4h
+    await blockedScan([makeHighPrioritySignal({ dedup_key: 'sig_vt_other_tf', timeframe: '1h' })]); // asset1/1h
+    await blockedScan([makeHighPrioritySignal({ dedup_key: 'sig_vt_same_new' })]); // asset1/4h de novo — só este supera o 1º
+
+    const tasks = await backend.entities.VerificationTask.filter({});
+    const byId = Object.fromEntries(tasks.map(t => [t.id, t]));
+    expect(byId.sig_vt_same_old.status).toBe('superseded');
+    expect(byId.sig_vt_other_asset.status).toBe('pending');
+    expect(byId.sig_vt_other_tf.status).toBe('pending');
+    expect(byId.sig_vt_same_new.status).toBe('pending');
+  });
+
   // Codex review (PR #159 follow-up): sem try/catch dedicado, uma falha
   // nesta escrita aditiva propagava e abortava TODO o restante de
   // persistScanResults para o ativo na passada — inclusive a criação da

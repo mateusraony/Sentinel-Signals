@@ -11,6 +11,7 @@ const STATUS_FILTERS = [
   { id: 'pending', label: 'Pendentes' },
   { id: 'reviewed', label: 'Revisadas' },
   { id: 'skipped', label: 'Puladas' },
+  { id: 'superseded', label: 'Superadas' },
 ];
 
 const PRIORITY_FILTERS = [
@@ -24,6 +25,9 @@ const STATUS_BADGE = {
   pending: { label: 'Pendente', color: '#ffd166', bg: 'rgba(255,209,102,0.1)', border: 'rgba(255,209,102,0.25)' },
   reviewed: { label: 'Revisada', color: '#00ff80', bg: 'rgba(0,255,128,0.08)', border: 'rgba(0,255,128,0.2)' },
   skipped: { label: 'Pulada', color: 'rgba(255,255,255,0.4)', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)' },
+  // Marcado automaticamente pelo scanner, não pelo usuário (item 76) — cor
+  // própria pra não parecer uma revisão manual que nunca aconteceu.
+  superseded: { label: 'Superada por sinal novo', color: '#00e5ff', bg: 'rgba(0,229,255,0.06)', border: 'rgba(0,229,255,0.18)' },
 };
 
 // Same age-urgency cue as VerificationWidget — duplicated (not shared) since

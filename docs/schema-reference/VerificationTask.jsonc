@@ -57,13 +57,13 @@
     },
     "status": {
       "type": "string",
-      "enum": ["pending", "reviewed", "skipped"],
+      "enum": ["pending", "reviewed", "skipped", "superseded"],
       "default": "pending",
-      "description": "pending = aguardando revisão humana. reviewed = usuário conferiu e marcou OK. skipped = usuário decidiu pular/ignorar este sinal."
+      "description": "pending = aguardando revisão humana. reviewed = usuário conferiu e marcou OK. skipped = usuário decidiu pular/ignorar este sinal. superseded = marcado automaticamente pelo scanner (persistScanResults) quando um sinal MAIS NOVO do mesmo asset_id+timeframe nasceu — a tarefa antiga não reflete mais o estado atual do ativo (docs/known-risks.md item 76)."
     },
     "reviewed_at": {
       "type": ["string", "null"],
-      "description": "Timestamp de quando status saiu de 'pending' (reviewed ou skipped)"
+      "description": "Timestamp de quando status saiu de 'pending' (reviewed, skipped ou superseded)"
     },
     "notes": {
       "type": "string",

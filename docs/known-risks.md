@@ -7717,3 +7717,80 @@ Mexer nela sem o Bloco 0 fechado repetiria a mesma armadilha do Bloco 1
 
 Só leitura de relatório de backtest já gerado — sem mudança de
 código/comportamento.
+
+## 76. VerificationTask pendente ficava "presa" indefinidamente quando um sinal mais novo do mesmo ativo chegava — corrigido
+
+### Contexto
+
+Usuário reportou incoerência real na produção: o widget "Análise Preditiva"/
+aba Verificação mostrava o FETUSDT como **SELL, "Entrada Liberada", 2 dias
+atrás**, enquanto a aba Trades ("Em Monitoramento") mostrava o MESMO ativo
+como **BUY, 16h atrás**. Duas telas do mesmo painel, mesmo ativo,
+contradizendo uma à outra.
+
+### Achado (lendo o código, antes de qualquer mudança)
+
+- **`Trades.jsx` ("Em Monitoramento") está correto por desenho**:
+  `monitoringMap` (linhas 325-333) sempre mantém só o `SignalEvent` mais
+  recente por `symbol_timeframe` — reflete o estado ATUAL do RF.
+- **`VerificationTask` (Análise Preditiva) nunca teve auto-expiração** — cada
+  sinal de prioridade alta cria UMA tarefa (`persistScanResults`, `scanner.js`),
+  que fica `pending` até o usuário clicar manualmente em revisar/pular. Não
+  existe nenhum código que marque uma tarefa antiga como superada quando um
+  sinal novo (e oposto) chega para o mesmo ativo. Isso já era um gap
+  **conhecido e deliberadamente adiado** na hora de construir a feature
+  (`docs/known-risks.md` item 72: *"Também adiados: ações em lote,
+  auto-expiração de tarefas antigas..."*) — o usuário é quem encontrou a
+  primeira confirmação real disso em produção (o teste manual com dado real
+  nunca tinha sido feito, também já registrado no item 72).
+- **Não é bug do motor de trading**: `VerificationTask` é só um lembrete
+  informativo (`"Informativo — replica as travas do scanner só para
+  conferência manual, não substitui nem altera a decisão real do motor"`),
+  nunca gateia entrada/saída real. O card antigo, mesmo com "ENTRADA
+  LIBERADA", nunca criou uma `TradeOperation` — só ficou visualmente
+  contraditório com a tela que reflete o estado real.
+
+### Correção
+
+`persistScanResults` (`scanner.js`), logo após criar uma `VerificationTask`
+nova com sucesso: busca outras tarefas `pending` do MESMO `asset_id` +
+`timeframe` (mesma chave que `Trades.jsx` já usa para "qual é o sinal atual
+deste ativo") e marca cada uma como `status: 'superseded'`. Filtro só com
+`==` (asset_id/timeframe/status), sem `orderBy` — mas, seguindo o mesmo
+padrão defensivo já usado no resto do `firestore.indexes.json` deste projeto
+(que já define índice composto até para combinações só-de-igualdade, ex.
+`assetStates(asset_id, timeframe)`), adicionado o índice composto
+`verificationTasks(asset_id, timeframe, status)` — **requer deploy manual**
+(`firebase deploy --only firestore:rules,firestore:indexes`, workflow
+`deploy-firestore.yml`, mesmo procedimento do item 72) antes do mecanismo
+funcionar em produção.
+
+**Novo valor de status**: `superseded` (`VerificationTask.status`, também
+`docs/schema-reference/VerificationTask.jsonc`) — distinto de
+`reviewed`/`skipped` (ações do usuário) porque é uma ação do SISTEMA. UI
+(`Verification.jsx`) ganhou aba de filtro "Superadas" e badge própria (cor
+diferente de "Revisada", pra não parecer uma revisão manual que nunca
+aconteceu). O widget do Dashboard (`VerificationWidget.jsx`) não precisou de
+mudança — já filtra só `status === 'pending'`, então uma tarefa superada
+simplesmente para de aparecer como pendência, sem nenhuma mudança de código.
+
+Escopo mantido mínimo, seguindo o mesmo raciocínio já registrado no item 72:
+não apaga a tarefa antiga (mantém histórico), não altera nada da lógica de
+entrada/confirmação, roda no mesmo `try/catch` dedicado que já protege a
+criação da `VerificationTask` (uma falha aqui não pode abortar o motor de
+entrada de outros sinais do mesmo ativo na mesma passada).
+
+### Verificação
+
+908→910 testes (2 novos: uma tarefa antiga do MESMO ativo+timeframe vira
+`superseded` quando a nova chega; tarefas de ativos/timeframes DIFERENTES
+ficam intocadas) + `npm run lint` limpo + `npm run build` + os 3 alvos
+esbuild (`build:scan`/`build:scan-shadow`/`build:backtest`) — todos passando.
+
+**Pendente após o merge**: deploy manual do índice Firestore novo
+(`firebase deploy --only firestore:rules,firestore:indexes` ou disparo do
+workflow `deploy-firestore.yml`) — sem isso, a query de superseding falha
+silenciosamente (mesma classe de erro já vista no item 72: `useQuery`
+engole o erro e devolve array vazio) e as tarefas antigas continuam presas,
+mas SEM regredir o comportamento anterior — o try/catch garante que uma
+falha aqui não trava mais nada.
