@@ -1857,6 +1857,47 @@ real (rodar com o flag ligado e medir) fica para depois do merge, mesmo
 padrão de todo mecanismo experimental anterior — decisão do usuário sobre
 quando rodar.
 
+### Resultado do A/B real (2026-08-12)
+
+Usuário rodou os 2 disparos recomendados (`backtest.yml`, mesma janela 12
+meses, mesmos 7 símbolos, SMC 1h→5m ligado nos 2 — necessário para a cascata
+`1h_5m` sequer existir no baseline) e colou os 2 relatórios completos.
+
+**Combinado (`report.overall`, o número que decide)**: baseline
+(`bloco4-fase1-baseline`, n=116) expectância líquida −0,016R, IC95
+[−0,247; +0,215]; hierárquico (`bloco4-fase1-hierarquico`, n=118) −0,076R,
+IC95 [−0,307; +0,154]. **Os dois individualmente INCONCLUSIVOS** (IC cruza
+zero nos dois) — comparação de 2 pontos estimados, sem teste formal da
+diferença entre os runs (mesma ressalva já registrada no item 68 para não
+repetir o erro corrigido lá): não dá para afirmar que o flag piora nem que
+melhora a expectância combinada com este dado.
+
+**Por cascata**: `4h_15m` foi de +0,060R (n=104) para +0,027R (n=104,
+mesmo n) — queda pequena, dentro do ruído desta amostra, possivelmente
+(hipótese não verificada, não tracei operação a operação) efeito do
+acoplamento de risco (`coupleSiblingRiskOnOpen`) puxando o stop de alguma
+RF já favorável para breakeven quando a perna SMC irmã abriu — 2 vitórias
+viraram derrota (50→48) com o mesmo total. `1h_5m` foi de −0,676R (n=12)
+para −0,845R (n=14) — os dois `sample_too_small` (n<30), mas a direção
+negativa é consistente com o achado já registrado no item 56 (−0,778R) de
+que a cascata SMC 1h→5m tem expectância historicamente ruim, independente
+deste mecanismo.
+
+**Achado mais relevante — o funil de `1h_5m` prova que o slot nunca foi o
+gargalo real desta cascata**: `active_op_exists` (rejeição por slot
+ocupado pela RF nativa) caiu de **4.704 → 30** — confirma mecanicamente que
+a coexistência de slots funciona exatamente como desenhado. Mas o volume
+de operações cresceu pouco (12→14, apenas +2): quase todas as ~4.674
+avaliações liberadas caíram no gargalo de verdade, `no_trigger`
+(12.058→16.502, já dominante nos dois runs). Resolver a disputa de slot não
+resolve o problema de volume da cascata SMC — o próprio gatilho 5m é o
+limitante, não a arbitragem entre cascatas.
+
+**Recomendação**: não ligar `hierarchicalCascadesEnabled` em produção com
+este dado — zero evidência de ganho na expectância combinada. Se a cascata
+SMC 1h→5m for revisitada no futuro, o alvo certo é o gatilho 5m
+(`no_trigger`), não o mecanismo de slot que esta fase construiu.
+
 ## 38. Gate de zona PD da cascata SMC 1h→5m — removido do viés 1h, movido para o gatilho 5m (redesenho do item 35)
 
 Continuação direta do item 35. Pedido do usuário (2026-07-21) após rodar o
