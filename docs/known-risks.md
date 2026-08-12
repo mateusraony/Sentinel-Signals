@@ -7795,7 +7795,7 @@ engole o erro e devolve array vazio) e as tarefas antigas continuam presas,
 mas SEM regredir o comportamento anterior — o try/catch garante que uma
 falha aqui não trava mais nada.
 
-## 76. SMC deixa de ser cascata independente, vira score observacional sobre a RF nativa — implementado, backtest-only
+## 77. SMC deixa de ser cascata independente, vira score observacional sobre a RF nativa — implementado, backtest-only
 
 ### Contexto
 
@@ -7871,6 +7871,54 @@ contra = `against`, sem bloquear a criação; zona contra [perna estreita] =
 fail-open; confirma pelo loop de retry) + `npm run lint` limpo + `npm run
 build` + os 3 alvos esbuild (`build:scan`/`build:scan-shadow`/
 `build:backtest`) + grep de isolamento confirmado.
+
+### Correção pós-merge: perna congelada no instante do sinal, não recalculada no retry (achado do Codex, PR #173)
+
+O Codex revisou o PR **depois de mergeado** e apontou um achado procedente
+(P2, `scanner.js:2791`): a função e os comentários ao redor dela prometiam
+que a perna SMC ficava "ancorada no candle 4h que gerou o sinal" — mas os
+dois pontos de chamada (1ª passada e retry) na verdade reconstruíam a perna
+a partir de `tf4hData.smc`/`tfData4h.smc` e `.lastClose` **ao vivo**, da
+passada ATUAL do scan. Como a janela de retry admite o sinal por até (mas
+não incluindo) 4h, um candle 4h novo pode fechar entre a criação do sinal e
+a confirmação por retry sem o RF ter revertido — nesse caso a passada de
+retry via um candle 4h diferente do que gerou o sinal, reconstruindo uma
+perna diferente e contaminando os grupos `aligned`/`against` do backtest.
+O mesmo problema já tinha sido evitado corretamente pela cascata SMC
+1h→5m (item 38) — perna computada uma vez, persistida em
+`SignalEvent.context.ote_leg_high/low`, nunca recalculada depois — só não
+tinha sido replicado aqui na primeira versão deste mecanismo.
+
+**Importante, para não confundir com outro comportamento do mesmo trecho de
+código**: o retry já usa `tfData4h.lastClose`/`lastCandleTime` como preço de
+ENTRADA de propósito (item 67/PR#147) — um `sig.price_at_signal` velho de
+horas poderia não ser mais executável. Isso continua certo e não mudou. O
+bug era especificamente sobre a PERNA (o range Premium/Discount), um
+conceito diferente que precisa ficar fixo no candle 4h original mesmo
+quando o preço de entrada legitimamente usa dado mais recente.
+
+**Correção**: `scanAsset` agora computa a perna uma única vez, no
+nascimento do sinal RF nativo (`buildOteLeg(r.confirmed.confirmedSignal,
+r.lastClose, r.smc)`, mesmo padrão de `buildOteLeg(signalType, r.lastClose,
+r.smc)` já usado para a cascata SMC), e grava em
+`SignalEvent.context.smc_align_leg_high/low`. `computeSmcAlignmentAtEntry`
+não recebe mais `legBreakClose`+`smc` para reconstruir a perna — recebe
+`legHigh`/`legLow` já prontos, lidos de `signal.context?.smc_align_leg_high/low`
+(1ª passada) ou `sig.context?.smc_align_leg_high/low` (retry). `smc.trend`
+continua sendo lido AO VIVO nos dois call sites, de propósito — só a
+IDENTIDADE da perna foi prometida como congelada; o gate irmão
+`asset.smc_confirm_4h15m` (item 45.5) já reavalia trend/zona a cada retry
+por design, e essa parte não muda.
+
+Novo teste de regressão (`scannerStateMachine.test.js`, describe
+`smcAlignmentScoreEnabled`): 1ª passada cria o sinal com uma perna
+`[50, 300]` (`aligned`); retry roda com `results['4h'].smc` DIFERENTE
+(perna `[90, 100]`, que sozinha classificaria a entrada como `against`) —
+o resultado esperado, e verificado, continua `aligned`, provando que o
+retry usa a perna persistida no `context` e não a recalcula ao vivo.
+Suíte inteira: 920/920 (7 no describe do item, era 6) + `npm run lint` +
+`npm run build` + os 3 alvos esbuild + grep de isolamento — todos
+confirmados de novo depois da correção.
 
 ### Próximo passo (fora deste registro)
 

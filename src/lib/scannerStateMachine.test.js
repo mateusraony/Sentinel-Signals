@@ -4573,7 +4573,7 @@ describe('Bloco 4 Fase 1 — operações independentes por cascata (hierarchical
   });
 });
 
-// docs/known-risks.md item 76 — pedido do usuário: parar de tratar a
+// docs/known-risks.md item 77 — pedido do usuário: parar de tratar a
 // cascata SMC como uma fonte de operação independente (item 75 já mostrou
 // que ela é código morto na prática) e, em vez disso, usar a estrutura SMC
 // só como um SCORE observacional sobre a RF nativa — nunca um gate, nunca
@@ -4582,7 +4582,13 @@ describe('Bloco 4 Fase 1 — operações independentes por cascata (hierarchical
 // PERNA do próprio rompimento (buildOteLeg/classifyZone, mesmo fix do item
 // 38), não a janela genérica de 20 velas — que seria tautológica pra um
 // candle que acabou de romper estrutura.
-describe('smcAlignmentScoreEnabled — SMC como score observacional da RF nativa (docs/known-risks.md item 76)', () => {
+//
+// smc_align_leg_high/low em `makeRfSignal`'s context simulam o que
+// scanAsset agora grava (uma vez, no nascimento do sinal, via buildOteLeg)
+// — os testes abaixo lêem esses valores como o código real lê, em vez de
+// recalcular a perna a partir do `smc` ao vivo de `results['4h']` (o bug
+// que o Codex apontou pós-merge no PR #173, corrigido aqui).
+describe('smcAlignmentScoreEnabled — SMC como score observacional da RF nativa (docs/known-risks.md item 77)', () => {
   afterEach(() => { fetchCandles.mockReset(); });
 
   // uptrendCandles(60, 100, 1) fecha em 100+60=160 na última vela (todas
@@ -4592,12 +4598,16 @@ describe('smcAlignmentScoreEnabled — SMC como score observacional da RF nativa
   const ALIGNED_15M = () => uptrendCandles(60, 100, 1);
   const ENTRY_PRICE = 160;
 
+  // Perna default [50, 300] (mesma da 1a passada do sinal 4h que gerou
+  // lastClose=300/lastSwingLow=50 nos testes abaixo): mid=175, eqBand=12.5,
+  // eqTop=187.5, eqBtm=162.5. ENTRY_PRICE=160 < eqBtm -> 'discount' ->
+  // zoneOk=true pra BUY.
   function makeRfSignal(overrides = {}) {
     return {
       symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
       timeframe: '4h', source: 'range_filter', dedup_key: 'sig_rf_smc_align',
       price_at_signal: 100, candle_time: new Date(0).toISOString(),
-      context: { score: 80, rf_value: 100 },
+      context: { score: 80, rf_value: 100, smc_align_leg_high: 300, smc_align_leg_low: 50 },
       ...overrides,
     };
   }
@@ -4648,7 +4658,10 @@ describe('smcAlignmentScoreEnabled — SMC como score observacional da RF nativa
     // Perna [90, 100]: mid=95, eqBand=0.5, eqTop=95.5. ENTRY_PRICE=160 >> eqTop -> 'premium' -> zoneOk=false pra BUY.
     const results = { '4h': makeTfData({ lastClose: 100, smc: { trend: 1, lastBull: {}, lastBear: {}, pdZone: 'discount', lastSwingHigh: null, lastSwingLow: 90 } }) };
 
-    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeRfSignal({ context: { score: 80, rf_value: 100, smc_align_leg_high: 100, smc_align_leg_low: 90 } })],
+    });
 
     const ops = await backend.entities.TradeOperation.filter({});
     expect(ops).toHaveLength(1);
@@ -4660,7 +4673,10 @@ describe('smcAlignmentScoreEnabled — SMC como score observacional da RF nativa
     const pineConfig = makePineConfig({ useADX: false, useChop: false, smcAlignmentScoreEnabled: true });
     const results = { '4h': makeTfData({ lastClose: 300, smc: { trend: 1, lastBull: {}, lastBear: {}, pdZone: 'discount', lastSwingHigh: null, lastSwingLow: null } }) };
 
-    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeRfSignal({ context: { score: 80, rf_value: 100, smc_align_leg_high: 300, smc_align_leg_low: null } })],
+    });
 
     const ops = await backend.entities.TradeOperation.filter({});
     expect(ops).toHaveLength(1);
@@ -4681,6 +4697,39 @@ describe('smcAlignmentScoreEnabled — SMC como score observacional da RF nativa
     fetchCandles.mockReset();
     fetchCandles.mockResolvedValue(ALIGNED_15M());
     await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].smc_alignment_at_entry).toBe('aligned');
+  });
+
+  it('perna SMC fica congelada no context do sinal — retry com results["4h"].smc diferente (novo candle 4h fechou entre as passadas) NÃO recalcula a perna ao vivo (docs/known-risks.md item 77, achado do Codex no PR #173)', async () => {
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, smcAlignmentScoreEnabled: true });
+
+    // Passada 1: 15m ainda não confirma — sinal persiste como SignalEvent
+    // com context.smc_align_leg_high/low = [50, 300] (default de
+    // makeRfSignal, mesma perna do teste "aligned").
+    fetchCandles.mockResolvedValue(downtrendCandles(60, 100, 1));
+    await persistScanResults({
+      ...makeScanResult({ results: { '4h': makeTfData({ lastClose: 300, smc: { trend: 1, lastBull: {}, lastBear: {}, pdZone: 'discount', lastSwingHigh: null, lastSwingLow: 50 } }) }, pineConfig }),
+      newSignals: [makeRfSignal()],
+    });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+
+    // Passada 2 (retry): results['4h'].smc mudou — simula um novo candle 4h
+    // fechado entre as duas passadas, sem o RF ter revertido (o cenário que
+    // o Codex apontou: a janela de retry admite o sinal por até 4h). Essa
+    // perna [90, 100] sozinha classificaria ENTRY_PRICE=160 como 'premium'
+    // -> against (mesmos números do teste "zona contra" acima). Se o retry
+    // recalculasse a perna a partir do smc AO VIVO (o bug), o resultado
+    // viraria 'against'; como a perna vem do context congelado no sinal
+    // (ainda [50,300]), o resultado tem que continuar 'aligned'.
+    fetchCandles.mockReset();
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    await persistScanResults({
+      ...makeScanResult({ results: { '4h': makeTfData({ lastClose: 100, smc: { trend: 1, lastBull: {}, lastBear: {}, pdZone: 'discount', lastSwingHigh: null, lastSwingLow: 90 } }) }, pineConfig }),
+      newSignals: [],
+    });
 
     const ops = await backend.entities.TradeOperation.filter({});
     expect(ops).toHaveLength(1);

@@ -1,4 +1,4 @@
-// docs/known-risks.md item 76 — tripwire de segurança, mesmo padrão do
+// docs/known-risks.md item 77 — tripwire de segurança, mesmo padrão do
 // hierarchicalCascadeTripwire.test.js: pineConfig.smcAlignmentScoreEnabled
 // tem que existir SÓ em scripts/backtestPineConfig.js. Se essa chave algum
 // dia aparecer como uma entrada de DEFAULTS/SYNCED_STRATEGY_KEYS em

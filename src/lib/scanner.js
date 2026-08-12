@@ -757,7 +757,7 @@ async function recordRejection(sig, cascade, reason, entryFunnelOutcomes) {
   }
 }
 
-// docs/known-risks.md item 76 — observational-only counterpart to the
+// docs/known-risks.md item 77 — observational-only counterpart to the
 // existing GATE `asset.smc_confirm_4h15m` (scanner.js, both call sites just
 // below): that gate gets it right in spirit (SMC structure should inform the
 // RF native cascade) but wrong in mechanics for two reasons — (1) it BLOCKS
@@ -773,21 +773,28 @@ async function recordRejection(sig, cascade, reason, entryFunnelOutcomes) {
 // helps or is "just more filter in the way". Never called when the flag is
 // off; caller owns that gate.
 //
-// `legBreakClose` (the 4h signal candle's own close) anchors the leg's top
-// (BUY) or bottom (SELL) edge — same convention as buildOteLeg's existing
-// caller. `entryPrice` (the REAL 15m confirmation price, a later and
-// independent value from `legBreakClose`) is what gets classified against
-// that leg. Using `legBreakClose` for BOTH would recreate the exact
-// tautology item 35/38 already fixed elsewhere: for BUY, buildOteLeg sets
-// legHigh = legBreakClose, so classifying legBreakClose itself against a
-// range whose own top IS legBreakClose would land in "premium" by
-// construction, every single time, regardless of any real market condition.
-function computeSmcAlignmentAtEntry(signalType, smc, legBreakClose, entryPrice) {
+// `legHigh`/`legLow` come from `SignalEvent.context.smc_align_leg_high/low`
+// — built ONCE via buildOteLeg at the instant the 4h signal was born (same
+// candle's close anchors the leg's top (BUY) or bottom (SELL) edge, same
+// convention as buildOteLeg's other caller), never rebuilt here from
+// whatever the CURRENT scan pass's live smc/lastClose happen to be. Codex
+// review (PR #173, post-merge, docs/known-risks.md item 77): a retry can
+// land after a NEWER 4h candle has closed without RF reversing, so the
+// live smc/lastClose can silently describe a different candle than the one
+// that fired the signal — rebuilding the leg from it would contaminate the
+// aligned/against groups despite this function's contract. `entryPrice`
+// (the REAL 15m confirmation price, a later and independent value from the
+// leg anchors) is what gets classified against that frozen leg — using the
+// same close that built the leg for BOTH would recreate the exact
+// tautology item 35/38 already fixed elsewhere. `smc.trend` is read LIVE at
+// the call site on purpose — only the leg's identity was ever promised to
+// be frozen; trend re-evaluation every retry matches the sibling gate
+// `asset.smc_confirm_4h15m` (item 45.5)'s existing behavior.
+function computeSmcAlignmentAtEntry(signalType, smc, legHigh, legLow, entryPrice) {
   if (!smc) return 'unavailable';
   const trendAligned = signalType === 'BUY' ? smc.trend === 1 : smc.trend === -1;
-  const leg = buildOteLeg(signalType, legBreakClose, { lastSwingHigh: smc.lastSwingHigh, lastSwingLow: smc.lastSwingLow });
-  if (leg.legHigh == null || leg.legLow == null) return 'unavailable';
-  const { zone } = classifyZone(entryPrice, leg.legHigh, leg.legLow);
+  if (legHigh == null || legLow == null) return 'unavailable';
+  const { zone } = classifyZone(entryPrice, legHigh, legLow);
   if (zone == null) return 'unavailable';
   const zoneOk = signalType === 'BUY' ? zone !== 'premium' : zone !== 'discount';
   return trendAligned && zoneOk ? 'aligned' : 'against';
@@ -1394,6 +1401,16 @@ export async function scanAsset(asset) {
         strengthResult.strength, strengthResult.alignment, strengthResult.reasons
       );
 
+      // docs/known-risks.md item 77 — Codex review on PR #173 (post-merge):
+      // computeSmcAlignmentAtEntry's leg must be frozen at the instant THIS
+      // signal is born, same discipline as ote_leg_high/low below for the
+      // SMC 1h->5m cascade (item 38). Only tf==='4h' feeds the RF-native
+      // (4h_15m) cascade that consumes this; r.smc is only populated for
+      // tf 4h/1h, no extra fetch cost.
+      const smcAlignLeg = (tf === '4h' && r.smc)
+        ? buildOteLeg(r.confirmed.confirmedSignal, r.lastClose, r.smc)
+        : { legHigh: null, legLow: null };
+
       newSignals.push({
         asset_id: asset.id,
         symbol: asset.symbol,
@@ -1418,6 +1435,8 @@ export async function scanAsset(asset) {
           tf_1h_direction: statesForAlignment['1h']?.rf_direction || 0,
           score: strengthResult.score,
           reasons: strengthResult.reasons,
+          smc_align_leg_high: smcAlignLeg.legHigh,
+          smc_align_leg_low: smcAlignLeg.legLow,
         },
         dedup_key: `${asset.symbol}_${tf}_${r.confirmed.confirmedSignal}_range_filter_${r.lastCandleTime}`,
       });
@@ -2258,7 +2277,7 @@ export async function persistScanResults(scanResult) {
               if (confirmed15m.confirmed) {
                 const opData = buildTradeOpData(signal, tf4hData, pineConfig, confirmed15m);
                 if (pineConfig.smcAlignmentScoreEnabled) {
-                  opData.smc_alignment_at_entry = computeSmcAlignmentAtEntry(signal.signal_type, tf4hData.smc, tf4hData.lastClose, opData.entry_price);
+                  opData.smc_alignment_at_entry = computeSmcAlignmentAtEntry(signal.signal_type, tf4hData.smc, signal.context?.smc_align_leg_high, signal.context?.smc_align_leg_low, opData.entry_price);
                 }
                 if (retestGate) stampRetestFields(opData, retestGate);
                 const minRR = pineConfig.minRR ?? 1.2;
@@ -2788,7 +2807,7 @@ export async function persistScanResults(scanResult) {
 
     const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed);
     if (pineConfig.smcAlignmentScoreEnabled) {
-      opData.smc_alignment_at_entry = computeSmcAlignmentAtEntry(sig.signal_type, tfData4h.smc, tfData4h.lastClose, opData.entry_price);
+      opData.smc_alignment_at_entry = computeSmcAlignmentAtEntry(sig.signal_type, tfData4h.smc, sig.context?.smc_align_leg_high, sig.context?.smc_align_leg_low, opData.entry_price);
     }
     if (retestGate) stampRetestFields(opData, retestGate);
     const minRR = pineConfig.minRR ?? 1.2;
