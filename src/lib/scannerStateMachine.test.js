@@ -4572,3 +4572,118 @@ describe('Bloco 4 Fase 1 — operações independentes por cascata (hierarchical
     expect(logs.some(l => l.details?.reason === 'duplicate_active_ops_detected')).toBe(true);
   });
 });
+
+// docs/known-risks.md item 76 — pedido do usuário: parar de tratar a
+// cascata SMC como uma fonte de operação independente (item 75 já mostrou
+// que ela é código morto na prática) e, em vez disso, usar a estrutura SMC
+// só como um SCORE observacional sobre a RF nativa — nunca um gate, nunca
+// muda entry_score. Corrige de propósito o defeito latente do gate
+// existente `asset.smc_confirm_4h15m` (item 45.5): a zona é medida contra a
+// PERNA do próprio rompimento (buildOteLeg/classifyZone, mesmo fix do item
+// 38), não a janela genérica de 20 velas — que seria tautológica pra um
+// candle que acabou de romper estrutura.
+describe('smcAlignmentScoreEnabled — SMC como score observacional da RF nativa (docs/known-risks.md item 76)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  // uptrendCandles(60, 100, 1) fecha em 100+60=160 na última vela (todas
+  // isClosed:true) — check15mConfirmation usa exatamente esse close como
+  // entryPrice. Fixo e determinístico, usado pra escolher os limites da
+  // perna (lastSwingHigh/lastSwingLow) em cada caso abaixo.
+  const ALIGNED_15M = () => uptrendCandles(60, 100, 1);
+  const ENTRY_PRICE = 160;
+
+  function makeRfSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_rf_smc_align',
+      price_at_signal: 100, candle_time: new Date(0).toISOString(),
+      context: { score: 80, rf_value: 100 },
+      ...overrides,
+    };
+  }
+
+  it('flag desligado (default): smc_alignment_at_entry ausente da operação', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false }); // smcAlignmentScoreEnabled ausente -> falsy
+    const results = { '4h': makeTfData({ lastClose: 300, smc: { trend: 1, lastBull: {}, lastBear: {}, pdZone: 'discount', lastSwingHigh: null, lastSwingLow: 50 } }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].smc_alignment_at_entry).toBeUndefined();
+  });
+
+  it('flag ligado, tendência e zona a favor -> aligned, sem mudar entry_score nem bloquear a operação', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, smcAlignmentScoreEnabled: true });
+    // Perna [50, 300]: mid=175, eqBand=12.5, eqTop=187.5, eqBtm=162.5.
+    // ENTRY_PRICE=160 < eqBtm -> 'discount' -> zoneOk=true pra BUY.
+    const results = { '4h': makeTfData({ lastClose: 300, smc: { trend: 1, lastBull: {}, lastBear: {}, pdZone: 'discount', lastSwingHigh: null, lastSwingLow: 50 } }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].entry_price).toBe(ENTRY_PRICE);
+    expect(ops[0].smc_alignment_at_entry).toBe('aligned');
+    expect(ops[0].entry_score).toBe(80); // idêntico ao score da RF, nunca mexido pelo SMC
+  });
+
+  it('flag ligado, tendência SMC contra o sinal -> against (mesma zona favorável do teste "aligned")', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, smcAlignmentScoreEnabled: true });
+    const results = { '4h': makeTfData({ lastClose: 300, smc: { trend: -1, lastBull: {}, lastBear: {}, pdZone: 'discount', lastSwingHigh: null, lastSwingLow: 50 } }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1); // observacional: nunca bloqueia a criação
+    expect(ops[0].smc_alignment_at_entry).toBe('against');
+  });
+
+  it('flag ligado, tendência a favor mas zona contra (perna estreita, ENTRY_PRICE cai em premium) -> against', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, smcAlignmentScoreEnabled: true });
+    // Perna [90, 100]: mid=95, eqBand=0.5, eqTop=95.5. ENTRY_PRICE=160 >> eqTop -> 'premium' -> zoneOk=false pra BUY.
+    const results = { '4h': makeTfData({ lastClose: 100, smc: { trend: 1, lastBull: {}, lastBear: {}, pdZone: 'discount', lastSwingHigh: null, lastSwingLow: 90 } }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].smc_alignment_at_entry).toBe('against');
+  });
+
+  it('flag ligado, pivôs de estrutura ainda não formados (lastSwingLow ausente) -> unavailable, fail-open (nunca bloqueia)', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, smcAlignmentScoreEnabled: true });
+    const results = { '4h': makeTfData({ lastClose: 300, smc: { trend: 1, lastBull: {}, lastBear: {}, pdZone: 'discount', lastSwingHigh: null, lastSwingLow: null } }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].smc_alignment_at_entry).toBe('unavailable');
+  });
+
+  it('confirma pelo loop de retry (não só na 1a passada)', async () => {
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, smcAlignmentScoreEnabled: true });
+    const results = { '4h': makeTfData({ lastClose: 300, smc: { trend: 1, lastBull: {}, lastBear: {}, pdZone: 'discount', lastSwingHigh: null, lastSwingLow: 50 } }) };
+
+    // Passada 1: 15m ainda não confirma (candle desalinhado) — sinal
+    // persiste como SignalEvent, sem op.
+    fetchCandles.mockResolvedValue(downtrendCandles(60, 100, 1));
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+
+    // Passada 2 (retry): 15m agora alinha — confirma via o loop de retry.
+    fetchCandles.mockReset();
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].smc_alignment_at_entry).toBe('aligned');
+  });
+});
