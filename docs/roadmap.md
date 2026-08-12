@@ -90,6 +90,16 @@ O que ocupava este bloco era rodar 12 meses × 20 símbolos para sair de 109
 operações. Feito — 344 operações, run 30278687522. Fica registrado o raciocínio
 porque ele continua valendo para qualquer run futuro.
 
+**A carteira de 20 símbolos, por extenso** (nunca tinha sido listada por
+extenso neste doc — só citada por contagem; recuperada em 2026-08-12 do log
+real do run 30278687522, seção "DE ONDE VEM O RESULTADO — por símbolo"):
+`BTCUSDT, ETHUSDT, BNBUSDT, ADAUSDT, XRPUSDT, SOLUSDT, AVAXUSDT, LINKUSDT,
+DOTUSDT, ARBUSDT, OPUSDT, SUIUSDT, NEARUSDT, AAVEUSDT, ONDOUSDT, FETUSDT,
+PENDLEUSDT, ZROUSDT, DYDXUSDT, PAXGUSDT`. Relevante para qualquer teste
+futuro que dependa de dado "genuinamente não examinado" (item 73) — símbolo
+fora desta lista (e fora do default de 7 do `backtest.yml`) nunca entrou em
+nenhum backtest deste projeto.
+
 ### Por que ampliar em ATIVOS e não em anos
 
 A primeira ideia foi janela de 4 anos. Foi **descartada a pedido do usuário, com
