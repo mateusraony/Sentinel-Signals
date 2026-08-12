@@ -7627,3 +7627,69 @@ legítima).
 
 Só análise de relatórios de backtest já gerados (sem mudança de
 código/comportamento) — não precisa rodar lint/test/build.
+
+## 75. Diagnóstico do funil da cascata SMC (`entry-funnel-diagnostico`) — hipótese do item 45.2 refutada como causa principal (2026-08-12)
+
+### Contexto
+
+Bloco 0.1, item residual (`docs/roadmap.md`): o funil de confirmação já
+estava instrumentado (itens 49/50), faltava rodar 1 backtest
+(`trial_label: entry-funnel-diagnostico`) pra ler a distribuição real de
+motivos de rejeição da cascata SMC 1h→5m e confirmar ou descartar a
+hipótese do item 45.2 (tensão geométrica entre gatilho e zona). Rodei
+**BTCUSDT sozinho**, 2025-01-01→2026-08-12 (~19,5 meses) — mesmo símbolo e
+início de janela do run original do item 45.1 (que mediu "75 eventos de
+estrutura → 0 operações"), agora com o código atual (já com as correções
+de instrumentação dos itens 49/50, que na época do 45.1 não existiam).
+
+### Resultado
+
+`smcDiagnostics`: 78 eventos de estrutura, 78 sinais confirmados no viés
+1h, 0 rejeitados por zona no viés, **0 operações criadas** — o "código
+morto" do item 45.1 se confirma de novo (janela um pouco maior, 78 vs 75).
+
+Com a instrumentação corrigida, dá pra abrir a distribuição real de
+rejeição — `smcTrigger` (por sinal, dedupado, n=57) e `entryFunnel['1h_5m']`
+(por avaliação, agregado sobre toda a janela de retry, excluindo
+`active_op_exists`, que é ocupação de slot, não rejeição do gatilho):
+
+| Motivo | `smcTrigger` (por sinal, n=57) | `entryFunnel` (por avaliação, n=2.701) |
+|---|---|---|
+| `no_trigger` | 53 (93,0%) | 2.519 (93,3%) |
+| `ote_zone_unfavorable` | 3 (5,3%) | 87 (3,2%) |
+| `wrong_direction_trigger` | 1 (1,8%) | 95 (3,5%) |
+
+`smcTrigger.confirmed: 0`, `rejected: 57` — nenhum dos 57 sinais avaliados
+confirmou operação nesta janela, nas duas granularidades de contagem.
+
+### Leitura
+
+**Fato**: o motivo dominante de rejeição, por larga margem (93% nas duas
+contagens independentes), é `no_trigger` — o gatilho de 5m
+(`check5mSmcConfirmation`, sweep ou BOS/CHoCH com `swingLen=10`, precisa
+disparar exatamente na última barra fechada daquela passada) **nunca
+dispara** dentro da janela de retry de 4h (48 candles de 5m) para 93% dos
+sinais. `ote_zone_unfavorable` — a hipótese do item 45.2 — responde por
+só 3-5% das rejeições.
+
+**Conclusão sobre a hipótese do item 45.2**: **refutada como causa
+principal.** Não é mecanismo inexistente (as 3-5% de rejeições por zona são
+reais, item 45.2 estava certo sobre o mecanismo existir), mas não é a causa
+dominante do "código morto". A causa dominante é outra e mais simples: o
+próprio gatilho de 5m — evento pontual, limiar local (`swingLen=10`,
+~50min), avaliado só na última barra fechada de cada passada — é raro
+demais para disparar dentro da janela de retry na grande maioria dos
+casos. Não é "dispara mas a zona rejeita"; é "quase nunca dispara".
+
+**Fora de escopo aqui** (diagnóstico, não mudança de código — Bloco 0
+continua sendo o gate pra calibrar/redesenhar qualquer mecanismo): ajustar
+o gatilho 5m (relaxar `swingLen`, ampliar a janela de avaliação, trocar de
+evento pontual pra estado, etc.) seria mudança de comportamento real na
+cascata SMC — que já tem expectância negativa medida (item 56, −0,778R).
+Mexer nela sem o Bloco 0 fechado repetiria a mesma armadilha do Bloco 1
+(calibrar sobre base sem edge demonstrado).
+
+### Verificação
+
+Só leitura de relatório de backtest já gerado — sem mudança de
+código/comportamento.

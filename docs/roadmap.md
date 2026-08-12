@@ -170,17 +170,19 @@ E o achado que sobrevive a tudo isso é de regime, não de motor: a janela intei
 foi um bear market (item 46.1), o que explica BUY × SELL sem defeito nenhum e
 manda a decisão para o Bloco 0 acima.
 
-**Continua aberto deste bloco**: a cascata SMC é **código morto na prática** —
-75 eventos de estrutura → 0 operações (item 45.1). Isso é **medição**. A causa
-provável é a tensão geométrica entre gatilho e zona no candle de 5m (item 45.2),
-mas isso é **hipótese**: o gatilho de 5m cruza um pivô local, não o `legHigh`
-fixo de 1h, então as duas condições são negativamente correlacionadas, não
-excludentes. O funil de confirmação (RF e SMC) já está instrumentado (item
-49, `last_rejection_reason` + seção `entryFunnel` no backtest) — falta rodar
-UM backtest (`trial_label: entry-funnel-diagnostico`) pra ler a distribuição
-real de motivos de rejeição e confirmar ou descartar a hipótese do item 45.2.
-Depende do Bloco 0: se o motor não tiver vantagem em regime nenhum, consertar
-a cascata SMC é ampliar um gerador de operações sem vantagem.
+**Diagnóstico do item residual — RODADO e RESOLVIDO (item 75,
+2026-08-12).** A cascata SMC continua **código morto na prática** — 78
+eventos de estrutura → 0 operações (BTCUSDT, ~19,5 meses, mesma medição
+do item 45.1, agora com instrumentação corrigida). Mas a hipótese do item
+45.2 (tensão geométrica entre gatilho e zona) foi **refutada como causa
+principal**: `ote_zone_unfavorable` explica só 3-5% das rejeições. A causa
+dominante (93%) é `no_trigger` — o próprio gatilho de 5m (evento pontual,
+`swingLen=10`) quase nunca dispara dentro da janela de retry de 4h.
+Consertar isso (relaxar o gatilho, mudar de evento pontual pra estado,
+etc.) seria mudança de comportamento real — e a cascata já tem expectância
+negativa medida (item 56, −0,778R). **Depende do Bloco 0**: se o motor não
+tiver vantagem em regime nenhum, consertar a cascata SMC é ampliar um
+gerador de operações sem vantagem — segue sem ação até o Bloco 0 fechar.
 
 ---
 
