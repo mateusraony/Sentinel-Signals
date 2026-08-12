@@ -7570,40 +7570,48 @@ deveria dar mais poder estatístico que 3 testes fragmentados). Sem
 correção de Bonferroni adicional aqui: é 1 teste pooled pré-desenhado, não
 N comparações.
 
-### BUY vs. SELL por janela — o padrão de 5 medições anteriores NÃO se replicou
+### BUY vs. SELL por janela — nenhuma confirmação nova, sem evidência de que o padrão anterior "quebrou"
 
 Computado direto de `overall.curve` (por operação, filtrado por `op.side`):
 
 | Janela | BUY | SELL |
 |---|---|---|
-| 2023-07→2024-07 | +0,335R (n=13, IC cruza zero) | **−0,039R** (n=16, IC cruza zero) |
+| 2023-07→2024-07 | +0,335R (n=13, IC cruza zero) | −0,039R (n=16, IC cruza zero) |
 | Alta 2024-07→2025-07 | +0,456R (n=16, IC cruza zero) | +0,094R (n=10, IC cruza zero) |
 | Baixa 2025-07→2026-07 | **−0,552R (n=21, IC95 [-0,965; -0,139] — não cruza zero)** | +0,243R (n=17, IC cruza zero) |
 
 Nenhum dos 3 desfechos pré-registrados do Bloco 0 bate integralmente (não é
 puramente direcional — a janela "alta" tem os dois lados positivos; não é
 positivo nas 3 janelas — a "baixa" é líquida negativa; não é negativo nas
-3 — duas das três são líquidas positivas). **Achado mais importante**: o
-padrão "SELL sempre positivo" que se sustentou em 5 medições anteriores
-(item 48/71, todas na carteira original de 7/20 símbolos) **não se repete**
-na janela 2023-07→2024-07 com LTC/DOGE — SELL veio levemente negativo e BUY
-positivo, o oposto do padrão. A janela "baixa" reproduz parcialmente o
-padrão de regime (BUY cai forte, SELL segura), mas com amostra muito
-pequena por lado (n=17-21) para confirmar sozinha.
+3 — duas das três são líquidas positivas).
+
+**Correção (achado do Codex, PR #169)**: a versão original desta seção
+tratava o SELL de 2023-07→2024-07 (−0,039R) como prova de que o padrão
+"SELL sempre positivo" (5 medições anteriores, item 48/71) "não se
+repete"/"quebrou". **Isso superclama o dado.** Com n=16 e IC95 cruzando
+zero, −0,039R é compatível tanto com um efeito SELL real positivo (que
+esta amostra pequena não teve poder pra detectar) quanto com ausência de
+efeito — o sinal do ponto estimado sozinho não estabelece não-replicação.
+A leitura correta: **esta fatia é inconclusiva**, ponto — não é evidência
+a favor do padrão anterior, mas também não é evidência contra. A janela
+"baixa" tem um sinal mais forte no lado BUY (IC não cruza zero), mas com
+n=17-21 por lado nas 3 janelas, nenhum corte aqui tem poder suficiente
+para confirmar ou refutar o padrão SELL sozinho.
 
 ### Leitura (fato × hipótese × recomendação)
 
 **Fato**: com dado genuinamente novo, nem o teste pooled combinado nem
-nenhuma das 3 janelas isoladas confirma vantagem do motor. **Fato**: o
-padrão de SELL consistentemente positivo, que motivou o item 71, não se
-replicou de forma limpa nesta amostra nova — quebrou numa das 3 janelas.
+nenhuma das 3 janelas isoladas confirma vantagem do motor — todas
+inconclusivas (IC cruza zero ou amostra pequena demais).
 
-**Hipótese (não confirmada, amostra pequena demais para separar de
-ruído)**: o padrão SELL-favorável medido anteriormente pode ser mais
-específico à cesta original de ativos (DeFi/L2/AI, forte correlação com
-BTC/altcoin beta) do que uma propriedade geral do motor — mas 2 símbolos
-não bastam para decidir isso; seria preciso um walk-forward com mais
-pares novos para ter poder estatístico real.
+**Hipótese (não confirmada — nem por este teste, nem pelo teste original)**:
+o padrão SELL-favorável medido anteriormente pode ser mais específico à
+cesta original de ativos (DeFi/L2/AI, forte correlação com BTC/altcoin
+beta) do que uma propriedade geral do motor. Este walk-forward não
+confirma essa hipótese nem a descarta — só não a reforça: nenhuma das 3
+janelas novas produziu uma 6ª medição SELL positiva e conclusiva. Seria
+preciso um walk-forward com mais pares novos (poder estatístico real, não
+2 símbolos) para decidir isso de qualquer jeito.
 
 **Recomendação**: Bloco 0 continua **em aberto**. Este teste não fecha a
 pergunta central — nem confirma, nem refuta "o motor tem vantagem" — mas
