@@ -1882,23 +1882,51 @@ export async function persistScanResults(scanResult) {
           telegram_notified: false,
           telegram_notified_at: null,
         });
-        if (verificationCreated.created && isTelegramConfigured()) {
-          // Fire-and-forget, como notifyNewSignal acima — NÃO aguardado,
-          // para não atrasar os gates de confirmação de entrada
-          // (check15mConfirmation/check5mSmcConfirmation) que rodam logo
-          // depois neste mesmo loop com uma chamada de rede ao Telegram.
-          // telegram_notified só deve significar "de fato enviado", não
-          // "tentaríamos enviar" (Codex review: o valor anterior gravava
-          // true mesmo quando o filtro de evento/score/timeframe descartava
-          // o envio, ou quando send() engolia uma falha de rede) — por isso
-          // o update fica condicionado ao retorno real de notifyVerificationTask,
-          // só que de forma assíncrona/eventual em vez de bloquear a passada.
-          notifyVerificationTask(signal, asset)
-            .then((delivered) => delivered && backend.entities.VerificationTask.update(verificationCreated.doc.id, {
-              telegram_notified: true,
-              telegram_notified_at: new Date().toISOString(),
-            }))
-            .catch((e) => logWarn('scanner', `Falha ao notificar/gravar entrega da tarefa de verificação de ${signal.symbol}`, { error: e.message, dedup_key: signal.dedup_key }));
+        if (verificationCreated.created) {
+          // Marca qualquer tarefa 'pending' MAIS ANTIGA do mesmo ativo+timeframe
+          // como 'superseded' — sem isso, um sinal SELL de 2 dias atrás ficava
+          // "Pendente"/"Entrada liberada" na aba Verificação para sempre, mesmo
+          // depois do RF já ter flipado pra BUY (achado do usuário, item 76):
+          // a aba Trades sempre mostra só o sinal MAIS RECENTE por
+          // símbolo+timeframe (Trades.jsx:325-333), mas a Verificação nunca
+          // marcava as tarefas antigas como superadas — as duas telas
+          // divergiam sem nenhum aviso visual do porquê. Mesma chave
+          // (asset_id + timeframe, não por cascata/source) que Trades.jsx já
+          // usa para "qual sinal é o atual" deste ativo. Filtro só com `==`
+          // (sem orderBy) não precisa de índice composto novo — diferente dos
+          // dois casos do item 72 (que combinavam igualdade com orderBy).
+          const stalePending = await backend.entities.VerificationTask.filter({
+            asset_id: signal.asset_id,
+            timeframe: signal.timeframe,
+            status: 'pending',
+          });
+          await Promise.all(
+            stalePending
+              .filter((t) => t.id !== verificationCreated.doc.id)
+              .map((t) => backend.entities.VerificationTask.update(t.id, {
+                status: 'superseded',
+                reviewed_at: new Date().toISOString(),
+              }))
+          );
+
+          if (isTelegramConfigured()) {
+            // Fire-and-forget, como notifyNewSignal acima — NÃO aguardado,
+            // para não atrasar os gates de confirmação de entrada
+            // (check15mConfirmation/check5mSmcConfirmation) que rodam logo
+            // depois neste mesmo loop com uma chamada de rede ao Telegram.
+            // telegram_notified só deve significar "de fato enviado", não
+            // "tentaríamos enviar" (Codex review: o valor anterior gravava
+            // true mesmo quando o filtro de evento/score/timeframe descartava
+            // o envio, ou quando send() engolia uma falha de rede) — por isso
+            // o update fica condicionado ao retorno real de notifyVerificationTask,
+            // só que de forma assíncrona/eventual em vez de bloquear a passada.
+            notifyVerificationTask(signal, asset)
+              .then((delivered) => delivered && backend.entities.VerificationTask.update(verificationCreated.doc.id, {
+                telegram_notified: true,
+                telegram_notified_at: new Date().toISOString(),
+              }))
+              .catch((e) => logWarn('scanner', `Falha ao notificar/gravar entrega da tarefa de verificação de ${signal.symbol}`, { error: e.message, dedup_key: signal.dedup_key }));
+          }
         }
       } catch (e) {
         logWarn('scanner', `Falha ao criar tarefa de verificação para ${signal.symbol}`, { error: e.message, dedup_key: signal.dedup_key });
