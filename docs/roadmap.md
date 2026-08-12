@@ -309,18 +309,29 @@ Registrado em "Fora de escopo, com justificativa" do item 44:
 
 ---
 
-## Bloco 4 — decisão de arquitetura, DESTRAVADA pelo usuário (2026-08-10)
+## Bloco 4 — Fase 1 IMPLEMENTADA, TESTADA e A/B FECHADO (2026-08-12)
 
-**Cascata 1D / operações independentes por timeframe** (item 37). Registrada
-como proposta do usuário e, até 2026-08-10, explicitamente **não
-implementada** — incompatível com a invariante "uma operação ativa por
-ativo" sem uma decisão de arquitetura própria. **Usuário decidiu
-explicitamente destravar** (detalhe em `docs/known-risks.md` item 37,
-subseção "Destravado explicitamente pelo usuário"), ciente do risco de
-métricas subestimarem risco agregado por ora — a pergunta que resta é
-**como** implementar, não **se**. `sentinel-council-review` técnica (o
-"como") já rodou (item 37, subseção "Conselho técnico"); ainda **nenhum
-código escrito** — falta o plano formal antes de codar.
+**Cascata 1D / operações independentes por timeframe** (item 37). Fase 1
+(escopo reduzido: só as 2 cascatas que já existiam, `4h_15m` e `1h_5m`,
+rodando como operações independentes no mesmo ativo — sem cascata 1D, sem
+gatilho de "continuidade" cross-timeframe) **implementada e mergeada**
+(infraestrutura PR #164, wiring no `scanner.js` PR #165) atrás de
+`pineConfig.hierarchicalCascadesEnabled` (backtest-only, default `false`).
+
+**A/B real rodado e registrado (PR #166)**: os 2 runs ficaram
+individualmente inconclusivos, sem evidência de ganho na expectância
+combinada. Achado mecânico real: o funil confirmou que o mecanismo
+funciona (rejeições por slot ocupado da cascata `1h_5m` caíram de 4.704
+para 30), mas o volume de operações cresceu pouco porque o gargalo real
+dessa cascata é o próprio gatilho SMC 5m, não a disputa de slot.
+**Recomendação: não ligar em produção com este dado.** Detalhe completo em
+`docs/known-risks.md` item 37.
+
+Fase 2 (cascata 1D nova + gatilho de "continuidade" cross-timeframe) segue
+**fora de escopo, não iniciada** — o especialista de trading do conselho já
+alertou que um gatilho de promoção cross-timeframe repetiria o mecanismo
+que já piorou expectância uma vez (`rf1hCondEnabled`, item 56). Não há
+justificativa nova para reabrir isso com o resultado acima.
 
 ---
 
