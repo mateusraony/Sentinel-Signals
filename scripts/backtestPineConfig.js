@@ -151,6 +151,20 @@ const DEFAULTS = {
   // motivo dos outros flags backtest-only acima. Ver tripwire test em
   // src/lib/hierarchicalCascadeTripwire.test.js.
   hierarchicalCascadesEnabled: false,
+  // Item 76 — versão OBSERVACIONAL do gate existente `asset.smc_confirm_4h15m`:
+  // em vez de bloquear a entrada da RF nativa quando a estrutura SMC (4h)
+  // discorda, só GRAVA a classificação (`TradeOperation.smc_alignment_at_entry`
+  // — 'aligned'/'against'/'unavailable') pra medir depois, via backtest, se
+  // isso realmente ajuda ou é só mais filtro atrapalhando — pedido explícito
+  // do usuário (2026-08-12): "SMC seria apenas score que precisa validar".
+  // Corrige de propósito o defeito latente do gate antigo (item 45.5): usa a
+  // zona da PERNA do próprio rompimento (buildOteLeg/classifyZone, mesmo fix
+  // do item 38), não a janela genérica de 20 velas que é tautológica pra um
+  // candle que acabou de romper estrutura. Nunca bloqueia nada — `entry_score`
+  // e a decisão de abrir a operação não mudam em nada com o flag ligado.
+  // Master flag OFF por padrão, backtest-only (mesmo motivo dos outros acima)
+  // — ver tripwire test em src/lib/smcAlignmentScoreTripwire.test.js.
+  smcAlignmentScoreEnabled: false,
 };
 
 let overrides = {};

@@ -7794,3 +7794,88 @@ silenciosamente (mesma classe de erro já vista no item 72: `useQuery`
 engole o erro e devolve array vazio) e as tarefas antigas continuam presas,
 mas SEM regredir o comportamento anterior — o try/catch garante que uma
 falha aqui não trava mais nada.
+
+## 76. SMC deixa de ser cascata independente, vira score observacional sobre a RF nativa — implementado, backtest-only
+
+### Contexto
+
+Depois do item 75 confirmar que a cascata SMC 1h→5m é código morto na
+prática (93% das rejeições nunca chegam nem a avaliar o gatilho), o usuário
+perguntou diretamente se SMC "não adianta de nada" e propôs uma mudança de
+arquitetura: parar de tratar SMC como gerador independente de operação e
+usá-lo só para identificar "zona de interesse" — a RF nativa continua sendo
+a única a abrir operação de verdade.
+
+### Achado que sustenta a proposta
+
+Relendo o Pine real do SMC (`docs/reference-pine/smc-a-unified-v2.3.pine`,
+já salvo no repositório desde 05/08 — não precisava ter sido reenviado,
+conferido linha a linha contra o que o usuário colou de novo, bate 100%):
+é um `indicator()`, **não** um `strategy()` — não existe
+`strategy.entry()`/`strategy.exit()` em lugar nenhum do arquivo. O script
+real só calcula estrutura/OB/FVG/zona/sweep e junta tudo num **score de
+confluência (0-7)**, nunca dispara operação sozinho. A cascata `1h_5m` que
+o Sentinel construiu (`check5mSmcConfirmation`) é uma invenção própria, sem
+correspondência no Pine — reforça a proposta do usuário: SMC como
+score/contexto é mais fiel ao que o script real É do que SMC como cascata
+independente.
+
+### Achado adicional: já existia uma versão quebrada disso
+
+`asset.smc_confirm_4h15m` — um flag por-ativo já existente — já usa
+estrutura SMC (tendência + zona) pra "confirmar" sinais da RF nativa em 4h.
+Mas (1) é um **gate obrigatório** (rejeita a operação, não só marca) e
+(2) usa a zona Premium/Discount **genérica de 20 velas** (`calculatePdZone`)
+— a mesma tautologia geométrica que os itens 35/38 já corrigiram na
+cascata SMC (o candle que acabou de romper estrutura cai perto da borda da
+janela por construção). Esse defeito já estava registrado (item 45.5),
+nunca corrigido. Não mexi nesse gate existente — só construí a versão nova
+ao lado, sem tocar no que já está em produção.
+
+### Implementado
+
+- **Novo flag** `pineConfig.smcAlignmentScoreEnabled` (backtest-only,
+  default `false` — mesmo isolamento dos outros mecanismos experimentais,
+  tripwire em `src/lib/smcAlignmentScoreTripwire.test.js`).
+- **Nova função pura** `computeSmcAlignmentAtEntry` (`src/lib/scanner.js`,
+  ao lado de `recordRejection`) — classifica `'aligned'`/`'against'`/
+  `'unavailable'` reusando `buildOteLeg`+`classifyZone` (mesmo fix do item
+  38) contra a perna do PRÓPRIO rompimento 4h, nunca a janela genérica.
+- **Correção de um bug real encontrado ao implementar**: a 1ª versão media
+  a zona contra o MESMO close que também define a borda da perna
+  (`legBreakClose`) — reproduzindo a exata tautologia dos itens 35/38 (pra
+  BUY, `legHigh = legBreakClose`, então classificar `legBreakClose` contra
+  um range cujo próprio topo É `legBreakClose` cai em "premium" por
+  construção, sempre, incondicionalmente). Corrigido antes de rodar
+  qualquer teste: a perna fica ancorada no candle de 4h que gerou o sinal
+  (`tf4hData.lastClose`), mas a zona é medida contra o **preço real de
+  entrada** (`opData.entry_price` — a confirmação de 15m, um valor
+  independente e posterior) — exatamente o mesmo desenho causal que o item
+  38 já usa (perna fixada no rompimento 1h, zona medida no gatilho 5m
+  posterior).
+- **Nunca bloqueia**: `entry_score` e a decisão de abrir a operação não
+  mudam em nada. Só grava `TradeOperation.smc_alignment_at_entry`
+  (`docs/schema-reference/TradeOperation.jsonc`) para análise posterior.
+- **Nos 2 pontos de criação da RF nativa** (1ª passada e retry) — os
+  mesmos onde `asset.smc_confirm_4h15m` já roda hoje, sem tocar nele.
+- **Cascata SMC 1h→5m independente**: não precisou apagar nada — já é
+  opt-in por ativo (`smc_enabled`), default `false` desde 02/08. Fica
+  inerte simplesmente por nunca ser ligada.
+
+### Verificação
+
+919/919 testes (6 novos: flag desligado = campo ausente; alinhado
+[tendência+zona a favor] = `aligned`, sem mudar `entry_score`; tendência
+contra = `against`, sem bloquear a criação; zona contra [perna estreita] =
+`against`; pivôs de estrutura ainda não formados = `unavailable`,
+fail-open; confirma pelo loop de retry) + `npm run lint` limpo + `npm run
+build` + os 3 alvos esbuild (`build:scan`/`build:scan-shadow`/
+`build:backtest`) + grep de isolamento confirmado.
+
+### Próximo passo (fora deste registro)
+
+Rodar o backtest normal da RF nativa com o flag ligado e quebrar o
+resultado por `aligned`/`against`/`unavailable` (mesmo tipo de corte já
+feito pra BUY/SELL no item 71) — responde se SMC realmente ajuda ou é só
+mais filtro no caminho, ANTES de decidir se vira peso no score ou fica só
+observacional. Decisão do usuário sobre quando rodar.

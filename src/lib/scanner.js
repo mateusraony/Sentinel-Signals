@@ -757,6 +757,42 @@ async function recordRejection(sig, cascade, reason, entryFunnelOutcomes) {
   }
 }
 
+// docs/known-risks.md item 76 — observational-only counterpart to the
+// existing GATE `asset.smc_confirm_4h15m` (scanner.js, both call sites just
+// below): that gate gets it right in spirit (SMC structure should inform the
+// RF native cascade) but wrong in mechanics for two reasons — (1) it BLOCKS
+// the entry outright instead of just scoring it, and (2) it classifies the
+// zone against the SAME generic 20-candle window `calculateStructure` reads,
+// which item 35/38 already proved is tautological for a candle that just
+// broke structure (close lands near the window's own edge almost by
+// construction). This function fixes (2) by reusing `buildOteLeg`+
+// `classifyZone` against the break's own impulse leg (same fix item 38
+// already applied to the 5m SMC trigger) — but deliberately does NOT fix (1):
+// it never blocks anything, only stamps a classification for later analysis,
+// per the user's explicit request to validate before deciding whether SMC
+// helps or is "just more filter in the way". Never called when the flag is
+// off; caller owns that gate.
+//
+// `legBreakClose` (the 4h signal candle's own close) anchors the leg's top
+// (BUY) or bottom (SELL) edge — same convention as buildOteLeg's existing
+// caller. `entryPrice` (the REAL 15m confirmation price, a later and
+// independent value from `legBreakClose`) is what gets classified against
+// that leg. Using `legBreakClose` for BOTH would recreate the exact
+// tautology item 35/38 already fixed elsewhere: for BUY, buildOteLeg sets
+// legHigh = legBreakClose, so classifying legBreakClose itself against a
+// range whose own top IS legBreakClose would land in "premium" by
+// construction, every single time, regardless of any real market condition.
+function computeSmcAlignmentAtEntry(signalType, smc, legBreakClose, entryPrice) {
+  if (!smc) return 'unavailable';
+  const trendAligned = signalType === 'BUY' ? smc.trend === 1 : smc.trend === -1;
+  const leg = buildOteLeg(signalType, legBreakClose, { lastSwingHigh: smc.lastSwingHigh, lastSwingLow: smc.lastSwingLow });
+  if (leg.legHigh == null || leg.legLow == null) return 'unavailable';
+  const { zone } = classifyZone(entryPrice, leg.legHigh, leg.legLow);
+  if (zone == null) return 'unavailable';
+  const zoneOk = signalType === 'BUY' ? zone !== 'premium' : zone !== 'discount';
+  return trendAligned && zoneOk ? 'aligned' : 'against';
+}
+
 // docs/known-risks.md item 37 (Bloco 4 Fase 1) — called right after a
 // hierarchical leg (4h_15m or 1h_5m) successfully opens, when the SIBLING
 // cascade already holds its own active leg on the same asset: moves the
@@ -2221,6 +2257,9 @@ export async function persistScanResults(scanResult) {
 
               if (confirmed15m.confirmed) {
                 const opData = buildTradeOpData(signal, tf4hData, pineConfig, confirmed15m);
+                if (pineConfig.smcAlignmentScoreEnabled) {
+                  opData.smc_alignment_at_entry = computeSmcAlignmentAtEntry(signal.signal_type, tf4hData.smc, tf4hData.lastClose, opData.entry_price);
+                }
                 if (retestGate) stampRetestFields(opData, retestGate);
                 const minRR = pineConfig.minRR ?? 1.2;
                 const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });
@@ -2748,6 +2787,9 @@ export async function persistScanResults(scanResult) {
     if (!confirmed.confirmed) { await recordRejection(sig, '4h_15m', 'confirmation_15m_not_aligned', entryFunnelOutcomes); continue; }
 
     const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed);
+    if (pineConfig.smcAlignmentScoreEnabled) {
+      opData.smc_alignment_at_entry = computeSmcAlignmentAtEntry(sig.signal_type, tfData4h.smc, tfData4h.lastClose, opData.entry_price);
+    }
     if (retestGate) stampRetestFields(opData, retestGate);
     const minRR = pineConfig.minRR ?? 1.2;
     const rr = passesRiskReward({ entry: opData.entry_price, stop: opData.initial_stop, tp1: opData.tp1, tp2: opData.tp2, minRR });

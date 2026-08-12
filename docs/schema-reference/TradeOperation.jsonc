@@ -233,6 +233,11 @@
       "enum": ["bullish_engulfing", "bearish_engulfing", "hammer", "shooting_star", "bullish_marubozu", "bearish_marubozu", null],
       "description": "Candlestick pattern (src/lib/indicators/candlePatterns.js) that confirmed the signal candle, RF cascade only — first match wins, checked in this priority: engulfing -> pin bar (hammer/shooting_star) -> marubozu. Null when pineConfig.candlePatternEnabled is off (the default) — additional gate on top of the RF signal, not a replacement for it. Requested by the user, 2026-08-02."
     },
+    "smc_alignment_at_entry": {
+      "type": ["string", "null"],
+      "enum": ["aligned", "against", "unavailable", null],
+      "description": "RF cascade only, purely observational — classifies whether the SMC structure trend AND Premium/Discount zone (measured against the break's own impulse leg, buildOteLeg/classifyZone, same fix as item 38 — not the tautological generic 20-candle window the older asset.smc_confirm_4h15m GATE still uses) agreed with the RF signal's direction at the moment of entry. 'unavailable' when structure pivots aren't formed yet. Never gates or changes entry_score/whether the operation opens — computed only when pineConfig.smcAlignmentScoreEnabled is on (off by default, backtest-only). Purpose: measure whether SMC context helps or just filters out good trades before ever turning it into a score weight or a gate. docs/known-risks.md item 76."
+    },
     "rf_reverse_bars_count": {
       "type": "number",
       "description": "Consecutive candles of `signal_timeframe` with Range Filter reversed against the position (pre-TP1 only) — used by the Invalidation toggle",
