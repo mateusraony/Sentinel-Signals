@@ -7534,3 +7534,88 @@ pausar otimização de estratégia e aceitar o painel como ferramenta de
 sinalização, seu propósito declarado
 desde sempre (`CLAUDE.md`) — fica com o usuário, não decidida
 unilateralmente aqui (mesmo padrão do Bloco 0 desde 2026-08-04).
+
+## 74. Walk-forward com dado genuinamente novo (LTCUSDT/DOGEUSDT) — teste pooled do Bloco 0, ainda inconclusivo (2026-08-12)
+
+### Contexto
+
+Seguindo a recomendação do item 73 (opção b — "um teste estatístico único
+e bem desenhado, mas só se usar dado genuinamente não examinado"), rodei 3
+disparos de `backtest.yml` com **LTCUSDT/DOGEUSDT** — os únicos 2 símbolos
+confirmados fora da carteira de 20 já lida 5-8 vezes (lista completa
+recuperada e registrada em `docs/roadmap.md`, Bloco 0) — nas mesmas 3
+janelas não sobrepostas já caracterizadas no Bloco 0 (2023-07→2024-07,
+alta 2024-07→2025-07, baixa 2025-07→2026-07), sem SMC (cascata `1h_5m`
+desligada, mesma metodologia dos runs originais de 20 símbolos —
+confirmado via `byCascade` só ter `4h_15m`), sem overrides de pineConfig.
+
+### Resultado — 3 janelas individuais
+
+| Janela | n (ops) | Expectância líquida | IC95 | Conclusiva? |
+|---|---|---|---|---|
+| 2023-07→2024-07 | 29 | +0,129R | [-0,272; +0,530] | NÃO (amostra pequena) |
+| Alta 2024-07→2025-07 | 26 | +0,317R | [-0,216; +0,850] | NÃO (amostra pequena) |
+| Baixa 2025-07→2026-07 | 38 | −0,196R | [-0,559; +0,166] | NÃO (IC cruza zero) |
+
+Amostra pequena em todas — 2 símbolos rendem ~26-38 operações por janela de
+12 meses, bem abaixo das 288-344 dos runs de 20 símbolos.
+
+### Meta-análise combinada (o teste pooled que o item 73 pediu)
+
+Estimativa ponderada pelo inverso da variância (peso = 1/erro-padrão²) das
+3 janelas: **expectância combinada +0,024R, IC95 [-0,216; +0,265]** (erro-padrão
+combinado 0,123, n total = 93). **Ainda cruza zero — INCONCLUSIVO**, mesmo
+depois de agrupar as 3 janelas num único teste (que é justamente o que
+deveria dar mais poder estatístico que 3 testes fragmentados). Sem
+correção de Bonferroni adicional aqui: é 1 teste pooled pré-desenhado, não
+N comparações.
+
+### BUY vs. SELL por janela — o padrão de 5 medições anteriores NÃO se replicou
+
+Computado direto de `overall.curve` (por operação, filtrado por `op.side`):
+
+| Janela | BUY | SELL |
+|---|---|---|
+| 2023-07→2024-07 | +0,335R (n=13, IC cruza zero) | **−0,039R** (n=16, IC cruza zero) |
+| Alta 2024-07→2025-07 | +0,456R (n=16, IC cruza zero) | +0,094R (n=10, IC cruza zero) |
+| Baixa 2025-07→2026-07 | **−0,552R (n=21, IC95 [-0,965; -0,139] — não cruza zero)** | +0,243R (n=17, IC cruza zero) |
+
+Nenhum dos 3 desfechos pré-registrados do Bloco 0 bate integralmente (não é
+puramente direcional — a janela "alta" tem os dois lados positivos; não é
+positivo nas 3 janelas — a "baixa" é líquida negativa; não é negativo nas
+3 — duas das três são líquidas positivas). **Achado mais importante**: o
+padrão "SELL sempre positivo" que se sustentou em 5 medições anteriores
+(item 48/71, todas na carteira original de 7/20 símbolos) **não se repete**
+na janela 2023-07→2024-07 com LTC/DOGE — SELL veio levemente negativo e BUY
+positivo, o oposto do padrão. A janela "baixa" reproduz parcialmente o
+padrão de regime (BUY cai forte, SELL segura), mas com amostra muito
+pequena por lado (n=17-21) para confirmar sozinha.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: com dado genuinamente novo, nem o teste pooled combinado nem
+nenhuma das 3 janelas isoladas confirma vantagem do motor. **Fato**: o
+padrão de SELL consistentemente positivo, que motivou o item 71, não se
+replicou de forma limpa nesta amostra nova — quebrou numa das 3 janelas.
+
+**Hipótese (não confirmada, amostra pequena demais para separar de
+ruído)**: o padrão SELL-favorável medido anteriormente pode ser mais
+específico à cesta original de ativos (DeFi/L2/AI, forte correlação com
+BTC/altcoin beta) do que uma propriedade geral do motor — mas 2 símbolos
+não bastam para decidir isso; seria preciso um walk-forward com mais
+pares novos para ter poder estatístico real.
+
+**Recomendação**: Bloco 0 continua **em aberto**. Este teste não fecha a
+pergunta central — nem confirma, nem refuta "o motor tem vantagem" — mas
+também não dá suporte novo para reabrir o Bloco 1 nem para tratar o achado
+SELL do item 71 como coisa estabelecida fora da cesta onde foi medido. Path
+adiante (sem decidir aqui, mesmo padrão do Bloco 0 desde 2026-08-04):
+ampliar o walk-forward com mais símbolos novos para ganhar poder
+estatístico real, ou aceitar a ambiguidade e tratar o painel como
+ferramenta de sinalização (opção que o próprio item 73 já registrou como
+legítima).
+
+### Verificação
+
+Só análise de relatórios de backtest já gerados (sem mudança de
+código/comportamento) — não precisa rodar lint/test/build.
