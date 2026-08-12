@@ -1518,6 +1518,30 @@ cenários via `persistScanResults` real (ambíguo pré-TP1, limpo pré-TP1,
 ambíguo pós-TP1 contra TP2) — os três confirmados falhando contra o código
 anterior antes da correção.
 
+### Volume real conferido — Bloco 5, item residual (2026-08-12)
+
+O critério de "só investir na reconstrução se `exit_ambiguous` mostrar
+volume real" nunca tinha sido checado contra dado de verdade. Agreguei
+`op.exit_ambiguous` de 17 relatórios de backtest reais já gerados nesta
+sessão (configs/janelas/símbolos diferentes — itens 67, 68, 69, 71,
+Bloco 4 Fase 1, o walk-forward do item 74 e o diagnóstico do item 75):
+**19 de 2.417 operações, 0,79%**. Taxa por run varia de 0% a no máximo
+~3,4% (Bloco 4 Fase 1, n pequeno) — nunca alta em nenhum run.
+
+**Ressalva honesta**: os 2.417 não são uma amostra limpa e independente —
+vários desses runs compartilham a mesma janela/carteira de 20 símbolos sob
+configs de `pineConfig` diferentes (ex. os 3 runs `allowedside-ab-*` e
+`indicator-attribution-20symbols-12m` provavelmente reusam candles
+sobrepostos), então há dupla-contagem real de operações parecidas. Isso não
+muda a leitura qualitativa: em nenhuma configuração testada até hoje a
+ambiguidade passou de ~3-4%.
+
+**Conclusão**: volume real é baixo, consistente e nunca alto — o critério
+de gate para reconstrução via timeframe menor **não foi atingido**. Mantido
+`exit_ambiguous` como campo observável sem reconstrução, sem reabrir a
+questão até (se algum dia) o volume real ao vivo (não de backtest) mostrar
+algo diferente.
+
 ## 37. Proposta do usuário — cascata hierárquica de operações independentes por timeframe (1h→4h→1D), NÃO implementada, registrada pra decisão futura
 
 Pedido do usuário (2026-07): em vez de (ou além de) descobrir por que a
