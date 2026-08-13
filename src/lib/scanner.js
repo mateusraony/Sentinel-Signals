@@ -765,31 +765,39 @@ async function recordRejection(sig, cascade, reason, entryFunnelOutcomes) {
 // zone against the SAME generic 20-candle window `calculateStructure` reads,
 // which item 35/38 already proved is tautological for a candle that just
 // broke structure (close lands near the window's own edge almost by
-// construction). This function fixes (2) by reusing `buildOteLeg`+
-// `classifyZone` against the break's own impulse leg (same fix item 38
-// already applied to the 5m SMC trigger) — but deliberately does NOT fix (1):
-// it never blocks anything, only stamps a classification for later analysis,
-// per the user's explicit request to validate before deciding whether SMC
-// helps or is "just more filter in the way". Never called when the flag is
-// off; caller owns that gate.
+// construction). This function fixes (2) by classifying against SMC's own
+// most recent swing range (`smc.lastSwingHigh`/`lastSwingLow` — the
+// confirmed protected pivots `calculateStructure` already tracks, textbook
+// ICT/SMC Premium/Discount definition) instead of the generic window — but
+// deliberately does NOT fix (1): it never blocks anything, only stamps a
+// classification for later analysis, per the user's explicit request to
+// validate before deciding whether SMC helps or is "just more filter in the
+// way". Never called when the flag is off; caller owns that gate.
 //
 // `legHigh`/`legLow` come from `SignalEvent.context.smc_align_leg_high/low`
-// — built ONCE via buildOteLeg at the instant the 4h signal was born (same
-// candle's close anchors the leg's top (BUY) or bottom (SELL) edge, same
-// convention as buildOteLeg's other caller), never rebuilt here from
-// whatever the CURRENT scan pass's live smc/lastClose happen to be. Codex
-// review (PR #173, post-merge, docs/known-risks.md item 77): a retry can
-// land after a NEWER 4h candle has closed without RF reversing, so the
-// live smc/lastClose can silently describe a different candle than the one
-// that fired the signal — rebuilding the leg from it would contaminate the
-// aligned/against groups despite this function's contract. `entryPrice`
-// (the REAL 15m confirmation price, a later and independent value from the
-// leg anchors) is what gets classified against that frozen leg — using the
-// same close that built the leg for BOTH would recreate the exact
-// tautology item 35/38 already fixed elsewhere. `smc.trend` is read LIVE at
-// the call site on purpose — only the leg's identity was ever promised to
-// be frozen; trend re-evaluation every retry matches the sibling gate
-// `asset.smc_confirm_4h15m` (item 45.5)'s existing behavior.
+// — built ONCE at the instant the 4h signal was born, never rebuilt here
+// from whatever the CURRENT scan pass's live smc happens to be. Codex
+// review (PR #173, post-merge): a retry can land after a NEWER 4h candle
+// has closed without RF reversing, so the live smc can silently describe a
+// different candle than the one that fired the signal — rebuilding the leg
+// from it would contaminate the aligned/against groups despite this
+// function's contract.
+//
+// The leg is deliberately NOT anchored to the RF signal candle's own close
+// (unlike `buildOteLeg`'s other caller, the SMC 1h->5m cascade, where the
+// break candle IS the SMC event). First live A/B (docs/known-risks.md item
+// 77, "Achado do primeiro A/B real") measured 0 'aligned' in 104 real
+// operations: a confirmed 15m entry almost always continues past the RF
+// signal candle's own close (that's what "confirmed" means), so anchoring
+// the leg to that close made the zone come out "premium"/"discount"
+// (against) in ~91-94% of trades by construction, regardless of real SMC
+// structure. Using SMC's own swing range fixes that — `entryPrice` (the
+// REAL 15m confirmation price) is classified against a leg that has no
+// structural relationship to the RF cascade's own timing at all.
+// `smc.trend` is read LIVE at the call site on purpose — only the leg's
+// identity was ever promised to be frozen; trend re-evaluation every retry
+// matches the sibling gate `asset.smc_confirm_4h15m` (item 45.5)'s existing
+// behavior.
 function computeSmcAlignmentAtEntry(signalType, smc, legHigh, legLow, entryPrice) {
   if (!smc) return 'unavailable';
   const trendAligned = signalType === 'BUY' ? smc.trend === 1 : smc.trend === -1;
@@ -1401,14 +1409,32 @@ export async function scanAsset(asset) {
         strengthResult.strength, strengthResult.alignment, strengthResult.reasons
       );
 
-      // docs/known-risks.md item 77 — Codex review on PR #173 (post-merge):
-      // computeSmcAlignmentAtEntry's leg must be frozen at the instant THIS
-      // signal is born, same discipline as ote_leg_high/low below for the
-      // SMC 1h->5m cascade (item 38). Only tf==='4h' feeds the RF-native
-      // (4h_15m) cascade that consumes this; r.smc is only populated for
-      // tf 4h/1h, no extra fetch cost.
+      // docs/known-risks.md item 77 — frozen at the instant THIS signal is
+      // born, same discipline as ote_leg_high/low below for the SMC 1h->5m
+      // cascade (item 38). Only tf==='4h' feeds the RF-native (4h_15m)
+      // cascade that consumes this; r.smc is only populated for tf 4h/1h,
+      // no extra fetch cost.
+      //
+      // Deliberately NOT buildOteLeg here (unlike the SMC 1h->5m block
+      // below) — buildOteLeg anchors one edge to the break candle's OWN
+      // close, which is the right call when the "break" IS the SMC event
+      // (the 1h->5m case). Here the break is an RF event, not an SMC one:
+      // anchoring to r.lastClose (the RF 4h signal candle's close) would
+      // measure "did price move past the candle that fired the RF signal"
+      // instead of anything about real SMC structure — a real bug, found
+      // AFTER running the first live A/B (docs/known-risks.md item 77,
+      // "Achado do primeiro A/B real"): a confirmed 15m entry almost always
+      // continues past that same close (that's what "confirmed" means),
+      // so the zone came out "premium"/"discount" (against) in ~91-94% of
+      // trades regardless of real market state — 0 'aligned' in 104 ops.
+      // The fix: use SMC's OWN most recent swing range (lastSwingHigh/
+      // lastSwingLow, the confirmed protected pivots calculateStructure
+      // already tracks independently of any RF candle) as the leg
+      // directly — the textbook ICT/SMC Premium/Discount definition
+      // (measured over the latest significant swing), genuinely
+      // independent of how/when the RF cascade happened to fire.
       const smcAlignLeg = (tf === '4h' && r.smc)
-        ? buildOteLeg(r.confirmed.confirmedSignal, r.lastClose, r.smc)
+        ? { legHigh: r.smc.lastSwingHigh ?? null, legLow: r.smc.lastSwingLow ?? null }
         : { legHigh: null, legLow: null };
 
       newSignals.push({
