@@ -123,6 +123,7 @@ export default function Verification() {
   });
 
   const updateMutation = useMutation({
+    /** @param {{ id: string, data: object }} args */
     mutationFn: ({ id, data }) => backend.entities.VerificationTask.update(id, data),
     onSuccess: () => {
       // Prefix match invalidates every statusFilter/priorityFilter variant.

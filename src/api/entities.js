@@ -229,6 +229,12 @@ async function clearActiveOp(assetId, tradeOpId, cascade) {
 // lands a terminal status, `assetActiveOps/{assetId}` is cleared in the SAME
 // transaction, closing the window where a crash between the status write and a
 // separate clearActiveOp would strand the asset (blocking any new entry).
+/**
+ * @param {string} opId
+ * @param {string} fromStatus
+ * @param {object} patch
+ * @param {{ assetId?: string, stopAdvanceMarkerField?: string, cascade?: string }} [options]
+ */
 async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField, cascade } = {}) {
   const opRef = doc(db, 'tradeOperations', opId);
   const terminal = isTerminalStatus(patch.status);
@@ -237,6 +243,7 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvance
     const snap = await tx.get(opRef);
     // All reads must precede writes in a Firestore transaction.
     const activeSnap = activeRef ? await tx.get(activeRef) : null;
+    /** @type {({ id: string, status?: string, side?: string, current_stop?: number } & Record<string, any>)|null} */
     const current = snap.exists() ? { id: snap.id, ...snap.data() } : null;
     if (!canApplyTransition(current, fromStatus)) {
       return { applied: false, currentStatus: current ? current.status : null };

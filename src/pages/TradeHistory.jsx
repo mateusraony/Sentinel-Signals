@@ -278,8 +278,8 @@ export default function TradeHistory() {
       return true;
     });
 
-    if (sortBy === 'date_desc') list.sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
-    else if (sortBy === 'date_asc') list.sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
+    if (sortBy === 'date_desc') list.sort((a, b) => new Date(b.created_date).getTime() - new Date(a.created_date).getTime());
+    else if (sortBy === 'date_asc') list.sort((a, b) => new Date(a.created_date).getTime() - new Date(b.created_date).getTime());
     else if (sortBy === 'pnl_desc') list.sort((a, b) => (calcRealizedPnlPct(b) ?? -999) - (calcRealizedPnlPct(a) ?? -999));
     else if (sortBy === 'pnl_asc') list.sort((a, b) => (calcRealizedPnlPct(a) ?? 999) - (calcRealizedPnlPct(b) ?? 999));
     else if (sortBy === 'score') list.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
@@ -289,6 +289,13 @@ export default function TradeHistory() {
 
   const { wins, losses, be, counted, totalPnlPct: totalPnl } = summarizeOps(filtered);
   const wr = counted > 0 ? Math.round((wins / counted) * 100) : 0;
+  // docs/known-risks.md item 36 / roadmap.md Bloco 5 — volume de
+  // exit_ambiguous (candle fechado tocou stop E TP no mesmo candle; política
+  // "stop vence" já em produção, isso só torna o volume real OBSERVÁVEL no
+  // painel). Medido em backtest (17 relatórios, 0,79%) mas nunca em produção
+  // ao vivo — este agente não tem leitura do Firestore de produção.
+  const ambiguousCount = filtered.filter(op => op.exit_ambiguous === true).length;
+  const ambiguousPct = filtered.length > 0 ? ((ambiguousCount / filtered.length) * 100).toFixed(1) : '0.0';
 
   const inputStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', outline: 'none', fontFamily: 'monospace', fontSize: 10 };
   const filterBtnStyle = (active) => active
@@ -416,6 +423,11 @@ export default function TradeHistory() {
           <span style={{ color: '#ffd166' }}>🔄 {be} BE</span>
           <span style={{ color: '#ff1478' }}>🛑 {losses} loss</span>
           <span style={{ color: wr >= 50 ? '#00ff80' : '#ff9f43' }}>WR {wr}%</span>
+          {ambiguousCount > 0 && (
+            <span style={{ color: '#ffd166' }} title="Candle fechado tocou stop e TP no mesmo candle (política: stop vence)">
+              ⚠️ {ambiguousCount} ambíguo{ambiguousCount !== 1 ? 's' : ''} ({ambiguousPct}%)
+            </span>
+          )}
           <span className="ml-auto font-bold" style={{ color: totalPnl >= 0 ? '#00ff80' : '#ff1478' }}>
             Total: {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}%
           </span>

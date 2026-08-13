@@ -110,6 +110,12 @@ export function createFakeBackend() {
     if (activeOps.get(anchorId) === tradeOpId) activeOps.set(anchorId, null);
   }
 
+  /**
+   * @param {string} opId
+   * @param {string} fromStatus
+   * @param {object} patch
+   * @param {{ assetId?: string, stopAdvanceMarkerField?: string, cascade?: string }} [options]
+   */
   async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField, cascade } = {}) {
     const opStore = stores.TradeOperation;
     const current = opStore.get(opId) || null;

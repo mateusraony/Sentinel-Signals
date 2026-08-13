@@ -300,6 +300,7 @@ export function calcCostR(op, costModel) {
 // a scratch trade). Ops without a usable R (legacy docs missing initial_stop,
 // zero risk) fall back to the same rule over PnL% — never to status-based
 // classification, which is the inconsistency this module removes.
+/** @param {object} op @param {{ epsilonR?: number, epsilonPct?: number, costModel?: CostModel }} [options] */
 export function classifyOutcome(op, { epsilonR = 0.05, epsilonPct = 0.1, costModel } = {}) {
   if (!isClosedOp(op)) return 'OPEN';
   const r = calcRealizedR(op, costModel);
@@ -336,6 +337,19 @@ export function expectancyCIAtZ(expectancyR, expectancyRStdErr, z) {
 // win-rate definition — no per-screen denominators. The equity curve orders
 // by close time (sortBy 'created' opts back into creation order); profitFactor
 // is null when there are no losses (render '∞').
+/**
+ * @typedef {object} CostModel
+ * @property {number} [feeBpsEntry]
+ * @property {number} [feeBpsExit]
+ * @property {number} [slippageBpsPerSide]
+ * @property {number} [fundingBpsPer8h]
+ * @property {boolean} [applied]
+ */
+
+/**
+ * @param {Array<object>} ops
+ * @param {{ epsilonR?: number, epsilonPct?: number, sortBy?: string, costModel?: CostModel, minTrades?: number }} [options]
+ */
 export function summarizeOps(ops, {
   epsilonR = 0.05, epsilonPct = 0.1, sortBy = 'closed', costModel, minTrades = 30,
 } = {}) {

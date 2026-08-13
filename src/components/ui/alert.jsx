@@ -19,7 +19,9 @@ const alertVariants = cva(
   }
 )
 
-const Alert = React.forwardRef(({ className, variant, ...props }, ref) => (
+const Alert = React.forwardRef(
+  /** @param {React.HTMLAttributes<HTMLDivElement> & import("class-variance-authority").VariantProps<typeof alertVariants>} props @param {React.ForwardedRef<HTMLDivElement>} ref */
+  ({ className, variant, ...props }, ref) => (
   <div
     ref={ref}
     role="alert"
@@ -28,7 +30,9 @@ const Alert = React.forwardRef(({ className, variant, ...props }, ref) => (
 ))
 Alert.displayName = "Alert"
 
-const AlertTitle = React.forwardRef(({ className, ...props }, ref) => (
+const AlertTitle = React.forwardRef(
+  /** @param {React.HTMLAttributes<HTMLHeadingElement>} props @param {React.ForwardedRef<HTMLHeadingElement>} ref */
+  ({ className, ...props }, ref) => (
   <h5
     ref={ref}
     className={cn("mb-1 font-medium leading-none tracking-tight", className)}
@@ -36,7 +40,9 @@ const AlertTitle = React.forwardRef(({ className, ...props }, ref) => (
 ))
 AlertTitle.displayName = "AlertTitle"
 
-const AlertDescription = React.forwardRef(({ className, ...props }, ref) => (
+const AlertDescription = React.forwardRef(
+  /** @param {React.HTMLAttributes<HTMLDivElement>} props @param {React.ForwardedRef<HTMLDivElement>} ref */
+  ({ className, ...props }, ref) => (
   <div
     ref={ref}
     className={cn("text-sm [&_p]:leading-relaxed", className)}

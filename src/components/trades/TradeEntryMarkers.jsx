@@ -61,6 +61,7 @@ function TradeDot(props) {
   return null;
 }
 
+/** @param {{ active?: boolean, payload?: Array<any> }} props */
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0]?.payload;
@@ -90,7 +91,7 @@ export default function TradeEntryMarkers({ history }) {
   const { chartData, finalCum, wins, losses } = useMemo(() => {
     const valid = history
       .filter(op => calcPnl(op) !== null && op.created_date && op.closed_at)
-      .sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
+      .sort((a, b) => new Date(a.created_date).getTime() - new Date(b.created_date).getTime());
 
     if (valid.length === 0) return { chartData: [], finalCum: 0, wins: 0, losses: 0 };
 

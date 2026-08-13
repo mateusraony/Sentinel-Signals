@@ -37,6 +37,9 @@ let currentMs = 0;
 class FakeDate extends RealDate {
   constructor(...args) {
     if (args.length === 0) super(currentMs);
+    // @ts-expect-error — Date's overloaded constructor can't accept a spread
+    // of a generic array; runtime behavior is correct (args are forwarded
+    // verbatim to the real Date constructor).
     else super(...args);
   }
   static now() {
@@ -58,6 +61,9 @@ export function installSimClock(initialMs) {
   if (originalDate) throw new Error('installSimClock: a sim clock is already installed — call restoreClock() first');
   originalDate = globalThis.Date;
   currentMs = initialMs;
+  // @ts-expect-error — FakeDate only overrides the no-arg constructor/`.now()`;
+  // TS can't confirm structural equivalence with the full DateConstructor
+  // interface (static parse/UTC/etc. are inherited at runtime via `extends`).
   globalThis.Date = FakeDate;
 }
 
@@ -126,6 +132,27 @@ export function inferStepMs(assets) {
   return (anySmc ? 5 : 15) * 60 * 1000;
 }
 
+/**
+ * `assets`/`backend`/`fromMs`/`toMs` are required at runtime (checked right
+ * below via explicit `throw`), not at the type level — the `= {}` default on
+ * the destructured parameter lets that throw produce a clear error message
+ * instead of a raw "Cannot read properties of undefined" from destructuring.
+ * @typedef {object} RunBacktestOptions
+ * @property {Array<object>} [assets]
+ * @property {object} [backend]
+ * @property {number} [fromMs]
+ * @property {number} [toMs]
+ * @property {number} [evaluationFromMs]
+ * @property {number} [evaluationToMs]
+ * @property {number} [stepMs]
+ * @property {(t: number, info?: object) => void} [onStep]
+ * @property {object} [costModel]
+ * @property {number} [minTrades]
+ * @property {object} [pineConfig]
+ * @property {(symbol: string, timeframe: string, afterMs: number) => Promise<Array<object>>} [getFutureCandles]
+ */
+
+/** @param {RunBacktestOptions} options */
 export async function runBacktest({
   assets, backend, fromMs, toMs, evaluationFromMs, evaluationToMs, stepMs, onStep, costModel, minTrades,
   // docs/known-risks.md item 69 (Fase 1) — pineConfig efetivo, só para o
@@ -634,6 +661,31 @@ function resolveReportCostModel(costModel) {
   return { ...DEFAULT_COST_MODEL, ...costModel, applied: !isZero };
 }
 
+/**
+ * @typedef {object} BuildReportOptions
+ * @property {number} [fromMs]
+ * @property {number} [toMs]
+ * @property {object} [dataRangeMs]
+ * @property {number} [smcConfirmedSignals]
+ * @property {number} [smcRejectedByOteZone]
+ * @property {Array<object>} [arbitrationOutcomes]
+ * @property {Array<object>} [retestOutcomes]
+ * @property {Array<object>} [displacementOutcomes]
+ * @property {Array<object>} [smcRegimeOutcomes]
+ * @property {Array<object>} [smcRegimeAllOutcomes]
+ * @property {Array<object>} [rfRegimeOutcomes]
+ * @property {Array<object>} [rfRegimeAllOutcomes]
+ * @property {Array<object>} [smcObFvgOutcomes]
+ * @property {Array<object>} [smcTriggerOutcomes]
+ * @property {Array<object>} [candlePatternOutcomes]
+ * @property {Array<object>} [indicatorAttributionRecords]
+ * @property {object} [entryFunnelCounts]
+ * @property {object} [attemptStats]
+ * @property {object} [costModel]
+ * @property {number} [minTrades]
+ */
+
+/** @param {Array<object>} ops @param {BuildReportOptions} options */
 export function buildReport(ops, {
   fromMs, toMs, dataRangeMs = null, smcConfirmedSignals = 0, smcRejectedByOteZone = 0,
   arbitrationOutcomes = [], retestOutcomes = [], displacementOutcomes = [],

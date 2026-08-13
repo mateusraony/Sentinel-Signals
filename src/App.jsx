@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, lazy, Suspense } from 'react'
 import { Toaster } from "@/components/ui/toaster"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -10,51 +10,60 @@ import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 import AppLayout from '@/components/layout/AppLayout';
-import Dashboard from '@/pages/Dashboard';
-import Assets from '@/pages/Assets';
-import Alerts from '@/pages/Alerts';
-import Logs from '@/pages/Logs';
-import Trades from '@/pages/Trades';
-import TradeHistory from '@/pages/TradeHistory';
-import PineScript from '@/pages/PineScript';
-import StrategyReviewer from '@/pages/StrategyReviewer';
-import MonthlyReport from '@/pages/MonthlyReport';
-import Settings from '@/pages/Settings';
-import Backtest from '@/pages/Backtest';
-import Verification from '@/pages/Verification';
+// docs/roadmap.md Bloco 5 (bundle >500kB) — cada página vira seu próprio
+// chunk, baixado só quando a rota é visitada, em vez de tudo cair no chunk
+// principal. AppLayout fica estático (é o shell, sempre necessário). O
+// fallback do Suspense reusa o mesmo spinner de tela cheia que já existia
+// para o carregamento de auth, abaixo — nenhuma UI nova.
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Assets = lazy(() => import('@/pages/Assets'));
+const Alerts = lazy(() => import('@/pages/Alerts'));
+const Logs = lazy(() => import('@/pages/Logs'));
+const Trades = lazy(() => import('@/pages/Trades'));
+const TradeHistory = lazy(() => import('@/pages/TradeHistory'));
+const PineScript = lazy(() => import('@/pages/PineScript'));
+const StrategyReviewer = lazy(() => import('@/pages/StrategyReviewer'));
+const MonthlyReport = lazy(() => import('@/pages/MonthlyReport'));
+const Settings = lazy(() => import('@/pages/Settings'));
+const Backtest = lazy(() => import('@/pages/Backtest'));
+const Verification = lazy(() => import('@/pages/Verification'));
+
+const PageLoadingFallback = () => (
+  <div className="fixed inset-0 flex items-center justify-center bg-background">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div>
+      <span className="text-xs text-muted-foreground font-mono">Carregando CryptoRadar...</span>
+    </div>
+  </div>
+);
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth } = useAuth();
 
   if (isLoadingAuth) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin"></div>
-          <span className="text-xs text-muted-foreground font-mono">Carregando CryptoRadar...</span>
-        </div>
-      </div>
-    );
+    return <PageLoadingFallback />;
   }
 
   return (
-    <Routes>
-      <Route element={<AppLayout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/assets" element={<Assets />} />
-        <Route path="/alerts" element={<Alerts />} />
-        <Route path="/logs" element={<Logs />} />
-        <Route path="/trades" element={<Trades />} />
-        <Route path="/history" element={<TradeHistory />} />
-        <Route path="/verification" element={<Verification />} />
-        <Route path="/pine" element={<PineScript />} />
-        <Route path="/reviewer" element={<StrategyReviewer />} />
-        <Route path="/monthly-report" element={<MonthlyReport />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/backtest" element={<Backtest />} />
-      </Route>
-      <Route path="*" element={<PageNotFound />} />
-    </Routes>
+    <Suspense fallback={<PageLoadingFallback />}>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/assets" element={<Assets />} />
+          <Route path="/alerts" element={<Alerts />} />
+          <Route path="/logs" element={<Logs />} />
+          <Route path="/trades" element={<Trades />} />
+          <Route path="/history" element={<TradeHistory />} />
+          <Route path="/verification" element={<Verification />} />
+          <Route path="/pine" element={<PineScript />} />
+          <Route path="/reviewer" element={<StrategyReviewer />} />
+          <Route path="/monthly-report" element={<MonthlyReport />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/backtest" element={<Backtest />} />
+        </Route>
+        <Route path="*" element={<PageNotFound />} />
+      </Routes>
+    </Suspense>
   );
 };
 

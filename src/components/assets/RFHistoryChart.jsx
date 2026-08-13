@@ -105,7 +105,7 @@ export default function RFHistoryChart({ asset }) {
   const signalRows = useMemo(() => {
     return signals
       .filter(s => s.context?.rf_value != null)
-      .sort((a, b) => new Date(b.created_date) - new Date(a.created_date))
+      .sort((a, b) => new Date(b.created_date).getTime() - new Date(a.created_date).getTime())
       .slice(0, 8)
       .map(s => ({
         time: moment(s.created_date).format('DD/MM HH:mm'),

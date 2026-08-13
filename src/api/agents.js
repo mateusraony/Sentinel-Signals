@@ -26,6 +26,7 @@ export const strategyReviewerAgent = {
     return snap.docs.map(toRecord).sort((a, b) => (b.created_date || '').localeCompare(a.created_date || ''));
   },
 
+  /** @param {{ agent_name?: string, metadata?: object }} [options] */
   async createConversation({ agent_name, metadata } = {}) {
     const uid = auth.currentUser?.uid;
     const payload = {

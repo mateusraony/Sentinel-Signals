@@ -274,6 +274,7 @@ export function calculatePdZone(candles, pdSwingLen = 20) {
  * `lastSwingLow` ausente) — chamador deve tratar como não avaliável
  * (fail-open via `classifyZone`), nunca como veredito desfavorável.
  */
+/** @param {'BUY'|'SELL'} signalType @param {number} breakClose @param {{ lastSwingHigh?: number, lastSwingLow?: number }} [options] */
 export function buildOteLeg(signalType, breakClose, { lastSwingHigh, lastSwingLow } = {}) {
   if (signalType === 'BUY') {
     return { legHigh: breakClose, legLow: lastSwingLow ?? null };

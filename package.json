@@ -21,7 +21,6 @@
     "analyze-shadow-rf1h": "node scripts/analyze-shadow-rf1h.mjs"
   },
   "dependencies": {
-    "@hello-pangea/dnd": "^17.0.0",
     "@hookform/resolvers": "^4.1.2",
     "@radix-ui/react-accordion": "^1.2.3",
     "@radix-ui/react-alert-dialog": "^1.1.6",
@@ -54,10 +53,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.0.0",
-    "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.5.2",
     "firebase": "^12.15.0",
-    "framer-motion": "^11.16.4",
     "input-otp": "^1.4.2",
     "jspdf": "^4.0.0",
     "lucide-react": "^0.475.0",

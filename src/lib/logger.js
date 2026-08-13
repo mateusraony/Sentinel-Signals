@@ -21,6 +21,7 @@ function dedupKey(level, module, message) {
   return `${level}:${module}:${message?.slice(0, 80)}`;
 }
 
+/** @param {string} level @param {string} module @param {string} message @param {object} [details] @param {object} [extra] */
 function addToQueue(level, module, message, details = null, extra = {}) {
   // Dedup identical messages within a short window
   const key = dedupKey(level, module, message);

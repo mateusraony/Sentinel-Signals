@@ -3,6 +3,7 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceL
 import moment from 'moment';
 import { summarizeOps } from '@/lib/tradeMetrics';
 
+/** @param {{ active?: boolean, payload?: Array<any>, label?: any }} props */
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;

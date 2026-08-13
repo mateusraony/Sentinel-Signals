@@ -183,9 +183,9 @@ export default function CorrelationWidget() {
                 <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} unit="%" width={38} />
                 <Tooltip
                   contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
-                  formatter={(value, name) => [`${value}%`, name.replace('USDT', '')]}
+                  formatter={(value, name) => [`${value}%`, String(name).replace('USDT', '')]}
                 />
-                <Legend wrapperStyle={{ fontSize: 9, fontFamily: 'monospace' }} formatter={(v) => v.replace('USDT', '')} />
+                <Legend wrapperStyle={{ fontSize: 9, fontFamily: 'monospace' }} formatter={(v) => String(v).replace('USDT', '')} />
                 {analysis.validSymbols.map((sym, i) => (
                   <Line key={sym} type="monotone" dataKey={sym} stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={1.5} dot={false} />
                 ))}

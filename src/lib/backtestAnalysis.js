@@ -180,6 +180,7 @@ function costComponentModels(costModel) {
  * operações sem R calculável entram na contagem do balde mas não na soma de R
  * — nunca são silenciosamente contadas como zero.
  */
+/** @param {Array<object>} ops @param {{ costModel?: object, epsilonR?: number, epsilonPct?: number, rangeMs?: { fromMs?: number, toMs?: number } }} [options] */
 export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, rangeMs } = {}) {
   const closed = (ops || []).filter(isClosedOp);
   const models = costComponentModels(costModel);
@@ -455,6 +456,7 @@ export function opsFromReport(report) {
 }
 
 /** Conveniência: relatório → diagnóstico, reusando o modelo de custo do run. */
+/** @param {object} report @param {{ costModel?: object }} [options] */
 export function analyzeReport(report, { costModel } = {}) {
   const fromReport = report?.costs?.model;
   // O relatório ecoa o modelo aplicado com uma flag extra (`applied`) que não

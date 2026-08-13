@@ -157,6 +157,7 @@ const DEFAULTS = {
  * @returns {Object} parsed config with mapped variable names
  */
 export function parsePineScript(code) {
+  /** @type {typeof DEFAULTS & { pineVersion?: number, strategyTitle?: string, _hash?: string, _parsedAt?: string }} */
   const config = { ...DEFAULTS };
   if (!code) return config;
 

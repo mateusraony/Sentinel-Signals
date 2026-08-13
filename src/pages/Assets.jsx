@@ -58,6 +58,7 @@ export default function Assets() {
   });
 
   const toggleMutation = useMutation({
+    /** @param {{ id: string, is_active: boolean }} args */
     mutationFn: ({ id, is_active }) => backend.entities.MonitoredAsset.update(id, { is_active }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['all-assets'] }),
   });

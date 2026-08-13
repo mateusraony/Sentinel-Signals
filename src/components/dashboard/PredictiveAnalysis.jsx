@@ -233,7 +233,7 @@ export default function PredictiveAnalysis({ recentSignals = [] }) {
                   <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} axisLine={false} tickLine={false} />
                   <Tooltip
                     contentStyle={{ background: 'rgba(6,8,15,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }}
-                    formatter={(value, name, props) => [`${value.toFixed(0)}% (${props.payload.n} op.)`, 'Taxa de acerto']}
+                    formatter={(value, name, props) => [`${Number(value).toFixed(0)}% (${props.payload.n} op.)`, 'Taxa de acerto']}
                   />
                   <Bar dataKey="winRate" radius={[4, 4, 0, 0]}>
                     {scoreBuckets.map((b, i) => (

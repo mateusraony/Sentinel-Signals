@@ -11,6 +11,7 @@ function fmt(price) {
   return price.toFixed(6);
 }
 
+/** @param {{ label: string, value: any, pineVar?: string, color?: string }} props */
 function ParamCard({ label, value, pineVar, color }) {
   return (
     <div className="rounded-lg px-2.5 py-2 text-center"
@@ -115,7 +116,7 @@ function TFStateCard({ tf, state, enabled }) {
   );
 }
 
-export default function AssetDetailPanel({ asset, states, expanded }) {
+export default function AssetDetailPanel({ asset, states, expanded, onToggle }) {
   if (!expanded) return null;
 
   return (

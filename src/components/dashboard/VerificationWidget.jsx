@@ -32,6 +32,7 @@ export default function VerificationWidget() {
   });
 
   const reviewMutation = useMutation({
+    /** @param {{ id: string, status: string }} args */
     mutationFn: ({ id, status }) => backend.entities.VerificationTask.update(id, {
       status,
       reviewed_at: new Date().toISOString(),

@@ -42,7 +42,7 @@ function RRBar({ op }) {
   if (range <= 0) return null;
   const pct = (v) => ((v - low) / range) * 100;
   const entryPct = pct(entry), tp1Pct = pct(tp1);
-  const currentPrice = stats ? (parseFloat(stats.highPrice + stats.lowPrice) / 2) : null;
+  const currentPrice = stats ? ((stats.highPrice + stats.lowPrice) / 2) : null;
   const currentPct = currentPrice ? Math.max(0, Math.min(100, pct(currentPrice))) : null;
 
   return (
@@ -298,16 +298,19 @@ export default function Trades() {
   });
 
   const closeMutation = useMutation({
+    /** @param {string} id */
     mutationFn: (id) => backend.entities.TradeOperation.update(id, { status: 'CLOSED', closed_reason: 'Encerrado manualmente' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trade-operations'] }),
   });
 
   const invalidateMutation = useMutation({
+    /** @param {string} id */
     mutationFn: (id) => backend.entities.TradeOperation.update(id, { status: 'INVALIDATED', closed_reason: 'Invalidado manualmente' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trade-operations'] }),
   });
 
   const editMutation = useMutation({
+    /** @param {{ id: string, data: object }} args */
     mutationFn: ({ id, data }) => backend.entities.TradeOperation.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-operations'] });

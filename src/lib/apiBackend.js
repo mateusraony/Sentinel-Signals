@@ -11,6 +11,7 @@ const BASE_URL = import.meta.env.VITE_BACKEND_URL;
 // method defaults to GET when no body is passed, POST otherwise — existing
 // callers (all POST-with-body) keep working unchanged; new GET-only callers
 // (e.g. polling a job's status) just omit body.
+/** @param {string} path @param {object} [body] @param {{ method?: string }} [options] */
 export async function callBackend(path, body, { method } = {}) {
   if (!BASE_URL) {
     throw new Error('VITE_BACKEND_URL não configurado.');
