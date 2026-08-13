@@ -7920,10 +7920,67 @@ Suíte inteira: 920/920 (7 no describe do item, era 6) + `npm run lint` +
 `npm run build` + os 3 alvos esbuild + grep de isolamento — todos
 confirmados de novo depois da correção.
 
+### Achado do primeiro A/B real: 0 "aligned" em 104 operações — viés geométrico na âncora da perna, corrigido
+
+Usuário disparou o primeiro A/B real (`backtest.yml`, 7 símbolos/12 meses,
+`pine_config: {"smcAlignmentScoreEnabled": true}`, `trial_label:
+smc-alignment-score-ab`). Resultado bruto (104 operações fechadas,
+`costs.conclusive: false`, IC cruza zero — a estratégia em si segue
+inconclusiva, nada novo aí): **0 `aligned`, 65 `against` (63%), 39
+`unavailable` (37%)** — distribuídos de forma equilibrada entre os 7
+símbolos e os dois lados (BUY/SELL), não é artefato de 1 ativo.
+
+**Investigação (fato, verificado contra os próprios números do
+relatório, não é só hipótese)**: cruzando `entry_price` com
+`origin_4h_price` (= `price_at_signal`, o fechamento da vela 4h que gerou
+o sinal — e também o mesmo valor que `legBreakClose` usava como uma das
+bordas da perna na 1ª versão deste mecanismo): em **91% dos BUYs e 94%
+dos SELLs**, o preço de entrada já tinha ultrapassado esse fechamento
+antes da operação abrir. Faz sentido mecanicamente — a RF nativa só entra
+depois que o 15m **confirma continuação**, então o preço quase sempre já
+andou mais na mesma direção. O problema: a perna da 1ª versão usava
+exatamente esse mesmo fechamento como uma de suas bordas
+(`buildOteLeg(signalType, r.lastClose, r.smc)`, `legHigh = legBreakClose`
+pra BUY) — então, quase sempre, o preço de entrada já estava além da
+própria borda que definia "premium" pra compra (ou "discount" pra venda).
+Resultado: `against` (ou `unavailable`, se os pivôs de estrutura nem
+existiam) praticamente garantido, **independente de qualquer estrutura
+SMC real** — um viés geométrico, não sinal de mercado. Não é o mesmo bug
+de tautologia dos itens 35/38 (não é literalmente "comparar o valor com
+ele mesmo": `entryPrice` ≠ `legBreakClose`), mas é primo dele — a régua de
+medição estava ancorada exatamente no ponto que uma entrada validada por
+continuação vai, quase sempre, ultrapassar.
+
+**Correção**: a perna deixou de usar `buildOteLeg` (que ancora uma borda
+no fechamento do candle que gerou o sinal — desenho correto pra cascata
+SMC 1h→5m, onde esse candle É o evento SMC, mas sem sentido aqui, onde o
+"rompimento" é um evento da RF, não da SMC) e passou a usar a **perna
+natural da própria estrutura SMC**: `smc.lastSwingHigh`/`lastSwingLow` —
+os pivôs protegidos e confirmados que `calculateStructure` já rastreia,
+independentes de qualquer candle da RF (mesmos campos que sustentam o
+stop estrutural da cascata SMC nativa, item 24). É também a definição
+mais fiel ao ICT/SMC real de Premium/Discount (medido sobre o último
+swing significativo), mais correta que o hack anterior. `context.
+smc_align_leg_high/low` agora grava `smc.lastSwingHigh`/`lastSwingLow`
+diretamente, no mesmo instante do sinal (mesma disciplina "congelado no
+sinal" da correção anterior, intocada). `smc.trend` continua lido ao
+vivo, sem mudança.
+
+Testes existentes (describe `smcAlignmentScoreEnabled`,
+`scannerStateMachine.test.js`) não mudaram — já recebiam a perna via
+`context` explícito, desacoplados de como `scanAsset` a calcula, então
+continuam cobrindo a lógica de classificação (`aligned`/`against`/
+`unavailable`) sem alteração. A produção da perna em si (`scanAsset`)
+segue no mesmo padrão de cobertura que o `ote_leg_high/low` da cascata
+SMC nativa já tinha (nunca testado no nível de `scanAsset` diretamente —
+só os consumidores, via `context` sintético). Suíte inteira: 920/920 +
+lint + build + os 3 alvos esbuild + grep de isolamento, todos
+confirmados de novo.
+
 ### Próximo passo (fora deste registro)
 
-Rodar o backtest normal da RF nativa com o flag ligado e quebrar o
-resultado por `aligned`/`against`/`unavailable` (mesmo tipo de corte já
-feito pra BUY/SELL no item 71) — responde se SMC realmente ajuda ou é só
-mais filtro no caminho, ANTES de decidir se vira peso no score ou fica só
+Rodar um NOVO A/B real (a base geométrica mudou, o resultado anterior não
+serve mais de referência) e, desta vez, quebrar por `aligned`/`against`/
+`unavailable` de verdade — responde se SMC realmente ajuda ou é só mais
+filtro no caminho, ANTES de decidir se vira peso no score ou fica só
 observacional. Decisão do usuário sobre quando rodar.
