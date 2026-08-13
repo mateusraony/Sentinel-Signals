@@ -165,6 +165,18 @@ const DEFAULTS = {
   // Master flag OFF por padrão, backtest-only (mesmo motivo dos outros acima)
   // — ver tripwire test em src/lib/smcAlignmentScoreTripwire.test.js.
   smcAlignmentScoreEnabled: false,
+  // Item 78 — dado real motivou: um run com rf1hUncondEnabled ligado mediu
+  // a cascata nativa (4h_15m) e RF_1H_UNCOND_CASCADE competindo pela MESMA
+  // vaga por ativo (67% das rejeições do 1h eram "vaga ocupada", amostra do
+  // 4h caiu pela metade só por causa da disputa) — contaminando os dois
+  // números, mesma classe de erro de sub-bucket já corrigida nos itens
+  // 51/68. Quando ligado, a cascata nativa (4h_15m) não cria NENHUMA
+  // operação (1ª passada nem retry) — dá a vaga inteira pra
+  // rf1hCondEnabled/rf1hUncondEnabled medir sozinha, sem competição. Sinais
+  // RF de 4h continuam sendo emitidos normalmente, só a criação de operação
+  // é suprimida. Master flag OFF por padrão, backtest-only (mesmo motivo dos
+  // outros acima) — ver tripwire test em src/lib/rf1hExclusiveTripwire.test.js.
+  rf1hExclusiveEnabled: false,
 };
 
 let overrides = {};
