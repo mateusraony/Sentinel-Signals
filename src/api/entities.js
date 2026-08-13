@@ -256,7 +256,12 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvance
       // away by a fresher value another worker already committed) must not
       // overwrite the candle-time marker with the candle IT read; that
       // would misidentify which candle produced the value actually stored.
-      if (stopAdvanceMarkerField && !stopAdvanceCandidateWon({ clampedStop, candidateStop: patch.current_stop })) {
+      if (stopAdvanceMarkerField && !stopAdvanceCandidateWon({
+        clampedStop,
+        candidateStop: patch.current_stop,
+        candidateCandleTime: patch[stopAdvanceMarkerField],
+        existingMarkerCandleTime: current[stopAdvanceMarkerField],
+      })) {
         delete safePatch[stopAdvanceMarkerField];
       }
     }

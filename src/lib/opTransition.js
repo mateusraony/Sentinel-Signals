@@ -72,8 +72,25 @@ export function clampMonotonicStop({ side, existingStop, candidateStop }) {
 // marker falsely claims T1 caused it, un-defeating the exact same-candle
 // look-ahead guard the marker exists for. Call with the value read INSIDE
 // the same transaction as clampMonotonicStop, on its result.
-export function stopAdvanceCandidateWon({ clampedStop, candidateStop }) {
-  return clampedStop === candidateStop;
+//
+// `candidateCandleTime`/`existingMarkerCandleTime` (docs/known-risks.md
+// item 80, B-1 council review) break a VALUE tie by candle recency. A
+// continuously-varying trail (the runner) rarely ties in value between two
+// racing workers, so value alone was enough there — but a mechanism that
+// saturates at a fixed one-shot target (e.g. advancePreTp1StopProtection
+// jumping to breakeven) makes a tie the COMMON case: two racing workers
+// that both cleared the trigger compute the exact same candidate stop, and
+// value comparison alone can't tell which of their candles actually
+// produced it. Pass plain candle-time strings (tfData.lastCandleTime is
+// always ISO 8601, lexically ordered — same convention already used for
+// this field everywhere else in scanner.js/opExitRules.js), never a
+// parsed Date — some callers use non-ISO placeholder strings in tests.
+export function stopAdvanceCandidateWon({ clampedStop, candidateStop, candidateCandleTime, existingMarkerCandleTime }) {
+  if (clampedStop !== candidateStop) return false;
+  if (candidateCandleTime != null && existingMarkerCandleTime != null) {
+    return candidateCandleTime >= existingMarkerCandleTime;
+  }
+  return true;
 }
 
 // Decide what createTradeOpIfNoneActive should do, given what it read inside

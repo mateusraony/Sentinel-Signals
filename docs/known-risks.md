@@ -8370,3 +8370,93 @@ seguida (afetam sinal, não só UI); B-1 pode esperar mas com o
 refinamento do conselho quando for feito; D-1 vale decidir logo
 (desativar endpoint não usado ou protegê-lo); P2/Info numa rodada
 dedicada futura, no espírito do Bloco 5 já fechado nesta sessão.
+
+---
+
+## 81. Correção dos 4 achados P1 mais acionáveis do item 80 — A-1/A-2, C-1/C-2, B-1, D-1 (2026-08-13)
+
+### Contexto
+
+Usuário pediu pra seguir com a ordem de próximos passos sugerida no item
+80. Perguntei especificamente como resolver D-1 (desativar vs. proteger o
+endpoint) — escolheu **proteger**. Escopo desta rodada: só estes 4
+achados (A-4/A-5 de acessibilidade e todo P2/Info ficam pra uma rodada
+dedicada futura, como já registrado no item 80). B-1 (motor de trading)
+teve o desenho validado por um agente Plan antes da implementação, que
+achou 2 problemas reais no desenho original — ver "Achado" abaixo.
+
+### Achado (correções aplicadas)
+
+**A-1/A-2 (UI)** — `AddAssetForm.jsx` (`handleValidate`/`handleSave`) e
+`AssetConfigPanel.jsx` (`handleSave`) agora envolvem as chamadas
+assíncronas em try/catch, resetam `validating`/`saving` num `finally`,
+reusam o estado de erro que cada componente já tinha
+(`error`/`errors` — array, não string solta) e chamam
+`logError(ComponentName, mensagem, { error: err.message })`, mesmo padrão
+já usado em `AssetCard.jsx`/`Trades.jsx`.
+
+**C-1 (indicador)** — `tier.js:calculateAtrPctSmooth` cortava a série
+ANTES de calcular o `atrPctSeries`, no índice `atrPeriod - 1` (o primeiro
+valor real de `calculateATRSeries`), em vez de filtrar por valor (o
+filtro antigo `v > 0 || v === 0` era um no-op, não distinguia placeholder
+de warm-up de ATR real zero). Teste de regressão novo em `tier.test.js`
+com candles de volatilidade constante (TR=2 todo candle, ATR% real
+sempre exatamente 2) provando que `atrLen=135`/`atrLen=148` em 149
+candles não dilui/zera mais o resultado (antes: 1.5 e 0.1
+respectivamente; depois: 2 nos dois casos).
+
+**C-2 (indicador)** — `rsi.js:calculateRSI` agora gateia
+`crossedBull50`/`crossedBear50` (e `prevRSI`/`prev2RSI`) por índice
+válido (`>= period`), não lendo mais o placeholder `fill(50)` como se
+fosse um RSI anterior real. Teste de regressão novo em `rsi.test.js`
+exatamente em `n = period+1` (o mínimo aceito) com closes estritamente
+crescentes, provando que `crossedBull50` não dispara mais a partir do
+placeholder.
+
+**B-1 (motor de trading, maior risco)** — `scanner.js` agora seta
+`stopAdvanceMarkerField = 'pre_tp1_stop_advanced_candle_time'` no branch
+pré-TP1 (linha ~3485), espelhando o que o branch runner já fazia (item
+59 addendum). `opTransition.js:stopAdvanceCandidateWon` ganhou um
+desempate por horário de vela (comparação de STRING, não `Date` — ISO
+8601 é lexicamente ordenável, e usar `Date` quebraria com os placeholders
+`'T1'`/`'T2'` que os próprios testes já usam pra representar horário de
+vela, virando `NaN`) pra resolver o caso de EMPATE de valor: diferente do
+runner (trail continuamente variável), `advancePreTp1StopProtection`
+satura num alvo fixo (breakeven), então dois workers concorrentes que
+cruzam o gatilho computam o MESMO valor candidato — um empate estrutural,
+não uma exceção rara. Um agente Plan validou o desenho antes da
+implementação e achou 2 problemas reais: (1) faltava um 4º backend
+espelhado, `scripts/adminEntitiesShadow.js` (modo sombra, item 56), que
+teria herdado o mesmo bug sem a correção; (2) o desenho original usava
+`new Date(...).getTime()` pro desempate, que quebraria silenciosamente
+com os placeholders de teste do próprio arquivo (`new Date('T1').getTime()
+=== NaN`) — trocado por comparação de string direta. Os 4 backends
+(`entities.js`, `adminEntities.js`, `fakeBackend.js`,
+`adminEntitiesShadow.js`) foram atualizados juntos. Teste de regressão
+novo em `scannerStateMachine.test.js` (mesmo estilo do teste do item 59
+addendum, mas com valores EMPATADOS nos dois workers, não diferentes —
+confirmado manualmente que o teste falha sem a correção de
+`opTransition.js` e passa com ela).
+
+**D-1 (segurança)** — `server/index.js:/api/telegram-notify` não lê mais
+`chatId` de `telegramConfig/{uid}` (documento que qualquer visitante
+anônimo podia escrever livremente) — converge pro único canal legítimo
+do app, a mesma env var `TELEGRAM_CHAT_ID` que o handler do webhook logo
+abaixo já usa e confia (o próprio comentário do arquivo já dizia "this
+app is single-tenant"). Adicionado rate limit por uid (10s, mesmo padrão
+"freio de cortesia" do disparo de backtest) e limite de tamanho do texto
+(4000 caracteres). Sem suíte de teste nova pro `server/` — não existe
+nenhuma hoje (lacuna já registrada no item 80), fora do escopo desta
+rodada.
+
+### Conclusão
+
+`npm run lint && npm test && npm run build && npm run typecheck` — todos
+limpos (932/932 testes, incluindo os 5 novos de regressão; lint e
+typecheck sem erro; build sem regressão de tamanho). A-4/A-5
+(acessibilidade) e todo P2/Info do item 80 seguem pendentes, por decisão
+de escopo desta rodada, não por esquecimento.
+
+### Próximo passo (fora deste registro)
+
+Decisão do usuário sobre quando tocar A-4/A-5 e a rodada de P2/Info.

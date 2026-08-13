@@ -56,26 +56,50 @@ async function requireAuth(req, res, next) {
   }
 }
 
+// Per-uid cooldown — same courtesy-brake pattern as the backtest trigger's
+// lastTriggerAt/TRIGGER_COOLDOWN_MS below (no queue/DB, resets on redeploy),
+// but keyed by uid so one authenticated visitor can't burn through the
+// shared bot token's own rate limit for everyone else.
+const telegramNotifyLastSentAt = new Map();
+const TELEGRAM_NOTIFY_COOLDOWN_MS = 10_000;
+
+function checkTelegramNotifyRateLimit(uid) {
+  const now = Date.now();
+  const last = telegramNotifyLastSentAt.get(uid) || 0;
+  if (now - last < TELEGRAM_NOTIFY_COOLDOWN_MS) return false;
+  telegramNotifyLastSentAt.set(uid, now);
+  return true;
+}
+
 // Sends a Telegram message on behalf of the caller. The bot token is a single
-// app-level secret (this app is single-tenant); each user only supplies
-// their own destination chat_id (telegramConfig/{uid}), never the token.
+// app-level secret (this app is single-tenant, see comment above) — the
+// destination is always THIS deployment's own configured channel
+// (TELEGRAM_CHAT_ID, the same env var the webhook handler below already
+// trusts), never a value read from a per-uid Firestore doc. Reading chatId
+// from telegramConfig/{uid} used to let any authenticated anonymous visitor
+// (auth is anonymous-only, docs/known-risks.md item 1) write an arbitrary
+// chat_id into their own doc and turn this endpoint into an open relay for
+// the real bot token (docs/known-risks.md item 80, D-1).
 app.post('/api/telegram-notify', requireAuth, async (req, res) => {
   const { text } = req.body || {};
   if (typeof text !== 'string' || !text.trim()) {
     return res.status(400).json({ error: 'text is required.' });
   }
+  if (text.length > 4000) {
+    return res.status(400).json({ error: 'text muito longo (máx. 4000 caracteres).' });
+  }
+  if (!checkTelegramNotifyRateLimit(req.uid)) {
+    return res.status(429).json({ error: 'Aguarde um pouco antes de enviar outra notificação.' });
+  }
+  if (!process.env.TELEGRAM_CHAT_ID) {
+    return res.status(503).json({ error: 'TELEGRAM_CHAT_ID não configurado neste servidor.' });
+  }
 
   try {
-    const cfgSnap = await db.collection('telegramConfig').doc(req.uid).get();
-    const chatId = cfgSnap.exists ? cfgSnap.data().chatId : null;
-    if (!chatId) {
-      return res.status(412).json({ error: 'Chat ID do Telegram não configurado.' });
-    }
-
     const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
+      body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, text, parse_mode: 'HTML' }),
     });
 
     if (!response.ok) {

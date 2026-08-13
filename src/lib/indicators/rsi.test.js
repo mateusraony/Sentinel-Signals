@@ -90,6 +90,23 @@ describe('calculateRSI', () => {
     expect(result.previousValue).toBeGreaterThan(50);
     expect(result.crossedBull50).toBe(true);
   });
+
+  // known-risks.md item 80, C-2: rsi[i] for i < period is the fill(50)
+  // placeholder, never a computed value. At exactly period+1 candles (the
+  // minimum calculateRSI accepts), only rsi[period] (the last index) is
+  // real — prevRSI/prev2RSI used to read straight into the placeholder
+  // region without checking. Strictly increasing closes push the one real
+  // RSI value well above 50; the old code read the placeholder 50 as
+  // "previousValue" and fired crossedBull50 from `50 <= 50 && lastRSI > 50`
+  // — a "cross" with no real prior RSI behind it.
+  it('does not treat the fill(50) placeholder as a real previous value right at the period+1 minimum', () => {
+    const candles = [];
+    for (let i = 0; i < 15; i++) candles.push(mkCandle(100 + i, 100 + i + 1, 100 + i - 1, 100 + i + 1, i));
+    const result = calculateRSI(candles, 14);
+    expect(result.value).toBeGreaterThan(50);
+    expect(result.crossedBull50).toBe(false);
+    expect(result.crossedBear50).toBe(false);
+  });
 });
 
 // known-risks.md item 30: calculateRSI used to hardcode the zone at 70/30 and
