@@ -8188,3 +8188,184 @@ então — amostra maior estreita o IC de qualquer uma dessas correlações e
 pode finalmente separar sinal de ruído. Se o usuário quiser ir além da
 correlação, o desenho de um backtest com dimensionamento variável
 (sugestão do Codex acima) fica disponível, mas não é gatilho automático.
+
+---
+
+## 80. Varredura completa do sistema — falhas/erros/bugs, do CSS ao motor (2026-08-13)
+
+### Contexto
+
+Usuário pediu uma varredura criteriosa e cuidadosa de TODO o projeto —
+"desde o css ate o mais complicado do sistema" — pra identificar falhas,
+erros e bugs, terminando num relatório. Diferente de `sentinel-bug-audit`
+(que exige reprodução de um bug relatado), esta foi uma auditoria ampla e
+exploratória. Rodei 5 agentes independentes em paralelo, cada um cobrindo
+um domínio (UI/acessibilidade, motor de trading, indicadores/paridade
+Pine, segurança/dados, build/CI), todos read-only, cada um com o índice
+dos 79 itens já registrados aqui + um bloco de decisões intencionais
+pra evitar redescobrir/re-reportar como "novo" algo já investigado e
+aceito. Um achado do motor (B-1) atingiu o critério de
+`sentinel-council-review` (concorrência real em máquina de estados) e
+recebeu 4 papéis independentes de revisão antes de entrar aqui.
+Relatório completo, navegável e com evidência expandível por achado,
+publicado como Artifact (link entregue ao usuário na conversa).
+
+### Achado — 25 itens novos, 13 riscos já conhecidos reconfirmados, 9 decisões intencionais revisadas e descartadas
+
+**P1 (8, requerem atenção, nenhum ativo em produção hoje):**
+
+- **A-1/A-2 (UI)** — `AddAssetForm.jsx:30-54` e `AssetConfigPanel.jsx:79-93`
+  chamam Firestore/API sem try/catch — uma falha de rede trava o spinner
+  de "Salvando..."/"Validando..." pra sempre, sem mensagem de erro.
+- **A-4 (UI)** — `AssetDrawer.jsx` é um modal caseiro (dois `<div>` fixos)
+  sem foco/Esc/`aria-modal`, apesar do componente `ui/sheet.jsx` (Radix
+  Sheet, próprio pra esse padrão) já existir no repo e não ser usado por
+  ninguém.
+- **A-5 (UI)** — vários `<input>`/`<select>` nativos usam `outline-none`
+  sem nenhum substituto de foco visível (Dashboard.jsx, Assets.jsx,
+  Logs.jsx, PineScript.jsx) — falha WCAG 2.4.7, ao contrário do
+  componente `Button` do design system, que já trata isso certo.
+- **B-1 (Motor)** — `scanner.js:3458-3486` (branch pré-TP1) nunca passa
+  `stopAdvanceMarkerField` pra `transitionTradeOp`, ao contrário do
+  branch runner pós-TP1 (`scanner.js:3584-3587`, hardening do item 59) —
+  o marcador `pre_tp1_stop_advanced_candle_time` pode ser sobrescrito por
+  um worker desatualizado numa corrida entre browser e cron, reabrindo a
+  classe de bug "falso STOP_HIT por look-ahead" que os itens 54/59 já
+  fecharam uma vez (agora no mecanismo pré-TP1). **Confirmado por conselho
+  de 4 papéis** (Concorrência, Arquiteto, Trading, Testes) — ver subseção
+  dedicada abaixo, incluindo uma refutação real que melhora a correção
+  proposta originalmente.
+- **C-1 (Indicadores)** — `tier.js:22-30`
+  (`calculateAtrPctSmooth`) mistura zeros-placeholder de warm-up do ATR
+  na média quando `atrPeriod` é grande o bastante pra invadir a janela de
+  suavização — reproduzido rodando o algoritmo real: `atrLen=135` dilui
+  o ATR% em ~26% (cruza o limiar T2→T1), `atrLen≥148` zera. Tier errado
+  propaga silenciosamente pra stop mult/ADX/Chop/Time Stop de uma
+  operação real, sem log nem exceção. `atrLen` é sincronizado
+  globalmente sem `maxval` no Pine real.
+- **C-2 (Indicadores)** — `rsi.js:29-66` (`calculateRSI`) inicializa a
+  série com placeholder `50` e `prevRSI`/`prev2RSI` podem ler esse
+  placeholder (não um RSI real) perto do warm-up mínimo — reproduzido:
+  com `n = period+1`, `crossedBull50` dispara a partir do PRIMEIRO valor
+  computável, não de um cruzamento real. Blindado hoje por guardas
+  externas (`closedCandles.length < 50`), mas `rsi_period` por-ativo sem
+  clamp na UI reproduz isso em produção com um ativo recém-listado
+  configurado em ~48-49 — +15 pontos indevidos no score de confluência.
+- **D-1 (Segurança)** — `server/index.js:62-92` +
+  `telegramConfig/{uid}` (escrita liberada ao próprio dono do doc):
+  qualquer visitante anônimo pode escrever um `chat_id` arbitrário no
+  próprio doc e usar `POST /api/telegram-notify` (endpoint hoje não usado
+  pelo frontend, confirmado) como relay de spam com o token real do canal
+  24h, sem rate limit.
+
+**P2 (12, vale corrigir sem urgência):** A-3 (linha do histórico não
+ativável por teclado), A-6 (contraste ~2:1 nos eixos dos gráficos,
+3 componentes), A-7 (busca global escondida abaixo de 640px sem
+fallback), A-8 (abas do editor Pine sem ARIA, ao contrário do padrão
+correto já usado em Dashboard.jsx), A-9 (sliders de Settings.jsx sem
+`aria-label`), B-2 (fechamento de operação hierárquica não passa
+`cascade` pra `transitionTradeOp` — âncora `assetActiveOps/{id}__{cascade}`
+fica com ponteiro fantasma, mascarado pelo auto-reparo P0-f;
+`hierarchicalCascadesEnabled` já está desligado por recomendação do
+próprio A/B do item 37), D-2 (`requireAuth` do server checa só
+autenticação, não autorização — qualquer anônimo dispara
+`/api/backtest/trigger`), D-3 (comparação do webhook secret não é
+constant-time), D-4 (`server/index.js:119` persiste o `secret` do
+webhook em texto puro dentro de `tradingviewWebhookEvents`), E-1 (3
+flags de produção — `preTp1StopProtectionEnabled`/`AtrMult`,
+`candlePatternEnabled` — ausentes do espelho `backtestPineConfig.js`,
+inofensivo hoje mas quebra a convenção documentada no próprio arquivo),
+E-2 (`ci.yml`, o gate de merge, sem `timeout-minutes`/`concurrency`,
+diferente de todos os outros workflows), E-3 (`deploy-firestore.yml` sem
+`timeout-minutes`).
+
+**Info (5, sem risco real hoje):** A-10 (`Sidebar.jsx` usa
+`console.error` em vez de `logError`, sem feedback ao usuário em falha),
+C-3 (função `ema()` triplicada byte-idêntica em `rangeFilter.js`/
+`macd.js`/`movingAverages.js`, risco de manutenção não de cálculo), D-5
+(comentário de `firestore.rules` descreve uma Cloud Function que nunca
+existiu — a regra em si já é segura), D-6 (CORS abre pra `'*'`
+silenciosamente se `ALLOWED_ORIGIN` faltar — hoje `render.yaml` define
+certo), E-4 (comentário aponta pro arquivo de tripwire errado —
+`rf1hCondTripwire.test.js` é o real, o comentário cita
+`scannerStateMachine.test.js`).
+
+### Achado B-1 em detalhe — conselho de revisão (4 papéis independentes)
+
+O achado do motor de trading (corrida no marcador pré-TP1) bateu o
+critério de `sentinel-council-review` (máquina de estados + concorrência
+em produção). Rodei 4 papéis independentes, cada um lendo o código real
+e tentando refutar a reconstrução antes de aceitar:
+
+- **Concorrência**: **CONFIRMADO** — a causa raiz é ainda mais ampla que
+  o achado original descrevia: `stopAdvanceMarkerField` nunca chega no
+  branch pré-TP1, então o marcador é sobrescrito incondicionalmente,
+  vencendo ou perdendo o clamp do `current_stop` (não só no caso de
+  empate de valor citado originalmente). Recomendou P2 (mecanismo
+  desligado por padrão hoje).
+- **Arquiteto**: confirmou a assimetria (cronologia bate com omissão —
+  item 54 já sinalizava o gêmeo estrutural um dia antes do item 59
+  corrigir só o runner) e **discordou parcialmente da correção
+  proposta**: como `advancePreTp1StopProtection` salta pra breakeven uma
+  única vez (valor fixo), dois workers concorrentes costumam calcular o
+  MESMO valor candidato — `stopAdvanceCandidateWon` (que compara só
+  valor, `clampedStop === candidateStop`) não discrimina quem venceu
+  nesse empate. Copiar literalmente o padrão do runner não fecha esse
+  caso.
+- **Trading**: **CONFIRMADO**, chegou **independentemente** à mesma
+  ressalva do Arquiteto sobre o empate de valor (convergência real entre
+  papéis que não se comunicaram). Recomendou manter **P1**: severidade
+  deve refletir o impacto SE o mecanismo for religado, não a
+  probabilidade disso acontecer — o flag é opt-in e documentado, não
+  hipotético.
+- **Testes**: achado **testável de forma conclusiva** — desenhou um
+  teste determinístico (nível `transitionTradeOp` direto, sem
+  `Promise.all`, sem depender de timing) que falha HOJE sem a correção,
+  no mesmo padrão do teste já existente pro runner
+  (`scannerStateMachine.test.js:4170-4191`).
+
+**Veredito**: severidade mantida **P1** — a flag
+`preTp1StopProtectionEnabled` está desligada por padrão em produção hoje
+(não é P0 ativo), mas é um bug real e documentado esperando pra
+acontecer se a flag for religada (o item 55 já decidiu mantê-la
+desligada por resultado de A/B, o que reduz a urgência mas não muda o
+que aconteceria se alguém a religasse). **A correção correta não é só
+espelhar o padrão do runner** — precisa também desempatar por horário de
+vela candidata quando os valores empatam, refinamento que só apareceu
+por causa da refutação do conselho.
+
+### Verificado e confirmado íntegro (não são achados, são checagens positivas)
+
+Todos os P0 de `.claude/rules/trading-engine.md` (CAS transacional,
+candle retroativo, trailing look-ahead, contagem RF por candle, retry
+re-apontando operação terminal, stop regredindo) seguem corretos —
+regressão checada linha a linha, sem achado novo. Paridade
+`pineParser.js`×`adminPineConfig.js` confirmada por diff programático
+(63 chaves DEFAULTS, 59 SYNCED_STRATEGY_KEYS, zero divergência — item 27
+persiste). Política "stop vence" na ambiguidade stop/TP idêntica nos
+branches pré/pós-TP1 (item 36). 7 arquivos de tripwire de isolamento
+rodados (`npx vitest run`) — 24/24 verdes, nenhum flag experimental
+vazando pra produção. Os 4 flags dormentes (`retestEnabled`,
+`displacementEnabled`, `smcTierEnabled`, `smcObFvgEnabled`) revisados por
+bug de código mesmo desligados — nenhum encontrado.
+
+### Conclusão
+
+Nenhuma correção foi aplicada nesta tarefa — foi deliberadamente
+só leitura/análise, por pedido do usuário ("me faça um relatório").
+Distribuição de severidade (8 P1 / 12 P2 / 5 Info) reflete um sistema já
+maduro e auditado — nenhum P0 novo, nenhum vazamento catastrófico de
+flag experimental (a hipótese de maior risco da própria varredura,
+investigada a fundo pelo Agente E e confirmada como não-lacuna). Os 2
+achados de maior valor prático são C-1/C-2 (indicadores) — silenciosos,
+sem log, afetam a qualidade do sinal diretamente, não só UI — e merecem
+prioridade mesmo sendo "só" P1.
+
+### Próximo passo (fora deste registro)
+
+Decisão do usuário sobre o que corrigir e em que ordem. Sugestão não
+vinculante: A-1/A-2 primeiro (menor risco, mudança isolada); C-1/C-2 em
+seguida (afetam sinal, não só UI); B-1 pode esperar mas com o
+refinamento do conselho quando for feito; D-1 vale decidir logo
+(desativar endpoint não usado ou protegê-lo); P2/Info numa rodada
+dedicada futura, no espírito do Bloco 5 já fechado nesta sessão.
