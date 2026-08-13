@@ -8212,7 +8212,8 @@ publicado como Artifact (link entregue ao usuário na conversa).
 
 ### Achado — 25 itens novos, 13 riscos já conhecidos reconfirmados, 9 decisões intencionais revisadas e descartadas
 
-**P1 (8, requerem atenção, nenhum ativo em produção hoje):**
+**P1 (8, requerem atenção — a maioria já ativa em produção hoje, só B-1
+está atrás de uma flag desligada; ver ressalva por item abaixo):**
 
 - **A-1/A-2 (UI)** — `AddAssetForm.jsx:30-54` e `AssetConfigPanel.jsx:79-93`
   chamam Firestore/API sem try/catch — uma falha de rede trava o spinner
