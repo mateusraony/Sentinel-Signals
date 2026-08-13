@@ -8108,7 +8108,7 @@ Reabrir só se surgir hipótese nova ou dado genuinamente não examinado
 
 ---
 
-## 79. Score e margem de regime não predizem R — análise post-hoc sobre dado já coletado (2026-08-13)
+## 79. Score e margem de regime — sem evidência de relação com R nesta amostra, análise post-hoc (2026-08-13)
 
 ### Contexto
 
@@ -8127,42 +8127,64 @@ sustento. Se não, as duas ideias não têm base nos dados que já existem.
 
 ### Achado (fato — análise post-hoc sobre `rf-4h-direto`, item 67, n=109, cascata nativa isolada, sem contaminação de outra cascata)
 
-Correlação de Pearson entre cada variável e o R realizado:
+Correlação de Pearson entre cada variável e o R realizado, com IC95%
+(transformação de Fisher — a correção que faltava na 1ª versão deste
+registro, apontada pelo Codex review no PR #178):
 
-| Variável | Correlação com R | Leitura |
-|---|---|---|
-| `entry_score` (0-100) | **−0,032** | zero — score não prediz resultado |
-| margem ADX (`adx_at_entry` − mínimo do tier) | **0,024** | zero |
-| margem Chop (máximo do tier − `chop_at_entry`) | **0,122** | fraca, positiva |
-| as duas margens somadas | 0,101 | fraca |
+| Variável | Correlação com R | IC95% | Cruza zero? |
+|---|---|---|---|
+| `entry_score` (0-100) | −0,032 | [−0,219; 0,157] | sim |
+| margem ADX (`adx_at_entry` − mínimo do tier) | 0,024 | [−0,165; 0,211] | sim |
+| margem Chop (máximo do tier − `chop_at_entry`) | 0,122 | [−0,068; 0,303] | sim |
+| as duas margens somadas | 0,101 | [−0,089; 0,284] | sim |
+
+**Nenhum dos quatro IC exclui zero** — com n=109, o erro-padrão da
+correlação é grande o bastante pra não distinguir "sem relação" de uma
+correlação moderada real em qualquer uma das quatro variáveis (o IC do
+score, por exemplo, é compatível com uma correlação negativa moderada
+[-0,22] OU positiva moderada [+0,16] — a estimativa pontual −0,032 não
+prova que a associação verdadeira é zero, só que esta amostra não tem
+poder pra detectá-la).
 
 Terços por `entry_score`: baixo avgR=+0,273, médio avgR=−0,156, alto
-avgR=+0,214 — sem gradiente, ruído puro (se score predissesse, o terço
-alto teria que vencer os outros dois, não empatar com o baixo).
+avgR=+0,214 — padrão em U, não monotônico. Terços por margem de Chop:
+baixo avgR=−0,184, médio avgR=+0,076, alto avgR=+0,432 — o único com
+gradiente na direção esperada, mas com IC cruzando zero igual aos
+outros. **Ressalva adicional**: Pearson só captura relação LINEAR — o
+padrão em U do score não seria bem descrito por nenhuma correlação
+linear, positiva ou negativa; os terços mostram isso diretamente
+(mais informativo aqui do que o coeficiente sozinho), mas também não
+sugerem nenhuma regra de dimensionamento simples (nem "aposte mais no
+score alto", já que o score baixo empatou com o alto).
 
-Terços por margem de Chop: baixo avgR=−0,184, médio avgR=+0,076, alto
-avgR=+0,432 — ÚNICA variável com gradiente monotônico na direção
-esperada (mais folga = melhor resultado). Mas com correlação de só 0,122
-em n=109, o teste-t não é significativo (|t|≈1,27, seria preciso ~1,98
-pra p<0,05) — é sugestivo, não é prova. Mesma disciplina de sempre: não
-declarar achado com esse nível de evidência.
+### Conclusão (recalibrada — a 1ª versão deste item superclaimava)
 
-### Conclusão
+**Não há evidência de relação entre `entry_score`/margem de regime e o R
+realizado NESTA amostra — não é o mesmo que provar que a relação não
+existe.** Com n=109 e essa magnitude de erro-padrão, um efeito real
+moderado (a diferença que separaria uma regra de dimensionamento útil de
+uma inútil) simplesmente não seria detectável. A formulação correta é
+"sem sustento pra agir agora", não "score não prediz resultado" (a
+primeira versão deste registro dizia isso, e o Codex review corretamente
+apontou que a análise não sustenta uma afirmação tão forte). Nenhuma
+decisão de produto tomada a partir disso — nem a favor, nem contra.
 
-**Linha 3 (dimensionar risco pelo score) não tem sustento nos dados —
-`entry_score` não prediz R, então apostar mais nos scores altos não
-deveria mudar o resultado esperado.** Linha 2 (painel como apoio humano,
-usando como proxy "sinal no limite do gate") tem só um indício fraco e
-não significativo do lado do Choppiness — não é evidência suficiente pra
-recomendar nada ainda, mas é o único sinal (por fraco que seja) que
-apontou na direção certa entre as 4 variáveis testadas. Nenhuma decisão
-de produto tomada a partir disso.
+**O que resolveria isso de verdade** (sugestão do próprio Codex review,
+registrada como pendência, não implementada): testar uma regra de
+dimensionamento CONCRETA (ex.: tamanho de posição proporcional ao score)
+direto em dado de holdout — diferente desta análise de correlação, que só
+usa os R-múltiplos já normalizados por risco (por construção,
+independentes do tamanho da posição). Simular uma regra de
+dimensionamento de verdade exigiria um motor de backtest novo, com PnL em
+dólar variável por operação — não existe hoje, é escopo novo, não
+implementado sem pedido explícito.
 
 ### Próximo passo (fora deste registro)
 
 Linha 1 (dado genuinamente novo/futuro) segue em aberto — não é
 simulável, só observável com o tempo. Agendado check-in pra ~90 dias
 (2026-11-11) pra revisitar com dado real de produção acumulado desde
-então. Se a margem de Chop continuar aparecendo em amostras futuras
-maiores, aí sim vale investigar como um gate mais rígido (ou um aviso
-visual no painel pro usuário decidir).
+então — amostra maior estreita o IC de qualquer uma dessas correlações e
+pode finalmente separar sinal de ruído. Se o usuário quiser ir além da
+correlação, o desenho de um backtest com dimensionamento variável
+(sugestão do Codex acima) fica disponível, mas não é gatilho automático.
