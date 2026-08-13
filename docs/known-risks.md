@@ -8105,3 +8105,64 @@ Nenhum programado — linha de investigação (RF direto em 1h, com ou sem
 condição do 4h) não parece promissora com o dado acumulado até aqui.
 Reabrir só se surgir hipótese nova ou dado genuinamente não examinado
 (mesma disciplina do item 73).
+
+---
+
+## 79. Score e margem de regime não predizem R — análise post-hoc sobre dado já coletado (2026-08-13)
+
+### Contexto
+
+Usuário perguntou (frustrado com a sequência de resultados inconclusivos)
+se havia alguma forma diferente de melhorar o resultado — não mais um
+filtro de entrada, mas algo estruturalmente distinto. Três linhas
+propostas: (1) dado genuinamente novo/futuro, (2) usar o painel como
+apoio à decisão humana em vez de piloto automático, (3) dimensionar
+risco pelo tanto que o sinal é confiável, em vez de mexer em quando
+entrar. As linhas 2 e 3 têm uma pergunta comum, testável AGORA com dado
+já coletado (sem precisar de novo backtest): **o `entry_score`/margem de
+regime da RF nativa prediz o resultado real da operação?** Se sim, tanto
+dimensionar posição pelo score (linha 3) quanto um humano hesitar em
+sinais "no limite" (linha 2, proxy: margem pro limiar de ADX/Chop) teriam
+sustento. Se não, as duas ideias não têm base nos dados que já existem.
+
+### Achado (fato — análise post-hoc sobre `rf-4h-direto`, item 67, n=109, cascata nativa isolada, sem contaminação de outra cascata)
+
+Correlação de Pearson entre cada variável e o R realizado:
+
+| Variável | Correlação com R | Leitura |
+|---|---|---|
+| `entry_score` (0-100) | **−0,032** | zero — score não prediz resultado |
+| margem ADX (`adx_at_entry` − mínimo do tier) | **0,024** | zero |
+| margem Chop (máximo do tier − `chop_at_entry`) | **0,122** | fraca, positiva |
+| as duas margens somadas | 0,101 | fraca |
+
+Terços por `entry_score`: baixo avgR=+0,273, médio avgR=−0,156, alto
+avgR=+0,214 — sem gradiente, ruído puro (se score predissesse, o terço
+alto teria que vencer os outros dois, não empatar com o baixo).
+
+Terços por margem de Chop: baixo avgR=−0,184, médio avgR=+0,076, alto
+avgR=+0,432 — ÚNICA variável com gradiente monotônico na direção
+esperada (mais folga = melhor resultado). Mas com correlação de só 0,122
+em n=109, o teste-t não é significativo (|t|≈1,27, seria preciso ~1,98
+pra p<0,05) — é sugestivo, não é prova. Mesma disciplina de sempre: não
+declarar achado com esse nível de evidência.
+
+### Conclusão
+
+**Linha 3 (dimensionar risco pelo score) não tem sustento nos dados —
+`entry_score` não prediz R, então apostar mais nos scores altos não
+deveria mudar o resultado esperado.** Linha 2 (painel como apoio humano,
+usando como proxy "sinal no limite do gate") tem só um indício fraco e
+não significativo do lado do Choppiness — não é evidência suficiente pra
+recomendar nada ainda, mas é o único sinal (por fraco que seja) que
+apontou na direção certa entre as 4 variáveis testadas. Nenhuma decisão
+de produto tomada a partir disso.
+
+### Próximo passo (fora deste registro)
+
+Linha 1 (dado genuinamente novo/futuro) segue em aberto — não é
+simulável, só observável com o tempo. Agendado check-in pra ~90 dias
+(2026-11-11) pra revisitar com dado real de produção acumulado desde
+então. Se a margem de Chop continuar aparecendo em amostras futuras
+maiores, aí sim vale investigar como um gate mais rígido (ou um aviso
+visual no painel pro usuário decidir).
