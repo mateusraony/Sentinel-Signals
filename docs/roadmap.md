@@ -364,17 +364,22 @@ justificativa nova para reabrir isso com o resultado acima.
   recomendado (SMC vira score, item 77) — investir em cobertura NOVA dela
   não teria valor.
 - **`exit_ambiguous` — volume de BACKTEST já medido, produção ao vivo tem
-  card no painel agora.** Reavaliado 2026-08-13: o volume em backtest já
-  tinha sido medido (item 36, adendo 2026-08-12: 19/2.417 operações, 0,79%,
-  17 relatórios reais) — só o volume EM PRODUÇÃO AO VIVO seguia sem
-  observação direta (o agente não tem leitura do Firestore de produção,
-  bloqueada pelo classificador de segurança do ambiente mesmo com
-  autorização explícita, item 67). Implementado: card de estatística em
-  `TradeHistory.jsx` (mesmo padrão de `summarizeOps`/`SummaryCard` já usado
-  em `MonthlyReport.jsx`) mostrando contagem/porcentagem real, direto do
-  painel — decisão de investir na reconstrução por timeframe menor segue
-  condicionada a esse número, agora observável pelo usuário a qualquer
-  momento.
+  card no painel agora (com ressalva de janela).** Reavaliado 2026-08-13: o
+  volume em backtest já tinha sido medido (item 36, adendo 2026-08-12:
+  19/2.417 operações, 0,79%, 17 relatórios reais) — só o volume EM PRODUÇÃO
+  AO VIVO seguia sem observação direta (o agente não tem leitura do
+  Firestore de produção, bloqueada pelo classificador de segurança do
+  ambiente mesmo com autorização explícita, item 67). Implementado: card de
+  estatística em `TradeHistory.jsx` (mesmo padrão de `summarizeOps`/
+  `SummaryCard` já usado em `MonthlyReport.jsx`) mostrando contagem/
+  porcentagem direto do painel. **Ressalva (achado do Codex no PR #180):**
+  a tela já busca só as 200 operações mais recentes
+  (`TradeOperation.list('-created_date', 200)`, mesmo teto que toda
+  estatística da tela usa) — se a produção acumular mais de 200 operações
+  fechadas, o card reflete só a janela mais recente, não o histórico
+  completo. Rotulado explicitamente na UI (tooltip); decisão de investir na
+  reconstrução por timeframe menor segue condicionada a esse número, dentro
+  dessa ressalva de janela.
 - **`npm run typecheck` fora do CI — 790→0 erros corrigidos (2026-08-13).**
   A doc antiga dizia "~80 erros" — o real era 790 (a doc nunca tinha sido
   reconferida contra o código). Todos corrigidos: exclusão de arquivos de

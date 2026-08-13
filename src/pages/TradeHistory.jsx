@@ -291,9 +291,13 @@ export default function TradeHistory() {
   const wr = counted > 0 ? Math.round((wins / counted) * 100) : 0;
   // docs/known-risks.md item 36 / roadmap.md Bloco 5 — volume de
   // exit_ambiguous (candle fechado tocou stop E TP no mesmo candle; política
-  // "stop vence" já em produção, isso só torna o volume real OBSERVÁVEL no
+  // "stop vence" já em produção, isso só torna o volume OBSERVÁVEL no
   // painel). Medido em backtest (17 relatórios, 0,79%) mas nunca em produção
-  // ao vivo — este agente não tem leitura do Firestore de produção.
+  // ao vivo — este agente não tem leitura do Firestore de produção. Calculado
+  // sobre `filtered`, que já herda o teto de 200 operações da query acima
+  // (mesmo teto de toda estatística desta tela, ex. WR%/wins/losses) — se a
+  // produção acumular mais de 200 operações fechadas, isto reflete só a
+  // janela mais recente, não o histórico completo.
   const ambiguousCount = filtered.filter(op => op.exit_ambiguous === true).length;
   const ambiguousPct = filtered.length > 0 ? ((ambiguousCount / filtered.length) * 100).toFixed(1) : '0.0';
 
@@ -424,8 +428,8 @@ export default function TradeHistory() {
           <span style={{ color: '#ff1478' }}>🛑 {losses} loss</span>
           <span style={{ color: wr >= 50 ? '#00ff80' : '#ff9f43' }}>WR {wr}%</span>
           {ambiguousCount > 0 && (
-            <span style={{ color: '#ffd166' }} title="Candle fechado tocou stop e TP no mesmo candle (política: stop vence)">
-              ⚠️ {ambiguousCount} ambíguo{ambiguousCount !== 1 ? 's' : ''} ({ambiguousPct}%)
+            <span style={{ color: '#ffd166' }} title="Candle fechado tocou stop e TP no mesmo candle (política: stop vence). Calculado sobre as últimas 200 operações carregadas nesta tela — não o histórico completo de produção.">
+              ⚠️ {ambiguousCount} ambíguo{ambiguousCount !== 1 ? 's' : ''} ({ambiguousPct}%)*
             </span>
           )}
           <span className="ml-auto font-bold" style={{ color: totalPnl >= 0 ? '#00ff80' : '#ff1478' }}>
