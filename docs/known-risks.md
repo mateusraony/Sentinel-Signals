@@ -8075,8 +8075,33 @@ visíveis no relatório); só a CRIAÇÃO de `TradeOperation` é suprimida.
 alvos esbuild (`build:scan`/`build:scan-shadow`/`build:backtest`) + grep
 de isolamento confirmado.
 
+### A/B limpo real: `rf1hExclusiveEnabled` funcionou, resultado não favorece o 1h
+
+Usuário rodou de novo (`trial_label: rf-1h-direto-isolado`,
+`{"rf1hUncondEnabled": true, "skip15mConfirmationEnabled": true,
+"rf1hExclusiveEnabled": true}`, mesmos 7 símbolos/12 meses). Confirmado
+que a trava funcionou: `report.byCascade` só tem `rf1h_uncond_15m`
+(`4h_15m` não aparece — zero tentativas, nenhuma linha no funil).
+
+| | Operações | Expectância líquida | Situação |
+|---|---|---|---|
+| `rf1h_uncond_15m` competindo (run anterior) | 224 | −0,115R | inconclusiva |
+| `rf1h_uncond_15m` isolado (este run) | 255 | −0,042R | inconclusiva |
+| `4h_15m` isolado (item 67/roadmap) | 109 | +0,108R | inconclusiva |
+
+Volume subiu (255 vs 224, sem mais perder vaga pro 4h) e a expectância
+melhorou (menos negativa), mas segue inconclusiva (IC95 cruza zero). Na
+comparação limpa lado a lado: o 1h dispara ~2,3× mais vezes que o 4h, mas
+com viés levemente NEGATIVO, oposto ao viés levemente positivo do 4h.
+Nenhum dos dois é conclusivo isoladamente (amostra pequena pros dois),
+mas **não há evidência de que RF direto em 1h ajude** — o sinal fraco
+disponível aponta na direção errada. Consistente com o resultado já
+registrado do RF 1h condicionado ao 4h (itens 56/68): mais uma leitura
+que não favorece dar peso ao 1h nesta estratégia.
+
 ### Próximo passo (fora deste registro)
 
-Rodar de novo o A/B "1h direto" com `rf1hExclusiveEnabled: true` junto —
-agora sim uma medição limpa de `rf1h_uncond_15m` sozinha, sem a cascata
-nativa competindo pela vaga. Decisão do usuário sobre quando rodar.
+Nenhum programado — linha de investigação (RF direto em 1h, com ou sem
+condição do 4h) não parece promissora com o dado acumulado até aqui.
+Reabrir só se surgir hipótese nova ou dado genuinamente não examinado
+(mesma disciplina do item 73).
