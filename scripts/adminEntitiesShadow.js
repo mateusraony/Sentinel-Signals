@@ -234,7 +234,12 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvance
     if (patch.current_stop != null) {
       const clampedStop = clampMonotonicStop({ side: current.side, existingStop: current.current_stop, candidateStop: patch.current_stop });
       safePatch = { ...patch, current_stop: clampedStop };
-      if (stopAdvanceMarkerField && !stopAdvanceCandidateWon({ clampedStop, candidateStop: patch.current_stop })) {
+      if (stopAdvanceMarkerField && !stopAdvanceCandidateWon({
+        clampedStop,
+        candidateStop: patch.current_stop,
+        candidateCandleTime: patch[stopAdvanceMarkerField],
+        existingMarkerCandleTime: current[stopAdvanceMarkerField],
+      })) {
         delete safePatch[stopAdvanceMarkerField];
       }
     }

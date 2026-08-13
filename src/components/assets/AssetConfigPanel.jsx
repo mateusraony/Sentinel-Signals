@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import MultiToggle from '@/components/ui/multi-toggle';
 import { Loader2, AlertCircle } from 'lucide-react';
+import { logError } from '@/lib/logger';
 
 const NOTIFY_SOURCE_OPTIONS = [
   { id: 'range_filter', label: 'RF' },
@@ -87,9 +88,15 @@ export default function AssetConfigPanel({ asset, onSave }) {
     }
     setErrors([]);
     setSaving(true);
-    await backend.entities.MonitoredAsset.update(asset.id, config);
-    setSaving(false);
-    onSave();
+    try {
+      await backend.entities.MonitoredAsset.update(asset.id, config);
+      onSave();
+    } catch (err) {
+      logError('AssetConfigPanel', `Falha ao salvar configuração do ativo ${asset.id}`, { error: err.message });
+      setErrors(['Falha ao salvar configuração — tente novamente.']);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const updateTf = (tf, enabled) => {

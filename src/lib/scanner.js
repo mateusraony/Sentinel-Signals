@@ -3482,6 +3482,14 @@ export async function persistScanResults(scanResult) {
           // (same still-latest-closed candle, next cron tick) never tests it
           // against the just-advanced stop.
           updatePayload.pre_tp1_stop_advanced_candle_time = tfData.lastCandleTime;
+          // Same transactional protection as the runner branch below
+          // (docs/known-risks.md item 59 addendum) — without this, a racing
+          // worker on a stale candle could overwrite this marker even
+          // though advancePreTp1StopProtection saturates at a fixed target
+          // (breakeven), so two racing workers usually compute the exact
+          // SAME candidate stop — a value tie stopAdvanceCandidateWon
+          // resolves by candle recency (item 80, B-1).
+          stopAdvanceMarkerField = 'pre_tp1_stop_advanced_candle_time';
         }
       }
     } else {

@@ -55,15 +55,23 @@ export function calculateRSI(candles, period = 14, overbought = 70, oversold = 3
   }
 
   const lastRSI = rsi[n - 1];
-  const prevRSI = n >= 2 ? rsi[n - 2] : lastRSI;
-  const prev2RSI = n >= 3 ? rsi[n - 3] : prevRSI;
+  const prevIdx = n - 2;
+  const prev2Idx = n - 3;
+  // rsi[i] for i < period is the fill(50) placeholder, never a computed
+  // value — a "cross" read from it isn't a real crossover, just an
+  // artifact of candles.length being close to period+1 (known-risks.md
+  // item 80, C-2).
+  const hasPrevRSI = prevIdx >= period;
+  const hasPrev2RSI = prev2Idx >= period;
+  const prevRSI = hasPrevRSI ? rsi[prevIdx] : lastRSI;
+  const prev2RSI = hasPrev2RSI ? rsi[prev2Idx] : prevRSI;
 
   // Same crossover-of-50 condition the Pine script uses to score entries
   // (ta.crossover(rsi,50) or a same-side 2-bar-old cross): a static
   // "50 < rsi < 70" band check (the previous JS logic) is a different,
   // looser condition than what the reference strategy actually scores on.
-  const crossedBull50 = (prevRSI <= 50 && lastRSI > 50) || (lastRSI > 50 && prevRSI > 50 && prev2RSI < 50);
-  const crossedBear50 = (prevRSI >= 50 && lastRSI < 50) || (lastRSI < 50 && prevRSI < 50 && prev2RSI > 50);
+  const crossedBull50 = hasPrevRSI && ((prevRSI <= 50 && lastRSI > 50) || (hasPrev2RSI && lastRSI > 50 && prevRSI > 50 && prev2RSI < 50));
+  const crossedBear50 = hasPrevRSI && ((prevRSI >= 50 && lastRSI < 50) || (hasPrev2RSI && lastRSI < 50 && prevRSI < 50 && prev2RSI > 50));
 
   return {
     value: lastRSI,

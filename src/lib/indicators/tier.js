@@ -23,8 +23,18 @@ export function calculateAtrPctSmooth(candles, atrPeriod = 14, smoothLen = 20) {
   const atrSeries = calculateATRSeries(candles, atrPeriod);
   if (atrSeries.length === 0) return 0;
 
-  const atrPctSeries = atrSeries.map((atr, i) => (atr / candles[i].close) * 100);
-  const slice = atrPctSeries.slice(-smoothLen).filter((v) => v > 0 || v === 0);
+  // calculateATRSeries fills indices 0..atrPeriod-2 with a structural 0
+  // placeholder (warm-up, never a measured ATR) — averaging those in would
+  // silently dilute (or zero out) atrPctSmooth when atrPeriod is large
+  // enough to invade the smoothing window, misclassifying the Tier without
+  // any error/log (known-risks.md item 80, C-1). Slice off the placeholder
+  // region by index BEFORE computing the pct series, instead of trying to
+  // filter it out by value (0 placeholder is indistinguishable from a
+  // genuinely flat ATR%).
+  const atrPctSeries = atrSeries
+    .slice(atrPeriod - 1)
+    .map((atr, i) => (atr / candles[atrPeriod - 1 + i].close) * 100);
+  const slice = atrPctSeries.slice(-smoothLen);
   if (slice.length === 0) return 0;
   return slice.reduce((a, b) => a + b, 0) / slice.length;
 }

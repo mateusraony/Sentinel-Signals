@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { classifyTier, TIER_PARAMS } from './tier';
+import { classifyTier, TIER_PARAMS, calculateAtrPctSmooth } from './tier';
+import { mkCandle } from './__fixtures__/candles';
 
 describe('classifyTier', () => {
   it('classifies below tier2 threshold as T1', () => {
@@ -38,6 +39,48 @@ describe('classifyTier', () => {
     const result = classifyTier(0.5, { tier2: 0.8, tier3: 1.5 }, { T2: 70 });
     expect(result.tier).toBe('T1');
     expect(result.timeStopBars).toBe(48);
+  });
+});
+
+// known-risks.md item 80, C-1: calculateATRSeries fills indices before
+// atrPeriod-1 with a structural 0 placeholder (warm-up, never a measured
+// ATR) — averaging those in silently dilutes (or zeroes) atrPctSmooth once
+// atrPeriod is large enough to invade the smoothing window, misclassifying
+// the Tier without any error/log. These candles hold a perfectly constant
+// true range (TR=2 every bar: no gap between open/close since price never
+// moves, high/low both 1 away) so the real (non-placeholder) ATR% is
+// exactly 2 at every index — any deviation from 2 in the assertions below
+// can only come from placeholder dilution, not from indicator math.
+describe('calculateAtrPctSmooth (known-risks item 80, C-1)', () => {
+  function constantVolatilityCandles(n, price = 100) {
+    return Array.from({ length: n }, (_, i) => mkCandle(price, price + 1, price - 1, price, i));
+  }
+
+  it('stays at the true ATR% when atrPeriod is small relative to the candle window', () => {
+    const candles = constantVolatilityCandles(149);
+    expect(calculateAtrPctSmooth(candles, 14, 20)).toBeCloseTo(2, 5);
+  });
+
+  it('does not dilute with warm-up placeholders when atrPeriod eats into the smoothing window', () => {
+    // 149 candles, atrPeriod=135, smoothLen=20 (defaults): the naive
+    // "last 20 indices of the raw series" window spans indices 129-148,
+    // of which only 134-148 (15) are real — the old value-based filter
+    // (`v > 0 || v === 0`) let the 5 leading 0-placeholders count as real
+    // measurements, diluting the average from 2 to 1.5 (a T2->T1
+    // misclassification at the default 0.8 threshold). The fix must
+    // return the true 2, not the diluted 1.5.
+    const candles = constantVolatilityCandles(149);
+    expect(calculateAtrPctSmooth(candles, 135, 20)).toBeCloseTo(2, 5);
+  });
+
+  it('does not zero out when atrPeriod leaves fewer real values than smoothLen', () => {
+    // atrPeriod=148 on 149 candles leaves exactly ONE real index (148) —
+    // under the old code this index's own smoothing window (last 20 of
+    // the raw series) is 19 placeholder zeros + 1 real value, diluting to
+    // 0.1 (functionally indistinguishable from "no volatility"). The fix
+    // must average only the single real value: still 2.
+    const candles = constantVolatilityCandles(149);
+    expect(calculateAtrPctSmooth(candles, 148, 20)).toBeCloseTo(2, 5);
   });
 });
 

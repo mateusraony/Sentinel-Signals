@@ -4189,6 +4189,39 @@ describe('cross-loop concurrency invariant (persistScanResults vs priceCheckActi
     expect(stored.current_stop).toBe(105); // never regresses to 102 (already covered above)
     expect(stored.runner_stop_advanced_candle_time).toBe('T2'); // marker matches the stop actually stored, not worker B's losing candle
   });
+
+  // docs/known-risks.md item 80, B-1 (council-reviewed): unlike the runner's
+  // continuously-varying trail, advancePreTp1StopProtection saturates at a
+  // FIXED target (breakeven = entry) the first time it fires — two racing
+  // workers that both cleared the trigger compute the exact SAME candidate
+  // stop, a value TIE that stopAdvanceCandidateWon's value-only comparison
+  // alone cannot resolve (unlike the test above, where 105≠102 already
+  // rejects the loser before any tiebreak runs). This is the case the
+  // council's Arquiteto/Trading roles independently flagged: copying the
+  // runner's fix literally isn't enough without the candle-time tiebreak.
+  it('a losing candidate that TIES in value must not overwrite the pre-TP1 marker with its own stale candle', async () => {
+    backend._seed('TradeOperation', makeOp({ status: 'SIGNAL_CONFIRMED', current_stop: 98 }));
+
+    // Worker A (fresher candle T2) commits first — breakeven trigger
+    // cleared, stop jumps to entry (100), tags the candle that produced it.
+    const workerA = await backend.tradeOps.transitionTradeOp('op1', 'SIGNAL_CONFIRMED', {
+      status: 'SIGNAL_CONFIRMED', current_stop: 100, pre_tp1_stop_advanced_candle_time: 'T2',
+    }, { stopAdvanceMarkerField: 'pre_tp1_stop_advanced_candle_time' });
+
+    // Worker B (stale — read current_stop=98 before A committed, off an
+    // OLDER candle T1) independently detects the SAME trigger crossing and
+    // computes the SAME breakeven target (100) — a genuine value tie, not a
+    // worse candidate.
+    const workerB = await backend.tradeOps.transitionTradeOp('op1', 'SIGNAL_CONFIRMED', {
+      status: 'SIGNAL_CONFIRMED', current_stop: 100, pre_tp1_stop_advanced_candle_time: 'T1',
+    }, { stopAdvanceMarkerField: 'pre_tp1_stop_advanced_candle_time' });
+
+    expect(workerA.applied).toBe(true);
+    expect(workerB.applied).toBe(true);
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.current_stop).toBe(100); // both workers agree on the value — nothing for clampMonotonicStop to reject
+    expect(stored.pre_tp1_stop_advanced_candle_time).toBe('T2'); // marker matches the fresher candle, not worker B's stale one it merely tied with in value
+  });
 });
 
 // docs/known-risks.md item 35/38: the zoneOk gate that used to reject a 1h

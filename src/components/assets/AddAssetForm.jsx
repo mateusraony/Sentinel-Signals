@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, AlertCircle, CheckCircle2, Zap } from 'lucide-react';
 import { validateSymbol } from '@/lib/marketDataProvider';
+import { logError } from '@/lib/logger';
 
 const POPULAR_PAIRS = [
   { symbol: 'BTCUSDT', name: 'BTC/USDT' },
@@ -32,10 +33,16 @@ export default function AddAssetForm({ onSuccess }) {
     setValidating(true);
     setError('');
     setValidated(false);
-    const isValid = await validateSymbol(symbol.toUpperCase().trim());
-    if (isValid) setValidated(true);
-    else setError(`"${symbol}" não encontrado na Binance`);
-    setValidating(false);
+    try {
+      const isValid = await validateSymbol(symbol.toUpperCase().trim());
+      if (isValid) setValidated(true);
+      else setError(`"${symbol}" não encontrado na Binance`);
+    } catch (err) {
+      logError('AddAssetForm', `Falha ao validar símbolo ${symbol}`, { error: err.message });
+      setError('Falha ao validar símbolo — tente novamente.');
+    } finally {
+      setValidating(false);
+    }
   };
 
   const handleSave = async () => {
@@ -43,14 +50,20 @@ export default function AddAssetForm({ onSuccess }) {
     setError('');
     const sym = symbol.toUpperCase().trim();
     const name = displayName.trim() || sym.replace('USDT', '/USDT');
-    await backend.entities.MonitoredAsset.create({
-      symbol: sym, display_name: name, exchange: 'binance', market: 'crypto',
-      is_active: true, timeframes_enabled: { '1h': true, '4h': true, '1d': true },
-      smc_enabled: false,
-      smc_confirm_4h15m: true,
-    });
-    setSaving(false);
-    onSuccess();
+    try {
+      await backend.entities.MonitoredAsset.create({
+        symbol: sym, display_name: name, exchange: 'binance', market: 'crypto',
+        is_active: true, timeframes_enabled: { '1h': true, '4h': true, '1d': true },
+        smc_enabled: false,
+        smc_confirm_4h15m: true,
+      });
+      onSuccess();
+    } catch (err) {
+      logError('AddAssetForm', `Falha ao adicionar ativo ${sym}`, { error: err.message });
+      setError('Falha ao adicionar ativo — tente novamente.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleQuickAdd = (pair) => { setSymbol(pair.symbol); setDisplayName(pair.name); setValidated(true); setError(''); };

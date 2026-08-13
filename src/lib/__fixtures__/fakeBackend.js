@@ -128,7 +128,12 @@ export function createFakeBackend() {
       safePatch = { ...patch, current_stop: clampedStop };
       // docs/known-risks.md item 59 addendum — see src/api/entities.js's
       // mirror of this function for the full comment.
-      if (stopAdvanceMarkerField && !stopAdvanceCandidateWon({ clampedStop, candidateStop: patch.current_stop })) {
+      if (stopAdvanceMarkerField && !stopAdvanceCandidateWon({
+        clampedStop,
+        candidateStop: patch.current_stop,
+        candidateCandleTime: patch[stopAdvanceMarkerField],
+        existingMarkerCandleTime: current[stopAdvanceMarkerField],
+      })) {
         delete safePatch[stopAdvanceMarkerField];
       }
     }
