@@ -13,6 +13,7 @@ import { scanAllAssets, priceCheckActiveOps, hasActiveTradeOps } from '@/lib/sca
 const PRICE_CHECK_INTERVAL = 2 * 60 * 1000; // 2 min
 const FULL_SCAN_INTERVAL = 60 * 60 * 1000;  // 60 min
 
+/** @param {{ queryClient?: import('@tanstack/react-query').QueryClient, onActivity?: (kind: string) => void }} [options] */
 export function useAutoScan({ queryClient, onActivity } = {}) {
   const lastFullScan = useRef(0);
   const timerRef = useRef(null);

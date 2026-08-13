@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { TrendingUp, TrendingDown, Target, Shield, BarChart2, Zap } from 'lucide-react';
 import { summarizeOps } from '@/lib/tradeMetrics';
 
-function MetricCard({ icon: Icon, label, value, sub, color, glowColor }) {
+function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefined }) {
   return (
     <div className="flex items-center gap-3 rounded-xl px-4 py-3 flex-1 min-w-0"
       style={{

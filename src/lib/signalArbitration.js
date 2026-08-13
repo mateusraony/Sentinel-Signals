@@ -71,6 +71,7 @@ export function classifyCascadeRelation(candidateCascade, candidateSide, activeO
   const candidateRank = CASCADE_RANK[candidateCascade];
   const activeRank = CASCADE_RANK[activeOp?.cascade];
   const direction = candidateSide === activeOp?.side ? 'same' : 'opposite';
+  /** @type {'larger'|'smaller'|'same'} */
   let tfRelation = 'same';
   if (candidateRank != null && activeRank != null) {
     if (candidateRank > activeRank) tfRelation = 'larger';
@@ -92,8 +93,16 @@ export function planSignalArbitration({ candidateCascade, candidateSide, candida
   const relation = activeOp
     ? classifyCascadeRelation(candidateCascade, candidateSide, activeOp)
     : { direction: null, tfRelation: null };
+  /**
+   * @param {string} outcome
+   * @param {string} action
+   * @param {string} reason
+   * @param {'info'|'warn'} [logLevel]
+   * @param {number} [scorePenalty]
+   */
   const build = (outcome, action, reason, logLevel = 'info', scorePenalty = 0) =>
     ({ outcome, action, reason, logLevel, scorePenalty, direction: relation.direction, tfRelation: relation.tfRelation });
+  /** @param {string} outcome @param {string} reason @param {'info'|'warn'} [logLevel] */
   const noOp = (outcome, reason, logLevel = 'info') => build(outcome, 'none', reason, logLevel);
 
   // Kill switch — falls back to the old pure-block behavior handled by the

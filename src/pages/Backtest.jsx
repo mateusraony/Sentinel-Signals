@@ -32,7 +32,7 @@ function fmtR(v, digits = 3) {
 
 const OUTCOME_COLORS = { WIN: '#00ff80', LOSS: '#ff1478', BE: '#64748b' };
 
-function SummaryCard({ icon: Icon, label, value, sublabel, color, glowColor }) {
+function SummaryCard({ icon: Icon, label, value, sublabel = undefined, color, glowColor }) {
   return (
     <div className="rounded-xl p-4 relative overflow-hidden"
       style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -266,7 +266,7 @@ const STATUS_ICON_COLOR = { TP2_HIT: ['🏆 TP2', '#00ff80'], STOP_HIT: ['🛑 S
 // ativo/timeframe.
 function SimulatedTradesTable({ ops }) {
   if (!ops || ops.length === 0) return null;
-  const rows = [...ops].sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
+  const rows = [...ops].sort((a, b) => new Date(b.created_date).getTime() - new Date(a.created_date).getTime());
 
   return (
     <Section title="Operações Simuladas">

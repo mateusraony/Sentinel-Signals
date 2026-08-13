@@ -353,14 +353,55 @@ justificativa nova para reabrir isso com o resultado acima.
   (`docs/claude/golden-tv-export.md`) nunca foi fornecido — exige plano pago do
   usuário. Sem ele, a paridade é validada por consistência interna e por 4
   barras transcritas à mão (`tvSpotCheck.test.js`).
-- **`check5mSmcConfirmation` sem teste dedicado** (`.claude/rules/testing.md`,
-  "Lacunas restantes"). Valor incremental baixo pelo motivo já registrado ali.
-- **`exit_ambiguous`** (item 36): o campo existe e é observável, mas o volume
-  real nunca foi conferido. A reconstrução por timeframe menor só se justifica
-  se esse número for relevante.
-- **`npm run typecheck` fora do CI**, ~80 erros pré-existentes (maioria
-  `checkJs` sobre `forwardRef` do shadcn/ui).
-- **Bundle principal acima de 500 kB** (Vite avisa, não falha).
+- **`check5mSmcConfirmation` sem teste dedicado — FECHADO.** Reavaliado
+  2026-08-13: `.claude/rules/testing.md` já documenta cobertura extensa via
+  `persistScanResults`/`scannerStateMachine.test.js` (todos os motivos de
+  rejeição/retry/expiração já testados) e marca o item como fechado desde
+  2026-08-04 — esta linha aqui estava desatualizada. A função nunca é
+  exportada/testada isolada, só via a cascata inteira — decisão aceita, não
+  reabrir sem motivo novo. Ver também: a função só serve à cascata `1h_5m`
+  independente, hoje código morto na prática (item 75) e fora do caminho
+  recomendado (SMC vira score, item 77) — investir em cobertura NOVA dela
+  não teria valor.
+- **`exit_ambiguous` — volume de BACKTEST já medido, produção ao vivo tem
+  card no painel agora (com ressalva de janela).** Reavaliado 2026-08-13: o
+  volume em backtest já tinha sido medido (item 36, adendo 2026-08-12:
+  19/2.417 operações, 0,79%, 17 relatórios reais) — só o volume EM PRODUÇÃO
+  AO VIVO seguia sem observação direta (o agente não tem leitura do
+  Firestore de produção, bloqueada pelo classificador de segurança do
+  ambiente mesmo com autorização explícita, item 67). Implementado: card de
+  estatística em `TradeHistory.jsx` (mesmo padrão de `summarizeOps`/
+  `SummaryCard` já usado em `MonthlyReport.jsx`) mostrando contagem/
+  porcentagem direto do painel. **Ressalva (achado do Codex no PR #180):**
+  a tela já busca só as 200 operações mais recentes
+  (`TradeOperation.list('-created_date', 200)`, mesmo teto que toda
+  estatística da tela usa) — se a produção acumular mais de 200 operações
+  fechadas, o card reflete só a janela mais recente, não o histórico
+  completo. Rotulado explicitamente na UI (tooltip); decisão de investir na
+  reconstrução por timeframe menor segue condicionada a esse número, dentro
+  dessa ressalva de janela.
+- **`npm run typecheck` fora do CI — 790→0 erros corrigidos (2026-08-13).**
+  A doc antiga dizia "~80 erros" — o real era 790 (a doc nunca tinha sido
+  reconferida contra o código). Todos corrigidos: exclusão de arquivos de
+  teste do escopo de checagem (não escondia bug real — nenhum arquivo de
+  produção importa teste), padrão `forwardRef` do shadcn/ui corrigido na
+  raiz (~10 wrappers), `@types/node`/`vite/client` adicionados, e o resto
+  (JSDoc de config/API reais em `backtestEngine.js`, `signalArbitration.js`,
+  `tradeMetrics.js`, `entities.js`, etc.) anotado um por um. `npm test`/
+  `lint`/`build` continuam verdes. **Segue fora do CI** — ligar como gate
+  obrigatório é decisão separada, não tomada aqui.
+- **Bundle principal acima de 500 kB — reduzido de 2.525 kB para 410 kB
+  (2026-08-13).** Nenhum `React.lazy`/code-splitting por rota existia —
+  as 12 páginas caíam todas no mesmo chunk. Implementado: `React.lazy` +
+  `Suspense` em `App.jsx` (cada página vira seu próprio chunk), `import()`
+  dinâmico do `jspdf` em `MonthlyReport.jsx` (só a exportação precisa
+  dele), e `manualChunks` isolando `recharts`/`firebase` do chunk
+  principal em `vite.config.js`. Esses dois últimos continuam grandes
+  como chunks PRÓPRIOS (>500kB cada) — esperado e aceito: são vendor libs
+  legítimas que quase nunca mudam entre deploys, cacheiam bem
+  separadamente; o que importava era tirá-las do chunk que carrega em
+  TODA página. `date-fns`/`framer-motion`/`@hello-pangea/dnd` removidos
+  do `package.json` — sem nenhum import em `src/`, dependências mortas.
 
 ---
 

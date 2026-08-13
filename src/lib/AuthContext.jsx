@@ -3,7 +3,7 @@ import { onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, sign
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebaseClient';
 
-const AuthContext = createContext();
+const AuthContext = createContext(undefined);
 
 // A profile document is created on first login for any Firebase Auth user.
 // New profiles always start as role "user" — promoting to "admin" is done

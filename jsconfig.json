@@ -14,7 +14,8 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "types": []
+    "types": ["node"],
+    "maxNodeModuleJsDepth": 0
   },
   "include": [
     "src/components/**/*.js",
@@ -27,7 +28,14 @@
     "src/api/**/*.jsx",
     "src/hooks/**/*.js",
     "src/hooks/**/*.jsx",
-    "src/Layout.jsx"
+    "src/Layout.jsx",
+    "src/vite-env.d.ts"
   ],
-  "exclude": ["node_modules", "dist", "src/components/ui"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/components/ui",
+    "**/*.test.js",
+    "**/*.test.jsx"
+  ]
 } 

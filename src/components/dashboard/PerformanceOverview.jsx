@@ -4,6 +4,7 @@ import { TrendingUp, Award, BarChart2, Target } from 'lucide-react';
 import moment from 'moment';
 import { summarizeOps } from '@/lib/tradeMetrics';
 
+/** @param {{ active?: boolean, payload?: Array<any> }} props */
 const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;

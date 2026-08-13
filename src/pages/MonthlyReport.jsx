@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { FileText, Download, TrendingUp, TrendingDown, Target, Award, Calendar, Loader2 } from 'lucide-react';
 import moment from 'moment';
-import { jsPDF } from 'jspdf';
 import {
   ComposedChart, Bar, Line, PieChart, Pie, Cell,
   ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -77,7 +76,7 @@ export default function MonthlyReport() {
     return operations
       .filter(isClosedOp)
       .filter(op => moment(op.created_date).format('YYYY-MM') === selectedMonth)
-      .sort((a, b) => new Date(a.created_date) - new Date(b.created_date));
+      .sort((a, b) => new Date(a.created_date).getTime() - new Date(b.created_date).getTime());
   }, [operations, selectedMonth]);
 
   const metrics = useMemo(() => {
@@ -151,10 +150,15 @@ export default function MonthlyReport() {
     return months;
   }, []);
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (!metrics || monthOps.length === 0) return;
     setExporting(true);
     try {
+      // docs/roadmap.md Bloco 5 (bundle >500kB) — jsPDF só é necessário
+      // aqui, na exportação; import dinâmico tira a lib inteira do chunk
+      // principal, sem mudar nenhum comportamento (mesma chamada, só depois
+      // do módulo carregar).
+      const { jsPDF } = await import('jspdf');
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
       let y = 20;
@@ -200,7 +204,7 @@ export default function MonthlyReport() {
         doc.setTextColor(120, 120, 120);
         doc.setFont(undefined, 'normal');
         doc.text(item.label, xPos, yPos);
-        doc.setTextColor(...item.color);
+        doc.setTextColor(item.color[0], item.color[1], item.color[2]);
         doc.setFont(undefined, 'bold');
         doc.text(item.value, xPos + 45, yPos);
         if (col === 0) col1Y += 7; else col2Y += 7;

@@ -59,6 +59,7 @@ function useMarketBenchmark(benchmarkKey, firstTradeTs, lastTradeTs) {
   });
 }
 
+/** @param {{ active?: boolean, payload?: Array<any>, marketLabel?: string }} props */
 function CustomTooltip({ active, payload, marketLabel }) {
   if (!active || !payload?.length) return null;
   const data = payload[0]?.payload;

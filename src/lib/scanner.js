@@ -1146,7 +1146,7 @@ async function handleActiveOpArbitration({ signal, candidateCascade, activeOp, r
 /**
  * Scan a single asset across all enabled timeframes
  * @param {Object} asset - MonitoredAsset entity record
- * @returns {Object} Scan result with states and signals
+ * @returns {Promise<Object>} Scan result with states and signals
  */
 export async function scanAsset(asset) {
   const startTime = Date.now();

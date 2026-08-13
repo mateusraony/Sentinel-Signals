@@ -25,12 +25,12 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
 
   const assetSignals = signals
     .filter(s => s.asset_id === asset.id)
-    .sort((a, b) => new Date(b.created_date) - new Date(a.created_date))
+    .sort((a, b) => new Date(b.created_date).getTime() - new Date(a.created_date).getTime())
     .slice(0, 8);
 
   const assetOps = tradeOps
     .filter(o => o.asset_id === asset.id)
-    .sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
+    .sort((a, b) => new Date(b.created_date).getTime() - new Date(a.created_date).getTime());
 
   return (
     <>

@@ -147,10 +147,13 @@ Skills em `.claude/skills/`, regras em `.claude/rules/` (carregam pelos
 
 ## Limitações conhecidas (não são regressões)
 
-- `npm run typecheck` **não está no CI** e tem ~80 erros pré-existentes (maioria
-  `checkJs` sobre shadcn/ui `forwardRef`). Corrigir é projeto à parte.
-- Bundle principal passa de 500kB (Vite avisa, não falha). Rota: `manualChunks`
-  ou `import()` dinâmico (`MonthlyReport.jsx` usa `jspdf`).
+- `npm run typecheck` **não está no CI** (best-effort) — 0 erros desde
+  2026-08-13 (Bloco 5 do roadmap; era ~80/na prática 790, corrigido).
+- Bundle principal já dividido por rota (`React.lazy`, `App.jsx`) +
+  `manualChunks` (`recharts`/`firebase`) + `import()` dinâmico do `jspdf`
+  (`MonthlyReport.jsx`) — chunk principal em ~410kB (era 2.525kB). Os chunks
+  de `recharts`/`firebase` continuam grandes de propósito (vendor libs
+  isoladas, cacheiam bem entre deploys) — ver `docs/roadmap.md` Bloco 5.
 - `react-hooks/exhaustive-deps` é `warn`; há omissões **intencionais**
   (`useAutoScan.js`, `AssetCard.jsx`) — não "corrija" sem entender o porquê.
 

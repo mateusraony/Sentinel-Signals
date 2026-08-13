@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 function AnimatedNumber({ value }) {
   const [display, setDisplay] = useState(0);
+  /** @type {React.MutableRefObject<number|undefined>} */
   const frameRef = useRef();
 
   useEffect(() => {
