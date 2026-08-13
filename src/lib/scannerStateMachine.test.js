@@ -3744,6 +3744,82 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
     });
   });
 
+  // docs/known-risks.md item 78 — motivado por dado real: um run com
+  // rf1hUncondEnabled ligado mediu a cascata nativa (4h_15m) e
+  // rf1h_uncond_15m competindo pela MESMA vaga por ativo (67% das
+  // rejeições do 1h eram "vaga ocupada", amostra do 4h caiu pela metade só
+  // por causa da disputa) — contaminando os dois números. Com
+  // rf1hExclusiveEnabled ligada, a cascata nativa não cria NENHUMA operação
+  // (1ª passada nem retry), dando a vaga inteira pra quem estiver ligado
+  // (rf1hCondEnabled/rf1hUncondEnabled) medir sozinha.
+  describe('RF nativa (4h_15m) suprimida pra medição isolada de 1h (item 78, rf1hExclusiveEnabled)', () => {
+    it('flag DESLIGADA (default): sinal 4h nativo cria operação normalmente — sem regressão', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 0.01));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false, useTimeStop: false });
+      const results = { '4h': makeTfData() };
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+      const ops = await backend.entities.TradeOperation.filter({});
+      expect(ops).toHaveLength(1);
+      expect(ops[0].cascade).toBe('4h_15m');
+    });
+
+    it('flag LIGADA: sinal 4h nativo não cria operação nenhuma (1ª passada) — ignorado silenciosamente, não conta como rejeição de gate', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 0.01));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false, useTimeStop: false, rf1hExclusiveEnabled: true });
+      const results = { '4h': makeTfData() };
+
+      const result = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+      expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+      expect(result.entryFunnelOutcomes.filter((o) => o.cascade === '4h_15m')).toHaveLength(0);
+    });
+
+    it('flag LIGADA + rf1hUncondEnabled LIGADA: sinal 4h e sinal 1h no MESMO scan — só o 1h cria operação, a vaga nunca é disputada', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 0.01));
+      const pineConfig = makePineConfig({
+        useADX: false, useChop: false, useTimeStop: false,
+        rf1hExclusiveEnabled: true, rf1hUncondEnabled: true,
+      });
+      const results = { '4h': makeTfData() };
+      const signal4h = makeRfSignal({ dedup_key: 'sig_excl_4h' });
+      const signal1h = makeRfSignal({ timeframe: '1h', dedup_key: 'sig_excl_1h' });
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [signal4h, signal1h] });
+
+      const ops = await backend.entities.TradeOperation.filter({});
+      expect(ops).toHaveLength(1);
+      expect(ops[0].cascade).toBe('rf1h_uncond_15m'); // nunca 4h_15m — a nativa nem tentou
+    });
+
+    it('retry: sinal 4h pendente nunca confirma (flag ligada), sinal 1h uncond pendente no mesmo scan confirma normalmente', async () => {
+      fetchCandles.mockResolvedValue(uptrendCandles(60, 100, 1));
+      const pineConfig = makePineConfig({ useADX: false, useChop: false, useTimeStop: false, rf1hExclusiveEnabled: true, rf1hUncondEnabled: true });
+      backend._seed('SignalEvent', {
+        id: 'sig_excl_retry_4h', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+        source: 'range_filter', dedup_key: 'sig_excl_retry_4h',
+        price_at_signal: 100, candle_time: new Date(0).toISOString(),
+        context: { score: 80, rf_value: 100 },
+        created_date: '2026-07-16T09:00:00.000Z', // dentro da janela de 4h (relógio congelado em 12:00)
+      });
+      backend._seed('SignalEvent', {
+        id: 'sig_excl_retry_1h', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '1h', signal_type: 'BUY',
+        source: 'range_filter', dedup_key: 'sig_excl_retry_1h',
+        price_at_signal: 100, candle_time: new Date(0).toISOString(),
+        context: { score: 80, rf_value: 100 },
+        created_date: '2026-07-16T09:00:00.000Z',
+      });
+      const results = { '4h': makeTfData() };
+
+      await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+      const ops = await backend.entities.TradeOperation.filter({});
+      expect(ops).toHaveLength(1);
+      expect(ops[0].cascade).toBe('rf1h_uncond_15m');
+    });
+  });
+
   describe('SMC (1h_5m)', () => {
     // Codex review (PR #102, P1) — mesmo raciocínio do teste equivalente na
     // seção RF acima: o sinal que acabou de confirmar não pode contar como

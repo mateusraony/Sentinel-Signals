@@ -7977,10 +7977,106 @@ só os consumidores, via `context` sintético). Suíte inteira: 920/920 +
 lint + build + os 3 alvos esbuild + grep de isolamento, todos
 confirmados de novo.
 
+### Segundo A/B real (perna corrigida): `aligned` aparece, mas amostra longe do suficiente
+
+Usuário rodou o A/B de novo (`trial_label: smc-alignment-score-ab-v2`,
+mesmos 7 símbolos/12 meses) já com a perna ancorada em `smc.lastSwingHigh/
+lastSwingLow`. Distribuição: **2 `aligned`**, 51 `against`, 51
+`unavailable` (n=104 — `unavailable` subiu de 39 para 51 porque agora as
+DUAS bordas da perna dependem de pivôs SMC formados, contra só uma
+antes). Confirma que a correção funciona (`aligned` deixou de ser
+estruturalmente impossível), mas 2 casos não sustentam nenhuma conclusão
+sobre se `aligned` performa diferente de `against` — essa amostra pode
+levar muito tempo pra crescer, já que `aligned` parece ser raro mesmo
+(~2%). `costs`/`overall` bateram byte-a-byte com a 1ª rodada (mesmo
+volume/expectância/IC) — confirma, de novo, que o campo é puramente
+observacional e nunca influenciou nenhuma entrada/saída real.
+
 ### Próximo passo (fora deste registro)
 
-Rodar um NOVO A/B real (a base geométrica mudou, o resultado anterior não
-serve mais de referência) e, desta vez, quebrar por `aligned`/`against`/
-`unavailable` de verdade — responde se SMC realmente ajuda ou é só mais
-filtro no caminho, ANTES de decidir se vira peso no score ou fica só
-observacional. Decisão do usuário sobre quando rodar.
+Sem novidade — segue esperando amostra crescer (nenhum novo A/B
+programado só pra isso; o campo já é gravado em toda operação com o flag
+ligado, então acumula sozinho em qualquer run futuro que tenha a flag
+ativa). Quando houver volume de `aligned` suficiente, quebrar por
+`aligned`/`against`/`unavailable` de verdade responde se SMC realmente
+ajuda ou é só mais filtro no caminho. Decisão do usuário sobre quando
+achar que já tem dado suficiente.
+
+---
+
+## 78. RF nativa (4h_15m) suprimida sob demanda para medir 1h isolado sem disputa de vaga
+
+### Contexto
+
+Usuário pediu uma comparação entre "RF nativa direto" no 4h e no 1h (sem
+confirmação de timeframe menor, batendo com o Pine real). O 4h já tinha
+peça pronta (`skip15mConfirmationEnabled`, item 67); o 1h também, juntando
+`rf1hUncondEnabled` (item 68) com o mesmo `skip15mConfirmationEnabled`
+(a função que ele desvia, `resolveEntryConfirmation15m`, já é genérica —
+usada pelos dois). Perguntado se preferia rodar rápido aceitando uma
+ressalva conhecida (as duas cascatas competem pela mesma vaga por ativo)
+ou esperar uma correção pequena antes — usuário escolheu rodar rápido
+primeiro.
+
+### Achado real — a ressalva se confirmou, e forte
+
+Resultado do A/B (`trial_label: rf-1h-direto`, `{"rf1hUncondEnabled":
+true, "skip15mConfirmationEnabled": true}`, mesmos 7 símbolos/12 meses):
+
+| Cascata | Operações | Expectância | Situação |
+|---|---|---|---|
+| `4h_15m` (competindo) | 59 | +0,363R | conclusiva |
+| `rf1h_uncond_15m` (competindo) | 224 | −0,115R | inconclusiva |
+| Total combinado | 283 | −0,015R | inconclusiva |
+
+O sinal de 1h dispara ~4× mais que o de 4h. Das rejeições de
+`rf1h_uncond_15m`, **67% foram `active_op_exists`** (vaga ocupada, não
+sinal ruim), e a amostra do `4h_15m` **caiu pela metade** (de 109, no run
+"4h direto" isolado, pra 59 aqui) só por causa da disputa. Os dois números
+da tabela acima são sub-buckets contaminados — mesma classe de erro já
+corrigida nos itens 51/68 (comparar sub-bucket de runs/cascatas diferentes
+sem isolar a variável não é um teste limpo). Não dá pra usar nenhum dos
+dois isoladamente como "quanto vale o 4h" ou "quanto vale o 1h". O que
+sobrevive: o total combinado, praticamente plano (levemente negativo,
+inconclusivo) — empilhar 1h direto sobre o que já existe não pareceu
+ajudar nesta janela.
+
+### Implementado — `pineConfig.rf1hExclusiveEnabled` (backtest-only)
+
+Suprime a criação de operação da cascata NATIVA (`4h_15m`) por completo —
+1ª passada e retry — dando a vaga inteira pra `rf1hCondEnabled`/
+`rf1hUncondEnabled` (o que estiver ligado) medir sem disputa. Sinais RF de
+4h continuam sendo emitidos e logados normalmente (funil/expiração
+visíveis no relatório); só a CRIAÇÃO de `TradeOperation` é suprimida.
+
+- **`src/lib/scanner.js`**: 1ª passada — o `else` final da cadeia
+  `if/else-if` que decide o que fazer com um sinal `source: 'range_filter'`
+  (cond 1h → uncond 1h → "não é 4h, ignorado" → nativo 4h) virou
+  `else if (!pineConfig.rf1hExclusiveEnabled)`; com a flag ligada, nenhum
+  ramo bate para um sinal de 4h — ele é ignorado silenciosamente (mesmo
+  comportamento do ramo "não é 4h" logo acima, sem gerar rejeição de
+  funil, porque não é um gate rejeitando, é a cascata inteira fora do
+  run). Retry — um `if (pineConfig.rf1hExclusiveEnabled) continue;` logo
+  no topo do loop que itera `recent4hSignals`, antes de qualquer outra
+  checagem.
+- **`scripts/backtestPineConfig.js`**: `rf1hExclusiveEnabled: false` nos
+  `DEFAULTS`, mesmo isolamento backtest-only dos demais (tripwire em
+  `src/lib/rf1hExclusiveTripwire.test.js`).
+- **`src/lib/scannerStateMachine.test.js`**: novo describe (4 casos) —
+  flag desligada não regride nada; flag ligada sozinha suprime o sinal 4h
+  sem crash e sem contar como rejeição; flag ligada + `rf1hUncondEnabled`
+  ligada, sinal 4h e sinal 1h no MESMO scan → só o 1h cria operação;
+  mesma prova no caminho de retry (sinal 4h pendente nunca confirma,
+  sinal 1h pendente confirma normalmente).
+
+### Verificação
+
+927/927 testes (4 novos) + `npm run lint` limpo + `npm run build` + os 3
+alvos esbuild (`build:scan`/`build:scan-shadow`/`build:backtest`) + grep
+de isolamento confirmado.
+
+### Próximo passo (fora deste registro)
+
+Rodar de novo o A/B "1h direto" com `rf1hExclusiveEnabled: true` junto —
+agora sim uma medição limpa de `rf1h_uncond_15m` sozinha, sem a cascata
+nativa competindo pela vaga. Decisão do usuário sobre quando rodar.

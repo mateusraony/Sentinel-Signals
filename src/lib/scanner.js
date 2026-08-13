@@ -70,6 +70,20 @@ const RF_1H_COND_CASCADE = 'rf1h_cond4h_15m';
 // ligar rf1hCondEnabled e rf1hUncondEnabled juntos no mesmo run — convenção,
 // não validado em runtime (mesmo padrão dos demais flags opt-in do projeto).
 const RF_1H_UNCOND_CASCADE = 'rf1h_uncond_15m';
+// docs/known-risks.md item 78 — pineConfig.rf1hExclusiveEnabled
+// (backtest-only, ver scripts/backtestPineConfig.js). Motivado por dado real:
+// um run com rf1hUncondEnabled ligado mediu a cascata 4h_15m e a
+// RF_1H_UNCOND_CASCADE competindo pela MESMA vaga por ativo — 67% das
+// rejeições do 1h eram "vaga ocupada", e a amostra do 4h nativo caiu pela
+// metade (109->59) só por causa da disputa, contaminando os dois números
+// (mesma classe de erro de sub-bucket já corrigida nos itens 51/68, agora
+// prevenida por desenho em vez de corrigida depois). Quando ligado, a
+// cascata NATIVA (4h_15m) simplesmente não cria operação nenhuma — nem na
+// 1ª passada nem no retry — dando a vaga inteira pra RF_1H_COND_CASCADE/
+// RF_1H_UNCOND_CASCADE (o que estiver ligado) medir sozinha, sem
+// competição. Sinais RF de 4h continuam sendo emitidos normalmente (só a
+// CRIAÇÃO de operação é suprimida) — o funil/expiração desses sinais segue
+// visível no relatório, só nunca vira TradeOperation.
 
 // Default fetch is enough for the convergent indicators (RF/RSI/MACD/EMA/
 // ATR/ADX/Choppiness — EMA/RMA-based, warm-up of ~6x their period is all
@@ -2172,8 +2186,13 @@ export async function persistScanResults(scanResult) {
           timeframe: signal.timeframe,
           details: { direction: signal.signal_type, score: signal.context?.score, reason: 'requires_4h_trend' },
         });
-      } else {
-        // 4H signal — verify 4H trend alignment explicitly before any entry
+      } else if (!pineConfig.rf1hExclusiveEnabled) {
+        // 4H signal — verify 4H trend alignment explicitly before any entry.
+        // docs/known-risks.md item 78: when rf1hExclusiveEnabled is on, this
+        // whole native-cascade branch is skipped — the 4H signal is simply
+        // never converted into a TradeOperation, freeing the asset's slot
+        // entirely for RF_1H_COND_CASCADE/RF_1H_UNCOND_CASCADE to measure
+        // without competing against 4h_15m for it.
         const tf4hData = results['4h'];
         if (tf4hData && tf4hData.atrValue) {
           // docs/known-risks.md item 71 — pineConfig.allowedSide
@@ -2715,6 +2734,10 @@ export async function persistScanResults(scanResult) {
       continue; // stale, skip
     }
     if (sig.is_dismissed) continue;
+    // docs/known-risks.md item 78 — same gate as the 1st-pass branch above:
+    // native cascade creates no operation while this flag is on, freeing
+    // the slot entirely for RF_1H_COND_CASCADE/RF_1H_UNCOND_CASCADE.
+    if (pineConfig.rf1hExclusiveEnabled) continue;
 
     // docs/known-risks.md item 37 (Bloco 4 Fase 1) — same per-cascade gate
     // as the 1st pass above; activeOp4h15m (not the shared activeOp) is the
