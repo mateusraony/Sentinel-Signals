@@ -1196,7 +1196,7 @@ export default function PineScript() {
               value={code}
               onChange={e => setCode(e.target.value)}
               spellCheck={false}
-              className="w-full font-mono text-[11px] outline-none resize-none leading-relaxed p-4"
+              className="w-full font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none leading-relaxed p-4"
               style={{ background: 'rgba(6,8,15,0.95)', color: 'rgba(0,255,128,0.85)', minHeight: '60vh', tabSize: 4 }}
             />
           </div>

@@ -208,14 +208,14 @@ export default function Dashboard() {
               <div className="space-y-3">
                 <div className="flex items-center gap-3 flex-wrap">
                   <select value={compareAId || ''} onChange={e => setCompareAId(e.target.value)}
-                    className="px-3 py-2 rounded-lg text-[11px] font-mono outline-none"
+                    className="px-3 py-2 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
                     <option value="">Selecione Ativo A...</option>
                     {assets.map(a => <option key={a.id} value={a.id}>{a.display_name}</option>)}
                   </select>
                   <span className="text-muted-foreground text-xs font-mono">vs</span>
                   <select value={compareBId || ''} onChange={e => setCompareBId(e.target.value)}
-                    className="px-3 py-2 rounded-lg text-[11px] font-mono outline-none"
+                    className="px-3 py-2 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
                     <option value="">Selecione Ativo B...</option>
                     {assets.map(a => <option key={a.id} value={a.id}>{a.display_name}</option>)}
@@ -267,7 +267,7 @@ export default function Dashboard() {
                     placeholder="Buscar ativo..."
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="w-full pl-7 pr-3 py-1.5 rounded-lg text-[10px] font-mono outline-none transition-all"
+                    className="w-full pl-7 pr-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring transition-all"
                     style={{
                       background: 'rgba(255,255,255,0.04)',
                       border: '1px solid rgba(255,255,255,0.08)',

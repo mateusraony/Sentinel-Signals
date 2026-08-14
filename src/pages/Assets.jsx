@@ -161,7 +161,7 @@ export default function Assets() {
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
           <input type="text" placeholder="Buscar ativo..." value={search} onChange={e => setSearch(e.target.value)}
-            className="w-full pl-7 pr-3 py-1.5 rounded-lg text-[10px] font-mono outline-none"
+            className="w-full pl-7 pr-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }} />
         </div>
         {[{ id: 'all', label: 'Todos' }, { id: 'active', label: '● Ativos' }, { id: 'inactive', label: '○ Inativos' },

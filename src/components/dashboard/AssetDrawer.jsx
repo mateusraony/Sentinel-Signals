@@ -1,7 +1,8 @@
 import React from 'react';
-import { X, TrendingUp, TrendingDown, Clock, Activity } from 'lucide-react';
+import { TrendingUp, TrendingDown, Clock, Activity } from 'lucide-react';
 import moment from 'moment';
 import SignalChecklist from './SignalChecklist';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 function fmt(price) {
   if (!price && price !== 0) return '—';
@@ -33,19 +34,19 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
     .sort((a, b) => new Date(b.created_date).getTime() - new Date(a.created_date).getTime());
 
   return (
-    <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-
-      {/* Drawer */}
-      <div className="fixed right-0 top-0 h-full w-full max-w-sm z-50 flex flex-col"
-        style={{ background: 'rgba(8,10,18,0.97)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(24px)' }}>
-
+    <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <SheetContent
+        side="right"
+        className="w-full max-w-sm p-0 flex flex-col gap-0"
+        style={{ background: 'rgba(8,10,18,0.97)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(24px)' }}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 shrink-0"
-          style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <SheetHeader
+          className="flex-row items-center justify-between px-5 py-4 shrink-0 space-y-0 text-left"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+        >
           <div>
-            <div className="font-bold text-base text-foreground">{asset.display_name}</div>
+            <SheetTitle className="font-bold text-base text-foreground">{asset.display_name}</SheetTitle>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-[9px] font-mono text-muted-foreground">{asset.exchange?.toUpperCase()}</span>
               <span className="flex items-center gap-1">
@@ -54,10 +55,7 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
               </span>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-white/[0.05] transition-colors">
-            <X className="w-4 h-4 text-muted-foreground" />
-          </button>
-        </div>
+        </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           {/* Trade Operations */}
@@ -159,7 +157,7 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
             )}
           </div>
         </div>
-      </div>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }
