@@ -67,6 +67,13 @@ quando ambos estão ativos ao mesmo tempo.
 > projeto for 100% gratuito. Não é mais item de backlog — não reabrir sem
 > mudança de contexto (ex.: usuário decidir migrar de exchange ou aceitar
 > custo de infraestrutura).
+>
+> **Atualização (2026-08-14, item 86)**: essa decisão vale só pra dado AO
+> VIVO (`fapi.binance.com`, bloqueado por IP). O arquivo histórico em lote
+> (`data.binance.vision`, serviço DIFERENTE) foi testado e está acessível
+> pra Futures também — abre uma opção real (não implementada) de trocar a
+> fonte do BACKTEST de Spot pra Futures. Não muda o scan ao vivo. Ver item
+> 86 para o resultado completo e as ressalvas.
 
 ## 5. AÇÃO NECESSÁRIA — deploy manual de `firestore.rules`/`firestore.indexes.json`
 
@@ -8817,3 +8824,81 @@ job aqui, ou nesta conversa — a partir daí registro o resultado real
 backtest; 403/451/timeout = a decisão do item 4 permanece). Enquanto
 isso, o workflow fica no repositório (não removido — sem credenciais,
 sem custo, sem risco de deixá-lo parado).
+
+## 86. Arquivo histórico Futures da Binance — ACESSÍVEL, não bloqueado (2026-08-14)
+
+### Contexto
+
+Usuário disparou manualmente `spike-futures-archive-check.yml` pela UI do
+GitHub (Actions → Run workflow) — o passo que ficou bloqueado no item 85
+por falta de permissão da integração desta sessão. Colou o log completo
+do job.
+
+### Achado (FATO, log real do runner `ubuntu-24.04`, região `eastus` — mesma
+rede dos runners de `scan.yml`/`backtest.yml`)
+
+Os dois `curl -I` retornaram **HTTP/2 200**:
+
+```
+--- BTCUSDT 1h Jan/2024 (Futures USD-M monthly klines) ---
+HTTP/2 200
+content-type: binary/octet-stream
+content-length: 38890
+last-modified: Sun, 18 Feb 2024 13:55:42 GMT
+server: AmazonS3 (via CloudFront)
+
+--- Same host, Spot equivalent (control) ---
+HTTP/2 200
+content-type: application/zip
+content-length: 43482
+last-modified: Mon, 05 Feb 2024 12:06:34 GMT
+server: AmazonS3 (via CloudFront)
+```
+
+`data.binance.vision` (CDN estático via CloudFront/S3, arquivo em lote
+histórico) **não está sujeito ao mesmo bloqueio 451 por IP de datacenter
+dos EUA** que afeta `fapi.binance.com` (API de trading Futures AO VIVO,
+item 4) — confirma a hipótese do item 47.2: são dois serviços distintos
+da Binance, com políticas de bloqueio independentes.
+
+### Ressalvas importantes (não deixar o achado "vender mais do que é")
+
+1. **Não afeta o scan ao vivo.** O arquivo é histórico/em lote —
+   `last-modified` de fevereiro de 2024 pro arquivo de janeiro/2024,
+   típico de arquivo mensal fechado (atualizado uma vez, dias depois do
+   fim do mês, não em tempo real). Não serve pra substituir
+   `fapi.binance.com` no scanner ao vivo, que precisa do candle mais
+   recente possível. A divergência painel(Futures)/cron(Spot) ao vivo
+   (item 4) **continua exatamente como estava** — este achado não a
+   resolve.
+2. **Só abre uma opção pro BACKTEST.** Hoje `scripts/fetch-backtest-data.mjs`
+   baixa histórico de `data-api.binance.vision` (API REST Spot, formato
+   JSON) — um serviço diferente deste (que serve arquivos `.zip`
+   contendo CSV, formato de arquivo em lote, não API REST). Trocar a
+   fonte do backtest pra usar Futures de verdade exigiria **reescrever**
+   esse script pra baixar/descompactar/parsear o formato de arquivo em
+   lote (ZIP→CSV) em vez de chamar uma API REST — não é troca de URL,
+   é um pipeline de dado diferente.
+3. **Decisão de produto, não implementada.** Faria o backtest refletir
+   melhor o que o painel ao vivo veria (Futures, não Spot) — mas é
+   trabalho real de engenharia, com trade-offs próprios (arquivos
+   mensais/diários têm lag de disponibilização, cobertura de símbolos
+   pode variar). Não implementar sem pedido explícito do usuário.
+
+### Conclusão
+
+Item 47.2 fechado: o arquivo histórico de Futures da Binance é
+**acessível** a partir de runners do GitHub Actions (mesma rede do
+`scan.yml`/`backtest.yml`). Isso NÃO muda a decisão aceita do item 4
+(divergência ao vivo permanece), mas registra uma opção real e nunca
+antes confirmada: um backtest futuro poderia usar dado histórico de
+Futures em vez de Spot, se o usuário decidir que vale o esforço de
+reescrever o pipeline de download.
+
+### Próximo passo
+
+Nenhum implementado agora — decisão do usuário se/quando quiser buscar
+essa opção. O workflow temporário `spike-futures-archive-check.yml`
+cumpriu seu propósito (responder a pergunta binária "dá pra acessar ou
+não") e foi removido neste mesmo commit — o resultado fica registrado
+aqui, não precisa do workflow permanecer no repositório.
