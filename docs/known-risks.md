@@ -8554,3 +8554,80 @@ visível), que não estavam no escopo desta rodada nem da anterior.
 Usuário promover seu uid pra `role: 'admin'` no console do Firebase (ver
 aviso acima) pra continuar usando o botão de backtest. A-4/A-5 seguem sem
 data definida.
+
+---
+
+## 83. Correção de A-4/A-5 — fecha os 25 achados do item 80 (2026-08-13)
+
+### Contexto
+
+Usuário confirmou que A-4/A-5 eram os únicos achados restantes da
+varredura completa (item 80) e pediu pra terminar. Últimos 2 dos 25
+achados originais.
+
+### Achado (correções aplicadas)
+
+**A-4** — `src/components/dashboard/AssetDrawer.jsx` migrado do modal
+caseiro (dois `<div>` fixos, sem foco/Esc/`aria-modal`) pro componente
+`Sheet` (`src/components/ui/sheet.jsx`, Radix Dialog por baixo) — já
+existia no repo, importado por ninguém. Ganha foco automático, fechamento
+por Esc e `aria-modal` de graça, sem reescrever o conteúdo (só a casca:
+`Sheet`/`SheetContent`/`SheetHeader`/`SheetTitle` substituindo os `<div>`s
+manuais; o `<button>` de fechar customizado foi removido — o `SheetContent`
+já inclui um botão de fechar acessível próprio).
+
+**Achado colateral do próprio processo de verificação**: migrar pra
+`Sheet` expôs 8 erros de `typecheck` que não apareciam antes —
+`src/components/ui/sheet.jsx` está em `jsconfig.json`'s `exclude`
+(pasta `ui/` inteira, convenção deste projeto pros componentes
+shadcn gerados), mas `exclude` só impede o arquivo de ser descoberto como
+raiz — não impede o `tsc` de checá-lo quando importado por um arquivo
+incluído (`AssetDrawer.jsx`). Como nada importava `sheet.jsx` antes, essa
+lacuna de tipagem (faltavam as anotações JSDoc `@param
+{React.ComponentPropsWithoutRef<typeof X>}` que o `dialog.jsx` gêmeo —
+mesmo Radix Dialog por baixo — já tinha corretamente) nunca tinha sido
+exercitada. Corrigido copiando o mesmo padrão de anotação de
+`dialog.jsx` pros 6 componentes de `sheet.jsx` (`SheetOverlay`,
+`SheetContent`, `SheetHeader`, `SheetFooter`, `SheetTitle`,
+`SheetDescription`) — `typecheck` volta a 0 erros.
+
+**A-5** — 7 ocorrências de `outline-none` sem substituto de foco visível
+(`Dashboard.jsx` ×3, `Assets.jsx`, `Logs.jsx` ×2, `PineScript.jsx`)
+ganham `focus-visible:ring-1 focus-visible:ring-ring`, mesmo padrão já
+usado em `ui/button.jsx`/`ui/input.jsx`.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck` — todos
+limpos (932/932 testes, build sem regressão de tamanho, typecheck 0
+erros incluindo o `sheet.jsx` agora tipado corretamente).
+
+**Limitação desta verificação, registrada com honestidade**: tentei subir
+`npm run dev` e clicar de verdade num `AssetCard` pra abrir o
+`AssetDrawer` (prática padrão pra mudança de UI), usando Playwright
+headless contra o servidor local. A tela renderizada ficou **em branco**
+— `Firebase: Error (auth/invalid-api-key)` — porque este ambiente
+sandboxed não tem as credenciais reais do Firebase (`VITE_FIREBASE_API_KEY`
+etc. são secrets só do Render, não existem aqui). Isso acontece em
+QUALQUER página do app neste ambiente, não é específico desta mudança —
+não consigo testar clique-a-clique aqui. A confiança nesta correção vem
+de: build/typecheck/lint limpos (confirmam que os imports/tipos resolvem
+de verdade), leitura cuidadosa da API do Radix Dialog/`cn`+`twMerge`
+(confirmando que as classes Tailwind do `Sheet` sobrescrevem
+corretamente as do componente original sem conflito), e o padrão já
+comprovado em produção no `dialog.jsx` gêmeo. Recomendo ao usuário
+conferir visualmente (clicar num ativo no Dashboard) na primeira
+oportunidade depois do deploy.
+
+### Conclusão
+
+Os 25 achados do item 80 (varredura completa de 2026-08-13) estão todos
+corrigidos: 8 P1 (item 81), 12 P2 + 5 Info (item 82), A-4/A-5 (este
+item). Nenhum achado da varredura original segue pendente.
+
+### Próximo passo (fora deste registro)
+
+Nenhum — varredura do item 80 encerrada. Usuário ainda precisa promover
+seu uid pra `role: 'admin'` (item 82, D-2) e conferir visualmente o
+`AssetDrawer` no primeiro uso pós-deploy (ver limitação de verificação
+acima).
