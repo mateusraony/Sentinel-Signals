@@ -8631,3 +8631,132 @@ Nenhum — varredura do item 80 encerrada. Usuário ainda precisa promover
 seu uid pra `role: 'admin'` (item 82, D-2) e conferir visualmente o
 `AssetDrawer` no primeiro uso pós-deploy (ver limitação de verificação
 acima).
+
+## 84. Curva de equity real (conta virtual, capital+drawdown compostos) (2026-08-14)
+
+### Contexto
+
+Uma análise externa (outra IA, com acesso de leitura ao repo) apontou que
+a "curva de equity" exibida hoje no relatório de Backtest
+(`overall.cumulativePct`, `src/lib/tradeMetrics.js` `summarizeOps`) é uma
+soma percentual ingênua — `cumulativePct += pnlPct` por operação fechada,
+sem dimensionamento de posição por risco nem composição de capital.
+Verifiquei lendo o código real: é fato, não exagero — o `maxDrawdownPct`
+reportado também deriva dessa mesma soma, então nunca foi um drawdown de
+conta genuíno. O usuário pediu para implementar isso com "a importância
+que deve ter pra que fique perfeito", junto com o teste do endpoint de
+arquivo histórico Futures (item 47.2, PR separado). Perguntado via
+`AskUserQuestion`, escolheu: capital inicial **$1.000**, risco **1% do
+capital corrente por operação**, escopo **Backtest + painel ao vivo**.
+
+### Achado-chave (simplifica o desenho)
+
+`calcRealizedR(op, costModel)` (já exportada, `tradeMetrics.js:259-264`)
+já desconta custo (via `calcRealizedDelta`, chokepoint único, item 44) e
+já pondera TP1+runner (via `getWeights`) — devolve o resultado em R
+(risco = `|entry_price - initial_stop|`). Com dimensionamento de posição
+por risco fixo, o PnL em dólar de qualquer operação fechada é, por
+construção algébrica:
+
+```
+pnlDollars = R × (capitalCorrente × risco%)
+```
+
+Vale mesmo com custo aplicado (R já é líquido). A curva de capital real
+não precisa recalcular preço de TP1, pesos nem custo — só chama
+`calcRealizedR` (já pública) e faz duas multiplicações por operação.
+
+### Implementação
+
+**Novo módulo `src/lib/equityCurve.js`** — separado de `tradeMetrics.js`
+(mesmo padrão de `backtestAnalysis.js`: importa só API pública, zero
+linha mudada no módulo mais crítico/mais testado do projeto).
+`simulateEquityCurve(ops, { initialCapital=1000, riskPct=1, costModel,
+epsilonR, epsilonPct, sortBy })` — ordena por `closed_at` (mesma
+convenção de `summarizeOps`), compõe capital sequencialmente sobre um
+único pool. Operação sem `initial_stop` válido (R null) fica
+`sized:false, reason:'unsized_no_r'`, capital inalterado — nunca inventa
+dimensionamento. Se o capital cai a `<= 0`, trava em 0
+(`accountBlown:true`) e as operações seguintes ficam
+`sized:false, reason:'account_blown'` — comportamento de conta
+liquidada. Devolve também `maxDrawdownAbs`/`maxDrawdownPct` (reais, sobre
+o pico de capital), `totalReturnPct`, `cagrPct` (com
+`cagrUnavailableReason` — `window_too_short`/`no_time_range`/
+`account_blown`/`non_positive_final_capital` — nunca extrapola CAGR de
+amostra inutilizável) e o array `curve` por operação.
+
+**Limitação documentada no cabeçalho do módulo, não escondida**: o laço
+assume um único pool de capital disputado sequencialmente por ordem de
+fechamento — não modela posições concorrentes (o sistema real roda
+vários ativos monitorados ao mesmo tempo, com operações sobrepostas no
+tempo). Mesma simplificação que `summarizeOps.cumulativePct` já fazia.
+Alocação de capital para posições sobrepostas ficou fora de escopo.
+
+**`src/pages/Backtest.jsx`**: título da curva ingênua existente
+(`ReportBody`, `overall.curve`) trocado para "Curva ingênua (soma %
+simples, NÃO composta — ver curva de capital real abaixo)" — zero mudança
+de cálculo, só deixa a natureza dela explícita (antes enganava por
+omissão). Nova seção "Curva de capital real (composta, position sizing
+por risco)" com inputs de capital inicial/risco por operação (o mesmo
+`Slider` já usado em `QuickBacktestTab`), 4 cards (Capital Final, Drawdown
+Real, CAGR, Operações Dimensionadas), badge "CONTA ZERADA" quando
+aplicável, e um `LineChart` do capital em USD. Reusa o mesmo `costModel`
+que o relatório já usou (`report.costs?.model`) — não diverge do
+`expectancyR` já exibido — e o aviso "RESULTADO INCONCLUSIVO" existente
+(amostra pequena/IC cruza zero, mesmo gate do item 44) agora também cobre
+a curva real, sem construir uma segunda máquina de IC95%.
+`PortfolioVsMarket.jsx` ficou **fora** desta rodada — problema correlato
+(soma % vs benchmark que compõe) mas de modelagem diferente (capital
+todo alocado por trade, não risco por trade) — decisão separada, não
+implementada.
+
+**Painel ao vivo**: novo componente `src/components/dashboard/
+VirtualAccountCard.jsx` (mesmo padrão visual de `MetricCard` que
+`PerformanceMetricsBar.jsx` já usa), com query PRÓPRIA
+(`['trade-operations-closed-all']`, `list('-created_date', 500)` — mesmo
+padrão de limite maior já usado por `MonthlyReport.jsx:71`) em vez de
+reaproveitar a query de 100 operações que `PerformanceMetricsBar`/
+`PerformanceOverview` já usam — para não mudar o comportamento desses
+widgets existentes. Mostra Capital Atual, Retorno Total % e Drawdown
+Real %, com os defaults do usuário ($1.000/1%). Posicionado em
+`Dashboard.jsx` entre `PerformanceOverview` e `CorrelationWidget` (mesma
+"zona de performance" já existente na página).
+
+### Testes
+
+`src/lib/equityCurve.test.js` (15 testes novos, convenção de
+`tradeMetrics.test.js` — fixture `makeOp()`, `ZERO_COST` explícito,
+conta manual em cada assert): dimensionamento simples, composição
+passo a passo ao longo de várias operações, drawdown real divergindo do
+ingênuo num cenário construído a propósito (ganho grande cedo infla o
+pico — medido: ingênuo 15% vs real ≈2,97%), conta zerada (gap through do
+stop com risco 100%), TP1+runner (reusa os mesmos cenários de
+`tradeMetrics.test.js`), operação sem `initial_stop`, CAGR indisponível
+(janela curta) vs disponível (~1 ano), validação de entrada
+(`initialCapital`/`riskPct` fora de faixa lançam), custo aplicado por
+padrão, lista vazia/só operações abertas.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck` — todos
+limpos (947/947 testes = 932 anteriores + 15 novos, 0 erros de
+typecheck, build sem regressão). Confirmado por grep que
+`equityCurve.js`/`VirtualAccountCard.jsx` não vazam para o bundle do scan
+(`scripts/dist/run-scan.mjs`, isolamento esbuild) — são consumidos só por
+páginas/componentes React, nunca por `scanner.js`.
+
+**Não verificado nesta rodada** (mesma limitação de sempre neste
+ambiente sandboxed, sem credenciais reais do Firebase): teste visual no
+browser do novo card no Dashboard e da nova seção no Backtest. Recomendo
+ao usuário conferir visualmente após o deploy — especialmente o slider de
+risco no Backtest (1%→5%) e o comportamento do card "Conta Virtual" com
+o histórico real de operações fechadas.
+
+### Conclusão
+
+Os dois passos concretos pedidos pelo usuário (teste do endpoint de
+arquivo histórico Futures — item 47.2, PR separado — e esta curva de
+equity real) estão implementados. A curva real fica lado a lado com a
+ingênua (aditivo, não substitui), reusa o chokepoint de custo/TP1-runner
+já existente sem duplicar lógica, e aparece tanto no Backtest quanto no
+painel ao vivo, conforme decisão explícita do usuário.

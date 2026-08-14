@@ -13,6 +13,7 @@ import { backend } from '@/api/entities';
 import { SYNCED_STRATEGY_KEYS, getPineConfig } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
 import { isClosedOp, getClosedAt, summarizeOps, calcRealizedPnlPct, getExitPrice, classifyOutcome } from '@/lib/tradeMetrics';
+import { simulateEquityCurve, DEFAULT_INITIAL_CAPITAL, DEFAULT_RISK_PCT } from '@/lib/equityCurve';
 import { fetchCandles } from '@/lib/marketDataProvider';
 import { runQuickBacktest } from '@/lib/quickBacktest';
 import { Slider } from '@/components/ui/slider';
@@ -29,6 +30,18 @@ function fmtR(v, digits = 3) {
   const sign = v >= 0 ? '+' : '';
   return `${sign}${v.toFixed(digits)}R`;
 }
+
+function fmtUsd(v, digits = 2) {
+  if (v === null || v === undefined || Number.isNaN(v)) return '—';
+  return `$${v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+
+const CAGR_UNAVAILABLE_LABEL = {
+  window_too_short: 'janela curta demais (< 30 dias)',
+  no_time_range: 'sem intervalo de tempo utilizável',
+  account_blown: 'conta zerada',
+  non_positive_final_capital: 'capital final não positivo',
+};
 
 const OUTCOME_COLORS = { WIN: '#00ff80', LOSS: '#ff1478', BE: '#64748b' };
 
@@ -98,6 +111,9 @@ function buildReportFromOps(ops) {
 function ReportBody({ report, hideCascadeTable = false }) {
   const { overall, costs } = report;
 
+  const [initialCapital, setInitialCapital] = useState(DEFAULT_INITIAL_CAPITAL);
+  const [riskPct, setRiskPct] = useState(DEFAULT_RISK_PCT);
+
   const equityCurve = useMemo(() => {
     if (!overall?.curve) return [];
     return overall.curve
@@ -109,6 +125,24 @@ function ReportBody({ report, hideCascadeTable = false }) {
         outcome: p.outcome,
       }));
   }, [overall]);
+
+  // Operações reais (mesma fonte que opsFromReport usa em backtestAnalysis.js
+  // — não muda a forma de overall.curve) alimentando a curva de capital REAL
+  // (composta, position sizing por risco) — ver src/lib/equityCurve.js.
+  const equitySim = useMemo(() => {
+    const ops = (overall?.curve || []).map(e => e.op).filter(Boolean);
+    if (ops.length === 0) return null;
+    return simulateEquityCurve(ops, { initialCapital, riskPct, costModel: costs?.model });
+  }, [overall, costs, initialCapital, riskPct]);
+
+  const realEquityChart = useMemo(() => {
+    if (!equitySim?.curve) return [];
+    return equitySim.curve.map((p, i) => ({
+      trade: i + 1,
+      capitalAfter: +p.capitalAfter.toFixed(2),
+      symbol: p.op?.symbol,
+    }));
+  }, [equitySim]);
 
   const outcomePie = useMemo(() => {
     if (!overall) return [];
@@ -149,7 +183,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
       {!costs.conclusive && (
         <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-mono" style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.3)', color: '#ff9f43' }}>
           <AlertTriangle className="w-4 h-4 shrink-0" />
-          RESULTADO INCONCLUSIVO — {inconclusiveLabel}. Win rate e profit factor abaixo são ruído nesta amostra.
+          RESULTADO INCONCLUSIVO — {inconclusiveLabel}. Win rate e profit factor abaixo são ruído nesta amostra — inclui a curva de capital real mais abaixo.
         </div>
       )}
 
@@ -173,7 +207,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
-          <Section title="Curva de equity (% acumulado por operação fechada)">
+          <Section title="Curva ingênua (soma % simples, NÃO composta — ver curva de capital real abaixo)">
             <div style={{ height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={equityCurve} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
@@ -204,6 +238,69 @@ function ReportBody({ report, hideCascadeTable = false }) {
           </div>
         </Section>
       </div>
+
+      {equitySim && (
+        <Section title="Curva de capital real (composta, position sizing por risco)">
+          <p className="text-[9px] font-mono text-muted-foreground/70 -mt-1 mb-1">
+            Dimensiona cada operação como {riskPct}% do capital CORRENTE (não do inicial) sobre o risco da
+            entrada — diferente da curva ingênua acima, aqui o capital efetivamente compõe ao longo da série.
+            Simplificação: assume um único pool de capital disputado sequencialmente por ordem de fechamento,
+            não posições simultâneas em vários ativos.
+          </p>
+          <div className="flex flex-wrap items-end gap-4 mb-2">
+            <div>
+              <label className="text-[9px] font-mono text-muted-foreground block mb-1">Capital inicial</label>
+              <input type="number" min={1} step={100} value={initialCapital}
+                onChange={e => setInitialCapital(Math.max(1, Number(e.target.value) || DEFAULT_INITIAL_CAPITAL))}
+                className="w-28 px-3 py-1.5 rounded-lg text-[11px] font-mono outline-none"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }} />
+            </div>
+            <div className="w-40">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[9px] font-mono text-muted-foreground">Risco por operação</span>
+                <span className="text-xs font-mono font-bold" style={{ color: '#ffd166' }}>{riskPct}%</span>
+              </div>
+              <Slider value={[riskPct]} min={0.1} max={5} step={0.1} onValueChange={([v]) => setRiskPct(v)} />
+            </div>
+            {equitySim.accountBlown && (
+              <span className="px-2.5 py-1 rounded-md text-[10px] font-mono font-bold"
+                style={{ background: 'rgba(255,20,120,0.15)', border: '1px solid rgba(255,20,120,0.4)', color: '#ff1478' }}>
+                CONTA ZERADA
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+            <SummaryCard icon={equitySim.totalReturnPct >= 0 ? TrendingUp : TrendingDown} label="Capital final"
+              value={fmtUsd(equitySim.finalCapital)} sublabel={fmtPct(equitySim.totalReturnPct)}
+              color={equitySim.totalReturnPct >= 0 ? '#00ff80' : '#ff1478'} glowColor="rgba(0,229,255,0.4)" />
+            <SummaryCard icon={TrendingDown} label="Drawdown real" value={fmtPct(-equitySim.maxDrawdownPct)}
+              sublabel={fmtUsd(-equitySim.maxDrawdownAbs)} color="#ff1478" glowColor="rgba(255,20,120,0.4)" />
+            <SummaryCard icon={Award} label="CAGR"
+              value={equitySim.cagrPct === null ? 'N/A' : fmtPct(equitySim.cagrPct)}
+              sublabel={equitySim.cagrPct === null ? (CAGR_UNAVAILABLE_LABEL[equitySim.cagrUnavailableReason] || equitySim.cagrUnavailableReason) : `~${equitySim.years?.toFixed(2)} anos`}
+              color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
+            <SummaryCard icon={FlaskConical} label="Operações dimensionadas" value={`${equitySim.sized}/${equitySim.total}`}
+              sublabel={equitySim.unsized > 0 ? `${equitySim.unsized} sem risco definido` : 'todas dimensionadas'}
+              color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
+          </div>
+
+          <div style={{ height: 220 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={realEquityChart} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="trade" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
+                <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} tickFormatter={v => fmtUsd(v, 0)} />
+                <Tooltip
+                  contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
+                  formatter={(value, name, props) => [fmtUsd(value), props.payload.symbol || 'capital']}
+                />
+                <Line type="monotone" dataKey="capitalAfter" stroke="#ffd166" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </Section>
+      )}
 
       {!hideCascadeTable && cascadeRows.length > 0 && (
         <Section title="Por cascata (4h→15m RF vs 1h→5m SMC)">

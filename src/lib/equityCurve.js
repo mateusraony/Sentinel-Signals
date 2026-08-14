@@ -1,0 +1,171 @@
+// Curva de equity REAL — capital em USD, compondo, com position sizing por
+// risco. Complementa (não substitui) a soma percentual ingênua de
+// `summarizeOps.cumulativePct` (tradeMetrics.js), que soma pnlPct por
+// operação sem nunca dimensionar posição nem compor capital — por isso
+// nunca produziu um drawdown de CONTA real.
+//
+// Módulo separado de tradeMetrics.js de propósito (mesmo padrão de
+// backtestAnalysis.js: importa só a API pública, zero linha mudada no
+// módulo mais crítico/mais testado do projeto). Toda a matemática de custo
+// e de TP1+runner já vem embutida em `calcRealizedR` — este módulo nunca
+// recalcula preço de TP1, pesos nem custo, só compõe capital em cima do R
+// já calculado no chokepoint existente:
+//
+//   pnlDollars = R × (capitalCorrente × risco%)
+//
+// Isso vale mesmo com custo aplicado, porque R já é líquido de custo
+// (calcRealizedR → calcRealizedDelta → calcTradeCost).
+//
+// Limitação deliberada: o laço assume um ÚNICO pool de capital disputado
+// SEQUENCIALMENTE por ordem de fechamento — não modela posições
+// concorrentes (o sistema real roda vários ativos monitorados ao mesmo
+// tempo, com operações sobrepostas no tempo). Mesma simplificação que
+// `summarizeOps.cumulativePct` já faz hoje (mesma ordenação por
+// closed_at). Alocação de capital para posições sobrepostas é um problema
+// mais complexo, fora de escopo desta rodada.
+import {
+  isClosedOp, getClosedAt, getOpenedAt, calcRealizedR, classifyOutcome,
+} from './tradeMetrics.js';
+
+export const DEFAULT_INITIAL_CAPITAL = 1000;
+export const DEFAULT_RISK_PCT = 1;
+
+const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+const MIN_YEARS_FOR_CAGR = 30 / 365.25;
+
+/**
+ * @param {Array<object>} ops
+ * @param {{ initialCapital?: number, riskPct?: number, epsilonR?: number,
+ *   epsilonPct?: number, sortBy?: string, costModel?: import('./tradeMetrics.js').CostModel }} [options]
+ */
+export function simulateEquityCurve(ops, {
+  initialCapital = DEFAULT_INITIAL_CAPITAL,
+  riskPct = DEFAULT_RISK_PCT,
+  epsilonR = 0.05,
+  epsilonPct = 0.1,
+  sortBy = 'closed',
+  costModel,
+} = {}) {
+  if (!Number.isFinite(initialCapital) || initialCapital <= 0) {
+    throw new Error('simulateEquityCurve: initialCapital deve ser um número finito > 0.');
+  }
+  if (!Number.isFinite(riskPct) || riskPct <= 0 || riskPct > 100) {
+    throw new Error('simulateEquityCurve: riskPct deve ser um número finito em (0, 100].');
+  }
+
+  const closed = (ops || []).filter(isClosedOp);
+  const keyOf = sortBy === 'created'
+    ? (op) => op.created_date ?? ''
+    : (op) => getClosedAt(op) ?? '';
+  closed.sort((a, b) => (keyOf(a) > keyOf(b) ? 1 : keyOf(a) < keyOf(b) ? -1 : 0));
+
+  const riskFraction = riskPct / 100;
+  let capital = initialCapital;
+  let peakCapital = initialCapital;
+  let maxDrawdownAbs = 0;
+  let maxDrawdownPct = 0;
+  let accountBlown = false;
+  let sized = 0;
+  let unsized = 0;
+  const curve = [];
+
+  for (const op of closed) {
+    const outcome = classifyOutcome(op, { epsilonR, epsilonPct, costModel });
+    const r = calcRealizedR(op, costModel);
+    const capitalBefore = capital;
+
+    if (accountBlown || r === null) {
+      unsized += 1;
+      curve.push({
+        op,
+        outcome,
+        r,
+        capitalBefore,
+        capitalAfter: capitalBefore,
+        pnlDollars: 0,
+        riskDollars: null,
+        sized: false,
+        reason: accountBlown ? 'account_blown' : 'unsized_no_r',
+        peakCapital,
+        drawdownAbs: maxDrawdownAbs,
+        drawdownPct: maxDrawdownPct,
+      });
+      continue;
+    }
+
+    const riskDollars = capitalBefore * riskFraction;
+    const pnlDollars = r * riskDollars;
+    capital = capitalBefore + pnlDollars;
+    if (capital <= 0) {
+      capital = 0;
+      accountBlown = true;
+    }
+    sized += 1;
+
+    peakCapital = Math.max(peakCapital, capital);
+    const drawdownAbs = peakCapital - capital;
+    const drawdownPct = peakCapital > 0 ? (drawdownAbs / peakCapital) * 100 : 0;
+    maxDrawdownAbs = Math.max(maxDrawdownAbs, drawdownAbs);
+    maxDrawdownPct = Math.max(maxDrawdownPct, drawdownPct);
+
+    curve.push({
+      op,
+      outcome,
+      r,
+      capitalBefore,
+      capitalAfter: capital,
+      pnlDollars,
+      riskDollars,
+      sized: true,
+      reason: null,
+      peakCapital,
+      drawdownAbs,
+      drawdownPct,
+    });
+  }
+
+  const finalCapital = capital;
+  const totalReturnPct = ((finalCapital / initialCapital) - 1) * 100;
+
+  const firstOpenedAt = closed.length > 0 ? getOpenedAt(closed[0]) : null;
+  const lastClosedAt = closed.length > 0 ? getClosedAt(closed[closed.length - 1]) : null;
+  let years = null;
+  if (firstOpenedAt && lastClosedAt) {
+    const startMs = new Date(firstOpenedAt).getTime();
+    const endMs = new Date(lastClosedAt).getTime();
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
+      years = (endMs - startMs) / MS_PER_YEAR;
+    }
+  }
+
+  let cagrPct = null;
+  let cagrUnavailableReason = null;
+  if (accountBlown) {
+    cagrUnavailableReason = 'account_blown';
+  } else if (finalCapital <= 0) {
+    cagrUnavailableReason = 'non_positive_final_capital';
+  } else if (years === null) {
+    cagrUnavailableReason = 'no_time_range';
+  } else if (years < MIN_YEARS_FOR_CAGR) {
+    cagrUnavailableReason = 'window_too_short';
+  } else {
+    cagrPct = (((finalCapital / initialCapital) ** (1 / years)) - 1) * 100;
+  }
+
+  return {
+    initialCapital,
+    riskPct,
+    finalCapital,
+    totalReturnPct,
+    maxDrawdownAbs,
+    maxDrawdownPct,
+    accountBlown,
+    years,
+    cagrPct,
+    cagrUnavailableReason,
+    sized,
+    unsized,
+    total: closed.length,
+    curve,
+  };
+}
