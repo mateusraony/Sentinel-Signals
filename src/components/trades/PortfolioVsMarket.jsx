@@ -6,7 +6,8 @@ import {
 } from 'recharts';
 import { TrendingUp, TrendingDown, Activity } from 'lucide-react';
 import moment from 'moment';
-import { getClosedAt, summarizeOps } from '@/lib/tradeMetrics';
+import { getClosedAt } from '@/lib/tradeMetrics';
+import { compoundReturnCurve } from '@/lib/equityCurve';
 import { BENCHMARK_OPTIONS } from '@/lib/marketBenchmarks';
 
 function fmtPct(v) {
@@ -16,14 +17,19 @@ function fmtPct(v) {
 }
 
 /**
- * Cumulative realized PnL % from closed trade operations (equal position size
- * per trade). The partial/runner split comes from the shared metrics module —
- * the old heuristic 0.5 weight and the mandatory exit_price filter are gone,
- * so legacy ops without exit_price now enter via the per-status fallback.
+ * Cumulative realized PnL % from closed trade operations, COMPOUNDED — 100%
+ * of the current capital reallocated into each trade in sequence (via
+ * `compoundReturnCurve`, src/lib/equityCurve.js), not a naive running sum.
+ * The market benchmark curve below is compound by nature (price return /
+ * compound interest), so the portfolio side has to compound too — otherwise
+ * "Superando"/"Atrás" would be an artifact of the comparison, not real
+ * performance (see docs/known-risks.md item 87). The partial/runner split
+ * comes from the shared metrics module — the old heuristic 0.5 weight and
+ * the mandatory exit_price filter are gone, so legacy ops without exit_price
+ * now enter via the per-status fallback.
  */
 function calcPortfolioCurve(trades) {
-  return summarizeOps(trades)
-    .curve
+  return compoundReturnCurve(trades)
     .filter(p => p.pnlPct !== null)
     .map(({ op, pnlPct, cumulativePct }) => {
       const closedAt = getClosedAt(op);
@@ -149,9 +155,14 @@ export default function PortfolioVsMarket({ trades }) {
       style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
       {/* Header */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          <Activity className="w-4 h-4" style={{ color: '#00e5ff' }} />
-          <h3 className="text-sm font-bold text-foreground">Carteira vs Mercado ({benchmarkOption.label})</h3>
+        <div className="flex items-center gap-2 min-w-0">
+          <Activity className="w-4 h-4 shrink-0" style={{ color: '#00e5ff' }} />
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-foreground">Carteira vs Mercado ({benchmarkOption.label})</h3>
+            <p className="text-[9px] font-mono text-muted-foreground/60 leading-tight">
+              100% do capital realocado a cada trade (composto) — comparável ao {benchmarkOption.label}, que também compõe
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-3 text-[10px] font-mono">
           <span className="flex items-center gap-1.5">
