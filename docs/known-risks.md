@@ -8755,8 +8755,57 @@ o histórico real de operações fechadas.
 ### Conclusão
 
 Os dois passos concretos pedidos pelo usuário (teste do endpoint de
-arquivo histórico Futures — item 47.2, PR separado — e esta curva de
-equity real) estão implementados. A curva real fica lado a lado com a
-ingênua (aditivo, não substitui), reusa o chokepoint de custo/TP1-runner
-já existente sem duplicar lógica, e aparece tanto no Backtest quanto no
-painel ao vivo, conforme decisão explícita do usuário.
+arquivo histórico Futures — item 47.2 — e esta curva de equity real)
+estão implementados. A curva real fica lado a lado com a ingênua
+(aditivo, não substitui), reusa o chokepoint de custo/TP1-runner já
+existente sem duplicar lógica, e aparece tanto no Backtest quanto no
+painel ao vivo, conforme decisão explícita do usuário. O teste do
+endpoint Futures em si ficou bloqueado — ver item 85.
+
+## 85. Teste do endpoint de arquivo histórico Futures — bloqueado por permissão (2026-08-14)
+
+### Contexto
+
+Depois do merge do PR #185 (`spike-futures-archive-check.yml`, item 47.2),
+tentei disparar o workflow via `mcp__github__actions_run_trigger`
+(`method: run_workflow`) contra `main`, tanto pelo nome do arquivo
+(`spike-futures-archive-check.yml`) quanto pelo ID numérico
+(`334249404`, confirmado existente e `state: active` via
+`actions_list.list_workflows`).
+
+### Achado
+
+As duas tentativas retornaram o mesmo erro:
+
+```
+403 Resource not accessible by integration []
+```
+
+Mesmo bloqueio que a sessão original do item 47.2 já tinha documentado —
+o token/integração do GitHub usado por esta sessão não tem o escopo
+necessário pra disparar `workflow_dispatch` via API, independente do
+workflow ter (ou não) `state: active`, e independente de eu estar
+chamando pelo nome do arquivo ou pelo ID numérico. Não é um problema do
+workflow em si (o YAML está correto, ativo, visível na listagem) — é uma
+restrição de permissão da integração GitHub App conectada a esta sessão,
+fora do meu controle.
+
+### Conclusão
+
+**Não corrigível de dentro de uma sessão do Claude Code com esse mesmo
+nível de acesso.** O workflow `spike-futures-archive-check.yml` continua
+no repositório, pronto pra disparar — só falta alguém com permissão
+disparar manualmente pela interface do GitHub (aba **Actions** →
+"Spike — Futures historical archive reachability (temporary)" → botão
+**Run workflow**) ou uma sessão futura cuja integração GitHub tenha o
+escopo `workflow` habilitado.
+
+### Próximo passo
+
+Pedir ao usuário para disparar manualmente pela UI do GitHub (2 cliques:
+Actions → selecionar o workflow → Run workflow) e colar o resultado do
+job aqui, ou nesta conversa — a partir daí registro o resultado real
+(HTTP 200 = arquivo em lote de Futures acessível, vira opção real pro
+backtest; 403/451/timeout = a decisão do item 4 permanece). Enquanto
+isso, o workflow fica no repositório (não removido — sem credenciais,
+sem custo, sem risco de deixá-lo parado).
