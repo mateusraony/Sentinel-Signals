@@ -1,30 +1,45 @@
-// Curva de equity REAL — capital em USD, compondo, com position sizing por
-// risco. Complementa (não substitui) a soma percentual ingênua de
-// `summarizeOps.cumulativePct` (tradeMetrics.js), que soma pnlPct por
-// operação sem nunca dimensionar posição nem compor capital — por isso
-// nunca produziu um drawdown de CONTA real.
+// Duas curvas de capital REAL, compostas — complementam (não substituem) a
+// soma percentual ingênua de `summarizeOps.cumulativePct` (tradeMetrics.js),
+// que soma pnlPct por operação sem nunca dimensionar posição nem compor
+// capital, por isso nunca produziu um drawdown de CONTA real nem uma % que
+// componha de verdade:
+//
+// - `simulateEquityCurve` — capital em USD, position sizing por RISCO
+//   (arrisca X% do capital corrente por operação, dimensionado pelo
+//   `initial_stop`). Uso: "quanto essa estratégia teria rendido numa conta
+//   de $N com risco de X% por operação" (ver Backtest.jsx/Dashboard).
+// - `compoundReturnCurve` — 100% do capital REALOCADO a cada operação (sem
+//   `initial_stop`, sem R, só o pnlPct bruto de cada trade). Uso: comparar
+//   a carteira contra um benchmark de mercado
+//   (`src/lib/marketBenchmarks.js`, `PortfolioVsMarket.jsx`) — o benchmark
+//   já É uma curva composta por natureza (retorno de preço/juros
+//   compostos), então comparar contra a soma ingênua é enganoso (a
+//   carteira parece "perder"/"ganhar" do mercado por um artefato de
+//   composição, não por desempenho real).
 //
 // Módulo separado de tradeMetrics.js de propósito (mesmo padrão de
 // backtestAnalysis.js: importa só a API pública, zero linha mudada no
 // módulo mais crítico/mais testado do projeto). Toda a matemática de custo
-// e de TP1+runner já vem embutida em `calcRealizedR` — este módulo nunca
-// recalcula preço de TP1, pesos nem custo, só compõe capital em cima do R
-// já calculado no chokepoint existente:
+// e de TP1+runner já vem embutida em `calcRealizedR`/`calcRealizedPnlPct` —
+// este módulo nunca recalcula preço de TP1, pesos nem custo, só compõe
+// capital em cima do que o chokepoint existente já calculou:
 //
-//   pnlDollars = R × (capitalCorrente × risco%)
+//   pnlDollars = R × (capitalCorrente × risco%)              [simulateEquityCurve]
+//   fator *= 1 + pnlPct/100, por operação                    [compoundReturnCurve]
 //
-// Isso vale mesmo com custo aplicado, porque R já é líquido de custo
-// (calcRealizedR → calcRealizedDelta → calcTradeCost).
+// Isso vale mesmo com custo aplicado, porque R/pnlPct já são líquidos de
+// custo (calcRealizedR/calcRealizedPnlPct → calcRealizedDelta →
+// calcTradeCost).
 //
-// Limitação deliberada: o laço assume um ÚNICO pool de capital disputado
-// SEQUENCIALMENTE por ordem de fechamento — não modela posições
+// Limitação deliberada nas DUAS: o laço assume um ÚNICO pool de capital
+// disputado SEQUENCIALMENTE por ordem de fechamento — não modela posições
 // concorrentes (o sistema real roda vários ativos monitorados ao mesmo
 // tempo, com operações sobrepostas no tempo). Mesma simplificação que
 // `summarizeOps.cumulativePct` já faz hoje (mesma ordenação por
 // closed_at). Alocação de capital para posições sobrepostas é um problema
 // mais complexo, fora de escopo desta rodada.
 import {
-  isClosedOp, getClosedAt, getOpenedAt, calcRealizedR, classifyOutcome,
+  isClosedOp, getClosedAt, getOpenedAt, calcRealizedR, calcRealizedPnlPct, classifyOutcome,
 } from './tradeMetrics.js';
 
 export const DEFAULT_INITIAL_CAPITAL = 1000;
@@ -168,4 +183,45 @@ export function simulateEquityCurve(ops, {
     total: closed.length,
     curve,
   };
+}
+
+// Segunda curva composta, mais simples: 100% do capital realocado a cada
+// operação (não é dimensionamento por risco — sem `initial_stop`, sem
+// unidades, sem R). Existe pra comparar a carteira contra um benchmark de
+// mercado (`src/lib/marketBenchmarks.js`), que É uma curva composta por
+// natureza (retorno de preço/juros compostos) — comparar isso contra a soma
+// ingênua de `summarizeOps.cumulativePct` é enganoso (a carteira "perde" ou
+// "ganha" do mercado por um artefato de composição, não por desempenho real).
+// Devolve o MESMO formato de entrada de `summarizeOps().curve`
+// (`{ op, outcome, pnlPct, cumulativePct }`) — troca direta em quem já
+// consome aquele array, só o cálculo de `cumulativePct` muda.
+/**
+ * @param {Array<object>} ops
+ * @param {{ epsilonR?: number, epsilonPct?: number, sortBy?: string, costModel?: import('./tradeMetrics.js').CostModel }} [options]
+ */
+export function compoundReturnCurve(ops, {
+  epsilonR = 0.05,
+  epsilonPct = 0.1,
+  sortBy = 'closed',
+  costModel,
+} = {}) {
+  const closed = (ops || []).filter(isClosedOp);
+  const keyOf = sortBy === 'created'
+    ? (op) => op.created_date ?? ''
+    : (op) => getClosedAt(op) ?? '';
+  closed.sort((a, b) => (keyOf(a) > keyOf(b) ? 1 : keyOf(a) < keyOf(b) ? -1 : 0));
+
+  let factor = 1;
+  const curve = [];
+  for (const op of closed) {
+    const outcome = classifyOutcome(op, { epsilonR, epsilonPct, costModel });
+    const pnlPct = calcRealizedPnlPct(op, costModel);
+    if (pnlPct === null) {
+      curve.push({ op, outcome, pnlPct: null, cumulativePct: (factor - 1) * 100 });
+      continue;
+    }
+    factor *= 1 + (pnlPct / 100);
+    curve.push({ op, outcome, pnlPct, cumulativePct: (factor - 1) * 100 });
+  }
+  return curve;
 }

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { ZERO_COST, calcRealizedR } from './tradeMetrics.js';
+import { ZERO_COST, calcRealizedR, calcRealizedPnlPct, summarizeOps } from './tradeMetrics.js';
 import {
   simulateEquityCurve,
+  compoundReturnCurve,
   DEFAULT_INITIAL_CAPITAL,
   DEFAULT_RISK_PCT,
 } from './equityCurve.js';
@@ -219,5 +220,64 @@ describe('simulateEquityCurve — lista vazia / sem operações fechadas', () =>
     const sim = simulateEquityCurve([op], { initialCapital: 5000, riskPct: 1 });
     expect(sim.curve).toEqual([]);
     expect(sim.finalCapital).toBe(5000);
+  });
+});
+
+describe('compoundReturnCurve — 100% do capital realocado a cada operação', () => {
+  it('1 operação: cumulativePct = pnlPct dessa operação', () => {
+    const op = makeOp({ exit_price: 95 }); // -1R, -5% (ZERO_COST)
+    const curve = compoundReturnCurve([op], { costModel: ZERO_COST });
+    expect(curve).toHaveLength(1);
+    expect(curve[0].pnlPct).toBeCloseTo(-5);
+    expect(curve[0].cumulativePct).toBeCloseTo(-5);
+  });
+
+  it('compõe (multiplica), não soma: +11.25% depois -5% ≠ soma ingênua de 6.25%', () => {
+    // op1: TP2 com parcial = +2.25R = +11.25%; op2: stop cheio = -1R = -5%
+    const op1 = makeOp({ id: 'op1', status: 'TP2_HIT', tp1_hit: true, exit_price: 115, closed_at: '2026-07-10T00:00:00.000Z' });
+    const op2 = makeOp({ id: 'op2', exit_price: 95, closed_at: '2026-07-11T00:00:00.000Z' });
+
+    const curve = compoundReturnCurve([op1, op2], { costModel: ZERO_COST });
+    expect(curve[0].pnlPct).toBeCloseTo(11.25);
+    expect(curve[1].pnlPct).toBeCloseTo(-5);
+
+    // fator = 1.1125 × 0.95 = 1.056875 → +5.6875%, não +6.25% (soma ingênua)
+    const expectedCompounded = ((1 + 11.25 / 100) * (1 + -5 / 100) - 1) * 100;
+    expect(expectedCompounded).toBeCloseTo(5.6875);
+    expect(curve[1].cumulativePct).toBeCloseTo(expectedCompounded);
+
+    const naiveSum = summarizeOps([op1, op2], { costModel: ZERO_COST }).totalPnlPct;
+    expect(naiveSum).toBeCloseTo(6.25);
+    expect(curve[1].cumulativePct).not.toBeCloseTo(naiveSum, 1);
+  });
+
+  it('operação com pnlPct não computável (sem exit_price recuperável): cumulativePct não muda', () => {
+    const op1 = makeOp({ id: 'op1', exit_price: 95, closed_at: '2026-07-10T00:00:00.000Z' }); // -5%
+    const op2 = makeOp({ id: 'op2', status: 'CLOSED', current_stop: undefined, exit_price: undefined, closed_at: '2026-07-11T00:00:00.000Z' });
+
+    const curve = compoundReturnCurve([op1, op2], { costModel: ZERO_COST });
+    expect(curve[0].pnlPct).toBeCloseTo(-5);
+    expect(curve[1].pnlPct).toBeNull();
+    expect(curve[1].cumulativePct).toBeCloseTo(curve[0].cumulativePct);
+  });
+
+  it('custo aplicado por padrão: cumulativePct sem costModel é pior que com ZERO_COST', () => {
+    const op = makeOp({ exit_price: 95 });
+    const curveNet = compoundReturnCurve([op]);
+    const curveGross = compoundReturnCurve([op], { costModel: ZERO_COST });
+    expect(curveNet[0].pnlPct).toBeLessThan(curveGross[0].pnlPct);
+    expect(curveNet[0].pnlPct).toBeCloseTo(calcRealizedPnlPct(op));
+    expect(curveGross[0].pnlPct).toBeCloseTo(calcRealizedPnlPct(op, ZERO_COST));
+  });
+
+  it('lista vazia: curve vazia, sem lançar', () => {
+    expect(compoundReturnCurve([])).toEqual([]);
+  });
+
+  it('mesmo formato de entrada de summarizeOps().curve (op, outcome, pnlPct, cumulativePct)', () => {
+    const op = makeOp({ exit_price: 95 });
+    const [entry] = compoundReturnCurve([op], { costModel: ZERO_COST });
+    expect(Object.keys(entry).sort()).toEqual(['cumulativePct', 'op', 'outcome', 'pnlPct'].sort());
+    expect(entry.outcome).toBe('LOSS');
   });
 });

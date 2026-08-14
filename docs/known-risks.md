@@ -8715,7 +8715,8 @@ a curva real, sem construir uma segunda máquina de IC95%.
 `PortfolioVsMarket.jsx` ficou **fora** desta rodada — problema correlato
 (soma % vs benchmark que compõe) mas de modelagem diferente (capital
 todo alocado por trade, não risco por trade) — decisão separada, não
-implementada.
+implementada. **Atualização (2026-08-14, item 87)**: implementado numa
+rodada seguinte, a pedido do usuário.
 
 **Painel ao vivo**: novo componente `src/components/dashboard/
 VirtualAccountCard.jsx` (mesmo padrão visual de `MetricCard` que
@@ -8902,3 +8903,76 @@ essa opção. O workflow temporário `spike-futures-archive-check.yml`
 cumpriu seu propósito (responder a pergunta binária "dá pra acessar ou
 não") e foi removido neste mesmo commit — o resultado fica registrado
 aqui, não precisa do workflow permanecer no repositório.
+
+## 87. `PortfolioVsMarket.jsx` — curva da carteira agora composta (2026-08-14)
+
+### Contexto
+
+Item 84 (curva de equity real) deixou `PortfolioVsMarket.jsx` fora de
+propósito — problema correlato, modelagem diferente (aqui não é
+dimensionamento por risco, é "100% do capital realocado por trade",
+comparável a um benchmark de mercado). Usuário pediu explicitamente pra
+fechar essa pendência.
+
+### Achado (confirmado lendo o código antes de mudar)
+
+`calcPortfolioCurve` (`PortfolioVsMarket.jsx`) usava
+`summarizeOps(trades).curve` → `cumulativePct`, a MESMA soma percentual
+ingênua do item 84 (`cumulativePct += pnlPct`, sem compor). O benchmark
+de mercado ao lado (`src/lib/marketBenchmarks.js`) já é uma curva
+composta por natureza — BTC usa `((close - basePrice) / basePrice) *
+100` (retorno de preço, inerentemente composto ano a ano) e CDI/Selic/
+IPCA usam juros compostos explícitos (`marketBenchmarks.js:53-60`,
+comentário do próprio arquivo já dizia isso). Resultado: o rótulo
+"Superando"/"Atrás" comparava uma soma ingênua contra uma curva
+composta — o veredito podia estar errado por um artefato de composição,
+não por desempenho real.
+
+### Correção
+
+Nova função `compoundReturnCurve` em `src/lib/equityCurve.js` (mesmo
+módulo do item 84, adição pura — zero linha mudada em `tradeMetrics.js`
+de novo): compõe um fator multiplicativo (`factor *= 1 + pnlPct/100`)
+por operação fechada, sem dimensionamento por risco (sem
+`initial_stop`, sem R, sem unidades) — só o `pnlPct` bruto de cada
+trade, já líquido de custo via `calcRealizedPnlPct` (mesmo chokepoint).
+Devolve o MESMO formato de `summarizeOps().curve`
+(`{ op, outcome, pnlPct, cumulativePct }`), então a troca em
+`PortfolioVsMarket.jsx` foi de uma linha (`summarizeOps(trades).curve` →
+`compoundReturnCurve(trades)`), sem tocar o resto do componente
+(merge com benchmark, tooltip, resumo). Adicionado um subtítulo no
+cabeçalho do card deixando explícito que a curva compõe, mesmo padrão de
+honestidade já usado no Backtest (item 84).
+
+Limitação herdada do item 84, documentada no cabeçalho do módulo: um
+único pool de capital sequencial, sem modelar posições simultâneas em
+vários ativos.
+
+### Testes
+
+6 casos novos em `equityCurve.test.js` (total 21 no arquivo): 1
+operação (cumulativePct = pnlPct dela), composição multiplicativa
+divergindo da soma ingênua num cenário construído a propósito
+(+11,25% então -5% → +5,6875% composto vs +6,25% soma, confirmado
+contra `summarizeOps(...).totalPnlPct`), operação sem `pnlPct`
+computável (cumulativePct não muda), custo aplicado por padrão, lista
+vazia, e formato de saída idêntico ao de `summarizeOps().curve`.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck` —
+todos limpos (953/953 testes = 947 anteriores + 6 novos, 0 erros de
+typecheck, build sem regressão). Confirmado por grep que
+`equityCurve.js` continua ausente do bundle do scan
+(`scripts/dist/run-scan.mjs`).
+
+**Não verificado nesta rodada** (mesma limitação do ambiente sandboxed
+de sempre): teste visual do card "Carteira vs Mercado" no browser real.
+Recomendo conferir depois do deploy, comparando o rótulo "Superando"/
+"Atrás" antes/depois se possível.
+
+### Conclusão
+
+Item 6 da lista de pendências fica fechado — `PortfolioVsMarket.jsx`
+agora compõe a curva da carteira, comparável de verdade com qualquer um
+dos 4 benchmarks (BTC/CDI/Selic/IPCA), todos compostos por natureza.
