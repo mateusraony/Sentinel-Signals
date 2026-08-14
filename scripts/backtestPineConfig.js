@@ -89,6 +89,16 @@ const DEFAULTS = {
   fvgFillTargetRatio: 0.6,
   smcScoreObWeight: 0,
   smcScoreFvgWeight: 0,
+  // Proteção de stop pré-TP1 (known-risks.md item 53/54) — master flag OFF
+  // por padrão. Faltava aqui (docs/known-risks.md item 80, E-1) — presente
+  // em src/lib/pineParser.js/scripts/adminPineConfig.js, quebrando a
+  // convenção "mantenha espelhado à mão" deste próprio arquivo. Aditivo:
+  // mesmos defaults dos outros dois arquivos.
+  preTp1StopProtectionEnabled: false,
+  preTp1StopProtectionAtrMult: 1.0,
+  // Gate de padrão de vela (engolfo) na cascata RF 4h→15m — master flag OFF
+  // por padrão. Mesma lacuna do item 80, E-1 acima.
+  candlePatternEnabled: false,
   // Bypassa check15mConfirmation na cascata RF nativa 4h→15m (known-risks.md
   // item 67) — master flag OFF by default. Override via --pine-config to
   // compare backtest reports with/without it. Espelha src/lib/pineParser.js/

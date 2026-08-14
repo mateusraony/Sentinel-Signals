@@ -66,7 +66,16 @@ function HistoryCard({ op }) {
       style={{ background: 'rgba(10,13,22,0.8)', border: `1px solid ${borderColor}`, boxShadow: `0 0 20px ${glowColor}` }}>
 
       {/* Main row */}
-      <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
+      <div
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded); }
+        }}
+      >
         {/* Side indicator */}
         <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: isBuy ? '#00ff80' : '#ff1478' }} />
 

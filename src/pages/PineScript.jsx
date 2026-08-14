@@ -1135,13 +1135,17 @@ export default function PineScript() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1" role="tablist" aria-label="Seções do Pine Script">
         {[
           { id: 'editor', label: '📝 Editor v12', icon: Code2 },
           { id: 'sync', label: '🔄 Sincronização', icon: Layers },
           { id: 'params', label: '⚙️ Parâmetros Ativos', icon: Info },
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            id={`pine-tab-${tab.id}`}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`pine-tabpanel-${tab.id}`}
             className="text-[10px] font-mono px-3 py-2 rounded-lg transition-all"
             style={activeTab === tab.id
               ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
@@ -1152,7 +1156,7 @@ export default function PineScript() {
       </div>
 
       {activeTab === 'editor' && (
-        <div className="space-y-3">
+        <div className="space-y-3" id="pine-tabpanel-editor" role="tabpanel" aria-labelledby="pine-tab-editor">
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={handleSave}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all"
@@ -1229,7 +1233,7 @@ export default function PineScript() {
       )}
 
       {activeTab === 'sync' && (
-        <div className="space-y-3">
+        <div className="space-y-3" id="pine-tabpanel-sync" role="tabpanel" aria-labelledby="pine-tab-sync">
           <div className="rounded-xl p-4 space-y-3" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(0,255,128,0.12)' }}>
             <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-2">🔗 NE RF v12 → Sistema</div>
             {SYNC_NOTES.map(note => (
@@ -1262,7 +1266,7 @@ export default function PineScript() {
       )}
 
       {activeTab === 'params' && (
-        <div className="space-y-3">
+        <div className="space-y-3" id="pine-tabpanel-params" role="tabpanel" aria-labelledby="pine-tab-params">
           <div className="text-[10px] font-mono text-muted-foreground mb-2">
             Parâmetros NE RF v12 por ativo — sincronizados com o scanner:
           </div>

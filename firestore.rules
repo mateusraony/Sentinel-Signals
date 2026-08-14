@@ -76,9 +76,13 @@ service cloud.firestore {
         && request.resource.data.role == resource.data.role;
     }
 
-    // Strategy Reviewer chat: a user may read/create their own conversations,
-    // but messages are only ever written by the strategyReviewerChat Cloud
-    // Function (Admin SDK bypasses these rules) so nobody can spoof replies.
+    // Strategy Reviewer chat: a user may read/create their own conversations.
+    // Messages are always denied client-side writes below (Strategy Reviewer
+    // is paused — src/pages/StrategyReviewer.jsx is a placeholder, and this
+    // project has no Cloud Functions/Blaze, permanent restriction — so
+    // nothing writes here today; this rule just guarantees nobody could
+    // spoof a reply if/when a server-side writer using the Admin SDK, which
+    // bypasses these rules, is ever built). docs/known-risks.md item 80, D-5.
     match /agentConversations/{convId} {
       allow read: if isSignedIn() && resource.data.user_id == request.auth.uid;
       allow create: if isSignedIn() && request.resource.data.user_id == request.auth.uid;

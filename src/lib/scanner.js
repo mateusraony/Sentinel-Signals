@@ -3608,7 +3608,16 @@ export async function persistScanResults(scanResult) {
         tp2_hit: tp2Hit,
         current_stop: newCurrentStop,
         ...updatePayload,
-      }, { assetId: op.asset_id, stopAdvanceMarkerField });
+      }, {
+        assetId: op.asset_id,
+        stopAdvanceMarkerField,
+        // Bloco 4 Fase 1 (hierarchicalCascadesEnabled) uses a per-cascade
+        // anchor doc (assetActiveOps/{assetId}__{cascade}) — without this,
+        // a terminal transition here tries to clear assetActiveOps/{assetId}
+        // (never written for a hierarchical op), leaving the real anchor
+        // pointing at a now-terminal op (docs/known-risks.md item 80, B-2).
+        cascade: op.hierarchical_cascade === true ? op.cascade : undefined,
+      });
       // Observability for the cross-loop precedence residual (see
       // .claude/rules/trading-engine.md): a dropped transition means the other
       // loop won the race — measure how often before designing a hard rule.
@@ -3887,7 +3896,11 @@ async function priceCheckActiveOpsInner() {
       // Same compare-and-set as persistScanResults — this price-check loop uses
       // a different lock ('price-check'), so it can race the full scan on the
       // same op; the transaction serialises the write and folds clearActiveOp.
-      const { applied, currentStatus } = await backend.tradeOps.transitionTradeOp(op.id, op.status, { status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit, current_stop: newCurrentStop, ...updatePayload }, { assetId: op.asset_id });
+      const { applied, currentStatus } = await backend.tradeOps.transitionTradeOp(op.id, op.status, { status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit, current_stop: newCurrentStop, ...updatePayload }, {
+        assetId: op.asset_id,
+        // Same fix as persistScanResults above (docs/known-risks.md item 80, B-2).
+        cascade: op.hierarchical_cascade === true ? op.cascade : undefined,
+      });
       // Same cross-loop race observability as persistScanResults.
       if (!applied) {
         logWarn('scanner', `Transição descartada pelo CAS (price check): op ${op.id} (${op.symbol}) ${op.status}→${newStatus}; status atual ${currentStatus}`, { op_id: op.id, from: op.status, attempted: newStatus, current: currentStatus }, { symbol: op.symbol });

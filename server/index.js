@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 const AdmZip = require('adm-zip');
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
@@ -14,7 +15,8 @@ if (missingEnv.length) {
   process.exit(1);
 }
 if (process.env.NODE_ENV === 'production' && !process.env.ALLOWED_ORIGIN) {
-  console.warn('ALLOWED_ORIGIN is not set in production — CORS will allow any origin ("*").');
+  console.error('ALLOWED_ORIGIN is not set in production — refusing to start with CORS open to any origin (docs/known-risks.md item 80, D-6).');
+  process.exit(1);
 }
 if (!process.env.WEBHOOK_SECRET) {
   console.warn('WEBHOOK_SECRET is not set — POST /webhook/tradingview will reject every request with 401.');
@@ -123,10 +125,21 @@ app.post('/api/telegram-notify', requireAuth, async (req, res) => {
 // (symbol_side_TIMEFRAME_reason_candleCloseISO-ish), so a plain
 // create-if-absent by signal_id is sufficient dedup — no need to key on
 // "action" separately.
+// Constant-time secret comparison — a plain !== leaks timing information
+// byte-by-byte (docs/known-risks.md item 80, D-3). Buffer.from on a
+// non-string throws, so the typeof guard runs first.
+function safeCompareSecret(provided, expected) {
+  if (typeof provided !== 'string') return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 app.post('/webhook/tradingview', async (req, res) => {
   const alert = req.body || {};
 
-  if (!process.env.WEBHOOK_SECRET || alert.secret !== process.env.WEBHOOK_SECRET) {
+  if (!process.env.WEBHOOK_SECRET || !safeCompareSecret(alert.secret, process.env.WEBHOOK_SECRET)) {
     return res.status(401).json({ error: 'Invalid or missing secret.' });
   }
 
@@ -135,12 +148,17 @@ app.post('/webhook/tradingview', async (req, res) => {
     return res.status(400).json({ error: 'signal_id and action are required.' });
   }
 
+  // Never persist the secret itself — it was already checked above.
+  // docs/known-risks.md item 80, D-4: storing it verbatim left
+  // WEBHOOK_SECRET readable in plaintext inside every event document.
+  const { secret, ...alertToStore } = alert;
+
   try {
     const ref = db.collection('tradingviewWebhookEvents').doc(signalId);
     const created = await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (snap.exists) return false;
-      tx.set(ref, { ...alert, source: 'tradingview_webhook', received_at: new Date().toISOString() });
+      tx.set(ref, { ...alertToStore, source: 'tradingview_webhook', received_at: new Date().toISOString() });
       return true;
     });
 
@@ -200,12 +218,32 @@ function requireGithubToken(req, res, next) {
   next();
 }
 
+// requireAuth alone only proves the caller is SIGNED IN — auth is
+// anonymous-only (docs/known-risks.md item 1), so that's not a real
+// authorization barrier for a route that spends external resources
+// (triggers a GitHub Actions run). Checks users/{uid}.role, which a client
+// can never set to 'admin' itself (firestore.rules: create forces 'user',
+// update forbids changing role) — promotion is always a manual step in the
+// Firebase console (docs/known-risks.md item 80, D-2).
+async function requireAdmin(req, res, next) {
+  try {
+    const userSnap = await db.collection('users').doc(req.uid).get();
+    if (!userSnap.exists || userSnap.data().role !== 'admin') {
+      return res.status(403).json({ error: 'Acesso restrito a administradores.' });
+    }
+    next();
+  } catch (e) {
+    console.error('requireAdmin check failed:', e.message);
+    res.status(500).json({ error: 'Erro interno ao verificar permissão.' });
+  }
+}
+
 // Sem fila/DB — só evita clique duplo/disparo repetido acidental. Reinicia a
 // cada deploy do server; é um freio de cortesia, não uma garantia forte.
 let lastTriggerAt = 0;
 const TRIGGER_COOLDOWN_MS = 60_000;
 
-app.post('/api/backtest/trigger', requireAuth, requireGithubToken, async (req, res) => {
+app.post('/api/backtest/trigger', requireAuth, requireGithubToken, requireAdmin, async (req, res) => {
   const now = Date.now();
   if (now - lastTriggerAt < TRIGGER_COOLDOWN_MS) {
     return res.status(429).json({ error: 'Aguarde um pouco antes de disparar outro backtest.' });

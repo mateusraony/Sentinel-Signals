@@ -8460,3 +8460,97 @@ de escopo desta rodada, não por esquecimento.
 ### Próximo passo (fora deste registro)
 
 Decisão do usuário sobre quando tocar A-4/A-5 e a rodada de P2/Info.
+
+---
+
+## 82. Correção dos 12 P2 + 5 Info do item 80 (2026-08-13)
+
+### Contexto
+
+Usuário pediu pra seguir com a rodada de P2/Info do item 80, deixada
+pendente no item 81. Para o D-2 (autorização do disparo de backtest),
+perguntei diretamente porque a correção mais completa (`role==='admin'`)
+tem um efeito colateral real de produto — usuário escolheu a opção mais
+segura mesmo sabendo disso. Validei os 5 fixes de maior risco
+(D-2/D-3/D-4/D-6 em `server/index.js`, B-2 em `scanner.js`) com um agente
+Plan antes de implementar, que confirmou todos os desenhos corretos
+contra o código real.
+
+### ⚠️ AÇÃO NECESSÁRIA — D-2 quebra o botão "Disparar Backtest" até promoção manual
+
+`POST /api/backtest/trigger` agora exige `users/{uid}.role === 'admin'`
+(nova middleware `requireAdmin`, `server/index.js`), além de estar
+autenticado. Como todo usuário recebe `role: 'user'` na criação e
+promoção a admin é sempre manual (`firestore.rules` já impede
+auto-promoção), **o botão "Disparar Backtest" do painel para de funcionar
+pro próprio usuário até ele promover seu uid pra `role: 'admin'` no
+console do Firebase** (Firestore Database → coleção `users` → documento
+do seu uid → campo `role` → `admin`). `/api/backtest/status`/`/artifact`
+não mudaram (continuam só `requireAuth`).
+
+### Achado (correções aplicadas)
+
+**UI (6):** A-3 (`TradeHistory.jsx`) — linha do card ganha
+`role="button" tabIndex={0}` + `onKeyDown` Enter/Espaço. A-6 (`PnLChart.jsx`,
+`TradeEntryMarkers.jsx`, `PerformanceOverview.jsx`) — contraste dos eixos
+Recharts, `fill` 0.2/0.25→0.45, `fontSize` 8→9. A-7 (`GlobalSearch.jsx`) —
+busca visível em mobile (removido `hidden sm:flex`), larguras responsivas.
+A-8 (`PineScript.jsx`) — ARIA retrofit nas abas customizadas
+(`role="tablist"/"tab"/"tabpanel"` + `aria-selected`/`aria-controls`/
+`aria-labelledby`), sem migrar pro componente Tabs do Dashboard (reescrita
+maior, mais risco). A-9 (`Settings.jsx`) — `aria-label={field.label}` nos
+sliders. A-10 (`Sidebar.jsx`) — `ClearLogsButton` troca `console.error`
+por `logError` + `toast` de erro.
+
+**Indicador (1):** C-3 — função `ema()` triplicada em `rangeFilter.js`/
+`macd.js`/`movingAverages.js` consolidada: `movingAverages.js` exporta a
+única cópia, os outros dois importam.
+
+**Motor (1):** B-2 (`scanner.js`) — os 2 call sites de `transitionTradeOp`
+que fecham uma operação agora passam `cascade: op.hierarchical_cascade
+=== true ? op.cascade : undefined`, corrigindo a âncora
+`assetActiveOps/{assetId}__{cascade}` que nunca era limpa numa operação
+hierárquica (mascarado até aqui pelo auto-reparo de ponteiro órfão, P0-f).
+Confirmado sem risco pra operações não-hierárquicas
+(`buildActiveOpsAnchorId` já trata `cascade` falsy como hoje).
+
+**Segurança (5):** D-2 (ver aviso acima). D-3 — comparação do webhook
+secret trocada por `crypto.timingSafeEqual` (constant-time). D-4 —
+`secret` descartado antes de persistir o evento do webhook (não fica
+mais em texto puro em `tradingviewWebhookEvents`). D-5 — comentário de
+`firestore.rules` corrigido (não descreve mais uma Cloud Function
+inexistente). D-6 — `ALLOWED_ORIGIN` ausente em produção agora derruba o
+boot (`process.exit(1)`) em vez de só avisar e seguir com CORS `'*'`,
+mesmo padrão já usado pros outros secrets obrigatórios do arquivo.
+
+**Build/CI (4):** E-1 — 3 flags (`preTp1StopProtectionEnabled`/
+`AtrMult`, `candlePatternEnabled`) que faltavam em
+`scripts/backtestPineConfig.js` DEFAULTS, quebrando a convenção "mantenha
+espelhado à mão" do próprio arquivo — adicionadas, puramente aditivo.
+E-2 — `ci.yml` ganha `timeout-minutes: 15` + `concurrency` com
+`cancel-in-progress: true` (cancela run obsoleto do mesmo PR/branch,
+diferente dos workflows agendados que enfileiram). E-3 —
+`deploy-firestore.yml` ganha `timeout-minutes: 5`. E-4 — comentário sobre
+`rf1hCondEnabled` em `pineParser.js`/`adminPineConfig.js` corrigido (apontava
+pro tripwire errado, `scannerStateMachine.test.js` em vez de
+`rf1hCondTripwire.test.js`).
+
+### Conclusão
+
+`npm run lint && npm test && npm run build && npm run typecheck` — todos
+limpos (932/932 testes, sem regressão de nenhum dos 40 arquivos de teste;
+lint e typecheck sem erro; build sem regressão de tamanho). Nenhum teste
+novo de regressão nesta rodada — os 17 fixes são todos correções
+estruturais/de contrato sem lógica nova complexa o bastante pra justificar
+um teste dedicado (confirmado pelo agente Plan: nenhum teste existente
+quebra, incluindo o único mock de `transitionTradeOp` em
+`scannerStateMachine.test.js`, que stuba a função inteira sem checar
+argumentos). Os 25 achados do item 80 estão todos corrigidos, exceto A-4/A-5
+(acessibilidade — modal do AssetDrawer sem foco/Esc/aria, inputs sem foco
+visível), que não estavam no escopo desta rodada nem da anterior.
+
+### Próximo passo (fora deste registro)
+
+Usuário promover seu uid pra `role: 'admin'` no console do Firebase (ver
+aviso acima) pra continuar usando o botão de backtest. A-4/A-5 seguem sem
+data definida.

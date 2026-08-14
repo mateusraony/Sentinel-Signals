@@ -86,8 +86,8 @@ export default function PnLChart({ history }) {
               <stop offset="95%" stopColor={gradColor} stopOpacity={0.02} />
             </linearGradient>
           </defs>
-          <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 8, fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 8, fontFamily: 'monospace' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
+          <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.45)', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fill: 'rgba(255,255,255,0.45)', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
           <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
           <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }} />
           <Area

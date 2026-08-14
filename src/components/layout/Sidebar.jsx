@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Coins, Bell, ScrollText, Zap, Target, BookOpen, Code2, Bot, FileText, Trash2, FilterX, Loader2, ArrowLeftRight, SlidersHorizontal, FlaskConical, ClipboardCheck } from 'lucide-react';
 import { backend } from '@/api/entities';
+import { logError } from '@/lib/logger';
+import { toast } from '@/components/ui/use-toast';
 
 const NAV_ITEMS = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -158,7 +160,8 @@ function ClearLogsButton() {
     try {
       await backend.entities.SystemLog.deleteMany({});
     } catch (e) {
-      console.error('Clear logs error:', e);
+      logError('Sidebar', 'Falha ao limpar logs', { error: e.message });
+      toast({ title: 'Erro ao limpar logs', description: e.message || 'Falha inesperada — tente novamente.', variant: 'destructive' });
     } finally {
       setClearing(false);
     }
