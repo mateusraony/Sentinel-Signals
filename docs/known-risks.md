@@ -8817,13 +8817,13 @@ API.
 
 ### Próximo passo
 
-Pedir ao usuário para disparar manualmente pela UI do GitHub (2 cliques:
-Actions → selecionar o workflow → Run workflow) e colar o resultado do
-job aqui, ou nesta conversa — a partir daí registro o resultado real
-(HTTP 200 = arquivo em lote de Futures acessível, vira opção real pro
-backtest; 403/451/timeout = a decisão do item 4 permanece). Enquanto
-isso, o workflow fica no repositório (não removido — sem credenciais,
-sem custo, sem risco de deixá-lo parado).
+**[SUPERADO — ver item 86]** O usuário disparou manualmente pela UI do
+GitHub no mesmo dia e colou o resultado; o workflow já foi removido do
+repositório (cumpriu seu propósito) e o resultado real está registrado
+no item 86, não aqui. Esta seção fica só como registro histórico do que
+era o plano no momento em que este item foi escrito — não reflete mais o
+estado atual do repositório (o arquivo `spike-futures-archive-check.yml`
+não existe mais).
 
 ## 86. Arquivo histórico Futures da Binance — ACESSÍVEL, não bloqueado (2026-08-14)
 
