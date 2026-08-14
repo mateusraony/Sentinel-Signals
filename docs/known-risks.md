@@ -8793,12 +8793,20 @@ fora do meu controle.
 ### Conclusão
 
 **Não corrigível de dentro de uma sessão do Claude Code com esse mesmo
-nível de acesso.** O workflow `spike-futures-archive-check.yml` continua
-no repositório, pronto pra disparar — só falta alguém com permissão
-disparar manualmente pela interface do GitHub (aba **Actions** →
-"Spike — Futures historical archive reachability (temporary)" → botão
-**Run workflow**) ou uma sessão futura cuja integração GitHub tenha o
-escopo `workflow` habilitado.
+nível de acesso.** O erro "Resource not accessible by integration"
+confirma que a conexão é via **GitHub App**, não um token OAuth pessoal —
+GitHub Apps não têm "escopo" no sentido OAuth; o que falta é a
+**permissão de repositório "Actions: write"** na instalação do App
+(distinta de "Contents"/"Pull requests", que já funcionam — só
+`workflows` dispatch exige `write` em Actions, ver [docs REST do
+GitHub](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event)).
+O workflow `spike-futures-archive-check.yml` continua no repositório,
+pronto pra disparar — só falta alguém com permissão disparar manualmente
+pela interface do GitHub (aba **Actions** → "Spike — Futures historical
+archive reachability (temporary)" → botão **Run workflow**) ou o
+administrador da instalação do GitHub App habilitar "Actions: write" nas
+permissões do repositório para sessões futuras conseguirem disparar via
+API.
 
 ### Próximo passo
 
