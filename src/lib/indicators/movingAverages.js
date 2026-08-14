@@ -50,7 +50,7 @@ export function calculateEMAs(candles, shortPeriod = 9, longPeriod = 21) {
   };
 }
 
-function ema(data, period) {
+export function ema(data, period) {
   const result = new Array(data.length).fill(0);
   const k = 2 / (period + 1);
   result[0] = data[0];

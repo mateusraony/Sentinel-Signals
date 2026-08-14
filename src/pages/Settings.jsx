@@ -200,6 +200,7 @@ export default function Settings() {
                     min={field.min}
                     max={field.max}
                     step={field.step}
+                    aria-label={field.label}
                     onValueChange={([v]) => setValues(prev => ({ ...prev, [field.key]: v }))}
                   />
                   <div className="flex items-center justify-between text-[8px] font-mono text-muted-foreground/50">

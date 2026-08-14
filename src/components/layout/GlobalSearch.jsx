@@ -77,7 +77,7 @@ export default function GlobalSearch() {
   const hasResults = results.assets.length > 0 || results.alerts.length > 0 || results.history.length > 0;
 
   return (
-    <div ref={containerRef} className="relative hidden sm:flex items-center">
+    <div ref={containerRef} className="relative flex items-center">
       {showSearch ? (
         <>
           <input
@@ -96,11 +96,11 @@ export default function GlobalSearch() {
             }}
             onBlur={() => { if (!search) setShowSearch(false); }}
             placeholder="Buscar ativo ou alerta..."
-            className="h-8 w-52 font-mono text-xs rounded-lg px-3 outline-none"
+            className="h-8 w-44 sm:w-52 font-mono text-xs rounded-lg px-3 outline-none"
             style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(255,255,255,0.8)' }}
           />
           {showDropdown && search.trim() && hasResults && (
-            <div className="absolute top-full mt-1.5 left-0 w-72 rounded-xl overflow-hidden z-50"
+            <div className="absolute top-full mt-1.5 left-0 w-64 sm:w-72 rounded-xl overflow-hidden z-50"
               style={{ background: 'rgba(10,13,22,0.98)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
               {results.assets.length > 0 && (
                 <div>
@@ -157,7 +157,7 @@ export default function GlobalSearch() {
             </div>
           )}
           {showDropdown && search.trim() && !hasResults && (
-            <div className="absolute top-full mt-1.5 left-0 w-72 rounded-xl overflow-hidden z-50"
+            <div className="absolute top-full mt-1.5 left-0 w-64 sm:w-72 rounded-xl overflow-hidden z-50"
               style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <div className="px-3 py-3 text-center text-[10px] font-mono text-muted-foreground">Nenhum resultado</div>
             </div>

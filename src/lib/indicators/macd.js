@@ -1,3 +1,5 @@
+import { ema } from './movingAverages';
+
 /**
  * MACD - Moving Average Convergence Divergence
  * 
@@ -59,12 +61,3 @@ export function calculateMACD(candles, fastPeriod = 12, slowPeriod = 26, signalP
   };
 }
 
-function ema(data, period) {
-  const result = new Array(data.length).fill(0);
-  const k = 2 / (period + 1);
-  result[0] = data[0];
-  for (let i = 1; i < data.length; i++) {
-    result[i] = data[i] * k + result[i - 1] * (1 - k);
-  }
-  return result;
-}

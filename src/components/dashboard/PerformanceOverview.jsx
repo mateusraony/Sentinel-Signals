@@ -119,7 +119,7 @@ export default function PerformanceOverview({ tradeOps }) {
                 </defs>
                 <XAxis dataKey="label" hide />
                 <YAxis
-                  tick={{ fontSize: 8, fill: 'rgba(255,255,255,0.25)', fontFamily: 'monospace' }}
+                  tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.45)', fontFamily: 'monospace' }}
                   tickLine={false} axisLine={false}
                   tickFormatter={v => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`}
                 />
