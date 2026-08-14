@@ -1,0 +1,32 @@
+name: Spike — Futures historical archive reachability (temporary)
+
+# Descartável — docs/known-risks.md item 47.2 identificou que
+# data.binance.vision (arquivo estático em lote) é diferente da API de
+# trading ao vivo fapi.binance.com (essa sim bloqueada por IP de datacenter
+# dos EUA, item 4) e nunca testou se o arquivo em lote escapa do mesmo
+# bloqueio. Este workflow só roda o curl -I que o item 47.2 já deixou
+# pronto, a partir de um runner ubuntu-latest (mesma rede dos runners de
+# scan.yml/backtest.yml). Sem credenciais, sem escrita em nada, sem efeito
+# colateral. Remover (ou manter como decisão registrada) depois do
+# resultado — ver known-risks.md pelo resultado.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check data.binance.vision Futures (USD-M) archive reachability
+        run: |
+          set +e
+          echo "--- BTCUSDT 1h Jan/2024 (Futures USD-M monthly klines) ---"
+          curl -sS -I --connect-timeout 10 --max-time 20 \
+            "https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1h/BTCUSDT-1h-2024-01.zip"
+          echo "curl exit code: $?"
+          echo ""
+          echo "--- Same host, Spot equivalent (control — already known to work) ---"
+          curl -sS -I --connect-timeout 10 --max-time 20 \
+            "https://data.binance.vision/data/spot/monthly/klines/BTCUSDT/1h/BTCUSDT-1h-2024-01.zip"
+          echo "curl exit code: $?"
