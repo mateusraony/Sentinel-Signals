@@ -72,6 +72,12 @@ candidato a edge genuíno que só desbloqueia o Bloco 1 se confirmado numa
 próxima medição em janela nova, sob IC corrigido por família (item 89). Ver
 item 88 para o raciocínio completo.
 
+**Linha SELL-only PAUSADA (2026-08-15)**: não existe hoje janela de 12 meses
+sem sobreposição com as 6 já usadas em medições de SELL — as janelas
+consumidas cobrem quase todo 2023-07→2026-08, e voltar a antes de 2023-07
+reabriria a incompatibilidade de regime (2022) já descartada abaixo. Retomar
+só quando houver dado ao vivo suficiente para uma janela genuinamente nova.
+
 ### A pergunta que só isto responde
 
 O baseline de 12 meses já rodou e mediu −0,076 R líquido / −0,031 R bruto em 344

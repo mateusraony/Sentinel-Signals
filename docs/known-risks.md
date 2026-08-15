@@ -9055,11 +9055,23 @@ subestimar o N (que seria liberal demais na direção perigosa), mas não é
 rigor estatístico formal — outra decisão de julgamento humano que o script
 não resolve por você.
 
-### Próximo passo
+### Próximo passo — PAUSADO (2026-08-15, decisão do usuário)
 
-Rodar uma medição adicional de SELL-only numa janela genuinamente nova (ver
-acima e item 89) e aplicar este critério ao resultado.
-`docs/roadmap.md` atualizado no mesmo commit para refletir este critério.
+Checagem antes de rodar o trial de SELL-only revelou que **não existe hoje
+uma janela de 12 meses genuinamente livre de sobreposição** com as já
+usadas em qualquer medição de SELL: as 6 janelas já consumidas
+(2023-07-27→2024-07-27, 2024-07-27→2025-07-27, 2024-08-10→2025-08-10,
+2025-07-27→2026-07-27, 2025-08-09→2026-08-09, 2025-08-10→2026-08-10) cobrem
+quase todo o período disponível — restam só ~5 dias de dado genuinamente
+novo até hoje (2026-08-15). Voltar a antes de 2023-07 reabriria uma
+comparação que o `roadmap.md` já descartou por regime incompatível
+(2022, Luna/FTX) e ativos faltantes na carteira original.
+
+**Decisão do usuário**: pausar esta linha de investigação em vez de rodar
+numa janela sobreposta ou pré-2022. Retomar quando houver dado ao vivo
+suficiente para uma janela genuinamente nova (mais alguns meses de
+histórico acumulado) — não antes disso. `docs/roadmap.md` atualizado no
+mesmo commit para refletir este critério e a pausa.
 
 ## 89. Registro de trials com correção Bonferroni automática (2026-08-15)
 
