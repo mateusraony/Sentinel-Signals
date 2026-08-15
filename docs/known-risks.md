@@ -9419,3 +9419,80 @@ janela.
 
 Nenhuma mudança de código — 3 relatórios a mais no ledger + esta análise.
 `npm run lint && npm test && npm run build` continuam limpos (981/981).
+
+### Controle pareado, mesmo commit, nas 2 janelas — resultado definitivo desta rodada (2026-08-15)
+
+Executada a recomendação da correção acima: 2 runs com `pineConfig` **padrão**
+(sem nenhum override), mesmas 2 janelas, mesmo commit `519f21e5` dos 6
+trials de tratamento (`default-control-baixa-new`,
+`default-control-alta2024`, família `exit-runner-fix-control` no ledger).
+
+| Janela | Controle (padrão) | n |
+|---|---|---|
+| Baixa (2025-08-15→2026-08-15) | +0,087R (INCONCLUSIVO) | 100 |
+| Alta (2024-07-27→2025-07-27) | **+0,250R (CONCLUSIVO, IC [0,013; 0,487])** | 101 |
+
+O controle da alta bate quase exato com o número já publicado no item 48
+(2026-08-04, commit diferente): +0,250R lá, +0,250R aqui, n=101 nos dois —
+o achado de 11 dias atrás **replicou** no commit atual, resolvendo a
+ressalva de commit da correção anterior.
+
+**As 6 comparações variante-menos-controle, mesma janela cada uma**:
+
+| Variante | Janela | Líquido | Controle | Delta |
+|---|---|---|---|---|
+| runner-off | baixa | +0,074R | +0,087R | **−0,013R** |
+| breakeven | baixa | +0,045R | +0,087R | **−0,042R** |
+| combo | baixa | +0,039R | +0,087R | **−0,048R** |
+| runner-off | alta | +0,238R | +0,250R | **−0,012R** |
+| breakeven | alta | +0,119R | +0,250R | **−0,131R** |
+| combo | alta | +0,138R | +0,250R | **−0,112R** |
+
+**As 6 de 6 comparações são negativas.** Nenhuma das 3 variantes bateu o
+controle padrão em nenhuma das 2 janelas testadas. `runner-off` é
+consistentemente a menos pior das 3 (delta mais próximo de zero nas duas
+janelas), mas ainda assim perde para não mexer em nada.
+
+### Leitura final desta rodada (fato × hipótese × recomendação)
+
+**Fato**: com o controle certo, nenhum dos 3 "consertos de saída" propostos
+pelo relatório externo (runner off, breakeven pré-TP1, ou o combo) supera o
+comportamento padrão do motor, em nenhuma das 2 janelas testadas — os 6
+deltas são todos negativos. Nenhuma das comparações individuais tem
+significância estatística formal (nenhum delta foi testado com IC próprio,
+e as amostras não são perfeitamente pareadas — `countedTrades` varia entre
+variantes porque a config de saída afeta quantas operações fecham antes do
+corte do backtest, não só o R de cada uma), mas a consistência de sentido
+(6 de 6 negativos, em 2 regimes diferentes) é um padrão forte demais pra
+ignorar.
+
+**Hipótese**: isto contradiz diretamente o Achado E do relatório externo
+que motivou toda esta investigação ("o runner devolve o lucro, tirar ele
+resolve"). Duas leituras possíveis, nenhuma decidida aqui: (a) o
+diagnóstico original do item 46.2 (runner custa −0,040R/op) foi medido
+diferente — contrafactual DENTRO do mesmo conjunto de operações que
+realmente bateram TP1, isolando só a gestão pós-TP1 — enquanto estes 6
+trials comparam POPULAÇÕES de operações fechadas diferentes entre si (por
+causa do efeito de corte acima); não são a mesma pergunta respondida duas
+vezes, então não se contradizem tecnicamente, mas a leitura prática
+("desligar o runner ajuda") não se sustenta nestes dados. (b) o efeito real
+do runner pode ser pequeno ou nulo nestas 2 janelas específicas, e o item
+46.2 mediu um efeito real mas específico do regime de baixa profunda em
+que foi medido (a mesma ressalva de regime que o item 46.1 já registra
+para BUY/SELL).
+
+**Recomendação**: **não mexer em `runnerEnabled`/
+`preTp1StopProtectionEnabled` em produção** — a evidência disponível hoje
+aponta na direção contrária à do relatório externo, não a favor. Se
+alguém quiser reabrir esta linha, o próximo passo tecnicamente correto é
+recalcular o contrafactual do item 46.2 (mesmo método: só as operações que
+bateram TP1, fechar 100% ali vs. manter o runner, DENTRO do mesmo conjunto)
+nestas 2 janelas novas — não mais trials de config inteira, que carregam o
+confound de população já descrito.
+
+### Verificação (controle pareado)
+
+Nenhuma mudança de código — 2 relatórios a mais no ledger
+(`docs/backtest-trial-registry.json`, família `exit-runner-fix-control`) +
+esta análise. `npm run lint && npm test && npm run build` continuam
+limpos (981/981).
