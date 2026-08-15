@@ -109,6 +109,7 @@ export function recordFromReport(report, family) {
     family,
     trialLabel: report.trialLabel,
     recordedAt: new Date().toISOString(),
+    source: 'report',
     runStartedAt: report.reproducibility?.runStartedAt ?? null,
     commitSha: report.reproducibility?.commitSha ?? null,
     configHash: report.reproducibility?.configHash ?? null,
@@ -122,6 +123,52 @@ export function recordFromReport(report, family) {
   };
 }
 
+// Registra uma medição HISTÓRICA já publicada em known-risks.md, sem um
+// backtest-report.json de origem (artifacts do backtest.yml expiram em 30
+// dias — muitas medições antigas da família "sell-only-hypothesis" já não
+// têm o artifact original). Existe porque uma família cujo N só conta trials
+// com artifact ainda vivo subestima sistematicamente quantas vezes aquela
+// hipótese já foi testada — e é exatamente essa subestimação que motivou
+// este registro (docs/known-risks.md item 89, achado do Codex review em
+// PR #189: computar N=1 num histórico documentado de N≥6 trataria uma
+// medição nova como confirmação corrigida sem contar as tentativas que a
+// motivaram). `source` (citação de onde o número vem, ex. "known-risks.md
+// item 45.9") é obrigatório — todo seed tem que ser auditável até o texto
+// que o originou. `n`/`expectancyRCI95` podem ser null quando o dado
+// publicado não incluiu essa informação (ex. só "R médio" sem IC) — o
+// registro ainda conta para o TAMANHO da família (é mais uma vez que a
+// hipótese foi olhada), só não contribui um IC corrigido próprio.
+export function createSeedRecord({
+  family, trialLabel, source, n = null, expectancyR, expectancyRCI95 = null, note = null,
+}) {
+  if (!family) throw new Error('createSeedRecord: family é obrigatório');
+  if (!trialLabel) throw new Error('createSeedRecord: trialLabel é obrigatório');
+  if (expectancyR === undefined || expectancyR === null || Number.isNaN(expectancyR)) {
+    throw new Error('createSeedRecord: expectancyR é obrigatório e numérico');
+  }
+  if (!source) {
+    throw new Error('createSeedRecord: source é obrigatório (de onde veio o número, ex.: "known-risks.md item 45.9")');
+  }
+  return {
+    family,
+    trialLabel,
+    recordedAt: new Date().toISOString(),
+    source: 'seed',
+    seedSource: source,
+    seedNote: note,
+    runStartedAt: null,
+    commitSha: null,
+    configHash: null,
+    pineConfigOverride: null,
+    n,
+    minTrades: null,
+    expectancyR,
+    expectancyRStdErr: stdErrFromCI95(expectancyRCI95),
+    expectancyRCI95,
+    conclusiveAtN1: expectancyRCI95 ? !(expectancyRCI95[0] <= 0 && expectancyRCI95[1] >= 0) : null,
+  };
+}
+
 export function loadRegistry(registryPath = REGISTRY_PATH) {
   if (!fs.existsSync(registryPath)) return [];
   return JSON.parse(fs.readFileSync(registryPath, 'utf8'));
@@ -131,19 +178,52 @@ function saveRegistry(records, registryPath = REGISTRY_PATH) {
   fs.writeFileSync(registryPath, `${JSON.stringify(records, null, 2)}\n`);
 }
 
+function assertNotDuplicate(registry, trialLabel, family) {
+  if (registry.some((r) => r.trialLabel === trialLabel && r.family === family)) {
+    throw new Error(
+      `Já existe registro para trialLabel="${trialLabel}" na família "${family}" — `
+      + 'evita duplicar (apague manualmente do JSON se for reprocessamento/reseed intencional).',
+    );
+  }
+}
+
 export function appendTrial(reportPath, family, registryPath = REGISTRY_PATH) {
   const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
   const record = recordFromReport(report, family);
   const registry = loadRegistry(registryPath);
-  if (registry.some((r) => r.trialLabel === record.trialLabel && r.family === family)) {
-    throw new Error(
-      `Já existe registro para trialLabel="${record.trialLabel}" na família "${family}" — `
-      + 'evita duplicar (apague manualmente do JSON se for reprocessamento intencional).',
-    );
-  }
+  assertNotDuplicate(registry, record.trialLabel, family);
   registry.push(record);
   saveRegistry(registry, registryPath);
   return record;
+}
+
+export function appendSeed(seedInput, registryPath = REGISTRY_PATH) {
+  const record = createSeedRecord(seedInput);
+  const registry = loadRegistry(registryPath);
+  assertNotDuplicate(registry, record.trialLabel, record.family);
+  registry.push(record);
+  saveRegistry(registry, registryPath);
+  return record;
+}
+
+// Preserva o gate de amostra mínima do relatório original: Bonferroni só
+// alarga o IC, nunca deveria "resgatar" um trial que já era inconclusivo por
+// amostra pequena demais (costs.conclusive=false por sample_too_small). Sem
+// isto, um trial com poucas operações podia aparecer como "SIM" corrigido
+// mesmo reprovado no gate de amostra do próprio summarizeOps (achado do
+// Codex review, PR #189). Regra: null quando falta dado pra decidir (nunca
+// assume positivo por omissão); false assim que qualquer gate reprova;
+// true só quando os dois gates passam.
+export function correctedConclusiveVerdict(record, correctedCI) {
+  if (correctedCI === null) return null;
+  const meetsMinSample = record.n !== null && record.minTrades !== null
+    ? record.n >= record.minTrades
+    : null;
+  if (meetsMinSample === false) return false;
+  const ciExcludesZero = !(correctedCI[0] <= 0 && correctedCI[1] >= 0);
+  if (!ciExcludesZero) return false;
+  if (meetsMinSample === null) return null;
+  return true;
 }
 
 export function summarizeFamily(family, registryPath = REGISTRY_PATH) {
@@ -157,16 +237,16 @@ export function summarizeFamily(family, registryPath = REGISTRY_PATH) {
   const fmtCI = (ci) => (ci ? `[${fmt(ci[0])}, ${fmt(ci[1])}]` : '—');
   const rows = registry.map((r) => {
     const correctedCI = ciAtZ(r.expectancyR, r.expectancyRStdErr, z);
-    const correctedConclusive = correctedCI ? !(correctedCI[0] <= 0 && correctedCI[1] >= 0) : null;
+    const correctedConclusive = correctedConclusiveVerdict(r, correctedCI);
     return { ...r, correctedCI, correctedConclusive };
   });
   const lines = [
     '',
     `## Família "${family}" — N=${familySize} trials, correção Bonferroni (alpha=0.05/${familySize}, z=${z.toFixed(4)})`,
     '',
-    '| trial_label | n | expectancyR | IC95 original (z=1.96) | IC corrigido (família) | conclusivo corrigido? |',
-    '|---|---|---|---|---|---|',
-    ...rows.map((r) => `| ${r.trialLabel} | ${r.n ?? '—'} | ${fmt(r.expectancyR)} | ${fmtCI(r.expectancyRCI95)} | ${fmtCI(r.correctedCI)} | ${r.correctedConclusive === null ? '—' : (r.correctedConclusive ? 'SIM' : 'não')} |`),
+    '| trial_label | fonte | n | expectancyR | IC95 original (z=1.96) | IC corrigido (família) | conclusivo corrigido? |',
+    '|---|---|---|---|---|---|---|',
+    ...rows.map((r) => `| ${r.trialLabel} | ${r.source ?? '—'} | ${r.n ?? '—'} | ${fmt(r.expectancyR)} | ${fmtCI(r.expectancyRCI95)} | ${fmtCI(r.correctedCI)} | ${r.correctedConclusive === null ? '—' : (r.correctedConclusive ? 'SIM' : 'não')} |`),
     '',
   ];
   return { family, n: familySize, z, rows, markdown: lines.join('\n') };
@@ -196,6 +276,23 @@ function main() {
     console.log(markdown);
     return;
   }
+  if (args.seed) {
+    const hasCI = args['ci-lo'] !== undefined || args['ci-hi'] !== undefined;
+    if (hasCI && (args['ci-lo'] === undefined || args['ci-hi'] === undefined)) {
+      throw new Error('--seed: passe --ci-lo e --ci-hi juntos, ou nenhum dos dois');
+    }
+    const record = appendSeed({
+      family: args.family,
+      trialLabel: args.label,
+      source: args.source,
+      n: args.n !== undefined ? Number(args.n) : null,
+      expectancyR: Number(args['expectancy-r']),
+      expectancyRCI95: hasCI ? [Number(args['ci-lo']), Number(args['ci-hi'])] : null,
+      note: args.note ?? null,
+    });
+    console.log(`[registry] seed adicionado: família="${record.family}" label="${record.trialLabel}" fonte="${record.seedSource}" n=${record.n ?? '—'} expectancyR=${record.expectancyR.toFixed(4)}`);
+    return;
+  }
   if (args.report && args.family) {
     const record = appendTrial(args.report, args.family);
     console.log(`[registry] adicionado: família="${record.family}" label="${record.trialLabel}" n=${record.n} expectancyR=${record.expectancyR?.toFixed(4) ?? '—'}`);
@@ -204,6 +301,8 @@ function main() {
   console.error(
     'Uso:\n'
     + '  node scripts/backtest-trial-registry.mjs --report <path> --family <nome>\n'
+    + '  node scripts/backtest-trial-registry.mjs --seed --family <nome> --label <trial_label> '
+    + '--source <"known-risks.md item N"> --expectancy-r <R> [--n <N>] [--ci-lo <lo> --ci-hi <hi>] [--note <texto>]\n'
     + '  node scripts/backtest-trial-registry.mjs --summarize-family <nome>',
   );
   process.exitCode = 1;

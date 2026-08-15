@@ -8,9 +8,12 @@ import {
   ciAtZ,
   stdErrFromCI95,
   recordFromReport,
+  createSeedRecord,
   appendTrial,
+  appendSeed,
   loadRegistry,
   summarizeFamily,
+  correctedConclusiveVerdict,
 } from './backtest-trial-registry.mjs';
 
 describe('inverseNormalCDF', () => {
@@ -99,6 +102,75 @@ describe('recordFromReport', () => {
   });
 });
 
+describe('createSeedRecord', () => {
+  it('cria um registro histórico com proveniência (source) obrigatória', () => {
+    const record = createSeedRecord({
+      family: 'sell-only-hypothesis',
+      trialLabel: 'baixa-baseline-20symbols-sell-slice',
+      source: 'known-risks.md item 45.9',
+      n: 166,
+      expectancyR: 0.199,
+      expectancyRCI95: [0.0193, 0.3787],
+    });
+    expect(record.source).toBe('seed');
+    expect(record.seedSource).toBe('known-risks.md item 45.9');
+    expect(record.n).toBe(166);
+    expect(record.expectancyRStdErr).not.toBeNull();
+  });
+
+  it('aceita n e CI95 ausentes (medição publicada só com R médio)', () => {
+    const record = createSeedRecord({
+      family: 'sell-only-hypothesis',
+      trialLabel: 'bloco0-janela3-sell-slice',
+      source: 'known-risks.md item 48',
+      expectancyR: 0.147,
+    });
+    expect(record.n).toBeNull();
+    expect(record.expectancyRCI95).toBeNull();
+    expect(record.expectancyRStdErr).toBeNull();
+  });
+
+  it('exige family/trialLabel/source/expectancyR', () => {
+    expect(() => createSeedRecord({ trialLabel: 'x', source: 's', expectancyR: 0.1 })).toThrow(/family/);
+    expect(() => createSeedRecord({ family: 'f', source: 's', expectancyR: 0.1 })).toThrow(/trialLabel/);
+    expect(() => createSeedRecord({ family: 'f', trialLabel: 'x', expectancyR: 0.1 })).toThrow(/source/);
+    expect(() => createSeedRecord({ family: 'f', trialLabel: 'x', source: 's' })).toThrow(/expectancyR/);
+  });
+});
+
+describe('correctedConclusiveVerdict — não resgata amostra pequena demais (achado Codex, PR #189)', () => {
+  it('devolve false quando n < minTrades, mesmo com IC corrigido excluindo zero', () => {
+    // Construído para que o IC corrigido exclua zero (expectancyR alto,
+    // stdErr pequeno) mas n fique abaixo do minTrades do próprio relatório
+    // original — reproduz o padrão que o Codex apontou.
+    const record = { n: 10, minTrades: 30, expectancyR: 0.5, expectancyRStdErr: 0.05 };
+    const correctedCI = [0.5 - 2.6 * 0.05, 0.5 + 2.6 * 0.05]; // exclui zero com folga
+    expect(correctedConclusiveVerdict(record, correctedCI)).toBe(false);
+  });
+
+  it('devolve true quando n >= minTrades E o IC corrigido exclui zero', () => {
+    const record = { n: 100, minTrades: 30, expectancyR: 0.5, expectancyRStdErr: 0.05 };
+    const correctedCI = [0.5 - 2.6 * 0.05, 0.5 + 2.6 * 0.05];
+    expect(correctedConclusiveVerdict(record, correctedCI)).toBe(true);
+  });
+
+  it('devolve false quando o IC corrigido cruza zero, independente da amostra', () => {
+    const record = { n: 100, minTrades: 30, expectancyR: 0.05, expectancyRStdErr: 0.1 };
+    const correctedCI = [-0.2, 0.3]; // cruza zero
+    expect(correctedConclusiveVerdict(record, correctedCI)).toBe(false);
+  });
+
+  it('devolve null quando não há como calcular o IC corrigido', () => {
+    expect(correctedConclusiveVerdict({ n: 100, minTrades: 30 }, null)).toBeNull();
+  });
+
+  it('devolve null (nunca true) quando minTrades é desconhecido mas o IC exclui zero — seeds sem minTrades', () => {
+    const record = { n: 166, minTrades: null, expectancyR: 0.5, expectancyRStdErr: 0.05 };
+    const correctedCI = [0.5 - 2.6 * 0.05, 0.5 + 2.6 * 0.05];
+    expect(correctedConclusiveVerdict(record, correctedCI)).toBeNull();
+  });
+});
+
 describe('appendTrial / loadRegistry / summarizeFamily (ledger em arquivo temporário)', () => {
   let tmpDir;
   let registryPath;
@@ -180,5 +252,60 @@ describe('appendTrial / loadRegistry / summarizeFamily (ledger em arquivo tempor
     const summary = summarizeFamily('nunca-usada', registryPath);
     expect(summary.n).toBe(0);
     expect(summary.rows).toEqual([]);
+  });
+
+  it('appendSeed grava um registro histórico e conta para o tamanho da família', () => {
+    const record = appendSeed({
+      family: 'sell-only-hypothesis',
+      trialLabel: 'baixa-baseline-20symbols-sell-slice',
+      source: 'known-risks.md item 45.9',
+      n: 166,
+      expectancyR: 0.199,
+      expectancyRCI95: [0.0193, 0.3787],
+    }, registryPath);
+    expect(record.source).toBe('seed');
+    expect(loadRegistry(registryPath)).toHaveLength(1);
+  });
+
+  it('rejeita seed duplicado (mesmo trialLabel + família)', () => {
+    const input = {
+      family: 'sell-only-hypothesis',
+      trialLabel: 'bloco0-janela3-sell-slice',
+      source: 'known-risks.md item 48',
+      expectancyR: 0.147,
+    };
+    appendSeed(input, registryPath);
+    expect(() => appendSeed(input, registryPath)).toThrow(/Já existe registro/);
+  });
+
+  it('família mista (seeds + trial novo) reflete o N combinado — regressão do achado do Codex, PR #189', () => {
+    // Reproduz o cenário real do item 88/89: a família "sell-only-hypothesis"
+    // já teria histórico publicado antes de qualquer trial novo rodar. Sem o
+    // seed, registrar só o trial novo reportaria N=1 (z=1,96) em vez do N
+    // real da família — exatamente o que o Codex apontou como risco de
+    // "desbloquear produto sem contar as tentativas que motivaram a
+    // correção".
+    appendSeed({
+      family: 'sell-only-hypothesis',
+      trialLabel: 'seed-1',
+      source: 'known-risks.md item 48',
+      n: 129,
+      expectancyR: 0.169,
+    }, registryPath);
+    appendSeed({
+      family: 'sell-only-hypothesis',
+      trialLabel: 'seed-2',
+      source: 'known-risks.md item 71',
+      n: 150,
+      expectancyR: 0.078,
+      expectancyRCI95: [-0.115, 0.270],
+    }, registryPath);
+    writeReport({ trialLabel: 'allowedside-sell-followup', costs: { netExpectancyR: 0.15, countedTrades: 120, minTrades: 30, conclusive: true, expectancyRCI95: [0.05, 0.25] } });
+    appendTrial(reportPath, 'sell-only-hypothesis', registryPath);
+
+    const summary = summarizeFamily('sell-only-hypothesis', registryPath);
+    expect(summary.n).toBe(3);
+    expect(summary.z).toBeCloseTo(bonferroniZ(3), 8);
+    expect(summary.z).toBeGreaterThan(bonferroniZ(1)); // mais conservador que tratar como N=1
   });
 });

@@ -9018,20 +9018,47 @@ pré-registrados bateu exatamente.
   de tendência 1D). Não desbloqueia nada por si só.
 - **SELL**: candidato a edge genuíno, mas **ainda não confirmado** — o
   teste out-of-sample do item 71 (holdout n=150) não confirmou a hipótese
-  SELL-only isoladamente (IC cruzou zero). Antes de qualquer mudança de
-  produto (ligar `allowedSide: SELL` de verdade em produção), exigir que uma
-  **próxima medição**, numa janela genuinamente nova — não usada em nenhum
-  trial anterior de SELL, nem do item 48 nem do item 71 — se sustente sob o
-  IC corrigido por família de comparações múltiplas (ver item 89). A família
-  "hipótese SELL-only" já teria N≥6 contando as 5 medições do item 48 mais o
-  holdout do item 71.
+  SELL-only isoladamente (IC cruzou zero), e o próprio item 71 já se encerrou
+  dizendo que reabrir a linha "exigiria evidência nova (ex. mais anos de
+  holdout, símbolos adicionais), não mais reanálise dos mesmos dados". Antes
+  de qualquer mudança de produto (ligar `allowedSide: SELL` de verdade em
+  produção), exigir que uma **próxima medição**, numa janela genuinamente
+  nova — não sobreposta a nenhuma das janelas já usadas em qualquer medição
+  de SELL até hoje (item 48: 2023-07→2024-07, 2024-07→2025-07,
+  2025-07→2026-07; item 71: 2024-08-10→2025-08-10, 2025-08-09→2026-08-09,
+  2025-08-10→2026-08-10) — se sustente sob o IC corrigido por família de
+  comparações múltiplas (ver item 89).
 - **Bloco 1** (os 4 flags dormentes) continua trancado — agora por esse
   motivo específico e testável, não por "ambiguidade" genérica.
 
+### Correção (2026-08-15, review externa Codex, PR #189)
+
+A primeira versão deste item estimava a família "hipótese SELL-only" em
+"N≥6", mas o ledger do item 89 nasceu vazio — rodar a próxima medição sem
+mais nada teria calculado N=1 (z=1,96) em vez do N real, exatamente o erro
+que a correção deveria evitar. Corrigido: as 8 medições de SELL já
+publicadas neste projeto foram semeadas no ledger via
+`backtest-trial-registry.mjs --seed` (ver item 89) — a família
+`sell-only-hypothesis` está hoje em **N=8** (z=2,7344), então a próxima
+medição fará N=9. Nem todas as 8 têm IC95 publicado (algumas janelas do
+item 48 só imprimiram R médio) — essas ainda contam para o TAMANHO da
+família (é mais uma vez que a hipótese foi olhada), só não contribuem um IC
+corrigido próprio.
+
+**Ressalva de honestidade que a correção acima não resolve**: várias dessas
+8 medições vêm de janelas fortemente sobrepostas (ex. as 3 leituras da
+mesma janela de baixa 2025-26, ou as 2 leituras quase idênticas da janela
+de alta 2024-25) — Bonferroni assume comparações independentes, e
+comparações sobre dado correlacionado violam essa suposição na direção
+"correção conservadora demais", não "liberal demais". Preferível a
+subestimar o N (que seria liberal demais na direção perigosa), mas não é
+rigor estatístico formal — outra decisão de julgamento humano que o script
+não resolve por você.
+
 ### Próximo passo
 
-Rodar uma medição adicional de SELL-only numa janela ainda não usada (ver
-item 89 e os trials desta rodada) e aplicar este critério ao resultado.
+Rodar uma medição adicional de SELL-only numa janela genuinamente nova (ver
+acima e item 89) e aplicar este critério ao resultado.
 `docs/roadmap.md` atualizado no mesmo commit para refletir este critério.
 
 ## 89. Registro de trials com correção Bonferroni automática (2026-08-15)
@@ -9070,10 +9097,39 @@ repo — não é `scripts/dist/`, não é gitignored):
 - `familySize=1` reproduz exatamente o `z=1,96` já usado em
   `summarizeOps`/`tradeMetrics.js` — a correção é estritamente uma extensão,
   nunca muda o veredito de um trial isolado sem irmãos na família.
-- 17 testes novos (`backtest-trial-registry.test.mjs`): a matemática do
-  Acklam contra quantis conhecidos da literatura (0,975→1,959964,
-  0,995→2,575829), Bonferroni N=2≈2,241 (valor de referência padrão),
-  append/duplicata/ledger vazio, e o markdown de saída.
+
+### Correções do Codex review (PR #189, ambas aplicadas)
+
+1. **P1 — família nascia vazia mas o item 88 já assumia N≥6.** A 1ª versão
+   só sabia registrar trials com `backtest-report.json` de origem — nenhuma
+   das medições históricas de SELL (item 48/71) tinha artifact vivo (retenção
+   de 30 dias). Rodar a próxima medição de SELL-only calcularia N=1 (z=1,96)
+   em vez do N real, tratando um resultado como "corrigido" sem contar as
+   tentativas que motivaram a correção — o oposto do propósito deste item.
+   Corrigido com um segundo modo, **`--seed`**: registra uma medição já
+   publicada em `known-risks.md`, sem artifact, com `source`/`seedSource`
+   obrigatório (proveniência auditável até o texto que originou o número) e
+   `n`/`expectancyRCI95` aceitando `null` quando o dado publicado não incluiu
+   essa informação (conta para o TAMANHO da família mesmo sem contribuir um
+   IC corrigido próprio). As 8 medições reais de SELL já publicadas (item
+   45.9, item 48 ×4, item 71 ×3) foram semeadas — família
+   `sell-only-hypothesis` em N=8 hoje, não N=1. Detalhe em item 88.
+2. **P1 — Bonferroni não devia "resgatar" amostra pequena demais.**
+   `summarizeFamily` computava `correctedConclusive` só a partir do IC
+   corrigido, ignorando `n`/`minTrades`/o `conclusive` original do relatório
+   — um trial reprovado por `sample_too_small` no próprio `summarizeOps`
+   podia aparecer como `SIM` aqui, porque alargar o IC não é o mesmo que ter
+   amostra suficiente. Nova função `correctedConclusiveVerdict` (testada
+   isoladamente, 5 casos incluindo o cenário exato que o Codex apontou):
+   `false` assim que qualquer gate reprova, `null` quando falta dado pra
+   decidir (nunca assume positivo por omissão — por isso todo registro
+   semeado, que não tem `minTrades` conhecido, mostra no máximo `null`/`não`,
+   nunca `SIM`), `true` só quando os dois gates passam.
+
+28 testes agora (`backtest-trial-registry.test.mjs`): Acklam contra quantis
+conhecidos, Bonferroni N=2≈2,241, seed com/sem CI, `correctedConclusiveVerdict`
+isolado, e um teste de regressão específico do achado #1 (família mista
+seed+trial novo reflete o N combinado).
 
 ### O que isto NÃO resolve
 
@@ -9081,17 +9137,20 @@ Decidir o que conta como "mesma família de hipótese" continua sendo
 julgamento humano — o `--family` é texto livre, do mesmo jeito que
 `trial_label` sempre foi. O script garante que, uma vez decidida a família,
 a correção nunca fica de fora por esquecimento; não decide a família por
-você.
+você. E Bonferroni em si assume comparações independentes — várias das 8
+medições semeadas vêm de janelas sobrepostas (ver ressalva de honestidade no
+item 88), o que torna N=8 conservador demais, não impreciso na direção
+perigosa.
 
 ### Verificação
 
-`npm run lint && npm test && npm run build` — 970/970 testes (953
-anteriores + 17 novos), lint limpo, build sem regressão (chunks grandes de
-`recharts`/`firebase` são aceitos de propósito, ver roadmap Bloco 5).
+`npm run lint && npm test && npm run build` — todos limpos após cada rodada
+de correção (970/970 → 981/981 com os 11 testes novos desta correção, ver
+contagem exata no commit).
 
 ### Próximo passo
 
 Usar o registro nos trials desta rodada (runner off, breakeven pré-TP1,
 combo, minScore 60, retest, e o follow-up de SELL-only do item 88) — famílias
 `exit-runner-fix`, `entry-score-threshold`, `entry-retest-gate` e
-`sell-only-hypothesis`.
+`sell-only-hypothesis` (esta última já em N=8, ver correção acima).
