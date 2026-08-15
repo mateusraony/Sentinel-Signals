@@ -9210,3 +9210,108 @@ combo, minScore 60, retest) — famílias `exit-runner-fix`,
 `entry-score-threshold`, `entry-retest-gate`. O follow-up de SELL-only do
 item 88 está PAUSADO (sem janela/símbolo genuinamente novo disponível hoje)
 — família `sell-only-hypothesis` fica em N=12 até essa linha ser retomada.
+
+## 90. Rodada de trials pós-auditoria externa: runner/breakeven/minScore/retest (2026-08-15)
+
+### Contexto
+
+Depois do fact-check do relatório externo (achados B/C/E) e das correções
+dos itens 88/89, usuário rodou 5 trials via `backtest.yml` — mesma janela
+nova para os 5 (`2025-08-15→2026-08-15`, 7 símbolos default, custos
+ligados) — cada um registrado no ledger do item 89 por família.
+
+### Resultado — família `exit-runner-fix` (N=3, z corrigido=2,3940)
+
+| trial_label | n | bruto | líquido | custo/op | IC95 original | IC corrigido |
+|---|---|---|---|---|---|---|
+| `runner-off-baseline` | 102 | +0,124R | **+0,074R** | 0,050R | [-0,156; 0,304] | [-0,207; 0,355] |
+| `pretp1-breakeven-baseline` | 112 | +0,087R | +0,045R | 0,043R | [-0,134; 0,224] | [-0,174; 0,264] |
+| `runner-off-plus-breakeven-baseline` (combo) | 112 | +0,080R | +0,039R | 0,041R | [-0,133; 0,210] | [-0,171; 0,248] |
+
+Todos os 3 **INCONCLUSIVOS** (IC cruza zero, com e sem correção), mas todos
+com ponto estimado positivo — direção consistente com o achado E do
+relatório externo (runner devolve lucro) e com o item 46.2 já registrado.
+**Achado não previsto**: o combo (runner off + breakeven) rendeu MENOS que
+runner off sozinho (+0,039R contra +0,074R), não mais. Amostra pequena
+demais (n~102-112) pra distinguir isso de ruído — mas vale registrar que a
+soma dos dois consertos não foi simplesmente aditiva nesta janela.
+
+### Resultado — família `entry-score-threshold` (N=1)
+
+| trial_label | n | bruto | líquido | IC95 |
+|---|---|---|---|---|
+| `minscore-60-baseline` | 154 | **−0,005R** | **−0,054R** | [-0,241; 0,134] |
+
+**INCONCLUSIVO, mas com ponto estimado NEGATIVO** — o oposto do que o
+Achado C do relatório externo previa ("score alto = pior entrada, `minScore`
+menor deveria capturar entradas melhores"). `minScore: 60` deixou passar
+mais 52 operações (154 contra ~102-112 dos outros trials, mesma janela) mas
+piorou tanto o bruto quanto o líquido. Não refuta o Achado C com rigor (IC
+cruza zero, e o achado original vinha de sub-buckets pequenos por faixa de
+score, que já eram um alerta de amostra insuficiente no fact-check) — mas
+também não dá nenhum suporte a ele. Ponto contra baixar `minScore` sem mais
+evidência.
+
+### Resultado — família `entry-retest-gate` (N=1) — achado qualitativo, não estatístico
+
+| trial_label | n | motivo |
+|---|---|---|
+| `retest-gate-baseline` | **0** | `sample_too_small` |
+
+**Zero operações na janela inteira. Correção (2026-08-15, review externa
+Codex, PR #191): a leitura original citava `entryFunnel.byReason.
+retest_pending = 2.050` como se fosse 2.050 sinais distintos travados — 
+errado.** `entryFunnel` conta cada AVALIAÇÃO rejeitada, somando a 1ª
+passada com todo retry (`backtestEngine.js:990-1002`) — um único sinal
+pendente por várias passadas do cron simulado contribui várias entradas.
+O relatório tem uma seção dedicada por sinal (`report.retest`, dedupada,
+last-write-wins) que é a fonte certa:
+
+| Métrica | Valor |
+|---|---|
+| Sinais únicos que entraram no gate | **126** |
+| Confirmados (preço retestou) | **3** (2,4%) |
+| Pendentes no corte do relatório | **123** (97,6%) |
+| Avaliações totais (1ª passada + retries) | 2.061 |
+| Sinais que tiveram retry | 114 (máx. 18 tentativas) |
+
+**Achado corrigido**: de 126 sinais únicos que passaram pelo gate, só 3
+(2,4%) confirmaram o reteste — não é um artefato de contagem, o gate
+continua extremamente restritivo na tolerância padrão. Ressalva honesta que
+a correção também expõe: "pendente no corte do relatório" não é o mesmo que
+"nunca teria confirmado" — alguns desses 123 podem ainda estar dentro da
+janela de validade quando a janela de backtest terminou (efeito de borda),
+não necessariamente expirados. Mesmo com essa ressalva, 2,4% de confirmação
+é baixo o bastante pra sustentar a recomendação original: antes de testar de
+novo, valeria afrouxar a tolerância (`retestToleranceAtrMult` > 0,3) — ou
+aceitar que o gate fica desligado, já que testar de novo com o mesmo valor
+não deve produzir resultado muito diferente.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: nenhum dos 5 trials produziu resultado estatisticamente
+conclusivo — esperado, dado que uma única janela de 12 meses/7 símbolos
+(~100-150 operações) não tem poder pra detectar edge menor que ~0,3R (a
+mesma matemática que `docs/roadmap.md`, "A regra que ordena tudo: amostra",
+já registra).
+
+**Hipótese**: os 3 consertos de saída (runner off, breakeven, combo) têm
+ponto estimado positivo, consistente com — mas não prova de — o achado E do
+relatório externo. O achado C (score baixo é melhor) não se sustenta nesta
+amostra; o ponto estimado foi na direção oposta. O gate de reteste na
+tolerância padrão parece impraticável, não só "não testado ainda".
+
+**Recomendação**: nenhuma mudança de config em produção a partir só disto
+— amostra insuficiente para qualquer um dos 5. Path adiante mais barato que
+esperar mais dado: repetir os mesmos 3 trials de saída numa 2ª janela
+(idealmente a alta 2024-25, já caracterizada no item 48) para começar a
+formar uma família com correção Bonferroni que tenha chance real de ficar
+conclusiva; recalibrar `retestToleranceAtrMult` antes de testar reteste de
+novo; não perseguir `minScore` mais baixo sem evidência nova.
+
+### Verificação
+
+Nenhuma mudança de código nesta rodada — só registro dos 5 relatórios no
+ledger (`docs/backtest-trial-registry.json`) e esta análise. `npm run lint
+&& npm test && npm run build` continuam limpos (981/981, sem alteração de
+contagem).
