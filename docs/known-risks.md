@@ -9031,22 +9031,26 @@ pré-registrados bateu exatamente.
 - **Bloco 1** (os 4 flags dormentes) continua trancado — agora por esse
   motivo específico e testável, não por "ambiguidade" genérica.
 
-### Correção (2026-08-15, review externa Codex, PR #189)
+### Correção (2026-08-15, review externa Codex, PR #189 e PR #190)
 
 A primeira versão deste item estimava a família "hipótese SELL-only" em
 "N≥6", mas o ledger do item 89 nasceu vazio — rodar a próxima medição sem
 mais nada teria calculado N=1 (z=1,96) em vez do N real, exatamente o erro
-que a correção deveria evitar. Corrigido: as 8 medições de SELL já
+que a correção deveria evitar. Corrigido em duas rodadas (PR #189, depois
+PR #190 ao achar mais 4 medições que a 1ª varredura tinha perdido — itens
+56 e 74, ver "Próximo passo" abaixo): as **12 medições de SELL** já
 publicadas neste projeto foram semeadas no ledger via
 `backtest-trial-registry.mjs --seed` (ver item 89) — a família
-`sell-only-hypothesis` está hoje em **N=8** (z=2,7344), então a próxima
-medição fará N=9. Nem todas as 8 têm IC95 publicado (algumas janelas do
-item 48 só imprimiram R médio) — essas ainda contam para o TAMANHO da
-família (é mais uma vez que a hipótese foi olhada), só não contribuem um IC
-corrigido próprio.
+`sell-only-hypothesis` está hoje em **N=12** (z=2,8653), então a próxima
+medição fará N=13. Nem todas as 12 têm IC95 publicado — essas ainda contam
+para o TAMANHO da família (é mais uma vez que a hipótese foi olhada), só
+não contribuem um IC corrigido próprio. Efeito prático de sair de N=8 para
+N=12: até a medição mais forte já registrada (item 71, n=159, +0,271R)
+deixa de sobreviver ao IC corrigido pela família inteira (`[-0,006;
+0,548]` — cruza zero).
 
 **Ressalva de honestidade que a correção acima não resolve**: várias dessas
-8 medições vêm de janelas fortemente sobrepostas (ex. as 3 leituras da
+12 medições vêm de janelas fortemente sobrepostas (ex. as 3 leituras da
 mesma janela de baixa 2025-26, ou as 2 leituras quase idênticas da janela
 de alta 2024-25) — Bonferroni assume comparações independentes, e
 comparações sobre dado correlacionado violam essa suposição na direção
@@ -9059,19 +9063,53 @@ não resolve por você.
 
 Checagem antes de rodar o trial de SELL-only revelou que **não existe hoje
 uma janela de 12 meses genuinamente livre de sobreposição** com as já
-usadas em qualquer medição de SELL: as 6 janelas já consumidas
-(2023-07-27→2024-07-27, 2024-07-27→2025-07-27, 2024-08-10→2025-08-10,
-2025-07-27→2026-07-27, 2025-08-09→2026-08-09, 2025-08-10→2026-08-10) cobrem
-quase todo o período disponível — restam só ~5 dias de dado genuinamente
-novo até hoje (2026-08-15). Voltar a antes de 2023-07 reabriria uma
-comparação que o `roadmap.md` já descartou por regime incompatível
-(2022, Luna/FTX) e ativos faltantes na carteira original.
+usadas em qualquer medição de SELL. **Correção (2026-08-15, review externa
+Codex, PR #190): o inventário original desta seção esquecia duas linhas de
+investigação inteiras** — item 56 já rodou `2022-07-27→2023-07-27` (7
+símbolos, run de controle só cascata nativa) e mediu SELL (n=30, +0,230R,
+ver seção "Braço exploratório — backtest retrospectivo pré-2023"); item 74
+já rodou as 3 janelas do Bloco 0 de novo, mas com **LTCUSDT/DOGEUSDT** — os
+únicos 2 símbolos confirmados fora da carteira já testada — e também mediu
+SELL nas 3 (n=16/10/17, todas com IC cruzando zero, amostra pequena demais
+pra confirmar ou refutar qualquer coisa).
 
-**Decisão do usuário**: pausar esta linha de investigação em vez de rodar
-numa janela sobreposta ou pré-2022. Retomar quando houver dado ao vivo
-suficiente para uma janela genuinamente nova (mais alguns meses de
-histórico acumulado) — não antes disso. `docs/roadmap.md` atualizado no
-mesmo commit para refletir este critério e a pausa.
+**As janelas de calendário já consumidas, contíguas sem buraco**:
+
+`2022-07-27→2023-07-27`, `2023-07-27→2024-07-27`, `2024-07-27→2025-07-27`,
+`2024-08-10→2025-08-10`, `2025-07-27→2026-07-27`, `2025-08-09→2026-08-09`,
+`2025-08-10→2026-08-10` — cobrem 2022-07-27 até 2026-08-10 sem lacuna.
+
+**Mas "janela nova" não é a única forma de dado genuinamente novo** — o
+item 74 já demonstrou o caminho alternativo: **símbolos nunca testados**,
+mesmo em janelas de calendário já usadas, também contam como não sobrepostos
+(o motor nunca viu aquele par ativo×janela antes). O problema é que os
+únicos 2 símbolos confirmados fora da carteira (LTC/DOGE) já foram gastos
+nessa tentativa — item 74 terminou inconclusivo por amostra pequena (só
+~26-38 operações/janela com 2 símbolos, contra 288-344 com a carteira de
+20) e recomendou explicitamente "ampliar o walk-forward com mais símbolos
+novos" como o próximo passo real, não decidido até hoje.
+
+Voltar a antes de 2022-07-27 (a outra alternativa) reabriria a
+incompatibilidade de regime (2021-2022, ciclo de alta seguido do colapso
+Luna/FTX) e o problema de ativos faltantes que o `roadmap.md` já descartou
+por outro motivo.
+
+**A próxima janela de CALENDÁRIO sem sobreposição só pode COMEÇAR em
+2026-08-10 ou depois e, sendo 12 meses, só fecha por volta de 2027-08-10** —
+quase um ano a
+partir de hoje (2026-08-15), não "alguns meses" como a versão anterior deste
+texto dizia (achado do Codex review, PR #190: essa imprecisão podia induzir
+alguém a rodar cedo demais, violando o próprio critério de janela sem
+sobreposição).
+
+**Decisão do usuário**: pausar esta linha de investigação por enquanto — não
+rodar em janela sobreposta, nem pré-2022, nem ampliar o walk-forward de
+símbolos novos agora. Duas formas válidas de retomar, nenhuma escolhida
+ainda: esperar o histórico ao vivo alcançar 2027-08-10 (janela de calendário
+nova), ou encontrar/confirmar símbolos adicionais fora da carteira já
+testada e repetir a metodologia do item 74 com mais poder estatístico que
+2 símbolos permitem. `docs/roadmap.md` atualizado no mesmo commit para
+refletir este critério e a pausa.
 
 ## 89. Registro de trials com correção Bonferroni automática (2026-08-15)
 
@@ -9123,9 +9161,11 @@ repo — não é `scripts/dist/`, não é gitignored):
    obrigatório (proveniência auditável até o texto que originou o número) e
    `n`/`expectancyRCI95` aceitando `null` quando o dado publicado não incluiu
    essa informação (conta para o TAMANHO da família mesmo sem contribuir um
-   IC corrigido próprio). As 8 medições reais de SELL já publicadas (item
-   45.9, item 48 ×4, item 71 ×3) foram semeadas — família
-   `sell-only-hypothesis` em N=8 hoje, não N=1. Detalhe em item 88.
+   IC corrigido próprio). As **12 medições reais de SELL** já publicadas
+   (item 45.9, item 48 ×4, item 71 ×3, item 56, item 74 ×3 — os últimos 4
+   achados numa 2ª rodada de review, PR #190, depois que a 1ª varredura
+   perdeu duas linhas de investigação inteiras) foram semeadas — família
+   `sell-only-hypothesis` em N=12 hoje, não N=1. Detalhe em item 88.
 2. **P1 — Bonferroni não devia "resgatar" amostra pequena demais.**
    `summarizeFamily` computava `correctedConclusive` só a partir do IC
    corrigido, ignorando `n`/`minTrades`/o `conclusive` original do relatório
@@ -9149,20 +9189,24 @@ Decidir o que conta como "mesma família de hipótese" continua sendo
 julgamento humano — o `--family` é texto livre, do mesmo jeito que
 `trial_label` sempre foi. O script garante que, uma vez decidida a família,
 a correção nunca fica de fora por esquecimento; não decide a família por
-você. E Bonferroni em si assume comparações independentes — várias das 8
-medições semeadas vêm de janelas sobrepostas (ver ressalva de honestidade no
-item 88), o que torna N=8 conservador demais, não impreciso na direção
-perigosa.
+você — nem garante que a varredura inicial de "quais medições já existem"
+foi completa (a 1ª varredura desta família perdeu 4 de 12 medições reais,
+corrigido só depois de uma 2ª review externa, PR #190). E Bonferroni em si
+assume comparações independentes — várias das 12 medições semeadas vêm de
+janelas sobrepostas (ver ressalva de honestidade no item 88), o que torna
+N=12 conservador demais, não impreciso na direção perigosa.
 
 ### Verificação
 
 `npm run lint && npm test && npm run build` — todos limpos após cada rodada
-de correção (970/970 → 981/981 com os 11 testes novos desta correção, ver
-contagem exata no commit).
+de correção (970/970 → 981/981 com os testes da correção de Bonferroni/
+seed; a rodada de PR #190 foi só documentação + dado no ledger, sem
+mudança de código, então a contagem de testes não mudou de novo).
 
 ### Próximo passo
 
 Usar o registro nos trials desta rodada (runner off, breakeven pré-TP1,
-combo, minScore 60, retest, e o follow-up de SELL-only do item 88) — famílias
-`exit-runner-fix`, `entry-score-threshold`, `entry-retest-gate` e
-`sell-only-hypothesis` (esta última já em N=8, ver correção acima).
+combo, minScore 60, retest) — famílias `exit-runner-fix`,
+`entry-score-threshold`, `entry-retest-gate`. O follow-up de SELL-only do
+item 88 está PAUSADO (sem janela/símbolo genuinamente novo disponível hoje)
+— família `sell-only-hypothesis` fica em N=12 até essa linha ser retomada.

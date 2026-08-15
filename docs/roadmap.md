@@ -72,11 +72,15 @@ candidato a edge genuíno que só desbloqueia o Bloco 1 se confirmado numa
 próxima medição em janela nova, sob IC corrigido por família (item 89). Ver
 item 88 para o raciocínio completo.
 
-**Linha SELL-only PAUSADA (2026-08-15)**: não existe hoje janela de 12 meses
-sem sobreposição com as 6 já usadas em medições de SELL — as janelas
-consumidas cobrem quase todo 2023-07→2026-08, e voltar a antes de 2023-07
-reabriria a incompatibilidade de regime (2022) já descartada abaixo. Retomar
-só quando houver dado ao vivo suficiente para uma janela genuinamente nova.
+**Linha SELL-only PAUSADA (2026-08-15, atualizado após 2ª review externa)**:
+não existe hoje janela de calendário nem par de símbolo+janela
+genuinamente novo — as 12 medições de SELL já feitas (item 48, item 56,
+item 71, item 74) cobrem 2022-07→2026-08-10 contíguo, e os únicos 2
+símbolos fora da carteira testada (LTC/DOGE, item 74) já foram usados nas
+3 janelas do Bloco 0. Retomar só de duas formas: esperar o calendário
+alcançar 2027-08-10, ou achar/confirmar mais símbolos novos e repetir a
+metodologia do item 74 com mais poder estatístico. Detalhe completo: item
+88.
 
 ### A pergunta que só isto responde
 
