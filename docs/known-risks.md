@@ -9420,12 +9420,22 @@ janela.
 Nenhuma mudança de código — 3 relatórios a mais no ledger + esta análise.
 `npm run lint && npm test && npm run build` continuam limpos (981/981).
 
-### Controle pareado, mesmo commit, nas 2 janelas — resultado definitivo desta rodada (2026-08-15)
+### Controle pareado nas 2 janelas — resultado desta rodada (2026-08-15)
 
 Executada a recomendação da correção acima: 2 runs com `pineConfig` **padrão**
-(sem nenhum override), mesmas 2 janelas, mesmo commit `519f21e5` dos 6
-trials de tratamento (`default-control-baixa-new`,
+(sem nenhum override), mesmas 2 janelas (`default-control-baixa-new`,
 `default-control-alta2024`, família `exit-runner-fix-control` no ledger).
+**Correção (2026-08-15, review externa Codex, PR #193): a afirmação
+"mesmo commit dos 6 trials de tratamento" era falsa** — os 2 controles são
+do commit `519f21e5`, os 3 trials de baixa são do `fd084dc8`, os 3 de alta
+são do `bc844e1a`, três commits distintos. Verificado agora (`git diff
+--stat` entre os três pares): as diferenças entre eles tocam **só**
+`docs/known-risks.md` e `docs/backtest-trial-registry.json` — nenhuma
+mudança em `src/lib/`, `scripts/` nem `.github/workflows/backtest.yml`
+entre nenhum dos três. Os commits são código-equivalentes pra fins de
+backtest (mesmo `scanner.js`/`backtestEngine.js` nos três), mas a
+afirmação certa é essa — "código equivalente, verificado" — não "mesmo
+commit".
 
 | Janela | Controle (padrão) | n |
 |---|---|---|
@@ -9449,46 +9459,68 @@ ressalva de commit da correção anterior.
 | combo | alta | +0,138R | +0,250R | **−0,112R** |
 
 **As 6 de 6 comparações são negativas.** Nenhuma das 3 variantes bateu o
-controle padrão em nenhuma das 2 janelas testadas. `runner-off` é
-consistentemente a menos pior das 3 (delta mais próximo de zero nas duas
-janelas), mas ainda assim perde para não mexer em nada.
+controle padrão em nenhuma das 2 janelas testadas, em ponto estimado.
+`runner-off` é a menos pior das 3 nas duas janelas (delta mais próximo de
+zero).
 
-### Leitura final desta rodada (fato × hipótese × recomendação)
+**Correção (2026-08-15, review externa Codex, PR #193): "6 de 6 negativos"
+não são 6 confirmações independentes — a leitura original superclaimava
+isso.** Três problemas reais na forma como os 6 deltas foram apresentados:
+(1) os 3 deltas de cada janela reutilizam o MESMO controle — uma flutuação
+de ruído nesse único run de controle move os 3 deltas daquela janela
+juntos, na mesma direção, não são 3 eventos independentes; (2) as 2 janelas
+não são independentes entre si (mesma lógica de mercado, séries de preço
+correlacionadas); (3) o combo é mecanicamente sobreposto às outras 2
+variantes (é as duas juntas), não uma 3ª observação livre. Nenhum IC do
+delta em si foi calculado.
 
-**Fato**: com o controle certo, nenhum dos 3 "consertos de saída" propostos
-pelo relatório externo (runner off, breakeven pré-TP1, ou o combo) supera o
-comportamento padrão do motor, em nenhuma das 2 janelas testadas — os 6
-deltas são todos negativos. Nenhuma das comparações individuais tem
-significância estatística formal (nenhum delta foi testado com IC próprio,
-e as amostras não são perfeitamente pareadas — `countedTrades` varia entre
-variantes porque a config de saída afeta quantas operações fecham antes do
-corte do backtest, não só o R de cada uma), mas a consistência de sentido
-(6 de 6 negativos, em 2 regimes diferentes) é um padrão forte demais pra
-ignorar.
+**O tamanho do delta de `runner-off` importa mais que o sinal**: o
+erro-padrão do PRÓPRIO controle (derivado do IC95 publicado) é
+**≈0,121R** nas duas janelas — uma ordem de grandeza MAIOR que o delta de
+`runner-off` (−0,012R a −0,013R). Isso significa que a diferença entre
+`runner-off` e não mexer em nada está muito dentro do ruído do próprio
+controle — não dá pra distinguir "ligeiramente pior" de "estatisticamente
+idêntico" com este dado. Os deltas de breakeven/combo são maiores
+(−0,042R a −0,131R, mais perto da ordem de grandeza do erro-padrão do
+controle) mas ainda sem IC próprio calculado.
 
-**Hipótese**: isto contradiz diretamente o Achado E do relatório externo
-que motivou toda esta investigação ("o runner devolve o lucro, tirar ele
-resolve"). Duas leituras possíveis, nenhuma decidida aqui: (a) o
-diagnóstico original do item 46.2 (runner custa −0,040R/op) foi medido
+### Leitura final desta rodada — corrigida (fato × hipótese × recomendação)
+
+**Fato**: com o controle certo, nenhuma das 3 variantes de saída superou o
+comportamento padrão em ponto estimado, nas 2 janelas testadas. Mas isso
+NÃO é 6 confirmações independentes de que as variantes pioram a
+estratégia — é, na melhor leitura, 2 observações de regime (correlacionadas
+entre si) com 3 comparações cada (correlacionadas dentro de cada janela
+pelo controle compartilhado). Para `runner-off` especificamente, o delta
+(~−0,012R) é pequeno demais frente ao erro-padrão do próprio controle
+(~0,121R) pra sustentar qualquer afirmação de direção.
+
+**Hipótese**: isto ainda pesa contra o Achado E do relatório externo
+("o runner devolve o lucro, tirar ele resolve") — nenhuma variante bateu o
+controle em nenhuma janela, então não há evidência A FAVOR de desligar o
+runner nestes dados. Mas também não há evidência forte CONTRA — o
+resultado correto é "inconclusivo em ambas as direções", não "o oposto do
+relatório está provado". Duas leituras possíveis pra por que o item 46.2
+(runner custa −0,040R/op) apontava numa direção mais clara: (a) foi medido
 diferente — contrafactual DENTRO do mesmo conjunto de operações que
 realmente bateram TP1, isolando só a gestão pós-TP1 — enquanto estes 6
-trials comparam POPULAÇÕES de operações fechadas diferentes entre si (por
-causa do efeito de corte acima); não são a mesma pergunta respondida duas
-vezes, então não se contradizem tecnicamente, mas a leitura prática
-("desligar o runner ajuda") não se sustenta nestes dados. (b) o efeito real
-do runner pode ser pequeno ou nulo nestas 2 janelas específicas, e o item
-46.2 mediu um efeito real mas específico do regime de baixa profunda em
-que foi medido (a mesma ressalva de regime que o item 46.1 já registra
+trials comparam POPULAÇÕES de operações fechadas diferentes entre si (a
+config de saída afeta quantas operações fecham antes do corte do
+backtest, não só o R de cada uma); (b) o efeito real do runner pode ser
+pequeno ou específico do regime de baixa profunda em que o item 46.2 foi
+medido originalmente (mesma ressalva de regime que o item 46.1 já registra
 para BUY/SELL).
 
-**Recomendação**: **não mexer em `runnerEnabled`/
-`preTp1StopProtectionEnabled` em produção** — a evidência disponível hoje
-aponta na direção contrária à do relatório externo, não a favor. Se
-alguém quiser reabrir esta linha, o próximo passo tecnicamente correto é
-recalcular o contrafactual do item 46.2 (mesmo método: só as operações que
+**Recomendação — revisada, mais cautelosa que a anterior**: não mudar
+`runnerEnabled`/`preTp1StopProtectionEnabled` em produção — mas por falta
+de evidência em qualquer direção, não porque os dados "provam que piora".
+Se a linha for reaberta, dois caminhos tecnicamente corretos, nenhum feito
+ainda: (a) recalcular o contrafactual do item 46.2 (só operações que
 bateram TP1, fechar 100% ali vs. manter o runner, DENTRO do mesmo conjunto)
-nestas 2 janelas novas — não mais trials de config inteira, que carregam o
-confound de população já descrito.
+nestas 2 janelas novas, que evita o confound de população; ou (b) se
+insistir no desenho de trial inteiro, calcular o IC do delta de verdade
+(exige os R por operação de ambos os lados, não só o resumo agregado) antes
+de reportar qualquer direção como leitura.
 
 ### Verificação (controle pareado)
 
