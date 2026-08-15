@@ -9528,3 +9528,60 @@ Nenhuma mudança de código — 2 relatórios a mais no ledger
 (`docs/backtest-trial-registry.json`, família `exit-runner-fix-control`) +
 esta análise. `npm run lint && npm test && npm run build` continuam
 limpos (981/981).
+
+### Recálculo do contrafactual do item 46.2, mesmo método, 2 janelas novas (2026-08-15)
+
+A correção anterior apontava dois caminhos: recalcular o contrafactual
+original (população pareada, só operações que bateram TP1) ou calcular o
+IC do delta dos 6 trials de config inteira. Optamos pelo primeiro — mais
+barato (reusa os 2 relatórios de controle já baixados, nenhum trial novo) e
+resolve o confound de população que os 6 trials de config carregavam.
+
+`scripts/analyze-backtest.mjs` já implementa exatamente o método do item
+46.2 (`src/lib/backtestAnalysis.js:analyzeOps`, usa `calcRAtTp1` de
+`tradeMetrics.js` — função dedicada a este contrafactual específico,
+existente desde a Fase de custos). Rodado sobre os 2 relatórios de
+controle (`default-control-baixa-new`, `default-control-alta2024`, config
+padrão, sem overrides):
+
+| Janela | Real (com runner) | 100% no TP1 | Contribuição do runner | Ops c/ TP1 | Melhor fechando no TP1 |
+|---|---|---|---|---|---|
+| Baixa (nova) | 0,140R | 0,146R | **−0,007R/op (−0,7R total)** | 41 (9 chegaram ao TP2) | 30 de 41 (73%) |
+| Alta 2024-25 | 0,305R | 0,303R | **+0,001R/op (+0,1R total)** | 46 (10 chegaram ao TP2) | 28 de 46 (61%) |
+
+**Comparação com o item 46.2 original** (baixa 2025-07→2026-07, 20
+símbolos, bear market profundo): contribuição do runner lá foi
+**−0,040R/op (−13,9R total)**, com 95 de 121 (78,5%) melhores fechando no
+TP1. **Nas 2 janelas novas, o efeito é quase nulo — uma ordem de grandeza
+menor** (−0,007R e +0,001R contra −0,040R original).
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: com o método correto (população pareada, mesma pergunta do item
+46.2), o runner não custa nada relevante nestas 2 janelas — praticamente
+zero na alta, pequeno na baixa. Isto substitui a leitura anterior baseada
+nos 6 deltas correlacionados (que era estatisticamente indefensável) por
+uma medição limpa e diretamente comparável ao achado original.
+
+**Hipótese, agora com evidência a favor**: a hipótese (b) da correção
+anterior se confirma — o achado original de −0,040R/op foi específico do
+regime de bear market profundo (BTC −37%, ETH −52%, item 46.1) em que foi
+medido, não uma propriedade geral do motor. Em janelas menos extremas
+(a atual, mista, e a alta), o runner não tem custo mensurável. Isto está
+alinhado com o próprio texto do item 46.2, que já registrava a mesma
+ressalva ("mas NUM REGIME SÓ, por isso não virou default").
+
+**Recomendação — fecha esta linha de investigação**: `runnerEnabled:
+false` **não tem justificativa nestas 2 janelas** — o efeito que motivou a
+proposta (do relatório externo, Achado E) é real mas específico de regime,
+não generalizável ao comportamento atual do motor. Não desligar o runner
+em produção. Se o regime voltar a ficar tão extremo quanto o de 2025-26
+(queda de 37%+ nos majors), vale remedir — até lá, esta linha está
+encerrada por falta de efeito, não por falta de dado.
+
+### Verificação (recálculo item 46.2)
+
+Nenhuma mudança de código — só reuso de `scripts/analyze-backtest.mjs`
+(já existente, sem alteração) sobre os 2 relatórios já no ledger, e esta
+análise. `npm run lint && npm test && npm run build` continuam limpos
+(981/981).
