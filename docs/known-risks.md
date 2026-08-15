@@ -9315,3 +9315,75 @@ Nenhuma mudança de código nesta rodada — só registro dos 5 relatórios no
 ledger (`docs/backtest-trial-registry.json`) e esta análise. `npm run lint
 && npm test && npm run build` continuam limpos (981/981, sem alteração de
 contagem).
+
+### 2ª janela — alta 2024-25, mesmos 3 trials de saída (2026-08-15)
+
+Seguindo a recomendação acima: os mesmos 3 trials de `exit-runner-fix`
+repetidos na janela de alta já caracterizada no item 48
+(`2024-07-27→2025-07-27`), mesma carteira de 7 símbolos, só a janela
+mudou.
+
+| trial_label | n | bruto | líquido | IC95 (z=1,96) | Conclusivo (z=1,96)? |
+|---|---|---|---|---|---|
+| `runner-off-alta2024` | 102 | +0,291R | **+0,238R** | **[0,009; 0,467]** | **SIM** |
+| `pretp1-breakeven-alta2024` | 114 | +0,164R | +0,119R | [-0,065; 0,303] | não |
+| `runner-off-plus-breakeven-alta2024` (combo) | 114 | +0,181R | +0,138R | [-0,046; 0,322] | não |
+
+**`runner-off-alta2024` é o primeiro trial desta família a fechar
+CONCLUSIVO isolado** (IC não cruza zero, mesmo padrão de honestidade que o
+item 48 usa: um resultado individual conclusivo, não a família toda).
+
+**Família `exit-runner-fix` agora com N=6 (baixa ×3 + alta ×3), correção
+Bonferroni z=2,6383**:
+
+| trial_label | líquido | IC95 original | IC corrigido (N=6) | Conclusivo corrigido? |
+|---|---|---|---|---|
+| `runner-off-baseline` (baixa) | +0,074R | [-0,156; 0,304] | [-0,236; 0,384] | não |
+| `pretp1-breakeven-baseline` (baixa) | +0,045R | [-0,134; 0,224] | [-0,196; 0,286] | não |
+| `runner-off-plus-breakeven-baseline` (baixa) | +0,039R | [-0,133; 0,210] | [-0,192; 0,270] | não |
+| `runner-off-alta2024` | +0,238R | **[0,009; 0,467]** | [-0,070; 0,546] | **não** |
+| `pretp1-breakeven-alta2024` | +0,119R | [-0,065; 0,303] | [-0,129; 0,367] | não |
+| `runner-off-plus-breakeven-alta2024` | +0,138R | [-0,046; 0,322] | [-0,110; 0,386] | não |
+
+**A correção por família derruba o único conclusivo isolado** —
+`runner-off-alta2024` deixa de sobreviver assim que contabiliza os 6 trials
+que já competem pela mesma pergunta. Isto é o registro do item 89 fazendo
+exatamente o que foi desenhado pra fazer: evitar que um resultado bonito
+isolado vire "confirmação" sem contar as tentativas.
+
+### Leitura combinada das 2 janelas (fato × hipótese × recomendação)
+
+**Fato**: as 6 medições (2 janelas × 3 variantes) são **todas positivas em
+ponto estimado** — nenhuma virou negativa em nenhuma janela. `runner-off`
+sozinho é o maior ponto estimado nas DUAS janelas (+0,074R baixa, +0,238R
+alta) — maior que breakeven sozinho e que o combo, nas duas. Mas o combo
+não se comportou igual nas duas janelas: pior que os dois isolados na
+baixa (+0,039R, abaixo de +0,074R e +0,045R), no meio dos dois na alta
+(+0,138R, entre +0,119R e +0,238R) — o "achado não previsto" da 1ª rodada
+(combo pior que a soma das partes) não se replicou com o mesmo padrão na
+alta.
+
+**Hipótese**: os pontos estimados muito maiores na alta (0,238R vs 0,074R
+para o mesmo `runner-off`) provavelmente refletem em parte que a janela de
+alta tem expectância geral melhor (item 48 já mediu isso pro portfólio
+inteiro) — não dá pra separar limpo "o conserto de saída ajuda mais" de
+"esta janela era melhor pra tudo". Ainda não há evidência forte o
+suficiente (mesmo com 2 janelas) pra decidir qual dos 3 — runner-off
+sozinho, breakeven sozinho, ou o combo — é a melhor escolha; `runner-off`
+sozinho lidera nas 2 medições feitas até agora, o que é um sinal
+direcional, não uma prova.
+
+**Recomendação**: continua sem justificar mudança de config em produção.
+Path adiante: uma 3ª janela (a mista 2023-24, também já caracterizada no
+item 48) fecharia as 3 janelas de regime já usadas no projeto para esta
+família de teste, dando o mesmo tipo de cobertura de regime que o Bloco 0
+já fez para BUY/SELL — e deixaria de precisar de janela nova pra continuar
+testando exit fixes (diferente da linha SELL-only, pausada, esta família
+ainda tem janelas de calendário disponíveis sem sobreposição *para esta
+pergunta específica*, já que nenhum dos 6 trials usou pineConfig ligado à
+hipótese SELL-only).
+
+### Verificação (2ª janela)
+
+Nenhuma mudança de código — 3 relatórios a mais no ledger + esta análise.
+`npm run lint && npm test && npm run build` continuam limpos (981/981).
