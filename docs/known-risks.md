@@ -9351,37 +9351,69 @@ que já competem pela mesma pergunta. Isto é o registro do item 89 fazendo
 exatamente o que foi desenhado pra fazer: evitar que um resultado bonito
 isolado vire "confirmação" sem contar as tentativas.
 
-### Leitura combinada das 2 janelas (fato × hipótese × recomendação)
+### Correção (2026-08-15, review externa Codex, PR #192) — faltava o controle, e existe um que derruba a leitura acima
 
-**Fato**: as 6 medições (2 janelas × 3 variantes) são **todas positivas em
-ponto estimado** — nenhuma virou negativa em nenhuma janela. `runner-off`
-sozinho é o maior ponto estimado nas DUAS janelas (+0,074R baixa, +0,238R
-alta) — maior que breakeven sozinho e que o combo, nas duas. Mas o combo
-não se comportou igual nas duas janelas: pior que os dois isolados na
-baixa (+0,039R, abaixo de +0,074R e +0,045R), no meio dos dois na alta
-(+0,138R, entre +0,119R e +0,238R) — o "achado não previsto" da 1ª rodada
-(combo pior que a soma das partes) não se replicou com o mesmo padrão na
-alta.
+**A leitura "combinada" original comparava cada variante contra ZERO
+(`expectancyRCI95` cruza zero ou não), nunca contra o comportamento padrão
+(`runnerEnabled: true`, sem breakeven) — então nenhuma das 6 medições
+respondia "isto melhora a estratégia?", só "isto tem expectância diferente
+de zero?". Isso por si só já seria uma falha de desenho grave o bastante
+pra invalidar a conclusão anterior. Mas o Codex achou algo mais concreto:
+**um controle real já existe para a janela de alta**, e ele derruba a
+leitura anterior na prática, não só na teoria.
 
-**Hipótese**: os pontos estimados muito maiores na alta (0,238R vs 0,074R
-para o mesmo `runner-off`) provavelmente refletem em parte que a janela de
-alta tem expectância geral melhor (item 48 já mediu isso pro portfólio
-inteiro) — não dá pra separar limpo "o conserto de saída ajuda mais" de
-"esta janela era melhor pra tudo". Ainda não há evidência forte o
-suficiente (mesmo com 2 janelas) pra decidir qual dos 3 — runner-off
-sozinho, breakeven sozinho, ou o combo — é a melhor escolha; `runner-off`
-sozinho lidera nas 2 medições feitas até agora, o que é um sinal
-direcional, não uma prova.
+O run `bloco0-alta-7symbols-confound-check` (item 48, "Confound
+controlado", 2026-08-04) é EXATAMENTE a mesma janela
+(`2024-07-27→2025-07-27`) e a mesma carteira de 7 símbolos, mas com
+**pineConfig padrão** (sem nenhum override de saída) — o controle que
+faltava:
 
-**Recomendação**: continua sem justificar mudança de config em produção.
-Path adiante: uma 3ª janela (a mista 2023-24, também já caracterizada no
-item 48) fecharia as 3 janelas de regime já usadas no projeto para esta
-família de teste, dando o mesmo tipo de cobertura de regime que o Bloco 0
-já fez para BUY/SELL — e deixaria de precisar de janela nova pra continuar
-testando exit fixes (diferente da linha SELL-only, pausada, esta família
-ainda tem janelas de calendário disponíveis sem sobreposição *para esta
-pergunta específica*, já que nenhum dos 6 trials usou pineConfig ligado à
-hipótese SELL-only).
+| Config | n | Líquido |
+|---|---|---|
+| **Controle (padrão, item 48, 2026-08-04)** | 101 | **+0,250R** |
+| `runner-off-alta2024` | 102 | +0,238R |
+| `pretp1-breakeven-alta2024` | 114 | +0,119R |
+| `runner-off-plus-breakeven-alta2024` (combo) | 114 | +0,138R |
+
+**O controle (config padrão) supera as 3 "correções" nesta janela** —
+inclusive `runner-off`, a que eu tinha lido como "a que mais ajuda". Sem
+IC publicado para o controle (o item 48 já registrava essa lacuna: "O IC
+exato da alta 7-símbolos não foi conferido"), então não dá pra dizer que a
+diferença é estatisticamente significativa — mas o ponto estimado inteiro
+da narrativa anterior ("runner-off lidera, é a correção mais promissora")
+não sobrevive à simples comparação com o que já estava rodando sem
+nenhuma mudança.
+
+**Ressalva adicional**: o controle é de 2026-08-04, os 6 trials de
+exit-fix são do commit `fd084dc8` (2026-08-15) — se algo mudou no motor
+entre essas duas datas (não verificado aqui), a comparação não é
+estritamente mesmo-commit. Não invalida o achado — só significa que o
+controle certo a usar daqui pra frente é um rodado no MESMO commit dos
+trials de tratamento, não um reaproveitado de outra sessão.
+
+### Leitura combinada — corrigida (fato × hipótese × recomendação)
+
+**Fato**: nenhuma das 6 medições de exit-fix tinha um controle pareado até
+agora — e o único controle disponível (alta 2024-25, mesma carteira,
+2026-08-04) supera as 3 variantes testadas, inclusive a que parecia
+melhor. A janela de baixa (2025-08-15→2026-08-15) não tem controle
+publicado nenhum — é uma janela nova, nunca rodada com config padrão.
+
+**Hipótese**: a leitura anterior ("runner-off é a correção mais
+promissora") era um artefato de comparar contra zero em vez de comparar
+contra o que já roda hoje. Não há evidência de que qualquer um dos 3
+conserta algo — pode ser que o comportamento padrão já capture a maior
+parte do valor nesta janela, ou que a diferença exista mas seja pequena
+demais pra aparecer nos ~100-114 operações medidos.
+
+**Recomendação — revisada, substitui a anterior**: não rodar uma 3ª janela
+treatment-only (isso preservaria o mesmo confound, é exatamente o que o
+Codex apontou). Antes de mais janelas, rodar um **controle pareado**
+(pineConfig padrão) no MESMO commit `fd084dc8`, nas MESMAS 2 janelas já
+usadas (baixa `2025-08-15→2026-08-15` e alta `2024-07-27→2025-07-27`), e
+comparar cada variante contra esse controle específico (`variante −
+controle`), não contra zero. Só depois disso decidir se vale uma 3ª
+janela.
 
 ### Verificação (2ª janela)
 
