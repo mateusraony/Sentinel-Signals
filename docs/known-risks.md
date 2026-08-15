@@ -9315,3 +9315,107 @@ Nenhuma mudança de código nesta rodada — só registro dos 5 relatórios no
 ledger (`docs/backtest-trial-registry.json`) e esta análise. `npm run lint
 && npm test && npm run build` continuam limpos (981/981, sem alteração de
 contagem).
+
+### 2ª janela — alta 2024-25, mesmos 3 trials de saída (2026-08-15)
+
+Seguindo a recomendação acima: os mesmos 3 trials de `exit-runner-fix`
+repetidos na janela de alta já caracterizada no item 48
+(`2024-07-27→2025-07-27`), mesma carteira de 7 símbolos, só a janela
+mudou.
+
+| trial_label | n | bruto | líquido | IC95 (z=1,96) | Conclusivo (z=1,96)? |
+|---|---|---|---|---|---|
+| `runner-off-alta2024` | 102 | +0,291R | **+0,238R** | **[0,009; 0,467]** | **SIM** |
+| `pretp1-breakeven-alta2024` | 114 | +0,164R | +0,119R | [-0,065; 0,303] | não |
+| `runner-off-plus-breakeven-alta2024` (combo) | 114 | +0,181R | +0,138R | [-0,046; 0,322] | não |
+
+**`runner-off-alta2024` é o primeiro trial desta família a fechar
+CONCLUSIVO isolado** (IC não cruza zero, mesmo padrão de honestidade que o
+item 48 usa: um resultado individual conclusivo, não a família toda).
+
+**Família `exit-runner-fix` agora com N=6 (baixa ×3 + alta ×3), correção
+Bonferroni z=2,6383**:
+
+| trial_label | líquido | IC95 original | IC corrigido (N=6) | Conclusivo corrigido? |
+|---|---|---|---|---|
+| `runner-off-baseline` (baixa) | +0,074R | [-0,156; 0,304] | [-0,236; 0,384] | não |
+| `pretp1-breakeven-baseline` (baixa) | +0,045R | [-0,134; 0,224] | [-0,196; 0,286] | não |
+| `runner-off-plus-breakeven-baseline` (baixa) | +0,039R | [-0,133; 0,210] | [-0,192; 0,270] | não |
+| `runner-off-alta2024` | +0,238R | **[0,009; 0,467]** | [-0,070; 0,546] | **não** |
+| `pretp1-breakeven-alta2024` | +0,119R | [-0,065; 0,303] | [-0,129; 0,367] | não |
+| `runner-off-plus-breakeven-alta2024` | +0,138R | [-0,046; 0,322] | [-0,110; 0,386] | não |
+
+**A correção por família derruba o único conclusivo isolado** —
+`runner-off-alta2024` deixa de sobreviver assim que contabiliza os 6 trials
+que já competem pela mesma pergunta. Isto é o registro do item 89 fazendo
+exatamente o que foi desenhado pra fazer: evitar que um resultado bonito
+isolado vire "confirmação" sem contar as tentativas.
+
+### Correção (2026-08-15, review externa Codex, PR #192) — faltava o controle, e existe um que derruba a leitura acima
+
+**A leitura "combinada" original comparava cada variante contra ZERO
+(`expectancyRCI95` cruza zero ou não), nunca contra o comportamento padrão
+(`runnerEnabled: true`, sem breakeven) — então nenhuma das 6 medições
+respondia "isto melhora a estratégia?", só "isto tem expectância diferente
+de zero?". Isso por si só já seria uma falha de desenho grave o bastante
+pra invalidar a conclusão anterior. Mas o Codex achou algo mais concreto:
+**um controle real já existe para a janela de alta**, e ele derruba a
+leitura anterior na prática, não só na teoria.
+
+O run `bloco0-alta-7symbols-confound-check` (item 48, "Confound
+controlado", 2026-08-04) é EXATAMENTE a mesma janela
+(`2024-07-27→2025-07-27`) e a mesma carteira de 7 símbolos, mas com
+**pineConfig padrão** (sem nenhum override de saída) — o controle que
+faltava:
+
+| Config | n | Líquido |
+|---|---|---|
+| **Controle (padrão, item 48, 2026-08-04)** | 101 | **+0,250R** |
+| `runner-off-alta2024` | 102 | +0,238R |
+| `pretp1-breakeven-alta2024` | 114 | +0,119R |
+| `runner-off-plus-breakeven-alta2024` (combo) | 114 | +0,138R |
+
+**O controle (config padrão) supera as 3 "correções" nesta janela** —
+inclusive `runner-off`, a que eu tinha lido como "a que mais ajuda". Sem
+IC publicado para o controle (o item 48 já registrava essa lacuna: "O IC
+exato da alta 7-símbolos não foi conferido"), então não dá pra dizer que a
+diferença é estatisticamente significativa — mas o ponto estimado inteiro
+da narrativa anterior ("runner-off lidera, é a correção mais promissora")
+não sobrevive à simples comparação com o que já estava rodando sem
+nenhuma mudança.
+
+**Ressalva adicional**: o controle é de 2026-08-04, os 6 trials de
+exit-fix são do commit `fd084dc8` (2026-08-15) — se algo mudou no motor
+entre essas duas datas (não verificado aqui), a comparação não é
+estritamente mesmo-commit. Não invalida o achado — só significa que o
+controle certo a usar daqui pra frente é um rodado no MESMO commit dos
+trials de tratamento, não um reaproveitado de outra sessão.
+
+### Leitura combinada — corrigida (fato × hipótese × recomendação)
+
+**Fato**: nenhuma das 6 medições de exit-fix tinha um controle pareado até
+agora — e o único controle disponível (alta 2024-25, mesma carteira,
+2026-08-04) supera as 3 variantes testadas, inclusive a que parecia
+melhor. A janela de baixa (2025-08-15→2026-08-15) não tem controle
+publicado nenhum — é uma janela nova, nunca rodada com config padrão.
+
+**Hipótese**: a leitura anterior ("runner-off é a correção mais
+promissora") era um artefato de comparar contra zero em vez de comparar
+contra o que já roda hoje. Não há evidência de que qualquer um dos 3
+conserta algo — pode ser que o comportamento padrão já capture a maior
+parte do valor nesta janela, ou que a diferença exista mas seja pequena
+demais pra aparecer nos ~100-114 operações medidos.
+
+**Recomendação — revisada, substitui a anterior**: não rodar uma 3ª janela
+treatment-only (isso preservaria o mesmo confound, é exatamente o que o
+Codex apontou). Antes de mais janelas, rodar um **controle pareado**
+(pineConfig padrão) no MESMO commit `fd084dc8`, nas MESMAS 2 janelas já
+usadas (baixa `2025-08-15→2026-08-15` e alta `2024-07-27→2025-07-27`), e
+comparar cada variante contra esse controle específico (`variante −
+controle`), não contra zero. Só depois disso decidir se vale uma 3ª
+janela.
+
+### Verificação (2ª janela)
+
+Nenhuma mudança de código — 3 relatórios a mais no ledger + esta análise.
+`npm run lint && npm test && npm run build` continuam limpos (981/981).
