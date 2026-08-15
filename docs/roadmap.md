@@ -20,9 +20,18 @@ plano de sessão morre com a sessão.
 > 0,401 R, 3 regimes, 2 composições de carteira) — o padrão mais consistente
 > já medido neste projeto. BUY segue acompanhando o regime, com oscilação
 > bem menor controlando o confound. Detalhe completo: item 48 (inclui a
-> subseção "Confound controlado"). **O Bloco 1 não foi desbloqueado** com
-> base nisso — decisão de como prosseguir está em aberto, não tomada
-> unilateralmente.
+> subseção "Confound controlado").
+>
+> **Atualização 2026-08-15 (item 88): critério de decisão revisado.** O
+> critério original tratava BUY/SELL como par único e por isso nenhum dos
+> três desfechos pré-registrados bateu com o resultado real (assimétrico).
+> Decisão tomada: BUY e SELL passam a ser hipóteses separadas — BUY aceito
+> como regime-dependente (mesmo tratamento do item 4, não desbloqueia nada
+> sozinho); SELL é candidato a edge genuíno mas só desbloqueia mudança de
+> produto se uma PRÓXIMA medição, em janela nova, se sustentar sob IC
+> corrigido por família (ver item 89, registro de trials). **O Bloco 1
+> continua trancado**, agora por esse motivo específico, não por
+> "ambiguidade" genérica.
 >
 > **Fase 1 — RF 1h condicionado ao 4h (esforço paralelo, fora da numeração
 > de Blocos abaixo)**: mecanismo backtest-only pronto e testado (nunca em
@@ -43,7 +52,7 @@ que**. Um bloco só começa quando o anterior fecha.
 
 ---
 
-## Bloco 0 — a janela de ALTA (RODADA — resultado ambíguo, ver item 48)
+## Bloco 0 — a janela de ALTA (RODADA — critério revisado, ver itens 48 e 88)
 
 **Rodar `backtest.yml` com `from: 2024-07-27`, `to: 2025-07-27`, a mesma carteira
 de 20 símbolos, `trial_label: bull-baseline`.** Zero código: só duas datas
@@ -51,12 +60,17 @@ diferentes no `workflow_dispatch`.
 
 **Resultado (2026-07-30, detalhe em `docs/known-risks.md` item 48)**:
 +0,294 R líquido, CONCLUSIVO (288 operações) — a primeira janela do projeto a
-fechar assim. Mas não bate exatamente com nenhum dos três desfechos do
-critério abaixo: os dois lados (BUY e SELL) vieram positivos (derruba o
+fechar assim. Não bateu exatamente com nenhum dos três desfechos do critério
+original abaixo: os dois lados (BUY e SELL) vieram positivos (derruba o
 cenário "puramente direcional"), mas a janela de baixa continua líquida
 negativa (ainda que inconclusiva), então "positivo nas duas janelas" também
-não se sustenta ao pé da letra. **O Bloco 1 não foi desbloqueado** com base
-nisso — fica em aberto até o usuário decidir como interpretar a ambiguidade.
+não se sustentou ao pé da letra.
+
+**Critério revisado (item 88, 2026-08-15)**: BUY e SELL viraram hipóteses
+separadas em vez de par único — BUY aceito como regime-dependente, SELL como
+candidato a edge genuíno que só desbloqueia o Bloco 1 se confirmado numa
+próxima medição em janela nova, sob IC corrigido por família (item 89). Ver
+item 88 para o raciocínio completo.
 
 ### A pergunta que só isto responde
 

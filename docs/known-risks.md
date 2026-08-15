@@ -8976,3 +8976,122 @@ Recomendo conferir depois do deploy, comparando o rótulo "Superando"/
 Item 6 da lista de pendências fica fechado — `PortfolioVsMarket.jsx`
 agora compõe a curva da carteira, comparável de verdade com qualquer um
 dos 4 benchmarks (BTC/CDI/Selic/IPCA), todos compostos por natureza.
+
+## 88. Bloco 0 / item 48 — critério revisado: BUY e SELL como hipóteses separadas (2026-08-15)
+
+### Contexto
+
+O item 48 rodou o critério de decisão pré-registrado do Bloco 0
+(`docs/roadmap.md`) com três desfechos possíveis, e nenhum bateu: a janela
+de alta veio com BUY **e** SELL positivos (derruba o cenário "puramente
+direcional"), mas a janela de baixa continua líquida negativa mesmo que
+estatisticamente inconclusiva (derruba "positivo nas duas janelas"). O
+`roadmap.md` registrou isso como decisão em aberto — "fica em aberto até o
+usuário decidir como interpretar a ambiguidade" (Bloco 0). Esta entrada
+resolve essa pendência, a pedido do usuário, depois de uma auditoria externa
+de um relatório de backtest que reabriu a pergunta.
+
+### Achado
+
+Olhando as 5 medições já feitas até hoje (3 janelas de regime + 2
+reprocessamentos controlados, ver item 48), o padrão real é **assimétrico
+entre os lados**, não simétrico como o critério original assumia:
+
+- **SELL**: positivo nas 5 de 5 medições (0,147R a 0,401R), atravessando 3
+  regimes de mercado e 2 composições de carteira diferentes.
+- **BUY**: acompanha o regime — positivo na janela de alta, negativo (mas
+  estatisticamente inconclusivo, IC cruza zero) na janela de baixa.
+
+O critério original tratava BUY/SELL como um par único ("direcional puro"
+vs. "vantagem independente de regime nas duas pernas"), então não tinha
+categoria para esse padrão assimétrico — por isso nenhum dos três desfechos
+pré-registrados bateu exatamente.
+
+### Critério revisado
+
+- BUY e SELL passam a ser avaliados como **hipóteses separadas**, não como
+  par binário.
+- **BUY**: aceito formalmente como regime-dependente — mesmo tratamento já
+  dado à divergência Futures×Spot (item 4): deixa de ser "risco pendente" e
+  vira limitação/comportamento aceito, enquanto ninguém propuser e testar um
+  filtro de regime específico à parte (ex.: condicionar compra ao alinhamento
+  de tendência 1D). Não desbloqueia nada por si só.
+- **SELL**: candidato a edge genuíno, mas **ainda não confirmado** — o
+  teste out-of-sample do item 71 (holdout n=150) não confirmou a hipótese
+  SELL-only isoladamente (IC cruzou zero). Antes de qualquer mudança de
+  produto (ligar `allowedSide: SELL` de verdade em produção), exigir que uma
+  **próxima medição**, numa janela genuinamente nova — não usada em nenhum
+  trial anterior de SELL, nem do item 48 nem do item 71 — se sustente sob o
+  IC corrigido por família de comparações múltiplas (ver item 89). A família
+  "hipótese SELL-only" já teria N≥6 contando as 5 medições do item 48 mais o
+  holdout do item 71.
+- **Bloco 1** (os 4 flags dormentes) continua trancado — agora por esse
+  motivo específico e testável, não por "ambiguidade" genérica.
+
+### Próximo passo
+
+Rodar uma medição adicional de SELL-only numa janela ainda não usada (ver
+item 89 e os trials desta rodada) e aplicar este critério ao resultado.
+`docs/roadmap.md` atualizado no mesmo commit para refletir este critério.
+
+## 89. Registro de trials com correção Bonferroni automática (2026-08-15)
+
+### Contexto
+
+Motivado pela mesma auditoria externa do item 88: toda vez que este projeto
+já aplicou correção de comparação múltipla (itens 45.9, 56, 68), o N da
+família de hipóteses foi decidido manualmente por um humano lendo o
+histórico do `known-risks.md`, e uma vez (item 68) a correção foi
+simplesmente esquecida na primeira versão do relatório — só corrigida depois
+por uma review externa (Codex, PR mencionado no próprio item 68). Não existia
+nenhum mecanismo — contador, tabela, registro — que soubesse quantos trials
+já competiam pela mesma pergunta.
+
+### O que foi construído
+
+`scripts/backtest-trial-registry.mjs` (CLI Node, sem dependência nova) +
+`docs/backtest-trial-registry.json` (ledger append-only, versionado no
+repo — não é `scripts/dist/`, não é gitignored):
+
+- `--report <path> --family <nome>`: lê o `backtest-report.json` de um run
+  do `backtest.yml` (usa os campos já existentes `trialLabel`,
+  `reproducibility`, `costs.{netExpectancyR,expectancyRCI95,countedTrades,
+  conclusive}` — nenhuma mudança em `backtestEngine.js`/`tradeMetrics.js` foi
+  necessária, o `stdErr` é recuperado a partir do próprio IC95 publicado) e
+  acrescenta um registro ao ledger. Recusa duplicar o mesmo `trialLabel` na
+  mesma família.
+- `--summarize-family <nome>`: para todos os trials daquela família, aplica
+  correção Bonferroni (`z` calculado por inversa exata da CDF normal —
+  aproximação racional de Acklam, não tabela hardcoded — para
+  `alpha=0.05/N`, N=tamanho da família) e imprime uma tabela markdown com o
+  IC original (z=1,96, o que cada relatório isolado já mostra) lado a lado
+  com o IC corrigido pela família, pronta para colar aqui no
+  `known-risks.md`.
+- `familySize=1` reproduz exatamente o `z=1,96` já usado em
+  `summarizeOps`/`tradeMetrics.js` — a correção é estritamente uma extensão,
+  nunca muda o veredito de um trial isolado sem irmãos na família.
+- 17 testes novos (`backtest-trial-registry.test.mjs`): a matemática do
+  Acklam contra quantis conhecidos da literatura (0,975→1,959964,
+  0,995→2,575829), Bonferroni N=2≈2,241 (valor de referência padrão),
+  append/duplicata/ledger vazio, e o markdown de saída.
+
+### O que isto NÃO resolve
+
+Decidir o que conta como "mesma família de hipótese" continua sendo
+julgamento humano — o `--family` é texto livre, do mesmo jeito que
+`trial_label` sempre foi. O script garante que, uma vez decidida a família,
+a correção nunca fica de fora por esquecimento; não decide a família por
+você.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` — 970/970 testes (953
+anteriores + 17 novos), lint limpo, build sem regressão (chunks grandes de
+`recharts`/`firebase` são aceitos de propósito, ver roadmap Bloco 5).
+
+### Próximo passo
+
+Usar o registro nos trials desta rodada (runner off, breakeven pré-TP1,
+combo, minScore 60, retest, e o follow-up de SELL-only do item 88) — famílias
+`exit-runner-fix`, `entry-score-threshold`, `entry-retest-gate` e
+`sell-only-hypothesis`.
