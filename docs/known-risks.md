@@ -9258,17 +9258,34 @@ evidência.
 |---|---|---|
 | `retest-gate-baseline` | **0** | `sample_too_small` |
 
-**Zero operações na janela inteira.** Funil de entrada explica: de 3.654
-rejeições na cascata `4h_15m`, **2.050 (56%) foram `retest_pending`** — o
-preço nunca voltou a tocar o nível rompido dentro da janela de validade do
-sinal, com a tolerância padrão de `retestToleranceAtrMult: 0.3`.
-`regime_rejected` foi a 2ª causa (1.592, 44% do restante). Isto não é um
-resultado inconclusivo por pouca sorte — é um achado direto: **o gate de
-reteste, na configuração padrão, é severo demais para ser usado como está**
-nesta janela/carteira. Antes de testar de novo, valeria afrouxar a
-tolerância (`retestToleranceAtrMult` > 0,3) ou aceitar que ele fica
-desligado — testar de novo com o mesmo valor não vai produzir dado
-diferente.
+**Zero operações na janela inteira. Correção (2026-08-15, review externa
+Codex, PR #191): a leitura original citava `entryFunnel.byReason.
+retest_pending = 2.050` como se fosse 2.050 sinais distintos travados — 
+errado.** `entryFunnel` conta cada AVALIAÇÃO rejeitada, somando a 1ª
+passada com todo retry (`backtestEngine.js:990-1002`) — um único sinal
+pendente por várias passadas do cron simulado contribui várias entradas.
+O relatório tem uma seção dedicada por sinal (`report.retest`, dedupada,
+last-write-wins) que é a fonte certa:
+
+| Métrica | Valor |
+|---|---|
+| Sinais únicos que entraram no gate | **126** |
+| Confirmados (preço retestou) | **3** (2,4%) |
+| Pendentes no corte do relatório | **123** (97,6%) |
+| Avaliações totais (1ª passada + retries) | 2.061 |
+| Sinais que tiveram retry | 114 (máx. 18 tentativas) |
+
+**Achado corrigido**: de 126 sinais únicos que passaram pelo gate, só 3
+(2,4%) confirmaram o reteste — não é um artefato de contagem, o gate
+continua extremamente restritivo na tolerância padrão. Ressalva honesta que
+a correção também expõe: "pendente no corte do relatório" não é o mesmo que
+"nunca teria confirmado" — alguns desses 123 podem ainda estar dentro da
+janela de validade quando a janela de backtest terminou (efeito de borda),
+não necessariamente expirados. Mesmo com essa ressalva, 2,4% de confirmação
+é baixo o bastante pra sustentar a recomendação original: antes de testar de
+novo, valeria afrouxar a tolerância (`retestToleranceAtrMult` > 0,3) — ou
+aceitar que o gate fica desligado, já que testar de novo com o mesmo valor
+não deve produzir resultado muito diferente.
 
 ### Leitura (fato × hipótese × recomendação)
 
