@@ -257,6 +257,53 @@ describe('planSignalArbitration — mesma cascata, direção oposta', () => {
     const r = planSignalArbitration({ candidateCascade: '4h_15m', candidateSide: 'SELL', candidateScore: 10, activeOp, pineConfig: { arbReinforceMinScore: 50 } });
     expect(r.outcome).toBe('candidate_below_arbitration_threshold');
   });
+
+  // known-risks.md item 93 — arbInvalidateOnOppositeSameTf, opt-in, mesmo
+  // padrão de arbInvalidateOnOppositeMajor mas para o branch same-timeframe.
+  describe('arbInvalidateOnOppositeSameTf (item 93)', () => {
+    const activeOp = { cascade: '4h_15m', side: 'BUY' };
+
+    it('por padrão (flag ausente), score alto continua só reduzindo confiança', () => {
+      const r = planSignalArbitration({ candidateCascade: '4h_15m', candidateSide: 'SELL', candidateScore: 90, activeOp });
+      expect(r.outcome).toBe('correction_warning');
+      expect(r.action).toBe('reduce_confidence');
+    });
+
+    it('com a flag ligada mas score abaixo de arbPromoteMinScore, ainda só reduz confiança', () => {
+      const r = planSignalArbitration({
+        candidateCascade: '4h_15m', candidateSide: 'SELL', candidateScore: 60, activeOp,
+        pineConfig: { arbInvalidateOnOppositeSameTf: true, arbPromoteMinScore: 75, arbReinforceMinScore: 50 },
+      });
+      expect(r.outcome).toBe('correction_warning');
+      expect(r.action).toBe('reduce_confidence');
+    });
+
+    it('com a flag ligada e score >= arbPromoteMinScore, invalida', () => {
+      const r = planSignalArbitration({
+        candidateCascade: '4h_15m', candidateSide: 'SELL', candidateScore: 80, activeOp,
+        pineConfig: { arbInvalidateOnOppositeSameTf: true, arbPromoteMinScore: 75 },
+      });
+      expect(r.outcome).toBe('correction_warning');
+      expect(r.action).toBe('invalidate');
+      expect(r.reason).toBe('same_cascade_opposite_direction_invalidate');
+    });
+
+    it('score exatamente no piso de promoção conta como suficiente (>=, não >)', () => {
+      const r = planSignalArbitration({
+        candidateCascade: '4h_15m', candidateSide: 'SELL', candidateScore: 75, activeOp,
+        pineConfig: { arbInvalidateOnOppositeSameTf: true, arbPromoteMinScore: 75 },
+      });
+      expect(r.action).toBe('invalidate');
+    });
+
+    it('flag ligada mas score abaixo do piso mínimo de gestão continua bloqueado (candidate_below_arbitration_threshold)', () => {
+      const r = planSignalArbitration({
+        candidateCascade: '4h_15m', candidateSide: 'SELL', candidateScore: 10, activeOp,
+        pineConfig: { arbInvalidateOnOppositeSameTf: true, arbReinforceMinScore: 50 },
+      });
+      expect(r.outcome).toBe('candidate_below_arbitration_threshold');
+    });
+  });
 });
 
 describe('planSignalArbitration — direction/tfRelation sempre presentes na resposta (observabilidade)', () => {

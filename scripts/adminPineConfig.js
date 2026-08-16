@@ -49,6 +49,10 @@ const DEFAULTS = {
   arbPromoteMinScore: 75,
   arbReinforceMinScore: 50,
   arbInvalidateOnOppositeMajor: false,
+  // Espelha src/lib/pineParser.js — mesmo mecanismo de
+  // arbInvalidateOnOppositeMajor, mas para o branch same-timeframe. OFF por
+  // padrão. Ver docs/known-risks.md item 93.
+  arbInvalidateOnOppositeSameTf: false,
   arbOppositeScorePenalty: 15,
   minRR: 1.2,
   smcScoreStructureWeight: 15,
@@ -116,7 +120,7 @@ const SYNCED_STRATEGY_KEYS = [
   'confirmBars', 'onlyClosedCandles',
   'emaFastLen', 'emaSlowLen', 'rsiLen', 'volLen', 'atrLen',
   'arbEnabled', 'arbPromoteMinScore', 'arbReinforceMinScore',
-  'arbInvalidateOnOppositeMajor', 'arbOppositeScorePenalty', 'minRR',
+  'arbInvalidateOnOppositeMajor', 'arbInvalidateOnOppositeSameTf', 'arbOppositeScorePenalty', 'minRR',
   'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
   'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
   'smcScoreSweepWeight',

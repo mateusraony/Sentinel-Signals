@@ -59,7 +59,10 @@ export const CASCADE_RANK = { '1h_5m': 1, '4h_15m': 2, 'rf1h_cond4h_15m': 2, 'rf
 // values, changed thresholds semantics) — stamped onto SystemLog entries and
 // TradeOperation patches so a later analysis can tell which rules produced a
 // given historical decision without guessing from timestamps.
-export const ARBITRATION_VERSION = 1;
+// v2 (docs/known-risks.md item 93): same_cascade_opposite_direction can now
+// resolve to 'invalidate' (previously always 'reduce_confidence'), gated by
+// arbInvalidateOnOppositeSameTf.
+export const ARBITRATION_VERSION = 2;
 
 /**
  * @param {'1h_5m'|'4h_15m'} candidateCascade
@@ -125,6 +128,14 @@ export function planSignalArbitration({ candidateCascade, candidateSide, candida
   const reinforceMin = pineConfig.arbReinforceMinScore ?? 50;
   const scorePenalty = pineConfig.arbOppositeScorePenalty ?? 15;
   const invalidateOnOpposite = pineConfig.arbInvalidateOnOppositeMajor === true;
+  // known-risks.md item 93 — mesmo padrão de arbInvalidateOnOppositeMajor,
+  // mas para o branch same-timeframe (same_cascade_opposite_direction) em vez
+  // do larger-timeframe (critical_opposite). Reusa arbPromoteMinScore como
+  // piso — não arbReinforceMinScore — de propósito: a pesquisa de comunidade
+  // sobre stop-and-reverse/whipsaw (item 93) recomenda uma confirmação MAIS
+  // forte antes de agir sobre um sinal oposto do que o piso mínimo que só
+  // reduz confiança, para não inverter por um candidato marginal.
+  const invalidateOnOppositeSameTf = pineConfig.arbInvalidateOnOppositeSameTf === true;
   const score = candidateScore ?? 0;
   const belowThreshold = () => noOp('candidate_below_arbitration_threshold', 'candidate_score_below_management_threshold');
 
@@ -186,5 +197,15 @@ export function planSignalArbitration({ candidateCascade, candidateSide, candida
 
   // direction === 'opposite' && tfRelation === 'same'
   if (score < reinforceMin) return belowThreshold();
+  // Opt-in (default false): candidato oposto FORTE (>= arbPromoteMinScore,
+  // não só >= reinforceMin) invalida a operação ativa em vez de só reduzir
+  // confiança. Mesma ressalva de causalidade invertida já documentada para
+  // o correction_warning "puro" (item 45.9/91/93): o aviso tende a chegar
+  // DEPOIS que o preço já andou contra a posição, então isto pode cortar a
+  // perda cedo OU sair de uma posição que se recuperaria — não dá para saber
+  // sem medir, por isso opt-in e nunca ligado por padrão.
+  if (invalidateOnOppositeSameTf && score >= promoteMin) {
+    return build('correction_warning', 'invalidate', 'same_cascade_opposite_direction_invalidate', 'warn', scorePenalty);
+  }
   return build('correction_warning', 'reduce_confidence', 'same_cascade_opposite_direction', 'warn', scorePenalty);
 }

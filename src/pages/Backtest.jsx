@@ -10,7 +10,7 @@ import {
   AlertTriangle, CheckCircle2, Rocket, Loader2, Calendar, History, Zap, Sparkles,
 } from 'lucide-react';
 import { backend } from '@/api/entities';
-import { SYNCED_STRATEGY_KEYS, getPineConfig } from '@/lib/pineParser';
+import { SYNCED_STRATEGY_KEYS, DEFAULTS as PINE_DEFAULTS, getPineConfig } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
 import { isClosedOp, getClosedAt, summarizeOps, calcRealizedPnlPct, getExitPrice, classifyOutcome } from '@/lib/tradeMetrics';
 import { simulateEquityCurve, DEFAULT_INITIAL_CAPITAL, DEFAULT_RISK_PCT } from '@/lib/equityCurve';
@@ -769,7 +769,14 @@ function JsonReportTab() {
     try {
       const payload = {};
       for (const key of SYNCED_STRATEGY_KEYS) {
-        if (pineConfig[key] !== undefined) payload[key] = pineConfig[key];
+        // Codex review (PR #197, docs/known-risks.md item 93): StrategyConfig.set
+        // merges (setDoc merge:true) — a key simply ABSENT from this payload
+        // leaves whatever is already in Firestore untouched. A report generated
+        // before a key existed has no entry for it, so skipping it here would
+        // let applying that OLD report silently preserve a NEWER flag's live
+        // value instead of resetting it to what was actually in effect when
+        // that report ran. Fall back to DEFAULTS so "apply" is a full reset.
+        payload[key] = pineConfig[key] !== undefined ? pineConfig[key] : PINE_DEFAULTS[key];
       }
       await backend.entities.StrategyConfig.set('current', {
         ...payload,

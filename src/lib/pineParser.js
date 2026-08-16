@@ -12,7 +12,13 @@ import { logWarn } from './logger';
 
 const PINE_CONFIG_KEY = 'cryptoradar_pine_config';
 
-const DEFAULTS = {
+// Exported so callers reconstructing a COMPLETE config from a partial one
+// (e.g. Backtest.jsx's "apply trial to live scanner", applying an old
+// report generated before a key existed) can fall back to the value that
+// was actually in effect at the time, instead of silently leaving
+// whatever is currently stored in Firestore untouched — see docs/known-risks.md
+// item 93 (Codex review, PR #197).
+export const DEFAULTS = {
   rng_per: 20,
   rng_qty: 3.5,
   minScore: 75,
@@ -55,6 +61,15 @@ const DEFAULTS = {
   arbPromoteMinScore: 75,
   arbReinforceMinScore: 50,
   arbInvalidateOnOppositeMajor: false,
+  // Mesmo mecanismo que arbInvalidateOnOppositeMajor, mas para um candidato
+  // oposto do MESMO timeframe (same_cascade_opposite_direction), não do
+  // timeframe maior. Master flag OFF por padrão — pesquisa de comunidade
+  // (stop-and-reverse/whipsaw) recomenda confirmação forte antes de agir
+  // sobre reversão, e o mecanismo irmão (correction_warning/item 45.9) já
+  // documentou causalidade invertida: o aviso tende a chegar depois que o
+  // preço já andou contra a posição. NÃO ativar sem comparar relatórios de
+  // backtest com/sem primeiro. Ver docs/known-risks.md item 93.
+  arbInvalidateOnOppositeSameTf: false,
   arbOppositeScorePenalty: 15,
   // Risk:Reward entry gate (src/lib/opExitRules.js passesRiskReward)
   minRR: 1.2,
@@ -271,7 +286,7 @@ export const SYNCED_STRATEGY_KEYS = [
   // Cross-cascade arbitration + R:R gate + SMC score weights (Phase 1 —
   // see signalArbitration.js/opExitRules.js/smcConfluence.js)
   'arbEnabled', 'arbPromoteMinScore', 'arbReinforceMinScore',
-  'arbInvalidateOnOppositeMajor', 'arbOppositeScorePenalty', 'minRR',
+  'arbInvalidateOnOppositeMajor', 'arbInvalidateOnOppositeSameTf', 'arbOppositeScorePenalty', 'minRR',
   'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
   'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
   'smcScoreSweepWeight',
@@ -309,7 +324,7 @@ export const SYNCED_STRATEGY_KEYS = [
 // whatever IS stored in Firestore.
 const NON_PINE_SYNCED_KEYS = new Set([
   'arbEnabled', 'arbPromoteMinScore', 'arbReinforceMinScore',
-  'arbInvalidateOnOppositeMajor', 'arbOppositeScorePenalty', 'minRR',
+  'arbInvalidateOnOppositeMajor', 'arbInvalidateOnOppositeSameTf', 'arbOppositeScorePenalty', 'minRR',
   'smcScoreStructureWeight', 'smcScoreChochBonus', 'smcScoreEmaWeight',
   'smcScoreRfWeight', 'smcScoreVolumeWeight', 'smcScoreAlignmentWeight',
   'smcScoreSweepWeight',
