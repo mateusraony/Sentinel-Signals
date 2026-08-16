@@ -193,6 +193,20 @@ const DEFAULTS = {
   // é suprimida. Master flag OFF por padrão, backtest-only (mesmo motivo dos
   // outros acima) — ver tripwire test em src/lib/rf1hExclusiveTripwire.test.js.
   rf1hExclusiveEnabled: false,
+  // Filtro de regime pro BUY na cascata RF nativa (docs/known-risks.md item
+  // 100) — condiciona entrada BUY ao alinhamento de tendência 1D
+  // (signal.context.tf_1d_direction === 1), nunca afeta SELL. Item 88 já
+  // tinha nomeado isto como o único caminho formal de reabrir a pergunta do
+  // BUY (regime-dependente: positivo em alta, negativo/inconclusivo em
+  // baixa) — pesquisa de comunidade confirma que filtro de tendência de
+  // timeframe maior (diário filtrando entrada 4h) é técnica padrão em
+  // sistemas trend-following (Quantpedia documenta exatamente esse desenho
+  // pra Bitcoin), com o custo conhecido de menos sinais e atraso na virada
+  // de tendência. Master flag OFF por padrão, backtest-only (mesmo motivo
+  // dos outros acima — mudança de ESTRATÉGIA, exige A/B real antes de
+  // cogitar produção, mesmo padrão do allowedSide) — ver tripwire test em
+  // src/lib/buyRegimeFilterTripwire.test.js.
+  buyRegimeFilterEnabled: false,
 };
 
 let overrides = {};

@@ -2542,6 +2542,152 @@ describe('Filtro de lado — allowedSide (opt-in, RF 4h_15m only, docs/known-ris
   });
 });
 
+describe('Filtro de regime pro BUY — buyRegimeFilterEnabled (opt-in, RF 4h_15m only, docs/known-risks.md item 100)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  function makeRegimeSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_regime',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80, tf_1d_direction: 1 },
+      ...overrides,
+    };
+  }
+  // skip15mConfirmationEnabled:true isola este teste do mecanismo de
+  // confirmação 15m (já coberto à parte, item 67) — só o gate de regime 1D
+  // importa aqui, mesmo padrão do describe de allowedSide acima.
+  function regimePineConfig(overrides = {}) {
+    return makePineConfig({ useADX: false, useChop: false, skip15mConfirmationEnabled: true, ...overrides });
+  }
+
+  it('flag desligado (default): BUY abre normalmente mesmo com 1D baixista', async () => {
+    const results = { '4h': makeTfData() }; // direction:1, alinhado com BUY
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig: regimePineConfig() }),
+      newSignals: [makeRegimeSignal({ context: { score: 80, tf_1d_direction: -1 } })],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+  });
+
+  it('flag ligado, 1D bullish (+1): BUY abre normalmente', async () => {
+    const pineConfig = regimePineConfig({ buyRegimeFilterEnabled: true });
+    const results = { '4h': makeTfData() };
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeRegimeSignal({ context: { score: 80, tf_1d_direction: 1 } })],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+  });
+
+  it('flag ligado, 1D baixista (-1): BUY bloqueado (buy_regime_filter_blocked no funil)', async () => {
+    const pineConfig = regimePineConfig({ buyRegimeFilterEnabled: true });
+    const results = { '4h': makeTfData() };
+    const r = await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeRegimeSignal({ context: { score: 80, tf_1d_direction: -1 } })],
+    });
+    expect(r.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_regime', cascade: '4h_15m', reason: 'buy_regime_filter_blocked' });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+  });
+
+  it('flag ligado, 1D neutro (0): BUY também bloqueado — gate conservador, exige bullish inequívoco', async () => {
+    const pineConfig = regimePineConfig({ buyRegimeFilterEnabled: true });
+    const results = { '4h': makeTfData() };
+    const r = await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeRegimeSignal({ context: { score: 80, tf_1d_direction: 0 } })],
+    });
+    expect(r.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_regime', cascade: '4h_15m', reason: 'buy_regime_filter_blocked' });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+  });
+
+  it('flag ligado, SELL nunca é afetado por este gate, mesmo com 1D baixista', async () => {
+    const pineConfig = regimePineConfig({ buyRegimeFilterEnabled: true });
+    const results = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeRegimeSignal({ signal_type: 'SELL', context: { score: 80, tf_1d_direction: -1 } })],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].side).toBe('SELL');
+  });
+
+  it('retry loop respeita o mesmo gate — sinal BUY pendente com 1D baixista AO VIVO nunca confirma via retry', async () => {
+    const pineConfig = regimePineConfig({ buyRegimeFilterEnabled: true });
+    backend._seed('SignalEvent', {
+      id: 'sig_regime', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_regime',
+      created_date: '2026-07-16T09:00:00.000Z', // dentro da janela de retry de 4h
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80, tf_1d_direction: 1 }, // congelado no nascimento — irrelevante pro retry
+    });
+    // 4h ainda alinhado com BUY, 1D AO VIVO baixista — só o 1D bloqueia
+    const results = { '4h': makeTfData(), '1d': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+
+    const r = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    expect(r.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_regime', cascade: '4h_15m', reason: 'buy_regime_filter_blocked' });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+  });
+
+  it('retry loop: diferente de allowedSide, a condição pode mudar entre passadas — grava last_rejection_reason via recordRejection', async () => {
+    const pineConfig = regimePineConfig({ buyRegimeFilterEnabled: true });
+    backend._seed('SignalEvent', {
+      id: 'sig_regime', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_regime',
+      created_date: '2026-07-16T09:00:00.000Z',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80, tf_1d_direction: 1 },
+    });
+    const results = { '4h': makeTfData(), '1d': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    const sig = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_regime' });
+    expect(sig[0].last_rejection_reason).toBe('buy_regime_filter_blocked');
+  });
+
+  it('Codex review (PR #203): retry lê o 1D AO VIVO, não o valor congelado no nascimento do sinal', async () => {
+    const pineConfig = regimePineConfig({ buyRegimeFilterEnabled: true });
+    // Sinal nasceu com 1D baixista (contexto congelado) — se o gate lesse
+    // sig.context.tf_1d_direction (o bug original), continuaria bloqueado
+    // pra sempre, mesmo o 1D tendo virado bullish depois.
+    backend._seed('SignalEvent', {
+      id: 'sig_regime', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_regime',
+      created_date: '2026-07-16T09:00:00.000Z',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80, tf_1d_direction: -1 },
+    });
+    // 1D AO VIVO já virou bullish — o gate deve deixar passar.
+    const results = { '4h': makeTfData(), '1d': makeTfData({ rf: { ...makeTfData().rf, direction: 1 } }) };
+
+    const r = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    expect(r.entryFunnelOutcomes).not.toContainEqual(expect.objectContaining({ reason: 'buy_regime_filter_blocked' }));
+  });
+
+  it('retry sem dado 1D disponível conta como bloqueado (gate conservador, mesma filosofia do valor neutro)', async () => {
+    const pineConfig = regimePineConfig({ buyRegimeFilterEnabled: true });
+    backend._seed('SignalEvent', {
+      id: 'sig_regime', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_regime',
+      created_date: '2026-07-16T09:00:00.000Z',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80, tf_1d_direction: 1 },
+    });
+    const results = { '4h': makeTfData() }; // sem '1d' nesta passada
+
+    const r = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    expect(r.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_regime', cascade: '4h_15m', reason: 'buy_regime_filter_blocked' });
+  });
+});
+
 describe('Fase 2 rodada 2 — gatilho de deslocamento (opt-in, SMC 1h→5m only, docs/known-risks.md item 41)', () => {
   afterEach(() => { fetchCandles.mockReset(); });
 
