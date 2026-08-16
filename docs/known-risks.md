@@ -10219,3 +10219,101 @@ não é medição formal, não muda código (`npm run lint && npm test --
 aqui — incluindo o erro e a correção lado a lado — porque é achado real,
 ainda que a conclusão final seja "sem evidência", seguindo a mesma regra
 do resto do arquivo.
+
+## 97. Ferramenta formal de correlação entre ativos (`backtest-correlation-check.mjs`) — piloto confirma correlação real e substancial no relatório do item 95 (2026-08-16)
+
+### Contexto
+
+Item 96 deixou a pergunta em aberto sem evidência (a checagem original era
+artefato). A pedido do usuário, desenhei e implementei a medição formal —
+pesquisa de comunidade confirmou erro-padrão em cluster (Cameron & Miller)
+como a técnica padrão da literatura de econometria/finanças pra esse
+problema exato, com a literatura de "overlapping returns" (Richardson &
+Smith 1991, Lo & MacKinlay 1988) como o análogo direto de operações com
+duração variável e sobreposta.
+
+### Ferramenta
+
+`scripts/backtest-correlation-check.mjs` (matemática pura à mão, sem
+dependência nova, mesmo padrão do `backtest-trial-registry.mjs`) —
+diagnóstico puro, não toca `backtestEngine.js`/`pineConfig`, roda em cima
+de um `backtest-report.json` já existente:
+
+1. **Erro-padrão em cluster (Cameron-Miller CR1)**, com clusters definidos
+   como componentes conectados do grafo de sobreposição temporal entre
+   operações de símbolos DIFERENTES (não por dia — duração variável
+   fatiaria uma operação longa de forma arbitrária num balde de
+   calendário). Devolve IC95 em cluster, DEFF (design effect) e N
+   efetivo — reduz exatamente ao erro-padrão ingênuo quando todo cluster
+   tem tamanho 1 (conferido em teste).
+2. **Teste de permutação por deslocamento circular por símbolo**: desloca
+   a série INTEIRA de cada símbolo por um offset aleatório, preservando
+   100% do comportamento real do símbolo (duração, taxa de acerto,
+   cadência) e destruindo só o alinhamento de calendário com os outros
+   símbolos — exatamente o tipo de correção que a review do Codex (item
+   96/PR #199) exigiu, agora formalizada e reutilizável. Serve de
+   validação cruzada do método 1, que sozinho é pouco confiável com
+   poucos clusters (G) — o script sempre reporta G e sinaliza quando
+   baixo (<20).
+3. Limitação documentada no próprio código: o IC em cluster usa z=1,96
+   (não t-Student, mesma convenção do resto do projeto) — com G baixo
+   pode subestimar a incerteza levemente a mais; por isso o teste de
+   permutação (que não depende de G pra ser válido) é a validação
+   primária nesse regime, não o IC em cluster sozinho.
+
+Testado (`scripts/backtest-correlation-check.test.mjs`, 21 casos): grafo
+de sobreposição (transitividade, componentes desconexos), fórmula CR1
+contra exemplo à mão, caso degenerado G=1 (a fórmula pura daria SE=0 —
+"certeza perfeita" falsa — corrigido pra devolver `null` explícito, mesma
+convenção de `sample_too_small`), deslocamento circular preserva
+duração/espaçamento, teste de permutação detecta corretamente correlação
+construída e ausência dela.
+
+### Piloto nos 3 relatórios do usuário
+
+| Relatório | N | G (clusters) | DEFF | N efetivo | Permutação (p-valor) |
+|---|---|---|---|---|---|
+| `retest-tol-0.6-baixa2025` | 1 | 1 | — | 1,0 | — (n insuficiente p/ qualquer cálculo) |
+| `retest-tol-1.0-baixa2025` | 4 | 3 | 1,64 | 2,43 | 0,0090 |
+| `sell-only-expanded-symbols-baixa2025` (item 95) | **72** | **18** | **2,99** | **24,08** | **0,0005** |
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: no relatório com amostra real (item 95, 72 operações), o efeito
+NÃO é artefato — o teste de permutação confirma isso diretamente (DEFF
+real muito acima do que o deslocamento circular, que preserva
+duração/seleção mas destrói correlação real, produz por acaso: p5=0,43,
+p95=1,64, real=2,99). **O N efetivo (~24) é cerca de 1/3 do N nominal
+(72)** — o IC95 em cluster ([-0,231; 0,745]) é quase o dobro da largura
+do IC ingênuo publicado no item 95 ([-0,025; 0,539]).
+
+**Hipótese**: a suspeita do item 96 se confirma, pelo menos para este
+relatório — operações de símbolos diferentes que estiveram abertas ao
+mesmo tempo realmente se movem junto o suficiente para inflar a confiança
+aparente de forma substancial. Isto NÃO significa que todo IC95 já
+publicado neste projeto tem o mesmo DEFF (~3,0 é específico desta
+janela/carteira de 8 símbolos, todos altamente correlacionados com BTC em
+regime de baixa) — mas é a primeira evidência real, não teórica, de que a
+ressalva "20 símbolos não são 20 amostras independentes" tem magnitude
+prática relevante, não só direção.
+
+**Recomendação**: (1) não implica mudar nenhum IC95 já publicado — seria
+preciso reprocessar cada relatório histórico, e a maioria dos artifacts
+do `backtest.yml` já expirou (mesma limitação que o item 89 já registrou
+pro ledger de trials); (2) proposta prática pra daqui pra frente: rodar
+`backtest-correlation-check.mjs` junto de qualquer novo relatório
+relevante (baixo custo, reusa o mesmo arquivo já baixado) e reportar
+N efetivo ao lado do N nominal — não é gate, não bloqueia nada, só
+informação adicional na mesma leitura; (3) o item 48/alta (único
+resultado CONCLUSIVO do Bloco 0, carteira de 20 símbolos) é o candidato
+mais importante pra rodar isto depois, se o artifact original ainda
+existir — é a conclusão mais forte já tirada neste projeto, e a que mais
+se beneficiaria de saber seu N efetivo real.
+
+### Verificação
+
+`npm run lint && npm test -- --run && npm run build` — 1007/1007 testes
+passando (21 novos), build limpo. Piloto rodado nos 3 relatórios
+(`node scripts/backtest-correlation-check.mjs --report <path>
+--iterations 2000`) — não é mudança de comportamento, ferramenta
+puramente diagnóstica.
