@@ -1469,5 +1469,26 @@
       0.5389974902912904
     ],
     "conclusiveAtN1": false
+  },
+  {
+    "family": "sell-only-hypothesis",
+    "trialLabel": "sell-only-expanded-symbols-baixa2025-newonly",
+    "recordedAt": "2026-08-16T13:30:08.369Z",
+    "source": "seed",
+    "seedSource": "docs/known-risks.md item 95 (correção Codex, PR #198) — mesmo report de sell-only-expanded-symbols-baixa2025, filtrado para excluir LTCUSDT/DOGEUSDT (janela quase idêntica à já usada em item74-walkforward-baixa-2025-26-ltcdoge-sell-slice)",
+    "seedNote": "Únicos 6 símbolos genuinamente novos: TRXUSDT,ATOMUSDT,ETCUSDT,UNIUSDT,ICPUSDT,FILUSDT (29W/21L/0BE). Recomputado de overall.curve do mesmo relatório, metodologia idêntica ao motor (mean/SE/CI95 verificados batendo com os campos originais do report antes do filtro).",
+    "runStartedAt": null,
+    "commitSha": null,
+    "configHash": null,
+    "pineConfigOverride": null,
+    "n": 50,
+    "minTrades": null,
+    "expectancyR": 0.38665737301872277,
+    "expectancyRStdErr": 0.1724907454735233,
+    "expectancyRCI95": [
+      0.048581724224151746,
+      0.7247330218132938
+    ],
+    "conclusiveAtN1": true
   }
 ]

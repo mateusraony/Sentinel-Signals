@@ -46,9 +46,12 @@ plano de sessão morre com a sessão.
 > operações continua abaixo do piso de amostra (0→1→4 contra o mínimo de
 > 30) — `retestEnabled` segue desligado. (2) SELL-only com carteira
 > expandida (8 símbolos, item 95, retomando a linha pausada do item 88):
-> primeira medição de símbolo novo a limpar o piso de amostra (n=72,
-> +0,257R líquida), mas o IC ainda cruza zero antes e depois da correção
-> por família (N=13 agora) — **Bloco 1 continua trancado**, mesmo critério
+> **correção Codex (PR #198)** — LTC/DOGE reusavam janela quase idêntica
+> ao item 74, então o número válido é só os 6 símbolos genuinamente novos
+> (n=50, +0,387R líquida, IC não corrigido não cruza zero — o resultado
+> individual mais forte da família até hoje), mas o IC volta a cruzar
+> zero depois da correção por família (N=14 agora) — **Bloco 1 continua
+> trancado**, mesmo critério
 > do item 88.
 
 ## A regra que ordena tudo: amostra
@@ -88,10 +91,15 @@ a pausa do item 88 (nenhuma janela de calendário nem símbolo genuinamente
 novo disponível) foi contornada pelo caminho (b) que o próprio item 88
 já previa — expandir a carteira de símbolos além de LTC/DOGE. Rodado com
 8 símbolos (`LTCUSDT,DOGEUSDT,TRXUSDT,ATOMUSDT,ETCUSDT,UNIUSDT,ICPUSDT,
-FILUSDT`): primeira medição de símbolo novo a limpar o piso de amostra
-(n=72, +0,257R líquida), mas o IC ainda cruza zero antes e depois da
-correção por família (N=13 hoje) — **não desbloqueia o Bloco 1**. Segue
-em aberto: expandir a carteira ainda mais (sem bloqueio de calendário) ou
+FILUSDT`), mas review externa (Codex, PR #198) achou que LTC/DOGE
+reusavam janela quase idêntica à já medida no item 74 — o número válido
+é só os 6 símbolos genuinamente novos (n=50, +0,387R líquida, IC não
+corrigido não cruza zero — o resultado individual mais forte já medido
+na família), mas o IC volta a cruzar zero depois da correção por família
+(N=14 hoje) — **não desbloqueia o Bloco 1**. Segue
+em aberto: expandir a carteira ainda mais (sem bloqueio de calendário,
+mas conferindo antes que o novo símbolo×janela não reusa nada já
+registrado) ou
 esperar 2027-08-10. Detalhe completo: item 95 (e item 88 para o critério
 original).
 
