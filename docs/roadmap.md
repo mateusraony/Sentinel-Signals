@@ -63,6 +63,16 @@ plano de sessão morre com a sessão.
 > teórica, de que "20 símbolos não são 20 amostras independentes" tem
 > magnitude prática. `scripts/backtest-correlation-check.mjs`, proposto
 > pra rodar junto de relatórios futuros relevantes. Detalhe: item 97.
+>
+> **Atualização 2026-08-16 (item 98): o artifact do item 48/alta (única
+> janela CONCLUSIVA) foi recuperado e rodado na ferramenta acima.**
+> Resultado continua excluindo zero (IC em cluster [0,028; 0,560], contra
+> [0,153; 0,435] ingênuo publicado), mas por margem muito mais estreita
+> — N efetivo ≈ 81 de 288 nominal (DEFF=3,56, o maior já medido, G=13
+> clusters). Não reverte a decisão do Bloco 1 (permanece trancado pelo
+> motivo já registrado no item 88, não por isto) — mas a "melhor
+> evidência de vantagem já produzida por este projeto" é mais frágil do
+> que o número originalmente publicado sugeria. Detalhe: item 98.
 
 ## A regra que ordena tudo: amostra
 
