@@ -10118,3 +10118,77 @@ calendário livre de sobreposição (~2027-08-10, item 88).
 `allowedSide: SELL`) + 1 registro derivado (seed, filtrado do mesmo
 relatório excluindo LTC/DOGE), ambos em `docs/backtest-trial-registry.json`
 via `backtest-trial-registry.mjs`. Nenhuma mudança de código.
+
+## 96. Correlação entre ativos — checagem rápida sugere que os IC95 deste projeto inteiro podem estar subestimando a incerteza real (2026-08-16, hipótese não formalizada)
+
+### Contexto
+
+Usuário perguntou, de forma exploratória, se havia algo estrutural sendo
+deixado passar apesar do volume de medições já feito. Investigando, achei
+uma ressalva já mencionada de passagem em pelo menos 2 lugares do projeto
+(`roadmap.md`, "20 símbolos não são 20 amostras independentes —
+correlação com BTC"; item 39/pesquisa de pyramiding sobre "portfolio
+heat") mas **nunca medida nem tratada como investigação própria** — todo
+IC95 calculado neste projeto (aqui e em todos os itens anteriores) trata
+cada operação como uma amostra independente, mas ativos cripto
+compartilham beta forte com BTC.
+
+### Checagem rápida (não é medição formal — n pequeno, 1 relatório só)
+
+Usando o relatório de `sell-only-expanded-symbols-baixa2025` (item 95, 72
+operações, 8 símbolos): de todos os pares de operações de **símbolos
+DIFERENTES** cuja janela de tempo aberta se sobrepôs (120 pares), **77,5%
+tiveram o mesmo sinal de resultado** (as duas ganharam ou as duas
+perderam) — contra ~51% esperado sob independência, dado o win rate geral
+de 54%. A diferença é grande demais para ser só o win rate elevado
+explicando por si.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: esta checagem específica é pequena e não corrigida por nada
+(não é um teste formal, é um gut-check de uma tarde) — não prova o
+tamanho do efeito. Mas a direção bate com o que já era esperado
+teoricamente (correlação com BTC é fato de mercado, não hipótese) e com o
+que o próprio projeto já vinha admitindo de passagem sem nunca medir.
+
+**Hipótese**: se o padrão se sustentar numa medição formal maior, o
+"tamanho efetivo de amostra" por trás de TODO IC95 já calculado neste
+projeto (Bloco 0, itens 48/71/74/88/90/91/95, etc.) é menor que o N
+nominal usado — o que torna os intervalos de confiança mais ESTREITOS do
+que deveriam ser, ou seja, **o projeto pode estar mais confiante do que
+deveria em vários resultados "conclusivos" ou "quase conclusivos"** já
+registrados (inclusive o item 48/alta, hoje o único resultado
+CONCLUSIVO do Bloco 0). Isto não inverte nenhuma conclusão sozinho, mas é
+uma correção de direção sistemática, não pontual — afeta a leitura de
+quase tudo que já foi medido.
+
+**Recomendação — não implementado, fica registrado como linha de
+investigação em aberto**: antes de qualquer novo trial de parâmetro
+(mais um `minScore`/reteste/tolerância), valeria mais medir isto
+primeiro — é mais barato (reusa relatórios já existentes, não pede rodar
+`backtest.yml` de novo) e potencialmente muda a leitura de tudo que já
+foi feito. Desenho possível, não decidido: calcular a correlação real de
+Pearson entre o R por operação e algum proxy do retorno de BTC no mesmo
+período (o projeto já usou Pearson + IC95% pra outra pergunta, item 79 —
+mesma ferramenta, aplicação diferente), ou de forma mais direta, um
+"erro-padrão em cluster" (agrupando por dia/janela sobreposta, técnica
+padrão em finanças para retornos correlacionados) em vez do erro-padrão
+simples usado em `backtest-trial-registry.mjs`/`tradeMetrics.js` hoje.
+
+### Segunda ideia, menor e já registrada no item 88 mas nunca testada: filtro de regime pro BUY
+
+Item 88 já nomeou isto explicitamente como o único caminho formal de
+reabrir a pergunta do BUY ("condicionar compra ao alinhamento de
+tendência 1D") — nunca chegou a virar trial. Diferente da correlação
+acima, é uma mudança de ESTRATÉGIA (um novo gate), não de método de
+medição — mais cara e arriscada, mas concreta e já com justificativa
+escrita.
+
+### Verificação
+
+Checagem exploratória via script Node ad-hoc sobre `overall.curve` do
+relatório do item 95 — não é medição formal, não precisa lint/test/build
+(nenhuma mudança de código). Registrado aqui porque é achado real, ainda
+que preliminar, seguindo a mesma regra do resto do arquivo — não é
+recomendação de mudança de comportamento, só de prioridade de
+investigação.
