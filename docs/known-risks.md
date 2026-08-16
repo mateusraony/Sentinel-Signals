@@ -10317,3 +10317,67 @@ passando (21 novos), build limpo. Piloto rodado nos 3 relatórios
 (`node scripts/backtest-correlation-check.mjs --report <path>
 --iterations 2000`) — não é mudança de comportamento, ferramenta
 puramente diagnóstica.
+
+## 98. O único resultado CONCLUSIVO do projeto (item 48/alta), sob correlação de cluster: continua excluindo zero, mas por uma margem muito menor (2026-08-16)
+
+### Contexto
+
+Seguindo a recomendação do item 97, o usuário recuperou o artifact original
+do item 48 (janela de alta, `trial_label: Bull-baseline`, 2024-07-27→
+2025-07-27, carteira de 20 símbolos) — não estava mais salvo, mas o artifact
+do GitHub Actions (run 30505384474, 2026-07-30) ainda não tinha expirado
+(validade até 2026-08-29). Sessão não alcança o domínio de Azure Blob
+Storage que serve artifacts do Actions (bloqueio de política de rede,
+mesma classe do bloqueio à Binance já documentado) — usuário baixou pelo
+navegador e enviou o `backtest-report.json` diretamente.
+
+### Resultado
+
+| Métrica | Ingênuo (publicado no item 48) | Em cluster (Cameron-Miller CR1) |
+|---|---|---|
+| N | 288 | 288 (G=13 clusters, tamanho médio 22,15) |
+| Erro-padrão | 0,0719 | 0,1357 |
+| IC95 | **[0,153; 0,435]** | **[0,028; 0,560]** |
+
+DEFF = 3,56 — **N efetivo ≈ 81** (de 288 nominal, ~28% do tamanho
+nominal). Teste de permutação (deslocamento circular por símbolo, 1000
+réplicas): DEFF real muito acima do nulo (média 0,39, p95 1,38) —
+**p-valor=0,0003**, confirmando que o efeito não é artefato de
+duração/seleção.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: o IC em cluster **continua excluindo zero** (0,028 > 0) — o
+resultado não é refutado, tecnicamente ainda "conclusivo" pela mesma
+régua usada em todo o projeto. Mas a margem encolheu de forma
+dramática: o limite inferior caiu de 0,153 pra 0,028 — mais de 5x mais
+perto de zero. G=13 é ainda mais baixo que o do item 95 (G=18), então a
+ressalva de confiabilidade do erro-padrão em cluster com poucos clusters
+se aplica com força extra aqui — o valor exato do limite inferior (0,028)
+merece menos confiança do que o teste de permutação (que não depende de
+G pra ser válido, e confirma a DIREÇÃO do efeito com bastante força).
+
+**Hipótese**: a "melhor evidência de vantagem que o projeto já produziu"
+(texto do próprio item 48) continua sendo a melhor evidência que existe
+— mas era mais forte do que devia parecer. Com tamanho médio de cluster
+de 22 operações (numa carteira de 20 símbolos), a maior parte das 288
+operações "independentes" na verdade se agrupa em blocos de dado
+correlacionado bem grandes — praticamente o que se poderia esperar de
+um mercado onde a maioria dos ativos segue o mesmo regime a maior parte
+do tempo.
+
+**Recomendação**: não implica reverter a decisão do item 48 (Bloco 1
+continua trancado pelo motivo já registrado — SELL não confirmado, não
+por causa disto). Mas ao comunicar este resultado pra qualquer decisão
+futura, a formulação correta não é mais "resultado conclusivo com IC
+[0,153; 0,435]" — é "resultado que sobrevive à correlação de cluster,
+mas por margem estreita, com poucos clusters efetivos (13) pra
+sustentar essa margem com confiança". Se uma nova janela de alta for
+medida no futuro (não hoje, sem pedido do usuário), vale rodar esta
+mesma ferramenta nela desde o início, não como correção posterior.
+
+### Verificação
+
+`node scripts/backtest-correlation-check.mjs --report <path>
+--iterations 3000` sobre o artifact recuperado do run 30505384474.
+Nenhuma mudança de código — mesma ferramenta do item 97, sem alteração.
