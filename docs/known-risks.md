@@ -9586,48 +9586,69 @@ Nenhuma mudança de código — só reuso de `scripts/analyze-backtest.mjs`
 análise. `npm run lint && npm test && npm run build` continuam limpos
 (981/981).
 
-### `minScore: 60` na janela de alta — fecha a família `entry-score-threshold` (2026-08-15)
+### `minScore: 60` na janela de alta (2026-08-15)
 
 Mesma disciplina aplicada ao runner: `minScore: 60` repetido na janela de
 alta 2024-25, comparado contra o controle padrão (`minScore: 75`) já
 rodado na mesma janela.
 
-| Janela | `minScore: 60` | Controle (`minScore: 75`) | Delta | Erro-padrão do controle |
-|---|---|---|---|---|
-| Baixa (nova) | −0,054R (n=154) | +0,087R (n=100) | **−0,141R** | ~0,121R |
-| Alta 2024-25 | +0,087R (n=152) | +0,250R (n=101) | **−0,163R** | ~0,121R |
+| Janela | `minScore: 60` | Controle (`minScore: 75`) | Delta |
+|---|---|---|---|
+| Baixa (nova) | −0,054R (n=154, stdErr 0,096) | +0,087R (n=100, stdErr 0,121) | −0,141R |
+| Alta 2024-25 | +0,087R (n=152, stdErr 0,099) | +0,250R (n=101, stdErr 0,121) | −0,163R |
 
-**Diferente do runner, este delta é MAIOR que o erro-padrão do próprio
-controle nas duas janelas** (−0,141R e −0,163R contra ~0,121R de ruído) —
-mesma régua que a correção do Codex (PR #193) ensinou a aplicar, mas desta
-vez o efeito passa no teste, não fica abaixo dele. Ainda não é um IC formal
-do delta (mesma limitação de sempre — população não perfeitamente pareada,
-`countedTrades` varia com o `minScore` porque mais sinais passam o filtro),
-mas a consistência de direção E magnitude nas 2 janelas, com efeito maior
-que o próprio ruído do controle, é uma leitura bem mais forte que a do
-runner.
+### Correção (2026-08-16, review externa Codex, PR #195) — "fecha a linha" estava errado, mesmo erro de novo
 
-### Leitura (fato × hipótese × recomendação)
+A 1ª versão desta seção comparava o delta só contra o erro-padrão do
+CONTROLE (~0,121R) e concluía que o efeito "passa no teste" — **errado
+pela mesma razão que a correção do PR #193 já tinha ensinado, só que
+aplicada de forma incompleta**: a VARIANTE (`minScore: 60`) também tem
+erro-padrão próprio (0,096R baixa, 0,099R alta), e o teste certo pra saber
+se uma DIFERENÇA entre duas amostras é real usa o erro-padrão da
+DIFERENÇA — soma em quadratura dos dois lados, não um erro-padrão só:
 
-**Fato**: `minScore: 60` piorou a expectância líquida nas 2 janelas
-testadas, com uma margem maior que o ruído de referência do controle nas
-duas. Isto contradiz diretamente o Achado C do relatório externo original
-("score alto = pior entrada, `minScore` menor deveria capturar entradas
-melhores") — a mesma direção do achado isolado da 1ª rodada (item 90,
-baixa), agora replicada numa 2ª janela independente com efeito ainda maior.
+```
+SE_diff = sqrt(SE_variante² + SE_controle²)
+z = delta / SE_diff
+```
 
-**Hipótese**: o Achado C do relatório externo provavelmente vinha de
-sub-buckets pequenos por faixa de score (o próprio fact-check inicial desta
-sessão já tinha sinalizado isso como um alerta de amostra insuficiente,
-antes de qualquer trial rodar) — um padrão que parecia real em ~10-20
-operações por faixa não sobreviveu ao teste direto em ~150 operações por
-janela, em 2 janelas.
+| Janela | Delta | SE_diff | z |
+|---|---|---|---|
+| Baixa | −0,141R | 0,154R | **−0,91** |
+| Alta | −0,163R | 0,156R | **−1,04** |
 
-**Recomendação — fecha esta linha de investigação**: não baixar `minScore`
-para 60 em produção. Diferente da linha do runner (fechada por FALTA de
-efeito), esta fecha por um efeito real e consistente na direção CONTRÁRIA
-à proposta do relatório externo. `minScore: 75` (o padrão atual) continua
-sendo a escolha melhor sustentada pelos dados disponíveis.
+**Os dois z ficam abaixo de 1,96 — nem no teste mais fraco possível (sem
+nenhuma correção de comparação múltipla) a diferença é estatisticamente
+distinguível de zero.** A conclusão "fecha esta linha, efeito real
+confirmado" da versão anterior não se sustenta — é o mesmo tipo de erro que
+os "6 de 6 negativos" do runner já tinham cometido (comparar contra
+metade da incerteza relevante), só que desta vez eu mesmo escrevi a régua
+certa na correção anterior e ainda assim apliquei ela incompleta aqui.
+
+### Leitura — corrigida (fato × hipótese × recomendação)
+
+**Fato**: `minScore: 60` teve ponto estimado pior que o controle nas 2
+janelas (direção consistente), mas a diferença não é estatisticamente
+distinguível de zero em nenhuma das duas, pelo teste de duas amostras
+independentes. Mesma população não perfeitamente pareada de sempre
+(`countedTrades` varia com o `minScore`), então mesmo esse teste é uma
+aproximação, não um IC formal do delta real.
+
+**Hipótese**: a direção consistentemente negativa em 2 janelas (mesmo sem
+significância formal) ainda pesa levemente CONTRA a proposta do Achado C
+do relatório externo ("score menor deveria ajudar") — não confirma que
+baixar o score piora, mas também não dá nenhum suporte à ideia de que
+ajuda. É o mesmo veredito "sem evidência forte em nenhuma direção" da
+linha do runner, não uma contradição forte do relatório como a versão
+anterior afirmava.
+
+**Recomendação — revisada**: não baixar `minScore` para 60 em produção,
+mas pela mesma razão de sempre (falta de evidência a favor), não porque os
+dados "provam que piora". Se alguém quiser uma resposta com significância
+de verdade, precisa do IC pareado por operação (mesma limitação já
+registrada na correção do PR #193) — comparar médias agregadas com
+amostras de tamanho diferente não chega lá, mesmo com o erro-padrão da
+diferença calculado corretamente.
 
 ### Verificação (`minScore` alta)
 
