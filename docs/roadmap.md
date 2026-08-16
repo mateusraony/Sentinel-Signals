@@ -73,6 +73,14 @@ plano de sessão morre com a sessão.
 > motivo já registrado no item 88, não por isto) — mas a "melhor
 > evidência de vantagem já produzida por este projeto" é mais frágil do
 > que o número originalmente publicado sugeria. Detalhe: item 98.
+>
+> **Atualização 2026-08-16 (item 99): DEFF≈3 se replica num 3º
+> relatório independente** (holdout do item 71 — já era inconclusivo,
+> decisão não muda). Três relatórios, três janelas/regimes diferentes,
+> DEFF sempre entre 2,99 e 3,56 — deixou de ser achado isolado. Regra
+> prática até rodar a ferramenta relatório por relatório: **N efetivo
+> real ≈ N nominal / 3** em qualquer IC95 já publicado neste projeto.
+> Detalhe: item 99.
 
 ## A regra que ordena tudo: amostra
 
