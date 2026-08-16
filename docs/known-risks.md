@@ -9869,3 +9869,76 @@ Nenhuma mudança de código — investigação por leitura direta de
 (pontos de wiring do `hierarchicalCascadesEnabled`) e itens 37/39/45.9/71
 do `known-risks.md`. `npm run lint && npm test && npm run build`
 continuam limpos (981/981, sem alteração — nada foi tocado no código).
+
+## 93. `arbInvalidateOnOppositeSameTf` — invalidação opt-in no branch `same_cascade_opposite_direction` (2026-08-16)
+
+### Pedido
+
+Continuação do item 92 (opção B, a alternativa mais barata identificada na
+investigação do mecanismo de slot): implementar a extensão do padrão já
+existente de `arbInvalidateOnOppositeMajor` para o branch same-timeframe
+(`direction === 'opposite' && tfRelation === 'same'`), que hoje é sempre
+`reduce_confidence`, nunca invalidação, independente da força do candidato
+oposto.
+
+### Pesquisa de comunidade (antes do desenho)
+
+Busca sobre estratégias trend-following "stop-and-reverse"/mitigação de
+whipsaw confirma a prática consolidada: exigir um limiar de confirmação
+**mais alto** do que o de simples entrada antes de inverter/fechar uma
+posição por sinal oposto — inverter no primeiro sinal contrário (sem
+filtro adicional) é o padrão clássico que gera excesso de whipsaw em
+mercados choppy. Por isso o desenho abaixo reusa `arbPromoteMinScore`
+(75, o piso já usado para PROMOVER um candidato a operação própria) como
+piso de invalidação, não `arbReinforceMinScore` (50, o piso mínimo só
+para reduzir confiança) — o candidato precisa ser forte o bastante para
+ter aberto operação própria por conta própria, não só "forte o bastante
+para ser notado".
+
+### Desenho implementado
+
+`src/lib/signalArbitration.js`, branch `same_cascade_opposite_direction`
+(final de `planSignalArbitration`): novo flag opt-in
+`pineConfig.arbInvalidateOnOppositeSameTf` (default `false`, mesmo padrão
+de todo outro flag experimental do motor). Com o flag ligado E
+`candidateScore >= arbPromoteMinScore`, o outcome passa de
+`reduce_confidence` para `invalidate` (mesma ação genérica que
+`critical_opposite` já usa) — `scanner.js:handleActiveOpArbitration` não
+precisou de nenhuma mudança, porque o tratamento de `action === 'invalidate'`
+já é genérico por ação, não por branch (seta `status: 'INVALIDATED'`,
+`closed_reason: 'INVALIDATION'`, `closed_at`, `exit_price`, libera o slot).
+Com o flag ligado mas score abaixo de `arbPromoteMinScore` (e acima de
+`arbReinforceMinScore`), o comportamento continua `reduce_confidence` —
+nunca invalida por um candidato fraco. Com o flag desligado (default), o
+comportamento é idêntico ao de sempre.
+
+Sincronizado nos 3 arquivos de config, mesma convenção dos outros flags
+production-syncable do motor: `src/lib/pineParser.js` e
+`scripts/adminPineConfig.js` (DEFAULTS + `SYNCED_STRATEGY_KEYS`, escreve/lê
+`strategyConfig/current` no Firestore) e `scripts/backtestPineConfig.js`
+(DEFAULTS, override só via `--pine-config`, sem Firestore).
+
+### Ressalva (herdada do item 92, não resolvida por este código)
+
+O mesmo risco de causalidade invertida do item 45.9/91 se aplica aqui: o
+item 45.9 mediu que o aviso de arbitragem chega DEPOIS que o preço já
+andou contra a posição (82/82 casos, mediana 64h) — é indicador
+coincidente, não preditor. Ligar `arbInvalidateOnOppositeSameTf` pode
+cortar a perda mais cedo (sair antes do stop cheio) ou pode piorar
+(sair de uma posição que se recuperaria — whipsaw). **Este item só
+implementa o mecanismo; não mede o efeito.** Segue a mesma regra de todo
+outro flag experimental do motor (retest/displacement/tier/pré-TP1
+breakeven etc.): não ativar em produção sem comparar relatórios de
+backtest com/sem primeiro.
+
+### Verificação
+
+`npm run lint && npm test -- --run && npm run build` — 986/986 testes
+passando (5 novos em `signalArbitration.test.js`, cobrindo: comportamento
+default-off, flag ligado mas score abaixo de `arbPromoteMinScore` (ainda
+`reduce_confidence`), flag ligado e score suficiente (`invalidate`),
+fronteira exata do limiar (`>=`, não `>`), e flag ligado mas score abaixo
+até de `arbReinforceMinScore` (ainda totalmente bloqueado por
+`belowThreshold`) — build limpo, lint limpo. Próximo passo (não feito
+ainda): rodar um trial de backtest com o flag ligado vs. desligado, no
+mesmo espírito dos outros testes desta rodada.

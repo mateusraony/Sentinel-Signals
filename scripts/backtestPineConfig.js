@@ -50,6 +50,12 @@ const DEFAULTS = {
   arbPromoteMinScore: 75,
   arbReinforceMinScore: 50,
   arbInvalidateOnOppositeMajor: false,
+  // Mesmo mecanismo de arbInvalidateOnOppositeMajor, mas para o branch
+  // same-timeframe (same_cascade_opposite_direction) em vez do
+  // larger-timeframe (critical_opposite). OFF por padrão. Espelha
+  // src/lib/pineParser.js/scripts/adminPineConfig.js. Ver docs/known-risks.md
+  // item 93. Override via --pine-config to compare backtest reports with/without it.
+  arbInvalidateOnOppositeSameTf: false,
   arbOppositeScorePenalty: 15,
   minRR: 1.2,
   smcScoreStructureWeight: 15,
