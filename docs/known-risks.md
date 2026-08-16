@@ -10119,7 +10119,7 @@ calendário livre de sobreposição (~2027-08-10, item 88).
 relatório excluindo LTC/DOGE), ambos em `docs/backtest-trial-registry.json`
 via `backtest-trial-registry.mjs`. Nenhuma mudança de código.
 
-## 96. Correlação entre ativos — checagem rápida sugere que os IC95 deste projeto inteiro podem estar subestimando a incerteza real (2026-08-16, hipótese não formalizada)
+## 96. Correlação entre ativos — hipótese continua válida, mas a checagem original era artefato, não sinal (2026-08-16, corrigido)
 
 ### Contexto
 
@@ -10131,49 +10131,75 @@ correlação com BTC"; item 39/pesquisa de pyramiding sobre "portfolio
 heat") mas **nunca medida nem tratada como investigação própria** — todo
 IC95 calculado neste projeto (aqui e em todos os itens anteriores) trata
 cada operação como uma amostra independente, mas ativos cripto
-compartilham beta forte com BTC.
+compartilham beta forte com BTC. Essa pergunta de fundo continua válida
+— o que mudou nesta correção é que a checagem que eu tinha feito para
+testá-la **não vale nada como evidência**, e o motivo é instrutivo.
 
-### Checagem rápida (não é medição formal — n pequeno, 1 relatório só)
+### O que a versão original fez (e por que estava errada)
 
 Usando o relatório de `sell-only-expanded-symbols-baixa2025` (item 95, 72
-operações, 8 símbolos): de todos os pares de operações de **símbolos
-DIFERENTES** cuja janela de tempo aberta se sobrepôs (120 pares), **77,5%
-tiveram o mesmo sinal de resultado** (as duas ganharam ou as duas
-perderam) — contra ~51% esperado sob independência, dado o win rate geral
-de 54%. A diferença é grande demais para ser só o win rate elevado
-explicando por si.
+operações, 8 símbolos): de 120 pares de operações de símbolos DIFERENTES
+cuja janela de tempo aberta se sobrepôs, 77,5% tiveram o mesmo sinal de
+resultado — comparado contra "~51% esperado sob independência, dado o
+win rate geral de 54%". Essa foi apresentada como evidência direcional
+de correlação entre ativos.
+
+### Correção (2026-08-16, review externa Codex, PR #199)
+
+**O nulo de 51% estava errado — não isolava correlação entre ativos.**
+Três problemas reais, todos confirmados com o dado do próprio relatório:
+
+1. **Duração e resultado NÃO são independentes**: operações vencedoras
+   nesta amostra duraram em média 209,7h; perdedoras, 155,9h (n=39/33).
+   Faz sentido mecanicamente — o motor tem trailing/TP2 que estende a
+   vida de uma operação ganhadora, enquanto um stop cedo encerra rápido
+   uma perdedora.
+2. **Selecionar pares por sobreposição de janela super-representa
+   operações longas** (um trade mais longo tem mais chance de se
+   sobrepor com outros) — como duração já está associada a resultado
+   (ponto 1), isso sozinho já infla a taxa de "mesmo sinal" sem nenhuma
+   correlação real de mercado.
+3. **Os 120 pares não são 120 comparações independentes**: a mesma
+   operação aparece em até 9 pares diferentes (5 operações não
+   apareceram em nenhum) — o mesmo resultado é contado várias vezes.
+
+**Verificação decisiva**: rodei um teste de permutação (2.000
+repetições) embaralhando os RÓTULOS de símbolo entre as operações —
+isso preserva exatamente a duração, o resultado e a estrutura de
+sobreposição/duplicação de cada operação, mas destrói qualquer
+correlação real de mercado entre ativos (já que o símbolo passa a ser
+arbitrário). Resultado: a taxa "mesmo sinal" sob esse nulo embaralhado
+tem média **77,5%** (IC empírico 5-95%: [75,2%; 79,8%]) — **idêntica**
+ao valor real observado (também 77,5%, p-valor=0,483). Ou seja: os 3
+problemas acima explicam o número inteiro, sozinhos, sem precisar de
+nenhuma correlação real entre BTC e os outros ativos. **A checagem
+original não tinha nenhum valor evidencial — nem fraco.**
 
 ### Leitura (fato × hipótese × recomendação)
 
-**Fato**: esta checagem específica é pequena e não corrigida por nada
-(não é um teste formal, é um gut-check de uma tarde) — não prova o
-tamanho do efeito. Mas a direção bate com o que já era esperado
-teoricamente (correlação com BTC é fato de mercado, não hipótese) e com o
-que o próprio projeto já vinha admitindo de passagem sem nunca medir.
+**Fato**: a hipótese de fundo (ativos cripto correlacionados via beta
+BTC, e isso potencialmente inflando a confiança de todo IC95 já
+calculado no projeto) continua teoricamente plausível — é fato de
+mercado bem estabelecido, independente desta checagem. Mas a checagem
+específica que fiz não a confirma nem a refuta: era estatisticamente
+inválida desde o desenho, comparando contra um nulo que não isolava a
+variável de interesse.
 
-**Hipótese**: se o padrão se sustentar numa medição formal maior, o
-"tamanho efetivo de amostra" por trás de TODO IC95 já calculado neste
-projeto (Bloco 0, itens 48/71/74/88/90/91/95, etc.) é menor que o N
-nominal usado — o que torna os intervalos de confiança mais ESTREITOS do
-que deveriam ser, ou seja, **o projeto pode estar mais confiante do que
-deveria em vários resultados "conclusivos" ou "quase conclusivos"** já
-registrados (inclusive o item 48/alta, hoje o único resultado
-CONCLUSIVO do Bloco 0). Isto não inverte nenhuma conclusão sozinho, mas é
-uma correção de direção sistemática, não pontual — afeta a leitura de
-quase tudo que já foi medido.
+**Hipótese**: nada mudou aqui — a pergunta "os IC95 deste projeto
+assumem independência que talvez não exista" segue em aberto, sem
+evidência a favor ou contra depois desta rodada.
 
-**Recomendação — não implementado, fica registrado como linha de
-investigação em aberto**: antes de qualquer novo trial de parâmetro
-(mais um `minScore`/reteste/tolerância), valeria mais medir isto
-primeiro — é mais barato (reusa relatórios já existentes, não pede rodar
-`backtest.yml` de novo) e potencialmente muda a leitura de tudo que já
-foi feito. Desenho possível, não decidido: calcular a correlação real de
-Pearson entre o R por operação e algum proxy do retorno de BTC no mesmo
-período (o projeto já usou Pearson + IC95% pra outra pergunta, item 79 —
-mesma ferramenta, aplicação diferente), ou de forma mais direta, um
-"erro-padrão em cluster" (agrupando por dia/janela sobreposta, técnica
-padrão em finanças para retornos correlacionados) em vez do erro-padrão
-simples usado em `backtest-trial-registry.mjs`/`tradeMetrics.js` hoje.
+**Recomendação — revisada**: não usar mais este achado como argumento
+de repriorização (como cheguei a sugerir ao usuário) — ele não sustenta
+isso. Se a pergunta valer a pena investigar formalmente, o desenho
+precisa isolar duração corretamente: (a) o teste de permutação por
+embaralhamento de rótulo de símbolo usado na correção acima é uma opção
+válida e já implementada nesta rodada — dá pra reaplicar num relatório
+maior; (b) a sugestão original do Codex (deslocar/reamostrar a série
+inteira de cada símbolo, ou coortes por tempo de entrada fixo) é outra
+via válida; (c) correlação de Pearson entre R e retorno real de BTC no
+mesmo período (item 79 já usou a ferramenta para outra pergunta) evita o
+problema de pareamento por sobreposição inteiramente.
 
 ### Segunda ideia, menor e já registrada no item 88 mas nunca testada: filtro de regime pro BUY
 
@@ -10182,13 +10208,14 @@ reabrir a pergunta do BUY ("condicionar compra ao alinhamento de
 tendência 1D") — nunca chegou a virar trial. Diferente da correlação
 acima, é uma mudança de ESTRATÉGIA (um novo gate), não de método de
 medição — mais cara e arriscada, mas concreta e já com justificativa
-escrita.
+escrita. Não afetada pela correção acima.
 
 ### Verificação
 
-Checagem exploratória via script Node ad-hoc sobre `overall.curve` do
-relatório do item 95 — não é medição formal, não precisa lint/test/build
-(nenhuma mudança de código). Registrado aqui porque é achado real, ainda
-que preliminar, seguindo a mesma regra do resto do arquivo — não é
-recomendação de mudança de comportamento, só de prioridade de
-investigação.
+Checagem exploratória original + teste de permutação de correção, ambos
+via script Node ad-hoc sobre `overall.curve` do relatório do item 95 —
+não é medição formal, não muda código (`npm run lint && npm test --
+--run` continuam limpos, nada tocado em `src/`/`scripts/`). Registrado
+aqui — incluindo o erro e a correção lado a lado — porque é achado real,
+ainda que a conclusão final seja "sem evidência", seguindo a mesma regra
+do resto do arquivo.
