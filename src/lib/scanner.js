@@ -2210,6 +2210,21 @@ export async function persistScanResults(scanResult) {
             entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'side_filter_blocked' });
             continue;
           }
+          // docs/known-risks.md item 100 — pineConfig.buyRegimeFilterEnabled
+          // (opt-in, backtest-only, default false). Item 88 registrou BUY
+          // como regime-dependente (positivo em alta, negativo/inconclusivo
+          // em baixa) e nomeou este filtro — condicionar compra ao
+          // alinhamento de tendência 1D — como o único caminho formal de
+          // reabrir a pergunta do BUY. Só afeta o lado BUY (SELL já performa
+          // bem independente de regime nas medições já feitas, item 88);
+          // usa signal.context.tf_1d_direction, já calculado por
+          // analyzeAlignment dentro de scanAsset — sem I/O extra. Neutro
+          // (0) conta como bloqueado: sem confirmação macro clara, gate
+          // conservador por desenho, não só bloqueia 1D baixista.
+          if (pineConfig.buyRegimeFilterEnabled && signal.signal_type === 'BUY' && signal.context?.tf_1d_direction !== 1) {
+            entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'buy_regime_filter_blocked' });
+            continue;
+          }
           const tf4hDir = tf4hData.rf.direction;
           const sigDir = signal.signal_type === 'BUY' ? 1 : -1;
 
@@ -2779,6 +2794,17 @@ export async function persistScanResults(scanResult) {
         await backend.entities.SignalEvent.update(sig.id, { last_rejection_reason: 'side_filter_blocked' });
         sig.last_rejection_reason = 'side_filter_blocked';
       }
+      continue;
+    }
+    // docs/known-risks.md item 100 — mesmo gate do 1º passo, aqui no retry.
+    // Diferente de allowedSide (o LADO é decidido no nascimento do sinal e
+    // nunca muda dentro do run — por isso aquele usa write-on-change
+    // manual), a direção 1D é condição de mercado AO VIVO — pode
+    // genuinamente mudar entre passadas de retry, mesma classe de
+    // trend_reversed/regime_rejected logo abaixo. Por isso usa
+    // recordRejection (o helper padrão), não o inline manual de allowedSide.
+    if (pineConfig.buyRegimeFilterEnabled && sig.signal_type === 'BUY' && sig.context?.tf_1d_direction !== 1) {
+      await recordRejection(sig, '4h_15m', 'buy_regime_filter_blocked', entryFunnelOutcomes);
       continue;
     }
     const tf4hDir = tfData4h.rf.direction;

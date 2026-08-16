@@ -10441,3 +10441,97 @@ efetivo provavelmente é uns 3x menor.
 `node scripts/backtest-correlation-check.mjs --report <path>
 --iterations 3000` sobre o artifact recuperado do run 31396915576.
 Nenhuma mudança de código.
+
+## 100. `buyRegimeFilterEnabled` — filtro de regime pro BUY, a linha nova pedida pelo usuário depois de identificar o loop de trials incrementais (2026-08-16)
+
+### Contexto
+
+Usuário perguntou diretamente se a sessão estava produzindo resultado ou
+entrando em loop. Resposta honesta: a linha SELL-only (itens 48→71→74→
+88→90→95→97→98→99, hoje N=14 na família Bonferroni) e a de tolerância de
+reteste (40→90→94) tinham virado incrementos de retorno decrescente —
+cada trial novo só torna o próximo mais difícil de confirmar (correção
+fica mais rígida), sem ganho de poder proporcional. O item 88 já tinha
+nomeado uma linha genuinamente nova, nunca tentada: "condicionar compra
+ao alinhamento de tendência 1D" — único caminho formal registrado pra
+reabrir a pergunta do BUY (regime-dependente: positivo em alta,
+negativo/inconclusivo em baixa, item 48/88). Usuário escolheu esta
+opção entre 4 caminhos apresentados.
+
+**Pesquisa de comunidade (WebSearch, 2026-08-16)** — filtro de tendência
+de timeframe maior gateando entradas: técnica padrão em sistemas
+trend-following ("higher-timeframe filter"/"regime filter"), Quantpedia
+documenta exatamente este desenho (filtro diário + entrada 4h) num
+sistema pra Bitcoin. Riscos conhecidos, documentados na literatura:
+menos sinais, atraso na virada de tendência (o filtro diário só
+confirma DEPOIS que parte do movimento já aconteceu), whipsaw quando
+diário e 4h discordam perto de uma reversão. Van Tharp Institute
+descreve o princípio geral ("operar na direção da tendência maior
+identificada num timeframe mais longo"). Contexto cripto atual
+(CryptoQuant, ago/2026): >84% das altcoins abaixo da MA200, funding
+negativo nas large-caps — consistente com a premissa de que BUY é mais
+regime-dependente que SELL neste momento de mercado.
+
+### Mecanismo implementado
+
+Novo `pineConfig.buyRegimeFilterEnabled` (opt-in, default `false`,
+backtest-only — mesmo isolamento arquitetural do `allowedSide`, item
+71: NUNCA espelhado em `src/lib/pineParser.js`/`scripts/
+adminPineConfig.js`, reforçado por `src/lib/buyRegimeFilterTripwire.
+test.js`). Só afeta sinais **BUY** da cascata RF nativa (`4h_15m`) — SELL
+nunca é tocado por este gate, exatamente por já performar bem
+independente de regime (item 88).
+
+**Reusa dado já calculado, zero I/O novo**: `signal.context.
+tf_1d_direction`/`sig.context.tf_1d_direction` já é gravado em toda
+`SignalEvent` desde sempre (`scanner.js`, alimentado por
+`analyzeAlignment`), até hoje só usado como metadado observacional na
+pontuação (nunca como gate — confirmado no item 70, que fechou a
+hipótese de que o filtro MTF do Pine real faria algo equivalente: aquele
+é matematicamente inerte na configuração do usuário, comparando o 4h
+contra ele mesmo — não tem relação com este mecanismo, que usa dado real
+de 1D). Gate posicionado no MESMO ponto do `allowedSide` (logo após
+`results['4h']` existir, antes do gate de alinhamento 4h) — mesma
+justificativa (mais barato, mais fundamental que checar qualidade do
+sinal).
+
+**Bloqueia quando 1D não é inequivocamente bullish** (`tf_1d_direction
+!== 1` — bloqueia tanto baixista quanto neutro/0, decisão deliberada:
+sem confirmação macro clara, gate conservador por desenho, não só
+filtra contra-tendência explícita).
+
+**Diferença de desenho importante em relação ao `allowedSide` no loop de
+retry**: o LADO de um sinal nunca muda depois de nascer (por isso
+`allowedSide` usa escrita manual write-on-change, evitando o helper
+padrão). A direção 1D é condição de mercado AO VIVO — pode genuinamente
+mudar entre passadas de retry, mesma classe de `trend_reversed`/
+`regime_rejected`. Por isso este gate usa o helper `recordRejection`
+padrão no retry, não o inline manual do `allowedSide` — decisão
+documentada no próprio código, não uma cópia cega do padrão vizinho.
+
+Rejeição registrada como `buy_regime_filter_blocked` em
+`entryFunnelOutcomes`/`SignalEvent.last_rejection_reason`, mesmo padrão
+de instrumentação de todo outro gate deste motor (nunca silencioso).
+
+### Verificação
+
+10 testes novos em `src/lib/scannerStateMachine.test.js` (novo describe
+`Filtro de regime pro BUY`): flag desligado sem mudança de
+comportamento; flag ligado com 1D bullish abre normalmente; 1D baixista
+bloqueia; 1D neutro TAMBÉM bloqueia (gate conservador); SELL nunca
+afetado mesmo com 1D baixista; retry respeita o mesmo gate; retry grava
+`last_rejection_reason` via `recordRejection` (confirma a escolha de
+desenho documentada acima, diferente do `allowedSide`). +3 testes de
+isolamento em `buyRegimeFilterTripwire.test.js` (mesmo padrão do
+`allowedSideTripwire.test.js`). `npm run lint && npm test -- --run` —
+1017/1017 passando. `npm run build` + os 3 alvos esbuild
+(`build:scan`/`build:scan-shadow`/`build:backtest`) compilando sem
+erro. Grep de isolamento confirmado: `buyRegimeFilterEnabled` ausente em
+`pineParser.js`/`adminPineConfig.js`, presente só em
+`backtestPineConfig.js`.
+
+**Próximo passo (não feito ainda)**: rodar um trial de backtest com o
+flag ligado vs. desligado — mesma regra de todo outro flag experimental
+deste motor, nunca ativar sem essa comparação primeiro. Diferente da
+linha SELL-only, esta é uma hipótese genuinamente nova — o primeiro
+resultado real vale mais do que qualquer previsão.

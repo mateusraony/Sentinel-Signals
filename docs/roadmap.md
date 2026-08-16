@@ -81,6 +81,16 @@ plano de sessão morre com a sessão.
 > prática até rodar a ferramenta relatório por relatório: **N efetivo
 > real ≈ N nominal / 3** em qualquer IC95 já publicado neste projeto.
 > Detalhe: item 99.
+>
+> **Atualização 2026-08-16 (item 100): linha nova, não incremento —
+> `buyRegimeFilterEnabled`.** Usuário apontou (com razão) que a linha
+> SELL-only tinha virado loop de retorno decrescente (N=14 na família,
+> cada trial novo torna o próximo mais difícil de confirmar). Escolhida
+> a única linha genuinamente nova já nomeada no projeto (item 88):
+> condicionar BUY ao alinhamento de tendência 1D. Implementado,
+> testado, opt-in/backtest-only (mesmo isolamento do `allowedSide`) —
+> **ainda não medido**. Próximo passo real: rodar `backtest.yml` com/sem
+> o flag e comparar. Detalhe: item 100.
 
 ## A regra que ordena tudo: amostra
 
