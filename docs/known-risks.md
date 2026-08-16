@@ -9655,3 +9655,57 @@ diferença calculado corretamente.
 Nenhuma mudança de código — 1 relatório a mais no ledger (família
 `entry-score-threshold`, agora N=2) + esta análise. `npm run lint && npm
 test && npm run build` continuam limpos (981/981).
+
+## 91. `minScore` mais baixo aumenta a taxa de arbitragem cross-side — confound não examinado (2026-08-15)
+
+### Contexto
+
+Ao revisar os 11 relatórios desta sessão em busca de algo que tivesse
+passado despercebido, comparei a taxa de operações atingidas por
+`arbitration_reason: 'same_cascade_opposite_direction'` (mecanismo do
+item 71 — BUY e SELL do mesmo ativo disputam o mesmo slot
+`assetActiveOps`; um sinal do lado oposto chegando com operação ativa não
+abre 2ª operação, só reduz `current_confidence_score` em 15 pontos) entre
+os trials de `minScore=60` e os controles padrão, usando
+`scripts/analyze-backtest.mjs` (já existente, sem alteração).
+
+### Achado
+
+| Trial | Ops arbitradas | Taxa | R médio arbitradas | R médio sem arbitragem |
+|---|---|---|---|---|
+| `minscore-60-baseline` (baixa) | 48/154 | **31%** | −0,672R | +0,226R |
+| `default-control-baixa-new` | 20/100 | 20% | −0,553R | +0,247R |
+| `minscore-60-alta2024` | 37/152 | **24%** | −0,483R | +0,271R |
+| `default-control-alta2024` | 15/101 | 15% | −0,818R | +0,436R |
+
+**`minScore` mais baixo deixa passar mais sinais brutos, e mais sinais
+significam mais colisões de slot** — a taxa de arbitragem sobe ~50-60%
+relativa (20%→31% baixa, 15%→24% alta) quando o score mínimo cai de 75
+para 60. Como operações arbitradas já são conhecidas por performar muito
+pior (R médio fortemente negativo nos 4 relatórios, consistente com o
+item 45.9), parte do resultado ruim do `minScore=60` (item 90) é um
+efeito MECÂNICO de mais sinal bruto gerando mais briga de slot — não
+necessariamente "entradas piores" no sentido que o Achado C do relatório
+externo propunha.
+
+**Não explica tudo**: olhando só as operações SEM arbitragem, `minScore=60`
+ainda perde para o controle na alta (0,271R vs 0,436R, diferença grande) e
+perde por pouco na baixa (0,226R vs 0,247R). Não dá para separar
+limpo, com este dado, quanto do efeito é mecânico (slot) e quanto é
+qualidade de entrada genuína — as duas explicações coexistem.
+
+### O que isto NÃO muda
+
+A recomendação do item 90 (não baixar `minScore` em produção) continua de
+pé — se a causa é mecânica (mais colisão de slot) em vez de qualidade de
+entrada, isso não é motivo para gostar mais de `minScore=60`, é só um
+motivo diferente para não gostar dele. Mas muda a INTERPRETAÇÃO: o
+problema pode estar mais no desenho de slot compartilhado entre lados do
+que na lógica de score em si — ver investigação do mecanismo abaixo,
+pedida explicitamente pelo usuário.
+
+### Verificação
+
+Nenhuma mudança de código — reuso de `scripts/analyze-backtest.mjs`
+existente sobre os 4 relatórios já no ledger, e esta análise. `npm run
+lint && npm test && npm run build` continuam limpos (981/981).
