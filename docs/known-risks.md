@@ -10381,3 +10381,63 @@ mesma ferramenta nela desde o início, não como correção posterior.
 `node scripts/backtest-correlation-check.mjs --report <path>
 --iterations 3000` sobre o artifact recuperado do run 30505384474.
 Nenhuma mudança de código — mesma ferramenta do item 97, sem alteração.
+
+## 99. Terceira medição de correlação (item 71/holdout) — DEFF≈3 se replica num 3º relatório independente (2026-08-16)
+
+### Contexto
+
+Usuário recuperou também o artifact do holdout do item 71
+(`allowedside-holdout-sell-only`, run 31396915576, 2024-08-10→2025-08-10,
+carteira de 20 símbolos, mesmo bloqueio de rede dos dois itens
+anteriores — baixado pelo navegador, enviado direto).
+
+### Resultado
+
+| Métrica | Ingênuo (publicado no item 71) | Em cluster (Cameron-Miller CR1) |
+|---|---|---|
+| N | 150 | 150 (G=17 clusters, tamanho médio 8,82) |
+| IC95 | [-0,115; 0,270] — já cruzava zero | [-0,275; 0,430] — cruza ainda mais |
+
+DEFF=3,36, N efetivo≈45 (de 150 nominal). Teste de permutação: DEFF real
+muito acima do nulo (média 0,87, p95 1,76) — **p-valor=0,0010**.
+
+### Leitura — o achado real aqui não é sobre este relatório específico
+
+Como o item 71 já era INCONCLUSIVO na leitura ingênua, a correção não
+muda nada da decisão (continua encerrado, mesmo motivo). **O achado real
+é outro**: esta é a 3ª medição independente de DEFF neste projeto —
+
+| Relatório | Item | DEFF |
+|---|---|---|
+| SELL-only expandido (8 símbolos) | 95/97 | 2,99 |
+| Bull-baseline (20 símbolos, alta) | 48/98 | 3,56 |
+| Holdout SELL-only (20 símbolos, baixa) | 71/99 | **3,36** |
+
+Três janelas diferentes, duas composições de carteira diferentes (8 e 20
+símbolos), dois regimes de mercado diferentes (alta e baixa) — e o DEFF
+caiu no mesmo intervalo estreito (2,99–3,56) nas três vezes. Isso deixa
+de ser "um resultado isolado" e vira um padrão replicado: **como regra
+prática de bolso, dividir qualquer N nominal deste projeto por ~3 dá uma
+estimativa melhor do N efetivo real** do que assumir independência —
+enquanto ninguém rodar a ferramenta relatório por relatório, esse é o
+melhor número disponível pra calibrar quanta confiança depositar num
+IC95 publicado.
+
+**Ressalva de honestidade**: 3 relatórios ainda é uma amostra pequena
+pra esse "DEFF≈3" virar constante confiável — todos vêm de ativos cripto
+correlacionados com BTC numa faixa parecida de regime (nenhum é um
+mercado extremamente anômalo tipo colapso Luna/FTX); não dá pra
+extrapolar esse número pra qualquer contexto sem mais medições.
+
+### Recomendação
+
+Nenhuma mudança de decisão. Registrado como referência rápida pra
+qualquer leitura futura de IC95 deste projeto: até que a ferramenta seja
+rodada no relatório específico, tratar o N nominal com ceticismo — o
+efetivo provavelmente é uns 3x menor.
+
+### Verificação
+
+`node scripts/backtest-correlation-check.mjs --report <path>
+--iterations 3000` sobre o artifact recuperado do run 31396915576.
+Nenhuma mudança de código.
