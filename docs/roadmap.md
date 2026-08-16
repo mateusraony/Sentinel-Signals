@@ -53,6 +53,16 @@ plano de sessão morre com a sessão.
 > zero depois da correção por família (N=14 agora) — **Bloco 1 continua
 > trancado**, mesmo critério
 > do item 88.
+>
+> **Atualização 2026-08-16 (item 97): ferramenta formal de correlação
+> entre ativos, piloto confirma efeito real.** No relatório de 72
+> operações do item 95, o N efetivo (corrigido por cluster de operações
+> sobrepostas no tempo) é ~24, não 72 — o IC95 correto é quase o dobro da
+> largura do publicado. Não muda nenhuma decisão registrada (não implica
+> reprocessar histórico), mas é a primeira confirmação real, não só
+> teórica, de que "20 símbolos não são 20 amostras independentes" tem
+> magnitude prática. `scripts/backtest-correlation-check.mjs`, proposto
+> pra rodar junto de relatórios futuros relevantes. Detalhe: item 97.
 
 ## A regra que ordena tudo: amostra
 
