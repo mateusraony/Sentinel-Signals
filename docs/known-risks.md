@@ -9655,3 +9655,217 @@ diferença calculado corretamente.
 Nenhuma mudança de código — 1 relatório a mais no ledger (família
 `entry-score-threshold`, agora N=2) + esta análise. `npm run lint && npm
 test && npm run build` continuam limpos (981/981).
+
+## 91. `minScore` mais baixo aumenta a taxa de arbitragem cross-side — confound não examinado (2026-08-15)
+
+### Contexto
+
+Ao revisar os 11 relatórios desta sessão em busca de algo que tivesse
+passado despercebido, comparei a taxa de operações atingidas por
+`arbitration_reason: 'same_cascade_opposite_direction'` (mecanismo do
+item 71 — BUY e SELL do mesmo ativo disputam o mesmo slot
+`assetActiveOps`; um sinal do lado oposto chegando com operação ativa não
+abre 2ª operação, só reduz `current_confidence_score` em 15 pontos) entre
+os trials de `minScore=60` e os controles padrão, usando
+`scripts/analyze-backtest.mjs` (já existente, sem alteração).
+
+### Achado
+
+| Trial | Ops arbitradas | Taxa | R médio arbitradas | R médio sem arbitragem |
+|---|---|---|---|---|
+| `minscore-60-baseline` (baixa) | 48/154 | 31% | −0,672R | +0,226R |
+| `default-control-baixa-new` | 20/100 | 20% | −0,553R | +0,247R |
+| `minscore-60-alta2024` | 37/152 | 24% | −0,483R | +0,271R |
+| `default-control-alta2024` | 15/101 | 15% | −0,818R | +0,436R |
+
+### Correção (2026-08-16, review externa Codex, PR #196, dois achados P1/P2)
+
+**1. A taxa de arbitragem NÃO sobe de forma estatisticamente sustentada
+nas duas janelas** — a versão original afirmava isso sem calcular
+incerteza. Teste de duas proporções (pooled): baixa (48/154 vs 20/100)
+`z≈1,96` — bem na fronteira, não passa com folga nem no teste mais fraco
+possível; alta (37/152 vs 15/101) `z≈1,83` — **abaixo** de 1,96, não
+distinguível de ruído. Rebaixado de "sobe nas duas janelas" para "diferença
+observada, sem significância estabelecida em nenhuma das duas".
+
+**2. Mais grave: não existe mecanismo causal ligando arbitragem a
+resultado pior — isto era o MESMO erro de causalidade invertida que o
+item 45.9 já tinha documentado, e citar o item 45.9 no texto original não
+impediu cometer o erro que ele descreve.** Verificado agora, busca
+completa no repo: `current_confidence_score` (o único campo que
+`reduce_confidence` escreve) é lido em `scanner.js` só para ESCREVER o
+próximo valor — **nenhuma lógica de saída, sizing, ou stop em
+`opExitRules.js`/`backtestEngine.js`/qualquer componente lê esse campo**.
+Ou seja: a arbitragem `same_cascade_opposite_direction` não muda NADA no
+destino da operação — é puramente informativa/logada. O sinal oposto
+também chega **depois** que a operação já estava aberta, não antes. A
+leitura honesta, idêntica à do item 45.9 para o `correction_warning`
+irmão: operações que já estão indo mal (preço andando contra a posição)
+são **mais prováveis de atrair um sinal de reversão no mesmo timeframe
+depois** — é o resultado ruim que causa a arbitragem aparecer, não a
+arbitragem que causa o resultado ruim. A frase "efeito MECÂNICO de mais
+sinal bruto gerando mais briga de slot" da versão anterior não tem
+sustentação nenhuma — corrigida para descrever só a correlação observada.
+
+**O que sobra, com essas duas correções**: `minScore=60` tem uma taxa de
+arbitragem numericamente maior que o controle nas 2 janelas (correlação,
+direção consistente), mas (a) a diferença não é estatisticamente
+estabelecida em nenhuma das duas, e (b) mesmo se fosse, não há mecanismo
+identificado que ligue isso ao pior resultado — é a mesma classe de
+correlação-sem-causa que o item 45.9 já tinha fechado como "indicador
+coincidente, não preditor, inutilizável como filtro".
+
+### O que isto NÃO muda
+
+A recomendação do item 90 (não baixar `minScore` em produção) continua de
+pé, mas agora só pelo motivo original (falta de evidência a favor) — a
+hipótese "é um efeito mecânico de slot" desta seção não se sustentou. A
+investigação do mecanismo de slot (item 92) segue válida como
+investigação arquitetural independente — não depende desta correlação
+para justificar o pedido explícito do usuário de entender o mecanismo.
+
+### Verificação
+
+Nenhuma mudança de código — reuso de `scripts/analyze-backtest.mjs`
+existente sobre os 4 relatórios já no ledger, busca de código para
+verificar consumidores de `current_confidence_score`, e esta análise.
+`npm run lint && npm test && npm run build` continuam limpos (981/981).
+
+## 92. Investigação do mecanismo de slot — por que "slot por lado" NÃO é uma extensão do Bloco 4 Fase 1 (2026-08-16)
+
+### Pedido
+
+A pedido explícito do usuário, motivado pelo item 91 (taxa de arbitragem
+cross-side numericamente maior sob `minScore=60` — correlação observada,
+sem mecanismo causal estabelecido, ver correção no próprio item 91):
+investigar com cuidado o mecanismo de slot compartilhado entre BUY e SELL
+que o item 71 já tinha deixado como pendência não resolvida — a pergunta
+vale por si (arquitetura do motor), independente de a correlação do
+item 91 ter ou não sustentação estatística. Isto é leitura/investigação —
+**nada foi implementado nesta rodada**.
+
+### Fato 1 — já existe uma infraestrutura de slot particionado, mas ela resolve um problema DIFERENTE
+
+O item 37 (Bloco 4 Fase 1, 2026-08-10→12) já implementou, testou e mediu em
+A/B um mecanismo de slot por `(ativo, cascata)`:
+`buildActiveOpsAnchorId(assetId, cascade)` (`src/lib/opTransition.js:131`)
+troca o doc-âncora `assetActiveOps/{assetId}` por
+`assetActiveOps/{assetId}__{cascade}` quando `pineConfig.
+hierarchicalCascadesEnabled` está ligado — deixando a cascata RF nativa
+(`4h_15m`) e a SMC (`1h_5m`) terem operações **simultâneas e independentes**
+no mesmo ativo, sem uma bloquear a outra.
+
+**Isto não cobre o caso do item 71/91.** A dimensão que o Bloco 4 particiona
+é CASCATA (RF × SMC) — nunca LADO. Confirmado lendo
+`planSignalArbitration` (`src/lib/signalArbitration.js:187-189`): mesmo com
+`hierarchicalCascadesEnabled` ligado, um candidato `4h_15m` SELL chegando
+com uma operação `4h_15m` BUY já ativa continua caindo no mesmo branch
+`direction === 'opposite' && tfRelation === 'same'` → `same_cascade_
+opposite_direction` → só reduz confiança, nunca abre 2ª operação. O texto
+do próprio item 37 já registra isso: "com o flag ligado, `4h_15m` e `1h_5m`
+nunca arbitram uma contra a outra... cada uma só arbitra DENTRO de si
+mesma, se aplicável" — ou seja, o problema de BUY×SELL dentro da MESMA
+cascata continua exatamente como estava.
+
+### Fato 2 — o resultado do A/B do Bloco 4 é um alerta relevante, não só uma nota de rodapé
+
+O A/B real do item 37 (2026-08-12) mediu: a coexistência de slots
+funcionou mecanicamente como desenhado (`active_op_exists` na cascata SMC
+caiu de 4.704 para 30 rejeições), **mas o volume de operações cresceu
+pouco** (12→14, +2) porque o gargalo real da SMC nunca foi o slot — era o
+próprio gatilho 5m (`no_trigger`, dominante nos dois runs). E a
+expectância combinada **não melhorou** (ambos os runs inconclusivos, RF
+nativa até caiu ligeiramente, possivelmente pelo acoplamento de risco
+`coupleSiblingRiskOnOpen`). **Lição direta para a proposta de slot por
+lado**: resolver a disputa de slot não resolve automaticamente nada — só
+libera volume onde o volume já era o problema. Se o gargalo do BUY/SELL
+não for a disputa de slot em si, mas outra coisa (ex.: sinais opostos
+correlacionados de verdade com reversão de tendência), abrir um 2º slot
+teria o mesmo resultado nulo que o Bloco 4 teve na SMC.
+
+### Fato 3 — slot por lado não é uma extensão natural do desenho existente; é conceitualmente diferente
+
+O Bloco 4 (RF × SMC simultâneas) é, na prática, uma forma de **pyramiding
+multi-timeframe** — duas pernas na MESMA direção implícita de tendência
+(a pesquisa de comunidade do próprio item 37 confirma: pyramiding é
+estritamente trend-following, nunca para "promediar" posição contrária).
+**Slot por lado seria outra coisa: permitir BUY e SELL simultâneos no
+MESMO ativo** — não duas pernas reforçando a mesma tese, mas duas apostas
+**diretamente opostas** sobre o mesmo preço. Isso é estruturalmente mais
+parecido com um straddle/hedge do que com pyramiding, e a
+`signalArbitration.js` já trata um candidato de lado oposto como
+**informação sobre a operação já ativa** (ela pode estar errada), não como
+uma 2ª oportunidade legítima e independente — é assim que o RF (Range
+Filter, um indicador de tendência) e a SMC foram desenhados: sistemas
+direcionais, não sistemas de hedge. Abrir um 2º slot para o lado oposto
+mudaria essa premissa de raiz, e — diferente do Bloco 4, que tinha
+literatura de pyramiding real como referência — não há prática de mercado
+equivalente clara para "hedge automático intrabot no mesmo ativo" que
+sirva de guia de desenho (pesquisa de comunidade ainda não feita para
+esta variante especificamente).
+
+### Fato 4 — existe uma alternativa mais barata e já meio-construída: fortalecer a invalidação em vez de abrir 2º slot
+
+`planSignalArbitration` já tem um precedente de "candidato oposto forte
+o bastante para agir, não só avisar": `direction === 'opposite' &&
+tfRelation === 'larger'` (`critical_opposite`) tem `arbInvalidateOnOppositeMajor`
+(`pineConfig`, default `false`) — quando ligado, invalida a operação ativa
+em vez de só reduzir confiança. **O branch `same_cascade_opposite_
+direction` (o que o item 71/91 mede) não tem equivalente nenhum** — é
+sempre `reduce_confidence`, nunca invalidação, independente do score do
+candidato. Estender esse MESMO padrão (`arbInvalidateOnOppositeSameTf` ou
+nome similar, opt-in, default false) para o caso mesmo-timeframe seria uma
+mudança **muito menor** que slot por lado: não mexe no invariante de
+"1 operação por ativo/cascata", reusa a mesma infraestrutura de
+`transitionTradeOp`/CAS já testada, e ataca o mesmo sintoma (BUY ruim
+persistindo enquanto um SELL bom não consegue nada) por um ângulo
+diferente — fechar a posição errada em vez de abrir uma 2ª.
+
+**Ressalva que pesa contra essa alternativa também**: o item 45.9 já
+mediu que o aviso de arbitragem (`correction_warning`) chega **depois**
+que o preço já andou contra a posição em 82 de 82 casos medidos (mediana
+64h) — é indicador **coincidente** de operação perdendo, não preditor. Se
+essa mesma causalidade invertida vale para `same_cascade_opposite_
+direction`, invalidar automaticamente nesse gatilho corta a perda só
+depois que ela já apareceu — pode ajudar (sair antes do stop cheio) ou
+piorar (sair de uma posição que se recuperaria, puro whipsaw). Não dá
+para saber sem medir.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: existem 2 caminhos de mecanismo, nenhum implementado hoje para o
+caso BUY×SELL mesma cascata — (A) slot por `(ativo, cascata, lado)`,
+extensão mecânica do Bloco 4 mas conceitualmente mais arriscada (posições
+opostas simultâneas, sem literatura de apoio equivalente); (B) invalidação
+opt-in no branch `same_cascade_opposite_direction`, mudança bem menor,
+reusa infraestrutura existente, mas com o mesmo risco de causalidade
+invertida já documentado no item 45.9 para o mecanismo irmão.
+
+**Hipótese**: (B) é a aposta mais barata e menos arriscada de testar
+primeiro — não mexe no invariante central da máquina de estados (que o
+item 37 já classificou como mudança estrutural que exige
+`sentinel-council-review`), e o A/B do Bloco 4 já deu um alerta real de
+que resolver disputa de slot nem sempre resolve o problema de expectância
+por trás dela.
+
+**Recomendação — não implementar nada agora, apenas o desenho fica
+registrado**: (1) qualquer uma das duas opções precisa entrar na mesma
+fila de disciplina que o item 37 já definiu — pesquisa de comunidade
+específica (nenhuma foi feita ainda para nenhuma das duas), desenho
+explícito, e revisão de conselho se for a opção (A), dado que mexe
+potencialmente no invariante de estado; (2) se o usuário quiser avançar,
+(B) é o ponto de entrada mais barato e reversível — pode ser medido com
+um trial de backtest simples (novo campo opt-in, sem tocar
+`assetActiveOps`) antes de considerar (A); (3) Bloco 0 (vantagem
+direcional da estratégia) continua sendo o bloqueio de sequenciamento
+formal já registrado no item 37 para QUALQUER mudança estrutural nova no
+motor — essa regra não mudou com esta investigação.
+
+### Verificação
+
+Nenhuma mudança de código — investigação por leitura direta de
+`src/lib/signalArbitration.js`, `src/lib/opTransition.js`,
+`src/api/entities.js`, `scripts/adminEntities.js`, `src/lib/scanner.js`
+(pontos de wiring do `hierarchicalCascadesEnabled`) e itens 37/39/45.9/71
+do `known-risks.md`. `npm run lint && npm test && npm run build`
+continuam limpos (981/981, sem alteração — nada foi tocado no código).
