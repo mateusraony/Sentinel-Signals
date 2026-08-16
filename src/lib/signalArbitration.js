@@ -59,7 +59,10 @@ export const CASCADE_RANK = { '1h_5m': 1, '4h_15m': 2, 'rf1h_cond4h_15m': 2, 'rf
 // values, changed thresholds semantics) — stamped onto SystemLog entries and
 // TradeOperation patches so a later analysis can tell which rules produced a
 // given historical decision without guessing from timestamps.
-export const ARBITRATION_VERSION = 1;
+// v2 (docs/known-risks.md item 93): same_cascade_opposite_direction can now
+// resolve to 'invalidate' (previously always 'reduce_confidence'), gated by
+// arbInvalidateOnOppositeSameTf.
+export const ARBITRATION_VERSION = 2;
 
 /**
  * @param {'1h_5m'|'4h_15m'} candidateCascade

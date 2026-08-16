@@ -45,6 +45,7 @@ import { fetchCurrentPrice, fetchCandles } from './marketDataProvider';
 import { isTelegramConfigured, notifyNewSignal, notifyVerificationTask, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
 import { persistScanResults, priceCheckActiveOps, activateSignalManually, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, resolveRangeFilterParams, firstPositive, firstPositiveInteger } from './scanner.js';
 import { calculateSmcSignalStrength } from './indicators/smcConfluence.js';
+import { ARBITRATION_VERSION } from './signalArbitration.js';
 import { closesFullyAtTp1 } from './opExitRules.js';
 
 let backend;
@@ -2117,7 +2118,7 @@ describe('cross-cascade arbitration — promoção em dois estágios, continuida
 
     const logs = await backend.entities.SystemLog.filter({});
     const entry = logs.find(l => l.details?.arbitration_outcome === 'continuation_confirmation');
-    expect(entry.details.arbitration_version).toBe(1);
+    expect(entry.details.arbitration_version).toBe(ARBITRATION_VERSION);
     expect(entry.details.arbitration_event_id).toBe('sig_smc_arb::op_4h');
     expect(entry.details.relation_direction).toBe('same');
     expect(entry.details.relation_tf).toBe('smaller');

@@ -12,7 +12,13 @@ import { logWarn } from './logger';
 
 const PINE_CONFIG_KEY = 'cryptoradar_pine_config';
 
-const DEFAULTS = {
+// Exported so callers reconstructing a COMPLETE config from a partial one
+// (e.g. Backtest.jsx's "apply trial to live scanner", applying an old
+// report generated before a key existed) can fall back to the value that
+// was actually in effect at the time, instead of silently leaving
+// whatever is currently stored in Firestore untouched — see docs/known-risks.md
+// item 93 (Codex review, PR #197).
+export const DEFAULTS = {
   rng_per: 20,
   rng_qty: 3.5,
   minScore: 75,
