@@ -9942,3 +9942,179 @@ até de `arbReinforceMinScore` (ainda totalmente bloqueado por
 `belowThreshold`) — build limpo, lint limpo. Próximo passo (não feito
 ainda): rodar um trial de backtest com o flag ligado vs. desligado, no
 mesmo espírito dos outros testes desta rodada.
+
+## 94. Reteste com tolerância maior (0,6×/1,0× ATR) — ainda não produz amostra utilizável (2026-08-16)
+
+### Contexto
+
+Seguindo a recomendação do item 90 (o baseline `retestToleranceAtrMult:
+0,3` teve só 2,4% de confirmação), usuário rodou 2 trials afrouxando a
+tolerância, mesma janela/carteira do item 90
+(`2025-08-15→2026-08-15`, 7 símbolos default, custos ligados):
+`retest-tol-0.6-baixa2025` (`retestToleranceAtrMult: 0,6`) e
+`retest-tol-1.0-baixa2025` (`retestToleranceAtrMult: 1,0` — o mesmo
+múltiplo tratado como "generoso" no item 53/54 para o breakeven pré-TP1).
+
+### Resultado
+
+| trial_label | tolerância | sinais no gate | confirmados | taxa | operações (n) | expectancyR líquida | conclusivo? |
+|---|---|---|---|---|---|---|---|
+| `retest-gate-baseline` (item 90) | 0,3× | 126 | 3 | 2,4% | 0 | — | não (`sample_too_small`) |
+| `retest-tol-0.6-baixa2025` | 0,6× | 125 | 4 | 3,2% | 1 | −1,025R | não (`sample_too_small`) |
+| `retest-tol-1.0-baixa2025` | 1,0× | 125 | 8 | 6,4% | 4 | −0,049R (bruta −0,004R) | não (`sample_too_small`, apesar de já ter IC95 calculável: [-1,192; 1,095]) |
+
+Família `entry-retest-gate` (ledger, `backtest-trial-registry.mjs`) agora
+em N=3, z corrigido=2,3940 — irrelevante aqui porque nenhum trial da
+família individualmente limpa o piso de amostra (`minTrades: 30`) para
+sequer entrar na comparação de IC.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: triplicar a tolerância (0,3×→1,0×) só levou a taxa de
+confirmação de 2,4% para 6,4% — mais que dobrou proporcionalmente, mas o
+volume absoluto de operações continua trivial (0→1→4, contra o piso de 30
+que o próprio motor exige para qualquer veredito). `avgBarsToConfirm`
+(10,8 e 9,1 barras de 15m, respectivamente) mostra que quando o reteste
+CONFIRMA, é rápido (~2-3h) — o problema não é velocidade, é que a grande
+maioria dos sinais nunca toca de volta o nível rompido dentro da janela
+de retry do sinal.
+
+**Hipótese**: mesmo em 1,0×ATR — já um múltiplo generoso pelo próprio
+padrão deste projeto — o gate de reteste, do jeito que está desenhado
+(retestar exatamente o nível que o próprio sinal candidato rompeu, não um
+nível estrutural mais largo), é estruturalmente incompatível com produzir
+amostra utilizável numa única janela de 12 meses/7 símbolos. Não é mais
+"a tolerância padrão é baixa demais" (leitura do item 90) — é "mesmo
+afrouxando bastante, o gate ainda é raro demais para medir nesta escala
+de teste".
+
+**Recomendação**: não vale continuar subindo a tolerância como próximo
+passo isolado — em algum ponto (provavelmente >1,5×ATR) o gate deixa de
+significar "reteste" e vira só "preço ainda por perto", esvaziando o
+propósito original do item 40. Se o usuário quiser insistir nesta linha,
+o gargalo real é ORÇAMENTO DE AMOSTRA (mais símbolos e/ou mais anos),
+não o multiplicador — mesma lição que o item 95 abaixo mede
+independentemente para a linha SELL-only. Por ora, `retestEnabled`
+continua desligado por padrão e esta linha de investigação fica parada
+até haver orçamento de amostra maior para testar.
+
+### Verificação
+
+2 relatórios reais (`backtest.yml`, mesma janela/carteira do item 90),
+registrados em `docs/backtest-trial-registry.json` via
+`backtest-trial-registry.mjs --report ... --family entry-retest-gate`.
+Nenhuma mudança de código.
+
+## 95. SELL-only com carteira expandida (8 símbolos) — mais perto do limiar, ainda inconclusivo (2026-08-16)
+
+### Contexto
+
+Item 88 pausou a linha SELL-only por falta de janela de calendário ou
+símbolo genuinamente novo, mas registrou uma segunda forma válida de dado
+novo: mais símbolos fora da carteira já testada (o caminho que o item 74
+já tinha aberto com só LTCUSDT/DOGEUSDT, subamostrado demais — n=16-38
+por janela). A pedido do usuário, retomando essa linha: rodou-se
+`sell-only-expanded-symbols-baixa2025` com 8 símbolos —
+`LTCUSDT,DOGEUSDT` (já usados no item 74) + 6 novos
+(`TRXUSDT,ATOMUSDT,ETCUSDT,UNIUSDT,ICPUSDT,FILUSDT`) — mesma janela
+recente do item 90 (`2025-08-15→2026-08-15`), `allowedSide: SELL`.
+
+### Resultado (pooled, 8 símbolos — ver correção abaixo)
+
+74 operações totais, 72 contadas (2 ainda abertas no corte do
+relatório — efeito de borda normal, não erro), distribuídas de forma
+razoavelmente equilibrada entre os 8 símbolos (7 a 11 operações cada):
+
+| Métrica | Valor |
+|---|---|
+| n (contadas) | 72 |
+| Win rate | 54,2% (39W/32L/1BE) |
+| Expectância líquida | +0,257R |
+| Expectância bruta | +0,314R |
+| Profit factor | 1,354 |
+| IC95 (não corrigido) | [-0,025; 0,539] — cruza zero por margem pequena |
+| Motivo de inconclusivo | `ci_straddles_zero` (não mais `sample_too_small` — n=72 já limpa o piso de 30) |
+
+### Correção (2026-08-16, review externa Codex, PR #198) — 2 achados
+
+**P1 — LTCUSDT/DOGEUSDT não são dado genuinamente novo nesta janela.**
+A leitura original tratou os 72 operações como amostra inteiramente
+nova, mas LTCUSDT/DOGEUSDT já tinham sido medidos pelo item 74 na janela
+`2025-07-27→2026-07-27` (`item74-walkforward-baixa-2025-26-ltcdoge-
+sell-slice`) — **~95% sobreposta** com a janela deste trial
+(`2025-08-15→2026-08-15`, início só 19 dias depois). O critério do item
+88 define "dado novo" como par ativo×janela nunca examinado — misturar
+os 22 operações de LTC/DOGE (11 cada) no n=72 pooled viola isso
+diretamente: parte da "próxima medição fora da amostra" já estava,
+efetivamente, dentro da amostra.
+
+**Recomputado excluindo LTC/DOGE** (só os 6 símbolos genuinamente novos,
+recalculado diretamente de `overall.curve` do mesmo relatório — mesma
+fórmula mean/SE/CI95 do motor, conferida batendo com os campos originais
+do relatório antes do filtro):
+
+| Métrica | Valor (só 6 símbolos novos) |
+|---|---|
+| n | 50 (TRXUSDT 9, ATOMUSDT 7, ETCUSDT 8, UNIUSDT 10, ICPUSDT 7, FILUSDT 9) |
+| Win/Loss | 29W/21L/0BE |
+| Expectância líquida | **+0,387R** |
+| IC95 (não corrigido) | **[0,049; 0,725]** — **não cruza zero** |
+
+Curiosamente, excluir LTC/DOGE **fortalece** o resultado (o ponto
+estimado sobe de +0,257R para +0,387R, e o IC deixa de tocar zero) — os
+dois símbolos reaproveitados estavam, nesta amostra, com desempenho pior
+que a média dos 6 novos, puxando o pooled para baixo. Registrado como
+`sell-only-expanded-symbols-baixa2025-newonly` (seed) na família.
+
+**P2 — a alegação "13/13, sem reversão de sinal" era falsa.** O ledger já
+tinha `item74-walkforward-2023-24-ltcdoge-sell-slice` com expectância
+**−0,039R** (n=16, inconclusiva) — um sinal negativo, não positivo — e
+outros 2 valores (0,078R, 0,094R) já ficavam fora da faixa "0,147R a
+0,401R" citada. O correto: **12 de 13 medições prévias são positivas, 1 é
+negativa** (a mais fraca da família em amostra, n=16, ela própria
+inconclusiva — não é evidência forte de reversão, mas também não é
+"sem reversão").
+
+### Resultado final (com as 2 correções aplicadas)
+
+Família `sell-only-hypothesis` agora em **N=14** (z corrigido=2,9137),
+incluindo os 2 registros deste trial (pooled contaminado, mantido no
+ledger por rastreabilidade, e o corrigido `-newonly`):
+
+| trial_label | n | expectancyR | IC95 não corrigido | IC corrigido (N=14) |
+|---|---|---|---|---|
+| `sell-only-expanded-symbols-baixa2025` (pooled, contaminado) | 72 | 0,257 | [-0,025; 0,539] | [-0,163; 0,676] |
+| `sell-only-expanded-symbols-baixa2025-newonly` (válido) | 50 | **0,387** | **[0,049; 0,725]** | [-0,116; 0,889] |
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: a versão corrigida (só os 6 símbolos genuinamente novos) é a
+**primeira medição individual da família inteira, com dado
+inequivocamente novo, cujo IC95 não corrigido não cruza zero** — mais
+forte que a versão pooled original. Mas depois da correção Bonferroni
+por família (N=14, z=2,91 contra z=1,96 sem correção), o IC volta a
+cruzar zero ([-0,116; 0,889]) — o mesmo desfecho final da leitura
+original, só que chegando lá por um caminho diferente e mais correto.
+
+**Hipótese**: 12 de 13 medições anteriores positivas (não 13/13) ainda é
+um padrão direcional forte, mas "quase todas positivas, uma negativa e
+pequena" é uma alegação mais fraca que "sem reversão nenhuma" — a
+correção não muda a conclusão prática, mas muda quanto peso essa
+consistência histórica deveria ter no julgamento.
+
+**Recomendação — inalterada em relação à leitura original**: pelo
+critério do item 88, isto **não desbloqueia o Bloco 1** — IC cruza zero
+depois da correção de família, mesmo com o resultado individual mais
+forte já medido. Os 2 caminhos seguem os mesmos: (a) expandir a carteira
+de símbolos ainda mais (com a ressalva, reforçada por este episódio, de
+CONFERIR que qualquer expansão futura não reusa símbolo×janela já
+registrado antes de pooling — o erro P1 acima é exatamente o tipo de
+lapso que se repete se não virar checklist); (b) esperar a janela de
+calendário livre de sobreposição (~2027-08-10, item 88).
+
+### Verificação
+
+1 relatório real (`backtest.yml`, 8 símbolos, janela 2025-08-15→2026-08-15,
+`allowedSide: SELL`) + 1 registro derivado (seed, filtrado do mesmo
+relatório excluindo LTC/DOGE), ambos em `docs/backtest-trial-registry.json`
+via `backtest-trial-registry.mjs`. Nenhuma mudança de código.

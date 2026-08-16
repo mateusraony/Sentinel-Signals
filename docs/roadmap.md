@@ -39,6 +39,20 @@ plano de sessão morre com a sessão.
 > nunca abre operação real), acumulando amostra rumo ao piso n≥30/alvo
 > n≈100 — avisa sozinho quando bater. Backtest exploratório numa janela
 > pré-2023 já rodado, inconclusivo. Detalhe: `docs/known-risks.md` item 56.
+>
+> **Atualização 2026-08-16 (itens 94/95): 3 novos trials, nenhum muda a
+> decisão acima.** (1) Reteste com tolerância maior (0,6× e 1,0× ATR, item
+> 94): a taxa de confirmação subiu de 2,4% para 6,4%, mas o volume de
+> operações continua abaixo do piso de amostra (0→1→4 contra o mínimo de
+> 30) — `retestEnabled` segue desligado. (2) SELL-only com carteira
+> expandida (8 símbolos, item 95, retomando a linha pausada do item 88):
+> **correção Codex (PR #198)** — LTC/DOGE reusavam janela quase idêntica
+> ao item 74, então o número válido é só os 6 símbolos genuinamente novos
+> (n=50, +0,387R líquida, IC não corrigido não cruza zero — o resultado
+> individual mais forte da família até hoje), mas o IC volta a cruzar
+> zero depois da correção por família (N=14 agora) — **Bloco 1 continua
+> trancado**, mesmo critério
+> do item 88.
 
 ## A regra que ordena tudo: amostra
 
@@ -72,15 +86,22 @@ candidato a edge genuíno que só desbloqueia o Bloco 1 se confirmado numa
 próxima medição em janela nova, sob IC corrigido por família (item 89). Ver
 item 88 para o raciocínio completo.
 
-**Linha SELL-only PAUSADA (2026-08-15, atualizado após 2ª review externa)**:
-não existe hoje janela de calendário nem par de símbolo+janela
-genuinamente novo — as 12 medições de SELL já feitas (item 48, item 56,
-item 71, item 74) cobrem 2022-07→2026-08-10 contíguo, e os únicos 2
-símbolos fora da carteira testada (LTC/DOGE, item 74) já foram usados nas
-3 janelas do Bloco 0. Retomar só de duas formas: esperar o calendário
-alcançar 2027-08-10, ou achar/confirmar mais símbolos novos e repetir a
-metodologia do item 74 com mais poder estatístico. Detalhe completo: item
-88.
+**Linha SELL-only — retomada via símbolos novos (2026-08-16, item 95)**:
+a pausa do item 88 (nenhuma janela de calendário nem símbolo genuinamente
+novo disponível) foi contornada pelo caminho (b) que o próprio item 88
+já previa — expandir a carteira de símbolos além de LTC/DOGE. Rodado com
+8 símbolos (`LTCUSDT,DOGEUSDT,TRXUSDT,ATOMUSDT,ETCUSDT,UNIUSDT,ICPUSDT,
+FILUSDT`), mas review externa (Codex, PR #198) achou que LTC/DOGE
+reusavam janela quase idêntica à já medida no item 74 — o número válido
+é só os 6 símbolos genuinamente novos (n=50, +0,387R líquida, IC não
+corrigido não cruza zero — o resultado individual mais forte já medido
+na família), mas o IC volta a cruzar zero depois da correção por família
+(N=14 hoje) — **não desbloqueia o Bloco 1**. Segue
+em aberto: expandir a carteira ainda mais (sem bloqueio de calendário,
+mas conferindo antes que o novo símbolo×janela não reusa nada já
+registrado) ou
+esperar 2027-08-10. Detalhe completo: item 95 (e item 88 para o critério
+original).
 
 ### A pergunta que só isto responde
 
