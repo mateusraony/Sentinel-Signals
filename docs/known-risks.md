@@ -9585,3 +9585,52 @@ Nenhuma mudança de código — só reuso de `scripts/analyze-backtest.mjs`
 (já existente, sem alteração) sobre os 2 relatórios já no ledger, e esta
 análise. `npm run lint && npm test && npm run build` continuam limpos
 (981/981).
+
+### `minScore: 60` na janela de alta — fecha a família `entry-score-threshold` (2026-08-15)
+
+Mesma disciplina aplicada ao runner: `minScore: 60` repetido na janela de
+alta 2024-25, comparado contra o controle padrão (`minScore: 75`) já
+rodado na mesma janela.
+
+| Janela | `minScore: 60` | Controle (`minScore: 75`) | Delta | Erro-padrão do controle |
+|---|---|---|---|---|
+| Baixa (nova) | −0,054R (n=154) | +0,087R (n=100) | **−0,141R** | ~0,121R |
+| Alta 2024-25 | +0,087R (n=152) | +0,250R (n=101) | **−0,163R** | ~0,121R |
+
+**Diferente do runner, este delta é MAIOR que o erro-padrão do próprio
+controle nas duas janelas** (−0,141R e −0,163R contra ~0,121R de ruído) —
+mesma régua que a correção do Codex (PR #193) ensinou a aplicar, mas desta
+vez o efeito passa no teste, não fica abaixo dele. Ainda não é um IC formal
+do delta (mesma limitação de sempre — população não perfeitamente pareada,
+`countedTrades` varia com o `minScore` porque mais sinais passam o filtro),
+mas a consistência de direção E magnitude nas 2 janelas, com efeito maior
+que o próprio ruído do controle, é uma leitura bem mais forte que a do
+runner.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: `minScore: 60` piorou a expectância líquida nas 2 janelas
+testadas, com uma margem maior que o ruído de referência do controle nas
+duas. Isto contradiz diretamente o Achado C do relatório externo original
+("score alto = pior entrada, `minScore` menor deveria capturar entradas
+melhores") — a mesma direção do achado isolado da 1ª rodada (item 90,
+baixa), agora replicada numa 2ª janela independente com efeito ainda maior.
+
+**Hipótese**: o Achado C do relatório externo provavelmente vinha de
+sub-buckets pequenos por faixa de score (o próprio fact-check inicial desta
+sessão já tinha sinalizado isso como um alerta de amostra insuficiente,
+antes de qualquer trial rodar) — um padrão que parecia real em ~10-20
+operações por faixa não sobreviveu ao teste direto em ~150 operações por
+janela, em 2 janelas.
+
+**Recomendação — fecha esta linha de investigação**: não baixar `minScore`
+para 60 em produção. Diferente da linha do runner (fechada por FALTA de
+efeito), esta fecha por um efeito real e consistente na direção CONTRÁRIA
+à proposta do relatório externo. `minScore: 75` (o padrão atual) continua
+sendo a escolha melhor sustentada pelos dados disponíveis.
+
+### Verificação (`minScore` alta)
+
+Nenhuma mudança de código — 1 relatório a mais no ledger (família
+`entry-score-threshold`, agora N=2) + esta análise. `npm run lint && npm
+test && npm run build` continuam limpos (981/981).
