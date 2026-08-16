@@ -2803,7 +2803,13 @@ export async function persistScanResults(scanResult) {
     // genuinamente mudar entre passadas de retry, mesma classe de
     // trend_reversed/regime_rejected logo abaixo. Por isso usa
     // recordRejection (o helper padrão), não o inline manual de allowedSide.
-    if (pineConfig.buyRegimeFilterEnabled && sig.signal_type === 'BUY' && sig.context?.tf_1d_direction !== 1) {
+    // Codex review (PR #203): ler sig.context.tf_1d_direction aqui seria o
+    // valor CONGELADO no nascimento do sinal — nunca mudaria entre
+    // retries, contradizendo o próprio comentário acima. Lê o 1D AO VIVO
+    // de results['1d'] (já buscado nesta mesma passada, mesmo padrão de
+    // tfData4h.rf.direction logo abaixo) — undefined conta como bloqueado,
+    // mesma filosofia conservadora do gate original.
+    if (pineConfig.buyRegimeFilterEnabled && sig.signal_type === 'BUY' && results['1d']?.rf?.direction !== 1) {
       await recordRejection(sig, '4h_15m', 'buy_regime_filter_blocked', entryFunnelOutcomes);
       continue;
     }

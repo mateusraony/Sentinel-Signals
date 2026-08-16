@@ -10513,21 +10513,46 @@ Rejeição registrada como `buy_regime_filter_blocked` em
 `entryFunnelOutcomes`/`SignalEvent.last_rejection_reason`, mesmo padrão
 de instrumentação de todo outro gate deste motor (nunca silencioso).
 
+### Correção (2026-08-16, review externa Codex, PR #203)
+
+**A implementação original do retry não fazia o que o próprio comentário
+dizia.** O texto acima já explicava que o gate no retry deveria
+reavaliar a direção 1D AO VIVO (por isso usa `recordRejection`, não o
+write-on-change manual do `allowedSide`) — mas o código lia
+`sig.context?.tf_1d_direction`, o valor CONGELADO no nascimento do
+sinal, que nunca muda dentro do run. Na prática: um BUY nascido com 1D
+bullish continuava passando mesmo depois do 1D virar baixista de
+verdade, e um BUY nascido com 1D baixista ficava bloqueado pra sempre
+mesmo depois do 1D virar bullish — o oposto do comportamento "condição
+ao vivo" documentado, e um viés real que contaminaria qualquer backtest
+rodado com o flag ligado.
+
+Corrigido: o gate no retry agora lê `results['1d']?.rf?.direction`
+diretamente (mesmo padrão de `tfData4h.rf.direction` já usado no gate de
+alinhamento 4h logo abaixo) — dado já buscado na mesma passada, sem I/O
+extra. `undefined` (1D indisponível nesta passada) conta como bloqueado,
+mesma filosofia conservadora do valor neutro. O gate do 1º passo não
+precisou de mudança — `signal.context.tf_1d_direction` ali É o valor
+recém-calculado por `analyzeAlignment` na mesma chamada de `scanAsset`,
+sem staleness possível (o sinal acabou de nascer).
+
 ### Verificação
 
-10 testes novos em `src/lib/scannerStateMachine.test.js` (novo describe
-`Filtro de regime pro BUY`): flag desligado sem mudança de
-comportamento; flag ligado com 1D bullish abre normalmente; 1D baixista
-bloqueia; 1D neutro TAMBÉM bloqueia (gate conservador); SELL nunca
-afetado mesmo com 1D baixista; retry respeita o mesmo gate; retry grava
-`last_rejection_reason` via `recordRejection` (confirma a escolha de
-desenho documentada acima, diferente do `allowedSide`). +3 testes de
-isolamento em `buyRegimeFilterTripwire.test.js` (mesmo padrão do
-`allowedSideTripwire.test.js`). `npm run lint && npm test -- --run` —
-1017/1017 passando. `npm run build` + os 3 alvos esbuild
-(`build:scan`/`build:scan-shadow`/`build:backtest`) compilando sem
-erro. Grep de isolamento confirmado: `buyRegimeFilterEnabled` ausente em
-`pineParser.js`/`adminPineConfig.js`, presente só em
+13 testes em `src/lib/scannerStateMachine.test.js` (novo describe
+`Filtro de regime pro BUY`, 3 adicionados na correção): flag desligado
+sem mudança de comportamento; flag ligado com 1D bullish abre
+normalmente; 1D baixista bloqueia; 1D neutro TAMBÉM bloqueia (gate
+conservador); SELL nunca afetado mesmo com 1D baixista; retry respeita o
+1D AO VIVO (não mais o congelado); retry grava `last_rejection_reason`
+via `recordRejection`; **teste específico da correção** — sinal nascido
+com 1D baixista mas 1D AO VIVO já bullish deixa passar (provaria o bug
+original, agora passa); 1D indisponível na passada conta como
+bloqueado. +3 testes de isolamento em `buyRegimeFilterTripwire.test.js`
+(mesmo padrão do `allowedSideTripwire.test.js`). `npm run lint && npm
+test -- --run` — 1019/1019 passando. `npm run build` + os 3 alvos
+esbuild (`build:scan`/`build:scan-shadow`/`build:backtest`) compilando
+sem erro. Grep de isolamento confirmado: `buyRegimeFilterEnabled`
+ausente em `pineParser.js`/`adminPineConfig.js`, presente só em
 `backtestPineConfig.js`.
 
 **Próximo passo (não feito ainda)**: rodar um trial de backtest com o

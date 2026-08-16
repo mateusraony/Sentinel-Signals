@@ -2616,16 +2616,17 @@ describe('Filtro de regime pro BUY — buyRegimeFilterEnabled (opt-in, RF 4h_15m
     expect(ops[0].side).toBe('SELL');
   });
 
-  it('retry loop respeita o mesmo gate — sinal BUY pendente com 1D baixista nunca confirma via retry', async () => {
+  it('retry loop respeita o mesmo gate — sinal BUY pendente com 1D baixista AO VIVO nunca confirma via retry', async () => {
     const pineConfig = regimePineConfig({ buyRegimeFilterEnabled: true });
     backend._seed('SignalEvent', {
       id: 'sig_regime', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
       source: 'range_filter', dedup_key: 'sig_regime',
       created_date: '2026-07-16T09:00:00.000Z', // dentro da janela de retry de 4h
       price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
-      context: { score: 80, tf_1d_direction: -1 },
+      context: { score: 80, tf_1d_direction: 1 }, // congelado no nascimento — irrelevante pro retry
     });
-    const results = { '4h': makeTfData() }; // 4h ainda alinhado com BUY — só o 1D bloqueia
+    // 4h ainda alinhado com BUY, 1D AO VIVO baixista — só o 1D bloqueia
+    const results = { '4h': makeTfData(), '1d': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
 
     const r = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
 
@@ -2640,14 +2641,50 @@ describe('Filtro de regime pro BUY — buyRegimeFilterEnabled (opt-in, RF 4h_15m
       source: 'range_filter', dedup_key: 'sig_regime',
       created_date: '2026-07-16T09:00:00.000Z',
       price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
-      context: { score: 80, tf_1d_direction: -1 },
+      context: { score: 80, tf_1d_direction: 1 },
     });
-    const results = { '4h': makeTfData() };
+    const results = { '4h': makeTfData(), '1d': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
 
     await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
 
     const sig = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_regime' });
     expect(sig[0].last_rejection_reason).toBe('buy_regime_filter_blocked');
+  });
+
+  it('Codex review (PR #203): retry lê o 1D AO VIVO, não o valor congelado no nascimento do sinal', async () => {
+    const pineConfig = regimePineConfig({ buyRegimeFilterEnabled: true });
+    // Sinal nasceu com 1D baixista (contexto congelado) — se o gate lesse
+    // sig.context.tf_1d_direction (o bug original), continuaria bloqueado
+    // pra sempre, mesmo o 1D tendo virado bullish depois.
+    backend._seed('SignalEvent', {
+      id: 'sig_regime', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_regime',
+      created_date: '2026-07-16T09:00:00.000Z',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80, tf_1d_direction: -1 },
+    });
+    // 1D AO VIVO já virou bullish — o gate deve deixar passar.
+    const results = { '4h': makeTfData(), '1d': makeTfData({ rf: { ...makeTfData().rf, direction: 1 } }) };
+
+    const r = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    expect(r.entryFunnelOutcomes).not.toContainEqual(expect.objectContaining({ reason: 'buy_regime_filter_blocked' }));
+  });
+
+  it('retry sem dado 1D disponível conta como bloqueado (gate conservador, mesma filosofia do valor neutro)', async () => {
+    const pineConfig = regimePineConfig({ buyRegimeFilterEnabled: true });
+    backend._seed('SignalEvent', {
+      id: 'sig_regime', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_regime',
+      created_date: '2026-07-16T09:00:00.000Z',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80, tf_1d_direction: 1 },
+    });
+    const results = { '4h': makeTfData() }; // sem '1d' nesta passada
+
+    const r = await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [] });
+
+    expect(r.entryFunnelOutcomes).toContainEqual({ dedup_key: 'sig_regime', cascade: '4h_15m', reason: 'buy_regime_filter_blocked' });
   });
 });
 
