@@ -10560,3 +10560,105 @@ flag ligado vs. desligado — mesma regra de todo outro flag experimental
 deste motor, nunca ativar sem essa comparação primeiro. Diferente da
 linha SELL-only, esta é uma hipótese genuinamente nova — o primeiro
 resultado real vale mais do que qualquer previsão.
+
+## 101. `buyRegimeFilterEnabled` medido pela 1ª vez — melhora aparente é composição de carteira, não qualidade de entrada (2026-08-16)
+
+### Contexto
+
+Usuário rodou os 2 disparos propostos (`buy-regime-filter-off-baixa2025`/
+`buy-regime-filter-on-baixa2025`), mesma janela `2025-07-27→2026-07-27`,
+carteira de 20 símbolos — a janela de baixa onde BUY já tinha medido
+-0,552R (item 74), escolhida de propósito por ser onde o filtro, se
+funcionar, deveria aparecer.
+
+### Resultado — número de topo
+
+| | Desligado | Ligado |
+|---|---|---|
+| n | 343 | 213 |
+| Expectância líquida | -0,041R | **+0,121R** |
+| IC95 | [-0,167; 0,085] | [-0,039; 0,282] |
+| Win rate | 41,1% | 49,8% |
+| Profit factor | 0,87 | 1,19 |
+
+Delta = +0,162R. **Não significativo**: `SE_diff = sqrt(SE_on² +
+SE_off²) = 0,104`, z = 1,559 (p≈0,12, bicaudal) — os dois números
+individuais já eram inconclusivos, e a diferença entre eles também não
+cruza o limiar convencional.
+
+### O achado real: decompondo por lado, quase toda a "melhora" é composição de carteira, não qualidade de entrada
+
+Como o filtro só bloqueia BUY, decompus por lado (`op.side`):
+
+| | BUY desligado | BUY ligado | SELL desligado | SELL ligado |
+|---|---|---|---|---|
+| n | 178 | **30** | 165 | **183** |
+| Expectância | -0,286R | -0,174R | +0,223R | +0,170R |
+| Delta (SE_diff, z) | +0,112R (z=0,49, ns) | | -0,053R (z=-0,41, ns) | |
+
+Dois achados nesta tabela, nenhum deles "o filtro melhorou o BUY":
+
+1. **O BUY caiu 83% em volume (178→30) e a qualidade dos que sobraram NÃO
+   melhorou de forma detectável** (z=0,49, muito longe de significativo,
+   amostra de 30 é pequena demais pra dizer qualquer coisa com confiança).
+2. **O SELL aumentou 11% em volume (165→183) mesmo sem o gate tocar em
+   SELL nenhuma vez no código.** Mecanismo: `assetActiveOps` compartilha
+   1 vaga por ativo — com 148 BUY a menos disputando a vaga, mais sinais
+   SELL que antes esbarravam em `active_op_exists` agora conseguem abrir.
+   Mesma classe de efeito de disputa de vaga já documentada nos itens
+   39.1/78 — não é bug, é o motor se comportando como desenhado, só que
+   não é o mecanismo que a hipótese do item 88/100 pretendia testar.
+
+**Decomposição aditiva** (mesma disciplina do `backtestAnalysis.js` —
+separar efeito de MISTURA de carteira do efeito de QUALIDADE por lado):
+com dois fatores (mistura BUY/SELL, qualidade de cada lado) e só 2 pontos
+de dado, a ordem da decomposição importa (efeito de interação real) — as
+duas ordens possíveis dão contribuição de mistura entre +0,130R e
++0,192R, e de qualidade entre -0,030R e +0,032R (média Shapley:
+mistura ≈+0,161R, qualidade ≈+0,001R). **Nas duas ordens, o efeito de
+mistura de carteira domina quase totalmente os +0,162R observados — o
+efeito de qualidade fica perto de zero.**
+
+### Ressalva adicional (ferramenta do item 97)
+
+`backtest-correlation-check.mjs` nos dois relatórios: `on` tem
+DEFF=3,30 (G=12), consistente com o padrão já replicado 3x nos itens
+97-99 — o IC95 real desse lado é mais largo do que o publicado. `off`
+deu DEFF=0,03 (G=7) — **não confiável**: G=7 é baixíssimo, e o teste de
+permutação confirma que esse número não se distingue de ruído
+(p=0,6335, dentro do intervalo esperado sob o nulo). Não dá pra refazer
+o teste de delta com erro-padrão em cluster dos dois lados de forma
+confiável com este par de relatórios.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: o número de topo (+0,162R) não é evidência de que "condicionar
+BUY ao 1D funciona" no sentido que a hipótese propunha — é
+majoritariamente um artefato de composição (menos BUY ruim diluindo o
+pool, mais SELL bom entrando pela vaga liberada), não de BUY melhor
+filtrado.
+
+**Hipótese**: se o objetivo real fosse "path pra mais SELL", o
+`allowedSide: 'SELL'` já testado nos itens 71/95/97/99 é o experimento
+mais direto — este mecanismo chega lá de forma indireta e cara (perde
+83% do volume BUY pra ganhar 11% de SELL). Se o objetivo é
+especificamente "BUY que sobra é melhor", esta medição não confirma nem
+refuta — n=30 no lado BUY-ligado não tem poder nenhum pra decidir isso.
+
+**Recomendação**: não ativar. Não é um "não funciona" definitivo — é
+"não sabemos ainda, e o efeito visível não é o que a hipótese previa".
+Se valer a pena insistir nesta linha especificamente (isolar qualidade
+de BUY, não composição), o próximo desenho precisaria neutralizar o
+efeito de vaga — ex.: medir só em `hierarchicalCascadesEnabled` (item
+37) ou em janela/carteira com mais volume BUY de sobra pra dar poder ao
+subconjunto BUY-ligado. Registrado como família nova
+`buy-regime-filter-hypothesis` no ledger (N=2 até aqui).
+
+### Verificação
+
+2 relatórios reais (`backtest.yml`), registrados via
+`backtest-trial-registry.mjs --family buy-regime-filter-hypothesis`.
+Decomposição e testes de significância via script Python ad-hoc sobre
+`overall.curve` dos dois relatórios (mesma fórmula `SE_diff` já
+estabelecida nas correções dos itens 90/95 desta sessão). Nenhuma
+mudança de código.

@@ -91,6 +91,14 @@ plano de sessão morre com a sessão.
 > testado, opt-in/backtest-only (mesmo isolamento do `allowedSide`) —
 > **ainda não medido**. Próximo passo real: rodar `backtest.yml` com/sem
 > o flag e comparar. Detalhe: item 100.
+>
+> **Atualização 2026-08-16 (item 101): medido — melhora aparente
+> (+0,162R) não é significativa (z=1,56) e, decompondo por lado, quase
+> toda ela vem de composição de carteira** (BUY caiu 83% em volume, SELL
+> subiu 11% via vaga liberada — `assetActiveOps` compartilhado), **não
+> de BUY melhor filtrado** (subconjunto BUY-ligado, n=30, sem poder pra
+> decidir nada). Não ativar. Não é "refutado" — é "não sabemos ainda, e
+> o efeito visível não é o que a hipótese previa". Detalhe: item 101.
 
 ## A regra que ordena tudo: amostra
 
