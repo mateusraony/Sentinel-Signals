@@ -2688,6 +2688,100 @@ describe('Filtro de regime pro BUY — buyRegimeFilterEnabled (opt-in, RF 4h_15m
   });
 });
 
+describe('Stop estrutural pro RF nativo — rfStructuralStopEnabled (opt-in, RF 4h_15m only, docs/known-risks.md item 102)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  function makeStructuralSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_structural',
+      price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+      context: { score: 80 },
+      ...overrides,
+    };
+  }
+  // skip15mConfirmationEnabled:true isola este teste do mecanismo de
+  // confirmação 15m, mesmo padrão dos describes de allowedSide/
+  // buyRegimeFilterEnabled acima — só a escolha do stop importa aqui.
+  function structuralPineConfig(overrides = {}) {
+    return makePineConfig({ useADX: false, useChop: false, skip15mConfirmationEnabled: true, ...overrides });
+  }
+
+  it('flag desligada (default): stop por tier×ATR, initial_stop_basis="tier_atr"', async () => {
+    const results = { '4h': makeTfData() };
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig: structuralPineConfig() }),
+      newSignals: [makeStructuralSignal()],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].initial_stop_basis).toBe('tier_atr');
+  });
+
+  it('flag ligada, swing válido dentro da faixa (piso/teto): usa stop estrutural, TP1/TP2 continuam no mesmo R', async () => {
+    const results = { '4h': makeTfData({ smc: { ...makeTfData().smc, lastSwingLow: 97.4 } }) };
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig: structuralPineConfig({ rfStructuralStopEnabled: true }) }),
+      newSignals: [makeStructuralSignal()],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    const op = ops[0];
+    expect(op.initial_stop_basis).toBe('structural');
+    const riskR = Math.abs(op.entry_price - op.initial_stop);
+    expect(op.tp1).toBeCloseTo(op.entry_price + riskR * 1.5, 6);
+    expect(op.tp2).toBeCloseTo(op.entry_price + riskR * 3.0, 6);
+  });
+
+  it('flag ligada, swing muito perto (distância < 0,5×ATR): stop "floored" no piso mínimo', async () => {
+    const results = { '4h': makeTfData({ smc: { ...makeTfData().smc, lastSwingLow: 99.85 } }) };
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig: structuralPineConfig({ rfStructuralStopEnabled: true }) }),
+      newSignals: [makeStructuralSignal()],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops[0].initial_stop_basis).toBe('structural_floored');
+  });
+
+  it('flag ligada, swing longe demais (distância > 2×ATR): cai pro fallback ATR, basis="structural_capped"', async () => {
+    const results = { '4h': makeTfData({ smc: { ...makeTfData().smc, lastSwingLow: 90 } }) };
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig: structuralPineConfig({ rfStructuralStopEnabled: true }) }),
+      newSignals: [makeStructuralSignal()],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops[0].initial_stop_basis).toBe('structural_capped');
+  });
+
+  it('flag ligada, sem swing disponível: cai pro fallback ATR, basis="atr_fallback" — mesmo comportamento de hoje', async () => {
+    const results = { '4h': makeTfData() }; // smc sem lastSwingLow/lastSwingHigh
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig: structuralPineConfig({ rfStructuralStopEnabled: true }) }),
+      newSignals: [makeStructuralSignal()],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops[0].initial_stop_basis).toBe('atr_fallback');
+  });
+
+  it('SELL usa lastSwingHigh como nível protegido (mesma mecânica, lado espelhado)', async () => {
+    const results = {
+      '4h': makeTfData({
+        rf: { ...makeTfData().rf, direction: -1 },
+        smc: { ...makeTfData().smc, lastSwingHigh: 102.6 },
+      }),
+    };
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig: structuralPineConfig({ rfStructuralStopEnabled: true }) }),
+      newSignals: [makeStructuralSignal({ signal_type: 'SELL' })],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].side).toBe('SELL');
+    expect(ops[0].initial_stop_basis).toBe('structural');
+    expect(ops[0].initial_stop).toBeGreaterThan(ops[0].entry_price); // stop acima da entrada, lado SELL
+  });
+});
+
 describe('Fase 2 rodada 2 — gatilho de deslocamento (opt-in, SMC 1h→5m only, docs/known-risks.md item 41)', () => {
   afterEach(() => { fetchCandles.mockReset(); });
 

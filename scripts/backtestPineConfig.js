@@ -207,6 +207,21 @@ const DEFAULTS = {
   // cogitar produção, mesmo padrão do allowedSide) — ver tripwire test em
   // src/lib/buyRegimeFilterTripwire.test.js.
   buyRegimeFilterEnabled: false,
+  // Stop estrutural na cascata RF nativa (docs/known-risks.md item 102) —
+  // reusa computeStructuralStop (já testado/em produção na cascata SMC),
+  // alimentado pelo swing de 4h que o RF já calcula pra todo sinal
+  // (tf4hData.smc.lastSwingLow/lastSwingHigh) — até hoje só metadado
+  // informativo, nunca stop. Item 24 já registrou que o RF ficou com o
+  // stop por tier×ATR por disciplina de paridade com o Pine real, não
+  // porque estrutural foi testado e rejeitado — combinação genuinamente
+  // nova. Quando ligado, TAMBÉM busca mais histórico de 4h
+  // (RF_4H_STRUCTURAL_STOP_CANDLE_LIMIT em scanner.js, mesmo motivo do
+  // item 34 que já ampliou o 1h da SMC — sem isso o swing quase sempre
+  // estaria ausente e o experimento cairia no fallback ATR de qualquer
+  // jeito). Master flag OFF por padrão, backtest-only (mesmo motivo dos
+  // outros acima) — ver tripwire test em
+  // src/lib/rfStructuralStopTripwire.test.js.
+  rfStructuralStopEnabled: false,
 };
 
 let overrides = {};

@@ -99,6 +99,16 @@ plano de sessão morre com a sessão.
 > de BUY melhor filtrado** (subconjunto BUY-ligado, n=30, sem poder pra
 > decidir nada). Não ativar. Não é "refutado" — é "não sabemos ainda, e
 > o efeito visível não é o que a hipótese previa". Detalhe: item 101.
+>
+> **Atualização 2026-08-17 (item 102): stop estrutural pro RF nativo —
+> primeira linha nova em SAÍDA/risco, não entrada.** Reusa
+> `computeStructuralStop` (já testado/em produção na SMC) alimentado
+> pelo swing de 4h que o RF já calcula pra todo sinal — nunca usado como
+> stop até hoje. Amplia a busca de candles 4h quando ligado (mesmo
+> ajuste que o item 34 já fez pro 1h da SMC, evitando um resultado
+> ambíguo por falta de dado). `TradeOperation.initial_stop_basis` audita
+> qual stop foi usado de verdade em cada operação. Implementado,
+> testado, opt-in/backtest-only — **ainda não medido**. Detalhe: item 102.
 
 ## A regra que ordena tudo: amostra
 
