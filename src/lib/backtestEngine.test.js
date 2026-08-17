@@ -631,6 +631,30 @@ describe('runBacktest — no-look-ahead (4h Range Filter flip)', () => {
     });
   });
 
+  // docs/known-risks.md item 102 — pineConfig.rfStructuralStopEnabled deve
+  // ampliar a busca de candles 4h (mesmo motivo do item 34, que já ampliou o
+  // 1h da SMC: calculateStructure é stateless, swingLen=50 quase silencia
+  // BOS/CHoCH com só 150 candles de histórico). `.at(-1)` porque
+  // fetchCandles.mock.calls acumula entre os testes deste arquivo (sem
+  // mockClear global) — sempre a chamada 4h mais recente que importa aqui.
+  describe('scanAsset — rfStructuralStopEnabled amplia a busca de candles 4h', () => {
+    it('flag desligada (default): busca 4h com o limite padrão (150)', async () => {
+      getPineConfig.mockResolvedValue(basePineConfig());
+      fetchCandles.mockImplementation(async () => build4hCandles().slice(0, 103));
+      await scanAsset(makeAsset());
+      const call4h = fetchCandles.mock.calls.filter(c => c[1] === '4h').at(-1);
+      expect(call4h[2]).toBe(150);
+    });
+
+    it('flag ligada: busca 4h com o limite ampliado (500)', async () => {
+      getPineConfig.mockResolvedValue(basePineConfig({ rfStructuralStopEnabled: true }));
+      fetchCandles.mockImplementation(async () => build4hCandles().slice(0, 103));
+      await scanAsset(makeAsset());
+      const call4h = fetchCandles.mock.calls.filter(c => c[1] === '4h').at(-1);
+      expect(call4h[2]).toBe(500);
+    });
+  });
+
   // known-risks item 47.2 -- warm-up: uma op aberta ANTES de evaluationFromMs
   // (aquecimento dos indicadores) e criada mecanicamente, mas excluida do
   // relatorio avaliado. Reusa o mesmo flip deterministico (BUY em

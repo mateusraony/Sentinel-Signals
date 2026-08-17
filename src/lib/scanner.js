@@ -98,6 +98,15 @@ const RF_1H_UNCOND_CASCADE = 'rf1h_uncond_15m';
 // gets the larger window; 4h/1d/15m/5m are unaffected.
 const DEFAULT_CANDLE_LIMIT = 150;
 const SMC_1H_STRUCTURE_CANDLE_LIMIT = 500;
+// docs/known-risks.md item 102 — mesma janela ampliada do
+// SMC_1H_STRUCTURE_CANDLE_LIMIT acima, mesmo motivo (item 34:
+// calculateStructure é stateless, swingLen=50 quase silencia BOS/CHoCH com
+// só 150 candles de histórico), aplicada ao 4h SÓ quando
+// pineConfig.rfStructuralStopEnabled está ligado — sem isso o stop
+// estrutural do RF nativo dependeria de um swing quase sempre ausente,
+// caindo no fallback ATR quase toda vez e tornando o experimento
+// inconclusivo por falta de dado, não por o mecanismo não ajudar.
+const RF_4H_STRUCTURAL_STOP_CANDLE_LIMIT = 500;
 // Fixed constant, deliberately NOT pineConfig.trailAtrMult — that field is
 // reserved for the RF cascade's post-TP1 trailing (see buildTradeOpData's
 // comment on the same mix-up). Fase 3 (known-risks item 42) gave the SMC
@@ -336,8 +345,28 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
   // confirms (see the up-to-4h retry window above), so using
   // sig.price_at_signal here would record a stale entry price.
   const entry = confirmation15m?.entryPrice ?? sig.price_at_signal;
-  const risk = tf4hData.atrValue * ATR_MULT;
-  const initialStop = isBuy ? entry - risk : entry + risk;
+  // docs/known-risks.md item 102 — pineConfig.rfStructuralStopEnabled
+  // (opt-in, backtest-only, default false). Reusa computeStructuralStop
+  // (já testado/em produção na cascata SMC) alimentado pelo swing de 4h
+  // que o RF nativo já calcula pra todo sinal (tf4hData.smc.lastSwingLow/
+  // lastSwingHigh, scanAsset) — até hoje só consumido como gate
+  // informativo, nunca como stop. Cai pro fallback ATR sozinho
+  // (computeStructuralStop) quando o nível estrutural está ausente/
+  // inválido/do lado errado. `basis` é gravado na operação
+  // (initial_stop_basis) pra auditoria — sem isso, "sem diferença" seria
+  // ambíguo entre "estrutural não ajuda" e "estrutural quase nunca foi
+  // usado de verdade" (ver RF_4H_STRUCTURAL_STOP_CANDLE_LIMIT acima).
+  let initialStop;
+  let stopBasis = 'tier_atr';
+  if (pineConfig.rfStructuralStopEnabled) {
+    const structuralLevel = isBuy ? tf4hData.smc?.lastSwingLow : tf4hData.smc?.lastSwingHigh;
+    const structural = computeStructuralStop({ isBuy, entry, structuralLevel, atrValue: tf4hData.atrValue });
+    initialStop = structural.stop;
+    stopBasis = structural.basis;
+  } else {
+    const risk = tf4hData.atrValue * ATR_MULT;
+    initialStop = isBuy ? entry - risk : entry + risk;
+  }
   const riskR = Math.abs(entry - initialStop);
   const tp1 = isBuy ? entry + riskR * tp1R : entry - riskR * tp1R;
   const tp2 = isBuy ? entry + riskR * tp2R : entry - riskR * tp2R;
@@ -372,6 +401,11 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
     atr_value: tf4hData.atrValue,
     initial_stop: initialStop,
     current_stop: initialStop,
+    // 'tier_atr' (default) | 'structural' | 'structural_floored' |
+    // 'structural_capped' | 'atr_fallback' (rfStructuralStopEnabled ligado,
+    // mas sem swing válido) — ver comentário acima. docs/known-risks.md
+    // item 102.
+    initial_stop_basis: stopBasis,
     tp1,
     tp2,
     tp1_hit: false,
@@ -1175,7 +1209,11 @@ export async function scanAsset(asset) {
   // Fetch and analyze each timeframe
   for (const tf of enabledTimeframes) {
     try {
-      const candleLimit = tf === '1h' ? SMC_1H_STRUCTURE_CANDLE_LIMIT : DEFAULT_CANDLE_LIMIT;
+      const candleLimit = tf === '1h'
+        ? SMC_1H_STRUCTURE_CANDLE_LIMIT
+        : (tf === '4h' && pineConfig.rfStructuralStopEnabled)
+          ? RF_4H_STRUCTURAL_STOP_CANDLE_LIMIT
+          : DEFAULT_CANDLE_LIMIT;
       const candles = await fetchCandles(asset.symbol, tf, candleLimit);
       
       // Only use closed candles for signal calculation

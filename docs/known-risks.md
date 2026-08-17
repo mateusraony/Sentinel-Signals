@@ -10662,3 +10662,89 @@ Decomposição e testes de significância via script Python ad-hoc sobre
 `overall.curve` dos dois relatórios (mesma fórmula `SE_diff` já
 estabelecida nas correções dos itens 90/95 desta sessão). Nenhuma
 mudança de código.
+
+## 102. `rfStructuralStopEnabled` — stop estrutural pro RF nativo, reusando o mecanismo já testado da SMC (2026-08-17)
+
+### Contexto
+
+Usuário perguntou, de forma direta e honesta, qual seria a melhor forma
+de obter resultado — se valeria trocar de estratégia inteira. Resposta
+registrada em conversa (não em known-risks, é opinião/recomendação, não
+achado de dado): os dados deste projeto não sustentam "trocar de
+estratégia" como primeiro passo — o teto real é estatístico (item 97-99,
+N efetivo ≈ N/3), não necessariamente a lógica de entrada, e uma
+estratégia nova bateria no MESMO teto sem nenhum do hardening já
+construído aqui. O lado barato e nunca testado é SAÍDA/gestão de risco,
+não entrada — e o candidato mais concreto é o stop estrutural: a cascata
+SMC já tem um (`computeStructuralStop`, testado, em produção), mas foi
+descartado junto com o resto da SMC (que tinha problema de ENTRADA, não
+de saída) — estrutural e a entrada SMC nunca foram separados e testados
+independentemente.
+
+### Mecanismo implementado
+
+Novo `pineConfig.rfStructuralStopEnabled` (opt-in, default `false`,
+backtest-only — mesmo isolamento arquitetural de todo outro flag
+experimental deste motor). Reusa **sem duplicar**:
+
+- `computeStructuralStop` (`opExitRules.js`, já testado/em produção na
+  SMC) — pega o nível de swing protegido, aplica margem de 0,1×ATR além
+  dele, trava a distância entre 0,5×ATR (piso) e 2,0×ATR (teto); sem
+  nível válido ou do lado errado, cai pro fallback ATR puro sozinho.
+- O swing de 4h que o RF nativo **já calcula pra todo sinal**
+  (`tf4hData.smc.lastSwingLow`/`lastSwingHigh`, via `calculateStructure`
+  dentro de `scanAsset`) — até hoje só consumido como gate informativo
+  (`smc_alignment_at_entry`), nunca como stop. Nenhum indicador novo,
+  nenhuma busca de dado nova pra ISSO especificamente.
+- TP1/TP2 já são calculados como `entry ± riskR × tp1R/tp2R` — trocando
+  o stop, os alvos se ajustam sozinhos pro MESMO múltiplo de R (1,5R/3R),
+  zero código extra.
+
+Confirmei no item 24 (já registrado): o RF ficou com o stop por
+tier×ATR por disciplina de **paridade com o Pine real**, não porque
+estrutural foi testado e rejeitado nessa cascata — combinação
+genuinamente nova, nunca proposta nem descartada antes.
+
+### O risco que quase inutilizaria o experimento, corrigido antes de medir
+
+Item 34 (já registrado) mediu que `calculateStructure` é *stateless*
+(recalcula do zero a cada scan) e `swingLen=50` quase silencia
+BOS/CHoCH com só 150 candles de histórico — foi por isso que a SMC no
+1h ganhou uma janela ampliada pra 500 candles só pra ela
+(`SMC_1H_STRUCTURE_CANDLE_LIMIT`). **O RF no 4h nunca ganhou esse
+ajuste.** Sem corrigir isso, o stop estrutural do RF quase sempre cairia
+no fallback ATR por falta de dado, não por o mecanismo não ajudar — um
+resultado "sem diferença" seria ambíguo e inútil. Corrigido: quando
+`rfStructuralStopEnabled` está ligado, a busca de candles 4h TAMBÉM
+amplia pra 500 (`RF_4H_STRUCTURAL_STOP_CANDLE_LIMIT`, mesmo valor/mesmo
+motivo) — sem afetar a busca de 4h de ninguém que não estiver testando
+este flag.
+
+**Instrumentação decisiva**: `TradeOperation.initial_stop_basis`
+(`'tier_atr'` default | `'structural'` | `'structural_floored'` |
+`'structural_capped'` | `'atr_fallback'` quando o flag está ligado mas
+sem swing válido) grava qual stop foi usado DE VERDADE em cada operação
+— sem isso, o resultado do futuro trial seria tão ambíguo quanto teria
+sido sem ampliar a janela: não daria pra distinguir "estrutural não
+ajuda" de "estrutural quase nunca foi usado".
+
+### Verificação
+
+19 testes novos: 6 comportamentais em `scannerStateMachine.test.js`
+(flag desligada sem mudança; swing válido usa estrutural com TP1/TP2 no
+mesmo R; swing muito perto vira `structural_floored`; swing longe demais
+vira `structural_capped`; sem swing vira `atr_fallback`; SELL usa
+`lastSwingHigh`, mesma mecânica espelhada); 2 em `backtestEngine.test.js`
+confirmando a ampliação real da busca de candles 4h (150 padrão, 500 com
+o flag); 3 de isolamento em `rfStructuralStopTripwire.test.js` (mesmo
+padrão dos outros tripwires). `npm run lint && npm test -- --run` —
+1030/1030 passando. `npm run build` + os 3 alvos esbuild
+(`build:scan`/`build:scan-shadow`/`build:backtest`) compilando sem erro.
+Grep de isolamento confirmado: `rfStructuralStopEnabled` ausente em
+`pineParser.js`/`adminPineConfig.js`, presente só em
+`backtestPineConfig.js`.
+
+**Próximo passo (não feito ainda)**: rodar um trial de backtest com o
+flag ligado vs. desligado, olhando também `initial_stop_basis` na
+distribuição de operações antes de interpretar qualquer diferença de
+expectância — mesma regra de todo outro flag experimental deste motor.
