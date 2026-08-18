@@ -10790,10 +10790,49 @@ exata, único diferencial é a flag:
 |---|---|---|
 | R médio (n=81, pareado) | **-0,789R** | **-0,651R** |
 
-Diferença pareada = **-0,138R**, erro-padrão pareado 0,0632,
-**t=-2,19 (n=81, significativo a 5%)** — o mecanismo piora o resultado
-das operações que toca, de forma estatisticamente detectável. 48 das 81
-operações ficaram PIORES com a invalidação, só 33 ficaram melhores.
+Diferença pareada = **-0,138R**. 48 das 81 operações ficaram PIORES com
+a invalidação, só 33 ficaram melhores.
+
+### Correção (2026-08-18, review externa Codex, PR #207) — significância recalculada com a ferramenta certa
+
+A primeira versão deste item computou o erro-padrão pareado como se as
+81 diferenças fossem independentes (t=-2,19), **sem aplicar a própria
+ferramenta de correlação (item 97) que esta sessão construiu
+justamente pra não cometer esse erro** — mesmo tipo de dado (múltiplas
+janelas de operação sobrepostas, vários símbolos) onde os itens 97-99
+já mediram DEFF≈3 (N efetivo ≈ N/3). Achado do Codex, procedente.
+
+Recomputado com `backtest-correlation-check.mjs` sobre as 81 diferenças
+pareadas (clusterizando por sobreposição temporal, mesma metodologia
+Cameron-Miller CR1 já usada nos itens 97-99):
+
+| Método | Erro-padrão | t |
+|---|---|---|
+| Ingênuo (i.i.d., versão original) | 0,0632 | -2,186 |
+| Em cluster (G=24, tamanho médio 3,38) | 0,0689 | **-2,005** |
+
+**Continua significativo — raspando, não confortável.** Achado extra,
+não previsto: o DEFF real aqui é **1,19**, bem menor que o ≈3 medido em
+R bruto (itens 97-99) — e o teste de permutação confirma que esse DEFF
+pequeno não se distingue de ruído (p=0,2047, dentro do intervalo do
+nulo). Leitura: a estimativa "reduziria pra t≈1,26" (aplicando o DEFF≈3
+de R bruto direto à diferença pareada) **superestimou a correção
+necessária** — diferenças pareadas cancelam boa parte do movimento de
+mercado COMUM aos dois lados da comparação (a mesma operação, com e sem
+o flag, herda o mesmo movimento de preço até o ponto em que divergem),
+que é justamente a componente que a correlação entre ativos infla. Não
+inventa a correção certa por analogia — precisa medir a série
+específica que está sendo testada, não reusar automaticamente um número
+de outro contexto (regra prática confirmada por este episódio: até um
+"efeito 10x menor" precisa ser medido, não estimado).
+
+**Honestidade sobre a margem**: G=24 está no limite baixo de
+confiabilidade que a própria ferramenta já sinaliza (<20 = pouco
+confiável sozinho) — t=-2,005 é significativo, mas por pouco. Não muda
+a recomendação (a direção do efeito, o mecanismo de causalidade
+invertida, e os 91% de STOP_HIT no mundo desligado continuam intactos),
+mas a confiança no resultado é mais modesta do que a primeira versão
+deste item transmitia.
 
 **O motivo**: no mundo "desligado", **74 das 81 operações (91%) bateram
 STOP_HIT de qualquer jeito** — quase todas já estavam condenadas antes
@@ -10812,8 +10851,10 @@ pré-calculado mais próximo da entrada.
 ### Leitura (fato × hipótese × recomendação)
 
 **Fato**: para as operações onde o mecanismo realmente age, ele piora o
-resultado, de forma estatisticamente significativa no teste pareado —
-não é mais "sem evidência", é evidência real contra.
+resultado, de forma estatisticamente significativa no teste pareado
+mesmo depois de corrigir por correlação entre ativos (t=-2,005, G=24) —
+não é mais "sem evidência", é evidência real contra, ainda que por
+margem mais estreita do que a primeira leitura sugeria.
 
 **Hipótese**: a suspeita de causalidade invertida do item 45.9,
 carregada por 3 itens seguidos (91/92/93) como ressalva teórica não
@@ -10832,11 +10873,20 @@ Quando dois relatórios compartilham janela/carteira, **casar operações
 por `id` determinístico** dá um contrafactual pareado real — mais forte
 que `SE_diff` sobre médias agregadas (que continua sendo o certo quando
 os relatórios NÃO compartilham as mesmas operações exatas, caso mais
-comum). Vale usar sempre que a condição se repetir.
+comum). **Correção do Codex incorporada à regra**: mesmo um contrafactual
+pareado precisa passar pela correção de correlação
+(`backtest-correlation-check.mjs`) antes de virar veredito — não dá pra
+assumir que diferenças pareadas herdam automaticamente o DEFF≈3 já
+medido pra R bruto (aqui saiu bem menor, 1,19, porque a diferença
+cancela a componente de mercado comum aos dois lados) nem que herdam
+independência total — tem que medir a série específica.
 
 ### Verificação
 
 2 relatórios reais, registrados via `backtest-trial-registry.mjs
---family arb-invalidate-sametf-hypothesis` (N=2). Pareamento e teste-t
-pareado via script Python ad-hoc sobre `overall.curve` dos dois
-relatórios, casando por `op.id`. Nenhuma mudança de código.
+--family arb-invalidate-sametf-hypothesis` (N=2). Pareamento via script
+Node ad-hoc sobre `overall.curve` dos dois relatórios, casando por
+`op.id`. Significância recomputada com `backtest-correlation-check.mjs`
+(erro-padrão em cluster + teste de permutação) sobre as diferenças
+pareadas, reusando as funções já testadas do item 97 em vez de
+reimplementar. Nenhuma mudança de código de produção.
