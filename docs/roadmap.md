@@ -125,24 +125,25 @@ plano de sessão morre com a sessão.
 > não "confirmado que piora") — precisa de uma 2ª medição independente pra
 > reabrir. Detalhe: item 103.
 >
-> **Atualização 2026-08-18 (item 104, corrigido/completado 2026-08-18): `rfStructuralStopEnabled`
+> **Atualização 2026-08-18 (item 104, corrigido/completado 2026-08-18 ×2): `rfStructuralStopEnabled`
 > medido — 1ª medição CONFUNDIDA por um teto não tier-aware, corrigida no
-> código; re-run limpo não confirma estatisticamente.**
+> código; re-run limpo não confirma estatisticamente com o teste certo.**
 > `computeStructuralStop` capava sempre em 2,0×ATR mesmo pra tiers T2/T3
 > (89% da amostra usa tier atrStopMult 2,5×/3,0×ATR quando desligado) —
 > o 1º trial testava, sem intenção, "ATR mais apertado" em vez de
 > "estrutural vs ATR". **Corrigido em `scanner.js`** (`maxAtrMult:
-> ATR_MULT`, tier-aware, igual ao ramo desligado) e **re-rodado**
-> (`rf-structural-stop-on-baixa2025-tierfix`, spot-check confirma teto
-> 3,0×ATR pro T3, não mais 2,0×): contrafactual pareado dá -0,043R
-> (334 operações), naive t=-2,51, mas em cluster **G=8 — baixo demais
-> pra confiar no `t=-2,67` "passando" contra t(7)=2,37** (a própria
-> literatura CR1 recomenda bootstrap wild-cluster nesse G, não
-> implementado aqui); teste de permutação não confirma (p=0,13);
-> checagem por símbolo mostra 11/20 negativos, não unânime. **Não
-> ativar** — sinal direcional negativo recorrente em 3 medições, mas
-> nenhuma alcança confiança estatística que resista a escrutínio.
-> Detalhe: item 104.
+> ATR_MULT`, tier-aware) e **re-rodado**: contrafactual pareado dá
+> -0,043R (334 operações), naive t=-2,51, cluster t=-2,67 (G=8, baixo
+> demais pra confiar no CR1). **2ª correção (Codex)**: o teste de
+> permutação citado pra invalidar a significância testava o DEFF, não o
+> efeito — erro de categoria. Nova função `clusterSignFlipTest`
+> (randomização de sinal por cluster, nulo sobre a MÉDIA, válida pra
+> qualquer G) dá o teste certo: **p=0,156, exaustivo sobre G=8 — não
+> significativo**, confirmando a conclusão original com o método certo
+> desta vez. Checagem por símbolo: 11/20 negativos, não unânime. **Não
+> ativar** — sinal direcional negativo no re-run (top-line e
+> contrafactual são 2 leituras do MESMO re-run, não medições
+> independentes), mas não confirmado estatisticamente. Detalhe: item 104.
 >
 > **Atualização 2026-08-18 (item 105, corrigido 2026-08-18): `preTp1StopProtectionEnabled`
 > medido — protege capital como desenhado, mas efeito no subconjunto

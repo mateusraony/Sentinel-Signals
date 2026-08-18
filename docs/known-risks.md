@@ -11131,33 +11131,58 @@ em cluster=0,0161, t=-2,67, "passa" contra o crítico t(7)=2,365 — **mas
 esse veredito não é confiável nesse G**: a literatura que fundamenta o
 CR1 (Cameron-Gelbach-Miller, a mesma citada no cabeçalho do script)
 recomenda bootstrap wild-cluster pra G tão baixo, que esta ferramenta
-não implementa; com só 8 "observações" efetivas pra estimar a variância
-entre clusters, o próprio erro-padrão em cluster é instável. DEFF=0,887
-(<1, atípico e também sintoma da instabilidade em G baixo, não
-evidência sólida de baixa correlação). Teste de permutação (a validação
-primária que a ferramenta recomenda justamente pra esse regime):
-**p=0,132 — não confirma que a estrutura de correlação medida se
-distingue de ruído.**
+não implementava até esta rodada; com só 8 "observações" efetivas pra
+estimar a variância entre clusters, o próprio erro-padrão em cluster é
+instável.
 
-**Checagem independente por símbolo** (não depende da matemática de
-cluster): dos 20 símbolos pareados, **11 tiveram diferença média
-negativa, 6 positiva, 3 ~zero** — direção majoritariamente negativa, mas
-longe de unânime. A magnitude agregada é puxada por um punhado de
-símbolos (XRPUSDT -0,261R, ARBUSDT -0,178R, AAVEUSDT -0,137R, ETHUSDT
--0,104R, DOTUSDT -0,078R), não um efeito uniforme em toda a carteira.
+### Correção (2026-08-18, review externa Codex, PR #210) — o teste de permutação errado foi usado pra julgar significância
+
+A leitura original citou `permutationTest` (p=0,132, "estrutura de
+correlação não se distingue de ruído") como se isso invalidasse a
+significância do efeito — **erro de categoria apontado pelo Codex**:
+`permutationTest` (item 97) testa se o **DEFF** medido excede o que um
+deslocamento circular de calendário produziria por acaso; ele não tem
+hipótese nula sobre a MÉDIA. Um p-valor alto ali só diz "não dá pra
+confirmar que a correção por cluster está bem calibrada" — não diz nada
+sobre se o efeito em si é zero. Tomados ao pé da letra, os dois testes
+efetivamente reportados (ingênuo t=-2,51, cluster t=-2,67) **rejeitam
+zero**, contradizendo a conclusão "não confirmado" que a leitura
+original tirou de um teste que respondia outra pergunta.
+
+**Corrigido com a ferramenta certa**: nova função `clusterSignFlipTest`
+(`backtest-correlation-check.mjs`) — teste de randomização cujo nulo É
+sobre a média: inverte o sinal de todos os valores de cada cluster
+JUNTOS (preserva a correlação intra-cluster), sorteia um padrão de
+sinais por cluster, recomputa a média, repete. Com G=8, dá pra enumerar
+os 2⁸=256 padrões possíveis — **p-valor EXATO**, não aproximado, e
+válido pra qualquer G (ao contrário do CR1, que degrada com G baixo).
+
+**Resultado**: `clusterSignFlipTest` nas 334 diferenças pareadas (G=8,
+enumeração exaustiva) — **p=0,156**. **Não significativo.** A conclusão
+prática da leitura original ("não confirmado") sobrevive, mas agora com
+o teste certo por trás — o teste de permutação de DEFF nunca deveria
+ter sido citado como evidência disso.
+
+**Checagem independente por símbolo** (não depende de nenhuma matemática
+de cluster, serve de triangulação adicional): dos 20 símbolos pareados,
+**11 tiveram diferença média negativa, 6 positiva, 3 ~zero** — direção
+majoritariamente negativa, mas longe de unânime. A magnitude agregada é
+puxada por um punhado de símbolos (XRPUSDT -0,261R, ARBUSDT -0,178R,
+AAVEUSDT -0,137R, ETHUSDT -0,104R, DOTUSDT -0,078R), não um efeito
+uniforme em toda a carteira — consistente com o `p=0,156` do teste
+correto (efeito não confirmado, majoritário mas não universal).
 
 ### Leitura final (fato × hipótese × recomendação)
 
-**Fato**: com o código corrigido, o ponto estimado do contrafactual
-pareado continua negativo (-0,043R) e o teste ingênuo é significativo
-— mas o teste em cluster (a referência correta pra este tipo de dado,
-estabelecida nos itens 97-103) não pode ser tomado como confiável
-porque G=8 é baixo demais pra sustentar a matemática CR1, e o teste de
-permutação (a validação recomendada exatamente pra esse caso) não
-confirma. A checagem por símbolo mostra que o sinal não é uniforme
-(11/20, não 20/20) — consistente com "efeito real, mas concentrado em
-poucos símbolos" ou com "artefato de poucos outliers", sem como
-distinguir os dois com os dados disponíveis.
+**Fato**: com o código corrigido (teste válido pra qualquer G), o ponto
+estimado do contrafactual pareado é negativo (-0,043R), mas o teste de
+randomização correto (`clusterSignFlipTest`, p=0,156, exaustivo sobre
+G=8) **não rejeita a hipótese nula de efeito zero**. Os testes ingênuo
+(t=-2,51) e em cluster CR1 (t=-2,67) formalmente "passam", mas o CR1
+não é confiável nesse G e o ingênuo ignora a correlação entre símbolos
+— nenhum dos dois é o teste certo aqui; o `clusterSignFlipTest` é. A
+checagem por símbolo (11/20 negativos) reforça a leitura de "sinal
+majoritário, não confirmado".
 
 **Hipótese**: stops mais largos (T2/T3 agora usando 2,5×/3,0×ATR de
 verdade, não mais 2,0× capado) parecem, direcionalmente, piorar o
@@ -11167,32 +11192,36 @@ equivalente (TP1/TP2 escalam no mesmo R, então o múltiplo de risco não
 muda, só a distância absoluta). Mas isso é leitura qualitativa, não
 achado estatístico confirmado.
 
-**Recomendação**: **não ativar** — a direção do sinal é consistentemente
-negativa nas 3 medições feitas até agora (item 104 original com bug,
-top-line do re-run, contrafactual pareado do re-run), mas nenhuma delas
-alcança confiança estatística que resista a escrutínio (G baixo,
-permutação não confirma, símbolos divididos). Não é "confirmado que
-piora" — é "nenhuma evidência de melhora, com sinal direcional negativo
-recorrente que não chega a ser conclusivo". Reabrir exigiria uma medição
-nova em janela/carteira onde os clusters de sobreposição fiquem menos
-concentrados (G maior), não repetir a mesma janela.
+**Recomendação**: **não ativar** — a direção do sinal é negativa tanto
+no trial original (confundido pelo bug, descartado como medição válida)
+quanto no re-run limpo (top-line E contrafactual pareado, que são DUAS
+LEITURAS do MESMO re-run, não duas medições independentes — o único
+dado novo aqui é o re-run em si), mas nenhuma leitura alcança confiança
+estatística com o teste correto. Não é "confirmado que piora" — é
+"nenhuma evidência de melhora, com sinal direcional negativo recorrente
+que não chega a ser conclusivo". Reabrir exigiria uma medição
+independente nova (janela/carteira diferente, idealmente com clusters de
+sobreposição menos concentrados — G maior), não repetir a mesma janela.
 
 ### Verificação
 
 3 relatórios reais (`backtest-trial-registry.mjs --family
 rf-structural-stop-hypothesis`, N=3 — Bonferroni z=2,394, todos
-inconclusivos isoladamente). Pareamento por `op.id` via script Node
-ad-hoc; significância via `backtest-correlation-check.mjs`
-(`clusterRobustStdErr` + `studentTCritical95` + `permutationTest`,
-funções já testadas), mais uma checagem independente por símbolo (média
-simples por `op.symbol`, sem depender da matemática de cluster).
+inconclusivos isoladamente; o 1º é diagnóstico do bug, não medição
+válida). Pareamento por `op.id` via script Node ad-hoc; significância
+via `backtest-correlation-check.mjs` (`clusterRobustStdErr` +
+`studentTCritical95` + `clusterSignFlipTest`, o teste do EFEITO, não do
+DEFF), mais uma checagem independente por símbolo (média simples por
+`op.symbol`, sem depender de nenhuma matemática de cluster).
 `initial_stop_basis`/`tier` lidos direto do `TradeOperation` de cada
 operação do relatório. Confound original identificado e código
 corrigido (`scanner.js`, `maxAtrMult: ATR_MULT`) com 2 testes novos de
-regressão (T3 tier-aware) em `scannerStateMachine.test.js` — `npm run
-lint && npm test -- --run` (1036/1036) e os 4 alvos de build
+regressão (T3 tier-aware) em `scannerStateMachine.test.js`.
+`clusterSignFlipTest` nova, testada (5 casos: valor exato calculado à
+mão, sem efeito, efeito forte, G<2, exaustivo vs. Monte Carlo,
+determinismo) em `backtest-correlation-check.test.mjs`. `npm run lint
+&& npm test -- --run` (1042/1042) e os 4 alvos de build
 (`build`/`build:scan`/`build:scan-shadow`/`build:backtest`) limpos.
-Nenhuma mudança de código nesta rodada (só o re-run + análise).
 
 ## 105. `preTp1StopProtectionEnabled` medido — protege capital como desenhado, mas o efeito no subconjunto onde realmente ativa é pequeno e não significativo (2026-08-18, corrigido 2026-08-18)
 
