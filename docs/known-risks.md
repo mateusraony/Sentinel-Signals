@@ -10749,6 +10749,33 @@ flag ligado vs. desligado, olhando também `initial_stop_basis` na
 distribuição de operações antes de interpretar qualquer diferença de
 expectância — mesma regra de todo outro flag experimental deste motor.
 
+### Correção (2026-08-18, review externa Codex, PR #209) — o teto não era por-tier
+
+O texto acima descreve o teto de `computeStructuralStop` como fixo em
+"2,0×ATR" — verdade só pro tier T1. O ramo DESLIGADO usa
+`tf4hData.tier?.atrStopMult` (2,0/2,5/3,0×ATR pra T1/T2/T3,
+`indicators/tier.js`), mas a chamada original de `computeStructuralStop`
+no ramo ligado não passava `maxAtrMult`, então sempre caía no default
+2,0 da função — pro T2/T3 (a maioria das operações reais, ver item 104),
+os casos `structural_capped`/`atr_fallback` produziam um stop
+SISTEMATICAMENTE mais apertado que o ramo desligado pro mesmo tier, não
+o mesmo valor. Isso quebrava a premissa de isolar 1 variável só
+("estrutural vs ATR") — também mudava, sem intenção, o múltiplo de
+risco pra maioria das operações.
+
+**Corrigido**: `scanner.js` agora passa `maxAtrMult: ATR_MULT` (o mesmo
+`tf4hData.tier?.atrStopMult ?? 2.0` que o ramo desligado usa) pra
+`computeStructuralStop`. O piso (`minAtrMult`, sem equivalente por-tier
+no ramo desligado) continua fixo em 0,5×ATR de propósito — só o TETO
+precisava ficar tier-aware pra reproduzir fielmente o comportamento
+antigo quando cai em `capped`/`fallback`. 2 testes novos em
+`scannerStateMachine.test.js` cobrindo T3 (`atrStopMult=3.0`) explicitamente.
+
+**Consequência prática**: o trial já medido no item 104
+(`rf-structural-stop-on-baixa2025`, rodado ANTES desta correção) está
+confundido — não testa limpo "estrutural vs ATR" pros tiers T2/T3 (98%
+da amostra). Ver item 104 para o detalhe e a recomendação de novo run.
+
 ## 103. `arbInvalidateOnOppositeSameTf` medido — sinal direcional negativo consistente com a causalidade invertida suspeitada, mas não confirmado estatisticamente (2026-08-17, corrigido 2026-08-18 ×2)
 
 ### Contexto
@@ -10946,3 +10973,258 @@ reusando/estendendo as funções já testadas do item 97 em vez de
 reimplementar. Única mudança de código: a extensão do script de
 diagnóstico (não toca `backtestEngine.js`/`scanner.js`/`pineConfig` —
 nenhuma mudança de comportamento de produção ou de backtest).
+
+## 104. `rfStructuralStopEnabled` medido — resultado CONFUNDIDO por um teto não tier-aware (corrigido no código, item 102), efeito pequeno e não significativo de qualquer forma (2026-08-18, corrigido 2026-08-18)
+
+### Contexto
+
+A/B do item 102 rodado: controle reaproveitado (`buy-regime-filter-off-
+baixa2025`, item 100) + `rf-structural-stop-on-baixa2025`, mesma janela
+`2025-07-27→2026-07-27`, carteira de 20 símbolos.
+
+### Resultado — número de topo
+
+| | Desligado | Ligado |
+|---|---|---|
+| n | 343 | 395 |
+| Expectância líquida | -0,041R | -0,107R |
+| Win rate | 41,1% | 39,7% |
+| IC95 | [-0,167; 0,085] | [-0,226; 0,011] |
+
+Delta = -0,066R, `SE_diff=0,088`, **z=-0,75 — não significativo**
+isoladamente. n subiu 343→395 (+52, +15%) mesmo o mecanismo só mudando
+o STOP — mesmo efeito de vaga liberada (`assetActiveOps`) já visto nos
+itens 101/103: um stop diferente muda a duração média da operação, que
+muda quando a vaga do ativo libera pra próxima entrada.
+
+### Contrafactual pareado por ID de operação
+
+336 das 395 operações do trial "ligado" existem também no "desligado"
+(85% — confirma que o mecanismo realmente só muda a SAÍDA: a imensa
+maioria das entradas é idêntica, a diferença de n vem do efeito de vaga
+liberada sobre a minoria restante).
+
+| | Com stop estrutural (ligado) | Com stop ATR (desligado, mesma operação) |
+|---|---|---|
+| R médio (n=336, pareado) | **-0,066R** | **-0,030R** |
+
+Diferença pareada = **-0,036R**. 227 das 336 pioraram, 109 melhoraram.
+
+| Método | Erro-padrão | t |
+|---|---|---|
+| Ingênuo (i.i.d.) | 0,0456 | -0,782 |
+| Em cluster (G=32, tamanho médio 10,50) | 0,0554 | **-0,643** |
+
+t crítico correto (t-Student, df=31) = **2,040** — `|t|=0,643` fica bem
+abaixo. **Não significativo por nenhuma medida.** DEFF=1,48; teste de
+permutação p=0,092 (perto do limiar de 10%, mas não confirma a
+correlação com confiança convencional).
+
+### Correção (2026-08-18, review externa Codex, PR #209) — a explicação original estava errada: o teto NÃO era por-tier
+
+A leitura original deste item classificava `structural_capped`/
+`atr_fallback` (95% da amostra) como "colapsa de volta pro comportamento
+ATR antigo" — **errado**. `computeStructuralStop` chamado pelo ramo
+ligado usava um teto FIXO de 2,0×ATR (`maxAtrMult` default), mas o ramo
+DESLIGADO usa `tf4hData.tier?.atrStopMult` — 2,0/2,5/3,0×ATR pra
+T1/T2/T3. Cruzando `initial_stop_basis` com o `tier` de cada operação:
+
+| Tier | `atrStopMult` do ramo desligado | n (trial ligado) | % da amostra |
+|---|---|---|---|
+| T1 | 2,0×ATR (== teto fixo usado) | 8 | 2,0% |
+| T2 | 2,5×ATR | 35 | 8,9% |
+| T3 | 3,0×ATR | 352 | 89,1% |
+
+**89% da amostra é T3.** Pra essas 352 operações, `structural_capped`/
+`atr_fallback` (a maioria delas) usaram um stop capado em 2,0×ATR
+enquanto o ramo desligado teria usado 3,0×ATR — **um terço mais
+apertado**, não "o mesmo comportamento antigo". O mesmo vale, em menor
+grau, pro T2 (2,0× contra 2,5×, 11% mais apertado). Só as 8 operações T1
+(2%) realmente reproduziam o comportamento antigo quando capadas/em
+fallback. **A afirmação "95% colapsa pro comportamento antigo" estava
+errada — pra 98% da amostra (T2+T3), o trial testava, sem intenção,
+"ATR mais apertado" e não "estrutural vs ATR".**
+
+**Corrigido no código** (`scanner.js`, ver item 102): `maxAtrMult` agora
+usa o mesmo `tf4hData.tier?.atrStopMult` do ramo desligado. **O trial já
+medido (`rf-structural-stop-on-baixa2025`) foi rodado ANTES desta
+correção e está confundido** — o -0,036R pareado abaixo mistura o
+efeito real de "estrutural vs ATR" com o efeito não intencional de "ATR
+mais apertado pra T2/T3". Não é possível decompor os dois a partir
+deste relatório sozinho (não há como saber, sem re-rodar, quanto do
+-0,036R vem de cada componente). **Recomendação: re-rodar o trial sob o
+código corrigido antes de tirar qualquer conclusão sobre a hipótese
+"stop estrutural" em si** — os números abaixo ficam registrados como
+diagnóstico do bug, não como medição válida do mecanismo.
+
+### O que os dados (confundidos) mostraram
+
+`TradeOperation.initial_stop_basis` (o campo de auditoria que o item 102
+adicionou de propósito) — das 395 operações do trial ligado:
+
+| `initial_stop_basis` | n | % |
+|---|---|---|
+| `structural_capped` (nível real longe demais, capado no teto — 2,0×ATR fixo, o bug) | 319 | 81% |
+| `atr_fallback` (sem swing válido, caiu no ATR — também 2,0×ATR fixo, o bug) | 56 | 14% |
+| `structural` (nível genuíno, nem capado nem flooreado — não afetado pelo bug) | 14 | 3,5% |
+| `structural_floored` (nível perto demais, elevado ao piso 0,5×ATR — não afetado pelo bug) | 6 | 1,5% |
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: o trial medido (-0,036R pareado, não significativo — t=-0,64
+em cluster contra t(31)=2,040 crítico) não pode ser atribuído
+limpamente à hipótese "stop estrutural" — 98% da amostra também sofreu
+um aperto de stop não intencional (teto fixo 2,0×ATR em vez do
+`atrStopMult` do tier). Mesmo sem essa confusão, o efeito medido já não
+era significativo, então a conclusão prática (não ativar, sem evidência
+de melhora) não muda — mas a EXPLICAÇÃO do porquê ("colapsa pro
+comportamento antigo") estava errada, e uma medição limpa da hipótese
+real continua pendente.
+
+**Hipótese**: com o teto corrigido (tier-aware), a fração de operações
+`structural_capped`/`atr_fallback` que reproduzem fielmente o
+comportamento antigo deve subir bastante — o próximo trial deveria
+produzir um contraste mais limpo entre "estrutural" (as poucas
+operações com nível genuíno) e "ATR antigo de verdade" (agora
+corretamente reproduzido nos casos capados/fallback).
+
+**Recomendação**: **não ativar** (sem evidência de melhora, efeito não
+significativo mesmo confundido) — e **não reusar os números deste
+trial** como medição da hipótese "estrutural vs ATR": re-rodar
+`rf-structural-stop-on-baixa2025` sob o código corrigido (commit que
+inclui a correção do item 102) é o próximo passo antes de qualquer
+decisão nova sobre este mecanismo.
+
+### Verificação
+
+2 relatórios reais (`backtest-trial-registry.mjs --family
+rf-structural-stop-hypothesis`, N=2 — Bonferroni z=2,241, ambos
+inconclusivos isoladamente). Pareamento por `op.id` via script Node
+ad-hoc; significância via `backtest-correlation-check.mjs`
+(`clusterRobustStdErr` + `studentTCritical95` + `permutationTest`,
+funções já testadas). `initial_stop_basis`/`tier` lidos direto do
+`TradeOperation` de cada operação do relatório. Confound identificado e
+código corrigido (`scanner.js`, `maxAtrMult: ATR_MULT`) com 2 testes
+novos de regressão (T3 tier-aware) em `scannerStateMachine.test.js` —
+`npm run lint && npm test -- --run` (1036/1036) e os 4 alvos de build
+(`build`/`build:scan`/`build:scan-shadow`/`build:backtest`) limpos.
+
+## 105. `preTp1StopProtectionEnabled` medido — protege capital como desenhado, mas o efeito no subconjunto onde realmente ativa é pequeno e não significativo (2026-08-18, corrigido 2026-08-18)
+
+### Contexto
+
+A/B do item 53/54 finalmente rodado: mesmo controle (`buy-regime-filter-
+off-baixa2025`) + `pretp1-breakeven-on-baixa2025`, mesma janela
+`2025-07-27→2026-07-27`, 20 símbolos, `preTp1StopProtectionAtrMult` no
+default (1,0×ATR).
+
+### Resultado — número de topo
+
+| | Desligado | Ligado |
+|---|---|---|
+| n | 343 | 404 |
+| Expectância líquida | -0,041R | -0,038R |
+| Win rate | 41,1% | 22,3% (ver explicação abaixo — não é piora real) |
+| IC95 | [-0,167; 0,085] | [-0,128; 0,051] |
+
+Delta = +0,003R, `SE_diff=0,079`, **z=0,04 — efetivamente zero**
+isoladamente. n subiu 343→404 (+61, +18%), mesmo efeito de vaga
+liberada dos itens 101/103/104.
+
+**O win rate caindo pra 22,3% NÃO é o mecanismo piorando** — é um
+artefato de como `wins`/`losses`/`be` são contados: `be` (breakeven)
+saltou de **3 (controle) para 160 (ligado)**, de 404 operações. Isso é
+exatamente o mecanismo funcionando como desenhado: operações que
+teriam fechado com perda agora fecham em 0R (breakeven), o que não
+conta como "win" — derruba o win rate nominal sem representar piora
+nenhuma (breakeven é estritamente melhor que perda). `avgLossR` das
+perdas que restaram caiu de 0,993R pra 0,886R (-11%) — as perdas que
+ainda acontecem são um pouco menores, também consistente com o desenho.
+
+### Contrafactual pareado por ID de operação
+
+342 das 404 operações do trial "ligado" existem também no "desligado"
+(85%). **182 dos 342 pares (53%) são EMPATE exato** (diferença = 0).
+
+### Correção (2026-08-18, review externa Codex, PR #209) — "empate" não é a mesma coisa que "gatilho não disparou"
+
+A leitura original assumiu que os 182 empates significavam "o gatilho
+nunca ativou nesses pares" e tratou os 160 pares não-empatados como "o
+subconjunto onde o mecanismo realmente agiu" — **os dois erros
+apontados pelo Codex**:
+
+1. `buildReport` expõe `preTp1StopProtection.advanced` (por relatório) e
+   cada operação carrega `pre_tp1_stop_advanced_at` (não-nulo quando o
+   stop realmente avançou pra breakeven) — a fonte certa pra saber se o
+   mecanismo ativou, não o sinal indireto de "a diferença de R deu zero".
+   Uma operação PODE avançar o stop e ainda assim fechar idêntica ao
+   controle (ex.: atinge TP1 depois de avançar — o nível de stop nunca
+   chega a ser testado). Recontando pelos 342 pares usando o campo real:
+   **226 (66%) tiveram o stop avançado**, não 160. Desses 226: 69
+   fecharam empatados mesmo assim (avançou mas TP1/TP2 saiu antes do
+   stop importar), 157 tiveram diferença real. E 3 dos pares
+   NÃO-empatados nem tinham `advanced` marcado — ruído pequeno, não
+   investigado (n=3, irrelevante pro resultado).
+2. **Erro aritmético**: o texto original relatou "+0,025R... contabilizando
+   só as 160 operações não-empatadas" — mas +0,025R é a média sobre os
+   **342 pares inteiros** (zeros inclusos), não sobre o subconjunto. A
+   média condicional certa, recalculada com o campo `advanced` real
+   (n=226, não 160): **+0,038R**.
+
+| | Todos os 342 pares (inclui zeros) | Só pares com `advanced=true` (n=226) |
+|---|---|---|
+| Diferença pareada média | +0,025R | **+0,038R** |
+| Erro-padrão ingênuo | 0,0399 | 0,0603 |
+| G (clusters) / tamanho médio | 21 / 16,3 | 26 / 8,7 |
+| Erro-padrão em cluster | 0,0269 | 0,0554 |
+| t em cluster | 0,927 | **0,680** |
+| t crítico (t-Student, df=G-1) | 2,086 | 2,060 |
+
+**Não significativo em nenhum dos dois recortes.** DEFF no subconjunto
+`advanced=true` = 0,844 (mais perto de 1 que o 0,455 do pool completo,
+como esperado — menos zeros artificiais suprimindo a variância
+compartilhada); teste de permutação p=0,439.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: o mecanismo faz exatamente o que foi desenhado pra fazer
+(operações que andaram a favor cedo e depois reverteriam pra perda
+fecham em breakeven em vez de perda plena — `be` salta 3→160 de 404,
+e o stop avançou de verdade em 226 das 342 operações pareadas, 66% —
+taxa de ativação bem mais alta do que a 1ª leitura sugeria). O efeito
+condicional a essa ativação é **+0,038R** (não os +0,025R
+originalmente citados, que eram a média não-condicional) — ainda
+levemente positivo, ainda não significativo.
+
+**Hipótese**: o achado do item 53 que motivou este mecanismo (61/117
+operações positivas cedo, MFE +0,578R, erodindo sem proteção) continua
+válido como observação — a proteção testada aqui é conservadora o
+bastante (gatilho em 1,0×ATR de movimento favorável, de propósito, ver
+item 54) que ela protege capital sem necessariamente capturar ganho
+extra, o que é consistente com um efeito agregado pequeno mesmo que a
+lógica esteja correta.
+
+**Recomendação**: **não ativar ainda** — mas, diferente do item 103/104
+(sinal negativo), aqui não há evidência CONTRA também: é um mecanismo
+que reduz risco de cauda (perdas viram breakeven) sem custo detectável
+na expectância, com uma taxa de ativação real de 66% (não 47% como a
+1ª leitura media indiretamente). Se a linha for retomada, testar
+`preTp1StopProtectionAtrMult` menor (ex.: 0,5×, gatilho mais cedo) numa
+amostra maior faz sentido — usar sempre `preTp1StopProtection.advanced`/
+`pre_tp1_stop_advanced_at` como fonte de ativação, nunca inferir pelo
+sinal da diferença pareada.
+
+### Verificação
+
+2 relatórios reais (`backtest-trial-registry.mjs --family
+pretp1-breakeven-baixa2025-hypothesis`, N=2 — Bonferroni z=2,241, ambos
+inconclusivos isoladamente). Pareamento por `op.id`; significância via
+`backtest-correlation-check.mjs` (mesmas funções do item 104), recomputada
+usando `TradeOperation.pre_tp1_stop_advanced_at` (não o sinal da
+diferença pareada) pra segmentar o subconjunto onde o mecanismo
+realmente ativou. `wins`/`losses`/`be`/`preTp1StopProtection.advanced`
+lidos direto de `report.overall`/`report.preTp1StopProtection` dos dois
+relatórios. Diferente do item 104, aqui o mecanismo em si (código) não
+tinha bug — só a análise original inferiu ativação pelo sinal errado e
+cometeu um erro aritmético na média condicional. Nenhuma mudança de
+código de produção.

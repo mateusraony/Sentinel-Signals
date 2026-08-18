@@ -2763,6 +2763,40 @@ describe('Stop estrutural pro RF nativo — rfStructuralStopEnabled (opt-in, RF 
     expect(ops[0].initial_stop_basis).toBe('atr_fallback');
   });
 
+  // Regressão do achado do Codex (PR #209, docs/known-risks.md item 104):
+  // sem o teto por-tier, T2/T3 'capped'/'fallback' reproduziam um stop
+  // sistematicamente mais apertado (2,0×ATR fixo) que o ramo desligado
+  // (2,5×/3,0×ATR por tier) — não isolava só "estrutural vs ATR", também
+  // mudava o múltiplo de risco pra maioria dos tiers.
+  it('flag ligada, tier T3 (atrStopMult=3.0), swing longe demais: capa em 3,0×ATR (o próprio mult do tier), não 2,0×ATR fixo', async () => {
+    const results = {
+      '4h': makeTfData({
+        tier: { tier: 'T3', atrStopMult: 3.0, chopMaxVal: 62, timeStopBars: 96 },
+        smc: { ...makeTfData().smc, lastSwingLow: 50 }, // bem além do teto, força capped
+      }),
+    };
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig: structuralPineConfig({ rfStructuralStopEnabled: true }) }),
+      newSignals: [makeStructuralSignal()],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops[0].initial_stop_basis).toBe('structural_capped');
+    // atrValue=2 (makeTfData default) × 3.0 (T3) = 6, não × 2.0 = 4.
+    expect(ops[0].entry_price - ops[0].initial_stop).toBeCloseTo(6, 6);
+  });
+
+  it('flag ligada, tier T3, sem swing disponível: atr_fallback usa 3,0×ATR do tier (o mesmo múltiplo que o ramo desligado usaria), não 2,0×ATR fixo', async () => {
+    const results = { '4h': makeTfData({ tier: { tier: 'T3', atrStopMult: 3.0, chopMaxVal: 62, timeStopBars: 96 } }) };
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig: structuralPineConfig({ rfStructuralStopEnabled: true }) }),
+      newSignals: [makeStructuralSignal()],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops[0].initial_stop_basis).toBe('atr_fallback');
+    // atrValue=2 (default makeTfData) × 3.0 (T3) = 6, não × 2.0 = 4.
+    expect(ops[0].entry_price - ops[0].initial_stop).toBeCloseTo(6, 6);
+  });
+
   it('SELL usa lastSwingHigh como nível protegido (mesma mecânica, lado espelhado)', async () => {
     const results = {
       '4h': makeTfData({
