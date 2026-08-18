@@ -6707,49 +6707,31 @@ Verificação: leitura direta dos 2 `backtest-report.json` completos
 `symbol === 'FETUSDT'`), comparação campo a campo das 18 operações de cada
 run. Nenhuma mudança de código nesta rodada — só registro do resultado.
 
-### Desfecho real e novo diagnóstico (2026-08-18)
+### Desfecho real e diagnóstico — RETRATADO por erro de ano (2026-08-18)
 
 O sinal de 05/08 (item acima) fechou no TradingView com **lucro em 15/08 às
-13h** — usuário trouxe o desfecho 10 dias depois. Rodado o disparo
-recomendado então e nunca feito: backtest só do FETUSDT, janela mais longa
-pra warm-up de indicador (`fetusdt-live-signal-diagnostic-0805`,
-2025-02-04→2025-08-20, config padrão — sem nenhum flag, igual ao que roda
-ao vivo).
+13h** — usuário trouxe o desfecho 10 dias depois. Rodado um disparo pra
+investigar: backtest só do FETUSDT, config padrão (sem nenhum flag, igual
+ao que roda ao vivo).
 
-**Achado**: `overall.curve` tem 10 operações no FETUSDT nesses 6,5 meses.
-A que mais se aproxima do sinal relatado é uma BUY com candle de sinal em
-**07/08 12:00 UTC** (fechada 14/08, `r=+1,17`, positiva) — **não** 05/08.
-Nenhuma operação, nem candidato rejeitado com timestamp recuperável (o
-`entryFunnel`/`rfRegime` deste motor são agregados por período inteiro, não
-por candle — limitação de instrumentação real, não intencional), aparece
-alinhada ao candle de 05/08. Confirma, de novo e de forma independente, o
-que o item 67 original já tinha achado: **o sinal de 05/08 nunca existiu no
-dado Spot que o scan ao vivo usa.**
+**Erro real, pego por review externa (Codex, PR #211), confirmado**: o
+disparo rodou a janela `2025-02-04→2025-08-20` — **ano errado**. O sinal
+relatado é de 2026 (o item 67 original é datado 2026-08-07; "hoje" nesta
+sessão é 2026-08-18). A operação "mais próxima" encontrada (BUY, candle de
+sinal 07/08, fechada 14/08, `r=+1,17`) é do **FETUSDT em agosto de 2025**,
+um ano inteiro antes do episódio real — não tem relação nenhuma com o
+sinal investigado. **A conclusão "causa identificada: divergência
+Spot×Futures" que estava aqui foi retirada — não tem base**: o diagnóstico
+correto (rodar a mesma janela sobre 2026) ainda não foi feito.
 
-Contexto quantitativo novo: em 6,5 meses, só **14 avaliações de regime**
-chegaram a acontecer pro RF 4h do FETUSDT (11 passaram, 3 rejeitadas por
-ADX fraco) — RF flip é evento raro por natureza (~1 a cada 2-3 semanas por
-símbolo), não só nesse caso. Isso é consistente com — e explica em parte —
-a percepção geral de "poucas operações ao vivo" que motivou esta conversa,
-independente do caso específico do FETUSDT.
-
-**Não dá pra ir além disso sem instrumentação nova**: não é possível hoje
-distinguir "RF nunca flipou no candle de 05/08 no Spot" de "flipou e foi
-um dos 3 rejeitados por ADX fraco no período" — o relatório não grava
-timestamp por rejeição, só contagem agregada. Mas ambas as explicações
-restantes apontam pro mesmo lugar: **dado Spot ≠ dado Futures no candle
-exato daquele sinal** (o RF é sensível a OHLC; um candle levemente
-diferente entre as duas fontes pode tanto não flipar quanto sair com ADX
-abaixo do piso). A confirmação de 15m (a suspeita original do usuário) já
-tinha sido descartada como causa neste caso específico.
-
-**Recomendação**: fechar esta linha de investigação como **causa
-identificada até o limite da instrumentação atual** — divergência
-Spot×Futures (item 4, limitação aceita permanentemente, sem workaround
-gratuito). Não abrir tarefa de instrumentação por candle só por este caso
-(custo desproporcional a um episódio já explicado o suficiente pra decisão
-prática); reconsiderar só se o padrão se repetir com frequência alta o
-bastante pra virar prioridade própria.
+Erro meu (Claude), não do usuário — as instruções de disparo que dei
+pediam `2025-02-04`/`2025-08-20` sem checar contra a data corrente da
+sessão. **Item 67 permanece EM ABERTO** quanto à causa do episódio de
+05/08/2026 — nenhuma hipótese (confirmação de 15m, divergência
+Spot×Futures, outra) está confirmada ou descartada por este disparo.
+Próximo passo: re-rodar `fetusdt-live-signal-diagnostic-0805` com janela
+em 2026 (ex.: `2026-02-04→2026-08-18`) antes de tirar qualquer conclusão
+nova.
 
 ## 68. RF 1h TOTALMENTE independente do 4h — A/B real: expectância negativa e conclusiva, mantido desligado (2026-08-08)
 
