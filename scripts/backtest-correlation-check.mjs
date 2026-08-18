@@ -223,6 +223,64 @@ export function permutationTest(intervals, fromMs, toMs, { iterations = 1000, ra
   };
 }
 
+// Teste de randomização pro EFEITO em si (a média de `values`), não pro
+// DEFF — lacuna real que `permutationTest` acima não cobre (aquele testa
+// só se a estrutura de correlação medida é distinguível de artefato de
+// calendário; não tem H0 sobre a média). Achado do Codex, PR #210: usar
+// o p-valor de `permutationTest` como se validasse (ou invalidasse) a
+// significância do efeito pareado é um erro de categoria — os dois testes
+// respondem perguntas diferentes.
+//
+// Sob H0 ("sem efeito real"), o SINAL da contribuição de cada cluster pra
+// média é permutável — inverte o sinal de TODOS os valores de um cluster
+// JUNTOS (preserva a correlação intra-cluster, único jeito de não violar
+// a independência assumida entre clusters), sorteia um padrão de sinais
+// por cluster (Rademacher: cada cluster vira +1 ou -1), recomputa a média
+// sob esse padrão, repete. Com G<=exhaustiveMaxG dá pra enumerar TODOS os
+// 2^G padrões (G=20 → ~1M, ainda rápido) — p-valor EXATO, não aproximado
+// por amostragem; G maior cai pra Monte Carlo com `iterations` sorteios.
+// Válido pra QUALQUER G>=2 (ao contrário do erro-padrão em cluster/CR1,
+// que degrada com G baixo) — é o método certo pra confirmar ou refutar
+// significância quando G é baixo demais pra confiar em CR1 (ex.: G=8,
+// item 104/docs/known-risks.md).
+export function clusterSignFlipTest(values, clusters, { iterations = 5000, rand = Math.random, exhaustiveMaxG = 20 } = {}) {
+  const g = clusters.length;
+  const n = values.length;
+  if (g < 2 || n < 2) return null;
+  const clusterSums = clusters.map((idxs) => idxs.reduce((acc, i) => acc + values[i], 0));
+  const observedMean = values.reduce((a, b) => a + b, 0) / n;
+  const meanForSigns = (signs) => {
+    let sum = 0;
+    for (let c = 0; c < g; c += 1) sum += signs[c] * clusterSums[c];
+    return sum / n;
+  };
+
+  const exhaustive = g <= exhaustiveMaxG;
+  let nullMeans;
+  if (exhaustive) {
+    const total = 2 ** g;
+    nullMeans = new Array(total);
+    for (let mask = 0; mask < total; mask += 1) {
+      const signs = new Array(g);
+      for (let c = 0; c < g; c += 1) signs[c] = ((mask >> c) & 1) ? 1 : -1;
+      nullMeans[mask] = meanForSigns(signs);
+    }
+  } else {
+    nullMeans = new Array(iterations);
+    for (let it = 0; it < iterations; it += 1) {
+      const signs = new Array(g);
+      for (let c = 0; c < g; c += 1) signs[c] = rand() < 0.5 ? -1 : 1;
+      nullMeans[it] = meanForSigns(signs);
+    }
+  }
+
+  const eps = 1e-9;
+  const countGEQ = nullMeans.filter((m) => Math.abs(m) >= Math.abs(observedMean) - eps).length;
+  const pValue = countGEQ / nullMeans.length;
+
+  return { observedMean, pValue, exhaustive, replicates: nullMeans.length, g };
+}
+
 export function analyzeReport(report, { iterations = 1000, rand = Math.random } = {}) {
   const intervals = buildTradeIntervals(report.overall.curve);
   const n = intervals.length;
@@ -255,6 +313,10 @@ export function analyzeReport(report, { iterations = 1000, rand = Math.random } 
   const permutation = hasRange
     ? permutationTest(intervals, fromMs, toMs, { iterations, rand })
     : null;
+  // Teste do EFEITO em si (a média), não do DEFF -- ver comentário de
+  // clusterSignFlipTest acima. Sempre computado quando g>=2, independente
+  // de `hasRange` (não depende de circular-shift/calendário).
+  const effectSignFlip = clusterSignFlipTest(values, clusters, { iterations, rand });
 
   return {
     trialLabel: report.trialLabel ?? null,
@@ -272,6 +334,7 @@ export function analyzeReport(report, { iterations = 1000, rand = Math.random } 
     deff,
     nEff,
     permutation,
+    effectSignFlip,
   };
 }
 
@@ -302,9 +365,19 @@ export function formatMarkdown(result) {
   if (result.permutation) {
     const p = result.permutation;
     lines.push(
-      `Teste de permutação (deslocamento circular por símbolo, ${p ? '1000' : ''} réplicas): `
+      `Teste de permutação da CORRELAÇÃO (deslocamento circular por símbolo, ${p ? '1000' : ''} réplicas) — `
+      + `testa se o DEFF medido é real ou artefato de calendário, NÃO testa o efeito/média: `
       + `DEFF real=${fmt(p.realDeff)} vs. nulo média=${fmt(p.nullMean)} `
       + `[p5=${fmt(p.nullP5)}, p95=${fmt(p.nullP95)}], p-valor=${p.pValue.toFixed(4)}`,
+      '',
+    );
+  }
+  if (result.effectSignFlip) {
+    const s = result.effectSignFlip;
+    lines.push(
+      `Teste de randomização do EFEITO (sign-flip por cluster, ${s.exhaustive ? `exaustivo, 2^${s.g}=${s.replicates} combinações` : `${s.replicates} sorteios`}) — `
+      + `este SIM testa se a média observada (${fmt(s.observedMean)}) é diferente de zero: `
+      + `p-valor=${s.pValue.toFixed(4)}`,
       '',
     );
   }

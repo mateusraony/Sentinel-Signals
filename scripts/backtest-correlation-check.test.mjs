@@ -10,6 +10,7 @@ import {
   studentTCritical95,
   circularShiftBySymbol,
   permutationTest,
+  clusterSignFlipTest,
   analyzeReport,
 } from './backtest-correlation-check.mjs';
 
@@ -239,6 +240,62 @@ describe('permutationTest', () => {
   });
 });
 
+describe('clusterSignFlipTest', () => {
+  it('valor exato: 4 clusters singleton com valor +1 cada -- só 2 de 16 padrões de sinal alcançam |média|=1 (p=0,125)', () => {
+    // Caso calculado à mão: values=[1,1,1,1], clusters=[[0],[1],[2],[3]].
+    // meanForSigns = soma(signs)/4. Só o padrão "tudo +1" (média=1) e
+    // "tudo -1" (média=-1) alcançam |média|>=1 -- 2 de 2^4=16 combinações.
+    const values = [1, 1, 1, 1];
+    const clusters = [[0], [1], [2], [3]];
+    const result = clusterSignFlipTest(values, clusters);
+    expect(result.exhaustive).toBe(true);
+    expect(result.replicates).toBe(16);
+    expect(result.observedMean).toBeCloseTo(1, 10);
+    expect(result.pValue).toBeCloseTo(2 / 16, 10);
+  });
+
+  it('sem efeito real (valores com sinais alternados somando ~zero por cluster), p-valor alto', () => {
+    // 4 clusters, cada um com 2 valores que se cancelam -- média observada
+    // pequena, deve estar bem dentro do miolo da distribuição nula.
+    const values = [1, -0.9, 1, -1.1, 1, -0.95, 1, -1.05];
+    const clusters = [[0, 1], [2, 3], [4, 5], [6, 7]];
+    const result = clusterSignFlipTest(values, clusters);
+    expect(result.pValue).toBeGreaterThan(0.3);
+  });
+
+  it('efeito forte e consistente em todos os clusters: p-valor baixo', () => {
+    // 10 clusters, todos fortemente positivos e do mesmo tamanho -- muito
+    // pouco espaço pra um padrão de sinal aleatório alcançar a mesma
+    // magnitude da média observada.
+    const values = Array.from({ length: 20 }, () => 1);
+    const clusters = Array.from({ length: 10 }, (_, i) => [i * 2, i * 2 + 1]);
+    const result = clusterSignFlipTest(values, clusters, { iterations: 5000, rand: mulberry32(7) });
+    expect(result.pValue).toBeLessThan(0.05);
+  });
+
+  it('G<2 devolve null (não dá pra permutar sinal de 1 cluster só)', () => {
+    expect(clusterSignFlipTest([1, 2], [[0, 1]])).toBeNull();
+  });
+
+  it('cai pra Monte Carlo (não exaustivo) quando G > exhaustiveMaxG', () => {
+    const g = 25;
+    const values = Array.from({ length: g }, (_, i) => (i % 2 === 0 ? 1 : -1));
+    const clusters = Array.from({ length: g }, (_, i) => [i]);
+    const result = clusterSignFlipTest(values, clusters, { iterations: 300, rand: mulberry32(2), exhaustiveMaxG: 20 });
+    expect(result.exhaustive).toBe(false);
+    expect(result.replicates).toBe(300);
+  });
+
+  it('é determinístico com o mesmo seed (Monte Carlo)', () => {
+    const g = 25;
+    const values = Array.from({ length: g }, () => 1);
+    const clusters = Array.from({ length: g }, (_, i) => [i]);
+    const a = clusterSignFlipTest(values, clusters, { iterations: 200, rand: mulberry32(99), exhaustiveMaxG: 20 });
+    const b = clusterSignFlipTest(values, clusters, { iterations: 200, rand: mulberry32(99), exhaustiveMaxG: 20 });
+    expect(a.pValue).toBe(b.pValue);
+  });
+});
+
 describe('analyzeReport', () => {
   it('roda de ponta a ponta num relatório sintético e devolve todos os campos', () => {
     const report = {
@@ -275,5 +332,9 @@ describe('analyzeReport', () => {
     const zWidth = result.clusteredCI[1] - result.clusteredCI[0];
     const tWidth = result.clusteredCIStudentT[1] - result.clusteredCIStudentT[0];
     expect(tWidth).toBeGreaterThan(zWidth);
+    // G=2 é exaustivo (2^2=4 combinações de sinal).
+    expect(result.effectSignFlip).not.toBeNull();
+    expect(result.effectSignFlip.exhaustive).toBe(true);
+    expect(result.effectSignFlip.replicates).toBe(4);
   });
 });
