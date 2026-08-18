@@ -109,6 +109,16 @@ plano de sessão morre com a sessão.
 > ambíguo por falta de dado). `TradeOperation.initial_stop_basis` audita
 > qual stop foi usado de verdade em cada operação. Implementado,
 > testado, opt-in/backtest-only — **ainda não medido**. Detalhe: item 102.
+>
+> **Atualização 2026-08-17 (item 103): `arbInvalidateOnOppositeSameTf`
+> medido — piora o resultado, confirmado por contrafactual pareado.**
+> Casando a MESMA operação exata nos dois relatórios (mesma janela/
+> carteira, `id` determinístico), as 81 operações que o mecanismo
+> realmente tocou pioraram em média -0,138R (t=-2,19, n=81,
+> significativo) — 91% delas já iam bater stop de qualquer jeito no
+> mundo sem o flag. Confirma a causalidade invertida já suspeitada
+> desde o item 45.9: o sinal oposto chega tarde demais pra ajudar.
+> **Não ativar.** Linha de investigação fechada. Detalhe: item 103.
 
 ## A regra que ordena tudo: amostra
 

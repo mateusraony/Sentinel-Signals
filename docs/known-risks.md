@@ -10748,3 +10748,95 @@ Grep de isolamento confirmado: `rfStructuralStopEnabled` ausente em
 flag ligado vs. desligado, olhando também `initial_stop_basis` na
 distribuição de operações antes de interpretar qualquer diferença de
 expectância — mesma regra de todo outro flag experimental deste motor.
+
+## 103. `arbInvalidateOnOppositeSameTf` medido — confirma a causalidade invertida já suspeitada, piora o resultado das operações que toca (2026-08-17)
+
+### Contexto
+
+A/B do item 93 rodado (`arb-invalidate-sametf-off-baixa2025` reaproveitado
+do item 100/101 como controle + `arb-invalidate-sametf-on-baixa2025`),
+mesma janela `2025-07-27→2026-07-27`, carteira de 20 símbolos.
+
+### Resultado — número de topo (comparação agregada, com o mesmo confundimento de composição do item 101)
+
+| | Desligado | Ligado |
+|---|---|---|
+| n | 343 | 385 |
+| Expectância líquida | -0,041R | -0,110R |
+| IC95 | [-0,167; 0,085] | [-0,226; 0,005] |
+
+Delta = -0,069R, `SE_diff=0,087`, **z=-0,79 — não significativo**
+isoladamente. Mas, como no item 101, o n aumentou (343→385, +42) mesmo
+o mecanismo só FECHANDO operações — sinal de que o mesmo efeito de vaga
+liberada (`assetActiveOps`) está presente aqui também: encerrar uma
+operação mais cedo libera a vaga do ativo pra um sinal novo entrar antes
+do que entraria sem o flag.
+
+### O achado real — contrafactual pareado por ID de operação
+
+Como os dois relatórios rodam na MESMA janela/carteira, o `id` da
+operação é determinístico (símbolo+timeframe+lado+candle) — dá pra
+casar a MESMA operação exata nos dois relatórios, isolando o efeito
+causal do resto do ruído de composição. Este é um método novo nesta
+sessão, mais forte que a comparação agregada usada até aqui quando os
+dois relatórios compartilham janela/carteira.
+
+Das 95 operações fechadas pelo mecanismo no relatório "ligado"
+(`arbitration_reason: 'same_cascade_opposite_direction_invalidate'`),
+**81 existem também no relatório "desligado"** — a mesma operação
+exata, único diferencial é a flag:
+
+| | Com invalidação (ligado) | Sem invalidação (desligado, mesma operação) |
+|---|---|---|
+| R médio (n=81, pareado) | **-0,789R** | **-0,651R** |
+
+Diferença pareada = **-0,138R**, erro-padrão pareado 0,0632,
+**t=-2,19 (n=81, significativo a 5%)** — o mecanismo piora o resultado
+das operações que toca, de forma estatisticamente detectável. 48 das 81
+operações ficaram PIORES com a invalidação, só 33 ficaram melhores.
+
+**O motivo**: no mundo "desligado", **74 das 81 operações (91%) bateram
+STOP_HIT de qualquer jeito** — quase todas já estavam condenadas antes
+do mecanismo interferir. Isso confirma exatamente a causalidade
+invertida já suspeitada e registrada no item 45.9/91/92/93: o sinal
+oposto forte que dispara a invalidação chega DEPOIS que o preço já
+andou contra a posição, então não é um alerta preventivo — é um
+indicador coincidente de uma operação que já ia perder de qualquer
+jeito. E, em vez de deixar o stop já calibrado (nível estrutural/ATR)
+fazer o trabalho dele, a saída por invalidação sai num preço pior em
+média (-0,79R contra -0,65R) — plausivelmente porque dispara sobre o
+preço corrente no momento em que o sinal oposto é forte o bastante
+(já depois de mais movimento contrário) em vez do nível de stop
+pré-calculado mais próximo da entrada.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: para as operações onde o mecanismo realmente age, ele piora o
+resultado, de forma estatisticamente significativa no teste pareado —
+não é mais "sem evidência", é evidência real contra.
+
+**Hipótese**: a suspeita de causalidade invertida do item 45.9,
+carregada por 3 itens seguidos (91/92/93) como ressalva teórica não
+testada, acaba de virar achado medido e confirmado.
+
+**Recomendação**: **não ativar `arbInvalidateOnOppositeSameTf`.** Não é
+"talvez com outro limiar" — o problema não é o `arbPromoteMinScore`
+usado como piso, é a premissa de que o sinal oposto chega a tempo de
+ajudar. Fechado como linha de investigação, mesmo nível de confiança do
+item 71 (SELL-only holdout) quando aquele deu inconclusivo pelo próprio
+critério pré-registrado.
+
+### Nota de método (reaproveitável em trials futuros)
+
+Quando dois relatórios compartilham janela/carteira, **casar operações
+por `id` determinístico** dá um contrafactual pareado real — mais forte
+que `SE_diff` sobre médias agregadas (que continua sendo o certo quando
+os relatórios NÃO compartilham as mesmas operações exatas, caso mais
+comum). Vale usar sempre que a condição se repetir.
+
+### Verificação
+
+2 relatórios reais, registrados via `backtest-trial-registry.mjs
+--family arb-invalidate-sametf-hypothesis` (N=2). Pareamento e teste-t
+pareado via script Python ad-hoc sobre `overall.curve` dos dois
+relatórios, casando por `op.id`. Nenhuma mudança de código.
