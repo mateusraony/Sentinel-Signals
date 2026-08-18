@@ -10749,7 +10749,7 @@ flag ligado vs. desligado, olhando também `initial_stop_basis` na
 distribuição de operações antes de interpretar qualquer diferença de
 expectância — mesma regra de todo outro flag experimental deste motor.
 
-## 103. `arbInvalidateOnOppositeSameTf` medido — confirma a causalidade invertida já suspeitada, piora o resultado das operações que toca (2026-08-17)
+## 103. `arbInvalidateOnOppositeSameTf` medido — sinal direcional negativo consistente com a causalidade invertida suspeitada, mas não confirmado estatisticamente (2026-08-17, corrigido 2026-08-18 ×2)
 
 ### Contexto
 
@@ -10790,10 +10790,81 @@ exata, único diferencial é a flag:
 |---|---|---|
 | R médio (n=81, pareado) | **-0,789R** | **-0,651R** |
 
-Diferença pareada = **-0,138R**, erro-padrão pareado 0,0632,
-**t=-2,19 (n=81, significativo a 5%)** — o mecanismo piora o resultado
-das operações que toca, de forma estatisticamente detectável. 48 das 81
-operações ficaram PIORES com a invalidação, só 33 ficaram melhores.
+Diferença pareada = **-0,138R**. 48 das 81 operações ficaram PIORES com
+a invalidação, só 33 ficaram melhores.
+
+### Correção (2026-08-18, review externa Codex, PR #207) — significância recalculada com a ferramenta certa
+
+A primeira versão deste item computou o erro-padrão pareado como se as
+81 diferenças fossem independentes (t=-2,19), **sem aplicar a própria
+ferramenta de correlação (item 97) que esta sessão construiu
+justamente pra não cometer esse erro** — mesmo tipo de dado (múltiplas
+janelas de operação sobrepostas, vários símbolos) onde os itens 97-99
+já mediram DEFF≈3 (N efetivo ≈ N/3). Achado do Codex, procedente.
+
+Recomputado com `backtest-correlation-check.mjs` sobre as 81 diferenças
+pareadas (clusterizando por sobreposição temporal, mesma metodologia
+Cameron-Miller CR1 já usada nos itens 97-99):
+
+| Método | Erro-padrão | t |
+|---|---|---|
+| Ingênuo (i.i.d., versão original) | 0,0632 | -2,186 |
+| Em cluster (G=24, tamanho médio 3,38) | 0,0689 | **-2,005** |
+
+Achado extra, não previsto: o DEFF real aqui é **1,19**, bem menor que
+o ≈3 medido em R bruto (itens 97-99) — e o teste de permutação confirma
+que esse DEFF pequeno não se distingue de ruído (p=0,2047, dentro do
+intervalo do nulo). Leitura: a estimativa "reduziria pra t≈1,26"
+(aplicando o DEFF≈3 de R bruto direto à diferença pareada)
+**superestimou a correção necessária** — diferenças pareadas cancelam
+boa parte do movimento de mercado COMUM aos dois lados da comparação (a
+mesma operação, com e sem o flag, herda o mesmo movimento de preço até
+o ponto em que divergem), que é justamente a componente que a
+correlação entre ativos infla. Não inventa a correção certa por
+analogia — precisa medir a série específica que está sendo testada, não
+reusar automaticamente um número de outro contexto (regra prática
+confirmada por este episódio: até um "efeito 10x menor" precisa ser
+medido, não estimado).
+
+### Segunda correção (2026-08-18, review externa Codex #2, PR #208) — a referência certa é t(G-1), não z, e o veredito muda
+
+A tabela acima comparou `|t|=2,005` contra o limiar z=1,96 (a mesma
+convenção documentada como limitação deliberada em
+`backtest-correlation-check.mjs`) e chamou de "significativo, raspando".
+**Errado**: erro-padrão em cluster com G baixo tem que ser comparado
+contra uma t-Student com `df=G-1`, não contra a normal — prática padrão
+da literatura (Cameron-Miller) que o próprio comentário do script já
+citava como ressalva, mas que esta análise não aplicou na hora de tirar
+o veredito. Com G=24, `df=23`, o crítico bicaudal a 5% é
+**t(23)=2,069** — não 1,96. `|t|=2,005 < 2,069`: **não passa**.
+
+Consequência da ferramenta (`scripts/backtest-correlation-check.mjs`,
+função nova `studentTCritical95`, testada contra a tabela t padrão em
+`backtest-correlation-check.test.mjs`): `analyzeReport`/`formatMarkdown`
+agora reportam o IC95 em cluster também com a referência t-Student
+correta, lado a lado com o z=1,96 antigo (mantido só pra comparação com
+o IC ingênuo) — a "raspada" que a primeira versão deste item chamou de
+significativa nunca teria passado se a ferramenta já reportasse a
+coluna certa por padrão.
+
+Achado complementar do mesmo review: a família `arb-invalidate-sametf-
+hypothesis` tem N=2 registros no ledger (`docs/backtest-trial-registry.
+json`) — `bonferroniZ(2)≈2,241`, também acima de `|t|=2,005`. Aplicar
+essa correção especificamente a este teste é mais discutível (o N=2 aqui
+é 1 controle + 1 tratamento do MESMO comparativo, não 2 hipóteses
+independentes competindo — diferente do uso já estabelecido do registro,
+ex. item 90 `exit-runner-fix` N=3 com 3 tratamentos distintos), mas não
+precisa ser resolvido: a correção t(G-1) sozinha já derruba o veredito,
+então a questão do Bonferroni fica sem efeito prático aqui.
+
+**Veredito revisado: INCONCLUSIVO.** O ponto estimado continua negativo
+(-0,138R pareado, -0,79R vs -0,65R) e consistente com a hipótese teórica
+de causalidade invertida (item 45.9) e com os 91% de STOP_HIT no mundo
+desligado — mas a diferença **não passa** no teste de significância
+correto (t(23), nem no Bonferroni de família). G=24 é justamente o
+regime que o comentário original do script já apontava como "pouco
+confiável sozinho" — aqui a instabilidade decidiu o veredito na direção
+oposta à que a 1ª correção (2026-08-18, PR #207) tinha concluído.
 
 **O motivo**: no mundo "desligado", **74 das 81 operações (91%) bateram
 STOP_HIT de qualquer jeito** — quase todas já estavam condenadas antes
@@ -10811,20 +10882,35 @@ pré-calculado mais próximo da entrada.
 
 ### Leitura (fato × hipótese × recomendação)
 
-**Fato**: para as operações onde o mecanismo realmente age, ele piora o
-resultado, de forma estatisticamente significativa no teste pareado —
-não é mais "sem evidência", é evidência real contra.
+**Fato**: para as 81 operações pareadas onde o mecanismo realmente age,
+o R médio piorou (-0,79R contra -0,65R) e 74 das 81 (91%) já bateriam
+STOP_HIT de qualquer jeito no mundo desligado. **Isso é medição direta,
+não depende de teste de significância.** Já a alegação de que essa
+piora é "estatisticamente significativa" **não sobrevive** à referência
+correta pro erro-padrão em cluster (t(23)=2,069 > |t| medido=2,005) —
+com G=24 clusters, não dá pra descartar que a diferença pareada seja
+ruído de amostra pequena.
 
 **Hipótese**: a suspeita de causalidade invertida do item 45.9,
 carregada por 3 itens seguidos (91/92/93) como ressalva teórica não
-testada, acaba de virar achado medido e confirmado.
+testada, ganhou um sinal direcional consistente nesta medição — mas
+**continua sendo hipótese**, não achado confirmado estatisticamente. O
+argumento mais forte a favor dela aqui não é o teste-t (que falhou), é
+a leitura qualitativa: 91% das operações que o mecanismo toca já
+estavam condenadas (STOP_HIT) antes dele agir, o que é consistente com
+"o sinal oposto chega tarde demais pra ajudar" independente do teste de
+significância.
 
-**Recomendação**: **não ativar `arbInvalidateOnOppositeSameTf`.** Não é
-"talvez com outro limiar" — o problema não é o `arbPromoteMinScore`
-usado como piso, é a premissa de que o sinal oposto chega a tempo de
-ajudar. Fechado como linha de investigação, mesmo nível de confiança do
-item 71 (SELL-only holdout) quando aquele deu inconclusivo pelo próprio
-critério pré-registrado.
+**Recomendação**: **não ativar `arbInvalidateOnOppositeSameTf` por
+enquanto** — mas por ausência de evidência a favor (nenhuma medição até
+hoje mostrou melhora, e o ponto estimado é negativo nas duas
+comparações), não por "confirmado que piora". Diferente do item 71
+(SELL-only), que tem um critério pré-registrado e um holdout genuíno
+batendo inconclusivo, aqui a leitura correta é: **medição única,
+inconclusiva, direção sugestiva mas não comprovada** — reabrir só faz
+sentido com uma 2ª medição independente (janela/carteira nova) que
+aumente G o suficiente pra um teste com poder real, não reanalisando os
+mesmos 81 pares de novo.
 
 ### Nota de método (reaproveitável em trials futuros)
 
@@ -10832,11 +10918,31 @@ Quando dois relatórios compartilham janela/carteira, **casar operações
 por `id` determinístico** dá um contrafactual pareado real — mais forte
 que `SE_diff` sobre médias agregadas (que continua sendo o certo quando
 os relatórios NÃO compartilham as mesmas operações exatas, caso mais
-comum). Vale usar sempre que a condição se repetir.
+comum). **Correção do Codex #1 incorporada à regra**: mesmo um
+contrafactual pareado precisa passar pela correção de correlação
+(`backtest-correlation-check.mjs`) antes de virar veredito — não dá pra
+assumir que diferenças pareadas herdam automaticamente o DEFF≈3 já
+medido pra R bruto (aqui saiu bem menor, 1,19, porque a diferença
+cancela a componente de mercado comum aos dois lados) nem que herdam
+independência total — tem que medir a série específica. **Correção do
+Codex #2 incorporada à regra**: erro-padrão em cluster com G baixo
+precisa de referência t-Student (`df=G-1`), não z=1,96 — a diferença é
+pequena a maior parte do tempo, mas decisiva perto do limiar (foi
+decisiva aqui: `t=-2,005` "passa" contra z=1,96, mas não contra
+t(23)=2,069). A ferramenta agora reporta as duas colunas
+(`clusteredCI` em z, `clusteredCIStudentT` em t) — usar sempre a coluna
+t-Student pra decidir significância, nunca só a z.
 
 ### Verificação
 
 2 relatórios reais, registrados via `backtest-trial-registry.mjs
---family arb-invalidate-sametf-hypothesis` (N=2). Pareamento e teste-t
-pareado via script Python ad-hoc sobre `overall.curve` dos dois
-relatórios, casando por `op.id`. Nenhuma mudança de código.
+--family arb-invalidate-sametf-hypothesis` (N=2). Pareamento via script
+Node ad-hoc sobre `overall.curve` dos dois relatórios, casando por
+`op.id`. Significância recomputada com `backtest-correlation-check.mjs`
+(erro-padrão em cluster + teste de permutação + `studentTCritical95`
+novo, testado contra a tabela t padrão em
+`backtest-correlation-check.test.mjs`) sobre as diferenças pareadas,
+reusando/estendendo as funções já testadas do item 97 em vez de
+reimplementar. Única mudança de código: a extensão do script de
+diagnóstico (não toca `backtestEngine.js`/`scanner.js`/`pineConfig` —
+nenhuma mudança de comportamento de produção ou de backtest).

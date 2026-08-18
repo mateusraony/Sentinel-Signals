@@ -134,6 +134,36 @@ export function naiveStdErr(values) {
   return Math.sqrt(variance / n);
 }
 
+// Valor crítico bicaudal (alpha=0.05) da t-Student para `df` graus de
+// liberdade — expansão de Cornish-Fisher a partir do quantil normal (Fisher
+// & Cornish 1960; mesma família de aproximação racional do Acklam já usada
+// em backtest-trial-registry.mjs, sem depender de função gama/beta
+// incompleta). Existe porque o item 103 (docs/known-risks.md) usou z=1,96
+// pra "significativo" com G=24 clusters e uma review externa (Codex, PR
+// #208) pegou que a referência certa pra erro-padrão em cluster com G baixo
+// é t(G-1), não normal — t(23)=2,069 > z=1,96, e isso muda o veredito
+// (|t| medido = 2,005 fica ABAIXO do crítico certo). Testada contra valores
+// tabelados conhecidos (df=5,10,23,30) em
+// backtest-correlation-check.test.mjs; erro cresce em df muito baixo (a
+// expansão é assintótica) — por isso `studentTCriticalUnreliable` sinaliza
+// df<10, mesmo espírito do `clusterCountLow` (G<20) já existente.
+export function studentTCritical95(df) {
+  if (!Number.isInteger(df) || df < 1) {
+    throw new RangeError(`studentTCritical95: df deve ser inteiro >= 1, recebeu ${df}`);
+  }
+  const z = 1.959963984540054; // inverseNormalCDF(0.975) -- mesma constante usada no resto do arquivo
+  const z2 = z * z;
+  const z3 = z2 * z;
+  const z5 = z3 * z2;
+  const z7 = z5 * z2;
+  const z9 = z7 * z2;
+  const g1 = (z3 + z) / 4;
+  const g2 = (5 * z5 + 16 * z3 + 3 * z) / 96;
+  const g3 = (3 * z7 + 19 * z5 + 17 * z3 - 15 * z) / 384;
+  const g4 = (79 * z9 + 776 * z7 + 1482 * z5 - 1920 * z3 - 945 * z) / 92160;
+  return z + g1 / df + g2 / df ** 2 + g3 / df ** 3 + g4 / df ** 4;
+}
+
 export function designEffect(naiveSE, clusteredSE) {
   if (!naiveSE || !clusteredSE) return null;
   return (clusteredSE / naiveSE) ** 2;
@@ -207,6 +237,15 @@ export function analyzeReport(report, { iterations = 1000, rand = Math.random } 
   const Z95 = 1.959963984540054;
   const naiveCI = naiveSE ? [mean - Z95 * naiveSE, mean + Z95 * naiveSE] : null;
   const clusteredCI = clusteredSE ? [mean - Z95 * clusteredSE, mean + Z95 * clusteredSE] : null;
+  // Referência certa pra erro-padrão em CLUSTER (não pro i.i.d. ingênuo, que
+  // não tem "graus de liberdade de cluster"): t(G-1), sempre mais
+  // conservadora que z=1,96 -- diferença pequena com G alto, mas decisiva
+  // perto do limiar de significância com G baixo (ver comentário de
+  // studentTCritical95 acima).
+  const clusteredTCritical = g >= 2 ? studentTCritical95(g - 1) : null;
+  const clusteredCIStudentT = (clusteredSE && clusteredTCritical)
+    ? [mean - clusteredTCritical * clusteredSE, mean + clusteredTCritical * clusteredSE]
+    : null;
 
   const fromMs = report.range?.fromMs;
   const toMs = report.range?.toMs;
@@ -228,6 +267,8 @@ export function analyzeReport(report, { iterations = 1000, rand = Math.random } 
     naiveCI,
     clusteredSE,
     clusteredCI,
+    clusteredTCritical,
+    clusteredCIStudentT,
     deff,
     nEff,
     permutation,
@@ -248,6 +289,12 @@ export function formatMarkdown(result) {
     '|---|---|---|',
     `| Erro-padrão | ${fmt(result.naiveSE)} | ${fmt(result.clusteredSE)} |`,
     `| IC95 (z=1,96) | ${fmtCI(result.naiveCI)} | ${fmtCI(result.clusteredCI)} |`,
+    `| IC95 (t-Student, df=G-1=${result.g - 1}, crítico=${fmt(result.clusteredTCritical)}) | — | ${fmtCI(result.clusteredCIStudentT)} |`,
+    '',
+    '**Use a linha t-Student pra veredito de significância do erro em cluster** '
+    + '(o t crítico é sempre >= z=1,96, mais conservador — decide o resultado '
+    + 'perto do limiar quando G é baixo). A linha z=1,96 fica só pra comparação '
+    + 'com o IC ingênuo, que não tem "graus de liberdade de cluster".',
     '',
     `DEFF (design effect) = ${fmt(result.deff)} — N efetivo = ${fmt(result.nEff)} (de N=${result.n} nominal)`,
     '',
