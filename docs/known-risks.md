@@ -6707,6 +6707,32 @@ Verificação: leitura direta dos 2 `backtest-report.json` completos
 `symbol === 'FETUSDT'`), comparação campo a campo das 18 operações de cada
 run. Nenhuma mudança de código nesta rodada — só registro do resultado.
 
+### Desfecho real e diagnóstico — RETRATADO por erro de ano (2026-08-18)
+
+O sinal de 05/08 (item acima) fechou no TradingView com **lucro em 15/08 às
+13h** — usuário trouxe o desfecho 10 dias depois. Rodado um disparo pra
+investigar: backtest só do FETUSDT, config padrão (sem nenhum flag, igual
+ao que roda ao vivo).
+
+**Erro real, pego por review externa (Codex, PR #211), confirmado**: o
+disparo rodou a janela `2025-02-04→2025-08-20` — **ano errado**. O sinal
+relatado é de 2026 (o item 67 original é datado 2026-08-07; "hoje" nesta
+sessão é 2026-08-18). A operação "mais próxima" encontrada (BUY, candle de
+sinal 07/08, fechada 14/08, `r=+1,17`) é do **FETUSDT em agosto de 2025**,
+um ano inteiro antes do episódio real — não tem relação nenhuma com o
+sinal investigado. **A conclusão "causa identificada: divergência
+Spot×Futures" que estava aqui foi retirada — não tem base**: o diagnóstico
+correto (rodar a mesma janela sobre 2026) ainda não foi feito.
+
+Erro meu (Claude), não do usuário — as instruções de disparo que dei
+pediam `2025-02-04`/`2025-08-20` sem checar contra a data corrente da
+sessão. **Item 67 permanece EM ABERTO** quanto à causa do episódio de
+05/08/2026 — nenhuma hipótese (confirmação de 15m, divergência
+Spot×Futures, outra) está confirmada ou descartada por este disparo.
+Próximo passo: re-rodar `fetusdt-live-signal-diagnostic-0805` com janela
+em 2026 (ex.: `2026-02-04→2026-08-18`) antes de tirar qualquer conclusão
+nova.
+
 ## 68. RF 1h TOTALMENTE independente do 4h — A/B real: expectância negativa e conclusiva, mantido desligado (2026-08-08)
 
 ### Contexto
