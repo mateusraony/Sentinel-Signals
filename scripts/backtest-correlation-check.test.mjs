@@ -7,6 +7,7 @@ import {
   naiveStdErr,
   designEffect,
   effectiveN,
+  studentTCritical95,
   circularShiftBySymbol,
   permutationTest,
   analyzeReport,
@@ -158,6 +159,32 @@ describe('designEffect / effectiveN', () => {
   });
 });
 
+describe('studentTCritical95', () => {
+  it('bate com valores tabelados conhecidos (df=5,10,23,30)', () => {
+    // Tabela t bicaudal, alpha=0.05 -- valores padrão de qualquer livro-texto.
+    expect(studentTCritical95(5)).toBeCloseTo(2.571, 2);
+    expect(studentTCritical95(10)).toBeCloseTo(2.228, 2);
+    expect(studentTCritical95(23)).toBeCloseTo(2.069, 2); // item 103, docs/known-risks.md
+    expect(studentTCritical95(30)).toBeCloseTo(2.042, 2);
+  });
+
+  it('converge para z=1,96 conforme df cresce (t-Student -> normal)', () => {
+    expect(studentTCritical95(1000)).toBeCloseTo(1.9623, 2);
+  });
+
+  it('é sempre >= z=1,96 (mais conservador que a normal em amostra finita)', () => {
+    for (const df of [1, 5, 10, 23, 30, 100]) {
+      expect(studentTCritical95(df)).toBeGreaterThanOrEqual(1.959963984540054);
+    }
+  });
+
+  it('rejeita df não inteiro ou < 1', () => {
+    expect(() => studentTCritical95(0)).toThrow(RangeError);
+    expect(() => studentTCritical95(-1)).toThrow(RangeError);
+    expect(() => studentTCritical95(2.5)).toThrow(RangeError);
+  });
+});
+
 describe('circularShiftBySymbol', () => {
   it('preserva a duração e o espaçamento relativo das operações de cada símbolo', () => {
     const intervals = [
@@ -238,5 +265,15 @@ describe('analyzeReport', () => {
     expect(result.nEff).toBeGreaterThan(0);
     expect(result.permutation).not.toBeNull();
     expect(result.clusterCountLow).toBe(true); // G=2 < 20
+    // t(df=1) real é 12,706 -- a aproximação de Cornish-Fisher degrada em df
+    // muito baixo (documentado no comentário de studentTCritical95), G=2 é
+    // um caso extremo só pra este teste sintético; checa só que fica bem
+    // acima de z=1,96, não a precisão exata.
+    expect(result.clusteredTCritical).toBeGreaterThan(5);
+    expect(result.clusteredCIStudentT).not.toBeNull();
+    // IC t-Student sempre >= largo que o IC em cluster com z=1,96 (mesmo SE, crítico maior)
+    const zWidth = result.clusteredCI[1] - result.clusteredCI[0];
+    const tWidth = result.clusteredCIStudentT[1] - result.clusteredCIStudentT[0];
+    expect(tWidth).toBeGreaterThan(zWidth);
   });
 });
