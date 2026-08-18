@@ -10974,7 +10974,7 @@ reimplementar. Única mudança de código: a extensão do script de
 diagnóstico (não toca `backtestEngine.js`/`scanner.js`/`pineConfig` —
 nenhuma mudança de comportamento de produção ou de backtest).
 
-## 104. `rfStructuralStopEnabled` medido — resultado CONFUNDIDO por um teto não tier-aware (corrigido no código, item 102), efeito pequeno e não significativo de qualquer forma (2026-08-18, corrigido 2026-08-18)
+## 104. `rfStructuralStopEnabled` medido — 1ª medição CONFUNDIDA por um teto não tier-aware (corrigido no código, item 102); re-run limpo dá sinal negativo direcional, mas G=8 baixo demais pra confirmar estatisticamente (2026-08-18, corrigido/completado 2026-08-18)
 
 ### Contexto
 
@@ -11095,19 +11095,104 @@ trial** como medição da hipótese "estrutural vs ATR": re-rodar
 inclui a correção do item 102) é o próximo passo antes de qualquer
 decisão nova sobre este mecanismo.
 
+### Re-run sob o código corrigido (2026-08-18) — sinal negativo confirma direção, mas G=8 é baixo demais pra confiar na significância
+
+`rf-structural-stop-on-baixa2025-tierfix` rodado (mesmo controle, mesma
+janela/carteira), commit `72152dc` (já com o teto tier-aware).
+**Confirmação de que o fix funcionou**: spot-check de uma operação T3
+`structural_capped` dá distância/ATR = 3,000 (não mais 2,000) — o teto
+agora usa mesmo o `atrStopMult` do tier. `initial_stop_basis='structural'`
+(nível genuíno) subiu de 3,5% (14/395, trial com bug) pra **9,9%
+(34/345)** — o teto mais largo pra T2/T3 dá mais espaço pro nível real
+de swing caber dentro da faixa antes de ser capado, exatamente o
+esperado.
+
+| | Desligado (controle) | Ligado (tierfix) |
+|---|---|---|
+| n | 343 | 345 |
+| Expectância líquida | -0,041R | -0,086R |
+| IC95 | [-0,167; 0,085] | [-0,211; 0,040] |
+
+Top-line: delta=-0,044R, `SE_diff=0,091`, z=-0,49 — não significativo
+isoladamente.
+
+**Contrafactual pareado**: 334/345 (97%) casam com o controle.
+
+| | Com stop estrutural (tierfix) | Controle (mesma operação) |
+|---|---|---|
+| R médio (n=334, pareado) | **-0,070R** | **-0,027R** |
+
+Diferença pareada = **-0,043R** (176 piores, 137 melhores, 21 empate).
+t ingênuo=-2,51 (passaria até no z=1,96 ingênuo). Em cluster: **G=8**,
+tamanho médio de cluster 41,75 — bem abaixo do piso de confiabilidade
+que a própria ferramenta já sinaliza (<20), e o G mais baixo medido
+nesta sessão até agora (itens 97-105 sempre tiveram G≥21). Erro-padrão
+em cluster=0,0161, t=-2,67, "passa" contra o crítico t(7)=2,365 — **mas
+esse veredito não é confiável nesse G**: a literatura que fundamenta o
+CR1 (Cameron-Gelbach-Miller, a mesma citada no cabeçalho do script)
+recomenda bootstrap wild-cluster pra G tão baixo, que esta ferramenta
+não implementa; com só 8 "observações" efetivas pra estimar a variância
+entre clusters, o próprio erro-padrão em cluster é instável. DEFF=0,887
+(<1, atípico e também sintoma da instabilidade em G baixo, não
+evidência sólida de baixa correlação). Teste de permutação (a validação
+primária que a ferramenta recomenda justamente pra esse regime):
+**p=0,132 — não confirma que a estrutura de correlação medida se
+distingue de ruído.**
+
+**Checagem independente por símbolo** (não depende da matemática de
+cluster): dos 20 símbolos pareados, **11 tiveram diferença média
+negativa, 6 positiva, 3 ~zero** — direção majoritariamente negativa, mas
+longe de unânime. A magnitude agregada é puxada por um punhado de
+símbolos (XRPUSDT -0,261R, ARBUSDT -0,178R, AAVEUSDT -0,137R, ETHUSDT
+-0,104R, DOTUSDT -0,078R), não um efeito uniforme em toda a carteira.
+
+### Leitura final (fato × hipótese × recomendação)
+
+**Fato**: com o código corrigido, o ponto estimado do contrafactual
+pareado continua negativo (-0,043R) e o teste ingênuo é significativo
+— mas o teste em cluster (a referência correta pra este tipo de dado,
+estabelecida nos itens 97-103) não pode ser tomado como confiável
+porque G=8 é baixo demais pra sustentar a matemática CR1, e o teste de
+permutação (a validação recomendada exatamente pra esse caso) não
+confirma. A checagem por símbolo mostra que o sinal não é uniforme
+(11/20, não 20/20) — consistente com "efeito real, mas concentrado em
+poucos símbolos" ou com "artefato de poucos outliers", sem como
+distinguir os dois com os dados disponíveis.
+
+**Hipótese**: stops mais largos (T2/T3 agora usando 2,5×/3,0×ATR de
+verdade, não mais 2,0× capado) parecem, direcionalmente, piorar o
+resultado — possivelmente porque um stop mais largo dá mais espaço pro
+preço reverter antes de ser interrompido, sem um ganho compensatório
+equivalente (TP1/TP2 escalam no mesmo R, então o múltiplo de risco não
+muda, só a distância absoluta). Mas isso é leitura qualitativa, não
+achado estatístico confirmado.
+
+**Recomendação**: **não ativar** — a direção do sinal é consistentemente
+negativa nas 3 medições feitas até agora (item 104 original com bug,
+top-line do re-run, contrafactual pareado do re-run), mas nenhuma delas
+alcança confiança estatística que resista a escrutínio (G baixo,
+permutação não confirma, símbolos divididos). Não é "confirmado que
+piora" — é "nenhuma evidência de melhora, com sinal direcional negativo
+recorrente que não chega a ser conclusivo". Reabrir exigiria uma medição
+nova em janela/carteira onde os clusters de sobreposição fiquem menos
+concentrados (G maior), não repetir a mesma janela.
+
 ### Verificação
 
-2 relatórios reais (`backtest-trial-registry.mjs --family
-rf-structural-stop-hypothesis`, N=2 — Bonferroni z=2,241, ambos
+3 relatórios reais (`backtest-trial-registry.mjs --family
+rf-structural-stop-hypothesis`, N=3 — Bonferroni z=2,394, todos
 inconclusivos isoladamente). Pareamento por `op.id` via script Node
 ad-hoc; significância via `backtest-correlation-check.mjs`
 (`clusterRobustStdErr` + `studentTCritical95` + `permutationTest`,
-funções já testadas). `initial_stop_basis`/`tier` lidos direto do
-`TradeOperation` de cada operação do relatório. Confound identificado e
-código corrigido (`scanner.js`, `maxAtrMult: ATR_MULT`) com 2 testes
-novos de regressão (T3 tier-aware) em `scannerStateMachine.test.js` —
-`npm run lint && npm test -- --run` (1036/1036) e os 4 alvos de build
+funções já testadas), mais uma checagem independente por símbolo (média
+simples por `op.symbol`, sem depender da matemática de cluster).
+`initial_stop_basis`/`tier` lidos direto do `TradeOperation` de cada
+operação do relatório. Confound original identificado e código
+corrigido (`scanner.js`, `maxAtrMult: ATR_MULT`) com 2 testes novos de
+regressão (T3 tier-aware) em `scannerStateMachine.test.js` — `npm run
+lint && npm test -- --run` (1036/1036) e os 4 alvos de build
 (`build`/`build:scan`/`build:scan-shadow`/`build:backtest`) limpos.
+Nenhuma mudança de código nesta rodada (só o re-run + análise).
 
 ## 105. `preTp1StopProtectionEnabled` medido — protege capital como desenhado, mas o efeito no subconjunto onde realmente ativa é pequeno e não significativo (2026-08-18, corrigido 2026-08-18)
 
