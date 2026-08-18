@@ -6707,6 +6707,50 @@ Verificação: leitura direta dos 2 `backtest-report.json` completos
 `symbol === 'FETUSDT'`), comparação campo a campo das 18 operações de cada
 run. Nenhuma mudança de código nesta rodada — só registro do resultado.
 
+### Desfecho real e novo diagnóstico (2026-08-18)
+
+O sinal de 05/08 (item acima) fechou no TradingView com **lucro em 15/08 às
+13h** — usuário trouxe o desfecho 10 dias depois. Rodado o disparo
+recomendado então e nunca feito: backtest só do FETUSDT, janela mais longa
+pra warm-up de indicador (`fetusdt-live-signal-diagnostic-0805`,
+2025-02-04→2025-08-20, config padrão — sem nenhum flag, igual ao que roda
+ao vivo).
+
+**Achado**: `overall.curve` tem 10 operações no FETUSDT nesses 6,5 meses.
+A que mais se aproxima do sinal relatado é uma BUY com candle de sinal em
+**07/08 12:00 UTC** (fechada 14/08, `r=+1,17`, positiva) — **não** 05/08.
+Nenhuma operação, nem candidato rejeitado com timestamp recuperável (o
+`entryFunnel`/`rfRegime` deste motor são agregados por período inteiro, não
+por candle — limitação de instrumentação real, não intencional), aparece
+alinhada ao candle de 05/08. Confirma, de novo e de forma independente, o
+que o item 67 original já tinha achado: **o sinal de 05/08 nunca existiu no
+dado Spot que o scan ao vivo usa.**
+
+Contexto quantitativo novo: em 6,5 meses, só **14 avaliações de regime**
+chegaram a acontecer pro RF 4h do FETUSDT (11 passaram, 3 rejeitadas por
+ADX fraco) — RF flip é evento raro por natureza (~1 a cada 2-3 semanas por
+símbolo), não só nesse caso. Isso é consistente com — e explica em parte —
+a percepção geral de "poucas operações ao vivo" que motivou esta conversa,
+independente do caso específico do FETUSDT.
+
+**Não dá pra ir além disso sem instrumentação nova**: não é possível hoje
+distinguir "RF nunca flipou no candle de 05/08 no Spot" de "flipou e foi
+um dos 3 rejeitados por ADX fraco no período" — o relatório não grava
+timestamp por rejeição, só contagem agregada. Mas ambas as explicações
+restantes apontam pro mesmo lugar: **dado Spot ≠ dado Futures no candle
+exato daquele sinal** (o RF é sensível a OHLC; um candle levemente
+diferente entre as duas fontes pode tanto não flipar quanto sair com ADX
+abaixo do piso). A confirmação de 15m (a suspeita original do usuário) já
+tinha sido descartada como causa neste caso específico.
+
+**Recomendação**: fechar esta linha de investigação como **causa
+identificada até o limite da instrumentação atual** — divergência
+Spot×Futures (item 4, limitação aceita permanentemente, sem workaround
+gratuito). Não abrir tarefa de instrumentação por candle só por este caso
+(custo desproporcional a um episódio já explicado o suficiente pra decisão
+prática); reconsiderar só se o padrão se repetir com frequência alta o
+bastante pra virar prioridade própria.
+
 ## 68. RF 1h TOTALMENTE independente do 4h — A/B real: expectância negativa e conclusiva, mantido desligado (2026-08-08)
 
 ### Contexto
