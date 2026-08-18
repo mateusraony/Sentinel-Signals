@@ -356,11 +356,20 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
   // (initial_stop_basis) pra auditoria — sem isso, "sem diferença" seria
   // ambíguo entre "estrutural não ajuda" e "estrutural quase nunca foi
   // usado de verdade" (ver RF_4H_STRUCTURAL_STOP_CANDLE_LIMIT acima).
+  // Correção (2026-08-18, review externa Codex, PR #209, docs/known-risks.md
+  // item 104): `maxAtrMult` PRECISA ser o `ATR_MULT` por-tier (o mesmo do
+  // ramo desligado abaixo), não o default 2.0 fixo de computeStructuralStop
+  // — sem isso, `structural_capped`/`atr_fallback` (a maioria dos casos)
+  // não reproduzem o stop antigo pra tier T2/T3 (2.5×/3.0×ATR), viram um
+  // aperto sistemático não intencional pro flag. O piso (minAtrMult, sem
+  // equivalente por-tier no ramo desligado) continua fixo de propósito.
   let initialStop;
   let stopBasis = 'tier_atr';
   if (pineConfig.rfStructuralStopEnabled) {
     const structuralLevel = isBuy ? tf4hData.smc?.lastSwingLow : tf4hData.smc?.lastSwingHigh;
-    const structural = computeStructuralStop({ isBuy, entry, structuralLevel, atrValue: tf4hData.atrValue });
+    const structural = computeStructuralStop({
+      isBuy, entry, structuralLevel, atrValue: tf4hData.atrValue, maxAtrMult: ATR_MULT,
+    });
     initialStop = structural.stop;
     stopBasis = structural.basis;
   } else {

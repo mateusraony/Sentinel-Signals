@@ -125,26 +125,31 @@ plano de sessão morre com a sessão.
 > não "confirmado que piora") — precisa de uma 2ª medição independente pra
 > reabrir. Detalhe: item 103.
 >
-> **Atualização 2026-08-18 (item 104): `rfStructuralStopEnabled` medido —
-> efeito pequeno e NÃO significativo; 95% dos casos colapsam de volta pro
-> comportamento ATR antigo.** Pareado por `op.id` (336 operações em
-> comum): -0,036R (piora pequena, não significativa — t=-0,64 em
-> cluster contra t(31)=2,04 crítico). `initial_stop_basis` explica o
-> porquê: 81% caiu em `structural_capped` (nível real longe demais,
-> capado no teto 2,0×ATR — quase idêntico ao stop antigo) e 14% em
-> `atr_fallback` (sem swing válido) — só 3,5% usou um nível
-> genuinamente estrutural. **Não ativar** do jeito que está calibrado;
-> testar a hipótese de verdade exigiria afrouxar o teto. Detalhe: item 104.
+> **Atualização 2026-08-18 (item 104, corrigido 2026-08-18): `rfStructuralStopEnabled`
+> medido — resultado CONFUNDIDO por um teto não tier-aware, corrigido no
+> código.** `computeStructuralStop` capava sempre em 2,0×ATR mesmo pra
+> tiers T2/T3 (89% da amostra usa tier atrStopMult 2,5×/3,0×ATR quando
+> desligado) — o trial testava, sem intenção, "ATR mais apertado" em vez
+> de "estrutural vs ATR" pra quase toda a amostra. **Corrigido**:
+> `scanner.js` agora usa o `atrStopMult` do próprio tier como teto
+> (`maxAtrMult: ATR_MULT`), igual ao ramo desligado. O trial já medido
+> (-0,036R pareado, não significativo — t=-0,64 contra t(31)=2,04) fica
+> registrado como diagnóstico do bug, não como medição válida — precisa
+> re-rodar sob o código corrigido antes de qualquer conclusão sobre a
+> hipótese em si. **Não ativar** (efeito já não era significativo mesmo
+> confundido). Detalhe: item 104.
 >
-> **Atualização 2026-08-18 (item 105): `preTp1StopProtectionEnabled`
-> medido — protege capital como desenhado (be salta de 3→160
-> operações), mas efeito agregado pequeno e NÃO significativo.** Pareado
-> por `op.id` (342 operações em comum, mas 53% empate exato — o gatilho
-> só ativa em ~metade dos casos): +0,025R nas 160 operações onde
-> realmente agiu, t=0,93 em cluster contra t(20)=2,09 crítico — não
-> passa. Reduz risco de cauda sem custo detectável na expectância, mas
-> sem ganho comprovado também. **Não ativar ainda** — nem sinal a favor
-> nem contra. Detalhe: item 105.
+> **Atualização 2026-08-18 (item 105, corrigido 2026-08-18): `preTp1StopProtectionEnabled`
+> medido — protege capital como desenhado, mas efeito no subconjunto
+> ativado é pequeno e NÃO significativo.** Correção: a leitura original
+> confundiu "diferença pareada = zero" com "gatilho não disparou" — usando
+> o campo real (`pre_tp1_stop_advanced_at`), o stop avançou em 226 das
+> 342 operações pareadas (66%, não 47% como a proxy sugeria); a média
+> condicional certa nesse subconjunto é +0,038R (não +0,025R, que era a
+> média NÃO condicional sobre todos os 342 pares — erro aritmético),
+> t=0,68 em cluster contra t(25)=2,06 crítico — não passa. Reduz risco de
+> cauda sem custo detectável na expectância, mas sem ganho comprovado.
+> **Não ativar ainda** — nem sinal a favor nem contra. Detalhe: item 105.
 
 ## A regra que ordena tudo: amostra
 
