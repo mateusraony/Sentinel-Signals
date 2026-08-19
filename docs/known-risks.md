@@ -11684,3 +11684,34 @@ mudança é aditiva (novos campos opcionais + leitura condicional na UI/
 Telegram), sem alterar nenhuma transição de estado nem campo existente;
 cobertura via os testes de regressão já existentes do state machine
 continua válida sem alteração.
+
+### Correção (Codex, PR #213) — 2 achados reais
+
+1. **P2 — `stop_hit_real_time`/`tp1_hit_real_time`/`tp2_hit_real_time` não
+   são o instante exato do cruzamento, só um limite superior.** O gate de
+   stop/TP1/TP2 é avaliado contra o HIGH/LOW intrabar do candle
+   (`stopCheckPrice`/`tpCheckPrice`), não o close — então
+   `tfData.lastCandleTime` (o fechamento do candle) só prova que o toque
+   aconteceu EM ALGUM MOMENTO dentro daquele candle, podendo ser até ~1
+   candle inteiro (4h na cascata RF) antes do valor gravado. A implementação
+   original rotulava isso como "Horário real" sem essa ressalva. **Fix**:
+   comentário explícito em `scanner.js` documentando o limite; UI
+   (`TradeHistory.jsx`) e Telegram (`realTimeLine(iso, isBound)`) agora
+   rotulam esses três campos como "🕐 Vela (candle)" em vez de "Horário
+   real", com tooltip explicando o porquê na UI. `closed_at_real_time`
+   herda a mesma ressalva quando `status === STOP_HIT` ou
+   `closed_reason === TP1_FULL`/`TP2_HIT`. INVALIDATION e CHOP_EXIT
+   continuam exatos (decisão é sobre o CLOSE do candle, não o range) — sem
+   mudança nesses dois.
+2. **P2 — `closed_at_real_time` do TIME_STOP gravava um horário sem
+   relação com o gatilho real.** Time Stop dispara por IDADE EM RELÓGIO
+   (`Date.now() - entryRef >= timeStopBars candles`), não por estado de
+   candle — gravar `tfData.lastCandleTime` rotulava um timestamp arbitrário
+   (o último candle fechado no momento do scan, que pode ser horas antes do
+   prazo real) como "horário real do Time Stop". **Fix**: calculado o prazo
+   exato e determinístico (`entryRef + timeStopBars × barMs`) em vez do
+   candle — esse SIM é o instante exato em que a condição passou a valer,
+   sem ressalva.
+
+`npm run lint && npm test -- --run && npm run build` + os 3 alvos esbuild
+limpos de novo após a correção (mesma contagem de testes, sem regressão).

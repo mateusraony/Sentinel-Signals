@@ -108,7 +108,7 @@
     },
     "tp1_hit_real_time": {
       "type": "string",
-      "description": "ISO timestamp of the actual candle close that triggered TP1 (only set for candle-based exits in persistScanResults, not the price-check tick loop, which has no candle to reference — docs/known-risks.md item 106 follow-up, 'horário real do alerta'). Prefer this over tp1_hit_at for display; falls back to null on tick-based exits and on ops created before this field existed."
+      "description": "ISO timestamp of the CLOSE of the candle whose high/low confirmed TP1 was touched (only set for candle-based exits in persistScanResults, not the price-check tick loop, which has no candle to reference — docs/known-risks.md item 106/107 follow-up, 'horário real do alerta'). This is an UPPER BOUND, not the exact intrabar cross — only OHLC is available, no tick data within the candle, so the true touch could be up to one candle's duration earlier. Still far more accurate than tp1_hit_at during a cron gap. Prefer this over tp1_hit_at for display, labeled as the candle time (not implying tick-level precision); falls back to null on tick-based exits and on ops created before this field existed."
     },
     "tp1_hit_price": {
       "type": "number",
@@ -120,7 +120,7 @@
     },
     "tp2_hit_real_time": {
       "type": "string",
-      "description": "ISO timestamp of the actual candle close that triggered TP2 (candle-based exits only — see tp1_hit_real_time)."
+      "description": "ISO timestamp of the CLOSE of the candle whose high/low confirmed TP2 was touched — an upper bound, not the exact intrabar cross (candle-based exits only — see tp1_hit_real_time for the full caveat)."
     },
     "tp2_hit_price": {
       "type": "number",
@@ -132,7 +132,7 @@
     },
     "stop_hit_real_time": {
       "type": "string",
-      "description": "ISO timestamp of the actual candle close that triggered the stop (candle-based exits only — see tp1_hit_real_time). Absent on price-check tick-based stops, where the wall-clock stop_hit_at already IS the real time at that loop's resolution."
+      "description": "ISO timestamp of the CLOSE of the candle whose high/low confirmed the stop was touched — an upper bound, not the exact intrabar cross (candle-based exits only — see tp1_hit_real_time for the full caveat). Absent on price-check tick-based stops, where the wall-clock stop_hit_at already IS the real time at that loop's resolution."
     },
     "stop_hit_price": {
       "type": "number",
@@ -148,7 +148,7 @@
     },
     "closed_at_real_time": {
       "type": "string",
-      "description": "ISO timestamp of the actual candle close that triggered this terminal close (STOP_HIT, INVALIDATION, CHOP_EXIT, TIME_STOP, TP1_FULL, TP2_HIT — candle-based exits only, see tp1_hit_real_time). Prefer this over closed_at for display when present."
+      "description": "ISO timestamp of the real event that triggered this terminal close (candle-based exits only). Precision varies by closed_reason: for INVALIDATION and CHOP_EXIT the decision is evaluated directly against the candle's CLOSE price, so this is exact; for STOP_HIT and TP1_FULL (intrabar high/low touch) it's the candle's close as an UPPER BOUND, not the exact cross (see tp1_hit_real_time); for TIME_STOP it's the computed deadline instant (entry time + tier_time_stop_bars candles), which is exact and deliberately NOT the latest candle's close (Codex review, PR #213 — Time Stop fires off wall-clock age, not candle state). Prefer this over closed_at for display when present."
     },
     "exit_price": {
       "type": "number",

@@ -34,6 +34,19 @@ function calcRR(op) {
 // cron latency doesn't clutter every row. A large gap here is itself a
 // diagnostic signal (docs/known-risks.md item 106 — Firestore quota outage,
 // or any other cron gap, makes this jump).
+// Codex review (PR #213): stop_hit_real_time/tp1_hit_real_time/
+// tp2_hit_real_time are the CLOSE of the candle whose high/low confirmed
+// an intrabar touch — an upper bound on the real cross, not the exact
+// instant (only OHLC is available, no tick data within the candle). Tag
+// makes that explicit instead of implying tick-level precision.
+function CandleBoundTag() {
+  return (
+    <span className="text-[8px] text-muted-foreground/50" title="Fechamento da vela que confirmou o toque — cota máxima; o cruzamento real do nível pode ter sido antes, dentro da mesma vela (só há dado OHLC, sem tick intrabar)">
+      {' '}(vela)
+    </span>
+  );
+}
+
 const LAG_THRESHOLD_MS = 20 * 60 * 1000;
 function DetectionLag({ realTime, detectedAt }) {
   if (!realTime || !detectedAt) return null;
@@ -183,16 +196,16 @@ function HistoryCard({ op }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[9px] font-mono">
               <span className="text-muted-foreground">🟢 Sinal gerado: <span className="text-foreground/60">{moment(op.created_date).format('DD/MM/YY HH:mm:ss')}</span></span>
               {op.tp1_hit_at && (
-                <span className="text-muted-foreground">🎯 TP1 atingido: <span style={{ color: '#00ff80' }}>{moment(op.tp1_hit_real_time || op.tp1_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.tp1_hit_price ? ` @ $${fmt(op.tp1_hit_price)}` : ''}{op.tp1_hit_real_time && <DetectionLag realTime={op.tp1_hit_real_time} detectedAt={op.tp1_hit_at} />}</span>
+                <span className="text-muted-foreground">🎯 TP1 atingido: <span style={{ color: '#00ff80' }}>{moment(op.tp1_hit_real_time || op.tp1_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.tp1_hit_price ? ` @ $${fmt(op.tp1_hit_price)}` : ''}{op.tp1_hit_real_time && <><CandleBoundTag /><DetectionLag realTime={op.tp1_hit_real_time} detectedAt={op.tp1_hit_at} /></>}</span>
               )}
               {op.tp2_hit_at && (
-                <span className="text-muted-foreground">🏆 TP2 atingido: <span style={{ color: '#00ff80' }}>{moment(op.tp2_hit_real_time || op.tp2_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.tp2_hit_price ? ` @ $${fmt(op.tp2_hit_price)}` : ''}{op.tp2_hit_real_time && <DetectionLag realTime={op.tp2_hit_real_time} detectedAt={op.tp2_hit_at} />}</span>
+                <span className="text-muted-foreground">🏆 TP2 atingido: <span style={{ color: '#00ff80' }}>{moment(op.tp2_hit_real_time || op.tp2_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.tp2_hit_price ? ` @ $${fmt(op.tp2_hit_price)}` : ''}{op.tp2_hit_real_time && <><CandleBoundTag /><DetectionLag realTime={op.tp2_hit_real_time} detectedAt={op.tp2_hit_at} /></>}</span>
               )}
               {op.stop_hit_at && (
-                <span className="text-muted-foreground">🛑 Stop atingido: <span style={{ color: '#ff1478' }}>{moment(op.stop_hit_real_time || op.stop_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.stop_hit_price ? ` @ $${fmt(op.stop_hit_price)}` : ''}{op.stop_hit_real_time && <DetectionLag realTime={op.stop_hit_real_time} detectedAt={op.stop_hit_at} />}</span>
+                <span className="text-muted-foreground">🛑 Stop atingido: <span style={{ color: '#ff1478' }}>{moment(op.stop_hit_real_time || op.stop_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.stop_hit_price ? ` @ $${fmt(op.stop_hit_price)}` : ''}{op.stop_hit_real_time && <><CandleBoundTag /><DetectionLag realTime={op.stop_hit_real_time} detectedAt={op.stop_hit_at} /></>}</span>
               )}
               {closedAt && (
-                <span className="text-muted-foreground">🔒 Encerrado em: <span className="text-foreground/60">{moment(op.closed_at_real_time || closedAt).format('DD/MM/YY HH:mm:ss')}</span>{op.closed_at_real_time && <DetectionLag realTime={op.closed_at_real_time} detectedAt={closedAt} />}</span>
+                <span className="text-muted-foreground">🔒 Encerrado em: <span className="text-foreground/60">{moment(op.closed_at_real_time || closedAt).format('DD/MM/YY HH:mm:ss')}</span>{op.closed_at_real_time && <>{(op.status === 'STOP_HIT' || op.status === 'TP2_HIT' || op.closed_reason === 'TP1_FULL') && <CandleBoundTag />}<DetectionLag realTime={op.closed_at_real_time} detectedAt={closedAt} /></>}</span>
               )}
             </div>
             <div className="text-[8px] font-mono text-muted-foreground mt-1">

@@ -228,9 +228,18 @@ function fmtBRT(iso) {
 // getEntryReferenceTime); silently omitted for tick-based price-check exits,
 // where the wall-clock *_at IS already the real time at that loop's
 // resolution.
-function realTimeLine(iso) {
+//
+// Codex review (PR #213): stop_hit_real_time/tp1_hit_real_time/
+// tp2_hit_real_time are the CLOSE of the candle whose high/low confirmed
+// the exit — an UPPER BOUND on the real cross, not the exact intrabar
+// instant (no tick data within the candle). Pass isBound=true for those so
+// the label says "vela" instead of implying tick-level precision.
+// closed_at_real_time varies by reason (see TradeOperation.jsonc) — callers
+// below pass isBound only where it applies.
+function realTimeLine(iso, isBound = false) {
   const formatted = fmtBRT(iso);
-  return formatted ? `🕐 Horário real: ${formatted}\n` : '';
+  if (!formatted) return '';
+  return isBound ? `🕐 Vela (candle): ${formatted}\n` : `🕐 Horário real: ${formatted}\n`;
 }
 
 // Codex review (PR #65): this used to hardcode "RF" and `context.score` for
@@ -312,7 +321,7 @@ export async function notifyTP1Hit(op, price) {
   return send(
     `🎯 <b>TP1 Atingido!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
-    realTimeLine(op.tp1_hit_real_time) +
+    realTimeLine(op.tp1_hit_real_time, true) +
     `💰 Preço atual: $${fmtP(price)}\n` +
     // Sem runner (known-risks item 46) o TP1 é saída TERMINAL — anunciar
     // "runner ativo, aguardando TP2" seria mentira no canal.
@@ -330,7 +339,7 @@ export async function notifyTP2Hit(op, price) {
   return send(
     `🏆 <b>TP2 Atingido — Operação Completa!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
-    realTimeLine(op.tp2_hit_real_time) +
+    realTimeLine(op.tp2_hit_real_time, true) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)} → TP2: $${fmtP(op.tp2)}\n\n` +
     `<i>✅ Lucro completo realizado — CryptoRadar</i>`
@@ -343,7 +352,7 @@ export async function notifyStopHit(op, price) {
   return send(
     `🛑 <b>Stop Atingido ${beMsg}</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
-    realTimeLine(op.stop_hit_real_time) +
+    realTimeLine(op.stop_hit_real_time, true) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Stop em: $${fmtP(op.current_stop)}\n\n` +
     `<i>⚡ CryptoRadar</i>`

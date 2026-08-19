@@ -141,9 +141,15 @@ function fmtBRT(iso) {
   return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} BRT`;
 }
 
-function realTimeLine(iso) {
+// isBound=true for stop_hit_real_time/tp1_hit_real_time/tp2_hit_real_time —
+// they're the candle CLOSE that confirmed an intrabar high/low touch, an
+// upper bound not the exact cross (Codex review, PR #213 — see
+// TradeOperation.jsonc). closed_at_real_time varies by reason; callers pass
+// isBound only where it applies.
+function realTimeLine(iso, isBound = false) {
   const formatted = fmtBRT(iso);
-  return formatted ? `🕐 Horário real: ${formatted}\n` : '';
+  if (!formatted) return '';
+  return isBound ? `🕐 Vela (candle): ${formatted}\n` : `🕐 Horário real: ${formatted}\n`;
 }
 
 // Codex review (PR #65): this used to hardcode "RF" and `context.score` for
@@ -225,7 +231,7 @@ export async function notifyTP1Hit(op, price) {
   return send(
     `🎯 <b>TP1 Atingido!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
-    realTimeLine(op.tp1_hit_real_time) +
+    realTimeLine(op.tp1_hit_real_time, true) +
     `💰 Preço atual: $${fmtP(price)}\n` +
     (closesFullyAtTp1(op)
       ? `✅ Posição encerrada 100% no TP1\n\n<i>⚡ CryptoRadar — operação fechada</i>`
@@ -241,7 +247,7 @@ export async function notifyTP2Hit(op, price) {
   return send(
     `🏆 <b>TP2 Atingido — Operação Completa!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
-    realTimeLine(op.tp2_hit_real_time) +
+    realTimeLine(op.tp2_hit_real_time, true) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)} → TP2: $${fmtP(op.tp2)}\n\n` +
     `<i>✅ Lucro completo realizado — CryptoRadar</i>`
@@ -279,7 +285,7 @@ export async function notifyStopHit(op, price) {
   return send(
     `🛑 <b>Stop Atingido ${beMsg}</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
-    realTimeLine(op.stop_hit_real_time) +
+    realTimeLine(op.stop_hit_real_time, true) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Stop em: $${fmtP(op.current_stop)}\n\n` +
     `<i>⚡ CryptoRadar</i>`

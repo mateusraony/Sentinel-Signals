@@ -3492,6 +3492,19 @@ export async function persistScanResults(scanResult) {
       const invalidationTriggered = pineConfig.useInvalidation === true
         && reverseBars >= (pineConfig.invalidRFBars ?? 2);
 
+      // Codex review (PR #213): stop_hit_real_time/tp1_hit_real_time/
+      // tp2_hit_real_time below are the CLOSE of the candle whose high/low
+      // (stopCheckPrice/tpCheckPrice, both intrabar extremes) confirmed the
+      // exit — an upper bound on when the level was actually touched, not
+      // the exact intrabar instant (only OHLC is available here, no tick
+      // data within the candle). For a 4h candle, the true cross could be
+      // up to ~4h earlier than this value. Still far more accurate than
+      // the wall-clock *_at during a cron gap (which can be off by days,
+      // not hours) — DetectionLag/UI/Telegram label these "(vela)" to keep
+      // this bound honest rather than implying tick-level precision.
+      // INVALIDATION/CHOP_EXIT below are different: their condition is
+      // evaluated directly against the candle's CLOSE price, so their
+      // closed_at_real_time IS the exact decision instant, no caveat.
       if (stopHit) {
         newStatus = 'STOP_HIT';
         updatePayload.stop_hit_at = nowIso;
@@ -3519,7 +3532,14 @@ export async function persistScanResults(scanResult) {
         updatePayload.closed_reason = 'TIME_STOP';
         updatePayload.exit_price = closePrice;
         updatePayload.closed_at = nowIso;
-        updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
+        // Codex review (PR #213): Time Stop fires off WALL-CLOCK age
+        // (barsOpen above), unrelated to tfData.lastCandleTime — using the
+        // candle's close here would label an arbitrary earlier timestamp as
+        // the "real" trigger. The real trigger is deterministic: the exact
+        // instant the deadline (entryRef + timeStopBars candles) elapsed.
+        updatePayload.closed_at_real_time = entryRef
+          ? new Date(new Date(entryRef).getTime() + timeStopBars * barMs).toISOString()
+          : null;
       } else if (tp1Touched) {
         tp1Hit = true;
         updatePayload.tp1_hit_at = nowIso;
