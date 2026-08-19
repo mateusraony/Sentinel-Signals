@@ -11618,6 +11618,22 @@ de `scripts/run-scan.mjs` + `src/lib/scanner.js`:
   desproporcional ao ganho (é leitura, não o recurso estourando). Registrado
   como opção futura, não implementado.
 
+### Remediação aplicada — `scan-shadow.yml` espaçado de 15min para 30min (2026-08-19)
+
+Usuário decidiu: reduzir ativos monitorados (10→já feito, ver seção
+anterior) **e** espaçar o modo sombra, as duas mitigações recomendadas na
+correção Codex acima. `.github/workflows/scan-shadow.yml`: `cron: "*/15 *
+* * *"` → `"*/30 * * * *"` — ~96 → ~48 passadas/dia, reduzindo pela metade
+a fatia deste workflow no orçamento compartilhado do Firestore. Trade-off
+aceito conscientemente (documentado no próprio workflow): a cadência de
+15min existia para amostrar 1 de cada 4 fechamentos de 15m
+(`check15mConfirmation` só examina o último fechado no instante da
+chamada, achado do Codex PR #129); 30min amostra 1 de cada 2 — ainda perde
+metade dos fechamentos intermediários, mas menos cego que hora em hora (a
+alternativa mais barata). Reversível sem custo (só o `cron:`) se a folga
+de cota ainda não for suficiente. `.github/workflows/analyze-shadow.yml` e
+`.claude/rules/ci-deploy.md` atualizados para refletir a nova cadência.
+
 ## 107. Horário real do evento (candle) vs. horário de detecção (scan) — alertas e histórico agora distinguem os dois (2026-08-19)
 
 ### Contexto
