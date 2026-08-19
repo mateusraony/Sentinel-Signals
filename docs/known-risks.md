@@ -6804,6 +6804,86 @@ TradingView, e leitura de `indicatorAttribution.records`/`overall.curve`/
 (`fetusdt-live-signal-diagnostic-0805-2026`). Nenhuma mudança de código
 nesta análise.
 
+### CAUSA REAL CONFIRMADA — não é o item 106, é o gate `smc_confirm_4h15m` rejeitando o sinal (2026-08-19)
+
+**A hipótese "provavelmente operacional (item 106)" da seção acima estava
+ERRADA e é retratada aqui** — não por raciocínio, por prova direta. Usuário
+perguntou se o disparo real (`scan.yml`, GitHub Actions) tinha rodado nesse
+horário. Em vez de continuar hipotetizando, chequei os dois lugares que dão
+resposta definitiva: os logs do próprio Actions e o Firestore de produção
+(leitura anônima, mesmo padrão já usado pela Routine "Vigia de mercado" —
+a rede desta sessão alcança `firestore.googleapis.com`, só não alcança a
+Binance).
+
+**Fato 1 — o scan real rodou limpo, sem nenhum erro de cota, no horário
+exato.** A vela SELL do FETUSDT abre 20:00 UTC e fecha 23:59:59.999 UTC em
+05/08 (17:00–21:00 Brasília) — a passada do `scan.yml` que processa esse
+fechamento é a run `31058245519`, iniciada 2026-08-06T00:00:11Z. Log
+completo: `[scan] scanAllAssets: 9 ativo(s), 0 falha(s)`. Zero
+`RESOURCE_EXHAUSTED`, zero falha de lock. A run anterior (20:00 UTC,
+05/08) também limpa. **O item 106 é real (confirmado por log noutro dia),
+mas não é a causa deste episódio — descartado por evidência direta, não
+por suposição.**
+
+**Fato 2 — o `SignalEvent` foi criado, o sinal FOI confirmado, e o motivo
+da rejeição está gravado no próprio documento.** Lido direto do Firestore
+(`signalEvents/FETUSDT_4h_SELL_range_filter_2026-08-05T23:59:59.999Z`):
+score 80, `alignment: "aligned"`, `context.rf_direction: -1`, sinal SELL
+4h totalmente válido e confirmado — mas com
+**`"last_rejection_reason": "smc_confirm_zone_rejected"`**. O sinal
+existiu, foi pontuado, foi persistido — e foi barrado por um gate
+ADICIONAL antes de virar `TradeOperation`.
+
+**O gate**: `asset.smc_confirm_4h15m` (`scanner.js:2889-2893`, espelhado
+na 1ª passada em `scanner.js:2330-2334`) — quando `true` no
+`MonitoredAsset`, exige que a estrutura SMC do 1h concorde em DUAS coisas
+antes de aceitar um sinal RF 4h: `trend` (tendência SMC alinhada com o
+sinal) E `pdZone` (preço não pode estar na zona premium/discount errada
+para o lado). Isso é **inteiramente original do Sentinel** — o Pine real
+do usuário ("NEW ERA - Range Filter Strategy v13.2") não tem esse
+conceito, confirmado na investigação original deste item ("não existe
+timeframe de confirmação separado em lugar nenhum do Pine real").
+
+**Achado 2, mais grave — não é só o FETUSDT.** Query em `monitoredAssets`
+confirma: **os 10 ativos monitorados têm `smc_confirm_4h15m: true`**, sem
+exceção. `src/components/assets/AddAssetForm.jsx:58` grava esse campo como
+`true` por padrão ao cadastrar um ativo novo — é opt-OUT, não opt-in, e o
+usuário nunca precisou "mexer em configuração" pra esse gate estar ligado
+em tudo, exatamente como ele relatou ("nunca mexi em configuração do
+sentinel nem do pine" — verdade, o padrão já vinha ligado). Esse gate
+pode estar rejeitando sinais RF válidos em TODOS os ativos monitorados há
+quem sabe quanto tempo — candidato muito mais direto para "por que não
+sai operação" do que qualquer hipótese estatística dos itens 100-105 OU o
+item 106.
+
+**27/07 (a outra operação real perdida)**: o `SignalEvent`
+correspondente (`FETUSDT_4h_SELL_range_filter_2026-07-27T15:59:59.999Z`)
+NÃO tem `last_rejection_reason` gravado — mas isso é esperado mesmo se o
+MESMO gate a rejeitou: o campo só é escrito pelos loops de RETRY
+(`persistScanResults`), a 1ª passada só loga no `SystemLog` (não
+recuperável nesta sessão, log expira). A BUY anterior do FETUSDT
+(`STOP_HIT`, fechada `2026-07-24T16:23:19.913Z`, bem antes de 27/07) não
+estava mais ativa — descarta `active_op_exists` como causa alternativa
+pro 27/07, deixando `smc_confirm_zone_rejected` como hipótese líder
+também aqui, coerente com o mesmo mecanismo do 05/08.
+
+**Recomendação — decisão do usuário, não decidida aqui**: desligar
+`smc_confirm_4h15m` (toggle "SMC confirm 4h→15m" na tela de configuração
+do ativo, `AssetConfigPanel.jsx`) aproximaria o Sentinel do comportamento
+real do Pine do usuário — mas é uma mudança de comportamento em produção,
+afeta os 10 ativos, e o padrão do projeto (mesma régua aplicada a TODO
+gate opcional deste arquivo) é comparar backtest com/sem antes de mudar
+qualquer flag ativa. Próximo passo natural: rodar o A/B
+(`smc_confirm_4h15m: true` vs `false`) via `backtest.yml` antes de decidir
+desligar em produção — ainda não feito.
+
+Verificação: leitura direta do Firestore de produção (script Node
+temporário, leitura anônima, apagado após uso — nunca escreveu nada) e do
+log completo (`get_job_logs`) das 2 runs de `scan.yml` mais próximas do
+fechamento da vela (2026-08-05T20:00:11Z e 2026-08-06T00:00:11Z, ambas
+`0 falha(s)`). Nenhuma mudança de código nesta rodada — só diagnóstico e
+correção de uma hipótese anterior que a prova direta invalidou.
+
 ## 68. RF 1h TOTALMENTE independente do 4h — A/B real: expectância negativa e conclusiva, mantido desligado (2026-08-08)
 
 ### Contexto
@@ -11641,6 +11721,72 @@ barata em cota. Reversível sem custo (só o `cron:`) se a folga de cota
 ainda não for suficiente. `.github/workflows/scan-shadow.yml`,
 `.github/workflows/analyze-shadow.yml` e `.claude/rules/ci-deploy.md`
 atualizados para refletir a nova cadência.
+
+### Checagem pós-remediação — ainda não dá pra dizer "resolvido" (2026-08-19)
+
+Usuário perguntou se ainda existe risco de estourar a cota depois das duas
+mitigações aplicadas (10 ativos, `scan-shadow.yml` a 30min). Não tenho como
+consultar o uso real do Firestore de produção nesta sessão (rede bloqueada,
+mesma limitação de sempre) — resposta é extrapolação de código, não
+medição direta.
+
+**Fato, com uma ressalva real (Codex, PR #215)**: o item 13 original
+registra que, com **10** ativos (o número atual, depois da redução), "a
+estimativa diária de escrita já passava de 90% do limite" — mas essa
+frase aparece ANTES da lista "Causas corrigidas" no texto original, não
+depois. Não está documentado se o 90% foi medido antes ou depois daquelas
+correções específicas (double fetch de config, log incondicional,
+checagem de op ativa 4x, queries sem filtro) — a leitura mais literal do
+texto é que é o número que MOTIVOU os fixes, não o resultado pós-fix. Eu
+tinha tratado esse 90% como o baseline atual válido; **isso não está
+sustentado** — pode ser um número pré-fix (realidade pós-fix desconhecida,
+possivelmente bem menor) ou um número pós-fix só que datado, sem contar
+várias otimizações de escrita feitas depois (item 45.3 write-on-change,
+o próprio dedup desta rodada, etc.). Sem recomputar a partir da contagem
+real de operações por-passada de hoje, não dá pra afirmar que a produção
+está em ~90% agora — é hipótese fraca, não fato.
+
+**Hipótese, revisada**: sem um número de baseline confiável para a
+produção, não dá pra concluir com confiança se o total (produção + fatia
+do `scan-shadow.yml`, mesma cota do projeto) está perto de 100% ou
+folgado. O dedup do log de erro (seção acima) só reduz a amplificação
+DURANTE um estouro/instabilidade — não muda a taxa de escrita normal, sem
+erro — então não afeta essa incerteza num sentido ou noutro.
+
+**Achado incidental (baixa prioridade, não corrigido)**: o guard de aviso
+de cota em `scanAllAssetsInner` (`src/lib/scanner.js`) tem
+`PASSES_PER_DAY = 312` **hardcoded** — correto pra `scan.yml`, mas
+`scan-shadow.yml` roda o MESMO `scanner.js` sem modificação (via
+`scanAllAssets()` em `run-scan-shadow.mjs`) a só 48 passadas/dia. O guard
+superestima o projetado do modo sombra em ~6,5x, então provavelmente
+dispara (falso alarme) em praticamente toda passada do modo sombra,
+gravando um `SystemLog.create` extra (via `logWarn`/`bulkCreate`) nas
+coleções isoladas — custo real mas pequeno (até ~48 escritas/dia a mais,
+~0,24% do limite). **Correção (Codex, PR #215)**: essas escritas extras
+NÃO deixam de afetar a produção — consomem a MESMA cota compartilhada do
+projeto (o ponto central desta seção inteira), só não mexem em dado de
+produção (coleções isoladas). A distinção certa é "não corrompe dado de
+produção", não "sem efeito na produção" — sob condição de cota já
+apertada, esse desperdício espúrio piora, não é neutro. Não corrigido
+nesta rodada — valor baixo pro esforço de parametrizar a constante;
+registrado como limpeza futura.
+
+**Recomendação — única forma de saber com certeza**: checar o Console do
+Firebase → Uso → Firestore (gráfico diário real de leitura/escrita,
+últimos 7 dias) — é a única fonte de verdade que não depende de
+extrapolação. **Correção (Codex, PR #215)**: a tela Logs do painel
+(`src/pages/Logs.jsx`) lê `backend.entities.SystemLog`, que mapeia pra
+`systemLogs` (a coleção real de produção) — os avisos do modo sombra vão
+pra `experimentalRf1hShadowSystemLogs`, uma coleção DIFERENTE que o painel
+nunca lê. Não existe risco de confundir os dois ali; qualquer aviso que
+aparecer na tela Logs já é necessariamente da produção. Pra inspecionar os
+avisos (ruidosos, pelo achado acima) do modo sombra especificamente,
+seria preciso olhar a coleção isolada direto no Firestore ou a saída do
+workflow no GitHub Actions, não o painel. Se o Console do Firebase
+confirmar estouro ainda ocorrendo, a próxima alavanca (não aplicada
+ainda) é reduzir a frequência do disparo externo do `scan.yml`
+(cron-job.org, hoje ~5min, item 18) — maior impacto restante disponível
+sem tocar em ativos monitorados de novo.
 
 ## 107. Horário real do evento (candle) vs. horário de detecção (scan) — alertas e histórico agora distinguem os dois (2026-08-19)
 
