@@ -11502,3 +11502,47 @@ dia, e (b) incluir `scan-shadow.yml` no orçamento de qualquer decisão de
 redução — pausá-lo ou espaçar mais (ex.: 30min em vez de 15min) libera
 cota real da produção sem tocar nos ativos monitorados nem no disparo
 principal.
+
+### Otimização de código aplicada (a pedido do usuário, antes de decidir reduzir ativos/frequência)
+
+Antes de qualquer decisão sobre reduzir ativos/frequência, usuário pediu
+para investigar se sobrava otimização de código no próprio scan. Auditoria
+de `scripts/run-scan.mjs` + `src/lib/scanner.js`:
+
+- **`last_scan_at` não pode ser otimizado** — `persistScanResults`
+  (`scanner.js:3722-3735`) já tem comentário explícito: precisa atualizar
+  em TODA passada (sucesso ou erro) porque é o campo que o watchdog do
+  item 12 ("cron parou de rodar de vez") usa pra distinguir de "este ativo
+  está falhando". Mexer aqui quebraria essa proteção — não é candidato.
+- **[APLICADO] `SystemLog.create` do catch-block de `scanAllAssetsInner`
+  não tinha dedup** (`scanner.js`, branch de erro dentro do loop de
+  `scanAllAssetsInner`) — ao contrário do `MonitoredAsset.update` do mesmo
+  catch (que só muda campos de status, sempre necessário), esse log
+  gravava um documento NOVO a cada passada com erro, mesmo quando é o
+  MESMO erro repetindo (exatamente o cenário deste item: 14 ativos,
+  `RESOURCE_EXHAUSTED` idêntico, a cada ~5min, por horas). Convertido para
+  `SystemLog.createUnique`, mesmo padrão já usado por
+  `logDuplicateActiveOpsPriceCheck` (item 39.1) — chave de dedup inclui
+  ativo + data (YYYY-MM-DD) + mensagem de erro exata, então: (a) o mesmo
+  erro no mesmo ativo no mesmo dia grava só 1 vez (era até ~288x/dia por
+  ativo no pico do cron a cada 5min), mas (b) um dia NOVO com o mesmo erro
+  ainda gera um log fresco (a data faz parte da chave), preservando
+  visibilidade recorrente em vez de silenciar o alerta depois da primeira
+  ocorrência para sempre. `createUnique` troca 1 escrita garantida por 1
+  leitura garantida + escrita só se for a primeira vez naquele dia — troca
+  favorável porque leitura tem muito mais folga (50k/dia) que escrita
+  (20k/dia, o gargalo real). Efeito esperado: praticamente elimina a
+  amplificação de escritas causada pelo PRÓPRIO log de erro durante um
+  estouro de cota prolongado (o log deixa de piorar o problema que está
+  reportando).
+- **[NÃO APLICADO, candidato secundário de menor valor] `scripts/
+  run-scan.mjs:checkAssetHealthchecks()`** roda seu próprio `MonitoredAsset.
+  filter({is_active:true})`, redundante com a query idêntica que
+  `scanAllAssetsInner` já fez na MESMA passada do cron — uma leitura select
+  duplicada, não desprezível mas menos urgente porque leitura tem 2,5x mais
+  folga que escrita. Não corrigido nesta rodada: eliminar a redundância
+  exigiria mudar o retorno de `scanAllAssets()` pra expor a lista de
+  `MonitoredAsset` já buscada, e essa função é compartilhada com o browser
+  (`useAutoScan.js`, `TopBar.jsx`) — mudar o contrato de retorno é risco
+  desproporcional ao ganho (é leitura, não o recurso estourando). Registrado
+  como opção futura, não implementado.

@@ -4062,7 +4062,18 @@ async function scanAllAssetsInner(onProgress) {
         scan_error_since: asset.scan_status === 'error' ? (asset.scan_error_since || new Date().toISOString()) : new Date().toISOString(),
       });
 
-      await backend.entities.SystemLog.create({
+      // Deduped like logDuplicateActiveOpsPriceCheck (item 39.1): a Firestore
+      // outage/quota exhaustion (docs/known-risks.md item 106) repeats the
+      // SAME error for the SAME asset on every ~5min pass, all day — an
+      // unconditional create() here was writing one SystemLog per failed
+      // pass, compounding the very write-quota problem it was reporting.
+      // createUnique caps it at 1 write per (asset, day, exact error
+      // message): dedupKey includes today's date so a NEW day still gets a
+      // fresh log entry even if the same outage recurs tomorrow, preserving
+      // visibility instead of silencing it after the first occurrence ever.
+      const today = new Date().toISOString().slice(0, 10);
+      const scanErrorDedupKey = `scan_error::${asset.id}::${today}::${err.message}`;
+      await backend.entities.SystemLog.createUnique(scanErrorDedupKey, {
         level: 'error',
         module: 'scanner',
         message: `Erro no scan de ${asset.symbol}: ${err.message}`,
