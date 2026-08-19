@@ -23,8 +23,10 @@ paths:
   disparo externo: known-risks **item 18**.
 - `scan-shadow.yml` — braço decisório do modo sombra prospectivo (Fase 1, RF
   1h condicionado ao 4h, `docs/known-risks.md` item 56): roda `npm run
-  scan:shadow` a cada 15min, escreve só em coleções Firestore isoladas
-  (`experimentalRf1hShadow*`), nunca abre operação real nem notifica Telegram.
+  scan:shadow` a cada 30min (reduzido de 15min — item 106/107, folga de cota
+  do Firestore compartilhado com a produção), escreve só em coleções
+  Firestore isoladas (`experimentalRf1hShadow*`), nunca abre operação real
+  nem notifica Telegram.
 - `analyze-shadow.yml` — relatório **só leitura** do acúmulo do modo sombra
   acima: `npm run analyze-shadow-rf1h` 1x/dia (+ `workflow_dispatch` manual),
   publica no Job Summary (humano) e em JSON no log do job (leitura

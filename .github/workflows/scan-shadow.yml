@@ -7,24 +7,31 @@ name: Shadow scan (Fase 1 — RF 1h condicionado ao 4h)
 # 'experimentalRf1hShadow' (scripts/adminEntitiesShadow.js) — nunca abre uma
 # TradeOperation real, nunca notifica Telegram.
 #
-# Cadência de 15min (não hora em hora, não os ~5min do scan real) — achado
-# de revisão (Codex, PR #129, P1): check15mConfirmation só examina o ÚLTIMO
-# candle 15m fechado no instante da chamada (src/lib/scanner.js), então
-# cadência horária amostra só 1 de cada 4 fechamentos de 15m — um alinhamento
-# que aparece e reverte dentro da mesma hora fica permanentemente invisível
-# pro scan sombra, mesmo com a janela de retry de 4h (ela reavalia o sinal,
-# não os candles 15m intermediários perdidos). 15min alinha 1:1 com o próprio
-# candle de confirmação (nenhum fechamento de 15m fica sem chance de ser
-# visto). Ainda ~21x mais leve que a cadência real de ~5min (96 passadas/dia
-# vs ~312) — compromisso deliberado com a quota compartilhada do Firestore
-# (Spark gratuito, ~50k leituras/20k escritas por dia, projeto inteiro,
-# trading-engine.md/scanner.js PASSES_PER_DAY) já usada pela produção real.
-# Se depois de alguns dias a tela "Logs" mostrar aviso de quota perto do
-# limite, apertar de volta pra hora em hora é reversível sem custo (só o
-# `cron:` abaixo) — nenhum estado de produção pra desfazer.
+# Cadência de 30min (não hora em hora, não os ~5min do scan real) —
+# reduzida de 15min pra 30min a pedido do usuário (docs/known-risks.md item
+# 106/107: cota do Firestore estourando em produção, compartilhada com este
+# workflow). Achado original de revisão (Codex, PR #129, P1):
+# check15mConfirmation só examina o ÚLTIMO candle 15m fechado no instante da
+# chamada (src/lib/scanner.js) — a cadência de 15min anterior alinhava 1:1
+# com esse candle (TODO fechamento de 15m tinha chance de ser visto); 30min
+# reduz isso pra 1 de cada 2 (perde a metade intermediária) — uma perda real
+# de cobertura, não uma melhora; a comparação que sobra vantajosa é só
+# contra a cadência HORÁRIA (1 de cada 4), a alternativa mais barata em
+# cota que ficaria pior ainda (Codex review, PR #214, corrigiu uma
+# comparação errada que constava aqui antes). Um alinhamento que aparece e
+# reverte no MESMO fechamento de 30min continua permanentemente invisível
+# pro scan sombra, mesmo com a janela de retry de 4h — ela reavalia o
+# sinal, não os candles 15m intermediários perdidos.
+# ~48 passadas/dia (era ~96 em 15min) — reduz pela metade a fatia deste
+# workflow no orçamento compartilhado do Firestore (Spark gratuito, ~50k
+# leituras/20k escritas por dia, projeto inteiro, trading-engine.md/
+# scanner.js PASSES_PER_DAY) já usada pela produção real. Se depois de
+# alguns dias a tela "Logs" ainda mostrar aviso de quota perto do limite,
+# apertar de volta pra hora em hora é reversível sem custo (só o `cron:`
+# abaixo) — nenhum estado de produção pra desfazer.
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
 
 concurrency:
