@@ -328,6 +328,28 @@ nunca deve receber nova transição.**
   sem comparar relatórios de backtest com/sem primeiro** — ver
   `docs/known-risks.md` item 58.
 
+- **Horário real do evento vs. horário de detecção** (item 107) — todo
+  `_at` de saída (`stop_hit_at`/`tp1_hit_at`/`tp2_hit_at`/`closed_at`) é o
+  instante em que a PASSADA do scan detectou a condição, nunca o evento de
+  mercado em si. Nos exits baseados em candle (`persistScanResults`, não
+  `priceCheckActiveOpsInner`, que não tem candle pra referenciar), campos
+  novos aditivos (`stop_hit_real_time`/`tp1_hit_real_time`/
+  `tp2_hit_real_time`/`closed_at_real_time`) gravam um horário real ao lado
+  do `_at` existente, sem substituí-lo — `TradeHistory.jsx` e os templates
+  do Telegram (`src/lib/telegram.js` + `scripts/adminTelegram.js`, mesmo
+  espelho manual de sempre) preferem o `_real_time` quando presente. Os
+  dois pontos de `notify*` em `scanner.js` passam o `op` mesclado com o
+  `updatePayload` recém-escrito (não mais o `op` pré-transição) — sem isso
+  os campos novos nunca chegariam à notificação. **Precisão varia por
+  campo** (Codex review, PR #213): stop/TP1/TP2 são avaliados contra
+  HIGH/LOW intrabar, então `tfData.lastCandleTime` (fechamento do candle) é
+  só um LIMITE SUPERIOR do cruzamento real, nunca o instante exato — UI/
+  Telegram rotulam esses três como "vela" em vez de "horário real" pra não
+  implicar precisão de tick. TIME_STOP dispara por idade em relógio, não
+  por candle — usa o prazo calculado (`entryRef + timeStopBars × barMs`),
+  não `lastCandleTime`. INVALIDATION/CHOP_EXIT são exatos (decisão é sobre
+  o CLOSE do candle).
+
 ## Regras ao mexer aqui
 
 - **Não** introduza um terceiro caminho de mutação de op. Consolidar/serializar

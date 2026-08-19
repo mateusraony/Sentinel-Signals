@@ -6733,6 +6733,77 @@ Próximo passo: re-rodar `fetusdt-live-signal-diagnostic-0805` com janela
 em 2026 (ex.: `2026-02-04→2026-08-18`) antes de tirar qualquer conclusão
 nova.
 
+### Resolvido — o sinal de 05/08 EXISTIA e passava nos gates do Sentinel; causa provável é operacional (2026-08-19)
+
+Usuário exportou 3 CSVs de candle 4h reais do FETUSDT (mai-jul/2026, via
+TradingView/Binance) e um print da lista de negociações real do TradingView
+("NE RF v13.2", 31/dez/2021-18/ago/2026) mostrando 4 execuções reais que
+nunca apareceram no Sentinel: long 21/07→23/07 (-5,03%), short 27/07→28/07
+e 27/07→30/07 (TP1+runner, +8,20%/+6,27%), e short **05/08→15/08**
+(+9,56%) — o episódio original deste item, agora confirmado como **SELL**,
+não BUY como a investigação original vinha assumindo.
+
+**Achado 1 — TradingView mostra horário de Brasília (UTC-3), não UTC.**
+Confirmado batendo os preços de entrada reais contra os candles Spot reais
+(`open`/`close` exatos): "21 jul 01:00" = candle 4h que abre 04:00 UTC
+(close 0,1599 ≈ entrada real 0,1600); "27 jul 09:00" = candle que abre
+12:00 UTC (close 0,1507 ≈ entrada real 0,1506). Confirma o que a análise
+anterior já tinha estabelecido para 27/07 ("12:00 UTC = 09:00 Brasília"),
+agora generalizado e verificado por preço, não só por hora.
+
+**Achado 2 — a comparação anterior (28/07 21h vs. 30/07 20:00 UTC, "~2
+dias de diferença") comparava a referência ERRADA.** A operação real de
+27/07 tinha DOIS fechamentos reais (TP1 parcial em 28/07 12:00 UTC +8,20%,
+runner final em 30/07 12:00 UTC +6,27%) — um padrão TP1+runner idêntico ao
+que o próprio Sentinel implementa (item 46). O backtest fecha essa mesma
+operação em **30/07 20:00 UTC** via `STOP_HIT` do runner (+1,247R). Contra
+a referência CERTA (o fechamento final real, 30/07 12:00 UTC, não o TP1
+parcial), a diferença é de **8 horas no mesmo dia**, não ~2 dias — muito
+mais consistente com a aproximação candle-a-candle do motor de backtest
+(já documentada acima) do que com qualquer divergência grave de dado.
+
+**Achado 3 — o sinal de 05/08 EXISTE no backtest, no candle exato, no
+preço exato, e passou no gate de confluência.** Lido diretamente de
+`indicatorAttribution.records` do relatório corrigido
+(`fetusdt-live-signal-diagnostic-0805-2026`, janela 2026-02-04→2026-08-18):
+registro com `direction: "SELL"`, `candle_time:
+"2026-08-05T23:59:59.999Z"` (candle que abre 20:00 UTC = 17:00 Brasília,
+bate exatamente com o horário real), `entry_price_ref: 0.1419` (real:
+0,1418), `score_real: 80`, **`passed_real: true`** — ou seja, pela própria
+lógica do Sentinel (mesmo código do scan real, rodado no backtest sem
+modificação), esse sinal deveria ter virado uma `TradeOperation`. O
+outcome registrado é `STILL_OPEN_AT_CUTOFF` (não fechou dentro da janela
+do backtest, apesar de `mfeR: 2.48` — ficou favorável e nunca foi
+contabilizado como fechado até o corte de 18/08), consistente com a
+aproximação por candle do motor de backtest, não com o sinal em si.
+
+**Leitura (fato × hipótese)**: **Fato** — o sinal SELL de 05/08 é real,
+válido, e passaria pelos gates de confluência/regime do Sentinel; a
+lógica/paridade do indicador NÃO é a causa da ausência no painel ao vivo.
+**Hipótese, mais provável com o dado disponível**: a causa é operacional
+— o mesmo tipo de falha que o item 106 encontrou (estouro de cota do
+Firestore bloqueando a escrita da `TradeOperation`) é a explicação mais
+direta para "o sinal existe mas nunca vira operação no painel", muito mais
+que qualquer hipótese de paridade/indicador já descartada nas rodadas
+anteriores deste item. **Não confirmado**: não temos log do Sistema de
+05/08 especificamente (a evidência do item 106 é de ~18-19/08) — a chance
+de o estouro já estar ocorrendo em 05/08 não foi verificada.
+
+**Recomendação**: se o usuário puder checar a tela Logs do Sistema
+filtrando por volta de 05/08 20:00 UTC (17:00 Brasília) por FETUSDT, e
+achar o mesmo padrão `RESOURCE_EXHAUSTED`/falha de lock do item 106, isso
+fecha o item 67 definitivamente como causado pela mesma falha operacional
+— sem precisar de mais nenhum backtest. Item 67 muda de "EM ABERTO, causa
+desconhecida" para "quase certamente operacional (item 106), pendente
+apenas de confirmação direta nos logs daquele dia".
+
+Verificação: leitura direta e cruzamento programático (Python/pandas ad
+hoc) dos 3 CSVs de candle reais contra os horários/preços do print do
+TradingView, e leitura de `indicatorAttribution.records`/`overall.curve`/
+`stillOpenAtCutoff` do `backtest-report.json` já anexado
+(`fetusdt-live-signal-diagnostic-0805-2026`). Nenhuma mudança de código
+nesta análise.
+
 ## 68. RF 1h TOTALMENTE independente do 4h — A/B real: expectância negativa e conclusiva, mantido desligado (2026-08-08)
 
 ### Contexto
@@ -11546,3 +11617,101 @@ de `scripts/run-scan.mjs` + `src/lib/scanner.js`:
   (`useAutoScan.js`, `TopBar.jsx`) — mudar o contrato de retorno é risco
   desproporcional ao ganho (é leitura, não o recurso estourando). Registrado
   como opção futura, não implementado.
+
+## 107. Horário real do evento (candle) vs. horário de detecção (scan) — alertas e histórico agora distinguem os dois (2026-08-19)
+
+### Contexto
+
+Pedido explícito do usuário, ao investigar o item 67/106: "precisa ter
+algum mecanismo pra quando pegar o alerta ou a entrada/saída/take/loss ele
+mostre o horário real que aconteceu". Confirmado por leitura de código:
+TODO evento de saída (`stop_hit_at`/`tp1_hit_at`/`tp2_hit_at`/`closed_at`,
+`src/lib/scanner.js`) é gravado com `new Date().toISOString()` — o
+horário em que a PASSADA do scan detectou a condição, nunca o horário real
+de mercado. Sob cadência normal (~5min) a diferença é pequena, mas depois
+de um gap de cron (item 106, rede, etc.) o horário gravado pode estar
+horas ou dias atrasado em relação ao evento real — exatamente o tipo de
+confusão que motivou a investigação do item 67 (comparar "quando fechou no
+Sentinel" com "quando fechou no TradingView" sem saber que o primeiro é
+detecção, não o evento).
+
+### Mecanismo implementado
+
+**Só o caminho baseado em candle** (`persistScanResults`, os dois blocos
+pré/pós-TP1) tem uma referência de horário real disponível —
+`tfData.lastCandleTime`, o fechamento do candle que causou a decisão.
+`priceCheckActiveOpsInner` (baseado em preço/tick) não tem candle nenhum
+para referenciar — ali o `_at` de parede JÁ é a melhor aproximação
+disponível, na resolução daquele loop.
+
+- **Campos novos, aditivos, sempre ao lado do `_at` existente** (nunca o
+  substituem, então nenhum consumidor existente quebra): `stop_hit_real_time`,
+  `tp1_hit_real_time`, `tp2_hit_real_time`, `closed_at_real_time` — só
+  gravados nos exits baseados em candle; ausentes (não `null` gravado como
+  regressão silenciosa — literalmente omitidos do patch) nos exits
+  baseados em tick, então a UI/Telegram sabem distinguir "sem horário real
+  disponível" de "horário real igual ao de detecção".
+- **`TradeHistory.jsx`**: a Linha do Tempo agora mostra `_real_time` como
+  horário principal (cai para `_at` só se `_real_time` ausente) e, quando a
+  diferença entre os dois passa de 20min (folga generosa acima da cadência
+  normal do cron), acrescenta "(detectado Xh depois)" — o próprio atraso
+  vira sinal de diagnóstico visível (gap de cron/quota fica óbvio olhando o
+  histórico, sem precisar ler o Debug Log).
+- **Telegram** (`src/lib/telegram.js` + espelho `scripts/adminTelegram.js`,
+  mesmo padrão de sincronização manual de sempre): `notifyStopHit`/
+  `notifyTP1Hit`/`notifyTP2Hit`/`notifyInvalidated`/`notifyTimeStop`/
+  `notifyChopExit`/`notifyTradeCreated` ganharam uma linha "🕐 Horário
+  real: DD/MM HH:mm BRT" (UTC-3, mesma convenção BRT já usada em
+  `TradeHistory.jsx`), omitida quando não há horário real disponível — sem
+  dependência nova (formatador de data manual, os dois arquivos já eram
+  enxutos/sem `moment`). Entrada usa `getEntryReferenceTime(op)`
+  (`opExitRules.js`, já existia para os campos `entry_candle_time_*`) —
+  entradas já tinham essa informação, só faltava exibi-la no alerta.
+- **`scanner.js`**: os dois pontos de chamada de `notify*` (candle-based e
+  tick-based) agora passam o `op` MESCLADO com o `updatePayload` que
+  acabou de ser escrito, não mais o `op` pré-transição — sem essa correção
+  os `_real_time`/`_at` recém-gravados nunca chegariam à função de
+  notificação (ela leria o valor antigo/`undefined`).
+
+### Verificação
+
+`npm run lint && npm test -- --run && npm run build` limpos (1042 testes,
+0 regressão — nenhum teste existente fazia match exato do `updatePayload`,
+só `toBeTruthy` em `closed_at`). Os 3 alvos esbuild que empacotam
+`scanner.js`/`telegram.js` (`build:scan`, `build:scan-shadow`,
+`build:backtest`) compilam limpos. Sem teste novo dedicado nesta rodada —
+mudança é aditiva (novos campos opcionais + leitura condicional na UI/
+Telegram), sem alterar nenhuma transição de estado nem campo existente;
+cobertura via os testes de regressão já existentes do state machine
+continua válida sem alteração.
+
+### Correção (Codex, PR #213) — 2 achados reais
+
+1. **P2 — `stop_hit_real_time`/`tp1_hit_real_time`/`tp2_hit_real_time` não
+   são o instante exato do cruzamento, só um limite superior.** O gate de
+   stop/TP1/TP2 é avaliado contra o HIGH/LOW intrabar do candle
+   (`stopCheckPrice`/`tpCheckPrice`), não o close — então
+   `tfData.lastCandleTime` (o fechamento do candle) só prova que o toque
+   aconteceu EM ALGUM MOMENTO dentro daquele candle, podendo ser até ~1
+   candle inteiro (4h na cascata RF) antes do valor gravado. A implementação
+   original rotulava isso como "Horário real" sem essa ressalva. **Fix**:
+   comentário explícito em `scanner.js` documentando o limite; UI
+   (`TradeHistory.jsx`) e Telegram (`realTimeLine(iso, isBound)`) agora
+   rotulam esses três campos como "🕐 Vela (candle)" em vez de "Horário
+   real", com tooltip explicando o porquê na UI. `closed_at_real_time`
+   herda a mesma ressalva quando `status === STOP_HIT` ou
+   `closed_reason === TP1_FULL`/`TP2_HIT`. INVALIDATION e CHOP_EXIT
+   continuam exatos (decisão é sobre o CLOSE do candle, não o range) — sem
+   mudança nesses dois.
+2. **P2 — `closed_at_real_time` do TIME_STOP gravava um horário sem
+   relação com o gatilho real.** Time Stop dispara por IDADE EM RELÓGIO
+   (`Date.now() - entryRef >= timeStopBars candles`), não por estado de
+   candle — gravar `tfData.lastCandleTime` rotulava um timestamp arbitrário
+   (o último candle fechado no momento do scan, que pode ser horas antes do
+   prazo real) como "horário real do Time Stop". **Fix**: calculado o prazo
+   exato e determinístico (`entryRef + timeStopBars × barMs`) em vez do
+   candle — esse SIM é o instante exato em que a condição passou a valer,
+   sem ressalva.
+
+`npm run lint && npm test -- --run && npm run build` + os 3 alvos esbuild
+limpos de novo após a correção (mesma contagem de testes, sem regressão).
