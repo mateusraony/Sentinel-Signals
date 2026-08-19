@@ -328,6 +328,20 @@ nunca deve receber nova transição.**
   sem comparar relatórios de backtest com/sem primeiro** — ver
   `docs/known-risks.md` item 58.
 
+- **Horário real do evento vs. horário de detecção** (item 107) — todo
+  `_at` de saída (`stop_hit_at`/`tp1_hit_at`/`tp2_hit_at`/`closed_at`) é o
+  instante em que a PASSADA do scan detectou a condição, nunca o evento de
+  mercado em si. Nos exits baseados em candle (`persistScanResults`, não
+  `priceCheckActiveOpsInner`, que não tem candle pra referenciar), campos
+  novos aditivos (`stop_hit_real_time`/`tp1_hit_real_time`/
+  `tp2_hit_real_time`/`closed_at_real_time`) gravam `tfData.lastCandleTime`
+  ao lado do `_at` existente, sem substituí-lo — `TradeHistory.jsx` e os
+  templates do Telegram (`src/lib/telegram.js` + `scripts/adminTelegram.js`,
+  mesmo espelho manual de sempre) preferem o `_real_time` quando presente.
+  Os dois pontos de `notify*` em `scanner.js` passam o `op` mesclado com o
+  `updatePayload` recém-escrito (não mais o `op` pré-transição) — sem isso
+  os campos novos nunca chegariam à notificação.
+
 ## Regras ao mexer aqui
 
 - **Não** introduza um terceiro caminho de mutação de op. Consolidar/serializar

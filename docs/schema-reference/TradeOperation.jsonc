@@ -104,7 +104,11 @@
     },
     "tp1_hit_at": {
       "type": "string",
-      "description": "ISO timestamp when TP1 was hit"
+      "description": "ISO timestamp when the scan/price-check PASS DETECTED TP1 was hit (wall clock, can lag the real market moment by up to a scan cadence — or much more after a cron gap). See tp1_hit_real_time for the real market time."
+    },
+    "tp1_hit_real_time": {
+      "type": "string",
+      "description": "ISO timestamp of the actual candle close that triggered TP1 (only set for candle-based exits in persistScanResults, not the price-check tick loop, which has no candle to reference — docs/known-risks.md item 106 follow-up, 'horário real do alerta'). Prefer this over tp1_hit_at for display; falls back to null on tick-based exits and on ops created before this field existed."
     },
     "tp1_hit_price": {
       "type": "number",
@@ -112,7 +116,11 @@
     },
     "tp2_hit_at": {
       "type": "string",
-      "description": "ISO timestamp when TP2 was hit"
+      "description": "ISO timestamp when the scan/price-check PASS DETECTED TP2 was hit (wall clock). See tp2_hit_real_time for the real market time."
+    },
+    "tp2_hit_real_time": {
+      "type": "string",
+      "description": "ISO timestamp of the actual candle close that triggered TP2 (candle-based exits only — see tp1_hit_real_time)."
     },
     "tp2_hit_price": {
       "type": "number",
@@ -120,7 +128,11 @@
     },
     "stop_hit_at": {
       "type": "string",
-      "description": "ISO timestamp when stop was hit"
+      "description": "ISO timestamp when the scan/price-check PASS DETECTED the stop was hit (wall clock). See stop_hit_real_time for the real market time."
+    },
+    "stop_hit_real_time": {
+      "type": "string",
+      "description": "ISO timestamp of the actual candle close that triggered the stop (candle-based exits only — see tp1_hit_real_time). Absent on price-check tick-based stops, where the wall-clock stop_hit_at already IS the real time at that loop's resolution."
     },
     "stop_hit_price": {
       "type": "number",
@@ -132,7 +144,11 @@
     },
     "closed_at": {
       "type": "string",
-      "description": "ISO timestamp when operation was closed/invalidated"
+      "description": "ISO timestamp when the scan PASS DETECTED/wrote the terminal close (wall clock). See closed_at_real_time for the real market time."
+    },
+    "closed_at_real_time": {
+      "type": "string",
+      "description": "ISO timestamp of the actual candle close that triggered this terminal close (STOP_HIT, INVALIDATION, CHOP_EXIT, TIME_STOP, TP1_FULL, TP2_HIT — candle-based exits only, see tp1_hit_real_time). Prefer this over closed_at for display when present."
     },
     "exit_price": {
       "type": "number",

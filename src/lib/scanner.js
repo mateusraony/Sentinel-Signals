@@ -3495,9 +3495,11 @@ export async function persistScanResults(scanResult) {
       if (stopHit) {
         newStatus = 'STOP_HIT';
         updatePayload.stop_hit_at = nowIso;
+        updatePayload.stop_hit_real_time = tfData.lastCandleTime || null;
         updatePayload.stop_hit_price = op.current_stop;
         updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
+        updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
         updatePayload.bars_to_stop = barsSinceEntry;
         if (stopTp1Ambiguous) updatePayload.exit_ambiguous = true;
       } else if (invalidationTriggered) {
@@ -3505,19 +3507,23 @@ export async function persistScanResults(scanResult) {
         updatePayload.closed_reason = 'INVALIDATION';
         updatePayload.exit_price = closePrice;
         updatePayload.closed_at = nowIso;
+        updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
       } else if (chopExitTriggered) {
         newStatus = 'CLOSED';
         updatePayload.closed_reason = 'CHOP_EXIT';
         updatePayload.exit_price = closePrice;
         updatePayload.closed_at = nowIso;
+        updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
       } else if (timeStopTriggered) {
         newStatus = 'CLOSED';
         updatePayload.closed_reason = 'TIME_STOP';
         updatePayload.exit_price = closePrice;
         updatePayload.closed_at = nowIso;
+        updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
       } else if (tp1Touched) {
         tp1Hit = true;
         updatePayload.tp1_hit_at = nowIso;
+        updatePayload.tp1_hit_real_time = tfData.lastCandleTime || null;
         updatePayload.tp1_hit_price = op.tp1;
         updatePayload.bars_to_tp1 = barsSinceEntry;
         if (closesFullyAtTp1(op)) {
@@ -3528,6 +3534,7 @@ export async function persistScanResults(scanResult) {
           updatePayload.closed_reason = 'TP1_FULL';
           updatePayload.exit_price = op.tp1;
           updatePayload.closed_at = nowIso;
+          updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
         } else {
           newStatus = 'RUNNER_ACTIVE';
           newCurrentStop = op.entry_price;
@@ -3605,19 +3612,23 @@ export async function persistScanResults(scanResult) {
       if (runnerStopHit) {
         newStatus = 'STOP_HIT';
         updatePayload.stop_hit_at = nowIso;
+        updatePayload.stop_hit_real_time = tfData.lastCandleTime || null;
         updatePayload.stop_hit_price = op.current_stop;
         // Runner stopped at BE (entry) or current stop
         updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
+        updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
         updatePayload.bars_to_stop = barsSinceEntry;
         if (stopTp2Ambiguous) updatePayload.exit_ambiguous = true;
       } else if (tp2Touched) {
         tp2Hit = true;
         newStatus = 'TP2_HIT';
         updatePayload.tp2_hit_at = nowIso;
+        updatePayload.tp2_hit_real_time = tfData.lastCandleTime || null;
         updatePayload.tp2_hit_price = op.tp2;
         updatePayload.exit_price = op.tp2;
         updatePayload.closed_at = nowIso;
+        updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
       } else if (op.cascade === '1h_5m') {
         // SMC cascade: the runner's invalidation must come from the same
         // structure that opened the trade (CHoCH against the position), not
@@ -3634,6 +3645,7 @@ export async function persistScanResults(scanResult) {
           updatePayload.closed_reason = 'INVALIDATION';
           updatePayload.exit_price = closePrice;
           updatePayload.closed_at = nowIso;
+          updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
         }
       } else if (rfFilt && op.exit_mode !== 'ATR_TRAILING') {
         const rfInval = isBuy ? (rfDir === -1 && closePrice < rfFilt) : (rfDir === 1 && closePrice > rfFilt);
@@ -3642,6 +3654,7 @@ export async function persistScanResults(scanResult) {
           updatePayload.closed_reason = 'INVALIDATION';
           updatePayload.exit_price = closePrice;
           updatePayload.closed_at = nowIso;
+          updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
         }
       }
 
@@ -3704,14 +3717,20 @@ export async function persistScanResults(scanResult) {
         logWarn('scanner', `Transição descartada pelo CAS: op ${op.id} (${op.symbol}) ${op.status}→${newStatus}; status atual ${currentStatus}`, { op_id: op.id, from: op.status, attempted: newStatus, current: currentStatus }, { symbol: op.symbol });
       }
       // Only notify when THIS pass actually applied the transition — prevents
-      // duplicate Telegram messages when both loops race the same op.
+      // duplicate Telegram messages when both loops race the same op. Notify
+      // functions get the op MERGED with updatePayload (not the stale
+      // pre-transition op) so they can read the *_real_time fields just
+      // written above — the candle's actual close time, not this pass's
+      // wall-clock detection time (docs/known-risks.md: horário real do
+      // alerta vs. horário em que o scan detectou).
       if (applied && isTelegramConfigured()) {
-        if (newStatus === 'STOP_HIT' && op.status !== 'STOP_HIT') notifyStopHit(op, closePrice).catch(() => {});
-        else if (newStatus === 'TP2_HIT') notifyTP2Hit(op, closePrice).catch(() => {});
-        else if (newStatus === 'INVALIDATED') notifyInvalidated(op, closePrice).catch(() => {});
-        else if (newStatus === 'CLOSED' && updatePayload.closed_reason === 'TIME_STOP') notifyTimeStop(op, closePrice).catch(() => {});
-        else if (newStatus === 'CLOSED' && updatePayload.closed_reason === 'CHOP_EXIT') notifyChopExit(op, closePrice).catch(() => {});
-        else if (tp1Hit && !op.tp1_hit) notifyTP1Hit(op, closePrice).catch(() => {});
+        const notifiedOp = { ...op, ...updatePayload, tp1_hit: tp1Hit, tp2_hit: tp2Hit };
+        if (newStatus === 'STOP_HIT' && op.status !== 'STOP_HIT') notifyStopHit(notifiedOp, closePrice).catch(() => {});
+        else if (newStatus === 'TP2_HIT') notifyTP2Hit(notifiedOp, closePrice).catch(() => {});
+        else if (newStatus === 'INVALIDATED') notifyInvalidated(notifiedOp, closePrice).catch(() => {});
+        else if (newStatus === 'CLOSED' && updatePayload.closed_reason === 'TIME_STOP') notifyTimeStop(notifiedOp, closePrice).catch(() => {});
+        else if (newStatus === 'CLOSED' && updatePayload.closed_reason === 'CHOP_EXIT') notifyChopExit(notifiedOp, closePrice).catch(() => {});
+        else if (tp1Hit && !op.tp1_hit) notifyTP1Hit(notifiedOp, closePrice).catch(() => {});
       }
     }
     } catch (err) {
@@ -3985,9 +4004,14 @@ async function priceCheckActiveOpsInner() {
         logWarn('scanner', `Transição descartada pelo CAS (price check): op ${op.id} (${op.symbol}) ${op.status}→${newStatus}; status atual ${currentStatus}`, { op_id: op.id, from: op.status, attempted: newStatus, current: currentStatus }, { symbol: op.symbol });
       }
       if (applied && isTelegramConfigured()) {
-        if (newStatus === 'STOP_HIT') notifyStopHit(op, price).catch(() => {});
-        else if (newStatus === 'TP2_HIT') notifyTP2Hit(op, price).catch(() => {});
-        else if (tp1Hit && !op.tp1_hit) notifyTP1Hit(op, price).catch(() => {});
+        // No candle here (price-based, not candle-based) — *_real_time is
+        // left absent, so notify* falls back to the wall-clock *_at, which
+        // IS the real time at this loop's resolution (continuous price
+        // ticks, not a 4h/1h candle boundary).
+        const notifiedOp = { ...op, ...updatePayload, tp1_hit: tp1Hit, tp2_hit: tp2Hit };
+        if (newStatus === 'STOP_HIT') notifyStopHit(notifiedOp, price).catch(() => {});
+        else if (newStatus === 'TP2_HIT') notifyTP2Hit(notifiedOp, price).catch(() => {});
+        else if (tp1Hit && !op.tp1_hit) notifyTP1Hit(notifiedOp, price).catch(() => {});
       }
     }
     } catch (err) {

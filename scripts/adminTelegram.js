@@ -11,7 +11,7 @@
 // conta, o do navegador e o das 24h anunciariam gestões diferentes para a
 // MESMA operação; opExitRules já está no bundle do scan) e o cliente
 // firebase-admin, mesmo padrão de scripts/adminPineConfig.js.
-import { closesFullyAtTp1 } from '../src/lib/opExitRules.js';
+import { closesFullyAtTp1, getEntryReferenceTime } from '../src/lib/opExitRules.js';
 import { getFirestore } from 'firebase-admin/firestore';
 
 const DEFAULT_FILTERS = {
@@ -132,6 +132,20 @@ function fmtP(p) {
   return p.toFixed(6);
 }
 
+// Mirrors src/lib/telegram.js's fmtBRT/realTimeLine — BRT (UTC-3), same
+// convention already used in TradeHistory.jsx's candle display.
+function fmtBRT(iso) {
+  if (!iso) return null;
+  const d = new Date(new Date(iso).getTime() - 3 * 60 * 60 * 1000);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} BRT`;
+}
+
+function realTimeLine(iso) {
+  const formatted = fmtBRT(iso);
+  return formatted ? `🕐 Horário real: ${formatted}\n` : '';
+}
+
 // Codex review (PR #65): this used to hardcode "RF" and `context.score` for
 // EVERY signal source — harmless while smc_structure/macd/ema_cross/rsi
 // signals rarely reached here, but enabling the SMC cascade by default
@@ -196,6 +210,7 @@ export async function notifyTradeCreated(op) {
   return send(
     `${emoji} <b>Entrada Confirmada — ${dir}</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${tfLabel}\n` +
+    realTimeLine(getEntryReferenceTime(op)) +
     `📍 Entrada: $${fmtP(op.entry_price)}\n` +
     `🛑 Stop: $${fmtP(op.initial_stop)}\n` +
     `🎯 TP1: $${fmtP(op.tp1)}  |  TP2: $${fmtP(op.tp2)}\n` +
@@ -210,6 +225,7 @@ export async function notifyTP1Hit(op, price) {
   return send(
     `🎯 <b>TP1 Atingido!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    realTimeLine(op.tp1_hit_real_time) +
     `💰 Preço atual: $${fmtP(price)}\n` +
     (closesFullyAtTp1(op)
       ? `✅ Posição encerrada 100% no TP1\n\n<i>⚡ CryptoRadar — operação fechada</i>`
@@ -225,6 +241,7 @@ export async function notifyTP2Hit(op, price) {
   return send(
     `🏆 <b>TP2 Atingido — Operação Completa!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    realTimeLine(op.tp2_hit_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)} → TP2: $${fmtP(op.tp2)}\n\n` +
     `<i>✅ Lucro completo realizado — CryptoRadar</i>`
@@ -262,6 +279,7 @@ export async function notifyStopHit(op, price) {
   return send(
     `🛑 <b>Stop Atingido ${beMsg}</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    realTimeLine(op.stop_hit_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Stop em: $${fmtP(op.current_stop)}\n\n` +
     `<i>⚡ CryptoRadar</i>`
@@ -274,6 +292,7 @@ export async function notifyInvalidated(op, price) {
   return send(
     `⚠️ <b>Sinal Invalidado ${stageMsg}</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
     `<i>🔄 Estrutura/tendência reverteu — CryptoRadar</i>`
@@ -285,6 +304,7 @@ export async function notifyTimeStop(op, price) {
   return send(
     `⏱️ <b>Time Stop — Operação Encerrada</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
     `<i>⌛ Prazo máximo sem atingir TP1 — CryptoRadar</i>`
@@ -296,6 +316,7 @@ export async function notifyChopExit(op, price) {
   return send(
     `🌊 <b>Chop Exit — Operação Encerrada</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
     `<i>📉 Mercado lateralizado (choppiness alto) — CryptoRadar</i>`
