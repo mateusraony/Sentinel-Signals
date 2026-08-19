@@ -11368,3 +11368,82 @@ relatórios. Diferente do item 104, aqui o mecanismo em si (código) não
 tinha bug — só a análise original inferiu ativação pelo sinal errado e
 cometeu um erro aritmético na média condicional. Nenhuma mudança de
 código de produção.
+
+## 106. Causa real da "semana sem operação ao vivo": cota diária do Firestore (Spark grátis) estourando — não é problema de estratégia (2026-08-19)
+
+### Contexto
+
+Depois de uma extensa investigação estatística (itens 100-105) sem achar
+nenhuma alavanca de melhora, usuário questionou se havia algum jeito de o
+projeto "começar a ter resultado" — semanas sem nenhuma operação nova ao
+vivo, mesmo com o motor supostamente funcionando. Investigação de um caso
+específico (FETUSDT, ver item 67) levou a checar os Logs do Sistema ao
+vivo — e o achado ali foi bem mais simples e mais grave que qualquer
+hipótese estatística cogitada até aqui.
+
+### Achado — cota gratuita do Firestore estourando continuamente
+
+Usuário trouxe um print dos Logs (66 registros ERR entre 18:41 e 21:10 de
+um único dia): a esmagadora maioria são `"8 RESOURCE_EXHAUSTED: Quota
+exceeded."` — o formato de erro gRPC padrão do Firestore quando a cota
+diária do plano Spark (gratuito: 50k leituras / 20k escritas / dia)
+estoura. **Todos os ativos monitorados** aparecem no log com esse mesmo
+erro, repetido a cada passada do cron (~5min): BTCUSDT, ETHUSDT, SOLUSDT,
+ARBUSDT, NEARUSDT, DYDXUSDT, PAXGUSDT, PENDLEUSDT, CRVUSDT, ENAUSDT,
+METISUSDT, ETHFIUSDT — não é um problema pontual de um ativo, é sistêmico.
+Adicionalmente, `acquireScanLock` (`src/api/entities.js:149`) também
+falha pelo mesmo motivo (`"Falha ao adquirir lock 'full-scan'"`,
+repetido dezenas de vezes) — mesmo a operação MAIS barata do scan (tentar
+pegar um lock) não consegue completar.
+
+**Isso já era um risco conhecido e parcialmente mitigado (item 13)**:
+uma auditoria anterior já tinha encontrado que, com **10**
+ativos monitorados, a estimativa de escrita diária já passava de 90% do
+limite gratuito, mesmo depois de cortar desperdício real (busca dupla de
+`getPineConfig`, log incondicional de "scan completo", checagem de
+operação ativa repetida 4x/ativo, queries sem corte de histórico). Um
+guard de aviso foi adicionado (`scanner.js:4074-4100`) — projeta o uso da
+passada atual pra um dia inteiro (312 passadas/dia: 288 do disparo
+externo cron-job.org a cada 5min + 24 do fallback horário do GitHub
+Actions, ver item 18) e grava um `logWarn` no Debug Log se o projetado
+passar de 80% do limite (16.000 escritas/dia).
+
+**Hoje há 14 ativos monitorados** (usuário confirmou) — 40% a mais que os
+10 que já tinham motivado o item 13. Extrapolando a mesma taxa de escrita
+por ativo medida naquela auditoria (~90%/10 ativos ≈ 9%/ativo do limite
+de 20k, ou seja ~1.800 escritas/ativo/dia projetadas), 14 ativos
+projetariam **~25.200 escritas/dia — 126% do limite gratuito**. Bate com
+o observado: no dia do print, o estouro já estava acontecendo por volta
+das 18h-21h e provavelmente bem antes (o log só guarda uma janela
+recente, "Limpar antigos" indica rotação).
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: a cota gratuita do Firestore está estourando de forma
+sistemática, todo dia, afetando TODOS os ativos monitorados — quando isso
+acontece, o scan não consegue gravar `SignalEvent`/`TradeOperation`/
+`AssetState` novos, então **nenhuma operação nova pode ser criada
+enquanto durar o estouro**, independente de o sinal ter edge ou não. Isso
+explica a "semana sem operação" de forma muito mais direta e completa do
+que qualquer hipótese estatística testada nos itens 100-105.
+
+**Hipótese**: o crescimento de 10→14 ativos monitorados (sem revisar a
+capacidade do plano gratuito) é a causa mais provável do estouro — o guard
+de 80% (item 13) deveria ter avisado no Debug Log antes de virar erro
+franco; não confirmado aqui se o aviso apareceu e passou despercebido, ou
+se o crescimento foi rápido o suficiente pra pular direto de "ok" pra
+"estourando" entre duas leituras do painel.
+
+**Recomendação**: reduzir carga sobre o Firestore antes de qualquer outra
+mudança — é a alavanca de maior impacto disponível, e não exige nenhuma
+mudança de código. Duas opções (ver conversa para a escolha do usuário):
+(a) reduzir o número de ativos monitorados de volta pra perto de 8-10; ou
+(b) reduzir a frequência do disparo externo (hoje ~5min via cron-job.org,
+item 18) — as duas juntas dão mais folga. Não decidido nesta rodada.
+
+### Verificação
+
+Diagnóstico feito por leitura direta dos Logs do Sistema em produção
+(prints do usuário) — não é possível reproduzir localmente (rede desta
+sessão não alcança o Firestore de produção). Nenhuma mudança de código
+nesta rodada — puro registro do achado.
