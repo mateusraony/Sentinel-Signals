@@ -11642,6 +11642,59 @@ ainda não for suficiente. `.github/workflows/scan-shadow.yml`,
 `.github/workflows/analyze-shadow.yml` e `.claude/rules/ci-deploy.md`
 atualizados para refletir a nova cadência.
 
+### Checagem pós-remediação — ainda não dá pra dizer "resolvido" (2026-08-19)
+
+Usuário perguntou se ainda existe risco de estourar a cota depois das duas
+mitigações aplicadas (10 ativos, `scan-shadow.yml` a 30min). Não tenho como
+consultar o uso real do Firestore de produção nesta sessão (rede bloqueada,
+mesma limitação de sempre) — resposta é extrapolação de código, não
+medição direta.
+
+**Fato**: o item 13 original já media que, com **10** ativos (o número
+atual, depois da redução), a escrita diária projetada passava de **90% do
+limite gratuito** (~18.000/20.000) — mesmo depois de já cortar os
+desperdícios reais conhecidos na época (double fetch de config, log
+incondicional, checagem de op ativa 4x, queries sem filtro). Ou seja: a
+redução de 14→10 ativos desfaz o excesso NOVO que a leva a 14 tinha
+causado, mas volta pro mesmo patamar (~90%) que o item 13 já considerava
+apertado — não "resolvido", só "de volta ao nível que já preocupava
+antes". O dedup do log de erro (seção acima) só reduz a amplificação
+DURANTE um estouro/instabilidade — não muda a taxa de escrita normal, sem
+erro.
+
+**Hipótese**: somando a fatia do `scan-shadow.yml` (agora ~48 passadas/dia,
+escreve em coleções isoladas mas na MESMA cota do projeto) ao ~90% da
+produção, o total provavelmente ainda fica perto ou acima de 100% em dias
+de atividade normal — não tenho o custo de escrita por-passada do scan
+sombra medido pra afirmar um número exato (ele roda só a cascata RF 1h
+condicionada, não as duas cascatas completas da produção, então
+plausivelmente é mais barato por passada, mas não é zero).
+
+**Achado incidental (baixa prioridade, não corrigido)**: o guard de aviso
+de cota em `scanAllAssetsInner` (`src/lib/scanner.js`) tem
+`PASSES_PER_DAY = 312` **hardcoded** — correto pra `scan.yml`, mas
+`scan-shadow.yml` roda o MESMO `scanner.js` sem modificação (via
+`scanAllAssets()` em `run-scan-shadow.mjs`) a só 48 passadas/dia. O guard
+superestima o projetado do modo sombra em ~6,5x, então provavelmente
+dispara (falso alarme) em praticamente toda passada do modo sombra,
+gravando um `SystemLog.create` extra (via `logWarn`/`bulkCreate`) nas
+coleções isoladas — custo real mas pequeno (até ~48 escritas/dia a mais,
+~0,24% do limite), e sem efeito na produção (coleções diferentes). Não
+corrigido nesta rodada — valor baixo pro esforço de parametrizar a
+constante; registrado como limpeza futura.
+
+**Recomendação — única forma de saber com certeza**: checar o Console do
+Firebase → Uso → Firestore (gráfico diário real de leitura/escrita,
+últimos 7 dias) — é a única fonte de verdade que não depende de
+extrapolação. Complemento mais rápido: checar a tela **Logs** do painel
+por avisos recentes "Uso do Firestore projetado perto do limite diário
+gratuito" vindos do módulo `scanner` (não confundir com os do modo sombra,
+que — pelo achado acima — são ruidosos/pouco confiáveis). Se algum desses
+dois confirmar estouro ainda ocorrendo, a próxima alavanca (não aplicada
+ainda) é reduzir a frequência do disparo externo do `scan.yml`
+(cron-job.org, hoje ~5min, item 18) — maior impacto restante disponível
+sem tocar em ativos monitorados de novo.
+
 ## 107. Horário real do evento (candle) vs. horário de detecção (scan) — alertas e histórico agora distinguem os dois (2026-08-19)
 
 ### Contexto
