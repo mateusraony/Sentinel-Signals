@@ -6804,6 +6804,86 @@ TradingView, e leitura de `indicatorAttribution.records`/`overall.curve`/
 (`fetusdt-live-signal-diagnostic-0805-2026`). Nenhuma mudança de código
 nesta análise.
 
+### CAUSA REAL CONFIRMADA — não é o item 106, é o gate `smc_confirm_4h15m` rejeitando o sinal (2026-08-19)
+
+**A hipótese "provavelmente operacional (item 106)" da seção acima estava
+ERRADA e é retratada aqui** — não por raciocínio, por prova direta. Usuário
+perguntou se o disparo real (`scan.yml`, GitHub Actions) tinha rodado nesse
+horário. Em vez de continuar hipotetizando, chequei os dois lugares que dão
+resposta definitiva: os logs do próprio Actions e o Firestore de produção
+(leitura anônima, mesmo padrão já usado pela Routine "Vigia de mercado" —
+a rede desta sessão alcança `firestore.googleapis.com`, só não alcança a
+Binance).
+
+**Fato 1 — o scan real rodou limpo, sem nenhum erro de cota, no horário
+exato.** A vela SELL do FETUSDT abre 20:00 UTC e fecha 23:59:59.999 UTC em
+05/08 (17:00–21:00 Brasília) — a passada do `scan.yml` que processa esse
+fechamento é a run `31058245519`, iniciada 2026-08-06T00:00:11Z. Log
+completo: `[scan] scanAllAssets: 9 ativo(s), 0 falha(s)`. Zero
+`RESOURCE_EXHAUSTED`, zero falha de lock. A run anterior (20:00 UTC,
+05/08) também limpa. **O item 106 é real (confirmado por log noutro dia),
+mas não é a causa deste episódio — descartado por evidência direta, não
+por suposição.**
+
+**Fato 2 — o `SignalEvent` foi criado, o sinal FOI confirmado, e o motivo
+da rejeição está gravado no próprio documento.** Lido direto do Firestore
+(`signalEvents/FETUSDT_4h_SELL_range_filter_2026-08-05T23:59:59.999Z`):
+score 80, `alignment: "aligned"`, `context.rf_direction: -1`, sinal SELL
+4h totalmente válido e confirmado — mas com
+**`"last_rejection_reason": "smc_confirm_zone_rejected"`**. O sinal
+existiu, foi pontuado, foi persistido — e foi barrado por um gate
+ADICIONAL antes de virar `TradeOperation`.
+
+**O gate**: `asset.smc_confirm_4h15m` (`scanner.js:2889-2893`, espelhado
+na 1ª passada em `scanner.js:2330-2334`) — quando `true` no
+`MonitoredAsset`, exige que a estrutura SMC do 1h concorde em DUAS coisas
+antes de aceitar um sinal RF 4h: `trend` (tendência SMC alinhada com o
+sinal) E `pdZone` (preço não pode estar na zona premium/discount errada
+para o lado). Isso é **inteiramente original do Sentinel** — o Pine real
+do usuário ("NEW ERA - Range Filter Strategy v13.2") não tem esse
+conceito, confirmado na investigação original deste item ("não existe
+timeframe de confirmação separado em lugar nenhum do Pine real").
+
+**Achado 2, mais grave — não é só o FETUSDT.** Query em `monitoredAssets`
+confirma: **os 10 ativos monitorados têm `smc_confirm_4h15m: true`**, sem
+exceção. `src/components/assets/AddAssetForm.jsx:58` grava esse campo como
+`true` por padrão ao cadastrar um ativo novo — é opt-OUT, não opt-in, e o
+usuário nunca precisou "mexer em configuração" pra esse gate estar ligado
+em tudo, exatamente como ele relatou ("nunca mexi em configuração do
+sentinel nem do pine" — verdade, o padrão já vinha ligado). Esse gate
+pode estar rejeitando sinais RF válidos em TODOS os ativos monitorados há
+quem sabe quanto tempo — candidato muito mais direto para "por que não
+sai operação" do que qualquer hipótese estatística dos itens 100-105 OU o
+item 106.
+
+**27/07 (a outra operação real perdida)**: o `SignalEvent`
+correspondente (`FETUSDT_4h_SELL_range_filter_2026-07-27T15:59:59.999Z`)
+NÃO tem `last_rejection_reason` gravado — mas isso é esperado mesmo se o
+MESMO gate a rejeitou: o campo só é escrito pelos loops de RETRY
+(`persistScanResults`), a 1ª passada só loga no `SystemLog` (não
+recuperável nesta sessão, log expira). A BUY anterior do FETUSDT
+(`STOP_HIT`, fechada `2026-07-24T16:23:19.913Z`, bem antes de 27/07) não
+estava mais ativa — descarta `active_op_exists` como causa alternativa
+pro 27/07, deixando `smc_confirm_zone_rejected` como hipótese líder
+também aqui, coerente com o mesmo mecanismo do 05/08.
+
+**Recomendação — decisão do usuário, não decidida aqui**: desligar
+`smc_confirm_4h15m` (toggle "SMC confirm 4h→15m" na tela de configuração
+do ativo, `AssetConfigPanel.jsx`) aproximaria o Sentinel do comportamento
+real do Pine do usuário — mas é uma mudança de comportamento em produção,
+afeta os 10 ativos, e o padrão do projeto (mesma régua aplicada a TODO
+gate opcional deste arquivo) é comparar backtest com/sem antes de mudar
+qualquer flag ativa. Próximo passo natural: rodar o A/B
+(`smc_confirm_4h15m: true` vs `false`) via `backtest.yml` antes de decidir
+desligar em produção — ainda não feito.
+
+Verificação: leitura direta do Firestore de produção (script Node
+temporário, leitura anônima, apagado após uso — nunca escreveu nada) e do
+log completo (`get_job_logs`) das 2 runs de `scan.yml` mais próximas do
+fechamento da vela (2026-08-05T20:00:11Z e 2026-08-06T00:00:11Z, ambas
+`0 falha(s)`). Nenhuma mudança de código nesta rodada — só diagnóstico e
+correção de uma hipótese anterior que a prova direta invalidou.
+
 ## 68. RF 1h TOTALMENTE independente do 4h — A/B real: expectância negativa e conclusiva, mantido desligado (2026-08-08)
 
 ### Contexto
