@@ -11368,3 +11368,181 @@ relatórios. Diferente do item 104, aqui o mecanismo em si (código) não
 tinha bug — só a análise original inferiu ativação pelo sinal errado e
 cometeu um erro aritmético na média condicional. Nenhuma mudança de
 código de produção.
+
+## 106. Causa real da "semana sem operação ao vivo": cota diária do Firestore (Spark grátis) estourando — não é problema de estratégia (2026-08-19)
+
+### Contexto
+
+Depois de uma extensa investigação estatística (itens 100-105) sem achar
+nenhuma alavanca de melhora, usuário questionou se havia algum jeito de o
+projeto "começar a ter resultado" — semanas sem nenhuma operação nova ao
+vivo, mesmo com o motor supostamente funcionando. Investigação de um caso
+específico (FETUSDT, ver item 67) levou a checar os Logs do Sistema ao
+vivo — e o achado ali foi bem mais simples e mais grave que qualquer
+hipótese estatística cogitada até aqui.
+
+### Achado — cota gratuita do Firestore estourando continuamente
+
+Usuário trouxe um print dos Logs (66 registros ERR entre 18:41 e 21:10 de
+um único dia): a esmagadora maioria são `"8 RESOURCE_EXHAUSTED: Quota
+exceeded."` — o formato de erro gRPC padrão do Firestore quando a cota
+diária do plano Spark (gratuito: 50k leituras / 20k escritas / dia)
+estoura. **Todos os ativos monitorados** aparecem no log com esse mesmo
+erro, repetido a cada passada do cron (~5min): BTCUSDT, ETHUSDT, SOLUSDT,
+ARBUSDT, NEARUSDT, DYDXUSDT, PAXGUSDT, PENDLEUSDT, CRVUSDT, ENAUSDT,
+METISUSDT, ETHFIUSDT — não é um problema pontual de um ativo, é sistêmico.
+Adicionalmente, `acquireScanLock` (`src/api/entities.js:149`) também
+falha pelo mesmo motivo (`"Falha ao adquirir lock 'full-scan'"`,
+repetido dezenas de vezes) — mesmo a operação MAIS barata do scan (tentar
+pegar um lock) não consegue completar.
+
+**Isso já era um risco conhecido e parcialmente mitigado (item 13)**:
+uma auditoria anterior já tinha encontrado que, com **10**
+ativos monitorados, a estimativa de escrita diária já passava de 90% do
+limite gratuito, mesmo depois de cortar desperdício real (busca dupla de
+`getPineConfig`, log incondicional de "scan completo", checagem de
+operação ativa repetida 4x/ativo, queries sem corte de histórico). Um
+guard de aviso foi adicionado (`scanner.js:4074-4100`) — projeta o uso da
+passada atual pra um dia inteiro (312 passadas/dia: 288 do disparo
+externo cron-job.org a cada 5min + 24 do fallback horário do GitHub
+Actions, ver item 18) e grava um `logWarn` no Debug Log se o projetado
+passar de 80% do limite (16.000 escritas/dia).
+
+**Hoje há 14 ativos monitorados** (usuário confirmou) — 40% a mais que os
+10 que já tinham motivado o item 13. Extrapolando a mesma taxa de escrita
+por ativo medida naquela auditoria (~90%/10 ativos ≈ 9%/ativo do limite
+de 20k, ou seja ~1.800 escritas/ativo/dia projetadas), 14 ativos
+projetariam **~25.200 escritas/dia — 126% do limite gratuito**. Bate com
+o observado: no dia do print, o estouro já estava acontecendo por volta
+das 18h-21h e provavelmente bem antes (o log só guarda uma janela
+recente, "Limpar antigos" indica rotação).
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: a cota gratuita do Firestore está estourando de forma
+sistemática, todo dia, afetando TODOS os ativos monitorados — quando isso
+acontece, o scan não consegue gravar `SignalEvent`/`TradeOperation`/
+`AssetState` novos, então **nenhuma operação nova pode ser criada
+enquanto durar o estouro**, independente de o sinal ter edge ou não. Isso
+explica a "semana sem operação" de forma muito mais direta e completa do
+que qualquer hipótese estatística testada nos itens 100-105.
+
+**Hipótese**: o crescimento de 10→14 ativos monitorados (sem revisar a
+capacidade do plano gratuito) é a causa mais provável do estouro — o guard
+de 80% (item 13) deveria ter avisado no Debug Log antes de virar erro
+franco; não confirmado aqui se o aviso apareceu e passou despercebido, ou
+se o crescimento foi rápido o suficiente pra pular direto de "ok" pra
+"estourando" entre duas leituras do painel.
+
+**Recomendação**: reduzir carga sobre o Firestore antes de qualquer outra
+mudança — é a alavanca de maior impacto disponível, e não exige nenhuma
+mudança de código. Duas opções (ver conversa para a escolha do usuário):
+(a) reduzir o número de ativos monitorados de volta pra perto de 8-10; ou
+(b) reduzir a frequência do disparo externo (hoje ~5min via cron-job.org,
+item 18) — as duas juntas dão mais folga. Não decidido nesta rodada.
+
+### Verificação
+
+Diagnóstico feito por leitura direta dos Logs do Sistema em produção
+(prints do usuário) — não é possível reproduzir localmente (rede desta
+sessão não alcança o Firestore de produção). Nenhuma mudança de código
+nesta rodada — puro registro do achado.
+
+### Correção (Codex, PR #212)
+
+Duas ressalvas pegas em review, que deixam o achado acima menos completo
+do que o texto original dava a entender — a causa raiz (estouro de cota)
+continua de pé, mas a conta e o alcance temporal precisam de ajuste.
+
+**1. A conta de 126% ignorou `scan-shadow.yml` — mesmo projeto Firebase,
+mesma cota.** O cálculo acima (312 passadas/dia, ~1.800 escritas/
+ativo/dia, 14 ativos → ~25.200 escritas/dia) só contou o disparo de
+produção (`scan.yml`). Só que `scan-shadow.yml` (`.github/workflows/
+scan-shadow.yml`, item 56 — Fase 1 do modo sombra) roda a cada 15min
+(**96 passadas/dia**) contra o **mesmo** `FIREBASE_SERVICE_ACCOUNT_JSON`,
+ou seja o mesmo projeto Firebase — só redireciona os writes pra coleções
+prefixadas `experimentalRf1hShadow*` (`scripts/adminEntitiesShadow.js`),
+o que isola as COLEÇÕES mas não a COTA (cota é por-projeto no Spark
+grátis, não por-coleção). O comentário do próprio workflow já registrava
+essa preocupação de propósito ("compromisso deliberado com a quota
+compartilhada... já usada pela produção real"), mas o item 106 original
+não somou esse consumo à conta. **Não tenho o custo de leitura/escrita
+por-passada do scan sombra medido** (não é o mesmo código do
+`scanAllAssetsInner` linha a linha — roda uma variante com
+`rf1hCondEnabled` forçado), então não dá pra transformar isso num número
+final único sem medir. O que dá pra afirmar com segurança: **os ~25.200/dia
+calculados são um piso, não o total real** — o consumo do modo sombra
+soma em cima disso, então a folga real acima de 100% da cota é maior (pior)
+do que os 126% relatados, não menor. Isso reforça a recomendação de reduzir
+carga (não a enfraquece), mas significa que "14 ativos causaram o estouro"
+não pode ser afirmado como única causa sem medir separadamente a fatia do
+modo sombra — e que **pausar/reduzir a frequência de `scan-shadow.yml`
+também deveria entrar como opção de mitigação**, não só reduzir ativos ou
+frequência da produção.
+
+**2. A evidência (66 logs, janela de ~2h30 num único dia) não cobre a
+semana inteira.** O texto original ("explica a 'semana sem operação' de
+forma muito mais direta e completa") generaliza uma amostra de uma janela
+de horas para uma afirmação sobre 7 dias. Como a cota do Firestore é
+**diária** (reseta a cada dia), o estouro observado nesse dia específico
+não prova, por si, que todos os outros dias da semana também estouraram
+no mesmo horário ou magnitude — só prova que ESSE dia estourou. **Leitura
+corrigida**: a exaustão de cota é um **contribuinte provável e
+confirmado** para pelo menos parte da janela sem operação (o dia
+documentado), não uma explicação verificada para a semana inteira — até
+que se confirme (via Logs do Sistema de mais dias, ou via console do
+Firebase → Uso, que mostra o gráfico diário de leitura/escrita) que o
+padrão se repete nos outros dias.
+
+**Recomendação atualizada**: antes de decidir só entre "reduzir ativos" e
+"reduzir frequência" (pergunta ainda em aberto na seção anterior),
+recomendo (a) checar o console do Firebase (Uso → Firestore) pros últimos
+7 dias, pra confirmar se o estouro é diário/recorrente ou pontual daquele
+dia, e (b) incluir `scan-shadow.yml` no orçamento de qualquer decisão de
+redução — pausá-lo ou espaçar mais (ex.: 30min em vez de 15min) libera
+cota real da produção sem tocar nos ativos monitorados nem no disparo
+principal.
+
+### Otimização de código aplicada (a pedido do usuário, antes de decidir reduzir ativos/frequência)
+
+Antes de qualquer decisão sobre reduzir ativos/frequência, usuário pediu
+para investigar se sobrava otimização de código no próprio scan. Auditoria
+de `scripts/run-scan.mjs` + `src/lib/scanner.js`:
+
+- **`last_scan_at` não pode ser otimizado** — `persistScanResults`
+  (`scanner.js:3722-3735`) já tem comentário explícito: precisa atualizar
+  em TODA passada (sucesso ou erro) porque é o campo que o watchdog do
+  item 12 ("cron parou de rodar de vez") usa pra distinguir de "este ativo
+  está falhando". Mexer aqui quebraria essa proteção — não é candidato.
+- **[APLICADO] `SystemLog.create` do catch-block de `scanAllAssetsInner`
+  não tinha dedup** (`scanner.js`, branch de erro dentro do loop de
+  `scanAllAssetsInner`) — ao contrário do `MonitoredAsset.update` do mesmo
+  catch (que só muda campos de status, sempre necessário), esse log
+  gravava um documento NOVO a cada passada com erro, mesmo quando é o
+  MESMO erro repetindo (exatamente o cenário deste item: 14 ativos,
+  `RESOURCE_EXHAUSTED` idêntico, a cada ~5min, por horas). Convertido para
+  `SystemLog.createUnique`, mesmo padrão já usado por
+  `logDuplicateActiveOpsPriceCheck` (item 39.1) — chave de dedup inclui
+  ativo + data (YYYY-MM-DD) + mensagem de erro exata, então: (a) o mesmo
+  erro no mesmo ativo no mesmo dia grava só 1 vez (era até ~288x/dia por
+  ativo no pico do cron a cada 5min), mas (b) um dia NOVO com o mesmo erro
+  ainda gera um log fresco (a data faz parte da chave), preservando
+  visibilidade recorrente em vez de silenciar o alerta depois da primeira
+  ocorrência para sempre. `createUnique` troca 1 escrita garantida por 1
+  leitura garantida + escrita só se for a primeira vez naquele dia — troca
+  favorável porque leitura tem muito mais folga (50k/dia) que escrita
+  (20k/dia, o gargalo real). Efeito esperado: praticamente elimina a
+  amplificação de escritas causada pelo PRÓPRIO log de erro durante um
+  estouro de cota prolongado (o log deixa de piorar o problema que está
+  reportando).
+- **[NÃO APLICADO, candidato secundário de menor valor] `scripts/
+  run-scan.mjs:checkAssetHealthchecks()`** roda seu próprio `MonitoredAsset.
+  filter({is_active:true})`, redundante com a query idêntica que
+  `scanAllAssetsInner` já fez na MESMA passada do cron — uma leitura select
+  duplicada, não desprezível mas menos urgente porque leitura tem 2,5x mais
+  folga que escrita. Não corrigido nesta rodada: eliminar a redundância
+  exigiria mudar o retorno de `scanAllAssets()` pra expor a lista de
+  `MonitoredAsset` já buscada, e essa função é compartilhada com o browser
+  (`useAutoScan.js`, `TopBar.jsx`) — mudar o contrato de retorno é risco
+  desproporcional ao ganho (é leitura, não o recurso estourando). Registrado
+  como opção futura, não implementado.
