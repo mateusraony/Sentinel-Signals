@@ -11650,25 +11650,28 @@ consultar o uso real do Firestore de produção nesta sessão (rede bloqueada,
 mesma limitação de sempre) — resposta é extrapolação de código, não
 medição direta.
 
-**Fato**: o item 13 original já media que, com **10** ativos (o número
-atual, depois da redução), a escrita diária projetada passava de **90% do
-limite gratuito** (~18.000/20.000) — mesmo depois de já cortar os
-desperdícios reais conhecidos na época (double fetch de config, log
-incondicional, checagem de op ativa 4x, queries sem filtro). Ou seja: a
-redução de 14→10 ativos desfaz o excesso NOVO que a leva a 14 tinha
-causado, mas volta pro mesmo patamar (~90%) que o item 13 já considerava
-apertado — não "resolvido", só "de volta ao nível que já preocupava
-antes". O dedup do log de erro (seção acima) só reduz a amplificação
-DURANTE um estouro/instabilidade — não muda a taxa de escrita normal, sem
-erro.
+**Fato, com uma ressalva real (Codex, PR #215)**: o item 13 original
+registra que, com **10** ativos (o número atual, depois da redução), "a
+estimativa diária de escrita já passava de 90% do limite" — mas essa
+frase aparece ANTES da lista "Causas corrigidas" no texto original, não
+depois. Não está documentado se o 90% foi medido antes ou depois daquelas
+correções específicas (double fetch de config, log incondicional,
+checagem de op ativa 4x, queries sem filtro) — a leitura mais literal do
+texto é que é o número que MOTIVOU os fixes, não o resultado pós-fix. Eu
+tinha tratado esse 90% como o baseline atual válido; **isso não está
+sustentado** — pode ser um número pré-fix (realidade pós-fix desconhecida,
+possivelmente bem menor) ou um número pós-fix só que datado, sem contar
+várias otimizações de escrita feitas depois (item 45.3 write-on-change,
+o próprio dedup desta rodada, etc.). Sem recomputar a partir da contagem
+real de operações por-passada de hoje, não dá pra afirmar que a produção
+está em ~90% agora — é hipótese fraca, não fato.
 
-**Hipótese**: somando a fatia do `scan-shadow.yml` (agora ~48 passadas/dia,
-escreve em coleções isoladas mas na MESMA cota do projeto) ao ~90% da
-produção, o total provavelmente ainda fica perto ou acima de 100% em dias
-de atividade normal — não tenho o custo de escrita por-passada do scan
-sombra medido pra afirmar um número exato (ele roda só a cascata RF 1h
-condicionada, não as duas cascatas completas da produção, então
-plausivelmente é mais barato por passada, mas não é zero).
+**Hipótese, revisada**: sem um número de baseline confiável para a
+produção, não dá pra concluir com confiança se o total (produção + fatia
+do `scan-shadow.yml`, mesma cota do projeto) está perto de 100% ou
+folgado. O dedup do log de erro (seção acima) só reduz a amplificação
+DURANTE um estouro/instabilidade — não muda a taxa de escrita normal, sem
+erro — então não afeta essa incerteza num sentido ou noutro.
 
 **Achado incidental (baixa prioridade, não corrigido)**: o guard de aviso
 de cota em `scanAllAssetsInner` (`src/lib/scanner.js`) tem
@@ -11679,18 +11682,28 @@ superestima o projetado do modo sombra em ~6,5x, então provavelmente
 dispara (falso alarme) em praticamente toda passada do modo sombra,
 gravando um `SystemLog.create` extra (via `logWarn`/`bulkCreate`) nas
 coleções isoladas — custo real mas pequeno (até ~48 escritas/dia a mais,
-~0,24% do limite), e sem efeito na produção (coleções diferentes). Não
-corrigido nesta rodada — valor baixo pro esforço de parametrizar a
-constante; registrado como limpeza futura.
+~0,24% do limite). **Correção (Codex, PR #215)**: essas escritas extras
+NÃO deixam de afetar a produção — consomem a MESMA cota compartilhada do
+projeto (o ponto central desta seção inteira), só não mexem em dado de
+produção (coleções isoladas). A distinção certa é "não corrompe dado de
+produção", não "sem efeito na produção" — sob condição de cota já
+apertada, esse desperdício espúrio piora, não é neutro. Não corrigido
+nesta rodada — valor baixo pro esforço de parametrizar a constante;
+registrado como limpeza futura.
 
 **Recomendação — única forma de saber com certeza**: checar o Console do
 Firebase → Uso → Firestore (gráfico diário real de leitura/escrita,
 últimos 7 dias) — é a única fonte de verdade que não depende de
-extrapolação. Complemento mais rápido: checar a tela **Logs** do painel
-por avisos recentes "Uso do Firestore projetado perto do limite diário
-gratuito" vindos do módulo `scanner` (não confundir com os do modo sombra,
-que — pelo achado acima — são ruidosos/pouco confiáveis). Se algum desses
-dois confirmar estouro ainda ocorrendo, a próxima alavanca (não aplicada
+extrapolação. **Correção (Codex, PR #215)**: a tela Logs do painel
+(`src/pages/Logs.jsx`) lê `backend.entities.SystemLog`, que mapeia pra
+`systemLogs` (a coleção real de produção) — os avisos do modo sombra vão
+pra `experimentalRf1hShadowSystemLogs`, uma coleção DIFERENTE que o painel
+nunca lê. Não existe risco de confundir os dois ali; qualquer aviso que
+aparecer na tela Logs já é necessariamente da produção. Pra inspecionar os
+avisos (ruidosos, pelo achado acima) do modo sombra especificamente,
+seria preciso olhar a coleção isolada direto no Firestore ou a saída do
+workflow no GitHub Actions, não o painel. Se o Console do Firebase
+confirmar estouro ainda ocorrendo, a próxima alavanca (não aplicada
 ainda) é reduzir a frequência do disparo externo do `scan.yml`
 (cron-job.org, hoje ~5min, item 18) — maior impacto restante disponível
 sem tocar em ativos monitorados de novo.
