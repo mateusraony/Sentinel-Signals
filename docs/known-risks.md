@@ -11447,3 +11447,58 @@ Diagnóstico feito por leitura direta dos Logs do Sistema em produção
 (prints do usuário) — não é possível reproduzir localmente (rede desta
 sessão não alcança o Firestore de produção). Nenhuma mudança de código
 nesta rodada — puro registro do achado.
+
+### Correção (Codex, PR #212)
+
+Duas ressalvas pegas em review, que deixam o achado acima menos completo
+do que o texto original dava a entender — a causa raiz (estouro de cota)
+continua de pé, mas a conta e o alcance temporal precisam de ajuste.
+
+**1. A conta de 126% ignorou `scan-shadow.yml` — mesmo projeto Firebase,
+mesma cota.** O cálculo acima (312 passadas/dia, ~1.800 escritas/
+ativo/dia, 14 ativos → ~25.200 escritas/dia) só contou o disparo de
+produção (`scan.yml`). Só que `scan-shadow.yml` (`.github/workflows/
+scan-shadow.yml`, item 56 — Fase 1 do modo sombra) roda a cada 15min
+(**96 passadas/dia**) contra o **mesmo** `FIREBASE_SERVICE_ACCOUNT_JSON`,
+ou seja o mesmo projeto Firebase — só redireciona os writes pra coleções
+prefixadas `experimentalRf1hShadow*` (`scripts/adminEntitiesShadow.js`),
+o que isola as COLEÇÕES mas não a COTA (cota é por-projeto no Spark
+grátis, não por-coleção). O comentário do próprio workflow já registrava
+essa preocupação de propósito ("compromisso deliberado com a quota
+compartilhada... já usada pela produção real"), mas o item 106 original
+não somou esse consumo à conta. **Não tenho o custo de leitura/escrita
+por-passada do scan sombra medido** (não é o mesmo código do
+`scanAllAssetsInner` linha a linha — roda uma variante com
+`rf1hCondEnabled` forçado), então não dá pra transformar isso num número
+final único sem medir. O que dá pra afirmar com segurança: **os ~25.200/dia
+calculados são um piso, não o total real** — o consumo do modo sombra
+soma em cima disso, então a folga real acima de 100% da cota é maior (pior)
+do que os 126% relatados, não menor. Isso reforça a recomendação de reduzir
+carga (não a enfraquece), mas significa que "14 ativos causaram o estouro"
+não pode ser afirmado como única causa sem medir separadamente a fatia do
+modo sombra — e que **pausar/reduzir a frequência de `scan-shadow.yml`
+também deveria entrar como opção de mitigação**, não só reduzir ativos ou
+frequência da produção.
+
+**2. A evidência (66 logs, janela de ~2h30 num único dia) não cobre a
+semana inteira.** O texto original ("explica a 'semana sem operação' de
+forma muito mais direta e completa") generaliza uma amostra de uma janela
+de horas para uma afirmação sobre 7 dias. Como a cota do Firestore é
+**diária** (reseta a cada dia), o estouro observado nesse dia específico
+não prova, por si, que todos os outros dias da semana também estouraram
+no mesmo horário ou magnitude — só prova que ESSE dia estourou. **Leitura
+corrigida**: a exaustão de cota é um **contribuinte provável e
+confirmado** para pelo menos parte da janela sem operação (o dia
+documentado), não uma explicação verificada para a semana inteira — até
+que se confirme (via Logs do Sistema de mais dias, ou via console do
+Firebase → Uso, que mostra o gráfico diário de leitura/escrita) que o
+padrão se repete nos outros dias.
+
+**Recomendação atualizada**: antes de decidir só entre "reduzir ativos" e
+"reduzir frequência" (pergunta ainda em aberto na seção anterior),
+recomendo (a) checar o console do Firebase (Uso → Firestore) pros últimos
+7 dias, pra confirmar se o estouro é diário/recorrente ou pontual daquele
+dia, e (b) incluir `scan-shadow.yml` no orçamento de qualquer decisão de
+redução — pausá-lo ou espaçar mais (ex.: 30min em vez de 15min) libera
+cota real da produção sem tocar nos ativos monitorados nem no disparo
+principal.
