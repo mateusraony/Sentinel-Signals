@@ -11974,3 +11974,26 @@ subestimaria o N em correções Bonferroni futuras dessa família. Nenhuma
 mudança de código nesta rodada — só diagnóstico. Próximo passo, se o
 usuário aprovar: desligar o gate nos 10 `MonitoredAsset` reais (escrita
 em produção, fora do escopo desta análise).
+
+### Aplicado em produção — os 10 ativos + default de cadastro (2026-08-20)
+
+Usuário aprovou explicitamente ("sim, pode desligar os 10 ativos e quando
+adicionar ativos que também já fique desligado por padrão"). Aplicado:
+
+- **Escrita direta no Firestore de produção** (`monitoredAssets`, os 10
+  ativos reais): `smc_confirm_4h15m: true → false` em todos, confirmado
+  por leitura de verificação pós-escrita (mesmo padrão de leitura anônima
+  já usado nesta investigação — script Node temporário, apagado depois,
+  nunca commitado). BTCUSDT, ETHUSDT, FETUSDT, PENDLEUSDT, ZROUSDT,
+  NEARUSDT, ARBUSDT, ENAUSDT, ETHFIUSDT, PAXGUSDT — os 10.
+- **`AddAssetForm.jsx`**: default de cadastro mudado de `true` para
+  `false` (PR #217) — ativo novo já nasce sem o gate. Continua ligável
+  manualmente por ativo em `AssetConfigPanel` pra quem quiser testar com
+  ele ligado.
+
+**O que isso NÃO faz**: não é uma promessa de lucro — o resultado medido
+sem o gate (item 108, seção acima) segue inconclusivo (IC95 cruza zero).
+É a correção de um mecanismo que, na amostra testada, zerava a cascata
+inteira; o que vem depois (se as próximas operações reais tiverem
+expectância positiva ou não) só o tempo/mais dado decide. Nenhum outro
+gate/config foi tocado nesta mudança.
