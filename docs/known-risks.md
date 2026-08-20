@@ -11911,16 +11911,18 @@ vs. gate desligado.
 | Profit factor | — | 0,986 (~empate) |
 | Max drawdown | — | 94,4% |
 
-**Fato, sem ressalva**: com o gate como está configurado em produção HOJE,
-a cascata RF 4h→15m produziu **ZERO operações em 12 meses, nos 7 símbolos
-padrão de referência**. Não é "às vezes barra um sinal bom" — é a MAIOR
-causa de rejeição isolada (56%, maior até que `regime_rejected`, que já era
-conhecido como o principal gargalo desde o item 50) e, na prática, funciona
-como um interruptor geral que nunca deixa passar nada nesse período. Isso
-explica "semanas sem operação" de forma mais completa e direta que
-qualquer hipótese estatística dos itens 100-105 **e** que o item 106 (cota
-do Firestore) — porque nenhuma folga de cota jamais produziria uma
-operação se o gate zera o funil antes de chegar lá.
+**Fato, escopado à amostra testada**: com o gate como está configurado em
+produção HOJE, a cascata RF 4h→15m produziu **ZERO operações nesta
+amostra específica** (12 meses, os 7 símbolos padrão de referência). Não
+é "às vezes barra um sinal bom" — nesta amostra é a MAIOR causa de
+rejeição isolada (56%, maior até que `regime_rejected`, que já era
+conhecido como o principal gargalo desde o item 50), rejeitando 100% do
+que sobrou depois do filtro de regime. **Isso não prova que o gate
+garante zero operações em qualquer condição futura** — o código permite
+passar quando a estrutura SMC concorda (ver "Leitura" abaixo) — mas
+explica a ausência de operação NESSA janela de forma mais completa e
+direta do que qualquer hipótese estatística dos itens 100-105 ou o item
+106 (cota do Firestore) explicaram sozinhos.
 
 **Com o gate desligado**: 98 operações reais, resultado **ainda
 inconclusivo** (IC cruza zero) — não é "prova que a estratégia é boa", é
@@ -11932,20 +11934,30 @@ pós-TP1, item 46, não necessariamente do gate).
 
 ### Leitura (fato × hipótese × recomendação)
 
-**Fato**: manter o gate ligado garante zero operações RF nativas,
-independente de qualquer outra coisa (estratégia boa ou ruim, cota
-sobrando ou não). **Hipótese**: o mecanismo provavelmente sofre do mesmo
-problema de tautologia geométrica já documentado para o gate de zona PD
-original (item 35/38) — comparar o range 4h contra sua própria estrutura
-tende a rejeitar quase tudo por construção, não por seletividade real;
-não confirmado a fundo nesta rodada (o campo `pdZone`/`trend` usado aqui é
-código funcionalmente irmão daquele já corrigido, mas não é o mesmo
-gate). **Recomendação**: desligar `smc_confirm_4h15m` nos 10 ativos
-monitorados — é a única forma de a cascata RF nativa voltar a produzir
-qualquer operação; o resultado das 98 operações sem o gate não é prova de
-lucro (inconclusivo), mas é infinitamente mais informativo que zero
-operações. **Não desliguei em produção nesta rodada** — é escrita em
-Firestore de produção afetando os 10 ativos reais, decisão do usuário.
+**Fato, com escopo explícito (Codex, PR #216)**: NESSA amostra testada —
+7 símbolos padrão, janela 2025-08-19→2026-08-19 — manter o gate ligado
+produziu zero operações RF nativas. Isso **não** é uma prova de que o
+gate garante zero operações sempre, em qualquer condição de mercado — o
+código (`scanner.js:2889-2893`) só rejeita quando `trendAligned` E
+`zoneOk` falham; existe combinação de tendência/zona SMC em que ele deixa
+passar (a taxa de rejeição de 100% nesta amostra é achado empírico de UMA
+janela/carteira, não uma garantia lógica do código). O que ESTÁ
+sustentado pelos dados: nesta amostra de 12 meses/7 símbolos — a mesma
+usada em praticamente toda a investigação anterior (itens 100-106) — o
+gate rejeitou 100% dos candidatos que sobraram depois do filtro de
+regime, então é um contribuinte real e mensurável pra "poucas/nenhuma
+operação", não só uma hipótese. **Hipótese**: o mecanismo provavelmente
+sofre do mesmo problema de tautologia geométrica já documentado para o
+gate de zona PD original (item 35/38) — comparar o range 4h contra sua
+própria estrutura tende a rejeitar quase tudo por construção, não por
+seletividade real; não confirmado a fundo nesta rodada (o campo
+`pdZone`/`trend` usado aqui é código funcionalmente irmão daquele já
+corrigido, mas não é o mesmo gate). **Recomendação**: desligar
+`smc_confirm_4h15m` nos 10 ativos monitorados — na amostra testada foi a
+diferença entre zero e 98 operações; o resultado das 98 sem o gate não é
+prova de lucro (inconclusivo), mas é infinitamente mais informativo que
+zero. **Não desliguei em produção nesta rodada** — é escrita em Firestore
+de produção afetando os 10 ativos reais, decisão do usuário.
 
 ### Verificação
 
@@ -11953,9 +11965,35 @@ Dois runs reais de `backtest.yml` disparados pelo usuário
 (`smc-confirm-4h15m-gate-on-baseline-1yr` e
 `smc-confirm-4h15m-gate-off-1yr`, mesma janela 2025-08-19→2026-08-19),
 relatórios completos anexados e lidos por inteiro (`entryFunnel`,
-`byCascade`, `costs`). Trial "off" registrado em
-`docs/backtest-trial-registry.json` (família `smc-confirm-4h15m-gate`,
-N=1 até aqui — o "on" não entra no registro por ter 0 operações, nada pra
-calcular IC). Nenhuma mudança de código nesta rodada — só diagnóstico.
-Próximo passo, se o usuário aprovar: desligar o gate nos 10
-`MonitoredAsset` reais (escrita em produção, fora do escopo desta análise).
+`byCascade`, `costs`). **Correção (Codex, PR #216)**: os DOIS trials estão
+registrados em `docs/backtest-trial-registry.json` (família
+`smc-confirm-4h15m-gate`, N=2) — o "on" (0 operações, `expectancyR: null`)
+também conta para o tamanho da família no `summarizeFamily`
+(`registry.length`, não filtra por IC presente), então omiti-lo
+subestimaria o N em correções Bonferroni futuras dessa família. Nenhuma
+mudança de código nesta rodada — só diagnóstico. Próximo passo, se o
+usuário aprovar: desligar o gate nos 10 `MonitoredAsset` reais (escrita
+em produção, fora do escopo desta análise).
+
+### Aplicado em produção — os 10 ativos + default de cadastro (2026-08-20)
+
+Usuário aprovou explicitamente ("sim, pode desligar os 10 ativos e quando
+adicionar ativos que também já fique desligado por padrão"). Aplicado:
+
+- **Escrita direta no Firestore de produção** (`monitoredAssets`, os 10
+  ativos reais): `smc_confirm_4h15m: true → false` em todos, confirmado
+  por leitura de verificação pós-escrita (mesmo padrão de leitura anônima
+  já usado nesta investigação — script Node temporário, apagado depois,
+  nunca commitado). BTCUSDT, ETHUSDT, FETUSDT, PENDLEUSDT, ZROUSDT,
+  NEARUSDT, ARBUSDT, ENAUSDT, ETHFIUSDT, PAXGUSDT — os 10.
+- **`AddAssetForm.jsx`**: default de cadastro mudado de `true` para
+  `false` (PR #217) — ativo novo já nasce sem o gate. Continua ligável
+  manualmente por ativo em `AssetConfigPanel` pra quem quiser testar com
+  ele ligado.
+
+**O que isso NÃO faz**: não é uma promessa de lucro — o resultado medido
+sem o gate (item 108, seção acima) segue inconclusivo (IC95 cruza zero).
+É a correção de um mecanismo que, na amostra testada, zerava a cascata
+inteira; o que vem depois (se as próximas operações reais tiverem
+expectância positiva ou não) só o tempo/mais dado decide. Nenhum outro
+gate/config foi tocado nesta mudança.

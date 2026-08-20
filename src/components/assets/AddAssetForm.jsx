@@ -55,7 +55,13 @@ export default function AddAssetForm({ onSuccess }) {
         symbol: sym, display_name: name, exchange: 'binance', market: 'crypto',
         is_active: true, timeframes_enabled: { '1h': true, '4h': true, '1d': true },
         smc_enabled: false,
-        smc_confirm_4h15m: true,
+        // Desligado por padrão desde 2026-08-20 (docs/known-risks.md item
+        // 108) — A/B real (backtest.yml, 7 símbolos, 12 meses) mostrou que,
+        // ligado, esse gate rejeitou 100% dos candidatos que sobraram do
+        // filtro de regime (2.025/3.600 rejeições, 56%), zerando a cascata
+        // RF nativa na amostra testada. Ligar continua possível manualmente
+        // via AssetConfigPanel, só o default de cadastro mudou.
+        smc_confirm_4h15m: false,
       });
       onSuccess();
     } catch (err) {

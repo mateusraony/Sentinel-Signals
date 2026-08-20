@@ -72,10 +72,11 @@ function makeAsset(symbol, { smcSymbols, smcConfirmSymbols, rfPeriod, rfMultipli
     timeframes_enabled: { '1h': true, '4h': true, '1d': true },
     rf_period: rfPeriod,
     rf_multiplier: rfMultiplier,
-    // Off by default here (unlike AddAssetForm.jsx's live default for NEW
-    // real assets) — a backtest asset list is explicit CLI input, not a
-    // panel action, so each stays opt-in via its own flag rather than
-    // silently inheriting the live-panel default or each other.
+    // Off by default here — a backtest asset list is explicit CLI input,
+    // not a panel action, so each stays opt-in via its own flag rather
+    // than silently inheriting the live-panel default (AddAssetForm.jsx,
+    // itself `false` again since 2026-08-20, docs/known-risks.md item 108)
+    // or each other.
     smc_enabled: smcSymbols.has(symbol),
     smc_confirm_4h15m: smcConfirmSymbols.has(symbol),
   };
