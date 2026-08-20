@@ -11788,6 +11788,56 @@ ainda) é reduzir a frequência do disparo externo do `scan.yml`
 (cron-job.org, hoje ~5min, item 18) — maior impacto restante disponível
 sem tocar em ativos monitorados de novo.
 
+### Verificação empírica pelos logs reais — sem Console do Firebase (2026-08-20)
+
+Usuário pediu pra checar o Console do Firebase. Sem acesso (é painel
+autenticado pela conta Google do usuário, fora do alcance da leitura
+anônima usada nesta investigação) — em vez disso, li os próprios
+`systemLogs` de produção (mesma leitura read-only de sempre), que dão um
+retrato mais preciso que qualquer captura de tela: histórico real de
+erros/avisos, não uma foto de um instante.
+
+**Fato**: o último erro real `RESOURCE_EXHAUSTED`/"Quota exceeded" ficou
+em **2026-08-19T06:36:34Z** (`Erro no scan de NEARUSDT: Quota exceeded.`)
+— nenhum depois disso até o momento desta checagem
+(2026-08-20T02:04, ~19h30 limpo). O último aviso PROJETADO (o guard de
+80%, que dispara antes de virar erro de verdade) foi ainda antes,
+2026-08-18T20:35:02Z (~30h sem disparar). É a maior janela sem
+incidente visível nos logs desde que o problema começou a ser
+investigado.
+
+**Achado que não estava na análise original**: nos avisos projetados dos
+dias calmos que antecederam o estouro (15-18/ago), quem ficava perto do
+limite era **LEITURA**, não escrita — projeção consistente em 80-88% dos
+50k/dia (ex.: `reads_this_pass: ~130-140` × 312 passadas ≈ 41-44k),
+enquanto escrita ficava bem folgada, 22-25% dos 20k/dia
+(`writes_this_pass: ~14` × 312 ≈ 4.368), com só alguns picos isolados
+(writes_this_pass 26-49 em passadas específicas). O item 106 original
+focou em escrita porque herdou a métrica do item 13 (medida antes de
+qualquer coisa desta rodada) — o dado real mostra que, pelo menos nesse
+recorte, leitura era o lado mais apertado. Também aparecem picos raros e
+extremos de leitura bem anteriores (07-17, 07-21, 07-28, 07-29, 08-10,
+08-12 — projeções de 97k a 696k/dia por causa de um `reads_this_pass`
+anômalo numa única passada, não um padrão sustentado) — não investigados
+a fundo, prováveis outliers pontuais.
+
+**Hipótese**: a combinação de 10 ativos + `scan-shadow.yml` a 30min (e
+possivelmente o reset diário de cota) trouxe o sistema pra dentro do
+orçamento a partir de ~06:36 de 08-19 — mas isso é só ~20h de dado limpo,
+não confirmação definitiva. **Ressalva importante**: essa janela limpa
+coincide com o período em que a cascata RF ainda estava zerada pelo gate
+`smc_confirm_4h15m` (item 108) — ou seja, o volume de escrita observado
+aqui é o de um sistema que NÃO estava abrindo operação nenhuma. Agora que
+os gates foram desligados (item 108 + addendum), operações reais vão
+voltar a gerar escrita adicional (`TradeOperation`/`SignalEvent` novos) —
+o teste real de se a cota aguenta é com o sistema operando de verdade,
+ainda não observado.
+
+**Recomendação**: acompanhar os logs de erro nos próximos dias,
+especialmente depois que a primeira operação real abrir — se
+`RESOURCE_EXHAUSTED` voltar a aparecer, a cota ainda não está resolvida
+de fato, só estava "descansando" durante o período sem operação.
+
 ## 107. Horário real do evento (candle) vs. horário de detecção (scan) — alertas e histórico agora distinguem os dois (2026-08-19)
 
 ### Contexto
