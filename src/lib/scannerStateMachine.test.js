@@ -215,6 +215,43 @@ describe('buildTradeOpData — entry into SIGNAL_CONFIRMED', () => {
     expect(op.tier_time_stop_bars).toBe(192); // 48 * 4 — real duration stays 192h, matching the 4h-calibrated tier
   });
 
+  // docs/known-risks.md item 109 — pineConfig.timeStopBarsOverride
+  // (backtest-only) substitui o valor do tier ANTES da conversão *4, pra
+  // que o prazo em relógio siga consistente entre cascatas. `null`/ausente
+  // tem que ser byte-idêntico ao comportamento de sempre.
+  it('timeStopBarsOverride ausente/null mantém o tier intacto (byte-idêntico)', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { tier: 'T3', atrStopMult: 3.0, timeStopBars: 96 } });
+
+    const semChave = buildTradeOpData(sig, tf4hData, makePineConfig(), { entryPrice: 100 });
+    const comNull = buildTradeOpData(sig, tf4hData, makePineConfig({ timeStopBarsOverride: null }), { entryPrice: 100 });
+
+    expect(semChave.tier_time_stop_bars).toBe(96);
+    expect(comNull.tier_time_stop_bars).toBe(96);
+  });
+
+  it('timeStopBarsOverride substitui o tier na cascata 4h nativa', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { tier: 'T3', atrStopMult: 3.0, timeStopBars: 96 } });
+
+    const op = buildTradeOpData(sig, tf4hData, makePineConfig({ timeStopBarsOverride: 24 }), { entryPrice: 100 });
+
+    expect(op.tier_time_stop_bars).toBe(24); // 24 velas de 4h = 96h, não as 96 velas (384h) do tier T3
+  });
+
+  it('timeStopBarsOverride passa pela MESMA conversão *4 quando o sinal é 1h (prazo em relógio consistente)', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { tier: 'T3', atrStopMult: 3.0, timeStopBars: 96 } });
+
+    const op = buildTradeOpData(
+      sig, tf4hData, makePineConfig({ timeStopBarsOverride: 24 }), { entryPrice: 100 },
+      { cascade: 'rf1h_cond4h_15m', signalTimeframe: '1h' },
+    );
+
+    // 24 * 4 = 96 velas de 1h = 96h — mesma duração em relógio do caso 4h acima
+    expect(op.tier_time_stop_bars).toBe(96);
+  });
+
   // known-risks.md item 67 — resolveEntryConfirmation15m's synthetic
   // confirmation object carries bypassed15m:true; buildTradeOpData must
   // record entry_candle_time_4h (not entry_candle_time_15m) and the

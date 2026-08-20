@@ -149,6 +149,26 @@ const DEFAULTS = {
   // produção). Backtest-only, só via --pine-config. Ver o tripwire test em
   // src/lib/allowedSideTripwire.test.js.
   allowedSide: null,
+  // docs/known-risks.md item 109 — sobrescreve o Time Stop por-tier
+  // (T1=48/T2=64/T3=96 velas do timeframe de sinal, `indicators/tier.js`)
+  // por um valor único, pra medir se encurtar o prazo máximo sem TP1
+  // melhora o resultado. Motivação: funding é 59% do custo medido e a
+  // duração MÉDIA em posição é de 130,7h. `null` = comportamento de
+  // sempre (tier decide), byte-idêntico.
+  //
+  // A evidência disponível é SUGESTIVA CONTRA encurtar (duração longa
+  // concentra-se nas ganhadoras; as saídas por TIME_STOP existentes rendem
+  // +0,283R), mas NÃO conclusiva: o P&L relevante é o valor NA vela do
+  // corte, e nenhum relatório guarda preço intermediário — só um replay
+  // com a regra modificada decide (achado do Codex, PR #221). Este flag
+  // existe exatamente pra permitir esse replay.
+  //
+  // Congelado na CRIAÇÃO da operação (`tier_time_stop_bars`), como
+  // runnerEnabled/preTp1StopProtectionEnabled — virar o flag no meio nunca
+  // reprograma o prazo de uma posição já viva. INTENTIONALLY NOT mirrored
+  // em src/lib/pineParser.js/scripts/adminPineConfig.js — mesmo motivo dos
+  // outros flags backtest-only acima. Ver src/lib/timeStopOverrideTripwire.test.js.
+  timeStopBarsOverride: null,
   // Bloco 4 Fase 1 (docs/known-risks.md item 37) — permite as cascatas
   // `4h_15m` (RF nativa) e `1h_5m` (SMC) manterem operações INDEPENDENTES
   // simultâneas no mesmo ativo, em vez de compartilhar 1 slot único

@@ -12139,8 +12139,16 @@ produziu operação de verdade (`smc-confirm-4h15m-gate-off-1yr`, item 108).
 Decomposição do custo (medida, não estimada): 1R equivale a uma distância de
 stop de **6,57% do preço** (mediana; média 7,67%). O custo total medido é
 **0,276% do preço por operação**, dos quais taxa+slippage ida e volta são
-0,12% e **funding é 0,163% (59% do custo)** — porque a duração mediana em
-posição é de **88h (3,7 dias)**, ou ~16 janelas de funding de 8h.
+0,12% e **funding é 0,163% (59% do custo)**.
+
+**Correção (Codex, PR #221)**: a versão original desta seção derivava o
+funding da duração MEDIANA e errava a conta — 88h cruzam 11 janelas de 8h,
+não 16. O 0,163% vem da duração **MÉDIA** (130,7h ≈ 16,3 janelas × 1bps =
+0,163%), não da mediana. As duas estatísticas são diferentes de propósito e
+a distribuição é fortemente assimétrica à direita: mediana **88h (3,7
+dias, 11 janelas)**, média **130,7h (5,4 dias, 16,3 janelas)** — poucas
+operações muito longas puxam a média. É a média que reconstrói o custo
+medido; a mediana descreve a operação típica.
 
 ### Achado 2 — o experimento nunca teve poder para concluir nada
 
@@ -12203,11 +12211,24 @@ hipótese parecia sólida:
   em funding sobre 98 ops ≈ **0,02R/op**, contra arriscar a recuperação de
   operações que rendem múltiplos disso.
 
-**Veredito**: não construir nem rodar esse teste. Encurtar o Time Stop
-trocaria ~0,02R/op de economia por perda provável muito maior. Deliberadamente
-**não** fatiei mais fino (ex.: faixa de 12-24 velas) — com n=59 e 8 positivas,
-isso é exatamente o problema de múltiplas comparações que os itens 58 e 71
-já documentaram neste projeto.
+**Veredito original (RETIRADO — Codex, PR #221)**: eu havia escrito "não
+construir nem rodar esse teste". **Isso não se sustentava.** O P&L relevante
+para um Time Stop de N velas é o valor NA VELA N, não o desfecho final da
+operação — e o relatório não guarda preço em instantes intermediários. Uma
+operação que terminou em +0,648R pode ter estado positiva, zerada ou
+negativa na vela 24; o desfecho final não determina o que o corte teria
+capturado. Eu mesmo registrei essa limitação na "Ressalva metodológica"
+abaixo e ainda assim emiti o veredito — contradição minha, não do dado.
+
+**Veredito corrigido**: a evidência é **sugestiva contra**, não conclusiva.
+Sugere contra porque (a) a duração longa concentra-se nas ganhadoras, (b) o
+mecanismo atual já é condicionado a `!tp1Hit`, (c) as saídas por `TIME_STOP`
+existentes rendem +0,283R, e (d) a economia de funding é pequena
+(~0,02R/op). **Nada disso substitui um replay com a regra modificada** — só
+isso decide. Por isso o flag foi construído nesta rodada (ver abaixo) em vez
+de o teste ser descartado. Deliberadamente **não** fatiei mais fino (ex.:
+faixa de 12-24 velas) — com n=59 e 8 positivas, isso é exatamente o problema
+de múltiplas comparações que os itens 58 e 71 já documentaram neste projeto.
 
 ### Leitura (fato × hipótese × recomendação)
 
@@ -12257,6 +12278,37 @@ semanal ad hoc (DEFF 1,375) antes de eu perceber que o repo já tinha a
 ferramenta certa, que agrupa por operações sobrepostas (DEFF 1,4289). Os
 números publicados acima são os da ferramenta — "reuse antes de criar"
 (`.claude/rules/operating-principles.md`) vale também para estatística.
+
+### Mecanismo construído — `pineConfig.timeStopBarsOverride` (backtest-only)
+
+Como o veredito negativo não se sustentava sem replay (correção do Codex
+acima), construí o flag que permite fazer o replay em vez de descartar o
+teste:
+
+- **`scripts/backtestPineConfig.js`**: `timeStopBarsOverride: null` — `null`
+  é o comportamento de sempre (tier decide: T1=48/T2=64/T3=96 velas).
+- **`src/lib/scanner.js`**: aplicado nos DOIS pontos onde
+  `tier_time_stop_bars` é congelado na criação da operação
+  (`buildTradeOpData` da RF e `buildSmcTradeOpData` da SMC). Na RF o
+  override entra ANTES da conversão `*4` do sinal de 1h, para o prazo em
+  RELÓGIO seguir consistente entre cascatas — exatamente o que o tier já
+  garantia. Congelado na criação, mesmo contrato de `runnerEnabled`/
+  `preTp1StopProtectionEnabled`: virar o flag no meio nunca reprograma o
+  prazo de uma posição já viva.
+- **Isolamento**: backtest-only, com tripwire dedicado
+  (`src/lib/timeStopOverrideTripwire.test.js`) garantindo que a chave nunca
+  vaze para `pineParser.js`/`adminPineConfig.js` — o risco aqui é concreto,
+  não teórico: é um parâmetro de gestão de risco, e um valor vindo de config
+  viva encurtaria o prazo de operações reais sem medição por trás.
+- **6 testes novos** (3 tripwire + 3 de comportamento em
+  `scannerStateMachine.test.js`: ausente/null byte-idêntico, override na
+  cascata 4h, override passando pela conversão `*4` no sinal de 1h).
+
+**A/B a rodar** (`backtest.yml`, mesma carteira de 7 símbolos/12 meses das
+outras medições deste item): baseline sem override × `{"timeStopBarsOverride":
+24}`. 24 velas de 4h = 96h ≈ 4 dias, contra as 96 velas (384h ≈ 16 dias) do
+T3 atual — o corte mais agressivo que a distribuição de duração comporta sem
+cortar a mediana. Não rodado nesta rodada.
 
 **Ressalva metodológica sobre os contrafactuais**: os cortes por duração
 mostram o desfecho FINAL das operações afetadas, não o que elas valeriam se
