@@ -12334,9 +12334,18 @@ e `time-stop-24-bars` (`bd547809-backtestreport_53.json`).
 | `grossExpectancyR` | +0,1324R | +0,0533R | −60% |
 | `avgCostR` | 0,0526R | 0,0430R | −18% (menos tempo exposto = menos funding, como esperado) |
 | `profitFactor` | 1,013 | **0,838** | cruza de lucrativo p/ deficitário |
-| `maxDrawdownPct` | 94,4% | **149,0%** | +58% |
+| `equityCurve.maxDrawdownPct` (risco 1%/op, capital $1.000 compondo — número economicamente significativo, `docs/claude/backtest-usage.md`) | 11,36% | **14,75%** | +30% |
+| `equityCurve.totalReturnPct` / `cagrPct` | +7,44% / +7,99%a.a. | **+0,54% / +0,59%a.a.** | retorno composto quase zerado |
 | TIME_STOP: n / avgR | 9 / **+0,283R** | 43 / **+0,078R** | população 4,8× maior, valor médio 72% menor |
 | STOP_HIT: n / avgR | 80 / −0,189R | 56 / **−0,367R** | população menor, perda média quase dobra |
+
+Nota: `overall.maxDrawdownPct` (94,4%→149,0%) NÃO entra na tabela —
+soma `pnlPct` bruto por operação como se cada uma re-arriscasse 100% do
+capital numa conta não dimensionada; é a mesma ressalva do item 108
+addendum (`docs/claude/backtest-usage.md` linha ~366-376). A linha acima
+usa `equityCurve.maxDrawdownPct`, a simulação real de risco 1%/operação
+que o painel ao vivo usa (`src/lib/equityCurve.js`) — direção igual
+(piora), magnitude bem menor e é essa que importa pra julgar risco de conta.
 
 Significância própria (`overall.conclusive`) e teste correto de cluster
 (`backtest-correlation-check.mjs`, sign-flip por cluster de operações
@@ -12368,12 +12377,52 @@ sobrepostas — o mesmo teste do Achado 2 acima) em cada run isoladamente:
   problema dominante (Achado 1 já mostrava isso: 45% do edge, não 100%), e
   este replay confirma isso na prática: o `expectancyR` líquido piora mesmo
   com menos custo, porque o gross caiu muito mais do que o custo economizou.
-- **Recomendação**: não trocar o Time Stop por tier para 24 velas —
-  `timeStopBarsOverride` fica como está (mecanismo backtest-only,
-  `null`=T3 decide, sem mudança de produção). Como nenhuma métrica melhorou
-  em nenhuma das duas runs, não há sinal parcial a perseguir com um novo
-  corte intermediário (ex. 48 velas) — a direção já está clara mesmo sem
-  significância formal; gastar outro trial nessa família não muda a
-  decisão. Esta pergunta específica (item 109/Achado 3) está encerrada.
-  O lever real continua sendo o do Achado 2/recomendação principal deste
-  item: amplitude de ativos, não parâmetro de saída.
+- **Correção de escopo (Codex, PR #222, P1)**: a versão original desta
+  recomendação dizia que "a pergunta específica do Time Stop está
+  encerrada" e que testar um corte intermediário (48 velas) "não muda a
+  decisão" — isso é overreach. O replay testou só o ponto 24 velas; um
+  corte não-linear como 48 pode se comportar diferente (a curva
+  duração×R do Achado 3 original não é monotônica o bastante pra
+  extrapolar um único ponto testado para toda a família de parâmetro). Além
+  disso, os dois p-valores de sign-flip acima testam cada braço contra
+  zero (a expectância do baseline é diferente de zero? a do 24-bar é
+  diferente de zero?) — **nenhum dos dois testa a diferença
+  baseline-vs-24-bar diretamente**, que exigiria um teste pareado/two-sample
+  não construído aqui.
+- **Recomendação (corrigida)**: não trocar o Time Stop por tier para
+  **24 velas especificamente** — `timeStopBarsOverride` fica como está
+  (mecanismo backtest-only, `null`=T3 decide, sem mudança de produção).
+  O veredito vale só para o ponto testado; um corte intermediário (ex. 48
+  velas) segue sem medição — se algum dia for testado, exigiria também um
+  teste direto baseline-vs-teste (não dois sign-flips isolados) antes de
+  decidir. Não é a prioridade: o lever real continua sendo o do Achado
+  2/recomendação principal deste item (amplitude de ativos, não parâmetro
+  de saída) — só não se pode mais dizer que a família toda de "Time Stop
+  mais curto" está descartada.
+
+**Registro no ledger de trials (Codex, PR #222, P2)**: os dois runs foram
+gravados em `docs/backtest-trial-registry.json` via
+`scripts/backtest-trial-registry.mjs`, família `time-stop-shortening-hypothesis`:
+
+```
+node scripts/backtest-trial-registry.mjs --report <baseline.json> --family time-stop-shortening-hypothesis
+node scripts/backtest-trial-registry.mjs --report <24bars.json> --family time-stop-shortening-hypothesis
+node scripts/backtest-trial-registry.mjs --summarize-family time-stop-shortening-hypothesis
+```
+
+| trial_label | n | expectancyR | IC95 original | IC corrigido por família (Bonferroni, N=2) | conclusivo? |
+|---|---|---|---|---|---|
+| time-stop-baseline | 99 | 0,080 | [-0,159; 0,319] | [-0,194; 0,354] | não |
+| time-stop-24-bars | 108 | 0,010 | [-0,185; 0,206] | [-0,213; 0,234] | não |
+
+Note que este projeto tem **dois** registros de experimento documentados —
+`docs/experiments/registry.json` (convenção mais antiga, citada em
+`docs/claude/backtest-usage.md` linha ~389, nunca usada na prática desde
+que foi criada — segue `[]`) e `docs/backtest-trial-registry.json` (ledger
+mais recente, construído no item 88/89, com CLI de Bonferroni e usado em
+~10 itens desde então). Usei o segundo, que é o mecanismo realmente ativo
+no repo (reuse antes de criar) — e corrigi o ponteiro obsoleto em
+`backtest-usage.md` pra parar de apontar pro registro morto (isso é a
+mesma classe de contradição documental que `documentation-truth.md` pede
+pra corrigir antes de empilhar instrução nova, não só uma resposta ao
+Codex).

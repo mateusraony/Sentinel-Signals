@@ -386,10 +386,16 @@ não só o caminho do arquivo — `runStartedAt`, `pineConfig`) — ver
 `docs/known-risks.md` item 47.2. Serve para responder, meses depois, "esse
 relatório é do código de hoje ou de antes de tal mudança?" sem depender de
 memória. Para uma rodada que decide algo (ativa/desativa flag, muda
-parâmetro), registre a comparação em `docs/experiments/registry.json`
-(hipótese, baseline × teste, janela de desenvolvimento × holdout, critério de
-aceite, status) em vez de só narrar em prosa — evita o mesmo experimento ser
-renomeado e repetido até dar um resultado favorável por acaso.
+parâmetro), registre a comparação em `docs/backtest-trial-registry.json`
+via `scripts/backtest-trial-registry.mjs --report <path> --family <nome>`
+(cada trial vira uma entrada; `--summarize-family <nome>` aplica correção
+Bonferroni e imprime o IC corrigido) em vez de só narrar em prosa — evita o
+mesmo experimento ser renomeado e repetido até dar um resultado favorável
+por acaso. `docs/experiments/registry.json` foi a convenção original
+(hipótese, baseline × teste, janela dev × holdout, critério de aceite,
+status em JSON solto) mas nunca chegou a ser usada — o ledger acima a
+substituiu na prática (item 88/89 do `known-risks.md`) e é o mecanismo
+ativo hoje.
 
 As mesmas seis flags existem como campos do formulário na **Opção B**
 (`backtest.yml` → *Run workflow*), com os mesmos defaults: deixar em branco usa
