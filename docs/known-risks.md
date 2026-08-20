@@ -11997,3 +11997,26 @@ sem o gate (item 108, seção acima) segue inconclusivo (IC95 cruza zero).
 inteira; o que vem depois (se as próximas operações reais tiverem
 expectância positiva ou não) só o tempo/mais dado decide. Nenhum outro
 gate/config foi tocado nesta mudança.
+
+### Addendum — `smc_enabled` (a cascata SMC em si) também desligada nos 6 ativos que ainda tinham (2026-08-20)
+
+Ao verificar o estado dos 10 ativos pra este item, achei que **6 deles
+ainda tinham `smc_enabled: true`** — ZROUSDT, FETUSDT, BTCUSDT, ETHUSDT,
+PAXGUSDT, PENDLEUSDT (os outros 4 já estavam `false`). Isso é diferente
+do gate `smc_confirm_4h15m` acima: é a cascata SMC 1h→5m completa, uma
+estratégia de entrada paralela à RF, não um filtro sobre ela. Já tinha
+veredito próprio, anterior a esta rodada: **expectância −0,778R** (item
+56/68), a mesma pesquisa que motivou o default de cadastro `false` desde
+2026-08-02 (`AddAssetForm.jsx` já escrevia `false` corretamente pra
+ativos NOVOS — só os 6 mais antigos, criados antes daquele reverte,
+ficaram com o valor velho).
+
+Usuário aprovou explicitamente ("sim, desliga o SMC nos 6 ativos").
+Aplicado: escrita direta no Firestore de produção, `smc_enabled: true →
+false` nos 6, confirmado por leitura pós-escrita (mesmo padrão de sempre
+— script temporário, nunca commitado). **Nenhuma mudança de código** —
+`AddAssetForm.jsx` já escrevia o default certo pra ativos novos; isso foi
+só sincronizar o estado dos 6 ativos antigos com o que a evidência de
+2026-08-02 já recomendava. Estado final: os 10 ativos monitorados têm
+`smc_enabled: false` E `smc_confirm_4h15m: false` — só a cascata RF
+4h→15m nativa fica ativa em todos, sem o gate extra.
