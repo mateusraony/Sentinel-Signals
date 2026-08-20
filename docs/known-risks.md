@@ -11885,3 +11885,77 @@ continua válida sem alteração.
 
 `npm run lint && npm test -- --run && npm run build` + os 3 alvos esbuild
 limpos de novo após a correção (mesma contagem de testes, sem regressão).
+
+## 108. `smc_confirm_4h15m` não é "filtro que barra uma operação de vez em quando" — zera a cascata RF inteira (2026-08-19)
+
+### Contexto
+
+Continuação direta do item 67: descoberto que o gate `asset.smc_confirm_4h15m`
+(ligado por padrão em `AddAssetForm.jsx`, presente em TODOS os 10 ativos
+monitorados hoje) rejeitou o sinal SELL real do FETUSDT em 05/08. Usuário
+perguntou se não seria melhor simplesmente tirar o gate. Antes de decidir por
+anedota, rodei o A/B real (mesmo padrão de todo o resto desta investigação —
+7 símbolos padrão, 12 meses, `backtest.yml`): gate ligado (replica produção)
+vs. gate desligado.
+
+### Resultado — não é ambíguo
+
+| | Gate LIGADO (produção hoje) | Gate DESLIGADO |
+|---|---|---|
+| Operações no período (7 símbolos, 12 meses) | **0** | 98 (99 com a ainda aberta) |
+| Rejeições da cascata 4h/15m | 3.600 | 1.949 |
+| `smc_confirm_zone_rejected` | **2.025 (56% de todas as rejeições)** | 0 (gate nem roda) |
+| `regime_rejected` | 1.574 | 1.401 |
+| Expectância líquida | — (zero trade, nada pra medir) | +0,064R |
+| IC 95% da expectância | — | [-0,176; +0,304] — **cruza zero, inconclusivo** |
+| Profit factor | — | 0,986 (~empate) |
+| Max drawdown | — | 94,4% |
+
+**Fato, sem ressalva**: com o gate como está configurado em produção HOJE,
+a cascata RF 4h→15m produziu **ZERO operações em 12 meses, nos 7 símbolos
+padrão de referência**. Não é "às vezes barra um sinal bom" — é a MAIOR
+causa de rejeição isolada (56%, maior até que `regime_rejected`, que já era
+conhecido como o principal gargalo desde o item 50) e, na prática, funciona
+como um interruptor geral que nunca deixa passar nada nesse período. Isso
+explica "semanas sem operação" de forma mais completa e direta que
+qualquer hipótese estatística dos itens 100-105 **e** que o item 106 (cota
+do Firestore) — porque nenhuma folga de cota jamais produziria uma
+operação se o gate zera o funil antes de chegar lá.
+
+**Com o gate desligado**: 98 operações reais, resultado **ainda
+inconclusivo** (IC cruza zero) — não é "prova que a estratégia é boa", é
+"agora existe uma amostra pra observar", o mesmo status de praticamente
+todo o resto desta investigação. Profit factor de 0,986 é essencialmente
+empate. Drawdown máximo de 94,4% é alto e merece atenção própria (não
+investigado nesta rodada — pode ser efeito já conhecido do runner
+pós-TP1, item 46, não necessariamente do gate).
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: manter o gate ligado garante zero operações RF nativas,
+independente de qualquer outra coisa (estratégia boa ou ruim, cota
+sobrando ou não). **Hipótese**: o mecanismo provavelmente sofre do mesmo
+problema de tautologia geométrica já documentado para o gate de zona PD
+original (item 35/38) — comparar o range 4h contra sua própria estrutura
+tende a rejeitar quase tudo por construção, não por seletividade real;
+não confirmado a fundo nesta rodada (o campo `pdZone`/`trend` usado aqui é
+código funcionalmente irmão daquele já corrigido, mas não é o mesmo
+gate). **Recomendação**: desligar `smc_confirm_4h15m` nos 10 ativos
+monitorados — é a única forma de a cascata RF nativa voltar a produzir
+qualquer operação; o resultado das 98 operações sem o gate não é prova de
+lucro (inconclusivo), mas é infinitamente mais informativo que zero
+operações. **Não desliguei em produção nesta rodada** — é escrita em
+Firestore de produção afetando os 10 ativos reais, decisão do usuário.
+
+### Verificação
+
+Dois runs reais de `backtest.yml` disparados pelo usuário
+(`smc-confirm-4h15m-gate-on-baseline-1yr` e
+`smc-confirm-4h15m-gate-off-1yr`, mesma janela 2025-08-19→2026-08-19),
+relatórios completos anexados e lidos por inteiro (`entryFunnel`,
+`byCascade`, `costs`). Trial "off" registrado em
+`docs/backtest-trial-registry.json` (família `smc-confirm-4h15m-gate`,
+N=1 até aqui — o "on" não entra no registro por ter 0 operações, nada pra
+calcular IC). Nenhuma mudança de código nesta rodada — só diagnóstico.
+Próximo passo, se o usuário aprovar: desligar o gate nos 10
+`MonitoredAsset` reais (escrita em produção, fora do escopo desta análise).
