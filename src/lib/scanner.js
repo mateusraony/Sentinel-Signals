@@ -445,9 +445,16 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
     // firing the Time Stop 4x too early (48/64/96h instead of the intended
     // 192/256/384h). Convert by 4 here, same precedent as the existing
     // SMC->4h promotion (scanner.js ~2192-2194: tf4h.tier.timeStopBars * 4).
-    tier_time_stop_bars: signalTimeframe === '1h' && tf4hData.tier?.timeStopBars != null
-      ? tf4hData.tier.timeStopBars * 4
-      : tf4hData.tier?.timeStopBars,
+    // docs/known-risks.md item 109 — pineConfig.timeStopBarsOverride
+    // (backtest-only, `null` = tier decide, byte-idêntico ao de sempre)
+    // substitui o valor do tier ANTES da conversão *4 acima, para que o
+    // prazo em RELÓGIO continue consistente entre as cascatas exatamente
+    // como o tier já garantia. Congelado aqui na criação de propósito —
+    // mesmo contrato de runnerEnabled/preTp1StopProtectionEnabled.
+    tier_time_stop_bars: (() => {
+      const base = pineConfig?.timeStopBarsOverride ?? tf4hData.tier?.timeStopBars;
+      return signalTimeframe === '1h' && base != null ? base * 4 : base;
+    })(),
     // Padrão de vela que confirmou a entrada (opt-in, pineConfig.
     // candlePatternEnabled) — null quando o gate está desligado.
     entry_candle_pattern: candlePattern?.pattern ?? null,
@@ -996,7 +1003,10 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     tier: tf1hData.tier?.tier,
     adx_at_entry: tf1hData.adx?.adx,
     chop_at_entry: tf1hData.chop,
-    tier_time_stop_bars: tf1hData.tier?.timeStopBars ?? 96,
+    // Mesmo override do item 109 aplicado na cascata SMC — aqui o valor já
+    // está em velas de 1h (o timeframe de sinal desta cascata), sem a
+    // conversão *4 que a RF precisa.
+    tier_time_stop_bars: pineConfig?.timeStopBarsOverride ?? tf1hData.tier?.timeStopBars ?? 96,
     // Observability only — mesmo campo/motivo do buildTradeOpData (RF) acima;
     // o sinal SMC agora também grava tf_1d/4h/1h_direction no context (ver o
     // push do SignalEvent smc_structure em scanAsset). Ver known-risks 47.2.

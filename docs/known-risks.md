@@ -12116,3 +12116,203 @@ caso de ops vazias). `npm run lint && npm test -- --run && npm run build`
 `overall.maxDrawdownPct`/`byCascade[cascata].maxDrawdownPct` continuam
 existindo sem mudança — só passam a ter, ao lado, o número que realmente
 importa pra avaliar risco de conta.
+
+## 109. Por que nada nunca dá "conclusivo": é poder estatístico, não escolha de indicador — e a retratação do meu próprio palpite de Time Stop (2026-08-20)
+
+### Contexto
+
+Usuário perguntou, de forma aberta, se existe "alguma outra forma de calcular
+ou fazer com que conseguisse ter mais resultado", se eu tinha dados, e se
+haveria "outro motor ou algo do tipo". Em vez de especular (o conselho de 5
+revisores já rejeitou a reescrita institucional em Python numa rodada
+anterior), rodei a conta em cima dos 98 trades reais do único run que
+produziu operação de verdade (`smc-confirm-4h15m-gate-off-1yr`, item 108).
+
+### Achado 1 — o custo come 45% do edge bruto
+
+| | |
+|---|---|
+| Expectância BRUTA | **+0,1165R** |
+| Custo médio | **−0,0524R** |
+| Expectância LÍQUIDA | **+0,0642R** |
+
+Decomposição do custo (medida, não estimada): 1R equivale a uma distância de
+stop de **6,57% do preço** (mediana; média 7,67%). O custo total medido é
+**0,276% do preço por operação**, dos quais taxa+slippage ida e volta são
+0,12% e **funding é 0,163% (59% do custo)**.
+
+**Correção (Codex, PR #221)**: a versão original desta seção derivava o
+funding da duração MEDIANA e errava a conta — 88h cruzam 11 janelas de 8h,
+não 16. O 0,163% vem da duração **MÉDIA** (130,7h ≈ 16,3 janelas × 1bps =
+0,163%), não da mediana. As duas estatísticas são diferentes de propósito e
+a distribuição é fortemente assimétrica à direita: mediana **88h (3,7
+dias, 11 janelas)**, média **130,7h (5,4 dias, 16,3 janelas)** — poucas
+operações muito longas puxam a média. É a média que reconstrói o custo
+medido; a mediana descreve a operação típica.
+
+### Achado 2 — o experimento nunca teve poder para concluir nada
+
+Desvio padrão medido: **1,2111R por operação**. Rodei
+`scripts/backtest-correlation-check.mjs` (a ferramenta do item 97, que agrupa
+por operações SOBREPOSTAS no tempo — mais rigoroso que agrupar por calendário)
+sobre este relatório:
+
+- **G = 27 clusters**, tamanho médio 3,63 operações
+- **DEFF = 1,4289** → amostra EFETIVA de **68,6 trades**, não 98
+- IC95 em cluster (t-Student, df=26): **[−0,2364; +0,3647]** — mais largo que
+  o ingênuo [−0,1756; +0,3039]
+- **Teste de sign-flip por cluster (o que de fato testa se a média difere de
+  zero): p = 0,651.** Não é "quase lá" — é ruído.
+
+Com esse desvio e corrigindo pelo DEFF, o tamanho de amostra necessário
+(alpha 5%, poder 80%) é:
+
+| Para provar um edge real de… | n ingênuo | n corrigido por DEFF |
+|---|---|---|
+| 0,20R | 287 | **411** |
+| 0,15R | 511 | **730** |
+| **0,10R** | 1.150 | **1.643** |
+| 0,05R | 4.600 | **6.573** |
+
+Temos **98** operações.
+
+**Isto reenquadra os itens 100-108 inteiros**: "inconclusivo" não foi azar
+nem método ruim — a 7 símbolos gerando ~98 trades/ano, provar um edge de
+0,10R exigiria 1.643 operações, ou **~17 anos**. Nenhum indicador, filtro ou
+reescrita muda essa aritmética; o que muda é amostra, custo por unidade de
+risco, ou tamanho do edge.
+
+**Consistência com o histórico**: o `docs/roadmap.md` já estimava `sd(R) ≈
+1,1` e erro-padrão 0,107 numa medição anterior — o medido aqui (1,2111 e
+0,1223) confirma aquela ordem de grandeza. O DEFF de 1,43 daqui é bem menor
+que o ~3,0 do item 97 (72 ops, N efetivo ~24); são datasets diferentes, e a
+diferença não foi investigada — não tratar 1,43 como "o" DEFF do projeto.
+
+### Achado 3 — RETRATAÇÃO: encurtar o Time Stop seria ATIVAMENTE RUIM
+
+Na conversa eu havia recomendado testar encurtar o tempo em posição, pelo
+raciocínio de que funding é 59% do custo. **Investiguei e o dado derruba a
+minha própria recomendação** — registro aqui porque o erro é meu e a
+hipótese parecia sólida:
+
+- Operações que ficam MAIS tempo abertas são justamente as GANHADORAS:
+  ops > 24 velas rendem **+0,363R** em média (65% positivas); ops > 48 velas
+  rendem **+0,648R** (83% positivas). Duração longa é *consequência* de estar
+  ganhando (bate TP1, runner corre por dias), não causa de custo — e esses
+  R já são LÍQUIDOS do funding que pagaram.
+- O Time Stop atual **já é condicionado corretamente**: `scanner.js` só o
+  avalia no ramo `!tp1Hit`, ou seja, ele já governa apenas as operações que
+  não engataram. Não é um corte cego por tempo.
+- Dentro dessa população (59 ops que não bateram TP1, −0,837R de média), as
+  que sobrevivem mais tempo também são as melhores: > 48 velas dá **−0,052R**
+  com 67% positivas, contra −0,730R das > 12 velas. As 9 ops que de fato
+  fecharam por `TIME_STOP` renderam **+0,283R** em média — positivo.
+- A economia seria pequena: cortar tudo em 24 velas pouparia ~13,1% de preço
+  em funding sobre 98 ops ≈ **0,02R/op**, contra arriscar a recuperação de
+  operações que rendem múltiplos disso.
+
+**Veredito original (RETIRADO — Codex, PR #221)**: eu havia escrito "não
+construir nem rodar esse teste". **Isso não se sustentava.** O P&L relevante
+para um Time Stop de N velas é o valor NA VELA N, não o desfecho final da
+operação — e o relatório não guarda preço em instantes intermediários. Uma
+operação que terminou em +0,648R pode ter estado positiva, zerada ou
+negativa na vela 24; o desfecho final não determina o que o corte teria
+capturado. Eu mesmo registrei essa limitação na "Ressalva metodológica"
+abaixo e ainda assim emiti o veredito — contradição minha, não do dado.
+
+**Veredito corrigido**: a evidência é **sugestiva contra**, não conclusiva.
+Sugere contra porque (a) a duração longa concentra-se nas ganhadoras, (b) o
+mecanismo atual já é condicionado a `!tp1Hit`, (c) as saídas por `TIME_STOP`
+existentes rendem +0,283R, e (d) a economia de funding é pequena
+(~0,02R/op). **Nada disso substitui um replay com a regra modificada** — só
+isso decide. Por isso o flag foi construído nesta rodada (ver abaixo) em vez
+de o teste ser descartado. Deliberadamente **não** fatiei mais fino (ex.:
+faixa de 12-24 velas) — com n=59 e 8 positivas, isso é exatamente o problema
+de múltiplas comparações que os itens 58 e 71 já documentaram neste projeto.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: existe edge bruto (+0,117R), o custo consome 45% dele, e a amostra
+é ~16x menor que a necessária para concluir qualquer coisa sobre o líquido.
+
+**Hipótese**: com edge líquido de ~0,06R contra ruído de 1,21R, é possível
+que não exista edge grande o suficiente para ser encontrado — e 100+ trials
+sem achar é, em si, um dado a favor dessa leitura. Não confirmado; a amostra
+também não permite refutar.
+
+**Recomendação — a única alavanca que ataca a causa raiz**: aumentar a
+**amplitude em ativos**, não o tempo. O DEFF de 1,43 (bem abaixo do
+degenerado, que seria ≈ tamanho médio de cluster = 3,63) indica que os
+trades não são redundantes entre si — cada ativo novo agrega informação
+real, ainda que menos que 1:1. Sair de 7 para ~20 símbolos triplicaria os
+trades/ano: os ~17 anos necessários para um edge de 0,10R virariam **~6
+anos** (se o volume escalar linearmente com os ativos, o que não é
+garantido — mais ativos podem ter regimes diferentes). O `docs/roadmap.md`
+(Bloco 0) já recomendava isso ("amplitude em ATIVOS, não anos"), e agora há
+a medição de DEFF que sustenta — mas ver a ressalva de correlação que o
+próprio roadmap registra (altcoins são fortemente correlacionadas com BTC;
+PAXGUSDT está na carteira por ser a exceção de baixa correlação).
+
+**Tensão real e não resolvida**: mais ativos monitorados = mais consumo da
+cota do Firestore, e acabamos de reduzir de 14 para 10 ativos exatamente por
+causa disso (item 106). As duas conclusões deste arquivo apontam em direções
+opostas e essa contradição precisa de decisão do usuário — provavelmente
+espaçar a cadência do scan em vez de cortar ativos, já que a cota é por
+passada × ativos. Não decidido nesta rodada.
+
+### Verificação
+
+Análise sobre `61592f45-backtestreport_51.json` (o relatório de 98 operações
+do item 108). Os números de correlação/significância vêm da ferramenta já
+existente do projeto, **não** de cálculo ad hoc: `node
+scripts/backtest-correlation-check.mjs --report <arquivo>` (item 97) — DEFF,
+IC em cluster t-Student e o sign-flip do efeito. O restante
+(expectância/desvio/erro padrão, decomposição de custo contra a distância
+real de stop e a duração real em posição, poder estatístico pela fórmula
+padrão de duas caudas, contrafactuais de duração) foi reprocessado com
+scripts Python ad hoc sobre o mesmo JSON. Nenhuma mudança de código nesta
+rodada — só diagnóstico.
+
+**Nota de método**: a primeira versão desta seção usou um agrupamento
+semanal ad hoc (DEFF 1,375) antes de eu perceber que o repo já tinha a
+ferramenta certa, que agrupa por operações sobrepostas (DEFF 1,4289). Os
+números publicados acima são os da ferramenta — "reuse antes de criar"
+(`.claude/rules/operating-principles.md`) vale também para estatística.
+
+### Mecanismo construído — `pineConfig.timeStopBarsOverride` (backtest-only)
+
+Como o veredito negativo não se sustentava sem replay (correção do Codex
+acima), construí o flag que permite fazer o replay em vez de descartar o
+teste:
+
+- **`scripts/backtestPineConfig.js`**: `timeStopBarsOverride: null` — `null`
+  é o comportamento de sempre (tier decide: T1=48/T2=64/T3=96 velas).
+- **`src/lib/scanner.js`**: aplicado nos DOIS pontos onde
+  `tier_time_stop_bars` é congelado na criação da operação
+  (`buildTradeOpData` da RF e `buildSmcTradeOpData` da SMC). Na RF o
+  override entra ANTES da conversão `*4` do sinal de 1h, para o prazo em
+  RELÓGIO seguir consistente entre cascatas — exatamente o que o tier já
+  garantia. Congelado na criação, mesmo contrato de `runnerEnabled`/
+  `preTp1StopProtectionEnabled`: virar o flag no meio nunca reprograma o
+  prazo de uma posição já viva.
+- **Isolamento**: backtest-only, com tripwire dedicado
+  (`src/lib/timeStopOverrideTripwire.test.js`) garantindo que a chave nunca
+  vaze para `pineParser.js`/`adminPineConfig.js` — o risco aqui é concreto,
+  não teórico: é um parâmetro de gestão de risco, e um valor vindo de config
+  viva encurtaria o prazo de operações reais sem medição por trás.
+- **6 testes novos** (3 tripwire + 3 de comportamento em
+  `scannerStateMachine.test.js`: ausente/null byte-idêntico, override na
+  cascata 4h, override passando pela conversão `*4` no sinal de 1h).
+
+**A/B a rodar** (`backtest.yml`, mesma carteira de 7 símbolos/12 meses das
+outras medições deste item): baseline sem override × `{"timeStopBarsOverride":
+24}`. 24 velas de 4h = 96h ≈ 4 dias, contra as 96 velas (384h ≈ 16 dias) do
+T3 atual — o corte mais agressivo que a distribuição de duração comporta sem
+cortar a mediana. Não rodado nesta rodada.
+
+**Ressalva metodológica sobre os contrafactuais**: os cortes por duração
+mostram o desfecho FINAL das operações afetadas, não o que elas valeriam se
+fechadas no ponto do corte (o relatório não guarda preço em instantes
+intermediários). Isso é suficiente para o veredito negativo — operações
+lucrativas seriam interrompidas — mas não seria suficiente para um veredito
+positivo, que exigiria um backtest real.
