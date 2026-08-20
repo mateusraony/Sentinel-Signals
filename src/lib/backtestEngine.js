@@ -29,6 +29,7 @@ import { isTerminalStatus } from './opTransition.js';
 import { summarizeOps, DEFAULT_COST_MODEL, ZERO_COST, getOpenedAt } from './tradeMetrics.js';
 import { closesFullyAtTp1 } from './opExitRules.js';
 import { buildShadowOp, simulateShadowOutcome } from './indicatorAttribution.js';
+import { simulateEquityCurve } from './equityCurve.js';
 
 const RealDate = Date;
 let originalDate = null;
@@ -1023,5 +1024,37 @@ export function buildReport(ops, {
       countedTrades: overallSummary.counted,
       minTrades: overallSummary.minTrades,
     },
+    // docs/known-risks.md item 108 addendum — `overall.maxDrawdownPct`
+    // (summarizeOps) sums each trade's raw pnlPct as if 100% of an
+    // unsized, non-compounding account were re-risked every trade, across
+    // symbols whose stop distance in % varies a lot for the SAME ~1R risk
+    // (a 1R stop can be 3% away on one symbol, 16% on another) — real
+    // multi-symbol runs can show a "drawdown" of 90%+ that a fixed-
+    // fractional-risk account would never actually experience. This
+    // section runs the SAME risk-normalized, compounding simulation the
+    // live panel already uses (equityCurve.js — Backtest.jsx/
+    // VirtualAccountCard.jsx), at its own defaults (1% risk/trade, $1000
+    // starting capital), so a backtest report carries the economically
+    // meaningful drawdown next to the naive one instead of only the
+    // misleading figure. `curve` omitted here (verbose per-trade array,
+    // same convention as byCascade/overall above) — full detail lives in
+    // the artifact JSON's ops list if ever needed.
+    equityCurve: (() => {
+      const sim = simulateEquityCurve(closed, { costModel });
+      return {
+        initialCapital: sim.initialCapital,
+        riskPct: sim.riskPct,
+        finalCapital: sim.finalCapital,
+        totalReturnPct: sim.totalReturnPct,
+        maxDrawdownPct: sim.maxDrawdownPct,
+        maxDrawdownAbs: sim.maxDrawdownAbs,
+        accountBlown: sim.accountBlown,
+        years: sim.years,
+        cagrPct: sim.cagrPct,
+        cagrUnavailableReason: sim.cagrUnavailableReason,
+        sized: sim.sized,
+        unsized: sim.unsized,
+      };
+    })(),
   };
 }

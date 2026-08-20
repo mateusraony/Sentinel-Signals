@@ -803,6 +803,40 @@ describe('buildReport', () => {
     });
   });
 
+  // docs/known-risks.md item 108 addendum: overall.maxDrawdownPct
+  // (summarizeOps) sums raw per-trade pnlPct as if a single non-compounding,
+  // fully-unsized account re-risked 100% of capital every trade — across
+  // symbols whose stop distance in % varies a lot for the SAME ~1R risk,
+  // that can show a scary "drawdown" no fixed-fractional-risk account would
+  // ever actually experience. Hand-computed: a 10%-stop loss then a 50%-stop
+  // loss (both exactly -1R) naively sums to -60% ("drawdown" 60, peak never
+  // left 0) — but at equityCurve.js's own default sizing (1% risk/trade,
+  // $1000 capital), the SAME two losses are $1000 -> $990 -> $980.10, a
+  // drawdown of ~1.99%. report.equityCurve carries this second, economically
+  // meaningful number alongside the naive one.
+  it('equityCurve reports a risk-normalized drawdown, far smaller than the naive pnlPct-summed one when stop distance % varies across symbols', () => {
+    const ops = [
+      closedOp({ entry_price: 100, initial_stop: 90, current_stop: 90, exit_price: 90, closed_at: '2026-07-16T09:00:00.000Z' }),
+      closedOp({ entry_price: 100, initial_stop: 50, current_stop: 50, exit_price: 50, closed_at: '2026-07-17T09:00:00.000Z' }),
+    ];
+    const report = buildReport(ops, { fromMs: 0, toMs: 1000, costModel: ZERO_COST });
+    expect(report.overall.maxDrawdownPct).toBeCloseTo(60, 5);
+    expect(report.equityCurve.initialCapital).toBe(1000);
+    expect(report.equityCurve.riskPct).toBe(1);
+    expect(report.equityCurve.finalCapital).toBeCloseTo(980.1, 2);
+    expect(report.equityCurve.maxDrawdownPct).toBeCloseTo(1.99, 2);
+    expect(report.equityCurve.sized).toBe(2);
+    expect(report.equityCurve.accountBlown).toBe(false);
+  });
+
+  it('equityCurve defaults sanely with no ops (legacy call shape)', () => {
+    const report = buildReport([], { fromMs: 0, toMs: 1000 });
+    expect(report.equityCurve.sized).toBe(0);
+    expect(report.equityCurve.unsized).toBe(0);
+    expect(report.equityCurve.maxDrawdownPct).toBe(0);
+    expect(report.equityCurve.finalCapital).toBe(report.equityCurve.initialCapital);
+  });
+
   // docs/known-risks.md item 46 — a seção diz QUAL gestão o run usou (não
   // quanto ela rendeu; isso é do diagnóstico). Sem ela, dois relatórios podem
   // ser comparados sem notar que a geometria de saída mudou entre eles, o que

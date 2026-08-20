@@ -364,6 +364,22 @@ taker), `--slippage-bps N` (default 1), `--funding-bps N` (default 1, por
 janela de 8h), `--min-trades N` (default 30), `--trial-label TXT` (gravado no
 JSON — serve para você contar quantas configurações já testou).
 
+**`report.equityCurve`** (`docs/known-risks.md` item 108 addendum) —
+`{initialCapital, riskPct, finalCapital, totalReturnPct, maxDrawdownPct,
+maxDrawdownAbs, accountBlown, years, cagrPct, cagrUnavailableReason, sized,
+unsized}`. **Ignore `report.overall.maxDrawdownPct`/`report.byCascade
+[cascata].maxDrawdownPct` para julgar risco de conta** — esse número soma o
+`pnlPct` bruto de cada operação como se uma conta não dimensionada e sem
+compor capital re-arriscasse 100% a cada operação; num run multi-símbolo,
+onde a mesma perda de ~1R pode ser "-3%" num ativo e "-16%" noutro
+(distância do stop em % varia por volatilidade), isso produz um "drawdown"
+de 90%+ que nenhuma conta com risco fixo por operação jamais experimentaria.
+`equityCurve` roda a MESMA simulação que o painel ao vivo usa
+(`src/lib/equityCurve.js` — `Backtest.jsx`/`VirtualAccountCard.jsx`): risco
+de 1% do capital corrente por operação (dimensionado pelo `initial_stop`),
+capital de $1.000, compondo de verdade a cada trade. É o número
+economicamente significativo pra julgar drawdown.
+
 Cada relatório também grava um bloco `reproducibility` (`commitSha`,
 `configHash` — hash do `pineConfig` EFETIVO já mesclado com `--pine-config`,
 não só o caminho do arquivo — `runStartedAt`, `pineConfig`) — ver
