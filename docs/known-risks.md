@@ -12304,11 +12304,11 @@ teste:
   `scannerStateMachine.test.js`: ausente/null byte-idêntico, override na
   cascata 4h, override passando pela conversão `*4` no sinal de 1h).
 
-**A/B a rodar** (`backtest.yml`, mesma carteira de 7 símbolos/12 meses das
+**A/B rodado** (`backtest.yml`, mesma carteira de 7 símbolos/12 meses das
 outras medições deste item): baseline sem override × `{"timeStopBarsOverride":
 24}`. 24 velas de 4h = 96h ≈ 4 dias, contra as 96 velas (384h ≈ 16 dias) do
 T3 atual — o corte mais agressivo que a distribuição de duração comporta sem
-cortar a mediana. Não rodado nesta rodada.
+cortar a mediana. Resultado no `### Replay rodado` abaixo.
 
 **Ressalva metodológica sobre os contrafactuais**: os cortes por duração
 mostram o desfecho FINAL das operações afetadas, não o que elas valeriam se
@@ -12316,3 +12316,64 @@ fechadas no ponto do corte (o relatório não guarda preço em instantes
 intermediários). Isso é suficiente para o veredito negativo — operações
 lucrativas seriam interrompidas — mas não seria suficiente para um veredito
 positivo, que exigiria um backtest real.
+
+### Replay rodado — o corte de 24 velas piora em todas as métricas (2026-08-20)
+
+`workflow_dispatch` da API falhou com `403 Resource not accessible by
+integration` (limitação estrutural do token deste app GitHub, já vista antes
+neste projeto) — o usuário disparou os dois runs manualmente pela interface.
+Janela nova (2025-08-20→2026-08-20, 12 meses), mesma carteira de 7 símbolos,
+custos ligados. Trial labels: `time-stop-baseline` (`c145bfa7-backtestreport_52.json`)
+e `time-stop-24-bars` (`bd547809-backtestreport_53.json`).
+
+| Métrica | baseline (T3=96 velas) | 24-bar override | Δ |
+|---|---|---|---|
+| N (contadas) | 99 | 108 | — |
+| winRate | 48,5% | 45,4% | −3,1pp |
+| `expectancyR` líquido | **+0,0798R** | **+0,0103R** | **−87%** |
+| `grossExpectancyR` | +0,1324R | +0,0533R | −60% |
+| `avgCostR` | 0,0526R | 0,0430R | −18% (menos tempo exposto = menos funding, como esperado) |
+| `profitFactor` | 1,013 | **0,838** | cruza de lucrativo p/ deficitário |
+| `maxDrawdownPct` | 94,4% | **149,0%** | +58% |
+| TIME_STOP: n / avgR | 9 / **+0,283R** | 43 / **+0,078R** | população 4,8× maior, valor médio 72% menor |
+| STOP_HIT: n / avgR | 80 / −0,189R | 56 / **−0,367R** | população menor, perda média quase dobra |
+
+Significância própria (`overall.conclusive`) e teste correto de cluster
+(`backtest-correlation-check.mjs`, sign-flip por cluster de operações
+sobrepostas — o mesmo teste do Achado 2 acima) em cada run isoladamente:
+
+- baseline: `ci_straddles_zero`; DEFF=1,4275, N efetivo=69,35; sign-flip
+  p=0,5920 (não significativo sozinho, consistente com Achado 2 do item 109).
+- 24-bar: `ci_straddles_zero`; DEFF=1,8742, N efetivo=57,62; sign-flip
+  p=0,9340 (idem).
+
+**Leitura (fato × hipótese × recomendação):**
+
+- **Fato**: nenhuma das duas medições é estatisticamente significativa
+  isoladamente — exatamente o que o Achado 2 já previa (poder insuficiente
+  com ~100 trades). Isso não é uma prova formal de que encurtar piora.
+- **Fato**: toda métrica de ponto (não só a média) moveu na direção
+  prevista pela "sugestão contra" do Achado 3 original — nenhuma melhorou.
+  O mecanismo aparece nos dados: o corte de 24 velas força 4,8× mais saídas
+  por TIME_STOP (9→43), mas o valor médio dessas saídas despenca de +0,283R
+  pra +0,078R — exatamente o efeito de interromper operações que ainda
+  estavam se desenvolvendo positivamente, como o Achado 3 (RETIRADO) já
+  suspeitava antes de virar veredito indevido. Como bônus negativo
+  inesperado: as operações que ainda assim chegam a STOP_HIT pioram de
+  −0,189R pra −0,367R (a composição de quem sobra nesse grupo muda — quem
+  teria se recuperado a tempo agora já saiu via TIME_STOP antes).
+- **Hipótese**: o `avgCostR` cair 18% (menos funding, como esperado
+  mecanicamente por menos tempo exposto) é real, mas pequeno demais pra
+  compensar a queda de 60% no edge bruto — a economia de custo nunca foi o
+  problema dominante (Achado 1 já mostrava isso: 45% do edge, não 100%), e
+  este replay confirma isso na prática: o `expectancyR` líquido piora mesmo
+  com menos custo, porque o gross caiu muito mais do que o custo economizou.
+- **Recomendação**: não trocar o Time Stop por tier para 24 velas —
+  `timeStopBarsOverride` fica como está (mecanismo backtest-only,
+  `null`=T3 decide, sem mudança de produção). Como nenhuma métrica melhorou
+  em nenhuma das duas runs, não há sinal parcial a perseguir com um novo
+  corte intermediário (ex. 48 velas) — a direção já está clara mesmo sem
+  significância formal; gastar outro trial nessa família não muda a
+  decisão. Esta pergunta específica (item 109/Achado 3) está encerrada.
+  O lever real continua sendo o do Achado 2/recomendação principal deste
+  item: amplitude de ativos, não parâmetro de saída.
