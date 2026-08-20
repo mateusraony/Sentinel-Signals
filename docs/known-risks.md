@@ -12426,3 +12426,134 @@ no repo (reuse antes de criar) — e corrigi o ponteiro obsoleto em
 mesma classe de contradição documental que `documentation-truth.md` pede
 pra corrigir antes de empilhar instrução nova, não só uma resposta ao
 Codex).
+
+## 110. Teste-gate com 42 símbolos genuinamente novos — continua inconclusivo, e um achado metodológico novo: mais ativos pode ENCOLHER o G do teste de cluster (2026-08-20)
+
+### Contexto
+
+Usuário perguntou por que testar em mais ativos do que vai operar (dúvida
+legítima — esclarecido: amplitude de ativos serve pra emprestar volume de
+operações das MESMAS regras, não pra decidir onde operar ao vivo) e propôs
+rodar "todos os testes possíveis de uma vez". Recusei testar Bloco 1 junto
+(reintroduziria múltiplas comparações) e propus, em vez disso, um teste-gate
+único: a base tem vantagem, com amostra de verdade? Só se sim, Bloco 1 faz
+sentido depois.
+
+**Universo**: 42 símbolos nunca usados em nenhum backtest deste projeto —
+fora dos 20 da "carteira" original (`roadmap.md` Bloco 0, já lida 5-8 vezes)
+e fora de LTCUSDT/DOGEUSDT (item 74). Dois lotes por limite de timeout
+conhecido (`fakeBackend.filter` é superlinear no tamanho do store
+compartilhado — Bloco 0, "Limite de performance conhecido"):
+
+- **Lote A** (20 símbolos): MATICUSDT, TRXUSDT, ATOMUSDT, FILUSDT, ICPUSDT,
+  APTUSDT, INJUSDT, RUNEUSDT, SEIUSDT, TIAUSDT, ETCUSDT, BCHUSDT, UNIUSDT,
+  LDOUSDT, MKRUSDT, ENAUSDT, ETHFIUSDT, TONUSDT, WLDUSDT, JUPUSDT.
+- **Lote B** (22 símbolos): XLMUSDT, VETUSDT, ALGOUSDT, EOSUSDT, XTZUSDT,
+  THETAUSDT, CHZUSDT, MANAUSDT, AXSUSDT, GALAUSDT, IMXUSDT, GRTUSDT,
+  CRVUSDT, SNXUSDT, COMPUSDT, ZILUSDT, KSMUSDT, EGLDUSDT, HBARUSDT,
+  QNTUSDT, ORDIUSDT, PEPEUSDT.
+
+Mesma janela (2025-08-20→2026-08-20, 12 meses), sem SMC, sem override de
+`pineConfig` — regras padrão, é o teste-gate, não o Bloco 1.
+
+### Resultado — os três números (naive, ainda sem correção)
+
+| | Lote A (n=273) | Lote B (n=317) | Pooled (n=590) |
+|---|---|---|---|
+| `expectancyR` | -0,0036R | **-0,1362R** | -0,0748R |
+| `grossExpectancyR` | +0,0386R | -0,0972R | — |
+| IC95 naive | [-0,148; 0,141] | [-0,261; -0,011] | [-0,170; 0,020] |
+| `conclusive` (naive, do próprio relatório) | não | **sim** | — |
+
+Lote B sozinho saiu "conclusivo negativo" pelo cálculo naive do relatório.
+Antes de aceitar isso — mesmo padrão de erro já cometido e corrigido várias
+vezes neste projeto (itens 97-99/103/104/108-addendum) — rodei os dois
+testes de correção que este repo já tem prontos.
+
+### Correção 1 — cluster de operações sobrepostas (`backtest-correlation-check.mjs`)
+
+| | Lote A | Lote B | Pooled |
+|---|---|---|---|
+| G (clusters) | 5 | 6 | **3** |
+| DEFF | 0,32 | 0,78 | 0,08 |
+| Sign-flip p-valor (teste correto do efeito) | 0,9375 | **0,0625** | 0,5000 (só 8 combinações possíveis) |
+
+O sign-flip do Lote B (o teste metodologicamente certo pra "a média é
+diferente de zero?", não o teste de DEFF) dá **p=0,0625 — não passa** o
+corte de 0,05, mesmo com o naive tendo cravado "conclusivo". Mesmo padrão
+de sempre: naive diz sim, cluster diz não.
+
+### Correção 2 — família de trials (`backtest-trial-registry.mjs`, Bonferroni N=2)
+
+```
+node scripts/backtest-trial-registry.mjs --report <loteA> --family base-edge-gate-42new
+node scripts/backtest-trial-registry.mjs --report <loteB> --family base-edge-gate-42new
+node scripts/backtest-trial-registry.mjs --summarize-family base-edge-gate-42new
+```
+
+| trial_label | IC95 original | IC corrigido por família (N=2) | conclusivo corrigido? |
+|---|---|---|---|
+| base-edge-gate-batchA-20new | [-0,148; 0,141] | [-0,169; 0,162] | não |
+| base-edge-gate-batchB-22new | [-0,261; -0,011] | [-0,279; 0,007] | **não** |
+
+Duas correções **independentes** (cluster e família) chegam à mesma
+conclusão por caminhos diferentes: o "conclusivo negativo" do Lote B não
+sobrevive a nenhuma delas.
+
+### Achado metodológico novo — o G do teste de cluster ENCOLHE com mais símbolos
+
+Não esperado, e vale registrar pra qualquer teste futuro de amplitude:
+`findOverlapClusters` (`backtest-correlation-check.mjs:82-102`) agrupa por
+**sobreposição no tempo entre símbolos DIFERENTES** (união-busca
+transitiva — `if (intervals[i].symbol === intervals[j].symbol) continue`).
+Com poucos símbolos, cada um contribui um cluster mais ou menos separado
+(G=27-46 nos runs de 7 símbolos do item 109). Com 20-22 símbolos ativos ao
+mesmo tempo na mesma janela de 12 meses, a chance de duas operações de
+símbolos diferentes se sobreporem em algum ponto do calendário sobe muito —
+e como a relação é transitiva, isso encadeia quase todo o histórico numa
+cadeia só. No pooled de 42 símbolos, G caiu pra **3** — resolução do teste
+exato de sign-flip vira 2³=8 combinações, quase sem poder de rejeitar nada
+(daí o p=0,50 do pooled, não é "sem sinal", é "teste sem resolução").
+
+**Consequência prática**: ampliar em ativos aumenta N bruto, mas — sob ESTE
+método específico de correção de cluster — pode reduzir G (as unidades
+estatísticas que realmente contam), o oposto do que a recomendação do item
+109 supunha implicitamente. Não invalida "amplie ativos" como ideia — mas
+mostra que não é de graça: em algum ponto entre 7 e 42 símbolos, G para de
+crescer e começa a cair. Não medido onde fica o ponto ótimo; ficaria pra
+uma rodada futura, só se o usuário quiser investir nisso.
+
+### Leitura (fato × hipótese × recomendação)
+
+- **Fato**: com 590 operações (42 símbolos nunca testados antes, ~6× a
+  amostra original de 109), a resposta pro teste-gate continua a mesma de
+  toda a investigação: **inconclusivo**, por qualquer correção válida
+  aplicada.
+- **Fato**: diferente das rodadas anteriores (que tinham estimativas
+  positivas e negativas misturadas — ex. item 48 alta +0,294R), aqui as
+  TRÊS estimativas de ponto (Lote A, Lote B, pooled) são todas negativas.
+  Não é prova de desvantagem real (nenhuma passa no teste corrigido), mas é
+  a primeira vez que uma amostra grande e genuinamente nova não produz
+  NENHUM sinal de ponto positivo.
+- **Hipótese**: o Lote B (memecoins/alts mais antigas — XLM, VET, ALGO,
+  CHZ, ZIL, PEPE etc.) pode ter características de mercado sistematicamente
+  diferentes da carteira original (menor tendência direcional sustentada,
+  mais chop) — não investigado nesta rodada, seria um novo desvio de
+  escopo.
+- **Recomendação**: por acordo prévio com o usuário (esta conversa), Bloco
+  1 (os 4 flags dormentes) fica pausado — o gate não veio positivo. Não é
+  "a estratégia está confirmada ruim" (nada passou no teste correto), é
+  "continua sem base demonstrada pra otimizar em cima". Decisão de como
+  prosseguir (aceitar o painel como ferramenta de sinalização sem mais
+  otimização de edge, tentar mais amplitude ainda observando o limite de G
+  acima, ou outra linha) fica com o usuário — mesma régua de sempre (item
+  73/88/109).
+
+### Verificação
+
+`backtest-correlation-check.mjs` rodado nos dois relatórios e num terceiro
+arquivo sintético (`overall.curve` dos dois concatenado, mesma
+`range`/`fromMs`/`toMs` — os únicos campos que a ferramenta lê) pra obter o
+pooled sem reimplementar a lógica de cluster. `backtest-trial-registry.mjs`
+rodado nos dois relatórios reais, família `base-edge-gate-42new` (N=2).
+Nenhuma mudança de código nesta rodada — só diagnóstico e registro.
