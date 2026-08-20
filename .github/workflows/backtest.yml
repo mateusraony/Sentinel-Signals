@@ -246,6 +246,14 @@ jobs:
                   // direto com netExpectancyR, e grossExpectancyR ao lado
                   // mostrando quanto do resultado era só ausência de custo.
                   costs: r.costs,
+                  // overall.maxDrawdownPct soma pnlPct bruto por operação
+                  // (sem posição dimensionada, sem compor capital) — pode
+                  // mostrar um "drawdown" de 90%+ que nenhuma conta com risco
+                  // fixo por operação jamais teria (item 108 addendum,
+                  // docs/known-risks.md). equityCurve é o número que decide
+                  // de verdade: mesma simulação de conta com risco de 1%
+                  // por operação que o painel ao vivo já usa.
+                  equityCurve: r.equityCurve,
                   overall: strip(r.overall),
                   byCascade: Object.fromEntries(Object.entries(r.byCascade).map(([k, v]) => [k, strip(v)])),
                   smcDiagnostics: r.smcDiagnostics,

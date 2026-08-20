@@ -12070,3 +12070,49 @@ só sincronizar o estado dos 6 ativos antigos com o que a evidência de
 2026-08-02 já recomendava. Estado final: os 10 ativos monitorados têm
 `smc_enabled: false` E `smc_confirm_4h15m: false` — só a cascata RF
 4h→15m nativa fica ativa em todos, sem o gate extra.
+
+### Addendum — causa do drawdown de 94,4% investigada: artefato de medição, não risco real (2026-08-20)
+
+O A/B do gate (seção principal deste item) mostrou `maxDrawdownPct: 94,4%`
+com o gate desligado — sinalizado como "não investigado" na hora.
+Investigado agora, recomputando a curva do relatório
+(`61592f45-backtestreport_51.json`) trade a trade.
+
+**Causa raiz confirmada**: `overall.maxDrawdownPct`
+(`summarizeOps`/`tradeMetrics.js`) soma o `pnlPct` BRUTO de cada operação
+— o retorno percentual de PREÇO daquele trade específico — como se uma
+única conta, sem posição dimensionada e sem compor capital, re-arriscasse
+100% do saldo a cada operação. Isso é economicamente enganoso num run
+multi-símbolo: a MESMA perda de ~1R (o stop sendo atingido) corresponde a
+`pnlPct` bem diferente dependendo da volatilidade do ativo — no relatório
+em questão, perdas de exatamente ~-1,02R apareceram como `pnlPct` indo de
+-3,09% até -16,55% dependendo do símbolo (distância do stop em % varia
+com o ATR de cada ativo). Somar esses percentuais brutos linearmente
+(sem dimensionar posição) infla um "drawdown" que nenhuma conta com risco
+fixo por operação jamais experimentaria.
+
+**Prova concreta**: recomputando a MESMA sequência de 98 operações em R
+(risco-normalizado, a unidade que já é comparável entre símbolos): o
+drawdown pico-a-vale é de **11,84R** — a 1% de risco por operação (padrão
+de `equityCurve.js`, já usado no painel ao vivo), isso é um drawdown de
+conta de **~11,8%**, não 94,4%. A ferramenta que já resolve isso
+(`simulateEquityCurve`, `src/lib/equityCurve.js`) já existia e já era
+usada no painel (`Backtest.jsx`/`VirtualAccountCard.jsx`) — só nunca
+tinha sido conectada ao relatório do `backtest.yml`/CLI.
+
+**Correção aplicada**: `buildReport` (`src/lib/backtestEngine.js`) agora
+roda `simulateEquityCurve` nas mesmas operações fechadas e expõe uma
+seção nova `report.equityCurve` (mesmos defaults do painel — 1%
+risco/operação, capital inicial $1.000) ao lado da `report.costs`/
+`report.overall` existentes — sem alterar nenhum campo antigo, puramente
+aditivo. `backtest.yml` (Job Summary) e `docs/claude/backtest-usage.md`
+atualizados pra explicar a diferença e recomendar `equityCurve.
+maxDrawdownPct` como o número que decide risco de conta, não o antigo.
+2 testes novos em `backtestEngine.test.js` (caso hand-computed provando a
+divergência 60% vs. ~1,99% com dois stops de tamanho % bem diferente;
+caso de ops vazias). `npm run lint && npm test -- --run && npm run build`
++ `build-backtest.mjs` limpos (1044 testes, 2 novos, 0 regressão).
+
+`overall.maxDrawdownPct`/`byCascade[cascata].maxDrawdownPct` continuam
+existindo sem mudança — só passam a ter, ao lado, o número que realmente
+importa pra avaliar risco de conta.
