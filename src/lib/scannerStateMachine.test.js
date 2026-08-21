@@ -189,6 +189,22 @@ describe('buildTradeOpData — entry into SIGNAL_CONFIRMED', () => {
     expect(explicitlyOn.pre_tp1_stop_advance_trigger_atr_mult).toBe(1.5);
   });
 
+  // docs/known-risks.md item 114 — same "frozen at creation" contract as
+  // pre_tp1_stop_protection_enabled above: pineConfig.disableTp2CapEnabled
+  // read here once, never again at exit time.
+  it('stamps tp2_cap_disabled from pineConfig.disableTp2CapEnabled, defaulting off (byte-identical to before this flag existed)', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { atrStopMult: 2.0 } });
+
+    const offByDefault = buildTradeOpData(sig, tf4hData, makePineConfig(), { entryPrice: 100 });
+    expect(offByDefault.tp2_cap_disabled).toBe(false);
+    expect(offByDefault.tp2).toBe(112); // tp2 still computed/stored even when the cap would be disabled
+
+    const explicitlyOn = buildTradeOpData(sig, tf4hData, makePineConfig({ disableTp2CapEnabled: true }), { entryPrice: 100 });
+    expect(explicitlyOn.tp2_cap_disabled).toBe(true);
+    expect(explicitlyOn.tp2).toBe(112); // same value — only the exit loops stop checking it
+  });
+
   // Codex review (PR #128, P1) — tf4hData.tier.timeStopBars is always
   // calibrated in 4h bars. The exit loop's SIGNAL_TF_MS[op.signal_timeframe]
   // lookup reads this raw count against whatever unit signal_timeframe
@@ -1094,6 +1110,20 @@ describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTI
     expect(stored.exit_price).toBe(106); // tp2
   });
 
+  // docs/known-risks.md item 114 — same candle/price as the test above
+  // (would hit tp2), but tp2_cap_disabled:true (frozen at creation) makes
+  // the runner ignore it and keep trailing instead, matching the real Pine
+  // (no fixed second target after TP1).
+  it('does NOT hit TP2 when tp2_cap_disabled is true — the runner keeps trailing instead', async () => {
+    backend._seed('TradeOperation', makeRunner({ tp2_cap_disabled: true }));
+    const results = { '4h': makeTfData({ lastCandleHigh: 107, lastCandleLow: 101, lastClose: 106, atrValue: 2 }) };
+    await persistScanResults(makeScanResult({ results, pineConfig: makePineConfig({ trailAtrMult: 2.0 }) }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('RUNNER_ACTIVE'); // not TP2_HIT
+    expect(stored.tp2_hit).toBe(false);
+    expect(stored.current_stop).toBe(102); // trailing still advances normally: close(106) - atr(2)*mult(2.0)
+  });
+
   it('STOP_HIT (runner) checks the STORED stop, not a same-candle trailing advance (P0-d)', async () => {
     backend._seed('TradeOperation', makeRunner({ current_stop: 100 }));
     const results = { '4h': makeTfData({ lastCandleHigh: 105, lastCandleLow: 99, lastClose: 104 }) };
@@ -1223,6 +1253,18 @@ describe('priceCheckActiveOps — price-based transitions', () => {
     await priceCheckActiveOps();
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('TP2_HIT');
+  });
+
+  // docs/known-risks.md item 114 — same price as the test above (crosses
+  // tp2), but tp2_cap_disabled:true makes this loop ignore it too (both
+  // exit loops must agree, same lesson as item 39.1).
+  it('does NOT hit TP2 on live price when tp2_cap_disabled is true', async () => {
+    backend._seed('TradeOperation', makeOp({ status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100, tp2_cap_disabled: true }));
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(107);
+    await priceCheckActiveOps();
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('RUNNER_ACTIVE');
+    expect(stored.tp2_hit).toBe(false);
   });
 
   it('never re-processes a terminal op — it is excluded by the server-side status filter', async () => {

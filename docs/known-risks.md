@@ -12800,3 +12800,183 @@ ora (decisão do usuário, ainda não tomada).
 `backtest-correlation-check.mjs` rodado nos 5 relatórios reais.
 `backtest-trial-registry.mjs` registrado nas 3 famílias novas. Nenhuma
 mudança de código nesta rodada — só diagnóstico e registro.
+
+## 114. `tp2R`/`TP2_HIT` não existe no Pine real do usuário — é invenção do Sentinel, nunca registrada como divergência (2026-08-21)
+
+### Contexto
+
+Usuário pediu para investigar por que os trades não estavam acontecendo (ao
+vivo e em backtest) e, dado o histórico de 113 itens sem edge estatístico
+demonstrado, escolheu como próximo passo testar `tp1R`/`tp2R`/`trailAtrMult`
+(item 46/109/112 — únicos parâmetros de saída nunca tocados em nenhum
+backtest). Antes de desenhar o experimento, fui checar a fonte primária do
+comportamento real (`src/pages/PineScript.jsx`, prática já estabelecida em
+`.claude/rules/pine-parity.md` para qualquer parâmetro cujo comportamento
+exato não esteja óbvio só pelo nome) — e `tp2R` não existe lá.
+
+### Achado
+
+- O Pine real (`PineScript.jsx:139-141`) só declara 3 inputs de risco/saída:
+  `tp1R` (1.5), `tp1QtyPercent` (50%), `trailAtrMult` (2.0). Não há `tp2R`
+  nem qualquer segundo alvo de preço fixo.
+- O runner real (`PineScript.jsx:607/617`, `strategy.exit("BUY RUNNER",
+  from_entry="BUY", stop=longRunnerStop, ...)`) só tem `stop=` —
+  **sem `limit=`**. Depois do TP1 parcial, a posição remanescente do
+  usuário no TradingView corre indefinidamente até o trailing stop (ATR ou
+  Range Filter Exit) fechar — nunca há um segundo alvo de preço.
+- `scanner.js:336/930` calcula `tp2R = (pineConfig.tp1R ?? 1.5) * 2` e trata
+  isso como alvo real: `TP2_HIT` é estado TERMINAL da máquina de estados
+  (`opTransition.js`), contado como vitória em `tradeMetrics.js` e no
+  diagnóstico de todo backtest — um mecanismo inteiro (estado, notificação
+  Telegram `notifyTP2Hit`, contagem em `report.overall`) sem contrapartida
+  na estratégia que o usuário efetivamente opera no TradingView.
+- Diferente de outras divergências already conscientes deste projeto (stop
+  estrutural da SMC, item 24; zona PD, item 38 — ambas com nota explícita
+  "divergência deliberada" no código/doc), esta nunca foi documentada como
+  tal — `docs/known-risks.md` linha 751 chega a dizer "tp2R do Pine", o que
+  não é exato.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: no único run com operações reais (item 108, 98 operações),
+`TP2_HIT` fecha uma fração real da amostra (Bloco 2 do roadmap mede 18/344,
+5,2%, num run anterior). Cada uma dessas é uma operação em que o Sentinel
+reporta um resultado (fechamento em 2×tp1R fixo) diferente do que o usuário
+realmente teria no TradingView — lá a posição continuaria correndo até o
+trailing stop.
+
+**Hipótese, não medida nesta rodada**: como o corte só acontece quando o
+preço já foi favorável o bastante para bater 2R, capar ali tende a
+subestimar operações vencedoras — mesma classe de efeito que o item 46 já
+mediu (só que invertido: lá o runner virar 100%-no-TP1 fecha CEDO demais e
+custou -0,040R/op; aqui a hipótese é que fechar em 2R fixo pode cortar
+ganhos que o Pine real deixaria correr mais).
+
+**Recomendação**: antes de "testar tp2R" como se fosse um parâmetro de
+estratégia comum, é preciso decidir o que ele deveria SER:
+(a) manter TP2 como decisão de produto LOCAL do Sentinel, divergindo do
+Pine de propósito (registrar como tal, mesmo padrão do item 24) — e aí sim
+testar o multiplicador (hoje fixo em 2×, sem mecanismo de override); ou
+(b) remover o TP2 sintético e deixar o runner correr só com trailing, fiel
+ao Pine real — mais alinhado com o que o usuário efetivamente opera, mas é
+mudança estrutural na máquina de estados, não calibração de parâmetro.
+
+### Verificação
+
+Achado por leitura direta de `src/pages/PineScript.jsx` (fonte primária)
+contra `src/lib/scanner.js` (linhas 336/381/930/949) e busca por `TP2` em
+todo `known-risks.md` (nenhuma menção prévia a esta divergência). Nenhuma
+mudança de código nesta rodada — só diagnóstico, decisão (a) vs (b) fica
+com o usuário antes de qualquer implementação.
+
+### Pesquisa de comunidade (antes de desenhar o mecanismo)
+
+Usuário escolheu a opção (b) — testar remover o TP2 sintético. Pesquisa
+feita antes de implementar (`.claude/rules/operating-principles.md`):
+
+- "Parcial no 1º alvo + trailing puro no resto (sem 2º alvo fixo)" é
+  descrito como o desenho híbrido com melhor Sharpe/variância entre os
+  três padrões comparados (alvo fixo puro, trailing puro, híbrido) —
+  exatamente o que o Pine real do usuário já faz
+  ([vizdumb.com](https://vizdumb.com/trade-management-playbook-partials-trailing-runners/),
+  [Optimus Futures](https://optimusfutures.com/blog/the-pros-cons-fixed-targets-vs-trailing-stop-technique/)).
+  Não há vencedor universal (trailing tende a ganhar em tendência forte,
+  alvo fixo em mercado que estagna num nível) — reforça que isto é uma
+  hipótese a testar, não uma correção óbvia.
+- Multiplicador de ATR trailing em swing: faixa típica 2,0×–3,0×, 2,5×
+  citado como baseline mais testado
+  ([StrategyQuant](https://strategyquant.com/blog/the-atr-trailing-stops-indicator-when-and-how-to-use-it-for-effective-trading/),
+  [Volatility Box](https://volatilitybox.com/research/volatility-adjusted-stop-losses/))
+  — o `trailAtrMult=2.0` atual já está dentro da faixa comum, na ponta
+  conservadora.
+- Otimizar o multiplicador de ATR em cima de pouco dado é overfitting já
+  documentado pela comunidade
+  ([Medium/FMZQuant](https://medium.com/@FMZQuant/atr-dynamic-trailing-stop-loss-quantitative-trading-strategy-3edb43e21e0c))
+  — a pesquisa não mudou a disciplina que este projeto já segue (um
+  parâmetro por vez, critério travado antes do número), só confirmou que
+  ela é a prática correta aqui também.
+
+### Mecanismo construído — `pineConfig.disableTp2CapEnabled` (backtest-only)
+
+- `scripts/backtestPineConfig.js`: `disableTp2CapEnabled: false` — `false`/
+  ausente é byte-idêntico a hoje. **INTENTIONALLY NOT mirrored** em
+  `src/lib/pineParser.js`/`scripts/adminPineConfig.js` (mesmo motivo dos
+  outros flags de mudança de ESTRATÉGIA DE SAÍDA — chave viva em
+  `strategyConfig/current` seria toggle de produção sem code-review).
+  Tripwire: `src/lib/disableTp2CapTripwire.test.js`.
+- `buildTradeOpData` (cascata RF) e `buildSmcTradeOpData` (cascata SMC),
+  `src/lib/scanner.js`: gravam `tp2_cap_disabled: !!pineConfig.
+  disableTp2CapEnabled` na CRIAÇÃO da operação — mesmo contrato de
+  `runnerEnabled`/`preTp1StopProtectionEnabled` (virar o flag no meio nunca
+  muda uma posição já viva). `tp2`/`tp2_hit` continuam calculados e
+  gravados normalmente mesmo com o flag ligado (auditoria/exibição) — só
+  os dois loops de saída param de checar contra eles.
+- `persistScanResults` (branch pós-TP1) e `priceCheckActiveOpsInner`: o
+  teste de `tp2Touched`/cruzamento de `tp2` agora é `!op.tp2_cap_disabled
+  && (...)` — com o flag ligado, o runner só encerra por
+  `STOP_HIT`/`INVALIDATED`/`CLOSED` (Time Stop/Chop Exit), igual ao Pine
+  real (sem 2º alvo fixo).
+- Schema (`docs/schema-reference/TradeOperation.jsonc`): campo novo
+  `tp2_cap_disabled` (boolean, default `false`) documentado ao lado de
+  `tp2_hit`.
+- 6 testes novos em `scannerStateMachine.test.js` (stamping default/
+  explícito on; candle-based não fecha em TP2 quando desligado, trailing
+  continua normalmente; price-check tick-based idem) + 3 no tripwire
+  dedicado. `npm run lint && npm test -- --run && npm run build` limpos
+  (1064 testes, 0 regressão) + os 3 alvos esbuild que empacotam
+  `scanner.js` (`build-scan.mjs`/`build-scan-shadow.mjs`/
+  `build-backtest.mjs`) compilam limpos.
+
+### Plano de 3 rodadas — critério travado ANTES do número (disciplina do item 88/109)
+
+Usuário pediu testar `tp1R`/`tp2R`/`trailAtrMult` em 3 rodadas separadas
+(nunca variar 2 parâmetros no mesmo run — mesma disciplina do Bloco 1 "um
+de cada vez"). Símbolos: os 7 padrão do projeto
+(`BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT` —
+`docs/claude/backtest-usage.md`), janela idêntica à do item 108/109
+(`2025-08-20T00:00:00Z`→`2026-08-20T00:00:00Z`, 12 meses) para
+comparabilidade direta com o relatório de 98 operações já existente
+(baseline sem overrides = já é o "gate off" de produção hoje — o CLI do
+backtest só liga `smc_confirm_4h15m` com `--smc-confirm` explícito, nunca
+por padrão). Não posso disparar `workflow_dispatch` por API (403,
+limitação já vista no item 109) — comandos abaixo para o usuário rodar via
+**Actions → "Backtest histórico (Sentinel Signals)" → Run workflow**.
+
+**Rodada 1 (agora) — TP2 sintético**: `{}` (baseline, igual ao item 108) vs
+`{"disableTp2CapEnabled": true}`. Critério: comparar `netExpectancyR`,
+`profitFactor`, `equityCurve.maxDrawdownPct` e rodar
+`backtest-correlation-check.mjs` nos dois. Família do ledger:
+`tp2-cap-disabled-hypothesis`.
+
+**Rodada 2 (depois, só após analisar a 1ª) — `tp1R`**: baseline (`tp1R:
+1.5`, rótulo do próprio Pine "equilíbrio") vs `{"tp1R": 1.0}` vs
+`{"tp1R": 2.0}` — 2 trials contra o mesmo baseline, nunca os 2 juntos.
+Família: `tp1r-sensitivity-hypothesis`.
+
+**Rodada 3 (por último) — `trailAtrMult`**: baseline (`2.0`) vs
+`{"trailAtrMult": 2.5}` vs `{"trailAtrMult": 3.0}` (faixa típica de
+comunidade, seção acima). Família: `trail-atr-mult-sensitivity-hypothesis`.
+
+Cada rodada: registrar no ledger (`backtest-trial-registry.mjs`), aplicar
+`backtest-correlation-check.mjs` (não só o `conclusive` ingênuo do
+relatório — lição repetida dos itens 97-99/103/104/108/110), e só
+prosseguir pra próxima rodada depois de registrar o resultado aqui.
+**Nenhum destes flags vai para produção só por sair positivo em 1
+relatório** — mesma régua estatística do resto do projeto (item 109: poder
+insuficiente é a limitação real, não escolha de parâmetro).
+
+### Verificação
+
+Ver "Mecanismo construído" acima. Comandos exatos da Rodada 1, prontos
+para o usuário copiar em **Run workflow**:
+
+```
+Símbolos: BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT
+De: 2025-08-20T00:00:00Z   Até: 2026-08-20T00:00:00Z
+
+Run A — trial_label: tp2-cap-baseline
+  Overrides do pineConfig em JSON: (deixe em branco)
+
+Run B — trial_label: tp2-cap-disabled
+  Overrides do pineConfig em JSON: {"disableTp2CapEnabled": true}
+```

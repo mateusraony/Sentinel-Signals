@@ -257,6 +257,29 @@ const DEFAULTS = {
   // src/lib/pineParser.js/scripts/adminPineConfig.js. Ver tripwire test em
   // src/lib/rsiOnlyGateTripwire.test.js.
   rsiOnlyGateEnabled: false,
+  // docs/known-risks.md item 114 — o Pine real do usuário (src/pages/
+  // PineScript.jsx) NÃO tem TP2: o runner pós-TP1 só tem `stop=` (trailing),
+  // sem `limit=` — corre até o trailing/RF-exit fechar, sem segundo alvo
+  // fixo. `TP2_HIT` (fechar em tp1R×2, hardcoded em buildTradeOpData/
+  // buildSmcTradeOpData) é invenção só do Sentinel, nunca antes registrada
+  // como divergência deliberada (diferente do stop estrutural SMC, item 24,
+  // que tem essa nota explícita). Pesquisa de comunidade (item 114) aponta
+  // "parcial no 1º alvo + trailing puro no resto, sem 2º alvo fixo" como o
+  // desenho híbrido mais bem avaliado — exatamente o que o Pine real já faz.
+  // Quando `true`, a operação nasce com `tp2_cap_disabled: true` (congelado
+  // na CRIAÇÃO, mesmo contrato de runnerEnabled/preTp1StopProtectionEnabled
+  // — virar o flag no meio nunca muda uma posição já viva): os dois loops de
+  // saída (persistScanResults/priceCheckActiveOpsInner) passam a ignorar
+  // `op.tp2` e o runner só encerra por STOP_HIT/INVALIDATED/CLOSED (Time
+  // Stop/Chop Exit), igual ao Pine. `tp2`/`tp2_hit` continuam gravados
+  // (mesmo cálculo de sempre) só para exibição/auditoria — nunca checados
+  // como saída quando o flag está ligado. Master flag OFF por padrão
+  // (byte-idêntico a hoje), backtest-only (mesmo motivo dos outros acima —
+  // mudança de ESTRATÉGIA de saída exige A/B real antes de cogitar
+  // produção). INTENTIONALLY NOT mirrored em src/lib/pineParser.js/
+  // scripts/adminPineConfig.js. Ver tripwire test em
+  // src/lib/disableTp2CapTripwire.test.js.
+  disableTp2CapEnabled: false,
 };
 
 let overrides = {};

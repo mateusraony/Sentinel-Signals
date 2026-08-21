@@ -419,6 +419,11 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
     tp2,
     tp1_hit: false,
     tp2_hit: false,
+    // docs/known-risks.md item 114 — congelado na CRIAÇÃO, mesmo contrato de
+    // runnerEnabled/preTp1StopProtectionEnabled. `tp2` continua gravado
+    // (auditoria/exibição) mesmo com o flag ligado; só os loops de saída
+    // param de checar contra ele.
+    tp2_cap_disabled: !!pineConfig.disableTp2CapEnabled,
     partial_percent: partialPct,
     runner_percent: 100 - partialPct,
     exit_mode: 'HYBRID_RF_ATR',
@@ -987,6 +992,8 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     tp2,
     tp1_hit: false,
     tp2_hit: false,
+    // docs/known-risks.md item 114 — mesmo contrato da cascata RF acima.
+    tp2_cap_disabled: !!pineConfig.disableTp2CapEnabled,
     partial_percent: partialPct,
     runner_percent: 100 - partialPct,
     exit_mode: 'HYBRID_RF_ATR',
@@ -3639,7 +3646,11 @@ export async function persistScanResults(scanResult) {
         && (isBuy ? stopCheckPrice <= op.current_stop : stopCheckPrice >= op.current_stop);
       // See the pre-TP1 branch above for why this is computed alongside
       // runnerStopHit instead of only inline in the tp2 else-if.
-      const tp2Touched = candleUsable
+      // docs/known-risks.md item 114 — tp2_cap_disabled (frozen at creation,
+      // pineConfig.disableTp2CapEnabled) makes this always false: the runner
+      // then only ever exits via STOP_HIT/INVALIDATED/CLOSED below, matching
+      // the real Pine (no fixed second target, trailing-only after TP1).
+      const tp2Touched = !op.tp2_cap_disabled && candleUsable
         && ((isBuy && tpCheckPrice >= op.tp2) || (!isBuy && tpCheckPrice <= op.tp2));
       const { ambiguous: stopTp2Ambiguous } = resolveCandleExit({ stopTouched: runnerStopHit, targetTouched: tp2Touched });
       if (runnerStopHit) {
@@ -4014,7 +4025,7 @@ async function priceCheckActiveOpsInner() {
         updatePayload.stop_hit_price = price;
         updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
-      } else if ((isBuy && price >= op.tp2) || (!isBuy && price <= op.tp2)) {
+      } else if (!op.tp2_cap_disabled && ((isBuy && price >= op.tp2) || (!isBuy && price <= op.tp2))) {
         tp2Hit = true; newStatus = 'TP2_HIT';
         updatePayload.tp2_hit_at = nowIso;
         updatePayload.tp2_hit_price = price;
