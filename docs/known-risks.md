@@ -12724,3 +12724,23 @@ enviado a provedor externo — `sentinel-council-review`), cada um citando
 arquivo:linha, com pelo menos 3 refutações/reforços reais entre papéis
 documentados na síntese final. Nenhuma mudança de código nesta rodada —
 só análise e registro.
+
+### Addendum — usuário decidiu testar o Bloco 1 mesmo assim (2026-08-20)
+
+Correção primeiro: eu tinha repassado "15 das 17 flags nunca testadas" do
+relatório do Arquiteto sem filtrar — impreciso. Recontagem real: 7 das 17
+JÁ foram testadas com backtest real e voltaram sem significância
+(`buyRegimeFilterEnabled`, `rfStructuralStopEnabled`,
+`preTp1StopProtectionEnabled`, `hierarchicalCascadesEnabled`,
+`allowedSide`, `timeStopBarsOverride`, `arbInvalidateOnOppositeSameTf`).
+As genuinamente nunca testadas com backtest real são só 6: os 4 do Bloco 1
+(`retestEnabled`, `displacementEnabled`, `smcTierEnabled`,
+`smcObFvgEnabled`) + `candlePatternEnabled` + `skip15mConfirmationEnabled`.
+
+Apresentei a escolha ao usuário: manter a disciplina da recomendação do
+item 73/112 (não abrir Bloco 1 até a base mostrar edge) vs. testar mesmo
+assim, sabendo que o resultado vem com desconfiança extra (base ainda não
+validada). **Usuário escolheu testar mesmo assim.** Registrado como
+decisão explícita, não como "esquecimento" da recomendação — mantém a
+ressalva de leitura (qualquer melhora aparente pode ser só o ruído que o
+próprio item 73 já preveniu). Configuração dos 6 runs na seção seguinte.
