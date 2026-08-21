@@ -102,6 +102,16 @@
       "type": "boolean",
       "default": false
     },
+    // Frozen at creation from pineConfig.disableTp2CapEnabled (backtest-only,
+    // docs/known-risks.md item 114) — same contract as pre_tp1_stop_protection_enabled
+    // below. When true, both exit loops ignore tp2 entirely: the runner only
+    // ever ends in STOP_HIT/INVALIDATED/CLOSED, matching the real Pine
+    // (no fixed second target after TP1, trailing-only). tp2/tp2_hit are
+    // still computed/stored as usual for display/audit even when this is true.
+    "tp2_cap_disabled": {
+      "type": "boolean",
+      "default": false
+    },
     "tp1_hit_at": {
       "type": "string",
       "description": "ISO timestamp when the scan/price-check PASS DETECTED TP1 was hit (wall clock, can lag the real market moment by up to a scan cadence — or much more after a cron gap). See tp1_hit_real_time for the real market time."
