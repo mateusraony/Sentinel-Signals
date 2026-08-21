@@ -12980,3 +12980,132 @@ Run A — trial_label: tp2-cap-baseline
 Run B — trial_label: tp2-cap-disabled
   Overrides do pineConfig em JSON: {"disableTp2CapEnabled": true}
 ```
+
+## 115. Rodada 1 medida — `disableTp2CapEnabled` não muda nada de estatisticamente detectável, mesmo com o teste pareado mais forte disponível (2026-08-21)
+
+### Contexto
+
+Usuário rodou os 2 runs da Rodada 1 (item 114): mesma janela (2025-08-20→
+2026-08-20), mesmos 7 símbolos, `tp2-cap-baseline`
+(`disableTp2CapEnabled` ausente) vs. `tp2-cap-disabled`
+(`disableTp2CapEnabled: true`).
+
+### Resultado — número de topo (cada relatório isolado)
+
+| | `tp2-cap-baseline` | `tp2-cap-disabled` | Δ |
+|---|---|---|---|
+| N | 99 | 99 | — |
+| winRate | 48,5% | 48,5% | — |
+| `netExpectancyR` | +0,0798 | +0,0951 | +0,0153 |
+| `grossExpectancyR` | +0,1324 | +0,1487 | +0,0163 |
+| `profitFactor` | 1,013 | 1,025 | +0,012 |
+| `equityCurve.totalReturnPct`/`cagrPct` | +7,44% / 7,99%a.a. | +9,02% / 9,68%a.a. | +1,58pp |
+| `equityCurve.maxDrawdownPct` | 11,36% | 11,94% | +0,58pp |
+| IC95 (naive) | [-0,159; 0,319] | [-0,153; 0,343] | cruza zero nos dois |
+| `conclusive` | não | não | — |
+
+Ponto estimado melhora nas duas rodadas do ranking (esperado — o baseline
+NUNCA fecha melhor que o disabled: o TP2 fixo só pode ANTECIPAR uma saída
+que o trailing, sem cap, deixaria correr mais ou menos). Cada relatório
+isolado segue inconclusivo por si (mesma régua de sempre) — mas isso, por
+si só, não responde "o efeito do FLAG é real?", porque os dois runs têm
+99 operações CADA UM e comparar dois IC95 independentes descarta toda a
+informação de que são **as mesmas entradas**, mudando só a saída de uma
+fração pequena delas.
+
+### O teste que realmente responde a pergunta — contrafactual pareado por ID de operação (mesmo método dos itens 103/104/105)
+
+Como os dois relatórios rodam a MESMA janela/carteira e o flag só afeta a
+SAÍDA (nunca a entrada), o `id` determinístico (`trade_<symbol>_<tf>_
+<side>_range_filter_<candle>`) casa exatamente as mesmas 99 operações nos
+dois relatórios — permitindo comparar o R de CADA operação individual
+entre os dois cenários, em vez de duas médias populacionais
+independentes.
+
+**Achado 1 — só 9 das 99 operações realmente mudaram de resultado.** As
+outras 90 são byte-idênticas nos dois relatórios (nunca chegaram perto de
+`tp2`, então o flag nunca entrou em jogo). Isso já é o esperado pelo
+desenho do mecanismo (item 114): só quem bateria TP2 é afetado.
+
+**Achado 2 — nas 9 que mudaram, todas eram `TP2_HIT` no baseline e viraram
+`STOP_HIT` no `disabled`** (o runner sem cap corre até o trailing pegar,
+nunca até um "TP3" melhor — não existe teto nenhum além do trailing).
+Dessas 9, **4 melhoraram** (deixar correr rendeu mais que o 2R fixo — até
++1,36R num caso, BTCUSDT SELL 2026-01-29) e **5 pioraram** (o trailing
+devolveu parte do lucro antes de fechar — até -0,67R, PAXGUSDT SELL
+2025-12-29). Nenhuma direção domina.
+
+**Achado 3 — diferença pareada, testada com `clusterSignFlipTest`
+(a mesma ferramenta dos itens 103/104, o teste correto pra G baixo, válido
+pra qualquer G):**
+
+| | |
+|---|---|
+| N pareado | 99 (90 com diferença exatamente 0, 9 com diferença real) |
+| Média da diferença pareada (`disabled - baseline`) | **+0,0153R** — bate com a diferença dos `netExpectancyR` dos dois relatórios, confirmando que a decomposição está certa |
+| G (clusters de operações sobrepostas, timing do baseline) | 28 |
+| `clusterSignFlipTest` p-valor | **0,688** — não é "quase lá", é a cara de ruído puro |
+| Média só entre as 9 operações afetadas | +0,168R (4 melhoram, 5 pioram) |
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: o teste pareado — mais forte que comparar dois IC95
+independentes, porque isola exatamente o subconjunto de 9 operações onde
+o flag fez diferença e usa o método de significância correto pra amostra
+pequena — não mostra efeito detectável (p=0,688). A melhora de ponto
+(+0,0153R líquido no agregado) é inteiramente consistente com o que 9
+sorteios de moeda produziriam por acaso.
+
+**Hipótese**: a pesquisa de comunidade (item 114) que motivou este teste
+("parcial + trailing puro" como desenho superior) pode estar certa em
+geral, mas n=9 operações realmente afetadas é ordens de grandeza abaixo
+do necessário pra distinguir isso de ruído — a mesma parede estatística do
+item 109 (poder insuficiente é a limitação real, não a escolha de
+mecanismo). Não confirmado nem refutado.
+
+**Recomendação**: **não promover `disableTp2CapEnabled` pra produção** com
+este dado — mesma régua do resto do projeto (item 73/109/112). Isto é
+trial #1 de uma família nova (`tp2-cap-disabled-hypothesis`), registrada
+no ledger com N=2 (os 2 relatórios desta rodada, não 2 hipóteses
+diferentes) — Bonferroni não muda o veredito, os dois IC95 corrigidos
+continuam cruzando zero. Precisaria de MUITAS mais operações batendo TP2
+no baseline (a fatia realmente afetada) pra este teste ter chance de
+concluir algo — não uma repetição do mesmo teste no mesmo tipo de amostra.
+
+### Verificação
+
+`node scripts/backtest-correlation-check.mjs --report <cada arquivo>`
+rodado nos dois relatórios isoladamente (IC95/DEFF/sign-flip de cada um
+sozinho, seção "número de topo" acima). Contrafactual pareado: script ad
+hoc reaproveitando as funções JÁ EXISTENTES do próprio
+`backtest-correlation-check.mjs` (`buildTradeIntervals`,
+`findOverlapClusters`, `clusterSignFlipTest` — nenhuma reimplementação,
+"reuse antes de criar") aplicadas à série de diferenças pareadas por `id`
+em vez de aos valores brutos de um relatório só. Os 2 relatórios
+registrados no ledger (`docs/backtest-trial-registry.json`, família
+`tp2-cap-disabled-hypothesis`, N=2) via `backtest-trial-registry.mjs`.
+Nenhuma mudança de código nesta rodada — só diagnóstico; `disableTp2CapEnabled`
+permanece `false` por padrão (byte-idêntico a hoje).
+
+### Próximo passo
+
+Rodada 2 (`tp1R`, já declarada no item 114): baseline (`tp1R: 1.5`) vs.
+`{"tp1R": 1.0}` vs. `{"tp1R": 2.0}` — 2 trials contra o mesmo baseline,
+mesma janela/carteira, nunca os 2 juntos no mesmo run. Comandos prontos
+para o usuário disparar via **Actions → "Backtest histórico" → Run
+workflow**:
+
+```
+Símbolos: BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT
+De: 2025-08-20T00:00:00Z   Até: 2026-08-20T00:00:00Z
+
+Run C — trial_label: tp1r-1.0
+  Overrides do pineConfig em JSON: {"tp1R": 1.0}
+
+Run D — trial_label: tp1r-2.0
+  Overrides do pineConfig em JSON: {"tp1R": 2.0}
+```
+
+(O `tp2-cap-baseline` desta rodada já serve de baseline pra Rodada 2 também
+— mesmo `tp1R: 1.5` implícito, mesma janela/carteira — não precisa rodar
+de novo.)
