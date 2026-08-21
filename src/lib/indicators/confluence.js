@@ -93,9 +93,16 @@ export function analyzeAlignment(states) {
  *   mechanism (buyFollowThrough) feeding both this score and the entry gate in
  *   scanner.js. Optional/null keeps every existing caller's behavior identical
  *   (at confirmBars=1 the two paths are mathematically equivalent anyway).
+ * @param {boolean} [rsiOnlyGateEnabled=false] - docs/known-risks.md item 111
+ *   (backtest-only, pineConfig.rsiOnlyGateEnabled). When true, the entry gate
+ *   (`passed`) ignores score/minScore entirely and requires ONLY the RSI 50
+ *   crossover in the signal's direction — score/strength/priority keep being
+ *   computed and returned unchanged (still useful for display/Telegram),
+ *   only `passed` (the actual gate scanner.js checks) is overridden. Default
+ *   false = byte-identical to today's score-gate behavior.
  * @returns {Object} Signal strength, priority, score, reasons
  */
-export function calculateSignalStrength(rfResult, rsiResult, macdResult, emaResult, alignmentResult, timeframe, volumeData = null, minScore = 75, confirmed = null) {
+export function calculateSignalStrength(rfResult, rsiResult, macdResult, emaResult, alignmentResult, timeframe, volumeData = null, minScore = 75, confirmed = null, rsiOnlyGateEnabled = false) {
   const isBuy  = confirmed ? confirmed.confirmedSignal === 'BUY'  : rfResult.signal === 'BUY';
   const isSell = confirmed ? confirmed.confirmedSignal === 'SELL' : rfResult.signal === 'SELL';
   const reasons = [];
@@ -137,7 +144,12 @@ export function calculateSignalStrength(rfResult, rsiResult, macdResult, emaResu
   if (isSell && rfResult.direction === -1) { score += 10; reasons.push('Preço abaixo do filtro (+10)'); }
 
   // Classify
-  const passed = score >= minScore;
+  // item 111 override: bypasses the weighted score entirely for the gate
+  // decision — RSI's own 50-crossover is the ONLY thing that decides
+  // passed. isBuy/isSell false (no confirmed signal) still fails closed.
+  const passed = rsiOnlyGateEnabled
+    ? (isBuy ? rsiResult.crossedBull50 : isSell ? rsiResult.crossedBear50 : false)
+    : score >= minScore;
   let strength, priority;
   if (score >= 85) {
     strength = 'strong'; priority = 'high';

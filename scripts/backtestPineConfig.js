@@ -242,6 +242,21 @@ const DEFAULTS = {
   // outros acima) — ver tripwire test em
   // src/lib/rfStructuralStopTripwire.test.js.
   rfStructuralStopEnabled: false,
+  // docs/known-risks.md item 111 — bypassa o score ponderado (MACD/EMA/RSI/
+  // volume/RF/estrutura, min. 75) inteiro: o gate de entrada passa a exigir
+  // SÓ o cruzamento de RSI na direção do sinal (calculateSignalStrength,
+  // src/lib/indicators/confluence.js). Motivação: mineração do item 110
+  // (1.893 sinais brutos pooled, simulador de operação-fantasma item 69)
+  // achou RSI como o único componente que se comporta como desenhado
+  // (concorda = melhor, discorda = pior — os outros 3 medidos são planos ou
+  // invertidos) e o ponto estimado mais alto entre as fatias testadas
+  // (+0,049R, NÃO significativo — amostra insuficiente, é indício, não
+  // prova). Master flag OFF por padrão, backtest-only (mesmo motivo dos
+  // outros acima — chave viva em strategyConfig/current seria toggle de
+  // produção sem code-review). INTENTIONALLY NOT mirrored em
+  // src/lib/pineParser.js/scripts/adminPineConfig.js. Ver tripwire test em
+  // src/lib/rsiOnlyGateTripwire.test.js.
+  rsiOnlyGateEnabled: false,
 };
 
 let overrides = {};

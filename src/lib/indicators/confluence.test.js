@@ -12,13 +12,14 @@ function baseArgs(overrides = {}) {
     volumeData: null,
     minScore: 75,
     confirmed: null,
+    rsiOnlyGateEnabled: false,
     ...overrides,
   };
 }
 
 function run(o) {
   const a = baseArgs(o);
-  return calculateSignalStrength(a.rfResult, a.rsiResult, a.macdResult, a.emaResult, a.alignmentResult, a.timeframe, a.volumeData, a.minScore, a.confirmed);
+  return calculateSignalStrength(a.rfResult, a.rsiResult, a.macdResult, a.emaResult, a.alignmentResult, a.timeframe, a.volumeData, a.minScore, a.confirmed, a.rsiOnlyGateEnabled);
 }
 
 // confirmBars feature: calculateSignalStrength's optional 9th param
@@ -70,5 +71,64 @@ describe('calculateSignalStrength — confirmBars (confirmed presente)', () => {
     });
     expect(r.reasons).not.toContain('Follow-through confirmado (+25)');
     expect(r.reasons).not.toContain('Preço acima do filtro (+10)');
+  });
+});
+
+// docs/known-risks.md item 111 — rsiOnlyGateEnabled substitui o gate de
+// score pelo cruzamento de RSI sozinho. `score`/`strength`/`priority`
+// continuam calculados normalmente (display/Telegram) — só `passed` muda.
+describe('calculateSignalStrength — rsiOnlyGateEnabled (item 111, backtest-only)', () => {
+  it('default (false) é byte-idêntico ao gate de score de sempre', () => {
+    const r = run({ rsiResult: { crossedBull50: false, crossedBear50: false }, minScore: 0 });
+    // score>=minScore(0) passaria pelo gate de score — mas sem
+    // rsiOnlyGateEnabled o resultado não muda o comportamento default,
+    // continua usando `passed = score >= minScore`.
+    expect(r.passed).toBe(true);
+  });
+
+  it('RSI concorda (BUY) com score baixo (reprovaria no gate normal): passa', () => {
+    const r = run({
+      rfResult: { signal: 'BUY', direction: -1 }, // nega "Preço acima do filtro (+10)"
+      macdResult: { histogram: -1 }, // nega MACD (+20)
+      emaResult: { trend: 'bearish' }, // nega EMA (+20)
+      rsiResult: { crossedBull50: true, crossedBear50: false },
+      minScore: 75,
+      rsiOnlyGateEnabled: true,
+    });
+    expect(r.score).toBeLessThan(75); // confirma que reprovaria no gate normal
+    expect(r.passed).toBe(true); // mas passa — só RSI decide
+  });
+
+  it('RSI discorda (BUY) com score alto (passaria no gate normal): reprova', () => {
+    const r = run({
+      rfResult: { signal: 'BUY', direction: 1 },
+      macdResult: { histogram: 1 },
+      emaResult: { trend: 'bullish' },
+      volumeData: { current: 10, ma: 5 },
+      rsiResult: { crossedBull50: false, crossedBear50: false },
+      minScore: 75,
+      rsiOnlyGateEnabled: true,
+    });
+    expect(r.score).toBeGreaterThanOrEqual(75); // confirma que passaria no gate normal
+    expect(r.passed).toBe(false); // mas reprova — RSI não concordou
+  });
+
+  it('SELL usa crossedBear50, não crossedBull50', () => {
+    const r = run({
+      rfResult: { signal: 'SELL', direction: -1 },
+      confirmed: { confirmedSignal: 'SELL', buyFollowThrough: false, sellFollowThrough: true, freshBuy: false, freshSell: true },
+      rsiResult: { crossedBull50: false, crossedBear50: true },
+      rsiOnlyGateEnabled: true,
+    });
+    expect(r.passed).toBe(true);
+  });
+
+  it('sem BUY nem SELL confirmado, falha fechado mesmo com rsiOnlyGateEnabled', () => {
+    const r = run({
+      rfResult: { signal: 'NONE', direction: 0 },
+      rsiResult: { crossedBull50: true, crossedBear50: true },
+      rsiOnlyGateEnabled: true,
+    });
+    expect(r.passed).toBe(false);
   });
 });
