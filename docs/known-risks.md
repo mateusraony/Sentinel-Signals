@@ -12744,3 +12744,59 @@ validada). **Usuário escolheu testar mesmo assim.** Registrado como
 decisão explícita, não como "esquecimento" da recomendação — mantém a
 ressalva de leitura (qualquer melhora aparente pode ser só o ruído que o
 próprio item 73 já preveniu). Configuração dos 6 runs na seção seguinte.
+
+## 113. Resultados reais — RSI sozinho, sem score, candle pattern; 4 runs SMC estouraram o timeout (2026-08-20)
+
+### Resultado — item 111 (RSI sozinho / sem score), mesmos Lote A/B do item 110
+
+| | n | `netExpectancyR` | profitFactor | Significativo? |
+|---|---|---|---|---|
+| Baseline Lote A (item 110) | 273 | -0,0036R | — | não |
+| `rsi-only-gate` Lote A | 222 | **+0,0083R** | 1,059 | não |
+| Baseline Lote B (item 110) | 317 | -0,1362R (naive "conclusivo" negativo) | — | — |
+| `rsi-only-gate` Lote B | 251 | **-0,0149R** | 1,023 | não |
+| `no-score-gate` Lote A | 460 | -0,0512R | 0,932 | não |
+| `no-score-gate` Lote B | 535 | -0,0500R | 0,949 | não |
+
+Registrado em famílias próprias no ledger (`rsi-only-gate-hypothesis`,
+`no-score-gate-hypothesis`, N=2 cada) — Bonferroni não muda nenhum
+veredito, ambos continuam cruzando zero. `backtest-correlation-check.mjs`
+por lote: nenhum sign-flip significativo (RSI-A p=0,909; RSI-B p=0,859;
+sem-score-A p=0,625; sem-score-B p=1,000, G=2).
+
+**Leitura**: RSI sozinho teve o melhor ponto estimado nos dois lotes,
+inclusive trazendo o Lote B (que tinha dado naive-negativo) de volta pra
+perto de zero — mas nenhum resultado é significativo, e a régua do item
+112 continua valendo: isto é **trial #1 de uma família nova**, não
+confirmação do achado de mineração do item 111. Sem-score (RF puro) não
+ajudou — pior que RSI sozinho nos dois lotes. Achado colateral: RSI
+sozinho gerou MENOS operações que o score cheio (222/251 vs 273/317) —
+"cruzar 50" é evento pontual mais raro que "somar 75+ pontos" via
+qualquer combinação dos 6 componentes.
+
+### Resultado — Bloco 1, `candlePatternEnabled` (único dos 4 flags RF que rodou)
+
+Lote A, n=96 (filtro corta bastante volume): `netExpectancyR` -0,2081R,
+profitFactor 0,625, sign-flip p=0,238 (G=21, resolução boa) — não
+significativo, mas é o maior efeito de magnitude (na direção ruim) já
+medido nesta rodada. Registrado em família própria
+(`candle-pattern-hypothesis`, N=1).
+
+### Achado técnico — SMC ligada em 20 símbolos estoura o timeout de 5h50
+
+4 runs falharam por timeout: `smc-baseline`, `displacement-gate`,
+`smc-tier-regime`, `smc-obfvg-weighted` — exatamente os 4 que ligavam a
+cascata SMC (1h→5m) nos mesmos 20 símbolos que rodam sem problema com só
+RF. A SMC adiciona um cálculo de estrutura inteiro (confirmação 5m,
+BOS/CHoCH) por cima do que já roda — o limite de "12 meses × 20 símbolos
+cabe no timeout" registrado no Bloco 0 valia só para RF puro, não se
+aplica com SMC ligada junto. Não re-rodado nesta sessão — precisaria de
+um lote bem menor (~8-10 símbolos) para caber com a SMC ligada, ou aceitar
+não testar `displacementEnabled`/`smcTierEnabled`/`smcObFvgEnabled` por
+ora (decisão do usuário, ainda não tomada).
+
+### Verificação
+
+`backtest-correlation-check.mjs` rodado nos 5 relatórios reais.
+`backtest-trial-registry.mjs` registrado nas 3 famílias novas. Nenhuma
+mudança de código nesta rodada — só diagnóstico e registro.
