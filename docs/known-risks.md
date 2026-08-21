@@ -12623,3 +12623,104 @@ na carteira original de 20). Dois lotes por limite de timeout (item 110):
 scripts/build-backtest.mjs` limpos (1058 testes, 0 regressão). Nenhuma
 mudança de comportamento de produção — os dois flags são backtest-only,
 `false`/ausente = idêntico a hoje.
+
+## 112. Conselho de revisão — "motor novo" ainda não se justifica; achado do RSI é ruído recorrente, não pista (2026-08-20)
+
+### Contexto
+
+Usuário pediu segunda opinião independente (skill `sentinel-council-review`)
+sobre se valia investir em desenhar um motor de entrada estruturalmente
+diferente, dado o histórico de ~111 itens sem nenhum resultado
+estatisticamente conclusivo. 6 papéis rodados (5 subagentes independentes +
+avaliador final que pesou as 5 posições, incluindo verificação própria no
+código): Arquiteto, Trading, Concorrência, Segurança, Testes.
+
+### Veredito
+
+**Não é hora de motor novo — com razão concreta, não "falta dado" genérico**:
+
+1. O gate `smc_confirm_4h15m` (item 108) zerava 100% das entradas da
+   cascata RF em produção até a correção de 2026-08-20 — o motor atual,
+   na config corrigida, ainda não rodou nem um dia em produção real.
+2. A única mudança estrutural já tentada (Bloco 4, cascatas independentes
+   por timeframe) rodou A/B e fechou sem ganho.
+3. 15 das 17 flags de estratégia do próprio motor atual
+   (`scripts/backtestPineConfig.js`) nunca foram formalmente encerradas —
+   o espaço de design atual está longe de esgotado.
+4. Qualquer motor novo com cadência/custo de sinal parecidos herda a
+   mesma parede de poder estatístico do item 109 (~1.643 operações/~17
+   anos pra provar 0,10R) — trocar de motor sem mudar essa equação é
+   trocar de fila, não resolver o problema.
+
+**Correção técnica que o avaliador final encontrou** ao verificar o cálculo
+do papel de Testes: o piso do teste exato de sign-flip é `2/2^G`, não
+`1/2^G` — G=3 (pooled item 110) → piso 0,25 (confere com o p=0,50 medido,
+só 8 combinações possíveis); mas G=5/G=6 (Lotes A/B) → piso real ≈0,063 e
+≈0,031 (não 0,031/0,016 como o papel de Testes calculou primeiro). Não
+muda a conclusão — reforça: o p=0,0625 do Lote B já estava perto do piso
+de resolução do próprio teste, não é "quase significativo" no sentido
+usual.
+
+### O achado do RSI (item 111) — ruído recorrente, achado mais forte do que a suspeita original
+
+O ponto mais importante que o papel de Testes trouxe (incorporado à síntese
+depois de chegar atrasado): o RSI **já foi medido duas vezes antes** pelo
+mesmo mecanismo (`indicatorAttribution`, item 69), com veredito diferente
+cada vez:
+
+| Medição | Universo | RSI concorda | RSI discorda | Direção |
+|---|---|---|---|---|
+| Item 69, run 1 | 7 símbolos | +0,017R | +0,121R | invertida |
+| Item 69, run 2 | 20 símbolos | −0,008R | +0,010R | invertida, encolhida — já rotulado no item 69 como "ruído, não sinal" |
+| Item 111 | 42 símbolos novos | +0,049R | −0,023R | agora "correta" |
+
+3 medições, 3 vereditos diferentes, mesmo indicador, mesmo método. O item
+111 é a 3ª medição, não a 1ª — o "achado" é o retrato de mineração sem
+sinal estável, não uma pista ainda não confirmada. Agravante: a mineração
+que escolheu RSI entre 4 candidatos rodou sobre os MESMOS sinais brutos
+dos mesmos Lote A+B que os 4 backtests de confirmação (já rodando) vão
+usar — seleção de hipótese e confirmação não-independentes na mesma
+amostra, o que nenhuma correção Bonferroni pós-hoc resolve sozinha.
+
+### Tratamento dos 4 backtests do RSI quando voltarem
+
+Registrar como família NOVA no ledger (nome decidido antes de ler
+resultado), nunca como confirmação do item 111. Rodar
+`backtest-correlation-check.mjs` por lote (não só pooled — o piso do
+pooled é matematicamente alto demais pra confirmar nada). Sem réplica num
+3º universo genuinamente novo, é trial #1, não veredito. Medir em
+`netExpectancyR`, nunca bruto (RSI-só muda composição/frequência de
+operações). Não promover `rsiOnlyGateEnabled` pra produção sob nenhuma
+leitura isolada desses 4 relatórios.
+
+### Backlog recomendado (nenhum item é "esperar mais trade")
+
+1. Deixar a correção do item 108 acumular produção real.
+2. Fechar formalmente (testar ou descartar por decisão) as 15 flags
+   dormentes.
+3. Expor o breakdown de funding pré/pós-TP1 já calculado internamente em
+   `tradeMetrics.js` (`countFundingSettlementsByLeg`), nunca exposto no
+   retorno de `calcTradeCost` — testa a ligação item 46↔109 sem backtest
+   novo.
+4. Testar `tp1R`/`tp2R`/`trailAtrMult` — únicos parâmetros de saída nunca
+   tocados em nenhum backtest.
+5. Mapear onde fica o teto de G entre 7 e 42 símbolos antes de recomendar
+   "amplie ativos" de novo.
+6. Resolver a contradição item 106 (10 ativos, cota Firestore) × "amplie
+   em ativos" — decisão do usuário.
+
+### Gatilhos que reabririam "motor novo"
+
+Backlog acima esgotado e resposta continuar sem edge; alguém propuser algo
+que ataque estrutura de custo/frequência (não só o gatilho de entrada,
+única classe que escaparia da parede estatística); ou o usuário decidir
+deliberadamente mudar a identidade do produto (de "espelho do Pine real"
+pra "pesquisa própria") — decisão dele, não conclusão forçada pelo dado.
+
+### Verificação
+
+6 agentes locais (Agent tool, subagent_type general-purpose, nenhum dado
+enviado a provedor externo — `sentinel-council-review`), cada um citando
+arquivo:linha, com pelo menos 3 refutações/reforços reais entre papéis
+documentados na síntese final. Nenhuma mudança de código nesta rodada —
+só análise e registro.
