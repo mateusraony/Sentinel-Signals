@@ -12557,3 +12557,69 @@ arquivo sintético (`overall.curve` dos dois concatenado, mesma
 pooled sem reimplementar a lógica de cluster. `backtest-trial-registry.mjs`
 rodado nos dois relatórios reais, família `base-edge-gate-42new` (N=2).
 Nenhuma mudança de código nesta rodada — só diagnóstico e registro.
+
+## 111. `pineConfig.rsiOnlyGateEnabled` — RSI sozinho no lugar do score ponderado (backtest-only, mecanismo construído)
+
+### Contexto
+
+Usuário pediu mineração dos componentes do score usando o simulador de
+operação-fantasma (item 69, `report.indicatorAttribution`) nos dois lotes do
+item 110 (1.893 sinais brutos pooled). Achado: RSI é o único dos 4
+componentes medíveis (MACD/EMA/RSI/Volume — Estrutura e RF não têm
+concorda/discorda pra medir, são a própria definição do sinal) que se
+comporta como desenhado — concorda +0,049R, discorda -0,023R, gap na direção
+certa. Os outros 3 são planos ou invertidos (MACD invertido: concorda
+-0,006R, discorda +0,153R). Nenhum passa em teste de significância
+individualmente (amostra pequena por fatia).
+
+Usuário pediu o teste real (não a simulação simplificada): RSI sozinho como
+gate de entrada, e "sem score" se possível.
+
+**"Sem score" já existia** — `pineConfig.minScore: 0` (já testável hoje,
+`minScore` é campo sincronizado desde sempre) deixa passar todo sinal RF
+confirmado, equivalente ao "RF puro" já medido no item 69/110. Não precisou
+de código novo.
+
+**"RSI sozinho" não existia** — o score é uma soma ponderada hardcoded
+(`confluence.js:114-137`, sem parametrização de peso via `pineConfig`), sem
+mecanismo pra isolar um componente como gate. Construído:
+
+- `calculateSignalStrength` (`src/lib/indicators/confluence.js`) ganhou um
+  10º parâmetro opcional `rsiOnlyGateEnabled` (default `false`, byte-
+  idêntico). Quando `true`, `passed` (o campo que `scanner.js:1477` checa
+  pra realmente criar o sinal) passa a ser só
+  `isBuy ? rsiResult.crossedBull50 : isSell ? rsiResult.crossedBear50 :
+  false` — ignora `score`/`minScore` por completo. `score`/`strength`/
+  `priority` continuam calculados normalmente (display/Telegram), só o gate
+  muda.
+- `scanner.js` (único call site de `calculateSignalStrength`) passa
+  `!!pineConfig?.rsiOnlyGateEnabled`.
+- `scripts/backtestPineConfig.js`: `rsiOnlyGateEnabled: false` — backtest-
+  only, **INTENTIONALLY NOT mirrored** em `src/lib/pineParser.js`/
+  `scripts/adminPineConfig.js` (mesmo motivo dos outros flags de mudança de
+  estratégia: chave viva em `strategyConfig/current` seria toggle de
+  produção sem code-review). Tripwire:
+  `src/lib/rsiOnlyGateTripwire.test.js` (mesmo padrão dos outros).
+- Testes de comportamento em `confluence.test.js`: default idêntico ao gate
+  de score; RSI concorda com score baixo (reprovaria no gate normal) passa;
+  RSI discorda com score alto (passaria no gate normal) reprova; SELL usa
+  `crossedBear50`; sem BUY/SELL confirmado falha fechado mesmo com o flag
+  ligado.
+
+### Parâmetros recomendados pros dois runs (ainda não rodados)
+
+Mesmos 42 símbolos do item 110 (reusar aqui não é o mesmo erro de reusar
+hipótese repetida — é hipótese NOVA, símbolo repetido pra comparação limpa
+já é convenção do projeto desde os testes de `minScore`/`retest`/`runner`
+na carteira original de 20). Dois lotes por limite de timeout (item 110):
+
+- **RSI sozinho**: `pine_config: {"rsiOnlyGateEnabled": true}`, símbolos =
+  Lote A e Lote B do item 110, mesma janela 12 meses, sem SMC.
+- **Sem score** (RF puro): `pine_config: {"minScore": 0}`, mesmos símbolos.
+
+### Verificação
+
+`npm run lint && npm test -- --run && npm run build && node
+scripts/build-backtest.mjs` limpos (1058 testes, 0 regressão). Nenhuma
+mudança de comportamento de produção — os dois flags são backtest-only,
+`false`/ausente = idêntico a hoje.

@@ -1427,7 +1427,10 @@ export async function scanAsset(asset) {
     // rangeFilterConfirmation.js.
     const MIN_SCORE = pineConfig.minScore ?? 75;
     const strengthResult = calculateSignalStrength(
-      r.rf, r.rsi, r.macd, r.ema, alignmentResult, tf, r.volumeData, MIN_SCORE, r.confirmed
+      r.rf, r.rsi, r.macd, r.ema, alignmentResult, tf, r.volumeData, MIN_SCORE, r.confirmed,
+      // docs/known-risks.md item 111 (backtest-only) — RSI sozinho decide o
+      // gate em vez do score ponderado, ver confluence.js.
+      !!pineConfig?.rsiOnlyGateEnabled
     );
 
     // docs/known-risks.md item 69 — captura TODO flip de RF em 4h confirmado
