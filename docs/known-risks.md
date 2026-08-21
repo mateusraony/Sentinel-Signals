@@ -12623,3 +12623,180 @@ na carteira original de 20). Dois lotes por limite de timeout (item 110):
 scripts/build-backtest.mjs` limpos (1058 testes, 0 regressão). Nenhuma
 mudança de comportamento de produção — os dois flags são backtest-only,
 `false`/ausente = idêntico a hoje.
+
+## 112. Conselho de revisão — "motor novo" ainda não se justifica; achado do RSI é ruído recorrente, não pista (2026-08-20)
+
+### Contexto
+
+Usuário pediu segunda opinião independente (skill `sentinel-council-review`)
+sobre se valia investir em desenhar um motor de entrada estruturalmente
+diferente, dado o histórico de ~111 itens sem nenhum resultado
+estatisticamente conclusivo. 6 papéis rodados (5 subagentes independentes +
+avaliador final que pesou as 5 posições, incluindo verificação própria no
+código): Arquiteto, Trading, Concorrência, Segurança, Testes.
+
+### Veredito
+
+**Não é hora de motor novo — com razão concreta, não "falta dado" genérico**:
+
+1. O gate `smc_confirm_4h15m` (item 108) zerava 100% das entradas da
+   cascata RF em produção até a correção de 2026-08-20 — o motor atual,
+   na config corrigida, ainda não rodou nem um dia em produção real.
+2. A única mudança estrutural já tentada (Bloco 4, cascatas independentes
+   por timeframe) rodou A/B e fechou sem ganho.
+3. 15 das 17 flags de estratégia do próprio motor atual
+   (`scripts/backtestPineConfig.js`) nunca foram formalmente encerradas —
+   o espaço de design atual está longe de esgotado.
+4. Qualquer motor novo com cadência/custo de sinal parecidos herda a
+   mesma parede de poder estatístico do item 109 (~1.643 operações/~17
+   anos pra provar 0,10R) — trocar de motor sem mudar essa equação é
+   trocar de fila, não resolver o problema.
+
+**Correção técnica que o avaliador final encontrou** ao verificar o cálculo
+do papel de Testes: o piso do teste exato de sign-flip é `2/2^G`, não
+`1/2^G` — G=3 (pooled item 110) → piso 0,25 (confere com o p=0,50 medido,
+só 8 combinações possíveis); mas G=5/G=6 (Lotes A/B) → piso real ≈0,063 e
+≈0,031 (não 0,031/0,016 como o papel de Testes calculou primeiro). Não
+muda a conclusão — reforça: o p=0,0625 do Lote B já estava perto do piso
+de resolução do próprio teste, não é "quase significativo" no sentido
+usual.
+
+### O achado do RSI (item 111) — ruído recorrente, achado mais forte do que a suspeita original
+
+O ponto mais importante que o papel de Testes trouxe (incorporado à síntese
+depois de chegar atrasado): o RSI **já foi medido duas vezes antes** pelo
+mesmo mecanismo (`indicatorAttribution`, item 69), com veredito diferente
+cada vez:
+
+| Medição | Universo | RSI concorda | RSI discorda | Direção |
+|---|---|---|---|---|
+| Item 69, run 1 | 7 símbolos | +0,017R | +0,121R | invertida |
+| Item 69, run 2 | 20 símbolos | −0,008R | +0,010R | invertida, encolhida — já rotulado no item 69 como "ruído, não sinal" |
+| Item 111 | 42 símbolos novos | +0,049R | −0,023R | agora "correta" |
+
+3 medições, 3 vereditos diferentes, mesmo indicador, mesmo método. O item
+111 é a 3ª medição, não a 1ª — o "achado" é o retrato de mineração sem
+sinal estável, não uma pista ainda não confirmada. Agravante: a mineração
+que escolheu RSI entre 4 candidatos rodou sobre os MESMOS sinais brutos
+dos mesmos Lote A+B que os 4 backtests de confirmação (já rodando) vão
+usar — seleção de hipótese e confirmação não-independentes na mesma
+amostra, o que nenhuma correção Bonferroni pós-hoc resolve sozinha.
+
+### Tratamento dos 4 backtests do RSI quando voltarem
+
+Registrar como família NOVA no ledger (nome decidido antes de ler
+resultado), nunca como confirmação do item 111. Rodar
+`backtest-correlation-check.mjs` por lote (não só pooled — o piso do
+pooled é matematicamente alto demais pra confirmar nada). Sem réplica num
+3º universo genuinamente novo, é trial #1, não veredito. Medir em
+`netExpectancyR`, nunca bruto (RSI-só muda composição/frequência de
+operações). Não promover `rsiOnlyGateEnabled` pra produção sob nenhuma
+leitura isolada desses 4 relatórios.
+
+### Backlog recomendado (nenhum item é "esperar mais trade")
+
+1. Deixar a correção do item 108 acumular produção real.
+2. Fechar formalmente (testar ou descartar por decisão) as 15 flags
+   dormentes.
+3. Expor o breakdown de funding pré/pós-TP1 já calculado internamente em
+   `tradeMetrics.js` (`countFundingSettlementsByLeg`), nunca exposto no
+   retorno de `calcTradeCost` — testa a ligação item 46↔109 sem backtest
+   novo.
+4. Testar `tp1R`/`tp2R`/`trailAtrMult` — únicos parâmetros de saída nunca
+   tocados em nenhum backtest.
+5. Mapear onde fica o teto de G entre 7 e 42 símbolos antes de recomendar
+   "amplie ativos" de novo.
+6. Resolver a contradição item 106 (10 ativos, cota Firestore) × "amplie
+   em ativos" — decisão do usuário.
+
+### Gatilhos que reabririam "motor novo"
+
+Backlog acima esgotado e resposta continuar sem edge; alguém propuser algo
+que ataque estrutura de custo/frequência (não só o gatilho de entrada,
+única classe que escaparia da parede estatística); ou o usuário decidir
+deliberadamente mudar a identidade do produto (de "espelho do Pine real"
+pra "pesquisa própria") — decisão dele, não conclusão forçada pelo dado.
+
+### Verificação
+
+6 agentes locais (Agent tool, subagent_type general-purpose, nenhum dado
+enviado a provedor externo — `sentinel-council-review`), cada um citando
+arquivo:linha, com pelo menos 3 refutações/reforços reais entre papéis
+documentados na síntese final. Nenhuma mudança de código nesta rodada —
+só análise e registro.
+
+### Addendum — usuário decidiu testar o Bloco 1 mesmo assim (2026-08-20)
+
+Correção primeiro: eu tinha repassado "15 das 17 flags nunca testadas" do
+relatório do Arquiteto sem filtrar — impreciso. Recontagem real: 7 das 17
+JÁ foram testadas com backtest real e voltaram sem significância
+(`buyRegimeFilterEnabled`, `rfStructuralStopEnabled`,
+`preTp1StopProtectionEnabled`, `hierarchicalCascadesEnabled`,
+`allowedSide`, `timeStopBarsOverride`, `arbInvalidateOnOppositeSameTf`).
+As genuinamente nunca testadas com backtest real são só 6: os 4 do Bloco 1
+(`retestEnabled`, `displacementEnabled`, `smcTierEnabled`,
+`smcObFvgEnabled`) + `candlePatternEnabled` + `skip15mConfirmationEnabled`.
+
+Apresentei a escolha ao usuário: manter a disciplina da recomendação do
+item 73/112 (não abrir Bloco 1 até a base mostrar edge) vs. testar mesmo
+assim, sabendo que o resultado vem com desconfiança extra (base ainda não
+validada). **Usuário escolheu testar mesmo assim.** Registrado como
+decisão explícita, não como "esquecimento" da recomendação — mantém a
+ressalva de leitura (qualquer melhora aparente pode ser só o ruído que o
+próprio item 73 já preveniu). Configuração dos 6 runs na seção seguinte.
+
+## 113. Resultados reais — RSI sozinho, sem score, candle pattern; 4 runs SMC estouraram o timeout (2026-08-20)
+
+### Resultado — item 111 (RSI sozinho / sem score), mesmos Lote A/B do item 110
+
+| | n | `netExpectancyR` | profitFactor | Significativo? |
+|---|---|---|---|---|
+| Baseline Lote A (item 110) | 273 | -0,0036R | — | não |
+| `rsi-only-gate` Lote A | 222 | **+0,0083R** | 1,059 | não |
+| Baseline Lote B (item 110) | 317 | -0,1362R (naive "conclusivo" negativo) | — | — |
+| `rsi-only-gate` Lote B | 251 | **-0,0149R** | 1,023 | não |
+| `no-score-gate` Lote A | 460 | -0,0512R | 0,932 | não |
+| `no-score-gate` Lote B | 535 | -0,0500R | 0,949 | não |
+
+Registrado em famílias próprias no ledger (`rsi-only-gate-hypothesis`,
+`no-score-gate-hypothesis`, N=2 cada) — Bonferroni não muda nenhum
+veredito, ambos continuam cruzando zero. `backtest-correlation-check.mjs`
+por lote: nenhum sign-flip significativo (RSI-A p=0,909; RSI-B p=0,859;
+sem-score-A p=0,625; sem-score-B p=1,000, G=2).
+
+**Leitura**: RSI sozinho teve o melhor ponto estimado nos dois lotes,
+inclusive trazendo o Lote B (que tinha dado naive-negativo) de volta pra
+perto de zero — mas nenhum resultado é significativo, e a régua do item
+112 continua valendo: isto é **trial #1 de uma família nova**, não
+confirmação do achado de mineração do item 111. Sem-score (RF puro) não
+ajudou — pior que RSI sozinho nos dois lotes. Achado colateral: RSI
+sozinho gerou MENOS operações que o score cheio (222/251 vs 273/317) —
+"cruzar 50" é evento pontual mais raro que "somar 75+ pontos" via
+qualquer combinação dos 6 componentes.
+
+### Resultado — Bloco 1, `candlePatternEnabled` (único dos 4 flags RF que rodou)
+
+Lote A, n=96 (filtro corta bastante volume): `netExpectancyR` -0,2081R,
+profitFactor 0,625, sign-flip p=0,238 (G=21, resolução boa) — não
+significativo, mas é o maior efeito de magnitude (na direção ruim) já
+medido nesta rodada. Registrado em família própria
+(`candle-pattern-hypothesis`, N=1).
+
+### Achado técnico — SMC ligada em 20 símbolos estoura o timeout de 5h50
+
+4 runs falharam por timeout: `smc-baseline`, `displacement-gate`,
+`smc-tier-regime`, `smc-obfvg-weighted` — exatamente os 4 que ligavam a
+cascata SMC (1h→5m) nos mesmos 20 símbolos que rodam sem problema com só
+RF. A SMC adiciona um cálculo de estrutura inteiro (confirmação 5m,
+BOS/CHoCH) por cima do que já roda — o limite de "12 meses × 20 símbolos
+cabe no timeout" registrado no Bloco 0 valia só para RF puro, não se
+aplica com SMC ligada junto. Não re-rodado nesta sessão — precisaria de
+um lote bem menor (~8-10 símbolos) para caber com a SMC ligada, ou aceitar
+não testar `displacementEnabled`/`smcTierEnabled`/`smcObFvgEnabled` por
+ora (decisão do usuário, ainda não tomada).
+
+### Verificação
+
+`backtest-correlation-check.mjs` rodado nos 5 relatórios reais.
+`backtest-trial-registry.mjs` registrado nas 3 famílias novas. Nenhuma
+mudança de código nesta rodada — só diagnóstico e registro.
