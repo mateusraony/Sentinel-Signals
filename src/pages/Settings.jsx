@@ -5,6 +5,7 @@ import { backend } from '@/api/entities';
 import { getPineConfig, getLocalPineConfig } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
 import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
 import { SlidersHorizontal, Save, CheckCircle2, RotateCcw, AlertTriangle, BarChart3, ShieldAlert, Zap } from 'lucide-react';
 
 // Cada slider: chave no pineConfig, alvo de gravação ('strategyConfig' ou
@@ -39,7 +40,23 @@ const GROUPS = [
 ];
 
 const FIELDS = GROUPS.flatMap(g => g.fields);
-const STRATEGY_KEYS = FIELDS.filter(f => f.target === 'strategyConfig').map(f => f.key);
+
+// Flags booleanas (não são slider — on/off), mesmo destino strategyConfig.
+// docs/known-risks.md item 120: skip15mConfirmationEnabled bypassa
+// check15mConfirmation na cascata RF nativa 4h→15m — objetivo é bater 1:1
+// com a estratégia real do usuário no TradingView (entra no fechamento do
+// candle 4h, sem confirmação de timeframe menor, ver .claude/rules/
+// trading-engine.md item 67). Medido em 4 rodadas de backtest (item 120):
+// melhor ponto estimado da investigação, ainda sem significância (p~0,16-0,29).
+const BOOL_FIELDS = [
+  {
+    key: 'skip15mConfirmationEnabled', target: 'strategyConfig',
+    label: 'Bypass confirmação 15m (fidelidade TradingView)',
+    help: 'Entra no fechamento do candle 4h, sem esperar confirmação 15m — igual ao Pine real do usuário. Ver known-risks item 120.',
+  },
+];
+
+const STRATEGY_KEYS = [...FIELDS.filter(f => f.target === 'strategyConfig').map(f => f.key), ...BOOL_FIELDS.map(f => f.key)];
 
 const ACTIVE_CONFIG_PILLS = [
   { key: 'rng_per', label: 'RF Period' },
@@ -79,6 +96,7 @@ export default function Settings() {
         atrLen: config.atrLen,
         rng_per: config.rng_per,
         rng_qty: config.rng_qty,
+        skip15mConfirmationEnabled: config.skip15mConfirmationEnabled,
       });
     });
     return () => { cancelled = true; };
@@ -86,7 +104,7 @@ export default function Settings() {
 
   const handleReset = () => {
     const defaults = getLocalPineConfig();
-    setValues(v => ({ ...v, ...Object.fromEntries(FIELDS.map(f => [f.key, defaults[f.key]])) }));
+    setValues(v => ({ ...v, ...Object.fromEntries([...FIELDS, ...BOOL_FIELDS].map(f => [f.key, defaults[f.key]])) }));
   };
 
   const handleSave = async () => {
@@ -208,6 +226,23 @@ export default function Settings() {
                   </div>
                 </div>
               ))}
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-3 pt-1">
+          {BOOL_FIELDS.map(field => (
+            <div key={field.key} className="flex items-center justify-between gap-4 rounded-xl p-4"
+              style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,209,102,0.2)' }}>
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-mono font-bold text-foreground">{field.label}</p>
+                <p className="text-[9px] font-mono text-muted-foreground">{field.help}</p>
+              </div>
+              <Switch
+                checked={!!values[field.key]}
+                onCheckedChange={(checked) => setValues(prev => ({ ...prev, [field.key]: checked }))}
+                aria-label={field.label}
+              />
             </div>
           ))}
         </div>

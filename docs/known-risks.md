@@ -13647,3 +13647,42 @@ Se optar por (a), é mudança de produção real (não backtest-only) — os 10
 `MonitoredAsset` precisariam do campo atualizado em
 `strategyConfig/current` (mesmo padrão do item 108, escrita direta em
 produção, fora do escopo de uma sessão de backtest).
+
+## 121. Toggle de produção para `skip15mConfirmationEnabled` (2026-08-22)
+
+### Contexto
+
+Usuário decidiu (a) do item 120: ligar `skip15mConfirmationEnabled` em
+produção. Escrita em `strategyConfig/current` não é algo que uma sessão
+de código consiga fazer diretamente (sem credenciais/browser contra o
+Firebase do usuário) — precisa ser feito pelo painel, pela própria
+sessão do usuário.
+
+### O que foi feito
+
+Adicionado um toggle (`Switch` shadcn) em `src/pages/Settings.jsx` para
+`skip15mConfirmationEnabled`, ao lado dos sliders já existentes (mesmo
+grupo `STRATEGY_KEYS`/`handleSave`, que já escreve em
+`strategyConfig/current` via `StrategyConfig.set` com merge — **não**
+usado o botão "Aplicar ao scanner AO VIVO" do Backtest.jsx, porque esse
+botão substitui TODAS as `SYNCED_STRATEGY_KEYS` pelo `pineConfig` completo
+do relatório carregado (comentário do próprio código, item 93: "apply é
+um full reset") — arriscaria reverter outros parâmetros já ajustados ao
+vivo via Settings (`tp1R`/`trailAtrMult`/`minScore`/`atrLen`) para o valor
+que estava em vigor NAQUELE backtest, não o valor real de produção hoje,
+que esta sessão não tem como ler). O toggle novo grava só
+`{ skip15mConfirmationEnabled, updated_at }` junto do resto do
+`strategyPayload` de sempre — merge, não substitui nada que o usuário não
+tenha mexido na mesma tela.
+
+Para ativar: painel → **Ajuste Fino** (Settings) → seção nova abaixo dos
+sliders → ligar o switch → **Salvar & Sincronizar**. Efeito no próximo
+scan (browser e cron, ambos leem `strategyConfig/current`).
+
+### Verificação
+
+`npm run lint && npm test && npm run build` — 48 arquivos/1064 testes
+passando, build ok. Nenhum teste novo (mudança é puramente de exposição de
+UI para um flag já testado em `scannerStateMachine.test.js`/
+`opExitRules.test.js`; a lógica de leitura do flag em `scanner.js` não
+mudou). Reversível pelo mesmo switch a qualquer momento.
