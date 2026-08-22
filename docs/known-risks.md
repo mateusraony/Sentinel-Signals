@@ -13345,3 +13345,171 @@ Leitura direta de `src/lib/scanner.js` (`resolveEntryConfirmation15m`,
 do usuário (card do painel, gráfico 4h do TradingView, gráfico 15m com
 SMC) e o texto já registrado no item 67. Nenhuma mudança de código nesta
 rodada — só diagnóstico.
+
+## 118. Rodada 3 medida — `trailAtrMult` (2.5/3.0): mais dá e tira, líquido ~zero, sem efeito detectável — fecha o plano de 3 rodadas do item 114
+
+### Contexto
+
+Usuário rodou os 2 backtests da Rodada 3 (item 114/116): `trail-atr-2.5`
+(`{"trailAtrMult": 2.5}`) e `trail-atr-3.0` (`{"trailAtrMult": 3.0}`),
+mesma janela/carteira do resto desta investigação. Com esta rodada, as 3
+rodadas pré-declaradas no item 114 (TP2 cap, `tp1R`, `trailAtrMult`) estão
+completas.
+
+### Resultado — número de topo
+
+| | `tp2-cap-baseline` (`trailAtrMult=2.0`) | `trail-atr-2.5` | `trail-atr-3.0` |
+|---|---|---|---|
+| N | 99 | 99 | 99 |
+| winRate | 48,5% | 48,5% | 48,5% |
+| `netExpectancyR` | +0,0798 | +0,0772 | +0,0812 |
+| `profitFactor` | 1,013 | 1,011 | 1,001 |
+| `equityCurve.totalReturnPct`/`cagrPct` | +7,44% / 8,0%a.a. | +7,15% / 7,7%a.a. | +7,56% / 8,1%a.a. |
+| `clusterSignFlipTest` (relatório isolado) | p=0,589 | p=0,607 | p=0,563 |
+
+Diferente das Rodadas 1 e 2 (onde o ponto estimado sempre melhorava),
+aqui o ponto fica **essencialmente no mesmo lugar** — dentro do ruído de
+±0,003R em torno do baseline, nos dois lados.
+
+### Contrafactual pareado por ID de operação (mesmo método das rodadas anteriores)
+
+| | `trail-atr-2.5` vs. baseline | `trail-atr-3.0` vs. baseline |
+|---|---|---|
+| N pareado | 99 (70 idênticas, **29 mudaram**) | 99 (69 idênticas, **30 mudaram**) |
+| Média da diferença pareada | **-0,0027R** | **+0,0014R** |
+| Entre as mudadas: melhoraram / pioraram | 3 / 26 | 6 / 24 |
+| G (clusters) | 28 | 28 |
+| `clusterSignFlipTest` p-valor | **0,866** | **0,949** |
+
+**Mecanismo visível nos dados** (diferente das rodadas 1/2 — aqui o
+padrão é claro e consistente com a física do trailing stop): a MAIORIA das
+mudanças é uma perda pequena e recorrente (o stop mais largo dá mais
+espaço pro preço voltar antes de fechar, então quem já ia perder, perde um
+pouco mais — 26 de 29 casos no 2.5x, 24 de 30 no 3.0x, a maioria entre
+-0,03R e -0,32R). Mas uma minoria rara ganha muito mais (3-6 operações que
+teriam batido stop agora correm até bater TP2, ganho de +0,46R a +1,10R
+cada). As duas forças praticamente se cancelam no agregado — por isso o
+ponto estimado mal se move, ao contrário de simplesmente "não ter efeito
+nenhum": tem efeito real por operação, só que assimétrico e compensado.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: nenhuma das duas variantes passa no teste de significância
+(p=0,866 e p=0,949 — os dois mais próximos de "ruído puro" desta sessão
+inteira, incluindo as rodadas 1 e 2).
+
+**Hipótese**: alargar o trailing troca "menos dado de volta em stops"
+(2.0x) por "mais chance de pegar o TP2 numa fração pequena de operações"
+(2.5x/3.0x) — mecanicamente plausível (mais espaço = menos chance de ser
+tirado por ruído, mais chance de aproveitar tendência), mas o efeito
+líquido medido é consistente com o custo e o ganho se cancelando por
+coincidência de magnitude nesta amostra específica, não com uma vantagem
+real de nenhum dos dois lados.
+
+**Recomendação**: **não promover nenhuma das duas variantes** — mesma
+régua de sempre. Registrado no ledger (família
+`trail-atr-mult-sensitivity-hypothesis`, N=3).
+
+### Síntese das 3 rodadas do item 114
+
+| Rodada | Parâmetro testado | Ponto estimado vs. baseline | `clusterSignFlipTest` (pareado) | Veredito |
+|---|---|---|---|---|
+| 1 (item 115) | `disableTp2CapEnabled` | +0,0153R | p=0,688 | Não promover |
+| 2 (item 116) | `tp1R: 2.0` | +0,0320R | p=0,513 | Não promover |
+| 3 (item 118) | `trailAtrMult: 2.5/3.0` | ±0,003R | p=0,866 / p=0,949 | Não promover |
+
+Nenhum dos 3 parâmetros de saída — os únicos nunca testados neste projeto
+antes desta sessão (roadmap.md, Bloco 2) — mostrou efeito estatisticamente
+detectável nesta amostra. Consistente com o achado central do item 109
+(poder estatístico insuficiente pra concluir qualquer coisa sobre um edge
+da ordem de 0,05-0,10R com ~100 operações) — não é evidência de que os
+parâmetros atuais são ótimos, é confirmação de que a amostra continua
+pequena demais pra decidir isso em qualquer direção. O `trailAtrMult` e o
+`tp1R` atuais (2.0x e 1.5R) permanecem em produção sem mudança.
+
+### Verificação
+
+`node scripts/backtest-correlation-check.mjs --report <cada arquivo>` +
+script ad hoc de contrafactual pareado (mesmo reuso de
+`buildTradeIntervals`/`findOverlapClusters`/`clusterSignFlipTest` das
+rodadas 1 e 2). Os 3 relatórios (baseline reusado + `trail-atr-2.5` +
+`trail-atr-3.0`) registrados no ledger via `backtest-trial-registry.mjs`,
+família `trail-atr-mult-sensitivity-hypothesis` (N=3). Nenhuma mudança de
+código nesta rodada — só diagnóstico.
+
+### Próximo passo
+
+O plano de 3 rodadas do item 114 está fechado. Candidatos em aberto,
+nenhum decidido ainda: (a) re-medir `skip15mConfirmationEnabled` com o
+método corrigido do item 117 (contando `SignalEvent.expired_logged`/
+`entryFunnel`, não só `overall.curve`); (b) o backlog do conselho de
+revisão (item 112): fechar as 3 flags SMC do Bloco 1 nunca testadas
+(timeout em 20 símbolos, precisaria de lote menor), expor o breakdown de
+funding pré/pós-TP1, ou resolver a tensão ativos×cota do Firestore (item
+106/109). Decisão de prioridade fica com o usuário.
+
+## 119. Ferramenta nova — `report.signalExpiry`, pra re-medir `skip15mConfirmationEnabled` corretamente (2026-08-22)
+
+### Contexto
+
+Usuário pediu pra re-medir `skip15mConfirmationEnabled` (candidato do item
+117, motivado pelo caso real do ENAUSDT). A correção do Codex no item 117
+apontou que o método antigo (comparar `overall.curve`, item 67) é
+estruturalmente cego a sinais que expiram sem nunca confirmar — só
+`report.entryFunnel` existia como alternativa, mas ele conta REJEIÇÕES
+(uma por avaliação de retry), não SINAIS DISTINTOS: um sinal preso no
+mesmo gate por várias passadas de retry conta várias vezes ali, e um
+sinal sem nenhum retry (avaliado só 1x) não aparece nada.
+
+### Mecanismo construído — `report.signalExpiry`
+
+- **`scripts/run-backtest.mjs`**: depois do replay, consulta direto
+  `backend.entities.SignalEvent.filter({ expired_logged: true })` — o
+  MESMO campo que a produção já grava (`scanner.js`, sem trilha nova) —
+  agrupado por `source` (`range_filter`/`smc_structure`) e
+  `last_rejection_reason`, dentro da mesma janela de avaliação que
+  `entryFunnel` já usa. Puramente aditivo: não toca `backtestEngine.js`
+  nem `scanner.js`, só lê um dado que já existia no backend fake.
+- Documentado em `docs/claude/backtest-usage.md` ao lado das outras seções
+  do relatório.
+- `npm run lint && npm test -- --run && npm run build` limpos (1064
+  testes, 0 regressão — puramente aditivo, sem mudar nenhum teste
+  existente) + `node scripts/build-backtest.mjs` compila limpo. Sem teste
+  dedicado novo: `run-backtest.mjs` é script de orquestração CLI, mesmo
+  padrão de `run-scan.mjs` (sem cobertura própria neste projeto — a lógica
+  de negócio testada é a de `scanner.js`/`backtestEngine.js`, não a
+  finalização do CLI).
+
+### Plano da Rodada 4 — `skip15mConfirmationEnabled`
+
+Baseline precisa ser um run NOVO (o `tp2-cap-baseline` já existente não
+tem `signalExpiry` — foi gerado antes desta ferramenta existir). Mesmos 7
+símbolos/janela de sempre:
+
+```
+Símbolos: BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT
+De: 2025-08-20T00:00:00Z   Até: 2026-08-20T00:00:00Z
+
+Run G — trial_label: skip15m-baseline
+  Overrides do pineConfig em JSON: (deixe em branco)
+
+Run H — trial_label: skip15m-enabled
+  Overrides do pineConfig em JSON: {"skip15mConfirmationEnabled": true}
+```
+
+Critério de leitura: comparar `report.signalExpiry['range_filter'].
+byReason.confirmation_15m_not_aligned` entre os dois (deve ir a ~0 no Run
+H — o gate nem roda), `netExpectancyR`/`profitFactor` de
+`report.byCascade['4h_15m']`, e o contrafactual pareado por ID de operação
+(mesmo método dos itens 115/116/118) pra medir o efeito real nas
+operações que os dois runs têm em comum. Só promover a produção se sair
+significativo — mesma régua de sempre.
+
+### Verificação
+
+Leitura de `scripts/backtestEntities.js`/`fakeBackend.js` (API `.filter()`
+já existente, matching por igualdade exata) e `scripts/build-backtest.mjs`
+(confirma que `@/api/entities` já é redirecionado pro backend fake em todo
+backtest, então a query funciona sem precisar de rede/Firestore).
+Nenhuma mudança de comportamento de produção — o campo é só leitura do
+que já existia.

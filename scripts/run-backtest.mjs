@@ -227,8 +227,34 @@ async function main() {
     },
   });
 
+  // docs/known-risks.md item 117/118 — `report.entryFunnel` conta REJEIÇÕES
+  // (uma por avaliação de retry), não sinais distintos que nunca confirmaram
+  // — um sinal preso no mesmo gate por N passadas de retry conta N vezes, e
+  // um sinal que expira sem nunca ter sido reavaliado (ex.: single-shot,
+  // sem retry algum) não aparece ali. Query direta no backend fake (o mesmo
+  // SignalEvent.expired_logged/last_rejection_reason que a produção grava —
+  // scanner.js, não uma trilha nova) fecha essa lacuna: quantos sinais
+  // DISTINTOS, por origem, expiraram sem nunca virar TradeOperation, e por
+  // qual motivo final. Janela igual à de avaliação (evaluationFromMs/ToMs
+  // quando dado, senão fromMs/toMs) — mesmo recorte que entryFunnel já usa
+  // via evalFromMs/evalToMs em backtestEngine.js.
+  const expiredSignals = await backend.entities.SignalEvent.filter({ expired_logged: true });
+  const signalExpiryFromMs = evaluationFromMs ?? fromMs;
+  const signalExpiryToMs = evaluationToMs ?? toMs;
+  const signalExpiry = {};
+  for (const sig of expiredSignals) {
+    const t = new Date(sig.candle_time || sig.created_date).getTime();
+    if (t < signalExpiryFromMs || t > signalExpiryToMs) continue;
+    const bucket = (signalExpiry[sig.source] ||= { total: 0, byReason: {} });
+    bucket.total += 1;
+    const reason = sig.last_rejection_reason || 'unknown';
+    bucket.byReason[reason] = (bucket.byReason[reason] || 0) + 1;
+  }
+  report.signalExpiry = signalExpiry;
+
   console.log(`[backtest] concluído em ${((performance.now() - started) / 1000).toFixed(1)}s`);
   console.log(`[backtest] total de operações: ${report.totalOps} (ainda abertas no corte: ${report.stillOpenAtCutoff})`);
+  console.log('[backtest] signalExpiry (sinais distintos que expiraram sem nunca confirmar):', report.signalExpiry);
   console.log('[backtest] geral:', report.overall);
   for (const [cascade, summary] of Object.entries(report.byCascade)) {
     console.log(`[backtest] cascata ${cascade}:`, summary);

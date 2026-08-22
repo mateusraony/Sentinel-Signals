@@ -416,12 +416,43 @@ inconclusivas), mas `maxDrawdownPct` piorou (111,73% → 137,76%) e 36% das
 **Mantido `preTp1StopProtectionEnabled: false` por padrão** — dado não
 mostra ganho e mostra um custo real. Ver `docs/known-risks.md` item 55.
 
-### Ainda aberto: `tp1R`/`tp2R`/`trailAtrMult`
+### `tp1R`/`tp2R`/`trailAtrMult` — TESTADO e FECHADO (2026-08-21/22, itens 114-118)
 
-TP2 é atingido em 18 de 344 (5,2%). Mexer em `tp1R` (1,5), `tp2R` (3,0) e
-`trailAtrMult` (2,0) continua **não testado** — e é busca de 3 parâmetros, com
-todo o risco de sobreajuste que isso traz. Mesma disciplina do Bloco 1: uma
-hipótese declarada antes, critério escrito antes, contada no `trial_label`.
+**Atualização (Codex review, PR #231): esta seção estava desatualizada** —
+dizia "continua não testado" depois que as 3 rodadas abaixo já tinham
+rodado, risco real de repetir o trabalho numa sessão futura. Corrigido.
+
+TP2 era atingido em 18 de 344 (5,2%) nesta medição anterior. As 3 rodadas
+pré-registradas (item 114), uma variável por vez contra o mesmo baseline
+(7 símbolos, 12 meses, `disableTp2CapEnabled`/`tp1R`/`trailAtrMult`),
+mediram:
+
+- **TP2 sintético** (item 115): descoberto que `tp2R` não existe no Pine
+  real do usuário (item 114) — é `tp1R × 2` hardcoded, sem contrapartida
+  na estratégia real (o runner real só tem trailing, sem 2º alvo fixo).
+  Testado remover o cap via `disableTp2CapEnabled` — ponto estimado
+  melhora (+0,015R), contrafactual pareado por operação não significativo
+  (p=0,688, `clusterSignFlipTest`). **Não promovido.**
+- **`tp1R`** (item 116): `tp1R=1.0` deu ZERO operações — não é resultado
+  sobre o parâmetro, é o gate `minRR` (default 1,2) travando toda entrada
+  matematicamente (`rr1 == tp1R` no modelo atual, `opExitRules.js`) — os
+  dois estão acoplados, testar um sem o outro não isola nada. `tp1R=2.0`
+  (96 ops): ponto estimado melhora (+0,032R), não significativo (p=0,513).
+  **Não promovido.**
+- **`trailAtrMult`** (item 118): `2.5`/`3.0` vs. `2.0` — ponto estimado
+  praticamente parado (±0,003R), mas o contrafactual pareado revela um
+  mecanismo real que se cancela (maioria perde um pouco mais, minoria rara
+  ganha muito mais no TP2). Não significativo (p=0,866/0,949 — os mais
+  próximos de ruído puro já medidos neste projeto). **Não promovido.**
+
+**Nenhum dos 3 parâmetros de saída mostrou efeito estatisticamente
+detectável.** Consistente com o item 109 (poder estatístico insuficiente
+pra concluir qualquer coisa com ~100 operações). `tp1R`/`trailAtrMult`
+permanecem em produção nos valores originais (1,5R/2,0×). Não reabrir sem
+amostra genuinamente maior (mesma régua do resto do projeto) — ver
+`docs/known-risks.md` itens 114-118 para o detalhe completo de cada
+rodada, incluindo o achado do acoplamento `tp1R`×`minRR` (item 116) e a
+descoberta de que `tp2R` não é um parâmetro real do Pine (item 114).
 
 ### PR-1 (item 47.2): dados limpos + telemetria nova, sem mexer em sinal
 
