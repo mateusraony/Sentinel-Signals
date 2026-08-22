@@ -17,6 +17,29 @@ import { logError } from '@/lib/logger';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
+// Traduz SignalEvent.last_rejection_reason (docs/schema-reference/SignalEvent.jsonc,
+// docs/known-risks.md item 45.3/49/50/6) para texto que o usuário entende sem
+// abrir o Debug Log. Puramente informativo — mesmo campo que o motor já
+// grava sozinho (write-on-change, scanner.js), nenhuma lógica nova aqui.
+const REJECTION_LABELS = {
+  trend_reversed: 'A tendência do timeframe maior reverteu antes de confirmar — o sinal pode expirar sem abrir operação.',
+  regime_rejected: 'Regime de mercado (ADX/Choppiness) não passou no filtro de qualidade — mercado sem tendência forte o bastante.',
+  smc_confirm_zone_rejected: 'A estrutura SMC do timeframe maior não concorda com a direção do sinal.',
+  retest_pending: 'Aguardando o preço retestar o nível rompido antes de confirmar (gate opcional).',
+  displacement_gate_rejected: 'Aguardando um candle de deslocamento válido na direção do sinal (gate opcional).',
+  confirmation_15m_not_aligned: 'Aguardando o Range Filter de 15m confirmar a mesma direção do sinal de 4h.',
+  insufficient_data: 'Dados insuficientes no timeframe menor (5m) pra avaliar o gatilho de entrada ainda.',
+  no_trigger: 'Aguardando o gatilho de entrada (varredura/estrutura) disparar no timeframe menor.',
+  wrong_direction_trigger: 'O gatilho de entrada disparou, mas na direção oposta ao sinal — segue aguardando.',
+  ote_zone_unfavorable: 'Preço fora da zona considerada favorável para entrada.',
+  fetch_error: 'Falha ao buscar dados de mercado na última tentativa — deve tentar de novo na próxima passada.',
+  rr_below_min: 'A relação risco:retorno calculada ficou abaixo do mínimo configurado (minRR).',
+  missing_fields: 'Dados de entrada incompletos para calcular o gate de risco:retorno.',
+  invalid_stop_distance: 'Distância de stop inválida (entrada e stop no mesmo preço).',
+};
+
+const CONFIRMATION_WINDOW_MS = 4 * 60 * 60 * 1000; // scanner.js FOUR_HOURS_MS — mesma janela pras 2 cascatas
+
 function fmt(price) {
   if (!price && price !== 0) return '—';
   if (price >= 10000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -178,6 +201,18 @@ function EditModal({ op, onClose, onSave }) {
 /** Monitoring card */
 function MonitoringCard({ signal }) {
   const isBuy = signal.signal_type === 'BUY';
+
+  const expiresAt = new Date(signal.created_date).getTime() + CONFIRMATION_WINDOW_MS;
+  const msLeft = expiresAt - Date.now();
+  const isExpired = signal.expired_logged === true || msLeft <= 0;
+  const hoursLeft = Math.floor(Math.max(0, msLeft) / (60 * 60 * 1000));
+  const minsLeft = Math.floor((Math.max(0, msLeft) % (60 * 60 * 1000)) / (60 * 1000));
+
+  const rejectionText = REJECTION_LABELS[signal.last_rejection_reason]
+    ?? (signal.last_rejection_reason
+      ? `Última rejeição registrada: ${signal.last_rejection_reason}`
+      : 'Ainda não avaliado por uma passada de retry — deve ter um motivo na próxima checagem (a cada ~5min).');
+
   return (
     <div className="rounded-xl p-4 space-y-2.5"
       style={{ background: 'rgba(12,15,26,0.75)', backdropFilter: 'blur(20px)', border: isBuy ? '1px solid rgba(0,255,128,0.15)' : '1px solid rgba(255,20,120,0.15)' }}>
@@ -206,9 +241,22 @@ function MonitoringCard({ signal }) {
       </div>
       <div style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
       <div className="text-[9px] font-mono text-muted-foreground leading-relaxed line-clamp-2">{signal.reason}</div>
-      <div className="flex items-center gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#ffd166', boxShadow: '0 0 4px #ffd166', display: 'inline-block' }} />
-        <span className="text-[9px] font-mono" style={{ color: '#ffd166' }}>Aguardando confirmação de entrada</span>
+
+      {/* Motivo real que está travando a entrada — SignalEvent.last_rejection_reason,
+          gravado pelo próprio motor (write-on-change) a cada passada de retry. */}
+      <div className="flex items-start gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full mt-1 shrink-0" style={{ background: isExpired ? '#64748b' : '#ffd166', boxShadow: isExpired ? 'none' : '0 0 4px #ffd166' }} />
+        <span className="text-[9px] font-mono leading-relaxed" style={{ color: isExpired ? '#64748b' : '#ffd166' }}>
+          {rejectionText}
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between text-[8px] font-mono">
+        <span style={{ color: isExpired ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>
+          {isExpired
+            ? '⚠ Janela de confirmação expirada — não vai mais virar operação neste sinal'
+            : `Janela de confirmação: expira em ${hoursLeft}h${minsLeft}m`}
+        </span>
       </div>
     </div>
   );
