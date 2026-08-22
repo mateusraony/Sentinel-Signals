@@ -248,6 +248,20 @@ só dava pra inferir por aritmética agregada (sinais × avaliações-teto).
 `byReason` inclui `wrong_direction_trigger` (sweep/estrutura dispararam, só
 do lado oposto ao sinal) — distinto de `no_trigger` genuíno.
 
+**`report.signalExpiry`** (`docs/known-risks.md` itens 117/118) —
+`{[source]: {total, byReason}}`, por origem do sinal (`range_filter`,
+`smc_structure`). Diferente de `report.entryFunnel` (que conta REJEIÇÕES —
+uma por avaliação de retry, então um sinal preso no mesmo gate por N
+passadas conta N vezes, e um sinal que expira sem nunca ter sido
+reavaliado não aparece ali), esta seção conta SINAIS DISTINTOS que
+expiraram sem nunca virar `TradeOperation` — consulta direta ao
+`SignalEvent.expired_logged`/`last_rejection_reason` que a produção já
+grava (`scanner.js`), sem trilha nova. É a métrica certa pra responder
+"quantos sinais reais morreram sem confirmar, e por quê" — motivada pelo
+caso real do ENAUSDT (item 117), onde o sinal expirou por
+`confirmation_15m_not_aligned` e o `entryFunnel` sozinho não permitia
+saber se isso era raro ou comum.
+
 **`report.smcObFvg`** (Fase 4, `docs/known-risks.md` item 43) —
 `{enabled, total, obActive, fvgActive, both, neither}`, só cascata SMC
 (`1h_5m`), medido no momento da EMISSÃO do sinal. **Este relatório é o único

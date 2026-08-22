@@ -13447,3 +13447,69 @@ revisão (item 112): fechar as 3 flags SMC do Bloco 1 nunca testadas
 (timeout em 20 símbolos, precisaria de lote menor), expor o breakdown de
 funding pré/pós-TP1, ou resolver a tensão ativos×cota do Firestore (item
 106/109). Decisão de prioridade fica com o usuário.
+
+## 119. Ferramenta nova — `report.signalExpiry`, pra re-medir `skip15mConfirmationEnabled` corretamente (2026-08-22)
+
+### Contexto
+
+Usuário pediu pra re-medir `skip15mConfirmationEnabled` (candidato do item
+117, motivado pelo caso real do ENAUSDT). A correção do Codex no item 117
+apontou que o método antigo (comparar `overall.curve`, item 67) é
+estruturalmente cego a sinais que expiram sem nunca confirmar — só
+`report.entryFunnel` existia como alternativa, mas ele conta REJEIÇÕES
+(uma por avaliação de retry), não SINAIS DISTINTOS: um sinal preso no
+mesmo gate por várias passadas de retry conta várias vezes ali, e um
+sinal sem nenhum retry (avaliado só 1x) não aparece nada.
+
+### Mecanismo construído — `report.signalExpiry`
+
+- **`scripts/run-backtest.mjs`**: depois do replay, consulta direto
+  `backend.entities.SignalEvent.filter({ expired_logged: true })` — o
+  MESMO campo que a produção já grava (`scanner.js`, sem trilha nova) —
+  agrupado por `source` (`range_filter`/`smc_structure`) e
+  `last_rejection_reason`, dentro da mesma janela de avaliação que
+  `entryFunnel` já usa. Puramente aditivo: não toca `backtestEngine.js`
+  nem `scanner.js`, só lê um dado que já existia no backend fake.
+- Documentado em `docs/claude/backtest-usage.md` ao lado das outras seções
+  do relatório.
+- `npm run lint && npm test -- --run && npm run build` limpos (1064
+  testes, 0 regressão — puramente aditivo, sem mudar nenhum teste
+  existente) + `node scripts/build-backtest.mjs` compila limpo. Sem teste
+  dedicado novo: `run-backtest.mjs` é script de orquestração CLI, mesmo
+  padrão de `run-scan.mjs` (sem cobertura própria neste projeto — a lógica
+  de negócio testada é a de `scanner.js`/`backtestEngine.js`, não a
+  finalização do CLI).
+
+### Plano da Rodada 4 — `skip15mConfirmationEnabled`
+
+Baseline precisa ser um run NOVO (o `tp2-cap-baseline` já existente não
+tem `signalExpiry` — foi gerado antes desta ferramenta existir). Mesmos 7
+símbolos/janela de sempre:
+
+```
+Símbolos: BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT
+De: 2025-08-20T00:00:00Z   Até: 2026-08-20T00:00:00Z
+
+Run G — trial_label: skip15m-baseline
+  Overrides do pineConfig em JSON: (deixe em branco)
+
+Run H — trial_label: skip15m-enabled
+  Overrides do pineConfig em JSON: {"skip15mConfirmationEnabled": true}
+```
+
+Critério de leitura: comparar `report.signalExpiry['range_filter'].
+byReason.confirmation_15m_not_aligned` entre os dois (deve ir a ~0 no Run
+H — o gate nem roda), `netExpectancyR`/`profitFactor` de
+`report.byCascade['4h_15m']`, e o contrafactual pareado por ID de operação
+(mesmo método dos itens 115/116/118) pra medir o efeito real nas
+operações que os dois runs têm em comum. Só promover a produção se sair
+significativo — mesma régua de sempre.
+
+### Verificação
+
+Leitura de `scripts/backtestEntities.js`/`fakeBackend.js` (API `.filter()`
+já existente, matching por igualdade exata) e `scripts/build-backtest.mjs`
+(confirma que `@/api/entities` já é redirecionado pro backend fake em todo
+backtest, então a query funciona sem precisar de rede/Firestore).
+Nenhuma mudança de comportamento de produção — o campo é só leitura do
+que já existia.
