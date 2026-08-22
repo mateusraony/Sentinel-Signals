@@ -13109,3 +13109,126 @@ Run D — trial_label: tp1r-2.0
 (O `tp2-cap-baseline` desta rodada já serve de baseline pra Rodada 2 também
 — mesmo `tp1R: 1.5` implícito, mesma janela/carteira — não precisa rodar
 de novo.)
+
+## 116. Rodada 2 medida — `tp1R=1.0` dá ZERO operações por um gate já documentado (`minRR`), não por falta de sinal; `tp1R=2.0` melhora o ponto mas continua sem efeito detectável (2026-08-21)
+
+### Contexto
+
+Usuário rodou os 2 backtests da Rodada 2 (item 114/115): `tp1r-1.0`
+(`{"tp1R": 1.0}`) e `tp1r-2.0` (`{"tp1R": 2.0}`), mesma janela/carteira do
+resto desta investigação.
+
+### Achado 1 — `tp1r-1.0`: 0 operações, causa raiz é `minRR` (gate já auto-documentado no código)
+
+`tp1r-1.0.overall.total = 0`. Antes de tratar isso como "resultado" (edge
+inexistente com TP1 mais apertado), fui direto no `entryFunnel`:
+`rr_below_min: 1738` (maior categoria de rejeição da amostra, ao lado de
+`regime_rejected: 1592`) — **100% dos sinais foram rejeitados pelo gate de
+risco:retorno**, não por falta de sinal RF/regime.
+
+Causa exata, já auto-documentada em `src/lib/opExitRules.js:207-218`
+(comentário "Honesty note" escrito quando `passesRiskReward` foi
+construído): sob o modelo atual, `tp1`/`tp2` são derivados como `entry ±
+riskDistance × tp1R/tp2R` — ou seja, `rr1` (o R:R usado pelo gate) é
+**matematicamente igual a `pineConfig.tp1R`** para toda entrada real hoje.
+O gate exige `rr1 >= minRR` (default **1.2**). Com `tp1R: 1.0`, `rr1 = 1.0
+< 1.2` **para toda e qualquer entrada, sempre** — não é uma rejeição
+ocasional, é uma trava estrutural: o próprio comentário do código já
+previa exatamente este cenário ("this gate cannot reject a real candidate
+unless tp1R itself is misconfigured below minRR").
+
+**Não é um resultado sobre `tp1R=1.0` ser ruim** — é um erro de desenho do
+trial: testar `tp1R` abaixo do `minRR` vigente sem também mexer no
+`minRR` não isola nada, só desliga o motor inteiro. `minRR` e `tp1R`
+estão acoplados por construção neste modelo (a única coisa que `minRR`
+hoje realmente barra é `tp1R` abaixo dele).
+
+### Achado 2 — `tp1r-2.0`: 96 operações, ponto estimado melhora, mas segue sem efeito detectável (mesmo com o teste pareado)
+
+| | `tp2-cap-baseline` (`tp1R=1.5`) | `tp1r-2.0` | Δ |
+|---|---|---|---|
+| N | 99 | 96 | -3 (ver nota abaixo) |
+| winRate | 48,5% | 46,9% | -1,6pp |
+| `netExpectancyR` | +0,0798 | +0,1134 | +0,0336 |
+| `profitFactor` | 1,013 | 1,050 | +0,037 |
+| `equityCurve.totalReturnPct`/`cagrPct` | +7,44% / 8,0%a.a. | +10,57% / 11,4%a.a. | +3,1pp |
+| `equityCurve.maxDrawdownPct` | 11,36% | 12,29% | +0,93pp |
+| `clusterSignFlipTest` (relatório isolado) | p=0,589 (item 108) | **p=0,435** | — |
+
+`tp1r-2.0` tem 3 operações a menos que o baseline (as 3 ficaram só no
+baseline: 2 STOP_HIT do FETUSDT perto do fim da janela + 1 TP2_HIT do
+ETHUSDT em 2025-09 — provável efeito de borda: com `tp1` mais distante
+(2R em vez de 1,5R), a op correspondente ainda estava aberta/sem resolução
+dentro da janela avaliada, então saiu do `overall.curve`, que só conta
+operações FECHADAS). Não investigado a fundo — não muda a leitura, é
+população residual pequena.
+
+**Contrafactual pareado por ID de operação** (mesmo método dos itens
+103/104/105 e do item 115 — casando as 96 operações em comum entre os
+dois relatórios, reusando `clusterSignFlipTest` de
+`backtest-correlation-check.mjs`):
+
+| | |
+|---|---|
+| N pareado | 96 (57 idênticas, **39 mudaram de resultado** — bem mais que os 9 do teste de TP2 no item 115, esperado: `tp1R` move o alvo de TODA operação, não só quem bateria TP2) |
+| Média da diferença pareada (`tp1r-2.0 − baseline`) | **+0,0320R** |
+| Dentre as 39 afetadas | **27 melhoraram, 12 pioraram** — direção líquida positiva, mas ainda pequena amostra |
+| G (clusters) | 27 |
+| `clusterSignFlipTest` p-valor | **0,513** — não significativo |
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: diferente do teste de TP2 (item 115, onde as mudanças eram
+puramente aleatórias — 4 melhoram/5 pioram, quase 50/50), aqui **27 de 39
+operações afetadas melhoraram** com o alvo mais distante — uma proporção
+mais assimétrica. Ainda assim, `clusterSignFlipTest` não rejeita a
+hipótese nula (p=0,513): com G=27 clusters e o tamanho de efeito medido,
+essa assimetria ainda cabe dentro do que ruído produziria.
+
+**Hipótese**: um TP1 mais distante (2R) dá mais espaço pro preço se mover
+antes de realizar parcial — em tendências que seguem, isso capta mais
+prêmio; em reversões rápidas, aumenta a chance de nunca bater TP1 e sofrer
+o stop cheio ao MODELO. Consistente com a mecânica conhecida do projeto
+(item 46, runner/TP1), mas não confirmado estatisticamente aqui.
+
+**Recomendação**: **não promover `tp1R: 2.0` pra produção** com este dado
+— mesma régua de sempre. Registrado no ledger (`docs/backtest-trial-registry.json`,
+família `tp1r-sensitivity-hypothesis`, N=3 incluindo o baseline
+compartilhado e o trial de 0 operações). Se o usuário quiser MESMO testar
+`tp1R=1.0` de verdade, precisa rodar de novo com `minRR` também reduzido
+(ex.: `{"tp1R": 1.0, "minRR": 1.0}`) — isso deixa de ser um teste de 1
+variável isolada (é uma segunda hipótese, "TP1 mais apertado E piso de
+R:R mais baixo", não só "TP1 mais apertado"), então precisa ser tratado
+como família própria no ledger, não reaproveitar `tp1r-sensitivity-hypothesis`.
+Decisão de rodar isso ou não fica com o usuário — não é a prioridade
+(Rodada 3, `trailAtrMult`, já está pronta e é uma hipótese mais limpa).
+
+### Verificação
+
+`node scripts/backtest-correlation-check.mjs --report <tp1r-2.0>` isolado
++ script ad hoc de contrafactual pareado (mesmo padrão do item 115,
+reusando `buildTradeIntervals`/`findOverlapClusters`/`clusterSignFlipTest`
+sem reimplementar nada). `tp1r-1.0` diagnosticado por leitura direta do
+`entryFunnel` do próprio relatório — nenhum script novo necessário, o
+campo já existia (item 45.3/49). Os 3 relatórios (baseline reusado,
+`tp1r-1.0`, `tp1r-2.0`) registrados no ledger via
+`backtest-trial-registry.mjs`, família `tp1r-sensitivity-hypothesis`
+(N=3). Nenhuma mudança de código nesta rodada — só diagnóstico.
+
+### Próximo passo
+
+Rodada 3 (`trailAtrMult`, já declarada no item 114) — comandos:
+
+```
+Símbolos: BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT
+De: 2025-08-20T00:00:00Z   Até: 2026-08-20T00:00:00Z
+
+Run E — trial_label: trail-atr-2.5
+  Overrides do pineConfig em JSON: {"trailAtrMult": 2.5}
+
+Run F — trial_label: trail-atr-3.0
+  Overrides do pineConfig em JSON: {"trailAtrMult": 3.0}
+```
+
+(Mesmo baseline `tp2-cap-baseline` serve de referência — `trailAtrMult:
+2.0` já é o default implícito nele.)
