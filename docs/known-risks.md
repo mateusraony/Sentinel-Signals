@@ -13513,3 +13513,137 @@ já existente, matching por igualdade exata) e `scripts/build-backtest.mjs`
 backtest, então a query funciona sem precisar de rede/Firestore).
 Nenhuma mudança de comportamento de produção — o campo é só leitura do
 que já existia.
+
+## 120. Rodada 4 medida — `skip15mConfirmationEnabled`: o ponto estimado mais forte da sessão, mas ainda dentro do ruído (corrigido 2026-08-22, Codex PR #232)
+
+### Contexto
+
+Usuário rodou os 2 backtests da Rodada 4 (item 117/119): `skip15m-baseline`
+(comportamento de hoje) vs. `skip15m-enabled`
+(`{"skip15mConfirmationEnabled": true}`), mesma janela/carteira de sempre.
+
+### Resultado — número de topo
+
+| | `skip15m-baseline` | `skip15m-enabled` | Δ |
+|---|---|---|---|
+| N | 99 | **104** | +5 |
+| winRate | 48,5% | 51,0% | +2,5pp |
+| `netExpectancyR` | +0,0798 | **+0,1455** | +0,0657 (quase o dobro) |
+| `profitFactor` | 1,013 | 1,236 | +0,223 |
+| `equityCurve.totalReturnPct`/`cagrPct` | +7,44% / 8,0%a.a. | **+15,42% / 16,6%a.a.** | mais que o dobro |
+| `equityCurve.maxDrawdownPct` | 11,36% | **9,86%** | melhora (menos drawdown) |
+| `clusterSignFlipTest` (relatório isolado) | p=0,621 | **p=0,285** | mais perto de significância que qualquer teste desta sessão, mas ainda não passa |
+
+Todas as métricas de ponto melhoram, e é a única rodada onde N muda (a
+única cuja hipótese é sobre a ENTRADA, não só a saída — as outras 3 rodadas
+do item 114 mantinham a mesma população de operações).
+
+### `report.signalExpiry` é CONSISTENTE com o esperado, mas não prova identidade sinal a sinal (correção Codex, PR #232)
+
+**Correção (Codex review, PR #232)**: a versão original desta seção dizia
+que a contagem de `signalExpiry` (9 sinais expirados por
+`confirmation_15m_not_aligned` no baseline) e as 9 operações que só
+existem no `skip15m-enabled` eram "as MESMAS 9", chamando isso de
+"causalidade comprovada campo a campo". **Isso não está sustentado**:
+`report.signalExpiry` (`scripts/run-backtest.mjs`) grava só agregados
+(`total`/`byReason`), sem guardar `dedup_key`/id do `SignalEvent` — não
+existe hoje nenhuma chave de junção que ligue as 9 operações recuperadas
+(identificadas por `id` de `TradeOperation`) às 9 contagens de
+`signalExpiry` (que são só um número). A igualdade de contagem (9 = 9) é
+**consistente** com a hipótese de que são os mesmos sinais — é
+exatamente o que o mecanismo prevê —, mas não é prova disso; poderia ser
+coincidência (ex.: um número diferente de sinais expirando por motivos
+diferentes, somando 9 por acaso). Confirmar a identidade exigiria
+`signalExpiry` passar a gravar os `dedup_key`s, não só a contagem — não
+feito nesta rodada.
+
+Essas 9 operações "recuperadas" (só existem no `skip15m-enabled`): **6
+positivas, 3 negativas**, R = `2,157, 1,109, 0,188, 1,520, 2,231, 1,613,
+-1,036, -1,026, -1,064` — **média +0,632R**. `clusterSignFlipTest`
+restrito a essas 9 (G=7 clusters, exaustivo): **p=0,156** — não
+significativo (n=9 é pouquíssimo), mas é o ponto estimado mais positivo de
+qualquer subgrupo medido nesta sessão.
+
+**Achado colateral — 4 operações desaparecem** (existiam no baseline, não
+existem no enabled): `BTCUSDT 2025-11-03 (+0,975R)`, `PENDLEUSDT 2025-11-21
+(-1,015R)`, `PENDLEUSDT 2026-03-07 (-1,029R)`, `ZROUSDT 2026-05-27
+(-1,034R)` — soma **-2,103R**, média **-0,526R** (**correção Codex**: a
+versão original somou errado e reportou -0,276R; a soma real dos 4
+valores é -2,103, não -1,104). Como esse subconjunto já era, em conjunto,
+francamente negativo DENTRO do baseline, ele puxava a média do baseline
+pra baixo — a ausência dele no `enabled` não é um custo que o `enabled`
+paga, é simplesmente uma população diferente que nunca incluiu essas 4
+entradas. Mecanismo plausível pra por que elas desaparecem, não
+confirmado a fundo: pular a espera do 15m muda o INSTANTE em que a
+entrada é avaliada (imediato no fechamento do 4h, em vez de esperar o
+candle de 15m realinhar) — nesse instante diferente, um snapshot diferente
+de regime/R:R pode reprovar num gate que o snapshot mais tardio (baseline)
+não reprovava. Achado real, mas raro (4 de 99) e não investigado a fundo
+nesta rodada.
+
+**As 95 operações em comum** (mesmo `id`) são quase todas idênticas — só
+11 têm diferença de preço de entrada por timing, a maioria centavos de R.
+Uma reproduz quase exatamente o caso do FETUSDT 2025-12-11 já registrado
+no item 67 (mesmo sinal, mesma magnitude de divergência ~0,58-0,59R) —
+consistência entre janelas diferentes, não achado novo. Média da
+diferença entre as 95 comuns: **-0,006R** (ruído puro, não é aqui que a
+melhora agregada vem).
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: a melhora agregada (+0,066R líquido) vem quase inteiramente da
+troca de 4 operações perdidas por 9 recuperadas — não de uma mudança nas
+95 operações que os dois cenários compartilham. Isso é consistente com o
+mecanismo que o flag deveria produzir (mais sinais confirmando, sem mudar
+os que já confirmavam) — a contagem bate (9=9), mas como corrigido acima,
+isso é consistência, não prova de identidade sinal a sinal.
+
+**Hipótese**: com apenas 9 operações "novas" e um efeito de +0,632R nelas,
+não dá pra distinguir sorte de vantagem real — a mesma parede estatística
+do item 109 (poder insuficiente é a limitação, não o mecanismo). Mas é o
+resultado mais consistente com a hipótese original (item 67: comunidade
+documenta que camada extra de confirmação raramente ajuda, e aqui a
+melhora concentra-se exatamente onde o mecanismo prevê).
+
+**Diferença de categoria em relação às outras 5 rodadas (itens 108/115/
+116/118)**: todos os outros parâmetros testados nesta sessão são
+otimizações do Sentinel sobre a estratégia — não têm correspondência no
+Pine real. `skip15mConfirmationEnabled` é o oposto: o objetivo declarado
+desde o item 67 é bater 1:1 com a estratégia que o usuário JÁ opera de
+verdade no TradingView (que não tem confirmação de 15m nenhuma — item
+114). Ligar isto não é "apostar num edge novo não comprovado" — é
+"parar de divergir da estratégia real por um motivo que a própria
+pesquisa de comunidade (item 67) já questionava". A régua de decisão pode
+ser diferente por causa disso — mas isso é julgamento de produto, não
+estatística, e fica com o usuário.
+
+**Recomendação**: dado que (a) o ponto estimado é o mais forte já medido,
+(b) a decomposição por operação é consistente com o mecanismo esperado
+(ainda que sem prova de identidade sinal a sinal, ver correção acima), e
+(c) o próprio propósito do flag é fidelidade à estratégia real — a decisão de ligar em produção é menos sobre "achamos edge
+estatístico" e mais sobre "aceitar o trade-off já conhecido" (perde a
+camada extra de proteção contra reversão rápida que o 15m dava, ganha
+paridade com o TradingView + os sinais que hoje expiram como o ENAUSDT).
+Não é uma recomendação unilateral de ligar — é uma reformulação honesta de
+que critério estatístico puro não é o único aplicável aqui. Decisão do
+usuário.
+
+### Verificação
+
+`node scripts/backtest-correlation-check.mjs --report <cada arquivo>` +
+script ad hoc reusando `buildTradeIntervals`/`findOverlapClusters`/
+`clusterSignFlipTest` pra separar comuns/recuperadas/perdidas por `id`
+(mesmo método das rodadas 1-3, adaptado pra população que MUDA de tamanho
+em vez de só mudar o resultado da mesma população). Os 2 relatórios
+registrados no ledger (família `skip15m-confirmation-rechecked-hypothesis`,
+N=2). Nenhuma mudança de código nesta rodada — só diagnóstico.
+
+### Próximo passo
+
+Decisão do usuário: (a) ligar `skip15mConfirmationEnabled` em produção
+aceitando o trade-off de fidelidade acima; (b) pedir mais amostra antes
+(mais símbolos, ou esperar mais operações reais); (c) deixar como está.
+Se optar por (a), é mudança de produção real (não backtest-only) — os 10
+`MonitoredAsset` precisariam do campo atualizado em
+`strategyConfig/current` (mesmo padrão do item 108, escrita direta em
+produção, fora do escopo de uma sessão de backtest).
