@@ -13514,7 +13514,7 @@ backtest, então a query funciona sem precisar de rede/Firestore).
 Nenhuma mudança de comportamento de produção — o campo é só leitura do
 que já existia.
 
-## 120. Rodada 4 medida — `skip15mConfirmationEnabled`: o ponto estimado mais forte da sessão, mas ainda dentro do ruído — e a causalidade agora provada, sinal por sinal
+## 120. Rodada 4 medida — `skip15mConfirmationEnabled`: o ponto estimado mais forte da sessão, mas ainda dentro do ruído (corrigido 2026-08-22, Codex PR #232)
 
 ### Contexto
 
@@ -13538,32 +13538,48 @@ Todas as métricas de ponto melhoram, e é a única rodada onde N muda (a
 única cuja hipótese é sobre a ENTRADA, não só a saída — as outras 3 rodadas
 do item 114 mantinham a mesma população de operações).
 
-### `report.signalExpiry` confirma a causalidade exata, sinal por sinal (a ferramenta nova do item 119 funcionou)
+### `report.signalExpiry` é CONSISTENTE com o esperado, mas não prova identidade sinal a sinal (correção Codex, PR #232)
 
-`skip15m-baseline.signalExpiry.range_filter.byReason.confirmation_15m_not_aligned
-= 9` — e o contrafactual pareado por ID de operação mostra **exatamente 9
-operações que só existem no `skip15m-enabled`** (nunca abriram no
-baseline). Casamento perfeito: são as MESMAS 9 que o `signalExpiry` já
-apontava. Isto não é mais hipótese — é causalidade comprovada campo a
-campo, a primeira vez nesta investigação que dá pra dizer com certeza
-"estes sinais específicos existem por causa deste flag específico", não
-só uma diferença agregada de contagem.
+**Correção (Codex review, PR #232)**: a versão original desta seção dizia
+que a contagem de `signalExpiry` (9 sinais expirados por
+`confirmation_15m_not_aligned` no baseline) e as 9 operações que só
+existem no `skip15m-enabled` eram "as MESMAS 9", chamando isso de
+"causalidade comprovada campo a campo". **Isso não está sustentado**:
+`report.signalExpiry` (`scripts/run-backtest.mjs`) grava só agregados
+(`total`/`byReason`), sem guardar `dedup_key`/id do `SignalEvent` — não
+existe hoje nenhuma chave de junção que ligue as 9 operações recuperadas
+(identificadas por `id` de `TradeOperation`) às 9 contagens de
+`signalExpiry` (que são só um número). A igualdade de contagem (9 = 9) é
+**consistente** com a hipótese de que são os mesmos sinais — é
+exatamente o que o mecanismo prevê —, mas não é prova disso; poderia ser
+coincidência (ex.: um número diferente de sinais expirando por motivos
+diferentes, somando 9 por acaso). Confirmar a identidade exigiria
+`signalExpiry` passar a gravar os `dedup_key`s, não só a contagem — não
+feito nesta rodada.
 
-Essas 9 operações "recuperadas": **6 positivas, 3 negativas**, R = `2,157,
-1,109, 0,188, 1,520, 2,231, 1,613, -1,036, -1,026, -1,064` — **média
-+0,632R**. `clusterSignFlipTest` restrito a essas 9 (G=7 clusters,
-exaustivo): **p=0,156** — não significativo (n=9 é pouquíssimo), mas é o
-ponto estimado mais positivo de qualquer subgrupo medido nesta sessão.
+Essas 9 operações "recuperadas" (só existem no `skip15m-enabled`): **6
+positivas, 3 negativas**, R = `2,157, 1,109, 0,188, 1,520, 2,231, 1,613,
+-1,036, -1,026, -1,064` — **média +0,632R**. `clusterSignFlipTest`
+restrito a essas 9 (G=7 clusters, exaustivo): **p=0,156** — não
+significativo (n=9 é pouquíssimo), mas é o ponto estimado mais positivo de
+qualquer subgrupo medido nesta sessão.
 
 **Achado colateral — 4 operações desaparecem** (existiam no baseline, não
 existem no enabled): `BTCUSDT 2025-11-03 (+0,975R)`, `PENDLEUSDT 2025-11-21
 (-1,015R)`, `PENDLEUSDT 2026-03-07 (-1,029R)`, `ZROUSDT 2026-05-27
-(-1,034R)` — média -0,276R. Mecanismo plausível, não confirmado a fundo:
-pular a espera do 15m muda o INSTANTE em que a entrada é avaliada (imediato
-no fechamento do 4h, em vez de esperar o candle de 15m realinhar) — nesse
-instante diferente, um snapshot diferente de regime/R:R pode reprovar num
-gate que o snapshot mais tardio (baseline) não reprovava. Achado real, mas
-raro (4 de 99) e não investigado a fundo nesta rodada.
+(-1,034R)` — soma **-2,103R**, média **-0,526R** (**correção Codex**: a
+versão original somou errado e reportou -0,276R; a soma real dos 4
+valores é -2,103, não -1,104). Como esse subconjunto já era, em conjunto,
+francamente negativo DENTRO do baseline, ele puxava a média do baseline
+pra baixo — a ausência dele no `enabled` não é um custo que o `enabled`
+paga, é simplesmente uma população diferente que nunca incluiu essas 4
+entradas. Mecanismo plausível pra por que elas desaparecem, não
+confirmado a fundo: pular a espera do 15m muda o INSTANTE em que a
+entrada é avaliada (imediato no fechamento do 4h, em vez de esperar o
+candle de 15m realinhar) — nesse instante diferente, um snapshot diferente
+de regime/R:R pode reprovar num gate que o snapshot mais tardio (baseline)
+não reprovava. Achado real, mas raro (4 de 99) e não investigado a fundo
+nesta rodada.
 
 **As 95 operações em comum** (mesmo `id`) são quase todas idênticas — só
 11 têm diferença de preço de entrada por timing, a maioria centavos de R.
@@ -13577,10 +13593,10 @@ melhora agregada vem).
 
 **Fato**: a melhora agregada (+0,066R líquido) vem quase inteiramente da
 troca de 4 operações perdidas por 9 recuperadas — não de uma mudança nas
-95 operações que os dois cenários compartilham. Isso é exatamente o
+95 operações que os dois cenários compartilham. Isso é consistente com o
 mecanismo que o flag deveria produzir (mais sinais confirmando, sem mudar
-os que já confirmavam), e a ferramenta nova do item 119 prova isso
-diretamente pela primeira vez.
+os que já confirmavam) — a contagem bate (9=9), mas como corrigido acima,
+isso é consistência, não prova de identidade sinal a sinal.
 
 **Hipótese**: com apenas 9 operações "novas" e um efeito de +0,632R nelas,
 não dá pra distinguir sorte de vantagem real — a mesma parede estatística
@@ -13602,9 +13618,9 @@ ser diferente por causa disso — mas isso é julgamento de produto, não
 estatística, e fica com o usuário.
 
 **Recomendação**: dado que (a) o ponto estimado é o mais forte já medido,
-(b) o mecanismo agora está provado causalmente sinal a sinal (não só
-suspeitado), e (c) o próprio propósito do flag é fidelidade à estratégia
-real — a decisão de ligar em produção é menos sobre "achamos edge
+(b) a decomposição por operação é consistente com o mecanismo esperado
+(ainda que sem prova de identidade sinal a sinal, ver correção acima), e
+(c) o próprio propósito do flag é fidelidade à estratégia real — a decisão de ligar em produção é menos sobre "achamos edge
 estatístico" e mais sobre "aceitar o trade-off já conhecido" (perde a
 camada extra de proteção contra reversão rápida que o 15m dava, ganha
 paridade com o TradingView + os sinais que hoje expiram como o ENAUSDT).
