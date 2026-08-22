@@ -78,6 +78,16 @@ export default function Settings() {
   const queryClient = useQueryClient();
   const [values, setValues] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'saved' | 'error'
+  // Codex review (PR #233): handleSave used to resend EVERY STRATEGY_KEYS
+  // value from this component's mount-time snapshot. Firestore merge
+  // doesn't protect against that — a stale-but-present key in the payload
+  // still overwrites whatever another tab/session wrote to
+  // strategyConfig/current in the meantime. Track only the keys the user
+  // actually touched (slider drag, switch flip, or explicit Restaurar) and
+  // send just those, so flipping one flag can never roll back a value
+  // someone else changed live.
+  const [dirty, setDirty] = useState(() => new Set());
+  const markDirty = (key) => setDirty(prev => new Set(prev).add(key));
 
   const { data: assets = [] } = useQuery({
     queryKey: ['all-assets'],
@@ -104,7 +114,9 @@ export default function Settings() {
 
   const handleReset = () => {
     const defaults = getLocalPineConfig();
-    setValues(v => ({ ...v, ...Object.fromEntries([...FIELDS, ...BOOL_FIELDS].map(f => [f.key, defaults[f.key]])) }));
+    const resetKeys = [...FIELDS, ...BOOL_FIELDS].map(f => f.key);
+    setValues(v => ({ ...v, ...Object.fromEntries(resetKeys.map(k => [k, defaults[k]])) }));
+    setDirty(prev => new Set([...prev, ...resetKeys]));
   };
 
   const handleSave = async () => {
@@ -112,11 +124,15 @@ export default function Settings() {
     setSaveStatus('saving');
     try {
       const strategyPayload = {};
-      for (const key of STRATEGY_KEYS) strategyPayload[key] = values[key];
-      await backend.entities.StrategyConfig.set('current', {
-        ...strategyPayload,
-        updated_at: new Date().toISOString(),
-      });
+      for (const key of STRATEGY_KEYS) {
+        if (dirty.has(key)) strategyPayload[key] = values[key];
+      }
+      if (Object.keys(strategyPayload).length > 0) {
+        await backend.entities.StrategyConfig.set('current', {
+          ...strategyPayload,
+          updated_at: new Date().toISOString(),
+        });
+      }
 
       const activeAssets = assets.filter(a => a.is_active);
       const toUpdate = activeAssets.filter(
@@ -131,6 +147,7 @@ export default function Settings() {
       queryClient.invalidateQueries({ queryKey: ['all-assets'] });
 
       logInfo('settings', `Ajustes finos salvos — ${toUpdate.length} ativo(s) atualizado(s)`, strategyPayload);
+      setDirty(new Set());
       setSaveStatus('saved');
     } catch (e) {
       setSaveStatus('error');
@@ -219,7 +236,7 @@ export default function Settings() {
                     max={field.max}
                     step={field.step}
                     aria-label={field.label}
-                    onValueChange={([v]) => setValues(prev => ({ ...prev, [field.key]: v }))}
+                    onValueChange={([v]) => { setValues(prev => ({ ...prev, [field.key]: v })); markDirty(field.key); }}
                   />
                   <div className="flex items-center justify-between text-[8px] font-mono text-muted-foreground/50">
                     <span>{field.min}</span><span>{field.max}</span>
@@ -240,7 +257,7 @@ export default function Settings() {
               </div>
               <Switch
                 checked={!!values[field.key]}
-                onCheckedChange={(checked) => setValues(prev => ({ ...prev, [field.key]: checked }))}
+                onCheckedChange={(checked) => { setValues(prev => ({ ...prev, [field.key]: checked })); markDirty(field.key); }}
                 aria-label={field.label}
               />
             </div>

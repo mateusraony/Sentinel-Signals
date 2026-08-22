@@ -13679,10 +13679,26 @@ Para ativar: painel → **Ajuste Fino** (Settings) → seção nova abaixo dos
 sliders → ligar o switch → **Salvar & Sincronizar**. Efeito no próximo
 scan (browser e cron, ambos leem `strategyConfig/current`).
 
+**Correção (Codex, PR #233, P1)**: a primeira versão do `handleSave`
+reconstruía `strategyPayload` a partir de TODAS as `STRATEGY_KEYS` lidas
+no snapshot de montagem do componente — a alegação da descrição do PR
+("grava só esse campo, preservando tudo mais") era falsa na prática: o
+merge do Firestore não protege contra uma chave presente-mas-desatualizada
+no payload. Se outra aba/sessão mudasse `tp1R`/`trailAtrMult`/`minScore`/
+`atrLen` enquanto esta tela ficasse aberta, ligar o switch e salvar
+reverteria esses valores para o snapshot antigo — exatamente o reset que
+o PR dizia evitar. Corrigido: novo estado `dirty` (Set) rastreia só as
+chaves que o usuário efetivamente tocou nesta sessão de tela (slider,
+switch, ou "Restaurar" explícito); `handleSave` agora só inclui no
+payload as chaves em `dirty` — se nenhuma chave de `strategyConfig` foi
+tocada, nem chama `StrategyConfig.set`. `dirty` é limpo após salvar com
+sucesso.
+
 ### Verificação
 
 `npm run lint && npm test && npm run build` — 48 arquivos/1064 testes
-passando, build ok. Nenhum teste novo (mudança é puramente de exposição de
-UI para um flag já testado em `scannerStateMachine.test.js`/
-`opExitRules.test.js`; a lógica de leitura do flag em `scanner.js` não
-mudou). Reversível pelo mesmo switch a qualquer momento.
+passando, build ok (rodado de novo após a correção acima). Nenhum teste
+novo (mudança é puramente de exposição de UI para um flag já testado em
+`scannerStateMachine.test.js`/`opExitRules.test.js`; a lógica de leitura
+do flag em `scanner.js` não mudou). Reversível pelo mesmo switch a
+qualquer momento.
