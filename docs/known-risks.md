@@ -13232,3 +13232,88 @@ Run F — trial_label: trail-atr-3.0
 
 (Mesmo baseline `tp2-cap-baseline` serve de referência — `trailAtrMult:
 2.0` já é o default implícito nele.)
+
+## 117. Caso ao vivo do ENAUSDT confirma o mecanismo do item 67 — e é mais severo que a amostra medida na época sugeria (2026-08-22)
+
+### Contexto
+
+Usuário reportou um sinal real: ENAUSDT deu BUY no Pine dele no TradingView
+(print do gráfico 4h confirma: `Entry 0.15620, Stop 0.13091 (-16,09%), TP1
+0.19364 (+24,13%), R:R 1:1.5, Score 85/100, T3 Altcoin`), mas o Sentinel
+ficou só "em monitoramento". Com o card novo do item 108 (PR #229), o
+motivo real apareceu direto na tela: **"Aguardando o Range Filter de 15m
+confirmar a mesma direção do sinal de 4h"** + **"Janela de confirmação
+expirada — não vai mais virar operação neste sinal"**.
+
+### Achado — é exatamente o mecanismo do item 67, e não o caso "raro" que a amostra de 2026-08-08 media
+
+O item 67 (2026-08-08) já tinha medido este exato gate
+(`skip15mConfirmationEnabled`/`check15mConfirmation`) e concluído: o efeito
+é **pequeno e raro** — 16 das 18 operações do FETUSDT testadas eram
+byte-idênticas com/sem o gate, porque um fechamento de candle 4h **também
+é** um fechamento de candle 15m (4h = 16×15m) — na maioria dos casos a
+"vela de 15m mais recente" já está alinhada no mesmo instante, sem espera
+real. Só 2 de 18 esperaram (15min), nenhuma expirou sem nunca confirmar.
+
+**O caso do ENAUSDT é qualitativamente diferente**: não foi um atraso de
+15-30min — foi a JANELA INTEIRA de 4h sem o RF de 15m nunca se alinhar,
+terminando em expiração total (sinal nunca virou operação). Isso não
+contradiz o item 67 (a amostra dele nunca mediu um caso de expiração
+total, só atrasos parciais), mas mostra que o "efeito pequeno e raro" de
+2026-08-08 não cobre esse desfecho — pode ser mais comum do que a amostra
+FETUSDT-only sugeria, especialmente em T3 Altcoin (ENAUSDT), onde o 15m
+tende a ser mais ruidoso/chicoteado que blue chips.
+
+**Fato verificado, não hipótese**: os dois motores concordaram na entrada
+de 4h (mesmo score 85/100, mesma direção BUY, "Forte") — a detecção do
+sinal em si está correta e paritária com o Pine real. A divergência é
+inteiramente no gate de confirmação de 15m que o Pine real **não tem**
+(confirmado antes, item 114: o Pine real entra no fechamento do próprio
+candle 4h, sem checar timeframe menor nenhum).
+
+### Sobre o gráfico de 15m com estrutura SMC (BOS/ChoCH/FVG/OB)
+
+O segundo print mostra um indicador de estrutura SMC rodando em 15m no
+TradingView do usuário. **Isso não está conectado a nada que o Sentinel
+usa hoje**: a cascata SMC do Sentinel opera em 1h→5m (`smcStructure.js`,
+`known-risks.md` diversos itens), nunca em 15m — o indicador do print é
+uma ferramenta manual do usuário, sem relação com o gate que bloqueou o
+ENAUSDT (que é puramente o Range Filter de 15m, não estrutura SMC).
+**Não dá pra extrair um "padrão novo" utilizável desse único gráfico** sem
+cair exatamente na armadilha que este projeto já evita há 116 itens —
+ler um padrão visual isolado e tratar como achado sem teste estatístico
+por trás. Se o usuário quiser investigar SMC em 15m como confirmação
+formal, isso seria um mecanismo NOVO (não existe hoje), precisaria de
+pesquisa de comunidade + desenho + backtest A/B como qualquer outro — não
+recomendado a partir de 1 gráfico.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: o novo card (item 108 addendum/PR #229) já fez exatamente o que
+deveria — expôs o motivo real sem precisar eu investigar manualmente.
+
+**Hipótese, não confirmada**: a recomendação do item 67 ("não ligar
+`skip15mConfirmationEnabled`") foi baseada numa amostra de 18 operações de
+1 símbolo (FETUSDT) medida há 2 semanas, ANTES das correções dos itens 106
+(cota Firestore) e 108 (`smc_confirm_4h15m` zerando a cascata) — a
+população de operações que essa medição viu pode não ser representativa
+da que a produção corrigida gera agora. O caso do ENAUSDT sugere que
+expiração total (não só atraso) pode ser mais frequente do que aquela
+amostra capturou, possivelmente concentrada em tiers mais voláteis (T2/T3).
+
+**Recomendação**: vale re-medir `skip15mConfirmationEnabled` com um A/B
+fresco (7 símbolos, janela atual — mesmo padrão das Rodadas 1-3 desta
+sessão), já que (a) o flag já está sincronizado como parâmetro de PRODUÇÃO
+(`SYNCED_STRATEGY_KEYS`, não backtest-only como os outros testados nesta
+sessão — ligar não exige código novo, só decisão) e (b) a medição anterior
+é potencialmente desatualizada. Não fiz esse teste nesta rodada — é
+candidato a Rodada 4, depois da Rodada 3 (`trailAtrMult`) já em andamento,
+mesma disciplina de um teste por vez.
+
+### Verificação
+
+Leitura direta de `src/lib/scanner.js` (`resolveEntryConfirmation15m`,
+`check15mConfirmation`) confirmando o mecanismo, cruzada com os 3 prints
+do usuário (card do painel, gráfico 4h do TradingView, gráfico 15m com
+SMC) e o texto já registrado no item 67. Nenhuma mudança de código nesta
+rodada — só diagnóstico.
