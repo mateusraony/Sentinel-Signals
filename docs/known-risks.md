@@ -13232,3 +13232,116 @@ Run F — trial_label: trail-atr-3.0
 
 (Mesmo baseline `tp2-cap-baseline` serve de referência — `trailAtrMult:
 2.0` já é o default implícito nele.)
+
+## 117. Caso ao vivo do ENAUSDT confirma o mecanismo do item 67 — e é mais severo que a amostra medida na época sugeria (2026-08-22)
+
+### Contexto
+
+Usuário reportou um sinal real: ENAUSDT deu BUY no Pine dele no TradingView
+(print do gráfico 4h confirma: `Entry 0.15620, Stop 0.13091 (-16,09%), TP1
+0.19364 (+24,13%), R:R 1:1.5, Score 85/100, T3 Altcoin`), mas o Sentinel
+ficou só "em monitoramento". Com o card novo do item 108 (PR #229), o
+motivo real apareceu direto na tela: **"Aguardando o Range Filter de 15m
+confirmar a mesma direção do sinal de 4h"** + **"Janela de confirmação
+expirada — não vai mais virar operação neste sinal"**.
+
+### Achado — é exatamente o mecanismo do item 67, mas o item 67 tem um ponto cego pra este desfecho específico
+
+O item 67 (2026-08-08) já tinha medido este exato gate
+(`skip15mConfirmationEnabled`/`check15mConfirmation`) e concluído: o efeito
+é **pequeno e raro** — 16 das 18 operações do FETUSDT testadas eram
+byte-idênticas com/sem o gate, porque um fechamento de candle 4h **também
+é** um fechamento de candle 15m (4h = 16×15m) — na maioria dos casos a
+"vela de 15m mais recente" já está alinhada no mesmo instante, sem espera
+real. Só 2 de 18 esperaram (15min).
+
+**Correção (Codex review, PR #230)**: a frase original aqui dizia "nenhuma
+[das 18] expirou sem nunca confirmar" — isso não é uma medição, é um
+artefato do método. A comparação das "18 operações" foi construída a
+partir de `overall.curve` (item 67, seção "Comparação operação-a-operação
+do FETUSDT"), que só contém operações que **abriram e fecharam** — um
+sinal que expira sem nunca confirmar não vira `TradeOperation`, então
+**nunca poderia aparecer** nessa lista de 18 em nenhum dos dois lados da
+comparação, por construção. Dizer "nenhuma das 18 expirou" não é
+evidência de que expiração total é rara — é uma tautologia do método
+(um método que só compara operações abertas não pode, estruturalmente,
+enxergar sinais que nunca abriram). **O único lugar em item 67 que toca
+esse desfecho é o delta agregado de volume dos 7 símbolos (103→108,
++5 operações)** — que pode incluir alguns sinais que só abriram porque o
+gate foi pulado (ou seja, teriam expirado sem o flag), mas isso nunca foi
+desagregado por símbolo nem cruzado com `SignalEvent.expired_logged`/
+`entryFunnel.byReason.confirmation_15m_not_aligned` — não dá pra saber
+com que frequência a expiração total específica (como a do ENAUSDT)
+acontecia naquela amostra.
+
+**O caso do ENAUSDT é uma expiração total real, observada ao vivo**: a
+JANELA INTEIRA de 4h passou sem o RF de 15m nunca se alinhar. O que dá
+pra afirmar com segurança: isso acontece na prática, e o item 67 nunca
+mediu a TAXA desse desfecho especificamente (nem a favor nem contra "é
+raro") — não porque não tenha acontecido na amostra dele, mas porque o
+método usado (comparação de `overall.curve`) não tinha como enxergar essa
+categoria de caso. Não dá pra afirmar que é "mais comum do que a amostra
+sugeria" (a amostra não sugeria nada sobre isso) — só que é uma lacuna de
+medição real, agora com um exemplo concreto.
+
+**Fato verificado, não hipótese**: os dois motores concordaram na entrada
+de 4h (mesmo score 85/100, mesma direção BUY, "Forte") — a detecção do
+sinal em si está correta e paritária com o Pine real. A divergência é
+inteiramente no gate de confirmação de 15m que o Pine real **não tem**
+(confirmado antes, item 114: o Pine real entra no fechamento do próprio
+candle 4h, sem checar timeframe menor nenhum).
+
+### Sobre o gráfico de 15m com estrutura SMC (BOS/ChoCH/FVG/OB)
+
+O segundo print mostra um indicador de estrutura SMC rodando em 15m no
+TradingView do usuário. **Isso não está conectado a nada que o Sentinel
+usa hoje**: a cascata SMC do Sentinel opera em 1h→5m (`smcStructure.js`,
+`known-risks.md` diversos itens), nunca em 15m — o indicador do print é
+uma ferramenta manual do usuário, sem relação com o gate que bloqueou o
+ENAUSDT (que é puramente o Range Filter de 15m, não estrutura SMC).
+**Não dá pra extrair um "padrão novo" utilizável desse único gráfico** sem
+cair exatamente na armadilha que este projeto já evita há 116 itens —
+ler um padrão visual isolado e tratar como achado sem teste estatístico
+por trás. Se o usuário quiser investigar SMC em 15m como confirmação
+formal, isso seria um mecanismo NOVO (não existe hoje), precisaria de
+pesquisa de comunidade + desenho + backtest A/B como qualquer outro — não
+recomendado a partir de 1 gráfico.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: o novo card (item 108 addendum/PR #229) já fez exatamente o que
+deveria — expôs o motivo real sem precisar eu investigar manualmente.
+
+**Hipótese, não confirmada**: a recomendação do item 67 ("não ligar
+`skip15mConfirmationEnabled`") foi baseada (a) na comparação pareada das 18
+operações do FETUSDT — método que, como corrigido acima, é estruturalmente
+cego a expirações totais — e (b) no delta agregado de volume dos 7
+símbolos (103→108, +5 operações), nunca desagregado por símbolo/motivo. A
+medição também é de antes das correções dos itens 106 (cota Firestore) e
+108 (`smc_confirm_4h15m` zerando a cascata), então a população de
+operações que ela viu pode não ser representativa da que a produção
+corrigida gera agora. **O que o caso do ENAUSDT estabelece**: expiração
+total acontece de verdade e é um desfecho que a metodologia de 2026-08-08
+nunca teve como medir — não que seja "mais frequente" (isso exigiria a
+contagem real, que não temos).
+
+**Recomendação**: vale re-medir `skip15mConfirmationEnabled` com um A/B
+fresco (7 símbolos, janela atual — mesmo padrão das Rodadas 1-3 desta
+sessão), **desta vez olhando `SignalEvent.expired_logged`/
+`entryFunnel.byReason.confirmation_15m_not_aligned` além do
+`overall.curve`** — só assim dá pra medir a taxa real de expiração total,
+não só o efeito sobre operações que já abriram. Motivado também por (a) o
+flag já estar sincronizado como parâmetro de PRODUÇÃO
+(`SYNCED_STRATEGY_KEYS`, não backtest-only como os outros testados nesta
+sessão — ligar não exige código novo, só decisão) e (b) a medição anterior
+ser potencialmente desatualizada. Não fiz esse teste nesta rodada — é
+candidato a Rodada 4, depois da Rodada 3 (`trailAtrMult`) já em andamento,
+mesma disciplina de um teste por vez.
+
+### Verificação
+
+Leitura direta de `src/lib/scanner.js` (`resolveEntryConfirmation15m`,
+`check15mConfirmation`) confirmando o mecanismo, cruzada com os 3 prints
+do usuário (card do painel, gráfico 4h do TradingView, gráfico 15m com
+SMC) e o texto já registrado no item 67. Nenhuma mudança de código nesta
+rodada — só diagnóstico.
