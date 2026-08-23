@@ -345,28 +345,57 @@ export default function Trades() {
     refetchInterval: 30000,
   });
 
+  // As 3 mutações abaixo passam pela MESMA CAS transacional
+  // (backend.tradeOps.transitionTradeOp) usada pelos dois loops do scanner —
+  // nunca backend.entities.TradeOperation.update() direto, que sobrescreveria
+  // o status sem checar se a op ainda está no estado lido (regra em
+  // .claude/rules/trading-engine.md: "não introduza um terceiro caminho de
+  // mutação de op"). `fromStatus` é o status do `op` no momento do clique
+  // (pode ter até 15s de defasagem — refetchInterval da query acima); se o
+  // scanner já tiver mudado a op nesse meio-tempo, a transação rejeita
+  // (`applied: false`) em vez de aplicar um patch stale por cima.
+  /** @param {object} op */
+  function manualTransition(op, patch) {
+    return backend.tradeOps.transitionTradeOp(op.id, op.status, patch, {
+      assetId: op.asset_id,
+      cascade: op.hierarchical_cascade === true ? op.cascade : undefined,
+    }).then(({ applied, currentStatus }) => {
+      if (!applied) {
+        throw new Error(`A operação já mudou de status (agora: ${currentStatus ?? 'desconhecido'}) — atualize a lista e tente de novo.`);
+      }
+    });
+  }
+
   const closeMutation = useMutation({
-    /** @param {string} id */
-    mutationFn: (id) => backend.entities.TradeOperation.update(id, { status: 'CLOSED', closed_reason: 'Encerrado manualmente' }),
+    /** @param {object} op */
+    mutationFn: (op) => manualTransition(op, { status: 'CLOSED', closed_reason: 'Encerrado manualmente' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trade-operations'] }),
+    onError: (err) => {
+      logError('Trades', 'Falha ao encerrar operação manualmente', { error: err.message });
+      window.alert(err.message);
+    },
   });
 
   const invalidateMutation = useMutation({
-    /** @param {string} id */
-    mutationFn: (id) => backend.entities.TradeOperation.update(id, { status: 'INVALIDATED', closed_reason: 'Invalidado manualmente' }),
+    /** @param {object} op */
+    mutationFn: (op) => manualTransition(op, { status: 'INVALIDATED', closed_reason: 'Invalidado manualmente' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trade-operations'] }),
+    onError: (err) => {
+      logError('Trades', 'Falha ao invalidar operação manualmente', { error: err.message });
+      window.alert(err.message);
+    },
   });
 
   const editMutation = useMutation({
-    /** @param {{ id: string, data: object }} args */
-    mutationFn: ({ id, data }) => backend.entities.TradeOperation.update(id, data),
+    /** @param {{ op: object, data: object }} args */
+    mutationFn: ({ op, data }) => manualTransition(op, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['trade-operations'] });
       setEditingOp(null);
     },
     onError: (err) => {
       logError('Trades', 'Falha ao salvar edição manual de operação', { error: err.message });
-      window.alert('Falha ao salvar. Veja o Debug Log.');
+      window.alert(err.message);
     },
   });
 
@@ -410,7 +439,7 @@ export default function Trades() {
         <EditModal
           op={editingOp}
           onClose={() => setEditingOp(null)}
-          onSave={(data) => editMutation.mutate({ id: editingOp.id, data })}
+          onSave={(data) => editMutation.mutate({ op: editingOp, data })}
         />
       )}
 
@@ -573,7 +602,7 @@ export default function Trades() {
                     {/* Invalidar */}
                     <button
                       onClick={() => {
-                        if (window.confirm(`Invalidar ${op.symbol} ${op.side}?`)) invalidateMutation.mutate(op.id);
+                        if (window.confirm(`Invalidar ${op.symbol} ${op.side}?`)) invalidateMutation.mutate(op);
                       }}
                       disabled={invalidateMutation.isPending}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all hover:opacity-90"
@@ -584,7 +613,7 @@ export default function Trades() {
                     {/* Encerrar */}
                     <button
                       onClick={() => {
-                        if (window.confirm(`Encerrar ${op.symbol} ${op.side}?`)) closeMutation.mutate(op.id);
+                        if (window.confirm(`Encerrar ${op.symbol} ${op.side}?`)) closeMutation.mutate(op);
                       }}
                       disabled={closeMutation.isPending}
                       className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-mono ml-auto transition-all hover:opacity-90"

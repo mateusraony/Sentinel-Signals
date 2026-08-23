@@ -14079,3 +14079,294 @@ dá pra fechar essa lacuna. Fora isso, uma 5ª medição em dado genuinamente
 novo (não repetição de janela/carteira) seria o próximo passo real antes
 de tirar qualquer conclusão sobre o regime de alta se sustentar — não
 pedida ainda pelo usuário.
+
+## 125. Conselho de revisão — auditoria completa do histórico do projeto (2026-08-23)
+
+### Contexto
+
+Pedido explícito do usuário: revisão criteriosa de TUDO já feito no
+projeto (todas as sessões, não só esta), procurando divergências, erros
+ou qualquer coisa prejudicando o motor/cérebro ou fórmulas de cálculo,
+"pensando com os agentes". Rodado o conselho de revisão
+(`sentinel-council-review`): 5 subagentes independentes (Arquiteto,
+Especialista em Trading, Concorrência, Segurança, Testes/Metodologia),
+cada um lendo `docs/known-risks.md` por inteiro (124 itens) + código
+relevante à própria lente, sem ver o trabalho dos outros. Eu (avaliador
+final) cruzei as 5 posições, verifiquei pessoalmente os 2 achados mais
+graves antes de escrever aqui, e organizei por severidade. Nenhum dado
+saiu da máquina (subagentes locais, mesma política do `llm-council`
+rejeitado).
+
+### Achado 1 (CRÍTICO, verificado por mim, CORRIGIDO — 2026-08-23) — `src/pages/Trades.jsx` é um 3º caminho de mutação de `TradeOperation`, sem CAS, violando regra própria do projeto
+
+**Fato** (achado do especialista em concorrência, verificado por mim lendo
+`src/pages/Trades.jsx:348-371`): as 3 mutations da página de Trades
+("Encerrar manualmente", "Invalidar manualmente", editar operação) escrevem
+via `backend.entities.TradeOperation.update(id, data)` — **não** via
+`backend.tradeOps.transitionTradeOp`, o único caminho que os outros dois
+mutadores do motor (`persistScanResults`/`priceCheckActiveOpsInner`)
+usam. Isso significa: sem `canApplyTransition` (dá pra re-transicionar
+uma op JÁ terminal), sem `clampMonotonicStop` (o `current_stop` do
+`EditModal` pode regredir livremente), sem limpeza do ponteiro
+`assetActiveOps` na mesma escrita. A lista que alimenta o modal atualiza a
+cada 15s (`refetchInterval`), então o dado na tela pode estar desatualizado
+no momento do clique. `.claude/rules/trading-engine.md:355` diz
+explicitamente "Não introduza um terceiro caminho de mutação de op" — este
+já existe, não documentado em nenhum item anterior.
+
+**Mitigação parcial que já existe**: `planTradeOpCreation` trata ponteiro
+para op terminal como órfão e repara na próxima criação — o ativo não
+fica travado pra sempre. O gate de entrada lê `status` direto da op, não
+o ponteiro, então uma edição manual que muda `status` pra terminal libera
+o ativo pra nova entrada na hora (não trava). O risco real não é
+travamento — é **corrupção silenciosa do registro de uma op ainda ativa**
+(métricas de win/loss erradas em `tradeMetrics.js`, `exit_price`/
+`stop_hit_price` órfãos) e uma corrida direta contra o scanner escrevendo
+a MESMA op no mesmo instante (last-write-wins, sem serialização).
+
+**Hipótese**: é ação manual/administrativa, frequência de corrida real é
+baixa — mas não é zero (o cron roda a cada ~5min, o price-check mais
+rápido ainda, e a lista do painel atualiza a cada 15s).
+
+**Recomendação**: trocar as 3 mutations pra passar por
+`backend.tradeOps.transitionTradeOp(id, op.status, patch, { assetId, cascade })`
+— reaproveita a regra pura já existente, zero lógica nova. Se o objetivo é
+permitir override mesmo sobre estado terminal (uso administrativo
+legítimo), fazer isso como uma exceção *documentada* dentro do adaptador,
+não um `.update()` cru fora dele. **Mudança de código real — não
+implementada aqui, precisa de confirmação explícita do usuário antes de
+mexer na máquina de estados** (mesma régua de sempre pra esta área).
+
+**Corrigido (pedido explícito do usuário, 2026-08-23)**: as 3 mutations
+(`closeMutation`/`invalidateMutation`/`editMutation`, `Trades.jsx:348-400`)
+agora passam por um helper local `manualTransition(op, patch)` que chama
+`backend.tradeOps.transitionTradeOp(op.id, op.status, patch, { assetId:
+op.asset_id, cascade: op.hierarchical_cascade === true ? op.cascade :
+undefined })` — mesmo padrão de `cascade` já usado pelos dois loops do
+scanner (`scanner.js:3755,4044`). Os 3 call sites (botões Editar/Invalidar/
+Encerrar, `.map(op => ...)`) passam o `op` inteiro em vez de só `op.id`,
+porque o CAS precisa do `status` lido no momento do clique como
+`fromStatus`. Quando `applied === false` (op mudou de estado entre o
+último refetch de 15s e o clique), o helper lança um erro com o
+`currentStatus` retornado; as 3 mutations ganharam (ou mantiveram, no caso
+de `editMutation`) `onError` com `logError` + `window.alert`, então a
+rejeição do CAS agora aparece pro usuário em vez de falhar silenciosamente
+como antes.
+
+**Efeito colateral aceito, não uma regressão**: como o patch passa a ser
+aplicado dentro da mesma transação que `clampMonotonicStop`
+(`src/api/entities.js:252-267`), um `current_stop` digitado manualmente no
+`EditModal` que PIORE o stop pro lado da operação (ex.: afrouxar
+propositalmente) é silenciosamente ajustado pro melhor valor entre o
+digitado e o já salvo — o `EditModal` não tem hoje um retorno explícito do
+valor efetivamente aplicado pra avisar o usuário disso (`transitionTradeOp`
+só devolve `{ applied: true }` no sucesso, sem o patch final). Antes desta
+correção o `update()` cru aceitava qualquer valor, inclusive um stop pior —
+essa liberdade era exatamente parte do buraco que este achado descreve
+(nenhuma proteção contra regressão), então o novo comportamento é
+consistente com o resto do motor, não uma regressão nova. Registrado aqui
+para não ficar como comportamento não-documentado; reabrir só se um
+usuário real precisar deliberadamente afrouxar um stop pelo painel.
+
+Verificação rodada: `npm run lint && npm test && npm run build`, todos
+verdes (1079 testes, nenhum novo — a lógica reaproveitada já tinha
+cobertura em `opTransition.test.js`/`scannerStateMachine.test.js`; não há
+suíte de componente para `src/pages/*.jsx` neste projeto, então a fiação em
+si do `Trades.jsx` não ganhou teste automatizado novo — verificado só por
+leitura/revisão manual dos 3 call sites e do helper).
+
+### Achado 2 (CRÍTICO, verificado por mim) — item 71 (BUY-only, "conclusivo mesmo com Bonferroni") nunca entrou no ledger nem foi cluster-corrigido
+
+**Fato** (achado do especialista em testes/metodologia, verificado por
+mim): o item 71 (linha 7345) chama o run `allowedside-ab-buy-only`
+(n=181, expectância líquida -0,344R, IC95 Bonferroni-ingênuo
+[-0,523,-0,165]) de "a única parte sólida — conclusiva mesmo com
+Bonferroni". Busquei `docs/backtest-trial-registry.json` por esse label —
+**não existe** (só o par SELL, `allowedside-ab-sell-only`, está
+registrado). Esse resultado nunca passou pelo
+`scripts/backtest-correlation-check.mjs` (a ferramenta de cluster-robustez
+criada no item 97, DEPOIS deste item 71 ter sido escrito) — é exatamente
+a mesma classe de lacuna que o item 98 encontrou (e corrigiu) para o
+número do item 48.
+
+**Hipótese** (estimativa por analogia, não recomputação real — o raw
+report não está disponível pra rodar a ferramenta de verdade): usando o
+DEFF típico já medido neste projeto pra datasets parecidos (1,4 a 3,56,
+itens 98/99/109/123), o IC corrigido por cluster provavelmente ainda
+exclui zero, mas por uma margem bem mais estreita que a publicada — o
+mesmo padrão que aconteceu com o item 48 quando revisitado no item 98
+("a melhor evidência de vantagem já produzida por este projeto é mais
+frágil do que o número originalmente publicado sugeria").
+
+**Recomendação**: recuperar o `backtest-report.json` bruto do run
+`allowedside-ab-buy-only` (artifact do GitHub Actions, se ainda não
+expirou — mesmo procedimento dos itens 98/99) ou re-rodar, registrar no
+ledger e rodar `backtest-correlation-check.mjs` de verdade. **Não é
+mudança de código — é apenas terminar uma verificação que ficou
+incompleta.** Nenhuma ação de produto depende disso hoje (nenhum flag foi
+ativado por causa deste número), mas o rótulo "conclusivo" que este item
+carrega pode estar emprestando mais confiança do que o número
+merece.
+
+### Achado 3 (IMPORTANTE) — score de confluência tem redundância estrutural que provavelmente explica por que `minScore` nunca mostra diferença
+
+**Fato** (`src/lib/indicators/confluence.js:110-144`, já registrado como
+achado antigo no item 45.7 mas nunca revisitado): dos 100 pontos do
+score, 25 vêm de "follow-through" e 10 de "preço vs. Range Filter" — no
+caminho `confirmed`, o segundo está CONTIDO no primeiro (mesma condição
+geométrica testada duas vezes). Some com MACD (20) e EMA (20), que também
+derivam ambos de cruzamento de médias — **até 55-65 dos 100 pontos** vêm
+de variáveis fortemente correlacionadas entre si, não de evidência
+independente.
+
+**Hipótese, agora cross-confirmada por dois revisores independentes de
+lentes diferentes** (Trading e, indiretamente, Testes ao revisar o item
+90): isso explicaria por que testar `minScore` em vários limiares (item
+90, "entry-score-threshold": `minScore=60` **piorou** o ponto estimado,
+o oposto do esperado se o score capturasse qualidade real) nunca produziu
+diferença — o score, acima de certo ponto, está medindo a mesma coisa
+repetidas vezes, não agregando informação nova.
+
+**Recomendação**: se algum dia o projeto quiser reabrir teste de
+`minScore`/pesos do score de confluência, tratar essa redundância
+primeiro (ex.: um teto por família de evidência, ou reduzir o peso do
+componente que já está descrito no follow-through) — senão qualquer novo
+teste de limiar vai continuar reordenando ruído correlacionado. **Não
+implementado — mudança de fórmula de cálculo, precisa de pedido
+explícito.**
+
+### Achado 4 (IMPORTANTE, corrigido — Codex, PR #238) — tensão de 3 fontes de dado nunca nomeada como risco; produção real já tem DOIS escritores, não um
+
+**Fato**: item 4 já documenta cron(Spot)×painel(Futures) como divergência
+aceita permanentemente. Os itens 122-123 adicionam uma 3ª fonte
+(backtest histórico Futures) e o item 123 recomenda "adotar Futures como
+fonte PADRÃO para as PRÓXIMAS medições de backtest".
+
+**Correção (Codex)**: a versão inicial deste achado chamava o cron de "o
+que decide operações reais", como se fosse o único escritor de produção
+— **falso**. `src/hooks/useAutoScan.js:29,43` chama os MESMOS
+`scanAllAssets`/`priceCheckActiveOps` de `src/lib/scanner.js` sempre que
+o painel está aberto no navegador (scan a cada 60min + price-check a
+cada 2min), usando `src/lib/marketDataProvider.js` — que é Futures (item
+4). Ou seja: hoje já existem **dois caminhos reais de escrita em
+produção** no mesmo Firestore — cron (Spot, 24/7) e painel (Futures,
+só quando alguém está com a aba aberta) — não um só. Nenhum dos dois é
+"a" fonte de verdade de produção; os dois são.
+
+**Hipótese**: isso não elimina a tensão original, só a torna mais
+complexa do que "validar contra o que o cron usa" — se o painel também
+escreve operações reais em Futures quando aberto, uma decisão de produto
+tomada por causa de um backtest em Futures não é necessariamente
+desalinhada com TODA a produção, só com a fração dela que passa pelo
+cron sem o painel aberto. Não há dado neste projeto sobre que fração das
+operações reais historicamente se originou de cada caminho (painel
+aberto vs. só cron) — não investigado.
+
+**Recomendação**: registrar esta tensão como extensão do item 4 (não
+novidade solta), mas sem a conclusão anterior de "validar sempre contra
+Spot" — a pergunta correta é mais sutil: qual fração da produção real
+passa por cada caminho, e é aceitável ter DOIS mercados de validação
+(Spot pro cron, Futures pro painel) em vez de escolher um só. **Decisão
+de processo/produto, não de código.**
+
+### Achado 5 (IMPORTANTE) — ~25 flags de `pineConfig` sem matriz de interação documentada; 2 acoplamentos ocultos já encontrados por acidente
+
+**Fato**: `tp1R`/`minRR` acoplados matematicamente (item 116, só
+descoberto quando um teste deu zero operações). `useADX`/`useChop` são
+globais, não exclusivos da cascata RF — ligar `smcTierEnabled` sem saber
+disso herda o estado desses dois pra SMC também (item 42). O item 77
+reproduziu, num mecanismo novo, a MESMA tautologia geométrica que os
+itens 35/38 já tinham corrigido em outro lugar — o conhecimento de "isso
+é um padrão de bug conhecido" não está encapsulado em nenhum lugar único.
+
+**Recomendação**: registrar esses 2 padrões conhecidos numa seção própria
+de `.claude/rules/trading-engine.md`, pra não serem redescobertos por
+ablação cara a cada nova rodada. **Mudança de documentação, baixo custo,
+alto valor.**
+
+### Achado 6 (IMPORTANTE, sem risco hoje) — hipótese de tautologia geométrica do gate `smc_confirm_4h15m` nunca investigada
+
+**Fato** (`src/lib/scanner.js:2909-2912`, confirmado ainda presente e
+hoje desligado por padrão `AddAssetForm.jsx:57,64`): o gate que zerou a
+cascata RF em produção (item 108) usa estrutura/zona parecida com a que
+os itens 35/38 já PROVARAM ser tautológica geometricamente noutro lugar
+— mas ninguém testou se este gate específico sofre do mesmo problema,
+porque a decisão tomada foi simplesmente desligá-lo.
+
+**Recomendação**: nenhuma ação agora (já desligado corretamente) — mas se
+algum dia alguém cogitar religar este gate, investigar a causa raiz
+primeiro (mesmo método do item 35: distribuição de `pdZone` no momento
+do rompimento), não reabrir sem entender por que zerava tudo.
+
+### Achado 7 (menor) — assimetria de `cascade` em `handleActiveOpArbitration`, inofensiva hoje
+
+**Fato** (`src/lib/scanner.js:1185`): não repassa `cascade` pro
+`transitionTradeOp` no branch `invalidate`, diferente dos outros 3 call
+sites que já foram corrigidos (item 80/B-2). **Hoje inofensivo**:
+`hierarchicalCascadesEnabled` só existe em backtest, travado por
+`hierarchicalCascadeTripwire.test.js`, e o branch em questão só é
+alcançado quando o flag é `false`. Vira armadilha só se essa cascata for
+promovida a produção no futuro sem notar esta lacuna.
+
+### Achados menores (registrados, sem ação recomendada agora)
+
+- `.claude/rules/firestore-concurrency.md` afirma "nunca importe
+  `firebase/firestore` direto" — mas `scripts/adminPineConfig.js`/
+  `adminTelegram.js` fazem isso de propósito para `strategyConfig`/
+  `telegramFilters`, funcionalmente correto, só a regra escrita está
+  desatualizada.
+- Narrativa de "duas cascatas simétricas" não reflete mais a realidade —
+  SMC é código morto/score experimental desde os itens 75/77/108;
+  `CLAUDE.md` poderia deixar isso mais claro.
+- `/api/backtest/status`/`/artifact` sem rate-limit (assimetria com
+  `/trigger`) — repo é público, sem dado sensível exposto, só risco de
+  esgotar cota do token do GitHub Actions por flood anônimo.
+- Download de ZIP em `fetch-backtest-data-futures.mjs` sem cap de
+  tamanho — zip-slip não se aplica (extração só em memória), risco
+  residual de zip-bomb é baixíssimo (fonte HTTPS confiável).
+- Item 36 (`exit_ambiguous`, "0,79%") citado com mais confiança do que a
+  amostra (com dupla-contagem conhecida) sustenta.
+- Golden parity real (`tvSpotCheck.test.js`) é só 4 barras transcritas —
+  já qualificado como "spot check" no próprio doc, reforçar essa citação
+  em usos futuros pra não virar "paridade confirmada" sem qualificação.
+- `scripts/fetch-backtest-data-futures.mjs` não faz escrita atômica —
+  só relevante se o script rodar 2x ao mesmo tempo manualmente, não é
+  caminho de produção.
+
+### Verificação positiva (nada quebrado, cruzado entre os 5 revisores)
+
+- Os 3 backends (`entities.js`/`adminEntities.js`/`fakeBackend.js`)
+  continuam com o CAS/transição idênticos — nenhuma divergência
+  silenciosa encontrada (Concorrência).
+- `tradeMetrics.js` — custo computado e subtraído uma única vez, risco
+  sempre ancorado em `initial_stop`, sem viés de sinal encontrado
+  (Trading).
+- `firestore.rules` — nenhuma coleção de negócio sem regra, nenhum
+  `if true` (Segurança).
+- `adm-zip@0.6.0` — sem CVE conhecida, confirmado via `npm audit`/`npm
+  view` reais, não só suposição (Segurança).
+- Correção do dirty-tracking em `Settings.jsx` (PR #233) genuinamente
+  fecha o buraco que o Codex apontou — sem caminho residual de
+  sobrescrita (Segurança).
+- `runnerEnabled`/`preTp1StopProtectionEnabled` — decisão de não ativar
+  apoiada em análise de poder estatístico explícita (item 109), não é a
+  parede sendo ignorada (Trading).
+- Item 124 (Spot×Futures, janela de alta): verificado `git diff --stat`
+  entre os commits dos dois relatórios comparados — nenhuma mudança de
+  cálculo não-gated por flag entre eles, a comparação se sustenta
+  (Trading) — fecha uma lacuna de rigor que o item tinha deixado aberta.
+- `npm test` (1079/1079), `npm run lint`, `npm run build` — rodados de
+  verdade nesta revisão, todos verdes (Testes).
+- Cobertura de teste das funções puras críticas (`opTransition.js`,
+  `opExitRules.js`, `signalArbitration.js`) é sólida, com casos de borda
+  reais, não só caminho feliz (Testes).
+
+### Próximo passo
+
+Esta rodada começou como revisão pura, sem mudança de código. O achado
+crítico 1 (Trades.jsx sem CAS) foi corrigido nesta mesma rodada — pedido
+explícito do usuário, ver "Corrigido" na seção do Achado 1 acima. O
+achado crítico 2 (item 71 nunca cluster-corrigido) segue pendente: é
+trabalho de verificação que pode ser feito sem tocar código nenhum
+(recuperar report + rodar ferramenta já existente), ainda sem pedido do
+usuário para executá-lo.
