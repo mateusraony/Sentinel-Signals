@@ -4567,5 +4567,26 @@
       0.5152142920272347
     ],
     "conclusiveAtN1": true
+  },
+  {
+    "family": "spot-vs-futures-hypothesis",
+    "trialLabel": "default-control-alta2024",
+    "recordedAt": "2026-08-23T18:30:46.070Z",
+    "source": "seed",
+    "seedSource": "known-risks.md item 124 addendum (trial pré-existente de 2026-08-15, família original exit-runner-fix-control)",
+    "seedNote": "Spot, mesma janela 2024-07-27/2025-07-27, 7 símbolos, pineConfig default -- achado tardio via review Codex PR#237, não tem raw report/curve salvo nesta sessão pra comparação pareada por id",
+    "runStartedAt": null,
+    "commitSha": null,
+    "configHash": null,
+    "pineConfigOverride": null,
+    "n": 101,
+    "minTrades": null,
+    "expectancyR": 0.24985335809397094,
+    "expectancyRStdErr": 0.12100981253780914,
+    "expectancyRCI95": [
+      0.012678483743921554,
+      0.4870282324440203
+    ],
+    "conclusiveAtN1": true
   }
 ]
