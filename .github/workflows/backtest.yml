@@ -314,6 +314,30 @@ jobs:
             } | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
+      # docs/known-risks.md item 125 (achado 2 do conselho de revisão) —
+      # backtest-correlation-check.mjs (item 96/97) já existia, mas só
+      # rodava sob demanda contra o artifact BAIXADO manualmente: exigia
+      # baixar o zip completo (`overall.curve`, que "Publicar resumo"/
+      # "Publicar diagnóstico" acima deliberadamente OMITEM da saída, pra
+      # não estourar o log com a curva inteira de operações fechadas) e
+      # rodar localmente. Sessões do Claude Code não têm acesso à API do
+      # GitHub para baixar artifacts — só ao conteúdo já publicado no job
+      # summary/log. Rodar aqui, dentro do próprio job (que já tem
+      # `backtest-report.json` em disco com a curva completa antes do
+      # upload), fecha essa lacuna pra TODO trial futuro, não só o que
+      # motivou a mudança — sem precisar do zip.
+      - name: Publicar correlação em cluster
+        if: always()
+        run: |
+          if [ -f backtest-report.json ]; then
+            {
+              echo "## Correlação em cluster (Cameron-Miller CR1) — erro-padrão robusto a operações correlacionadas"
+              echo '```'
+              node scripts/backtest-correlation-check.mjs --report backtest-report.json
+              echo '```'
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload do relatório completo
         if: always()
         uses: actions/upload-artifact@v4
