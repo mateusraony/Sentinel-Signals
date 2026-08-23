@@ -108,6 +108,23 @@ describe('findOverlapClusters', () => {
     expect(clusters).toContainEqual([0, 1]);
     expect(clusters).toContainEqual([2, 3]);
   });
+
+  // Codex review, PR #239: uma operação deslocada por circularShiftBySymbol
+  // pode "vazar" pra depois de toMs (close > toMs) -- no círculo, ela
+  // também ocupa [fromMs, close-rangeMs). Sem `rangeMs`, essa sobreposição
+  // com uma operação perto do INÍCIO da janela é invisível.
+  it('rangeMs opcional: sobreposição circular só é detectada quando passada', () => {
+    // A "vaza" 20ms além de toMs=1000 (representa [970,1000) U [0,20) no
+    // círculo); B fica perto do início (10-20) -- só se sobrepõem se o
+    // vazamento de A for considerado.
+    const intervals = [
+      { symbol: 'A', open: 970, close: 1020 },
+      { symbol: 'B', open: 10, close: 20 },
+    ];
+    expect(findOverlapClusters(intervals)).toHaveLength(2); // sem rangeMs: não enxerga o vazamento
+    const circular = findOverlapClusters(intervals, 1000);
+    expect(circular).toHaveLength(1); // com rangeMs: A e B se sobrepõem via o vazamento
+  });
 });
 
 describe('naiveStdErr / clusterRobustStdErr', () => {
@@ -203,12 +220,26 @@ describe('circularShiftBySymbol', () => {
     expect(gapShifted).toBeCloseTo(((gapOriginal % 10000) + 10000) % 10000, 6);
   });
 
-  it('mantém os timestamps dentro do range [fromMs, toMs)', () => {
+  it('mantém open dentro do range [fromMs, toMs) mesmo perto do limite', () => {
     const intervals = [{ symbol: 'A', open: 500, close: 900, r: 0.1 }];
     const rand = () => 0.999999;
     const shifted = circularShiftBySymbol(intervals, 0, 1000, rand);
     expect(shifted[0].open).toBeGreaterThanOrEqual(0);
     expect(shifted[0].open).toBeLessThan(1000);
+  });
+
+  // Codex review, PR #239: a versão anterior dobrava `close` de forma
+  // independente de `open`, podendo inverter (close < open) quando só um
+  // dos dois cruzava toMs. `close` NUNCA é dobrado agora -- pode ultrapassar
+  // toMs (vazamento pro início, ver findOverlapClusters/rangeMs), mas nunca
+  // fica menor que `open`.
+  it('close nunca fica menor que open, mesmo quando a operação vaza além de toMs', () => {
+    const intervals = [{ symbol: 'A', open: 0, close: 50, r: 0.1 }];
+    const rand = () => 0.97; // offset=970 -- open desloca pra 970, close (970+50=1020) vaza além de toMs=1000
+    const shifted = circularShiftBySymbol(intervals, 0, 1000, rand);
+    expect(shifted[0].open).toBe(970);
+    expect(shifted[0].close).toBe(1020);
+    expect(shifted[0].close).toBeGreaterThan(shifted[0].open);
   });
 });
 
@@ -227,6 +258,11 @@ describe('permutationTest', () => {
     const result = permutationTest(intervals, 0, 6000, { iterations: 200, rand });
     expect(result.realDeff).toBeGreaterThan(1);
     expect(result.pValue).toBeLessThan(0.2);
+    // Codex review, PR #239: réplicas cuja réplica embaralhada colapsa pra
+    // g<2 (DEFF não estimável NESSA réplica) são excluídas da distribuição
+    // nula, não fabricadas como 1 -- nullReplicates pode ser <= iterations.
+    expect(result.nullReplicates).toBeGreaterThan(0);
+    expect(result.nullReplicates).toBeLessThanOrEqual(200);
   });
 
   it('sem nenhuma sobreposição entre símbolos, DEFF real fica em 1 (sem clusters compostos)', () => {
@@ -238,6 +274,27 @@ describe('permutationTest', () => {
     const rand = mulberry32(1);
     const result = permutationTest(intervals, 0, 3000, { iterations: 50, rand });
     expect(result.realDeff).toBeCloseTo(1, 6);
+    expect(result.nullReplicates).toBeGreaterThan(0);
+    expect(result.nullReplicates).toBeLessThanOrEqual(50);
+  });
+
+  // Codex review, PR #239 (2ª rodada): com só 2 símbolos, uma réplica cujo
+  // deslocamento aleatório faz A e B se sobreporem colapsa pra g=1 --
+  // cenário NORMAL (não um caso patológico raro), não só um risco teórico.
+  // clusterRobustStdErr devolve null pra essa réplica; o teste antigo
+  // (sem o guard) fabricava DEFF=1 no lugar. Aqui só confere que o
+  // resultado nunca finge mais réplicas do que as que sobreviveram.
+  it('com poucos símbolos, réplicas que colapsam pra g=1 são excluídas (nullReplicates < iterations)', () => {
+    const intervals = [
+      { symbol: 'A', open: 0, close: 200, r: 0.3 },
+      { symbol: 'B', open: 5000, close: 5200, r: -0.2 },
+    ];
+    const rand = mulberry32(42);
+    const result = permutationTest(intervals, 0, 6000, { iterations: 300, rand });
+    expect(result.nullReplicates).toBeGreaterThan(0);
+    expect(result.nullReplicates).toBeLessThan(300);
+    expect(result.pValue).toBeGreaterThanOrEqual(0);
+    expect(result.pValue).toBeLessThanOrEqual(1);
   });
 });
 

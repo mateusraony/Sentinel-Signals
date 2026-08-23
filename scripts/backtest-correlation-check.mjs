@@ -75,11 +75,33 @@ function intervalsOverlap(a, b) {
   return a.open < b.close && b.open < a.close;
 }
 
+// Codex review, PR #239: uma réplica de `circularShiftBySymbol` pode
+// "atravessar" o limite [fromMs, toMs) -- uma operação cujo `close`
+// deslocado ultrapassa `toMs` continua, no círculo, ocupando também
+// [fromMs, close-rangeMs). `intervalsOverlap` sozinho não enxerga essa
+// continuação (compara só a posição linear canônica), perdendo
+// sobreposições reais com operações perto do início da janela. Ladrilha a
+// posição de `b` em {-rangeMs, 0, +rangeMs} antes de comparar -- como a
+// duração de qualquer operação é sempre << rangeMs (a janela do replay
+// inteiro), 1 período pra cada lado basta (mesmo argumento do "1 vizinho de
+// cada lado" usado em problemas de intervalo circular). `rangeMs` ausente
+// preserva o comportamento linear de sempre (usado pelas intervals REAIS,
+// nunca deslocadas, onde não existe fronteira circular pra atravessar).
+function intervalsOverlapCircular(a, b, rangeMs) {
+  if (rangeMs == null) return intervalsOverlap(a, b);
+  for (const delta of [0, -rangeMs, rangeMs]) {
+    if (a.open < b.close + delta && (b.open + delta) < a.close) return true;
+  }
+  return false;
+}
+
 // Componentes conectados do grafo de sobreposição (union-find), restrito a
 // arestas entre símbolos DIFERENTES — duas operações do MESMO símbolo nunca
 // coexistem (invariante `assetActiveOps`), então essa restrição nunca
 // exclui nada na prática; é só para deixar a intenção explícita.
-export function findOverlapClusters(intervals) {
+// `rangeMs` opcional (ver `intervalsOverlapCircular` acima) — só o
+// deslocamento circular de `circularShiftBySymbol` precisa dele.
+export function findOverlapClusters(intervals, rangeMs = null) {
   const n = intervals.length;
   const parent = Array.from({ length: n }, (_, i) => i);
   function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
@@ -88,7 +110,7 @@ export function findOverlapClusters(intervals) {
   for (let i = 0; i < n; i += 1) {
     for (let j = i + 1; j < n; j += 1) {
       if (intervals[i].symbol === intervals[j].symbol) continue;
-      if (intervalsOverlap(intervals[i], intervals[j])) union(i, j);
+      if (intervalsOverlapCircular(intervals[i], intervals[j], rangeMs)) union(i, j);
     }
   }
 
@@ -178,6 +200,18 @@ export function effectiveN(n, deff) {
 // dentro de [0, rangeMs) — preserva o espaçamento/duração/resultado
 // internos de cada símbolo, randomiza o alinhamento de calendário entre
 // símbolos diferentes. `fromMs`/`toMs` vêm de report.range.
+//
+// Codex review, PR #239: a versão anterior deslocava `open` E `close`
+// independentemente, cada um com seu próprio wrap-around — uma operação
+// cujo `close` cruzasse `toMs` podia sair com `close` NUMERICAMENTE MENOR
+// que `open` (o close "deu a volta" pro início, o open não). Isso quebra a
+// invariante open<close que `intervalsOverlapCircular` (acima) assume, e
+// silenciosamente faz essa operação nunca sobrepor nada. Corrigido: só
+// `open` é dobrado pra dentro de [fromMs, toMs); `close` é sempre
+// `open + duração`, deliberadamente SEM dobrar — pode ultrapassar `toMs`
+// (representando o "vaza pro início" na volta do círculo), mas nunca
+// inverte em relação ao próprio `open`. `intervalsOverlapCircular` é quem
+// sabe ladrilhar esse excesso contra as outras operações.
 export function circularShiftBySymbol(intervals, fromMs, toMs, rand) {
   const rangeMs = toMs - fromMs;
   const offsetBySymbol = new Map();
@@ -186,8 +220,8 @@ export function circularShiftBySymbol(intervals, fromMs, toMs, rand) {
   }
   return intervals.map((iv) => {
     const offset = offsetBySymbol.get(iv.symbol);
-    const shift = (t) => fromMs + (((t - fromMs + offset) % rangeMs) + rangeMs) % rangeMs;
-    return { ...iv, open: shift(iv.open), close: shift(iv.close) };
+    const open = fromMs + (((iv.open - fromMs + offset) % rangeMs) + rangeMs) % rangeMs;
+    return { ...iv, open, close: open + (iv.close - iv.open) };
   });
 }
 
@@ -197,29 +231,47 @@ export function circularShiftBySymbol(intervals, fromMs, toMs, rand) {
 // nulas com DEFF >= DEFF real — testa "o DEFF medido excede o que só o
 // artefato de duração/seleção já produziria por acaso?".
 export function permutationTest(intervals, fromMs, toMs, { iterations = 1000, rand = Math.random } = {}) {
+  const rangeMs = toMs - fromMs;
   const values = intervals.map((iv) => iv.r);
   const naiveSE = naiveStdErr(values);
+  // Sem `rangeMs`: as intervals REAIS nunca são deslocadas, não há
+  // fronteira circular pra atravessar (ver intervalsOverlapCircular acima).
   const realClusters = findOverlapClusters(intervals);
   const realClusteredSE = clusterRobustStdErr(values, realClusters);
   const realDeff = designEffect(naiveSE, realClusteredSE) ?? 1;
 
+  // Codex review, PR #239 (2ª rodada): mesmo com a observação real tendo
+  // G>=2, uma réplica individual do deslocamento circular pode colapsar
+  // pra 1 cluster só (ex.: o deslocamento aleatório empilha todas as
+  // operações num mesmo bloco de sobreposição) — `clusteredSE` sai `null`
+  // pra ESSA réplica, e empurrar `?? 1` no lugar contaminava a
+  // distribuição nula com um valor fabricado (o mesmo raciocínio do gate
+  // de n<2/g<2 em analyzeReport, um nível mais fundo). Réplicas
+  // indefinidas são EXCLUÍDAS da distribuição nula (nunca substituídas por
+  // um valor-sentinela) — denominadores usam `nullDeffs.length` (as
+  // réplicas que sobraram), não `iterations` (o nominal).
   const nullDeffs = [];
   for (let i = 0; i < iterations; i += 1) {
     const shifted = circularShiftBySymbol(intervals, fromMs, toMs, rand);
-    const clusters = findOverlapClusters(shifted);
+    const clusters = findOverlapClusters(shifted, rangeMs);
     const clusteredSE = clusterRobustStdErr(values, clusters);
-    nullDeffs.push(designEffect(naiveSE, clusteredSE) ?? 1);
+    const deff = designEffect(naiveSE, clusteredSE);
+    if (deff !== null) nullDeffs.push(deff);
+  }
+  if (nullDeffs.length === 0) {
+    return { realDeff, nullMean: null, nullP5: null, nullP95: null, pValue: null, nullReplicates: 0 };
   }
   nullDeffs.sort((a, b) => a - b);
-  const pValue = nullDeffs.filter((d) => d >= realDeff).length / iterations;
-  const pct = (p) => nullDeffs[Math.min(iterations - 1, Math.floor(p * iterations))];
+  const pValue = nullDeffs.filter((d) => d >= realDeff).length / nullDeffs.length;
+  const pct = (p) => nullDeffs[Math.min(nullDeffs.length - 1, Math.floor(p * nullDeffs.length))];
 
   return {
     realDeff,
-    nullMean: nullDeffs.reduce((a, b) => a + b, 0) / iterations,
+    nullMean: nullDeffs.reduce((a, b) => a + b, 0) / nullDeffs.length,
     nullP5: pct(0.05),
     nullP95: pct(0.95),
     pValue,
+    nullReplicates: nullDeffs.length,
   };
 }
 
@@ -395,13 +447,21 @@ export function formatMarkdown(result) {
   ];
   if (result.permutation) {
     const p = result.permutation;
-    lines.push(
-      `Teste de permutação da CORRELAÇÃO (deslocamento circular por símbolo, ${p ? '1000' : ''} réplicas) — `
-      + `testa se o DEFF medido é real ou artefato de calendário, NÃO testa o efeito/média: `
-      + `DEFF real=${fmt(p.realDeff)} vs. nulo média=${fmt(p.nullMean)} `
-      + `[p5=${fmt(p.nullP5)}, p95=${fmt(p.nullP95)}], p-valor=${p.pValue.toFixed(4)}`,
-      '',
-    );
+    if (p.pValue === null) {
+      lines.push(
+        'Teste de permutação da CORRELAÇÃO — todas as réplicas de deslocamento circular colapsaram '
+        + 'pra 1 cluster só (DEFF não estimável em nenhuma) — sem base pra distribuição nula.',
+        '',
+      );
+    } else {
+      lines.push(
+        `Teste de permutação da CORRELAÇÃO (deslocamento circular por símbolo, ${p.nullReplicates} réplicas válidas) — `
+        + `testa se o DEFF medido é real ou artefato de calendário, NÃO testa o efeito/média: `
+        + `DEFF real=${fmt(p.realDeff)} vs. nulo média=${fmt(p.nullMean)} `
+        + `[p5=${fmt(p.nullP5)}, p95=${fmt(p.nullP95)}], p-valor=${fmt(p.pValue)}`,
+        '',
+      );
+    }
   }
   if (result.effectSignFlip) {
     const s = result.effectSignFlip;
