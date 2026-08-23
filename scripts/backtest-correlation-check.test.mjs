@@ -363,4 +363,28 @@ describe('analyzeReport', () => {
     const result = analyzeReport(report, { iterations: 50, rand: mulberry32(9) });
     expect(result).toEqual({ trialLabel: 'single-trade-test', n: 1, insufficientData: true });
   });
+
+  // Codex review, PR #239, 2ª rodada: g=1 (n>=2 mas só 1 cluster -- as 2
+  // operações, de símbolos diferentes, se sobrepõem no tempo) não tem
+  // variância ENTRE clusters pra estimar, mas sem o gate abaixo
+  // permutationTest ainda calculava um "DEFF real=1.0000, p-valor=1.0000"
+  // (o mesmo fallback `?? 1` do teste de n<2 acima, só que disparado
+  // dentro de permutationTest em vez de analyzeReport).
+  it('g=1 (só um cluster) não roda o teste de permutação (DEFF não seria estimável)', () => {
+    const report = {
+      trialLabel: 'single-cluster-test',
+      range: { fromMs: 0, toMs: 10000 },
+      overall: {
+        curve: [
+          { r: 0.5, op: { symbol: 'BTCUSDT', created_date: new Date(0).toISOString(), closed_at: new Date(2000).toISOString() } },
+          { r: -0.2, op: { symbol: 'ETHUSDT', created_date: new Date(1000).toISOString(), closed_at: new Date(3000).toISOString() } },
+        ],
+      },
+    };
+    const result = analyzeReport(report, { iterations: 50, rand: mulberry32(9) });
+    expect(result.n).toBe(2);
+    expect(result.g).toBe(1);
+    expect(result.clusteredSE).toBeNull();
+    expect(result.permutation).toBeNull();
+  });
 });

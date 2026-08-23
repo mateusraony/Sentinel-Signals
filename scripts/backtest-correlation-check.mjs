@@ -324,7 +324,14 @@ export function analyzeReport(report, { iterations = 1000, rand = Math.random } 
   // Checagem explícita de tipo (não truthy) -- fromMs=0 é um epoch válido,
   // "0 && toMs" o trataria incorretamente como ausente.
   const hasRange = typeof fromMs === 'number' && typeof toMs === 'number';
-  const permutation = hasRange
+  // Codex review, PR #239: com g<2 não existe variância ENTRE clusters pra
+  // estimar (mesma razão de clusterRobustStdErr devolver null, e de
+  // clusteredTCritical/effectSignFlip já serem gateados por g>=2 acima) --
+  // sem esse gate aqui, permutationTest's `?? 1` (fallback do DEFF real
+  // indefinido) e do DEFF nulo de cada réplica embaralhada convergiam pro
+  // MESMO valor 1, produzindo um "DEFF real=1.0000, p-valor=1.0000" que
+  // parece uma medição válida de "sem correlação detectada" sem ser.
+  const permutation = (hasRange && g >= 2)
     ? permutationTest(intervals, fromMs, toMs, { iterations, rand })
     : null;
   // Teste do EFEITO em si (a média), não do DEFF -- ver comentário de
