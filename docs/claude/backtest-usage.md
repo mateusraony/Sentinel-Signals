@@ -67,6 +67,29 @@ Timeframes: inclua sempre `15m` se algum ativo usar a cascata padrão
 (4h→15m); inclua `5m` também se algum ativo tiver `smc_enabled` (cascata
 1h→5m).
 
+### Fonte alternativa: Futures USDⓈ-M real (`docs/known-risks.md` item 122)
+
+Se você opera Futures/Perpétuo de verdade no TradingView (não Spot), o
+backtest acima mede o mercado ERRADO — `data-api.binance.vision` é Spot, o
+mesmo preço/candle que o cron 24/7 usa (item 4), mas não o que seu Pine real
+enxerga. Use `scripts/fetch-backtest-data-futures.mjs` em vez do script
+acima (mesmos argumentos, mesmo formato de saída — só troca a fonte):
+
+```bash
+node scripts/fetch-backtest-data-futures.mjs \
+  --symbols BTCUSDT,ETHUSDT \
+  --from 2025-01-01 --to 2026-01-01 \
+  --timeframes 1h,4h,1d,15m
+```
+
+Baixa de `data.binance.vision` (arquivo em lote/CDN — serviço DIFERENTE da
+API `fapi.binance.com` que fica bloqueada por IP de datacenter dos EUA,
+item 4; este não é bloqueado, item 86). Arquivo mensal primeiro, cai para
+diário quando o mês ainda não tem consolidado mensal publicado (tipicamente
+o mês corrente). **Só cobre o backtest** — o scan AO VIVO continua em Spot,
+sem solução gratuita (item 4 permanece inalterado). Na **Opção B** (GitHub Actions, acima), o input booleano `futures_data` do
+workflow faz a mesma troca sem precisar rodar nada localmente.
+
 ## Passo 2 — rodar o replay (Opção A, sua máquina)
 
 ```bash

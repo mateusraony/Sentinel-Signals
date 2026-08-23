@@ -13702,3 +13702,90 @@ novo (mudança é puramente de exposição de UI para um flag já testado em
 `scannerStateMachine.test.js`/`opExitRules.test.js`; a lógica de leitura
 do flag em `scanner.js` não mudou). Reversível pelo mesmo switch a
 qualquer momento.
+
+## 122. Backtest passa a poder usar dado real Futures USDⓈ-M, não só Spot (2026-08-22)
+
+### Contexto
+
+Usuário reportou um sinal real do ENAUSDT com posição ativa/win no Pine do
+TradingView, sem correspondência nenhuma no Sentinel (item 121, caso ao
+vivo). Investigação levou de volta ao item 4 (divergência Spot × Futures,
+"aceita formalmente" para o scan AO VIVO) — usuário confirmou que seu Pine
+real opera **Futures/Perpétuo**, não Spot. Isso significa que TODA medição
+de backtest feita neste projeto até hoje (Bloco 0, as 4 rodadas de saída,
+etc.) rodou contra um mercado diferente do que o usuário realmente opera —
+Spot e Perpétuo do mesmo par não fecham candle idêntico (funding, basis,
+liquidações). Usuário pediu explicitamente para fechar essa lacuna, dentro
+do que é gratuito (item 86 já tinha encontrado o caminho, nunca implementado).
+
+### O que foi feito
+
+**Novo script** `scripts/fetch-backtest-data-futures.mjs`, alternativa a
+`scripts/fetch-backtest-data.mjs` (Spot, inalterado) — mesma interface de
+CLI e mesmo formato de saída (`{symbol}_{tf}.json` em
+`scripts/__fixtures__/backtest/`, lido por
+`scripts/backtestMarketDataProvider.js` sem nenhuma mudança), só troca a
+fonte:
+
+- Baixa de `data.binance.vision` (CDN de arquivo em lote, item 86) em vez de
+  `data-api.binance.vision` (API REST Spot) — arquivo **mensal** primeiro
+  (`.../futures/um/monthly/klines/{symbol}/{tf}/{symbol}-{tf}-{ano}-{mes}.zip`),
+  cai para **diário** quando o mês não tem consolidado mensal ainda
+  (tipicamente o mês corrente).
+- Lógica pura extraída para `scripts/binanceArchive.js` (testável sem rede):
+  construção de URL, enumeração de meses/dias cobertos por um intervalo,
+  parsing do CSV dentro do ZIP, dedup/filtro dos candles.
+- Reusa `fetchWithRetry` de `src/lib/httpRetry.js` (já compartilhado
+  browser/cron) em vez de duplicar retry/backoff — só um 404 no arquivo
+  MENSAL aciona o fallback diário, não é tratado como erro transitório.
+- Dependência nova: `adm-zip` (devDependency — só usado neste script
+  Node, nunca entra no bundle do frontend; zero dependências transitivas,
+  `npm audit` não introduziu nenhuma vulnerabilidade nova).
+
+**Duas armadilhas reais de formato, tratadas defensivamente em vez de
+hardcoded** (pesquisa de comunidade, `binance/binance-public-data` README +
+issues):
+1. **Timestamp em microssegundos**: a Binance mudou o arquivo histórico
+   Spot para microssegundos a partir de 2025-01-01 (confirmado no README
+   oficial); não há confirmação pública se/quando Futures mudou também.
+   Em vez de fixar uma data de corte (que pode estar errada), a detecção é
+   por MAGNITUDE por valor (`normalizeTimestamp` em `binanceArchive.js`):
+   um timestamp em milissegundos pra qualquer data 2020-2030 tem 13
+   dígitos, em microssegundos tem 16 — o limiar de `1e14` separa os dois
+   com folga larga dos dois lados, funcionando igual em arquivo antigo (ms)
+   e novo (µs) sem precisar saber qual é qual de antemão.
+2. **Linha de cabeçalho opcional**: alguns arquivos têm header
+   (`open_time,open,high,...`), outros não. `parseKlineCsv` detecta
+   testando se a 1ª célula da linha parseia como número — um `open_time`
+   real sempre parseia, um cabeçalho nunca.
+
+**Workflow** (`backtest.yml`): novo input booleano `futures_data` (default
+`false` — preserva o comportamento de sempre) escolhe qual dos dois scripts
+de download roda. **Só afeta o BACKTEST** — o scan ao vivo (cron 24/7)
+continua em Spot, sem solução gratuita (item 4 permanece exatamente como
+estava; `fapi.binance.com`, a API de TRADING ao vivo, segue bloqueada por
+IP de datacenter dos EUA — `data.binance.vision` é um serviço diferente,
+só de arquivo histórico).
+
+### Verificação
+
+15 casos novos em `scripts/binanceArchive.test.js` (URLs mensal/diária,
+enumeração de meses cruzando virada de ano, dias clipados a um intervalo
+parcial, parsing com/sem cabeçalho, conversão µs→ms, dedup por
+sobreposição mensal/diária, filtro de candle ainda não fechado). Testado
+manualmente a extração real de ZIP (round-trip com `adm-zip` construindo e
+lendo um arquivo sintético no formato Binance) — a extração de rede em si
+(baixar da Binance de verdade) **não pode ser testada nesta sessão**, a
+mesma restrição de rede que já vale para `fetch-backtest-data.mjs`
+(`.claude/rules/pine-parity.md`) — só roda na máquina do usuário ou no
+runner do GitHub Actions (`backtest.yml`). `npm run lint && npm test &&
+npm run build` — 49 arquivos/1079 testes passando, build ok.
+
+### Próximo passo
+
+Rodar `backtest.yml` com `futures_data: true` numa janela/carteira já
+medida em Spot (ex.: repetir o baseline de 12 meses/7 símbolos) e comparar
+os dois relatórios — não pressupor que Futures muda o resultado, medir.
+Se os números divergirem de forma relevante, isso quantifica o quanto as
+conclusões anteriores (Bloco 0, as 4 rodadas de saída) estavam
+contaminadas pela fonte errada de dado.
