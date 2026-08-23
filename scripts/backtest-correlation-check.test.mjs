@@ -296,6 +296,26 @@ describe('permutationTest', () => {
     expect(result.pValue).toBeGreaterThanOrEqual(0);
     expect(result.pValue).toBeLessThanOrEqual(1);
   });
+
+  // Codex review, PR #239 (4ª rodada): com correlação real muito forte,
+  // NENHUMA réplica embaralhada alcança o DEFF real -- p-valor "de verdade"
+  // seria 0, mas um Monte Carlo finito nunca pode afirmar isso (a menor
+  // probabilidade distinguível de zero com N réplicas é ~1/N). A correção
+  // (excedências+1)/(N+1) garante que o p-valor NUNCA seja exatamente 0.
+  it('correção de amostra finita: p-valor nunca é exatamente 0 mesmo quando nenhuma réplica alcança o DEFF real', () => {
+    const intervals = [];
+    for (let i = 0; i < 10; i += 1) {
+      const base = i * 1000;
+      const r = i % 2 === 0 ? 1 : -1;
+      intervals.push({ symbol: `SYM${i}_A`, open: base, close: base + 100, r });
+      intervals.push({ symbol: `SYM${i}_B`, open: base + 10, close: base + 110, r });
+    }
+    const rand = mulberry32(7);
+    const result = permutationTest(intervals, 0, 10000, { iterations: 100, rand });
+    // Confirmado por execução real: com este seed, 0 das 100 réplicas
+    // alcançam o DEFF real (2.11) -- sem a correção, pValue seria 0.0000.
+    expect(result.pValue).toBeCloseTo(1 / 101, 10);
+  });
 });
 
 describe('clusterSignFlipTest', () => {
@@ -351,6 +371,20 @@ describe('clusterSignFlipTest', () => {
     const a = clusterSignFlipTest(values, clusters, { iterations: 200, rand: mulberry32(99), exhaustiveMaxG: 20 });
     const b = clusterSignFlipTest(values, clusters, { iterations: 200, rand: mulberry32(99), exhaustiveMaxG: 20 });
     expect(a.pValue).toBe(b.pValue);
+  });
+
+  // Codex review, PR #239 (4ª rodada): mesma correção de amostra finita de
+  // permutationTest, aplicada ao ramo Monte Carlo daqui -- o ramo exaustivo
+  // (teste acima, "valor exato") já é preciso por construção e continua
+  // SEM a correção (ela deixaria o resultado exato errado).
+  it('correção de amostra finita no ramo Monte Carlo: p-valor nunca é exatamente 0', () => {
+    const g = 25;
+    const values = Array.from({ length: g }, () => 1);
+    const clusters = Array.from({ length: g }, (_, i) => [i]);
+    const result = clusterSignFlipTest(values, clusters, { iterations: 200, rand: mulberry32(99), exhaustiveMaxG: 20 });
+    // Confirmado por execução real: com este seed, 0 das 200 réplicas
+    // alcançam |média|=1 -- sem a correção, pValue seria 0.0000.
+    expect(result.pValue).toBeCloseTo(1 / 201, 10);
   });
 });
 

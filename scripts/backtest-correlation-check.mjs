@@ -262,7 +262,15 @@ export function permutationTest(intervals, fromMs, toMs, { iterations = 1000, ra
     return { realDeff, nullMean: null, nullP5: null, nullP95: null, pValue: null, nullReplicates: 0 };
   }
   nullDeffs.sort((a, b) => a - b);
-  const pValue = nullDeffs.filter((d) => d >= realDeff).length / nullDeffs.length;
+  // Codex review, PR #239 (4ª rodada): um p-valor de Monte Carlo com 0
+  // excedências não é zero de verdade -- com N réplicas finitas, a menor
+  // probabilidade que o método consegue distinguir de zero é ~1/N. A
+  // correção padrão de amostra finita (Davison & Hinkley 1997, North et
+  // al. 2002 -- a mesma usada por implementações de permutation test como
+  // coin/scikit-learn) é (excedências+1)/(N+1): nunca deixa reportar
+  // p=0.0000 (confiança perfeita que nenhuma simulação finita entrega) e
+  // converge pro p-valor exato quando N→∞.
+  const pValue = (nullDeffs.filter((d) => d >= realDeff).length + 1) / (nullDeffs.length + 1);
   const pct = (p) => nullDeffs[Math.min(nullDeffs.length - 1, Math.floor(p * nullDeffs.length))];
 
   return {
@@ -328,7 +336,13 @@ export function clusterSignFlipTest(values, clusters, { iterations = 5000, rand 
 
   const eps = 1e-9;
   const countGEQ = nullMeans.filter((m) => Math.abs(m) >= Math.abs(observedMean) - eps).length;
-  const pValue = countGEQ / nullMeans.length;
+  // Correção de amostra finita (mesmo raciocínio de permutationTest acima)
+  // só se aplica ao ramo Monte Carlo -- o exaustivo (2^g <= exhaustiveMaxG)
+  // enumera TODOS os padrões de sinal possíveis, então seu p-valor já é
+  // exato, não uma estimativa amostrada; "corrigi-lo" o deixaria errado.
+  const pValue = exhaustive
+    ? countGEQ / nullMeans.length
+    : (countGEQ + 1) / (nullMeans.length + 1);
 
   return { observedMean, pValue, exhaustive, replicates: nullMeans.length, g };
 }
@@ -490,13 +504,24 @@ function parseArgs(argv) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.report) {
-    console.error('Uso: node scripts/backtest-correlation-check.mjs --report <path> [--iterations N]');
+    console.error('Uso: node scripts/backtest-correlation-check.mjs --report <path> [--iterations N] [--seed N]');
     process.exitCode = 1;
     return;
   }
   const report = JSON.parse(fs.readFileSync(args.report, 'utf8'));
   const iterations = args.iterations ? Number(args.iterations) : 1000;
-  const result = analyzeReport(report, { iterations });
+  // Codex review, PR #239: sem seed fixo, o teste de permutação/sign-flip
+  // (Math.random() puro) dava um resultado DIFERENTE a cada rodada sobre o
+  // MESMO relatório -- inofensivo enquanto era rodado sob demanda, mas
+  // agora que backtest.yml publica isso como evidência de experimento em
+  // TODO trial, o mesmo dado precisa reproduzir a mesma conclusão.
+  // `--seed` reproduz uma rodada específica; sem ele, gera um seed novo e
+  // IMPRIME (auditável mesmo sem fixar) -- fixar um valor único pra sempre
+  // enviesaria o teste a uma única realização particular do embaralhamento.
+  const seed = args.seed ? Number(args.seed) : (Date.now() >>> 0);
+  const rand = mulberry32(seed);
+  const result = analyzeReport(report, { iterations, rand });
+  console.log(`Seed (\`--seed ${seed}\` reproduz esta rodada exata): ${seed}`);
   console.log(formatMarkdown(result));
 }
 
