@@ -14363,10 +14363,10 @@ promovida a produção no futuro sem notar esta lacuna.
 
 ### Próximo passo
 
-Nenhuma mudança de código foi feita nesta rodada — é revisão pura. Os 2
-achados críticos (Trades.jsx sem CAS, item 71 nunca cluster-corrigido)
-são candidatos naturais a ação, mas ambos exigem decisão do usuário antes
-de qualquer mudança: o primeiro toca a máquina de estados de operações
-(régua de confirmação de sempre), o segundo é trabalho de verificação
-que pode ser feito sem tocar código nenhum (recuperar report + rodar
-ferramenta já existente).
+Esta rodada começou como revisão pura, sem mudança de código. O achado
+crítico 1 (Trades.jsx sem CAS) foi corrigido nesta mesma rodada — pedido
+explícito do usuário, ver "Corrigido" na seção do Achado 1 acima. O
+achado crítico 2 (item 71 nunca cluster-corrigido) segue pendente: é
+trabalho de verificação que pode ser feito sem tocar código nenhum
+(recuperar report + rodar ferramenta já existente), ainda sem pedido do
+usuário para executá-lo.
