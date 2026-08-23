@@ -13954,3 +13954,88 @@ implementação) e este item (a primeira medição) fecham o pedido do
 usuário. Decisão de reabrir qualquer linha de teste de parâmetro
 (Bloco 1/2 do roadmap) usando Futures como fonte fica para quando o
 usuário pedir.
+
+## 124. Janela de alta 2024-07→2025-07 em Futures — ponto estimado forte, mas some sob correção por família (2026-08-23)
+
+### Contexto
+
+Usuário pediu uma 2ª rodada com `futures_data: true`, desta vez repetindo
+a janela de alta 2024-07-27→2025-07-27 — a mesma do item 48
+(`bull-baseline`), a ÚNICA janela de todo o histórico deste projeto que
+já fechou CONCLUSIVA em Spot (+0,294R, 20 símbolos/288 operações). Escolha
+feita via pergunta direta ao usuário (não presumida). Mesmos 7 símbolos
+padrão desta sessão (não os 20 do item 48 — carteira menor, real, a que o
+usuário de fato usa).
+
+### Achado
+
+`futures-bull-2024`: **CONCLUSIVO** já no relatório bruto —
+`netExpectancyR` = **+0,278R** (N=103, IC95 [0,040; 0,515], não cruza
+zero). Erro-padrão em cluster quase igual ao ingênuo (DEFF=0,996 —
+**a correlação entre ativos, que normalmente infla o erro em 2-3,5×
+neste projeto, praticamente desaparece nesta janela**) — IC em cluster
+com t-Student(df=22): [0,027; 0,529], ainda excluindo zero. O teste mais
+rigoroso já usado nesta sessão (`clusterSignFlipTest`, sorteio de sinal
+por cluster): **p=0,060** — acima do limiar convencional 0,05, por pouco.
+
+**Consistência qualitativa com o item 48**: mesma janela de calendário,
+fonte de dado diferente (Futures aqui, Spot lá) e carteira bem menor (7
+símbolos/103 operações aqui vs. 20/288 lá) — ponto estimado quase
+idêntico (+0,278R vs. +0,294R do item 48). Todos os 5 trimestres da
+janela fecharam positivos (100%), BUY e SELL vieram quase empatados
+(+0,277R e +0,278R — sem a assimetria BUY-fraco/SELL-forte que os
+relatórios em bear market sempre mostraram) e os 7 símbolos contribuíram
+positivamente, sem nenhum símbolo isolado carregando o resultado (item
+48 e outros já alertaram pra concentração — aqui não houve).
+
+**Correção por família (Bonferroni, ledger `spot-vs-futures-hypothesis`,
+agora N=3)**: o IC95 individual [0,040; 0,515] some sob a correção —
+**IC corrigido [-0,013; 0,568], cruza zero**. **NÃO CONCLUSIVO** pela
+régua que este projeto usa pra qualquer trial isolado dentro de uma
+família de tentativas relacionadas.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: o relatório isolado passaria no critério de significância
+usado no resto do projeto (item 44/88) SE fosse a única tentativa —
+mas não é: é a 3ª tentativa relacionada à pergunta "Spot vs Futures
+muda o resultado?", e corrigido por isso, o IC volta a cruzar zero.
+
+**Hipótese**: o ponto estimado forte (+0,278R) é consistente com o item
+48 ter capturado algo real sobre AQUELE regime de mercado (alta,
+2024-07→2025-07) — não necessariamente sobre a fonte de dado (Spot vs
+Futures), já que os dois mercados deram resultado parecido nessa janela.
+Isso é uma leitura direcional, não uma confirmação — a mesma ressalva de
+sempre (item 109: poder estatístico insuficiente pra decidir com ~100
+operações).
+
+**Recomendação**: não promover como "Futures tem vantagem" nem "a janela
+de alta tem vantagem confirmada" — ainda precisa de uma 4ª medição
+independente em dado genuinamente novo (não mais uma repetição de
+janela/carteira já olhada) pra decidir isso sob a mesma régua estatística
+que trancou o Bloco 1 no item 88. O que ESTE item muda de fato: reforça
+que a diferença Spot × Futures em si (o que o item 122/123 foi construído
+pra medir) parece pequena — nas duas janelas testadas até agora (bear no
+item 123, alta aqui), a fonte de dado não muda o sinal qualitativo do
+resultado (bear: os dois inconclusivos e parecidos; alta: os dois fortes
+e parecidos). O que muda o resultado é o REGIME de mercado, não Spot vs
+Futures — consistente com o achado histórico do item 46.1/48.
+
+### Verificação
+
+`node scripts/backtest-correlation-check.mjs --report futures-bull-2024`
++ `node scripts/analyze-backtest.mjs --report futures-bull-2024` (mesmas
+ferramentas de sempre). Registrado no ledger
+(`spot-vs-futures-hypothesis`, agora N=3) — `node
+scripts/backtest-trial-registry.mjs --summarize-family
+spot-vs-futures-hypothesis` confirma o IC corrigido cruzando zero.
+Nenhuma mudança de código.
+
+### Próximo passo
+
+Não teria como fechar isso sem: (a) rodar a mesma janela 2024-07→2025-07
+em SPOT com os mesmos 7 símbolos (comparação pareada por `id`, mesmo
+método do item 123 — ainda não feito, este relatório não tem par direto
+ainda) e/ou (b) uma 4ª medição em dado genuinamente novo antes de tirar
+qualquer conclusão sobre o regime de alta se sustentar. Nenhuma das duas
+foi pedida ainda pelo usuário.
