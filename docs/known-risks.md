@@ -13902,6 +13902,51 @@ ledger (`spot-vs-futures-hypothesis`, N=2). Nenhuma
 mudança de código nesta rodada — só diagnóstico sobre os 2 relatórios já
 gerados pelo usuário.
 
+### Detalhamento adicional — de onde vem a diferença (`analyze-backtest.mjs`, janela corrigida)
+
+Pedido do usuário após o headline: decompor os dois relatórios (mesmo
+diagnóstico usado em toda rodada anterior desta sessão) pra ver ONDE a
+diferença se concentra, sem prometer que algum recorte aqui embaixo é
+estatisticamente significativo (nenhum destes cortes tem amostra pra
+isso — são fato descritivo, não teste).
+
+- **A perda média no stop piorou**: mesma proporção de operações batendo
+  stop (~80% dos dois lados), mas a perda média foi de -0,189R (Spot)
+  para **-0,357R** (Futures) — quase o dobro. É o principal motor da
+  queda no headline.
+- **TP2 bateu mais vezes no Futures**: 9 operações (Spot) vs. **13**
+  (Futures), ganho médio parecido (~+2,18R nos dois). O runner (segurar
+  a posição além do TP1 em vez de fechar 100% ali) contribuiu ~0 no Spot
+  (praticamente indiferente a fechar tudo no TP1) mas **+0,029R** no
+  Futures — ajudou mais, puxado pelos TP2 extras.
+- **Inversões por símbolo**: `BTCUSDT` (+0,069R → -0,180R) e `FETUSDT`
+  (+0,114R → -0,049R) viraram de positivo pra negativo; `ZROUSDT` piorou
+  (-0,241R → -0,677R). `PAXGUSDT` e `ETHUSDT` ficaram parecidos ou um
+  pouco melhores no Futures.
+- **SELL segue positivo, mas mais fraco**: +0,390R (Spot) → **+0,228R**
+  (Futures). Relevante porque SELL é o padrão mais consistentemente
+  positivo já medido no projeto (5 medições anteriores, todas em Spot —
+  ver `docs/roadmap.md` Bloco 0/item 88/95) — esta é a 1ª medição dele em
+  dado real de Futures, e o sinal sobrevive mas encolhe. BUY seguiu
+  líquido negativo nos dois (-0,224R Spot, -0,246R Futures).
+- **Curva de conta realista** (1% de risco por operação, compondo —
+  `equityCurve`, o número que reflete uma conta de verdade, não a soma
+  bruta): terminaria o ano em **+7,44%** (Spot, CAGR +7,99%/ano) contra
+  **-0,08%** (Futures, CAGR -0,08%/ano — essencialmente zero a zero).
+  **Ressalva**: `overall.totalPnlPct`/`maxDrawdownPct` (-79,6%/126% no
+  Futures) são a soma percentual ingênua, sem dimensionamento de risco
+  nem composição — o mesmo artefato enganoso já documentado no item 108
+  addendum. Não são números de conta real; `equityCurve` acima é.
+- **Funil de entrada quase idêntico** nas duas fontes (rejeição dominante
+  em ambas é `regime_rejected`/ADX fraco, ~68-72% das rejeições) — a
+  fonte de dado não muda COMO os gates filtram, só o resultado das
+  operações que passam.
+
+Nada disto tem amostra suficiente pra separar "efeito real do mercado"
+de "ruído numa reamostragem diferente" — é composição do resultado, não
+validação (mesmo aviso que `analyze-backtest.mjs` imprime em todo
+relatório INCONCLUSIVO).
+
 ### Próximo passo
 
 Nenhum pendente desta rodada especificamente — item 122 (a
