@@ -14197,27 +14197,39 @@ teste de limiar vai continuar reordenando ruído correlacionado. **Não
 implementado — mudança de fórmula de cálculo, precisa de pedido
 explícito.**
 
-### Achado 4 (IMPORTANTE) — tensão de 3 fontes de dado (cron=Spot, painel=Futures, backtest agora recomendado=Futures) nunca nomeada como risco
+### Achado 4 (IMPORTANTE, corrigido — Codex, PR #238) — tensão de 3 fontes de dado nunca nomeada como risco; produção real já tem DOIS escritores, não um
 
 **Fato**: item 4 já documenta cron(Spot)×painel(Futures) como divergência
 aceita permanentemente. Os itens 122-123 adicionam uma 3ª fonte
 (backtest histórico Futures) e o item 123 recomenda "adotar Futures como
 fonte PADRÃO para as PRÓXIMAS medições de backtest".
 
-**Hipótese**: como o cron 24/7 (o que decide operações reais) permanece
-em Spot para sempre (bloqueio de IP, sem solução gratuita), toda futura
-decisão de ativar um flag por causa de um backtest em Futures estaria
-sendo validada contra um mercado ligeiramente diferente daquele em que a
-decisão será aplicada ao vivo. O item 123 mediu que a diferença é pequena
-nas 2 janelas testadas — mas 2 janelas é pouca evidência pra uma mudança
-de qual-é-a-fonte-padrão-de-validação.
+**Correção (Codex)**: a versão inicial deste achado chamava o cron de "o
+que decide operações reais", como se fosse o único escritor de produção
+— **falso**. `src/hooks/useAutoScan.js:29,43` chama os MESMOS
+`scanAllAssets`/`priceCheckActiveOps` de `src/lib/scanner.js` sempre que
+o painel está aberto no navegador (scan a cada 60min + price-check a
+cada 2min), usando `src/lib/marketDataProvider.js` — que é Futures (item
+4). Ou seja: hoje já existem **dois caminhos reais de escrita em
+produção** no mesmo Firestore — cron (Spot, 24/7) e painel (Futures,
+só quando alguém está com a aba aberta) — não um só. Nenhum dos dois é
+"a" fonte de verdade de produção; os dois são.
 
-**Recomendação**: registrar esta tensão explicitamente como extensão do
-item 4 (não uma novidade solta) e decidir conscientemente: o backtest que
-vai validar decisões de PRODUÇÃO deveria continuar em Spot (o que o cron
-realmente usa), reservando Futures pra quando a pergunta for
-especificamente "isso bate com o que eu vejo no TradingView". **Decisão
-de processo, não de código — pode ser decidida em texto.**
+**Hipótese**: isso não elimina a tensão original, só a torna mais
+complexa do que "validar contra o que o cron usa" — se o painel também
+escreve operações reais em Futures quando aberto, uma decisão de produto
+tomada por causa de um backtest em Futures não é necessariamente
+desalinhada com TODA a produção, só com a fração dela que passa pelo
+cron sem o painel aberto. Não há dado neste projeto sobre que fração das
+operações reais historicamente se originou de cada caminho (painel
+aberto vs. só cron) — não investigado.
+
+**Recomendação**: registrar esta tensão como extensão do item 4 (não
+novidade solta), mas sem a conclusão anterior de "validar sempre contra
+Spot" — a pergunta correta é mais sutil: qual fração da produção real
+passa por cada caminho, e é aceitável ter DOIS mercados de validação
+(Spot pro cron, Futures pro painel) em vez de escolher um só. **Decisão
+de processo/produto, não de código.**
 
 ### Achado 5 (IMPORTANTE) — ~25 flags de `pineConfig` sem matriz de interação documentada; 2 acoplamentos ocultos já encontrados por acidente
 
