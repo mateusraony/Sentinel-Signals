@@ -261,7 +261,20 @@ export function permutationTest(intervals, fromMs, toMs, { iterations = 1000, ra
   // fronteira circular pra atravessar (ver intervalsOverlapCircular acima).
   const realClusters = findOverlapClusters(intervals);
   const realClusteredSE = clusterRobustStdErr(values, realClusters);
-  const realDeff = designEffect(naiveSE, realClusteredSE) ?? 1;
+  const realDeff = designEffect(naiveSE, realClusteredSE);
+  // Codex review, PR #239 (9ª rodada): com naiveSE==0 (todos os R FECHADOS
+  // idênticos — ex.: um trial degenerado onde toda operação bate o mesmo
+  // stop) o DEFF do dado OBSERVADO já é indefinido por definição (0/0) —
+  // `designEffect` devolve null corretamente, mas o `?? 1` de antes
+  // fabricava realDeff=1 mesmo com g>=2 observado genuíno. Como g>=2 já é
+  // garantido pelo chamador (analyzeReport só chama isto com g>=2), o
+  // ÚNICO jeito de realDeff sair null aqui é naiveSE==0 — sai cedo, ANTES
+  // de rodar qualquer réplica (nenhuma delas mudaria essa conclusão: a
+  // mesma naiveSE==0 vale pra toda réplica, já que os valores de R não
+  // mudam, só o alinhamento de calendário).
+  if (realDeff === null) {
+    return { realDeff: null, nullMean: null, nullP5: null, nullP95: null, pValue: null, nullReplicates: 0 };
+  }
 
   // Codex review, PR #239 (2ª rodada): mesmo com a observação real tendo
   // G>=2, uma réplica individual do deslocamento circular pode colapsar
@@ -488,7 +501,16 @@ export function formatMarkdown(result) {
   ];
   if (result.permutation) {
     const p = result.permutation;
-    if (p.pValue === null) {
+    if (p.realDeff === null) {
+      // Codex review, PR #239 (9ª rodada): naiveSE==0 (todos os R FECHADOS
+      // idênticos) -- o DEFF do dado OBSERVADO já é indefinido (0/0), não
+      // "as réplicas colapsaram" (mensagem de baixo, causa raiz diferente).
+      lines.push(
+        'Teste de permutação da CORRELAÇÃO — DEFF não é computável para este relatório '
+        + '(todas as operações fechadas têm o mesmo R — variância zero pra clustering explicar).',
+        '',
+      );
+    } else if (p.pValue === null) {
       lines.push(
         'Teste de permutação da CORRELAÇÃO — todas as réplicas de deslocamento circular colapsaram '
         + 'pra 1 cluster só (DEFF não estimável em nenhuma) — sem base pra distribuição nula.',

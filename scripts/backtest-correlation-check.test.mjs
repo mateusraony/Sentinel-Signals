@@ -298,6 +298,25 @@ describe('circularShiftBySymbol', () => {
 });
 
 describe('permutationTest', () => {
+  // Codex review, PR #239 (9ª rodada): naiveSE==0 (todas as operações
+  // fechadas com o MESMO R -- ex.: um trial degenerado onde toda operação
+  // bate o mesmo stop) deixa o DEFF do dado OBSERVADO indefinido por
+  // definição (0/0), mesmo com g>=2 genuíno (3 símbolos, sem sobreposição
+  // nenhuma -- não é um caso de "réplicas colapsaram", é o dado real que
+  // não tem variância nenhuma pra clustering explicar). Sai cedo, ANTES de
+  // rodar qualquer réplica -- nenhuma mudaria essa conclusão, já que os R
+  // não mudam entre réplicas, só o alinhamento de calendário.
+  it('naiveSE==0 (todo R fechado idêntico) devolve realDeff=null sem rodar réplicas', () => {
+    const intervals = [
+      { symbol: 'A', open: 0, close: 10, r: 1 },
+      { symbol: 'B', open: 1000, close: 1010, r: 1 },
+      { symbol: 'C', open: 2000, close: 2010, r: 1 },
+    ];
+    const rand = mulberry32(5);
+    const result = permutationTest(intervals, 0, 3000, { iterations: 50, rand });
+    expect(result).toEqual({ realDeff: null, nullMean: null, nullP5: null, nullP95: null, pValue: null, nullReplicates: 0 });
+  });
+
   it('com correlação real forte (clusters sempre no mesmo sinal, por construção), DEFF real excede a maioria do nulo', () => {
     // 6 pares de operações; dentro de cada par (símbolos diferentes), o R é IDÊNTICO e as janelas
     // sempre se sobrepõem nas mesmas posições relativas -- correlação real, não artefato de duração.
@@ -510,6 +529,27 @@ describe('analyzeReport', () => {
     expect(result.nEff).toBe(Infinity);
     expect(result.clusteredCI).toEqual([0, 0]); // média real é 0 -- IC de largura zero, não null
     expect(result.clusteredCIStudentT).toEqual([0, 0]);
+  });
+
+  // Codex review, PR #239 (9ª rodada): naiveSE==0 fim a fim (curva real com
+  // g>=2 mas todo R fechado idêntico) -- a mensagem do formatMarkdown deve
+  // apontar a causa raiz certa (variância zero no dado observado), não
+  // "réplicas colapsaram" (causa raiz diferente, já coberta acima).
+  it('naiveSE==0 fim a fim: permutation.realDeff é null, formatMarkdown aponta a causa certa', () => {
+    const report = {
+      trialLabel: 'naive-se-zero-test',
+      range: { fromMs: 0, toMs: 3000 },
+      overall: {
+        curve: [
+          { r: 1, op: { symbol: 'A', created_date: new Date(0).toISOString(), closed_at: new Date(10).toISOString() } },
+          { r: 1, op: { symbol: 'B', created_date: new Date(1000).toISOString(), closed_at: new Date(1010).toISOString() } },
+          { r: 1, op: { symbol: 'C', created_date: new Date(2000).toISOString(), closed_at: new Date(2010).toISOString() } },
+        ],
+      },
+    };
+    const result = analyzeReport(report, { iterations: 50, rand: mulberry32(5) });
+    expect(result.permutation).toEqual({ realDeff: null, nullMean: null, nullP5: null, nullP95: null, pValue: null, nullReplicates: 0 });
+    expect(formatMarkdown(result)).toContain('DEFF não é computável para este relatório');
   });
 
   // Codex review, PR #239: com n<2 as fórmulas degeneram em números que
