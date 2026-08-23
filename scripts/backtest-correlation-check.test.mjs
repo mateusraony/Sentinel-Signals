@@ -190,6 +190,13 @@ describe('designEffect / effectiveN', () => {
     expect(effectiveN(50, null)).toBe(50);
   });
 
+  // Codex review, PR #239 (8ª rodada): DEFF==0 (real, ver teste acima) não
+  // é "ausente" -- N efetivo = N/0 = Infinity é a leitura matematicamente
+  // correta (nenhuma inflação de variância detectada), não o N nominal.
+  it('effectiveN com DEFF==0 (real) devolve Infinity, não o N nominal', () => {
+    expect(effectiveN(50, 0)).toBe(Infinity);
+  });
+
   // Codex review, PR #239 (6ª rodada): erro-padrão em cluster LEGITIMAMENTE
   // zero (resíduos de cada cluster somam exatamente zero) é um DEFF
   // estimável (0), não "faltando" -- a checagem antiga (`!clusteredSE`)
@@ -210,9 +217,8 @@ describe('designEffect / effectiveN', () => {
 });
 
 describe('studentTCritical95', () => {
-  it('bate com valores tabelados conhecidos (df=2,3,4,5,10,23,30)', () => {
+  it('bate com valores tabelados conhecidos (df=3,4,5,10,23,30)', () => {
     // Tabela t bicaudal, alpha=0.05 -- valores padrão de qualquer livro-texto.
-    expect(studentTCritical95(2)).toBeCloseTo(4.303, 1); // maior erro da expansão fora de df=1, ~0.03
     expect(studentTCritical95(3)).toBeCloseTo(3.182, 2);
     expect(studentTCritical95(4)).toBeCloseTo(2.776, 2);
     expect(studentTCritical95(5)).toBeCloseTo(2.571, 2);
@@ -221,14 +227,18 @@ describe('studentTCritical95', () => {
     expect(studentTCritical95(30)).toBeCloseTo(2.042, 2);
   });
 
-  // Codex review, PR #239 (5ª rodada): a expansão de Cornish-Fisher é
-  // assintótica e diverge de verdade só em df=1 (~11,30 vs o exato 12,706,
-  // erro que já muda veredito perto da borda) -- G=2 clusters (o mínimo
-  // não-trivial de erro-padrão em cluster) não é caso exótico. df=1 usa o
-  // fechamento exato de Cauchy(0,1) em vez da expansão; df>=2 já bate com
-  // a tabela acima com folga.
+  // Codex review, PR #239 (5ª/8ª rodadas): a expansão de Cornish-Fisher é
+  // assintótica e diverge de verdade em df=1 e df=2 (~11,30 vs o exato
+  // 12,706; ~4,2706 vs o exato 4,3027) -- G=2/G=3 clusters não são casos
+  // exóticos pro erro-padrão em cluster, e o erro já muda veredito perto
+  // da borda. Os dois usam fechamento algébrico exato em vez da expansão;
+  // df>=3 já bate com a tabela acima com folga.
   it('df=1 usa o valor EXATO de Cauchy(0,1), não a aproximação assintótica', () => {
     expect(studentTCritical95(1)).toBeCloseTo(12.706, 3);
+  });
+
+  it('df=2 usa o fechamento algébrico EXATO, não a aproximação assintótica', () => {
+    expect(studentTCritical95(2)).toBeCloseTo(4.3027, 3);
   });
 
   it('converge para z=1,96 conforme df cresce (t-Student -> normal)', () => {
@@ -471,6 +481,35 @@ describe('analyzeReport', () => {
     expect(result.effectSignFlip).not.toBeNull();
     expect(result.effectSignFlip.exhaustive).toBe(true);
     expect(result.effectSignFlip.replicates).toBe(4);
+  });
+
+  // Codex review, PR #239 (8ª rodada): a correção do null-vs-zero em
+  // designEffect (7ª rodada) não bastava sozinha -- analyzeReport ainda
+  // usava truthy (`clusteredSE ?`/`clusteredSE &&`) pra construir os ICs, e
+  // effectiveN tratava DEFF=0 como ausente. Fim a fim: 4 operações cujos
+  // resíduos se cancelam em cada um dos 2 clusters (mesmo exemplo de
+  // clusterRobustStdErr acima) devem propagar SE=0 REAL até os ICs (largura
+  // zero, não null) e até N efetivo (Infinity, não o nominal).
+  it('erro-padrão em cluster real igual a zero propaga corretamente (IC de largura zero, N efetivo=Infinity)', () => {
+    const report = {
+      trialLabel: 'zero-se-test',
+      range: { fromMs: 0, toMs: 10000 },
+      overall: {
+        curve: [
+          { r: 1, op: { symbol: 'A', created_date: new Date(0).toISOString(), closed_at: new Date(1000).toISOString() } },
+          { r: -1, op: { symbol: 'B', created_date: new Date(200).toISOString(), closed_at: new Date(800).toISOString() } },
+          { r: 2, op: { symbol: 'C', created_date: new Date(5000).toISOString(), closed_at: new Date(6000).toISOString() } },
+          { r: -2, op: { symbol: 'D', created_date: new Date(5200).toISOString(), closed_at: new Date(5800).toISOString() } },
+        ],
+      },
+    };
+    const result = analyzeReport(report, { iterations: 50, rand: mulberry32(9) });
+    expect(result.g).toBe(2);
+    expect(result.clusteredSE).toBe(0);
+    expect(result.deff).toBe(0);
+    expect(result.nEff).toBe(Infinity);
+    expect(result.clusteredCI).toEqual([0, 0]); // média real é 0 -- IC de largura zero, não null
+    expect(result.clusteredCIStudentT).toEqual([0, 0]);
   });
 
   // Codex review, PR #239: com n<2 as fórmulas degeneram em números que

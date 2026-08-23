@@ -165,20 +165,23 @@ export function naiveStdErr(values) {
 // #208) pegou que a referência certa pra erro-padrão em cluster com G baixo
 // é t(G-1), não normal — t(23)=2,069 > z=1,96, e isso muda o veredito
 // (|t| medido = 2,005 fica ABAIXO do crítico certo). Testada contra valores
-// tabelados conhecidos (df=2,3,...,10,23,30) em
-// backtest-correlation-check.test.mjs — a partir de df=2 o erro já é
-// desprezível (<=0,03 em df=2, encolhendo depois). Só df=1 (G=2 clusters —
-// caso raro, mas não exótico: o mínimo não-trivial pro erro-padrão em
-// cluster) diverge de verdade: a expansão assintótica dá ~11,30 contra o
-// valor exato 12,706 (Codex review, PR #239, 5ª rodada — significativo o
-// bastante pra inverter um veredito bem na borda). Fechado com a fórmula
-// exata da distribuição de Cauchy (t com 1 grau de liberdade É Cauchy
-// padrão): quantil = tan(π·(p-0,5)).
+// tabelados conhecidos (df=3,...,10,23,30) em
+// backtest-correlation-check.test.mjs — a partir de df=3 o erro já é
+// desprezível (<=0,0034, encolhendo depois). df=1 e df=2 (G=2/G=3
+// clusters — o mínimo não-trivial e o seguinte, nada exótico) divergem de
+// verdade o bastante pra inverter um veredito bem na borda quando
+// publicados como recomendação de leitura em todo trial (Codex review, PR
+// #239, 5ª/8ª rodadas: df=1 dá ~11,30 contra o exato 12,706; df=2 dá
+// ~4,2706 contra o exato 4,3027). Os dois têm fechamento algébrico exato,
+// usados em vez da expansão: df=1 é a distribuição de Cauchy(0,1) padrão
+// (quantil = tan(π·(p-0,5))); df=2 tem CDF fechada
+// F(t) = 1/2·(1 + t/√(2+t²)), invertida em k=2p-1: t = k·√(2/(1-k²)).
 export function studentTCritical95(df) {
   if (!Number.isInteger(df) || df < 1) {
     throw new RangeError(`studentTCritical95: df deve ser inteiro >= 1, recebeu ${df}`);
   }
   if (df === 1) return Math.tan(Math.PI * 0.475); // quantil exato de Cauchy(0,1) em p=0,975
+  if (df === 2) { const k = 0.95; return k * Math.sqrt(2 / (1 - k * k)); } // quantil exato em p=0,975
   const z = 1.959963984540054; // inverseNormalCDF(0.975) -- mesma constante usada no resto do arquivo
   const z2 = z * z;
   const z3 = z2 * z;
@@ -205,8 +208,14 @@ export function designEffect(naiveSE, clusteredSE) {
   return (clusteredSE / naiveSE) ** 2;
 }
 
+// Codex review, PR #239 (7ª rodada): mesma distinção null-vs-zero de
+// designEffect -- deff=0 (real, cluster sem NENHUMA inflação de variância
+// detectada) não é "ausente". `n/0` é matematicamente Infinity (N efetivo
+// infinito é a leitura correta de DEFF zero), não o N nominal -- devolver o
+// nominal escondia o cancelamento degenerado atrás de um número comum.
 export function effectiveN(n, deff) {
-  if (!deff) return n;
+  if (deff == null) return n;
+  if (deff === 0) return Infinity;
   return n / deff;
 }
 
@@ -387,15 +396,19 @@ export function analyzeReport(report, { iterations = 1000, rand = Math.random } 
   const nEff = effectiveN(n, deff);
   const mean = values.reduce((a, b) => a + b, 0) / n;
   const Z95 = 1.959963984540054;
-  const naiveCI = naiveSE ? [mean - Z95 * naiveSE, mean + Z95 * naiveSE] : null;
-  const clusteredCI = clusteredSE ? [mean - Z95 * clusteredSE, mean + Z95 * clusteredSE] : null;
+  // Codex review, PR #239 (7ª rodada): checagem de truthy (`naiveSE ?`/
+  // `clusteredSE ?`) tratava um erro-padrão LEGITIMAMENTE zero como
+  // ausente, devolvendo null em vez do IC de largura zero (correto: sem
+  // incerteza detectada -> IC = [média, média], não "não calculável").
+  const naiveCI = naiveSE != null ? [mean - Z95 * naiveSE, mean + Z95 * naiveSE] : null;
+  const clusteredCI = clusteredSE != null ? [mean - Z95 * clusteredSE, mean + Z95 * clusteredSE] : null;
   // Referência certa pra erro-padrão em CLUSTER (não pro i.i.d. ingênuo, que
   // não tem "graus de liberdade de cluster"): t(G-1), sempre mais
   // conservadora que z=1,96 -- diferença pequena com G alto, mas decisiva
   // perto do limiar de significância com G baixo (ver comentário de
   // studentTCritical95 acima).
   const clusteredTCritical = g >= 2 ? studentTCritical95(g - 1) : null;
-  const clusteredCIStudentT = (clusteredSE && clusteredTCritical)
+  const clusteredCIStudentT = (clusteredSE != null && clusteredTCritical != null)
     ? [mean - clusteredTCritical * clusteredSE, mean + clusteredTCritical * clusteredSE]
     : null;
 
