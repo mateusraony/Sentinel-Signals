@@ -14097,7 +14097,7 @@ graves antes de escrever aqui, e organizei por severidade. Nenhum dado
 saiu da máquina (subagentes locais, mesma política do `llm-council`
 rejeitado).
 
-### Achado 1 (CRÍTICO, verificado por mim) — `src/pages/Trades.jsx` é um 3º caminho de mutação de `TradeOperation`, sem CAS, violando regra própria do projeto
+### Achado 1 (CRÍTICO, verificado por mim, CORRIGIDO — 2026-08-23) — `src/pages/Trades.jsx` é um 3º caminho de mutação de `TradeOperation`, sem CAS, violando regra própria do projeto
 
 **Fato** (achado do especialista em concorrência, verificado por mim lendo
 `src/pages/Trades.jsx:348-371`): as 3 mutations da página de Trades
@@ -14136,6 +14136,44 @@ legítimo), fazer isso como uma exceção *documentada* dentro do adaptador,
 não um `.update()` cru fora dele. **Mudança de código real — não
 implementada aqui, precisa de confirmação explícita do usuário antes de
 mexer na máquina de estados** (mesma régua de sempre pra esta área).
+
+**Corrigido (pedido explícito do usuário, 2026-08-23)**: as 3 mutations
+(`closeMutation`/`invalidateMutation`/`editMutation`, `Trades.jsx:348-400`)
+agora passam por um helper local `manualTransition(op, patch)` que chama
+`backend.tradeOps.transitionTradeOp(op.id, op.status, patch, { assetId:
+op.asset_id, cascade: op.hierarchical_cascade === true ? op.cascade :
+undefined })` — mesmo padrão de `cascade` já usado pelos dois loops do
+scanner (`scanner.js:3755,4044`). Os 3 call sites (botões Editar/Invalidar/
+Encerrar, `.map(op => ...)`) passam o `op` inteiro em vez de só `op.id`,
+porque o CAS precisa do `status` lido no momento do clique como
+`fromStatus`. Quando `applied === false` (op mudou de estado entre o
+último refetch de 15s e o clique), o helper lança um erro com o
+`currentStatus` retornado; as 3 mutations ganharam (ou mantiveram, no caso
+de `editMutation`) `onError` com `logError` + `window.alert`, então a
+rejeição do CAS agora aparece pro usuário em vez de falhar silenciosamente
+como antes.
+
+**Efeito colateral aceito, não uma regressão**: como o patch passa a ser
+aplicado dentro da mesma transação que `clampMonotonicStop`
+(`src/api/entities.js:252-267`), um `current_stop` digitado manualmente no
+`EditModal` que PIORE o stop pro lado da operação (ex.: afrouxar
+propositalmente) é silenciosamente ajustado pro melhor valor entre o
+digitado e o já salvo — o `EditModal` não tem hoje um retorno explícito do
+valor efetivamente aplicado pra avisar o usuário disso (`transitionTradeOp`
+só devolve `{ applied: true }` no sucesso, sem o patch final). Antes desta
+correção o `update()` cru aceitava qualquer valor, inclusive um stop pior —
+essa liberdade era exatamente parte do buraco que este achado descreve
+(nenhuma proteção contra regressão), então o novo comportamento é
+consistente com o resto do motor, não uma regressão nova. Registrado aqui
+para não ficar como comportamento não-documentado; reabrir só se um
+usuário real precisar deliberadamente afrouxar um stop pelo painel.
+
+Verificação rodada: `npm run lint && npm test && npm run build`, todos
+verdes (1079 testes, nenhum novo — a lógica reaproveitada já tinha
+cobertura em `opTransition.test.js`/`scannerStateMachine.test.js`; não há
+suíte de componente para `src/pages/*.jsx` neste projeto, então a fiação em
+si do `Trades.jsx` não ganhou teste automatizado novo — verificado só por
+leitura/revisão manual dos 3 call sites e do helper).
 
 ### Achado 2 (CRÍTICO, verificado por mim) — item 71 (BUY-only, "conclusivo mesmo com Bonferroni") nunca entrou no ledger nem foi cluster-corrigido
 
