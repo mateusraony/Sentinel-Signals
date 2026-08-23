@@ -192,8 +192,16 @@ export function studentTCritical95(df) {
   return z + g1 / df + g2 / df ** 2 + g3 / df ** 3 + g4 / df ** 4;
 }
 
+// Codex review, PR #239 (6ª rodada): `!clusteredSE`/`!naiveSE` (checagem de
+// truthy) trata um erro-padrão em cluster LEGITIMAMENTE zero (os resíduos
+// de cada cluster somam exatamente zero -- raro, mas real, não "faltando")
+// como se fosse ausente, devolvendo `null` -- que os chamadores (`realDeff
+// = designEffect(...) ?? 1`) então fabricavam como DEFF=1. `clusteredSE`
+// zero É um DEFF estimável (0, sem inflação nenhuma detectada) -- só
+// `naiveSE` zero é genuinamente indefinido (todos os R idênticos, divisão
+// por zero). Checagem trocada para `== null` (nullish), que `0` não aciona.
 export function designEffect(naiveSE, clusteredSE) {
-  if (!naiveSE || !clusteredSE) return null;
+  if (naiveSE == null || clusteredSE == null || naiveSE === 0) return null;
   return (clusteredSE / naiveSE) ** 2;
 }
 

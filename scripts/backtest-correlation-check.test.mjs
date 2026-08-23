@@ -160,6 +160,19 @@ describe('naiveStdErr / clusterRobustStdErr', () => {
     expect(naiveStdErr([1])).toBeNull();
     expect(clusterRobustStdErr([1], [[0]])).toBeNull();
   });
+
+  // Codex review, PR #239 (6ª rodada): quando os resíduos DENTRO de cada
+  // cluster se cancelam exatamente (soma=0 em todo cluster), a fórmula CR1
+  // dá SE=0 de verdade -- um valor ESTIMÁVEL (real, ainda que degenerado),
+  // diferente do G=1 acima (onde SE=0 é sempre falso, por construção da
+  // fórmula). designEffect precisa distinguir esse 0 real de um null.
+  it('resíduos que se cancelam em todo cluster dão SE=0 real (não confundir com G=1)', () => {
+    // valores: [1,-1,2,-2], média=0, resíduos=[1,-1,2,-2]
+    // clusters [[0,1],[2,3]]: soma por cluster = [0, 0] -- cancela em cada um
+    const values = [1, -1, 2, -2];
+    const clusters = [[0, 1], [2, 3]];
+    expect(clusterRobustStdErr(values, clusters)).toBe(0);
+  });
 });
 
 describe('designEffect / effectiveN', () => {
@@ -175,6 +188,24 @@ describe('designEffect / effectiveN', () => {
 
   it('effectiveN sem DEFF (null) devolve o N nominal', () => {
     expect(effectiveN(50, null)).toBe(50);
+  });
+
+  // Codex review, PR #239 (6ª rodada): erro-padrão em cluster LEGITIMAMENTE
+  // zero (resíduos de cada cluster somam exatamente zero) é um DEFF
+  // estimável (0), não "faltando" -- a checagem antiga (`!clusteredSE`)
+  // confundia os dois e devolvia null, que os chamadores fabricavam como 1.
+  it('clusteredSE==0 é um DEFF real (0), não null/ausente', () => {
+    expect(designEffect(0.1, 0)).toBe(0);
+  });
+
+  it('naiveSE==0 (todos os R idênticos) continua null -- divisão por zero genuína', () => {
+    expect(designEffect(0, 0.1)).toBeNull();
+    expect(designEffect(0, 0)).toBeNull();
+  });
+
+  it('null/undefined em qualquer lado continua null', () => {
+    expect(designEffect(null, 0.1)).toBeNull();
+    expect(designEffect(0.1, null)).toBeNull();
   });
 });
 
