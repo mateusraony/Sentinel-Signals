@@ -217,32 +217,29 @@ describe('designEffect / effectiveN', () => {
 });
 
 describe('studentTCritical95', () => {
-  it('bate com valores tabelados conhecidos (df=3,4,5,10,23,30)', () => {
-    // Tabela t bicaudal, alpha=0.05 -- valores padrão de qualquer livro-texto.
-    expect(studentTCritical95(3)).toBeCloseTo(3.182, 2);
-    expect(studentTCritical95(4)).toBeCloseTo(2.776, 2);
-    expect(studentTCritical95(5)).toBeCloseTo(2.571, 2);
-    expect(studentTCritical95(10)).toBeCloseTo(2.228, 2);
-    expect(studentTCritical95(23)).toBeCloseTo(2.069, 2); // item 103, docs/known-risks.md
-    expect(studentTCritical95(30)).toBeCloseTo(2.042, 2);
-  });
-
-  // Codex review, PR #239 (5ª/8ª rodadas): a expansão de Cornish-Fisher é
-  // assintótica e diverge de verdade em df=1 e df=2 (~11,30 vs o exato
-  // 12,706; ~4,2706 vs o exato 4,3027) -- G=2/G=3 clusters não são casos
-  // exóticos pro erro-padrão em cluster, e o erro já muda veredito perto
-  // da borda. Os dois usam fechamento algébrico exato em vez da expansão;
-  // df>=3 já bate com a tabela acima com folga.
-  it('df=1 usa o valor EXATO de Cauchy(0,1), não a aproximação assintótica', () => {
-    expect(studentTCritical95(1)).toBeCloseTo(12.706, 3);
-  });
-
-  it('df=2 usa o fechamento algébrico EXATO, não a aproximação assintótica', () => {
+  // Codex review, PR #239 (5ª/8ª/10ª rodadas): a expansão de Cornish-Fisher
+  // usada antes era assintótica e NUNCA acertava exatamente nenhum df
+  // finito -- cada rodada resolvia um df específico com um fechamento
+  // algébrico ad-hoc (df=1: Cauchy; df=2: CDF fechada), mas o Codex sempre
+  // achava o próximo df com o mesmo problema em menor grau (df=3: ~3,1786
+  // vs o exato 3,1824). Substituído por um cálculo exato via a relação
+  // padrão entre a CDF de t e a função beta incompleta regularizada
+  // (busca binária sobre I_x(df/2,1/2)=0,05) -- fecha a CLASSE inteira do
+  // achado, não mais um df por rodada. Tabela t bicaudal, alpha=0.05 --
+  // valores padrão de qualquer livro-texto/scipy.stats.t.ppf(0.975, df).
+  it('bate com valores tabelados conhecidos (df=1,2,3,4,5,10,23,30)', () => {
+    expect(studentTCritical95(1)).toBeCloseTo(12.7062, 3);
     expect(studentTCritical95(2)).toBeCloseTo(4.3027, 3);
+    expect(studentTCritical95(3)).toBeCloseTo(3.1824, 3);
+    expect(studentTCritical95(4)).toBeCloseTo(2.7764, 3);
+    expect(studentTCritical95(5)).toBeCloseTo(2.5706, 3);
+    expect(studentTCritical95(10)).toBeCloseTo(2.2281, 3);
+    expect(studentTCritical95(23)).toBeCloseTo(2.0687, 3); // item 103, docs/known-risks.md
+    expect(studentTCritical95(30)).toBeCloseTo(2.0423, 3);
   });
 
   it('converge para z=1,96 conforme df cresce (t-Student -> normal)', () => {
-    expect(studentTCritical95(1000)).toBeCloseTo(1.9623, 2);
+    expect(studentTCritical95(1000)).toBeCloseTo(1.9623, 3);
   });
 
   it('é sempre >= z=1,96 (mais conservador que a normal em amostra finita)', () => {

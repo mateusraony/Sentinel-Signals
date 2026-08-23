@@ -156,43 +156,106 @@ export function naiveStdErr(values) {
   return Math.sqrt(variance / n);
 }
 
+// Log-gama via aproximação de Lanczos (g=7, coeficientes padrão da
+// literatura -- precisão de ponto-flutuante double em todo o domínio
+// positivo, reflexão de Euler pra x<0.5). Única dependência de
+// incompleteBeta abaixo; sem depender de nenhuma lib externa.
+function logGamma(x) {
+  const g = 7;
+  const c = [
+    0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+    771.32342877765313, -176.61502916214059, 12.507343278686905,
+    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7,
+  ];
+  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - logGamma(1 - x);
+  const xm1 = x - 1;
+  let a = c[0];
+  const t = xm1 + g + 0.5;
+  for (let i = 1; i < g + 2; i += 1) a += c[i] / (xm1 + i);
+  return 0.5 * Math.log(2 * Math.PI) + (xm1 + 0.5) * Math.log(t) - t + Math.log(a);
+}
+
+// Fração contínua de Lentz pra função beta incompleta (Numerical Recipes
+// 6.4) -- converge rápido pra x < (a+1)/(a+b+2) (o chamador garante isso
+// escolhendo o lado certo da simetria I_x(a,b) = 1 - I_(1-x)(b,a)).
+function betaContinuedFraction(x, a, b) {
+  const MAX_ITER = 200;
+  const EPS = 3e-16;
+  const FPMIN = 1e-300;
+  const qab = a + b;
+  const qap = a + 1;
+  const qam = a - 1;
+  let c = 1;
+  let d = 1 - (qab * x) / qap;
+  if (Math.abs(d) < FPMIN) d = FPMIN;
+  d = 1 / d;
+  let h = d;
+  for (let m = 1; m <= MAX_ITER; m += 1) {
+    const m2 = 2 * m;
+    let aa = (m * (b - m) * x) / ((qam + m2) * (a + m2));
+    d = 1 + aa * d;
+    if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = 1 + aa / c;
+    if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1 / d;
+    h *= d * c;
+    aa = (-(a + m) * (qab + m) * x) / ((a + m2) * (qap + m2));
+    d = 1 + aa * d;
+    if (Math.abs(d) < FPMIN) d = FPMIN;
+    c = 1 + aa / c;
+    if (Math.abs(c) < FPMIN) c = FPMIN;
+    d = 1 / d;
+    const delta = d * c;
+    h *= delta;
+    if (Math.abs(delta - 1) < EPS) break;
+  }
+  return h;
+}
+
+// Função beta incompleta regularizada I_x(a,b), 0<=x<=1, a,b>0.
+function regularizedIncompleteBeta(x, a, b) {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  const logBt = logGamma(a + b) - logGamma(a) - logGamma(b) + a * Math.log(x) + b * Math.log(1 - x);
+  const bt = Math.exp(logBt);
+  if (x < (a + 1) / (a + b + 2)) return (bt * betaContinuedFraction(x, a, b)) / a;
+  return 1 - (bt * betaContinuedFraction(1 - x, b, a)) / b;
+}
+
 // Valor crítico bicaudal (alpha=0.05) da t-Student para `df` graus de
-// liberdade — expansão de Cornish-Fisher a partir do quantil normal (Fisher
-// & Cornish 1960; mesma família de aproximação racional do Acklam já usada
-// em backtest-trial-registry.mjs, sem depender de função gama/beta
-// incompleta). Existe porque o item 103 (docs/known-risks.md) usou z=1,96
-// pra "significativo" com G=24 clusters e uma review externa (Codex, PR
-// #208) pegou que a referência certa pra erro-padrão em cluster com G baixo
-// é t(G-1), não normal — t(23)=2,069 > z=1,96, e isso muda o veredito
-// (|t| medido = 2,005 fica ABAIXO do crítico certo). Testada contra valores
-// tabelados conhecidos (df=3,...,10,23,30) em
-// backtest-correlation-check.test.mjs — a partir de df=3 o erro já é
-// desprezível (<=0,0034, encolhendo depois). df=1 e df=2 (G=2/G=3
-// clusters — o mínimo não-trivial e o seguinte, nada exótico) divergem de
-// verdade o bastante pra inverter um veredito bem na borda quando
-// publicados como recomendação de leitura em todo trial (Codex review, PR
-// #239, 5ª/8ª rodadas: df=1 dá ~11,30 contra o exato 12,706; df=2 dá
-// ~4,2706 contra o exato 4,3027). Os dois têm fechamento algébrico exato,
-// usados em vez da expansão: df=1 é a distribuição de Cauchy(0,1) padrão
-// (quantil = tan(π·(p-0,5))); df=2 tem CDF fechada
-// F(t) = 1/2·(1 + t/√(2+t²)), invertida em k=2p-1: t = k·√(2/(1-k²)).
+// liberdade, EXATO (a menos de erro de ponto-flutuante) para qualquer df,
+// via a relação padrão entre a CDF de t e a função beta incompleta
+// regularizada: para t>0, F(t) = 1 - 1/2·I_x(df/2, 1/2), x = df/(df+t²).
+// Achar t tal que F(t)=0,975 equivale a achar x tal que I_x(df/2,1/2)=0,05
+// (busca binária monotônica -- I_x é estritamente crescente em x), depois
+// t = √(df·(1-x)/x).
+//
+// Substitui a expansão de Cornish-Fisher usada antes (assintótica, nunca
+// exatamente certa pra nenhum df finito): a review externa (Codex, PR
+// #239) encontrou o mesmo padrão de erro em df=1 (5ª rodada, ~11,30 vs o
+// exato 12,706), depois em df=2 (8ª rodada, ~4,2706 vs 4,3027) e depois em
+// df=3 (10ª rodada, ~3,1786 vs 3,1824) -- cada rodada resolvia UM df, mas
+// o próximo df sempre teria o mesmo problema em menor grau, porque a
+// aproximação nunca CONVERGE pro valor exato em df finito nenhum. A
+// fórmula fechada acima fecha a classe inteira do achado de uma vez, não
+// mais um df por rodada. Testada contra valores tabelados conhecidos
+// (df=1,2,3,4,5,10,23,30) e contra a convergência pra z=1,96 quando
+// df→∞ em backtest-correlation-check.test.mjs.
 export function studentTCritical95(df) {
   if (!Number.isInteger(df) || df < 1) {
     throw new RangeError(`studentTCritical95: df deve ser inteiro >= 1, recebeu ${df}`);
   }
-  if (df === 1) return Math.tan(Math.PI * 0.475); // quantil exato de Cauchy(0,1) em p=0,975
-  if (df === 2) { const k = 0.95; return k * Math.sqrt(2 / (1 - k * k)); } // quantil exato em p=0,975
-  const z = 1.959963984540054; // inverseNormalCDF(0.975) -- mesma constante usada no resto do arquivo
-  const z2 = z * z;
-  const z3 = z2 * z;
-  const z5 = z3 * z2;
-  const z7 = z5 * z2;
-  const z9 = z7 * z2;
-  const g1 = (z3 + z) / 4;
-  const g2 = (5 * z5 + 16 * z3 + 3 * z) / 96;
-  const g3 = (3 * z7 + 19 * z5 + 17 * z3 - 15 * z) / 384;
-  const g4 = (79 * z9 + 776 * z7 + 1482 * z5 - 1920 * z3 - 945 * z) / 92160;
-  return z + g1 / df + g2 / df ** 2 + g3 / df ** 3 + g4 / df ** 4;
+  const a = df / 2;
+  const b = 0.5;
+  const target = 0.05;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 200; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (regularizedIncompleteBeta(mid, a, b) < target) lo = mid; else hi = mid;
+  }
+  const x = (lo + hi) / 2;
+  return Math.sqrt((df * (1 - x)) / x);
 }
 
 // Codex review, PR #239 (6ª rodada): `!clusteredSE`/`!naiveSE` (checagem de
