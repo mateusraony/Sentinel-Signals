@@ -331,10 +331,13 @@ jobs:
         run: |
           if [ -f backtest-report.json ]; then
             {
-              echo "## Correlação em cluster (Cameron-Miller CR1) — erro-padrão robusto a operações correlacionadas"
-              echo '```'
+              # Sem cerca de código: formatMarkdown() (scripts/backtest-correlation-check.mjs)
+              # já emite Markdown de verdade (## headings, **negrito**, tabela) — ao
+              # contrário de "Publicar diagnóstico" acima (analyze-backtest.mjs, saída
+              # de texto puro, por isso cercado). Cercar aqui faria o GitHub renderizar
+              # o relatório inteiro como bloco monoespaçado inerte em vez de Markdown
+              # estruturado (Codex review, PR #239, 12ª rodada).
               node scripts/backtest-correlation-check.mjs --report backtest-report.json
-              echo '```'
             } | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
