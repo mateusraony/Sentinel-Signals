@@ -13804,17 +13804,46 @@ Comparado contra o baseline em Spot mais recente já existente nesta sessão
 
 **Headline**: Spot `netExpectancyR` = +0,080R (N=99, IC95 [-0,159; 0,319],
 INCONCLUSIVO); Futures `netExpectancyR` = +0,007R (N=105, IC95 [-0,233;
-0,246], INCONCLUSIVO). Os dois IC's se sobrepõem quase por completo — não
-dá pra dizer que um é diferente do outro, nem que qualquer um dos dois é
-diferente de zero.
+0,246], INCONCLUSIVO).
+
+**Correção (Codex, PR #235, 2× P2)**: a versão inicial deste item cometia
+dois erros de método.
+
+1. **As janelas dos dois relatórios estão deslocadas 3 dias** (Spot
+   2025-08-20→2026-08-20, Futures 2025-08-23→2026-08-23) — qualquer
+   operação nos 3 dias de borda de um relatório que o outro nunca avaliou
+   seria contada como "diferença de mercado" quando na verdade é só
+   diferença de cobertura de data. **Verificado**: restringindo os dois
+   relatórios à janela sobreposta (2025-08-23→2026-08-20), **0 operações
+   foram excluídas dos dois lados** — os 99/105 já estavam inteiramente
+   dentro da sobreposição. A decomposição abaixo (13/19/86) já estava
+   correta por coincidência (nenhum sinal caiu exatamente nos 3 dias de
+   borda em nenhum dos 7 símbolos), não porque o desenho original
+   estivesse certo — script re-executado com o filtro explícito pra
+   confirmar, não só assumido.
+2. **O IC's "se sobrepondo" não é um teste de hipótese da diferença** —
+   é uma leitura informal. O teste pareado (p=0,652) também não cobre a
+   afirmação "a diferença GERAL entre Spot e Futures é ruído", porque só
+   testa os 86 pareados, excluindo as 13+19 operações que o próprio item
+   aponta como as que arrastam o resultado. **Corrigido**: teste formal de
+   2 amostras independentes, usando o erro-padrão em CLUSTER de cada
+   relatório (não o SE ingênuo) — `diff (Futures − Spot) = -0,073R`,
+   `SE_diff = 0,193` (combinando os dois SEs em cluster via
+   Welch-Satterthwaite), `t = -0,377`. Não significativo tanto com df de
+   Welch (~49, crítico 2,011) quanto com o df conservador (mínimo dos
+   dois G−1 = 22, crítico 2,074) — **a mesma conclusão do texto original
+   ("nenhuma diferença detectável"), agora apoiada num teste que
+   realmente inclui as operações não pareadas**, não só a sobreposição
+   visual dos dois IC's.
 
 **Decomposição pareada por `id`** (mesmo método das rodadas 1-4 desta
-sessão): **86 das ~100 operações têm exatamente o mesmo `id`
-determinístico** (símbolo/lado/horário do candle) nos dois relatórios —
-ou seja, o gatilho da Range Filter dispara no MESMO candle na maioria dos
-casos, mesmo com o preço vindo de mercados diferentes (o rompimento do
-Range Filter normalmente não é sutil o bastante pra ficar de um lado do
-limiar num mercado e do outro lado no outro). Sobre essas 86:
+sessão, já confirmada acima como não afetada pelo deslocamento de janela):
+**86 das ~100 operações têm exatamente o mesmo `id` determinístico**
+(símbolo/lado/horário do candle) nos dois relatórios — ou seja, o
+gatilho da Range Filter dispara no MESMO candle na maioria dos casos,
+mesmo com o preço vindo de mercados diferentes (o rompimento do Range
+Filter normalmente não é sutil o bastante pra ficar de um lado do limiar
+num mercado e do outro lado no outro). Sobre essas 86:
 
 - Diferença pareada (Futures − Spot): **+0,036R**, `clusterSignFlipTest`
   p=0,652 (G=24) — **não significativo**. 53 melhoraram, 33 pioraram —
@@ -13838,11 +13867,12 @@ eles saem.
 
 ### Leitura (fato × hipótese × recomendação)
 
-**Fato**: nem Spot, nem Futures, nem a diferença entre os dois é
-estatisticamente distinguível de ruído nesta amostra (~100 operações) —
-a mesma parede do item 109 (poder estatístico insuficiente). Registrado
-como família nova no ledger (`spot-vs-futures-hypothesis`, N=2) —
-INCONCLUSIVO mesmo antes da correção por família.
+**Fato**: nem Spot, nem Futures, nem a diferença formal entre os dois
+(teste de 2 amostras independentes acima, t=-0,377) é estatisticamente
+distinguível de ruído nesta amostra (~100 operações) — a mesma parede do
+item 109 (poder estatístico insuficiente). Registrado como família nova
+no ledger (`spot-vs-futures-hypothesis`, N=2) — INCONCLUSIVO mesmo antes
+da correção por família.
 
 **Hipótese**: a troca de 13 por 19 operações é consistente com o
 mecanismo esperado — o Range Filter reage ao fechamento do candle, e
@@ -13865,8 +13895,10 @@ reabrir alguma dessas linhas, não é uma ação automática desta rodada.
 
 `node scripts/backtest-correlation-check.mjs --report <cada arquivo>` +
 script ad hoc reusando `buildTradeIntervals`/`findOverlapClusters`/
-`clusterSignFlipTest` (mesmo método das rodadas 1-4). 2 relatórios
-registrados no ledger (`spot-vs-futures-hypothesis`, N=2). Nenhuma
+`clusterSignFlipTest`/`clusterRobustStdErr`/`studentTCritical95` (mesmo
+método das rodadas 1-4, estendido com o teste de 2 amostras independentes
+descrito acima após a correção do Codex). 2 relatórios registrados no
+ledger (`spot-vs-futures-hypothesis`, N=2). Nenhuma
 mudança de código nesta rodada — só diagnóstico sobre os 2 relatórios já
 gerados pelo usuário.
 
