@@ -52,6 +52,30 @@ describe('buildTradeIntervals', () => {
     ];
     expect(buildTradeIntervals(curve)).toHaveLength(1);
   });
+
+  // Codex review, PR #239 (13ª rodada): `open` deve vir de `getOpenedAt`
+  // (src/lib/tradeMetrics.js) -- a referência canônica de "quando a posição
+  // começou a existir" (entry_candle_time_15m/5m/4h, com fallback pra
+  // created_date) -- não `created_date` puro. Numa confirmação atrasada
+  // (retry, mesmo cenário do item 26/P0-g), created_date (quando o scan
+  // criou o registro) pode ser BEM anterior ao instante real de entrada,
+  // fazendo essa operação "aparentar" sobreposição com outra que na
+  // verdade nunca coexistiu com ela.
+  it('usa entry_candle_time_15m como open quando presente, não created_date', () => {
+    const curve = [
+      {
+        r: 0.5,
+        op: {
+          symbol: 'BTCUSDT',
+          created_date: '2026-01-01T00:00:00Z',
+          entry_candle_time_15m: '2026-01-01T12:00:00Z',
+          closed_at: '2026-01-02T00:00:00Z',
+        },
+      },
+    ];
+    const intervals = buildTradeIntervals(curve);
+    expect(intervals[0].open).toBe(new Date('2026-01-01T12:00:00Z').getTime());
+  });
 });
 
 describe('findOverlapClusters', () => {

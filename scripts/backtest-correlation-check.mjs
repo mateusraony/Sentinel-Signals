@@ -42,6 +42,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getOpenedAt } from '../src/lib/tradeMetrics.js';
 
 // PRNG seedável (mulberry32) — sem dependência nova, mesmo espírito do
 // Acklam em backtest-trial-registry.mjs. Só usado para o teste de
@@ -58,14 +59,25 @@ export function mulberry32(seed) {
 
 // Extrai {symbol, open, close, r} de report.overall.curve. `overall.curve`
 // só contém operações FECHADAS (stillOpenAtCutoff fica de fora), então
-// created_date/closed_at estão sempre presentes — confirmado contra 3
-// relatórios reais antes de escrever isto.
+// closed_at está sempre presente — confirmado contra 3 relatórios reais
+// antes de escrever isto.
+//
+// `open` vem de `getOpenedAt` (src/lib/tradeMetrics.js) — a mesma referência
+// canônica de "quando a posição passou a existir" que o resto do projeto já
+// usa pra custo/duração (entry_candle_time_15m/5m/4h, caindo para
+// candle_close_time/created_date) — NÃO `created_date` puro (Codex review,
+// PR #239, 13ª rodada). Uma confirmação atrasada (retry, mesmo cenário do
+// item 26/P0-g em trading-engine.md) faz `created_date` (quando o SCAN
+// criou o registro) divergir de quando a posição de fato começou a
+// coexistir com outras — usar a referência errada muda que operações se
+// sobrepõem, e portanto G/erro-padrão em cluster/os dois p-valores
+// publicados.
 export function buildTradeIntervals(curve) {
   return curve
-    .filter((c) => typeof c.r === 'number' && c.op?.created_date && c.op?.closed_at)
+    .filter((c) => typeof c.r === 'number' && getOpenedAt(c.op) && c.op?.closed_at)
     .map((c) => ({
       symbol: c.op.symbol,
-      open: new Date(c.op.created_date).getTime(),
+      open: new Date(getOpenedAt(c.op)).getTime(),
       close: new Date(c.op.closed_at).getTime(),
       r: c.r,
     }));
