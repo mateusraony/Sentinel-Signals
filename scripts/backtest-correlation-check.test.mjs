@@ -179,12 +179,25 @@ describe('designEffect / effectiveN', () => {
 });
 
 describe('studentTCritical95', () => {
-  it('bate com valores tabelados conhecidos (df=5,10,23,30)', () => {
+  it('bate com valores tabelados conhecidos (df=2,3,4,5,10,23,30)', () => {
     // Tabela t bicaudal, alpha=0.05 -- valores padrão de qualquer livro-texto.
+    expect(studentTCritical95(2)).toBeCloseTo(4.303, 1); // maior erro da expansão fora de df=1, ~0.03
+    expect(studentTCritical95(3)).toBeCloseTo(3.182, 2);
+    expect(studentTCritical95(4)).toBeCloseTo(2.776, 2);
     expect(studentTCritical95(5)).toBeCloseTo(2.571, 2);
     expect(studentTCritical95(10)).toBeCloseTo(2.228, 2);
     expect(studentTCritical95(23)).toBeCloseTo(2.069, 2); // item 103, docs/known-risks.md
     expect(studentTCritical95(30)).toBeCloseTo(2.042, 2);
+  });
+
+  // Codex review, PR #239 (5ª rodada): a expansão de Cornish-Fisher é
+  // assintótica e diverge de verdade só em df=1 (~11,30 vs o exato 12,706,
+  // erro que já muda veredito perto da borda) -- G=2 clusters (o mínimo
+  // não-trivial de erro-padrão em cluster) não é caso exótico. df=1 usa o
+  // fechamento exato de Cauchy(0,1) em vez da expansão; df>=2 já bate com
+  // a tabela acima com folga.
+  it('df=1 usa o valor EXATO de Cauchy(0,1), não a aproximação assintótica', () => {
+    expect(studentTCritical95(1)).toBeCloseTo(12.706, 3);
   });
 
   it('converge para z=1,96 conforme df cresce (t-Student -> normal)', () => {
@@ -414,11 +427,10 @@ describe('analyzeReport', () => {
     expect(result.nEff).toBeGreaterThan(0);
     expect(result.permutation).not.toBeNull();
     expect(result.clusterCountLow).toBe(true); // G=2 < 20
-    // t(df=1) real é 12,706 -- a aproximação de Cornish-Fisher degrada em df
-    // muito baixo (documentado no comentário de studentTCritical95), G=2 é
-    // um caso extremo só pra este teste sintético; checa só que fica bem
-    // acima de z=1,96, não a precisão exata.
-    expect(result.clusteredTCritical).toBeGreaterThan(5);
+    // t(df=1) exato é 12,706 (Cauchy(0,1) -- ver studentTCritical95, PR
+    // #239 5ª rodada); G=2 é o caso mínimo não-trivial pra erro-padrão em
+    // cluster, não uma escolha arbitrária deste teste sintético.
+    expect(result.clusteredTCritical).toBeCloseTo(12.706, 2);
     expect(result.clusteredCIStudentT).not.toBeNull();
     // IC t-Student sempre >= largo que o IC em cluster com z=1,96 (mesmo SE, crítico maior)
     const zWidth = result.clusteredCI[1] - result.clusteredCI[0];

@@ -165,14 +165,20 @@ export function naiveStdErr(values) {
 // #208) pegou que a referência certa pra erro-padrão em cluster com G baixo
 // é t(G-1), não normal — t(23)=2,069 > z=1,96, e isso muda o veredito
 // (|t| medido = 2,005 fica ABAIXO do crítico certo). Testada contra valores
-// tabelados conhecidos (df=5,10,23,30) em
-// backtest-correlation-check.test.mjs; erro cresce em df muito baixo (a
-// expansão é assintótica) — por isso `studentTCriticalUnreliable` sinaliza
-// df<10, mesmo espírito do `clusterCountLow` (G<20) já existente.
+// tabelados conhecidos (df=2,3,...,10,23,30) em
+// backtest-correlation-check.test.mjs — a partir de df=2 o erro já é
+// desprezível (<=0,03 em df=2, encolhendo depois). Só df=1 (G=2 clusters —
+// caso raro, mas não exótico: o mínimo não-trivial pro erro-padrão em
+// cluster) diverge de verdade: a expansão assintótica dá ~11,30 contra o
+// valor exato 12,706 (Codex review, PR #239, 5ª rodada — significativo o
+// bastante pra inverter um veredito bem na borda). Fechado com a fórmula
+// exata da distribuição de Cauchy (t com 1 grau de liberdade É Cauchy
+// padrão): quantil = tan(π·(p-0,5)).
 export function studentTCritical95(df) {
   if (!Number.isInteger(df) || df < 1) {
     throw new RangeError(`studentTCritical95: df deve ser inteiro >= 1, recebeu ${df}`);
   }
+  if (df === 1) return Math.tan(Math.PI * 0.475); // quantil exato de Cauchy(0,1) em p=0,975
   const z = 1.959963984540054; // inverseNormalCDF(0.975) -- mesma constante usada no resto do arquivo
   const z2 = z * z;
   const z3 = z2 * z;
