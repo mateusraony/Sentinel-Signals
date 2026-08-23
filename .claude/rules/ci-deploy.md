@@ -38,7 +38,12 @@ paths:
   (`src/lib/backtestEngine.js`, ver `docs/claude/backtest-usage.md`) no
   runner do GitHub (alcança a Binance, diferente das sessões do Claude
   Code). Não usa nenhum secret — backend fake em memória, Telegram no-op —
-  só baixa candles públicos e sobe o relatório como artifact.
+  só baixa candles públicos e sobe o relatório como artifact. Input
+  `futures_data` (default `false`) troca a fonte de Spot
+  (`data-api.binance.vision`, mesma do cron ao vivo) para Futures USDⓈ-M
+  real (`data.binance.vision`, arquivo em lote — `docs/known-risks.md`
+  itens 86/122) — só afeta a MEDIÇÃO do backtest, o scan ao vivo continua
+  em Spot (item 4, sem solução gratuita).
 
 ## Deploy
 

@@ -1,0 +1,132 @@
+import { describe, it, expect } from 'vitest';
+import {
+  buildMonthlyUrl,
+  buildDailyUrl,
+  monthsInRange,
+  daysInMonthRange,
+  parseKlineCsv,
+  dedupeAndFilterCandles,
+} from './binanceArchive.js';
+
+describe('buildMonthlyUrl/buildDailyUrl', () => {
+  it('monta a URL mensal com mês preenchido com zero', () => {
+    expect(buildMonthlyUrl('BTCUSDT', '1h', 2024, 7)).toBe(
+      'https://data.binance.vision/data/futures/um/monthly/klines/BTCUSDT/1h/BTCUSDT-1h-2024-07.zip'
+    );
+  });
+
+  it('monta a URL diária com dia e mês preenchidos com zero', () => {
+    expect(buildDailyUrl('ETHUSDT', '4h', 2025, 3, 5)).toBe(
+      'https://data.binance.vision/data/futures/um/daily/klines/ETHUSDT/4h/ETHUSDT-4h-2025-03-05.zip'
+    );
+  });
+});
+
+describe('monthsInRange', () => {
+  it('um único mês quando o intervalo cabe todo nele', () => {
+    const from = Date.UTC(2024, 6, 10); // 2024-07-10
+    const to = Date.UTC(2024, 6, 20); // 2024-07-20
+    expect(monthsInRange(from, to)).toEqual([{ year: 2024, month: 7 }]);
+  });
+
+  it('inclui os meses parciais nas duas pontas', () => {
+    const from = Date.UTC(2024, 5, 25); // 2024-06-25
+    const to = Date.UTC(2024, 7, 5); // 2024-08-05
+    expect(monthsInRange(from, to)).toEqual([
+      { year: 2024, month: 6 },
+      { year: 2024, month: 7 },
+      { year: 2024, month: 8 },
+    ]);
+  });
+
+  it('atravessa virada de ano corretamente', () => {
+    const from = Date.UTC(2024, 11, 20); // 2024-12-20
+    const to = Date.UTC(2025, 0, 10); // 2025-01-10
+    expect(monthsInRange(from, to)).toEqual([
+      { year: 2024, month: 12 },
+      { year: 2025, month: 1 },
+    ]);
+  });
+});
+
+describe('daysInMonthRange', () => {
+  it('devolve só os dias que caem dentro do intervalo pedido', () => {
+    const from = Date.UTC(2024, 6, 28); // 2024-07-28
+    const to = Date.UTC(2024, 7, 3); // 2024-08-03 (mês seguinte)
+    expect(daysInMonthRange(2024, 7, from, to)).toEqual([28, 29, 30, 31]);
+  });
+
+  it('mês inteiro quando o intervalo cobre tudo', () => {
+    const from = Date.UTC(2024, 1, 1); // fevereiro (bissexto)
+    const to = Date.UTC(2024, 2, 1);
+    expect(daysInMonthRange(2024, 2, from, to)).toHaveLength(29);
+  });
+});
+
+describe('parseKlineCsv', () => {
+  const row = (openTime, closeTime) =>
+    `${openTime},50000.00,50100.00,49900.00,50050.00,12.5,${closeTime},625000.00,100,6.0,300000.00,0`;
+
+  it('parseia linhas sem cabeçalho (formato antigo)', () => {
+    const csv = [row(1700000000000, 1700003599999), row(1700003600000, 1700007199999)].join('\n');
+    const candles = parseKlineCsv(csv);
+    expect(candles).toHaveLength(2);
+    expect(candles[0]).toEqual({
+      openTime: 1700000000000,
+      open: 50000,
+      high: 50100,
+      low: 49900,
+      close: 50050,
+      volume: 12.5,
+      closeTime: 1700003599999,
+    });
+  });
+
+  it('pula a linha de cabeçalho quando presente (formato novo)', () => {
+    const header = 'open_time,open,high,low,close,volume,close_time,quote_volume,count,taker_buy_volume,taker_buy_quote_volume,ignore';
+    const csv = [header, row(1700000000000, 1700003599999)].join('\n');
+    const candles = parseKlineCsv(csv);
+    expect(candles).toHaveLength(1);
+    expect(candles[0].openTime).toBe(1700000000000);
+  });
+
+  it('detecta e converte timestamps em microssegundos (arquivos 2025+) para milissegundos', () => {
+    // Mesmo instante que 1700000000000ms, só que em µs (×1000).
+    const csv = row(1700000000000000, 1700003599999000);
+    const candles = parseKlineCsv(csv);
+    expect(candles[0].openTime).toBe(1700000000000);
+    expect(candles[0].closeTime).toBe(1700003599999);
+  });
+
+  it('ignora linhas em branco/malformadas sem quebrar o parse das válidas', () => {
+    const csv = ['', row(1700000000000, 1700003599999), '   ', 'x,y'].join('\n');
+    expect(parseKlineCsv(csv)).toHaveLength(1);
+  });
+});
+
+describe('dedupeAndFilterCandles', () => {
+  const make = (openTime, closeTime) => ({ openTime, open: 1, high: 1, low: 1, close: 1, volume: 1, closeTime });
+
+  it('ordena por openTime', () => {
+    const out = dedupeAndFilterCandles([make(300, 301), make(100, 101), make(200, 201)], 0, 1000, 10_000);
+    expect(out.map((c) => c.openTime)).toEqual([100, 200, 300]);
+  });
+
+  it('deduplica por openTime (sobreposição mensal/diária), mantendo a última ocorrência', () => {
+    const first = make(100, 101);
+    const second = { ...make(100, 101), volume: 99 }; // mesma barra, fonte diferente
+    const out = dedupeAndFilterCandles([first, second], 0, 1000, 10_000);
+    expect(out).toHaveLength(1);
+    expect(out[0].volume).toBe(99);
+  });
+
+  it('descarta candle fora de [fromMs, toMs)', () => {
+    const out = dedupeAndFilterCandles([make(50, 51), make(100, 101), make(999, 1000)], 100, 999, 10_000);
+    expect(out.map((c) => c.openTime)).toEqual([100]);
+  });
+
+  it('descarta candle ainda não fechado (closeTime no futuro)', () => {
+    const out = dedupeAndFilterCandles([make(100, 20_000)], 0, 1_000_000, 10_000);
+    expect(out).toHaveLength(0);
+  });
+});

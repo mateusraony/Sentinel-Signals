@@ -30,7 +30,7 @@ on:
         # (+ SOLUSDT/METISUSDT, fora dos backtests padrão de 7 símbolos —
         # foram avaliados numa rodada de verificação ad-hoc, ver
         # known-risks.md item 57).
-        description: "Símbolos separados por vírgula (Binance Spot)"
+        description: "Símbolos separados por vírgula (Binance Spot por padrão — ver futures_data abaixo)"
         default: "BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT"
         required: true
       from:
@@ -86,6 +86,18 @@ on:
       min_trades:
         description: "Mínimo de operações para o relatório não ser marcado INCONCLUSIVO (vazio = 30)"
         default: ""
+        required: false
+      futures_data:
+        # docs/known-risks.md item 86/122: baixa o histórico de
+        # data.binance.vision (arquivo em lote Futures USDⓈ-M, não bloqueado
+        # por IP de datacenter dos EUA) em vez de Spot (data-api.binance.vision,
+        # a mesma fonte do cron 24/7 ao vivo). Não muda o scan ao vivo — só
+        # aproxima a MEDIÇÃO do backtest do mercado que o usuário realmente
+        # opera (confirmado Futures/Perpétuo no TradingView). Default false
+        # preserva o comportamento de sempre (Spot).
+        description: "Baixar histórico Futures (data.binance.vision) em vez de Spot"
+        type: boolean
+        default: false
         required: false
       trial_label:
         # Sem default fixo POSSÍVEL de verdade: é texto livre que descreve O
@@ -167,11 +179,23 @@ jobs:
           "
 
       - name: Baixar histórico real (Binance Spot)
+        if: ${{ inputs.futures_data != true }}
         env:
           SYMBOLS: ${{ inputs.symbols }}
           TIMEFRAMES: ${{ inputs.timeframes }}
         run: |
           node scripts/fetch-backtest-data.mjs \
+            --symbols "$SYMBOLS" \
+            --from "$FROM" --to "$TO" \
+            --timeframes "$TIMEFRAMES"
+
+      - name: Baixar histórico real (Binance Futures USDⓈ-M)
+        if: ${{ inputs.futures_data == true }}
+        env:
+          SYMBOLS: ${{ inputs.symbols }}
+          TIMEFRAMES: ${{ inputs.timeframes }}
+        run: |
+          node scripts/fetch-backtest-data-futures.mjs \
             --symbols "$SYMBOLS" \
             --from "$FROM" --to "$TO" \
             --timeframes "$TIMEFRAMES"
