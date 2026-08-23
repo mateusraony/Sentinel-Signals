@@ -497,6 +497,12 @@ describe('analyzeReport', () => {
     expect(result.effectSignFlip).not.toBeNull();
     expect(result.effectSignFlip.exhaustive).toBe(true);
     expect(result.effectSignFlip.replicates).toBe(4);
+    // Codex review, PR #239 (11ª rodada): sign-flip só é exato sob H0
+    // simétrica em torno de zero, não sob "média=0" isoladamente -- R-
+    // multiple de trade é assimétrico por construção (stop ~fixo, TP/runner
+    // variável). O texto publicado não pode alegar que o teste "SIM" prova
+    // média != 0 sem essa ressalva.
+    expect(formatMarkdown(result)).toContain('Exato só sob distribuição simétrica em torno de zero');
   });
 
   // Codex review, PR #239 (8ª rodada): a correção do null-vs-zero em

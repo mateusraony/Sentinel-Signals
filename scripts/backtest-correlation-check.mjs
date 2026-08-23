@@ -402,6 +402,19 @@ export function permutationTest(intervals, fromMs, toMs, { iterations = 1000, ra
 // que degrada com G baixo) — é o método certo pra confirmar ou refutar
 // significância quando G é baixo demais pra confiar em CR1 (ex.: G=8,
 // item 104/docs/known-risks.md).
+//
+// Ressalva (Codex review, PR #239, 11ª rodada): sign-flip é EXATO para H0
+// "média = 0" só quando a distribuição sob H0 é SIMÉTRICA em torno de zero
+// — inverter o sinal de um cluster só preserva a distribuição nula se X e
+// -X forem igualmente prováveis, o que exige simetria, não só média zero.
+// R-multiple de trade NÃO é simétrico por construção (stop costuma ser um
+// -1R aproximadamente fixo; TP2/runner é variável e ilimitado pra cima) —
+// com essa assimetria, o p-valor deste teste pode ter tamanho incorreto
+// (nem sempre conservador) mesmo sob H0 genuíno. Por isso ele nunca é a
+// única evidência: `clusteredCI`/`clusteredCIStudentT` (CR1 + t de Student,
+// resultado de `analyzeReport`) já respondem "a média difere de zero?" sem
+// depender de simetria — este teste é um COMPLEMENTO de baixo-G, não uma
+// substituição exata quando a distribuição subjacente é assimétrica.
 export function clusterSignFlipTest(values, clusters, { iterations = 5000, rand = Math.random, exhaustiveMaxG = 20 } = {}) {
   const g = clusters.length;
   const n = values.length;
@@ -593,8 +606,10 @@ export function formatMarkdown(result) {
     const s = result.effectSignFlip;
     lines.push(
       `Teste de randomização do EFEITO (sign-flip por cluster, ${s.exhaustive ? `exaustivo, 2^${s.g}=${s.replicates} combinações` : `${s.replicates} sorteios`}) — `
-      + `este SIM testa se a média observada (${fmt(s.observedMean)}) é diferente de zero: `
-      + `p-valor=${s.pValue.toFixed(4)}`,
+      + `testa se a média observada (${fmt(s.observedMean)}) é diferente de zero: `
+      + `p-valor=${s.pValue.toFixed(4)}. `
+      + `Exato só sob distribuição simétrica em torno de zero (R-multiple de trade não é simétrico por construção — `
+      + `ver IC em cluster acima como referência que não depende dessa suposição)`,
       '',
     );
   }
