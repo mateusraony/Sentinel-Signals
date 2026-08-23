@@ -13789,3 +13789,123 @@ os dois relatórios — não pressupor que Futures muda o resultado, medir.
 Se os números divergirem de forma relevante, isso quantifica o quanto as
 conclusões anteriores (Bloco 0, as 4 rodadas de saída) estavam
 contaminadas pela fonte errada de dado.
+
+## 123. Spot × Futures medido — mesmo ruído estatístico dos dois lados, mas população de operações muda de verdade (2026-08-23)
+
+### Contexto
+
+Usuário rodou `backtest.yml` com `futures_data: true` (item 122),
+7 símbolos padrão, ~12 meses (`futures-baseline`, 2025-08-23→2026-08-23).
+Comparado contra o baseline em Spot mais recente já existente nesta sessão
+(`skip15m-baseline`, item 120, mesmos 7 símbolos, janela quase idêntica —
+2025-08-20→2026-08-20, 3 dias de diferença).
+
+### Achado
+
+**Headline**: Spot `netExpectancyR` = +0,080R (N=99, IC95 [-0,159; 0,319],
+INCONCLUSIVO); Futures `netExpectancyR` = +0,007R (N=105, IC95 [-0,233;
+0,246], INCONCLUSIVO).
+
+**Correção (Codex, PR #235, 2× P2)**: a versão inicial deste item cometia
+dois erros de método.
+
+1. **As janelas dos dois relatórios estão deslocadas 3 dias** (Spot
+   2025-08-20→2026-08-20, Futures 2025-08-23→2026-08-23) — qualquer
+   operação nos 3 dias de borda de um relatório que o outro nunca avaliou
+   seria contada como "diferença de mercado" quando na verdade é só
+   diferença de cobertura de data. **Verificado**: restringindo os dois
+   relatórios à janela sobreposta (2025-08-23→2026-08-20), **0 operações
+   foram excluídas dos dois lados** — os 99/105 já estavam inteiramente
+   dentro da sobreposição. A decomposição abaixo (13/19/86) já estava
+   correta por coincidência (nenhum sinal caiu exatamente nos 3 dias de
+   borda em nenhum dos 7 símbolos), não porque o desenho original
+   estivesse certo — script re-executado com o filtro explícito pra
+   confirmar, não só assumido.
+2. **O IC's "se sobrepondo" não é um teste de hipótese da diferença** —
+   é uma leitura informal. O teste pareado (p=0,652) também não cobre a
+   afirmação "a diferença GERAL entre Spot e Futures é ruído", porque só
+   testa os 86 pareados, excluindo as 13+19 operações que o próprio item
+   aponta como as que arrastam o resultado. **Corrigido**: teste formal de
+   2 amostras independentes, usando o erro-padrão em CLUSTER de cada
+   relatório (não o SE ingênuo) — `diff (Futures − Spot) = -0,073R`,
+   `SE_diff = 0,193` (combinando os dois SEs em cluster via
+   Welch-Satterthwaite), `t = -0,377`. Não significativo tanto com df de
+   Welch (~49, crítico 2,011) quanto com o df conservador (mínimo dos
+   dois G−1 = 22, crítico 2,074) — **a mesma conclusão do texto original
+   ("nenhuma diferença detectável"), agora apoiada num teste que
+   realmente inclui as operações não pareadas**, não só a sobreposição
+   visual dos dois IC's.
+
+**Decomposição pareada por `id`** (mesmo método das rodadas 1-4 desta
+sessão, já confirmada acima como não afetada pelo deslocamento de janela):
+**86 das ~100 operações têm exatamente o mesmo `id` determinístico**
+(símbolo/lado/horário do candle) nos dois relatórios — ou seja, o
+gatilho da Range Filter dispara no MESMO candle na maioria dos casos,
+mesmo com o preço vindo de mercados diferentes (o rompimento do Range
+Filter normalmente não é sutil o bastante pra ficar de um lado do limiar
+num mercado e do outro lado no outro). Sobre essas 86:
+
+- Diferença pareada (Futures − Spot): **+0,036R**, `clusterSignFlipTest`
+  p=0,652 (G=24) — **não significativo**. 53 melhoraram, 33 pioraram —
+  nem toda operação comum tem o MESMO resultado (preço de entrada real
+  diferente muda R por operação), mas sem direção dominante.
+- **13 operações que existiam no Spot desaparecem completamente no
+  Futures** — média R = **+0,356** (eram operações boas: a maioria
+  `STOP_HIT` positivo, uma `CLOSED +0,730`, uma `-1,015`/`-1,075` negativas
+  isoladas).
+- **19 operações novas aparecem só no Futures** — média R = **-0,298**
+  (maioria `STOP_HIT` negativo; duas `TP2_HIT` fortes, +2,176 e +2,222,
+  puxam a média pra cima, mas a maioria é perda).
+
+**O mecanismo real**: a queda do headline (+0,080R → +0,007R) não vem de
+"as mesmas operações irem pior no Futures" — as 86 comuns foram
+LIGEIRAMENTE MELHORES no Futures (+0,036R, mesmo sem significância). Vem
+inteiramente da TROCA DE POPULAÇÃO: perder 13 vencedoras reais e ganhar 19
+perdedoras líquidas em troca. Mesma estrutura de achado do item 121
+(skip15m) — mudar a fonte/config muda QUAIS sinais disparam, não só como
+eles saem.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: nem Spot, nem Futures, nem a diferença formal entre os dois
+(teste de 2 amostras independentes acima, t=-0,377) é estatisticamente
+distinguível de ruído nesta amostra (~100 operações) — a mesma parede do
+item 109 (poder estatístico insuficiente). Registrado como família nova
+no ledger (`spot-vs-futures-hypothesis`, N=2) — INCONCLUSIVO mesmo antes
+da correção por família.
+
+**Hipótese**: a troca de 13 por 19 operações é consistente com o
+mecanismo esperado — o Range Filter reage ao fechamento do candle, e
+perto de uma reversão marginal um candle pode fechar de um lado do
+limiar no Spot e do outro no Futures (funding/basis empurrando o preço
+por uma fração de ATR). Não é possível prontamente confirmar identidade
+mecanismo-a-mecanismo com este dado (mesma ressalva do item 120 sobre
+"consistente com" não ser "prova de").
+
+**Recomendação**: não promover Futures nem Spot como "mais confiável"
+com este N — mas adotar Futures como fonte PADRÃO para as PRÓXIMAS
+medições de backtest daqui pra frente, já que é o mercado real que o
+usuário opera (decisão de produto já tomada ao pedir a implementação do
+item 122, não uma conclusão estatística nova). Toda rodada futura de
+teste de parâmetro (tp1R, trailAtrMult, os 4 flags do Bloco 1, etc.)
+deveria preferir `futures_data: true` — mas só quando o usuário quiser
+reabrir alguma dessas linhas, não é uma ação automática desta rodada.
+
+### Verificação
+
+`node scripts/backtest-correlation-check.mjs --report <cada arquivo>` +
+script ad hoc reusando `buildTradeIntervals`/`findOverlapClusters`/
+`clusterSignFlipTest`/`clusterRobustStdErr`/`studentTCritical95` (mesmo
+método das rodadas 1-4, estendido com o teste de 2 amostras independentes
+descrito acima após a correção do Codex). 2 relatórios registrados no
+ledger (`spot-vs-futures-hypothesis`, N=2). Nenhuma
+mudança de código nesta rodada — só diagnóstico sobre os 2 relatórios já
+gerados pelo usuário.
+
+### Próximo passo
+
+Nenhum pendente desta rodada especificamente — item 122 (a
+implementação) e este item (a primeira medição) fecham o pedido do
+usuário. Decisão de reabrir qualquer linha de teste de parâmetro
+(Bloco 1/2 do roadmap) usando Futures como fonte fica para quando o
+usuário pedir.
