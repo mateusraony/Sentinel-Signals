@@ -284,6 +284,20 @@ export function clusterSignFlipTest(values, clusters, { iterations = 5000, rand 
 export function analyzeReport(report, { iterations = 1000, rand = Math.random } = {}) {
   const intervals = buildTradeIntervals(report.overall.curve);
   const n = intervals.length;
+  // Codex review, PR #239: com n<2 (gate de amostra/regime cortou o run
+  // inteiro, ou um trial-only-config sem nenhuma operação fechável) todo
+  // cálculo abaixo degenera em números que PARECEM válidos sem ser --
+  // avgClusterSize vira NaN (0/0), e permutationTest usa `?? 1` como
+  // fallback pra SE indefinido dos dois lados (real e nulo), então
+  // DEFF=1/p-valor=1.0000 sai IDÊNTICO ao de um DEFF nulo genuíno, sem
+  // nenhum jeito de distinguir os dois casos no resultado. Mesmo padrão de
+  // honestidade que summarizeOps já usa (INCONCLUSIVO em vez de exibir
+  // métricas de aparência normal sobre amostra insuficiente) -- curto-
+  // circuita ANTES de qualquer cálculo, em vez de deixar cada função pura
+  // decidir sozinha o que fazer com um array vazio/unitário.
+  if (n < 2) {
+    return { trialLabel: report.trialLabel ?? null, n, insufficientData: true };
+  }
   const values = intervals.map((iv) => iv.r);
   const clusters = findOverlapClusters(intervals);
   const g = clusters.length;
@@ -339,6 +353,16 @@ export function analyzeReport(report, { iterations = 1000, rand = Math.random } 
 }
 
 export function formatMarkdown(result) {
+  if (result.insufficientData) {
+    return [
+      '',
+      `## Correlação entre ativos — ${result.trialLabel ?? '(sem trial_label)'}`,
+      '',
+      `**Dados insuficientes** (N=${result.n} operações fechadas com R calculável, mínimo 2) — `
+      + 'nenhuma estatística de correlação é calculável, não tente ler DEFF/p-valor de um relatório vazio ou de 1 operação.',
+      '',
+    ].join('\n');
+  }
   const fmt = (v) => (v === null || v === undefined ? '—' : v.toFixed(4));
   const fmtCI = (ci) => (ci ? `[${fmt(ci[0])}, ${fmt(ci[1])}]` : '—');
   const lines = [

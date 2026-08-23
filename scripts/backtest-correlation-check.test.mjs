@@ -12,6 +12,7 @@ import {
   permutationTest,
   clusterSignFlipTest,
   analyzeReport,
+  formatMarkdown,
 } from './backtest-correlation-check.mjs';
 
 describe('mulberry32', () => {
@@ -336,5 +337,30 @@ describe('analyzeReport', () => {
     expect(result.effectSignFlip).not.toBeNull();
     expect(result.effectSignFlip.exhaustive).toBe(true);
     expect(result.effectSignFlip.replicates).toBe(4);
+  });
+
+  // Codex review, PR #239: com n<2 as fórmulas degeneram em números que
+  // PARECEM válidos (avgClusterSize=NaN, DEFF=1/p-valor=1.0000 idênticos ao
+  // fallback `?? 1` de um DEFF nulo genuíno) em vez de sinalizar amostra
+  // insuficiente -- ver o guard em analyzeReport.
+  it('n=0 (curve vazia) devolve insufficientData em vez de estatística inventada', () => {
+    const report = { trialLabel: 'empty-test', range: { fromMs: 0, toMs: 10000 }, overall: { curve: [] } };
+    const result = analyzeReport(report, { iterations: 50, rand: mulberry32(9) });
+    expect(result).toEqual({ trialLabel: 'empty-test', n: 0, insufficientData: true });
+    expect(formatMarkdown(result)).toContain('Dados insuficientes');
+  });
+
+  it('n=1 (uma única operação fechada) também devolve insufficientData', () => {
+    const report = {
+      trialLabel: 'single-trade-test',
+      range: { fromMs: 0, toMs: 10000 },
+      overall: {
+        curve: [
+          { r: 0.5, op: { symbol: 'BTCUSDT', created_date: new Date(0).toISOString(), closed_at: new Date(1000).toISOString() } },
+        ],
+      },
+    };
+    const result = analyzeReport(report, { iterations: 50, rand: mulberry32(9) });
+    expect(result).toEqual({ trialLabel: 'single-trade-test', n: 1, insufficientData: true });
   });
 });
