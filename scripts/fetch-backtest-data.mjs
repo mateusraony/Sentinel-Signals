@@ -18,6 +18,7 @@
 // pedido, com uma pausa entre chamadas para não estourar rate limit.
 import fs from 'node:fs';
 import path from 'node:path';
+import { writeJsonAtomic } from './writeJsonAtomic.mjs';
 
 const BASE = 'https://data-api.binance.vision/api/v3';
 const MAX_LIMIT = 1000;
@@ -160,7 +161,7 @@ async function main() {
       console.log(`[fetch-backtest-data] ${symbol} ${tf}: baixando ${args.from} → ${args.to}...`);
       const candles = await fetchRange(symbol, tf, fromMs, toMs);
       const outFile = path.join(outDir, `${symbol}_${tf}.json`);
-      fs.writeFileSync(outFile, JSON.stringify(candles));
+      writeJsonAtomic(outFile, candles);
       console.log(`[fetch-backtest-data] ${symbol} ${tf}: ${candles.length} candles → ${outFile}`);
     }
   }

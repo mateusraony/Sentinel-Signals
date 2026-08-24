@@ -57,6 +57,10 @@ Definido por pesquisa de comunidade (fontes no PR que o introduziu):
   4h (BTC/ETH/PENDLE/FET) transcritas de prints da Data Window do usuário
   (2026-07-18) — 31/32 valores na precisão exibida; exceção documentada
   (ADX do PENDLE, ~0,6%). Novo spot check = novos casos nesse arquivo.
+  **Ao citar isto em qualquer doc/PR/análise (item 125, achado menor):
+  é um "spot check" de 4 barras, não "paridade confirmada" — leve a
+  qualificação junto com o número toda vez, nunca só "31/32 valores
+  batendo" solto.**
 
 ## Regras ao tocar cálculo
 

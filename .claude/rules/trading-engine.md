@@ -157,6 +157,19 @@ nunca deve receber nova transição.**
   `TradeOperation`; toda escrita passa por `transitionTradeOp` (mesma CAS
   acima). Detalhe completo, os 7 problemas corrigidos após auditoria externa
   do PR #78, e os campos novos: `docs/known-risks.md` item 39.
+- **RF e SMC não são cascatas simétricas na prática, mesmo com o código
+  tratando as duas como pares** (item 125 achado menor). RF (4h→15m) é o
+  gerador ativo. SMC (1h→5m) está tecnicamente ativa em produção (opt-in
+  por `MonitoredAsset.smc_enabled`) mas mede ~0 operações reais no mundo
+  real — 93% das rejeições nunca chegam a avaliar o próprio gatilho
+  (item 75, `no_trigger`). O Pine real do SMC (`docs/reference-pine/
+  smc-a-unified-v2.3.pine`) nem é um `strategy()` — é um `indicator()` que só
+  produz um score de confluência, nunca dispara operação sozinho; a cascata
+  `1h_5m` é invenção própria do Sentinel, sem correspondência 1:1 no script
+  real (item 77). A direção proposta (SMC como score/contexto sobre a RF
+  nativa, não gerador independente) existe só como `pineConfig.
+  smcAlignmentScoreEnabled`, backtest-only, desligado por padrão — não
+  substituiu a cascata `1h_5m` em produção.
 - **[CORRIGIDO — item 39.1] Guarda de operações duplicadas agora cobre os
   DOIS loops mutadores.** `persistScanResults` já suspendia
   arbitragem/entrada/stop-TP quando detectava mais de uma operação ativa
