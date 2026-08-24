@@ -25,6 +25,22 @@ export function buildDailyUrl(symbol, interval, year, month, day) {
   return `${ARCHIVE_BASE}/daily/klines/${symbol}/${interval}/${symbol}-${interval}-${year}-${mm}-${dd}.zip`;
 }
 
+// docs/known-risks.md item 125 (achado menor): downloadArchive() used to
+// buffer the ENTIRE response with no size check before handing it to
+// AdmZip. Zip-slip doesn't apply here (the zip is only read into memory,
+// never extracted to disk) and data.binance.vision is a trusted HTTPS CDN,
+// so the practical zip-bomb risk was already very low — but a real monthly
+// kline CSV for one symbol/interval is a few MB at most, so capping well
+// above that costs nothing for legitimate archives and stops a truly
+// malformed/unexpected response from being fully buffered.
+export const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024;
+
+export function assertArchiveSizeWithinLimit(byteLength, context) {
+  if (byteLength > MAX_ARCHIVE_BYTES) {
+    throw new Error(`Archive ${context} excede o limite de tamanho (${byteLength} > ${MAX_ARCHIVE_BYTES} bytes) — download recusado.`);
+  }
+}
+
 /**
  * Every calendar month touched by [fromMs, toMs), inclusive of partial
  * months at either edge — a monthly archive is tried first for each one

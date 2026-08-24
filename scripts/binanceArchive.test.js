@@ -6,6 +6,8 @@ import {
   daysInMonthRange,
   parseKlineCsv,
   dedupeAndFilterCandles,
+  MAX_ARCHIVE_BYTES,
+  assertArchiveSizeWithinLimit,
 } from './binanceArchive.js';
 
 describe('buildMonthlyUrl/buildDailyUrl', () => {
@@ -128,5 +130,22 @@ describe('dedupeAndFilterCandles', () => {
   it('descarta candle ainda não fechado (closeTime no futuro)', () => {
     const out = dedupeAndFilterCandles([make(100, 20_000)], 0, 1_000_000, 10_000);
     expect(out).toHaveLength(0);
+  });
+});
+
+// Item 125 (achado menor): downloadArchive() não checava o tamanho da
+// resposta antes de bufferizar e passar pro AdmZip.
+describe('assertArchiveSizeWithinLimit', () => {
+  it('não lança para um tamanho normal (poucos MB, arquivo real)', () => {
+    expect(() => assertArchiveSizeWithinLimit(5 * 1024 * 1024, 'BTCUSDT 1h 2024-07 (mensal)')).not.toThrow();
+  });
+
+  it('não lança exatamente no limite', () => {
+    expect(() => assertArchiveSizeWithinLimit(MAX_ARCHIVE_BYTES, 'ctx')).not.toThrow();
+  });
+
+  it('lança acima do limite, com o contexto na mensagem', () => {
+    expect(() => assertArchiveSizeWithinLimit(MAX_ARCHIVE_BYTES + 1, 'BTCUSDT 1h 2024-07 (mensal)'))
+      .toThrow(/BTCUSDT 1h 2024-07 \(mensal\)/);
   });
 });

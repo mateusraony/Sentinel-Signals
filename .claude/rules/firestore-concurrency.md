@@ -17,6 +17,17 @@ Todo acesso passa por `backend` (`src/api/entities.js`): `backend.entities.<Nome
 `scripts/adminEntities.js` (firebase-admin, mesma forma de chamada, ignora as
 `firestore.rules`).
 
+**Exceção deliberada** (item 125 achado menor, 2026-08-24): `strategyConfig/
+current` e `telegramFilters/current` NÃO têm entidade equivalente em
+`scripts/adminEntities.js` — `scripts/adminPineConfig.js`/`adminTelegram.js`
+leem esses dois docs direto via `firebase-admin/firestore` (`getFirestore()`),
+sem passar por nenhum adaptador. Do lado browser eles passam por `backend`
+normalmente (`StrategyConfig`/entidade equivalente em `src/api/entities.js`).
+Não é bug — é a mesma lista de "sem `.jsonc`" já documentada no `CLAUDE.md`
+(tabela de coleções) — só não estava explicitada AQUI, onde alguém lendo só
+esta regra concluiria (errado) que todo acesso do cron passa por
+`adminEntities.js`.
+
 ## Concorrência
 
 - **Uma op ativa por ativo** é garantida por transação de doc único em

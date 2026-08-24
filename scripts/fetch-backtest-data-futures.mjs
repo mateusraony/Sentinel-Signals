@@ -36,7 +36,9 @@ import {
   daysInMonthRange,
   parseKlineCsv,
   dedupeAndFilterCandles,
+  assertArchiveSizeWithinLimit,
 } from './binanceArchive.js';
+import { writeJsonAtomic } from './writeJsonAtomic.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -70,7 +72,14 @@ async function downloadArchive(url, contexto) {
   const res = await fetchWithRetry(url, { context: contexto });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Binance archive error (${res.status}) em ${contexto}: ${await res.text()}`);
-  return Buffer.from(await res.arrayBuffer());
+  // Content-Length check first — avoids buffering a huge body at all when
+  // the header is present and honest; the post-buffer check below is the
+  // real guarantee (catches a missing/wrong header too).
+  const contentLength = Number(res.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > 0) assertArchiveSizeWithinLimit(contentLength, contexto);
+  const buffer = Buffer.from(await res.arrayBuffer());
+  assertArchiveSizeWithinLimit(buffer.length, contexto);
+  return buffer;
 }
 
 async function fetchFuturesArchive(symbol, interval, fromMs, toMs) {
@@ -124,7 +133,7 @@ async function main() {
       console.log(`[fetch-backtest-data-futures] ${symbol} ${tf}: baixando ${args.from} → ${args.to} (Futures USDⓈ-M)...`);
       const candles = await fetchFuturesArchive(symbol, tf, fromMs, toMs);
       const outFile = path.join(outDir, `${symbol}_${tf}.json`);
-      fs.writeFileSync(outFile, JSON.stringify(candles));
+      writeJsonAtomic(outFile, candles);
       console.log(`[fetch-backtest-data-futures] ${symbol} ${tf}: ${candles.length} candles → ${outFile}`);
     }
   }

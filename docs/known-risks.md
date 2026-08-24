@@ -1554,8 +1554,10 @@ volume real" nunca tinha sido checado contra dado de verdade. Agreguei
 `op.exit_ambiguous` de 17 relatórios de backtest reais já gerados nesta
 sessão (configs/janelas/símbolos diferentes — itens 67, 68, 69, 71,
 Bloco 4 Fase 1, o walk-forward do item 74 e o diagnóstico do item 75):
-**19 de 2.417 operações, 0,79%**. Taxa por run varia de 0% a no máximo
-~3,4% (Bloco 4 Fase 1, n pequeno) — nunca alta em nenhum run.
+**19 de 2.417 operações, 0,79% (amostra com dupla-contagem conhecida —
+ver ressalva abaixo, não citar sozinho sem ela)**. Taxa por run varia de
+0% a no máximo ~3,4% (Bloco 4 Fase 1, n pequeno) — nunca alta em nenhum
+run.
 
 **Ressalva honesta**: os 2.417 não são uma amostra limpa e independente —
 vários desses runs compartilham a mesma janela/carteira de 20 símbolos sob
@@ -14396,30 +14398,42 @@ anchor genérico do ativo") — confirmado que falha sem o fix (anchor
 por-cascata continuava apontando pra uma op já terminal) e passa com ele.
 `npm run lint && npm test && npm run build` verdes.
 
-### Achados menores (registrados, sem ação recomendada agora)
+### Achados menores (FECHADOS — 2026-08-24, pedido explícito do usuário)
 
-- `.claude/rules/firestore-concurrency.md` afirma "nunca importe
-  `firebase/firestore` direto" — mas `scripts/adminPineConfig.js`/
-  `adminTelegram.js` fazem isso de propósito para `strategyConfig`/
-  `telegramFilters`, funcionalmente correto, só a regra escrita está
-  desatualizada.
-- Narrativa de "duas cascatas simétricas" não reflete mais a realidade —
-  SMC é código morto/score experimental desde os itens 75/77/108;
-  `CLAUDE.md` poderia deixar isso mais claro.
-- `/api/backtest/status`/`/artifact` sem rate-limit (assimetria com
-  `/trigger`) — repo é público, sem dado sensível exposto, só risco de
-  esgotar cota do token do GitHub Actions por flood anônimo.
-- Download de ZIP em `fetch-backtest-data-futures.mjs` sem cap de
-  tamanho — zip-slip não se aplica (extração só em memória), risco
-  residual de zip-bomb é baixíssimo (fonte HTTPS confiável).
-- Item 36 (`exit_ambiguous`, "0,79%") citado com mais confiança do que a
-  amostra (com dupla-contagem conhecida) sustenta.
-- Golden parity real (`tvSpotCheck.test.js`) é só 4 barras transcritas —
-  já qualificado como "spot check" no próprio doc, reforçar essa citação
-  em usos futuros pra não virar "paridade confirmada" sem qualificação.
-- `scripts/fetch-backtest-data-futures.mjs` não faz escrita atômica —
-  só relevante se o script rodar 2x ao mesmo tempo manualmente, não é
-  caminho de produção.
+Todos os 7 abaixo endereçados nesta rodada — 4 mudanças de código pequenas
+(rate-limit, cap de tamanho de ZIP, escrita atômica), 3 de documentação:
+
+- ~~`.claude/rules/firestore-concurrency.md` afirma "nunca importe
+  `firebase/firestore` direto"~~ — **corrigido**: adicionada a exceção
+  deliberada (`strategyConfig`/`telegramFilters` via `firebase-admin/
+  firestore` direto no cron, sem entidade equivalente em
+  `adminEntities.js`), mesma lista já documentada no `CLAUDE.md`.
+- ~~Narrativa de "duas cascatas simétricas" desatualizada~~ — **corrigido**:
+  nova nota em `.claude/rules/trading-engine.md` (RF é o gerador ativo;
+  SMC tecnicamente ativa mas mede ~0 operações reais, itens 75/77).
+- ~~`/api/backtest/status`/`/artifact` sem rate-limit~~ — **corrigido**:
+  cooldown por-uid (`createUidCooldown`, mesmo padrão já usado em
+  `/api/telegram-notify`) adicionado nos dois endpoints — 3s/5s,
+  folgado o bastante pra não quebrar o polling legítimo do frontend
+  (10s), apertado o bastante pra cortar flood.
+- ~~ZIP sem cap de tamanho~~ — **corrigido**: `assertArchiveSizeWithinLimit`
+  (`scripts/binanceArchive.js`, 200MB, checa `Content-Length` antes de
+  bufferizar e o tamanho real depois) em `fetch-backtest-data-futures.mjs`.
+- ~~Item 36 citado sem a ressalva de dupla-contagem~~ — **corrigido**:
+  ressalva movida pra dentro da mesma frase do número ("0,79%"), não
+  mais 3 linhas depois — nenhuma citação externa encontrada que
+  precisasse de correção própria (as 2 existentes já não citavam o
+  número sozinho).
+- ~~`tvSpotCheck.test.js` corre risco de virar "paridade confirmada" sem
+  qualificação~~ — **corrigido**: as 4 citações existentes já eram bem
+  qualificadas; adicionada uma nota permanente em
+  `.claude/rules/pine-parity.md` pra citações futuras.
+- ~~`fetch-backtest-data-futures.mjs` sem escrita atômica~~ — **corrigido**:
+  novo `scripts/writeJsonAtomic.mjs` (temp file + rename), aplicado
+  também no script Spot irmão (`fetch-backtest-data.mjs`, mesmo padrão,
+  não estava no achado original mas tinha o mesmo problema).
+
+Verificação: `npm run lint && npm test && npm run build` verdes.
 
 ### Verificação positiva (nada quebrado, cruzado entre os 5 revisores)
 
