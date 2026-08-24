@@ -155,6 +155,17 @@ export const DEFAULTS = {
   // mas sistematicamente atrasado/perdido vs. o TradingView). Não ativar em
   // produção sem comparar relatórios de backtest com/sem primeiro.
   skip15mConfirmationEnabled: false,
+  // docs/known-risks.md item 114/128 — o Pine real do usuário NÃO tem TP2:
+  // o runner pós-TP1 só tem trailing, sem segundo alvo fixo.
+  // `TP2_HIT` (tp1R×2 hardcoded) é invenção só do Sentinel. Objetivo é o
+  // mesmo do skip15mConfirmationEnabled acima: bater 1:1 com a estratégia
+  // real, não otimização estatística (item 115 mediu ponto estimado
+  // +0,015R, não significativo — mesma situação do skip15m). Master flag
+  // OFF por padrão. Quando `true`, o runner só encerra por STOP_HIT/
+  // INVALIDATED/CLOSED (Time Stop/Chop Exit), nunca por TP2 — congelado na
+  // CRIAÇÃO da operação (`tp2_cap_disabled`), mesmo contrato de
+  // runnerEnabled/preTp1StopProtectionEnabled.
+  disableTp2CapEnabled: false,
   // NOTA (não é omissão): `rf1hCondEnabled` (Fase 1, docs/known-risks.md
   // item 56 "Fase 1") existe SÓ em scripts/backtestPineConfig.js —
   // deliberadamente NÃO espelhado aqui, ao contrário da convenção padrão
@@ -307,6 +318,8 @@ export const SYNCED_STRATEGY_KEYS = [
   'candlePatternEnabled',
   // Bypass da confirmação 15m na cascata RF nativa (known-risks.md item 67)
   'skip15mConfirmationEnabled',
+  // Desliga o teto de TP2 do runner, trailing puro igual ao Pine real (known-risks.md item 114/128)
+  'disableTp2CapEnabled',
 ];
 
 // Subset of SYNCED_STRATEGY_KEYS that has no `input.*()` counterpart in the
@@ -337,6 +350,7 @@ const NON_PINE_SYNCED_KEYS = new Set([
   'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
   'candlePatternEnabled',
   'skip15mConfirmationEnabled',
+  'disableTp2CapEnabled',
 ]);
 
 /**

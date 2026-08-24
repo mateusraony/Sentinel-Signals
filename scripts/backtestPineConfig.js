@@ -274,11 +274,10 @@ const DEFAULTS = {
   // Stop/Chop Exit), igual ao Pine. `tp2`/`tp2_hit` continuam gravados
   // (mesmo cálculo de sempre) só para exibição/auditoria — nunca checados
   // como saída quando o flag está ligado. Master flag OFF por padrão
-  // (byte-idêntico a hoje), backtest-only (mesmo motivo dos outros acima —
-  // mudança de ESTRATÉGIA de saída exige A/B real antes de cogitar
-  // produção). INTENTIONALLY NOT mirrored em src/lib/pineParser.js/
-  // scripts/adminPineConfig.js. Ver tripwire test em
-  // src/lib/disableTp2CapTripwire.test.js.
+  // (byte-idêntico a hoje). Promovido a toggle de produção (known-risks.md
+  // item 128, mesmo raciocínio de paridade com o Pine real do
+  // skip15mConfirmationEnabled, item 120/121) — Espelha src/lib/
+  // pineParser.js/scripts/adminPineConfig.js.
   disableTp2CapEnabled: false,
 };
 

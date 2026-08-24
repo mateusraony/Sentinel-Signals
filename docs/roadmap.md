@@ -551,6 +551,17 @@ amostra genuinamente maior (mesma régua do resto do projeto) — ver
 rodada, incluindo o achado do acoplamento `tp1R`×`minRR` (item 116) e a
 descoberta de que `tp2R` não é um parâmetro real do Pine (item 114).
 
+> **Atualização 2026-08-24 (item 128): `disableTp2CapEnabled` ATIVADO EM
+> PRODUÇÃO, por fidelidade ao Pine real — mesmo raciocínio do
+> `skip15mConfirmationEnabled` (item 121).** Não estatístico (item 115:
+> +0,015R, não significativo) — decisão de produto, porque o Pine real do
+> usuário não tem TP2 fixo, só trailing pós-TP1. Verificado antes: nenhum
+> dos outros 3 flags dormentes do Bloco 1 acima tem base de paridade
+> comparável (retest/displacement/tier não existem no Pine real; OB/FVG
+> tem base parcial mas exige escolha de peso com blast radius em produção,
+> não ativado). Toggle em `Settings.jsx`, mesmo padrão do item 121.
+> Detalhe: item 128.
+
 ### PR-1 (item 47.2): dados limpos + telemetria nova, sem mexer em sinal
 
 Avaliação de uma proposta externa de reforma (2026-07-29, detalhe completo em
