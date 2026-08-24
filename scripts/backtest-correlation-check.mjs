@@ -234,12 +234,14 @@ function regularizedIncompleteBeta(x, a, b) {
   return 1 - (bt * betaContinuedFraction(1 - x, b, a)) / b;
 }
 
-// Valor crítico bicaudal (alpha=0.05) da t-Student para `df` graus de
-// liberdade, EXATO (a menos de erro de ponto-flutuante) para qualquer df,
-// via a relação padrão entre a CDF de t e a função beta incompleta
-// regularizada: para t>0, F(t) = 1 - 1/2·I_x(df/2, 1/2), x = df/(df+t²).
-// Achar t tal que F(t)=0,975 equivale a achar x tal que I_x(df/2,1/2)=0,05
-// (busca binária monotônica -- I_x é estritamente crescente em x), depois
+// Valor crítico bicaudal da t-Student para `df` graus de liberdade e nível
+// `alpha` (default 0,05, ou seja 95% -- o nome mantém "95" porque é de
+// longe o uso mais comum no arquivo, não porque o alpha é fixo), EXATO (a
+// menos de erro de ponto-flutuante) para qualquer df, via a relação padrão
+// entre a CDF de t e a função beta incompleta regularizada: para t>0,
+// F(t) = 1 - 1/2·I_x(df/2, 1/2), x = df/(df+t²). Achar t tal que
+// F(t)=1-alpha/2 equivale a achar x tal que I_x(df/2,1/2)=alpha (busca
+// binária monotônica -- I_x é estritamente crescente em x), depois
 // t = √(df·(1-x)/x).
 //
 // Substitui a expansão de Cornish-Fisher usada antes (assintótica, nunca
@@ -253,13 +255,23 @@ function regularizedIncompleteBeta(x, a, b) {
 // mais um df por rodada. Testada contra valores tabelados conhecidos
 // (df=1,2,3,4,5,10,23,30) e contra a convergência pra z=1,96 quando
 // df→∞ em backtest-correlation-check.test.mjs.
-export function studentTCritical95(df) {
+//
+// Parâmetro `alpha` (Codex review, PR #240): combinar cluster-robustez com
+// correção Bonferroni exige o t crítico no alpha AJUSTADO (ex.: 0,05/2 pra
+// família de 2), não o z normal -- usar z ali subestima a incerteza porque
+// a variância em cluster só tem G-1 graus de liberdade, não infinitos.
+// Cross-validado contra scipy.stats.t.ppf (df=26/alpha=0,025 -> 2,378786;
+// df=100/alpha=0,025 -> 2,275652) em backtest-correlation-check.test.mjs.
+export function studentTCritical95(df, alpha = 0.05) {
   if (!Number.isInteger(df) || df < 1) {
     throw new RangeError(`studentTCritical95: df deve ser inteiro >= 1, recebeu ${df}`);
   }
+  if (!(alpha > 0 && alpha < 1)) {
+    throw new RangeError(`studentTCritical95: alpha deve estar em (0,1), recebeu ${alpha}`);
+  }
   const a = df / 2;
   const b = 0.5;
-  const target = 0.05;
+  const target = alpha;
   let lo = 0;
   let hi = 1;
   for (let i = 0; i < 200; i += 1) {

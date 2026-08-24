@@ -14417,14 +14417,17 @@ Cameron-Miller) pela primeira vez:
 | DEFF (design effect) | 1,368 |
 | N efetivo | 132,3 (de 181 nominal) |
 | IC95 em cluster (t-Student, df=26, crítico=2,0555) | **[-0,536; -0,152]** — não cruza zero |
-| Teste de permutação (deslocamento circular, 1000 réplicas) | DEFF real 1,368 vs. nulo média 0,772 [p5=0,289; p95=1,472], **p=0,069** |
+| Teste de permutação (deslocamento circular, `--seed 1`, 1000 réplicas) | DEFF real 1,368 vs. nulo média 0,772 [p5=0,289; p95=1,472], **p=0,069** |
 | Teste sign-flip do efeito (por cluster) | **p=0,004** |
 
 O teste de permutação (a correlação medida é artefato de calendário ou
 real?) fica perto do limiar convencional sem cruzá-lo — DEFF=1,368 não é
 tão extremo quanto os itens 98/99/109/123 já viram noutros datasets
 (1,4-3,56), mas ainda assim alarga o IC o bastante pra valer a pena
-reportar a versão em cluster, não só a ingênua.
+reportar a versão em cluster, não só a ingênua. `--seed 1` reproduz esta
+rodada exata (achado do Codex, PR #240: um p-valor perto de 0,05 sem o
+seed registrado não é reproduzível — a variação de amostragem entre
+seeds diferentes pode mover um p=0,069 pra qualquer lado do limiar).
 
 **Registrado em `docs/backtest-trial-registry.json`**, família nova
 `allowedside-ab-pair-m2` (N=2): o report real (`source: "report"`) para
@@ -14444,20 +14447,30 @@ IC corrigido (Bonferroni m=2, z=2,2414):
 ```
 
 **Combinando as duas correções** (cluster-robustez + Bonferroni m=2 —
-aplicando o z de Bonferroni sobre o erro-padrão EM CLUSTER, não o
-ingênuo, já que a correlação entre ativos deste dataset é real e medida,
-não hipotética): IC = -0,3443 ± 2,2414×0,0934 = **[-0,554; -0,135]**.
-Ainda exclui zero, com folga — é o número mais conservador já produzido
-pra este trial, empilhando as duas correções que este projeto já validou
-separadamente noutros itens.
+aplicando o erro-padrão EM CLUSTER, não o ingênuo, já que a correlação
+entre ativos deste dataset é real e medida, não hipotética). **Correção
+(Codex, PR #240, P2)**: a versão inicial deste item usava o z normal de
+Bonferroni (2,2414) aqui — errado, porque a variância em cluster só tem
+df=G-1=26 graus de liberdade, não infinitos (o mesmo raciocínio que já
+levou a usar t-Student em vez de z na linha do IC em cluster acima). O
+certo é o crítico t no alpha AJUSTADO: `studentTCritical95(26, 0.025)` =
+**2,378786** (generalizado nesta mesma rodada pra aceitar `alpha`, não só
+0,05 — cross-validado contra `scipy.stats.t.ppf`, ver
+`backtest-correlation-check.test.mjs`). IC = -0,3443 ± 2,378786×0,0934 =
+**[-0,566; -0,122]**. Mais largo que o [-0,554;-0,135] publicado
+originalmente (como o Codex já previu: "a conclusão pode não mudar, mas
+os limites publicados são estreitos demais"), mas a conclusão realmente
+não muda — ainda exclui zero, com folga. É o número mais conservador já
+produzido pra este trial, empilhando as duas correções que este projeto
+já validou separadamente noutros itens.
 
 ### Leitura (fato × hipótese × recomendação)
 
 **Fato**: a hipótese do item 125 (achado 2) se confirmou — o IC corrigido
 por cluster é mais largo que o publicado (ingênuo [-0,501;-0,188] → em
 cluster [-0,536;-0,152]), mas continua excluindo zero. Mesmo empilhando
-cluster-robustez E correção Bonferroni m=2, o resultado sobrevive:
-[-0,554;-0,135].
+cluster-robustez E correção Bonferroni m=2 (t-Student no alpha ajustado,
+não z), o resultado sobrevive: [-0,566;-0,122].
 
 **Conclusão**: BUY-only permanece a evidência mais sólida de vantagem
 direcional (negativa) já medida neste projeto — robusta a
@@ -14473,8 +14486,10 @@ fechado. Se o projeto algum dia quiser agir sobre este achado, a lacuna
 que falta é confirmação fora da amostra (mesmo ponto já levantado no
 item 71) — não mais estatística de cluster, que agora está feita.
 
-Verificação: `npm run lint && npm test && npm run build` verdes (1096
-testes). `node scripts/backtest-correlation-check.mjs`/
-`backtest-trial-registry.mjs` rodados de verdade contra o
-`backtest-report.json` bruto enviado pelo usuário (não estimativa por
-analogia como a hipótese original do item 125 registrava).
+Verificação: `npm run lint && npm test && npm run build` verdes (1100
+testes — +4 desta rodada, cobrindo o `alpha` novo de `studentTCritical95`
+cross-validado contra `scipy.stats.t.ppf`). `node
+scripts/backtest-correlation-check.mjs`/`backtest-trial-registry.mjs`
+rodados de verdade contra o `backtest-report.json` bruto enviado pelo
+usuário (não estimativa por analogia como a hipótese original do item
+125 registrava).
