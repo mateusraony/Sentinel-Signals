@@ -14175,7 +14175,7 @@ suíte de componente para `src/pages/*.jsx` neste projeto, então a fiação em
 si do `Trades.jsx` não ganhou teste automatizado novo — verificado só por
 leitura/revisão manual dos 3 call sites e do helper).
 
-### Achado 2 (CRÍTICO, verificado por mim) — item 71 (BUY-only, "conclusivo mesmo com Bonferroni") nunca entrou no ledger nem foi cluster-corrigido
+### Achado 2 (CRÍTICO, verificado por mim, FECHADO — 2026-08-24) — item 71 (BUY-only, "conclusivo mesmo com Bonferroni") nunca entrou no ledger nem foi cluster-corrigido
 
 **Fato** (achado do especialista em testes/metodologia, verificado por
 mim): o item 71 (linha 7345) chama o run `allowedside-ab-buy-only`
@@ -14207,6 +14207,11 @@ incompleta.** Nenhuma ação de produto depende disso hoje (nenhum flag foi
 ativado por causa deste número), mas o rótulo "conclusivo" que este item
 carrega pode estar emprestando mais confiança do que o número
 merece.
+
+**Fechamento (2026-08-24)**: re-rodado (o artifact original expirava sem
+acesso desta sessão), registrado em `docs/backtest-trial-registry.json` e
+cluster-corrigido de verdade — ver item 126. A hipótese acima (margem mais
+estreita, mas sem cruzar zero) se confirmou.
 
 ### Achado 3 (IMPORTANTE) — score de confluência tem redundância estrutural que provavelmente explica por que `minScore` nunca mostra diferença
 
@@ -14366,7 +14371,110 @@ promovida a produção no futuro sem notar esta lacuna.
 Esta rodada começou como revisão pura, sem mudança de código. O achado
 crítico 1 (Trades.jsx sem CAS) foi corrigido nesta mesma rodada — pedido
 explícito do usuário, ver "Corrigido" na seção do Achado 1 acima. O
-achado crítico 2 (item 71 nunca cluster-corrigido) segue pendente: é
-trabalho de verificação que pode ser feito sem tocar código nenhum
-(recuperar report + rodar ferramenta já existente), ainda sem pedido do
-usuário para executá-lo.
+achado crítico 2 (item 71 nunca cluster-corrigido) também foi fechado
+(2026-08-24, pedido explícito do usuário) — ver item 126 pro resultado
+final. Achados 3-7 e os achados menores seguem sem ação, pendentes de
+pedido explícito.
+
+## 126. `allowedside-ab-buy-only` re-rodado e cluster-corrigido de verdade — item 71/125 (achado 2) fechado (2026-08-24)
+
+### Contexto
+
+Achado 2 do conselho de revisão (item 125): o item 71 chamava
+`allowedside-ab-buy-only` de "conclusiva mesmo com Bonferroni", mas o
+resultado nunca tinha entrado no `docs/backtest-trial-registry.json` nem
+passado pelo `scripts/backtest-correlation-check.mjs` (ferramenta de
+cluster-robustez criada no item 97, DEPOIS do item 71 ter sido escrito).
+
+O PR #239 fechou a lacuna de infraestrutura primeiro (publica correlação
+em cluster automaticamente no job summary de todo trial futuro, sem
+precisar baixar artifact — 14 rodadas de review real do Codex, todas
+corrigidas). Esta sessão então tentou disparar o re-run via API
+(`workflow_dispatch`) e recebeu `403 Resource not accessible by
+integration` — a integração do GitHub desta sessão tem permissão de
+LEITURA mas não de disparo de workflow (mesma classe de limitação que já
+bloqueava o download de artifact, itens 98/99). O usuário disparou
+manualmente pelo painel do GitHub Actions e enviou o `backtest-report.json`
+bruto resultante.
+
+### Achado
+
+Re-rodado com os parâmetros exatos do run original (`reproducibility.
+commitSha`=`ac0bfe2`, 20 símbolos, janela `2025-08-10T00:00:00Z→
+2026-08-10T00:00:00Z`, `pineConfig.allowedSide`="BUY", confirmado lendo
+`trialArgs`/`reproducibility` do report) — n=181, `netExpectancyR`=
+**-0,344R**, idêntico ao publicado no item 71 (run determinístico contra
+histórico Binance já fechado, nada mudou).
+
+Passado pelo `backtest-correlation-check.mjs` (cluster-robustez CR1,
+Cameron-Miller) pela primeira vez:
+
+| Métrica | Valor |
+|---|---|
+| G (clusters) | 27 (tamanho médio 6,70) |
+| Erro-padrão ingênuo (i.i.d.) | 0,0798 |
+| Erro-padrão em cluster (CR1) | 0,0934 |
+| DEFF (design effect) | 1,368 |
+| N efetivo | 132,3 (de 181 nominal) |
+| IC95 em cluster (t-Student, df=26, crítico=2,0555) | **[-0,536; -0,152]** — não cruza zero |
+| Teste de permutação (deslocamento circular, 1000 réplicas) | DEFF real 1,368 vs. nulo média 0,772 [p5=0,289; p95=1,472], **p=0,069** |
+| Teste sign-flip do efeito (por cluster) | **p=0,004** |
+
+O teste de permutação (a correlação medida é artefato de calendário ou
+real?) fica perto do limiar convencional sem cruzá-lo — DEFF=1,368 não é
+tão extremo quanto os itens 98/99/109/123 já viram noutros datasets
+(1,4-3,56), mas ainda assim alarga o IC o bastante pra valer a pena
+reportar a versão em cluster, não só a ingênua.
+
+**Registrado em `docs/backtest-trial-registry.json`**, família nova
+`allowedside-ab-pair-m2` (N=2): o report real (`source: "report"`) para
+`allowedside-ab-buy-only`, mais um seed citando o item 71 pra
+`allowedside-ab-sell-only` (mesma rodada A/B, mesmos 175 operações/
++0,202R/IC95 [0,023;0,381] já publicados). Família isolada com N=2 de
+propósito — **não** a família `sell-only-hypothesis` já existente, que
+acumula testes da hipótese "SELL é positivo" ao longo de várias janelas
+(pergunta diferente); esta família nova existe só pra reproduzir
+formalmente, via `summarizeFamily`, a correção manual m=2 que o item 71
+já tinha feito à mão. Confirma exatamente os números publicados:
+
+```
+IC corrigido (Bonferroni m=2, z=2,2414):
+  allowedside-ab-buy-only:  [-0,523; -0,165]  (idêntico ao item 71)
+  allowedside-ab-sell-only: [-0,003; 0,407]   (cruza zero, idêntico ao item 71)
+```
+
+**Combinando as duas correções** (cluster-robustez + Bonferroni m=2 —
+aplicando o z de Bonferroni sobre o erro-padrão EM CLUSTER, não o
+ingênuo, já que a correlação entre ativos deste dataset é real e medida,
+não hipotética): IC = -0,3443 ± 2,2414×0,0934 = **[-0,554; -0,135]**.
+Ainda exclui zero, com folga — é o número mais conservador já produzido
+pra este trial, empilhando as duas correções que este projeto já validou
+separadamente noutros itens.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: a hipótese do item 125 (achado 2) se confirmou — o IC corrigido
+por cluster é mais largo que o publicado (ingênuo [-0,501;-0,188] → em
+cluster [-0,536;-0,152]), mas continua excluindo zero. Mesmo empilhando
+cluster-robustez E correção Bonferroni m=2, o resultado sobrevive:
+[-0,554;-0,135].
+
+**Conclusão**: BUY-only permanece a evidência mais sólida de vantagem
+direcional (negativa) já medida neste projeto — robusta a
+cluster-correlação E a múltiplas comparações. A ressalva que já valia no
+item 71 continua valendo: é medição na MESMA janela que gerou a
+hipótese, não confirmação fora da amostra (~99,7% de sobreposição com a
+janela que originou o achado) — decisão de produto (ex.: restringir
+`allowedSide`) ainda exigiria essa confirmação independente antes de
+virar mudança de comportamento real.
+
+**Recomendação**: nenhuma ação de código. Achado 2 do item 125 está
+fechado. Se o projeto algum dia quiser agir sobre este achado, a lacuna
+que falta é confirmação fora da amostra (mesmo ponto já levantado no
+item 71) — não mais estatística de cluster, que agora está feita.
+
+Verificação: `npm run lint && npm test && npm run build` verdes (1096
+testes). `node scripts/backtest-correlation-check.mjs`/
+`backtest-trial-registry.mjs` rodados de verdade contra o
+`backtest-report.json` bruto enviado pelo usuário (não estimativa por
+analogia como a hipótese original do item 125 registrava).
