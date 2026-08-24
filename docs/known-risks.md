@@ -14336,7 +14336,7 @@ caminho (painel aberto vs. só cron) continua não instrumentada; fica
 como pergunta em aberto pra quem algum dia quiser medir isso, não como
 ação pendente.
 
-### Achado 5 (IMPORTANTE) — ~25 flags de `pineConfig` sem matriz de interação documentada; 2 acoplamentos ocultos já encontrados por acidente
+### Achado 5 (IMPORTANTE, FECHADO — 2026-08-24) — ~25 flags de `pineConfig` sem matriz de interação documentada; 2 acoplamentos ocultos já encontrados por acidente
 
 **Fato**: `tp1R`/`minRR` acoplados matematicamente (item 116, só
 descoberto quando um teste deu zero operações). `useADX`/`useChop` são
@@ -14351,29 +14351,50 @@ de `.claude/rules/trading-engine.md`, pra não serem redescobertos por
 ablação cara a cada nova rodada. **Mudança de documentação, baixo custo,
 alto valor.**
 
-### Achado 6 (IMPORTANTE, sem risco hoje) — hipótese de tautologia geométrica do gate `smc_confirm_4h15m` nunca investigada
+**Fechamento (2026-08-24)**: adicionada a seção "Padrões de bug já
+redescobertos mais de uma vez" em `.claude/rules/trading-engine.md`,
+registrando os 3 padrões (acoplamento tp1R/minRR, escopo global de
+useADX/useChop, e a classe de tautologia geométrica de gate — o 3º nem
+tinha nome próprio antes, só existia como 2 ocorrências não conectadas).
+Nenhuma mudança de código.
 
-**Fato** (`src/lib/scanner.js:2909-2912`, confirmado ainda presente e
-hoje desligado por padrão `AddAssetForm.jsx:57,64`): o gate que zerou a
-cascata RF em produção (item 108) usa estrutura/zona parecida com a que
-os itens 35/38 já PROVARAM ser tautológica geometricamente noutro lugar
-— mas ninguém testou se este gate específico sofre do mesmo problema,
-porque a decisão tomada foi simplesmente desligá-lo.
+### Achado 6 (IMPORTANTE, sem risco hoje, FECHADO — 2026-08-24) — hipótese de tautologia geométrica do gate `smc_confirm_4h15m` nunca investigada
+
+**Fato** (`src/lib/scanner.js`, confirmado ainda presente e hoje
+desligado por padrão `AddAssetForm.jsx:64`): o gate que zerou a cascata
+RF em produção (item 108) usa estrutura/zona parecida com a que os itens
+35/38 já PROVARAM ser tautológica geometricamente noutro lugar — mas
+ninguém testou se este gate específico sofre do mesmo problema, porque a
+decisão tomada foi simplesmente desligá-lo.
 
 **Recomendação**: nenhuma ação agora (já desligado corretamente) — mas se
 algum dia alguém cogitar religar este gate, investigar a causa raiz
 primeiro (mesmo método do item 35: distribuição de `pdZone` no momento
 do rompimento), não reabrir sem entender por que zerava tudo.
 
-### Achado 7 (menor) — assimetria de `cascade` em `handleActiveOpArbitration`, inofensiva hoje
+**Fechamento (2026-08-24)**: reconfirmado nesta rodada — `smc_confirm_4h15m:
+false` continua o default de cadastro (`AddAssetForm.jsx:64`), gate
+continua presente e inalterado em `scanner.js`. A recomendação já era
+"nenhuma ação agora"; fechado como verificado, não como pendência.
 
-**Fato** (`src/lib/scanner.js:1185`): não repassa `cascade` pro
-`transitionTradeOp` no branch `invalidate`, diferente dos outros 3 call
-sites que já foram corrigidos (item 80/B-2). **Hoje inofensivo**:
+### Achado 7 (menor, CORRIGIDO — 2026-08-24) — assimetria de `cascade` em `handleActiveOpArbitration`, inofensiva hoje
+
+**Fato** (`src/lib/scanner.js`, branch `invalidate` de
+`handleActiveOpArbitration`): não repassava `cascade` pro
+`transitionTradeOp`, diferente dos outros 2 call sites que fecham
+operação já corrigidos (item 80/B-2). **Hoje inofensivo**:
 `hierarchicalCascadesEnabled` só existe em backtest, travado por
 `hierarchicalCascadeTripwire.test.js`, e o branch em questão só é
-alcançado quando o flag é `false`. Vira armadilha só se essa cascata for
-promovida a produção no futuro sem notar esta lacuna.
+alcançado quando o flag é `false`. Viraria armadilha se essa cascata
+fosse promovida a produção no futuro sem notar esta lacuna.
+
+**Correção (2026-08-24)**: adicionado `cascade: activeOp.hierarchical_cascade
+=== true ? activeOp.cascade : undefined` na chamada, mesmo padrão dos
+outros 2 call sites. Regressão em `scannerStateMachine.test.js` ("invalidação
+por arbitragem numa op hierárquica limpa o anchor POR CASCATA, não o
+anchor genérico do ativo") — confirmado que falha sem o fix (anchor
+por-cascata continuava apontando pra uma op já terminal) e passa com ele.
+`npm run lint && npm test && npm run build` verdes.
 
 ### Achados menores (registrados, sem ação recomendada agora)
 
@@ -14441,8 +14462,15 @@ Pine real do usuário, não só no port JS (ver seção do Achado 3 acima). O
 achado 4 (tensão de DOIS escritores de produção) também foi fechado
 (2026-08-24, pedido explícito do usuário) SEM mudança de código —
 registrado como extensão do item 4, exatamente como a recomendação
-original pedia. Achados 5-7 e os achados menores seguem sem ação,
-pendentes de pedido explícito.
+original pedia. Achados 5, 6 e 7 também foram fechados (2026-08-24,
+pedido explícito do usuário): achado 5 (documentação, 2 acoplamentos
+ocultos + a classe de tautologia geométrica registrados em
+`.claude/rules/trading-engine.md`), achado 6 (reconfirmado, sem ação —
+gate continua desligado por padrão), achado 7 (única correção de código
+real desta rodada — `cascade` agora repassado no branch `invalidate` de
+`handleActiveOpArbitration`, com regressão provando o bug antes do fix).
+Os achados menores (polimento/observação, sem recomendação de ação)
+seguem sem ação, pendentes de pedido explícito.
 
 ## 126. `allowedside-ab-buy-only` re-rodado e cluster-corrigido de verdade — item 71/125 (achado 2) fechado (2026-08-24)
 
