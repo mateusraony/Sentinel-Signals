@@ -100,6 +100,10 @@ const DEFAULTS = {
   // Bypassa check15mConfirmation na cascata RF nativa 4h→15m (known-risks.md
   // item 67) — master flag OFF por padrão. Espelha src/lib/pineParser.js.
   skip15mConfirmationEnabled: false,
+  // Desliga o teto de TP2 do runner, trailing puro igual ao Pine real
+  // (known-risks.md item 114/128) — master flag OFF por padrão. Espelha
+  // src/lib/pineParser.js.
+  disableTp2CapEnabled: false,
   // NOTA (não é omissão): `rf1hCondEnabled` (Fase 1, docs/known-risks.md
   // item 56 "Fase 1") existe SÓ em scripts/backtestPineConfig.js —
   // deliberadamente NÃO espelhado aqui, ao contrário da convenção padrão
@@ -133,6 +137,7 @@ const SYNCED_STRATEGY_KEYS = [
   'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
   'candlePatternEnabled',
   'skip15mConfirmationEnabled',
+  'disableTp2CapEnabled',
 ];
 
 export async function getPineConfig() {

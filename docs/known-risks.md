@@ -14661,3 +14661,76 @@ funciona como desenhado. Se o usuário quiser progresso mais rápido, os
 de resolver a pergunta central, só de produzir MAIS um resultado
 inconclusivo ou uma decisão sem base estatística. Registrado para não
 reabrir esta pergunta sem o dado atualizado.
+
+## 128. Toggle de produção para `disableTp2CapEnabled` (2026-08-24)
+
+### Contexto
+
+Usuário escolheu o caminho (3) do item 127: decisão de produto não-
+estatística num flag ainda dormente, mesmo raciocínio já usado em
+`skip15mConfirmationEnabled` (item 120/121). Antes de implementar,
+confrontei os 4 flags do Bloco 1 (roadmap) contra o Pine real linha a
+linha — nenhum tem base de paridade genuína:
+
+- `retestEnabled`: nenhuma menção a "retest" no Pine real da RF
+  (`src/pages/PineScript.jsx`).
+- `displacementEnabled`/`smcTierEnabled`: nenhuma menção a "displacement"
+  nem "tier" no Pine real da SMC (`docs/reference-pine/smc-a-unified-v2.3.pine`,
+  1728 linhas, conferido por completo) — e os dois travam a cascata
+  `1h_5m`, que o item 77 já provou ser invenção do Sentinel sem
+  correspondência nenhuma no Pine real (o script real nunca abre
+  operação, é só `indicator()`).
+- `smcObFvgEnabled`: base PARCIAL — Order Block e FVG genuinamente são
+  2 dos 7 componentes (peso igual) do score de confluência real. Mas o
+  score do Sentinel já é estruturalmente divergente (9 componentes,
+  pesos desiguais somando 100, vs. 7 componentes de peso igual somando
+  7) e alimenta os limiares de arbitragem em produção — não é um toggle
+  simples, é uma escolha de peso com blast radius real (o próprio item
+  43 já sinalizava isso). Não ativado nesta rodada — precisa de decisão
+  explícita de peso, não só "ligar".
+
+**Candidato bom, fora do Bloco 1**: `disableTp2CapEnabled` (item
+114/115) — o item 114 já tinha confirmado que o Pine real NÃO tem TP2
+fixo (só trailing pós-TP1); `tp2R`/`TP2_HIT` são invenção completa do
+Sentinel. `disableTp2CapEnabled: true` faz o runner sair só por
+STOP_HIT/INVALIDATED/CLOSED — trailing puro, batendo exatamente com o
+Pine real. Testado (item 115): ponto estimado +0,015R, não significativo
+(p=0,688) — mesma situação estatística do skip15m.
+
+### O que foi feito
+
+Mesmo padrão exato de implementação do item 121 (`skip15mConfirmationEnabled`):
+
+1. `disableTp2CapEnabled` promovido de backtest-only
+   (`scripts/backtestPineConfig.js`, isolado por `disableTp2CapTripwire.test.js`)
+   pra flag sincronizado de produção — adicionado a `DEFAULTS`/
+   `SYNCED_STRATEGY_KEYS` (+ `NON_PINE_SYNCED_KEYS`, browser) em
+   `src/lib/pineParser.js` e `scripts/adminPineConfig.js`. Default
+   permanece `false` nos três arquivos (byte-idêntico a hoje até alguém
+   ligar o switch).
+2. `src/lib/disableTp2CapTripwire.test.js` removido — seu propósito
+   (garantir que a chave NUNCA apareça nos dois arquivos de produção) é
+   agora o oposto do desenho pretendido.
+3. Toggle (`Switch` shadcn) adicionado em `src/pages/Settings.jsx`, ao
+   lado do de `skip15mConfirmationEnabled`, mesmo grupo `BOOL_FIELDS`/
+   `STRATEGY_KEYS`/`dirty`-tracking (já corrigido contra o bug de reset
+   do item 121 — reusado, não reimplementado).
+4. `scanner.js` não mudou — já lia `pineConfig.disableTp2CapEnabled`
+   agnóstico de onde o valor vem (congela em `tp2_cap_disabled` na
+   criação da operação).
+
+Para ativar: painel → **Ajuste Fino** (Settings) → switch "Desligar teto
+de TP2 (fidelidade TradingView)" → **Salvar & Sincronizar**. Efeito no
+próximo scan (browser e cron). Reversível pelo mesmo switch a qualquer
+momento.
+
+### Verificação
+
+`npm run lint && npm test (1104, -3 do tripwire removido) && npm run
+build` verdes. Sem suíte de componente pra `Settings.jsx` neste projeto
+(mesma lacuna já documentada em `.claude/rules/testing.md`) — verificação
+por leitura cuidadosa do diff, não por navegador ao vivo (sandbox sem
+credencial real do Firebase, mesma limitação que o item 121 já
+enfrentou). Lógica de leitura do flag em `scanner.js` não mudou —
+já testada em `scannerStateMachine.test.js`/`opExitRules.test.js` desde
+o item 114/115.

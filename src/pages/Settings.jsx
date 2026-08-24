@@ -48,11 +48,21 @@ const FIELDS = GROUPS.flatMap(g => g.fields);
 // candle 4h, sem confirmação de timeframe menor, ver .claude/rules/
 // trading-engine.md item 67). Medido em 4 rodadas de backtest (item 120):
 // melhor ponto estimado da investigação, ainda sem significância (p~0,16-0,29).
+// docs/known-risks.md item 114/128: disableTp2CapEnabled desliga o teto de
+// TP2 do runner (tp1R×2, invenção do Sentinel) — o Pine real do usuário só
+// tem trailing pós-TP1, sem segundo alvo fixo. Mesmo objetivo de fidelidade
+// ao TradingView do skip15mConfirmationEnabled acima. Medido (item 115):
+// ponto estimado melhora, ainda sem significância (p=0,688).
 const BOOL_FIELDS = [
   {
     key: 'skip15mConfirmationEnabled', target: 'strategyConfig',
     label: 'Bypass confirmação 15m (fidelidade TradingView)',
     help: 'Entra no fechamento do candle 4h, sem esperar confirmação 15m — igual ao Pine real do usuário. Ver known-risks item 120.',
+  },
+  {
+    key: 'disableTp2CapEnabled', target: 'strategyConfig',
+    label: 'Desligar teto de TP2 (fidelidade TradingView)',
+    help: 'Runner corre até trailing/Time Stop/Chop Exit, sem fechar em 2×TP1 — igual ao Pine real do usuário. Ver known-risks item 128.',
   },
 ];
 
@@ -107,6 +117,7 @@ export default function Settings() {
         rng_per: config.rng_per,
         rng_qty: config.rng_qty,
         skip15mConfirmationEnabled: config.skip15mConfirmationEnabled,
+        disableTp2CapEnabled: config.disableTp2CapEnabled,
       });
     });
     return () => { cancelled = true; };
