@@ -74,6 +74,28 @@ quando ambos estão ativos ao mesmo tempo.
 > pra Futures também — abre uma opção real (não implementada) de trocar a
 > fonte do BACKTEST de Spot pra Futures. Não muda o scan ao vivo. Ver item
 > 86 para o resultado completo e as ressalvas.
+>
+> **Atualização (2026-08-24, item 125 achado 4) — a divergência acima não é
+> só de PREÇO exibido, são DOIS caminhos reais de ESCRITA em produção.**
+> `src/hooks/useAutoScan.js:29,43` chama os MESMOS `scanAllAssets`/
+> `priceCheckActiveOps` de `src/lib/scanner.js` sempre que o painel está
+> aberto no navegador (full scan a cada 60min + price-check a cada 2min
+> quando há operação ativa) — usando `src/lib/marketDataProvider.js`
+> (Futures, item acima). Ou seja: hoje já existem **dois escritores reais**
+> no mesmo Firestore de produção — cron (Spot, 24/7, sempre rodando) e
+> painel (Futures, só quando alguém está com a aba aberta) — não um só. Uma
+> operação real criada com o painel aberto usa preço/candle de Futures; a
+> mesma janela de tempo com o painel fechado usa Spot via cron. Nenhum dos
+> dois é "a" fonte de verdade de produção — os dois são, simultaneamente.
+> Isso torna a pergunta de validação mais sutil do que "comparar backtest
+> contra o que o cron usa": um backtest em Futures (item 122/123) não é
+> necessariamente desalinhado de TODA a produção real, só da fração dela
+> que passa pelo cron sem o painel aberto. **Não há dado neste projeto
+> sobre que fração das operações reais historicamente se originou de cada
+> caminho** — não investigado, não instrumentado (`TradeOperation` não
+> registra qual dos dois loops a criou). Nenhuma mudança de código —
+> registro de tensão, decisão de processo/produto se algum dia quiser
+> medir/decidir entre os dois caminhos.
 
 ## 5. AÇÃO NECESSÁRIA — deploy manual de `firestore.rules`/`firestore.indexes.json`
 
@@ -14273,7 +14295,7 @@ está — reflete fielmente o Pine real, não é código deste projeto para
 usuário algum dia alterar o Pine no TradingView pra remover essa
 redundância, revisitar este item.
 
-### Achado 4 (IMPORTANTE, corrigido — Codex, PR #238) — tensão de 3 fontes de dado nunca nomeada como risco; produção real já tem DOIS escritores, não um
+### Achado 4 (IMPORTANTE, corrigido — Codex, PR #238; FECHADO — 2026-08-24) — tensão de 3 fontes de dado nunca nomeada como risco; produção real já tem DOIS escritores, não um
 
 **Fato**: item 4 já documenta cron(Spot)×painel(Futures) como divergência
 aceita permanentemente. Os itens 122-123 adicionam uma 3ª fonte
@@ -14306,6 +14328,13 @@ Spot" — a pergunta correta é mais sutil: qual fração da produção real
 passa por cada caminho, e é aceitável ter DOIS mercados de validação
 (Spot pro cron, Futures pro painel) em vez de escolher um só. **Decisão
 de processo/produto, não de código.**
+
+**Fechamento (2026-08-24)**: registrado como extensão do item 4 (ver
+bloco "Atualização (2026-08-24, item 125 achado 4)" lá) — sem mudança de
+código, exatamente como recomendado. A fração de operações reais por
+caminho (painel aberto vs. só cron) continua não instrumentada; fica
+como pergunta em aberto pra quem algum dia quiser medir isso, não como
+ação pendente.
 
 ### Achado 5 (IMPORTANTE) — ~25 flags de `pineConfig` sem matriz de interação documentada; 2 acoplamentos ocultos já encontrados por acidente
 
@@ -14408,9 +14437,12 @@ achado crítico 2 (item 71 nunca cluster-corrigido) também foi fechado
 (2026-08-24, pedido explícito do usuário) — ver item 126 pro resultado
 final. O achado 3 (redundância do score) foi fechado (2026-08-24, pedido
 explícito do usuário) SEM mudança de código — a redundância existe no
-Pine real do usuário, não só no port JS (ver seção do Achado 3 acima).
-Achados 4-7 e os achados menores seguem sem ação, pendentes de pedido
-explícito.
+Pine real do usuário, não só no port JS (ver seção do Achado 3 acima). O
+achado 4 (tensão de DOIS escritores de produção) também foi fechado
+(2026-08-24, pedido explícito do usuário) SEM mudança de código —
+registrado como extensão do item 4, exatamente como a recomendação
+original pedia. Achados 5-7 e os achados menores seguem sem ação,
+pendentes de pedido explícito.
 
 ## 126. `allowedside-ab-buy-only` re-rodado e cluster-corrigido de verdade — item 71/125 (achado 2) fechado (2026-08-24)
 
