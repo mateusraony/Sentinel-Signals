@@ -277,6 +277,32 @@ describe('studentTCritical95', () => {
     expect(() => studentTCritical95(-1)).toThrow(RangeError);
     expect(() => studentTCritical95(2.5)).toThrow(RangeError);
   });
+
+  // Codex review, PR #240: combinar cluster-robustez com correção
+  // Bonferroni exige o t crítico no alpha AJUSTADO (ex.: 0,05/2 pra família
+  // de 2 comparações), não o z normal -- usar z ali subestima a incerteza
+  // porque a variância em cluster só tem df=G-1 graus de liberdade, não
+  // infinitos. Valores cross-validados contra scipy.stats.t.ppf(1-alpha/2,
+  // df) rodado nesta sessão (não de memória).
+  it('aceita alpha != 0,05 -- necessário pra combinar Bonferroni com df finito', () => {
+    expect(studentTCritical95(26, 0.025)).toBeCloseTo(2.378786, 5);
+    expect(studentTCritical95(30, 0.025)).toBeCloseTo(2.359562, 5);
+    expect(studentTCritical95(5, 0.01)).toBeCloseTo(4.032143, 5);
+  });
+
+  it('alpha omitido continua default 0,05 (compatibilidade com todo call site existente)', () => {
+    expect(studentTCritical95(26)).toBeCloseTo(studentTCritical95(26, 0.05), 10);
+  });
+
+  it('converge pro z normal do MESMO alpha conforme df cresce, não só pro z=1,96', () => {
+    expect(studentTCritical95(100000, 0.025)).toBeCloseTo(2.241403, 3);
+  });
+
+  it('rejeita alpha fora de (0,1)', () => {
+    expect(() => studentTCritical95(10, 0)).toThrow(RangeError);
+    expect(() => studentTCritical95(10, 1)).toThrow(RangeError);
+    expect(() => studentTCritical95(10, -0.05)).toThrow(RangeError);
+  });
 });
 
 describe('circularShiftBySymbol', () => {
