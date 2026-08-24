@@ -156,6 +156,71 @@ plano de sessão morre com a sessão.
 > t=0,68 em cluster contra t(25)=2,06 crítico — não passa. Reduz risco de
 > cauda sem custo detectável na expectância, mas sem ganho comprovado.
 > **Não ativar ainda** — nem sinal a favor nem contra. Detalhe: item 105.
+>
+> **Atualização 2026-08-19 (item 108): `smc_confirm_4h15m` desativado em
+> produção — zerava a cascata RF inteira, não "barrava de vez em
+> quando".** Gate obrigatório na cascata `4h_15m` que na prática rejeitou
+> 100% dos candidatos que sobraram do filtro de regime (2.025/3.600,
+> 56%). Desligado nos 10 ativos monitorados + novo default de cadastro
+> (`AddAssetForm.jsx`); `smc_enabled` também desligado em 6 ativos
+> legados que o tinham ligado sem uso real. Mudança de produção real,
+> fora da numeração de Blocos (não era um dos 4 flags do Bloco 1).
+> Detalhe: item 108.
+>
+> **Atualização 2026-08-22 (itens 119-121): `skip15mConfirmationEnabled`
+> — ATIVADO EM PRODUÇÃO, por fidelidade ao Pine real, não por
+> significância estatística.** Rodada 4 (ferramenta nova
+> `report.signalExpiry` corrigiu a medição das 3 rodadas anteriores):
+> N 99→104, expectância líquida +0,0798R→+0,1455R, profit factor
+> 1,013→1,236, CAGR 8,0%→16,6% — o ponto estimado mais forte da sessão,
+> mas `clusterSignFlipTest` ainda não significativo (p=0,285). Decisão
+> do usuário: ativar mesmo assim, porque o Pine real dele no TradingView
+> não tem confirmação 15m (item 67) — é decisão de **paridade com a
+> estratégia real**, não de otimização estatística. Toggle em
+> `Settings.jsx`; um bug real de dirty-tracking (Codex PR #232) foi
+> corrigido no processo pra não reverter outros parâmetros ao vivo por
+> acidente. Detalhe: itens 119-121.
+>
+> **Atualização 2026-08-22/23 (itens 122-124): backtest ganha fonte
+> Futures real — Spot × Futures são estatisticamente indistinguíveis.**
+> Todo backtest deste projeto até aqui rodou em Spot, mas o usuário opera
+> Futures/Perpétuo de verdade (item 4) — `fetch-backtest-data-futures.mjs`
+> fecha essa lacuna de MEDIÇÃO (não muda o scan ao vivo, que segue Spot
+> por bloqueio de IP). Medido (item 123): Spot +0,080R (N=99,
+> INCONCLUSIVO) vs. Futures +0,007R (N=105, INCONCLUSIVO), teste de
+> 2 amostras t=-0,377 — indistinguíveis. Replicando a janela de alta do
+> item 48 em Futures (item 124): ponto estimado forte (+0,278R,
+> N=103), mas some sob correção Bonferroni de família (N=4 agora,
+> `spot-vs-futures-hypothesis`) — reforça a leitura de que é REGIME de
+> mercado, não fonte de dado, que decide o resultado. Recomendação:
+> adotar Futures como fonte padrão pra medições FUTURAS de parâmetro
+> (Blocos 1/2) — decisão de processo, não muda nenhum veredito já
+> registrado.
+>
+> **Atualização 2026-08-23/24 (itens 125/126): conselho de revisão
+> externo auditou TODO o histórico do projeto — 7 achados críticos/
+> importantes + 7 menores, TODOS fechados.** Revisão multi-papel
+> (Arquitetura, Trading, Concorrência, Segurança, Testes) sobre o
+> histórico inteiro, não só a sessão corrente (item 125). O achado mais
+> relevante pro Bloco 0/1: `allowedside-ab-buy-only` (item 71 — a
+> evidência mais forte já produzida contra o lado BUY) nunca tinha sido
+> cluster-corrigido nem registrado no ledger. Re-rodado e medido de
+> verdade (item 126): mesmo empilhando cluster-robustez (CR1, G=27,
+> DEFF=1,368) E correção Bonferroni m=2 (pareado com o SELL-only da
+> mesma rodada A/B, mesmo critério do item 88) — a correção MAIS
+> conservadora já aplicada a qualquer número deste projeto — o IC final
+> **[-0,566; -0,122]** ainda exclui zero. BUY-negativo continua
+> a evidência direcional mais sólida já medida aqui, mas com a MESMA
+> ressalva de sempre: é medição na mesma janela que gerou a hipótese, não
+> confirmação fora da amostra — não muda o critério do item 88 nem
+> destrava o Bloco 1 sozinho. Os outros 6 achados críticos/importantes
+> (CAS de `Trades.jsx`, redundância do score de confluência — que se
+> confirmou fiel ao Pine real, não bug —, tensão de dois escritores reais
+> de produção, inconsistência de `cascade` em arbitragem, documentação de
+> acoplamentos ocultos) e os 7 achados menores (rate-limit, cap de ZIP,
+> escrita atômica, 3 correções de doc) foram corrigidos/fechados nesta
+> mesma rodada — nenhum muda o estado dos Blocos abaixo. Detalhe: itens
+> 125/126.
 
 ## A regra que ordena tudo: amostra
 
@@ -357,6 +422,26 @@ config, e cada item termina com "não ativar sem comparar backtest antes":
 | `displacementEnabled` | 41 | Exige candle de deslocamento na confirmação 5m (só SMC) |
 | `smcTierEnabled` | 42 | Estende tier/ADX/Choppiness à cascata SMC |
 | `smcObFvgEnabled` | 43 | Order Block / FVG como componentes de score (peso 0) |
+
+**Tentativa real de medir 3 dos 4 — travou em timeout, não em resultado
+(item 113, 2026-08-20).** `displacementEnabled`/`smcTierEnabled`/
+`smcObFvgEnabled` tocam a cascata SMC 1h→5m, que sozinha já estoura o
+timeout do `backtest.yml` com 20 símbolos/12 meses (mesmo problema de
+performance do Bloco 0 — replay superlinear, ver "Limite de performance
+conhecido" abaixo). As 4 tentativas de rodar esses flags nessa carteira
+**nunca terminaram** — não é "testado e sem efeito", é "não deu pra
+testar". Bloco continua igualmente bloqueado, mas por um motivo técnico
+adicional além da recomendação do conselho acima: uma janela/carteira
+menor seria necessária só pra esses 3 flags específicos.
+
+**Outros mecanismos de entrada, fora dos 4 originais, testados e
+fechados desde então** (não promovidos, nenhum reabre o Bloco):
+`rsiOnlyGateEnabled` (RSI sozinho no lugar do score ponderado, item 111)
+e `candlePatternEnabled` (padrão de vela na cascata RF, item 58) — os
+dois medidos, negativos/não-significativos, não ativados. `timeStopBarsOverride`
+(24 barras, item 109) — testado, negativo, não ativado. Nenhum destes é
+um dos 4 flags formais da tabela acima; registrados aqui só pra não
+serem re-testados do zero.
 
 ### Como testar — e como NÃO testar
 
