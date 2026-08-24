@@ -2080,6 +2080,34 @@ describe('cross-cascade arbitration — promoção em dois estágios, continuida
     expect(op.arbitration_outcome).toBe('critical_opposite');
   });
 
+  // Item 125 achado 7: o branch `invalidate` de handleActiveOpArbitration
+  // não repassava `cascade` pro transitionTradeOp, diferente dos outros 2
+  // call sites que fecham operação (item 80/B-2) -- uma op HIERÁRQUICA
+  // invalidada por arbitragem limpava o anchor errado
+  // (assetActiveOps/{assetId} em vez de .../{assetId}__{cascade}), deixando
+  // o anchor real órfão apontando pra uma op já terminal.
+  it('invalidação por arbitragem numa op hierárquica limpa o anchor POR CASCATA, não o anchor genérico do ativo', async () => {
+    backend._seed('TradeOperation', makeOp({
+      id: 'op_1h', cascade: '1h_5m', side: 'BUY', status: 'SIGNAL_CONFIRMED', hierarchical_cascade: true,
+    }));
+    backend._setActiveOp('asset1', 'op_1h', '1h_5m'); // anchor real de uma op hierárquica: assetActiveOps/asset1__1h_5m
+    const pineConfig = makePineConfig({ useADX: false, useChop: false, arbInvalidateOnOppositeMajor: true });
+    const results = { '4h': makeTfData({ rf: { filterValue: 90, direction: -1, signal: 'none', highBand: 105, lowBand: 95, condIni: false } }) };
+
+    await persistScanResults({
+      ...makeScanResult({ results, pineConfig }),
+      newSignals: [makeRfSignal({ signal_type: 'SELL', dedup_key: 'sig_rf_opp_inv_hier' })],
+    });
+
+    const op = backend._get('TradeOperation', 'op_1h');
+    expect(op.status).toBe('INVALIDATED');
+    // O anchor POR CASCATA foi limpo -- é ele que a op hierárquica de fato usa.
+    expect(backend._getActiveOp('asset1', '1h_5m')).toBe(null);
+    // O anchor GENÉRICO nunca foi escrito por esta op, então continua vazio --
+    // sem o fix, era ESTE que a transição terminal tentava (inutilmente) limpar.
+    expect(backend._getActiveOp('asset1')).toBe(null);
+  });
+
   it('oposto maior cancela uma promoção PENDENTE (reject_pending_promotion) em vez de deixá-la solta', async () => {
     backend._seed('TradeOperation', makeOp({
       id: 'op_1h', cascade: '1h_5m', side: 'BUY', status: 'SIGNAL_CONFIRMED', promotion_status: 'PENDING_15M',

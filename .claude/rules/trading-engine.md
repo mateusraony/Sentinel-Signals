@@ -350,6 +350,43 @@ nunca deve receber nova transição.**
   não `lastCandleTime`. INVALIDATION/CHOP_EXIT são exatos (decisão é sobre
   o CLOSE do candle).
 
+## Padrões de bug já redescobertos mais de uma vez (item 125 achado 5)
+
+Três armadilhas que já custaram uma rodada de ablação cara pra descobrir —
+registradas aqui pra não serem redescobertas do zero na próxima. Nenhuma das
+três é um bug hoje (os 3 casos que as motivaram já foram corrigidos/
+compreendidos); são propriedades estruturais de `pineConfig`/da cascata que
+qualquer flag NOVO pode pisar sem aviso.
+
+- **Acoplamento matemático entre parâmetros não documentado.** `tp1R`/
+  `minRR` são matematicamente acoplados — um `tp1R` baixo demais pode violar
+  `minRR` e zerar TODAS as operações silenciosamente, sem erro (item 116, só
+  descoberto quando um teste real deu 0 operações e a causa raiz levou uma
+  rodada pra achar). Antes de testar um novo valor de QUALQUER parâmetro que
+  afete a relação risco/retorno (tp1R, tp2R, stop, minRR), verifique se ele
+  interage matematicamente com outro gate — não assuma independência só
+  porque são campos separados no config.
+- **Flags "por cascata" nem sempre são exclusivos da cascata.** `useADX`/
+  `useChop` são GLOBAIS (compartilhados por RF e SMC), não exclusivos da
+  cascata RF onde foram introduzidos — ligar `smcTierEnabled` sem saber
+  disso herda o estado desses dois pra SMC também, efeito colateral não
+  óbvio pelo nome do flag (item 42). Ao introduzir um flag novo com nome
+  "por cascata" (`smcXxxEnabled`, `rfXxxEnabled`), confirme explicitamente
+  se ele lê algum parâmetro/threshold JÁ usado pela outra cascata antes de
+  assumir isolamento.
+- **Tautologia geométrica de gate compartilhando `closedCandles` com a
+  função que ele filtra.** Já apareceu 2x em lugares DIFERENTES do código
+  (itens 35/38, gate de zona PD da cascata SMC 1h→5m — 74/74 rompimentos
+  rejeitados em 18,5 meses de BTCUSDT — e de novo no item 77, mecanismo
+  novo, mesmo padrão): um gate que mede a posição de `close` contra um
+  range/estrutura derivado do MESMO `closedCandles` que gerou o evento que
+  ele está filtrando tende a rejeitar por construção geométrica, não por
+  raridade estatística real — parece seletivo, mas é tautológico. Ao
+  escrever um gate novo que compara preço contra estrutura recente, meça a
+  distribuição do valor filtrado (mesmo método do item 35: histograma de
+  `pdZone`/equivalente no momento do evento) ANTES de aceitar uma taxa de
+  rejeição alta como "o gate está funcionando".
+
 ## Regras ao mexer aqui
 
 - **Não** introduza um terceiro caminho de mutação de op. Consolidar/serializar

@@ -1182,7 +1182,18 @@ async function handleActiveOpArbitration({ signal, candidateCascade, activeOp, r
     patch.promotion_status = 'REJECTED';
   }
 
-  const { applied, currentStatus } = await backend.tradeOps.transitionTradeOp(activeOp.id, activeOp.status, patch, { assetId: activeOp.asset_id });
+  const { applied, currentStatus } = await backend.tradeOps.transitionTradeOp(activeOp.id, activeOp.status, patch, {
+    assetId: activeOp.asset_id,
+    // Item 125 achado 7: este é o branch `invalidate` acima (patch.status =
+    // 'INVALIDATED', terminal) — sem `cascade` aqui, uma operação
+    // hierárquica invalidada por arbitragem limparia o anchor errado
+    // (assetActiveOps/{assetId} em vez de .../{assetId}__{cascade}), mesmo
+    // bug que o item 80/B-2 já corrigiu nos outros 2 call sites que fecham
+    // operação (scanner.js, mais acima). Hoje inofensivo em produção
+    // (hierarchicalCascadesEnabled só existe em backtest), mas deixa a
+    // função consistente com as demais que fecham operação.
+    cascade: activeOp.hierarchical_cascade === true ? activeOp.cascade : undefined,
+  });
   if (!applied) {
     await backend.entities.SystemLog.create({
       level: 'warn',
