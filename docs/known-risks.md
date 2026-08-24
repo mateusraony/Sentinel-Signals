@@ -14603,3 +14603,61 @@ scripts/backtest-correlation-check.mjs`/`backtest-trial-registry.mjs`
 rodados de verdade contra o `backtest-report.json` bruto enviado pelo
 usuário (não estimativa por analogia como a hipótese original do item
 125 registrava).
+
+## 127. Modo sombra prospectivo (Fase 1) medido pela primeira vez — velocidade real de acúmulo, não só o mecanismo (2026-08-24)
+
+### Contexto
+
+Usuário perguntou se o projeto segue "na estaca zero" no Bloco 0/1.
+Resposta honesta: sim, na pergunta central (o motor tem vantagem real?),
+apesar de toda a higiene/correção desta sessão. Dos 3 caminhos possíveis
+daqui — (1) destravar o timeout do backtest com SMC pra medir os 3 flags
+do Bloco 1 ainda intocados, (2) esperar o modo sombra prospectivo (item
+56) acumular amostra genuinamente nova, (3) decisão de produto não-
+estatística como já feito com `skip15mConfirmationEnabled` — o caminho
+(2) é o único livre do problema de reprocessar dado já minerado (itens
+73/88/98/110). Nunca tinha sido checado contra dado real, só o mecanismo
+(`scan-shadow.yml`/`analyze-shadow.yml`) tinha sido auditado.
+
+### Fato (lido do job log real do run #21 de `analyze-shadow.yml`, 2026-08-24T13:54, via GitHub API)
+
+`scan-shadow.yml` está saudável: 497 execuções desde o início (run #1,
+2026-08-04 — ~20 dias corridos até esta checagem), a cada ~30min-1h; das
+últimas 30, só 1 falha + 1 cancelamento, ambos recuperados na passada
+seguinte. Amostra acumulada nas coleções isoladas do modo sombra:
+
+- `rf1h_cond4h_15m` (experimental): **1 operação fechada** (piso mínimo
+  30, alvo 100).
+- `4h_15m` (controle nativo, sombreado nas mesmas coleções pra
+  comparação, sem custo extra de scan): **0 operações fechadas**.
+
+Ambos `INCONCLUSIVO (amostra < mínimo)` — esperado — mas a MAGNITUDE é o
+achado novo: a ~1 operação/20 dias no lado experimental, o piso de 30
+está a mais de 1,5 ano de distância no ritmo medido; o alvo de 100 não é
+alcançável em prazo relevante nesse ritmo.
+
+### Hipótese
+
+Causa raiz não investigada nesta rodada — candidatos: o universo de
+ativos monitorados é pequeno (9-10, `CLAUDE.md`) e a condição extra do
+gate `rf1h_cond4h_15m` (RF 1h só conta quando o 4h concorda) estreita
+ainda mais o funil sobre um universo já pequeno. O item 56 mediu
+≈0,32 operação/dia pra cascata NATIVA de produção (7 símbolos, dado real
+de `TradeOperation`) — mas essa taxa é de uma coleção diferente
+(produção real, não as coleções isoladas `experimentalRf1hShadow*` do
+modo sombra); comparar as duas taxas diretamente pode não ser válido sem
+investigar se as condições são realmente equivalentes.
+
+### Recomendação
+
+O roadmap (`docs/roadmap.md`, Estado/Fase 1) descreve o modo sombra como
+"acumulando amostra... avisa sozinho quando bater" — verdadeiro, mas
+implicitamente sugeria um prazo de semanas/meses. Corrigido lá para
+refletir o ritmo medido (anos, não meses). Nenhuma ação de código —
+achado é sobre EXPECTATIVA de prazo, não sobre o mecanismo, que já
+funciona como desenhado. Se o usuário quiser progresso mais rápido, os
+únicos caminhos que restam são (1) — timeout do backtest com SMC — ou
+(3) — decisão de produto não-estatística — nenhum dos dois com garantia
+de resolver a pergunta central, só de produzir MAIS um resultado
+inconclusivo ou uma decisão sem base estatística. Registrado para não
+reabrir esta pergunta sem o dado atualizado.

@@ -40,6 +40,18 @@ plano de sessão morre com a sessão.
 > n≈100 — avisa sozinho quando bater. Backtest exploratório numa janela
 > pré-2023 já rodado, inconclusivo. Detalhe: `docs/known-risks.md` item 56.
 >
+> **Atualização 2026-08-24 (item 127): velocidade real medida pela
+> primeira vez — o piso está a mais de 1,5 ano de distância no ritmo
+> atual, não semanas/meses.** Conferido contra o job log real (não só o
+> mecanismo): ~20 dias desde o início (2026-08-04), 1 operação fechada no
+> lado experimental (`rf1h_cond4h_15m`), 0 no controle nativo sombreado
+> (`4h_15m`). `scan-shadow.yml` está saudável (497 execuções, quase todas
+> bem-sucedidas) — o problema não é o mecanismo, é o funil (universo de
+> ~9-10 ativos monitorados × condição extra do gate). "Avisa sozinho
+> quando bater" continua verdade, só que o prazo esperado mudou de
+> "aguardar" pra "não é um caminho de curto/médio prazo". Detalhe: item
+> 127.
+>
 > **Atualização 2026-08-16 (itens 94/95): 3 novos trials, nenhum muda a
 > decisão acima.** (1) Reteste com tolerância maior (0,6× e 1,0× ATR, item
 > 94): a taxa de confirmação subiu de 2,4% para 6,4%, mas o volume de
