@@ -14213,7 +14213,7 @@ acesso desta sessão), registrado em `docs/backtest-trial-registry.json` e
 cluster-corrigido de verdade — ver item 126. A hipótese acima (margem mais
 estreita, mas sem cruzar zero) se confirmou.
 
-### Achado 3 (IMPORTANTE) — score de confluência tem redundância estrutural que provavelmente explica por que `minScore` nunca mostra diferença
+### Achado 3 (IMPORTANTE, FECHADO — 2026-08-24, sem mudança de código) — score de confluência tem redundância estrutural que provavelmente explica por que `minScore` nunca mostra diferença
 
 **Fato** (`src/lib/indicators/confluence.js:110-144`, já registrado como
 achado antigo no item 45.7 mas nunca revisitado): dos 100 pontos do
@@ -14232,13 +14232,46 @@ o oposto do esperado se o score capturasse qualidade real) nunca produziu
 diferença — o score, acima de certo ponto, está medindo a mesma coisa
 repetidas vezes, não agregando informação nova.
 
-**Recomendação**: se algum dia o projeto quiser reabrir teste de
+**Recomendação original**: se algum dia o projeto quiser reabrir teste de
 `minScore`/pesos do score de confluência, tratar essa redundância
 primeiro (ex.: um teto por família de evidência, ou reduzir o peso do
 componente que já está descrito no follow-through) — senão qualquer novo
-teste de limiar vai continuar reordenando ruído correlacionado. **Não
-implementado — mudança de fórmula de cálculo, precisa de pedido
-explícito.**
+teste de limiar vai continuar reordenando ruído correlacionado.
+
+**Fechamento (2026-08-24)**: pedido do usuário pra implementar — antes de
+mexer em `confluence.js`, cruzei contra `src/pages/PineScript.jsx` (o
+Pine real do usuário, fonte primária pra qualquer parâmetro de
+comportamento não óbvio, ver `.claude/rules/pine-parity.md`) e a
+redundância **existe no Pine real também**, não é invenção do port JS:
+
+```
+// PineScript.jsx:322-327 — buyFollowThrough É a mesma condição geométrica
+// de "close > filt", só estendida pra janela de confirmBars barras:
+bool buyFollowThrough  = true
+for i = 0 to confirmBars - 1
+    buyFollowThrough  := buyFollowThrough  and close[i] > filt[i] and fdir[i] == 1
+
+// PineScript.jsx:351-358 — as DUAS entram no score, testando a mesma coisa 2x:
+buyScore += buyFollowThrough ? 25 : 0   // ...
+buyScore += close > filt     ? 10 : 0   // ...(condição já contida na de cima)
+```
+
+`src/lib/indicators/confluence.js` só replica fielmente essa fórmula.
+Isso muda a leitura do achado: **não é um bug de port a corrigir** —
+é uma propriedade real da estratégia que o usuário roda no TradingView.
+Reduzir o peso do componente redundante em `confluence.js` sem mudar o
+Pine real criaria uma divergência de verdade entre o painel e o
+TradingView (o score exibido deixaria de bater com a Data Window do
+gráfico) — exatamente o que `.claude/rules/pine-parity.md` existe pra
+evitar ("Paridade ≠ taxa de acerto: corrigir paridade aproxima do
+TradingView, não torna a estratégia lucrativa" — aqui seria o inverso,
+"corrigir" o score pioraria a paridade).
+
+**Decisão do usuário, dado esse fato novo**: manter a redundância como
+está — reflete fielmente o Pine real, não é código deste projeto para
+"consertar". Fechado como documentação, sem mudança de fórmula. Se o
+usuário algum dia alterar o Pine no TradingView pra remover essa
+redundância, revisitar este item.
 
 ### Achado 4 (IMPORTANTE, corrigido — Codex, PR #238) — tensão de 3 fontes de dado nunca nomeada como risco; produção real já tem DOIS escritores, não um
 
@@ -14373,8 +14406,11 @@ crítico 1 (Trades.jsx sem CAS) foi corrigido nesta mesma rodada — pedido
 explícito do usuário, ver "Corrigido" na seção do Achado 1 acima. O
 achado crítico 2 (item 71 nunca cluster-corrigido) também foi fechado
 (2026-08-24, pedido explícito do usuário) — ver item 126 pro resultado
-final. Achados 3-7 e os achados menores seguem sem ação, pendentes de
-pedido explícito.
+final. O achado 3 (redundância do score) foi fechado (2026-08-24, pedido
+explícito do usuário) SEM mudança de código — a redundância existe no
+Pine real do usuário, não só no port JS (ver seção do Achado 3 acima).
+Achados 4-7 e os achados menores seguem sem ação, pendentes de pedido
+explícito.
 
 ## 126. `allowedside-ab-buy-only` re-rodado e cluster-corrigido de verdade — item 71/125 (achado 2) fechado (2026-08-24)
 
