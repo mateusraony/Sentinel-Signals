@@ -16,6 +16,14 @@ const COLLECTION_NAME_MAP = {
   StrategyConfig: 'strategyConfig',
 };
 
+// docs/known-risks.md item 130 — backup-firestore.mjs now includes SystemLog
+// (bounded, most-recent-N) so production issues can be diagnosed after the
+// fact without live Firestore credentials. Deliberately NOT restored here,
+// same reasoning as before this change: it's operational noise for disaster
+// recovery, not business data worth overwriting live logs with a stale
+// snapshot.
+const DELIBERATELY_SKIPPED = new Set(['SystemLog']);
+
 async function main() {
   const filePath = process.argv[2];
   const dryRun = process.argv.includes('--dry-run');
@@ -36,6 +44,10 @@ async function main() {
 
   console.log(`Backup de ${snapshot.taken_at || 'data desconhecida'}:`);
   for (const [name, docs] of entries) {
+    if (DELIBERATELY_SKIPPED.has(name)) {
+      console.log(`  ${name}: PULADO DE PROPÓSITO (log operacional, não é dado de negócio — ver comentário no topo deste arquivo)`);
+      continue;
+    }
     const collectionName = COLLECTION_NAME_MAP[name];
     if (!collectionName) {
       console.log(`  ${name}: IGNORADO (coleção não reconhecida)`);

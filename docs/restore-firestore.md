@@ -32,11 +32,14 @@ git log --oneline -- 'backup-*.json'
 
 2. **Abra o arquivo e confira o que tem dentro** — é um JSON simples, com
    uma chave por coleção (`MonitoredAsset`, `AssetState`, `SignalEvent`,
-   `TradeOperation`, `PriceAlert`, `StrategyConfig`) e um array de
-   documentos dentro de cada uma. Se você só quer restaurar uma coleção
+   `TradeOperation`, `PriceAlert`, `StrategyConfig`, `SystemLog`) e um array
+   de documentos dentro de cada uma. Se você só quer restaurar uma coleção
    específica (ex: só `tradeOperations`), edite o JSON e apague as outras
    chaves antes do próximo passo — o script de restauração processa
-   qualquer coleção presente no arquivo.
+   qualquer coleção presente no arquivo. **`SystemLog` é só pra diagnóstico**
+   (ver `docs/known-risks.md` item 130) — traz só os ~3.000 registros mais
+   recentes, e o script de restauração o pula de propósito (log operacional
+   antigo não é algo que faça sentido sobrescrever no banco ao vivo).
 
 3. **Rode o script de restauração** (precisa das mesmas credenciais do
    scan agendado — `FIREBASE_SERVICE_ACCOUNT_JSON`):
