@@ -64,8 +64,19 @@ export default function Assets() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => backend.entities.MonitoredAsset.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['all-assets'] }),
+    // AssetState (one doc per timeframe) has no lifecycle of its own tied to
+    // MonitoredAsset — deleting only the asset left it orphaned forever
+    // (confirmed in production: 4 removed assets, 12 stale AssetState docs
+    // still being read/written by nothing). SignalEvent/TradeOperation stay
+    // untouched — those are the audit trail, not per-asset scan state.
+    mutationFn: async (id) => {
+      await backend.entities.MonitoredAsset.delete(id);
+      await backend.entities.AssetState.deleteMany({ asset_id: id });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-assets'] });
+      queryClient.invalidateQueries({ queryKey: ['asset-states'] });
+    },
   });
 
   const active = assets.filter(a => a.is_active);
