@@ -14894,10 +14894,39 @@ Actions) nem sessão de navegador autenticada — só o usuário, pela página
 Settings, pode gravar em `strategyConfig/current`. `disableTp2CapEnabled`
 fica desligado por ora.
 
+**Atualização (mesmo dia)**: usuário ativou `skip15mConfirmationEnabled`
+pela própria página Settings e confirmou por print — switch ligado,
+persistindo depois de F5 (`strategyConfig/current` gravado corretamente,
+`setDoc` com `merge: true`). O relato inicial de "não está salvando" não se
+repetiu na segunda tentativa — mais provável falha pontual de rede/clique
+do que bug; código de `handleSave`/`StrategyConfig.set` revisado e está
+correto (dirty-tracking do item 121 intacto).
+
+### Addendum — `SystemLog` passa a entrar no backup diário, bounded (mesmo dia)
+
+Gap identificado durante esta própria investigação: `scripts/
+backup-firestore.mjs` excluía `SystemLog` de propósito ("ruído operacional,
+não vale restaurar em desastre") — correto para RESTAURAÇÃO, mas isso
+também tornava impossível diagnosticar produção depois do fato (avisos
+como "Transição descartada pelo CAS", erros de fetch) sem credencial do
+Firebase ao vivo, exatamente a limitação que esta auditoria esbarrou.
+Pedido explícito do usuário: corrigido. `SystemLog` agora entra no backup
+via `.list('-created_date', 3000)` — **bounded de propósito**, não
+`.list()` puro, porque isso releria a coleção INTEIRA a cada backup diário,
+crescendo pra sempre — exatamente o anti-padrão de leitura que `.claude/
+rules/firestore-concurrency.md` já pede pra não reintroduzir. `scripts/
+restore-firestore.mjs` continua sem restaurar `SystemLog` (agora
+explícito, `DELIBERATELY_SKIPPED`, com mensagem própria em vez de cair no
+"coleção não reconhecida" genérico) — log antigo não é algo que faça
+sentido sobrescrever no banco ao vivo; o objetivo do campo novo é só
+leitura/diagnóstico. `docs/restore-firestore.md` atualizado.
+
 ### Verificação
 
 `npm run lint && npm test (1104/1104) && npm run build` verdes para a
-correção do `AssetState` órfão. Achados de auditoria (ausência de bug no
-motor/indicadores, causa-raiz do hiato de operações) não mudam nenhum
-código — são achado de leitura + dado real, registrados aqui conforme
-`.claude/rules/documentation-truth.md`.
+correção do `AssetState` órfão e para o backup de `SystemLog`
+(`node --check` nos dois scripts editados — sem suíte de teste dedicada
+pra scripts admin, mesma lacuna pré-existente de sempre). Achados de
+auditoria (ausência de bug no motor/indicadores, causa-raiz do hiato de
+operações) não mudam nenhum código — são achado de leitura + dado real,
+registrados aqui conforme `.claude/rules/documentation-truth.md`.
