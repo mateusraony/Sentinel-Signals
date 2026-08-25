@@ -169,6 +169,42 @@ const DEFAULTS = {
   // em src/lib/pineParser.js/scripts/adminPineConfig.js — mesmo motivo dos
   // outros flags backtest-only acima. Ver src/lib/timeStopOverrideTripwire.test.js.
   timeStopBarsOverride: null,
+  // docs/known-risks.md item 132 — TRAILING pré-TP1 contínuo, o mecanismo que
+  // o comentário do próprio advancePreTp1StopProtection (opExitRules.js)
+  // chama de "a different, not-yet-built mechanism". OFF por padrão.
+  //
+  // Motivação (item 53, medida): 61 de 117 operações — 52% da amostra —
+  // terminaram em STOP_HIT sem NUNCA tocar o TP1; 98,4% delas ficaram
+  // positivas antes (MFE médio +0,578R) e devolveram 1,709R em média. Causa
+  // mecânica: no ramo pré-TP1 o stop nunca é reatribuído — fica imóvel por
+  // 18,1 barras em média enquanto o preço vai a +0,578R e volta.
+  //
+  // NÃO é recalibrar o breakeven (preTp1StopProtectionEnabled): são dois
+  // pontos diferentes da curva proteção×corte-prematuro. Breakeven é salto
+  // binário que SATURA na entrada (protege muito por disparo, mas cortou 36%
+  // das que chegariam ao TP1 — item 55) e para de ajudar depois da entrada.
+  // O trail RATCHEIA com a volatilidade: fica MAIS LONGE do preço que o
+  // breakeven enquanto o movimento é jovem (corta menos) e continua subindo
+  // depois (protege mais). Os dois modos são mutuamente exclusivos e o modo
+  // é congelado na CRIAÇÃO (`pre_tp1_stop_mode`), como runnerEnabled.
+  //
+  // Requer preTp1StopProtectionEnabled ligado — é ele que abre o bloco
+  // pré-TP1 em persistScanResults; este flag só escolhe QUAL mecanismo roda.
+  //
+  // NÃO ativar sem comparar relatórios com/sem primeiro, e calibrar
+  // start/trail contra o histograma real de MFE (item 132), não às cegas.
+  // INTENTIONALLY NOT mirrored em src/lib/pineParser.js/
+  // scripts/adminPineConfig.js — ver src/lib/preTp1TrailTripwire.test.js.
+  preTp1TrailEnabled: false,
+  // Quanto o preço precisa andar a favor (× ATR) antes de o trail armar.
+  // Generoso de propósito: um trail semeado na entrada apertaria o stop já
+  // na 1ª barra, o oposto da lição de whipsaw que o item 53 registrou.
+  preTp1TrailStartAtrMult: 1.0,
+  // Distância do trail ao extremo favorável (× ATR). 2.5 é o baseline mais
+  // testado na literatura de swing citada no item 114 — e, com o stop
+  // inicial em 2,0-3,0×ATR por tier, mantém o trail atrás do stop original
+  // até o movimento realmente se provar.
+  preTp1TrailAtrMult: 2.5,
   // Bloco 4 Fase 1 (docs/known-risks.md item 37) — permite as cascatas
   // `4h_15m` (RF nativa) e `1h_5m` (SMC) manterem operações INDEPENDENTES
   // simultâneas no mesmo ativo, em vez de compartilhar 1 slot único

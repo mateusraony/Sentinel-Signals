@@ -587,7 +587,20 @@
     },
     "pre_tp1_stop_advance_trigger_atr_mult": {
       "type": "number",
-      "description": "known-risks.md items 53/54 — pineConfig.preTp1StopProtectionAtrMult value used for this entry's evaluation, recorded per-op since the config can change over time (same pattern as retest_touch_mode/displacement_min_body_atr_mult). Only meaningful when pre_tp1_stop_protection_enabled is true."
+      "description": "known-risks.md items 53/54 — pineConfig.preTp1StopProtectionAtrMult value used for this entry's evaluation, recorded per-op since the config can change over time (same pattern as retest_touch_mode/displacement_min_body_atr_mult). Only meaningful when pre_tp1_stop_protection_enabled is true, AND pre_tp1_stop_mode is 'breakeven'."
+    },
+    "pre_tp1_stop_mode": {
+      "type": "string",
+      "enum": ["breakeven", "trailing"],
+      "description": "known-risks.md item 132 — WHICH pre-TP1 mechanism governs this operation, frozen at creation from pineConfig.preTp1TrailEnabled (same contract as partial_percent/runnerEnabled: a later flag flip governs only the NEXT operation). Absent or 'breakeven' = the original mechanism (advancePreTp1StopProtection: a binary jump to entry that SATURATES there). 'trailing' = advancePreTp1Trailing: a continuous trail anchored on the favourable EXTREME since entry (reconstructed from mfe_r via favorableExtremeFromMfe), which stays FURTHER from price than breakeven while the move is young and keeps climbing past breakeven once it proves itself. Mutually exclusive — only one runs. Both require pre_tp1_stop_protection_enabled: that flag opens the pre-TP1 block, this one picks the mechanism inside it."
+    },
+    "pre_tp1_trail_start_atr_mult": {
+      "type": "number",
+      "description": "known-risks.md item 132 — pineConfig.preTp1TrailStartAtrMult recorded per-op (same pattern as pre_tp1_stop_advance_trigger_atr_mult). How far price must move favourably, in ATR multiples, before the trail arms at all. Deliberately generous: a trail seeded at entry would tighten the stop on the very first bar, the opposite of the premature-breakeven whipsaw lesson of item 53. Only meaningful when pre_tp1_stop_mode is 'trailing'."
+    },
+    "pre_tp1_trail_atr_mult": {
+      "type": "number",
+      "description": "known-risks.md item 132 — pineConfig.preTp1TrailAtrMult recorded per-op. Distance from the favourable extreme to the trailed stop, in ATR multiples. Only meaningful when pre_tp1_stop_mode is 'trailing'."
     },
     "pre_tp1_stop_advanced_at": {
       "type": "string",

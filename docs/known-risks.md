@@ -15090,3 +15090,124 @@ Verificação das correções: `npm run lint && npm test (1130, +6) && npm run
 build && npm run build:backtest` verdes. Os 6 testes novos reproduzem cada
 achado — inclusive um que demonstra explicitamente que, sem a guarda do P1, a
 lacuna cobraria MENOS que a constante.
+
+## 132. Trailing pré-TP1 contínuo — o mecanismo que o item 54 nomeou e nunca foi construído (2026-08-25)
+
+### Contexto
+
+Frente B do plano "outra forma de fazer os trades" (Frente A = item 131).
+Enquanto o item 131 ataca a MEDIÇÃO do custo, este ataca o único vazio
+arquitetural que sobrou na gestão da operação.
+
+### O buraco, medido (item 53, N=117)
+
+**61 operações — 52% da amostra inteira** terminaram em `STOP_HIT` sem nunca
+tocar o TP1:
+
+| | |
+|---|---|
+| Resultado final médio | **−1,131R** |
+| MFE médio | **+0,578R** |
+| % que chegou a ficar positiva | **98,4% (60 de 61)** |
+| Giveback médio (MFE → final) | **1,709R** |
+| Tempo até o MFE | 5,9 barras |
+| Tempo até o stop | **18,1 barras** |
+
+Causa mecânica confirmada no código: no ramo pré-TP1 de `persistScanResults`,
+`newCurrentStop` **nunca era reatribuído** — `advanceTrailingStop` só roda com
+`newStatus === 'RUNNER_ACTIVE'`. O stop fica **imóvel por ~18 barras** enquanto
+o preço vai a +0,578R e volta.
+
+### Por que não é recalibrar o breakeven já existente
+
+O mecanismo existente (`advancePreTp1StopProtection`) **satura em breakeven** —
+`Math.max/min(currentStop, entry)`, nunca além. Medido duas vezes sem efeito
+líquido (item 55: −0,0452 → −0,0446 e maxDD 111,73% → 137,76%; item 105:
++0,003R, z=0,04). O diagnóstico do item 55 aponta a causa: **29 de 81 disparos
+(36%) teriam chegado ao TP1 mesmo sem a proteção** — corte prematuro.
+
+São dois pontos diferentes da mesma curva, não duas calibrações de uma coisa:
+
+| | Breakeven | Trailing (este item) |
+|---|---|---|
+| Forma | salto binário, satura na entrada | ratcheia com a volatilidade, nunca satura |
+| Âncora | close | **extremo favorável** desde a entrada |
+| Movimento jovem | já saltou pra entrada → corta mais | fica mais longe do preço → **corta menos** |
+| Depois da entrada | para de ajudar | continua subindo |
+
+O próprio item 54 registra que um *trailing pré-TP1 completo* é "um mecanismo
+DIFERENTE, não implementado aqui". E a busca exaustiva no histórico confirmou
+**zero menções** a Chandelier Exit, SuperTrend, PSAR, trailing-desde-a-entrada,
+scale-out em múltiplos R ou exit por MFE em `docs/`, `.claude/` e `CLAUDE.md` —
+espaço genuinamente novo, não releitura do que falhou.
+
+### O que foi implementado
+
+- `src/lib/opExitRules.js` — `advancePreTp1Trailing` (função pura, monotônica,
+  mesmo contrato anti-look-ahead das outras duas) + `favorableExtremeFromMfe`.
+- **Reuso em vez de campo novo**: o extremo favorável é **reconstruído do
+  `mfe_r`** que o motor já rastreia por operação (item 47.2), em vez de um 2º
+  campo de pico que poderia dessincronizar. Como `mfe_r` é definido contra a
+  distância do stop INICIAL, a inversa é exata, não aproximação. `null` (op
+  nova, doc legado, risco zero) significa "não trilha ainda" — nunca zero.
+- `scanner.js`, bloco pré-TP1 — despacho entre os dois modos, lido **da
+  operação** (`pre_tp1_stop_mode`), nunca do `pineConfig` ao vivo.
+- **O one-shot foi condicionado ao modo**: `!op.pre_tp1_stop_advanced_at` só
+  vale no breakeven (que satura, logo um 2º avanço é impossível por
+  construção); o trailing precisa avançar a cada candle novo em que o extremo
+  melhora. Sem isso o trail avançaria uma vez e congelaria.
+- Marcador anti-look-ahead reusado (`pre_tp1_stop_advanced_candle_time` +
+  `stopAdvanceMarkerField`), obrigatório para todo mecanismo que avança stop a
+  partir do candle — sem ele, a mesma vela ainda não fechada seria re-testada
+  contra o stop recém-avançado (bug do PR #106/item 59).
+- 3 campos congelados na criação nos DOIS construtores (`buildTradeOpData` e
+  `buildSmcTradeOpData`), `backtestPineConfig.js` (backtest-only),
+  `preTp1TrailTripwire.test.js` (9 asserções, 3 chaves × 3 arquivos),
+  `TradeOperation.jsonc`, `backtest-usage.md`.
+
+### NÃO medido — e a armadilha a evitar
+
+O mecanismo está **desligado por padrão e nunca foi medido**.
+`preTp1TrailStartAtrMult`/`preTp1TrailAtrMult` formam um espaço 2D, e varrê-lo
+em ~100 operações é exatamente o problema de múltiplas comparações do item 58.
+
+**O caminho registrado**: olhar primeiro a **distribuição de MFE das operações
+pré-TP1** e derivar os dois valores dela, declarados ANTES de rodar. O dado já
+existe (`mfe_r` por operação desde o item 47.2; `backtestAnalysis.js:343` já
+calcula a seção de MFE/MAE) mas **nunca foi publicado** — só a média +0,578R do
+item 53. Publicá-la é o pré-requisito da calibração, não um passo opcional.
+
+E vale a ordem do item 44 (Bajgrowicz & Scaillet): **congelar os custos antes
+de calibrar qualquer parâmetro** — ou seja, o item 131 (funding real) precisa
+estar medido e fechado antes desta calibração, senão a busca roda sobre um
+custo que ainda vai mudar.
+
+### Correção da review externa (Codex, PR #253) — diagnóstico mentiria sobre o modo
+
+Achado P2, real e do mesmo tipo do P2 do item 131: `report.
+preTp1StopProtection.stoppedAtBreakevenPreTp1` contava TODA saída
+`STOP_HIT` pós-avanço como "parou no breakeven", e `analyze-backtest.mjs`
+imprimia "avançou p/ breakeven". No modo trailing o stop avança para preços
+**arbitrários** acima/abaixo da entrada — o rótulo seria factualmente falso
+**justamente no relatório que existe para medir este mecanismo**, e
+impediria distinguir saída trilhada de saída em breakeven. Corrigido:
+`stoppedAtBreakevenPreTp1` passou a contar SÓ o modo breakeven (o nome volta
+a ser literalmente verdadeiro), o modo trailing ganhou
+`stoppedAtTrailedStopPreTp1`, e um campo `mode`
+(`breakeven`/`trailing`/`mixed`) reporta qual mecanismo governou o run —
+`mixed` avisa que o flag virou no meio e que os dois contadores descrevem
+populações diferentes, já que o modo é congelado por operação. Os rótulos do
+`analyze-backtest.mjs` acompanham o modo.
+
+### Verificação
+
+`npm run lint && npm test (1159, +29) && npm run build` + os **4 alvos esbuild
+que empacotam `scanner.js`** (`build:scan`, `build:scan-shadow`,
+`build:backtest`) compilando. Testes: 11 da função pura (dormência até o
+gatilho, âncora no extremo e não no close, monotonicidade, subir além do
+breakeven, ser MENOS agressivo que o breakeven com movimento jovem, espelho
+SELL, entradas inválidas, ida-e-volta exata do MFE) e 8 na máquina de estados
+real via `persistScanResults` (modo ausente = breakeven para toda op legada,
+dormência, avanços múltiplos, P0-d, passada repetida no mesmo candle, e a
+reversão que encerra no stop trilhado em vez da perda cheia — o cenário exato
+das 61 operações do item 53).

@@ -970,22 +970,44 @@ export function buildReport(ops, {
     // Invalidation depois do avanço. Comparar este bloco entre dois relatórios
     // (--pine-config com/sem o flag) é o mesmo fluxo "compare antes de ativar"
     // de retest/displacement/smcTier — ver known-risks.md item 54.
+    //
+    // Codex review (PR #253, P2): com `pre_tp1_stop_mode: 'trailing'` (item
+    // 132) o stop avança para preços ARBITRÁRIOS acima/abaixo da entrada, não
+    // para breakeven — contar essas saídas como "parou no breakeven" tornaria
+    // o diagnóstico factualmente falso justamente no relatório que existe
+    // para MEDIR o mecanismo novo, e impediria distinguir saída trilhada de
+    // saída em breakeven. Por isso `stoppedAtBreakevenPreTp1` passou a contar
+    // SÓ o modo breakeven (nome volta a ser literalmente verdadeiro) e o modo
+    // trailing tem contador próprio.
     preTp1StopProtection: (() => {
       const enabledOps = closed.filter(op => op.pre_tp1_stop_protection_enabled === true);
       const advancedOps = enabledOps.filter(op => op.pre_tp1_stop_advanced_at);
-      let reachedTp1 = 0, stoppedAtBreakeven = 0, otherExit = 0;
+      const isTrailing = (op) => op.pre_tp1_stop_mode === 'trailing';
+      let reachedTp1 = 0, stoppedAtBreakeven = 0, stoppedAtTrailed = 0, otherExit = 0;
       for (const op of advancedOps) {
         if (op.tp1_hit) reachedTp1 += 1;
-        else if (op.status === 'STOP_HIT') stoppedAtBreakeven += 1;
-        else otherExit += 1;
+        else if (op.status === 'STOP_HIT') {
+          if (isTrailing(op)) stoppedAtTrailed += 1;
+          else stoppedAtBreakeven += 1;
+        } else otherExit += 1;
       }
+      const trailingCount = enabledOps.filter(isTrailing).length;
       return {
         enabled: enabledOps.length > 0,
         total: enabledOps.length,
         advanced: advancedOps.length,
         reachedTp1AfterAdvance: reachedTp1,
         stoppedAtBreakevenPreTp1: stoppedAtBreakeven,
+        // Item 132 — saída no stop TRILHADO (preço arbitrário, não breakeven).
+        stoppedAtTrailedStopPreTp1: stoppedAtTrailed,
         otherExitAfterAdvance: otherExit,
+        // Qual mecanismo governou as operações deste run. 'mixed' significa
+        // que o flag virou no meio (o modo é congelado por operação), e aí os
+        // dois contadores acima descrevem populações diferentes — não
+        // compare o agregado nesse caso.
+        mode: enabledOps.length === 0 ? null
+          : trailingCount === enabledOps.length ? 'trailing'
+            : trailingCount === 0 ? 'breakeven' : 'mixed',
       };
     })(),
     // Funil de confirmação de entrada (docs/known-risks.md item 45.3/49) —
