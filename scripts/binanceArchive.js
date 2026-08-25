@@ -25,6 +25,22 @@ export function buildDailyUrl(symbol, interval, year, month, day) {
   return `${ARCHIVE_BASE}/daily/klines/${symbol}/${interval}/${symbol}-${interval}-${year}-${mm}-${dd}.zip`;
 }
 
+// docs/known-risks.md item 131 — funding REAL (com sinal, por período), em vez
+// da constante `fundingBpsPer8h: 1` de src/lib/tradeMetrics.js. Mesma CDN,
+// mesmo padrão de caminho dos klines acima: só troca o "dataset" de `klines`
+// para `fundingRate` e não tem componente de intervalo (funding é publicado
+// por símbolo, não por timeframe).
+export function buildMonthlyFundingUrl(symbol, year, month) {
+  const mm = String(month).padStart(2, '0');
+  return `${ARCHIVE_BASE}/monthly/fundingRate/${symbol}/${symbol}-fundingRate-${year}-${mm}.zip`;
+}
+
+export function buildDailyFundingUrl(symbol, year, month, day) {
+  const mm = String(month).padStart(2, '0');
+  const dd = String(day).padStart(2, '0');
+  return `${ARCHIVE_BASE}/daily/fundingRate/${symbol}/${symbol}-fundingRate-${year}-${mm}-${dd}.zip`;
+}
+
 // docs/known-risks.md item 125 (achado menor): downloadArchive() used to
 // buffer the ENTIRE response with no size check before handing it to
 // AdmZip. Zip-slip doesn't apply here (the zip is only read into memory,
@@ -129,6 +145,95 @@ export function parseKlineCsv(csvText) {
     });
   }
   return candles;
+}
+
+// A funding rate outside ±1 (i.e. ±100% per settlement) is not a rate this
+// parser understands — Binance caps funding far below that, so a value that
+// large means the column mapping is wrong (or the archive schema changed).
+// Rejecting it loudly beats silently costing every backtest a nonsense rate:
+// the whole point of item 131 is that funding is 59% of measured cost, so a
+// misparsed column would corrupt the exact number this work exists to fix.
+const MAX_PLAUSIBLE_FUNDING_RATE = 1;
+
+/**
+ * Parses one fundingRate archive CSV (the file inside the ZIP).
+ *
+ * Schema published by Binance is `calc_time,funding_interval_hours,
+ * last_funding_rate`, but this resolves columns BY HEADER NAME when a header
+ * row is present rather than trusting position — the kline archives already
+ * proved (see parseKlineCsv) that this CDN's formats vary across vintages,
+ * and a silently shifted column here would be indistinguishable from real
+ * data. Falls back to documented positions only when there is no header.
+ *
+ * Timestamps get the same ms-vs-µs normalization as klines.
+ *
+ * @param {string} csvText
+ * @returns {{ calcTime: number, intervalHours: number|null, rate: number }[]}
+ */
+export function parseFundingCsv(csvText) {
+  const lines = csvText.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return [];
+
+  let timeIdx = 0;
+  let intervalIdx = 1;
+  let rateIdx = 2;
+  let startLine = 0;
+
+  const firstCols = lines[0].split(',').map((c) => c.trim());
+  if (!Number.isFinite(Number(firstCols[0]))) {
+    // Header row present — resolve by name, don't trust position.
+    const header = firstCols.map((c) => c.toLowerCase());
+    const findIdx = (...names) => header.findIndex((h) => names.includes(h));
+    const t = findIdx('calc_time', 'calctime', 'fundingtime', 'funding_time');
+    const r = findIdx('last_funding_rate', 'lastfundingrate', 'funding_rate', 'fundingrate');
+    const i = findIdx('funding_interval_hours', 'fundingintervalhours');
+    if (t === -1 || r === -1) {
+      throw new Error(
+        `fundingRate CSV com header não reconhecido (colunas: ${firstCols.join('|')}) — `
+        + 'mapeamento de coluna abortado em vez de adivinhar posição.',
+      );
+    }
+    timeIdx = t;
+    rateIdx = r;
+    intervalIdx = i; // -1 quando ausente: tratado como null abaixo
+    startLine = 1;
+  }
+
+  const rows = [];
+  for (let i = startLine; i < lines.length; i++) {
+    const cols = lines[i].split(',');
+    if (cols.length <= Math.max(timeIdx, rateIdx)) continue;
+    const calcTimeRaw = Number(cols[timeIdx]);
+    const rate = parseFloat(cols[rateIdx]);
+    if (!Number.isFinite(calcTimeRaw) || !Number.isFinite(rate)) continue;
+    if (Math.abs(rate) > MAX_PLAUSIBLE_FUNDING_RATE) {
+      throw new Error(
+        `fundingRate implausível (${rate}) na linha ${i + 1} — provável coluna errada, download recusado.`,
+      );
+    }
+    const intervalRaw = intervalIdx >= 0 ? Number(cols[intervalIdx]) : NaN;
+    rows.push({
+      calcTime: normalizeTimestamp(cols[timeIdx]),
+      intervalHours: Number.isFinite(intervalRaw) && intervalRaw > 0 ? intervalRaw : null,
+      rate,
+    });
+  }
+  return rows;
+}
+
+/**
+ * Same dedupe/clip contract as dedupeAndFilterCandles, for funding rows.
+ * No "only closed" rule applies — a funding settlement is a point event that
+ * either already happened or hasn't been published yet.
+ * @param {ReturnType<typeof parseFundingCsv>} rows
+ */
+export function dedupeAndFilterFunding(rows, fromMs, toMs) {
+  const byTime = new Map();
+  for (const row of rows) {
+    if (row.calcTime < fromMs || row.calcTime >= toMs) continue;
+    byTime.set(row.calcTime, row);
+  }
+  return [...byTime.values()].sort((a, b) => a.calcTime - b.calcTime);
 }
 
 /**

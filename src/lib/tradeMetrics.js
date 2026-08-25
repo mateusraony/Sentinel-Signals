@@ -46,11 +46,17 @@ const EIGHT_HOURS_MS = 8 * 60 * 60 * 1000;
 // vectorbt, Backtrader, QuantConnect and freqtrade all default to zero
 // slippage. 1 bp/side is a registered choice for BTC/ETH-class liquidity
 // (~20% of the fee cost), not a convention.
+// fundingSeries (docs/known-risks.md item 131) is the one field here that is
+// NOT a rate: it's real, per-symbol, per-settlement historical funding, and
+// when present it REPLACES fundingBpsPer8h entirely (see calcFundingCost).
+// null by default so every existing caller — panel included — keeps the exact
+// constant-rate behaviour it had before item 131.
 export const DEFAULT_COST_MODEL = {
   feeBpsEntry: 5,
   feeBpsExit: 5,
   slippageBpsPerSide: 1,
   fundingBpsPer8h: 1,
+  fundingSeries: null,
 };
 
 // Explicit opt-out — yields the pre-Fase-5 gross numbers. Used by the tests
@@ -60,6 +66,9 @@ export const ZERO_COST = {
   feeBpsExit: 0,
   slippageBpsPerSide: 0,
   fundingBpsPer8h: 0,
+  // Explicitly null, not merely absent: ZERO_COST must mean zero even if a
+  // caller spreads it over a model that carried a real series.
+  fundingSeries: null,
 };
 
 // Exportada para src/lib/backtestAnalysis.js poder montar modelos isolados
@@ -75,6 +84,7 @@ export function resolveCostModel(model) {
       ? model.slippageBpsPerSide : DEFAULT_COST_MODEL.slippageBpsPerSide,
     fundingBpsPer8h: Number.isFinite(model.fundingBpsPer8h)
       ? model.fundingBpsPer8h : DEFAULT_COST_MODEL.fundingBpsPer8h,
+    fundingSeries: model.fundingSeries ?? DEFAULT_COST_MODEL.fundingSeries,
   };
 }
 
@@ -131,15 +141,136 @@ export function countFundingSettlementsByLeg(op) {
   };
 }
 
-// Total round-trip cost in PRICE units (always >= 0 — a cost never helps the
-// trader, regardless of side). Fee and slippage are charged per fill on that
-// fill's own notional; the module has no position size, so notional is the
-// fill price and every leg is weighted by its share of the position.
+/**
+ * Funding in PRICE units, for one op. Two modes, same contract:
+ *
+ * 1. **Constant** (default, pre-item-131): `fundingBpsPer8h` charged on every
+ *    8h boundary crossed, to BOTH sides equally, always a cost.
+ * 2. **Real series** (`costModel.fundingSeries`, item 131): the actual
+ *    published rate at each settlement the op was open for, WITH ITS SIGN and
+ *    WITH THE SIDE APPLIED.
+ *
+ * Why mode 2 exists: on a perpetual future funding is a TRANSFER, not a fee.
+ * When the rate is positive (the dominant regime in crypto) longs pay shorts —
+ * a short RECEIVES. Mode 1 charged both sides, which is simply wrong, and it
+ * is not a rounding error: funding is 57.9-59% of this project's measured cost
+ * (items 44/109) and SELL is the side measured positive in all 5 windows so
+ * far. So the error sits exactly on top of the one result the project keeps
+ * finding.
+ *
+ * Consequence callers must handle: **funding can be NEGATIVE** (income), so
+ * calcTradeCost().total is no longer guaranteed >= 0. That is intended — a
+ * short collecting funding really did end up with more money, and clamping it
+ * at zero would reintroduce the same optimism-in-reverse this fixes.
+ *
+ * Leg weighting matches the constant mode exactly (full notional before TP1,
+ * runner fraction after), so switching modes changes the RATE applied, never
+ * the exposure model.
+ *
+ * **Cobertura incompleta cai de volta na constante** (Codex review, PR #252,
+ * P1). Um buraco na série — download parcial, um 404 diário engolido pelo
+ * fetch, um mês ainda não publicado — faria a op não casar linha nenhuma e
+ * devolver funding ZERO, que é indistinguível de "não pagou" e **subestima
+ * o custo em silêncio**. É o pior modo de falha possível justamente aqui:
+ * este trabalho existe para corrigir a medição do custo, e um furo de dado
+ * apareceria como "custo menor", ou seja, como uma falsa melhora. Por isso,
+ * quando as liquidações casadas são MENOS que as fronteiras de 8h que a op
+ * comprovadamente atravessou, esta função devolve o valor da CONSTANTE
+ * (conservador — nunca subestima) marcado como `series_incomplete`, em vez
+ * do número furado. Mais liquidações que o esperado é legítimo (par com
+ * intervalo de funding menor que 8h) e segue como `series`.
+ *
+ * @returns {{ cost: number, settlements: number, beforeTp1: number, afterTp1: number,
+ *   source: 'series'|'constant'|'series_incomplete', expectedSettlements: number }}
+ */
+export function calcFundingCost(op, costModel) {
+  const m = resolveCostModel(costModel);
+  const series = m.fundingSeries?.[op?.symbol];
+  const expectedLegs = countFundingSettlementsByLeg(op);
+  const expectedSettlements = expectedLegs.beforeTp1 + expectedLegs.afterTp1;
+
+  if (Array.isArray(series) && series.length > 0) {
+    const openedAt = getOpenedAt(op);
+    const closedAt = getClosedAt(op);
+    const startMs = openedAt ? new Date(openedAt).getTime() : NaN;
+    const endMs = closedAt ? new Date(closedAt).getTime() : NaN;
+    if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
+      const tp1Ms = op.tp1_hit && op.tp1_hit_at ? new Date(op.tp1_hit_at).getTime() : NaN;
+      const hasTp1 = Number.isFinite(tp1Ms) && tp1Ms > startMs && tp1Ms < endMs;
+      const { runner } = getWeights(op);
+      // A SELL is short: it receives what a long pays, so the sign flips.
+      const sideMult = op.side === 'SELL' ? -1 : 1;
+
+      let beforeTp1 = 0;
+      let afterTp1 = 0;
+      let settlements = 0;
+      for (const row of series) {
+        // Same half-open window as countFundingSettlements: a settlement is
+        // charged only if the position was open AT that instant.
+        if (!(row.calcTime > startMs && row.calcTime <= endMs)) continue;
+        const charge = op.entry_price * row.rate * sideMult;
+        if (hasTp1 && row.calcTime > tp1Ms) afterTp1 += runner * charge;
+        else beforeTp1 += charge;
+        settlements += 1;
+      }
+      if (settlements >= expectedSettlements) {
+        return {
+          cost: beforeTp1 + afterTp1, settlements, beforeTp1, afterTp1,
+          source: 'series', expectedSettlements,
+        };
+      }
+      // Lacuna real: cai na constante abaixo, marcado para a telemetria.
+      const gapLegs = expectedLegs;
+      const gapRate = m.fundingBpsPer8h / BPS;
+      const gapBefore = gapLegs.beforeTp1 * op.entry_price * gapRate;
+      const gapAfter = gapLegs.afterTp1 * runner * op.entry_price * gapRate;
+      return {
+        cost: gapBefore + gapAfter,
+        settlements: expectedSettlements,
+        beforeTp1: gapBefore,
+        afterTp1: gapAfter,
+        source: 'series_incomplete',
+        expectedSettlements,
+        matchedSettlements: settlements,
+      };
+    }
+  }
+
+  if (!(m.fundingBpsPer8h > 0)) {
+    return {
+      cost: 0, settlements: 0, beforeTp1: 0, afterTp1: 0,
+      source: 'constant', expectedSettlements,
+    };
+  }
+  const rate = m.fundingBpsPer8h / BPS;
+  const { runner } = getWeights(op);
+  const beforeTp1 = expectedLegs.beforeTp1 * op.entry_price * rate;
+  const afterTp1 = expectedLegs.afterTp1 * runner * op.entry_price * rate;
+  return {
+    cost: beforeTp1 + afterTp1,
+    settlements: expectedSettlements,
+    beforeTp1,
+    afterTp1,
+    source: 'constant',
+    expectedSettlements,
+  };
+}
+
+// Total round-trip cost in PRICE units. Fee and slippage are charged per fill
+// on that fill's own notional; the module has no position size, so notional is
+// the fill price and every leg is weighted by its share of the position.
+//
+// NOT guaranteed >= 0 since item 131: with a real funding series a short can
+// COLLECT funding, making total negative (net income). Fee and slippage are
+// still always costs — only the funding component can flip sign.
 //
 // Fill count follows the same tp1_hit branch calcRealizedDelta uses: 3 fills
 // with a TP1 partial (entry + partial + runner), 2 without.
 export function calcTradeCost(op, costModel) {
-  const zero = { total: 0, entryCost: 0, exitCost: 0, fundingCost: 0, fills: 0, fundingSettlements: 0 };
+  const zero = {
+    total: 0, entryCost: 0, exitCost: 0, fundingCost: 0, fills: 0, fundingSettlements: 0,
+    fundingBeforeTp1: 0, fundingAfterTp1: 0, fundingSource: 'constant',
+  };
   if (!isClosedOp(op) || !isFinitePrice(op.entry_price)) return zero;
   const exit = getExitPrice(op);
   if (exit === null) return zero;
@@ -162,23 +293,22 @@ export function calcTradeCost(op, costModel) {
     fills = 2;
   }
 
-  let fundingSettlements = 0;
-  let fundingCost = 0;
-  if (m.fundingBpsPer8h > 0) {
-    const { beforeTp1, afterTp1 } = countFundingSettlementsByLeg(op);
-    fundingSettlements = beforeTp1 + afterTp1;
-    const rate = m.fundingBpsPer8h / BPS;
-    const { runner } = getWeights(op);
-    fundingCost = (beforeTp1 * op.entry_price + afterTp1 * runner * op.entry_price) * rate;
-  }
+  const funding = calcFundingCost(op, m);
 
   return {
-    total: entryCost + exitCost + fundingCost,
+    total: entryCost + exitCost + funding.cost,
     entryCost,
     exitCost,
-    fundingCost,
+    fundingCost: funding.cost,
     fills,
-    fundingSettlements,
+    fundingSettlements: funding.settlements,
+    // Pre/post-TP1 split was computed internally since the Fase 5 leg fix but
+    // never surfaced — item #3 of the review council's backlog (item 112),
+    // which tests the item 46 <-> 109 link (does the runner's extra time in
+    // market pay for its own funding?) without running a new backtest.
+    fundingBeforeTp1: funding.beforeTp1,
+    fundingAfterTp1: funding.afterTp1,
+    fundingSource: funding.source,
   };
 }
 

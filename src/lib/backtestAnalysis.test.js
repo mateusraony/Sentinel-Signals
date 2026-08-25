@@ -521,6 +521,65 @@ describe('analyzeOps — decomposição do custo', () => {
     expect(costModel.feeBpsEntry).toBe(0);
   });
 
+  // Codex review (PR #252, P2) — quando funding vira RECEITA (short coletando
+  // com série real, item 131), esconder só a fatia negativa não basta: as
+  // outras passam a ser divididas por um total líquido reduzido e estouram
+  // 100% (ex.: taxa 143%). Não é decomposição — suprime o conjunto inteiro.
+  it('funding como receita suprime TODAS as shares, não só a negativa', () => {
+    const sell = makeOp({
+      symbol: 'BTCUSDT', side: 'SELL', initial_stop: 105, tp1: 92.5, tp2: 85,
+      exit_price: 105, closed_at: '2026-07-24T08:00:00.000Z',
+    });
+    // Série real cobrindo as 24 fronteiras, taxa positiva => o SELL recebe.
+    const series = { BTCUSDT: [] };
+    const start = Date.parse(sell.candle_close_time ?? sell.created_date);
+    for (let i = 1; i <= 24; i++) {
+      series.BTCUSDT.push({ calcTime: start + i * 8 * 60 * 60 * 1000, rate: 0.0004 });
+    }
+    const { cost } = analyzeOps([sell], {
+      costModel: { ...DEFAULT_COST_MODEL, fundingSeries: series },
+    });
+    expect(cost.avgFundingR).toBeLessThan(0); // receita, confirmando o cenário
+    expect(cost.fundingShare).toBeNull();
+    expect(cost.feeShare).toBeNull();
+    expect(cost.slippageShare).toBeNull();
+    // ...e os valores em R continuam exatos, que é o ponto de suprimir só a %
+    expect(Number.isFinite(cost.avgFeeR)).toBe(true);
+    expect(Number.isFinite(cost.avgCostR)).toBe(true);
+  });
+
+  // Codex review (PR #252, P2) — "atravessou fronteira" != "pagou funding".
+  it('opsWithFunding conta liquidações aplicadas, não fronteiras de calendário', () => {
+    const op = makeOp({ symbol: 'BTCUSDT', closed_at: '2026-07-24T08:00:00.000Z' });
+    // Série presente mas vazia para o símbolo => cai na constante e cobra.
+    const { cost } = analyzeOps([op], {
+      costModel: { ...DEFAULT_COST_MODEL, fundingSeries: { OUTRO: [{ calcTime: 1, rate: 0.1 }] } },
+    });
+    expect(cost.avgBoundariesCrossed).toBe(24);
+    expect(cost.opsWithFunding).toBe(1);
+    // Símbolo sem série caiu na constante — o relatório NÃO pode se dizer
+    // "funding real" nesse caso, senão descreveria uma mistura.
+    expect(cost.opsWithIncompleteFunding).toBe(1);
+    expect(cost.fundingModel).toBe('mixed');
+  });
+
+  it('série com lacuna marca fundingModel mixed e conta a operação afetada', () => {
+    const op = makeOp({ symbol: 'BTCUSDT', closed_at: '2026-07-24T08:00:00.000Z' });
+    const start = Date.parse(op.candle_close_time ?? op.created_date);
+    // 24 fronteiras esperadas, série com só 2 => lacuna.
+    const gappy = { BTCUSDT: [
+      { calcTime: start + 8 * 60 * 60 * 1000, rate: 0.0001 },
+      { calcTime: start + 16 * 60 * 60 * 1000, rate: 0.0001 },
+    ] };
+    const { cost } = analyzeOps([op], {
+      costModel: { ...DEFAULT_COST_MODEL, fundingSeries: gappy },
+    });
+    expect(cost.opsWithIncompleteFunding).toBe(1);
+    expect(cost.fundingModel).toBe('mixed');
+    // e cobra a constante, nunca o valor furado
+    expect(cost.avgFundingR).toBeGreaterThan(0);
+  });
+
   it('funding com posição longa domina a taxa — o caso que motivou a decomposição', () => {
     // 8 dias em posição = 24 fronteiras de 8h. É o Time Stop da cascata RF
     // (48 barras de 4h), não as "poucas horas" que a pesquisa do item 44

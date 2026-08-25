@@ -22,6 +22,7 @@ import {
   DEFAULT_COST_MODEL,
   ZERO_COST,
   calcCostR,
+  calcFundingCost,
   calcRAtTp1,
   calcRealizedR,
   classifyOutcome,
@@ -167,9 +168,15 @@ function costComponentModels(costModel) {
   const m = resolveCostModel(costModel);
   return {
     resolved: m,
-    fee: { feeBpsEntry: m.feeBpsEntry, feeBpsExit: m.feeBpsExit, slippageBpsPerSide: 0, fundingBpsPer8h: 0 },
-    slippage: { feeBpsEntry: 0, feeBpsExit: 0, slippageBpsPerSide: m.slippageBpsPerSide, fundingBpsPer8h: 0 },
-    funding: { feeBpsEntry: 0, feeBpsExit: 0, slippageBpsPerSide: 0, fundingBpsPer8h: m.fundingBpsPer8h },
+    // fundingSeries explicitamente null nos dois primeiros (item 131): sem
+    // isso, um modelo "só taxa" herdaria a série real e cobraria funding —
+    // exatamente a divergência entre decomposição e custo cobrado que o
+    // comentário acima existe para impedir.
+    fee: { feeBpsEntry: m.feeBpsEntry, feeBpsExit: m.feeBpsExit, slippageBpsPerSide: 0, fundingBpsPer8h: 0, fundingSeries: null },
+    slippage: { feeBpsEntry: 0, feeBpsExit: 0, slippageBpsPerSide: m.slippageBpsPerSide, fundingBpsPer8h: 0, fundingSeries: null },
+    // ...e o modelo de funding PRECISA carregá-la, senão a linha de funding do
+    // relatório descreveria a constante enquanto o total usou a série real.
+    funding: { feeBpsEntry: 0, feeBpsExit: 0, slippageBpsPerSide: 0, fundingBpsPer8h: m.fundingBpsPer8h, fundingSeries: m.fundingSeries },
   };
 }
 
@@ -261,11 +268,27 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
   // --no-costs que serve para o A/B.
   let sumFeeR = 0; let sumSlippageR = 0; let sumFundingR = 0; let sumCostR = 0;
   let costRCount = 0; let sumBoundaries = 0; let opsWithFunding = 0;
-  const fundingCharged = models.resolved.fundingBpsPer8h > 0;
+  // Com série real (item 131) o funding é cobrado independentemente de
+  // fundingBpsPer8h — a constante deixa de ser a fonte da taxa.
+  const fundingCharged = models.resolved.fundingBpsPer8h > 0
+    || !!models.resolved.fundingSeries;
+  let opsWithIncompleteFunding = 0;
   for (const { op, costR } of rows) {
     const boundaries = countFundingSettlements(op);
     sumBoundaries += boundaries;
-    if (fundingCharged && boundaries > 0) opsWithFunding += 1;
+    // Codex review (PR #252, P2): "atravessou uma fronteira de 8h" != "pagou
+    // funding". Com série real, quem decide é a liquidação que calcFundingCost
+    // de fato casou — uma série parcial, ou um par com intervalo != 8h, faria
+    // esta telemetria afirmar pagamento onde o motor não aplicou nenhum.
+    const funding = calcFundingCost(op, models.resolved);
+    if (fundingCharged && funding.settlements > 0) opsWithFunding += 1;
+    // Duas formas de NÃO ser funding real, ambas contam: lacuna dentro da
+    // série (source 'series_incomplete') e símbolo sem série nenhuma, que cai
+    // em 'constant' mesmo com fundingSeries presente no modelo. Sem contar as
+    // duas, o relatório poderia dizer "funding real" descrevendo uma mistura.
+    if (models.resolved.fundingSeries && funding.source !== 'series') {
+      opsWithIncompleteFunding += 1;
+    }
     if (costR === null) continue;
     costRCount += 1;
     sumCostR += costR;
@@ -273,7 +296,19 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
     sumSlippageR += calcCostR(op, models.slippage) ?? 0;
     sumFundingR += calcCostR(op, models.funding) ?? 0;
   }
-  const share = (part) => (sumCostR > 0 ? part / sumCostR : null);
+  // Proporção só é interpretável quando o total é um custo de verdade E todos
+  // os componentes são custos. Com funding real (item 131) um componente pode
+  // ser NEGATIVO (short recebendo funding) — e aí não basta esconder a fatia
+  // negativa: as OUTRAS passam a ser divididas por um total líquido reduzido e
+  // podem passar de 100% (ex.: taxa 143%, slippage 29%, funding em branco),
+  // o que não é decomposição nenhuma (Codex review, PR #252, P2). Então
+  // suprime o conjunto INTEIRO, e o relatório mostra os valores em R, que
+  // continuam exatos.
+  const anyComponentIsIncome = sumFeeR < 0 || sumSlippageR < 0 || sumFundingR < 0;
+  const share = (part) => {
+    if (!(sumCostR > 0) || anyComponentIsIncome) return null;
+    return part / sumCostR;
+  };
 
   // ATRIBUIÇÃO DO RUNNER — a única peça da geometria de saída que nenhuma fase
   // mediu. Não é um eixo de baldes: é uma subtração entre dois cenários sobre
@@ -389,10 +424,19 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
       feeShare: share(sumFeeR),
       slippageShare: share(sumSlippageR),
       fundingShare: share(sumFundingR),
-      // Geometria (sempre medida) vs. pagamento (só quando a taxa é > 0).
+      // Geometria (sempre medida) vs. pagamento (liquidações efetivamente
+      // aplicadas pelo motor de custo — ver o comentário no laço acima).
       avgBoundariesCrossed: mean(sumBoundaries, closed.length),
       opsWithFunding,
       fundingCharged,
+      // Item 131 / Codex P1: operações cuja série real tinha lacuna e caíram
+      // de volta na constante. Diferente de zero significa que o relatório NÃO
+      // é 100% funding real — a série precisa ser rebaixada antes de comparar.
+      opsWithIncompleteFunding,
+      // 'series' quando a série real cobriu tudo, 'mixed' quando houve lacuna.
+      fundingModel: models.resolved.fundingSeries
+        ? (opsWithIncompleteFunding > 0 ? 'mixed' : 'series')
+        : 'constant',
       costRCount,
     },
     runner: {

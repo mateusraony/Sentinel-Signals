@@ -14,7 +14,12 @@
 //     [--pine-config ./my-pine-overrides.json] \
 //     [--step-ms 900000] [--out ./backtest-report.json] \
 //     [--no-costs] [--fee-bps 5] [--slippage-bps 1] [--funding-bps 1] \
-//     [--min-trades 30] [--trial-label "ob-weight-7"]
+//     [--real-funding] [--min-trades 30] [--trial-label "ob-weight-7"]
+//
+// --real-funding (docs/known-risks.md item 131): cobra funding pela taxa REAL
+// publicada, com sinal e por lado (vendido RECEBE quando a taxa é positiva),
+// em vez da constante --funding-bps. Exige rodar antes
+// `node scripts/fetch-backtest-funding.mjs` para os MESMOS símbolos/período.
 //
 // --evaluation-from/--evaluation-to (docs/known-risks.md item 47.2, both
 // optional, default = --from/--to): --from/--to continue to be the DATA
@@ -41,6 +46,7 @@
 // 4h/15m RF cascade stricter (requires 4h SMC structure/zone agreement) —
 // it does not require --smc, and --smc does not imply it.
 import fs from 'node:fs';
+import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { runBacktest } from '../src/lib/backtestEngine.js';
@@ -86,7 +92,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   if (!args.symbols || !args.from || !args.to) {
-    console.error('Uso: run-backtest.mjs --symbols SYM1,SYM2 --from ISO --to ISO [--evaluation-from ISO] [--evaluation-to ISO] [--data-dir DIR] [--smc SYM1,SYM2] [--smc-confirm SYM1,SYM2] [--pine-config FILE] [--step-ms N] [--out FILE] [--no-costs] [--fee-bps N] [--slippage-bps N] [--funding-bps N] [--min-trades N] [--trial-label TXT]');
+    console.error('Uso: run-backtest.mjs --symbols SYM1,SYM2 --from ISO --to ISO [--evaluation-from ISO] [--evaluation-to ISO] [--data-dir DIR] [--smc SYM1,SYM2] [--smc-confirm SYM1,SYM2] [--pine-config FILE] [--step-ms N] [--out FILE] [--no-costs] [--fee-bps N] [--slippage-bps N] [--funding-bps N] [--real-funding] [--min-trades N] [--trial-label TXT]');
     process.exitCode = 1;
     return;
   }
@@ -128,8 +134,64 @@ async function main() {
   const evaluationFromMs = args['evaluation-from'] ? new Date(args['evaluation-from']).getTime() : undefined;
   const evaluationToMs = args['evaluation-to'] ? new Date(args['evaluation-to']).getTime() : undefined;
 
+  // Funding REAL (docs/known-risks.md item 131) — opt-in por --real-funding,
+  // lendo os arquivos que scripts/fetch-backtest-funding.mjs gravou no MESMO
+  // diretório dos candles. Quando ligado, substitui a constante
+  // `fundingBpsPer8h` por taxa real, com sinal e por lado (SELL recebe quando
+  // a taxa é positiva). Símbolo sem arquivo cai na constante — e isso é
+  // avisado alto, porque uma carteira meio-real/meio-constante mediria uma
+  // mistura que nenhuma das duas hipóteses descreve.
+  // Piso de cobertura da série de funding. Não é 100% de propósito: pares com
+  // intervalo de funding != 8h, listagem no meio do período e o mês corrente
+  // ainda não consolidado produzem contagens legitimamente diferentes do
+  // esperado por 8h. 90% recusa buraco real sem reprovar essas variações.
+  const COBERTURA_MINIMA_FUNDING = 0.9;
+  let fundingSeries = null;
+  if (args['real-funding'] && !args['no-costs']) {
+    const dataDir = args['data-dir'] || path.join('scripts', '__fixtures__', 'backtest');
+    fundingSeries = {};
+    const faltando = [];
+    for (const symbol of symbols) {
+      const file = path.join(dataDir, `${symbol}_funding.json`);
+      if (!fs.existsSync(file)) { faltando.push(symbol); continue; }
+      const rows = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      if (!Array.isArray(rows) || rows.length === 0) { faltando.push(symbol); continue; }
+
+      // Codex review (PR #252, P1): "arquivo existe e não está vazio" não é
+      // cobertura. Um download parcial (404 diário engolido, mês não
+      // publicado) daria uma série com buraco, e operações dentro do buraco
+      // não casariam liquidação nenhuma. calcFundingCost já protege por
+      // operação (cai na constante, marcado `series_incomplete`), mas é
+      // melhor recusar o run inteiro aqui do que produzir um relatório
+      // rotulado "funding real" que na verdade é uma mistura.
+      const esperado = Math.floor((toMs - fromMs) / (8 * 60 * 60 * 1000));
+      const cobertura = esperado > 0 ? rows.length / esperado : 0;
+      if (cobertura < COBERTURA_MINIMA_FUNDING) {
+        console.error(
+          `[backtest] ERRO: funding de ${symbol} cobre só ${Math.round(cobertura * 100)}% `
+          + `das ${esperado} janelas de 8h do período (${rows.length} liquidações). `
+          + 'Rebaixe a série (rode scripts/fetch-backtest-funding.mjs de novo) antes de comparar — '
+          + 'um relatório "funding real" com lacuna subestima custo silenciosamente.',
+        );
+        process.exitCode = 1;
+        return;
+      }
+      fundingSeries[symbol] = rows;
+      console.log(`[backtest] funding real: ${symbol} — ${rows.length} liquidações (${Math.round(cobertura * 100)}% de cobertura)`);
+    }
+    if (faltando.length > 0) {
+      console.warn(`[backtest] AVISO: sem funding real para ${faltando.join(', ')} — esses símbolos usam a constante. Rode scripts/fetch-backtest-funding.mjs para o mesmo período/carteira antes de comparar.`);
+    }
+    if (Object.keys(fundingSeries).length === 0) {
+      console.warn('[backtest] AVISO: --real-funding pedido mas NENHUM símbolo tem série — rodando 100% na constante.');
+      fundingSeries = null;
+    }
+  }
+
   // Modelo de custo. Sem flag nenhuma => DEFAULT_COST_MODEL (taxa real).
-  // --no-costs => ZERO_COST, que reproduz os números pré-Fase-5.
+  // --no-costs => ZERO_COST, que reproduz os números pré-Fase-5. ZERO_COST
+  // vem por ÚLTIMO de propósito: zera inclusive a série de funding, senão um
+  // run --no-costs deixaria de reproduzir o baseline pré-Fase-5.
   const costModel = args['no-costs']
     ? ZERO_COST
     : {
@@ -138,6 +200,7 @@ async function main() {
           : {}),
         ...(args['slippage-bps'] !== undefined ? { slippageBpsPerSide: Number(args['slippage-bps']) } : {}),
         ...(args['funding-bps'] !== undefined ? { fundingBpsPer8h: Number(args['funding-bps']) } : {}),
+        ...(fundingSeries ? { fundingSeries } : {}),
       };
   const minTrades = args['min-trades'] ? Number(args['min-trades']) : undefined;
 
