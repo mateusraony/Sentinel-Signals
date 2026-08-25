@@ -14734,3 +14734,78 @@ credencial real do Firebase, mesma limitação que o item 121 já
 enfrentou). Lógica de leitura do flag em `scanner.js` não mudou —
 já testada em `scannerStateMachine.test.js`/`opExitRules.test.js` desde
 o item 114/115.
+
+## 129. "Confiança ao vivo" — card novo no Dashboard, decisão de produto (2026-08-24)
+
+### Contexto
+
+Depois do item 128, os três caminhos de progresso que eu tinha oferecido
+(decisão não-estatística nos flags dormentes, SMC-timeout de baixo valor,
+modo sombra) se esgotaram — nenhum flag do Bloco 1 tem base de paridade
+limpa restante, e o item 127 já tinha medido que o modo sombra prospectivo
+está a mais de 1,5 ano do piso de amostra. O caminho que sobrava pro Bloco
+0/1 — expandir a janela de calendário do SELL-only (item 95/88) — exige
+esperar até 2027-08-10 pra uma janela genuinamente nova.
+
+Usuário rejeitou essa espera ("Não tem como esperar uma janela tão
+grande"). Pedido explícito: o sistema deve ir **coletando informações e
+criando relatório sozinho** em vez de depender de rodar backtest manual
+numa janela nova; e o foco deve migrar pra **começar a usar o painel pra
+valer**, do mesmo jeito que o usuário já usa o Pine dele no TradingView
+(olha o indicador, decide manualmente) — mas só faz sentido confiar nisso
+se houver uma forma visível de acompanhar se o motor está melhorando e
+pode ser confiável, aproveitando toda a base de teste já construída.
+
+### Decisão
+
+**Não é mudança na política de trading.** `CLAUDE.md`/`trading-safety.md`
+seguem valendo — Sentinel continua painel de sinalização, TP/Stop virtuais,
+nenhuma ordem enviada à exchange. "Usar pra valer" significa o usuário
+seguir os sinais MANUALMENTE na conta real dele (como já faz com o Pine),
+não o painel executando ordem sozinho — isso já era possível hoje via
+Telegram, não precisava de mudança de código nenhuma.
+
+O que faltava era uma forma de **ver a confiança crescer ao vivo**, sem
+depender de rodar `backtest.yml` numa janela nova. `src/lib/tradeMetrics.js`
+já calcula exatamente isso (`summarizeOps`: `expectancyR`,
+`expectancyRCI95`, `conclusive`/`inconclusiveReason`, gate `minTrades=30`)
+mas só era usado em relatórios de BACKTEST — nunca aplicado às operações
+REAIS de produção no painel.
+
+### O que foi feito
+
+Novo componente `src/components/dashboard/LiveConfidenceCard.jsx`, no
+`Dashboard.jsx` logo depois de `VirtualAccountCard`:
+
+- Busca as mesmas `TradeOperation` que `VirtualAccountCard` já busca
+  (`list('-created_date', 500)`, mesmo `queryKey` — reusa o cache do
+  TanStack Query, zero fetch extra).
+- Roda `summarizeOps` três vezes: geral, só `side === 'BUY'`, só
+  `side === 'SELL'` — **nunca combinados num IC só**, porque o item 88 já
+  estabeleceu que BUY e SELL são hipóteses estatísticas separadas neste
+  projeto.
+- Mostra expectância em R, IC 95%, contagem vs. o piso de 30, e um selo
+  CONCLUSIVO/INCONCLUSIVO — mesma leitura que qualquer relatório de
+  backtest já usa, só que sobre a amostra AO VIVO, que cresce sozinha a
+  cada operação fechada pelo scan agendado.
+- Puramente aditivo: nenhuma lógica de trading/scanner tocada (regra de
+  `frontend-ui.md`) — só leitura e apresentação de dado já calculado por
+  função pura já testada.
+
+Isso não destrava o Bloco 1 sozinho — o critério do item 88 (IC excluir
+zero numa amostra nova) continua o mesmo. O que muda é COMO essa amostra
+nova é observada: em vez de depender de eu rodar um backtest manual numa
+janela de calendário específica, a amostra ao vivo (RF 4h→15m, a cascata
+que realmente gera operação — ver `.claude/rules/trading-engine.md`) vai
+crescer sozinha e o card mostra em tempo real quando (se) o IC deixar de
+cruzar zero.
+
+### Verificação
+
+`npm run lint && npm test (1104/1104) && npm run build` verdes. Sem
+verificação visual ao vivo no navegador (mesma limitação de sempre —
+sandbox sem credencial real do Firebase); componente é aditivo e reusa
+`summarizeOps`, já coberto por `tradeMetrics.test.js`. Sem suíte de
+componente pra `src/components/dashboard/*.jsx` neste projeto (nenhum
+componente de dashboard tem teste dedicado hoje — lacuna pré-existente,
+não introduzida aqui).
