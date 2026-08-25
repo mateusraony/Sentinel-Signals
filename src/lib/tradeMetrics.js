@@ -167,11 +167,27 @@ export function countFundingSettlementsByLeg(op) {
  * runner fraction after), so switching modes changes the RATE applied, never
  * the exposure model.
  *
- * @returns {{ cost: number, settlements: number, beforeTp1: number, afterTp1: number, source: 'series'|'constant' }}
+ * **Cobertura incompleta cai de volta na constante** (Codex review, PR #252,
+ * P1). Um buraco na série — download parcial, um 404 diário engolido pelo
+ * fetch, um mês ainda não publicado — faria a op não casar linha nenhuma e
+ * devolver funding ZERO, que é indistinguível de "não pagou" e **subestima
+ * o custo em silêncio**. É o pior modo de falha possível justamente aqui:
+ * este trabalho existe para corrigir a medição do custo, e um furo de dado
+ * apareceria como "custo menor", ou seja, como uma falsa melhora. Por isso,
+ * quando as liquidações casadas são MENOS que as fronteiras de 8h que a op
+ * comprovadamente atravessou, esta função devolve o valor da CONSTANTE
+ * (conservador — nunca subestima) marcado como `series_incomplete`, em vez
+ * do número furado. Mais liquidações que o esperado é legítimo (par com
+ * intervalo de funding menor que 8h) e segue como `series`.
+ *
+ * @returns {{ cost: number, settlements: number, beforeTp1: number, afterTp1: number,
+ *   source: 'series'|'constant'|'series_incomplete', expectedSettlements: number }}
  */
 export function calcFundingCost(op, costModel) {
   const m = resolveCostModel(costModel);
   const series = m.fundingSeries?.[op?.symbol];
+  const expectedLegs = countFundingSettlementsByLeg(op);
+  const expectedSettlements = expectedLegs.beforeTp1 + expectedLegs.afterTp1;
 
   if (Array.isArray(series) && series.length > 0) {
     const openedAt = getOpenedAt(op);
@@ -197,24 +213,46 @@ export function calcFundingCost(op, costModel) {
         else beforeTp1 += charge;
         settlements += 1;
       }
-      return { cost: beforeTp1 + afterTp1, settlements, beforeTp1, afterTp1, source: 'series' };
+      if (settlements >= expectedSettlements) {
+        return {
+          cost: beforeTp1 + afterTp1, settlements, beforeTp1, afterTp1,
+          source: 'series', expectedSettlements,
+        };
+      }
+      // Lacuna real: cai na constante abaixo, marcado para a telemetria.
+      const gapLegs = expectedLegs;
+      const gapRate = m.fundingBpsPer8h / BPS;
+      const gapBefore = gapLegs.beforeTp1 * op.entry_price * gapRate;
+      const gapAfter = gapLegs.afterTp1 * runner * op.entry_price * gapRate;
+      return {
+        cost: gapBefore + gapAfter,
+        settlements: expectedSettlements,
+        beforeTp1: gapBefore,
+        afterTp1: gapAfter,
+        source: 'series_incomplete',
+        expectedSettlements,
+        matchedSettlements: settlements,
+      };
     }
   }
 
   if (!(m.fundingBpsPer8h > 0)) {
-    return { cost: 0, settlements: 0, beforeTp1: 0, afterTp1: 0, source: 'constant' };
+    return {
+      cost: 0, settlements: 0, beforeTp1: 0, afterTp1: 0,
+      source: 'constant', expectedSettlements,
+    };
   }
-  const legs = countFundingSettlementsByLeg(op);
   const rate = m.fundingBpsPer8h / BPS;
   const { runner } = getWeights(op);
-  const beforeTp1 = legs.beforeTp1 * op.entry_price * rate;
-  const afterTp1 = legs.afterTp1 * runner * op.entry_price * rate;
+  const beforeTp1 = expectedLegs.beforeTp1 * op.entry_price * rate;
+  const afterTp1 = expectedLegs.afterTp1 * runner * op.entry_price * rate;
   return {
     cost: beforeTp1 + afterTp1,
-    settlements: legs.beforeTp1 + legs.afterTp1,
+    settlements: expectedSettlements,
     beforeTp1,
     afterTp1,
     source: 'constant',
+    expectedSettlements,
   };
 }
 

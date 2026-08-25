@@ -633,3 +633,48 @@ describe('funding real com sinal por lado (item 131)', () => {
     expect(calcFundingCost(makeOp(held), { fundingSeries: series }).source).toBe('series');
   });
 });
+
+// Codex review (PR #252, P1) — série com LACUNA não pode virar funding zero.
+// É o modo de falha mais perigoso do item 131: um furo de dado apareceria
+// como "custo menor", ou seja, como falsa melhora, exatamente no número que
+// este trabalho existe para corrigir.
+describe('funding real — cobertura incompleta (item 131, Codex P1)', () => {
+  const held = {
+    symbol: 'BTCUSDT', exit_price: 95,
+    candle_close_time: '2026-07-16T07:00:00.000Z', closed_at: '2026-07-17T01:00:00.000Z',
+  };
+
+  it('série faltando liquidações cai na CONSTANTE, marcada, em vez de cobrar zero', () => {
+    // A op atravessa 3 fronteiras (08, 16, 00) mas a série só tem a primeira.
+    const gappy = { BTCUSDT: [{ calcTime: Date.parse('2026-07-16T08:00:00.000Z'), rate: 0.0001 }] };
+    const op = makeOp(held);
+    const c = calcFundingCost(op, { fundingSeries: gappy });
+    expect(c.source).toBe('series_incomplete');
+    expect(c.matchedSettlements).toBe(1);
+    expect(c.expectedSettlements).toBe(3);
+    // Cobra o mesmo que a constante — nunca menos.
+    expect(c.cost).toBeCloseTo(calcFundingCost(op).cost, 9);
+    expect(c.cost).toBeGreaterThan(0);
+  });
+
+  it('sem a guarda, a lacuna teria cobrado menos que a constante (o bug)', () => {
+    const gappy = { BTCUSDT: [{ calcTime: Date.parse('2026-07-16T08:00:00.000Z'), rate: 0.0001 }] };
+    const soma1Liquidacao = 1 * 0.0001 * 100; // o que o laço casaria sozinho
+    const constante = calcFundingCost(makeOp(held)).cost;
+    expect(soma1Liquidacao).toBeLessThan(constante); // o bug seria subestimar
+    expect(calcFundingCost(makeOp(held), { fundingSeries: gappy }).cost).toBeCloseTo(constante, 9);
+  });
+
+  it('MAIS liquidações que o esperado é legítimo (par com intervalo < 8h), segue série', () => {
+    // 6 liquidações de 4h em 4h no mesmo intervalo — esperado por 8h é 3.
+    const denso = {
+      BTCUSDT: [4, 8, 12, 16, 20, 24].map((h) => ({
+        calcTime: Date.parse('2026-07-16T07:00:00.000Z') + h * 60 * 60 * 1000,
+        rate: 0.0001,
+      })).filter((r) => r.calcTime <= Date.parse('2026-07-17T01:00:00.000Z')),
+    };
+    const c = calcFundingCost(makeOp(held), { fundingSeries: denso });
+    expect(c.source).toBe('series');
+    expect(c.settlements).toBeGreaterThanOrEqual(c.expectedSettlements);
+  });
+});

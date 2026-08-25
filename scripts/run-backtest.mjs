@@ -141,6 +141,11 @@ async function main() {
   // a taxa é positiva). Símbolo sem arquivo cai na constante — e isso é
   // avisado alto, porque uma carteira meio-real/meio-constante mediria uma
   // mistura que nenhuma das duas hipóteses descreve.
+  // Piso de cobertura da série de funding. Não é 100% de propósito: pares com
+  // intervalo de funding != 8h, listagem no meio do período e o mês corrente
+  // ainda não consolidado produzem contagens legitimamente diferentes do
+  // esperado por 8h. 90% recusa buraco real sem reprovar essas variações.
+  const COBERTURA_MINIMA_FUNDING = 0.9;
   let fundingSeries = null;
   if (args['real-funding'] && !args['no-costs']) {
     const dataDir = args['data-dir'] || path.join('scripts', '__fixtures__', 'backtest');
@@ -151,8 +156,28 @@ async function main() {
       if (!fs.existsSync(file)) { faltando.push(symbol); continue; }
       const rows = JSON.parse(fs.readFileSync(file, 'utf-8'));
       if (!Array.isArray(rows) || rows.length === 0) { faltando.push(symbol); continue; }
+
+      // Codex review (PR #252, P1): "arquivo existe e não está vazio" não é
+      // cobertura. Um download parcial (404 diário engolido, mês não
+      // publicado) daria uma série com buraco, e operações dentro do buraco
+      // não casariam liquidação nenhuma. calcFundingCost já protege por
+      // operação (cai na constante, marcado `series_incomplete`), mas é
+      // melhor recusar o run inteiro aqui do que produzir um relatório
+      // rotulado "funding real" que na verdade é uma mistura.
+      const esperado = Math.floor((toMs - fromMs) / (8 * 60 * 60 * 1000));
+      const cobertura = esperado > 0 ? rows.length / esperado : 0;
+      if (cobertura < COBERTURA_MINIMA_FUNDING) {
+        console.error(
+          `[backtest] ERRO: funding de ${symbol} cobre só ${Math.round(cobertura * 100)}% `
+          + `das ${esperado} janelas de 8h do período (${rows.length} liquidações). `
+          + 'Rebaixe a série (rode scripts/fetch-backtest-funding.mjs de novo) antes de comparar — '
+          + 'um relatório "funding real" com lacuna subestima custo silenciosamente.',
+        );
+        process.exitCode = 1;
+        return;
+      }
       fundingSeries[symbol] = rows;
-      console.log(`[backtest] funding real: ${symbol} — ${rows.length} liquidações`);
+      console.log(`[backtest] funding real: ${symbol} — ${rows.length} liquidações (${Math.round(cobertura * 100)}% de cobertura)`);
     }
     if (faltando.length > 0) {
       console.warn(`[backtest] AVISO: sem funding real para ${faltando.join(', ')} — esses símbolos usam a constante. Rode scripts/fetch-backtest-funding.mjs para o mesmo período/carteira antes de comparar.`);

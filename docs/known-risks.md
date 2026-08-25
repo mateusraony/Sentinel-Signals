@@ -15048,3 +15048,45 @@ para `fetch-backtest-data.mjs`). O caminho e o schema seguem a convenção
 publicada da Binance e o parser foi escrito defensivamente contra divergência,
 mas a **primeira execução real no runner é o teste de verdade** — se o dataset
 não existir nesse formato, é lá que aparece.
+
+### Correções da review externa (Codex, PR #252) — 3 achados, todos reais
+
+**P1 — série incompleta virava funding ZERO, silenciosamente.** O achado mais
+importante da review, e um bug de verdade na 1ª implementação: se o arquivo
+de funding tivesse buraco (download parcial, 404 diário engolido pelo fetch,
+mês não publicado), uma operação dentro do buraco não casava linha nenhuma e
+recebia custo **zero** — indistinguível de "não pagou", **subestimando o
+custo**. É o pior modo de falha possível justamente aqui: um furo de dado
+apareceria como "custo menor", ou seja, como uma **falsa melhora**, no exato
+número que este item existe para corrigir. Corrigido com defesa em
+profundidade: (a) `calcFundingCost` compara liquidações casadas contra as
+fronteiras de 8h que a op comprovadamente atravessou
+(`countFundingSettlementsByLeg`, já existente) e, se casou MENOS, devolve o
+valor da **constante** (conservador, nunca subestima) marcado como
+`series_incomplete`; (b) `run-backtest.mjs` valida cobertura ≥90% da janela
+ANTES do replay e **recusa o run** com mensagem explícita. O piso não é 100%
+de propósito — par com intervalo de funding ≠8h, listagem no meio do período
+e mês corrente não consolidado produzem contagens legitimamente menores.
+Casar MAIS que o esperado é legítimo (intervalo <8h) e segue como `series`.
+
+**P2 — proporções de custo estouravam 100% quando funding virava receita.**
+A 1ª versão escondia só a fatia negativa; as outras continuavam divididas
+pelo total líquido reduzido e podiam reportar taxa 143%, slippage 29%,
+funding em branco — o que não é decomposição nenhuma. Corrigido: qualquer
+componente negativo suprime o **conjunto inteiro** de percentuais; os valores
+em R continuam exatos e visíveis.
+
+**P2 — telemetria contava fronteira de calendário, não liquidação aplicada.**
+`opsWithFunding` vinha de `countFundingSettlements` (fronteiras fixas de 8h)
+em vez das linhas que `calcFundingCost` realmente aplicou — com série parcial
+ou par de intervalo ≠8h, o relatório afirmaria pagamento onde o motor não
+cobrou nada. Corrigido para usar a contagem devolvida pelo cálculo. Somados
+dois campos novos: `opsWithIncompleteFunding` e `fundingModel`
+(`constant`/`series`/`mixed`), que tornam impossível ler um relatório como
+"funding real" quando ele é, de fato, mistura — inclusive no caso de um
+símbolo inteiro sem arquivo (que cai na constante).
+
+Verificação das correções: `npm run lint && npm test (1130, +6) && npm run
+build && npm run build:backtest` verdes. Os 6 testes novos reproduzem cada
+achado — inclusive um que demonstra explicitamente que, sem a guarda do P1, a
+lacuna cobraria MENOS que a constante.
