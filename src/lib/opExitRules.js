@@ -87,6 +87,70 @@ export function advancePreTp1StopProtection({ isBuy, currentStop, entry, closePr
   return isBuy ? Math.max(currentStop, entry) : Math.min(currentStop, entry);
 }
 
+// Pre-TP1 CONTINUOUS trailing (opt-in, docs/known-risks.md item 132) — the
+// mechanism advancePreTp1StopProtection's own comment above calls "a
+// different, not-yet-built mechanism".
+//
+// Why a second pre-TP1 mechanism instead of tuning the first: they are two
+// different points on the protection-vs-premature-cut curve, not two
+// calibrations of one thing.
+//   - Breakeven is a BINARY JUMP that SATURATES at entry: it protects a lot
+//     per firing, but cuts trades that would have recovered (measured, item
+//     55: 29 of 81 firings — 36% — would have reached TP1 anyway), and it
+//     stops helping entirely once price is past entry.
+//   - This RATCHETS with volatility and never saturates: the stop follows the
+//     favourable EXTREME at a fixed ATR distance, so it stays FURTHER from
+//     price than breakeven while the move is young (cutting less), and keeps
+//     climbing after breakeven (protecting more) when the move is real.
+//
+// Anchored on the favourable EXTREME (high for BUY / low for SELL) since
+// entry, NOT on close: a Chandelier-style trail measures giveback from the
+// peak, and using close would under-measure exactly the erosion this targets
+// (item 53: 61 ops, avg MFE +0.578R, avg giveback 1.709R, peak at 5.9 bars
+// and stop at 18.1 bars).
+//
+// `startAtrMult` keeps the trail dormant until the move has proven itself —
+// without it, a trail seeded at entry would immediately tighten the stop on
+// the very first bar, which is the opposite of the generous-threshold lesson
+// item 53 took from community research on premature-breakeven whipsaw.
+//
+// Monotonic like the other two (never regresses). Same look-ahead contract:
+// the caller MUST evaluate this candle's stop-hit against the STORED stop
+// before calling this — the advance only protects from the next candle on
+// (P0-d), and repeated passes over the same unclosed candle are excluded by
+// the caller's `*_advanced_candle_time` marker.
+export function advancePreTp1Trailing({
+  isBuy, currentStop, entry, favorableExtreme, atrValue, startAtrMult, trailAtrMult,
+}) {
+  if (!Number.isFinite(currentStop) || !Number.isFinite(entry)
+    || !Number.isFinite(favorableExtreme) || !Number.isFinite(atrValue) || atrValue <= 0
+    || !Number.isFinite(startAtrMult) || !Number.isFinite(trailAtrMult) || trailAtrMult <= 0) {
+    return currentStop;
+  }
+  const favorableMove = isBuy ? favorableExtreme - entry : entry - favorableExtreme;
+  if (favorableMove < atrValue * startAtrMult) return currentStop;
+  const trailStop = isBuy
+    ? favorableExtreme - atrValue * trailAtrMult
+    : favorableExtreme + atrValue * trailAtrMult;
+  return isBuy ? Math.max(currentStop, trailStop) : Math.min(currentStop, trailStop);
+}
+
+// Reconstructs the favourable extreme reached since entry from the MFE the
+// engine already tracks per operation (`mfe_r`, item 47.2), instead of adding
+// a second peak field that could drift out of sync with it. mfe_r is defined
+// against the INITIAL stop distance (calcRealizedR's denominator), so the
+// inverse is exact, not an approximation.
+//
+// Returns null when the op has no usable MFE yet (fresh op, legacy doc,
+// zero risk) — callers must treat that as "don't trail yet", never as zero.
+export function favorableExtremeFromMfe(op) {
+  const { entry_price: entry, initial_stop: initialStop, mfe_r: mfeR } = op ?? {};
+  if (!Number.isFinite(entry) || !Number.isFinite(initialStop) || !Number.isFinite(mfeR)) return null;
+  const risk = Math.abs(entry - initialStop);
+  if (risk === 0) return null;
+  return op.side === 'SELL' ? entry - mfeR * risk : entry + mfeR * risk;
+}
+
 // docs/known-risks.md item 37 (Bloco 4 Fase 1) — coupling risk between
 // simultaneously active legs of the SAME asset (hierarchical cascades):
 // when a sibling cascade opens its own operation on an asset that already

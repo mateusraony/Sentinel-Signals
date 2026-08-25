@@ -371,6 +371,38 @@ está cortando operações que teriam chegado ao TP1 de qualquer forma, trocando
 lucro por uma saída antecipada desnecessária. `stoppedAtBreakevenPreTp1` é o
 cenário que o mecanismo pretende produzir (perda cheia virando scratch).
 
+### Modo TRAILING pré-TP1 (`preTp1TrailEnabled`, item 132)
+
+O mesmo bloco pré-TP1 tem **dois mecanismos mutuamente exclusivos**, e
+`preTp1TrailEnabled` escolhe qual roda. Não é recalibrar o breakeven — são
+dois pontos diferentes da curva proteção × corte-prematuro:
+
+| | Breakeven (default) | Trailing (item 132) |
+|---|---|---|
+| Forma | salto binário, **satura** na entrada | **ratcheia** com a volatilidade, nunca satura |
+| Âncora | close do candle | **extremo favorável** desde a entrada |
+| Enquanto o movimento é jovem | já saltou para a entrada → **corta mais** | fica mais longe do preço → **corta menos** |
+| Depois da entrada | **para de ajudar** | continua subindo |
+| Medido | 36% dos disparos cortaram quem chegaria ao TP1 (item 55) | **ainda não medido** |
+
+**Requer `preTp1StopProtectionEnabled` ligado** — é ele que abre o bloco
+pré-TP1; o novo flag só decide o mecanismo dentro dele. O modo é congelado na
+criação (`pre_tp1_stop_mode`), então virar o flag nunca troca o mecanismo de
+uma posição já viva.
+
+```bash
+echo '{"preTp1StopProtectionEnabled": true, "preTp1TrailEnabled": false}' > /tmp/be.json
+echo '{"preTp1StopProtectionEnabled": true, "preTp1TrailEnabled": true, "preTp1TrailStartAtrMult": 1.0, "preTp1TrailAtrMult": 2.5}' > /tmp/trail.json
+```
+
+**Calibrar contra dado, não às cegas.** `preTp1TrailStartAtrMult`/
+`preTp1TrailAtrMult` formam um espaço 2D, e varrer esse espaço em ~100
+operações é exatamente o problema de múltiplas comparações que o item 58
+documenta. O caminho registrado no item 132 é olhar primeiro a **distribuição
+de MFE das operações pré-TP1** (`mfe_r`, já rastreado por operação desde o
+item 47.2, e já calculado em `backtestAnalysis.js` — só nunca foi publicado)
+e derivar os dois valores dela, declarando-os **antes** de rodar.
+
 **`report.costs`** (Fase 5, `docs/known-risks.md` item 44) —
 `{model, avgCostR, totalCostPct, grossExpectancyR, netExpectancyR, conclusive,
 inconclusiveReason, expectancyRCI95, countedTrades, minTrades}`. **Taxa,

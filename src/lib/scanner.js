@@ -31,7 +31,7 @@ import { detectOrderBlock } from './indicators/orderBlock';
 import { detectEngulfing, detectPinBar, detectMarubozu } from './indicators/candlePatterns';
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, advanceToBreakevenOnSiblingOpen, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, advancePreTp1Trailing, favorableExtremeFromMfe, advanceToBreakevenOnSiblingOpen, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
 import { groupActiveOpsByAsset, isTerminalStatus } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { logInfo, logWarn, logError } from './logger';
@@ -489,6 +489,14 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
     // persistScanResults, not here.
     pre_tp1_stop_protection_enabled: pineConfig.preTp1StopProtectionEnabled === true,
     pre_tp1_stop_advance_trigger_atr_mult: pineConfig.preTp1StopProtectionAtrMult ?? 1.0,
+    // docs/known-risks.md item 132 — QUAL mecanismo pré-TP1 governa esta
+    // operação, congelado aqui pelo mesmo motivo dos campos acima. Ausente/
+    // 'breakeven' = comportamento de sempre; 'trailing' = trail contínuo
+    // ancorado no extremo favorável. Os dois multiplicadores só têm
+    // significado no modo 'trailing'.
+    pre_tp1_stop_mode: pineConfig.preTp1TrailEnabled === true ? 'trailing' : 'breakeven',
+    pre_tp1_trail_start_atr_mult: pineConfig.preTp1TrailStartAtrMult ?? 1.0,
+    pre_tp1_trail_atr_mult: pineConfig.preTp1TrailAtrMult ?? 2.5,
   };
 }
 
@@ -1047,6 +1055,14 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     // motivo do buildTradeOpData (RF) acima.
     pre_tp1_stop_protection_enabled: pineConfig.preTp1StopProtectionEnabled === true,
     pre_tp1_stop_advance_trigger_atr_mult: pineConfig.preTp1StopProtectionAtrMult ?? 1.0,
+    // docs/known-risks.md item 132 — QUAL mecanismo pré-TP1 governa esta
+    // operação, congelado aqui pelo mesmo motivo dos campos acima. Ausente/
+    // 'breakeven' = comportamento de sempre; 'trailing' = trail contínuo
+    // ancorado no extremo favorável. Os dois multiplicadores só têm
+    // significado no modo 'trailing'.
+    pre_tp1_stop_mode: pineConfig.preTp1TrailEnabled === true ? 'trailing' : 'breakeven',
+    pre_tp1_trail_start_atr_mult: pineConfig.preTp1TrailStartAtrMult ?? 1.0,
+    pre_tp1_trail_atr_mult: pineConfig.preTp1TrailAtrMult ?? 2.5,
   };
 }
 
@@ -3604,15 +3620,50 @@ export async function persistScanResults(scanResult) {
       // post-TP1 trailing below.
       if (newStatus === op.status && op.pre_tp1_stop_protection_enabled === true
           && candleUsable && tfData.atrValue) {
-        newCurrentStop = advancePreTp1StopProtection({
-          isBuy,
-          currentStop: newCurrentStop,
-          entry: op.entry_price,
-          closePrice,
-          atrValue: tfData.atrValue,
-          triggerAtrMult: op.pre_tp1_stop_advance_trigger_atr_mult ?? 1.0,
-        });
-        if (newCurrentStop !== op.current_stop && !op.pre_tp1_stop_advanced_at) {
+        // docs/known-risks.md item 132 — dois modos MUTUAMENTE EXCLUSIVOS, e
+        // qual deles vale é lido da OPERAÇÃO (`pre_tp1_stop_mode`, congelado
+        // na criação), nunca do pineConfig ao vivo: mesmo contrato de
+        // closesFullyAtTp1/runnerEnabled. 'breakeven' (default, e o que toda
+        // op legada sem o campo usa) salta pra entrada e satura;
+        // 'trailing' acompanha o extremo favorável a uma distância fixa de
+        // ATR e nunca satura.
+        const trailingMode = op.pre_tp1_stop_mode === 'trailing';
+        if (trailingMode) {
+          // Ancorado no extremo favorável reconstruído do mfe_r que o próprio
+          // loop acabou de atualizar (bloco MFE/MAE acima), em vez de um 2º
+          // campo de pico que poderia dessincronizar. null = ainda sem MFE
+          // utilizável => não trilha (nunca trata como zero).
+          const favorableExtreme = favorableExtremeFromMfe({
+            ...op,
+            mfe_r: updatePayload.mfe_r ?? op.mfe_r,
+          });
+          if (favorableExtreme !== null) {
+            newCurrentStop = advancePreTp1Trailing({
+              isBuy,
+              currentStop: newCurrentStop,
+              entry: op.entry_price,
+              favorableExtreme,
+              atrValue: tfData.atrValue,
+              startAtrMult: op.pre_tp1_trail_start_atr_mult ?? 1.0,
+              trailAtrMult: op.pre_tp1_trail_atr_mult ?? 2.5,
+            });
+          }
+        } else {
+          newCurrentStop = advancePreTp1StopProtection({
+            isBuy,
+            currentStop: newCurrentStop,
+            entry: op.entry_price,
+            closePrice,
+            atrValue: tfData.atrValue,
+            triggerAtrMult: op.pre_tp1_stop_advance_trigger_atr_mult ?? 1.0,
+          });
+        }
+        // O breakeven avança UMA vez só (satura na entrada, então um 2º
+        // avanço é impossível por construção); o trailing avança a cada
+        // candle novo em que o extremo melhora — por isso o one-shot
+        // `!op.pre_tp1_stop_advanced_at` só vale no modo breakeven.
+        if (newCurrentStop !== op.current_stop
+            && (trailingMode || !op.pre_tp1_stop_advanced_at)) {
           updatePayload.pre_tp1_stop_advanced_at = nowIso;
           // See the stopAdvancedThisCandle guard above (Codex PR #106, P1) —
           // marks THIS candle as already-settled so a repeat pass over it

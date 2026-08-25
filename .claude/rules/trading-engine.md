@@ -311,6 +311,23 @@ nunca deve receber nova transição.**
   a `advanceTrailingStop` e ao MFE/MAE, ausente de
   `priceCheckActiveOpsInner`. **Não ativar sem comparar relatórios de
   backtest com/sem primeiro** — ver `docs/known-risks.md` itens 53/54.
+- **Trailing pré-TP1 contínuo** (`opExitRules.js:advancePreTp1Trailing` +
+  `favorableExtremeFromMfe`) — item 132, **`pineConfig.preTp1TrailEnabled`
+  desligado por padrão, backtest-only**. Segundo modo do MESMO bloco
+  pré-TP1, mutuamente exclusivo com o breakeven acima; qual roda é lido da
+  OPERAÇÃO (`pre_tp1_stop_mode`, congelado na criação), nunca do
+  `pineConfig` ao vivo. Não é recalibrar o breakeven: aquele é um salto
+  binário que SATURA na entrada (protege muito por disparo, mas cortou 36%
+  das que chegariam ao TP1 — item 55); este RATCHEIA com a volatilidade,
+  ancorado no EXTREMO favorável desde a entrada, ficando mais longe do
+  preço enquanto o movimento é jovem e continuando a subir depois. O
+  extremo é **reconstruído de `mfe_r`** (item 47.2) em vez de um campo de
+  pico novo — a inversa é exata porque `mfe_r` usa a distância do stop
+  inicial como denominador. **O one-shot `pre_tp1_stop_advanced_at` só
+  vale no modo breakeven** (que satura); o trailing precisa avançar a cada
+  candle novo. **Não ativar sem medir**, e calibrar `start`/`trail` contra
+  o histograma real de MFE (nunca publicado até hoje), não às cegas — ver
+  `docs/known-risks.md` item 132.
 - **Retry na busca de candle ao vivo** (`src/lib/httpRetry.js`,
   `fetchWithRetry`) — item 57. Causa raiz confirmada do volume baixo de
   operações ao vivo: `src/lib/marketDataProvider.js` (browser) e

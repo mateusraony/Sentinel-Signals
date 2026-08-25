@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, advanceToBreakevenOnSiblingOpen, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules.js';
+import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, advancePreTp1Trailing, favorableExtremeFromMfe, advanceToBreakevenOnSiblingOpen, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules.js';
 import { getWeights } from './tradeMetrics.js';
 
 const T0 = '2026-07-15T04:00:00.000Z'; // candle open, at/before the entry
@@ -383,5 +383,92 @@ describe('closesFullyAtTp1 — o TP1 encerra a posição? (known-risks item 46)'
     for (const ruim of [NaN, Infinity, 'muito', {}, []]) {
       expect(closesFullyAtTp1({ partial_percent: ruim })).toBe(false);
     }
+  });
+});
+
+// docs/known-risks.md item 132 — trailing pré-TP1 contínuo. Base fixa:
+// entrada 100, ATR 2, start 1.0×ATR, trail 2.5×ATR. Todo valor esperado
+// abaixo sai dessas contas à mão.
+describe('advancePreTp1Trailing (opt-in, item 132)', () => {
+  const base = { isBuy: true, entry: 100, atrValue: 2, startAtrMult: 1.0, trailAtrMult: 2.5 };
+
+  it('fica dormente até o movimento favorável atingir startAtrMult × ATR', () => {
+    // pico em 101.9 => movimento 1.9 < 2.0 (1.0×ATR) => não arma
+    expect(advancePreTp1Trailing({ ...base, currentStop: 94, favorableExtreme: 101.9 })).toBe(94);
+  });
+
+  it('arma exatamente no limiar e trilha a partir do EXTREMO, não do close', () => {
+    // pico 102 => movimento 2.0 == limiar; stop = 102 - 2*2.5 = 97
+    expect(advancePreTp1Trailing({ ...base, currentStop: 94, favorableExtreme: 102 })).toBe(97);
+  });
+
+  it('é monotônico: nunca regride um stop já melhor', () => {
+    // trail daria 97, mas o stop já está em 98,5
+    expect(advancePreTp1Trailing({ ...base, currentStop: 98.5, favorableExtreme: 102 })).toBe(98.5);
+  });
+
+  it('continua subindo além do breakeven quando o movimento é real (o que o breakeven NÃO faz)', () => {
+    // pico 110 => stop = 110 - 5 = 105, acima da entrada (100)
+    const stop = advancePreTp1Trailing({ ...base, currentStop: 94, favorableExtreme: 110 });
+    expect(stop).toBe(105);
+    expect(stop).toBeGreaterThan(base.entry);
+    // o mecanismo de breakeven satura em 100 no mesmo cenário
+    expect(advancePreTp1StopProtection({
+      isBuy: true, currentStop: 94, entry: 100, closePrice: 110, atrValue: 2, triggerAtrMult: 1.0,
+    })).toBe(100);
+  });
+
+  it('é MENOS agressivo que o breakeven enquanto o movimento é jovem (corta menos)', () => {
+    // pico 103: trail = 103 - 5 = 98 (ainda negativo); breakeven saltaria pra 100
+    const trail = advancePreTp1Trailing({ ...base, currentStop: 94, favorableExtreme: 103 });
+    const breakeven = advancePreTp1StopProtection({
+      isBuy: true, currentStop: 94, entry: 100, closePrice: 103, atrValue: 2, triggerAtrMult: 1.0,
+    });
+    expect(trail).toBe(98);
+    expect(trail).toBeLessThan(breakeven); // mais longe do preço => menos corte prematuro
+  });
+
+  it('SELL espelha: trilha acima do menor low', () => {
+    // pico 98 (movimento 2.0 == limiar); stop = 98 + 5 = 103
+    expect(advancePreTp1Trailing({
+      ...base, isBuy: false, currentStop: 106, favorableExtreme: 98,
+    })).toBe(103);
+  });
+
+  it('entrada inválida devolve o stop atual sem lançar', () => {
+    for (const bad of [
+      { favorableExtreme: NaN }, { atrValue: 0 }, { atrValue: NaN },
+      { trailAtrMult: 0 }, { startAtrMult: NaN }, { entry: undefined },
+    ]) {
+      expect(advancePreTp1Trailing({ ...base, currentStop: 94, favorableExtreme: 110, ...bad })).toBe(94);
+    }
+  });
+});
+
+describe('favorableExtremeFromMfe (item 132)', () => {
+  it('BUY: reconstrói o pico a partir do mfe_r que o motor já rastreia', () => {
+    // risco = |100 - 95| = 5; mfe 0.578R => pico = 100 + 2.89
+    expect(favorableExtremeFromMfe({
+      side: 'BUY', entry_price: 100, initial_stop: 95, mfe_r: 0.578,
+    })).toBeCloseTo(102.89, 9);
+  });
+
+  it('SELL: espelha o sinal', () => {
+    expect(favorableExtremeFromMfe({
+      side: 'SELL', entry_price: 100, initial_stop: 105, mfe_r: 0.578,
+    })).toBeCloseTo(97.11, 9);
+  });
+
+  it('é o inverso exato do cálculo de MFE do scanner (ida e volta)', () => {
+    const op = { side: 'BUY', entry_price: 100, initial_stop: 95, mfe_r: 1.234 };
+    const extreme = favorableExtremeFromMfe(op);
+    const risk = Math.abs(op.entry_price - op.initial_stop);
+    expect((extreme - op.entry_price) / risk).toBeCloseTo(op.mfe_r, 12);
+  });
+
+  it('devolve null (nunca zero) quando não há MFE utilizável', () => {
+    expect(favorableExtremeFromMfe({ side: 'BUY', entry_price: 100, initial_stop: 95 })).toBeNull();
+    expect(favorableExtremeFromMfe({ side: 'BUY', entry_price: 100, initial_stop: 100, mfe_r: 1 })).toBeNull();
+    expect(favorableExtremeFromMfe(null)).toBeNull();
   });
 });

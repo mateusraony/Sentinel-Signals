@@ -1003,6 +1003,123 @@ describe('persistScanResults — pre-TP1 stop protection (opt-in, docs/known-ris
   });
 });
 
+// docs/known-risks.md item 132 — trailing pré-TP1 CONTÍNUO, o segundo modo
+// do mesmo bloco. Mesma op base (BUY, entrada 100, initial_stop 98 => risco
+// 2, tp1 103) e mesmo ATR 2. Com start 1.0x e trail 2.5x: o trail arma
+// quando o extremo favorável chega a 102, e o stop vira extremo - 5.
+describe('persistScanResults — trailing pré-TP1 (opt-in, item 132)', () => {
+  const trailingOp = (extra = {}) => makeOp({
+    pre_tp1_stop_protection_enabled: true,
+    pre_tp1_stop_mode: 'trailing',
+    pre_tp1_trail_start_atr_mult: 1.0,
+    pre_tp1_trail_atr_mult: 2.5,
+    ...extra,
+  });
+
+  it('modo ausente = breakeven (toda operação legada segue com o comportamento de sempre)', async () => {
+    backend._seed('TradeOperation', makeOp({
+      pre_tp1_stop_protection_enabled: true,
+      pre_tp1_stop_advance_trigger_atr_mult: 1.0,
+    }));
+    const favorable = makeTfData({ lastCandleHigh: 102.5, lastCandleLow: 99, lastClose: 102.5 });
+    await persistScanResults(makeScanResult({ results: { '4h': favorable } }));
+    expect(backend._get('TradeOperation', 'op1').current_stop).toBe(100); // breakeven, não trail
+  });
+
+  it('fica dormente enquanto o movimento não atinge o gatilho', async () => {
+    backend._seed('TradeOperation', trailingOp());
+    // extremo 101.5 => movimento 1.5 < 2.0 (1.0xATR)
+    const morno = makeTfData({ lastCandleHigh: 101.5, lastCandleLow: 99.5, lastClose: 101 });
+    await persistScanResults(makeScanResult({ results: { '4h': morno } }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.current_stop).toBe(98); // intocado
+    expect(stored.pre_tp1_stop_advanced_at).toBeUndefined();
+  });
+
+  it('arma no extremo (não no close) e fica MAIS LONGE do preço que o breakeven', async () => {
+    backend._seed('TradeOperation', trailingOp());
+    // extremo 102.5 => trail = 102.5 - 5 = 97.5, que é PIOR que o stop
+    // armazenado (98) => monotonicidade mantém 98. É o ponto do mecanismo:
+    // com o movimento ainda jovem ele não aperta nada, enquanto o breakeven
+    // já teria saltado para 100 (ver o teste equivalente no describe acima).
+    const favorable = makeTfData({ lastCandleHigh: 102.5, lastCandleLow: 99, lastClose: 102.5 });
+    await persistScanResults(makeScanResult({ results: { '4h': favorable } }));
+    expect(backend._get('TradeOperation', 'op1').current_stop).toBe(98);
+  });
+
+  it('continua subindo ALÉM do breakeven quando o movimento se prova (o que o breakeven não faz)', async () => {
+    backend._seed('TradeOperation', trailingOp({ tp1: 130 })); // TP1 longe: isola o trail
+    // extremo 110 => trail = 110 - 5 = 105, acima da entrada (100)
+    const forte = makeTfData({ lastCandleHigh: 110, lastCandleLow: 99, lastClose: 109 });
+    await persistScanResults(makeScanResult({ results: { '4h': forte } }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.current_stop).toBe(105);
+    expect(stored.current_stop).toBeGreaterThan(100); // breakeven saturaria em 100
+    expect(stored.pre_tp1_stop_advanced_at).toBeTruthy();
+  });
+
+  it('avança VÁRIAS vezes conforme o extremo melhora (o breakeven é one-shot)', async () => {
+    backend._seed('TradeOperation', trailingOp({ tp1: 130 }));
+    await persistScanResults(makeScanResult({ results: { '4h': makeTfData({
+      lastCandleHigh: 110, lastCandleLow: 99, lastClose: 109,
+    }) } }));
+    expect(backend._get('TradeOperation', 'op1').current_stop).toBe(105);
+
+    // Candle NOVO com extremo maior => trail sobe de novo (115 - 5 = 110).
+    await persistScanResults(makeScanResult({ results: { '4h': makeTfData({
+      lastCandleTime: '2026-07-16T16:00:00.000Z', lastCandleOpenTime: '2026-07-16T12:00:00.000Z',
+      lastCandleHigh: 115, lastCandleLow: 108, lastClose: 114,
+    }) } }));
+    expect(backend._get('TradeOperation', 'op1').current_stop).toBe(110);
+  });
+
+  it('P0-d: o avanço vem deste candle mas só protege do PRÓXIMO (sem look-ahead)', async () => {
+    backend._seed('TradeOperation', trailingOp({ tp1: 130 }));
+    // Mesmo candle: extremo 110 arma o trail em 105, e o low 104 ficaria
+    // ABAIXO desse 105 — mas o stop-hit tem que ser avaliado contra o stop
+    // ARMAZENADO (98), que o low 104 nunca cruza.
+    const sameCandle = makeTfData({ lastCandleHigh: 110, lastCandleLow: 104, lastClose: 109 });
+    await persistScanResults(makeScanResult({ results: { '4h': sameCandle } }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED'); // não parou
+    expect(stored.current_stop).toBe(105);
+  });
+
+  it('passada repetida sobre o MESMO candle não re-testa contra o stop recém-avançado', async () => {
+    backend._seed('TradeOperation', trailingOp({ tp1: 130 }));
+    const sameCandle = makeTfData({ lastCandleHigh: 110, lastCandleLow: 104, lastClose: 109 });
+
+    await persistScanResults(makeScanResult({ results: { '4h': sameCandle } }));
+    expect(backend._get('TradeOperation', 'op1').current_stop).toBe(105);
+
+    // Cron roda de novo 5 min depois, MESMO candle ainda é o último fechado.
+    await persistScanResults(makeScanResult({ results: { '4h': sameCandle } }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED'); // o bug que este teste guarda
+    expect(stored.current_stop).toBe(105);
+  });
+
+  it('uma reversão posterior encerra no stop trilhado, não na perda cheia', async () => {
+    backend._seed('TradeOperation', trailingOp({ tp1: 130 }));
+    await persistScanResults(makeScanResult({ results: { '4h': makeTfData({
+      lastCandleHigh: 110, lastCandleLow: 99, lastClose: 109,
+    }) } }));
+    expect(backend._get('TradeOperation', 'op1').current_stop).toBe(105);
+
+    // Candle novo devolve tudo: low 96 cruzaria o stop original (98) também,
+    // mas agora sai em 105 — lucro, em vez de -1R. É exatamente o cenário das
+    // 61 operações do item 53 (MFE +0,578R devolvido até o stop cheio).
+    await persistScanResults(makeScanResult({ results: { '4h': makeTfData({
+      lastCandleTime: '2026-07-16T16:00:00.000Z', lastCandleOpenTime: '2026-07-16T12:00:00.000Z',
+      lastCandleHigh: 108, lastCandleLow: 96, lastClose: 97,
+    }) } }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('STOP_HIT');
+    expect(stored.exit_price).toBe(105);
+  });
+});
+
+
 // known-risks item 47.2 — MFE/MAE tracked incrementally from THIS candle's
 // high/low, gated by the same candleUsable guard as stop/TP (P0-c/P0-g).
 // Default makeOp: BUY, entry 100, initial_stop 98 -> risk 2. Default
