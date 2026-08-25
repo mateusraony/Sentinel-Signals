@@ -880,20 +880,51 @@ describe('buildReport', () => {
     };
 
     expect(buildReport([], { fromMs: 0, toMs: 1000 }).preTp1StopProtection).toEqual({
-      enabled: false, total: 0, advanced: 0, reachedTp1AfterAdvance: 0, stoppedAtBreakevenPreTp1: 0, otherExitAfterAdvance: 0,
+      enabled: false, total: 0, advanced: 0, reachedTp1AfterAdvance: 0, stoppedAtBreakevenPreTp1: 0,
+      stoppedAtTrailedStopPreTp1: 0, otherExitAfterAdvance: 0, mode: null,
     });
     expect(buildReport([flagOff], { fromMs: 0, toMs: 1000 }).preTp1StopProtection).toEqual({
-      enabled: false, total: 0, advanced: 0, reachedTp1AfterAdvance: 0, stoppedAtBreakevenPreTp1: 0, otherExitAfterAdvance: 0,
+      enabled: false, total: 0, advanced: 0, reachedTp1AfterAdvance: 0, stoppedAtBreakevenPreTp1: 0,
+      stoppedAtTrailedStopPreTp1: 0, otherExitAfterAdvance: 0, mode: null,
     });
     expect(buildReport([enabledNeverFired], { fromMs: 0, toMs: 1000 }).preTp1StopProtection).toEqual({
-      enabled: true, total: 1, advanced: 0, reachedTp1AfterAdvance: 0, stoppedAtBreakevenPreTp1: 0, otherExitAfterAdvance: 0,
+      enabled: true, total: 1, advanced: 0, reachedTp1AfterAdvance: 0, stoppedAtBreakevenPreTp1: 0,
+      stoppedAtTrailedStopPreTp1: 0, otherExitAfterAdvance: 0, mode: 'breakeven',
     });
     expect(buildReport(
       [advancedThenTp1, advancedThenScratched, advancedThenTimeStop],
       { fromMs: 0, toMs: 1000 },
     ).preTp1StopProtection).toEqual({
-      enabled: true, total: 3, advanced: 3, reachedTp1AfterAdvance: 1, stoppedAtBreakevenPreTp1: 1, otherExitAfterAdvance: 1,
+      enabled: true, total: 3, advanced: 3, reachedTp1AfterAdvance: 1, stoppedAtBreakevenPreTp1: 1,
+      stoppedAtTrailedStopPreTp1: 0, otherExitAfterAdvance: 1, mode: 'breakeven',
     });
+  });
+
+  // Codex review (PR #253, P2) — no modo 'trailing' (item 132) o stop avança
+  // para preços ARBITRÁRIOS, não para breakeven. Contar essas saídas como
+  // "parou no breakeven" tornaria falso justamente o diagnóstico que existe
+  // para medir o mecanismo novo, e impediria distinguir os dois.
+  it('separa saída no stop TRILHADO da saída em breakeven (item 132)', () => {
+    const trailed = {
+      status: 'STOP_HIT', pre_tp1_stop_protection_enabled: true, pre_tp1_stop_mode: 'trailing',
+      pre_tp1_stop_advanced_at: '2026-07-16T12:00:00.000Z', tp1_hit: false,
+    };
+    const breakeven = {
+      status: 'STOP_HIT', pre_tp1_stop_protection_enabled: true, pre_tp1_stop_mode: 'breakeven',
+      pre_tp1_stop_advanced_at: '2026-07-16T12:00:00.000Z', tp1_hit: false,
+    };
+
+    const soTrailing = buildReport([trailed], { fromMs: 0, toMs: 1000 }).preTp1StopProtection;
+    expect(soTrailing.mode).toBe('trailing');
+    expect(soTrailing.stoppedAtTrailedStopPreTp1).toBe(1);
+    expect(soTrailing.stoppedAtBreakevenPreTp1).toBe(0); // não mente mais
+
+    // Flag virado no meio: o modo é congelado POR operação, então o run vira
+    // uma mistura e os dois contadores descrevem populações diferentes.
+    const misto = buildReport([trailed, breakeven], { fromMs: 0, toMs: 1000 }).preTp1StopProtection;
+    expect(misto.mode).toBe('mixed');
+    expect(misto.stoppedAtTrailedStopPreTp1).toBe(1);
+    expect(misto.stoppedAtBreakevenPreTp1).toBe(1);
   });
 
   // Fase 2 rodada 1 (docs/known-risks.md item 40) — retest.enabled is

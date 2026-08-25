@@ -15182,9 +15182,26 @@ de calibrar qualquer parâmetro** — ou seja, o item 131 (funding real) precisa
 estar medido e fechado antes desta calibração, senão a busca roda sobre um
 custo que ainda vai mudar.
 
+### Correção da review externa (Codex, PR #253) — diagnóstico mentiria sobre o modo
+
+Achado P2, real e do mesmo tipo do P2 do item 131: `report.
+preTp1StopProtection.stoppedAtBreakevenPreTp1` contava TODA saída
+`STOP_HIT` pós-avanço como "parou no breakeven", e `analyze-backtest.mjs`
+imprimia "avançou p/ breakeven". No modo trailing o stop avança para preços
+**arbitrários** acima/abaixo da entrada — o rótulo seria factualmente falso
+**justamente no relatório que existe para medir este mecanismo**, e
+impediria distinguir saída trilhada de saída em breakeven. Corrigido:
+`stoppedAtBreakevenPreTp1` passou a contar SÓ o modo breakeven (o nome volta
+a ser literalmente verdadeiro), o modo trailing ganhou
+`stoppedAtTrailedStopPreTp1`, e um campo `mode`
+(`breakeven`/`trailing`/`mixed`) reporta qual mecanismo governou o run —
+`mixed` avisa que o flag virou no meio e que os dois contadores descrevem
+populações diferentes, já que o modo é congelado por operação. Os rótulos do
+`analyze-backtest.mjs` acompanham o modo.
+
 ### Verificação
 
-`npm run lint && npm test (1158, +28) && npm run build` + os **4 alvos esbuild
+`npm run lint && npm test (1159, +29) && npm run build` + os **4 alvos esbuild
 que empacotam `scanner.js`** (`build:scan`, `build:scan-shadow`,
 `build:backtest`) compilando. Testes: 11 da função pura (dormência até o
 gatilho, âncora no extremo e não no close, monotonicidade, subir além do

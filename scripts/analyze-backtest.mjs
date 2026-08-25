@@ -255,12 +255,27 @@ function renderGateSection(title, section) {
 // docs/known-risks.md items 53/54 — opt-in pineConfig.preTp1StopProtectionEnabled.
 // Shape is per-operation (like report.runner), not a Map-of-outcomes gate
 // section, so it doesn't fit renderGateSection above.
+// Codex review (PR #253, P2): o rótulo precisa dizer o que de fato aconteceu.
+// No modo 'trailing' (item 132) o stop avança para preços arbitrários, não
+// para breakeven — dizer "avançou p/ breakeven" ali seria falso.
 function renderPreTp1StopProtection(section) {
-  const out = ['PROTEÇÃO DE STOP PRÉ-TP1 (opt-in, preTp1StopProtectionEnabled)'];
-  out.push(`operações com o flag ligado: ${section.total} · gate disparou (avançou p/ breakeven): ${section.advanced}`);
+  const modoLabel = section.mode === 'trailing' ? 'modo TRAILING contínuo (item 132)'
+    : section.mode === 'mixed' ? 'modo MISTO — flag virou no meio, contadores descrevem populações diferentes'
+      : 'modo breakeven (itens 53/54)';
+  const avancoLabel = section.mode === 'trailing' ? 'avançou o stop trilhado'
+    : section.mode === 'mixed' ? 'avançou o stop' : 'avançou p/ breakeven';
+  const out = [`PROTEÇÃO DE STOP PRÉ-TP1 (opt-in, preTp1StopProtectionEnabled) — ${modoLabel}`];
+  out.push(`operações com o flag ligado: ${section.total} · gate disparou (${avancoLabel}): ${section.advanced}`);
   if (section.advanced > 0) {
+    const paradas = [];
+    if (section.stoppedAtBreakevenPreTp1 > 0 || section.mode !== 'trailing') {
+      paradas.push(`pararam no breakeven: ${section.stoppedAtBreakevenPreTp1}`);
+    }
+    if (section.stoppedAtTrailedStopPreTp1 > 0 || section.mode === 'trailing' || section.mode === 'mixed') {
+      paradas.push(`pararam no stop trilhado: ${section.stoppedAtTrailedStopPreTp1 ?? 0}`);
+    }
     out.push(`dos que dispararam — chegaram ao TP1 mesmo assim: ${section.reachedTp1AfterAdvance} · `
-      + `pararam no breakeven (pré-TP1): ${section.stoppedAtBreakevenPreTp1} · outra saída: ${section.otherExitAfterAdvance}`);
+      + `${paradas.join(' · ')} · outra saída: ${section.otherExitAfterAdvance}`);
   }
   return out;
 }
