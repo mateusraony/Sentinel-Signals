@@ -14809,3 +14809,95 @@ sandbox sem credencial real do Firebase); componente é aditivo e reusa
 componente pra `src/components/dashboard/*.jsx` neste projeto (nenhum
 componente de dashboard tem teste dedicado hoje — lacuna pré-existente,
 não introduzida aqui).
+
+## 130. Auditoria independente do motor/cérebro (2026-08-25) — zero `TradeOperation` em 33 dias explicado, sem bug novo no motor/indicadores; um bug real de limpeza órfã corrigido
+
+### Contexto
+
+Pedido do usuário: varredura completa e independente (sem ler este arquivo
+nem `docs/roadmap.md` antes de formar hipótese) do motor e dos indicadores,
+cruzada com os dados REAIS de produção (não só o histórico documentado),
+pra determinar por que o sistema parecia não estar "funcionando" com os 10
+ativos já cadastrados. Duas releituras completas de código rodaram em
+paralelo (agentes sem acesso a este arquivo) além da minha própria, e os
+dados reais vieram do backup diário do Firestore (`sentinel-signals-backups`,
+repo privado, snapshot de 2026-08-24T04:11Z) e dos logs reais de
+11.869 execuções do `scan.yml`.
+
+### Fato — o que os dados reais mostram
+
+Do backup real: 10 `MonitoredAsset`, 2.835 `SignalEvent`, mas só **3**
+`TradeOperation` já existiram na história inteira do projeto, todas
+fechadas, nenhuma criada desde 2026-07-23. O scan roda com sucesso a cada
+~5min (`scanAllAssets: 10 ativo(s), 0 falha(s)` nos logs reais do runner,
+todos os 10 `MonitoredAsset.scan_status === 'success'`) — a infraestrutura
+não é a causa.
+
+Reconstruindo a linha do tempo real por `SignalEvent.last_rejection_reason`
+e `created_date`: o gate `smc_confirm_4h15m` (item 108) ficou ligado nos 10
+ativos reais de 2026-07-19 até 2026-08-20T01:59Z (commits `6af8b1b`/
+`08220fd`) — bate com a última operação (23/07) e com `smc_confirm_zone_rejected`
+sendo a rejeição de PAXGUSDT/ENAUSDT em 19/08, um dia antes da correção.
+**Verificado agora, direto no backup**: os 10 documentos `MonitoredAsset`
+de produção realmente têm `smc_confirm_4h15m: false` hoje — a correção do
+item 108 está em vigor de fato, não só documentada como feita. De 20/08 a
+25/08 (5 dias), só **1** sinal 4h qualificado apareceu no funil inteiro
+(ENAUSDT, 22/08), rejeitado por `confirmation_15m_not_aligned` — gate
+legítimo (`check15mConfirmation`, `scanner.js:503`), não bug.
+
+### Auditoria de código — sem bug novo confirmado no motor/indicadores
+
+Três leituras independentes (a minha, rastreando `scanAsset` →
+`check15mConfirmation`/`evaluateRegime`/`buildTradeOpData`; e duas por
+agentes instruídos a não ler `known-risks.md`/`roadmap.md`/`.claude/rules/*`
+antes de formar opinião) não encontraram nenhuma condicional invertida,
+exceção engolida, ordem de gate errada ou regressão na máquina de estados
+(`opTransition.js`), temporalidade (P0-c/P0-d/P0-g) ou cálculo de indicador
+(RSI/MACD/EMA/RF/ADX/Choppiness/estrutura SMC) — todos conferem linha a
+linha com o código atual. Único ponto novo, de baixa prioridade e sem
+efeito hoje: `src/lib/indicators/retest.js:53` usa `lowerBound`/`upperBound`
+em vez do `level` quebrado para `resumedDirection` em `touchMode:'wick'` —
+pode classificar erroneamente um candle como "retomou direção" sem o preço
+ter voltado a fechar do lado certo do nível. Inerte em produção
+(`retestEnabled: false`, confirmado no `strategyConfig/current` real, nunca
+tocado em nenhum dos 10 ativos) — registrado aqui só para não ser
+redescoberto do zero se o flag for ligado no futuro.
+
+### Bug real encontrado e corrigido — `AssetState` órfão ao excluir ativo
+
+`src/pages/Assets.jsx` (função de exclusão, antes desta correção) chamava
+só `backend.entities.MonitoredAsset.delete(id)` — os 3 documentos
+`AssetState` do ativo (um por timeframe) nunca eram removidos.
+**Confirmado nos dados reais**: 4 ativos já excluídos (SOLUSDT, METISUSDT,
+DYDXUSDT, CRVUSDT) ainda tinham 12 documentos `AssetState` vivos no
+Firestore, sem `MonitoredAsset` correspondente — leitura/escrita
+desperdiçada, relevante pra cota do plano Spark (`.claude/rules/
+firestore-concurrency.md`). **Corrigido**: `deleteMutation` em
+`Assets.jsx` agora também chama `backend.entities.AssetState.deleteMany({
+asset_id: id })` (helper já existente em `entities.js:134`, batch delete
+por query). A pedido explícito do usuário, **os 12 documentos órfãos já
+existentes não foram limpos** — só o código foi corrigido pra não gerar
+novos órfãos; `SignalEvent`/`TradeOperation` do ativo excluído
+propositalmente NÃO são tocados (são trilha de auditoria, não estado de
+scan). Sem suíte de componente pra `Assets.jsx` neste projeto (lacuna
+pré-existente) — verificado por leitura do diff; `npm run lint && npm test
+(1104/1104) && npm run build` verdes.
+
+### Recomendação (decisão do usuário, não aplicada nesta rodada)
+
+`skip15mConfirmationEnabled` (Settings.jsx, item 67/120) removeria
+exatamente o gate que rejeitou o único candidato desde a correção do item
+108 — usuário escolheu ativar só este dos dois toggles de fidelidade Pine
+oferecidos. **Não apliquei**: esta sessão remota não tem credencial do
+Firebase (`FIREBASE_SERVICE_ACCOUNT_JSON` só existe como secret do GitHub
+Actions) nem sessão de navegador autenticada — só o usuário, pela página
+Settings, pode gravar em `strategyConfig/current`. `disableTp2CapEnabled`
+fica desligado por ora.
+
+### Verificação
+
+`npm run lint && npm test (1104/1104) && npm run build` verdes para a
+correção do `AssetState` órfão. Achados de auditoria (ausência de bug no
+motor/indicadores, causa-raiz do hiato de operações) não mudam nenhum
+código — são achado de leitura + dado real, registrados aqui conforme
+`.claude/rules/documentation-truth.md`.
