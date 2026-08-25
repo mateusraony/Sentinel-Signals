@@ -6,6 +6,10 @@ import {
   daysInMonthRange,
   parseKlineCsv,
   dedupeAndFilterCandles,
+  buildMonthlyFundingUrl,
+  buildDailyFundingUrl,
+  parseFundingCsv,
+  dedupeAndFilterFunding,
   MAX_ARCHIVE_BYTES,
   assertArchiveSizeWithinLimit,
 } from './binanceArchive.js';
@@ -147,5 +151,91 @@ describe('assertArchiveSizeWithinLimit', () => {
   it('lança acima do limite, com o contexto na mensagem', () => {
     expect(() => assertArchiveSizeWithinLimit(MAX_ARCHIVE_BYTES + 1, 'BTCUSDT 1h 2024-07 (mensal)'))
       .toThrow(/BTCUSDT 1h 2024-07 \(mensal\)/);
+  });
+});
+
+// docs/known-risks.md item 131 — funding real. Este parser é a fronteira onde
+// um erro corrompe silenciosamente 59% do custo medido do projeto, então os
+// testes cobrem tanto o formato feliz quanto as formas de errar em silêncio.
+describe('funding rate — URLs', () => {
+  it('monta a URL mensal de fundingRate (sem componente de intervalo)', () => {
+    expect(buildMonthlyFundingUrl('BTCUSDT', 2026, 7)).toBe(
+      'https://data.binance.vision/data/futures/um/monthly/fundingRate/BTCUSDT/BTCUSDT-fundingRate-2026-07.zip'
+    );
+  });
+
+  it('monta a URL diária de fundingRate', () => {
+    expect(buildDailyFundingUrl('ETHUSDT', 2026, 8, 3)).toBe(
+      'https://data.binance.vision/data/futures/um/daily/fundingRate/ETHUSDT/ETHUSDT-fundingRate-2026-08-03.zip'
+    );
+  });
+});
+
+describe('parseFundingCsv', () => {
+  it('lê o formato publicado, com header', () => {
+    const csv = [
+      'calc_time,funding_interval_hours,last_funding_rate',
+      '1767225600000,8,0.00010000',
+      '1767254400000,8,-0.00005000',
+    ].join('\n');
+    expect(parseFundingCsv(csv)).toEqual([
+      { calcTime: 1767225600000, intervalHours: 8, rate: 0.0001 },
+      { calcTime: 1767254400000, intervalHours: 8, rate: -0.00005 },
+    ]);
+  });
+
+  it('lê sem header, por posição documentada', () => {
+    const rows = parseFundingCsv('1767225600000,8,0.0001');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].rate).toBeCloseTo(0.0001, 9);
+  });
+
+  // A defesa central: se a Binance reordenar as colunas, resolver por NOME
+  // mantém o resultado certo — resolver por posição daria um número plausível
+  // e errado, que é o modo de falha caro aqui.
+  it('resolve por NOME quando as colunas vêm em ordem diferente', () => {
+    const csv = [
+      'last_funding_rate,calc_time,funding_interval_hours',
+      '0.0001,1767225600000,8',
+    ].join('\n');
+    expect(parseFundingCsv(csv)).toEqual([
+      { calcTime: 1767225600000, intervalHours: 8, rate: 0.0001 },
+    ]);
+  });
+
+  it('lança em header desconhecido em vez de adivinhar posição', () => {
+    expect(() => parseFundingCsv('foo,bar,baz\n1,2,3')).toThrow(/header não reconhecido/);
+  });
+
+  it('lança em taxa implausível (sinal de coluna trocada)', () => {
+    expect(() => parseFundingCsv('calc_time,funding_interval_hours,last_funding_rate\n1767225600000,8,1767225600000'))
+      .toThrow(/implausível/);
+  });
+
+  it('normaliza timestamp em microssegundos como os klines', () => {
+    const rows = parseFundingCsv('calc_time,funding_interval_hours,last_funding_rate\n1767225600000000,8,0.0001');
+    expect(rows[0].calcTime).toBe(1767225600000);
+  });
+
+  it('intervalHours vira null quando a coluna não existe', () => {
+    const rows = parseFundingCsv('calc_time,last_funding_rate\n1767225600000,0.0001');
+    expect(rows[0].intervalHours).toBeNull();
+    expect(rows[0].rate).toBeCloseTo(0.0001, 9);
+  });
+
+  it('devolve lista vazia para CSV vazio', () => {
+    expect(parseFundingCsv('')).toEqual([]);
+  });
+});
+
+describe('dedupeAndFilterFunding', () => {
+  it('ordena, deduplica e recorta para [from, to)', () => {
+    const rows = [
+      { calcTime: 300, rate: 0.3 },
+      { calcTime: 100, rate: 0.1 },
+      { calcTime: 300, rate: 0.3 },
+      { calcTime: 500, rate: 0.5 },
+    ];
+    expect(dedupeAndFilterFunding(rows, 100, 500).map((r) => r.calcTime)).toEqual([100, 300]);
   });
 });

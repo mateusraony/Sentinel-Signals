@@ -16,6 +16,7 @@ import {
   calcRAtTp1,
   countFundingSettlements,
   countFundingSettlementsByLeg,
+  calcFundingCost,
   expectancyCIAtZ,
 } from './tradeMetrics.js';
 
@@ -518,5 +519,117 @@ describe('small helpers', () => {
     expect(getOpenedAt(makeOp({ entry_candle_time_4h: 'c' }))).toBe('c');
     expect(getOpenedAt(makeOp({ candle_close_time: 'd' }))).toBe('d');
     expect(getOpenedAt(makeOp({ candle_close_time: undefined }))).toBe('2026-07-16T08:00:00.000Z'); // created_date
+  });
+});
+
+// docs/known-risks.md item 131 — funding REAL com sinal por lado. O modelo
+// antigo (constante fundingBpsPer8h) cobrava dos DOIS lados igualmente; num
+// perpétuo funding é transferência: com taxa positiva o comprado paga e o
+// VENDIDO RECEBE. Importa porque funding é 57,9-59% do custo medido (itens
+// 44/109) e SELL é o lado positivo nas 5 medições do projeto.
+describe('funding real com sinal por lado (item 131)', () => {
+  // 3 liquidações reais nas fronteiras que a op abaixo atravessa (08, 16, 00),
+  // taxa de 0,01% (= 1 bps, o MESMO valor da constante default) para que a
+  // comparação série-vs-constante isole o SINAL, não a magnitude.
+  const series = {
+    BTCUSDT: [
+      { calcTime: Date.parse('2026-07-16T08:00:00.000Z'), rate: 0.0001, intervalHours: 8 },
+      { calcTime: Date.parse('2026-07-16T16:00:00.000Z'), rate: 0.0001, intervalHours: 8 },
+      { calcTime: Date.parse('2026-07-17T00:00:00.000Z'), rate: 0.0001, intervalHours: 8 },
+    ],
+  };
+  const held = {
+    symbol: 'BTCUSDT', exit_price: 95,
+    candle_close_time: '2026-07-16T07:00:00.000Z', closed_at: '2026-07-17T01:00:00.000Z',
+  };
+
+  it('sem série, o resultado é idêntico ao modelo constante (default inalterado)', () => {
+    const op = makeOp(held);
+    expect(calcTradeCost(op).fundingCost).toBeCloseTo(3 * 0.0001 * 100, 9);
+    expect(calcTradeCost(op).fundingSource).toBe('constant');
+    // e passar uma série de OUTRO símbolo também cai no constante
+    expect(calcTradeCost(op, { fundingSeries: { ETHUSDT: series.BTCUSDT } }).fundingSource).toBe('constant');
+  });
+
+  it('BUY PAGA com taxa positiva — mesma magnitude da constante equivalente', () => {
+    const op = makeOp({ ...held, side: 'BUY' });
+    const withSeries = calcTradeCost(op, { fundingSeries: series });
+    expect(withSeries.fundingSource).toBe('series');
+    expect(withSeries.fundingCost).toBeCloseTo(3 * 0.0001 * 100, 9);
+    expect(withSeries.fundingCost).toBeCloseTo(calcTradeCost(op).fundingCost, 9);
+  });
+
+  it('SELL RECEBE com taxa positiva — funding negativo, o oposto exato do BUY', () => {
+    const buy = calcTradeCost(makeOp({ ...held, side: 'BUY' }), { fundingSeries: series });
+    const sell = calcTradeCost(makeOp({ ...held, side: 'SELL' }), { fundingSeries: series });
+    expect(sell.fundingCost).toBeLessThan(0);
+    expect(sell.fundingCost).toBeCloseTo(-buy.fundingCost, 9);
+    // ...e no modelo antigo os dois lados pagavam o MESMO valor positivo:
+    // é exatamente esse erro que o item 131 corrige.
+    expect(calcTradeCost(makeOp({ ...held, side: 'SELL' })).fundingCost)
+      .toBeCloseTo(calcTradeCost(makeOp({ ...held, side: 'BUY' })).fundingCost, 9);
+  });
+
+  it('taxa NEGATIVA inverte os papéis (comprado recebe, vendido paga)', () => {
+    const negative = { BTCUSDT: series.BTCUSDT.map((r) => ({ ...r, rate: -0.0001 })) };
+    expect(calcTradeCost(makeOp({ ...held, side: 'BUY' }), { fundingSeries: negative }).fundingCost)
+      .toBeLessThan(0);
+    expect(calcTradeCost(makeOp({ ...held, side: 'SELL' }), { fundingSeries: negative }).fundingCost)
+      .toBeGreaterThan(0);
+  });
+
+  it('preserva a ponderação por perna pós-TP1 (item 47.2) — só a taxa muda de fonte', () => {
+    const withTp1 = makeOp({
+      ...held, status: 'TP2_HIT', tp1_hit: true,
+      tp1_hit_at: '2026-07-16T15:00:00.000Z', exit_price: 115,
+    });
+    const c = calcTradeCost(withTp1, { fundingSeries: series });
+    // 1 fronteira a 100% + 2 a 50% = 2/3 do notional-fronteira, igual à constante
+    expect(c.fundingCost).toBeCloseTo(calcTradeCost(withTp1).fundingCost, 9);
+    expect(c.fundingSettlements).toBe(3);
+    expect(c.fundingBeforeTp1).toBeCloseTo(1 * 0.0001 * 100, 9);
+    expect(c.fundingAfterTp1).toBeCloseTo(2 * 0.5 * 0.0001 * 100, 9);
+  });
+
+  it('janela é half-open: liquidação na abertura não conta, no fechamento conta', () => {
+    const boundary = {
+      BTCUSDT: [
+        { calcTime: Date.parse('2026-07-16T08:00:00.000Z'), rate: 0.0001 },
+        { calcTime: Date.parse('2026-07-16T16:00:00.000Z'), rate: 0.0001 },
+      ],
+    };
+    const op = makeOp({
+      symbol: 'BTCUSDT', exit_price: 95,
+      candle_close_time: '2026-07-16T08:00:00.000Z', // abre EM cima da liquidação
+      closed_at: '2026-07-16T16:00:00.000Z', // fecha EM cima da seguinte
+    });
+    const c = calcTradeCost(op, { fundingSeries: boundary });
+    expect(c.fundingSettlements).toBe(1); // só a de 16:00
+    // bate com a contagem de fronteiras que o modelo constante já usava
+    expect(c.fundingSettlements).toBe(countFundingSettlements(op));
+  });
+
+  // ZERO_COST (o que --no-costs usa) precisa zerar TUDO, inclusive funding
+  // real — senão um run --no-costs deixaria de reproduzir os números
+  // pré-Fase-5 e o A/B de custo mediria outra coisa. Vale pela ordem do
+  // spread: ZERO_COST por ÚLTIMO sobrescreve a série com null.
+  it('ZERO_COST aplicado por último zera mesmo um modelo que carregava série', () => {
+    const comSerie = { fundingSeries: series };
+    const c = calcTradeCost(makeOp({ ...held, side: 'SELL' }), { ...comSerie, ...ZERO_COST });
+    expect(c.fundingCost).toBe(0);
+    expect(c.total).toBe(0);
+    expect(c.fundingSource).toBe('constant');
+  });
+
+  it('efeito de ponta a ponta: um SELL recebendo funding fecha com R MAIOR', () => {
+    const op = makeOp({ ...held, side: 'SELL', entry_price: 100, initial_stop: 105, exit_price: 105 });
+    const rConstant = calcRealizedR(op);
+    const rSeries = calcRealizedR(op, { fundingSeries: series });
+    expect(rSeries).toBeGreaterThan(rConstant);
+  });
+
+  it('calcFundingCost é exportada e reporta a fonte usada', () => {
+    expect(calcFundingCost(makeOp(held)).source).toBe('constant');
+    expect(calcFundingCost(makeOp(held), { fundingSeries: series }).source).toBe('series');
   });
 });

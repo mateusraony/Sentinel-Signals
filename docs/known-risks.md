@@ -14930,3 +14930,121 @@ pra scripts admin, mesma lacuna pré-existente de sempre). Achados de
 auditoria (ausência de bug no motor/indicadores, causa-raiz do hiato de
 operações) não mudam nenhum código — são achado de leitura + dado real,
 registrados aqui conforme `.claude/rules/documentation-truth.md`.
+
+## 131. Funding real com sinal por lado — a única das 3 alavancas do item 109 ainda intocada (2026-08-25)
+
+### Contexto
+
+Usuário perguntou qual seria **outra forma de fazer os trades** (entrada,
+stop, take, carregar a operação). Antes de propor, confrontei o ledger:
+`docs/backtest-trial-registry.json` tem **63 trials em 21 famílias**, mediana
+de expectância **+0,080R**, média +0,059R — e, ao contrário da leitura
+corrente de que "só se mexeu na entrada", **saída foi testada tanto quanto**
+(~23 trials: `tp1R`, `trailAtrMult`, Time Stop, breakeven pré-TP1, runner,
+TP2 cap, stop estrutural). Frequência também (itens 56/68: RF 1h cond/uncond
+levou o volume de 103 para 281 operações e seguiu inconclusivo).
+
+Ou seja: propor "outra combinação de entrada/stop/take" seria o 64º trial,
+e o item 109 já explica por que ele nasceria inconclusivo — sd=1,2111R/op,
+DEFF 1,43, **1.643 operações (~17 anos a 7 símbolos) para provar 0,10R**.
+
+O item 109 nomeia as 3 únicas alavancas — **amostra**, **custo por unidade de
+risco**, **tamanho do edge** — e o item 112 (conselho de revisão) registra que
+só escapa da parede quem ataca **estrutura de custo/frequência**. Frequência
+falhou (item 68); amostra esbarra na cota do Firestore (item 106 cortou de 14
+para 10 ativos); **custo por unidade de risco nunca foi atacado**. É esta
+rodada.
+
+### O erro de medição (fato, verificado no código)
+
+`src/lib/tradeMetrics.js` cobrava funding como **constante**
+(`fundingBpsPer8h: 1`), aplicada **igualmente a BUY e SELL**, sempre como
+custo positivo. Num perpétuo isso é factualmente errado: funding é
+**transferência**, não taxa — com taxa positiva (regime dominante em cripto)
+o comprado paga e o **vendido RECEBE**.
+
+Por que a magnitude importa aqui e não é detalhe contábil:
+
+| | |
+|---|---|
+| Funding no custo total (itens 44/109) | **57,9-59%** |
+| Custo sobre o edge BRUTO (item 109) | **45%** (+0,1165R bruto → +0,0642R líquido) |
+| Funding medido | 0,163% do preço/op; 1R = 6,57% do preço → **≈0,025R** |
+| Inverter o sinal num SELL | delta ≈ **+0,05R** naquelas operações |
+| Edge líquido inteiro, para comparação | **+0,0642R** |
+
+E o alvo do erro não é aleatório: **SELL é positivo nas 5 medições já feitas**
+(0,147R a 0,401R, 3 regimes, 2 carteiras) — o padrão mais consistente do
+projeto. O modelo antigo cobrava do lado que, no mundo real, provavelmente
+recebia.
+
+### Por que isto escapa da parede estatística (e as outras 63 tentativas não)
+
+Não reduz variância — **desloca a média**. Como `n ∝ (sd/edge)²`, dobrar o
+edge **divide o n necessário por 4**: 1.643 → ~411 operações, ~17 anos → ~4.
+É a única mudança identificada que mexe no denominador do problema em vez de
+disputar o numerador.
+
+**Não é um trial** e não entra no ledger: é correção de medição, mesma
+categoria da Fase 5 (item 44), adotada ligada por padrão justamente por
+"corrigir uma medição errada, não adicionar mecanismo". O `docs/roadmap.md`
+(Bloco 3) já registrava que a classificação original de funding como "custo
+de segunda ordem (~5%)" **foi refutada pela medição** — isto fecha essa
+pendência.
+
+### O que foi implementado
+
+- `scripts/binanceArchive.js` — `buildMonthlyFundingUrl`/`buildDailyFundingUrl`
+  (mesma CDN dos klines, dataset `fundingRate`) + `parseFundingCsv` +
+  `dedupeAndFilterFunding`. O parser **resolve colunas por NOME** quando há
+  header e **lança** em header desconhecido ou taxa implausível (|rate| > 1)
+  em vez de adivinhar posição — este é o ponto onde um erro corromperia
+  silenciosamente 59% do custo medido, e um número errado aqui é
+  indistinguível de dado real.
+- `scripts/fetch-backtest-funding.mjs` — download (mensal com fallback
+  diário, espelhando `fetch-backtest-data-futures.mjs`), com relatório de
+  sanidade por símbolo (cobertura % das janelas de 8h esperadas, taxa média,
+  % positivas) — porque este dado não é conferível a olho depois.
+- `src/lib/tradeMetrics.js` — nova função pura exportada `calcFundingCost`,
+  com dois modos: `constant` (default, **byte-idêntico** ao anterior) e
+  `series` (real, com sinal e lado). `costModel.fundingSeries` é `null` por
+  padrão, então **painel e todo caller existente seguem inalterados**.
+  A ponderação por perna pré/pós-TP1 (item 47.2) é preservada exatamente —
+  muda a TAXA aplicada, nunca o modelo de exposição.
+- **Invariante quebrada de propósito**: `calcTradeCost().total` deixa de ser
+  garantidamente >= 0 — um short que coleta funding realmente terminou com
+  mais dinheiro, e travar em zero reintroduziria o mesmo otimismo ao
+  contrário que isto corrige. Documentado no cabeçalho da função.
+- `fundingBeforeTp1`/`fundingAfterTp1` agora **expostos** no retorno de
+  `calcTradeCost` — fecha o **item #3 do backlog do conselho** (item 112),
+  que testa a ligação item 46↔109 (o runner paga o próprio funding?) sem
+  backtest novo.
+- `src/lib/backtestAnalysis.js` — 3 armadilhas fechadas: (a) o modelo isolado
+  de funding precisava **carregar** a série (senão a decomposição descreveria
+  a constante enquanto o total usou a real); (b) os modelos de taxa/slippage
+  precisavam de `fundingSeries: null` explícito; (c) `share()` devolve `null`
+  para componente negativo — "35% do custo" perde sentido quando uma parcela
+  é receita.
+- `scripts/run-backtest.mjs` `--real-funding` + `backtest.yml` input
+  `real_funding`, que **exige** `futures_data` e **falha alto** se pedirem só
+  um (relatório rotulado "funding real" que usou a constante é pior que
+  nenhum relatório).
+
+### Verificação
+
+`npm run lint && npm test (1124, +20) && npm run build && npm run
+build:backtest` verdes. Os 20 testes novos cobrem: default byte-idêntico sem
+série; BUY paga e SELL recebe com taxa positiva (e o oposto exato entre os
+dois); taxa negativa invertendo os papéis; ponderação pós-TP1 preservada;
+janela half-open batendo com `countFundingSettlements`; `ZERO_COST` zerando
+mesmo com série; efeito de ponta a ponta em `calcRealizedR`; e, no parser,
+resolução por nome com colunas fora de ordem, header desconhecido e taxa
+implausível.
+
+**Não verificado nesta sessão**: o endpoint `fundingRate` do
+data.binance.vision não pôde ser confirmado daqui — a rede das sessões do
+Claude Code bloqueia a Binance (403 do proxy, mesma restrição já documentada
+para `fetch-backtest-data.mjs`). O caminho e o schema seguem a convenção
+publicada da Binance e o parser foi escrito defensivamente contra divergência,
+mas a **primeira execução real no runner é o teste de verdade** — se o dataset
+não existir nesse formato, é lá que aparece.

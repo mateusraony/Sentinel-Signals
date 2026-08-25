@@ -401,6 +401,48 @@ taker), `--slippage-bps N` (default 1), `--funding-bps N` (default 1, por
 janela de 8h), `--min-trades N` (default 30), `--trial-label TXT` (gravado no
 JSON — serve para você contar quantas configurações já testou).
 
+### Funding REAL com sinal por lado (`--real-funding`, item 131)
+
+`--funding-bps` é uma **constante** cobrada dos dois lados igualmente. Num
+perpétuo isso é factualmente errado: funding é **transferência**, não taxa —
+quando a taxa é positiva (regime dominante em cripto) o **comprado paga e o
+vendido RECEBE**. E não é detalhe: funding é **57,9-59% do custo medido**
+(itens 44/109), o custo consome 45% do edge bruto, e **SELL é o lado medido
+positivo nas 5 janelas** já rodadas — o erro está exatamente em cima do único
+padrão consistente do projeto.
+
+`--real-funding` troca a constante pela taxa real publicada, por liquidação e
+com sinal. Exige baixar a série antes, para os **mesmos** símbolos/período:
+
+```bash
+node scripts/fetch-backtest-funding.mjs \
+  --symbols BTCUSDT,ETHUSDT --from 2025-08-20 --to 2026-08-20
+
+npm run backtest -- --symbols BTCUSDT,ETHUSDT \
+  --from 2025-08-20T00:00:00Z --to 2026-08-20T00:00:00Z \
+  --real-funding --trial-label funding-real --out ./report-funding-real.json
+```
+
+Símbolo sem arquivo cai na constante **com aviso no log** — uma carteira
+meio-real/meio-constante mede uma mistura que nenhuma das duas hipóteses
+descreve, então confira o aviso antes de comparar. `--no-costs` continua
+zerando tudo, inclusive a série.
+
+Na **Opção B** (`backtest.yml`) é a caixa **"Cobrar funding REAL (com sinal por
+lado)"**, que **exige** a caixa de Futures ligada (Spot não tem funding) — o
+workflow falha explicitamente se pedirem uma sem a outra, em vez de rodar na
+constante fingindo ser real.
+
+**O que olhar no A/B**: `report.costs.avgCostR` e `netExpectancyR`, mas
+principalmente **separado por lado** — o efeito previsto é assimétrico
+(SELL melhora, BUY praticamente não muda). Um efeito simétrico seria sinal de
+que a série não foi aplicada.
+
+Isso **não é um trial de estratégia** e não entra no ledger de overfitting: é
+correção de medição, mesma categoria da Fase 5 (item 44), que também foi
+adotada ligada por padrão por "corrigir uma medição errada, não adicionar
+mecanismo".
+
 **`report.equityCurve`** (`docs/known-risks.md` item 108 addendum) —
 `{initialCapital, riskPct, finalCapital, totalReturnPct, maxDrawdownPct,
 maxDrawdownAbs, accountBlown, years, cagrPct, cagrUnavailableReason, sized,

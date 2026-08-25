@@ -83,6 +83,18 @@ on:
         description: "Funding por janela de 8h em bps (vazio = 1). Só é cobrado nas fronteiras 00/08/16 UTC que a posição atravessar"
         default: ""
         required: false
+      real_funding:
+        # docs/known-risks.md item 131: substitui a constante funding_bps pela
+        # taxa REAL publicada pela Binance, com SINAL e por LADO — num
+        # perpétuo funding é transferência, não taxa: com taxa positiva o
+        # comprado paga e o VENDIDO RECEBE. A constante cobrava dos dois lados
+        # igualmente, e funding é 57,9-59% do custo medido (itens 44/109).
+        # Baixa de data.binance.vision (mesma CDN de futures_data), então só
+        # faz sentido junto com futures_data (Spot não tem funding).
+        description: "Cobrar funding REAL (com sinal por lado) em vez da constante — exige futures_data"
+        type: boolean
+        default: false
+        required: false
       min_trades:
         description: "Mínimo de operações para o relatório não ser marcado INCONCLUSIVO (vazio = 30)"
         default: ""
@@ -200,6 +212,28 @@ jobs:
             --from "$FROM" --to "$TO" \
             --timeframes "$TIMEFRAMES"
 
+      - name: Baixar funding real (Binance Futures USDⓈ-M)
+        # docs/known-risks.md item 131. Só roda com futures_data ligado —
+        # funding não existe em Spot, e a série precisa vir do mesmo mercado
+        # que os candles, senão o custo descreveria um mercado e o preço
+        # outro.
+        if: ${{ inputs.real_funding == true && inputs.futures_data == true }}
+        env:
+          SYMBOLS: ${{ inputs.symbols }}
+        run: |
+          node scripts/fetch-backtest-funding.mjs \
+            --symbols "$SYMBOLS" \
+            --from "$FROM" --to "$TO"
+
+      - name: Recusar funding real sem dado de Futures
+        # Falha alto em vez de rodar silenciosamente na constante: um relatório
+        # rotulado "funding real" que na verdade usou a constante é pior que
+        # nenhum relatório — é o tipo de erro que só aparece meses depois.
+        if: ${{ inputs.real_funding == true && inputs.futures_data != true }}
+        run: |
+          echo "::error::real_funding exige futures_data ligado (funding só existe em Futures; Spot não tem)."
+          exit 1
+
       - name: Rodar o replay
         env:
           SYMBOLS: ${{ inputs.symbols }}
@@ -210,6 +244,7 @@ jobs:
           FEE_BPS: ${{ inputs.fee_bps }}
           SLIPPAGE_BPS: ${{ inputs.slippage_bps }}
           FUNDING_BPS: ${{ inputs.funding_bps }}
+          REAL_FUNDING: ${{ inputs.real_funding }}
           MIN_TRADES: ${{ inputs.min_trades }}
           TRIAL_LABEL: ${{ inputs.trial_label }}
         run: |
@@ -224,6 +259,8 @@ jobs:
           if [ -n "$FEE_BPS" ]; then ARGS+=(--fee-bps "$FEE_BPS"); fi
           if [ -n "$SLIPPAGE_BPS" ]; then ARGS+=(--slippage-bps "$SLIPPAGE_BPS"); fi
           if [ -n "$FUNDING_BPS" ]; then ARGS+=(--funding-bps "$FUNDING_BPS"); fi
+          # Funding real com sinal por lado (item 131) — substitui a constante.
+          if [ "$REAL_FUNDING" = "true" ]; then ARGS+=(--real-funding); fi
           if [ -n "$MIN_TRADES" ]; then ARGS+=(--min-trades "$MIN_TRADES"); fi
           if [ -n "$TRIAL_LABEL" ]; then ARGS+=(--trial-label "$TRIAL_LABEL"); fi
           npm run backtest -- "${ARGS[@]}"

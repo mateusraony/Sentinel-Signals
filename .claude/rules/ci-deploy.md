@@ -43,7 +43,11 @@ paths:
   (`data-api.binance.vision`, mesma do cron ao vivo) para Futures USDⓈ-M
   real (`data.binance.vision`, arquivo em lote — `docs/known-risks.md`
   itens 86/122) — só afeta a MEDIÇÃO do backtest, o scan ao vivo continua
-  em Spot (item 4, sem solução gratuita).
+  em Spot (item 4, sem solução gratuita). Input `real_funding` (default
+  `false`, **exige `futures_data`** — o workflow falha se pedirem só um)
+  cobra funding pela taxa REAL publicada, com sinal e por lado, em vez da
+  constante `funding_bps` (`scripts/fetch-backtest-funding.mjs`,
+  `docs/known-risks.md` item 131).
 
 ## Deploy
 

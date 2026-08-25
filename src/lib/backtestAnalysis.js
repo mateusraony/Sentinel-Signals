@@ -167,9 +167,15 @@ function costComponentModels(costModel) {
   const m = resolveCostModel(costModel);
   return {
     resolved: m,
-    fee: { feeBpsEntry: m.feeBpsEntry, feeBpsExit: m.feeBpsExit, slippageBpsPerSide: 0, fundingBpsPer8h: 0 },
-    slippage: { feeBpsEntry: 0, feeBpsExit: 0, slippageBpsPerSide: m.slippageBpsPerSide, fundingBpsPer8h: 0 },
-    funding: { feeBpsEntry: 0, feeBpsExit: 0, slippageBpsPerSide: 0, fundingBpsPer8h: m.fundingBpsPer8h },
+    // fundingSeries explicitamente null nos dois primeiros (item 131): sem
+    // isso, um modelo "só taxa" herdaria a série real e cobraria funding —
+    // exatamente a divergência entre decomposição e custo cobrado que o
+    // comentário acima existe para impedir.
+    fee: { feeBpsEntry: m.feeBpsEntry, feeBpsExit: m.feeBpsExit, slippageBpsPerSide: 0, fundingBpsPer8h: 0, fundingSeries: null },
+    slippage: { feeBpsEntry: 0, feeBpsExit: 0, slippageBpsPerSide: m.slippageBpsPerSide, fundingBpsPer8h: 0, fundingSeries: null },
+    // ...e o modelo de funding PRECISA carregá-la, senão a linha de funding do
+    // relatório descreveria a constante enquanto o total usou a série real.
+    funding: { feeBpsEntry: 0, feeBpsExit: 0, slippageBpsPerSide: 0, fundingBpsPer8h: m.fundingBpsPer8h, fundingSeries: m.fundingSeries },
   };
 }
 
@@ -261,7 +267,10 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
   // --no-costs que serve para o A/B.
   let sumFeeR = 0; let sumSlippageR = 0; let sumFundingR = 0; let sumCostR = 0;
   let costRCount = 0; let sumBoundaries = 0; let opsWithFunding = 0;
-  const fundingCharged = models.resolved.fundingBpsPer8h > 0;
+  // Com série real (item 131) o funding é cobrado independentemente de
+  // fundingBpsPer8h — a constante deixa de ser a fonte da taxa.
+  const fundingCharged = models.resolved.fundingBpsPer8h > 0
+    || !!models.resolved.fundingSeries;
   for (const { op, costR } of rows) {
     const boundaries = countFundingSettlements(op);
     sumBoundaries += boundaries;
@@ -273,7 +282,17 @@ export function analyzeOps(ops, { costModel, epsilonR = 0.05, epsilonPct = 0.1, 
     sumSlippageR += calcCostR(op, models.slippage) ?? 0;
     sumFundingR += calcCostR(op, models.funding) ?? 0;
   }
-  const share = (part) => (sumCostR > 0 ? part / sumCostR : null);
+  // Proporção só é interpretável quando o total é um custo de verdade. Com
+  // funding real (item 131) um componente pode ser NEGATIVO (short recebendo
+  // funding), e aí "35% do custo" deixa de significar algo — uma parcela
+  // negativa sobre um total pequeno produz percentuais absurdos (>100%,
+  // negativos). Nesses casos devolve null e o relatório mostra o valor em R,
+  // que continua exato, em vez de uma porcentagem enganosa.
+  const share = (part) => {
+    if (!(sumCostR > 0)) return null;
+    if (part < 0) return null;
+    return part / sumCostR;
+  };
 
   // ATRIBUIÇÃO DO RUNNER — a única peça da geometria de saída que nenhuma fase
   // mediu. Não é um eixo de baldes: é uma subtração entre dois cenários sobre
