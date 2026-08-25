@@ -233,6 +233,19 @@ plano de sessão morre com a sessão.
 > escrita atômica, 3 correções de doc) foram corrigidos/fechados nesta
 > mesma rodada — nenhum muda o estado dos Blocos abaixo. Detalhe: itens
 > 125/126.
+>
+> **Atualização 2026-08-24 (item 129): card "Confiança ao Vivo" no
+> Dashboard — decisão de produto, não estatística.** Usuário rejeitou
+> esperar a janela de calendário do item 95 (2027-08-10) e pediu que o
+> sistema colete/reporte sozinho, com o foco migrando pra usar o painel
+> pra valer (manualmente, como o Pine do TradingView). Novo componente
+> aplica o mesmo `summarizeOps`/IC/gate de amostra dos relatórios de
+> backtest às operações REAIS de produção (BUY/SELL separados, item 88),
+> crescendo sozinho a cada operação fechada — sem precisar de backtest
+> manual numa janela nova. Não muda a política de trading (sinalização,
+> TP/Stop virtuais) nem o critério de desbloqueio do Bloco 1 (IC sem
+> cruzar zero numa amostra nova) — só torna essa amostra observável ao
+> vivo em vez de depender de uma rodada manual. Detalhe: item 129.
 
 ## A regra que ordena tudo: amostra
 

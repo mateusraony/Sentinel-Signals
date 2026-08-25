@@ -13,6 +13,7 @@ import ComparePanel from '@/components/dashboard/ComparePanel';
 import TelegramStatusBanner from '@/components/dashboard/TelegramStatusBanner';
 import PerformanceMetricsBar from '@/components/dashboard/PerformanceMetricsBar';
 import VirtualAccountCard from '@/components/dashboard/VirtualAccountCard';
+import LiveConfidenceCard from '@/components/dashboard/LiveConfidenceCard';
 import WeeklySummary from '@/components/dashboard/WeeklySummary';
 import CorrelationWidget from '@/components/dashboard/CorrelationWidget';
 import VerificationWidget from '@/components/dashboard/VerificationWidget';
@@ -245,6 +246,9 @@ export default function Dashboard() {
 
             {/* Conta virtual real (capital+drawdown compostos, position sizing por risco) */}
             <VirtualAccountCard />
+
+            {/* Confiança ao vivo — mesmo IC/gate de amostra do backtest, sobre operações reais */}
+            <LiveConfidenceCard />
 
             {/* Cross-asset price correlation */}
             <CorrelationWidget />
