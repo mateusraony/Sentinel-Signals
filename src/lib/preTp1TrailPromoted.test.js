@@ -9,11 +9,24 @@
 // que espelham DEFAULTS à mão (browser/cron/backtest) concordam no valor
 // promovido, e uma op nova nasce com o modo promovido sem nenhum
 // --pine-config.
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { getPineConfig as getBacktestConfig } from '../../scripts/backtestPineConfig.js';
+
+// Mocked the same way telegram.test.js mocks pineParser.js's sibling module
+// (same firebaseClient-avoidance reason as the comment below) — this lets
+// getPineConfig/getLocalPineConfig be imported and exercised for REAL,
+// instead of only regex-checked as text, for the localStorage-staleness
+// regression test below.
+vi.mock('./logger', () => ({
+  logWarn: vi.fn(),
+  logError: vi.fn(),
+}));
+vi.mock('@/api/entities', () => ({
+  backend: { entities: { StrategyConfig: { get: vi.fn().mockResolvedValue(null) } } },
+}));
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -81,5 +94,57 @@ describe('trailing pré-TP1 — promovido a LIGADO por padrão (item 132)', () =
       expect(browserSource, `${chave} ausente de alguma lista de sync (browser)`).toMatch(new RegExp(`'${chave}'`));
       expect(cronSource, `${chave} ausente da lista de sync (cron)`).toMatch(new RegExp(`'${chave}'`));
     }
+  });
+
+  // Codex review (PR #258, P1): um usuário que salvou o Pine script ANTES
+  // desta promoção tem um blob de localStorage carregando
+  // preTp1StopProtectionEnabled: false para sempre — parsePineScript() nunca
+  // sobrescreve essa chave (sem input.*() correspondente no Pine), então o
+  // valor gravado é sempre o DEFAULTS de quando o usuário salvou por último.
+  // Sem correção, getPineConfig()/getLocalPineConfig() faziam
+  // {...DEFAULTS, ...localStorage}, deixando esse blob antigo vencer o novo
+  // default `true`. Reproduz o bug real (o teste falha sem
+  // stripNonPineSyncedKeys em pineParser.js) e prova a correção.
+  describe('cache antigo em localStorage não mascara a promoção (Codex P1, PR #258)', () => {
+    function makeLocalStorage(initial) {
+      const store = new Map(Object.entries(initial ?? {}));
+      return {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+        clear: () => store.clear(),
+      };
+    }
+
+    it('getPineConfig(): blob salvo antes do deploy (preTp1StopProtectionEnabled: false) não sobrevive — DEFAULTS promovido vence', async () => {
+      globalThis.localStorage = makeLocalStorage({
+        cryptoradar_pine_config: JSON.stringify({
+          // Blob real de um usuário: DEFAULTS de antes da promoção, gravado
+          // por parsePineScript() num save de Pine script anterior a
+          // 2026-08-26 — junto de um valor GENUINAMENTE parseado do Pine
+          // (rng_per), que precisa continuar vindo do cache normalmente.
+          preTp1StopProtectionEnabled: false,
+          preTp1TrailEnabled: false,
+          rng_per: 55,
+        }),
+      });
+      const { getPineConfig } = await import('./pineParser.js');
+      const config = await getPineConfig();
+      expect(config.preTp1StopProtectionEnabled, 'mestre deveria seguir o DEFAULTS promovido, não o cache antigo').toBe(true);
+      expect(config.preTp1TrailEnabled).toBe(true);
+      // Prova que a correção não é um bypass geral do cache — valores
+      // genuinamente Pine-parsed continuam vindo do localStorage.
+      expect(config.rng_per, 'valor Pine-parsed real não deveria ser afetado pelo strip').toBe(55);
+    });
+
+    it('getLocalPineConfig() (leitura síncrona): mesma proteção, sem round-trip ao Firestore', async () => {
+      globalThis.localStorage = makeLocalStorage({
+        cryptoradar_pine_config: JSON.stringify({ preTp1StopProtectionEnabled: false, preTp1TrailEnabled: false }),
+      });
+      const { getLocalPineConfig } = await import('./pineParser.js');
+      const config = getLocalPineConfig();
+      expect(config.preTp1StopProtectionEnabled).toBe(true);
+      expect(config.preTp1TrailEnabled).toBe(true);
+    });
   });
 });

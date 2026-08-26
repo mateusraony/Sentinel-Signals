@@ -15630,3 +15630,45 @@ retroatividade, por design.
 Verificação: `npm run lint && npm test && npm run build && node
 scripts/build-scan.mjs && node scripts/build-backtest.mjs`.
 
+**Duas correções pós-promoção (review Codex, PR #258).**
+
+1. **P1 — cache de `localStorage` no browser podia mascarar a promoção.**
+   `parsePineScript()` nunca sobrescreve uma chave de `NON_PINE_SYNCED_KEYS`
+   (não tem `input.*()` correspondente no Pine) — então um blob salvo em
+   `localStorage` ANTES deste deploy carregava `preTp1StopProtectionEnabled:
+   false` para sempre, e `getPineConfig()` fazia
+   `{...DEFAULTS, ...localStorage}`, deixando o blob antigo vencer o novo
+   `DEFAULTS.preTp1StopProtectionEnabled: true`. Como a chave está em
+   `NON_PINE_SYNCED_KEYS`, o merge do Firestore (que só sobrescreve com
+   `current[key] !== undefined`) nunca corrigia isso. Confirmado que o cron
+   (`scripts/adminPineConfig.js`) não tem essa camada de cache — só
+   `{...DEFAULTS}` + Firestore — então a divergência era **só do browser**.
+   Corrigido com `stripNonPineSyncedKeys()` (`src/lib/pineParser.js`),
+   filtrando toda chave de `NON_PINE_SYNCED_KEYS` do que é lido do
+   `localStorage` em `getPineConfig()`/`getLocalPineConfig()` — não é
+   específico às 4 chaves do trailing, fecha a mesma classe de bug latente
+   para qualquer membro atual/futuro de `NON_PINE_SYNCED_KEYS`
+   (`runnerEnabled`, `retestEnabled`, etc.), que tinha exatamente o mesmo
+   defeito estrutural, só não manifestado ainda porque nenhum desses defaults
+   havia mudado depois de um usuário salvar o Pine script.
+2. **P2 — a guarda do item 132 (`scripts/run-backtest.mjs`, "combinação
+   inválida") passou a rejeitar um exemplo pré-existente e legítimo**
+   (`docs/claude/backtest-usage.md`, desligar tudo via
+   `{"preTp1StopProtectionEnabled": false}`), porque `preTp1TrailEnabled`
+   agora herda `true` do `DEFAULTS` promovido em vez de precisar ser pedido
+   explicitamente. A guarda existia para um cenário específico — mestre
+   DESLIGADO por padrão, então pedir só o trailing era um no-op silencioso
+   sem nenhum sinal no relatório. Esse cenário não existe mais: com o mestre
+   LIGADO por padrão, um `false` explícito é inequívoco (é a única forma de
+   desligar), e o relatório resultante já reflete isso diretamente
+   (`report.preTp1StopProtection.enabled: false`) — nenhuma leitura
+   enganosa possível. **Guarda removida** (não convertida em `||` — essa
+   opção já foi tentada e revertida uma vez nesta mesma família, ver
+   "Primeira tentativa de correção, revertida" acima; trocar a semântica de
+   novo custaria o mesmo risco). `docs/claude/backtest-usage.md` atualizado
+   para não afirmar mais que a combinação é recusada.
+
+Verificação pós-correção: `npm run lint && npm test && npm run build && node
+scripts/build-scan.mjs && node scripts/build-backtest.mjs && npm run
+build:scan-shadow`.
+

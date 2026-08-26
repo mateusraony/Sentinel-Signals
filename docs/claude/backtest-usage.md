@@ -386,12 +386,18 @@ dois pontos diferentes da curva proteção × corte-prematuro:
 | Medido | 36% dos disparos cortaram quem chegaria ao TP1 (item 55) | **medido** (item 132): mesma expectância dentro do ruído, sd(R) −35%, max drawdown pela metade |
 
 **Requer `preTp1StopProtectionEnabled` ligado** — é ele que abre o bloco
-pré-TP1; o outro flag só decide o mecanismo dentro dele. Pedir o trailing sem
-ele **não é aviso, é recusa**: `run-backtest` aborta antes do replay (item
-132), porque sozinho o trailing seria um no-op e o relatório sairia idêntico
-ao controle sem nada indicando que o mecanismo nunca rodou. O modo é congelado na
-criação (`pre_tp1_stop_mode`), então virar o flag nunca troca o mecanismo de
-uma posição já viva.
+pré-TP1; o outro flag só decide o mecanismo dentro dele. Antes de 2026-08-26,
+com o mestre desligado por padrão, pedir só o trailing era um no-op silencioso
+(relatório idêntico ao controle, sem indicar que o mecanismo nunca rodou) —
+`run-backtest` recusava essa combinação antes do replay para evitar essa
+leitura errada. **Desde a promoção do mestre a `true` por padrão, essa guarda
+foi removida** (Codex review, PR #258): o risco que ela existia para evitar
+não se aplica mais — `{"preTp1StopProtectionEnabled": false}` sozinho agora é
+uma forma legítima e inequívoca de desligar TUDO (breakeven e trailing), e o
+relatório resultante (`report.preTp1StopProtection.enabled: false`) reflete
+isso diretamente, sem ilusão possível. O modo é congelado na criação
+(`pre_tp1_stop_mode`), então virar o flag nunca troca o mecanismo de uma
+posição já viva.
 
 **Os dois flags, `start 1,0/trail 2,0` (config A da grade medida), são o
 DEFAULT desde 2026-08-26 — um replay sem `--pine-config` já mede o trailing.**
