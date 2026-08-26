@@ -117,31 +117,6 @@ async function main() {
     setPineConfigOverrides(overrides);
   }
 
-  // Combinação inválida do item 132: `preTp1StopProtectionEnabled` é o
-  // interruptor MESTRE do bloco pré-TP1 (scanner.js, ramo
-  // `newStatus === op.status`); `preTp1TrailEnabled` só escolhe QUAL mecanismo
-  // roda dentro dele. Pedir o trailing sem abrir o bloco não é um erro
-  // barulhento — é um NO-OP: a op nasce com `pre_tp1_stop_mode: 'trailing'`,
-  // nada nunca avança o stop, e o relatório volta byte-idêntico ao controle.
-  // A leitura natural desse relatório seria "o trailing não teve efeito",
-  // quando o mecanismo jamais rodou — falso NEGATIVO, simétrico ao falso
-  // positivo que o item 131 custou duas rodadas. Recusar aqui custa segundos;
-  // descobrir depois custa o replay inteiro e uma conclusão errada.
-  // `await` obrigatório: getPineConfig é async. Sem ele `efetivo` seria uma
-  // Promise, `efetivo.preTp1TrailEnabled` viria undefined e esta guarda
-  // NUNCA dispararia — a própria guarda contra no-op virando um no-op.
-  const efetivo = await getPineConfig();
-  if (efetivo.preTp1TrailEnabled === true && efetivo.preTp1StopProtectionEnabled !== true) {
-    console.error(
-      '[backtest] ERRO: preTp1TrailEnabled ligado com preTp1StopProtectionEnabled desligado. '
-      + 'O trailing pré-TP1 roda DENTRO do bloco que preTp1StopProtectionEnabled abre — sozinho '
-      + 'ele não faz nada, e o relatório sairia idêntico ao controle sem nenhum aviso. '
-      + 'Ligue os dois: {"preTp1StopProtectionEnabled":true,"preTp1TrailEnabled":true,...}',
-    );
-    process.exitCode = 1;
-    return;
-  }
-
   const symbols = String(args.symbols).split(',').map((s) => s.trim()).filter(Boolean);
   const smcSymbols = new Set(String(args.smc || '').split(',').map((s) => s.trim()).filter(Boolean));
   const smcConfirmSymbols = new Set(String(args['smc-confirm'] || '').split(',').map((s) => s.trim()).filter(Boolean));

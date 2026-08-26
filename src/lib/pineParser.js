@@ -129,15 +129,38 @@ export const DEFAULTS = {
   smcScoreFvgWeight: 0,
   // Proteção de stop pré-TP1 (known-risks.md item 53/54) — não é do Pine,
   // mesmo padrão dos outros flags de mecanismo (arbEnabled/runnerEnabled/
-  // retestEnabled/etc). Master flag OFF por padrão: 61 das 117 operações de
-  // um backtest real (12 meses/7 símbolos) ficaram positivas cedo (MFE médio
-  // +0,578R) e depois erodiram até o stop original sem NENHUMA proteção
-  // intermediária (advanceTrailingStop só roda pós-TP1). Threshold em
-  // múltiplo de ATR (não um R fixo pequeno) por causa da armadilha de
-  // whipsaw documentada na pesquisa de comunidade — ver item 54. NÃO ativar
-  // sem comparar relatórios de backtest com/sem primeiro.
-  preTp1StopProtectionEnabled: false,
+  // retestEnabled/etc). Master flag: 61 das 117 operações de um backtest
+  // real (12 meses/7 símbolos) ficaram positivas cedo (MFE médio +0,578R) e
+  // depois erodiram até o stop original sem NENHUMA proteção intermediária
+  // (advanceTrailingStop só roda pós-TP1). Threshold em múltiplo de ATR
+  // (não um R fixo pequeno) por causa da armadilha de whipsaw documentada
+  // na pesquisa de comunidade — ver item 54.
+  //
+  // LIGADO por padrão desde 2026-08-26 (item 132, decisão do usuário),
+  // no modo TRAILING (não o breakeven que `preTp1StopProtectionAtrMult`
+  // sozinho descreve — ver `preTp1TrailEnabled` abaixo, que escolhe o
+  // modo). Medido contra grade pré-registrada (config A: start 1,0/trail
+  // 2,0 — os dois valores já existiam na estratégia, zero parâmetro novo):
+  // 103 vs. 120 operações, mesma expectância líquida dentro do ruído
+  // (+0,0257R vs. +0,0262R — diferença não detectável, z=0,004), mas sd(R)
+  // cai 35% e max drawdown cai pela metade (12,66% → 6,40%). Não prova
+  // edge — reduz o custo (amostra necessária) de provar ou refutar um.
+  // `preTp1StopProtectionAtrMult` fica sem efeito enquanto o modo for
+  // 'trailing' (só governa o breakeven), mantido pelo mesmo valor de
+  // sempre para não mudar nada se algum dia o modo voltar a breakeven.
+  preTp1StopProtectionEnabled: true,
   preTp1StopProtectionAtrMult: 1.0,
+  // Trailing pré-TP1 contínuo (known-risks.md item 132) — segundo modo do
+  // MESMO bloco acima, mutuamente exclusivo com o breakeven; qual roda é
+  // lido da OPERAÇÃO (`pre_tp1_stop_mode`, congelado na criação — nunca do
+  // pineConfig ao vivo, então um flip aqui só afeta operações NOVAS).
+  // Ratcheia com a volatilidade, ancorado no extremo favorável desde a
+  // entrada, em vez de saltar uma vez pra breakeven e saturar. Valores
+  // (start 1,0×ATR / trail 2,0×ATR) são a config A medida acima — 2,0 é o
+  // mesmo `trailAtrMult` do trailing pós-TP1 já em produção.
+  preTp1TrailEnabled: true,
+  preTp1TrailStartAtrMult: 1.0,
+  preTp1TrailAtrMult: 2.0,
   // Gate de padrão de vela (engolfo) na cascata RF 4h→15m — não é do Pine
   // (mesma categoria de mecanismo próprio do reteste/deslocamento/tier
   // acima), pedido explícito do usuário, 2026-08-02. Master flag OFF por
@@ -260,7 +283,7 @@ export function savePineConfig(code) {
 export function getLocalPineConfig() {
   try {
     const stored = localStorage.getItem(PINE_CONFIG_KEY);
-    if (stored) return { ...DEFAULTS, ...JSON.parse(stored) };
+    if (stored) return { ...DEFAULTS, ...stripNonPineSyncedKeys(JSON.parse(stored)) };
   } catch (e) {
     logWarn('pineParser', 'Config Pine Script corrompida no localStorage, usando defaults', { error: e.message });
   }
@@ -312,8 +335,10 @@ export const SYNCED_STRATEGY_KEYS = [
   // Order Block / FVG (Fase 4 — orderBlock.js + fvg.js)
   'smcObFvgEnabled', 'obFvgAtrLen', 'obMinAtrMult', 'obMaxAtrMult',
   'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
-  // Proteção de stop pré-TP1 (known-risks.md item 53/54)
+  // Proteção de stop pré-TP1 (known-risks.md item 53/54) + trailing
+  // contínuo (item 132), LIGADO por padrão desde 2026-08-26
   'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
+  'preTp1TrailEnabled', 'preTp1TrailStartAtrMult', 'preTp1TrailAtrMult',
   // Gate de padrão de vela na cascata RF (candlePatterns.js)
   'candlePatternEnabled',
   // Bypass da confirmação 15m na cascata RF nativa (known-risks.md item 67)
@@ -348,10 +373,29 @@ const NON_PINE_SYNCED_KEYS = new Set([
   'smcObFvgEnabled', 'obFvgAtrLen', 'obMinAtrMult', 'obMaxAtrMult',
   'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
   'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
+  'preTp1TrailEnabled', 'preTp1TrailStartAtrMult', 'preTp1TrailAtrMult',
   'candlePatternEnabled',
   'skip15mConfirmationEnabled',
   'disableTp2CapEnabled',
 ]);
+
+// Codex review (PR #258): a localStorage blob is only ever written by
+// savePineConfig()/parsePineScript(), and parsePineScript() never touches a
+// NON_PINE_SYNCED_KEYS member (no input.*() counterpart to match) — so a
+// persisted blob just carries whatever DEFAULTS were in effect the last time
+// the user saved their Pine script. Across a deploy that changes one of
+// those defaults (e.g. item 132's preTp1StopProtectionEnabled promotion), an
+// old blob would silently pin the browser to the STALE value forever —
+// Firestore's SYNCED_STRATEGY_KEYS merge below can't correct it either,
+// since these keys are deliberately excluded from the write payload (see
+// NON_PINE_SYNCED_KEYS comment above). Stripping them out of what's read
+// from localStorage keeps them following DEFAULTS (or an explicit Firestore
+// override), matching the invariant the comment above already claims.
+function stripNonPineSyncedKeys(parsed) {
+  const result = { ...parsed };
+  for (const key of NON_PINE_SYNCED_KEYS) delete result[key];
+  return result;
+}
 
 /**
  * Read the current Pine config: merges localStorage (all Pine-parsed
@@ -365,7 +409,7 @@ export async function getPineConfig() {
   let config = { ...DEFAULTS };
   try {
     const stored = localStorage.getItem(PINE_CONFIG_KEY);
-    if (stored) config = { ...config, ...JSON.parse(stored) };
+    if (stored) config = { ...config, ...stripNonPineSyncedKeys(JSON.parse(stored)) };
   } catch (e) {
     logWarn('pineParser', 'Config Pine Script corrompida no localStorage, usando defaults', { error: e.message });
   }

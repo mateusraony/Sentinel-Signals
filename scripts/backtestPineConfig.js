@@ -95,12 +95,12 @@ const DEFAULTS = {
   fvgFillTargetRatio: 0.6,
   smcScoreObWeight: 0,
   smcScoreFvgWeight: 0,
-  // Proteção de stop pré-TP1 (known-risks.md item 53/54) — master flag OFF
-  // por padrão. Faltava aqui (docs/known-risks.md item 80, E-1) — presente
-  // em src/lib/pineParser.js/scripts/adminPineConfig.js, quebrando a
-  // convenção "mantenha espelhado à mão" deste próprio arquivo. Aditivo:
-  // mesmos defaults dos outros dois arquivos.
-  preTp1StopProtectionEnabled: false,
+  // Proteção de stop pré-TP1 (known-risks.md item 53/54) + trailing
+  // contínuo (item 132) — LIGADO por padrão desde 2026-08-26, modo
+  // TRAILING (preTp1TrailEnabled abaixo). Mesmos defaults de
+  // src/lib/pineParser.js/scripts/adminPineConfig.js — um replay sem
+  // --pine-config reproduz o comportamento de produção.
+  preTp1StopProtectionEnabled: true,
   preTp1StopProtectionAtrMult: 1.0,
   // Gate de padrão de vela (engolfo) na cascata RF 4h→15m — master flag OFF
   // por padrão. Mesma lacuna do item 80, E-1 acima.
@@ -171,7 +171,7 @@ const DEFAULTS = {
   timeStopBarsOverride: null,
   // docs/known-risks.md item 132 — TRAILING pré-TP1 contínuo, o mecanismo que
   // o comentário do próprio advancePreTp1StopProtection (opExitRules.js)
-  // chama de "a different, not-yet-built mechanism". OFF por padrão.
+  // chama de "a different, not-yet-built mechanism".
   //
   // Motivação (item 53, medida): 61 de 117 operações — 52% da amostra —
   // terminaram em STOP_HIT sem NUNCA tocar o TP1; 98,4% delas ficaram
@@ -188,23 +188,24 @@ const DEFAULTS = {
   // depois (protege mais). Os dois modos são mutuamente exclusivos e o modo
   // é congelado na CRIAÇÃO (`pre_tp1_stop_mode`), como runnerEnabled.
   //
-  // Requer preTp1StopProtectionEnabled ligado — é ele que abre o bloco
-  // pré-TP1 em persistScanResults; este flag só escolhe QUAL mecanismo roda.
-  //
-  // NÃO ativar sem comparar relatórios com/sem primeiro, e calibrar
-  // start/trail contra o histograma real de MFE (item 132), não às cegas.
-  // INTENTIONALLY NOT mirrored em src/lib/pineParser.js/
-  // scripts/adminPineConfig.js — ver src/lib/preTp1TrailTripwire.test.js.
-  preTp1TrailEnabled: false,
+  // LIGADO por padrão desde 2026-08-26 (decisão do usuário, config A da
+  // grade pré-registrada). Medido contra controle na mesma janela: 120 vs.
+  // 103 operações, expectância líquida indistinguível dentro do ruído
+  // (+0,0262R vs. +0,0257R), sd(R) −35% e max drawdown pela metade
+  // (12,66% → 6,40%). Não prova edge — reduz o custo de medir um. Ver
+  // docs/known-risks.md item 132 pra decomposição completa (inclusive a
+  // correção pós-review do Codex: aceleração real é 1,85×, não os 2,8×
+  // da 1ª leitura).
+  preTp1TrailEnabled: true,
   // Quanto o preço precisa andar a favor (× ATR) antes de o trail armar.
   // Generoso de propósito: um trail semeado na entrada apertaria o stop já
   // na 1ª barra, o oposto da lição de whipsaw que o item 53 registrou.
   preTp1TrailStartAtrMult: 1.0,
-  // Distância do trail ao extremo favorável (× ATR). 2.5 é o baseline mais
-  // testado na literatura de swing citada no item 114 — e, com o stop
-  // inicial em 2,0-3,0×ATR por tier, mantém o trail atrás do stop original
-  // até o movimento realmente se provar.
-  preTp1TrailAtrMult: 2.5,
+  // Distância do trail ao extremo favorável (× ATR). 2.0 = o mesmo
+  // `trailAtrMult` do trailing pós-TP1 já em produção — zero parâmetro
+  // novo, é a config A medida acima (não o 2.5 de pesquisa pré-medição
+  // que este arquivo carregava antes de 2026-08-26).
+  preTp1TrailAtrMult: 2.0,
   // Bloco 4 Fase 1 (docs/known-risks.md item 37) — permite as cascatas
   // `4h_15m` (RF nativa) e `1h_5m` (SMC) manterem operações INDEPENDENTES
   // simultâneas no mesmo ativo, em vez de compartilhar 1 slot único
