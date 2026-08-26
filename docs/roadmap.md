@@ -506,7 +506,7 @@ decisão de ligar depende do Bloco 0.
 **E não salva a estratégia**: mesmo eliminando o runner inteiro, o bruto vai a
 +0,009 R contra 0,045 R de custo.
 
-### Proteção de stop pré-TP1 — IMPLEMENTADO, opt-in, A/B rodado e fechado (item 53/54/55)
+### Proteção de stop pré-TP1 — breakeven testado e descartado; TRAILING promovido a produção (item 53/54/55/132)
 
 Achado de 2026-08-01: das 96 operações que terminaram em `STOP_HIT` num
 backtest real (12 meses/7 símbolos), 61 (52% do total) nunca tiveram TP1
@@ -523,8 +523,19 @@ expectância estatisticamente igual (-0,0452R vs -0,0446R, ambas
 inconclusivas), mas `maxDrawdownPct` piorou (111,73% → 137,76%) e 36% das
 81 operações em que o gate disparou teriam batido TP1 mesmo sem ele
 (cortadas cedo pela sacudida que a pesquisa do item 53 já alertava).
-**Mantido `preTp1StopProtectionEnabled: false` por padrão** — dado não
-mostra ganho e mostra um custo real. Ver `docs/known-risks.md` item 55.
+**Mantido `preTp1StopProtectionEnabled: false` por padrão (na época)** — o
+modo BREAKEVEN medido acima não mostrou ganho e mostrou um custo real. Ver
+`docs/known-risks.md` item 55.
+
+**Atualização 2026-08-26 (item 132):** o mesmo bloco pré-TP1 ganhou um
+segundo modo — TRAILING contínuo, ancorado no extremo favorável em vez de
+saltar uma vez pra breakeven — e o resultado foi o oposto do breakeven:
+mesma expectância dentro do ruído, mas drawdown pela METADE (12,66% →
+6,40%), não pior. `preTp1StopProtectionEnabled` (interruptor mestre) e
+`preTp1TrailEnabled` (escolhe o modo) estão **LIGADOS por padrão** desde
+então, config `start 1,0×ATR / trail 2,0×ATR`. Decisão do usuário, não
+consequência automática da medição — ver `docs/known-risks.md` item 132
+pra decomposição completa.
 
 ### `tp1R`/`tp2R`/`trailAtrMult` — TESTADO e FECHADO (2026-08-21/22, itens 114-118)
 

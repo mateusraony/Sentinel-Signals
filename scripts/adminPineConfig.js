@@ -90,10 +90,15 @@ const DEFAULTS = {
   fvgFillTargetRatio: 0.6,
   smcScoreObWeight: 0,
   smcScoreFvgWeight: 0,
-  // Proteção de stop pré-TP1 (known-risks.md item 53/54) — master flag OFF
-  // por padrão. Espelha src/lib/pineParser.js.
-  preTp1StopProtectionEnabled: false,
+  // Proteção de stop pré-TP1 (known-risks.md item 53/54) + trailing
+  // contínuo (item 132) — LIGADO por padrão desde 2026-08-26, no modo
+  // TRAILING (preTp1TrailEnabled). Espelha src/lib/pineParser.js — ver o
+  // comentário lá para a medição completa (config A: start 1,0/trail 2,0).
+  preTp1StopProtectionEnabled: true,
   preTp1StopProtectionAtrMult: 1.0,
+  preTp1TrailEnabled: true,
+  preTp1TrailStartAtrMult: 1.0,
+  preTp1TrailAtrMult: 2.0,
   // Gate de padrão de vela (engolfo) na cascata RF — master flag OFF por
   // padrão. Espelha src/lib/pineParser.js.
   candlePatternEnabled: false,
@@ -135,6 +140,7 @@ const SYNCED_STRATEGY_KEYS = [
   'smcObFvgEnabled', 'obFvgAtrLen', 'obMinAtrMult', 'obMaxAtrMult',
   'fvgMinAtrMult', 'fvgFillTargetRatio', 'smcScoreObWeight', 'smcScoreFvgWeight',
   'preTp1StopProtectionEnabled', 'preTp1StopProtectionAtrMult',
+  'preTp1TrailEnabled', 'preTp1TrailStartAtrMult', 'preTp1TrailAtrMult',
   'candlePatternEnabled',
   'skip15mConfirmationEnabled',
   'disableTp2CapEnabled',

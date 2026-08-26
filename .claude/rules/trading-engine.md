@@ -294,40 +294,46 @@ nunca deve receber nova transição.**
   todas via `scripts/analyze-backtest.mjs`. Decisão de mudar algum
   threshold fica para depois, com este dado em mãos.
 - **Proteção de stop pré-TP1** (`opExitRules.js:advancePreTp1StopProtection`
-  + `scanner.js`, branch pré-TP1 de `persistScanResults`) — item 53/54,
-  **`pineConfig.preTp1StopProtectionEnabled` desligado por padrão**. Achado
-  que motivou: 61 de 117 operações de um backtest real ficaram positivas
-  cedo (MFE médio +0,578R) e depois erodiram sem NENHUMA proteção
-  intermediária até o `initial_stop` original (`advanceTrailingStop` só
-  roda pós-TP1). Quando ligado, avança o stop pra breakeven (nunca além)
-  uma vez que o preço se move a favor por `preTp1StopProtectionAtrMult ×
-  ATR` (default 1.0×, múltiplo generoso de propósito — pesquisa de
-  comunidade documenta whipsaw em breakeven prematuro). **Decisão congelada
-  na CRIAÇÃO** (`pre_tp1_stop_protection_enabled`/
-  `pre_tp1_stop_advance_trigger_atr_mult` na operação), lida da OPERAÇÃO no
-  loop de saída, nunca do `pineConfig` ao vivo — mesmo raciocínio do
-  runner (item 46): um flag virando no meio não pode abandonar/introduzir
-  proteção numa posição já em andamento. Só em `persistScanResults` — igual
-  a `advanceTrailingStop` e ao MFE/MAE, ausente de
-  `priceCheckActiveOpsInner`. **Não ativar sem comparar relatórios de
-  backtest com/sem primeiro** — ver `docs/known-risks.md` itens 53/54.
+  + `scanner.js`, branch pré-TP1 de `persistScanResults`) — item 53/54.
+  `pineConfig.preTp1StopProtectionEnabled` é o interruptor MESTRE do bloco
+  pré-TP1 inteiro (**LIGADO por padrão desde 2026-08-26**, item 132) — sem
+  ele, nem o breakeven nem o trailing abaixo rodam. Achado que motivou: 61
+  de 117 operações de um backtest real ficaram positivas cedo (MFE médio
+  +0,578R) e depois erodiram sem NENHUMA proteção intermediária até o
+  `initial_stop` original (`advanceTrailingStop` só roda pós-TP1). O modo
+  em produção hoje é TRAILING, não breakeven — ver o bullet abaixo;
+  `preTp1StopProtectionAtrMult` (default 1.0×) só tem efeito se o modo
+  voltar a ser breakeven. **Decisão congelada na CRIAÇÃO**
+  (`pre_tp1_stop_protection_enabled`/`pre_tp1_stop_advance_trigger_atr_mult`
+  na operação), lida da OPERAÇÃO no loop de saída, nunca do `pineConfig` ao
+  vivo — mesmo raciocínio do runner (item 46): um flag virando no meio não
+  pode abandonar/introduzir proteção numa posição já em andamento (operações
+  criadas ANTES de 2026-08-26 nasceram com o flag `false` e ficam sem
+  nenhuma proteção pré-TP1 pra sempre — só operações novas herdam). Só em
+  `persistScanResults` — igual a `advanceTrailingStop` e ao MFE/MAE, ausente
+  de `priceCheckActiveOpsInner`.
 - **Trailing pré-TP1 contínuo** (`opExitRules.js:advancePreTp1Trailing` +
   `favorableExtremeFromMfe`) — item 132, **`pineConfig.preTp1TrailEnabled`
-  desligado por padrão, backtest-only**. Segundo modo do MESMO bloco
-  pré-TP1, mutuamente exclusivo com o breakeven acima; qual roda é lido da
-  OPERAÇÃO (`pre_tp1_stop_mode`, congelado na criação), nunca do
-  `pineConfig` ao vivo. Não é recalibrar o breakeven: aquele é um salto
-  binário que SATURA na entrada (protege muito por disparo, mas cortou 36%
-  das que chegariam ao TP1 — item 55); este RATCHEIA com a volatilidade,
-  ancorado no EXTREMO favorável desde a entrada, ficando mais longe do
-  preço enquanto o movimento é jovem e continuando a subir depois. O
-  extremo é **reconstruído de `mfe_r`** (item 47.2) em vez de um campo de
+  LIGADO por padrão desde 2026-08-26** (decisão do usuário, config A da
+  grade pré-registrada: `start 1,0×ATR / trail 2,0×ATR`). Segundo modo do
+  MESMO bloco pré-TP1, mutuamente exclusivo com o breakeven acima; qual
+  roda é lido da OPERAÇÃO (`pre_tp1_stop_mode`, congelado na criação),
+  nunca do `pineConfig` ao vivo. Não é recalibrar o breakeven: aquele é um
+  salto binário que SATURA na entrada (protege muito por disparo, mas
+  cortou 36% das que chegariam ao TP1 — item 55); este RATCHEIA com a
+  volatilidade, ancorado no EXTREMO favorável desde a entrada, ficando mais
+  longe do preço enquanto o movimento é jovem e continuando a subir depois.
+  O extremo é **reconstruído de `mfe_r`** (item 47.2) em vez de um campo de
   pico novo — a inversa é exata porque `mfe_r` usa a distância do stop
   inicial como denominador. **O one-shot `pre_tp1_stop_advanced_at` só
   vale no modo breakeven** (que satura); o trailing precisa avançar a cada
-  candle novo. **Não ativar sem medir**, e calibrar `start`/`trail` contra
-  o histograma real de MFE (nunca publicado até hoje), não às cegas — ver
-  `docs/known-risks.md` item 132.
+  candle novo. **Medido** contra controle na mesma janela (120 vs. 103
+  operações): expectância líquida indistinguível dentro do ruído
+  (+0,0262R vs. +0,0257R, z=0,004 — não prova edge), sd(R) −35%, max
+  drawdown pela metade (12,66% → 6,40%) — reduz o custo de medir um edge,
+  não o gera. Ver `docs/known-risks.md` item 132 pra decomposição completa,
+  inclusive a correção pós-review do Codex (aceleração real é 1,85×, não
+  os 2,8× da 1ª leitura, e a config B ficou inconclusiva, não "morta").
 - **Retry na busca de candle ao vivo** (`src/lib/httpRetry.js`,
   `fetchWithRetry`) — item 57. Causa raiz confirmada do volume baixo de
   operações ao vivo: `src/lib/marketDataProvider.js` (browser) e

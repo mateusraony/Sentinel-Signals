@@ -371,40 +371,46 @@ está cortando operações que teriam chegado ao TP1 de qualquer forma, trocando
 lucro por uma saída antecipada desnecessária. `stoppedAtBreakevenPreTp1` é o
 cenário que o mecanismo pretende produzir (perda cheia virando scratch).
 
-### Modo TRAILING pré-TP1 (`preTp1TrailEnabled`, item 132)
+### Modo TRAILING pré-TP1 (`preTp1TrailEnabled`, item 132) — LIGADO por padrão
 
 O mesmo bloco pré-TP1 tem **dois mecanismos mutuamente exclusivos**, e
 `preTp1TrailEnabled` escolhe qual roda. Não é recalibrar o breakeven — são
 dois pontos diferentes da curva proteção × corte-prematuro:
 
-| | Breakeven (default) | Trailing (item 132) |
+| | Breakeven | Trailing (item 132, **default desde 2026-08-26**) |
 |---|---|---|
 | Forma | salto binário, **satura** na entrada | **ratcheia** com a volatilidade, nunca satura |
 | Âncora | close do candle | **extremo favorável** desde a entrada |
 | Enquanto o movimento é jovem | já saltou para a entrada → **corta mais** | fica mais longe do preço → **corta menos** |
 | Depois da entrada | **para de ajudar** | continua subindo |
-| Medido | 36% dos disparos cortaram quem chegaria ao TP1 (item 55) | **ainda não medido** |
+| Medido | 36% dos disparos cortaram quem chegaria ao TP1 (item 55) | **medido** (item 132): mesma expectância dentro do ruído, sd(R) −35%, max drawdown pela metade |
 
 **Requer `preTp1StopProtectionEnabled` ligado** — é ele que abre o bloco
-pré-TP1; o novo flag só decide o mecanismo dentro dele. Pedir o trailing sem
+pré-TP1; o outro flag só decide o mecanismo dentro dele. Pedir o trailing sem
 ele **não é aviso, é recusa**: `run-backtest` aborta antes do replay (item
 132), porque sozinho o trailing seria um no-op e o relatório sairia idêntico
 ao controle sem nada indicando que o mecanismo nunca rodou. O modo é congelado na
 criação (`pre_tp1_stop_mode`), então virar o flag nunca troca o mecanismo de
 uma posição já viva.
 
+**Os dois flags, `start 1,0/trail 2,0` (config A da grade medida), são o
+DEFAULT desde 2026-08-26 — um replay sem `--pine-config` já mede o trailing.**
+Para comparar contra o breakeven antigo ou testar outro par `start`/`trail`,
+sobrescreva explicitamente:
+
 ```bash
-echo '{"preTp1StopProtectionEnabled": true, "preTp1TrailEnabled": false}' > /tmp/be.json
-echo '{"preTp1StopProtectionEnabled": true, "preTp1TrailEnabled": true, "preTp1TrailStartAtrMult": 1.0, "preTp1TrailAtrMult": 2.5}' > /tmp/trail.json
+echo '{"preTp1TrailEnabled": false}' > /tmp/be.json   # volta ao breakeven, só pra comparação
+echo '{"preTp1TrailStartAtrMult": 0.5, "preTp1TrailAtrMult": 1.25}' > /tmp/trail-b.json   # config B (medida, inconclusiva — ver item 132)
 ```
 
-**Calibrar contra dado, não às cegas.** `preTp1TrailStartAtrMult`/
-`preTp1TrailAtrMult` formam um espaço 2D, e varrer esse espaço em ~100
-operações é exatamente o problema de múltiplas comparações que o item 58
-documenta. O caminho registrado no item 132 é olhar primeiro a **distribuição
-de MFE das operações pré-TP1** (`mfe_r`, já rastreado por operação desde o
-item 47.2, e já calculado em `backtestAnalysis.js` — só nunca foi publicado)
-e derivar os dois valores dela, declarando-os **antes** de rodar.
+**A calibração já foi feita — não varra o espaço de novo às cegas.**
+`preTp1TrailStartAtrMult`/`preTp1TrailAtrMult` formam um espaço 2D, e varrer
+esse espaço em ~100 operações é exatamente o problema de múltiplas
+comparações que o item 58 documenta. A grade pré-registrada (config A/B,
+derivada da distribuição real de MFE) já foi medida e o resultado está no
+item 132 — qualquer novo par testado entra como trial NOVO no ledger
+(`scripts/backtest-trial-registry.mjs`), não como continuação gratuita desta
+calibração.
 
 **`report.costs`** (Fase 5, `docs/known-risks.md` item 44) —
 `{model, avgCostR, totalCostPct, grossExpectancyR, netExpectancyR, conclusive,

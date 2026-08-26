@@ -4721,9 +4721,17 @@ invariante `active_op_exists`, ver também item 56).
 Expectância ficou estatisticamente igual entre as duas rodadas (a
 diferença é ruído, não sinal real), mas o drawdown piorou de forma visível
 e o padrão de corte prematuro de vencedores apareceu com peso real (36%
-dos disparos). **Recomendação: manter `pineConfig.
-preTp1StopProtectionEnabled` desligado por padrão.** Os dados não mostram
-ganho, e mostram um custo real e mensurável.
+dos disparos). **Recomendação (só para o modo BREAKEVEN medido aqui):
+manter `pineConfig.preTp1StopProtectionEnabled` desligado por padrão.** Os
+dados não mostram ganho, e mostram um custo real e mensurável.
+
+> **Superada em parte pelo item 132 (2026-08-26).** O interruptor mestre
+> `preTp1StopProtectionEnabled` está LIGADO por padrão desde então — mas no
+> modo **TRAILING**, não no breakeven medido aqui. O trailing mostrou o
+> oposto do que este item mediu para o breakeven: drawdown pela METADE, não
+> pior. A recomendação acima permanece correta como descrição do que foi
+> testado (breakeven), só deixou de descrever o default atual do flag
+> mestre.
 
 ### Verificação
 
@@ -15585,4 +15593,40 @@ A é candidato legítimo, mas pelo motivo errado — não entra como "melhora o
 resultado", entra como "mesma expectância dentro do ruído, metade do drawdown,
 e amostra necessária 1,85× menor". Ligar em produção é decisão de produto do
 usuário, não consequência automática desta medição.
+
+### Promovido a LIGADO por padrão em produção (2026-08-26)
+
+O usuário pediu explicitamente ("pode ligar a config A do trailing") depois
+de ler o veredito acima — decisão de produto, não recomendação minha sozinha
+virando ação. `preTp1StopProtectionEnabled: true` (interruptor mestre) e
+`preTp1TrailEnabled: true` com `preTp1TrailStartAtrMult: 1.0` /
+`preTp1TrailAtrMult: 2.0` (config A) passam a ser o DEFAULT nos 3 arquivos
+que espelham `DEFAULTS` à mão — `src/lib/pineParser.js` (browser),
+`scripts/adminPineConfig.js` (cron), `scripts/backtestPineConfig.js`
+(backtest, que carregava `2.5` de antes da medição — atualizado pra `2.0`
+pra manter o espelho consistente).
+
+**`src/lib/preTp1TrailTripwire.test.js` foi removido e substituído por
+`src/lib/preTp1TrailPromoted.test.js`.** A premissa do tripwire antigo ("essas
+3 chaves NUNCA aparecem em pineParser.js/adminPineConfig.js") ficou falsa por
+construção com a promoção — mantê-lo geraria CI vermelho numa mudança
+intencional. O teste novo cobre o invariante oposto: os 3 arquivos concordam
+byte a byte no valor promovido (regex sobre texto-fonte para
+`adminPineConfig.js`/`pineParser.js` — importar direto quebra por causa da
+cadeia `logger.js`→`firebaseClient.js`→`getAuth()` sem API key real no
+ambiente de teste; import direto e seguro só para `backtestPineConfig.js`,
+que não tem essa cadeia).
+
+**Contrato "congelado na criação" verificado intacto antes da promoção**
+(`scanner.js:497-499`/`1063-1065` só leem `pineConfig` em
+`buildTradeOpData`/`buildSmcTradeOpData`, na CRIAÇÃO da op; o loop de saída
+em `~3624-3648` só lê `op.pre_tp1_stop_mode`/`op.pre_tp1_trail_*`, nunca
+`pineConfig` ao vivo) — flip do default só afeta operações **NOVAS**.
+Qualquer operação criada antes deste deploy nasceu com
+`pre_tp1_stop_protection_enabled: false` e permanece SEM nenhuma proteção
+pré-TP1 (nem breakeven, nem trailing) pelo resto da vida dela — não há
+retroatividade, por design.
+
+Verificação: `npm run lint && npm test && npm run build && node
+scripts/build-scan.mjs && node scripts/build-backtest.mjs`.
 
