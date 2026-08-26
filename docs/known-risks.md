@@ -15341,3 +15341,132 @@ real via `persistScanResults` (modo ausente = breakeven para toda op legada,
 dormência, avanços múltiplos, P0-d, passada repetida no mesmo candle, e a
 reversão que encerra no stop trilhado em vez da perda cheia — o cenário exato
 das 61 operações do item 53).
+
+### Distribuição real de MFE (2026-08-26) — publicada pela primeira vez
+
+Passo obrigatório do plano: **antes de escolher `start`/`trail`, olhar a
+distribuição** (rastreada desde o item 47.2, nunca impressa). Extraída do
+relatório limpo do item 131 (103 operações, funding real, `fundingModel:
+"series"`), convertendo `mfe_r` para múltiplos de ATR — que é a unidade em que
+o trailing é parametrizado.
+
+**Nunca atingiram TP1 (65 ops, 63% da amostra — a população que o mecanismo mira):**
+
+| | mín | p10 | p25 | mediana | p75 | p90 | máx | média |
+|---|---|---|---|---|---|---|---|---|
+| MFE (R) | −0,090 | 0,041 | 0,201 | **0,469** | 0,868 | 1,024 | 1,404 | 0,529 |
+| MFE (ATR) | −0,271 | 0,101 | 0,509 | **1,317** | 2,523 | 3,031 | 4,211 | 1,531 |
+| barras até o pico | 1 | 1 | 2 | **4** | 11 | 35 | 87 | 12,1 |
+
+**Atingiram TP1 (38 ops — a população em risco de corte prematuro):**
+
+| | mín | p25 | mediana | p75 | máx | média |
+|---|---|---|---|---|---|---|
+| MFE (R) | **1,519** | 1,641 | 2,306 | 3,135 | 5,905 | 2,513 |
+| MFE (ATR) | **3,274** | 4,777 | 5,991 | 8,074 | 17,715 | 6,797 |
+| barras até o pico | 2 | 19 | **29** | 46 | 95 | 34,8 |
+
+Risco médio da posição: **2,7-2,9 ATR** (é a ponte entre as duas unidades —
+1R ≈ 2,8 ATR nesta carteira).
+
+Três fatos que a média do item 53 (+0,578R) escondia:
+
+1. **Separação quase limpa no nível do pico.** O piso das vencedoras é
+   3,274 ATR; só **4 das 65** perdedoras chegaram lá. Mas isso NÃO ajuda a
+   escolher `start`: qualquer limiar ≤ 3,0 arma 100% das vencedoras também.
+   Armar não é o que corta — armar cedo é barato quando o trail é largo.
+2. **Separação forte no TEMPO.** As perdedoras picam na **4ª barra** (mediana);
+   as vencedoras na **29ª**. Quem vai ganhar continua subindo; quem vai perder
+   pica cedo e sangra por ~18 barras (item 53).
+3. **O parâmetro que decide é `trail`, não `start`.** A mediana de MFE das
+   perdedoras é 1,317 ATR — um trail maior que isso simplesmente não alcança
+   metade da população-alvo (o clamp monotônico mantém o stop inicial e nada
+   acontece).
+
+### Limite superior EXATO do ganho — e por que só o ganho é calculável
+
+Para as 65 que nunca atingiram TP1 o ganho é computável sem backtest: elas
+foram do pico ao stop inicial, logo **cruzaram necessariamente todo nível
+intermediário** — o trailing teria sido tocado. Usar o pico FINAL superestima
+(se o trail travasse num pico anterior, mais baixo, a saída seria pior), por
+isso é **limite superior**, não previsão.
+
+Resultado real dessas 65: **−1,000R cada**.
+
+| trail (ATR) | resultado sob trailing | ganho | resgatadas (start 0,50) |
+|---|---|---|---|
+| 0,75 | +0,011 | +1,011 | 45/65 |
+| 1,00 | −0,123 | +0,877 | 40/65 |
+| 1,25 | −0,266 | +0,734 | 34/65 |
+| 1,50 | −0,355 | +0,645 | 31/65 |
+| **2,00** | **−0,565** | **+0,435** | 22/65 |
+| 2,50 | −0,676 | +0,324 | 18/65 |
+
+Diluído nas 103 operações, o teto vai de **+0,20R/op** (trail 2,5) a
+**+0,64R/op** (trail 0,75) — contra a expectância líquida atual de +0,026R.
+Headroom real, ordem de grandeza acima do edge inteiro.
+
+**O custo é do outro lado e NÃO é calculável daqui.** O trail pode cortar as 38
+vencedoras antes do TP1, e o dado necessário para saber isso — o recuo máximo a
+partir de um pico *intermediário* — não é rastreado (`mae_r` mede o adverso
+desde a ENTRADA, sobre a vida inteira, não o pullback desde o pico corrente).
+Aritmética do ponto de equilíbrio: com trail 2,0 o ganho é 65 × 0,435 = 28,3R;
+para anular, as 38 vencedoras teriam de perder **0,74R cada** em média. Não é
+implausível — é exatamente o que o backtest existe para medir.
+
+### Armadilha fechada antes de medir: `preTp1TrailEnabled` sozinho é no-op
+
+O bloco pré-TP1 inteiro (`scanner.js`, ramo `newStatus === op.status`) é
+guardado por `op.pre_tp1_stop_protection_enabled`, congelado **só** de
+`pineConfig.preTp1StopProtectionEnabled`. Ligar apenas `preTp1TrailEnabled`
+deixa a operação com `pre_tp1_stop_mode: 'trailing'` e o mecanismo **morto**:
+o relatório volta byte-idêntico ao controle e a leitura natural seria "o
+trailing não teve efeito", quando ele nunca rodou. É o **falso negativo
+simétrico** ao falso positivo que o item 131 custou duas rodadas para eliminar.
+
+**Primeira tentativa de correção, revertida (review Codex, PR #256):** eu fiz
+os dois flags armarem o bloco (`A || B`). Codex apontou que isso contradiz o
+contrato documentado em `docs/claude/backtest-usage.md` e
+`scripts/backtestPineConfig.js`, os dois dizendo que
+`preTp1StopProtectionEnabled` é o interruptor MESTRE — quem pusesse
+`preTp1StopProtectionEnabled: false` para DESLIGAR a proteção passaria a rodar
+o trailing sem saber. Trocar a semântica de um flag para consertar uma
+armadilha de uso é pior que a armadilha.
+
+**Correção adotada:** o contrato mestre fica intacto e a combinação inválida
+**falha alto** em `scripts/run-backtest.mjs`, antes do replay. É o mesmo padrão
+que esta sessão já aplicou duas vezes no item 131 (funding real sem Futures;
+relatório saindo `mixed`): quando o modo de falha é silencioso, a resposta é
+recusar o run, não reinterpretar o parâmetro.
+
+Detalhe que quase repetiu o próprio bug: `getPineConfig()` é **async**. Sem
+`await`, a guarda leria `undefined` numa Promise e nunca dispararia — a guarda
+contra no-op virando um no-op. Verificada rodando os dois casos de verdade
+pelo `run-backtest`: a combinação inválida é recusada, a válida segue.
+
+### Grade PRÉ-REGISTRADA (declarada 2026-08-26, ANTES de qualquer run)
+
+Duas configurações, não uma varredura 2D — o item 58 documenta por que
+múltiplas comparações em N=103 destroem a interpretabilidade.
+
+**Config A — `start 1,0 / trail 2,0`. ZERO parâmetro novo.** Os dois valores já
+existem na estratégia: 1,0 é o `preTp1StopProtectionAtrMult` do breakeven
+(item 53) e 2,0 é o `trailAtrMult` do trailing pós-TP1 já em produção. Nada
+está sendo ajustado — é o mecanismo novo rodando com os multiplicadores que o
+projeto já escolheu. Teto: +0,435R nas 65, ~+0,27R/op diluído.
+
+**Config B — `start 0,5 / trail 1,25`. Derivada da distribuição acima.** 1,25
+é a mediana de MFE da população-alvo arredondada: por construção ~metade das
+perdedoras tem pico ≥ trail e é resgatada acima de zero. 0,5 porque armar cedo
+é barato e o p25 das perdedoras é 0,509 ATR. Teto: +0,734R nas 65,
+~+0,46R/op diluído. É a config agressiva — e a que mais arrisca cortar
+vencedora.
+
+**Predição registrada antes de ver resultado:** A melhora o líquido; B tem
+teto maior mas pode sair PIOR que A por corte prematuro. Se B > A, o mecanismo
+é mais robusto do que eu suponho; se ambas piorarem, o custo nas vencedoras é
+maior que 0,74R/op e a Frente B morre com uma medição, não com um palpite.
+
+Controle: o próprio relatório `funding-real-sinal-por-lado` do item 131 —
+mesma janela, mesma carteira, trailing desligado.
+

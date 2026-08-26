@@ -1,0 +1,386 @@
+{
+  "range": {
+    "fromMs": 1767225600000,
+    "toMs": 1767312000000,
+    "from": "2026-01-01T00:00:00.000Z",
+    "to": "2026-01-02T00:00:00.000Z"
+  },
+  "dataRangeMs": null,
+  "totalOps": 0,
+  "stillOpenAtCutoff": 0,
+  "overall": {
+    "total": 0,
+    "counted": 0,
+    "unknown": 0,
+    "wins": 0,
+    "losses": 0,
+    "be": 0,
+    "winRate": 0,
+    "totalPnlPct": 0,
+    "avgWinPct": 0,
+    "avgLossPct": 0,
+    "avgWinR": null,
+    "avgLossR": null,
+    "expectancyR": null,
+    "rCounted": 0,
+    "profitFactor": null,
+    "maxDrawdownPct": 0,
+    "totalCostPct": 0,
+    "avgCostR": null,
+    "grossExpectancyR": null,
+    "expectancyRStdErr": null,
+    "expectancyRCI95": null,
+    "conclusive": false,
+    "inconclusiveReason": "sample_too_small",
+    "minTrades": 30,
+    "curve": []
+  },
+  "byCascade": {},
+  "smcDiagnostics": {
+    "structureEventsTotal": 0,
+    "confirmedSignals": 0,
+    "rejectedByOteZone": 0,
+    "tradeOpsCreated": 0
+  },
+  "arbitration": {
+    "total": 0,
+    "attempts": {
+      "evaluations": 0,
+      "retried": 0,
+      "maxAttempts": 0
+    },
+    "byOutcome": {},
+    "byCascade": {}
+  },
+  "retest": {
+    "enabled": false,
+    "total": 0,
+    "attempts": {
+      "evaluations": 0,
+      "retried": 0,
+      "maxAttempts": 0
+    },
+    "confirmed": 0,
+    "pending": 0,
+    "avgBarsToConfirm": null,
+    "byCascade": {},
+    "byReason": {}
+  },
+  "displacement": {
+    "enabled": false,
+    "total": 0,
+    "attempts": {
+      "evaluations": 0,
+      "retried": 0,
+      "maxAttempts": 0
+    },
+    "confirmed": 0,
+    "pending": 0,
+    "avgBodyRatio": null,
+    "byCascade": {},
+    "byReason": {}
+  },
+  "smcRegime": {
+    "enabled": false,
+    "attempts": {
+      "evaluations": 0,
+      "retried": 0,
+      "maxAttempts": 0
+    },
+    "total": 0,
+    "passed": 0,
+    "rejected": 0,
+    "byReason": {},
+    "adxStats": null,
+    "chopStats": null,
+    "byCascade": {}
+  },
+  "rfRegime": {
+    "enabled": false,
+    "attempts": {
+      "evaluations": 0,
+      "retried": 0,
+      "maxAttempts": 0
+    },
+    "total": 0,
+    "passed": 0,
+    "rejected": 0,
+    "byReason": {},
+    "adxStats": null,
+    "chopStats": null,
+    "byCascade": {}
+  },
+  "smcObFvg": {
+    "enabled": false,
+    "total": 0,
+    "attempts": {
+      "evaluations": 0,
+      "retried": 0,
+      "maxAttempts": 0
+    },
+    "obActive": 0,
+    "fvgActive": 0,
+    "both": 0,
+    "neither": 0
+  },
+  "smcTrigger": {
+    "total": 0,
+    "attempts": {
+      "evaluations": 0,
+      "retried": 0,
+      "maxAttempts": 0
+    },
+    "confirmed": 0,
+    "rejected": 0,
+    "byTrigger": {
+      "sweep": 0,
+      "structure": 0
+    },
+    "byRawAlignment": {
+      "sweepOnly": 0,
+      "structureOnly": 0,
+      "both": 0
+    },
+    "byReason": {}
+  },
+  "candlePattern": {
+    "enabled": false,
+    "total": 0,
+    "attempts": {
+      "evaluations": 0,
+      "retried": 0,
+      "maxAttempts": 0
+    },
+    "passed": 0,
+    "rejected": 0,
+    "byPattern": {},
+    "byReason": {}
+  },
+  "runner": {
+    "enabled": false,
+    "opsWithRunner": 0,
+    "opsFullyClosedAtTp1": 0,
+    "closedByTp1Full": 0
+  },
+  "preTp1StopProtection": {
+    "enabled": false,
+    "total": 0,
+    "advanced": 0,
+    "reachedTp1AfterAdvance": 0,
+    "stoppedAtBreakevenPreTp1": 0,
+    "stoppedAtTrailedStopPreTp1": 0,
+    "otherExitAfterAdvance": 0,
+    "mode": null
+  },
+  "entryFunnel": {
+    "4h_15m": {
+      "totalRejections": 0,
+      "byReason": {}
+    },
+    "1h_5m": {
+      "totalRejections": 0,
+      "byReason": {}
+    }
+  },
+  "indicatorAttribution": {
+    "totalRawSignals": 0,
+    "resolvedOutcomes": 0,
+    "stillOpenOrInsufficient": 0,
+    "by": {
+      "macd": {
+        "agrees": {
+          "n": 0,
+          "expectancyR": null,
+          "stdErr": null,
+          "ci95": null,
+          "conclusive": false,
+          "inconclusiveReason": "no_data"
+        },
+        "disagrees": {
+          "n": 0,
+          "expectancyR": null,
+          "stdErr": null,
+          "ci95": null,
+          "conclusive": false,
+          "inconclusiveReason": "no_data"
+        }
+      },
+      "ema": {
+        "agrees": {
+          "n": 0,
+          "expectancyR": null,
+          "stdErr": null,
+          "ci95": null,
+          "conclusive": false,
+          "inconclusiveReason": "no_data"
+        },
+        "disagrees": {
+          "n": 0,
+          "expectancyR": null,
+          "stdErr": null,
+          "ci95": null,
+          "conclusive": false,
+          "inconclusiveReason": "no_data"
+        }
+      },
+      "rsi": {
+        "agrees": {
+          "n": 0,
+          "expectancyR": null,
+          "stdErr": null,
+          "ci95": null,
+          "conclusive": false,
+          "inconclusiveReason": "no_data"
+        },
+        "disagrees": {
+          "n": 0,
+          "expectancyR": null,
+          "stdErr": null,
+          "ci95": null,
+          "conclusive": false,
+          "inconclusiveReason": "no_data"
+        }
+      },
+      "volume_above_ma": {
+        "agrees": {
+          "n": 0,
+          "expectancyR": null,
+          "stdErr": null,
+          "ci95": null,
+          "conclusive": false,
+          "inconclusiveReason": "no_data"
+        },
+        "disagrees": {
+          "n": 0,
+          "expectancyR": null,
+          "stdErr": null,
+          "ci95": null,
+          "conclusive": false,
+          "inconclusiveReason": "no_data"
+        }
+      }
+    },
+    "records": []
+  },
+  "costs": {
+    "model": {
+      "feeBpsEntry": 5,
+      "feeBpsExit": 5,
+      "slippageBpsPerSide": 1,
+      "fundingBpsPer8h": 1,
+      "fundingSeries": null,
+      "applied": true
+    },
+    "avgCostR": null,
+    "totalCostPct": 0,
+    "grossExpectancyR": null,
+    "netExpectancyR": null,
+    "conclusive": false,
+    "inconclusiveReason": "sample_too_small",
+    "expectancyRCI95": null,
+    "countedTrades": 0,
+    "minTrades": 30
+  },
+  "equityCurve": {
+    "initialCapital": 1000,
+    "riskPct": 1,
+    "finalCapital": 1000,
+    "totalReturnPct": 0,
+    "maxDrawdownPct": 0,
+    "maxDrawdownAbs": 0,
+    "accountBlown": false,
+    "years": null,
+    "cagrPct": null,
+    "cagrUnavailableReason": "no_time_range",
+    "sized": 0,
+    "unsized": 0
+  },
+  "signalExpiry": {},
+  "trialLabel": "guard-test",
+  "trialArgs": "--symbols BTCUSDT --from 2026-01-01 --to 2026-01-02 --pine-config /tmp/claude-0/-home-user-Sentinel-Signals/c64c4b67-95e7-560f-8c6b-052626f64773/scratchpad/os-dois.json --trial-label guard-test",
+  "reproducibility": {
+    "commitSha": "229e3cdc5b3264e2328b8a3e5d98c9fb3e58cc91",
+    "configHash": "4481432df3d9d289",
+    "runStartedAt": "2026-08-26T09:53:19.962Z",
+    "pineConfig": {
+      "rng_per": 20,
+      "rng_qty": 3.5,
+      "minScore": 75,
+      "atrLen": 14,
+      "tp1R": 1.5,
+      "tp1QtyPercent": 50,
+      "trailAtrMult": 2,
+      "emaFastLen": 20,
+      "emaSlowLen": 50,
+      "rsiLen": 14,
+      "volLen": 20,
+      "pineVersion": 6,
+      "strategyTitle": "NEW ERA - Range Filter Strategy v13.2",
+      "tier2Threshold": 0.8,
+      "tier3Threshold": 1.5,
+      "useADX": true,
+      "adxLen": 14,
+      "adxSmooth": 14,
+      "useChop": true,
+      "chopLen": 14,
+      "useTimeStop": true,
+      "timeStopT1": 48,
+      "timeStopT2": 64,
+      "timeStopT3": 96,
+      "useChopExit": false,
+      "useInvalidation": false,
+      "invalidRFBars": 2,
+      "invalidScoreMin": 75,
+      "confirmBars": 1,
+      "onlyClosedCandles": true,
+      "arbEnabled": true,
+      "arbPromoteMinScore": 75,
+      "arbReinforceMinScore": 50,
+      "arbInvalidateOnOppositeMajor": false,
+      "arbInvalidateOnOppositeSameTf": false,
+      "arbOppositeScorePenalty": 15,
+      "minRR": 1.2,
+      "smcScoreStructureWeight": 15,
+      "smcScoreChochBonus": 10,
+      "smcScoreEmaWeight": 20,
+      "smcScoreRfWeight": 15,
+      "smcScoreVolumeWeight": 15,
+      "smcScoreAlignmentWeight": 15,
+      "smcScoreSweepWeight": 10,
+      "runnerEnabled": true,
+      "retestEnabled": false,
+      "retestToleranceAtrMult": 0.3,
+      "retestTouchMode": "close",
+      "displacementEnabled": false,
+      "displacementBodyAtrMult": 1.5,
+      "displacementMinVolumeRatio": null,
+      "smcTierEnabled": false,
+      "smcObFvgEnabled": false,
+      "obFvgAtrLen": 50,
+      "obMinAtrMult": 0.5,
+      "obMaxAtrMult": 2.5,
+      "fvgMinAtrMult": 0.5,
+      "fvgFillTargetRatio": 0.6,
+      "smcScoreObWeight": 0,
+      "smcScoreFvgWeight": 0,
+      "preTp1StopProtectionEnabled": true,
+      "preTp1StopProtectionAtrMult": 1,
+      "candlePatternEnabled": false,
+      "skip15mConfirmationEnabled": false,
+      "rf1hCondEnabled": false,
+      "rf1hUncondEnabled": false,
+      "allowedSide": null,
+      "timeStopBarsOverride": null,
+      "preTp1TrailEnabled": true,
+      "preTp1TrailStartAtrMult": 1,
+      "preTp1TrailAtrMult": 2.5,
+      "hierarchicalCascadesEnabled": false,
+      "smcAlignmentScoreEnabled": false,
+      "rf1hExclusiveEnabled": false,
+      "buyRegimeFilterEnabled": false,
+      "rfStructuralStopEnabled": false,
+      "rsiOnlyGateEnabled": false,
+      "disableTp2CapEnabled": false
+    }
+  }
+}

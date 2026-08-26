@@ -189,9 +189,46 @@ describe('buildTradeOpData — entry into SIGNAL_CONFIRMED', () => {
     expect(explicitlyOn.pre_tp1_stop_advance_trigger_atr_mult).toBe(1.5);
   });
 
-  // docs/known-risks.md item 114 — same "frozen at creation" contract as
-  // pre_tp1_stop_protection_enabled above: pineConfig.disableTp2CapEnabled
-  // read here once, never again at exit time.
+  // docs/known-risks.md item 132 — `preTp1StopProtectionEnabled` é o
+  // interruptor MESTRE do bloco pré-TP1; `preTp1TrailEnabled` só escolhe QUAL
+  // mecanismo roda dentro dele. Este teste fixa esse contrato: ligar só o
+  // trailing marca o MODO mas NÃO arma o bloco — combinação que o backtest
+  // recusa antes de rodar (scripts/run-backtest.mjs), justamente porque
+  // sozinha ela seria um no-op silencioso e o relatório sairia idêntico ao
+  // controle sem nenhum aviso.
+  it('preTp1TrailEnabled marca o modo mas NÃO arma o bloco: quem arma é preTp1StopProtectionEnabled', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { atrStopMult: 2.0 } });
+
+    const soTrail = buildTradeOpData(
+      sig, tf4hData, makePineConfig({ preTp1TrailEnabled: true }), { entryPrice: 100 },
+    );
+    expect(soTrail.pre_tp1_stop_mode).toBe('trailing');
+    expect(soTrail.pre_tp1_stop_protection_enabled).toBe(false);
+
+    const osDois = buildTradeOpData(
+      sig, tf4hData,
+      makePineConfig({
+        preTp1StopProtectionEnabled: true,
+        preTp1TrailEnabled: true,
+        preTp1TrailStartAtrMult: 1.0,
+        preTp1TrailAtrMult: 2.0,
+      }),
+      { entryPrice: 100 },
+    );
+    expect(osDois.pre_tp1_stop_protection_enabled).toBe(true);
+    expect(osDois.pre_tp1_stop_mode).toBe('trailing');
+    expect(osDois.pre_tp1_trail_start_atr_mult).toBe(1.0);
+    expect(osDois.pre_tp1_trail_atr_mult).toBe(2.0);
+
+    // Breakeven sozinho continua armando o bloco no modo de sempre.
+    const soBreakeven = buildTradeOpData(
+      sig, tf4hData, makePineConfig({ preTp1StopProtectionEnabled: true }), { entryPrice: 100 },
+    );
+    expect(soBreakeven.pre_tp1_stop_protection_enabled).toBe(true);
+    expect(soBreakeven.pre_tp1_stop_mode).toBe('breakeven');
+  });
+
   it('stamps tp2_cap_disabled from pineConfig.disableTp2CapEnabled, defaulting off (byte-identical to before this flag existed)', () => {
     const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
     const tf4hData = makeTfData({ atrValue: 2, tier: { atrStopMult: 2.0 } });
