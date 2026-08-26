@@ -15470,3 +15470,119 @@ maior que 0,74R/op e a Frente B morre com uma medição, não com um palpite.
 Controle: o próprio relatório `funding-real-sinal-por-lado` do item 131 —
 mesma janela, mesma carteira, trailing desligado.
 
+### Resultado medido (2026-08-26) — a Frente B não adiciona edge, mas muda a MEDIDA
+
+Dois runs da grade pré-registrada, janela `2025-08-26 → 2026-07-31`, Futures,
+funding real (`fundingModel: "series"` nos dois). Controle: o relatório
+`funding-real-sinal-por-lado` do item 131.
+
+| | Controle | **A — 1,0/2,0** | B — 0,5/1,25 |
+|---|---|---|---|
+| operações | 103 | **120** | 120 |
+| expectância líquida | +0,0257 | **+0,0262** | **−0,0030** |
+| sd(R) por operação | 1,2493 | **0,8063** | 0,5503 |
+| erro-padrão em cluster | 0,1066 | **0,0783** | 0,0480 |
+| IC95 t-Student em cluster | [−0,200; +0,252] | [−0,131; +0,184] | [−0,099; +0,093] |
+| clusters (G) | 17 | **50** | 64 |
+| max drawdown | 12,66% | **6,40%** | 6,58% |
+| profit factor | 0,841 | **0,977** | 0,925 |
+| saídas em TP2 | 12 | 6 | **1** |
+| média das saídas em stop | −0,323R | **−0,089R** | −0,022R |
+| tempo médio em posição | 4,8d | 2,3d | 28h |
+
+**O mecanismo funciona exatamente como projetado nos dois lados — e é por isso
+que ele não gera edge.** A média das saídas em stop melhora de −0,323R para
+−0,089R (A), confirmando o limite superior calculado acima. Mas as saídas em
+TP2 caem de 12 para 6 (A) e para 1 (B), e o Time Stop desaparece por completo
+(no controle eram 8 operações a +0,352R). O trail **trunca as DUAS caudas**: os
+perdedores param pequeno e os vencedores também. Em 2,0 ATR os dois efeitos se
+cancelam; em 1,25 o corte de vencedor domina e o líquido vira negativo.
+
+**Predição registrada × medido.** Eu previ "A melhora o líquido; B pode sair
+pior". B saiu pior — certo. **A não melhorou o líquido: +0,0005R é ruído** —
+errado. E o efeito real de A eu não previ em nenhuma direção.
+
+**O que A realmente entrega — a alavanca do item 109, por um caminho
+inesperado.** A expectância é a mesma dentro do ruído, mas:
+
+- **sd cai 35%** (1,2493 → 0,8063).
+- **operações sobem 17%** (103 → 120). O trail devolve o slot do ativo mais
+  cedo: as rejeições `active_op_exists` desabam de 475 para 10 (é contagem de
+  RETENTATIVAS, por isso o colapso é super-linear no tempo em posição, enquanto
+  a contagem de operações sobe só 17% — consistente, não anomalia).
+- **clusters vão de 17 para 50**, porque operações curtas se sobrepõem menos.
+
+**Aceleração: 1,85× — e a primeira versão deste item dizia 2,8×, errado**
+(achado do Codex, PR #257). A conta de 2,8× usava só a razão de sd i.i.d.
+(`(0,8063/1,2493)² = 0,42`) vezes as 17% operações a mais, **ignorando a
+mudança na estrutura de correlação** — apesar de a frase afirmar que somava os
+três efeitos.
+
+Com o DEFF medido, o sd EFETIVO (`sd × √DEFF`) é o que dirige o `n`:
+
+| | sd i.i.d. | DEFF | sd efetivo |
+|---|---|---|---|
+| Controle | 1,2493 | **0,7500** (correlação AJUDA) | 1,0819 |
+| A | 0,8063 | **1,1329** (correlação ATRAPALHA) | 0,8582 |
+
+O `n` necessário cai para **63%**, não 42%. E como as duas janelas cobrem o
+mesmo ano, a razão dos erros-padrão em cluster ao quadrado já entrega a
+aceleração com as operações extras embutidas: `(0,1066/0,0783)² = **1,85×**`.
+
+**A terceira bala estava invertida.** Eu afirmei que ir de 17 para 50 clusters
+tornaria a correção "menos punitiva". O oposto: o controle tinha DEFF 0,75 —
+correlação NEGATIVA, um bônus (N efetivo 137 de 103 nominais) — e A tem DEFF
+1,13, um pedágio (N efetivo 106 de 120). Mais clusters não viraram menos
+penalidade; a penalidade passou a existir. A aceleração de 1,85× é **líquida
+desse pedágio**, não somada a ele.
+
+Não é edge novo, é o mesmo edge numa forma mais barata de medir — só que 1,85×
+mais barata, não 2,8×.
+
+**E um benefício que não é estatístico: o max drawdown cai pela metade**
+(12,66% → 6,40%), com profit factor subindo de 0,841 para 0,977. Isso vale por
+si, independente de significância.
+
+**Ressalvas obrigatórias.**
+
+1. **Não é comparação pareada.** Ao contrário do A/B de funding (mesmas 103
+   operações dos dois lados), aqui o mecanismo MUDA a população: 103 × 120
+   operações. A comparação é ponta a ponta, não pareada.
+2. **"Expectância inalterada" é uma afirmação fraca.** Os IC se sobrepõem
+   quase por completo; a diferença de +0,0005R não distingue "igual" de
+   "±0,05R". O que é medição direta e não inferência: sd, drawdown, contagem
+   de operações, distribuição de saídas.
+3. **Nada disso é significativo.** Os três seguem `conclusive: false`,
+   `ci_straddles_zero`; com correção de Bonferroni para a família de 2 trials
+   (`scripts/backtest-trial-registry.mjs --summarize-family pre-tp1-trailing`),
+   A fica em [−0,139; +0,191]. **O edge continua não provado** — o que mudou é
+   quanto custa prová-lo.
+4. Registrados no ledger como família NOVA `pre-tp1-trailing` (2 trials).
+5. **Nenhuma das três diferenças é detectável** (achado do Codex, PR #257).
+   Tratando os runs como amostras independentes — conservador, já que
+   compartilham o MESMO dado de preço e a correlação positiva real reduziria
+   o erro-padrão da diferença:
+
+   | comparação | diferença | EP | z |
+   |---|---|---|---|
+   | B − controle | −0,0287 R | 0,1169 | **−0,245** |
+   | A − controle | +0,0005 R | 0,1323 | **+0,004** |
+   | B − A | −0,0292 R | 0,0918 | **−0,318** |
+
+**Veredito, corrigido.** A versão original dizia "B está morto" — **não é
+sustentável** e o Codex está certo: o IC em cluster de B é [−0,099; +0,093],
+nenhum teste de diferença foi feito antes de eu escrever aquilo, e a condição
+de morte que EU pré-registrei era "se **ambas** piorarem" — A não piorou. B
+segue **inconclusivo**, como tudo aqui.
+
+O que resta contra B não é estatístico, é mecânico e é medição direta: **1
+saída em TP2 em 120 operações**, contra 12 em 103 no controle. Isso é
+truncamento quase total dos vencedores, um fato sobre o que o mecanismo faz —
+não uma inferência sobre expectância. É motivo suficiente para despriorizar B,
+e insuficiente para eliminá-la.
+
+A é candidato legítimo, mas pelo motivo errado — não entra como "melhora o
+resultado", entra como "mesma expectância dentro do ruído, metade do drawdown,
+e amostra necessária 1,85× menor". Ligar em produção é decisão de produto do
+usuário, não consequência automática desta medição.
+
