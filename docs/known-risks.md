@@ -15505,19 +15505,39 @@ errado. E o efeito real de A eu não previ em nenhuma direção.
 **O que A realmente entrega — a alavanca do item 109, por um caminho
 inesperado.** A expectância é a mesma dentro do ruído, mas:
 
-- **sd cai 35%** (1,2493 → 0,8063). Como `n ∝ (sd/edge)²`, o n necessário para
-  o mesmo edge cai para **42%** do anterior.
+- **sd cai 35%** (1,2493 → 0,8063).
 - **operações sobem 17%** (103 → 120). O trail devolve o slot do ativo mais
   cedo: as rejeições `active_op_exists` desabam de 475 para 10 (é contagem de
   RETENTATIVAS, por isso o colapso é super-linear no tempo em posição, enquanto
   a contagem de operações sobe só 17% — consistente, não anomalia).
-- **clusters vão de 17 para 50.** Operações mais curtas se sobrepõem menos no
-  tempo, então a correção por correlação deixa de ser tão punitiva — é o
-  gargalo que o item 109 nomeou (`G` baixo torna o IC em cluster pouco
-  confiável sozinho).
+- **clusters vão de 17 para 50**, porque operações curtas se sobrepõem menos.
 
-Somando os três: **o tempo até significância cai ~2,8×**. Não é edge novo, é o
-mesmo edge numa forma muito mais barata de medir.
+**Aceleração: 1,85× — e a primeira versão deste item dizia 2,8×, errado**
+(achado do Codex, PR #257). A conta de 2,8× usava só a razão de sd i.i.d.
+(`(0,8063/1,2493)² = 0,42`) vezes as 17% operações a mais, **ignorando a
+mudança na estrutura de correlação** — apesar de a frase afirmar que somava os
+três efeitos.
+
+Com o DEFF medido, o sd EFETIVO (`sd × √DEFF`) é o que dirige o `n`:
+
+| | sd i.i.d. | DEFF | sd efetivo |
+|---|---|---|---|
+| Controle | 1,2493 | **0,7500** (correlação AJUDA) | 1,0819 |
+| A | 0,8063 | **1,1329** (correlação ATRAPALHA) | 0,8582 |
+
+O `n` necessário cai para **63%**, não 42%. E como as duas janelas cobrem o
+mesmo ano, a razão dos erros-padrão em cluster ao quadrado já entrega a
+aceleração com as operações extras embutidas: `(0,1066/0,0783)² = **1,85×**`.
+
+**A terceira bala estava invertida.** Eu afirmei que ir de 17 para 50 clusters
+tornaria a correção "menos punitiva". O oposto: o controle tinha DEFF 0,75 —
+correlação NEGATIVA, um bônus (N efetivo 137 de 103 nominais) — e A tem DEFF
+1,13, um pedágio (N efetivo 106 de 120). Mais clusters não viraram menos
+penalidade; a penalidade passou a existir. A aceleração de 1,85× é **líquida
+desse pedágio**, não somada a ele.
+
+Não é edge novo, é o mesmo edge numa forma mais barata de medir — só que 1,85×
+mais barata, não 2,8×.
 
 **E um benefício que não é estatístico: o max drawdown cai pela metade**
 (12,66% → 6,40%), com profit factor subindo de 0,841 para 0,977. Isso vale por
@@ -15538,9 +15558,31 @@ si, independente de significância.
    A fica em [−0,139; +0,191]. **O edge continua não provado** — o que mudou é
    quanto custa prová-lo.
 4. Registrados no ledger como família NOVA `pre-tp1-trailing` (2 trials).
+5. **Nenhuma das três diferenças é detectável** (achado do Codex, PR #257).
+   Tratando os runs como amostras independentes — conservador, já que
+   compartilham o MESMO dado de preço e a correlação positiva real reduziria
+   o erro-padrão da diferença:
 
-**Veredito:** B está morto. A é um candidato legítimo, mas pelo motivo errado —
-não entra como "melhora o resultado", entra como "mesma expectância, metade do
-drawdown, e amostra necessária 2,8× menor". Ligar em produção é decisão de
-produto do usuário, não consequência automática desta medição.
+   | comparação | diferença | EP | z |
+   |---|---|---|---|
+   | B − controle | −0,0287 R | 0,1169 | **−0,245** |
+   | A − controle | +0,0005 R | 0,1323 | **+0,004** |
+   | B − A | −0,0292 R | 0,0918 | **−0,318** |
+
+**Veredito, corrigido.** A versão original dizia "B está morto" — **não é
+sustentável** e o Codex está certo: o IC em cluster de B é [−0,099; +0,093],
+nenhum teste de diferença foi feito antes de eu escrever aquilo, e a condição
+de morte que EU pré-registrei era "se **ambas** piorarem" — A não piorou. B
+segue **inconclusivo**, como tudo aqui.
+
+O que resta contra B não é estatístico, é mecânico e é medição direta: **1
+saída em TP2 em 120 operações**, contra 12 em 103 no controle. Isso é
+truncamento quase total dos vencedores, um fato sobre o que o mecanismo faz —
+não uma inferência sobre expectância. É motivo suficiente para despriorizar B,
+e insuficiente para eliminá-la.
+
+A é candidato legítimo, mas pelo motivo errado — não entra como "melhora o
+resultado", entra como "mesma expectância dentro do ruído, metade do drawdown,
+e amostra necessária 1,85× menor". Ligar em produção é decisão de produto do
+usuário, não consequência automática desta medição.
 
