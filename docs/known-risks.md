@@ -12154,6 +12154,12 @@ produziu operação de verdade (`smc-confirm-4h15m-gate-off-1yr`, item 108).
 
 ### Achado 1 — o custo come 45% do edge bruto
 
+> **Revisado pelo item 131 (2026-08-26).** Os 45% abaixo foram medidos com
+> funding CONSTANTE (`fundingBpsPer8h: 1`, cobrado dos dois lados). Com a
+> taxa real publicada, com sinal por lado, o custo cai 56% e funding vira
+> receita líquida — na janela do item 131 a fatia do custo sai de 48% para
+> 24% do edge bruto. Ao citar este número, diga com qual modelo de funding.
+
 | | |
 |---|---|
 | Expectância BRUTA | **+0,1165R** |
@@ -15168,9 +15174,52 @@ relatório segue `conclusive: false` (`ci_straddles_zero`), IC95 em cluster
 `[−0,215; +0,231]` com G=18. O que muda é o denominador do item 109 — é para
 isso que a rodada existe.
 
-**Pendente:** re-rodar o par #134/#136 com o parser corrigido e `--to` no fim
-do último mês fechado, para produzir o número autoritativo com
-`fundingModel: "series"` limpo.
+### Medição autoritativa (2026-08-26, parser corrigido) — FRENTE A FECHADA
+
+Par re-rodado com o commit `9748fad` (PR #254 já em `main`), janela
+`2025-08-26 → 2026-07-31`, 7 símbolos, Futures. **`fundingModel: "series"`,
+`opsWithIncompleteFunding: 0`** — nenhuma operação caiu na constante. Este é o
+número; os Runs #134/#136 ficam só como registro do bug.
+
+A/B limpo por construção: 103 operações idênticas nos dois lados,
+`grossExpectancyR` igual em `0,049384` — funding não toca entrada nem saída.
+
+| | Controle (constante) | Funding real | Δ |
+|---|---|---|---|
+| funding R/op | +0,0270 | **−0,0029** | −0,0299 |
+| fatia do funding no custo | 50,4% | **negativa (receita)** | — |
+| `avgCostR` | 0,0536 | **0,0237** | **−56%** |
+| `netExpectancyR` | **−0,0042** | **+0,0257** | **+0,0299** |
+| média R BUY (47 ops) | −0,282 | −0,257 | +0,025 |
+| média R SELL (56 ops) | +0,229 | +0,263 | +0,034 |
+
+Três leituras que importam:
+
+1. **O sinal do resultado líquido inverte.** Com a constante, esta carteira/
+   janela é levemente NEGATIVA (−0,0042R). Com funding real, é positiva
+   (+0,0257R). O projeto vinha medindo como custo algo que, nesta janela, era
+   receita — e a diferença é da ordem do edge líquido inteiro.
+2. **A decomposição confirma a retratação da prévia.** BUY melhora +0,025 e
+   SELL +0,034: os dois lados ganham. A assimetria de sinal vale **+0,009R**,
+   ~30% do efeito; os outros ~70% são a constante ter sido alta demais em
+   magnitude. A hipótese registrada acima (efeito assimétrico dominado pelo
+   sinal, ~+0,05R nas SELL) está refutada em ambos os números.
+3. **Não vira significância, e não era para virar.** Segue
+   `conclusive: false` (`ci_straddles_zero`): N=103, G=17 clusters,
+   IC95 t-Student em cluster `[−0,200; +0,252]`, sign-flip por cluster
+   p=0,8078. O ganho é no DENOMINADOR do item 109 — com o edge saindo de
+   ~0,064R para ~0,026R nesta janela específica o n necessário não cai
+   (a janela é outra, o baseline do item 109 media 98 ops noutro recorte);
+   o que cai é o VIÉS: o custo deixou de ser superestimado em 56%.
+
+Efeito colateral já visível: `avgCostR` cai de 0,0536 para 0,0237, então a
+afirmação corrente de que "o custo consome 45% do edge bruto" (itens 44/109)
+passa a ser **48% do edge bruto com a constante, 24% com funding real** nesta
+janela. Qualquer análise futura que cite os 45% precisa dizer com qual modelo.
+
+**Congelado.** Regra do item 44 (Bajgrowicz & Scaillet): custos congelados
+antes de calibrar parâmetro. A Frente B (item 132, trailing pré-TP1) pode
+agora ser calibrada contra este custo, não contra o antigo.
 
 ## 132. Trailing pré-TP1 contínuo — o mecanismo que o item 54 nomeou e nunca foi construído (2026-08-25)
 
