@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { snapFundingCalcTime } from '../../scripts/binanceArchive.js';
 import {
   isClosedOp,
   getClosedAt,
@@ -663,6 +664,44 @@ describe('funding real — cobertura incompleta (item 131, Codex P1)', () => {
     const constante = calcFundingCost(makeOp(held)).cost;
     expect(soma1Liquidacao).toBeLessThan(constante); // o bug seria subestimar
     expect(calcFundingCost(makeOp(held), { fundingSeries: gappy }).cost).toBeCloseTo(constante, 9);
+  });
+
+  // Item 131, Run #136: a causa REAL da contaminação medida em produção não
+  // foi buraco de dado — foi jitter de milissegundos. 22 das 24 operações
+  // contaminadas estavam a EXATAMENTE uma liquidação do esperado, porque a
+  // Binance carimba `calc_time` alguns ms depois da hora cheia e a op fecha
+  // na hora cheia exata. A guarda fez o certo (cair na constante em vez de
+  // cobrar de menos); quem estava errado era o dado de entrada.
+  it('liquidação carimbada 3 ms tarde some da janela e derruba a op na constante', () => {
+    const comJitter = {
+      BTCUSDT: [
+        '2026-07-16T08:00:00.000Z', '2026-07-16T16:00:00.000Z', '2026-07-17T00:00:00.000Z',
+      ].map((iso) => ({ calcTime: Date.parse(iso) + 3, rate: 0.0001 })),
+    };
+    const op = makeOp({
+      symbol: 'BTCUSDT', exit_price: 95,
+      candle_close_time: '2026-07-16T07:00:00.000Z',
+      closed_at: '2026-07-17T00:00:00.000Z', // fecha EM cima de uma fronteira
+    });
+    const c = calcFundingCost(op, { fundingSeries: comJitter });
+    expect(c.source).toBe('series_incomplete');
+    expect(c.matchedSettlements).toBe(c.expectedSettlements - 1);
+  });
+
+  it('com os mesmos carimbos ancorados pelo parser, a mesma op usa a série', () => {
+    const ancorado = {
+      BTCUSDT: [
+        '2026-07-16T08:00:00.000Z', '2026-07-16T16:00:00.000Z', '2026-07-17T00:00:00.000Z',
+      ].map((iso) => ({ calcTime: snapFundingCalcTime(Date.parse(iso) + 3), rate: 0.0001 })),
+    };
+    const op = makeOp({
+      symbol: 'BTCUSDT', exit_price: 95,
+      candle_close_time: '2026-07-16T07:00:00.000Z',
+      closed_at: '2026-07-17T00:00:00.000Z',
+    });
+    const c = calcFundingCost(op, { fundingSeries: ancorado });
+    expect(c.source).toBe('series');
+    expect(c.settlements).toBe(c.expectedSettlements);
   });
 
   it('MAIS liquidações que o esperado é legítimo (par com intervalo < 8h), segue série', () => {

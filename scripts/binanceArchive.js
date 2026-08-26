@@ -156,6 +156,32 @@ export function parseKlineCsv(csvText) {
 const MAX_PLAUSIBLE_FUNDING_RATE = 1;
 
 /**
+ * Arredonda `calc_time` para o segundo mais próximo.
+ *
+ * Por que isto existe (item 131, medido no Run #136): o motor fecha operação
+ * em fronteira exata de vela (16:00:00.000). A Binance carimba a liquidação
+ * daquele mesmo instante como 16:00:00.003. A janela de cobrança é semiaberta
+ * `(entrada, saída]`, então 3 ms de atraso jogam a liquidação para FORA da
+ * operação — enquanto `countFundingSettlementsByLeg`, que conta fronteiras por
+ * aritmética de hora cheia, continua contando ela. O resultado é um "falta uma
+ * liquidação" que derruba a operação no fallback da constante.
+ *
+ * Não é hipótese: 22 das 24 operações contaminadas do Run #136 estavam a
+ * EXATAMENTE uma liquidação do esperado, e o jitter medido em 9.340
+ * liquidações reais de 7 pares vai de 1 a 24 ms DEPOIS da hora cheia, nunca
+ * antes. 24 ms << 500 ms, então arredondar
+ * para o segundo é inequívoco e não pode fundir duas liquidações distintas
+ * (a menor cadência real é de 1 hora).
+ *
+ * @param {number} calcTime epoch ms como publicado
+ * @returns {number} epoch ms na fronteira
+ */
+export function snapFundingCalcTime(calcTime) {
+  if (!Number.isFinite(calcTime)) return calcTime;
+  return Math.round(calcTime / 1000) * 1000;
+}
+
+/**
  * Parses one fundingRate archive CSV (the file inside the ZIP).
  *
  * Schema published by Binance is `calc_time,funding_interval_hours,
@@ -213,7 +239,7 @@ export function parseFundingCsv(csvText) {
     }
     const intervalRaw = intervalIdx >= 0 ? Number(cols[intervalIdx]) : NaN;
     rows.push({
-      calcTime: normalizeTimestamp(cols[timeIdx]),
+      calcTime: snapFundingCalcTime(normalizeTimestamp(cols[timeIdx])),
       intervalHours: Number.isFinite(intervalRaw) && intervalRaw > 0 ? intervalRaw : null,
       rate,
     });

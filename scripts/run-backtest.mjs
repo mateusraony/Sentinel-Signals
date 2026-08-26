@@ -50,6 +50,7 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { runBacktest } from '../src/lib/backtestEngine.js';
+import { analyzeReport } from '../src/lib/backtestAnalysis.js';
 import { ZERO_COST } from '../src/lib/tradeMetrics.js';
 import { backend } from '@/api/entities';
 import { setPineConfigOverrides, getPineConfig } from './backtestPineConfig.js';
@@ -164,6 +165,27 @@ async function main() {
       // operação (cai na constante, marcado `series_incomplete`), mas é
       // melhor recusar o run inteiro aqui do que produzir um relatório
       // rotulado "funding real" que na verdade é uma mistura.
+      // Contagem sozinha NÃO detecta lacuna contígua: no Run #136 as 7 séries
+      // pararam em 2026-07-31 (mês corrente não publicado) e mesmo assim
+      // marcaram 94,8% de cobertura, porque faltavam só os 20 dias do fim.
+      // A janela precisa estar COBERTA, não apenas densa — e falhar aqui custa
+      // segundos, enquanto falhar depois custa os ~28 min do replay.
+      const MAX_INTERVALO_FUNDING_MS = 8 * 60 * 60 * 1000;
+      const primeiro = rows[0].calcTime;
+      const ultimo = rows[rows.length - 1].calcTime;
+      if (primeiro > fromMs + MAX_INTERVALO_FUNDING_MS || ultimo < toMs - MAX_INTERVALO_FUNDING_MS) {
+        console.error(
+          `[backtest] ERRO: funding de ${symbol} não cobre a janela pedida. `
+          + `Série vai de ${new Date(primeiro).toISOString()} a ${new Date(ultimo).toISOString()}, `
+          + `mas o período é ${new Date(fromMs).toISOString()} → ${new Date(toMs).toISOString()}. `
+          + 'A Binance só publica o arquivo MENSAL depois que o mês fecha, então uma janela que '
+          + 'termina no mês corrente sempre ficará truncada: rode com --to no fim do último mês '
+          + 'fechado, ou rebaixe a série.',
+        );
+        process.exitCode = 1;
+        return;
+      }
+
       const esperado = Math.floor((toMs - fromMs) / (8 * 60 * 60 * 1000));
       const cobertura = esperado > 0 ? rows.length / esperado : 0;
       if (cobertura < COBERTURA_MINIMA_FUNDING) {
@@ -381,6 +403,31 @@ async function main() {
   };
   fs.writeFileSync(outPath, JSON.stringify(enriched, null, 2));
   console.log(`[backtest] relatório completo salvo em ${outPath}`);
+
+  // Trava final do funding real (item 131). As checagens de cobertura acima
+  // olham a SÉRIE; esta olha o RESULTADO — quantas operações de fato casaram
+  // liquidação real. É a única que pega contaminação cuja causa não é buraco
+  // de dado: no Run #136, 22 de 24 operações caíram na constante porque a
+  // Binance carimba `calc_time` alguns MILISSEGUNDOS depois da hora cheia e
+  // a janela de cobrança é semiaberta — série 94,8% densa, cobertura
+  // aprovada, e ainda assim 23% do relatório medindo a constante que este
+  // trabalho existe para substituir. Um relatório assim não é "quase certo",
+  // é a média de duas hipóteses diferentes: falha, não avisa.
+  if (fundingSeries) {
+    const { fundingModel, opsWithIncompleteFunding } = analyzeReport(enriched).cost;
+    if (fundingModel !== 'series') {
+      console.error(
+        `[backtest] ERRO: --real-funding pedido, mas ${opsWithIncompleteFunding} de `
+        + `${enriched.overall?.counted ?? '?'} operações não casaram a série real e caíram na `
+        + `constante (fundingModel="${fundingModel}"). O relatório em ${outPath} mede uma MISTURA, `
+        + 'não funding real — não compare com o controle. Rode scripts/fetch-backtest-funding.mjs '
+        + 'de novo para o mesmo período/carteira, ou encurte --to até o fim do último mês fechado.',
+      );
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`[backtest] funding real: 100% das operações casaram a série (fundingModel="${fundingModel}").`);
+  }
 }
 
 main().catch((err) => {

@@ -9,6 +9,7 @@ import {
   buildMonthlyFundingUrl,
   buildDailyFundingUrl,
   parseFundingCsv,
+  snapFundingCalcTime,
   dedupeAndFilterFunding,
   MAX_ARCHIVE_BYTES,
   assertArchiveSizeWithinLimit,
@@ -225,6 +226,32 @@ describe('parseFundingCsv', () => {
 
   it('devolve lista vazia para CSV vazio', () => {
     expect(parseFundingCsv('')).toEqual([]);
+  });
+
+  // Regressão do item 131 (Run #136): a Binance publica `calc_time` de 1 a
+  // 24 ms DEPOIS da fronteira exata em 54,6% das liquidações. Como a janela
+  // de cobrança de calcFundingCost é semiaberta `(entrada, saída]`, uma
+  // operação que fecha EM CIMA da fronteira perdia justamente a liquidação
+  // daquele instante — e caía inteira no fallback da constante. Foram 22 das
+  // 24 operações contaminadas, todas a exatamente uma liquidação do esperado.
+  it('ancora calc_time na fronteira quando a Binance carimba alguns ms depois', () => {
+    const csv = [
+      'calc_time,funding_interval_hours,last_funding_rate',
+      '1785441600003,4,-0.00002057',
+      '1785456000000,4,0.00001',
+      '1785470400024,4,0.00002',
+    ].join('\n');
+    expect(parseFundingCsv(csv).map((r) => r.calcTime)).toEqual([
+      1785441600000, 1785456000000, 1785470400000,
+    ]);
+  });
+
+  it('ancorar não funde liquidações distintas (a cadência mínima real é horária)', () => {
+    expect(snapFundingCalcTime(1785441600003)).toBe(1785441600000);
+    expect(snapFundingCalcTime(1785441599976)).toBe(1785441600000);
+    // Uma hora adiante continua uma liquidação separada.
+    expect(snapFundingCalcTime(1785445200002)).toBe(1785445200000);
+    expect(snapFundingCalcTime(Number.NaN)).toBeNaN();
   });
 });
 

@@ -47,7 +47,10 @@ paths:
   `false`, **exige `futures_data`** — o workflow falha se pedirem só um)
   cobra funding pela taxa REAL publicada, com sinal e por lado, em vez da
   constante `funding_bps` (`scripts/fetch-backtest-funding.mjs`,
-  `docs/known-risks.md` item 131).
+  `docs/known-risks.md` item 131). **A janela precisa terminar no fim de um
+  mês FECHADO**: a Binance só publica o arquivo mensal de funding depois que
+  o mês vira, então pedir até o mês corrente trunca a série — o run recusa em
+  vez de medir uma mistura.
 
 ## Deploy
 
