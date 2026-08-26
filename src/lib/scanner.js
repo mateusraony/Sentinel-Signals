@@ -487,14 +487,7 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
     // flip governs only the NEXT operation. pre_tp1_stop_advanced_at stays
     // absent until (if ever) the gate actually fires — stamped by
     // persistScanResults, not here.
-    // item 132: QUALQUER um dos dois flags arma o bloco pré-TP1 — este campo
-    // diz SE algum mecanismo governa a op, `pre_tp1_stop_mode` diz QUAL.
-    // Sem o `||`, ligar só `preTp1TrailEnabled` seria um NO-OP SILENCIOSO:
-    // o run voltaria idêntico ao controle e seria lido como "trailing sem
-    // efeito", quando o mecanismo nunca teria rodado. Falso negativo é tão
-    // caro quanto o falso positivo que o item 131 custou duas rodadas.
-    pre_tp1_stop_protection_enabled: pineConfig.preTp1StopProtectionEnabled === true
-      || pineConfig.preTp1TrailEnabled === true,
+    pre_tp1_stop_protection_enabled: pineConfig.preTp1StopProtectionEnabled === true,
     pre_tp1_stop_advance_trigger_atr_mult: pineConfig.preTp1StopProtectionAtrMult ?? 1.0,
     // docs/known-risks.md item 132 — QUAL mecanismo pré-TP1 governa esta
     // operação, congelado aqui pelo mesmo motivo dos campos acima. Ausente/
@@ -1060,14 +1053,7 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     executor: EXECUTOR,
     // Proteção de stop pré-TP1 (opt-in, known-risks.md item 53/54) — mesmo
     // motivo do buildTradeOpData (RF) acima.
-    // item 132: QUALQUER um dos dois flags arma o bloco pré-TP1 — este campo
-    // diz SE algum mecanismo governa a op, `pre_tp1_stop_mode` diz QUAL.
-    // Sem o `||`, ligar só `preTp1TrailEnabled` seria um NO-OP SILENCIOSO:
-    // o run voltaria idêntico ao controle e seria lido como "trailing sem
-    // efeito", quando o mecanismo nunca teria rodado. Falso negativo é tão
-    // caro quanto o falso positivo que o item 131 custou duas rodadas.
-    pre_tp1_stop_protection_enabled: pineConfig.preTp1StopProtectionEnabled === true
-      || pineConfig.preTp1TrailEnabled === true,
+    pre_tp1_stop_protection_enabled: pineConfig.preTp1StopProtectionEnabled === true,
     pre_tp1_stop_advance_trigger_atr_mult: pineConfig.preTp1StopProtectionAtrMult ?? 1.0,
     // docs/known-risks.md item 132 — QUAL mecanismo pré-TP1 governa esta
     // operação, congelado aqui pelo mesmo motivo dos campos acima. Ausente/

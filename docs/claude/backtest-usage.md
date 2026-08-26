@@ -386,7 +386,10 @@ dois pontos diferentes da curva proteção × corte-prematuro:
 | Medido | 36% dos disparos cortaram quem chegaria ao TP1 (item 55) | **ainda não medido** |
 
 **Requer `preTp1StopProtectionEnabled` ligado** — é ele que abre o bloco
-pré-TP1; o novo flag só decide o mecanismo dentro dele. O modo é congelado na
+pré-TP1; o novo flag só decide o mecanismo dentro dele. Pedir o trailing sem
+ele **não é aviso, é recusa**: `run-backtest` aborta antes do replay (item
+132), porque sozinho o trailing seria um no-op e o relatório sairia idêntico
+ao controle sem nada indicando que o mecanismo nunca rodou. O modo é congelado na
 criação (`pre_tp1_stop_mode`), então virar o flag nunca troca o mecanismo de
 uma posição já viva.
 

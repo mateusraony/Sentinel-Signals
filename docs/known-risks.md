@@ -15414,19 +15414,35 @@ Aritmética do ponto de equilíbrio: com trail 2,0 o ganho é 65 × 0,435 = 28,3
 para anular, as 38 vencedoras teriam de perder **0,74R cada** em média. Não é
 implausível — é exatamente o que o backtest existe para medir.
 
-### Bug corrigido antes de medir: `preTp1TrailEnabled` sozinho era no-op
+### Armadilha fechada antes de medir: `preTp1TrailEnabled` sozinho é no-op
 
 O bloco pré-TP1 inteiro (`scanner.js`, ramo `newStatus === op.status`) é
 guardado por `op.pre_tp1_stop_protection_enabled`, congelado **só** de
 `pineConfig.preTp1StopProtectionEnabled`. Ligar apenas `preTp1TrailEnabled`
-deixava a operação com `pre_tp1_stop_mode: 'trailing'` e o mecanismo **morto**:
-o relatório voltaria byte-idêntico ao controle e a leitura seria "o trailing
-não teve efeito", quando ele nunca rodou. É o **falso negativo simétrico** ao
-falso positivo que o item 131 custou duas rodadas para eliminar.
+deixa a operação com `pre_tp1_stop_mode: 'trailing'` e o mecanismo **morto**:
+o relatório volta byte-idêntico ao controle e a leitura natural seria "o
+trailing não teve efeito", quando ele nunca rodou. É o **falso negativo
+simétrico** ao falso positivo que o item 131 custou duas rodadas para eliminar.
 
-Corrigido: qualquer um dos dois flags arma o bloco (`pre_tp1_stop_mode` segue
-decidindo QUAL mecanismo roda). Regressão em `scannerStateMachine.test.js`,
-verificada falhando contra o código antigo antes da correção.
+**Primeira tentativa de correção, revertida (review Codex, PR #256):** eu fiz
+os dois flags armarem o bloco (`A || B`). Codex apontou que isso contradiz o
+contrato documentado em `docs/claude/backtest-usage.md` e
+`scripts/backtestPineConfig.js`, os dois dizendo que
+`preTp1StopProtectionEnabled` é o interruptor MESTRE — quem pusesse
+`preTp1StopProtectionEnabled: false` para DESLIGAR a proteção passaria a rodar
+o trailing sem saber. Trocar a semântica de um flag para consertar uma
+armadilha de uso é pior que a armadilha.
+
+**Correção adotada:** o contrato mestre fica intacto e a combinação inválida
+**falha alto** em `scripts/run-backtest.mjs`, antes do replay. É o mesmo padrão
+que esta sessão já aplicou duas vezes no item 131 (funding real sem Futures;
+relatório saindo `mixed`): quando o modo de falha é silencioso, a resposta é
+recusar o run, não reinterpretar o parâmetro.
+
+Detalhe que quase repetiu o próprio bug: `getPineConfig()` é **async**. Sem
+`await`, a guarda leria `undefined` numa Promise e nunca dispararia — a guarda
+contra no-op virando um no-op. Verificada rodando os dois casos de verdade
+pelo `run-backtest`: a combinação inválida é recusada, a válida segue.
 
 ### Grade PRÉ-REGISTRADA (declarada 2026-08-26, ANTES de qualquer run)
 
