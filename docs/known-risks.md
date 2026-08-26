@@ -15091,6 +15091,87 @@ build && npm run build:backtest` verdes. Os 6 testes novos reproduzem cada
 achado — inclusive um que demonstra explicitamente que, sem a guarda do P1, a
 lacuna cobraria MENOS que a constante.
 
+### Primeira medição real (Runs #134 × #136, 2026-08-26) — e o bug que ela expôs
+
+A/B disparado pelo usuário, janela canônica `2025-08-20 → 2026-08-20`,
+7 símbolos, Futures. Mesmo conjunto de operações nos dois lados (104 ops,
+`grossExpectancyR` idêntico em `0,038669`) — funding não muda entrada nem
+saída, só a contabilidade de custo, então o A/B é limpo por construção.
+
+O download validou o Passo 0 do plano, que eu não conseguia checar da sessão:
+**o dataset `monthly/fundingRate/` existe no formato assumido** e baixou os 7
+símbolos em 87s. Dois achados de estrutura, nenhum previsto:
+
+- **ZROUSDT e PAXGUSDT liquidam a cada 4h**, não 8h (2.075 linhas contra
+  1.038). `countFundingSettlementsByLeg` conta fronteiras de 8h, então esses
+  pares casam MAIS liquidações que o esperado — caso já tratado como legítimo
+  na guarda do P1, e agora coberto por teste.
+- **A constante `fundingBpsPer8h: 1` estava alta por ~4x**, não só com o sinal
+  errado. Taxa média real por liquidação: BTC +0,287 bps, ETH +0,200,
+  PENDLE +0,273, DYDX +0,545, PAXG +0,200, ZRO −0,214, **FET −1,211**. 69,1%
+  das 9.340 liquidações são positivas (comprado paga), mas a magnitude típica
+  é uma fração de 1 bps.
+
+**O relatório do #136 saiu contaminado: `fundingModel: "mixed"`, 24 de 104
+operações na constante.** A guarda de cobertura de 90% aprovou (94,8%), e o
+relatório parecia normal. Duas causas distintas:
+
+1. **Jitter de milissegundos (22 das 24).** A Binance carimba `calc_time` de
+   1 a 24 ms DEPOIS da fronteira exata em 54,6% das liquidações, nunca antes.
+   O motor fecha operação em fronteira exata de vela (16:00:00.000). Como a
+   janela de cobrança é semiaberta `(entrada, saída]`, a liquidação de
+   16:00:00.003 cai FORA — enquanto `countFundingSettlementsByLeg`, que conta
+   por aritmética de hora cheia, continua contando ela. Resultado: "falta uma
+   liquidação" e a operação inteira desaba no fallback da constante. As 22
+   estavam a **exatamente uma** liquidação do esperado — assinatura inequívoca.
+2. **Penhasco no fim da série (2 das 24).** As 7 séries param em 2026-07-31: a
+   Binance só publica o arquivo mensal depois que o mês fecha, e o fallback
+   diário não cobriu agosto. A guarda de cobertura por CONTAGEM não vê lacuna
+   contígua — faltavam só os 20 dias finais de 365.
+
+Correções (esta rodada):
+
+- `snapFundingCalcTime` em `scripts/binanceArchive.js`, aplicada em
+  `parseFundingCsv`: ancora `calc_time` no segundo. 24 ms << 500 ms, e a
+  cadência real mínima é horária, então não há como fundir liquidações.
+- `scripts/run-backtest.mjs`: valida que a série **cobre** a janela (primeiro
+  e último settlement), não só que tem linhas suficientes — falha em segundos
+  em vez de depois dos ~28 min do replay, com a instrução de usar `--to` no
+  fim do último mês fechado.
+- `scripts/run-backtest.mjs`: **trava final sobre o RESULTADO** — com
+  `--real-funding`, um relatório que sai `fundingModel !== 'series'` faz o run
+  falhar. É a única das três que pega contaminação cuja causa não é buraco de
+  dado, e a única que teria pego esta noite automaticamente em vez de à mão.
+
+**Prévia reaplicando o ancoramento sobre a série do #136** (não substitui um
+run limpo — 2 operações seguem na constante pelo penhasco de agosto):
+
+| | Controle #134 | #136 como saiu | #136 ancorado |
+|---|---|---|---|
+| `fundingModel` | constante | **mixed (24 ops)** | mixed (2 ops) |
+| funding R/op | +0,0268 | +0,0038 | **−0,0025 (receita)** |
+| `avgCostR` | 0,0536 | 0,0306 | **0,0243** |
+| média R BUY | −0,299 | −0,281 | −0,275 |
+| média R SELL | +0,228 | +0,256 | +0,262 |
+
+**Retratação da hipótese que motivou a rodada.** Eu previ efeito
+ASSIMÉTRICO — SELL melhora muito pelo sinal invertido, BUY quase não muda — e
+estimei ~+0,05R nas SELL. Medido: os dois lados melhoram (BUY +0,024,
+SELL +0,034), e a assimetria de sinal vale **+0,010R**, um quinto do que
+estimei. O termo dominante é o que eu não previ: **a constante era alta demais
+em magnitude**. O efeito TOTAL (+0,029R/op no custo) é maior do que o sinal
+sozinho daria — mas pelo motivo errado em relação à hipótese registrada acima.
+
+Funding deixa de ser custo e vira **receita líquida** nesta carteira/janela,
+e a fatia de custo cai de 50% para negativa. Isso NÃO valida a estratégia: o
+relatório segue `conclusive: false` (`ci_straddles_zero`), IC95 em cluster
+`[−0,215; +0,231]` com G=18. O que muda é o denominador do item 109 — é para
+isso que a rodada existe.
+
+**Pendente:** re-rodar o par #134/#136 com o parser corrigido e `--to` no fim
+do último mês fechado, para produzir o número autoritativo com
+`fundingModel: "series"` limpo.
+
 ## 132. Trailing pré-TP1 contínuo — o mecanismo que o item 54 nomeou e nunca foi construído (2026-08-25)
 
 ### Contexto
