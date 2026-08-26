@@ -189,6 +189,40 @@ describe('buildTradeOpData — entry into SIGNAL_CONFIRMED', () => {
     expect(explicitlyOn.pre_tp1_stop_advance_trigger_atr_mult).toBe(1.5);
   });
 
+  // docs/known-risks.md item 132 — o bloco pré-TP1 inteiro
+  // (scanner.js, ramo `newStatus === op.status`) é guardado por
+  // `op.pre_tp1_stop_protection_enabled`. Sem este OU, ligar SÓ
+  // preTp1TrailEnabled deixaria o trailing armado no papel
+  // (`pre_tp1_stop_mode: 'trailing'`) e morto na prática: o relatório
+  // voltaria idêntico ao controle e a leitura seria "trailing não teve
+  // efeito", quando o mecanismo nunca rodou. É o falso NEGATIVO simétrico
+  // ao falso positivo do item 131.
+  it('preTp1TrailEnabled sozinho arma o bloco pré-TP1 (senão o trailing é no-op silencioso)', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { atrStopMult: 2.0 } });
+
+    const soTrail = buildTradeOpData(
+      sig, tf4hData,
+      makePineConfig({ preTp1TrailEnabled: true, preTp1TrailStartAtrMult: 1.0, preTp1TrailAtrMult: 2.0 }),
+      { entryPrice: 100 },
+    );
+    expect(soTrail.pre_tp1_stop_protection_enabled).toBe(true);
+    expect(soTrail.pre_tp1_stop_mode).toBe('trailing');
+    expect(soTrail.pre_tp1_trail_start_atr_mult).toBe(1.0);
+    expect(soTrail.pre_tp1_trail_atr_mult).toBe(2.0);
+
+    // E o caminho inverso continua intacto: breakeven sozinho não vira trailing.
+    const soBreakeven = buildTradeOpData(
+      sig, tf4hData, makePineConfig({ preTp1StopProtectionEnabled: true }), { entryPrice: 100 },
+    );
+    expect(soBreakeven.pre_tp1_stop_protection_enabled).toBe(true);
+    expect(soBreakeven.pre_tp1_stop_mode).toBe('breakeven');
+
+    // Nenhum dos dois: bloco desarmado, byte-idêntico ao de sempre.
+    const nenhum = buildTradeOpData(sig, tf4hData, makePineConfig(), { entryPrice: 100 });
+    expect(nenhum.pre_tp1_stop_protection_enabled).toBe(false);
+  });
+
   // docs/known-risks.md item 114 — same "frozen at creation" contract as
   // pre_tp1_stop_protection_enabled above: pineConfig.disableTp2CapEnabled
   // read here once, never again at exit time.
