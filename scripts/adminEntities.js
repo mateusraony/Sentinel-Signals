@@ -10,6 +10,7 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 // Relative (not '@/') so esbuild bundles it for the cron without the Vite alias
 // — see scripts/build-scan.mjs (it only rewrites '@/api/entities').
 import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation, buildActiveOpsAnchorId } from '../src/lib/opTransition.js';
+import { classifyFilter } from '../src/lib/queryFilters.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) });
@@ -19,8 +20,14 @@ const db = getFirestore();
 function applyFilters(collectionRef, filters = {}) {
   let q = collectionRef;
   Object.entries(filters).forEach(([field, value]) => {
-    if (value === undefined) return;
-    q = Array.isArray(value) ? q.where(field, 'in', value) : q.where(field, '==', value);
+    // Mesma semântica do browser e do fake (src/lib/queryFilters.js):
+    // array -> `in`, { gte: x } -> range '>=' no servidor. Ver
+    // docs/known-risks.md item 133.
+    const parsed = classifyFilter(field, value);
+    if (parsed.kind === 'skip') return;
+    if (parsed.kind === 'in') q = q.where(field, 'in', parsed.operand);
+    else if (parsed.kind === 'range') q = q.where(field, parsed.operator, parsed.operand);
+    else q = q.where(field, '==', parsed.operand);
   });
   return q;
 }

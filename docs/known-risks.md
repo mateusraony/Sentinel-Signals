@@ -15931,3 +15931,140 @@ de pairs trading registra o mesmo viés de comparações múltiplas que o item 5
 já documenta neste repo — testar as 45 duplas de 10 ativos seria selecionar a
 melhor de 45, overfitting por construção. Nada disso mudou a decisão; reforçou
 (C) como refutada.
+
+### Teto de exposição de carteira — mecanismo CONSTRUÍDO e grade PRÉ-REGISTRADA (2026-08-27)
+
+A hipótese (E) acima virou código, backtest-only. Pedido explícito do usuário
+depois de ler a síntese do conselho ("pode fazer o que vc sugeriu... depois
+medir o teto de exposição em backtest").
+
+**O que foi construído.** `pineConfig.maxConcurrentSameSideOps` (`null` =
+sem teto, o único comportamento que existe em produção) limita quantas
+operações do MESMO LADO podem estar abertas ao mesmo tempo na carteira
+INTEIRA. `assetActiveOps` já garantia 1 por ATIVO; nada limitava a carteira.
+
+- Ponto de aplicação: wrapper local `createTradeOpIfNoneActiveCapped` em
+  `persistScanResults` (`src/lib/scanner.js`), com a MESMA assinatura de
+  `backend.tradeOps.createTradeOpIfNoneActive` — os 8 pontos de criação
+  dentro da função passaram a chamá-lo. `createManualTradeOp` fica de fora
+  de propósito: entrada manual é ação do usuário, não decisão do motor.
+- **Custo em produção: zero.** Com o teto nulo nenhuma query extra é
+  emitida; a contagem de carteira só é lida quando o teto está ligado.
+- Contagem incrementada dentro da passada, para o teto valer entre ativos da
+  mesma passada e não só entre passadas.
+- Barrados deduplicados por `trade_op_id` — o mesmo sinal é reavaliado no
+  loop de retry, então contar tentativas inflaria a métrica.
+- Tripwire em `src/lib/portfolioSideCapTripwire.test.js`: a chave não pode
+  aparecer em `pineParser.js`/`adminPineConfig.js`. Risco concreto — é um
+  controle de RISCO de carteira, e `strategyConfig/current` é gravável por
+  qualquer sessão anônima.
+- Relatório: `report.portfolioCap` (`{enabled, cap, blocked, bySide, bySymbol}`).
+
+**A métrica que decide NÃO é expectância.** O objetivo declarado do
+mecanismo é reduzir a correlação ENTRE operações — o termo G/DEFF que o item
+110 expôs como o gargalo real e que nenhuma regra de saída toca (o item 132
+atacou a variância POR operação). Logo o que decide é o **erro-padrão em
+cluster** de `scripts/backtest-correlation-check.mjs`, na mesma forma que o
+item 132 usou: `aceleração = (EP_controle / EP_tratamento)²`.
+
+`blocked` **não é "operações perdidas"** — uma entrada barrada pode ser
+justamente uma perdedora. Ler `blocked` como custo é o erro que este
+parágrafo existe para impedir.
+
+#### Grade PRÉ-REGISTRADA (declarada ANTES de qualquer run)
+
+Duas configurações, não varredura — item 58. Janela, carteira e custos
+idênticos ao item 132 (`2025-08-26 → 2026-07-31`, 7 símbolos, Futures,
+funding real); a ÚNICA diferença é o teto.
+
+| | valor | razão declarada |
+|---|---|---|
+| **Controle** | `null` | defaults de produção (já incluem o trailing config A do item 132) |
+| **K=3** | 3 | o próprio projeto estimou ~1,3-3 apostas independentes sob a correlação medida; K=3 é "não aposte mais do que o número de apostas realmente independentes que você tem" |
+| **K=5** | 5 | metade do universo — teto brando, para separar efeito de teto de efeito de aperto |
+
+**Predição registrada antes de ver resultado:** os dois cortam n (menos
+operações). K=3 corta mais e deve subir G/baixar DEFF mais; K=5 corta pouco e
+pode não mover nada. Espero que o efeito líquido em `(EP_controle/EP_K)²`
+seja **próximo de 1 ou pior** — ou seja, **espero que este mecanismo NÃO
+acelere a medição** — porque a perda de n tende a compensar o ganho de
+independência. Registro isso explicitamente para não reinterpretar depois:
+se sair ≥ 1,3× é resultado contra a minha previsão, não a favor dela.
+
+**Condição de morte declarada:** se as DUAS configurações derem
+`(EP_controle/EP_K)² < 1,0` (ou seja, erro-padrão em cluster PIOR que o
+controle), o mecanismo não serve ao propósito para o qual foi construído e
+sai do roadmap — não vira "testar mais valores de K".
+
+**Verificação extra embutida no controle:** o run de controle roda com o
+código NOVO (filtro de range do item 133 já aplicado). Se os números baterem
+com o config A já medido no item 132, isso confirma que a mudança de query é
+neutra para o backtest — algo que eu estaria assumindo em vez de verificando.
+
+#### Três correções antes de qualquer run (review Codex, PR #260)
+
+1. **Viés de ordem dos símbolos (P1) — teria contaminado a medição.** Com o
+   teto ligado os ativos competem por vaga no MESMO instante simulado, e
+   `runBacktest` varre `assets` sequencialmente: o primeiro da lista ficava
+   com a última vaga, então **permutar `--symbols` mudava quais operações
+   sobreviviam**. O relatório descreveria a ordem da entrada, não a
+   estratégia. Corrigido com duas medidas: ordenar por símbolo (permutar a
+   entrada deixa de mudar qualquer coisa) e **rotacionar o início a cada
+   tick** (só ordenar daria vaga preferencial eterna ao primeiro
+   alfabeticamente). Aplicado **só quando o teto está ligado** — sem teto não
+   há acoplamento entre ativos, e manter a ordem original preserva byte a
+   byte os relatórios já publicados, inclusive o controle. Reproduzido e
+   guardado por teste: sem a correção as permutações devolvem ativos
+   diferentes (`CCCUSDT` × `AAAUSDT`); com ela, idênticos.
+2. **`enabled`/`cap` inferidos das rejeições (P2).** Um run com teto ligado
+   que nunca encostasse no limite reportaria `enabled: false, cap: null` —
+   indistinguível do controle na comparação seguinte. Passam a vir da CONFIG
+   (`portfolioCapConfigured`), não das rejeições observadas.
+3. **Erro estatístico no alvo novo (P1)** — ver a seção do alvo, abaixo.
+
+### Alvo declarado TROCADO: de "provar edge" para "estreitar o IC" (2026-08-27)
+
+Terceira das três ações que o usuário aprovou desta síntese. Não é mudança
+de estratégia — é mudança do critério pelo qual o projeto declara progresso.
+
+**Por que.** `conclusive` é binário e, aqui, quase sempre `false`. Provar o
+edge MEDIDO (+0,026R) exigiria ~8.400 operações, ~70 anos — não é uma meta
+difícil, é uma meta inalcançável, e 65 trials são a evidência empírica disso.
+Perseguir `conclusive: true` produz a leitura errada ("mais um trial e talvez
+saia") de um fato que já é conhecido.
+
+A **meia-largura do IC95** não tem esse defeito: encolhe com √n exista edge
+ou não, e responde a pergunta acionável — *que tamanho de vantagem esta
+amostra já consegue descartar?*. Meia-largura de 0,15R significa "qualquer
+edge real maior que 0,15R teria aparecido". Isso é falsificação com
+evidência, no lugar de esperar indefinidamente por significância.
+
+**O que mudou no código** (aditivo, nada removido — `conclusive` e
+`inconclusiveReason` continuam existindo e continuam sendo impressos):
+
+- `src/lib/tradeMetrics.js`: `summarizeOps` passa a devolver
+  `expectancyRCI95HalfWidth` e `expectancyRSd`.
+- `tradesForCIHalfWidth(sd, alvo, deff)` — nova função pura: quantas
+  operações para o IC atingir uma meia-largura alvo. `deff` multiplica o n
+  (a amostra efetiva é n/DEFF); o default 1 é o caso i.i.d., que este
+  projeto **não** tem, então o default é um piso otimista e está documentado
+  como tal.
+- `scripts/run-backtest.mjs` imprime sempre um bloco "PODER DE DESCARTE":
+  a meia-largura atingida, o que ela já descarta, e quantas operações
+  faltam para ±0,20/±0,15/±0,10R.
+
+**Correção antes do primeiro uso (review Codex, PR #260).** A primeira versão
+imprimia *"esta amostra já descarta qualquer edge maior que {meia-largura}"*.
+**Errado, e no número que esta seção acabou de tornar a métrica de decisão.**
+A meia-largura só é o limite de descarte quando a expectância é exatamente
+zero: com +0,20R ± 0,10R o IC é [0,10; 0,30] e um edge de 0,15R segue
+perfeitamente compatível com os dados. O limite é o **extremo superior do
+IC** (`expectancyR + meia-largura`), e é isso que passa a ser impresso. A
+meia-largura continua sendo a métrica de PROGRESSO (é ela que encolhe com
+√n); ela só não é o limite.
+
+**Ressalva que acompanha o número, sempre.** Tudo isso é o IC **ingênuo**.
+A correção por cluster (`scripts/backtest-correlation-check.mjs`) costuma
+ALARGAR neste projeto — o item 109 mediu DEFF 1,43, e o item 110 chegou a
+DEFF 0,08 com G=3. O bloco impresso diz isso na própria saída e manda rodar
+a ferramenta. Nunca cite a meia-largura ingênua como se fosse a corrigida.

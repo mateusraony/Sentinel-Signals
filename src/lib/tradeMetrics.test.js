@@ -18,8 +18,7 @@ import {
   countFundingSettlements,
   countFundingSettlementsByLeg,
   calcFundingCost,
-  expectancyCIAtZ,
-} from './tradeMetrics.js';
+  expectancyCIAtZ, tradesForCIHalfWidth } from './tradeMetrics.js';
 
 // Base BUY fixture: risk = 5 (entry 100, stop 95), tp1 = +1.5R (107.5),
 // tp2 = +3R (115), 50/50 split — every expected value below is hand-computed
@@ -715,5 +714,81 @@ describe('funding real — cobertura incompleta (item 131, Codex P1)', () => {
     const c = calcFundingCost(makeOp(held), { fundingSeries: denso });
     expect(c.source).toBe('series');
     expect(c.settlements).toBeGreaterThanOrEqual(c.expectedSettlements);
+  });
+});
+
+// docs/known-risks.md item 133 — MUDANÇA DE ALVO: de "provar edge" (binário,
+// quase sempre falso neste projeto) para "estreitar o IC" (progride com √n e
+// responde "que vantagem esta amostra já descarta?").
+describe('tradesForCIHalfWidth — alvo declarado do item 133', () => {
+  it('inverte a fórmula do IC: com o n devolvido, a meia-largura bate no alvo', () => {
+    const sd = 1.2;
+    const alvo = 0.15;
+    const n = tradesForCIHalfWidth(sd, alvo);
+    const meiaLarguraObtida = 1.96 * (sd / Math.sqrt(n));
+    // Arredonda pra cima, então nunca fica MAIOR que o alvo.
+    expect(meiaLarguraObtida).toBeLessThanOrEqual(alvo);
+    expect(meiaLarguraObtida).toBeGreaterThan(alvo * 0.99);
+  });
+
+  it('escala com o quadrado: metade da meia-largura custa 4x as operações', () => {
+    expect(tradesForCIHalfWidth(1.0, 0.10)).toBeCloseTo(tradesForCIHalfWidth(1.0, 0.20) * 4, -1);
+  });
+
+  it('DEFF multiplica o n necessário (amostra efetiva é n/DEFF)', () => {
+    const iid = tradesForCIHalfWidth(1.0, 0.15);
+    expect(tradesForCIHalfWidth(1.0, 0.15, 2)).toBe(Math.ceil(iid * 2));
+    expect(tradesForCIHalfWidth(1.0, 0.15, 1)).toBe(iid);
+  });
+
+  it('DEFF inválido cai para 1 em vez de devolver lixo', () => {
+    const iid = tradesForCIHalfWidth(1.0, 0.15);
+    expect(tradesForCIHalfWidth(1.0, 0.15, 0)).toBe(iid);
+    expect(tradesForCIHalfWidth(1.0, 0.15, NaN)).toBe(iid);
+  });
+
+  it('entrada inválida devolve null, nunca NaN/Infinity disfarçado de número', () => {
+    expect(tradesForCIHalfWidth(0, 0.15)).toBeNull();
+    expect(tradesForCIHalfWidth(1.0, 0)).toBeNull();
+    expect(tradesForCIHalfWidth(NaN, 0.15)).toBeNull();
+    expect(tradesForCIHalfWidth(1.0, NaN)).toBeNull();
+  });
+
+  it('reproduz a ordem de grandeza publicada no item 133 (sd 0,8063, DEFF 1,1329)', () => {
+    // ~2,4 anos a 120 ops/ano para meia-largura de 0,10R.
+    const n = tradesForCIHalfWidth(0.8063, 0.10, 1.1329);
+    expect(n / 120).toBeGreaterThan(2.0);
+    expect(n / 120).toBeLessThan(3.0);
+  });
+});
+
+// docs/known-risks.md item 133 — achado P1 do Codex no PR #260. A meia-largura
+// do IC NÃO é, por si, o limite superior do edge verdadeiro: ela só coincide
+// com o limite quando a expectância é exatamente zero. Com +0,20R ± 0,10R o IC
+// é [0,10; 0,30] e um edge de 0,15R segue compatível com os dados — dizer que
+// "0,10R está descartado" ali é falso. Este teste fixa a relação para o texto
+// impresso por run-backtest.mjs nunca voltar a confundir os dois.
+describe('meia-largura × limite de descarte (item 133)', () => {
+  function summarizeComR(rs) {
+    const ops = rs.map((r, i) => ({
+      id: `op${i}`, status: 'STOP_HIT', side: 'BUY',
+      entry_price: 100, initial_stop: 90,
+      exit_price: 100 + r * 10, partial_percent: 100,
+    }));
+    return summarizeOps(ops, { costModel: ZERO_COST, minTrades: 1 });
+  }
+
+  it('o extremo superior do IC é expectância + meia-largura, não a meia-largura', () => {
+    const s = summarizeComR([0.5, 0.7, 0.3, 0.6, 0.4, 0.8, 0.2, 0.55]);
+    expect(s.expectancyRCI95[1]).toBeCloseTo(s.expectancyR + s.expectancyRCI95HalfWidth, 10);
+    expect(s.expectancyRCI95[0]).toBeCloseTo(s.expectancyR - s.expectancyRCI95HalfWidth, 10);
+  });
+
+  it('com expectância claramente positiva, o limite de descarte é MAIOR que a meia-largura', () => {
+    const s = summarizeComR([0.5, 0.7, 0.3, 0.6, 0.4, 0.8, 0.2, 0.55]);
+    expect(s.expectancyR).toBeGreaterThan(0.1);
+    // É este o erro que o Codex pegou: usar a meia-largura como limite
+    // afirmaria ter descartado edges que os dados não descartam.
+    expect(s.expectancyRCI95[1]).toBeGreaterThan(s.expectancyRCI95HalfWidth);
   });
 });
