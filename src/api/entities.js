@@ -17,15 +17,21 @@ import {
 import { db } from '@/lib/firebaseClient';
 import { strategyReviewerAgent } from '@/api/agents';
 import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation, buildActiveOpsAnchorId } from '@/lib/opTransition';
+import { classifyFilter } from '@/lib/queryFilters';
 
 function buildQuery(collectionName, filters = {}, sort, limitCount) {
   const constraints = [];
   Object.entries(filters).forEach(([field, value]) => {
-    if (value === undefined) return;
-    // Array value -> Firestore 'in' (max 30 values), so callers can filter
-    // to a small set of statuses server-side instead of fetching every
-    // document and filtering client-side (billed per document read).
-    constraints.push(Array.isArray(value) ? where(field, 'in', value) : where(field, '==', value));
+    // Array value -> Firestore 'in' (max 30 values); { gte: x } -> range
+    // '>=' server-side. Ambos existem pelo mesmo motivo: filtrar no
+    // servidor em vez de buscar documento para descartar no cliente
+    // (cobrado por documento lido). Semântica compartilhada com o cron e o
+    // fake em src/lib/queryFilters.js — ver known-risks item 133.
+    const parsed = classifyFilter(field, value);
+    if (parsed.kind === 'skip') return;
+    if (parsed.kind === 'in') constraints.push(where(field, 'in', parsed.operand));
+    else if (parsed.kind === 'range') constraints.push(where(field, parsed.operator, parsed.operand));
+    else constraints.push(where(field, '==', parsed.operand));
   });
   if (sort) {
     const descending = sort.startsWith('-');

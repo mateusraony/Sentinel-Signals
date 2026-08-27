@@ -8,6 +8,7 @@
 // scannerStateMachine.test.js), the same principle already used for the
 // browser/cron split (src/api/entities.js vs scripts/adminEntities.js).
 import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation, buildActiveOpsAnchorId } from '../opTransition.js';
+import { matchesFilter } from '../queryFilters.js';
 
 const COLLECTIONS = [
   'MonitoredAsset', 'AssetState', 'SignalEvent', 'TradeOperation',
@@ -15,10 +16,10 @@ const COLLECTIONS = [
 ];
 
 function matches(doc, filters) {
-  return Object.entries(filters).every(([field, value]) => {
-    if (value === undefined) return true;
-    return Array.isArray(value) ? value.includes(doc[field]) : doc[field] === value;
-  });
+  // Comparação delegada a src/lib/queryFilters.js — o MESMO módulo que
+  // traduz o filtro para a query nativa no browser e no cron, para o fake
+  // nunca divergir do operador real (known-risks item 133).
+  return Object.entries(filters).every(([field, value]) => matchesFilter(field, value, doc[field]));
 }
 
 function applySort(arr, sort) {

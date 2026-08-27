@@ -19,6 +19,7 @@
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation } from '../src/lib/opTransition.js';
+import { classifyFilter } from '../src/lib/queryFilters.js';
 
 if (!getApps().length) {
   initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) });
@@ -30,8 +31,15 @@ const SHADOW_PREFIX = 'experimentalRf1hShadow';
 function applyFilters(collectionRef, filters = {}) {
   let q = collectionRef;
   Object.entries(filters).forEach(([field, value]) => {
-    if (value === undefined) return;
-    q = Array.isArray(value) ? q.where(field, 'in', value) : q.where(field, '==', value);
+    // Mesma semântica dos outros backends (src/lib/queryFilters.js): o
+    // modo sombra roda o MESMO scanner.js, então também recebe o filtro de
+    // range dos loops de retry — sem isto a query iria como igualdade
+    // contra um objeto e não casaria com nada (known-risks item 133).
+    const parsed = classifyFilter(field, value);
+    if (parsed.kind === 'skip') return;
+    if (parsed.kind === 'in') q = q.where(field, 'in', parsed.operand);
+    else if (parsed.kind === 'range') q = q.where(field, parsed.operator, parsed.operand);
+    else q = q.where(field, '==', parsed.operand);
   });
   return q;
 }

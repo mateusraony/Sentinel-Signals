@@ -53,6 +53,25 @@ const TIMEFRAMES = ['1h', '4h', '1d'];
 const TF_15M = '15m'; // Used for entry confirmation after 4h signal
 const TF_5M = '5m'; // Used for entry confirmation after 1h SMC signal
 const ONE_HOUR_MS = 60 * 60 * 1000;
+
+// Fator entre a janela da QUERY dos loops de retry e a janela de EXPIRAÇÃO
+// do sinal. Precisa ser > 1, e o motivo é uma armadilha real (known-risks
+// item 133, achado do review Codex no PR #259):
+//
+// As duas queries de retry (RF 4h→15m e SMC 1h→5m) alimentam TAMBÉM o ramo
+// que registra a expiração do sinal (`expired_logged` + `SystemLog`, item
+// 47.2, que existe justamente para a expiração não ser muda). Um filtro
+// exatamente na janela de expiração faria o sinal desaparecer da query no
+// mesmo instante em que expira — o log nunca seria escrito.
+//
+// Com fator 2 o sinal expira na metade da janela e continua visível pela
+// outra metade; como o scan roda a cada ~5min e `expired_logged` é
+// idempotente, na operação normal ele é sempre capturado. Modo de falha
+// residual e limitado: se o scan ficar fora do ar por mais que a janela de
+// expiração inteira (estouro de cota do item 106, instabilidade do GitHub
+// Actions), o sinal atravessa sem log — custa uma linha de log, nunca uma
+// operação. Aumentar o fator amplia essa folga e o custo de leitura junto.
+const RETRY_QUERY_WINDOW_FACTOR = 2;
 // Fase 1 (docs/known-risks.md item 56 "Fase 1") — RF 1h condicionado ao 4h.
 // pineConfig.rf1hCondEnabled (backtest-only, ver scripts/backtestPineConfig.js)
 // deixa um sinal RF 1h virar candidato de entrada quando o RF 4h JÁ estiver
@@ -2815,11 +2834,21 @@ export async function persistScanResults(scanResult) {
   // ─── Retry: re-check 15m confirmation for pending 4h signals ───
   // Signals that were saved but didn't create a trade op (15m wasn't aligned)
   // get re-checked on every scan. If 15m aligns now, the trade op is created.
-  const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+  const rfRetryExpiryMs = 4 * ONE_HOUR_MS;
+  const fourHoursAgo = new Date(Date.now() - rfRetryExpiryMs).toISOString();
+  // Corte servidor-side: sem ele esta query pagava 10 leituras por ativo por
+  // passada (312×/dia) para descartar quase todas pelo tempo no laço abaixo —
+  // era o termo dominante da cota de LEITURA, o lado apertado do plano Spark
+  // (known-risks item 133). A janela é MAIOR que a de expiração de propósito;
+  // ver RETRY_QUERY_WINDOW_FACTOR.
+  const rfRetryQueryFloor = new Date(
+    Date.now() - rfRetryExpiryMs * RETRY_QUERY_WINDOW_FACTOR,
+  ).toISOString();
   const recent4hSignals = await backend.entities.SignalEvent.filter({
     asset_id: asset.id,
     source: 'range_filter',
     timeframe: '4h',
+    created_date: { gte: rfRetryQueryFloor },
   }, '-created_date', 10);
 
   for (const sig of recent4hSignals) {
@@ -3222,11 +3251,18 @@ export async function persistScanResults(scanResult) {
 
   // ─── Retry: re-check 5m SMC confirmation for pending 1h signals ───
   if (asset.smc_enabled) {
-    const oneHourAgo4x = new Date(Date.now() - 4 * ONE_HOUR_MS).toISOString();
+    const smcRetryExpiryMs = 4 * ONE_HOUR_MS;
+    const oneHourAgo4x = new Date(Date.now() - smcRetryExpiryMs).toISOString();
+    // Gêmeo do corte da cascata RF acima — mesmo motivo, mesma ressalva de
+    // expiração (known-risks item 133).
+    const smcRetryQueryFloor = new Date(
+      Date.now() - smcRetryExpiryMs * RETRY_QUERY_WINDOW_FACTOR,
+    ).toISOString();
     const recentSmcSignals = await backend.entities.SignalEvent.filter({
       asset_id: asset.id,
       source: 'smc_structure',
       timeframe: '1h',
+      created_date: { gte: smcRetryQueryFloor },
     }, '-created_date', 10);
 
     for (const sig of recentSmcSignals) {
