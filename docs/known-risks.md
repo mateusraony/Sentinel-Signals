@@ -15717,6 +15717,21 @@ passada → teto ≈ **28 ativos**. Desacoplando as cadências (`price-check` a 
 `:3977`, chamadas em sequência em `scripts/run-scan.mjs:69,73`) o teto sobe
 mais. **Não medido em produção — é projeção, não fato.**
 
+**Ressalva obrigatória que quase virou regressão (review Codex, PR #259):** a
+janela do range filter **não pode ser `created_date >= fourHoursAgo`**. O
+mesmo fetch alimenta o ramo de expiração em `scanner.js:2825-2842`, que existe
+desde o item 47.2 justamente para a expiração não ser muda (grava
+`expired_logged` + um `SystemLog`). Filtrar em 4h faria o sinal sumir da query
+**no exato instante em que expira**, e esse log nunca mais seria escrito — o
+gêmeo SMC em `:3226` tem o mesmo problema. A margem de **8h** citada acima
+existe por isso: o sinal expira em 4h e continua visível por mais 4h, o scan
+roda a cada 5min, e `expired_logged` é idempotente — na operação normal ele é
+sempre pego. **Mas introduz um modo de falha novo e limitado**: se o scan
+ficar fora do ar por mais de 4h (estouro de cota do item 106, instabilidade do
+GitHub Actions), o sinal atravessa a janela sem log. Perde-se uma linha de
+log, não uma operação. Quem implementar decide entre aceitar isso, alargar a
+margem, ou fazer uma varredura de expiração separada — **não é drop-in.**
+
 ### Correção 2 — a carteira de 20 símbolos JÁ foi medida (eu havia dito que não)
 
 Afirmei na conversa que a maior carteira já medida foram 8 símbolos. Errado:
@@ -15769,15 +15784,37 @@ Cinco argumentos independentes, todos verificados:
    BH sobre o ledger inteiro reprovam todos os SELL. O único sobrevivente é
    `allowedside-ab-buy-only`, z=−4,31: **o achado robusto do projeto é que BUY
    PERDE (−0,344R), não que SELL ganha.**
-5. **Matador mecânico**: o líquido só virou positivo porque o item 131 fez
-   funding virar **receita do vendido** — e funding só existe em perpétuo. O
-   painel ao vivo lê **Binance Spot** (item 4), onde não há funding e não se
-   vende a descoberto. (D) foi validada num mercado que o painel não observa.
+5. **Dependência de funding — argumento CORRIGIDO (review Codex, PR #259).**
+   A primeira versão deste item dizia: *"o painel ao vivo lê Binance Spot, onde
+   não há funding nem venda a descoberto; (D) foi validada num mercado que o
+   painel não observa."* **Isso está factualmente invertido e o Codex está
+   certo.** O `CLAUDE.md:72` diz o contrário com todas as letras — "Divergência
+   **Futures (painel)** × **Spot (cron)**" — e o código confirma:
+   `src/lib/marketDataProvider.js:25` usa `https://fapi.binance.com/fapi/v1`
+   com `MARKET_SOURCE = 'futures'` (:31); é o `scripts/adminMarketDataProvider.js:16`
+   que fica em `data-api.binance.vision` (Spot), porque `fapi` devolve 451 em
+   datacenter dos EUA. O painel **observa** perpétuo.
+
+   O que sobra do argumento, na forma correta e mais fraca:
+   - A metade que roda **24/7 e cria a maior parte das operações** é o cron, e
+     ela **está em Spot** — então o termo de funding que tornou (D) positiva
+     não existe no dado que alimenta a maioria das operações ao vivo.
+   - E mesmo no painel, funding é um termo do **modelo de custo do backtest**
+     (`src/lib/tradeMetrics.js`), não um fluxo real: o Sentinel não executa
+     ordem, TP/Stop são virtuais. A "receita do vendido" só se materializa
+     para quem de fato carrega um short perpétuo.
+
+   Ou seja: isto deixa de ser "matador mecânico" e vira **uma ressalva de
+   generalização**. O veredito de (D) **não muda**, porque ele já estava
+   sustentado pelos argumentos 1-4 (reamostragem, fatias `seed`, holdout
+   pré-registrado falhado, Bonferroni) — nenhum deles depende de qual mercado
+   o painel lê.
 
 Nota de regime: o argumento ingênuo "SELL só funciona porque 2025-26 caiu"
 **já estava refutado no repo** (itens 46.1/48/88 controlaram por 3 janelas e
 carteira fixa). O problema de (D) não é regime — é reamostragem, holdout
-falhado e mercado errado.
+falhado e o fato de a evidência direcional robusta ser "BUY perde", não "SELL
+ganha".
 
 Risco adicional de wiring, se algum dia for cogitado: `allowedSide` é avaliado
 no NASCIMENTO do sinal e nunca reavaliado (`scanner.js:2880-2890`), diferente
@@ -15827,8 +15864,19 @@ edge ≥ 0,15R" morre com evidência, não com cansaço.
 
 ### O elefante (advogado-do-diabo), não refutado pelo conselho
 
-+0,0257R com sd 1,2111 a n=120 dá **z=0,23, p=0,82**. Sob edge verdadeiro
-exatamente zero, observar isso ou melhor acontece em ~41% das vezes. Some: 65
+**Números refeitos por run consistente (review Codex, PR #259).** A primeira
+versão desta seção misturava três runs: média `+0,0257` (controle, n=103), sd
+`1,2111` (item 109, dataset antigo) e `n=120` (config A) — o `z=0,23, p=0,82`
+não vinha de nenhum experimento real. Refeito, cada linha com o **erro-padrão
+em cluster do próprio run** (que é o teste certo aqui, não o ingênuo):
+
+| run | média | EP em cluster | z | p (bicaudal) | P(observar ≥ isto \| edge=0) |
+|---|---|---|---|---|---|
+| Controle (n=103, G=17) | +0,0257 | 0,1066 | **0,241** | **0,809** | **40,5%** |
+| Config A (n=120, G=50) | +0,0262 | 0,0783 | **0,335** | **0,738** | **36,9%** |
+
+A conclusão não muda — os dois são indistinguíveis de zero — mas agora os
+números são deriváveis de um run só. Some: 65
 trials, 22 famílias; as 11 "conclusivas" decompõem em long numa janela de alta
 e short numa janela de baixa; a maior amostra genuinamente nova (item 110) deu
 negativo; e **o sinal do resultado do projeto dependia de um bug de custo de
@@ -15863,6 +15911,9 @@ Ordem de prioridade, nenhuma implementada nesta rodada:
    já existe, e remove o modo de falha do item 106 que **zera operações ao
    vivo**. Caminho de LEITURA, não de mutação. Menor mudança, maior ganho
    verificável pelo instrumento que já existe (`scanner.js:4229`).
+   **Não é drop-in** — ver a ressalva de expiração na Correção 1: a janela tem
+   de ser maior que as 4h de expiração, senão mata o `expired_logged` do item
+   47.2.
 2. **Teto de ops simultâneas do mesmo lado (E)**, backtest-only, grade
    pré-registrada, medindo **G e DEFF** e não só expectância — é a única
    proposta que ataca o gargalo que o item 110 expôs.
