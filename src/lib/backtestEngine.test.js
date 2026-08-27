@@ -707,6 +707,64 @@ describe('runBacktest — no-look-ahead (4h Range Filter flip)', () => {
       })).rejects.toThrow();
     });
   });
+
+  // docs/known-risks.md item 133 — achado P1 do Codex no PR #260. Com o teto de
+  // carteira ligado, os ativos passam a competir por vaga dentro do MESMO
+  // instante simulado. Como runBacktest varre `assets` sequencialmente, a ordem
+  // da lista decidia quem ficava com a última vaga: permutar `--symbols` mudaria
+  // quais operações sobrevivem, e o relatório descreveria a ordem da entrada em
+  // vez da estratégia — contaminando exatamente a medição pré-registrada.
+  describe('teto de carteira — resultado independe da ordem de --symbols (item 133)', () => {
+    const SIMBOLOS = ['AAAUSDT', 'BBBUSDT', 'CCCUSDT'];
+
+    // setCandles() recria o store a cada chamada e substitui o mock, então
+    // chamá-lo em laço deixaria só o ÚLTIMO símbolo com candles — e os três
+    // runs passariam trivialmente, por não haver competição nenhuma. Este
+    // helper monta UM store com os três.
+    function setCandlesMulti(simbolos) {
+      const store = new Map();
+      for (const sym of simbolos) {
+        store.set(`${sym}:4h`, build4hCandles());
+        store.set(`${sym}:15m`, build15mCandlesAligned());
+      }
+      fetchCandles.mockImplementation(async (sym, tf, limit) =>
+        sliceClosedAsOf(store.get(`${sym}:${tf}`) || [], simNow(), limit));
+    }
+
+    async function rodarComOrdem(ordem, cap) {
+      setCandlesMulti(SIMBOLOS);
+      getPineConfig.mockResolvedValue(basePineConfig({ maxConcurrentSameSideOps: cap }));
+      const backend = createFakeBackend();
+      Object.assign(entitiesModule.backend, backend);
+      await runBacktest({
+        assets: ordem.map((s) => makeAsset({ id: s, symbol: s })),
+        backend,
+        pineConfig: basePineConfig({ maxConcurrentSameSideOps: cap }),
+        fromMs: FLIP_CLOSE_TIME - 2 * FOUR_H,
+        toMs: FLIP_CLOSE_TIME,
+        stepMs: FIFTEEN_M,
+      });
+      const ops = await backend.entities.TradeOperation.filter({});
+      return ops.map((o) => o.symbol).sort();
+    }
+
+    it('as 3 permutações da lista produzem o MESMO conjunto de operações com teto=1', async () => {
+      const direta = await rodarComOrdem(['AAAUSDT', 'BBBUSDT', 'CCCUSDT'], 1);
+      const invertida = await rodarComOrdem(['CCCUSDT', 'BBBUSDT', 'AAAUSDT'], 1);
+      const embaralhada = await rodarComOrdem(['BBBUSDT', 'AAAUSDT', 'CCCUSDT'], 1);
+
+      expect(invertida).toEqual(direta);
+      expect(embaralhada).toEqual(direta);
+      // E o teto de fato mordeu: menos operações que os 3 ativos disponíveis.
+      expect(direta.length).toBeLessThan(SIMBOLOS.length);
+      expect(direta.length).toBeGreaterThan(0);
+    });
+
+    it('sem teto (controle) os 3 ativos abrem — a competição só existe com o teto ligado', async () => {
+      const semTeto = await rodarComOrdem(['AAAUSDT', 'BBBUSDT', 'CCCUSDT'], null);
+      expect(semTeto).toEqual(SIMBOLOS);
+    });
+  });
 });
 
 describe('inferStepMs', () => {
@@ -1630,3 +1688,48 @@ describe('runBacktest — smcDiagnostics answers "why zero SMC ops?" with real c
     expect(report.smcDiagnostics.tradeOpsCreated).toBe(1);
   });
 });
+
+// docs/known-risks.md item 133 — achado P2 do Codex no PR #260: a seção
+// portfolioCap inferia `enabled`/`cap` das REJEIÇÕES observadas, então um run
+// com teto ligado que nunca encostou no limite reportava `enabled: false` —
+// indistinguível do controle sem teto na comparação seguinte.
+describe('buildReport — portfolioCap vem da CONFIG, não das rejeições (item 133)', () => {
+  const opsBase = [{ status: 'STOP_HIT', cascade: '4h_15m', entry_price: 100, initial_stop: 90, exit_price: 90, side: 'BUY' }];
+
+  it('teto ligado que não barrou nada reporta enabled:true e o cap configurado', () => {
+    const report = buildReport(opsBase, {
+      fromMs: 0, toMs: 1000, portfolioCapOutcomes: [], portfolioCapConfigured: 3,
+    });
+    expect(report.portfolioCap.enabled).toBe(true);
+    expect(report.portfolioCap.cap).toBe(3);
+    expect(report.portfolioCap.blocked).toBe(0);
+  });
+
+  it('controle sem teto continua enabled:false com cap null', () => {
+    const report = buildReport(opsBase, {
+      fromMs: 0, toMs: 1000, portfolioCapOutcomes: [], portfolioCapConfigured: null,
+    });
+    expect(report.portfolioCap.enabled).toBe(false);
+    expect(report.portfolioCap.cap).toBeNull();
+  });
+
+  it('os dois casos acima são DISTINGUÍVEIS — é exatamente o que o bug apagava', () => {
+    const comTeto = buildReport(opsBase, { fromMs: 0, toMs: 1000, portfolioCapOutcomes: [], portfolioCapConfigured: 3 });
+    const semTeto = buildReport(opsBase, { fromMs: 0, toMs: 1000, portfolioCapOutcomes: [], portfolioCapConfigured: null });
+    expect(comTeto.portfolioCap).not.toEqual(semTeto.portfolioCap);
+  });
+
+  it('conta as barradas e agrega por lado/símbolo quando houve bloqueio', () => {
+    const report = buildReport(opsBase, {
+      fromMs: 0, toMs: 1000, portfolioCapConfigured: 2,
+      portfolioCapOutcomes: [
+        { trade_op_id: 'a', symbol: 'BTCUSDT', side: 'BUY', cap: 2, openSameSide: 2 },
+        { trade_op_id: 'b', symbol: 'ETHUSDT', side: 'BUY', cap: 2, openSameSide: 2 },
+      ],
+    });
+    expect(report.portfolioCap.blocked).toBe(2);
+    expect(report.portfolioCap.bySide).toEqual({ BUY: 2 });
+    expect(report.portfolioCap.bySymbol).toEqual({ BTCUSDT: 1, ETHUSDT: 1 });
+  });
+});
+

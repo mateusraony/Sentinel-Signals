@@ -761,3 +761,34 @@ describe('tradesForCIHalfWidth — alvo declarado do item 133', () => {
     expect(n / 120).toBeLessThan(3.0);
   });
 });
+
+// docs/known-risks.md item 133 — achado P1 do Codex no PR #260. A meia-largura
+// do IC NÃO é, por si, o limite superior do edge verdadeiro: ela só coincide
+// com o limite quando a expectância é exatamente zero. Com +0,20R ± 0,10R o IC
+// é [0,10; 0,30] e um edge de 0,15R segue compatível com os dados — dizer que
+// "0,10R está descartado" ali é falso. Este teste fixa a relação para o texto
+// impresso por run-backtest.mjs nunca voltar a confundir os dois.
+describe('meia-largura × limite de descarte (item 133)', () => {
+  function summarizeComR(rs) {
+    const ops = rs.map((r, i) => ({
+      id: `op${i}`, status: 'STOP_HIT', side: 'BUY',
+      entry_price: 100, initial_stop: 90,
+      exit_price: 100 + r * 10, partial_percent: 100,
+    }));
+    return summarizeOps(ops, { costModel: ZERO_COST, minTrades: 1 });
+  }
+
+  it('o extremo superior do IC é expectância + meia-largura, não a meia-largura', () => {
+    const s = summarizeComR([0.5, 0.7, 0.3, 0.6, 0.4, 0.8, 0.2, 0.55]);
+    expect(s.expectancyRCI95[1]).toBeCloseTo(s.expectancyR + s.expectancyRCI95HalfWidth, 10);
+    expect(s.expectancyRCI95[0]).toBeCloseTo(s.expectancyR - s.expectancyRCI95HalfWidth, 10);
+  });
+
+  it('com expectância claramente positiva, o limite de descarte é MAIOR que a meia-largura', () => {
+    const s = summarizeComR([0.5, 0.7, 0.3, 0.6, 0.4, 0.8, 0.2, 0.55]);
+    expect(s.expectancyR).toBeGreaterThan(0.1);
+    // É este o erro que o Codex pegou: usar a meia-largura como limite
+    // afirmaria ter descartado edges que os dados não descartam.
+    expect(s.expectancyRCI95[1]).toBeGreaterThan(s.expectancyRCI95HalfWidth);
+  });
+});

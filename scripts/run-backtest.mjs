@@ -386,7 +386,17 @@ async function main() {
   if (Number.isFinite(meiaLargura) && Number.isFinite(sdPorOp) && sdPorOp > 0) {
     console.log('');
     console.log(`  📏 PODER DE DESCARTE (alvo do item 133) — meia-largura do IC95: ±${meiaLargura.toFixed(3)}R`);
-    console.log(`      Esta amostra já descarta qualquer edge real maior que ~${meiaLargura.toFixed(3)}R.`);
+    // O limite de descarte é o EXTREMO SUPERIOR do IC, não a meia-largura
+    // (achado do Codex, PR #260). A meia-largura só coincide com o limite
+    // quando a expectância é exatamente zero: com +0,20R ± 0,10R o IC é
+    // [0,10; 0,30] e um edge de 0,15R continua perfeitamente compatível com
+    // os dados — dizer que "0,10R está descartado" ali seria falso, e
+    // justamente no número que o item 133 tornou a métrica de decisão.
+    const limiteSuperior = report.costs.expectancyRCI95?.[1];
+    if (Number.isFinite(limiteSuperior)) {
+      console.log(`      Esta amostra já descarta qualquer edge real maior que ${limiteSuperior.toFixed(3)}R`
+        + ` (extremo superior do IC, NÃO a meia-largura).`);
+    }
     const alvos = [0.20, 0.15, 0.10];
     const linhas = alvos
       .filter((alvo) => alvo < meiaLargura)

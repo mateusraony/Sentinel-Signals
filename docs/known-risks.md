@@ -16001,6 +16001,27 @@ código NOVO (filtro de range do item 133 já aplicado). Se os números baterem
 com o config A já medido no item 132, isso confirma que a mudança de query é
 neutra para o backtest — algo que eu estaria assumindo em vez de verificando.
 
+#### Três correções antes de qualquer run (review Codex, PR #260)
+
+1. **Viés de ordem dos símbolos (P1) — teria contaminado a medição.** Com o
+   teto ligado os ativos competem por vaga no MESMO instante simulado, e
+   `runBacktest` varre `assets` sequencialmente: o primeiro da lista ficava
+   com a última vaga, então **permutar `--symbols` mudava quais operações
+   sobreviviam**. O relatório descreveria a ordem da entrada, não a
+   estratégia. Corrigido com duas medidas: ordenar por símbolo (permutar a
+   entrada deixa de mudar qualquer coisa) e **rotacionar o início a cada
+   tick** (só ordenar daria vaga preferencial eterna ao primeiro
+   alfabeticamente). Aplicado **só quando o teto está ligado** — sem teto não
+   há acoplamento entre ativos, e manter a ordem original preserva byte a
+   byte os relatórios já publicados, inclusive o controle. Reproduzido e
+   guardado por teste: sem a correção as permutações devolvem ativos
+   diferentes (`CCCUSDT` × `AAAUSDT`); com ela, idênticos.
+2. **`enabled`/`cap` inferidos das rejeições (P2).** Um run com teto ligado
+   que nunca encostasse no limite reportaria `enabled: false, cap: null` —
+   indistinguível do controle na comparação seguinte. Passam a vir da CONFIG
+   (`portfolioCapConfigured`), não das rejeições observadas.
+3. **Erro estatístico no alvo novo (P1)** — ver a seção do alvo, abaixo.
+
 ### Alvo declarado TROCADO: de "provar edge" para "estreitar o IC" (2026-08-27)
 
 Terceira das três ações que o usuário aprovou desta síntese. Não é mudança
@@ -16031,6 +16052,16 @@ evidência, no lugar de esperar indefinidamente por significância.
 - `scripts/run-backtest.mjs` imprime sempre um bloco "PODER DE DESCARTE":
   a meia-largura atingida, o que ela já descarta, e quantas operações
   faltam para ±0,20/±0,15/±0,10R.
+
+**Correção antes do primeiro uso (review Codex, PR #260).** A primeira versão
+imprimia *"esta amostra já descarta qualquer edge maior que {meia-largura}"*.
+**Errado, e no número que esta seção acabou de tornar a métrica de decisão.**
+A meia-largura só é o limite de descarte quando a expectância é exatamente
+zero: com +0,20R ± 0,10R o IC é [0,10; 0,30] e um edge de 0,15R segue
+perfeitamente compatível com os dados. O limite é o **extremo superior do
+IC** (`expectancyR + meia-largura`), e é isso que passa a ser impresso. A
+meia-largura continua sendo a métrica de PROGRESSO (é ela que encolhe com
+√n); ela só não é o limite.
 
 **Ressalva que acompanha o número, sempre.** Tudo isso é o IC **ingênuo**.
 A correção por cluster (`scripts/backtest-correlation-check.mjs`) costuma
