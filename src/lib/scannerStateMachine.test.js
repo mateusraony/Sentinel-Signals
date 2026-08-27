@@ -5381,3 +5381,79 @@ describe('smcAlignmentScoreEnabled — SMC como score observacional da RF nativa
     expect(ops[0].smc_alignment_at_entry).toBe('aligned');
   });
 });
+
+// docs/known-risks.md item 133 — teto de exposição de carteira
+// (pineConfig.maxConcurrentSameSideOps, BACKTEST-ONLY). `assetActiveOps` já
+// garante 1 operação por ATIVO; este teto limita quantas do MESMO LADO podem
+// estar abertas na carteira INTEIRA ao mesmo tempo. Reaproveita a receita de
+// sweep 5m do describe do gate de zona OTE acima — é o caminho mais curto
+// deste arquivo para uma criação de operação determinística.
+describe('teto de exposição de carteira — maxConcurrentSameSideOps (item 133)', () => {
+  function mk5m(open, high, low, close, i) {
+    return { open, high, low, close, openTime: i * 300000, closeTime: (i + 1) * 300000, isClosed: true };
+  }
+  function bullishSweepCandles5m() {
+    const candles = [];
+    for (let i = 0; i < 59; i++) candles.push(mk5m(100, 105, 95, 100, i));
+    candles.push(mk5m(96, 97, 93, 96.5, 59));
+    return candles;
+  }
+  function makeSmcSignal(overrides = {}) {
+    return {
+      asset_id: 'asset1', symbol: 'BTCUSDT', signal_type: 'BUY',
+      timeframe: '1h', source: 'smc_structure', dedup_key: 'smc_cap_1',
+      price_at_signal: 100,
+      context: { structure_type: 'BOS', pd_zone: 'premium', ote_leg_high: 200, ote_leg_low: 50 },
+      ...overrides,
+    };
+  }
+  // Operação já aberta em OUTRO ativo — é isto que `assetActiveOps` não vê,
+  // porque a âncora dele é por ativo.
+  function seedOpenOpOnAnotherAsset(side) {
+    return backend._seed('TradeOperation', {
+      id: 'op_outro_ativo', asset_id: 'asset_outro', symbol: 'ETHUSDT',
+      side, status: 'SIGNAL_CONFIRMED', cascade: '1h_5m',
+    });
+  }
+
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  async function runWithCap({ cap, seededSide }) {
+    fetchCandles.mockImplementation(async () => bullishSweepCandles5m());
+    if (seededSide) seedOpenOpOnAnotherAsset(seededSide);
+    const asset = makeAsset({ smc_enabled: true });
+    const results = { '1h': makeTfData({ atrValue: 2 }) };
+    const pineConfig = { ...makePineConfig(), maxConcurrentSameSideOps: cap };
+    const out = await persistScanResults({
+      ...makeScanResult({ asset, results, pineConfig }), newSignals: [makeSmcSignal()],
+    });
+    const criadas = (await backend.entities.TradeOperation.filter({}))
+      .filter((o) => o.asset_id === 'asset1');
+    return { out, criadas };
+  }
+
+  it('BLOQUEIA a entrada quando o teto do lado já está ocupado por operação de OUTRO ativo', async () => {
+    const { out, criadas } = await runWithCap({ cap: 1, seededSide: 'BUY' });
+    expect(criadas).toHaveLength(0);
+    expect(out.portfolioCapOutcomes).toHaveLength(1);
+    expect(out.portfolioCapOutcomes[0]).toMatchObject({ side: 'BUY', cap: 1, openSameSide: 1 });
+  });
+
+  it('NÃO bloqueia quando a operação aberta é do lado OPOSTO (o teto é por lado)', async () => {
+    const { out, criadas } = await runWithCap({ cap: 1, seededSide: 'SELL' });
+    expect(criadas).toHaveLength(1);
+    expect(out.portfolioCapOutcomes).toHaveLength(0);
+  });
+
+  it('NÃO bloqueia quando ainda há folga no teto', async () => {
+    const { out, criadas } = await runWithCap({ cap: 2, seededSide: 'BUY' });
+    expect(criadas).toHaveLength(1);
+    expect(out.portfolioCapOutcomes).toHaveLength(0);
+  });
+
+  it('teto nulo (o default de PRODUÇÃO) é passthrough: cria normalmente e não emite nenhuma contagem', async () => {
+    const { out, criadas } = await runWithCap({ cap: null, seededSide: 'BUY' });
+    expect(criadas).toHaveLength(1);
+    expect(out.portfolioCapOutcomes).toHaveLength(0);
+  });
+});

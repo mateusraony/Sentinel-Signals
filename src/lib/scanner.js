@@ -1987,6 +1987,73 @@ export async function persistScanResults(scanResult) {
   // dedup_key+cascade com o motivo do gate que rejeitou — feeding
   // buildReport's `entryFunnel` section.
   const entryFunnelOutcomes = [];
+
+  // ─── Teto de exposição de carteira (backtest-only, known-risks item 133) ───
+  // `assetActiveOps` garante 1 operação por ATIVO — e só. Não existe nenhum
+  // limite de quantas operações do MESMO LADO podem estar abertas ao mesmo
+  // tempo na carteira inteira. Com ativos fortemente correlacionados a BTC,
+  // N posições simultâneas do mesmo lado são uma aposta de tamanho N, não N
+  // apostas independentes: é exatamente o termo que infla o DEFF e que
+  // NENHUMA regra de saída consegue tocar (o item 132 cortou a variância
+  // POR operação; esta é a variância ENTRE operações).
+  //
+  // Custo em produção: ZERO. Com o teto nulo (o default em produção — a
+  // chave só existe em scripts/backtestPineConfig.js) nenhuma query extra é
+  // emitida. Só o backtest paga, e lá o backend é fake em memória.
+  const portfolioSideCap = pineConfig.maxConcurrentSameSideOps ?? null;
+  const portfolioCapOutcomes = [];
+  const portfolioCapBlockedIds = new Set();
+  const openSideCounts = { BUY: 0, SELL: 0 };
+  if (portfolioSideCap != null) {
+    const portfolioOps = await backend.entities.TradeOperation.filter({
+      status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'],
+    });
+    for (const op of portfolioOps) {
+      if (op.side === 'BUY' || op.side === 'SELL') openSideCounts[op.side] += 1;
+    }
+  }
+
+  /**
+   * Wrapper com a MESMA assinatura de `backend.tradeOps.createTradeOpIfNoneActive`
+   * — trocar a chamada pelo wrapper é a única mudança nos 8 pontos de criação
+   * dentro desta função. Com o teto desligado é um passthrough literal.
+   *
+   * A contagem local é incrementada a cada criação bem-sucedida para o teto
+   * valer DENTRO da mesma passada, não só entre passadas (a query acima é
+   * lida uma vez por ativo; sem isso, dois ativos na mesma passada poderiam
+   * ambos passar por um teto já esgotado).
+   *
+   * NÃO cobre `createManualTradeOp` de propósito: entrada manual é ação
+   * explícita do usuário no painel, não uma decisão do motor.
+   */
+  const createTradeOpIfNoneActiveCapped = async (assetId, tradeOpId, opData, cascade) => {
+    const side = opData?.side;
+    if (portfolioSideCap != null && (side === 'BUY' || side === 'SELL')
+        && openSideCounts[side] >= portfolioSideCap) {
+      // Deduplicado por `tradeOpId`: o MESMO sinal é avaliado na 1ª passada e
+      // de novo no loop de retry dentro desta mesma chamada, então contar
+      // tentativas infla a métrica. O que interessa medir é quantas ENTRADAS
+      // distintas o teto barrou — o `tradeOpId` é determinístico por sinal,
+      // então é a chave certa (mesma dedup que `createTradeOpIfNoneActive` já
+      // faz do lado do banco).
+      if (!portfolioCapBlockedIds.has(tradeOpId)) {
+        portfolioCapBlockedIds.add(tradeOpId);
+        portfolioCapOutcomes.push({
+          trade_op_id: tradeOpId,
+          symbol: opData?.symbol ?? asset.symbol,
+          side,
+          cascade: opData?.cascade ?? cascade ?? null,
+          openSameSide: openSideCounts[side],
+          cap: portfolioSideCap,
+        });
+      }
+      return { created: false, blockedByPortfolioCap: true };
+    }
+    const res = await backend.tradeOps.createTradeOpIfNoneActive(assetId, tradeOpId, opData, cascade);
+    if (res?.created && (side === 'BUY' || side === 'SELL')) openSideCounts[side] += 1;
+    return res;
+  };
+
   for (const signal of newSignals) {
     // Cooldown check — a best-effort query, not atomic on its own, but the
     // scan lock (acquireScanLock in scanAllAssets/priceCheckActiveOps) means
@@ -2219,7 +2286,7 @@ export async function persistScanResults(scanResult) {
                   opData.rr_gate_mode = RR_GATE_MODE;
                   opData.rr_target_basis = RR_TARGET_BASIS;
                   const tradeOpId = `trade_${signal.dedup_key}`;
-                  const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
+                  const created = await createTradeOpIfNoneActiveCapped(signal.asset_id, tradeOpId, opData);
                   if (created.created) {
                     hasActiveOp = true;
                     activeOp = created.doc;
@@ -2276,7 +2343,7 @@ export async function persistScanResults(scanResult) {
                 opData.rr_gate_mode = RR_GATE_MODE;
                 opData.rr_target_basis = RR_TARGET_BASIS;
                 const tradeOpId = `trade_${signal.dedup_key}`;
-                const created = await backend.tradeOps.createTradeOpIfNoneActive(signal.asset_id, tradeOpId, opData);
+                const created = await createTradeOpIfNoneActiveCapped(signal.asset_id, tradeOpId, opData);
                 if (created.created) {
                   hasActiveOp = true;
                   activeOp = created.doc;
@@ -2473,7 +2540,7 @@ export async function persistScanResults(scanResult) {
                   // on the op itself, read back by groupActiveOpsByAsset.
                   if (pineConfig.hierarchicalCascadesEnabled) opData.hierarchical_cascade = true;
                   const tradeOpId = `trade_${signal.dedup_key}`;
-                  const created = await backend.tradeOps.createTradeOpIfNoneActive(
+                  const created = await createTradeOpIfNoneActiveCapped(
                     signal.asset_id, tradeOpId, opData,
                     pineConfig.hierarchicalCascadesEnabled ? '4h_15m' : undefined,
                   );
@@ -2653,7 +2720,7 @@ export async function persistScanResults(scanResult) {
               // the op itself, read back by groupActiveOpsByAsset.
               if (pineConfig.hierarchicalCascadesEnabled) opData.hierarchical_cascade = true;
               const tradeOpId = `trade_smc_${signal.dedup_key}`;
-              const created = await backend.tradeOps.createTradeOpIfNoneActive(
+              const created = await createTradeOpIfNoneActiveCapped(
                 signal.asset_id, tradeOpId, opData,
                 pineConfig.hierarchicalCascadesEnabled ? '1h_5m' : undefined,
               );
@@ -3036,7 +3103,7 @@ export async function persistScanResults(scanResult) {
     if (pineConfig.hierarchicalCascadesEnabled) opData.hierarchical_cascade = true;
 
     const tradeOpId = `trade_${sig.dedup_key || sig.id}`;
-    const created = await backend.tradeOps.createTradeOpIfNoneActive(
+    const created = await createTradeOpIfNoneActiveCapped(
       sig.asset_id, tradeOpId, opData,
       pineConfig.hierarchicalCascadesEnabled ? '4h_15m' : undefined,
     );
@@ -3136,7 +3203,7 @@ export async function persistScanResults(scanResult) {
       opData.rr_target_basis = RR_TARGET_BASIS;
 
       const tradeOpId = `trade_${sig.dedup_key || sig.id}`;
-      const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
+      const created = await createTradeOpIfNoneActiveCapped(sig.asset_id, tradeOpId, opData);
       if (!created.created) continue;
       hasActiveOp = true;
       activeOp = created.doc;
@@ -3231,7 +3298,7 @@ export async function persistScanResults(scanResult) {
       opData.rr_target_basis = RR_TARGET_BASIS;
 
       const tradeOpId = `trade_${sig.dedup_key || sig.id}`;
-      const created = await backend.tradeOps.createTradeOpIfNoneActive(sig.asset_id, tradeOpId, opData);
+      const created = await createTradeOpIfNoneActiveCapped(sig.asset_id, tradeOpId, opData);
       if (!created.created) continue;
       hasActiveOp = true;
       activeOp = created.doc;
@@ -3387,7 +3454,7 @@ export async function persistScanResults(scanResult) {
       if (pineConfig.hierarchicalCascadesEnabled) opData.hierarchical_cascade = true;
 
       const tradeOpId = `trade_smc_${sig.dedup_key || sig.id}`;
-      const created = await backend.tradeOps.createTradeOpIfNoneActive(
+      const created = await createTradeOpIfNoneActiveCapped(
         sig.asset_id, tradeOpId, opData,
         pineConfig.hierarchicalCascadesEnabled ? '1h_5m' : undefined,
       );
@@ -3917,7 +3984,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes, rfRegimeOutcomes, smcObFvgOutcomes, smcTriggerOutcomes, entryFunnelOutcomes, candlePatternOutcomes };
+  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes, rfRegimeOutcomes, smcObFvgOutcomes, smcTriggerOutcomes, entryFunnelOutcomes, candlePatternOutcomes, portfolioCapOutcomes };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()

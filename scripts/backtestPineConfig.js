@@ -169,6 +169,37 @@ const DEFAULTS = {
   // em src/lib/pineParser.js/scripts/adminPineConfig.js — mesmo motivo dos
   // outros flags backtest-only acima. Ver src/lib/timeStopOverrideTripwire.test.js.
   timeStopBarsOverride: null,
+
+  // docs/known-risks.md item 133 — TETO DE EXPOSIÇÃO DE CARTEIRA.
+  // BACKTEST-ONLY, `null` = sem teto (o comportamento de sempre, e o único
+  // que existe em produção). Tripwire em
+  // src/lib/portfolioSideCapTripwire.test.js garante que esta chave NUNCA
+  // apareça em pineParser.js/adminPineConfig.js: as duas alimentam
+  // strategyConfig/current, gravável por qualquer sessão anônima (sem tela
+  // de login, CLAUDE.md decisão 1) — a chave lá seria um controle de RISCO
+  // de produção editável por quem tiver a URL.
+  //
+  // O que é: número máximo de operações do MESMO LADO (BUY ou SELL)
+  // abertas ao mesmo tempo na carteira INTEIRA. `assetActiveOps` já garante
+  // 1 operação por ATIVO, mas nada limita a carteira: com 10 ativos
+  // fortemente correlacionados a BTC, 10 posições do mesmo lado são uma
+  // aposta de tamanho 10, não 10 apostas independentes.
+  //
+  // Por que isto e não outro mecanismo: o item 110 mediu que ampliar a
+  // carteira aumenta operações sem aumentar informação — 42 símbolos novos
+  // deram n=590 com G=3 e DEFF 0,08, porque as operações se sobrepõem na
+  // mesma janela. A unidade independente é TEMPO, não ativo. Este é o único
+  // mecanismo identificado que ataca esse termo (a variância ENTRE
+  // operações); o item 132 já atacou a variância POR operação e entregou
+  // 1,85× de aceleração, mas não toca o G.
+  //
+  // HIPÓTESE A MEDIR, não melhoria assumida: o teto REDUZ n (menos
+  // operações) e AUMENTA a independência por operação. O efeito líquido em
+  // tempo-até-significância é desconhecido e pode ser negativo. Por isso a
+  // métrica que decide NÃO é expectância — é **G e DEFF**, via
+  // `scripts/backtest-correlation-check.mjs`.
+  maxConcurrentSameSideOps: null,
+
   // docs/known-risks.md item 132 — TRAILING pré-TP1 contínuo, o mecanismo que
   // o comentário do próprio advancePreTp1StopProtection (opExitRules.js)
   // chama de "a different, not-yet-built mechanism".

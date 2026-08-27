@@ -267,6 +267,9 @@ export async function runBacktest({
   // Gate de padrão de vela (engolfo), RF 4h_15m only, opt-in via
   // pineConfig.candlePatternEnabled — same convention as retestOutcomesByKey.
   const candlePatternOutcomesByKey = new Map();
+  // item 133 — entradas barradas pelo teto de exposição de carteira. Já vem
+  // deduplicada por trade_op_id do scanner; o Map aqui só reune os ativos.
+  const portfolioCapOutcomesByOpId = new Map();
   // known-risks item 45.3/49 — "muitos sinais, poucas operações". Diferente
   // dos Maps acima (que guardam o estado FINAL por sinal), este é um
   // histograma de TODAS as avaliações que rejeitaram algo, nas duas
@@ -400,6 +403,9 @@ export async function runBacktest({
             for (const outcome of (persistResult.candlePatternOutcomes || [])) {
               recordOutcome(candlePatternOutcomesByKey, attemptsByKey.candlePattern, outcome);
             }
+            for (const outcome of (persistResult.portfolioCapOutcomes || [])) {
+              portfolioCapOutcomesByOpId.set(outcome.trade_op_id, outcome);
+            }
           }
         } catch (err) {
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
@@ -442,6 +448,7 @@ export async function runBacktest({
     smcObFvgOutcomes: [...smcObFvgOutcomesByKey.values()],
     smcTriggerOutcomes: [...smcTriggerOutcomesByKey.values()],
     candlePatternOutcomes: [...candlePatternOutcomesByKey.values()],
+    portfolioCapOutcomes: [...portfolioCapOutcomesByOpId.values()],
     indicatorAttributionRecords: [...indicatorAttributionByKey.values()],
     entryFunnelCounts,
     attemptStats: Object.fromEntries(
@@ -693,6 +700,7 @@ export function buildReport(ops, {
   smcRegimeOutcomes = [], smcRegimeAllOutcomes = smcRegimeOutcomes,
   rfRegimeOutcomes = [], rfRegimeAllOutcomes = rfRegimeOutcomes,
   smcObFvgOutcomes = [], smcTriggerOutcomes = [], candlePatternOutcomes = [],
+  portfolioCapOutcomes = [],
   indicatorAttributionRecords = [],
   entryFunnelCounts = { '4h_15m': {}, '1h_5m': {} }, attemptStats = {}, costModel, minTrades,
 } = {}) {
@@ -931,6 +939,32 @@ export function buildReport(ops, {
         rejected: candlePatternOutcomes.length - passed,
         byPattern,
         byReason,
+      };
+    })(),
+    // Teto de exposição de carteira (docs/known-risks.md item 133) —
+    // BACKTEST-ONLY (pineConfig.maxConcurrentSameSideOps). Conta as entradas
+    // que o teto BARROU, já deduplicadas por trade_op_id no scanner (o mesmo
+    // sinal é reavaliado no loop de retry).
+    //
+    // ATENÇÃO ao ler: `blocked` NÃO é "operações perdidas". Uma entrada
+    // barrada aqui pode ser justamente a que teria perdido — e o objetivo
+    // declarado deste mecanismo não é expectância, é reduzir a correlação
+    // ENTRE operações. A métrica que decide é **G e DEFF** de
+    // scripts/backtest-correlation-check.mjs sobre o relatório, não este
+    // contador nem a expectância isolada.
+    portfolioCap: (() => {
+      const bySide = {};
+      const bySymbol = {};
+      for (const o of portfolioCapOutcomes) {
+        bySide[o.side] = (bySide[o.side] || 0) + 1;
+        if (o.symbol) bySymbol[o.symbol] = (bySymbol[o.symbol] || 0) + 1;
+      }
+      return {
+        enabled: portfolioCapOutcomes.length > 0,
+        cap: portfolioCapOutcomes[0]?.cap ?? null,
+        blocked: portfolioCapOutcomes.length,
+        bySide,
+        bySymbol,
       };
     })(),
     // Geometria de saída (docs/known-risks.md item 46) — QUAL gestão este run
