@@ -51,7 +51,7 @@ import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { runBacktest } from '../src/lib/backtestEngine.js';
 import { analyzeReport } from '../src/lib/backtestAnalysis.js';
-import { ZERO_COST } from '../src/lib/tradeMetrics.js';
+import { ZERO_COST, tradesForCIHalfWidth } from '../src/lib/tradeMetrics.js';
 import { backend } from '@/api/entities';
 import { setPineConfigOverrides, getPineConfig } from './backtestPineConfig.js';
 import { loadSeries } from './backtestMarketDataProvider.js';
@@ -373,6 +373,30 @@ async function main() {
     console.log('');
   } else {
     console.log(`[backtest] amostra suficiente: ${report.costs.countedTrades} operações, expectância líquida ${report.costs.netExpectancyR?.toFixed(3)}R`);
+  }
+
+  // docs/known-risks.md item 133 — ALVO DECLARADO: estreitar o IC, não
+  // provar edge. Impresso SEMPRE (conclusivo ou não), porque é a única
+  // métrica aqui que progride monotonicamente com amostra e responde a
+  // pergunta acionável: "que tamanho de vantagem esta amostra já descarta?".
+  // "Inconclusivo" continua sendo verdade e continua sendo impresso acima —
+  // o que muda é que ele deixa de ser o fim da leitura.
+  const meiaLargura = report.costs.expectancyRCI95HalfWidth;
+  const sdPorOp = report.costs.expectancyRSd;
+  if (Number.isFinite(meiaLargura) && Number.isFinite(sdPorOp) && sdPorOp > 0) {
+    console.log('');
+    console.log(`  📏 PODER DE DESCARTE (alvo do item 133) — meia-largura do IC95: ±${meiaLargura.toFixed(3)}R`);
+    console.log(`      Esta amostra já descarta qualquer edge real maior que ~${meiaLargura.toFixed(3)}R.`);
+    const alvos = [0.20, 0.15, 0.10];
+    const linhas = alvos
+      .filter((alvo) => alvo < meiaLargura)
+      .map((alvo) => `±${alvo.toFixed(2)}R → ${tradesForCIHalfWidth(sdPorOp, alvo)} ops`);
+    if (linhas.length) {
+      console.log(`      Para estreitar (IC ingênuo, sd=${sdPorOp.toFixed(3)}): ${linhas.join(' · ')}`);
+    }
+    console.log('      Números INGÊNUOS — a correção por cluster costuma alargar neste projeto.');
+    console.log('      Rode: node scripts/backtest-correlation-check.mjs --report <arquivo>');
+    console.log('');
   }
 
   const outPath = args.out || 'backtest-report.json';

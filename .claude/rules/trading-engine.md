@@ -224,6 +224,30 @@ nunca deve receber nova transição.**
   original depende de perfil de volume via biblioteca externa inacessível) —
   ver `docs/known-risks.md` item 43.
 
+- **Alvo de medição: ESTREITAR O IC, não provar edge** (item 133,
+  2026-08-27). `conclusive` é binário e aqui é quase sempre `false` — provar
+  o edge medido (+0,026R) exigiria ~8.400 operações (~70 anos). A métrica de
+  progresso é a **meia-largura do IC95**
+  (`summarizeOps().expectancyRCI95HalfWidth`), que encolhe com √n exista edge
+  ou não e responde "que vantagem esta amostra já descarta?".
+  `tradesForCIHalfWidth(sd, alvo, deff)` dá o n necessário; `run-backtest`
+  imprime o bloco "PODER DE DESCARTE" em todo run. **Sempre ingênuo** — a
+  correção por cluster (`backtest-correlation-check.mjs`) costuma alargar
+  neste projeto (DEFF medido de 0,08 a 1,43); nunca cite a meia-largura
+  ingênua como se fosse a corrigida.
+
+- **Teto de exposição de carteira** (`pineConfig.maxConcurrentSameSideOps`,
+  item 133) — **BACKTEST-ONLY, `null` em produção**, com tripwire
+  (`src/lib/portfolioSideCapTripwire.test.js`). Limita operações do MESMO
+  LADO abertas ao mesmo tempo na carteira INTEIRA; `assetActiveOps` só
+  garante 1 por ATIVO. Aplicado pelo wrapper `createTradeOpIfNoneActiveCapped`
+  em `persistScanResults` (mesma assinatura do método do backend), fora de
+  `createManualTradeOp` de propósito. Custo ZERO em produção: com o teto nulo
+  nenhuma query extra é emitida. Ataca a variância ENTRE operações (o termo
+  G/DEFF do item 110), não a variância POR operação que o item 132 já
+  atacou. **Hipótese não medida** — a métrica que decide é G/DEFF, não
+  expectância nem o contador de barradas.
+
 - **Custos reais e gate de amostra** (`src/lib/tradeMetrics.js`) — Fase 5,
   **LIGADO por padrão** (não é opt-in como as Fases 2-4: corrige uma medição
   errada, não adiciona mecanismo). Taxa/slippage/funding descontados no

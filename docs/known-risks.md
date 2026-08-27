@@ -16000,3 +16000,40 @@ sai do roadmap — não vira "testar mais valores de K".
 código NOVO (filtro de range do item 133 já aplicado). Se os números baterem
 com o config A já medido no item 132, isso confirma que a mudança de query é
 neutra para o backtest — algo que eu estaria assumindo em vez de verificando.
+
+### Alvo declarado TROCADO: de "provar edge" para "estreitar o IC" (2026-08-27)
+
+Terceira das três ações que o usuário aprovou desta síntese. Não é mudança
+de estratégia — é mudança do critério pelo qual o projeto declara progresso.
+
+**Por que.** `conclusive` é binário e, aqui, quase sempre `false`. Provar o
+edge MEDIDO (+0,026R) exigiria ~8.400 operações, ~70 anos — não é uma meta
+difícil, é uma meta inalcançável, e 65 trials são a evidência empírica disso.
+Perseguir `conclusive: true` produz a leitura errada ("mais um trial e talvez
+saia") de um fato que já é conhecido.
+
+A **meia-largura do IC95** não tem esse defeito: encolhe com √n exista edge
+ou não, e responde a pergunta acionável — *que tamanho de vantagem esta
+amostra já consegue descartar?*. Meia-largura de 0,15R significa "qualquer
+edge real maior que 0,15R teria aparecido". Isso é falsificação com
+evidência, no lugar de esperar indefinidamente por significância.
+
+**O que mudou no código** (aditivo, nada removido — `conclusive` e
+`inconclusiveReason` continuam existindo e continuam sendo impressos):
+
+- `src/lib/tradeMetrics.js`: `summarizeOps` passa a devolver
+  `expectancyRCI95HalfWidth` e `expectancyRSd`.
+- `tradesForCIHalfWidth(sd, alvo, deff)` — nova função pura: quantas
+  operações para o IC atingir uma meia-largura alvo. `deff` multiplica o n
+  (a amostra efetiva é n/DEFF); o default 1 é o caso i.i.d., que este
+  projeto **não** tem, então o default é um piso otimista e está documentado
+  como tal.
+- `scripts/run-backtest.mjs` imprime sempre um bloco "PODER DE DESCARTE":
+  a meia-largura atingida, o que ela já descarta, e quantas operações
+  faltam para ±0,20/±0,15/±0,10R.
+
+**Ressalva que acompanha o número, sempre.** Tudo isso é o IC **ingênuo**.
+A correção por cluster (`scripts/backtest-correlation-check.mjs`) costuma
+ALARGAR neste projeto — o item 109 mediu DEFF 1,43, e o item 110 chegou a
+DEFF 0,08 com G=3. O bloco impresso diz isso na própria saída e manda rodar
+a ferramenta. Nunca cite a meia-largura ingênua como se fosse a corrigida.

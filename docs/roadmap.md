@@ -279,6 +279,25 @@ candidato a edge genuíno que só desbloqueia o Bloco 1 se confirmado numa
 próxima medição em janela nova, sob IC corrigido por família (item 89). Ver
 item 88 para o raciocínio completo.
 
+> **ENCERRADO pelo item 133 (2026-08-27).** A confirmação que o critério
+> acima pedia foi feita e **falhou**: o único holdout SELL genuinamente fora
+> da amostra e pré-registrado deu n=150, +0,078R, IC cruzando zero
+> (`allowedside-holdout-sell-only`); os 4 IC "conclusivos" da família são a
+> MESMA janela remedida (93-99,5% de sobreposição) e 13 dos 14 registros são
+> fatias `seed`, não runs independentes; e 0 de 14 sobrevivem ao Bonferroni
+> da própria família. O achado direcional robusto do ledger é **"BUY perde
+> −0,344R"**, não "SELL ganha". SELL-only **não vai a produção** e não
+> desbloqueia o Bloco 1.
+>
+> **O alvo declarado do projeto mudou junto** (item 133): não é mais provar
+> edge — é **estreitar o IC**. Provar o edge medido (+0,026R) exigiria ~70
+> anos; estreitar a meia-largura para ±0,15R leva ~1 ano e para ±0,10R ~2,4
+> anos. `run-backtest` passa a imprimir "PODER DE DESCARTE" em todo run, e
+> `tradesForCIHalfWidth` (`src/lib/tradeMetrics.js`) dá o n necessário. A
+> pergunta que o projeto responde daqui pra frente é *"que tamanho de
+> vantagem esta amostra já descarta?"* — sempre respondível — no lugar de
+> *"quando sai o conclusivo?"*, que depende de um edge que pode não existir.
+
 **Linha SELL-only — retomada via símbolos novos (2026-08-16, item 95)**:
 a pausa do item 88 (nenhuma janela de calendário nem símbolo genuinamente
 novo disponível) foi contornada pelo caminho (b) que o próprio item 88

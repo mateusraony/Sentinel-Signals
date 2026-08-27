@@ -480,6 +480,37 @@ export function expectancyCIAtZ(expectancyR, expectancyRStdErr, z) {
  * @param {Array<object>} ops
  * @param {{ epsilonR?: number, epsilonPct?: number, sortBy?: string, costModel?: CostModel, minTrades?: number }} [options]
  */
+/**
+ * Quantas operações são necessárias para o IC95 ingênuo atingir uma
+ * meia-largura alvo, dado o desvio por operação.
+ *
+ * docs/known-risks.md item 133 — este é o ALVO declarado do projeto desde
+ * então, no lugar de "provar edge". A pergunta que ele responde é
+ * acionável e sempre respondível ("quanto falta para conseguir descartar
+ * uma vantagem de X?"), enquanto "quando vou provar o edge?" depende de o
+ * edge existir e ter um tamanho que este universo nunca vai medir
+ * (~8.400 operações para o +0,026R medido).
+ *
+ * `deff` aplica o efeito de desenho por correlação em cluster: a amostra
+ * EFETIVA é n/DEFF, então o n nominal necessário é multiplicado por DEFF.
+ * O default 1 é o caso i.i.d. — que este projeto NÃO tem. Passe o DEFF
+ * medido por scripts/backtest-correlation-check.mjs quando for citar o
+ * número numa decisão; o default existe só para o caso em que não há
+ * medição de cluster disponível, e nesse caso o resultado é um piso
+ * otimista, não uma estimativa.
+ *
+ * @param {number} sd - desvio padrão do R por operação
+ * @param {number} targetHalfWidth - meia-largura desejada, em R
+ * @param {number} [deff=1] - design effect medido
+ * @returns {number|null} n necessário (arredondado para cima)
+ */
+export function tradesForCIHalfWidth(sd, targetHalfWidth, deff = 1) {
+  if (!Number.isFinite(sd) || !Number.isFinite(targetHalfWidth)) return null;
+  if (sd <= 0 || targetHalfWidth <= 0) return null;
+  const effectiveDeff = Number.isFinite(deff) && deff > 0 ? deff : 1;
+  return Math.ceil(((1.96 * sd) / targetHalfWidth) ** 2 * effectiveDeff);
+}
+
 export function summarizeOps(ops, {
   epsilonR = 0.05, epsilonPct = 0.1, sortBy = 'closed', costModel, minTrades = 30,
 } = {}) {
@@ -563,6 +594,26 @@ export function summarizeOps(ops, {
   else if (expectancyRCI95 === null) inconclusiveReason = 'no_r_samples';
   else if (expectancyRCI95[0] <= 0 && expectancyRCI95[1] >= 0) inconclusiveReason = 'ci_straddles_zero';
 
+  // docs/known-risks.md item 133 — MUDANÇA DE ALVO.
+  //
+  // `conclusive` é binário e, neste projeto, é quase sempre `false`: com o
+  // edge medido (+0,026R) e o desvio observado, PROVAR esse edge exigiria
+  // ~8.400 operações (~70 anos a 120/ano). Perseguir `conclusive: true` é
+  // perseguir algo fora de alcance, e 65 trials confirmam isso na prática.
+  //
+  // A meia-largura do IC é o que de fato PROGRIDE: ela encolhe com √n
+  // independentemente de existir edge, e é ela que responde a pergunta
+  // acionável — "que tamanho de vantagem esta amostra já consegue
+  // descartar?". Meia-largura de 0,15R significa: qualquer edge maior que
+  // 0,15R teria aparecido. Isso é falsificação real, com evidência, em vez
+  // de esperar indefinidamente por significância.
+  //
+  // Continua sendo o IC INGÊNUO. A correção por cluster (que neste projeto
+  // costuma alargar) é responsabilidade de scripts/backtest-correlation-check.mjs
+  // — nunca cite a meia-largura daqui como se fosse a corrigida.
+  const expectancyRSd = expectancyRStdErr !== null ? expectancyRStdErr * Math.sqrt(rCounted) : null;
+  const expectancyRCI95HalfWidth = expectancyRStdErr !== null ? 1.96 * expectancyRStdErr : null;
+
   return {
     total: closed.length,
     counted,
@@ -586,6 +637,9 @@ export function summarizeOps(ops, {
     grossExpectancyR: grossRCounted > 0 ? sumGrossR / grossRCounted : null,
     expectancyRStdErr,
     expectancyRCI95,
+    // Alvo declarado do projeto desde o item 133 — ver o comentário acima.
+    expectancyRSd,
+    expectancyRCI95HalfWidth,
     conclusive: inconclusiveReason === null,
     inconclusiveReason,
     minTrades,
