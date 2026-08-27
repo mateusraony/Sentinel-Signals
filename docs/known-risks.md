@@ -15672,3 +15672,262 @@ Verificação pós-correção: `npm run lint && npm test && npm run build && nod
 scripts/build-scan.mjs && node scripts/build-backtest.mjs && npm run
 build:scan-shadow`.
 
+
+---
+
+## 133. Conselho de revisão — "operar só os 10 pares": a amostra não é a alavanca que o item 109 pensou, e o teto de 10 ativos é um bug de query (2026-08-27)
+
+### Contexto
+
+Usuário perguntou, depois do item 132 fechar: operando **somente os 10 pares
+atuais**, quais opções ou padrões existem? Pediu pesquisa externa e conselho de
+revisores independentes. Rodaram 4 papéis em paralelo
+(`.claude/skills/sentinel-council-review`): estratégia, estatística,
+arquitetura e advogado-do-diabo, cada um instruído a refutar os outros.
+Hipóteses postas na mesa: (A) mais amostra dos mesmos 10, (B) redução de
+variância, (C) cross-sectional entre os 10, (D) SELL-only em produção.
+
+**Duas premissas do meu próprio dossiê foram refutadas pelo conselho** e estão
+corrigidas abaixo — registro porque os erros são meus.
+
+### Correção 1 — o gargalo de cota é LEITURA, e o teto de 10 ativos é artefato de query
+
+O item 106 culpou **escrita** e cortou 14→10 ativos. Mas o próprio item 106
+(linhas 11842-11848) já registrava a medição posterior que o contradiz:
+`reads_this_pass ~130-140` × 312 ≈ **41-44k/dia = 82-88% dos 50k**, contra
+escrita em **22-25% dos 20k**. O item 106 herdou a métrica de escrita do item
+13, medida antes das correções daquela rodada.
+
+Causa da leitura, verificada nas três pontas:
+
+- `scanner.js:2818-2823` calcula `fourHoursAgo` e depois busca os **10 últimos**
+  `SignalEvent` **sem filtro temporal**, descartando pelo tempo no laço
+  (`if (sig.created_date < fourHoursAgo)`). Paga 10 leituras/ativo/passada para
+  usar quase nenhuma, 312×/dia. Gêmeo em `:3226` para a perna SMC.
+- `buildQuery` (`src/api/entities.js:21-29`) só emite `==` e `in` — não existe
+  operador de range, então o filtro **não pode** ir ao servidor hoje.
+- **O índice composto necessário já existe**: `asset_id ASC, source ASC,
+  timeframe ASC, created_date DESC` em `firestore.indexes.json`. Três
+  igualdades + range no campo ordenado é exatamente a forma suportada.
+  **Nenhum índice novo.**
+
+Projeção do revisor de arquitetura com o range filter: ~4,5 leituras/ativo/
+passada → teto ≈ **28 ativos**. Desacoplando as cadências (`price-check` a 5min,
+`full-scan` a 15min — já são funções e locks separados, `scanner.js:4134` e
+`:3977`, chamadas em sequência em `scripts/run-scan.mjs:69,73`) o teto sobe
+mais. **Não medido em produção — é projeção, não fato.**
+
+**Ressalva obrigatória que quase virou regressão (review Codex, PR #259):** a
+janela do range filter **não pode ser `created_date >= fourHoursAgo`**. O
+mesmo fetch alimenta o ramo de expiração em `scanner.js:2825-2842`, que existe
+desde o item 47.2 justamente para a expiração não ser muda (grava
+`expired_logged` + um `SystemLog`). Filtrar em 4h faria o sinal sumir da query
+**no exato instante em que expira**, e esse log nunca mais seria escrito — o
+gêmeo SMC em `:3226` tem o mesmo problema. A margem de **8h** citada acima
+existe por isso: o sinal expira em 4h e continua visível por mais 4h, o scan
+roda a cada 5min, e `expired_logged` é idempotente — na operação normal ele é
+sempre pego. **Mas introduz um modo de falha novo e limitado**: se o scan
+ficar fora do ar por mais de 4h (estouro de cota do item 106, instabilidade do
+GitHub Actions), o sinal atravessa a janela sem log. Perde-se uma linha de
+log, não uma operação. Quem implementar decide entre aceitar isso, alargar a
+margem, ou fazer uma varredura de expiração separada — **não é drop-in.**
+
+### Correção 2 — a carteira de 20 símbolos JÁ foi medida (eu havia dito que não)
+
+Afirmei na conversa que a maior carteira já medida foram 8 símbolos. Errado:
+o ledger tem `baixa-baseline-20symbols-sell-slice` (n=166) e
+`bloco0-alta-20symbols-sell-slice` (n=129). O Bloco 0 do roadmap foi executado
+em duas janelas.
+
+### O achado que reordena tudo — item 110 já mediu a alavanca do item 109
+
+O item 109 nomeou "amplitude em ATIVOS" como a única alavanca que ataca a
+causa raiz, com base num DEFF de 1,4289 que sugeria que cada ativo agrega
+informação real. **O item 110 mediu e o resultado é o oposto**: 42 símbolos
+genuinamente novos, mesma janela, regras padrão, sem override —
+**n=590, expectância −0,0748R**, e o achado metodológico no próprio título:
+*mais ativos ENCOLHE o G do teste de cluster*. Pooled: **G=3, DEFF 0,08**.
+
+Mecanismo: as operações dos 42 símbolos se sobrepõem nos mesmos 12 meses e
+compartilham beta de BTC, então colapsam em pouquíssimos clusters
+independentes. **A unidade independente é TEMPO, não ativo.** Adicionar ativos
+adiciona operações sem adicionar informação proporcional.
+
+Consequência: destravar a cota (Correção 1) continua valendo — por
+correção, folga e por eliminar o modo de falha do item 106, que zera operações
+ao vivo — mas **não compra o poder estatístico que o item 109 projetou**.
+
+### Veredito por hipótese (consenso do conselho, com as refutações)
+
+| | Veredito | Motivo decisivo |
+|---|---|---|
+| **(A)** mais amostra | **MORTA** | Afrouxar gate medido negativo 6× (n=343 a 535, −0,038 a −0,110). Item 68: RF 1h independente deu negativo e CONCLUSIVO. Mais ativos: item 110 acima. |
+| **(B)** variância | **ÚNICA VIÁVEL** | Único ganho medido fora do ruído (item 132: sd −35%, drawdown 12,66%→6,40%, aceleração 1,85×). Estatístico e advogado-do-diabo convergiram nela independentemente. |
+| **(C)** cross-sectional | **REFUTADA** | Estratégia defendeu ("única que ataca o DEFF"); estatístico refutou com número: ICC cross-símbolo implícito é +0,163/+0,095/−0,049, não 0,7 → teto de **1,19×** de aceleração, contra 1,85× que (B) já entregou, a 20× o custo de engenharia. Item 97/98: 20 símbolos → G=13, DEFF 3,56. |
+| **(D)** SELL-only | **NÃO VAI A PRODUÇÃO** | Ver abaixo. |
+
+### (D) SELL-only — por que a família mais positiva do projeto não vira produção
+
+Cinco argumentos independentes, todos verificados:
+
+1. **Os 4 CI "conclusivos" são a MESMA amostra remedida.** Sobreposição de
+   janela calculada dos `seedSource`: 93,1%, 99,5%, e uma janela 100% idêntica
+   (só símbolos diferentes). Os CI não se somam: t cai de 4,13 (se
+   independentes) para **2,40** — um teste único.
+2. **13 dos 14 registros são `source: "seed"`** — fatias recalculadas à mão dos
+   mesmos relatórios, não runs independentes.
+3. **O único teste pré-registrado fora da amostra FALHOU**:
+   `allowedside-holdout-sell-only`, janela 2024-08-10→2025-08-10, n=150,
+   **+0,078R, IC [−0,115; +0,27], `conclusiveAtN1: false`**. Regressão de
+   ~0,22 → 0,078 é assinatura de overfitting.
+4. **0 de 14 sobrevivem ao Bonferroni da própria família** (z=2,9137). Holm e
+   BH sobre o ledger inteiro reprovam todos os SELL. O único sobrevivente é
+   `allowedside-ab-buy-only`, z=−4,31: **o achado robusto do projeto é que BUY
+   PERDE (−0,344R), não que SELL ganha.**
+5. **Dependência de funding — argumento CORRIGIDO (review Codex, PR #259).**
+   A primeira versão deste item dizia: *"o painel ao vivo lê Binance Spot, onde
+   não há funding nem venda a descoberto; (D) foi validada num mercado que o
+   painel não observa."* **Isso está factualmente invertido e o Codex está
+   certo.** O `CLAUDE.md:72` diz o contrário com todas as letras — "Divergência
+   **Futures (painel)** × **Spot (cron)**" — e o código confirma:
+   `src/lib/marketDataProvider.js:25` usa `https://fapi.binance.com/fapi/v1`
+   com `MARKET_SOURCE = 'futures'` (:31); é o `scripts/adminMarketDataProvider.js:16`
+   que fica em `data-api.binance.vision` (Spot), porque `fapi` devolve 451 em
+   datacenter dos EUA. O painel **observa** perpétuo.
+
+   O que sobra do argumento, na forma correta e mais fraca:
+   - A metade que roda **24/7 e cria a maior parte das operações** é o cron, e
+     ela **está em Spot** — então o termo de funding que tornou (D) positiva
+     não existe no dado que alimenta a maioria das operações ao vivo.
+   - E mesmo no painel, funding é um termo do **modelo de custo do backtest**
+     (`src/lib/tradeMetrics.js`), não um fluxo real: o Sentinel não executa
+     ordem, TP/Stop são virtuais. A "receita do vendido" só se materializa
+     para quem de fato carrega um short perpétuo.
+
+   Ou seja: isto deixa de ser "matador mecânico" e vira **uma ressalva de
+   generalização**. O veredito de (D) **não muda**, porque ele já estava
+   sustentado pelos argumentos 1-4 (reamostragem, fatias `seed`, holdout
+   pré-registrado falhado, Bonferroni) — nenhum deles depende de qual mercado
+   o painel lê.
+
+Nota de regime: o argumento ingênuo "SELL só funciona porque 2025-26 caiu"
+**já estava refutado no repo** (itens 46.1/48/88 controlaram por 3 janelas e
+carteira fixa). O problema de (D) não é regime — é reamostragem, holdout
+falhado e o fato de a evidência direcional robusta ser "BUY perde", não "SELL
+ganha".
+
+Risco adicional de wiring, se algum dia for cogitado: `allowedSide` é avaliado
+no NASCIMENTO do sinal e nunca reavaliado (`scanner.js:2880-2890`), diferente
+de `buyRegimeFilterEnabled` que relê o 1D ao vivo (`:2908`) — não tem chave de
+desligar se o regime virar. E está deliberadamente fora de
+`SYNCED_STRATEGY_KEYS` (verificado: ausente de `pineParser.js` e
+`adminPineConfig.js`), porque `strategyConfig/current` é gravável por qualquer
+sessão anônima.
+
+### (E) Hipótese NOVA do conselho — não existe teto de exposição de carteira
+
+**Fato verificado** (grep por `maxConcurrent|maxOpenOps|exposure|portfolioLimit`
+em `scanner.js`, `opExitRules.js` e os dois configs: **zero ocorrências**):
+o motor não tem nenhum limite de operações simultâneas nem de exposição.
+`assetActiveOps` garante 1 op por ativo — e só. Com 10 ativos fortemente
+correlacionados a BTC, "10 posições abertas do mesmo lado" é permitido e é
+**uma aposta de tamanho 10×, não 10 apostas**.
+
+É o análogo de carteira do item 132: ataca a variância **entre** operações —
+exatamente o termo G/DEFF que o item 110 expôs como o gargalo real e que
+nenhuma regra de saída consegue tocar. Um teto de K ops simultâneas do mesmo
+lado (K≈3-4) reduz n mas aumenta independência por operação; o efeito líquido
+em tempo-até-significância é medível e desconhecido. Custo de leitura zero (a
+lista de ops ativas já é carregada, `scanner.js:4030-4038`).
+
+**Não implementado. É proposta, não medição.**
+
+### A mudança de alvo (recomendação do revisor de estatística)
+
+Tabela de n refeita com os números pós-item 132 (sd 0,8063, DEFF 1,1329,
+~120 ops/ano), fórmula validada contra a do item 109:
+
+| δ | item 109 (16,8 anos p/ 0,10R) | **pós-132** |
+|---|---|---|
+| 0,20R | 4,2 anos | **1,2 ano** |
+| 0,10R | **16,8 anos** | **4,8 anos** |
+| 0,05R | 67 anos | 19,3 anos |
+
+**Mas 0,10R é hipótese; o edge MEDIDO é +0,0262R — provar isso exige n=8.422,
+~70 anos. Nunca.** Os "17 anos" do item 109 já estavam obsoletos antes do 132
+(parte da queda é o baseline novo do item 131, não mérito do trailing).
+
+Por isso o alvo defensável não é *provar* edge, é **estreitar o IC**:
+meia-largura de **0,15R em ~1 ano** e **0,10R em ~2,4 anos**. Isso é
+falsificação real — se em 2 anos o IC for [−0,08; +0,12], a hipótese "existe
+edge ≥ 0,15R" morre com evidência, não com cansaço.
+
+### O elefante (advogado-do-diabo), não refutado pelo conselho
+
+**Números refeitos por run consistente (review Codex, PR #259).** A primeira
+versão desta seção misturava três runs: média `+0,0257` (controle, n=103), sd
+`1,2111` (item 109, dataset antigo) e `n=120` (config A) — o `z=0,23, p=0,82`
+não vinha de nenhum experimento real. Refeito, cada linha com o **erro-padrão
+em cluster do próprio run** (que é o teste certo aqui, não o ingênuo):
+
+| run | média | EP em cluster | z | p (bicaudal) | P(observar ≥ isto \| edge=0) |
+|---|---|---|---|---|---|
+| Controle (n=103, G=17) | +0,0257 | 0,1066 | **0,241** | **0,809** | **40,5%** |
+| Config A (n=120, G=50) | +0,0262 | 0,0783 | **0,335** | **0,738** | **36,9%** |
+
+A conclusão não muda — os dois são indistinguíveis de zero — mas agora os
+números são deriváveis de um run só. Some: 65
+trials, 22 famílias; as 11 "conclusivas" decompõem em long numa janela de alta
+e short numa janela de baixa; a maior amostra genuinamente nova (item 110) deu
+negativo; e **o sinal do resultado do projeto dependia de um bug de custo de
+20×** (item 131). Nada disso prova ausência de edge — é impossível provar
+ausência aqui, só se põe teto. Mas é a leitura que o dado sustenta melhor.
+
+O que o projeto comprovadamente faz bem não é garimpar edge — é **falsificar
+com honestidade**: matou runner, breakeven, RSI-only, stop estrutural,
+arb-invalidate, Time Stop encurtado, RF 1h independente. O instrumental
+(cluster-robusto, Bonferroni por família, pré-registro, ledger, ~1.160 testes)
+é melhor que o da maioria dos projetos de varejo.
+
+### O que NÃO é provável neste universo, por melhor que seja feito
+
+1. Edge de 0,05R — 19,3 anos com config A. Fora de alcance.
+2. O edge realmente medido (+0,026R) — ~70 anos. Nunca.
+3. Ausência de edge — impossível por construção; só se põe teto.
+4. Robustez cross-regime — 10 pares dão ~1,3 apostas independentes por
+   rebalance sob correlação alta; qualquer resultado é 1 amostra de 1 mercado.
+5. Superioridade entre variantes com Δ < 0,10R — a menos que o A/B seja
+   **pareado** (como o item 131 fez, mesmas 103 ops dos dois lados; o item 132
+   NÃO foi pareado, 103 vs 120). Pareamento recupera 2×cov(A,B) e é a única
+   forma de medir diferença pequena aqui.
+
+### Recomendação final (avaliador)
+
+Ordem de prioridade, nenhuma implementada nesta rodada:
+
+1. **Range filter em `scanner.js:2819`/`:3226` + suporte a range em
+   `buildQuery`.** Não é jogada de edge — é correção de eficiência real (~70%
+   da cota de leitura relendo documento descartado no cliente), no índice que
+   já existe, e remove o modo de falha do item 106 que **zera operações ao
+   vivo**. Caminho de LEITURA, não de mutação. Menor mudança, maior ganho
+   verificável pelo instrumento que já existe (`scanner.js:4229`).
+   **Não é drop-in** — ver a ressalva de expiração na Correção 1: a janela tem
+   de ser maior que as 4h de expiração, senão mata o `expired_logged` do item
+   47.2.
+2. **Teto de ops simultâneas do mesmo lado (E)**, backtest-only, grade
+   pré-registrada, medindo **G e DEFF** e não só expectância — é a única
+   proposta que ataca o gargalo que o item 110 expôs.
+3. **Trocar o alvo declarado** de "provar edge" para "estreitar o IC", com
+   pareamento obrigatório em qualquer A/B de variante.
+
+**Não recomendado**: (A) em qualquer forma, (C), e (D) em produção.
+
+### Pesquisa externa consultada
+
+Momentum cross-sectional em cripto tem drawdown maior que time-series
+justamente pela alta correlação entre os ativos; pareamento (common random
+numbers) reduz a variância do estimador da diferença em 2×cov; e a literatura
+de pairs trading registra o mesmo viés de comparações múltiplas que o item 58
+já documenta neste repo — testar as 45 duplas de 10 ativos seria selecionar a
+melhor de 45, overfitting por construção. Nada disso mudou a decisão; reforçou
+(C) como refutada.
