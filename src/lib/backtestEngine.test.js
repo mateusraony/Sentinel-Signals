@@ -1733,3 +1733,28 @@ describe('buildReport — portfolioCap vem da CONFIG, não das rejeições (item
   });
 });
 
+
+// docs/known-risks.md item 133 — bug real, achado ao inspecionar os 3
+// relatórios reais da grade pré-registrada do teto de carteira: nenhum
+// trazia expectancyRSd/expectancyRCI95HalfWidth em report.costs, porque
+// summarizeOps() os calcula mas buildReport() monta `costs` A MÃO em vez de
+// espalhar o retorno dela — os dois campos ficaram de fora. O teste unitário
+// de tradeMetrics.js (que só chama summarizeOps diretamente) não cobria essa
+// junção; só apareceu num relatório de verdade, fora do alcance desta sessão
+// (rede sem Binance). Este teste fixa o ponto exato da junção.
+describe('buildReport — expectancyRSd/expectancyRCI95HalfWidth chegam ao report.costs (item 133)', () => {
+  it('repassa os dois campos que summarizeOps calcula, não só o IC/expectância', () => {
+    const ops = [
+      { status: 'STOP_HIT', cascade: '4h_15m', entry_price: 100, initial_stop: 90, exit_price: 100, side: 'BUY' },
+      { status: 'STOP_HIT', cascade: '4h_15m', entry_price: 100, initial_stop: 90, exit_price: 120, side: 'BUY' },
+      { status: 'STOP_HIT', cascade: '4h_15m', entry_price: 100, initial_stop: 90, exit_price: 80, side: 'BUY' },
+    ];
+    const report = buildReport(ops, { fromMs: 0, toMs: 1000, minTrades: 1 });
+    expect(report.costs.expectancyRSd).not.toBeNull();
+    expect(report.costs.expectancyRCI95HalfWidth).not.toBeNull();
+    // Mesma relação que tradeMetrics.test.js já fixa em isolamento — aqui
+    // fixando que ela sobrevive à montagem manual do relatório completo.
+    expect(report.costs.expectancyRCI95[1])
+      .toBeCloseTo(report.costs.netExpectancyR + report.costs.expectancyRCI95HalfWidth, 10);
+  });
+});

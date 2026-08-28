@@ -245,8 +245,12 @@ nunca deve receber nova transição.**
   `createManualTradeOp` de propósito. Custo ZERO em produção: com o teto nulo
   nenhuma query extra é emitida. Ataca a variância ENTRE operações (o termo
   G/DEFF do item 110), não a variância POR operação que o item 132 já
-  atacou. **Hipótese não medida** — a métrica que decide é G/DEFF, não
-  expectância nem o contador de barradas.
+  atacou. **MEDIDO (2026-08-28) e DESPRIORIZADO** — grade pré-registrada
+  K=3/K=5 deu aceleração de 1,07×/1,00×, dentro da predição ("próximo de
+  1"), muito longe dos 1,85× do item 132. Com só 7 símbolos, K=5 não bloqueou
+  nenhuma operação em 11 meses (concorrência nunca chegou lá) e K=3 saturou
+  sem sobrar sinal. Não eliminado — se o universo de símbolos crescer, a
+  concorrência de carteira também cresce e o cálculo pode mudar.
 
 - **Custos reais e gate de amostra** (`src/lib/tradeMetrics.js`) — Fase 5,
   **LIGADO por padrão** (não é opt-in como as Fases 2-4: corrige uma medição
