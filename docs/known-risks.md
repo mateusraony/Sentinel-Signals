@@ -15677,6 +15677,15 @@ build:scan-shadow`.
 
 ## 133. Conselho de revisão — "operar só os 10 pares": a amostra não é a alavanca que o item 109 pensou, e o teto de 10 ativos é um bug de query (2026-08-27)
 
+> **FECHADO (2026-08-28).** As 3 recomendações do conselho abaixo foram
+> implementadas e verificadas nas PRs #259/#260/#261: (1) query de retry
+> filtrada no servidor — mergeada; (2) teto de exposição de carteira —
+> implementado, MEDIDO com dado real, e **despriorizado** (aceleração 1,07×/
+> 1,00×, dentro da predição pré-registrada, muito abaixo do que justificaria
+> manter); (3) alvo trocado de "provar edge" para "estreitar o IC" —
+> mergeado. Detalhe de cada um nas seções "Correções antes de qualquer run",
+> "Grade medida" e "Alvo declarado TROCADO" mais abaixo.
+
 ### Contexto
 
 Usuário perguntou, depois do item 132 fechar: operando **somente os 10 pares
@@ -15840,7 +15849,10 @@ lado (K≈3-4) reduz n mas aumenta independência por operação; o efeito líqu
 em tempo-até-significância é medível e desconhecido. Custo de leitura zero (a
 lista de ops ativas já é carregada, `scanner.js:4030-4038`).
 
-**Não implementado. É proposta, não medição.**
+**Implementado e MEDIDO em 2026-08-28 — ver "Grade medida" mais abaixo.**
+Resultado: aceleração 1,07× (K=3) e 1,00× (K=5, nunca ativou com só 7
+símbolos) — dentro da predição pré-registrada de "próximo de 1", longe dos
+1,85× do item 132. Despriorizado, não eliminado.
 
 ### A mudança de alvo (recomendação do revisor de estatística)
 
@@ -15903,7 +15915,7 @@ arb-invalidate, Time Stop encurtado, RF 1h independente. O instrumental
 
 ### Recomendação final (avaliador)
 
-Ordem de prioridade, nenhuma implementada nesta rodada:
+Ordem de prioridade — **as 3 implementadas em 2026-08-27/28, PRs #259-261**:
 
 1. **Range filter em `scanner.js:2819`/`:3226` + suporte a range em
    `buildQuery`.** Não é jogada de edge — é correção de eficiência real (~70%
