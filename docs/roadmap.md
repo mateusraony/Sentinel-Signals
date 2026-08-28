@@ -246,6 +246,21 @@ plano de sessão morre com a sessão.
 > TP/Stop virtuais) nem o critério de desbloqueio do Bloco 1 (IC sem
 > cruzar zero numa amostra nova) — só torna essa amostra observável ao
 > vivo em vez de depender de uma rodada manual. Detalhe: item 129.
+>
+> **Atualização 2026-08-27/28 (itens 132/133): Bloco 0 ENCERRADO — o critério
+> de desbloqueio do Bloco 1 foi testado e FALHOU.** O trailing pré-TP1 foi
+> medido, promovido a produção (config A) e depois um conselho de revisão
+> respondeu "operando só os 10 pares atuais, quais opções existem?" com 3
+> ações implementadas (query de retry no servidor, teto de exposição de
+> carteira — medido e despriorizado, alvo trocado de "provar edge" para
+> "estreitar o IC"). **A que importa para este bloco**: o próprio critério
+> declarado acima ("IC sem cruzar zero numa amostra nova") foi avaliado
+> contra o holdout genuinamente fora da amostra e pré-registrado do item 88
+> — `allowedside-holdout-sell-only`, n=150, **+0,078R, IC [−0,115; +0,27],
+> cruza zero**. 0 dos 14 trials da família SELL-only sobrevivem ao
+> Bonferroni por família. **O Bloco 1 não está mais "aguardando uma medição
+> futura" — a medição aconteceu e não confirmou.** Permanece trancado, agora
+> por resultado, não por falta de dado. Detalhe completo: item 133.
 
 ## A regra que ordena tudo: amostra
 
@@ -455,6 +470,15 @@ gerador de operações sem vantagem — segue sem ação até o Bloco 0 fechar.
 > futura — os ~3 anos já disponíveis foram lidos 5-8 vezes, reusá-los não
 > é confirmação, ver correção do Codex no item 73) em vez de mais ablação
 > fragmentada. Decisão de como prosseguir segue com o usuário.
+>
+> **FECHADO por resultado (2026-08-27, item 133).** O "dado genuinamente não
+> examinado" acima chegou: o holdout pré-registrado e fora da amostra do
+> item 88 (`allowedside-holdout-sell-only`, n=150) deu +0,078R, IC
+> [−0,115; +0,27] — cruza zero. Não é mais uma decisão de priorização, é um
+> critério pré-declarado que foi testado e não se sustentou. Não reabrir sem
+> amostra genuinamente nova (símbolos nunca usados e/ou janela prospectiva
+> futura) — reusar os ~3 anos já disponíveis não é confirmação, é o mesmo
+> erro que o item 73 já apontou.
 
 Fases 2, 3 e 4 construíram quatro mecanismos completos, testados e documentados.
 **Nenhum deles jamais foi medido.** Os quatro seguem `false` nos três arquivos de
