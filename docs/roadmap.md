@@ -247,20 +247,33 @@ plano de sessão morre com a sessão.
 > cruzar zero numa amostra nova) — só torna essa amostra observável ao
 > vivo em vez de depender de uma rodada manual. Detalhe: item 129.
 >
-> **Atualização 2026-08-27/28 (itens 132/133): Bloco 0 ENCERRADO — o critério
-> de desbloqueio do Bloco 1 foi testado e FALHOU.** O trailing pré-TP1 foi
-> medido, promovido a produção (config A) e depois um conselho de revisão
-> respondeu "operando só os 10 pares atuais, quais opções existem?" com 3
-> ações implementadas (query de retry no servidor, teto de exposição de
-> carteira — medido e despriorizado, alvo trocado de "provar edge" para
-> "estreitar o IC"). **A que importa para este bloco**: o próprio critério
-> declarado acima ("IC sem cruzar zero numa amostra nova") foi avaliado
-> contra o holdout genuinamente fora da amostra e pré-registrado do item 88
-> — `allowedside-holdout-sell-only`, n=150, **+0,078R, IC [−0,115; +0,27],
-> cruza zero**. 0 dos 14 trials da família SELL-only sobrevivem ao
-> Bonferroni por família. **O Bloco 1 não está mais "aguardando uma medição
-> futura" — a medição aconteceu e não confirmou.** Permanece trancado, agora
-> por resultado, não por falta de dado. Detalhe completo: item 133.
+> **Atualização 2026-08-27/28 (itens 132/133): Bloco 0 ENCERRADO. Bloco 1
+> segue trancado, SEM mudança no motivo.** O trailing pré-TP1 foi medido,
+> promovido a produção (config A) e depois um conselho de revisão respondeu
+> "operando só os 10 pares atuais, quais opções existem?" com 3 ações
+> implementadas (query de retry no servidor, teto de exposição de carteira —
+> medido e despriorizado, alvo trocado de "provar edge" para "estreitar o
+> IC"). Nenhuma delas toca o critério do item 88.
+>
+> **Correção (achado do Codex, PR #263): uma versão anterior desta entrada
+> errava a cronologia.** Dizia que o holdout `allowedside-holdout-sell-only`
+> (n=150, +0,078R, IC [−0,115; +0,27]) era a "próxima medição" que testou o
+> critério do item 88 e falhou. Errado: esse holdout é do item 71, **já
+> conhecido e já citado no próprio texto do item 88** como a evidência que
+> motivou o critério — não uma resposta a ele. Sua janela
+> (2024-08-10→2025-08-10) é uma das que o item 88 explicitamente exclui de
+> contar como "nova". **Nenhuma medição que qualifique como resposta ao
+> critério do item 88 foi feita até hoje.** O item 133 não muda isso — 0 dos
+> 14 trials da família SELL-only sobreviverem ao Bonferroni é evidência
+> adicional contra promover SELL-only, mas não é o teste específico e
+> pré-registrado que o item 88 exige (janela genuinamente sem sobreposição
+> com nenhuma medição SELL anterior). **Bloco 1 permanece trancado pelo
+> mesmo motivo de sempre — falta de dado que qualifique, não um resultado
+> negativo novo.** Os dois caminhos seguem os do item 88/95: (a) carteira
+> nova o bastante para não reusar símbolo×janela (com a ressalva do item 110
+> — mais símbolos podem não comprar informação independente), ou (b) esperar
+> a janela de calendário livre de sobreposição (~2027-08-10). Detalhe
+> completo: item 133.
 
 ## A regra que ordena tudo: amostra
 
@@ -471,14 +484,23 @@ gerador de operações sem vantagem — segue sem ação até o Bloco 0 fechar.
 > é confirmação, ver correção do Codex no item 73) em vez de mais ablação
 > fragmentada. Decisão de como prosseguir segue com o usuário.
 >
-> **FECHADO por resultado (2026-08-27, item 133).** O "dado genuinamente não
-> examinado" acima chegou: o holdout pré-registrado e fora da amostra do
-> item 88 (`allowedside-holdout-sell-only`, n=150) deu +0,078R, IC
-> [−0,115; +0,27] — cruza zero. Não é mais uma decisão de priorização, é um
-> critério pré-declarado que foi testado e não se sustentou. Não reabrir sem
-> amostra genuinamente nova (símbolos nunca usados e/ou janela prospectiva
-> futura) — reusar os ~3 anos já disponíveis não é confirmação, é o mesmo
-> erro que o item 73 já apontou.
+> **Ainda TRANCADO, mesmo motivo (2026-08-27/28, item 133 — corrigido no
+> PR #263 após achado do Codex).** Uma versão anterior desta nota afirmava
+> "FECHADO por resultado", citando o holdout `allowedside-holdout-sell-only`
+> (n=150, +0,078R, IC [−0,115; +0,27]) como o "dado genuinamente não
+> examinado" que chegou e falhou. **Errado — cronologia invertida**: esse
+> holdout é do item 71 e já era conhecido quando o item 88 escreveu o
+> critério de desbloqueio (o próprio texto do item 88 o cita como a
+> evidência que MOTIVOU o critério); sua janela é uma das que o item 88
+> explicitamente exclui de contar como medição nova. Não houve "dado que
+> chegou" — não existe até hoje nenhuma medição que qualifique como resposta
+> ao critério. O conselho do item 133 reforçou a mesma conclusão por outro
+> ângulo (0 dos 14 trials SELL-only sobrevivem ao Bonferroni por família),
+> mas isso não substitui o teste específico que o item 88 exige. **Segue
+> trancado por falta de dado que qualifique**, não por um resultado negativo
+> novo. Não reabrir sem amostra genuinamente nova (símbolos nunca usados
+> e/ou janela prospectiva futura, ~2027-08-10) — reusar os ~3 anos já
+> disponíveis não é confirmação, é o mesmo erro que o item 73 já apontou.
 
 Fases 2, 3 e 4 construíram quatro mecanismos completos, testados e documentados.
 **Nenhum deles jamais foi medido.** Os quatro seguem `false` nos três arquivos de
