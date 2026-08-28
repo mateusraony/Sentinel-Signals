@@ -16068,3 +16068,87 @@ A correção por cluster (`scripts/backtest-correlation-check.mjs`) costuma
 ALARGAR neste projeto — o item 109 mediu DEFF 1,43, e o item 110 chegou a
 DEFF 0,08 com G=3. O bloco impresso diz isso na própria saída e manda rodar
 a ferramenta. Nunca cite a meia-largura ingênua como se fosse a corrigida.
+
+### Grade medida (2026-08-28) — mecanismo NÃO acelera a medição, como previsto
+
+Três runs reais, 7 símbolos, Futures, funding real, janela idêntica ao item
+132 (`2025-08-26 → 2026-07-31`). Rodados pelo usuário (workflow bloqueado
+para esta sessão — sem permissão de disparo, Binance inalcançável) em dois
+branches (`claude/motor-cerebro-analise-completa-mer4c2` e `main`, já
+idênticos por causa do merge do PR #260) — **os pares de mesma config deram
+resultado byte-idêntico entre os dois branches**, confirmando o que a
+"verificação extra embutida" pedia: a mudança de query do item 133 (filtro
+no servidor) é neutra para o backtest.
+
+| | Controle (`null`) | K=3 | K=5 |
+|---|---|---|---|
+| n | 120 | 116 | 120 |
+| netExpectancyR | +0,0262 | +0,0196 | +0,0262 |
+| max drawdown (equity curve) | 6,40% | 6,18% | 6,40% |
+| barradas | 0 | 4 | **0** |
+| G (clusters) | 50 | 50 | 50 |
+| DEFF | 1,1329 | **1,0102** | 1,1329 |
+| EP em cluster | 0,0783 | 0,0756 | 0,0783 |
+| sign-flip p | 0,738 | 0,816 | 0,741 |
+
+**K=5 não fez nada** — 0 operações barradas em 11 meses. Com só 7 símbolos, a
+concorrência de posições do mesmo lado raramente passa de 4; o teto "brando"
+que a pré-registração propôs para separar efeito-de-teto de efeito-de-aperto
+acabou não testando nada — é literalmente o mesmo run que o controle (mesmo
+seed seria supérfluo confirmar: todos os campos batem exceto metadata).
+
+**K=3 mexeu, mas dentro do que a predição já esperava.** DEFF caiu de 1,1329
+para 1,0102 (correlação real melhorou ~11%), mas a perda de 4 operações
+(120→116, sd por trade praticamente igual: 0,8065→0,8099) quase cancelou o
+ganho. Aceleração real: `(0,0783/0,0756)² ≈ 1,07×`.
+
+**Confere com a predição pré-registrada.** Eu havia escrito: *"espero que o
+efeito líquido... seja próximo de 1 ou pior... se sair ≥ 1,3× é resultado
+CONTRA a minha previsão"*. 1,07× e 1,00× são exatamente "próximo de 1" — a
+predição se confirmou. A condição de morte formal (as duas dando razão
+`< 1,0`) não disparou ao pé da letra — nenhuma ficou PIOR que o controle —
+mas o resultado é o mesmo veredito na prática: **o mecanismo não entrega o
+que foi construído para entregar**. Longe dos 1,85× que o item 132 (trailing
+pré-TP1) já tinha entregue, a ~20× o custo de engenharia, exatamente como o
+revisor de estatística do conselho havia estimado antes de qualquer run
+(seção "Grade PRÉ-REGISTRADA" acima).
+
+**Recomendação: não seguir por este caminho.** Não "testar mais K" — o
+próprio universo de 7 símbolos limita a concorrência simultânea a um teto
+que K=3 já satura sem sobrar sinal, e K=5 já mostrou não existir folga
+suficiente para testar valores maiores com proveito. Igual à config B do
+item 132: despriorizado, não eliminado — se o universo de símbolos crescer
+(item 133 acima, correção de query abre espaço para isso), a concorrência
+de carteira também cresce e o cálculo pode mudar; não vale reabrir sem essa
+mudança de premissa.
+
+### Bug real achado ao inspecionar os relatórios (corrigido antes de fechar)
+
+Nenhum dos três relatórios trazia `expectancyRSd`/`expectancyRCI95HalfWidth`
+em `report.costs` — o bloco "PODER DE DESCARTE" que `run-backtest.mjs`
+imprime nunca apareceu em nenhum dos três runs, sem erro nenhum (o guard
+`Number.isFinite` engoliu a ausência em silêncio).
+
+Causa: `summarizeOps()` (`tradeMetrics.js`) calcula os dois campos, mas
+`buildReport()` (`backtestEngine.js`) monta `costs` **manualmente**, campo a
+campo, em vez de espalhar o retorno dela — e os dois campos novos do item
+133 (Task 3, "estreitar o IC") ficaram de fora dessa lista. O teste que eu
+escrevi para essa mudança (`tradeMetrics.test.js`) só chama `summarizeOps`
+diretamente e nunca passou pela montagem manual de `buildReport` — não podia
+pegar isso. Só apareceu porque o usuário rodou o backtest de verdade e me
+mandou os relatórios; esta sessão não alcança a Binance para rodar sozinha.
+
+Corrigido: os dois campos passam a ser repassados em `buildReport`. Teste
+novo em `backtestEngine.test.js`, no nível exato onde o bug vivia (a junção
+manual), não só em `tradeMetrics.js` isolado — confirmado que ele pega a
+regressão (revertido de propósito, falhou; restaurado, passou).
+
+**Nenhum dos três relatórios já coletados precisa ser re-rodado** — o bug é
+só na exposição do campo de meia-largura do IC, não no cálculo de
+`expectancyR`/`expectancyRCI95`/DEFF/G que decidiu o veredito acima; todos
+esses vieram corretos e foram conferidos por `backtest-correlation-check.mjs`
+rodado sobre os relatórios reais.
+
+Verificação: `npm run lint && npm test && npm run build && node
+scripts/build-scan.mjs && node scripts/build-backtest.mjs && npm run
+build:scan-shadow`.

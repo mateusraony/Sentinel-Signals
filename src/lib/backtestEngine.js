@@ -1109,6 +1109,17 @@ export function buildReport(ops, {
       conclusive: overallSummary.conclusive,
       inconclusiveReason: overallSummary.inconclusiveReason,
       expectancyRCI95: overallSummary.expectancyRCI95,
+      // docs/known-risks.md item 133 — ALVO "estreitar o IC". Faltavam aqui:
+      // summarizeOps() já os calculava, mas este objeto é montado a mão em
+      // vez de espalhar o retorno dela, e ficaram de fora — bug real,
+      // achado ao inspecionar os 3 relatórios reais da grade pré-registrada
+      // (nenhum trazia o bloco "PODER DE DESCARTE" que run-backtest.mjs
+      // imprime; o guard `Number.isFinite` ali engoliu a ausência em
+      // silêncio, sem erro). Nunca testado fim a fim porque a rede desta
+      // sessão não alcança a Binance — só o teste unitário de
+      // tradeMetrics.js rodou, e ele não cobre esta junção manual.
+      expectancyRSd: overallSummary.expectancyRSd,
+      expectancyRCI95HalfWidth: overallSummary.expectancyRCI95HalfWidth,
       countedTrades: overallSummary.counted,
       minTrades: overallSummary.minTrades,
     },
