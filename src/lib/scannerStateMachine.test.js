@@ -317,15 +317,47 @@ describe('buildTradeOpData — entry into SIGNAL_CONFIRMED', () => {
       entryPrice: 100, entryCandleTime: '2026-07-16T08:00:00.000Z', bypassed15m: true,
     });
     expect(bypassed.entry_candle_time_4h).toBe('2026-07-16T08:00:00.000Z');
-    expect(bypassed.entry_candle_time_15m).toBeUndefined();
+    expect(bypassed.entry_candle_time_15m).toBeNull();
     expect(bypassed.skip_15m_confirmation).toBe(true);
 
     const real15m = buildTradeOpData(sig, tf4hData, makePineConfig(), {
       entryPrice: 100, entryCandleTime: '2026-07-16T08:15:00.000Z',
     });
     expect(real15m.entry_candle_time_15m).toBe('2026-07-16T08:15:00.000Z');
-    expect(real15m.entry_candle_time_4h).toBeUndefined();
+    expect(real15m.entry_candle_time_4h).toBeNull();
     expect(real15m.skip_15m_confirmation).toBe(false);
+  });
+
+  // Bug real (2026-08-29): as duas linhas acima usavam `undefined` como
+  // sentinela de "não aplicável" em vez de `null` — Firestore REJEITA
+  // qualquer campo com valor `undefined` na escrita (client E admin SDK,
+  // nenhum dos dois tem `ignoreUndefinedProperties` configurado), então
+  // TODA operação criada pelo caminho normal (bypassed15m ausente/false —
+  // ou seja, skip15mConfirmationEnabled desligado, o padrão de produção)
+  // quebrava ao tentar gravar `entry_candle_time_4h: undefined`. Achado ao
+  // investigar por que nenhuma operação nova aparecia em produção desde
+  // 2026-08-16 (quando estas duas linhas foram introduzidas, PR #200) —
+  // ver docs/known-risks.md item 136. Este teste garante que NENHUM valor
+  // `undefined` literal sai de `buildTradeOpData` nesses dois campos, nos
+  // dois ramos — `toBeNull()`/`not.toHaveProperty` com `undefined` não
+  // pegam isso com segurança suficiente, por isso o Object.keys() abaixo.
+  it('never returns entry_candle_time_4h/entry_candle_time_15m as literal undefined — Firestore rejects it on write (docs/known-risks.md item 136)', () => {
+    const sig = { symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY', price_at_signal: 100, context: {} };
+    const tf4hData = makeTfData({ atrValue: 2, tier: { atrStopMult: 2.0 } });
+
+    const normalPath = buildTradeOpData(sig, tf4hData, makePineConfig(), {
+      entryPrice: 100, entryCandleTime: '2026-07-16T08:15:00.000Z',
+    });
+    const bypassedPath = buildTradeOpData(sig, tf4hData, makePineConfig(), {
+      entryPrice: 100, entryCandleTime: '2026-07-16T08:00:00.000Z', bypassed15m: true,
+    });
+
+    for (const op of [normalPath, bypassedPath]) {
+      expect(op).toHaveProperty('entry_candle_time_4h');
+      expect(op).toHaveProperty('entry_candle_time_15m');
+      expect(op.entry_candle_time_4h).not.toBeUndefined();
+      expect(op.entry_candle_time_15m).not.toBeUndefined();
+    }
   });
 });
 
@@ -906,7 +938,7 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     vi.mocked(isTelegramConfigured).mockReturnValue(true);
     backend._seed('TradeOperation', makeOp());
     const pineConfig = makePineConfig({ useInvalidation: true, invalidRFBars: 2 });
-    const tfData = makeTfData({ rf: { filterValue: 90, direction: -1 }, lastCandleHigh: 101, lastCandleLow: 99 });
+    const tfData = makeTfData({ rf: { ...makeTfData().rf, filterValue: 90, direction: -1 }, lastCandleHigh: 101, lastCandleLow: 99 });
 
     await persistScanResults(makeScanResult({ results: { '4h': tfData }, pineConfig }));
     let stored = backend._get('TradeOperation', 'op1');
@@ -919,7 +951,7 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     expect(stored.rf_reverse_bars_count).toBe(1);
 
     // Next candle, still reversed — now crosses the threshold.
-    const nextCandle = makeTfData({ rf: { filterValue: 90, direction: -1 }, lastCandleHigh: 101, lastCandleLow: 99, lastCandleTime: '2026-07-16T16:00:00.000Z' });
+    const nextCandle = makeTfData({ rf: { ...makeTfData().rf, filterValue: 90, direction: -1 }, lastCandleHigh: 101, lastCandleLow: 99, lastCandleTime: '2026-07-16T16:00:00.000Z' });
     await persistScanResults(makeScanResult({ results: { '4h': nextCandle }, pineConfig }));
     stored = backend._get('TradeOperation', 'op1');
     expect(stored.rf_reverse_bars_count).toBe(2);
@@ -1351,7 +1383,7 @@ describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTI
     vi.mocked(isTelegramConfigured).mockReturnValue(true);
     backend._seed('TradeOperation', makeRunner({ current_stop: 90, exit_mode: 'HYBRID_RF_ATR' }));
     const results = {
-      '4h': makeTfData({ lastCandleHigh: 104, lastCandleLow: 101, lastClose: 104, rf: { filterValue: 105, direction: -1 } }),
+      '4h': makeTfData({ lastCandleHigh: 104, lastCandleLow: 101, lastClose: 104, rf: { ...makeTfData().rf, filterValue: 105, direction: -1 } }),
     };
     await persistScanResults(makeScanResult({ results }));
     const stored = backend._get('TradeOperation', 'op1');
@@ -2637,7 +2669,7 @@ describe('Bypass da confirmação 15m (opt-in, RF 4h_15m only, docs/known-risks.
     const ops = await backend.entities.TradeOperation.filter({});
     expect(ops).toHaveLength(1);
     expect(ops[0].skip_15m_confirmation).toBe(false);
-    expect(ops[0].entry_candle_time_4h).toBeUndefined();
+    expect(ops[0].entry_candle_time_4h).toBeNull();
     expect(ops[0].entry_candle_time_15m).toBeTruthy();
     expect(fetchCandles).toHaveBeenCalledTimes(1); // check15mConfirmation buscou candles de 15m
   });
@@ -2659,7 +2691,7 @@ describe('Bypass da confirmação 15m (opt-in, RF 4h_15m only, docs/known-risks.
     const op = ops[0];
     expect(op.entry_price).toBe(100);
     expect(op.entry_candle_time_4h).toBe('2026-07-16T08:00:00.000Z');
-    expect(op.entry_candle_time_15m).toBeUndefined();
+    expect(op.entry_candle_time_15m).toBeNull();
     expect(op.skip_15m_confirmation).toBe(true);
     expect(fetchCandles).toHaveBeenCalledTimes(0); // nenhuma busca de 15m — bypass real, não "passa mais fácil"
   });
@@ -3352,8 +3384,8 @@ describe('Fase 3 — tier/regime na cascata SMC (opt-in, docs/known-risks.md ite
     const ops = await backend.entities.TradeOperation.filter({});
     expect(ops).toHaveLength(1);
     const op = ops[0];
-    expect(op.tier).toBeUndefined();
-    expect(op.adx_at_entry).toBeUndefined();
+    expect(op.tier).toBeNull();
+    expect(op.adx_at_entry).toBeNull();
     expect(op.chop_at_entry).toBeNull();
     expect(op.tier_time_stop_bars).toBe(96);
     const logs = await backend.entities.SystemLog.filter({});
@@ -3478,8 +3510,8 @@ describe('Fase 3 — tier/regime na cascata SMC (opt-in, docs/known-risks.md ite
 
     const opData = buildSmcTradeOpData(sig, tf1hData, makePineConfig(), confirmation5m);
 
-    expect(opData.tier).toBeUndefined();
-    expect(opData.adx_at_entry).toBeUndefined();
+    expect(opData.tier).toBeNull();
+    expect(opData.adx_at_entry).toBeNull();
     expect(opData.chop_at_entry).toBeNull();
     expect(opData.tier_time_stop_bars).toBe(96);
   });

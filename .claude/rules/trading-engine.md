@@ -95,6 +95,29 @@ nunca deve receber nova transição.**
   de ponteiros órfãos legados); op terminal nunca volta a ser apontada; op viva
   sem ponteiro (janela de crash) continua sendo re-apontada. Ver
   `docs/known-risks.md` item 21.
+- **[CORRIGIDO — P0-h] Escrita de operação quebrava com `undefined` em
+  campos opcionais — bloqueou TODA criação de operação em produção por
+  ~2 semanas.** Firestore rejeita qualquer campo com valor `undefined`
+  literal na escrita (client SDK e admin SDK, nenhum dos dois configurado
+  com `ignoreUndefinedProperties`). `buildTradeOpData`/`buildSmcTradeOpData`
+  tinham vários campos que caem em `undefined` sem fallback quando o dado de
+  origem está ausente (`entry_candle_time_4h`/`_15m` no ramo "não aplicável"
+  do bypass de `skip15mConfirmationEnabled`, `tier`/`adx_at_entry` quando o
+  dado de regime não está disponível, `pd_zone`/`structure_type` na cascata
+  SMC, `origin_4h_price`/`origin_1h_price`, `rf_filter_value`) — qualquer
+  operação que passasse por um desses caminhos derrubava a transação
+  inteira com `Value for argument "data" is not a valid Firestore document.
+  Cannot use "undefined" as a Firestore value`. `entry_candle_time_4h` em
+  especial afetava o caminho NORMAL (gate de 15m ligado, o padrão de
+  produção) desde que foi introduzido (PR #200, 2026-08-16) — toda operação
+  criada pelo caminho padrão quebrava, silenciosamente (o erro ia pro
+  `SystemLog`, nunca derrubava o scan inteiro). Corrigido trocando todo
+  `undefined` por `null` nesses campos (mesma convenção já usada nos demais
+  campos opcionais da função). O `fakeBackend.js` usado pelos testes agora
+  também rejeita `undefined` do mesmo jeito que o Firestore real — é o que
+  teria pego isto no PR #200, e é o que impede a mesma classe de bug de
+  voltar sem teste pegar. Achado ao vivo (usuário reportou operação real do
+  ENAUSDT sumindo do painel) — ver `docs/known-risks.md` item 136.
 - **[CORRIGIDO — item 20 da proposta de hardening 2026-07] `current_stop`
   podia regredir mesmo com o CAS de `status` intacto.** `transitionTradeOp`
   faz CAS só sobre `status` (`canApplyTransition`) — o resto do `patch`,

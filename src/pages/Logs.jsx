@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { ScrollText, Filter, RefreshCw, AlertTriangle, Info, Bug, AlertCircle, X, Search, Trash2 } from 'lucide-react';
+import { ScrollText, Filter, RefreshCw, AlertTriangle, Info, Bug, AlertCircle, X, Search, Trash2, Copy, Check } from 'lucide-react';
 import moment from 'moment';
 
 const LEVEL_CONFIG = {
@@ -43,6 +43,28 @@ export default function Logs() {
 
   const hasActiveFilters = filterLevel !== 'all' || filterModule !== 'all' || search;
 
+  const [copied, setCopied] = useState(false);
+  // Texto plano, não JSON — pensado para colar direto numa conversa (o
+  // pedido original era "não consigo copiar o que está na tela pra você
+  // ler"). Respeita os filtros ativos (nível/módulo/busca), não os 200
+  // logs inteiros — o que está na tela é o que o usuário quer copiar.
+  const handleCopy = async () => {
+    const text = filtered.map(log => {
+      const time = moment(log.created_date).format('YYYY-MM-DD HH:mm:ss');
+      const tags = [log.module, log.symbol, log.timeframe].filter(Boolean).join(' ');
+      const details = log.details ? `\n  ${JSON.stringify(log.details)}` : '';
+      return `[${time}] ${log.level?.toUpperCase() || 'INFO'} ${tags ? `(${tags}) ` : ''}${log.message}${details}`;
+    }).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API pode falhar (permissão negada, contexto não-seguro);
+      // sem fallback silencioso — o botão só reage se realmente copiou.
+    }
+  };
+
   return (
     <div className="space-y-5 max-w-7xl mx-auto">
       {/* Header */}
@@ -60,6 +82,14 @@ export default function Logs() {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
             <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />Atualizar
+          </button>
+          <button onClick={handleCopy} disabled={filtered.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all disabled:opacity-40"
+            style={copied
+              ? { background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }
+              : { background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)', color: '#00e5ff' }}>
+            {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+            {copied ? 'Copiado!' : `Copiar (${filtered.length})`}
           </button>
           <button onClick={() => clearLogsMutation.mutate()} disabled={clearLogsMutation.isPending}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all hover:opacity-80"

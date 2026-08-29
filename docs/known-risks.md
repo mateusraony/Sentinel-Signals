@@ -16421,3 +16421,163 @@ de regressão à média/overfitting num ponto estimado forte de amostra única
 item 135 e a Rodada 4 (item 120) como candidato ativo — despriorizado,
 não eliminado (universo de símbolos maior ou dado em Futures poderiam
 mudar o cálculo, mas não há indício hoje que valha a pena).
+
+## 136. P0-h — nenhuma operação nova em produção desde 2026-08-16: `undefined` em campo opcional quebrava toda escrita no Firestore (2026-08-29)
+
+### Contexto
+
+Usuário reportou olhando o painel direto: nenhuma operação no histórico
+desde julho, e o card de "Logs do Sistema" mostrava **1 erro**:
+
+```
+ERR scanner ENAUSDT
+Erro no scan de ENAUSDT: Value for argument "data" is not a valid Firestore
+document. Cannot use "undefined" as a Firestore value (found in field
+"entry_candle_time_15m"). If you want to ignore undefined values, enable
+`ignoreUndefinedProperties`.
+```
+
+O mesmo print mostrava um segundo achado, secundário mas real: uma
+passada com **482 leituras**, projetando **150.384/dia** contra o limite
+gratuito de 50.000 (3× acima) — registrado aqui como achado, não
+investigado a fundo nesta rodada (a causa raiz abaixo já explica a seca de
+operações sozinha; a cota seria uma investigação separada se persistir
+depois da correção).
+
+### Causa raiz — confirmada, não hipótese
+
+`buildTradeOpData` (`src/lib/scanner.js:456-457`, introduzido no PR #200,
+**2026-08-16**):
+
+```js
+entry_candle_time_15m: confirmation15m?.bypassed15m ? undefined : confirmation15m?.entryCandleTime,
+entry_candle_time_4h: confirmation15m?.bypassed15m ? confirmation15m?.entryCandleTime : undefined,
+```
+
+Com `skip15mConfirmationEnabled: false` (o padrão de produção,
+`pineParser.js:180`), `bypassed15m` é sempre falso — então **todo caminho
+normal** gravava `entry_candle_time_4h: undefined` explicitamente. Firestore
+rejeita qualquer campo `undefined` na escrita — **client SDK e admin SDK**,
+nenhum dos dois tem `ignoreUndefinedProperties` configurado
+(`src/api/entities.js`, `scripts/adminEntities.js`) — então **toda tentativa
+de criar uma `TradeOperation` pelo caminho normal, no cron E no browser,
+quebrava com exceção**, desde 16/08. A exceção é capturada pelo try/catch
+por-ativo de `scanAllAssets` (item verificado no achado do Codex sobre o
+item 134) — o scan inteiro continua reportando `success`, só o ativo
+específico loga erro no `SystemLog`, nunca derruba o job. É por isso que
+`scan.yml` sempre apareceu "100% saudável" (item 134) enquanto nenhuma
+operação nova era criada: a métrica que eu checava (conclusão do job) não
+enxerga esta classe de falha.
+
+**Por que só ENAUSDT aparecia no log**: o erro só dispara quando um sinal
+realmente CONFIRMA e tenta virar operação — com a baixa frequência natural
+de sinais (item 109/127, ~180 ops/ano em 10 ativos), a maioria dos ativos
+simplesmente não teve chance de bater nesse caminho na janela dos 200 logs
+mais recentes. O bug afetava TODOS igualmente, não só o ENAUSDT — foi
+coincidência de qual ativo teve sinal primeiro depois que a instrumentação
+(o card de erro) existia pra mostrar.
+
+**Auditoria mais ampla, mesma classe de bug**: ao endurecer o backend fake
+de teste pra rejeitar `undefined` do mesmo jeito que o Firestore real
+(abaixo), mais 6 campos com o mesmo padrão apareceram, todos em
+`buildTradeOpData`/`buildSmcTradeOpData`: `tier`, `adx_at_entry` (nos dois
+builders), `origin_4h_price`, `origin_1h_price`, `rf_filter_value`,
+`pd_zone`, `structure_type`. Nenhum tinha o fallback `?? null` que o resto
+da mesma função já usa consistentemente (`entry_candle_pattern`,
+`tf_1d_direction`, etc.) — provavelmente escritos em rodadas diferentes
+(Fase 3 do item 42, item 45.3/49, item 47.2) sem notar a inconsistência.
+`tier`/`adx_at_entry` da cascata SMC eram os mais graves depois do achado
+principal: ficam `undefined` sempre que `smcTierEnabled` está desligado (o
+padrão), então **toda operação SMC também quebrava**, não só quando o RF
+skip15m bypass rodava.
+
+### Correção
+
+Todos os 8 campos trocados de `? X : undefined` / `X?.Y` sem fallback para
+`?? null` — mesma convenção já estabelecida no resto da função, nenhuma
+mudança de comportamento além de parar de crashar (`null` e `undefined`
+são tratados de forma idêntica por todo código consumidor —
+`getEntryReferenceTime` usa `||`, os demais leitores usam `??`/checagem de
+falsy).
+
+**`src/lib/__fixtures__/fakeBackend.js` endurecido**: novo
+`assertNoUndefinedFields`, chamado em todo ponto de escrita
+(`create`/`createUnique`/`update`/`bulkCreate`/`createTradeOpIfNoneActive`/
+`transitionTradeOp`), lançando o mesmo erro que o Firestore real lançaria.
+**É isto que deveria ter pego o bug no PR #200** — o fake aceitava
+`undefined` silenciosamente (`{...data}` num Map, sem validação), então
+1200 testes passavam com um payload que o Firestore de verdade rejeitava
+100% das vezes. Fechar essa lacuna estrutural importa mais que qualquer
+teste individual: protege contra a MESMA classe de bug reaparecer em
+qualquer campo futuro, não só nos 8 corrigidos agora.
+
+Ao rodar a suíte com o fake endurecido, 44 testes quebraram de uma vez (os
+mesmos 8 campos, espalhados por dezenas de casos) — 3 desses eram lacuna
+de FIXTURE de teste, não bug de produção: `rf: { filterValue, direction }`
+sobrescrevia o objeto `rf` inteiro em vez de espalhar sobre o default
+(`{...makeTfData().rf, ...}`), derrubando `highBand`/`lowBand` que só
+existiam no objeto original — corrigidos no teste, não no código-fonte
+(`calculateRangeFilter` sempre devolve as 6 chaves juntas na produção real;
+não havia bug ali).
+
+### Correção 2 — `assertNoUndefinedFields` era só top-level (achado real, Codex PR #266)
+
+**A primeira versão do guard só checava as chaves de 1º nível do objeto.**
+Firestore rejeita `undefined` em QUALQUER profundidade — um objeto aninhado
+(`SystemLog.details`) ou um elemento de array com `undefined` dentro quebra
+a escrita real do mesmo jeito que um campo top-level, e o guard raso deixava
+passar. Corrigido: `assertNoUndefinedFields` agora percorre recursivamente
+objetos e arrays (`walk`), preservando o caminho (`details.score`,
+`op_created_dates[0]`) na mensagem de erro.
+
+Rodar a suíte com a versão recursiva achou **mais uma leva real**, desta vez
+quase toda em `details:` de `SystemLog.create`/`logInfo`/`logWarn` — o
+padrão mais comum: `score: signal.context?.score` (11 pontos de chamada,
+logs de rejeição/retry das cascatas RF e RF-1h) e `structure_type`/
+`anchor_level` (gatilho de reteste, item 40) sem fallback. Também
+`VerificationTask.createUnique`'s `score` (já isolado por try/catch próprio
+— item 45, não bloqueava criação de operação, mas a própria
+`VerificationTask` nunca persistia) e `stampRetestFields` (6 campos do
+gate de reteste — `retestEnabled` é opt-in/desligado por padrão, então
+impacto zero em produção hoje, mas seria a mesma armadilha se o usuário
+ligar o flag). A maioria dos 11 pontos de `logInfo`/`logWarn` tem um nível
+de proteção que `SystemLog.create` direto não tem: `src/lib/logger.js`
+enfileira e o `flush()` interno tem try/catch próprio ("logging nunca deve
+derrubar o app") — uma falha ali não propaga pra `persistScanResults`, só
+perde o log silenciosamente (fica reenfileirando pra sempre, sem nunca
+conseguir persistir). Os dois `SystemLog.create` DIRETOS (sem passar por
+`logger.js`) — diagnóstico de "operações ativas duplicadas", um caso raro/
+quase-impossível em operação normal — não têm essa proteção; ali um
+`created_date` ausente crasharia com o mesmo raio de explosão do achado
+principal. Todos corrigidos com `?? null`, mesma convenção.
+
+Com essa 2ª rodada, foram **~20 campos** ao todo (contando os 2 achados),
+não os 8 da primeira leitura — o número real só apareceu depois do guard
+ficar tão rigoroso quanto o Firestore de verdade.
+
+### Verificação
+
+Teste de regressão exato no ponto onde o bug vivia
+(`scannerStateMachine.test.js`, `buildTradeOpData — entry into
+SIGNAL_CONFIRMED`): reproduzido primeiro (falhou contra o código antigo,
+`toBeUndefined()`→`toBeNull()` e uma asserção nova que nenhum dos dois
+campos sai como `undefined` literal em nenhum dos dois ramos), depois
+corrigido. `npm run lint && npm test && npm run build && node
+scripts/build-scan.mjs && node scripts/build-backtest.mjs && npm run
+build:scan-shadow` — 1200 testes, lint limpo, os 4 bundles compilam.
+
+### O que ainda não está confirmado
+
+- **Não consigo confirmar em produção real** (item 67 — sem leitura direta
+  do Firestore) que operações voltam a ser criadas depois do deploy desta
+  correção. Precisa de observação do usuário nos próximos scans/dias.
+- **A leitura de 482/passada (achado secundário acima) não foi
+  investigada** — pode ser efeito colateral do próprio bug (retry
+  acumulando tentativas de escrita que sempre falham?) ou uma causa
+  independente. Fica para uma rodada futura se persistir depois desta
+  correção.
+- Não fica claro por quanto tempo exatamente a produção ficou sem NENHUMA
+  operação nova antes de 16/08 também — o usuário reportou "só 3 no
+  histórico, todas de julho"; o bug deste item começa precisamente em
+  16/08, então o período de julho a 16/08 tem uma causa distinta (ou
+  simplesmente baixo volume natural) que este item não investiga.
