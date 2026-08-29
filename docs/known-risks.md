@@ -16351,3 +16351,73 @@ pine-parity.md`) — os dois runs precisam do runner do GitHub Actions
 API registrada no PR que acompanha este item; se a permissão de disparo
 não estiver disponível a esta sessão, os inputs exatos acima ficam prontos
 para o usuário disparar manualmente pela UI do GitHub Actions.
+
+### Resultado medido (2026-08-29) — a hipótese foi REFUTADA, direção inverteu
+
+Usuário rodou os 2 backtests corretos (carteira de 10 ativos ao vivo,
+incluindo ENAUSDT; `market_source: spot` — a caixa Futures não foi marcada
+nesta rodada, ressalva abaixo). Um 3º upload anterior usava os 7 símbolos
+padrão sem ENAUSDT e foi descartado (não respondia à pergunta).
+
+| | Run K — `baseline` | Run L — `skip15m-enabled` | Δ |
+|---|---|---|---|
+| N | 183 | 195 | +12 |
+| `netExpectancyR` | **+0,0957** | +0,0784 | **−0,0173** |
+| `expectancyRCI95` (ingênuo) | [−0,026; 0,217] | [−0,039; 0,196] | — |
+| `expectancyRCI95` (cluster, t-Student) | [−0,024; 0,215] | [−0,035; 0,192] | — |
+| `sign-flip` p-valor (efeito ≠ 0) | 0,0819 | 0,1399 | — |
+| DEFF / G | 0,90 / G=41 | 0,88 / G=41 | — |
+| `equityCurve.maxDrawdownPct` | 6,00% | 6,85% | — |
+
+**Condição de morte do pré-registro disparou**: o Run L não repetiu a
+melhora do item 120 — o delta é **negativo**. As 12 operações recuperadas
+(que só existem no run com o gate desligado) têm **R médio −0,304**
+(`-1.013, -0.152, 1.14, -0.235, -0.048, -1.026, 0.328, -0.219, -1.014,
+-1.063, -0.082, -0.262`) — a maioria perdedora, e mais que suficiente para
+inverter o sinal do agregado. Cluster-corrigido, o BASELINE (comportamento
+de hoje) fica mais perto de significância (p=0,082) que o `enabled`
+(p=0,140) — o oposto do que o item 120 sugeria.
+
+**`confirmation_15m_not_aligned` NÃO é a razão dominante de expiração**
+nesta carteira/janela — achado que também refuta a hipótese pré-registrada.
+No baseline: 284 sinais RF expiraram no total, só **14 (4,9%)** por
+`confirmation_15m_not_aligned`; `regime_rejected` é maior (100, 35%); e
+**60% (170) caem em `unknown`** — sinais que expiraram sem nenhum retry
+gravar motivo (`SignalEvent.last_rejection_reason` só é escrito pelo loop
+de RETRY, item 45.3/49 — um sinal sem retry nunca grava motivo). É uma
+lacuna real de instrumentação, não investigada a fundo aqui — futura, se
+o usuário quiser fechar essa visibilidade.
+
+**Sobre o ENAUSDT especificamente**: já gera operações no Sentinel hoje —
+**13 no baseline**, não zero. O sinal do caso relatado (item 117/135,
+entrada real ~21/08 21:00) tem uma operação próxima no backtest (`BUY,
+2026-08-22T04:00, STOP_HIT, r=-0,398`, presente nos DOIS runs) — mas é uma
+operação DIFERENTE da que o usuário viu no Pine real (preço/horário de
+entrada não batem exatamente), consistente com a divergência Spot×Futures
+já aceita (item 121/122): o backtest rodou em Spot, o Pine real do usuário
+é Futures/Perpétuo. Não dá pra atribuir a esta amostra "prova" de que o
+caso específico do ENAUSDT seria resolvido pelo gate — o próprio evento
+que motivou a investigação não está representado de forma identificável
+nela.
+
+**Ressalva não fechada**: `futures_data` não foi marcado nesta rodada
+(`market_source: spot` em ambos os runs) — a aproximação com o mercado real
+do usuário (item 121/122) não foi testada aqui. Dado o resultado já
+refutar a hipótese em Spot, rodar de novo em Futures só se justifica se o
+usuário quiser fechar esse último grau de liberdade — não é urgente com a
+hipótese principal já morta.
+
+### Recomendação
+
+**Não ligar `skip15mConfirmationEnabled` em produção com este dado.**
+Continua `false` (`src/lib/pineParser.js:180`). O resultado mais forte
+do projeto (item 120) não se replicou numa amostra fresca, mais realista
+(carteira ao vivo em vez de 7 símbolos de conveniência) e mais recente —
+inverteu de sinal. Isso não prova que o gate "ajuda" (ambos inconclusivos)
+— prova que a evidência que apontava pra desligá-lo não era robusta o
+bastante pra sobreviver a uma segunda amostra independente. Padrão clássico
+de regressão à média/overfitting num ponto estimado forte de amostra única
+(mesmo padrão já visto no item 120 do SELL-only, argumento 3). Fecha o
+item 135 e a Rodada 4 (item 120) como candidato ativo — despriorizado,
+não eliminado (universo de símbolos maior ou dado em Futures poderiam
+mudar o cálculo, mas não há indício hoje que valha a pena).
