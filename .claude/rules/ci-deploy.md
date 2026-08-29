@@ -12,11 +12,13 @@ paths:
 ## Workflows
 
 - `ci.yml` — lint + `npm test` + build a cada push/PR. Alerta Telegram em falha.
-- `scan.yml` — `npm run scan`, seguido de `npm run backfill-check`
-  (`continue-on-error: true` — nunca derruba o scan ao vivo). O 2º passo só
-  faz trabalho real quando existe `MonitoredAsset` com
-  `backfill_check_status:'pending'` (checagem retroativa ao
-  adicionar/reativar um ativo, `docs/known-risks.md` item 137). **Relógio de
+- `scan.yml` — `npm run scan`. O passo `npm run backfill-check` (checagem
+  retroativa ao adicionar/reativar um ativo, `docs/known-risks.md` item 137)
+  está **DESLIGADO** desde 2026-08-29 (item 137 addendum) — um replay de 60
+  dias/15min contra o Firestore real travou 11+min e ficou repetindo a cada
+  ciclo, atrasando o scan ao vivo de todos os ativos. `MonitoredAsset`s
+  marcados `backfill_check_status:'pending'` ficam pendentes indefinidamente
+  até o mecanismo ser redesenhado e o passo religado. **Relógio de
   trading**: o cadenciamento real de
   ~5min vem de disparo **externo** (cron-job.org via `workflow_dispatch`,
   configurado e confirmado — ver `docs/claude/external-cron-setup.md`,
