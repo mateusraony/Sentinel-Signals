@@ -33,4 +33,29 @@ describe('fakeBackend — StrategyConfig/TelegramFilters via set(id, data)', () 
     expect(doc.minScore).toBe(75); // preserved from the first set — merge, not overwrite
     expect(doc.tp1R).toBe(2.0); // updated by the second set
   });
+
+  // Codex review, PR #267: a top-level spread would REPLACE the whole
+  // `sources` object instead of merging into it — diverging from real
+  // Firestore's setDoc(..., {merge:true}), which recursively merges nested
+  // MAP fields (only the leaf keys actually provided get overwritten).
+  it('set() deep-merges nested objects, preserving sibling keys not mentioned in the partial update', async () => {
+    const backend = createFakeBackend();
+    await backend.entities.TelegramFilters.set('current', { sources: { rf: true, macd: true, rsi: false } });
+    await backend.entities.TelegramFilters.set('current', { sources: { macd: false } });
+
+    const [doc] = await backend.entities.TelegramFilters.filter({});
+    expect(doc.sources).toEqual({ rf: true, macd: false, rsi: false });
+  });
+
+  // Firestore never merges arrays element-wise, even under merge:true — a
+  // provided array always fully replaces the existing one. The deep-merge
+  // above must not accidentally treat an array like a plain object.
+  it('set() replaces (not merges) an array field, matching Firestore array semantics', async () => {
+    const backend = createFakeBackend();
+    await backend.entities.TelegramFilters.set('current', { eventIds: ['a', 'b', 'c'] });
+    await backend.entities.TelegramFilters.set('current', { eventIds: ['x'] });
+
+    const [doc] = await backend.entities.TelegramFilters.filter({});
+    expect(doc.eventIds).toEqual(['x']);
+  });
 });

@@ -16631,12 +16631,27 @@ os achados verificados manualmente (não aceitos às cegas) antes de corrigir:
    `SYNCED_STRATEGY_KEYS`×`DEFAULTS` não achou nenhuma chave sem default),
    mas era um ponto cego real pra qualquer regressão futura.
 
-**Corrigido**: `set(id, data)` adicionado ao `fakeBackend.js` (mesma
-semântica de merge do `setDoc({merge:true})` real, guardado por
+**Corrigido**: `set(id, data)` adicionado ao `fakeBackend.js` (guardado por
 `assertNoUndefinedFields`), `StrategyConfig`/`TelegramFilters` adicionados ao
-`COLLECTIONS`, 3 testes novos em `fakeBackend.test.js` (novo arquivo — não
+`COLLECTIONS`, testes novos em `fakeBackend.test.js` (novo arquivo — não
 existia teste dedicado ao fake em si) provando que o guard pega `undefined`
-top-level, `undefined` aninhado, e que o merge preserva campos não tocados.
+top-level e aninhado.
+
+**Correção adicional (Codex review, PR #267)**: a 1ª versão do `set()` fazia
+merge RASO (`{...existing, ...data}`) — real Firestore `setDoc(...,
+{merge:true})` faz merge RECURSIVO de objetos aninhados (uma chave irmã não
+mencionada dentro de um campo tipo-mapa sobrevive; só as folhas realmente
+fornecidas são sobrescritas). O spread raso substituía o objeto aninhado
+INTEIRO, divergindo do real — exatamente o tipo de divergência fake×real que
+este item inteiro existe pra fechar, só que num detalhe mais sutil que o
+`undefined`. Corrigido com `deepMergeFirestore` (recursivo em objetos
+simples, mas **arrays nunca são mesclados elemento-a-elemento** — Firestore
+sempre substitui o array inteiro mesmo sob `merge:true`, e a função respeita
+isso). Dois testes novos: um provando que uma chave irmã sobrevive a um
+update parcial aninhado (falhou contra o merge raso, confirmado antes de
+corrigir — depois passou), outro provando que array continua sendo
+substituído por inteiro, não mesclado.
+
 Os 4 pontos frágeis do item 1 corrigidos com `?? null`, mesma convenção.
 `scripts/adminEntities.js` **não** ganhou `set()` — decisão deliberada
 preexistente (`.claude/rules/firestore-concurrency.md`): o cron escreve

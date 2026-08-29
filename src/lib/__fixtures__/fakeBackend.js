@@ -68,6 +68,26 @@ function assertNoUndefinedFields(data, collectionName) {
   }
 }
 
+// docs/known-risks.md item 136 (Codex review, PR #267) — Firestore's
+// `setDoc(ref, data, {merge:true})` recursively merges nested MAP fields
+// (a sibling key under a nested object not mentioned in `data` survives);
+// a plain top-level spread instead REPLACES the whole nested object,
+// silently diverging from what real Firestore does. Arrays are never
+// merged element-wise by Firestore even under `merge:true` — a provided
+// array value always fully replaces the existing one, so this only
+// recurses into plain objects, never arrays.
+function deepMergeFirestore(existing, incoming) {
+  const result = { ...existing };
+  for (const [key, value] of Object.entries(incoming)) {
+    const existingValue = existing?.[key];
+    const bothPlainObjects =
+      value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date) &&
+      existingValue !== null && typeof existingValue === 'object' && !Array.isArray(existingValue) && !(existingValue instanceof Date);
+    result[key] = bothPlainObjects ? deepMergeFirestore(existingValue, value) : value;
+  }
+  return result;
+}
+
 function applySort(arr, sort) {
   if (!sort) return arr;
   const descending = sort.startsWith('-');
@@ -125,7 +145,7 @@ export function createFakeBackend() {
       // pre-exist). Only used by StrategyConfig/TelegramFilters today.
       async set(id, data) {
         assertNoUndefinedFields(data, name);
-        const doc = { ...(store.get(id) || {}), ...data, id };
+        const doc = { ...deepMergeFirestore(store.get(id) || {}, data), id };
         store.set(id, doc);
         return { id, ...data };
       },
