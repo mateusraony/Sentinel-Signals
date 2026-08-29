@@ -16765,6 +16765,55 @@ memória), e não há como medir o tempo real de um job aqui (rede das sessões
 bloqueia Binance/Firestore); manter o job previsível dentro do timeout do
 `scan.yml` importa mais que processar 2 ativos por ciclo.
 
+**Correção pós-review (Codex, PR #268)** — 4 achados reais, todos corrigidos:
+
+1. **P1 — paginação de candle histórico ia na direção errada.** A Binance
+   devolve klines em ordem ASCENDENTE a partir de `startTime` quando
+   `startTime` e `endTime` são passados juntos, não "as últimas N antes de
+   `endTime`". A 1ª versão mantinha `startTime` fixo e só recuava `endTime`
+   — a 2ª chamada pedia um intervalo já coberto/vazio e o loop terminava
+   depois de só ~10 dias de 15m (1000 candles), nunca chegando perto de
+   "agora". A janela de 60 dias virava, na prática, uma janela de ~10 dias
+   que nem cobria o instante da checagem — o mecanismo inteiro nunca
+   detectaria uma operação ainda aberta. Corrigido: paginação PARA FRENTE,
+   avançando `startTime = últimoOpenTime + 1` a cada página.
+2. **P1 — falha de rede ficava em cache para sempre, com falso "concluído,
+   nada encontrado".** `loadSeries` cacheava a PROMISE (correto, para
+   deduplicar chamadas concorrentes) mas nunca evictava uma rejeição — e
+   `scanAsset` engole erro de busca por-timeframe no próprio `errors`
+   interno (nunca propagado a `runBacktest`/ao orquestrador). Resultado: um
+   replay degradado por uma falha de Binance persistente terminava
+   "normalmente", com 0 operações — e `backfill_check_status` ia pra
+   `'done'` como se tivesse checado de verdade. Corrigido: `hasFetchFailure()`
+   novo em `backfillMarketDataProvider.js` (evicta a entrada rejeitada do
+   cache E lembra que houve falha); `run-backfill-check.mjs` agora marca
+   `'error'` em vez de `'done'` quando isso acontece.
+3. **P1 (o mais sério) — o replay podia expor uma operação AO VIVO real a
+   candles de semanas atrás.** `scan.yml` roda `npm run scan` (ao vivo)
+   ANTES de `npm run backfill-check`, no mesmo job. Se o ativo recém-
+   adicionado já tivesse sinal confirmável NA HORA, o scan ao vivo podia
+   criar a `TradeOperation` real segundos antes do backfill começar — e o
+   replay, sem guarda nenhuma, reavaliaria essa MESMA operação real contra
+   todo o histórico de 60 dias. Stop/TP1/TP2 são protegidos pelo guard
+   temporal P0-c/P0-g (`isCandleUsableForExits`), mas invalidação/chop-exit
+   NÃO são gateados pelo horário de entrada — um candle de 3 semanas atrás,
+   sem nenhuma relação com a operação que acabou de nascer, podia
+   invalidar/fechar uma posição real. Corrigido com a defesa mais simples
+   possível: `checkOneAsset` agora aborta o replay inteiro (sem nem chamar
+   `runBacktest`) sempre que já existe qualquer operação NÃO-terminal para o
+   ativo — não há nada pra backfillar quando já existe cobertura ao vivo, e
+   isso fecha o buraco por completo em vez de tentar proteger o replay
+   candle a candle.
+4. **P2 — ativo desativado antes do próximo ciclo do cron ainda era
+   checado.** Desativar um ativo não limpa `backfill_check_status:'pending'`
+   sozinho, e a query original não filtrava por `is_active`. Corrigido:
+   `main()` separa pendentes desativados (resolvidos direto pra `'done'`,
+   sem gastar o orçamento de `MAX_ASSETS_PER_RUN`) dos pendentes ativos
+   antes de processar.
+
+`MAX_ASSETS_PER_RUN` reduzido de 2 para 1 no mesmo commit por precaução —
+ver o parágrafo "achado próprio" abaixo.
+
 **Limitação aceita, não resolvida por este mecanismo**: a causa raiz que
 motivou o pedido (divergência Spot×Futures, item 4) continua sem solução
 gratuita. O backfill reduz o SINTOMA (o painel encontra a operação

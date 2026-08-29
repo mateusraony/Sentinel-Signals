@@ -46,19 +46,25 @@ function normalizeCandles(rawCandles) {
   }));
 }
 
-// Pagina PARA TRÁS a partir de toMs até cobrir fromMs — a Binance devolve no
-// máximo 1000 velas por chamada, e uma janela de 60 dias em 15m (~5760
-// candles) ultrapassa isso. O guard de 50 páginas é só uma rede de segurança
-// contra um bug de paginação que nunca convirja (a janela real é sempre
-// curta — BACKFILL_LOOKBACK_DAYS — nunca deveria chegar perto disso).
+// Pagina PARA FRENTE a partir de fromMs até alcançar toMs — a Binance
+// devolve klines em ordem ASCENDENTE A PARTIR de startTime quando startTime
+// E endTime são passados juntos (não "as últimas N antes de endTime"), então
+// startTime precisa avançar a cada página, nunca endTime recuar (Codex
+// review, PR #268: a versão anterior mantinha startTime fixo e só movia
+// endTime para trás — a 2ª chamada pedia um intervalo vazio/já coberto e o
+// loop terminava depois de só ~10 dias em 15m, sem nunca chegar perto de
+// "agora"). No máximo 1000 velas por chamada — uma janela de 60 dias em 15m
+// (~5760 candles) ultrapassa isso. O guard de 50 páginas é só uma rede de
+// segurança contra um bug de paginação que nunca convirja (a janela real é
+// sempre curta — BACKFILL_LOOKBACK_DAYS — nunca deveria chegar perto disso).
 async function fetchHistoricalCandles(symbol, timeframe, fromMs, toMs) {
   const interval = TIMEFRAME_MAP[timeframe];
   if (!interval) throw new Error(`Timeframe inválido: ${timeframe}. Válidos: ${Object.keys(TIMEFRAME_MAP).join(', ')}`);
 
   const pages = [];
-  let endTime = toMs;
+  let startTime = fromMs;
   for (let page = 0; page < 50; page++) {
-    const url = `${BINANCE_BASE_URL}/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&startTime=${fromMs}&endTime=${endTime}&limit=${MAX_KLINES_PER_CALL}`;
+    const url = `${BINANCE_BASE_URL}/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&startTime=${startTime}&endTime=${toMs}&limit=${MAX_KLINES_PER_CALL}`;
     const response = await fetchWithRetry(url, { context: `${symbol} ${timeframe} backfill` });
     if (!response.ok) {
       const errorText = await response.text();
@@ -67,13 +73,14 @@ async function fetchHistoricalCandles(symbol, timeframe, fromMs, toMs) {
     const data = await response.json();
     if (!Array.isArray(data) || data.length === 0) break;
     pages.push(...data);
-    const earliest = data[0][0];
-    if (earliest <= fromMs || data.length < MAX_KLINES_PER_CALL) break;
-    endTime = earliest - 1;
+    const lastOpenTime = data[data.length - 1][0];
+    if (data.length < MAX_KLINES_PER_CALL || lastOpenTime >= toMs) break;
+    startTime = lastOpenTime + 1;
   }
 
-  // Dedup (páginas adjacentes podem se sobrepor em 1 vela no limite) + ordem
-  // ascendente — pré-condição obrigatória de sliceClosedAsOf.
+  // Dedup (defensivo — paginação para frente com startTime = último openTime+1
+  // não deveria sobrepor, mas custa nada garantir) + ordem ascendente —
+  // pré-condição obrigatória de sliceClosedAsOf.
   const byOpenTime = new Map(pages.map((c) => [c[0], c]));
   const sorted = [...byOpenTime.values()].sort((a, b) => a[0] - b[0]);
   return normalizeCandles(sorted);
@@ -84,10 +91,30 @@ async function fetchHistoricalCandles(symbol, timeframe, fromMs, toMs) {
 // mesmo symbol+timeframe disparariam fetches duplicados à Binance.
 const cache = new Map();
 
+// docs/known-risks.md item 137 (Codex review, PR #268) — se fetchHistoricalCandles
+// rejeitar (Binance fora do ar mesmo após o retry de fetchWithRetry), a
+// PROMISE rejeitada ficava em cache para sempre: toda tentativa seguinte do
+// MESMO symbol+timeframe (ex. novo tick do replay) recebia o mesmo erro
+// cacheado, mas scanAsset engole isso por-timeframe (`errors` interno, nunca
+// propagado) — o replay inteiro terminava "normalmente" com 0 operações
+// encontradas, e checkOneAsset marcava backfill_check_status:'done' como se
+// tivesse checado de verdade. `hasFetchFailure()` deixa o orquestrador saber
+// que a checagem foi degradada, para marcar 'error' (retry no próximo ciclo)
+// em vez de 'done' com falso negativo.
+let fetchFailed = false;
+export function hasFetchFailure() {
+  return fetchFailed;
+}
+
 function loadSeries(symbol, timeframe, fromMs, toMs) {
   const key = `${symbol}:${timeframe}`;
   if (!cache.has(key)) {
-    cache.set(key, fetchHistoricalCandles(symbol, timeframe, fromMs, toMs));
+    const promise = fetchHistoricalCandles(symbol, timeframe, fromMs, toMs).catch((err) => {
+      fetchFailed = true;
+      cache.delete(key); // evict — não persistir uma rejeição em cache
+      throw err;
+    });
+    cache.set(key, promise);
   }
   return cache.get(key);
 }
@@ -100,6 +127,7 @@ let activeWindow = null;
 export function setBackfillWindow(fromMs, toMs) {
   activeWindow = { fromMs, toMs };
   cache.clear();
+  fetchFailed = false;
 }
 
 export async function fetchCandles(symbol, timeframe, limit) {
