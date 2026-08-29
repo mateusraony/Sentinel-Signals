@@ -16164,3 +16164,108 @@ rodado sobre os relatórios reais.
 Verificação: `npm run lint && npm test && npm run build && node
 scripts/build-scan.mjs && node scripts/build-backtest.mjs && npm run
 build:scan-shadow`.
+
+## 134. Checagem de saúde dos dois mecanismos automáticos — scan ao vivo e modo sombra (2026-08-29)
+
+### Contexto
+
+Usuário pediu uma checagem de saúde dos dois mecanismos que rodam sem
+intervenção (produção e modo sombra) e de quanto dado cada um já acumulou.
+Esta sessão não lê Firestore de produção diretamente (item 67) — a checagem
+é inteiramente via histórico de runs do GitHub Actions e via o próprio
+relatório do `analyze-shadow.yml`, que é leitura real do Firestore rodada
+pelo runner do GitHub.
+
+### `scan.yml` (produção) — saudável, verificado além da conclusão do job
+
+30 runs mais recentes (#13038–#13067, evento `workflow_dispatch`) todos
+`success`, cadência de ~5min confirmada (cron-job.org externo funcionando,
+item 18). `total_count: 13067` desde a criação do workflow.
+
+**Correção pós-review (Codex, PR #264):** `conclusion: success` sozinho não
+prova saúde por-ativo — `scripts/run-scan.mjs` (`main()`, linhas 63-70) só
+loga (`console.error`) ativos que falharam em `scanAllAssets()`, nunca lança
+nem marca o job como falho por isso; o workflow inteiro reporta sucesso
+mesmo que todo ativo monitorado esteja falhando. Verificação real feita
+depois disso: inspecionado o log de dois runs reais e distantes no tempo
+(#13069, 2026-08-29T01:10, e #13043, 2026-08-28T23:00) — ambos imprimem
+`[scan] scanAllAssets: 10 ativo(s), 0 falha(s)`. Duas amostras não é
+"sempre", mas é evidência real de por-ativo, não só a conclusão do job.
+Mitigação estrutural já existente e independente desta checagem: o
+dead-man's-switch por-ativo (`ASSET_STALE_GRACE_MS`, item 12) alerta via
+Telegram se um ativo específico ficar sem atualização por 30min — cobre
+justamente o buraco que a conclusão do job não cobre, embora esta sessão
+não consiga confirmar se algum alerta desses disparou (exigiria ler
+Firestore/Telegram de produção, item 67).
+
+### `scan-shadow.yml` (modo sombra) — cadência real MUITO abaixo do declarado (achado real, Codex PR #264)
+
+**Correção da primeira versão deste item — eu tinha checado só
+`conclusion` (sucesso/falha), nunca a cadência real entre runs. Estava
+errado ao chamar isso de "saudável".** O workflow declara
+`cron: "*/30 * * * *"` (30min) — mas os intervalos reais entre runs
+consecutivos, calculados a partir dos timestamps de criação de
+#517–#546 (2026-08-25T16:09 → 2026-08-28T18:29, 546 runs no total),
+degradam ao longo da janela observada:
+
+| Trecho | Intervalo típico |
+|---|---|
+| #517→#525 (2026-08-25, primeiras ~8h) | ~50-60min (já 2x o declarado) |
+| #526→#542 (2026-08-26) | 50min-3h40min, crescente |
+| #543→#546 (2026-08-27→08-28) | **8h27min a 12h55min entre runs** |
+
+No momento desta checagem (2026-08-29T01:12Z), o run mais recente
+(`scan.yml` roda a cada 5min sem falha, prova que o repo não está com
+Actions bloqueado em geral) é o **#13069 de `scan.yml`**, mas o
+`scan-shadow.yml` mais recente ainda é **#546, de 2026-08-28T18:29:47Z —
+um gap de 6h42min e contando**, sem nenhum run novo enfileirado. Cadência
+declarada (30min) e cadência real (agora medida em HORAS) divergem por
+mais de uma ordem de grandeza.
+
+**Causa provável (não confirmada, hipótese com evidência circunstancial
+forte):** `scan-shadow.yml` ainda depende só do `schedule:` nativo do
+GitHub Actions — exatamente o mecanismo que o item 18 já documentou como
+"melhor esforço", sujeito a atraso sob carga, e que motivou o
+`scan.yml` a migrar para disparo externo via cron-job.org
+(`workflow_dispatch`, ver `.claude/rules/ci-deploy.md`). `scan.yml` dispara
+~288x/dia por esse caminho externo — volume de Actions no repo inteiro alto
+o bastante para que o GitHub deprioritize os `schedule:` triggers de
+OUTROS workflows do mesmo repo (comportamento documentado da comunidade,
+não interno ao Sentinel). `scan-shadow.yml` nunca recebeu a mesma migração
+que já resolveu esse problema para `scan.yml` — a correção original do
+item 18 cobriu só a produção, não o modo sombra.
+
+**Efeito sobre o achado de volume abaixo:** o modo sombra provavelmente
+está catando MENOS candles fechados do que o desenho supõe — não é só "a
+frequência do sinal é baixa", é também "o scanner está rodando com menos
+frequência do que o script assume". Os dois efeitos são indistinguíveis
+sem instrumentação adicional (não construída).
+
+**Não corrigido nesta rodada.** Migrar `scan-shadow.yml` para disparo
+externo (mesmo padrão do `scan.yml`) exigiria configurar um novo endpoint
+no cron-job.org, fora do repositório, com o PAT pessoal do usuário — mudança
+de infraestrutura fora do que esta sessão pode/deve fazer sem confirmação.
+Registrado aqui como achado em aberto, não implementado.
+
+### Quanto dado já existe (via `analyze-shadow.yml`, relatório real mais recente — run #25, 2026-08-28T22:57:53Z)
+
+| Cascata | Operações fechadas | Piso mínimo | Veredito |
+|---|---|---|---|
+| `rf1h_cond4h_15m` (experimental) | **1** | 30 | INCONCLUSIVO (amostra < mínimo) |
+| `4h_15m` (controle nativo sombreado) | **0** | 30 | INCONCLUSIVO (amostra < mínimo) |
+
+Mesmos números do item 127 (snapshot de 2026-08-24) — **nenhuma operação
+nova fechou nos últimos ~4 dias, em nenhuma das duas cascatas**. Consistente
+com o gargalo de volume já registrado no item 127 — mas, à luz do achado de
+cadência acima, **parte da causa pode ser a cadência real degradada, não só
+a frequência do sinal**; os dois fatores não foram isolados nesta checagem.
+
+### Resposta direta
+
+`scan.yml` (produção): **saudável**, inclusive por-ativo nas amostras
+verificadas. `scan-shadow.yml` (modo sombra): **rodando, mas com cadência
+real muito abaixo do declarado** (gap atual de 6h42min+ contra um cron de
+30min) — problema real, em aberto, provavelmente ligado ao mesmo
+comportamento de `schedule:` sob carga que o item 18 já tinha resolvido só
+para a produção. Nenhum dos dois modos está gerando dado suficiente para
+qualquer veredito estatístico do modo sombra.
