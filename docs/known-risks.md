@@ -16164,3 +16164,57 @@ rodado sobre os relatórios reais.
 Verificação: `npm run lint && npm test && npm run build && node
 scripts/build-scan.mjs && node scripts/build-backtest.mjs && npm run
 build:scan-shadow`.
+
+## 134. Checagem de saúde dos dois mecanismos automáticos — scan ao vivo e modo sombra (2026-08-29)
+
+### Contexto
+
+Usuário pediu uma checagem de saúde dos dois mecanismos que rodam sem
+intervenção (produção e modo sombra) e de quanto dado cada um já acumulou.
+Esta sessão não lê Firestore de produção diretamente (item 67) — a checagem
+é inteiramente via histórico de runs do GitHub Actions e via o próprio
+relatório do `analyze-shadow.yml`, que é leitura real do Firestore rodada
+pelo runner do GitHub.
+
+### `scan.yml` (produção) — saudável
+
+30 runs mais recentes (#13038–#13067, evento `workflow_dispatch`) todos
+`success`, cadência de ~5min confirmada (cron-job.org externo funcionando,
+item 18). `total_count: 13067` desde a criação do workflow.
+
+### `scan-shadow.yml` (modo sombra) — saudável hoje, 1 incidente isolado e já recuperado
+
+546 runs no total. Os 30 mais recentes (#517–#546, 2026-08-25→2026-08-28)
+quase todos `success`, com **duas exceções na mesma janela**:
+
+- **#529** (2026-08-26T05:07:18Z) — `cancelled`.
+- **#530** (2026-08-26T06:01:26Z) — `failure`. Log real do job:
+  `Error: 8 RESOURCE_EXHAUSTED: Quota exceeded` do `@google-cloud/firestore`
+  — cota diária do Firestore Spark (50k leituras/20k escritas) esgotada
+  naquela janela, não um bug no código do scan sombra.
+- **#531** em diante (2026-08-26T07:27:56Z, 10 minutos depois) já voltou a
+  `success` e **todos os runs seguintes até #546** (2026-08-28T18:29, mais
+  recente no momento desta checagem) são `success` — sem recorrência. É um
+  blip isolado de ~1h, não um problema em andamento; não precisa de ação.
+
+### Quanto dado já existe (via `analyze-shadow.yml`, relatório real mais recente — run #25, 2026-08-28T22:57:53Z)
+
+| Cascata | Operações fechadas | Piso mínimo | Veredito |
+|---|---|---|---|
+| `rf1h_cond4h_15m` (experimental) | **1** | 30 | INCONCLUSIVO (amostra < mínimo) |
+| `4h_15m` (controle nativo sombreado) | **0** | 30 | INCONCLUSIVO (amostra < mínimo) |
+
+Mesmos números do item 127 (snapshot de 2026-08-24) — **nenhuma operação
+nova fechou nos últimos ~4 dias, em nenhuma das duas cascatas**. Confirma o
+diagnóstico já registrado no item 127: no ritmo observado, o piso de 30
+operações está muito além do horizonte de meses, não é uma questão de
+"aguardar mais alguns dias". Nada aqui é regressão nova — é o mesmo
+gargalo de volume já conhecido, só reconfirmado com dado mais recente.
+
+### Resposta direta
+
+Os dois modos estão **funcionando** (produção 100% saudável; sombra com um
+incidente de cota já sanado sozinho). Nenhum dos dois está **gerando dado
+suficiente** — a produção acumula histórico real mas fora do escopo desta
+checagem de contagem, e o modo sombra continua com amostra insuficiente
+(1 operação) para qualquer veredito estatístico.
