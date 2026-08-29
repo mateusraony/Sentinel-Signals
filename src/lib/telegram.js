@@ -6,6 +6,7 @@
  */
 import { logWarn } from './logger';
 import { closesFullyAtTp1, getEntryReferenceTime } from './opExitRules';
+import { formatBackfillLag } from './backfillDetection';
 
 const STORAGE_KEY = 'cryptoradar_telegram_cfg';
 const FILTERS_KEY = 'tg_filters';
@@ -298,12 +299,24 @@ export async function notifyVerificationTask(signal, asset) {
   );
 }
 
+// docs/known-risks.md item 137 — pedido explícito do usuário: uma operação
+// criada pela checagem retroativa (scripts/run-backfill-check.mjs, tag
+// source:'backfill') precisa deixar isso claro NA notificação também, não só
+// no painel — senão a mensagem lê como se o Sentinel tivesse acabado de
+// pegar a entrada ao vivo, quando na verdade ela já aconteceu no passado.
+function backfillPrefix(op) {
+  if (op.source !== 'backfill') return '';
+  const lag = formatBackfillLag(op.backfill_entry_lag_ms);
+  return `⏱ <b>Detectada retroativamente</b> — entrada real foi há ${lag ?? 'algum tempo'}, o Sentinel só a encontrou agora ao adicionar/atualizar o ativo (não foi pega ao vivo).\n\n`;
+}
+
 export async function notifyTradeCreated(op) {
   if (!shouldSend('entry_confirmed', op)) return;
   const emoji = op.side === 'BUY' ? '✅🟢' : '✅🔴';
   const dir = op.side === 'BUY' ? 'COMPRA' : 'VENDA';
   const tfLabel = op.timeframe === '15m' ? '15m (entrada 4h)' : op.timeframe?.toUpperCase();
   return send(
+    backfillPrefix(op) +
     `${emoji} <b>Entrada Confirmada — ${dir}</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${tfLabel}\n` +
     realTimeLine(getEntryReferenceTime(op)) +

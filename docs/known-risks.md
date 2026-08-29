@@ -16667,3 +16667,109 @@ na UI, nem no cron/servidor, nem no adaptador. `npm run lint && npm test &&
 npm run build && node scripts/build-scan.mjs && node
 scripts/build-backtest.mjs && npm run build:scan-shadow` — 1203 testes (3
 novos), lint e build limpos, os 4 bundles compilam.
+
+## 137. Checagem retroativa (backfill) ao adicionar/reativar um ativo (2026-08-29)
+
+**Pedido do usuário**: ao adicionar a ENAUSDT ao Sentinel, o ativo já estava
+com uma posição aberta no TradingView real (Futures) havia dias — o painel só
+mostrava "MUITO PRÓXIMO" porque o preço Spot (que o painel monitora, item 4)
+ainda não tinha cruzado o mesmo limiar que o Futures do usuário já tinha
+cruzado. Pedido literal: "precisa ser visto algum mecanismo pra ver se já tem
+alguma operação em aberto quando colocar um token ou atualizar... pode usar
+dados do backtest ou algo do tipo" — e, no refinamento: "automático ao
+adicionar/atualizar... com detalhe que a operação começou a X dias e Y horas
+atrás pra deixar explícito que foi adicionado depois e não o sistema".
+
+**Decisão de arquitetura, confirmada com o usuário via pergunta explícita**:
+descobri que o motor REAL com paridade completa (cascata RF 4h→15m, todos os
+gates) só roda no Node (cron), nunca no navegador — a única versão
+client-side (`src/lib/quickBacktest.js`) é um sandbox simplificado,
+single-timeframe, documentado explicitamente como "não é paridade". Duas
+opções foram postas ao usuário: (a) preview instantâneo aproximado no
+navegador + confirmação real depois pelo cron, ou (b) só o motor real via
+cron, sem preview. Escolhido **(b)** — nenhuma operação real deveria nascer
+de um cálculo aproximado, e duas fontes de número (estimativa × real) que
+podem divergir é exatamente o tipo de confusão que este projeto já sofreu com
+Spot×Futures (item 4). Escopo também confirmado: **só a cascata RF nativa
+(4h→15m)** — SMC mede ~0 operações reais em produção (item 125), dobrar a
+superfície de mudança não se paga.
+
+**Desenho**: reaproveita `src/lib/backtestEngine.js:runBacktest` — o mesmo
+motor de replay histórico que já existia para `backtest.yml`, com relógio
+simulado (`installSimClock`/`sliceClosedAsOf`, sem look-ahead) — mas passando
+o **backend REAL de produção** (`scripts/adminEntities.js`), não o fake em
+memória que `run-backtest.mjs` usa. Isso significa que uma operação
+retroativa nasce pelo **MESMO caminho** (`persistScanResults` →
+`createTradeOpIfNoneActive`) que uma operação ao vivo — não é um terceiro
+caminho de mutação (`.claude/rules/trading-engine.md`).
+
+Fluxo:
+1. `AddAssetForm.jsx` (criação) e `Assets.jsx` (reativação, `is_active`
+   false→true) gravam `MonitoredAsset.backfill_check_status: 'pending'`.
+2. `scripts/run-backfill-check.mjs`, rodando como um **processo Node
+   separado** logo após `npm run scan` no mesmo job do `scan.yml`
+   (`continue-on-error: true` — nunca deixar uma falha aqui derrubar o scan
+   ao vivo), busca até 2 ativos pendentes por execução (checar um ativo é
+   raro; o próximo ciclo pega o resto).
+3. Para cada um: busca candles históricos reais dos últimos
+   `BACKFILL_LOOKBACK_DAYS` (60 dias — cobre o Time Stop MÁXIMO de produção,
+   T3 = 96 barras de 4h = 16 dias, mais ~40 dias de aquecimento de indicador)
+   via um **6º alvo de redirecionamento** (`scripts/build-backfill.mjs`,
+   mesma técnica dos outros 5): `@/api/entities`→`adminEntities.js` (real),
+   `./telegram`→`backtestTelegram.js` (no-op — replay não deve disparar
+   Telegram "ao vivo" para eventos de semanas atrás), `./pineParser`→
+   `adminPineConfig.js` (config real de produção), `./marketDataProvider`→
+   `scripts/backfillMarketDataProvider.js` (novo — Binance Spot REST
+   paginado para uma janela recente, não os arquivos de meses do backtest
+   nem o "últimos N" do scan ao vivo).
+4. `runBacktest` roda a cascata real sobre a janela; qualquer
+   `TradeOperation` nova (comparando snapshot antes/depois) é rotulada
+   `source:'backfill'` + `backfill_detected_at` + `backfill_entry_lag_ms`
+   (atraso real entrada→detecção) via `update()` simples — nunca
+   `transitionTradeOp` (é metadado aditivo, não status/current_stop, então
+   não precisa do CAS transacional daquele caminho).
+5. Uma notificação Telegram por operação encontrada, reaproveitando
+   `notifyTradeCreated` (agora com um prefixo `⏱ Detectada
+   retroativamente...` quando `source==='backfill'`, espelhado em
+   `src/lib/telegram.js`/`scripts/adminTelegram.js`).
+6. `MonitoredAsset` volta para `backfill_check_status: 'done'` (ou `'error'`
+   + `backfill_check_error`), com `backfill_ops_found` para auditoria.
+
+**Lógica pura** (`src/lib/backfillDetection.js`, testada em
+`backfillDetection.test.js`): `backfillLookbackWindow`, `buildBackfillTags`
+(reaproveita `getEntryReferenceTime` de `opExitRules.js` — mesma prioridade
+de campo que o guard temporal P0-c/P0-g já usa, não reduplicada), e
+`formatBackfillLag` (formata "3d 14h" para UI/Telegram).
+
+**UI**: `TradeCard.jsx` (dashboard, operação ativa) e `TradeHistory.jsx`
+(histórico) mostram um banner "Detectada retroativamente — entrada real foi
+há Xd Yh. Não foi pega ao vivo..." sempre que `op.source === 'backfill'`.
+
+**Achado próprio durante a implementação — custo multiplicativo de
+`getPineConfig()`**: `scanAsset` (scanner.js:1279) chama `getPineConfig()` a
+cada invocação, sem cache — inofensivo no scan ao vivo (1 leitura real de
+Firestore por ativo por passada) e no `backtest.yml` (config estática,
+CLI-overridable, sem I/O), mas o backfill roda `scanAsset` até ~5760 vezes
+por ativo (60 dias / 15min) contra o `adminPineConfig.js` REAL — sem
+correção, seriam ~5760 leituras reais de `strategyConfig/current` por
+checagem, e até 11.520 num job que processasse 2 ativos. Corrigido
+memoizando `getPineConfig()` **por processo** em `adminPineConfig.js` (cache
+da PROMISE, mesmo padrão já usado em `adminTelegram.js:loadTelegramSources`
+— cada `npm run scan`/`npm run backfill-check` é uma execução curta e
+isolada, então 1 leitura por processo é correta e não fica desatualizada).
+Efeito colateral positivo: o scan ao vivo também passou a fazer 1 leitura
+por passada em vez de 1 por ativo. `MAX_ASSETS_PER_RUN` também reduzido de 2
+para 1 por precaução — o custo dominante do replay não é a Binance, é o
+Firestore real por tick (ao contrário do backtest, que usa o fake em
+memória), e não há como medir o tempo real de um job aqui (rede das sessões
+bloqueia Binance/Firestore); manter o job previsível dentro do timeout do
+`scan.yml` importa mais que processar 2 ativos por ciclo.
+
+**Limitação aceita, não resolvida por este mecanismo**: a causa raiz que
+motivou o pedido (divergência Spot×Futures, item 4) continua sem solução
+gratuita. O backfill reduz o SINTOMA (o painel encontra a operação
+retroativamente em vez de nunca) mas mede a partir do MESMO dado Spot que o
+scan ao vivo — se o cruzamento só aconteceu no Futures do usuário e o Spot
+nunca cruzou, o backfill também não encontra nada, corretamente (não seria
+honesto inventar uma operação que o motor real, com o dado disponível, não
+confirmaria).

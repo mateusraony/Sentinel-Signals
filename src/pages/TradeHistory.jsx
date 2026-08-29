@@ -8,6 +8,7 @@ import {
   isClosedOp, getClosedAt, getExitPrice,
   calcRealizedPnlPct, calcRealizedR, classifyOutcome, summarizeOps,
 } from '@/lib/tradeMetrics';
+import { formatBackfillLag } from '@/lib/backfillDetection';
 
 function fmt(price) {
   if (!price && price !== 0) return '—';
@@ -127,6 +128,12 @@ function HistoryCard({ op }) {
               style={{ background: `${badgeColor}15`, color: badgeColor, border: `1px solid ${badgeColor}30` }}>
               {isBE ? '🔄 Breakeven' : s.label}
             </span>
+            {op.source === 'backfill' && (
+              <span className="text-[9px] font-mono font-semibold px-2 py-0.5 rounded flex items-center gap-1"
+                style={{ background: 'rgba(0,229,255,0.1)', color: '#00e5ff', border: '1px solid rgba(0,229,255,0.3)' }}>
+                <History className="w-2.5 h-2.5" /> Retroativa
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3 mt-1 text-[8px] font-mono text-muted-foreground flex-wrap">
             <span>📍 ${fmt(op.entry_price)}</span>
@@ -159,6 +166,19 @@ function HistoryCard({ op }) {
       {/* Expanded detail */}
       {expanded && (
         <div className="px-4 pb-4 pt-1 space-y-3 border-t" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+          {/* Backfill banner — docs/known-risks.md item 137: deixar explícito
+              que a entrada real aconteceu no passado, detectada só ao
+              adicionar/reativar o ativo, não pega ao vivo pelo scan normal. */}
+          {op.source === 'backfill' && (
+            <div className="rounded-lg px-3 py-2 flex items-start gap-2"
+              style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.25)' }}>
+              <History className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#00e5ff' }} />
+              <p className="text-[10px] font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
+                Detectada retroativamente{op.backfill_entry_lag_ms != null ? ` — entrada real foi há ${formatBackfillLag(op.backfill_entry_lag_ms)}` : ''}. Não foi pega ao vivo: o ativo foi adicionado/reativado depois, e o Sentinel reconstruiu a operação a partir do histórico.
+              </p>
+            </div>
+          )}
+
           {/* Price breakdown grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[

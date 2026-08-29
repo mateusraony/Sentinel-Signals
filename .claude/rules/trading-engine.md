@@ -415,6 +415,21 @@ nunca deve receber nova transição.**
   sem comparar relatórios de backtest com/sem primeiro** — ver
   `docs/known-risks.md` item 58.
 
+- **Checagem retroativa (backfill) ao adicionar/reativar um ativo** (item
+  137) — `scripts/run-backfill-check.mjs`, processo Node separado rodando
+  após `npm run scan` no `scan.yml`. Reaproveita `backtestEngine.js:
+  runBacktest` — MESMO motor de replay do `backtest.yml` — mas contra o
+  **backend real de produção**, então uma operação retroativa nasce pelo
+  MESMO caminho (`persistScanResults`→`createTradeOpIfNoneActive`) que uma
+  ao vivo, não um terceiro caminho de mutação. 6º alvo de redirecionamento
+  (`scripts/build-backfill.mjs`); janela de 60 dias via
+  `scripts/backfillMarketDataProvider.js` (Binance REST paginado, novo, 3º
+  provedor desse slot ao lado de `adminMarketDataProvider.js`/
+  `backtestMarketDataProvider.js`). Escopo v1: só RF nativa (SMC mede ~0
+  operações reais, item 125). Ops resultantes ganham `source:'backfill'` +
+  `backfill_entry_lag_ms` (metadado aditivo via `update()`, nunca
+  `transitionTradeOp`).
+
 - **Horário real do evento vs. horário de detecção** (item 107) — todo
   `_at` de saída (`stop_hit_at`/`tp1_hit_at`/`tp2_hit_at`/`closed_at`) é o
   instante em que a PASSADA do scan detectou a condição, nunca o evento de

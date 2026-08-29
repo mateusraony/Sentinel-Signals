@@ -146,19 +146,35 @@ const SYNCED_STRATEGY_KEYS = [
   'disableTp2CapEnabled',
 ];
 
+// Memoizado por PROCESSO (mesmo padrão de adminTelegram.js:
+// loadTelegramSources) — cada `npm run scan`/`npm run backfill-check` é uma
+// execução curta e isolada do GitHub Actions, então uma leitura por
+// processo é correta e não fica desatualizada. Sem isto, scanAsset (que
+// chama getPineConfig() a cada invocação) faria uma leitura real de
+// Firestore POR TICK do replay de backfill — até ~5760 leituras por ativo
+// numa janela de 60 dias/15min (docs/known-risks.md item 137) — em vez de 1
+// por processo. Cacheia a PROMISE (não só o valor resolvido) para também
+// deduplicar chamadas concorrentes (scanAllAssets roda vários ativos em
+// paralelo).
+let configPromise = null;
 export async function getPineConfig() {
-  const config = { ...DEFAULTS };
-  try {
-    const db = getFirestore();
-    const snap = await db.collection('strategyConfig').doc('current').get();
-    if (snap.exists) {
-      const data = snap.data();
-      for (const key of SYNCED_STRATEGY_KEYS) {
-        if (data[key] !== undefined) config[key] = data[key];
+  if (!configPromise) {
+    configPromise = (async () => {
+      const config = { ...DEFAULTS };
+      try {
+        const db = getFirestore();
+        const snap = await db.collection('strategyConfig').doc('current').get();
+        if (snap.exists) {
+          const data = snap.data();
+          for (const key of SYNCED_STRATEGY_KEYS) {
+            if (data[key] !== undefined) config[key] = data[key];
+          }
+        }
+      } catch (e) {
+        console.warn('[adminPineConfig] Falha ao ler strategyConfig, usando defaults:', e.message);
       }
-    }
-  } catch (e) {
-    console.warn('[adminPineConfig] Falha ao ler strategyConfig, usando defaults:', e.message);
+      return config;
+    })();
   }
-  return config;
+  return configPromise;
 }

@@ -59,7 +59,14 @@ export default function Assets() {
 
   const toggleMutation = useMutation({
     /** @param {{ id: string, is_active: boolean }} args */
-    mutationFn: ({ id, is_active }) => backend.entities.MonitoredAsset.update(id, { is_active }),
+    mutationFn: ({ id, is_active }) => backend.entities.MonitoredAsset.update(id, {
+      is_active,
+      // docs/known-risks.md item 137 — reativar é, na prática, "adicionar de
+      // volta": mesmo pedido do usuário de checagem retroativa que
+      // AddAssetForm.jsx já dispara no cadastro. Só na transição
+      // false→true — desativar não deve disparar nada.
+      ...(is_active ? { backfill_check_status: 'pending' } : {}),
+    }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['all-assets'] }),
   });
 

@@ -12,6 +12,7 @@
 // MESMA operação; opExitRules já está no bundle do scan) e o cliente
 // firebase-admin, mesmo padrão de scripts/adminPineConfig.js.
 import { closesFullyAtTp1, getEntryReferenceTime } from '../src/lib/opExitRules.js';
+import { formatBackfillLag } from '../src/lib/backfillDetection.js';
 import { getFirestore } from 'firebase-admin/firestore';
 
 const DEFAULT_FILTERS = {
@@ -208,12 +209,23 @@ export async function notifyVerificationTask(signal, asset) {
   );
 }
 
+// docs/known-risks.md item 137 — mesmo raciocínio/mirror manual de
+// src/lib/telegram.js: uma operação criada pela checagem retroativa
+// (scripts/run-backfill-check.mjs, tag source:'backfill') precisa deixar
+// isso claro NA notificação também, não só no painel.
+function backfillPrefix(op) {
+  if (op.source !== 'backfill') return '';
+  const lag = formatBackfillLag(op.backfill_entry_lag_ms);
+  return `⏱ <b>Detectada retroativamente</b> — entrada real foi há ${lag ?? 'algum tempo'}, o Sentinel só a encontrou agora ao adicionar/atualizar o ativo (não foi pega ao vivo).\n\n`;
+}
+
 export async function notifyTradeCreated(op) {
   if (!(await shouldSend('entry_confirmed', op))) return;
   const emoji = op.side === 'BUY' ? '✅🟢' : '✅🔴';
   const dir = op.side === 'BUY' ? 'COMPRA' : 'VENDA';
   const tfLabel = op.timeframe === '15m' ? '15m (entrada 4h)' : op.timeframe?.toUpperCase();
   return send(
+    backfillPrefix(op) +
     `${emoji} <b>Entrada Confirmada — ${dir}</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${tfLabel}\n` +
     realTimeLine(getEntryReferenceTime(op)) +

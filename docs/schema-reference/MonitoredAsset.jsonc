@@ -163,6 +163,27 @@
       "type": "boolean",
       "default": false,
       "description": "When true, adds an extra confirmation gate to the EXISTING 4h/15m Range Filter cascade: the 4h SMC structure trend and Premium/Discount zone must agree with the RF signal direction before a TradeOperation is created. Unlike smc_enabled (purely additive — a separate cascade), this one is NOT additive: it makes the main RF cascade stricter, filtering out RF signals whose 4h SMC structure/zone disagrees. `default: false` is both the schema fallback (field absent) and what AddAssetForm.jsx writes on every NEW asset as of 2026-08-20 (docs/known-risks.md item 108 — real A/B via backtest.yml, 7 symbols/12 months, measured this gate rejecting 100% of the candidates that survived the regime filter, zeroing the RF cascade's operation count in that sample; the same day, the 10 real production assets were switched from `true` to `false` too). Between 2026-07-19 and 2026-08-20, AddAssetForm.jsx wrote `true` here instead (at the user's request, before the A/B evidence existed) — assets created in that window keep whatever was written at creation time, this default change is not retroactive. Toggle per-asset in AssetConfigPanel ('SMC confirm 4h→15m') if you want it on for a specific asset to test. Same known-risks.md item 9 caveat applies (engineering-validated, not yet compared side-by-side with real TradingView output)."
+    },
+    "backfill_check_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "done",
+        "error"
+      ],
+      "description": "Drives scripts/run-backfill-check.mjs (docs/known-risks.md item 137). AddAssetForm.jsx writes 'pending' on every NEW asset, and Assets.jsx writes it again on reactivation (is_active false→true) — both mean 'check whether the RF 4h/15m cascade would already have an operation open on this asset, using real recent history'. The scan.yml cron picks up 'pending' assets, runs the real engine (backtestEngine.js:runBacktest) against production over the last 60 days, tags any newly-created TradeOperation source:'backfill', then writes 'done' (or 'error' + backfill_check_error on failure). Absent = never checked (assets created before this field existed)."
+    },
+    "backfill_checked_at": {
+      "type": "string",
+      "description": "ISO timestamp of the last backfill check completion (success or error). See backfill_check_status."
+    },
+    "backfill_ops_found": {
+      "type": "number",
+      "description": "How many TradeOperation docs the last backfill check tagged source:'backfill' for this asset — 0 is a normal, common outcome (no signal was active in the lookback window). See backfill_check_status."
+    },
+    "backfill_check_error": {
+      "type": "string",
+      "description": "Error message from the last backfill check, when backfill_check_status is 'error' (e.g. Binance rejected the symbol, network failure). Truncated to 500 chars."
     }
   },
   "required": [
