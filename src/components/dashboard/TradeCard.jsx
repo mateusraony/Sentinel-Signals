@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import moment from 'moment';
-import { Clock, TrendingUp, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, TrendingUp, TrendingDown, ChevronDown, ChevronUp, History } from 'lucide-react';
+import { formatBackfillLag } from '@/lib/backfillDetection';
 
 const STATUS_CONFIG = {
   SIGNAL_CONFIRMED: {
@@ -123,6 +124,23 @@ function PriceGrid({ op }) {
   );
 }
 
+// docs/known-risks.md item 137 — pedido explícito do usuário: deixar claro
+// que a entrada real aconteceu no passado e só foi encontrada quando o
+// ativo foi adicionado/reativado, não pega ao vivo pelo scan normal.
+function BackfillBanner({ op }) {
+  if (op.source !== 'backfill') return null;
+  const lag = formatBackfillLag(op.backfill_entry_lag_ms);
+  return (
+    <div className="rounded-lg px-3 py-2 flex items-start gap-2"
+      style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.25)' }}>
+      <History className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#00e5ff' }} />
+      <p className="text-[10px] font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
+        Detectada retroativamente{lag ? ` — entrada real foi há ${lag}` : ''}. Não foi pega ao vivo: o ativo foi adicionado/reativado depois, e o Sentinel reconstruiu a operação a partir do histórico.
+      </p>
+    </div>
+  );
+}
+
 function StatusBanner({ op }) {
   const banners = {
     SIGNAL_CONFIRMED: { text: '👀 Monitorando — aguardar preço avançar para TP1', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
@@ -187,6 +205,9 @@ export default function TradeCard({ operation: op }) {
           {status.label}
         </span>
       </div>
+
+      {/* Backfill banner — retroactive detection, before the normal status banner */}
+      <BackfillBanner op={op} />
 
       {/* Status banner — plain language */}
       <StatusBanner op={op} />

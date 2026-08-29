@@ -12,7 +12,12 @@ paths:
 ## Workflows
 
 - `ci.yml` — lint + `npm test` + build a cada push/PR. Alerta Telegram em falha.
-- `scan.yml` — `npm run scan`. **Relógio de trading**: o cadenciamento real de
+- `scan.yml` — `npm run scan`, seguido de `npm run backfill-check`
+  (`continue-on-error: true` — nunca derruba o scan ao vivo). O 2º passo só
+  faz trabalho real quando existe `MonitoredAsset` com
+  `backfill_check_status:'pending'` (checagem retroativa ao
+  adicionar/reativar um ativo, `docs/known-risks.md` item 137). **Relógio de
+  trading**: o cadenciamento real de
   ~5min vem de disparo **externo** (cron-job.org via `workflow_dispatch`,
   configurado e confirmado — ver `docs/claude/external-cron-setup.md`,
   configuração fora do repo, PAT pessoal do usuário); o `schedule:` interno

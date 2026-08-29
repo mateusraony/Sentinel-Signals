@@ -62,6 +62,14 @@ export default function AddAssetForm({ onSuccess }) {
         // RF nativa na amostra testada. Ligar continua possível manualmente
         // via AssetConfigPanel, só o default de cadastro mudou.
         smc_confirm_4h15m: false,
+        // docs/known-risks.md item 137 — pedido do usuário: ao adicionar um
+        // ativo que já tem sinal cruzado em outro lugar (ex. TradingView),
+        // não esperar o próximo sinal ao vivo. scripts/run-backfill-check.mjs
+        // (rodando após o scan agendado) pega qualquer MonitoredAsset
+        // 'pending' e roda o motor REAL sobre os últimos 60 dias contra o
+        // backend de produção — qualquer operação que a cascata RF nativa já
+        // teria aberto nasce agora, rotulada source:'backfill'.
+        backfill_check_status: 'pending',
       });
       onSuccess();
     } catch (err) {

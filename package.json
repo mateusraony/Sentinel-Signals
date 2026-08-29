@@ -17,6 +17,8 @@
     "scan:shadow": "npm run build:scan-shadow && node scripts/dist/run-scan-shadow.mjs",
     "build:backtest": "node scripts/build-backtest.mjs",
     "backtest": "npm run build:backtest && node scripts/dist/run-backtest.mjs",
+    "build:backfill": "node scripts/build-backfill.mjs",
+    "backfill-check": "npm run build:backfill && node scripts/dist/run-backfill-check.mjs",
     "analyze-backtest": "node scripts/analyze-backtest.mjs",
     "analyze-shadow-rf1h": "node scripts/analyze-shadow-rf1h.mjs"
   },

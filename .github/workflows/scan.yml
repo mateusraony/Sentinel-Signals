@@ -28,7 +28,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v5
 
@@ -45,3 +45,16 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+
+      # Checagem retroativa (docs/known-risks.md item 137) — só faz trabalho
+      # real quando existe MonitoredAsset com backfill_check_status:'pending'
+      # (query única e barata quando não há nada; custo real só ao
+      # adicionar/reativar um ativo). continue-on-error: nunca deixar uma
+      # falha aqui (rede, símbolo ruim) derrubar o scan ao vivo acima, que já
+      # rodou e é o que importa de verdade.
+      - run: npm run backfill-check
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
