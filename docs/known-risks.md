@@ -16269,3 +16269,155 @@ real muito abaixo do declarado** (gap atual de 6h42min+ contra um cron de
 comportamento de `schedule:` sob carga que o item 18 já tinha resolvido só
 para a produção. Nenhum dos dois modos está gerando dado suficiente para
 qualquer veredito estatístico do modo sombra.
+
+## 135. Caso ENAUSDT.P confirmado como o mesmo do item 117 — pré-registro de re-medição em carteira ao vivo + Futures (2026-08-29)
+
+### Contexto
+
+Usuário reportou (com print real do TradingView) uma operação ENAUSDT.P
+(BUY, entrada 21/08 21:00, 0,15601, stop 0,13091, TP1 0,19364, R:R 1:1,5,
+score 85/100, "T3 Altcoin") que fechou no Pine dele em 28/08 22:38 com
++3,43% — e nunca virou operação no Sentinel. **Parâmetros idênticos ao caso
+já registrado no item 117 (2026-08-22)** — mesmo score, mesmo stop, mesmo
+TP1, mesmo R:R, mesma janela de entrada — é a mesma operação, agora com o
+desfecho final observado no mercado real.
+
+Duas causas já diagnosticadas na época continuam valendo, sem mudança:
+
+1. **Gate `check15mConfirmation`** (item 117): o Sentinel detectou o sinal
+   de 4h em paridade total com o Pine (mesmo score/direção), mas a janela
+   inteira de 4h passou sem o Range Filter de 15m confirmar a mesma
+   direção — o Pine real do usuário **não tem** esse gate (item 114).
+2. **Spot × Futures** (item 121/122, decisão permanente `CLAUDE.md` item 4):
+   o gráfico do usuário é `.P` (Perpétuo); o scan ao vivo usa Binance Spot,
+   sem alternativa gratuita a partir de datacenter dos EUA.
+
+A Rodada 4 (item 119/120) já mediu `skip15mConfirmationEnabled: true` numa
+carteira de backtest de 7 símbolos em Spot (não a carteira real, não
+Futures) e achou o ponto mais forte da sessão até então (netExpectancyR
+quase dobrou, +5 operações, p=0,285 — não passa significância). Segue
+`false` em produção hoje (`src/lib/pineParser.js:180`, confirmado).
+
+### Pedido do usuário
+
+Não ligar ainda — rodar mais um backtest antes, desta vez **analisando por
+que essas entradas não acontecem no Sentinel**, não só repetir o número de
+topo.
+
+### Pré-registro (ANTES de rodar) — família nova, não reaproveita o item 120
+
+**Por que é um trial novo, não repetição**: carteira diferente (os 10
+ativos MONITORADOS AO VIVO hoje — `BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,
+ZROUSDT,NEARUSDT,ARBUSDT,ENAUSDT,ETHFIUSDT,PAXGUSDT`, item 133 Correção 2 —
+em vez dos 7 símbolos padrão de backtest, que não incluem ENAUSDT) E fonte
+de mercado diferente (`futures_data: true`, aproximando do que o usuário
+realmente opera, em vez de Spot).
+
+- **Family**: `skip15m-live10-futures`
+- **Run K** — `trial_label: skip15m-live10-futures-baseline` (pineConfig
+  default, sem overrides)
+- **Run L** — `trial_label: skip15m-live10-futures-enabled`
+  (`{"skip15mConfirmationEnabled": true}`)
+- Symbols: `BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,NEARUSDT,ARBUSDT,ENAUSDT,ETHFIUSDT,PAXGUSDT`
+- `futures_data: true`; `real_funding: false` (deliberado — este trial isola
+  o mecanismo de ENTRADA, não o modelo de custo; misturar os dois
+  contaminaria a leitura de qual mudança explica o quê)
+- Janela: padrão do workflow (12 meses até agora)
+
+**Hipótese**: `confirmation_15m_not_aligned` continua a razão dominante em
+`report.signalExpiry['range_filter'].byReason` nesta carteira/mercado
+novos, e o Run L repete a direção positiva do item 120 (mais operações,
+`netExpectancyR` melhor) — mas por ser população genuinamente nova
+(símbolos diferentes, mercado diferente), o resultado pode ir em qualquer
+direção.
+
+**Condição de morte**: se o Run L não repetir a melhora (delta negativo ou
+nulo de `netExpectancyR`), ou se `confirmation_15m_not_aligned` não for a
+razão dominante de expiração nesta carteira, isso refuta tratar este gate
+como o principal candidato a promoção — não só "mais um dado incerto".
+
+**Leitura planejada, além do número de topo** (o pedido específico do
+usuário — "por que essas entradas não estão correndo"):
+`report.signalExpiry['range_filter'].byReason` completo (todas as razões,
+não só a dominante) nos dois runs, e `report.entryFunnel` para o funil de
+rejeição por gate — juntos respondem quais entradas reais (como a do
+ENAUSDT) morrem em qual etapa, não só quantas.
+
+### Execução
+
+Esta sessão não alcança a Binance (rede bloqueada, `.claude/rules/
+pine-parity.md`) — os dois runs precisam do runner do GitHub Actions
+(`backtest.yml`, `workflow_dispatch`). Tentativa de disparo automático via
+API registrada no PR que acompanha este item; se a permissão de disparo
+não estiver disponível a esta sessão, os inputs exatos acima ficam prontos
+para o usuário disparar manualmente pela UI do GitHub Actions.
+
+### Resultado medido (2026-08-29) — a hipótese foi REFUTADA, direção inverteu
+
+Usuário rodou os 2 backtests corretos (carteira de 10 ativos ao vivo,
+incluindo ENAUSDT; `market_source: spot` — a caixa Futures não foi marcada
+nesta rodada, ressalva abaixo). Um 3º upload anterior usava os 7 símbolos
+padrão sem ENAUSDT e foi descartado (não respondia à pergunta).
+
+| | Run K — `baseline` | Run L — `skip15m-enabled` | Δ |
+|---|---|---|---|
+| N | 183 | 195 | +12 |
+| `netExpectancyR` | **+0,0957** | +0,0784 | **−0,0173** |
+| `expectancyRCI95` (ingênuo) | [−0,026; 0,217] | [−0,039; 0,196] | — |
+| `expectancyRCI95` (cluster, t-Student) | [−0,024; 0,215] | [−0,035; 0,192] | — |
+| `sign-flip` p-valor (efeito ≠ 0) | 0,0819 | 0,1399 | — |
+| DEFF / G | 0,90 / G=41 | 0,88 / G=41 | — |
+| `equityCurve.maxDrawdownPct` | 6,00% | 6,85% | — |
+
+**Condição de morte do pré-registro disparou**: o Run L não repetiu a
+melhora do item 120 — o delta é **negativo**. As 12 operações recuperadas
+(que só existem no run com o gate desligado) têm **R médio −0,304**
+(`-1.013, -0.152, 1.14, -0.235, -0.048, -1.026, 0.328, -0.219, -1.014,
+-1.063, -0.082, -0.262`) — a maioria perdedora, e mais que suficiente para
+inverter o sinal do agregado. Cluster-corrigido, o BASELINE (comportamento
+de hoje) fica mais perto de significância (p=0,082) que o `enabled`
+(p=0,140) — o oposto do que o item 120 sugeria.
+
+**`confirmation_15m_not_aligned` NÃO é a razão dominante de expiração**
+nesta carteira/janela — achado que também refuta a hipótese pré-registrada.
+No baseline: 284 sinais RF expiraram no total, só **14 (4,9%)** por
+`confirmation_15m_not_aligned`; `regime_rejected` é maior (100, 35%); e
+**60% (170) caem em `unknown`** — sinais que expiraram sem nenhum retry
+gravar motivo (`SignalEvent.last_rejection_reason` só é escrito pelo loop
+de RETRY, item 45.3/49 — um sinal sem retry nunca grava motivo). É uma
+lacuna real de instrumentação, não investigada a fundo aqui — futura, se
+o usuário quiser fechar essa visibilidade.
+
+**Sobre o ENAUSDT especificamente**: já gera operações no Sentinel hoje —
+**13 no baseline**, não zero. O sinal do caso relatado (item 117/135,
+entrada real ~21/08 21:00) tem uma operação próxima no backtest (`BUY,
+2026-08-22T04:00, STOP_HIT, r=-0,398`, presente nos DOIS runs) — mas é uma
+operação DIFERENTE da que o usuário viu no Pine real (preço/horário de
+entrada não batem exatamente), consistente com a divergência Spot×Futures
+já aceita (item 121/122): o backtest rodou em Spot, o Pine real do usuário
+é Futures/Perpétuo. Não dá pra atribuir a esta amostra "prova" de que o
+caso específico do ENAUSDT seria resolvido pelo gate — o próprio evento
+que motivou a investigação não está representado de forma identificável
+nela.
+
+**Ressalva não fechada**: `futures_data` não foi marcado nesta rodada
+(`market_source: spot` em ambos os runs) — a aproximação com o mercado real
+do usuário (item 121/122) não foi testada aqui. Dado o resultado já
+refutar a hipótese em Spot, rodar de novo em Futures só se justifica se o
+usuário quiser fechar esse último grau de liberdade — não é urgente com a
+hipótese principal já morta.
+
+### Recomendação
+
+**Não ligar `skip15mConfirmationEnabled` em produção com este dado.**
+Continua `false` (`src/lib/pineParser.js:180`). O resultado mais forte
+do projeto (item 120) não se replicou numa amostra fresca, mais realista
+(carteira ao vivo em vez de 7 símbolos de conveniência) e mais recente —
+inverteu de sinal. Isso não prova que o gate "ajuda" (ambos inconclusivos)
+— prova que a evidência que apontava pra desligá-lo não era robusta o
+bastante pra sobreviver a uma segunda amostra independente. Padrão clássico
+de regressão à média/overfitting num ponto estimado forte de amostra única
+(mesmo padrão já visto no item 120 do SELL-only, argumento 3). Fecha o
+item 135 e a Rodada 4 (item 120) como candidato ativo — despriorizado,
+não eliminado (universo de símbolos maior ou dado em Futures poderiam
+mudar o cálculo, mas não há indício hoje que valha a pena).
