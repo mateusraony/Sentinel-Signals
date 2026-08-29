@@ -16581,3 +16581,74 @@ build:scan-shadow` — 1200 testes, lint limpo, os 4 bundles compilam.
   histórico, todas de julho"; o bug deste item começa precisamente em
   16/08, então o período de julho a 16/08 tem uma causa distinta (ou
   simplesmente baixo volume natural) que este item não investiga.
+
+### Varredura final — 4 agentes em paralelo, todo o resto do repositório (2026-08-29)
+
+Usuário pediu confirmação de que não sobrou mais nenhuma instância desta
+classe de bug em lugar nenhum, com varredura extremamente detalhada. Rodados
+4 agentes de exploração em paralelo, cada um numa frente sem sobreposição, e
+os achados verificados manualmente (não aceitos às cegas) antes de corrigir:
+
+1. **Resto de `scanner.js`** (tudo que os 1200 testes ainda não cobriam) —
+   leitura completa das 4353 linhas. 2 pontos frágeis achados (não
+   exploráveis hoje, mesmo padrão sem `?? null` do resto da função):
+   `entry_candle_time_5m` em `buildSmcTradeOpData` e `structure_type` num
+   log de "aguardando confirmação 5m" — ambos protegidos hoje por invariantes
+   upstream (`check5mSmcConfirmation` nunca retorna `entryCandleTime`
+   indefinido quando `confirmed:true`; o branch só roda pra sinais
+   `smc_structure`, que sempre populam `structure_type`), mas do mesmo jeito
+   frágil que já causou o incidente original se essas invariantes algum
+   dia mudarem. Também achou (verificado nesta sessão, além do que o agente
+   relatou) mais 2 `details:` de log (`adx`/`chop`/`tier` nas linhas do
+   "regime bloqueado" RF e SMC, 4h e 1h) sem o `?? null` que as linhas
+   irmãs ao lado já tinham.
+2. **Páginas/componentes da UI** (tudo fora do scanner que escreve no
+   Firestore) — `Settings.jsx`, `Backtest.jsx`, `Assets.jsx`, `Alerts.jsx`,
+   `Verification.jsx`, `Trades.jsx`, `AssetConfigPanel.jsx`,
+   `AddAssetForm.jsx`, `TelegramSettings.jsx`, `PineScript.jsx` e os módulos
+   que eles chamam (`pineParser.js`, `telegram.js`). **Nada encontrado** —
+   todo campo opcional já cai em literal, `??`/`||`, ou fallback garantido.
+3. **`scripts/` e `server/`** — `adminEntities.js`/`adminEntitiesShadow.js`
+   (só repassam `data` do chamador, nenhum campo próprio pode ser
+   `undefined`), `adminPineConfig.js`/`adminTelegram.js` (hoje **não fazem
+   nenhuma escrita no Firestore**, só leitura), `run-scan.mjs`/
+   `run-backtest.mjs`/`backtestEntities.js` (o backtest nunca toca Firestore
+   real, e herda o `fakeBackend.js` já endurecido — o workflow `backtest.yml`
+   agora pegaria esta classe de bug também), `server/index.js` (única
+   escrita é do webhook do TradingView, payload vem de JSON parseado — JSON
+   não tem `undefined`, estruturalmente seguro). **Nada encontrado.**
+4. **Paridade entre os três backends** (fake/browser/cron) — achado real:
+   `src/api/entities.js` tem um método `set(id, data)` (usado só por
+   `StrategyConfig`/`TelegramFilters`, os dois singletons de config) que
+   **não existia em `fakeBackend.js` nem em `scripts/adminEntities.js`** —
+   nem as duas coleções (`StrategyConfig`/`TelegramFilters`) estavam no
+   `COLLECTIONS` do fake. Nenhum teste jamais exercitou essa escrita através
+   do fake — exatamente a mesma lacuna estrutural que escondeu o bug
+   original por 2 semanas, só que num caminho diferente. **Verificado
+   independentemente** (não só o relato do agente): confirmado por grep que
+   `entities.js:86-91` tem o método e nem `fakeBackend.js` nem
+   `adminEntities.js` têm equivalente. Não é bug vivo hoje (checagem cruzada
+   `SYNCED_STRATEGY_KEYS`×`DEFAULTS` não achou nenhuma chave sem default),
+   mas era um ponto cego real pra qualquer regressão futura.
+
+**Corrigido**: `set(id, data)` adicionado ao `fakeBackend.js` (mesma
+semântica de merge do `setDoc({merge:true})` real, guardado por
+`assertNoUndefinedFields`), `StrategyConfig`/`TelegramFilters` adicionados ao
+`COLLECTIONS`, 3 testes novos em `fakeBackend.test.js` (novo arquivo — não
+existia teste dedicado ao fake em si) provando que o guard pega `undefined`
+top-level, `undefined` aninhado, e que o merge preserva campos não tocados.
+Os 4 pontos frágeis do item 1 corrigidos com `?? null`, mesma convenção.
+`scripts/adminEntities.js` **não** ganhou `set()` — decisão deliberada
+preexistente (`.claude/rules/firestore-concurrency.md`): o cron escreve
+`strategyConfig`/`telegramFilters` direto via `firebase-admin` em
+`adminPineConfig.js`/`adminTelegram.js` (hoje só leitura), não por esse
+adaptador — replicar `set()` lá criaria um método morto, não uma proteção
+real.
+
+**Conclusão da varredura**: com estas correções, não restou nenhuma
+instância conhecida da classe de bug "campo `undefined` gravado no
+Firestore" em nenhuma parte do repositório — nem no motor (scanner.js), nem
+na UI, nem no cron/servidor, nem no adaptador. `npm run lint && npm test &&
+npm run build && node scripts/build-scan.mjs && node
+scripts/build-backtest.mjs && npm run build:scan-shadow` — 1203 testes (3
+novos), lint e build limpos, os 4 bundles compilam.
