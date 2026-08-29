@@ -16520,6 +16520,41 @@ existiam no objeto original — corrigidos no teste, não no código-fonte
 (`calculateRangeFilter` sempre devolve as 6 chaves juntas na produção real;
 não havia bug ali).
 
+### Correção 2 — `assertNoUndefinedFields` era só top-level (achado real, Codex PR #266)
+
+**A primeira versão do guard só checava as chaves de 1º nível do objeto.**
+Firestore rejeita `undefined` em QUALQUER profundidade — um objeto aninhado
+(`SystemLog.details`) ou um elemento de array com `undefined` dentro quebra
+a escrita real do mesmo jeito que um campo top-level, e o guard raso deixava
+passar. Corrigido: `assertNoUndefinedFields` agora percorre recursivamente
+objetos e arrays (`walk`), preservando o caminho (`details.score`,
+`op_created_dates[0]`) na mensagem de erro.
+
+Rodar a suíte com a versão recursiva achou **mais uma leva real**, desta vez
+quase toda em `details:` de `SystemLog.create`/`logInfo`/`logWarn` — o
+padrão mais comum: `score: signal.context?.score` (11 pontos de chamada,
+logs de rejeição/retry das cascatas RF e RF-1h) e `structure_type`/
+`anchor_level` (gatilho de reteste, item 40) sem fallback. Também
+`VerificationTask.createUnique`'s `score` (já isolado por try/catch próprio
+— item 45, não bloqueava criação de operação, mas a própria
+`VerificationTask` nunca persistia) e `stampRetestFields` (6 campos do
+gate de reteste — `retestEnabled` é opt-in/desligado por padrão, então
+impacto zero em produção hoje, mas seria a mesma armadilha se o usuário
+ligar o flag). A maioria dos 11 pontos de `logInfo`/`logWarn` tem um nível
+de proteção que `SystemLog.create` direto não tem: `src/lib/logger.js`
+enfileira e o `flush()` interno tem try/catch próprio ("logging nunca deve
+derrubar o app") — uma falha ali não propaga pra `persistScanResults`, só
+perde o log silenciosamente (fica reenfileirando pra sempre, sem nunca
+conseguir persistir). Os dois `SystemLog.create` DIRETOS (sem passar por
+`logger.js`) — diagnóstico de "operações ativas duplicadas", um caso raro/
+quase-impossível em operação normal — não têm essa proteção; ali um
+`created_date` ausente crasharia com o mesmo raio de explosão do achado
+principal. Todos corrigidos com `?? null`, mesma convenção.
+
+Com essa 2ª rodada, foram **~20 campos** ao todo (contando os 2 achados),
+não os 8 da primeira leitura — o número real só apareceu depois do guard
+ficar tão rigoroso quanto o Firestore de verdade.
+
 ### Verificação
 
 Teste de regressão exato no ponto onde o bug vivia

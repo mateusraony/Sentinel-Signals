@@ -779,11 +779,11 @@ async function evaluateRetestGate({ symbol, direction, level, signalCandleTime, 
 // retest gate actually participated in this entry.
 function stampRetestFields(opData, gate) {
   opData.retest_gate_enabled = true;
-  opData.retest_anchor_level = gate.anchorLevel;
-  opData.retest_price = gate.retestPrice;
-  opData.retest_candle_time = gate.retestCandleTime;
-  opData.retest_bars_to_confirm = gate.barsToConfirm;
-  opData.retest_touch_mode = gate.touchMode;
+  opData.retest_anchor_level = gate.anchorLevel ?? null;
+  opData.retest_price = gate.retestPrice ?? null;
+  opData.retest_candle_time = gate.retestCandleTime ?? null;
+  opData.retest_bars_to_confirm = gate.barsToConfirm ?? null;
+  opData.retest_touch_mode = gate.touchMode ?? null;
 }
 
 // ─── Fase 2 rodada 2: displacement candle gate (opt-in, off by default,
@@ -1923,7 +1923,7 @@ export async function persistScanResults(scanResult) {
         op_ids: activeOpsAtStart.map(o => o.id),
         op_statuses: activeOpsAtStart.map(o => o.status),
         op_cascades: activeOpsAtStart.map(o => o.cascade),
-        op_created_dates: activeOpsAtStart.map(o => o.created_date),
+        op_created_dates: activeOpsAtStart.map(o => o.created_date ?? null),
       },
     });
   }
@@ -2156,7 +2156,7 @@ export async function persistScanResults(scanResult) {
           timeframe: signal.timeframe,
           source: signal.source,
           priority: signal.priority,
-          score: signal.context?.score,
+          score: signal.context?.score ?? null,
           signal_context: signal.context,
           reason: signal.reason,
           status: 'pending',
@@ -2299,7 +2299,7 @@ export async function persistScanResults(scanResult) {
                     activeOp = created.doc;
                     if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
                     logInfo('scanner', `${signal.symbol} entrada criada (RF 1h condicionado ao 4h) — experimental`, {
-                      score: signal.context?.score, rr: rr.rr1,
+                      score: signal.context?.score ?? null, rr: rr.rr1,
                     }, { symbol: signal.symbol, timeframe: '15m' });
                   }
                 }
@@ -2356,7 +2356,7 @@ export async function persistScanResults(scanResult) {
                   activeOp = created.doc;
                   if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
                   logInfo('scanner', `${signal.symbol} entrada criada (RF 1h independente do 4h) — experimental`, {
-                    score: signal.context?.score, rr: rr.rr1,
+                    score: signal.context?.score ?? null, rr: rr.rr1,
                   }, { symbol: signal.symbol, timeframe: '15m' });
                 }
               }
@@ -2371,7 +2371,7 @@ export async function persistScanResults(scanResult) {
           message: `${asset.symbol} ${signal.timeframe.toUpperCase()} ${signal.signal_type} — entrada bloqueada (requer tendência 4H confirmada)`,
           symbol: asset.symbol,
           timeframe: signal.timeframe,
-          details: { direction: signal.signal_type, score: signal.context?.score, reason: 'requires_4h_trend' },
+          details: { direction: signal.signal_type, score: signal.context?.score ?? null, reason: 'requires_4h_trend' },
         });
       } else if (!pineConfig.rf1hExclusiveEnabled) {
         // 4H signal — verify 4H trend alignment explicitly before any entry.
@@ -2424,7 +2424,7 @@ export async function persistScanResults(scanResult) {
               message: `${asset.symbol} 4H ${signal.signal_type} — tendência 4H desalinhada (dir=${tf4hDir}), entrada bloqueada`,
               symbol: asset.symbol,
               timeframe: '4h',
-              details: { signal_dir: sigDir, tf4h_dir: tf4hDir, score: signal.context?.score },
+              details: { signal_dir: sigDir, tf4h_dir: tf4hDir, score: signal.context?.score ?? null },
             });
           } else {
             const regime = evaluateRegime(tf4hData, pineConfig);
@@ -2511,7 +2511,7 @@ export async function persistScanResults(scanResult) {
                   message: `${asset.symbol} 4h ${signal.signal_type} — aguardando reteste do nível ${retestGate.anchorLevel ?? 'n/d'} antes de confirmar no 15m`,
                   symbol: asset.symbol,
                   timeframe: '15m',
-                  details: { reason: 'awaiting_retest', retest_reason: retestGate.reason, anchor_level: retestGate.anchorLevel },
+                  details: { reason: 'awaiting_retest', retest_reason: retestGate.reason, anchor_level: retestGate.anchorLevel ?? null },
                 });
               } else {
               // 15m confirmation required — no entry without it (unless
@@ -2562,7 +2562,7 @@ export async function persistScanResults(scanResult) {
                     activeOp = created.doc;
                     if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
                     logInfo('scanner', `${signal.symbol} entrada criada — Pine sync ativo`, {
-                      score: signal.context?.score, atr_mult: pineConfig.trailAtrMult, tp1R: pineConfig.tp1R, rr: rr.rr1,
+                      score: signal.context?.score ?? null, atr_mult: pineConfig.trailAtrMult, tp1R: pineConfig.tp1R, rr: rr.rr1,
                     }, { symbol: signal.symbol, timeframe: '15m' });
                   }
                 }
@@ -2575,7 +2575,7 @@ export async function persistScanResults(scanResult) {
                   message: `${asset.symbol} 4h ${signal.signal_type} — aguardando confirmação no 15m`,
                   symbol: asset.symbol,
                   timeframe: '15m',
-                  details: { signal_tf: '4h', direction: signal.signal_type, score: signal.context?.score },
+                  details: { signal_tf: '4h', direction: signal.signal_type, score: signal.context?.score ?? null },
                 });
               }
               }
@@ -2667,7 +2667,7 @@ export async function persistScanResults(scanResult) {
               message: `${asset.symbol} 1H SMC ${signal.signal_type} — aguardando reteste do nível ${retestGate.anchorLevel ?? 'n/d'} antes de confirmar no 5m`,
               symbol: asset.symbol,
               timeframe: '5m',
-              details: { reason: 'awaiting_retest', retest_reason: retestGate.reason, anchor_level: retestGate.anchorLevel },
+              details: { reason: 'awaiting_retest', retest_reason: retestGate.reason, anchor_level: retestGate.anchorLevel ?? null },
             });
           } else {
           const legBounds = { legHigh: signal.context?.ote_leg_high, legLow: signal.context?.ote_leg_low };
@@ -2742,7 +2742,7 @@ export async function persistScanResults(scanResult) {
                 activeOp = created.doc;
                 if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
                 logInfo('scanner', `${signal.symbol} entrada SMC criada (1h→5m)`, {
-                  score: signal.context?.score, structure_type: signal.context?.structure_type, trigger: confirmed5m.trigger, rr: rr.rr1,
+                  score: signal.context?.score ?? null, structure_type: signal.context?.structure_type ?? null, trigger: confirmed5m.trigger, rr: rr.rr1,
                 }, { symbol: signal.symbol, timeframe: '5m' });
               }
             }
@@ -3131,7 +3131,7 @@ export async function persistScanResults(scanResult) {
       message: `${sig.symbol} 4h ${sig.signal_type} — confirmação 15m OK, entrada criada`,
       symbol: sig.symbol,
       timeframe: '15m',
-      details: { signal_tf: '4h', direction: sig.signal_type, score: sig.context?.score, rr: rr.rr1, retry: true },
+      details: { signal_tf: '4h', direction: sig.signal_type, score: sig.context?.score ?? null, rr: rr.rr1, retry: true },
     });
   }
 
@@ -3223,7 +3223,7 @@ export async function persistScanResults(scanResult) {
         message: `${sig.symbol} 1h RF ${sig.signal_type} — confirmação 15m OK, entrada criada (condicionado ao 4h, experimental)`,
         symbol: sig.symbol,
         timeframe: '15m',
-        details: { signal_tf: '1h', direction: sig.signal_type, score: sig.context?.score, rr: rr.rr1, retry: true },
+        details: { signal_tf: '1h', direction: sig.signal_type, score: sig.context?.score ?? null, rr: rr.rr1, retry: true },
       });
     }
   }
@@ -3318,7 +3318,7 @@ export async function persistScanResults(scanResult) {
         message: `${sig.symbol} 1h RF ${sig.signal_type} — confirmação 15m OK, entrada criada (independente do 4h, experimental)`,
         symbol: sig.symbol,
         timeframe: '15m',
-        details: { signal_tf: '1h', direction: sig.signal_type, score: sig.context?.score, rr: rr.rr1, retry: true },
+        details: { signal_tf: '1h', direction: sig.signal_type, score: sig.context?.score ?? null, rr: rr.rr1, retry: true },
       });
     }
   }
@@ -4122,7 +4122,7 @@ async function logDuplicateActiveOpsPriceCheck(assetKey, ops) {
       op_statuses: sorted.map(o => o.status),
       op_cascades: sorted.map(o => o.cascade),
       op_sides: sorted.map(o => o.side),
-      op_created_dates: sorted.map(o => o.created_date),
+      op_created_dates: sorted.map(o => o.created_date ?? null),
     },
   });
 }

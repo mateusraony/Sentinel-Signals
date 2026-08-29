@@ -31,14 +31,30 @@ function matches(doc, filters) {
 // suite — the fake and the real backend diverged on the one behavior that
 // mattered. Throws with the same wording Firestore itself uses, so a test
 // failure here reads the same as a real production crash would.
+// Recursive (Codex review, PR #266): Firestore rejects `undefined` at ANY
+// depth, not just top-level fields — a nested object (e.g. SystemLog.details)
+// or array element with `undefined` inside it crashes the real write exactly
+// like a top-level one does. `walk` tracks a dotted/bracketed path so the
+// thrown field name still points at the actual offending key, not just the
+// top-level container.
 function assertNoUndefinedFields(data, collectionName) {
-  for (const [field, value] of Object.entries(data)) {
+  function walk(value, path) {
     if (value === undefined) {
       throw new Error(
-        `Value for argument "data" is not a valid Firestore document. Cannot use "undefined" as a Firestore value (found in field "${field}"). ` +
+        `Value for argument "data" is not a valid Firestore document. Cannot use "undefined" as a Firestore value (found in field "${path}"). ` +
         `[fakeBackend, collection ${collectionName}] If you want to ignore undefined values, enable \`ignoreUndefinedProperties\`.`
       );
     }
+    if (Array.isArray(value)) {
+      value.forEach((item, i) => walk(item, `${path}[${i}]`));
+    } else if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
+      for (const [key, nested] of Object.entries(value)) {
+        walk(nested, path ? `${path}.${key}` : key);
+      }
+    }
+  }
+  for (const [field, value] of Object.entries(data)) {
+    walk(value, field);
   }
 }
 
