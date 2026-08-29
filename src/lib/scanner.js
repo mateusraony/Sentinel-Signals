@@ -453,12 +453,17 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
     // it under its own field so getEntryReferenceTime's callers (P0-g guard,
     // Time Stop) and any future reader can tell "confirmed by a dedicated
     // 15m candle" apart from "confirmed by skipping that step entirely".
-    entry_candle_time_15m: confirmation15m?.bypassed15m ? undefined : confirmation15m?.entryCandleTime,
-    entry_candle_time_4h: confirmation15m?.bypassed15m ? confirmation15m?.entryCandleTime : undefined,
+    // `null`, never `undefined`, for the "not applicable" branch — Firestore
+    // rejects any field with a literal `undefined` value on write (client
+    // AND admin SDK, neither has ignoreUndefinedProperties set), so an
+    // `undefined` here crashed EVERY normal (non-bypassed) op creation in
+    // production — docs/known-risks.md item 136.
+    entry_candle_time_15m: confirmation15m?.bypassed15m ? null : (confirmation15m?.entryCandleTime ?? null),
+    entry_candle_time_4h: confirmation15m?.bypassed15m ? (confirmation15m?.entryCandleTime ?? null) : null,
     skip_15m_confirmation: confirmation15m?.bypassed15m === true,
-    origin_4h_price: sig.price_at_signal,
-    tier: tf4hData.tier?.tier,
-    adx_at_entry: tf4hData.adx?.adx,
+    origin_4h_price: sig.price_at_signal ?? null,
+    tier: tf4hData.tier?.tier ?? null,
+    adx_at_entry: tf4hData.adx?.adx ?? null,
     chop_at_entry: tf4hData.chop,
     // tf4hData.tier.timeStopBars is always calibrated in 4h bars (tier.js).
     // The native path stamps signal_timeframe:'4h', so the exit loop's
@@ -493,7 +498,7 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
     candle_status: 'CLOSED',
     data_status: 'LIVE',
     signal_reasons: sig.context?.reasons || [],
-    rf_filter_value: sig.context?.rf_value,
+    rf_filter_value: sig.context?.rf_value ?? null,
     invalidates_if: isBuy
       ? 'Candle fechar abaixo do Range Filter'
       : 'Candle fechar acima do Range Filter',
@@ -1027,15 +1032,17 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     candle_open_time: tf1hData.lastCandleOpenTime,
     candle_close_time: tf1hData.lastCandleTime,
     entry_candle_time_5m: confirmation5m?.entryCandleTime,
-    origin_1h_price: sig.price_at_signal,
+    origin_1h_price: sig.price_at_signal ?? null,
     // Fase 3 (docs/known-risks.md item 42): tier/adx_at_entry/chop_at_entry
     // are the SAME fields buildTradeOpData (RF) already stamps — not new
     // fields, just also populated here when pineConfig.smcTierEnabled
-    // populated tf1hData.tier in scanAsset. `?? 96` preserves today's exact
-    // literal when the flag is off or tier is unavailable — buildTradeOpData
-    // doesn't need this fallback because tier on 4h is unconditional.
-    tier: tf1hData.tier?.tier,
-    adx_at_entry: tf1hData.adx?.adx,
+    // populated tf1hData.tier in scanAsset. `?? null` preserves today's
+    // exact behavior when the flag is off or tier is unavailable — a bare
+    // `tf1hData.tier?.tier` left this `undefined` whenever smcTierEnabled
+    // was off (the default), crashing the Firestore write on every SMC op
+    // creation. docs/known-risks.md item 136.
+    tier: tf1hData.tier?.tier ?? null,
+    adx_at_entry: tf1hData.adx?.adx ?? null,
     chop_at_entry: tf1hData.chop,
     // Mesmo override do item 109 aplicado na cascata SMC — aqui o valor já
     // está em velas de 1h (o timeframe de sinal desta cascata), sem a
@@ -1048,8 +1055,8 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     tf_4h_direction: sig.context?.tf_4h_direction ?? null,
     tf_1h_direction: sig.context?.tf_1h_direction ?? null,
     bias: sig.signal_type === 'BUY' ? 'bullish' : 'bearish',
-    structure_type: sig.context?.structure_type,
-    pd_zone: sig.context?.pd_zone,
+    structure_type: sig.context?.structure_type ?? null,
+    pd_zone: sig.context?.pd_zone ?? null,
     // Observability only (item 38) — the leg the 1h break anchored, and the
     // zone the 5m entry candle was actually classified into against it.
     // Never consumed by stop/TP math (that stays computeStructuralStop's

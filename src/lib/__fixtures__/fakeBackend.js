@@ -22,6 +22,26 @@ function matches(doc, filters) {
   return Object.entries(filters).every(([field, value]) => matchesFilter(field, value, doc[field]));
 }
 
+// docs/known-risks.md item 136 — real Firestore (client AND admin SDK,
+// neither configured with ignoreUndefinedProperties) rejects ANY field with
+// a literal `undefined` value on write. This fake silently accepted it
+// (plain object spread into a Map), which is exactly how a 2-week production
+// outage (buildTradeOpData writing `entry_candle_time_4h: undefined` on
+// every normal op) went undetected by the entire scannerStateMachine.test.js
+// suite — the fake and the real backend diverged on the one behavior that
+// mattered. Throws with the same wording Firestore itself uses, so a test
+// failure here reads the same as a real production crash would.
+function assertNoUndefinedFields(data, collectionName) {
+  for (const [field, value] of Object.entries(data)) {
+    if (value === undefined) {
+      throw new Error(
+        `Value for argument "data" is not a valid Firestore document. Cannot use "undefined" as a Firestore value (found in field "${field}"). ` +
+        `[fakeBackend, collection ${collectionName}] If you want to ignore undefined values, enable \`ignoreUndefinedProperties\`.`
+      );
+    }
+  }
+}
+
 function applySort(arr, sort) {
   if (!sort) return arr;
   const descending = sort.startsWith('-');
@@ -50,18 +70,21 @@ export function createFakeBackend() {
         return arr;
       },
       async create(data) {
+        assertNoUndefinedFields(data, name);
         const id = nextId(name);
         const doc = { created_date: new Date().toISOString(), ...data, id };
         store.set(id, doc);
         return doc;
       },
       async createUnique(id, data) {
+        assertNoUndefinedFields(data, name);
         if (store.has(id)) return { created: false, existing: store.get(id) };
         const doc = { created_date: new Date().toISOString(), ...data, id };
         store.set(id, doc);
         return { created: true, doc };
       },
       async update(id, data) {
+        assertNoUndefinedFields(data, name);
         const doc = { ...(store.get(id) || {}), ...data, id };
         store.set(id, doc);
         return doc;
@@ -70,6 +93,7 @@ export function createFakeBackend() {
         store.delete(id);
       },
       async bulkCreate(items) {
+        items.forEach((item) => assertNoUndefinedFields(item, name));
         return items.map((item) => {
           const id = nextId(name);
           const doc = { created_date: new Date().toISOString(), ...item, id };
@@ -89,6 +113,7 @@ export function createFakeBackend() {
   async function releaseScanLock() {}
 
   async function createTradeOpIfNoneActive(assetId, docId, data, cascade) {
+    assertNoUndefinedFields(data, 'TradeOperation');
     const opStore = stores.TradeOperation;
     const anchorId = buildActiveOpsAnchorId(assetId, cascade);
     const pointerOpId = activeOps.get(anchorId) || null;
@@ -138,6 +163,7 @@ export function createFakeBackend() {
         delete safePatch[stopAdvanceMarkerField];
       }
     }
+    assertNoUndefinedFields(safePatch, 'TradeOperation');
     opStore.set(opId, { ...current, ...safePatch });
     const anchorId = buildActiveOpsAnchorId(assetId, cascade);
     if (isTerminalStatus(patch.status) && assetId && activeOps.get(anchorId) === opId) {
