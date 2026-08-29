@@ -1031,7 +1031,7 @@ export function buildSmcTradeOpData(sig, tf1hData, pineConfig, confirmation5m) {
     exit_mode: 'HYBRID_RF_ATR',
     candle_open_time: tf1hData.lastCandleOpenTime,
     candle_close_time: tf1hData.lastCandleTime,
-    entry_candle_time_5m: confirmation5m?.entryCandleTime,
+    entry_candle_time_5m: confirmation5m?.entryCandleTime ?? null,
     origin_1h_price: sig.price_at_signal ?? null,
     // Fase 3 (docs/known-risks.md item 42): tier/adx_at_entry/chop_at_entry
     // are the SAME fields buildTradeOpData (RF) already stamps — not new
@@ -2441,7 +2441,7 @@ export async function persistScanResults(scanResult) {
                 message: `${asset.symbol} 4H ${signal.signal_type} — regime bloqueado (${!regime.adxOk ? 'ADX fraco' : ''}${!regime.adxOk && !regime.chopOk ? ' + ' : ''}${!regime.chopOk ? 'mercado lateralizado' : ''})`,
                 symbol: asset.symbol,
                 timeframe: '4h',
-                details: { adx: tf4hData.adx?.adx, chop: tf4hData.chop, tier: tf4hData.tier?.tier, adxOk: regime.adxOk, chopOk: regime.chopOk },
+                details: { adx: tf4hData.adx?.adx ?? null, chop: tf4hData.chop ?? null, tier: tf4hData.tier?.tier ?? null, adxOk: regime.adxOk, chopOk: regime.chopOk },
               });
               continue;
             }
@@ -2634,7 +2634,7 @@ export async function persistScanResults(scanResult) {
             message: `${asset.symbol} 1H SMC ${signal.signal_type} — regime bloqueado (${!regime.adxOk ? 'ADX fraco' : ''}${!regime.adxOk && !regime.chopOk ? ' + ' : ''}${!regime.chopOk ? 'mercado lateralizado' : ''})`,
             symbol: asset.symbol,
             timeframe: '1h',
-            details: { adx: tf1hData.adx?.adx, chop: tf1hData.chop, tier: tf1hData.tier?.tier, adxOk: regime.adxOk, chopOk: regime.chopOk },
+            details: { adx: tf1hData.adx?.adx ?? null, chop: tf1hData.chop ?? null, tier: tf1hData.tier?.tier ?? null, adxOk: regime.adxOk, chopOk: regime.chopOk },
           });
           continue;
         }
@@ -2764,7 +2764,7 @@ export async function persistScanResults(scanResult) {
               details: {
                 signal_tf: '1h',
                 direction: signal.signal_type,
-                structure_type: signal.context?.structure_type,
+                structure_type: signal.context?.structure_type ?? null,
                 reason: confirmed5m.rejectReason,
                 ote_zone: confirmed5m.oteZone,
               },

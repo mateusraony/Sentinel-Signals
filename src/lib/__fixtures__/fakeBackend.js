@@ -13,6 +13,16 @@ import { matchesFilter } from '../queryFilters.js';
 const COLLECTIONS = [
   'MonitoredAsset', 'AssetState', 'SignalEvent', 'TradeOperation',
   'PriceAlert', 'SystemLog', 'User', 'VerificationTask',
+  // StrategyConfig/TelegramFilters (docs/known-risks.md item 136, final
+  // sweep): missing here entirely until now — src/api/entities.js has a
+  // 10th entity registration for each (`createEntity('strategyConfig')`/
+  // `createEntity('telegramFilters')`), used by their singleton `.set(id,
+  // data)` writes (Settings.jsx, Backtest.jsx, pineParser.js's
+  // syncPineToAssets, telegram.js's setTelegramFilters). No test exercised
+  // either through this fake before, so no test could ever have caught an
+  // undefined field in that write path — exactly the blind spot that let
+  // the original entry_candle_time_4h bug hide for two weeks.
+  'StrategyConfig', 'TelegramFilters',
 ];
 
 function matches(doc, filters) {
@@ -56,6 +66,26 @@ function assertNoUndefinedFields(data, collectionName) {
   for (const [field, value] of Object.entries(data)) {
     walk(value, field);
   }
+}
+
+// docs/known-risks.md item 136 (Codex review, PR #267) — Firestore's
+// `setDoc(ref, data, {merge:true})` recursively merges nested MAP fields
+// (a sibling key under a nested object not mentioned in `data` survives);
+// a plain top-level spread instead REPLACES the whole nested object,
+// silently diverging from what real Firestore does. Arrays are never
+// merged element-wise by Firestore even under `merge:true` — a provided
+// array value always fully replaces the existing one, so this only
+// recurses into plain objects, never arrays.
+function deepMergeFirestore(existing, incoming) {
+  const result = { ...existing };
+  for (const [key, value] of Object.entries(incoming)) {
+    const existingValue = existing?.[key];
+    const bothPlainObjects =
+      value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date) &&
+      existingValue !== null && typeof existingValue === 'object' && !Array.isArray(existingValue) && !(existingValue instanceof Date);
+    result[key] = bothPlainObjects ? deepMergeFirestore(existingValue, value) : value;
+  }
+  return result;
 }
 
 function applySort(arr, sort) {
@@ -107,6 +137,17 @@ export function createFakeBackend() {
       },
       async delete(id) {
         store.delete(id);
+      },
+      // Mirrors src/api/entities.js's `set(id, data)` (Firestore `setDoc`
+      // with `{ merge: true }`) — a MERGE write, unlike `update` above's
+      // shallow-spread-over-existing (same net effect for a flat singleton
+      // doc, but semantically distinct: `set` never requires the doc to
+      // pre-exist). Only used by StrategyConfig/TelegramFilters today.
+      async set(id, data) {
+        assertNoUndefinedFields(data, name);
+        const doc = { ...deepMergeFirestore(store.get(id) || {}, data), id };
+        store.set(id, doc);
+        return { id, ...data };
       },
       async bulkCreate(items) {
         items.forEach((item) => assertNoUndefinedFields(item, name));
