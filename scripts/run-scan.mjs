@@ -96,6 +96,7 @@ async function main() {
     await checkAssetHealthchecks();
   } catch (err) {
     console.warn('[scan] per-asset healthcheck failed (non-fatal):', err.message);
+    await alertIfQuotaExhausted(err?.message);
   }
 
   console.log(`[scan] finished in ${((Date.now() - started) / 1000).toFixed(1)}s`);
