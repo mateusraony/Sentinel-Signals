@@ -16822,3 +16822,76 @@ scan ao vivo — se o cruzamento só aconteceu no Futures do usuário e o Spot
 nunca cruzou, o backfill também não encontra nada, corretamente (não seria
 honesto inventar uma operação que o motor real, com o dado disponível, não
 confirmaria).
+
+### Addendum (2026-08-29) — incidente ao vivo: mecanismo DESLIGADO
+
+Poucos minutos depois do merge da correção pós-review acima, o usuário
+reativou a ENAUSDT em produção — o primeiro uso real do mecanismo. Dois
+problemas novos apareceram, nenhum pego pelo review anterior (que verificou
+correção de estado, não desempenho contra Firestore real):
+
+1. **O replay de 60 dias/15min contra o Firestore REAL nunca termina dentro
+   do timeout do job.** `backtest.yml`/`run-backtest.mjs` roda o mesmo
+   `runBacktest` contra um backend FAKE em memória (`backtestEntities.js`) —
+   5760 ticks ali são baratos. Contra o Firestore real, cada tick custa uma
+   ida-e-volta de rede de verdade (leituras/escritas de `AssetState`,
+   `TradeOperation`, `SignalEvent`, `MonitoredAsset`), e isso nunca foi
+   medido antes de religar em produção. Confirmado no histórico do GitHub
+   Actions: o passo `npm run backfill-check` rodou de 22:55:47 a 23:07:19
+   (**11m32s**) no job `33279731054` e foi `cancelled` pelo
+   `timeout-minutes: 12` do job — sem nunca terminar.
+2. **Como o processo foi morto (não terminou sozinho),
+   `backfill_check_status` nunca voltou a `'done'`/`'error'`** — a ENAUSDT
+   ficou presa em `'pending'`. Resultado: **cada ciclo seguinte do
+   `scan.yml` repetia o mesmo travamento** (confirmado: o job seguinte,
+   `33280125355`, já estava em progresso há minutos quando percebido). Como
+   `concurrency: group: scheduled-scan` serializa TODOS os runs do
+   workflow, isso atrasava o scan ao vivo dos 10 ativos, não só da ENAUSDT —
+   `continue-on-error: true` não protege disso (protege contra exit code
+   != 0, não contra estouro de timeout).
+3. **Achado relacionado, mesmo incidente, ainda mais sério em potencial**:
+   enquanto o replay roda, ele reaproveita `persistScanResults` (a MESMA
+   função do scan ao vivo) sob o relógio SIMULADO do `backtestEngine.js` —
+   que também escreve `MonitoredAsset.last_scan_at`/`scan_status`/
+   `scan_error`/`scan_error_since` (linha ~3963 de `scanner.js`) e
+   `AssetState` (o snapshot de indicador — RF/MACD/EMA/RSI — que os cards do
+   painel renderizam), usando `new Date()` que sob `installSimClock` reporta
+   o instante SIMULADO, não o real. A correção pós-review (item 3 da lista
+   acima) só isolou `TradeOperation` do replay — nunca isolou
+   `MonitoredAsset`/`AssetState`. Sintoma visto ao vivo no log do usuário:
+   `"ENAUSDT scan obsoleto (73043min atrás)"` e
+   `scan_error:"1d: Apenas 9 candles fechados disponíveis"` — ambos
+   coerentes com o replay estar ~9 dias dentro da janela simulada de 60 dias
+   (60d atrás + 9d ≈ 50,7 dias ≈ 73043min) quando o healthcheck do navegador
+   capturou o snapshot. Como o passo nunca chegou a terminar (item 1 acima),
+   não dá pra confirmar se isso se autocorrigia no tick final (quando o
+   relógio simulado alcança "agora") — só que fica errado por toda a
+   duração do replay, que já se provou poder passar de 11 minutos.
+
+**Ação tomada**: PR #269 desligou o passo `npm run backfill-check` do
+`scan.yml` (comentado, script/bundle continuam no repo intactos) — restaura
+o cadenciamento normal do scan ao vivo imediatamente. `MonitoredAsset`s já
+marcados `backfill_check_status:'pending'` (ex. ENAUSDT) ficam pendentes
+indefinidamente até o mecanismo ser redesenhado.
+
+**Antes de religar, precisa**:
+1. Rodar fora do grupo de concorrência `scheduled-scan` — um workflow
+   separado, com seu próprio timeout generoso, para nunca mais atrasar o
+   scan ao vivo não importa quanto o replay demore.
+2. Resolver o custo real por tick contra Firestore — seja reduzindo
+   drasticamente `BACKFILL_LOOKBACK_DAYS`, seja batchando leituras/escritas,
+   seja aceitando que um replay de produção sempre vai ser lento e
+   desenhando em torno disso (ex. rodar uma vez por dia, não a cada ciclo).
+3. Isolar `MonitoredAsset.last_scan_at`/`scan_status`/`scan_error`/
+   `scan_error_since` e `AssetState` do replay, mesmo princípio já aplicado
+   a `TradeOperation` (snapshot antes, restaura depois — sucesso ou falha,
+   `try/finally`) — sem isso o painel mostra dado histórico como se fosse
+   ao vivo durante toda a duração do replay.
+
+**Lição**: a `sentinel-trading-engine-review` da PR #268 cobriu corretude de
+estado (CAS, look-ahead, isolamento de `TradeOperation`) mas não cobriu
+desempenho/custo contra o backend REAL — `backtest.yml` nunca teria pegado
+isso porque roda contra um fake em memória. Qualquer mecanismo futuro que
+reaproveite `runBacktest`/`persistScanResults` contra produção precisa medir
+o custo real por tick ANTES de rodar dentro de um cron com timeout apertado,
+não depois.
