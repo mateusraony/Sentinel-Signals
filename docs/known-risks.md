@@ -16895,3 +16895,74 @@ isso porque roda contra um fake em memória. Qualquer mecanismo futuro que
 reaproveite `runBacktest`/`persistScanResults` contra produção precisa medir
 o custo real por tick ANTES de rodar dentro de um cron com timeout apertado,
 não depois.
+
+## 138. Alerta Telegram para cota do Firestore realmente esgotada (2026-08-30)
+
+### Contexto
+
+Consequência direta do incidente do item 137 (addendum): o replay preso em
+`'pending'` repetindo a cada ciclo do `scan.yml` não só atrasava o scan ao
+vivo (serializado por `concurrency: scheduled-scan`) — os logs do job
+mostraram `[scan] FAILED: Error: 8 RESOURCE_EXHAUSTED: Quota exceeded.`, ou
+seja a cota diária gratuita do Firestore (item 106/13) chegou a esgotar de
+verdade durante o incidente, não só ficar perto do limite. O guard existente
+(`scanner.js:4325-4351`, "Uso do Firestore projetado perto do limite diário
+gratuito") só grava um `logWarn` no `SystemLog` — não notifica Telegram, e é
+uma PROJEÇÃO (antes do estouro), não o estouro em si. O usuário só descobriu
+o incidente porque reativou um ativo manualmente e checou o Debug Log —
+perguntou "o que podemos fazer pra corrigir esse problema do Firestore" e
+pediu explicitamente o alerta Telegram para quando a cota estiver
+**realmente** esgotada, não só projetada perto do limite. Upgrade para o
+plano pago Blaze foi deliberadamente descartado como opção — restrição
+permanente do `CLAUDE.md` (usuário recusou cartão/custo), não sugerido.
+
+### Mecanismo implementado
+
+`scripts/adminTelegram.js:notifyFirestoreQuotaExhausted(errMessage)` — alerta
+"system" que ignora `shouldSend()` de propósito (mesmo padrão de
+`notifyAssetStale`, item 12): isto não é um sinal de trading sujeito a
+filtro de timeframe/prioridade/score, é "o scan não consegue mais escrever
+no Firestore".
+
+Detectado em dois pontos de `scripts/run-scan.mjs` (regex
+`/RESOURCE_EXHAUSTED/i` na mensagem de erro):
+
+1. **`main().catch(...)`** — falha não tratada até o topo (o caso confirmado
+   no log real do incidente do item 137, provavelmente `acquireScanLock` ou
+   equivalente).
+2. **`scanAllAssets()` retornando com falha por-ativo** — cobre o achado
+   original do item 106 (todos os ativos falhando com `RESOURCE_EXHAUSTED`,
+   um por um, sem que `main()` chegue a lançar) — sem este segundo ponto, o
+   caso mais comum historicamente (estouro "silencioso", scan "termina" sem
+   throw) nunca dispararia o alerta.
+
+**Dedup deliberadamente fail-OPEN, não fail-closed.** O marcador de
+cooldown (1h, `systemAlerts/firestoreQuota.last_alert_at`) também vive no
+Firestore — soa circular (alertar sobre o Firestore estar indisponível
+checando o Firestore), mas leitura e escrita têm cotas diárias SEPARADAS
+(item 106: leitura e escrita já estouraram 80%+ de forma independente uma
+da outra) — na maioria dos estouros reais (de escrita, o padrão mais comum
+observado), a leitura do marcador ainda funciona e o cooldown normal se
+aplica. Se a leitura do marcador também falhar (as duas cotas esgotadas, ou
+falha transitória de rede), o código falha ABERTO: alerta em toda passada
+em vez de arriscar ficar em silêncio durante o exato incidente que existe
+para reportar — mesmo espírito fail-open de `loadTelegramSources`
+(`adminTelegram.js`) e `getPineConfig` (`adminPineConfig.js`).
+
+### Escopo — só cron, não espelhado no navegador
+
+Diferente dos demais `notify*`, esta função **não** foi espelhada em
+`src/lib/telegram.js`. O incidente real e o pedido do usuário são sobre o
+canal 24h (`scan.yml`, que roda sem navegador aberto) — o painel no
+navegador não sofre o mesmo problema de "ninguém vê o Debug Log por horas"
+porque só roda com a aba aberta, e replicar o mecanismo lá sem um caso de
+uso real seria escopo além do pedido (`.claude/rules/operating-principles.md`
+— "menor alteração, maior ganho verificável").
+
+### Verificação
+
+`npm run lint && npm test && npm run build` — ver commit. Sem teste
+dedicado: mudança é puramente de infraestrutura de alerta (I/O de rede +
+Firestore), sem lógica de estado/transição de operação — fora do escopo de
+`.claude/rules/testing.md` (motor de trading). `node scripts/build-scan.mjs`
+confirma que o bundle do cron compila com a função nova.

@@ -4,7 +4,26 @@
 import { scanAllAssets, priceCheckActiveOps } from '../src/lib/scanner.js';
 import { backend } from '@/api/entities';
 import { assetHealthcheckReason, shouldAlertStale, shouldClearStaleAlert } from '../src/lib/assetHealthcheck.js';
-import { isTelegramConfigured, notifyAssetStale } from './adminTelegram.js';
+import { isTelegramConfigured, notifyAssetStale, notifyFirestoreQuotaExhausted } from './adminTelegram.js';
+
+// Real Firestore quota exhaustion (docs/known-risks.md item 138), distinct
+// from scanner.js's "projected near limit" warning (SystemLog-only, fires
+// BEFORE the quota is actually hit). This is the "it's actually hit now"
+// signal — checked against both (a) an uncaught top-level failure (item
+// 106/addendum: acquireScanLock or similar throwing all the way up) and (b)
+// per-asset scan errors that scanAllAssetsInner already swallows internally
+// (item 106 original finding: every asset failing with RESOURCE_EXHAUSTED
+// while main() itself completes without throwing).
+function isFirestoreQuotaExhausted(message) {
+  return /RESOURCE_EXHAUSTED/i.test(String(message || ''));
+}
+
+async function alertIfQuotaExhausted(message) {
+  if (!isFirestoreQuotaExhausted(message) || !isTelegramConfigured()) return;
+  await notifyFirestoreQuotaExhausted(message).catch((e) =>
+    console.warn('[scan] Falha ao notificar cota do Firestore (não crítico):', e.message)
+  );
+}
 
 // Per-asset dead-man's-switch (docs/known-risks.md item 12): the
 // healthchecks.io ping below only reports the WHOLE scan pass as
@@ -67,6 +86,8 @@ async function main() {
   const failed = results.filter((r) => !r.success);
   console.log(`[scan] scanAllAssets: ${total} ativo(s), ${failed.length} falha(s)`);
   failed.forEach((r) => console.error(`[scan]   ${r.symbol}: ${r.error}`));
+  const quotaFailure = failed.find((r) => isFirestoreQuotaExhausted(r.error));
+  if (quotaFailure) await alertIfQuotaExhausted(quotaFailure.error);
 
   await priceCheckActiveOps();
   console.log('[scan] priceCheckActiveOps done');
@@ -83,6 +104,7 @@ async function main() {
 
 main().catch(async (err) => {
   console.error('[scan] FAILED:', err);
+  await alertIfQuotaExhausted(err?.message);
   await pingHealthcheck('/fail');
   process.exitCode = 1;
 });

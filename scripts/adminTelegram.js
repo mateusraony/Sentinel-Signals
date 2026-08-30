@@ -291,6 +291,50 @@ export async function notifyAssetStale(asset, reason) {
   );
 }
 
+// System alert for genuine Firestore quota exhaustion (docs/known-risks.md
+// item 138) — distinct from scanner.js's "projeted near limit" logWarn
+// (SystemLog-only, never reaches Telegram). Bypasses shouldSend() like
+// notifyAssetStale above: this isn't a trading signal, it's "the scan can't
+// write to Firestore at all right now".
+//
+// The dedup marker below is ALSO a Firestore doc, which sounds circular —
+// but it's deliberately fail-OPEN: reads/writes have separate daily quotas
+// (item 106 — reads and writes have hit 80%+ independently of each other),
+// so the marker read often still succeeds even while the write that
+// triggered this alert failed, giving real cooldown. If the marker read
+// itself fails too (both quotas exhausted, or transient network), this
+// alerts on every pass instead of risking silence during the exact outage
+// it exists to report — same fail-open spirit as loadTelegramSources above.
+const QUOTA_ALERT_COOLDOWN_MS = 60 * 60 * 1000;
+
+export async function notifyFirestoreQuotaExhausted(errMessage) {
+  const ref = getFirestore().collection('systemAlerts').doc('firestoreQuota');
+  let shouldAlert = true;
+  try {
+    const snap = await ref.get();
+    const lastAt = snap.exists && snap.data().last_alert_at ? new Date(snap.data().last_alert_at).getTime() : 0;
+    shouldAlert = !lastAt || Date.now() - lastAt > QUOTA_ALERT_COOLDOWN_MS;
+  } catch (e) {
+    console.warn('[adminTelegram] Falha ao checar dedup de cota do Firestore, alertando mesmo assim:', e.message);
+  }
+  if (!shouldAlert) return false;
+  const delivered = await send(
+    `🚨 <b>Cota do Firestore esgotada</b>\n\n` +
+    `O scan ao vivo está falhando com <code>RESOURCE_EXHAUSTED</code> — nenhuma ` +
+    `operação nova pode ser aberta/atualizada enquanto isso durar.\n\n` +
+    `📝 ${errMessage || 'Quota exceeded.'}\n\n` +
+    `<i>⚡ CryptoRadar — cota reseta ~meia-noite Pacific (~07:00 UTC)</i>`
+  );
+  if (delivered) {
+    try {
+      await ref.set({ last_alert_at: new Date().toISOString() });
+    } catch (e) {
+      console.warn('[adminTelegram] Falha ao gravar dedup de cota do Firestore (não crítico):', e.message);
+    }
+  }
+  return delivered;
+}
+
 export async function notifyStopHit(op, price) {
   if (!(await shouldSend('stop_hit', op))) return;
   const beMsg = op.tp1_hit ? '(breakeven — sem prejuízo)' : '(stop inicial)';
