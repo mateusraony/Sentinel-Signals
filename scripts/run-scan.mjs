@@ -9,11 +9,14 @@ import { isTelegramConfigured, notifyAssetStale, notifyFirestoreQuotaExhausted }
 // Real Firestore quota exhaustion (docs/known-risks.md item 138), distinct
 // from scanner.js's "projected near limit" warning (SystemLog-only, fires
 // BEFORE the quota is actually hit). This is the "it's actually hit now"
-// signal — checked against both (a) an uncaught top-level failure (item
-// 106/addendum: acquireScanLock or similar throwing all the way up) and (b)
+// signal — checked against (a) an uncaught top-level failure (item
+// 106/addendum: acquireScanLock or similar throwing all the way up), (b)
 // per-asset scan errors that scanAllAssetsInner already swallows internally
 // (item 106 original finding: every asset failing with RESOURCE_EXHAUSTED
-// while main() itself completes without throwing).
+// while main() itself completes without throwing), and (c) per-op price-check
+// errors that priceCheckActiveOpsInner also swallows internally via
+// logError (fire-and-forget, never propagates on its own — scanner.js now
+// returns { errors } from that loop specifically so this can see them).
 function isFirestoreQuotaExhausted(message) {
   return /RESOURCE_EXHAUSTED/i.test(String(message || ''));
 }
@@ -89,8 +92,10 @@ async function main() {
   const quotaFailure = failed.find((r) => isFirestoreQuotaExhausted(r.error));
   if (quotaFailure) await alertIfQuotaExhausted(quotaFailure.error);
 
-  await priceCheckActiveOps();
+  const { errors: priceCheckErrors } = await priceCheckActiveOps();
   console.log('[scan] priceCheckActiveOps done');
+  const priceCheckQuotaFailure = priceCheckErrors.find((e) => isFirestoreQuotaExhausted(e.error));
+  if (priceCheckQuotaFailure) await alertIfQuotaExhausted(priceCheckQuotaFailure.error);
 
   try {
     await checkAssetHealthchecks();

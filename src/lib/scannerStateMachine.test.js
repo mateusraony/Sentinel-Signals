@@ -1462,6 +1462,28 @@ describe('priceCheckActiveOps — price-based transitions', () => {
     expect(backend._get('TradeOperation', 'op-terminal')).toEqual(terminal); // byte-identical, untouched
     expect(backend._get('TradeOperation', 'op1').status).toBe('RUNNER_ACTIVE');
   });
+
+  // docs/known-risks.md item 138 — a per-op write failure here (e.g. a real
+  // Firestore RESOURCE_EXHAUSTED) used to be swallowed by logError alone
+  // (fire-and-forget, never propagates) with no way for the caller
+  // (scripts/run-scan.mjs) to detect and alert on it. priceCheckActiveOps now
+  // returns { errors } so that caller can see it — this proves the error is
+  // surfaced AND that the existing per-op isolation is unchanged (the other
+  // op still gets processed normally in the same pass).
+  it('surfaces a per-op write failure in the returned errors without aborting the other ops', async () => {
+    backend._seed('TradeOperation', makeOp());
+    backend._seed('TradeOperation', makeOp({ id: 'op2', symbol: 'ETHUSDT', asset_id: 'asset2' }));
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(104);
+    const originalTransition = backend.tradeOps.transitionTradeOp.bind(backend.tradeOps);
+    vi.spyOn(backend.tradeOps, 'transitionTradeOp').mockImplementation(async (opId, ...rest) => {
+      if (opId === 'op1') throw new Error('8 RESOURCE_EXHAUSTED: Quota exceeded.');
+      return originalTransition(opId, ...rest);
+    });
+    const { errors } = await priceCheckActiveOps();
+    expect(errors).toEqual([{ symbol: 'BTCUSDT', error: '8 RESOURCE_EXHAUSTED: Quota exceeded.' }]);
+    expect(backend._get('TradeOperation', 'op1').status).toBe('SIGNAL_CONFIRMED'); // untouched by the failed write
+    expect(backend._get('TradeOperation', 'op2').status).toBe('RUNNER_ACTIVE'); // other op still processed
+  });
 });
 
 // docs/known-risks.md item 46. A gestão é congelada NA CRIAÇÃO
