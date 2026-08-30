@@ -241,6 +241,34 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvance
   });
 }
 
+// Mirrors src/api/entities.js's makeResilientLogEntity — same reasoning,
+// same real incident (docs/known-risks.md item 138 addendum): a SystemLog
+// write failure must never abort the real scan work in persistScanResults,
+// only the generic createEntity() factory stays untouched (a genuine
+// TradeOperation/MonitoredAsset/SignalEvent write failure must keep
+// throwing — P0-h, .claude/rules/trading-engine.md).
+function makeResilientLogEntity(entity) {
+  return {
+    ...entity,
+    async create(data) {
+      try {
+        return await entity.create(data);
+      } catch (e) {
+        console.warn('[SystemLog] Falha ao gravar log (não crítico, ignorado):', e.message);
+        return { id: null, ...data };
+      }
+    },
+    async createUnique(id, data) {
+      try {
+        return await entity.createUnique(id, data);
+      } catch (e) {
+        console.warn('[SystemLog] Falha ao gravar log dedupado (não crítico, ignorado):', e.message);
+        return { created: false, existing: null };
+      }
+    },
+  };
+}
+
 export const backend = {
   entities: {
     MonitoredAsset: createEntity('monitoredAssets'),
@@ -248,7 +276,7 @@ export const backend = {
     SignalEvent: createEntity('signalEvents'),
     TradeOperation: createEntity('tradeOperations'),
     PriceAlert: createEntity('priceAlerts'),
-    SystemLog: createEntity('systemLogs'),
+    SystemLog: makeResilientLogEntity(createEntity('systemLogs')),
     User: createEntity('users'),
     VerificationTask: createEntity('verificationTasks'),
   },
