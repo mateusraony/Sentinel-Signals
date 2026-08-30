@@ -280,6 +280,44 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvance
   });
 }
 
+// SystemLog writes are pure observability (Debug Log/audit trail) — never
+// load-bearing for trading state, and every caller in scanner.js already
+// treats them as fire-and-forget (bare `await`, return value never read).
+// Real incident (docs/known-risks.md item 138 addendum): a single SystemLog
+// write failing (observed: a spurious ALREADY_EXISTS from an auto-ID
+// create()/addDoc(), the documented gRPC-retry-after-lost-ack quirk) was
+// propagating all the way up through persistScanResults and aborting the
+// ENTIRE scan pass for that asset — discarding real signal-detection work
+// and marking a healthy asset scan_status:'error' for hours. Wraps ONLY
+// this entity's create/createUnique, never the generic createEntity()
+// factory other entities share — a real TradeOperation/MonitoredAsset/
+// SignalEvent write failure must keep throwing (see P0-h,
+// .claude/rules/trading-engine.md).
+// console.warn (not logWarn) is deliberate here, not a lint regression: this
+// IS the SystemLog write path, and logger.js's logWarn ultimately calls back
+// into backend.entities.SystemLog — importing it here would be circular.
+function makeResilientLogEntity(entity) {
+  return {
+    ...entity,
+    async create(data) {
+      try {
+        return await entity.create(data);
+      } catch (e) {
+        console.warn('[SystemLog] Falha ao gravar log (não crítico, ignorado):', e.message);
+        return { id: null, ...data };
+      }
+    },
+    async createUnique(id, data) {
+      try {
+        return await entity.createUnique(id, data);
+      } catch (e) {
+        console.warn('[SystemLog] Falha ao gravar log dedupado (não crítico, ignorado):', e.message);
+        return { created: false, existing: null };
+      }
+    },
+  };
+}
+
 export const backend = {
   entities: {
     MonitoredAsset: createEntity('monitoredAssets'),
@@ -287,7 +325,7 @@ export const backend = {
     SignalEvent: createEntity('signalEvents'),
     TradeOperation: createEntity('tradeOperations'),
     PriceAlert: createEntity('priceAlerts'),
-    SystemLog: createEntity('systemLogs'),
+    SystemLog: makeResilientLogEntity(createEntity('systemLogs')),
     User: createEntity('users'),
     StrategyConfig: createEntity('strategyConfig'),
     TelegramFilters: createEntity('telegramFilters'),

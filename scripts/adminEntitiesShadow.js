@@ -260,6 +260,31 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvance
   });
 }
 
+// Mirrors src/api/entities.js's makeResilientLogEntity — same reasoning,
+// same real incident (docs/known-risks.md item 138 addendum). Keeps this 3rd
+// mirror behaviorally identical to the other two instead of drifting.
+function makeResilientLogEntity(entity) {
+  return {
+    ...entity,
+    async create(data) {
+      try {
+        return await entity.create(data);
+      } catch (e) {
+        console.warn('[SystemLog] Falha ao gravar log (não crítico, ignorado):', e.message);
+        return { id: null, ...data };
+      }
+    },
+    async createUnique(id, data) {
+      try {
+        return await entity.createUnique(id, data);
+      } catch (e) {
+        console.warn('[SystemLog] Falha ao gravar log dedupado (não crítico, ignorado):', e.message);
+        return { created: false, existing: null };
+      }
+    },
+  };
+}
+
 export const backend = {
   entities: {
     MonitoredAsset: createMonitoredAssetShadowEntity(),
@@ -267,7 +292,7 @@ export const backend = {
     SignalEvent: createEntity(`${SHADOW_PREFIX}SignalEvents`),
     TradeOperation: createEntity(`${SHADOW_PREFIX}TradeOperations`),
     PriceAlert: createEntity(`${SHADOW_PREFIX}PriceAlerts`),
-    SystemLog: createEntity(`${SHADOW_PREFIX}SystemLogs`),
+    SystemLog: makeResilientLogEntity(createEntity(`${SHADOW_PREFIX}SystemLogs`)),
     User: createEntity(`${SHADOW_PREFIX}Users`),
     VerificationTask: createEntity(`${SHADOW_PREFIX}VerificationTasks`),
   },

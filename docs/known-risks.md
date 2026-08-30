@@ -16966,3 +16966,90 @@ dedicado: mudança é puramente de infraestrutura de alerta (I/O de rede +
 Firestore), sem lógica de estado/transição de operação — fora do escopo de
 `.claude/rules/testing.md` (motor de trading). `node scripts/build-scan.mjs`
 confirma que o bundle do cron compila com a função nova.
+
+## 139. Uma escrita não crítica em `SystemLog` abortava a passada inteira do scan — ENAUSDT ficou ~7h em erro (2026-08-30)
+
+### Contexto
+
+Usuário reportou que uma operação real de ENAUSDT.P (TradingView, 4H, aberta
+27/08 13h BRT) não aparece no Sentinel. Investigação inicial (cota do
+Firestore zerando ativos, tela Ativos, janela de 50 sinais mais recentes em
+"Em Monitoramento") não encontrou a causa — até o usuário colar um trecho
+real do Debug Log:
+
+```
+[2026-08-30 04:00:22] WARN (monitor ENAUSDT) ENAUSDT em estado de erro
+  {"scan_error":"Document already exists: projects/sentinel-signals/databases/
+  (default)/documents/systemLogs/YBu5xHyWfnzuNBMUQjDh"}
+```
+
+acompanhado de avisos "scan obsoleto" crescentes (125min → 351min) apontando
+todos para o mesmo último scan bem-sucedido, ~22:09 de 29/08 — ou seja, TODA
+passada do cron sobre o ENAUSDT falhou, sem exceção, por ~7 horas seguidas
+(~85 passadas de 5min).
+
+### Causa raiz
+
+`"Document already exists: .../systemLogs/<id-aleatório>"` é o formato de
+erro `ALREADY_EXISTS` que o Firestore devolve quando uma escrita com ID
+**auto-gerado** (`.add()`/`addDoc()`, que internamente usa `doc().create()`,
+não `.set()`) é reenviada por uma retentativa automática de rede/gRPC depois
+que a 1ª tentativa já tinha sucesso no servidor mas a confirmação se perdeu
+— comportamento documentado de clients gRPC/Firestore sob rede instável, não
+um bug de lógica nossa.
+
+O problema real: `persistScanResults` (`src/lib/scanner.js`, ~30 pontos de
+chamada, linhas 941-3979) faz `await backend.entities.SystemLog.create({...})`
+**sem nenhum try/catch próprio** em nenhum desses pontos — a função inteira é
+um caminho reto. Como o erro veio formatado como string única (não o
+`"tf: erro; tf2: erro"` que `scanAllAssetsInner` monta para erros
+por-timeframe), ficou claro que a exceção subiu até o catch de TOPO em
+`scanAllAssetsInner` (`scanner.js` ~linha 4291) — ou seja, **uma falha
+transitória numa escrita de LOG (puro efeito colateral de observabilidade)
+abortava a passada INTEIRA daquele ativo**, descartando qualquer
+sinal/operação que já tivesse sido detectado nessa mesma passada, e
+marcando o ativo inteiro como `scan_status:'error'`.
+
+Confirmado: nenhum chamador de `SystemLog.create()`/`createUnique()` em
+`scanner.js` usa o valor de retorno (sempre `await` solto) — engolir a
+própria falha dessas duas chamadas não quebra nenhum contrato existente.
+
+### Correção
+
+`SystemLog.create`/`createUnique` passam a engolir a própria falha (log via
+`console.warn`, nunca propagam), mas **só para a entidade `SystemLog`** — a
+fábrica genérica `createEntity()` continua intocada, então uma falha real de
+escrita em `TradeOperation`/`MonitoredAsset`/`SignalEvent` continua
+propagando normalmente (P0-h, `.claude/rules/trading-engine.md` — esconder
+esse tipo de falha seria reintroduzir exatamente a classe de bug que aquele
+item já corrigiu). `console.warn` em vez de `logWarn` é deliberado, não
+regressão do padrão do projeto: `logWarn` chama de volta
+`backend.entities.SystemLog` — importar `logger.js` aqui seria circular.
+
+Aplicado nos **3 espelhos** do adaptador (`src/api/entities.js`,
+`scripts/adminEntities.js`, `scripts/adminEntitiesShadow.js`) — mantém os
+três comportando idêntico, mesmo princípio de `src/lib/scanner.js` rodar
+sem modificação nos três.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` — 1223 testes, 0 regressão. Dois
+testes novos (`scripts/adminEntities.test.js`, `src/api/entities.test.js`,
+espelhados) provam: (1) `SystemLog.create()` engole `ALREADY_EXISTS`
+espúrio e devolve fallback em vez de lançar; (2) `SystemLog.createUnique()`
+engole falha de transação; (3) `TradeOperation.create()` continua
+propagando erro real — prova que o isolamento por-entidade funciona, não só
+que a exceção sumiu. `node scripts/build-scan.mjs`/`build-scan-shadow.mjs`/
+`build-backtest.mjs`/`build-backfill.mjs` confirmam que os 4 bundles esbuild
+que importam os adaptadores compilam limpos.
+
+### Sobre o caso do ENAUSDT especificamente
+
+Esta correção fecha um bug real e confirmado (a asfixia de 7h), mas **não
+prova sozinha** que foi a causa exata do sinal de 27/08 não aparecer — isso
+exigiria ver o Debug Log daquela data/hora especificamente (não verificado
+nesta rodada). A divergência Spot(painel)×Futures(TradingView real) — item
+4/117/135, limitação permanente aceita, sem solução gratuita — continua
+sendo a explicação alternativa (e nada aqui a descarta). As duas causas não
+são mutuamente exclusivas: mesmo sem este bug, o sinal poderia não ter
+disparado no lado Spot.
