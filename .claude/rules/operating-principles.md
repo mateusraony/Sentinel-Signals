@@ -40,3 +40,12 @@ global do usuário (ver `docs/claude/global-CLAUDE.md.example`).
   painel), refira-se ao rótulo/label visível na tela — nunca ao nome
   técnico da chave/variável por trás dele. O usuário não é dev; peça e
   descreva os campos pelo texto que ele efetivamente lê.
+- **Merge automático autorizado (2026-08-30, pedido explícito do usuário).**
+  Em qualquer PR que você mesmo abriu neste repo: assim que a CI estiver
+  verde E o PR estiver `mergeable_state: clean` (sem conflito, sem review
+  bloqueando) E as threads de review que você endereçou estiverem
+  resolvidas, pode mesclar direto — não espere um "pode dar merge" a cada
+  vez. Continua exigindo confirmação explícita: qualquer coisa fora desse
+  crivo (CI vermelho, conflito, review humano pedindo mudança ainda não
+  atendida, PR que você não abriu) e ações destrutivas/irreversíveis em
+  geral (force-push, `reset --hard`, deletar branch/dado).
