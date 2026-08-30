@@ -54,7 +54,8 @@ Sem `.jsonc`: `scannerLocks` (lock de scan), `assetActiveOps/{assetId}` (garante
 (Strategy Reviewer, pausado), `telegramConfig/{uid}` (não usado — chat_id vive no
 `localStorage` hoje), `telegramFilters/current` (filtro de origem do sinal —
 RF/SMC/MACD/EMA/RSI — sincronizado painel↔cron, ver `docs/known-risks.md`
-item 47).
+item 47), `systemAlerts/firestoreQuota` (marcador de dedup do alerta Telegram
+de cota do Firestore esgotada, só cron, ver `docs/known-risks.md` item 138).
 
 ## ⚠️ Decisões intencionais — não "corrija" sem pedido
 
