@@ -4087,11 +4087,11 @@ export async function priceCheckActiveOps() {
   const acquired = await tryAcquireScanLock('price-check', PRICE_CHECK_LOCK_TTL_MS, holder);
   if (!acquired) {
     logInfo('scanner', 'Price check ignorado — outra execução já está em andamento (lock ocupado)');
-    return;
+    return { errors: [], skipped: true };
   }
 
   try {
-    await priceCheckActiveOpsInner();
+    return await priceCheckActiveOpsInner();
   } finally {
     await tryReleaseScanLock('price-check', holder);
   }
@@ -4128,12 +4128,20 @@ async function logDuplicateActiveOpsPriceCheck(assetKey, ops) {
 }
 
 async function priceCheckActiveOpsInner() {
+  // Firestore-quota-exhaustion errors from the per-op catch below (item 138
+  // addendum) — collected here so the caller (scripts/run-scan.mjs) can
+  // detect and alert on them, since logError there is fire-and-forget and
+  // never propagates. Purely a reporting side-channel: does not change any
+  // state transition, and a per-op error still never aborts the loop for
+  // the other ops (same isolation as before).
+  const errors = [];
+
   // Filtered server-side by status instead of fetching every TradeOperation
   // ever created and discarding most of it client-side — that unfiltered
   // read grows with trade history forever and was a real, documented
   // Firestore-quota risk (see docs/known-risks.md item 13).
   const activeOps = await backend.entities.TradeOperation.filter({ status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'] });
-  if (activeOps.length === 0) return;
+  if (activeOps.length === 0) return { errors };
 
   // Invariant guard (docs/known-risks.md item 39 residual limitation, now
   // closed): group by asset and never let a duplicated asset's ops reach the
@@ -4145,7 +4153,7 @@ async function priceCheckActiveOpsInner() {
     await logDuplicateActiveOpsPriceCheck(assetKey, ops);
   }
   const opsToProcess = [...validGroups.values()];
-  if (opsToProcess.length === 0) return;
+  if (opsToProcess.length === 0) return { errors };
 
   const symbols = [...new Set(opsToProcess.map(op => op.symbol))];
   const prices = {};
@@ -4232,8 +4240,11 @@ async function priceCheckActiveOpsInner() {
     }
     } catch (err) {
       logError('scanner', `Falha ao atualizar status da operação ${op.id} (${op.symbol}) no price check`, { error: err.message });
+      errors.push({ symbol: op.symbol, error: err.message });
     }
   }
+
+  return { errors };
 }
 
 /**
