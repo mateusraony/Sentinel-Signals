@@ -208,10 +208,17 @@ function MonitoringCard({ signal }) {
   const hoursLeft = Math.floor(Math.max(0, msLeft) / (60 * 60 * 1000));
   const minsLeft = Math.floor((Math.max(0, msLeft) % (60 * 60 * 1000)) / (60 * 1000));
 
-  const rejectionText = REJECTION_LABELS[signal.last_rejection_reason]
-    ?? (signal.last_rejection_reason
-      ? `Última rejeição registrada: ${signal.last_rejection_reason}`
-      : 'Ainda não avaliado por uma passada de retry — deve ter um motivo na próxima checagem (a cada ~5min).');
+  const knownReason = signal.last_rejection_reason
+    ? (REJECTION_LABELS[signal.last_rejection_reason] ?? `Última rejeição registrada: ${signal.last_rejection_reason}`)
+    : null;
+
+  // Nunca promete uma "próxima checagem" para um sinal que já expirou — isso
+  // contradiz o badge de baixo, que já diz que a janela fechou. Expirado
+  // sempre fala no passado (o que já aconteceu); só o sinal ainda dentro da
+  // janela fala no presente/futuro (o que está sendo avaliado agora).
+  const rejectionText = isExpired
+    ? (knownReason ?? 'O motor não chegou a reavaliar esse sinal antes da janela fechar.')
+    : (knownReason ?? 'Sinal novo — o motor está avaliando se confirma a entrada (nova checagem em ~5min).');
 
   return (
     <div className="rounded-xl p-4 space-y-2.5"
@@ -252,10 +259,8 @@ function MonitoringCard({ signal }) {
       </div>
 
       <div className="flex items-center justify-between text-[8px] font-mono">
-        <span style={{ color: isExpired ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>
-          {isExpired
-            ? '⚠ Janela de confirmação expirada — não vai mais virar operação neste sinal'
-            : `Janela de confirmação: expira em ${hoursLeft}h${minsLeft}m`}
+        <span style={{ color: isExpired ? '#64748b' : 'rgba(255,255,255,0.35)' }}>
+          {isExpired ? 'Expirado — não virou operação' : `Confirma em até ${hoursLeft}h${minsLeft}m`}
         </span>
       </div>
     </div>
