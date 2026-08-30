@@ -202,6 +202,17 @@ function EditModal({ op, onClose, onSave }) {
 function MonitoringCard({ signal }) {
   const isBuy = signal.signal_type === 'BUY';
 
+  // Só a cascata nativa 4h→15m entra numa fila de confirmação de verdade
+  // (janela de horas, last_rejection_reason) — a Range Filter também dispara
+  // em 1h/1d por ativo (MonitoredAsset.timeframes_enabled), mas esses são
+  // avisos informativos puros: nunca viram operação por este mecanismo
+  // (scanner.js — só tf==='4h' alimenta a cascata de confirmação/retry), e
+  // por isso nunca têm "motivo de rejeição" nem "janela" de verdade. Tratar
+  // os dois casos como se fossem a mesma coisa é o que gerava a confusão
+  // reportada pelo usuário — a explicação de "aguardando/expirou" simplesmente
+  // não se aplica a um sinal 1h/1d.
+  const isConfirmationEligible = signal.timeframe === '4h';
+
   const expiresAt = new Date(signal.created_date).getTime() + CONFIRMATION_WINDOW_MS;
   const msLeft = expiresAt - Date.now();
   const isExpired = signal.expired_logged === true || msLeft <= 0;
@@ -216,9 +227,14 @@ function MonitoringCard({ signal }) {
   // contradiz o badge de baixo, que já diz que a janela fechou. Expirado
   // sempre fala no passado (o que já aconteceu); só o sinal ainda dentro da
   // janela fala no presente/futuro (o que está sendo avaliado agora).
-  const rejectionText = isExpired
-    ? (knownReason ?? 'O motor não chegou a reavaliar esse sinal antes da janela fechar.')
-    : (knownReason ?? 'Sinal novo — o motor está avaliando se confirma a entrada (nova checagem em ~5min).');
+  const rejectionText = !isConfirmationEligible
+    ? `Sinal informativo (${signal.timeframe?.toUpperCase()}) — a Range Filter disparou nesse timeframe, mas só sinais de 4H entram na fila que pode virar operação. Este aqui é só um aviso, não vai confirmar nem expirar.`
+    : isExpired
+      ? (knownReason ?? 'O motor não chegou a reavaliar esse sinal antes da janela fechar.')
+      : (knownReason ?? 'Sinal novo — o motor está avaliando se confirma a entrada (nova checagem em ~5min).');
+
+  const dotColor = !isConfirmationEligible ? '#60a5fa' : (isExpired ? '#64748b' : '#ffd166');
+  const showGlow = isConfirmationEligible && !isExpired;
 
   return (
     <div className="rounded-xl p-4 space-y-2.5"
@@ -231,6 +247,12 @@ function MonitoringCard({ signal }) {
               style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.07)' }}>
               {signal.timeframe?.toUpperCase()}
             </span>
+            {!isConfirmationEligible && (
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+                style={{ background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.25)' }}>
+                ℹ Só aviso
+              </span>
+            )}
             <span className="flex items-center gap-0.5 text-[10px] font-mono font-bold px-2 py-0.5 rounded"
               style={isBuy
                 ? { background: 'rgba(0,255,128,0.1)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.25)' }
@@ -250,17 +272,20 @@ function MonitoringCard({ signal }) {
       <div className="text-[9px] font-mono text-muted-foreground leading-relaxed line-clamp-2">{signal.reason}</div>
 
       {/* Motivo real que está travando a entrada — SignalEvent.last_rejection_reason,
-          gravado pelo próprio motor (write-on-change) a cada passada de retry. */}
+          gravado pelo próprio motor (write-on-change) a cada passada de retry.
+          Só existe/faz sentido para sinais de 4H (isConfirmationEligible). */}
       <div className="flex items-start gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full mt-1 shrink-0" style={{ background: isExpired ? '#64748b' : '#ffd166', boxShadow: isExpired ? 'none' : '0 0 4px #ffd166' }} />
-        <span className="text-[9px] font-mono leading-relaxed" style={{ color: isExpired ? '#64748b' : '#ffd166' }}>
+        <span className="w-1.5 h-1.5 rounded-full mt-1 shrink-0" style={{ background: dotColor, boxShadow: showGlow ? `0 0 4px ${dotColor}` : 'none' }} />
+        <span className="text-[9px] font-mono leading-relaxed" style={{ color: dotColor }}>
           {rejectionText}
         </span>
       </div>
 
       <div className="flex items-center justify-between text-[8px] font-mono">
-        <span style={{ color: isExpired ? '#64748b' : 'rgba(255,255,255,0.35)' }}>
-          {isExpired ? 'Expirado — não virou operação' : `Confirma em até ${hoursLeft}h${minsLeft}m`}
+        <span style={{ color: !isConfirmationEligible ? '#60a5fa' : (isExpired ? '#64748b' : 'rgba(255,255,255,0.35)') }}>
+          {!isConfirmationEligible
+            ? 'Sem fila de confirmação — não vira operação por aqui'
+            : (isExpired ? 'Expirado — não virou operação' : `Confirma em até ${hoursLeft}h${minsLeft}m`)}
         </span>
       </div>
     </div>
