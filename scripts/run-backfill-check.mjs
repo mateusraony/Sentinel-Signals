@@ -23,7 +23,7 @@
 // real salvo no Firestore.
 import { runBacktest } from '../src/lib/backtestEngine.js';
 import { isTerminalStatus } from '../src/lib/opTransition.js';
-import { backend } from '@/api/entities';
+import { backend, getAndResetOpCounts } from '@/api/entities';
 import { getPineConfig } from './adminPineConfig.js';
 import { setBackfillWindow, hasFetchFailure } from './backfillMarketDataProvider.js';
 import { notifyTradeCreated } from './adminTelegram.js';
@@ -138,6 +138,14 @@ async function main() {
   const pineConfig = await getPineConfig();
 
   for (const asset of batch) {
+    // Observabilidade do fix do item 137 addendum (2026-08-31): a causa raiz
+    // do travamento de 11+min era volume de chamadas Firestore reais por
+    // tick (scripts/adminEntitiesBackfillCache.js tem o relato completo).
+    // Reseta o contador aqui e loga o total logo abaixo — fecha o loop:
+    // prova que a correção funcionou de verdade em vez de assumir, e torna
+    // uma regressão futura (ex.: um novo caller ungateado) visível no job
+    // log sem precisar de outro incidente ao vivo.
+    getAndResetOpCounts();
     try {
       await checkOneAsset(asset, pineConfig);
     } catch (err) {
@@ -146,6 +154,9 @@ async function main() {
         backfill_check_status: 'error',
         backfill_check_error: String(err.message || err).slice(0, 500),
       }).catch(() => {});
+    } finally {
+      const { reads, writes } = getAndResetOpCounts();
+      console.log(`[backfill] ${asset.symbol}: ${reads} leitura(s) + ${writes} escrita(s) Firestore reais nesta checagem`);
     }
   }
 }

@@ -12,13 +12,7 @@ paths:
 ## Workflows
 
 - `ci.yml` — lint + `npm test` + build a cada push/PR. Alerta Telegram em falha.
-- `scan.yml` — `npm run scan`. O passo `npm run backfill-check` (checagem
-  retroativa ao adicionar/reativar um ativo, `docs/known-risks.md` item 137)
-  está **DESLIGADO** desde 2026-08-29 (item 137 addendum) — um replay de 60
-  dias/15min contra o Firestore real travou 11+min e ficou repetindo a cada
-  ciclo, atrasando o scan ao vivo de todos os ativos. `MonitoredAsset`s
-  marcados `backfill_check_status:'pending'` ficam pendentes indefinidamente
-  até o mecanismo ser redesenhado e o passo religado. **Relógio de
+- `scan.yml` — `npm run scan`. **Relógio de
   trading**: o cadenciamento real de
   ~5min vem de disparo **externo** (cron-job.org via `workflow_dispatch`,
   configurado e confirmado — ver `docs/claude/external-cron-setup.md`,
@@ -28,6 +22,19 @@ paths:
   `HEALTHCHECKS_PING_URL` (known-risks 12). Atraso sob carga do `schedule` do
   GitHub Actions em geral, e a medição real feita neste projeto antes do
   disparo externo: known-risks **item 18**.
+- `backfill.yml` — checagem retroativa ao adicionar/reativar um ativo
+  (`npm run backfill-check`, `docs/known-risks.md` item 137). Workflow
+  SEPARADO de `scan.yml` de propósito, com `concurrency: group:
+  backfill-check` próprio e `timeout-minutes: 20` — até 2026-08-29 rodava
+  dentro do mesmo job/grupo do scan ao vivo, e um replay de 60 dias/15min
+  contra o Firestore real travou 11+min, atrasando o scan de todos os
+  ativos (item 137 addendum). Religado em 2026-08-31 depois de achar e
+  corrigir a causa raiz (2 pontos de I/O incondicional por tick em
+  `persistScanResults`, resolvidos num cache em memória em
+  `scripts/adminEntitiesBackfillCache.js`, sem tocar `scanner.js`) — ver o
+  addendum de 2026-08-31 no item 137 para o relato completo. Cadência
+  própria de 1x/hora (`workflow_dispatch` também disponível) — ativo novo é
+  raro.
 - `scan-shadow.yml` — braço decisório do modo sombra prospectivo (Fase 1, RF
   1h condicionado ao 4h, `docs/known-risks.md` item 56): roda `npm run
   scan:shadow` a cada 30min (reduzido de 15min — item 106/107, folga de cota

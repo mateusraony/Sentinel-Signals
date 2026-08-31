@@ -3,7 +3,7 @@
 // redirect target alongside scan (4) and backtest (5), same technique
 // (esbuild onResolve rewriting scanner.js's imports without touching
 // scanner.js itself):
-//   '@/api/entities'       → scripts/adminEntities.js            (REAL backend — a backfilled op is a real production TradeOperation)
+//   '@/api/entities'       → scripts/adminEntitiesBackfillCache.js (REAL backend for every collection except AssetState/MonitoredAsset, which are cached in-memory only — item 137 addendum, fixes the 2026-08-29 hang; a backfilled op is still a real production TradeOperation)
 //   './telegram'           → scripts/backtestTelegram.js         (no-op — replaying historical candle closes must never fire "live" Telegram alerts for events days/weeks old)
 //   './pineParser'         → scripts/adminPineConfig.js          (REAL live strategyConfig/current — same settings production scanning uses right now)
 //   './marketDataProvider' → scripts/backfillMarketDataProvider.js (live Binance REST, bounded recent window, not archive files)
@@ -17,7 +17,7 @@ const backfillOverrides = {
   name: 'backfill-overrides',
   setup(b) {
     b.onResolve({ filter: /^@\/api\/entities$/ }, () => ({
-      path: path.resolve(root, 'scripts/adminEntities.js'),
+      path: path.resolve(root, 'scripts/adminEntitiesBackfillCache.js'),
     }));
     b.onResolve({ filter: /^\.\/telegram$/ }, (args) => {
       if (args.importer.endsWith(path.join('src', 'lib', 'scanner.js'))) {
