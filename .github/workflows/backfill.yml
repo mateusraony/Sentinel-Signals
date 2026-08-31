@@ -1,0 +1,50 @@
+name: Backfill check (checagem retroativa de ativo novo/reativado)
+
+# Checagem retroativa ao adicionar/reativar um ativo (docs/known-risks.md
+# item 137) — roda src/lib/scanner.js SEM modificação sobre os últimos 60
+# dias, contra o backend REAL de produção, então uma operação retroativa
+# nasce pelo MESMO caminho (persistScanResults→createTradeOpIfNoneActive)
+# que uma ao vivo, nunca um 3º caminho de mutação.
+#
+# Workflow SEPARADO de scan.yml de propósito (item 137 addendum, requisito
+# #1) — até 2026-08-31 este passo rodava dentro do MESMO job/concurrency
+# group (scheduled-scan) do scan ao vivo: um replay que travasse atrasava o
+# scan de TODOS os ativos. Grupo de concorrência próprio abaixo garante que
+# isso nunca mais aconteça, esteja o replay rápido ou não.
+#
+# O travamento de 11+min original (60 dias/15min de replay contra o
+# Firestore real, sem cache — scripts/adminEntitiesBackfillCache.js tem o
+# relato completo da causa raiz e da correção) foi resolvido ali, no
+# adaptador usado só por este job — src/lib/scanner.js continua intocado.
+on:
+  schedule:
+    # Ativo novo é raro (usuário adiciona ocasionalmente, não continuamente)
+    # — cadência própria e baixa, independente do scan ao vivo, mesmo
+    # espírito de scan-shadow.yml ter cadência própria em vez de herdar a
+    # do scan real.
+    - cron: "23 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: backfill-check
+  cancel-in-progress: false
+
+jobs:
+  backfill-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run backfill-check
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

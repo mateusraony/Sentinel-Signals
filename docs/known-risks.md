@@ -16896,6 +16896,80 @@ reaproveite `runBacktest`/`persistScanResults` contra produção precisa medir
 o custo real por tick ANTES de rodar dentro de um cron com timeout apertado,
 não depois.
 
+### Addendum (2026-08-31) — causa raiz encontrada, mecanismo religado
+
+Pedido do usuário: religar o passo automático, mas resolver o travamento
+antes. Achei a causa raiz lendo o código diretamente (não a rede — esta
+sessão não alcança Firestore/Binance) — não é volume de candle nem
+`getPineConfig()` (já corrigido acima), é volume de chamadas Firestore
+síncronas por tick, exatamente onde o addendum anterior apontava (item 3 da
+lista de achados de 2026-08-29).
+
+**Causa raiz confirmada por leitura de código**: dentro de
+`persistScanResults` (chamada 5.760× por ativo — 60 dias / passo de 15min —
+no loop de `runBacktest`, `src/lib/backtestEngine.js:345-441`), duas
+coleções são tocadas **incondicionalmente a cada tick**, sem nenhum gate de
+"mudou alguma coisa" (diferente de todo o resto da função):
+
+1. `MonitoredAsset.update(asset.id, {last_scan_at, scan_status, scan_error,
+   scan_error_since})` — `scanner.js:3963`, roda sempre que
+   `persistScanResults` termina. **5.760 escritas sequenciais reais** contra
+   `scripts/adminEntities.js` — a ~100-200ms de round-trip cada, ~10-19min:
+   bate com os 11m32s medidos no addendum anterior quase exatamente.
+2. `AssetState.filter({asset_id, timeframe})` — `scanner.js:1839`, uma QUERY
+   (não um `.doc().get()`) rodada a cada tick por timeframe.
+   `hasAssetStateChanged` (linha 1852) só evita a ESCRITA quando nada mudou;
+   a LEITURA acontece sempre. Para RF nativo (3 timeframes): **~17.280
+   leituras** por ativo — quase 1/3 da cota diária inteira do plano Spark
+   (~50k leituras/dia, `.claude/rules/firestore-concurrency.md`) num único
+   backfill.
+
+Confirmado por `Grep` que não existem outros pontos de escrita/leitura
+incondicional por tick nessas duas coleções dentro de `persistScanResults` —
+e que nenhuma delas é usada para DECIDIR nada (`scanAsset` recalcula
+RF/sinais sempre a partir dos candles, garantia "sem look-ahead" dos golden
+tests; `AssetState` é puro cache de exibição). Isso confirma o item 3 do
+addendum anterior era o achado certo, só faltava a localização exata.
+
+**Correção** — `scripts/adminEntitiesBackfillCache.js` (novo, 4º mirror do
+adaptador ao lado de `adminEntities.js`/`adminEntitiesShadow.js`/o fake de
+teste): envolve `adminEntities.js` e intercepta SÓ `AssetState`/
+`MonitoredAsset` com um cache em memória — a 1ª leitura de cada
+`(asset_id, timeframe)` vai ao Firestore real; toda leitura/escrita seguinte
+fica só em memória, nunca chega ao Firestore durante o replay. Toda outra
+coleção (`TradeOperation`, `SignalEvent`, `SystemLog`, `assetActiveOps`,
+`scannerLocks`) continua passando direto pro adaptador real — uma operação
+retroativa continua nascendo pelo MESMO caminho transacional
+(`createTradeOpIfNoneActive`), sem nenhum 3º caminho de mutação. Isolamento
+garantido por `adminEntitiesBackfillCacheTripwire.test.js` (lê o texto-fonte,
+mesma técnica de `adminEntitiesShadowTripwire.test.js`); comportamento
+coberto por `adminEntitiesBackfillCache.test.js`.
+
+Isso resolve os 3 requisitos do addendum anterior:
+
+1. **Grupo de concorrência próprio** — novo `.github/workflows/backfill.yml`
+   (`concurrency: group: backfill-check`, independente de `scheduled-scan`),
+   `timeout-minutes: 20`, cadência própria de baixa frequência
+   (`cron: "23 * * * *"`, 1x/hora) + `workflow_dispatch`. `scan.yml` teve o
+   passo comentado removido, com uma linha apontando pra cá.
+2. **Custo real por tick resolvido** — sem reduzir `BACKFILL_LOOKBACK_DAYS`
+   nem mudar o comportamento observável de `persistScanResults`: cachear as
+   2 coleções elimina ~5.760 escritas + ~17.280 leituras → **0 escritas + ~3
+   leituras** por ativo/60 dias. `run-backfill-check.mjs` agora loga
+   `getAndResetOpCounts()` real por ativo checado, fechando o loop de
+   observabilidade em vez de assumir que a correção funcionou.
+3. **`MonitoredAsset`/`AssetState` isolados do replay** — mais simples que o
+   "snapshot antes / restaura depois" cogitado no addendum anterior: como as
+   duas coleções nunca são escritas de verdade no Firestore durante o
+   replay, não existe nada pra restaurar — o snapshot ao vivo simplesmente
+   nunca é perturbado.
+
+**Confirmação real pendente**: esta sessão não roda o workflow (rede
+bloqueada) — a confirmação de tempo/contagem real de operações Firestore
+fica para o primeiro `workflow_dispatch` de `backfill.yml` em produção,
+processando a fila de ativos presos em `'pending'` desde 2026-08-29
+(inclui a ENAUSDT e o LDOUSDT).
+
 ## 138. Alerta Telegram para cota do Firestore realmente esgotada (2026-08-30)
 
 ### Contexto

@@ -46,22 +46,8 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
 
-      # DESLIGADO (2026-08-29, incidente ao vivo, docs/known-risks.md item 137
-      # addendum) — um replay de 60 dias/15min contra o Firestore REAL (não o
-      # fake em memória do backtest.yml) levou 11+min sem terminar e foi morto
-      # pelo timeout do job, sem nunca gravar backfill_check_status — o ativo
-      # ficou preso em 'pending' e CADA ciclo seguinte repetia o mesmo travamento,
-      # atrasando o scan ao vivo de todo mundo (concurrency: scheduled-scan
-      # serializa os runs; continue-on-error não protege contra estouro de
-      # timeout, só contra exit code != 0). Religar exige: (1) rodar fora do
-      # grupo de concorrência scheduled-scan (workflow separado), (2) resolver o
-      # custo real de Firestore por tick antes de reabilitar dentro do cron ao
-      # vivo, (3) restaurar MonitoredAsset/AssetState pós-replay (achado
-      # separado, mesmo incidente — o replay também sobrescrevia o snapshot ao
-      # vivo do ativo com dado histórico simulado enquanto rodava).
-      # - run: npm run backfill-check
-      #   continue-on-error: true
-      #   env:
-      #     FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-      #     TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      #     TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      # A checagem retroativa (backfill) roda em .github/workflows/backfill.yml,
+      # workflow SEPARADO com concurrency group próprio — ver esse arquivo e
+      # docs/known-risks.md item 137 addendum (2026-08-29 → religado em
+      # 2026-08-31) para o incidente que motivou o split e a correção da
+      # causa raiz.
