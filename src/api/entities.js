@@ -30,7 +30,7 @@ function buildQuery(collectionName, filters = {}, sort, limitCount) {
     const parsed = classifyFilter(field, value);
     if (parsed.kind === 'skip') return;
     if (parsed.kind === 'in') constraints.push(where(field, 'in', parsed.operand));
-    else if (parsed.kind === 'range') constraints.push(where(field, parsed.operator, parsed.operand));
+    else if (parsed.kind === 'range') parsed.ranges.forEach(({ operator, operand }) => constraints.push(where(field, operator, operand)));
     else constraints.push(where(field, '==', parsed.operand));
   });
   if (sort) {

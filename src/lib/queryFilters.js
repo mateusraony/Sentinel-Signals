@@ -13,14 +13,24 @@
  *
  * Formas aceitas:
  *
- *   { campo: valor }          → igualdade (`==`)
- *   { campo: [a, b] }         → Firestore `in` (máx. 30 valores)
- *   { campo: { gte: valor } } → range `>=` avaliado NO SERVIDOR
+ *   { campo: valor }                    → igualdade (`==`)
+ *   { campo: [a, b] }                   → Firestore `in` (máx. 30 valores)
+ *   { campo: { gte: valor } }           → range `>=` avaliado NO SERVIDOR
+ *   { campo: { gte: a, lt: b } }        → range `>= a AND < b` (intervalo
+ *                                          fechado-aberto), 2 constraints no
+ *                                          MESMO campo — ver known-risks
+ *                                          item 141 (paginação truncava
+ *                                          meses antigos do relatório mensal)
  *
  * O range existe para o caso do `docs/known-risks.md` item 133: consultas
  * que buscavam os N últimos documentos e descartavam pelo tempo no cliente
  * pagavam leitura por documento descartado, 312×/dia por ativo — a leitura
- * era o lado apertado da cota do plano Spark (82-88% dos 50k/dia).
+ * era o lado apertado da cota do plano Spark (82-88% dos 50k/dia). `lt`
+ * (item 141) fecha o outro lado do intervalo: sem ele, uma busca por um
+ * PERÍODO (ex.: um mês) só consegue expressar "a partir de X", nunca "e
+ * antes de Y" — o chamador era forçado a substituir por "N mais recentes" e
+ * filtrar no cliente, que é exatamente o padrão que trunca silenciosamente
+ * quando o histórico total passa de N.
  *
  * **Operador desconhecido LANÇA, nunca é ignorado.** Ignorar em silêncio
  * devolveria MAIS documentos que o pedido (perde a economia de cota sem
@@ -31,7 +41,13 @@
  */
 
 /** Operadores de range suportados → operador do Firestore. */
-export const RANGE_OPERATORS = Object.freeze({ gte: '>=' });
+export const RANGE_OPERATORS = Object.freeze({ gte: '>=', lt: '<' });
+
+/** Operador do Firestore → comparador equivalente, para o backend fake. */
+const RANGE_COMPARATORS = Object.freeze({
+  '>=': (docValue, operand) => docValue >= operand,
+  '<': (docValue, operand) => docValue < operand,
+});
 
 /**
  * Um valor de filtro é descritor de range quando é objeto simples (não
@@ -52,10 +68,16 @@ function isPlainObject(value) {
 /**
  * Classifica um valor de filtro numa das formas suportadas.
  *
+ * Um descritor de range pode combinar até um operador POR CHAVE de
+ * `RANGE_OPERATORS` (hoje `gte`/`lt`, nunca repetido — chave de objeto já
+ * garante isso) — `{ gte: a, lt: b }` vira duas constraints no MESMO campo,
+ * a forma padrão de expressar um intervalo `[a, b)` no Firestore.
+ *
  * @param {string} field - nome do campo (só para mensagem de erro)
  * @param {*} value - valor bruto vindo do objeto de filtros
  * @returns {{kind: 'skip'} | {kind: 'in', operand: any[]}
- *   | {kind: 'eq', operand: *} | {kind: 'range', operator: string, operand: *}}
+ *   | {kind: 'eq', operand: *}
+ *   | {kind: 'range', ranges: Array<{operator: string, operand: *}>}}
  */
 export function classifyFilter(field, value) {
   if (value === undefined) return { kind: 'skip' };
@@ -63,28 +85,30 @@ export function classifyFilter(field, value) {
   if (!isPlainObject(value)) return { kind: 'eq', operand: value };
 
   const keys = Object.keys(value);
-  const suportados = Object.keys(RANGE_OPERATORS).join(', ');
+  const supportedOps = Object.keys(RANGE_OPERATORS);
+  const suportados = supportedOps.join(', ');
 
-  if (keys.length !== 1) {
+  if (keys.length === 0 || keys.length > supportedOps.length) {
     throw new Error(
-      `filter(${field}): descritor de range precisa de exatamente 1 operador, `
+      `filter(${field}): descritor de range precisa de 1 a ${supportedOps.length} operador(es), `
       + `recebeu ${keys.length} (${keys.join(', ') || 'nenhum'}). Suportados: ${suportados}.`,
     );
   }
 
-  const [op] = keys;
-  if (!Object.hasOwn(RANGE_OPERATORS, op)) {
-    throw new Error(
-      `filter(${field}): operador de range desconhecido '${op}'. Suportados: ${suportados}.`,
-    );
-  }
+  const ranges = keys.map((op) => {
+    if (!Object.hasOwn(RANGE_OPERATORS, op)) {
+      throw new Error(
+        `filter(${field}): operador de range desconhecido '${op}'. Suportados: ${suportados}.`,
+      );
+    }
+    const operand = value[op];
+    if (operand === undefined) {
+      throw new Error(`filter(${field}): operador '${op}' recebeu undefined.`);
+    }
+    return { operator: RANGE_OPERATORS[op], operand };
+  });
 
-  const operand = value[op];
-  if (operand === undefined) {
-    throw new Error(`filter(${field}): operador '${op}' recebeu undefined.`);
-  }
-
-  return { kind: 'range', operator: RANGE_OPERATORS[op], operand };
+  return { kind: 'range', ranges };
 }
 
 /**
@@ -102,9 +126,10 @@ export function matchesFilter(field, value, docValue) {
     case 'range':
       // Um documento sem o campo nunca satisfaz um range — mesmo
       // comportamento do Firestore, que não indexa doc sem o campo e
-      // portanto o omite do resultado de uma consulta de range.
+      // portanto o omite do resultado de uma consulta de range. Com 2
+      // constraints (intervalo), o documento precisa satisfazer AMBAS.
       if (docValue === undefined || docValue === null) return false;
-      return docValue >= parsed.operand;
+      return parsed.ranges.every(({ operator, operand }) => RANGE_COMPARATORS[operator](docValue, operand));
     default:
       throw new Error(`filter(${field}): classificação inesperada.`);
   }
