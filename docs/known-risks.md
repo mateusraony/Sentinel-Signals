@@ -17267,3 +17267,103 @@ Firestore (credenciais só existem no GitHub Actions/Render), então não foi
 possível contar quantas operações reais existem hoje pra provar que o teto
 de 500 já tinha sido ultrapassado — só que o código tinha esse teto e que
 ele produziria exatamente o sintoma relatado.
+
+## 142. `scan.yml` travava por MINUTOS ao esgotar a cota do Firestore — cota breve virava horas de painel parado (2026-09-01)
+
+**Relato do usuário**: alerta "🚨 Cota do Firestore esgotada" recorrente,
+"já está a tempos recebendo essa mensagem" — pediu correção e alternativas.
+
+### Causa raiz — confirmada ao vivo, incidente ativo no momento da investigação
+
+Não é só "a cota esgota" (isso já era esperado e documentado, item 138) — é
+uma **amplificação self-inflicted**: quando o SDK admin do Firestore
+(`@google-cloud/firestore`, usado por `scripts/adminEntities.js`) recebe
+`RESOURCE_EXHAUSTED` numa chamada, ele **tenta de novo internamente, com
+backoff, por vários MINUTOS antes de desistir** — comportamento da própria
+biblioteca, sem parâmetro documentado para desligar retry por código de erro
+(confirmado por pesquisa de comunidade: [googleapis/nodejs-firestore#1387](https://github.com/googleapis/nodejs-firestore/issues/1387)
+— "no ability to use different retry settings based on error codes"; relatos
+de travamentos de dezenas de minutos a ~1h em outros projetos usando o mesmo
+cliente).
+
+Medido ao vivo nos logs reais do `scan.yml` (run
+`33554697059`, 2026-09-01 20:20-20:29 UTC): o build termina em 25ms, e a
+PRÓXIMA linha de log só aparece **8min51s depois**, com `FAILED: Error: 8
+RESOURCE_EXHAUSTED` — a chamada ficou presa retry-ando sozinha o tempo
+inteiro, sem nenhum log intermediário.
+
+`scan.yml` é disparado a cada ~5min por um cron externo
+(`cron-job.org`, `.claude/rules/ci-deploy.md`) e usa `concurrency: group:
+scheduled-scan` — então o PRÓXIMO disparo **cancela** a execução anterior
+que ainda está presa retry-ando, antes dela sequer terminar de desistir
+sozinha. Resultado: nenhuma passada completa de verdade, nenhuma operação é
+avaliada, e o ciclo se repete a cada 5min até a cota resetar (~meia-noite
+Pacific) — confirmado ao vivo via GitHub Actions API: de 18:15 a 20:37 UTC
+do mesmo dia (2h22min e contando no momento da investigação), a esmagadora
+maioria das execuções de `scan.yml` alternava entre `cancelled` e `failure`,
+só 1 `success` isolado no meio. `backfill.yml` (roda de hora em hora,
+`scripts/adminEntitiesBackfillCache.js`, mesmo cliente Firestore) também
+falhava nas mesmas janelas, mas rápido (<1s) — a variação de tempo até
+desistir aparentemente depende de quantas chamadas sequenciais o script
+tenta antes de encontrar a exaustão, não é um teto fixo por chamada.
+
+Ou seja: uma cota estourada BREVE deveria durar minutos (até a próxima
+passada bem-sucedida); essa amplificação transformava isso em HORAS de
+painel efetivamente parado, sem nenhuma operação sendo avaliada.
+
+### Correção
+
+`scripts/scanTimeout.mjs` (novo, só para `run-scan.mjs` nesta rodada — ver
+"Fora de escopo" abaixo) — `withTimeout(promise, ms, label)` corre a chamada
+real contra um prazo bem mais curto (90s — folga generosa sobre o ~20s que
+um scan normal leva, incluindo o retry de rede da Binance via
+`httpRetry.js`, item 57) e rejeita com uma mensagem que casa com o regex
+`/RESOURCE_EXHAUSTED/i` já existente em `isFirestoreQuotaExhausted`, então o
+alerta Telegram de cota (item 138) continua disparando normalmente — sem
+precisar de um caminho de alerta novo.
+
+`forceExit(code)` — chamado no `main().catch(...)` de `run-scan.mjs` em vez
+de só `process.exitCode = 1`. Necessário porque `Promise.race` (o que
+`withTimeout` faz por baixo) não CANCELA a chamada perdedora — ela continua
+rodando (e re-tentando) em segundo plano, e o Node não encerra o processo
+sozinho enquanto ela mantiver timers pendentes. Sem `process.exit()`
+explícito, o job do GitHub Actions ficaria vivo pelo mesmo tempo de antes,
+mesmo com a lógica já tendo desistido e alertado — só `forceExit` faz o job
+terminar de verdade em ~90s.
+
+Aplicado nos 3 pontos de `run-scan.mjs` que tocam Firestore de verdade:
+`scanAllAssets()`, `priceCheckActiveOps()`, `checkAssetHealthchecks()`.
+
+### Fora de escopo desta rodada (risco estrutural igual, não corrigido)
+
+- **`scripts/run-backfill-check.mjs`** — mesmo cliente Firestore, mesmo
+  risco teórico de travar em retry, mas o perfil de duração normal é
+  MUITO mais variável (`checkOneAsset` pode legitimamente levar minutos
+  num replay real com muitas escritas — o próprio incidente do item 137
+  addendum registrou 1.916 escritas reais para 1 ativo). Escolher um prazo
+  de `withTimeout` sem matar um replay legítimo em andamento exigiria dado
+  real que esta sessão não tem como coletar (sem acesso a Firestore de
+  produção) — aplicar um número às cegas seria a mesma classe de erro que
+  o item 137 já corrigiu uma vez (assumir custo em vez de medir). O
+  `timeout-minutes: 20` do workflow continua sendo o backstop.
+- **`scripts/run-scan-shadow.mjs`** — mesmo risco estrutural
+  (`scan-shadow.yml` também usa `concurrency` + cadência curta, 30min), mas
+  não abre operação real nem notifica Telegram — prioridade menor. Não
+  medido o tempo normal de execução para calibrar um prazo com confiança.
+
+### Verificação
+
+`npm run lint && npm test && npm run build`. Novo `scripts/scanTimeout.test.mjs`
+(5 casos: resolve/rejeita com o valor real quando a promise termina a
+tempo, rejeita com erro nomeando o label e casando o regex de cota quando
+estoura o prazo — via fake timers, sem esperar 90s de verdade —, não deixa
+rejeição pendurada quando a promise real já venceu a corrida, `forceExit`
+seta `exitCode` e chama `process.exit`). 1246/1246 testes passando.
+`node scripts/build-scan.mjs` confirma o bundle compila com o import novo
+(219.5kb → 220.6kb).
+
+**Não confirmado contra produção**: mesma ressalva do item 141 — esta sessão
+não consegue disparar `scan.yml` de verdade nem observar o comportamento
+pós-correção ao vivo. A confirmação real só vem do próximo disparo em
+produção (a incidente ficou ativa até pelo menos 20:37 UTC no momento desta
+análise).
