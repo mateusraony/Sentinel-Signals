@@ -134,6 +134,13 @@ function HistoryCard({ op }) {
                 <History className="w-2.5 h-2.5" /> Retroativa
               </span>
             )}
+            {op.exit_ambiguous && (
+              <span className="text-[9px] font-mono font-semibold px-2 py-0.5 rounded"
+                style={{ background: 'rgba(0,229,255,0.1)', color: '#00e5ff', border: '1px solid rgba(0,229,255,0.3)' }}
+                title="Nessa vela, o preço tocou o stop e o take ao mesmo tempo — veja detalhes ao expandir">
+                ℹ️ Situação rara
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3 mt-1 text-[8px] font-mono text-muted-foreground flex-wrap">
             <span>📍 ${fmt(op.entry_price)}</span>
@@ -175,6 +182,22 @@ function HistoryCard({ op }) {
               <History className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#00e5ff' }} />
               <p className="text-[10px] font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
                 Detectada retroativamente{op.backfill_entry_lag_ms != null ? ` — entrada real foi há ${formatBackfillLag(op.backfill_entry_lag_ms)}` : ''}. Não foi pega ao vivo: o ativo foi adicionado/reativado depois, e o Sentinel reconstruiu a operação a partir do histórico.
+              </p>
+            </div>
+          )}
+
+          {/* Pedido do usuário (2026-09-01, conselho de revisão em
+              docs/known-risks.md): exit_ambiguous = candle fechou tocando
+              stop E TP no mesmo intervalo — o motor já decidiu sozinho
+              ("stop vence", .claude/rules/trading-engine.md) e a operação
+              já estava encerrada quando isso foi detectado. Puramente
+              informativo, mesmo padrão do banner de backfill acima. */}
+          {op.exit_ambiguous && (
+            <div className="rounded-lg px-3 py-2 flex items-start gap-2"
+              style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.25)' }}>
+              <span className="shrink-0 mt-0.5">ℹ️</span>
+              <p className="text-[10px] font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
+                Nessa vela, o preço tocou o stop e o take ao mesmo tempo — o gráfico não mostra qual foi primeiro de verdade. Por segurança, o sistema sempre considera que o stop aconteceu primeiro nesses casos raros. Essa operação já foi encerrada com esse resultado.
               </p>
             </div>
           )}

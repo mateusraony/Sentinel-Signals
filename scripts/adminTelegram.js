@@ -307,6 +307,18 @@ export async function notifyAssetStale(asset, reason) {
 // it exists to report — same fail-open spirit as loadTelegramSources above.
 const QUOTA_ALERT_COOLDOWN_MS = 60 * 60 * 1000;
 
+// Pedido do usuário (2026-09-01): quando um candle fecha tocando stop E TP no
+// mesmo intervalo, o motor já decide sozinho e imediatamente ("stop vence",
+// TradeOperation.exit_ambiguous — .claude/rules/trading-engine.md, seção
+// "Ambiguidade stop/TP no mesmo candle") — a operação já está encerrada
+// quando isso é detectado, então não existe "continuar ou sair" real pra
+// perguntar (ver docs/known-risks.md, conselho de revisão 2026-08-31). O que
+// falta é só deixar isso visível em linguagem simples, sem jargão — este
+// texto é acrescentado à notificação de stop já existente, nunca muda a
+// decisão nem atrasa o envio.
+const AMBIGUOUS_EXIT_NOTE =
+  `\nℹ️ <b>Nessa vela, o preço tocou o stop e o take ao mesmo tempo</b> — o gráfico não mostra qual foi primeiro de verdade. Por segurança, o sistema sempre considera que o stop aconteceu primeiro nesses casos raros. Essa operação já foi encerrada com esse resultado.\n`;
+
 export async function notifyFirestoreQuotaExhausted(errMessage) {
   const ref = getFirestore().collection('systemAlerts').doc('firestoreQuota');
   let shouldAlert = true;
@@ -343,7 +355,8 @@ export async function notifyStopHit(op, price) {
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.stop_hit_real_time, true) +
     `💰 Preço: $${fmtP(price)}\n` +
-    `📍 Stop em: $${fmtP(op.current_stop)}\n\n` +
+    `📍 Stop em: $${fmtP(op.current_stop)}\n` +
+    (op.exit_ambiguous ? AMBIGUOUS_EXIT_NOTE : '\n') +
     `<i>⚡ CryptoRadar</i>`
   );
 }
