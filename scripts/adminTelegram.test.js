@@ -138,3 +138,33 @@ describe('adminTelegram — override por ativo (known-risks item 47)', () => {
   });
 });
 
+// item 140: exit_ambiguous (stop e take tocados na mesma vela — política
+// "stop vence", .claude/rules/trading-engine.md) some junto com STOP_HIT
+// (sempre terminal), então isto é puramente informativo — nenhuma
+// mudança de comportamento do motor, só texto extra na notificação.
+describe('notifyStopHit — nota de ambiguidade stop/TP na mesma vela (item 140)', () => {
+  function baseOp(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h',
+      current_stop: 95, tp1_hit: false,
+      ...overrides,
+    };
+  }
+
+  it('inclui a nota de ambiguidade quando op.exit_ambiguous é true', async () => {
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    await notifyStopHit(baseOp({ exit_ambiguous: true }), 95);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('tocou o stop e o take ao mesmo tempo');
+  });
+
+  it('não inclui a nota quando op.exit_ambiguous é falsy/ausente', async () => {
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    await notifyStopHit(baseOp(), 95);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).not.toContain('tocou o stop e o take ao mesmo tempo');
+  });
+});
+

@@ -20,7 +20,7 @@ vi.mock('@/api/entities', () => ({
   backend: { entities: { TelegramFilters: { set: telegramFiltersSetMock } } },
 }));
 
-import { getTelegramFilters, notifyNewSignal, notifyVerificationTask, notifyTradeCreated, setTelegramFilters } from './telegram.js';
+import { getTelegramFilters, notifyNewSignal, notifyVerificationTask, notifyTradeCreated, notifyStopHit, setTelegramFilters } from './telegram.js';
 
 function makeLocalStorage() {
   const store = new Map();
@@ -380,5 +380,39 @@ describe('shouldSend — override por ativo (known-risks item 47)', () => {
       initial_stop: 105, tp1: 95, tp2: 90, score: 80, source: 'manual',
     }, { notify_signal_types: ['BUY'] });
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// item 140: exit_ambiguous (stop e take tocados na mesma vela — política
+// "stop vence", .claude/rules/trading-engine.md) some junto com STOP_HIT
+// (sempre terminal), então isto é puramente informativo — nenhuma
+// mudança de comportamento do motor, só texto extra na notificação.
+// Espelho de scripts/adminTelegram.test.js's describe de mesmo nome.
+describe('notifyStopHit — nota de ambiguidade stop/TP na mesma vela (item 140)', () => {
+  beforeEach(() => {
+    localStorage.setItem('cryptoradar_telegram_cfg', JSON.stringify({ botToken: 'x', chatId: 'y' }));
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+  });
+
+  function baseOp(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h',
+      current_stop: 95, tp1_hit: false,
+      ...overrides,
+    };
+  }
+
+  it('inclui a nota de ambiguidade quando op.exit_ambiguous é true', async () => {
+    await notifyStopHit(baseOp({ exit_ambiguous: true }), 95);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('tocou o stop e o take ao mesmo tempo');
+  });
+
+  it('não inclui a nota quando op.exit_ambiguous é falsy/ausente', async () => {
+    await notifyStopHit(baseOp(), 95);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).not.toContain('tocou o stop e o take ao mesmo tempo');
   });
 });

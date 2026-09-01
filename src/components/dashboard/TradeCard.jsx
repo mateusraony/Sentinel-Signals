@@ -141,6 +141,25 @@ function BackfillBanner({ op }) {
   );
 }
 
+// Pedido do usuário (2026-09-01, conselho de revisão em docs/known-risks.md):
+// quando exit_ambiguous é true, o candle fechou tocando stop E TP no mesmo
+// intervalo — o motor já decidiu sozinho ("stop vence",
+// .claude/rules/trading-engine.md) e a operação já está encerrada quando
+// isso é visível aqui. Não existe "continuar ou sair" real pra perguntar
+// (não sobrou operação aberta) — só falta deixar claro, em linguagem
+// simples, o que aconteceu e por quê. Puramente informativo: não muda
+// status, cor nem nenhuma decisão do motor.
+function AmbiguousExitBanner({ op }) {
+  if (!op.exit_ambiguous) return null;
+  return (
+    <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.25)' }}>
+      <p className="text-[10px] font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
+        ℹ️ Nessa vela, o preço tocou o stop e o take ao mesmo tempo — o gráfico não mostra qual foi primeiro de verdade. Por segurança, o sistema sempre considera que o stop aconteceu primeiro nesses casos raros. Essa operação já foi encerrada com esse resultado.
+      </p>
+    </div>
+  );
+}
+
 function StatusBanner({ op }) {
   const banners = {
     SIGNAL_CONFIRMED: { text: '👀 Monitorando — aguardar preço avançar para TP1', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
@@ -153,9 +172,12 @@ function StatusBanner({ op }) {
   const b = banners[op.status];
   if (!b) return null;
   return (
-    <div className="rounded-lg px-3 py-2" style={{ background: b.bg, border: `1px solid ${b.color}22` }}>
-      <p className="text-[10px] font-mono leading-relaxed" style={{ color: b.color }}>{b.text}</p>
-    </div>
+    <>
+      <div className="rounded-lg px-3 py-2" style={{ background: b.bg, border: `1px solid ${b.color}22` }}>
+        <p className="text-[10px] font-mono leading-relaxed" style={{ color: b.color }}>{b.text}</p>
+      </div>
+      <AmbiguousExitBanner op={op} />
+    </>
   );
 }
 

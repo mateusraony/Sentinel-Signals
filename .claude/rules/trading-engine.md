@@ -163,7 +163,11 @@ nunca deve receber nova transição.**
   — sem mudar nenhuma transição. Reconstrução via timeframe menor fica
   registrada como opção futura, condicionada a volume real desse campo (dado
   de 15m/5m não fica disponível no loop de saída hoje — buscar exigiria
-  custo de API recorrente). Ver `docs/known-risks.md` item 36.
+  custo de API recorrente). Ver `docs/known-risks.md` item 36. **Surfaced em
+  linguagem simples** (Telegram + `TradeCard`/`TradeHistory`) desde o item
+  140 — puramente informativo, `exit_ambiguous` só é marcado junto com
+  `STOP_HIT` (terminal), então não existe "decisão pendente" real por trás
+  disso, só explicação do que já aconteceu.
 - **[RESIDUAL — aguardando dados] Precedência stop>TP entre loops.** O CAS
   resolve a corrida de dados; com P0-c/d corrigidos, o cenário grave (TP1
   retroativo vencendo stop real) deixou de existir. O que resta — dois loops

@@ -17127,3 +17127,56 @@ nesta rodada). A divergência Spot(painel)×Futures(TradingView real) — item
 sendo a explicação alternativa (e nada aqui a descarta). As duas causas não
 são mutuamente exclusivas: mesmo sem este bug, o sinal poderia não ter
 disparado no lado Spot.
+
+## 140. "Alerta de atenção" para operação ambígua — conselho de revisão + versão mínima implementada (2026-09-01)
+
+**Pedido do usuário**: quando uma operação real "precisa de atenção", o
+sistema deveria alertar em linguagem muito simples (continuar ou sair), e se
+o usuário não responder, seguir sozinho com a ação padrão e deixar registrado
+o que foi feito. Pedido explícito de rodar isso pelo conselho de revisão
+(`sentinel-council-review`) antes de implementar, "pra ficar blindado e
+perfeito".
+
+**Conselho rodado** (5 papéis independentes — Arquiteto, Trading/Risco,
+Concorrência, Segurança, Testes) sobre o desenho completo ("esperar decisão
+com prazo, senão agir sozinho"). Achado convergente mais forte, vindo
+principalmente do Trading/Risco: em **todo** caso candidato do motor hoje
+(`exit_ambiguous`, "Transição descartada pelo CAS", Time Stop, Chop Exit,
+avanço de trailing), a "ação recomendada" já é a única regra determinística
+que o motor aplica — não existe uma segunda opção real pra alguém escolher.
+Nenhum dos 5 papéis encontrou um caso onde esperar resposta humana antes de
+agir teria valor decisório; todos convergiram contra introduzir prazo/estado
+de espera/CAS estendido pra isso.
+
+**Achado adicional, decisivo** (verificação de código direta, não do
+conselho): o único caso real de ambiguidade do motor — `exit_ambiguous`
+(`scanner.js:3674` e `:3838`) — só é marcado **no mesmo `updatePayload` que
+já grava `STOP_HIT`**, um status TERMINAL. Ou seja, quando o sistema detecta
+a ambiguidade, a operação **já está fechada** — não existe "continuar ou
+sair" possível, porque não sobra operação aberta pra decidir sobre. O
+desenho "espera decisão com prazo, senão age sozinho" pedido originalmente
+não tem, hoje, nenhum caso real do motor onde pendurar.
+
+**Decisão, confirmada com o usuário**: implementar só a parte que sobrevive
+à checagem acima — notificação enriquecida, em linguagem simples, sem
+espera, sem prazo, sem novo campo/estado/caminho de mutação. Muda zero
+comportamento do motor, só visibilidade:
+
+1. `scripts/adminTelegram.js` + `src/lib/telegram.js` (espelho
+   browser/cron de sempre) — `notifyStopHit` acrescenta um parágrafo (só
+   quando `op.exit_ambiguous === true`) explicando o que aconteceu, antes de
+   `<i>⚡ CryptoRadar</i>`.
+2. `src/components/dashboard/TradeCard.jsx` — novo `AmbiguousExitBanner`,
+   renderizado ao lado do `StatusBanner` existente, mesmo texto/estilo do
+   `BackfillBanner` (tema ciano `#00e5ff`, já usado pra "isso é informativo,
+   não é alarme").
+3. `src/pages/TradeHistory.jsx` — badge "ℹ️ Situação rara" na linha (mesmo
+   padrão visual do badge "🔀 Retroativa" já existente) + banner expandido
+   com o mesmo texto, ao lado do banner de backfill.
+
+Nenhum campo novo no Firestore (`exit_ambiguous` já existia desde o item 36),
+nenhuma mudança em `scanner.js`/`opTransition.js`/CAS, nenhum flag —
+puramente aditivo em templates de notificação e componentes de exibição já
+existentes. O desenho maior (campo `pending_user_decision`, prazo, CAS
+estendido, botão de override) que o conselho detalhou fica registrado aqui
+como referência, **sem caso de uso real hoje** — não implementado.
