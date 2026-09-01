@@ -66,18 +66,31 @@ export default function MonthlyReport() {
   const [selectedMonth, setSelectedMonth] = useState(moment().format('YYYY-MM'));
   const [exporting, setExporting] = useState(false);
 
+  // Busca por INTERVALO do mês selecionado (known-risks item 141) —
+  // antes buscava as 500 operações mais recentes (todo status, sem filtro
+  // de data) e filtrava o mês no cliente; com o histórico total passando de
+  // 500, qualquer mês mais antigo que a 500ª operação mais recente nunca
+  // era buscado e aparecia como "nenhuma operação" mesmo tendo havido.
+  // queryKey inclui selectedMonth de propósito — a query em si agora
+  // depende do mês, então trocar de mês precisa refazer o fetch.
   const { data: operations = [], isLoading } = useQuery({
-    queryKey: ['monthly-report-ops'],
-    queryFn: () => backend.entities.TradeOperation.list('-created_date', 500),
+    queryKey: ['monthly-report-ops', selectedMonth],
+    queryFn: () => {
+      const start = moment(selectedMonth, 'YYYY-MM').startOf('month');
+      const end = start.clone().add(1, 'month');
+      return backend.entities.TradeOperation.filter(
+        { created_date: { gte: start.toISOString(), lt: end.toISOString() } },
+        '-created_date',
+      );
+    },
     refetchInterval: 30000,
   });
 
   const monthOps = useMemo(() => {
     return operations
       .filter(isClosedOp)
-      .filter(op => moment(op.created_date).format('YYYY-MM') === selectedMonth)
       .sort((a, b) => new Date(a.created_date).getTime() - new Date(b.created_date).getTime());
-  }, [operations, selectedMonth]);
+  }, [operations]);
 
   const metrics = useMemo(() => {
     if (monthOps.length === 0) return null;

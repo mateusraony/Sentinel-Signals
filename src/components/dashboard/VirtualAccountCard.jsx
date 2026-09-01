@@ -28,10 +28,14 @@ function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefine
 
 // Conta virtual (capital+drawdown reais, compostos) sobre TODAS as operações
 // fechadas — query própria (não a de 100 ops que PerformanceMetricsBar/
-// PerformanceOverview já usam), mesmo padrão de limite maior do
-// MonthlyReport.jsx (list('-created_date', 500)), pra não mudar o
-// comportamento dos widgets existentes. Defaults ($1.000 / 1% de risco por
-// operação) são os mesmos do relatório de Backtest — ver src/lib/equityCurve.js.
+// PerformanceOverview já usam), com o mesmo teto de 500 que MonthlyReport.jsx
+// tinha antes do item 141 (agora MonthlyReport busca por intervalo de data
+// em vez desse teto — aqui ele segue valendo, sem filtro de mês possível,
+// já que a conta virtual precisa do histórico inteiro). Sujeito à mesma
+// classe de truncamento silencioso caso o total de operações fechadas passe
+// de 500 — não corrigido nesta rodada (fora do que foi pedido: known-risks
+// item 141). Defaults ($1.000 / 1% de risco por operação) são os mesmos do
+// relatório de Backtest — ver src/lib/equityCurve.js.
 export default function VirtualAccountCard() {
   const { data: operations = [] } = useQuery({
     queryKey: ['trade-operations-closed-all'],

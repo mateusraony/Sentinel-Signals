@@ -17180,3 +17180,90 @@ puramente aditivo em templates de notificação e componentes de exibição já
 existentes. O desenho maior (campo `pending_user_decision`, prazo, CAS
 estendido, botão de override) que o conselho detalhou fica registrado aqui
 como referência, **sem caso de uso real hoje** — não implementado.
+
+## 141. `MonthlyReport.jsx` truncava silenciosamente meses antigos — teto de 500 operações sem filtro de data (2026-09-01)
+
+**Relato do usuário**: "no relatório não está constando operações em
+outubro" (o mês mais antigo do seletor — o painel mostra os últimos 12
+meses). Suspeita do usuário: havia operações reais naquele mês que não
+apareceram.
+
+**Causa raiz confirmada por leitura de código** (não confirmada contra o
+Firestore de produção — esta sessão não tem credencial pra consultar o
+banco real, só o GitHub Actions/Render têm): `src/pages/MonthlyReport.jsx`
+buscava `TradeOperation.list('-created_date', 500)` — as **500 operações
+mais recentes, de QUALQUER status**, sem filtro de data — e filtrava o mês
+selecionado inteiramente no CLIENTE (`moment(op.created_date).format('YYYY-
+MM') === selectedMonth`). Se o total de documentos em `tradeOperations` (soma
+de todos os status, não só fechadas) já passou de 500, tudo mais antigo que
+a 500ª operação mais recente **nunca é buscado** — o mês mais antigo do
+seletor é justamente o mais exposto a cair fora dessa janela. A tela mostra
+"Nenhuma operação fechada neste mês" sem nenhum aviso de truncamento — visto
+de fora, indistinguível de "não houve operação".
+
+**Por que "500" não foi um número arbitrário testado ao vivo**: o volume de
+operações reais era baixíssimo no início do projeto (item 56: "só 3
+operações desde que o painel existe"), então o teto nunca foi estourado
+naquela época. Volume cresceu desde então (retry de fetch — item 57 — e o
+backfill retroativo — item 137 — adicionam operações que o cálculo original
+não previa), tornando plausível que o teto tenha sido ultrapassado.
+
+**`src/components/dashboard/VirtualAccountCard.jsx` compartilha o MESMO
+padrão** (`list('-created_date', 500)`, próprio comentário linkava
+explicitamente ao teto do `MonthlyReport.jsx`) — sujeito à mesma classe de
+truncamento silencioso para a conta virtual/curva de equity. **Não corrigido
+nesta rodada** — fora do que foi pedido (o relato era especificamente sobre
+"o relatório"); comentário do arquivo atualizado pra não descrever mais um
+padrão que só `VirtualAccountCard.jsx` ainda segue.
+
+### Correção
+
+Busca por **intervalo de data do mês selecionado** em vez de "N mais
+recentes + filtro no cliente" — o teto deixa de existir para este caso,
+qualquer mês (passado ou futuro) fica correto independente de quantas
+operações existam no total.
+
+- `src/lib/queryFilters.js` — `RANGE_OPERATORS` ganhou `lt` (`<`), ao lado do
+  `gte` (`>=`) já existente (item 133). `classifyFilter` agora aceita 1 OU 2
+  operadores no mesmo descritor (`{ gte: a, lt: b }`), retornando
+  `{ kind: 'range', ranges: [...] }` — 2 constraints no MESMO campo, a forma
+  padrão do Firestore pra expressar um intervalo fechado-aberto `[a, b)`.
+  Tripwire de teste (`RANGE_OPERATORS` fixo em `['gte']`) forçou, de
+  propósito, a revisão dos **4 backends** que traduzem `classifyFilter`
+  pra query nativa: `src/api/entities.js` (browser), `scripts/
+  adminEntities.js` (cron), `scripts/adminEntitiesShadow.js` (modo sombra —
+  achado ao grepar, não estava no radar inicial), e `matchesFilter` do
+  próprio `queryFilters.js` (usado por `src/lib/__fixtures__/fakeBackend.js`,
+  testes e backtest). Os 4 agora iteram `parsed.ranges`, emitindo um
+  `where()`/comparação por constraint. `scripts/adminEntitiesBackfillCache.js`
+  não precisou de mudança — só intercepta `AssetState`/`MonitoredAsset`,
+  delega `filter()` de outras coleções sem tocar.
+- `src/pages/MonthlyReport.jsx` — a query agora é
+  `TradeOperation.filter({ created_date: { gte: inícioDoMês, lt:
+  inícioDoMêsSeguinte } }, '-created_date')`, com `queryKey` incluindo
+  `selectedMonth` (antes era uma chave fixa — trocar de mês não re-buscava,
+  só refiltrava o mesmo array de 500; agora a busca em si depende do mês,
+  então precisa refazer o fetch). Fronteiras do mês calculadas com
+  `moment(selectedMonth, 'YYYY-MM').startOf('month')` — mesma semântica de
+  fuso (hora local do navegador) que o filtro antigo já usava, só movida do
+  cliente pro servidor.
+- Sem índice composto novo: range + `orderBy` no MESMO campo (`created_date`)
+  é coberto pelo índice de campo único automático do Firestore — não precisa
+  de entrada nova em `firestore.indexes.json`/deploy manual.
+
+### Verificação
+
+`npm run lint && npm test && npm run build`. Testes novos/atualizados em
+`src/lib/queryFilters.test.js` (intervalo `{gte, lt}`, mensagens de erro
+para operador desconhecido/excesso de operadores, tripwire dos 4 backends).
+Sem teste de componente para `MonthlyReport.jsx` — este projeto não tem
+`@testing-library/react`/ambiente jsdom configurado (`.claude/rules/
+testing.md`: cobertura é de função pura em `src/lib`, não de JSX); a
+cobertura de regressão ficou na primitiva compartilhada (`queryFilters.js`)
+de onde o bug realmente vinha.
+
+**Não confirmado contra produção**: esta sessão não tem acesso direto ao
+Firestore (credenciais só existem no GitHub Actions/Render), então não foi
+possível contar quantas operações reais existem hoje pra provar que o teto
+de 500 já tinha sido ultrapassado — só que o código tinha esse teto e que
+ele produziria exatamente o sintoma relatado.

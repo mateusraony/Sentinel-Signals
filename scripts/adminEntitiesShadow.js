@@ -38,7 +38,7 @@ function applyFilters(collectionRef, filters = {}) {
     const parsed = classifyFilter(field, value);
     if (parsed.kind === 'skip') return;
     if (parsed.kind === 'in') q = q.where(field, 'in', parsed.operand);
-    else if (parsed.kind === 'range') q = q.where(field, parsed.operator, parsed.operand);
+    else if (parsed.kind === 'range') parsed.ranges.forEach(({ operator, operand }) => { q = q.where(field, operator, operand); });
     else q = q.where(field, '==', parsed.operand);
   });
   return q;

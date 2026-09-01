@@ -23,7 +23,15 @@ describe('classifyFilter — formas suportadas', () => {
 
   it('{ gte } vira range com o operador do Firestore', () => {
     expect(classifyFilter('created_date', { gte: '2026-01-01' }))
-      .toEqual({ kind: 'range', operator: '>=', operand: '2026-01-01' });
+      .toEqual({ kind: 'range', ranges: [{ operator: '>=', operand: '2026-01-01' }] });
+  });
+
+  it('{ gte, lt } vira duas constraints de range no mesmo campo — intervalo [a, b)', () => {
+    expect(classifyFilter('created_date', { gte: '2026-01-01', lt: '2026-02-01' }))
+      .toEqual({ kind: 'range', ranges: [
+        { operator: '>=', operand: '2026-01-01' },
+        { operator: '<', operand: '2026-02-01' },
+      ] });
   });
 
   it('Date NÃO é tratada como descritor de range', () => {
@@ -43,14 +51,19 @@ describe('classifyFilter — falha ALTO, nunca em silêncio', () => {
       .toThrow(/operador de range desconhecido 'lte'.*gte/s);
   });
 
-  it('mais de um operador lança', () => {
+  it('operador conhecido combinado com desconhecido lança', () => {
     expect(() => classifyFilter('created_date', { gte: 'a', gt: 'b' }))
-      .toThrow(/exatamente 1 operador, recebeu 2/);
+      .toThrow(/operador de range desconhecido 'gt'.*gte, lt/s);
+  });
+
+  it('mais operadores do que os suportados lança (nunca despeja o range inteiro por engano)', () => {
+    expect(() => classifyFilter('created_date', { gte: 'a', lt: 'b', gt: 'c' }))
+      .toThrow(/precisa de 1 a 2 operador\(es\), recebeu 3/);
   });
 
   it('objeto vazio lança em vez de virar filtro que não filtra nada', () => {
     expect(() => classifyFilter('created_date', {}))
-      .toThrow(/exatamente 1 operador, recebeu 0/);
+      .toThrow(/precisa de 1 a 2 operador\(es\), recebeu 0/);
   });
 
   it('operador com operando undefined lança', () => {
@@ -58,8 +71,8 @@ describe('classifyFilter — falha ALTO, nunca em silêncio', () => {
       .toThrow(/recebeu undefined/);
   });
 
-  it('só `gte` é suportado hoje — este teste falha de propósito ao adicionar outro, forçando revisão dos 3 backends', () => {
-    expect(Object.keys(RANGE_OPERATORS)).toEqual(['gte']);
+  it('só `gte`/`lt` são suportados hoje — este teste falha de propósito ao adicionar outro, forçando revisão dos 4 backends (entities.js/adminEntities.js/adminEntitiesShadow.js/fakeBackend.js)', () => {
+    expect(Object.keys(RANGE_OPERATORS)).toEqual(['gte', 'lt']);
   });
 });
 
@@ -74,6 +87,14 @@ describe('matchesFilter — o fake precisa concordar com o operador real', () =>
   it('documento SEM o campo nunca satisfaz um range — igual ao Firestore, que não o indexa', () => {
     expect(matchesFilter('created_date', { gte: '2026-01-01' }, undefined)).toBe(false);
     expect(matchesFilter('created_date', { gte: '2026-01-01' }, null)).toBe(false);
+  });
+
+  it('intervalo { gte, lt } exige as DUAS constraints — dentro entra, nas bordas depende do lado', () => {
+    const f = { gte: '2026-06-01', lt: '2026-07-01' };
+    expect(matchesFilter('created_date', f, '2026-06-15')).toBe(true);
+    expect(matchesFilter('created_date', f, '2026-06-01')).toBe(true); // gte inclui o início
+    expect(matchesFilter('created_date', f, '2026-07-01')).toBe(false); // lt exclui o fim
+    expect(matchesFilter('created_date', f, '2026-05-31')).toBe(false);
   });
 
   it('igualdade e `in` seguem valendo', () => {
