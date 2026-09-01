@@ -5,6 +5,13 @@ import { scanAllAssets, priceCheckActiveOps } from '../src/lib/scanner.js';
 import { backend } from '@/api/entities';
 import { assetHealthcheckReason, shouldAlertStale, shouldClearStaleAlert } from '../src/lib/assetHealthcheck.js';
 import { isTelegramConfigured, notifyAssetStale, notifyFirestoreQuotaExhausted } from './adminTelegram.js';
+import { withTimeout, forceExit } from './scanTimeout.mjs';
+
+// docs/known-risks.md item 142 — a scan normal termina em ~20s; 90s dá
+// folga generosa (retry de rede da Binance via httpRetry.js incluído) sem
+// chegar perto dos minutos que uma chamada Firestore presa em retry de
+// RESOURCE_EXHAUSTED levaria para desistir sozinha.
+const SCAN_STEP_TIMEOUT_MS = 90 * 1000;
 
 // Real Firestore quota exhaustion (docs/known-risks.md item 138), distinct
 // from scanner.js's "projected near limit" warning (SystemLog-only, fires
@@ -85,20 +92,20 @@ async function pingHealthcheck(suffix = '') {
 async function main() {
   const started = Date.now();
 
-  const { total, results } = await scanAllAssets();
+  const { total, results } = await withTimeout(scanAllAssets(), SCAN_STEP_TIMEOUT_MS, 'scanAllAssets');
   const failed = results.filter((r) => !r.success);
   console.log(`[scan] scanAllAssets: ${total} ativo(s), ${failed.length} falha(s)`);
   failed.forEach((r) => console.error(`[scan]   ${r.symbol}: ${r.error}`));
   const quotaFailure = failed.find((r) => isFirestoreQuotaExhausted(r.error));
   if (quotaFailure) await alertIfQuotaExhausted(quotaFailure.error);
 
-  const { errors: priceCheckErrors } = await priceCheckActiveOps();
+  const { errors: priceCheckErrors } = await withTimeout(priceCheckActiveOps(), SCAN_STEP_TIMEOUT_MS, 'priceCheckActiveOps');
   console.log('[scan] priceCheckActiveOps done');
   const priceCheckQuotaFailure = priceCheckErrors.find((e) => isFirestoreQuotaExhausted(e.error));
   if (priceCheckQuotaFailure) await alertIfQuotaExhausted(priceCheckQuotaFailure.error);
 
   try {
-    await checkAssetHealthchecks();
+    await withTimeout(checkAssetHealthchecks(), SCAN_STEP_TIMEOUT_MS, 'checkAssetHealthchecks');
   } catch (err) {
     console.warn('[scan] per-asset healthcheck failed (non-fatal):', err.message);
     await alertIfQuotaExhausted(err?.message);
@@ -112,5 +119,10 @@ main().catch(async (err) => {
   console.error('[scan] FAILED:', err);
   await alertIfQuotaExhausted(err?.message);
   await pingHealthcheck('/fail');
-  process.exitCode = 1;
+  // forceExit (não só process.exitCode) — docs/known-risks.md item 142: se o
+  // erro veio de um withTimeout acima, a chamada real ao Firestore perdeu a
+  // corrida mas continua rodando (e re-tentando) em segundo plano; sem um
+  // process.exit() explícito, o job do GitHub Actions ficaria vivo até ELA
+  // desistir sozinha, do mesmo jeito que travava antes desta correção.
+  forceExit(1);
 });
