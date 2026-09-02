@@ -45,10 +45,17 @@ async function alertIfQuotaExhausted(message) {
 // around its call in main().
 const ASSET_STALE_GRACE_MS = 30 * 60 * 1000;
 
-async function checkAssetHealthchecks() {
-  const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
+// docs/known-risks.md item 148: `assets` (when provided) is the post-scan
+// snapshot scanAllAssets() already fetched and updated a moment ago in this
+// same pass — reusing it avoids a second MonitoredAsset.filter() read that
+// was pure duplication of a query scanAllAssetsInner already ran. Falls back
+// to a fresh read only when scanAllAssets() didn't run this asset list at all
+// (the 'full-scan' lock was held by a concurrent execution) — a genuinely
+// rare case where there's no fresher snapshot to reuse.
+async function checkAssetHealthchecks(assets) {
+  const list = assets ?? await backend.entities.MonitoredAsset.filter({ is_active: true });
   const now = Date.now();
-  for (const asset of assets) {
+  for (const asset of list) {
     const reason = assetHealthcheckReason(asset, { now, graceMs: ASSET_STALE_GRACE_MS });
     if (shouldAlertStale(asset, reason)) {
       // Only persist the dedup marker once delivery is CONFIRMED — if Telegram
@@ -92,7 +99,7 @@ async function pingHealthcheck(suffix = '') {
 async function main() {
   const started = Date.now();
 
-  const { total, results } = await withTimeout(scanAllAssets(), SCAN_STEP_TIMEOUT_MS, 'scanAllAssets');
+  const { total, results, assets } = await withTimeout(scanAllAssets(), SCAN_STEP_TIMEOUT_MS, 'scanAllAssets');
   const failed = results.filter((r) => !r.success);
   console.log(`[scan] scanAllAssets: ${total} ativo(s), ${failed.length} falha(s)`);
   failed.forEach((r) => console.error(`[scan]   ${r.symbol}: ${r.error}`));
@@ -105,7 +112,7 @@ async function main() {
   if (priceCheckQuotaFailure) await alertIfQuotaExhausted(priceCheckQuotaFailure.error);
 
   try {
-    await withTimeout(checkAssetHealthchecks(), SCAN_STEP_TIMEOUT_MS, 'checkAssetHealthchecks');
+    await withTimeout(checkAssetHealthchecks(assets), SCAN_STEP_TIMEOUT_MS, 'checkAssetHealthchecks');
   } catch (err) {
     console.warn('[scan] per-asset healthcheck failed (non-fatal):', err.message);
     await alertIfQuotaExhausted(err?.message);

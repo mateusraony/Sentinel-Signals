@@ -17914,3 +17914,64 @@ Nenhuma das três exige Blaze/cartão (permanentemente descartado,
 Investigação por leitura direta do código atual (`scanner.js`,
 `run-scan.mjs`, `scan-shadow.yml`) e conferência cruzada com os achados já
 registrados nos itens 13/106/133 — sem mudança de código nesta rodada.
+
+### Achado 1.1 implementado (2026-09-02, pedido explícito do usuário)
+
+**Cuidado que quase virou regressão silenciosa**: a primeira ideia — devolver
+a mesma lista de `MonitoredAsset` que `scanAllAssetsInner` já buscou no
+INÍCIO da passada e repassar direto pra `checkAssetHealthchecks` — está
+ERRADA. Essa lista é o snapshot de ANTES do scan; `checkAssetHealthchecks`
+decide "este ativo está travado?" lendo exatamente os campos
+(`last_scan_at`, `scan_error_since`) que o PRÓPRIO scan grava durante a
+passada (`persistScanResults` no caminho de sucesso, o catch por-ativo no
+caminho de erro) — reusar o snapshot pré-scan faria o healthcheck decidir
+com dado de 5 minutos atrás, atrasando em 1 passada tanto o alerta de
+"ativo travado" quanto a limpeza do alerta quando o ativo se recupera
+(`assetHealthcheckReason`/`shouldClearStaleAlert`, `src/lib/
+assetHealthcheck.js`). Teria sido exatamente o tipo de "perda de
+qualidade" que o pedido do usuário proibiu.
+
+**Correção real**: `persistScanResults` já computava o payload exato
+gravado em `MonitoredAsset.update()` (`last_scan_at`/`scan_status`/
+`scan_error`/`scan_error_since`) — só não o expunha. Capturado numa
+variável local (`assetScanUpdate`) e devolvido como campo aditivo no
+retorno da função (`src/lib/scanner.js`). `scanAllAssetsInner` (mesmo
+arquivo) agora monta `updatedAssets` mesclando cada `asset` pré-scan com o
+`assetScanUpdate` recém-gravado (caminho de sucesso) ou com o payload
+equivalente do catch por-ativo (caminho de erro) — **sem nenhuma leitura
+extra**, porque é o mesmo dado que a passada já escreveu, só propagado em
+memória em vez de reconsultado. `stale_alert_sent_at` (o único outro campo
+que `checkAssetHealthchecks` lê) não é tocado pelo scan, então o valor
+pré-scan dele já estava correto e continua vindo do `asset` original.
+
+`scripts/run-scan.mjs`: `checkAssetHealthchecks(assets)` passa a receber
+essa lista já atualizada; só cai de volta pra um `MonitoredAsset.filter({
+is_active: true })` fresco quando `assets` vem `undefined` — o caso raro em
+que `scanAllAssets()` nem rodou (lock `full-scan` ocupado por uma execução
+concorrente), onde não existe snapshot mais fresco pra reaproveitar.
+
+Custo evitado: ~1 leitura por ativo ativo por passada × 312 passadas/dia
+(a mesma estimativa do achado 1.1 original, ~6% do teto de 50k leituras/dia
+com ~10 ativos).
+
+### Verificação (implementação)
+
+- `persistScanResults` e `persistScanResults`+erro cobertos por 2 testes
+  novos em `scannerStateMachine.test.js` (`assetScanUpdate no retorno
+  espelha exatamente o que foi gravado`) — comparam o campo retornado
+  contra o doc realmente persistido no backend fake, nos dois caminhos
+  (sucesso e erro). **Mutation-tested**: revertida a exposição de
+  `assetScanUpdate` no retorno, os 2 testes falharam (`expected undefined
+  to match object`) exatamente como esperado; restaurada em seguida.
+- `npm run lint && npm test && npm run build` — 1269/1269 (era 1267; +2
+  testes novos). `node scripts/build-scan.mjs` (221,2kb),
+  `build-scan-shadow.mjs` (205,5kb, não usa `checkAssetHealthchecks` —
+  intocado, só herda o retorno aditivo de `scanAllAssets`),
+  `build-backtest.mjs` (297,2kb), `build-backfill.mjs` (272,7kb) — os 4
+  alvos que empacotam `scanner.js`/`persistScanResults` compilam limpos.
+- Consumidores do navegador de `scanAllAssets()` (`TopBar.jsx`,
+  `useAutoScan.js`) conferidos: nenhum desestrutura além de
+  `total`/`results`/`skipped` — campo `assets` aditivo, ignorado sem
+  quebrar nada.
+- **Achados 1.2 e 2 seguem não implementados** — ficam à disposição do
+  usuário, conforme a ordem de prioridade acima.
