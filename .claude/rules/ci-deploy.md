@@ -40,7 +40,14 @@ paths:
   `scripts/adminEntitiesBackfillCache.js`, sem tocar `scanner.js`) — ver o
   addendum de 2026-08-31 no item 137 para o relato completo. Cadência
   própria de 1x/hora (`workflow_dispatch` também disponível) — ativo novo é
-  raro.
+  raro. `scripts/run-backfill-check.mjs` envolve os 3 pontos que tocam
+  Firestore de verdade (leitura de pendentes, `getPineConfig`,
+  `checkOneAsset` por ativo) num timeout de 5min + `process.exit()`
+  forçado — mesmo padrão do `scan.yml` acima (`scripts/scanTimeout.mjs`),
+  fechando a lacuna que o item 142 tinha deixado fora de escopo por falta
+  de dado real; sem isso, um ativo cujo replay trava (ex.: `RESOURCE_EXHAUSTED`)
+  gastava os 20min INTEIROS de `timeout-minutes` contra o Firestore real a
+  cada ciclo horário (`docs/known-risks.md` item 147).
 - `scan-shadow.yml` — braço decisório do modo sombra prospectivo (Fase 1, RF
   1h condicionado ao 4h, `docs/known-risks.md` item 56): roda `npm run
   scan:shadow` a cada 30min (reduzido de 15min — item 106/107, folga de cota
