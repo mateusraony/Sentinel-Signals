@@ -17812,3 +17812,105 @@ esta sessão não consegue disparar `backfill.yml` de verdade nem observar o
 comportamento pós-correção ao vivo. A confirmação real vem do próximo ciclo
 horário em produção — deve mostrar `checkOneAsset:LDOUSDT` falhando rápido
 (~5min) com a mensagem de timeout, em vez de travar os 20min inteiros.
+
+## 148. Investigação — sobrou alavanca de LEITURA para cortar, sem mudar comportamento? (2026-09-02)
+
+**Pedido do usuário**: depois do item 147 (e da explicação de que a cota
+esgotando é esperada, não regressão), usuário aprovou explicitamente
+investigar corte de consumo do Firestore — com a condição **"sem perder
+qualidade"**. Esta rodada é só investigação/registro; nenhuma mudança de
+código foi feita ainda.
+
+### O que já estava fechado antes desta rodada (não redescoberto, só confirmado ao ler o código atual)
+
+O item 133 (Correção 1) já identificou e uma rodada anterior (PR #259) já
+corrigiu o maior item de leitura conhecido: a query de retry de
+`SignalEvent` (4 pontos — RF 4h `:2921`, RF 1h condicionado `:3147`, RF 1h
+incondicional `:3244`, SMC 1h `:3335`) buscava os 10 últimos eventos **sem
+filtro de tempo no servidor**, descartando quase todos no laço em memória —
+confirmado lendo `scanner.js` ao vivo: as 4 já têm
+`created_date: { gte: ... }` no filtro, com a ressalva do `expired_logged`
+(item 47.2) preservada (janela do filtro maior que a janela de expiração,
+via `RETRY_QUERY_WINDOW_FACTOR`). **Nada a fazer aqui — já em produção.**
+
+### Achado 1 — duas leituras redundantes ainda presentes, baixo risco
+
+1. **`scripts/run-scan.mjs:checkAssetHealthchecks()`** roda seu próprio
+   `MonitoredAsset.filter({is_active:true})`, redundante com a busca
+   idêntica que `scanAllAssetsInner` já fez segundos antes, na MESMA
+   passada do cron. Já era um achado do item 106 ("candidato secundário de
+   menor valor, não implementado") — só que naquela época a leitura ainda
+   não estava confirmada como o recurso mais apertado (isso só veio no item
+   133: leitura em ~88% do teto contra ~22-25% da escrita). Com o gargalo
+   real identificado como leitura, este achado fica mais atrativo do que
+   quando foi descartado. Custo hoje: 1 leitura por ativo ativo por
+   passada × 312 passadas/dia (ex.: com ~10 ativos, ~3.120 leituras/dia,
+   ~6% do teto de 50k). Correção de baixo risco: `scanAllAssets()`
+   (`src/lib/scanner.js`) já busca a lista internamente — adicionar essa
+   lista como campo aditivo no retorno (`{ total, results, assets }`) não
+   quebra os consumidores existentes no navegador (`useAutoScan.js`,
+   `TopBar.jsx` leem só `total`/`results`, um campo novo é ignorado), e
+   `run-scan.mjs` passa a repassar essa lista pra `checkAssetHealthchecks`
+   em vez de buscar de novo. Não toca em nenhum loop de mutação de operação.
+
+2. **`persistScanResults` busca `TradeOperation` ativa do MESMO ativo DUAS
+   vezes na MESMA passada**: `activeOpsAtStart` no início da função
+   (`scanner.js:1870`) e `allActiveOps` de novo perto do fim
+   (`scanner.js:3495`), ambas com o mesmo filtro `asset_id` + `status:
+   [SIGNAL_CONFIRMED, RUNNER_ACTIVE]`. A segunda existe porque, entre as
+   duas, até 8 pontos de criação de operação (`createTradeOpIfNoneActiveCapped`)
+   podem ter aberto uma operação nova para este ativo dentro da MESMA
+   passada — mas o código já rastreia isso em memória (`hasActiveOp`/
+   `activeOp`/`hasActiveOp4h15m`/`hasActiveOp1h5m`, atualizados a cada
+   criação bem-sucedida). Em teoria dá pra reconstruir `allActiveOps` a
+   partir do estado em memória + qualquer operação criada nesta passada,
+   sem reconsultar o Firestore — mas isso também é o único ponto que pega
+   uma operação criada por um processo CONCORRENTE (aba do navegador
+   criando manualmente, ou uma 2ª cascata) no meio do processamento deste
+   ativo. Custo: ~1 leitura extra por ativo ATIVO (a maioria dos ativos não
+   tem operação aberta, então o custo real é menor que o achado 1 — bounded
+   por quantos ativos têm operação em `SIGNAL_CONFIRMED`/`RUNNER_ACTIVE` no
+   momento, tipicamente poucos). **Não é candidato de implementação direta
+   como o achado 1** — mexe no loop que gerencia stop/TP
+   (`.claude/rules/trading-engine.md`), então exige
+   `sentinel-trading-engine-review` + `sentinel-state-machine-test`
+   completos antes de qualquer mudança, não só a troca mecânica do achado 1.
+
+### Achado 2 — alavanca fora do código: `scan-shadow.yml` (já reduzida uma vez, item 106)
+
+`scan-shadow.yml` roda o modo sombra (pesquisa, nunca abre operação real
+nem notifica Telegram) a cada 30min (~48 passadas/dia) contra o MESMO
+projeto/cota Firestore da produção — já foi reduzido de 15min pra 30min no
+item 106 a pedido do usuário. Reduzir mais (ex.: 1h) ou pausar
+temporariamente em dias de cota apertada é reversível sem custo (só o
+`cron:` do workflow) e tem **risco zero pro motor real** (coleções isoladas
+`experimentalRf1hShadow*`) — mas **não é gratuito em qualidade**: reduz a
+cobertura de fechamentos de candle 15m que o experimento observa (a mesma
+perda já documentada quando foi de 15→30min). Diferente do achado 1, este
+não é "corte de desperdício" — é trocar velocidade de acúmulo de dado da
+pesquisa por cota, então fica como opção, não recomendação.
+
+### Recomendação
+
+Ordem de prioridade, do achado que não tem trade-off nenhum pro mais caro:
+
+1. **Achado 1.1** (`checkAssetHealthchecks` reaproveitando a lista já
+   buscada) — sem trade-off, sem tocar motor de trading, ~6% de folga de
+   leitura. Recomendado.
+2. **Achado 1.2** (fundir as duas leituras de `TradeOperation` ativa por
+   ativo em `persistScanResults`) — ganho menor, exige review completo do
+   motor antes de mexer (não é troca mecânica). Só vale a pena se a cota
+   continuar apertada depois do achado 1.1.
+3. **Achado 2** (`scan-shadow.yml` mais devagar/pausado) — dial existente,
+   trade-off real em cobertura de pesquisa, não em produção. Fica com o
+   usuário decidir se a folga de cota vale mais que a velocidade de
+   acúmulo do experimento agora.
+
+Nenhuma das três exige Blaze/cartão (permanentemente descartado,
+`CLAUDE.md`) — todas dentro do plano Spark gratuito.
+
+### Verificação
+
+Investigação por leitura direta do código atual (`scanner.js`,
+`run-scan.mjs`, `scan-shadow.yml`) e conferência cruzada com os achados já
+registrados nos itens 13/106/133 — sem mudança de código nesta rodada.
