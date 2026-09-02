@@ -8,6 +8,7 @@ import {
   ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import { isClosedOp, getExitPrice, getClosedAt, calcRealizedPnlPct, summarizeOps } from '@/lib/tradeMetrics';
+import { Tooltip as InfoTooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 function fmt(price) {
   if (!price && price !== 0) return '—';
@@ -37,7 +38,7 @@ const STATUS_COLORS = {
   CLOSED: '#64748b',
 };
 
-function SummaryCard({ icon: Icon, label, value, sublabel, color, glowColor }) {
+function SummaryCard({ icon: Icon, label, value, sublabel, color, glowColor, tooltip = undefined }) {
   return (
     <div className="rounded-xl p-4 relative overflow-hidden"
       style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -45,7 +46,18 @@ function SummaryCard({ icon: Icon, label, value, sublabel, color, glowColor }) {
         style={{ background: `radial-gradient(circle, ${glowColor}, transparent 70%)`, transform: 'translate(30%, -30%)' }} />
       <div className="flex items-center gap-2 mb-2">
         <Icon className="w-4 h-4" style={{ color }} />
-        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
+        {tooltip ? (
+          <InfoTooltip>
+            <TooltipTrigger type="button" className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
+              {label}
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              {tooltip}
+            </TooltipContent>
+          </InfoTooltip>
+        ) : (
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
+        )}
       </div>
       <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
       {sublabel && <div className="text-[9px] font-mono text-muted-foreground mt-1">{sublabel}</div>}
@@ -337,7 +349,8 @@ export default function MonthlyReport() {
             <SummaryCard icon={FileText} label="Total de Trades" value={`${metrics.totalTrades}`} sublabel="operações fechadas" color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
             <SummaryCard icon={TrendingUp} label="Vitórias" value={`${metrics.wins}`} sublabel="trades lucrativos" color="#00ff80" glowColor="rgba(0,255,128,0.4)" />
             <SummaryCard icon={TrendingDown} label="Derrotas" value={`${metrics.losses}`} sublabel="trades em perda" color="#ff1478" glowColor="rgba(255,20,120,0.4)" />
-            <SummaryCard icon={Award} label="Profit Factor" value={metrics.profitFactor === null ? '∞' : metrics.profitFactor.toFixed(2)} sublabel={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? '✓ Saudável' : '⚠ Baixo'} color={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? '#00ff80' : '#ff9f43'} glowColor={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'} />
+            <SummaryCard icon={Award} label="Profit Factor" value={metrics.profitFactor === null ? '∞' : metrics.profitFactor.toFixed(2)} sublabel={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? '✓ Saudável' : '⚠ Baixo'} color={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? '#00ff80' : '#ff9f43'} glowColor={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'}
+              tooltip="Soma dos ganhos ÷ soma das perdas (valor absoluto). Acima de 1 = ganhos superam perdas no total; ≥ 1,5 é o piso considerado saudável aqui. '∞' quando não houve nenhuma perda no mês." />
           </div>
 
           {/* Additional metrics */}

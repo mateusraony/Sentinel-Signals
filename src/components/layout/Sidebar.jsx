@@ -207,7 +207,9 @@ function MobileBottomNav() {
           <Link
             key={item.path}
             to={item.path}
-            className="flex flex-col items-center justify-center gap-1 flex-1 h-full transition-all duration-200 relative"
+            aria-label={item.label}
+            aria-current={isActive ? 'page' : undefined}
+            className="flex items-center justify-center flex-1 h-full transition-all duration-200 relative"
           >
             {isActive && (
               <span
@@ -216,17 +218,13 @@ function MobileBottomNav() {
               />
             )}
             <item.icon
-              className="w-5 h-5"
+              className="w-[22px] h-[22px]"
               style={{
-                color: isActive ? '#00ff80' : 'rgba(255,255,255,0.25)',
+                color: isActive ? '#00ff80' : 'rgba(255,255,255,0.3)',
                 filter: isActive ? 'drop-shadow(0 0 5px rgba(0,255,128,0.6))' : 'none',
                 transition: 'color 0.18s, filter 0.18s',
               }}
             />
-            <span
-              className="text-[10px] font-mono"
-              style={{ color: isActive ? 'rgba(0,255,128,0.85)' : 'rgba(255,255,255,0.22)' }}
-            >{item.label}</span>
           </Link>
         );
       })}

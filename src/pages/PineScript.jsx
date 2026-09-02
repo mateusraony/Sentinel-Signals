@@ -1085,7 +1085,7 @@ export default function PineScript() {
   };
 
   const handleReset = () => {
-    if (confirm('Restaurar o NE RF v12 padrão? Isso vai sobrescrever as edições.')) {
+    if (confirm('Restaurar o NE RF v13.2 padrão? Isso vai sobrescrever as edições.')) {
       setCode(DEFAULT_PINE);
       localStorage.setItem('pine_script_code_v12', DEFAULT_PINE);
     }
@@ -1108,13 +1108,13 @@ export default function PineScript() {
         <div>
           <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Estratégia</p>
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Pine Script</h1>
-          <p className="text-[10px] font-mono text-muted-foreground mt-1">NEW ERA — Range Filter Strategy v12</p>
+          <p className="text-[10px] font-mono text-muted-foreground mt-1">NEW ERA — Range Filter Strategy v13.2</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 text-[9px] font-mono px-2 py-1 rounded"
             style={{ background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.2)', color: '#00ff80' }}>
             <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#00ff80', boxShadow: '0 0 4px #00ff80' }} />
-            v12 · MTF 4h + Entrada 15m
+            v13.2 · MTF 4h + Entrada 15m
           </div>
           {/* Auto-sync indicator */}
           <div className="flex items-center gap-1.5 text-[9px] font-mono px-2 py-1 rounded"
@@ -1137,7 +1137,7 @@ export default function PineScript() {
       {/* Tabs */}
       <div className="flex items-center gap-1" role="tablist" aria-label="Seções do Pine Script">
         {[
-          { id: 'editor', label: '📝 Editor v12', icon: Code2 },
+          { id: 'editor', label: '📝 Editor v13.2', icon: Code2 },
           { id: 'sync', label: '🔄 Sincronização', icon: Layers },
           { id: 'params', label: '⚙️ Parâmetros Ativos', icon: Info },
         ].map(tab => (
@@ -1173,7 +1173,7 @@ export default function PineScript() {
             <button onClick={handleReset}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all"
               style={{ background: 'rgba(255,159,67,0.07)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
-              <RefreshCw className="w-3 h-3" />Restaurar v12
+              <RefreshCw className="w-3 h-3" />Restaurar v13.2
             </button>
             <span className="text-[9px] font-mono text-muted-foreground ml-auto">Auto-salvo · {code.split('\n').length} linhas</span>
           </div>
@@ -1181,7 +1181,7 @@ export default function PineScript() {
           <div className="relative rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,255,128,0.15)' }}>
             <div className="flex items-center gap-2 px-4 py-2" style={{ background: 'rgba(6,8,15,0.9)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
               <Code2 className="w-3 h-3" style={{ color: '#00e5ff' }} />
-              <span className="text-[9px] font-mono" style={{ color: '#00e5ff' }}>NE_RF_v12.pine</span>
+              <span className="text-[9px] font-mono" style={{ color: '#00e5ff' }}>NE_RF_v13.2.pine</span>
               <span className="text-[8px] font-mono px-1.5 py-0.5 rounded ml-2"
                 style={{ background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
                 @version=6
@@ -1235,7 +1235,7 @@ export default function PineScript() {
       {activeTab === 'sync' && (
         <div className="space-y-3" id="pine-tabpanel-sync" role="tabpanel" aria-labelledby="pine-tab-sync">
           <div className="rounded-xl p-4 space-y-3" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(0,255,128,0.12)' }}>
-            <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-2">🔗 NE RF v12 → Sistema</div>
+            <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-2">🔗 NE RF v13.2 → Sistema</div>
             {SYNC_NOTES.map(note => (
               <div key={note.label} className="flex items-start gap-3 py-2.5 px-3 rounded-lg"
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -1268,7 +1268,7 @@ export default function PineScript() {
       {activeTab === 'params' && (
         <div className="space-y-3" id="pine-tabpanel-params" role="tabpanel" aria-labelledby="pine-tab-params">
           <div className="text-[10px] font-mono text-muted-foreground mb-2">
-            Parâmetros NE RF v12 por ativo — sincronizados com o scanner:
+            Parâmetros NE RF v13.2 por ativo — sincronizados com o scanner:
           </div>
           {assets.length === 0 ? (
             <div className="rounded-xl p-8 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>

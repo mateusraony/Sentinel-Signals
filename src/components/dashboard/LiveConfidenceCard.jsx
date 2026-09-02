@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Gauge } from 'lucide-react';
 import { backend } from '@/api/entities';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { summarizeOps } from '@/lib/tradeMetrics';
 
 // Mesmo teto/queryKey de VirtualAccountCard.jsx — dados compartilhados via
@@ -19,10 +20,17 @@ function ConfidenceRow({ label, summary }) {
     <div className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-[8px] font-mono uppercase text-muted-foreground">{label}</span>
-        <span className="text-[8px] font-mono px-1.5 py-0.5 rounded"
-          style={{ background: `${badgeColor}18`, border: `1px solid ${badgeColor}40`, color: badgeColor }}>
-          {badgeLabel}
-        </span>
+        <Tooltip>
+          <TooltipTrigger type="button" className="text-[8px] font-mono px-1.5 py-0.5 rounded cursor-help"
+            style={{ background: `${badgeColor}18`, border: `1px solid ${badgeColor}40`, color: badgeColor }}>
+            {badgeLabel}
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            {summary.conclusive
+              ? 'CONCLUSIVO: o intervalo de confiança de 95% da expectância não cruza zero — a amostra já descarta "sem edge nenhum" nesse sentido (não prova o tamanho do edge).'
+              : 'INCONCLUSIVO: amostra pequena demais ou o intervalo de confiança de 95% da expectância ainda cruza zero — não dá para descartar "sem edge nenhum" com esta amostra.'}
+          </TooltipContent>
+        </Tooltip>
       </div>
       <div className="text-base font-bold font-mono"
         style={{ color: hasSamples ? (positive ? '#00ff80' : '#ff1478') : 'rgba(255,255,255,0.3)' }}>
@@ -30,7 +38,16 @@ function ConfidenceRow({ label, summary }) {
       </div>
       <div className="text-[8px] font-mono text-muted-foreground mt-0.5">
         {summary.counted}/{summary.minTrades} operações
-        {ci ? ` · IC [${ci[0].toFixed(3)}; ${ci[1].toFixed(3)}]` : ''}
+        {ci ? (
+          <Tooltip>
+            <TooltipTrigger type="button" className="cursor-help underline decoration-dotted underline-offset-2">
+              {` · IC [${ci[0].toFixed(3)}; ${ci[1].toFixed(3)}]`}
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              Intervalo de confiança de 95% da expectância (R por operação). "Que vantagem esta amostra já descarta?" — quanto mais estreito, mais essa amostra restringe o edge real, exista ele ou não.
+            </TooltipContent>
+          </Tooltip>
+        ) : ''}
       </div>
     </div>
   );
