@@ -17700,3 +17700,115 @@ verificação sintática se aplicava. `npm run lint && npm test && npm run
 build` rodados mesmo assim — 1267/1267 passando, sem regressão (esperado,
 nenhum arquivo de código mudou). `CLAUDE.md` confirmado em 180 linhas,
 ainda abaixo do teto de ~200 do `documentation-truth.md`.
+
+## 147. `backfill.yml` travava 20min INTEIROS toda hora em RESOURCE_EXHAUSTED — pressão de cota que o item 142 não cobria (2026-09-02)
+
+**Relato do usuário**: alerta recorrente "🚨 Cota do Firestore esgotada" no
+Telegram, agora com o texto do timeout do item 142 ("Timeout: scanAllAssets
+não retornou em 90000ms"). Investigação confirmou que o `withTimeout` do
+item 142 está funcionando exatamente como projetado — mas achou uma causa
+raiz DIFERENTE e mais séria pressionando a cota durante o dia inteiro, não
+só perto do reset da meia-noite Pacific.
+
+### O que o item 142 já resolveu (confirmado ao vivo)
+
+Via GitHub Actions API: das 30 execuções mais recentes de `scan.yml`,
+4 falharam com o timeout do item 142 (17:45, 17:50, 17:55, 18:15 UTC),
+intercaladas com sucessos — **nenhuma travou por mais que ~92s** (medido
+nos 2 casos checados: "Run npm run scan" de 17:45:28 a 17:47:00 e de
+18:15:30 a 18:17:02). Isso é exatamente o comportamento pretendido: falha
+rápida em vez do travamento de minutos que cascateava em horas de outage
+(item 142 original). **Não é uma regressão** — é a cota realmente esgotando
+de novo, agora tratada com segurança.
+
+### Causa raiz nova: `backfill.yml` (item 137) travando 20min por hora, sem nenhum timeout
+
+`backfill.yml` roda de hora em hora e, nas últimas 14 execuções, só 2
+tiveram sucesso — 8 falharam e 4 foram canceladas. As execuções canceladas
+mais recentes (16:39-17:00 e 11:26-11:46 UTC) mostram o mesmo padrão exato
+nos logs reais do job:
+
+```
+[backfill] 1 ativo(s) pendente(s) e ativo(s), processando 1 nesta execução
+[backfill] LDOUSDT: checando janela 2026-07-04T16:39:45.497Z → 2026-09-02T16:39:45.497Z
+##[error]The operation was canceled.
+```
+
+Sem NENHUMA linha de log entre "checando janela" e o cancelamento — 20min14s
+e 19min49s respectivamente, batendo exatamente no `timeout-minutes: 20` do
+workflow (`.github/workflows/backfill.yml`) toda vez. `LDOUSDT` é o único
+ativo com `backfill_check_status:'pending'` (por isso `MAX_ASSETS_PER_RUN=1`
+sempre o escolhe de novo) — como o replay nunca completa, ele nunca marca
+`'done'`/`'error'`, e o próximo ciclo horário tenta de novo, travando pelos
+mesmos 20 minutos inteiros contra o Firestore real. **Isso é a MESMA causa
+raiz do item 142** (cliente admin do Firestore trava em retry de
+`RESOURCE_EXHAUSTED` por minutos, sem opção documentada de desistir mais
+cedo) — só que em `run-backfill-check.mjs`, que o item 142 deixou
+explicitamente **fora de escopo** por falta de dado real pra calibrar um
+prazo seguro ("Escolher um prazo de `withTimeout` sem matar um replay
+legítimo em andamento exigiria dado real que esta sessão não tem como
+coletar"). Agora esse dado existe: toda vez que travou, foi pelos 20min
+inteiros — muito acima do perfil normal pós-cache do item 137 addendum
+(~0 escritas + ~3 leituras Firestore reais por checagem bem-sucedida).
+
+**Impacto**: `backfill.yml` gastando ~20min de tentativas reais contra o
+Firestore A CADA HORA — pressão de cota substancial, plausivelmente a causa
+das falhas intermitentes de `scan.yml` acontecendo ao longo do dia (não só
+perto do reset), já que os dois workflows compartilham o mesmo projeto/cota
+Firestore.
+
+### Correção
+
+Mesmo padrão do item 142 (`scripts/scanTimeout.mjs`, reaproveitado sem
+alteração), aplicado a `scripts/run-backfill-check.mjs` nos 3 pontos que
+tocam Firestore de verdade: a leitura inicial de pendentes
+(`MonitoredAsset.filter(pending)`), `getPineConfig()`, e o `checkOneAsset`
+por-ativo (o ponto onde o travamento real foi observado). Prazo escolhido:
+**5 minutos** — generoso sobre o perfil normal (que deveria ser dominado
+por ~6-8 chamadas paginadas à Binance, cada uma com retry limitado a poucos
+segundos via `httpRetry.js`, não por Firestore real pós-cache), mas bem
+abaixo dos 20min que travam o job inteiro.
+
+Diferença importante do item 142: o `catch` por-ativo já existente
+(`backfill_check_status:'error'`) ENGOLE o timeout em vez de propagar —
+então `forceExit(0)` precisou ser adicionado também no caminho de
+**sucesso** de `main()` (via `.then()`), não só no `.catch()` — sem isso, a
+promise perdedora do `withTimeout` por-ativo manteria o processo vivo
+mesmo com `main()` já tendo retornado normalmente, negando o "falha rápida"
+pretendido. `run-scan.mjs` não precisava disso porque lá QUALQUER timeout
+propaga até o `.catch()` externo, que já chama `forceExit`.
+
+Também adicionado: alerta Telegram (`notifyFirestoreQuotaExhausted`,
+reaproveitando o mesmo marcador de dedup `systemAlerts/firestoreQuota` do
+item 138/143) quando o timeout capturado é especificamente
+`RESOURCE_EXHAUSTED` — `backfill.yml` não alertava nada antes, só logava no
+job (só visível abrindo o Actions manualmente).
+
+### Fora de escopo desta rodada
+
+- **`scripts/run-scan-shadow.mjs`** — mesmo risco estrutural, mesma
+  ressalva já registrada no item 142 (cadência de 30min, não abre operação
+  real nem notifica Telegram, prioridade menor).
+- **Por que LDOUSDT especificamente fica pendente** — não investigado a
+  fundo aqui; o fix torna o SINTOMA (travamento de 20min/hora) seguro, mas
+  não explica se há algo específico sobre este símbolo/janela causando
+  `RESOURCE_EXHAUSTED` repetido bem nessa hora, ou se é só coincidência de
+  cota já perto do limite quando o cron dele dispara. Observável agora via
+  `backfill_check_error` no próprio doc do `MonitoredAsset` e via o alerta
+  Telegram novo — dado real vai se acumular sozinho a partir daqui.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` — 1267/1267 passando (nenhum
+teste novo dedicado: a lógica nova é composição/wiring de `withTimeout`/
+`forceExit`, já cobertos por `scanTimeout.test.mjs`, mesmo precedente do
+item 142 — `run-scan.mjs` também não tem teste próprio). `node --check` no
+arquivo fonte e no bundle (`node scripts/build-backfill.mjs`, 272,6kb).
+Causa raiz confirmada via logs reais de 2 execuções canceladas do
+`backfill.yml` (GitHub Actions API) — mesmo padrão exato nas duas.
+
+**Não confirmado contra produção**: mesma ressalva do item 142 original —
+esta sessão não consegue disparar `backfill.yml` de verdade nem observar o
+comportamento pós-correção ao vivo. A confirmação real vem do próximo ciclo
+horário em produção — deve mostrar `checkOneAsset:LDOUSDT` falhando rápido
+(~5min) com a mensagem de timeout, em vez de travar os 20min inteiros.

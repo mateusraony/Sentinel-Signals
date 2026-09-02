@@ -26,8 +26,30 @@ import { isTerminalStatus } from '../src/lib/opTransition.js';
 import { backend, getAndResetOpCounts } from '@/api/entities';
 import { getPineConfig } from './adminPineConfig.js';
 import { setBackfillWindow, hasFetchFailure } from './backfillMarketDataProvider.js';
-import { notifyTradeCreated } from './adminTelegram.js';
+import { notifyTradeCreated, notifyFirestoreQuotaExhausted, isTelegramConfigured } from './adminTelegram.js';
 import { backfillLookbackWindow, buildBackfillTags, formatBackfillLag } from '../src/lib/backfillDetection.js';
+import { withTimeout, forceExit } from './scanTimeout.mjs';
+
+// docs/known-risks.md item 142/147 — mesmo risco do run-scan.mjs (cliente
+// admin do Firestore trava em retry de RESOURCE_EXHAUSTED por MINUTOS, sem
+// opção documentada de desistir mais cedo), deliberadamente deixado "fora de
+// escopo" no item 142 por falta de dado real pra calibrar um prazo seguro
+// sem matar um replay legítimo em andamento. Item 147 traz o dado que
+// faltava: toda vez que travou ao vivo, foi pelos 20min INTEIROS do
+// timeout-minutes do workflow (múltiplas execuções observadas, sempre
+// travando logo após o log "checando janela", sem nenhuma linha
+// intermediária até o cancelamento) — muito acima do perfil normal
+// pós-cache do item 137 addendum (~0 escritas + ~3 leituras Firestore reais
+// por checagem; o custo dominante é ~6-8 chamadas paginadas à Binance, cada
+// uma com retry limitado a poucos segundos via httpRetry.js). 5min dá folga
+// generosa sobre esse perfil normal sem chegar perto dos 20min que travam o
+// job inteiro e ainda gastam ~20min de tentativas reais contra o Firestore
+// A CADA hora — pressão de cota que se soma à do scan ao vivo.
+const BACKFILL_STEP_TIMEOUT_MS = 5 * 60 * 1000;
+
+function isFirestoreQuotaExhausted(message) {
+  return /RESOURCE_EXHAUSTED/i.test(String(message || ''));
+}
 
 // Limite por execução — checar um ativo novo é raro (o usuário adiciona
 // símbolos ocasionalmente, não a cada scan). Custo dominante não é a
@@ -107,7 +129,11 @@ async function checkOneAsset(asset, pineConfig) {
 }
 
 async function main() {
-  const pending = await backend.entities.MonitoredAsset.filter({ backfill_check_status: 'pending' });
+  const pending = await withTimeout(
+    backend.entities.MonitoredAsset.filter({ backfill_check_status: 'pending' }),
+    BACKFILL_STEP_TIMEOUT_MS,
+    'MonitoredAsset.filter(pending)',
+  );
   if (pending.length === 0) {
     console.log('[backfill] nada pendente');
     return;
@@ -135,7 +161,7 @@ async function main() {
 
   const batch = activePending.slice(0, MAX_ASSETS_PER_RUN);
   console.log(`[backfill] ${activePending.length} ativo(s) pendente(s) e ativo(s), processando ${batch.length} nesta execução`);
-  const pineConfig = await getPineConfig();
+  const pineConfig = await withTimeout(getPineConfig(), BACKFILL_STEP_TIMEOUT_MS, 'getPineConfig');
 
   for (const asset of batch) {
     // Observabilidade do fix do item 137 addendum (2026-08-31): a causa raiz
@@ -147,13 +173,22 @@ async function main() {
     // log sem precisar de outro incidente ao vivo.
     getAndResetOpCounts();
     try {
-      await checkOneAsset(asset, pineConfig);
+      await withTimeout(checkOneAsset(asset, pineConfig), BACKFILL_STEP_TIMEOUT_MS, `checkOneAsset:${asset.symbol}`);
     } catch (err) {
       console.error(`[backfill] ${asset.symbol} FALHOU: ${err.message}`);
       await backend.entities.MonitoredAsset.update(asset.id, {
         backfill_check_status: 'error',
         backfill_check_error: String(err.message || err).slice(0, 500),
       }).catch(() => {});
+      // docs/known-risks.md item 147 — mesmo alerta que run-scan.mjs já
+      // dispara (isFirestoreQuotaExhausted, item 138), reaproveitando o
+      // mesmo marcador de dedup (systemAlerts/firestoreQuota) — não spamma
+      // se o scan ao vivo já alertou na última hora.
+      if (isFirestoreQuotaExhausted(err?.message) && isTelegramConfigured()) {
+        await notifyFirestoreQuotaExhausted(err.message).catch((e) =>
+          console.warn('[backfill] Falha ao notificar cota do Firestore (não crítico):', e.message)
+        );
+      }
     } finally {
       const { reads, writes } = getAndResetOpCounts();
       console.log(`[backfill] ${asset.symbol}: ${reads} leitura(s) + ${writes} escrita(s) Firestore reais nesta checagem`);
@@ -161,7 +196,19 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error('[backfill] FAILED:', err);
-  process.exitCode = 1;
-});
+main()
+  .then(() => forceExit(0))
+  .catch((err) => {
+    console.error('[backfill] FAILED:', err);
+    // forceExit (não só process.exitCode) — docs/known-risks.md item 142/147:
+    // se o erro veio de um withTimeout acima (per-ativo ou fora dele), a
+    // chamada real ao Firestore perdeu a corrida mas continua rodando (e
+    // re-tentando) em segundo plano; o catch por-ativo já trata o timeout
+    // sem propagar até aqui, então este catch cobre falhas ANTES do loop
+    // (pending fetch, getPineConfig). forceExit também no caminho de
+    // sucesso porque, ao contrário do run-scan.mjs, o catch por-ativo
+    // ENGOLE o timeout (marca 'error' e segue) em vez de propagar — sem
+    // isso, a promise perdedora do withTimeout por-ativo manteria o
+    // processo vivo mesmo com main() já tendo retornado normalmente.
+    forceExit(1);
+  });
