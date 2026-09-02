@@ -214,6 +214,13 @@ export default function TradeCard({ operation: op }) {
             style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.08)' }}>
             {tfLabel}
           </span>
+          {op.tier && (
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+              title="Tier de volatilidade (ATR%) classificado na entrada — ver Pine v13.2 Grupo 03"
+              style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.7)', border: '1px solid rgba(0,229,255,0.18)' }}>
+              {op.tier}
+            </span>
+          )}
           <span className="text-[10px] font-mono px-2 py-0.5 rounded font-bold"
             style={isBuy
               ? { background: 'rgba(0,255,128,0.12)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.3)' }
@@ -262,6 +269,21 @@ export default function TradeCard({ operation: op }) {
         <span>📊 {op.partial_percent}% TP1 · {op.runner_percent}% runner</span>
         <span style={{ color: 'rgba(0,229,255,0.7)' }}>{exitModeLabel}</span>
       </div>
+
+      {/* MFE/MAE — maior favorável/adverso já visto, em múltiplos de R.
+          Ausente em ops legadas ou cujo candle de gerenciamento não era
+          utilizável (P0-c/P0-g) — não mostra nada nesse caso em vez de 0. */}
+      {(Number.isFinite(op.mfe_r) || Number.isFinite(op.mae_r)) && (
+        <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground px-0.5"
+          title="MFE: maior lucro flutuante já visto nesta operação. MAE: maior perda flutuante já vista. Ambos em múltiplos do risco inicial (R).">
+          {Number.isFinite(op.mfe_r) && (
+            <span>📈 MFE <span style={{ color: '#00ff80' }}>{op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R</span></span>
+          )}
+          {Number.isFinite(op.mae_r) && (
+            <span>📉 MAE <span style={{ color: '#ff1478' }}>{op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R</span></span>
+          )}
+        </div>
+      )}
 
       {/* Motivos técnicos */}
       {reasons.length > 0 && (

@@ -18,23 +18,30 @@ const GROUPS = [
   {
     id: 'range_filter', label: 'Range Filter', icon: BarChart3, color: '#00ff80',
     fields: [
-      { key: 'rng_per', label: 'Swing Period', target: 'assets', min: 5, max: 50, step: 1, suffix: '' },
-      { key: 'rng_qty', label: 'Swing Multiplier', target: 'assets', min: 0.5, max: 8, step: 0.1, suffix: '' },
+      { key: 'rng_per', label: 'Swing Period', target: 'assets', min: 5, max: 50, step: 1, suffix: '',
+        help: 'Janela (em candles) do Range Filter. Maior = menos sensível a ruído e mais atraso pra detectar mudança de tendência; menor = reage mais rápido, mas com mais falso sinal.' },
+      { key: 'rng_qty', label: 'Swing Multiplier', target: 'assets', min: 0.5, max: 8, step: 0.1, suffix: '',
+        help: 'Multiplicador que controla a largura da banda do Range Filter. Maior = banda mais larga, filtra mais reversões pequenas antes de virar sinal.' },
     ],
   },
   {
     id: 'risk', label: 'Gestão de Risco', icon: ShieldAlert, color: '#ff1478',
     fields: [
-      { key: 'trailAtrMult', label: 'ATR Multiplicador (Stop)', target: 'strategyConfig', min: 0.5, max: 5, step: 0.1, suffix: 'x' },
-      { key: 'tp1R', label: 'TP1 em R', target: 'strategyConfig', min: 0.5, max: 4, step: 0.1, suffix: 'R' },
-      { key: 'tp1QtyPercent', label: '% Realizar no TP1', target: 'strategyConfig', min: 10, max: 90, step: 5, suffix: '%' },
+      { key: 'trailAtrMult', label: 'ATR Multiplicador (Stop)', target: 'strategyConfig', min: 0.5, max: 5, step: 0.1, suffix: 'x',
+        help: 'Distância do stop/trailing em múltiplos de ATR. Maior = stop mais largo (menos chance de ser varrido por ruído, mas perde mais se a operação errar).' },
+      { key: 'tp1R', label: 'TP1 em R', target: 'strategyConfig', min: 0.5, max: 4, step: 0.1, suffix: 'R',
+        help: 'Alvo do primeiro take profit, em múltiplos do risco inicial (R). Ex.: 1,5R = realiza parcial quando o lucro atinge 1,5× o valor arriscado no stop.' },
+      { key: 'tp1QtyPercent', label: '% Realizar no TP1', target: 'strategyConfig', min: 10, max: 90, step: 5, suffix: '%',
+        help: 'Percentual da posição encerrado no TP1. O restante (runner) segue até TP2, trailing ou Time Stop — ver runnerEnabled em known-risks item 46.' },
     ],
   },
   {
     id: 'confirmation', label: 'Confirmação', icon: Zap, color: '#ffd166',
     fields: [
-      { key: 'minScore', label: 'Score Mínimo', target: 'strategyConfig', min: 50, max: 100, step: 1, suffix: '' },
-      { key: 'atrLen', label: 'ATR Periodo', target: 'strategyConfig', min: 5, max: 30, step: 1, suffix: '' },
+      { key: 'minScore', label: 'Score Mínimo', target: 'strategyConfig', min: 50, max: 100, step: 1, suffix: '',
+        help: 'Score mínimo de confluência (0–100) exigido para confirmar um sinal. Maior = mais seletivo, menos sinais confirmados.' },
+      { key: 'atrLen', label: 'ATR Periodo', target: 'strategyConfig', min: 5, max: 30, step: 1, suffix: '',
+        help: 'Período (em candles) usado para calcular o ATR (Average True Range) que dimensiona o stop inicial e o trailing.' },
     ],
   },
 ];
@@ -252,6 +259,9 @@ export default function Settings() {
                   <div className="flex items-center justify-between text-[8px] font-mono text-muted-foreground/50">
                     <span>{field.min}</span><span>{field.max}</span>
                   </div>
+                  {field.help && (
+                    <p className="text-[9px] font-mono text-muted-foreground/70 leading-snug">{field.help}</p>
+                  )}
                 </div>
               ))}
             </div>

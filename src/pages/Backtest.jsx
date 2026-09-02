@@ -10,6 +10,7 @@ import {
   AlertTriangle, CheckCircle2, Rocket, Loader2, Calendar, History, Zap, Sparkles,
 } from 'lucide-react';
 import { backend } from '@/api/entities';
+import { Tooltip as InfoTooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { SYNCED_STRATEGY_KEYS, DEFAULTS as PINE_DEFAULTS, getPineConfig } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
 import { isClosedOp, getClosedAt, summarizeOps, calcRealizedPnlPct, getExitPrice, classifyOutcome } from '@/lib/tradeMetrics';
@@ -45,7 +46,7 @@ const CAGR_UNAVAILABLE_LABEL = {
 
 const OUTCOME_COLORS = { WIN: '#00ff80', LOSS: '#ff1478', BE: '#64748b' };
 
-function SummaryCard({ icon: Icon, label, value, sublabel = undefined, color, glowColor }) {
+function SummaryCard({ icon: Icon, label, value, sublabel = undefined, color, glowColor, tooltip = undefined }) {
   return (
     <div className="rounded-xl p-4 relative overflow-hidden"
       style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -53,7 +54,18 @@ function SummaryCard({ icon: Icon, label, value, sublabel = undefined, color, gl
         style={{ background: `radial-gradient(circle, ${glowColor}, transparent 70%)`, transform: 'translate(30%, -30%)' }} />
       <div className="flex items-center gap-2 mb-2">
         <Icon className="w-4 h-4" style={{ color }} />
-        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
+        {tooltip ? (
+          <InfoTooltip>
+            <TooltipTrigger type="button" className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
+              {label}
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              {tooltip}
+            </TooltipContent>
+          </InfoTooltip>
+        ) : (
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
+        )}
       </div>
       <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
       {sublabel && <div className="text-[9px] font-mono text-muted-foreground mt-1">{sublabel}</div>}
@@ -190,13 +202,15 @@ function ReportBody({ report, hideCascadeTable = false }) {
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <SummaryCard icon={overall.expectancyR >= 0 ? TrendingUp : TrendingDown} label="Expectância líquida"
           value={fmtR(overall.expectancyR)} sublabel={`bruta: ${fmtR(overall.grossExpectancyR)}`}
-          color={overall.expectancyR >= 0 ? '#00ff80' : '#ff1478'} glowColor={overall.expectancyR >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'} />
+          color={overall.expectancyR >= 0 ? '#00ff80' : '#ff1478'} glowColor={overall.expectancyR >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'}
+          tooltip="R = resultado da operação dividido pelo risco inicial (distância entre entrada e stop). Expectância líquida é a média de R por operação, já descontando taxa/slippage/funding (ver 'Custo médio' ao lado); 'bruta' é sem esses custos." />
         <SummaryCard icon={Target} label="Taxa de acerto" value={`${overall.winRate.toFixed(1)}%`}
           sublabel={`${overall.wins}W · ${overall.be}BE · ${overall.losses}L`}
           color={overall.winRate >= 50 ? '#00ff80' : '#ff9f43'} glowColor="rgba(0,229,255,0.4)" />
         <SummaryCard icon={Award} label="Profit Factor" value={overall.profitFactor === null ? '∞' : overall.profitFactor.toFixed(2)}
           sublabel={overall.profitFactor === null || overall.profitFactor >= 1.5 ? '✓ Saudável' : '⚠ Baixo'}
-          color={overall.profitFactor === null || overall.profitFactor >= 1.5 ? '#00ff80' : '#ff9f43'} glowColor="rgba(0,255,128,0.4)" />
+          color={overall.profitFactor === null || overall.profitFactor >= 1.5 ? '#00ff80' : '#ff9f43'} glowColor="rgba(0,255,128,0.4)"
+          tooltip="Soma dos ganhos ÷ soma das perdas (valor absoluto). Acima de 1 = ganhos superam perdas no total; ≥ 1,5 é o piso considerado saudável aqui. '∞' quando não houve nenhuma perda na amostra." />
         <SummaryCard icon={TrendingDown} label="Máx. Drawdown" value={fmtPct(-overall.maxDrawdownPct)}
           color="#ff1478" glowColor="rgba(255,20,120,0.4)" />
         <SummaryCard icon={FlaskConical} label="Operações" value={`${overall.counted}`}
@@ -311,8 +325,8 @@ function ReportBody({ report, hideCascadeTable = false }) {
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Cascata</th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium">Operações</th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium">Taxa de acerto</th>
-                  <th className="text-right px-3 py-2 text-muted-foreground font-medium">Expectância</th>
-                  <th className="text-right px-3 py-2 text-muted-foreground font-medium">Profit Factor</th>
+                  <th className="text-right px-3 py-2 text-muted-foreground font-medium" title="Média de R (resultado ÷ risco inicial) por operação">Expectância</th>
+                  <th className="text-right px-3 py-2 text-muted-foreground font-medium" title="Soma dos ganhos ÷ soma das perdas — acima de 1 significa que os ganhos superam as perdas no total">Profit Factor</th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium">Máx. Drawdown</th>
                 </tr>
               </thead>

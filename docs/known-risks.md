@@ -17482,3 +17482,75 @@ despercebida.
 novos: 3 do achado 1, 9 do achado 2, 5 do achado 3). `node
 scripts/build-scan.mjs` confirma o bundle do scan compila com o import novo
 de `scanTimeout.mjs` em `adminTelegram.js`.
+
+## 144. Achados de UI da varredura de 6 agentes — 7 lacunas visuais corrigidas (2026-09-02)
+
+**Pedido do usuário**: seguir com os achados de UI listados no item 143
+("pode seguir com os achados de UI da varredura"). Puramente visual —
+`.claude/rules/frontend-ui.md` — nenhuma lógica de trading/scanner/Firestore
+tocada, todos os campos consumidos já existiam (`mfe_r`/`mae_r`/`tier`
+vinham sendo calculados desde os itens 46/47.2, só nunca exibidos).
+
+1. **MFE/MAE/tier ausentes do painel** — `TradeCard.jsx` (op ativa) e
+   `TradeHistory.jsx` (histórico) ganharam um badge de tier (T1/T2/T3) no
+   cabeçalho e uma linha MFE/MAE em R, condicionados a
+   `Number.isFinite(op.mfe_r/mae_r)` (ops legadas/sem candle utilizável não
+   têm esses campos — P0-c/P0-g, `.claude/rules/trading-engine.md`).
+2. **Tooltips de R/IC95/Profit Factor** — `Backtest.jsx`/`MonthlyReport.jsx`:
+   `SummaryCard` ganhou uma prop `tooltip` opcional, reaproveitando o
+   componente shadcn `Tooltip` já usado em `Dashboard.jsx` (precisou de alias
+   `Tooltip as InfoTooltip` nos dois arquivos — `Tooltip` já é importado do
+   `recharts` para o gráfico). `LiveConfidenceCard.jsx` (IC95 ao vivo)
+   ganhou tooltip no badge CONCLUSIVO/INCONCLUSIVO e no trecho "IC [x; y]".
+3. **Settings.jsx sem texto de ajuda nos sliders** — os 7 campos de
+   `GROUPS[].fields[]` ganharam `help` (mesmo padrão que `BOOL_FIELDS` já
+   tinha), renderizado abaixo do slider.
+4. **Nav mobile lotada** — `Sidebar.jsx`'s `MobileBottomNav` tinha 12 itens
+   com ícone+rótulo de 10px empilhados numa faixa de 64px — rótulos como
+   "Verificação"/"Relatório" ficavam espremidos/cortados. Trocado para
+   ícone-só (mesmo padrão que o `DesktopSidebar` já usa), com
+   `aria-label`/`aria-current` para acessibilidade — não remove nenhuma rota,
+   só o rótulo visível.
+5. **Alerts.jsx sem filtro SMC** — `smc_structure` é uma origem real e
+   ativamente gravada (`scanner.js`, `SignalEvent.jsonc`), mas faltava em
+   `SOURCE_LABELS` e na lista de botões de filtro — usuário não conseguia
+   filtrar alertas só de estrutura SMC. Adicionado nos dois.
+6. **PineScript.jsx rotulado "v12"** — a estratégia real é v13.2
+   (`CLAUDE.md`, `title` do Pine embutido já dizia v13.2) — 7 ocorrências de
+   cópia visual (subtítulo, pill de status, aba, botões, header de seção,
+   texto de intro, diálogo de confirmação) corrigidas para v13.2. A chave de
+   `localStorage` (`pine_script_code_v12`) e o nome de arquivo fake no editor
+   foram **deixados como estavam** onde mudar exigiria migração — só o nome
+   de arquivo fake (`NE_RF_v12.pine`, puramente decorativo) foi atualizado
+   junto por ser cópia, não estado persistido.
+7. **Assets.jsx sem tratamento visual de erro/pendente** — `scan_status`
+   (enum `idle|scanning|success|error`) só tinha ícone para `error`/`success`;
+   `idle` (o default do schema) não renderizava nada. Adicionado ícone neutro
+   para `idle`/ausente. `backfill_check_status` (enum `pending|done|error`,
+   escrito em `Assets.jsx`/`AddAssetForm.jsx` mas nunca lido em lugar nenhum)
+   ganhou um badge âmbar quando `'pending'` — relevante desde que o backfill
+   automático ficou pausado (2026-08-29 a 2026-08-31, item 137 addendum):
+   ativos adicionados/reativados nessa janela ficam com o campo preso em
+   `'pending'` sem nenhuma indicação visual até agora.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` — 1263/1263 testes passando, sem
+regressão (mudança puramente de JSX/copy, nenhum teste novo necessário —
+nenhum destes 7 pontos tem lógica pura testável, são todos apresentação
+condicional de dados já existentes).
+
+**Não verificado ao vivo no navegador**: esta sessão tentou subir o dev
+server (`npm run dev`) e capturar screenshots via Playwright (sem
+`chromium-cli`; usado o Playwright instalado globalmente em
+`/opt/node22/lib/node_modules` como alternativa) — o app **não monta**
+neste ambiente: `firebaseClient.js` lança `Firebase: Error
+(auth/invalid-api-key)` de forma síncrona (sem credenciais reais do
+Firebase disponíveis nesta sandbox), o que impede até o `AuthProvider`
+resolver e a página fica em branco antes de qualquer rota renderizar. Mesma
+classe de limitação já registrada nos itens 141/142 (esta sessão não
+alcança Firestore/Binance diretamente) — aqui se estende ao próprio SDK do
+Firebase Auth no navegador. Verificação ficou em: build/lint/testes +
+releitura adversarial do diff (guards `Number.isFinite`, nenhuma prop
+faltando, sem colisão de import `Tooltip`/`recharts`). Confirmação visual
+real fica pendente do usuário testar em produção/preview.

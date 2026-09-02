@@ -7,6 +7,7 @@ import moment from 'moment';
 
 const SOURCE_LABELS = {
   range_filter: 'Range Filter',
+  smc_structure: 'SMC Structure',
   rsi: 'RSI',
   macd: 'MACD',
   ema_cross: 'EMA Cross',
@@ -139,7 +140,7 @@ export default function Alerts() {
           <div className="w-px h-4" style={{ background: 'rgba(255,255,255,0.08)' }} />
 
           {/* Fonte */}
-          {['all', 'range_filter', 'rsi', 'macd', 'ema_cross'].map(src => (
+          {['all', 'range_filter', 'smc_structure', 'rsi', 'macd', 'ema_cross'].map(src => (
             <button key={src} onClick={() => setFilterSource(src)}
               className="text-[9px] font-mono px-2 py-1.5 rounded-lg transition-all"
               style={filterSource === src
