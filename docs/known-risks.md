@@ -17813,6 +17813,30 @@ comportamento pós-correção ao vivo. A confirmação real vem do próximo cicl
 horário em produção — deve mostrar `checkOneAsset:LDOUSDT` falhando rápido
 (~5min) com a mensagem de timeout, em vez de travar os 20min inteiros.
 
+### Confirmado em produção (2026-09-02T19:50Z, run #15)
+
+Primeira execução real de `backfill.yml` desde o merge do PR #286: job
+inteiro terminou em **28s** (`npm run backfill-check` falhou em ~1,1s) —
+não os 20min do timeout antigo. Log real (`get_job_logs`):
+`[backfill] FAILED: Error: 8 RESOURCE_EXHAUSTED: Quota exceeded.`
+
+**Nuance real, não a que a previsão original assumia**: a mensagem que
+apareceu é o erro CRU do Firestore, não o texto `Timeout: ... via
+docs/known-risks.md item 142` do `withTimeout`. Isso porque, desta vez, a
+PRIMEIRA chamada de `main()` (`MonitoredAsset.filter({backfill_check_status:
+'pending'})`) rejeitou sozinha quase instantaneamente — a cota estava tão
+esgotada no instante exato que o cliente do Firestore nem chegou a ficar
+preso em retry por minutos, então a corrida do `withTimeout` terminou pelo
+lado da promise REAL, não pelo timer de 5min. Isso é exatamente o
+comportamento correto por design (`scripts/scanTimeout.mjs` propaga o erro
+real inalterado quando ele chega antes do timeout) — só não é o caminho
+"trava e o timeout resgata" que a redação original desta seção previa como
+única confirmação válida. **O resultado que importa está confirmado**: sem
+hang de 20min, alerta Telegram de cota disparado (mesmo regex
+`RESOURCE_EXHAUSTED` bate nesta mensagem). Continua sem dado sobre a
+pergunta "por que LDOUSDT especificamente" — esta falha aconteceu antes do
+loop por-ativo sequer começar.
+
 ## 148. Investigação — sobrou alavanca de LEITURA para cortar, sem mudar comportamento? (2026-09-02)
 
 **Pedido do usuário**: depois do item 147 (e da explicação de que a cota
