@@ -18020,3 +18020,100 @@ do motor de trading (só o `cron:` de um workflow isolado, coleções
 sombra); `npm run lint && npm test && npm run build` +
 `npm run build:scan-shadow` seguem válidos (nenhum código tocado, só YAML
 e comentários/docs).
+
+## 149. Conselho de revisão — Pine de terceiro (LuxAlgo "HTF Reversal Divergences") vale a pena como filtro? (2026-09-02)
+
+**Pedido do usuário**: trouxe um Pine Script de terceiro (LuxAlgo, CC
+BY-NC-SA, `indicator()` de painel — sem `strategy()`, sem stop/TP/gestão de
+risco próprios) só como "estudo", perguntando se valeria a pena como filtro
+no Sentinel. Pediu conselho de agentes (`.claude/skills/sentinel-council-
+review`) e honestidade. Nenhuma mudança de código nesta rodada — puro
+registro de análise.
+
+### Componentes do script
+
+1. Padrões de reversão num timeframe mais alto (HTF): engulfing bull/bear e
+   pin bar (hammer/shooting star), calculados sobre o candle HTF recém-
+   fechado via `request.security(...)`.
+2. Divergência RSI clássica via pivôs (`ta.pivothigh`/`ta.pivotlow`,
+   lookback 5/5 default).
+3. "HTF PO3" (desligado por padrão): visualização de candle projetado, sem
+   lógica de sinal.
+
+### Veredito por componente (convergência dos 3 papéis — estrategista,
+cético, arquiteto — rodados em paralelo, sem enviar nada a provedor
+externo)
+
+**1. Padrões de vela HTF — NÃO vale a pena. Já existe e já morreu
+empiricamente.** `src/lib/indicators/candlePatterns.js` (`detectEngulfing`,
+`detectPinBar`, e um 3º detector que o LuxAlgo nem tem — `detectMarubozu`)
+já implementa exatamente isso, ligado por `pineConfig.candlePatternEnabled`
+(item 58, desligado por padrão). O A/B **já foi medido duas vezes**: a
+exploração original do item 58 (n=22, +0,452R, inconclusivo, top-10 = 130%
+do resultado — amostra pequena demais pra confiar) e depois com amostra
+real no ledger de backtest (`candle-pattern-batchA`, n=96, **−0,208R**,
+profit factor 0,625 — o item 113 chama isso de "o maior efeito de
+magnitude, na direção ruim, já medido" naquela rodada). A queda de +0,452
+pra −0,208 é a mesma assinatura de overfitting que o item 133 usou pra
+matar a hipótese SELL-only. Reabrir isso não é um teste novo, é RETESTAR
+algo já decidido com dado real.
+
+**2. HTF PO3 — nada a portar.** Puramente visual (candle projetado, sem
+lógica de sinal).
+
+**3. Divergência RSI — genuinamente nova, mas prioridade BAIXA.** Grep por
+"diverg" em `src/lib/indicators/` não encontra nenhuma lógica preço-vs-
+indicador (RSI já é calculado e usado — cruzamento de 50 no score de
+confluência, `rsi_zone` persistido, `rsiOnlyGateEnabled` backtest-only —
+mas nunca comparado contra pivôs de preço). Estruturalmente diferente do
+que já foi testado (mede exaustão/reversão, não alinhamento de tendência
+como RF/EMA/ADX/Chop). Contras que pesam contra priorizar agora: (a) o
+projeto tem **65 trials registrados, 0 conclusivos** (`docs/backtest-
+trial-registry.json`), e o edge medido (+0,0262R) tem `p=0,738` — testar
+mais uma coisa entra nesse mesmo território; (b) `ta.pivothigh(lbL,lbR)` só
+confirma `lbR` barras depois — no 4h isso é ~20h de atraso, então faria
+mais sentido no TF de confirmação (15m/5m) que no de sinal; (c) o alvo
+declarado do projeto **mudou de "provar edge" pra "estreitar o IC"** (item
+133) — qualquer gate novo corta amostra (o de padrão de vela cortou ~75%),
+o que trabalha CONTRA esse alvo, não a favor, a menos que a especificidade
+ganha compense. Esforço de implementação (se decidido testar): BAIXO-MÉDIO
+— RSI já é porte validado por golden test, cálculo é sobre candles já
+buscados (custo de Firestore/API marginal ~zero), entraria no mesmo molde
+do item 58 (`evaluateRsiDivergenceGate` ao lado de `evaluateCandlePattern
+Gate`, `scanner.js:314`, 2 chaves espelhadas em `pineParser.js`/
+`adminPineConfig.js`). Armadilha real se implementado: `detectSwings`
+(`smcStructure.js:37`) já existe como "pivô" no projeto mas com convenção
+DIFERENTE (breakout de janela com estado, não lbL/lbR simétrico) —
+reusar/confundir os dois silenciosamente mudaria a semântica (mesma classe
+de bug do item 34: janela de lookback errada zerou operações SMC).
+
+### Licença (CC BY-NC-SA — não-comercial, compartilhaAlike)
+
+Não é bloqueador hoje (`CLAUDE.md`: projeto 100% gratuito, sem
+monetização) — e nunca portaríamos o CÓDIGO do LuxAlgo, só reimplementaria
+a técnica genérica (divergência RSI é conceito de análise técnica clássico,
+não IP do LuxAlgo). A cláusula ShareAlike merece nota porque o repo publica
+uma branch `backups` pública (já foi risco de exposição no item 25) — sem
+ação necessária agora, só registro.
+
+### Recomendação final
+
+**Padrões de vela: deixar quieto — pergunta já respondida com dado real.**
+**PO3: nada a fazer.** **Divergência RSI: fica no backlog, prioridade
+baixa, NÃO virar trabalho agora** — só valeria a pena com disciplina
+completa (hipótese e critério de morte pré-registrados antes do run, A/B
+**pareado** — item 133 exige isso pra Δ<0,10R —, e reportar meia-largura de
+IC/poder de descarte, não só expectância pontual). Nenhum P0 do motor
+bloqueia (todos `[CORRIGIDO]` em `trading-engine.md`), então não é uma
+questão de pré-requisito — é de prioridade e de já ter amostra insuficiente
+sobrando pra gastar num filtro novo.
+
+### Verificação
+
+3 papéis independentes (estrategista, cético, arquiteto — Agent tool,
+subagentes locais, nenhum dado enviado a provedor externo) investigaram o
+código real em paralelo e citaram arquivo:linha; convergência nos 3 sobre
+padrões de vela e PO3, sem refutação real entre eles nesses dois pontos —
+só o cético trouxe o dado do 2º A/B (`candle-pattern-batchA`) que os outros
+não tinham achado, fortalecendo (não contradizendo) a mesma conclusão. Sem
+mudança de código.
