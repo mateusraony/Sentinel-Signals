@@ -7,31 +7,41 @@ name: Shadow scan (Fase 1 — RF 1h condicionado ao 4h)
 # 'experimentalRf1hShadow' (scripts/adminEntitiesShadow.js) — nunca abre uma
 # TradeOperation real, nunca notifica Telegram.
 #
-# Cadência de 30min (não hora em hora, não os ~5min do scan real) —
-# reduzida de 15min pra 30min a pedido do usuário (docs/known-risks.md item
-# 106/107: cota do Firestore estourando em produção, compartilhada com este
-# workflow). Achado original de revisão (Codex, PR #129, P1):
-# check15mConfirmation só examina o ÚLTIMO candle 15m fechado no instante da
-# chamada (src/lib/scanner.js) — a cadência de 15min anterior alinhava 1:1
-# com esse candle (TODO fechamento de 15m tinha chance de ser visto); 30min
-# reduz isso pra 1 de cada 2 (perde a metade intermediária) — uma perda real
-# de cobertura, não uma melhora; a comparação que sobra vantajosa é só
-# contra a cadência HORÁRIA (1 de cada 4), a alternativa mais barata em
-# cota que ficaria pior ainda (Codex review, PR #214, corrigiu uma
-# comparação errada que constava aqui antes). Um alinhamento que aparece e
-# reverte no MESMO fechamento de 30min continua permanentemente invisível
-# pro scan sombra, mesmo com a janela de retry de 4h — ela reavalia o
-# sinal, não os candles 15m intermediários perdidos.
-# ~48 passadas/dia (era ~96 em 15min) — reduz pela metade a fatia deste
-# workflow no orçamento compartilhado do Firestore (Spark gratuito, ~50k
-# leituras/20k escritas por dia, projeto inteiro, trading-engine.md/
-# scanner.js PASSES_PER_DAY) já usada pela produção real. Se depois de
-# alguns dias a tela "Logs" ainda mostrar aviso de quota perto do limite,
-# apertar de volta pra hora em hora é reversível sem custo (só o `cron:`
-# abaixo) — nenhum estado de produção pra desfazer.
+# Cadência HORÁRIA (era 30min) — apertada de novo a pedido do usuário
+# (docs/known-risks.md item 148, achado 2, 2026-09-02): cota do Firestore
+# estourando de forma sistemática ao longo do dia (item 147), este workflow
+# compartilha o MESMO projeto/cota da produção real. Já tinha sido reduzida
+# de 15min pra 30min antes por este mesmo motivo (item 106/107) — esta é a
+# 2ª rodada de aperto, prevista desde então ("apertar de volta pra hora em
+# hora é reversível sem custo"). Achado original de revisão (Codex, PR #129,
+# P1): check15mConfirmation só examina o ÚLTIMO candle 15m fechado no
+# instante da chamada (src/lib/scanner.js) — a cadência horária cobre só 1
+# de cada 4 fechamentos de 15m (a pior cobertura já cogitada nas rodadas
+# anteriores, aceita agora porque a pressão de cota é maior que a perda de
+# amostra do experimento). Um alinhamento que aparece e reverte no MESMO
+# fechamento de 1h continua permanentemente invisível pro scan sombra,
+# mesmo com a janela de retry de 4h — ela reavalia o sinal, não os candles
+# 15m intermediários perdidos.
+# ~24 passadas/dia SE o `schedule:` disparasse no ritmo declarado — mas o
+# item 134 (2026-08-29) já tinha achado que a cadência REAL deste workflow
+# roda muito mais devagar que o cron declarado (GitHub despriorizando o
+# `schedule:` interno sob a carga do `scan.yml`, que dispara ~288x/dia via
+# disparo externo) e isso segue acontecendo: medido de novo em 2026-09-02,
+# a cadência real dos últimos 5 dias foi ~5,6 passadas/dia (intervalo médio
+# de ~4h28min), não as ~48/dia que 30min prometia. Ou seja: o ganho real
+# deste aperto de 30min→60min é INCERTO — pode ser bem menor que "metade",
+# porque a cadência já era muito menor que a declarada antes desta mudança.
+# A correção que garantiria o ganho é migrar pro mesmo disparo externo que
+# já resolveu isso para o scan.yml (item 18/106) — fora do repositório
+# (cron-job.org, PAT pessoal do usuário), não implementada aqui.
+# Minuto 41 (não :00) de propósito — evita o pico de congestionamento do
+# GitHub Actions no topo da hora, mesmo espírito do scan.yml (:07) e do
+# backfill.yml (:23), cada um num minuto diferente pra não competir entre
+# si nem com o disparo externo do scan real (cron-job.org, ~5min). Reversível
+# sem custo (só o `cron:` abaixo) — nenhum estado de produção pra desfazer.
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "41 * * * *"
   workflow_dispatch: {}
 
 concurrency:

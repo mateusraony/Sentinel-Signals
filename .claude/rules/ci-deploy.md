@@ -50,10 +50,16 @@ paths:
   cada ciclo horário (`docs/known-risks.md` item 147).
 - `scan-shadow.yml` — braço decisório do modo sombra prospectivo (Fase 1, RF
   1h condicionado ao 4h, `docs/known-risks.md` item 56): roda `npm run
-  scan:shadow` a cada 30min (reduzido de 15min — item 106/107, folga de cota
-  do Firestore compartilhado com a produção), escreve só em coleções
-  Firestore isoladas (`experimentalRf1hShadow*`), nunca abre operação real
-  nem notifica Telegram.
+  scan:shadow`, declarado a cada hora (`cron: "41 * * * *"`, reduzido de
+  15min→30min — item 106/107 — e depois de 30min→60min — item 148, achado
+  2 — sempre por folga de cota do Firestore compartilhado com a produção).
+  **A cadência REAL diverge da declarada** — GitHub despriorizando o
+  `schedule:` interno deste workflow sob a carga do `scan.yml` (item 134,
+  confirmado de novo no item 148: ~5,6 passadas/dia reais em vez das ~48
+  que 30min prometia) — então o ganho do aperto 30min→60min é incerto, não
+  garantido. Escreve só em coleções Firestore isoladas
+  (`experimentalRf1hShadow*`), nunca abre operação real nem notifica
+  Telegram.
 - `analyze-shadow.yml` — relatório **só leitura** do acúmulo do modo sombra
   acima: `npm run analyze-shadow-rf1h` 1x/dia (+ `workflow_dispatch` manual),
   publica no Job Summary (humano) e em JSON no log do job (leitura

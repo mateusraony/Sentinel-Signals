@@ -17973,5 +17973,50 @@ com ~10 ativos).
   `useAutoScan.js`) conferidos: nenhum desestrutura além de
   `total`/`results`/`skipped` — campo `assets` aditivo, ignorado sem
   quebrar nada.
-- **Achados 1.2 e 2 seguem não implementados** — ficam à disposição do
-  usuário, conforme a ordem de prioridade acima.
+- **Achado 1.2 segue não implementado** — fica à disposição do usuário.
+
+### Achado 2 implementado (2026-09-02, pedido explícito do usuário) — com ressalva importante achada durante a implementação
+
+Usuário escolheu, entre as duas opções apresentadas (reduzir cadência vs.
+pausar), **reduzir a cadência declarada de `scan-shadow.yml` de 30min pra
+1h** (`.github/workflows/scan-shadow.yml`: `cron: "*/30 * * * *"` →
+`"41 * * * *"` — minuto :41 escolhido de propósito, fora do topo da hora e
+diferente do minuto de `scan.yml` :07 e `backfill.yml` :23, pra não
+competir entre os três). `analyze-shadow.yml` e `.claude/rules/ci-deploy.md`
+atualizados pra citar a nova cadência.
+
+**Antes de reportar como pronto, medi a cadência REAL do workflow contra a
+API do GitHub Actions (não só assumi que 30min→60min dobra pra a metade) —
+e o resultado contradiz a expectativa original do achado 2.** O item 134
+(2026-08-29) já tinha achado que `scan-shadow.yml` roda muito mais devagar
+que o `cron:` declarado, porque depende só do `schedule:` interno do
+GitHub Actions — que é despriorizado sob a carga alta do `scan.yml`
+(~288 disparos/dia via cron-job.org externo, mesmo repositório). Medindo
+de novo agora (28 runs entre 2026-08-28T18:29Z e 2026-09-02T18:54Z, span
+de ~120h): **intervalo médio real de ~4h28min, ~5,6 passadas/dia** — não
+as ~48/dia que a cadência declarada de 30min prometia (nem as ~24/dia que
+60min prometeria). O problema do item 134 **não foi corrigido nesses 4
+dias** e continua exatamente como estava.
+
+**Consequência honesta**: o aperto de 30min→60min é uma mudança correta e
+de risco zero (reversível, isolada, mesmo raciocínio dos itens 106/107),
+mas o GANHO REAL sobre a cota do Firestore é **incerto, provavelmente bem
+menor que "reduz pela metade"** — porque a cadência real já estava muito
+abaixo da declarada ANTES desta mudança. Não dá pra afirmar quanto de cota
+isso libera sem medir de novo depois (a cadência real pode até não mudar
+quase nada, se o gargalo for inteiramente a despriorização do `schedule:`
+e não o valor do `cron:` em si). A correção que garantiria o ganho —
+migrar `scan-shadow.yml` pro mesmo disparo externo que já resolveu isso
+para o `scan.yml` (cron-job.org, item 18/106) — é mudança de
+infraestrutura fora do repositório, com o PAT pessoal do usuário, e
+**segue não implementada**, mesma decisão do item 134.
+
+### Verificação (achado 2)
+
+Medição da cadência real via `mcp__github__actions_list` (28 runs mais
+recentes de `scan-shadow.yml`, IDs #546-#573) — script Python somando os
+intervalos entre `created_at` consecutivos. Sem mudança de comportamento
+do motor de trading (só o `cron:` de um workflow isolado, coleções
+sombra); `npm run lint && npm test && npm run build` +
+`npm run build:scan-shadow` seguem válidos (nenhum código tocado, só YAML
+e comentários/docs).

@@ -18,10 +18,11 @@ name: Modo sombra — relatório de amostra (Fase 1)
 # docs/known-risks.md item 56.
 on:
   schedule:
-    # 1x/dia — o acúmulo é lento (sinal 1h, cadência de scan de 30min,
-    # piso de 30 operações fechadas), não precisa de cadência maior; muito
-    # mais barato que reusar os 30min do scan-shadow.yml para algo que só
-    # LÊ o que já foi escrito.
+    # 1x/dia — o acúmulo é lento (sinal 1h, cadência de scan agora HORÁRIA
+    # — docs/known-risks.md item 148, achado 2 — piso de 30 operações
+    # fechadas), não precisa de cadência maior; muito mais barato que
+    # reusar a cadência do scan-shadow.yml para algo que só LÊ o que já
+    # foi escrito.
     - cron: "0 13 * * *"
   workflow_dispatch: {}
 
