@@ -17362,11 +17362,21 @@ seta `exitCode` e chama `process.exit`). 1246/1246 testes passando.
 `node scripts/build-scan.mjs` confirma o bundle compila com o import novo
 (219.5kb → 220.6kb).
 
-**Não confirmado contra produção**: mesma ressalva do item 141 — esta sessão
-não consegue disparar `scan.yml` de verdade nem observar o comportamento
-pós-correção ao vivo. A confirmação real só vem do próximo disparo em
-produção (a incidente ficou ativa até pelo menos 20:37 UTC no momento desta
-análise).
+**Confirmação parcial contra produção (addendum 2026-09-02, item 143)**: via
+GitHub Actions API (esta sessão não alcança Firestore/Binance diretamente,
+mas alcança a API do GitHub), `scan.yml` mostra **30 execuções consecutivas
+`success`** entre 14:45 e 17:10 UTC de 2026-09-02 — cadência normal de ~5min
+sustentada, bem depois do merge deste fix e do merge do item 143. Confirma
+que a cascata de `cancelled`/`failure` do incidente original não voltou a
+ocorrer nesta janela. **Não confirma especificamente** o caminho de
+`withTimeout` disparando de verdade sob `RESOURCE_EXHAUSTED` real — nenhuma
+das 30 execuções falhou, e um erro por-ativo dentro de `scanAllAssets` é
+absorvido internamente (vira `results[].success:false`, não faz o job
+inteiro falhar), então uma exaustão de cota parcial poderia estar
+acontecendo e sendo tratada sem aparecer como `failure` nesta amostra. A
+confirmação completa (job `failure` rápido + alerta Telegram entregue,
+correlacionados) só vem de observar o próximo episódio real de cota
+esgotada.
 
 ## 143. Varredura de 6 agentes (funções/UI/segurança/docs/motor/testes) — "correção dos 3 topos" (2026-09-02)
 
