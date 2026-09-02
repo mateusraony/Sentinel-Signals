@@ -5511,3 +5511,40 @@ describe('teto de exposição de carteira — maxConcurrentSameSideOps (item 133
     expect(out.portfolioCapOutcomes).toHaveLength(0);
   });
 });
+
+describe('persistScanResults — assetScanUpdate no retorno espelha exatamente o que foi gravado (docs/known-risks.md item 148)', () => {
+  // scripts/run-scan.mjs's checkAssetHealthchecks() reuses this field instead
+  // of re-querying MonitoredAsset — a second Firestore read that duplicated
+  // the one scanAllAssetsInner already does. This only avoids the extra read
+  // safely if the returned field is byte-identical to what was actually
+  // persisted, which is what these two tests prove.
+  it('sucesso: assetScanUpdate bate com o doc gravado em MonitoredAsset', async () => {
+    const results = { '4h': makeTfData() };
+    const out = await persistScanResults(makeScanResult({ results }));
+
+    expect(out.assetScanUpdate).toMatchObject({
+      scan_status: 'success',
+      scan_error: '',
+      scan_error_since: null,
+    });
+    expect(typeof out.assetScanUpdate.last_scan_at).toBe('string');
+
+    const [stored] = await backend.entities.MonitoredAsset.filter({});
+    expect(stored).toMatchObject(out.assetScanUpdate);
+  });
+
+  it('erro: assetScanUpdate reflete scan_status/scan_error/scan_error_since gravados, mesmo sem sinal', async () => {
+    const results = { '4h': makeTfData() };
+    const scanResult = { ...makeScanResult({ results }), errors: [{ timeframe: '4h', error: 'Binance timeout' }] };
+    const out = await persistScanResults(scanResult);
+
+    expect(out.assetScanUpdate).toMatchObject({
+      scan_status: 'error',
+      scan_error: '4h: Binance timeout',
+    });
+    expect(typeof out.assetScanUpdate.scan_error_since).toBe('string');
+
+    const [stored] = await backend.entities.MonitoredAsset.filter({});
+    expect(stored).toMatchObject(out.assetScanUpdate);
+  });
+});

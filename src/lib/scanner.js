@@ -3960,14 +3960,21 @@ export async function persistScanResults(scanResult) {
   // only last_scan_at would never notice an asset failing every single pass;
   // see docs/known-risks.md item 12 and scripts/run-scan.mjs's per-asset
   // healthcheck, which alerts when this has been set for too long).
-  await backend.entities.MonitoredAsset.update(asset.id, {
+  // Captured in a local var (not just inlined in the .update() call below) so
+  // the exact just-written fields can be returned to the caller — scanAllAssetsInner
+  // reuses this to keep its own asset snapshot fresh WITHOUT a second read
+  // (docs/known-risks.md item 148): recomputing the same fields there from
+  // scratch would duplicate this logic and risk drifting from what was
+  // actually persisted, so the payload itself is threaded through instead.
+  const assetScanUpdate = {
     last_scan_at: new Date().toISOString(),
     scan_status: errors.length > 0 ? 'error' : 'success',
     scan_error: errors.length > 0 ? errors.map(e => `${e.timeframe}: ${e.error}`).join('; ') : '',
     scan_error_since: errors.length > 0
       ? (asset.scan_status === 'error' ? (asset.scan_error_since || new Date().toISOString()) : new Date().toISOString())
       : null,
-  });
+  };
+  await backend.entities.MonitoredAsset.update(asset.id, assetScanUpdate);
 
   // Log scan — only when something actually happened (new signal or error).
   // A routine "nothing changed" pass used to write this unconditionally for
@@ -3991,7 +3998,7 @@ export async function persistScanResults(scanResult) {
     });
   }
 
-  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes, rfRegimeOutcomes, smcObFvgOutcomes, smcTriggerOutcomes, entryFunnelOutcomes, candlePatternOutcomes, portfolioCapOutcomes };
+  return { persistedSignals, errors, smc5mZoneRejections, arbitrationOutcomes, retestOutcomes, displacementOutcomes, smcRegimeOutcomes, rfRegimeOutcomes, smcObFvgOutcomes, smcTriggerOutcomes, entryFunnelOutcomes, candlePatternOutcomes, portfolioCapOutcomes, assetScanUpdate };
 }
 
 // known-risks.md item 32: useAutoScan.js used to gate priceCheckActiveOps()
@@ -4269,10 +4276,19 @@ async function scanAllAssetsInner(onProgress) {
   const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
 
   if (assets.length === 0) {
-    return { total: 0, results: [] };
+    return { total: 0, results: [], assets: [] };
   }
 
   const allResults = [];
+  // Post-scan snapshot of each asset, built up as the loop below writes to
+  // MonitoredAsset — NOT a second read. scripts/run-scan.mjs's per-asset
+  // healthcheck (checkAssetHealthchecks) needs the freshly-written
+  // last_scan_at/scan_error_since to decide staleness correctly; reusing the
+  // PRE-scan `assets` array above would silently feed it data from the
+  // previous pass. Merging each asset's just-written fields here keeps the
+  // caller's list accurate without an extra Firestore query
+  // (docs/known-risks.md item 148).
+  const updatedAssets = [];
 
   for (let i = 0; i < assets.length; i++) {
     const asset = assets[i];
@@ -4287,13 +4303,14 @@ async function scanAllAssetsInner(onProgress) {
       // success/error status at the end of the pass.
       const result = await scanAsset(asset);
       const persisted = await persistScanResults(result);
-      
+
       allResults.push({
         symbol: asset.symbol,
         success: true,
         ...result,
         persisted,
       });
+      updatedAssets.push({ ...asset, ...persisted.assetScanUpdate });
 
       // Small delay between assets to respect rate limits
       if (i < assets.length - 1) {
@@ -4306,12 +4323,14 @@ async function scanAllAssetsInner(onProgress) {
         error: err.message,
       });
 
-      await backend.entities.MonitoredAsset.update(asset.id, {
+      const assetScanUpdate = {
         scan_status: 'error',
         scan_error: err.message,
         last_scan_at: new Date().toISOString(),
         scan_error_since: asset.scan_status === 'error' ? (asset.scan_error_since || new Date().toISOString()) : new Date().toISOString(),
-      });
+      };
+      await backend.entities.MonitoredAsset.update(asset.id, assetScanUpdate);
+      updatedAssets.push({ ...asset, ...assetScanUpdate });
 
       // Deduped like logDuplicateActiveOpsPriceCheck (item 39.1): a Firestore
       // outage/quota exhaustion (docs/known-risks.md item 106) repeats the
@@ -4361,5 +4380,5 @@ async function scanAllAssetsInner(onProgress) {
     });
   }
 
-  return { total: assets.length, results: allResults };
+  return { total: assets.length, results: allResults, assets: updatedAssets };
 }
