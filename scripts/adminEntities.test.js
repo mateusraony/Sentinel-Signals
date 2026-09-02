@@ -11,17 +11,24 @@
 // normalmente — P0-h, .claude/rules/trading-engine.md).
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { addMock, runTransactionMock, collectionMock } = vi.hoisted(() => {
+const { addMock, runTransactionMock, collectionMock, whereMock, getMock } = vi.hoisted(() => {
   const addMock = vi.fn();
   const runTransactionMock = vi.fn();
+  const getMock = vi.fn();
+  // where/orderBy/limit são compartilhados entre TODAS as instâncias de
+  // collection() de propósito — cada filter() só chama col() uma vez, então
+  // isso deixa whereMock.mock.calls como o registro fiel de toda constraint
+  // emitida numa única chamada, sem precisar capturar a instância da query.
+  const whereMock = vi.fn().mockReturnThis();
   const collectionMock = vi.fn(() => ({
     add: addMock,
     doc: vi.fn(() => ({})),
-    where: vi.fn().mockReturnThis(),
+    where: whereMock,
     orderBy: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
+    get: getMock,
   }));
-  return { addMock, runTransactionMock, collectionMock };
+  return { addMock, runTransactionMock, collectionMock, whereMock, getMock };
 });
 
 vi.mock('firebase-admin/app', () => ({
@@ -44,6 +51,9 @@ beforeEach(() => {
   addMock.mockReset();
   runTransactionMock.mockReset();
   collectionMock.mockClear();
+  whereMock.mockClear();
+  getMock.mockReset();
+  getMock.mockResolvedValue({ docs: [] });
 });
 
 describe('adminEntities — SystemLog nunca propaga falha de escrita (item 138 addendum)', () => {
@@ -71,5 +81,42 @@ describe('adminEntities — SystemLog nunca propaga falha de escrita (item 138 a
     await expect(
       backend.entities.TradeOperation.create({ symbol: 'BTCUSDT' })
     ).rejects.toThrow('PERMISSION_DENIED');
+  });
+});
+
+// docs/known-risks.md item 141/143: mesmo risco do espelho browser
+// (src/api/entities.test.js) — classifyFilter só descreve a semântica
+// pretendida, a tradução real para .where() encadeado do admin SDK é
+// duplicada à mão aqui. Um bug nesta tradução (ex.: só aplicar a 1a
+// constraint de um range de 2) derrotaria o fix do item 141 no CRON
+// especificamente (é este arquivo, não entities.js, que roda no scan
+// agendado) com CI verde.
+describe('adminEntities — filter() traduz range para .where() nativo (item 143)', () => {
+  it('{ gte } vira uma única constraint where(field, ">=", operand)', async () => {
+    const { backend } = await import('./adminEntities.js');
+    await backend.entities.TradeOperation.filter({ created_date: { gte: '2026-10-01T00:00:00.000Z' } });
+    const calls = whereMock.mock.calls.filter(([field]) => field === 'created_date');
+    expect(calls).toEqual([['created_date', '>=', '2026-10-01T00:00:00.000Z']]);
+  });
+
+  it('{ gte, lt } vira DUAS constraints where() no mesmo campo — intervalo [a, b)', async () => {
+    const { backend } = await import('./adminEntities.js');
+    await backend.entities.TradeOperation.filter({
+      created_date: { gte: '2026-10-01T00:00:00.000Z', lt: '2026-11-01T00:00:00.000Z' },
+    });
+    const calls = whereMock.mock.calls.filter(([field]) => field === 'created_date');
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        ['created_date', '>=', '2026-10-01T00:00:00.000Z'],
+        ['created_date', '<', '2026-11-01T00:00:00.000Z'],
+      ]),
+    );
+    expect(calls).toHaveLength(2);
+  });
+
+  it('igualdade simples continua where(field, "==", valor) — não regride', async () => {
+    const { backend } = await import('./adminEntities.js');
+    await backend.entities.TradeOperation.filter({ status: 'RUNNER_ACTIVE' });
+    expect(whereMock).toHaveBeenCalledWith('status', '==', 'RUNNER_ACTIVE');
   });
 });

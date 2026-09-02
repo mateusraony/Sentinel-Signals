@@ -14,6 +14,7 @@
 import { closesFullyAtTp1, getEntryReferenceTime } from '../src/lib/opExitRules.js';
 import { formatBackfillLag } from '../src/lib/backfillDetection.js';
 import { getFirestore } from 'firebase-admin/firestore';
+import { withTimeout } from './scanTimeout.mjs';
 
 const DEFAULT_FILTERS = {
   timeframes: ['1h', '4h', '1d'],
@@ -319,11 +320,22 @@ const QUOTA_ALERT_COOLDOWN_MS = 60 * 60 * 1000;
 const AMBIGUOUS_EXIT_NOTE =
   `\nℹ️ <b>Nessa vela, o preço tocou o stop e o take ao mesmo tempo</b> — o gráfico não mostra qual foi primeiro de verdade. Por segurança, o sistema sempre considera que o stop aconteceu primeiro nesses casos raros. Essa operação já foi encerrada com esse resultado.\n`;
 
+// docs/known-risks.md item 142 addendum — o get()/set() do dedup abaixo são
+// chamadas Firestore reais no MESMO cliente admin que pode ficar preso em
+// retry de RESOURCE_EXHAUSTED por minutos (item 142). Esta função só é
+// chamada quando a cota JÁ deu match como esgotada (isFirestoreQuotaExhausted
+// em run-scan.mjs) — ou seja, exatamente na janela de maior risco de travar.
+// Sem timeout aqui, o alerta cujo propósito é avisar RÁPIDO vira o próprio
+// travamento que scanTimeout.mjs foi criado para eliminar, e o forceExit()
+// de run-scan.mjs nunca é alcançado. 15s é generoso pra um get/set de doc
+// único (bem menor que os 90s do scan inteiro, que faz muito mais chamadas).
+const QUOTA_DEDUP_TIMEOUT_MS = 15 * 1000;
+
 export async function notifyFirestoreQuotaExhausted(errMessage) {
   const ref = getFirestore().collection('systemAlerts').doc('firestoreQuota');
   let shouldAlert = true;
   try {
-    const snap = await ref.get();
+    const snap = await withTimeout(ref.get(), QUOTA_DEDUP_TIMEOUT_MS, 'notifyFirestoreQuotaExhausted: ref.get()');
     const lastAt = snap.exists && snap.data().last_alert_at ? new Date(snap.data().last_alert_at).getTime() : 0;
     shouldAlert = !lastAt || Date.now() - lastAt > QUOTA_ALERT_COOLDOWN_MS;
   } catch (e) {
@@ -339,7 +351,7 @@ export async function notifyFirestoreQuotaExhausted(errMessage) {
   );
   if (delivered) {
     try {
-      await ref.set({ last_alert_at: new Date().toISOString() });
+      await withTimeout(ref.set({ last_alert_at: new Date().toISOString() }), QUOTA_DEDUP_TIMEOUT_MS, 'notifyFirestoreQuotaExhausted: ref.set()');
     } catch (e) {
       console.warn('[adminTelegram] Falha ao gravar dedup de cota do Firestore (não crítico):', e.message);
     }
