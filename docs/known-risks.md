@@ -17641,3 +17641,62 @@ segue single-tenant na prática (comentário já existente no código) — o
 risco residual de um NAT/escritório compartilhado colidindo cooldowns
 legítimos é aceito, não é uma garantia forte (mesmo espírito do
 `lastTriggerAt` global, "freio de cortesia, não garantia forte").
+
+## 146. Achados de documentação da varredura de 6 agentes — 4 divergências fechadas (2026-09-02)
+
+**Pedido do usuário**: seguir com os achados de documentação do item 143
+("pode seguir com os achados de documentação também"). `.claude/rules/
+documentation-truth.md`: confrontado com o código real antes de escrever
+qualquer correção — os 4 pontos abaixo foram verificados com `grep`/leitura
+direta, não assumidos do resumo original da auditoria.
+
+1. **Tabela de schema do `CLAUDE.md`** listava 7 das 9 entidades reais de
+   `docs/schema-reference/*.jsonc` — faltavam `VerificationTask.jsonc`
+   (coleção `verificationTasks`, confirmada em `src/api/entities.js`,
+   consumida por `src/pages/Verification.jsx`) e
+   `TradingviewWebhookEvent.jsonc` (coleção `tradingviewWebhookEvents`,
+   escrita só por `server/index.js` via Admin SDK — nunca passa por
+   `backend.entities`, por isso ficou de fora até agora; adicionada à
+   tabela com essa ressalva). Ambas adicionadas.
+2. **Lista de workflows de `.claude/rules/ci-deploy.md`** documentava 9 dos
+   11 arquivos reais em `.github/workflows/` — faltavam `count-signals.yml`
+   (diagnóstico manual, conta `SignalEvent` RF por timeframe, apoia a
+   decisão do item 56 "Retomada 2026-08-03") e `golden-fixture.yml`
+   (congela candles reais da Binance como fixture dos golden tests de
+   paridade, `.claude/rules/pine-parity.md` — dispara manual, abre PR
+   sozinho). Ambos documentados.
+3. **`docs/schema-reference/TradeOperation.jsonc`** documentava `stop_basis`
+   (rotulado "SMC cascade only") mas nunca `initial_stop_basis` — o campo
+   irmão da cascata RF nativa (`buildTradeOpData`, `scanner.js:436`),
+   escrito desde o item 102, usado extensivamente na análise do item 102
+   (`docs/known-risks.md`, tabela de correlação `initial_stop_basis`×`tier`)
+   e testado em `scannerStateMachine.test.js` — mas nunca tinha entrada
+   própria no schema. Não é o mesmo campo com nome trocado — são DOIS
+   campos reais e distintos (uma cascata cada), e só um estava documentado.
+   Adicionado `initial_stop_basis` (enum `tier_atr`/`structural`/
+   `structural_floored`/`structural_capped`/`atr_fallback`) logo após
+   `initial_stop` no schema, com nota explícita apontando pra não confundir
+   com `stop_basis` (SMC).
+4. **`.claude/rules/firestore-concurrency.md`**'s lista de exceções
+   deliberadas (item 125 achado menor — docs que bypassam
+   `scripts/adminEntities.js` via `getFirestore()` direto) citava só
+   `strategyConfig/current` e `telegramFilters/current`. Um 3º já existia:
+   `systemAlerts/firestoreQuota` (`scripts/adminTelegram.js`,
+   `notifyFirestoreQuotaExhausted` — introduzido no item 138, com timeout
+   adicionado no item 143 desta mesma sessão). Diferença notável dos outros
+   dois: não tem lado browser nenhum (item 138 já documentava isso como
+   "só cron, não espelhado no navegador") — a nota foi ajustada para não
+   implicar que os três têm um par client-side.
+
+### Verificação
+
+Mudança só de documentação (`CLAUDE.md`, `.claude/rules/ci-deploy.md`,
+`.claude/rules/firestore-concurrency.md`,
+`docs/schema-reference/TradeOperation.jsonc`) — nenhum arquivo de código
+tocado. `TradeOperation.jsonc` confirmado como JSON válido após remover os
+comentários `//` (estilo JSONC) via script Python, já que nenhum código do
+projeto faz parse deste arquivo em runtime (é documentação pura) — só essa
+verificação sintática se aplicava. `npm run lint && npm test && npm run
+build` rodados mesmo assim — 1267/1267 passando, sem regressão (esperado,
+nenhum arquivo de código mudou). `CLAUDE.md` confirmado em 180 linhas,
+ainda abaixo do teto de ~200 do `documentation-truth.md`.

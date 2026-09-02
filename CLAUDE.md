@@ -47,6 +47,8 @@ conhecer o Firestore direto. Ao adicionar entidade, use `createEntity('colecao')
 | `PriceAlert.jsonc` | `priceAlerts` |
 | `SystemLog.jsonc` | `systemLogs` |
 | `User.jsonc` | `users` (`{ role }`, chave = uid) |
+| `VerificationTask.jsonc` | `verificationTasks` |
+| `TradingviewWebhookEvent.jsonc` | `tradingviewWebhookEvents` (só `server/index.js`, Admin SDK — não passa por `backend.entities`) |
 
 Sem `.jsonc`: `scannerLocks` (lock de scan), `assetActiveOps/{assetId}` (garante
 1 op ativa por ativo via transação de doc único), `strategyConfig/current`

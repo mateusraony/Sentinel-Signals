@@ -54,6 +54,20 @@ paths:
 - `keep-warm.yml` — ping `/health` a cada 10 min (Render free não hibernar).
 - `backup.yml` — backup diário das coleções de negócio → branch `backups`.
 - `deploy-firestore.yml` — deploy **manual** de rules/índices.
+- `count-signals.yml` — diagnóstico **manual** (só `workflow_dispatch`):
+  `scripts/count-1h-signals.mjs` conta `SignalEvent` RF por timeframe contra o
+  Firestore real, publica no Job Summary. Apoia uma decisão de produto (vale a
+  pena destravar o 1h como cascata de entrada? — `docs/known-risks.md` item
+  56, "Retomada 2026-08-03"), não é diagnóstico de rotina nem toca nenhuma
+  operação.
+- `golden-fixture.yml` — congela candles reais da Binance Spot como fixture
+  dos golden tests de paridade (`src/lib/indicators/goldenParity.test.js`,
+  `.claude/rules/pine-parity.md`) — roda no runner do GitHub porque a rede das
+  sessões do Claude Code bloqueia a Binance. Disparo **manual**
+  (`workflow_dispatch`, símbolo/timeframes/quantidade configuráveis); o job
+  commita os JSONs numa branch própria e **abre um PR sozinho** — os golden
+  tests do CI validam os candles reais antes do merge. Fixture é congelada de
+  propósito (teste determinístico e offline); não regravar sem motivo.
 - `backtest.yml` — disparo **manual** do motor de backtest histórico
   (`src/lib/backtestEngine.js`, ver `docs/claude/backtest-usage.md`) no
   runner do GitHub (alcança a Binance, diferente das sessões do Claude
