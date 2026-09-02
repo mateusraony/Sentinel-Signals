@@ -5,6 +5,7 @@ const AdmZip = require('adm-zip');
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
+const { createCooldown } = require('./rateLimit');
 
 // Fail fast with a clear message instead of an opaque JSON.parse crash if
 // this ever gets deployed without its secrets configured.
@@ -32,6 +33,12 @@ const auth = getAuth();
 const db = getFirestore();
 
 const app = express();
+// Render termina TLS/HTTP num proxy reverso na frente do processo — sem
+// isto, req.ip devolveria o endereço interno do proxy (o mesmo pra toda
+// requisição) em vez do IP real do cliente, inutilizando qualquer limite
+// chaveado por IP abaixo (docs/known-risks.md item 145). `1` = confia só no
+// primeiro hop (o proxy do Render), não numa cadeia arbitrária.
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
 
@@ -58,33 +65,21 @@ async function requireAuth(req, res, next) {
   }
 }
 
-// Per-uid cooldown factory — same courtesy-brake pattern as the backtest
-// trigger's lastTriggerAt/TRIGGER_COOLDOWN_MS below (no queue/DB, resets on
-// redeploy), but keyed by uid so one authenticated visitor can't burn
-// through a shared resource for everyone else — the Telegram bot's own
-// rate limit, or (item 125 achado menor) the shared GITHUB_ACTIONS_TOKEN's
-// request quota, which /api/backtest/status and /artifact both spend on
-// every call and, unlike /trigger, had no throttle at all despite only
-// requiring requireAuth (anonymous, docs/known-risks.md item 1).
-function createUidCooldown(ms) {
-  const lastAt = new Map();
-  return function checkCooldown(uid) {
-    const now = Date.now();
-    const last = lastAt.get(uid) || 0;
-    if (now - last < ms) return false;
-    lastAt.set(uid, now);
-    return true;
-  };
-}
-
-const checkTelegramNotifyRateLimit = createUidCooldown(10_000);
+// Freios de cortesia por IP (docs/known-risks.md item 145 — createCooldown
+// em rateLimit.js explica por que IP e não uid) protegendo um recurso
+// compartilhado: o rate limit do próprio bot do Telegram, ou (item 125
+// achado menor) a cota de requisições do GITHUB_ACTIONS_TOKEN compartilhado,
+// que /api/backtest/status e /artifact gastam a cada chamada e, ao
+// contrário de /trigger, não tinham NENHUM freio antes disto apesar de só
+// exigirem requireAuth (anônimo, docs/known-risks.md item 1).
+const checkTelegramNotifyRateLimit = createCooldown(10_000);
 // Frontend polls status every 10s (TriggerBacktestPanel.jsx STATUS_POLL_MS)
 // — well above this cooldown, so normal polling never hits 429.
-const checkBacktestStatusRateLimit = createUidCooldown(3_000);
+const checkBacktestStatusRateLimit = createCooldown(3_000);
 // Artifact is fetched once per completed run, not polled — a slightly
 // longer cooldown costs nothing for legitimate use and caps abuse a bit
 // tighter, since each call downloads+unzips a real file.
-const checkBacktestArtifactRateLimit = createUidCooldown(5_000);
+const checkBacktestArtifactRateLimit = createCooldown(5_000);
 
 // Sends a Telegram message on behalf of the caller. The bot token is a single
 // app-level secret (this app is single-tenant, see comment above) — the
@@ -103,7 +98,7 @@ app.post('/api/telegram-notify', requireAuth, async (req, res) => {
   if (text.length > 4000) {
     return res.status(400).json({ error: 'text muito longo (máx. 4000 caracteres).' });
   }
-  if (!checkTelegramNotifyRateLimit(req.uid)) {
+  if (!checkTelegramNotifyRateLimit(req)) {
     return res.status(429).json({ error: 'Aguarde um pouco antes de enviar outra notificação.' });
   }
   if (!process.env.TELEGRAM_CHAT_ID) {
@@ -360,7 +355,7 @@ app.get('/api/backtest/status/:runId', requireAuth, requireGithubToken, async (r
   if (!/^\d+$/.test(runId)) {
     return res.status(400).json({ error: 'runId inválido.' });
   }
-  if (!checkBacktestStatusRateLimit(req.uid)) {
+  if (!checkBacktestStatusRateLimit(req)) {
     return res.status(429).json({ error: 'Aguarde um pouco antes de consultar de novo.' });
   }
   try {
@@ -381,7 +376,7 @@ app.get('/api/backtest/artifact/:runId', requireAuth, requireGithubToken, async 
   if (!/^\d+$/.test(runId)) {
     return res.status(400).json({ error: 'runId inválido.' });
   }
-  if (!checkBacktestArtifactRateLimit(req.uid)) {
+  if (!checkBacktestArtifactRateLimit(req)) {
     return res.status(429).json({ error: 'Aguarde um pouco antes de consultar de novo.' });
   }
   try {

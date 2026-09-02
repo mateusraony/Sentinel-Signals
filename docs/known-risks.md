@@ -17554,3 +17554,90 @@ Firebase Auth no navegador. Verificação ficou em: build/lint/testes +
 releitura adversarial do diff (guards `Number.isFinite`, nenhuma prop
 faltando, sem colisão de import `Tooltip`/`recharts`). Confirmação visual
 real fica pendente do usuário testar em produção/preview.
+
+## 145. `server/index.js` — freios de cortesia por-uid eram contornáveis de graça via reautenticação anônima (2026-09-02)
+
+**Achado da varredura de 6 agentes** (item 143, agente de segurança), pedido
+explícito do usuário para corrigir ("pode seguir com os achados de
+segurança").
+
+### Causa raiz
+
+`checkTelegramNotifyRateLimit`/`checkBacktestStatusRateLimit`/
+`checkBacktestArtifactRateLimit` (`server/index.js`, protegem
+`/api/telegram-notify`, `/api/backtest/status/:runId`,
+`/api/backtest/artifact/:runId`) eram cooldowns chaveados por `req.uid` — o
+uid do token Firebase verificado por `requireAuth`. Como a auth deste
+projeto é **só anônima** (`CLAUDE.md` decisão item 1 — `signInAnonymously()`,
+qualquer URL entra), um cliente ganha um uid **novo de graça** chamando
+`signInAnonymously()` de novo no browser, zerando o cooldown sem custo
+nenhum — client-side, sem fricção, automatizável. Isso deixava sem freio
+real:
+
+- `/api/telegram-notify`: manda mensagem pelo bot Telegram do app para o
+  `TELEGRAM_CHAT_ID` fixo — abuso esgota o rate limit do próprio bot e/ou
+  vira spam no canal do usuário.
+- `/api/backtest/status`/`/artifact`: gastam a cota de requisições do
+  `GITHUB_ACTIONS_TOKEN` **compartilhado** (comentário já existente no
+  código citava isso, item 125 achado menor) — esgotar essa cota quebra
+  essas rotas para QUALQUER visitante, não só o abusador.
+
+`/api/backtest/trigger` não tinha esse problema: `lastTriggerAt` já é
+GLOBAL (não por-uid) e a rota também exige `requireAdmin` (checa
+`users/{uid}.role === 'admin'`, campo que o client nunca consegue setar —
+`firestore.rules`), então promoção teria que ser manual mesmo com uid novo.
+
+### Correção
+
+Extraído `createCooldown(ms, keyOf)` de `server/index.js` para
+`server/rateLimit.js` (módulo puro, sem `firebase-admin` — o arquivo
+original inicializa o SDK no carregamento e sai com `process.exit(1)` sem
+`FIREBASE_SERVICE_ACCOUNT_JSON`, o que o tornava não-testável em isolamento
+antes desta extração). `keyOf` default agora é `req.ip`, não `req.uid` — IP
+é bem mais caro de trocar em massa que um uid anônimo gratuito, e é o que de
+fato limita o custo que esses freios existem para conter. `requireAuth`
+continua exigido nas 3 rotas (ainda filtra requisições sem nenhum token
+válido); só a CHAVE do cooldown mudou.
+
+Necessário também `app.set('trust proxy', 1)` (novo, logo após criar o
+`app`) — o Render termina TLS/HTTP num proxy reverso na frente do processo;
+sem isso, `req.ip` devolveria sempre o endereço interno do proxy (idêntico
+pra toda requisição, inutilizando qualquer limite por IP). `1` confia só no
+primeiro hop, não numa cadeia arbitrária de proxies.
+
+`/api/backtest/trigger` (global + `requireAdmin`) não precisou de mudança —
+já não tinha esse buraco.
+
+### Verificação
+
+- **Teste de mutação, não só cobertura**: `server/rateLimit.test.js` (4
+  casos) — confirmado que reverter `keyOf` para `req.uid` faz o teste
+  principal falhar (rodado manualmente nesta sessão, revertido depois).
+- **Boot real do servidor** com credencial de service account fake
+  (gerada localmente, nunca chega a autenticar num GCP real) — `node
+  index.js` sobe normalmente, `GET /health` responde 200, `POST
+  /webhook/tradingview` responde 401 sem `secret` e segue adiante (500 só
+  por falta de Firestore real) com o `secret` correto — confirma que o
+  refactor não quebrou o boot nem a validação de secret existente.
+- **`trust proxy` verificado ao vivo**: script isolado com o mesmo Express
+  do `server/node_modules` confirma que `req.ip` reflete
+  `X-Forwarded-For` quando presente (`203.0.113.77` → `203.0.113.77`) e
+  cai para o socket direto quando ausente (`127.0.0.1`) — exatamente o
+  comportamento que o Render precisa.
+- `npm run lint && npm test && npm run build` — 1267/1267 testes passando
+  (4 novos). `node --check` nos dois arquivos de `server/` tocados.
+
+**Não testado**: as 3 rotas ponta a ponta com um token Firebase real
+verificado por `requireAuth` — exigiria credenciais reais do Firebase Auth
+que esta sessão não tem. A lógica de rate-limit em si (a parte que mudou) é
+testada isoladamente e com mutação; `requireAuth` não foi tocado.
+
+### Fora de escopo desta rodada
+
+IP ainda é um limite imperfeito (VPN/proxy compartilhado, CGNAT) — mas é a
+melhoria de menor privilégio disponível sem introduzir CAPTCHA/App Check ou
+uma dependência nova de rate-limit (nenhuma das duas foi pedida). O app
+segue single-tenant na prática (comentário já existente no código) — o
+risco residual de um NAT/escritório compartilhado colidindo cooldowns
+legítimos é aceito, não é uma garantia forte (mesmo espírito do
+`lastTriggerAt` global, "freio de cortesia, não garantia forte").
