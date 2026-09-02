@@ -17367,3 +17367,108 @@ não consegue disparar `scan.yml` de verdade nem observar o comportamento
 pós-correção ao vivo. A confirmação real só vem do próximo disparo em
 produção (a incidente ficou ativa até pelo menos 20:37 UTC no momento desta
 análise).
+
+## 143. Varredura de 6 agentes (funções/UI/segurança/docs/motor/testes) — "correção dos 3 topos" (2026-09-02)
+
+**Pedido do usuário**: varredura completa e honesta do sistema por múltiplos
+agentes, cada um cobrindo sua área, seguida de uma síntese conjunta apontando
+o que vale a pena corrigir. 6 agentes paralelos (funções/negócio, UI/UX,
+segurança, documentação, motor de trading, cobertura de testes) auditaram o
+repositório em modo leitura; a síntese identificou 3 achados cruzados de
+prioridade alta — todos ameaçando correções já mescladas nesta mesma sessão
+(itens 141/142) — que o usuário aprovou corrigir ("Pode fazer a correção dos
+3 topos que vc disse"). Os demais achados (UI: MFE/MAE/tier ausentes do
+painel, tooltips de R/IC95/Profit Factor, `Settings.jsx`, nav mobile,
+`Alerts.jsx`, rótulo "v12" do `PineScript.jsx`, tratamento de erro/pendente
+em `Assets.jsx`; segurança: bypass de rate-limit; docs: tabela de schema do
+`CLAUDE.md`, lista de workflows de `ci-deploy.md`, nome de campo em
+`TradeOperation.jsonc`, exceções de `firestore-concurrency.md`) ficam
+registrados aqui para referência, **não implementados** — exigem pedido
+explícito à parte.
+
+### Achado 1 — `notifyFirestoreQuotaExhausted` podia travar exatamente na janela que o item 142 corrigiu
+
+O item 142 envolveu as 3 chamadas Firestore de `run-scan.mjs` em
+`withTimeout`, mas **não** o `get()`/`set()` de dedup dentro de
+`notifyFirestoreQuotaExhausted` (`scripts/adminTelegram.js`, item 138) — a
+própria função de ALERTA da cota esgotada. Como ela só é chamada depois que
+`isFirestoreQuotaExhausted` já deu match (ou seja, exatamente na janela de
+maior risco do cliente admin travar em retry por minutos, item 142), sem
+timeout aqui o alerta cujo propósito é avisar RÁPIDO virava o próprio
+travamento que `scanTimeout.mjs` foi criado para eliminar — e o
+`forceExit()` de `run-scan.mjs` nunca seria alcançado, porque a exceção
+nunca escaparia da função presa.
+
+**Correção**: `ref.get()` e `ref.set(...)` dentro de
+`notifyFirestoreQuotaExhausted` agora passam por `withTimeout` (reaproveitado
+de `scripts/scanTimeout.mjs`, item 142), com um prazo próprio
+`QUOTA_DEDUP_TIMEOUT_MS = 15s` (bem menor que os 90s do scan inteiro — é
+1 doc único, não ~30 chamadas). Os dois já eram fail-open por design (a
+leitura cai para "sempre alertar" se falhar; a escrita é best-effort,
+`try/catch` já existente) — o timeout só troca "travado indefinidamente" por
+"falha rápida", sem mudar o comportamento fail-open em si.
+
+Regressão: `scripts/adminTelegram.test.js`, novo describe
+`notifyFirestoreQuotaExhausted — timeout no dedup (item 142 addendum)` — 3
+casos com fake timers (mesmo padrão de `scanTimeout.test.mjs`): `ref.get()`
+que nunca resolve não trava a função (alerta mesmo assim, fail-open),
+`ref.set()` que nunca resolve não trava a função (dedup é não-crítico),
+caminho feliz do cooldown dentro da janela não reenvia.
+
+### Achado 2 — a tradução real do range de `queryFilters.js` para `where()` nativo não tinha teste próprio
+
+O item 141 estendeu `classifyFilter`/`matchesFilter`
+(`src/lib/queryFilters.js`) para suportar `{ gte, lt }` (2 constraints no
+mesmo campo) e atualizou os 3 backends reais que traduzem isso para
+`where()` nativo (`src/api/entities.js`, `scripts/adminEntities.js`,
+`scripts/adminEntitiesShadow.js`) — mas só a função PURA
+(`classifyFilter`/`matchesFilter`) tinha teste; nenhum teste inspecionava os
+argumentos reais de `where(...)` emitidos pelos 3 backends. Um bug de
+tradução ali (ex.: só aplicar a 1ª constraint de um range de 2, ou trocar a
+ordem operador/operando) teria derrotado o fix do item 141
+(`MonthlyReport.jsx` truncando meses antigos) silenciosamente, com CI verde.
+
+**Correção**: nenhuma mudança de código — só teste. `src/api/entities.test.js`
+e `scripts/adminEntities.test.js` ganharam um describe
+`filter() traduz range para where() nativo (item 143)` cada, mockando
+`where`/`.where()` para capturar os argumentos reais de chamada (não só o
+valor de retorno) e comparando com o esperado para `{ gte }`, `{ gte, lt }` e
+igualdade simples (regressão de não-quebra). `scripts/adminEntitiesShadow.js`
+não tinha nenhum teste próprio até agora — novo arquivo
+`scripts/adminEntitiesShadowFilter.test.js`, mesmo padrão, importando o
+módulo de verdade (mockando `firebase-admin/app`/`firebase-admin/firestore`
+como `scripts/adminEntities.test.js` já faz — ao contrário do que o
+comentário de `adminEntitiesShadowTripwire.test.js` sugeria, este arquivo NÃO
+inicializa firebase-admin no top-level, então importar funciona sem
+`FIREBASE_SERVICE_ACCOUNT_JSON`).
+
+### Achado 3 — só existiam tripwires NEGATIVOS para o par `DEFAULTS`/`SYNCED_STRATEGY_KEYS`
+
+`src/lib/pineParser.js` (browser) e `scripts/adminPineConfig.js` (cron)
+mantêm esse par espelhado à mão (`.claude/rules/pine-parity.md`) — vários
+testes (`rf1hCondTripwire.test.js` e outros) confirmam que uma chave
+ESPECÍFICA nunca aparece nos dois (tripwire negativo), mas nenhum teste
+comparava o par INTEIRO chave a chave. Esta é exatamente a classe de bug do
+item 27 (histórico): `emaFastLen`/`emaSlowLen` existiam em `DEFAULTS` desde
+o início mas ficaram fora de `SYNCED_STRATEGY_KEYS` por meses, sem nenhum
+teste acusando — o cron usava um fallback hardcoded diferente do Pine real
+silenciosamente.
+
+**Correção**: novo `src/lib/pineConfigMirrorTripwire.test.js` — lê o
+texto-fonte dos dois arquivos (mesma técnica dos tripwires negativos
+existentes), extrai as chaves de `DEFAULTS` e `SYNCED_STRATEGY_KEYS` de cada
+um (filtrando linhas de comentário) e compara os dois conjuntos: sem chave
+faltando em nenhuma direção, sem duplicata em nenhum dos dois, toda chave de
+`SYNCED_STRATEGY_KEYS` também presente em `DEFAULTS`, e um caso nomeado
+confirmando que `emaFastLen`/`emaSlowLen` (a regressão real do item 27)
+estão sincronizados hoje. Confirmado hoje: os dois arquivos já estavam
+idênticos — o teste não encontrou nem corrigiu uma divergência real, só
+fechou a lacuna de cobertura que deixaria uma futura divergência passar
+despercebida.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` — 1263/1263 testes passando (17
+novos: 3 do achado 1, 9 do achado 2, 5 do achado 3). `node
+scripts/build-scan.mjs` confirma o bundle do scan compila com o import novo
+de `scanTimeout.mjs` em `adminTelegram.js`.

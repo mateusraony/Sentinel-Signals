@@ -4,12 +4,15 @@
 // nenhum teste antes desta mudança (é um espelho fino, sem lógica própria);
 // este arquivo nasce cobrindo especificamente a parte nova: a leitura do
 // Firestore, memoizada por processo, e o fail-open em cada caminho de erro.
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const { firestoreGetMock } = vi.hoisted(() => ({ firestoreGetMock: vi.fn() }));
+const { firestoreGetMock, firestoreSetMock } = vi.hoisted(() => ({
+  firestoreGetMock: vi.fn(),
+  firestoreSetMock: vi.fn(),
+}));
 vi.mock('firebase-admin/firestore', () => ({
   getFirestore: () => ({
-    collection: () => ({ doc: () => ({ get: firestoreGetMock }) }),
+    collection: () => ({ doc: () => ({ get: firestoreGetMock, set: firestoreSetMock }) }),
   }),
 }));
 
@@ -34,6 +37,8 @@ beforeEach(() => {
   // não herdar o cache de um teste anterior.
   vi.resetModules();
   firestoreGetMock.mockReset();
+  firestoreSetMock.mockReset();
+  firestoreSetMock.mockResolvedValue(undefined);
   process.env.TELEGRAM_BOT_TOKEN = 'x';
   process.env.TELEGRAM_CHAT_ID = 'y';
   global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
@@ -165,6 +170,53 @@ describe('notifyStopHit — nota de ambiguidade stop/TP na mesma vela (item 140)
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
     expect(text).not.toContain('tocou o stop e o take ao mesmo tempo');
+  });
+});
+
+// docs/known-risks.md item 142 addendum: notifyFirestoreQuotaExhausted é
+// chamada exatamente quando a cota do Firestore JÁ deu match como esgotada —
+// a janela de maior risco do cliente admin travar em retry de
+// RESOURCE_EXHAUSTED por minutos (item 142). Sem o withTimeout ao redor do
+// get()/set() de dedup, o alerta cujo propósito é avisar RÁPIDO vira o
+// próprio travamento que scanTimeout.mjs foi criado para eliminar. Estes
+// testes provam que um get()/set() que nunca resolve não trava a função —
+// mesmo padrão de fake timers de scanTimeout.test.mjs.
+describe('notifyFirestoreQuotaExhausted — timeout no dedup (item 142 addendum)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('ref.get() que nunca resolve não trava a função — timeout dispara e alerta mesmo assim (fail-open)', async () => {
+    vi.useFakeTimers();
+    firestoreGetMock.mockReturnValue(new Promise(() => {}));
+    const { notifyFirestoreQuotaExhausted } = await import('./adminTelegram.js');
+    const resultPromise = notifyFirestoreQuotaExhausted('8 RESOURCE_EXHAUSTED: Quota exceeded.');
+    await vi.advanceTimersByTimeAsync(15_000);
+    const delivered = await resultPromise;
+    expect(delivered).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('ref.set() que nunca resolve não trava a função — o dedup é não-crítico', async () => {
+    vi.useFakeTimers();
+    firestoreGetMock.mockResolvedValue({ exists: false });
+    firestoreSetMock.mockReturnValue(new Promise(() => {}));
+    const { notifyFirestoreQuotaExhausted } = await import('./adminTelegram.js');
+    const resultPromise = notifyFirestoreQuotaExhausted('Quota exceeded.');
+    await vi.advanceTimersByTimeAsync(15_000);
+    const delivered = await resultPromise;
+    expect(delivered).toBe(true);
+  });
+
+  it('caminho feliz: dedup dentro do cooldown não reenvia', async () => {
+    firestoreGetMock.mockResolvedValue({
+      exists: true,
+      data: () => ({ last_alert_at: new Date().toISOString() }),
+    });
+    const { notifyFirestoreQuotaExhausted } = await import('./adminTelegram.js');
+    const delivered = await notifyFirestoreQuotaExhausted('Quota exceeded.');
+    expect(delivered).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });
 
