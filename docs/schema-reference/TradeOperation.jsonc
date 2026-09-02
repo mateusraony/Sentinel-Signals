@@ -85,6 +85,17 @@
     "initial_stop": {
       "type": "number"
     },
+    "initial_stop_basis": {
+      "type": "string",
+      "enum": [
+        "tier_atr",
+        "structural",
+        "structural_floored",
+        "structural_capped",
+        "atr_fallback"
+      ],
+      "description": "RF native cascade (4h->15m) only — the SMC cascade's equivalent field is stop_basis below, do not confuse the two. How the initial stop was derived: 'tier_atr' (default — tier-based ATR multiple, computeStructuralStop off) or, with pineConfig.rfStructuralStopEnabled on (opt-in, backtest-only, docs/known-risks.md item 102): 'structural' (structural level with buffer), 'structural_floored' (floored at the per-tier ATR minimum), 'structural_capped' (capped at the per-tier ATR maximum), 'atr_fallback' (missing/invalid structural level, same result as tier_atr but recorded under this name to distinguish 'structural helps nothing' from 'structural was rarely even tried'). See computeStructuralStop in opExitRules.js and buildTradeOpData in scanner.js."
+    },
     "current_stop": {
       "type": "number"
     },

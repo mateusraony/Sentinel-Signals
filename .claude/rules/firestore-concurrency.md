@@ -17,16 +17,20 @@ Todo acesso passa por `backend` (`src/api/entities.js`): `backend.entities.<Nome
 `scripts/adminEntities.js` (firebase-admin, mesma forma de chamada, ignora as
 `firestore.rules`).
 
-**Exceção deliberada** (item 125 achado menor, 2026-08-24): `strategyConfig/
-current` e `telegramFilters/current` NÃO têm entidade equivalente em
+**Exceção deliberada** (item 125 achado menor, 2026-08-24; lista completada no
+item 145 addendum, 2026-09-02): `strategyConfig/current`, `telegramFilters/
+current` e `systemAlerts/firestoreQuota` NÃO têm entidade equivalente em
 `scripts/adminEntities.js` — `scripts/adminPineConfig.js`/`adminTelegram.js`
-leem esses dois docs direto via `firebase-admin/firestore` (`getFirestore()`),
-sem passar por nenhum adaptador. Do lado browser eles passam por `backend`
-normalmente (`StrategyConfig`/entidade equivalente em `src/api/entities.js`).
-Não é bug — é a mesma lista de "sem `.jsonc`" já documentada no `CLAUDE.md`
-(tabela de coleções) — só não estava explicitada AQUI, onde alguém lendo só
-esta regra concluiria (errado) que todo acesso do cron passa por
-`adminEntities.js`.
+leem esses três docs direto via `firebase-admin/firestore` (`getFirestore()`),
+sem passar por nenhum adaptador. Do lado browser, `strategyConfig/current` e
+`telegramFilters/current` passam por `backend` normalmente (`StrategyConfig`/
+entidade equivalente em `src/api/entities.js`); `systemAlerts/firestoreQuota`
+não tem lado browser nenhum — é escrito/lido só pelo cron
+(`notifyFirestoreQuotaExhausted`, `docs/known-risks.md` item 138, "só cron,
+não espelhado no navegador"). Não é bug — é a mesma lista de "sem `.jsonc`" já
+documentada no `CLAUDE.md` (tabela de coleções) — só não estava explicitada
+AQUI, onde alguém lendo só esta regra concluiria (errado) que todo acesso do
+cron passa por `adminEntities.js`.
 
 ## Concorrência
 
