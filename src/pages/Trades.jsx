@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
+import { rtdbEntities } from '@/api/rtdbEntities';
 import {
   Loader2, Target, History, XCircle, Eye,
   TrendingUp, TrendingDown, AlertTriangle,
@@ -365,7 +366,7 @@ export default function Trades() {
 
   const { data: operations = [], isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['trade-operations'],
-    queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
+    queryFn: () => rtdbEntities.TradeOperation.list('-created_date', 100),
     refetchInterval: 15000,
   });
 

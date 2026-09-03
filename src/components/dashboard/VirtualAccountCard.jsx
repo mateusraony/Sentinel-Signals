@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Wallet, TrendingUp, TrendingDown, Shield } from 'lucide-react';
-import { backend } from '@/api/entities';
+import { rtdbEntities } from '@/api/rtdbEntities';
 import { simulateEquityCurve, DEFAULT_INITIAL_CAPITAL, DEFAULT_RISK_PCT } from '@/lib/equityCurve';
 
 function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefined }) {
@@ -39,7 +39,7 @@ function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefine
 export default function VirtualAccountCard() {
   const { data: operations = [] } = useQuery({
     queryKey: ['trade-operations-closed-all'],
-    queryFn: () => backend.entities.TradeOperation.list('-created_date', 500),
+    queryFn: () => rtdbEntities.TradeOperation.list('-created_date', 500),
     refetchInterval: 30000,
   });
 

@@ -1,13 +1,14 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
+import { rtdbEntities } from '@/api/rtdbEntities';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function TickerBar() {
   const { data: states = [] } = useQuery({
     queryKey: ['asset-states'],
-    queryFn: () => backend.entities.AssetState.list(),
+    queryFn: () => rtdbEntities.AssetState.list(),
     refetchInterval: 60000
   });
 
