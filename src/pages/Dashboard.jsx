@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { rtdbEntities } from '@/api/rtdbEntities';
 import { Bell, Coins, TrendingUp, TrendingDown, Target, Clock, Search, ArrowUpDown, Swords } from 'lucide-react';
 import AssetCard from '@/components/dashboard/AssetCard';
 import RecentAlertsList from '@/components/dashboard/RecentAlertsList';
@@ -50,7 +49,7 @@ export default function Dashboard() {
 
   const { data: states = [] } = useQuery({
     queryKey: ['asset-states'],
-    queryFn: () => rtdbEntities.AssetState.list(),
+    queryFn: () => backend.entities.AssetState.list(),
     refetchInterval: 15000,
   });
 
@@ -62,7 +61,7 @@ export default function Dashboard() {
 
   const { data: tradeOps = [] } = useQuery({
     queryKey: ['trade-operations-dashboard'],
-    queryFn: () => rtdbEntities.TradeOperation.list('-created_date', 100),
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
     refetchInterval: 10000,
   });
 
