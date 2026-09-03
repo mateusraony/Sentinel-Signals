@@ -18276,3 +18276,126 @@ sessão (sem acesso direto ao Firestore/console). Estimativa de código
 cross-validada contra o dado real (mesma ordem de grandeza, ~25% batendo
 com o que se esperava de um dos vários consumidores). Sem mudança de
 código nesta rodada.
+
+## 151. Existe alternativa ao teto diário do Firestore Spark? — pesquisa de mercado + comunidade (2026-09-03)
+
+**Pedido do usuário**: depois do item 150, perguntou se existe outra forma
+de não ter esse problema — outro banco/site, pedindo pesquisa real com
+agentes em comunidades/Reddit. 3 investigações rodadas em paralelo (2
+pesquisas externas via WebSearch, 1 interna no código) — sem mudança de
+código nesta rodada.
+
+### Achado 1 — custo de migrar de banco (investigação interna do código)
+
+`backend` (`src/api/entities.js`, 338 linhas) expõe 10 entidades via
+`createEntity()`, mas a abstração **não é hermética**: `src/api/agents.js`
+e `src/lib/AuthContext.jsx` importam `firebase/firestore` direto; 3
+scripts do cron (`adminPineConfig.js`/`adminTelegram.js`) leem 3 docs sem
+passar por adaptador nenhum (já documentado em
+`.claude/rules/firestore-concurrency.md`). Existem **4 implementações
+paralelas** da mesma interface pra trocar numa migração:
+`src/api/entities.js` (338 linhas) + `scripts/adminEntities.js` (288) +
+`adminEntitiesShadow.js` (302) + `adminEntitiesBackfillCache.js` (133) —
+723 linhas só nos espelhos do cron.
+
+**O ponto que mais pesa**: o motor de trading depende de **transações
+Firestore de verdade** pra garantir a invariante P0 "1 operação ativa por
+ativo" (`createTradeOpIfNoneActive`/`transitionTradeOp`,
+`src/api/entities.js:157-260`, âncora `assetActiveOps/{assetId}` porque
+Firestore não lê query dentro de transação). Um banco sem transação ACID
+real quebraria essa garantia documentada em `.claude/rules/
+trading-engine.md`. `firestore.rules` (108 linhas) é simples de portar
+(quase tudo `isSignedIn()`); Auth anônima está concentrada em ~2 arquivos.
+
+**Estimativa honesta**: trocar de banco mantendo Firebase Auth = **grande
+(semanas, não dias)** — não pela quantidade de arquivos, mas por precisar
+reconstruir a garantia de CAS num sistema novo e revalidar com os testes
+de concorrência (`fakeBackend.js`). Trocar banco E auth juntos é
+incrementalmente maior ainda.
+
+### Achado 2 — comparação de alternativas gratuitas (WebSearch real, fontes citadas)
+
+Estourar o teto do Firestore Spark é queixa recorrente na comunidade — um
+relato achado (dev.to) descreve 10 mil das 50 mil leituras gastas em só 2h
+num app pequeno, causa mais citada é polling/listener repetido, exatamente
+o padrão do Sentinel. Dicas recorrentes da comunidade: cache local, doc de
+agregação em vez de N documentos, TTL de cache de servidor (um caso citado
+reduziu >95% das leituras).
+
+| Serviço | Teto grátis | Unidade | Transação ACID real |
+|---|---|---|---|
+| **Firestore (atual)** | 50k leituras/dia, 20k escritas/dia | **por dia** | Sim |
+| **Supabase** (Postgres) | 500MB storage, **requisições de API ilimitadas**, 5GB egress/mês | por mês (storage/egress), sem teto de request | **Sim** (nativo) |
+| **Neon** (Postgres) | 100 CU-horas/mês, 0,5GB storage | por mês (compute) | **Sim** (nativo) |
+| **Turso** (libSQL) | 500M row-reads/mês, 10M row-writes/mês | por mês, mas conta linha ESCANEADA, não só retornada | Sim |
+| **Cloudflare D1** | 5M rows lidas/dia, 100k escritas/dia | por dia (passou a aplicar de verdade em 1/set/2026, 2 dias antes desta pesquisa) | Parcial — sem transação multi-statement cross-request |
+| **MongoDB Atlas M0** | 512MB storage, sem teto de request | por armazenamento | Sim, desde v4.0 |
+| **Convex** | 1M function calls/mês, 1GB egress/mês | por mês | Sim (nativo) |
+| **PocketBase** (self-host, ex.: Render free) | depende do host | N/A | Sim — **mas filesystem efêmero apaga o SQLite a cada redeploy/restart sem disco persistente (pago)** |
+
+Achado central: **Firestore e Cloudflare D1 são os únicos com teto "por
+dia"** — os demais são por mês/armazenamento, folgado pro volume real do
+Sentinel (~10 documentos, poucas dezenas de trades/mês). Supabase e Neon
+já têm a transação ACID que o item acima exige, e nenhum dos dois tarifa
+por operação — sidestepping o gargalo exato que o Sentinel tem hoje.
+Armadilhas comuns: pausa por inatividade (Supabase 7 dias, MongoDB M0 30
+dias — provavelmente não afeta o Sentinel, que tem cron ativo a cada
+5min); Turso conta linha escaneada, não retornada.
+
+### Achado 3 — Firebase Realtime Database (RTDB) como complemento, mesma conta (WebSearch real, fontes citadas)
+
+RTDB é OUTRO produto dentro do MESMO projeto Firebase — cobrança por
+**banda/armazenamento**, não por operação: **1GB armazenamento, 10GB de
+transferência/MÊS, 100 conexões simultâneas — sem teto "por dia"**. Sem
+dependência nova (`firebase/database` já vem no pacote `firebase`
+instalado); regras separadas (`database.rules.json`, sintaxe diferente de
+`firestore.rules`); Auth anônima funciona igual nos dois (mesma
+conta/projeto).
+
+Limitação estrutural real: é uma única árvore JSON, sem query composta,
+"deep by default" (uma query devolve a subárvore inteira) — ruim pra dado
+filtrado tipo `SignalEvent` (asset+timeframe+data), bom pra "pegar um nó
+pequeno inteiro com frequência" (ex.: `AssetState`, `strategyConfig`).
+
+**Cálculo que sustenta a ideia**: 10 documentos lidos a cada 15s por N
+telas geram `10×N×(86400/15)` leituras/dia no Firestore — estoura 50k
+facilmente com poucas telas abertas (bate com um relato real de alguém
+estourando 50k em 4h só de uma coleção pequena repolled). No RTDB o MESMO
+padrão custa banda, não contagem — com payload pequeno (poucos KB), é
+difícil chegar perto de 10GB/mês mesmo com polling agressivo, e trocar
+polling por listener nativo (`onValue`) corta ainda mais.
+
+**Ressalvas honestas**: (a) exigiria sincronizar os poucos documentos
+"quentes" entre Firestore (fonte de verdade) e RTDB (cache quente) —
+trabalho real, mas bem menor que trocar de banco inteiro; (b) um resultado
+de busca mencionou uma possível cobrança por request do RTDB acima de
+100k/dia a partir de 1/set/2026 — **não confirmado na fonte primária**
+(`firebase.google.com` bloqueado pelo proxy de rede desta sessão para
+fetch direto) — checar manualmente no console antes de decidir com base
+nisso; (c) sem relato de primeira mão (só recomendação genérica de blog)
+combinando os dois bancos no mesmo projeto — o padrão é documentado
+oficialmente pelo próprio Firebase, mas a medição de ganho real é
+inferência, não benchmark medido.
+
+### Síntese — duas opções reais, esforço muito diferente
+
+1. **Trocar de banco inteiro (ex.: Supabase)** — resolve de vez (sem teto
+   de operação contado, tem transação real), mas é **trabalho grande**
+   (semanas) por causa da garantia CAS do motor de trading.
+2. **Complementar com Firebase Realtime Database pro dado quente do
+   painel** — mesma conta, sem dependência nova, **esforço bem menor**,
+   ataca diretamente o suspeito mais provável (~75% do consumo real não
+   explicado pelo `scan.yml`, item 150) sem tocar o motor de trading nem
+   as transações. Trade-off: sincronização extra entre os dois bancos, e
+   a ressalva não confirmada sobre cobrança por request.
+
+Nenhuma das duas decidida nesta rodada — registro de pesquisa pra
+embasar a decisão do usuário.
+
+### Verificação
+
+3 investigações independentes (2 subagentes com WebSearch real, fontes
+citadas em cada achado; 1 agente Explore no código real, citações
+arquivo:linha) — duas primeiras tentativas dos agentes de WebSearch
+falharam por sobrecarga temporária do servidor (erro 529), rodadas de novo
+com sucesso. Sem mudança de código nesta rodada.
