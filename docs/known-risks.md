@@ -18541,8 +18541,18 @@ principal" pra o arquivo continuar importável em teste
 (`workflow_dispatch` só — Actions tab → "Backfill Firestore → RTDB" → "Run
 workflow"), mesmos secrets de `scan.yml`. Rodar UMA VEZ antes de religar
 qualquer `queryFn` de volta pro RTDB nos 7 arquivos revertidos acima — sem
-isso, o mesmo incidente se repete no próximo deploy. Religar a leitura em
-si continua não decidido/implementado nesta rodada.
+isso, o mesmo incidente se repete no próximo deploy.
+
+**Rodado ao vivo (2026-09-03, run real confirmado no log)**: 45
+`AssetState` + 13 `TradeOperation` lidos do Firestore e escritos no RTDB
+com sucesso, em 1,0s (`FIREBASE_DATABASE_URL` chegou mascarado no log,
+confirmando que o secret está correto desta vez — diferente do bug do
+item anterior). **Leitura religada**: os mesmos 9 pontos revertidos acima
+(`Dashboard.jsx`, `Assets.jsx`, `TickerBar.jsx`, `TradeHistory.jsx`,
+`Trades.jsx`, `MonthlyReport.jsx`, `VirtualAccountCard.jsx`,
+`LiveConfidenceCard.jsx`) voltaram a ler `rtdbEntities.<Nome>` em vez de
+`backend.entities.<Nome>` — desta vez com o RTDB já populado pelo backfill,
+fechando exatamente a lacuna que causou o incidente anterior.
 
 **Passos manuais do usuário (fora do código, não executáveis por esta
 sessão)**: criar o RTDB no Console Firebase (Realtime Database → criar
