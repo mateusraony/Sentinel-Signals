@@ -18214,3 +18214,65 @@ padrões de vela e PO3, sem refutação real entre eles nesses dois pontos —
 só o cético trouxe o dado do 2º A/B (`candle-pattern-batchA`) que os outros
 não tinham achado, fortalecendo (não contradizendo) a mesma conclusão. Sem
 mudança de código.
+
+## 150. Medição real das duas alavancas restantes (frequência × nº de ativos) — dado do Firebase Console muda a leitura (2026-09-03)
+
+**Pedido do usuário**: depois do item 148 (3 achados de leitura já implementados)
+e ainda recebendo o alerta de cota esgotada, pediu pra medir as duas alavancas
+que sobraram — reduzir a frequência do scan ao vivo vs. reduzir o nº de
+ativos monitorados — antes de decidir. Sem mudança de código nesta rodada.
+
+### Estimativa por código (sem acesso a Firestore ao vivo)
+
+10 ativos monitorados (confirmado via log real de `scan.yml`, run
+`33656835029`: `[scan] scanAllAssets: 10 ativo(s), 0 falha(s)`). Usando a
+metodologia já validada pelo item 133 (~4,5 leituras/ativo/passada) e
+descontando os dois cortes do item 148 (achado 1.1: −1 leitura/ativo/passada
+em `checkAssetHealthchecks`; achado 1.2: −1 leitura/ativo/passada em
+`allActiveOps`, na maioria das passadas): **~3,5 leituras/ativo/passada**,
+`PASSES_PER_DAY = 312` → **~10.920 leituras/dia só do `scan.yml`**.
+
+### Dado real (usuário trouxe prints do Firebase Console → Firestore → Uso)
+
+- **Média de 30 dias: 1,3 milhão de leituras ÷ 30 = ~43.300 leituras/dia —
+  86% do teto gratuito de 50k/dia**, quase sem folga. Explica por que
+  qualquer dia um pouco acima da média estoura a cota.
+- Um dia real recente (bucket "2-3 set"): 34 mil leituras (68% do teto),
+  9,2 mil gravações (46% do teto de 20k) — **gravação segue bem mais
+  folgada que leitura**, confirmando o achado do item 133 (leitura é o
+  recurso apertado, não escrita).
+- Página "Utilização e faturamento" (snapshot do dia corrente no momento
+  do print): 15k/50k leituras (30,4%), 2,8k/20k gravações (14,1%).
+- "Listeners de snapshot" (pico 8) — investigado e descartado como
+  preocupação: `onSnapshot` só existe em `src/api/agents.js`
+  (`subscribeToConversation`, API do Strategy Reviewer) e **não tem
+  nenhum chamador em `src/`** — código morto, consistente com a decisão
+  já registrada de o Strategy Reviewer estar pausado/desconectado
+  (`CLAUDE.md`). Não é fonte de leitura/escrita real.
+
+### Achado que muda a recomendação
+
+A estimativa do `scan.yml` sozinho (~10.920/dia) é só **~25% da média real
+de ~43.300/dia**. **Os outros ~75% vêm de algo que não é o scan ao vivo** —
+candidato mais forte, ainda não medido diretamente: o painel aberto no
+navegador (várias telas com `refetchInterval` de 10-30s —
+`src/pages/Dashboard.jsx`, `Assets.jsx`, etc. — grep confirmado), somado a
+`scan-shadow.yml` e `backfill.yml` (cadências próprias, mesma cota
+compartilhada).
+
+**Consequência pra decisão**: reduzir só a frequência do scan ataca uma
+fatia pequena (~25%) do consumo real — sozinha, pode não bastar pra sair
+da zona de estouro, já que a folga hoje é de só ~14% (86%→100% na média).
+Reduzir ativos ataca proporcionalmente TODOS os consumidores conhecidos
+(scan, modo sombra, checagem retroativa, e as telas do painel, que também
+escalam com nº de ativos) — alavanca de alcance mais largo, agora com dado
+real sustentando a recomendação (não só a hipótese qualitativa do item 148).
+
+### Verificação
+
+Prints reais do usuário (Firebase Console → Cloud Firestore → Uso, e
+Utilização e faturamento) — não é possível obter esse dado de dentro desta
+sessão (sem acesso direto ao Firestore/console). Estimativa de código
+cross-validada contra o dado real (mesma ordem de grandeza, ~25% batendo
+com o que se esperava de um dos vários consumidores). Sem mudança de
+código nesta rodada.
