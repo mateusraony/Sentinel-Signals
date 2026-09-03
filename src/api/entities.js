@@ -14,10 +14,34 @@ import {
   writeBatch,
   runTransaction,
 } from 'firebase/firestore';
-import { db } from '@/lib/firebaseClient';
+import { ref, set as rtdbSet, update as rtdbUpdate, remove as rtdbRemove } from 'firebase/database';
+import { db, rtdb } from '@/lib/firebaseClient';
 import { strategyReviewerAgent } from '@/api/agents';
 import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation, buildActiveOpsAnchorId } from '@/lib/opTransition';
 import { classifyFilter } from '@/lib/queryFilters';
+import { toRtdbKey, createRtdbMirrorHelpers } from '@/lib/rtdbMirror';
+
+// Firestore→RTDB read mirror (docs/known-risks.md item 152) — fire-and-forget,
+// never awaited by the callers below, and always a no-op when RTDB isn't
+// provisioned in this environment (rtdb === null, see firebaseClient.js).
+// See src/lib/rtdbMirror.js for why the key is sanitized and why these
+// helpers never throw.
+function mirrorSet(rtdbPath, firestoreId, value) {
+  if (!rtdb) return;
+  rtdbSet(ref(rtdb, `${rtdbPath}/${toRtdbKey(firestoreId)}`), value)
+    .catch((e) => console.warn(`[RTDB mirror] set falhou (${rtdbPath}/${firestoreId}), ignorado:`, e.message));
+}
+function mirrorUpdate(rtdbPath, firestoreId, patch) {
+  if (!rtdb) return;
+  rtdbUpdate(ref(rtdb, `${rtdbPath}/${toRtdbKey(firestoreId)}`), patch)
+    .catch((e) => console.warn(`[RTDB mirror] update falhou (${rtdbPath}/${firestoreId}), ignorado:`, e.message));
+}
+function mirrorRemove(rtdbPath, firestoreId) {
+  if (!rtdb) return;
+  rtdbRemove(ref(rtdb, `${rtdbPath}/${toRtdbKey(firestoreId)}`))
+    .catch((e) => console.warn(`[RTDB mirror] remove falhou (${rtdbPath}/${firestoreId}), ignorado:`, e.message));
+}
+const { withRtdbMirror, withCreateOpMirror, withTransitionOpMirror } = createRtdbMirrorHelpers({ mirrorSet, mirrorUpdate, mirrorRemove });
 
 function buildQuery(collectionName, filters = {}, sort, limitCount) {
   const constraints = [];
@@ -140,10 +164,12 @@ function createEntity(collectionName) {
     async deleteMany(filters = {}) {
       const snapshot = await getDocs(buildQuery(collectionName, filters));
       opCounts.reads += snapshot.docs.length;
+      const deleted = snapshotToArray(snapshot);
       const batch = writeBatch(db);
       snapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
       await batch.commit();
       opCounts.writes += snapshot.docs.length;
+      return deleted;
     },
   };
 }
@@ -276,7 +302,7 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvance
         && activeSnap.data().active_trade_op_id === opId) {
       tx.set(activeRef, { active_trade_op_id: null, updated_at: new Date().toISOString() });
     }
-    return { applied: true };
+    return { applied: true, patch: safePatch };
   });
 }
 
@@ -321,9 +347,9 @@ function makeResilientLogEntity(entity) {
 export const backend = {
   entities: {
     MonitoredAsset: createEntity('monitoredAssets'),
-    AssetState: createEntity('assetStates'),
+    AssetState: withRtdbMirror('AssetState', createEntity('assetStates')),
     SignalEvent: createEntity('signalEvents'),
-    TradeOperation: createEntity('tradeOperations'),
+    TradeOperation: withRtdbMirror('TradeOperation', createEntity('tradeOperations')),
     PriceAlert: createEntity('priceAlerts'),
     SystemLog: makeResilientLogEntity(createEntity('systemLogs')),
     User: createEntity('users'),
@@ -333,6 +359,12 @@ export const backend = {
   },
   agents: strategyReviewerAgent,
   locks: { acquireScanLock, releaseScanLock },
-  tradeOps: { createTradeOpIfNoneActive, clearActiveOp, transitionTradeOp },
+  tradeOps: {
+    createTradeOpIfNoneActive: withCreateOpMirror(createTradeOpIfNoneActive),
+    // clearActiveOp never touches tradeOperations — only the assetActiveOps
+    // pointer — so it's deliberately never wrapped (docs/known-risks.md item 152).
+    clearActiveOp,
+    transitionTradeOp: withTransitionOpMirror(transitionTradeOp),
+  },
   quota: { getAndResetOpCounts },
 };

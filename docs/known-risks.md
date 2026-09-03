@@ -18399,3 +18399,123 @@ citadas em cada achado; 1 agente Explore no código real, citações
 arquivo:linha) — duas primeiras tentativas dos agentes de WebSearch
 falharam por sobrecarga temporária do servidor (erro 529), rodadas de novo
 com sucesso. Sem mudança de código nesta rodada.
+
+## 152. Implementado — Firebase Realtime Database (RTDB) como espelho de LEITURA do dashboard (2026-09-03)
+
+Implementação do item 151 achado 3, aprovada explicitamente pelo usuário
+("pode ir rodando a opção 2") depois de confirmar consumo real do navegador
+no Console (Leituras 45,2%/50k, Gravações 25,4%/20k). Objetivo: absorver o
+polling do dashboard (TanStack Query, 10-30s em ~14 telas) via RTDB (banda/
+armazenamento MENSAL — 1GB storage + 10GB/mês no Spark), sem tocar o motor
+de trading.
+
+**Escopo desta rodada**: só `AssetState`/`TradeOperation` — as 2 coleções
+de maior frequência×telas (9 dos ~20 pollers reais). `signalEvents`/
+`monitoredAssets`/`verificationTasks` (as 2 leituras simples)/`systemLogs`
+seguem candidatas ao MESMO padrão numa rodada seguinte.
+
+**Achado que não estava na pesquisa original**: IDs de `TradeOperation` são
+determinísticos (`` `trade_${signal.dedup_key}` ``, `src/lib/scanner.js`,
+9 pontos de criação) e embutem o timestamp ISO bruto do candle — ex.
+`trade_BTCUSDT_4h_BUY_raw_2026-09-03T12:00:00.000Z`. RTDB proíbe `.` `#` `$`
+`[` `]` `/` em chaves — o `.000Z` quebraria `set()`/`update()` na hora. Toda
+chave RTDB é sanitizada (`toRtdbKey`, `src/lib/rtdbMirror.js`,
+`.replace(/[.#$/[\]]/g, '_')`) e o ID real do Firestore fica guardado como
+campo `id` dentro do valor espelhado — é dele que a leitura via RTDB
+recupera o `.id` usado em mutações subsequentes.
+
+**Design**:
+- **Mirror de escrita** (`src/lib/rtdbMirror.js`, módulo puro sem SDK,
+  compartilhado por `src/api/entities.js` e `scripts/adminEntities.js` —
+  mesmo raciocínio de `src/lib/queryFilters.js`/`opTransition.js`, já que o
+  scanner roda idêntico nos dois ambientes): `withRtdbMirror` intercepta
+  `create`/`update`/`bulkCreate`/`deleteMany` só de `AssetState`/
+  `TradeOperation`; `withCreateOpMirror`/`withTransitionOpMirror` envolvem
+  `backend.tradeOps.createTradeOpIfNoneActive`/`transitionTradeOp` e
+  espelham só DEPOIS que a transação Firestore real já resolveu (nunca
+  dentro de `runTransaction`) — `clearActiveOp` nunca é espelhado (só mexe
+  no ponteiro `assetActiveOps`, nunca em `tradeOperations`). Toda primitiva
+  de I/O (`mirrorSet`/`mirrorUpdate`/`mirrorRemove`) é fire-and-forget com
+  `.catch()` próprio + uma 2ª camada de defesa (`safeMirrorCall`, dentro do
+  próprio helper puro) contra um throw síncrono — uma falha do RTDB nunca
+  pode derrubar a escrita real no Firestore. Verificado por 2 tripwires
+  (`src/api/entitiesRtdbTripwire.test.js`,
+  `scripts/adminEntitiesRtdbTripwire.test.js`, leitura de texto-fonte —
+  mesma técnica de `adminEntitiesBackfillCacheTripwire.test.js`) que
+  confirmam as 3 funções P0 nunca referenciam RTDB no próprio corpo, e que
+  só as 2 entidades do escopo são espelhadas.
+- **2 ajustes aditivos preparatórios** (tocam código P0, cobertos pela
+  suíte completa `opTransition.test.js`/`scannerStateMachine.test.js` antes
+  de seguir): `deleteMany` passou a devolver os docs deletados (era
+  `undefined`) e `transitionTradeOp` passou a devolver `{ applied, patch:
+  safePatch }` (era só `{ applied }`) — o único jeito do mirror saber o que
+  foi REALMENTE escrito (`clampMonotonicStop` pode alterar `current_stop`
+  do patch de entrada) sem gastar uma leitura extra. Espelhado também no
+  `fakeBackend.js` de teste, por paridade dos 3 backends.
+- **Adaptador de leitura** (`src/api/rtdbEntities.js`, novo): contrato
+  reduzido (`list`/`filter`) reconhecendo só os 2 formatos que os pollers
+  em escopo usam — order+limit (`orderByChild`+`limitToLast`+`reverse()`
+  client-side, já que RTDB só ordena ASC nativamente) e range de um único
+  campo (`{ created_date: { gte, lt } }`, só `MonthlyReport.jsx`, via
+  `startAt`+`endBefore` — exclusivo, preserva a semântica do item 141).
+  Formato não reconhecido (filtro composto, igualdade simples, array `in`)
+  cai no fallback Firestore (`backend.entities.<Nome>` injetado) em vez de
+  arriscar resultado incompleto — mesmo espírito de
+  `isAssetStateHotPathQuery` em `scripts/adminEntitiesBackfillCache.js`.
+  `rtdb === null` (RTDB não provisionado neste ambiente) tem o mesmo
+  fallback.
+- **9 pontos de leitura trocados** (só o `queryFn`, mesma `queryKey`/
+  `refetchInterval` — preserva a dedup existente do TanStack Query, ex.
+  `VirtualAccountCard.jsx`/`LiveConfidenceCard.jsx` continuam
+  compartilhando 1 única leitura a cada 30s pra `trade-operations-closed-
+  all`): `Dashboard.jsx`, `Assets.jsx`, `TickerBar.jsx` (`AssetState`);
+  `Dashboard.jsx`, `Assets.jsx`, `TradeHistory.jsx`, `Trades.jsx`,
+  `MonthlyReport.jsx`, `VirtualAccountCard.jsx`, `LiveConfidenceCard.jsx`
+  (`TradeOperation`). Toda MUTAÇÃO continua 100% Firestore
+  (`backend.entities`/`backend.tradeOps`) — RTDB nunca é escrito pela app,
+  só pelo mirror interno do adaptador.
+- **`database.rules.json`** (novo): `auth != null` pras 2 coleções
+  espelhadas (mesma intenção de `isSignedIn()` do `firestore.rules` — nenhuma
+  das duas tem lógica condicional por campo hoje), `.indexOn: ["created_date"]`
+  só em `tradeOperations` (as leituras usam `orderByChild('created_date')`;
+  `assetStates` não usa `orderByChild`/`equalTo`). `firebase.json` ganhou a
+  chave `database`; `deploy-firestore.yml` renomeado pra "Deploy Firestore &
+  RTDB rules" e o `--only` estendido com `,database`.
+- **Guard "ausente = no-op"** nos dois lados: `src/lib/firebaseClient.js`
+  (`export const rtdb = firebaseConfig.databaseURL ? getDatabase(app) :
+  null`) e `scripts/adminEntities.js` (Admin SDK não infere `databaseURL`
+  do service account, precisa de `process.env.FIREBASE_DATABASE_URL`
+  explícito em `initializeApp` — sem a env var, `rtdb` fica `null`). Isso
+  deixa o código mergeável/deployável ANTES do RTDB existir de fato no
+  Console, sem quebrar produção (app continua 100% Firestore).
+- **Zero dependência nova** — `firebase/database` (client) e
+  `firebase-admin/database` (admin) já resolvem via `require.resolve`,
+  ambos os pacotes (`firebase`, `firebase-admin`) já instalados.
+
+**Limitação aceita (não implementada)**: sem backfill retroativo do RTDB —
+um documento antigo que nunca mais é criado/atualizado/deletado no
+Firestore não aparece no RTDB até a próxima escrita real. Como
+`AssetState` e `TradeOperation` são reescritos a cada scan/transição
+(minutos a horas), o espelho converge sozinho — não foi julgado necessário
+um script de importação inicial pra este v1.
+
+**Passos manuais do usuário (fora do código, não executáveis por esta
+sessão)**: criar o RTDB no Console Firebase (Realtime Database → criar
+banco), copiar a `databaseURL` gerada e setar em 3 lugares
+(`VITE_FIREBASE_DATABASE_URL` no `render.yaml` — já commitado vazio nesta
+rodada — e local `.env`; secret `FIREBASE_DATABASE_URL` no GitHub Actions),
+rodar `deploy-firestore.yml` uma vez para publicar `database.rules.json`, e
+confirmar manualmente no Console a ressalva não verificada do item 151
+sobre possível cobrança por request do RTDB acima de 100k/dia (fonte
+bloqueada pelo proxy de rede desta sessão).
+
+### Verificação
+
+`npm run lint && npm test && npm run build` verdes (1328+ testes, incluindo
+os novos: `rtdbMirror.test.js`, extensões de `entities.test.js`/
+`adminEntities.test.js`, os 2 tripwires, `rtdbEntities.test.js`) — zero
+regressão na suíte P0 (`opTransition.test.js`/`scannerStateMachine.test.js`)
+antes e depois dos 2 ajustes aditivos. Sem acesso a Firestore/RTDB reais
+nesta sessão — a confirmação de queda real de leituras diárias e a
+population real de `/assetStates`/`/tradeOperations` no Console só podem
+ser feitas pelo usuário após os passos manuais acima.

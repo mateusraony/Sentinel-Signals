@@ -42,6 +42,10 @@ jobs:
       - run: npm run scan
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          # RTDB read mirror (docs/known-risks.md item 152) — optional: unset
+          # leaves the mirror a no-op (scripts/adminEntities.js), same as
+          # before the Realtime Database is provisioned in the Console.
+          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}

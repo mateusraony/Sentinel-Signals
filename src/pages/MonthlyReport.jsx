@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { backend } from '@/api/entities';
+import { rtdbEntities } from '@/api/rtdbEntities';
 import { FileText, Download, TrendingUp, TrendingDown, Target, Award, Calendar, Loader2 } from 'lucide-react';
 import moment from 'moment';
 import {
@@ -90,7 +90,7 @@ export default function MonthlyReport() {
     queryFn: () => {
       const start = moment(selectedMonth, 'YYYY-MM').startOf('month');
       const end = start.clone().add(1, 'month');
-      return backend.entities.TradeOperation.filter(
+      return rtdbEntities.TradeOperation.filter(
         { created_date: { gte: start.toISOString(), lt: end.toISOString() } },
         '-created_date',
       );

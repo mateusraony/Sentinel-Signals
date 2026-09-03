@@ -7,15 +7,45 @@
 // only when bundling for the scheduled scan job.
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getDatabase } from 'firebase-admin/database';
 // Relative (not '@/') so esbuild bundles it for the cron without the Vite alias
 // — see scripts/build-scan.mjs (it only rewrites '@/api/entities').
 import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, isTerminalStatus, planTradeOpCreation, buildActiveOpsAnchorId } from '../src/lib/opTransition.js';
 import { classifyFilter } from '../src/lib/queryFilters.js';
+import { toRtdbKey, createRtdbMirrorHelpers } from '../src/lib/rtdbMirror.js';
 
+// Unlike the client SDK, the Admin SDK does NOT infer databaseURL from the
+// service account — it must be passed explicitly to initializeApp(). Without
+// FIREBASE_DATABASE_URL set, rtdb stays null and the mirror below is a no-op
+// (same guard as the browser side, src/lib/firebaseClient.js) — this lets the
+// code ship before the Realtime Database is provisioned in the Console (see
+// docs/known-risks.md item 152).
+const databaseURL = process.env.FIREBASE_DATABASE_URL;
 if (!getApps().length) {
-  initializeApp({ credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)) });
+  initializeApp({
+    credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)),
+    ...(databaseURL ? { databaseURL } : {}),
+  });
 }
 const db = getFirestore();
+const rtdb = databaseURL ? getDatabase() : null;
+
+function mirrorSet(rtdbPath, firestoreId, value) {
+  if (!rtdb) return;
+  rtdb.ref(`${rtdbPath}/${toRtdbKey(firestoreId)}`).set(value)
+    .catch((e) => console.warn(`[RTDB mirror] set falhou (${rtdbPath}/${firestoreId}), ignorado:`, e.message));
+}
+function mirrorUpdate(rtdbPath, firestoreId, patch) {
+  if (!rtdb) return;
+  rtdb.ref(`${rtdbPath}/${toRtdbKey(firestoreId)}`).update(patch)
+    .catch((e) => console.warn(`[RTDB mirror] update falhou (${rtdbPath}/${firestoreId}), ignorado:`, e.message));
+}
+function mirrorRemove(rtdbPath, firestoreId) {
+  if (!rtdb) return;
+  rtdb.ref(`${rtdbPath}/${toRtdbKey(firestoreId)}`).remove()
+    .catch((e) => console.warn(`[RTDB mirror] remove falhou (${rtdbPath}/${firestoreId}), ignorado:`, e.message));
+}
+const { withRtdbMirror, withCreateOpMirror, withTransitionOpMirror } = createRtdbMirrorHelpers({ mirrorSet, mirrorUpdate, mirrorRemove });
 
 function applyFilters(collectionRef, filters = {}) {
   let q = collectionRef;
@@ -122,10 +152,12 @@ function createEntity(collectionName) {
     async deleteMany(filters = {}) {
       const snapshot = await applyFilters(col(), filters).get();
       opCounts.reads += snapshot.docs.length;
+      const deleted = snapshotToArray(snapshot);
       const batch = db.batch();
       snapshot.docs.forEach((docSnap) => batch.delete(docSnap.ref));
       await batch.commit();
       opCounts.writes += snapshot.docs.length;
+      return deleted;
     },
   };
 }
@@ -237,7 +269,7 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvance
         && activeSnap.data().active_trade_op_id === opId) {
       tx.set(activeRef, { active_trade_op_id: null, updated_at: new Date().toISOString() });
     }
-    return { applied: true };
+    return { applied: true, patch: safePatch };
   });
 }
 
@@ -272,16 +304,22 @@ function makeResilientLogEntity(entity) {
 export const backend = {
   entities: {
     MonitoredAsset: createEntity('monitoredAssets'),
-    AssetState: createEntity('assetStates'),
+    AssetState: withRtdbMirror('AssetState', createEntity('assetStates')),
     SignalEvent: createEntity('signalEvents'),
-    TradeOperation: createEntity('tradeOperations'),
+    TradeOperation: withRtdbMirror('TradeOperation', createEntity('tradeOperations')),
     PriceAlert: createEntity('priceAlerts'),
     SystemLog: makeResilientLogEntity(createEntity('systemLogs')),
     User: createEntity('users'),
     VerificationTask: createEntity('verificationTasks'),
   },
   locks: { acquireScanLock, releaseScanLock },
-  tradeOps: { createTradeOpIfNoneActive, clearActiveOp, transitionTradeOp },
+  tradeOps: {
+    createTradeOpIfNoneActive: withCreateOpMirror(createTradeOpIfNoneActive),
+    // clearActiveOp never touches tradeOperations — only the assetActiveOps
+    // pointer — so it's deliberately never wrapped (docs/known-risks.md item 152).
+    clearActiveOp,
+    transitionTradeOp: withTransitionOpMirror(transitionTradeOp),
+  },
   quota: { getAndResetOpCounts },
 };
 
