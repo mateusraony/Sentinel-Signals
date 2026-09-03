@@ -122,14 +122,30 @@ async function main() {
   await pingHealthcheck();
 }
 
-main().catch(async (err) => {
-  console.error('[scan] FAILED:', err);
-  await alertIfQuotaExhausted(err?.message);
-  await pingHealthcheck('/fail');
-  // forceExit (não só process.exitCode) — docs/known-risks.md item 142: se o
-  // erro veio de um withTimeout acima, a chamada real ao Firestore perdeu a
-  // corrida mas continua rodando (e re-tentando) em segundo plano; sem um
-  // process.exit() explícito, o job do GitHub Actions ficaria vivo até ELA
-  // desistir sozinha, do mesmo jeito que travava antes desta correção.
-  forceExit(1);
-});
+main()
+  .then(() => {
+    // forceExit também no caminho de SUCESSO (docs/known-risks.md item 152)
+    // — desde que o mirror Firestore→RTDB entrou em produção
+    // (scripts/adminEntities.js, ativo quando FIREBASE_DATABASE_URL está
+    // setada), firebase-admin/database mantém uma conexão WebSocket
+    // persistente para o Realtime Database. main() completando com sucesso
+    // não fecha essa conexão sozinho, então o processo (e o job do GitHub
+    // Actions) ficava pendurado indefinidamente em vez de sair — sem esse
+    // forceExit, um scan bem-sucedido nunca terminava, colidindo com o
+    // próximo disparo de ~5min e cascateando exatamente como o hang de
+    // RESOURCE_EXHAUSTED do item 142, mas em TODA passada em vez de só
+    // quando a cota estoura. Mesmo padrão que scripts/run-backfill-check.mjs
+    // já usa (mesma razão, doc mais antiga).
+    forceExit(0);
+  })
+  .catch(async (err) => {
+    console.error('[scan] FAILED:', err);
+    await alertIfQuotaExhausted(err?.message);
+    await pingHealthcheck('/fail');
+    // forceExit (não só process.exitCode) — docs/known-risks.md item 142: se o
+    // erro veio de um withTimeout acima, a chamada real ao Firestore perdeu a
+    // corrida mas continua rodando (e re-tentando) em segundo plano; sem um
+    // process.exit() explícito, o job do GitHub Actions ficaria vivo até ELA
+    // desistir sozinha, do mesmo jeito que travava antes desta correção.
+    forceExit(1);
+  });
