@@ -5548,3 +5548,70 @@ describe('persistScanResults — assetScanUpdate no retorno espelha exatamente o
     expect(stored).toMatchObject(out.assetScanUpdate);
   });
 });
+
+describe('persistScanResults — allActiveOps reaproveita activeOpsAtStart quando nada muda na passada (docs/known-risks.md item 148, achado 1.2)', () => {
+  // uptrendCandles() timestamps candles from epoch (1970-01-01), fine for
+  // indicator math (RF only cares about relative order) but this describe
+  // combines entry creation AND same-pass exit management — the real
+  // entry_candle_time_15m this produces feeds P0-g's temporal guard and the
+  // Time Stop age calculation, so an epoch-era timestamp reads as "8,400+
+  // days old" and the fresh op would close on TIME_STOP inside the very
+  // pass that created it, a fixture artifact having nothing to do with the
+  // read-count behavior this file actually tests. Re-anchored to end right
+  // at the frozen system clock (see beforeEach above) so it reads as a
+  // normal, just-closed confirming candle instead. Small step (0.01, not
+  // the usual 1) for the same reason on the price axis: the entry price
+  // comes from this series' LAST close, not the unrelated 4h candle below —
+  // keeping it near 100 avoids the stop/tp1 landing somewhere that
+  // coincidentally crosses (or doesn't) the 4h candle's own range.
+  const ALIGNED_15M = () => {
+    const base = Date.parse('2026-07-16T12:00:00.000Z') - 60 * 3600000;
+    return uptrendCandles(60, 100, 0.01).map((c) => ({ ...c, openTime: base + c.openTime, closeTime: base + c.closeTime }));
+  };
+
+  function makeRfSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+      timeframe: '4h', source: 'range_filter', dedup_key: 'sig_rf_reuse_check',
+      price_at_signal: 100, context: { score: 80 },
+      ...overrides,
+    };
+  }
+
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  it('sem entrada nova nesta passada: 1 única leitura de TradeOperation, reaproveitada pra gerenciar a op já ativa', async () => {
+    backend._seed('TradeOperation', makeOp()); // já ativa: stop=98, tp1=103
+    const filterSpy = vi.spyOn(backend.entities.TradeOperation, 'filter');
+
+    // Candle cruzando o stop — prova que o loop de gerenciamento de saída
+    // rodou sobre a lista REAPROVEITADA (não sobre uma lista vazia por
+    // engano, o que deixaria a op presa em SIGNAL_CONFIRMED para sempre).
+    const results = { '4h': makeTfData({ lastCandleLow: 97, lastCandleHigh: 99, lastClose: 98 }) };
+    await persistScanResults(makeScanResult({ results }));
+
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('STOP_HIT');
+
+    const activeOpsCalls = filterSpy.mock.calls.filter(([filters]) => filters?.status);
+    expect(activeOpsCalls).toHaveLength(1);
+  });
+
+  it('com entrada nova nesta passada: 2 leituras de TradeOperation (activeOpsAtStart + reconsulta pra pegar a op recém-criada)', async () => {
+    fetchCandles.mockResolvedValue(ALIGNED_15M());
+    const filterSpy = vi.spyOn(backend.entities.TradeOperation, 'filter');
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() }; // rf.direction 1 — alinhado com BUY
+
+    await persistScanResults({ ...makeScanResult({ results, pineConfig }), newSignals: [makeRfSignal()] });
+
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].status).toBe('SIGNAL_CONFIRMED');
+
+    // A chamada de asserção acima ({}` sem `status`) não conta — só as
+    // buscas reais de operação ativa, identificadas pelo filtro de status.
+    const activeOpsCalls = filterSpy.mock.calls.filter(([filters]) => filters?.status);
+    expect(activeOpsCalls).toHaveLength(2);
+  });
+});

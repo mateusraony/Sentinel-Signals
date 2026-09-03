@@ -1873,6 +1873,14 @@ export async function persistScanResults(scanResult) {
     status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'],
   });
   let hasActiveOp = activeOpsAtStart.length > 0;
+  // docs/known-risks.md item 148 (achado 1.2) — set true by every one of the
+  // 8 entry-creation success branches below (4 cascades × first-pass/retry).
+  // Lets the "Update status of existing active TradeOperations" loop further
+  // down reuse activeOpsAtStart instead of re-querying TradeOperation when
+  // nothing changed this pass (the common case) — see that query for the
+  // full reasoning. NOT a substitute for hasActiveOp/activeOp* (those still
+  // gate entry creation); this only decides whether a second read is needed.
+  let entryCreatedThisPass = false;
   // Shared detector (src/lib/opTransition.js) — this query already filters
   // by this asset's symbol+id, so at most one group ever comes back UNLESS
   // both ops carry the hierarchical_cascade stamp (Bloco 4 Fase 1, below) —
@@ -2296,6 +2304,7 @@ export async function persistScanResults(scanResult) {
                   const created = await createTradeOpIfNoneActiveCapped(signal.asset_id, tradeOpId, opData);
                   if (created.created) {
                     hasActiveOp = true;
+                    entryCreatedThisPass = true;
                     activeOp = created.doc;
                     if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
                     logInfo('scanner', `${signal.symbol} entrada criada (RF 1h condicionado ao 4h) — experimental`, {
@@ -2353,6 +2362,7 @@ export async function persistScanResults(scanResult) {
                 const created = await createTradeOpIfNoneActiveCapped(signal.asset_id, tradeOpId, opData);
                 if (created.created) {
                   hasActiveOp = true;
+                  entryCreatedThisPass = true;
                   activeOp = created.doc;
                   if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
                   logInfo('scanner', `${signal.symbol} entrada criada (RF 1h independente do 4h) — experimental`, {
@@ -2552,6 +2562,7 @@ export async function persistScanResults(scanResult) {
                     pineConfig.hierarchicalCascadesEnabled ? '4h_15m' : undefined,
                   );
                   if (created.created) {
+                    entryCreatedThisPass = true;
                     if (pineConfig.hierarchicalCascadesEnabled) {
                       hasActiveOp4h15m = true;
                       activeOp4h15m = created.doc;
@@ -2732,6 +2743,7 @@ export async function persistScanResults(scanResult) {
                 pineConfig.hierarchicalCascadesEnabled ? '1h_5m' : undefined,
               );
               if (created.created) {
+                entryCreatedThisPass = true;
                 if (pineConfig.hierarchicalCascadesEnabled) {
                   hasActiveOp1h5m = true;
                   activeOp1h5m = created.doc;
@@ -3115,6 +3127,7 @@ export async function persistScanResults(scanResult) {
       pineConfig.hierarchicalCascadesEnabled ? '4h_15m' : undefined,
     );
     if (!created.created) continue;
+    entryCreatedThisPass = true;
     if (pineConfig.hierarchicalCascadesEnabled) {
       hasActiveOp4h15m = true;
       activeOp4h15m = created.doc;
@@ -3213,6 +3226,7 @@ export async function persistScanResults(scanResult) {
       const created = await createTradeOpIfNoneActiveCapped(sig.asset_id, tradeOpId, opData);
       if (!created.created) continue;
       hasActiveOp = true;
+      entryCreatedThisPass = true;
       activeOp = created.doc;
 
       if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
@@ -3308,6 +3322,7 @@ export async function persistScanResults(scanResult) {
       const created = await createTradeOpIfNoneActiveCapped(sig.asset_id, tradeOpId, opData);
       if (!created.created) continue;
       hasActiveOp = true;
+      entryCreatedThisPass = true;
       activeOp = created.doc;
 
       if (isTelegramConfigured()) notifyTradeCreated(created.doc).catch(() => {});
@@ -3466,6 +3481,7 @@ export async function persistScanResults(scanResult) {
         pineConfig.hierarchicalCascadesEnabled ? '1h_5m' : undefined,
       );
       if (!created.created) continue;
+      entryCreatedThisPass = true;
       if (pineConfig.hierarchicalCascadesEnabled) {
         hasActiveOp1h5m = true;
         activeOp1h5m = created.doc;
@@ -3492,10 +3508,45 @@ export async function persistScanResults(scanResult) {
   // here too, not just to entry creation/arbitration above: with more than
   // one active op for this asset, this loop can't tell which one is real
   // either, so touching stop/TP on any of them would be guessing.
-  const allActiveOps = duplicateActiveOps ? [] : await backend.entities.TradeOperation.filter({
-    asset_id: asset.id,
-    status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'],
-  });
+  //
+  // Re-querying here used to be unconditional — same asset_id+status filter
+  // as activeOpsAtStart above, just re-run to pick up any op the 8 entry
+  // blocks above this point might have created THIS pass. Firestore bills a
+  // minimum of 1 read per query even when it returns 0 documents, so this
+  // cost the same as activeOpsAtStart on every single asset every pass,
+  // active op or not (docs/known-risks.md item 148, achado 1.2).
+  //
+  // entryCreatedThisPass (false on the overwhelming majority of passes —
+  // real entries are rare relative to scan frequency) lets us reuse
+  // activeOpsAtStart instead: nothing in the 8 creation blocks above touches
+  // an EXISTING op's status, so if none of them created anything, the set of
+  // active ops for this asset is exactly what activeOpsAtStart already read.
+  // Deliberately NOT reconstructed from activeOp/activeOp4h15m/activeOp1h5m
+  // when entryCreatedThisPass is true — those three aren't updated
+  // consistently by every creation site (the two RF 4h retry-loop paths,
+  // ~3123/~3474 in the pre-edit numbering, only ever set the boolean
+  // hasActiveOp*, never the full op object), so reconstructing from them
+  // would silently under-manage a freshly created op on its own first pass.
+  // Re-querying in that (rare) branch keeps this exact, at the cost this
+  // item already had before achado 1.2.
+  //
+  // Residual gap, accepted: a concurrent EXTERNAL write (browser manual
+  // entry) landing in the few-hundred-ms window between activeOpsAtStart and
+  // here, on a pass where THIS scan created nothing itself, would be missed
+  // by this loop for one pass. Not silent: priceCheckActiveOpsInner runs
+  // right after in the same cron cycle with its own fresh, independent
+  // query, and this loop only acts on CANDLE closes anyway (not live
+  // price), so the exposure is bounded to "one candle-close pass late",
+  // same self-correcting profile already accepted elsewhere in this file
+  // (e.g. the item 20 hardening note above on clampMonotonicStop).
+  const allActiveOps = duplicateActiveOps
+    ? []
+    : entryCreatedThisPass
+      ? await backend.entities.TradeOperation.filter({
+          asset_id: asset.id,
+          status: ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'],
+        })
+      : activeOpsAtStart;
   for (const op of allActiveOps) {
     // Defense-in-depth: the status filter above already excludes terminal
     // ops server-side, but this guard stays in case a concurrent transaction

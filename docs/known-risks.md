@@ -17997,7 +17997,80 @@ com ~10 ativos).
   `useAutoScan.js`) conferidos: nenhum desestrutura além de
   `total`/`results`/`skipped` — campo `assets` aditivo, ignorado sem
   quebrar nada.
-- **Achado 1.2 segue não implementado** — fica à disposição do usuário.
+### Achado 1.2 implementado (2026-09-02, pedido explícito do usuário, revisão completa via `sentinel-trading-engine-review`)
+
+**Correção de conta feita durante a revisão**: o texto original deste achado
+estimava o custo como "~1 leitura extra por ativo ATIVO por passada... a
+maioria dos ativos não tem operação aberta, então o custo real é menor que
+o achado 1.1". **Isso estava errado** — o Firestore cobra leitura mínima
+de 1 por query mesmo com 0 resultados (mesma regra já usada para o cálculo
+correto do item 133), então a segunda leitura de `TradeOperation`
+(`allActiveOps`, `scanner.js:persistScanResults`) custava 1 leitura por
+ativo MONITORADO por passada, tenha ou não operação ativa — mesma ordem de
+grandeza do achado 1.1, não "poucos".
+
+**Por que não foi uma troca mecânica**: `persistScanResults` busca a
+operação ativa do ativo DUAS vezes — `activeOpsAtStart` no início da
+função, `allActiveOps` de novo perto do fim, logo antes do loop que
+gerencia stop/TP/trailing das operações ativas. Entre as duas leituras,
+até 8 pontos de criação de operação (4 cascatas × 1ª passada/retry) podem
+abrir uma operação nova para este ativo. Investigação (varrendo os 8
+pontos com `grep`) confirmou que o código **já rastreia isso em memória de
+forma inconsistente**: 6 dos 8 pontos atualizam `activeOp = created.doc`
+logo após criar; os outros 2 (os retries de RF 4h/1h-condicionado em modo
+NÃO hierárquico) só setam o booleano `hasActiveOp`, nunca o objeto
+completo. Reconstruir `allActiveOps` inteiramente a partir dessas
+variáveis exigiria primeiro consertar essa inconsistência nos 8 pontos —
+mudança bem maior e mais arriscada no motor de trading do que o ganho
+justifica.
+
+**Correção real, escopo reduzido**: nova flag `entryCreatedThisPass`
+(`let`, inicializada `false` junto de `hasActiveOp`), setada `true` nos
+mesmos 8 pontos onde `hasActiveOp`/`hasActiveOp4h15m`/`hasActiveOp1h5m` já
+viram `true`. A segunda leitura só roda quando `entryCreatedThisPass` é
+`true` (entradas são raras — a maioria das passadas não cria nenhuma);
+caso contrário, reaproveita `activeOpsAtStart` diretamente — nada em
+memória precisou ser reconstruído, só decide SE vale a pena reconsultar.
+
+**Risco residual aceito, documentado em comentário no próprio código**:
+uma escrita CONCORRENTE externa (ex.: botão "Ativar agora" do navegador)
+chegando na janela entre as duas leituras, numa passada em que o PRÓPRIO
+scan não criou nada, não seria pega por este loop nesta passada
+específica — não é silencioso: `priceCheckActiveOpsInner` roda logo depois
+no mesmo ciclo do cron, com sua própria leitura fresca e independente, e
+este loop só age sobre fechamento de CANDLE (não preço ao vivo), então a
+exposição real é "uma passada de candle atrasada", mesmo perfil de
+autocorreção já aceito em outros pontos deste arquivo (ex. a nota de
+hardening do item 20 sobre `clampMonotonicStop`).
+
+### Verificação (achado 1.2)
+
+- 2 testes novos em `scannerStateMachine.test.js` (describe dedicado),
+  usando `vi.spyOn(backend.entities.TradeOperation, 'filter')` pra contar
+  leituras reais: (a) sem entrada nova na passada → exatamente 1 leitura,
+  reaproveitada, e a op pré-existente ainda é gerenciada corretamente
+  (STOP_HIT quando o candle cruza); (b) com entrada nova → exatamente 2
+  leituras (a segunda pega a op recém-criada). **Mutation-tested nos dois
+  sentidos**: forçando a segunda leitura sempre rodar, o teste (a) falha
+  (esperava 1, achou 2); forçando ela nunca rodar, o teste (b) falha
+  (esperava 2, achou 1) — as outras 287 pré-existentes continuam passando
+  nos dois casos, confirmando que nenhuma delas dependia implicitamente do
+  comportamento antigo.
+- Achado no caminho: o fixture `uptrendCandles()` usado por outros describes
+  data do epoch (1970) — inofensivo nos testes existentes (nunca combinam
+  criação+gerenciamento na MESMA chamada), mas quebrava o novo teste (b) de
+  dois jeitos diferentes até ser corrigido (preço do candle de confirmação
+   15m descolado do candle 4h; depois `entry_candle_time_15m` de 1970 lendo
+  como "operação com 8400+ dias de idade" e fechando por TIME_STOP dentro
+  da própria passada de criação) — resolvido reancorando os timestamps do
+  fixture no relógio congelado do teste, só dentro deste describe.
+- `npm run lint && npm test && npm run build` — 1271/1271 (era 1269).
+  `build:scan`/`build:scan-shadow`/`build:backtest`/`build:backfill`
+  compilam limpos.
+- Nenhum P0 de `trading-engine.md` agravado (todos `[CORRIGIDO]` ou
+  `[RESIDUAL — aceito]`); nenhum terceiro caminho de mutação introduzido;
+  nenhuma transição de estado nova — só a origem da LISTA de operações que
+  o loop de gerenciamento já existente itera.
 
 ### Achado 2 implementado (2026-09-02, pedido explícito do usuário) — com ressalva importante achada durante a implementação
 
