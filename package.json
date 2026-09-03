@@ -20,7 +20,8 @@
     "build:backfill": "node scripts/build-backfill.mjs",
     "backfill-check": "npm run build:backfill && node scripts/dist/run-backfill-check.mjs",
     "analyze-backtest": "node scripts/analyze-backtest.mjs",
-    "analyze-shadow-rf1h": "node scripts/analyze-shadow-rf1h.mjs"
+    "analyze-shadow-rf1h": "node scripts/analyze-shadow-rf1h.mjs",
+    "backfill-rtdb": "node scripts/backfill-rtdb.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^4.1.2",

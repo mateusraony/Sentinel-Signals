@@ -67,6 +67,13 @@ paths:
 - `keep-warm.yml` — ping `/health` a cada 10 min (Render free não hibernar).
 - `backup.yml` — backup diário das coleções de negócio → branch `backups`.
 - `deploy-firestore.yml` — deploy **manual** de rules/índices.
+- `backfill-rtdb.yml` — disparo **manual** (`workflow_dispatch` só) de
+  `scripts/backfill-rtdb.mjs` (`docs/known-risks.md` item 152 addendum):
+  copia `assetStates`/`tradeOperations` do Firestore pro RTDB uma única vez,
+  fechando o "cold start" do mirror ao vivo (uma `TradeOperation` fechada
+  nunca mais é escrita, então nunca convergiria sozinha sem isto). Não faz
+  parte de nenhum agendamento — rodar antes de religar qualquer leitura do
+  painel pro RTDB de novo.
 - `count-signals.yml` — diagnóstico **manual** (só `workflow_dispatch`):
   `scripts/count-1h-signals.mjs` conta `SignalEvent` RF por timeframe contra o
   Firestore real, publica no Job Summary. Apoia uma decisão de produto (vale a

@@ -15,7 +15,10 @@ checagem retroativa ao adicionar/reativar um ativo, roda em
 `adminEntities.js` também embute o espelho de leitura RTDB pro dashboard
 (`AssetState`/`TradeOperation`, `src/lib/rtdbMirror.js`, ver
 `docs/known-risks.md` item 152) — ativo só quando `FIREBASE_DATABASE_URL`
-está setada; sem ela, é no-op e o backfill continua idêntico a antes. Seguir:
+está setada; sem ela, é no-op e o backfill continua idêntico a antes.
+`scripts/backfill-rtdb.mjs` (rodado só manualmente via `backfill-rtdb.yml`,
+nunca no cron) faz a cópia inicial Firestore→RTDB que o mirror ao vivo não
+cobre sozinho — ver item 152 addendum. Seguir:
 
 @../.claude/rules/ci-deploy.md
 @../.claude/rules/trading-engine.md

@@ -18518,10 +18518,31 @@ leitura de volta pro Firestore (`backend.entities`) nos 7 arquivos —
 (`src/lib/rtdbMirror.js` + a fiação em `entities.js`/`adminEntities.js`)
 rodando normalmente em produção (sem risco — nunca tocou o motor de
 trading) e o módulo `src/api/rtdbEntities.js` intacto, só sem consumidor
-por enquanto. **Pendente para religar a leitura**: um backfill explícito
-(script que copia o estado atual de `assetStates`/`tradeOperations` do
-Firestore pro RTDB uma única vez) antes de trocar qualquer `queryFn` de
-volta — sem isso, o mesmo incidente se repete no primeiro deploy.
+por enquanto.
+
+**Backfill implementado** (`scripts/backfill-rtdb.mjs`, novo): copia o
+estado ATUAL de todas as coleções em `RTDB_MIRRORED_ENTITIES`
+(`AssetState`/`TradeOperation` nesta rodada — itera o mapa em vez de uma
+lista hardcoded, então uma coleção futura adicionada ao mirror já fica
+coberta automaticamente) do Firestore pro RTDB, de uma vez. Reaproveita
+`backend.entities.<Nome>.list()` (mesma leitura sem filtro que os pollers
+do painel já faziam) e `toRtdbKey` (mesma sanitização de chave do mirror
+ao vivo). Escreve em lotes de até 500 docs por chamada `rtdb.ref().update()`
+(multi-path update — 1 round-trip por lote, em vez de 1 por doc, mesmo
+raciocínio do `writeBatch` do lado Firestore). Idempotente — seguro rodar
+mais de uma vez, cada doc é uma sobrescrita completa pelo valor atual do
+Firestore. Mesmo bug de `main()` nunca encerrando sozinho descoberto no
+item acima (`firebase-admin/database` mantém WebSocket persistente) —
+`forceExit` no sucesso E no erro, guardado atrás de um check de "é o módulo
+principal" pra o arquivo continuar importável em teste
+(`scripts/backfill-rtdb.test.js`) sem disparar `main()` à toa.
+
+**Disparo**: `.github/workflows/backfill-rtdb.yml`, manual
+(`workflow_dispatch` só — Actions tab → "Backfill Firestore → RTDB" → "Run
+workflow"), mesmos secrets de `scan.yml`. Rodar UMA VEZ antes de religar
+qualquer `queryFn` de volta pro RTDB nos 7 arquivos revertidos acima — sem
+isso, o mesmo incidente se repete no próximo deploy. Religar a leitura em
+si continua não decidido/implementado nesta rodada.
 
 **Passos manuais do usuário (fora do código, não executáveis por esta
 sessão)**: criar o RTDB no Console Firebase (Realtime Database → criar

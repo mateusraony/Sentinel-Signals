@@ -1,0 +1,38 @@
+name: Backfill Firestore → RTDB
+
+# Disparo manual só (Actions tab → "Backfill Firestore → RTDB" → "Run
+# workflow") — não é o relógio de trading nem roda em nenhum agendamento.
+# Copia o estado ATUAL de assetStates/tradeOperations do Firestore pro
+# Realtime Database uma única vez, fechando o "cold start" do mirror
+# (docs/known-risks.md item 152 addendum, incidente 2026-09-03): o mirror
+# ao vivo só espelha um doc quando ele é criado/atualizado/transicionado DE
+# NOVO depois que o mirror entrou no ar — uma TradeOperation já fechada
+# nunca mais é escrita, então nunca convergiria sozinha sem isto.
+#
+# Seguro pra rodar mais de uma vez (cada doc é sobrescrito por completo,
+# nunca mesclado por partes) — mas normalmente só precisa rodar uma vez,
+# antes de religar qualquer leitura do painel pro RTDB de novo.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run backfill-rtdb
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
