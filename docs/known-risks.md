@@ -18499,6 +18499,30 @@ Firestore não aparece no RTDB até a próxima escrita real. Como
 (minutos a horas), o espelho converge sozinho — não foi julgado necessário
 um script de importação inicial pra este v1.
 
+**Incidente ao vivo (2026-09-03, ~40min após o RTDB entrar em produção)**:
+a frase acima subestimou o impacto real. Assim que os 9 pontos de leitura
+foram trocados pro RTDB (ainda vazio, sem backfill), o usuário reportou
+operações abertas "fechando e sumindo" e o histórico de trades "sumindo"
+no painel — os dados continuavam intactos no Firestore, mas a tela passou
+a ler de uma fonte quase vazia. Duas causas específicas que a frase
+otimista não considerou: (1) uma `TradeOperation` **fechada** nunca mais é
+escrita depois de fechar — nunca converge, não é questão de tempo, é
+PERMANENTE sem um backfill explícito; (2) mesmo uma op **ativa** só
+aparece no RTDB na PRÓXIMA transição real (`transitionTradeOp`/`update()`
+com mudança de fato) — se nada mudou nela desde que o mirror entrou no ar,
+ficou invisível também. **Correção aplicada**: revertidos os 9 pontos de
+leitura de volta pro Firestore (`backend.entities`) nos 7 arquivos —
+`Dashboard.jsx`, `Assets.jsx`, `TickerBar.jsx`, `TradeHistory.jsx`,
+`Trades.jsx`, `MonthlyReport.jsx`, `VirtualAccountCard.jsx`,
+`LiveConfidenceCard.jsx` — mantendo o mirror de ESCRITA
+(`src/lib/rtdbMirror.js` + a fiação em `entities.js`/`adminEntities.js`)
+rodando normalmente em produção (sem risco — nunca tocou o motor de
+trading) e o módulo `src/api/rtdbEntities.js` intacto, só sem consumidor
+por enquanto. **Pendente para religar a leitura**: um backfill explícito
+(script que copia o estado atual de `assetStates`/`tradeOperations` do
+Firestore pro RTDB uma única vez) antes de trocar qualquer `queryFn` de
+volta — sem isso, o mesmo incidente se repete no primeiro deploy.
+
 **Passos manuais do usuário (fora do código, não executáveis por esta
 sessão)**: criar o RTDB no Console Firebase (Realtime Database → criar
 banco), copiar a `databaseURL` gerada e setar em 3 lugares

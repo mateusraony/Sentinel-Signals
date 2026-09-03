@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Gauge } from 'lucide-react';
-import { rtdbEntities } from '@/api/rtdbEntities';
+import { backend } from '@/api/entities';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { summarizeOps } from '@/lib/tradeMetrics';
 
@@ -63,7 +63,7 @@ function ConfidenceRow({ label, summary }) {
 export default function LiveConfidenceCard() {
   const { data: operations = [] } = useQuery({
     queryKey: ['trade-operations-closed-all'],
-    queryFn: () => rtdbEntities.TradeOperation.list('-created_date', OPS_LIMIT),
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', OPS_LIMIT),
     refetchInterval: 30000,
   });
 
