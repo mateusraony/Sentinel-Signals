@@ -323,4 +323,7 @@ export const backend = {
   quota: { getAndResetOpCounts },
 };
 
-export { FieldValue };
+// rtdb is exported for scripts/backfill-rtdb.mjs (docs/known-risks.md item
+// 152 addendum) — the one-time Firestore→RTDB copy reuses this exact
+// connection/guard instead of re-initializing firebase-admin/database itself.
+export { FieldValue, rtdb };
