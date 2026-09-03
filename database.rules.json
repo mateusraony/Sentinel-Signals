@@ -1,0 +1,13 @@
+{
+  "rules": {
+    "assetStates": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "tradeOperations": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["created_date"]
+    }
+  }
+}

@@ -32,6 +32,19 @@ documentada no `CLAUDE.md` (tabela de coleções) — só não estava explicitad
 AQUI, onde alguém lendo só esta regra concluiria (errado) que todo acesso do
 cron passa por `adminEntities.js`.
 
+## RTDB — espelho de leitura (item 152)
+
+`AssetState`/`TradeOperation` também são espelhadas no Firebase Realtime
+Database (RTDB), absorvendo o polling do dashboard (`src/api/rtdbEntities.js`)
+sem tocar a cota diária do Firestore. **Mesma disciplina do adaptador**:
+`firebase/database`/`firebase-admin/database` **nunca** são importados direto
+em componente/página — só via `src/api/rtdbEntities.js` (leitura) e o mirror
+interno de `src/api/entities.js`/`scripts/adminEntities.js`
+(`src/lib/rtdbMirror.js`, escrita). RTDB é **read-only** para o dashboard:
+toda mutação continua exclusivamente por `backend.entities`/`backend.tradeOps`
+(Firestore) — o mirror só espelha DEPOIS que a transação real já resolveu,
+nunca participa dela. Ver `docs/known-risks.md` item 152.
+
 ## Concorrência
 
 - **Uma op ativa por ativo** é garantida por transação de doc único em

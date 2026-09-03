@@ -226,7 +226,7 @@ export function createFakeBackend() {
     if (isTerminalStatus(patch.status) && assetId && activeOps.get(anchorId) === opId) {
       activeOps.set(anchorId, null);
     }
-    return { applied: true };
+    return { applied: true, patch: safePatch };
   }
 
   return {

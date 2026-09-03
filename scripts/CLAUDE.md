@@ -11,7 +11,11 @@ adaptador, envolve `adminEntities.js` com cache em memória só para
 `AssetState`/`MonitoredAsset`, ver `docs/known-risks.md` item 137 addendum
 2026-08-31) e janela recente ao vivo (`backfillMarketDataProvider.js`) —
 checagem retroativa ao adicionar/reativar um ativo, roda em
-`.github/workflows/backfill.yml` (workflow separado do scan ao vivo). Seguir:
+`.github/workflows/backfill.yml` (workflow separado do scan ao vivo).
+`adminEntities.js` também embute o espelho de leitura RTDB pro dashboard
+(`AssetState`/`TradeOperation`, `src/lib/rtdbMirror.js`, ver
+`docs/known-risks.md` item 152) — ativo só quando `FIREBASE_DATABASE_URL`
+está setada; sem ela, é no-op e o backfill continua idêntico a antes. Seguir:
 
 @../.claude/rules/ci-deploy.md
 @../.claude/rules/trading-engine.md

@@ -20,6 +20,15 @@ services:
         value: "9439557541"
       - key: VITE_FIREBASE_APP_ID
         value: "1:9439557541:web:f92e49ade6d2e69f0dda4c"
+      # RTDB read mirror for the dashboard's polling reads (docs/known-risks.md
+      # item 152) — public URL, same class as the other VITE_FIREBASE_* values
+      # above, not a secret. Empty until the Realtime Database is created in
+      # the Firebase Console (Realtime Database → create) — the app falls
+      # back to Firestore for everything while this is unset (see the guard
+      # in src/lib/firebaseClient.js). Fill in after creating the RTDB
+      # instance, format https://<project-id>-default-rtdb.<region>.firebasedatabase.app
+      - key: VITE_FIREBASE_DATABASE_URL
+        value: ""
       - key: VITE_BACKEND_URL
         value: https://sentinel-signals-api.onrender.com
     routes:
