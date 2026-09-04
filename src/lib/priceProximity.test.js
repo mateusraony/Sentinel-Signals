@@ -6,6 +6,8 @@ import {
   pctDelta,
   formatQuoteAge,
   nextMilestone,
+  stopPosture,
+  orderLevelsByRail,
   describeProximity,
   rrGeometry,
   LEVEL_DEFS,
@@ -252,5 +254,79 @@ describe('nextMilestone', () => {
     expect(nextMilestone({ side: 'BUY' }, 105)).toBeNull();
     // preço acima de tudo: nenhum alvo à frente e o stop já ficou para trás
     expect(nextMilestone({ side: 'BUY', tp1: 100, tp2: 110 }, 200)).toBeNull();
+  });
+});
+
+describe('nextMilestone — alvo já executado', () => {
+  it('não anuncia o TP1 de novo quando ele já foi atingido (runner que recuou)', () => {
+    // BUY com TP1 executado em 110; preço recuou para 108.
+    const runner = { ...buyOp, tp1_hit: true };
+    const m = nextMilestone(runner, 108);
+    expect(m.key).not.toBe('tp1');
+    expect(m.key).toBe('tp2');
+  });
+
+  it('sem tp1_hit, o mesmo cenário continua mirando o TP1', () => {
+    expect(nextMilestone(buyOp, 108).key).toBe('tp1');
+  });
+
+  it('ignora também um TP2 já atingido', () => {
+    expect(nextMilestone({ ...buyOp, tp1_hit: true, tp2_hit: true }, 108).key).toBe('stop');
+  });
+});
+
+describe('stopPosture', () => {
+  it('classifica risco, breakeven e lucro travado num BUY', () => {
+    expect(stopPosture({ side: 'BUY', entry_price: 100, current_stop: 90 })).toBe('risk');
+    expect(stopPosture({ side: 'BUY', entry_price: 100, current_stop: 100 })).toBe('breakeven');
+    expect(stopPosture({ side: 'BUY', entry_price: 100, current_stop: 108 })).toBe('locked');
+  });
+
+  it('espelha para SELL', () => {
+    expect(stopPosture({ side: 'SELL', entry_price: 100, current_stop: 110 })).toBe('risk');
+    expect(stopPosture({ side: 'SELL', entry_price: 100, current_stop: 100 })).toBe('breakeven');
+    expect(stopPosture({ side: 'SELL', entry_price: 100, current_stop: 92 })).toBe('locked');
+  });
+
+  it('não transforma ruído de ponto flutuante em lucro travado', () => {
+    expect(stopPosture({ side: 'BUY', entry_price: 100, current_stop: 100.00000001 })).toBe('breakeven');
+  });
+
+  it('não deduz nada de tp1_hit — só dos preços', () => {
+    // tp1_hit não muda a resposta: o stop é que decide.
+    expect(stopPosture({ side: 'BUY', entry_price: 100, current_stop: 90, tp1_hit: true })).toBe('risk');
+  });
+
+  it('devolve null sem stop ou sem entrada', () => {
+    expect(stopPosture({ side: 'BUY', entry_price: 100 })).toBeNull();
+    expect(stopPosture(null)).toBeNull();
+  });
+});
+
+describe('orderLevelsByRail', () => {
+  it('num BUY mantém stop → entrada → TP1 → TP2', () => {
+    const { levels } = describeProximity(buyOp, 105);
+    expect(orderLevelsByRail(levels).map(l => l.key)).toEqual(['stop', 'entry', 'tp1', 'tp2']);
+  });
+
+  it('num SELL inverte, para casar com as pontas da trilha', () => {
+    const { levels } = describeProximity(sellOp, 95);
+    expect(orderLevelsByRail(levels).map(l => l.key)).toEqual(['tp2', 'tp1', 'entry', 'stop']);
+  });
+
+  it('a ordem sempre bate com as posições calculadas por rrGeometry', () => {
+    for (const op of [buyOp, sellOp, { side: 'BUY', current_stop: 105, entry_price: 100, tp1: 110, tp2: 120 }]) {
+      const { levels } = describeProximity(op, 100);
+      const geo = rrGeometry(op, 100);
+      const positions = orderLevelsByRail(levels).map(l => geo.positions[l.key]);
+      expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    }
+  });
+
+  it('não muta o array recebido', () => {
+    const { levels } = describeProximity(sellOp, 95);
+    const before = levels.map(l => l.key);
+    orderLevelsByRail(levels);
+    expect(levels.map(l => l.key)).toEqual(before);
   });
 });

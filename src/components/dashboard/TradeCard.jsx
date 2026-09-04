@@ -4,6 +4,7 @@ import { Clock, TrendingUp, TrendingDown, ChevronDown, ChevronUp, History } from
 import { formatBackfillLag } from '@/lib/backfillDetection';
 import {
   formatPrice, formatSignedPct, describeProximity, rrGeometry, nextMilestone,
+  stopPosture, orderLevelsByRail,
 } from '@/lib/priceProximity';
 import { useLivePrice } from '@/hooks/useLivePrice';
 
@@ -76,15 +77,22 @@ const LEVEL_COLOR = {
   tp2: '#00ff80',
 };
 
+// A postura do stop vem da comparação stop × entrada — nunca de `tp1_hit`.
+// Depois do TP1 o trailing continua avançando (scanner.js:advanceTrailingStop),
+// então um runner antigo pode ter o stop bem além da entrada: chamar isso de
+// "breakeven" esconderia lucro já garantido.
+const STOP_POSTURE_LABEL = { risk: 'Stop', breakeven: 'Stop (BE)', locked: 'Stop 🔒' };
+const STOP_POSTURE_COLOR = { risk: LEVEL_COLOR.stop, breakeven: LEVEL_COLOR.stopBe, locked: '#00ff80' };
+
 function levelColor(key, op) {
-  if (key === 'stop') return op.tp1_hit ? LEVEL_COLOR.stopBe : LEVEL_COLOR.stop;
+  if (key === 'stop') return STOP_POSTURE_COLOR[stopPosture(op)] ?? LEVEL_COLOR.stop;
   if (key === 'tp1') return op.tp1_hit ? '#00ff80' : LEVEL_COLOR.tp1;
   if (key === 'tp2') return op.tp2_hit ? '#00ff80' : LEVEL_COLOR.tp2;
   return LEVEL_COLOR.entry;
 }
 
 function levelLabel(key, op) {
-  if (key === 'stop') return op.tp1_hit ? 'Stop (BE)' : 'Stop';
+  if (key === 'stop') return STOP_POSTURE_LABEL[stopPosture(op)] ?? 'Stop';
   if (key === 'entry') return 'Entrada';
   if (key === 'tp1') return op.tp1_hit ? 'TP1 ✓' : 'TP1';
   return op.tp2_hit ? 'TP2 ✓' : 'TP2';
@@ -150,7 +158,7 @@ function LevelRail({ op, price, isStale }) {
       )}
 
       <div className="grid grid-cols-4 gap-1">
-        {levels.map((level) => {
+        {orderLevelsByRail(levels).map((level) => {
           const color = levelColor(level.key, op);
           return (
             <div key={level.key} className="min-w-0"
@@ -185,21 +193,25 @@ function MilestoneLine({ op, price, isStale }) {
   if (!milestone) return null;
 
   const isRisk = milestone.kind === 'risk';
-  const color = isRisk ? (op.tp1_hit ? '#ffd166' : '#ff1478') : '#00ff80';
+  const posture = stopPosture(op);
+  const color = isRisk ? (STOP_POSTURE_COLOR[posture] ?? '#ff1478') : '#00ff80';
   const distance = milestone.absPct.toFixed(2);
+  const riskText = posture === 'locked'
+    ? 'até o stop, que já protege lucro'
+    : posture === 'breakeven'
+      ? 'até o stop no breakeven'
+      : 'até o stop';
 
   return (
     <div className="flex items-center gap-1.5 text-[11px] font-mono rounded-lg px-2.5 py-1.5"
       style={{ background: `${color}0f`, border: `1px solid ${color}26` }}>
-      <span aria-hidden="true">{isRisk ? '🛑' : '🎯'}</span>
+      <span aria-hidden="true">{isRisk ? (posture === 'locked' ? '🔒' : '🛑') : '🎯'}</span>
       <span style={{ color: 'rgba(255,255,255,0.6)' }}>
         {isRisk ? 'Faltam' : 'Faltam'}
       </span>
       <span className="font-bold" style={{ color }}>{distance}%</span>
       <span style={{ color: 'rgba(255,255,255,0.6)' }}>
-        {isRisk
-          ? (op.tp1_hit ? 'até o stop no breakeven' : 'até o stop')
-          : `para o ${milestone.label}`}
+        {isRisk ? riskText : `para o ${milestone.label}`}
       </span>
       {isStale && (
         <span className="ml-auto text-[9px] shrink-0" style={{ color: '#ff9f43' }} title="Calculado sobre a última cotação recebida.">

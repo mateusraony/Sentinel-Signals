@@ -18849,3 +18849,40 @@ maiores por call site) no RTDB e migrar seus pontos de leitura, mais os 4 de
 telas de diagnóstico, com menos impacto. Alternativa independente e barata,
 que não exclui a anterior: aumentar `refetchInterval` e `staleTime` nas telas
 que hoje batem a cada 10–15s.
+
+### Addendum (2026-09-04) — 3 achados de review no PR #302, corrigidos após o merge
+
+A revisão do bot (`chatgpt-codex-connector`) chegou segundos antes do merge do
+PR #302 e não foi vista a tempo. Os três achados P2 foram **verificados no
+código** e corrigidos em seguida. Dois deles são defeitos que esta
+reestruturação introduziu ou amplificou.
+
+**1. Rótulos da trilha invertidos em operação SELL** (o mais grave para o
+objetivo de "bater o olho"). `rrGeometry` monta a trilha pelo min/max REAIS
+dos níveis, então num SELL normal o TP2 fica na ponta esquerda e o stop na
+direita — mas a linha de rótulos era renderizada na ordem lógica fixa
+(Stop, Entrada, TP1, TP2), da esquerda para a direita. Como os rótulos ficam
+logo abaixo da trilha, eles nomeavam as pontas **ao contrário** em toda
+operação de venda. Corrigido com `orderLevelsByRail(levels)` (ordena por
+preço crescente, o mesmo critério do min/max de `rrGeometry`), com um teste
+que confere que a ordem exibida sempre casa com as posições calculadas.
+
+**2. "Faltam X% para o TP1" num TP1 já executado.** `nextMilestone` era
+geometria pura e não olhava `tp1_hit`. Num runner que recuou, o preço fica de
+novo abaixo do TP1 e aquele alvo voltava a ganhar a comparação de distância —
+contradizendo o rótulo "TP1 ✓" ao lado, e escondendo que os marcos reais eram
+o TP2 ou o stop. Corrigido excluindo TP já atingido (idem TP2).
+
+**3. Nem todo stop pós-TP1 é breakeven.** Confirmado em
+`src/lib/scanner.js` (bloco `advanceTrailingStop`, status `RUNNER_ACTIVE`): o
+trailing continua avançando o stop a cada candle favorável depois do TP1, de
+modo que um runner antigo pode ter o stop bem além da entrada, travando lucro
+real. O rótulo `Stop (BE)` derivado só de `tp1_hit` já existia antes (vinha do
+`PriceGrid` original), mas esta rodada o amplificou ao repetir "stop no
+breakeven" na frase do próximo marco. Corrigido com `stopPosture(op)`, que
+compara stop × entrada e devolve `risk` / `breakeven` / `locked` — com
+tolerância relativa para não transformar ruído de ponto flutuante em "lucro".
+Passa a existir o estado visual "Stop 🔒" (verde) para stop que já protege
+lucro.
+
+`npm run lint && npm test && npm run build` verdes (1377 testes, 12 novos).
