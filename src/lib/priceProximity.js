@@ -198,6 +198,41 @@ export function rrGeometry(op, currentPrice) {
 }
 
 /**
+ * Onde o stop está em relação à entrada — a única forma honesta de dizer se
+ * ele ainda arrisca, se zerou o risco, ou se já trava lucro.
+ *
+ * `op.tp1_hit` NÃO responde isso: depois do TP1 o motor segue avançando o
+ * stop a cada candle favorável (`advanceTrailingStop`, `src/lib/scanner.js`),
+ * então um runner antigo pode ter o stop bem acima da entrada. Rotular tudo
+ * isso de "breakeven" esconde lucro já garantido.
+ *
+ * @returns {'risk'|'breakeven'|'locked'|null}
+ */
+export function stopPosture(op) {
+  const stop = usablePrice(op?.current_stop);
+  const entry = usablePrice(op?.entry_price);
+  if (stop === null || entry === null) return null;
+
+  // Tolerância relativa mínima: o motor grava o breakeven como o próprio
+  // preço de entrada, mas ruído de ponto flutuante não pode virar "lucro".
+  if (Math.abs(stop - entry) <= entry * 1e-6) return 'breakeven';
+  const isBuy = op?.side !== 'SELL';
+  const beyondEntry = isBuy ? stop > entry : stop < entry;
+  return beyondEntry ? 'locked' : 'risk';
+}
+
+/**
+ * Ordena os níveis como eles aparecem na trilha (menor preço à esquerda).
+ *
+ * `rrGeometry` monta a trilha pelo min/max REAIS dos níveis, então numa
+ * operação SELL o TP2 fica na ponta esquerda e o stop na direita. A ordem
+ * lógica (stop, entrada, TP1, TP2) rotularia essas pontas ao contrário.
+ */
+export function orderLevelsByRail(levels) {
+  return [...levels].sort((a, b) => a.price - b.price);
+}
+
+/**
  * O próximo marco relevante entre o preço atual e os níveis da operação: o
  * alvo de lucro mais próximo ainda não alcançado, ou o stop — o que estiver
  * mais perto em percentual. É a frase de "bater o olho" do card.
@@ -223,9 +258,12 @@ export function nextMilestone(op, currentPrice) {
   const targetPending = (level) => level !== null && (isBuy ? level > price : level < price);
   const riskPending = (level) => level !== null && (isBuy ? level < price : level > price);
 
+  // Um TP já executado não volta a ser marco: num runner que recuou, o preço
+  // fica de novo "abaixo" do TP1, mas aquele alvo já pagou a parcial — anunciar
+  // "faltam X% para o TP1" contradiz o próprio rótulo "TP1 ✓" ao lado.
   const candidates = [];
-  if (targetPending(tp1)) candidates.push({ key: 'tp1', label: 'TP1', kind: 'target', price: tp1 });
-  if (targetPending(tp2)) candidates.push({ key: 'tp2', label: 'TP2', kind: 'target', price: tp2 });
+  if (!op?.tp1_hit && targetPending(tp1)) candidates.push({ key: 'tp1', label: 'TP1', kind: 'target', price: tp1 });
+  if (!op?.tp2_hit && targetPending(tp2)) candidates.push({ key: 'tp2', label: 'TP2', kind: 'target', price: tp2 });
   if (riskPending(stop)) candidates.push({ key: 'stop', label: 'stop', kind: 'risk', price: stop });
   if (candidates.length === 0) return null;
 
