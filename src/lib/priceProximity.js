@@ -54,6 +54,23 @@ export function formatPrice(price) {
   return parsed.toFixed(8);
 }
 
+/**
+ * Idade de uma cotação, em texto curto. Existe porque `formatBackfillLag`
+ * (`src/lib/backfillDetection.js`) tem granularidade de minuto — bom para o
+ * atraso de um backfill, cego para uma cotação que atualiza a cada 30s.
+ */
+export function formatQuoteAge(ms) {
+  const parsed = num(ms);
+  if (parsed === null || parsed < 0) return null;
+  const seconds = Math.floor(parsed / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
 /** Percentual assinado com sinal explícito no positivo ("+1.20%"). */
 export function formatSignedPct(pct, digits = 2) {
   const parsed = num(pct);

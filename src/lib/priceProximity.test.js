@@ -4,6 +4,7 @@ import {
   formatPrice,
   formatSignedPct,
   pctDelta,
+  formatQuoteAge,
   describeProximity,
   rrGeometry,
   LEVEL_DEFS,
@@ -58,6 +59,26 @@ describe('formatSignedPct', () => {
     expect(formatSignedPct(-1.234)).toBe('-1.23%');
     expect(formatSignedPct(0)).toBe('0.00%');
     expect(formatSignedPct(null)).toBe('—');
+  });
+});
+
+describe('formatQuoteAge', () => {
+  it('tem granularidade de segundo — a cotação atualiza a cada 30s', () => {
+    expect(formatQuoteAge(0)).toBe('0s');
+    expect(formatQuoteAge(45_000)).toBe('45s');
+    expect(formatQuoteAge(59_999)).toBe('59s');
+  });
+
+  it('sobe a escala conforme a cotação envelhece', () => {
+    expect(formatQuoteAge(60_000)).toBe('1min');
+    expect(formatQuoteAge(90 * 60_000)).toBe('1h');
+    expect(formatQuoteAge(50 * 60 * 60_000)).toBe('2d');
+  });
+
+  it('devolve null para entrada inválida ou negativa', () => {
+    for (const bad of [null, undefined, NaN, -1, 'abc']) {
+      expect(formatQuoteAge(bad)).toBeNull();
+    }
   });
 });
 

@@ -18668,3 +18668,25 @@ lógica de trading/backend — o diff toca só `src/pages/Trades.jsx`,
 a aparência renderizada (esta sessão não tem navegador nem acesso ao painel
 publicado) e o comportamento com a Binance real — ambos dependem do usuário
 abrir a aba Trades depois do deploy.
+
+### Addendum (2026-09-04) — cotação em cache nunca mais é apresentada como "ao vivo"
+
+Achado de bot de review no PR #301 (`chatgpt-codex-connector`, P1), **confirmado
+lendo o próprio código**: o TanStack Query mantém o último `data` bem-sucedido
+quando um refetch falha. Como o primeiro corte priorizava qualquer `price` não
+nulo, uma indisponibilidade da Binance deixava o card mostrando a cotação velha
+sob o rótulo "Ao vivo", com P&L e distâncias derivados dela. `SignalLivePrice`
+era pior: só mostrava "preço indisponível" quando **não havia** cache, ou seja,
+suprimia o aviso justamente quando havia um número velho na tela.
+
+Corrigido com o hook `useLivePrice(symbol)` (compartilhado pelos dois
+componentes), que expõe `isStale` cobrindo os dois casos — a última tentativa
+falhou, ou a última tentativa bem-sucedida passou de `QUOTE_STALE_MS` (90s,
+3 ciclos de refetch). Quando `isStale`, o rótulo vira "Desatualizado", a cor
+passa de ciano para laranja, a idade da cotação aparece ao lado ("há 2min"),
+o badge de resultado é atenuado e os `title` explicam que os números vieram do
+último preço recebido, não do preço de agora. `formatQuoteAge` (novo em
+`priceProximity.js`, 3 testes) existe porque `formatBackfillLag` tem
+granularidade de minuto — cega para uma cotação que atualiza a cada 30s.
+
+`npm run lint && npm test && npm run build` verdes (1359 testes).

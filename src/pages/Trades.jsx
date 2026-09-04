@@ -12,7 +12,7 @@ import TradeEntryMarkers from '@/components/trades/TradeEntryMarkers';
 import PortfolioVsMarket from '@/components/trades/PortfolioVsMarket';
 import PerformanceReport from '@/components/trades/PerformanceReport';
 import { fetchCurrentPrice } from '@/lib/marketDataProvider';
-import { describeProximity, rrGeometry, formatPrice, formatSignedPct, usablePrice } from '@/lib/priceProximity';
+import { describeProximity, rrGeometry, formatPrice, formatSignedPct, formatQuoteAge, usablePrice } from '@/lib/priceProximity';
 import moment from 'moment';
 import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
 import { logError } from '@/lib/logger';
@@ -42,6 +42,38 @@ const REJECTION_LABELS = {
 
 const CONFIRMATION_WINDOW_MS = 4 * 60 * 60 * 1000; // scanner.js FOUR_HOURS_MS — mesma janela pras 2 cascatas
 
+// Uma cotação parada por mais de 3 ciclos de refetch não é mais "ao vivo".
+const QUOTE_STALE_MS = 90_000;
+
+/**
+ * Preço ao vivo de um símbolo, com honestidade sobre a idade do dado.
+ *
+ * O TanStack Query mantém o último `data` bem-sucedido quando um refetch
+ * falha — sem isto, o card seguiria mostrando uma cotação velha rotulada como
+ * "ao vivo" durante uma indisponibilidade da Binance. `isStale` cobre os dois
+ * casos: a última tentativa falhou, ou a última tentativa BEM-SUCEDIDA já
+ * passou da validade. A idade é recalculada a cada render, e o próprio
+ * `refetchInterval` garante um render a cada 30s mesmo em erro contínuo.
+ *
+ * A `queryKey` por símbolo é o que mantém a dedup do TanStack Query: dois
+ * cards do mesmo par compartilham uma única requisição.
+ */
+function useLivePrice(symbol) {
+  const { data, isLoading, isError, dataUpdatedAt } = useQuery({
+    queryKey: ['live-price', symbol],
+    queryFn: () => fetchCurrentPrice(symbol),
+    enabled: Boolean(symbol),
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+
+  const price = usablePrice(data);
+  const ageMs = price !== null && dataUpdatedAt ? Math.max(0, Date.now() - dataUpdatedAt) : null;
+  const isStale = price !== null && (isError || (ageMs !== null && ageMs > QUOTE_STALE_MS));
+
+  return { price, isLoading, isError, isStale, ageMs, ageLabel: formatQuoteAge(ageMs) };
+}
+
 // Cores por nível — mesmas de PriceGrid em TradeCard.jsx, para o card inteiro
 // falar a mesma língua visual.
 function levelColor(key, op) {
@@ -70,20 +102,14 @@ const SEGMENT_COLOR = {
  * mesmo par compartilham uma única requisição a cada 30s.
  */
 function LivePricePanel({ op }) {
-  const { data: livePrice, isLoading, isError } = useQuery({
-    queryKey: ['live-price', op.symbol],
-    queryFn: () => fetchCurrentPrice(op.symbol),
-    enabled: Boolean(op.symbol),
-    refetchInterval: 30000,
-    staleTime: 15000,
-  });
+  const { price, isLoading, isError, isStale, ageLabel } = useLivePrice(op.symbol);
 
-  const { levels, unrealizedPct } = describeProximity(op, livePrice);
-  const geo = rrGeometry(op, livePrice);
+  const { levels, unrealizedPct } = describeProximity(op, price);
+  const geo = rrGeometry(op, price);
   if (levels.length === 0) return null;
 
-  const price = usablePrice(livePrice);
   const pnlColor = unrealizedPct === null ? 'rgba(255,255,255,0.4)' : unrealizedPct >= 0 ? '#00ff80' : '#ff1478';
+  const quoteColor = price === null ? 'rgba(255,255,255,0.35)' : isStale ? '#ff9f43' : '#00e5ff';
 
   return (
     <div className="px-3 py-2.5 space-y-2"
@@ -95,31 +121,38 @@ function LivePricePanel({ op }) {
           <span className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest shrink-0"
             style={{ color: 'rgba(255,255,255,0.35)' }}>
             <span
-              className={`w-1.5 h-1.5 rounded-full${price !== null && !isError ? ' animate-pulse motion-reduce:animate-none' : ''}`}
+              className={`w-1.5 h-1.5 rounded-full${price !== null && !isStale ? ' animate-pulse motion-reduce:animate-none' : ''}`}
               style={{
-                background: isError ? '#ff9f43' : '#00e5ff',
-                boxShadow: isError ? 'none' : '0 0 5px #00e5ff',
+                background: quoteColor,
+                boxShadow: isStale || price === null ? 'none' : '0 0 5px #00e5ff',
               }} />
-            Ao vivo
+            {isStale ? 'Desatualizado' : 'Ao vivo'}
           </span>
-          <span className="text-base font-mono font-bold truncate" style={{ color: price !== null ? '#00e5ff' : 'rgba(255,255,255,0.35)' }}>
+          <span className="text-base font-mono font-bold truncate" style={{ color: quoteColor }}>
             {price !== null
               ? `$${formatPrice(price)}`
               : isLoading ? 'buscando…' : '—'}
           </span>
+          {isStale && ageLabel && (
+            <span className="text-[9px] font-mono shrink-0" style={{ color: '#ff9f43' }}>há {ageLabel}</span>
+          )}
         </div>
         {unrealizedPct !== null && (
           <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded shrink-0"
-            title="Resultado em aberto sobre a entrada, sem descontar taxas nem funding."
-            style={{ color: pnlColor, background: `${pnlColor}14`, border: `1px solid ${pnlColor}33` }}>
+            title={isStale
+              ? `Calculado sobre a última cotação recebida (há ${ageLabel ?? '?'}), não sobre o preço de agora. Sem descontar taxas nem funding.`
+              : 'Resultado em aberto sobre a entrada, sem descontar taxas nem funding.'}
+            style={{ color: pnlColor, background: `${pnlColor}14`, border: `1px solid ${pnlColor}33`, opacity: isStale ? 0.55 : 1 }}>
             {formatSignedPct(unrealizedPct)}
           </span>
         )}
       </div>
 
-      {isError && (
+      {(isStale || (isError && price === null)) && (
         <p className="text-[8px] font-mono leading-relaxed" style={{ color: '#ff9f43' }}>
-          ⚠️ Não deu para buscar o preço agora (a Binance não respondeu). Os níveis abaixo continuam válidos; o painel tenta de novo em alguns segundos.
+          {price === null
+            ? '⚠️ Não deu para buscar o preço agora (a Binance não respondeu). Os níveis abaixo continuam válidos; o painel tenta de novo em alguns segundos.'
+            : `⚠️ Este é o último preço que chegou${ageLabel ? `, de ${ageLabel} atrás` : ''} — a atualização automática não está passando. As distâncias abaixo foram calculadas sobre ele, não sobre o preço de agora.`}
         </p>
       )}
 
@@ -168,13 +201,16 @@ function LivePricePanel({ op }) {
             ))}
             {geo.currentPct !== null && (
               <div className="absolute -top-1 -bottom-1 w-0.5 rounded-full"
-                title={geo.currentOutOfRange ? 'Preço fora do intervalo stop–TP2 (marcador fixado na borda)' : 'Preço atual'}
+                title={[
+                  isStale ? `Última cotação recebida (há ${ageLabel ?? '?'})` : 'Preço atual',
+                  geo.currentOutOfRange ? '— fora do intervalo stop–TP2, marcador fixado na borda' : '',
+                ].filter(Boolean).join(' ')}
                 style={{
                   left: `${geo.currentPct}%`,
-                  background: '#00e5ff',
-                  boxShadow: '0 0 4px #00e5ff',
+                  background: quoteColor,
+                  boxShadow: `0 0 4px ${quoteColor}`,
                   transform: 'translateX(-50%)',
-                  opacity: geo.currentOutOfRange ? 0.5 : 1,
+                  opacity: geo.currentOutOfRange || isStale ? 0.5 : 1,
                 }} />
             )}
           </div>
@@ -297,15 +333,8 @@ function EditModal({ op, onClose, onSave }) {
  * um par que aparece nas duas listas custa uma requisição só.
  */
 function SignalLivePrice({ symbol, referencePrice, side }) {
-  const { data: livePrice, isError } = useQuery({
-    queryKey: ['live-price', symbol],
-    queryFn: () => fetchCurrentPrice(symbol),
-    enabled: Boolean(symbol),
-    refetchInterval: 30000,
-    staleTime: 15000,
-  });
+  const { price, isError, isStale, ageLabel } = useLivePrice(symbol);
 
-  const price = usablePrice(livePrice);
   if (price === null) {
     return isError
       ? <div className="text-[9px] font-mono" style={{ color: '#ff9f43' }} title="A Binance não respondeu na última tentativa.">preço indisponível</div>
@@ -316,10 +345,17 @@ function SignalLivePrice({ symbol, referencePrice, side }) {
   const color = unrealizedPct === null ? 'rgba(255,255,255,0.35)' : unrealizedPct >= 0 ? '#00ff80' : '#ff1478';
 
   return (
-    <div className="text-[9px] font-mono flex items-center justify-end gap-1" style={{ color: '#00e5ff' }}>
-      <span title="Preço de mercado agora">${formatPrice(price)}</span>
+    <div className="text-[9px] font-mono flex items-center justify-end gap-1"
+      style={{ color: isStale ? '#ff9f43' : '#00e5ff', opacity: isStale ? 0.7 : 1 }}>
+      <span title={isStale
+        ? `Último preço recebido, de ${ageLabel ?? '?'} atrás — a atualização automática não está passando.`
+        : 'Preço de mercado agora'}>
+        {isStale ? '⚠️ ' : ''}${formatPrice(price)}
+      </span>
       {unrealizedPct !== null && (
-        <span style={{ color }} title="Quanto o preço andou a favor do sinal desde que ele apareceu.">
+        <span style={{ color }} title={isStale
+          ? `Calculado sobre o último preço recebido (há ${ageLabel ?? '?'}), não sobre o preço de agora.`
+          : 'Quanto o preço andou a favor do sinal desde que ele apareceu.'}>
           {formatSignedPct(unrealizedPct)}
         </span>
       )}
