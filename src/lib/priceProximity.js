@@ -196,3 +196,45 @@ export function rrGeometry(op, currentPrice) {
     currentOutOfRange,
   };
 }
+
+/**
+ * O próximo marco relevante entre o preço atual e os níveis da operação: o
+ * alvo de lucro mais próximo ainda não alcançado, ou o stop — o que estiver
+ * mais perto em percentual. É a frase de "bater o olho" do card.
+ *
+ * Geometria pura, direcional pelo `side`: não lê `status`, não sabe se a
+ * operação está aberta e não decide nada. Um nível já ultrapassado na direção
+ * do trade simplesmente deixa de ser candidato.
+ *
+ * @returns {null | { key: 'stop'|'tp1'|'tp2', label: string,
+ *                    kind: 'target'|'risk', price: number,
+ *                    pct: number, absPct: number }}
+ */
+export function nextMilestone(op, currentPrice) {
+  const price = usablePrice(currentPrice);
+  if (price === null) return null;
+
+  const isBuy = op?.side !== 'SELL';
+  const stop = usablePrice(op?.current_stop);
+  const tp1 = usablePrice(op?.tp1);
+  const tp2 = usablePrice(op?.tp2);
+
+  // "Pendente" = ainda à frente na direção que importa para aquele nível.
+  const targetPending = (level) => level !== null && (isBuy ? level > price : level < price);
+  const riskPending = (level) => level !== null && (isBuy ? level < price : level > price);
+
+  const candidates = [];
+  if (targetPending(tp1)) candidates.push({ key: 'tp1', label: 'TP1', kind: 'target', price: tp1 });
+  if (targetPending(tp2)) candidates.push({ key: 'tp2', label: 'TP2', kind: 'target', price: tp2 });
+  if (riskPending(stop)) candidates.push({ key: 'stop', label: 'stop', kind: 'risk', price: stop });
+  if (candidates.length === 0) return null;
+
+  let nearest = null;
+  for (const candidate of candidates) {
+    const pct = pctDelta(price, candidate.price);
+    if (pct === null) continue;
+    const absPct = Math.abs(pct);
+    if (nearest === null || absPct < nearest.absPct) nearest = { ...candidate, pct, absPct };
+  }
+  return nearest;
+}

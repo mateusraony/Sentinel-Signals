@@ -5,6 +5,7 @@ import {
   formatSignedPct,
   pctDelta,
   formatQuoteAge,
+  nextMilestone,
   describeProximity,
   rrGeometry,
   LEVEL_DEFS,
@@ -213,5 +214,43 @@ describe('LEVEL_DEFS', () => {
   it('está congelado e cobre exatamente os campos da operação', () => {
     expect(Object.isFrozen(LEVEL_DEFS)).toBe(true);
     expect(LEVEL_DEFS.map(d => d.field)).toEqual(['current_stop', 'entry_price', 'tp1', 'tp2']);
+  });
+});
+
+describe('nextMilestone', () => {
+  it('aponta o TP mais próximo quando o preço está entre entrada e TP1', () => {
+    const m = nextMilestone(buyOp, 105);
+    expect(m.key).toBe('tp1');
+    expect(m.kind).toBe('target');
+    expect(m.absPct).toBeCloseTo(4.7619, 3);
+  });
+
+  it('pula o TP1 já ultrapassado e passa a mirar o TP2', () => {
+    expect(nextMilestone(buyOp, 115).key).toBe('tp2');
+  });
+
+  it('avisa do stop quando ele é o marco mais próximo', () => {
+    const m = nextMilestone(buyOp, 91);
+    expect(m.key).toBe('stop');
+    expect(m.kind).toBe('risk');
+  });
+
+  it('espelha a direção para SELL', () => {
+    expect(nextMilestone(sellOp, 95).key).toBe('tp1');
+    expect(nextMilestone(sellOp, 85).key).toBe('tp2');
+    expect(nextMilestone(sellOp, 109).key).toBe('stop');
+  });
+
+  it('funciona com stop de trailing acima da entrada (BUY)', () => {
+    const trailing = { side: 'BUY', current_stop: 105, entry_price: 100, tp1: 110, tp2: 120 };
+    expect(nextMilestone(trailing, 107).key).toBe('stop');
+    expect(nextMilestone(trailing, 109.5).key).toBe('tp1');
+  });
+
+  it('devolve null sem preço, sem níveis, ou quando nada está pendente', () => {
+    expect(nextMilestone(buyOp, null)).toBeNull();
+    expect(nextMilestone({ side: 'BUY' }, 105)).toBeNull();
+    // preço acima de tudo: nenhum alvo à frente e o stop já ficou para trás
+    expect(nextMilestone({ side: 'BUY', tp1: 100, tp2: 110 }, 200)).toBeNull();
   });
 });
