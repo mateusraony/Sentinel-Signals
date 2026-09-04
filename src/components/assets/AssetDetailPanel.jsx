@@ -2,14 +2,7 @@ import React from 'react';
 import { Sliders, Activity, Clock } from 'lucide-react';
 import RFHistoryChart from './RFHistoryChart';
 import moment from 'moment';
-
-function fmt(price) {
-  if (!price && price !== 0) return '—';
-  if (price >= 10000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (price >= 100) return price.toFixed(2);
-  if (price >= 1) return price.toFixed(4);
-  return price.toFixed(6);
-}
+import { formatPrice } from '@/lib/priceProximity';
 
 /** @param {{ label: string, value: any, pineVar?: string, color?: string }} props */
 function ParamCard({ label, value, pineVar, color }) {
@@ -65,17 +58,17 @@ function TFStateCard({ tf, state, enabled }) {
       <div className="space-y-1 text-[9px] font-mono">
         <div className="flex justify-between">
           <span className="text-muted-foreground">RF Value</span>
-          <span style={{ color: 'rgba(0,229,255,0.7)' }}>${fmt(state.rf_filter_value)}</span>
+          <span style={{ color: 'rgba(0,229,255,0.7)' }}>${formatPrice(state.rf_filter_value)}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">RF Band</span>
           <span style={{ color: 'rgba(255,255,255,0.5)' }}>
-            ${fmt(state.rf_low_band)} ~ ${fmt(state.rf_high_band)}
+            ${formatPrice(state.rf_low_band)} ~ ${formatPrice(state.rf_high_band)}
           </span>
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Last Close</span>
-          <span style={{ color: 'rgba(255,255,255,0.7)' }}>${fmt(state.last_close)}</span>
+          <span style={{ color: 'rgba(255,255,255,0.7)' }}>${formatPrice(state.last_close)}</span>
         </div>
       </div>
 

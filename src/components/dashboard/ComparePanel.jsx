@@ -2,14 +2,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Crown, Swords, TrendingUp, TrendingDown } from 'lucide-react';
 import { fetch24hStats } from '@/lib/marketDataProvider';
-
-function fmt(price) {
-  if (!price && price !== 0) return '—';
-  if (price >= 10000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (price >= 100) return price.toFixed(2);
-  if (price >= 1) return price.toFixed(4);
-  return price.toFixed(6);
-}
+import { formatPrice } from '@/lib/priceProximity';
 
 function dirCfg(dir) {
   if (dir === 1) return { icon: '▲', color: '#00ff80', label: 'Bull' };
@@ -90,7 +83,7 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
       {/* Price + 24h */}
       <div className="flex items-end justify-between mb-3">
         <div>
-          <div className="text-lg font-bold font-mono text-foreground">${fmt(price)}</div>
+          <div className="text-lg font-bold font-mono text-foreground">${formatPrice(price)}</div>
           {change !== undefined && (
             <div className="text-[11px] font-mono" style={{ color: change >= 0 ? '#00ff80' : '#ff1478' }}>
               {change >= 0 ? '+' : ''}{change.toFixed(2)}% 24h
@@ -134,7 +127,7 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
           const s4h = states.find(s => s.timeframe === '4h');
           return (
             <>
-              <MetricRow label="RF Valor (4h)" value={s4h ? `$${fmt(s4h.rf_filter_value)}` : '—'} color="rgba(0,229,255,0.7)" />
+              <MetricRow label="RF Valor (4h)" value={s4h ? `$${formatPrice(s4h.rf_filter_value)}` : '—'} color="rgba(0,229,255,0.7)" />
               <MetricRow label="RSI (1h)" value={Number.isFinite(s1h?.rsi_value) ? s1h.rsi_value.toFixed(0) : '—'}
                 color={s1h?.rsi_zone === 'overbought' ? '#ff1478' : s1h?.rsi_zone === 'oversold' ? '#00ff80' : 'rgba(255,255,255,0.7)'} />
               <MetricRow label="MACD Hist" value={s1h?.macd_histogram !== undefined ? (s1h.macd_histogram > 0 ? '▲ Pos' : '▼ Neg') : '—'}

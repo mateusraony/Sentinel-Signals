@@ -9,14 +9,7 @@ import {
 } from 'recharts';
 import { isClosedOp, getExitPrice, getClosedAt, calcRealizedPnlPct, summarizeOps } from '@/lib/tradeMetrics';
 import { Tooltip as InfoTooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-
-function fmt(price) {
-  if (!price && price !== 0) return '—';
-  if (price >= 10000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (price >= 100) return price.toFixed(2);
-  if (price >= 1) return price.toFixed(4);
-  return price.toFixed(6);
-}
+import { formatPrice } from '@/lib/priceProximity';
 
 function fmtPct(v) {
   if (v === null || v === undefined || isNaN(v)) return '—';
@@ -269,8 +262,8 @@ export default function MonthlyReport() {
           moment(op.created_date).format('DD/MM HH:mm'),
           op.symbol?.replace('USDT', '') || '—',
           op.side || '—',
-          `$${fmt(op.entry_price)}`,
-          exitPrice ? `$${fmt(exitPrice)}` : '—',
+          `$${formatPrice(op.entry_price)}`,
+          exitPrice ? `$${formatPrice(exitPrice)}` : '—',
           pnl !== null ? fmtPct(pnl) : '—',
           (STATUS_LABELS[op.status] || op.status).replace(/[^\x20-\x7E]/g, ''),
         ];
@@ -441,8 +434,8 @@ export default function MonthlyReport() {
                         <td className="px-4 py-2 text-muted-foreground">{moment(op.created_date).format('DD/MM HH:mm')}</td>
                         <td className="px-4 py-2 text-foreground font-semibold">{op.symbol?.replace('USDT', '/USDT')}</td>
                         <td className="px-4 py-2" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</td>
-                        <td className="px-4 py-2 text-right text-muted-foreground">${fmt(op.entry_price)}</td>
-                        <td className="px-4 py-2 text-right text-muted-foreground">{exitPrice ? `$${fmt(exitPrice)}` : '—'}</td>
+                        <td className="px-4 py-2 text-right text-muted-foreground">${formatPrice(op.entry_price)}</td>
+                        <td className="px-4 py-2 text-right text-muted-foreground">{exitPrice ? `$${formatPrice(exitPrice)}` : '—'}</td>
                         <td className="px-4 py-2 text-right font-bold" style={{ color: pnl >= 0 ? '#00ff80' : '#ff1478' }}>{pnl !== null ? fmtPct(pnl) : '—'}</td>
                         <td className="px-4 py-2" style={{ color: STATUS_COLORS[op.status] || '#64748b' }}>{STATUS_LABELS[op.status] || op.status}</td>
                       </tr>

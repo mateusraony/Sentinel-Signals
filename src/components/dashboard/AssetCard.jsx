@@ -6,15 +6,7 @@ import { activateSignalManually } from '@/lib/scanner';
 import { logError } from '@/lib/logger';
 import moment from 'moment';
 import ProximityBar, { calcProximity } from '@/components/dashboard/ProximityBar';
-
-function fmt(price) {
-  if (!price && price !== 0) return '—';
-  if (price >= 10000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (price >= 100) return price.toFixed(2);
-  if (price >= 1) return price.toFixed(4);
-  if (price >= 0.001) return price.toFixed(4);
-  return price.toFixed(6);
-}
+import { formatPrice } from '@/lib/priceProximity';
 
 function Dot({ color, filled = true }) {
   return (
@@ -290,7 +282,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
           <div className="text-right shrink-0 ml-2">
             {lastPrice ? (
               <>
-                <div className="font-bold font-mono text-sm text-foreground">${fmt(lastPrice)}</div>
+                <div className="font-bold font-mono text-sm text-foreground">${formatPrice(lastPrice)}</div>
                 {priceChange !== undefined && priceChange !== null && (
                   <div className="text-[10px] font-mono" style={{ color: priceChange >= 0 ? '#00ff80' : '#ff1478' }}>
                     {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
@@ -379,7 +371,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
               <div className="text-[8px] font-mono text-muted-foreground mb-0.5 leading-tight truncate">{col}</div>
               <div className="text-[10px] font-mono font-semibold" style={{ color: priceVals[i] ? priceColColors[i] : 'rgba(255,255,255,0.15)' }}>
-                {fmt(priceVals[i])}
+                {formatPrice(priceVals[i])}
               </div>
             </div>
           ))}

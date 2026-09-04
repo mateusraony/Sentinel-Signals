@@ -18574,3 +18574,97 @@ antes e depois dos 2 ajustes aditivos. Sem acesso a Firestore/RTDB reais
 nesta sessão — a confirmação de queda real de leituras diárias e a
 population real de `/assetStates`/`/tradeOperations` no Console só podem
 ser feitas pelo usuário após os passos manuais acima.
+
+---
+
+## 153. Implementado — preço ao vivo e distância até os níveis nos cards da aba Trades (2026-09-04)
+
+**Pedido do usuário** (2026-09-04): *"na aba trades, acredito que nos cards
+dá pra melhorar colocando o valor real online do ativo, assim dá pra ter
+noção de quanto falta pra operação tanto abrir quanto fechar"*, seguido de
+*"pode implementar sim, e se tiver mais melhorias pode fazer, veja bem tudo
+pra ficar perfeito e blindado"*.
+
+Tarefa **puramente visual** (skill `sentinel-ui-review`,
+`.claude/rules/frontend-ui.md`): nenhuma linha de `src/lib/scanner.js`,
+`src/api/entities.js`, `firestore.rules` ou `server/` foi tocada. Nada aqui
+dispara transição de operação — o motor continua sendo o único caminho de
+mutação (`.claude/rules/trading-engine.md`).
+
+### Fato — o marcador de "preço atual" da barra RR estava errado
+
+`src/pages/Trades.jsx:69` (antes desta rodada) calculava o preço exibido na
+barra risco/retorno como `(stats.highPrice + stats.lowPrice) / 2` — o
+**ponto médio da faixa de 24h** devolvida por `fetch24hStats`, não o preço
+negociado agora. Numa faixa de 24h larga o marcador podia ficar
+arbitrariamente longe do preço real, e nunca se movia entre um candle e
+outro. `fetchCurrentPrice()` (endpoint `/ticker/price`, último preço
+negociado) já existia no mesmo módulo e já era usado por
+`SignalChecklist.jsx` e `scanner.js` — era só não estar sendo usado aqui.
+
+### Fato — outras fragilidades encontradas no mesmo componente
+
+1. `if (!stop || !entry || !tp1 || !tp2) return null` derrubava a barra
+   **inteira** quando faltava um único campo — o usuário perdia também os
+   três níveis que existiam.
+2. `entryPct`/`tp1Pct` não tinham clamp (só `currentPct` tinha). Com o
+   trailing pré-TP1 ligado em produção (item 132) o stop pode ultrapassar a
+   entrada, e a fórmula fixa `low = isBuy ? stop : tp2` produzia posição
+   negativa — marcador renderizado fora da barra.
+3. Sem estado de carregando/erro: uma falha na Binance sumia com o marcador
+   sem nenhuma indicação de que faltava dado.
+4. `fmt(price)` estava duplicado em **9 arquivos** com escalas divergentes.
+   No MESMO card, `Trades.jsx` renderizava 50 como `50.0000` e
+   `TradeCard.jsx` renderizava `50.00`.
+
+### O que foi feito
+
+- **`src/lib/priceProximity.js`** (novo, puro, 24 testes em
+  `priceProximity.test.js`): `formatPrice` (escala canônica única),
+  `formatSignedPct`, `pctDelta`, `describeProximity(op, preço)` e
+  `rrGeometry(op, preço)`. Cabeçalho declara explicitamente que é
+  display-only e que não alimenta decisão de trading. Coage número
+  serializado como string (o RTDB pode devolver assim) e devolve `null` em
+  vez de `NaN`/`Infinity` em toda entrada inválida.
+  - `rrGeometry` usa o **min/max reais** dos quatro níveis em vez de
+    `stop`/`tp2` fixos por lado, com clamp em todos os marcadores — corrige
+    (2) para qualquer configuração de stop, inclusive trailing além da
+    entrada. Sinaliza `currentOutOfRange` quando o preço saiu do intervalo,
+    em vez de mentir que ele está na borda.
+  - `describeProximity` degrada **por nível**: campo ausente some sozinho,
+    os outros permanecem — corrige (1).
+- **`src/pages/Trades.jsx`**: `RRBar` virou `LivePricePanel` — preço ao vivo
+  numérico + resultado bruto em aberto (rotulado como sem taxas/funding,
+  para não conflitar com `tradeMetrics.js`, que é quem contabiliza custo) +
+  um chip por nível com a distância percentual e seta de direção (o nível
+  mais próximo fica destacado) + a barra RR. `queryFn` trocado para
+  `fetchCurrentPrice`; `queryKey` passou de `['rr-price', symbol]` para
+  `['live-price', symbol]` (a forma do dado em cache mudou), mantendo a
+  dedup por símbolo do TanStack Query.
+- **`MonitoringCard`** (mesma aba) ganhou `SignalLivePrice`: preço ao vivo e
+  quanto o preço andou a favor desde o sinal — é a metade "quanto falta pra
+  **abrir**" do pedido. Compartilha a mesma `queryKey`, então um par que
+  aparece nas duas listas custa uma requisição só.
+- **Formatador único**: os 9 `fmt` locais foram substituídos por
+  `formatPrice`. A escala nova é estritamente mais informativa nas pontas
+  (separador de milhar a partir de 1.000 em vez de 10.000; até 8 casas em
+  preços abaixo de 0,0001, onde a escala antiga truncava em 6).
+- Acessibilidade: barra com `role="img"` e `aria-label` descrevendo os
+  níveis e o preço atual; `title` explicativo em cada chip; pulso do
+  indicador "ao vivo" respeita `motion-reduce`.
+
+**Não confundir com `ProximityBar`** (`src/components/dashboard/`): aquele
+mede a distância do fechamento até a linha do Range Filter em `AssetState`
+(sinal que ainda não existe); este mede a distância do preço ao vivo até os
+níveis de uma operação que já existe. São conceitos distintos e continuam
+separados de propósito.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` verdes (1356 testes, incluindo
+os 24 novos de `priceProximity.test.js`). Zero mudança em arquivo de
+lógica de trading/backend — o diff toca só `src/pages/Trades.jsx`,
+`src/components/**` e o módulo puro novo. **Não verificado nesta sessão**:
+a aparência renderizada (esta sessão não tem navegador nem acesso ao painel
+publicado) e o comportamento com a Binance real — ambos dependem do usuário
+abrir a aba Trades depois do deploy.

@@ -9,14 +9,7 @@ import {
   calcRealizedPnlPct, calcRealizedR, classifyOutcome, summarizeOps,
 } from '@/lib/tradeMetrics';
 import { formatBackfillLag } from '@/lib/backfillDetection';
-
-function fmt(price) {
-  if (!price && price !== 0) return '—';
-  if (price >= 10000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (price >= 100) return price.toFixed(2);
-  if (price >= 1) return price.toFixed(4);
-  return price.toFixed(6);
-}
+import { formatPrice } from '@/lib/priceProximity';
 
 // Planned risk/reward of the setup — always against the INITIAL stop. The old
 // version divided by current_stop, which post-TP1 is already breakeven and
@@ -150,8 +143,8 @@ function HistoryCard({ op }) {
             )}
           </div>
           <div className="flex items-center gap-3 mt-1 text-[8px] font-mono text-muted-foreground flex-wrap">
-            <span>📍 ${fmt(op.entry_price)}</span>
-            {exitPrice && <span>🚪 ${fmt(exitPrice)}</span>}
+            <span>📍 ${formatPrice(op.entry_price)}</span>
+            {exitPrice && <span>🚪 ${formatPrice(exitPrice)}</span>}
             {rr && <span>⚖️ RR 1:{rr}</span>}
             {duration && <span>⏱ {duration}</span>}
             <span>🕐 Sinal: {moment(op.created_date).format('DD/MM/YY HH:mm')}</span>
@@ -219,7 +212,7 @@ function HistoryCard({ op }) {
             ].map(({ label, value, color }) => (
               <div key={label} className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div className="text-[9px] font-mono text-muted-foreground">{label}</div>
-                <div className="text-sm font-mono font-bold mt-0.5" style={{ color }}>{value ? `$${fmt(value)}` : '—'}</div>
+                <div className="text-sm font-mono font-bold mt-0.5" style={{ color }}>{value ? `$${formatPrice(value)}` : '—'}</div>
               </div>
             ))}
           </div>
@@ -261,13 +254,13 @@ function HistoryCard({ op }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[9px] font-mono">
               <span className="text-muted-foreground">🟢 Sinal gerado: <span className="text-foreground/60">{moment(op.created_date).format('DD/MM/YY HH:mm:ss')}</span></span>
               {op.tp1_hit_at && (
-                <span className="text-muted-foreground">🎯 TP1 atingido: <span style={{ color: '#00ff80' }}>{moment(op.tp1_hit_real_time || op.tp1_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.tp1_hit_price ? ` @ $${fmt(op.tp1_hit_price)}` : ''}{op.tp1_hit_real_time && <><CandleBoundTag /><DetectionLag realTime={op.tp1_hit_real_time} detectedAt={op.tp1_hit_at} /></>}</span>
+                <span className="text-muted-foreground">🎯 TP1 atingido: <span style={{ color: '#00ff80' }}>{moment(op.tp1_hit_real_time || op.tp1_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.tp1_hit_price ? ` @ $${formatPrice(op.tp1_hit_price)}` : ''}{op.tp1_hit_real_time && <><CandleBoundTag /><DetectionLag realTime={op.tp1_hit_real_time} detectedAt={op.tp1_hit_at} /></>}</span>
               )}
               {op.tp2_hit_at && (
-                <span className="text-muted-foreground">🏆 TP2 atingido: <span style={{ color: '#00ff80' }}>{moment(op.tp2_hit_real_time || op.tp2_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.tp2_hit_price ? ` @ $${fmt(op.tp2_hit_price)}` : ''}{op.tp2_hit_real_time && <><CandleBoundTag /><DetectionLag realTime={op.tp2_hit_real_time} detectedAt={op.tp2_hit_at} /></>}</span>
+                <span className="text-muted-foreground">🏆 TP2 atingido: <span style={{ color: '#00ff80' }}>{moment(op.tp2_hit_real_time || op.tp2_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.tp2_hit_price ? ` @ $${formatPrice(op.tp2_hit_price)}` : ''}{op.tp2_hit_real_time && <><CandleBoundTag /><DetectionLag realTime={op.tp2_hit_real_time} detectedAt={op.tp2_hit_at} /></>}</span>
               )}
               {op.stop_hit_at && (
-                <span className="text-muted-foreground">🛑 Stop atingido: <span style={{ color: '#ff1478' }}>{moment(op.stop_hit_real_time || op.stop_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.stop_hit_price ? ` @ $${fmt(op.stop_hit_price)}` : ''}{op.stop_hit_real_time && <><CandleBoundTag /><DetectionLag realTime={op.stop_hit_real_time} detectedAt={op.stop_hit_at} /></>}</span>
+                <span className="text-muted-foreground">🛑 Stop atingido: <span style={{ color: '#ff1478' }}>{moment(op.stop_hit_real_time || op.stop_hit_at).format('DD/MM/YY HH:mm:ss')}</span>{op.stop_hit_price ? ` @ $${formatPrice(op.stop_hit_price)}` : ''}{op.stop_hit_real_time && <><CandleBoundTag /><DetectionLag realTime={op.stop_hit_real_time} detectedAt={op.stop_hit_at} /></>}</span>
               )}
               {closedAt && (
                 <span className="text-muted-foreground">🔒 Encerrado em: <span className="text-foreground/60">{moment(op.closed_at_real_time || closedAt).format('DD/MM/YY HH:mm:ss')}</span>{op.closed_at_real_time && <>{(op.status === 'STOP_HIT' || op.status === 'TP2_HIT' || op.closed_reason === 'TP1_FULL') && <CandleBoundTag />}<DetectionLag realTime={op.closed_at_real_time} detectedAt={closedAt} /></>}</span>
