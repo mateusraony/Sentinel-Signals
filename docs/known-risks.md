@@ -18690,3 +18690,162 @@ o badge de resultado é atenuado e os `title` explicam que os números vieram do
 granularidade de minuto — cega para uma cotação que atualiza a cada 30s.
 
 `npm run lint && npm test && npm run build` verdes (1359 testes).
+
+---
+
+## 154. Reestruturação do card de operação — "o que" num olhar, "por que" a um clique (2026-09-04)
+
+**Pedido do usuário** (2026-09-04): *"não ficou tão legal o modo em que estão
+as coisas, melhore o formato e o jeito de ver os cards e informação, seja
+inovador e veja as últimas tendências e principalmente que seja fácil de
+visualizar e que dê pra bater o olho e entender"*.
+
+### Fato — o item 153 piorou a densidade em vez de melhorar
+
+Auditoria do card renderizado (`Trades.jsx` + `TradeCard.jsx`) na versão
+mesclada pelo PR #301: **os quatro níveis apareciam DUAS vezes no mesmo
+card** — uma no `PriceGrid` de `TradeCard.jsx` e outra nos chips do
+`LivePricePanel` que o item 153 acrescentou logo abaixo. O painel novo foi
+parafusado num card que já era denso, sem revisar o que já existia nele.
+
+Contagem dos blocos empilhados por card antes desta rodada: cabeçalho,
+banner de backfill, banner de status, janela do candle + status do dado,
+tendência por timeframe, barra de score + frase explicativa, grade de 4
+preços, percentuais parcial/runner + modo de saída, MFE/MAE, motivos
+técnicos, painel de preço ao vivo (com os 4 preços de novo) e barra
+risco/retorno, botões de ação — **~12 blocos**, num grid de até 3 colunas.
+
+### Pesquisa da comunidade (feita ANTES do redesenho, conforme
+`.claude/rules/operating-principles.md`)
+
+Convergência entre as fontes consultadas, e o ponto quantificado que decidiu
+o desenho: **entre 5 e 9 elementos na visão padrão** é o intervalo que
+funciona de forma consistente; acima de 9 a compreensão começa a cair mesmo
+para usuários numéricos — e produtos de finanças toleram o topo dessa faixa.
+O card estava em ~12. O padrão dominante citado por todas as fontes é
+**divulgação progressiva**: mostrar primeiro a métrica que responde "está
+tudo bem?", e deixar o detalhe a um clique. Junto com isso, **métrica-herói**
+(um número grande, não uma parede de dados) e **cor com significado**
+(cor = estado; estrutura neutra).
+
+Fontes: [Fintech Dashboard Design 2026 (Foundey)](https://foundey.com/blog/fintech-dashboard-design-2026) ·
+[Fintech Dashboard Design: Patterns & Real Examples (Masterly)](https://www.themasterly.com/blog/fintech-dashboard-design-guide) ·
+[Investment Dashboard UX Design (Lollypop)](https://lollypop.design/blog/2026/may/investment-dashboard-ux-design-guide/) ·
+[35 SaaS Dashboard Design Examples, Trends and Patterns (925studios)](https://www.925studios.co/blog/saas-dashboard-design-examples-2026) ·
+[Bento Grid Dashboard Design (Orbix)](https://www.orbix.studio/blogs/bento-grid-dashboard-design-aesthetics) ·
+[Progressive Disclosure design pattern (ui-patterns)](https://ui-patterns.com/patterns/ProgressiveDisclosure)
+
+**O que a pesquisa mudou na decisão:** a intenção inicial era só remover a
+duplicação. O número 5–9 mostrou que remover a duplicação não bastava (ficaria
+em ~11) — foi ela que motivou mover TODO o bloco técnico para trás de um
+clique, em vez de só reorganizar.
+
+### O que ficou
+
+**Camada 1, sempre visível (6 elementos):** identidade (par, lado,
+timeframe) + estado · preço ao vivo como número-herói + resultado em aberto ·
+trilha stop → entrada → TP1 → TP2 com agulha no preço · os quatro números com
+a distância percentual de cada um, **uma vez só** · a frase do próximo marco
+("Faltam 1,35% para o TP1" / "Faltam 0,40% até o stop") · ações.
+
+**Camada 2, atrás de "Detalhes técnicos":** banner de status em linguagem
+simples, score, tendência por timeframe, tier, janela do candle, status do
+dado, parcial/runner, modo de saída, MFE/MAE, motivos técnicos.
+
+Banners excepcionais (backfill, saída ambígua) continuam na camada 1 — são
+raros e mudam a leitura da operação.
+
+**Trilha** — substitui a grade de 4 preços E a barra risco/retorno separada
+(eram duas representações dos mesmos quatro números). Zona de risco
+stop↔entrada em rosa, zona de lucro entrada↔TP2 em verde, marca do TP1
+dentro dela, agulha no preço atual.
+
+**Botão Compacto/Detalhado** na barra de filtros abre ou fecha a camada 2 de
+todos os cards de uma vez; cada card continua podendo ser aberto sozinho.
+
+**Cor com significado:** o card antigo tinha borda colorida nos 3 lados mais
+brilho externo na cor do status. Agora a estrutura é neutra e o status vive
+numa faixa de 3px à esquerda mais uma pílula — sobra contraste para o que
+muda (resultado, agulha do preço, aviso de cotação velha).
+
+### Mudanças de código
+
+- `nextMilestone(op, preço)` novo em `src/lib/priceProximity.js` (6 testes):
+  geometria pura e direcional, escolhe entre o alvo pendente mais próximo e o
+  stop. Não lê `status`, não decide nada.
+- `src/hooks/useLivePrice.js` novo — o hook que estava embutido em
+  `Trades.jsx` virou compartilhado (`TradeCard` e `MonitoringCard` usam o
+  mesmo, com a mesma `queryKey` por símbolo: dedup preservada).
+- `TradeCard.jsx` reestruturado; recebe as ações por prop `actions` e segue
+  100% apresentação — quem tem as mutações é `Trades.jsx`, pela CAS
+  transacional do motor.
+- Guarda nova: "resultado em aberto" e "próximo marco" só aparecem em
+  operação viva (`SIGNAL_CONFIRMED`/`RUNNER_ACTIVE`) — em operação encerrada
+  os dois seriam mentira.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` verdes (1365 testes). Nenhuma
+linha de `scanner.js`/`entities.js`/`firestore.rules`/`server/` tocada.
+**Não verificado nesta sessão:** a aparência renderizada — esta sessão não
+tem navegador nem acesso ao painel publicado.
+
+---
+
+## 155. ⚠️ ABERTO — a cota do Firestore continua estourando; o item 152 cobriu só parte do polling (2026-09-04)
+
+**Achado ao responder "confirme se tudo que fizemos realmente está certo".**
+Não é regressão do item 153/154 — é o problema original do item 150/151/152,
+ainda vivo.
+
+### Fato — o scan agendado está falhando em toda passada
+
+Runs do `scan.yml` 14816 a 14822 (2026-09-04, 00:25 a 00:55 UTC): **todas
+`failure`**. Log real do run 33823706296:
+
+```
+[scan] FAILED: Error: Timeout: scanAllAssets não retornou em 90000ms
+[adminTelegram] Falha ao checar dedup de cota do Firestore,
+                alertando mesmo assim: 8 RESOURCE_EXHAUSTED: Quota exceeded.
+```
+
+As falhas começam no head `7f3e36b` (PR #300, religar a leitura no RTDB) —
+ou seja, **antes** da mudança de UI, que não toca leitura nenhuma.
+
+### Fato — quanto do polling o item 152 realmente moveu
+
+Contagem de pontos de leitura com `queryFn` nas páginas/componentes do
+painel (call sites, **não** leituras/dia — intervalos e tamanhos diferem):
+
+| Origem | Coleções | Call sites |
+|---|---|---|
+| **Firestore** (`backend.entities`) | MonitoredAsset (8), SignalEvent (7), TradeOperation (4), VerificationTask (3), SystemLog (2) | **24** |
+| **RTDB** (`rtdbEntities`) | TradeOperation (6), AssetState (3) | **9** |
+
+O item 152 limitou o escopo de propósito a `AssetState` e `TradeOperation`
+("menor alteração, maior ganho verificável"), documentando que
+`signalEvents`/`monitoredAssets`/`verificationTasks`/`systemLogs` seguiriam
+o mesmo padrão numa rodada seguinte. **Essa rodada seguinte não aconteceu** —
+e as coleções que ficaram de fora respondem pela maioria dos call sites.
+Nem `TradeOperation` migrou por inteiro: 4 pontos ainda leem do Firestore.
+
+### Correção de uma afirmação minha desta sessão
+
+Eu disse que a migração para RTDB estava "verificada funcionando". Isso era
+verdade sobre o **mecanismo** (espelho populando, backfill rodado, scans
+limpos naquela janela) e **falso sobre o resultado** (alívio de cota). O
+mecanismo funciona; o objetivo não foi atingido.
+
+### Não verificado
+
+Leituras/dia reais por coleção — depende do Console do Firebase, sem acesso
+nesta sessão. A tabela acima mede superfície de código, não volume.
+
+### Recomendação (não implementada — decisão do usuário)
+
+Rodada 2 do item 152: espelhar `signalEvents` e `monitoredAssets` (as duas
+maiores por call site) no RTDB e migrar seus pontos de leitura, mais os 4 de
+`TradeOperation` que ficaram para trás. `systemLogs`/`verificationTasks` são
+telas de diagnóstico, com menos impacto. Alternativa independente e barata,
+que não exclui a anterior: aumentar `refetchInterval` e `staleTime` nas telas
+que hoje batem a cada 10–15s.

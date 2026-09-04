@@ -5,14 +5,14 @@ import { rtdbEntities } from '@/api/rtdbEntities';
 import {
   Loader2, Target, History, XCircle, Eye,
   TrendingUp, TrendingDown, AlertTriangle,
-  BarChart2, Edit3, X, Search, Calendar
+  BarChart2, Edit3, X, Search, Calendar, ChevronDown, ChevronUp
 } from 'lucide-react';
 import TradeCard from '@/components/dashboard/TradeCard';
 import TradeEntryMarkers from '@/components/trades/TradeEntryMarkers';
 import PortfolioVsMarket from '@/components/trades/PortfolioVsMarket';
 import PerformanceReport from '@/components/trades/PerformanceReport';
-import { fetchCurrentPrice } from '@/lib/marketDataProvider';
-import { describeProximity, rrGeometry, formatPrice, formatSignedPct, formatQuoteAge, usablePrice } from '@/lib/priceProximity';
+import { describeProximity, formatPrice, formatSignedPct } from '@/lib/priceProximity';
+import { useLivePrice } from '@/hooks/useLivePrice';
 import moment from 'moment';
 import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
 import { logError } from '@/lib/logger';
@@ -41,189 +41,6 @@ const REJECTION_LABELS = {
 };
 
 const CONFIRMATION_WINDOW_MS = 4 * 60 * 60 * 1000; // scanner.js FOUR_HOURS_MS — mesma janela pras 2 cascatas
-
-// Uma cotação parada por mais de 3 ciclos de refetch não é mais "ao vivo".
-const QUOTE_STALE_MS = 90_000;
-
-/**
- * Preço ao vivo de um símbolo, com honestidade sobre a idade do dado.
- *
- * O TanStack Query mantém o último `data` bem-sucedido quando um refetch
- * falha — sem isto, o card seguiria mostrando uma cotação velha rotulada como
- * "ao vivo" durante uma indisponibilidade da Binance. `isStale` cobre os dois
- * casos: a última tentativa falhou, ou a última tentativa BEM-SUCEDIDA já
- * passou da validade. A idade é recalculada a cada render, e o próprio
- * `refetchInterval` garante um render a cada 30s mesmo em erro contínuo.
- *
- * A `queryKey` por símbolo é o que mantém a dedup do TanStack Query: dois
- * cards do mesmo par compartilham uma única requisição.
- */
-function useLivePrice(symbol) {
-  const { data, isLoading, isError, dataUpdatedAt } = useQuery({
-    queryKey: ['live-price', symbol],
-    queryFn: () => fetchCurrentPrice(symbol),
-    enabled: Boolean(symbol),
-    refetchInterval: 30000,
-    staleTime: 15000,
-  });
-
-  const price = usablePrice(data);
-  const ageMs = price !== null && dataUpdatedAt ? Math.max(0, Date.now() - dataUpdatedAt) : null;
-  const isStale = price !== null && (isError || (ageMs !== null && ageMs > QUOTE_STALE_MS));
-
-  return { price, isLoading, isError, isStale, ageMs, ageLabel: formatQuoteAge(ageMs) };
-}
-
-// Cores por nível — mesmas de PriceGrid em TradeCard.jsx, para o card inteiro
-// falar a mesma língua visual.
-function levelColor(key, op) {
-  switch (key) {
-    case 'stop': return op.tp1_hit ? '#ffd166' : '#ff1478';
-    case 'entry': return '#e2e8f0';
-    case 'tp1': return op.tp1_hit ? '#00ff80' : '#ffd166';
-    case 'tp2': return op.tp2_hit ? '#00ff80' : 'rgba(255,209,102,0.55)';
-    default: return 'rgba(255,255,255,0.5)';
-  }
-}
-
-const SEGMENT_COLOR = {
-  risk: 'rgba(255,20,120,0.4)',
-  tp1: 'rgba(0,255,128,0.35)',
-  tp2: 'rgba(0,255,128,0.6)',
-};
-
-/**
- * Preço ao vivo + distância até cada nível + barra de risco/retorno.
- *
- * Só exibição: o preço vem da Binance direto pro navegador (mesmo
- * `fetchCurrentPrice` que o motor usa, nada de Firestore/RTDB aqui) e não
- * dispara nenhuma transição — quem move a operação continua sendo o scanner.
- * A `queryKey` por símbolo mantém a dedup do TanStack Query: dois cards do
- * mesmo par compartilham uma única requisição a cada 30s.
- */
-function LivePricePanel({ op }) {
-  const { price, isLoading, isError, isStale, ageLabel } = useLivePrice(op.symbol);
-
-  const { levels, unrealizedPct } = describeProximity(op, price);
-  const geo = rrGeometry(op, price);
-  if (levels.length === 0) return null;
-
-  const pnlColor = unrealizedPct === null ? 'rgba(255,255,255,0.4)' : unrealizedPct >= 0 ? '#00ff80' : '#ff1478';
-  const quoteColor = price === null ? 'rgba(255,255,255,0.35)' : isStale ? '#ff9f43' : '#00e5ff';
-
-  return (
-    <div className="px-3 py-2.5 space-y-2"
-      style={{ background: 'rgba(6,8,15,0.45)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-
-      {/* Preço ao vivo + resultado bruto em aberto */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest shrink-0"
-            style={{ color: 'rgba(255,255,255,0.35)' }}>
-            <span
-              className={`w-1.5 h-1.5 rounded-full${price !== null && !isStale ? ' animate-pulse motion-reduce:animate-none' : ''}`}
-              style={{
-                background: quoteColor,
-                boxShadow: isStale || price === null ? 'none' : '0 0 5px #00e5ff',
-              }} />
-            {isStale ? 'Desatualizado' : 'Ao vivo'}
-          </span>
-          <span className="text-base font-mono font-bold truncate" style={{ color: quoteColor }}>
-            {price !== null
-              ? `$${formatPrice(price)}`
-              : isLoading ? 'buscando…' : '—'}
-          </span>
-          {isStale && ageLabel && (
-            <span className="text-[9px] font-mono shrink-0" style={{ color: '#ff9f43' }}>há {ageLabel}</span>
-          )}
-        </div>
-        {unrealizedPct !== null && (
-          <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded shrink-0"
-            title={isStale
-              ? `Calculado sobre a última cotação recebida (há ${ageLabel ?? '?'}), não sobre o preço de agora. Sem descontar taxas nem funding.`
-              : 'Resultado em aberto sobre a entrada, sem descontar taxas nem funding.'}
-            style={{ color: pnlColor, background: `${pnlColor}14`, border: `1px solid ${pnlColor}33`, opacity: isStale ? 0.55 : 1 }}>
-            {formatSignedPct(unrealizedPct)}
-          </span>
-        )}
-      </div>
-
-      {(isStale || (isError && price === null)) && (
-        <p className="text-[8px] font-mono leading-relaxed" style={{ color: '#ff9f43' }}>
-          {price === null
-            ? '⚠️ Não deu para buscar o preço agora (a Binance não respondeu). Os níveis abaixo continuam válidos; o painel tenta de novo em alguns segundos.'
-            : `⚠️ Este é o último preço que chegou${ageLabel ? `, de ${ageLabel} atrás` : ''} — a atualização automática não está passando. As distâncias abaixo foram calculadas sobre ele, não sobre o preço de agora.`}
-        </p>
-      )}
-
-      {/* Distância até cada nível */}
-      {/* 2x2 fixo: o card fica com ~370px nos grids de 2/3 colunas, largura
-          em que 4 chips lado a lado cortariam o preço. */}
-      <div className="grid grid-cols-2 gap-1.5">
-        {levels.map((level) => {
-          const color = levelColor(level.key, op);
-          return (
-            <div key={level.key} className="rounded-lg px-2 py-1.5 min-w-0"
-              style={{
-                background: level.isNearest ? `${color}12` : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${level.isNearest ? `${color}45` : 'rgba(255,255,255,0.05)'}`,
-              }}>
-              <div className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-wide"
-                style={{ color: 'rgba(255,255,255,0.35)' }}>
-                <span className="truncate">{level.label}</span>
-                {level.isNearest && <span style={{ color }} title="Nível mais próximo do preço atual">•</span>}
-              </div>
-              <div className="text-[11px] font-mono font-bold truncate" style={{ color }}>${formatPrice(level.price)}</div>
-              <div className="text-[9px] font-mono truncate"
-                style={{ color: level.pct === null ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.45)' }}
-                title={level.pct === null ? undefined : `O preço precisa andar ${formatSignedPct(level.pct)} para chegar em ${level.label}.`}>
-                {level.pct === null ? '—' : `${level.position === 'above' ? '↑' : level.position === 'below' ? '↓' : '='} ${Math.abs(level.pct).toFixed(2)}%`}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Barra risco/retorno — só quando os 4 níveis existem */}
-      {geo && (
-        <div>
-          <div className="relative h-2 w-full rounded-full overflow-visible"
-            role="img"
-            aria-label={`Barra de risco e retorno. Stop $${formatPrice(op.current_stop)}, entrada $${formatPrice(op.entry_price)}, TP1 $${formatPrice(op.tp1)}, TP2 $${formatPrice(op.tp2)}.${price !== null ? ` Preço atual $${formatPrice(price)}.` : ''}`}
-            style={{ background: 'rgba(255,255,255,0.06)' }}>
-            {geo.segments.map((seg) => (
-              <div key={seg.key} className="absolute h-full"
-                style={{ left: `${seg.from}%`, width: `${seg.to - seg.from}%`, background: SEGMENT_COLOR[seg.key] }} />
-            ))}
-            {['stop', 'entry', 'tp1', 'tp2'].map((key) => (
-              <div key={key} className="absolute top-0 bottom-0 w-0.5"
-                style={{ left: `${geo.positions[key]}%`, background: levelColor(key, op), transform: 'translateX(-50%)' }} />
-            ))}
-            {geo.currentPct !== null && (
-              <div className="absolute -top-1 -bottom-1 w-0.5 rounded-full"
-                title={[
-                  isStale ? `Última cotação recebida (há ${ageLabel ?? '?'})` : 'Preço atual',
-                  geo.currentOutOfRange ? '— fora do intervalo stop–TP2, marcador fixado na borda' : '',
-                ].filter(Boolean).join(' ')}
-                style={{
-                  left: `${geo.currentPct}%`,
-                  background: quoteColor,
-                  boxShadow: `0 0 4px ${quoteColor}`,
-                  transform: 'translateX(-50%)',
-                  opacity: geo.currentOutOfRange || isStale ? 0.5 : 1,
-                }} />
-            )}
-          </div>
-          {geo.currentOutOfRange && (
-            <p className="text-[8px] font-mono mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
-              O preço saiu do intervalo entre stop e TP2 — o marcador ficou preso na borda.
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /** Modal for editing an active operation */
 function EditModal({ op, onClose, onSave }) {
@@ -498,6 +315,7 @@ function HistoryRow({ op }) {
 
 export default function Trades() {
   const [showHistory, setShowHistory] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const [showChart, setShowChart] = useState(true);
   const [filterTf, setFilterTf] = useState('all');
   const [filterSide, setFilterSide] = useState('all');
@@ -739,6 +557,20 @@ export default function Trades() {
               {side === 'all' ? 'Todos' : side}
             </button>
           ))}
+
+          {/* Densidade — abre/fecha os detalhes técnicos de TODOS os cards de
+              uma vez. Cada card continua podendo ser aberto sozinho depois. */}
+          <div className="w-px h-4 mx-1" style={{ background: 'rgba(255,255,255,0.08)' }} />
+          <button onClick={() => setShowDetails(v => !v)}
+            aria-pressed={showDetails}
+            title="Abre ou fecha os detalhes técnicos de todos os cards de operação ao mesmo tempo."
+            className="flex items-center gap-1 text-[10px] font-mono px-2.5 py-1 rounded-md transition-all"
+            style={showDetails
+              ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
+              : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+            {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {showDetails ? 'Detalhado' : 'Compacto'}
+          </button>
         </div>
 
         {/* Monitoring section */}
@@ -779,46 +611,42 @@ export default function Trades() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {applyFilters(active).map(op => (
-                <div key={op.id} className="rounded-xl overflow-hidden"
-                  style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <TradeCard operation={op} />
-                  <LivePricePanel op={op} />
-
-                  {/* Action buttons — always visible */}
-                  <div className="flex items-center gap-1.5 p-2"
-                    style={{ background: 'rgba(6,8,15,0.6)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                    {/* Edit */}
-                    <button
-                      onClick={() => setEditingOp(op)}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all hover:opacity-90"
-                      style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
-                      <Edit3 className="w-3 h-3" />
-                      Editar
-                    </button>
-                    {/* Invalidar */}
-                    <button
-                      onClick={() => {
-                        if (window.confirm(`Invalidar ${op.symbol} ${op.side}?`)) invalidateMutation.mutate(op);
-                      }}
-                      disabled={invalidateMutation.isPending}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all hover:opacity-90"
-                      style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
-                      <AlertTriangle className="w-3 h-3" />
-                      Invalidar
-                    </button>
-                    {/* Encerrar */}
-                    <button
-                      onClick={() => {
-                        if (window.confirm(`Encerrar ${op.symbol} ${op.side}?`)) closeMutation.mutate(op);
-                      }}
-                      disabled={closeMutation.isPending}
-                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-mono ml-auto transition-all hover:opacity-90"
-                      style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.25)', color: '#ff1478' }}>
-                      <XCircle className="w-3 h-3" />
-                      Encerrar
-                    </button>
-                  </div>
-                </div>
+                <TradeCard
+                  key={op.id}
+                  operation={op}
+                  expandAll={showDetails}
+                  actions={
+                    <div className="flex items-center gap-1.5 p-2">
+                      <button
+                        onClick={() => setEditingOp(op)}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all hover:opacity-90"
+                        style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
+                        <Edit3 className="w-3 h-3" />
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Invalidar ${op.symbol} ${op.side}?`)) invalidateMutation.mutate(op);
+                        }}
+                        disabled={invalidateMutation.isPending}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all hover:opacity-90"
+                        style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
+                        <AlertTriangle className="w-3 h-3" />
+                        Invalidar
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Encerrar ${op.symbol} ${op.side}?`)) closeMutation.mutate(op);
+                        }}
+                        disabled={closeMutation.isPending}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-mono ml-auto transition-all hover:opacity-90"
+                        style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.25)', color: '#ff1478' }}>
+                        <XCircle className="w-3 h-3" />
+                        Encerrar
+                      </button>
+                    </div>
+                  }
+                />
               ))}
             </div>
           )}
