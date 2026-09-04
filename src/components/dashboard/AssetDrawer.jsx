@@ -3,14 +3,7 @@ import { TrendingUp, TrendingDown, Clock, Activity } from 'lucide-react';
 import moment from 'moment';
 import SignalChecklist from './SignalChecklist';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-
-function fmt(price) {
-  if (!price && price !== 0) return '—';
-  if (price >= 10000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (price >= 100) return price.toFixed(2);
-  if (price >= 1) return price.toFixed(4);
-  return price.toFixed(6);
-}
+import { formatPrice } from '@/lib/priceProximity';
 
 const STATUS_CFG = {
   SIGNAL_CONFIRMED: { label: 'Entrada Confirmada', color: '#00ff80' },
@@ -93,7 +86,7 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
                         ].map(({ l, v }) => (
                           <div key={l}>
                             <div className="text-[8px] font-mono text-muted-foreground">{l}</div>
-                            <div className="text-[10px] font-mono text-foreground/70">${fmt(v)}</div>
+                            <div className="text-[10px] font-mono text-foreground/70">${formatPrice(v)}</div>
                           </div>
                         ))}
                       </div>
@@ -137,7 +130,7 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-[9px] font-mono text-muted-foreground">{sig.timeframe?.toUpperCase()}</span>
-                          <span className="text-[9px] font-mono text-foreground/60">${fmt(sig.price_at_signal)}</span>
+                          <span className="text-[9px] font-mono text-foreground/60">${formatPrice(sig.price_at_signal)}</span>
                           {sig.context?.score && (
                             <span className="text-[8px] font-mono" style={{ color: '#ffd166' }}>
                               Confl. {sig.context.score}

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import moment from 'moment';
 import { Clock, TrendingUp, TrendingDown, ChevronDown, ChevronUp, History } from 'lucide-react';
 import { formatBackfillLag } from '@/lib/backfillDetection';
+import { formatPrice } from '@/lib/priceProximity';
 
 const STATUS_CONFIG = {
   SIGNAL_CONFIRMED: {
@@ -42,14 +43,6 @@ const DATA_STATUS = {
   OFFLINE: { label: '⛔ OFFLINE', color: '#ff1478' },
   ERROR:   { label: '❌ ERROR',   color: '#ff1478' },
 };
-
-function fmt(price) {
-  if (!price && price !== 0) return '—';
-  if (price >= 10000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (price < 0.01) return price.toFixed(6);
-  if (price < 1) return price.toFixed(4);
-  return price.toFixed(2);
-}
 
 function fmtBRT(iso) {
   if (!iso) return '—';
@@ -117,7 +110,7 @@ function PriceGrid({ op }) {
       ].map(({ label, value, color }) => (
         <div key={label} className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
           <div className="text-[9px] font-mono text-muted-foreground mb-0.5">{label}</div>
-          <div className="text-sm font-mono font-bold" style={{ color }}>${fmt(value)}</div>
+          <div className="text-sm font-mono font-bold" style={{ color }}>${formatPrice(value)}</div>
         </div>
       ))}
     </div>

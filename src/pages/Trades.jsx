@@ -11,7 +11,8 @@ import TradeCard from '@/components/dashboard/TradeCard';
 import TradeEntryMarkers from '@/components/trades/TradeEntryMarkers';
 import PortfolioVsMarket from '@/components/trades/PortfolioVsMarket';
 import PerformanceReport from '@/components/trades/PerformanceReport';
-import { fetch24hStats } from '@/lib/marketDataProvider';
+import { fetchCurrentPrice } from '@/lib/marketDataProvider';
+import { describeProximity, rrGeometry, formatPrice, formatSignedPct, formatQuoteAge, usablePrice } from '@/lib/priceProximity';
 import moment from 'moment';
 import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
 import { logError } from '@/lib/logger';
@@ -41,60 +42,185 @@ const REJECTION_LABELS = {
 
 const CONFIRMATION_WINDOW_MS = 4 * 60 * 60 * 1000; // scanner.js FOUR_HOURS_MS — mesma janela pras 2 cascatas
 
-function fmt(price) {
-  if (!price && price !== 0) return '—';
-  if (price >= 10000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (price >= 100) return price.toFixed(2);
-  if (price >= 1) return price.toFixed(4);
-  return price.toFixed(6);
-}
+// Uma cotação parada por mais de 3 ciclos de refetch não é mais "ao vivo".
+const QUOTE_STALE_MS = 90_000;
 
-/** Horizontal Risk/Reward visual bar */
-function RRBar({ op }) {
-  const { data: stats } = useQuery({
-    queryKey: ['rr-price', op.symbol],
-    queryFn: () => fetch24hStats(op.symbol),
+/**
+ * Preço ao vivo de um símbolo, com honestidade sobre a idade do dado.
+ *
+ * O TanStack Query mantém o último `data` bem-sucedido quando um refetch
+ * falha — sem isto, o card seguiria mostrando uma cotação velha rotulada como
+ * "ao vivo" durante uma indisponibilidade da Binance. `isStale` cobre os dois
+ * casos: a última tentativa falhou, ou a última tentativa BEM-SUCEDIDA já
+ * passou da validade. A idade é recalculada a cada render, e o próprio
+ * `refetchInterval` garante um render a cada 30s mesmo em erro contínuo.
+ *
+ * A `queryKey` por símbolo é o que mantém a dedup do TanStack Query: dois
+ * cards do mesmo par compartilham uma única requisição.
+ */
+function useLivePrice(symbol) {
+  const { data, isLoading, isError, dataUpdatedAt } = useQuery({
+    queryKey: ['live-price', symbol],
+    queryFn: () => fetchCurrentPrice(symbol),
+    enabled: Boolean(symbol),
     refetchInterval: 30000,
     staleTime: 15000,
   });
 
-  const isBuy = op.side === 'BUY';
-  const stop = op.current_stop, entry = op.entry_price, tp1 = op.tp1, tp2 = op.tp2;
-  if (!stop || !entry || !tp1 || !tp2) return null;
-  const low = isBuy ? stop : tp2, high = isBuy ? tp2 : stop;
-  const range = high - low;
-  if (range <= 0) return null;
-  const pct = (v) => ((v - low) / range) * 100;
-  const entryPct = pct(entry), tp1Pct = pct(tp1);
-  const currentPrice = stats ? ((stats.highPrice + stats.lowPrice) / 2) : null;
-  const currentPct = currentPrice ? Math.max(0, Math.min(100, pct(currentPrice))) : null;
+  const price = usablePrice(data);
+  const ageMs = price !== null && dataUpdatedAt ? Math.max(0, Date.now() - dataUpdatedAt) : null;
+  const isStale = price !== null && (isError || (ageMs !== null && ageMs > QUOTE_STALE_MS));
+
+  return { price, isLoading, isError, isStale, ageMs, ageLabel: formatQuoteAge(ageMs) };
+}
+
+// Cores por nível — mesmas de PriceGrid em TradeCard.jsx, para o card inteiro
+// falar a mesma língua visual.
+function levelColor(key, op) {
+  switch (key) {
+    case 'stop': return op.tp1_hit ? '#ffd166' : '#ff1478';
+    case 'entry': return '#e2e8f0';
+    case 'tp1': return op.tp1_hit ? '#00ff80' : '#ffd166';
+    case 'tp2': return op.tp2_hit ? '#00ff80' : 'rgba(255,209,102,0.55)';
+    default: return 'rgba(255,255,255,0.5)';
+  }
+}
+
+const SEGMENT_COLOR = {
+  risk: 'rgba(255,20,120,0.4)',
+  tp1: 'rgba(0,255,128,0.35)',
+  tp2: 'rgba(0,255,128,0.6)',
+};
+
+/**
+ * Preço ao vivo + distância até cada nível + barra de risco/retorno.
+ *
+ * Só exibição: o preço vem da Binance direto pro navegador (mesmo
+ * `fetchCurrentPrice` que o motor usa, nada de Firestore/RTDB aqui) e não
+ * dispara nenhuma transição — quem move a operação continua sendo o scanner.
+ * A `queryKey` por símbolo mantém a dedup do TanStack Query: dois cards do
+ * mesmo par compartilham uma única requisição a cada 30s.
+ */
+function LivePricePanel({ op }) {
+  const { price, isLoading, isError, isStale, ageLabel } = useLivePrice(op.symbol);
+
+  const { levels, unrealizedPct } = describeProximity(op, price);
+  const geo = rrGeometry(op, price);
+  if (levels.length === 0) return null;
+
+  const pnlColor = unrealizedPct === null ? 'rgba(255,255,255,0.4)' : unrealizedPct >= 0 ? '#00ff80' : '#ff1478';
+  const quoteColor = price === null ? 'rgba(255,255,255,0.35)' : isStale ? '#ff9f43' : '#00e5ff';
 
   return (
-    <div className="mt-2 mb-1 px-1">
-      <div className="flex justify-between text-[8px] font-mono text-muted-foreground mb-1">
-        <span>Stop</span><span>Entrada</span><span>TP1</span><span>TP2</span>
-      </div>
-      <div className="relative h-2 w-full rounded-full overflow-visible" style={{ background: 'rgba(255,255,255,0.06)' }}>
-        {isBuy
-          ? <div className="absolute h-full rounded-l-full" style={{ left: 0, width: `${entryPct}%`, background: 'rgba(255,20,120,0.4)' }} />
-          : <div className="absolute h-full rounded-r-full" style={{ left: `${entryPct}%`, right: 0, background: 'rgba(255,20,120,0.4)' }} />}
-        {isBuy
-          ? <div className="absolute h-full" style={{ left: `${entryPct}%`, width: `${tp1Pct - entryPct}%`, background: 'rgba(0,255,128,0.35)' }} />
-          : <div className="absolute h-full" style={{ left: `${tp1Pct}%`, width: `${entryPct - tp1Pct}%`, background: 'rgba(0,255,128,0.35)' }} />}
-        {isBuy
-          ? <div className="absolute h-full rounded-r-full" style={{ left: `${tp1Pct}%`, right: 0, background: 'rgba(0,255,128,0.6)' }} />
-          : <div className="absolute h-full rounded-l-full" style={{ left: 0, width: `${tp1Pct}%`, background: 'rgba(0,255,128,0.6)' }} />}
-        {[{ p: entryPct, c: 'rgba(255,255,255,0.8)' }, { p: tp1Pct, c: '#ffd166' }, { p: isBuy ? 100 : 0, c: '#00ff80' }].map((m, i) => (
-          <div key={i} className="absolute top-0 bottom-0 w-0.5" style={{ left: `${m.p}%`, background: m.c, transform: 'translateX(-50%)' }} />
-        ))}
-        {currentPct !== null && (
-          <div className="absolute -top-1 -bottom-1 w-0.5 rounded-full"
-            style={{ left: `${currentPct}%`, background: '#00e5ff', boxShadow: '0 0 4px #00e5ff', transform: 'translateX(-50%)' }} />
+    <div className="px-3 py-2.5 space-y-2"
+      style={{ background: 'rgba(6,8,15,0.45)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+
+      {/* Preço ao vivo + resultado bruto em aberto */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-widest shrink-0"
+            style={{ color: 'rgba(255,255,255,0.35)' }}>
+            <span
+              className={`w-1.5 h-1.5 rounded-full${price !== null && !isStale ? ' animate-pulse motion-reduce:animate-none' : ''}`}
+              style={{
+                background: quoteColor,
+                boxShadow: isStale || price === null ? 'none' : '0 0 5px #00e5ff',
+              }} />
+            {isStale ? 'Desatualizado' : 'Ao vivo'}
+          </span>
+          <span className="text-base font-mono font-bold truncate" style={{ color: quoteColor }}>
+            {price !== null
+              ? `$${formatPrice(price)}`
+              : isLoading ? 'buscando…' : '—'}
+          </span>
+          {isStale && ageLabel && (
+            <span className="text-[9px] font-mono shrink-0" style={{ color: '#ff9f43' }}>há {ageLabel}</span>
+          )}
+        </div>
+        {unrealizedPct !== null && (
+          <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded shrink-0"
+            title={isStale
+              ? `Calculado sobre a última cotação recebida (há ${ageLabel ?? '?'}), não sobre o preço de agora. Sem descontar taxas nem funding.`
+              : 'Resultado em aberto sobre a entrada, sem descontar taxas nem funding.'}
+            style={{ color: pnlColor, background: `${pnlColor}14`, border: `1px solid ${pnlColor}33`, opacity: isStale ? 0.55 : 1 }}>
+            {formatSignedPct(unrealizedPct)}
+          </span>
         )}
       </div>
-      <div className="flex justify-between text-[8px] font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.25)' }}>
-        <span>${fmt(stop)}</span><span>${fmt(entry)}</span><span>${fmt(tp1)}</span><span>${fmt(tp2)}</span>
+
+      {(isStale || (isError && price === null)) && (
+        <p className="text-[8px] font-mono leading-relaxed" style={{ color: '#ff9f43' }}>
+          {price === null
+            ? '⚠️ Não deu para buscar o preço agora (a Binance não respondeu). Os níveis abaixo continuam válidos; o painel tenta de novo em alguns segundos.'
+            : `⚠️ Este é o último preço que chegou${ageLabel ? `, de ${ageLabel} atrás` : ''} — a atualização automática não está passando. As distâncias abaixo foram calculadas sobre ele, não sobre o preço de agora.`}
+        </p>
+      )}
+
+      {/* Distância até cada nível */}
+      {/* 2x2 fixo: o card fica com ~370px nos grids de 2/3 colunas, largura
+          em que 4 chips lado a lado cortariam o preço. */}
+      <div className="grid grid-cols-2 gap-1.5">
+        {levels.map((level) => {
+          const color = levelColor(level.key, op);
+          return (
+            <div key={level.key} className="rounded-lg px-2 py-1.5 min-w-0"
+              style={{
+                background: level.isNearest ? `${color}12` : 'rgba(255,255,255,0.03)',
+                border: `1px solid ${level.isNearest ? `${color}45` : 'rgba(255,255,255,0.05)'}`,
+              }}>
+              <div className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-wide"
+                style={{ color: 'rgba(255,255,255,0.35)' }}>
+                <span className="truncate">{level.label}</span>
+                {level.isNearest && <span style={{ color }} title="Nível mais próximo do preço atual">•</span>}
+              </div>
+              <div className="text-[11px] font-mono font-bold truncate" style={{ color }}>${formatPrice(level.price)}</div>
+              <div className="text-[9px] font-mono truncate"
+                style={{ color: level.pct === null ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.45)' }}
+                title={level.pct === null ? undefined : `O preço precisa andar ${formatSignedPct(level.pct)} para chegar em ${level.label}.`}>
+                {level.pct === null ? '—' : `${level.position === 'above' ? '↑' : level.position === 'below' ? '↓' : '='} ${Math.abs(level.pct).toFixed(2)}%`}
+              </div>
+            </div>
+          );
+        })}
       </div>
+
+      {/* Barra risco/retorno — só quando os 4 níveis existem */}
+      {geo && (
+        <div>
+          <div className="relative h-2 w-full rounded-full overflow-visible"
+            role="img"
+            aria-label={`Barra de risco e retorno. Stop $${formatPrice(op.current_stop)}, entrada $${formatPrice(op.entry_price)}, TP1 $${formatPrice(op.tp1)}, TP2 $${formatPrice(op.tp2)}.${price !== null ? ` Preço atual $${formatPrice(price)}.` : ''}`}
+            style={{ background: 'rgba(255,255,255,0.06)' }}>
+            {geo.segments.map((seg) => (
+              <div key={seg.key} className="absolute h-full"
+                style={{ left: `${seg.from}%`, width: `${seg.to - seg.from}%`, background: SEGMENT_COLOR[seg.key] }} />
+            ))}
+            {['stop', 'entry', 'tp1', 'tp2'].map((key) => (
+              <div key={key} className="absolute top-0 bottom-0 w-0.5"
+                style={{ left: `${geo.positions[key]}%`, background: levelColor(key, op), transform: 'translateX(-50%)' }} />
+            ))}
+            {geo.currentPct !== null && (
+              <div className="absolute -top-1 -bottom-1 w-0.5 rounded-full"
+                title={[
+                  isStale ? `Última cotação recebida (há ${ageLabel ?? '?'})` : 'Preço atual',
+                  geo.currentOutOfRange ? '— fora do intervalo stop–TP2, marcador fixado na borda' : '',
+                ].filter(Boolean).join(' ')}
+                style={{
+                  left: `${geo.currentPct}%`,
+                  background: quoteColor,
+                  boxShadow: `0 0 4px ${quoteColor}`,
+                  transform: 'translateX(-50%)',
+                  opacity: geo.currentOutOfRange || isStale ? 0.5 : 1,
+                }} />
+            )}
+          </div>
+          {geo.currentOutOfRange && (
+            <p className="text-[8px] font-mono mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
+              O preço saiu do intervalo entre stop e TP2 — o marcador ficou preso na borda.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -200,6 +326,43 @@ function EditModal({ op, onClose, onSave }) {
 }
 
 /** Monitoring card */
+/**
+ * Preço ao vivo de um sinal ainda em monitoramento — responde "quanto falta
+ * para a operação abrir" em vez de só mostrar o preço congelado do momento do
+ * sinal. Compartilha a MESMA `queryKey` do painel das operações ativas, então
+ * um par que aparece nas duas listas custa uma requisição só.
+ */
+function SignalLivePrice({ symbol, referencePrice, side }) {
+  const { price, isError, isStale, ageLabel } = useLivePrice(symbol);
+
+  if (price === null) {
+    return isError
+      ? <div className="text-[9px] font-mono" style={{ color: '#ff9f43' }} title="A Binance não respondeu na última tentativa.">preço indisponível</div>
+      : null;
+  }
+
+  const { unrealizedPct } = describeProximity({ side, entry_price: referencePrice }, price);
+  const color = unrealizedPct === null ? 'rgba(255,255,255,0.35)' : unrealizedPct >= 0 ? '#00ff80' : '#ff1478';
+
+  return (
+    <div className="text-[9px] font-mono flex items-center justify-end gap-1"
+      style={{ color: isStale ? '#ff9f43' : '#00e5ff', opacity: isStale ? 0.7 : 1 }}>
+      <span title={isStale
+        ? `Último preço recebido, de ${ageLabel ?? '?'} atrás — a atualização automática não está passando.`
+        : 'Preço de mercado agora'}>
+        {isStale ? '⚠️ ' : ''}${formatPrice(price)}
+      </span>
+      {unrealizedPct !== null && (
+        <span style={{ color }} title={isStale
+          ? `Calculado sobre o último preço recebido (há ${ageLabel ?? '?'}), não sobre o preço de agora.`
+          : 'Quanto o preço andou a favor do sinal desde que ele apareceu.'}>
+          {formatSignedPct(unrealizedPct)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function MonitoringCard({ signal }) {
   const isBuy = signal.signal_type === 'BUY';
 
@@ -265,7 +428,9 @@ function MonitoringCard({ signal }) {
           <div className="text-[9px] font-mono text-muted-foreground mt-0.5">{moment(signal.created_date).fromNow()}</div>
         </div>
         <div className="text-right shrink-0">
-          <div className="text-[11px] font-mono font-semibold text-foreground">${fmt(signal.price_at_signal)}</div>
+          <div className="text-[11px] font-mono font-semibold text-foreground"
+            title="Preço no momento em que o sinal apareceu.">${formatPrice(signal.price_at_signal)}</div>
+          <SignalLivePrice symbol={signal.symbol} referencePrice={signal.price_at_signal} side={signal.signal_type} />
           <div className="text-[9px] font-mono" style={{ color: '#ffd166' }}>Score: {signal.context?.score || 0}/100</div>
         </div>
       </div>
@@ -315,8 +480,8 @@ function HistoryRow({ op }) {
         <span className="font-semibold text-xs text-foreground shrink-0">{op.symbol?.replace('USDT', '/USDT')}</span>
         <span className="text-[9px] font-mono text-muted-foreground">{op.timeframe?.toUpperCase()}</span>
         <span className="text-[9px] font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</span>
-        <span className="text-[9px] font-mono text-muted-foreground hidden sm:block">${fmt(op.entry_price)}</span>
-        {exitPrice && <span className="text-[9px] font-mono text-muted-foreground hidden md:block">→ ${fmt(exitPrice)}</span>}
+        <span className="text-[9px] font-mono text-muted-foreground hidden sm:block">${formatPrice(op.entry_price)}</span>
+        {exitPrice && <span className="text-[9px] font-mono text-muted-foreground hidden md:block">→ ${formatPrice(exitPrice)}</span>}
       </div>
       <div className="flex items-center gap-3 shrink-0">
         {pnlPct !== null && (
@@ -617,7 +782,7 @@ export default function Trades() {
                 <div key={op.id} className="rounded-xl overflow-hidden"
                   style={{ border: '1px solid rgba(255,255,255,0.06)' }}>
                   <TradeCard operation={op} />
-                  <RRBar op={op} />
+                  <LivePricePanel op={op} />
 
                   {/* Action buttons — always visible */}
                   <div className="flex items-center gap-1.5 p-2"

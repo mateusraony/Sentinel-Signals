@@ -8,18 +8,11 @@ import {
 } from 'recharts';
 import { BarChart2, AlertTriangle } from 'lucide-react';
 import moment from 'moment';
+import { formatPrice } from '@/lib/priceProximity';
 
 const TIMEFRAMES = ['15m', '1h', '4h', '1d'];
 const DISPLAY_BARS = 60;
 const FETCH_LIMIT = 200;
-
-function fmt(price) {
-  if (!price && price !== 0) return '—';
-  if (price >= 10000) return price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (price >= 100) return price.toFixed(2);
-  if (price >= 1) return price.toFixed(4);
-  return price.toFixed(6);
-}
 
 function dirColor(dir) {
   return dir === 1 ? '#00ff80' : dir === -1 ? '#ff1478' : '#64748b';
@@ -191,9 +184,9 @@ export default function RFHistoryChart({ asset }) {
                   contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                   labelStyle={{ color: 'rgba(255,255,255,0.5)', fontSize: 9 }}
                   formatter={(value, name) => {
-                    if (name === 'band') return [`$${fmt(value[0])} ~ $${fmt(value[1])}`, 'Banda RF'];
-                    if (name === 'rf') return [`$${fmt(value)}`, 'RF'];
-                    if (name === 'price') return [`$${fmt(value)}`, 'Preço'];
+                    if (name === 'band') return [`$${formatPrice(value[0])} ~ $${formatPrice(value[1])}`, 'Banda RF'];
+                    if (name === 'rf') return [`$${formatPrice(value)}`, 'RF'];
+                    if (name === 'price') return [`$${formatPrice(value)}`, 'Preço'];
                     return [value, name];
                   }}
                 />
@@ -218,8 +211,8 @@ export default function RFHistoryChart({ asset }) {
                 {d.dir === 1 ? '▲' : d.dir === -1 ? '▼' : '—'} {d.tf?.toUpperCase()}
               </span>
               <span style={{ color: d.signal === 'BUY' ? '#00ff80' : '#ff1478' }}>{d.signal}</span>
-              <span style={{ color: '#00e5ff' }}>${fmt(d.rf)}</span>
-              <span className="text-muted-foreground">${fmt(d.price)}</span>
+              <span style={{ color: '#00e5ff' }}>${formatPrice(d.rf)}</span>
+              <span className="text-muted-foreground">${formatPrice(d.price)}</span>
             </div>
           ))}
         </div>
