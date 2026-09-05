@@ -30,6 +30,14 @@ jobs:
       - run: npm test
       - run: npm run build
 
+      # Catraca do typecheck (docs/known-risks.md item 166). NÃO exige zero:
+      # o projeto é JSX com checkJs best-effort e carrega um passivo conhecido
+      # de 16 erros de atrito de tipagem. O que ela impede é o passivo CRESCER
+      # — foi por não ter guarda nenhuma que ele voltou de 0 para 16 sem
+      # ninguém ver. Um erro de sintaxe reprova sempre, mesmo baixando a
+      # contagem (o tsc aborta e reporta menos do que existe).
+      - run: npm run typecheck:ratchet
+
       # Best-effort Telegram alert when lint/test/build fails, so the user
       # finds out without having to check GitHub. Silently skipped if the
       # Telegram secrets aren't configured (same secrets scan.yml uses).

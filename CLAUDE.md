@@ -150,12 +150,14 @@ Skills em `.claude/skills/`, regras em `.claude/rules/` (carregam pelos
 
 ## Limitações conhecidas (não são regressões)
 
-- `npm run typecheck` **não está no CI** (best-effort). Zerado em 2026-08-13
-  (Bloco 5 do roadmap; era ~80/na prática 790) e **voltou a divergir por não
-  ter guarda no CI**: 16 erros medidos em 2026-09-05 (`tradeMetrics.js`,
-  `Assets.jsx`, `Trades.jsx`). Não é regressão de runtime — é o custo
-  conhecido de um check opcional. Ao mexer aqui, compare a CONTAGEM antes e
-  depois em vez de exigir zero.
+- `npm run typecheck` roda no CI **como catraca**, não exigindo zero
+  (`npm run typecheck:ratchet`, item 166): o teto é o passivo atual (16 erros
+  de atrito de tipagem, medidos em 2026-09-05) e **só pode descer**. Zerado em
+  2026-08-13 e de volta a 16 justamente por não ter guarda nenhuma. Corrigiu
+  erros? `npm run typecheck:ratchet -- --update` baixa o teto.
+- **Cobertura** (`npm run test:coverage`, item 166): motor 86-99%, camada de
+  tela ~30-55% desde o smoke test de páginas. Era 0,0% em `src/pages`,
+  `src/components` e `src/hooks` até 2026-09-05.
 - Bundle principal já dividido por rota (`React.lazy`, `App.jsx`) +
   `manualChunks` (`recharts`/`firebase`) + `import()` dinâmico do `jspdf`
   (`MonthlyReport.jsx`) — chunk principal em ~410kB (era 2.525kB). Os chunks

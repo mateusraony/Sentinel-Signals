@@ -35,3 +35,6 @@ dist-ssr
 # (scripts/fetch-backtest-data.mjs) — dado do usuário, pode chegar a dezenas
 # de MB, não é fixture congelada como src/lib/indicators/__fixtures__/golden.
 scripts/__fixtures__/backtest/
+
+# Relatório de cobertura (npm run test:coverage) — item 166
+coverage/

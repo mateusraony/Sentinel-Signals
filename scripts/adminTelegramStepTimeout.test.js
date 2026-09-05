@@ -96,3 +96,36 @@ describe('notifyStepTimeout', () => {
     expect(await notifyStepTimeout('scanAllAssets', 90_000)).toBe(true);
   });
 });
+
+// Achado do Codex (PR #311), item 167. `normalizarMensagem` da auditoria troca
+// o símbolo do ativo por `<ativo>`; esse texto entrava CRU numa mensagem com
+// parse_mode HTML, o Telegram rejeitava com 400, send() devolvia false e a
+// auditoria ignorava — execução verde, alerta não entregue.
+describe('notifyHealthAudit — escape de HTML', () => {
+  it('escapa texto do usuário para o Telegram não rejeitar a mensagem', async () => {
+    const { escaparHtml } = await import('./adminTelegram.js');
+    expect(escaparHtml('<ativo> falhou')).toBe('&lt;ativo&gt; falhou');
+    expect(escaparHtml('a & b')).toBe('a &amp; b');
+    expect(escaparHtml(null)).toBe('');
+  });
+
+  it('REGRESSÃO: um achado com <ativo> não vaza tag crua para a API', async () => {
+    const { notifyHealthAudit } = await import('./adminTelegram.js');
+    await notifyHealthAudit('Auditoria achou algo', ['scanner · <ativo> falhou ao buscar'], null);
+
+    const corpo = global.fetch.mock.calls.map((c) => c[1].body).join('\n');
+    expect(corpo).toContain('&lt;ativo&gt;');
+    // A tag crua derrubaria a mensagem inteira com "Unsupported start tag".
+    expect(corpo).not.toContain('<ativo>');
+  });
+
+  it('as tags de formatação do PRÓPRIO template continuam funcionando', async () => {
+    const { notifyHealthAudit } = await import('./adminTelegram.js');
+    await notifyHealthAudit('Título', ['achado'], 'https://exemplo/run/1');
+
+    const corpo = global.fetch.mock.calls.map((c) => c[1].body).join('\n');
+    expect(corpo).toContain('<b>');   // só o texto dinâmico é escapado
+    expect(corpo).toContain('<i>');
+    expect(corpo).toContain('href=');
+  });
+});
