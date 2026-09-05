@@ -18940,3 +18940,81 @@ focado 3h cai de ~54.000 para ~11.000 leituras. Com o scan em ~25% da cota
 (item 150), sobra folga. **A confirmar pelo usuário:** se o alerta de
 `RESOURCE_EXHAUSTED` para de chegar. Se ainda chegar, aí sim a rodada 2 do
 espelho RTDB volta à mesa — e a instrumentação para decidir isso agora existe.
+
+---
+
+## 156. Cards de "Em Monitoramento" reescritos após teste de usabilidade com persona leiga (2026-09-05)
+
+**Pedido do usuário** (2026-09-05): *"os cards em monitoramento ainda está
+ruim… use um agente e faça de 'cobaia' fazendo com que ele pense como usuária
+que não entende, pra ver o que entende da informação e o que pode fazer pra
+que quando ele for ler, consiga interpretar e também tomar a decisão… com mais
+foco em termos simples de rápido e fácil entendimento."*
+
+### Método
+
+Agente rodado em duas fases: (1) reagir aos três estados do card **sem ler o
+código**, na persona de alguém que não sabe o que é Range Filter, timeframe,
+MACD, ADX, SMC ou score de confluência; (2) só então ler o código e propor.
+
+### Fato — o achado mais grave
+
+Na fase 1 a persona concluiu **"o app mandou comprar BTC"**. A resposta certa
+é *não faça nada*: o motor abre a operação sozinho e o usuário nunca executa
+nada por este card. Três causas, todas verificadas no código:
+
+1. **Hierarquia invertida.** O elemento mais forte (badge `BUY`/`SELL`
+   colorido) era **idêntico nos três estados**; o que os diferenciava vivia em
+   `text-[8px]` cinza no rodapé. O card gritava o que não diferencia e
+   sussurrava o que diferencia.
+2. **Ninguém dizia quem age.** Nenhuma das 16 frases continha "você não
+   precisa fazer nada". Resultado: ansiedade com o contador ("preciso comprar
+   antes de 1h47?") e culpa com o expirado ("perdi dinheiro?").
+3. **Rótulos só em `title=`.** Os dois preços (`price_at_signal` e o preço ao
+   vivo) apareciam como dois números monoespaçados sem legenda — a explicação
+   existia apenas como tooltip de hover, que morre no toque e na leitura
+   rápida. A persona chutou o significado dos dois. E travou de vez no
+   `+0,49%` de um card SELL: o percentual é **direcional** (a favor do sinal),
+   correto, mas ilegível sem rótulo.
+
+Outros achados confirmados no código: `Score: 78/100` cru foi lido como "78%
+de chance de dar certo" — exatamente a leitura que `ScoreBar` já bloqueia no
+card de operação ("não é uma probabilidade de acerto"); `is_dismissed` existe,
+é respeitado pelo scanner e pela página Alerts, mas **`monitoringList` não
+filtrava por ele e não havia botão de dispensar**, então um card expirado só
+saía da tela quando 50 sinais novos o empurrassem; e o rótulo da seção
+("Em Monitoramento") mentia para 2 dos 3 estados.
+
+### O que foi feito
+
+- **`src/lib/signalStatus.js`** (novo, puro, 16 testes): traduz fase e motivo
+  para linguagem simples. Regra do módulo: **toda frase termina resolvendo
+  "e eu, faço o quê?"** — há teste que falha se alguma não terminar em "Nada a
+  fazer.", e outro que falha se algum texto novo vazar jargão do motor
+  (`Range Filter`, `ADX`, `SMC`, `candle`, `minRR`, `OTE`…).
+  As 14 chaves de rejeição viraram **3 famílias com ícone distinto**:
+  `⏳ falta acontecer` · `⚠ o cenário piorou` · `↻ problema do app, ele se
+  resolve` — antes as 14 eram visualmente idênticas.
+- **Estado virou o elemento dominante**: badge no topo direito + faixa
+  colorida de 3px à esquerda (mesmo padrão do card de operação); a direção
+  virou texto discreto ("Aviso de alta (compra)").
+- **Rótulos na tela**: "preço agora", "avisou em $X", "+0,53% **a favor do
+  aviso**". O prazo virou hora de relógio com consequência declarada, não só
+  contagem regressiva.
+- **`ScoreBar` reusada** (exportada de `TradeCard.jsx`) dentro de "Detalhes
+  técnicos", levando junto a ressalva que faltava.
+- **Expirado** virou uma linha discreta com botão de dispensar; a lista passa
+  a respeitar `is_dismissed` (reuso da mutação que já existia em
+  `Alerts.jsx`).
+- **Informativos (1h/1d)** saíram da lista principal para um acordeão fechado
+  — nunca viram operação, e ocupavam card de tamanho igual.
+- Seção renomeada para **"Avisos em análise"**, com subtítulo dizendo que o
+  app abre sozinho se algum virar operação.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` verdes (1395 testes, 16 novos).
+Nenhuma linha de `scanner.js`/`entities.js`/`firestore.rules`/`server/`
+tocada. **Não verificado nesta sessão:** a aparência renderizada e um segundo
+teste com a persona sobre o card novo — o ciclo honesto seria repetir a fase 1
+sobre esta versão.
