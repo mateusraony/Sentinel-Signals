@@ -24,7 +24,21 @@ describe('withTimeout', () => {
     vi.useFakeTimers();
     const neverSettles = new Promise(() => {});
     const result = withTimeout(neverSettles, 90_000, 'scanAllAssets');
-    const assertion = expect(result).rejects.toThrow(/Timeout: scanAllAssets.*90000ms.*RESOURCE_EXHAUSTED/s);
+    const assertion = expect(result).rejects.toThrow(/Timeout: scanAllAssets.*90000ms/s);
+    await vi.advanceTimersByTimeAsync(90_000);
+    await assertion;
+  });
+
+  // docs/known-risks.md item 162: enquanto a mensagem carregava a HIPÓTESE
+  // "RESOURCE_EXHAUSTED do Firestore", quem classificava a falha por regex
+  // casava com ela e reportava todo timeout como cota esgotada. A mensagem
+  // agora diz só o que foi observado.
+  it('a mensagem de timeout não carrega a assinatura de cota do Firestore', async () => {
+    vi.useFakeTimers();
+    const result = withTimeout(new Promise(() => {}), 90_000, 'scanAllAssets');
+    const assertion = expect(result).rejects.toThrow(
+      /^Timeout: scanAllAssets não retornou em 90000ms \(ver docs\/known-risks\.md itens 142 e 162\)\.$/
+    );
     await vi.advanceTimersByTimeAsync(90_000);
     await assertion;
   });

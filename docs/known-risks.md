@@ -19394,3 +19394,191 @@ Aplicado em:
 `npm run lint && npm test && npm run build` verdes (1425 testes, 14 novos).
 Nenhuma linha de `scanner.js`/`entities.js`/`firestore.rules`/`server/`
 tocada. **Não verificado:** a aparência renderizada.
+
+## 162. Todo travamento virava "Cota do Firestore esgotada" (2026-09-05)
+
+**Relato do usuário**, no mesmo dia em que os itens 155/158/160 fecharam o
+episódio real de cota:
+
+> 🚨 Cota do Firestore esgotada — O scan ao vivo está falhando com
+> `RESOURCE_EXHAUSTED` […] 📝 Timeout: checkOneAsset:LDOUSDT não retornou em
+> 300000ms — provável travamento em retry de RESOURCE_EXHAUSTED do Firestore
+
+### Fato — não havia cota esgotada nenhuma
+
+Verificado direto nas execuções do GitHub Actions: os scans 15261 (12:50 UTC)
+e 15262 (12:55 UTC) terminaram `success` em ~50s cada, com o Firestore
+respondendo normalmente. O alerta veio do `backfill.yml`, não do scan: um
+único ativo (`checkOneAsset:LDOUSDT`) estourou o `BACKFILL_STEP_TIMEOUT_MS`
+de 5 minutos.
+
+### Causa raiz — o detector casava com a própria hipótese
+
+`scripts/scanTimeout.mjs` montava a mensagem assim:
+
+```
+Timeout: <etapa> não retornou em <N>ms — provável travamento em retry de
+RESOURCE_EXHAUSTED do Firestore (ver docs/known-risks.md item 142).
+```
+
+A parte depois do travessão é uma **hipótese** de quem escreveu o timeout, não
+um fato observado. Só que `run-scan.mjs:30` e `run-backfill-check.mjs:50`
+decidiam "é cota esgotada" com, cada um por sua conta:
+
+```js
+function isFirestoreQuotaExhausted(message) {
+  return /RESOURCE_EXHAUSTED/i.test(String(message || ''));
+}
+```
+
+que casa com a própria frase acima. Consequência: **todo timeout, de qualquer
+causa — Binance lenta, replay pesado, rede — era anunciado ao usuário como
+cota esgotada**, com a cota inteira disponível. Um diagnóstico errado é pior
+que nenhum: manda olhar o lugar errado.
+
+O bug foi introduzido junto com o próprio timeout (item 142) e ficou latente
+até o item 147 estender o mesmo padrão ao backfill, que é onde travamentos
+legítimos (replay de 60 dias) são muito mais prováveis.
+
+### Correção — o guard, não o sintoma
+
+1. **`scripts/failureClassification.mjs`** (novo, puro, sem I/O) — passa a ser
+   o ÚNICO lugar que decide o que é cota. Só conta a **assinatura real** do
+   erro do Firestore (`Quota exceeded` ou o código gRPC `8 RESOURCE_EXHAUSTED`);
+   a prosa de hipótese é removida do texto antes do teste, então nem logs
+   antigos enganam o detector. Também extrai `{ step, ms }` do timeout e
+   traduz o rótulo técnico para português simples (`checkOneAsset:LDOUSDT` →
+   "a checagem retroativa do LDOUSDT").
+2. **`scanTimeout.mjs`** — a mensagem passa a dizer só o que foi observado
+   (que etapa não respondeu, em quanto tempo). A causa provável continua
+   documentada, no comentário, onde nenhum regex a lê.
+3. **Alerta próprio para etapa travada** (`notifyStepTimeout`) — nomeia a
+   etapa em vez de chutar a causa, com marcador de dedup **separado**
+   (`systemAlerts/stepTimeout`). Separado de propósito: misturar com o de
+   cota faria um travamento qualquer disparar/silenciar o aviso de "cota
+   normalizada" do item 160.
+4. **`run-backfill-check.mjs` deixou de ser mudo no catch de topo** — um
+   travamento antes do loop (leitura de pendentes, `getPineConfig`) falhava o
+   job sem nenhum aviso.
+
+### Verificação
+
+- `scripts/failureClassification.test.js` (12 testes) usa **a mensagem exata
+  que o usuário recebeu** como caso de regressão: classifica `timeout`, não
+  `quota`. Um `8 RESOURCE_EXHAUSTED: Quota exceeded.` de verdade continua
+  classificando como `quota`, inclusive quando chega junto de um timeout.
+- `scripts/failureClassificationTripwire.test.js` trava a FORMA, não só o
+  caso: nenhum ponto de entrada pode voltar a classificar cota por conta
+  própria, e `scanTimeout.mjs` não pode voltar a pôr a assinatura de cota
+  dentro do erro que monta. **Verificado empiricamente**: reintroduzindo as
+  duas coisas, os dois testes falham; revertendo, passam.
+- `scripts/adminTelegramStepTimeout.test.js` (5 testes) prova o dedup próprio,
+  que uma etapa diferente é informação nova, e que a mensagem não fala em cota.
+- `npm run lint && npm test && npm run build` verdes; `build:scan` e
+  `build:backfill` empacotam.
+
+### O que continua verdadeiro
+
+O item 142 não muda: o cliente admin do Firestore realmente trava por minutos
+em retry de `RESOURCE_EXHAUSTED`, e o timeout continua sendo a defesa certa. O
+que estava errado era **afirmar essa causa** em toda ocorrência.
+
+## 163. O horário da recusa e o "o que realmente aconteceu" (2026-09-05)
+
+**Pedido do usuário**, sobre os textos entregues no item 161:
+
+> faz o horário da recusa também, falar que **virou para outro lado e bem
+> vazio, sem sentido nenhum**, quero saber se o pavio perdeu força ou o que
+> realmente aconteceu, não apenas que viu que acaba ficando vazio a fala!
+
+Ele está certo nas duas coisas, e as duas tinham causas diferentes.
+
+### Fato 1 — o texto era vago porque O DADO era vago
+
+Não era só uma escolha ruim de palavras. Confirmado no código:
+
+| Motivo gravado | O que ele junta |
+|---|---|
+| `regime_rejected` | **dois** gates distintos — força da tendência (ADX) e lateralidade (Choppiness) — numa palavra só |
+| `confirmation_15m_not_aligned` | **três** causas — `check15mConfirmation` (`scanner.js`) devolvia o MESMO `{ confirmed: false }` para dado insuficiente, direção contrária e erro de rede |
+| `trend_reversed` | não dizia para QUAL lado a tendência virou |
+
+Nenhum texto de UI podia ser específico, porque o banco não sabia. Por isso a
+correção começou no motor, não na frase.
+
+### Fato 2 — não havia horário nenhum (item 161 já tinha registrado)
+
+`SignalEvent` gravava `last_rejection_reason` e mais nada: sem carimbo, sem
+`updated_date`. O item 161 recusou-se a mostrar um horário aproximado (seria
+inventar dado de auditoria) e deixou a mudança de motor anotada — é esta.
+
+### A restrição que desenhou a solução
+
+`last_rejection_reason` é **write-on-change** de propósito: um sinal preso no
+mesmo gate por ~48 passadas de retry custa UMA escrita, não 48. Logo depois de
+dois incidentes de cota do Firestore (itens 155/158), gastar uma escrita por
+ativo a cada 5 minutos seria uma regressão séria.
+
+Daí as duas regras que valem para sempre neste campo:
+
+1. **O detalhe é CATEGÓRICO, nunca numérico.** `adx: 18,3 → 18,7` mudaria a
+   cada passada e mataria o write-on-change. `"foi o ADX"` não muda enquanto
+   o motivo não mudar.
+2. **O carimbo só avança quando motivo ou detalhe mudam.** O efeito colateral
+   é uma informação MELHOR que "última checagem": `last_rejection_at` quer
+   dizer **desde quando o aviso está travado nisto**. A UI diz "Barrado
+   desde", não "Barrado às".
+
+### O que foi entregue
+
+**Motor** (`src/lib/scanner.js` — instrumentação, nenhuma transição tocada):
+
+- `check15mConfirmation` devolve `reason` (`insufficient_data`/`not_aligned`/
+  `fetch_error`), aditivo — quem decide entrada continua olhando só
+  `confirmed`.
+- `recordRejection` grava `last_rejection_detail` + `last_rejection_at` pela
+  mesma porta de write-on-change, via a regra pura
+  `src/lib/signalRejection.js:rejectionPatch`.
+- Os logs de expiração das 4 cascatas carregam motivo/detalhe/horário.
+
+**Texto** (`src/lib/signalStatus.js`) — cada frase diz o que foi MEDIDO e por
+que aquilo barra a entrada, sem o nome técnico do indicador:
+
+| Antes | Depois |
+|---|---|
+| "O mercado virou para o outro lado depois do aviso." | "A linha de tendência do gráfico de 4 horas aponta para BAIXO agora. Enquanto ela apontar para baixo, um aviso de compra não vira operação — seria comprar contra a maré." |
+| "O preço está andando de lado, sem direção clara." (para os dois gates) | **força**: "O preço até se mexe, mas o movimento está fraco […] costuma voltar atrás antes de chegar ao alvo." · **lateralidade**: "O preço está preso numa faixa […] a proteção é atingida antes do alvo com muita frequência." |
+
+Também entraram 3 motivos que **caíam no fallback "código X"** por não estarem
+no mapa: `candle_pattern_rejected` (o "pavio" que o usuário citou —
+engolfo/pavio de rejeição/vela cheia), `buy_regime_filter_blocked` e
+`side_filter_blocked`.
+
+**Limpeza**: `REJECTION_LABELS` em `Trades.jsx` era código morto desde o item
+156 — a versão antiga, cheia de jargão ("ADX/Choppiness", "minRR", "gate"),
+esperando alguém reusá-la por engano. Removida.
+
+### Verificação
+
+- `src/lib/signalRejection.test.js` (10 testes) — inclui a **regressão de
+  custo**: mesmo motivo e mesmo detalhe não geram escrita, e o horário não
+  avança.
+- `scannerStateMachine.test.js` — mesma prova fim a fim contra
+  `persistScanResults` real, mais a separação ADX × Choppiness.
+- `signalStatus.test.js` — toda variante por detalhe obedece às mesmas regras
+  da frase-base (termina em "Nada a fazer.", chip ≤ 28 caracteres, sem jargão),
+  e cada variante precisa dizer algo DIFERENTE da base — senão o detalhe não
+  serviu para nada.
+- `eventTimeline.test.js` — a trava do item 161 continua de pé: motivo **sem**
+  carimbo (sinal anterior a este item) não vira linha na tela.
+- `npm run lint && npm test && npm run build` verdes (1464 testes);
+  `build:scan` empacota. `npm run typecheck` na mesma contagem de antes (16,
+  todos pré-existentes) — a versão inicial da mudança tinha somado 3, corrigido
+  igualando o shape de retorno das duas confirmações.
+
+### Bug de teste encontrado no caminho
+
+A trava anti-jargão do item 156 usava `\b`, e `\w` em JavaScript é só
+`[A-Za-z0-9_]` — então `\batr\b` casava dentro de **"voltar atrás"** (o `á`
+conta como borda de palavra). Mesma classe do falso positivo de `\bema\b` em
+"demais", já corrigido antes. Trocado por lookarounds que enxergam acento.

@@ -22,29 +22,6 @@ import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
-// Traduz SignalEvent.last_rejection_reason (docs/schema-reference/SignalEvent.jsonc,
-// docs/known-risks.md item 45.3/49/50/6) para texto que o usuário entende sem
-// abrir o Debug Log. Puramente informativo — mesmo campo que o motor já
-// grava sozinho (write-on-change, scanner.js), nenhuma lógica nova aqui.
-const REJECTION_LABELS = {
-  trend_reversed: 'A tendência do timeframe maior reverteu antes de confirmar — o sinal pode expirar sem abrir operação.',
-  regime_rejected: 'Regime de mercado (ADX/Choppiness) não passou no filtro de qualidade — mercado sem tendência forte o bastante.',
-  smc_confirm_zone_rejected: 'A estrutura SMC do timeframe maior não concorda com a direção do sinal.',
-  retest_pending: 'Aguardando o preço retestar o nível rompido antes de confirmar (gate opcional).',
-  displacement_gate_rejected: 'Aguardando um candle de deslocamento válido na direção do sinal (gate opcional).',
-  confirmation_15m_not_aligned: 'Aguardando o Range Filter de 15m confirmar a mesma direção do sinal de 4h.',
-  insufficient_data: 'Dados insuficientes no timeframe menor (5m) pra avaliar o gatilho de entrada ainda.',
-  no_trigger: 'Aguardando o gatilho de entrada (varredura/estrutura) disparar no timeframe menor.',
-  wrong_direction_trigger: 'O gatilho de entrada disparou, mas na direção oposta ao sinal — segue aguardando.',
-  ote_zone_unfavorable: 'Preço fora da zona considerada favorável para entrada.',
-  fetch_error: 'Falha ao buscar dados de mercado na última tentativa — deve tentar de novo na próxima passada.',
-  rr_below_min: 'A relação risco:retorno calculada ficou abaixo do mínimo configurado (minRR).',
-  missing_fields: 'Dados de entrada incompletos para calcular o gate de risco:retorno.',
-  invalid_stop_distance: 'Distância de stop inválida (entrada e stop no mesmo preço).',
-};
-
-const CONFIRMATION_WINDOW_MS = 4 * 60 * 60 * 1000; // scanner.js FOUR_HOURS_MS — mesma janela pras 2 cascatas
-
 /** Modal for editing an active operation */
 function EditModal({ op, onClose, onSave }) {
   const [stop, setStop] = useState(op.current_stop ?? '');
@@ -273,8 +250,19 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
 
       {/* 3 · O que falta — chip curto + frase que termina em "nada a fazer" */}
       <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="text-[10px] font-mono font-semibold mb-1" style={{ color: copy.color }}>
-          {reason.icon} {reason.chip}
+        <div className="flex items-baseline justify-between gap-2 mb-1">
+          <div className="text-[10px] font-mono font-semibold" style={{ color: copy.color }}>
+            {reason.icon} {reason.chip}
+          </div>
+          {/* "desde", não "às": o motor só recarimba quando o MOTIVO muda
+              (item 163) — é há quanto tempo o aviso está preso nisto, o que
+              é justamente o que o usuário quer comparar depois. */}
+          {signal.last_rejection_at && (
+            <span className="text-[9px] font-mono shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}
+              title="Desde quando este aviso está travado neste mesmo motivo (horário de Brasília)">
+              desde {fmtBRT(signal.last_rejection_at)}
+            </span>
+          )}
         </div>
         <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
           {reason.detail}

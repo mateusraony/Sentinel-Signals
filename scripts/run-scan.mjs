@@ -5,10 +5,11 @@ import { scanAllAssets, priceCheckActiveOps } from '../src/lib/scanner.js';
 import { backend } from '@/api/entities';
 import { assetHealthcheckReason, shouldAlertStale, shouldClearStaleAlert } from '../src/lib/assetHealthcheck.js';
 import {
-  isTelegramConfigured, notifyAssetStale,
+  isTelegramConfigured, notifyAssetStale, notifyStepTimeout,
   notifyFirestoreQuotaExhausted, notifyFirestoreQuotaRecovered,
 } from './adminTelegram.js';
 import { withTimeout, forceExit } from './scanTimeout.mjs';
+import { classifyFailure, isFirestoreQuotaExhausted } from './failureClassification.mjs';
 
 // docs/known-risks.md item 142 — a scan normal termina em ~20s; 90s dá
 // folga generosa (retry de rede da Binance via httpRetry.js incluído) sem
@@ -27,9 +28,6 @@ const SCAN_STEP_TIMEOUT_MS = 90 * 1000;
 // errors that priceCheckActiveOpsInner also swallows internally via
 // logError (fire-and-forget, never propagates on its own — scanner.js now
 // returns { errors } from that loop specifically so this can see them).
-function isFirestoreQuotaExhausted(message) {
-  return /RESOURCE_EXHAUSTED/i.test(String(message || ''));
-}
 
 // Verdadeiro se QUALQUER etapa desta passada esbarrou na cota. Só uma
 // passada inteiramente limpa autoriza o aviso de recuperação (item 160) —
@@ -37,12 +35,31 @@ function isFirestoreQuotaExhausted(message) {
 // avisar nada.
 let sawQuotaFailure = false;
 
-async function alertIfQuotaExhausted(message) {
-  if (!isFirestoreQuotaExhausted(message) || !isTelegramConfigured()) return;
-  sawQuotaFailure = true;
-  await notifyFirestoreQuotaExhausted(message).catch((e) =>
-    console.warn('[scan] Falha ao notificar cota do Firestore (não crítico):', e.message)
-  );
+/**
+ * Avisa o usuário do que REALMENTE aconteceu (docs/known-risks.md item 162).
+ *
+ * Até 2026-09-05 este ponto classificava com `/RESOURCE_EXHAUSTED/i` na
+ * mensagem — e a própria mensagem de timeout carregava essa palavra como
+ * HIPÓTESE, então TODO travamento, de qualquer causa, era anunciado como
+ * "Cota do Firestore esgotada". `classifyFailure` separa os dois: cota é só
+ * o que traz a assinatura real do erro; um travamento sem ela tem alerta
+ * próprio, que nomeia a etapa em vez de chutar a causa.
+ */
+async function alertOnFailure(message) {
+  if (!isTelegramConfigured()) return;
+  const { kind, step, ms } = classifyFailure(message);
+  if (kind === 'quota') {
+    sawQuotaFailure = true;
+    await notifyFirestoreQuotaExhausted(message).catch((e) =>
+      console.warn('[scan] Falha ao notificar cota do Firestore (não crítico):', e.message)
+    );
+    return;
+  }
+  if (kind === 'timeout') {
+    await notifyStepTimeout(step, ms).catch((e) =>
+      console.warn('[scan] Falha ao notificar etapa travada (não crítico):', e.message)
+    );
+  }
 }
 
 /**
@@ -129,18 +146,18 @@ async function main() {
   console.log(`[scan] scanAllAssets: ${total} ativo(s), ${failed.length} falha(s)`);
   failed.forEach((r) => console.error(`[scan]   ${r.symbol}: ${r.error}`));
   const quotaFailure = failed.find((r) => isFirestoreQuotaExhausted(r.error));
-  if (quotaFailure) await alertIfQuotaExhausted(quotaFailure.error);
+  if (quotaFailure) await alertOnFailure(quotaFailure.error);
 
   const { errors: priceCheckErrors } = await withTimeout(priceCheckActiveOps(), SCAN_STEP_TIMEOUT_MS, 'priceCheckActiveOps');
   console.log('[scan] priceCheckActiveOps done');
   const priceCheckQuotaFailure = priceCheckErrors.find((e) => isFirestoreQuotaExhausted(e.error));
-  if (priceCheckQuotaFailure) await alertIfQuotaExhausted(priceCheckQuotaFailure.error);
+  if (priceCheckQuotaFailure) await alertOnFailure(priceCheckQuotaFailure.error);
 
   try {
     await withTimeout(checkAssetHealthchecks(assets), SCAN_STEP_TIMEOUT_MS, 'checkAssetHealthchecks');
   } catch (err) {
     console.warn('[scan] per-asset healthcheck failed (non-fatal):', err.message);
-    await alertIfQuotaExhausted(err?.message);
+    await alertOnFailure(err?.message);
   }
 
   console.log(`[scan] finished in ${((Date.now() - started) / 1000).toFixed(1)}s`);
@@ -166,7 +183,7 @@ main()
   })
   .catch(async (err) => {
     console.error('[scan] FAILED:', err);
-    await alertIfQuotaExhausted(err?.message);
+    await alertOnFailure(err?.message);
     await pingHealthcheck('/fail');
     // forceExit (não só process.exitCode) — docs/known-risks.md item 142: se o
     // erro veio de um withTimeout acima, a chamada real ao Firestore perdeu a

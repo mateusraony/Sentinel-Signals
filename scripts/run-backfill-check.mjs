@@ -26,9 +26,12 @@ import { isTerminalStatus } from '../src/lib/opTransition.js';
 import { backend, getAndResetOpCounts } from '@/api/entities';
 import { getPineConfig } from './adminPineConfig.js';
 import { setBackfillWindow, hasFetchFailure } from './backfillMarketDataProvider.js';
-import { notifyTradeCreated, notifyFirestoreQuotaExhausted, isTelegramConfigured } from './adminTelegram.js';
+import {
+  notifyTradeCreated, notifyFirestoreQuotaExhausted, notifyStepTimeout, isTelegramConfigured,
+} from './adminTelegram.js';
 import { backfillLookbackWindow, buildBackfillTags, formatBackfillLag } from '../src/lib/backfillDetection.js';
 import { withTimeout, forceExit } from './scanTimeout.mjs';
+import { classifyFailure } from './failureClassification.mjs';
 
 // docs/known-risks.md item 142/147 — mesmo risco do run-scan.mjs (cliente
 // admin do Firestore trava em retry de RESOURCE_EXHAUSTED por MINUTOS, sem
@@ -47,8 +50,35 @@ import { withTimeout, forceExit } from './scanTimeout.mjs';
 // A CADA hora — pressão de cota que se soma à do scan ao vivo.
 const BACKFILL_STEP_TIMEOUT_MS = 5 * 60 * 1000;
 
-function isFirestoreQuotaExhausted(message) {
-  return /RESOURCE_EXHAUSTED/i.test(String(message || ''));
+/**
+ * Avisa o que REALMENTE aconteceu (docs/known-risks.md item 162).
+ *
+ * Este arquivo foi a ORIGEM do falso alarme de 2026-09-05: o backfill travou
+ * em UM ativo (`checkOneAsset:LDOUSDT`, 5min) e o usuário recebeu "Cota do
+ * Firestore esgotada" — enquanto o scan ao vivo rodava verde a cada 5
+ * minutos, provando que a cota estava normal. A causa era classificar por
+ * `/RESOURCE_EXHAUSTED/i` numa mensagem de timeout que carregava essa
+ * palavra como HIPÓTESE. `classifyFailure` separa os dois casos.
+ *
+ * Continua reaproveitando o mesmo marcador de dedup do alerta de cota
+ * (`systemAlerts/firestoreQuota`) quando a cota é real — não spamma se o
+ * scan ao vivo já alertou na última hora; o alerta de etapa travada tem
+ * marcador próprio.
+ */
+async function alertOnFailure(message) {
+  if (!isTelegramConfigured()) return;
+  const { kind, step, ms } = classifyFailure(message);
+  if (kind === 'quota') {
+    await notifyFirestoreQuotaExhausted(message).catch((e) =>
+      console.warn('[backfill] Falha ao notificar cota do Firestore (não crítico):', e.message)
+    );
+    return;
+  }
+  if (kind === 'timeout') {
+    await notifyStepTimeout(step, ms).catch((e) =>
+      console.warn('[backfill] Falha ao notificar etapa travada (não crítico):', e.message)
+    );
+  }
 }
 
 // Limite por execução — checar um ativo novo é raro (o usuário adiciona
@@ -180,15 +210,9 @@ async function main() {
         backfill_check_status: 'error',
         backfill_check_error: String(err.message || err).slice(0, 500),
       }).catch(() => {});
-      // docs/known-risks.md item 147 — mesmo alerta que run-scan.mjs já
-      // dispara (isFirestoreQuotaExhausted, item 138), reaproveitando o
-      // mesmo marcador de dedup (systemAlerts/firestoreQuota) — não spamma
-      // se o scan ao vivo já alertou na última hora.
-      if (isFirestoreQuotaExhausted(err?.message) && isTelegramConfigured()) {
-        await notifyFirestoreQuotaExhausted(err.message).catch((e) =>
-          console.warn('[backfill] Falha ao notificar cota do Firestore (não crítico):', e.message)
-        );
-      }
+      // docs/known-risks.md itens 147/162 — mesmo alerta que run-scan.mjs
+      // dispara, agora classificando cota × etapa travada.
+      await alertOnFailure(err?.message);
     } finally {
       const { reads, writes } = getAndResetOpCounts();
       console.log(`[backfill] ${asset.symbol}: ${reads} leitura(s) + ${writes} escrita(s) Firestore reais nesta checagem`);
@@ -198,8 +222,11 @@ async function main() {
 
 main()
   .then(() => forceExit(0))
-  .catch((err) => {
+  .catch(async (err) => {
     console.error('[backfill] FAILED:', err);
+    // Até o item 162 este catch era MUDO: um travamento antes do loop
+    // (leitura de pendentes, getPineConfig) falhava o job sem nenhum aviso.
+    await alertOnFailure(err?.message);
     // forceExit (não só process.exitCode) — docs/known-risks.md item 142/147:
     // se o erro veio de um withTimeout acima (per-ativo ou fora dele), a
     // chamada real ao Firestore perdeu a corrida mas continua rodando (e

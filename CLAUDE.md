@@ -150,8 +150,12 @@ Skills em `.claude/skills/`, regras em `.claude/rules/` (carregam pelos
 
 ## Limitações conhecidas (não são regressões)
 
-- `npm run typecheck` **não está no CI** (best-effort) — 0 erros desde
-  2026-08-13 (Bloco 5 do roadmap; era ~80/na prática 790, corrigido).
+- `npm run typecheck` **não está no CI** (best-effort). Zerado em 2026-08-13
+  (Bloco 5 do roadmap; era ~80/na prática 790) e **voltou a divergir por não
+  ter guarda no CI**: 16 erros medidos em 2026-09-05 (`tradeMetrics.js`,
+  `Assets.jsx`, `Trades.jsx`). Não é regressão de runtime — é o custo
+  conhecido de um check opcional. Ao mexer aqui, compare a CONTAGEM antes e
+  depois em vez de exigir zero.
 - Bundle principal já dividido por rota (`React.lazy`, `App.jsx`) +
   `manualChunks` (`recharts`/`firebase`) + `import()` dinâmico do `jspdf`
   (`MonthlyReport.jsx`) — chunk principal em ~410kB (era 2.525kB). Os chunks

@@ -3861,6 +3861,71 @@ describe('funil de confirmação de entrada — last_rejection_reason + entryFun
       expect(updateSpy).toHaveBeenCalledTimes(1);
     });
 
+    // docs/known-risks.md item 163 — o usuário pediu "o horário da recusa" e
+    // reclamou que o motivo era vago demais ("falar que virou para outro lado
+    // e bem vazio... quero saber o que realmente aconteceu"). Os dois campos
+    // novos entram pela MESMA porta de write-on-change, porque a alternativa
+    // (carimbar toda passada) custaria uma escrita por ativo a cada 5 minutos
+    // logo depois de dois incidentes de cota (itens 155/158).
+    it('carimba last_rejection_at e o detalhe categórico do motivo', async () => {
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const reversedResults = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+
+      await persistScanResults({ ...makeScanResult({ results: reversedResults, pineConfig }), newSignals: [makeRfSignal()] });
+
+      const [stored] = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf' });
+      expect(stored.last_rejection_reason).toBe('trend_reversed');
+      // "virou para o outro lado" — para QUAL lado é o que faltava.
+      expect(stored.last_rejection_detail).toBe('now_down');
+      expect(Number.isFinite(Date.parse(stored.last_rejection_at))).toBe(true);
+    });
+
+    it('REGRESSÃO DE CUSTO: o horário NÃO avança enquanto o motivo não muda', async () => {
+      const pineConfig = makePineConfig({ useADX: false, useChop: false });
+      const reversedResults = { '4h': makeTfData({ rf: { ...makeTfData().rf, direction: -1 } }) };
+      await persistScanResults({ ...makeScanResult({ results: reversedResults, pineConfig }), newSignals: [makeRfSignal()] });
+      const [primeira] = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf' });
+
+      const updateSpy = vi.spyOn(backend.entities.SignalEvent, 'update');
+      await persistScanResults({ ...makeScanResult({ results: reversedResults, pineConfig }), newSignals: [] });
+
+      expect(updateSpy).not.toHaveBeenCalled();
+      const [segunda] = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf' });
+      // É "travado nisto desde", não "última checagem".
+      expect(segunda.last_rejection_at).toBe(primeira.last_rejection_at);
+    });
+
+    it('separa os dois gates que regime_rejected juntava: ADX (sem força) × Choppiness (de lado)', async () => {
+      const tier = { tier: 'T1', atrStopMult: 2.0, chopMaxVal: 55, timeStopBars: 48, adxMinVal: 25 };
+      // Só o ADX reprova: movimento sem força.
+      await persistScanResults({
+        ...makeScanResult({
+          results: { '4h': makeTfData({ adx: { adx: 5 }, chop: 40, tier }) },
+          pineConfig: makePineConfig({ useADX: true, useChop: false }),
+        }),
+        newSignals: [makeRfSignal()],
+      });
+      const [porAdx] = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf' });
+      expect(porAdx.last_rejection_reason).toBe('regime_rejected');
+      expect(porAdx.last_rejection_detail).toBe('adx');
+
+      // Agora só o Choppiness reprova: preço andando de lado. Mesmo motivo,
+      // detalhe diferente — é informação nova e precisa recarimbar (o relógio
+      // do teste é congelado, então quem prova a regravação é a escrita).
+      const updateSpy = vi.spyOn(backend.entities.SignalEvent, 'update');
+      await persistScanResults({
+        ...makeScanResult({
+          results: { '4h': makeTfData({ adx: { adx: 30 }, chop: 90, tier }) },
+          pineConfig: makePineConfig({ useADX: false, useChop: true }),
+        }),
+        newSignals: [],
+      });
+      const [porChop] = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_funnel_rf' });
+      expect(porChop.last_rejection_reason).toBe('regime_rejected');
+      expect(porChop.last_rejection_detail).toBe('chop');
+      expect(updateSpy).toHaveBeenCalledWith('sig_funnel_rf', expect.objectContaining({ last_rejection_detail: 'chop' }));
+    });
+
     // Round 3 (docs/known-risks.md item 50) — rfRegimeOutcomes mirrors
     // smcRegimeOutcomes (Fase 3) for the RF cascade: unlike entryFunnelOutcomes
     // (only the string reason), this carries the actual adx/chop/tier that

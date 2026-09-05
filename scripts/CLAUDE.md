@@ -12,6 +12,10 @@ adaptador, envolve `adminEntities.js` com cache em memória só para
 2026-08-31) e janela recente ao vivo (`backfillMarketDataProvider.js`) —
 checagem retroativa ao adicionar/reativar um ativo, roda em
 `.github/workflows/backfill.yml` (workflow separado do scan ao vivo).
+`failureClassification.mjs` é o ÚNICO lugar que decide se uma falha é cota
+esgotada do Firestore ou apenas uma etapa travada — nunca classifique isso por
+regex no ponto de entrada (`docs/known-risks.md` item 162); a mensagem de
+`scanTimeout.mjs` diz só o que foi observado, sem chutar a causa.
 `adminEntities.js` também embute o espelho de leitura RTDB pro dashboard
 (`AssetState`/`TradeOperation`, `src/lib/rtdbMirror.js`, ver
 `docs/known-risks.md` item 152) — ativo só quando `FIREBASE_DATABASE_URL`

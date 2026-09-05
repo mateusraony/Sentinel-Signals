@@ -93,13 +93,38 @@ describe('signalTimeline', () => {
     expect(signalTimeline({ timeframe: '4h', created_date: 'lixo' })).toEqual([]);
   });
 
-  // Trava documental: o horário da rejeição NÃO existe no banco (só
-  // last_rejection_reason, sem carimbo). Este teste falha se alguém achar que
-  // pode inventar um — ver item 161.
-  it('nunca inventa um horário de rejeição', () => {
+  // Trava documental do item 161, ainda válida depois do 163: o carimbo agora
+  // existe, mas só a partir do 163 — todo sinal anterior tem o motivo e NÃO
+  // tem o horário. Este teste falha se alguém achar que pode preencher a
+  // lacuna com uma aproximação.
+  it('nunca inventa um horário de rejeição — motivo sem carimbo não vira linha', () => {
+    // Sinal anterior ao item 163: tem o motivo, não tem o horário.
     const events = signalTimeline({
       timeframe: '4h', created_date: T(8), last_rejection_reason: 'trend_reversed',
     }, { now: Date.parse(T(9)) });
     expect(events.some(e => e.key.includes('reject'))).toBe(false);
+  });
+
+  // docs/known-risks.md item 163 — o motor passou a gravar last_rejection_at.
+  it('mostra o horário da recusa quando o motor o gravou', () => {
+    const events = signalTimeline({
+      timeframe: '4h', created_date: T(8),
+      last_rejection_reason: 'regime_rejected', last_rejection_detail: 'chop',
+      last_rejection_at: T(9),
+    }, { now: Date.parse(T(10)) });
+
+    const rejected = events.find(e => e.key === 'rejected');
+    expect(rejected.at).toBe(T(9));
+    // "desde", não "em": o carimbo só avança quando o MOTIVO muda.
+    expect(rejected.label).toBe('Barrado desde');
+    // Não é fechamento de vela — é relógio. Não pode ganhar a etiqueta (vela).
+    expect(rejected.candleBound).toBe(false);
+  });
+
+  it('a recusa entra na ordem cronológica certa, entre o aviso e o prazo', () => {
+    const events = signalTimeline({
+      timeframe: '4h', created_date: T(8), last_rejection_at: T(9),
+    }, { now: Date.parse(T(10)) });
+    expect(events.map(e => e.key)).toEqual(['appeared', 'rejected', 'deadline']);
   });
 });

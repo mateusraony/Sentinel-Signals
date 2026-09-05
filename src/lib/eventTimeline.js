@@ -111,13 +111,13 @@ export function opTimeline(op) {
 /**
  * Eventos de um aviso (SignalEvent).
  *
- * ⚠️ **O horário da rejeição não existe no banco.** `SignalEvent` grava
- * `last_rejection_reason` (texto) e `expired_logged` (booleano), mas nenhum
- * carimbo de quando a rejeição foi registrada — confirmado no schema. Mostrar
- * um horário aproximado aqui seria inventar dado de auditoria, então esta
- * função devolve só o que é verificável: quando o aviso apareceu e quando o
- * prazo fecha/fechou (derivado, exato). Ver item 161 para a mudança de motor
- * que destravaria isso.
+ * **O horário da rejeição passou a existir no item 163** — o motor grava
+ * `last_rejection_at`, carimbado só quando o MOTIVO (ou o detalhe) muda. Por
+ * isso o rótulo é *"Barrado desde"*, não *"Barrado em"*: é desde quando o
+ * aviso está preso neste motivo, não a hora da última checagem. Um sinal
+ * anterior ao item 163, ou nunca avaliado, simplesmente não traz a linha —
+ * continua valendo a regra do item 161 de nunca inventar horário de
+ * auditoria.
  *
  * @returns {TimelineEvent[]}
  */
@@ -127,6 +127,8 @@ export function signalTimeline(signal, { now = Date.now() } = {}) {
   if (!appeared) return [];
 
   const events = [appeared];
+  const rejected = event('rejected', 'Barrado desde', null, signal.last_rejection_at);
+  if (rejected) events.push(rejected);
   // Só a cascata de 4h tem prazo de verdade; 1h/1d nunca confirmam nem expiram.
   if (signal.timeframe === '4h') {
     const deadline = new Date(appeared.at).getTime() + CONFIRMATION_WINDOW_MS;

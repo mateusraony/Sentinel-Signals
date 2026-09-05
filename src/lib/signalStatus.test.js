@@ -65,12 +65,59 @@ describe('rejectionCopy', () => {
     }
   });
 
+  // item 163 — as variantes por detalhe são o texto que o usuário lê na
+  // maioria das vezes (regime_rejected e confirmation_15m_not_aligned são os
+  // dois motivos mais frequentes em produção). Elas precisam obedecer às
+  // MESMAS regras da frase-base, senão a correção do item 163 reabre
+  // exatamente o buraco que o item 156 fechou.
+  it('toda variante por detalhe também resolve "e eu, faço o quê?"', () => {
+    for (const [key, entry] of Object.entries(REJECTION_COPY)) {
+      for (const detalhe of Object.keys(entry.by ?? {})) {
+        for (const lado of ['BUY', 'SELL']) {
+          const copy = rejectionCopy({ last_rejection_reason: key, last_rejection_detail: detalhe, signal_type: lado });
+          expect(copy.detail, `${key}/${detalhe}/${lado}`).toMatch(/Nada a fazer\.$/);
+          expect(copy.chip.length, `${key}/${detalhe}/${lado}: "${copy.chip}"`).toBeLessThanOrEqual(28);
+          expect(Object.values(REASON_KIND)).toContain(copy.kind);
+        }
+      }
+    }
+  });
+
+  it('a variante diz algo DIFERENTE da frase-base — senão o detalhe não serviu para nada', () => {
+    const base = rejectionCopy({ last_rejection_reason: 'regime_rejected', signal_type: 'BUY' });
+    for (const detalhe of ['adx', 'chop', 'adx_chop']) {
+      const variante = rejectionCopy({ last_rejection_reason: 'regime_rejected', last_rejection_detail: detalhe, signal_type: 'BUY' });
+      expect(variante.detail).not.toBe(base.detail);
+    }
+    // "o pavio perdeu força" era literalmente o exemplo do usuário do que ele
+    // queria saber: o texto do ADX precisa falar de FORÇA do movimento.
+    expect(rejectionCopy({ last_rejection_reason: 'regime_rejected', last_rejection_detail: 'adx' }).detail)
+      .toMatch(/fraco|for[çc]a/i);
+    expect(rejectionCopy({ last_rejection_reason: 'regime_rejected', last_rejection_detail: 'chop' }).detail)
+      .toMatch(/de lado|faixa/i);
+  });
+
+  it('detalhe desconhecido cai na frase-base completa, nunca em texto vazio', () => {
+    const copy = rejectionCopy({ last_rejection_reason: 'regime_rejected', last_rejection_detail: 'detalhe_do_futuro', signal_type: 'BUY' });
+    expect(copy.detail).toBe(rejectionCopy({ last_rejection_reason: 'regime_rejected', signal_type: 'BUY' }).detail);
+  });
+
   it('nenhum texto novo vaza jargão do motor', () => {
-    // \b para não casar dentro de palavra ("d-EMA-is" não é o indicador EMA).
-    const jargao = /Range Filter|\b(timeframe|ADX|Choppiness|SMC|MACD|EMA|RSI|ATR|candle|gate|minRR|OTE|retest|displacement)\b/i;
-    for (const key of Object.keys(REJECTION_COPY)) {
-      const { chip, detail } = rejectionCopy({ last_rejection_reason: key, signal_type: 'BUY' });
-      expect(`${chip} ${detail}`).not.toMatch(jargao);
+    // Borda de palavra que ENXERGA ACENTO. `\b` sozinho não serve: `\w` é só
+    // [A-Za-z0-9_], então `\batr\b` casa dentro de "voltar atrás" (o `á` conta
+    // como borda) e `\bema\b` casaria em "d-ema-is". Os dois já deram falso
+    // positivo aqui — a lista proíbe o NOME TÉCNICO do indicador, não pedaços
+    // de palavras comuns em português.
+    const LETRA = 'A-Za-z0-9_À-ÖØ-öø-ÿ';
+    const jargao = new RegExp(
+      `Range Filter|(?<![${LETRA}])(timeframe|ADX|Choppiness|SMC|MACD|EMA|RSI|ATR|candle|gate|minRR|OTE|retest|displacement)(?![${LETRA}])`,
+      'i',
+    );
+    for (const [key, entry] of Object.entries(REJECTION_COPY)) {
+      for (const detalhe of [undefined, ...Object.keys(entry.by ?? {})]) {
+        const { chip, detail } = rejectionCopy({ last_rejection_reason: key, last_rejection_detail: detalhe, signal_type: 'BUY' });
+        expect(`${chip} ${detail}`, `${key}/${detalhe}`).not.toMatch(jargao);
+      }
     }
   });
 
