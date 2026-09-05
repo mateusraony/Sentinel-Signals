@@ -19018,3 +19018,29 @@ Nenhuma linha de `scanner.js`/`entities.js`/`firestore.rules`/`server/`
 tocada. **Não verificado nesta sessão:** a aparência renderizada e um segundo
 teste com a persona sobre o card novo — o ciclo honesto seria repetir a fase 1
 sobre esta versão.
+
+### Addendum (2026-09-05) — o tripwire do item 155 tinha o mesmo tipo de buraco que ele existe para tampar
+
+Achado de review no PR #304, verificado e procedente: a primeira versão do
+tripwire varria o fonte com `/refetchInterval:\s*(\d[\d_]*)/` e comparava o
+número com o piso. Um regex não avalia expressão — `refetchInterval: 10 * 1000`
+ou uma constante nova `FAST_POLL_MS` **não produziriam match nenhum**, e o
+teste ficaria verde com o painel voltando a pesquisar a cada 10s. Um guarda que
+só reconhece a forma exata do incidente anterior não previne o próximo.
+
+Refeito como **allowlist**: o valor precisa ser o NOME de um export de
+`pollingIntervals.js` que esteja no piso ou acima. A lista é derivada dos
+próprios exports do módulo, então uma constante nova abaixo do piso também não
+entra. Literal, aritmética e identificador desconhecido falham por igual.
+
+Ao endurecer, o tripwire encontrou um caso que eu mesmo tinha deixado passar
+(`AssetCard.jsx`, literal `60000`) — e ele revelou uma segunda fragilidade: a
+isenção estava por **nome de arquivo** (`useLivePrice.js`), o que não cobre
+outras chamadas de mercado. O escopo passou a ser definido pelo que a query
+**lê**: só entra no tripwire o `useQuery` cujo corpo menciona
+`backend.entities` ou `rtdbEntities`. Cotação da Binance fica de fora por
+definição, sem lista de exceções para manter.
+
+Três metatestes provam a detecção em vez de afirmá-la: literal, aritmética e
+constante desconhecida são pegos; as constantes do módulo passam; um bloco que
+lê a Binance é ignorado.
