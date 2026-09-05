@@ -64,6 +64,41 @@ futuro) e — de quebra — a **cascata de confirmação 15m atrasada**
 (`check15mConfirmation` via o loop de retry de `persistScanResults`), que
 fecha a lacuna descrita abaixo.
 
+## Camada de tela — smoke test de renderização (item 166)
+
+`src/pages/pagesSmoke.test.jsx` monta TODA página em jsdom com os mesmos
+provedores de `App.jsx`, em **duas variantes: dados vazios e dados presentes**.
+Não é teste de comportamento — responde "renderiza sem explodir?".
+
+Antes dele a cobertura de `src/pages`/`src/components`/`src/hooks` era **0,0%**
+(63 arquivos, 2.439 linhas, zero executadas), e foi de lá que veio a página
+quebrada do item 157.
+
+**As duas variantes são obrigatórias.** Um teste de reintrodução provou que a
+variante vazia SOZINHA não pega a classe de bug do item 157: um componente que
+só renderiza quando há dados nunca é exercitado — o mesmo ponto cego que deixou
+o bug chegar em produção. Ao adicionar página nova, some-a a `PAGINAS`; ao
+adicionar entidade, some uma linha plausível a `LINHAS_EXEMPLO`
+(`src/pages/__fixtures__/renderPage.jsx`).
+
+O mock é de UM módulo (`@/api/entities`) — dividendo do adaptador. Página que
+importe Firestore direto quebra aqui, o que é a informação certa.
+
+## Verificação de guard: reintroduza o bug (item 166)
+
+**Todo tripwire/guard novo precisa provar que falha com o bug que ele deve
+pegar.** Nesta sessão a verificação achou buraco no guard recém-escrito duas
+vezes (o smoke test que não pegava; a catraca do typecheck que aprovava erro de
+sintaxe porque a contagem despencava). Guard não testado contra o próprio alvo
+é suposição com aparência de proteção.
+
+## Módulo que faz trabalho no carregamento é intestável (item 166)
+
+Já mordeu 3× neste projeto (itens 158, 164, 166). Em Node/ESM, ou a parte pura
+sai para um módulo próprio (`healthAuditFormat.mjs`, `failureClassification.mjs`),
+ou o corpo fica atrás de uma guarda de execução direta
+(`import.meta.url === pathToFileURL(process.argv[1]).href`).
+
 ## Lacunas restantes
 
 - **Cascata de entrada completa** (`check15mConfirmation`/

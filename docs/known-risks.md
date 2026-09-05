@@ -19795,3 +19795,114 @@ Mesmo quebrada, ela trouxe dado:
   do reset das 07:00 UTC**. Confirma pela terceira via (depois dos logs do
   backfill) que a cota vinha estourando até o último minuto do ciclo.
 - **Custo real: 13 leituras** — o orçamento de 520 era teto, não consumo.
+
+## 166. Fase 1 do pente fino — fechar os buracos de guard (2026-09-05)
+
+Segunda fase do pedido do item 164. A Fase 0 achou o que já estava quebrado;
+esta fecha as portas pelas quais os bugs desta sessão entraram.
+
+### Fato — a cobertura, medida pela primeira vez neste projeto
+
+`@vitest/coverage-v8` nunca tinha sido instalado. Primeira medição:
+
+| diretório | cobertura | linhas | arquivos | sem 1 linha coberta |
+|---|---|---|---|---|
+| `src/lib/indicators` | **98,7%** | 603 | 17 | 0 |
+| `src/lib` | **86,3%** | 2.856 | 33 | 7 |
+| `src/api` | 46,9% | 194 | 3 | 1 |
+| `scripts` | 33,4% | 2.173 | 39 | 25 |
+| `server` | 4,7% | 211 | 2 | 1 |
+| `src/components` | **0,0%** | 1.352 | 46 | **46** |
+| `src/pages` | **0,0%** | 1.014 | 13 | **13** |
+| `src/hooks` | **0,0%** | 73 | 4 | **4** |
+
+O motor está entre 86% e 99%. **A camada de tela estava em zero absoluto** —
+63 arquivos, 2.439 linhas, nenhuma linha jamais executada por um teste. É de
+lá que veio a página quebrada do item 157.
+
+Depois desta rodada: `src/pages` **54,5%**, `src/components` **32,5%**,
+`src/hooks` **19,2%**.
+
+### Entrega 1 — smoke test de renderização de toda página
+
+`src/pages/pagesSmoke.test.jsx` + `src/pages/__fixtures__/renderPage.jsx`.
+Responde uma pergunta só: **a página monta sem explodir?**
+
+O mock é de UM módulo — `@/api/entities`. É o dividendo do adaptador: se uma
+página furar a regra e importar Firestore direto, o teste dela quebra aqui, o
+que é a informação certa.
+
+**O achado que salvou o teste de ser inútil.** A primeira versão só usava dados
+vazios. Um teste de reintrodução (variável indefinida dentro de
+`MonitoringCard`, a classe exata do item 157) **passou verde**: aquele
+componente só renderiza quando existe sinal, então o caminho quebrado nunca era
+exercitado — *o mesmo ponto cego que deixou o bug chegar em produção, repetido
+com outra roupa.*
+
+Corrigido com duas variantes por página (vazio + com dados). Reintroduzindo o
+mesmo bug agora, **2 testes falham**. Medido, não suposto.
+
+As três escolhas de desenho:
+
+1. **Dados vazios** — o estado que mais quebra na vida real e que ninguém
+   testa à mão (todo `.map`, `[0]`, `.reduce`, divisão por `length`).
+2. **Dados presentes** — sem isso o teste não vale o que promete (acima).
+3. **Erro de console reprova** — o React engole erro de render e segue com um
+   `console.error`; sem essa trava, página meio quebrada passa verde.
+
+### Entrega 2 — catraca do typecheck no CI
+
+`scripts/typecheck-ratchet.mjs` + passo novo em `ci.yml`.
+
+**Não exige zero, de propósito.** O projeto é JSX com `checkJs` best-effort, e
+os 16 erros restantes são atrito de tipagem de biblioteca (`title` num ícone
+lucide, campo a mais num literal), não defeito de runtime. Exigir zero forçaria
+correções fora de escopo ou — muito pior — a tentação de desligar o check, que
+é exatamente como ele chegou aqui: zerado em 2026-08-13, de volta a 16 sem
+ninguém ver, e o `CLAUDE.md` ainda afirmando "0 erros desde 2026-08-13".
+
+A catraca aceita o passivo e **impede que cresça**. Mesmo espírito do `no-undef`
+do item 157: o guard não precisa ser perfeito, precisa existir e não ter buraco.
+
+**E ela tinha um buraco, achado ao testá-la.** Um erro de SINTAXE faz o `tsc`
+abortar a análise e reportar **1 erro em vez de 17** — a contagem despenca e a
+catraca aprovaria um projeto que não compila. Uma catraca que só olha o número
+tem precisamente o defeito que ela existe para prevenir. Corrigido: qualquer
+`TS1xxx` reprova, independente do teto. Travado em
+`scripts/typecheckRatchet.test.js`.
+
+### A disciplina que virou padrão nesta sessão
+
+**Todo guard novo é verificado reintroduzindo o bug que ele deve pegar.** Foi
+assim nos itens 157, 162, 165 e agora aqui — e nas duas vezes desta rodada a
+verificação achou um buraco no guard recém-escrito (o smoke test que não pegava,
+a catraca que aprovava sintaxe quebrada). Um guard não testado contra o próprio
+alvo é uma suposição com aparência de proteção.
+
+### Terceira vez na MESMA armadilha de acoplamento
+
+`typecheck-ratchet.mjs` executava o script inteiro no import — o teste morria
+com "no tests" antes de rodar. É o item 158 de novo (importar `rtdb` de
+`adminEntities.js` puxou o `initializeApp()` e derrubou 17 testes) e o item 164
+de novo (a parte pura da auditoria teve de sair para um módulo separado).
+
+Registrado aqui como padrão a reconhecer: **em Node/ESM, um módulo que faz
+trabalho no carregamento é intestável.** Ou a parte pura sai para um módulo
+próprio, ou o corpo fica atrás de uma guarda de execução direta
+(`import.meta.url === pathToFileURL(process.argv[1]).href`).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet` verdes
+— **1540 testes** (57 novos). `coverage/` no `.gitignore`.
+
+Dependências novas, todas `devDependencies`: `@vitest/coverage-v8@4.1.10`
+(casada com o vitest 4 — a resolução automática puxava a v5 e exigia
+`--legacy-peer-deps`, que de quebra removia `date-fns` do lockfile), `jsdom`,
+`@testing-library/react`, `@testing-library/jest-dom`.
+
+### Fases seguintes
+
+- **Fase 2** — varredura pelas 3 famílias de bug (item 164) no repo inteiro.
+- **Fase 3** — motor, adversarial, com `sentinel-council-review` e
+  `sentinel-state-machine-test` sobre os P0 documentados.
