@@ -12,6 +12,8 @@ import PortfolioVsMarket from '@/components/trades/PortfolioVsMarket';
 import PerformanceReport from '@/components/trades/PerformanceReport';
 import { describeProximity, formatPrice, formatSignedPct } from '@/lib/priceProximity';
 import { classifySignal, phaseCopy, rejectionCopy, formatTimeLeft, SIGNAL_PHASE } from '@/lib/signalStatus';
+import { signalTimeline, opTimeline, closedReasonLabel } from '@/lib/eventTimeline';
+import { EventTimeline, fmtBRT } from '@/components/dashboard/EventTimeline';
 import { useLivePrice } from '@/hooks/useLivePrice';
 import moment from 'moment';
 import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
@@ -179,22 +181,37 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
     return (
       <div className="rounded-xl px-3 py-2.5 flex items-start gap-2"
         style={{ background: 'rgba(12,15,26,0.5)', border: '1px solid rgba(255,255,255,0.05)', borderLeft: `3px solid ${copy.color}` }}>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.6)' }}>
               {signal.symbol?.replace('USDT', '/USDT')}
             </span>
             <span className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>
-              {isBuy ? 'alta' : 'baixa'} · {moment(signal.created_date).fromNow()}
+              {isBuy ? 'alta' : 'baixa'}
             </span>
             <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
               style={{ background: `${copy.color}1a`, color: copy.color, border: `1px solid ${copy.color}40` }}>
               {copy.icon} {copy.badge}
             </span>
           </div>
-          <p className="text-[10px] font-mono leading-relaxed mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>
+
+          <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.4)' }}>
             {copy.reassurance}
           </p>
+
+          {/* O QUE O SISTEMA NÃO GOSTOU. Antes o card expirado só dizia que
+              nada foi aberto e engolia o motivo — que estava ali, em
+              last_rejection_reason. Pedido do usuário, item 161. */}
+          <div className="rounded-lg px-2 py-1.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="text-[9px] font-mono font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>
+              {reason.icon} O que travou: {reason.chip}
+            </div>
+            <p className="text-[9px] font-mono leading-relaxed mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              {reason.detail}
+            </p>
+          </div>
+
+          <EventTimeline events={signalTimeline(signal)} title={null} />
         </div>
         <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
           title="Tirar este aviso da lista"
@@ -217,6 +234,11 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
           <div className="font-bold text-sm text-foreground truncate">{signal.symbol?.replace('USDT', '/USDT')}</div>
           <div className="text-[10px] font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
             {isBuy ? 'Aviso de alta (compra)' : 'Aviso de baixa (venda)'} · {moment(signal.created_date).fromNow()}
+          </div>
+          {/* Horário absoluto ao lado do relativo: "há 2 horas" não serve
+              para conferir nada depois (item 161). */}
+          <div className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.28)' }}>
+            apareceu {fmtBRT(signal.created_date)} BRT
           </div>
         </div>
         <span className="text-[10px] font-mono px-2 py-0.5 rounded shrink-0 font-semibold"
@@ -289,6 +311,7 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
           <div className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
             Gráfico de {signal.timeframe?.toUpperCase()}
           </div>
+          <EventTimeline events={signalTimeline(signal)} />
           <ScoreBar score={signal.context?.score || 0} />
           {signal.reason && (
             <p className="text-[9px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.35)' }}>
@@ -315,6 +338,9 @@ function HistoryRow({ op }) {
     CLOSED:      { label: '✗ Enc.', color: '#64748b' },
   };
   const s = STATUS_MAP[op.status] || { label: op.status, color: '#64748b' };
+  const eventos = opTimeline(op);
+  const fechamento = eventos.length > 1 ? eventos[eventos.length - 1] : null;
+  const motivo = closedReasonLabel(op);
 
   return (
     <div className="rounded-xl px-4 py-2.5 flex items-center gap-3 transition-opacity"
@@ -333,7 +359,13 @@ function HistoryRow({ op }) {
           </span>
         )}
         <span className="text-[9px] font-mono font-semibold" style={{ color: s.color }}>{s.label}</span>
-        <span className="text-[9px] font-mono text-muted-foreground hidden sm:block">{moment(op.created_date).format('DD/MM HH:mm')}</span>
+        {/* Aberta -> fechada, ambos absolutos, com o motivo quando existe.
+            Antes só havia a data de criação (item 161). */}
+        <span className="text-[9px] font-mono text-muted-foreground hidden sm:block text-right leading-tight"
+          title={motivo ? `Encerrada por: ${motivo}` : undefined}>
+          {fmtBRT(op.created_date)}
+          {fechamento ? <><br />→ {fmtBRT(fechamento.at)}{motivo ? ` (${motivo})` : ''}</> : null}
+        </span>
       </div>
     </div>
   );

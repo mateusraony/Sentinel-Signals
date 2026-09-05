@@ -11,6 +11,7 @@ import {
 import { formatBackfillLag } from '@/lib/backfillDetection';
 import { formatPrice } from '@/lib/priceProximity';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
+import { CandleBoundTag, DetectionLag } from '@/components/dashboard/EventTimeline';
 
 // Planned risk/reward of the setup — always against the INITIAL stop. The old
 // version divided by current_stop, which post-TP1 is already breakeven and
@@ -29,33 +30,6 @@ function calcRR(op) {
 // cron latency doesn't clutter every row. A large gap here is itself a
 // diagnostic signal (docs/known-risks.md item 106 — Firestore quota outage,
 // or any other cron gap, makes this jump).
-// Codex review (PR #213): stop_hit_real_time/tp1_hit_real_time/
-// tp2_hit_real_time are the CLOSE of the candle whose high/low confirmed
-// an intrabar touch — an upper bound on the real cross, not the exact
-// instant (only OHLC is available, no tick data within the candle). Tag
-// makes that explicit instead of implying tick-level precision.
-function CandleBoundTag() {
-  return (
-    <span className="text-[8px] text-muted-foreground/50" title="Fechamento da vela que confirmou o toque — cota máxima; o cruzamento real do nível pode ter sido antes, dentro da mesma vela (só há dado OHLC, sem tick intrabar)">
-      {' '}(vela)
-    </span>
-  );
-}
-
-const LAG_THRESHOLD_MS = 20 * 60 * 1000;
-function DetectionLag({ realTime, detectedAt }) {
-  if (!realTime || !detectedAt) return null;
-  const gapMs = new Date(detectedAt).getTime() - new Date(realTime).getTime();
-  if (!Number.isFinite(gapMs) || gapMs < LAG_THRESHOLD_MS) return null;
-  const hours = gapMs / 3_600_000;
-  const label = hours >= 1 ? `${hours.toFixed(1)}h` : `${Math.round(gapMs / 60_000)}min`;
-  return (
-    <span className="text-[8px] text-amber-500/80" title="Diferença entre o fechamento real do candle e quando o scan detectou/gravou">
-      {' '}(detectado {label} depois)
-    </span>
-  );
-}
-
 const STATUS_MAP = {
   TP2_HIT:     { label: '🏆 TP2 Atingido',    color: '#00ff80', short: 'TP2' },
   STOP_HIT:    { label: '🛑 Stop',             color: '#ff1478', short: 'STOP' },
