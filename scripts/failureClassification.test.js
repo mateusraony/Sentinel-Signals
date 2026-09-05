@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   classifyFailure, describeStep, formatStepDuration,
-  isFirestoreQuotaExhausted, parseStepTimeout,
+  isFirestoreQuotaExhausted, isMissingIndex, parseStepTimeout,
 } from './failureClassification.mjs';
 
 // A mensagem EXATA que chegou no Telegram do usuário em 2026-09-05, com a
@@ -88,5 +88,26 @@ describe('formatStepDuration', () => {
     expect(formatStepDuration(90_000)).toBe('1.5min');
     expect(formatStepDuration(300_000)).toBe('5min');
     expect(formatStepDuration(null)).toBeNull();
+  });
+});
+
+describe('isMissingIndex (item 165)', () => {
+  // A mensagem REAL que a auditoria devolveu na primeira execução em produção.
+  const REAL = '9 FAILED_PRECONDITION: The query requires an index. You can create it here: '
+    + 'https://console.firebase.google.com/v1/r/project/sentinel-signals/firestore/indexes?create_composite=Cl';
+
+  it('reconhece índice composto faltando', () => {
+    expect(isMissingIndex(REAL)).toBe(true);
+    expect(classifyFailure(REAL).kind).toBe('missing_index');
+  });
+
+  it('NÃO confunde índice faltando com cota esgotada — foi esse chute que motivou o item', () => {
+    expect(isFirestoreQuotaExhausted(REAL)).toBe(false);
+    expect(isMissingIndex('8 RESOURCE_EXHAUSTED: Quota exceeded.')).toBe(false);
+    expect(classifyFailure('8 RESOURCE_EXHAUSTED: Quota exceeded.').kind).toBe('quota');
+  });
+
+  it('timeout continua vencendo índice — a etapa travada é a informação mais útil', () => {
+    expect(classifyFailure('Timeout: scanAllAssets não retornou em 90000ms').kind).toBe('timeout');
   });
 });

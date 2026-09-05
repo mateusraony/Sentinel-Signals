@@ -35,6 +35,18 @@ const REAL_QUOTA_RE = /Quota exceeded|\b\d+\s+RESOURCE_EXHAUSTED\b/i;
 /** A frase de hipótese que `scanTimeout.mjs` anexa — removida antes de testar. */
 const HYPOTHESIS_RE = /—\s*prov[áa]vel travamento em retry de[\s\S]*$/i;
 
+/**
+ * Índice composto faltando no Firestore.
+ *
+ * Adicionado no item 165 depois de a auditoria de saúde (164) falhar 3 de 5
+ * checagens com isto — e a mensagem genérica de erro dela CHUTAR que a causa
+ * era cota, que é exatamente o bug que o item 162 acabara de corrigir noutro
+ * lugar. Não é falha de dado nem de cota: é uma consulta que combina filtro
+ * com ordenação em campo diferente sem o índice correspondente. Só aparece
+ * contra o banco real.
+ */
+const MISSING_INDEX_RE = /requires an index|FAILED_PRECONDITION/i;
+
 /** O formato da mensagem de timeout, de onde sai o nome da etapa travada. */
 const TIMEOUT_RE = /^Timeout:\s*(.+?)\s+n[ãa]o retornou em\s*(\d+)\s*ms/i;
 
@@ -65,10 +77,20 @@ export function isFirestoreQuotaExhausted(message) {
   return REAL_QUOTA_RE.test(text(message).replace(HYPOTHESIS_RE, ''));
 }
 
+/** Consulta sem o índice composto que ela exige? */
+export function isMissingIndex(message) {
+  return MISSING_INDEX_RE.test(text(message));
+}
+
 /**
  * Classifica a falha para o alerta saber o que dizer.
  *
- * @returns {{ kind: 'quota'|'timeout'|'other', step: string|null, ms: number|null }}
+ * `missing_index` é lido hoje só pela auditoria de saúde (item 165). Os pontos
+ * de entrada do scan não agem sobre ele de propósito: as consultas deles são
+ * todas cobertas por `firestore.indexes.json`, então um índice faltando ali
+ * seria bug de deploy, não condição de runtime a alertar.
+ *
+ * @returns {{ kind: 'quota'|'timeout'|'missing_index'|'other', step: string|null, ms: number|null }}
  */
 export function classifyFailure(message) {
   // Cota real vence: um timeout CAUSADO por cota traz a assinatura de
@@ -78,6 +100,7 @@ export function classifyFailure(message) {
   }
   const timeout = parseStepTimeout(message);
   if (timeout) return { kind: 'timeout', step: timeout.step, ms: timeout.ms };
+  if (isMissingIndex(message)) return { kind: 'missing_index', step: null, ms: null };
   return { kind: 'other', step: null, ms: null };
 }
 

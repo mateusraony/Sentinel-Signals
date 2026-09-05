@@ -19700,3 +19700,98 @@ afirmava mais do que sabia. O alvo é outro e é atingível: **nada falha em
 silêncio** e **cada família de bug já vista tem um guard testado contra ela**.
 Isso não impede o bug novo — impede o bug repetido e o bug invisível, que foram
 os dois caros aqui.
+
+## 165. A auditoria caiu na própria armadilha que ela existe para caçar (2026-09-05)
+
+Primeira execução em produção do item 164. **3 das 5 checagens falharam:**
+
+```
+9 FAILED_PRECONDITION: The query requires an index.
+```
+
+### Causa raiz — filtro + ordenação em campos diferentes
+
+`SystemLog.filter({ level: 'error' }, '-created_date', 200)` combina um filtro
+de igualdade (`level`) com ordenação por OUTRO campo (`created_date`). O
+Firestore exige **índice composto** para isso. Mesmo problema em
+`filter({ level: 'warn' })` e `filter({ timeframe: '4h' })`.
+
+Só aparece contra o banco real: nenhuma sessão de desenvolvimento tem
+credencial do Firestore, e o teste unitário exercita a formatação, não a
+consulta. É por isso que a Fase 0 é a fase que acha bug de verdade.
+
+### O defeito PIOR — a mensagem de erro chutou a causa
+
+O `catch` genérico da auditoria dizia:
+
+> *"Isto é informação, não um bug do relatório: se a leitura falhou com
+> `Quota exceeded`, a resposta da auditoria é justamente essa."*
+
+A falha não tinha nada a ver com cota. **É exatamente a família do item 162** —
+afirmar a causa provável em vez de reportar o observado — reaparecendo, no
+mesmo dia, no código escrito para caçá-la. Registrado aqui sem atenuação: a
+família "guard com buraco" inclui o guard que eu mesmo acabo de escrever.
+
+### Correção — sem índice novo, por três razões
+
+A correção **não** foi criar os índices compostos:
+
+1. Seria um índice novo em `systemLogs`, a coleção mais escrita do projeto.
+2. `firestore.indexes.json` só entra em produção por **deploy manual** — o
+   diagnóstico passaria a depender de um passo que o usuário precisa lembrar
+   de fazer, que é a classe de problema que este item existe para resolver.
+3. Não era necessário: ordenar só por `created_date` é servido pelo índice
+   automático de campo único.
+
+Então: `list('-created_date', N)` + filtro **em memória**. Erros e avisos
+passaram a sair de **uma** leitura em vez de duas — mais barato que a versão
+que falhava.
+
+| | Antes | Depois |
+|---|---|---|
+| Consultas | 4 (2 exigiam índice) | 3, nenhuma exige índice |
+| Orçamento | 520 documentos | 570 documentos |
+| Funcionava? | 2 de 5 seções | todas |
+
+### O guard, não o sintoma
+
+`scripts/healthAuditQueryTripwire.test.js` trava a FORMA: nenhuma consulta da
+auditoria pode usar `.filter(`, toda leitura precisa de teto explícito, e o
+orçamento declarado no comentário tem de bater com a soma dos tetos reais.
+**Verificado empiricamente**: reintroduzindo a consulta exata que quebrou, o
+tripwire falha; revertendo, passa.
+
+`failureClassification.mjs` — o único lugar autorizado a dizer o que é uma
+falha (item 162) — aprendeu `missing_index`, com teste usando a mensagem real
+do incidente. A mensagem do `catch` agora nomeia o que foi observado e explica
+cada caso sem supor nenhum.
+
+### Agendamento e aviso (pedido do usuário)
+
+> *"Deixa programado de alguma forma pra rodar de madrugada, porque não
+> consigo fazer isso."*
+
+`schedule: "40 4 * * *"` — **04:40 UTC (01:40 em Brasília)**, que é quando as
+duas falhas reais de cota aconteceram, ~21h30 dentro do ciclo diário. Não é
+horário arbitrário: é o único em que o teste discrimina.
+
+E o relatório passou a **avisar no Telegram quando acha algo** — porque uma
+auditoria agendada que só escreve num Job Summary tem exatamente o defeito que
+ela existe para corrigir: ninguém lê.
+
+**Passada limpa é silenciosa, de propósito.** Um "está tudo bem" diário treina
+o hábito de ignorar o aviso, que é como o alerta de cota perdeu o significado
+nos itens 158/160. O aviso dispara só em: episódio de cota aberto, cota que
+estourou nas últimas 24h (mesmo já normalizada — episódio fechado não é dia
+limpo), erro em 3+ ativos ao mesmo tempo, operação presa há mais de 21 dias,
+transições descartadas pelo CAS, ou uma checagem que não pôde ser lida.
+
+### O que a primeira execução já mostrou
+
+Mesmo quebrada, ela trouxe dado:
+
+- **13 operações, 1 ativa, nenhuma presa** — a seção que funcionou está limpa.
+- **Último alerta de cota: 2026-09-05T06:57:02Z**, ou seja **~3 minutos antes
+  do reset das 07:00 UTC**. Confirma pela terceira via (depois dos logs do
+  backfill) que a cota vinha estourando até o último minuto do ciclo.
+- **Custo real: 13 leituras** — o orçamento de 520 era teto, não consumo.

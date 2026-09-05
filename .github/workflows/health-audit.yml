@@ -1,26 +1,32 @@
 name: Diagnóstico — auditoria de saúde
 
-# Disparo MANUAL só. Não é o relógio de trading (scan.yml) nem a checagem
-# retroativa (backfill.yml) — é uma leitura pontual e limitada do Firestore
-# real (scripts/health-audit.mjs) que responde "o que está falhando e ninguém
-# viu?". Ver docs/known-risks.md item 164.
-#
-# Por que MANUAL e não agendado, por enquanto: um alerta automático precisa de
-# um limiar, e ainda não existe uma linha de base do que é "normal" aqui. Foi
-# justamente inverter essa ordem que produziu o spam do item 158 e o alarme
-# falso do item 162. Primeiro medimos algumas vezes; agendar (e avisar no
-# Telegram quando passar do limiar) é o passo seguinte, com dado na mão.
-#
-# ⏰ QUANDO RODAR IMPORTA. A cota do Firestore é DIÁRIA e zera ~07:00 UTC.
-# Rodar logo depois do reset dirá "tudo bem" mesmo num dia em que a cota
-# estoure de madrugada — foi exatamente assim que as falhas reais de 04/09 e
-# 05/09 (04:36-04:43 UTC) passaram despercebidas por dois dias. Para o teste
-# que DISCRIMINA, rode entre 03:00 e 06:00 UTC (00:00-03:00 em Brasília).
+# Responde "o que está falhando e ninguém viu?" (docs/known-risks.md 164/165):
+# erros e avisos agrupados, operações presas, funil de entrada e o estado do
+# episódio de cota. Leitura pura — não é o relógio de trading (scan.yml) nem a
+# checagem retroativa (backfill.yml), e o job FALHA se o script escrever
+# qualquer coisa no Firestore.
 on:
+  # ⏰ 04:40 UTC = 01:40 em Brasília. Este horário NÃO é arbitrário: é quando as
+  # duas falhas reais de cota aconteceram (04/09 04:43 e 05/09 04:36 UTC). A
+  # cota é diária e zera ~07:00 UTC, então 04:40 é ~21h30 dentro do ciclo — o
+  # fim do dia de cota, onde o problema aparece. Rodar de manhã diria "tudo
+  # bem" mesmo num dia em que a cota estourou de madrugada, que foi exatamente
+  # como isso passou dois dias despercebido.
+  #
+  # Ressalva conhecida: o `schedule:` do GitHub Actions atrasa sob carga e é
+  # desativado após ~60 dias sem push no repo (known-risks 12/18/134). Para um
+  # diagnóstico diário isso é aceitável — um atraso de minutos não muda o
+  # veredito, e o disparo manual continua disponível.
+  schedule:
+    - cron: "40 4 * * *"
   workflow_dispatch: {}
 
 permissions:
   contents: read
+
+concurrency:
+  group: health-audit
+  cancel-in-progress: false
 
 jobs:
   audit:
@@ -36,8 +42,13 @@ jobs:
 
       - run: npm ci
 
-      - name: Auditar saúde (read-only, teto de 520 documentos)
+      # O script avisa no Telegram por conta própria, e SÓ quando acha algo —
+      # um aviso diário de "está tudo bem" treina o hábito de ignorar o aviso.
+      # Por isso os secrets do Telegram entram aqui.
+      - name: Auditar saúde (read-only, teto de 570 documentos)
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node scripts/health-audit.mjs | tee -a "$GITHUB_STEP_SUMMARY"
