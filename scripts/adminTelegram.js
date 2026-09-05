@@ -541,6 +541,28 @@ export async function notifyStepTimeout(step, ms) {
   return delivered;
 }
 
+/**
+ * Resultado da auditoria de saúde (item 165) — só quando há o que dizer.
+ *
+ * Sem dedup nem cooldown de propósito: a auditoria roda 1×/dia e já decide
+ * sozinha se cala. Um segundo mecanismo de silêncio em cima disso é como se
+ * perde um aviso real — foi o que aconteceu no item 158, onde o dedup vivia
+ * no lugar que caía junto com o problema.
+ *
+ * Nunca lança: a auditoria não pode falhar por causa do aviso sobre ela.
+ */
+export async function notifyHealthAudit(titulo, linhas, url) {
+  const corpo = linhas.map((l) => `• ${l}`).join('\n');
+  return send(
+    `🩺 <b>${titulo}</b>\n\n${corpo}\n\n`
+    + (url ? `<a href="${url}">Ver o relatório completo</a>\n\n` : '')
+    + `<i>⚡ CryptoRadar — auditoria diária. Silêncio aqui significa que ela rodou e não achou nada.</i>`
+  ).catch((e) => {
+    console.warn('[adminTelegram] Falha ao notificar auditoria (não crítico):', e.message);
+    return false;
+  });
+}
+
 export async function notifyStopHit(op, price) {
   if (!(await shouldSend('stop_hit', op))) return;
   const beMsg = op.tp1_hit ? '(breakeven — sem prejuízo)' : '(stop inicial)';
