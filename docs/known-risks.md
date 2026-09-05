@@ -19110,3 +19110,72 @@ minutos depois do merge. Isso **não** contradiz a correção do item 155: a cot
 do Firestore é diária e já estava gasta naquele dia; o reset é ~07:00 UTC. A
 correção também é do lado do navegador — não muda o consumo do scan em si. A
 avaliação honesta exige **um dia inteiro após o deploy**.
+
+---
+
+## 158. O dedup do alerta de cota morava dentro da coisa que fica indisponível (2026-09-05)
+
+**Reportado pelo usuário:** *"E ainda estou recebendo mensagem no telegram de
+erro"* — depois do deploy do item 155.
+
+### Fato — duas coisas diferentes estavam misturadas
+
+**(a) O scan ainda falha, e nisso não há novidade.** Log real do run 15121
+(2026-09-05 01:25 UTC): mesmo `Timeout: scanAllAssets… RESOURCE_EXHAUSTED`. A
+cota do Firestore é **diária, com reset ~07:00 UTC**; o deploy do item 155
+entrou 01:15 UTC, ou seja, ~18h dentro de um dia cuja cota já estava gasta. A
+correção age no **navegador** — não muda o consumo do próprio scan. Avaliar o
+item 155 antes do primeiro dia completo pós-deploy não é possível.
+
+**(b) A frequência do alerta é um bug próprio, e esse dá para consertar já.**
+`notifyFirestoreQuotaExhausted` guardava o marcador de dedup em
+`systemAlerts/firestoreQuota` **no Firestore**:
+
+```js
+try {
+  const snap = await withTimeout(ref.get(), ...);   // ← leitura do Firestore
+  shouldAlert = !lastAt || Date.now() - lastAt > QUOTA_ALERT_COOLDOWN_MS;
+} catch (e) {
+  console.warn('… alertando mesmo assim:', e.message);   // ← shouldAlert continua true
+}
+```
+
+Quando a cota estoura, o `get()` falha → `catch` → alerta assim mesmo; e o
+`set()` do marcador falha pelo mesmo motivo → o marcador **nunca é gravado**.
+O cooldown de 1 hora existia e **nunca era aplicado**: o usuário recebia um
+alerta a cada passada do scan, ~5 em 5 minutos, indefinidamente.
+
+O dedup que existe para evitar spam de alerta de cota estava, por construção,
+desligado exatamente durante a falta de cota.
+
+### Correção
+
+O marcador passou para o **RTDB** — mesmo projeto Firebase, já configurado
+(`FIREBASE_DATABASE_URL`), cobrado por banda/mês e **sem teto diário de
+operações**, então continua legível justamente durante a queda do Firestore.
+Sem RTDB configurado, o caminho anterior no Firestore segue valendo.
+
+Acesso ao `getDatabase()` é **preguiçoso**, dentro da função. A primeira
+tentativa foi importar `rtdb` de `scripts/adminEntities.js`, o que puxou o
+`initializeApp()` daquele módulo para o carregamento de `adminTelegram.js` e
+quebrou os 17 testes existentes com `SyntaxError: "undefined" is not valid
+JSON` — um módulo de notificação não pode depender do bootstrap inteiro do
+admin.
+
+`shouldAlertQuota(lastAt, now, cooldown)` foi extraída como função pura e
+testável. Marcador ilegível continua alertando de propósito: perder o
+**primeiro** aviso de uma queda real é pior que um alerta a mais. O que
+conserta o spam não é fechar essa porta — é o marcador ter passado a ser
+legível durante a queda.
+
+### Verificação
+
+6 testes novos em `scripts/adminTelegramQuotaDedup.test.js`, incluindo a
+regressão que reproduz o incidente: **com toda chamada ao Firestore falhando**,
+a primeira passada alerta e grava o marcador no RTDB; a segunda lê o marcador e
+**não** realerta (`fetch` chamado 1 vez, não 2). Outro teste garante que o
+marcador nunca toca o Firestore quando há RTDB.
+
+`npm run lint && npm test && npm run build` verdes (1405 testes). `systemAlerts`
+declarado em `database.rules.json` (o Admin SDK ignora rules, mas o arquivo é a
+documentação do que existe no banco).
