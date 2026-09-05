@@ -19243,16 +19243,61 @@ são consistentes com "o dia de cota acabou de começar". O padrão histórico d
 falha é exatamente esse: o dia começa bem e a cota estoura horas depois, à
 medida que o painel é usado.
 
-O teste que **discrimina** as duas hipóteses é a mesma medição feita
-**tarde no dia de cota** (~12-18h após o reset, que é quando as falhas vinham
-acontecendo), e idealmente com o usuário tendo usado o painel no meio.
-Comparar com o mesmo horário de dias anteriores seria o ideal, mas paginar o
-histórico do Actions até lá é caro demais para o valor.
+O teste que **discrimina** as duas hipóteses é a mesma medição feita tarde no
+dia de cota, e idealmente com o usuário tendo usado o painel no meio.
 
 **Conclusão honesta:** encorajador, não conclusivo. Checagem discriminante
 agendada. Se falhar de novo tarde no dia, o diagnóstico do item 155 estava
 incompleto e a rodada 2 do espelho RTDB volta à mesa — e aí com a
 instrumentação do item 155 para decidir por número.
+
+### Addendum (2026-09-05 19:30 UTC) — a janela discriminante estava errada, e agora tem número
+
+A ressalva acima estimou a janela de falha em **"~12-18h após o reset"**. Isso
+foi escrito antes de a Fase 0 (item 164) localizar as falhas reais. **A
+estimativa estava errada**, e a checagem agendada para 19:30 UTC (12h30 dentro
+do dia de cota) foi disparada em cima dela — ou seja, mediu a hora errada.
+
+Medição do `backfill.yml`, que roda ~1x/hora e por isso cobre o dia inteiro
+barato (16 runs, `#19`–`#34`, 2026-09-03 a 09-05). Horas contadas a partir do
+reset de ~07:00 UTC:
+
+| Dia de cota | 2-5h | 7-9h | 11-12h | 14-15h | 17h | **21h30** |
+|---|---|---|---|---|---|---|
+| 03/09 → 04/09 | ✅ 11:21 | ✅ 15:03 | ✅ 18:43 | ✅ 21:44 | ✅ 00:08 | ❌ **04:40** |
+| 04/09 → 05/09 | ✅ 09:42 | ✅ 14:23 | ✅ 18:28 | ✅ 21:32 | ✅ 00:09 | ❌ **04:36** |
+| 05/09 → 06/09 | ✅ 09:07 | ✅ 12:46 | ✅ 16:06 | ✅ 18:21 | *(pendente)* | *(pendente)* |
+
+**Duas falhas em 16 runs, e as duas na mesma hora**: ~21h30 dentro do ciclo,
+nas últimas ~2h antes do reset. Todo o resto do dia é verde — inclusive 17h
+dentro do ciclo, nos DOIS dias que depois falharam.
+
+O que isso prova sobre a medição de hoje: **nada**. A passada verde de hoje às
+18:21 (11h21 no ciclo) é indistinguível das passadas verdes de 04/09 às 18:28
+(11h28) e de 03/09 às 18:43 (11h43) — os dois dias que estouraram a cota
+depois. Uma medição feita numa hora em que os dias de falha também estavam
+verdes não separa hipótese nenhuma, por construção.
+
+**É a mesma armadilha do item 164, de novo, num lugar novo**: verificar no
+horário conveniente e ler o verde como prova. Lá foram três rodadas de
+verificação matinal; aqui foi uma janela estimada de cabeça, sem dado, e
+escrita na própria ressalva que existia para evitar o erro.
+
+### O que realmente vai decidir, e quando
+
+A correção do item 155 é do lado do navegador e entrou às **01:15 UTC de
+05/09** — 18h dentro de um dia de cota já gasto. O dia iniciado às ~07:00 UTC
+de 05/09 é, portanto, **o primeiro dia inteiro sob a correção**, exatamente o
+que o item 157 já exigia ("a avaliação honesta exige um dia inteiro após o
+deploy").
+
+O veredito cai na virada de 05→06/09, por volta das **04:36 UTC** — e é
+justamente ali que `health-audit.yml` passou a rodar sozinha (04:40 UTC, item
+165). O horário da auditoria foi escolhido a partir dessas mesmas duas falhas;
+a convergência não é coincidência, é o instrumento tendo sido apontado para o
+lugar certo antes de a pergunta ser feita.
+
+**Status: continua ABERTO, sem evidência nova a favor nem contra.**
 
 ---
 
