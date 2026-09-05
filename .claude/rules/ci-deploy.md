@@ -100,9 +100,13 @@ paths:
   diário que zera às ~07:00 UTC. Rodar de manhã diria "tudo bem" mesmo num dia
   em que a cota estourou de madrugada, que foi como isso passou dois dias
   despercebido.
-  **Nenhuma consulta dela pode exigir índice composto** (item 165): use
-  `list('-created_date', N)` e filtre em memória, nunca `filter(...)` com
-  `sort` — travado por `scripts/healthAuditQueryTripwire.test.js`.
+  **Nenhuma consulta dela pode exigir índice composto** (itens 165/167):
+  ordenação SEM filtro (`list('-created_date', N)`) ou igualdade SEM ordenação
+  (`filter({campo}, undefined, N)`) — nunca as duas juntas. Ela lê os erros
+  **duas vezes de propósito**: a janela recente responde "o que acontece
+  agora", e a amostra por nível impede que um erro da madrugada seja expulso
+  por log rotineiro (~2.000 `info`/dia contra uma janela de 300). Travado por
+  `scripts/healthAuditQueryTripwire.test.js`.
 - `golden-fixture.yml` — congela candles reais da Binance Spot como fixture
   dos golden tests de paridade (`src/lib/indicators/goldenParity.test.js`,
   `.claude/rules/pine-parity.md`) — roda no runner do GitHub porque a rede das

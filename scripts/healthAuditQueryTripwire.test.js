@@ -21,19 +21,44 @@ import { dirname, join } from 'node:path';
 const SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'health-audit.mjs'), 'utf8');
 
 describe('consultas da auditoria de saúde', () => {
-  it('nunca usa .filter() — só .list(), que dispensa índice composto', () => {
-    const filtros = SRC.match(/backend\.entities\.\w+\.filter\(/g) ?? [];
-    expect(filtros, `use .list('-created_date', N) e filtre em memória: ${filtros.join(', ')}`).toEqual([]);
+  // A regra real não é "sem filter" — é "sem consulta que exija índice
+  // COMPOSTO". Duas formas são seguras e ambas são usadas hoje:
+  //   list('-created_date', N)          → ordenação sem filtro
+  //   filter({campo}, undefined, N)     → igualdade sem ordenação
+  // O que exige índice composto é filtro + ordenação em campo diferente.
+  it('nenhuma consulta combina filtro COM ordenação', () => {
+    const filtrosComSort = SRC.match(/backend\.entities\.\w+\.filter\([^)]*,\s*'[^']+'/g) ?? [];
+    expect(
+      filtrosComSort,
+      `filtro + ordenação exige índice composto — foi o que quebrou em produção: ${filtrosComSort.join(', ')}`,
+    ).toEqual([]);
   });
 
-  it('toda leitura de coleção passa por .list() com teto explícito', () => {
-    const leituras = SRC.match(/backend\.entities\.\w+\.list\([^)]*\)/g) ?? [];
+  it('todo filtro passa `undefined` no lugar da ordenação, explicitamente', () => {
+    const filtros = SRC.match(/backend\.entities\.\w+\.filter\([^)]*\)/g) ?? [];
+    for (const f of filtros) {
+      expect(f, `${f}: passe undefined como 2º argumento para deixar claro que não há ordenação`)
+        .toMatch(/,\s*undefined\s*,/);
+    }
+  });
+
+  it('toda leitura de coleção tem teto explícito', () => {
+    const leituras = SRC.match(/backend\.entities\.\w+\.(list|filter)\([^)]*\)/g) ?? [];
     expect(leituras.length).toBeGreaterThan(0);
     for (const leitura of leituras) {
-      // Sem limite, .list() varre a coleção inteira — o oposto do contrato de
-      // uma auditoria que existe para diagnosticar falta de cota.
+      // Sem limite, a consulta varre a coleção inteira — o oposto do contrato
+      // de uma auditoria que existe para diagnosticar falta de cota.
       expect(leitura, `${leitura} não passa um teto de leitura`).toMatch(/,\s*LIMITE_\w+\s*\)/);
     }
+  });
+
+  // Achado do Codex (PR #311): a janela por recência sozinha deixa um erro da
+  // madrugada ser expulso por log rotineiro, e a auditoria roda 1×/dia.
+  it('lê erros por NÍVEL, não só pela janela de recência', () => {
+    expect(
+      SRC,
+      'sem a amostra por nível, um erro antigo é expulso por log info e a auditoria reporta "nenhum erro"',
+    ).toMatch(/SystemLog\.filter\(\s*\{\s*level:\s*'error'\s*\}/);
   });
 
   it('o orçamento declarado é a soma dos tetos reais', () => {

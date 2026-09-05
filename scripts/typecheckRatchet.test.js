@@ -5,7 +5,7 @@
 // de 17 — a contagem DESPENCOU e a catraca teria aprovado um projeto quebrado.
 // Uma catraca que só olha o número tem exatamente o defeito que ela previne.
 import { describe, it, expect } from 'vitest';
-import { contarErros, temErroDeSintaxe } from './typecheck-ratchet.mjs';
+import { contarErros, temErroDeSintaxe, avaliarExecucao } from './typecheck-ratchet.mjs';
 
 const SAIDA_TIPOS = [
   "src/lib/tradeMetrics.js(234,9): error TS2353: Object literal may only specify known properties.",
@@ -41,5 +41,55 @@ describe('temErroDeSintaxe', () => {
   it('saída limpa não acusa sintaxe', () => {
     expect(temErroDeSintaxe('')).toBe(false);
     expect(temErroDeSintaxe(null)).toBe(false);
+  });
+});
+
+// Achados do Codex no PR #312 — os dois verificados por reprodução antes da
+// correção. Ver o cabeçalho de typecheck-ratchet.mjs, "os três buracos".
+describe('avaliarExecucao — o compilador chegou a rodar?', () => {
+  const ok = { status: 0, signal: null, saida: '', erroDeSpawn: null };
+
+  it('status normal com diagnósticos de tipo conta como execução válida', () => {
+    expect(avaliarExecucao(ok).rodou).toBe(true);
+    expect(avaliarExecucao({ ...ok, status: 1, saida: 'a.js(1,1): error TS2322: nope' }).rodou).toBe(true);
+    expect(avaliarExecucao({ ...ok, status: 2 }).rodou).toBe(true);
+  });
+
+  it('REGRESSÃO: config sem arquivos de entrada (TS18003) NÃO é "zero erros"', () => {
+    // O caso real: um jsconfig apontando para pasta inexistente fazia a versão
+    // anterior sair com código 0 — CI verde sem nenhum arquivo checado.
+    const r = avaliarExecucao({ ...ok, status: 1, saida: "error TS18003: No inputs were found in config file" });
+    expect(r.rodou).toBe(false);
+    expect(r.motivo).toMatch(/TS18003/);
+  });
+
+  it('erro de opção/config do compilador (TS5xxx/TS6xxx) reprova', () => {
+    expect(avaliarExecucao({ ...ok, status: 1, saida: 'error TS5058: The specified path does not exist' }).rodou).toBe(false);
+    expect(avaliarExecucao({ ...ok, status: 1, saida: 'error TS6053: File not found' }).rodou).toBe(false);
+  });
+
+  it('compilador morto por sinal, ausente, ou com código estranho reprova', () => {
+    expect(avaliarExecucao({ ...ok, signal: 'SIGKILL' }).rodou).toBe(false);
+    expect(avaliarExecucao({ ...ok, erroDeSpawn: 'spawn npx ENOENT' }).rodou).toBe(false);
+    expect(avaliarExecucao({ ...ok, status: 127 }).rodou).toBe(false);
+    expect(avaliarExecucao({ ...ok, status: null }).rodou).toBe(false);
+  });
+
+  it('cada reprovação explica O QUE foi observado, nunca uma suposição', () => {
+    for (const caso of [
+      { ...ok, signal: 'SIGKILL' },
+      { ...ok, erroDeSpawn: 'ENOENT' },
+      { ...ok, status: 127 },
+      { ...ok, status: 1, saida: 'error TS18003: x' },
+    ]) {
+      expect(avaliarExecucao(caso).motivo).toBeTruthy();
+    }
+  });
+});
+
+describe('erro de sintaxe × código de 5 dígitos', () => {
+  it('TS1005 é sintaxe; TS18003 não é (é config, tratado à parte)', () => {
+    expect(temErroDeSintaxe('error TS1005: expected')).toBe(true);
+    expect(temErroDeSintaxe('error TS18003: No inputs')).toBe(false);
   });
 });

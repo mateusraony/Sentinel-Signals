@@ -21,10 +21,27 @@
  * do `no-undef` do item 157: o guard não precisa ser perfeito, precisa existir
  * e não ter buraco.
  *
- * Uso: `npm run typecheck:ratchet`. Para baixar o teto depois de corrigir,
- * rode com `--update` (ou ajuste `TETO` à mão) e comite a mudança.
+ * ## Os três buracos de uma catraca ingênua (todos fechados aqui)
+ *
+ * Uma catraca que só compara números tem a mesma doença que ela previne. Os
+ * três foram achados testando-a, não teorizando:
+ *
+ * 1. **Erro de sintaxe DERRUBA a contagem** — o tsc aborta e reporta 1 em vez
+ *    de 17, abaixo do teto, aprovado.
+ * 2. **Compilador que não roda vira "sem erros"** (Codex, PR #312). Config
+ *    ilegível, `TS5023`/`TS5058`, `TS18003` (nenhum arquivo de entrada),
+ *    processo morto por sinal, binário ausente: tudo dava 0 ou 1 erro,
+ *    passava no teto, e o CI ficava verde **sem nenhum typecheck ter
+ *    acontecido**. Verificado: com um `jsconfig.json` apontando para pasta
+ *    inexistente, a versão anterior saía com código 0.
+ * 3. **`--update` podia SUBIR o teto** (Codex, PR #312). O ramo de atualização
+ *    rodava ANTES da checagem de regressão, então rodá-lo com 17 erros gravava
+ *    `TETO = 17` e abençoava a regressão para sempre.
+ *
+ * Uso: `npm run typecheck:ratchet`. Depois de corrigir erros,
+ * `npm run typecheck:ratchet -- --update` baixa o teto (e recusa subir).
  */
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
@@ -37,6 +54,9 @@ const ARQUIVO = fileURLToPath(import.meta.url);
  * `scanner.js` — nenhum deles regressão de runtime, todos atrito de tipagem.
  */
 const TETO = 16;
+
+/** Códigos de saída que significam "o tsc rodou e reportou diagnósticos". */
+const STATUS_NORMAIS = new Set([0, 1, 2]);
 
 /** Conta as linhas `error TSxxxx` da saída do tsc. */
 export function contarErros(saida) {
@@ -54,16 +74,38 @@ export function contarErros(saida) {
  * para prevenir, então sintaxe reprova sempre, independente do teto.
  */
 export function temErroDeSintaxe(saida) {
-  return /error TS1\d{3}:/.test(String(saida ?? ''));
+  return /error TS1\d{3}:(?!\d)/.test(String(saida ?? ''));
+}
+
+/**
+ * O tsc chegou a CHECAR o projeto?
+ *
+ * Distingue "rodou e achou erros de tipo" (o caso normal, que o teto julga) de
+ * "não rodou" — que nunca pode passar, porque contagem baixa aí não significa
+ * qualidade, significa ausência de medição.
+ *
+ * @returns {{ rodou: boolean, motivo: string|null }}
+ */
+export function avaliarExecucao({ status, signal, saida, erroDeSpawn }) {
+  if (erroDeSpawn) return { rodou: false, motivo: `o compilador não pôde ser executado (${erroDeSpawn})` };
+  if (signal) return { rodou: false, motivo: `o compilador foi morto pelo sinal ${signal}` };
+  if (!STATUS_NORMAIS.has(status)) return { rodou: false, motivo: `o compilador saiu com código inesperado ${status}` };
+  // TS5xxx/TS6xxx = opção ou arquivo de configuração inválido. TS18003 = "No
+  // inputs were found in config file", o mais traiçoeiro: UM erro, nenhum
+  // arquivo checado.
+  const config = String(saida ?? '').match(/error TS(5\d{3}|6\d{3}|18003):/);
+  if (config) return { rodou: false, motivo: `erro de configuração do compilador (TS${config[1]})` };
+  return { rodou: true, motivo: null };
 }
 
 function rodarTypecheck() {
-  try {
-    // O tsc sai com código != 0 quando há erro — a saída é o que interessa.
-    return execSync('npx tsc -p ./jsconfig.json', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch (e) {
-    return `${e.stdout ?? ''}${e.stderr ?? ''}`;
-  }
+  const r = spawnSync('npx', ['tsc', '-p', './jsconfig.json'], { encoding: 'utf8' });
+  return {
+    saida: `${r.stdout ?? ''}${r.stderr ?? ''}`,
+    status: r.status,
+    signal: r.signal,
+    erroDeSpawn: r.error?.message ?? null,
+  };
 }
 
 /**
@@ -75,11 +117,23 @@ function rodarTypecheck() {
  * módulo que faz trabalho no carregamento), pela terceira vez neste projeto.
  */
 function main() {
-  const saida = rodarTypecheck();
+  const execucao = rodarTypecheck();
+  const { saida } = execucao;
   const erros = contarErros(saida);
   const atualizar = process.argv.includes('--update');
 
   console.log(`[typecheck] ${erros} erro(s) · teto ${TETO}`);
+
+  // ORDEM IMPORTA: "o compilador rodou?" vem antes de qualquer comparação com
+  // o teto. Foi assim que a versão anterior deixava o CI verde com um
+  // jsconfig.json quebrado.
+  const { rodou, motivo } = avaliarExecucao(execucao);
+  if (!rodou) {
+    console.error(`\n❌ O TYPECHECK NÃO ACONTECEU: ${motivo}.`);
+    console.error('A contagem acima não vale nada — nenhum arquivo foi checado.\n');
+    console.error(saida);
+    process.exit(1);
+  }
 
   if (temErroDeSintaxe(saida)) {
     console.error('\n❌ ERRO DE SINTAXE. O tsc parou de analisar, então a contagem acima está');
@@ -89,9 +143,15 @@ function main() {
   }
 
   if (atualizar) {
+    if (erros > TETO) {
+      console.error(`\n❌ --update recusado: ${erros} erros é MAIOR que o teto ${TETO}.`);
+      console.error('O teto só desce. Subi-lo abençoaria a regressão em vez de corrigi-la.\n');
+      console.error(saida);
+      process.exit(1);
+    }
     const src = readFileSync(ARQUIVO, 'utf8').replace(/^const TETO = \d+;$/m, `const TETO = ${erros};`);
     writeFileSync(ARQUIVO, src);
-    console.log(`[typecheck] teto atualizado para ${erros} — comite esta mudança.`);
+    console.log(`[typecheck] teto baixado para ${erros} — comite esta mudança.`);
     process.exit(0);
   }
 

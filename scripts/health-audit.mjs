@@ -33,14 +33,31 @@
  * **2. Nenhuma consulta pode exigir índice composto.** Item 165: a primeira
  * execução em produção falhou em 3 de 5 checagens com `FAILED_PRECONDITION:
  * The query requires an index`, porque `filter({campo}, '-created_date')`
- * combina filtro com ordenação em campo diferente. A correção NÃO foi criar os
- * índices: foi ler ordenando só por `created_date` (servido pelo índice
- * automático de campo único) e filtrar em memória. Isso evita índice novo em
- * `systemLogs`, que é a coleção mais escrita do projeto — e evita depender de
- * um deploy manual de índices para o diagnóstico funcionar.
+ * combina filtro com ordenação em campo DIFERENTE. Criar os índices foi
+ * descartado: seria um índice novo em `systemLogs` (a coleção mais escrita do
+ * projeto) e faria o diagnóstico depender de um deploy manual — a classe de
+ * problema que ele existe para resolver.
  *
- * **Ao mexer aqui: nunca passe `filters` e `sort` juntos.** É a armadilha que
- * este arquivo já pisou uma vez.
+ * **Ao mexer aqui: nunca passe `filters` E `sort` juntos.** Duas formas são
+ * seguras e ambas são usadas: ordenar só por `created_date` sem filtro, e
+ * filtrar por IGUALDADE sem ordenação. As duas são servidas pelo índice
+ * automático de campo único. Travado por `healthAuditQueryTripwire.test.js`.
+ *
+ * ## Por que a leitura de erros é feita DUAS vezes
+ *
+ * Achado do Codex (PR #311), verificado: a janela por recência sozinha deixa
+ * um erro da madrugada ser EXPULSO por log rotineiro. O scanner escreve ~7
+ * registros `info` por passada × ~288 passadas/dia ≈ 2.000/dia, então 300
+ * documentos cobrem uma janela de ~3,5 horas — e a auditoria roda 1×/dia.
+ * Ela reportaria "nenhum erro" bem no dia em que houve um. É a falha
+ * silenciosa que ela existe para detectar, dentro dela mesma.
+ *
+ * Por isso são duas leituras com propósitos distintos, e o relatório diz qual
+ * é qual: a **janela recente** (ordenada, todos os níveis) responde "o que
+ * está acontecendo agora"; a **amostra de erros** (filtro por igualdade, sem
+ * ordenação) responde "existe erro sistêmico?" sem poder ser despejada. A
+ * amostra não tem garantia de recência — o Firestore devolve por ordem de ID
+ * quando não há `orderBy` — e o relatório diz isso em vez de fingir.
  */
 import { backend, rtdb } from './adminEntities.js';
 import { agrupar, celula, haQuantoTempo } from './healthAuditFormat.mjs';
@@ -48,12 +65,13 @@ import { classifyFailure } from './failureClassification.mjs';
 import { isTelegramConfigured, notifyHealthAudit } from './adminTelegram.js';
 
 // ── Orçamento de leitura ────────────────────────────────────────────────────
-// Somados: no MÁXIMO 570 documentos por execução (~1% do teto diário de 50k).
+// Somados: no MÁXIMO 770 documentos por execução (~1,5% do teto diário de 50k).
 // A auditoria mede TENDÊNCIA, não faz inventário.
 const LIMITE_LOGS = 300;
+const LIMITE_ERROS = 200;
 const LIMITE_OPS = 120;
 const LIMITE_SINAIS = 150;
-const ORCAMENTO_TOTAL = LIMITE_LOGS + LIMITE_OPS + LIMITE_SINAIS;
+const ORCAMENTO_TOTAL = LIMITE_LOGS + LIMITE_ERROS + LIMITE_OPS + LIMITE_SINAIS;
 
 // Uma operação aberta há mais tempo que isto é suspeita em qualquer tier: o
 // Time Stop mais longo da tabela é 64 barras de 4h (~10,7 dias). O dobro disso
@@ -109,8 +127,14 @@ async function checar(titulo, fn) {
 // automático) e separa por nível em memória. Além de dispensar índice, custa
 // menos que as duas consultas filtradas da versão anterior.
 async function checarLogs() {
+  // Leitura 1 — JANELA RECENTE: ordenada por data, todos os níveis. Responde
+  // "o que está acontecendo agora", com recência confiável.
   const logs = await backend.entities.SystemLog.list('-created_date', LIMITE_LOGS);
-  if (logs.length === 0) { p('Nenhum registro de log.'); return; }
+  // Leitura 2 — AMOSTRA DE ERROS: igualdade sem ordenação (não exige índice
+  // composto), imune ao despejo por log rotineiro. Ver o cabeçalho.
+  const amostraErros = await backend.entities.SystemLog.filter({ level: 'error' }, undefined, LIMITE_ERROS);
+
+  if (logs.length === 0 && amostraErros.length === 0) { p('Nenhum registro de log.'); return; }
 
   const erros = logs.filter((l) => l.level === 'error');
   const avisos = logs.filter((l) => l.level === 'warn');
@@ -144,6 +168,35 @@ async function checarLogs() {
         p(`  - exemplo: \`${String(g.exemplo).slice(0, 200)}\``);
       }
       achados.push(`erro em ${sistemicos[0].ativos.size} ativos ao mesmo tempo: ${sistemicos[0].chave}`);
+    }
+  }
+
+  // A amostra existe justamente para o caso em que a janela acima não viu
+  // nada. Só vale a pena imprimir o que ela acrescenta.
+  const idsNaJanela = new Set(erros.map((e) => e.id));
+  const foraDaJanela = amostraErros.filter((e) => !idsNaJanela.has(e.id));
+  if (foraDaJanela.length) {
+    const grupos = agrupar(foraDaJanela);
+    p('');
+    p(`### Erros fora da janela recente → ${grupos.length} problemas distintos`);
+    p('');
+    p(`_Amostra de até ${LIMITE_ERROS} erros de QUALQUER data — é ela que impede um erro`);
+    p('da madrugada de ser expulso por log rotineiro. Sem garantia de recência: sem');
+    p('ordenação, o Firestore devolve por ordem de identificador._');
+    p('');
+    p('| # | Módulo · problema | Ativos | Mais recente |');
+    p('|---|---|---|---|');
+    for (const g of grupos.slice(0, 10)) {
+      p(`| ${g.total} | ${celula(g.chave)} | ${g.ativos.size || '—'} | ${haQuantoTempo(g.ultimo)} |`);
+    }
+    const sistemicosFora = grupos.filter((g) => g.ativos.size >= 3);
+    if (sistemicosFora.length) {
+      p('');
+      p('🚨 **Falha sistêmica fora da janela recente** (3+ ativos):');
+      for (const g of sistemicosFora.slice(0, 5)) {
+        p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}`);
+      }
+      achados.push(`erro em ${sistemicosFora[0].ativos.size} ativos (fora da janela recente): ${sistemicosFora[0].chave}`);
     }
   }
 

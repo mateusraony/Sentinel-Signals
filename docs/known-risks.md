@@ -19952,3 +19952,72 @@ mina.
 - **Fase 2** — varredura pelas 3 famílias de bug (item 164) no repo inteiro.
 - **Fase 3** — motor, adversarial, com `sentinel-council-review` e
   `sentinel-state-machine-test` sobre os P0 documentados.
+
+## 167. Duas falhas silenciárias DENTRO da auditoria de saúde (2026-09-05)
+
+Achados do Codex no PR #311, **depois do merge**. Os dois verificados antes de
+corrigir, e os dois da mesma família que a auditoria existe para caçar —
+dentro dela mesma.
+
+### P1 — a auditoria podia reportar "nenhum erro" durante uma falha
+
+`SystemLog.list('-created_date', 300)` lê os 300 registros mais recentes de
+TODOS os níveis e separa por nível em memória. Medido: `scanner.js` faz 7
+chamadas de log por passada × ~288 passadas/dia ≈ **2.000 registros `info` por
+dia**. Uma janela de 300 documentos cobre ~3,5 horas, e a auditoria roda
+1×/dia às 04:40 UTC.
+
+**Um erro da madrugada é expulso por log rotineiro antes de alguém olhar** —
+exatamente a condição de falha silenciosa que ela foi construída para detectar.
+
+Corrigido com **duas leituras de propósitos distintos**:
+
+| Leitura | Consulta | Responde |
+|---|---|---|
+| Janela recente | `list('-created_date', 300)` | "o que está acontecendo agora", com recência confiável |
+| Amostra de erros | `filter({level:'error'}, undefined, 200)` | "existe erro sistêmico?", imune a despejo |
+
+A segunda usa **igualdade sem ordenação**, que o índice automático de campo
+único serve — não exige índice composto, então a decisão do item 165 continua
+valendo. Sem `orderBy` o Firestore devolve por ordem de identificador, então
+essa amostra **não tem garantia de recência**, e o relatório diz isso em vez de
+fingir. Orçamento subiu de 570 para 770 documentos (~1,5% do teto diário).
+
+### P1 — o alerta no Telegram podia ser rejeitado em silêncio
+
+`normalizarMensagem` troca o símbolo do ativo por `<ativo>` (é o que agrupa
+"BTCUSDT falhou" com "LDOUSDT falhou"). Esse texto entrava CRU numa mensagem
+com `parse_mode: 'HTML'`; o Telegram rejeita tag desconhecida com 400,
+`send()` devolve `false`, e a auditoria ignorava o retorno.
+
+**Execução verde, alerta não entregue.** Corrigido com `escaparHtml` no título,
+em cada achado e na URL — as tags do próprio template continuam funcionando.
+
+### O tripwire estava expressando a regra errada
+
+O do item 165 proibia `.filter(` inteiro. A regra real não é essa: o que exige
+índice composto é **filtro + ordenação em campo diferente**. Igualdade sem
+ordenação é segura, e é justamente o que a correção acima precisava.
+
+Reescrito para a invariante correta, e **verificado contra os dois bugs**:
+reintroduzindo o filtro-com-ordenação (item 165) falha; removendo a amostra por
+nível (este item) falha; revertendo, passa.
+
+### Os dois P2 da catraca do typecheck (mesmo PR, item 166)
+
+1. **Compilador que não roda virava "sem erros".** Config ilegível, `TS5023`/
+   `TS5058`, `TS18003` (nenhum arquivo de entrada), processo morto por sinal:
+   tudo dava 0 ou 1 erro contado, passava no teto, **CI verde sem nenhum
+   typecheck**. Verificado: com um `jsconfig.json` apontando para pasta
+   inexistente, a versão anterior saía com código 0; agora sai 1.
+2. **`--update` podia SUBIR o teto.** O ramo rodava antes da checagem de
+   regressão, então rodá-lo com 17 erros gravava `TETO = 17`. Verificado:
+   agora recusa e o teto fica em 16.
+
+### O padrão que estes quatro achados confirmam
+
+Todos os quatro são **guard com buraco**, e nos quatro o guard era recém-escrito
+por mim, nesta mesma sessão, para caçar essa exata família. Reforça a regra já
+registrada no item 166: um guard só conta depois de provar que falha com o bug
+que deveria pegar — e a prova precisa cobrir o caminho REAL, não o caminho
+conveniente.
