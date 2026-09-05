@@ -6,6 +6,13 @@ import pluginUnusedImports from "eslint-plugin-unused-imports";
 
 export default [
   {
+    // Testes rodam no Node (vitest), nao no browser: `global`, `process` e
+    // afins sao legitimos aqui. Sem este bloco, ligar `no-undef` acusaria
+    // 32 falsos positivos e a tentacao seria desligar a regra de novo.
+    files: ["**/*.test.{js,mjs,cjs,jsx}"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
+  {
     files: [
       "src/components/**/*.{js,mjs,cjs,jsx}",
       "src/pages/**/*.{js,mjs,cjs,jsx}",
@@ -38,6 +45,13 @@ export default [
       "unused-imports": pluginUnusedImports,
     },
     rules: {
+      // O spread de pluginJs.configs.recommended acima e' sobrescrito pelo
+      // spread do pluginReact e depois por este bloco `rules` — as regras
+      // recomendadas do JS eram descartadas em silencio. `no-undef` estava
+      // entre elas, e a ausencia dela deixou passar um `useState` declarado
+      // no componente ERRADO: lint/test/build verdes, pagina /trades quebrada
+      // em producao com "Can't find variable". Ver docs/known-risks.md item 157.
+      "no-undef": "error",
       "no-unused-vars": "off",
       "react/jsx-uses-vars": "error",
       "react/jsx-uses-react": "error",

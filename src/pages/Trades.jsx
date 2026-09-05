@@ -161,7 +161,6 @@ function EditModal({ op, onClose, onSave }) {
  */
 function MonitoringCard({ signal, onDismiss, isDismissing }) {
   const [showDetails, setShowDetails] = useState(false);
-  const [showInfoSignals, setShowInfoSignals] = useState(false);
   const { price, isStale } = useLivePrice(signal.symbol);
 
   const { phase, msLeft, expiresAt } = classifySignal(signal);
@@ -342,6 +341,7 @@ function HistoryRow({ op }) {
 
 export default function Trades() {
   const [showHistory, setShowHistory] = useState(false);
+  const [showInfoSignals, setShowInfoSignals] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [showChart, setShowChart] = useState(true);
   const [filterTf, setFilterTf] = useState('all');

@@ -19044,3 +19044,69 @@ definição, sem lista de exceções para manter.
 Três metatestes provam a detecção em vez de afirmá-la: literal, aritmética e
 constante desconhecida são pegos; as constantes do módulo passam; um bloco que
 lê a Binance é ignorado.
+
+---
+
+## 157. 🔴 Incidente — `/trades` quebrada em produção por `useState` no componente errado (2026-09-05)
+
+**Reportado pelo usuário** com o log do ErrorBoundary:
+`Erro de renderização: Can't find variable: showInfoSignals`, em `/trades`,
+4 ocorrências. Regressão introduzida pelo item 156 (PR #304), mesclado ~20 min
+antes.
+
+### Causa imediata
+
+`const [showInfoSignals, setShowInfoSignals] = useState(false)` ficou declarado
+dentro de **`MonitoringCard`** (linha 164) enquanto era usado dentro de
+**`Trades()`** (linhas 650-658). Erro meu de edição: apliquei um
+`replace(..., count=1)` ancorado em `const [showDetails, setShowDetails] =
+useState(false);`, sem notar que eu **acabara de adicionar essa mesma linha** ao
+`MonitoringCard` — então a primeira ocorrência no arquivo passou a ser a do
+componente errado.
+
+### Causa sistêmica — por que lint, testes e build passaram verdes
+
+`eslint.config.js` fazia spread de `pluginJs.configs.recommended` e, logo
+depois, spread de `pluginReact.configs.flat.recommended` e um bloco `rules:`
+explícito. Em spread de objeto a última chave vence: **o `rules` das
+recomendadas do JS era descartado em silêncio**, e `no-undef` estava entre
+elas.
+
+Verificado experimentalmente, não deduzido: reintroduzi o bug exato e medi.
+
+| Verificação | Com o bug reintroduzido |
+|---|---|
+| `npx eslint` (antes desta correção) | ✅ verde — não via nada |
+| `npx eslint` (com `no-undef` ligada) | ❌ **5 erros**, apontando a linha |
+| `npm run build` | ✅ **verde** — Vite não faz análise de escopo |
+| `npm test` | ✅ verde — não há teste de render de `Trades.jsx` |
+
+Ou seja: as três verificações que eu rodo antes de todo push eram, juntas,
+cegas para esta classe de erro.
+
+### Correção
+
+1. Declaração movida para `Trades()`.
+2. **`no-undef: "error"`** ligada explicitamente em `eslint.config.js`, com
+   comentário explicando por que ela não pode voltar a depender do spread.
+3. Bloco de config novo para `**/*.test.*` com `globals.node`: sem ele, ligar
+   a regra acusaria 32 falsos positivos (`global`, do vitest) e a tentação
+   seria desligá-la de novo.
+
+`npm run lint && npm test && npm run build` verdes (1399 testes).
+
+### Lição
+
+O ponto não é "tomei mais cuidado". Um `replace` ancorado em texto que existe
+em mais de um escopo é uma armadilha que vai reaparecer — o que mudou é que
+agora **existe uma verificação automática que pega**, e ela roda na CI a cada
+PR. Esta foi a terceira vez nesta sequência de trabalho em que a correção real
+foi consertar o *guarda*, não só o sintoma (ver também o addendum do item 155).
+
+### Nota sobre a cota (item 155) — não confundir com este incidente
+
+O mesmo log traz `Quota exceeded` às 22:19 e 21:55 BRT (= 01:19 e 00:55 UTC),
+minutos depois do merge. Isso **não** contradiz a correção do item 155: a cota
+do Firestore é diária e já estava gasta naquele dia; o reset é ~07:00 UTC. A
+correção também é do lado do navegador — não muda o consumo do scan em si. A
+avaliação honesta exige **um dia inteiro após o deploy**.
