@@ -10,6 +10,7 @@ import {
 import { isClosedOp, getExitPrice, getClosedAt, calcRealizedPnlPct, summarizeOps } from '@/lib/tradeMetrics';
 import { Tooltip as InfoTooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { formatPrice } from '@/lib/priceProximity';
+import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 function fmtPct(v) {
   if (v === null || v === undefined || isNaN(v)) return '—';
@@ -88,7 +89,7 @@ export default function MonthlyReport() {
         '-created_date',
       );
     },
-    refetchInterval: 30000,
+    refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
   const monthOps = useMemo(() => {

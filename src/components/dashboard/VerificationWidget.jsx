@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { ClipboardCheck, Check, X as XIcon, ChevronRight } from 'lucide-react';
 import moment from 'moment';
+import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 // Age thresholds for the visual "don't forget this one" cue — a sinal de
 // alta prioridade perde relevância com o tempo (mesmo raciocínio do Time
@@ -28,7 +29,7 @@ export default function VerificationWidget() {
   const { data: tasks = [] } = useQuery({
     queryKey: ['verification-tasks-recent'],
     queryFn: () => backend.entities.VerificationTask.list('-created_date', 50),
-    refetchInterval: 15000,
+    refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
   const reviewMutation = useMutation({

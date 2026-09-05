@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { Bug, X, Trash2 } from 'lucide-react';
 import moment from 'moment';
+import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 const LEVEL_CONFIG = {
   error: { color: '#ff1478', label: 'ERR', bg: 'rgba(255,20,120,0.1)', border: 'rgba(255,20,120,0.25)' },
@@ -18,7 +19,7 @@ export default function DebugLogButton() {
   const { data: logs = [] } = useQuery({
     queryKey: ['system-logs-debug'],
     queryFn: () => backend.entities.SystemLog.list('-created_date', 50),
-    refetchInterval: 10000,
+    refetchInterval: POLL_DIAGNOSTIC_MS,
     enabled: open,
   });
 

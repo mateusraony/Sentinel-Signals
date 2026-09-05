@@ -16,6 +16,7 @@ import { useLivePrice } from '@/hooks/useLivePrice';
 import moment from 'moment';
 import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
 import { logError } from '@/lib/logger';
+import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
@@ -350,13 +351,13 @@ export default function Trades() {
   const { data: operations = [], isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['trade-operations'],
     queryFn: () => rtdbEntities.TradeOperation.list('-created_date', 100),
-    refetchInterval: 15000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const { data: recentSignals = [] } = useQuery({
     queryKey: ['recent-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 50),
-    refetchInterval: 30000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   // As 3 mutações abaixo passam pela MESMA CAS transacional

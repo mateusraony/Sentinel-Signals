@@ -4,6 +4,7 @@ import { backend } from '@/api/entities';
 import { Bell, Filter, Trash2, TrendingUp, TrendingDown, Search, X, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import moment from 'moment';
+import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 const SOURCE_LABELS = {
   range_filter: 'Range Filter',
@@ -31,7 +32,7 @@ export default function Alerts() {
   const { data: signals = [], isLoading } = useQuery({
     queryKey: ['all-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 200),
-    refetchInterval: 15000,
+    refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
   const dismissMutation = useMutation({

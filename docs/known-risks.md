@@ -18886,3 +18886,57 @@ Passa a existir o estado visual "Stop 🔒" (verde) para stop que já protege
 lucro.
 
 `npm run lint && npm test && npm run build` verdes (1377 testes, 12 novos).
+
+### Resolução (2026-09-05) — a causa não era "faltou a rodada 2 do RTDB"
+
+O usuário reportou que o alerta de cota continuava chegando. Medição nova,
+sobre o código real (`useQuery` com `refetchInterval` × limite da query):
+
+| Tela | Coleção | Docs/query | Intervalo | Leituras/dia (aba em foco) | × cota |
+|---|---|---|---|---|---|
+| `Logs.jsx` | SystemLog | 200 | 15s | 1.152.000 | 23× |
+| `Alerts.jsx` | SignalEvent | 200 | 15s | 1.152.000 | 23× |
+| `Verification*` (×3) | VerificationTask | 200 | 15s | 1.152.000 | 23× |
+| `Dashboard.jsx` | SignalEvent | 50 | 10s | 432.000 | 9× |
+| `DebugLogButton.jsx` | SystemLog | 50 | 10s | 432.000 | 9× |
+| `Assets.jsx` | SignalEvent | 100 | 20s | 432.000 | 9× |
+| `Trades.jsx` | SignalEvent | 50 | 30s | 144.000 | 3× |
+
+**O Dashboard aberto e em foco por 3 horas consome sozinho 54.000 leituras —
+a cota diária inteira é 50.000.** O Firestore cobra **por documento
+devolvido**, não por query: `list('-created_date', 200)` a cada 15s são 200
+leituras a cada 15s, mesmo que nada tenha mudado.
+
+**Correção do diagnóstico do item 155.** A recomendação anterior ("rodada 2 do
+RTDB") tratava o sintoma pelo lado errado. Trocar de banco não conserta
+amostrar 30× mais rápido do que o dado muda — só muda quem cobra a conta (e
+teria estourado em seguida a banda mensal do RTDB: `TradeOperation.list(500)`
+a cada 30s dá ~1,4 GB/dia contra 10 GB/mês grátis).
+
+**Causa raiz real:** `refetchOnWindowFocus` estava `false` em
+`src/lib/query-client.js` (herdado do template Base44, não é decisão
+documentada em lugar nenhum). Sem ele, o `refetchInterval` virava o único
+jeito de a tela atualizar — o que justificou intervalos de 10–15s. O dado,
+porém, só muda quando o scan agendado roda: a cada **~5 minutos**.
+
+**O que foi feito:**
+- `src/lib/pollingIntervals.js` (novo): `POLL_OPERATIONAL_MS` (60s, telas que
+  o usuário acompanha) e `POLL_DIAGNOSTIC_MS` (120s, logs/verificação/
+  relatórios), ambos derivados de `SCAN_CADENCE_MS`. Os 21 pollers passam a
+  usar as constantes em vez de literais.
+- `refetchOnWindowFocus: true` + `staleTime` padrão de 60s: voltar para a aba
+  atualiza na hora (mais responsivo que antes), e alternar de aba várias vezes
+  em menos de um minuto não redispara nada.
+- Tripwire em `pollingIntervals.test.js`: varre o código-fonte e falha se
+  qualquer `refetchInterval` de leitura de banco voltar abaixo do piso. Foi
+  intervalo literal espalhado pelas telas que criou o problema.
+
+**O preço ao vivo não foi afetado**: `useLivePrice` bate na Binance (30s),
+fora de Firestore/RTDB e fora de qualquer cota — a cotação segue viva com o
+banco sendo lido devagar. O tripwire isenta esse arquivo explicitamente.
+
+**Projeção** (não medida no Console — sem acesso nesta sessão): Dashboard
+focado 3h cai de ~54.000 para ~11.000 leituras. Com o scan em ~25% da cota
+(item 150), sobra folga. **A confirmar pelo usuário:** se o alerta de
+`RESOURCE_EXHAUSTED` para de chegar. Se ainda chegar, aí sim a rodada 2 do
+espelho RTDB volta à mesa — e a instrumentação para decidir isso agora existe.
