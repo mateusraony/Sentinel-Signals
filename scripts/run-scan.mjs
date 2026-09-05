@@ -4,7 +4,10 @@
 import { scanAllAssets, priceCheckActiveOps } from '../src/lib/scanner.js';
 import { backend } from '@/api/entities';
 import { assetHealthcheckReason, shouldAlertStale, shouldClearStaleAlert } from '../src/lib/assetHealthcheck.js';
-import { isTelegramConfigured, notifyAssetStale, notifyFirestoreQuotaExhausted } from './adminTelegram.js';
+import {
+  isTelegramConfigured, notifyAssetStale,
+  notifyFirestoreQuotaExhausted, notifyFirestoreQuotaRecovered,
+} from './adminTelegram.js';
 import { withTimeout, forceExit } from './scanTimeout.mjs';
 
 // docs/known-risks.md item 142 — a scan normal termina em ~20s; 90s dá
@@ -28,10 +31,32 @@ function isFirestoreQuotaExhausted(message) {
   return /RESOURCE_EXHAUSTED/i.test(String(message || ''));
 }
 
+// Verdadeiro se QUALQUER etapa desta passada esbarrou na cota. Só uma
+// passada inteiramente limpa autoriza o aviso de recuperação (item 160) —
+// avisar "voltou ao normal" no meio de uma queda parcial seria pior que não
+// avisar nada.
+let sawQuotaFailure = false;
+
 async function alertIfQuotaExhausted(message) {
   if (!isFirestoreQuotaExhausted(message) || !isTelegramConfigured()) return;
+  sawQuotaFailure = true;
   await notifyFirestoreQuotaExhausted(message).catch((e) =>
     console.warn('[scan] Falha ao notificar cota do Firestore (não crítico):', e.message)
+  );
+}
+
+/**
+ * Fecha o episódio de queda quando a passada inteira deu certo.
+ *
+ * O alerta de cota dizia "está falhando" e NADA nunca dizia que voltou — o
+ * usuário ficava olhando um alarme velho sem saber que já não valia
+ * (docs/known-risks.md item 160). No caso normal isso é uma leitura minúscula
+ * no RTDB e nenhuma mensagem: só envia se havia episódio aberto.
+ */
+async function announceQuotaRecoveryIfClean() {
+  if (sawQuotaFailure || !isTelegramConfigured()) return;
+  await notifyFirestoreQuotaRecovered().catch((e) =>
+    console.warn('[scan] Falha ao notificar recuperação de cota (não crítico):', e.message)
   );
 }
 
@@ -119,6 +144,7 @@ async function main() {
   }
 
   console.log(`[scan] finished in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  await announceQuotaRecoveryIfClean();
   await pingHealthcheck();
 }
 

@@ -19253,3 +19253,70 @@ histórico do Actions até lá é caro demais para o valor.
 agendada. Se falhar de novo tarde no dia, o diagnóstico do item 155 estava
 incompleto e a rodada 2 do espelho RTDB volta à mesa — e aí com a
 instrumentação do item 155 para decidir por número.
+
+---
+
+## 160. Alerta de cota sem "tudo certo" — o alarme nunca dizia que tinha acabado (2026-09-05)
+
+**Reportado pelo usuário:** *"Sobre o telegram, ainda está com cota esgotada."*
+
+### Fato — não havia cota esgotada nenhuma naquele momento
+
+Estado medido às 09:16 UTC, quando o usuário reportou:
+
+| Workflow | Última execução | Resultado |
+|---|---|---|
+| `scan.yml` | 09:15, 09:10, 09:05 UTC | ✅ `success`, ~47s cada |
+| `backfill.yml` | 09:07 UTC | ✅ `success` |
+
+A cota havia zerado às ~07:00 UTC e **nenhuma execução falhou desde então**. O
+último alerta possível saiu por volta das 06:40 UTC — ~2h30 antes do relato.
+
+### Causa — um alarme sem contraparte
+
+O usuário estava certo sobre o que via: uma mensagem no Telegram dizendo que a
+cota estava esgotada, sem nada indicando o contrário. O alerta dizia *"o scan
+ao vivo está falhando"* e **nada nunca dizia que voltou**. Sem um "tudo certo",
+a única leitura possível de um alarme parado no histórico é "ainda está
+acontecendo".
+
+Isso não é erro de interpretação do usuário — é lacuna do produto. Um alerta
+sem recuperação é um alarme que nunca desarma.
+
+### Correção
+
+`notifyFirestoreQuotaRecovered()` novo em `scripts/adminTelegram.js`, chamado
+por `run-scan.mjs` em **toda passada bem-sucedida**.
+
+O marcador no RTDB (item 158) ganhou estado de episódio:
+
+```
+last_alert_at     — controle do cooldown de 1h (já existia)
+alert_active      — há um episódio de queda ABERTO
+alert_started_at  — quando começou, para medir a duração
+```
+
+- **Só envia se havia episódio aberto.** No caso normal — que é toda passada,
+  a cada 5 min — é uma leitura minúscula no RTDB e nenhuma mensagem.
+- **Só uma passada inteiramente limpa autoriza o aviso** (`sawQuotaFailure` em
+  `run-scan.mjs`): anunciar "voltou ao normal" no meio de uma queda parcial
+  seria pior que não anunciar.
+- **Informa a duração** da queda inteira, reusando `formatBackfillLag` que o
+  módulo já importava. Um realerta dentro do mesmo episódio **não** reinicia
+  `alert_started_at`, então a duração é da queda toda, não do último alerta.
+- **Marcador ilegível fica calado** — o oposto deliberado do caso do alerta,
+  onde o silêncio esconderia uma queda real. Aqui, um "tudo certo" falso é
+  pior que nenhum.
+- O texto do alerta de queda agora **promete** o aviso de retorno ("aviso o
+  momento em que voltar ao normal"), para que a ausência de mensagem passe a
+  significar alguma coisa.
+
+### Verificação
+
+6 testes novos, incluindo o ciclo completo: a queda alerta e abre o episódio;
+a passada limpa seguinte avisa e fecha; a passada limpa depois dessa fica
+calada (não avisa duas vezes). `npm run lint && npm test && npm run build`
+verdes (1411 testes), `npm run build:scan` monta o bundle do cron.
+
+**Não verificado:** a mensagem chegando de verdade no Telegram — só acontece
+no próximo episódio real de cota esgotada.
