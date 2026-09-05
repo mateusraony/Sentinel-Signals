@@ -364,32 +364,39 @@ function quotaMarkerRef() {
   }
 }
 
-/** Lê `last_alert_at` do marcador. `null` = nunca alertou OU não deu para ler. */
+/**
+ * Lê o marcador inteiro. `{}` = nunca alertou OU não deu para ler.
+ *
+ * Formato (docs/known-risks.md item 160):
+ *   last_alert_at     — controle do cooldown de 1h
+ *   alert_active      — há um episódio de queda ABERTO
+ *   alert_started_at  — quando esse episódio começou (para medir a duração)
+ */
 async function readQuotaMarker() {
   const rtdbRef = quotaMarkerRef();
   if (rtdbRef) {
     const snap = await withTimeout(rtdbRef.get(), QUOTA_DEDUP_TIMEOUT_MS, 'readQuotaMarker: rtdb.get()');
-    return snap.exists() ? (snap.val()?.last_alert_at ?? null) : null;
+    return snap.exists() ? (snap.val() ?? {}) : {};
   }
   // Sem RTDB configurado: cai no Firestore, o comportamento anterior.
   const ref = getFirestore().collection('systemAlerts').doc('firestoreQuota');
   const snap = await withTimeout(ref.get(), QUOTA_DEDUP_TIMEOUT_MS, 'readQuotaMarker: firestore.get()');
-  return snap.exists && snap.data().last_alert_at ? snap.data().last_alert_at : null;
+  return snap.exists ? (snap.data() ?? {}) : {};
 }
 
-async function writeQuotaMarker(iso) {
+async function writeQuotaMarker(marker) {
   const rtdbRef = quotaMarkerRef();
   if (rtdbRef) {
-    return withTimeout(rtdbRef.set({ last_alert_at: iso }), QUOTA_DEDUP_TIMEOUT_MS, 'writeQuotaMarker: rtdb.set()');
+    return withTimeout(rtdbRef.set(marker), QUOTA_DEDUP_TIMEOUT_MS, 'writeQuotaMarker: rtdb.set()');
   }
   const ref = getFirestore().collection('systemAlerts').doc('firestoreQuota');
-  return withTimeout(ref.set({ last_alert_at: iso }), QUOTA_DEDUP_TIMEOUT_MS, 'writeQuotaMarker: firestore.set()');
+  return withTimeout(ref.set(marker), QUOTA_DEDUP_TIMEOUT_MS, 'writeQuotaMarker: firestore.set()');
 }
 
 /**
  * Decisão pura de alertar, separada do I/O para ser testável.
  *
- * `lastAt === null` cobre dois casos diferentes de propósito: nunca alertou
+ * `lastAt` ausente cobre dois casos diferentes de propósito: nunca alertou
  * (deve alertar) e não deu para ler o marcador (alerta mesmo assim — perder
  * o primeiro aviso de uma queda real é pior que um alerta a mais). O que
  * conserta o spam não é fechar essa porta, é o marcador passar a ser legível
@@ -403,26 +410,77 @@ export function shouldAlertQuota(lastAt, now = Date.now(), cooldownMs = QUOTA_AL
 }
 
 export async function notifyFirestoreQuotaExhausted(errMessage) {
-  let lastAt = null;
+  let marker = {};
   try {
-    lastAt = await readQuotaMarker();
+    marker = await readQuotaMarker();
   } catch (e) {
     console.warn('[adminTelegram] Falha ao checar dedup de cota, alertando mesmo assim:', e.message);
   }
-  if (!shouldAlertQuota(lastAt)) return false;
+  if (!shouldAlertQuota(marker.last_alert_at)) return false;
 
   const delivered = await send(
     `🚨 <b>Cota do Firestore esgotada</b>\n\n` +
     `O scan ao vivo está falhando com <code>RESOURCE_EXHAUSTED</code> — nenhuma ` +
     `operação nova pode ser aberta/atualizada enquanto isso durar.\n\n` +
     `📝 ${errMessage || 'Quota exceeded.'}\n\n` +
-    `<i>⚡ CryptoRadar — cota reseta ~meia-noite Pacific (~07:00 UTC)</i>`
+    `<i>⚡ CryptoRadar — aviso o momento em que voltar ao normal. Cota reseta ~meia-noite Pacific (~07:00 UTC)</i>`
+  );
+  if (delivered) {
+    const nowIso = new Date().toISOString();
+    try {
+      await writeQuotaMarker({
+        last_alert_at: nowIso,
+        alert_active: true,
+        // Só reabre a contagem se não havia episódio em curso — assim a
+        // duração informada na recuperação é a da queda inteira, não a do
+        // último alerta.
+        alert_started_at: marker.alert_active && marker.alert_started_at ? marker.alert_started_at : nowIso,
+      });
+    } catch (e) {
+      console.warn('[adminTelegram] Falha ao gravar dedup de cota (não crítico):', e.message);
+    }
+  }
+  return delivered;
+}
+
+/**
+ * Avisa que a cota normalizou — o "tudo certo" que faltava (item 160).
+ *
+ * Sem isto, o usuário ficava olhando um alarme antigo sem nenhuma forma de
+ * saber que ele já não valia: a mensagem dizia "está falhando" e nada nunca
+ * dizia que voltou. Foi exatamente o que aconteceu em 2026-09-05.
+ *
+ * Chamada em TODA passada bem-sucedida do scan, mas só envia quando havia um
+ * episódio aberto — no caso normal é uma leitura minúscula no RTDB e nada
+ * mais. Nunca lança: a recuperação nunca pode derrubar um scan que deu certo.
+ */
+export async function notifyFirestoreQuotaRecovered() {
+  let marker;
+  try {
+    marker = await readQuotaMarker();
+  } catch (e) {
+    // Marcador ilegível: não dá para saber se havia episódio aberto. Ficar
+    // calado é o certo aqui — o oposto do caso do alerta, onde o silêncio
+    // esconderia uma queda real.
+    console.warn('[adminTelegram] Falha ao checar recuperação de cota (não crítico):', e.message);
+    return false;
+  }
+  if (!marker.alert_active) return false;
+
+  const startedAt = marker.alert_started_at ? new Date(marker.alert_started_at).getTime() : null;
+  const duracao = Number.isFinite(startedAt) ? formatBackfillLag(Date.now() - startedAt) : null;
+
+  const delivered = await send(
+    `✅ <b>Cota do Firestore normalizada</b>\n\n` +
+    `O scan voltou a rodar${duracao ? ` — ficou ${duracao} sem conseguir` : ''}. ` +
+    `Operações voltam a ser abertas e atualizadas normalmente.\n\n` +
+    `<i>⚡ CryptoRadar</i>`
   );
   if (delivered) {
     try {
-      await writeQuotaMarker(new Date().toISOString());
+      await writeQuotaMarker({ ...marker, alert_active: false });
     } catch (e) {
-      console.warn('[adminTelegram] Falha ao gravar dedup de cota (não crítico):', e.message);
+      console.warn('[adminTelegram] Falha ao limpar marcador de cota (não crítico):', e.message);
     }
   }
   return delivered;

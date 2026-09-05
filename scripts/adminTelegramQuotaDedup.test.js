@@ -88,3 +88,73 @@ describe('notifyFirestoreQuotaExhausted — o cenário real do incidente', () =>
     expect(await notifyFirestoreQuotaExhausted('Quota exceeded.')).toBe(true);
   });
 });
+
+// docs/known-risks.md item 160 — o alerta dizia "está falhando" e NADA nunca
+// dizia que voltou. O usuário ficava olhando um alarme velho sem forma de
+// saber que já não valia (relatado em 2026-09-05: "ainda está com cota
+// esgotada", com o scan já rodando verde havia 2h).
+describe('notifyFirestoreQuotaRecovered — o "tudo certo" que faltava', () => {
+  it('ciclo completo: queda alerta e abre episódio; recuperação avisa e fecha', async () => {
+    rtdbGet.mockResolvedValueOnce(rtdbSnap(undefined));
+    const { notifyFirestoreQuotaExhausted, notifyFirestoreQuotaRecovered } = await import('./adminTelegram.js');
+
+    expect(await notifyFirestoreQuotaExhausted('Quota exceeded.')).toBe(true);
+    const gravado = rtdbSet.mock.calls[0][0];
+    expect(gravado.alert_active).toBe(true);
+    expect(gravado.alert_started_at).toBeTruthy();
+
+    // Passada seguinte já limpa: o episódio está aberto, então avisa.
+    rtdbGet.mockResolvedValueOnce({ exists: () => true, val: () => gravado });
+    expect(await notifyFirestoreQuotaRecovered()).toBe(true);
+    expect(rtdbSet.mock.calls[1][0].alert_active).toBe(false);
+
+    const texto = global.fetch.mock.calls[1][1].body;
+    expect(texto).toContain('normalizada');
+  });
+
+  it('sem episódio aberto, não manda nada — é o caso normal, a cada 5min', async () => {
+    rtdbGet.mockResolvedValue(rtdbSnap(undefined));
+    const { notifyFirestoreQuotaRecovered } = await import('./adminTelegram.js');
+    expect(await notifyFirestoreQuotaRecovered()).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(rtdbSet).not.toHaveBeenCalled();
+  });
+
+  it('não avisa duas vezes: depois de fechado, a próxima passada limpa fica calada', async () => {
+    const fechado = { last_alert_at: '2026-09-05T04:00:00.000Z', alert_active: false };
+    rtdbGet.mockResolvedValue({ exists: () => true, val: () => fechado });
+    const { notifyFirestoreQuotaRecovered } = await import('./adminTelegram.js');
+    expect(await notifyFirestoreQuotaRecovered()).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('informa quanto tempo durou a queda', async () => {
+    const inicio = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(); // 3h atrás
+    rtdbGet.mockResolvedValue({
+      exists: () => true,
+      val: () => ({ last_alert_at: inicio, alert_active: true, alert_started_at: inicio }),
+    });
+    const { notifyFirestoreQuotaRecovered } = await import('./adminTelegram.js');
+    await notifyFirestoreQuotaRecovered();
+    expect(global.fetch.mock.calls[0][1].body).toContain('3h');
+  });
+
+  it('alerta repetido não reinicia a contagem — a duração é da queda inteira', async () => {
+    const inicio = '2026-09-05T01:00:00.000Z';
+    // Episódio aberto há tempo, já fora do cooldown: realerta.
+    rtdbGet.mockResolvedValueOnce({
+      exists: () => true,
+      val: () => ({ last_alert_at: '2026-09-05T01:00:00.000Z', alert_active: true, alert_started_at: inicio }),
+    });
+    const { notifyFirestoreQuotaExhausted } = await import('./adminTelegram.js');
+    await notifyFirestoreQuotaExhausted('Quota exceeded.');
+    expect(rtdbSet.mock.calls[0][0].alert_started_at).toBe(inicio);
+  });
+
+  it('marcador ilegível fica calado — o oposto do alerta, de propósito', async () => {
+    rtdbGet.mockImplementation(() => Promise.reject(new Error('rtdb fora do ar')));
+    const { notifyFirestoreQuotaRecovered } = await import('./adminTelegram.js');
+    expect(await notifyFirestoreQuotaRecovered()).toBe(false);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
