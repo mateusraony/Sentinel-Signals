@@ -5,6 +5,7 @@ import { notifyVerificationTask, isTelegramConfigured } from '@/lib/telegram';
 import { ClipboardCheck, Check, X as XIcon, Search, ArrowUpDown, Send, Loader2 } from 'lucide-react';
 import SignalChecklist from '@/components/dashboard/SignalChecklist';
 import moment from 'moment';
+import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 const STATUS_FILTERS = [
   { id: 'all', label: 'Todas' },
@@ -100,7 +101,7 @@ export default function Verification() {
       status: statusFilter !== 'all' ? statusFilter : undefined,
       priority: priorityFilter !== 'all' ? priorityFilter : undefined,
     }, '-created_date', 200),
-    refetchInterval: 15000,
+    refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
   // Contagem do badge do cabeçalho é independente do filtro ativo — sem isso,
@@ -109,7 +110,7 @@ export default function Verification() {
   const { data: pendingTasks = [] } = useQuery({
     queryKey: ['verification-tasks-pending-count'],
     queryFn: () => backend.entities.VerificationTask.filter({ status: 'pending' }, '-created_date', 200),
-    refetchInterval: 15000,
+    refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
   const { data: assets = [] } = useQuery({

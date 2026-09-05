@@ -11,6 +11,7 @@ import AssetConfigPanel from '@/components/assets/AssetConfigPanel';
 import AssetDetailPanel from '@/components/assets/AssetDetailPanel';
 import { calcProximity } from '@/components/dashboard/ProximityBar';
 import moment from 'moment';
+import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 
 export default function Assets() {
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -37,25 +38,25 @@ export default function Assets() {
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['all-assets'],
     queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
-    refetchInterval: 30000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const { data: states = [] } = useQuery({
     queryKey: ['asset-states'],
     queryFn: () => rtdbEntities.AssetState.list(),
-    refetchInterval: 20000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const { data: recentSignals = [] } = useQuery({
     queryKey: ['recent-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 100),
-    refetchInterval: 20000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const { data: tradeOps = [] } = useQuery({
     queryKey: ['trade-operations-assets'],
     queryFn: () => rtdbEntities.TradeOperation.list('-created_date', 100),
-    refetchInterval: 20000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const toggleMutation = useMutation({

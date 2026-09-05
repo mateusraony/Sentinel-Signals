@@ -10,6 +10,7 @@ import {
 } from '@/lib/tradeMetrics';
 import { formatBackfillLag } from '@/lib/backfillDetection';
 import { formatPrice } from '@/lib/priceProximity';
+import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 // Planned risk/reward of the setup — always against the INITIAL stop. The old
 // version divided by current_stop, which post-TP1 is already breakeven and
@@ -354,7 +355,7 @@ export default function TradeHistory() {
   const { data: operations = [], isLoading } = useQuery({
     queryKey: ['trade-history'],
     queryFn: () => rtdbEntities.TradeOperation.list('-created_date', 200),
-    refetchInterval: 30000,
+    refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
   const history = operations.filter(isClosedOp);

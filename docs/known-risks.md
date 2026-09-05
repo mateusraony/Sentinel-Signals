@@ -18886,3 +18886,161 @@ Passa a existir o estado visual "Stop 🔒" (verde) para stop que já protege
 lucro.
 
 `npm run lint && npm test && npm run build` verdes (1377 testes, 12 novos).
+
+### Resolução (2026-09-05) — a causa não era "faltou a rodada 2 do RTDB"
+
+O usuário reportou que o alerta de cota continuava chegando. Medição nova,
+sobre o código real (`useQuery` com `refetchInterval` × limite da query):
+
+| Tela | Coleção | Docs/query | Intervalo | Leituras/dia (aba em foco) | × cota |
+|---|---|---|---|---|---|
+| `Logs.jsx` | SystemLog | 200 | 15s | 1.152.000 | 23× |
+| `Alerts.jsx` | SignalEvent | 200 | 15s | 1.152.000 | 23× |
+| `Verification*` (×3) | VerificationTask | 200 | 15s | 1.152.000 | 23× |
+| `Dashboard.jsx` | SignalEvent | 50 | 10s | 432.000 | 9× |
+| `DebugLogButton.jsx` | SystemLog | 50 | 10s | 432.000 | 9× |
+| `Assets.jsx` | SignalEvent | 100 | 20s | 432.000 | 9× |
+| `Trades.jsx` | SignalEvent | 50 | 30s | 144.000 | 3× |
+
+**O Dashboard aberto e em foco por 3 horas consome sozinho 54.000 leituras —
+a cota diária inteira é 50.000.** O Firestore cobra **por documento
+devolvido**, não por query: `list('-created_date', 200)` a cada 15s são 200
+leituras a cada 15s, mesmo que nada tenha mudado.
+
+**Correção do diagnóstico do item 155.** A recomendação anterior ("rodada 2 do
+RTDB") tratava o sintoma pelo lado errado. Trocar de banco não conserta
+amostrar 30× mais rápido do que o dado muda — só muda quem cobra a conta (e
+teria estourado em seguida a banda mensal do RTDB: `TradeOperation.list(500)`
+a cada 30s dá ~1,4 GB/dia contra 10 GB/mês grátis).
+
+**Causa raiz real:** `refetchOnWindowFocus` estava `false` em
+`src/lib/query-client.js` (herdado do template Base44, não é decisão
+documentada em lugar nenhum). Sem ele, o `refetchInterval` virava o único
+jeito de a tela atualizar — o que justificou intervalos de 10–15s. O dado,
+porém, só muda quando o scan agendado roda: a cada **~5 minutos**.
+
+**O que foi feito:**
+- `src/lib/pollingIntervals.js` (novo): `POLL_OPERATIONAL_MS` (60s, telas que
+  o usuário acompanha) e `POLL_DIAGNOSTIC_MS` (120s, logs/verificação/
+  relatórios), ambos derivados de `SCAN_CADENCE_MS`. Os 21 pollers passam a
+  usar as constantes em vez de literais.
+- `refetchOnWindowFocus: true` + `staleTime` padrão de 60s: voltar para a aba
+  atualiza na hora (mais responsivo que antes), e alternar de aba várias vezes
+  em menos de um minuto não redispara nada.
+- Tripwire em `pollingIntervals.test.js`: varre o código-fonte e falha se
+  qualquer `refetchInterval` de leitura de banco voltar abaixo do piso. Foi
+  intervalo literal espalhado pelas telas que criou o problema.
+
+**O preço ao vivo não foi afetado**: `useLivePrice` bate na Binance (30s),
+fora de Firestore/RTDB e fora de qualquer cota — a cotação segue viva com o
+banco sendo lido devagar. O tripwire isenta esse arquivo explicitamente.
+
+**Projeção** (não medida no Console — sem acesso nesta sessão): Dashboard
+focado 3h cai de ~54.000 para ~11.000 leituras. Com o scan em ~25% da cota
+(item 150), sobra folga. **A confirmar pelo usuário:** se o alerta de
+`RESOURCE_EXHAUSTED` para de chegar. Se ainda chegar, aí sim a rodada 2 do
+espelho RTDB volta à mesa — e a instrumentação para decidir isso agora existe.
+
+---
+
+## 156. Cards de "Em Monitoramento" reescritos após teste de usabilidade com persona leiga (2026-09-05)
+
+**Pedido do usuário** (2026-09-05): *"os cards em monitoramento ainda está
+ruim… use um agente e faça de 'cobaia' fazendo com que ele pense como usuária
+que não entende, pra ver o que entende da informação e o que pode fazer pra
+que quando ele for ler, consiga interpretar e também tomar a decisão… com mais
+foco em termos simples de rápido e fácil entendimento."*
+
+### Método
+
+Agente rodado em duas fases: (1) reagir aos três estados do card **sem ler o
+código**, na persona de alguém que não sabe o que é Range Filter, timeframe,
+MACD, ADX, SMC ou score de confluência; (2) só então ler o código e propor.
+
+### Fato — o achado mais grave
+
+Na fase 1 a persona concluiu **"o app mandou comprar BTC"**. A resposta certa
+é *não faça nada*: o motor abre a operação sozinho e o usuário nunca executa
+nada por este card. Três causas, todas verificadas no código:
+
+1. **Hierarquia invertida.** O elemento mais forte (badge `BUY`/`SELL`
+   colorido) era **idêntico nos três estados**; o que os diferenciava vivia em
+   `text-[8px]` cinza no rodapé. O card gritava o que não diferencia e
+   sussurrava o que diferencia.
+2. **Ninguém dizia quem age.** Nenhuma das 16 frases continha "você não
+   precisa fazer nada". Resultado: ansiedade com o contador ("preciso comprar
+   antes de 1h47?") e culpa com o expirado ("perdi dinheiro?").
+3. **Rótulos só em `title=`.** Os dois preços (`price_at_signal` e o preço ao
+   vivo) apareciam como dois números monoespaçados sem legenda — a explicação
+   existia apenas como tooltip de hover, que morre no toque e na leitura
+   rápida. A persona chutou o significado dos dois. E travou de vez no
+   `+0,49%` de um card SELL: o percentual é **direcional** (a favor do sinal),
+   correto, mas ilegível sem rótulo.
+
+Outros achados confirmados no código: `Score: 78/100` cru foi lido como "78%
+de chance de dar certo" — exatamente a leitura que `ScoreBar` já bloqueia no
+card de operação ("não é uma probabilidade de acerto"); `is_dismissed` existe,
+é respeitado pelo scanner e pela página Alerts, mas **`monitoringList` não
+filtrava por ele e não havia botão de dispensar**, então um card expirado só
+saía da tela quando 50 sinais novos o empurrassem; e o rótulo da seção
+("Em Monitoramento") mentia para 2 dos 3 estados.
+
+### O que foi feito
+
+- **`src/lib/signalStatus.js`** (novo, puro, 16 testes): traduz fase e motivo
+  para linguagem simples. Regra do módulo: **toda frase termina resolvendo
+  "e eu, faço o quê?"** — há teste que falha se alguma não terminar em "Nada a
+  fazer.", e outro que falha se algum texto novo vazar jargão do motor
+  (`Range Filter`, `ADX`, `SMC`, `candle`, `minRR`, `OTE`…).
+  As 14 chaves de rejeição viraram **3 famílias com ícone distinto**:
+  `⏳ falta acontecer` · `⚠ o cenário piorou` · `↻ problema do app, ele se
+  resolve` — antes as 14 eram visualmente idênticas.
+- **Estado virou o elemento dominante**: badge no topo direito + faixa
+  colorida de 3px à esquerda (mesmo padrão do card de operação); a direção
+  virou texto discreto ("Aviso de alta (compra)").
+- **Rótulos na tela**: "preço agora", "avisou em $X", "+0,53% **a favor do
+  aviso**". O prazo virou hora de relógio com consequência declarada, não só
+  contagem regressiva.
+- **`ScoreBar` reusada** (exportada de `TradeCard.jsx`) dentro de "Detalhes
+  técnicos", levando junto a ressalva que faltava.
+- **Expirado** virou uma linha discreta com botão de dispensar; a lista passa
+  a respeitar `is_dismissed` (reuso da mutação que já existia em
+  `Alerts.jsx`).
+- **Informativos (1h/1d)** saíram da lista principal para um acordeão fechado
+  — nunca viram operação, e ocupavam card de tamanho igual.
+- Seção renomeada para **"Avisos em análise"**, com subtítulo dizendo que o
+  app abre sozinho se algum virar operação.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` verdes (1395 testes, 16 novos).
+Nenhuma linha de `scanner.js`/`entities.js`/`firestore.rules`/`server/`
+tocada. **Não verificado nesta sessão:** a aparência renderizada e um segundo
+teste com a persona sobre o card novo — o ciclo honesto seria repetir a fase 1
+sobre esta versão.
+
+### Addendum (2026-09-05) — o tripwire do item 155 tinha o mesmo tipo de buraco que ele existe para tampar
+
+Achado de review no PR #304, verificado e procedente: a primeira versão do
+tripwire varria o fonte com `/refetchInterval:\s*(\d[\d_]*)/` e comparava o
+número com o piso. Um regex não avalia expressão — `refetchInterval: 10 * 1000`
+ou uma constante nova `FAST_POLL_MS` **não produziriam match nenhum**, e o
+teste ficaria verde com o painel voltando a pesquisar a cada 10s. Um guarda que
+só reconhece a forma exata do incidente anterior não previne o próximo.
+
+Refeito como **allowlist**: o valor precisa ser o NOME de um export de
+`pollingIntervals.js` que esteja no piso ou acima. A lista é derivada dos
+próprios exports do módulo, então uma constante nova abaixo do piso também não
+entra. Literal, aritmética e identificador desconhecido falham por igual.
+
+Ao endurecer, o tripwire encontrou um caso que eu mesmo tinha deixado passar
+(`AssetCard.jsx`, literal `60000`) — e ele revelou uma segunda fragilidade: a
+isenção estava por **nome de arquivo** (`useLivePrice.js`), o que não cobre
+outras chamadas de mercado. O escopo passou a ser definido pelo que a query
+**lê**: só entra no tripwire o `useQuery` cujo corpo menciona
+`backend.entities` ou `rtdbEntities`. Cotação da Binance fica de fora por
+definição, sem lista de exceções para manter.
+
+Três metatestes provam a detecção em vez de afirmá-la: literal, aritmética e
+constante desconhecida são pegos; as constantes do módulo passam; um bloco que
+lê a Binance é ignorado.

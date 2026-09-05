@@ -3,6 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { ScrollText, Filter, RefreshCw, AlertTriangle, Info, Bug, AlertCircle, X, Search, Trash2, Copy, Check } from 'lucide-react';
 import moment from 'moment';
+import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 const LEVEL_CONFIG = {
   info:  { icon: Info,          color: 'rgba(0,229,255,0.8)',   bg: 'rgba(0,229,255,0.08)',   border: 'rgba(0,229,255,0.2)',   label: 'INFO' },
@@ -19,7 +20,7 @@ export default function Logs() {
   const { data: logs = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ['system-logs'],
     queryFn: () => backend.entities.SystemLog.list('-created_date', 200),
-    refetchInterval: 15000,
+    refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
   const clearLogsMutation = useMutation({

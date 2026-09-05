@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Wallet, TrendingUp, TrendingDown, Shield } from 'lucide-react';
 import { rtdbEntities } from '@/api/rtdbEntities';
 import { simulateEquityCurve, DEFAULT_INITIAL_CAPITAL, DEFAULT_RISK_PCT } from '@/lib/equityCurve';
+import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefined }) {
   return (
@@ -40,7 +41,7 @@ export default function VirtualAccountCard() {
   const { data: operations = [] } = useQuery({
     queryKey: ['trade-operations-closed-all'],
     queryFn: () => rtdbEntities.TradeOperation.list('-created_date', 500),
-    refetchInterval: 30000,
+    refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
   const sim = useMemo(() => {

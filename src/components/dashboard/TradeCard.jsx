@@ -259,7 +259,7 @@ function AmbiguousExitBanner({ op }) {
 
 /* ────────────────────────── Camada 2 — o porquê ─────────────────────────── */
 
-function ScoreBar({ score }) {
+export function ScoreBar({ score }) {
   const pct = Math.max(0, Math.min(100, score || 0));
   const color = pct >= 85 ? '#00ff80' : pct >= 65 ? '#ffd166' : '#ff9f43';
   const label = pct >= 85 ? '🔥 Forte' : pct >= 65 ? '⚡ Moderado' : '〰 Fraco';

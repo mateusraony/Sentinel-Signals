@@ -3,19 +3,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { rtdbEntities } from '@/api/rtdbEntities';
 import {
-  Loader2, Target, History, XCircle, Eye,
-  TrendingUp, TrendingDown, AlertTriangle,
+  Loader2, Target, History, XCircle, Eye, AlertTriangle,
   BarChart2, Edit3, X, Search, Calendar, ChevronDown, ChevronUp
 } from 'lucide-react';
-import TradeCard from '@/components/dashboard/TradeCard';
+import TradeCard, { ScoreBar } from '@/components/dashboard/TradeCard';
 import TradeEntryMarkers from '@/components/trades/TradeEntryMarkers';
 import PortfolioVsMarket from '@/components/trades/PortfolioVsMarket';
 import PerformanceReport from '@/components/trades/PerformanceReport';
 import { describeProximity, formatPrice, formatSignedPct } from '@/lib/priceProximity';
+import { classifySignal, phaseCopy, rejectionCopy, formatTimeLeft, SIGNAL_PHASE } from '@/lib/signalStatus';
 import { useLivePrice } from '@/hooks/useLivePrice';
 import moment from 'moment';
 import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
 import { logError } from '@/lib/logger';
+import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
@@ -144,133 +145,159 @@ function EditModal({ op, onClose, onSave }) {
 
 /** Monitoring card */
 /**
- * Preço ao vivo de um sinal ainda em monitoramento — responde "quanto falta
- * para a operação abrir" em vez de só mostrar o preço congelado do momento do
- * sinal. Compartilha a MESMA `queryKey` do painel das operações ativas, então
- * um par que aparece nas duas listas custa uma requisição só.
+ * Card de aviso em análise — reescrito em 2026-09-05 (item 156).
+ *
+ * Um teste de usabilidade com persona leiga leu a versão anterior como uma
+ * ORDEM DE COMPRA ("o app mandou comprar BTC") quando a resposta certa era
+ * "não faça nada". Três causas, todas endereçadas aqui:
+ *  1. o elemento mais forte (badge BUY/SELL) era idêntico nos 3 estados, e o
+ *     que os diferenciava vivia em 8px cinza no rodapé → estado virou o badge
+ *     dominante, direção virou texto discreto;
+ *  2. nenhuma das frases dizia quem age → toda fase agora traz a linha de
+ *     "você não precisa fazer nada" (src/lib/signalStatus.js);
+ *  3. os dois preços e o score não tinham rótulo visível (só `title=`, que
+ *     morre no toque) → rótulos na tela, e o score reusa a ScoreBar do card
+ *     de operação, que já carrega a ressalva "não é probabilidade de acerto".
  */
-function SignalLivePrice({ symbol, referencePrice, side }) {
-  const { price, isError, isStale, ageLabel } = useLivePrice(symbol);
+function MonitoringCard({ signal, onDismiss, isDismissing }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const [showInfoSignals, setShowInfoSignals] = useState(false);
+  const { price, isStale } = useLivePrice(signal.symbol);
 
-  if (price === null) {
-    return isError
-      ? <div className="text-[9px] font-mono" style={{ color: '#ff9f43' }} title="A Binance não respondeu na última tentativa.">preço indisponível</div>
-      : null;
-  }
-
-  const { unrealizedPct } = describeProximity({ side, entry_price: referencePrice }, price);
-  const color = unrealizedPct === null ? 'rgba(255,255,255,0.35)' : unrealizedPct >= 0 ? '#00ff80' : '#ff1478';
-
-  return (
-    <div className="text-[9px] font-mono flex items-center justify-end gap-1"
-      style={{ color: isStale ? '#ff9f43' : '#00e5ff', opacity: isStale ? 0.7 : 1 }}>
-      <span title={isStale
-        ? `Último preço recebido, de ${ageLabel ?? '?'} atrás — a atualização automática não está passando.`
-        : 'Preço de mercado agora'}>
-        {isStale ? '⚠️ ' : ''}${formatPrice(price)}
-      </span>
-      {unrealizedPct !== null && (
-        <span style={{ color }} title={isStale
-          ? `Calculado sobre o último preço recebido (há ${ageLabel ?? '?'}), não sobre o preço de agora.`
-          : 'Quanto o preço andou a favor do sinal desde que ele apareceu.'}>
-          {formatSignedPct(unrealizedPct)}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function MonitoringCard({ signal }) {
+  const { phase, msLeft, expiresAt } = classifySignal(signal);
+  const copy = phaseCopy(phase);
+  const reason = rejectionCopy(signal);
   const isBuy = signal.signal_type === 'BUY';
+  const timeLeft = formatTimeLeft(msLeft);
 
-  // Só a cascata nativa 4h→15m entra numa fila de confirmação de verdade
-  // (janela de horas, last_rejection_reason) — a Range Filter também dispara
-  // em 1h/1d por ativo (MonitoredAsset.timeframes_enabled), mas esses são
-  // avisos informativos puros: nunca viram operação por este mecanismo
-  // (scanner.js — só tf==='4h' alimenta a cascata de confirmação/retry), e
-  // por isso nunca têm "motivo de rejeição" nem "janela" de verdade. Tratar
-  // os dois casos como se fossem a mesma coisa é o que gerava a confusão
-  // reportada pelo usuário — a explicação de "aguardando/expirou" simplesmente
-  // não se aplica a um sinal 1h/1d.
-  const isConfirmationEligible = signal.timeframe === '4h';
+  const { unrealizedPct } = describeProximity(
+    { side: signal.signal_type, entry_price: signal.price_at_signal }, price);
+  const moveColor = unrealizedPct === null ? 'rgba(255,255,255,0.35)' : unrealizedPct >= 0 ? '#00ff80' : '#ff1478';
 
-  const expiresAt = new Date(signal.created_date).getTime() + CONFIRMATION_WINDOW_MS;
-  const msLeft = expiresAt - Date.now();
-  const isExpired = signal.expired_logged === true || msLeft <= 0;
-  const hoursLeft = Math.floor(Math.max(0, msLeft) / (60 * 60 * 1000));
-  const minsLeft = Math.floor((Math.max(0, msLeft) % (60 * 60 * 1000)) / (60 * 1000));
-
-  const knownReason = signal.last_rejection_reason
-    ? (REJECTION_LABELS[signal.last_rejection_reason] ?? `Última rejeição registrada: ${signal.last_rejection_reason}`)
-    : null;
-
-  // Nunca promete uma "próxima checagem" para um sinal que já expirou — isso
-  // contradiz o badge de baixo, que já diz que a janela fechou. Expirado
-  // sempre fala no passado (o que já aconteceu); só o sinal ainda dentro da
-  // janela fala no presente/futuro (o que está sendo avaliado agora).
-  const rejectionText = !isConfirmationEligible
-    ? `Sinal informativo (${signal.timeframe?.toUpperCase()}) — a Range Filter disparou nesse timeframe, mas só sinais de 4H entram na fila que pode virar operação. Este aqui é só um aviso, não vai confirmar nem expirar.`
-    : isExpired
-      ? (knownReason ?? 'O motor não chegou a reavaliar esse sinal antes da janela fechar.')
-      : (knownReason ?? 'Sinal novo — o motor está avaliando se confirma a entrada (nova checagem em ~5min).');
-
-  const dotColor = !isConfirmationEligible ? '#60a5fa' : (isExpired ? '#64748b' : '#ffd166');
-  const showGlow = isConfirmationEligible && !isExpired;
-
-  return (
-    <div className="rounded-xl p-4 space-y-2.5"
-      style={{ background: 'rgba(12,15,26,0.75)', backdropFilter: 'blur(20px)', border: isBuy ? '1px solid rgba(0,255,128,0.15)' : '1px solid rgba(255,20,120,0.15)' }}>
-      <div className="flex items-start justify-between">
-        <div>
+  // Já passou: uma linha discreta, com saída. Antes ficava com o mesmo peso
+  // visual de um aviso vivo e só sumia quando 50 sinais novos o empurravam.
+  if (phase === SIGNAL_PHASE.EXPIRED) {
+    return (
+      <div className="rounded-xl px-3 py-2.5 flex items-start gap-2"
+        style={{ background: 'rgba(12,15,26,0.5)', border: '1px solid rgba(255,255,255,0.05)', borderLeft: `3px solid ${copy.color}` }}>
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-sm text-foreground">{signal.symbol?.replace('USDT', '/USDT')}</span>
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
-              style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.07)' }}>
-              {signal.timeframe?.toUpperCase()}
+            <span className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.6)' }}>
+              {signal.symbol?.replace('USDT', '/USDT')}
             </span>
-            {!isConfirmationEligible && (
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
-                style={{ background: 'rgba(96,165,250,0.1)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.25)' }}>
-                ℹ Só aviso
-              </span>
-            )}
-            <span className="flex items-center gap-0.5 text-[10px] font-mono font-bold px-2 py-0.5 rounded"
-              style={isBuy
-                ? { background: 'rgba(0,255,128,0.1)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.25)' }
-                : { background: 'rgba(255,20,120,0.1)', color: '#ff1478', border: '1px solid rgba(255,20,120,0.25)' }}>
-              {isBuy ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {signal.signal_type}
+            <span className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>
+              {isBuy ? 'alta' : 'baixa'} · {moment(signal.created_date).fromNow()}
+            </span>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+              style={{ background: `${copy.color}1a`, color: copy.color, border: `1px solid ${copy.color}40` }}>
+              {copy.icon} {copy.badge}
             </span>
           </div>
-          <div className="text-[9px] font-mono text-muted-foreground mt-0.5">{moment(signal.created_date).fromNow()}</div>
+          <p className="text-[10px] font-mono leading-relaxed mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            {copy.reassurance}
+          </p>
+        </div>
+        <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
+          title="Tirar este aviso da lista"
+          className="shrink-0 p-1 rounded-lg transition-colors hover:bg-white/[0.06]">
+          <X className="w-3.5 h-3.5" style={{ color: 'rgba(255,255,255,0.35)' }} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl p-4 space-y-3"
+      style={{
+        background: 'rgba(12,15,26,0.75)', backdropFilter: 'blur(20px)',
+        border: '1px solid rgba(255,255,255,0.06)', borderLeft: `3px solid ${copy.color}`,
+      }}>
+      {/* 1 · Identidade — e o ESTADO como elemento dominante, não a direção */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-bold text-sm text-foreground truncate">{signal.symbol?.replace('USDT', '/USDT')}</div>
+          <div className="text-[10px] font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            {isBuy ? 'Aviso de alta (compra)' : 'Aviso de baixa (venda)'} · {moment(signal.created_date).fromNow()}
+          </div>
+        </div>
+        <span className="text-[10px] font-mono px-2 py-0.5 rounded shrink-0 font-semibold"
+          style={{ background: `${copy.color}1a`, color: copy.color, border: `1px solid ${copy.color}45` }}>
+          {copy.icon} {copy.badge}
+        </span>
+      </div>
+
+      {/* 2 · Preço agora — rotulado. Antes eram dois números sem legenda. */}
+      <div className="flex items-end justify-between gap-2 flex-wrap">
+        <div className="min-w-0">
+          <div className="text-lg font-mono font-bold leading-none truncate"
+            style={{ color: price === null ? 'rgba(255,255,255,0.35)' : isStale ? '#ff9f43' : 'rgba(255,255,255,0.95)' }}>
+            {price !== null ? `$${formatPrice(price)}` : '—'}
+          </div>
+          <div className="text-[9px] font-mono uppercase tracking-widest mt-1"
+            style={{ color: isStale ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>
+            {isStale ? 'preço desatualizado' : 'preço agora'}
+          </div>
         </div>
         <div className="text-right shrink-0">
-          <div className="text-[11px] font-mono font-semibold text-foreground"
-            title="Preço no momento em que o sinal apareceu.">${formatPrice(signal.price_at_signal)}</div>
-          <SignalLivePrice symbol={signal.symbol} referencePrice={signal.price_at_signal} side={signal.signal_type} />
-          <div className="text-[9px] font-mono" style={{ color: '#ffd166' }}>Score: {signal.context?.score || 0}/100</div>
+          <div className="text-[11px] font-mono" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            avisou em ${formatPrice(signal.price_at_signal)}
+          </div>
+          {unrealizedPct !== null && (
+            <div className="text-[10px] font-mono font-bold" style={{ color: moveColor, opacity: isStale ? 0.55 : 1 }}>
+              {formatSignedPct(unrealizedPct)} a favor do aviso
+            </div>
+          )}
         </div>
       </div>
-      <div style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
-      <div className="text-[9px] font-mono text-muted-foreground leading-relaxed line-clamp-2">{signal.reason}</div>
 
-      {/* Motivo real que está travando a entrada — SignalEvent.last_rejection_reason,
-          gravado pelo próprio motor (write-on-change) a cada passada de retry.
-          Só existe/faz sentido para sinais de 4H (isConfirmationEligible). */}
-      <div className="flex items-start gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full mt-1 shrink-0" style={{ background: dotColor, boxShadow: showGlow ? `0 0 4px ${dotColor}` : 'none' }} />
-        <span className="text-[9px] font-mono leading-relaxed" style={{ color: dotColor }}>
-          {rejectionText}
-        </span>
+      {/* 3 · O que falta — chip curto + frase que termina em "nada a fazer" */}
+      <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="text-[10px] font-mono font-semibold mb-1" style={{ color: copy.color }}>
+          {reason.icon} {reason.chip}
+        </div>
+        <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
+          {reason.detail}
+        </p>
       </div>
 
-      <div className="flex items-center justify-between text-[8px] font-mono">
-        <span style={{ color: !isConfirmationEligible ? '#60a5fa' : (isExpired ? '#64748b' : 'rgba(255,255,255,0.35)') }}>
-          {!isConfirmationEligible
-            ? 'Sem fila de confirmação — não vira operação por aqui'
-            : (isExpired ? 'Expirado — não virou operação' : `Confirma em até ${hoursLeft}h${minsLeft}m`)}
-        </span>
+      {/* 4 · Quem age, e até quando */}
+      <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+        {copy.reassurance}
+        {phase === SIGNAL_PHASE.WAITING && expiresAt && timeLeft
+          ? ` Prazo: até ${moment(expiresAt).utcOffset(-3).format('DD/MM [às] HH[h]mm')} (faltam ${timeLeft}).`
+          : ''}
+      </p>
+
+      {/* 5 · O técnico, a um clique */}
+      <div className="flex items-center justify-between gap-2">
+        <button onClick={() => setShowDetails(!showDetails)}
+          aria-expanded={showDetails}
+          className="flex items-center gap-1 text-[10px] font-mono transition-colors hover:text-foreground/70"
+          style={{ color: 'rgba(255,255,255,0.35)' }}>
+          {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          Detalhes técnicos
+        </button>
+        <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
+          title="Tirar este aviso da lista"
+          className="text-[10px] font-mono px-2 py-1 rounded-lg transition-colors hover:bg-white/[0.06]"
+          style={{ color: 'rgba(255,255,255,0.3)' }}>
+          Dispensar
+        </button>
       </div>
+
+      {showDetails && (
+        <div className="space-y-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            Gráfico de {signal.timeframe?.toUpperCase()}
+          </div>
+          <ScoreBar score={signal.context?.score || 0} />
+          {signal.reason && (
+            <p className="text-[9px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              {signal.reason}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -350,13 +377,13 @@ export default function Trades() {
   const { data: operations = [], isLoading, dataUpdatedAt } = useQuery({
     queryKey: ['trade-operations'],
     queryFn: () => rtdbEntities.TradeOperation.list('-created_date', 100),
-    refetchInterval: 15000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const { data: recentSignals = [] } = useQuery({
     queryKey: ['recent-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 50),
-    refetchInterval: 30000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   // As 3 mutações abaixo passam pela MESMA CAS transacional
@@ -379,6 +406,14 @@ export default function Trades() {
       }
     });
   }
+
+  // Mesma mutacao de Alerts.jsx — o campo ja existe no schema e ja e
+  // respeitado pelo motor; faltava so o botao aqui.
+  const dismissSignalMutation = useMutation({
+    mutationFn: (signal) => backend.entities.SignalEvent.update(signal.id, { is_dismissed: true }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['recent-signals'] }),
+    onError: (err) => logError('Falha ao dispensar aviso', err),
+  });
 
   const closeMutation = useMutation({
     /** @param {object} op */
@@ -419,13 +454,20 @@ export default function Trades() {
   const activeKey = new Set(active.map(o => `${o.symbol}_${o.timeframe}`));
   const monitoringMap = new Map();
   recentSignals
-    .filter(s => s.source === 'range_filter' && !activeKey.has(`${s.symbol}_${s.timeframe}`))
+    // is_dismissed ja e respeitado pelo scanner e pela pagina Alerts; so esta
+    // lista o ignorava, entao um aviso dispensado voltava a aparecer aqui.
+    .filter(s => s.source === 'range_filter' && !s.is_dismissed && !activeKey.has(`${s.symbol}_${s.timeframe}`))
     .forEach(s => {
       const key = `${s.symbol}_${s.timeframe}`;
       if (!monitoringMap.has(key) || new Date(s.created_date) > new Date(monitoringMap.get(key).created_date))
         monitoringMap.set(key, s);
     });
   const monitoringList = [...monitoringMap.values()];
+  // Sinais de 1h/1d nunca viram operacao (so a cascata 4h alimenta a fila).
+  // Misturados na lista principal eles eram ruido com peso de conteudo — vao
+  // para um acordeao fechado. Ver docs/known-risks.md item 156.
+  const monitoringActionable = monitoringList.filter(s => classifySignal(s).phase !== SIGNAL_PHASE.INFO);
+  const monitoringInfoOnly = monitoringList.filter(s => classifySignal(s).phase === SIGNAL_PHASE.INFO);
 
   const applyFilters = (list) => list
     .filter(o => filterTf === 'all' || o.timeframe === filterTf)
@@ -470,7 +512,7 @@ export default function Trades() {
               <span className="text-muted-foreground">Atualizado há {secAgo}s</span>
             </span>
             <span className="text-muted-foreground">
-              {monitoringList.length} monitorando · {active.length} ativas · {history.length} histórico
+              {monitoringActionable.length} em análise · {active.length} ativas · {history.length} histórico
             </span>
           </div>
         </div>
@@ -573,21 +615,58 @@ export default function Trades() {
           </button>
         </div>
 
-        {/* Monitoring section */}
-        {monitoringList.length > 0 && (
+        {/* Avisos em análise — rótulo antigo ("Em Monitoramento") mentia para
+            2 dos 3 estados: expirado não está sendo monitorado e informativo
+            nunca foi. Ver docs/known-risks.md item 156. */}
+        {monitoringActionable.length > 0 && (
           <div>
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-1">
               <Eye className="w-4 h-4" style={{ color: '#ffd166' }} />
-              <h2 className="text-base font-bold text-foreground">Em Monitoramento</h2>
+              <h2 className="text-base font-bold text-foreground">Avisos em análise</h2>
               <span className="text-xs font-mono" style={{ color: '#ffd166' }}>
-                ({applyFilters(monitoringList.map(s => ({ ...s, side: s.signal_type }))).length})
+                ({applyFilters(monitoringActionable.map(s => ({ ...s, side: s.signal_type }))).length})
               </span>
             </div>
+            <p className="text-[10px] font-mono mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
+              O app está checando estes. Se algum virar operação, ele abre sozinho e ela aparece em Operações Ativas.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {applyFilters(monitoringList.map(s => ({ ...s, side: s.signal_type }))).map(signal => (
-                <MonitoringCard key={signal.id} signal={signal} />
+              {applyFilters(monitoringActionable.map(s => ({ ...s, side: s.signal_type }))).map(signal => (
+                <MonitoringCard
+                  key={signal.id}
+                  signal={signal}
+                  onDismiss={(sig) => dismissSignalMutation.mutate(sig)}
+                  isDismissing={dismissSignalMutation.isPending}
+                />
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Observações de mercado — nunca viram operação, então saem da lista
+            principal e ficam num acordeão fechado. */}
+        {applyFilters(monitoringInfoOnly.map(s => ({ ...s, side: s.signal_type }))).length > 0 && (
+          <div>
+            <button onClick={() => setShowInfoSignals(!showInfoSignals)}
+              aria-expanded={showInfoSignals}
+              className="flex items-center gap-2 text-[11px] font-mono transition-colors hover:text-foreground/70"
+              style={{ color: '#60a5fa' }}>
+              {showInfoSignals ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              ℹ {applyFilters(monitoringInfoOnly.map(s => ({ ...s, side: s.signal_type }))).length} observações de mercado
+              <span style={{ color: 'rgba(255,255,255,0.3)' }}>— não viram operação</span>
+            </button>
+            {showInfoSignals && (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-3">
+                {applyFilters(monitoringInfoOnly.map(s => ({ ...s, side: s.signal_type }))).map(signal => (
+                  <MonitoringCard
+                    key={signal.id}
+                    signal={signal}
+                    onDismiss={(sig) => dismissSignalMutation.mutate(sig)}
+                    isDismissing={dismissSignalMutation.isPending}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 

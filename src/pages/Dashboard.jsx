@@ -22,6 +22,7 @@ import PredictiveAnalysis from '@/components/dashboard/PredictiveAnalysis';
 import { useBrowserNotifications } from '@/hooks/useBrowserNotifications';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
@@ -45,25 +46,25 @@ export default function Dashboard() {
   const { data: assets = [], isLoading: loadingAssets } = useQuery({
     queryKey: ['monitored-assets'],
     queryFn: () => backend.entities.MonitoredAsset.filter({ is_active: true }),
-    refetchInterval: 20000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const { data: states = [] } = useQuery({
     queryKey: ['asset-states'],
     queryFn: () => rtdbEntities.AssetState.list(),
-    refetchInterval: 15000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const { data: recentSignals = [] } = useQuery({
     queryKey: ['recent-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 50),
-    refetchInterval: 10000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const { data: tradeOps = [] } = useQuery({
     queryKey: ['trade-operations-dashboard'],
     queryFn: () => rtdbEntities.TradeOperation.list('-created_date', 100),
-    refetchInterval: 10000,
+    refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   // Browser + in-app notifications

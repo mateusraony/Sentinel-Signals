@@ -4,6 +4,7 @@ import { Gauge } from 'lucide-react';
 import { rtdbEntities } from '@/api/rtdbEntities';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { summarizeOps } from '@/lib/tradeMetrics';
+import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 // Mesmo teto/queryKey de VirtualAccountCard.jsx — dados compartilhados via
 // cache do TanStack Query, sem fetch extra.
@@ -64,7 +65,7 @@ export default function LiveConfidenceCard() {
   const { data: operations = [] } = useQuery({
     queryKey: ['trade-operations-closed-all'],
     queryFn: () => rtdbEntities.TradeOperation.list('-created_date', OPS_LIMIT),
-    refetchInterval: 30000,
+    refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
   const { all, buy, sell } = useMemo(() => ({

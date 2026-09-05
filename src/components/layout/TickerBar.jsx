@@ -4,12 +4,13 @@ import { backend } from '@/api/entities';
 import { rtdbEntities } from '@/api/rtdbEntities';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 
 export default function TickerBar() {
   const { data: states = [] } = useQuery({
     queryKey: ['asset-states'],
     queryFn: () => rtdbEntities.AssetState.list(),
-    refetchInterval: 60000
+    refetchInterval: POLL_OPERATIONAL_MS
   });
 
   const { data: assets = [] } = useQuery({
