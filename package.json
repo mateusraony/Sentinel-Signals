@@ -83,7 +83,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",
-    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^22.13.5",
     "@types/react": "^18.2.66",
@@ -101,7 +100,7 @@
     "eslint-plugin-unused-imports": "^4.3.0",
     "firebase-admin": "^14.1.0",
     "globals": "^15.14.0",
-    "jsdom": "^30.0.1",
+    "jsdom": "^26.1.0",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.2",

@@ -19901,6 +19901,52 @@ Dependências novas, todas `devDependencies`: `@vitest/coverage-v8@4.1.10`
 `--legacy-peer-deps`, que de quebra removia `date-fns` do lockfile), `jsdom`,
 `@testing-library/react`, `@testing-library/jest-dom`.
 
+### Addendum — a CI pegou o que eu não peguei: `engines` do Node
+
+O primeiro push da Fase 1 **quebrou o CI**, num modo que merece registro:
+
+```
+Failed to start forks worker for src/pages/pagesSmoke.test.jsx
+Caused by: TypeError: webidl.util.markAsUncloneable is not a function
+  ❯ new CacheStorage node_modules/undici/lib/web/cache/cachestorage.js
+  ❯ Object.<anonymous> node_modules/jsdom/lib/api.js
+```
+
+`jsdom@30` declara `engines.node: ^22.22.2 || ^24.15.0 || >=26`. O `ci.yml`
+roda **Node 20**. A suíte passou local porque o Node desta máquina é
+**22.22.2** — exatamente dentro da faixa. Coincidência perfeita para esconder
+o problema até o push.
+
+**`engines` no npm é advisório:** instalar uma dependência que exige Node mais
+novo que o de produção não emite erro nenhum; a quebra vem depois, longe da
+causa, num stack trace que não menciona versão de Node em lugar nenhum.
+
+Corrigido fixando `jsdom@^26.1.0` (`engines: >=18`) em vez de subir o Node do
+CI — subir o Node divergiria o que a CI testa do que o scan roda em produção,
+e mexer no Node do relógio de trading é decisão de produto.
+
+**Guard:** `scripts/nodeEnginesTripwire.test.js` compara o `engines.node` de
+toda dependência direta contra a versão que o `ci.yml` declara, e falha no
+`npm test` — antes do push. Verificado reintroduzindo o `engines` do jsdom 30.
+
+### Achado do addendum — `firebase-admin` roda em Node não suportado
+
+A mesma checagem expôs algo **anterior a este item**: `firebase-admin@14.1.0`
+declara `engines.node: >=22`, e `scan.yml`/`backfill.yml` rodam **Node 20**. O
+relógio de trading roda o SDK admin numa versão que o próprio SDK diz não
+suportar. Funciona hoje (advisório), mas é risco latente da mesma família.
+
+Não corrigido aqui de propósito: subir o Node de todos os workflows toca o scan
+ao vivo. Está no `PASSIVO_CONHECIDO` do tripwire — aceito, documentado, e o
+teste avisa se ele deixar de ser necessário. **Decisão pendente do usuário.**
+
+### Dependência instalada sem uso
+
+`@testing-library/jest-dom` foi instalada e nunca importada — violação da
+convenção do próprio repositório ("não adicione dependência nova sem confirmar
+uso real"). Removida. Ela também exigia Node >=22, então teria sido a próxima
+mina.
+
 ### Fases seguintes
 
 - **Fase 2** — varredura pelas 3 famílias de bug (item 164) no repo inteiro.
