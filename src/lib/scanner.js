@@ -34,6 +34,7 @@ import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, advancePreTp1Trailing, favorableExtremeFromMfe, advanceToBreakevenOnSiblingOpen, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
 import { groupActiveOpsByAsset, isTerminalStatus } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
+import { rejectionPatch, regimeDetail, trendReversedDetail } from './signalRejection';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
 import {
@@ -528,9 +529,16 @@ export function buildTradeOpData(sig, tf4hData, pineConfig, confirmation15m, cas
  * Check 15m RF direction to confirm a 4h signal before entry.
  * Only requires directional alignment — Range Filter signals fire on state
  * change only, so requiring a fresh signal would block valid entries.
- * Returns { confirmed, entryPrice, entryCandleTime }: entryPrice is the
- * close of the latest closed 15m candle, used as the real entry price
+ * Returns { confirmed, entryPrice, entryCandleTime, reason }: entryPrice is
+ * the close of the latest closed 15m candle, used as the real entry price
  * instead of the (potentially hours-old) 4h signal price.
+ *
+ * `reason` (docs/known-risks.md item 163) é aditivo e só existe quando
+ * `confirmed` é false: até este item as TRÊS causas de não-confirmação —
+ * dado insuficiente, direção contrária e erro de rede — devolviam o MESMO
+ * `{ confirmed: false }`, então nenhum texto de UI podia dizer o que
+ * realmente aconteceu, porque o dado não sabia. Nenhum chamador muda de
+ * comportamento: quem decide entrada continua olhando só `confirmed`.
  */
 async function check15mConfirmation(symbol, direction, asset) {
   // docs/known-risks.md item 6 (2026-08-03): mesmo resolvedor do cálculo RF
@@ -549,7 +557,7 @@ async function check15mConfirmation(symbol, direction, asset) {
     const closed = candles15m.filter(c => c.isClosed);
     if (closed.length < rfParams.period + 10) {
       // Not enough data — do NOT allow trade without confirmation
-      return { confirmed: false, entryPrice: null, entryCandleTime: null };
+      return { confirmed: false, entryPrice: null, entryCandleTime: null, reason: 'insufficient_data' };
     }
 
     const rf = calculateRangeFilter(
@@ -561,7 +569,7 @@ async function check15mConfirmation(symbol, direction, asset) {
     // 15m RF must be pointing in the same direction as the 4h signal
     const aligned = direction === 'BUY' ? rf.direction === 1 : rf.direction === -1;
     if (!aligned) {
-      return { confirmed: false, entryPrice: null, entryCandleTime: null };
+      return { confirmed: false, entryPrice: null, entryCandleTime: null, reason: 'not_aligned' };
     }
 
     const lastClosed = closed[closed.length - 1];
@@ -569,11 +577,12 @@ async function check15mConfirmation(symbol, direction, asset) {
       confirmed: true,
       entryPrice: lastClosed.close,
       entryCandleTime: new Date(lastClosed.closeTime).toISOString(),
+      reason: null,
     };
   } catch (err) {
     // Data fetch error — do NOT allow trade without confirmation
     console.warn(`[15m confirm] ${symbol} fetch failed:`, err.message);
-    return { confirmed: false, entryPrice: null, entryCandleTime: null };
+    return { confirmed: false, entryPrice: null, entryCandleTime: null, reason: 'fetch_error' };
   }
 }
 
@@ -603,7 +612,9 @@ async function check15mConfirmation(symbol, direction, asset) {
  */
 function resolveEntryConfirmation15m({ symbol, direction, asset, pineConfig, entryPrice, entryCandleTime }) {
   if (pineConfig.skip15mConfirmationEnabled === true) {
-    return Promise.resolve({ confirmed: true, entryPrice, entryCandleTime, bypassed15m: true });
+    // `reason: null` mantém o shape do retorno igual ao de check15mConfirmation
+    // (item 163) — só existe motivo quando NÃO confirmou, e aqui confirmou.
+    return Promise.resolve({ confirmed: true, entryPrice, entryCandleTime, bypassed15m: true, reason: null });
   }
   return check15mConfirmation(symbol, direction, asset);
 }
@@ -850,11 +861,19 @@ function stampDisplacementFields(opData, gate) {
 // muitas passadas de retry custa zero escrita extra; só uma mudança de
 // motivo grava. `entryFunnelOutcomes` é sempre empurrado (em memória, sem
 // custo) — é o que alimenta a seção `entryFunnel` do relatório de backtest.
-async function recordRejection(sig, cascade, reason, entryFunnelOutcomes) {
+// docs/known-risks.md item 163 — `detail` é o "o que REALMENTE aconteceu" que
+// faltava (ex.: `regime_rejected` junta ADX e Choppiness numa palavra só), e
+// `last_rejection_at` é o "desde quando". Os dois entram pela MESMA regra de
+// write-on-change: `rejectionPatch` devolve null quando motivo e detalhe são
+// os mesmos da passada anterior, então um sinal preso no mesmo gate continua
+// custando UMA escrita, não uma a cada 5 minutos. Por isso o detalhe é sempre
+// CATEGÓRICO, nunca numérico — ver o cabeçalho de src/lib/signalRejection.js.
+async function recordRejection(sig, cascade, reason, entryFunnelOutcomes, detail = null) {
   entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade, reason });
-  if (sig.last_rejection_reason !== reason) {
-    await backend.entities.SignalEvent.update(sig.id, { last_rejection_reason: reason });
-    sig.last_rejection_reason = reason;
+  const patch = rejectionPatch(sig, reason, detail);
+  if (patch) {
+    await backend.entities.SignalEvent.update(sig.id, patch);
+    Object.assign(sig, patch);
   }
 }
 
@@ -2949,10 +2968,10 @@ export async function persistScanResults(scanResult) {
         await backend.entities.SystemLog.create({
           level: 'info',
           module: 'scanner',
-          message: `${sig.symbol} 4h ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (4h)${sig.last_rejection_reason ? ` — último motivo: ${sig.last_rejection_reason}` : ''}`,
+          message: `${sig.symbol} 4h ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (4h)${sig.last_rejection_reason ? ` — último motivo: ${sig.last_rejection_reason}${sig.last_rejection_detail ? `/${sig.last_rejection_detail}` : ''}` : ''}`,
           symbol: sig.symbol,
           timeframe: '4h',
-          details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '4h_15m', last_rejection_reason: sig.last_rejection_reason ?? null },
+          details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '4h_15m', last_rejection_reason: sig.last_rejection_reason ?? null, last_rejection_detail: sig.last_rejection_detail ?? null, last_rejection_at: sig.last_rejection_at ?? null },
         });
       }
       continue; // stale, skip
@@ -2998,10 +3017,11 @@ export async function persistScanResults(scanResult) {
     // cada 5min), inflando `report.entryFunnel...side_filter_blocked` bem
     // além da contagem real de sinais bloqueados. Grava/conta só na 1ª vez.
     if (pineConfig.allowedSide && sig.signal_type !== pineConfig.allowedSide) {
-      if (sig.last_rejection_reason !== 'side_filter_blocked') {
+      const sidePatch = rejectionPatch(sig, 'side_filter_blocked');
+      if (sidePatch) {
         entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', reason: 'side_filter_blocked' });
-        await backend.entities.SignalEvent.update(sig.id, { last_rejection_reason: 'side_filter_blocked' });
-        sig.last_rejection_reason = 'side_filter_blocked';
+        await backend.entities.SignalEvent.update(sig.id, sidePatch);
+        Object.assign(sig, sidePatch);
       }
       continue;
     }
@@ -3024,7 +3044,7 @@ export async function persistScanResults(scanResult) {
     }
     const tf4hDir = tfData4h.rf.direction;
     const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
-    if (tf4hDir !== sigDir) { await recordRejection(sig, '4h_15m', 'trend_reversed', entryFunnelOutcomes); continue; }
+    if (tf4hDir !== sigDir) { await recordRejection(sig, '4h_15m', 'trend_reversed', entryFunnelOutcomes, trendReversedDetail(tf4hDir)); continue; }
 
     // Regime gate (ADX + Choppiness) — re-evaluated every retry pass since
     // conditions may have changed since the signal first fired.
@@ -3034,7 +3054,7 @@ export async function persistScanResults(scanResult) {
       ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
       adx: tfData4h.adx?.adx ?? null, chop: tfData4h.chop ?? null, tier: tfData4h.tier?.tier ?? null,
     });
-    if (!regime.ok) { await recordRejection(sig, '4h_15m', 'regime_rejected', entryFunnelOutcomes); continue; }
+    if (!regime.ok) { await recordRejection(sig, '4h_15m', 'regime_rejected', entryFunnelOutcomes, regimeDetail(regime)); continue; }
 
     // Candle pattern gate (engolfo) — re-evaluated every retry pass, same
     // reasoning as regime above: the signal candle doesn't change, but the
@@ -3093,7 +3113,7 @@ export async function persistScanResults(scanResult) {
       symbol: sig.symbol, direction: sig.signal_type, asset, pineConfig,
       entryPrice: tfData4h.lastClose, entryCandleTime: tfData4h.lastCandleTime,
     });
-    if (!confirmed.confirmed) { await recordRejection(sig, '4h_15m', 'confirmation_15m_not_aligned', entryFunnelOutcomes); continue; }
+    if (!confirmed.confirmed) { await recordRejection(sig, '4h_15m', 'confirmation_15m_not_aligned', entryFunnelOutcomes, confirmed.reason ?? null); continue; }
 
     const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed);
     if (pineConfig.smcAlignmentScoreEnabled) {
@@ -3170,10 +3190,10 @@ export async function persistScanResults(scanResult) {
           await backend.entities.SystemLog.create({
             level: 'info',
             module: 'scanner',
-            message: `${sig.symbol} 1h RF ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (15m, experimental)${sig.last_rejection_reason ? ` — último motivo: ${sig.last_rejection_reason}` : ''}`,
+            message: `${sig.symbol} 1h RF ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (15m, experimental)${sig.last_rejection_reason ? ` — último motivo: ${sig.last_rejection_reason}${sig.last_rejection_detail ? `/${sig.last_rejection_detail}` : ''}` : ''}`,
             symbol: sig.symbol,
             timeframe: '1h',
-            details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: RF_1H_COND_CASCADE, last_rejection_reason: sig.last_rejection_reason ?? null },
+            details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: RF_1H_COND_CASCADE, last_rejection_reason: sig.last_rejection_reason ?? null, last_rejection_detail: sig.last_rejection_detail ?? null, last_rejection_at: sig.last_rejection_at ?? null },
           });
         }
         continue;
@@ -3190,7 +3210,7 @@ export async function persistScanResults(scanResult) {
       if (!tfData4h || !tfData4h.atrValue) continue;
       const tf4hDir = tfData4h.rf.direction;
       const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
-      if (tf4hDir !== sigDir) { await recordRejection(sig, RF_1H_COND_CASCADE, 'trend_reversed', entryFunnelOutcomes); continue; }
+      if (tf4hDir !== sigDir) { await recordRejection(sig, RF_1H_COND_CASCADE, 'trend_reversed', entryFunnelOutcomes, trendReversedDetail(tf4hDir)); continue; }
 
       const regime = evaluateRegime(tfData4h, pineConfig);
       rfRegimeOutcomes.push({
@@ -3198,7 +3218,7 @@ export async function persistScanResults(scanResult) {
         ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
         adx: tfData4h.adx?.adx ?? null, chop: tfData4h.chop ?? null, tier: tfData4h.tier?.tier ?? null,
       });
-      if (!regime.ok) { await recordRejection(sig, RF_1H_COND_CASCADE, 'regime_rejected', entryFunnelOutcomes); continue; }
+      if (!regime.ok) { await recordRejection(sig, RF_1H_COND_CASCADE, 'regime_rejected', entryFunnelOutcomes, regimeDetail(regime)); continue; }
 
       // Codex review (PR #147, P1) — same reasoning as the native retry loop
       // above: a retry here can fire hours after the signal was born, so a
@@ -3209,7 +3229,7 @@ export async function persistScanResults(scanResult) {
         symbol: sig.symbol, direction: sig.signal_type, asset, pineConfig,
         entryPrice: tfData4h.lastClose, entryCandleTime: tfData4h.lastCandleTime,
       });
-      if (!confirmed.confirmed) { await recordRejection(sig, RF_1H_COND_CASCADE, 'confirmation_15m_not_aligned', entryFunnelOutcomes); continue; }
+      if (!confirmed.confirmed) { await recordRejection(sig, RF_1H_COND_CASCADE, 'confirmation_15m_not_aligned', entryFunnelOutcomes, confirmed.reason ?? null); continue; }
 
       const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed, { cascade: RF_1H_COND_CASCADE, signalTimeframe: '1h' });
       const minRR = pineConfig.minRR ?? 1.2;
@@ -3268,10 +3288,10 @@ export async function persistScanResults(scanResult) {
           await backend.entities.SystemLog.create({
             level: 'info',
             module: 'scanner',
-            message: `${sig.symbol} 1h RF ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (15m, independente do 4h, experimental)${sig.last_rejection_reason ? ` — último motivo: ${sig.last_rejection_reason}` : ''}`,
+            message: `${sig.symbol} 1h RF ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (15m, independente do 4h, experimental)${sig.last_rejection_reason ? ` — último motivo: ${sig.last_rejection_reason}${sig.last_rejection_detail ? `/${sig.last_rejection_detail}` : ''}` : ''}`,
             symbol: sig.symbol,
             timeframe: '1h',
-            details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: RF_1H_UNCOND_CASCADE, last_rejection_reason: sig.last_rejection_reason ?? null },
+            details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: RF_1H_UNCOND_CASCADE, last_rejection_reason: sig.last_rejection_reason ?? null, last_rejection_detail: sig.last_rejection_detail ?? null, last_rejection_at: sig.last_rejection_at ?? null },
           });
         }
         continue;
@@ -3293,7 +3313,7 @@ export async function persistScanResults(scanResult) {
         ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
         adx: tfData4hUncond.adx?.adx ?? null, chop: tfData4hUncond.chop ?? null, tier: tfData4hUncond.tier?.tier ?? null,
       });
-      if (!regime.ok) { await recordRejection(sig, RF_1H_UNCOND_CASCADE, 'regime_rejected', entryFunnelOutcomes); continue; }
+      if (!regime.ok) { await recordRejection(sig, RF_1H_UNCOND_CASCADE, 'regime_rejected', entryFunnelOutcomes, regimeDetail(regime)); continue; }
 
       // Mesmo raciocínio do retry rf1hCondEnabled (Codex PR #147, P1): usar
       // o candle 4h ATUAL (causal/executável) como entrada, nunca o
@@ -3305,7 +3325,7 @@ export async function persistScanResults(scanResult) {
         symbol: sig.symbol, direction: sig.signal_type, asset, pineConfig,
         entryPrice: tfData4hUncond.lastClose, entryCandleTime: tfData4hUncond.lastCandleTime,
       });
-      if (!confirmed.confirmed) { await recordRejection(sig, RF_1H_UNCOND_CASCADE, 'confirmation_15m_not_aligned', entryFunnelOutcomes); continue; }
+      if (!confirmed.confirmed) { await recordRejection(sig, RF_1H_UNCOND_CASCADE, 'confirmation_15m_not_aligned', entryFunnelOutcomes, confirmed.reason ?? null); continue; }
 
       const opData = buildTradeOpData(sig, tfData4hUncond, pineConfig, confirmed, { cascade: RF_1H_UNCOND_CASCADE, signalTimeframe: '1h' });
       const minRR = pineConfig.minRR ?? 1.2;
@@ -3362,10 +3382,10 @@ export async function persistScanResults(scanResult) {
           await backend.entities.SystemLog.create({
             level: 'info',
             module: 'scanner',
-            message: `${sig.symbol} 1h SMC ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (5m)${sig.last_rejection_reason ? ` — último motivo: ${sig.last_rejection_reason}` : ''}`,
+            message: `${sig.symbol} 1h SMC ${sig.signal_type} — sinal expirou sem nunca confirmar entrada (5m)${sig.last_rejection_reason ? ` — último motivo: ${sig.last_rejection_reason}${sig.last_rejection_detail ? `/${sig.last_rejection_detail}` : ''}` : ''}`,
             symbol: sig.symbol,
             timeframe: '1h',
-            details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '1h_5m', last_rejection_reason: sig.last_rejection_reason ?? null },
+            details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '1h_5m', last_rejection_reason: sig.last_rejection_reason ?? null, last_rejection_detail: sig.last_rejection_detail ?? null, last_rejection_at: sig.last_rejection_at ?? null },
           });
         }
         continue; // stale, skip
@@ -3387,7 +3407,7 @@ export async function persistScanResults(scanResult) {
       const tfData1h = results['1h'];
       if (!tfData1h || !tfData1h.atrValue || !tfData1h.smc) continue;
       const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
-      if (tfData1h.smc.trend !== sigDir) { await recordRejection(sig, '1h_5m', 'trend_reversed', entryFunnelOutcomes); continue; }
+      if (tfData1h.smc.trend !== sigDir) { await recordRejection(sig, '1h_5m', 'trend_reversed', entryFunnelOutcomes, trendReversedDetail(tfData1h.smc.trend)); continue; }
 
       // Fase 3 (docs/known-risks.md item 42) — off by default; silent on
       // reject, same reasoning as the retest/displacement retry loops below
@@ -3398,7 +3418,7 @@ export async function persistScanResults(scanResult) {
         ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
         adx: tfData1h.adx?.adx ?? null, chop: tfData1h.chop ?? null, tier: tfData1h.tier?.tier ?? null,
       });
-      if (!regime.ok) { await recordRejection(sig, '1h_5m', 'regime_rejected', entryFunnelOutcomes); continue; }
+      if (!regime.ok) { await recordRejection(sig, '1h_5m', 'regime_rejected', entryFunnelOutcomes, regimeDetail(regime)); continue; }
 
       // Fase 2 rodada 1 (docs/known-risks.md item 40) — off by default;
       // silent on a miss, same reasoning as the RF retry loop above (the 1st
