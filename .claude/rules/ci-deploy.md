@@ -86,6 +86,17 @@ paths:
   pena destravar o 1h como cascata de entrada? — `docs/known-risks.md` item
   56, "Retomada 2026-08-03"), não é diagnóstico de rotina nem toca nenhuma
   operação.
+- `health-audit.yml` — diagnóstico **manual** (só `workflow_dispatch`):
+  `scripts/health-audit.mjs` responde "o que está falhando e ninguém viu?"
+  (`docs/known-risks.md` item 164) — erros/avisos agrupados, operações presas,
+  funil de entrada e o estado do episódio de cota, tudo no Job Summary.
+  **Read-only por contrato**: o job FALHA se o script escrever qualquer coisa.
+  Teto explícito de 520 documentos lidos (~1% da cota diária) — uma auditoria
+  que varresse coleções para diagnosticar falta de cota seria o remédio
+  virando a doença. **⏰ Rode entre 03:00 e 06:00 UTC**: a cota zera ~07:00
+  UTC, então um relatório logo após o reset dirá "tudo bem" mesmo num dia em
+  que ela estourou de madrugada — foi assim que as falhas reais de 04/09 e
+  05/09 passaram dois dias despercebidas.
 - `golden-fixture.yml` — congela candles reais da Binance Spot como fixture
   dos golden tests de paridade (`src/lib/indicators/goldenParity.test.js`,
   `.claude/rules/pine-parity.md`) — roda no runner do GitHub porque a rede das

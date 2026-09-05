@@ -19582,3 +19582,121 @@ A trava anti-jargão do item 156 usava `\b`, e `\w` em JavaScript é só
 `[A-Za-z0-9_]` — então `\batr\b` casava dentro de **"voltar atrás"** (o `á`
 conta como borda de palavra). Mesma classe do falso positivo de `\bema\b` em
 "demais", já corrigido antes. Trocado por lookarounds que enxergam acento.
+
+## 164. Auditoria de saúde — e a cota que ainda estoura de madrugada (2026-09-05)
+
+**Pedido do usuário**, depois de uma sessão com vários bugs sérios seguidos:
+
+> Percebi que nesse chat tivemos muitos bugs sérios e isso acaba me deixando
+> receoso com todo o projeto […] Como pode ser feito pra que seja feito um
+> pente fino em tudo pra verificar todo tipo de bugs sérios e leves?
+
+### Fato — os bugs da sessão não eram aleatórios, eram 3 famílias
+
+Classificados, não impressionistas:
+
+| Família | Bugs desta sessão |
+|---|---|
+| **Guard com buraco** — o mecanismo existia mas nunca foi testado contra o bug que devia pegar | `eslint.config.js` descartando `no-undef` por spread (item 157) · dedup de cota morando dentro do Firestore (158) · classificador casando com a própria hipótese (162) · a trava anti-jargão casando `\batr\b` em "voltar **atr**ás" (163) |
+| **Falha silenciosa que vira valor plausível** — não dá erro, dá número errado | meio do range de 24h exibido como "preço agora" · cotação velha rotulada "ao vivo" · `{confirmed:false}` colapsando 3 causas (163) · `undefined` no Firestore parando toda criação de operação por ~2 semanas (136) |
+| **UI reimplementando regra do motor** | legendas invertidas em SELL · "faltam X% pro TP1" num TP1 já batido · "Stop BE" derivado do campo errado (154 addendum) |
+
+Isso muda a estratégia de auditoria: **caçar por FAMÍLIA rende muito mais que
+varrer arquivo por arquivo**, porque cada família tem uma assinatura buscável.
+
+### Fato — onde o risco está, medido
+
+| | |
+|---|---|
+| `src/lib` (motor, regras, indicadores) | 1.464 testes, máquina de estados fim a fim, golden parity — **bem coberto** |
+| `src/pages` + `src/components` | **109 arquivos, 16.699 linhas, ZERO testes** |
+| Cobertura de teste | **nunca medida** — a dependência nem está instalada |
+| `typecheck` | fora do CI, 16 erros acumulados sem ninguém ver |
+| `catch` mudo fora de notificação | apenas 2 — esta parte está saudável |
+
+O motor não é o lugar frágil. **O frágil é a camada de tela** (foi de lá que
+veio a página quebrada do item 157) **e o invisível é o que já falha sem gritar.**
+
+### 🚨 Achado da Fase 0 — a cota AINDA estoura, todo dia, de madrugada
+
+Investigando as execuções vermelhas do `backfill.yml`, duas falharam com a
+assinatura **REAL** de cota esgotada (`code: 8, details: 'Quota exceeded.'` —
+não o falso alarme do item 162):
+
+| Execução | Quando | Erro |
+|---|---|---|
+| #30 | 2026-09-05 **04:36 UTC** | `8 RESOURCE_EXHAUSTED: Quota exceeded.` |
+| #24 | 2026-09-04 **04:43 UTC** | idem |
+
+O horário é a informação: a cota zera ~07:00 UTC, então **04:40 UTC é ~21h30
+dentro do dia de cota** — o fim do ciclo. É exatamente o padrão que o item 159
+descreveu como ainda não provado (*"começa bem, estoura horas depois"*) e
+deixou agendado como "teste discriminante". **Agora está medido, e em dois dias
+consecutivos.**
+
+Por que passou despercebido: as verificações dos itens 155/159 foram feitas de
+manhã (09:00-13:00 UTC), quando a cota tinha acabado de zerar. Sete passadas
+verdes logo após o reset são compatíveis tanto com "a correção funcionou"
+quanto com "o dia mal começou" — o próprio item 159 registrou essa ressalva.
+Ela se confirmou.
+
+**Consequência ainda não medida:** não se sabe se o `scan.yml` (o relógio de
+trading) também cai nessa janela. Se cair, há uma janela diária de horas em que
+nenhuma operação é aberta, atualizada ou encerrada. É a primeira pergunta que a
+auditoria abaixo deve responder.
+
+### O que foi entregue
+
+**`scripts/health-audit.mjs`** + **`.github/workflows/health-audit.yml`** —
+diagnóstico read-only, disparo manual, mesmo molde do `count-signals.yml`.
+Responde "o que está falhando e ninguém viu?" em 5 seções: erros agrupados,
+avisos (incl. transições descartadas pelo CAS), operações presas, funil de
+entrada, e o estado do episódio de cota.
+
+Duas decisões de desenho que são o ponto do arquivo:
+
+1. **Nunca custar mais do que anuncia.** Uma auditoria que varresse coleções
+   inteiras para diagnosticar falta de cota seria o remédio virando a doença.
+   Toda leitura tem teto explícito (520 documentos no total, ~1% do teto
+   diário) e o relatório termina imprimindo o custo REAL medido por
+   `backend.quota.getAndResetOpCounts()`. Se ele escrever qualquer coisa, o job
+   falha — é read-only por contrato, não por intenção.
+2. **Agrupar, não listar.** `normalizarMensagem` troca ativo e número por
+   marcador, então 200 linhas de log viram "3 problemas distintos". E o que a
+   tabela destaca não é a contagem, é **quantos ativos DIFERENTES** — um erro
+   em 3+ ativos ao mesmo tempo é falha sistêmica, que foi exatamente a forma do
+   item 136.
+
+A parte pura vive em **`scripts/healthAuditFormat.mjs`** (13 testes) porque
+`health-audit.mjs` importa `adminEntities.js`, que faz `initializeApp()` no
+carregamento — um teste que o importasse quebraria sem credencial. É o mesmo
+acoplamento que derrubou 17 testes de uma vez no item 158.
+
+### Por que o disparo é manual (por enquanto)
+
+Um alerta automático precisa de limiar, e não existe linha de base do que é
+"normal" aqui. Inverter essa ordem foi o que produziu o spam do item 158 e o
+alarme falso do 162. Medir algumas vezes primeiro; agendar (e notificar no
+Telegram acima do limiar) é o passo seguinte, com dado na mão.
+
+**⏰ Quando rodar importa:** entre **03:00 e 06:00 UTC** (00:00-03:00 em
+Brasília) para o teste que discrimina. Rodado logo após o reset, o relatório
+dirá "tudo bem" mesmo num dia em que a cota estourou de madrugada.
+
+### Fases seguintes (planejadas, não feitas)
+
+- **Fase 1 — fechar os buracos de guard.** Medir cobertura pela primeira vez;
+  `typecheck` no CI com catraca (falha se o número SUBIR, sem exigir zero);
+  smoke test de render das 109 telas sem teste; e a convenção de que todo
+  tripwire precisa provar que falha com o bug reintroduzido.
+- **Fase 2 — varredura pelas 3 famílias** acima no repositório inteiro.
+- **Fase 3 — motor, adversarial**, com `sentinel-council-review` e
+  `sentinel-state-machine-test` sobre os P0 documentados.
+
+### Ressalva honesta
+
+"Blindado" não existe, e prometer isso repetiria o erro do alerta de cota, que
+afirmava mais do que sabia. O alvo é outro e é atingível: **nada falha em
+silêncio** e **cada família de bug já vista tem um guard testado contra ela**.
+Isso não impede o bug novo — impede o bug repetido e o bug invisível, que foram
+os dois caros aqui.
