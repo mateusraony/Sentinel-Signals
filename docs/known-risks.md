@@ -19394,3 +19394,91 @@ Aplicado em:
 `npm run lint && npm test && npm run build` verdes (1425 testes, 14 novos).
 Nenhuma linha de `scanner.js`/`entities.js`/`firestore.rules`/`server/`
 tocada. **Não verificado:** a aparência renderizada.
+
+## 162. Todo travamento virava "Cota do Firestore esgotada" (2026-09-05)
+
+**Relato do usuário**, no mesmo dia em que os itens 155/158/160 fecharam o
+episódio real de cota:
+
+> 🚨 Cota do Firestore esgotada — O scan ao vivo está falhando com
+> `RESOURCE_EXHAUSTED` […] 📝 Timeout: checkOneAsset:LDOUSDT não retornou em
+> 300000ms — provável travamento em retry de RESOURCE_EXHAUSTED do Firestore
+
+### Fato — não havia cota esgotada nenhuma
+
+Verificado direto nas execuções do GitHub Actions: os scans 15261 (12:50 UTC)
+e 15262 (12:55 UTC) terminaram `success` em ~50s cada, com o Firestore
+respondendo normalmente. O alerta veio do `backfill.yml`, não do scan: um
+único ativo (`checkOneAsset:LDOUSDT`) estourou o `BACKFILL_STEP_TIMEOUT_MS`
+de 5 minutos.
+
+### Causa raiz — o detector casava com a própria hipótese
+
+`scripts/scanTimeout.mjs` montava a mensagem assim:
+
+```
+Timeout: <etapa> não retornou em <N>ms — provável travamento em retry de
+RESOURCE_EXHAUSTED do Firestore (ver docs/known-risks.md item 142).
+```
+
+A parte depois do travessão é uma **hipótese** de quem escreveu o timeout, não
+um fato observado. Só que `run-scan.mjs:30` e `run-backfill-check.mjs:50`
+decidiam "é cota esgotada" com, cada um por sua conta:
+
+```js
+function isFirestoreQuotaExhausted(message) {
+  return /RESOURCE_EXHAUSTED/i.test(String(message || ''));
+}
+```
+
+que casa com a própria frase acima. Consequência: **todo timeout, de qualquer
+causa — Binance lenta, replay pesado, rede — era anunciado ao usuário como
+cota esgotada**, com a cota inteira disponível. Um diagnóstico errado é pior
+que nenhum: manda olhar o lugar errado.
+
+O bug foi introduzido junto com o próprio timeout (item 142) e ficou latente
+até o item 147 estender o mesmo padrão ao backfill, que é onde travamentos
+legítimos (replay de 60 dias) são muito mais prováveis.
+
+### Correção — o guard, não o sintoma
+
+1. **`scripts/failureClassification.mjs`** (novo, puro, sem I/O) — passa a ser
+   o ÚNICO lugar que decide o que é cota. Só conta a **assinatura real** do
+   erro do Firestore (`Quota exceeded` ou o código gRPC `8 RESOURCE_EXHAUSTED`);
+   a prosa de hipótese é removida do texto antes do teste, então nem logs
+   antigos enganam o detector. Também extrai `{ step, ms }` do timeout e
+   traduz o rótulo técnico para português simples (`checkOneAsset:LDOUSDT` →
+   "a checagem retroativa do LDOUSDT").
+2. **`scanTimeout.mjs`** — a mensagem passa a dizer só o que foi observado
+   (que etapa não respondeu, em quanto tempo). A causa provável continua
+   documentada, no comentário, onde nenhum regex a lê.
+3. **Alerta próprio para etapa travada** (`notifyStepTimeout`) — nomeia a
+   etapa em vez de chutar a causa, com marcador de dedup **separado**
+   (`systemAlerts/stepTimeout`). Separado de propósito: misturar com o de
+   cota faria um travamento qualquer disparar/silenciar o aviso de "cota
+   normalizada" do item 160.
+4. **`run-backfill-check.mjs` deixou de ser mudo no catch de topo** — um
+   travamento antes do loop (leitura de pendentes, `getPineConfig`) falhava o
+   job sem nenhum aviso.
+
+### Verificação
+
+- `scripts/failureClassification.test.js` (12 testes) usa **a mensagem exata
+  que o usuário recebeu** como caso de regressão: classifica `timeout`, não
+  `quota`. Um `8 RESOURCE_EXHAUSTED: Quota exceeded.` de verdade continua
+  classificando como `quota`, inclusive quando chega junto de um timeout.
+- `scripts/failureClassificationTripwire.test.js` trava a FORMA, não só o
+  caso: nenhum ponto de entrada pode voltar a classificar cota por conta
+  própria, e `scanTimeout.mjs` não pode voltar a pôr a assinatura de cota
+  dentro do erro que monta. **Verificado empiricamente**: reintroduzindo as
+  duas coisas, os dois testes falham; revertendo, passam.
+- `scripts/adminTelegramStepTimeout.test.js` (5 testes) prova o dedup próprio,
+  que uma etapa diferente é informação nova, e que a mensagem não fala em cota.
+- `npm run lint && npm test && npm run build` verdes; `build:scan` e
+  `build:backfill` empacotam.
+
+### O que continua verdadeiro
+
+O item 142 não muda: o cliente admin do Firestore realmente trava por minutos
+em retry de `RESOURCE_EXHAUSTED`, e o timeout continua sendo a defesa certa. O
+que estava errado era **afirmar essa causa** em toda ocorrência.

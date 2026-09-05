@@ -15,6 +15,7 @@ import { closesFullyAtTp1, getEntryReferenceTime } from '../src/lib/opExitRules.
 import { formatBackfillLag } from '../src/lib/backfillDetection.js';
 import { getFirestore } from 'firebase-admin/firestore';
 import { withTimeout } from './scanTimeout.mjs';
+import { describeStep, formatStepDuration } from './failureClassification.mjs';
 // O marcador de dedup de cota vive FORA do Firestore (item 158). Acesso
 // PREGUIÇOSO de propósito: importar scripts/adminEntities.js aqui puxaria o
 // initializeApp() dele para o carregamento deste módulo, acoplando um módulo
@@ -349,16 +350,22 @@ const QUOTA_DEDUP_TIMEOUT_MS = 15 * 1000;
 // (FIREBASE_DATABASE_URL), e cobrado por banda/mês — sem teto diário de
 // operações, então ele continua legível justamente durante a falta de cota
 // do Firestore.
-const QUOTA_MARKER_PATH = 'systemAlerts/firestoreQuota';
+const ALERT_MARKER_COLLECTION = 'systemAlerts';
+const QUOTA_MARKER_DOC = 'firestoreQuota';
+// Marcador PRÓPRIO do alerta de etapa travada (item 162) — separado do de
+// cota de propósito: são episódios diferentes, e misturar os dois faria uma
+// etapa travada zerar o episódio de cota (e vice-versa), fazendo o aviso de
+// "voltou ao normal" mentir.
+const STEP_TIMEOUT_MARKER_DOC = 'stepTimeout';
 
 /**
  * Handle do marcador no RTDB, ou `null` se o RTDB não estiver configurado
  * neste ambiente — mesmo guard de scripts/adminEntities.js.
  */
-function quotaMarkerRef() {
+function markerRef(doc) {
   if (!process.env.FIREBASE_DATABASE_URL) return null;
   try {
-    return getDatabase().ref(QUOTA_MARKER_PATH);
+    return getDatabase().ref(`${ALERT_MARKER_COLLECTION}/${doc}`);
   } catch {
     return null;
   }
@@ -372,26 +379,29 @@ function quotaMarkerRef() {
  *   alert_active      — há um episódio de queda ABERTO
  *   alert_started_at  — quando esse episódio começou (para medir a duração)
  */
-async function readQuotaMarker() {
-  const rtdbRef = quotaMarkerRef();
+async function readAlertMarker(doc) {
+  const rtdbRef = markerRef(doc);
   if (rtdbRef) {
-    const snap = await withTimeout(rtdbRef.get(), QUOTA_DEDUP_TIMEOUT_MS, 'readQuotaMarker: rtdb.get()');
+    const snap = await withTimeout(rtdbRef.get(), QUOTA_DEDUP_TIMEOUT_MS, `readAlertMarker(${doc}): rtdb.get()`);
     return snap.exists() ? (snap.val() ?? {}) : {};
   }
   // Sem RTDB configurado: cai no Firestore, o comportamento anterior.
-  const ref = getFirestore().collection('systemAlerts').doc('firestoreQuota');
-  const snap = await withTimeout(ref.get(), QUOTA_DEDUP_TIMEOUT_MS, 'readQuotaMarker: firestore.get()');
+  const ref = getFirestore().collection(ALERT_MARKER_COLLECTION).doc(doc);
+  const snap = await withTimeout(ref.get(), QUOTA_DEDUP_TIMEOUT_MS, `readAlertMarker(${doc}): firestore.get()`);
   return snap.exists ? (snap.data() ?? {}) : {};
 }
 
-async function writeQuotaMarker(marker) {
-  const rtdbRef = quotaMarkerRef();
+async function writeAlertMarker(doc, marker) {
+  const rtdbRef = markerRef(doc);
   if (rtdbRef) {
-    return withTimeout(rtdbRef.set(marker), QUOTA_DEDUP_TIMEOUT_MS, 'writeQuotaMarker: rtdb.set()');
+    return withTimeout(rtdbRef.set(marker), QUOTA_DEDUP_TIMEOUT_MS, `writeAlertMarker(${doc}): rtdb.set()`);
   }
-  const ref = getFirestore().collection('systemAlerts').doc('firestoreQuota');
-  return withTimeout(ref.set(marker), QUOTA_DEDUP_TIMEOUT_MS, 'writeQuotaMarker: firestore.set()');
+  const ref = getFirestore().collection(ALERT_MARKER_COLLECTION).doc(doc);
+  return withTimeout(ref.set(marker), QUOTA_DEDUP_TIMEOUT_MS, `writeAlertMarker(${doc}): firestore.set()`);
 }
+
+const readQuotaMarker = () => readAlertMarker(QUOTA_MARKER_DOC);
+const writeQuotaMarker = (marker) => writeAlertMarker(QUOTA_MARKER_DOC, marker);
 
 /**
  * Decisão pura de alertar, separada do I/O para ser testável.
@@ -481,6 +491,51 @@ export async function notifyFirestoreQuotaRecovered() {
       await writeQuotaMarker({ ...marker, alert_active: false });
     } catch (e) {
       console.warn('[adminTelegram] Falha ao limpar marcador de cota (não crítico):', e.message);
+    }
+  }
+  return delivered;
+}
+
+/**
+ * Uma ETAPA travou — alerta próprio, item 162.
+ *
+ * Antes deste alerta existir, todo travamento era anunciado como "Cota do
+ * Firestore esgotada", porque a mensagem de timeout carregava a palavra
+ * `RESOURCE_EXHAUSTED` como hipótese e o detector casava com ela. O usuário
+ * recebia um diagnóstico ERRADO — em 2026-09-05 recebeu alerta de cota
+ * esgotada enquanto o scan ao vivo rodava verde a cada 5 minutos.
+ *
+ * Este alerta diz só o que foi observado: QUE etapa não respondeu e em quanto
+ * tempo. Sem chutar a causa.
+ *
+ * Dedup próprio (`systemAlerts/stepTimeout`), nunca o de cota: são episódios
+ * diferentes, e o aviso de "cota normalizada" não pode ser disparado nem
+ * silenciado por um travamento que não tem nada a ver com cota.
+ */
+export async function notifyStepTimeout(step, ms) {
+  let marker = {};
+  try {
+    marker = await readAlertMarker(STEP_TIMEOUT_MARKER_DOC);
+  } catch (e) {
+    console.warn('[adminTelegram] Falha ao checar dedup de etapa travada, alertando mesmo assim:', e.message);
+  }
+  // Etapa DIFERENTE da última avisada é informação nova — não fica presa no
+  // cooldown de uma etapa que já não é a que está travando.
+  if (marker.step === step && !shouldAlertQuota(marker.last_alert_at)) return false;
+
+  const duracao = formatStepDuration(ms);
+  const delivered = await send(
+    `⏱️ <b>Uma etapa travou</b>\n\n`
+    + `O sistema parou de esperar por ${describeStep(step)}`
+    + `${duracao ? ` — não respondeu em ${duracao}` : ''}. `
+    + `Ele tenta de novo sozinho no próximo ciclo.\n\n`
+    + `<i>⚡ CryptoRadar — quando a causa for falta de cota, o aviso é outro e diz isso.</i>`
+  );
+  if (delivered) {
+    try {
+      await writeAlertMarker(STEP_TIMEOUT_MARKER_DOC, { last_alert_at: new Date().toISOString(), step });
+    } catch (e) {
+      console.warn('[adminTelegram] Falha ao gravar dedup de etapa travada (não crítico):', e.message);
     }
   }
   return delivered;

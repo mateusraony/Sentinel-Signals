@@ -47,7 +47,13 @@ paths:
   fechando a lacuna que o item 142 tinha deixado fora de escopo por falta
   de dado real; sem isso, um ativo cujo replay trava (ex.: `RESOURCE_EXHAUSTED`)
   gastava os 20min INTEIROS de `timeout-minutes` contra o Firestore real a
-  cada ciclo horário (`docs/known-risks.md` item 147).
+  cada ciclo horário (`docs/known-risks.md` item 147). **A mensagem desse
+  timeout diz só o que foi observado** (qual etapa, em quanto tempo): enquanto
+  ela carregava a causa provável (`RESOURCE_EXHAUSTED`), os dois pontos de
+  entrada classificavam a falha por regex e anunciavam TODO travamento como
+  "cota esgotada" — quem classifica agora é
+  `scripts/failureClassification.mjs`, único lugar autorizado a decidir isso
+  (`docs/known-risks.md` item 162).
 - `scan-shadow.yml` — braço decisório do modo sombra prospectivo (Fase 1, RF
   1h condicionado ao 4h, `docs/known-risks.md` item 56): roda `npm run
   scan:shadow`, declarado a cada hora (`cron: "41 * * * *"`, reduzido de

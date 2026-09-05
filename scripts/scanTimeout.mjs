@@ -20,9 +20,16 @@
 export function withTimeout(promise, ms, label) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
+      // A mensagem diz só O QUE FOI OBSERVADO: qual etapa não respondeu e em
+      // quanto tempo. A causa provável (retry de cota do Firestore) fica no
+      // comentário acima, NÃO no texto do erro — enquanto ela estava na
+      // mensagem, quem classificava a falha por regex casava com a própria
+      // hipótese e reportava TODO timeout como "cota esgotada", inclusive com
+      // a cota inteira disponível (docs/known-risks.md item 162, incidente ao
+      // vivo de 2026-09-05).
       reject(new Error(
-        `Timeout: ${label} não retornou em ${ms}ms — provável travamento em retry de `
-        + 'RESOURCE_EXHAUSTED do Firestore (ver docs/known-risks.md item 142).'
+        `Timeout: ${label} não retornou em ${ms}ms `
+        + '(ver docs/known-risks.md itens 142 e 162).'
       ));
     }, ms);
     promise.then(
