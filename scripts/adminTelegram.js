@@ -15,6 +15,12 @@ import { closesFullyAtTp1, getEntryReferenceTime } from '../src/lib/opExitRules.
 import { formatBackfillLag } from '../src/lib/backfillDetection.js';
 import { getFirestore } from 'firebase-admin/firestore';
 import { withTimeout } from './scanTimeout.mjs';
+// O marcador de dedup de cota vive FORA do Firestore (item 158). Acesso
+// PREGUIÇOSO de propósito: importar scripts/adminEntities.js aqui puxaria o
+// initializeApp() dele para o carregamento deste módulo, acoplando um módulo
+// de notificação ao bootstrap inteiro do admin — e quebrando qualquer
+// consumidor sem credencial, testes inclusive.
+import { getDatabase } from 'firebase-admin/database';
 
 const DEFAULT_FILTERS = {
   timeframes: ['1h', '4h', '1d'],
@@ -331,17 +337,80 @@ const AMBIGUOUS_EXIT_NOTE =
 // único (bem menor que os 90s do scan inteiro, que faz muito mais chamadas).
 const QUOTA_DEDUP_TIMEOUT_MS = 15 * 1000;
 
-export async function notifyFirestoreQuotaExhausted(errMessage) {
-  const ref = getFirestore().collection('systemAlerts').doc('firestoreQuota');
-  let shouldAlert = true;
+// docs/known-risks.md item 158 — o marcador de dedup NÃO pode morar no
+// Firestore. Ele existe para evitar spam do alerta de cota esgotada, mas o
+// `get()` dele é uma leitura do Firestore: quando a cota estoura, ele falha,
+// o `catch` mantinha `shouldAlert = true`, e o `set()` também falhava — então
+// o marcador nunca era gravado. Resultado: um alerta a CADA passada do scan
+// (~5min), exatamente na situação em que o dedup deveria funcionar. O
+// cooldown de 1h existia e nunca era aplicado.
+//
+// O RTDB é o lugar certo: mesmo projeto Firebase, já configurado
+// (FIREBASE_DATABASE_URL), e cobrado por banda/mês — sem teto diário de
+// operações, então ele continua legível justamente durante a falta de cota
+// do Firestore.
+const QUOTA_MARKER_PATH = 'systemAlerts/firestoreQuota';
+
+/**
+ * Handle do marcador no RTDB, ou `null` se o RTDB não estiver configurado
+ * neste ambiente — mesmo guard de scripts/adminEntities.js.
+ */
+function quotaMarkerRef() {
+  if (!process.env.FIREBASE_DATABASE_URL) return null;
   try {
-    const snap = await withTimeout(ref.get(), QUOTA_DEDUP_TIMEOUT_MS, 'notifyFirestoreQuotaExhausted: ref.get()');
-    const lastAt = snap.exists && snap.data().last_alert_at ? new Date(snap.data().last_alert_at).getTime() : 0;
-    shouldAlert = !lastAt || Date.now() - lastAt > QUOTA_ALERT_COOLDOWN_MS;
-  } catch (e) {
-    console.warn('[adminTelegram] Falha ao checar dedup de cota do Firestore, alertando mesmo assim:', e.message);
+    return getDatabase().ref(QUOTA_MARKER_PATH);
+  } catch {
+    return null;
   }
-  if (!shouldAlert) return false;
+}
+
+/** Lê `last_alert_at` do marcador. `null` = nunca alertou OU não deu para ler. */
+async function readQuotaMarker() {
+  const rtdbRef = quotaMarkerRef();
+  if (rtdbRef) {
+    const snap = await withTimeout(rtdbRef.get(), QUOTA_DEDUP_TIMEOUT_MS, 'readQuotaMarker: rtdb.get()');
+    return snap.exists() ? (snap.val()?.last_alert_at ?? null) : null;
+  }
+  // Sem RTDB configurado: cai no Firestore, o comportamento anterior.
+  const ref = getFirestore().collection('systemAlerts').doc('firestoreQuota');
+  const snap = await withTimeout(ref.get(), QUOTA_DEDUP_TIMEOUT_MS, 'readQuotaMarker: firestore.get()');
+  return snap.exists && snap.data().last_alert_at ? snap.data().last_alert_at : null;
+}
+
+async function writeQuotaMarker(iso) {
+  const rtdbRef = quotaMarkerRef();
+  if (rtdbRef) {
+    return withTimeout(rtdbRef.set({ last_alert_at: iso }), QUOTA_DEDUP_TIMEOUT_MS, 'writeQuotaMarker: rtdb.set()');
+  }
+  const ref = getFirestore().collection('systemAlerts').doc('firestoreQuota');
+  return withTimeout(ref.set({ last_alert_at: iso }), QUOTA_DEDUP_TIMEOUT_MS, 'writeQuotaMarker: firestore.set()');
+}
+
+/**
+ * Decisão pura de alertar, separada do I/O para ser testável.
+ *
+ * `lastAt === null` cobre dois casos diferentes de propósito: nunca alertou
+ * (deve alertar) e não deu para ler o marcador (alerta mesmo assim — perder
+ * o primeiro aviso de uma queda real é pior que um alerta a mais). O que
+ * conserta o spam não é fechar essa porta, é o marcador passar a ser legível
+ * durante a queda.
+ */
+export function shouldAlertQuota(lastAt, now = Date.now(), cooldownMs = QUOTA_ALERT_COOLDOWN_MS) {
+  if (!lastAt) return true;
+  const parsed = new Date(lastAt).getTime();
+  if (!Number.isFinite(parsed)) return true;
+  return now - parsed > cooldownMs;
+}
+
+export async function notifyFirestoreQuotaExhausted(errMessage) {
+  let lastAt = null;
+  try {
+    lastAt = await readQuotaMarker();
+  } catch (e) {
+    console.warn('[adminTelegram] Falha ao checar dedup de cota, alertando mesmo assim:', e.message);
+  }
+  if (!shouldAlertQuota(lastAt)) return false;
+
   const delivered = await send(
     `🚨 <b>Cota do Firestore esgotada</b>\n\n` +
     `O scan ao vivo está falhando com <code>RESOURCE_EXHAUSTED</code> — nenhuma ` +
@@ -351,9 +420,9 @@ export async function notifyFirestoreQuotaExhausted(errMessage) {
   );
   if (delivered) {
     try {
-      await withTimeout(ref.set({ last_alert_at: new Date().toISOString() }), QUOTA_DEDUP_TIMEOUT_MS, 'notifyFirestoreQuotaExhausted: ref.set()');
+      await writeQuotaMarker(new Date().toISOString());
     } catch (e) {
-      console.warn('[adminTelegram] Falha ao gravar dedup de cota do Firestore (não crítico):', e.message);
+      console.warn('[adminTelegram] Falha ao gravar dedup de cota (não crítico):', e.message);
     }
   }
   return delivered;

@@ -19044,3 +19044,162 @@ definição, sem lista de exceções para manter.
 Três metatestes provam a detecção em vez de afirmá-la: literal, aritmética e
 constante desconhecida são pegos; as constantes do módulo passam; um bloco que
 lê a Binance é ignorado.
+
+---
+
+## 157. 🔴 Incidente — `/trades` quebrada em produção por `useState` no componente errado (2026-09-05)
+
+**Reportado pelo usuário** com o log do ErrorBoundary:
+`Erro de renderização: Can't find variable: showInfoSignals`, em `/trades`,
+4 ocorrências. Regressão introduzida pelo item 156 (PR #304), mesclado ~20 min
+antes.
+
+### Causa imediata
+
+`const [showInfoSignals, setShowInfoSignals] = useState(false)` ficou declarado
+dentro de **`MonitoringCard`** (linha 164) enquanto era usado dentro de
+**`Trades()`** (linhas 650-658). Erro meu de edição: apliquei um
+`replace(..., count=1)` ancorado em `const [showDetails, setShowDetails] =
+useState(false);`, sem notar que eu **acabara de adicionar essa mesma linha** ao
+`MonitoringCard` — então a primeira ocorrência no arquivo passou a ser a do
+componente errado.
+
+### Causa sistêmica — por que lint, testes e build passaram verdes
+
+`eslint.config.js` fazia spread de `pluginJs.configs.recommended` e, logo
+depois, spread de `pluginReact.configs.flat.recommended` e um bloco `rules:`
+explícito. Em spread de objeto a última chave vence: **o `rules` das
+recomendadas do JS era descartado em silêncio**, e `no-undef` estava entre
+elas.
+
+Verificado experimentalmente, não deduzido: reintroduzi o bug exato e medi.
+
+| Verificação | Com o bug reintroduzido |
+|---|---|
+| `npx eslint` (antes desta correção) | ✅ verde — não via nada |
+| `npx eslint` (com `no-undef` ligada) | ❌ **5 erros**, apontando a linha |
+| `npm run build` | ✅ **verde** — Vite não faz análise de escopo |
+| `npm test` | ✅ verde — não há teste de render de `Trades.jsx` |
+
+Ou seja: as três verificações que eu rodo antes de todo push eram, juntas,
+cegas para esta classe de erro.
+
+### Correção
+
+1. Declaração movida para `Trades()`.
+2. **`no-undef: "error"`** ligada explicitamente em `eslint.config.js`, com
+   comentário explicando por que ela não pode voltar a depender do spread.
+3. Bloco de config novo para `**/*.test.*` com `globals.node`: sem ele, ligar
+   a regra acusaria 32 falsos positivos (`global`, do vitest) e a tentação
+   seria desligá-la de novo.
+
+`npm run lint && npm test && npm run build` verdes (1399 testes).
+
+### Lição
+
+O ponto não é "tomei mais cuidado". Um `replace` ancorado em texto que existe
+em mais de um escopo é uma armadilha que vai reaparecer — o que mudou é que
+agora **existe uma verificação automática que pega**, e ela roda na CI a cada
+PR. Esta foi a terceira vez nesta sequência de trabalho em que a correção real
+foi consertar o *guarda*, não só o sintoma (ver também o addendum do item 155).
+
+### Nota sobre a cota (item 155) — não confundir com este incidente
+
+O mesmo log traz `Quota exceeded` às 22:19 e 21:55 BRT (= 01:19 e 00:55 UTC),
+minutos depois do merge. Isso **não** contradiz a correção do item 155: a cota
+do Firestore é diária e já estava gasta naquele dia; o reset é ~07:00 UTC. A
+correção também é do lado do navegador — não muda o consumo do scan em si. A
+avaliação honesta exige **um dia inteiro após o deploy**.
+
+---
+
+## 158. O dedup do alerta de cota morava dentro da coisa que fica indisponível (2026-09-05)
+
+**Reportado pelo usuário:** *"E ainda estou recebendo mensagem no telegram de
+erro"* — depois do deploy do item 155.
+
+### Fato — duas coisas diferentes estavam misturadas
+
+**(a) O scan ainda falha, e nisso não há novidade.** Log real do run 15121
+(2026-09-05 01:25 UTC): mesmo `Timeout: scanAllAssets… RESOURCE_EXHAUSTED`. A
+cota do Firestore é **diária, com reset ~07:00 UTC**; o deploy do item 155
+entrou 01:15 UTC, ou seja, ~18h dentro de um dia cuja cota já estava gasta. A
+correção age no **navegador** — não muda o consumo do próprio scan. Avaliar o
+item 155 antes do primeiro dia completo pós-deploy não é possível.
+
+**(b) A frequência do alerta é um bug próprio, e esse dá para consertar já.**
+`notifyFirestoreQuotaExhausted` guardava o marcador de dedup em
+`systemAlerts/firestoreQuota` **no Firestore**:
+
+```js
+try {
+  const snap = await withTimeout(ref.get(), ...);   // ← leitura do Firestore
+  shouldAlert = !lastAt || Date.now() - lastAt > QUOTA_ALERT_COOLDOWN_MS;
+} catch (e) {
+  console.warn('… alertando mesmo assim:', e.message);   // ← shouldAlert continua true
+}
+```
+
+Quando a cota estoura, o `get()` falha → `catch` → alerta assim mesmo; e o
+`set()` do marcador falha pelo mesmo motivo → o marcador **nunca é gravado**.
+O cooldown de 1 hora existia e **nunca era aplicado**: o usuário recebia um
+alerta a cada passada do scan, ~5 em 5 minutos, indefinidamente.
+
+O dedup que existe para evitar spam de alerta de cota estava, por construção,
+desligado exatamente durante a falta de cota.
+
+### Correção
+
+O marcador passou para o **RTDB** — mesmo projeto Firebase, já configurado
+(`FIREBASE_DATABASE_URL`), cobrado por banda/mês e **sem teto diário de
+operações**, então continua legível justamente durante a queda do Firestore.
+Sem RTDB configurado, o caminho anterior no Firestore segue valendo.
+
+Acesso ao `getDatabase()` é **preguiçoso**, dentro da função. A primeira
+tentativa foi importar `rtdb` de `scripts/adminEntities.js`, o que puxou o
+`initializeApp()` daquele módulo para o carregamento de `adminTelegram.js` e
+quebrou os 17 testes existentes com `SyntaxError: "undefined" is not valid
+JSON` — um módulo de notificação não pode depender do bootstrap inteiro do
+admin.
+
+`shouldAlertQuota(lastAt, now, cooldown)` foi extraída como função pura e
+testável. Marcador ilegível continua alertando de propósito: perder o
+**primeiro** aviso de uma queda real é pior que um alerta a mais. O que
+conserta o spam não é fechar essa porta — é o marcador ter passado a ser
+legível durante a queda.
+
+### Verificação
+
+6 testes novos em `scripts/adminTelegramQuotaDedup.test.js`, incluindo a
+regressão que reproduz o incidente: **com toda chamada ao Firestore falhando**,
+a primeira passada alerta e grava o marcador no RTDB; a segunda lê o marcador e
+**não** realerta (`fetch` chamado 1 vez, não 2). Outro teste garante que o
+marcador nunca toca o Firestore quando há RTDB.
+
+`npm run lint && npm test && npm run build` verdes (1405 testes). `systemAlerts`
+declarado em `database.rules.json` (o Admin SDK ignora rules, mas o arquivo é a
+documentação do que existe no banco).
+
+### Addendum ao item 157 (2026-09-05) — o guarda novo cobria menos do que eu achava
+
+Achado de review no PR #305, verificado empiricamente e procedente. Ligar
+`no-undef` não bastava: o bloco de config listava subpastas
+(`src/components/**`, `src/pages/**`, `src/lib/**`, `src/api/**`,
+`src/hooks/**`, `src/Layout.jsx`) e **deixava de fora os dois pontos de
+entrada da aplicação**. Como o comando da CI é `eslint . --quiet`, arquivo não
+coberto por nenhum bloco não vira nem aviso.
+
+Medido, não deduzido: com um identificador inexistente em cada um dos dois
+pontos de entrada, `npm run lint` saía com **exit code 0**.
+
+E o impacto é maior que o do incidente original: o arquivo raiz da aplicação
+carrega o roteamento e o `QueryClientProvider`; um identificador indefinido
+ali derruba o app **inteiro**, não uma página.
+
+Corrigido trocando a lista de subpastas por `src/**/*.{js,mjs,cjs,jsx}` (o
+`ignores` de `src/components/ui/**` continua valendo). Zero violação
+pré-existente apareceu, e o mesmo experimento agora sai com **exit code 1**
+apontando as duas linhas.
+
+Lição repetida pela quarta vez nesta sequência: ao adicionar um guarda, medir
+o que ele **não** cobre é tão importante quanto vê-lo pegar o caso conhecido.
