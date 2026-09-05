@@ -19320,3 +19320,77 @@ verdes (1411 testes), `npm run build:scan` monta o bundle do cron.
 
 **Não verificado:** a mensagem chegando de verdade no Telegram — só acontece
 no próximo episódio real de cota esgotada.
+
+---
+
+## 161. Motivo da recusa e horários absolutos em todos os cards (2026-09-05)
+
+**Pedido do usuário**, sobre a frase do card expirado: *"Gostei, porém está
+faltando o porquê não deu certo que o sistema não gostou, e também precisa
+colocar o horário que foi negado ou fechado ou aberto de tudo pra poder
+comparar depois e ver como está agindo o sistema. Em todos os cards."*
+
+### Fato — o card expirado engolia o motivo que já estava no dado
+
+O item 156 reduziu o card expirado a uma linha discreta com o texto de
+tranquilização, e **descartou `last_rejection_reason`** — que estava ali, no
+mesmo objeto, e é exatamente "o que o sistema não gostou". Corrigido: o card
+expirado agora mostra o chip + a frase do motivo, com o mesmo vocabulário em
+linguagem simples do item 156.
+
+### ⚠️ Fato — "o horário que foi negado" NÃO EXISTE no banco
+
+Verificado em `docs/schema-reference/SignalEvent.jsonc`: o schema grava
+`last_rejection_reason` (string) e `expired_logged` (boolean) e **nenhum
+carimbo de tempo da rejeição**. Também não há `updated_date` — confirmado por
+busca em `src/api/entities.js` e `scripts/adminEntities.js`: nenhuma escrita
+carimba data de atualização.
+
+Ou seja: **não dá para mostrar quando um aviso foi recusado.** Mostrar um
+horário aproximado ali seria inventar dado de auditoria — o oposto do que o
+pedido quer. Há um teste em `eventTimeline.test.js` que trava isso
+("nunca inventa um horário de rejeição").
+
+**Mudança de motor que destravaria** (NÃO feita nesta rodada, é `scanner.js`):
+gravar `last_rejection_at` junto de `last_rejection_reason`. **Cuidado
+essencial:** esse par é escrito com *write-on-change* justamente para não
+gastar escrita do Firestore a cada passada. Um timestamp que muda toda vez
+**derrubaria essa otimização** e forçaria uma escrita por ativo a cada 5
+minutos — logo depois de um incidente de cota (itens 155/158). O desenho certo
+é carimbar só quando o MOTIVO muda; aí o campo significa "desde quando está
+travado nisto", que é mais útil que "última checagem".
+
+### O que foi entregue
+
+**`src/lib/eventTimeline.js`** (novo, puro, 14 testes) — decide quais eventos
+existem e com qual carimbo. O ponto central: o schema grava **dois relógios**
+por saída, e diz explicitamente *"prefer this over X_at for display"*:
+
+| Campo | Significado |
+|---|---|
+| `X_hit_real_time`, `closed_at_real_time` | horário de **mercado** (fechamento da vela que confirmou) |
+| `X_hit_at`, `closed_at` | quando o **scan detectou** — atrasa numa falha de cron ou queda de cota |
+
+`opTimeline` usa o de mercado quando existe e **carrega o outro junto**, para
+o componente mostrar a defasagem — que é justamente o sinal de diagnóstico
+que o usuário quer poder comparar.
+
+**`src/components/dashboard/EventTimeline.jsx`** (novo) — `CandleBoundTag` e
+`DetectionLag` nasceram dentro de `TradeHistory.jsx` e viviam só lá; viraram
+compartilhados. Unifica também o `fmtBRT` que estava duplicado.
+
+Aplicado em:
+
+| Card | O que ganhou |
+|---|---|
+| Aviso expirado | **o motivo** (chip + frase) · apareceu em · prazo fechou em |
+| Aviso em análise | "apareceu 05/09 08:15 BRT" na face · linha do tempo nos detalhes |
+| Operação ativa | "aberta 05/09 08:15" no cabeçalho · linha do tempo completa nos detalhes |
+| Histórico (Trades) | aberta → fechada, ambos absolutos, com o motivo do encerramento |
+| Histórico (página) | passa a usar os componentes compartilhados |
+
+### Verificação
+
+`npm run lint && npm test && npm run build` verdes (1425 testes, 14 novos).
+Nenhuma linha de `scanner.js`/`entities.js`/`firestore.rules`/`server/`
+tocada. **Não verificado:** a aparência renderizada.

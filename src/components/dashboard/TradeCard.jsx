@@ -430,6 +430,12 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
             <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
               {op.timeframe?.toUpperCase()}
             </span>
+            {/* Horário absoluto de abertura já na camada 1: é o âncora de
+                qualquer comparação posterior (item 161). */}
+            <span className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.25)' }}
+              title="Quando esta operação foi aberta (horário de Brasília)">
+              aberta {fmtBRT(op.created_date)}
+            </span>
           </div>
           <span className="text-[10px] font-mono px-2 py-0.5 rounded shrink-0 font-semibold"
             title={status.desc}
