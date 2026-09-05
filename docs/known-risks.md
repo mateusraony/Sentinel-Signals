@@ -19203,3 +19203,53 @@ apontando as duas linhas.
 
 Lição repetida pela quarta vez nesta sequência: ao adicionar um guarda, medir
 o que ele **não** cobre é tão importante quanto vê-lo pegar o caso conhecido.
+
+---
+
+## 159. Verificação em produção dos itens 155 e 158 (2026-09-05, após o reset de cota)
+
+Registro do que foi **medido em produção**, não do que se esperava.
+
+### Item 158 — o spam do alerta parou (confirmado)
+
+Mesma falha de cota, logs do mesmo workflow, antes e depois do deploy de
+`77a8cc5`:
+
+| Run | Horário UTC | Código | Linha do alerta no log |
+|---|---|---|---|
+| 15121 | 01:25 | antigo | `[adminTelegram] Falha ao checar dedup de cota do Firestore, **alertando mesmo assim**` |
+| 15133 | 02:25 | novo | *(ausente)* |
+| 15135 | 02:35 | novo | *(ausente)* |
+
+O marcador no RTDB foi lido com sucesso, estava dentro do cooldown de 1h, e
+`notifyFirestoreQuotaExhausted` retornou `false` sem enviar. O cooldown que
+**nunca havia sido aplicado** passou a valer.
+
+### Item 155 — 7 passadas verdes consecutivas após o reset
+
+Primeiras runs do novo dia de cota (reset ~07:00 UTC):
+
+| Runs | Horário UTC | Conclusão | Duração |
+|---|---|---|---|
+| 15192 → 15198 | 07:15 → 07:45 | **7× `success`** | ~50s cada |
+
+Antes, as passadas levavam ~2 minutos e terminavam em
+`Timeout: scanAllAssets não retornou em 90000ms`. Agora completam de verdade.
+
+### ⚠️ Ressalva metodológica — isto ainda NÃO é prova do item 155
+
+7 runs verdes são **consistentes** com a correção ter funcionado, mas também
+são consistentes com "o dia de cota acabou de começar". O padrão histórico da
+falha é exatamente esse: o dia começa bem e a cota estoura horas depois, à
+medida que o painel é usado.
+
+O teste que **discrimina** as duas hipóteses é a mesma medição feita
+**tarde no dia de cota** (~12-18h após o reset, que é quando as falhas vinham
+acontecendo), e idealmente com o usuário tendo usado o painel no meio.
+Comparar com o mesmo horário de dias anteriores seria o ideal, mas paginar o
+histórico do Actions até lá é caro demais para o valor.
+
+**Conclusão honesta:** encorajador, não conclusivo. Checagem discriminante
+agendada. Se falhar de novo tarde no dia, o diagnóstico do item 155 estava
+incompleto e a rodada 2 do espelho RTDB volta à mesa — e aí com a
+instrumentação do item 155 para decidir por número.
