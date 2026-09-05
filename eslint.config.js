@@ -13,14 +13,14 @@ export default [
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
   {
-    files: [
-      "src/components/**/*.{js,mjs,cjs,jsx}",
-      "src/pages/**/*.{js,mjs,cjs,jsx}",
-      "src/lib/**/*.{js,mjs,cjs,jsx}",
-      "src/api/**/*.{js,mjs,cjs,jsx}",
-      "src/hooks/**/*.{js,mjs,cjs,jsx}",
-      "src/Layout.jsx",
-    ],
+    // TODO o codigo de producao, nao uma lista de subpastas. A lista anterior
+    // enumerava components/pages/lib/api/hooks + Layout.jsx e deixava de fora
+    // src/App.jsx e src/main.jsx — os dois pontos de entrada. Como o comando
+    // da CI e `eslint . --quiet`, arquivo nao coberto nao vira nem aviso: o
+    // lint saia VERDE com variavel indefinida em App.jsx, que derruba o app
+    // inteiro (nao so uma pagina). Achado de review no PR #305, confirmado
+    // empiricamente. Ver docs/known-risks.md item 157 addendum.
+    files: ["src/**/*.{js,mjs,cjs,jsx}"],
     ignores: ["src/components/ui/**/*"],
     ...pluginJs.configs.recommended,
     ...pluginReact.configs.flat.recommended,

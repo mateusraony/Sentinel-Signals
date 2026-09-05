@@ -19179,3 +19179,27 @@ marcador nunca toca o Firestore quando há RTDB.
 `npm run lint && npm test && npm run build` verdes (1405 testes). `systemAlerts`
 declarado em `database.rules.json` (o Admin SDK ignora rules, mas o arquivo é a
 documentação do que existe no banco).
+
+### Addendum ao item 157 (2026-09-05) — o guarda novo cobria menos do que eu achava
+
+Achado de review no PR #305, verificado empiricamente e procedente. Ligar
+`no-undef` não bastava: o bloco de config listava subpastas
+(`src/components/**`, `src/pages/**`, `src/lib/**`, `src/api/**`,
+`src/hooks/**`, `src/Layout.jsx`) e **deixava de fora os dois pontos de
+entrada da aplicação**. Como o comando da CI é `eslint . --quiet`, arquivo não
+coberto por nenhum bloco não vira nem aviso.
+
+Medido, não deduzido: com um identificador inexistente em cada um dos dois
+pontos de entrada, `npm run lint` saía com **exit code 0**.
+
+E o impacto é maior que o do incidente original: o arquivo raiz da aplicação
+carrega o roteamento e o `QueryClientProvider`; um identificador indefinido
+ali derruba o app **inteiro**, não uma página.
+
+Corrigido trocando a lista de subpastas por `src/**/*.{js,mjs,cjs,jsx}` (o
+`ignores` de `src/components/ui/**` continua valendo). Zero violação
+pré-existente apareceu, e o mesmo experimento agora sai com **exit code 1**
+apontando as duas linhas.
+
+Lição repetida pela quarta vez nesta sequência: ao adicionar um guarda, medir
+o que ele **não** cobre é tão importante quanto vê-lo pegar o caso conhecido.
