@@ -16,6 +16,11 @@ checagem retroativa ao adicionar/reativar um ativo, roda em
 esgotada do Firestore ou apenas uma etapa travada — nunca classifique isso por
 regex no ponto de entrada (`docs/known-risks.md` item 162); a mensagem de
 `scanTimeout.mjs` diz só o que foi observado, sem chutar a causa.
+`health-audit.mjs` (manual, `health-audit.yml`) é a auditoria de saúde read-only
+do item 164 — teto de leitura explícito e o job falha se ela escrever. A parte
+pura mora em `healthAuditFormat.mjs` **de propósito**: quem importa
+`adminEntities.js` herda o `initializeApp()` dele no carregamento e quebra sem
+credencial (foi o que derrubou 17 testes no item 158).
 `adminEntities.js` também embute o espelho de leitura RTDB pro dashboard
 (`AssetState`/`TradeOperation`, `src/lib/rtdbMirror.js`, ver
 `docs/known-risks.md` item 152) — ativo só quando `FIREBASE_DATABASE_URL`

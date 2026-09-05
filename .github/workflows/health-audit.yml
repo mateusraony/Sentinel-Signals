@@ -1,0 +1,43 @@
+name: Diagnóstico — auditoria de saúde
+
+# Disparo MANUAL só. Não é o relógio de trading (scan.yml) nem a checagem
+# retroativa (backfill.yml) — é uma leitura pontual e limitada do Firestore
+# real (scripts/health-audit.mjs) que responde "o que está falhando e ninguém
+# viu?". Ver docs/known-risks.md item 164.
+#
+# Por que MANUAL e não agendado, por enquanto: um alerta automático precisa de
+# um limiar, e ainda não existe uma linha de base do que é "normal" aqui. Foi
+# justamente inverter essa ordem que produziu o spam do item 158 e o alarme
+# falso do item 162. Primeiro medimos algumas vezes; agendar (e avisar no
+# Telegram quando passar do limiar) é o passo seguinte, com dado na mão.
+#
+# ⏰ QUANDO RODAR IMPORTA. A cota do Firestore é DIÁRIA e zera ~07:00 UTC.
+# Rodar logo depois do reset dirá "tudo bem" mesmo num dia em que a cota
+# estoure de madrugada — foi exatamente assim que as falhas reais de 04/09 e
+# 05/09 (04:36-04:43 UTC) passaram despercebidas por dois dias. Para o teste
+# que DISCRIMINA, rode entre 03:00 e 06:00 UTC (00:00-03:00 em Brasília).
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Auditar saúde (read-only, teto de 520 documentos)
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+        run: node scripts/health-audit.mjs | tee -a "$GITHUB_STEP_SUMMARY"
