@@ -19470,6 +19470,59 @@ RTDB (migrar `signalEvents`/`monitoredAssets`/`verificationTasks`/
 `systemLogs` e os 24 pontos de leitura restantes) sem decisão explícita dele.
 Proposta feita, não executada.
 
+### Addendum (2026-09-06 15:39 UTC) — a cota esgota ainda mais cedo, mesmo após a rodada 2 do item 152 (#315)
+
+A rodada 2 (item 152 addendum, `SignalEvent` no RTDB, PR #315) foi mesclada
+às 15:22 UTC. O usuário disparou `backfill-rtdb.yml` (passo manual pedido)
+17 minutos depois — **falhou** com a assinatura real (item 162):
+
+```
+[backfill-rtdb] FAILED: Error: 8 RESOURCE_EXHAUSTED: Quota exceeded.
+```
+
+**Verificação antes de atribuir causa** (mesma disciplina do item 162): a
+suspeita óbvia era o próprio `backfillCollection` — ele lê `SignalEvent` via
+`.list()` **sem limite**, e uma coleção grande poderia estourar sozinha,
+mesma classe do erro que esta sessão cometeu horas antes com `systemLogs`
+(addendum acima). Testado com a consulta mais barata que existe: uma
+contagem via agregação no servidor (`getCountFromServer`, custa **1 leitura
+fixa, independente do tamanho da coleção**) contra `signalEvents`/
+`tradeOperations`/`assetStates`. **Também falhou, com a mesma assinatura.**
+Se até a leitura mais barata possível é rejeitada, a cota está zerada de
+verdade — não é o `.list()` sem limite sendo caro, é ausência total de
+orçamento.
+
+**O dado que importa**: isso aconteceu às 15:39 UTC, **~8h39 dentro do ciclo
+de cota** (reset ~07:00 UTC). O pior episódio documentado até aqui (addendum
+2, item 159) começava às 14h25 no ciclo. Este é **~6h mais cedo ainda**.
+
+**Interpretação — fato vs hipótese, não confundir**:
+- Fato: a cota está esgotando cada vez mais cedo no ciclo diário, em runs
+  sucessivas (~21h30 → 14h25 → 8h39), não estabilizando.
+- Hipótese, não confirmada: a rodada 2 mesclada minutos antes NÃO pode ser a
+  causa desta falha específica — ela reduz consumo (menos leitura direta de
+  `SignalEvent`), e o item 155 já estava em produção há mais de 24h antes
+  desta run. É mais consistente com uso crescente do painel/histórico
+  crescendo (mais `TradeOperation`/`SignalEvent` acumulados ao longo do
+  tempo = queries que devolvem mais documentos pelo mesmo limite) do que com
+  qualquer mudança desta sessão.
+- Não descartado: `scripts/backfill-rtdb.mjs`'s `backfillCollection` lê
+  cada coleção do `RTDB_MIRRORED_ENTITIES` inteira, sem paginação — um
+  desenho que fica mais caro conforme as coleções crescem. Não é a causa
+  desta falha (a cota já estava zerada antes de chegar lá), mas é uma
+  fragilidade real para quando a cota voltar: candidato a rodada futura
+  (paginar ou usar `getCountFromServer` pra decidir se vale a pena rodar).
+
+**Ação recomendada ao usuário**: `deploy-firestore.yml` ("Deploy Firestore &
+RTDB rules") é deploy de regras/índices — plano de controle, não consulta de
+dados — deveria funcionar normalmente mesmo com a cota de leitura zerada;
+pode ser disparado agora. `backfill-rtdb.yml` precisa esperar o reset
+(~07:00 UTC) e ser disparado de novo depois.
+
+**Não iniciado nesta sessão**: qualquer correção de `backfill-rtdb.mjs` ou
+nova investigação da causa do agravamento — ambos ficam para quando o
+usuário decidir seguir.
+
 ---
 
 ## 160. Alerta de cota sem "tudo certo" — o alarme nunca dizia que tinha acabado (2026-09-05)
