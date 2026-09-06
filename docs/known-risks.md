@@ -19523,6 +19523,23 @@ pode ser disparado agora. `backfill-rtdb.yml` precisa esperar o reset
 nova investigação da causa do agravamento — ambos ficam para quando o
 usuário decidir seguir.
 
+### Addendum (2026-09-06 20:05 UTC) — não foi um blip: mais de 4h30 sem recuperar
+
+O usuário tentou `backfill-rtdb.yml` de novo às 19:53 UTC (~12h53 no ciclo) —
+mesma assinatura (`8 RESOURCE_EXHAUSTED: Quota exceeded.`). Verificado
+`scan.yml` no mesmo intervalo: as **10 runs mais recentes** (19:20 → 20:05
+UTC) são todas `failure`.
+
+**Fato novo**: a exaustão desta rodada não foi um pico isolado — está
+**contínua desde pelo menos 15:39 UTC, sem uma única passada verde em 4h30+**
+(confirmado até 20:05 UTC, ainda ativa no momento deste registro). Os
+episódios anteriores (itens 159/164) eram falhas pontuais de minutos a poucas
+horas antes do reset; este cobre a tarde inteira.
+
+Usuário orientado a não insistir em `backfill-rtdb.yml` até o reset
+(~07:00 UTC) e a tentar `deploy-firestore.yml` no meio-tempo (não deveria
+ser afetado — é plano de controle, não leitura de dados).
+
 ---
 
 ## 160. Alerta de cota sem "tudo certo" — o alarme nunca dizia que tinha acabado (2026-09-05)
