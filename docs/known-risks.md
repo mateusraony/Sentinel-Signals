@@ -19297,7 +19297,69 @@ justamente ali que `health-audit.yml` passou a rodar sozinha (04:40 UTC, item
 a convergência não é coincidência, é o instrumento tendo sido apontado para o
 lugar certo antes de a pergunta ser feita.
 
-**Status: continua ABERTO, sem evidência nova a favor nem contra.**
+### Addendum (2026-09-06 05:15 UTC) — o veredito chegou, e é negativo: a cota estourou mais cedo e por muito mais tempo
+
+O check-in real disparou na hora certa desta vez. O resultado **não confirma**
+a correção do item 155 — pelo contrário, mede o pior episódio de cota já
+registrado neste projeto.
+
+**Assinatura confirmada** (disciplina do item 162 — nunca classificar por
+suposição): log da run `#36` do `backfill.yml`, 22:57:36 UTC de 05/09:
+
+```
+[backfill] FAILED: Error: 8 RESOURCE_EXHAUSTED: Quota exceeded.
+  code: 8,
+  details: 'Quota exceeded.',
+```
+
+É a assinatura real, não um timeout genérico. Cota esgotada de verdade.
+
+**Linha do tempo completa**, reconstruída run a run do `scan.yml` (cadência de
+~5min) e do `backfill.yml` (~1x/hora), horas contadas a partir do reset de
+~07:00 UTC de 05/09:
+
+| Horário UTC | Horas no ciclo | `scan.yml` | `backfill.yml` |
+|---|---|---|---|
+| até 20:45 | até 13h45 | ✅ quase todo verde | ✅ 20:29 sucesso |
+| 20:50–21:20 | 13h50–14h20 | intercalado (3 falhas, 5 sucessos) | — |
+| **21:25** | **14h25** | ❌ **falha sustentada começa aqui** | — |
+| 22:35 | 15h35 | ✅ (única sucesso isolado) | — |
+| **22:40 em diante** | **15h40+** | ❌ **contínuo, sem exceção** | ❌ 22:57 (assinatura confirmada) |
+| 01:02 (06/09) | 18h02 | ❌ | ❌ |
+| 04:35–05:17 (06/09) | 21h35–22h17 | ❌ | *(sem run nesta janela)* |
+
+**Isto é estritamente pior que os dois dias anteriores em duas dimensões:**
+
+1. **Começou muito mais cedo.** Os dois episódios documentados antes (04/09,
+   05/09) apareciam só nas últimas ~2h do ciclo, por volta de 21h30. Este
+   começou às **14h25** — 7 horas mais cedo no ciclo, no meio do dia.
+2. **Durou muito mais.** Os episódios anteriores eram falhas isoladas (uma
+   run, resolvida na seguinte). Este ficou **contínuo por pelo menos 6h40**
+   (22:40 de 05/09 até 05:17 de 06/09, sem uma única run verde no meio) e
+   ainda estava ativo quando este check-in foi escrito.
+
+**O que isso diz sobre o item 155:** a correção do lado do navegador não
+impediu, e não parece ter atenuado de forma perceptível, o estouro de cota —
+o episódio que ela deveria evitar foi o pior já medido, não o menor. Isso é
+consistente com o que o próprio item 155 já tinha registrado antes de propor
+a correção: o item 152 (espelho RTDB) cobre só 9 dos 33 pontos de leitura do
+painel (`AssetState`/`TradeOperation`, parcial); os outros 24 — a maioria,
+em `MonitoredAsset`, `SignalEvent`, `VerificationTask`, `SystemLog` — ainda
+leem do Firestore direto. A correção de 05/09 mexeu no que já estava
+migrado; não tocou no que ainda não tinha sido.
+
+**Achado secundário**: o `health-audit.yml` agendado para 04:40 UTC de 06/09
+não aparece na lista de runs até o momento deste registro — só o disparo
+manual de ontem. Consistente com a ressalva já documentada nos itens 12/18/134
+(o `schedule:` do GitHub Actions é despriorizado sob carga, e este repositório
+roda `scan.yml` a cada ~5min o dia inteiro). Não é um novo bug; é o risco
+conhecido se manifestando pela primeira vez neste workflow específico.
+
+**Status: item 155 continua ABERTO — não corrigido.** Por instrução do
+usuário na configuração deste check-in: não iniciar a rodada 2 do espelho
+RTDB (migrar `signalEvents`/`monitoredAssets`/`verificationTasks`/
+`systemLogs` e os 24 pontos de leitura restantes) sem decisão explícita dele.
+Proposta feita, não executada.
 
 ---
 
