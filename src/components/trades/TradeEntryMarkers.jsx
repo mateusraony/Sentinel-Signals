@@ -4,7 +4,7 @@ import {
   ResponsiveContainer, ReferenceLine, CartesianGrid
 } from 'recharts';
 import moment from 'moment';
-import { calcRealizedPnlPct as calcPnl } from '@/lib/tradeMetrics';
+import { calcRealizedPnlPct as calcPnl, classifyOutcome } from '@/lib/tradeMetrics';
 
 const STATUS_LABELS = {
   TP2_HIT: '🏆 TP2 Hit',
@@ -30,18 +30,25 @@ function EntryDot({ cx, cy, payload }) {
   );
 }
 
+// item 166 Fase 2: a cor do STOP_HIT usava `tp1_hit` pra decidir "breakeven"
+// — exatamente a heurística que PerformanceOverview.jsx já removeu em favor
+// do outcome REALIZADO (classifyOutcome), porque um runner pode travar lucro
+// real bem depois do TP1 (advanceTrailingStop, scanner.js). Sem essa troca,
+// os dois widgets da mesma tela podiam discordar sobre o mesmo trade. Função
+// pura exportada pra testar sem precisar renderizar o gráfico inteiro.
+export function exitDotColor(status, outcome) {
+  if (status === 'STOP_HIT' && outcome === 'WIN') return '#00ff80';
+  if (status === 'STOP_HIT' && outcome === 'BE') return '#ffd166';
+  if (status === 'STOP_HIT') return '#ff1478';
+  if (status === 'TP2_HIT') return '#00ff80';
+  if (status === 'INVALIDATED') return '#ff9f43';
+  return '#64748b';
+}
+
 // Exit marker — circle with crosshair, colored by outcome
 function ExitDot({ cx, cy, payload }) {
   if (!cx || !cy || payload.type !== 'exit') return null;
-  const color = payload.status === 'STOP_HIT' && !payload.tp1_hit
-    ? '#ff1478'
-    : payload.status === 'STOP_HIT' && payload.tp1_hit
-      ? '#ffd166'
-      : payload.status === 'TP2_HIT'
-        ? '#00ff80'
-        : payload.status === 'INVALIDATED'
-          ? '#ff9f43'
-          : '#64748b';
+  const color = exitDotColor(payload.status, payload.outcome);
   return (
     <g>
       <circle cx={cx} cy={cy} r={6} fill="none" stroke={color} strokeWidth={2}
@@ -110,6 +117,7 @@ export default function TradeEntryMarkers({ history }) {
       const side = op.side;
       const status = op.status;
       const statusLabel = STATUS_LABELS[status] || status;
+      const outcome = classifyOutcome(op);
 
       points.push({
         date: moment(op.created_date).format('DD/MM HH:mm'),
@@ -117,8 +125,7 @@ export default function TradeEntryMarkers({ history }) {
         type: 'entry',
         cumulative: parseFloat(entryCum.toFixed(2)),
         pnl: 0,
-        symbol, side, status, statusLabel,
-        tp1_hit: op.tp1_hit,
+        symbol, side, status, statusLabel, outcome,
       });
       points.push({
         date: moment(op.closed_at).format('DD/MM HH:mm'),
@@ -126,8 +133,7 @@ export default function TradeEntryMarkers({ history }) {
         type: 'exit',
         cumulative: parseFloat(exitCum.toFixed(2)),
         pnl: parseFloat(pnl.toFixed(2)),
-        symbol, side, status, statusLabel,
-        tp1_hit: op.tp1_hit,
+        symbol, side, status, statusLabel, outcome,
       });
     });
 

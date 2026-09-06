@@ -21,6 +21,7 @@ vi.mock('@/api/entities', () => ({
 }));
 
 import { getTelegramFilters, notifyNewSignal, notifyVerificationTask, notifyTradeCreated, notifyStopHit, setTelegramFilters } from './telegram.js';
+import { logWarn } from './logger';
 
 function makeLocalStorage() {
   const store = new Map();
@@ -167,6 +168,29 @@ describe('notifyVerificationTask', () => {
     }));
     await notifyVerificationTask(baseSignal());
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// send() (item 166 Fase 2, "guard com buraco" / falha silenciosa) só fazia
+// console.warn quando o envio falhava — nada chegava ao SystemLog, então
+// nem o Debug Log do painel nem scripts/health-audit.mjs (que só lê
+// SystemLog) jamais saberiam que o canal de alerta parou de funcionar.
+describe('send — falha de envio agora fica visível no SystemLog (item 166 Fase 2)', () => {
+  beforeEach(() => {
+    localStorage.setItem('cryptoradar_telegram_cfg', JSON.stringify({ botToken: 'x', chatId: 'y' }));
+    logWarn.mockClear();
+  });
+
+  it('resposta não-ok do Telegram registra logWarn (não só console.warn)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => 'Unauthorized' });
+    await notifyVerificationTask({ symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter', priority: 'high', reason: 'x', context: { score: 88 } });
+    expect(logWarn).toHaveBeenCalledWith('telegram', expect.any(String), expect.objectContaining({ status: 401 }));
+  });
+
+  it('exceção de rede no fetch também registra logWarn', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
+    await notifyVerificationTask({ symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter', priority: 'high', reason: 'x', context: { score: 88 } });
+    expect(logWarn).toHaveBeenCalledWith('telegram', expect.any(String), expect.objectContaining({ error: 'Failed to fetch' }));
   });
 });
 

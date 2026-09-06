@@ -20307,3 +20307,108 @@ por mim, nesta mesma sessão, para caçar essa exata família. Reforça a regra 
 registrada no item 166: um guard só conta depois de provar que falha com o bug
 que deveria pegar — e a prova precisa cobrir o caminho REAL, não o caminho
 conveniente.
+
+---
+
+## 168. Fase 2 do pente fino — varredura por família de bug no resto do repositório (2026-09-06)
+
+Depois da rodada 2 do item 152 (`SignalEvent` no RTDB, PR #315), pedido
+explícito do usuário: "pode fazer a outra fase" — a Fase 2 do pente fino
+original (item 164), varrer o repositório inteiro atrás de irmãos das 3
+famílias de bug já encontradas nesta sessão (guard com buraco, falha
+silenciosa que vira valor plausível, UI reimplementando regra do motor).
+
+Três investigações paralelas (subagentes read-only, um por família),
+consolidadas e verificadas antes de qualquer correção. Corrigidos nesta
+rodada os 3 achados de maior severidade e menor risco (aprovado pelo
+usuário); o 4º achado (11 tripwires de flag backtest-only checando a
+sintaxe errada) fica para uma rodada separada, por ser uma correção maior.
+
+### Corrigido 1 — alerta do Telegram falhava em silêncio total
+
+`src/lib/telegram.js`/`scripts/adminTelegram.js`: `send()` só fazia
+`console.warn` quando o envio falhava — nem o Debug Log do painel nem
+`scripts/health-audit.mjs` (que só lê `SystemLog`) saberiam que o canal de
+alertas parou (token expirado, chat bloqueado, outage do Telegram). Mesma
+forma do item 158, no canal que o usuário efetivamente usa pra saber que
+uma operação abriu ou fechou.
+
+Corrigido com `logWarn`/`logTelegramFailure` (fire-and-forget, nunca
+aguardado por `send()`) em cada branch de falha. No lado admin, escrita
+direta em `systemLogs` via Firestore, envolvida em `try/catch` (não só
+`.catch()` na promise) — um cliente Firestore mal configurado lançando
+SÍNCRONO não pode escapar e virar "o scan inteiro quebrou" em vez de "a
+notificação falhou" (mesmo raciocínio de `safeMirrorCall`,
+`src/lib/rtdbMirror.js`). Verificado por reprodução nos dois lados
+(`telegram.test.js`/`adminTelegram.test.js`): teste falha antes da correção,
+passa depois; um teste extra prova que o próprio `try/catch` da correção
+engole um `.add is not a function` sem propagar.
+
+### Corrigido 3 — dois cards de operação reimplementavam regra do motor
+
+Ambos já tinham sido corrigidos EM OUTRO LUGAR do mesmo arquivo/tela
+(item 154 / `PerformanceOverview.jsx`) — o bug era o mesmo padrão não
+propagado, não um erro novo.
+
+- `TradeCard.jsx`'s `StatusBanner`: texto de `STOP_HIT` usava `op.tp1_hit`
+  pra decidir "breakeven", quando o resto do mesmo arquivo já usa
+  `stopPosture(op)` desde o item 154 (`advanceTrailingStop` continua
+  avançando o stop depois do TP1 — um runner pode travar lucro real, que
+  `tp1_hit` sozinho não distingue de um breakeven exato). Um runner que
+  fechou com lucro mostrava "sem prejuízo" em vez do ganho. Novo teste
+  `TradeCard.test.jsx` (RTL, 3 casos: lucro travado / breakeven exato /
+  risco original) reproduz e verifica.
+- `TradeEntryMarkers.jsx`'s `ExitDot`: cor do ponto de saída usava
+  `status === 'STOP_HIT' && tp1_hit` — a MESMA heurística que
+  `PerformanceOverview.jsx` (mesma tela) já tinha trocado por
+  `classifyOutcome` (`tradeMetrics.js`). Os dois widgets podiam discordar
+  sobre o mesmo trade. Lógica extraída pra função pura exportada
+  `exitDotColor(status, outcome)`, testada isoladamente
+  (`TradeEntryMarkers.test.js`) sem precisar renderizar o gráfico inteiro —
+  seguindo a convenção do projeto de testar a função pura antes do
+  componente.
+
+### Corrigido 4 — lista incompleta no guard do modo sombra
+
+`adminEntitiesShadowTripwire.test.js` checava só 5 das 8 coleções reais de
+produção (`priceAlerts`/`users`/`verificationTasks` faltavam) — um regresso
+que tirasse o prefixo `experimentalRf1hShadow` de qualquer uma delas passaria
+verde. Verificado por reprodução: com `PriceAlert: createEntity('priceAlerts')`
+(sem prefixo) reintroduzido de propósito, o teste ANTIGO passava; o teste
+NOVO falha, apontando o vazamento. Código de produção já estava correto
+(as 3 coleções já usam o prefixo) — só o guard tinha o buraco.
+
+### Adiado — item 2 (11 tripwires de flag backtest-only)
+
+`allowedSideTripwire.test.js` e outros 10 arquivos irmãos checam se a flag
+aparece como `nome: valor` num objeto — mas o vazamento real pra produção é
+via entrada em `SYNCED_STRATEGY_KEYS` (array de strings), forma que nenhum
+deles verifica. Existe uma rede de segurança coincidente hoje
+(`pineConfigMirrorTripwire.test.js` pegaria isso por outro motivo), mas os
+guards com o nome certo pra essa proteção não fazem o trabalho que prometem.
+Fica para rodada separada — mexer em 11 arquivos de tripwire de segurança
+merece mais cuidado que os 3 acima.
+
+### Não corrigido nesta rodada, registrado para decisão futura
+
+Achados menores da mesma varredura, baixo risco/impacto, não solicitados
+nesta rodada: `TradeEntryMarkers.jsx`'s contagem W/L usa `pnl >= 0` cru em
+vez do `classifyOutcome` epsilon-banded (pode discordar de outros widgets
+num trade muito próximo de zero); `TradeHistory.jsx` afirma uma causa fixa
+("stop movido para entrada após TP1") pro texto de BE que nem sempre é
+verdadeira; 7-8 componentes reescrevem à mão a lista de status terminal/ativo
+em vez de importar de `opTransition.js` (`TERMINAL_STATUSES`/
+`isTerminalStatus`) — hoje as listas batem, divergência só aparece se o motor
+ganhar um status novo; `fetch24hStats` (cosmético, 24h% no card) e o aviso de
+fixture ausente do backtest local usam menos logging que o padrão do
+respectivo arquivo.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` verdes (1575 testes, 5 novos:
+`telegram.test.js`/`adminTelegram.test.js` estendidos,
+`adminEntitiesShadowTripwire.test.js` estendido, `TradeCard.test.jsx` e
+`TradeEntryMarkers.test.js` novos). `npm run build:scan` confirma que o
+bundle do cron (que inclui `adminTelegram.js`) segue montando sem erro.
+Todos os 4 fixes verificados por reprodução: bug reintroduzido → teste
+falha; fix restaurado → teste passa.

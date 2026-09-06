@@ -108,6 +108,43 @@ async function shouldSend(event, data, asset) {
   return true;
 }
 
+// Fire-and-forget SystemLog write (item 166 Fase 2) — só console.warn deixava
+// uma falha de envio invisível pro resto do sistema: nem o Debug Log do
+// painel nem scripts/health-audit.mjs (que só lê SystemLog) saberiam que o
+// canal de 24h parou. Nunca aguardado por send() e sempre com .catch próprio
+// — mesmo espírito do mirror RTDB (src/lib/rtdbMirror.js): uma escrita de
+// log não pode atrasar nem quebrar o envio que ela está registrando, nem
+// travar run-scan.mjs se o Firestore estiver indisponível (o forceExit do
+// scanTimeout.mjs mata qualquer promise pendente de qualquer forma).
+// Aguardada por send() (não fire-and-forget) — Codex review, PR #318:
+// run-scan.mjs/run-backfill-check.mjs chamam forceExit() (process.exit())
+// logo depois de aguardar o alerta que dispara esta função; sem aguardar a
+// escrita, forceExit podia matar a promise pendente antes dela chegar ao
+// Firestore, perdendo exatamente o registro que este fix existe pra
+// garantir. withTimeout (já usado no resto deste arquivo) limita a espera —
+// sem ele, um Firestore preso em retry de RESOURCE_EXHAUSTED (o mesmo
+// cenário que costuma coincidir com um alerta de cota) reintroduziria a
+// travada de minutos que scanTimeout.mjs existe pra evitar. try/catch em
+// volta da chamada inteira, não só .catch() na promise — um throw SÍNCRONO
+// (ex.: cliente Firestore mal configurado) não pode escapar e virar uma
+// exceção não tratada dentro do try/catch de send(), que converteria "falha
+// ao notificar" em "o scan inteiro quebrou". Mesmo raciocínio de
+// safeMirrorCall (src/lib/rtdbMirror.js).
+async function logTelegramFailure(message, details) {
+  try {
+    await withTimeout(
+      getFirestore().collection('systemLogs').add({
+        level: 'warn', module: 'telegram', message, details,
+        created_date: new Date().toISOString(),
+      }),
+      5000,
+      'telegramFailureLog',
+    );
+  } catch (e) {
+    console.warn('[Telegram] log de falha no SystemLog também falhou, ignorado:', e.message);
+  }
+}
+
 // Returns whether the message was actually delivered (2xx from Telegram) —
 // callers that need to know delivery succeeded (e.g. the per-asset healthcheck
 // dedup marker, see checkAssetHealthchecks in run-scan.mjs) must not assume
@@ -124,12 +161,15 @@ async function send(html) {
       body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: 'HTML' }),
     });
     if (!res.ok) {
-      console.warn('[Telegram] send failed:', res.status, await res.text());
+      const body = await res.text();
+      console.warn('[Telegram] send failed:', res.status, body);
+      await logTelegramFailure('Falha ao enviar mensagem ao Telegram', { status: res.status, body });
       return false;
     }
     return true;
   } catch (e) {
     console.warn('[Telegram] send failed:', e.message);
+    await logTelegramFailure('Falha ao enviar mensagem ao Telegram (exceção)', { error: e.message });
     return false;
   }
 }
