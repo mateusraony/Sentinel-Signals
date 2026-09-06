@@ -39,4 +39,23 @@ describe('rf1hCondEnabled — tripwire de isolamento backtest-only', () => {
     const source = readFileSync(resolve(__dirname, '../../scripts/adminPineConfig.js'), 'utf-8');
     expect(source).not.toMatch(KEY_AS_OBJECT_ENTRY);
   });
+
+  // Item 2 da Fase 2 do pente fino (docs/known-risks.md item 168, achado 2,
+  // deferido a pedido do usuário pra esta rodada separada): o vetor real de
+  // vazamento pra produção não é uma entrada em DEFAULTS (checado acima) — é
+  // uma entrada em SYNCED_STRATEGY_KEYS. getPineConfig() (pineParser.js) lê
+  // esse array e, pra CADA chave nele, sobrescreve config[key] com o valor de
+  // strategyConfig/current no Firestore SE a chave estiver presente lá —
+  // isso roda incondicionalmente, sem checar se a chave também existe em
+  // DEFAULTS. Bastaria adicionar 'rf1hCondEnabled' ao array (sem tocar DEFAULTS
+  // nenhum) pra o Firestore (gravável por qualquer sessão anônima, CLAUDE.md
+  // decisão 1) já conseguir setar esse flag hoje mesmo — os 3 testes acima
+  // não pegariam isso, porque só olham a forma de entrada de objeto.
+  it('NÃO está em nenhuma lista de sync (SYNCED_STRATEGY_KEYS) dos dois arquivos de produção', () => {
+    for (const rel of ['./pineParser.js', '../../scripts/adminPineConfig.js']) {
+      const source = readFileSync(resolve(__dirname, rel), 'utf-8');
+      expect(source, `${rel} não pode citar a chave como string de sync`)
+        .not.toMatch(/'rf1hCondEnabled'/);
+    }
+  });
 });
