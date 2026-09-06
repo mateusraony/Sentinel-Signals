@@ -6,6 +6,7 @@ import {
   formatPrice, formatSignedPct, describeProximity, rrGeometry, nextMilestone,
   stopPosture, orderLevelsByRail,
 } from '@/lib/priceProximity';
+import { classifyOutcome } from '@/lib/tradeMetrics';
 import { useLivePrice } from '@/hooks/useLivePrice';
 
 /**
@@ -305,14 +306,22 @@ function TFTrendRow({ op }) {
   );
 }
 
-// A postura do stop no banner de status precisa vir de stopPosture(op),
-// nunca de op.tp1_hit — mesmo raciocínio do bloco acima (item 154), achado de
-// novo no item 166 Fase 2: este banner ficou de fora daquela correção. Um
-// runner que travou lucro real (trailing avançou o stop além da entrada,
-// `advanceTrailingStop`) mostrava "sem prejuízo" em vez do ganho de verdade.
+// O banner de STOP_HIT é sobre uma operação já ENCERRADA — precisa do
+// resultado REALIZADO (classifyOutcome, a mesma fonte única que
+// PerformanceOverview.jsx/TradeEntryMarkers.jsx usam), nunca de op.tp1_hit
+// (item 154) nem de stopPosture(op) (item 166 Fase 2, 1ª correção deste
+// banner). stopPosture só compara o preço NOMINAL do stop com a entrada —
+// certo para descrever uma posição ainda ABERTA (PriceGrid/MilestoneLine
+// abaixo continuam usando stopPosture de propósito, não têm resultado
+// realizado ainda), mas errado para o resultado FINAL: um stop pré-TP1
+// avançado (`preTp1TrailEnabled`) pode ficar nominalmente acima da entrada e
+// mesmo assim fechar em prejuízo/empate líquido depois de taxa/slippage/
+// funding (`calcRealizedR`/`calcRealizedPnlPct`, Fase 5 de custos) — Codex
+// review, PR #318, achou este banner anunciando "encerrado no lucro" nesse
+// caso.
 const STOP_HIT_BANNER = {
-  locked:    { text: '💰 Stop travou lucro — encerrado no lucro', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
-  breakeven: { text: '🔄 Stop no breakeven — sem prejuízo', color: LEVEL_COLOR.stopBe, bg: 'rgba(255,209,102,0.06)' },
+  WIN: { text: '💰 Stop travou lucro — encerrado no lucro', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
+  BE:  { text: '🔄 Stop no breakeven — sem prejuízo', color: LEVEL_COLOR.stopBe, bg: 'rgba(255,209,102,0.06)' },
 };
 const STOP_HIT_BANNER_DEFAULT = { text: '🛑 Stop atingido — revisar setup', color: LEVEL_COLOR.stop, bg: 'rgba(255,20,120,0.06)' };
 
@@ -321,7 +330,7 @@ function StatusBanner({ op }) {
     SIGNAL_CONFIRMED: { text: '👀 Monitorando — aguardar preço avançar para TP1', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
     RUNNER_ACTIVE:    { text: '🚀 Runner ativo — 50% realizado no TP1, deixar correr', color: '#ffd166', bg: 'rgba(255,209,102,0.06)' },
     TP2_HIT:          { text: '🏆 Encerrado com lucro máximo no TP2 — parabéns!', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
-    STOP_HIT:         STOP_HIT_BANNER[stopPosture(op)] ?? STOP_HIT_BANNER_DEFAULT,
+    STOP_HIT:         STOP_HIT_BANNER[classifyOutcome(op)] ?? STOP_HIT_BANNER_DEFAULT,
     INVALIDATED:      { text: '⚠️ Sinal invalidado — não operar agora', color: '#ff9f43', bg: 'rgba(255,159,67,0.06)' },
     CLOSED:           { text: '✖ Operação encerrada manualmente', color: '#64748b', bg: 'rgba(100,116,139,0.06)' },
   };

@@ -28,14 +28,18 @@ function unprefixedCollectionArgOccurrences(name) {
 
 describe('adminEntitiesShadow.js — tripwire de isolamento de coleção', () => {
   it('NUNCA referencia as coleções reais de produção (sem prefixo) que scanner.js efetivamente muta', () => {
-    // Lista completa das 8 coleções de negócio da tabela de CLAUDE.md, exceto
+    // Lista completa das 9 coleções de negócio da tabela de CLAUDE.md, exceto
     // monitoredAssets (passthrough intencional, coberto no teste seguinte).
-    // Achado no item 166 Fase 2: esta lista tinha só 5 das 8 — priceAlerts/
-    // users/verificationTasks nunca eram checadas, então um regresso que
-    // tirasse o prefixo de qualquer uma delas passaria verde aqui. Hoje o
-    // código já as prefixa corretamente; verificado que SEM esta extensão o
-    // teste não pegava um `createEntity('priceAlerts')` sem prefixo.
-    for (const realCollection of ['tradeOperations', 'signalEvents', 'systemLogs', 'scannerLocks', 'assetActiveOps', 'priceAlerts', 'users', 'verificationTasks']) {
+    // Achado no item 166 Fase 2: esta lista tinha só 5 das 8 então conhecidas
+    // — priceAlerts/users/verificationTasks nunca eram checadas, então um
+    // regresso que tirasse o prefixo de qualquer uma delas passaria verde
+    // aqui. Review do Codex (PR #318) achou uma 9ª ausente na PRÓPRIA
+    // correção: assetStates — a coleção que persistScanResults escreve a
+    // cada passada normal, e que ficou de fora tanto da lista original quanto
+    // da extensão. Hoje o código já prefixa todas corretamente; verificado
+    // que SEM esta extensão o teste não pegava um
+    // `createEntity('assetStates')`/`createEntity('priceAlerts')` sem prefixo.
+    for (const realCollection of ['assetStates', 'tradeOperations', 'signalEvents', 'systemLogs', 'scannerLocks', 'assetActiveOps', 'priceAlerts', 'users', 'verificationTasks']) {
       expect(unprefixedCollectionArgOccurrences(realCollection)).toEqual([]);
     }
   });

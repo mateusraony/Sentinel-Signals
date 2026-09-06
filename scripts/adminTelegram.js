@@ -116,19 +116,32 @@ async function shouldSend(event, data, asset) {
 // log não pode atrasar nem quebrar o envio que ela está registrando, nem
 // travar run-scan.mjs se o Firestore estiver indisponível (o forceExit do
 // scanTimeout.mjs mata qualquer promise pendente de qualquer forma).
-function logTelegramFailure(message, details) {
-  // try/catch em volta da chamada inteira, não só .catch() na promise — um
-  // throw SÍNCRONO (ex.: cliente Firestore mal configurado) não pode escapar
-  // e virar uma exceção não tratada dentro do try/catch de send(), que
-  // converteria "falha ao notificar" em "o scan inteiro quebrou". Mesmo
-  // raciocínio de safeMirrorCall (src/lib/rtdbMirror.js).
+// Aguardada por send() (não fire-and-forget) — Codex review, PR #318:
+// run-scan.mjs/run-backfill-check.mjs chamam forceExit() (process.exit())
+// logo depois de aguardar o alerta que dispara esta função; sem aguardar a
+// escrita, forceExit podia matar a promise pendente antes dela chegar ao
+// Firestore, perdendo exatamente o registro que este fix existe pra
+// garantir. withTimeout (já usado no resto deste arquivo) limita a espera —
+// sem ele, um Firestore preso em retry de RESOURCE_EXHAUSTED (o mesmo
+// cenário que costuma coincidir com um alerta de cota) reintroduziria a
+// travada de minutos que scanTimeout.mjs existe pra evitar. try/catch em
+// volta da chamada inteira, não só .catch() na promise — um throw SÍNCRONO
+// (ex.: cliente Firestore mal configurado) não pode escapar e virar uma
+// exceção não tratada dentro do try/catch de send(), que converteria "falha
+// ao notificar" em "o scan inteiro quebrou". Mesmo raciocínio de
+// safeMirrorCall (src/lib/rtdbMirror.js).
+async function logTelegramFailure(message, details) {
   try {
-    getFirestore().collection('systemLogs').add({
-      level: 'warn', module: 'telegram', message, details,
-      created_date: new Date().toISOString(),
-    }).catch((e) => console.warn('[Telegram] log de falha no SystemLog também falhou, ignorado:', e.message));
+    await withTimeout(
+      getFirestore().collection('systemLogs').add({
+        level: 'warn', module: 'telegram', message, details,
+        created_date: new Date().toISOString(),
+      }),
+      5000,
+      'telegramFailureLog',
+    );
   } catch (e) {
-    console.warn('[Telegram] log de falha no SystemLog também falhou (síncrono), ignorado:', e.message);
+    console.warn('[Telegram] log de falha no SystemLog também falhou, ignorado:', e.message);
   }
 }
 
@@ -150,13 +163,13 @@ async function send(html) {
     if (!res.ok) {
       const body = await res.text();
       console.warn('[Telegram] send failed:', res.status, body);
-      logTelegramFailure('Falha ao enviar mensagem ao Telegram', { status: res.status, body });
+      await logTelegramFailure('Falha ao enviar mensagem ao Telegram', { status: res.status, body });
       return false;
     }
     return true;
   } catch (e) {
     console.warn('[Telegram] send failed:', e.message);
-    logTelegramFailure('Falha ao enviar mensagem ao Telegram (exceção)', { error: e.message });
+    await logTelegramFailure('Falha ao enviar mensagem ao Telegram (exceção)', { error: e.message });
     return false;
   }
 }

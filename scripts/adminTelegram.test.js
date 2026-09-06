@@ -220,6 +220,39 @@ describe('send — falha de envio agora fica visível no SystemLog (item 166 Fas
     // logTelegramFailure, este await rejeitaria e o teste falharia sozinho.
     await notifyStopHit(baseOp(), 95);
   });
+
+  // Codex review (PR #318): run-scan.mjs/run-backfill-check.mjs chamam
+  // forceExit() (process.exit()) logo depois de aguardar o alerta que
+  // dispara send() — antes desta correção, logTelegramFailure era
+  // fire-and-forget dentro de send(), então send() podia resolver (e o
+  // processo sair) ANTES da escrita no SystemLog completar, perdendo
+  // silenciosamente o próprio registro que o item 1 desta rodada existe pra
+  // garantir. Prova que send() agora aguarda a escrita: com a escrita
+  // travada, a promise de notifyStopHit ainda não resolveu.
+  it('send() aguarda a escrita do SystemLog terminar antes de resolver (corrida com forceExit)', async () => {
+    let resolveAdd;
+    firestoreAddMock.mockImplementation(() => new Promise((resolve) => { resolveAdd = resolve; }));
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'x' });
+    const { notifyStopHit } = await import('./adminTelegram.js');
+
+    let settled = false;
+    const pending = notifyStopHit(baseOp(), 95).then(() => { settled = true; });
+
+    // setTimeout(0) só dispara depois que a fila de MICROtasks esvazia —
+    // drena tudo que a cadeia fetch/shouldSend podia terminar sozinha, sem
+    // depender da escrita no Firestore (ainda travada, resolveAdd não foi
+    // chamado). 3 `await Promise.resolve()` soltos não bastam aqui: a
+    // primeira versão deste teste passava com o código ANTIGO (fire-and-
+    // forget) porque a cadeia de awaits internos de send()/shouldSend() por
+    // si só já passa de 3 microtasks, então "settled ainda false" dava falso
+    // positivo mesmo sem a correção.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+
+    resolveAdd();
+    await pending;
+    expect(settled).toBe(true);
+  });
 });
 
 // docs/known-risks.md item 142 addendum: notifyFirestoreQuotaExhausted é
