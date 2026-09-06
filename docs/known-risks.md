@@ -20378,16 +20378,80 @@ verde. Verificado por reprodução: com `PriceAlert: createEntity('priceAlerts')
 NOVO falha, apontando o vazamento. Código de produção já estava correto
 (as 3 coleções já usam o prefixo) — só o guard tinha o buraco.
 
-### Adiado — item 2 (11 tripwires de flag backtest-only)
+### Addendum 2026-09-06 — Codex review no PR #318 corrigiu 3 achados novos
 
-`allowedSideTripwire.test.js` e outros 10 arquivos irmãos checam se a flag
-aparece como `nome: valor` num objeto — mas o vazamento real pra produção é
-via entrada em `SYNCED_STRATEGY_KEYS` (array de strings), forma que nenhum
-deles verifica. Existe uma rede de segurança coincidente hoje
-(`pineConfigMirrorTripwire.test.js` pegaria isso por outro motivo), mas os
-guards com o nome certo pra essa proteção não fazem o trabalho que prometem.
-Fica para rodada separada — mexer em 11 arquivos de tripwire de segurança
-merece mais cuidado que os 3 acima.
+A revisão automática do Codex no PR #318 achou 3 problemas reais nos fixes
+1/3/4 acima, todos corrigidos e verificados por reprodução antes do merge
+(commit `7adbda5`):
+
+- **Item 1 (Telegram)**: `logTelegramFailure` era fire-and-forget DENTRO de
+  `send()` — `run-scan.mjs`/`run-backfill-check.mjs` chamam `forceExit()`
+  (`process.exit()`) logo depois de aguardar o alerta que dispara `send()`,
+  então o próprio `process.exit()` podia matar a escrita no `SystemLog`
+  antes dela completar, perdendo exatamente o registro que o item 1 existia
+  pra garantir. `send()` agora `await`s `logTelegramFailure`, com
+  `withTimeout` (5s) para não reintroduzir a travada de minutos do item 142
+  sob `RESOURCE_EXHAUSTED`.
+- **Item 3 (`TradeCard.jsx`)**: a correção trocou `op.tp1_hit` por
+  `stopPosture(op)` no banner de `STOP_HIT`, mas `stopPosture` só compara o
+  stop NOMINAL com a entrada — não é o resultado REALIZADO de uma operação
+  já encerrada. Um stop exatamente na entrada com TP1 já bancado é um GANHO
+  real (a perna parcial já lucrou), não breakeven; um stop pré-TP1 avançado
+  além da entrada pode fechar líquido em BE/LOSS depois de taxa/slippage/
+  funding (Fase 5). Trocado para `classifyOutcome(op)` — a mesma fonte
+  única que `PerformanceOverview.jsx`/`TradeEntryMarkers.jsx` já usam.
+  `stopPosture` continua correto nos widgets de posição ABERTA
+  (`PriceGrid`/`MilestoneLine`), que não têm resultado realizado ainda.
+- **Item 4 (`adminEntitiesShadowTripwire.test.js`)**: a lista "completa" de
+  9 coleções reais ainda tinha um buraco — `assetStates` nunca foi checada,
+  nem na versão original nem na extensão que corrigiu as outras 3. Mesma
+  classe de bug (guard incompleto) que o próprio item 4 estava corrigindo.
+
+### Corrigido 2 (rodada separada, 2026-09-06) — 11 tripwires de flag backtest-only
+
+`allowedSideTripwire.test.js` e mais 9 arquivos irmãos
+(`buyRegimeFilterTripwire`, `hierarchicalCascadeTripwire`, `rf1hCondTripwire`,
+`rf1hExclusiveTripwire`, `rf1hUncondTripwire`, `rfStructuralStopTripwire`,
+`rsiOnlyGateTripwire`, `smcAlignmentScoreTripwire`,
+`timeStopOverrideTripwire`) só checavam se a flag aparece como `nome: valor`
+num objeto (`KEY_AS_OBJECT_ENTRY`) — o vazamento real pra produção é via
+entrada em `SYNCED_STRATEGY_KEYS` (array de strings): `getPineConfig()`
+(`pineParser.js`) lê esse array e sobrescreve `config[key]` com o valor de
+`strategyConfig/current` do Firestore (gravável por qualquer sessão anônima,
+CLAUDE.md decisão 1) para CADA chave presente, **sem checar se ela também
+existe em `DEFAULTS`**. Nenhum dos 10 arquivos verificava essa forma.
+`portfolioSideCapTripwire.test.js` (item 133) já tinha o teste certo — serviu
+de modelo para os outros 10.
+
+Adicionado um 4º teste em cada um dos 10 arquivos: confirma que a chave nunca
+aparece como string entre aspas simples em `pineParser.js`/
+`adminPineConfig.js`. Verificado por reprodução nos 10: reintroduzida cada
+flag como entrada de `SYNCED_STRATEGY_KEYS` (só em `pineParser.js`), o teste
+novo falha; revertido, volta a passar.
+
+**Achado ao verificar (fato, não hipótese) — o risco de produção já estava
+coberto por outro guard.** Testado também o cenário mais realista (a mesma
+flag adicionada SIMETRICAMENTE a `SYNCED_STRATEGY_KEYS` nos DOIS arquivos,
+sem tocar `DEFAULTS` em nenhum): `pineConfigMirrorTripwire.test.js` (item
+143) já falha nesse caso, no teste "toda chave de `SYNCED_STRATEGY_KEYS`
+existe em `DEFAULTS` nos dois arquivos" — porque a chave nova não estaria em
+`DEFAULTS`. Rastreando as 3 formas em que o vazamento poderia acontecer
+(assimetria entre os dois arquivos; presente em `SYNCED_STRATEGY_KEYS` sem
+`DEFAULTS`; presente em ambos coerentemente) — as 3 já caem em algum dos 5
+testes existentes de `pineConfigMirrorTripwire.test.js`. Essa é exatamente a
+"rede de segurança coincidente" que a nota de adiamento original já
+suspeitava existir, agora confirmada por teste, não por suposição.
+
+**O que esta rodada realmente fecha, então**: não um buraco de produção sem
+nenhuma rede embaixo, mas (a) o descompasso entre o que cada um dos 10
+arquivos AFIRMA proteger no próprio comentário de cabeçalho ("se aparecer
+como entrada de DEFAULTS/SYNCED_STRATEGY_KEYS...") e o que o código
+realmente checava (só a forma DEFAULTS); (b) defesa em profundidade — se
+`pineConfigMirrorTripwire.test.js` for um dia enfraquecido/removido por
+engano, estes 10 continuam cobrindo especificamente as flags de segurança
+mais sensíveis, com uma falha nomeada e direta em vez de um diff de array
+genérico. Não é uma correção cosmética — só não era o "buraco crítico sem
+nenhuma proteção" que a redação original do adiamento sugeria.
 
 ### Não corrigido nesta rodada, registrado para decisão futura
 
@@ -20405,10 +20469,9 @@ respectivo arquivo.
 
 ### Verificação
 
-`npm run lint && npm test && npm run build` verdes (1575 testes, 5 novos:
-`telegram.test.js`/`adminTelegram.test.js` estendidos,
-`adminEntitiesShadowTripwire.test.js` estendido, `TradeCard.test.jsx` e
-`TradeEntryMarkers.test.js` novos). `npm run build:scan` confirma que o
-bundle do cron (que inclui `adminTelegram.js`) segue montando sem erro.
-Todos os 4 fixes verificados por reprodução: bug reintroduzido → teste
-falha; fix restaurado → teste passa.
+`npm run lint && npm test && npm run build` verdes ao longo das 3 rodadas
+desta entrada (1575 → 1577 com os 3 fixes do Codex → 1587 com os 10 testes
+novos do item 2). `npm run build:scan` confirma, a cada rodada, que o bundle
+do cron (que inclui `adminTelegram.js`) segue montando sem erro. Todos os
+fixes — os 4 originais, os 3 do Codex, e os 10 do item 2 — verificados por
+reprodução: bug reintroduzido → teste falha; fix restaurado → teste passa.
