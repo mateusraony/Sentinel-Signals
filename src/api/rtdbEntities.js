@@ -1,9 +1,9 @@
-// Realtime Database READ adapter (docs/known-risks.md item 152) — mirrors
-// the reduced subset of backend.entities.<Name>'s shape ({list, filter})
-// that the dashboard's hot polling reads actually use for AssetState/
-// TradeOperation: order+limit ("-created_date", N) and a single-field range
-// ({ created_date: { gte, lt } }, MonthlyReport.jsx). Every call is
-// fire-and-forget-free (normal awaited reads) but NEVER mutates anything —
+// Realtime Database READ adapter (docs/known-risks.md item 152, rodada 2) —
+// mirrors the reduced subset of backend.entities.<Name>'s shape
+// ({list, filter}) that the dashboard's hot polling reads actually use for
+// AssetState/SignalEvent/TradeOperation: order+limit ("-created_date", N)
+// and a single-field range ({ created_date: { gte, lt } }, MonthlyReport.jsx).
+// Every call is fire-and-forget-free (normal awaited reads) but NEVER mutates —
 // all writes/mutations continue exclusively through backend.entities/
 // backend.tradeOps (Firestore), never through this module. See
 // .claude/rules/firestore-concurrency.md: this stays the only place pages
@@ -88,5 +88,6 @@ function createRtdbReadEntity(rtdbPath, fallbackEntity) {
 
 export const rtdbEntities = {
   AssetState: createRtdbReadEntity('assetStates', backend.entities.AssetState),
+  SignalEvent: createRtdbReadEntity('signalEvents', backend.entities.SignalEvent),
   TradeOperation: createRtdbReadEntity('tradeOperations', backend.entities.TradeOperation),
 };

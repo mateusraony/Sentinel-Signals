@@ -28,6 +28,7 @@ vi.mock('@/api/entities', () => ({
   backend: {
     entities: {
       AssetState: { list: fallbackListMock, filter: fallbackFilterMock },
+      SignalEvent: { list: fallbackListMock, filter: fallbackFilterMock },
       TradeOperation: { list: fallbackListMock, filter: fallbackFilterMock },
     },
   },
@@ -83,6 +84,13 @@ describe('rtdbEntities — list()', () => {
     // RTDB só ordena ASC — limitToLast(N) devolve os N últimos em ordem ASC
     // (a, b); reverse() reconstrói -created_date (b, a).
     expect(result.map((r) => r.id)).toEqual(['b', 'a']);
+  });
+
+  it('SignalEvent (rodada 2, item 152 addendum) usa o path signalEvents', async () => {
+    getMock.mockResolvedValue(snapshotOf({ s1: { id: 's1', symbol: 'BTCUSDT', created_date: '2026-01-01T00:00:00.000Z' } }));
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    await rtdbEntities.SignalEvent.list('-created_date', 100);
+    expect(refMock).toHaveBeenCalledWith({}, 'signalEvents');
   });
 
   it('sort ascendente (sem "-") não inverte o resultado', async () => {

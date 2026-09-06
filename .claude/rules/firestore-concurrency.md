@@ -34,9 +34,13 @@ cron passa por `adminEntities.js`.
 
 ## RTDB — espelho de leitura (item 152)
 
-`AssetState`/`TradeOperation` também são espelhadas no Firebase Realtime
-Database (RTDB), absorvendo o polling do dashboard (`src/api/rtdbEntities.js`)
-sem tocar a cota diária do Firestore. **Mesma disciplina do adaptador**:
+`AssetState`/`SignalEvent`/`TradeOperation` também são espelhadas no Firebase
+Realtime Database (RTDB), absorvendo o polling do dashboard
+(`src/api/rtdbEntities.js`) sem tocar a cota diária do Firestore. `SignalEvent`
+entrou na rodada 2 (item 152 addendum) porque é o denominador comum das 4
+telas mais usadas (Dashboard/Assets/Alerts/Trades) — mesmo com os intervalos
+corrigidos do item 155, cada uma sozinha custava mais que a cota diária
+inteira se ficasse aberta o dia todo. **Mesma disciplina do adaptador**:
 `firebase/database`/`firebase-admin/database` **nunca** são importados direto
 em componente/página — só via `src/api/rtdbEntities.js` (leitura) e o mirror
 interno de `src/api/entities.js`/`scripts/adminEntities.js`

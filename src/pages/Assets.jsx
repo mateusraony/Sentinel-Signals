@@ -49,7 +49,7 @@ export default function Assets() {
 
   const { data: recentSignals = [] } = useQuery({
     queryKey: ['recent-signals'],
-    queryFn: () => backend.entities.SignalEvent.list('-created_date', 100),
+    queryFn: () => rtdbEntities.SignalEvent.list('-created_date', 100),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 

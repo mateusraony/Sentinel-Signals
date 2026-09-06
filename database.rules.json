@@ -4,6 +4,13 @@
       ".read": "auth != null",
       ".write": "auth != null"
     },
+    "signalEvents": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": [
+        "created_date"
+      ]
+    },
     "tradeOperations": {
       ".read": "auth != null",
       ".write": "auth != null",

@@ -16,13 +16,21 @@
 // followed. Verified structurally by entitiesRtdbTripwire.test.js /
 // scripts/adminEntitiesRtdbTripwire.test.js.
 
-// Only these two collections are mirrored this round — assetStates/
-// tradeOperations are the highest frequency×screens dashboard pollers
-// (docs/known-risks.md item 152). Extending this set later is the same
-// pattern, not a redesign — see the same item for the candidates left out
-// (signalEvents/monitoredAssets/verificationTasks/systemLogs).
+// assetStates/tradeOperations were the first round (docs/known-risks.md item
+// 152). signalEvents joined in round 2 (item 152 addendum, item 155/159
+// investigation): measured against the CURRENT (already-fixed, 60-120s)
+// polling intervals, Dashboard/Assets/Alerts/Trades each read SignalEvent
+// straight from Firestore and each, alone, costs more than the entire daily
+// quota if left open a full day (100 docs/60s on Assets.jsx alone is
+// ~159.800 reads/day against a 50.000 budget) — the single highest-leverage
+// collection left un-mirrored, shared by every screen a user would
+// realistically keep open while watching the market. monitoredAssets/
+// verificationTasks/systemLogs remain candidates for a future round; their
+// document counts are an order of magnitude smaller (tens, not hundreds),
+// so measured priority puts them after, not before.
 export const RTDB_MIRRORED_ENTITIES = Object.freeze({
   AssetState: 'assetStates',
+  SignalEvent: 'signalEvents',
   TradeOperation: 'tradeOperations',
 });
 
@@ -68,9 +76,9 @@ export function createRtdbMirrorHelpers({ mirrorSet, mirrorUpdate, mirrorRemove 
   }
 
   // Wraps one backend.entities.<Name> object. Only entities present in
-  // RTDB_MIRRORED_ENTITIES are intercepted (create/update/bulkCreate/
-  // deleteMany) — every other entity (SignalEvent, MonitoredAsset,
-  // SystemLog, ...) is returned completely untouched.
+  // RTDB_MIRRORED_ENTITIES are intercepted (create/createUnique/update/
+  // bulkCreate/deleteMany) — every other entity (MonitoredAsset, SystemLog,
+  // VerificationTask, ...) is returned completely untouched.
   function withRtdbMirror(entityKey, entity) {
     const rtdbPath = RTDB_MIRRORED_ENTITIES[entityKey];
     if (!rtdbPath) return entity;
@@ -81,6 +89,16 @@ export function createRtdbMirrorHelpers({ mirrorSet, mirrorUpdate, mirrorRemove 
         const created = await entity.create(data);
         safeMirrorCall(mirrorSet, rtdbPath, created.id, created);
         return created;
+      },
+      // SignalEvent's real creation path in scanner.js is createUnique
+      // (dedup by signal.dedup_key), never create() — same {created, doc}
+      // shape as createTradeOpIfNoneActive below, so the same "only on a
+      // real create" guard applies: a dedup hit (created: false) must not
+      // re-mirror the pre-existing doc.
+      async createUnique(id, data) {
+        const res = await entity.createUnique(id, data);
+        if (res.created && res.doc) safeMirrorCall(mirrorSet, rtdbPath, res.doc.id, res.doc);
+        return res;
       },
       async update(id, data) {
         const updated = await entity.update(id, data);
