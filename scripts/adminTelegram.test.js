@@ -6,15 +6,16 @@
 // Firestore, memoizada por processo, e o fail-open em cada caminho de erro.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const { firestoreGetMock, firestoreSetMock } = vi.hoisted(() => ({
-  firestoreGetMock: vi.fn(),
-  firestoreSetMock: vi.fn(),
-}));
-vi.mock('firebase-admin/firestore', () => ({
-  getFirestore: () => ({
-    collection: () => ({ doc: () => ({ get: firestoreGetMock, set: firestoreSetMock }) }),
-  }),
-}));
+const { firestoreGetMock, firestoreSetMock, firestoreAddMock, getFirestoreMock } = vi.hoisted(() => {
+  const firestoreGetMock = vi.fn();
+  const firestoreSetMock = vi.fn();
+  const firestoreAddMock = vi.fn();
+  const getFirestoreMock = vi.fn(() => ({
+    collection: () => ({ doc: () => ({ get: firestoreGetMock, set: firestoreSetMock }), add: firestoreAddMock }),
+  }));
+  return { firestoreGetMock, firestoreSetMock, firestoreAddMock, getFirestoreMock };
+});
+vi.mock('firebase-admin/firestore', () => ({ getFirestore: getFirestoreMock }));
 
 function snap(sources) {
   return sources === undefined
@@ -39,6 +40,12 @@ beforeEach(() => {
   firestoreGetMock.mockReset();
   firestoreSetMock.mockReset();
   firestoreSetMock.mockResolvedValue(undefined);
+  firestoreAddMock.mockReset();
+  firestoreAddMock.mockResolvedValue(undefined);
+  getFirestoreMock.mockReset();
+  getFirestoreMock.mockImplementation(() => ({
+    collection: () => ({ doc: () => ({ get: firestoreGetMock, set: firestoreSetMock }), add: firestoreAddMock }),
+  }));
   process.env.TELEGRAM_BOT_TOKEN = 'x';
   process.env.TELEGRAM_CHAT_ID = 'y';
   global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
@@ -170,6 +177,48 @@ describe('notifyStopHit — nota de ambiguidade stop/TP na mesma vela (item 140)
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
     expect(text).not.toContain('tocou o stop e o take ao mesmo tempo');
+  });
+});
+
+// send() (item 166 Fase 2, "falha silenciosa") só fazia console.warn quando
+// o envio falhava — invisível pro Debug Log do painel e pro
+// scripts/health-audit.mjs, que só lê SystemLog.
+describe('send — falha de envio agora fica visível no SystemLog (item 166 Fase 2)', () => {
+  function baseOp(overrides = {}) {
+    return { symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h', current_stop: 95, tp1_hit: false, ...overrides };
+  }
+
+  it('resposta não-ok do Telegram grava no SystemLog (não só console.warn)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => 'Unauthorized' });
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    await notifyStopHit(baseOp(), 95);
+    expect(firestoreAddMock).toHaveBeenCalledWith(expect.objectContaining({
+      level: 'warn', module: 'telegram', details: expect.objectContaining({ status: 401 }),
+    }));
+  });
+
+  it('exceção de rede no fetch também grava no SystemLog', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    await notifyStopHit(baseOp(), 95);
+    expect(firestoreAddMock).toHaveBeenCalledWith(expect.objectContaining({
+      level: 'warn', module: 'telegram', details: expect.objectContaining({ error: 'Failed to fetch' }),
+    }));
+  });
+
+  it('um cliente Firestore que nem expõe .add() nunca vira exceção não tratada (throw síncrono engolido)', async () => {
+    // Simula o pior caso: getFirestore().collection() devolve um objeto SEM
+    // .add — exatamente o shape que este próprio mock usava antes desta
+    // rodada. logTelegramFailure precisa engolir o throw síncrono
+    // ("... .add is not a function"), não só uma rejeição de promise.
+    getFirestoreMock.mockImplementation(() => ({
+      collection: () => ({ doc: () => ({ get: firestoreGetMock, set: firestoreSetMock }) }),
+    }));
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'x' });
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    // Se o throw síncrono de .add() escapasse do try/catch de
+    // logTelegramFailure, este await rejeitaria e o teste falharia sozinho.
+    await notifyStopHit(baseOp(), 95);
   });
 });
 

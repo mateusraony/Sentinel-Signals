@@ -305,12 +305,23 @@ function TFTrendRow({ op }) {
   );
 }
 
+// A postura do stop no banner de status precisa vir de stopPosture(op),
+// nunca de op.tp1_hit — mesmo raciocínio do bloco acima (item 154), achado de
+// novo no item 166 Fase 2: este banner ficou de fora daquela correção. Um
+// runner que travou lucro real (trailing avançou o stop além da entrada,
+// `advanceTrailingStop`) mostrava "sem prejuízo" em vez do ganho de verdade.
+const STOP_HIT_BANNER = {
+  locked:    { text: '💰 Stop travou lucro — encerrado no lucro', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
+  breakeven: { text: '🔄 Stop no breakeven — sem prejuízo', color: LEVEL_COLOR.stopBe, bg: 'rgba(255,209,102,0.06)' },
+};
+const STOP_HIT_BANNER_DEFAULT = { text: '🛑 Stop atingido — revisar setup', color: LEVEL_COLOR.stop, bg: 'rgba(255,20,120,0.06)' };
+
 function StatusBanner({ op }) {
   const banners = {
     SIGNAL_CONFIRMED: { text: '👀 Monitorando — aguardar preço avançar para TP1', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
     RUNNER_ACTIVE:    { text: '🚀 Runner ativo — 50% realizado no TP1, deixar correr', color: '#ffd166', bg: 'rgba(255,209,102,0.06)' },
     TP2_HIT:          { text: '🏆 Encerrado com lucro máximo no TP2 — parabéns!', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
-    STOP_HIT:         { text: op.tp1_hit ? '🔄 Stop no breakeven — sem prejuízo' : '🛑 Stop atingido — revisar setup', color: op.tp1_hit ? '#ffd166' : '#ff1478', bg: op.tp1_hit ? 'rgba(255,209,102,0.06)' : 'rgba(255,20,120,0.06)' },
+    STOP_HIT:         STOP_HIT_BANNER[stopPosture(op)] ?? STOP_HIT_BANNER_DEFAULT,
     INVALIDATED:      { text: '⚠️ Sinal invalidado — não operar agora', color: '#ff9f43', bg: 'rgba(255,159,67,0.06)' },
     CLOSED:           { text: '✖ Operação encerrada manualmente', color: '#64748b', bg: 'rgba(100,116,139,0.06)' },
   };

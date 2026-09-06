@@ -108,6 +108,30 @@ async function shouldSend(event, data, asset) {
   return true;
 }
 
+// Fire-and-forget SystemLog write (item 166 Fase 2) — só console.warn deixava
+// uma falha de envio invisível pro resto do sistema: nem o Debug Log do
+// painel nem scripts/health-audit.mjs (que só lê SystemLog) saberiam que o
+// canal de 24h parou. Nunca aguardado por send() e sempre com .catch próprio
+// — mesmo espírito do mirror RTDB (src/lib/rtdbMirror.js): uma escrita de
+// log não pode atrasar nem quebrar o envio que ela está registrando, nem
+// travar run-scan.mjs se o Firestore estiver indisponível (o forceExit do
+// scanTimeout.mjs mata qualquer promise pendente de qualquer forma).
+function logTelegramFailure(message, details) {
+  // try/catch em volta da chamada inteira, não só .catch() na promise — um
+  // throw SÍNCRONO (ex.: cliente Firestore mal configurado) não pode escapar
+  // e virar uma exceção não tratada dentro do try/catch de send(), que
+  // converteria "falha ao notificar" em "o scan inteiro quebrou". Mesmo
+  // raciocínio de safeMirrorCall (src/lib/rtdbMirror.js).
+  try {
+    getFirestore().collection('systemLogs').add({
+      level: 'warn', module: 'telegram', message, details,
+      created_date: new Date().toISOString(),
+    }).catch((e) => console.warn('[Telegram] log de falha no SystemLog também falhou, ignorado:', e.message));
+  } catch (e) {
+    console.warn('[Telegram] log de falha no SystemLog também falhou (síncrono), ignorado:', e.message);
+  }
+}
+
 // Returns whether the message was actually delivered (2xx from Telegram) —
 // callers that need to know delivery succeeded (e.g. the per-asset healthcheck
 // dedup marker, see checkAssetHealthchecks in run-scan.mjs) must not assume
@@ -124,12 +148,15 @@ async function send(html) {
       body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: 'HTML' }),
     });
     if (!res.ok) {
-      console.warn('[Telegram] send failed:', res.status, await res.text());
+      const body = await res.text();
+      console.warn('[Telegram] send failed:', res.status, body);
+      logTelegramFailure('Falha ao enviar mensagem ao Telegram', { status: res.status, body });
       return false;
     }
     return true;
   } catch (e) {
     console.warn('[Telegram] send failed:', e.message);
+    logTelegramFailure('Falha ao enviar mensagem ao Telegram (exceção)', { error: e.message });
     return false;
   }
 }

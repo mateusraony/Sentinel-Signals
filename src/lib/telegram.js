@@ -193,12 +193,18 @@ async function send(html) {
       body: JSON.stringify({ chat_id: chatId, text: html, parse_mode: 'HTML' }),
     });
     if (!res.ok) {
-      console.warn('[Telegram] send failed:', res.status, await res.text());
+      const body = await res.text();
+      console.warn('[Telegram] send failed:', res.status, body);
+      // item 166 Fase 2: só console.warn deixava a falha invisível — nem o
+      // Debug Log do painel nem scripts/health-audit.mjs (que só lê
+      // SystemLog) saberiam que o canal de alerta parou.
+      logWarn('telegram', 'Falha ao enviar mensagem ao Telegram', { status: res.status, body });
       return false;
     }
     return true;
   } catch (e) {
     console.warn('[Telegram] send failed:', e.message);
+    logWarn('telegram', 'Falha ao enviar mensagem ao Telegram (exceção)', { error: e.message });
     return false;
   }
 }
