@@ -18575,6 +18575,115 @@ nesta sessão — a confirmação de queda real de leituras diárias e a
 population real de `/assetStates`/`/tradeOperations` no Console só podem
 ser feitas pelo usuário após os passos manuais acima.
 
+### Addendum (2026-09-06) — rodada 2: por que o item 155 não bastou, e por que `SignalEvent` é o alvo certo
+
+O item 159 registrou o pior episódio de cota já medido, **depois** de a
+correção de polling do item 155 já estar em produção havia um dia inteiro.
+Investigação antes de mexer em código (pedido do usuário: "quero entender
+melhor o que está acontecendo pra corrigir isso").
+
+**Fato — o código do item 155 está correto.** Conferido linha a linha:
+`pollingIntervals.js`/`query-client.js` intactos, todo `refetchInterval`
+Firestore usa as constantes (60s/120s), nenhum literal escapou. O único
+`60000` solto (`AssetCard.jsx`) busca a Binance direto — fora da cota.
+
+**Fato — mesmo com os intervalos corrigidos, várias telas sozinhas já
+ultrapassam a cota do dia inteiro.** Custo recomputado com os limites de
+documento reais do código de hoje:
+
+| Tela | Coleção (Firestore direto) | Docs/consulta | Intervalo | Custo se aberta 24h |
+|---|---|---|---|---|
+| **Assets** | `SignalEvent` | 100 | 60s | **~159.800/dia** |
+| **Alerts** | `SignalEvent` | 200 | 120s | ~144.000/dia |
+| **Logs** | `SystemLog` | 200 | 120s | ~144.000/dia |
+| **Dashboard** | `SignalEvent` | 50 | 60s | ~86.400/dia |
+| **Trades** | `SignalEvent` | 50 | 60s | ~72.000/dia |
+
+A cota inteira é ~50.000/dia. `TradeHistory`/`MonthlyReport` já liam 100% do
+RTDB (rodada 1, item 152) e custam zero — é por isso que o teste rápido do
+item 159 pareceu bom, mas um dia inteiro de uso real não.
+
+**Fato — `SignalEvent` é o denominador comum.** Das 4 telas que alguém
+"de olho no mercado" deixaria abertas (Dashboard/Assets/Trades/Alerts),
+**todas as 4** leem `SignalEvent` direto do Firestore — nunca migrado na
+rodada 1, que cobriu só `AssetState`/`TradeOperation`.
+
+**Descartado como causa**: nenhum ativo foi criado/reativado nas 48h
+anteriores (11 `monitoredAssets`, 10 ativos, 1 `backfill_check_status:
+'pending'` — provavelmente obsoleto, não gerou replay pesado).
+
+**Hipótese secundária, não descartada**: não existe nenhum mecanismo no
+painel que force uma aba já aberta a recarregar num novo deploy (única
+chamada a `window.location.reload()` no repo inteiro é dentro do
+`ErrorBoundary`, só em crash de render). Uma aba aberta antes das 01:15 UTC
+de 05/09 seguiria rodando os intervalos ANTIGOS (10-15s) indefinidamente,
+sem nada avisar — agravante possível, não a causa raiz sozinha (o fato
+acima já basta: mesmo o código NOVO, numa aba nova, estoura em várias
+telas).
+
+**Nota operacional sobre esta própria investigação**: uma consulta sem
+limite em `systemLogs` (`getDocs(collection(db, 'systemLogs'))`, sem
+`limit`) rodada durante a investigação devolveu **47.533 documentos numa
+única chamada** — quase a cota diária inteira, consumida por engano, não
+por uso orgânico do painel. Registrado aqui porque é a mesma classe de erro
+dos itens 162/165 (nunca ler uma coleção sem limite explícito), cometida
+ao investigar o problema que ela mesma descreve.
+
+### O que mudou nesta rodada
+
+`SignalEvent` entra em `RTDB_MIRRORED_ENTITIES` (`src/lib/rtdbMirror.js`),
+mesmo padrão da rodada 1 — mirror fire-and-forget, fora de qualquer
+transação, nunca altera o valor devolvido ao chamador. Uma diferença real
+do desenho anterior: `SignalEvent` nasce por `createUnique(dedup_key, ...)`
+em `scanner.js` (dedup de sinal), não por `create()` — `withRtdbMirror`
+ganhou suporte a `createUnique` (mesma forma `{created, doc}` de
+`createTradeOpIfNoneActive`, mesmo guard "só espelha quando `created ===
+true`"). `update()` (dismiss de alerta, `Alerts.jsx`/`Trades.jsx`, e os
+patches de `scanner.js`) já era coberto pelo wrapper genérico.
+
+- `src/api/entities.js`/`scripts/adminEntities.js`: `SignalEvent` envolvida
+  por `withRtdbMirror`.
+- `src/api/rtdbEntities.js`: novo `SignalEvent: createRtdbReadEntity(
+  'signalEvents', backend.entities.SignalEvent)` — mesmo contrato reduzido
+  (`list`/`filter`, "reconhece o formato exato, senão cai pro Firestore").
+- `database.rules.json`: nó `signalEvents` com `.indexOn: ["created_date"]`
+  (as 4 telas usam `list('-created_date', N)` → `orderByChild`). **Exige
+  `firebase deploy --only database`** antes de valer em produção — mesmo
+  passo manual do item 152 original.
+- `Dashboard.jsx`/`Assets.jsx`/`Trades.jsx` (já importavam `rtdbEntities`
+  pra `AssetState`/`TradeOperation`) e `Alerts.jsx` (import novo): a
+  `queryFn` de `recentSignals`/`signals` troca de `backend.entities.
+  SignalEvent.list(...)` para `rtdbEntities.SignalEvent.list(...)` —
+  mesma `queryKey`/`refetchInterval`, só a fonte de leitura muda. As
+  mutações de dismiss (`backend.entities.SignalEvent.update(id, {
+  is_dismissed: true })`) continuam 100% Firestore, agora espelhadas
+  automaticamente pelo wrapper.
+- Fora de escopo, de propósito (custo baixo, poucas dezenas de documentos):
+  `MonitoredAsset`, `VerificationTask`. `SystemLog` (Logs.jsx, ~144.000/dia
+  se aberta o dia todo) fica candidata pra uma rodada 3, priorizada por dado
+  real depois de medir o efeito desta.
+
+Testes estendidos no mesmo padrão da rodada 1: `rtdbMirror.test.js`
+(`createUnique` espelha só em `created === true`), os 2 tripwires de escopo
+(`AssetState`/`SignalEvent`/`TradeOperation`, travado), `entities.test.js`/
+`adminEntities.test.js` (comportamento real do `createUnique`/`update` de
+`SignalEvent` com as primitivas mockadas), `rtdbEntities.test.js` (path
+`signalEvents` correto). `scripts/backfill-rtdb.mjs` não mudou — itera
+`RTDB_MIRRORED_ENTITIES` genericamente, então passa a copiar `signalEvents`
+sozinho; precisa rodar de novo (`backfill-rtdb.yml`, manual) para popular o
+RTDB com o histórico existente antes da leitura convergir sozinha.
+
+### Passos manuais do usuário (mesmo padrão do item 152 original)
+
+1. `firebase deploy --only database` (ou o `--only` estendido do
+   `deploy-firestore.yml`) — publica o `.indexOn` novo.
+2. Disparar `.github/workflows/backfill-rtdb.yml` (manual) uma vez — sem
+   isso, `SignalEvent`s já existentes só aparecem no RTDB à medida que
+   forem atualizados (`expired_logged`, dismiss), nunca retroativamente.
+3. Confirmar depois de um dia sob a mudança: `health-audit.yml` (04:40 UTC)
+   e o padrão de runs do `scan.yml`/`backfill.yml` na mesma janela crítica
+   (~21h30 dentro do ciclo) que os itens 159/164 já isolaram.
+
 ---
 
 ## 153. Implementado — preço ao vivo e distância até os níveis nos cards da aba Trades (2026-09-04)

@@ -305,7 +305,7 @@ export const backend = {
   entities: {
     MonitoredAsset: createEntity('monitoredAssets'),
     AssetState: withRtdbMirror('AssetState', createEntity('assetStates')),
-    SignalEvent: createEntity('signalEvents'),
+    SignalEvent: withRtdbMirror('SignalEvent', createEntity('signalEvents')),
     TradeOperation: withRtdbMirror('TradeOperation', createEntity('tradeOperations')),
     PriceAlert: createEntity('priceAlerts'),
     SystemLog: makeResilientLogEntity(createEntity('systemLogs')),

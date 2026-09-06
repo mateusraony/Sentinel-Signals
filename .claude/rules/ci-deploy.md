@@ -75,7 +75,9 @@ paths:
 - `deploy-firestore.yml` — deploy **manual** de rules/índices.
 - `backfill-rtdb.yml` — disparo **manual** (`workflow_dispatch` só) de
   `scripts/backfill-rtdb.mjs` (`docs/known-risks.md` item 152 addendum):
-  copia `assetStates`/`tradeOperations` do Firestore pro RTDB uma única vez,
+  copia `assetStates`/`signalEvents`/`tradeOperations` do Firestore pro RTDB
+  uma única vez (itera `RTDB_MIRRORED_ENTITIES`, então uma coleção nova
+  entra automaticamente ao ser adicionada lá — nenhuma mudança neste script),
   fechando o "cold start" do mirror ao vivo (uma `TradeOperation` fechada
   nunca mais é escrita, então nunca convergiria sozinha sem isto). Não faz
   parte de nenhum agendamento — rodar antes de religar qualquer leitura do

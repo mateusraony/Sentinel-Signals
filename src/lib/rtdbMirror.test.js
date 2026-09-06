@@ -43,7 +43,7 @@ describe('createRtdbMirrorHelpers', () => {
         create: vi.fn().mockResolvedValue({ id: 'x1', foo: 'bar' }),
         update: vi.fn().mockResolvedValue({ id: 'x1', foo: 'baz' }),
       };
-      const wrapped = helpers.withRtdbMirror('SignalEvent', real);
+      const wrapped = helpers.withRtdbMirror('MonitoredAsset', real);
       expect(wrapped).toBe(real);
       await wrapped.create({ foo: 'bar' });
       expect(mirrorSet).not.toHaveBeenCalled();
@@ -62,6 +62,21 @@ describe('createRtdbMirrorHelpers', () => {
       const wrapped = helpers.withRtdbMirror('TradeOperation', real);
       await wrapped.update('trade_x', { status: 'CLOSED' });
       expect(mirrorUpdate).toHaveBeenCalledWith('tradeOperations', 'trade_x', { status: 'CLOSED' });
+    });
+
+    it('SignalEvent.createUnique espelha o doc criado quando created === true (caminho real de scanner.js)', async () => {
+      const real = { createUnique: vi.fn().mockResolvedValue({ created: true, doc: { id: 'sig_x', symbol: 'BTCUSDT' } }) };
+      const wrapped = helpers.withRtdbMirror('SignalEvent', real);
+      const res = await wrapped.createUnique('sig_x', { symbol: 'BTCUSDT' });
+      expect(res).toEqual({ created: true, doc: { id: 'sig_x', symbol: 'BTCUSDT' } });
+      expect(mirrorSet).toHaveBeenCalledWith('signalEvents', 'sig_x', { id: 'sig_x', symbol: 'BTCUSDT' });
+    });
+
+    it('SignalEvent.createUnique NÃO espelha em dedup hit (created === false)', async () => {
+      const real = { createUnique: vi.fn().mockResolvedValue({ created: false, existing: { id: 'sig_x' } }) };
+      const wrapped = helpers.withRtdbMirror('SignalEvent', real);
+      await wrapped.createUnique('sig_x', { symbol: 'BTCUSDT' });
+      expect(mirrorSet).not.toHaveBeenCalled();
     });
 
     it('bulkCreate espelha cada item criado individualmente', async () => {
@@ -147,7 +162,11 @@ describe('createRtdbMirrorHelpers', () => {
     });
   });
 
-  it('RTDB_MIRRORED_ENTITIES trava exatamente no escopo desta rodada', () => {
-    expect(RTDB_MIRRORED_ENTITIES).toEqual({ AssetState: 'assetStates', TradeOperation: 'tradeOperations' });
+  it('RTDB_MIRRORED_ENTITIES trava exatamente no escopo atual (rodadas 1+2)', () => {
+    expect(RTDB_MIRRORED_ENTITIES).toEqual({
+      AssetState: 'assetStates',
+      SignalEvent: 'signalEvents',
+      TradeOperation: 'tradeOperations',
+    });
   });
 });

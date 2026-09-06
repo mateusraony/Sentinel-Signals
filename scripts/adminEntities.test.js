@@ -177,10 +177,32 @@ describe('adminEntities.js — mirror Firestore→RTDB (item 152)', () => {
     expect(rtdbUpdateMock).toHaveBeenCalledWith({ status: 'CLOSED' });
   });
 
-  it('SignalEvent.create() (fora do escopo desta rodada) nunca toca o RTDB', async () => {
-    addMock.mockResolvedValue({ id: 'sig1' });
+  it('MonitoredAsset.create() (fora do escopo) nunca toca o RTDB', async () => {
+    addMock.mockResolvedValue({ id: 'a1' });
     const { backend } = await import('./adminEntities.js');
-    await backend.entities.SignalEvent.create({ symbol: 'BTCUSDT' });
+    await backend.entities.MonitoredAsset.create({ symbol: 'BTCUSDT' });
+    expect(rtdbSetMock).not.toHaveBeenCalled();
+  });
+
+  it('SignalEvent.createUnique() espelha o doc criado quando created === true (rodada 2, item 152 addendum)', async () => {
+    runTransactionMock.mockImplementation(async (cb) => cb({
+      get: vi.fn().mockResolvedValue({ exists: false, data: () => ({}) }),
+      set: vi.fn(),
+    }));
+    const { backend } = await import('./adminEntities.js');
+    const res = await backend.entities.SignalEvent.createUnique('sig_x', { symbol: 'BTCUSDT' });
+    expect(res.created).toBe(true);
+    expect(rtdbRefMock).toHaveBeenCalledWith('signalEvents/sig_x');
+    expect(rtdbSetMock).toHaveBeenCalledWith(expect.objectContaining({ id: 'sig_x', symbol: 'BTCUSDT' }));
+  });
+
+  it('SignalEvent.createUnique() NÃO espelha num dedup hit (created === false)', async () => {
+    runTransactionMock.mockImplementation(async (cb) => cb({
+      get: vi.fn().mockResolvedValue({ exists: true, id: 'sig_x', data: () => ({ symbol: 'BTCUSDT' }) }),
+      set: vi.fn(),
+    }));
+    const { backend } = await import('./adminEntities.js');
+    await backend.entities.SignalEvent.createUnique('sig_x', { symbol: 'BTCUSDT' });
     expect(rtdbSetMock).not.toHaveBeenCalled();
   });
 

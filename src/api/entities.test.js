@@ -90,11 +90,44 @@ describe('entities.js — mirror Firestore→RTDB (item 152)', () => {
     expect(patch).toEqual({ status: 'CLOSED' });
   });
 
-  it('SignalEvent.create() (fora do escopo desta rodada) nunca toca o RTDB', async () => {
-    addDocMock.mockResolvedValue({ id: 'sig1' });
+  it('MonitoredAsset.create() (fora do escopo) nunca toca o RTDB', async () => {
+    addDocMock.mockResolvedValue({ id: 'a1' });
     const { backend } = await import('./entities.js');
-    await backend.entities.SignalEvent.create({ symbol: 'BTCUSDT' });
+    await backend.entities.MonitoredAsset.create({ symbol: 'BTCUSDT' });
     expect(rtdbSetMock).not.toHaveBeenCalled();
+  });
+
+  it('SignalEvent.createUnique() espelha o doc criado quando created === true (rodada 2, item 152 addendum)', async () => {
+    runTransactionMock.mockImplementation(async (db, cb) => cb({
+      get: vi.fn().mockResolvedValue({ exists: () => false, data: () => ({}) }),
+      set: vi.fn(),
+    }));
+    const { backend } = await import('./entities.js');
+    const res = await backend.entities.SignalEvent.createUnique('sig_x', { symbol: 'BTCUSDT' });
+    expect(res.created).toBe(true);
+    expect(rtdbSetMock).toHaveBeenCalledTimes(1);
+    const [ref, value] = rtdbSetMock.mock.calls[0];
+    expect(ref.path).toBe('signalEvents/sig_x');
+    expect(value).toEqual(expect.objectContaining({ id: 'sig_x', symbol: 'BTCUSDT' }));
+  });
+
+  it('SignalEvent.createUnique() NÃO espelha num dedup hit (created === false)', async () => {
+    runTransactionMock.mockImplementation(async (db, cb) => cb({
+      get: vi.fn().mockResolvedValue({ exists: () => true, data: () => ({ id: 'sig_x', symbol: 'BTCUSDT' }) }),
+      set: vi.fn(),
+    }));
+    const { backend } = await import('./entities.js');
+    await backend.entities.SignalEvent.createUnique('sig_x', { symbol: 'BTCUSDT' });
+    expect(rtdbSetMock).not.toHaveBeenCalled();
+  });
+
+  it('SignalEvent.update() (dismiss de alerta) espelha só o patch', async () => {
+    const { backend } = await import('./entities.js');
+    await backend.entities.SignalEvent.update('sig_x', { is_dismissed: true });
+    expect(rtdbUpdateMock).toHaveBeenCalledTimes(1);
+    const [ref, patch] = rtdbUpdateMock.mock.calls[0];
+    expect(ref.path).toBe('signalEvents/sig_x');
+    expect(patch).toEqual({ is_dismissed: true });
   });
 
   it('createTradeOpIfNoneActive espelha o doc criado quando created === true', async () => {
