@@ -20571,3 +20571,74 @@ comportamento intencionalmente mudado, já que agora esse formato passou a
 ser reconhecido).
 
 **Próximo passo**: aguardar aprovação do usuário pra 3b.
+
+### Addendum (2026-09-07) — auditoria pós-merge da 3a, pedida pelo usuário antes da 3b
+
+Pedido explícito: "Confirma se não teve nada de errado na 3a e se não tiver
+pode ir para a 3b, mas só depois de ter certeza que a 3a está blindada e
+perfeita, sem erros, bugs ou falhas ou qualquer coisa que pode atrapalhar
+futuramente". Reli o diff exato mesclado (`git diff d01982e..287962c`) com
+olhar adversarial, em vez de só re-rodar os testes que já tinham passado.
+Achou 2 problemas reais — nenhum afetando produção HOJE (nenhum call site
+atual os aciona), mas os dois seriam disparados assim que a 3b tocasse
+`VerificationTask`, exatamente por causa do padrão de filtro opcional que a
+3b ia introduzir.
+
+**Achado 1 — `singleFieldEqualityShape` quebrava com `undefined`, não só
+roteava errado.** `classifyFilter()` (`src/lib/queryFilters.js:83`) —
+a mesma regra que `backend.entities.<Nome>.filter()` já obedece do lado
+Firestore — trata uma chave `undefined` como "SEM filtro nesse campo", não
+"igual a undefined". É assim que `Verification.jsx` já monta
+`{ status: statusFilter !== 'all' ? statusFilter : undefined }`, e é
+EXATAMENTE esse padrão que a etapa 3b ia apontar pro RTDB
+(`VerificationTask.filter({status, priority}, ...)`). O guard de
+`singleFieldEqualityShape` só excluía `null`/objeto — `undefined` passava
+como "igualdade válida" e chamava `equalTo(undefined)`. Reproduzido: um
+teste com `{ status: undefined }` não só roteava errado, **lançava uma
+exceção não tratada** (`TypeError: Cannot read properties of undefined
+(reading 'val')`), porque o mock do RTDB foi de fato chamado com um valor
+inválido. Corrigido excluindo `undefined` explicitamente do reconhecimento
+de forma (cai no fallback Firestore, que já trata isso corretamente).
+Verificado por reprodução: teste falha antes do fix (com crash), passa
+depois.
+
+**Achado 2 — 2 dos 3 componentes trocados na 3a tinham ZERO cobertura de
+render, a mesma classe de ponto cego do item 157/166.**
+`src/pages/pagesSmoke.test.jsx` monta páginas via `renderPage()`
+(`src/pages/__fixtures__/renderPage.jsx`), que NÃO inclui `AppLayout`/
+`TopBar` — então `GlobalSearch.jsx` (vive dentro de `TopBar.jsx`) nunca é
+montado por nenhum teste existente. `RFHistoryChart.jsx` vive dentro de
+`AssetDetailPanel.jsx`, que faz `if (!expanded) return null`
+(`AssetDetailPanel.jsx:113`) — e o smoke test nunca expande nenhuma linha
+(`expandedId` fica `null` a passada inteira), então também nunca é montado.
+`WeeklySummary.jsx` é o único dos 3 que já era coberto (indiretamente, via
+`Dashboard.jsx` — está dentro de uma `Tabs` com `defaultValue="overview"`,
+que o Radix monta imediatamente). Ou seja: a troca de `queryFn` nos 2
+arquivos sem cobertura tinha passado em `npm test` só porque a lógica pura
+de `rtdbEntities.js` estava testada isoladamente — nenhum teste chegava a
+RENDERIZAR os componentes de verdade com a troca aplicada.
+
+Fechado com 2 arquivos de teste novos (`RFHistoryChart.test.jsx`,
+`GlobalSearch.test.jsx`, RTL): cada um confirma que o componente renderiza
+sem explodir com dado real vindo do mock de `rtdbEntities`, E que a chamada
+exata (`filter`/`list`, com os argumentos certos) está de fato ligada —
+não só "alguma função foi chamada". Verificado por reprodução no
+`RFHistoryChart.test.jsx`: revertida a troca (`rtdbEntities` → `backend`
+sem mockar `@/api/entities`), o teste quebra imediatamente (o import real de
+`firebaseClient.js` tenta inicializar o Firebase Auth de verdade e lança
+`auth/invalid-api-key`) — mesma disciplina de "página que importe Firestore
+direto quebra aqui" que `pagesSmoke.test.jsx` já usa. Restaurado, volta a
+passar.
+
+**O que isso significa pra 3b**: a lição principal é que `VerificationTask`
+usa exatamente o padrão `{ campo: valorOuUndefined }` que o achado 1 corrigiu
+— sem essa correção, a 3b teria herdado um crash real na tela de
+Verificação. A 3b também precisa do mesmo cuidado de cobertura de render do
+achado 2: `Verification.jsx` É uma página do smoke test (coberta), mas
+qualquer componente novo que só renderiza condicionalmente precisa de teste
+dedicado, não só confiar no smoke test genérico.
+
+**Verificação**: `npm run lint && npm test (1595, 85 arquivos) && npm run
+build && npm run build:scan` verdes. CI verde no `main` pós-merge da 3a
+(commit `287962c`) confirmado antes de começar a auditoria — a auditoria não
+foi motivada por nenhuma falha observada, foi pedido preventivo do usuário.

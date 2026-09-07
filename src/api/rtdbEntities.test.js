@@ -188,6 +188,26 @@ describe('rtdbEntities — filter()', () => {
     expect(getMock).not.toHaveBeenCalled();
   });
 
+  // Auditoria pós-merge da 3a (pedido do usuário: confirmar que a 3a está
+  // "blindada" antes de seguir pra 3b): classifyFilter() (src/lib/
+  // queryFilters.js:83) trata uma chave `undefined` como "SEM filtro nesse
+  // campo" — é assim que Verification.jsx monta
+  // `{ status: statusFilter !== 'all' ? statusFilter : undefined }`, exatamente
+  // o padrão que a etapa 3b vai apontar pro RTDB. singleFieldEqualityShape
+  // tinha um buraco: só excluía `null`/objeto, não `undefined` — um filtro
+  // como `{ status: undefined }` seria reconhecido como "igual a undefined" e
+  // viraria `equalTo(undefined)` no RTDB, divergindo do "sem filtro" que o
+  // Firestore sempre fez pra essa mesma forma.
+  it('valor undefined no filtro de igualdade cai no fallback Firestore (mesma convenção de classifyFilter — "sem filtro", não "igual a undefined")', async () => {
+    fallbackFilterMock.mockResolvedValue([{ id: 'x' }]);
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    const result = await rtdbEntities.TradeOperation.filter({ status: undefined });
+    expect(result).toEqual([{ id: 'x' }]);
+    expect(fallbackFilterMock).toHaveBeenCalledWith({ status: undefined }, undefined, undefined);
+    expect(equalToMock).not.toHaveBeenCalled();
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
   it('filtro composto (2+ campos, ex. verificationTasks status+priority) cai no fallback Firestore', async () => {
     fallbackFilterMock.mockResolvedValue([]);
     const { rtdbEntities } = await import('./rtdbEntities.js');
