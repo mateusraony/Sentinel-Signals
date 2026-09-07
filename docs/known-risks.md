@@ -20475,3 +20475,99 @@ novos do item 2). `npm run build:scan` confirma, a cada rodada, que o bundle
 do cron (que inclui `adminTelegram.js`) segue montando sem erro. Todos os
 fixes — os 4 originais, os 3 do Codex, e os 10 do item 2 — verificados por
 reprodução: bug reintroduzido → teste falha; fix restaurado → teste passa.
+
+---
+
+## 169. Rodada 3 do espelho RTDB (item 152) — proposta e etapa 3a (2026-09-07)
+
+Item 155 (cota do Firestore) continua ABERTO — a rodada 2 (`SignalEvent`, PR
+#315) não impediu o pior episódio de esgotamento já medido (addendum
+2026-09-06 do item 159). Pedido do usuário: montar a proposta da rodada 3
+(migrar as leituras restantes pro RTDB) **sem perder dado nem regredir nada
+já apontado**. Levantamento feito com um subagente read-only + verificação
+direta no código antes de propor qualquer coisa.
+
+### Onde a suposição anterior (item 152 addendum) estava desatualizada
+
+- **`PriceAlert`/`User` não têm NENHUM consumidor de produção** — só existem
+  no adaptador e em fixtures de teste. `User` além disso é lido/escrito
+  direto via `firebase/firestore` em `AuthContext.jsx` (auth anônima, CLAUDE.md
+  decisão 1 — fora de escopo, não mexido). As duas saem da rodada 3 por
+  completo: nada para migrar.
+- **`VerificationTask` tem mais de 200 documentos**, não "dezenas" como a
+  suposição original dizia — confirmado no próprio comentário de
+  `Verification.jsx:91-96` (review do Codex, PR #159 follow-up).
+- **A rodada 2 não cobriu 3 componentes** que ainda leem `SignalEvent` direto
+  do Firestore: `GlobalSearch.jsx`, `RFHistoryChart.jsx`, `WeeklySummary.jsx`.
+
+### Achado de segurança — por que a proposta separa as entidades em etapas
+
+`VerificationTask`/`SystemLog` usam `createUnique(id, ...)` com ID
+determinístico, igual ao `TradeOperation`. `VerificationTask` reaproveita o
+MESMO `signal.dedup_key` já sanitizado por `toRtdbKey()` — risco conhecido,
+zero código novo. `SystemLog` tem um `createUnique` (`scanner.js:4415-4417`)
+cujo ID embute `err.message` — **texto de erro livre, não controlado**:
+```js
+const scanErrorDedupKey = `scan_error::${asset.id}::${today}::${err.message}`;
+```
+`toRtdbKey()` já sanitiza os 6 caracteres proibidos automaticamente (chamado
+dentro de `mirrorSet`/`mirrorUpdate`, `entities.js:29-43`) — mas não limita
+TAMANHO, e o RTDB rejeita chaves acima de ~768 bytes. Como todo mirror já é
+fire-and-forget com `.catch()` próprio (nunca afeta a escrita real no
+Firestore), o efeito não é perda de dado na escrita — é uma leitura via RTDB
+potencialmente INCOMPLETA sem avisar ninguém, se algum log específico nunca
+foi espelhado por causa do tamanho da chave. Por isso `SystemLog` fica pra
+uma etapa própria (3c), condicionada a endurecer `toRtdbKey()` primeiro
+(limite de tamanho + hash determinístico como fallback). Achado adicional
+ao desenhar essa etapa: `withRtdbMirror` nunca envolveu `delete(id)`
+singular (só `deleteMany`) — nunca precisou, porque nenhuma das 3 entidades
+já mirroradas usa delete singular; `Logs.jsx`/`DebugLogButton.jsx` usam,
+então isso também precisa entrar na correção da 3c, senão um log apagado no
+Firestore ficaria pra sempre no espelho.
+
+**Proposta em 3 etapas**, cada uma um PR separado, só a próxima depois da
+anterior mesclada e aprovada:
+- **3a** — fechar a lacuna da rodada 2 (as 3 leituras de `SignalEvent`
+  esquecidas). Sem risco novo, mirror já existe.
+- **3b** — `MonitoredAsset` (9 pontos) + `VerificationTask` (3 pontos), modo
+  "nó inteiro + filtro em memória" (mesmo padrão que `AssetState` já usa),
+  sem precisar de `.indexOn` novo pras duas.
+- **3c** — `SystemLog`, condicionada ao endurecimento de `toRtdbKey()` +
+  extensão de `withRtdbMirror` pra cobrir `delete()` singular.
+
+### Etapa 3a — implementada e mesclada
+
+Achado ao implementar: `RFHistoryChart.jsx` usa
+`SignalEvent.filter({ asset_id: asset.id }, '-created_date', 60)` — uma
+igualdade de campo único, formato que `src/api/rtdbEntities.js` ainda não
+reconhecia (só reconhecia range `{gte,lt}`). Sem estender o adaptador
+primeiro, a troca de `backend.entities` para `rtdbEntities` nesse arquivo
+teria sido um no-op silencioso (caindo sempre no fallback Firestore) — não
+um "zero risco" de verdade.
+
+Adicionado `singleFieldEqualityShape()` em `rtdbEntities.js`, mesmo
+princípio de segurança do resto do módulo ("reconhece o formato exato, senão
+cai pro Firestore"): `{ campo: valorEscalar }` vira
+`orderByChild(campo)+equalTo(valor)` no RTDB — o RTDB não combina isso com
+uma 2ª ordenação no servidor, então sort/limit acontecem em memória depois
+(sobre um conjunto já filtrado pelo `equalTo`, nunca incompleto). `null` e
+valores objeto/array continuam caindo no fallback, como antes. Adicionado
+`.indexOn: ["asset_id"]` em `signalEvents` no `database.rules.json` — precisa
+de `firebase deploy --only database` (ou o workflow "Deploy Firestore & RTDB
+rules", que já cobre `database` desde a rodada 1) pra valer em produção;
+antes do deploy, `orderByChild('asset_id')` funciona mas sem índice (RTDB
+avisa no console, não quebra).
+
+`GlobalSearch.jsx`/`RFHistoryChart.jsx`/`WeeklySummary.jsx` trocaram
+`backend.entities.SignalEvent` por `rtdbEntities.SignalEvent` — só o
+`queryFn`, `queryKey`/`staleTime` intactos, mesmo padrão das rodadas
+anteriores. As leituras de `MonitoredAsset`/`TradeOperation` nesses mesmos
+arquivos ficam de fora de propósito (fora do escopo da 3a).
+
+**Verificação**: `npm run lint && npm test (1589) && npm run build` verdes.
+14 testes em `rtdbEntities.test.js` (2 novos, cobrindo o formato de
+igualdade; 1 teste existente — "igualdade cai no fallback" — teve seu
+comportamento intencionalmente mudado, já que agora esse formato passou a
+ser reconhecido).
+
+**Próximo passo**: aguardar aprovação do usuário pra 3b.
