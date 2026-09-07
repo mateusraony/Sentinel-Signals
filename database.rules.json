@@ -8,7 +8,8 @@
       ".read": "auth != null",
       ".write": "auth != null",
       ".indexOn": [
-        "created_date"
+        "created_date",
+        "asset_id"
       ]
     },
     "tradeOperations": {

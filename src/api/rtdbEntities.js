@@ -1,8 +1,12 @@
-// Realtime Database READ adapter (docs/known-risks.md item 152, rodada 2) —
-// mirrors the reduced subset of backend.entities.<Name>'s shape
-// ({list, filter}) that the dashboard's hot polling reads actually use for
-// AssetState/SignalEvent/TradeOperation: order+limit ("-created_date", N)
-// and a single-field range ({ created_date: { gte, lt } }, MonthlyReport.jsx).
+// Realtime Database READ adapter (docs/known-risks.md item 152, rodadas 2+3)
+// — mirrors the reduced subset of backend.entities.<Name>'s shape
+// ({list, filter}) that the dashboard's hot polling reads actually use:
+// order+limit ("-created_date", N), a single-field range
+// ({ created_date: { gte, lt } }, MonthlyReport.jsx) and, desde a rodada 3,
+// uma igualdade de campo único ({ asset_id: 'BTCUSDT' }, RFHistoryChart.jsx)
+// via orderByChild+equalTo — o resultado (já filtrado, exato) ainda é
+// ordenado/cortado em memória porque o RTDB não combina equalTo com uma 2ª
+// ordenação por outro campo no servidor.
 // Every call is fire-and-forget-free (normal awaited reads) but NEVER mutates —
 // all writes/mutations continue exclusively through backend.entities/
 // backend.tradeOps (Firestore), never through this module. See
@@ -16,7 +20,7 @@
 // filter shape gets today's behavior (a real Firestore read via the
 // `fallbackEntity` passed in), never an incomplete/wrong RTDB result. RTDB
 // not provisioned in this environment (rtdb === null) falls back the same way.
-import { ref, get, query, orderByChild, limitToLast, startAt, endBefore } from 'firebase/database';
+import { ref, get, query, orderByChild, limitToLast, startAt, endBefore, equalTo } from 'firebase/database';
 import { rtdb } from '@/lib/firebaseClient';
 import { backend } from '@/api/entities';
 
@@ -55,6 +59,22 @@ function singleFieldRangeShape(filters) {
   return { field, gte: value.gte, lt: value.lt };
 }
 
+// { field: scalarValue } — single-field EQUALITY, the shape
+// RFHistoryChart.jsx uses (`{ asset_id: asset.id }`). Distinct from
+// singleFieldRangeShape (whose value is always a { gte, lt } object) — a
+// plain scalar (string/number/boolean) means "equals", not "range". null,
+// arrays (Firestore `in`) and any other object value are NOT recognized here
+// on purpose — those fall through to Firestore below, same safety net as
+// every other unrecognized shape in this module.
+function singleFieldEqualityShape(filters) {
+  const keys = Object.keys(filters);
+  if (keys.length !== 1) return null;
+  const [field] = keys;
+  const value = filters[field];
+  if (value === null || typeof value === 'object') return null;
+  return { field, value };
+}
+
 function createRtdbReadEntity(rtdbPath, fallbackEntity) {
   return {
     async list(sort, limitCount) {
@@ -74,14 +94,33 @@ function createRtdbReadEntity(rtdbPath, fallbackEntity) {
       if (Object.keys(filters).length === 0) return this.list(sort, limitCount);
 
       const range = singleFieldRangeShape(filters);
-      if (!range) return fallbackEntity.filter(filters, sort, limitCount);
+      if (range) {
+        const constraints = [orderByChild(range.field)];
+        if (range.gte !== undefined) constraints.push(startAt(range.gte));
+        if (range.lt !== undefined) constraints.push(endBefore(range.lt));
+        if (limitCount) constraints.push(limitToLast(limitCount));
+        const snapshot = await get(query(ref(rtdb, rtdbPath), ...constraints));
+        return withOrder(valuesOf(snapshot), sort);
+      }
 
-      const constraints = [orderByChild(range.field)];
-      if (range.gte !== undefined) constraints.push(startAt(range.gte));
-      if (range.lt !== undefined) constraints.push(endBefore(range.lt));
-      if (limitCount) constraints.push(limitToLast(limitCount));
-      const snapshot = await get(query(ref(rtdb, rtdbPath), ...constraints));
-      return withOrder(valuesOf(snapshot), sort);
+      const equality = singleFieldEqualityShape(filters);
+      if (equality) {
+        const snapshot = await get(query(ref(rtdb, rtdbPath), orderByChild(equality.field), equalTo(equality.value)));
+        // equalTo já devolve o conjunto exato (nunca parcial) — mas o RTDB não
+        // combina esse filtro com uma ordenação por OUTRO campo no servidor,
+        // então sort/limit acontecem aqui, em memória, sobre um conjunto já
+        // pequeno (o próprio propósito do filtro de igualdade é estreitar).
+        let items = valuesOf(snapshot);
+        if (sort) {
+          const field = sortField(sort);
+          items = [...items].sort((a, b) => (a[field] < b[field] ? -1 : a[field] > b[field] ? 1 : 0));
+          if (isDescending(sort)) items.reverse();
+        }
+        if (limitCount) items = items.slice(0, limitCount);
+        return items;
+      }
+
+      return fallbackEntity.filter(filters, sort, limitCount);
     },
   };
 }

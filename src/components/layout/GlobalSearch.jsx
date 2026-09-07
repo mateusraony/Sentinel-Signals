@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { backend } from '@/api/entities';
+import { rtdbEntities } from '@/api/rtdbEntities';
 import { Search, Coins, Bell, History } from 'lucide-react';
 
 export default function GlobalSearch() {
@@ -19,7 +20,7 @@ export default function GlobalSearch() {
 
   const { data: allSignals = [] } = useQuery({
     queryKey: ['recent-signals'],
-    queryFn: () => backend.entities.SignalEvent.list('-created_date', 50),
+    queryFn: () => rtdbEntities.SignalEvent.list('-created_date', 50),
     staleTime: 15000,
   });
 

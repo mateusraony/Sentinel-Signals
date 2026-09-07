@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { getMock, queryMock, refMock, orderByChildMock, limitToLastMock, startAtMock, endBeforeMock } = vi.hoisted(() => ({
+const { getMock, queryMock, refMock, orderByChildMock, limitToLastMock, startAtMock, endBeforeMock, equalToMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
   queryMock: vi.fn((...args) => ({ __query: args })),
   refMock: vi.fn((db, path) => ({ path })),
@@ -8,6 +8,7 @@ const { getMock, queryMock, refMock, orderByChildMock, limitToLastMock, startAtM
   limitToLastMock: vi.fn((n) => ({ __limitToLast: n })),
   startAtMock: vi.fn((v) => ({ __startAt: v })),
   endBeforeMock: vi.fn((v) => ({ __endBefore: v })),
+  equalToMock: vi.fn((v) => ({ __equalTo: v })),
 }));
 
 vi.mock('@/lib/firebaseClient', () => ({ rtdb: {} }));
@@ -20,6 +21,7 @@ vi.mock('firebase/database', () => ({
   limitToLast: limitToLastMock,
   startAt: startAtMock,
   endBefore: endBeforeMock,
+  equalTo: equalToMock,
 }));
 
 const fallbackListMock = vi.fn();
@@ -47,6 +49,7 @@ beforeEach(() => {
   limitToLastMock.mockClear();
   startAtMock.mockClear();
   endBeforeMock.mockClear();
+  equalToMock.mockClear();
   fallbackListMock.mockReset();
   fallbackFilterMock.mockReset();
   // Re-assert the default (rtdb truthy) on every test — vi.doMock from the
@@ -147,12 +150,41 @@ describe('rtdbEntities — filter()', () => {
     expect(endBeforeMock).not.toHaveBeenCalled();
   });
 
-  it('filtro de igualdade simples (formato não reconhecido) cai no fallback Firestore, nunca lança', async () => {
-    fallbackFilterMock.mockResolvedValue([{ id: 'x', status: 'RUNNER_ACTIVE' }]);
+  // Rodada 3 (RFHistoryChart.jsx: SignalEvent.filter({ asset_id }, '-created_date', 60))
+  // — igualdade de campo único vira orderByChild+equalTo; sort/limit acontecem
+  // em memória depois, porque o RTDB não combina equalTo com uma 2ª ordenação
+  // por outro campo no servidor.
+  it('igualdade de campo único ({ field: valor escalar }) vira orderByChild+equalTo, com sort/limit em memória', async () => {
+    getMock.mockResolvedValue(snapshotOf({
+      s1: { id: 's1', asset_id: 'BTCUSDT', created_date: '2026-01-01T00:00:00.000Z' },
+      s2: { id: 's2', asset_id: 'BTCUSDT', created_date: '2026-01-03T00:00:00.000Z' },
+      s3: { id: 's3', asset_id: 'BTCUSDT', created_date: '2026-01-02T00:00:00.000Z' },
+    }));
     const { rtdbEntities } = await import('./rtdbEntities.js');
-    const result = await rtdbEntities.TradeOperation.filter({ status: 'RUNNER_ACTIVE' });
-    expect(result).toEqual([{ id: 'x', status: 'RUNNER_ACTIVE' }]);
-    expect(fallbackFilterMock).toHaveBeenCalledWith({ status: 'RUNNER_ACTIVE' }, undefined, undefined);
+    const result = await rtdbEntities.SignalEvent.filter({ asset_id: 'BTCUSDT' }, '-created_date', 2);
+    expect(orderByChildMock).toHaveBeenCalledWith('asset_id');
+    expect(equalToMock).toHaveBeenCalledWith('BTCUSDT');
+    // 3 docs voltam do equalTo (nó inteiro que casa); -created_date + limit 2
+    // corta pros 2 mais recentes, em memória.
+    expect(result.map((r) => r.id)).toEqual(['s2', 's3']);
+    expect(fallbackFilterMock).not.toHaveBeenCalled();
+  });
+
+  it('igualdade sem sort/limit devolve todo o conjunto que casou o equalTo, sem ordem específica', async () => {
+    getMock.mockResolvedValue(snapshotOf({
+      s1: { id: 's1', asset_id: 'ETHUSDT' },
+      s2: { id: 's2', asset_id: 'ETHUSDT' },
+    }));
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    const result = await rtdbEntities.SignalEvent.filter({ asset_id: 'ETHUSDT' });
+    expect(result).toHaveLength(2);
+  });
+
+  it('valor null no filtro de igualdade cai no fallback Firestore (não confundir com igualdade a null)', async () => {
+    fallbackFilterMock.mockResolvedValue([]);
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    await rtdbEntities.TradeOperation.filter({ status: null });
+    expect(fallbackFilterMock).toHaveBeenCalled();
     expect(getMock).not.toHaveBeenCalled();
   });
 

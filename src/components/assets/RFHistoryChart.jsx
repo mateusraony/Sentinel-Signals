@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { backend } from '@/api/entities';
+import { rtdbEntities } from '@/api/rtdbEntities';
 import { fetchCandles } from '@/lib/marketDataProvider';
 import { calculateRangeFilter } from '@/lib/indicators/rangeFilter';
 import {
@@ -40,7 +40,7 @@ export default function RFHistoryChart({ asset }) {
     // Bounded to the 60 most recent signals (not just range_filter — macd
     // signals also carry rf_value, see scanner.js) so this query doesn't grow
     // with the asset's whole signal history; the table only needs the last 8.
-    queryFn: () => backend.entities.SignalEvent.filter({ asset_id: asset.id }, '-created_date', 60),
+    queryFn: () => rtdbEntities.SignalEvent.filter({ asset_id: asset.id }, '-created_date', 60),
     staleTime: 30000,
   });
 

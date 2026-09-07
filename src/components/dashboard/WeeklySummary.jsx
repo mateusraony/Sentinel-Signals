@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
+import { rtdbEntities } from '@/api/rtdbEntities';
 import { CalendarDays, TrendingUp, TrendingDown, Target, Zap } from 'lucide-react';
 import { BarChart, Bar, ResponsiveContainer, Tooltip, Cell } from 'recharts';
 import moment from 'moment';
@@ -23,7 +24,7 @@ export default function WeeklySummary() {
 
   const { data: recentSignals = [] } = useQuery({
     queryKey: ['weekly-summary-signals'],
-    queryFn: () => backend.entities.SignalEvent.list('-created_date', WEEK_SIGNALS_LIMIT),
+    queryFn: () => rtdbEntities.SignalEvent.list('-created_date', WEEK_SIGNALS_LIMIT),
     staleTime: 60000,
   });
 
