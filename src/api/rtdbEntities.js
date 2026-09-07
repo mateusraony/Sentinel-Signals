@@ -66,12 +66,22 @@ function singleFieldRangeShape(filters) {
 // arrays (Firestore `in`) and any other object value are NOT recognized here
 // on purpose — those fall through to Firestore below, same safety net as
 // every other unrecognized shape in this module.
+//
+// `undefined` is excluded on purpose too, and separately from `null`:
+// classifyFilter() (src/lib/queryFilters.js:83) — the same rule
+// backend.entities.<Name>.filter() obeys on the Firestore side — treats an
+// `undefined`-valued key as "no constraint on this field", not "equals
+// undefined" (that's how Verification.jsx builds
+// `{ status: statusFilter !== 'all' ? statusFilter : undefined }`). Without
+// this guard, that exact shape would be misread as a real equality filter
+// and crash calling equalTo(undefined) against the RTDB SDK instead of
+// falling through to Firestore, which honors the "no constraint" meaning.
 function singleFieldEqualityShape(filters) {
   const keys = Object.keys(filters);
   if (keys.length !== 1) return null;
   const [field] = keys;
   const value = filters[field];
-  if (value === null || typeof value === 'object') return null;
+  if (value === undefined || value === null || typeof value === 'object') return null;
   return { field, value };
 }
 
