@@ -1,6 +1,5 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { backend } from '@/api/entities';
 import { rtdbEntities } from '@/api/rtdbEntities';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -15,7 +14,7 @@ export default function TickerBar() {
 
   const { data: assets = [] } = useQuery({
     queryKey: ['all-assets-ticker'],
-    queryFn: () => backend.entities.MonitoredAsset.filter({ is_active: true })
+    queryFn: () => rtdbEntities.MonitoredAsset.filter({ is_active: true })
   });
 
   const items = assets.map((asset) => {

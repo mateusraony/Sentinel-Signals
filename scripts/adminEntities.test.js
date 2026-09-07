@@ -177,10 +177,10 @@ describe('adminEntities.js — mirror Firestore→RTDB (item 152)', () => {
     expect(rtdbUpdateMock).toHaveBeenCalledWith({ status: 'CLOSED' });
   });
 
-  it('MonitoredAsset.create() (fora do escopo) nunca toca o RTDB', async () => {
+  it('PriceAlert.create() (fora do escopo) nunca toca o RTDB', async () => {
     addMock.mockResolvedValue({ id: 'a1' });
     const { backend } = await import('./adminEntities.js');
-    await backend.entities.MonitoredAsset.create({ symbol: 'BTCUSDT' });
+    await backend.entities.PriceAlert.create({ symbol: 'BTCUSDT' });
     expect(rtdbSetMock).not.toHaveBeenCalled();
   });
 

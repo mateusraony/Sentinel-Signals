@@ -10,6 +10,7 @@ import {
   AlertTriangle, CheckCircle2, Rocket, Loader2, Calendar, History, Zap, Sparkles,
 } from 'lucide-react';
 import { backend } from '@/api/entities';
+import { rtdbEntities } from '@/api/rtdbEntities';
 import { Tooltip as InfoTooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { SYNCED_STRATEGY_KEYS, DEFAULTS as PINE_DEFAULTS, getPineConfig } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
@@ -457,7 +458,7 @@ function QuickBacktestTab() {
 
   const { data: assets = [] } = useQuery({
     queryKey: ['all-assets'],
-    queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
+    queryFn: () => rtdbEntities.MonitoredAsset.list('-created_date'),
     staleTime: 60000,
   });
 

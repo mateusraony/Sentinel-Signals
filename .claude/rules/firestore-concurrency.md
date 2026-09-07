@@ -34,19 +34,26 @@ cron passa por `adminEntities.js`.
 
 ## RTDB — espelho de leitura (item 152)
 
-`AssetState`/`SignalEvent`/`TradeOperation` também são espelhadas no Firebase
-Realtime Database (RTDB), absorvendo o polling do dashboard
-(`src/api/rtdbEntities.js`) sem tocar a cota diária do Firestore. `SignalEvent`
-entrou na rodada 2 (item 152 addendum) porque é o denominador comum das 4
-telas mais usadas (Dashboard/Assets/Alerts/Trades) — mesmo com os intervalos
-corrigidos do item 155, cada uma sozinha custava mais que a cota diária
-inteira se ficasse aberta o dia todo. A rodada 3 (item 169) fechou a lacuna
-de 3 componentes que a rodada 2 não cobriu (`GlobalSearch.jsx`/
-`RFHistoryChart.jsx`/`WeeklySummary.jsx`) e estendeu `rtdbEntities.js` com um
-3º formato reconhecido: igualdade de campo único (`{ campo: valorEscalar }`
-→ `orderByChild+equalTo`), além de order+limit e range. `MonitoredAsset`/
-`VerificationTask`/`SystemLog` seguem fora do mirror — candidatas às etapas
-3b/3c, ver item 169. **Mesma disciplina do adaptador**:
+`AssetState`/`MonitoredAsset`/`SignalEvent`/`TradeOperation`/
+`VerificationTask` são espelhadas no Firebase Realtime Database (RTDB),
+absorvendo o polling do dashboard (`src/api/rtdbEntities.js`) sem tocar a
+cota diária do Firestore. `SignalEvent` entrou na rodada 2 (item 152
+addendum) porque é o denominador comum das 4 telas mais usadas (Dashboard/
+Assets/Alerts/Trades) — mesmo com os intervalos corrigidos do item 155,
+cada uma sozinha custava mais que a cota diária inteira se ficasse aberta o
+dia todo. A rodada 3 (item 169) fechou a lacuna de 3 componentes que a
+rodada 2 não cobriu (`GlobalSearch.jsx`/`RFHistoryChart.jsx`/
+`WeeklySummary.jsx`, etapa 3a) e estendeu `rtdbEntities.js` com um 3º
+formato reconhecido: igualdade de campo único (`{ campo: valorEscalar }` →
+`orderByChild+equalTo`), além de order+limit e range. A etapa 3b migrou
+`MonitoredAsset`/`VerificationTask` com um 4º modo — `createRtdbWholeNodeReadEntity`
+("nó inteiro"): busca a árvore inteira e filtra/ordena/limita em memória,
+sem precisar reconhecer formato nem de `.indexOn` novo — escolhido por
+essas duas coleções serem pequenas o bastante (dezenas/poucas centenas de
+docs) pra tornar isso barato. `SystemLog` segue fora do mirror — candidata à
+etapa 3c, condicionada a endurecer `toRtdbKey()` primeiro (limite de
+tamanho + fallback determinístico, ID embute texto de erro livre), ver item
+169. **Mesma disciplina do adaptador**:
 `firebase/database`/`firebase-admin/database` **nunca** são importados direto
 em componente/página — só via `src/api/rtdbEntities.js` (leitura) e o mirror
 interno de `src/api/entities.js`/`scripts/adminEntities.js`

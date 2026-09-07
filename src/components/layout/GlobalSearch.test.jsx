@@ -6,6 +6,12 @@
 // (o harness do smoke test) monta páginas isoladas, sem AppLayout/TopBar em
 // volta. A troca de PR #320 (`backend.entities.SignalEvent` →
 // `rtdbEntities.SignalEvent`) tinha, portanto, zero verificação de render.
+//
+// Rodada 3b (item 169): GlobalSearch também passou a ler MonitoredAsset via
+// rtdbEntities (modo "nó inteiro"). O mock abaixo precisa cobrir as DUAS
+// entidades lidas via rtdbEntities agora — um mock incompleto faria
+// `rtdbEntities.MonitoredAsset.list()` estourar dentro do queryFn (engolido
+// silenciosamente pelo TanStack Query) sem nenhum teste notar a wiring quebrada.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
@@ -15,16 +21,18 @@ import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import GlobalSearch from './GlobalSearch.jsx';
 
 const signalListMock = vi.fn();
+const monitoredAssetListMock = vi.fn();
 vi.mock('@/api/rtdbEntities', () => ({
-  rtdbEntities: { SignalEvent: { list: (...args) => signalListMock(...args) } },
+  rtdbEntities: {
+    SignalEvent: { list: (...args) => signalListMock(...args) },
+    MonitoredAsset: { list: (...args) => monitoredAssetListMock(...args) },
+  },
 }));
 
-const monitoredAssetListMock = vi.fn().mockResolvedValue([]);
 const tradeOpListMock = vi.fn().mockResolvedValue([]);
 vi.mock('@/api/entities', () => ({
   backend: {
     entities: {
-      MonitoredAsset: { list: (...args) => monitoredAssetListMock(...args) },
       TradeOperation: { list: (...args) => tradeOpListMock(...args) },
     },
   },
@@ -46,6 +54,7 @@ function renderSearch() {
 describe('GlobalSearch — SignalEvent lido via rtdbEntities (item 169)', () => {
   it('chama rtdbEntities.SignalEvent.list("-created_date", 50) — prova que a troca do PR #320 está de fato ligada', async () => {
     signalListMock.mockResolvedValue([]);
+    monitoredAssetListMock.mockResolvedValue([]);
     renderSearch();
     // A query dispara em segundo plano mesmo com a busca colapsada
     // (useQuery não depende de showSearch) — não precisa interagir com nada.
@@ -56,10 +65,33 @@ describe('GlobalSearch — SignalEvent lido via rtdbEntities (item 169)', () => 
     signalListMock.mockResolvedValue([
       { id: 's1', symbol: 'BTCUSDT', signal_type: 'BUY', timeframe: '4h', reason: 'teste' },
     ]);
+    monitoredAssetListMock.mockResolvedValue([]);
     renderSearch();
     fireEvent.click(screen.getByRole('button', { name: /Buscar ativo ou alerta/i }));
     const input = screen.getByPlaceholderText(/Buscar ativo ou alerta/i);
     fireEvent.change(input, { target: { value: 'BTC' } });
     await screen.findByText('BTC/USDT');
+  });
+});
+
+// Rodada 3b (item 169): MonitoredAsset lido via rtdbEntities (modo "nó inteiro").
+describe('GlobalSearch — MonitoredAsset lido via rtdbEntities (rodada 3b, item 169)', () => {
+  it('chama rtdbEntities.MonitoredAsset.list() — prova que a wiring da rodada 3b está de fato ligada', async () => {
+    signalListMock.mockResolvedValue([]);
+    monitoredAssetListMock.mockResolvedValue([]);
+    renderSearch();
+    await waitFor(() => expect(monitoredAssetListMock).toHaveBeenCalledWith());
+  });
+
+  it('mostra um resultado de ativo vindo do RTDB ao digitar uma busca que casa', async () => {
+    signalListMock.mockResolvedValue([]);
+    monitoredAssetListMock.mockResolvedValue([
+      { id: 'a1', symbol: 'BTCUSDT', display_name: 'Bitcoin' },
+    ]);
+    renderSearch();
+    fireEvent.click(screen.getByRole('button', { name: /Buscar ativo ou alerta/i }));
+    const input = screen.getByPlaceholderText(/Buscar ativo ou alerta/i);
+    fireEvent.change(input, { target: { value: 'Bitcoin' } });
+    await screen.findByText('Bitcoin');
   });
 });

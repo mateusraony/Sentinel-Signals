@@ -32,6 +32,8 @@ vi.mock('@/api/entities', () => ({
       AssetState: { list: fallbackListMock, filter: fallbackFilterMock },
       SignalEvent: { list: fallbackListMock, filter: fallbackFilterMock },
       TradeOperation: { list: fallbackListMock, filter: fallbackFilterMock },
+      MonitoredAsset: { list: fallbackListMock, filter: fallbackFilterMock },
+      VerificationTask: { list: fallbackListMock, filter: fallbackFilterMock },
     },
   },
 }));
@@ -221,6 +223,116 @@ describe('rtdbEntities — filter()', () => {
     const { rtdbEntities } = await import('./rtdbEntities.js');
     await rtdbEntities.TradeOperation.filter({ status: ['RUNNER_ACTIVE', 'SIGNAL_CONFIRMED'] });
     expect(fallbackFilterMock).toHaveBeenCalled();
+    expect(getMock).not.toHaveBeenCalled();
+  });
+});
+
+// Rodada 3b (item 169): MonitoredAsset/VerificationTask usam o modo "nó
+// inteiro" — sempre buscam a árvore inteira do RTDB (sem orderByChild/query
+// nenhuma) e filtram/ordenam/cortam em memória. Coleções pequenas o
+// bastante (dezenas/poucas centenas de docs) que isso é sempre correto e
+// mais simples que manter um reconhecedor de formato de query por campo.
+describe('rtdbEntities — modo "nó inteiro" (MonitoredAsset/VerificationTask, rodada 3b)', () => {
+  it('list() sem argumentos busca a árvore inteira, sem query nenhuma', async () => {
+    getMock.mockResolvedValue(snapshotOf({ a1: { id: 'a1', symbol: 'BTCUSDT' }, a2: { id: 'a2', symbol: 'ETHUSDT' } }));
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    const result = await rtdbEntities.MonitoredAsset.list();
+    expect(refMock).toHaveBeenCalledWith({}, 'monitoredAssets');
+    expect(queryMock).not.toHaveBeenCalled();
+    expect(result).toHaveLength(2);
+  });
+
+  it('list("-created_date") ordena em memória (sem orderByChild no RTDB)', async () => {
+    getMock.mockResolvedValue(snapshotOf({
+      a: { id: 'a', created_date: '2026-01-01T00:00:00.000Z' },
+      b: { id: 'b', created_date: '2026-01-02T00:00:00.000Z' },
+    }));
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    const result = await rtdbEntities.MonitoredAsset.list('-created_date');
+    expect(orderByChildMock).not.toHaveBeenCalled();
+    expect(result.map((r) => r.id)).toEqual(['b', 'a']);
+  });
+
+  it('filter({ is_active: true }) — igualdade de campo único (Dashboard.jsx/TickerBar.jsx) filtra em memória', async () => {
+    getMock.mockResolvedValue(snapshotOf({
+      a1: { id: 'a1', symbol: 'BTCUSDT', is_active: true },
+      a2: { id: 'a2', symbol: 'ETHUSDT', is_active: false },
+    }));
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    const result = await rtdbEntities.MonitoredAsset.filter({ is_active: true });
+    expect(equalToMock).not.toHaveBeenCalled();
+    expect(result.map((r) => r.id)).toEqual(['a1']);
+  });
+
+  it('filter({ status, priority }) — igualdade de DOIS campos (Verification.jsx) filtra ambos em memória', async () => {
+    getMock.mockResolvedValue(snapshotOf({
+      v1: { id: 'v1', status: 'pending', priority: 'high' },
+      v2: { id: 'v2', status: 'pending', priority: 'low' },
+      v3: { id: 'v3', status: 'reviewed', priority: 'high' },
+    }));
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    const result = await rtdbEntities.VerificationTask.filter({ status: 'pending', priority: 'high' }, '-created_date', 200);
+    expect(result.map((r) => r.id)).toEqual(['v1']);
+  });
+
+  // A verificação central desta rodada: Verification.jsx monta
+  // `{ status: statusFilter !== 'all' ? statusFilter : undefined, priority: ... }`
+  // — o achado do addendum pós-3a (undefined = "sem filtro nesse campo",
+  // nunca "igual a undefined") precisa valer aqui também, não só no modo de
+  // igualdade de campo único.
+  it('campo com valor undefined é IGNORADO (não filtra por ele) — mesma convenção de classifyFilter()', async () => {
+    getMock.mockResolvedValue(snapshotOf({
+      v1: { id: 'v1', status: 'pending', priority: 'high' },
+      v2: { id: 'v2', status: 'reviewed', priority: 'low' },
+    }));
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    // "Todas" as prioridades selecionado — priority vira undefined, exatamente
+    // como Verification.jsx monta quando o filtro está em "all".
+    const result = await rtdbEntities.VerificationTask.filter({ status: 'pending', priority: undefined }, '-created_date', 200);
+    expect(result.map((r) => r.id)).toEqual(['v1']);
+  });
+
+  it('todos os campos undefined se comporta como list() — devolve tudo', async () => {
+    getMock.mockResolvedValue(snapshotOf({
+      v1: { id: 'v1', status: 'pending' },
+      v2: { id: 'v2', status: 'reviewed' },
+    }));
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    const result = await rtdbEntities.VerificationTask.filter({ status: undefined, priority: undefined });
+    expect(result).toHaveLength(2);
+  });
+
+  it('valor null em qualquer campo cai no fallback Firestore inteiro (não busca o nó)', async () => {
+    fallbackFilterMock.mockResolvedValue([]);
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    await rtdbEntities.VerificationTask.filter({ status: 'pending', priority: null });
+    expect(fallbackFilterMock).toHaveBeenCalled();
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
+  it('valor array (Firestore `in`) em qualquer campo cai no fallback Firestore inteiro', async () => {
+    fallbackFilterMock.mockResolvedValue([]);
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    await rtdbEntities.VerificationTask.filter({ status: ['pending', 'reviewed'] });
+    expect(fallbackFilterMock).toHaveBeenCalled();
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
+  it('valor range ({gte,lt}) em qualquer campo cai no fallback Firestore inteiro', async () => {
+    fallbackFilterMock.mockResolvedValue([]);
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    await rtdbEntities.VerificationTask.filter({ created_date: { gte: '2026-01-01' } });
+    expect(fallbackFilterMock).toHaveBeenCalled();
+    expect(getMock).not.toHaveBeenCalled();
+  });
+
+  it('sem rtdb provisionado (null), list() e filter() caem no fallback Firestore', async () => {
+    vi.doMock('@/lib/firebaseClient', () => ({ rtdb: null }));
+    fallbackListMock.mockResolvedValue([{ id: 'x' }]);
+    fallbackFilterMock.mockResolvedValue([{ id: 'y' }]);
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    await expect(rtdbEntities.MonitoredAsset.list()).resolves.toEqual([{ id: 'x' }]);
+    await expect(rtdbEntities.VerificationTask.filter({ status: 'pending' })).resolves.toEqual([{ id: 'y' }]);
     expect(getMock).not.toHaveBeenCalled();
   });
 });

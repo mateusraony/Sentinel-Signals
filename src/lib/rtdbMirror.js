@@ -25,13 +25,20 @@
 // ~159.800 reads/day against a 50.000 budget) — the single highest-leverage
 // collection left un-mirrored, shared by every screen a user would
 // realistically keep open while watching the market. monitoredAssets/
-// verificationTasks/systemLogs remain candidates for a future round; their
-// document counts are an order of magnitude smaller (tens, not hundreds),
-// so measured priority puts them after, not before.
+// verificationTasks joined in round 3b (item 169) — smaller collections
+// (tens/low hundreds, not thousands), read via the whole-node mode in
+// src/api/rtdbEntities.js (createRtdbWholeNodeReadEntity) instead of an
+// RTDB-side query, so no .indexOn is needed for either. systemLogs remains a
+// candidate for a future round (3c) — its two createUnique() calls embed
+// unbounded free-text (err.message) in the doc id, which needs toRtdbKey()
+// hardened with a length-safe fallback FIRST (see item 169's round-3
+// proposal); nothing here blocks that, it's just not done yet.
 export const RTDB_MIRRORED_ENTITIES = Object.freeze({
   AssetState: 'assetStates',
+  MonitoredAsset: 'monitoredAssets',
   SignalEvent: 'signalEvents',
   TradeOperation: 'tradeOperations',
+  VerificationTask: 'verificationTasks',
 });
 
 // RTDB keys can't contain '.', '#', '$', '[', ']', '/'. TradeOperation ids
@@ -77,8 +84,8 @@ export function createRtdbMirrorHelpers({ mirrorSet, mirrorUpdate, mirrorRemove 
 
   // Wraps one backend.entities.<Name> object. Only entities present in
   // RTDB_MIRRORED_ENTITIES are intercepted (create/createUnique/update/
-  // bulkCreate/deleteMany) — every other entity (MonitoredAsset, SystemLog,
-  // VerificationTask, ...) is returned completely untouched.
+  // bulkCreate/deleteMany/delete) — every other entity (SystemLog, User,
+  // PriceAlert, ...) is returned completely untouched.
   function withRtdbMirror(entityKey, entity) {
     const rtdbPath = RTDB_MIRRORED_ENTITIES[entityKey];
     if (!rtdbPath) return entity;
@@ -114,6 +121,21 @@ export function createRtdbMirrorHelpers({ mirrorSet, mirrorUpdate, mirrorRemove 
         const deleted = await entity.deleteMany(filters);
         (deleted ?? []).forEach((item) => safeMirrorCall(mirrorRemove, rtdbPath, item.id));
         return deleted;
+      },
+      // Achado na auditoria pós-3a (item 169 addendum): nenhuma das 3
+      // entidades das rodadas 1/2 usa delete() singular em produção — só
+      // deleteMany() — então este método nunca precisou de mirror até agora.
+      // A rodada 3b introduz MonitoredAsset, e Assets.jsx remove um ativo via
+      // delete(id) singular (não deleteMany) — sem este wrapper, um ativo
+      // removido do Firestore ficaria pra sempre no espelho RTDB. Ao
+      // contrário de deleteMany (que só espelha se o Firestore devolveu os
+      // docs deletados), aqui não há ambiguidade: se entity.delete(id) não
+      // lançou, o doc já não existe mais no Firestore — espelhar a remoção é
+      // sempre correto.
+      async delete(id) {
+        const result = await entity.delete(id);
+        safeMirrorCall(mirrorRemove, rtdbPath, id);
+        return result;
       },
     };
   }

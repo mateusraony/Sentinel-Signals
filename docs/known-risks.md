@@ -20642,3 +20642,87 @@ dedicado, não só confiar no smoke test genérico.
 build && npm run build:scan` verdes. CI verde no `main` pós-merge da 3a
 (commit `287962c`) confirmado antes de começar a auditoria — a auditoria não
 foi motivada por nenhuma falha observada, foi pedido preventivo do usuário.
+
+### Etapa 3b (2026-09-07) — `MonitoredAsset` + `VerificationTask`, modo "nó inteiro"
+
+Aprovada pelo usuário só depois da auditoria da 3a acima ("Pode fazer o
+3b"). Migra `MonitoredAsset` (9 pontos de leitura) e `VerificationTask` (3
+pontos) para `rtdbEntities`, com um modo de leitura NOVO em
+`src/api/rtdbEntities.js` — `createRtdbWholeNodeReadEntity` — em vez de
+estender o reconhecedor de formato server-side que a 3a usou.
+
+**Por que um modo diferente**: as duas coleções são pequenas (dezenas/
+poucas centenas de docs — `VerificationTask` confirmada em ~200+ no achado
+da proposta original). Em vez de reconhecer cada novo formato de filtro
+(risco já materializado no achado 1 da auditoria da 3a, que quebrou com
+`undefined`), o modo "nó inteiro" sempre busca a árvore INTEIRA
+(`get(ref(rtdb, path))`, sem `orderByChild`/`equalTo`) e faz TODO o
+filtro/ordenação/limite em memória, no cliente — correto por construção
+para qualquer combinação de filtros de igualdade escalar, sem precisar de
+`.indexOn` novo nem de reconhecer formato nenhum. `matchesEqualityFilters`
+replica a MESMA convenção de `classifyFilter()` que motivou o achado 1 da
+3a (`valor === undefined` → sem filtro nesse campo, não "igual a
+undefined") — desta vez desde o desenho inicial, não como correção
+posterior; um teste dedicado (`rtdbEntities.test.js`) prova isso com
+`VerificationTask.filter({ status: 'pending', priority: undefined }, ...)`
+e foi verificado por reprodução (removida a exclusão de `undefined`, o
+teste falha; restaurada, passa).
+
+**Gap fechado antes de migrar `MonitoredAsset`**: `withRtdbMirror`
+(`src/lib/rtdbMirror.js`) nunca cobria `delete(id)` singular — só
+`create`/`update`/`bulkCreate`/`deleteMany` — porque nenhuma das 3
+entidades já mirroradas (`AssetState`/`SignalEvent`/`TradeOperation`) usa
+delete singular. `Assets.jsx:82` chama `MonitoredAsset.delete(id)`
+diretamente — sem o gap fechado, apagar um ativo removeria do Firestore
+mas deixaria o RTDB com um registro fantasma pra sempre. Adicionado
+`delete(id)` ao wrapper (sempre espelha incondicionalmente após o delete
+real resolver, sem a ambiguidade de `deleteMany` que precisa checar se o
+array devolvido é vazio) — testado e verificado por reprodução.
+
+**Achado ao rodar a suíte completa** (não é regressão, é fallout correto da
+mudança de escopo): 2 testes pré-existentes chamados
+`'MonitoredAsset.create() (fora do escopo) nunca toca o RTDB'`
+(`src/api/entities.test.js`, `scripts/adminEntities.test.js`) passaram a
+falhar — a premissa deles (MonitoredAsset fora do escopo do mirror) deixou
+de ser verdade exatamente pela mudança que a 3b faz de propósito.
+Repropostos para `PriceAlert` (confirmada fora do escopo em qualquer etapa
+desta rodada — sem consumidor de produção, ver achado da proposta acima),
+preservando a intenção original do teste (provar que uma entidade
+genuinamente fora do escopo nunca toca o RTDB).
+
+**Achado de cobertura de render (mesma disciplina do achado 2 da auditoria
+3a, verificado ANTES de declarar a etapa pronta, não depois)**:
+`TickerBar.jsx` vive dentro de `AppLayout.jsx` — fora da árvore que
+`pagesSmoke.test.jsx`/`renderPage()` monta — e nunca tinha teste próprio.
+Fechado com `TickerBar.test.jsx` (RTL), confirmando a chamada exata
+(`rtdbEntities.AssetState.list()` +
+`rtdbEntities.MonitoredAsset.filter({is_active:true})`) e o render com/sem
+dado. Verificado por reprodução: revertida a troca de `MonitoredAsset` para
+um stub, os 3 testes falham; restaurada, voltam a passar.
+`GlobalSearch.test.jsx` (escrito na auditoria 3a) também tinha um buraco
+que só a mudança da 3b expôs: seu mock de `@/api/rtdbEntities` cobria só
+`SignalEvent` — a leitura de `MonitoredAsset` que a 3b move pra
+`rtdbEntities` ficaria chamando `rtdbEntities.MonitoredAsset.list()` sobre
+`undefined`, uma exceção engolida silenciosamente pelo TanStack Query
+(nenhum teste notaria). Corrigido adicionando `MonitoredAsset` ao mock +
+2 testes novos que provam a wiring; verificado por reprodução (revertido
+pro mock antigo, os 2 testes novos falham; restaurado, voltam a passar).
+
+**Escopo tocado**: `src/lib/rtdbMirror.js` (+`delete()`), `src/api/entities.js`,
+`scripts/adminEntities.js`, `src/api/rtdbEntities.js` (+modo "nó inteiro"),
+`database.rules.json` (+`monitoredAssets`/`verificationTasks`, sem
+`.indexOn` — nunca usam `orderByChild`), e 10 arquivos de página/componente
+trocando só o `queryFn` de leitura (mutações continuam 100% em `backend`):
+`TickerBar.jsx`, `GlobalSearch.jsx`, `CorrelationWidget.jsx`,
+`Dashboard.jsx`, `Assets.jsx`, `Settings.jsx`, `PineScript.jsx`,
+`Backtest.jsx`, `Verification.jsx`, `VerificationWidget.jsx`.
+
+**Verificação**: `npm run lint && npm test (1612, 86 arquivos) && npm run
+build && npm run build:scan` verdes. Todo teste novo/corrigido verificado
+por reintrodução do bug-alvo antes de restaurar.
+
+**Próximo passo**: a etapa 3c (`SystemLog`) segue explicitamente NÃO
+aprovada — depende do endurecimento de `toRtdbKey()` (limite de tamanho +
+fallback determinístico) descrito acima, e não deve começar sem pedido
+explícito do usuário, seguindo o mesmo padrão de aprovação por etapa desta
+rodada inteira.
