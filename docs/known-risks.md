@@ -20870,3 +20870,72 @@ Com a 3c mesclada, a proposta original da rodada 3 (item 152) está completa
 espelhada no RTDB. Nenhuma etapa 3d está planejada; `PriceAlert`/`User`
 seguem fora por falta de consumidor de produção (achado da proposta
 original).
+
+### Addendum (2026-09-07) — incidente ao vivo: `backfill-rtdb.mjs` esgotou a cota ao copiar SystemLog
+
+O usuário rodou "Backfill Firestore → RTDB" manualmente pós-merge da 3c (run
+#4) para fechar o "cold start" do mirror — fechar a lacuna dos documentos que
+já existiam ANTES da 3c e nunca mais seriam tocados de novo (só um doc
+criado/atualizado DEPOIS que o mirror entra no ar é espelhado ao vivo). O run
+falhou. Log real:
+
+```
+[backfill-rtdb] AssetState: 45 documento(s) lido(s) do Firestore
+[backfill-rtdb] MonitoredAsset: 11 documento(s) lido(s) do Firestore
+[backfill-rtdb] SignalEvent: 3828 documento(s) lido(s) do Firestore
+[backfill-rtdb] SystemLog: 49699 documento(s) lido(s) do Firestore
+[backfill-rtdb] SystemLog: 49699 documento(s) escrito(s) no RTDB
+[backfill-rtdb] FAILED: Error: 8 RESOURCE_EXHAUSTED: Quota exceeded.
+```
+
+**Causa raiz**: `backfillCollection()` (`scripts/backfill-rtdb.mjs`) sempre
+chamou `backend.entities[entityName].list()` **sem limite nenhum** — correto
+para AssetState/MonitoredAsset (dezenas de docs) e aceitável para SignalEvent
+(milhares), mas catastrófico para `SystemLog`: **~49.700 documentos**, uma
+ordem de grandeza maior do que a estimativa "milhares" registrada na etapa 3c
+acima — sozinho, quase a cota diária INTEIRA (~50k leituras/dia no Spark).
+A leitura/escrita de SystemLog em si teve sucesso (49.699 escritos no RTDB
+corretamente), mas esgotou a cota ANTES do loop chegar em `TradeOperation`/
+`VerificationTask` (a ordem de `RTDB_MIRRORED_ENTITIES` é AssetState→
+MonitoredAsset→SignalEvent→SystemLog→TradeOperation→VerificationTask) —
+essas duas nunca foram backfilled nesse run.
+
+**Impacto real confirmado**: o próximo scan agendado (`scan.yml`, run
+#15889, disparado ~1min depois) falhou de verdade —
+`Timeout: scanAllAssets não retornou em 90000ms` — a cota já esgotada fazia
+o cliente admin do Firestore travar em retry, e o timeout de aplicação de
+90s (`scripts/scanTimeout.mjs`, itens 142/162) conteve o travamento e
+encerrou o processo de forma limpa em vez de ficar pendurado — a mitigação
+já existente funcionou exatamente como desenhada, mas ainda assim foi uma
+passada real de scan perdida, e a cota deve seguir degradada até o reset
+diário (~07:00 UTC).
+
+**Por que a etapa 3c não pegou isso antes**: a etapa 3c mediu SystemLog como
+"grande (milhares de docs, não dezenas/centenas)" — verdade, mas a
+ORDEM DE GRANDEZA real (dezenas de milhares) só apareceu ao rodar contra o
+Firestore de produção de verdade; nada nos testes locais (que usam mocks)
+nem no raciocínio de design tinha como capturar isso sem esse dado real —
+mesma classe de lacuna já registrada no item 125 achado 5 (dado real vs.
+suposição de escala).
+
+**Correção**: `backfillCollection()` ganhou um limite por entidade
+(`LIST_LIMIT_OVERRIDES`), aplicado só a `SystemLog` (2000 mais recentes por
+`created_date` desc) — generoso frente ao que o painel realmente usa (200 em
+`Logs.jsx`, 50 em `DebugLogButton.jsx`), e uma fração pequena da cota
+diária. As outras 5 entidades continuam lendo tudo sem limite: nenhuma
+mostrou o mesmo problema de escala, e `TradeOperation` em particular é lido
+por FAIXA DE DATA em `MonthlyReport.jsx` — um limite por "mais recentes"
+cortaria histórico antigo que esse consumidor específico ainda precisa, então
+não recebeu o mesmo tratamento sem evidência equivalente. Verificado por
+reintrodução: revertendo o limite, os 2 testes novos
+(`scripts/backfill-rtdb.test.js`) falham (`SystemLog` volta a chamar
+`.list()` sem argumento nenhum); restaurado, voltam a passar.
+
+**Ainda pendente (ação manual do usuário, fora do alcance desta correção)**:
+rodar "Backfill Firestore → RTDB" de novo depois que a cota resetar, agora
+com o limite em vigor — vai completar `TradeOperation`/`VerificationTask`
+(que nunca chegaram a rodar) sem repetir o esgotamento. Idempotente, seguro
+rodar de novo (mesma garantia já documentada acima).
+
+**Verificação**: `npm run lint && npm test (1636, 87 arquivos) && npm run
+build` verdes.
