@@ -114,6 +114,58 @@ describe('adminEntities — SystemLog nunca propaga falha de escrita (item 138 a
       backend.entities.TradeOperation.create({ symbol: 'BTCUSDT' })
     ).rejects.toThrow('PERMISSION_DENIED');
   });
+
+  // Rodada 3c (item 169): SystemLog entrou no escopo do mirror (mesmo
+  // espelho browser, src/api/entities.test.js — ver o comentário lá para o
+  // raciocínio completo). A ordem da composição
+  // (makeResilientLogEntity(withRtdbMirror(...))) é o que garante que uma
+  // falha REAL do Firestore nunca alcança a linha do mirror — sem isso, o
+  // catch interno produziria `{ id: null, ...data }` e o mirror gravaria
+  // toda escrita que falha na MESMA chave RTDB ('systemLogs/null').
+  it('create() com falha real do Firestore NUNCA aciona o mirror', async () => {
+    addMock.mockRejectedValue(new Error('ALREADY_EXISTS espúrio'));
+    const { backend } = await import('./adminEntities.js');
+    await backend.entities.SystemLog.create({ level: 'info', module: 'scanner', message: 'x' });
+    expect(rtdbSetMock).not.toHaveBeenCalled();
+  });
+
+  it('createUnique() com falha real do Firestore NUNCA aciona o mirror', async () => {
+    runTransactionMock.mockRejectedValue(new Error('ABORTED: contention'));
+    const { backend } = await import('./adminEntities.js');
+    await backend.entities.SystemLog.createUnique('dedup-key', { level: 'error', message: 'x' });
+    expect(rtdbSetMock).not.toHaveBeenCalled();
+  });
+
+  it('create() bem-sucedido ESPELHA normalmente (a resiliência não suprime o mirror no caminho feliz)', async () => {
+    addMock.mockResolvedValue({ id: 'log_1' });
+    const { backend } = await import('./adminEntities.js');
+    const created = await backend.entities.SystemLog.create({ level: 'info', module: 'scanner', message: 'x' });
+    expect(rtdbRefMock).toHaveBeenCalledWith('systemLogs/log_1');
+    expect(rtdbSetMock).toHaveBeenCalledWith(created);
+  });
+
+  it('createUnique() bem-sucedido (created === true) ESPELHA normalmente — dedup key longa (err.message livre) sanitizada e truncada', async () => {
+    runTransactionMock.mockImplementation(async (cb) => cb({
+      get: vi.fn().mockResolvedValue({ exists: false, data: () => ({}) }),
+      set: vi.fn(),
+    }));
+    const { backend } = await import('./adminEntities.js');
+    const longMessage = 'Falha ao buscar candles: '.repeat(50);
+    const dedupKey = `scan_error::BTCUSDT::2026-09-07::${longMessage}`;
+    const res = await backend.entities.SystemLog.createUnique(dedupKey, { level: 'error', message: longMessage });
+    expect(res.created).toBe(true);
+    expect(rtdbRefMock).toHaveBeenCalledTimes(1);
+    const [path] = rtdbRefMock.mock.calls[0];
+    const sanitizedKey = path.slice('systemLogs/'.length);
+    expect(new TextEncoder().encode(sanitizedKey).length).toBeLessThanOrEqual(700);
+  });
+
+  it('delete(id) singular (Logs.jsx/DebugLogButton.jsx removendo 1 log) remove do RTDB', async () => {
+    const { backend } = await import('./adminEntities.js');
+    await backend.entities.SystemLog.delete('log_1');
+    expect(rtdbRefMock).toHaveBeenCalledWith('systemLogs/log_1');
+    expect(rtdbRemoveMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 // docs/known-risks.md item 141/143: mesmo risco do espelho browser

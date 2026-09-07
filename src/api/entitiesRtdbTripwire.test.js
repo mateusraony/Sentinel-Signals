@@ -46,10 +46,19 @@ describe('entities.js — tripwire de isolamento do mirror RTDB', () => {
     expect(exportBlock).toMatch(/withTransitionOpMirror\(transitionTradeOp\)/);
   });
 
-  it('só AssetState/MonitoredAsset/SignalEvent/TradeOperation/VerificationTask são envolvidas por withRtdbMirror no export final — escopo travado', () => {
+  it('só AssetState/MonitoredAsset/SignalEvent/SystemLog/TradeOperation/VerificationTask são envolvidas por withRtdbMirror no export final — escopo travado', () => {
     const exportBlock = source.slice(source.indexOf('entities: {'), source.indexOf('export const backend') + source.slice(source.indexOf('export const backend')).indexOf('agents:'));
     const wrapped = [...exportBlock.matchAll(/withRtdbMirror\('(\w+)'/g)].map((m) => m[1]);
-    expect(wrapped.sort()).toEqual(['AssetState', 'MonitoredAsset', 'SignalEvent', 'TradeOperation', 'VerificationTask']);
+    expect(wrapped.sort()).toEqual(['AssetState', 'MonitoredAsset', 'SignalEvent', 'SystemLog', 'TradeOperation', 'VerificationTask']);
+  });
+
+  // Rodada 3c (item 169): a ORDEM da composição de SystemLog é o ponto
+  // crítico (ver o comentário em entities.js) — resiliência PRECISA ser a
+  // camada mais externa, envolvendo o mirror, nunca o contrário. Trava a
+  // sintaxe exata no código-fonte para que uma futura edição não inverta a
+  // ordem sem que este tripwire denuncie.
+  it('SystemLog é composta como makeResilientLogEntity(withRtdbMirror(...)) — resiliência por FORA do mirror, nunca o contrário', () => {
+    expect(source).toMatch(/SystemLog:\s*makeResilientLogEntity\(withRtdbMirror\('SystemLog',\s*createEntity\('systemLogs'\)\)\)/);
   });
 
   it('as 3 primitivas de I/O (mirrorSet/mirrorUpdate/mirrorRemove) sempre fazem guard rtdb ?? no-op e nunca lançam (têm .catch próprio)', () => {

@@ -308,7 +308,16 @@ export const backend = {
     SignalEvent: withRtdbMirror('SignalEvent', createEntity('signalEvents')),
     TradeOperation: withRtdbMirror('TradeOperation', createEntity('tradeOperations')),
     PriceAlert: createEntity('priceAlerts'),
-    SystemLog: makeResilientLogEntity(createEntity('systemLogs')),
+    // Resilience must be the OUTERMOST layer here, not the mirror — see the
+    // comment on makeResilientLogEntity below for why. If the real Firestore
+    // create()/createUnique() throws, that throw must propagate straight
+    // out of withRtdbMirror (never reaching its mirror line) so THIS catch
+    // is what turns it into the safe fallback — with the wrapping reversed,
+    // a resilient-then-mirror composition would instead see a synthesized
+    // `{ id: null, ...data }` from the inner catch and mirror THAT, writing
+    // every failed log to the same RTDB key ('systemLogs/null') over and
+    // over. docs/known-risks.md item 169 (rodada 3c).
+    SystemLog: makeResilientLogEntity(withRtdbMirror('SystemLog', createEntity('systemLogs'))),
     User: createEntity('users'),
     VerificationTask: withRtdbMirror('VerificationTask', createEntity('verificationTasks')),
   },

@@ -27,6 +27,13 @@
         "created_date"
       ]
     },
+    "systemLogs": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": [
+        "created_date"
+      ]
+    },
     "systemAlerts": {
       ".read": "auth != null",
       ".write": "auth != null"
