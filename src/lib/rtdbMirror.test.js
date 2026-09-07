@@ -22,6 +22,49 @@ describe('toRtdbKey', () => {
   it('sanitiza cada caractere proibido individualmente', () => {
     expect(toRtdbKey('a.b#c$d[e]f/g')).toBe('a_b_c_d_e_f_g');
   });
+
+  // Rodada 3c (item 169): o bloqueador documentado para mirrorar SystemLog —
+  // scanner.js's scanErrorDedupKey (`scan_error::${asset.id}::${today}::
+  // ${err.message}`) embute err.message, texto livre sem contrato de
+  // tamanho. RTDB rejeita chaves acima de ~768 bytes; sem truncar, o SDK
+  // rejeitaria o set()/update() (silenciosamente, via o .catch() do mirror —
+  // não quebra a escrita real no Firestore, mas o log some do espelho RTDB
+  // sem avisar ninguém, exatamente o "achado" que bloqueava a 3c).
+  describe('toRtdbKey — hardening de tamanho (rodada 3c)', () => {
+    it('o caso real do landmine — scanErrorDedupKey com err.message longo — produz uma chave dentro do limite', () => {
+      const longMessage = 'Falha ao buscar candles: '.repeat(50); // ~1300 bytes
+      const id = `scan_error::BTCUSDT::2026-09-07::${longMessage}`;
+      const key = toRtdbKey(id);
+      expect(new TextEncoder().encode(key).length).toBeLessThanOrEqual(700);
+      expect(key).not.toMatch(/[.#$/[\]]/);
+    });
+
+    it('é determinístico — o MESMO id longo sempre produz a MESMA chave truncada (dedup do createUnique sobrevive à truncagem)', () => {
+      const id = `scan_error::ETHUSDT::2026-09-07::${'x'.repeat(1000)}`;
+      expect(toRtdbKey(id)).toBe(toRtdbKey(id));
+    });
+
+    it('DOIS ids longos que compartilham o mesmo prefixo truncado NÃO colidem na mesma chave', () => {
+      const prefix = `scan_error::SOLUSDT::2026-09-07::${'a'.repeat(900)}`;
+      const idA = `${prefix}_causa_A`;
+      const idB = `${prefix}_causa_B`;
+      expect(toRtdbKey(idA)).not.toBe(toRtdbKey(idB));
+    });
+
+    it('ids curtos (a esmagadora maioria — todo o resto do app) não são afetados pelo hardening', () => {
+      const id = 'trade_BTCUSDT_4h_BUY_raw_2026-09-03T12:00:00.000Z';
+      expect(toRtdbKey(id)).toBe(id.replace(/[.#$/[\]]/g, '_'));
+    });
+
+    it('caracteres multi-byte (UTF-8) perto do limite não quebram a truncagem nem lançam exceção', () => {
+      // Cada "é" ocupa 2 bytes em UTF-8 — testa que o corte por BYTES (não por
+      // caractere) nunca produz uma chave ainda maior que o orçamento.
+      const id = `scan_error::BTCUSDT::2026-09-07::${'é'.repeat(500)}`;
+      expect(() => toRtdbKey(id)).not.toThrow();
+      const key = toRtdbKey(id);
+      expect(new TextEncoder().encode(key).length).toBeLessThanOrEqual(700);
+    });
+  });
 });
 
 describe('createRtdbMirrorHelpers', () => {
@@ -39,13 +82,14 @@ describe('createRtdbMirrorHelpers', () => {
 
   describe('withRtdbMirror', () => {
     it('entidade fora de RTDB_MIRRORED_ENTITIES é passthrough puro — nenhum mirror* é chamado', async () => {
-      // SystemLog (não MonitoredAsset — que entrou no escopo na rodada 3b) é
-      // o exemplo aqui: continua fora, candidata só à rodada 3c (item 169).
+      // PriceAlert (não SystemLog — que entrou no escopo na rodada 3c, nem
+      // MonitoredAsset — rodada 3b) é o exemplo aqui: confirmada sem
+      // consumidor de produção (item 169), fora de qualquer rodada.
       const real = {
         create: vi.fn().mockResolvedValue({ id: 'x1', foo: 'bar' }),
         update: vi.fn().mockResolvedValue({ id: 'x1', foo: 'baz' }),
       };
-      const wrapped = helpers.withRtdbMirror('SystemLog', real);
+      const wrapped = helpers.withRtdbMirror('PriceAlert', real);
       expect(wrapped).toBe(real);
       await wrapped.create({ foo: 'bar' });
       expect(mirrorSet).not.toHaveBeenCalled();
@@ -182,11 +226,12 @@ describe('createRtdbMirrorHelpers', () => {
     });
   });
 
-  it('RTDB_MIRRORED_ENTITIES trava exatamente no escopo atual (rodadas 1+2+3b)', () => {
+  it('RTDB_MIRRORED_ENTITIES trava exatamente no escopo atual (rodadas 1+2+3b+3c)', () => {
     expect(RTDB_MIRRORED_ENTITIES).toEqual({
       AssetState: 'assetStates',
       MonitoredAsset: 'monitoredAssets',
       SignalEvent: 'signalEvents',
+      SystemLog: 'systemLogs',
       TradeOperation: 'tradeOperations',
       VerificationTask: 'verificationTasks',
     });

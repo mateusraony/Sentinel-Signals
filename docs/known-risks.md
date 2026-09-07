@@ -20726,3 +20726,147 @@ aprovada — depende do endurecimento de `toRtdbKey()` (limite de tamanho +
 fallback determinístico) descrito acima, e não deve começar sem pedido
 explícito do usuário, seguindo o mesmo padrão de aprovação por etapa desta
 rodada inteira.
+
+### Addendum (2026-09-07) — auditoria pós-merge da 3b, pedida pelo usuário antes da 3c
+
+Mesmo pedido/rigor da auditoria da 3a: reler o diff MESCLADO (`git diff
+a6a1e21..97d9478`) com olhar adversarial, confirmar CI verde no commit de
+merge em si (não só no branch do PR) via API do GitHub, e rodar
+`lint`/`test`/`build`/`build:scan` locais contra o HEAD exato de `main` pós-
+merge — não reaproveitar a verificação já feita antes do merge.
+
+Percorrido: `rtdbMirror.js` (wiring/`delete()`), o modo "nó inteiro" inteiro
+(`isSupportedWholeNodeFilters`/`matchesEqualityFilters` contra CADA call site
+real, não só os testes), a sanitização de `VerificationTask.createUnique`
+(confirmada herdada de `toRtdbKey()` via `mirrorSet`, sem código novo),
+`database.rules.json`, os 2 tripwires, e os 10 arquivos de página/componente
+(mutação continua 100% em `backend`, nenhum vazamento). **Nenhum bug
+encontrado** — diferente da auditoria da 3a, que achou 2 problemas reais.
+
+Duas propriedades foram investigadas e conscientemente NÃO tratadas como
+defeito, por serem estruturais da arquitetura desde a rodada 1, não algo que
+a 3b introduziu ou piorou:
+- `delete()` (novo na 3b) não tem um teste de "throw da primitiva nunca
+  propaga" dedicado, ao contrário de `withTransitionOpMirror` — mas
+  `safeMirrorCall`, o mecanismo que garante isso, é COMPARTILHADO por todos
+  os métodos e já é testado noutro lugar. Lacuna de simetria de teste, não
+  lacuna de comportamento.
+- Mutação via `backend` seguida de `invalidateQueries` cujo `queryFn` lê via
+  `rtdbEntities` tem uma janela real de inconsistência eventual (o mirror é
+  fire-and-forget, não é esperado antes do `onSuccess` disparar o refetch).
+  Existe desde a rodada 1 (`Trades.jsx`/`AssetCard.jsx` com `TradeOperation`)
+  — `Verification.jsx` só repete o mesmo padrão já aceito, não introduz um
+  novo.
+
+**Verificação**: CI confirmado verde no commit de merge `97d9478` via API
+(não só no branch do PR). `npm run lint && npm test (1612, 86 arquivos) &&
+npm run build && npm run build:scan` verdes rodados de novo contra o HEAD
+exato de `main` pós-merge — sem diferença do que o CI já tinha visto.
+
+Confirmado limpo → aprovação do usuário para a 3c ("depois que tiver certeza
+pode fazer o 3C").
+
+### Etapa 3c (2026-09-07) — `SystemLog`
+
+**Bloqueador resolvido primeiro**: `toRtdbKey()` (`src/lib/rtdbMirror.js`)
+ganhou um fallback de tamanho — RTDB rejeita chaves acima de ~768 bytes, e o
+`scanErrorDedupKey` de `scanner.js`
+(`` `scan_error::${asset.id}::${today}::${err.message}` ``) embute
+`err.message`, texto livre sem contrato de tamanho algum. Acima de
+`RTDB_KEY_MAX_BYTES` (700, com margem), a chave sanitizada é truncada por
+BYTES (não por caractere — um `String.slice()` ingênuo poderia cortar um
+caractere UTF-8 multi-byte ao meio e ainda estourar o limite; corrigido
+codificando para bytes com `TextEncoder`, cortando, e decodificando de volta
+com `TextDecoder` em modo não-fatal, que substitui uma sequência parcial no
+corte por U+FFFD em vez de lançar) e recebe um sufixo de hash determinístico
+(FNV-1a 32-bit, sem dependência de `crypto`/Web Crypto — funciona idêntico no
+browser e no Node) do STRING SANITIZADO INTEIRO — determinístico (o mesmo id
+longo sempre produz a mesma chave, então o dedup do `createUnique` sobrevive
+à truncagem) e sem colisão (dois ids longos que compartilham o prefixo
+truncado ainda divergem, porque o hash cobre a string inteira, não só o
+prefixo sobrevivente). IDs curtos (o resto do app inteiro, e a maioria dos
+IDs do próprio SystemLog) não são afetados — o branch de truncagem só entra
+quando o limite é de fato ultrapassado.
+
+**A ORDEM da composição do wrapper é o ponto crítico, achado ao desenhar a
+fiação**: `SystemLog` já tinha `makeResilientLogEntity` (item 138 addendum) —
+`create()`/`createUnique()` NUNCA lançam, engolem qualquer falha real do
+Firestore e devolvem um fallback (`{id: null, ...data}` /
+`{created: false, existing: null}`). A composição óbvia,
+`withRtdbMirror('SystemLog', makeResilientLogEntity(...))` (mirror por FORA,
+igual ao padrão de todas as outras entidades), tem um bug real: numa falha
+REAL do Firestore, o `create()` resiliente devolve `{id: null, ...}` SEM
+lançar — e o mirror, vendo um retorno "bem-sucedido", espelharia isso,
+chamando `mirrorSet('systemLogs', null, ...)` toda vez que qualquer escrita
+falhasse, sempre na MESMA chave RTDB (`systemLogs/null`), sobrescrevendo-a
+repetidamente. **Reproduzido de propósito** antes de fixar a ordem correta:
+com a composição errada, o teste
+`create() com falha real do Firestore NUNCA aciona o mirror` falha de fato,
+com `rtdbSetMock` chamado com `{path: "systemLogs/null"}`. A composição
+correta inverte a ordem — `makeResilientLogEntity(withRtdbMirror('SystemLog',
+createEntity('systemLogs')))`, resiliência por FORA — porque assim, quando o
+Firestore real lança, o throw propaga direto por dentro de `withRtdbMirror`
+(a linha do mirror nunca é alcançada) até o `catch` de
+`makeResilientLogEntity`, que é quem decide o fallback. Travado por um novo
+tripwire (`entitiesRtdbTripwire.test.js` / `adminEntitiesRtdbTripwire.test.js`)
+que lê a sintaxe exata da composição no código-fonte.
+
+**Leitura**: diferente de `MonitoredAsset`/`VerificationTask` (3b, modo "nó
+inteiro"), `SystemLog` é uma coleção GRANDE (milhares de docs, não
+dezenas/centenas) — buscar a árvore inteira a cada poll destruiria o
+propósito da migração. `Logs.jsx`/`DebugLogButton.jsx` só chamam
+`.list('-created_date', N)`, sem nenhum `.filter()` — o MESMO formato
+order+limit que `SignalEvent`/`TradeOperation` já usam, então reaproveitado
+`createRtdbReadEntity` sem nenhum código de leitura novo. `.indexOn:
+["created_date"]` adicionado a `systemLogs` em `database.rules.json` (mesmo
+padrão de `signalEvents`/`tradeOperations`).
+
+**`delete()` singular** (`Logs.jsx`'s "limpar >24h", `DebugLogButton.jsx`'s
+lixeira por-log) já estava coberto pelo wrapper genérico adicionado na 3b
+(item 169, achado ao desenhar aquela etapa) — nenhuma mudança adicional
+precisou entrar aqui além de somar `SystemLog` ao escopo do
+`RTDB_MIRRORED_ENTITIES`. `Sidebar.jsx`'s "limpar tudo"
+(`SystemLog.deleteMany({})`) também herda o mirror automaticamente — pode
+disparar milhares de `mirrorRemove` fire-and-forget de uma vez (ação manual
+rara, não um caminho quente; mesma categoria de custo já aceita para
+`deleteMany` nas outras entidades).
+
+**Achado de cobertura de render**: `DebugLogButton.jsx` vive dentro de
+`AppLayout.jsx` — fora da árvore que `pagesSmoke.test.jsx`/`renderPage()`
+monta — e nunca tinha teste próprio (mesma classe de ponto cego fechada para
+`TickerBar.jsx`/`GlobalSearch.jsx` na 3b). Fechado com `DebugLogButton.test.jsx`
+(RTL) — inclui confirmar que a leitura fica desabilitada até o painel abrir
+(`enabled: open`) e que a mutação de delete continua indo por `backend`,
+nunca por `rtdbEntities`. `Logs.jsx` (a página) já era coberta pelo smoke
+test — sem gap ali, `pagesSmoke.test.jsx` mocka `@/api/rtdbEntities` por
+inteiro (não por arquivo), então a troca de `queryFn` foi automaticamente
+exercitada.
+
+**Crescimento de armazenamento não é um risco novo desta rodada**: SystemLog
+já cresce sem purga automatizada no Firestore hoje (só os botões manuais
+"limpar >24h"/"limpar tudo"), e o mirror simplesmente copia o que já é
+escrito — não amplifica o volume, duplica o crescimento já existente num 2º
+lugar. Sem cron de retenção para NENHUM dos dois lados hoje; se o
+armazenamento do RTDB (1GB grátis no Spark) algum dia virar problema
+prático, é a mesma pergunta que já vale para o Firestore, não uma nova.
+
+**Escopo tocado**: `src/lib/rtdbMirror.js` (`toRtdbKey()` com hardening de
+tamanho + `SystemLog` no `RTDB_MIRRORED_ENTITIES`), `src/api/entities.js` +
+`scripts/adminEntities.js` (composição `makeResilientLogEntity(withRtdbMirror(...))`),
+`src/api/rtdbEntities.js` (`SystemLog` via `createRtdbReadEntity`),
+`database.rules.json` (+`systemLogs` com `.indexOn`), os 2 tripwires,
+`Logs.jsx`/`DebugLogButton.jsx` (só `queryFn`, mutação intacta).
+
+**Verificação**: `npm run lint && npm test (1634, 87 arquivos) && npm run
+build && npm run build:scan` verdes. Todo teste novo verificado por
+reintrodução do bug-alvo: a ordem errada da composição (`rtdbSetMock`
+chamado com `systemLogs/null`), o `toRtdbKey()` sem hardening (chave de
+1283/1033 bytes, muito acima do limite), e a wiring do `DebugLogButton.jsx`
+(3 dos 4 testes falham revertendo pra `backend.entities.SystemLog` direto).
+
+Com a 3c mesclada, a proposta original da rodada 3 (item 152) está completa
+— as 6 entidades de negócio inteiras (`AssetState`, `MonitoredAsset`,
+`SignalEvent`, `SystemLog`, `TradeOperation`, `VerificationTask`) têm leitura
+espelhada no RTDB. Nenhuma etapa 3d está planejada; `PriceAlert`/`User`
+seguem fora por falta de consumidor de produção (achado da proposta
+original).

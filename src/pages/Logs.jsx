@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
+import { rtdbEntities } from '@/api/rtdbEntities';
 import { ScrollText, Filter, RefreshCw, AlertTriangle, Info, Bug, AlertCircle, X, Search, Trash2, Copy, Check } from 'lucide-react';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
@@ -19,7 +20,7 @@ export default function Logs() {
 
   const { data: logs = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ['system-logs'],
-    queryFn: () => backend.entities.SystemLog.list('-created_date', 200),
+    queryFn: () => rtdbEntities.SystemLog.list('-created_date', 200),
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 

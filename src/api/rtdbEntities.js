@@ -196,6 +196,13 @@ export const rtdbEntities = {
   AssetState: createRtdbReadEntity('assetStates', backend.entities.AssetState),
   MonitoredAsset: createRtdbWholeNodeReadEntity('monitoredAssets', backend.entities.MonitoredAsset),
   SignalEvent: createRtdbReadEntity('signalEvents', backend.entities.SignalEvent),
+  // Rodada 3c (item 169): SystemLog é grande (milhares de docs, não
+  // dezenas/centenas como MonitoredAsset/VerificationTask) — modo de nó
+  // inteiro buscaria a árvore toda a cada poll, o oposto do objetivo desta
+  // migração. Logs.jsx/DebugLogButton.jsx só chamam `.list('-created_date',
+  // N)`, sem nenhum `.filter()` — o mesmo formato order+limit que
+  // SignalEvent/TradeOperation já usam, reconhecido nativamente aqui.
+  SystemLog: createRtdbReadEntity('systemLogs', backend.entities.SystemLog),
   TradeOperation: createRtdbReadEntity('tradeOperations', backend.entities.TradeOperation),
   VerificationTask: createRtdbWholeNodeReadEntity('verificationTasks', backend.entities.VerificationTask),
 };

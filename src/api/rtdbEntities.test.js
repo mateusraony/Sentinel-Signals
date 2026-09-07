@@ -31,6 +31,7 @@ vi.mock('@/api/entities', () => ({
     entities: {
       AssetState: { list: fallbackListMock, filter: fallbackFilterMock },
       SignalEvent: { list: fallbackListMock, filter: fallbackFilterMock },
+      SystemLog: { list: fallbackListMock, filter: fallbackFilterMock },
       TradeOperation: { list: fallbackListMock, filter: fallbackFilterMock },
       MonitoredAsset: { list: fallbackListMock, filter: fallbackFilterMock },
       VerificationTask: { list: fallbackListMock, filter: fallbackFilterMock },
@@ -96,6 +97,23 @@ describe('rtdbEntities — list()', () => {
     const { rtdbEntities } = await import('./rtdbEntities.js');
     await rtdbEntities.SignalEvent.list('-created_date', 100);
     expect(refMock).toHaveBeenCalledWith({}, 'signalEvents');
+  });
+
+  // Rodada 3c (item 169): SystemLog usa o MESMO modo order+limit que
+  // SignalEvent/TradeOperation (createRtdbReadEntity) — não o modo "nó
+  // inteiro" da 3b — porque a coleção é grande (milhares de docs); Logs.jsx/
+  // DebugLogButton.jsx só chamam .list('-created_date', N), sem .filter().
+  it('SystemLog (rodada 3c) usa o path systemLogs, mesmo formato order+limit de SignalEvent/TradeOperation', async () => {
+    getMock.mockResolvedValue(snapshotOf({
+      l1: { id: 'l1', level: 'error', created_date: '2026-01-01T00:00:00.000Z' },
+      l2: { id: 'l2', level: 'info', created_date: '2026-01-02T00:00:00.000Z' },
+    }));
+    const { rtdbEntities } = await import('./rtdbEntities.js');
+    const result = await rtdbEntities.SystemLog.list('-created_date', 200);
+    expect(refMock).toHaveBeenCalledWith({}, 'systemLogs');
+    expect(orderByChildMock).toHaveBeenCalledWith('created_date');
+    expect(limitToLastMock).toHaveBeenCalledWith(200);
+    expect(result.map((r) => r.id)).toEqual(['l2', 'l1']);
   });
 
   it('sort ascendente (sem "-") não inverte o resultado', async () => {

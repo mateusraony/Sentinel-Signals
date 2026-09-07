@@ -185,6 +185,63 @@ describe('entities.js — SystemLog nunca propaga falha de escrita (item 138 add
       backend.entities.TradeOperation.create({ symbol: 'BTCUSDT' })
     ).rejects.toThrow('PERMISSION_DENIED');
   });
+
+  // Rodada 3c (item 169): SystemLog entrou no escopo do mirror
+  // (makeResilientLogEntity(withRtdbMirror('SystemLog', ...))). A ORDEM da
+  // composição é o ponto crítico — resiliência tem que ser a camada MAIS
+  // EXTERNA. Se fosse ao contrário (mirror envolvendo o resiliente), uma
+  // falha real do Firestore produziria `{ id: null, ...data }` do catch
+  // interno, e o mirror espelharia ISSO — gravando toda escrita que falha na
+  // MESMA chave RTDB ('systemLogs/null'), repetidamente. Com a ordem certa,
+  // o throw do Firestore propaga direto por dentro de withRtdbMirror (nunca
+  // alcança a linha do mirror) até o catch de makeResilientLogEntity.
+  it('create() com falha real do Firestore NUNCA aciona o mirror (a composição resiliente-fora-do-mirror evita a chave "systemLogs/null")', async () => {
+    addDocMock.mockRejectedValue(new Error('ALREADY_EXISTS espúrio'));
+    const { backend } = await import('./entities.js');
+    await backend.entities.SystemLog.create({ level: 'info', module: 'scanner', message: 'x' });
+    expect(rtdbSetMock).not.toHaveBeenCalled();
+  });
+
+  it('createUnique() com falha real do Firestore NUNCA aciona o mirror', async () => {
+    runTransactionMock.mockRejectedValue(new Error('ABORTED: contention'));
+    const { backend } = await import('./entities.js');
+    await backend.entities.SystemLog.createUnique('dedup-key', { level: 'error', message: 'x' });
+    expect(rtdbSetMock).not.toHaveBeenCalled();
+  });
+
+  it('create() bem-sucedido ESPELHA normalmente (a resiliência não suprime o mirror no caminho feliz)', async () => {
+    addDocMock.mockResolvedValue({ id: 'log_1' });
+    const { backend } = await import('./entities.js');
+    const created = await backend.entities.SystemLog.create({ level: 'info', module: 'scanner', message: 'x' });
+    expect(created).toEqual(expect.objectContaining({ id: 'log_1' }));
+    expect(rtdbSetMock).toHaveBeenCalledTimes(1);
+    const [ref, value] = rtdbSetMock.mock.calls[0];
+    expect(ref.path).toBe('systemLogs/log_1');
+    expect(value).toEqual(created);
+  });
+
+  it('createUnique() bem-sucedido (created === true) ESPELHA normalmente — dedup key longa (err.message livre) sanitizada e truncada', async () => {
+    runTransactionMock.mockImplementation(async (db, cb) => cb({
+      get: vi.fn().mockResolvedValue({ exists: () => false, data: () => ({}) }),
+      set: vi.fn(),
+    }));
+    const { backend } = await import('./entities.js');
+    const longMessage = 'Falha ao buscar candles: '.repeat(50);
+    const dedupKey = `scan_error::BTCUSDT::2026-09-07::${longMessage}`;
+    const res = await backend.entities.SystemLog.createUnique(dedupKey, { level: 'error', message: longMessage });
+    expect(res.created).toBe(true);
+    expect(rtdbSetMock).toHaveBeenCalledTimes(1);
+    const [ref] = rtdbSetMock.mock.calls[0];
+    const sanitizedKey = ref.path.slice('systemLogs/'.length);
+    expect(new TextEncoder().encode(sanitizedKey).length).toBeLessThanOrEqual(700);
+  });
+
+  it('delete(id) singular (Logs.jsx/DebugLogButton.jsx removendo 1 log) remove do RTDB', async () => {
+    const { backend } = await import('./entities.js');
+    await backend.entities.SystemLog.delete('log_1');
+    expect(rtdbRemoveMock).toHaveBeenCalledTimes(1);
+    expect(rtdbRemoveMock.mock.calls[0][0].path).toBe('systemLogs/log_1');
+  });
 });
 
 // docs/known-risks.md item 141/143: classifyFilter (src/lib/queryFilters.js)

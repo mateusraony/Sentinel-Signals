@@ -41,10 +41,17 @@ describe('adminEntities.js — tripwire de isolamento do mirror RTDB', () => {
     expect(exportBlock).toMatch(/withTransitionOpMirror\(transitionTradeOp\)/);
   });
 
-  it('só AssetState/MonitoredAsset/SignalEvent/TradeOperation/VerificationTask são envolvidas por withRtdbMirror no export final — escopo travado', () => {
+  it('só AssetState/MonitoredAsset/SignalEvent/SystemLog/TradeOperation/VerificationTask são envolvidas por withRtdbMirror no export final — escopo travado', () => {
     const exportBlock = source.slice(source.indexOf('entities: {'), source.indexOf('export const backend') + source.slice(source.indexOf('export const backend')).indexOf('locks:'));
     const wrapped = [...exportBlock.matchAll(/withRtdbMirror\('(\w+)'/g)].map((m) => m[1]);
-    expect(wrapped.sort()).toEqual(['AssetState', 'MonitoredAsset', 'SignalEvent', 'TradeOperation', 'VerificationTask']);
+    expect(wrapped.sort()).toEqual(['AssetState', 'MonitoredAsset', 'SignalEvent', 'SystemLog', 'TradeOperation', 'VerificationTask']);
+  });
+
+  // Rodada 3c (item 169): mesma trava do lado browser
+  // (src/api/entitiesRtdbTripwire.test.js) — resiliência precisa ser a
+  // camada mais externa, envolvendo o mirror, nunca o contrário.
+  it('SystemLog é composta como makeResilientLogEntity(withRtdbMirror(...)) — resiliência por FORA do mirror, nunca o contrário', () => {
+    expect(source).toMatch(/SystemLog:\s*makeResilientLogEntity\(withRtdbMirror\('SystemLog',\s*createEntity\('systemLogs'\)\)\)/);
   });
 
   it('databaseURL ausente deixa rtdb null (guard explícito, mesmo espírito do lado browser)', () => {
