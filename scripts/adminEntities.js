@@ -303,14 +303,14 @@ function makeResilientLogEntity(entity) {
 
 export const backend = {
   entities: {
-    MonitoredAsset: createEntity('monitoredAssets'),
+    MonitoredAsset: withRtdbMirror('MonitoredAsset', createEntity('monitoredAssets')),
     AssetState: withRtdbMirror('AssetState', createEntity('assetStates')),
     SignalEvent: withRtdbMirror('SignalEvent', createEntity('signalEvents')),
     TradeOperation: withRtdbMirror('TradeOperation', createEntity('tradeOperations')),
     PriceAlert: createEntity('priceAlerts'),
     SystemLog: makeResilientLogEntity(createEntity('systemLogs')),
     User: createEntity('users'),
-    VerificationTask: createEntity('verificationTasks'),
+    VerificationTask: withRtdbMirror('VerificationTask', createEntity('verificationTasks')),
   },
   locks: { acquireScanLock, releaseScanLock },
   tradeOps: {

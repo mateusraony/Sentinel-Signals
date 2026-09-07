@@ -37,7 +37,7 @@ export default function Assets() {
 
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['all-assets'],
-    queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
+    queryFn: () => rtdbEntities.MonitoredAsset.list('-created_date'),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 

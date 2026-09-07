@@ -4,6 +4,14 @@
       ".read": "auth != null",
       ".write": "auth != null"
     },
+    "monitoredAssets": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "verificationTasks": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
     "signalEvents": {
       ".read": "auth != null",
       ".write": "auth != null",

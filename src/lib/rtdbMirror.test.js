@@ -39,11 +39,13 @@ describe('createRtdbMirrorHelpers', () => {
 
   describe('withRtdbMirror', () => {
     it('entidade fora de RTDB_MIRRORED_ENTITIES é passthrough puro — nenhum mirror* é chamado', async () => {
+      // SystemLog (não MonitoredAsset — que entrou no escopo na rodada 3b) é
+      // o exemplo aqui: continua fora, candidata só à rodada 3c (item 169).
       const real = {
         create: vi.fn().mockResolvedValue({ id: 'x1', foo: 'bar' }),
         update: vi.fn().mockResolvedValue({ id: 'x1', foo: 'baz' }),
       };
-      const wrapped = helpers.withRtdbMirror('MonitoredAsset', real);
+      const wrapped = helpers.withRtdbMirror('SystemLog', real);
       expect(wrapped).toBe(real);
       await wrapped.create({ foo: 'bar' });
       expect(mirrorSet).not.toHaveBeenCalled();
@@ -100,6 +102,24 @@ describe('createRtdbMirrorHelpers', () => {
       const wrapped = helpers.withRtdbMirror('AssetState', real);
       await expect(wrapped.deleteMany({})).resolves.toBeUndefined();
       expect(mirrorRemove).not.toHaveBeenCalled();
+    });
+
+    // Item 169 addendum (auditoria pós-3a): delete() singular nunca tinha
+    // sido usado pelas 3 entidades das rodadas 1/2 — só apareceu com
+    // MonitoredAsset na 3b (Assets.jsx remove um ativo via delete(id), não
+    // deleteMany). Sem este wrapper, um ativo removido no Firestore ficaria
+    // pra sempre no espelho RTDB.
+    it('delete(id) remove do RTDB o mesmo id removido no Firestore', async () => {
+      const real = { delete: vi.fn().mockResolvedValue(undefined) };
+      const wrapped = helpers.withRtdbMirror('MonitoredAsset', real);
+      await wrapped.delete('asset_1');
+      expect(mirrorRemove).toHaveBeenCalledWith('monitoredAssets', 'asset_1');
+    });
+
+    it('delete(id) devolve exatamente o que o adaptador real devolveria', async () => {
+      const real = { delete: vi.fn().mockResolvedValue(undefined) };
+      const wrapped = helpers.withRtdbMirror('MonitoredAsset', real);
+      await expect(wrapped.delete('asset_1')).resolves.toBeUndefined();
     });
 
     it('devolve exatamente o que o adaptador real devolveria — mirror nunca altera o valor de retorno', async () => {
@@ -162,11 +182,13 @@ describe('createRtdbMirrorHelpers', () => {
     });
   });
 
-  it('RTDB_MIRRORED_ENTITIES trava exatamente no escopo atual (rodadas 1+2)', () => {
+  it('RTDB_MIRRORED_ENTITIES trava exatamente no escopo atual (rodadas 1+2+3b)', () => {
     expect(RTDB_MIRRORED_ENTITIES).toEqual({
       AssetState: 'assetStates',
+      MonitoredAsset: 'monitoredAssets',
       SignalEvent: 'signalEvents',
       TradeOperation: 'tradeOperations',
+      VerificationTask: 'verificationTasks',
     });
   });
 });

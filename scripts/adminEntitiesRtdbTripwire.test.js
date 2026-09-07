@@ -41,10 +41,10 @@ describe('adminEntities.js — tripwire de isolamento do mirror RTDB', () => {
     expect(exportBlock).toMatch(/withTransitionOpMirror\(transitionTradeOp\)/);
   });
 
-  it('só AssetState/SignalEvent/TradeOperation são envolvidas por withRtdbMirror no export final — escopo travado', () => {
+  it('só AssetState/MonitoredAsset/SignalEvent/TradeOperation/VerificationTask são envolvidas por withRtdbMirror no export final — escopo travado', () => {
     const exportBlock = source.slice(source.indexOf('entities: {'), source.indexOf('export const backend') + source.slice(source.indexOf('export const backend')).indexOf('locks:'));
     const wrapped = [...exportBlock.matchAll(/withRtdbMirror\('(\w+)'/g)].map((m) => m[1]);
-    expect(wrapped.sort()).toEqual(['AssetState', 'SignalEvent', 'TradeOperation']);
+    expect(wrapped.sort()).toEqual(['AssetState', 'MonitoredAsset', 'SignalEvent', 'TradeOperation', 'VerificationTask']);
   });
 
   it('databaseURL ausente deixa rtdb null (guard explícito, mesmo espírito do lado browser)', () => {

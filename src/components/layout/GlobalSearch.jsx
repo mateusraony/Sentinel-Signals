@@ -14,7 +14,7 @@ export default function GlobalSearch() {
 
   const { data: allAssets = [] } = useQuery({
     queryKey: ['monitored-assets'],
-    queryFn: () => backend.entities.MonitoredAsset.list(),
+    queryFn: () => rtdbEntities.MonitoredAsset.list(),
     staleTime: 60000,
   });
 

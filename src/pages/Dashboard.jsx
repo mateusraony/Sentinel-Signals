@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { backend } from '@/api/entities';
 import { rtdbEntities } from '@/api/rtdbEntities';
 import { Bell, Coins, TrendingUp, TrendingDown, Target, Clock, Search, ArrowUpDown, Swords } from 'lucide-react';
 import AssetCard from '@/components/dashboard/AssetCard';
@@ -45,7 +44,7 @@ export default function Dashboard() {
 
   const { data: assets = [], isLoading: loadingAssets } = useQuery({
     queryKey: ['monitored-assets'],
-    queryFn: () => backend.entities.MonitoredAsset.filter({ is_active: true }),
+    queryFn: () => rtdbEntities.MonitoredAsset.filter({ is_active: true }),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
