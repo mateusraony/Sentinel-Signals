@@ -27,13 +27,38 @@ import { forceExit } from './scanTimeout.mjs';
 // scanner.js's writeBatch already applies on the Firestore side.
 const CHUNK_SIZE = 500;
 
+// Incidente ao vivo (2026-09-07, run #4 deste workflow, docs/known-risks.md
+// item 152/169 addendum): um .list() sem limite em SystemLog leu 49.699
+// documentos do Firestore num ÚNICO backfill — sozinho, quase a cota diária
+// INTEIRA (~50k leituras/dia no Spark) — e derrubou o próximo scan agendado
+// (RESOURCE_EXHAUSTED, contido pelo timeout de 90s de scanTimeout.mjs, mas
+// mesmo assim um scan real perdido). TradeOperation/VerificationTask (depois
+// de SystemLog na ordem de RTDB_MIRRORED_ENTITIES) nunca chegaram a ser
+// backfilled nesse run. O painel só mostra os últimos 200 (Logs.jsx) ou 50
+// (DebugLogButton.jsx) SystemLog de qualquer forma — cobrir só os mais
+// recentes já fecha o "cold start" do mirror pro que o painel realmente lê,
+// sem gastar a cota inteira numa coleção que só cresce (sem purga
+// automatizada). Nenhuma outra coleção mirrorada precisou desse limite até
+// agora — AssetState/MonitoredAsset (dezenas) e SignalEvent (milhares, não
+// dezenas de milhares) ficam bem abaixo da cota diária mesmo sem limite;
+// TradeOperation também é lido por faixa de data (MonthlyReport.jsx), então
+// um limite por "mais recentes" cortaria histórico antigo que esse
+// consumidor específico ainda precisa — sem essa mesma justificativa de
+// escala, não ganhou um limite aqui.
+const LIST_LIMIT_OVERRIDES = {
+  SystemLog: 2000,
+};
+
 // Exported for scripts/backfill-rtdb.test.js — the rest of main() is a thin
 // wrapper (loop + forceExit) that, like run-scan.mjs/run-backfill-check.mjs,
 // isn't unit-tested directly in this repo's convention; the real chunking/
 // key-sanitization/collection-mapping logic here is.
 export async function backfillCollection(entityName, rtdbPath) {
-  const docs = await backend.entities[entityName].list();
-  console.log(`[backfill-rtdb] ${entityName}: ${docs.length} documento(s) lido(s) do Firestore`);
+  const limit = LIST_LIMIT_OVERRIDES[entityName];
+  const docs = limit
+    ? await backend.entities[entityName].list('-created_date', limit)
+    : await backend.entities[entityName].list();
+  console.log(`[backfill-rtdb] ${entityName}: ${docs.length} documento(s) lido(s) do Firestore${limit ? ` (limitado aos ${limit} mais recentes)` : ''}`);
 
   for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
     const chunk = docs.slice(i, i + CHUNK_SIZE);

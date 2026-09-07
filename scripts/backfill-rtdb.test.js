@@ -11,7 +11,7 @@ const { listMock, updateMock, refMock } = vi.hoisted(() => {
 });
 
 vi.mock('./adminEntities.js', () => ({
-  backend: { entities: { AssetState: { list: listMock }, TradeOperation: { list: listMock } } },
+  backend: { entities: { AssetState: { list: listMock }, TradeOperation: { list: listMock }, SystemLog: { list: listMock } } },
   rtdb: { ref: refMock },
 }));
 
@@ -69,5 +69,28 @@ describe('backfillCollection', () => {
     await backfillCollection('AssetState', 'assetStates');
     const [updates] = updateMock.mock.calls[0];
     expect(Object.keys(updates)[0]).toMatch(/^assetStates\//);
+  });
+
+  // Incidente ao vivo 2026-09-07 (docs/known-risks.md item 152/169
+  // addendum): SystemLog tem ~49.700 docs no Firestore — um .list() sem
+  // limite sozinho quase esgota a cota diária inteira (~50k leituras/dia no
+  // Spark) e derrubou o próximo scan agendado. SystemLog precisa ler com um
+  // limite; qualquer outra entidade (sem esse achado de escala) continua lendo
+  // tudo, sem limite.
+  it('SystemLog lê com um limite (mais recentes), NUNCA a coleção inteira sem limite', async () => {
+    listMock.mockResolvedValue([]);
+    const { backfillCollection } = await import('./backfill-rtdb.mjs');
+    await backfillCollection('SystemLog', 'systemLogs');
+    expect(listMock).toHaveBeenCalledWith('-created_date', expect.any(Number));
+    expect(listMock).not.toHaveBeenCalledWith();
+  });
+
+  it('entidades sem achado de escala (AssetState/TradeOperation) continuam lendo tudo, sem limite', async () => {
+    listMock.mockResolvedValue([]);
+    const { backfillCollection } = await import('./backfill-rtdb.mjs');
+    await backfillCollection('AssetState', 'assetStates');
+    await backfillCollection('TradeOperation', 'tradeOperations');
+    expect(listMock).toHaveBeenNthCalledWith(1);
+    expect(listMock).toHaveBeenNthCalledWith(2);
   });
 });
