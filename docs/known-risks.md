@@ -21086,3 +21086,15 @@ ambos teriam sido regressões reais de segurança no momento do cutover se
 não tivessem sido pegos aqui. Reforça por que `sentinel-security-review` é
 obrigatório antes de expor qualquer rota nova desta migração, não um passo
 formal.
+
+### Addendum (2026-09-08) — schema aplicado no Neon real
+
+Usuário cadastrou o secret `DATABASE_URL` no GitHub Actions e disparou
+`db-migrate.yml` manualmente (run #1) — todos os passos verdes, "Aplicar
+db/schema.sql" concluído em <1s sem erro. A instância de produção do Neon
+já tem todas as tabelas de `db/schema.sql`, incluindo o índice único
+parcial `trade_operations_active_anchor_uq` que fecha o mecanismo do CAS
+redesenhado. Continua tudo dark — nenhum código de produção lê/escreve
+nessa instância ainda. Próximo passo real de código é o cliente HTTP do
+browser (`src/api/entitiesPostgres.js`, item 6 do plano) ou o
+re-export de `scripts/adminEntities.js`, ainda não iniciados.
