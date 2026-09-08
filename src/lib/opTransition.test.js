@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, groupActiveOpsByAsset, isTerminalStatus, planTradeOpCreation, buildActiveOpsAnchorId, TERMINAL_STATUSES } from './opTransition.js';
+import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, groupActiveOpsByAsset, isTerminalStatus, planTradeOpCreation, planTradeOpCreationSql, buildActiveOpsAnchorId, TERMINAL_STATUSES } from './opTransition.js';
 
 describe('isTerminalStatus', () => {
   it('recognises every terminal status', () => {
@@ -133,6 +133,115 @@ describe('planTradeOpCreation', () => {
       pointerOp: null,
       existingOp: null,
     })).toEqual({ action: 'create', pointer: 'set' });
+  });
+});
+
+// Postgres-era sibling of planTradeOpCreation (Firestore→Neon migration
+// plan) — reviewed by sentinel-council-review (2026-09) before being
+// written. `activeRowsForAsset` stands in for what a real
+// `SELECT ... FOR UPDATE WHERE asset_id = $1 AND status NOT IN (terminal)`
+// would return; there is no pointer to repair/clear here, so the two cases
+// specific to that (planTradeOpCreation's "orphan pointer" tests above) are
+// deliberately NOT ported — they don't apply to a design with no pointer.
+describe('planTradeOpCreationSql', () => {
+  it('creates on a clean slate (no other active rows for the asset)', () => {
+    expect(planTradeOpCreationSql({ activeRowsForAsset: [], existingOpById: null, cascade: undefined, docId: 'op_new' }))
+      .toEqual({ action: 'create' });
+  });
+
+  it('blocks a non-cascade candidate while another op is genuinely live on the asset', () => {
+    const plan = planTradeOpCreationSql({
+      activeRowsForAsset: [{ id: 'op_a', status: 'RUNNER_ACTIVE' }],
+      existingOpById: null,
+      cascade: undefined,
+      docId: 'op_new',
+    });
+    expect(plan).toEqual({ action: 'blocked' });
+  });
+
+  it('never resurrects a terminal op reused by the retry loop', () => {
+    for (const s of TERMINAL_STATUSES) {
+      const plan = planTradeOpCreationSql({
+        activeRowsForAsset: [],
+        existingOpById: { id: 'op_a', status: s },
+        cascade: undefined,
+        docId: 'op_a',
+      });
+      expect(plan).toEqual({ action: 'reuse' });
+    }
+  });
+
+  it('reuses a live op found at the deterministic id, without treating it as another op blocking the asset', () => {
+    const plan = planTradeOpCreationSql({
+      // The op's own row comes back inside activeRowsForAsset too — a real
+      // SELECT WHERE asset_id=$1 AND status NOT IN (terminal) FOR UPDATE
+      // would include it.
+      activeRowsForAsset: [{ id: 'op_a', status: 'SIGNAL_CONFIRMED' }],
+      existingOpById: { id: 'op_a', status: 'SIGNAL_CONFIRMED' },
+      cascade: undefined,
+      docId: 'op_a',
+    });
+    expect(plan).toEqual({ action: 'reuse' });
+  });
+
+  // Council finding (Trading role): a retry by deterministic id must not
+  // self-block under the cascade-coexistence rule below just because its
+  // own (live) row is present in activeRowsForAsset.
+  it('a hierarchical-cascade retry of its own live op resolves to reuse, never self-blocks', () => {
+    const plan = planTradeOpCreationSql({
+      activeRowsForAsset: [{ id: 'op_a', status: 'RUNNER_ACTIVE', cascade: '4h_15m', hierarchical_cascade: true }],
+      existingOpById: { id: 'op_a', status: 'RUNNER_ACTIVE', cascade: '4h_15m', hierarchical_cascade: true },
+      cascade: '4h_15m',
+      docId: 'op_a',
+    });
+    expect(plan).toEqual({ action: 'reuse' });
+  });
+
+  // Defense-in-depth: even if a future caller fails to also resolve
+  // `existingOpById` (leaving it null) while the op's own row is still
+  // present in `activeRowsForAsset`, the row-id exclusion must keep the
+  // candidate from colliding with ITSELF under the same-cascade check.
+  it('excludes the candidate\'s own row from activeRowsForAsset before applying the cascade rule, even without existingOpById', () => {
+    const plan = planTradeOpCreationSql({
+      activeRowsForAsset: [{ id: 'op_a', status: 'RUNNER_ACTIVE', cascade: '4h_15m', hierarchical_cascade: true }],
+      existingOpById: null,
+      cascade: '4h_15m',
+      docId: 'op_a',
+    });
+    expect(plan).toEqual({ action: 'create' });
+  });
+
+  it('creates a hierarchical candidate when every other active row on the asset is also stamped, different cascade', () => {
+    const plan = planTradeOpCreationSql({
+      activeRowsForAsset: [{ id: 'op_a', status: 'RUNNER_ACTIVE', cascade: '4h_15m', hierarchical_cascade: true }],
+      existingOpById: null,
+      cascade: '1h_5m',
+      docId: 'op_new',
+    });
+    expect(plan).toEqual({ action: 'create' });
+  });
+
+  it('blocks a hierarchical candidate when another row of the SAME cascade is already active', () => {
+    const plan = planTradeOpCreationSql({
+      activeRowsForAsset: [{ id: 'op_a', status: 'RUNNER_ACTIVE', cascade: '4h_15m', hierarchical_cascade: true }],
+      existingOpById: null,
+      cascade: '4h_15m',
+      docId: 'op_new',
+    });
+    expect(plan).toEqual({ action: 'blocked' });
+  });
+
+  // Council finding (Trading role): coexistence is all-or-nothing — a
+  // single legacy/unstamped row occupying the asset blocks a hierarchical
+  // candidate too, mirroring groupActiveOpsByAsset's detection rule.
+  it('blocks a hierarchical candidate when the asset has a legacy non-stamped op active', () => {
+    const plan = planTradeOpCreationSql({
+      activeRowsForAsset: [{ id: 'op_legacy', status: 'RUNNER_ACTIVE', cascade: undefined, hierarchical_cascade: undefined }],
+      existingOpById: null,
+      cascade: '1h_5m',
+      docId: 'op_new',
+    });
+    expect(plan).toEqual({ action: 'blocked' });
   });
 });
 

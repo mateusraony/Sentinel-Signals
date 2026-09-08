@@ -119,6 +119,73 @@ export function planTradeOpCreation({ pointerOpId, pointerOp, existingOp }) {
   return { action: 'create', pointer: 'set' };
 }
 
+// Postgres-era sibling of planTradeOpCreation above, written for the
+// Firestore→Neon migration plan (assetActiveOps has no Postgres equivalent —
+// a transaction there can run `SELECT ... FOR UPDATE WHERE asset_id = $1 AND
+// status NOT IN (terminal)` directly, so there's no side pointer to repair or
+// clear; the `pointer: 'set'|'clear'|'keep'` branches of planTradeOpCreation
+// don't apply here and this function has none). Kept side-by-side with
+// planTradeOpCreation (not a replacement) until the Firestore backend is
+// decommissioned — see the migration plan's cutover phase.
+//
+// `activeRowsForAsset` is whatever a `SELECT ... FOR UPDATE` against
+// trade_operations for this asset_id (status NOT IN terminal) returns —
+// each row needs at least `{ id, cascade, hierarchical_cascade }`. Reviewed
+// by sentinel-council-review (2026-09) before being written, which is where
+// the two rules below came from — neither existed in planTradeOpCreation
+// because the Firestore doc-anchor design made them structurally impossible:
+//
+// 1. A signal retry reuses the SAME deterministic `docId` — if that op is
+//    already live, its own row comes back inside `activeRowsForAsset`. It
+//    must never be evaluated as "another op blocking this asset"; excluding
+//    it by id is what lets a retry of an already-active op resolve to
+//    `reuse` instead of spuriously colliding with itself under the
+//    cascade-coexistence rule below.
+// 2. Cascade coexistence (`hierarchical_cascade`) used to be free: separate
+//    Firestore anchor docs per (assetId, cascade) meant one cascade's
+//    transaction never even read the other's pointer. A single query
+//    against all of an asset's rows sees both, so the SAME "all-or-nothing"
+//    rule `groupActiveOpsByAsset` already enforces for duplicate DETECTION
+//    has to be enforced here too, at creation time: a hierarchical
+//    candidate is blocked by ANY other live row that isn't ALSO stamped
+//    hierarchical (a single legacy/unstamped op occupying the asset blocks
+//    everything, exactly like today), and by another row of the SAME
+//    cascade even if both are stamped (a real duplicate, not coexistence).
+//
+// Returns { action: 'blocked' | 'reuse' | 'create' }.
+export function planTradeOpCreationSql({ activeRowsForAsset, existingOpById, cascade, docId }) {
+  const others = (activeRowsForAsset || []).filter((row) => row.id !== docId);
+
+  if (existingOpById) {
+    // Terminal: don't resurrect it. Live: it's this call's own occupant of
+    // the asset (already excluded from `others` above) — either way, no new
+    // row to insert.
+    return { action: 'reuse' };
+  }
+
+  if (others.length === 0) {
+    return { action: 'create' };
+  }
+
+  // Not opting into cascade coexistence — any other live op on the asset
+  // blocks it, same as a shared (non-cascade-scoped) anchor always did.
+  if (!cascade) {
+    return { action: 'blocked' };
+  }
+
+  const allOthersHierarchical = others.every((row) => row.hierarchical_cascade === true);
+  if (!allOthersHierarchical) {
+    return { action: 'blocked' };
+  }
+
+  const sameCascadeAlreadyActive = others.some((row) => row.cascade === cascade);
+  if (sameCascadeAlreadyActive) {
+    return { action: 'blocked' };
+  }
+
+  return { action: 'create' };
+}
+
 // docs/known-risks.md item 37 (Bloco 4 Fase 1) — the doc-anchor ID for
 // `assetActiveOps`. Cascades that never opt into hierarchical coexistence
 // (the default, and every cascade until Fase 1 wires it in) keep the
