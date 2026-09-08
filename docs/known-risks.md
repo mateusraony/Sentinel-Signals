@@ -21281,3 +21281,53 @@ funcionando antes de decomissionar o do Firestore") está satisfeito — mas
 `npm run lint && npm test && npm run build` verdes (1751 testes rodando
 com `TEST_DATABASE_URL` setada — 5 testes novos de `backup-postgres.mjs`,
 incluindo o round-trip real).
+
+### Addendum (2026-09-08) — Fase 9: runbook de cutover + 7 gaps de código encontrados
+
+`docs/claude/postgres-cutover-runbook.md` — só documentação, nenhum código
+mudou nesta rodada. Ao escrever o passo a passo do dia do cutover
+("Confronte com o código antes de afirmar",
+`.claude/rules/documentation-truth.md`), confrontar o plano com o estado
+REAL do código achou **7 itens que o cutover precisa e nenhuma fase
+anterior implementou** — nenhum é regressão (as Fases 1-8 nunca prometeram
+cobri-los), mas o runbook não seria honesto se escondesse que "rodar o
+cutover" hoje não é possível só com o que já existe:
+
+1. `scripts/adminEntities.js` continua a reimplementação Firestore
+   completa (~330 linhas) — o re-export fino de `db/pgEntitiesCore.mjs`
+   previsto no plano ("Nova API própria") nunca foi feito (a Fase 5 já
+   registrava isso como "não bloqueia o resto" na época).
+2. `src/api/entities.js` continua 100% Firestore — o cutover troca seu
+   CONTEÚDO pelo de `entitiesPostgres.js` (Fase 6), preservando o
+   Firestore como `entitiesFirestoreLegacy.js`.
+3. `AuthContext.jsx`'s `loadOrCreateProfile` continua lendo
+   `users/{uid}` direto do Firestore — precisa trocar para
+   `fetch('/api/me', ...)` (a rota já existe, dark, Fase 5).
+4. **O achado mais concreto**: `POST /webhook/tradingview`
+   (`server/index.js:159-203`) continua gravando o dedup de `signal_id`
+   direto no Firestore via `runTransaction` — não existe NENHUM caminho
+   Postgres para isso hoje. `tradingview_webhook_events` tem tabela no
+   schema (Fase 2) mas foi deliberadamente excluída de `ENTITY_TABLES`
+   (`db/pgEntitiesCore.mjs`, "server-only, nunca passa por
+   `backend.entities`") — vai precisar de uma função dedicada
+   (`INSERT ... ON CONFLICT DO NOTHING RETURNING id`, já citada no
+   desenho original do plano, "Nova API própria") chamada direto pelo
+   webhook, não uma entidade genérica nova.
+5. `render.yaml`'s serviço `sentinel-signals-api` não declara
+   `DATABASE_URL` nem como `sync: false` — sem essa linha, o secret nem
+   aparece no dashboard do Render pra ser setado.
+6. `scripts/migrate-firestore-to-postgres.mjs`/`verify-postgres-
+   migration.mjs` (Fase 7) nunca rodaram contra o Firestore de produção
+   real — só contra Postgres local desta sandbox (mesma restrição de rede
+   já documentada, `db/CLAUDE.md`). Precisam de um "ensaio" real antes do
+   dia do cutover, não só a suíte de testes.
+7. Não existe workflow do GitHub Actions pra rodar essa migração real —
+   só `db-migrate.yml` (aplica o schema, não migra dado). Um novo
+   `workflow_dispatch` com os dois secrets juntos (`FIREBASE_SERVICE_
+   ACCOUNT_JSON` + `DATABASE_URL`) seguiria o mesmo padrão já provado por
+   `db-migrate.yml` — decisão de criar isso (ou rodar local) ainda em
+   aberto.
+
+O runbook documenta os 7 itens como checklist bloqueante — a fase 10
+(execução do cutover) continua não iniciada, e não deve começar antes
+desses itens fecharem.
