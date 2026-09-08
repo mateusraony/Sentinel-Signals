@@ -12,6 +12,13 @@ paths:
 ## Workflows
 
 - `ci.yml` — lint + `npm test` + build a cada push/PR. Alerta Telegram em falha.
+  Desde a migração Firestore→Neon (plano em
+  `/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`), o job
+  sobe um `services: postgres:` (imagem oficial `postgres:16`, local ao
+  runner, sem rede externa, sem custo) e passa `TEST_DATABASE_URL` pro
+  `npm test` — é o que faz `db/schema.test.js`/`db/concurrency.test.js`
+  rodarem de verdade em vez de pular (`describe.skipIf`). Nenhum outro
+  arquivo de teste usa esse serviço.
 - `scan.yml` — `npm run scan`. **Relógio de
   trading**: o cadenciamento real de
   ~5min vem de disparo **externo** (cron-job.org via `workflow_dispatch`,
