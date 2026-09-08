@@ -21086,3 +21086,63 @@ ambos teriam sido regressões reais de segurança no momento do cutover se
 não tivessem sido pegos aqui. Reforça por que `sentinel-security-review` é
 obrigatório antes de expor qualquer rota nova desta migração, não um passo
 formal.
+
+### Addendum (2026-09-08) — schema aplicado no Neon real
+
+Usuário cadastrou o secret `DATABASE_URL` no GitHub Actions e disparou
+`db-migrate.yml` manualmente (run #1) — todos os passos verdes, "Aplicar
+db/schema.sql" concluído em <1s sem erro. A instância de produção do Neon
+já tem todas as tabelas de `db/schema.sql`, incluindo o índice único
+parcial `trade_operations_active_anchor_uq` que fecha o mecanismo do CAS
+redesenhado. Continua tudo dark — nenhum código de produção lê/escreve
+nessa instância ainda. Próximo passo real de código é o cliente HTTP do
+browser (`src/api/entitiesPostgres.js`, item 6 do plano) ou o
+re-export de `scripts/adminEntities.js`, ainda não iniciados.
+
+### Addendum (2026-09-08) — Fase 6: cliente HTTP do browser (dark)
+
+`src/api/entitiesPostgres.js` — tradução fina de `backend.entities.<Nome>.
+{list,filter,get,set,create,createUnique,update,delete,bulkCreate,
+deleteMany}`, `backend.locks`, `backend.tradeOps`, `backend.quota` para as
+rotas HTTP já existentes (`server/routes/{entities,tradeOps,locks}.js`,
+Fase 5). Nenhum arquivo de produção importa isto ainda —
+`src/api/entities.js` (Firestore) continua sendo o backend real.
+
+Reusa `callBackend` (`src/lib/apiBackend.js`, já em produção para
+`/api/telegram-notify`/`/api/backtest/*`) em vez de reimplementar
+fetch/header de auth — "reuse antes de criar". Extensão aditiva feita em
+`callBackend`: `allow404` (opt-in, default `false`) para `get(id)` devolver
+`null` num 404 em vez de lançar — mesmo contrato do `get()` Firestore
+original (`snap.exists() ? ... : null`); nenhum chamador existente passa
+essa opção, então o comportamento deles não muda. Corpo omitido também para
+`DELETE` (nenhum chamador existente usava esse método antes).
+
+Duas decisões de forma deliberadas, ambas fora do escopo da Fase 6 mas
+preservando a paridade de forma exigida pelo plano:
+- `entities.User` existe no objeto (por forma, os ~20 consumidores não
+  fazem checagem condicional de coleção) mas qualquer chamada real
+  lançaria 403 — a coleção `User` é bloqueada na rota genérica de
+  propósito (`server/entityCollectionGuard.js`, addendum acima). Confirmado
+  por grep que nenhum arquivo de produção chama `backend.entities.User`
+  hoje (`AuthContext.jsx` lê o Firestore direto, não passa pelo adaptador)
+  — o consumidor real dessa informação no cutover será `GET /api/me`, fora
+  deste adaptador.
+- `backend.agents` (Strategy Reviewer) foi **omitido** do objeto —
+  `agentConversations` não é migrado nesta rodada (decisão de escopo do
+  plano) e `StrategyReviewer.jsx` é placeholder pausado que nem importa
+  `backend` hoje (confirmado por grep). `backend.quota.getAndResetOpCounts()`
+  vira stub local (`{reads:0, writes:0}`, nunca chama rede) — Postgres/Neon
+  não tem teto diário de operações, então o contador Firestore não tem
+  equivalente que faça sentido calcular no cliente.
+
+Testado mockando `callBackend` (não `global.fetch` diretamente — mesmo
+padrão de `src/lib/telegram.test.js` para `src/api/entities.js`: mockar a
+dependência imediata, já que `callBackend` em si só é exercitável de ponta
+a ponta com `VITE_BACKEND_URL`/`auth.currentUser` reais, que já são
+responsabilidade de `apiBackend.js`, não deste arquivo). 20 testes,
+`src/api/entitiesPostgres.test.js` — path/método/corpo de cada tradução,
+incluindo o caminho 404→`null` de `get()` e os dois casos de
+`transitionTradeOp` (com e sem `options`).
+
+`npm run lint && npm test && npm run build` verdes (1685 testes, 3
+arquivos gated por `TEST_DATABASE_URL` pulados como esperado sem a var).
