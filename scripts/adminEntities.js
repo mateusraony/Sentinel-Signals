@@ -332,7 +332,10 @@ export const backend = {
   quota: { getAndResetOpCounts },
 };
 
-// rtdb is exported for scripts/backfill-rtdb.mjs (docs/known-risks.md item
-// 152 addendum) — the one-time Firestore→RTDB copy reuses this exact
-// connection/guard instead of re-initializing firebase-admin/database itself.
-export { FieldValue, rtdb };
+// db/rtdb are exported for one-time migration scripts (scripts/backfill-
+// rtdb.mjs, docs/known-risks.md item 152 addendum; scripts/migrate-
+// firestore-to-postgres.mjs, Fase 7 do plano de migração Firestore→Neon)
+// that need to read Firestore directly (raw collection queries/cursors),
+// not through the backend.entities.* adapter above — reusing this
+// already-initialized app/connection instead of a 2nd initializeApp() call.
+export { db, FieldValue, rtdb };

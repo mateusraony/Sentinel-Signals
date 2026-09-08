@@ -21146,3 +21146,81 @@ incluindo o caminho 404→`null` de `get()` e os dois casos de
 
 `npm run lint && npm test && npm run build` verdes (1685 testes, 3
 arquivos gated por `TEST_DATABASE_URL` pulados como esperado sem a var).
+
+### Addendum (2026-09-08) — Fase 7: scripts operacionais de migração de dados
+
+`scripts/migrate-firestore-to-postgres.mjs` + `scripts/verify-postgres-
+migration.mjs` — ainda **não executados contra dados reais** (nem Firestore
+de produção nem o Neon real; validados só contra Postgres local desta
+sandbox, mesma restrição de rede já documentada). Não fazem parte do
+cutover em si — só preenchem/verificam a instância Postgres para uma
+decisão futura de promoção (fase 10 do plano).
+
+**Achado de desenho, resolvido antes de escrever o script**: `bulkCreate`/
+`create` existentes em `db/pgEntitiesCore.mjs` sempre geram um id novo
+(`crypto.randomUUID()`) — inadequados para migração, que precisa preservar
+o id ORIGINAL do documento Firestore (evita remapear referências cruzadas
+como `asset_id` entre coleções, decisão já registrada no plano). Nova
+função `bulkImportEntity(entityName, items)` (aditiva, mesmo arquivo):
+preserva `item.id`, faz upsert completo (`ON CONFLICT DO UPDATE`, não
+"insere se ausente") — rodar o script mais de uma vez (ex.: validação
+contra um branch de teste do Neon antes do cutover real) sempre converge
+para o snapshot ATUAL do Firestore, nunca deixa uma linha desatualizada
+silenciosamente atrás de um "já existe, ignorado". Nunca toca
+`active_ops_anchor` (`TradeOperation`) — analisado e confirmado que não
+precisa: a decisão de bloqueio do CAS (`planTradeOpCreationSql`) lê
+`status`/`asset_id`/`cascade`/`hierarchical_cascade` direto da tabela, não
+a âncora, então uma operação ativa migrada com âncora `NULL` já bloqueia
+corretamente uma nova criação para o mesmo ativo (`SELECT ... FOR UPDATE
+WHERE asset_id = $1 AND status NOT IN (terminal)` encontra a linha
+normalmente) — provado com um teste real contra Postgres
+(`db/pgEntitiesCore.test.js`, "uma TradeOperation ativa migrada... bloqueia
+createTradeOpIfNoneActive").
+
+**Achado de dado, resolvido antes de escrever o script**: o único campo
+Firestore não-primitivo em uso em produção (`users/{uid}.created_at`,
+`serverTimestamp()`, ver `CLAUDE.md` "Zero tipos exóticos do Firestore em
+uso") chega do `firebase-admin` como uma instância `Timestamp` real, não
+uma string — `JSON.stringify` direto nela não produziria a mesma
+representação ISO8601 que o resto do app usa. `scripts/
+firestorePlainValue.mjs` (helper puro, sem `firebase-admin` no
+carregamento — mesma lição do item 166, "módulo que faz trabalho no
+carregamento é intestável") converte por duck-typing (`toDate`/`seconds`/
+`nanoseconds`, não `instanceof`, pra não acoplar a uma classe específica)
+antes de gravar/comparar. O mesmo módulo expõe `canonicalJson` (chaves de
+objeto ordenadas recursivamente, ordem de array preservada) — usado pelo
+checksum do script de verificação.
+
+**Paginação real, não um `list()` gigante nem um `limit` truncando
+histórico**: diferente de `backfill-rtdb.mjs` (que LIMITA `SystemLog` aos
+2000 mais recentes — justificado ali por ser um espelho de LEITURA cujo
+único consumidor real, o painel, só mostra os últimos 200/50), a migração
+real precisa do histórico INTEIRO (Postgres passa a ser a fonte de
+verdade) — cortar teria descartado dado permanentemente. Em vez disso,
+pagina por cursor de documento (`FieldPath.documentId()` + `startAfter`,
+500 por página) — o CUSTO de leitura contra a cota do Firestore continua
+sendo aproximadamente o mesmo (não tem como migrar tudo por menos que ler
+tudo), mas paginar evita um único request gigante (timeout, pico de
+memória) e deixa o progresso visível/interrompível página a página. Rodar
+isto é inerentemente uma operação de "custo alto, uma vez" — sem workflow
+agendado, prevista para a janela de manutenção do cutover.
+
+**Escopo**: as 10 entidades de `ENTITY_TABLES` (8 coleções "plurais" + 2
+documentos singleton `current`). Fora de propósito, mesmo raciocínio já
+documentado em `db/pgEntitiesCore.mjs`: `tradingviewWebhookEvents` (log de
+dedup só de auditoria, sem consumidor que dependa do histórico) e
+`scannerLocks` (estado de execução efêmero). `agentConversations`/
+`experimentalRf1hShadow*` fora por decisão de escopo já registrada no
+plano.
+
+**Testes**: `scripts/firestorePlainValue.test.js` (puro),
+`scripts/migrate-firestore-to-postgres.test.js` (paginação/cursor/chunking
+com um Firestore fake — mesma convenção de `backfill-rtdb.test.js`),
+`scripts/verify-postgres-migration.test.js` (checksum/comparação/detecção
+de duplicata, puro, + a mesma paginação fake), e 5 testes NOVOS contra
+Postgres REAL em `db/pgEntitiesCore.test.js` para `bulkImportEntity`
+(preserva id, upsert converge no snapshot mais recente, lista vazia é
+no-op, item sem id lança erro claro, e o teste do `active_ops_anchor`
+acima). `npm run lint && npm test && npm run build` verdes (1746 testes
+rodando com `TEST_DATABASE_URL` setada contra Postgres local — nenhum
+arquivo gated pulado nesta rodada).
