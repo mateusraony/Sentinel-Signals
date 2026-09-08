@@ -10,9 +10,12 @@ const BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
 // method defaults to GET when no body is passed, POST otherwise — existing
 // callers (all POST-with-body) keep working unchanged; new GET-only callers
-// (e.g. polling a job's status) just omit body.
-/** @param {string} path @param {object} [body] @param {{ method?: string }} [options] */
-export async function callBackend(path, body, { method } = {}) {
+// (e.g. polling a job's status) just omit body. `allow404` is opt-in (used by
+// src/api/entitiesPostgres.js's `get(id)`, which — like the Firestore
+// original in src/api/entities.js — returns `null` for a missing document
+// instead of throwing); every existing caller keeps throwing on 404 as before.
+/** @param {string} path @param {object} [body] @param {{ method?: string, allow404?: boolean }} [options] */
+export async function callBackend(path, body, { method, allow404 } = {}) {
   if (!BASE_URL) {
     throw new Error('VITE_BACKEND_URL não configurado.');
   }
@@ -27,8 +30,11 @@ export async function callBackend(path, body, { method } = {}) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
     },
-    ...(httpMethod === 'GET' ? {} : { body: JSON.stringify(body || {}) }),
+    ...(httpMethod === 'GET' || httpMethod === 'DELETE' ? {} : { body: JSON.stringify(body || {}) }),
   });
+  if (allow404 && response.status === 404) {
+    return null;
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data.error || `Request failed with status ${response.status}`);
