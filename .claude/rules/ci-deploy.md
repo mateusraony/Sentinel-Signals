@@ -80,6 +80,15 @@ paths:
 - `keep-warm.yml` — ping `/health` a cada 10 min (Render free não hibernar).
 - `backup.yml` — backup diário das coleções de negócio → branch `backups`.
 - `deploy-firestore.yml` — deploy **manual** de rules/índices.
+- `db-migrate.yml` — disparo **manual** (`workflow_dispatch` só): aplica
+  `db/schema.sql` (via `db/migrate.mjs`, idempotente) no projeto Neon real,
+  usando o secret `DATABASE_URL`. Existe porque a sessão remota do Claude
+  Code não alcança `*.neon.tech` (política de rede do ambiente — ver
+  `db/CLAUDE.md`), então este é o único jeito automatizado de aplicar o
+  schema sem o usuário rodar um comando na própria máquina. Parte do plano
+  de migração Firestore→Neon
+  (`/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`), ainda
+  não conectado a nenhum código de produção.
 - `backfill-rtdb.yml` — disparo **manual** (`workflow_dispatch` só) de
   `scripts/backfill-rtdb.mjs` (`docs/known-risks.md` item 152 addendum):
   copia `assetStates`/`signalEvents`/`tradeOperations` do Firestore pro RTDB

@@ -1,0 +1,37 @@
+name: Aplicar schema Postgres (Neon)
+
+# Disparo manual — fecha a lacuna descrita em
+# /root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md: a sessão
+# remota do Claude Code não alcança *.neon.tech (política de rede do
+# ambiente, mesma classe de restrição que já bloqueia a Binance ali — ver
+# db/CLAUDE.md), então aplicar db/schema.sql no projeto Neon real só é
+# possível daqui (runner do GitHub, rede irrestrita) ou pela máquina do
+# usuário. Idempotente (db/migrate.mjs usa IF NOT EXISTS em tudo) — seguro
+# rodar de novo a qualquer momento, inclusive depois de uma mudança em
+# db/schema.sql.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Aplicar db/schema.sql
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Secret DATABASE_URL não configurado (Settings → Secrets and variables → Actions → New repository secret, nome exato DATABASE_URL, valor = connection string 'pooled' do Console Neon)."
+            exit 1
+          fi
+          node db/migrate.mjs | tee -a "$GITHUB_STEP_SUMMARY"

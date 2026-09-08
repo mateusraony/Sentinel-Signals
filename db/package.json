@@ -1,0 +1,9 @@
+{
+  "name": "sentinel-signals-db",
+  "private": true,
+  "type": "module",
+  "description": "Adaptador Postgres/Neon compartilhado (db/pgEntitiesCore.mjs) — package.json próprio só porque o Render builda server/ isolado (rootDir), sem instalar as dependências raiz. Ver render.yaml (buildCommand de sentinel-signals-api) e db/CLAUDE.md.",
+  "dependencies": {
+    "pg": "^8.23.0"
+  }
+}

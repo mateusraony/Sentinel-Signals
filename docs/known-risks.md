@@ -20939,3 +20939,150 @@ rodar de novo (mesma garantia já documentada acima).
 
 **Verificação**: `npm run lint && npm test (1636, 87 arquivos) && npm run
 build` verdes.
+
+## 170. Migração Firestore→Neon — Fases 2-5: schema, CAS redesenhado, API própria (2026-09-08)
+
+Continuação do item 151 (achado 3) e da decisão de migrar para Neon (Postgres
+serverless gratuito, sem teto diário) tomada pelo usuário após pesquisa
+verificada nesta sessão. Plano completo em
+`/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`. Registro
+das decisões técnicas desta rodada — todo o código é **dark** (nada em
+produção chama nada disto ainda; `src/api/entities.js`/Firestore continuam
+sendo o backend real até o cutover).
+
+**Conselho de revisão antes do código** (`sentinel-council-review`, 5 papéis
+independentes + síntese) sobre o redesenho do CAS de `TradeOperation`
+(eliminar o documento-âncora `assetActiveOps`, que só existia por causa de
+uma limitação específica do Firestore — "transactions can only read
+documents, not queries"). Achado crítico, confirmado independentemente por
+2 papéis (Concorrência e Testes): um `SELECT ... FOR UPDATE` sozinho NÃO
+fecha a corrida de criar a primeira operação de um ativo — a cláusula só
+trava linhas que já EXISTEM, então duas transações concorrentes (browser +
+cron) criando a 1ª op de um ativo simultaneamente poderiam ambas commitar,
+gerando 2 operações ativas. Fechado com um **índice único parcial**
+(`trade_operations_active_anchor_uq`, coluna `active_ops_anchor` =
+`buildActiveOpsAnchorId(asset_id, cascade)`, `NULL` quando terminal) — o
+`INSERT` que perde a corrida recebe um erro de constraint (`23505`),
+tratado como "bloqueado", nunca como exceção. Achado da parte de Trading
+(também incorporado): a coexistência entre cascatas hierárquicas
+(`hierarchical_cascade`) era garantida ESTRUTURALMENTE por documentos-âncora
+separados no Firestore — sem esse isolamento físico, a nova função pura
+`planTradeOpCreationSql` (`src/lib/opTransition.js`, sibling aditiva de
+`planTradeOpCreation`, que continua em uso enquanto o Firestore for real)
+precisou replicar essa regra explicitamente, incluindo excluir a própria
+linha do candidato (evita autobloqueio num retry de sinal).
+
+**`db/schema.sql`**: padrão híbrido (coluna tipada só para campo
+filtrado/ordenado hoje + `data JSONB` com o documento completo) — evita
+migração de schema a cada campo novo em `TradeOperation`, que o histórico
+deste projeto mostra crescer com frequência. `db/migrate.mjs` aplica o
+arquivo inteiro (idempotente via `IF NOT EXISTS`).
+
+**Descoberta de ambiente**: esta sessão remota do Claude Code não alcança
+`*.neon.tech`/`*.aws.neon.tech` nem por TCP direto nem pela API HTTP do
+driver serverless (`@neondatabase/serverless`, testado e bloqueado com 403
+"Host not in allowlist") — política de rede do ambiente, mesma classe de
+restrição que já bloqueia a Binance aqui. Não é específico a nenhuma
+credencial. Contornado descobrindo que o ambiente já tem Postgres 16 e
+Docker instalados localmente — toda a validação desta rodada (schema,
+índice único, CAS real com 2 conexões distintas) rodou contra esse Postgres
+local, e `ci.yml` ganhou um `services: postgres:` (container local ao
+runner do GitHub, sem custo, sem rede externa) para a mesma validação rodar
+em todo PR daqui pra frente. A aplicação final do schema no projeto Neon
+real ganhou um workflow dedicado (`db-migrate.yml`, `workflow_dispatch`
+manual, secret `DATABASE_URL`) — só o runner do GitHub ou a máquina do
+usuário alcançam o Neon de verdade.
+
+**`db/pgEntitiesCore.mjs` — decisão ESM, não CJS** (revisão de uma escolha
+inicial do plano): as funções puras de que este módulo depende
+(`opTransition.js`, `assertNoUndefinedFields.js`, `deepMergeFirestore.js`)
+só existem como ESM. `server/index.js` (CommonJS) consome via `import()`
+dinâmico (`server/pgCoreLoader.js`, cacheado). 20 testes de integração
+contra Postgres real (`db/pgEntitiesCore.test.js`), incluindo o mesmo
+cenário de corrida do item de concorrência acima repetido 25× contra as
+funções REAIS (`createTradeOpIfNoneActive`/`transitionTradeOp`), não só SQL
+cru.
+
+**Descoberta de deploy**: `render.yaml`'s `sentinel-signals-api` builda só
+`server/` (`rootDir: server`) — um `npm ci` ali nunca instalaria as
+dependências de `db/` (o pacote `pg`), já que Node resolve módulos subindo
+a árvore de diretórios a partir de QUEM faz o `import`, não de quem chama a
+função por cima. `db/` ganhou seu próprio `package.json`/`package-lock.json`
+só por causa disso, e o `buildCommand` do serviço virou
+`npm ci && npm --prefix ../db ci`. Achado só porque o boot real do servidor
+foi testado de ponta a ponta (credenciais falsas geradas localmente, nunca
+commitadas) — sem esse teste, o gap só apareceria depois do cutover, em
+produção.
+
+**Rotas novas em `server/routes/{entities,tradeOps,locks,me}.js`**:
+equivalente funcional ao deny-by-default de `firestore.rules` (nome de
+coleção fora de `ENTITY_TABLES` → 404, único registro, reaproveitado tanto
+pela rota genérica quanto pelo core — simplificação sobre o
+`server/entityRegistry.js` separado do desenho original do plano).
+`server/tradeOpPatchGuard.js`: guarda de campos proibidos no `patch` de
+`POST /api/trade-ops/:id/transition` — **denylist, não allowlist** (desvio
+deliberado da sugestão literal do conselho de segurança, documentado no
+próprio arquivo): os campos legítimos de um patch de `TradeOperation` são
+dezenas e crescem com frequência (ver o histórico em
+`.claude/rules/trading-engine.md`), então uma allowlist teria o mesmo
+atrito de "espelho mantido à mão" que este projeto já evita em outros
+lugares; a denylist (`id`/`asset_id`/`created_date`/`symbol`/
+`active_ops_anchor`) cobre o risco real (sobrescrever a identidade/chave do
+CAS) sem essa fricção. `PATCH /api/entities/User/:id` replica a regra de
+não-auto-promoção a admin do `firestore.rules` atual como checagem
+explícita (rejeita mudança de `role` com 403).
+
+**Verificação**: `npm run lint && npm test` verdes (1688 testes,
+`TEST_DATABASE_URL` setada contra o Postgres local — os arquivos de
+integração pulam de forma limpa sem essa var), `npm run build` verde. 3
+verificações por reintrodução deliberada: removido o filtro de
+auto-exclusão + a checagem de mesma-cascata de `planTradeOpCreationSql`
+(2 testes falham como esperado); removido o índice único parcial do schema
+(o teste de corrida falha com 2 operações ativas, exatamente o achado do
+conselho); removido o `catch` do erro `23505` em
+`createTradeOpIfNoneActive` (a corrida vira exceção não tratada em vez de
+resultado limpo) — os três restaurados depois de confirmados. Boot real do
+`server/index.js` testado (credenciais falsas locais, nunca commitadas):
+`/health` 200, rota nova sem `DATABASE_URL` → 503, com `DATABASE_URL` mas
+sem `Authorization` → 401 antes mesmo de checar se a coleção existe (sem
+vazamento de informação para chamador não autenticado).
+
+### Addendum — 2 achados reais do `sentinel-security-review` desta fase, corrigidos antes de mesclar
+
+Rodada de revisão pedida explicitamente sobre a superfície nova (server/
+routes + `db/pgEntitiesCore.mjs`) — dois problemas concretos, não
+hipotéticos, ambos verificados por reintrodução deliberada contra Postgres
+real:
+
+1. **`users/{uid}` perdia o isolamento "dono only" que `firestore.rules`
+   garante hoje.** A 1ª versão da rota `PATCH /api/entities/User/:id` só
+   bloqueava mudar `role` — GET/PATCH/DELETE de QUALQUER uid passavam
+   direto, e a listagem/filtro (`GET /api/entities/User`) devolvia a tabela
+   `users` INTEIRA (email+role de todo mundo) pra qualquer chamador
+   autenticado (a auth aqui é anônima — qualquer sessão). Corrigido
+   bloqueando a coleção `User` por completo na rota genérica (403,
+   `server/entityCollectionGuard.js`) — `GET /api/me` já cobre 100% do uso
+   legítimo (ler/criar o PRÓPRIO perfil, sempre por `req.uid`, nunca por um
+   id vindo do cliente). Reintrodução: removido o bloqueio,
+   `server/entityCollectionGuard.test.js` falha exatamente como esperado
+   (`allowed: true` em vez de `false`/403) — restaurado.
+2. **Injeção de SQL de verdade via nome de campo em `?filters=`/`sort`.**
+   `data->>'campo'` (o fallback pra campo sem coluna tipada,
+   `db/pgEntitiesCore.mjs`) interpolava `field` direto na string SQL —
+   Postgres não tem placeholder (`$1`) pra NOME de coluna, só pra valor.
+   Um filtro como `{"x'); DROP TABLE monitored_assets;--": 1}` (JSON
+   arbitrário vindo de `GET /api/entities/:collection?filters=...`) chegava
+   sem escapar na query. Corrigido com `assertSafeFieldName` (regex
+   `^[a-zA-Z_][a-zA-Z0-9_]*$`, rejeita — nunca tenta escapar) no único
+   ponto de entrada (`columnExpr`, usado tanto por filtro quanto por
+   `sort`). Reintrodução contra Postgres REAL (não teoria): removida a
+   validação, o payload malicioso chegou a produzir `syntax error at or
+   near ";"` — prova concreta de que a string estava sendo interpolada sem
+   proteção antes da correção; restaurada, `db/pgEntitiesCore.test.js`
+   (22 testes) volta a passar.
+
+Nenhum dos dois chegou a produção (rotas dark, PR ainda não mesclado) — mas
+ambos teriam sido regressões reais de segurança no momento do cutover se
+não tivessem sido pegos aqui. Reforça por que `sentinel-security-review` é
+obrigatório antes de expor qualquer rota nova desta migração, não um passo
+formal.

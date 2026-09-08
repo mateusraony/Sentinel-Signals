@@ -6,6 +6,13 @@ const { initializeApp, cert } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
 const { createCooldown } = require('./rateLimit');
+// Fase 5 do plano de migração Firestore→Neon
+// (/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md) — rotas
+// dark, ver o comentário perto de app.use(...) mais abaixo.
+const { createEntitiesRouter } = require('./routes/entities');
+const { createTradeOpsRouter } = require('./routes/tradeOps');
+const { createLocksRouter } = require('./routes/locks');
+const { createMeRouter } = require('./routes/me');
 
 // Fail fast with a clear message instead of an opaque JSON.parse crash if
 // this ever gets deployed without its secrets configured.
@@ -57,7 +64,12 @@ async function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Missing Authorization bearer token.' });
   }
   try {
-    req.uid = (await auth.verifyIdToken(idToken)).uid;
+    const decoded = await auth.verifyIdToken(idToken);
+    req.uid = decoded.uid;
+    // Aditivo (Fase 5 do plano de migração) — só server/routes/me.js lê
+    // isto hoje; nenhum chamador existente é afetado por um campo novo em
+    // `req`.
+    req.userEmail = decoded.email ?? null;
     next();
   } catch (e) {
     console.error('verifyIdToken failed:', e.message);
@@ -420,6 +432,18 @@ app.get('/api/backtest/artifact/:runId', requireAuth, requireGithubToken, async 
     res.status(500).json({ error: 'Erro interno ao buscar o relatório.' });
   }
 });
+
+// --- Migração Firestore→Neon — Fase 5 (dark) ---------------------------
+// Rotas HTTP sobre db/pgEntitiesCore.mjs
+// (/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md). SEM
+// mudança de comportamento em produção: nada no browser chama estes
+// caminhos ainda (src/api/entities.js continua 100% Firestore até o
+// cutover), e sem DATABASE_URL configurada elas respondem 503
+// (requireDatabaseUrl em server/pgCoreLoader.js) em vez de tentar conectar.
+app.use('/api/entities', createEntitiesRouter({ requireAuth }));
+app.use('/api/trade-ops', createTradeOpsRouter({ requireAuth }));
+app.use('/api/locks', createLocksRouter({ requireAuth }));
+app.use('/api/me', createMeRouter({ requireAuth }));
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`sentinel-signals-api listening on :${port}`));
