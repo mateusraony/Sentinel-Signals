@@ -89,6 +89,22 @@ paths:
   de migração Firestore→Neon
   (`/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`), ainda
   não conectado a nenhum código de produção.
+- `backup-postgres.yml` — backup diário do Postgres/Neon via `pg_dump`
+  (Fase 8 do plano de migração Firestore→Neon,
+  `/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`) —
+  **pré-requisito obrigatório antes de qualquer decomissão** do backup do
+  Firestore (`backup.yml` acima continua rodando em paralelo até o cutover
+  real). `scripts/backup-postgres.mjs` gera um dump `--format=custom`
+  (exclui `users`/`scanner_locks` — ver o cabeçalho do script) e publica na
+  branch `backups-postgres` do MESMO repositório privado
+  `mateusraony/sentinel-signals-backups`, mas numa branch **separada** da
+  `backups` de `backup.yml` — evita os dois workflows fazendo `git push` na
+  mesma branch em janelas próximas (risco de non-fast-forward). Mesma deploy
+  key SSH reaproveitada (`BACKUP_DEPLOY_KEY`, escopo já é o repositório
+  inteiro). `schedule` deslocado 14min do `backup.yml` (`cron: "37 3 * * *"`
+  vs. `"23 3 * * *"`), mesmo motivo. Restauração via `pg_restore` puro (sem
+  script próprio, ao contrário do Firestore) — ver
+  `docs/restore-postgres.md`.
 - `backfill-rtdb.yml` — disparo **manual** (`workflow_dispatch` só) de
   `scripts/backfill-rtdb.mjs` (`docs/known-risks.md` item 152 addendum):
   copia `assetStates`/`signalEvents`/`tradeOperations` do Firestore pro RTDB

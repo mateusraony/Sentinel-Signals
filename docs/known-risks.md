@@ -21224,3 +21224,60 @@ no-op, item sem id lança erro claro, e o teste do `active_ops_anchor`
 acima). `npm run lint && npm test && npm run build` verdes (1746 testes
 rodando com `TEST_DATABASE_URL` setada contra Postgres local — nenhum
 arquivo gated pulado nesta rodada).
+
+### Addendum (2026-09-08) — Fase 8: backup do Postgres (pré-requisito p/ decomissão)
+
+`scripts/backup-postgres.mjs` + `.github/workflows/backup-postgres.yml` —
+diferente das Fases 6/7, esta é a mais SIMPLES do plano até aqui: Postgres
+já tem ferramenta de backup/restore nativa e madura (`pg_dump`/
+`pg_restore`), então o script é um wrapper fino (monta argumentos, invoca
+o binário, confere código de saída) em vez de uma reimplementação —
+contraste direto com `scripts/backup-firestore.mjs`/`restore-firestore.mjs`
+(~100 linhas reimplementando snapshot JSON + restauração campo a campo,
+necessário só porque o export/import oficial do Firestore exige o plano
+pago Blaze, item 14).
+
+**Decisão de escopo** (`EXCLUDED_TABLES`): `users` fica fora do dump —
+mesma decisão já tomada pro backup do Firestore (registros de perfil
+ligados à auth anônima, não vale a pena restaurar num desastre).
+`scanner_locks` também fica fora — estado de execução efêmero ("quem está
+rodando agora" no instante do backup), mesmo raciocínio já usado pra
+excluir essa tabela da migração de dados (Fase 7). `tradingview_webhook_
+events` fica DENTRO de propósito (diferente da migração, que a pulou) —
+é log de auditoria, vale preservar num backup mesmo sem precisar dele pra
+reconstruir estado ao vivo.
+
+**Aceito, não resolvido**: ao contrário do Firestore (limitado a 3000
+`SystemLog` por causa da cota diária de LEITURA), Postgres não tem esse
+teto — mas isso significa que `system_logs` cresce sem limite dentro do
+dump também. `pg_dump` só filtra por tabela inteira, não por linha (um
+corte por idade exigiria uma query customizada, fora do escopo desta
+fase). Aceito por ora, revisitar se o tamanho do backup virar problema
+real — ainda não rodou nenhuma vez em produção pra ter esse dado.
+
+**Decisão de infraestrutura**: branch `backups-postgres` **separada** da
+`backups` que `backup.yml` (Firestore) já usa no mesmo repositório privado
+`sentinel-signals-backups` — evita os dois workflows fazendo `git push` na
+mesma branch em janelas de tempo próximas (risco real de
+non-fast-forward se coincidirem, ex.: retry ou disparo manual concorrente
+com o agendado). Mesma deploy key SSH reaproveitada sem mudança (a chave é
+escopada ao repositório inteiro, não a uma branch). `schedule` deslocado
+14min do `backup.yml` pela mesma razão.
+
+**Testado com round-trip REAL** (`pg_dump` → `TRUNCATE` → `pg_restore`,
+não um mock) contra Postgres local: insere dado em `monitored_assets`/
+`users`/`tradingview_webhook_events`, gera o dump, apaga tudo, restaura, e
+confirma — `monitored_assets`/`tradingview_webhook_events` voltam
+intactos, `users` permanece vazio (prova concreta de que `--exclude-table`
+funcionou, não só a leitura do argumento de linha de comando).
+`docs/restore-postgres.md` documenta a restauração manual (`pg_restore`
+puro, sem script próprio).
+
+Com isso, o pré-requisito da fase 11 do plano ("backup do Postgres
+funcionando antes de decomissionar o do Firestore") está satisfeito — mas
+`backup.yml` (Firestore) continua rodando em paralelo até o cutover real
+(fase 10, ainda não iniciada).
+
+`npm run lint && npm test && npm run build` verdes (1751 testes rodando
+com `TEST_DATABASE_URL` setada — 5 testes novos de `backup-postgres.mjs`,
+incluindo o round-trip real).
