@@ -18,6 +18,19 @@ export function isTerminalStatus(status) {
   return TERMINAL_STATUSES.includes(status);
 }
 
+// Every value TradeOperation.status is allowed to hold — the two live
+// statuses (.claude/rules/trading-engine.md's state machine:
+// SIGNAL_CONFIRMED → RUNNER_ACTIVE, both → a terminal) plus TERMINAL_STATUSES.
+// Not consulted by canApplyTransition itself (that only cares whether the
+// value MATCHES fromStatus/is terminal, not whether it's a status that
+// exists at all) — added for the Postgres migration's HTTP routes
+// (server/routes/tradeOps.js), which accept `patch.status` from a request
+// body and need to reject a nonsense value before it reaches the CAS: an
+// unknown status would pass canApplyTransition (it isn't terminal, so
+// isTerminalStatus is false) but then never be terminal EITHER, silently
+// stranding the op in a status no code path recognizes.
+export const TRADE_OP_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE', ...TERMINAL_STATUSES];
+
 // Decide whether a status write may apply, given the CURRENT document (as read
 // inside the transaction) and the status the caller believed it was
 // transitioning from. Rejects when:

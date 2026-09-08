@@ -45,7 +45,12 @@ services:
     name: sentinel-signals-api
     branch: main
     rootDir: server
-    buildCommand: npm ci
+    # server/index.js importa dinamicamente ../db/pgEntitiesCore.mjs (Fase 5
+    # do plano de migração Firestore→Neon — dark, sem DATABASE_URL configurada
+    # essas rotas respondem 503) — como rootDir escopa o build a server/, um
+    # `npm ci` só aqui NUNCA instala as dependências de db/ (pg). db/ ganhou
+    # seu próprio package.json só por causa disso — ver db/CLAUDE.md.
+    buildCommand: npm ci && npm --prefix ../db ci
     startCommand: node index.js
     envVars:
       - key: NODE_VERSION

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, groupActiveOpsByAsset, isTerminalStatus, planTradeOpCreation, planTradeOpCreationSql, buildActiveOpsAnchorId, TERMINAL_STATUSES } from './opTransition.js';
+import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, groupActiveOpsByAsset, isTerminalStatus, planTradeOpCreation, planTradeOpCreationSql, buildActiveOpsAnchorId, TERMINAL_STATUSES, TRADE_OP_STATUSES } from './opTransition.js';
 
 describe('isTerminalStatus', () => {
   it('recognises every terminal status', () => {
@@ -450,6 +450,13 @@ describe('groupActiveOpsByAsset', () => {
       expect(validGroups.has('asset_1')).toBe(false);
       expect(duplicateGroups.get('asset_1')).toEqual([opA, opB]);
     });
+  });
+});
+
+describe('TRADE_OP_STATUSES', () => {
+  it('contains exactly the 2 live statuses plus every terminal status, no duplicates', () => {
+    expect(TRADE_OP_STATUSES).toEqual(['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE', ...TERMINAL_STATUSES]);
+    expect(new Set(TRADE_OP_STATUSES).size).toBe(TRADE_OP_STATUSES.length);
   });
 });
 

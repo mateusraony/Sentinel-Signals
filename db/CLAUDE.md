@@ -1,15 +1,44 @@
-# db — schema Postgres/Neon (migração em andamento)
+# db — schema + adaptador Postgres/Neon (migração em andamento)
 
 Plano completo em `/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`
-— este diretório cobre só a Fase 2 (schema + migração de dados), ainda
-**não conectado a nenhum código de produção**. `src/api/entities.js`/
-`scripts/adminEntities.js` continuam 100% Firestore até o cutover.
+— este diretório cobre as Fases 2-4 (schema, migração de dados, adaptador),
+ainda **não conectado a nenhum código de produção**. `src/api/entities.js`/
+`scripts/adminEntities.js` continuam 100% Firestore até o cutover;
+`server/routes/*.js` chamam `pgEntitiesCore.mjs` mas nada no browser chama
+essas rotas ainda (ver `server/CLAUDE.md`).
 
 `schema.sql` é a fonte única do schema (padrão híbrido: colunas tipadas só
 pros campos filtrados/ordenados hoje + coluna `data JSONB` com o documento
 completo — ver o cabeçalho do arquivo). `migrate.mjs` aplica esse arquivo
 (idempotente via `IF NOT EXISTS` em tudo — sem `db/migrations/` versionado
 ainda, não há 2ª mudança de schema pra justificar isso hoje).
+`.github/workflows/db-migrate.yml` (`workflow_dispatch` manual, secret
+`DATABASE_URL`) roda `migrate.mjs` contra o Neon real — o único jeito
+automatizado de aplicar o schema, já que esta sessão não alcança o Neon
+diretamente (ver abaixo).
+
+`pgEntitiesCore.mjs` é o adaptador — mesma forma de chamada de
+`backend` em `src/api/entities.js` (`entities.<Nome>.{list,filter,get,set,
+create,createUnique,update,delete,bulkCreate,deleteMany}`, `locks`,
+`tradeOps`). **ESM de propósito** (não CJS): depende de `src/lib/
+opTransition.js`/`assertNoUndefinedFields.js`/`deepMergeFirestore.js`, que
+só existem como ESM. `server/index.js` (CommonJS) consome via `import()`
+dinâmico cacheado em `server/pgCoreLoader.js`. `ENTITY_TABLES` (exportado
+daqui) é o único registro de "nome lógico → tabela" — a rota genérica de
+entidades (`server/routes/entities.js`) importa ele direto em vez de manter
+um 2º registro separado.
+
+**`db/package.json` próprio** (com `pg` como dependência, `package-lock.json`
+gerado): existe só porque `render.yaml`'s `sentinel-signals-api` builda com
+`rootDir: server` — um `npm ci` escopado a `server/` nunca instalaria as
+dependências de `db/`, já que a resolução de módulo do Node sobe a árvore
+de diretórios a partir de QUEM importa (`pgEntitiesCore.mjs`, em `db/`), não
+de quem chama por cima. O `buildCommand` desse serviço no `render.yaml` roda
+`npm ci && npm --prefix ../db ci`. Sem isso, o boot do servidor funcionaria
+localmente (onde `db/node_modules` resolve pra cima até a raiz do repo, que
+tem `pg`) mas quebraria em produção assim que uma rota Postgres fosse
+chamada de verdade — achado só porque o boot real foi testado ponta a ponta
+antes de mesclar (ver `docs/known-risks.md` item 170).
 
 `trade_operations.active_ops_anchor` + o índice único parcial
 `trade_operations_active_anchor_uq` são o mecanismo do CAS redesenhado
@@ -22,7 +51,8 @@ travar); o índice único é o que fecha.
 
 ## Testes contra Postgres real (não fake, não mock)
 
-`schema.test.js`/`concurrency.test.js` são gated por `TEST_DATABASE_URL`
+`schema.test.js`/`concurrency.test.js`/`pgEntitiesCore.test.js` são gated
+por `TEST_DATABASE_URL`
 (`describe.skipIf`) — `npm test` sem essa var pula os dois de forma limpa.
 Rodar localmente contra um Postgres qualquer (não precisa ser Neon — é só
 Postgres padrão):
