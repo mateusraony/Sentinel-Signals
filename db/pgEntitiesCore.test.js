@@ -6,7 +6,7 @@
 // certo", incluindo concorrência com 2 conexões distintas de verdade.
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { applySchema } from './migrate.mjs';
-import { backend, getPool, closePool } from './pgEntitiesCore.mjs';
+import { backend, getPool, closePool, bulkImportEntity } from './pgEntitiesCore.mjs';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
@@ -129,6 +129,51 @@ describe.skipIf(!TEST_DATABASE_URL)('db/pgEntitiesCore.mjs', () => {
     it('rejeita nome de campo malicioso em sort', async () => {
       await expect(backend.entities.MonitoredAsset.list("x'); DROP TABLE monitored_assets;--"))
         .rejects.toThrow(/Nome de campo inválido/);
+    });
+  });
+
+  // Fase 7 (scripts/migrate-firestore-to-postgres.mjs) — diferente de
+  // bulkCreate() (testado acima), que sempre gera um id novo, esta função
+  // PRESERVA o id de cada item (reaproveita o ID do documento Firestore) e
+  // faz upsert (ON CONFLICT DO UPDATE), não insert-if-absent.
+  describe('bulkImportEntity (migração — preserva id, upsert)', () => {
+    it('preserva o id de cada item em vez de gerar um novo', async () => {
+      await bulkImportEntity('MonitoredAsset', [
+        { id: 'firestore-doc-id-1', symbol: 'BTCUSDT', is_active: true },
+      ]);
+      const fetched = await backend.entities.MonitoredAsset.get('firestore-doc-id-1');
+      expect(fetched).toEqual({ id: 'firestore-doc-id-1', symbol: 'BTCUSDT', is_active: true });
+    });
+
+    it('rodar duas vezes com dados diferentes converge para o snapshot mais recente (upsert, não no-op)', async () => {
+      await bulkImportEntity('TradeOperation', [{ id: 'op-1', asset_id: 'BTCUSDT', status: 'SIGNAL_CONFIRMED' }]);
+      await bulkImportEntity('TradeOperation', [{ id: 'op-1', asset_id: 'BTCUSDT', status: 'RUNNER_ACTIVE' }]);
+      const fetched = await backend.entities.TradeOperation.get('op-1');
+      expect(fetched.status).toBe('RUNNER_ACTIVE');
+      expect(await backend.entities.TradeOperation.list()).toHaveLength(1);
+    });
+
+    it('lista vazia não toca o banco (0 upserts, sem erro)', async () => {
+      const result = await bulkImportEntity('SignalEvent', []);
+      expect(result).toEqual({ upserted: 0 });
+      expect(await backend.entities.SignalEvent.list()).toHaveLength(0);
+    });
+
+    it('item sem id lança um erro claro em vez de silenciosamente gerar um novo', async () => {
+      await expect(bulkImportEntity('MonitoredAsset', [{ symbol: 'BTCUSDT' }])).rejects.toThrow(/item sem id/);
+    });
+
+    // Prova a análise do comentário de bulkImportEntity: uma op ATIVA
+    // migrada com active_ops_anchor NULL já bloqueia corretamente uma nova
+    // criação para o mesmo ativo — o CAS lê status/asset_id, não a âncora.
+    it('uma TradeOperation ativa migrada (active_ops_anchor NULL) bloqueia createTradeOpIfNoneActive para o mesmo ativo', async () => {
+      await bulkImportEntity('TradeOperation', [
+        { id: 'migrated-op-1', asset_id: 'BTCUSDT', symbol: 'BTCUSDT', status: 'RUNNER_ACTIVE', side: 'BUY' },
+      ]);
+      const result = await backend.tradeOps.createTradeOpIfNoneActive('BTCUSDT', 'new-op-2', { symbol: 'BTCUSDT', status: 'SIGNAL_CONFIRMED' });
+      expect(result.created).toBe(false);
+      expect(result.existingId).toBe('migrated-op-1');
+      expect(await backend.entities.TradeOperation.list()).toHaveLength(1);
     });
   });
 

@@ -324,6 +324,62 @@ function createEntity(entityName) {
   return { list, filter, get, set, create, createUnique, update, delete: del, bulkCreate, deleteMany };
 }
 
+// --- Importação em massa (Fase 7 do plano de migração,
+// scripts/migrate-firestore-to-postgres.mjs) ------------------------------
+
+// Diferente de bulkCreate() (que sempre GERA um id novo — pensado para
+// escrita ao vivo, nunca para migração), esta função PRESERVA o id de cada
+// item: é o que a migração real precisa (ver o plano, "Design de schema
+// Postgres" — reaproveitar o ID do documento Firestore tal como está evita
+// remapear referências cruzadas como `asset_id` entre coleções). Upsert
+// completo (`ON CONFLICT DO UPDATE`), não "insere se ainda não existir": a
+// migração pode rodar mais de uma vez contra o mesmo Postgres antes do
+// cutover real (ex.: validação contra um branch de teste do Neon, ou uma
+// 2ª rodada mais próxima do cutover) — cada rodada deve convergir para o
+// snapshot ATUAL do Firestore, nunca deixar uma linha desatualizada
+// silenciosamente por trás de um "já existe, ignorado".
+//
+// Nunca toca `active_ops_anchor` (só existe em `trade_operations`, fora de
+// `columns` de propósito — ver ENTITY_TABLES.TradeOperation acima): essa
+// coluna só é escrita pelas 2 transações do CAS
+// (createTradeOpIfNoneActive/transitionTradeOp) e existe só para o índice
+// único parcial pegar a corrida de criação CONCORRENTE (2 chamadores
+// inserindo ao mesmo tempo quando nenhuma linha existe ainda). A decisão
+// de bloqueio do CAS lê `status`/`asset_id`/`cascade`/`hierarchical_cascade`
+// direto da tabela (`planTradeOpCreationSql`), nunca a âncora — uma
+// operação ativa migrada com âncora NULL já bloqueia corretamente uma
+// nova criação para o mesmo ativo (o `SELECT ... FOR UPDATE WHERE
+// asset_id = $1 AND status NOT IN (terminal)` encontra essa linha
+// normalmente). Nada a reconstruir aqui.
+export async function bulkImportEntity(entityName, items) {
+  if (items.length === 0) return { upserted: 0 };
+  const { table, columns } = ENTITY_TABLES[entityName];
+  const client = await getPool().connect();
+  try {
+    await client.query('BEGIN');
+    for (const item of items) {
+      const { id, ...rest } = item;
+      if (!id) throw new Error(`bulkImportEntity(${entityName}): item sem id.`);
+      assertNoUndefinedFields(rest, entityName);
+      const cols = typedValues(columns, rest);
+      const setCols = columns.map((c) => `"${c}" = EXCLUDED."${c}"`).join(', ');
+      await client.query(
+        `INSERT INTO ${table} (id, ${columns.map((c) => `"${c}"`).join(', ')}, data)
+         VALUES ($1, ${columns.map((_, i) => `$${i + 3}`).join(', ')}, $2)
+         ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data${setCols ? `, ${setCols}` : ''}`,
+        [id, JSON.stringify(rest), ...cols]
+      );
+    }
+    await client.query('COMMIT');
+    return { upserted: items.length };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // --- Locks (scannerLocks → scanner_locks) ---------------------------------
 
 async function acquireScanLock(lockName, ttlMs, holder) {

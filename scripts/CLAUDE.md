@@ -35,7 +35,37 @@ quando `FIREBASE_DATABASE_URL` está setada; sem ela, é no-op e o backfill
 continua idêntico a antes.
 `scripts/backfill-rtdb.mjs` (rodado só manualmente via `backfill-rtdb.yml`,
 nunca no cron) faz a cópia inicial Firestore→RTDB que o mirror ao vivo não
-cobre sozinho — ver item 152 addendum. Seguir:
+cobre sozinho — ver item 152 addendum.
+
+`scripts/migrate-firestore-to-postgres.mjs` + `scripts/verify-postgres-
+migration.mjs` (Fase 7 do plano de migração Firestore→Neon,
+`/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`) — scripts
+operacionais, sem workflow agendado (rodam manualmente na janela de
+manutenção do cutover, fase 10 do plano). O primeiro lê cada coleção de
+negócio direto do `firebase-admin/firestore` (paginação real por cursor de
+documento, `FieldPath.documentId()` — mesma lição de escala do item 152:
+paginar em vez de um único `list()` gigante) e upserta em Postgres via
+`db/pgEntitiesCore.mjs`'s `bulkImportEntity` (preserva o id do documento
+Firestore, ao contrário de `bulkCreate`/`create`, que sempre geram um id
+novo — necessário pra não remapear referências cruzadas como `asset_id`). O
+segundo lê os DOIS lados (Firestore direto + `backend.entities.*` do
+Postgres) e compara contagem + checksum determinístico por coleção, e,
+especificamente para `TradeOperation`, roda `groupActiveOpsByAsset`
+(inalterada) contra os dois datasets para confirmar que a migração não
+introduziu/removeu uma duplicata de operação ativa por ativo. Escopo: as 10
+entidades de `ENTITY_TABLES` — `tradingviewWebhookEvents`/`scannerLocks`
+ficam de fora de propósito (mesmo raciocínio de `db/pgEntitiesCore.mjs`:
+log de auditoria sem consumidor do histórico / estado de execução
+efêmero), assim como `agentConversations`/`experimentalRf1hShadow*`
+(decisão de escopo do plano). `scripts/firestorePlainValue.mjs` é o helper
+puro compartilhado pelos dois (conversão de `Timestamp` do Firestore —
+único tipo exótico em uso, `users/{uid}.created_at` — para string ISO, e o
+JSON canônico usado no checksum) — módulo próprio de propósito, sem
+`firebase-admin` no carregamento, pra ficar testável sem credencial (mesma
+lição de `failureClassification.mjs`/`healthAuditFormat.mjs`, item 166).
+`scripts/adminEntities.js` exporta `db` (a conexão Firestore já
+inicializada) especificamente para esses 2 scripts + `backfill-rtdb.mjs`
+reusarem em vez de cada um chamar `initializeApp()` de novo. Seguir:
 
 @../.claude/rules/ci-deploy.md
 @../.claude/rules/trading-engine.md
