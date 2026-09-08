@@ -1,26 +1,47 @@
-// Cobre o filtro de origem do sinal (RF/SMC/MACD/EMA/RSI) lido do Firestore
-// (telegramFilters/current) — o espelho admin de src/lib/telegram.test.js's
-// "shouldSend — filtro de origem do sinal". adminTelegram.js não tinha
-// nenhum teste antes desta mudança (é um espelho fino, sem lógica própria);
-// este arquivo nasce cobrindo especificamente a parte nova: a leitura do
-// Firestore, memoizada por processo, e o fail-open em cada caminho de erro.
+// Cobre o filtro de origem do sinal (RF/SMC/MACD/EMA/RSI, lido de
+// TelegramFilters/'current') e o fallback de log no SystemLog — o espelho
+// admin de src/lib/telegram.test.js's "shouldSend — filtro de origem do
+// sinal". adminTelegram.js não tinha nenhum teste antes desta mudança (é um
+// espelho fino, sem lógica própria); este arquivo nasce cobrindo
+// especificamente a parte nova: a leitura memoizada por processo, e o
+// fail-open em cada caminho de erro.
+//
+// Fase 10 do plano de migração Firestore→Neon: TelegramFilters/SystemLog
+// migraram de Firestore direto pra backend (Postgres, scripts/
+// adminEntities.js) — mockado abaixo via `./adminEntities.js`. O marcador
+// de dedup de cota (notifyFirestoreQuotaExhausted, descrição no fim do
+// arquivo) continua Firestore/RTDB, fora desta migração — mockado via
+// `firebase-admin/firestore` como antes.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const { firestoreGetMock, firestoreSetMock, firestoreAddMock, getFirestoreMock } = vi.hoisted(() => {
+const { firestoreGetMock, firestoreSetMock, getFirestoreMock } = vi.hoisted(() => {
   const firestoreGetMock = vi.fn();
   const firestoreSetMock = vi.fn();
-  const firestoreAddMock = vi.fn();
   const getFirestoreMock = vi.fn(() => ({
-    collection: () => ({ doc: () => ({ get: firestoreGetMock, set: firestoreSetMock }), add: firestoreAddMock }),
+    collection: () => ({ doc: () => ({ get: firestoreGetMock, set: firestoreSetMock }) }),
   }));
-  return { firestoreGetMock, firestoreSetMock, firestoreAddMock, getFirestoreMock };
+  return { firestoreGetMock, firestoreSetMock, getFirestoreMock };
 });
 vi.mock('firebase-admin/firestore', () => ({ getFirestore: getFirestoreMock }));
 
-function snap(sources) {
-  return sources === undefined
-    ? { exists: false }
-    : { exists: true, data: () => ({ sources }) };
+const { telegramFiltersGetMock, systemLogCreateMock } = vi.hoisted(() => ({
+  telegramFiltersGetMock: vi.fn(),
+  systemLogCreateMock: vi.fn(),
+}));
+vi.mock('./adminEntities.js', () => ({
+  backend: {
+    entities: {
+      TelegramFilters: { get: telegramFiltersGetMock },
+      SystemLog: { create: systemLogCreateMock },
+    },
+  },
+}));
+
+// Postgres get() contrato: null = ausente, { id, ...campos } = presente —
+// diferente do snapshot Firestore ({exists, data()}) que este arquivo usava
+// antes da Fase 10.
+function doc(sources) {
+  return sources === undefined ? null : { id: 'current', sources };
 }
 
 function baseSignal(overrides = {}) {
@@ -40,34 +61,35 @@ beforeEach(() => {
   firestoreGetMock.mockReset();
   firestoreSetMock.mockReset();
   firestoreSetMock.mockResolvedValue(undefined);
-  firestoreAddMock.mockReset();
-  firestoreAddMock.mockResolvedValue(undefined);
   getFirestoreMock.mockReset();
   getFirestoreMock.mockImplementation(() => ({
-    collection: () => ({ doc: () => ({ get: firestoreGetMock, set: firestoreSetMock }), add: firestoreAddMock }),
+    collection: () => ({ doc: () => ({ get: firestoreGetMock, set: firestoreSetMock }) }),
   }));
+  telegramFiltersGetMock.mockReset();
+  systemLogCreateMock.mockReset();
+  systemLogCreateMock.mockResolvedValue(undefined);
   process.env.TELEGRAM_BOT_TOKEN = 'x';
   process.env.TELEGRAM_CHAT_ID = 'y';
   global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
 });
 
-describe('adminTelegram — filtro de origem do sinal (lido de telegramFilters/current)', () => {
-  it('não notifica quando a origem está fora do doc salvo no Firestore', async () => {
-    firestoreGetMock.mockResolvedValue(snap(['range_filter']));
+describe('adminTelegram — filtro de origem do sinal (lido de TelegramFilters/current)', () => {
+  it('não notifica quando a origem está fora do doc salvo', async () => {
+    telegramFiltersGetMock.mockResolvedValue(doc(['range_filter']));
     const { notifyNewSignal } = await import('./adminTelegram.js');
     await notifyNewSignal(baseSignal({ source: 'macd' }));
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('notifica quando a origem está dentro do doc salvo', async () => {
-    firestoreGetMock.mockResolvedValue(snap(['macd']));
+    telegramFiltersGetMock.mockResolvedValue(doc(['macd']));
     const { notifyNewSignal } = await import('./adminTelegram.js');
     await notifyNewSignal(baseSignal({ source: 'macd' }));
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('doc ausente (usuário nunca abriu Configurações) = todas as 5 origens — fail-open', async () => {
-    firestoreGetMock.mockResolvedValue(snap(undefined));
+    telegramFiltersGetMock.mockResolvedValue(doc(undefined));
     const { notifyNewSignal } = await import('./adminTelegram.js');
     for (const source of ['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi']) {
       global.fetch.mockClear();
@@ -76,74 +98,74 @@ describe('adminTelegram — filtro de origem do sinal (lido de telegramFilters/c
     }
   });
 
-  it('erro ao ler o Firestore nunca silencia o canal — fail-open para todas as origens', async () => {
-    firestoreGetMock.mockRejectedValue(new Error('offline'));
+  it('erro ao ler o backend nunca silencia o canal — fail-open para todas as origens', async () => {
+    telegramFiltersGetMock.mockRejectedValue(new Error('offline'));
     const { notifyNewSignal } = await import('./adminTelegram.js');
     await notifyNewSignal(baseSignal({ source: 'macd' }));
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('origem DESCONHECIDA nunca é filtrada, mesmo com um doc restritivo salvo', async () => {
-    firestoreGetMock.mockResolvedValue(snap(['range_filter']));
+    telegramFiltersGetMock.mockResolvedValue(doc(['range_filter']));
     const { notifyNewSignal } = await import('./adminTelegram.js');
     await notifyNewSignal(baseSignal({ source: 'um_source_futuro_que_ainda_nao_existe' }));
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('memoiza por processo — duas notificações no mesmo import leem o Firestore uma vez só', async () => {
-    firestoreGetMock.mockResolvedValue(snap(['macd', 'rsi']));
+  it('memoiza por processo — duas notificações no mesmo import leem o backend uma vez só', async () => {
+    telegramFiltersGetMock.mockResolvedValue(doc(['macd', 'rsi']));
     const { notifyNewSignal } = await import('./adminTelegram.js');
     await notifyNewSignal(baseSignal({ source: 'macd' }));
     await notifyNewSignal(baseSignal({ source: 'rsi' }));
-    expect(firestoreGetMock).toHaveBeenCalledTimes(1);
+    expect(telegramFiltersGetMock).toHaveBeenCalledTimes(1);
   });
 
   it('o filtro NÃO se aplica a eventos de operação — TradeOperation.source é vocabulário diferente', async () => {
-    firestoreGetMock.mockResolvedValue(snap(['range_filter']));
+    telegramFiltersGetMock.mockResolvedValue(doc(['range_filter']));
     const { notifyTradeCreated } = await import('./adminTelegram.js');
     await notifyTradeCreated({
       symbol: 'BTCUSDT', side: 'BUY', timeframe: '15m', signal_timeframe: '4h', entry_price: 100,
       initial_stop: 95, tp1: 105, tp2: 110, score: 80, source: 'manual',
     });
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    // Confirma que nem chegou a consultar o Firestore para este evento —
+    // Confirma que nem chegou a consultar o backend para este evento —
     // o guard de evento (signal_detected) descarta antes disso.
-    expect(firestoreGetMock).not.toHaveBeenCalled();
+    expect(telegramFiltersGetMock).not.toHaveBeenCalled();
   });
 });
 
 describe('adminTelegram — override por ativo (known-risks item 47)', () => {
-  it('asset.notify_sources SUBSTITUI o filtro global, e evita ler o Firestore', async () => {
-    firestoreGetMock.mockResolvedValue(snap(['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi'])); // global libera tudo
+  it('asset.notify_sources SUBSTITUI o filtro global, e evita ler o backend', async () => {
+    telegramFiltersGetMock.mockResolvedValue(doc(['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi'])); // global libera tudo
     const { notifyNewSignal } = await import('./adminTelegram.js');
     await notifyNewSignal(baseSignal({ source: 'macd' }), { notify_sources: ['range_filter'] });
     expect(global.fetch).not.toHaveBeenCalled();
-    expect(firestoreGetMock).not.toHaveBeenCalled(); // override por ativo decide sozinho, sem precisar do doc global
+    expect(telegramFiltersGetMock).not.toHaveBeenCalled(); // override por ativo decide sozinho, sem precisar do doc global
   });
 
-  it('asset.notify_sources pode LIBERAR uma origem que o Firestore global bloqueia', async () => {
-    firestoreGetMock.mockResolvedValue(snap(['range_filter'])); // global só RF
+  it('asset.notify_sources pode LIBERAR uma origem que o filtro global bloqueia', async () => {
+    telegramFiltersGetMock.mockResolvedValue(doc(['range_filter'])); // global só RF
     const { notifyNewSignal } = await import('./adminTelegram.js');
     await notifyNewSignal(baseSignal({ source: 'macd' }), { notify_sources: ['macd'] });
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('asset.notify_signal_types SUBSTITUI o filtro global de lado', async () => {
-    firestoreGetMock.mockResolvedValue(snap(['macd']));
+    telegramFiltersGetMock.mockResolvedValue(doc(['macd']));
     const { notifyNewSignal } = await import('./adminTelegram.js');
     await notifyNewSignal(baseSignal({ source: 'macd', signal_type: 'BUY' }), { notify_signal_types: ['SELL'] });
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('sem asset, continua herdando 100% do filtro global lido do Firestore — regressão', async () => {
-    firestoreGetMock.mockResolvedValue(snap(['macd']));
+  it('sem asset, continua herdando 100% do filtro global lido do backend — regressão', async () => {
+    telegramFiltersGetMock.mockResolvedValue(doc(['macd']));
     const { notifyNewSignal } = await import('./adminTelegram.js');
     await notifyNewSignal(baseSignal({ source: 'macd' }));
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('array vazio silencia o ativo por completo — estado válido, não erro', async () => {
-    firestoreGetMock.mockResolvedValue(snap(['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi']));
+    telegramFiltersGetMock.mockResolvedValue(doc(['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi']));
     const { notifyNewSignal } = await import('./adminTelegram.js');
     await notifyNewSignal(baseSignal(), { notify_sources: [] });
     expect(global.fetch).not.toHaveBeenCalled();
@@ -192,7 +214,7 @@ describe('send — falha de envio agora fica visível no SystemLog (item 166 Fas
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401, text: async () => 'Unauthorized' });
     const { notifyStopHit } = await import('./adminTelegram.js');
     await notifyStopHit(baseOp(), 95);
-    expect(firestoreAddMock).toHaveBeenCalledWith(expect.objectContaining({
+    expect(systemLogCreateMock).toHaveBeenCalledWith(expect.objectContaining({
       level: 'warn', module: 'telegram', details: expect.objectContaining({ status: 401 }),
     }));
   });
@@ -201,23 +223,20 @@ describe('send — falha de envio agora fica visível no SystemLog (item 166 Fas
     global.fetch = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
     const { notifyStopHit } = await import('./adminTelegram.js');
     await notifyStopHit(baseOp(), 95);
-    expect(firestoreAddMock).toHaveBeenCalledWith(expect.objectContaining({
+    expect(systemLogCreateMock).toHaveBeenCalledWith(expect.objectContaining({
       level: 'warn', module: 'telegram', details: expect.objectContaining({ error: 'Failed to fetch' }),
     }));
   });
 
-  it('um cliente Firestore que nem expõe .add() nunca vira exceção não tratada (throw síncrono engolido)', async () => {
-    // Simula o pior caso: getFirestore().collection() devolve um objeto SEM
-    // .add — exatamente o shape que este próprio mock usava antes desta
-    // rodada. logTelegramFailure precisa engolir o throw síncrono
-    // ("... .add is not a function"), não só uma rejeição de promise.
-    getFirestoreMock.mockImplementation(() => ({
-      collection: () => ({ doc: () => ({ get: firestoreGetMock, set: firestoreSetMock }) }),
-    }));
+  it('um backend cujo SystemLog.create() lança síncrono nunca vira exceção não tratada (throw engolido)', async () => {
+    // logTelegramFailure precisa engolir um throw SÍNCRONO do backend (não só
+    // uma promise rejeitada) — mesmo raciocínio de safeMirrorCall
+    // (src/lib/rtdbMirror.js).
+    systemLogCreateMock.mockImplementation(() => { throw new Error('SystemLog.create is not a function'); });
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'x' });
     const { notifyStopHit } = await import('./adminTelegram.js');
-    // Se o throw síncrono de .add() escapasse do try/catch de
-    // logTelegramFailure, este await rejeitaria e o teste falharia sozinho.
+    // Se o throw síncrono escapasse do try/catch de logTelegramFailure, este
+    // await rejeitaria e o teste falharia sozinho.
     await notifyStopHit(baseOp(), 95);
   });
 
@@ -230,8 +249,8 @@ describe('send — falha de envio agora fica visível no SystemLog (item 166 Fas
   // garantir. Prova que send() agora aguarda a escrita: com a escrita
   // travada, a promise de notifyStopHit ainda não resolveu.
   it('send() aguarda a escrita do SystemLog terminar antes de resolver (corrida com forceExit)', async () => {
-    let resolveAdd;
-    firestoreAddMock.mockImplementation(() => new Promise((resolve) => { resolveAdd = resolve; }));
+    let resolveCreate;
+    systemLogCreateMock.mockImplementation(() => new Promise((resolve) => { resolveCreate = resolve; }));
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'x' });
     const { notifyStopHit } = await import('./adminTelegram.js');
 
@@ -240,7 +259,7 @@ describe('send — falha de envio agora fica visível no SystemLog (item 166 Fas
 
     // setTimeout(0) só dispara depois que a fila de MICROtasks esvazia —
     // drena tudo que a cadeia fetch/shouldSend podia terminar sozinha, sem
-    // depender da escrita no Firestore (ainda travada, resolveAdd não foi
+    // depender da escrita no backend (ainda travada, resolveCreate não foi
     // chamado). 3 `await Promise.resolve()` soltos não bastam aqui: a
     // primeira versão deste teste passava com o código ANTIGO (fire-and-
     // forget) porque a cadeia de awaits internos de send()/shouldSend() por
@@ -249,7 +268,7 @@ describe('send — falha de envio agora fica visível no SystemLog (item 166 Fas
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(settled).toBe(false);
 
-    resolveAdd();
+    resolveCreate();
     await pending;
     expect(settled).toBe(true);
   });
@@ -263,6 +282,11 @@ describe('send — falha de envio agora fica visível no SystemLog (item 166 Fas
 // próprio travamento que scanTimeout.mjs foi criado para eliminar. Estes
 // testes provam que um get()/set() que nunca resolve não trava a função —
 // mesmo padrão de fake timers de scanTimeout.test.mjs.
+//
+// Fora da Fase 10: este marcador (readAlertMarker/writeAlertMarker) prefere
+// RTDB e só cai pro Firestore como fallback — sem FIREBASE_DATABASE_URL no
+// ambiente de teste, markerRef() devolve null e o código cai direto no
+// caminho Firestore mockado abaixo, exatamente como antes desta rodada.
 describe('notifyFirestoreQuotaExhausted — timeout no dedup (item 142 addendum)', () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -301,4 +325,3 @@ describe('notifyFirestoreQuotaExhausted — timeout no dedup (item 142 addendum)
     expect(global.fetch).not.toHaveBeenCalled();
   });
 });
-

@@ -20,7 +20,7 @@
 // already warns against (the scanner itself only logs on signal/error, so
 // this collection is lower-volume than a raw per-scan log would be, but
 // still unbounded over time without a cap).
-import { backend } from './adminEntities.js';
+import { backend } from './adminEntitiesFirestoreLegacy.js';
 
 const COLLECTIONS = [
   'MonitoredAsset',

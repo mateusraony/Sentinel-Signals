@@ -23,7 +23,7 @@
 // node scripts/verify-postgres-migration.mjs`.
 import { createHash } from 'node:crypto';
 import { FieldPath } from 'firebase-admin/firestore';
-import { db } from './adminEntities.js';
+import { db } from './adminEntitiesFirestoreLegacy.js';
 import { backend, closePool } from '../db/pgEntitiesCore.mjs';
 import { canonicalJson, toPlainValue } from './firestorePlainValue.mjs';
 import { groupActiveOpsByAsset } from '../src/lib/opTransition.js';

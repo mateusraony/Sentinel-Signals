@@ -16,11 +16,21 @@ import { formatBackfillLag } from '../src/lib/backfillDetection.js';
 import { getFirestore } from 'firebase-admin/firestore';
 import { withTimeout } from './scanTimeout.mjs';
 import { describeStep, formatStepDuration } from './failureClassification.mjs';
-// O marcador de dedup de cota vive FORA do Firestore (item 158). Acesso
-// PREGUIÇOSO de propósito: importar scripts/adminEntities.js aqui puxaria o
-// initializeApp() dele para o carregamento deste módulo, acoplando um módulo
-// de notificação ao bootstrap inteiro do admin — e quebrando qualquer
-// consumidor sem credencial, testes inclusive.
+// Postgres/Neon (Fase 10 do plano de migração Firestore→Neon) — telegramFilters
+// (loadTelegramSources abaixo) e o fallback de log (logTelegramFailure) agora
+// lêem/escrevem pelo backend AO VIVO do motor de trading
+// (scripts/adminEntities.js), não mais Firestore direto. Seguro importar
+// direto (sem o cuidado "preguiçoso" que ainda vale pra RTDB logo abaixo): o
+// re-export Postgres não chama nada no carregamento do módulo, só quando um
+// método é de fato invocado.
+import { backend } from './adminEntities.js';
+// O marcador de dedup de cota (readAlertMarker/writeAlertMarker abaixo)
+// prefere RTDB e só cai pro Firestore como fallback — RTDB fica FORA desta
+// migração (só sai na decomissão, fase 11), então continua acessado direto,
+// preguiçoso de propósito: importar scripts/adminEntitiesFirestoreLegacy.js
+// aqui puxaria o initializeApp() dele para o carregamento deste módulo,
+// acoplando um módulo de notificação ao bootstrap inteiro do admin Firestore
+// — e quebrando qualquer consumidor sem credencial, testes inclusive.
 import { getDatabase } from 'firebase-admin/database';
 
 const DEFAULT_FILTERS = {
@@ -50,8 +60,8 @@ async function loadTelegramSources() {
   if (!sourcesPromise) {
     sourcesPromise = (async () => {
       try {
-        const snap = await getFirestore().collection('telegramFilters').doc('current').get();
-        const sources = snap.exists && Array.isArray(snap.data().sources) ? snap.data().sources : null;
+        const doc = await backend.entities.TelegramFilters.get('current');
+        const sources = Array.isArray(doc?.sources) ? doc.sources : null;
         return sources ?? DEFAULT_SOURCES;
       } catch (e) {
         console.warn('[adminTelegram] Falha ao ler telegramFilters, notificando todas as origens:', e.message);
@@ -133,7 +143,7 @@ async function shouldSend(event, data, asset) {
 async function logTelegramFailure(message, details) {
   try {
     await withTimeout(
-      getFirestore().collection('systemLogs').add({
+      backend.entities.SystemLog.create({
         level: 'warn', module: 'telegram', message, details,
         created_date: new Date().toISOString(),
       }),

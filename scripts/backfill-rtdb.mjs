@@ -18,7 +18,7 @@
 // Deliberately plain Node ESM (no esbuild bundling, unlike run-scan.mjs) —
 // adminEntities.js and rtdbMirror.js only use relative imports, so this
 // script runs directly with `node scripts/backfill-rtdb.mjs`.
-import { backend, rtdb } from './adminEntities.js';
+import { backend, rtdb } from './adminEntitiesFirestoreLegacy.js';
 import { RTDB_MIRRORED_ENTITIES, toRtdbKey } from '../src/lib/rtdbMirror.js';
 import { forceExit } from './scanTimeout.mjs';
 

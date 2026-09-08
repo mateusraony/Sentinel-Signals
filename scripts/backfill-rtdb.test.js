@@ -10,7 +10,7 @@ const { listMock, updateMock, refMock } = vi.hoisted(() => {
   return { listMock: vi.fn(), updateMock, refMock };
 });
 
-vi.mock('./adminEntities.js', () => ({
+vi.mock('./adminEntitiesFirestoreLegacy.js', () => ({
   backend: { entities: { AssetState: { list: listMock }, TradeOperation: { list: listMock }, SystemLog: { list: listMock } } },
   rtdb: { ref: refMock },
 }));

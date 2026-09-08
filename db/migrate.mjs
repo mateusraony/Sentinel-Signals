@@ -17,6 +17,25 @@ import pg from 'pg';
 
 const SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
+// Chave arbitrária fixa, só precisa ser a MESMA em toda chamada — serializa
+// chamadores concorrentes de applySchema contra o mesmo banco (achado
+// rodando os testes locais desta sessão: 4 arquivos de teste diferentes
+// — db/schema.test.js, db/concurrency.test.js, db/pgEntitiesCore.test.js,
+// scripts/backup-postgres.test.js — cada um chama applySchema no próprio
+// beforeAll, e o vitest roda arquivos em paralelo por padrão; `CREATE TABLE
+// IF NOT EXISTS` não é à prova de corrida sob concorrência de verdade sem
+// isso — duas conexões concorrentes "veem" a tabela como ausente ao mesmo
+// tempo e ambas tentam criar, batendo no catálogo pg_type e corrompendo o
+// resto da suíte com erros incoerentes ("duplicate key value violates
+// unique constraint pg_type_typname_nsp_index", "relation ... does not
+// exist", etc., cada rodada com um erro diferente — a assinatura clássica
+// de uma corrida, não um bug de lógica). `pg_advisory_lock` é session-scoped
+// — só serializa dentro do MESMO processo `node` se usado do jeito errado;
+// aqui funciona porque cada arquivo de teste abre sua PRÓPRIA conexão
+// (client novo), então o lock realmente serializa entre processos/threads
+// diferentes do vitest.
+const SCHEMA_LOCK_KEY = 823456111;
+
 export async function applySchema(databaseUrl, schemaPath = SCHEMA_PATH) {
   if (!databaseUrl) {
     throw new Error('DATABASE_URL não está setada — nada a fazer.');
@@ -25,7 +44,12 @@ export async function applySchema(databaseUrl, schemaPath = SCHEMA_PATH) {
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
   try {
-    await client.query(sql);
+    await client.query('SELECT pg_advisory_lock($1)', [SCHEMA_LOCK_KEY]);
+    try {
+      await client.query(sql);
+    } finally {
+      await client.query('SELECT pg_advisory_unlock($1)', [SCHEMA_LOCK_KEY]);
+    }
   } finally {
     await client.end();
   }

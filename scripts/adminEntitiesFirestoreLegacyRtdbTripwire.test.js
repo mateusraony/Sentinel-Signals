@@ -2,16 +2,21 @@
 // incidente evitado, mesma técnica (docs/known-risks.md item 152): o mirror
 // Firestore→RTDB nunca pode participar da mutação de TradeOperation, e
 // clearActiveOp nunca é espelhado. Lê o texto-fonte em vez de importar o
-// módulo: adminEntities.js inicializa firebase-admin no top-level (precisa de
-// FIREBASE_SERVICE_ACCOUNT_JSON, ausente no ambiente de teste) — mesmo motivo
-// de adminEntitiesShadowTripwire.test.js/adminEntitiesBackfillCacheTripwire.test.js.
+// módulo: adminEntitiesFirestoreLegacy.js inicializa firebase-admin no
+// top-level (precisa de FIREBASE_SERVICE_ACCOUNT_JSON, ausente no ambiente
+// de teste) — mesmo motivo de
+// adminEntitiesShadowTripwire.test.js/adminEntitiesBackfillCacheTripwire.test.js.
+//
+// Renomeado (Fase 10, junto com scripts/adminEntitiesFirestoreLegacy.js) —
+// scripts/adminEntities.js virou o re-export Postgres, esse arquivo é quem
+// ainda tem as funções que este tripwire verifica.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(resolve(__dirname, './adminEntities.js'), 'utf-8');
+const source = readFileSync(resolve(__dirname, './adminEntitiesFirestoreLegacy.js'), 'utf-8');
 
 function extractFunctionBody(fnName) {
   const match = source.match(new RegExp(`function ${fnName}\\([^)]*\\)[^{]*\\{[\\s\\S]*?\\n\\}\\n`));
@@ -19,7 +24,7 @@ function extractFunctionBody(fnName) {
   return match[0];
 }
 
-describe('adminEntities.js — tripwire de isolamento do mirror RTDB', () => {
+describe('adminEntitiesFirestoreLegacy.js — tripwire de isolamento do mirror RTDB', () => {
   it.each(['createTradeOpIfNoneActive', 'transitionTradeOp', 'clearActiveOp'])(
     '%s nunca referencia RTDB no próprio corpo (mirror só acontece FORA da transação, no wrapper)',
     (fnName) => {

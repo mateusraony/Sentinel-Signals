@@ -47,6 +47,13 @@ jobs:
       # Por isso os secrets do Telegram entram aqui.
       - name: Auditar saúde (read-only, teto de 570 documentos)
         env:
+          # Postgres/Neon (Fase 10 do plano de migração Firestore→Neon) —
+          # health-audit.mjs lê o backend AO VIVO (scripts/adminEntities.js,
+          # agora Postgres) para os dados de negócio.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Ainda necessário: health-audit.mjs também importa `rtdb` de
+          # scripts/adminEntitiesFirestoreLegacy.js (Firestore, fora desta
+          # migração) só para checar o marcador de cota do Firestore.
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

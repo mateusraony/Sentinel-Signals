@@ -46,7 +46,7 @@
 // Rodar manualmente: `DATABASE_URL=... FIREBASE_SERVICE_ACCOUNT_JSON=...
 // node scripts/migrate-firestore-to-postgres.mjs`.
 import { FieldPath } from 'firebase-admin/firestore';
-import { db } from './adminEntities.js';
+import { db } from './adminEntitiesFirestoreLegacy.js';
 import { bulkImportEntity, closePool } from '../db/pgEntitiesCore.mjs';
 import { toPlainValue } from './firestorePlainValue.mjs';
 import { forceExit } from './scanTimeout.mjs';

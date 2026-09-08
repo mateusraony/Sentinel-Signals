@@ -6,7 +6,7 @@
 alvo) para rodar o motor de backtest histórico local — ver
 `docs/claude/backtest-usage.md` e `docs/known-risks.md` item 33.
 `run-backfill-check.mjs`/`build-backfill.mjs` fazem o mesmo (6º alvo), mas
-contra o backend REAL (`adminEntitiesBackfillCache.js` — 4º mirror do
+contra o backend AO VIVO (`adminEntitiesBackfillCache.js` — 4º mirror do
 adaptador, envolve `adminEntities.js` com cache em memória só para
 `AssetState`/`MonitoredAsset`, ver `docs/known-risks.md` item 137 addendum
 2026-08-31) e janela recente ao vivo (`backfillMarketDataProvider.js`) —
@@ -24,18 +24,41 @@ job falha se ela escrever, e ela avisa no Telegram só quando acha algo.
 `sort` (item 165 — 3 de 5 checagens falharam assim na primeira execução real,
 e o erro só aparece contra o banco de verdade). Travado por
 `healthAuditQueryTripwire.test.js`. A parte pura mora em
-`healthAuditFormat.mjs` **de propósito**: quem importa `adminEntities.js`
-herda o `initializeApp()` dele no carregamento e quebra sem credencial (foi o
-que derrubou 17 testes no item 158).
-`adminEntities.js` também embute o espelho de leitura RTDB pro dashboard —
-as 6 entidades de negócio inteiras (`AssetState`/`MonitoredAsset`/
-`SignalEvent`/`SystemLog`/`TradeOperation`/`VerificationTask`,
-`src/lib/rtdbMirror.js`, ver `docs/known-risks.md` item 152/169) — ativo só
-quando `FIREBASE_DATABASE_URL` está setada; sem ela, é no-op e o backfill
-continua idêntico a antes.
+`healthAuditFormat.mjs` **de propósito**: quem importa
+`adminEntitiesFirestoreLegacy.js` (ver abaixo) herda o `initializeApp()`
+dele no carregamento e quebra sem credencial (foi o que derrubou 17 testes
+no item 158) — `adminEntities.js` (Postgres, pós-Fase 10) não tem esse
+problema, mas a separação continua valendo pra quem ainda importa o lado
+Firestore.
+
+**Fase 10 do plano de migração Firestore→Neon (preparada, PR aberto, ainda
+sem merge automático — ver `docs/known-risks.md` item 170 addendum)**:
+`scripts/adminEntities.js` deixou de ser a reimplementação Firestore
+completa (~330 linhas) e virou um re-export fino de
+`db/pgEntitiesCore.mjs` — `build-scan.mjs`/`build-backfill.mjs` continuam
+redirecionando `@/api/entities` pra ele SEM NENHUMA mudança nesses dois
+arquivos (o nome do arquivo não mudou, só o conteúdo). A versão Firestore
+original foi renomeada para `scripts/adminEntitiesFirestoreLegacy.js` —
+**não é código morto**: `scripts/backup-firestore.mjs`/`backfill-rtdb.mjs`
+(rodam até a decomissão do Firestore, fase 11 do plano) e
+`scripts/migrate-firestore-to-postgres.mjs`/`verify-postgres-
+migration.mjs` (cujo trabalho É ler Firestore) continuam importando dela.
+É esse arquivo renomeado (não mais `adminEntities.js`) que embute o
+espelho de leitura RTDB pro dashboard — as 6 entidades de negócio inteiras
+(`AssetState`/`MonitoredAsset`/`SignalEvent`/`SystemLog`/`TradeOperation`/
+`VerificationTask`, `src/lib/rtdbMirror.js`, ver `docs/known-risks.md`
+item 152/169) — ativo só quando `FIREBASE_DATABASE_URL` está setada; sem
+ela, é no-op. `scripts/adminPineConfig.js`/`scripts/adminTelegram.js`
+também migraram pro `adminEntities.js` Postgres (achado durante a
+implementação, não previsto no plano original — liam Firestore direto,
+sem passar pelo adaptador). **Pergunta em aberto, não resolvida**: o
+mirror RTDB acima não tem equivalente nos novos adaptadores Postgres —
+ver a seção própria em `docs/claude/postgres-cutover-runbook.md` antes de
+mesclar o item que troca `src/api/entities.js` (browser).
 `scripts/backfill-rtdb.mjs` (rodado só manualmente via `backfill-rtdb.yml`,
 nunca no cron) faz a cópia inicial Firestore→RTDB que o mirror ao vivo não
-cobre sozinho — ver item 152 addendum.
+cobre sozinho — ver item 152 addendum; continua Firestore-only, importa de
+`adminEntitiesFirestoreLegacy.js`.
 
 `scripts/migrate-firestore-to-postgres.mjs` + `scripts/verify-postgres-
 migration.mjs` (Fase 7 do plano de migração Firestore→Neon,
@@ -63,9 +86,10 @@ puro compartilhado pelos dois (conversão de `Timestamp` do Firestore —
 JSON canônico usado no checksum) — módulo próprio de propósito, sem
 `firebase-admin` no carregamento, pra ficar testável sem credencial (mesma
 lição de `failureClassification.mjs`/`healthAuditFormat.mjs`, item 166).
-`scripts/adminEntities.js` exporta `db` (a conexão Firestore já
-inicializada) especificamente para esses 2 scripts + `backfill-rtdb.mjs`
-reusarem em vez de cada um chamar `initializeApp()` de novo.
+`scripts/adminEntitiesFirestoreLegacy.js` exporta `db` (a conexão
+Firestore já inicializada) especificamente para esses 2 scripts +
+`backfill-rtdb.mjs` reusarem em vez de cada um chamar `initializeApp()` de
+novo.
 
 `scripts/backup-postgres.mjs` (Fase 8, `backup-postgres.yml`) — diferente
 dos scripts acima, é um wrapper FINO em volta do `pg_dump` nativo (não uma
