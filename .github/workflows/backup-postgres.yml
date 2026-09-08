@@ -1,0 +1,108 @@
+name: Daily Postgres backup
+
+# Backup diário via pg_dump/pg_restore (Fase 8 do plano de migração
+# Firestore→Neon,
+# /root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md) —
+# pré-requisito obrigatório antes de qualquer decomissão do backup do
+# Firestore (backup.yml continua rodando em paralelo até o cutover real,
+# fase 10 do plano). scripts/backup-postgres.mjs monta o dump
+# (--format=custom, exclui users/scanner_locks — ver o cabeçalho do script
+# pro porquê) e publica na branch `backups-postgres` do mesmo repositório
+# PRIVADO usado pelo backup do Firestore
+# (mateusraony/sentinel-signals-backups), mantendo os últimos 30 dias.
+#
+# Branch SEPARADA da `backups` do backup.yml (não a mesma) — de propósito:
+# os dois workflows fariam `git push` na MESMA branch em horários próximos
+# (mesmo com o schedule deste deslocado, ver abaixo), correndo risco real
+# de um non-fast-forward se as duas execuções coincidirem por qualquer
+# motivo (retry, disparo manual concorrente). Uma branch por tipo de backup
+# elimina essa corrida por completo, sem custo — a deploy key é do
+# REPOSITÓRIO (não de uma branch específica), então nenhum secret novo é
+# necessário.
+#
+# Mesma autenticação do backup.yml — deploy key SSH (`BACKUP_DEPLOY_KEY`,
+# reaproveitada, escopo já é o repositório inteiro) — ver o comentário
+# completo em backup.yml sobre por que deploy key em vez de PAT/token.
+#
+# Restauração: `pg_restore --clean --if-exists --no-owner --no-privileges
+# --dbname <DATABASE_URL> <arquivo>.dump` — procedimento padrão do
+# pg_restore, sem script próprio (ao contrário do Firestore, que precisou
+# de scripts/restore-firestore.mjs porque não existe ferramenta nativa
+# equivalente).
+on:
+  schedule:
+    # 14min depois do backup.yml (03:23 UTC) — evita os dois workflows
+    # fazendo push na mesma janela de minuto (docs/known-risks.md item 18
+    # sobre minuto 0 já era evitado; aqui é sobre não coincidir com o OUTRO
+    # backup, não sobre o atraso do GitHub Actions em si).
+    - cron: "37 3 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Gerar dump
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Secret DATABASE_URL não configurado (mesmo secret usado por db-migrate.yml — Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+          DATE=$(date -u +%Y-%m-%d)
+          node scripts/backup-postgres.mjs "/tmp/postgres-backup-${DATE}.dump"
+          echo "BACKUP_DATE=${DATE}" >> "$GITHUB_ENV"
+
+      - name: Publicar na branch backups-postgres (repo privado, via deploy key SSH)
+        env:
+          BACKUP_DEPLOY_KEY: ${{ secrets.BACKUP_DEPLOY_KEY }}
+        run: |
+          git config user.name "sentinel-signals-bot"
+          git config user.email "actions@users.noreply.github.com"
+
+          mkdir -p ~/.ssh
+          echo "$BACKUP_DEPLOY_KEY" > ~/.ssh/backup_deploy_key
+          chmod 600 ~/.ssh/backup_deploy_key
+          # Pinned, not scanned — mesma justificativa de backup.yml (chaves
+          # públicas do GitHub, não confiadas via TOFU em runtime).
+          cat <<'KNOWN_HOSTS' >> ~/.ssh/known_hosts
+          github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+          github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+          github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+          KNOWN_HOSTS
+          chmod 600 ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/backup_deploy_key -o IdentitiesOnly=yes"
+
+          git remote add backup-repo "git@github.com:mateusraony/sentinel-signals-backups.git"
+
+          git fetch backup-repo backups-postgres || true
+          if git show-ref --verify --quiet refs/remotes/backup-repo/backups-postgres; then
+            git checkout -B backups-postgres backup-repo/backups-postgres
+          else
+            git checkout --orphan backups-postgres
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          cp "/tmp/postgres-backup-${BACKUP_DATE}.dump" "./postgres-backup-${BACKUP_DATE}.dump"
+          git add "postgres-backup-${BACKUP_DATE}.dump"
+          git commit -m "Backup Postgres ${BACKUP_DATE}" --allow-empty
+
+          # Mantém só os últimos 30 snapshots diários
+          ls -1 postgres-backup-*.dump 2>/dev/null | sort | head -n -30 | xargs -r git rm -q --ignore-unmatch
+          git diff --cached --quiet || git commit -m "Remove backups antigos (mantém últimos 30)"
+
+          git push backup-repo backups-postgres

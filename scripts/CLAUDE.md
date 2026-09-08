@@ -65,7 +65,18 @@ JSON canônico usado no checksum) — módulo próprio de propósito, sem
 lição de `failureClassification.mjs`/`healthAuditFormat.mjs`, item 166).
 `scripts/adminEntities.js` exporta `db` (a conexão Firestore já
 inicializada) especificamente para esses 2 scripts + `backfill-rtdb.mjs`
-reusarem em vez de cada um chamar `initializeApp()` de novo. Seguir:
+reusarem em vez de cada um chamar `initializeApp()` de novo.
+
+`scripts/backup-postgres.mjs` (Fase 8, `backup-postgres.yml`) — diferente
+dos scripts acima, é um wrapper FINO em volta do `pg_dump` nativo (não uma
+reimplementação como `backup-firestore.mjs` precisou ser, já que Postgres
+tem ferramenta de backup/restore madura e o Firestore não, sem o plano
+pago Blaze). Exclui `users`/`scanner_locks` do dump — ver o cabeçalho do
+arquivo pro porquê de cada um. Testado com `buildPgDumpArgs` (puro) +
+round-trip real `pg_dump`→`pg_restore` contra Postgres de verdade
+(`scripts/backup-postgres.test.js`, gated por `TEST_DATABASE_URL`).
+Restauração via `pg_restore` puro, sem script próprio — ver
+`docs/restore-postgres.md`. Seguir:
 
 @../.claude/rules/ci-deploy.md
 @../.claude/rules/trading-engine.md
