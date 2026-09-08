@@ -95,6 +95,12 @@ async function clearActiveOp(assetId, tradeOpId, cascade) {
   await callBackend('/api/trade-ops/clear-active', { assetId, tradeOpId, cascade });
 }
 
+/**
+ * @param {string} opId
+ * @param {string} fromStatus
+ * @param {object} patch
+ * @param {{ assetId?: string, stopAdvanceMarkerField?: string, cascade?: string }} [options]
+ */
 async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvanceMarkerField, cascade } = {}) {
   return callBackend(`/api/trade-ops/${opId}/transition`, { fromStatus, patch, assetId, stopAdvanceMarkerField, cascade });
 }
