@@ -21461,6 +21461,70 @@ browser/auth/webhook/render.yaml) devem ser implementados, seguindo a
 sequência do runbook — nunca simultâneo, nunca antes do ensaio validar os
 dois scripts contra dado real pela primeira vez.
 
+### Addendum (2026-09-09) — item 4 metade fechado (dedup do webhook, dark) + achado de corrida entre arquivos de teste
+
+`db/pgEntitiesCore.mjs` ganhou `insertWebhookEventIfNew(id, data)`
+(`INSERT ... ON CONFLICT (id) DO NOTHING RETURNING id`), o equivalente
+Postgres da transação de dedup do webhook TradingView — pedido explícito
+do usuário ("pode seguir então"), continuando o fechamento da checklist do
+runbook item por item. **Ainda dark**: `server/index.js` continua
+chamando só a transação Firestore — ligar de verdade é o item 4b,
+reservado pra janela de cutover coordenada (webhook é canal ao vivo,
+TradingView espera a resposta). Testado com concorrência REAL (2
+gravações simultâneas do mesmo `signal_id`, 25x) — exatamente 1 vence,
+nunca 0 nem 2.
+
+**Achado ao verificar, antes de qualquer merge**: rodando a suíte
+completa repetidamente (disciplina de verificação padrão deste projeto,
+não algo pedido especificamente), `db/concurrency.test.js` falhava de
+forma 100% reproduzível (6/6) quando rodado junto com
+`db/pgEntitiesCore.test.js` — `expected [] to have length 1 but got +0`.
+Causa raiz: `pgEntitiesCore.test.js`'s `beforeEach` faz `TRUNCATE
+trade_operations` (irrestrito, TODAS as linhas) e vitest roda arquivos de
+teste em paralelo por padrão — o `TRUNCATE` de um arquivo apagava a linha
+que `concurrency.test.js` acabara de inserir, ENTRE o `INSERT` e o
+`SELECT` de verificação do outro. **É a MESMA classe de corrida já
+documentada no item 170 addendum anterior** (Fase 10, achado de
+infraestrutura de teste) — mas aquele addendum e a correção correspondente
+(`scripts/backup-postgres.test.js` rodando num banco isolado) vivem só no
+PR #332 (Phase 10, ainda não mesclado por pedido explícito do usuário) e
+NUNCA cobriram esta interação específica (`concurrency.test.js` ×
+`pgEntitiesCore.test.js`) — confirmado comparando o diff: PR #332 não
+toca nenhum dos dois arquivos além do fix do `applySchema`. Reproduzido
+também SEM nenhuma mudança nova (só os dois arquivos como estavam em
+`main`), então não é regressão desta rodada — é um bug pré-existente que
+só não tinha sido pego porque ninguém tinha rodado `db/concurrency.test.js`
++ `db/pgEntitiesCore.test.js` juntos, repetidamente, localmente, antes.
+
+**Corrigido nesta rodada** (não fazia parte do pedido original, mas
+bloqueava a própria verificação exigida — "confirme que tudo foi feito
+certo... pra daí sim fazer o merge"): `db/concurrency.test.js` passou a
+rodar num banco de teste PRÓPRIO (`CREATE DATABASE` descartável, criado/
+apagado no próprio `describe`), mesmo padrão já usado por
+`backup-postgres.test.js`. Como a correção do `applySchema` (chave de
+advisory lock, item 170 addendum anterior) também vive só no PR #332 não
+mesclado, foi portada aqui também — sem ela, `applySchema` rodando de
+dois arquivos ao mesmo tempo (agora incluindo o banco novo deste arquivo)
+volta a corromper o catálogo `pg_type`. A correção de isolamento do
+`backup-postgres.test.js` em si (banco próprio, mesma versão do PR #332)
+também foi portada — sem ela, a suíte completa (`npx vitest run`, sem
+escopo) ainda falhava intermitentemente (2 de 3 rodadas, arquivos
+diferentes cada vez) mesmo com `concurrency.test.js` já isolado. Com as 3
+peças juntas (advisory lock + `concurrency.test.js` isolado +
+`backup-postgres.test.js` isolado), a suíte completa rodou 4x consecutivas
+100% verde (1756 testes) antes deste PR ser aberto.
+
+Quando o PR #332 eventualmente for mesclado (fase 10, execução do
+cutover), essas mesmas mudanças em `db/migrate.mjs`/
+`scripts/backup-postgres.test.js` vindas de lá vão bater exatamente com o
+que já está em `main` por este PR — sem conflito real esperado (mesmo
+texto, mesma correção, encontrada independentemente duas vezes).
+
+**Verificado**: `npm run lint` limpo; `npx vitest run` (suíte completa,
+`TEST_DATABASE_URL` setada) — 1756 testes verdes, 4 rodadas consecutivas;
+`npm run build` verde; `npm run typecheck:ratchet` — 16 erro(s), dentro do
+teto.
+
 ### Addendum (2026-09-09) — achado real do Codex review no PR #334, corrigido antes do ensaio rodar
 
 O PR #334 (item 7, já mesclado) recebeu um review automático (Codex, App do
@@ -21506,3 +21570,43 @@ corrida nunca existiu).
 testadas noutro lugar, provando especificamente que o Firestore é lido
 1 vez só e que uma divergência real ainda é detectada corretamente);
 `npm run build` verde.
+
+### Addendum (2026-09-09) — 2 achados reais adicionais do Codex review (PRs #336/#337), corrigidos antes de mesclar
+
+Duas rodadas de review automático a mais, ambas em código já coberto
+pelos addenda acima, ambas achados reais (não ruído):
+
+1. **`db/migrate.mjs`'s `applySchema` (PR #336)**: o lock/unlock
+   session-scoped (`pg_advisory_lock`/`pg_advisory_unlock`, item 170
+   addendum de Fase 10) é seguro contra a `TEST_DATABASE_URL` local/CI
+   (conexão direta), mas `db-migrate.yml` roda essa mesma função contra a
+   connection string **'pooled'** do Neon (PgBouncer em modo transaction
+   pooling) — com lock/schema/unlock como 3 chamadas `client.query()`
+   separadas fora de uma transação explícita, o pooler pode atribuir cada
+   uma a uma sessão de backend DIFERENTE: o schema rodaria sem o lock de
+   verdade, e o unlock poderia nunca alcançar a sessão que travou (lock
+   vazado até aquela conexão de backend ser reciclada, travando uma
+   migração futura). Corrigido trocando pra `pg_advisory_xact_lock` dentro
+   de um `BEGIN...COMMIT` explícito — transaction pooling garante a MESMA
+   sessão de backend do `BEGIN` até o `COMMIT`, então lock + aplicação do
+   schema + liberação automática (no `COMMIT`) ficam garantidamente juntos,
+   não importa como o PgBouncer agende as chamadas separadas.
+2. **`scripts/migrate-and-verify-postgres.mjs` (PR #337)**: `bulkImportEntity`
+   abre 1 única transação pra TODOS os itens recebidos numa chamada — o
+   script novo lia o Firestore inteiro em memória (necessário pra eliminar
+   a corrida de snapshot) e passava o array INTEIRO de uma vez, ao
+   contrário do script original (`migrateCollection`), que chamava
+   `bulkImportEntity` 1x POR PÁGINA (≤500 itens). Pra uma coleção grande
+   (`signalEvents`/`tradeOperations`), isso vira 1 transação sem limite,
+   arriscando estourar algum limite do Neon ou o timeout de 20min do
+   workflow, e derrubando a migração INTEIRA da coleção numa falha parcial
+   em vez de só o último lote. Corrigido: a leitura do Firestore continua
+   única (a correção da corrida fica intacta), mas a ESCRITA volta a
+   acontecer em lotes de 500.
+
+Ambos verificados com teste novo que reproduz o cenário (lock cruzando
+sessões não é testável localmente sem um pooler de verdade — a correção
+segue a garantia documentada de transaction pooling, não uma reprodução
+direta; o lote de escrita tem teste real: 1200 itens → 3 chamadas de
+500/500/200). Respondido e resolvido nos 2 threads do Codex nos PRs
+respectivos antes de mesclar.
