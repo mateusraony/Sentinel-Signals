@@ -89,6 +89,20 @@ paths:
   de migração Firestore→Neon
   (`/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`), ainda
   não conectado a nenhum código de produção.
+- `migrate-postgres.yml` — disparo **manual** (`workflow_dispatch` só):
+  roda `npm run migrate-postgres` (`scripts/migrate-firestore-to-
+  postgres.mjs`) seguido de `npm run verify-postgres` (`scripts/verify-
+  postgres-migration.mjs`) contra o Firestore de produção real E o Neon
+  real, usando `FIREBASE_SERVICE_ACCOUNT_JSON` E `DATABASE_URL` juntos —
+  mesma restrição de rede do `db-migrate.yml` acima (a sessão do Claude
+  Code não alcança nenhum dos dois com credencial real). Fecha o item 7 do
+  runbook de cutover (`docs/claude/postgres-cutover-runbook.md`) — usado
+  tanto pro "ensaio" pré-cutover (item 6) quanto pela migração final do dia
+  do cutover; idempotente (upsert), seguro rodar mais de uma vez. Falha o
+  job (não silencioso) se `verify-postgres-migration.mjs` achar qualquer
+  divergência de contagem/checksum/duplicata de `TradeOperation`. Ainda não
+  conectado a nenhum código de produção — só lê Firestore e escreve no
+  Postgres, que nada em produção lê até o cutover (item 2) acontecer.
 - `backup-postgres.yml` — backup diário do Postgres/Neon via `pg_dump`
   (Fase 8 do plano de migração Firestore→Neon,
   `/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`) —

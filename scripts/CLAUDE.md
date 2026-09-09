@@ -40,16 +40,27 @@ cobre sozinho — ver item 152 addendum.
 `scripts/migrate-firestore-to-postgres.mjs` + `scripts/verify-postgres-
 migration.mjs` (Fase 7 do plano de migração Firestore→Neon,
 `/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`) — scripts
-operacionais, sem workflow agendado (rodam manualmente na janela de
-manutenção do cutover, fase 10 do plano). O primeiro lê cada coleção de
+operacionais, **agora com workflow** (`.github/workflows/migrate-
+postgres.yml`, `workflow_dispatch`, roda `npm run migrate-postgres` seguido
+de `npm run verify-postgres` com `FIREBASE_SERVICE_ACCOUNT_JSON` E
+`DATABASE_URL` juntos — fecha o item 7 do runbook de cutover,
+`docs/claude/postgres-cutover-runbook.md`). O primeiro lê cada coleção de
 negócio direto do `firebase-admin/firestore` (paginação real por cursor de
 documento, `FieldPath.documentId()` — mesma lição de escala do item 152:
 paginar em vez de um único `list()` gigante) e upserta em Postgres via
 `db/pgEntitiesCore.mjs`'s `bulkImportEntity` (preserva o id do documento
 Firestore, ao contrário de `bulkCreate`/`create`, que sempre geram um id
-novo — necessário pra não remapear referências cruzadas como `asset_id`). O
-segundo lê os DOIS lados (Firestore direto + `backend.entities.*` do
-Postgres) e compara contagem + checksum determinístico por coleção, e,
+novo — necessário pra não remapear referências cruzadas como `asset_id`).
+**`systemLogs` é limitado aos 2000 mais recentes** (`LIST_LIMIT_OVERRIDES`,
+`migrateRecentCollection` em vez de `migrateCollection`) — achado ao
+preparar o workflow: migrar o histórico inteiro repetiria o incidente do
+item 152 addendum (`backfill-rtdb.mjs` esgotou a cota lendo ~49.700
+documentos numa chamada só); paginar evita um request gigante mas não
+reduz a CONTAGEM de leituras cobrada pela cota. O segundo lê os DOIS lados
+(Firestore direto + `backend.entities.*` do Postgres) e compara contagem +
+checksum determinístico por coleção (mesmo limite espelhado via
+`readFirestoreCollectionRecent`/`LIST_LIMIT_OVERRIDES`, importado do
+primeiro script, pra comparar a MESMA fatia dos dois lados), e,
 especificamente para `TradeOperation`, roda `groupActiveOpsByAsset`
 (inalterada) contra os dois datasets para confirmar que a migração não
 introduziu/removeu uma duplicata de operação ativa por ativo. Escopo: as 10
