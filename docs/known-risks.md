@@ -20940,6 +20940,91 @@ rodar de novo (mesma garantia já documentada acima).
 **Verificação**: `npm run lint && npm test (1636, 87 arquivos) && npm run
 build` verdes.
 
+### Addendum (2026-09-09) — Incidente ao vivo: `MonitoredAsset` sumiu do painel porque `database.rules.json` nunca foi implantado depois da etapa 3b
+
+**Sintoma reportado pelo usuário**: os ativos cadastrados desapareceram da
+tela Assets — sem mensagem de erro, sem indício de qual tela/desde quando.
+
+**Descartado por evidência, não suposição**:
+- Não é a migração Firestore→Neon (Fase 10): produção segue 100% no commit
+  `67e7e92` (pré-PR#332), confirmado via `list_workflow_runs` do `scan.yml` —
+  todas as passadas recentes `conclusion: success`.
+- Não é perda de dado no Firestore: o job `scan` do run mais recente
+  (run_id `34355891386`, job `102480349544`, 2026-09-09T13:15Z) logou
+  `[scan] scanAllAssets: 10 ativo(s), 0 falha(s)` — os 10 `MonitoredAsset`
+  continuam intactos no Firestore, a fonte de verdade nunca foi tocada.
+
+**Causa raiz confirmada**: `database.rules.json` ganhou as entradas
+`monitoredAssets`/`verificationTasks` (`.read`/`.write`: `"auth != null"`)
+no MESMO commit que ligou o modo "nó inteiro" do espelho RTDB para essas
+duas coleções (`1d25aba`, "Espelho RTDB rodada 3b", 2026-09-07T14:33 UTC —
+item 169 acima), incluindo `Assets.jsx:38-40` passando a ler
+`rtdbEntities.MonitoredAsset.list('-created_date')` em vez do Firestore
+direto. O deploy do FRONTEND é automático a cada push em `main` (Render) —
+esse código entrou no ar imediatamente. Mas o deploy das REGRAS do RTDB
+(`database.rules.json`) é **manual** (`deploy-firestore.yml`,
+`workflow_dispatch` só) — e o último run bem-sucedido desse workflow antes
+do incidente foi o run #8 (`id 34057296310`), em **2026-09-06T20:13 UTC**,
+quase 18h ANTES do commit `1d25aba`. Ninguém disparou o workflow de novo
+depois que a etapa 3b foi mesclada — as regras `monitoredAssets`/
+`verificationTasks` existiam só no repositório, nunca chegaram ao projeto
+Firebase real.
+
+Sem uma regra correspondente publicada para `monitoredAssets`, o RTDB nega
+acesso por padrão a esse caminho para o SDK do cliente (browser, sujeito a
+regra) — só o Admin SDK (cron/backfill, que ignora regras, igual ao
+Firestore) conseguia ler/escrever ali, o que explica por que o
+`backfill-rtdb.yml` (run #6, 2026-09-08T13:57 UTC, Admin SDK) escreveu "11
+documento(s)" no RTDB sem erro, mesmo com a regra ausente — e por que o
+scan ao vivo (Admin SDK também) nunca acusou nada. O navegador é o único
+lado sujeito à regra, e é exatamente o que ficou cego.
+
+**Por que virou silêncio total na tela, não um erro visível**:
+`Assets.jsx:38` (`useQuery({ queryKey: ['all-assets'], queryFn: () =>
+rtdbEntities.MonitoredAsset.list('-created_date') })`) só desestrutura
+`data: assets = []` e `isLoading` — não trata `isError`/`error`. Uma
+rejeição de permissão do `get()` do RTDB (`src/api/rtdbEntities.js:177`,
+dentro de `fetchAll()` de `createRtdbWholeNodeReadEntity`) vira, depois de
+esgotar os retries padrão do TanStack Query, `assets = []`/`isLoading =
+false` — a tela renderiza normalmente o estado vazio ("Nenhum ativo
+cadastrado.", `Assets.jsx:209`), indistinguível de "conta realmente sem
+ativos". Isso também bate com o achado já registrado neste mesmo arquivo
+(`createRtdbWholeNodeReadEntity`, item 169 etapa 3b): o fallback para
+Firestore só dispara quando `rtdb` em si é falsy (variável de ambiente
+ausente) — nunca quando o `get()` lança um erro real, incluindo
+PERMISSION_DENIED. `VerificationTask` está sujeita ao mesmo buraco (mesma
+etapa 3b, mesma regra ausente), mas o usuário não reportou nada sobre a
+tela de Verificação — não investigado a fundo aqui por não ser o sintoma
+relatado.
+
+**Correção**: nenhuma mudança de código — as regras corretas já estão em
+`database.rules.json`, só nunca foram publicadas. A correção é rodar o
+workflow "Deploy Firestore & RTDB rules" (Actions → esse nome → "Run
+workflow") uma vez. Esta sessão tentou disparar isso via API
+(`actions_run_trigger`/`workflow_dispatch`) e recebeu `403 Resource not
+accessible by integration` — mesma restrição de permissão já documentada
+no plano de migração Postgres (a sessão não tem escopo de API para disparar
+workflows) — por isso é uma ação manual do usuário, não algo que esta sessão
+resolveu sozinha.
+
+**Risco estrutural exposto, não corrigido nesta rodada**: o par
+frontend-automático / regras-manuais é uma armadilha de ordenação de deploy
+que já se materializou uma vez (este incidente) e pode se repetir em
+qualquer PR futuro que adicione um caminho de leitura RTDB novo — o código
+que lê fica no ar antes da regra que autoriza a leitura, com uma falha
+silenciosa (não um erro visível) no meio. Não implementado nesta rodada
+(fora do pedido do usuário, que foi só diagnosticar); opções para uma
+rodada futura, se o usuário quiser: (a) um passo de CI que compare
+`RTDB_MIRRORED_ENTITIES` contra as chaves de `database.rules.json` e falhe
+se divergirem, (b) automatizar o deploy de `database.rules.json` no mesmo
+push que já dispara o deploy do frontend (mudaria a superfície de
+`ci-deploy.md`, decisão de produto, não tomada aqui).
+
+**Ainda pendente (ação manual do usuário)**: disparar "Deploy Firestore &
+RTDB rules" no Actions. Depois de rodar, os ativos devem reaparecer na
+próxima leitura do painel (RTDB volta a responder, sem precisar de nenhum
+redeploy do frontend).
+
 ## 170. Migração Firestore→Neon — Fases 2-5: schema, CAS redesenhado, API própria (2026-09-08)
 
 Continuação do item 151 (achado 3) e da decisão de migrar para Neon (Postgres
