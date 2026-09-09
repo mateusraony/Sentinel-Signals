@@ -70,10 +70,14 @@ de código reais que faltam:
    padrão de `createUnique`: `INSERT ... ON CONFLICT (id) DO NOTHING
    RETURNING id`, já citado no plano) chamada direto por
    `server/index.js`, não uma entidade genérica nova.
-5. **`render.yaml`'s serviço `sentinel-signals-api` não declara
-   `DATABASE_URL`** (nem como `sync: false`) — precisa da mesma entrada que
-   os outros secrets (`FIREBASE_SERVICE_ACCOUNT_JSON`, etc.) antes do
-   secret poder ser setado no dashboard do Render.
+5. ✅ **Metade feita** — `render.yaml`'s serviço `sentinel-signals-api`
+   agora declara `DATABASE_URL` (`sync: false`), mesma entrada dos outros
+   secrets. **Ainda falta o passo manual**: setar o valor real (a mesma
+   connection string 'pooled' já usada no secret `DATABASE_URL` do GitHub
+   Actions) no dashboard do Render, serviço `sentinel-signals-api` →
+   Environment. Sem isso, as rotas Postgres continuam respondendo 503
+   (comportamento seguro, documentado em `server/pgCoreLoader.js`) — nada
+   muda em produção só por essa declaração ter sido feita.
 6. **`scripts/migrate-firestore-to-postgres.mjs`/`verify-postgres-
    migration.mjs` nunca rodaram contra o Firestore de produção real** —
    só contra Postgres local desta sandbox (a sessão do Claude Code não
