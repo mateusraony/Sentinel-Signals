@@ -21610,3 +21610,50 @@ segue a garantia documentada de transaction pooling, não uma reprodução
 direta; o lote de escrita tem teste real: 1200 itens → 3 chamadas de
 500/500/200). Respondido e resolvido nos 2 threads do Codex nos PRs
 respectivos antes de mesclar.
+
+### Addendum (2026-09-09) — item 6 fechado: ensaio real rodado com sucesso, zero divergência
+
+Usuário disparou `migrate-postgres.yml` manualmente (run #1,
+`https://github.com/mateusraony/Sentinel-Signals/actions/runs/34396305920`,
+19:38-19:40 UTC, `conclusion: success`) — **primeira validação real de
+`scripts/migrate-and-verify-postgres.mjs` contra o Firestore de produção e
+o Neon real**, depois de fechados os 2 achados do Codex acima (sem eles,
+esta seria a primeira chance de qualquer um dos dois se manifestar contra
+dado de produção de verdade).
+
+Resultado, lido direto do log do job (não só o `conclusion: success` do
+run): 6.061 documentos migrados, as 10 entidades TODAS com contagem E
+checksum batendo entre Firestore e Postgres —
+
+| Entidade | Documentos | Contagem | Checksum |
+|---|---|---|---|
+| MonitoredAsset | 11 | OK | OK |
+| AssetState | 45 | OK | OK |
+| SignalEvent | 3903 | OK | OK |
+| TradeOperation | 16 | OK | OK |
+| PriceAlert | 0 | OK | OK |
+| SystemLog (2000 mais recentes) | 2000 | OK | OK |
+| User | 3 | OK | OK |
+| VerificationTask | 81 | OK | OK |
+| StrategyConfig/current | 1 | OK | OK |
+| TelegramFilters/current | 1 | OK | OK |
+
+E, especificamente para `TradeOperation` (o P0 mais crítico do motor de
+trading): `groupActiveOpsByAsset` rodado contra os dois datasets — 0
+grupos duplicados dos dois lados, `match: true`. Zero divergência na
+primeira tentativa — nenhuma investigação de causa raiz foi necessária.
+
+**O que isso NÃO significa**: nenhuma leitura/escrita de produção mudou de
+lugar. O Postgres agora tem uma cópia fiel e verificada dos dados reais,
+mas `src/api/entities.js`/`scripts/adminEntities.js`/`AuthContext.jsx`/o
+webhook continuam 100% Firestore — itens 1-4 do runbook seguem
+bloqueando o cutover de verdade, e a pergunta em aberto do RTDB (ver PR
+#332) continua sem decisão antes do item 2 (troca do browser) poder
+avançar.
+
+Fecha o item 6 do runbook de cutover
+(`docs/claude/postgres-cutover-runbook.md`) — dos 7 itens originais da
+checklist de código, restam 1 (`scripts/adminEntities.js`, Fase 10 prep,
+PR #332 aberto sem merge automático), 2 (browser), 3 (AuthContext) e 4b
+(ligar o webhook de verdade) — os 4 que só devem acontecer juntos, na
+janela de cutover coordenada.
