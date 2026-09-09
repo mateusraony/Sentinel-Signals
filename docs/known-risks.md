@@ -21417,6 +21417,50 @@ O runbook documenta os 7 itens como checklist bloqueante — a fase 10
 (execução do cutover) continua não iniciada, e não deve começar antes
 desses itens fecharem.
 
+### Addendum (2026-09-09) — item 7 fechado: workflow de migração real + achado de cota
+
+Fecha o item 7 do runbook (`.github/workflows/migrate-postgres.yml`,
+`workflow_dispatch`, roda `npm run migrate-postgres` seguido de `npm run
+verify-postgres` com `FIREBASE_SERVICE_ACCOUNT_JSON` + `DATABASE_URL`
+juntos, mesmo padrão de `db-migrate.yml`) — pedido explícito do usuário
+("pode seguir então") depois de esclarecido que isso NÃO é o cutover em si
+(o item 6, ensaio real, ainda não foi disparado; itens 2-5 continuam em
+aberto).
+
+**Achado ao preparar, antes de rodar contra produção**: `scripts/migrate-
+firestore-to-postgres.mjs` lia `systemLogs` inteiro, sem limite — a MESMA
+classe de incidente do item 152 addendum (`backfill-rtdb.mjs` esgotou a
+cota lendo ~49.700 documentos numa chamada só, derrubando o próximo scan
+agendado). A paginação por cursor já existente evita um request gigante,
+mas não reduz a CONTAGEM de leituras cobrada pela cota — migrar o
+histórico inteiro de `systemLogs` gastaria a mesma cota que já causou um
+incidente real. Corrigido ANTES de qualquer execução real (nunca chegou a
+rodar contra produção com o bug): `LIST_LIMIT_OVERRIDES = { systemLogs:
+2000 }`, nova função `migrateRecentCollection` (query única `orderBy
+('created_date','desc').limit(2000)` em vez da paginação exaustiva) — mesmo
+limite/mesma justificativa de `backfill-rtdb.mjs`. `verify-postgres-
+migration.mjs` espelha o mesmo limite (`readFirestoreCollectionRecent`,
+`LIST_LIMIT_OVERRIDES` importado do script de migração — fonte única, sem
+duplicar o número) pro lado da verificação comparar a MESMA fatia dos dois
+bancos; sem isso, a verificação acusaria divergência de contagem falsa
+(Firestore inteiro vs. Postgres só com os 2000 mais recentes). As outras 9
+entidades continuam migração exaustiva — nenhuma mostrou o mesmo problema
+de escala (mesmo raciocínio já aplicado no item 152 addendum a
+`backfill-rtdb.mjs`).
+
+**Verificado**: `npm run lint` limpo nos arquivos tocados; `npx vitest run
+scripts/migrate-firestore-to-postgres.test.js scripts/verify-postgres-
+migration.test.js` — 25 testes verdes (incluindo os novos: limite
+respeitado mesmo com mais documentos disponíveis, coleção vazia, coleção
+menor que o limite). YAML do workflow validado com parser real antes de
+commitar.
+
+**Ainda não executado contra produção** — o item 6 (ensaio real) é o
+próximo passo, e só depois disso é que os itens 2-5 (troca de verdade do
+browser/auth/webhook/render.yaml) devem ser implementados, seguindo a
+sequência do runbook — nunca simultâneo, nunca antes do ensaio validar os
+dois scripts contra dado real pela primeira vez.
+
 ### Addendum (2026-09-09) — item 4 metade fechado (dedup do webhook, dark) + achado de corrida entre arquivos de teste
 
 `db/pgEntitiesCore.mjs` ganhou `insertWebhookEventIfNew(id, data)`

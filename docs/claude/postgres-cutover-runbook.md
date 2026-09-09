@@ -6,7 +6,7 @@ padrão de `docs/claude/external-cron-setup.md`: procedimento manual passo a
 passo, não automatizado. **Este documento não executa nada sozinho** — é o
 guia pra quando o cutover em si (fase 10 do plano) for decidido.
 
-## Status desta rodada (2026-09-08)
+## Status desta rodada (2026-09-09)
 
 **Pronto** (Fases 1-8 do plano, todas mescladas):
 
@@ -25,6 +25,17 @@ guia pra quando o cutover em si (fase 10 do plano) for decidido.
 - Backup diário do Postgres (`scripts/backup-postgres.mjs` +
   `.github/workflows/backup-postgres.yml`) — pré-requisito da fase 11
   satisfeito — PR #330.
+- **Fase 10 (execução) preparada, mas NÃO mesclada** — `scripts/
+  adminEntities.js` vira re-export fino de `db/pgEntitiesCore.mjs`
+  (item 1 abaixo), PR aberto a pedido explícito do usuário sem merge
+  automático (mescla só o backend AO VIVO do cron — diferente de todas as
+  fases anteriores, dark até aqui). Ver `docs/known-risks.md` item 170
+  addendum.
+- Workflow de migração/verificação real via GitHub Actions
+  (`.github/workflows/migrate-postgres.yml`, item 7 abaixo) — fecha a
+  lacuna que faltava pro item 6 (ensaio) poder rodar sem máquina local.
+- Dedup do webhook em Postgres, dark (item 4 abaixo) — ainda não ligada em
+  `server/index.js`.
 
 **Ainda NÃO pronto** — ver a checklist abaixo. Não tente executar o
 cutover sem fechar esses itens primeiro; nenhum deles é opcional.
@@ -60,10 +71,14 @@ de código reais que faltam:
    troca de verdade (item 4b) é feita só durante a janela de cutover
    coordenada, junto com os outros itens, porque o webhook é um canal ao
    vivo (TradingView está esperando a resposta).
-5. **`render.yaml`'s serviço `sentinel-signals-api` não declara
-   `DATABASE_URL`** (nem como `sync: false`) — precisa da mesma entrada que
-   os outros secrets (`FIREBASE_SERVICE_ACCOUNT_JSON`, etc.) antes do
-   secret poder ser setado no dashboard do Render.
+5. ✅ **Metade feita** — `render.yaml`'s serviço `sentinel-signals-api`
+   agora declara `DATABASE_URL` (`sync: false`), mesma entrada dos outros
+   secrets. **Ainda falta o passo manual**: setar o valor real (a mesma
+   connection string 'pooled' já usada no secret `DATABASE_URL` do GitHub
+   Actions) no dashboard do Render, serviço `sentinel-signals-api` →
+   Environment. Sem isso, as rotas Postgres continuam respondendo 503
+   (comportamento seguro, documentado em `server/pgCoreLoader.js`) — nada
+   muda em produção só por essa declaração ter sido feita.
 6. **`scripts/migrate-firestore-to-postgres.mjs`/`verify-postgres-
    migration.mjs` nunca rodaram contra o Firestore de produção real** —
    só contra Postgres local desta sandbox (a sessão do Claude Code não
@@ -71,14 +86,20 @@ de código reais que faltam:
    real, ver `db/CLAUDE.md`). **Rodar um "ensaio" completo (migrar +
    verificar) antes do dia do cutover, fora da janela de manutenção**, é
    como esses scripts vão ser validados contra dado real pela primeira
-   vez — não deixe isso pra hora H.
-7. **Não existe workflow pra rodar a migração/verificação a partir do
-   GitHub Actions.** `db-migrate.yml` (aplicar `db/schema.sql`) já prova o
-   padrão — um workflow `workflow_dispatch` com os secrets
-   `FIREBASE_SERVICE_ACCOUNT_JSON` E `DATABASE_URL` juntos rodaria os
-   scripts do item 6 sem precisar de máquina local. Se preferir rodar na
-   sua própria máquina em vez de criar esse workflow, tudo bem — mas
-   alguém precisa decidir qual caminho antes do dia do cutover.
+   vez — não deixe isso pra hora H. ✅ **Caminho pronto** (item 7 abaixo);
+   ensaio em si ainda não rodado — próximo passo.
+7. ✅ **Feito** — `.github/workflows/migrate-postgres.yml`
+   (`workflow_dispatch`) roda `npm run migrate-postgres` seguido de
+   `npm run verify-postgres` com `FIREBASE_SERVICE_ACCOUNT_JSON` E
+   `DATABASE_URL` juntos, mesmo padrão de `db-migrate.yml`. Serve tanto
+   pro ensaio (item 6) quanto pra migração final do dia do cutover (passo
+   2-3 abaixo) — mesmo par de scripts, idempotente. **Achado ao preparar
+   este item**: `migrate-firestore-to-postgres.mjs` lia `systemLogs`
+   inteiro, sem limite — mesma classe de incidente do item 152 addendum
+   (backfill-rtdb.mjs esgotou a cota lendo ~49.700 documentos numa
+   chamada só). Corrigido com o mesmo `LIST_LIMIT_OVERRIDES` (2000 mais
+   recentes) já usado lá, espelhado em `verify-postgres-migration.mjs`
+   pro lado da verificação comparar a mesma fatia.
 
 ## Pré-requisitos operacionais
 

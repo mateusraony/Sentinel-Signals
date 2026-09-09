@@ -77,5 +77,16 @@ services:
       # que a plataforma oferece.
       - key: GITHUB_ACTIONS_TOKEN
         sync: false
+      # Connection string 'pooled' do Neon (mesmo secret já usado nos
+      # workflows do GitHub Actions, db-migrate.yml/migrate-postgres.yml) —
+      # sem ela, server/pgCoreLoader.js não conecta e as rotas Postgres
+      # (server/routes/{entities,tradeOps,locks,me}.js) respondem 503 em vez
+      # de tentar (dark até o cutover, item 2 do runbook de cutover
+      # ligar de verdade — ver db/CLAUDE.md/docs/claude/postgres-cutover-
+      # runbook.md). Declarar aqui só HABILITA o campo no dashboard do
+      # Render — setar o valor real é passo manual, mesmo padrão dos outros
+      # secrets acima.
+      - key: DATABASE_URL
+        sync: false
       - key: ALLOWED_ORIGIN
         value: https://sentinel-signals.onrender.com

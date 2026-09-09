@@ -1,0 +1,77 @@
+name: Migrar Firestore → Postgres (dados reais)
+
+# Disparo manual só (Actions tab → "Migrar Firestore → Postgres (dados
+# reais)" → "Run workflow"). Fecha o item 7 do runbook de cutover
+# (docs/claude/postgres-cutover-runbook.md): a sessão remota do Claude Code
+# não alcança nem o Firestore de produção com credencial real nem o Neon
+# real (db/CLAUDE.md) — este workflow roda no runner do GitHub (rede
+# irrestrita) com os dois secrets juntos.
+#
+# Roda scripts/migrate-firestore-to-postgres.mjs (upsert idempotente,
+# seguro rodar mais de uma vez) seguido de scripts/verify-postgres-
+# migration.mjs (falha o job — `exit 1` via forceExit — se achar qualquer
+# divergência de contagem/checksum/duplicata de TradeOperation).
+#
+# Dois usos previstos, mesmo par de passos:
+# 1. "Ensaio" (item 6 do runbook) — rodar isto ANTES do dia do cutover, fora
+#    da janela de manutenção, só pra validar os scripts contra dado real
+#    pela primeira vez. Não afeta produção: Firestore é só lido; o Postgres
+#    escrito ainda não é lido por nada em produção até o cutover (item 2)
+#    acontecer.
+# 2. Migração final do dia do cutover (passo 2-3 do runbook) — rodar de novo
+#    bem antes do deploy simultâneo, pra upsertar qualquer dado criado desde
+#    o ensaio.
+#
+# Custo de leitura Firestore: paginado (nunca um único request gigante), mas
+# a CONTAGEM de leituras cobrada é a mesma de ler a coleção inteira —
+# systemLogs é limitado aos 2000 mais recentes de propósito
+# (LIST_LIMIT_OVERRIDES em migrate-firestore-to-postgres.mjs) pra não repetir
+# o incidente do item 152 addendum (backfill-rtdb.mjs esgotou a cota lendo
+# systemLogs sem limite). As outras 9 entidades continuam migração
+# exaustiva — rodar numa janela de baixo uso evita competir com o scan
+# agendado pela mesma cota diária.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  migrate-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Checar secrets obrigatórios
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::Secret FIREBASE_SERVICE_ACCOUNT_JSON não configurado (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::Secret DATABASE_URL não configurado (Settings → Secrets and variables → Actions → New repository secret, nome exato DATABASE_URL, valor = connection string 'pooled' do Console Neon)."
+            exit 1
+          fi
+
+      - name: Migrar dados reais (Firestore → Postgres)
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run migrate-postgres | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Verificar migração (contagem + checksum + duplicata de TradeOperation)
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: npm run verify-postgres | tee -a "$GITHUB_STEP_SUMMARY"
