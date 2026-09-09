@@ -5,11 +5,27 @@
 // que o binário `pg_dump`/`pg_restore` (não um mock) faz o que o comentário
 // do arquivo promete: inclui o que deveria, exclui o que não deveria, e o
 // dado volta intacto depois de um restore.
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+//
+// Roda num BANCO DE TESTE PRÓPRIO (CREATE DATABASE, não a TEST_DATABASE_URL
+// compartilhada) — achado rodando a suíte completa repetidamente: vitest
+// executa arquivos de teste em paralelo por padrão, e os outros arquivos
+// gated por TEST_DATABASE_URL (db/schema.test.js, db/concurrency.test.js,
+// db/pgEntitiesCore.test.js) TRUNCAM/escrevem nas MESMAS tabelas
+// compartilhadas (monitored_assets, users, etc.) — um DROP/CREATE TABLE via
+// `pg_restore --clean` deste arquivo rodando ao mesmo tempo que um INSERT de
+// outro arquivo produz erros incoerentes ("relation does not exist",
+// contagem errada), a assinatura clássica de uma corrida entre arquivos, não
+// um bug de lógica. Um banco próprio (criado/apagado neste describe) isola
+// esse round-trip destrutivo por completo — nenhuma consulta crua aqui usa
+// `backend.entities`/`getPool()` compartilhados de propósito, exatamente
+// para nunca mexer no `process.env.DATABASE_URL` global que outros arquivos
+// também setam no próprio beforeAll.
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import pg from 'pg';
 import { buildPgDumpArgs, EXCLUDED_TABLES } from './backup-postgres.mjs';
 
 describe('buildPgDumpArgs', () => {
@@ -40,69 +56,83 @@ describe('buildPgDumpArgs', () => {
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
-describe.skipIf(!TEST_DATABASE_URL)('backup-postgres.mjs — pg_dump/pg_restore reais', () => {
+function withDbName(baseUrl, dbName) {
+  const url = new URL(baseUrl);
+  url.pathname = `/${dbName}`;
+  return url.toString();
+}
+
+describe.skipIf(!TEST_DATABASE_URL)('backup-postgres.mjs — pg_dump/pg_restore reais (banco isolado)', () => {
   let applySchema;
-  let backend;
-  let getPool;
-  let closePool;
+  let adminClient;
+  let dbName;
+  let dbUrl;
   let tmpDir;
 
   beforeAll(async () => {
     ({ applySchema } = await import('../db/migrate.mjs'));
-    ({ backend, getPool, closePool } = await import('../db/pgEntitiesCore.mjs'));
-    await applySchema(TEST_DATABASE_URL);
-    process.env.DATABASE_URL = TEST_DATABASE_URL;
+    dbName = `backup_test_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+    dbUrl = withDbName(TEST_DATABASE_URL, dbName);
+    adminClient = new pg.Client({ connectionString: TEST_DATABASE_URL });
+    await adminClient.connect();
+    await adminClient.query(`CREATE DATABASE "${dbName}"`);
+    await applySchema(dbUrl);
     tmpDir = mkdtempSync(path.join(tmpdir(), 'backup-postgres-test-'));
   });
 
   afterAll(async () => {
-    await closePool();
+    await adminClient.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+    await adminClient.end();
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  beforeEach(async () => {
-    const pool = getPool(TEST_DATABASE_URL);
-    await pool.query('TRUNCATE monitored_assets, users, tradingview_webhook_events');
-  });
-
   it('o dump inclui monitored_assets e tradingview_webhook_events, mas NUNCA users — o restore prova isso', async () => {
-    await backend.entities.MonitoredAsset.create({ symbol: 'BTCUSDT', is_active: true });
-    await backend.entities.User.create({ role: 'user', email: 'test@example.com' });
-    const pool = getPool(TEST_DATABASE_URL);
-    await pool.query(
-      "INSERT INTO tradingview_webhook_events (id, data) VALUES ('sig-1', '{\"symbol\":\"BTCUSDT\"}'::jsonb)"
-    );
+    const client = new pg.Client({ connectionString: dbUrl });
+    await client.connect();
+    try {
+      await client.query(
+        `INSERT INTO monitored_assets (id, symbol, is_active, data) VALUES ('asset-1', 'BTCUSDT', true, '{"symbol":"BTCUSDT","is_active":true}'::jsonb)`
+      );
+      await client.query(
+        `INSERT INTO users (id, data) VALUES ('user-1', '{"role":"user","email":"test@example.com"}'::jsonb)`
+      );
+      await client.query(
+        `INSERT INTO tradingview_webhook_events (id, data) VALUES ('sig-1', '{"symbol":"BTCUSDT"}'::jsonb)`
+      );
 
-    const dumpPath = path.join(tmpDir, 'test.dump');
-    const dumpResult = spawnSync('pg_dump', buildPgDumpArgs(TEST_DATABASE_URL, dumpPath));
-    expect(dumpResult.status).toBe(0);
+      const dumpPath = path.join(tmpDir, 'test.dump');
+      const dumpResult = spawnSync('pg_dump', buildPgDumpArgs(dbUrl, dumpPath));
+      expect(dumpResult.status).toBe(0);
 
-    // Apaga tudo — o restore que vem a seguir é o que prova o conteúdo do dump.
-    await pool.query('TRUNCATE monitored_assets, users, tradingview_webhook_events');
-    expect(await backend.entities.MonitoredAsset.list()).toHaveLength(0);
+      // Apaga tudo — o restore que vem a seguir é o que prova o conteúdo do dump.
+      await client.query('TRUNCATE monitored_assets, users, tradingview_webhook_events');
 
-    const restoreResult = spawnSync('pg_restore', [
-      '--clean', '--if-exists', '--no-owner', '--no-privileges',
-      '--dbname', TEST_DATABASE_URL, dumpPath,
-    ]);
-    // pg_restore pode sair com status != 0 por avisos não-fatais (ex.: um
-    // DROP de objeto que não existia); o que prova o restore de verdade é o
-    // dado de volta no banco — as asserções abaixo — não o código de
-    // saída sozinho. Se o restore falhou de verdade, os asserts abaixo
-    // pegam isso (a tabela continuaria vazia).
-    if (restoreResult.status !== 0) {
-      console.warn('[test] pg_restore saiu com status', restoreResult.status, restoreResult.stderr?.toString());
+      const restoreResult = spawnSync('pg_restore', [
+        '--clean', '--if-exists', '--no-owner', '--no-privileges',
+        '--dbname', dbUrl, dumpPath,
+      ]);
+      // pg_restore pode sair com status != 0 por avisos não-fatais (ex.: um
+      // DROP de objeto que não existia); o que prova o restore de verdade é
+      // o dado de volta no banco — as asserções abaixo — não o código de
+      // saída sozinho. Se o restore falhou de verdade, os asserts abaixo
+      // pegam isso (a tabela continuaria vazia).
+      if (restoreResult.status !== 0) {
+        console.warn('[test] pg_restore saiu com status', restoreResult.status, restoreResult.stderr?.toString());
+      }
+
+      const assets = (await client.query('SELECT id, symbol FROM monitored_assets')).rows;
+      expect(assets).toHaveLength(1);
+      expect(assets[0].symbol).toBe('BTCUSDT');
+
+      const events = (await client.query('SELECT id FROM tradingview_webhook_events')).rows;
+      expect(events.map((r) => r.id)).toEqual(['sig-1']);
+
+      // users nunca esteve no dump — TRUNCATE deixou vazio, e o restore não
+      // o repovoou (a prova real de que --exclude-table=users funcionou).
+      const users = (await client.query('SELECT id FROM users')).rows;
+      expect(users).toHaveLength(0);
+    } finally {
+      await client.end();
     }
-
-    const assets = await backend.entities.MonitoredAsset.list();
-    expect(assets).toHaveLength(1);
-    expect(assets[0].symbol).toBe('BTCUSDT');
-
-    const { rows } = await pool.query('SELECT id FROM tradingview_webhook_events');
-    expect(rows.map((r) => r.id)).toEqual(['sig-1']);
-
-    // users nunca esteve no dump — TRUNCATE deixou vazio, e o restore não
-    // o repovoou (a prova real de que --exclude-table=users funcionou).
-    expect(await backend.entities.User.list()).toHaveLength(0);
   });
 });

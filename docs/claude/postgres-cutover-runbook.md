@@ -50,17 +50,16 @@ de código reais que faltam:
    direto** (`getDoc`/`setDoc` em `users/{uid}`) — precisa trocar para
    `fetch('/api/me', {headers:{Authorization:'Bearer '+idToken}})`, a rota
    que `server/routes/me.js` já expõe (dark).
-4. **O webhook `POST /webhook/tradingview` (`server/index.js:159-203`)
-   continua gravando o dedup de `signal_id` direto no Firestore**
-   (`db.collection('tradingviewWebhookEvents')` + `runTransaction`) — não
-   existe hoje nenhum caminho Postgres para isso. `db/schema.sql` já criou
-   a tabela `tradingview_webhook_events`, mas `tradingview_webhook_events`
-   foi **deliberadamente excluída** de `ENTITY_TABLES`
-   (`db/pgEntitiesCore.mjs`, "server-only, nunca passa por
-   `backend.entities`") — o cutover precisa de uma função dedicada (mesmo
-   padrão de `createUnique`: `INSERT ... ON CONFLICT (id) DO NOTHING
-   RETURNING id`, já citado no plano) chamada direto por
-   `server/index.js`, não uma entidade genérica nova.
+4. ✅ **Metade feita** — `db/pgEntitiesCore.mjs` ganhou
+   `insertWebhookEventIfNew(id, data)` (`INSERT ... ON CONFLICT (id) DO
+   NOTHING RETURNING id`, testado com concorrência real, 25x), o
+   equivalente Postgres da transação de dedup que `server/index.js`'s
+   `POST /webhook/tradingview` (`server/index.js:159-203`) faz hoje contra
+   o Firestore (`db.collection('tradingviewWebhookEvents')` +
+   `runTransaction`). **Ainda NÃO chamada por `server/index.js`** — a
+   troca de verdade (item 4b) é feita só durante a janela de cutover
+   coordenada, junto com os outros itens, porque o webhook é um canal ao
+   vivo (TradingView está esperando a resposta).
 5. **`render.yaml`'s serviço `sentinel-signals-api` não declara
    `DATABASE_URL`** (nem como `sync: false`) — precisa da mesma entrada que
    os outros secrets (`FIREBASE_SERVICE_ACCOUNT_JSON`, etc.) antes do

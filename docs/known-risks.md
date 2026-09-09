@@ -21416,3 +21416,67 @@ cutover" hoje não é possível só com o que já existe:
 O runbook documenta os 7 itens como checklist bloqueante — a fase 10
 (execução do cutover) continua não iniciada, e não deve começar antes
 desses itens fecharem.
+
+### Addendum (2026-09-09) — item 4 metade fechado (dedup do webhook, dark) + achado de corrida entre arquivos de teste
+
+`db/pgEntitiesCore.mjs` ganhou `insertWebhookEventIfNew(id, data)`
+(`INSERT ... ON CONFLICT (id) DO NOTHING RETURNING id`), o equivalente
+Postgres da transação de dedup do webhook TradingView — pedido explícito
+do usuário ("pode seguir então"), continuando o fechamento da checklist do
+runbook item por item. **Ainda dark**: `server/index.js` continua
+chamando só a transação Firestore — ligar de verdade é o item 4b,
+reservado pra janela de cutover coordenada (webhook é canal ao vivo,
+TradingView espera a resposta). Testado com concorrência REAL (2
+gravações simultâneas do mesmo `signal_id`, 25x) — exatamente 1 vence,
+nunca 0 nem 2.
+
+**Achado ao verificar, antes de qualquer merge**: rodando a suíte
+completa repetidamente (disciplina de verificação padrão deste projeto,
+não algo pedido especificamente), `db/concurrency.test.js` falhava de
+forma 100% reproduzível (6/6) quando rodado junto com
+`db/pgEntitiesCore.test.js` — `expected [] to have length 1 but got +0`.
+Causa raiz: `pgEntitiesCore.test.js`'s `beforeEach` faz `TRUNCATE
+trade_operations` (irrestrito, TODAS as linhas) e vitest roda arquivos de
+teste em paralelo por padrão — o `TRUNCATE` de um arquivo apagava a linha
+que `concurrency.test.js` acabara de inserir, ENTRE o `INSERT` e o
+`SELECT` de verificação do outro. **É a MESMA classe de corrida já
+documentada no item 170 addendum anterior** (Fase 10, achado de
+infraestrutura de teste) — mas aquele addendum e a correção correspondente
+(`scripts/backup-postgres.test.js` rodando num banco isolado) vivem só no
+PR #332 (Phase 10, ainda não mesclado por pedido explícito do usuário) e
+NUNCA cobriram esta interação específica (`concurrency.test.js` ×
+`pgEntitiesCore.test.js`) — confirmado comparando o diff: PR #332 não
+toca nenhum dos dois arquivos além do fix do `applySchema`. Reproduzido
+também SEM nenhuma mudança nova (só os dois arquivos como estavam em
+`main`), então não é regressão desta rodada — é um bug pré-existente que
+só não tinha sido pego porque ninguém tinha rodado `db/concurrency.test.js`
++ `db/pgEntitiesCore.test.js` juntos, repetidamente, localmente, antes.
+
+**Corrigido nesta rodada** (não fazia parte do pedido original, mas
+bloqueava a própria verificação exigida — "confirme que tudo foi feito
+certo... pra daí sim fazer o merge"): `db/concurrency.test.js` passou a
+rodar num banco de teste PRÓPRIO (`CREATE DATABASE` descartável, criado/
+apagado no próprio `describe`), mesmo padrão já usado por
+`backup-postgres.test.js`. Como a correção do `applySchema` (chave de
+advisory lock, item 170 addendum anterior) também vive só no PR #332 não
+mesclado, foi portada aqui também — sem ela, `applySchema` rodando de
+dois arquivos ao mesmo tempo (agora incluindo o banco novo deste arquivo)
+volta a corromper o catálogo `pg_type`. A correção de isolamento do
+`backup-postgres.test.js` em si (banco próprio, mesma versão do PR #332)
+também foi portada — sem ela, a suíte completa (`npx vitest run`, sem
+escopo) ainda falhava intermitentemente (2 de 3 rodadas, arquivos
+diferentes cada vez) mesmo com `concurrency.test.js` já isolado. Com as 3
+peças juntas (advisory lock + `concurrency.test.js` isolado +
+`backup-postgres.test.js` isolado), a suíte completa rodou 4x consecutivas
+100% verde (1756 testes) antes deste PR ser aberto.
+
+Quando o PR #332 eventualmente for mesclado (fase 10, execução do
+cutover), essas mesmas mudanças em `db/migrate.mjs`/
+`scripts/backup-postgres.test.js` vindas de lá vão bater exatamente com o
+que já está em `main` por este PR — sem conflito real esperado (mesmo
+texto, mesma correção, encontrada independentemente duas vezes).
+
+**Verificado**: `npm run lint` limpo; `npx vitest run` (suíte completa,
+`TEST_DATABASE_URL` setada) — 1756 testes verdes, 4 rodadas consecutivas;
+`npm run build` verde; `npm run typecheck:ratchet` — 16 erro(s), dentro do
+teto.

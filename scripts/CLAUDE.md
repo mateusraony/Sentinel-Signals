@@ -74,7 +74,10 @@ tem ferramenta de backup/restore madura e o Firestore não, sem o plano
 pago Blaze). Exclui `users`/`scanner_locks` do dump — ver o cabeçalho do
 arquivo pro porquê de cada um. Testado com `buildPgDumpArgs` (puro) +
 round-trip real `pg_dump`→`pg_restore` contra Postgres de verdade
-(`scripts/backup-postgres.test.js`, gated por `TEST_DATABASE_URL`).
+(`scripts/backup-postgres.test.js`, gated por `TEST_DATABASE_URL`, **num
+banco descartável próprio** — `pg_restore --clean` rodando contra a
+`TEST_DATABASE_URL` compartilhada corrompia arquivos vizinhos que rodam em
+paralelo, ver `db/CLAUDE.md`).
 Restauração via `pg_restore` puro, sem script próprio — ver
 `docs/restore-postgres.md`. Seguir:
 

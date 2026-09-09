@@ -49,13 +49,35 @@ porque um `SELECT ... FOR UPDATE` sozinho NÃO fecha a corrida de criar a
 primeira operação de um ativo (linhas que ainda não existem não têm o que
 travar); o índice único é o que fecha.
 
+`insertWebhookEventIfNew` (item 4 do runbook de cutover,
+`docs/claude/postgres-cutover-runbook.md`) — equivalente Postgres da
+transação de dedup do webhook TradingView (`server/index.js`'s `POST
+/webhook/tradingview`, hoje só Firestore). `tradingview_webhook_events`
+segue deliberadamente fora de `ENTITY_TABLES`/`backend` ("server-only,
+nunca passa por `backend.entities`") — por isso é exportada solta, não
+dentro de `backend`. `INSERT ... ON CONFLICT (id) DO NOTHING RETURNING id`
+é atômico sob concorrência real (testado com 2 gravações simultâneas do
+mesmo `signal_id`, 25x). **Preparada, ainda NÃO chamada por
+`server/index.js`** — ligar isso de verdade é o item 4b do runbook, feito
+só durante a janela de cutover coordenada (o webhook é um canal ao vivo).
+
 ## Testes contra Postgres real (não fake, não mock)
 
 `schema.test.js`/`concurrency.test.js`/`pgEntitiesCore.test.js` são gated
 por `TEST_DATABASE_URL`
 (`describe.skipIf`) — `npm test` sem essa var pula os dois de forma limpa.
-Rodar localmente contra um Postgres qualquer (não precisa ser Neon — é só
-Postgres padrão):
+**`concurrency.test.js` roda num banco próprio** (`CREATE DATABASE`
+descartável, não a `TEST_DATABASE_URL` compartilhada) — achado rodando a
+suíte completa repetidamente: `pgEntitiesCore.test.js`'s `TRUNCATE
+trade_operations` (irrestrito) no `beforeEach`, rodando em paralelo (vitest
+roda arquivos em paralelo por padrão), apagava a linha que
+`concurrency.test.js` acabara de inserir, ENTRE o `INSERT` e o `SELECT` de
+verificação — reproduzido 6/6 vezes antes da correção, 0/6 depois. Mesmo
+padrão de banco isolado já usado por `scripts/backup-postgres.test.js`
+(mesmo raciocínio: um `pg_restore --clean` rodando junto com qualquer outro
+arquivo produz a mesma classe de corrida). Rodar localmente contra um
+Postgres qualquer (não precisa ser Neon — é só Postgres padrão, com
+permissão `CREATEDB` pro usuário de teste):
 
 ```
 TEST_DATABASE_URL=postgresql://user:pass@localhost:5432/dbname npx vitest run db/
