@@ -40,6 +40,26 @@ import { COLLECTION_ENTITIES, SINGLETON_DOCS, LIST_LIMIT_OVERRIDES } from './mig
 import { readFirestoreCollection, readFirestoreCollectionRecent, readFirestoreSingleton, compareDatasets, compareTradeOpDuplicates } from './verify-postgres-migration.mjs';
 import { forceExit } from './scanTimeout.mjs';
 
+// Mesmo tamanho de página de scripts/migrate-firestore-to-postgres.mjs —
+// achado real por review externa (Codex, PR #337): bulkImportEntity abre 1
+// única transação (BEGIN...COMMIT) pra TODOS os itens recebidos numa
+// chamada. migrateCollection original chamava bulkImportEntity 1x POR
+// PÁGINA (≤500 itens), então uma coleção grande nunca virava uma
+// transação sem limite. Aqui a leitura do Firestore já acontece inteira em
+// memória (é o que elimina a corrida de snapshot — ver o cabeçalho do
+// arquivo), mas a ESCRITA no Postgres precisa continuar em lotes, senão
+// uma coleção crescendo (signalEvents, tradeOperations) vira 1 transação
+// gigante — arriscando estourar limite do Neon ou o timeout de 20min do
+// workflow, e derrubando a migração INTEIRA da coleção numa falha parcial
+// (em vez de só a última página, como antes).
+const WRITE_CHUNK_SIZE = 500;
+
+function chunk(items, size) {
+  const chunks = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
 // Exported for scripts/migrate-and-verify-postgres.test.js — lê o Firestore
 // UMA vez (via readFirestoreCollection(Recent), mesma paginação de
 // scripts/migrate-firestore-to-postgres.mjs's migrateCollection — os dois
@@ -52,7 +72,9 @@ export async function migrateAndVerifyCollection(firestoreCollection, entityName
   const firestoreItems = limit
     ? await readFirestoreCollectionRecent(firestoreCollection, limit)
     : await readFirestoreCollection(firestoreCollection);
-  if (firestoreItems.length) await bulkImportEntity(entityName, firestoreItems);
+  for (const page of chunk(firestoreItems, WRITE_CHUNK_SIZE)) {
+    await bulkImportEntity(entityName, page);
+  }
 
   const postgresItems = limit
     ? await backend.entities[entityName].list('-created_date', limit)

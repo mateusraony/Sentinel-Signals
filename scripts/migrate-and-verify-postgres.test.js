@@ -92,6 +92,22 @@ describe('migrateAndVerifyCollection', () => {
     expect(listMock).toHaveBeenCalledWith('-created_date', 2000);
   });
 
+  it('coleção grande (>500) escreve em LOTES — nunca 1 transação com todos os itens de uma vez', async () => {
+    const items = Array.from({ length: 1200 }, (_, i) => ({ id: `sig_${i}`, symbol: 'BTCUSDT' }));
+    readFirestoreCollectionMock.mockResolvedValue(items);
+    backendMock.entities.SignalEvent = { list: vi.fn().mockResolvedValue(items) };
+    const { migrateAndVerifyCollection } = await import('./migrate-and-verify-postgres.mjs');
+
+    const result = await migrateAndVerifyCollection('signalEvents', 'SignalEvent');
+
+    expect(bulkImportEntityMock).toHaveBeenCalledTimes(3); // 500 + 500 + 200
+    const pageSizes = bulkImportEntityMock.mock.calls.map(([, page]) => page.length);
+    expect(pageSizes).toEqual([500, 500, 200]);
+    const allWrittenIds = bulkImportEntityMock.mock.calls.flatMap(([, page]) => page.map((it) => it.id));
+    expect(new Set(allWrittenIds).size).toBe(1200); // nenhum item repetido/pulado entre lotes
+    expect(result.ok).toBe(true); // comparação ainda usa o array INTEIRO, não só o último lote
+  });
+
   it('coleção vazia não chama bulkImportEntity', async () => {
     readFirestoreCollectionMock.mockResolvedValue([]);
     backendMock.entities.PriceAlert = { list: vi.fn().mockResolvedValue([]) };
