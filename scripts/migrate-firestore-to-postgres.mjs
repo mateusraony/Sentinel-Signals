@@ -73,6 +73,20 @@ export const SINGLETON_DOCS = {
   telegramFilters: 'TelegramFilters',
 };
 
+// Mesma lição já paga em produção (docs/known-risks.md item 152 addendum,
+// incidente real de scripts/backfill-rtdb.mjs): `systemLogs` sozinho já
+// mediu ~49.700 documentos — quase a cota diária INTEIRA do Firestore
+// Spark (~50k leituras/dia). Migrar o histórico inteiro custaria a mesma
+// leitura que já derrubou um scan agendado uma vez (paginar evita um único
+// request gigante, mas não reduz a CONTAGEM de leituras cobradas). Como
+// SystemLog é diagnóstico (nenhum consumidor de produção depende do
+// histórico completo — só Logs.jsx/DebugLogButton.jsx, que já mostram no
+// máximo 200/50 linhas), migrar só os mais recentes é seguro: mesmo limite
+// de `backfill-rtdb.mjs`'s LIST_LIMIT_OVERRIDES.
+export const LIST_LIMIT_OVERRIDES = {
+  systemLogs: 2000,
+};
+
 function docToItem(docSnap) {
   return { id: docSnap.id, ...toPlainValue(docSnap.data()) };
 }
@@ -102,6 +116,17 @@ export async function migrateCollection(firestoreCollection, entityName) {
   return total;
 }
 
+// Variante limitada de migrateCollection — só os N mais recentes por
+// `created_date` (ver LIST_LIMIT_OVERRIDES acima), num único get() em vez
+// de paginação exaustiva. Usada só para `systemLogs` hoje.
+export async function migrateRecentCollection(firestoreCollection, entityName, limit) {
+  const snapshot = await db.collection(firestoreCollection).orderBy('created_date', 'desc').limit(limit).get();
+  const items = snapshot.docs.map(docToItem);
+  if (items.length) await bulkImportEntity(entityName, items);
+  console.log(`[migrate] ${firestoreCollection}: ${items.length} documento(s) migrado(s) (limitado aos ${limit} mais recentes)`);
+  return items.length;
+}
+
 export async function migrateSingleton(firestoreCollection, docId, entityName) {
   const snap = await db.collection(firestoreCollection).doc(docId).get();
   if (!snap.exists) {
@@ -117,7 +142,10 @@ async function main() {
   const started = Date.now();
   const counts = {};
   for (const [collection, entityName] of Object.entries(COLLECTION_ENTITIES)) {
-    counts[collection] = await migrateCollection(collection, entityName);
+    const limit = LIST_LIMIT_OVERRIDES[collection];
+    counts[collection] = limit
+      ? await migrateRecentCollection(collection, entityName, limit)
+      : await migrateCollection(collection, entityName);
   }
   for (const [collection, entityName] of Object.entries(SINGLETON_DOCS)) {
     counts[collection] = await migrateSingleton(collection, 'current', entityName);
