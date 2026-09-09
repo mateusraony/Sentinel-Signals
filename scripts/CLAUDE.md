@@ -41,10 +41,24 @@ cobre sozinho — ver item 152 addendum.
 migration.mjs` (Fase 7 do plano de migração Firestore→Neon,
 `/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`) — scripts
 operacionais, **agora com workflow** (`.github/workflows/migrate-
-postgres.yml`, `workflow_dispatch`, roda `npm run migrate-postgres` seguido
-de `npm run verify-postgres` com `FIREBASE_SERVICE_ACCOUNT_JSON` E
-`DATABASE_URL` juntos — fecha o item 7 do runbook de cutover,
-`docs/claude/postgres-cutover-runbook.md`). O primeiro lê cada coleção de
+postgres.yml`, `workflow_dispatch`, roda `npm run migrate-verify-postgres`
+— `scripts/migrate-and-verify-postgres.mjs` — com `FIREBASE_SERVICE_
+ACCOUNT_JSON` E `DATABASE_URL` juntos — fecha o item 7 do runbook de
+cutover, `docs/claude/postgres-cutover-runbook.md`). **O workflow NÃO chama
+os dois scripts abaixo separadamente** — achado real (Codex review, PR
+#334): rodar `migrate-firestore-to-postgres.mjs` e depois `verify-postgres-
+migration.mjs` como 2 processos faz cada um ler o Firestore DE NOVO; se o
+cron ao vivo escrever entre as duas leituras (roda a cada ~5min, e o
+"ensaio" do item 6 roda de propósito com o cron ativo), a verificação acusa
+divergência falsa mesmo com a migração correta — pior ainda pra coleções
+ATUALIZADAS em vez de criadas (`AssetState`/`TradeOperation` não ganham
+`created_date` novo a cada scan). `scripts/migrate-and-verify-postgres.mjs`
+resolve lendo cada coleção do Firestore **uma única vez**, escrevendo no
+Postgres e comparando contra o MESMO array em memória (100% reuso das
+funções abaixo — nenhuma lógica de leitura/comparação nova). Os dois
+scripts originais continuam existindo e utilizáveis separadamente (o dia
+real do cutover já pausa o cron antes de migrar/verificar, então a corrida
+não existe lá). O primeiro lê cada coleção de
 negócio direto do `firebase-admin/firestore` (paginação real por cursor de
 documento, `FieldPath.documentId()` — mesma lição de escala do item 152:
 paginar em vez de um único `list()` gigante) e upserta em Postgres via

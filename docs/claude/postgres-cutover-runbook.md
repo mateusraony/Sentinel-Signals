@@ -88,17 +88,27 @@ de código reais que faltam:
    vez — não deixe isso pra hora H. ✅ **Caminho pronto** (item 7 abaixo);
    ensaio em si ainda não rodado — próximo passo.
 7. ✅ **Feito** — `.github/workflows/migrate-postgres.yml`
-   (`workflow_dispatch`) roda `npm run migrate-postgres` seguido de
-   `npm run verify-postgres` com `FIREBASE_SERVICE_ACCOUNT_JSON` E
-   `DATABASE_URL` juntos, mesmo padrão de `db-migrate.yml`. Serve tanto
-   pro ensaio (item 6) quanto pra migração final do dia do cutover (passo
-   2-3 abaixo) — mesmo par de scripts, idempotente. **Achado ao preparar
-   este item**: `migrate-firestore-to-postgres.mjs` lia `systemLogs`
-   inteiro, sem limite — mesma classe de incidente do item 152 addendum
-   (backfill-rtdb.mjs esgotou a cota lendo ~49.700 documentos numa
-   chamada só). Corrigido com o mesmo `LIST_LIMIT_OVERRIDES` (2000 mais
-   recentes) já usado lá, espelhado em `verify-postgres-migration.mjs`
-   pro lado da verificação comparar a mesma fatia.
+   (`workflow_dispatch`) roda `npm run migrate-verify-postgres`
+   (`scripts/migrate-and-verify-postgres.mjs`) com `FIREBASE_SERVICE_
+   ACCOUNT_JSON` E `DATABASE_URL` juntos, mesmo padrão de `db-migrate.yml`.
+   Serve tanto pro ensaio (item 6) quanto pra migração final do dia do
+   cutover (passo 2-3 abaixo). **2 achados ao preparar este item**: (a)
+   `migrate-firestore-to-postgres.mjs` lia `systemLogs` inteiro, sem
+   limite — mesma classe de incidente do item 152 addendum
+   (backfill-rtdb.mjs esgotou a cota lendo ~49.700 documentos numa chamada
+   só) — corrigido com `LIST_LIMIT_OVERRIDES` (2000 mais recentes); (b)
+   achado real por review externa (Codex, comentário no PR #334): rodar
+   `migrate-firestore-to-postgres.mjs` e `verify-postgres-migration.mjs`
+   como 2 processos separados faz cada um ler o Firestore DE NOVO — com o
+   cron ao vivo escrevendo entre as duas leituras (o ensaio roda de
+   propósito fora da janela de manutenção, cron ativo), a verificação
+   podia acusar divergência falsa mesmo com a migração correta.
+   Corrigido: `scripts/migrate-and-verify-postgres.mjs` lê cada coleção do
+   Firestore **uma única vez**, escreve no Postgres e verifica contra o
+   MESMO array em memória — a corrida deixa de existir por construção
+   (100% reuso das funções dos 2 scripts originais, que continuam
+   existindo/utilizáveis separadamente — o dia real do cutover já pausa o
+   cron antes, então lá a corrida nunca existiu).
 
 ## Pré-requisitos operacionais
 
@@ -125,15 +135,15 @@ um evento de mercado conhecido).
    (cron-job.org, ver `docs/claude/external-cron-setup.md`) e confirmar que
    nenhuma run de `scan.yml`/`backfill.yml`/`scan-shadow.yml` está em
    andamento (Actions → aguardar/cancelar).
-2. **Backfill final**: rodar `scripts/migrate-firestore-to-postgres.mjs`
-   contra o Firestore de produção real e o Neon de produção real — pela
-   máquina local ou pelo workflow do item 7 acima. Isso vai upsertar
-   qualquer dado criado desde o último ensaio (item 6).
-3. **Verificar**: rodar `scripts/verify-postgres-migration.mjs` logo em
-   seguida, mesmas credenciais. **Não prossiga se ele reportar qualquer
-   divergência** (contagem, checksum, ou grupos de `TradeOperation`
-   duplicados) — investigue a causa raiz primeiro.
-4. **Deploy simultâneo**:
+2. **Backfill final + verificação**: rodar `scripts/migrate-and-verify-
+   postgres.mjs` (`npm run migrate-verify-postgres`) contra o Firestore de
+   produção real e o Neon de produção real — pela máquina local ou pelo
+   workflow do item 7 acima. Isso vai upsertar qualquer dado criado desde
+   o último ensaio (item 6) e verificar na mesma passada (mesmo snapshot,
+   sem reler o Firestore — ver item 7 pro porquê). **Não prossiga se ele
+   reportar qualquer divergência** (contagem, checksum, ou grupos de
+   `TradeOperation` duplicados) — investigue a causa raiz primeiro.
+3. **Deploy simultâneo**:
    - `sentinel-signals-api` (Render): confirmar `DATABASE_URL` setada no
      dashboard, deploy da versão com o webhook migrado (item 4) e as
      rotas HTTP já dark ativadas (nada muda pra elas — só passam a ser
@@ -145,10 +155,10 @@ um evento de mercado conhecido).
      confirmar que `scripts/adminEntities.js` (item 1) já é o re-export —
      o redirecionamento existente em `build-scan.mjs`/`build-backfill.mjs`
      continua funcionando sem mudança neles.
-5. **Reativar o relógio de trading**: religar o disparo externo
+4. **Reativar o relógio de trading**: religar o disparo externo
    (cron-job.org) assim que os 3 deploys acima estiverem confirmados no
    ar.
-6. **Smoke test manual**: abrir o painel, confirmar login (`/api/me`
+5. **Smoke test manual**: abrir o painel, confirmar login (`/api/me`
    funcionando), confirmar que uma tela com dado real (Dashboard/Trades)
    carrega. Disparar `workflow_dispatch` manual de `scan.yml` uma vez e
    conferir no Job Summary/logs que ele rodou contra Postgres sem erro.
