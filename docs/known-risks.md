@@ -21524,3 +21524,89 @@ texto, mesma correção, encontrada independentemente duas vezes).
 `TEST_DATABASE_URL` setada) — 1756 testes verdes, 4 rodadas consecutivas;
 `npm run build` verde; `npm run typecheck:ratchet` — 16 erro(s), dentro do
 teto.
+
+### Addendum (2026-09-09) — achado real do Codex review no PR #334, corrigido antes do ensaio rodar
+
+O PR #334 (item 7, já mesclado) recebeu um review automático (Codex, App do
+GitHub) num comentário real, não ruído: `verify-postgres-migration.mjs`
+(chamado como o 2º de 2 processos separados pelo workflow) relê o
+Firestore DE NOVO depois que `migrate-firestore-to-postgres.mjs` já
+terminou — se o cron ao vivo escrever entre as duas leituras (ele roda a
+cada ~5min, e o "ensaio", item 6, roda de propósito FORA da janela de
+manutenção, com o cron ainda ativo), a verificação compara contra um
+Firestore que já mudou e acusa divergência mesmo com a migração correta.
+Pior ainda para coleções ATUALIZADAS em vez de criadas —
+`AssetState`/`TradeOperation` mudam a cada scan sem `created_date` novo, o
+que invalida a alternativa mais simples (filtrar por um cutoff de
+`created_date`) sugerida no próprio comentário.
+
+**Avaliado como achado real, não falso positivo** — confirmado lendo o
+código: `verify-postgres-migration.mjs`'s `main()` chama
+`readFirestoreCollection(Recent)` de novo por conta própria, sem receber
+nenhum estado do processo `migrate-firestore-to-postgres.mjs` anterior (são
+2 invocações `node` separadas no workflow, sem memória compartilhada).
+
+**Corrigido antes do ensaio (item 6) ser disparado pela primeira vez** —
+não fazia parte do pedido original, mas era exatamente o próximo passo
+planejado, e rodar o ensaio com esse bug ainda presente teria produzido um
+alarme falso na primeira tentativa. `scripts/migrate-and-verify-
+postgres.mjs` (novo) lê cada coleção do Firestore **uma única vez**, migra
+pro Postgres, e verifica contra o MESMO array em memória — a corrida deixa
+de existir por construção, não só encolhe. 100% reuso das peças já
+existentes/testadas: `readFirestoreCollection(Recent)`/
+`readFirestoreSingleton`/`compareDatasets`/`compareTradeOpDuplicates` de
+`verify-postgres-migration.mjs`, `bulkImportEntity` de
+`db/pgEntitiesCore.mjs`, `COLLECTION_ENTITIES`/`SINGLETON_DOCS`/
+`LIST_LIMIT_OVERRIDES` de `migrate-firestore-to-postgres.mjs` — nenhuma
+lógica de leitura/comparação nova, só uma composição diferente delas.
+`.github/workflows/migrate-postgres.yml` passou a chamar só este script
+combinado (`npm run migrate-verify-postgres`); os 2 scripts originais
+continuam existindo e utilizáveis separadamente (o dia real do cutover já
+pausa o cron ANTES de migrar/verificar — passo 1 do runbook —, então lá a
+corrida nunca existiu).
+
+**Verificado**: `npm run lint` limpo; 6 testes novos
+(`scripts/migrate-and-verify-postgres.test.js`, mockando as peças já
+testadas noutro lugar, provando especificamente que o Firestore é lido
+1 vez só e que uma divergência real ainda é detectada corretamente);
+`npm run build` verde.
+
+### Addendum (2026-09-09) — 2 achados reais adicionais do Codex review (PRs #336/#337), corrigidos antes de mesclar
+
+Duas rodadas de review automático a mais, ambas em código já coberto
+pelos addenda acima, ambas achados reais (não ruído):
+
+1. **`db/migrate.mjs`'s `applySchema` (PR #336)**: o lock/unlock
+   session-scoped (`pg_advisory_lock`/`pg_advisory_unlock`, item 170
+   addendum de Fase 10) é seguro contra a `TEST_DATABASE_URL` local/CI
+   (conexão direta), mas `db-migrate.yml` roda essa mesma função contra a
+   connection string **'pooled'** do Neon (PgBouncer em modo transaction
+   pooling) — com lock/schema/unlock como 3 chamadas `client.query()`
+   separadas fora de uma transação explícita, o pooler pode atribuir cada
+   uma a uma sessão de backend DIFERENTE: o schema rodaria sem o lock de
+   verdade, e o unlock poderia nunca alcançar a sessão que travou (lock
+   vazado até aquela conexão de backend ser reciclada, travando uma
+   migração futura). Corrigido trocando pra `pg_advisory_xact_lock` dentro
+   de um `BEGIN...COMMIT` explícito — transaction pooling garante a MESMA
+   sessão de backend do `BEGIN` até o `COMMIT`, então lock + aplicação do
+   schema + liberação automática (no `COMMIT`) ficam garantidamente juntos,
+   não importa como o PgBouncer agende as chamadas separadas.
+2. **`scripts/migrate-and-verify-postgres.mjs` (PR #337)**: `bulkImportEntity`
+   abre 1 única transação pra TODOS os itens recebidos numa chamada — o
+   script novo lia o Firestore inteiro em memória (necessário pra eliminar
+   a corrida de snapshot) e passava o array INTEIRO de uma vez, ao
+   contrário do script original (`migrateCollection`), que chamava
+   `bulkImportEntity` 1x POR PÁGINA (≤500 itens). Pra uma coleção grande
+   (`signalEvents`/`tradeOperations`), isso vira 1 transação sem limite,
+   arriscando estourar algum limite do Neon ou o timeout de 20min do
+   workflow, e derrubando a migração INTEIRA da coleção numa falha parcial
+   em vez de só o último lote. Corrigido: a leitura do Firestore continua
+   única (a correção da corrida fica intacta), mas a ESCRITA volta a
+   acontecer em lotes de 500.
+
+Ambos verificados com teste novo que reproduz o cenário (lock cruzando
+sessões não é testável localmente sem um pooler de verdade — a correção
+segue a garantia documentada de transaction pooling, não uma reprodução
+direta; o lote de escrita tem teste real: 1200 itens → 3 chamadas de
+500/500/200). Respondido e resolvido nos 2 threads do Codex nos PRs
+respectivos antes de mesclar.

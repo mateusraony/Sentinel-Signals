@@ -7,20 +7,28 @@ name: Migrar Firestore → Postgres (dados reais)
 # real (db/CLAUDE.md) — este workflow roda no runner do GitHub (rede
 # irrestrita) com os dois secrets juntos.
 #
-# Roda scripts/migrate-firestore-to-postgres.mjs (upsert idempotente,
-# seguro rodar mais de uma vez) seguido de scripts/verify-postgres-
-# migration.mjs (falha o job — `exit 1` via forceExit — se achar qualquer
-# divergência de contagem/checksum/duplicata de TradeOperation).
+# Roda scripts/migrate-and-verify-postgres.mjs — migra E verifica cada
+# coleção contra o MESMO snapshot do Firestore (lido uma única vez), em vez
+# de rodar migrate-firestore-to-postgres.mjs + verify-postgres-migration.mjs
+# como dois processos separados. Achado real (Codex review, PR #334): dois
+# processos separados cada um lê o Firestore DE NOVO — se o cron ao vivo
+# escrever entre as duas leituras (ele roda a cada ~5min, e o "ensaio" abaixo
+# roda de propósito com o cron ainda ativo), a verificação acusa divergência
+# falsa mesmo com a migração correta. O script combinado elimina a corrida
+# por construção. Falha o job (`exit 1` via forceExit) se achar qualquer
+# divergência de verdade (contagem/checksum/duplicata de TradeOperation).
 #
-# Dois usos previstos, mesmo par de passos:
+# Dois usos previstos, mesmo passo:
 # 1. "Ensaio" (item 6 do runbook) — rodar isto ANTES do dia do cutover, fora
-#    da janela de manutenção, só pra validar os scripts contra dado real
-#    pela primeira vez. Não afeta produção: Firestore é só lido; o Postgres
+#    da janela de manutenção, só pra validar o script contra dado real pela
+#    primeira vez. Não afeta produção: Firestore é só lido; o Postgres
 #    escrito ainda não é lido por nada em produção até o cutover (item 2)
 #    acontecer.
 # 2. Migração final do dia do cutover (passo 2-3 do runbook) — rodar de novo
 #    bem antes do deploy simultâneo, pra upsertar qualquer dado criado desde
-#    o ensaio.
+#    o ensaio. Aqui o cron já está pausado (passo 1), então a corrida acima
+#    nem se aplicaria — mas o script combinado funciona igual nos dois casos,
+#    sem precisar de lógica condicional.
 #
 # Custo de leitura Firestore: paginado (nunca um único request gigante), mas
 # a CONTAGEM de leituras cobrada é a mesma de ler a coleção inteira —
@@ -64,14 +72,8 @@ jobs:
             exit 1
           fi
 
-      - name: Migrar dados reais (Firestore → Postgres)
+      - name: Migrar e verificar dados reais (Firestore → Postgres, mesmo snapshot)
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npm run migrate-postgres | tee -a "$GITHUB_STEP_SUMMARY"
-
-      - name: Verificar migração (contagem + checksum + duplicata de TradeOperation)
-        env:
-          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npm run verify-postgres | tee -a "$GITHUB_STEP_SUMMARY"
+        run: npm run migrate-verify-postgres | tee -a "$GITHUB_STEP_SUMMARY"
