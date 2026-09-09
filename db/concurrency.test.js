@@ -11,12 +11,32 @@
 // opTransition.test.js — não duplicada aqui.
 //
 // Gated por TEST_DATABASE_URL, mesmo padrão de schema.test.js.
+//
+// Roda num BANCO DE TESTE PRÓPRIO (CREATE DATABASE, não a
+// TEST_DATABASE_URL compartilhada) — achado ao rodar a suíte completa
+// repetidamente: vitest executa arquivos de teste em paralelo por padrão, e
+// `db/pgEntitiesCore.test.js` faz `TRUNCATE ... trade_operations ...`
+// (irrestrito, TODAS as linhas) no próprio `beforeEach` — rodando ao mesmo
+// tempo que este arquivo insere/verifica uma linha por `asset_id`
+// específico, o TRUNCATE do outro arquivo apaga a linha ENTRE o INSERT e o
+// SELECT de verificação deste arquivo, produzindo "expected [] to have
+// length 1 but got +0" de forma 100% reproduzível (não um flake raro —
+// reproduzido 6/6 rodando os dois arquivos juntos, com ou sem mudança
+// nova). Mesmo padrão já usado em `scripts/backup-postgres.test.js` (banco
+// isolado por describe) — reaproveitado aqui em vez de inventar um 2º jeito
+// de resolver o mesmo problema.
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import pg from 'pg';
 import { applySchema } from './migrate.mjs';
 import { buildActiveOpsAnchorId } from '../src/lib/opTransition.js';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
+
+function withDbName(baseUrl, dbName) {
+  const url = new URL(baseUrl);
+  url.pathname = `/${dbName}`;
+  return url.toString();
+}
 
 // Mimics the create-if-none-active shape a future db/pgEntitiesCore.cjs
 // would use: SELECT...FOR UPDATE (real in a live adapter, kept here for
@@ -48,13 +68,20 @@ async function attemptCreate(client, { id, assetId, cascade, hierarchicalCascade
 }
 
 describe.skipIf(!TEST_DATABASE_URL)('trade_operations_active_anchor_uq (real concurrency)', () => {
+  let adminClient;
+  let dbName;
   let clientA;
   let clientB;
 
   beforeAll(async () => {
-    await applySchema(TEST_DATABASE_URL);
-    clientA = new pg.Client({ connectionString: TEST_DATABASE_URL });
-    clientB = new pg.Client({ connectionString: TEST_DATABASE_URL });
+    dbName = `concurrency_test_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+    const dbUrl = withDbName(TEST_DATABASE_URL, dbName);
+    adminClient = new pg.Client({ connectionString: TEST_DATABASE_URL });
+    await adminClient.connect();
+    await adminClient.query(`CREATE DATABASE "${dbName}"`);
+    await applySchema(dbUrl);
+    clientA = new pg.Client({ connectionString: dbUrl });
+    clientB = new pg.Client({ connectionString: dbUrl });
     await clientA.connect();
     await clientB.connect();
   });
@@ -62,6 +89,8 @@ describe.skipIf(!TEST_DATABASE_URL)('trade_operations_active_anchor_uq (real con
   afterAll(async () => {
     await clientA.end();
     await clientB.end();
+    await adminClient.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+    await adminClient.end();
   });
 
   beforeEach(async () => {
