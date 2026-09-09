@@ -20,8 +20,8 @@ guia pra quando o cutover em si (fase 10 do plano) for decidido.
 - Cliente HTTP do browser dark (`src/api/entitiesPostgres.js`) — PR #328.
 - Scripts de migração/verificação de dados
   (`scripts/migrate-firestore-to-postgres.mjs`/`verify-postgres-
-  migration.mjs`) — testados contra Postgres local, **nunca rodados contra
-  o Firestore de produção real** — PR #329.
+  migration.mjs`) — PR #329, e **já validados contra o Firestore de
+  produção real** (ensaio, item 6 abaixo).
 - Backup diário do Postgres (`scripts/backup-postgres.mjs` +
   `.github/workflows/backup-postgres.yml`) — pré-requisito da fase 11
   satisfeito — PR #330.
@@ -36,6 +36,9 @@ guia pra quando o cutover em si (fase 10 do plano) for decidido.
   lacuna que faltava pro item 6 (ensaio) poder rodar sem máquina local.
 - Dedup do webhook em Postgres, dark (item 4 abaixo) — ainda não ligada em
   `server/index.js`.
+- **Ensaio real rodado com sucesso** (item 6 abaixo, run #1 do
+  `migrate-postgres.yml`) — 6.061 documentos, TODAS as 10 entidades com
+  contagem+checksum batendo, 0 divergência na 1ª tentativa.
 
 **Ainda NÃO pronto** — ver a checklist abaixo. Não tente executar o
 cutover sem fechar esses itens primeiro; nenhum deles é opcional.
@@ -79,15 +82,18 @@ de código reais que faltam:
    Environment. Sem isso, as rotas Postgres continuam respondendo 503
    (comportamento seguro, documentado em `server/pgCoreLoader.js`) — nada
    muda em produção só por essa declaração ter sido feita.
-6. **`scripts/migrate-firestore-to-postgres.mjs`/`verify-postgres-
-   migration.mjs` nunca rodaram contra o Firestore de produção real** —
-   só contra Postgres local desta sandbox (a sessão do Claude Code não
-   alcança nem o Firestore de produção com credenciais reais nem o Neon
-   real, ver `db/CLAUDE.md`). **Rodar um "ensaio" completo (migrar +
-   verificar) antes do dia do cutover, fora da janela de manutenção**, é
-   como esses scripts vão ser validados contra dado real pela primeira
-   vez — não deixe isso pra hora H. ✅ **Caminho pronto** (item 7 abaixo);
-   ensaio em si ainda não rodado — próximo passo.
+6. ✅ **Feito** — ensaio real rodado pelo usuário via `migrate-postgres.yml`
+   (run #1, 2026-09-09T19:38-19:40 UTC, `conclusion: success`) —
+   **primeira validação real dos scripts de migração/verificação contra o
+   Firestore de produção e o Neon real**. 6.061 documentos migrados,
+   TODAS as 10 entidades com contagem E checksum batendo
+   (`MonitoredAsset` 11, `AssetState` 45, `SignalEvent` 3903,
+   `TradeOperation` 16, `PriceAlert` 0, `SystemLog` 2000 — limitado aos
+   mais recentes de propósito, `User` 3, `VerificationTask` 81,
+   `StrategyConfig`/`TelegramFilters` 1 cada) — inclusive
+   `TradeOperation` (o P0 mais crítico): 0 grupos duplicados dos dois
+   lados. Zero divergência na primeira tentativa. Detalhe em
+   `docs/known-risks.md` item 170 addendum.
 7. ✅ **Feito** — `.github/workflows/migrate-postgres.yml`
    (`workflow_dispatch`) roda `npm run migrate-verify-postgres`
    (`scripts/migrate-and-verify-postgres.mjs`) com `FIREBASE_SERVICE_
