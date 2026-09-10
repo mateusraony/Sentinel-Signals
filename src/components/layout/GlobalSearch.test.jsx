@@ -7,11 +7,11 @@
 // volta. A troca de PR #320 (`backend.entities.SignalEvent` →
 // `rtdbEntities.SignalEvent`) tinha, portanto, zero verificação de render.
 //
-// Rodada 3b (item 169): GlobalSearch também passou a ler MonitoredAsset via
-// rtdbEntities (modo "nó inteiro"). O mock abaixo precisa cobrir as DUAS
-// entidades lidas via rtdbEntities agora — um mock incompleto faria
-// `rtdbEntities.MonitoredAsset.list()` estourar dentro do queryFn (engolido
-// silenciosamente pelo TanStack Query) sem nenhum teste notar a wiring quebrada.
+// Cutover Postgres/Neon (item 2 do runbook): o espelho RTDB foi abandonado
+// (decisão explícita do usuário) e `rtdbEntities` reverteu para
+// `backend.entities` — leitura e mutação agora passam pelo MESMO adaptador,
+// um único mock cobre as três entidades usadas aqui (SignalEvent,
+// MonitoredAsset, TradeOperation).
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
@@ -22,17 +22,12 @@ import GlobalSearch from './GlobalSearch.jsx';
 
 const signalListMock = vi.fn();
 const monitoredAssetListMock = vi.fn();
-vi.mock('@/api/rtdbEntities', () => ({
-  rtdbEntities: {
-    SignalEvent: { list: (...args) => signalListMock(...args) },
-    MonitoredAsset: { list: (...args) => monitoredAssetListMock(...args) },
-  },
-}));
-
 const tradeOpListMock = vi.fn().mockResolvedValue([]);
 vi.mock('@/api/entities', () => ({
   backend: {
     entities: {
+      SignalEvent: { list: (...args) => signalListMock(...args) },
+      MonitoredAsset: { list: (...args) => monitoredAssetListMock(...args) },
       TradeOperation: { list: (...args) => tradeOpListMock(...args) },
     },
   },
@@ -51,8 +46,8 @@ function renderSearch() {
   );
 }
 
-describe('GlobalSearch — SignalEvent lido via rtdbEntities (item 169)', () => {
-  it('chama rtdbEntities.SignalEvent.list("-created_date", 50) — prova que a troca do PR #320 está de fato ligada', async () => {
+describe('GlobalSearch — SignalEvent lido via backend.entities (item 169; RTDB abandonado no cutover Postgres)', () => {
+  it('chama backend.entities.SignalEvent.list("-created_date", 50) — prova que a wiring está de fato ligada', async () => {
     signalListMock.mockResolvedValue([]);
     monitoredAssetListMock.mockResolvedValue([]);
     renderSearch();
@@ -61,7 +56,7 @@ describe('GlobalSearch — SignalEvent lido via rtdbEntities (item 169)', () => 
     await waitFor(() => expect(signalListMock).toHaveBeenCalledWith('-created_date', 50));
   });
 
-  it('mostra um resultado de sinal vindo do RTDB ao digitar uma busca que casa', async () => {
+  it('mostra um resultado de sinal ao digitar uma busca que casa', async () => {
     signalListMock.mockResolvedValue([
       { id: 's1', symbol: 'BTCUSDT', signal_type: 'BUY', timeframe: '4h', reason: 'teste' },
     ]);
@@ -74,16 +69,15 @@ describe('GlobalSearch — SignalEvent lido via rtdbEntities (item 169)', () => 
   });
 });
 
-// Rodada 3b (item 169): MonitoredAsset lido via rtdbEntities (modo "nó inteiro").
-describe('GlobalSearch — MonitoredAsset lido via rtdbEntities (rodada 3b, item 169)', () => {
-  it('chama rtdbEntities.MonitoredAsset.list() — prova que a wiring da rodada 3b está de fato ligada', async () => {
+describe('GlobalSearch — MonitoredAsset lido via backend.entities (rodada 3b, item 169)', () => {
+  it('chama backend.entities.MonitoredAsset.list() — prova que a wiring está de fato ligada', async () => {
     signalListMock.mockResolvedValue([]);
     monitoredAssetListMock.mockResolvedValue([]);
     renderSearch();
     await waitFor(() => expect(monitoredAssetListMock).toHaveBeenCalledWith());
   });
 
-  it('mostra um resultado de ativo vindo do RTDB ao digitar uma busca que casa', async () => {
+  it('mostra um resultado de ativo ao digitar uma busca que casa', async () => {
     signalListMock.mockResolvedValue([]);
     monitoredAssetListMock.mockResolvedValue([
       { id: 'a1', symbol: 'BTCUSDT', display_name: 'Bitcoin' },

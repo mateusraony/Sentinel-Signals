@@ -2,7 +2,6 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { rtdbEntities } from '@/api/rtdbEntities';
 import { ClipboardCheck, Check, X as XIcon, ChevronRight } from 'lucide-react';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
@@ -29,7 +28,7 @@ export default function VerificationWidget() {
 
   const { data: tasks = [] } = useQuery({
     queryKey: ['verification-tasks-recent'],
-    queryFn: () => rtdbEntities.VerificationTask.list('-created_date', 50),
+    queryFn: () => backend.entities.VerificationTask.list('-created_date', 50),
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 

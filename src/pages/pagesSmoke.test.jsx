@@ -47,10 +47,6 @@ vi.mock('@/api/entities', async () => {
   const { makeFakeBackendModule } = await import('./__fixtures__/renderPage.jsx');
   return { get backend() { return makeFakeBackendModule({ populated: estado.populated }).backend; } };
 });
-vi.mock('@/api/rtdbEntities', async () => {
-  const { makeFakeBackendModule } = await import('./__fixtures__/renderPage.jsx');
-  return { get rtdbEntities() { return makeFakeBackendModule({ populated: estado.populated }).backend.entities; } };
-});
 vi.mock('@/lib/firebaseClient', () => ({ db: {}, auth: {}, rtdb: null, app: {} }));
 vi.mock('@/lib/AuthContext', () => ({
   AuthProvider: ({ children }) => children,

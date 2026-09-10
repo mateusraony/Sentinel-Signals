@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { rtdbEntities } from '@/api/rtdbEntities';
+import { backend } from '@/api/entities';
 import { fetchCandles } from '@/lib/marketDataProvider';
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { GitCompareArrows, Plus, X, AlertTriangle } from 'lucide-react';
@@ -44,7 +44,7 @@ export default function CorrelationWidget() {
 
   const { data: assets = [] } = useQuery({
     queryKey: ['all-assets'],
-    queryFn: () => rtdbEntities.MonitoredAsset.list('-created_date'),
+    queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
     staleTime: 60000,
   });
 

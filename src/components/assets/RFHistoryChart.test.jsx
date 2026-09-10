@@ -12,6 +12,10 @@
 // (`backend.entities.SignalEvent` → `rtdbEntities.SignalEvent`) tinha,
 // portanto, zero verificação de render — só a lógica pura de
 // `rtdbEntities.js` estava coberta.
+//
+// Cutover Postgres/Neon (item 2 do runbook): o espelho RTDB foi abandonado
+// (decisão explícita do usuário) e `rtdbEntities` reverteu para
+// `backend.entities`.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -20,8 +24,8 @@ import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import RFHistoryChart from './RFHistoryChart.jsx';
 
 const filterMock = vi.fn();
-vi.mock('@/api/rtdbEntities', () => ({
-  rtdbEntities: { SignalEvent: { filter: (...args) => filterMock(...args) } },
+vi.mock('@/api/entities', () => ({
+  backend: { entities: { SignalEvent: { filter: (...args) => filterMock(...args) } } },
 }));
 
 vi.mock('@/lib/marketDataProvider', () => ({
@@ -56,15 +60,15 @@ function renderChart(asset) {
 
 const baseAsset = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', rf_period: 20, rf_multiplier: 3.5 };
 
-describe('RFHistoryChart — SignalEvent lido via rtdbEntities (item 169)', () => {
-  it('chama rtdbEntities.SignalEvent.filter com asset_id/sort/limit exatos — prova que a troca do PR #320 está de fato ligada', async () => {
+describe('RFHistoryChart — SignalEvent lido via backend.entities (item 169; RTDB abandonado no cutover Postgres)', () => {
+  it('chama backend.entities.SignalEvent.filter com asset_id/sort/limit exatos — prova que a wiring está de fato ligada', async () => {
     filterMock.mockResolvedValue([]);
     renderChart(baseAsset);
     await screen.findByText(/Histórico Range Filter/i);
     expect(filterMock).toHaveBeenCalledWith({ asset_id: 'a1' }, '-created_date', 60);
   });
 
-  it('renderiza sem explodir com sinais retornados pelo RTDB', async () => {
+  it('renderiza sem explodir com sinais retornados pelo backend', async () => {
     filterMock.mockResolvedValue([
       {
         id: 's1', asset_id: 'a1', created_date: new Date().toISOString(),
@@ -76,7 +80,7 @@ describe('RFHistoryChart — SignalEvent lido via rtdbEntities (item 169)', () =
     await screen.findByText('BUY');
   });
 
-  it('renderiza sem explodir quando o RTDB devolve lista vazia (ativo sem sinal recente)', async () => {
+  it('renderiza sem explodir quando o backend devolve lista vazia (ativo sem sinal recente)', async () => {
     filterMock.mockResolvedValue([]);
     renderChart(baseAsset);
     await screen.findByText(/Histórico Range Filter/i);

@@ -7,16 +7,20 @@
 // E clearActiveOp nunca deve ser espelhado (não mexe em tradeOperations, só
 // no ponteiro assetActiveOps).
 //
-// Lê o texto-fonte em vez de importar o módulo: entities.js importa
-// @/lib/firebaseClient, que inicializa o Firebase app real no top-level —
-// mesma técnica de scripts/adminEntitiesBackfillCacheTripwire.test.js.
+// Lê o texto-fonte em vez de importar o módulo: entitiesFirestoreLegacy.js
+// importa @/lib/firebaseClient, que inicializa o Firebase app real no
+// top-level — mesma técnica de scripts/adminEntitiesBackfillCacheTripwire.test.js.
+//
+// entities.js virou o cliente HTTP Postgres (cutover Firestore→Neon); este
+// arquivo Firestore legado (mantido como referência de rollback) é o único
+// lugar onde o mirror RTDB ainda existe — daí o tripwire ter migrado com ele.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(resolve(__dirname, './entities.js'), 'utf-8');
+const source = readFileSync(resolve(__dirname, './entitiesFirestoreLegacy.js'), 'utf-8');
 
 function extractFunctionBody(fnName) {
   const match = source.match(new RegExp(`function ${fnName}\\([^)]*\\)[^{]*\\{[\\s\\S]*?\\n\\}\\n`));
@@ -24,7 +28,7 @@ function extractFunctionBody(fnName) {
   return match[0];
 }
 
-describe('entities.js — tripwire de isolamento do mirror RTDB', () => {
+describe('entitiesFirestoreLegacy.js — tripwire de isolamento do mirror RTDB', () => {
   it.each(['createTradeOpIfNoneActive', 'transitionTradeOp', 'clearActiveOp'])(
     '%s nunca referencia RTDB no próprio corpo (mirror só acontece FORA da transação, no wrapper)',
     (fnName) => {

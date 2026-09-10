@@ -7,15 +7,25 @@ paths:
   - scripts/adminEntities.js
 ---
 
-# Firestore — adaptador, concorrência e quota
+# Dados — adaptador, concorrência e quota (cutover Firestore→Postgres/Neon)
+
+**Desde o cutover** (item 2 do runbook, `docs/claude/postgres-cutover-
+runbook.md`), o backend real é Postgres/Neon, não Firestore — este arquivo
+descreve o Postgres, com o histórico Firestore preservado onde ainda é
+relevante (rollback, `entitiesFirestoreLegacy.js`, decisões que sobrevivem à
+migração). Detalhe completo do adaptador/CAS Postgres: `db/CLAUDE.md`.
 
 ## Adaptador (não fure a abstração)
 
 Todo acesso passa por `backend` (`src/api/entities.js`): `backend.entities.<Nome>`,
-`backend.locks`, `backend.tradeOps`. Nova entidade = `createEntity('colecao')`.
-**Nunca** importe `firebase/firestore` direto em componentes/páginas. O cron usa
-`scripts/adminEntities.js` (firebase-admin, mesma forma de chamada, ignora as
-`firestore.rules`).
+`backend.locks`, `backend.tradeOps`. Nova entidade = mesmo nome lógico em
+`ENTITY_TABLES` (`db/pgEntitiesCore.mjs`) — é o único registro de "nome →
+tabela", tanto o cliente HTTP do browser quanto a rota genérica de entidades
+(`server/routes/entities.js`) o reusam, nenhum registro duplicado. **Nunca**
+importe `firebase/firestore`/faça `fetch` cru para o backend direto em
+componentes/páginas. O cron usa `scripts/adminEntities.js` (mesma forma de
+chamada) — ver `db/CLAUDE.md`/`scripts/CLAUDE.md` para o estado exato desse
+lado (Fase 10 do plano de migração, PR próprio sem merge automático).
 
 **Exceção deliberada** (item 125 achado menor, 2026-08-24; lista completada no
 item 145 addendum, 2026-09-02): `strategyConfig/current`, `telegramFilters/
@@ -32,10 +42,24 @@ documentada no `CLAUDE.md` (tabela de coleções) — só não estava explicitad
 AQUI, onde alguém lendo só esta regra concluiria (errado) que todo acesso do
 cron passa por `adminEntities.js`.
 
-## RTDB — espelho de leitura (item 152)
+## RTDB — espelho de leitura (item 152) — ABANDONADO no cutover (item 170 addendum, 2026-09-10)
+
+**Histórico, não mais o comportamento real desde o cutover.** O espelho
+RTDB existiu para absorver o polling do dashboard sem tocar a cota diária
+do Firestore — decisão explícita do usuário no item 2 do runbook
+(`docs/claude/postgres-cutover-runbook.md`): Postgres/Neon não tem teto
+diário de operações, então a justificativa desaparece, e nenhum espelho
+Postgres→RTDB foi construído para substituí-lo. Os ~20 consumidores que
+liam via `rtdbEntities.X` voltaram a ler `backend.entities.X` direto.
+`src/api/rtdbEntities.js`/`src/lib/rtdbMirror.js` seguem no repositório como
+código morto (zero importador real) até a Fase 11 (decomissão, só depois do
+bake period) — não apague sem ler o item 170 addendum primeiro. Resto desta
+seção documenta como o mirror funcionava, para quem precisar entender
+`entitiesFirestoreLegacy.js` (mantido com o mirror intacto, como referência
+de rollback).
 
 `AssetState`/`MonitoredAsset`/`SignalEvent`/`SystemLog`/`TradeOperation`/
-`VerificationTask` — as 6 entidades de negócio inteiras deste app — são
+`VerificationTask` — as 6 entidades de negócio inteiras deste app — eram
 espelhadas no Firebase Realtime Database (RTDB), absorvendo o polling do
 dashboard (`src/api/rtdbEntities.js`) sem tocar a cota diária do Firestore.
 `SignalEvent` entrou na rodada 2 (item 152 addendum) porque é o denominador
@@ -74,22 +98,31 @@ nunca participa dela. Ver `docs/known-risks.md` item 152.
 
 ## Concorrência
 
-- **Uma op ativa por ativo** é garantida por transação de doc único em
-  `assetActiveOps/{assetId}` (`createTradeOpIfNoneActive`/`clearActiveOp`) —
-  Firestore não lê query dentro de transação, por isso o doc-âncora.
-- O **lock de scan** (`scannerLocks`, `acquireScanLock`/`releaseScanLock`) é
-  *fail-open* (loga e prossegue se falhar) — logo não é garantia forte.
+- **Uma op ativa por ativo** — desde o cutover, garantida por um **índice
+  único parcial** em Postgres (`trade_operations_active_anchor_uq`, coluna
+  `active_ops_anchor`) em vez do doc-âncora `assetActiveOps/{assetId}` do
+  Firestore — detalhe completo do mecanismo e por que `SELECT ... FOR
+  UPDATE` sozinho não bastava em `db/CLAUDE.md`. `assetActiveOps` só existe
+  mais dentro de `entitiesFirestoreLegacy.js` (referência de rollback);
+  `clearActiveOp` virou no-op documentado no adaptador Postgres — o índice
+  libera o ativo sozinho quando o `UPDATE` grava um status terminal.
+- O **lock de scan** (`scannerLocks`/`scanner_locks`,
+  `acquireScanLock`/`releaseScanLock`) é *fail-open* (loga e prossegue se
+  falhar) — logo não é garantia forte, nos dois backends.
 - Mutação de estado de `TradeOperation` **deve** ser transacional/idempotente
   quando o campo depende do valor atual (status, contadores) — ver os P0 em
-  `.claude/rules/trading-engine.md`. Read-modify-write sem transação é bug aqui.
+  `.claude/rules/trading-engine.md`. Read-modify-write sem transação é bug
+  aqui, no Postgres tanto quanto era no Firestore.
 
-## Quota (plano Spark gratuito: ~50k leituras / 20k escritas/dia)
+## Quota — histórico do plano Spark gratuito (~50k leituras / 20k escritas/dia)
 
-Já houve corte de desperdício (known-risks item 13): buscar só o necessário
-(`where(status, 'in', [...])` em vez de ler todo o histórico), reaproveitar
-`getPineConfig()` uma vez por scan, gravar log só quando há sinal/erro. **Não
-reintroduza** leituras/escritas que crescem com o histórico nem gravação por
-passada sem candle novo.
+**Não se aplica mais desde o cutover** — Postgres/Neon não tem teto diário
+de operações (cobra por CU-hora/mês), motivo pelo qual o espelho RTDB acima
+foi abandonado. Mantido aqui como contexto histórico de por que o código
+tem os padrões que tem (buscar só o necessário, reaproveitar
+`getPineConfig()` uma vez por scan, gravar log só quando há sinal/erro,
+known-risks item 13) — bons padrões de qualquer forma, mas não mais uma
+restrição rígida que bloqueia deploy.
 
 ## Regras
 

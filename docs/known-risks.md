@@ -21657,3 +21657,107 @@ checklist de código, restam 1 (`scripts/adminEntities.js`, Fase 10 prep,
 PR #332 aberto sem merge automático), 2 (browser), 3 (AuthContext) e 4b
 (ligar o webhook de verdade) — os 4 que só devem acontecer juntos, na
 janela de cutover coordenada.
+
+### Addendum (2026-09-10) — decisão do RTDB + itens 2/3/4b preparados (execução, PR aberto sem merge automático)
+
+**Decisão do usuário sobre o atalho RTDB** (pergunta explícita via
+`AskUserQuestion`, já que era o único garfo arquitetural real que faltava
+antes de tocar o item 2): **abandonar o espelho de leitura RTDB** em vez de
+construir um espelho novo Postgres→RTDB. Motivo: o RTDB existe desde o item
+152 só para absorver o polling do dashboard sem tocar a cota diária do
+Firestore — Postgres/Neon não tem teto diário de operações (cobra por
+CU-hora), então a justificativa original desaparece por completo com o
+cutover. Manter o mirror vivo exigiria um 3º sistema de escrita (Postgres→
+RTDB) só para depois decomissioná-lo na Fase 11 — trabalho descartável.
+
+Com a decisão tomada, os itens 2/3/4b do runbook foram implementados juntos
+numa única PR (mesmo raciocínio do item 1/PR #332: são "execução", não
+"dark" — mudam o que roda em produção no momento em que mesclam+deployam,
+então **esta PR não é mesclada automaticamente**, mesmo com lint/test/build
+verdes — fica aberta para o usuário decidir o dia/horário do cutover, junto
+com o item 1 e o passo a passo completo do runbook):
+
+**Item 2 — browser (`src/api/entities.js`)**:
+- `src/api/entities.js` (Firestore) virou `src/api/entitiesFirestoreLegacy.js`
+  — preservado intocado como referência de rollback (mesmo padrão do item 1
+  do lado cron). `src/api/entitiesPostgres.js` (Fase 6, dark) virou o novo
+  `src/api/entities.js` — troca de conteúdo, forma externa idêntica, nenhum
+  consumidor mudou por causa disso.
+- Testes seguiram o arquivo: `entities.test.js` (Firestore) →
+  `entitiesFirestoreLegacy.test.js`; `entitiesPostgres.test.js` → novo
+  `entities.test.js`; `entitiesRtdbTripwire.test.js` →
+  `entitiesFirestoreLegacyRtdbTripwire.test.js` (o tripwire de isolamento do
+  mirror RTDB só faz sentido contra o arquivo Firestore, que é o único que
+  ainda tem esse código).
+- **Consequência direta da decisão do RTDB**: os 20 arquivos que liam via
+  `rtdbEntities.X` (rodadas 2/3 do item 152/169 — `Dashboard.jsx`,
+  `Trades.jsx`, `Settings.jsx`, `PineScript.jsx`, `Backtest.jsx`,
+  `MonthlyReport.jsx`, `Logs.jsx`, `Assets.jsx`, `Alerts.jsx`,
+  `Verification.jsx`, `TradeHistory.jsx`, `WeeklySummary.jsx`,
+  `LiveConfidenceCard.jsx`, `VerificationWidget.jsx`, `VirtualAccountCard.jsx`,
+  `CorrelationWidget.jsx`, `RFHistoryChart.jsx`, `TickerBar.jsx`,
+  `DebugLogButton.jsx`, `GlobalSearch.jsx`) foram revertidos para
+  `backend.entities.X` — não é opcional deixá-los como estavam: depois do
+  cutover nada mais escreve no RTDB (o mirror de escrita mora só dentro de
+  `entitiesFirestoreLegacy.js`, que vira código morto), então uma leitura via
+  `rtdbEntities` continuaria funcionando por um tempo com dado cada vez mais
+  velho e depois congelaria — a mesma classe de bug do incidente real
+  registrado no addendum de 2026-09-09 acima (RTDB parando de refletir a
+  realidade sem nenhum erro visível), só que permanente em vez de um lapso de
+  deploy. Os 5 testes de componente que mockavam `@/api/rtdbEntities`
+  (`DebugLogButton.test.jsx`, `GlobalSearch.test.jsx`, `TickerBar.test.jsx`,
+  `RFHistoryChart.test.jsx`) e o mock equivalente em `pagesSmoke.test.jsx`
+  foram atualizados para mockar `@/api/entities` (`backend.entities`) em vez
+  disso — onde um componente já tinha os dois mocks separados (leitura via
+  `rtdbEntities`, mutação via `backend.entities`), os dois colapsaram num só,
+  já que agora é o mesmo adaptador para as duas coisas.
+- `src/api/rtdbEntities.js`/`src/lib/rtdbMirror.js` **não foram apagados**
+  nesta rodada — ficam como código morto (zero importador real depois desta
+  PR) até a Fase 11 (decomissão, só depois do bake period), igual ao plano já
+  prevê para o lado de escrita.
+
+**Item 3 — `AuthContext.jsx`**: `loadOrCreateProfile` trocou o par
+`getDoc`/`setDoc` direto em `users/{uid}` por `callBackend('/api/me')`
+(reusa o helper já usado por outras chamadas ao `sentinel-signals-api`, em
+vez de um `fetch` cru como o runbook descrevia literalmente — mesmo
+resultado observável, menos código novo). `server/routes/me.js` (Fase 5,
+dark até aqui) já fazia create-if-absent atômico via
+`backend.entities.User.createUnique` — fecha de graça a pequena janela de
+corrida getDoc→setDoc que a versão Firestore tinha, sem esforço extra desta
+rodada.
+
+**Item 4b — webhook (`server/index.js`)**: `POST /webhook/tradingview`
+trocou a transação Firestore (`db.runTransaction` em
+`tradingviewWebhookEvents/{signalId}`) por `insertWebhookEventIfNew`
+(`db/pgEntitiesCore.mjs`, já testado com concorrência real 25x desde o item
+4a). Como esta rota não é um `Router` (não dá pra usar o middleware
+`requireDatabaseUrl` como as outras rotas Postgres), o mesmo comportamento —
+503 em vez de tentar conectar sem `DATABASE_URL` — foi replicado inline.
+
+**Achado não corrigido, registrado para decisão futura**: `requireAdmin`
+(`server/index.js`, gate de `POST /api/backtest/trigger`) continua lendo
+`db.collection('users').doc(req.uid).get()` **direto do Firestore** — fora
+do escopo do item 3, que (por desenho do runbook) só cobria
+`loadOrCreateProfile`. Depois do cutover, `GET /api/me` (o que o browser
+mostra) passa a refletir o `role` do Postgres, enquanto `requireAdmin`
+continua confiando no `role` do Firestore — os dois só ficam consistentes
+enquanto ninguém promover um usuário a admin manualmente em só um dos dois
+bancos. Não é um bug ativo hoje (o `ensaio` do item 6 confirmou os dois
+lados idênticos na migração), mas é uma divergência que só cresce com o
+tempo se ninguém decidir migrar `requireAdmin` para Postgres também — fica
+para uma rodada futura, não bloqueia este cutover porque a promoção a admin
+já é um passo manual raro, documentado, feito por quem tem acesso aos dois
+bancos.
+
+**Verificação**: `npm run lint && npm test && npm run build` verdes (1730
+testes, 0 falhas reais — 1 flake de timeout em paralelo no smoke test do
+Dashboard, reproduzido 2x limpo isolado, mesma classe de instabilidade sob
+carga já vista em outras rodadas, não um bug de código). `rtdbEntities.js`
+em si segue com seus próprios testes passando (o arquivo continua
+funcionando isoladamente — só não tem mais nenhum importador real do lado
+do app).
+
+**Não mesclado** — igual ao item 1 (PR #332), esta PR fica aberta esperando
+o usuário decidir o dia/horário do cutover coordenado (passo a passo
+completo em `docs/claude/postgres-cutover-runbook.md`), já que mesclar+
+deployar muda o backend AO VIVO do browser/auth/webhook.

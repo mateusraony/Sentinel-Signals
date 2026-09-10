@@ -31,6 +31,16 @@ guia pra quando o cutover em si (fase 10 do plano) for decidido.
   automático (mescla só o backend AO VIVO do cron — diferente de todas as
   fases anteriores, dark até aqui). Ver `docs/known-risks.md` item 170
   addendum.
+- **Decisão do RTDB tomada (2026-09-10): abandonar o atalho**, não
+  construir um espelho novo Postgres→RTDB — Postgres/Neon não tem teto
+  diário de operações, motivo original do mirror, então ele deixa de fazer
+  sentido no dia do cutover. Ver `docs/known-risks.md` item 170 addendum
+  (2026-09-10).
+- **Itens 2 (browser), 3 (`AuthContext.jsx`) e 4b (webhook) preparados
+  numa única PR, mas NÃO mesclados** — mesmo padrão do item 1: mudam o
+  backend AO VIVO no momento em que mesclam+deployam, então ficam
+  esperando o dia do cutover coordenado, não merge automático. Detalhe
+  completo em `docs/known-risks.md` item 170 addendum (2026-09-10).
 - Workflow de migração/verificação real via GitHub Actions
   (`.github/workflows/migrate-postgres.yml`, item 7 abaixo) — fecha a
   lacuna que faltava pro item 6 (ensaio) poder rodar sem máquina local.
@@ -54,26 +64,32 @@ de código reais que faltam:
    CLAUDE.md`). O cron (`scripts/run-scan.mjs`/`build-scan.mjs`) importa
    esse arquivo — sem trocar, o cutover do browser/server não move o
    scanner junto.
-2. **`src/api/entities.js` continua sendo o Firestore real** — o cutover
-   exige trocar o CONTEÚDO deste arquivo pelo do cliente Postgres já
-   pronto (`src/api/entitiesPostgres.js`), preservando o Firestore como
-   `src/api/entitiesFirestoreLegacy.js` (referência de rollback, ver
-   abaixo) — nenhum outro dos ~20 arquivos consumidores deve mudar, porque
-   os dois adaptadores já têm a mesma forma externa.
-3. **`AuthContext.jsx`'s `loadOrCreateProfile` continua lendo o Firestore
-   direto** (`getDoc`/`setDoc` em `users/{uid}`) — precisa trocar para
-   `fetch('/api/me', {headers:{Authorization:'Bearer '+idToken}})`, a rota
-   que `server/routes/me.js` já expõe (dark).
-4. ✅ **Metade feita** — `db/pgEntitiesCore.mjs` ganhou
+2. ✅ **Feito, PR aberto sem merge automático** — `src/api/entities.js`
+   trocou de conteúdo para o cliente Postgres (o antigo `src/api/
+   entitiesPostgres.js`); o Firestore original foi preservado como
+   `src/api/entitiesFirestoreLegacy.js` (referência de rollback). Os
+   ~20 arquivos consumidores não mudaram por causa dessa troca — mudaram
+   por causa da decisão do RTDB abaixo (item 2 do runbook e item 170
+   addendum de 2026-09-10 continuam a mesma PR).
+   **Consequência da decisão de abandonar o atalho RTDB** (ver acima): os
+   20 arquivos que liam via `rtdbEntities.X` foram revertidos para
+   `backend.entities.X` na MESMA PR — depois do cutover nada mais escreve
+   no RTDB, então deixá-los como estavam congelaria a leitura deles sem
+   erro visível. Detalhe completo em `docs/known-risks.md` item 170
+   addendum (2026-09-10).
+3. ✅ **Feito, mesma PR** — `AuthContext.jsx`'s `loadOrCreateProfile` trocou
+   a leitura direta do Firestore (`getDoc`/`setDoc` em `users/{uid}`) por
+   `callBackend('/api/me')`, a rota que `server/routes/me.js` já expõe
+   (antes dark, agora chamada de verdade nesta PR).
+4. ✅ **Feito, mesma PR** — `db/pgEntitiesCore.mjs`'s
    `insertWebhookEventIfNew(id, data)` (`INSERT ... ON CONFLICT (id) DO
-   NOTHING RETURNING id`, testado com concorrência real, 25x), o
-   equivalente Postgres da transação de dedup que `server/index.js`'s
-   `POST /webhook/tradingview` (`server/index.js:159-203`) faz hoje contra
-   o Firestore (`db.collection('tradingviewWebhookEvents')` +
-   `runTransaction`). **Ainda NÃO chamada por `server/index.js`** — a
-   troca de verdade (item 4b) é feita só durante a janela de cutover
-   coordenada, junto com os outros itens, porque o webhook é um canal ao
-   vivo (TradingView está esperando a resposta).
+   NOTHING RETURNING id`, testado com concorrência real, 25x) agora É
+   chamada por `server/index.js`'s `POST /webhook/tradingview`, no lugar
+   da transação Firestore (`db.collection('tradingviewWebhookEvents')` +
+   `runTransaction`) que fazia isso antes. Guardada por um 503 explícito
+   se `DATABASE_URL` não estiver configurada (mesmo comportamento do
+   middleware `requireDatabaseUrl` das outras rotas Postgres, replicado
+   inline porque esta rota não é um `Router`).
 5. ✅ **Metade feita** — `render.yaml`'s serviço `sentinel-signals-api`
    agora declara `DATABASE_URL` (`sync: false`), mesma entrada dos outros
    secrets. **Ainda falta o passo manual**: setar o valor real (a mesma
