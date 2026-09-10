@@ -21761,3 +21761,55 @@ do app).
 o usuário decidir o dia/horário do cutover coordenado (passo a passo
 completo em `docs/claude/postgres-cutover-runbook.md`), já que mesclar+
 deployar muda o backend AO VIVO do browser/auth/webhook.
+
+### Addendum (2026-09-10) — 3 achados do Codex review no PR #339: 1 corrigido, 1 fechado via runbook, 1 aceito
+
+**Corrigido — `SystemLog` perdeu a resiliência a falha transitória de
+escrita (item 138) na troca de backend.** `entitiesFirestoreLegacy.js`
+envolvia `SystemLog.create()`/`createUnique()` numa camada que engole
+falha não crítica (`makeResilientLogEntity`) — sem ela, uma falha
+transitória de rede/Postgres num `logWarn`/`logError` propagaria e
+abortaria o resto do trabalho de scan daquele ativo
+(`handleActiveOpArbitration`, vários pontos de `persistScanResults`),
+reintroduzindo o mesmo incidente real que o item 138 já tinha corrigido —
+achado real, confirmado lendo o código (o novo `src/api/entities.js`
+Postgres usava `createEntity('SystemLog')` puro, sem wrapper nenhum).
+Corrigido portando o mesmo `makeResilientLogEntity` (sem a preocupação de
+ordem de composição com o mirror RTDB que a versão Firestore tinha, já que
+o cliente Postgres não tem mirror). 5 testes novos em `entities.test.js`
+espelham os da versão Firestore.
+
+**Fechado via mudança no runbook, não no código — abas abertas do painel
+continuam escrevendo no Firestore antigo depois do deploy.** O painel roda
+`useAutoScan` no browser (`scanAllAssets`/`priceCheckActiveOps`, o MESMO
+motor de trading do cron, não uma cópia read-only) — uma aba já carregada
+mantém o bundle JS (e portanto o módulo `src/api/entities.js`) ANTIGO em
+memória mesmo depois do deploy do frontend trocar o bundle servido para
+novos carregamentos. Enquanto essa aba ficar aberta, ela continuaria
+criando/transicionando `TradeOperation` real no Firestore — e essa escrita
+nunca chegaria ao Postgres, silenciosamente, já que nada mais lê o
+Firestore depois do cutover. Avaliado como achado GRANDE (exigiria decisão
+de produto: version-gate forçando reload, dual-write/reconciliação, etc.) —
+mas dado que este é um painel de operador único, a correção proporcional
+foi um passo explícito no runbook (`docs/claude/postgres-cutover-runbook.md`,
+passo 1: fechar/recarregar toda aba do painel ANTES do backfill final),
+não uma peça de engenharia nova. Mesma filosofia de eliminação de corrida
+por construção já usada no resto desta migração (ler uma vez, não duas) —
+aqui aplicada ao escritor, não ao leitor: sem escritor concorrente entre o
+snapshot final e o deploy, a corrida não existe. Se o usuário quiser uma
+garantia mais forte que dependa menos de lembrar de fechar as abas (ex.: um
+version-gate real), fica como trabalho futuro, não bloqueia este cutover.
+
+**Aceito sem correção — janela estreita de notificação duplicada do
+Telegram para webhook retentado.** `tradingviewWebhookEvents` fica fora da
+migração de dados de propósito (log de auditoria sem consumidor de
+histórico, `db/CLAUDE.md`) — um `signal_id` gravado no Firestore pouco
+antes do corte, se o TradingView reenviar (retry) depois do cutover, não
+existe no Postgres, então `insertWebhookEventIfNew` devolve `created: true`
+e a notificação do Telegram sai de novo. Blast radius baixo (o webhook só
+loga/notifica, nunca envia ordem — `.claude/rules/trading-safety.md`; pior
+caso é uma mensagem duplicada) e janela estreita (só ids recentes,
+só se houver retry) — aceito como está, documentado no runbook (passo 5).
+Corrigir exigiria semear os ids recentes do Firestore no Postgres como
+parte do backfill final — não feito nesta rodada, fica registrado caso
+incomode na prática.

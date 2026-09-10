@@ -101,6 +101,45 @@ describe('entities — backend.entities.<Nome>', () => {
   });
 });
 
+// Achado real do Codex review (PR #339): a versão Firestore
+// (entitiesFirestoreLegacy.js) envolvia SystemLog.create()/createUnique()
+// numa camada resiliente (item 138) — sem ela aqui, uma falha transitória
+// de rede/Postgres propagaria e abortaria o resto do trabalho de scan de um
+// ativo (handleActiveOpArbitration, vários pontos de persistScanResults).
+describe('entities — SystemLog nunca propaga falha de escrita (paridade com entitiesFirestoreLegacy.js, item 138)', () => {
+  it('create() engole erro de callBackend e devolve fallback em vez de lançar', async () => {
+    callBackendMock.mockRejectedValueOnce(new Error('Request failed with status 500'));
+    await expect(
+      backend.entities.SystemLog.create({ level: 'info', module: 'scanner', message: 'x' })
+    ).resolves.toEqual(expect.objectContaining({ id: null, level: 'info' }));
+  });
+
+  it('createUnique() engole erro de callBackend e devolve { created: false } em vez de lançar', async () => {
+    callBackendMock.mockRejectedValueOnce(new Error('Request failed with status 500'));
+    await expect(
+      backend.entities.SystemLog.createUnique('dedup-key', { level: 'error', message: 'x' })
+    ).resolves.toEqual({ created: false, existing: null });
+  });
+
+  it('não afeta outras entidades — TradeOperation.create() continua propagando erro real', async () => {
+    callBackendMock.mockRejectedValueOnce(new Error('PERMISSION_DENIED'));
+    await expect(
+      backend.entities.TradeOperation.create({ symbol: 'BTCUSDT' })
+    ).rejects.toThrow('PERMISSION_DENIED');
+  });
+
+  it('create() bem-sucedido não é afetado pelo wrapper — devolve a resposta real do callBackend', async () => {
+    callBackendMock.mockResolvedValueOnce({ id: 'log_1', level: 'info' });
+    const created = await backend.entities.SystemLog.create({ level: 'info', module: 'scanner', message: 'x' });
+    expect(created).toEqual({ id: 'log_1', level: 'info' });
+  });
+
+  it('list()/filter()/delete() de SystemLog continuam delegando direto (só create/createUnique são envolvidos)', async () => {
+    await backend.entities.SystemLog.list('-created_date', 50);
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/SystemLog?sort=-created_date&limit=50', undefined, { method: 'GET' });
+  });
+});
+
 describe('entities — backend.locks', () => {
   it('acquireScanLock() desembrulha { acquired } do corpo da resposta', async () => {
     callBackendMock.mockResolvedValueOnce({ acquired: true });

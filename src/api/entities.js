@@ -102,6 +102,38 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvance
   return callBackend(`/api/trade-ops/${opId}/transition`, { fromStatus, patch, assetId, stopAdvanceMarkerField, cascade });
 }
 
+// Achado real do Codex review (PR #339): a versão Firestore
+// (entitiesFirestoreLegacy.js) envolvia SystemLog.create()/createUnique()
+// numa camada resiliente que engole falha de escrita não crítica — sem
+// isso, uma falha transitória (Postgres/HTTP) em `logWarn`/`logError`
+// propagava e abortava o resto do trabalho de scan de um ativo
+// (handleActiveOpArbitration, vários pontos de persistScanResults) — o
+// mesmo incidente real do item 138 que a versão Firestore corrigiu.
+// Precisa da mesma resiliência aqui, senão a troca de backend reintroduz o
+// bug corrigido. Sem a preocupação de ordem de composição com o mirror
+// RTDB que a versão Firestore tinha (item 169) — não existe mirror aqui.
+function makeResilientLogEntity(entity) {
+  return {
+    ...entity,
+    async create(data) {
+      try {
+        return await entity.create(data);
+      } catch (e) {
+        console.warn('[SystemLog] Falha ao gravar log (não crítico, ignorado):', e.message);
+        return { id: null, ...data };
+      }
+    },
+    async createUnique(id, data) {
+      try {
+        return await entity.createUnique(id, data);
+      } catch (e) {
+        console.warn('[SystemLog] Falha ao gravar log dedupado (não crítico, ignorado):', e.message);
+        return { created: false, existing: null };
+      }
+    },
+  };
+}
+
 // Contador de leitura/escrita do Firestore (docs/known-risks.md item 13) —
 // não tem equivalente no Postgres/Neon (sem teto diário de operações, ver
 // CLAUDE.md). Stub local que nunca sobe ao servidor, mesmo formato do stub
@@ -123,7 +155,7 @@ export const backend = {
     SignalEvent: createEntity('SignalEvent'),
     TradeOperation: createEntity('TradeOperation'),
     PriceAlert: createEntity('PriceAlert'),
-    SystemLog: createEntity('SystemLog'),
+    SystemLog: makeResilientLogEntity(createEntity('SystemLog')),
     // Bloqueada na rota genérica de propósito (server/entityCollectionGuard.js
     // — isolamento "dono only" de users/{uid}); mantida aqui só por forma —
     // qualquer chamada real lançaria 403. Perfil do próprio usuário usa

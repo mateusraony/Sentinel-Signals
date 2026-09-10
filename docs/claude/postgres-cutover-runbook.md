@@ -154,10 +154,22 @@ código revisado/mesclado, `npm run lint && npm test && npm run build`
 verdes na `main`. Escolha um horário de baixo volume de sinal (não durante
 um evento de mercado conhecido).
 
-1. **Pausar o relógio de trading**: desativar o disparo externo
-   (cron-job.org, ver `docs/claude/external-cron-setup.md`) e confirmar que
-   nenhuma run de `scan.yml`/`backfill.yml`/`scan-shadow.yml` está em
-   andamento (Actions → aguardar/cancelar).
+1. **Pausar o relógio de trading E fechar toda aba aberta do painel**:
+   desativar o disparo externo (cron-job.org, ver `docs/claude/
+   external-cron-setup.md`) e confirmar que nenhuma run de `scan.yml`/
+   `backfill.yml`/`scan-shadow.yml` está em andamento (Actions → aguardar/
+   cancelar). **Fechar (ou recarregar) toda aba do painel aberta em
+   qualquer dispositivo antes de seguir para o passo 2** — achado real do
+   Codex review no PR #339: o painel roda `useAutoScan` no browser
+   (`scanAllAssets`/`priceCheckActiveOps`, o mesmo motor do cron), então
+   uma aba já carregada continua com o bundle Firestore ANTIGO em memória
+   mesmo depois do deploy do passo 3 — ela seguiria criando/transicionando
+   `TradeOperation` real no Firestore, e essa escrita nunca chegaria ao
+   Postgres, silenciosamente. Fechar as abas ANTES do backfill final (passo
+   2) fecha essa corrida pela mesma raiz que o resto deste plano usa
+   (snapshot único, sem escritor concorrente por trás) — reabra o painel só
+   depois do passo 4 confirmado, pegando o bundle novo. Detalhe em
+   `docs/known-risks.md` item 170 addendum (2026-09-10).
 2. **Backfill final + verificação**: rodar `scripts/migrate-and-verify-
    postgres.mjs` (`npm run migrate-verify-postgres`) contra o Firestore de
    produção real e o Neon de produção real — pela máquina local ou pelo
@@ -185,6 +197,19 @@ um evento de mercado conhecido).
    funcionando), confirmar que uma tela com dado real (Dashboard/Trades)
    carrega. Disparar `workflow_dispatch` manual de `scan.yml` uma vez e
    conferir no Job Summary/logs que ele rodou contra Postgres sem erro.
+
+**Risco menor aceito, não corrigido** (achado do Codex review, PR #339):
+`tradingviewWebhookEvents` fica de fora da migração de dados de propósito
+(log de auditoria, `db/CLAUDE.md`) — se o TradingView reenviar (retry) um
+webhook cujo `signal_id` já tinha sido gravado no Firestore ANTES do
+cutover, o Postgres não tem esse id, então `insertWebhookEventIfNew`
+devolve `created: true` e manda a notificação do Telegram de novo. Janela
+estreita (só ids gravados pouco antes do corte, e só se o TradingView
+reenviar depois) e blast radius baixo (o webhook só loga/notifica — nunca
+envia ordem, `.claude/rules/trading-safety.md` — o pior caso é uma
+mensagem duplicada no Telegram). Aceito sem correção nesta rodada; se
+incomodar na prática, a correção seria semear os ids recentes do Firestore
+no Postgres como parte do passo 2 acima.
 
 ## Rollback
 
