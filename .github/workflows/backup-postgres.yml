@@ -55,6 +55,19 @@ jobs:
 
       - run: npm ci
 
+      # Achado real (docs/known-risks.md): as 3 primeiras execuções
+      # agendadas falharam — pg_dump 16.x (o que o runner ubuntu-latest
+      # traz por padrão) recusa dumpar um servidor Postgres de major
+      # version MAIOR que o do próprio pg_dump ("aborting because of
+      # server version mismatch"). O Neon roda Postgres 18.x. O repositório
+      # apt do PGDG já vem configurado nas imagens do runner (é de lá que
+      # o pacote 16 default vem, veja o sufixo "pgdg" na versão do erro) —
+      # só falta pedir o pacote da versão 18 explicitamente;
+      # postgresql-common troca o `pg_dump` do PATH pro binário mais novo
+      # instalado automaticamente via update-alternatives.
+      - name: Instalar pg_dump 18 (compatível com o major version do Neon)
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-18
+
       - name: Gerar dump
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
