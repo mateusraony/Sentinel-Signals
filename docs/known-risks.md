@@ -21657,3 +21657,48 @@ checklist de código, restam 1 (`scripts/adminEntities.js`, Fase 10 prep,
 PR #332 aberto sem merge automático), 2 (browser), 3 (AuthContext) e 4b
 (ligar o webhook de verdade) — os 4 que só devem acontecer juntos, na
 janela de cutover coordenada.
+
+## 171. `backup-postgres.yml` falhando desde a 1ª execução — `pg_dump` mais antigo que o Neon (2026-09-11)
+
+**Achado ao checar se o cutover já podia ser feito** — o pré-requisito
+operacional do runbook ("Backup do Postgres rodando... confirmar que pelo
+menos 1 run agendado real já aconteceu com sucesso") estava marcado feito
+com base só no teste local (`scripts/backup-postgres.test.js` contra
+Postgres local) — as 3 execuções agendadas REAIS (`backup-postgres.yml`,
+09/10/11 de setembro, toda madrugada) tinham **falhado todas as 3**, sem
+que ninguém tivesse notado (o workflow não tem alerta configurado, ao
+contrário de `scan.yml`/`ci.yml`).
+
+**Causa raiz**: `pg_dump: error: aborting because of server version
+mismatch — server version: 18.6; pg_dump version: 16.15`. O runner
+`ubuntu-latest` do GitHub Actions vem com `pg_dump` 16.x pré-instalado (via
+repositório PGDG, já configurado na imagem — daí o sufixo `pgdg24.04` na
+versão do erro); o Neon roda Postgres 18.6. `pg_dump`/`pg_restore` recusam
+operar contra um servidor de major version MAIOR que a própria ferramenta
+(regra de compatibilidade do próprio Postgres) — o dump nunca foi gerado
+nem uma vez em produção.
+
+**Corrigido**: novo passo no workflow (`sudo apt-get install -y
+postgresql-client-18`, repositório PGDG já disponível na imagem do
+runner) antes de "Gerar dump" — `postgresql-common` troca o `pg_dump` do
+`PATH` pro binário mais novo instalado automaticamente via
+`update-alternatives`, sem precisar apontar caminho absoluto.
+`docs/restore-postgres.md` ganhou o mesmo aviso (checar `pg_restore
+--version` antes de restaurar, já que uma restauração manual da máquina do
+usuário pode ter o mesmo problema se a ferramenta local for mais antiga
+que 18).
+
+**Não verificável localmente antes de mesclar** — esta sandbox não tem o
+repositório PGDG configurado (ambiente diferente do runner real do GitHub
+Actions), então a instalação do pacote `postgresql-client-18` não pôde ser
+testada aqui; a correção depende do próximo `workflow_dispatch`/execução
+agendada real para confirmar. Risco julgado baixo: a suposição (PGDG já
+configurado na imagem `ubuntu-latest`) está diretamente confirmada pelo
+sufixo de versão do próprio erro de produção, não é uma suposição às
+cegas.
+
+**Impacto no cutover**: o pré-requisito operacional do runbook
+permanece **não fechado** até uma execução agendada real de
+`backup-postgres.yml` terminar com sucesso — não é recomendável prosseguir
+com a janela de cutover coordenada (que torna o Postgres a fonte de
+verdade) sem ter pelo menos um backup real funcionando primeiro.

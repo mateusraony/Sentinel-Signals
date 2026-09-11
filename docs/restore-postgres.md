@@ -33,7 +33,17 @@ git log --oneline -- 'postgres-backup-*.dump'
    ```
    (troque a data pelo arquivo que você quer)
 
-2. **Confira o conteúdo antes de restaurar** — `pg_restore --list` mostra o
+2. **Confirme a versão do `pg_restore` local ANTES de tentar** (`pg_restore
+   --version`) — achado real rodando `backup-postgres.yml` em produção
+   (`docs/known-risks.md`): `pg_dump`/`pg_restore` recusam operar contra um
+   servidor de major version MAIOR que a própria ferramenta ("aborting
+   because of server version mismatch"). O Neon roda Postgres 18.x — se o
+   `pg_restore` da sua máquina for mais antigo (ex.: 16, o default de
+   muitas distros), instale a versão 18 antes de seguir (no Ubuntu/Debian,
+   via o repositório oficial `apt.postgresql.org`, pacote
+   `postgresql-client-18`; no macOS, `brew install postgresql@18`).
+
+3. **Confira o conteúdo antes de restaurar** — `pg_restore --list` mostra o
    que está dentro do dump (tabelas/dados) sem tocar em nada:
    ```
    pg_restore --list /tmp/restore.dump
@@ -42,7 +52,7 @@ git log --oneline -- 'postgres-backup-*.dump'
    anônima) nem `scanner_locks` (estado de execução efêmero) — ver o
    cabeçalho de `scripts/backup-postgres.mjs` pro porquê.
 
-3. **Restaure contra o banco de destino** (`DATABASE_URL` da instância que
+4. **Restaure contra o banco de destino** (`DATABASE_URL` da instância que
    vai RECEBER os dados — nunca aponte para produção sem ter certeza):
    ```
    pg_restore --clean --if-exists --no-owner --no-privileges \
@@ -57,7 +67,7 @@ git log --oneline -- 'postgres-backup-*.dump'
      `users`/`scanner_locks` do banco de destino (o comando nunca as
      menciona, já que elas nunca estiveram no dump).
 
-4. **Restaurar só uma tabela específica** (ex.: só `trade_operations`, sem
+5. **Restaurar só uma tabela específica** (ex.: só `trade_operations`, sem
    tocar o resto): use `--table`:
    ```
    pg_restore --clean --if-exists --no-owner --no-privileges \
@@ -72,8 +82,8 @@ precisam voltar. Se o projeto inteiro precisar ser recriado do zero:
    connection string "pooled".
 2. Rode `db/migrate.mjs` (ou dispare `.github/workflows/db-migrate.yml`) pra
    aplicar `db/schema.sql` — `pg_restore --clean --if-exists` já recria as
-   tabelas sozinho a partir do passo 3 acima, mas aplicar o schema primeiro
+   tabelas sozinho a partir do passo 4 acima, mas aplicar o schema primeiro
    garante que qualquer tabela **excluída do dump** (`users`/
    `scanner_locks`) também exista, vazia, prontas pro app escrever de novo.
 3. Atualize o secret `DATABASE_URL` (GitHub Actions e Render).
-4. Siga os passos 1-4 acima normalmente.
+4. Siga os passos 1-5 acima normalmente.
