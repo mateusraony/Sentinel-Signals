@@ -27,7 +27,7 @@ import { db } from './adminEntitiesFirestoreLegacy.js';
 import { backend, closePool } from '../db/pgEntitiesCore.mjs';
 import { canonicalJson, toPlainValue } from './firestorePlainValue.mjs';
 import { groupActiveOpsByAsset } from '../src/lib/opTransition.js';
-import { COLLECTION_ENTITIES, SINGLETON_DOCS } from './migrate-firestore-to-postgres.mjs';
+import { COLLECTION_ENTITIES, SINGLETON_DOCS, LIST_LIMIT_OVERRIDES } from './migrate-firestore-to-postgres.mjs';
 import { forceExit } from './scanTimeout.mjs';
 
 const PAGE_SIZE = 500;
@@ -46,6 +46,16 @@ export async function readFirestoreCollection(firestoreCollection) {
     cursor = snapshot.docs[snapshot.docs.length - 1];
   }
   return items;
+}
+
+// Variante limitada de readFirestoreCollection — só os N mais recentes por
+// `created_date` (mesma LIST_LIMIT_OVERRIDES de migrate-firestore-to-
+// postgres.mjs). A verificação fica, honestamente, restrita a essa fatia —
+// não é "SystemLog inteiro bate", é "os N mais recentes batem", exatamente
+// o que foi migrado.
+export async function readFirestoreCollectionRecent(firestoreCollection, limit) {
+  const snapshot = await db.collection(firestoreCollection).orderBy('created_date', 'desc').limit(limit).get();
+  return snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...toPlainValue(docSnap.data()) }));
 }
 
 export async function readFirestoreSingleton(firestoreCollection, docId) {
@@ -93,12 +103,14 @@ export function compareTradeOpDuplicates(firestoreOps, postgresOps) {
   };
 }
 
-async function verifyEntity(firestoreItems, entityName) {
-  const postgresItems = await backend.entities[entityName].list();
+async function verifyEntity(firestoreItems, entityName, limit) {
+  const postgresItems = limit
+    ? await backend.entities[entityName].list('-created_date', limit)
+    : await backend.entities[entityName].list();
   const result = compareDatasets(firestoreItems, postgresItems);
   const ok = result.countMatch && result.checksumMatch;
   console.log(
-    `[verify] ${entityName}: Firestore=${result.firestoreCount} Postgres=${result.postgresCount} `
+    `[verify] ${entityName}${limit ? ` (${limit} mais recentes)` : ''}: Firestore=${result.firestoreCount} Postgres=${result.postgresCount} `
     + `contagem=${result.countMatch ? 'OK' : 'DIVERGE'} checksum=${result.checksumMatch ? 'OK' : 'DIVERGE'}`
   );
   return { entityName, ok, ...result, firestoreItems, postgresItems };
@@ -109,8 +121,11 @@ async function main() {
   const results = [];
 
   for (const [collection, entityName] of Object.entries(COLLECTION_ENTITIES)) {
-    const firestoreItems = await readFirestoreCollection(collection);
-    results.push(await verifyEntity(firestoreItems, entityName));
+    const limit = LIST_LIMIT_OVERRIDES[collection];
+    const firestoreItems = limit
+      ? await readFirestoreCollectionRecent(collection, limit)
+      : await readFirestoreCollection(collection);
+    results.push(await verifyEntity(firestoreItems, entityName, limit));
   }
   for (const [collection, entityName] of Object.entries(SINGLETON_DOCS)) {
     const firestoreItems = await readFirestoreSingleton(collection, 'current');

@@ -24,7 +24,10 @@
     "typecheck:ratchet": "node scripts/typecheck-ratchet.mjs",
     "analyze-backtest": "node scripts/analyze-backtest.mjs",
     "analyze-shadow-rf1h": "node scripts/analyze-shadow-rf1h.mjs",
-    "backfill-rtdb": "node scripts/backfill-rtdb.mjs"
+    "backfill-rtdb": "node scripts/backfill-rtdb.mjs",
+    "migrate-postgres": "node scripts/migrate-firestore-to-postgres.mjs",
+    "verify-postgres": "node scripts/verify-postgres-migration.mjs",
+    "migrate-verify-postgres": "node scripts/migrate-and-verify-postgres.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^4.1.2",

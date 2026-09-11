@@ -29,11 +29,22 @@ const SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 // resto da suíte com erros incoerentes ("duplicate key value violates
 // unique constraint pg_type_typname_nsp_index", "relation ... does not
 // exist", etc., cada rodada com um erro diferente — a assinatura clássica
-// de uma corrida, não um bug de lógica). `pg_advisory_lock` é session-scoped
-// — só serializa dentro do MESMO processo `node` se usado do jeito errado;
-// aqui funciona porque cada arquivo de teste abre sua PRÓPRIA conexão
-// (client novo), então o lock realmente serializa entre processos/threads
-// diferentes do vitest.
+// de uma corrida, não um bug de lógica). `pg_advisory_xact_lock` (não
+// `pg_advisory_lock`/`_unlock` — achado real por review externa, Codex,
+// PR #336) — TRANSACTION-scoped, liberado automaticamente no COMMIT/
+// ROLLBACK, ao contrário da variante session-scoped. Isso importa
+// especificamente porque `db-migrate.yml` roda isto contra a connection
+// string 'pooled' do Neon (PgBouncer em modo transaction pooling): com o
+// lock/unlock session-scoped como 2 chamadas `client.query()` SEPARADAS
+// (fora de uma transação explícita), o pooler pode reatribuir cada chamada
+// a uma sessão de backend DIFERENTE — o schema rodaria sem o lock
+// realmente seguro, e o unlock poderia nunca alcançar a sessão que de fato
+// travou (lock vazado até aquela conexão de backend ser reciclada).
+// `pg_advisory_xact_lock` dentro de um `BEGIN...COMMIT` explícito fecha
+// isso: pooling em modo transação garante a MESMA sessão de backend do
+// `BEGIN` até o `COMMIT`, não importa quantas chamadas `client.query()`
+// aconteçam no meio — é exatamente a garantia que o modo "transaction
+// pooling" promete preservar.
 const SCHEMA_LOCK_KEY = 823456111;
 
 export async function applySchema(databaseUrl, schemaPath = SCHEMA_PATH) {
@@ -44,11 +55,14 @@ export async function applySchema(databaseUrl, schemaPath = SCHEMA_PATH) {
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
   try {
-    await client.query('SELECT pg_advisory_lock($1)', [SCHEMA_LOCK_KEY]);
+    await client.query('BEGIN');
     try {
+      await client.query('SELECT pg_advisory_xact_lock($1)', [SCHEMA_LOCK_KEY]);
       await client.query(sql);
-    } finally {
-      await client.query('SELECT pg_advisory_unlock($1)', [SCHEMA_LOCK_KEY]);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
     }
   } finally {
     await client.end();

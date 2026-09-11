@@ -380,6 +380,41 @@ export async function bulkImportEntity(entityName, items) {
   }
 }
 
+// --- tradingview_webhook_events (server-only) -----------------------------
+// Equivalente Postgres da transação de dedup do webhook TradingView
+// (`server/index.js`'s `POST /webhook/tradingview`, hoje: `db.runTransaction`
+// lê o doc por `signal_id`, devolve `false` se já existe, senão grava e
+// devolve `true`). `tradingviewWebhookEvents`/`tradingview_webhook_events`
+// foi deliberadamente excluída de `ENTITY_TABLES` (ver `db/schema.sql`:
+// "server-only, nunca passa pela rota genérica nem por `backend.entities`")
+// — por isso esta função não reusa `createEntity`, é o único ponto de
+// escrita dessa tabela. `INSERT ... ON CONFLICT (id) DO NOTHING RETURNING
+// id` é atômico sob concorrência real (2 requisições simultâneas com o
+// mesmo `signal_id`, ex.: retry do TradingView): o Postgres garante que só
+// uma `INSERT` "ganha" a linha (`RETURNING id` devolve 1 linha), a outra
+// recebe zero linhas — sem precisar de transação explícita nem de `SELECT
+// ... FOR UPDATE` prévio, ao contrário do CAS de `TradeOperation` acima
+// (aqui não há decisão além de "já existe ou não").
+//
+// **Preparação do item 4 do runbook de cutover
+// (docs/claude/postgres-cutover-runbook.md) — ainda NÃO chamada por
+// `server/index.js`.** A troca de verdade (ligar isto no lugar da
+// transação Firestore) é o item 4b, feito durante a janela de cutover
+// coordenada, junto com os outros itens (browser/auth/render.yaml) — nunca
+// isoladamente, porque o webhook é um canal ao vivo (TradingView está
+// esperando a resposta).
+export async function insertWebhookEventIfNew(id, data) {
+  assertNoUndefinedFields(data, 'TradingviewWebhookEvent');
+  const { rows } = await getPool().query(
+    `INSERT INTO tradingview_webhook_events (id, source, received_at, data)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (id) DO NOTHING
+     RETURNING id`,
+    [id, data.source ?? null, data.received_at ?? nowIso(), JSON.stringify(data)]
+  );
+  return { created: rows.length > 0 };
+}
+
 // --- Locks (scannerLocks → scanner_locks) ---------------------------------
 
 async function acquireScanLock(lockName, ttlMs, holder) {

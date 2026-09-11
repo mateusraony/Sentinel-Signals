@@ -6,7 +6,7 @@ padrão de `docs/claude/external-cron-setup.md`: procedimento manual passo a
 passo, não automatizado. **Este documento não executa nada sozinho** — é o
 guia pra quando o cutover em si (fase 10 do plano) for decidido.
 
-## Status desta rodada (2026-09-08)
+## Status desta rodada (2026-09-09)
 
 **Pronto** (Fases 1-8 do plano, todas mescladas):
 
@@ -20,11 +20,25 @@ guia pra quando o cutover em si (fase 10 do plano) for decidido.
 - Cliente HTTP do browser dark (`src/api/entitiesPostgres.js`) — PR #328.
 - Scripts de migração/verificação de dados
   (`scripts/migrate-firestore-to-postgres.mjs`/`verify-postgres-
-  migration.mjs`) — testados contra Postgres local, **nunca rodados contra
-  o Firestore de produção real** — PR #329.
+  migration.mjs`) — PR #329, e **já validados contra o Firestore de
+  produção real** (ensaio, item 6 abaixo).
 - Backup diário do Postgres (`scripts/backup-postgres.mjs` +
   `.github/workflows/backup-postgres.yml`) — pré-requisito da fase 11
   satisfeito — PR #330.
+- **Fase 10 (execução) preparada, mas NÃO mesclada** — `scripts/
+  adminEntities.js` vira re-export fino de `db/pgEntitiesCore.mjs`
+  (item 1 abaixo), PR aberto a pedido explícito do usuário sem merge
+  automático (mescla só o backend AO VIVO do cron — diferente de todas as
+  fases anteriores, dark até aqui). Ver `docs/known-risks.md` item 170
+  addendum.
+- Workflow de migração/verificação real via GitHub Actions
+  (`.github/workflows/migrate-postgres.yml`, item 7 abaixo) — fecha a
+  lacuna que faltava pro item 6 (ensaio) poder rodar sem máquina local.
+- Dedup do webhook em Postgres, dark (item 4 abaixo) — ainda não ligada em
+  `server/index.js`.
+- **Ensaio real rodado com sucesso** (item 6 abaixo, run #1 do
+  `migrate-postgres.yml`) — 6.061 documentos, TODAS as 10 entidades com
+  contagem+checksum batendo, 0 divergência na 1ª tentativa.
 
 **Preparado, mas NÃO mesclado ainda** (PR aberto, propositalmente sem
 merge automático — ver o addendum de 2026-09-08 em `docs/known-risks.md`
@@ -66,36 +80,58 @@ de código reais que faltam:
    direto** (`getDoc`/`setDoc` em `users/{uid}`) — precisa trocar para
    `fetch('/api/me', {headers:{Authorization:'Bearer '+idToken}})`, a rota
    que `server/routes/me.js` já expõe (dark).
-4. **O webhook `POST /webhook/tradingview` (`server/index.js:159-203`)
-   continua gravando o dedup de `signal_id` direto no Firestore**
-   (`db.collection('tradingviewWebhookEvents')` + `runTransaction`) — não
-   existe hoje nenhum caminho Postgres para isso. `db/schema.sql` já criou
-   a tabela `tradingview_webhook_events`, mas `tradingview_webhook_events`
-   foi **deliberadamente excluída** de `ENTITY_TABLES`
-   (`db/pgEntitiesCore.mjs`, "server-only, nunca passa por
-   `backend.entities`") — o cutover precisa de uma função dedicada (mesmo
-   padrão de `createUnique`: `INSERT ... ON CONFLICT (id) DO NOTHING
-   RETURNING id`, já citado no plano) chamada direto por
-   `server/index.js`, não uma entidade genérica nova.
-5. **`render.yaml`'s serviço `sentinel-signals-api` não declara
-   `DATABASE_URL`** (nem como `sync: false`) — precisa da mesma entrada que
-   os outros secrets (`FIREBASE_SERVICE_ACCOUNT_JSON`, etc.) antes do
-   secret poder ser setado no dashboard do Render.
-6. **`scripts/migrate-firestore-to-postgres.mjs`/`verify-postgres-
-   migration.mjs` nunca rodaram contra o Firestore de produção real** —
-   só contra Postgres local desta sandbox (a sessão do Claude Code não
-   alcança nem o Firestore de produção com credenciais reais nem o Neon
-   real, ver `db/CLAUDE.md`). **Rodar um "ensaio" completo (migrar +
-   verificar) antes do dia do cutover, fora da janela de manutenção**, é
-   como esses scripts vão ser validados contra dado real pela primeira
-   vez — não deixe isso pra hora H.
-7. **Não existe workflow pra rodar a migração/verificação a partir do
-   GitHub Actions.** `db-migrate.yml` (aplicar `db/schema.sql`) já prova o
-   padrão — um workflow `workflow_dispatch` com os secrets
-   `FIREBASE_SERVICE_ACCOUNT_JSON` E `DATABASE_URL` juntos rodaria os
-   scripts do item 6 sem precisar de máquina local. Se preferir rodar na
-   sua própria máquina em vez de criar esse workflow, tudo bem — mas
-   alguém precisa decidir qual caminho antes do dia do cutover.
+4. ✅ **Metade feita** — `db/pgEntitiesCore.mjs` ganhou
+   `insertWebhookEventIfNew(id, data)` (`INSERT ... ON CONFLICT (id) DO
+   NOTHING RETURNING id`, testado com concorrência real, 25x), o
+   equivalente Postgres da transação de dedup que `server/index.js`'s
+   `POST /webhook/tradingview` (`server/index.js:159-203`) faz hoje contra
+   o Firestore (`db.collection('tradingviewWebhookEvents')` +
+   `runTransaction`). **Ainda NÃO chamada por `server/index.js`** — a
+   troca de verdade (item 4b) é feita só durante a janela de cutover
+   coordenada, junto com os outros itens, porque o webhook é um canal ao
+   vivo (TradingView está esperando a resposta).
+5. ✅ **Metade feita** — `render.yaml`'s serviço `sentinel-signals-api`
+   agora declara `DATABASE_URL` (`sync: false`), mesma entrada dos outros
+   secrets. **Ainda falta o passo manual**: setar o valor real (a mesma
+   connection string 'pooled' já usada no secret `DATABASE_URL` do GitHub
+   Actions) no dashboard do Render, serviço `sentinel-signals-api` →
+   Environment. Sem isso, as rotas Postgres continuam respondendo 503
+   (comportamento seguro, documentado em `server/pgCoreLoader.js`) — nada
+   muda em produção só por essa declaração ter sido feita.
+6. ✅ **Feito** — ensaio real rodado pelo usuário via `migrate-postgres.yml`
+   (run #1, 2026-09-09T19:38-19:40 UTC, `conclusion: success`) —
+   **primeira validação real dos scripts de migração/verificação contra o
+   Firestore de produção e o Neon real**. 6.061 documentos migrados,
+   TODAS as 10 entidades com contagem E checksum batendo
+   (`MonitoredAsset` 11, `AssetState` 45, `SignalEvent` 3903,
+   `TradeOperation` 16, `PriceAlert` 0, `SystemLog` 2000 — limitado aos
+   mais recentes de propósito, `User` 3, `VerificationTask` 81,
+   `StrategyConfig`/`TelegramFilters` 1 cada) — inclusive
+   `TradeOperation` (o P0 mais crítico): 0 grupos duplicados dos dois
+   lados. Zero divergência na primeira tentativa. Detalhe em
+   `docs/known-risks.md` item 170 addendum.
+7. ✅ **Feito** — `.github/workflows/migrate-postgres.yml`
+   (`workflow_dispatch`) roda `npm run migrate-verify-postgres`
+   (`scripts/migrate-and-verify-postgres.mjs`) com `FIREBASE_SERVICE_
+   ACCOUNT_JSON` E `DATABASE_URL` juntos, mesmo padrão de `db-migrate.yml`.
+   Serve tanto pro ensaio (item 6) quanto pra migração final do dia do
+   cutover (passo 2-3 abaixo). **2 achados ao preparar este item**: (a)
+   `migrate-firestore-to-postgres.mjs` lia `systemLogs` inteiro, sem
+   limite — mesma classe de incidente do item 152 addendum
+   (backfill-rtdb.mjs esgotou a cota lendo ~49.700 documentos numa chamada
+   só) — corrigido com `LIST_LIMIT_OVERRIDES` (2000 mais recentes); (b)
+   achado real por review externa (Codex, comentário no PR #334): rodar
+   `migrate-firestore-to-postgres.mjs` e `verify-postgres-migration.mjs`
+   como 2 processos separados faz cada um ler o Firestore DE NOVO — com o
+   cron ao vivo escrevendo entre as duas leituras (o ensaio roda de
+   propósito fora da janela de manutenção, cron ativo), a verificação
+   podia acusar divergência falsa mesmo com a migração correta.
+   Corrigido: `scripts/migrate-and-verify-postgres.mjs` lê cada coleção do
+   Firestore **uma única vez**, escreve no Postgres e verifica contra o
+   MESMO array em memória — a corrida deixa de existir por construção
+   (100% reuso das funções dos 2 scripts originais, que continuam
+   existindo/utilizáveis separadamente — o dia real do cutover já pausa o
+   cron antes, então lá a corrida nunca existiu).
 8. ~~`scripts/adminPineConfig.js`/`scripts/adminTelegram.js` liam
    Firestore direto (`getFirestore()`), sem passar por
    `scripts/adminEntities.js`~~ — **achado durante a implementação do item
@@ -111,10 +147,12 @@ de código reais que faltam:
    deixado INTOCADO de propósito, é específico do Firestore e fica fora
    desta migração.
 
-## Pergunta em aberto — RTDB do painel continua fazendo sentido pós-cutover?
+## RTDB do painel pós-cutover — decisão já tomada (ver abaixo)
 
-**Não é um item de código faltando — é uma decisão de produto ainda não
-tomada**, achada ao preparar o item 1. O painel lê dados "ao vivo" via
+**Não era um item de código faltando — era uma decisão de produto**,
+achada ao preparar o item 1, **já resolvida em 2026-09-10** (ver o
+"Decidido" no fim desta seção). Contexto de como o problema apareceu: o
+painel lê dados "ao vivo" via
 RTDB (`src/api/rtdbEntities.js`, `docs/known-risks.md` item 152) — um
 espelho de LEITURA que existe especificamente para não gastar a cota
 diária do Firestore. Esse espelho é alimentado por `withRtdbMirror` dentro
@@ -133,10 +171,15 @@ existe esse mecanismo no lado Postgres**. Duas opções, nenhuma implementada:
    Postgres→RTDB) só até a decomissão do RTDB (fase 11) — mais trabalho
    pra algo que já está no caminho de saída.
 
-Sem decidir isso, o cutover do item 2 (`src/api/entities.js`) deixaria o
-painel mostrando dado RTDB CONGELADO (nunca mais atualizado) sem nenhum
-erro visível — o tipo de falha silenciosa que este projeto já foi mordido
-por antes (item 157). **Resolver antes de executar o item 2**, não durante.
+**Decidido (2026-09-10, não nesta PR — ver PR #339/`docs/known-risks.md`
+item 170 addendum): opção 1, abandonar o atalho.** Postgres/Neon não tem
+teto diário de operações, motivo original do espelho — nenhum mirror novo
+Postgres→RTDB foi construído. O painel voltou a ler `backend.entities`
+direto (mesmo cliente HTTP do item 2) nos ~20 arquivos que liam via
+`rtdbEntities.X`; `src/api/rtdbEntities.js`/`src/lib/rtdbMirror.js` ficam
+como código morto até a Fase 11. Essa mudança está preparada no PR #339
+(itens 2/3/4b), não nesta PR (item 1, cron) — as duas ficam sincronizadas
+porque devem mesclar juntas na janela de cutover coordenada.
 
 ## Pré-requisitos operacionais
 
@@ -163,15 +206,15 @@ um evento de mercado conhecido).
    (cron-job.org, ver `docs/claude/external-cron-setup.md`) e confirmar que
    nenhuma run de `scan.yml`/`backfill.yml`/`scan-shadow.yml` está em
    andamento (Actions → aguardar/cancelar).
-2. **Backfill final**: rodar `scripts/migrate-firestore-to-postgres.mjs`
-   contra o Firestore de produção real e o Neon de produção real — pela
-   máquina local ou pelo workflow do item 7 acima. Isso vai upsertar
-   qualquer dado criado desde o último ensaio (item 6).
-3. **Verificar**: rodar `scripts/verify-postgres-migration.mjs` logo em
-   seguida, mesmas credenciais. **Não prossiga se ele reportar qualquer
-   divergência** (contagem, checksum, ou grupos de `TradeOperation`
-   duplicados) — investigue a causa raiz primeiro.
-4. **Deploy simultâneo**:
+2. **Backfill final + verificação**: rodar `scripts/migrate-and-verify-
+   postgres.mjs` (`npm run migrate-verify-postgres`) contra o Firestore de
+   produção real e o Neon de produção real — pela máquina local ou pelo
+   workflow do item 7 acima. Isso vai upsertar qualquer dado criado desde
+   o último ensaio (item 6) e verificar na mesma passada (mesmo snapshot,
+   sem reler o Firestore — ver item 7 pro porquê). **Não prossiga se ele
+   reportar qualquer divergência** (contagem, checksum, ou grupos de
+   `TradeOperation` duplicados) — investigue a causa raiz primeiro.
+3. **Deploy simultâneo**:
    - `sentinel-signals-api` (Render): confirmar `DATABASE_URL` setada no
      dashboard, deploy da versão com o webhook migrado (item 4) e as
      rotas HTTP já dark ativadas (nada muda pra elas — só passam a ser
@@ -183,10 +226,10 @@ um evento de mercado conhecido).
      confirmar que `scripts/adminEntities.js` (item 1) já é o re-export —
      o redirecionamento existente em `build-scan.mjs`/`build-backfill.mjs`
      continua funcionando sem mudança neles.
-5. **Reativar o relógio de trading**: religar o disparo externo
+4. **Reativar o relógio de trading**: religar o disparo externo
    (cron-job.org) assim que os 3 deploys acima estiverem confirmados no
    ar.
-6. **Smoke test manual**: abrir o painel, confirmar login (`/api/me`
+5. **Smoke test manual**: abrir o painel, confirmar login (`/api/me`
    funcionando), confirmar que uma tela com dado real (Dashboard/Trades)
    carrega. Disparar `workflow_dispatch` manual de `scan.yml` uma vez e
    conferir no Job Summary/logs que ele rodou contra Postgres sem erro.

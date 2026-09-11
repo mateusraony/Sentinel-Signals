@@ -63,16 +63,41 @@ cobre sozinho — ver item 152 addendum; continua Firestore-only, importa de
 `scripts/migrate-firestore-to-postgres.mjs` + `scripts/verify-postgres-
 migration.mjs` (Fase 7 do plano de migração Firestore→Neon,
 `/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`) — scripts
-operacionais, sem workflow agendado (rodam manualmente na janela de
-manutenção do cutover, fase 10 do plano). O primeiro lê cada coleção de
+operacionais, **agora com workflow** (`.github/workflows/migrate-
+postgres.yml`, `workflow_dispatch`, roda `npm run migrate-verify-postgres`
+— `scripts/migrate-and-verify-postgres.mjs` — com `FIREBASE_SERVICE_
+ACCOUNT_JSON` E `DATABASE_URL` juntos — fecha o item 7 do runbook de
+cutover, `docs/claude/postgres-cutover-runbook.md`). **O workflow NÃO chama
+os dois scripts abaixo separadamente** — achado real (Codex review, PR
+#334): rodar `migrate-firestore-to-postgres.mjs` e depois `verify-postgres-
+migration.mjs` como 2 processos faz cada um ler o Firestore DE NOVO; se o
+cron ao vivo escrever entre as duas leituras (roda a cada ~5min, e o
+"ensaio" do item 6 roda de propósito com o cron ativo), a verificação acusa
+divergência falsa mesmo com a migração correta — pior ainda pra coleções
+ATUALIZADAS em vez de criadas (`AssetState`/`TradeOperation` não ganham
+`created_date` novo a cada scan). `scripts/migrate-and-verify-postgres.mjs`
+resolve lendo cada coleção do Firestore **uma única vez**, escrevendo no
+Postgres e comparando contra o MESMO array em memória (100% reuso das
+funções abaixo — nenhuma lógica de leitura/comparação nova). Os dois
+scripts originais continuam existindo e utilizáveis separadamente (o dia
+real do cutover já pausa o cron antes de migrar/verificar, então a corrida
+não existe lá). O primeiro lê cada coleção de
 negócio direto do `firebase-admin/firestore` (paginação real por cursor de
 documento, `FieldPath.documentId()` — mesma lição de escala do item 152:
 paginar em vez de um único `list()` gigante) e upserta em Postgres via
 `db/pgEntitiesCore.mjs`'s `bulkImportEntity` (preserva o id do documento
 Firestore, ao contrário de `bulkCreate`/`create`, que sempre geram um id
-novo — necessário pra não remapear referências cruzadas como `asset_id`). O
-segundo lê os DOIS lados (Firestore direto + `backend.entities.*` do
-Postgres) e compara contagem + checksum determinístico por coleção, e,
+novo — necessário pra não remapear referências cruzadas como `asset_id`).
+**`systemLogs` é limitado aos 2000 mais recentes** (`LIST_LIMIT_OVERRIDES`,
+`migrateRecentCollection` em vez de `migrateCollection`) — achado ao
+preparar o workflow: migrar o histórico inteiro repetiria o incidente do
+item 152 addendum (`backfill-rtdb.mjs` esgotou a cota lendo ~49.700
+documentos numa chamada só); paginar evita um request gigante mas não
+reduz a CONTAGEM de leituras cobrada pela cota. O segundo lê os DOIS lados
+(Firestore direto + `backend.entities.*` do Postgres) e compara contagem +
+checksum determinístico por coleção (mesmo limite espelhado via
+`readFirestoreCollectionRecent`/`LIST_LIMIT_OVERRIDES`, importado do
+primeiro script, pra comparar a MESMA fatia dos dois lados), e,
 especificamente para `TradeOperation`, roda `groupActiveOpsByAsset`
 (inalterada) contra os dois datasets para confirmar que a migração não
 introduziu/removeu uma duplicata de operação ativa por ativo. Escopo: as 10
@@ -98,7 +123,10 @@ tem ferramenta de backup/restore madura e o Firestore não, sem o plano
 pago Blaze). Exclui `users`/`scanner_locks` do dump — ver o cabeçalho do
 arquivo pro porquê de cada um. Testado com `buildPgDumpArgs` (puro) +
 round-trip real `pg_dump`→`pg_restore` contra Postgres de verdade
-(`scripts/backup-postgres.test.js`, gated por `TEST_DATABASE_URL`).
+(`scripts/backup-postgres.test.js`, gated por `TEST_DATABASE_URL`, **num
+banco descartável próprio** — `pg_restore --clean` rodando contra a
+`TEST_DATABASE_URL` compartilhada corrompia arquivos vizinhos que rodam em
+paralelo, ver `db/CLAUDE.md`).
 Restauração via `pg_restore` puro, sem script próprio — ver
 `docs/restore-postgres.md`. Seguir:
 

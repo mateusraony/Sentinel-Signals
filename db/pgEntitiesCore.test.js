@@ -6,7 +6,7 @@
 // certo", incluindo concorrência com 2 conexões distintas de verdade.
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { applySchema } from './migrate.mjs';
-import { backend, getPool, closePool, bulkImportEntity } from './pgEntitiesCore.mjs';
+import { backend, getPool, closePool, bulkImportEntity, insertWebhookEventIfNew } from './pgEntitiesCore.mjs';
 
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
@@ -22,7 +22,7 @@ describe.skipIf(!TEST_DATABASE_URL)('db/pgEntitiesCore.mjs', () => {
 
   beforeEach(async () => {
     const pool = getPool(TEST_DATABASE_URL);
-    await pool.query('TRUNCATE monitored_assets, asset_states, signal_events, trade_operations, price_alerts, system_logs, users, verification_tasks, strategy_config, telegram_filters, scanner_locks');
+    await pool.query('TRUNCATE monitored_assets, asset_states, signal_events, trade_operations, price_alerts, system_logs, users, verification_tasks, strategy_config, telegram_filters, scanner_locks, tradingview_webhook_events');
   });
 
   describe('CRUD genérico (entities.<Nome>)', () => {
@@ -174,6 +174,47 @@ describe.skipIf(!TEST_DATABASE_URL)('db/pgEntitiesCore.mjs', () => {
       expect(result.created).toBe(false);
       expect(result.existingId).toBe('migrated-op-1');
       expect(await backend.entities.TradeOperation.list()).toHaveLength(1);
+    });
+  });
+
+  describe('insertWebhookEventIfNew (dedup do webhook TradingView, item 4 do runbook de cutover — prep, ainda não ligada em server/index.js)', () => {
+    it('primeira gravação de um signal_id retorna created: true', async () => {
+      const result = await insertWebhookEventIfNew('sig-1', { symbol: 'BTCUSDT', action: 'entry', source: 'tradingview_webhook', received_at: '2026-09-09T00:00:00.000Z' });
+      expect(result.created).toBe(true);
+    });
+
+    it('mesmo signal_id de novo (retry do TradingView) retorna created: false, sem sobrescrever', async () => {
+      await insertWebhookEventIfNew('sig-1', { symbol: 'BTCUSDT', action: 'entry', received_at: '2026-09-09T00:00:00.000Z' });
+      const retry = await insertWebhookEventIfNew('sig-1', { symbol: 'ETHUSDT', action: 'entry', received_at: '2026-09-09T00:05:00.000Z' });
+      expect(retry.created).toBe(false);
+
+      const { rows } = await getPool().query('SELECT data FROM tradingview_webhook_events WHERE id = $1', ['sig-1']);
+      expect(rows[0].data.symbol).toBe('BTCUSDT'); // a 1ª gravação venceu, não a 2ª
+    });
+
+    it('CONCORRÊNCIA REAL: exatamente 1 de 2 gravações simultâneas com o mesmo signal_id ganha (25x)', async () => {
+      for (let i = 0; i < 25; i++) {
+        const id = `sig-race-${i}`;
+        const [a, b] = await Promise.all([
+          insertWebhookEventIfNew(id, { symbol: 'BTCUSDT', source: 'a' }),
+          insertWebhookEventIfNew(id, { symbol: 'BTCUSDT', source: 'b' }),
+        ]);
+        const createdCount = [a.created, b.created].filter(Boolean).length;
+        expect(createdCount).toBe(1);
+      }
+    });
+
+    it('ids diferentes gravam independentemente, ambos created: true', async () => {
+      const [a, b] = await Promise.all([
+        insertWebhookEventIfNew('sig-a', { symbol: 'BTCUSDT' }),
+        insertWebhookEventIfNew('sig-b', { symbol: 'ETHUSDT' }),
+      ]);
+      expect(a.created).toBe(true);
+      expect(b.created).toBe(true);
+    });
+
+    it('campo undefined lança (assertNoUndefinedFields), mesma guarda das outras entidades', async () => {
+      await expect(insertWebhookEventIfNew('sig-1', { symbol: 'BTCUSDT', reason: undefined })).rejects.toThrow();
     });
   });
 

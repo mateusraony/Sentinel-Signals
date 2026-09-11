@@ -128,6 +128,53 @@ describe('migrateCollection', () => {
   });
 });
 
+describe('migrateRecentCollection', () => {
+  it('lê no máximo `limit` documentos (mesmo com mais disponível) e upserta uma vez', async () => {
+    const docs = Array.from({ length: 5000 }, (_, i) => ({
+      id: `log_${String(i).padStart(4, '0')}`,
+      data: { level: 'info', created_date: '2026-09-01T00:00:00.000Z' },
+    }));
+    Object.assign(dbMock, makeFakeDb({ systemLogs: docs }));
+    const { migrateRecentCollection } = await import('./migrate-firestore-to-postgres.mjs');
+
+    const total = await migrateRecentCollection('systemLogs', 'SystemLog', 2000);
+
+    expect(total).toBe(2000);
+    expect(bulkImportEntityMock).toHaveBeenCalledTimes(1);
+    const [entityName, items] = bulkImportEntityMock.mock.calls[0];
+    expect(entityName).toBe('SystemLog');
+    expect(items).toHaveLength(2000);
+  });
+
+  it('coleção vazia não chama bulkImportEntity', async () => {
+    Object.assign(dbMock, makeFakeDb({ systemLogs: [] }));
+    const { migrateRecentCollection } = await import('./migrate-firestore-to-postgres.mjs');
+
+    const total = await migrateRecentCollection('systemLogs', 'SystemLog', 2000);
+
+    expect(total).toBe(0);
+    expect(bulkImportEntityMock).not.toHaveBeenCalled();
+  });
+
+  it('coleção com menos documentos que o limite migra todos, sem sobrar/faltar', async () => {
+    const docs = Array.from({ length: 3 }, (_, i) => ({ id: `log_${i}`, data: { level: 'info' } }));
+    Object.assign(dbMock, makeFakeDb({ systemLogs: docs }));
+    const { migrateRecentCollection } = await import('./migrate-firestore-to-postgres.mjs');
+
+    const total = await migrateRecentCollection('systemLogs', 'SystemLog', 2000);
+
+    expect(total).toBe(3);
+  });
+});
+
+describe('LIST_LIMIT_OVERRIDES', () => {
+  it('só systemLogs tem limite — as outras 7 coleções continuam migração exaustiva', async () => {
+    const { LIST_LIMIT_OVERRIDES, COLLECTION_ENTITIES } = await import('./migrate-firestore-to-postgres.mjs');
+    expect(Object.keys(LIST_LIMIT_OVERRIDES)).toEqual(['systemLogs']);
+    expect(Object.keys(COLLECTION_ENTITIES)).toContain('systemLogs');
+  });
+});
+
 describe('migrateSingleton', () => {
   it('documento existente é upsertado com o id fixo', async () => {
     Object.assign(dbMock, makeFakeDb({ strategyConfig: [{ id: 'current', data: { rf_period: 20 } }] }));

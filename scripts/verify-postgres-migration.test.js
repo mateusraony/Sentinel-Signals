@@ -168,6 +168,24 @@ describe('readFirestoreCollection', () => {
   });
 });
 
+describe('readFirestoreCollectionRecent', () => {
+  it('lê no máximo `limit` documentos', async () => {
+    const docs = Array.from({ length: 5000 }, (_, i) => ({ id: `log_${i}`, data: { level: 'info' } }));
+    Object.assign(dbMock, makeFakeDb({ systemLogs: docs }));
+    const { readFirestoreCollectionRecent } = await import('./verify-postgres-migration.mjs');
+
+    const items = await readFirestoreCollectionRecent('systemLogs', 2000);
+
+    expect(items).toHaveLength(2000);
+  });
+
+  it('coleção vazia devolve array vazio', async () => {
+    Object.assign(dbMock, makeFakeDb({ systemLogs: [] }));
+    const { readFirestoreCollectionRecent } = await import('./verify-postgres-migration.mjs');
+    expect(await readFirestoreCollectionRecent('systemLogs', 2000)).toEqual([]);
+  });
+});
+
 describe('readFirestoreSingleton', () => {
   it('documento existente vem com o id', async () => {
     Object.assign(dbMock, makeFakeDb({ strategyConfig: [{ id: 'current', data: { rf_period: 20 } }] }));

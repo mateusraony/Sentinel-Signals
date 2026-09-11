@@ -7,7 +7,7 @@
 // dado volta intacto depois de um restore.
 //
 // Roda num BANCO DE TESTE PRÓPRIO (CREATE DATABASE, não a TEST_DATABASE_URL
-// compartilhada) — achado rodando a suíte completa nesta sessão: vitest
+// compartilhada) — achado rodando a suíte completa repetidamente: vitest
 // executa arquivos de teste em paralelo por padrão, e os outros arquivos
 // gated por TEST_DATABASE_URL (db/schema.test.js, db/concurrency.test.js,
 // db/pgEntitiesCore.test.js) TRUNCAM/escrevem nas MESMAS tabelas

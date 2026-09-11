@@ -20940,6 +20940,91 @@ rodar de novo (mesma garantia já documentada acima).
 **Verificação**: `npm run lint && npm test (1636, 87 arquivos) && npm run
 build` verdes.
 
+### Addendum (2026-09-09) — Incidente ao vivo: `MonitoredAsset` sumiu do painel porque `database.rules.json` nunca foi implantado depois da etapa 3b
+
+**Sintoma reportado pelo usuário**: os ativos cadastrados desapareceram da
+tela Assets — sem mensagem de erro, sem indício de qual tela/desde quando.
+
+**Descartado por evidência, não suposição**:
+- Não é a migração Firestore→Neon (Fase 10): produção segue 100% no commit
+  `67e7e92` (pré-PR#332), confirmado via `list_workflow_runs` do `scan.yml` —
+  todas as passadas recentes `conclusion: success`.
+- Não é perda de dado no Firestore: o job `scan` do run mais recente
+  (run_id `34355891386`, job `102480349544`, 2026-09-09T13:15Z) logou
+  `[scan] scanAllAssets: 10 ativo(s), 0 falha(s)` — os 10 `MonitoredAsset`
+  continuam intactos no Firestore, a fonte de verdade nunca foi tocada.
+
+**Causa raiz confirmada**: `database.rules.json` ganhou as entradas
+`monitoredAssets`/`verificationTasks` (`.read`/`.write`: `"auth != null"`)
+no MESMO commit que ligou o modo "nó inteiro" do espelho RTDB para essas
+duas coleções (`1d25aba`, "Espelho RTDB rodada 3b", 2026-09-07T14:33 UTC —
+item 169 acima), incluindo `Assets.jsx:38-40` passando a ler
+`rtdbEntities.MonitoredAsset.list('-created_date')` em vez do Firestore
+direto. O deploy do FRONTEND é automático a cada push em `main` (Render) —
+esse código entrou no ar imediatamente. Mas o deploy das REGRAS do RTDB
+(`database.rules.json`) é **manual** (`deploy-firestore.yml`,
+`workflow_dispatch` só) — e o último run bem-sucedido desse workflow antes
+do incidente foi o run #8 (`id 34057296310`), em **2026-09-06T20:13 UTC**,
+quase 18h ANTES do commit `1d25aba`. Ninguém disparou o workflow de novo
+depois que a etapa 3b foi mesclada — as regras `monitoredAssets`/
+`verificationTasks` existiam só no repositório, nunca chegaram ao projeto
+Firebase real.
+
+Sem uma regra correspondente publicada para `monitoredAssets`, o RTDB nega
+acesso por padrão a esse caminho para o SDK do cliente (browser, sujeito a
+regra) — só o Admin SDK (cron/backfill, que ignora regras, igual ao
+Firestore) conseguia ler/escrever ali, o que explica por que o
+`backfill-rtdb.yml` (run #6, 2026-09-08T13:57 UTC, Admin SDK) escreveu "11
+documento(s)" no RTDB sem erro, mesmo com a regra ausente — e por que o
+scan ao vivo (Admin SDK também) nunca acusou nada. O navegador é o único
+lado sujeito à regra, e é exatamente o que ficou cego.
+
+**Por que virou silêncio total na tela, não um erro visível**:
+`Assets.jsx:38` (`useQuery({ queryKey: ['all-assets'], queryFn: () =>
+rtdbEntities.MonitoredAsset.list('-created_date') })`) só desestrutura
+`data: assets = []` e `isLoading` — não trata `isError`/`error`. Uma
+rejeição de permissão do `get()` do RTDB (`src/api/rtdbEntities.js:177`,
+dentro de `fetchAll()` de `createRtdbWholeNodeReadEntity`) vira, depois de
+esgotar os retries padrão do TanStack Query, `assets = []`/`isLoading =
+false` — a tela renderiza normalmente o estado vazio ("Nenhum ativo
+cadastrado.", `Assets.jsx:209`), indistinguível de "conta realmente sem
+ativos". Isso também bate com o achado já registrado neste mesmo arquivo
+(`createRtdbWholeNodeReadEntity`, item 169 etapa 3b): o fallback para
+Firestore só dispara quando `rtdb` em si é falsy (variável de ambiente
+ausente) — nunca quando o `get()` lança um erro real, incluindo
+PERMISSION_DENIED. `VerificationTask` está sujeita ao mesmo buraco (mesma
+etapa 3b, mesma regra ausente), mas o usuário não reportou nada sobre a
+tela de Verificação — não investigado a fundo aqui por não ser o sintoma
+relatado.
+
+**Correção**: nenhuma mudança de código — as regras corretas já estão em
+`database.rules.json`, só nunca foram publicadas. A correção é rodar o
+workflow "Deploy Firestore & RTDB rules" (Actions → esse nome → "Run
+workflow") uma vez. Esta sessão tentou disparar isso via API
+(`actions_run_trigger`/`workflow_dispatch`) e recebeu `403 Resource not
+accessible by integration` — mesma restrição de permissão já documentada
+no plano de migração Postgres (a sessão não tem escopo de API para disparar
+workflows) — por isso é uma ação manual do usuário, não algo que esta sessão
+resolveu sozinha.
+
+**Risco estrutural exposto, não corrigido nesta rodada**: o par
+frontend-automático / regras-manuais é uma armadilha de ordenação de deploy
+que já se materializou uma vez (este incidente) e pode se repetir em
+qualquer PR futuro que adicione um caminho de leitura RTDB novo — o código
+que lê fica no ar antes da regra que autoriza a leitura, com uma falha
+silenciosa (não um erro visível) no meio. Não implementado nesta rodada
+(fora do pedido do usuário, que foi só diagnosticar); opções para uma
+rodada futura, se o usuário quiser: (a) um passo de CI que compare
+`RTDB_MIRRORED_ENTITIES` contra as chaves de `database.rules.json` e falhe
+se divergirem, (b) automatizar o deploy de `database.rules.json` no mesmo
+push que já dispara o deploy do frontend (mudaria a superfície de
+`ci-deploy.md`, decisão de produto, não tomada aqui).
+
+**Ainda pendente (ação manual do usuário)**: disparar "Deploy Firestore &
+RTDB rules" no Actions. Depois de rodar, os ativos devem reaparecer na
+próxima leitura do painel (RTDB volta a responder, sem precisar de nenhum
+redeploy do frontend).
+
 ## 170. Migração Firestore→Neon — Fases 2-5: schema, CAS redesenhado, API própria (2026-09-08)
 
 Continuação do item 151 (achado 3) e da decisão de migrar para Neon (Postgres
@@ -21432,3 +21517,244 @@ do cron) rodados manualmente para confirmar que o redirecionamento
 `@/api/entities` → `adminEntities.js` resolve sem erro pós-rename.
 **Este PR não será mesclado automaticamente** — fica pro usuário decidir
 o momento, seguindo a janela de manutenção do runbook.
+
+### Addendum (2026-09-09) — item 7 fechado: workflow de migração real + achado de cota
+
+Fecha o item 7 do runbook (`.github/workflows/migrate-postgres.yml`,
+`workflow_dispatch`, roda `npm run migrate-postgres` seguido de `npm run
+verify-postgres` com `FIREBASE_SERVICE_ACCOUNT_JSON` + `DATABASE_URL`
+juntos, mesmo padrão de `db-migrate.yml`) — pedido explícito do usuário
+("pode seguir então") depois de esclarecido que isso NÃO é o cutover em si
+(o item 6, ensaio real, ainda não foi disparado; itens 2-5 continuam em
+aberto).
+
+**Achado ao preparar, antes de rodar contra produção**: `scripts/migrate-
+firestore-to-postgres.mjs` lia `systemLogs` inteiro, sem limite — a MESMA
+classe de incidente do item 152 addendum (`backfill-rtdb.mjs` esgotou a
+cota lendo ~49.700 documentos numa chamada só, derrubando o próximo scan
+agendado). A paginação por cursor já existente evita um request gigante,
+mas não reduz a CONTAGEM de leituras cobrada pela cota — migrar o
+histórico inteiro de `systemLogs` gastaria a mesma cota que já causou um
+incidente real. Corrigido ANTES de qualquer execução real (nunca chegou a
+rodar contra produção com o bug): `LIST_LIMIT_OVERRIDES = { systemLogs:
+2000 }`, nova função `migrateRecentCollection` (query única `orderBy
+('created_date','desc').limit(2000)` em vez da paginação exaustiva) — mesmo
+limite/mesma justificativa de `backfill-rtdb.mjs`. `verify-postgres-
+migration.mjs` espelha o mesmo limite (`readFirestoreCollectionRecent`,
+`LIST_LIMIT_OVERRIDES` importado do script de migração — fonte única, sem
+duplicar o número) pro lado da verificação comparar a MESMA fatia dos dois
+bancos; sem isso, a verificação acusaria divergência de contagem falsa
+(Firestore inteiro vs. Postgres só com os 2000 mais recentes). As outras 9
+entidades continuam migração exaustiva — nenhuma mostrou o mesmo problema
+de escala (mesmo raciocínio já aplicado no item 152 addendum a
+`backfill-rtdb.mjs`).
+
+**Verificado**: `npm run lint` limpo nos arquivos tocados; `npx vitest run
+scripts/migrate-firestore-to-postgres.test.js scripts/verify-postgres-
+migration.test.js` — 25 testes verdes (incluindo os novos: limite
+respeitado mesmo com mais documentos disponíveis, coleção vazia, coleção
+menor que o limite). YAML do workflow validado com parser real antes de
+commitar.
+
+**Ainda não executado contra produção** — o item 6 (ensaio real) é o
+próximo passo, e só depois disso é que os itens 2-5 (troca de verdade do
+browser/auth/webhook/render.yaml) devem ser implementados, seguindo a
+sequência do runbook — nunca simultâneo, nunca antes do ensaio validar os
+dois scripts contra dado real pela primeira vez.
+
+### Addendum (2026-09-09) — item 4 metade fechado (dedup do webhook, dark) + achado de corrida entre arquivos de teste
+
+`db/pgEntitiesCore.mjs` ganhou `insertWebhookEventIfNew(id, data)`
+(`INSERT ... ON CONFLICT (id) DO NOTHING RETURNING id`), o equivalente
+Postgres da transação de dedup do webhook TradingView — pedido explícito
+do usuário ("pode seguir então"), continuando o fechamento da checklist do
+runbook item por item. **Ainda dark**: `server/index.js` continua
+chamando só a transação Firestore — ligar de verdade é o item 4b,
+reservado pra janela de cutover coordenada (webhook é canal ao vivo,
+TradingView espera a resposta). Testado com concorrência REAL (2
+gravações simultâneas do mesmo `signal_id`, 25x) — exatamente 1 vence,
+nunca 0 nem 2.
+
+**Achado ao verificar, antes de qualquer merge**: rodando a suíte
+completa repetidamente (disciplina de verificação padrão deste projeto,
+não algo pedido especificamente), `db/concurrency.test.js` falhava de
+forma 100% reproduzível (6/6) quando rodado junto com
+`db/pgEntitiesCore.test.js` — `expected [] to have length 1 but got +0`.
+Causa raiz: `pgEntitiesCore.test.js`'s `beforeEach` faz `TRUNCATE
+trade_operations` (irrestrito, TODAS as linhas) e vitest roda arquivos de
+teste em paralelo por padrão — o `TRUNCATE` de um arquivo apagava a linha
+que `concurrency.test.js` acabara de inserir, ENTRE o `INSERT` e o
+`SELECT` de verificação do outro. **É a MESMA classe de corrida já
+documentada no item 170 addendum anterior** (Fase 10, achado de
+infraestrutura de teste) — mas aquele addendum e a correção correspondente
+(`scripts/backup-postgres.test.js` rodando num banco isolado) vivem só no
+PR #332 (Phase 10, ainda não mesclado por pedido explícito do usuário) e
+NUNCA cobriram esta interação específica (`concurrency.test.js` ×
+`pgEntitiesCore.test.js`) — confirmado comparando o diff: PR #332 não
+toca nenhum dos dois arquivos além do fix do `applySchema`. Reproduzido
+também SEM nenhuma mudança nova (só os dois arquivos como estavam em
+`main`), então não é regressão desta rodada — é um bug pré-existente que
+só não tinha sido pego porque ninguém tinha rodado `db/concurrency.test.js`
++ `db/pgEntitiesCore.test.js` juntos, repetidamente, localmente, antes.
+
+**Corrigido nesta rodada** (não fazia parte do pedido original, mas
+bloqueava a própria verificação exigida — "confirme que tudo foi feito
+certo... pra daí sim fazer o merge"): `db/concurrency.test.js` passou a
+rodar num banco de teste PRÓPRIO (`CREATE DATABASE` descartável, criado/
+apagado no próprio `describe`), mesmo padrão já usado por
+`backup-postgres.test.js`. Como a correção do `applySchema` (chave de
+advisory lock, item 170 addendum anterior) também vive só no PR #332 não
+mesclado, foi portada aqui também — sem ela, `applySchema` rodando de
+dois arquivos ao mesmo tempo (agora incluindo o banco novo deste arquivo)
+volta a corromper o catálogo `pg_type`. A correção de isolamento do
+`backup-postgres.test.js` em si (banco próprio, mesma versão do PR #332)
+também foi portada — sem ela, a suíte completa (`npx vitest run`, sem
+escopo) ainda falhava intermitentemente (2 de 3 rodadas, arquivos
+diferentes cada vez) mesmo com `concurrency.test.js` já isolado. Com as 3
+peças juntas (advisory lock + `concurrency.test.js` isolado +
+`backup-postgres.test.js` isolado), a suíte completa rodou 4x consecutivas
+100% verde (1756 testes) antes deste PR ser aberto.
+
+Quando o PR #332 eventualmente for mesclado (fase 10, execução do
+cutover), essas mesmas mudanças em `db/migrate.mjs`/
+`scripts/backup-postgres.test.js` vindas de lá vão bater exatamente com o
+que já está em `main` por este PR — sem conflito real esperado (mesmo
+texto, mesma correção, encontrada independentemente duas vezes).
+
+**Verificado**: `npm run lint` limpo; `npx vitest run` (suíte completa,
+`TEST_DATABASE_URL` setada) — 1756 testes verdes, 4 rodadas consecutivas;
+`npm run build` verde; `npm run typecheck:ratchet` — 16 erro(s), dentro do
+teto.
+
+### Addendum (2026-09-09) — achado real do Codex review no PR #334, corrigido antes do ensaio rodar
+
+O PR #334 (item 7, já mesclado) recebeu um review automático (Codex, App do
+GitHub) num comentário real, não ruído: `verify-postgres-migration.mjs`
+(chamado como o 2º de 2 processos separados pelo workflow) relê o
+Firestore DE NOVO depois que `migrate-firestore-to-postgres.mjs` já
+terminou — se o cron ao vivo escrever entre as duas leituras (ele roda a
+cada ~5min, e o "ensaio", item 6, roda de propósito FORA da janela de
+manutenção, com o cron ainda ativo), a verificação compara contra um
+Firestore que já mudou e acusa divergência mesmo com a migração correta.
+Pior ainda para coleções ATUALIZADAS em vez de criadas —
+`AssetState`/`TradeOperation` mudam a cada scan sem `created_date` novo, o
+que invalida a alternativa mais simples (filtrar por um cutoff de
+`created_date`) sugerida no próprio comentário.
+
+**Avaliado como achado real, não falso positivo** — confirmado lendo o
+código: `verify-postgres-migration.mjs`'s `main()` chama
+`readFirestoreCollection(Recent)` de novo por conta própria, sem receber
+nenhum estado do processo `migrate-firestore-to-postgres.mjs` anterior (são
+2 invocações `node` separadas no workflow, sem memória compartilhada).
+
+**Corrigido antes do ensaio (item 6) ser disparado pela primeira vez** —
+não fazia parte do pedido original, mas era exatamente o próximo passo
+planejado, e rodar o ensaio com esse bug ainda presente teria produzido um
+alarme falso na primeira tentativa. `scripts/migrate-and-verify-
+postgres.mjs` (novo) lê cada coleção do Firestore **uma única vez**, migra
+pro Postgres, e verifica contra o MESMO array em memória — a corrida deixa
+de existir por construção, não só encolhe. 100% reuso das peças já
+existentes/testadas: `readFirestoreCollection(Recent)`/
+`readFirestoreSingleton`/`compareDatasets`/`compareTradeOpDuplicates` de
+`verify-postgres-migration.mjs`, `bulkImportEntity` de
+`db/pgEntitiesCore.mjs`, `COLLECTION_ENTITIES`/`SINGLETON_DOCS`/
+`LIST_LIMIT_OVERRIDES` de `migrate-firestore-to-postgres.mjs` — nenhuma
+lógica de leitura/comparação nova, só uma composição diferente delas.
+`.github/workflows/migrate-postgres.yml` passou a chamar só este script
+combinado (`npm run migrate-verify-postgres`); os 2 scripts originais
+continuam existindo e utilizáveis separadamente (o dia real do cutover já
+pausa o cron ANTES de migrar/verificar — passo 1 do runbook —, então lá a
+corrida nunca existiu).
+
+**Verificado**: `npm run lint` limpo; 6 testes novos
+(`scripts/migrate-and-verify-postgres.test.js`, mockando as peças já
+testadas noutro lugar, provando especificamente que o Firestore é lido
+1 vez só e que uma divergência real ainda é detectada corretamente);
+`npm run build` verde.
+
+### Addendum (2026-09-09) — 2 achados reais adicionais do Codex review (PRs #336/#337), corrigidos antes de mesclar
+
+Duas rodadas de review automático a mais, ambas em código já coberto
+pelos addenda acima, ambas achados reais (não ruído):
+
+1. **`db/migrate.mjs`'s `applySchema` (PR #336)**: o lock/unlock
+   session-scoped (`pg_advisory_lock`/`pg_advisory_unlock`, item 170
+   addendum de Fase 10) é seguro contra a `TEST_DATABASE_URL` local/CI
+   (conexão direta), mas `db-migrate.yml` roda essa mesma função contra a
+   connection string **'pooled'** do Neon (PgBouncer em modo transaction
+   pooling) — com lock/schema/unlock como 3 chamadas `client.query()`
+   separadas fora de uma transação explícita, o pooler pode atribuir cada
+   uma a uma sessão de backend DIFERENTE: o schema rodaria sem o lock de
+   verdade, e o unlock poderia nunca alcançar a sessão que travou (lock
+   vazado até aquela conexão de backend ser reciclada, travando uma
+   migração futura). Corrigido trocando pra `pg_advisory_xact_lock` dentro
+   de um `BEGIN...COMMIT` explícito — transaction pooling garante a MESMA
+   sessão de backend do `BEGIN` até o `COMMIT`, então lock + aplicação do
+   schema + liberação automática (no `COMMIT`) ficam garantidamente juntos,
+   não importa como o PgBouncer agende as chamadas separadas.
+2. **`scripts/migrate-and-verify-postgres.mjs` (PR #337)**: `bulkImportEntity`
+   abre 1 única transação pra TODOS os itens recebidos numa chamada — o
+   script novo lia o Firestore inteiro em memória (necessário pra eliminar
+   a corrida de snapshot) e passava o array INTEIRO de uma vez, ao
+   contrário do script original (`migrateCollection`), que chamava
+   `bulkImportEntity` 1x POR PÁGINA (≤500 itens). Pra uma coleção grande
+   (`signalEvents`/`tradeOperations`), isso vira 1 transação sem limite,
+   arriscando estourar algum limite do Neon ou o timeout de 20min do
+   workflow, e derrubando a migração INTEIRA da coleção numa falha parcial
+   em vez de só o último lote. Corrigido: a leitura do Firestore continua
+   única (a correção da corrida fica intacta), mas a ESCRITA volta a
+   acontecer em lotes de 500.
+
+Ambos verificados com teste novo que reproduz o cenário (lock cruzando
+sessões não é testável localmente sem um pooler de verdade — a correção
+segue a garantia documentada de transaction pooling, não uma reprodução
+direta; o lote de escrita tem teste real: 1200 itens → 3 chamadas de
+500/500/200). Respondido e resolvido nos 2 threads do Codex nos PRs
+respectivos antes de mesclar.
+
+### Addendum (2026-09-09) — item 6 fechado: ensaio real rodado com sucesso, zero divergência
+
+Usuário disparou `migrate-postgres.yml` manualmente (run #1,
+`https://github.com/mateusraony/Sentinel-Signals/actions/runs/34396305920`,
+19:38-19:40 UTC, `conclusion: success`) — **primeira validação real de
+`scripts/migrate-and-verify-postgres.mjs` contra o Firestore de produção e
+o Neon real**, depois de fechados os 2 achados do Codex acima (sem eles,
+esta seria a primeira chance de qualquer um dos dois se manifestar contra
+dado de produção de verdade).
+
+Resultado, lido direto do log do job (não só o `conclusion: success` do
+run): 6.061 documentos migrados, as 10 entidades TODAS com contagem E
+checksum batendo entre Firestore e Postgres —
+
+| Entidade | Documentos | Contagem | Checksum |
+|---|---|---|---|
+| MonitoredAsset | 11 | OK | OK |
+| AssetState | 45 | OK | OK |
+| SignalEvent | 3903 | OK | OK |
+| TradeOperation | 16 | OK | OK |
+| PriceAlert | 0 | OK | OK |
+| SystemLog (2000 mais recentes) | 2000 | OK | OK |
+| User | 3 | OK | OK |
+| VerificationTask | 81 | OK | OK |
+| StrategyConfig/current | 1 | OK | OK |
+| TelegramFilters/current | 1 | OK | OK |
+
+E, especificamente para `TradeOperation` (o P0 mais crítico do motor de
+trading): `groupActiveOpsByAsset` rodado contra os dois datasets — 0
+grupos duplicados dos dois lados, `match: true`. Zero divergência na
+primeira tentativa — nenhuma investigação de causa raiz foi necessária.
+
+**O que isso NÃO significa**: nenhuma leitura/escrita de produção mudou de
+lugar. O Postgres agora tem uma cópia fiel e verificada dos dados reais,
+mas `src/api/entities.js`/`scripts/adminEntities.js`/`AuthContext.jsx`/o
+webhook continuam 100% Firestore — itens 1-4 do runbook seguem
+bloqueando o cutover de verdade, e a pergunta em aberto do RTDB (ver PR
+#332) continua sem decisão antes do item 2 (troca do browser) poder
+avançar.
+
+Fecha o item 6 do runbook de cutover
+(`docs/claude/postgres-cutover-runbook.md`) — dos 7 itens originais da
+checklist de código, restam 1 (`scripts/adminEntities.js`, Fase 10 prep,
+PR #332 aberto sem merge automático), 2 (browser), 3 (AuthContext) e 4b
+(ligar o webhook de verdade) — os 4 que só devem acontecer juntos, na
+janela de cutover coordenada.
