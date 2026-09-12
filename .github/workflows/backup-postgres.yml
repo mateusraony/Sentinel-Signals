@@ -72,13 +72,29 @@ jobs:
       # imagem, é dependência do pg_dump 16 default) — ele detecta a distro
       # (`noble`) e escreve o `sources.list.d` + chave de assinatura certos
       # sozinho, sem precisar hardcodar nenhum dos dois aqui.
-      # `postgresql-common` troca o `pg_dump` do PATH pro binário mais novo
-      # instalado automaticamente via update-alternatives.
+      #
+      # 2ª tentativa de correção também estava incompleta: o pacote
+      # postgresql-client-18 instala de fato (confirmado em produção), mas
+      # isso NÃO troca o `pg_dump` resolvido em `$PATH` — o log real mostrou
+      # `update-alternatives` mexendo só no link do manpage do `psql`, o
+      # binário `pg_dump` em `/usr/bin` continuou apontando pra versão 16.
+      # Debian/Ubuntu instalam cada major version isolado em
+      # `/usr/lib/postgresql/<versão>/bin/` de propósito (para poder ter
+      # várias versões coexistindo) — por isso a correção certa é apontar o
+      # PATH explicitamente pra pasta da versão 18, sem depender de nenhuma
+      # suposição sobre alternatives.
       - name: Instalar pg_dump 18 (compatível com o major version do Neon)
         run: |
           sudo apt-get install -y postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Confirmar que pg_dump resolvido é a versão 18
+        run: |
+          which pg_dump
+          pg_dump --version
+          pg_dump --version | grep -q ' 18\.' || { echo "::error::pg_dump no PATH não é a versão 18 (ver /usr/lib/postgresql/18/bin em \$GITHUB_PATH)."; exit 1; }
 
       - name: Gerar dump
         env:

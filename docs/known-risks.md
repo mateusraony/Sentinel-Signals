@@ -21734,3 +21734,42 @@ não é evidência de que aquele repositório está configurado — só rodar o
 comando real (ou usar o mecanismo oficial de setup) prova isso. "Risco
 julgado baixo" sem poder verificar localmente deveria ter sido, no
 mínimo, uma suposição marcada como não confirmada, não uma quase-certeza.
+
+### Addendum (2026-09-12, 2ª correção) — pacote instalado, mas `pg_dump` do PATH continuou na v16
+
+O usuário disparou `workflow_dispatch` de novo contra a 2ª correção — desta
+vez o `postgresql-client-18` foi **buscado e instalado com sucesso** (log
+real confirma download de `https://apt.postgresql.org/pub/repos/apt
+noble-pgdg/main`, então o addendum anterior estava certo sobre a causa e a
+correção do registro do repositório). Mas o passo "Gerar dump" falhou de
+novo, com o **mesmo** erro original: `pg_dump: detail: server version: 18.6
+(2078fcb); pg_dump version: 16.15 (Ubuntu 16.15-1.pgdg24.04+2)`.
+
+**Causa**: a afirmação registrada no addendum anterior ("`postgresql-common`
+troca o `pg_dump` do PATH pro binário mais novo automaticamente via
+`update-alternatives`") também estava **errada** — 3ª suposição não
+verificada localmente que se mostrou falsa contra o runner real. O log real
+mostra `update-alternatives` só trocando o link do MANPAGE do `psql`; o
+binário `pg_dump` em `/usr/bin` nunca foi tocado, e o Debian/Ubuntu instalam
+cada major version isolado em `/usr/lib/postgresql/<versão>/bin/`
+precisamente para poderem coexistir sem um "vencedor" automático de PATH.
+
+**Corrigido de verdade**: em vez de confiar em qualquer mecanismo implícito
+de troca de PATH, o workflow agora aponta explicitamente para o binário da
+versão 18 via `echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"` (convenção
+oficial do GitHub Actions para alterar o PATH dos passos seguintes de um
+job) logo após instalar o pacote, e ganhou um passo de verificação
+(`pg_dump --version | grep -q ' 18\.'`) que falha explicitamente o job se a
+resolução do PATH não for a esperada — em vez de deixar o erro genérico de
+"version mismatch" do próprio `pg_dump` ser a única evidência.
+
+**Lição (reforça a anterior, agora pela 3ª vez no mesmo incidente)**: cada
+uma das duas primeiras correções carregava uma suposição sobre o
+comportamento do runner que não pôde ser testada nesta sandbox (sem rede
+para `postgresql.org`) e que se provou errada só contra o ambiente real.
+Nenhuma suposição sobre esse pipeline deveria mais ser tratada como
+"provavelmente certa" sem uma verificação explícita (como o novo passo
+"Confirmar que pg_dump resolvido é a versão 18") rodando dentro do próprio
+workflow — depender só do usuário disparar manualmente e reportar o
+resultado é lento e cada rodada perdida atrasa o fechamento deste
+pré-requisito do cutover.
