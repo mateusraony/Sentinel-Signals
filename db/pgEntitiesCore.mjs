@@ -264,10 +264,23 @@ function createEntity(entityName) {
       params.push(data[c]);
       return `"${c}" = $${params.length}`;
     }).join(', ');
-    await getPool().query(
+    const { rowCount } = await getPool().query(
       `UPDATE ${table} SET data = data || $2${setCols ? `, ${setCols}` : ''} WHERE id = $1`,
       params
     );
+    // Um UPDATE com WHERE id = $1 que não casa nenhuma linha não é erro pro
+    // Postgres — só afeta 0 linhas e segue em frente. Sem esta checagem, um
+    // id inconsistente (documento apagado/nunca migrado/id errado) fazia
+    // este método devolver "sucesso" sem escrever nada — achado real: o
+    // `.update(asset.id, {backfill_check_status:'error',...})` de
+    // scripts/run-backfill-check.mjs (catch de timeout) tinha exatamente
+    // essa forma, e o `.catch(() => {})` em volta dele não tinha nenhuma
+    // exceção pra engolir — o ativo ficava preso em 'pending' pra sempre,
+    // sem nenhum rastro no log (docs/known-risks.md, achado do LDOUSDT
+    // travando o backfill-check todo ciclo).
+    if (rowCount === 0) {
+      throw new Error(`${entityName}.update(${id}): nenhum documento encontrado com esse id.`);
+    }
     return { id, ...data };
   }
 

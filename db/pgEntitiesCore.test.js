@@ -75,6 +75,18 @@ describe.skipIf(!TEST_DATABASE_URL)('db/pgEntitiesCore.mjs', () => {
       expect(fetched.status).toBe('RUNNER_ACTIVE');
     });
 
+    // Achado real: scripts/run-backfill-check.mjs marca um ativo como
+    // 'error' após um timeout via update(asset.id, {...}).catch(() => {})
+    // — sem esta checagem, um UPDATE ... WHERE id = $1 que não casa nenhuma
+    // linha não lança nada (Postgres só afeta 0 linhas), o `.catch` não tem
+    // o que engolir, e o chamador acha que escreveu quando não escreveu
+    // nada — reproduzido aqui contra Postgres real, não um mock.
+    it('update lança erro se o id não existir, em vez de silenciar uma escrita que não afetou nenhuma linha', async () => {
+      await expect(
+        backend.entities.MonitoredAsset.update('id-que-nao-existe', { is_active: false })
+      ).rejects.toThrow(/nenhum documento encontrado/);
+    });
+
     it('set faz merge PROFUNDO (deepMergeFirestore), preservando chaves irmãs em objeto aninhado', async () => {
       await backend.entities.TelegramFilters.set('current', { sources: { rf: true, macd: true } });
       await backend.entities.TelegramFilters.set('current', { sources: { macd: false } });

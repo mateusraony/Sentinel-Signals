@@ -22198,3 +22198,94 @@ string "project_id" property` — esperado, não é o bug sendo corrigido).
 `build-backtest.mjs` (4º config de esbuild do projeto) foi conferido e
 confirmado fora de risco — não importa `adminPineConfig`/`adminEntities`,
 usa config estático e backend fake em memória, nenhum caminho até `pg`.
+
+## 174. `MonitoredAsset.update()` genérico do Postgres não checa `rowCount` — LDOUSDT preso em `backfill_check_status:'pending'` indefinidamente (2026-09-12)
+
+**Achado a partir de relato do usuário**: "recebi de novo que travou, está
+travando o LDO". Investigação nos logs reais do `backfill.yml`
+(`.github/workflows/backfill.yml`, roda 1x/hora) mostrou o MESMO ativo
+(LDOUSDT) travando no timeout de 5min do `checkOneAsset` em TODAS as
+execuções observadas ao longo do dia (09:25, 13:38, 17:14, 19:25 UTC —
+antes e depois do cutover Firestore→Postgres, então não foi causado pela
+migração):
+
+```
+[backfill] LDOUSDT: checando janela ...
+[backfill] LDOUSDT FALHOU: Timeout: checkOneAsset:LDOUSDT não retornou em 300000ms (ver docs/known-risks.md itens 142 e 162).
+```
+
+É o mesmo incidente já documentado no cabeçalho de
+`scripts/run-backfill-check.mjs` como "falso alarme de 2026-09-05" — mas
+aquela correção (item 162, `classifyFailure`) só consertou a
+CLASSIFICAÇÃO do alerta (parou de dizer "cota esgotada" quando não é
+isso). Ninguém tinha corrigido o motivo de o LDOUSDT continuar preso.
+
+**Confirmado com o usuário** (via painel, aba Ativos): ele não tocou no
+interruptor do LDO, e mesmo assim o selo "backfill pendente" continua
+aparecendo agora — ou seja, `backfill_check_status` nunca sai de
+`'pending'` sozinho, apesar do `catch` em `run-backfill-check.mjs:209-212`
+tentar marcar `'error'` explicitamente depois de cada timeout:
+
+```js
+await backend.entities.MonitoredAsset.update(asset.id, {
+  backfill_check_status: 'error',
+  backfill_check_error: String(err.message || err).slice(0, 500),
+}).catch(() => {});
+```
+
+**Causa raiz**: `db/pgEntitiesCore.mjs`'s `update()` genérico (usado por
+TODA entidade, não só `MonitoredAsset`) rodava `UPDATE ... WHERE id = $1`
+sem checar quantas linhas foram afetadas:
+
+```js
+await getPool().query(
+  `UPDATE ${table} SET data = data || $2${setCols ? `, ${setCols}` : ''} WHERE id = $1`,
+  params
+);
+return { id, ...data };  // sempre "sucesso", mesmo com 0 linhas afetadas
+```
+
+Um `UPDATE` cujo `WHERE` não casa nenhuma linha **não é erro para o
+Postgres** — só afeta 0 linhas e segue normalmente. Sem checar
+`rowCount`, a função sempre devolvia como se tivesse escrito, mesmo
+quando não escreveu nada. Combinado com o `.catch(() => {})` do
+chamador (que só existe para não derrubar o job por uma falha de
+log/notificação, não para engolir a PRÓPRIA escrita que importa), isso
+criava um ponto cego perfeito: nenhuma exceção em lugar nenhum, nenhuma
+linha no log, e o ativo preso em `'pending'` para sempre — cada ciclo
+horário seguinte reencontra o mesmo LDOUSDT `'pending'`, tenta de novo,
+trava nos mesmos 5 minutos, dispara o mesmo alerta de "etapa travada".
+
+**Não foi possível confirmar com certeza absoluta POR QUE o `id` usado
+não casava nenhuma linha** (esta sessão não alcança nem a API de
+produção nem o Postgres/Neon diretamente — mesma restrição de rede já
+documentada em `db/CLAUDE.md`) — só o MECANISMO do bug (a escrita
+silenciosamente vira no-op), verificado no código e reproduzido contra
+Postgres real em teste.
+
+**Corrigido**: `update()` agora lança erro explícito quando `rowCount ===
+0`, em vez de devolver sucesso silencioso. Reproduzido contra Postgres
+real ANTES da correção (teste falhava — a promise resolvia em vez de
+rejeitar) e confirmado DEPOIS (teste passa) —
+`db/pgEntitiesCore.test.js`: "update lança erro se o id não existir, em
+vez de silenciar uma escrita que não afetou nenhuma linha". Suíte
+completa (1777 testes, incluindo `concurrency.test.js`/`schema.test.js`
+contra Postgres local) + lint + build verdes depois da mudança.
+
+**Efeito esperado no próximo travamento do LDO**: o `catch` de
+`run-backfill-check.mjs` vai receber uma exceção de verdade do
+`.update()` (que ele mesmo engole via `.catch(() => {})`, então o
+comportamento externo do job não muda), mas agora existe uma chance real
+de essa falha aparecer em algum lugar observável se alguém remover esse
+`.catch()` silencioso — o que é o próximo passo recomendado, não feito
+nesta rodada: trocar o `.catch(() => {})` por um `console.error` explícito
+nesse ponto específico, já que essa é a ÚLTIMA tentativa de registrar que
+algo deu errado antes do `forceExit()`. Sem isso, mesmo com `update()`
+agora lançando erro de verdade, o mesmo padrão de silêncio se repete um
+nível acima.
+
+**Lição**: qualquer `.catch(() => {})` "só para não derrubar o job"
+precisa ser auditado quanto a SE ele está mesmo protegendo contra uma
+falha secundária inofensiva, ou se está silenciando a ÚNICA tentativa de
+registrar/corrigir o estado que a exceção original já quebrou — os dois
+parecem idênticos no código, mas têm blast radius opostos.
