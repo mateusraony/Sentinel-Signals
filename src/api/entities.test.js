@@ -1,283 +1,203 @@
-// Espelho browser do regression test em scripts/adminEntities.test.js — mesmo
-// incidente real (docs/known-risks.md item 138 addendum): uma falha de
-// escrita não crítica em SystemLog.create()/createUnique() (observado:
-// ALREADY_EXISTS espúrio num ID auto-gerado) não pode mais abortar
-// persistScanResults inteiro. Ver aquele arquivo para o relato completo do
-// incidente.
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+// Testa a tradução pura de src/api/entities.js — cada método vira UMA
+// chamada a callBackend() (src/lib/apiBackend.js) com o path/método/corpo
+// certos. `callBackend` é mockado aqui (não `global.fetch`): é o mesmo padrão
+// já usado por src/lib/telegram.test.js para src/api/entities.js — mockar a
+// dependência imediata, não a pilha inteira (fetch real exigiria também
+// simular auth.currentUser.getIdToken() e VITE_BACKEND_URL, que já são
+// responsabilidade de apiBackend.js, não deste arquivo). `callBackend` em si
+// já é exercitado pelos consumidores reais de src/lib/apiBackend.js (rotas de
+// backtest/telegram-notify) contra o servidor real em produção.
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const {
-  addDocMock, runTransactionMock, getDocsMock, whereMock,
-  rtdbSetMock, rtdbUpdateMock, rtdbRemoveMock,
-} = vi.hoisted(() => ({
-  addDocMock: vi.fn(),
-  runTransactionMock: vi.fn(),
-  getDocsMock: vi.fn(),
-  whereMock: vi.fn((field, op, operand) => ({ field, op, operand })),
-  rtdbSetMock: vi.fn(),
-  rtdbUpdateMock: vi.fn(),
-  rtdbRemoveMock: vi.fn(),
-}));
+const { callBackendMock } = vi.hoisted(() => ({ callBackendMock: vi.fn() }));
+vi.mock('@/lib/apiBackend', () => ({ callBackend: callBackendMock }));
 
-// rtdb: {} (truthy) so the mirror wrappers actually attempt calls — the
-// `rtdb === null` no-op guard itself is covered by
-// entitiesRtdbTripwire.test.js (reads the source directly).
-vi.mock('@/lib/firebaseClient', () => ({ db: {}, auth: {}, functions: {}, rtdb: {} }));
-
-vi.mock('firebase/firestore', () => ({
-  collection: vi.fn(() => ({})),
-  doc: vi.fn(() => ({})),
-  getDoc: vi.fn(),
-  getDocs: getDocsMock,
-  addDoc: addDocMock,
-  setDoc: vi.fn(),
-  updateDoc: vi.fn(),
-  deleteDoc: vi.fn(),
-  query: vi.fn((...args) => args),
-  where: whereMock,
-  orderBy: vi.fn(),
-  limit: vi.fn(),
-  writeBatch: vi.fn(),
-  runTransaction: runTransactionMock,
-}));
-
-vi.mock('firebase/database', () => ({
-  ref: vi.fn((db, path) => ({ path })),
-  set: rtdbSetMock,
-  update: rtdbUpdateMock,
-  remove: rtdbRemoveMock,
-}));
-
-vi.mock('@/api/agents', () => ({ strategyReviewerAgent: {} }));
+const { backend } = await import('./entities.js');
 
 beforeEach(() => {
-  vi.resetModules();
-  addDocMock.mockReset();
-  runTransactionMock.mockReset();
-  getDocsMock.mockReset();
-  getDocsMock.mockResolvedValue({ docs: [] });
-  whereMock.mockClear();
-  rtdbSetMock.mockReset();
-  rtdbSetMock.mockResolvedValue(undefined);
-  rtdbUpdateMock.mockReset();
-  rtdbUpdateMock.mockResolvedValue(undefined);
-  rtdbRemoveMock.mockReset();
-  rtdbRemoveMock.mockResolvedValue(undefined);
+  callBackendMock.mockReset();
+  callBackendMock.mockResolvedValue({ ok: true });
 });
 
-// docs/known-risks.md item 152 — comportamento do mirror Firestore→RTDB.
-// Estrutura já verificada pelo tripwire (entitiesRtdbTripwire.test.js); aqui
-// é o comportamento real com as primitivas mockadas.
-describe('entities.js — mirror Firestore→RTDB (item 152)', () => {
-  it('AssetState.create() espelha o doc criado (com id) na chave sanitizada', async () => {
-    addDocMock.mockResolvedValue({ id: 'BTCUSDT::4h' });
-    const { backend } = await import('./entities.js');
-    const created = await backend.entities.AssetState.create({ asset_id: 'BTCUSDT', timeframe: '4h' });
-    expect(created).toEqual(expect.objectContaining({ id: 'BTCUSDT::4h', asset_id: 'BTCUSDT' }));
-    expect(rtdbSetMock).toHaveBeenCalledTimes(1);
-    const [, value] = rtdbSetMock.mock.calls[0];
-    expect(value).toEqual(created);
+describe('entities — backend.entities.<Nome>', () => {
+  it('list() faz GET sem filtros, com sort/limit na querystring', async () => {
+    await backend.entities.MonitoredAsset.list('-created_date', 10);
+    expect(callBackendMock).toHaveBeenCalledWith(
+      '/api/entities/MonitoredAsset?sort=-created_date&limit=10',
+      undefined,
+      { method: 'GET' },
+    );
   });
 
-  it('TradeOperation.update() espelha só o patch na chave sanitizada (dedup_key com timestamp ISO)', async () => {
-    const { backend } = await import('./entities.js');
-    const id = 'trade_BTCUSDT_4h_BUY_raw_2026-09-03T12:00:00.000Z';
-    await backend.entities.TradeOperation.update(id, { status: 'CLOSED' });
-    expect(rtdbUpdateMock).toHaveBeenCalledTimes(1);
-    const [ref, patch] = rtdbUpdateMock.mock.calls[0];
-    const sanitizedKey = ref.path.slice('tradeOperations/'.length);
-    expect(sanitizedKey).not.toMatch(/[.#$/[\]]/);
-    expect(patch).toEqual({ status: 'CLOSED' });
+  it('list() sem sort/limit não inclui querystring', async () => {
+    await backend.entities.MonitoredAsset.list();
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/MonitoredAsset', undefined, { method: 'GET' });
   });
 
-  it('PriceAlert.create() (fora do escopo) nunca toca o RTDB', async () => {
-    addDocMock.mockResolvedValue({ id: 'a1' });
-    const { backend } = await import('./entities.js');
-    await backend.entities.PriceAlert.create({ symbol: 'BTCUSDT' });
-    expect(rtdbSetMock).not.toHaveBeenCalled();
+  it('filter() serializa o objeto de filtros como JSON em ?filters=', async () => {
+    await backend.entities.SignalEvent.filter({ symbol: 'BTCUSDT', notified: false }, 'created_date', 5);
+    const [path, body, options] = callBackendMock.mock.calls[0];
+    expect(options).toEqual({ method: 'GET' });
+    expect(body).toBeUndefined();
+    expect(path).toContain('/api/entities/SignalEvent?');
+    const qs = new URLSearchParams(path.split('?')[1]);
+    expect(JSON.parse(qs.get('filters'))).toEqual({ symbol: 'BTCUSDT', notified: false });
+    expect(qs.get('sort')).toBe('created_date');
+    expect(qs.get('limit')).toBe('5');
   });
 
-  it('SignalEvent.createUnique() espelha o doc criado quando created === true (rodada 2, item 152 addendum)', async () => {
-    runTransactionMock.mockImplementation(async (db, cb) => cb({
-      get: vi.fn().mockResolvedValue({ exists: () => false, data: () => ({}) }),
-      set: vi.fn(),
-    }));
-    const { backend } = await import('./entities.js');
-    const res = await backend.entities.SignalEvent.createUnique('sig_x', { symbol: 'BTCUSDT' });
-    expect(res.created).toBe(true);
-    expect(rtdbSetMock).toHaveBeenCalledTimes(1);
-    const [ref, value] = rtdbSetMock.mock.calls[0];
-    expect(ref.path).toBe('signalEvents/sig_x');
-    expect(value).toEqual(expect.objectContaining({ id: 'sig_x', symbol: 'BTCUSDT' }));
+  it('filter() com objeto vazio omite ?filters=', async () => {
+    await backend.entities.SignalEvent.filter({});
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/SignalEvent', undefined, { method: 'GET' });
   });
 
-  it('SignalEvent.createUnique() NÃO espelha num dedup hit (created === false)', async () => {
-    runTransactionMock.mockImplementation(async (db, cb) => cb({
-      get: vi.fn().mockResolvedValue({ exists: () => true, data: () => ({ id: 'sig_x', symbol: 'BTCUSDT' }) }),
-      set: vi.fn(),
-    }));
-    const { backend } = await import('./entities.js');
-    await backend.entities.SignalEvent.createUnique('sig_x', { symbol: 'BTCUSDT' });
-    expect(rtdbSetMock).not.toHaveBeenCalled();
+  it('get() encontrado devolve o documento (allow404 habilitado)', async () => {
+    callBackendMock.mockResolvedValueOnce({ id: 'op-1', status: 'RUNNER_ACTIVE' });
+    const result = await backend.entities.TradeOperation.get('op-1');
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/TradeOperation/op-1', undefined, { method: 'GET', allow404: true });
+    expect(result).toEqual({ id: 'op-1', status: 'RUNNER_ACTIVE' });
   });
 
-  it('SignalEvent.update() (dismiss de alerta) espelha só o patch', async () => {
-    const { backend } = await import('./entities.js');
-    await backend.entities.SignalEvent.update('sig_x', { is_dismissed: true });
-    expect(rtdbUpdateMock).toHaveBeenCalledTimes(1);
-    const [ref, patch] = rtdbUpdateMock.mock.calls[0];
-    expect(ref.path).toBe('signalEvents/sig_x');
-    expect(patch).toEqual({ is_dismissed: true });
+  it('get() de documento inexistente devolve null (não lança) — mesmo contrato do Firestore original', async () => {
+    callBackendMock.mockResolvedValueOnce(null);
+    const result = await backend.entities.TradeOperation.get('missing');
+    expect(result).toBeNull();
   });
 
-  it('createTradeOpIfNoneActive espelha o doc criado quando created === true', async () => {
-    runTransactionMock.mockImplementation(async (db, cb) => cb({
-      get: vi.fn().mockResolvedValue({ exists: () => false, data: () => ({}) }),
-      set: vi.fn(),
-    }));
-    const { backend } = await import('./entities.js');
-    await backend.tradeOps.createTradeOpIfNoneActive('BTCUSDT', 'trade_x', { symbol: 'BTCUSDT' });
-    expect(rtdbSetMock).toHaveBeenCalledTimes(1);
+  it('set() faz POST em /:id/set com o corpo bruto', async () => {
+    await backend.entities.StrategyConfig.set('current', { rf_period: 20 });
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/StrategyConfig/current/set', { rf_period: 20 });
   });
 
-  it('createTradeOpIfNoneActive NÃO espelha quando bloqueado (created === false)', async () => {
-    runTransactionMock.mockImplementation(async (db, cb) => cb({
-      get: vi.fn().mockResolvedValue({ exists: () => true, data: () => ({ active_trade_op_id: 'trade_other', status: 'RUNNER_ACTIVE' }) }),
-      set: vi.fn(),
-    }));
-    const { backend } = await import('./entities.js');
-    await backend.tradeOps.createTradeOpIfNoneActive('BTCUSDT', 'trade_x', { symbol: 'BTCUSDT' });
-    expect(rtdbSetMock).not.toHaveBeenCalled();
+  it('create() faz POST na coleção com o corpo bruto', async () => {
+    await backend.entities.SignalEvent.create({ symbol: 'ETHUSDT' });
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/SignalEvent', { symbol: 'ETHUSDT' });
   });
 
-  it('uma falha do RTDB (mockada) nunca impede a operação real de resolver — a promise rejeitada é engolida pelo .catch próprio', async () => {
-    rtdbSetMock.mockRejectedValue(new Error('RTDB indisponível'));
-    addDocMock.mockResolvedValue({ id: 'x1' });
-    const { backend } = await import('./entities.js');
-    await expect(backend.entities.AssetState.create({ asset_id: 'BTCUSDT', timeframe: '4h' }))
-      .resolves.toEqual(expect.objectContaining({ id: 'x1' }));
+  it('createUnique() faz POST em /:id/unique', async () => {
+    await backend.entities.SystemLog.createUnique('dedup-key', { level: 'warn' });
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/SystemLog/dedup-key/unique', { level: 'warn' });
+  });
+
+  it('update() faz PATCH em /:id', async () => {
+    await backend.entities.TradeOperation.update('op-1', { current_stop: 100 });
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/TradeOperation/op-1', { current_stop: 100 }, { method: 'PATCH' });
+  });
+
+  it('delete() faz DELETE em /:id sem corpo', async () => {
+    await backend.entities.PriceAlert.delete('alert-1');
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/PriceAlert/alert-1', undefined, { method: 'DELETE' });
+  });
+
+  it('bulkCreate() faz POST em /bulk com o array bruto', async () => {
+    const items = [{ symbol: 'A' }, { symbol: 'B' }];
+    await backend.entities.MonitoredAsset.bulkCreate(items);
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/MonitoredAsset/bulk', items);
+  });
+
+  it('deleteMany() faz POST em /delete-many com o objeto de filtros', async () => {
+    await backend.entities.SystemLog.deleteMany({ level: 'debug' });
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/SystemLog/delete-many', { level: 'debug' });
   });
 });
 
-describe('entities.js — SystemLog nunca propaga falha de escrita (item 138 addendum)', () => {
-  it('create() engole ALREADY_EXISTS espúrio e devolve fallback em vez de lançar', async () => {
-    addDocMock.mockRejectedValue(new Error(
-      'Document already exists: projects/sentinel-signals/databases/(default)/documents/systemLogs/YBu5xHyWfnzuNBMUQjDh'
-    ));
-    const { backend } = await import('./entities.js');
+// Achado real do Codex review (PR #339): a versão Firestore
+// (entitiesFirestoreLegacy.js) envolvia SystemLog.create()/createUnique()
+// numa camada resiliente (item 138) — sem ela aqui, uma falha transitória
+// de rede/Postgres propagaria e abortaria o resto do trabalho de scan de um
+// ativo (handleActiveOpArbitration, vários pontos de persistScanResults).
+describe('entities — SystemLog nunca propaga falha de escrita (paridade com entitiesFirestoreLegacy.js, item 138)', () => {
+  it('create() engole erro de callBackend e devolve fallback em vez de lançar', async () => {
+    callBackendMock.mockRejectedValueOnce(new Error('Request failed with status 500'));
     await expect(
       backend.entities.SystemLog.create({ level: 'info', module: 'scanner', message: 'x' })
     ).resolves.toEqual(expect.objectContaining({ id: null, level: 'info' }));
   });
 
-  it('createUnique() engole falha de transação e devolve { created: false } em vez de lançar', async () => {
-    runTransactionMock.mockRejectedValue(new Error('ABORTED: contention'));
-    const { backend } = await import('./entities.js');
+  it('createUnique() engole erro de callBackend e devolve { created: false } em vez de lançar', async () => {
+    callBackendMock.mockRejectedValueOnce(new Error('Request failed with status 500'));
     await expect(
       backend.entities.SystemLog.createUnique('dedup-key', { level: 'error', message: 'x' })
     ).resolves.toEqual({ created: false, existing: null });
   });
 
   it('não afeta outras entidades — TradeOperation.create() continua propagando erro real', async () => {
-    addDocMock.mockRejectedValue(new Error('PERMISSION_DENIED'));
-    const { backend } = await import('./entities.js');
+    callBackendMock.mockRejectedValueOnce(new Error('PERMISSION_DENIED'));
     await expect(
       backend.entities.TradeOperation.create({ symbol: 'BTCUSDT' })
     ).rejects.toThrow('PERMISSION_DENIED');
   });
 
-  // Rodada 3c (item 169): SystemLog entrou no escopo do mirror
-  // (makeResilientLogEntity(withRtdbMirror('SystemLog', ...))). A ORDEM da
-  // composição é o ponto crítico — resiliência tem que ser a camada MAIS
-  // EXTERNA. Se fosse ao contrário (mirror envolvendo o resiliente), uma
-  // falha real do Firestore produziria `{ id: null, ...data }` do catch
-  // interno, e o mirror espelharia ISSO — gravando toda escrita que falha na
-  // MESMA chave RTDB ('systemLogs/null'), repetidamente. Com a ordem certa,
-  // o throw do Firestore propaga direto por dentro de withRtdbMirror (nunca
-  // alcança a linha do mirror) até o catch de makeResilientLogEntity.
-  it('create() com falha real do Firestore NUNCA aciona o mirror (a composição resiliente-fora-do-mirror evita a chave "systemLogs/null")', async () => {
-    addDocMock.mockRejectedValue(new Error('ALREADY_EXISTS espúrio'));
-    const { backend } = await import('./entities.js');
-    await backend.entities.SystemLog.create({ level: 'info', module: 'scanner', message: 'x' });
-    expect(rtdbSetMock).not.toHaveBeenCalled();
-  });
-
-  it('createUnique() com falha real do Firestore NUNCA aciona o mirror', async () => {
-    runTransactionMock.mockRejectedValue(new Error('ABORTED: contention'));
-    const { backend } = await import('./entities.js');
-    await backend.entities.SystemLog.createUnique('dedup-key', { level: 'error', message: 'x' });
-    expect(rtdbSetMock).not.toHaveBeenCalled();
-  });
-
-  it('create() bem-sucedido ESPELHA normalmente (a resiliência não suprime o mirror no caminho feliz)', async () => {
-    addDocMock.mockResolvedValue({ id: 'log_1' });
-    const { backend } = await import('./entities.js');
+  it('create() bem-sucedido não é afetado pelo wrapper — devolve a resposta real do callBackend', async () => {
+    callBackendMock.mockResolvedValueOnce({ id: 'log_1', level: 'info' });
     const created = await backend.entities.SystemLog.create({ level: 'info', module: 'scanner', message: 'x' });
-    expect(created).toEqual(expect.objectContaining({ id: 'log_1' }));
-    expect(rtdbSetMock).toHaveBeenCalledTimes(1);
-    const [ref, value] = rtdbSetMock.mock.calls[0];
-    expect(ref.path).toBe('systemLogs/log_1');
-    expect(value).toEqual(created);
+    expect(created).toEqual({ id: 'log_1', level: 'info' });
   });
 
-  it('createUnique() bem-sucedido (created === true) ESPELHA normalmente — dedup key longa (err.message livre) sanitizada e truncada', async () => {
-    runTransactionMock.mockImplementation(async (db, cb) => cb({
-      get: vi.fn().mockResolvedValue({ exists: () => false, data: () => ({}) }),
-      set: vi.fn(),
-    }));
-    const { backend } = await import('./entities.js');
-    const longMessage = 'Falha ao buscar candles: '.repeat(50);
-    const dedupKey = `scan_error::BTCUSDT::2026-09-07::${longMessage}`;
-    const res = await backend.entities.SystemLog.createUnique(dedupKey, { level: 'error', message: longMessage });
-    expect(res.created).toBe(true);
-    expect(rtdbSetMock).toHaveBeenCalledTimes(1);
-    const [ref] = rtdbSetMock.mock.calls[0];
-    const sanitizedKey = ref.path.slice('systemLogs/'.length);
-    expect(new TextEncoder().encode(sanitizedKey).length).toBeLessThanOrEqual(700);
-  });
-
-  it('delete(id) singular (Logs.jsx/DebugLogButton.jsx removendo 1 log) remove do RTDB', async () => {
-    const { backend } = await import('./entities.js');
-    await backend.entities.SystemLog.delete('log_1');
-    expect(rtdbRemoveMock).toHaveBeenCalledTimes(1);
-    expect(rtdbRemoveMock.mock.calls[0][0].path).toBe('systemLogs/log_1');
+  it('list()/filter()/delete() de SystemLog continuam delegando direto (só create/createUnique são envolvidos)', async () => {
+    await backend.entities.SystemLog.list('-created_date', 50);
+    expect(callBackendMock).toHaveBeenCalledWith('/api/entities/SystemLog?sort=-created_date&limit=50', undefined, { method: 'GET' });
   });
 });
 
-// docs/known-risks.md item 141/143: classifyFilter (src/lib/queryFilters.js)
-// só descreve a SEMÂNTICA pretendida — a tradução real para where() nativo
-// vive aqui, duplicada à mão nos 3 backends (entities.js/adminEntities.js/
-// adminEntitiesShadow.js). Um bug de tradução (ex.: só aplicar a 1a
-// constraint de um range de 2) derrotaria o fix do item 141 (MonthlyReport
-// truncando meses antigos) silenciosamente, com CI verde — só
-// classifyFilter/matchesFilter (a função pura) eram testados até agora, não
-// a chamada onde() de verdade.
-describe('entities.js — filter() traduz range para where() nativo (item 143)', () => {
-  it('{ gte } vira uma única constraint where(field, ">=", operand)', async () => {
-    const { backend } = await import('./entities.js');
-    await backend.entities.TradeOperation.filter({ created_date: { gte: '2026-10-01T00:00:00.000Z' } });
-    const calls = whereMock.mock.calls.filter(([field]) => field === 'created_date');
-    expect(calls).toEqual([['created_date', '>=', '2026-10-01T00:00:00.000Z']]);
+describe('entities — backend.locks', () => {
+  it('acquireScanLock() desembrulha { acquired } do corpo da resposta', async () => {
+    callBackendMock.mockResolvedValueOnce({ acquired: true });
+    const acquired = await backend.locks.acquireScanLock('full-scan', 60000, 'holder-1');
+    expect(callBackendMock).toHaveBeenCalledWith('/api/locks/acquire', { lockName: 'full-scan', ttlMs: 60000, holder: 'holder-1' });
+    expect(acquired).toBe(true);
   });
 
-  it('{ gte, lt } vira DUAS constraints where() no mesmo campo — intervalo [a, b)', async () => {
-    const { backend } = await import('./entities.js');
-    await backend.entities.TradeOperation.filter({
-      created_date: { gte: '2026-10-01T00:00:00.000Z', lt: '2026-11-01T00:00:00.000Z' },
+  it('releaseScanLock() faz POST e não devolve nada', async () => {
+    const result = await backend.locks.releaseScanLock('full-scan', 'holder-1');
+    expect(callBackendMock).toHaveBeenCalledWith('/api/locks/release', { lockName: 'full-scan', holder: 'holder-1' });
+    expect(result).toBeUndefined();
+  });
+});
+
+describe('entities — backend.tradeOps', () => {
+  it('createTradeOpIfNoneActive() repassa os 4 argumentos posicionais no corpo', async () => {
+    const data = { symbol: 'BTCUSDT', status: 'SIGNAL_CONFIRMED' };
+    await backend.tradeOps.createTradeOpIfNoneActive('asset-1', 'op-1', data, 'rf');
+    expect(callBackendMock).toHaveBeenCalledWith('/api/trade-ops/create-if-none-active', {
+      assetId: 'asset-1', docId: 'op-1', data, cascade: 'rf',
     });
-    const calls = whereMock.mock.calls.filter(([field]) => field === 'created_date');
-    expect(calls).toEqual(
-      expect.arrayContaining([
-        ['created_date', '>=', '2026-10-01T00:00:00.000Z'],
-        ['created_date', '<', '2026-11-01T00:00:00.000Z'],
-      ]),
-    );
-    expect(calls).toHaveLength(2);
   });
 
-  it('igualdade simples continua where(field, "==", valor) — não regride', async () => {
-    const { backend } = await import('./entities.js');
-    await backend.entities.TradeOperation.filter({ status: 'RUNNER_ACTIVE' });
-    expect(whereMock).toHaveBeenCalledWith('status', '==', 'RUNNER_ACTIVE');
+  it('transitionTradeOp() repassa opId na URL e o resto no corpo, incluindo as options', async () => {
+    const patch = { status: 'TP2_HIT' };
+    await backend.tradeOps.transitionTradeOp('op-1', 'RUNNER_ACTIVE', patch, {
+      assetId: 'asset-1', stopAdvanceMarkerField: 'runner_stop_advanced_candle_time', cascade: 'rf',
+    });
+    expect(callBackendMock).toHaveBeenCalledWith('/api/trade-ops/op-1/transition', {
+      fromStatus: 'RUNNER_ACTIVE',
+      patch,
+      assetId: 'asset-1',
+      stopAdvanceMarkerField: 'runner_stop_advanced_candle_time',
+      cascade: 'rf',
+    });
+  });
+
+  it('transitionTradeOp() funciona sem options (todas as chaves opcionais viram undefined)', async () => {
+    await backend.tradeOps.transitionTradeOp('op-1', 'SIGNAL_CONFIRMED', { status: 'STOP_HIT' });
+    expect(callBackendMock).toHaveBeenCalledWith('/api/trade-ops/op-1/transition', {
+      fromStatus: 'SIGNAL_CONFIRMED',
+      patch: { status: 'STOP_HIT' },
+      assetId: undefined,
+      stopAdvanceMarkerField: undefined,
+      cascade: undefined,
+    });
+  });
+
+  it('clearActiveOp() faz POST em /clear-active', async () => {
+    await backend.tradeOps.clearActiveOp('asset-1', 'op-1', 'rf');
+    expect(callBackendMock).toHaveBeenCalledWith('/api/trade-ops/clear-active', { assetId: 'asset-1', tradeOpId: 'op-1', cascade: 'rf' });
+  });
+});
+
+describe('entities — backend.quota', () => {
+  it('getAndResetOpCounts() é um stub local — nunca chama a rede', () => {
+    expect(backend.quota.getAndResetOpCounts()).toEqual({ reads: 0, writes: 0 });
+    expect(callBackendMock).not.toHaveBeenCalled();
   });
 });

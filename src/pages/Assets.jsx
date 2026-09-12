@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { rtdbEntities } from '@/api/rtdbEntities';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Plus, Trash2, Loader2, CheckCircle2, XCircle, MinusCircle, History, Settings2, Coins, Clock, Activity, Search, ChevronDown, ChevronUp, TrendingUp, Crosshair } from 'lucide-react';
@@ -37,25 +36,25 @@ export default function Assets() {
 
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['all-assets'],
-    queryFn: () => rtdbEntities.MonitoredAsset.list('-created_date'),
+    queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const { data: states = [] } = useQuery({
     queryKey: ['asset-states'],
-    queryFn: () => rtdbEntities.AssetState.list(),
+    queryFn: () => backend.entities.AssetState.list(),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const { data: recentSignals = [] } = useQuery({
     queryKey: ['recent-signals'],
-    queryFn: () => rtdbEntities.SignalEvent.list('-created_date', 100),
+    queryFn: () => backend.entities.SignalEvent.list('-created_date', 100),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
   const { data: tradeOps = [] } = useQuery({
     queryKey: ['trade-operations-assets'],
-    queryFn: () => rtdbEntities.TradeOperation.list('-created_date', 100),
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 

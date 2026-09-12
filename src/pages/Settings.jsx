@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { rtdbEntities } from '@/api/rtdbEntities';
 import { getPineConfig, getLocalPineConfig } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
 import { Slider } from '@/components/ui/slider';
@@ -109,7 +108,7 @@ export default function Settings() {
 
   const { data: assets = [] } = useQuery({
     queryKey: ['all-assets'],
-    queryFn: () => rtdbEntities.MonitoredAsset.list('-created_date'),
+    queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
   });
 
   useEffect(() => {

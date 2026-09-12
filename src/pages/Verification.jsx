@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { rtdbEntities } from '@/api/rtdbEntities';
 import { notifyVerificationTask, isTelegramConfigured } from '@/lib/telegram';
 import { ClipboardCheck, Check, X as XIcon, Search, ArrowUpDown, Send, Loader2 } from 'lucide-react';
 import SignalChecklist from '@/components/dashboard/SignalChecklist';
@@ -98,7 +97,7 @@ export default function Verification() {
   // dois casos.
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ['verification-tasks-all', statusFilter, priorityFilter],
-    queryFn: () => rtdbEntities.VerificationTask.filter({
+    queryFn: () => backend.entities.VerificationTask.filter({
       status: statusFilter !== 'all' ? statusFilter : undefined,
       priority: priorityFilter !== 'all' ? priorityFilter : undefined,
     }, '-created_date', 200),
@@ -110,13 +109,13 @@ export default function Verification() {
   // sumir ou ficar desatualizado.
   const { data: pendingTasks = [] } = useQuery({
     queryKey: ['verification-tasks-pending-count'],
-    queryFn: () => rtdbEntities.VerificationTask.filter({ status: 'pending' }, '-created_date', 200),
+    queryFn: () => backend.entities.VerificationTask.filter({ status: 'pending' }, '-created_date', 200),
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
   const { data: assets = [] } = useQuery({
     queryKey: ['monitored-assets-verification'],
-    queryFn: () => rtdbEntities.MonitoredAsset.list(),
+    queryFn: () => backend.entities.MonitoredAsset.list(),
   });
 
   const { data: tradeOps = [] } = useQuery({

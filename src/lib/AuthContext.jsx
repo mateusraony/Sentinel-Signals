@@ -1,22 +1,21 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebaseClient';
+import { auth } from '@/lib/firebaseClient';
+import { callBackend } from '@/lib/apiBackend';
 
 const AuthContext = createContext(undefined);
 
-// A profile document is created on first login for any Firebase Auth user.
-// New profiles always start as role "user" — promoting to "admin" is done
-// manually (Firestore console) to avoid a client-side privilege escalation path.
+// Cutover Postgres/Neon (item 3 do runbook,
+// docs/claude/postgres-cutover-runbook.md): perfil deixa de ser lido/criado
+// direto no Firestore (getDoc/setDoc em users/{uid}) e passa por GET /api/me
+// (server/routes/me.js) — create-if-absent atômico no servidor
+// (backend.entities.User.createUnique), sem a pequena janela de corrida
+// getDoc→setDoc que a versão Firestore tinha. Novos perfis continuam
+// nascendo com role:'user' — promoção a admin continua manual, do lado do
+// servidor (nunca setável pelo próprio client).
 const loadOrCreateProfile = async (firebaseUser) => {
-  const profileRef = doc(db, 'users', firebaseUser.uid);
-  const snap = await getDoc(profileRef);
-  if (snap.exists()) {
-    return { uid: firebaseUser.uid, email: firebaseUser.email, ...snap.data() };
-  }
-  const profile = { role: 'user', email: firebaseUser.email, created_at: serverTimestamp() };
-  await setDoc(profileRef, profile);
-  return { uid: firebaseUser.uid, email: firebaseUser.email, role: 'user' };
+  const profile = await callBackend('/api/me');
+  return { ...profile, email: profile.email ?? firebaseUser.email };
 };
 
 export const AuthProvider = ({ children }) => {

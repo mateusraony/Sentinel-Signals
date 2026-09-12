@@ -13,6 +13,7 @@ const { createEntitiesRouter } = require('./routes/entities');
 const { createTradeOpsRouter } = require('./routes/tradeOps');
 const { createLocksRouter } = require('./routes/locks');
 const { createMeRouter } = require('./routes/me');
+const { getPgCore } = require('./pgCoreLoader');
 
 // Fail fast with a clear message instead of an opaque JSON.parse crash if
 // this ever gets deployed without its secrets configured.
@@ -156,6 +157,17 @@ function safeCompareSecret(provided, expected) {
   return crypto.timingSafeEqual(a, b);
 }
 
+// Cutover Postgres/Neon (item 4b do runbook,
+// docs/claude/postgres-cutover-runbook.md): dedup do webhook trocou de uma
+// transação Firestore (get+set em tradingviewWebhookEvents/{signalId}) para
+// `insertWebhookEventIfNew` (db/pgEntitiesCore.mjs — INSERT ... ON CONFLICT
+// DO NOTHING, testado com concorrência real, 25x). tradingview_webhook_events
+// continua fora de ENTITY_TABLES/backend de propósito (server-only, nunca
+// passa pela rota genérica de entidades) — só este handler grava nela.
+// Esta rota não é um Router (não dá pra usar o middleware requireDatabaseUrl
+// de server/pgCoreLoader.js como as outras rotas Postgres) — mesmo
+// comportamento (503 em vez de tentar conectar sem DATABASE_URL) replicado
+// inline, ver abaixo.
 app.post('/webhook/tradingview', async (req, res) => {
   const alert = req.body || {};
 
@@ -168,18 +180,21 @@ app.post('/webhook/tradingview', async (req, res) => {
     return res.status(400).json({ error: 'signal_id and action are required.' });
   }
 
+  if (!process.env.DATABASE_URL) {
+    return res.status(503).json({ error: 'DATABASE_URL não configurado neste servidor.' });
+  }
+
   // Never persist the secret itself — it was already checked above.
   // docs/known-risks.md item 80, D-4: storing it verbatim left
   // WEBHOOK_SECRET readable in plaintext inside every event document.
   const { secret, ...alertToStore } = alert;
 
   try {
-    const ref = db.collection('tradingviewWebhookEvents').doc(signalId);
-    const created = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (snap.exists) return false;
-      tx.set(ref, { ...alertToStore, source: 'tradingview_webhook', received_at: new Date().toISOString() });
-      return true;
+    const { insertWebhookEventIfNew } = await getPgCore();
+    const { created } = await insertWebhookEventIfNew(signalId, {
+      ...alertToStore,
+      source: 'tradingview_webhook',
+      received_at: new Date().toISOString(),
     });
 
     if (created && process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {

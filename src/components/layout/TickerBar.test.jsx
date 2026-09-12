@@ -7,6 +7,10 @@
 // páginas isoladas, sem AppLayout em volta. Mesma classe de ponto cego já
 // identificada e fechada para GlobalSearch.jsx na auditoria da rodada 3a
 // (item 169) — a troca de queryFn aqui tinha zero verificação de render.
+//
+// Cutover Postgres/Neon (item 2 do runbook): o espelho RTDB foi abandonado
+// (decisão explícita do usuário) e `rtdbEntities` reverteu para
+// `backend.entities`.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -16,10 +20,12 @@ import TickerBar from './TickerBar.jsx';
 
 const assetStateListMock = vi.fn();
 const monitoredAssetFilterMock = vi.fn();
-vi.mock('@/api/rtdbEntities', () => ({
-  rtdbEntities: {
-    AssetState: { list: (...args) => assetStateListMock(...args) },
-    MonitoredAsset: { filter: (...args) => monitoredAssetFilterMock(...args) },
+vi.mock('@/api/entities', () => ({
+  backend: {
+    entities: {
+      AssetState: { list: (...args) => assetStateListMock(...args) },
+      MonitoredAsset: { filter: (...args) => monitoredAssetFilterMock(...args) },
+    },
   },
 }));
 
@@ -34,8 +40,8 @@ function renderTicker() {
   );
 }
 
-describe('TickerBar — AssetState/MonitoredAsset lidos via rtdbEntities (rodada 3b, item 169)', () => {
-  it('chama rtdbEntities.AssetState.list() e rtdbEntities.MonitoredAsset.filter({is_active:true}) — prova que a wiring está de fato ligada', async () => {
+describe('TickerBar — AssetState/MonitoredAsset lidos via backend.entities (rodada 3b, item 169; RTDB abandonado no cutover Postgres)', () => {
+  it('chama backend.entities.AssetState.list() e backend.entities.MonitoredAsset.filter({is_active:true}) — prova que a wiring está de fato ligada', async () => {
     assetStateListMock.mockResolvedValue([]);
     monitoredAssetFilterMock.mockResolvedValue([]);
     renderTicker();
@@ -55,7 +61,7 @@ describe('TickerBar — AssetState/MonitoredAsset lidos via rtdbEntities (rodada
     expect(container.firstChild).toBeNull();
   });
 
-  it('mostra o preço e o símbolo do ativo quando o RTDB devolve estado com last_close', async () => {
+  it('mostra o preço e o símbolo do ativo quando o backend devolve estado com last_close', async () => {
     assetStateListMock.mockResolvedValue([
       { id: 's1', asset_id: 'a1', timeframe: '1h', last_close: 60123.45, rf_direction: 1 },
     ]);

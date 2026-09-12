@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { rtdbEntities } from '@/api/rtdbEntities';
+import { backend } from '@/api/entities';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
@@ -8,13 +8,13 @@ import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 export default function TickerBar() {
   const { data: states = [] } = useQuery({
     queryKey: ['asset-states'],
-    queryFn: () => rtdbEntities.AssetState.list(),
+    queryFn: () => backend.entities.AssetState.list(),
     refetchInterval: POLL_OPERATIONAL_MS
   });
 
   const { data: assets = [] } = useQuery({
     queryKey: ['all-assets-ticker'],
-    queryFn: () => rtdbEntities.MonitoredAsset.filter({ is_active: true })
+    queryFn: () => backend.entities.MonitoredAsset.filter({ is_active: true })
   });
 
   const items = assets.map((asset) => {

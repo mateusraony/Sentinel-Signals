@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { rtdbEntities } from '@/api/rtdbEntities';
 import { Bell, Filter, Trash2, TrendingUp, TrendingDown, Search, X, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import moment from 'moment';
@@ -32,7 +31,7 @@ export default function Alerts() {
 
   const { data: signals = [], isLoading } = useQuery({
     queryKey: ['all-signals'],
-    queryFn: () => rtdbEntities.SignalEvent.list('-created_date', 200),
+    queryFn: () => backend.entities.SignalEvent.list('-created_date', 200),
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 

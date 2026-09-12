@@ -31,6 +31,16 @@ guia pra quando o cutover em si (fase 10 do plano) for decidido.
   automático (mescla só o backend AO VIVO do cron — diferente de todas as
   fases anteriores, dark até aqui). Ver `docs/known-risks.md` item 170
   addendum.
+- **Decisão do RTDB tomada (2026-09-10): abandonar o atalho**, não
+  construir um espelho novo Postgres→RTDB — Postgres/Neon não tem teto
+  diário de operações, motivo original do mirror, então ele deixa de fazer
+  sentido no dia do cutover. Ver `docs/known-risks.md` item 170 addendum
+  (2026-09-10).
+- **Itens 2 (browser), 3 (`AuthContext.jsx`) e 4b (webhook) preparados
+  numa única PR, mas NÃO mesclados** — mesmo padrão do item 1: mudam o
+  backend AO VIVO no momento em que mesclam+deployam, então ficam
+  esperando o dia do cutover coordenado, não merge automático. Detalhe
+  completo em `docs/known-risks.md` item 170 addendum (2026-09-10).
 - Workflow de migração/verificação real via GitHub Actions
   (`.github/workflows/migrate-postgres.yml`, item 7 abaixo) — fecha a
   lacuna que faltava pro item 6 (ensaio) poder rodar sem máquina local.
@@ -67,37 +77,42 @@ cutover sem fechar esses itens primeiro; nenhum deles é opcional.
 Estes bloqueiam o cutover — nenhum é "ajuste de configuração", são mudanças
 de código reais que faltam:
 
-1. ~~`scripts/adminEntities.js` continua sendo a reimplementação Firestore
-   completa~~ — **preparado** (ver acima), aguardando merge no dia do
-   cutover.
-2. **`src/api/entities.js` continua sendo o Firestore real** — o cutover
-   exige trocar o CONTEÚDO deste arquivo pelo do cliente Postgres já
-   pronto (`src/api/entitiesPostgres.js`), preservando o Firestore como
-   `src/api/entitiesFirestoreLegacy.js` (referência de rollback, ver
-   abaixo) — nenhum outro dos ~20 arquivos consumidores deve mudar, porque
-   os dois adaptadores já têm a mesma forma externa.
-3. **`AuthContext.jsx`'s `loadOrCreateProfile` continua lendo o Firestore
-   direto** (`getDoc`/`setDoc` em `users/{uid}`) — precisa trocar para
-   `fetch('/api/me', {headers:{Authorization:'Bearer '+idToken}})`, a rota
-   que `server/routes/me.js` já expõe (dark).
-4. ✅ **Metade feita** — `db/pgEntitiesCore.mjs` ganhou
+1. ✅ **Feito** (PR #332, mesclada 2026-09-12) — `scripts/adminEntities.js`
+   virou o re-export fino de `db/pgEntitiesCore.mjs`. O cron
+   (`scripts/run-scan.mjs`/`build-scan.mjs`) já roda contra Postgres.
+2. ✅ **Feito** (PR #339) — `src/api/entities.js`
+   trocou de conteúdo para o cliente Postgres (o antigo `src/api/
+   entitiesPostgres.js`); o Firestore original foi preservado como
+   `src/api/entitiesFirestoreLegacy.js` (referência de rollback). Os
+   ~20 arquivos consumidores não mudaram por causa dessa troca — mudaram
+   por causa da decisão do RTDB abaixo (item 2 do runbook e item 170
+   addendum de 2026-09-10 continuam a mesma PR).
+   **Consequência da decisão de abandonar o atalho RTDB** (ver acima): os
+   20 arquivos que liam via `rtdbEntities.X` foram revertidos para
+   `backend.entities.X` na MESMA PR — depois do cutover nada mais escreve
+   no RTDB, então deixá-los como estavam congelaria a leitura deles sem
+   erro visível. Detalhe completo em `docs/known-risks.md` item 170
+   addendum (2026-09-10).
+3. ✅ **Feito** (PR #339) — `AuthContext.jsx`'s `loadOrCreateProfile` trocou
+   a leitura direta do Firestore (`getDoc`/`setDoc` em `users/{uid}`) por
+   `callBackend('/api/me')`, a rota que `server/routes/me.js` já expõe
+   (antes dark, agora chamada de verdade nesta PR).
+4. ✅ **Feito** (PR #339) — `db/pgEntitiesCore.mjs`'s
    `insertWebhookEventIfNew(id, data)` (`INSERT ... ON CONFLICT (id) DO
-   NOTHING RETURNING id`, testado com concorrência real, 25x), o
-   equivalente Postgres da transação de dedup que `server/index.js`'s
-   `POST /webhook/tradingview` (`server/index.js:159-203`) faz hoje contra
-   o Firestore (`db.collection('tradingviewWebhookEvents')` +
-   `runTransaction`). **Ainda NÃO chamada por `server/index.js`** — a
-   troca de verdade (item 4b) é feita só durante a janela de cutover
-   coordenada, junto com os outros itens, porque o webhook é um canal ao
-   vivo (TradingView está esperando a resposta).
-5. ✅ **Metade feita** — `render.yaml`'s serviço `sentinel-signals-api`
-   agora declara `DATABASE_URL` (`sync: false`), mesma entrada dos outros
-   secrets. **Ainda falta o passo manual**: setar o valor real (a mesma
-   connection string 'pooled' já usada no secret `DATABASE_URL` do GitHub
-   Actions) no dashboard do Render, serviço `sentinel-signals-api` →
-   Environment. Sem isso, as rotas Postgres continuam respondendo 503
-   (comportamento seguro, documentado em `server/pgCoreLoader.js`) — nada
-   muda em produção só por essa declaração ter sido feita.
+   NOTHING RETURNING id`, testado com concorrência real, 25x) agora É
+   chamada por `server/index.js`'s `POST /webhook/tradingview`, no lugar
+   da transação Firestore (`db.collection('tradingviewWebhookEvents')` +
+   `runTransaction`) que fazia isso antes. Guardada por um 503 explícito
+   se `DATABASE_URL` não estiver configurada (mesmo comportamento do
+   middleware `requireDatabaseUrl` das outras rotas Postgres, replicado
+   inline porque esta rota não é um `Router`).
+5. ✅ **Feito** (2026-09-12) — `render.yaml`'s serviço `sentinel-signals-api`
+   declara `DATABASE_URL` (`sync: false`); o usuário setou o valor real (a
+   mesma connection string 'pooled' já usada no secret `DATABASE_URL` do
+   GitHub Actions) no dashboard do Render, serviço `sentinel-signals-api` →
+   Environment. Ainda não muda nada em produção sozinho — as rotas
+   Postgres só passam a ser chamadas de verdade no deploy do dia do
+   cutover (passo 3 abaixo).
 6. ✅ **Feito** — ensaio real rodado pelo usuário via `migrate-postgres.yml`
    (run #1, 2026-09-09T19:38-19:40 UTC, `conclusion: success`) —
    **primeira validação real dos scripts de migração/verificação contra o
@@ -184,16 +199,21 @@ porque devem mesclar juntas na janela de cutover coordenada.
 ## Pré-requisitos operacionais
 
 - [x] Secret `DATABASE_URL` cadastrado no GitHub Actions.
-- [ ] Secret `DATABASE_URL` cadastrado no Render, serviço
-      `sentinel-signals-api` (depende do item 5 acima primeiro).
-- [x] Backup do Postgres rodando (`backup-postgres.yml`) — confirmar que
-      pelo menos 1 run agendado real já aconteceu com sucesso (não só o
-      teste local) antes do cutover.
-- [ ] Backup do Firestore continua rodando (`backup.yml`) — não desativar
-      até o fim do bake period (ver abaixo).
-- [ ] Acesso confirmado ao repositório privado de backup
+- [x] Secret `DATABASE_URL` cadastrado no Render, serviço
+      `sentinel-signals-api` (2026-09-12).
+- [x] Backup do Postgres rodando (`backup-postgres.yml`) — confirmado com
+      pelo menos 1 run real bem-sucedido (run #6, 2026-09-12, depois de 3
+      correções sucessivas de ambiente — ver `docs/known-risks.md` item
+      171). Agendamento diário segue ativo para confirmar recorrência.
+- [x] Backup do Firestore continua rodando (`backup.yml`) — confirmado
+      (run #63, 2026-09-11 08:10 UTC, `conclusion: success`; runs #59-63
+      todos verdes, 1/dia). Não desativar até o fim do bake period (ver
+      abaixo).
+- [x] Acesso confirmado ao repositório privado de backup
       (`mateusraony/sentinel-signals-backups`), branches `backups` E
-      `backups-postgres`.
+      `backups-postgres` — as duas confirmadas por push real recente
+      (`backups-postgres` no run #6 acima; `backups` no run #63 do
+      `backup.yml`).
 
 ## Passo a passo do dia do cutover
 
@@ -202,10 +222,22 @@ código revisado/mesclado, `npm run lint && npm test && npm run build`
 verdes na `main`. Escolha um horário de baixo volume de sinal (não durante
 um evento de mercado conhecido).
 
-1. **Pausar o relógio de trading**: desativar o disparo externo
-   (cron-job.org, ver `docs/claude/external-cron-setup.md`) e confirmar que
-   nenhuma run de `scan.yml`/`backfill.yml`/`scan-shadow.yml` está em
-   andamento (Actions → aguardar/cancelar).
+1. **Pausar o relógio de trading E fechar toda aba aberta do painel**:
+   desativar o disparo externo (cron-job.org, ver `docs/claude/
+   external-cron-setup.md`) e confirmar que nenhuma run de `scan.yml`/
+   `backfill.yml`/`scan-shadow.yml` está em andamento (Actions → aguardar/
+   cancelar). **Fechar (ou recarregar) toda aba do painel aberta em
+   qualquer dispositivo antes de seguir para o passo 2** — achado real do
+   Codex review no PR #339: o painel roda `useAutoScan` no browser
+   (`scanAllAssets`/`priceCheckActiveOps`, o mesmo motor do cron), então
+   uma aba já carregada continua com o bundle Firestore ANTIGO em memória
+   mesmo depois do deploy do passo 3 — ela seguiria criando/transicionando
+   `TradeOperation` real no Firestore, e essa escrita nunca chegaria ao
+   Postgres, silenciosamente. Fechar as abas ANTES do backfill final (passo
+   2) fecha essa corrida pela mesma raiz que o resto deste plano usa
+   (snapshot único, sem escritor concorrente por trás) — reabra o painel só
+   depois do passo 4 confirmado, pegando o bundle novo. Detalhe em
+   `docs/known-risks.md` item 170 addendum (2026-09-10).
 2. **Backfill final + verificação**: rodar `scripts/migrate-and-verify-
    postgres.mjs` (`npm run migrate-verify-postgres`) contra o Firestore de
    produção real e o Neon de produção real — pela máquina local ou pelo
@@ -233,6 +265,19 @@ um evento de mercado conhecido).
    funcionando), confirmar que uma tela com dado real (Dashboard/Trades)
    carrega. Disparar `workflow_dispatch` manual de `scan.yml` uma vez e
    conferir no Job Summary/logs que ele rodou contra Postgres sem erro.
+
+**Risco menor aceito, não corrigido** (achado do Codex review, PR #339):
+`tradingviewWebhookEvents` fica de fora da migração de dados de propósito
+(log de auditoria, `db/CLAUDE.md`) — se o TradingView reenviar (retry) um
+webhook cujo `signal_id` já tinha sido gravado no Firestore ANTES do
+cutover, o Postgres não tem esse id, então `insertWebhookEventIfNew`
+devolve `created: true` e manda a notificação do Telegram de novo. Janela
+estreita (só ids gravados pouco antes do corte, e só se o TradingView
+reenviar depois) e blast radius baixo (o webhook só loga/notifica — nunca
+envia ordem, `.claude/rules/trading-safety.md` — o pior caso é uma
+mensagem duplicada no Telegram). Aceito sem correção nesta rodada; se
+incomodar na prática, a correção seria semear os ids recentes do Firestore
+no Postgres como parte do passo 2 acima.
 
 ## Rollback
 

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { rtdbEntities } from '@/api/rtdbEntities';
 import { Bug, X, Trash2 } from 'lucide-react';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
@@ -19,7 +18,7 @@ export default function DebugLogButton() {
 
   const { data: logs = [] } = useQuery({
     queryKey: ['system-logs-debug'],
-    queryFn: () => rtdbEntities.SystemLog.list('-created_date', 50),
+    queryFn: () => backend.entities.SystemLog.list('-created_date', 50),
     refetchInterval: POLL_DIAGNOSTIC_MS,
     enabled: open,
   });
