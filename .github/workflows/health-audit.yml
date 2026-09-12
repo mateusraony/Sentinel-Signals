@@ -47,8 +47,23 @@ jobs:
       # Por isso os secrets do Telegram entram aqui.
       - name: Auditar saúde (read-only, teto de 570 documentos)
         env:
+          # Postgres/Neon (Fase 10 do plano de migração Firestore→Neon) —
+          # health-audit.mjs lê o backend AO VIVO (scripts/adminEntities.js,
+          # agora Postgres) para os dados de negócio.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Ainda necessário: health-audit.mjs também importa `rtdb` de
+          # scripts/adminEntitiesFirestoreLegacy.js (Firestore, fora desta
+          # migração) só para checar o marcador de cota do Firestore.
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node scripts/health-audit.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+        # set -o pipefail: sem isso, uma falha real do script (ex.: exceção
+        # não tratada) ficava mascarada como job verde, porque o shell (só
+        # -e, sem pipefail) avalia o código de saída do ÚLTIMO comando do
+        # pipe (tee, sempre 0) — justamente o oposto do contrato read-only
+        # "o job FALHA se algo der errado" que este workflow promete
+        # (achado real em migrate-postgres.yml, 2026-09-12, mesmo padrão).
+        run: |
+          set -o pipefail
+          node scripts/health-audit.mjs | tee -a "$GITHUB_STEP_SUMMARY"

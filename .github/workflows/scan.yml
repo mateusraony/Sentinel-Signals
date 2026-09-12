@@ -41,11 +41,24 @@ jobs:
 
       - run: npm run scan
         env:
+          # Postgres/Neon (Fase 10 do plano de migração Firestore→Neon) —
+          # scripts/adminEntities.js (o backend AO VIVO que este scan usa
+          # via '@/api/entities') precisa disto; sem, getPool() lança e todo
+          # scan falha.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Ainda necessário: o marcador de dedup de cota do alerta do
+          # Telegram (RTDB/Firestore, fora desta migração — ver
+          # docs/known-risks.md item 170 addendum) continua lido pelo bundle
+          # do scan via adminTelegram.js.
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-          # RTDB read mirror (docs/known-risks.md item 152) — optional: unset
-          # leaves the mirror a no-op (scripts/adminEntities.js), same as
-          # before the Realtime Database is provisioned in the Console.
-          FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
+          # RTDB (docs/known-risks.md item 152) — optional: unset leaves the
+          # quota-alert dedup marker on Firestore fallback instead of RTDB,
+          # same as before the Realtime Database is provisioned. NOTA (item
+          # 170 addendum): esta migração NÃO decidiu ainda se o mirror
+          # Firestore→RTDB que alimenta a leitura "ao vivo" do painel
+          # (src/api/rtdbEntities.js) continua fazendo sentido pós-cutover —
+          # o novo backend Postgres (scripts/adminEntities.js,
+          # src/api/entitiesPostgres.js) não escreve em RTDB. Ver addendum.
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}

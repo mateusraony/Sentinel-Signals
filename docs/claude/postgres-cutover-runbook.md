@@ -50,6 +50,25 @@ guia pra quando o cutover em si (fase 10 do plano) for decidido.
   `migrate-postgres.yml`) — 6.061 documentos, TODAS as 10 entidades com
   contagem+checksum batendo, 0 divergência na 1ª tentativa.
 
+**Preparado, mas NÃO mesclado ainda** (PR aberto, propositalmente sem
+merge automático — ver o addendum de 2026-09-08 em `docs/known-risks.md`
+item 170 para o detalhe completo):
+
+- Item 1 abaixo: `scripts/adminEntities.js` virou o re-export fino de
+  `db/pgEntitiesCore.mjs`; a versão Firestore foi preservada como
+  `scripts/adminEntitiesFirestoreLegacy.js` (ainda usada por
+  `backup-firestore.mjs`/`backfill-rtdb.mjs`/`migrate-firestore-to-
+  postgres.mjs`/`verify-postgres-migration.mjs`, que precisam continuar
+  falando com o Firestore real). `scripts/adminPineConfig.js` e
+  `scripts/adminTelegram.js` (achado NOVO, não estava na checklist
+  original — item 8 abaixo) também migrados para o backend Postgres.
+  `.github/workflows/{scan,backfill,count-signals,health-audit}.yml`
+  ganharam `DATABASE_URL` no `env:`. **Merging isto sozinho já muda o
+  comportamento AO VIVO do cron** (não é código dark como as Fases 1-9) —
+  só mesclar depois de pausar o disparo externo (passo 1 do "Passo a
+  passo" abaixo) e confirmar `DATABASE_URL` no secret do GitHub Actions
+  aponta pro Neon de produção com o schema aplicado.
+
 **Ainda NÃO pronto** — ver a checklist abaixo. Não tente executar o
 cutover sem fechar esses itens primeiro; nenhum deles é opcional.
 
@@ -58,13 +77,10 @@ cutover sem fechar esses itens primeiro; nenhum deles é opcional.
 Estes bloqueiam o cutover — nenhum é "ajuste de configuração", são mudanças
 de código reais que faltam:
 
-1. **`scripts/adminEntities.js` continua sendo a reimplementação Firestore
-   completa** (~330 linhas), não o re-export fino de
-   `db/pgEntitiesCore.mjs` que o plano prevê ("Nova API própria", `db/
-   CLAUDE.md`). O cron (`scripts/run-scan.mjs`/`build-scan.mjs`) importa
-   esse arquivo — sem trocar, o cutover do browser/server não move o
-   scanner junto.
-2. ✅ **Feito, PR aberto sem merge automático** — `src/api/entities.js`
+1. ✅ **Feito** (PR #332, mesclada 2026-09-12) — `scripts/adminEntities.js`
+   virou o re-export fino de `db/pgEntitiesCore.mjs`. O cron
+   (`scripts/run-scan.mjs`/`build-scan.mjs`) já roda contra Postgres.
+2. ✅ **Feito** (PR #339) — `src/api/entities.js`
    trocou de conteúdo para o cliente Postgres (o antigo `src/api/
    entitiesPostgres.js`); o Firestore original foi preservado como
    `src/api/entitiesFirestoreLegacy.js` (referência de rollback). Os
@@ -77,11 +93,11 @@ de código reais que faltam:
    no RTDB, então deixá-los como estavam congelaria a leitura deles sem
    erro visível. Detalhe completo em `docs/known-risks.md` item 170
    addendum (2026-09-10).
-3. ✅ **Feito, mesma PR** — `AuthContext.jsx`'s `loadOrCreateProfile` trocou
+3. ✅ **Feito** (PR #339) — `AuthContext.jsx`'s `loadOrCreateProfile` trocou
    a leitura direta do Firestore (`getDoc`/`setDoc` em `users/{uid}`) por
    `callBackend('/api/me')`, a rota que `server/routes/me.js` já expõe
    (antes dark, agora chamada de verdade nesta PR).
-4. ✅ **Feito, mesma PR** — `db/pgEntitiesCore.mjs`'s
+4. ✅ **Feito** (PR #339) — `db/pgEntitiesCore.mjs`'s
    `insertWebhookEventIfNew(id, data)` (`INSERT ... ON CONFLICT (id) DO
    NOTHING RETURNING id`, testado com concorrência real, 25x) agora É
    chamada por `server/index.js`'s `POST /webhook/tradingview`, no lugar
@@ -131,6 +147,54 @@ de código reais que faltam:
    (100% reuso das funções dos 2 scripts originais, que continuam
    existindo/utilizáveis separadamente — o dia real do cutover já pausa o
    cron antes, então lá a corrida nunca existiu).
+8. ~~`scripts/adminPineConfig.js`/`scripts/adminTelegram.js` liam
+   Firestore direto (`getFirestore()`), sem passar por
+   `scripts/adminEntities.js`~~ — **achado durante a implementação do item
+   1, não estava na checklist original.** `adminPineConfig.js` lia
+   `strategyConfig/current` direto; `adminTelegram.js` lia
+   `telegramFilters/current` e gravava um fallback de log em `systemLogs`
+   direto também. Sem portar os DOIS, o cron continuaria lendo config de
+   estratégia/filtro de Telegram do Firestore MESMO DEPOIS do item 1 —
+   drift silencioso entre o que o navegador escreve (Postgres, pós item 2)
+   e o que o cron lê (Firestore, stale). **Preparado** junto com o item 1
+   (ver acima) — o marcador de dedup de cota do Telegram
+   (`systemAlerts/firestoreQuota`, RTDB com fallback Firestore) foi
+   deixado INTOCADO de propósito, é específico do Firestore e fica fora
+   desta migração.
+
+## RTDB do painel pós-cutover — decisão já tomada (ver abaixo)
+
+**Não era um item de código faltando — era uma decisão de produto**,
+achada ao preparar o item 1, **já resolvida em 2026-09-10** (ver o
+"Decidido" no fim desta seção). Contexto de como o problema apareceu: o
+painel lê dados "ao vivo" via
+RTDB (`src/api/rtdbEntities.js`, `docs/known-risks.md` item 152) — um
+espelho de LEITURA que existe especificamente para não gastar a cota
+diária do Firestore. Esse espelho é alimentado por `withRtdbMirror` dentro
+de `src/api/entities.js`/`scripts/adminEntities.js` (a versão Firestore).
+Os novos adaptadores Postgres (`src/api/entitiesPostgres.js`,
+`scripts/adminEntities.js` pós-cutover) **não escrevem em RTDB — não
+existe esse mecanismo no lado Postgres**. Duas opções, nenhuma implementada:
+
+1. **O painel para de ler RTDB e passa a chamar a API HTTP Postgres
+   direto** (`GET /api/entities/:collection`, já existe, dark) — faz
+   sentido: Postgres não tem cota diária, então o motivo original do
+   espelho RTDB desaparece. Mas troca "polling direto no banco" por
+   "polling via API HTTP própria" — latência/carga diferentes, não
+   medidas ainda.
+2. **RTDB continua sendo escrito manualmente** (ex.: um mirror novo
+   Postgres→RTDB) só até a decomissão do RTDB (fase 11) — mais trabalho
+   pra algo que já está no caminho de saída.
+
+**Decidido (2026-09-10, não nesta PR — ver PR #339/`docs/known-risks.md`
+item 170 addendum): opção 1, abandonar o atalho.** Postgres/Neon não tem
+teto diário de operações, motivo original do espelho — nenhum mirror novo
+Postgres→RTDB foi construído. O painel voltou a ler `backend.entities`
+direto (mesmo cliente HTTP do item 2) nos ~20 arquivos que liam via
+`rtdbEntities.X`; `src/api/rtdbEntities.js`/`src/lib/rtdbMirror.js` ficam
+como código morto até a Fase 11. Essa mudança está preparada no PR #339
+(itens 2/3/4b), não nesta PR (item 1, cron) — as duas ficam sincronizadas
+porque devem mesclar juntas na janela de cutover coordenada.
 
 ## Pré-requisitos operacionais
 

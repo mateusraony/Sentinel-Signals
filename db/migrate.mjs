@@ -19,31 +19,32 @@ const SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
 // Chave arbitrária fixa, só precisa ser a MESMA em toda chamada — serializa
 // chamadores concorrentes de applySchema contra o mesmo banco (achado
-// rodando os testes locais desta sessão: 3+ arquivos de teste diferentes
-// — db/schema.test.js, db/concurrency.test.js, db/pgEntitiesCore.test.js —
-// cada um chama applySchema no próprio beforeAll, e o vitest roda arquivos
-// em paralelo por padrão; `CREATE TABLE IF NOT EXISTS` não é à prova de
-// corrida sob concorrência de verdade sem isso — duas conexões concorrentes
-// "veem" a tabela como ausente ao mesmo tempo e ambas tentam criar, batendo
-// no catálogo pg_type e corrompendo o resto da suíte com erros incoerentes
-// ("duplicate key value violates unique constraint pg_type_typname_nsp_
-// index", "relation ... does not exist", etc., cada rodada com um erro
-// diferente — a assinatura clássica de uma corrida, não um bug de lógica).
-// `pg_advisory_xact_lock` (não `pg_advisory_lock`/`_unlock` — achado real
-// por review externa, Codex, PR #336) — TRANSACTION-scoped, liberado
-// automaticamente no COMMIT/ROLLBACK, ao contrário da variante session-
-// scoped. Isso importa especificamente porque `db-migrate.yml` roda isto
-// contra a connection string 'pooled' do Neon (PgBouncer em modo
-// transaction pooling): com o lock/unlock session-scoped como 2 chamadas
-// `client.query()` SEPARADAS (fora de uma transação explícita), o pooler
-// pode reatribuir cada chamada a uma sessão de backend DIFERENTE — o
-// schema rodaria sem o lock realmente seguro, e o unlock poderia nunca
-// alcançar a sessão que de fato travou (lock vazado até aquela conexão de
-// backend ser reciclada). `pg_advisory_xact_lock` dentro de um
-// `BEGIN...COMMIT` explícito fecha isso: pooling em modo transação garante
-// a MESMA sessão de backend do `BEGIN` até o `COMMIT`, não importa quantas
-// chamadas `client.query()` aconteçam no meio — é exatamente a garantia
-// que o modo "transaction pooling" promete preservar.
+// rodando os testes locais desta sessão: 4 arquivos de teste diferentes
+// — db/schema.test.js, db/concurrency.test.js, db/pgEntitiesCore.test.js,
+// scripts/backup-postgres.test.js — cada um chama applySchema no próprio
+// beforeAll, e o vitest roda arquivos em paralelo por padrão; `CREATE TABLE
+// IF NOT EXISTS` não é à prova de corrida sob concorrência de verdade sem
+// isso — duas conexões concorrentes "veem" a tabela como ausente ao mesmo
+// tempo e ambas tentam criar, batendo no catálogo pg_type e corrompendo o
+// resto da suíte com erros incoerentes ("duplicate key value violates
+// unique constraint pg_type_typname_nsp_index", "relation ... does not
+// exist", etc., cada rodada com um erro diferente — a assinatura clássica
+// de uma corrida, não um bug de lógica). `pg_advisory_xact_lock` (não
+// `pg_advisory_lock`/`_unlock` — achado real por review externa, Codex,
+// PR #336) — TRANSACTION-scoped, liberado automaticamente no COMMIT/
+// ROLLBACK, ao contrário da variante session-scoped. Isso importa
+// especificamente porque `db-migrate.yml` roda isto contra a connection
+// string 'pooled' do Neon (PgBouncer em modo transaction pooling): com o
+// lock/unlock session-scoped como 2 chamadas `client.query()` SEPARADAS
+// (fora de uma transação explícita), o pooler pode reatribuir cada chamada
+// a uma sessão de backend DIFERENTE — o schema rodaria sem o lock
+// realmente seguro, e o unlock poderia nunca alcançar a sessão que de fato
+// travou (lock vazado até aquela conexão de backend ser reciclada).
+// `pg_advisory_xact_lock` dentro de um `BEGIN...COMMIT` explícito fecha
+// isso: pooling em modo transação garante a MESMA sessão de backend do
+// `BEGIN` até o `COMMIT`, não importa quantas chamadas `client.query()`
+// aconteçam no meio — é exatamente a garantia que o modo "transaction
+// pooling" promete preservar.
 const SCHEMA_LOCK_KEY = 823456111;
 
 export async function applySchema(databaseUrl, schemaPath = SCHEMA_PATH) {

@@ -1,11 +1,20 @@
 # db — schema + adaptador Postgres/Neon (migração em andamento)
 
 Plano completo em `/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`
-— este diretório cobre as Fases 2-4 (schema, migração de dados, adaptador),
-ainda **não conectado a nenhum código de produção**. `src/api/entities.js`/
-`scripts/adminEntities.js` continuam 100% Firestore até o cutover;
+— este diretório cobre as Fases 2-4 (schema, migração de dados, adaptador).
 `server/routes/*.js` chamam `pgEntitiesCore.mjs` mas nada no browser chama
-essas rotas ainda (ver `server/CLAUDE.md`).
+essas rotas ainda (ver `server/CLAUDE.md`); `src/api/entities.js` continua
+100% Firestore até o cutover do browser (item 2 do runbook,
+`docs/claude/postgres-cutover-runbook.md`). **`scripts/adminEntities.js`
+(o cron) é a exceção**: a Fase 10 já o trocou por um re-export fino deste
+diretório (`pgEntitiesCore.mjs`'s `backend`) — a versão Firestore original
+foi preservada como `scripts/adminEntitiesFirestoreLegacy.js` (ainda usada
+por `backup-firestore.mjs`/`backfill-rtdb.mjs`/`migrate-firestore-to-
+postgres.mjs`/`verify-postgres-migration.mjs`). Essa troca só conecta o
+cron a `pgEntitiesCore.mjs` de verdade quando o PR que a introduziu for
+MESCLADO — propositalmente ainda não mesclado automaticamente, ver
+`docs/known-risks.md` item 170 addendum (a diferença das Fases 1-9: isto
+não é código dark, o merge sozinho já muda o backend AO VIVO do cron).
 
 `schema.sql` é a fonte única do schema (padrão híbrido: colunas tipadas só
 pros campos filtrados/ordenados hoje + coluna `data JSONB` com o documento

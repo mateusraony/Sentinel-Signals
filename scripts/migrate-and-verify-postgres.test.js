@@ -31,13 +31,16 @@ vi.mock('../db/pgEntitiesCore.mjs', () => ({
   backend: backendMock,
 }));
 
-// verify-postgres-migration.mjs importa `db` de ./adminEntities.js, que
-// chama firebase-admin's initializeApp() NO CARREGAMENTO (sem credencial
-// real, lançaria aqui) — mockado antes do importOriginal() abaixo pra
-// nenhum dos dois módulos tentar inicializar o Firebase de verdade (mesma
-// lição do item 158/166: módulo que faz trabalho no carregamento é
-// intestável sem isto).
-vi.mock('./adminEntities.js', () => ({ db: {} }));
+// verify-postgres-migration.mjs importa `db` de
+// ./adminEntitiesFirestoreLegacy.js (Fase 10 renomeou adminEntities.js
+// pro cliente Postgres — o lado Firestore, que este script precisa pra
+// LER o Firestore de verdade, vive no arquivo renomeado), que chama
+// firebase-admin's initializeApp() NO CARREGAMENTO (sem credencial real,
+// lançaria aqui) — mockado antes do importOriginal() abaixo pra nenhum dos
+// dois módulos tentar inicializar o Firebase de verdade (mesma lição do
+// item 158/166: módulo que faz trabalho no carregamento é intestável sem
+// isto).
+vi.mock('./adminEntitiesFirestoreLegacy.js', () => ({ db: {} }));
 
 // Reimporta as funções REAIS de compareDatasets/compareTradeOpDuplicates
 // (puras, já testadas em verify-postgres-migration.test.js) mas troca as

@@ -27,5 +27,16 @@ jobs:
 
       - name: Contar SignalEvent RF por timeframe
         env:
-          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-        run: node scripts/count-1h-signals.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+          # Postgres/Neon (Fase 10 do plano de migração Firestore→Neon) —
+          # count-1h-signals.mjs só importa scripts/adminEntities.js (o
+          # backend AO VIVO, agora Postgres) — não toca Firestore/RTDB em
+          # nenhum outro ponto, então FIREBASE_SERVICE_ACCOUNT_JSON deixou de
+          # ser necessário aqui.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12):
+        # sem isso, o job reporta "success" mesmo se o script falhar, porque
+        # o shell (só -e) avalia o código de saída do último comando do pipe
+        # (tee, sempre 0).
+        run: |
+          set -o pipefail
+          node scripts/count-1h-signals.mjs | tee -a "$GITHUB_STEP_SUMMARY"

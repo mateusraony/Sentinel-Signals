@@ -21417,6 +21417,107 @@ O runbook documenta os 7 itens como checklist bloqueante — a fase 10
 (execução do cutover) continua não iniciada, e não deve começar antes
 desses itens fecharem.
 
+### Addendum (2026-09-08) — Fase 10 (prep): cron/scripts seguem o backend Postgres, SEM merge automático
+
+Pedido explícito do usuário: implementar a Fase 10, mas com uma ressalva
+que ele mesmo levantou depois de eu apontar o problema — diferente das
+Fases 1-9 (tudo dark/inerte até ser ligado), trocar o CONTEÚDO de
+`scripts/adminEntities.js` muda o comportamento AO VIVO do cron assim que
+o merge acontece (o próximo `scan.yml` já rodaria contra Postgres). Com a
+autorização permanente de merge automático já em uso nas Fases 1-9, isso
+causaria um cutover não controlado. **Decisão**: preparar o código, abrir
+o PR, mas **não mesclar automaticamente** — fica para o usuário mesclar
+quando tiver completado os passos da janela de manutenção do runbook
+(pausar o disparo externo primeiro).
+
+**Item 1 do runbook implementado**: `scripts/adminEntities.js` virou
+re-export fino de `db/pgEntitiesCore.mjs` (10 linhas). A versão Firestore
+completa (~330 linhas) foi renomeada para
+`scripts/adminEntitiesFirestoreLegacy.js` — **não é código morto**, 4
+scripts continuam precisando dela regardless do cutover:
+`backup-firestore.mjs`/`backfill-rtdb.mjs` (rodam até a decomissão do
+Firestore, fase 11) e `migrate-firestore-to-postgres.mjs`/`verify-
+postgres-migration.mjs` (cujo trabalho É ler Firestore). `db/CLAUDE.md`
+previa manter o NOME do arquivo (`adminEntities.js`) justamente pra
+`build-scan.mjs`/`build-backfill.mjs` não precisarem mudar — confirmado
+funcionando (os dois bundles esbuild rodaram limpos depois da troca).
+`scripts/health-audit.mjs` precisou de DOIS imports separados (`backend`
+do novo arquivo Postgres, `rtdb` do arquivo Firestore renomeado) — o
+marcador de cota do Firestore que ele audita é específico do Firestore,
+fora desta migração.
+
+**Achado ao implementar, não estava na checklist original do runbook**:
+`scripts/adminPineConfig.js` e `scripts/adminTelegram.js` liam Firestore
+DIRETO via `getFirestore()`, sem passar por `adminEntities.js` — um
+"preguiçoso de propósito" documentado no próprio código, pra não acoplar
+esses módulos ao `initializeApp()` do arquivo Firestore no carregamento.
+Sem portar os dois, o item 1 sozinho teria deixado o cron lendo
+`strategyConfig`/`telegramFilters` do Firestore MESMO DEPOIS do cutover
+do browser (item 2) — o navegador escrevendo em Postgres, o cron lendo
+Firestore stale, drift silencioso de parâmetro de estratégia. Portado:
+`getPineConfig()` (`adminPineConfig.js`) e `loadTelegramSources()`/
+`logTelegramFailure()` (`adminTelegram.js`) agora usam `backend` do novo
+`adminEntities.js` — e o cuidado "preguiçoso" deixou de ser necessário
+(confirmado: o re-export Postgres não tem `initializeApp()` nem nenhum
+efeito colateral no carregamento, diferente do arquivo Firestore que
+substituiu). O marcador de dedup de cota do Telegram
+(`readAlertMarker`/`writeAlertMarker`, RTDB com fallback Firestore) ficou
+INTOCADO — é específico do Firestore, fora desta migração.
+`scripts/adminTelegram.test.js` precisou de reescrita substancial (mockar
+`./adminEntities.js` pros dois caminhos migrados, manter o mock de
+`firebase-admin/firestore` só pro marcador de cota).
+
+**4 workflows do GitHub Actions ganharam `DATABASE_URL`** no `env:`
+(`scan.yml`, `backfill.yml`, `count-signals.yml`, `health-audit.yml`) —
+sem isso, o próximo run de qualquer um deles falharia com "DATABASE_URL
+não está setada" assim que o merge fosse pro ar.
+`count-signals.yml` deixou de precisar de `FIREBASE_SERVICE_ACCOUNT_JSON`
+por completo (o script só toca `adminEntities.js` agora).
+
+**Pergunta em aberto, não resolvida nesta rodada** (ver o runbook,
+seção própria): o mirror Firestore→RTDB que alimenta a leitura "ao vivo"
+do painel (`src/api/rtdbEntities.js`, item 152) não tem equivalente nos
+novos adaptadores Postgres — sem decidir isso antes do item 2 do runbook
+(trocar `src/api/entities.js`), o painel pós-cutover mostraria dado RTDB
+CONGELADO sem nenhum erro visível, mesma classe de falha silenciosa do
+item 157.
+
+**Achado de infraestrutura de teste, corrigido nesta rodada**: rodar a
+suíte completa repetidamente localmente (`TEST_DATABASE_URL` setada)
+revelou uma corrida real entre arquivos de teste que compartilham a MESMA
+`TEST_DATABASE_URL` — `db/schema.test.js`, `db/concurrency.test.js`,
+`db/pgEntitiesCore.test.js` (pré-existentes) e o novo
+`scripts/backup-postgres.test.js` (Fase 8, PR #330) todos chamam
+`applySchema()`/leem-escrevem nas mesmas tabelas contra o MESMO banco, e
+vitest roda arquivos em paralelo por padrão — sintomas incoerentes a cada
+rodada (`relation X does not exist`, `duplicate key value violates
+unique constraint pg_type_typname_nsp_index`, contagens erradas), a
+assinatura clássica de uma corrida entre arquivos, não um bug de lógica
+de produto. Duas correções: (1) `db/migrate.mjs`'s `applySchema()` agora
+serializa com `pg_advisory_lock`/`pg_advisory_unlock` — chamadores
+concorrentes esperam a vez em vez de correr o `CREATE TABLE IF NOT
+EXISTS` ao mesmo tempo (que não é à prova de corrida real sob TOCTOU,
+apesar do nome); (2) `scripts/backup-postgres.test.js` (o maior
+contribuinte pro problema — seu `pg_restore --clean` literalmente
+DROPA tabelas compartilhadas em cima de outros arquivos usando-as ao
+mesmo tempo) passou a criar seu PRÓPRIO banco descartável
+(`CREATE DATABASE`/`DROP DATABASE` no próprio `beforeAll`/`afterAll`),
+isolando seu round-trip destrutivo por completo — nunca mais toca
+`process.env.DATABASE_URL`/`getPool()` compartilhados. Confirmado
+com 4 rodadas completas consecutivas de `npm test` (1753 testes) 100%
+verdes depois da correção (antes: falhas intermitentes em 3 de 5 rodadas
+seguidas). Reintrodução não verificada por reversão explícita (a corrida
+é não-determinística por natureza, difícil de reproduzir garantidamente)
+— a evidência é a taxa de falha medida antes/depois.
+
+**Verificação**: `npm run lint && npm test && npm run build` verdes
+(1753 testes, `TEST_DATABASE_URL` setada, 4 rodadas consecutivas limpas).
+`node scripts/build-scan.mjs`/`build-backfill.mjs` (bundles esbuild reais
+do cron) rodados manualmente para confirmar que o redirecionamento
+`@/api/entities` → `adminEntities.js` resolve sem erro pós-rename.
+**Este PR não será mesclado automaticamente** — fica pro usuário decidir
+o momento, seguindo a janela de manutenção do runbook.
+
 ### Addendum (2026-09-09) — item 7 fechado: workflow de migração real + achado de cota
 
 Fecha o item 7 do runbook (`.github/workflows/migrate-postgres.yml`,
@@ -21948,3 +22049,58 @@ produção (equivalente ao agendado, mesmo código, mesmo secret). O
 agendamento diário (`cron: "37 3 * * *"`) segue ativo para confirmar
 recorrência sem intervenção — não é razão para reabrir o item, só
 acompanhar.
+
+## 172. `| tee "$GITHUB_STEP_SUMMARY"` sem `pipefail` mascarava job falho como verde, em 6 workflows (2026-09-12)
+
+**Achado durante a 1ª tentativa real de migração final do cutover**
+(`migrate-postgres.yml`, disparado pelo usuário depois de pausar o cron
+externo e fechar as abas do painel, passo 2 do runbook). O job terminou
+`conclusion: success`, mas o log real do passo mostrava:
+
+```
+[migrate-and-verify] FAILED: Error: 8 RESOURCE_EXHAUSTED: Quota exceeded.
+```
+
+A cota do Firestore estava esgotada no momento (mesma causa raiz de 2
+timeouts do `scan.yml` minutos antes, item 142/162) — a migração final
+**não rodou de verdade**, mas o workflow reportou sucesso, o que quase
+levou a prosseguir para o deploy do cutover sem a migração/verificação
+real ter acontecido.
+
+**Causa raiz**: `.github/workflows/migrate-postgres.yml` rodava
+`npm run migrate-verify-postgres | tee -a "$GITHUB_STEP_SUMMARY"` sem
+`set -o pipefail`. O shell dos passos do GitHub Actions usa só `bash -e
+{0}` por padrão (confirmado pelo próprio log do job) — `-e` sozinho, sem
+`pipefail`, avalia o código de saída de um pipe (`|`) pelo **último**
+comando (`tee`, que sempre sai `0` ao gravar num arquivo válido), não pelo
+primeiro. Um `exit 1`/exceção do lado esquerdo do pipe fica mascarado —
+exatamente o que aconteceu aqui.
+
+**Corrigido**: `set -o pipefail` adicionado antes do pipe em
+`migrate-postgres.yml`. Ao procurar o mesmo padrão (`| tee -a
+"$GITHUB_STEP_SUMMARY"`) no resto do repositório, o MESMO bug apareceu em
+mais 5 workflows, nenhum deles descoberto por um incidente real até agora
+— corrigidos juntos, mesma causa raiz, mesmo fix de uma linha:
+`health-audit.yml` (mais grave dos 5 — é o workflow cujo contrato
+explícito é "o job FALHA se algo der errado", exatamente o que este bug
+quebrava silenciosamente), `db-migrate.yml` (aplica schema no Neon de
+produção), `count-signals.yml`, `analyze-shadow.yml`, e as 3 ocorrências
+em `backtest.yml` (menor risco — são passos `if: always()` de relatório
+que não gatilham o resultado do backtest em si, mas mesma classe de bug).
+
+**Não verificado por reintrodução do bug** (`.claude/rules/testing.md`,
+"reintroduza o bug"): não há como rodar um job real do GitHub Actions
+nesta sandbox para provar que o `pipefail` de fato vira o job vermelho
+quando o script falha — a evidência é a leitura correta da doc do
+`bash`/comportamento POSIX de pipes com `-o pipefail`, mais o log real que
+motivou a correção (mostrando o comportamento OPOSTO sem o fix). Validado
+localmente só por sintaxe YAML (`yaml.safe_load`) + `npm run lint && npm
+test` (não exercitam workflow YAML, só confirmam que nada de JS quebrou).
+Confirmação definitiva só viria de um próximo disparo real que falhe e o
+job reporte vermelho — não forçado deliberadamente nesta rodada para não
+gastar mais cota do Firestore/tempo do runner sem necessidade.
+
+**Impacto no cutover**: a migração final (passo 2 do runbook) precisa ser
+disparada de novo depois que a cota do Firestore resetar — o job desta
+vez vai reportar o resultado real (vermelho se falhar de novo, verde só se
+o script realmente completar sem erro).
