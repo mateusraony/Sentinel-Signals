@@ -21893,3 +21893,58 @@ produção (equivalente ao agendado, mesmo código, mesmo secret). O
 agendamento diário (`cron: "37 3 * * *"`) segue ativo para confirmar
 recorrência sem intervenção — não é razão para reabrir o item, só
 acompanhar.
+
+## 172. `| tee "$GITHUB_STEP_SUMMARY"` sem `pipefail` mascarava job falho como verde, em 6 workflows (2026-09-12)
+
+**Achado durante a 1ª tentativa real de migração final do cutover**
+(`migrate-postgres.yml`, disparado pelo usuário depois de pausar o cron
+externo e fechar as abas do painel, passo 2 do runbook). O job terminou
+`conclusion: success`, mas o log real do passo mostrava:
+
+```
+[migrate-and-verify] FAILED: Error: 8 RESOURCE_EXHAUSTED: Quota exceeded.
+```
+
+A cota do Firestore estava esgotada no momento (mesma causa raiz de 2
+timeouts do `scan.yml` minutos antes, item 142/162) — a migração final
+**não rodou de verdade**, mas o workflow reportou sucesso, o que quase
+levou a prosseguir para o deploy do cutover sem a migração/verificação
+real ter acontecido.
+
+**Causa raiz**: `.github/workflows/migrate-postgres.yml` rodava
+`npm run migrate-verify-postgres | tee -a "$GITHUB_STEP_SUMMARY"` sem
+`set -o pipefail`. O shell dos passos do GitHub Actions usa só `bash -e
+{0}` por padrão (confirmado pelo próprio log do job) — `-e` sozinho, sem
+`pipefail`, avalia o código de saída de um pipe (`|`) pelo **último**
+comando (`tee`, que sempre sai `0` ao gravar num arquivo válido), não pelo
+primeiro. Um `exit 1`/exceção do lado esquerdo do pipe fica mascarado —
+exatamente o que aconteceu aqui.
+
+**Corrigido**: `set -o pipefail` adicionado antes do pipe em
+`migrate-postgres.yml`. Ao procurar o mesmo padrão (`| tee -a
+"$GITHUB_STEP_SUMMARY"`) no resto do repositório, o MESMO bug apareceu em
+mais 5 workflows, nenhum deles descoberto por um incidente real até agora
+— corrigidos juntos, mesma causa raiz, mesmo fix de uma linha:
+`health-audit.yml` (mais grave dos 5 — é o workflow cujo contrato
+explícito é "o job FALHA se algo der errado", exatamente o que este bug
+quebrava silenciosamente), `db-migrate.yml` (aplica schema no Neon de
+produção), `count-signals.yml`, `analyze-shadow.yml`, e as 3 ocorrências
+em `backtest.yml` (menor risco — são passos `if: always()` de relatório
+que não gatilham o resultado do backtest em si, mas mesma classe de bug).
+
+**Não verificado por reintrodução do bug** (`.claude/rules/testing.md`,
+"reintroduza o bug"): não há como rodar um job real do GitHub Actions
+nesta sandbox para provar que o `pipefail` de fato vira o job vermelho
+quando o script falha — a evidência é a leitura correta da doc do
+`bash`/comportamento POSIX de pipes com `-o pipefail`, mais o log real que
+motivou a correção (mostrando o comportamento OPOSTO sem o fix). Validado
+localmente só por sintaxe YAML (`yaml.safe_load`) + `npm run lint && npm
+test` (não exercitam workflow YAML, só confirmam que nada de JS quebrou).
+Confirmação definitiva só viria de um próximo disparo real que falhe e o
+job reporte vermelho — não forçado deliberadamente nesta rodada para não
+gastar mais cota do Firestore/tempo do runner sem necessidade.
+
+**Impacto no cutover**: a migração final (passo 2 do runbook) precisa ser
+disparada de novo depois que a cota do Firestore resetar — o job desta
+vez vai reportar o resultado real (vermelho se falhar de novo, verde só se
+o script realmente completar sem erro).

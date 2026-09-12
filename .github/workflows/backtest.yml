@@ -269,7 +269,9 @@ jobs:
       # completa de operações fechadas, só os agregados por cascata.
       - name: Publicar resumo
         if: always()
+        # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12).
         run: |
+          set -o pipefail
           if [ -f backtest-report.json ]; then
             {
               echo "## Backtest — resumo (${FROM} → ${TO})"
@@ -341,7 +343,9 @@ jobs:
       # leitura do relatório que acabou de ser gerado. Ver known-risks item 44.
       - name: Publicar diagnóstico
         if: always()
+        # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12).
         run: |
+          set -o pipefail
           if [ -f backtest-report.json ]; then
             {
               echo "## Diagnóstico — de onde vem o resultado"
@@ -365,7 +369,9 @@ jobs:
       # motivou a mudança — sem precisar do zip.
       - name: Publicar correlação em cluster
         if: always()
+        # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12).
         run: |
+          set -o pipefail
           if [ -f backtest-report.json ]; then
             {
               # Sem cerca de código: formatMarkdown() (scripts/backtest-correlation-check.mjs)

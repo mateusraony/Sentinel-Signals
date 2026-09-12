@@ -76,4 +76,13 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: npm run migrate-verify-postgres | tee -a "$GITHUB_STEP_SUMMARY"
+        # set -o pipefail: sem isso, o shell (só -e, sem pipefail) avalia o
+        # código de saída do ÚLTIMO comando do pipe (tee, que sempre sai 0) —
+        # uma falha real de migrate-and-verify-postgres.mjs (ex.:
+        # RESOURCE_EXHAUSTED do Firestore) ficava mascarada como job verde
+        # (achado real, 2026-09-12: o script logou "FAILED" mas o job
+        # reportou success — quase levou o cutover a prosseguir sem a
+        # migração final ter de fato rodado).
+        run: |
+          set -o pipefail
+          npm run migrate-verify-postgres | tee -a "$GITHUB_STEP_SUMMARY"

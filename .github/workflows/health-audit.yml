@@ -58,4 +58,12 @@ jobs:
           FIREBASE_DATABASE_URL: ${{ secrets.FIREBASE_DATABASE_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: node scripts/health-audit.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+        # set -o pipefail: sem isso, uma falha real do script (ex.: exceção
+        # não tratada) ficava mascarada como job verde, porque o shell (só
+        # -e, sem pipefail) avalia o código de saída do ÚLTIMO comando do
+        # pipe (tee, sempre 0) — justamente o oposto do contrato read-only
+        # "o job FALHA se algo der errado" que este workflow promete
+        # (achado real em migrate-postgres.yml, 2026-09-12, mesmo padrão).
+        run: |
+          set -o pipefail
+          node scripts/health-audit.mjs | tee -a "$GITHUB_STEP_SUMMARY"

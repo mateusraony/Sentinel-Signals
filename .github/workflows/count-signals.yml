@@ -33,4 +33,10 @@ jobs:
           # nenhum outro ponto, então FIREBASE_SERVICE_ACCOUNT_JSON deixou de
           # ser necessário aqui.
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: node scripts/count-1h-signals.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+        # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12):
+        # sem isso, o job reporta "success" mesmo se o script falhar, porque
+        # o shell (só -e) avalia o código de saída do último comando do pipe
+        # (tee, sempre 0).
+        run: |
+          set -o pipefail
+          node scripts/count-1h-signals.mjs | tee -a "$GITHUB_STEP_SUMMARY"
