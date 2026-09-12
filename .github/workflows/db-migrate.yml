@@ -29,7 +29,13 @@ jobs:
       - name: Aplicar db/schema.sql
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12):
+        # sem isso, o job reporta "success" mesmo se node db/migrate.mjs
+        # falhar (ex.: erro de SQL), porque o shell (só -e) avalia o código
+        # de saída do último comando do pipe (tee, sempre 0) — perigoso
+        # especificamente aqui, que aplica schema no Neon de produção.
         run: |
+          set -o pipefail
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::Secret DATABASE_URL não configurado (Settings → Secrets and variables → Actions → New repository secret, nome exato DATABASE_URL, valor = connection string 'pooled' do Console Neon)."
             exit 1
