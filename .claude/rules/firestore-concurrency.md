@@ -24,8 +24,8 @@ tabela", tanto o cliente HTTP do browser quanto a rota genérica de entidades
 (`server/routes/entities.js`) o reusam, nenhum registro duplicado. **Nunca**
 importe `firebase/firestore`/faça `fetch` cru para o backend direto em
 componentes/páginas. O cron usa `scripts/adminEntities.js` (mesma forma de
-chamada) — ver `db/CLAUDE.md`/`scripts/CLAUDE.md` para o estado exato desse
-lado (Fase 10 do plano de migração, PR próprio sem merge automático).
+chamada) — ver `db/CLAUDE.md`/`scripts/CLAUDE.md` (cutover concluído
+2026-09-12, ambos os lados no Postgres/Neon).
 
 **Exceção deliberada** (item 125 achado menor, 2026-08-24; lista completada no
 item 145 addendum, 2026-09-02): `strategyConfig/current`, `telegramFilters/

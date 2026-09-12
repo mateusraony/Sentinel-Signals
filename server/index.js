@@ -8,7 +8,8 @@ const { getFirestore } = require('firebase-admin/firestore');
 const { createCooldown } = require('./rateLimit');
 // Fase 5 do plano de migração Firestore→Neon
 // (/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md) — rotas
-// dark, ver o comentário perto de app.use(...) mais abaixo.
+// já em uso real desde o cutover, ver o comentário perto de app.use(...)
+// mais abaixo.
 const { createEntitiesRouter } = require('./routes/entities');
 const { createTradeOpsRouter } = require('./routes/tradeOps');
 const { createLocksRouter } = require('./routes/locks');
@@ -448,12 +449,11 @@ app.get('/api/backtest/artifact/:runId', requireAuth, requireGithubToken, async 
   }
 });
 
-// --- Migração Firestore→Neon — Fase 5 (dark) ---------------------------
+// --- Migração Firestore→Neon — Fase 5 -----------------------------------
 // Rotas HTTP sobre db/pgEntitiesCore.mjs
-// (/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md). SEM
-// mudança de comportamento em produção: nada no browser chama estes
-// caminhos ainda (src/api/entities.js continua 100% Firestore até o
-// cutover), e sem DATABASE_URL configurada elas respondem 503
+// (/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md).
+// Chamadas de verdade pelo browser (src/api/entities.js) desde o cutover
+// (2026-09-12); sem DATABASE_URL configurada elas respondem 503
 // (requireDatabaseUrl em server/pgCoreLoader.js) em vez de tentar conectar.
 app.use('/api/entities', createEntitiesRouter({ requireAuth }));
 app.use('/api/trade-ops', createTradeOpsRouter({ requireAuth }));
