@@ -141,14 +141,15 @@ de código reais que faltam:
       pelo menos 1 run real bem-sucedido (run #6, 2026-09-12, depois de 3
       correções sucessivas de ambiente — ver `docs/known-risks.md` item
       171). Agendamento diário segue ativo para confirmar recorrência.
-- [ ] Backup do Firestore continua rodando (`backup.yml`) — não desativar
-      até o fim do bake period (ver abaixo). Verificar a última execução
-      agendada antes do dia do cutover (não confirmado nesta rodada).
-- [ ] Acesso confirmado ao repositório privado de backup
+- [x] Backup do Firestore continua rodando (`backup.yml`) — confirmado
+      (run #63, 2026-09-11 08:10 UTC, `conclusion: success`; runs #59-63
+      todos verdes, 1/dia). Não desativar até o fim do bake period (ver
+      abaixo).
+- [x] Acesso confirmado ao repositório privado de backup
       (`mateusraony/sentinel-signals-backups`), branches `backups` E
-      `backups-postgres` — a branch `backups-postgres` já confirmada
-      (push real do run #6 acima); `backups` (Firestore) não reconfirmada
-      nesta rodada.
+      `backups-postgres` — as duas confirmadas por push real recente
+      (`backups-postgres` no run #6 acima; `backups` no run #63 do
+      `backup.yml`).
 
 ## Passo a passo do dia do cutover
 
