@@ -1,20 +1,20 @@
-# db — schema + adaptador Postgres/Neon (migração em andamento)
+# db — schema + adaptador Postgres/Neon (cutover concluído 2026-09-12)
 
-Plano completo em `/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`
-— este diretório cobre as Fases 2-4 (schema, migração de dados, adaptador).
-`server/routes/*.js` chamam `pgEntitiesCore.mjs` mas nada no browser chama
-essas rotas ainda (ver `server/CLAUDE.md`); `src/api/entities.js` continua
-100% Firestore até o cutover do browser (item 2 do runbook,
-`docs/claude/postgres-cutover-runbook.md`). **`scripts/adminEntities.js`
-(o cron) é a exceção**: a Fase 10 já o trocou por um re-export fino deste
-diretório (`pgEntitiesCore.mjs`'s `backend`) — a versão Firestore original
-foi preservada como `scripts/adminEntitiesFirestoreLegacy.js` (ainda usada
-por `backup-firestore.mjs`/`backfill-rtdb.mjs`/`migrate-firestore-to-
-postgres.mjs`/`verify-postgres-migration.mjs`). Essa troca só conecta o
-cron a `pgEntitiesCore.mjs` de verdade quando o PR que a introduziu for
-MESCLADO — propositalmente ainda não mesclado automaticamente, ver
-`docs/known-risks.md` item 170 addendum (a diferença das Fases 1-9: isto
-não é código dark, o merge sozinho já muda o backend AO VIVO do cron).
+Plano completo em `/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`.
+**Cutover Firestore→Postgres/Neon concluído** (PRs #332/#339, mescladas e
+deployadas 2026-09-12 — ver `docs/claude/postgres-cutover-runbook.md`):
+`server/routes/*.js` chamam `pgEntitiesCore.mjs` e o browser já chama essas
+rotas de verdade (`src/api/entities.js` é o cliente HTTP Postgres —
+`src/api/entitiesFirestoreLegacy.js` preserva a versão Firestore original
+só como referência de rollback). `scripts/adminEntities.js` (o cron) é o
+re-export fino deste diretório (`pgEntitiesCore.mjs`'s `backend`) desde a
+mesma janela — a versão Firestore original foi preservada como
+`scripts/adminEntitiesFirestoreLegacy.js` (ainda usada por
+`backup-firestore.mjs`/`backfill-rtdb.mjs`/`migrate-firestore-to-
+postgres.mjs`/`verify-postgres-migration.mjs`, cujo trabalho é ler
+Firestore de propósito). Bake period em andamento — Firebase/Firestore
+continuam vivos como rede de segurança de rollback por 1-2 semanas antes
+da decomissão de verdade (fase 11 do plano).
 
 `schema.sql` é a fonte única do schema (padrão híbrido: colunas tipadas só
 pros campos filtrados/ordenados hoje + coluna `data JSONB` com o documento
@@ -58,17 +58,16 @@ porque um `SELECT ... FOR UPDATE` sozinho NÃO fecha a corrida de criar a
 primeira operação de um ativo (linhas que ainda não existem não têm o que
 travar); o índice único é o que fecha.
 
-`insertWebhookEventIfNew` (item 4 do runbook de cutover,
+`insertWebhookEventIfNew` (item 4b do runbook de cutover,
 `docs/claude/postgres-cutover-runbook.md`) — equivalente Postgres da
-transação de dedup do webhook TradingView (`server/index.js`'s `POST
-/webhook/tradingview`, hoje só Firestore). `tradingview_webhook_events`
-segue deliberadamente fora de `ENTITY_TABLES`/`backend` ("server-only,
-nunca passa por `backend.entities`") — por isso é exportada solta, não
-dentro de `backend`. `INSERT ... ON CONFLICT (id) DO NOTHING RETURNING id`
-é atômico sob concorrência real (testado com 2 gravações simultâneas do
-mesmo `signal_id`, 25x). **Preparada, ainda NÃO chamada por
-`server/index.js`** — ligar isso de verdade é o item 4b do runbook, feito
-só durante a janela de cutover coordenada (o webhook é um canal ao vivo).
+transação de dedup do webhook TradingView, **já chamada de verdade por
+`server/index.js`'s `POST /webhook/tradingview`** desde o cutover
+(2026-09-12) — a transação Firestore original foi removida. `tradingview_
+webhook_events` segue deliberadamente fora de `ENTITY_TABLES`/`backend`
+("server-only, nunca passa por `backend.entities`") — por isso é exportada
+solta, não dentro de `backend`. `INSERT ... ON CONFLICT (id) DO NOTHING
+RETURNING id` é atômico sob concorrência real (testado com 2 gravações
+simultâneas do mesmo `signal_id`, 25x).
 
 ## Testes contra Postgres real (não fake, não mock)
 

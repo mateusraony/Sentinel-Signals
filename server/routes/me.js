@@ -1,7 +1,6 @@
 // Substitui a leitura direta a Firestore de `loadOrCreateProfile`
 // (src/lib/AuthContext.jsx) — Fase 5 do plano de migração Firestore→Neon.
-// **Dark nesta PR**: AuthContext.jsx continua chamando o Firestore direto
-// até o cutover; esta rota existe mas ninguém no browser a chama ainda.
+// Chamada de verdade pelo browser desde o cutover (2026-09-12).
 //
 // `createUnique` (create-if-absent atômico) substitui o par
 // getDoc/setDoc do original — mesmo resultado observável (perfil criado com
