@@ -21702,3 +21702,35 @@ permanece **não fechado** até uma execução agendada real de
 `backup-postgres.yml` terminar com sucesso — não é recomendável prosseguir
 com a janela de cutover coordenada (que torna o Postgres a fonte de
 verdade) sem ter pelo menos um backup real funcionando primeiro.
+
+### Addendum (2026-09-12) — a 1ª correção estava errada; o risco "julgado baixo" acima se confirmou
+
+O usuário disparou `workflow_dispatch` manualmente contra a correção acima
+— **falhou de novo**, com um erro NOVO: `E: Unable to locate package
+postgresql-client-18`. A suposição registrada acima ("o repositório PGDG
+já vem configurado na imagem do runner... confirmado pelo sufixo de
+versão") estava **errada** — o sufixo `pgdg24.04` no nome do pacote
+`postgresql-client-16` é só a convenção de VERSIONAMENTO que o pacote do
+Ubuntu usa (construído com as mesmas ferramentas/patches do PGDG), não
+prova que o repositório apt.postgresql.org está de fato registrado como
+fonte — ele não estava. `apt-get install postgresql-client-18` sozinho
+nunca teria como funcionar sem esse passo. O aviso que este addendum
+substitui ("risco julgado baixo... não é uma suposição às cegas") foi
+otimismo mal calibrado — a suposição nunca tinha sido de fato confirmada,
+só parecia confirmada por uma coincidência de nome.
+
+**Corrigido de verdade**: em vez de assumir o repositório já configurado,
+o workflow agora roda o script oficial mantido pelo próprio pacote
+`postgresql-common` (`/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+-y`, já vem na imagem — é dependência do `pg_dump` 16 default) — ele
+detecta a distro (`noble`) e escreve o `sources.list.d`/chave de
+assinatura corretos sozinho (inclusive rodando seu próprio `apt-get
+update` internamente), método documentado em postgresql.org/download/
+linux/ubuntu, em vez de qualquer suposição sobre o que já vem pronto na
+imagem do runner.
+
+**Lição**: um nome de pacote parecido com o de um repositório específico
+não é evidência de que aquele repositório está configurado — só rodar o
+comando real (ou usar o mecanismo oficial de setup) prova isso. "Risco
+julgado baixo" sem poder verificar localmente deveria ter sido, no
+mínimo, uma suposição marcada como não confirmada, não uma quase-certeza.
