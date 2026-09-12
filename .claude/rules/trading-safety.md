@@ -19,8 +19,9 @@ usuário e uma fase de segurança própria:
 - criar/cancelar ordem · alterar posição · transferir fundos · mudar
   alavancagem/margem · habilitar trading ao vivo.
 
-Hoje TP/Stop são **virtuais** (só atualizam `TradeOperation` no Firestore); o
-webhook `server/` e o cron **só logam/notificam**. Não copie código de execução
+Hoje TP/Stop são **virtuais** (só atualizam `TradeOperation` no Postgres/Neon,
+desde o cutover de 2026-09-12 — antes era Firestore); o webhook `server/` e o
+cron **só logam/notificam**. Não copie código de execução
 de terceiros (ex.: o bot `claude-tradingview-mcp-trading` auditado — long-only
 hardcoded, sem stop, sem reconciliação, sem idempotência; `rules.json`
 decorativo). Não conecte a conta real de exchange.
