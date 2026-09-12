@@ -22104,3 +22104,53 @@ gastar mais cota do Firestore/tempo do runner sem necessidade.
 disparada de novo depois que a cota do Firestore resetar — o job desta
 vez vai reportar o resultado real (vermelho se falhar de novo, verde só se
 o script realmente completar sem erro).
+
+## 173. Cron parou 100% no ar logo após o cutover — bundle do scan quebrava ao carregar `pg` (2026-09-12)
+
+**Achado durante o smoke test do cutover** (PRs #332 + #339 já mescladas e
+deployadas): a primeira passada real do `scan.yml` pós-cutover falhou, e as
+seguintes também — 100% das passadas depois do merge, sem exceção. Log
+real:
+
+```
+Error: Dynamic require of "events" is not supported
+    at node_modules/pg/lib/client.js (.../run-scan.mjs:3652:24)
+```
+
+**Causa raiz**: `scripts/build-scan.mjs`/`build-backfill.mjs` (esbuild,
+`format: 'esm'`, `platform: 'node'`) já marcavam `firebase-admin` como
+`external` — mas não `pg`, que só entrou na árvore de imports do cron
+agora que `scripts/adminEntities.js` virou o re-export de
+`db/pgEntitiesCore.mjs` (PR #332). O esbuild consegue bundlar a maioria
+dos pacotes CJS em saída ESM, mas os `require()` internos do
+`node-postgres` (`node_modules/pg/lib/client.js`) não sobrevivem a esse
+bundling de forma confiável — o bundle carrega, mas explode no primeiro
+`require('events')` disparado em runtime.
+
+**Por que passou pela verificação da PR #332**: o test plan daquela PR
+rodou `node scripts/build-scan.mjs`/`build-backfill.mjs` manualmente e
+confirmou que os bundles **compilam sem erro** — mas nunca os **executou**.
+Compilar só passa pelo esbuild; o `require` dinâmico quebrado só aparece
+quando o Node de fato roda o arquivo gerado. É a mesma classe de lacuna do
+item 172 (verificar só o sintoma superficial — "compilou"/"o job disse
+sucesso" — sem confirmar o comportamento real).
+
+**Corrigido**: `pg` adicionado à lista `external` dos dois esbuild configs
+(`build-scan.mjs`/`build-backfill.mjs`), ao lado de `firebase-admin` — já é
+dependência real do projeto (`npm ci` já a instala antes do build rodar),
+então resolvê-la em runtime via `node_modules` em vez de bundlá-la é seguro
+e reduz o bundle em quase a metade (415kb→237kb no `run-scan.mjs`).
+
+**Verificado por execução real desta vez** (não só build): os dois bundles
+reconstruídos rodaram de ponta a ponta contra Postgres local
+(`scanAllAssets`/`priceCheckActiveOps`/`backfill` completando sem erro,
+único aviso não-crítico sendo a checagem de cota do Firestore sem
+credencial real de teste) — confirma que o `require` dinâmico não aparece
+mais.
+
+**Lição (reforça o item 172, agora numa classe de bug diferente)**:
+"o build passou" e "o job disse sucesso" são sinais insuficientes por
+padrões diferentes — nenhum dos dois prova que o artefato gerado FUNCIONA
+quando executado de verdade. Qualquer verificação de bundle/pipeline daqui
+pra frente precisa incluir rodar o artefato final, não só confirmar que
+ele foi produzido sem erro de compilação/exit code enganoso.

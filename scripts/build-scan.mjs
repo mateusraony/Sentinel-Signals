@@ -49,6 +49,13 @@ await build({
   target: 'node20',
   outfile: path.resolve(root, 'scripts/dist/run-scan.mjs'),
   plugins: [adminOverrides],
-  external: ['firebase-admin', 'firebase-admin/*'],
+  // 'pg' externo: bundlá-lo produz "Dynamic require of \"events\" is not
+  // supported" em produção (achado real, 2026-09-12, primeiro scan.yml
+  // pós-cutover Postgres — esbuild não consegue reescrever de forma
+  // confiável os require() internos do node-postgres em bundle ESM). 'pg'
+  // já é dependência real do projeto (npm ci instala node_modules antes
+  // deste build rodar), então resolvê-lo em runtime é seguro e mais
+  // simples que tentar convencer o esbuild a bundlá-lo direito.
+  external: ['firebase-admin', 'firebase-admin/*', 'pg'],
   logLevel: 'info',
 });
