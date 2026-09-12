@@ -90,14 +90,13 @@ de código reais que faltam:
    se `DATABASE_URL` não estiver configurada (mesmo comportamento do
    middleware `requireDatabaseUrl` das outras rotas Postgres, replicado
    inline porque esta rota não é um `Router`).
-5. ✅ **Metade feita** — `render.yaml`'s serviço `sentinel-signals-api`
-   agora declara `DATABASE_URL` (`sync: false`), mesma entrada dos outros
-   secrets. **Ainda falta o passo manual**: setar o valor real (a mesma
-   connection string 'pooled' já usada no secret `DATABASE_URL` do GitHub
-   Actions) no dashboard do Render, serviço `sentinel-signals-api` →
-   Environment. Sem isso, as rotas Postgres continuam respondendo 503
-   (comportamento seguro, documentado em `server/pgCoreLoader.js`) — nada
-   muda em produção só por essa declaração ter sido feita.
+5. ✅ **Feito** (2026-09-12) — `render.yaml`'s serviço `sentinel-signals-api`
+   declara `DATABASE_URL` (`sync: false`); o usuário setou o valor real (a
+   mesma connection string 'pooled' já usada no secret `DATABASE_URL` do
+   GitHub Actions) no dashboard do Render, serviço `sentinel-signals-api` →
+   Environment. Ainda não muda nada em produção sozinho — as rotas
+   Postgres só passam a ser chamadas de verdade no deploy do dia do
+   cutover (passo 3 abaixo).
 6. ✅ **Feito** — ensaio real rodado pelo usuário via `migrate-postgres.yml`
    (run #1, 2026-09-09T19:38-19:40 UTC, `conclusion: success`) —
    **primeira validação real dos scripts de migração/verificação contra o
@@ -136,16 +135,20 @@ de código reais que faltam:
 ## Pré-requisitos operacionais
 
 - [x] Secret `DATABASE_URL` cadastrado no GitHub Actions.
-- [ ] Secret `DATABASE_URL` cadastrado no Render, serviço
-      `sentinel-signals-api` (depende do item 5 acima primeiro).
-- [x] Backup do Postgres rodando (`backup-postgres.yml`) — confirmar que
-      pelo menos 1 run agendado real já aconteceu com sucesso (não só o
-      teste local) antes do cutover.
+- [x] Secret `DATABASE_URL` cadastrado no Render, serviço
+      `sentinel-signals-api` (2026-09-12).
+- [x] Backup do Postgres rodando (`backup-postgres.yml`) — confirmado com
+      pelo menos 1 run real bem-sucedido (run #6, 2026-09-12, depois de 3
+      correções sucessivas de ambiente — ver `docs/known-risks.md` item
+      171). Agendamento diário segue ativo para confirmar recorrência.
 - [ ] Backup do Firestore continua rodando (`backup.yml`) — não desativar
-      até o fim do bake period (ver abaixo).
+      até o fim do bake period (ver abaixo). Verificar a última execução
+      agendada antes do dia do cutover (não confirmado nesta rodada).
 - [ ] Acesso confirmado ao repositório privado de backup
       (`mateusraony/sentinel-signals-backups`), branches `backups` E
-      `backups-postgres`.
+      `backups-postgres` — a branch `backups-postgres` já confirmada
+      (push real do run #6 acima); `backups` (Firestore) não reconfirmada
+      nesta rodada.
 
 ## Passo a passo do dia do cutover
 
