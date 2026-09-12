@@ -22154,3 +22154,47 @@ padrões diferentes — nenhum dos dois prova que o artefato gerado FUNCIONA
 quando executado de verdade. Qualquer verificação de bundle/pipeline daqui
 pra frente precisa incluir rodar o artefato final, não só confirmar que
 ele foi produzido sem erro de compilação/exit code enganoso.
+
+### Addendum 2026-09-12 — 3º empacotador ficou de fora da correção: `scan-shadow.yml` quebrou pelo mesmo motivo
+
+A correção acima só tocou `build-scan.mjs`/`build-backfill.mjs` — existe um
+**3º** config de esbuild, `scripts/build-scan-shadow.mjs` (empacota o modo
+sombra Fase 1, `docs/known-risks.md` item 56), que não foi incluído na
+varredura por não ter sido lembrado como consumidor da mesma cadeia de
+imports. Ficou quebrado silenciosamente por ~3h (primeira falha real:
+run #636, 2026-09-12 14:22 UTC, achado pelo usuário via notificação do
+GitHub — "recebi que uma etapa travou" — e confirmado nesta sessão lendo o
+log real do job) até ser corrigido aqui.
+
+**Causa raiz, mesma classe, caminho de import diferente**: `scan-shadow.yml`
+escreve só em coleções Firestore isoladas (`experimentalRf1hShadow*`,
+`scripts/adminEntitiesShadow.js`, que **não** importa Postgres) — mas
+`scripts/adminPineConfigShadow.js` reusa `getPineConfig()` do
+`scripts/adminPineConfig.js` **real** (não isolado), de propósito, pra ler
+os mesmos parâmetros de estratégia que o scan ao vivo usa. Desde a Fase 10,
+`adminPineConfig.js` lê `strategyConfig/current` via `scripts/
+adminEntities.js` — que virou o re-export de `db/pgEntitiesCore.mjs` (PR
+#332) — então `pg` entra na árvore de imports do bundle shadow por essa
+ponte, mesmo o resto do fluxo shadow sendo 100% Firestore. `build-scan-
+shadow.mjs` marcava só `firebase-admin`/`firebase-admin/*` como `external`,
+não `pg` — mesmo `Error: Dynamic require of "events" is not supported`.
+
+**Lição sobre a lição**: corrigir uma classe de bug em TODOS os pontos
+conhecidos não basta se a varredura que decide "todos os pontos" for feita
+de memória em vez de grep — `grep -rn "adminPineConfig\|adminEntities"
+scripts/build-*.mjs` (ou equivalente) antes de fechar o item 173 teria
+achado os 3 arquivos de uma vez. Ao corrigir uma classe de bug de
+import/bundling, listar TODOS os consumidores da árvore afetada
+programaticamente, não por recordação de quais arquivos foram tocados na
+mesma PR.
+
+**Corrigido**: `pg` adicionado ao `external` de `build-scan-shadow.mjs`,
+mesmo padrão dos outros dois. Verificado por execução real: bundle
+reconstruído (402kb→225kb, confirma que `pg` deixou de ser embutido) rodado
+localmente — o `Dynamic require of "events"` desapareceu; o processo agora
+falha bem mais adiante, na validação de credencial Firebase fake usada no
+teste local (`FirebaseAppError: Service account object must contain a
+string "project_id" property` — esperado, não é o bug sendo corrigido).
+`build-backtest.mjs` (4º config de esbuild do projeto) foi conferido e
+confirmado fora de risco — não importa `adminPineConfig`/`adminEntities`,
+usa config estático e backend fake em memória, nenhum caminho até `pg`.

@@ -46,6 +46,6 @@ await build({
   target: 'node20',
   outfile: path.resolve(root, 'scripts/dist/run-scan-shadow.mjs'),
   plugins: [shadowOverrides],
-  external: ['firebase-admin', 'firebase-admin/*'],
+  external: ['firebase-admin', 'firebase-admin/*', 'pg'],
   logLevel: 'info',
 });
