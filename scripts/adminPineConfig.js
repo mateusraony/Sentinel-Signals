@@ -1,16 +1,28 @@
 // Node/GitHub Actions counterpart to src/lib/pineParser.js's getPineConfig().
-// The strategy-business parameters below are read from strategyConfig/current
-// in Firestore — the same document the in-browser Pine Script page writes to
-// via syncPineToAssets() — so the 24/7 scan and the in-browser scan never
-// disagree. rf_period/rf_multiplier don't need this: those are synced
-// per-asset to Firestore already (MonitoredAsset.rf_period/rf_multiplier),
-// read directly by scanner.js from the asset record.
+// The strategy-business parameters below are read from the StrategyConfig
+// singleton (id 'current') — the same doc the in-browser Pine Script page
+// writes to via syncPineToAssets() — so the 24/7 scan and the in-browser
+// scan never disagree. rf_period/rf_multiplier don't need this: those are
+// synced per-asset already (MonitoredAsset.rf_period/rf_multiplier), read
+// directly by scanner.js from the asset record.
+//
+// Postgres/Neon (Fase 10 do plano de migração Firestore→Neon) — lia
+// Firestore direto via firebase-admin (`getFirestore().collection(
+// 'strategyConfig').doc('current')`) até esta rodada; agora lê pelo mesmo
+// backend AO VIVO que o resto do motor de trading usa
+// (scripts/adminEntities.js). Deixou de precisar do acesso "preguiçoso"
+// que justificava não importar scripts/adminEntities.js aqui antes
+// (comentário removido: aquele cuidado existia porque a versão Firestore
+// de adminEntities.js chamava initializeApp() incondicionalmente no
+// carregamento do módulo, quebrando qualquer teste sem credencial — o
+// re-export Postgres não tem esse efeito colateral, getPool() só conecta
+// quando de fato chamado).
 //
 // Keep this DEFAULTS/SYNCED_STRATEGY_KEYS pair mirrored by hand with
 // src/lib/pineParser.js — there's no shared module between the two (the
 // browser file uses browser-only APIs like localStorage), so any new synced
 // parameter added there must be added here too.
-import { getFirestore } from 'firebase-admin/firestore';
+import { backend } from './adminEntities.js';
 
 const DEFAULTS = {
   rng_per: 20,
@@ -162,12 +174,10 @@ export async function getPineConfig() {
     configPromise = (async () => {
       const config = { ...DEFAULTS };
       try {
-        const db = getFirestore();
-        const snap = await db.collection('strategyConfig').doc('current').get();
-        if (snap.exists) {
-          const data = snap.data();
+        const doc = await backend.entities.StrategyConfig.get('current');
+        if (doc) {
           for (const key of SYNCED_STRATEGY_KEYS) {
-            if (data[key] !== undefined) config[key] = data[key];
+            if (doc[key] !== undefined) config[key] = doc[key];
           }
         }
       } catch (e) {

@@ -57,7 +57,7 @@ function makeFakeDb(collections) {
 }
 
 const { dbMock } = vi.hoisted(() => ({ dbMock: { collection: vi.fn() } }));
-vi.mock('./adminEntities.js', () => ({ db: dbMock }));
+vi.mock('./adminEntitiesFirestoreLegacy.js', () => ({ db: dbMock }));
 
 beforeEach(() => {
   bulkImportEntityMock.mockReset().mockResolvedValue({ upserted: 0 });

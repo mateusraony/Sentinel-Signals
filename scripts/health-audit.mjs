@@ -59,7 +59,14 @@
  * amostra não tem garantia de recência — o Firestore devolve por ordem de ID
  * quando não há `orderBy` — e o relatório diz isso em vez de fingir.
  */
-import { backend, rtdb } from './adminEntities.js';
+// backend segue o backend AO VIVO do motor de trading (Postgres pós-Fase 10
+// deste plano — scripts/adminEntities.js), mas rtdb continua vindo do
+// arquivo Firestore renomeado: o marcador de cota do Firestore
+// (systemAlerts/firestoreQuota, checado abaixo) é específico do Firestore e
+// não tem equivalente em Postgres — RTDB não faz parte desta migração (só é
+// removido na decomissão, fase 11).
+import { backend } from './adminEntities.js';
+import { rtdb } from './adminEntitiesFirestoreLegacy.js';
 import { agrupar, celula, haQuantoTempo } from './healthAuditFormat.mjs';
 import { classifyFailure } from './failureClassification.mjs';
 import { isTelegramConfigured, notifyHealthAudit } from './adminTelegram.js';

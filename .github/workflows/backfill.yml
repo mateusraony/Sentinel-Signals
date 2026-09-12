@@ -45,6 +45,11 @@ jobs:
 
       - run: npm run backfill-check
         env:
+          # Postgres/Neon (Fase 10 do plano de migração Firestore→Neon) — same
+          # reasoning as scan.yml above (this job's redirected '@/api/entities'
+          # target, scripts/adminEntitiesBackfillCache.js, wraps
+          # scripts/adminEntities.js's live backend).
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           # RTDB read mirror (docs/known-risks.md item 152) — optional, same
           # guard as scan.yml above.
