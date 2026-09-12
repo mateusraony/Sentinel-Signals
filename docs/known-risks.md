@@ -21758,3 +21758,138 @@ checklist de código, restam 1 (`scripts/adminEntities.js`, Fase 10 prep,
 PR #332 aberto sem merge automático), 2 (browser), 3 (AuthContext) e 4b
 (ligar o webhook de verdade) — os 4 que só devem acontecer juntos, na
 janela de cutover coordenada.
+
+## 171. `backup-postgres.yml` falhando desde a 1ª execução — `pg_dump` mais antigo que o Neon (2026-09-11)
+
+**Achado ao checar se o cutover já podia ser feito** — o pré-requisito
+operacional do runbook ("Backup do Postgres rodando... confirmar que pelo
+menos 1 run agendado real já aconteceu com sucesso") estava marcado feito
+com base só no teste local (`scripts/backup-postgres.test.js` contra
+Postgres local) — as 3 execuções agendadas REAIS (`backup-postgres.yml`,
+09/10/11 de setembro, toda madrugada) tinham **falhado todas as 3**, sem
+que ninguém tivesse notado (o workflow não tem alerta configurado, ao
+contrário de `scan.yml`/`ci.yml`).
+
+**Causa raiz**: `pg_dump: error: aborting because of server version
+mismatch — server version: 18.6; pg_dump version: 16.15`. O runner
+`ubuntu-latest` do GitHub Actions vem com `pg_dump` 16.x pré-instalado (via
+repositório PGDG, já configurado na imagem — daí o sufixo `pgdg24.04` na
+versão do erro); o Neon roda Postgres 18.6. `pg_dump`/`pg_restore` recusam
+operar contra um servidor de major version MAIOR que a própria ferramenta
+(regra de compatibilidade do próprio Postgres) — o dump nunca foi gerado
+nem uma vez em produção.
+
+**Corrigido**: novo passo no workflow (`sudo apt-get install -y
+postgresql-client-18`, repositório PGDG já disponível na imagem do
+runner) antes de "Gerar dump" — `postgresql-common` troca o `pg_dump` do
+`PATH` pro binário mais novo instalado automaticamente via
+`update-alternatives`, sem precisar apontar caminho absoluto.
+`docs/restore-postgres.md` ganhou o mesmo aviso (checar `pg_restore
+--version` antes de restaurar, já que uma restauração manual da máquina do
+usuário pode ter o mesmo problema se a ferramenta local for mais antiga
+que 18).
+
+**Não verificável localmente antes de mesclar** — esta sandbox não tem o
+repositório PGDG configurado (ambiente diferente do runner real do GitHub
+Actions), então a instalação do pacote `postgresql-client-18` não pôde ser
+testada aqui; a correção depende do próximo `workflow_dispatch`/execução
+agendada real para confirmar. Risco julgado baixo: a suposição (PGDG já
+configurado na imagem `ubuntu-latest`) está diretamente confirmada pelo
+sufixo de versão do próprio erro de produção, não é uma suposição às
+cegas.
+
+**Impacto no cutover**: o pré-requisito operacional do runbook
+permanece **não fechado** até uma execução agendada real de
+`backup-postgres.yml` terminar com sucesso — não é recomendável prosseguir
+com a janela de cutover coordenada (que torna o Postgres a fonte de
+verdade) sem ter pelo menos um backup real funcionando primeiro.
+
+### Addendum (2026-09-12) — a 1ª correção estava errada; o risco "julgado baixo" acima se confirmou
+
+O usuário disparou `workflow_dispatch` manualmente contra a correção acima
+— **falhou de novo**, com um erro NOVO: `E: Unable to locate package
+postgresql-client-18`. A suposição registrada acima ("o repositório PGDG
+já vem configurado na imagem do runner... confirmado pelo sufixo de
+versão") estava **errada** — o sufixo `pgdg24.04` no nome do pacote
+`postgresql-client-16` é só a convenção de VERSIONAMENTO que o pacote do
+Ubuntu usa (construído com as mesmas ferramentas/patches do PGDG), não
+prova que o repositório apt.postgresql.org está de fato registrado como
+fonte — ele não estava. `apt-get install postgresql-client-18` sozinho
+nunca teria como funcionar sem esse passo. O aviso que este addendum
+substitui ("risco julgado baixo... não é uma suposição às cegas") foi
+otimismo mal calibrado — a suposição nunca tinha sido de fato confirmada,
+só parecia confirmada por uma coincidência de nome.
+
+**Corrigido de verdade**: em vez de assumir o repositório já configurado,
+o workflow agora roda o script oficial mantido pelo próprio pacote
+`postgresql-common` (`/usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+-y`, já vem na imagem — é dependência do `pg_dump` 16 default) — ele
+detecta a distro (`noble`) e escreve o `sources.list.d`/chave de
+assinatura corretos sozinho (inclusive rodando seu próprio `apt-get
+update` internamente), método documentado em postgresql.org/download/
+linux/ubuntu, em vez de qualquer suposição sobre o que já vem pronto na
+imagem do runner.
+
+**Lição**: um nome de pacote parecido com o de um repositório específico
+não é evidência de que aquele repositório está configurado — só rodar o
+comando real (ou usar o mecanismo oficial de setup) prova isso. "Risco
+julgado baixo" sem poder verificar localmente deveria ter sido, no
+mínimo, uma suposição marcada como não confirmada, não uma quase-certeza.
+
+### Addendum (2026-09-12, 2ª correção) — pacote instalado, mas `pg_dump` do PATH continuou na v16
+
+O usuário disparou `workflow_dispatch` de novo contra a 2ª correção — desta
+vez o `postgresql-client-18` foi **buscado e instalado com sucesso** (log
+real confirma download de `https://apt.postgresql.org/pub/repos/apt
+noble-pgdg/main`, então o addendum anterior estava certo sobre a causa e a
+correção do registro do repositório). Mas o passo "Gerar dump" falhou de
+novo, com o **mesmo** erro original: `pg_dump: detail: server version: 18.6
+(2078fcb); pg_dump version: 16.15 (Ubuntu 16.15-1.pgdg24.04+2)`.
+
+**Causa**: a afirmação registrada no addendum anterior ("`postgresql-common`
+troca o `pg_dump` do PATH pro binário mais novo automaticamente via
+`update-alternatives`") também estava **errada** — 3ª suposição não
+verificada localmente que se mostrou falsa contra o runner real. O log real
+mostra `update-alternatives` só trocando o link do MANPAGE do `psql`; o
+binário `pg_dump` em `/usr/bin` nunca foi tocado, e o Debian/Ubuntu instalam
+cada major version isolado em `/usr/lib/postgresql/<versão>/bin/`
+precisamente para poderem coexistir sem um "vencedor" automático de PATH.
+
+**Corrigido de verdade**: em vez de confiar em qualquer mecanismo implícito
+de troca de PATH, o workflow agora aponta explicitamente para o binário da
+versão 18 via `echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"` (convenção
+oficial do GitHub Actions para alterar o PATH dos passos seguintes de um
+job) logo após instalar o pacote, e ganhou um passo de verificação
+(`pg_dump --version | grep -q ' 18\.'`) que falha explicitamente o job se a
+resolução do PATH não for a esperada — em vez de deixar o erro genérico de
+"version mismatch" do próprio `pg_dump` ser a única evidência.
+
+**Lição (reforça a anterior, agora pela 3ª vez no mesmo incidente)**: cada
+uma das duas primeiras correções carregava uma suposição sobre o
+comportamento do runner que não pôde ser testada nesta sandbox (sem rede
+para `postgresql.org`) e que se provou errada só contra o ambiente real.
+Nenhuma suposição sobre esse pipeline deveria mais ser tratada como
+"provavelmente certa" sem uma verificação explícita (como o novo passo
+"Confirmar que pg_dump resolvido é a versão 18") rodando dentro do próprio
+workflow — depender só do usuário disparar manualmente e reportar o
+resultado é lento e cada rodada perdida atrasa o fechamento deste
+pré-requisito do cutover.
+
+### Resolvido (2026-09-12) — 1º backup real bem-sucedido, item fechado
+
+`workflow_dispatch` disparado pelo usuário contra a 3ª correção (PR #342,
+merge `f3ef21b`) — **run #6, sucesso em todos os 8 passos**, incluindo
+"Confirmar que pg_dump resolvido é a versão 18", "Gerar dump" e "Publicar
+na branch backups-postgres" (repositório privado
+`mateusraony/sentinel-signals-backups`). É o primeiro backup real do
+Postgres/Neon que completa com sucesso desde que o workflow existe — as 5
+execuções anteriores (3 agendadas + 2 disparos manuais pós #340/#341)
+falharam todas por variações do mesmo problema de versão do `pg_dump`.
+
+**Pré-requisito do runbook de cutover agora fechado**: "Backup do Postgres
+rodando... confirmar que pelo menos 1 run agendado real já aconteceu com
+sucesso" — condição satisfeita por um disparo manual real contra o Neon de
+produção (equivalente ao agendado, mesmo código, mesmo secret). O
+agendamento diário (`cron: "37 3 * * *"`) segue ativo para confirmar
+recorrência sem intervenção — não é razão para reabrir o item, só
+acompanhar.
