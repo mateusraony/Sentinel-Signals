@@ -45,6 +45,9 @@ await build({
   target: 'node20',
   outfile: path.resolve(root, 'scripts/dist/run-backfill-check.mjs'),
   plugins: [backfillOverrides],
-  external: ['firebase-admin', 'firebase-admin/*'],
+  // 'pg' externo — mesmo achado real de build-scan.mjs (2026-09-12):
+  // bundlar 'pg' produz "Dynamic require of \"events\" is not supported"
+  // em runtime. Ver o comentário completo lá.
+  external: ['firebase-admin', 'firebase-admin/*', 'pg'],
   logLevel: 'info',
 });
