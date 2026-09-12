@@ -21773,3 +21773,22 @@ Nenhuma suposição sobre esse pipeline deveria mais ser tratada como
 workflow — depender só do usuário disparar manualmente e reportar o
 resultado é lento e cada rodada perdida atrasa o fechamento deste
 pré-requisito do cutover.
+
+### Resolvido (2026-09-12) — 1º backup real bem-sucedido, item fechado
+
+`workflow_dispatch` disparado pelo usuário contra a 3ª correção (PR #342,
+merge `f3ef21b`) — **run #6, sucesso em todos os 8 passos**, incluindo
+"Confirmar que pg_dump resolvido é a versão 18", "Gerar dump" e "Publicar
+na branch backups-postgres" (repositório privado
+`mateusraony/sentinel-signals-backups`). É o primeiro backup real do
+Postgres/Neon que completa com sucesso desde que o workflow existe — as 5
+execuções anteriores (3 agendadas + 2 disparos manuais pós #340/#341)
+falharam todas por variações do mesmo problema de versão do `pg_dump`.
+
+**Pré-requisito do runbook de cutover agora fechado**: "Backup do Postgres
+rodando... confirmar que pelo menos 1 run agendado real já aconteceu com
+sucesso" — condição satisfeita por um disparo manual real contra o Neon de
+produção (equivalente ao agendado, mesmo código, mesmo secret). O
+agendamento diário (`cron: "37 3 * * *"`) segue ativo para confirmar
+recorrência sem intervenção — não é razão para reabrir o item, só
+acompanhar.
