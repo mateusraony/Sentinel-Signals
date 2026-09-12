@@ -1,6 +1,7 @@
 // O CAS redesenhado, exposto via HTTP (Fase 5 do plano de migração
 // Firestore→Neon) — revisado por sentinel-council-review antes de existir
-// (ver db/pgEntitiesCore.mjs e db/CLAUDE.md). **Dark nesta PR.**
+// (ver db/pgEntitiesCore.mjs e db/CLAUDE.md). Chamada de verdade pelo
+// browser desde o cutover (2026-09-12).
 const express = require('express');
 const { getPgCore, requireDatabaseUrl } = require('../pgCoreLoader');
 const { validateTradeOpPatch } = require('../tradeOpPatchGuard');

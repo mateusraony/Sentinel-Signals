@@ -15,8 +15,10 @@
 // em server/index.js. `scripts/adminEntities.js` (ESM, empacotado por
 // esbuild) importaria normalmente quando essa fase chegar.
 //
-// **Dark nesta PR** — nada em produção chama isto ainda. `src/api/
-// entities.js` (Firestore) continua sendo o backend real até o cutover.
+// Backend real em produção desde o cutover (2026-09-12) — `src/api/
+// entities.js` (browser) e `scripts/adminEntities.js` (cron) chamam isto
+// de verdade; `src/api/entitiesFirestoreLegacy.js` preserva a versão
+// Firestore só como referência de rollback.
 import pg from 'pg';
 import {
   canApplyTransition,
@@ -396,13 +398,10 @@ export async function bulkImportEntity(entityName, items) {
 // ... FOR UPDATE` prévio, ao contrário do CAS de `TradeOperation` acima
 // (aqui não há decisão além de "já existe ou não").
 //
-// **Preparação do item 4 do runbook de cutover
-// (docs/claude/postgres-cutover-runbook.md) — ainda NÃO chamada por
-// `server/index.js`.** A troca de verdade (ligar isto no lugar da
-// transação Firestore) é o item 4b, feito durante a janela de cutover
-// coordenada, junto com os outros itens (browser/auth/render.yaml) — nunca
-// isoladamente, porque o webhook é um canal ao vivo (TradingView está
-// esperando a resposta).
+// Item 4b do runbook de cutover (docs/claude/postgres-cutover-runbook.md)
+// — **já chamada de verdade por `server/index.js`'s `POST /webhook/
+// tradingview`** desde o cutover (2026-09-12); a transação Firestore
+// original foi removida.
 export async function insertWebhookEventIfNew(id, data) {
   assertNoUndefinedFields(data, 'TradingviewWebhookEvent');
   const { rows } = await getPool().query(

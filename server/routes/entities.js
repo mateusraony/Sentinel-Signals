@@ -3,7 +3,7 @@
 // `firestore.rules`: NUNCA consulta uma tabela livre, só as registradas em
 // db/pgEntitiesCore.mjs's ENTITY_TABLES (nome fora do registro → 404), e
 // nunca a coleção `User` (dono only — ver server/entityCollectionGuard.js).
-// **Dark nesta PR** — nada no browser chama isto ainda.
+// Chamada de verdade pelo browser desde o cutover (2026-09-12).
 const express = require('express');
 const { getPgCore, requireDatabaseUrl } = require('../pgCoreLoader');
 const { checkCollectionAccess } = require('../entityCollectionGuard');

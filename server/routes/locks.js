@@ -1,5 +1,5 @@
-// backend.locks (Fase 5 do plano de migração Firestore→Neon). **Dark
-// nesta PR.**
+// backend.locks (Fase 5 do plano de migração Firestore→Neon). Chamada de
+// verdade pelo browser desde o cutover (2026-09-12).
 const express = require('express');
 const { getPgCore, requireDatabaseUrl } = require('../pgCoreLoader');
 

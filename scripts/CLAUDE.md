@@ -31,8 +31,8 @@ no item 158) — `adminEntities.js` (Postgres, pós-Fase 10) não tem esse
 problema, mas a separação continua valendo pra quem ainda importa o lado
 Firestore.
 
-**Fase 10 do plano de migração Firestore→Neon (preparada, PR aberto, ainda
-sem merge automático — ver `docs/known-risks.md` item 170 addendum)**:
+**Fase 10 do plano de migração Firestore→Neon (cutover concluído
+2026-09-12 — ver `docs/known-risks.md` item 170 addendum)**:
 `scripts/adminEntities.js` deixou de ser a reimplementação Firestore
 completa (~330 linhas) e virou um re-export fino de
 `db/pgEntitiesCore.mjs` — `build-scan.mjs`/`build-backfill.mjs` continuam
