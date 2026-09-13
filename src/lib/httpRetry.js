@@ -70,7 +70,7 @@ function wrapResponseBodyTimeout(res, timer) {
   return new Proxy(res, {
     get(target, prop, receiver) {
       const value = Reflect.get(target, prop, receiver);
-      if (typeof value !== 'function' || !BODY_READ_METHODS.includes(prop)) {
+      if (typeof value !== 'function' || typeof prop !== 'string' || !BODY_READ_METHODS.includes(prop)) {
         return typeof value === 'function' ? value.bind(target) : value;
       }
       return async (...args) => {
