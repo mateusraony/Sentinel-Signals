@@ -142,16 +142,40 @@ async function checkOneAsset(asset, pineConfig) {
   // o replay chegou nos 5 minutos, em vez de só "travou, sem mais nada".
   const replayStartedAtMs = performance.now();
   let lastProgressLogAtMs = replayStartedAtMs;
+  // docs/known-risks.md item 176 addendum 3 — o log de progresso acima
+  // (PR #353) provou que o custo TOTAL por tick estoura o orçamento, mas
+  // não isola qual fonte domina (Postgres, Binance ou computação): `onStep`
+  // só dispara depois que TODO o trabalho do tick já terminou. Achado do
+  // Codex review (PR #354): apontar "latência Postgres" como causa sem medir
+  // era conclusão apressada. `process.cpuUsage([previousValue])` é a API
+  // nativa do Node para medir CPU consumida (user+system) num intervalo,
+  // independente do relógio de parede — não toca nenhuma linha de
+  // db/pgEntitiesCore.mjs nem scanner.js (opção "medir antes de escolher"
+  // do documento). Se a % de CPU por janela ficar perto de 100%, o gargalo é
+  // computação (ex.: recálculo de indicador sobre histórico crescente); se
+  // ficar bem abaixo, o processo está esperando por I/O (Postgres/Binance)
+  // ou disputando CPU com outros processos no runner compartilhado do
+  // GitHub Actions. `fetchHistoricalCandles`
+  // (scripts/backfillMarketDataProvider.js) cacheia por symbol+timeframe
+  // para a janela INTEIRA — o fetch à Binance é pago uma vez por ativo, não
+  // por tick, então não pode ser a causa de um custo que se repete a cada
+  // tick; por isso o cronômetro aqui mede CPU, não tempo de rede à parte.
+  let lastCpuUsage = process.cpuUsage();
   const PROGRESS_LOG_INTERVAL_MS = 30_000;
   const report = await runBacktest({
     assets: [replayAsset], backend, fromMs, toMs, pineConfig,
     onStep: (t) => {
       const nowMs = performance.now();
       if (nowMs - lastProgressLogAtMs < PROGRESS_LOG_INTERVAL_MS) return;
+      const wallMs = nowMs - lastProgressLogAtMs;
+      const cpuDelta = process.cpuUsage(lastCpuUsage);
+      lastCpuUsage = process.cpuUsage();
       lastProgressLogAtMs = nowMs;
       const elapsedS = (nowMs - replayStartedAtMs) / 1000;
       const pct = toMs > fromMs ? (100 * (t - fromMs)) / (toMs - fromMs) : 100;
-      console.log(`[backfill] ${asset.symbol}: replay em ${new Date(t).toISOString()} (${pct.toFixed(1)}% da janela) — ${elapsedS.toFixed(0)}s reais decorridos`);
+      const cpuMs = (cpuDelta.user + cpuDelta.system) / 1000;
+      const cpuPct = wallMs > 0 ? (100 * cpuMs) / wallMs : 0;
+      console.log(`[backfill] ${asset.symbol}: replay em ${new Date(t).toISOString()} (${pct.toFixed(1)}% da janela) — ${elapsedS.toFixed(0)}s reais decorridos, CPU ${cpuPct.toFixed(0)}% da janela (${(cpuMs / 1000).toFixed(1)}s de ${(wallMs / 1000).toFixed(1)}s)`);
     },
   });
 
