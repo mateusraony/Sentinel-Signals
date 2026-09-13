@@ -22289,3 +22289,71 @@ precisa ser auditado quanto a SE ele está mesmo protegendo contra uma
 falha secundária inofensiva, ou se está silenciando a ÚNICA tentativa de
 registrar/corrigir o estado que a exceção original já quebrou — os dois
 parecem idênticos no código, mas têm blast radius opostos.
+
+## 175. "Avisos em análise" mostrava "nenhuma operação foi aberta" para um ativo com operação genuinamente ATIVA (2026-09-13)
+
+**Achado a partir de print real do usuário**: a aba Trades mostrava
+simultaneamente, para PENDLE/USDT e ETHFI/USDT, um card em "Avisos em
+análise" com o badge "✓ Já passou" / "O prazo acabou e nenhuma operação
+foi aberta..." **e** um card em "Operações Ativas" mostrando a MESMA
+operação genuinamente aberta, com timestamps sobrepostos. Usuário: "sim
+aparece o ativo no sentinel, como esta no print".
+
+**Causa raiz — dois bugs independentes que se somam**:
+
+1. **`Trades.jsx`'s `activeKey` comparava o campo errado.** A lista de
+   "Avisos em análise" deveria esconder qualquer `SignalEvent` cujo ativo já
+   tem operação ativa (`activeKey = new Set(active.map(o =>
+   \`${o.symbol}_${o.timeframe}\`))`), mas `TradeOperation.timeframe` é o
+   timeframe de EXECUÇÃO ('15m' na cascata nativa —
+   `scanner.js:buildTradeOpData`, '5m' na SMC), nunca o timeframe do sinal
+   ('4h'/'1h', gravado em `TradeOperation.signal_timeframe`). Comparando
+   contra `SignalEvent.timeframe` (que É '4h'/'1h'), a chave
+   `"PENDLEUSDT_15m"` nunca batia com `"PENDLEUSDT_4h"` — essa exclusão
+   **nunca funcionou** para nenhuma operação da cascata nativa, desde que
+   foi escrita.
+2. **`scanner.js`'s marcação de `expired_logged` não checava se o sinal já
+   tinha virado operação.** Os 4 laços de retry (RF nativo 4h, RF 1h
+   condicionado/incondicional — backtest-only —, SMC 1h) marcam
+   `expired_logged: true` só por idade (`sig.created_date <
+   fourHoursAgo`), sem checar `ownsActiveOp` (que já existia mais abaixo no
+   mesmo laço, mas só para não poluir a contagem do funil de
+   `entryFunnelOutcomes` — nunca aplicado ao corte de idade). Resultado:
+   **toda operação ainda ativa 4h+ depois de aberta** (a maioria das
+   `RUNNER_ACTIVE`, e qualquer `SIGNAL_CONFIRMED` que demorou a evoluir)
+   tinha, no próprio `SignalEvent` que a originou, a marca "expirou sem
+   nunca confirmar entrada" — mesmo com a operação viva e sendo gerenciada
+   naquele exato momento. `signalStatus.js`'s `classifySignal` lê
+   `expired_logged === true` (ou `msLeft <= 0`, que também já teria passado
+   nesse ponto) para produzir o badge "Já passou".
+
+Juntos, os dois bugs garantiam que a contradição do print não era um caso
+raro do PENDLE/ETHFI — era o comportamento padrão para qualquer operação
+viva há mais de 4h. Não é uma decisão intencional (não há nada em
+`CLAUDE.md`/aqui indicando isso de propósito) — é diferente do gap já
+registrado no item 50 (achado 5, `Dashboard.jsx`/`AssetCard.jsx` sem
+filtro por `expired_logged`/idade antes de rotular "Observando"), que vai
+na direção OPOSTA (sinal morto ainda rotulado como vivo).
+
+**Corrigido**:
+- `Trades.jsx`: `activeKey` agora usa `o.signal_timeframe ?? o.timeframe`
+  (fallback só para operação legada anterior ao campo aditivo).
+- `scanner.js`: os 4 laços de retry computam `ownsActiveOp` **antes** do
+  corte de idade e nunca marcam `expired_logged`/logam a expiração quando
+  `ownsActiveOp` é verdadeiro — o cálculo (antes duplicado só para o
+  funil) passou a ser feito uma vez e reusado nos dois pontos.
+
+**Reproduzido antes da correção, confirmado depois** (disciplina do
+projeto — teste falhava com o bug, passa com a correção):
+`scannerStateMachine.test.js`: "NÃO marca expired_logged num sinal cuja
+própria operação já está ativa, mesmo envelhecido além da janela de
+retry"; `src/pages/Trades.test.jsx` (arquivo novo): "esconde o aviso de um
+sinal cuja operação já está ativa" (e o caso simétrico, sem operação
+ativa, continua mostrando o aviso normalmente). Suíte completa (1740
+testes) + lint + build verdes depois da mudança.
+
+**Ainda não feito** (fora de escopo desta rodada, pedido separado do
+usuário): revisão de clareza/copy das seções "Avisos em análise" e
+"Operações Ativas" com pesquisa de comunidade — a correção acima resolve a
+CONTRADIÇÃO de dado, não a legibilidade geral que o usuário também
+apontou como confusa.
