@@ -242,6 +242,17 @@ async function main() {
 
   const batch = activePending.slice(0, MAX_ASSETS_PER_RUN);
   console.log(`[backfill] ${activePending.length} ativo(s) pendente(s) e ativo(s), processando ${batch.length} nesta execução`);
+  // docs/known-risks.md item 176 addendum 5 — o usuário confirmou que não
+  // reativou/recriou o LDOUSDT manualmente, mas ele continua reaparecendo
+  // como 'pending' a cada ciclo mesmo sendo marcado 'error' após cada
+  // timeout (só reativação/criação escrevem 'pending' no código, ver
+  // src/pages/Assets.jsx e AddAssetForm.jsx). Loga o id interno de cada
+  // pendente pra confirmar se é sempre a MESMA linha (bug de retomada) ou
+  // linhas DIFERENTES (possível registro duplicado do mesmo símbolo) —
+  // puro log, não muda nenhuma decisão.
+  for (const a of activePending) {
+    console.log(`[backfill] pendente: ${a.symbol} (id=${a.id}, status=${a.backfill_check_status}, checked_at=${a.backfill_checked_at ?? 'nunca'})`);
+  }
   const pineConfig = await withTimeout(getPineConfig(), BACKFILL_STEP_TIMEOUT_MS, 'getPineConfig');
 
   for (const asset of batch) {
