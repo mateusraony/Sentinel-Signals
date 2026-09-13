@@ -3762,6 +3762,37 @@ describe('persistScanResults — expiração silenciosa de sinal (item 47.2)', (
     const logs = await backend.entities.SystemLog.filter({});
     expect(logs.some((l) => l.message?.includes('sinal expirou sem nunca confirmar entrada'))).toBe(true);
   });
+
+  // docs/known-risks.md item 174 addendum — achado a partir de um print real
+  // do usuário: PENDLEUSDT/ETHFIUSDT apareciam simultaneamente em "Avisos em
+  // análise" (badge "Já passou" / "nenhuma operação foi aberta") e em
+  // "Operações Ativas" (a operação genuinamente viva). Causa raiz aqui: o
+  // corte de idade acima marcava `expired_logged` só olhando `created_date`,
+  // sem nunca checar se o PRÓPRIO sinal já é dono da operação ativa — um
+  // sinal que confirmou entrada em minutos e cuja operação segue aberta
+  // ainda ganhava, 4h+ depois, a marca "expirou sem nunca confirmar
+  // entrada". `TradeOperation.id` determinístico (`trade_${dedup_key}`) é o
+  // que identifica o dono.
+  it('NÃO marca expired_logged num sinal cuja própria operação já está ativa, mesmo envelhecido além da janela de retry', async () => {
+    backend._seed('SignalEvent', {
+      id: 'sig_owns_op', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_owns_op',
+      created_date: '2026-07-16T07:00:00.000Z', // 5h antes do "now" congelado (12:00)
+    });
+    backend._seed('TradeOperation', makeOp({
+      id: 'trade_sig_owns_op', status: 'SIGNAL_CONFIRMED', cascade: '4h_15m',
+      created_date: '2026-07-16T07:05:00.000Z',
+    }));
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults(makeScanResult({ results, pineConfig }));
+
+    const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_owns_op' });
+    expect(stored[0].expired_logged).toBeFalsy();
+    const logs = await backend.entities.SystemLog.filter({});
+    expect(logs.some((l) => l.message?.includes('sinal expirou sem nunca confirmar entrada'))).toBe(false);
+  });
 });
 
 // known-risks item 45.3/49 — Round 1 do plano "fechar o processo do motor":

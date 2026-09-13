@@ -2957,13 +2957,24 @@ export async function persistScanResults(scanResult) {
   }, '-created_date', 10);
 
   for (const sig of recent4hSignals) {
+    // Computado antes do corte de idade abaixo (não só para o funil mais
+    // adiante) — docs/known-risks.md item 174 addendum: um sinal dono de
+    // uma operação ATIVA nunca pode ser marcado `expired_logged` só por ter
+    // envelhecido além de 4h — ele não expirou, ele teve sucesso. tradeOpId
+    // espelha o id determinístico que os blocos de criação (1ª passada e
+    // retry) usam (`trade_${dedup_key}`).
+    const ownsActiveOp = (pineConfig.hierarchicalCascadesEnabled ? activeOp4h15m : activeOp)?.id === `trade_${sig.dedup_key}`;
+
     if (sig.created_date < fourHoursAgo) {
       // known-risks item 47.2 — antes disso a expiração era muda: sem
       // TradeOperation e sem SystemLog, indistinguível de um sinal que nunca
       // chegou a ser tentado. `expired_logged` já veio junto com `sig` no
       // fetch acima — não custa leitura extra, só grava (uma vez) quando
-      // ainda não gravou.
-      if (!sig.expired_logged) {
+      // ainda não gravou. Nunca grava se `ownsActiveOp` (item 174 addendum)
+      // — senão toda operação ainda ativa 4h+ depois de aberta ganha, no
+      // próprio SignalEvent que a originou, a marca falsa de "expirou sem
+      // nunca confirmar entrada".
+      if (!sig.expired_logged && !ownsActiveOp) {
         await backend.entities.SignalEvent.update(sig.id, { expired_logged: true });
         await backend.entities.SystemLog.create({
           level: 'info',
@@ -2995,12 +3006,8 @@ export async function persistScanResults(scanResult) {
       // block above. That is not a rejection, it is the signal that
       // SUCCEEDED; counting it as `active_op_exists` would make every
       // successful RF entry pollute the funnel with a false rejection each
-      // pass. tradeOpId mirrors the deterministic id the 1st-pass/retry
-      // creation blocks both use (`trade_${dedup_key}`), so this only
-      // suppresses the count for the signal that actually owns activeOp —
-      // a genuinely different pending signal blocked by another op still
-      // counts normally.
-      const ownsActiveOp = (pineConfig.hierarchicalCascadesEnabled ? activeOp4h15m : activeOp)?.id === `trade_${sig.dedup_key}`;
+      // pass — a genuinely different pending signal blocked by another op
+      // still counts normally. `ownsActiveOp` computed once above.
       if (!ownsActiveOp) entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '4h_15m', reason: 'active_op_exists' });
       continue;
     }
@@ -3184,8 +3191,13 @@ export async function persistScanResults(scanResult) {
     }, '-created_date', 10);
 
     for (const sig of recent1hRfSignals) {
+      // Item 174 addendum — mesmo raciocínio do retry nativo 4h acima:
+      // computado antes do corte de idade, para nunca marcar `expired_logged`
+      // no sinal que já é dono da operação ativa.
+      const ownsActiveOp = activeOp?.id === `trade_${sig.dedup_key}`;
+
       if (sig.created_date < oneHourAgo4xRf) {
-        if (!sig.expired_logged) {
+        if (!sig.expired_logged && !ownsActiveOp) {
           await backend.entities.SignalEvent.update(sig.id, { expired_logged: true });
           await backend.entities.SystemLog.create({
             level: 'info',
@@ -3201,7 +3213,6 @@ export async function persistScanResults(scanResult) {
       if (sig.is_dismissed) continue;
 
       if (hasActiveOp) {
-        const ownsActiveOp = activeOp?.id === `trade_${sig.dedup_key}`;
         if (!ownsActiveOp) entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: RF_1H_COND_CASCADE, reason: 'active_op_exists' });
         continue;
       }
@@ -3282,8 +3293,11 @@ export async function persistScanResults(scanResult) {
     }, '-created_date', 10);
 
     for (const sig of recent1hRfSignalsUncond) {
+      // Item 174 addendum — mesmo raciocínio do retry nativo 4h acima.
+      const ownsActiveOp = activeOp?.id === `trade_${sig.dedup_key}`;
+
       if (sig.created_date < oneHourAgo4xRfUncond) {
-        if (!sig.expired_logged) {
+        if (!sig.expired_logged && !ownsActiveOp) {
           await backend.entities.SignalEvent.update(sig.id, { expired_logged: true });
           await backend.entities.SystemLog.create({
             level: 'info',
@@ -3299,7 +3313,6 @@ export async function persistScanResults(scanResult) {
       if (sig.is_dismissed) continue;
 
       if (hasActiveOp) {
-        const ownsActiveOp = activeOp?.id === `trade_${sig.dedup_key}`;
         if (!ownsActiveOp) entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: RF_1H_UNCOND_CASCADE, reason: 'active_op_exists' });
         continue;
       }
@@ -3375,9 +3388,14 @@ export async function persistScanResults(scanResult) {
     }, '-created_date', 10);
 
     for (const sig of recentSmcSignals) {
+      // Item 174 addendum — mesmo raciocínio do retry RF acima: computado
+      // antes do corte de idade, para nunca marcar `expired_logged` no
+      // sinal que já é dono da operação ativa.
+      const ownsActiveOp = (pineConfig.hierarchicalCascadesEnabled ? activeOp1h5m : activeOp)?.id === `trade_smc_${sig.dedup_key}`;
+
       if (sig.created_date < oneHourAgo4x) {
         // Mesmo mecanismo do retry RF acima — known-risks item 45.4/47.2.
-        if (!sig.expired_logged) {
+        if (!sig.expired_logged && !ownsActiveOp) {
           await backend.entities.SignalEvent.update(sig.id, { expired_logged: true });
           await backend.entities.SystemLog.create({
             level: 'info',
@@ -3397,8 +3415,7 @@ export async function persistScanResults(scanResult) {
       if (pineConfig.hierarchicalCascadesEnabled ? hasActiveOp1h5m : hasActiveOp) {
         // Codex review (PR #102) — same reasoning as the RF retry loop above:
         // don't count the signal that OWNS the currently active op as a
-        // false `active_op_exists` rejection.
-        const ownsActiveOp = (pineConfig.hierarchicalCascadesEnabled ? activeOp1h5m : activeOp)?.id === `trade_smc_${sig.dedup_key}`;
+        // false `active_op_exists` rejection. `ownsActiveOp` computed above.
         if (!ownsActiveOp) entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade: '1h_5m', reason: 'active_op_exists' });
         continue;
       }

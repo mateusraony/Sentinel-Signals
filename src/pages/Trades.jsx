@@ -470,7 +470,13 @@ export default function Trades() {
   const active  = operations.filter(o => ACTIVE_STATUSES.includes(o.status));
   const history = operations.filter(isClosedOp);
 
-  const activeKey = new Set(active.map(o => `${o.symbol}_${o.timeframe}`));
+  // TradeOperation.timeframe é o timeframe de EXECUÇÃO ('15m'/'5m' — onde a
+  // entrada foi confirmada), nunca o timeframe do SinalEvent que a originou
+  // ('4h'/'1h' — signal_timeframe). Comparar contra o `timeframe` errado
+  // fazia essa chave nunca bater para nenhuma operação da cascata nativa —
+  // o aviso "em análise" do sinal que abriu a operação nunca era escondido,
+  // mesmo com a operação ativa (docs/known-risks.md item 174 addendum).
+  const activeKey = new Set(active.map(o => `${o.symbol}_${o.signal_timeframe ?? o.timeframe}`));
   const monitoringMap = new Map();
   recentSignals
     // is_dismissed ja e respeitado pelo scanner e pela pagina Alerts; so esta
