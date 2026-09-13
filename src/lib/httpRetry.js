@@ -33,19 +33,55 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Métodos de leitura de corpo que precisam continuar cobertos pelo mesmo
+// timer — sem isto, `res.json()`/`.text()` chamados pelo CALLER depois que
+// `fetchComTimeout` já retornou (todo consumidor real faz isso, ex.:
+// scripts/backfillMarketDataProvider.js) ficam fora do escopo do
+// AbortController e podem travar para sempre numa conexão cujo cabeçalho
+// chegou mas o corpo nunca fecha (docs/known-risks.md item 176 addendum 2,
+// achado do Codex review no PR #353).
+const BODY_READ_METHODS = ['json', 'text', 'arrayBuffer', 'blob', 'formData'];
+
 /** `fetch()` com um limite de tempo PRÓPRIO, via AbortController — sem isto,
  * uma conexão pendurada nunca aciona nem sucesso nem os catches de retry
  * abaixo. Um abort vira `AbortError`/`DOMException`, tratado pelo mesmo
  * caminho de "falha de rede pura" que um `TypeError` já usava.
+ *
+ * O timer NÃO é limpo assim que os cabeçalhos chegam — só quando a leitura
+ * do corpo (se houver) termina. O `AbortSignal` passado a `fetch()` também
+ * aborta uma leitura de corpo em andamento no mesmo request (comportamento
+ * padrão do Fetch/undici), então o abort continua funcionando mesmo depois
+ * que esta função já retornou a Response para o chamador.
  */
 async function fetchComTimeout(url, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let res;
   try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
+    res = await fetch(url, { signal: controller.signal });
+  } catch (err) {
     clearTimeout(timer);
+    throw err;
   }
+  return wrapResponseBodyTimeout(res, timer);
+}
+
+function wrapResponseBodyTimeout(res, timer) {
+  return new Proxy(res, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (typeof value !== 'function' || typeof prop !== 'string' || !BODY_READ_METHODS.includes(prop)) {
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+      return async (...args) => {
+        try {
+          return await value.apply(target, args);
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+    },
+  });
 }
 
 // A janela de rate limit da Binance é por MINUTO — honrar o `Retry-After`

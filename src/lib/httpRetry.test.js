@@ -145,6 +145,37 @@ describe('fetchWithRetry', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   }, 10_000);
 
+  // docs/known-risks.md item 176 addendum 2 — achado do Codex review no
+  // PR #353: `fetchComTimeout` limpava o timer assim que o `fetch()`
+  // resolvia (cabeçalhos chegaram), mas todo chamador real
+  // (`scripts/backfillMarketDataProvider.js:73`, por exemplo) ainda faz
+  // `await response.json()`/`.text()` DEPOIS disso — fora do escopo do
+  // timeout. Uma conexão que entrega os cabeçalhos mas trava no CORPO
+  // (chunked incompleto, conexão caída no meio) não aciona nada aqui:
+  // ficava pendurada até o timeout EXTERNO do job inteiro, exatamente a
+  // mesma classe de sintoma que este arquivo já corrigiu para o caso
+  // "nunca responde nada".
+  it('a hung response BODY (cabeçalhos chegam, .json() nunca resolve) é abortada pelo mesmo timeout por tentativa — não trava para sempre', async () => {
+    const hungBodyResponse = (signal) => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: () => new Promise((_, reject) => {
+        signal.addEventListener('abort', () => {
+          reject(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }));
+        });
+      }),
+    });
+    const fetchMock = vi.fn()
+      .mockImplementationOnce((url, opts) => Promise.resolve(hungBodyResponse(opts.signal)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const resPromise = fetchWithRetry('https://example.test', { attemptTimeoutMs: 5000 });
+    const jsonAssertion = resPromise.then((res) => expect(res.json()).rejects.toThrow(/aborted/i));
+    await vi.advanceTimersByTimeAsync(5000); // dispara o abort — cobre o corpo, não só os cabeçalhos
+    await jsonAssertion;
+  }, 10_000);
+
   it('honors Retry-After as an HTTP date', async () => {
     const retryAt = new Date(Date.now() + 1500).toUTCString();
     const fetchMock = vi.fn()

@@ -126,7 +126,34 @@ async function checkOneAsset(asset, pineConfig) {
   // REPLAY (escopo v1, ver cabeçalho) — não altera a preferência salva do
   // usuário para o scan ao vivo normal.
   const replayAsset = { ...asset, smc_enabled: false };
-  const report = await runBacktest({ assets: [replayAsset], backend, fromMs, toMs, pineConfig });
+  // docs/known-risks.md item 176 addendum — LDOUSDT continua travando os
+  // 5min inteiros mesmo depois das 3 correções da rodada anterior
+  // (observabilidade do erro engolido, dedup do Telegram, timeout por
+  // tentativa no fetch). Hipótese principal agora: não é um fetch travado —
+  // é o PRÓPRIO REPLAY (até ~5760 ticks de 15m contra o Postgres real, item
+  // 137 addendum já tinha achado o mesmo padrão antes do cutover, resolvido
+  // só PARCIALMENTE por scripts/adminEntitiesBackfillCache.js). `onStep`
+  // (já suportado por runBacktest, nunca usado aqui) loga o progresso real a
+  // cada ~30s de relógio de VERDADE — `performance.now()`, não `Date.now()`:
+  // `backtestEngine.test.js` ("onStep roda com o relógio simulado ativo")
+  // já prova que `Date.now()` dentro de `onStep` é o CURSOR simulado do
+  // replay, não a hora real; `performance.now()` é o que continua real ali.
+  // A próxima vez que travar, o log vai mostrar até que ponto do histórico
+  // o replay chegou nos 5 minutos, em vez de só "travou, sem mais nada".
+  const replayStartedAtMs = performance.now();
+  let lastProgressLogAtMs = replayStartedAtMs;
+  const PROGRESS_LOG_INTERVAL_MS = 30_000;
+  const report = await runBacktest({
+    assets: [replayAsset], backend, fromMs, toMs, pineConfig,
+    onStep: (t) => {
+      const nowMs = performance.now();
+      if (nowMs - lastProgressLogAtMs < PROGRESS_LOG_INTERVAL_MS) return;
+      lastProgressLogAtMs = nowMs;
+      const elapsedS = (nowMs - replayStartedAtMs) / 1000;
+      const pct = toMs > fromMs ? (100 * (t - fromMs)) / (toMs - fromMs) : 100;
+      console.log(`[backfill] ${asset.symbol}: replay em ${new Date(t).toISOString()} (${pct.toFixed(1)}% da janela) — ${elapsedS.toFixed(0)}s reais decorridos`);
+    },
+  });
 
   const opsAfter = await backend.entities.TradeOperation.filter({ asset_id: asset.id });
   const tags = buildBackfillTags(opsBefore, opsAfter);

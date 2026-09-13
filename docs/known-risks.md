@@ -22518,3 +22518,111 @@ não há como confirmar ao vivo que o próximo ciclo do LDOUSDT completa
 normalmente. A correção 1 (log explícito) é o que vai permitir confirmar ou
 refutar isso no PRÓXIMO travamento, se houver — algo que o item 174 sozinho
 não tinha conseguido entregar.
+
+### Addendum (2026-09-13, mesmo dia) — o achado 4 estava errado; travamento continua idêntico
+
+Usuário reportou que o travamento persiste ("ainda está travando"). Os 2
+runs seguintes do `backfill.yml` (04:55 e 10:21 UTC) já rodavam as 3
+correções acima — e o LDOUSDT trava exatamente do mesmo jeito, com a MESMA
+duração (~5min32s). O achado 4 (fetch pendurado sem timeout) não era a
+causa real: com o timeout de 20s/tentativa em vigor, um hang de rede teria
+que falhar bem mais rápido do que 5 minutos — a duração idêntica prova que
+o gargalo não está numa única chamada de rede travada.
+
+**Novo dado, encontrado no log do run de 10:21 UTC**: logo após o timeout
+de `checkOneAsset` disparar, uma tempestade de erros
+`@firebase/database: ... invalid_grant: Invalid JWT` aparece — com
+timestamps de **2026-08-04/05** (não a data real, 2026-09-13). Isso é
+efeito colateral direto da correção 2 desta mesma rodada (reinicializar o
+Firebase Admin): `runBacktest` (`backtestEngine.js`) instala um
+**relógio simulado global** (`installSimClock`, substitui `Date` inteiro
+para o replay envelhecer cooldowns/Time Stop corretamente) e só o restaura
+num `finally` ao FINAL do laço inteiro. `withTimeout` (`scanTimeout.mjs`)
+não cancela a promise perdedora — ela continua rodando em segundo plano.
+Ou seja: quando o timeout "vence a corrida" e `notifyStepTimeout` roda
+(agora que sabe inicializar o Firebase de verdade), o `runBacktest` de
+fundo AINDA está rodando com `Date` simulado — o RTDB usa `Date.now()`
+internamente para assinar o JWT do OAuth2, gerando um token com
+timestamp errado (do meio do replay histórico, não agora), que o Google
+rejeita. **Efeito só cosmético** (mais ~30s de log e 2 timeouts de 15s no
+próprio marcador de dedup, que já tem fail-open) — não é a causa do
+travamento de 5 minutos, que já estava lá ANTES dessa cadeia de eventos
+começar.
+
+**Hipótese revisada, mais bem fundamentada**: o próprio comentário do
+`ci-deploy.md` sobre o item 137 já documentava exatamente esta classe de
+problema ANTES do cutover — "um replay de 60 dias/15min... travou 11+min",
+corrigido só PARCIALMENTE por `scripts/adminEntitiesBackfillCache.js`
+(cache em memória só para `AssetState`/`MonitoredAsset`). O log do run
+PRÉ-cutover (00:03 UTC, 2026-09-13) media isso de verdade e mostrava
+**3474 leituras + 1250 escritas Firestore reais** só para o LDOUSDT numa
+única checagem — volume compatível com esgotar 5 minutos por acúmulo de
+latência de rede (Render↔Neon), não por uma chamada travada. Pós-cutover,
+`getAndResetOpCounts()` virou um stub que sempre devolve zero
+(`db/pgEntitiesCore.mjs`) — a MESMA visibilidade que resolveu o item 137
+da primeira vez está cega agora.
+
+**Corrigido nesta rodada** (puro logging, sem tocar `scanner.js`/
+`backtestEngine.js`/`db/pgEntitiesCore.mjs`): `checkOneAsset`
+(`run-backfill-check.mjs`) passa a usar o parâmetro `onStep` que
+`runBacktest` já suporta (nunca usado aqui) para logar, a cada ~30s de
+relógio REAL (`performance.now()` — `backtestEngine.test.js` já prova que
+`Date.now()` dentro de `onStep` é o cursor simulado, não a hora real), até
+onde o replay chegou na janela histórica e quantos segundos reais se
+passaram. Na próxima vez que o LDOUSDT travar, o log vai mostrar se o
+replay avança devagar e constante (confirma a hipótese de volume de I/O) ou
+trava sempre no mesmo ponto específico do histórico (apontaria para outra
+causa, ex.: um candle/sinal específico gerando um loop caro).
+
+**Ainda não confirmado, de novo**: sem acesso a Binance/Postgres de
+produção desta sessão, só o PRÓXIMO ciclo real vai mostrar o progresso.
+Reportado ao usuário com essa honestidade — o problema não está resolvido,
+só mais instrumentado.
+
+### Addendum 2 (2026-09-13, mesmo dia) — Codex review do PR #353 achou uma
+### 5ª causa real possível: timeout por tentativa não cobria o CORPO da resposta
+
+Review automática (Codex, PR #353) sinalizou dois achados sobre as
+correções da rodada anterior deste mesmo item:
+
+**Corrigido nesta rodada — `fetchComTimeout` (`src/lib/httpRetry.js`) só
+protegia os CABEÇALHOS, não o corpo.** O timeout por tentativa (achado 4
+do corpo principal deste item, PR #352) usa `AbortController`, mas o timer
+era limpo no `finally` assim que `fetch()` resolvia — ou seja, assim que os
+CABEÇALHOS chegavam. Todo chamador real então faz `await response.json()`/
+`.text()` DEPOIS disso, já fora do escopo do timer —
+`scripts/backfillMarketDataProvider.js:73` é exatamente esse caso. Uma
+conexão que entrega cabeçalhos mas trava no CORPO (chunked incompleto,
+conexão caída no meio da transferência) reproduz a MESMA classe de sintoma
+que o achado 4 original resolveu só pela metade: nenhum retry aciona,
+fica pendurada até o timeout EXTERNO do job inteiro (5min em
+`run-backfill-check.mjs`) — **candidata real a ser a causa do próprio
+travamento do LDOUSDT**, mais direta que a hipótese de volume de I/O do
+achado 4/addendum 1 acima (não descarta a outra, as duas podem coexistir).
+Corrigido envolvendo a `Response` num `Proxy` (`wrapResponseBodyTimeout`)
+que só limpa o timer quando `json()`/`text()`/`arrayBuffer()`/`blob()`/
+`formData()` terminam — o MESMO `AbortSignal` passado a `fetch()` também
+aborta uma leitura de corpo em andamento no mesmo request (comportamento
+padrão do Fetch/undici), então o abort continua funcionando mesmo depois
+que a função já retornou a `Response` pro chamador. Reproduzido por teste
+antes da correção (`src/lib/httpRetry.test.js`, "hung response BODY... —
+não trava para sempre": travava de verdade, confirmado com timeout de
+10s), passa depois.
+
+**Documentado, não corrigido nesta rodada — RTDB acessado enquanto o
+relógio simulado do replay ainda pode estar ativo.** Mesmo achado do
+addendum 1 acima (o vazamento de `Date` simulado pro JWT do RTDB),
+sinalizado de novo pelo Codex no mesmo commit. Avaliado de novo: a
+correção correta (tornar o `runBacktest` de fundo cancelável em
+`backtestEngine.js`) segue sendo uma mudança maior, e uma correção rápida
+óbvia — forçar `restoreClock()` assim que o timeout vence a corrida, antes
+de notificar — é **insegura**: o `runBacktest` abandonado continua rodando
+IRIA usar `Date.now()` real no meio do replay para calcular idade de Time
+Stop/cooldown contra timestamps históricos, potencialmente fechando
+(`CLOSED`/`INVALIDATED`) ou pulando operações reais por engano — trocaria
+um bug cosmético (log ruidoso, marcador de dedup falha e cai pro
+Firestore) por um bug de CORRETUDE no motor de trading. Mantido como está;
+resposta registrada na própria thread do PR.
+
+Suíte completa (1747 testes, +1 novo) + lint + build + build:scan +
+build:backfill verdes depois desta correção.
