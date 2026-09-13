@@ -22626,3 +22626,68 @@ resposta registrada na própria thread do PR.
 
 Suíte completa (1747 testes, +1 novo) + lint + build + build:scan +
 build:backfill verdes depois desta correção.
+
+### Addendum 3 (2026-09-13, mesmo dia) — causa raiz CONFIRMADA com dado real:
+### não é um travamento, é um replay estruturalmente mais lento que o orçamento
+
+Usuário reportou de novo ("Acabei de receber que travou de novo o mesmo
+par") logo depois do PR #353 mesclar. Ele mesmo disparou o workflow
+manualmente (aba Actions → "Run workflow") pra não esperar o agendamento
+interno do GitHub, que estava atrasado (~3h40 sem rodar sozinho — mais um
+ponto de evidência real a favor do padrão do item 18). Dois runs reais
+seguidos com o log novo do `onStep`:
+
+- **Run #83** (14:28 UTC, agendado): 9,1% da janela em 30s → 59,9% em
+  271s → timeout aos 300s ainda em 63,2%.
+- **Run #84** (14:43 UTC, `workflow_dispatch` manual): 2,8% em 30s → 16,7%
+  em 272s → timeout aos 300s ainda em 18,0% — quase **3,5× mais lento**
+  que o run anterior, 15 minutos antes, mesmo ativo, mesmo código.
+
+**O achado 4/addendum 1 estava certo — agora com prova, não só
+inferência.** Os dois runs avançam de forma CONTÍNUA (nunca zeram, nunca
+ficam presos num timestamp fixo) — não é uma conexão pendurada, não é um
+loop infinito num candle específico. É puro acúmulo de latência real
+(Render↔Neon) por tick, e o total é estruturalmente maior que os 5 minutos
+de orçamento: extrapolando a taxa MELHOR já observada (run #83, ~7%/30s
+nos primeiros 150s), a janela inteira levaria **~7-8 minutos**; na taxa do
+run #84, levaria **~28 minutos** — os dois acima do timeout de 5min, e o
+pior caso passaria até do `timeout-minutes: 20` do workflow inteiro.
+
+**Achado novo: a variação de velocidade entre runs consecutivos (3,5×
+em 15 minutos, mesmo ativo) aponta para latência de rede/Postgres
+variável**, não custo computacional fixo por tick — coerente com Neon
+serverless (scale-to-zero após 5min ocioso, listado no `CLAUDE.md`): um
+compute que acabou de "acordar" atende mais devagar que um já aquecido.
+Não confirmado com certeza (não dá pra instrumentar round-trip individual
+sem tocar `db/pgEntitiesCore.mjs`), mas é a explicação mais simples para o
+padrão observado.
+
+**Reconfirmado en passant**: o efeito colateral do relógio simulado
+vazando pro RTDB (addendum 2) reproduziu de novo, nos dois runs, exatamente
+como documentado — confirma que a instrumentação/diagnóstico estão
+corretos, e que aquele efeito é mesmo só cosmético (a marcação de
+`backfill_check_status:'error'` aconteceu normalmente nos dois runs, sem o
+log de falha que o PR #352 adicionou).
+
+**Isto não é mais um bug a caçar — é uma restrição de orçamento a
+resolver.** O replay de 60 dias/15min do LDOUSDT contra o Postgres real de
+produção simplesmente não cabe em 5 minutos, com folga insuficiente até
+para o timeout de 20min do workflow no pior caso. Três direções possíveis,
+nenhuma implementada ainda (decisão de produto, não só técnica — janela
+menor muda o que o backfill cobre; timeout maior consome mais minutos de
+GitHub Actions; estender o cache do item 137 exige tocar mais fundo no
+motor de scan):
+
+1. **Aumentar `BACKFILL_STEP_TIMEOUT_MS`/`timeout-minutes`** — mais
+   simples e menor risco (não toca `scanner.js`/motor), mas o pior caso
+   observado (run #84 extrapolado ~28min) pode não caber nem num teto
+   generoso, e cada tentativa mais longa consome mais minutos de CI.
+2. **Reduzir `BACKFILL_LOOKBACK_DAYS`** (60 dias hoje) — corta o trabalho
+   proporcionalmente, mas muda o que "checagem retroativa" cobre; motivo
+   original do valor (Time Stop máximo de produção) precisa reavaliação.
+3. **Estender `adminEntitiesBackfillCache.js`** (hoje só `AssetState`/
+   `MonitoredAsset`, item 137 addendum) para cachear mais coleções tocadas
+   durante o replay (`SignalEvent`, possivelmente `TradeOperation` de
+   leitura) — ataca a causa em vez do sintoma, mas é a mudança mais
+   arriscada (toca mais fundo o caminho que `scanner.js` usa, exige
+   `sentinel-trading-engine-review`).
