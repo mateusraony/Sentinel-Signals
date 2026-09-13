@@ -22715,3 +22715,43 @@ motor de scan):
    leitura) — ataca a causa em vez do sintoma, mas é a mudança mais
    arriscada (toca mais fundo o caminho que `scanner.js` usa, exige
    `sentinel-trading-engine-review`).
+
+### Addendum 4 (2026-09-13, mesmo dia) — dado real da opção 0: o processo
+### está 96-98% do tempo ESPERANDO, não computando
+
+Usuário pediu explicitamente para seguir pela opção 0 ("medir antes de
+escolher"). Implementada da forma mais segura possível (PR #355):
+`process.cpuUsage([previousValue])` — API nativa do Node, mede CPU
+consumida (`user+system`) por janela, sem tocar `db/pgEntitiesCore.mjs`
+nem `scanner.js`. Binance deliberadamente não instrumentado à parte:
+`fetchHistoricalCandles` (`scripts/backfillMarketDataProvider.js`) cacheia
+por symbol+timeframe para a janela INTEIRA do replay — o fetch é pago uma
+vez por ativo, não por tick, então não pode explicar um custo que se
+repete tick a tick. Instrumentar Postgres foi avaliado e descartado:
+monkey-patch em `pool.query()`/`pool.connect()` (pg-pool) arrisca
+contagem dupla — `pool.query()` delega internamente para `this.connect()`
+(confirmado lendo `node_modules/pg-pool/index.js:449`) — superfície de
+risco desnecessária no adaptador que o CAS de trading usa.
+
+**Run #85** (18:14 UTC, primeiro run real com a instrumentação): CPU
+consistentemente **2-4% da janela** em TODAS as 9 amostras de ~30s do
+replay, do início (4%, 30s) ao timeout (3%, 301s) — nunca passou de 4%.
+Timeout no mesmo padrão de sempre: parou em 51,7% da janela aos 300s,
+mesma duração de ~5min31s dos runs anteriores.
+
+**Conclusão, com dado real, não mais hipótese**: o processo passa
+96-98% do tempo de parede ESPERANDO, não computando. Isso **descarta**
+"custo computacional" (recálculo de indicador, complexidade do replay)
+como causa — a CPU está quase ociosa o tempo todo. O gargalo é I/O
+externo: Postgres (mais provável, dado o padrão idêntico já visto
+pré-cutover contra o Firestore — mesma classe de problema, backend
+diferente) ou, menos provável dado o cache por-ativo, Binance. Isso
+também explica a variação de até 3,5× entre runs consecutivos (item 176
+addendum 3) — latência de rede/round-trip variável é exatamente o tipo de
+coisa que causaria essa oscilação; CPU/computação não explicaria.
+
+Isso estreita a decisão real para as opções 2 e 3 (reduzir a janela ou
+estender o cache) — a opção 1 (só aumentar o timeout) não resolveria a
+causa, apenas adiaria a falha, e o processo ficaria minutos esperando
+I/O à toa. Nenhuma correção implementada ainda — decisão pendente com o
+usuário.
