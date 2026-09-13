@@ -134,6 +134,20 @@ describe('rejectionCopy', () => {
     expect(copy.detail).toMatch(/Nada a fazer\.$/);
   });
 
+  // docs/known-risks.md item 175 — achado a partir de print real do usuário:
+  // um sinal já EXPIRADO sem `last_rejection_reason` (ex.: rejeitado na 1ª
+  // passada, nunca reavaliado pelo laço de retry que grava o campo) mostrava
+  // a MESMA frase de sinal "recém-chegado" que "refaz a conta a cada 5
+  // minutos" — direta contradição com o badge "Já passou" ao lado, sem
+  // nenhum motivo real explicado.
+  it('sem motivo registrado E sinal EXPIRADO, não finge que ainda está sendo checado', () => {
+    const copy = rejectionCopy({ signal_type: 'BUY' }, SIGNAL_PHASE.EXPIRED);
+    expect(copy.chip).not.toBe('Checando agora');
+    expect(copy.detail).not.toMatch(/rec[ée]m-chegado|a cada 5 minutos/i);
+    expect(copy.detail).toMatch(/Nada a fazer\.$/);
+    expect(copy.kind).toBe(REASON_KIND.APP);
+  });
+
   it('chave desconhecida não vira tela vazia nem código cru sem contexto', () => {
     const copy = rejectionCopy({ last_rejection_reason: 'motivo_inventado', signal_type: 'BUY' });
     expect(copy.detail).toContain('motivo_inventado');

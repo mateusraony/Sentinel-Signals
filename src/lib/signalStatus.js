@@ -238,14 +238,34 @@ export const REJECTION_COPY = Object.freeze({
 const NOTHING_TO_DO = 'Nada a fazer.';
 
 /**
+ * Sem `phase` (ou fora de EXPIRED), a ausência de motivo é lida como "acabou
+ * de chegar" — verdadeiro para um sinal jovem. Um sinal já EXPIRADO sem
+ * motivo salvo é outra coisa: ele NÃO está mais sendo reavaliado a cada 5
+ * minutos, então repetir essa frase (achado a partir de print real do
+ * usuário, docs/known-risks.md item 175) é uma contradição direta com o
+ * badge "Já passou" ao lado — o texto dizia "recém-chegado" e "refaz a conta"
+ * num aviso com horas de idade.
+ */
+const NO_REASON_EXPIRED = Object.freeze({
+  kind: REASON_KIND.APP,
+  chip: 'Sem detalhe salvo',
+  detail: `O app não guardou o motivo técnico exato deste aviso — só sabe que passaram as 4 horas sem confirmar entrada. ${NOTHING_TO_DO}`,
+});
+
+/**
  * Resolve o motivo em chip + frase, já com o fecho "nada a fazer".
  * Chave desconhecida nunca vira tela em branco nem código cru sem contexto.
+ * `phase` (opcional, de `classifySignal`) só muda a resposta quando NÃO há
+ * `last_rejection_reason` — ver `NO_REASON_EXPIRED` acima.
  */
-export function rejectionCopy(signal) {
+export function rejectionCopy(signal, phase) {
   const key = signal?.last_rejection_reason;
   const isBuy = signal?.signal_type !== 'SELL';
 
   if (!key) {
+    if (phase === SIGNAL_PHASE.EXPIRED) {
+      return { ...NO_REASON_EXPIRED, icon: reasonIcon(NO_REASON_EXPIRED.kind) };
+    }
     return {
       kind: REASON_KIND.WAITING,
       icon: reasonIcon(REASON_KIND.WAITING),
