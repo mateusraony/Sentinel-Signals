@@ -143,7 +143,7 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
 
   const { phase, msLeft, expiresAt } = classifySignal(signal);
   const copy = phaseCopy(phase);
-  const reason = rejectionCopy(signal);
+  const reason = rejectionCopy(signal, phase);
   const isBuy = signal.signal_type === 'BUY';
   const timeLeft = formatTimeLeft(msLeft);
 

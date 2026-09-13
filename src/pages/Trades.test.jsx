@@ -95,4 +95,19 @@ describe('Trades — "Avisos em análise" nunca contradiz "Operações Ativas"',
     await screen.findByText('PENDLE/USDT');
     await screen.findByText(/nenhuma operação foi aberta/i);
   });
+
+  // docs/known-risks.md item 175 — SIGNAL_4H não tem last_rejection_reason
+  // (nunca foi reavaliado pelo laço de retry que grava o campo). Antes da
+  // correção, o card "Já passou" mostrava "Aviso recém-chegado... refaz a
+  // conta a cada 5 minutos" — texto de sinal FRESCO num aviso com horas de
+  // idade, achado a partir do print real do usuário.
+  it('sinal expirado sem motivo salvo não finge que ainda está sendo checado a cada 5 minutos', async () => {
+    mockBackend({ operations: [], signals: [SIGNAL_4H] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    await screen.findByText('PENDLE/USDT');
+    expect(screen.queryByText(/rec[ée]m-chegado/i)).toBeNull();
+    expect(screen.queryByText(/a cada 5 minutos/i)).toBeNull();
+  });
 });

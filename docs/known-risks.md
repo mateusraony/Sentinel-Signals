@@ -22357,3 +22357,54 @@ usuário): revisão de clareza/copy das seções "Avisos em análise" e
 "Operações Ativas" com pesquisa de comunidade — a correção acima resolve a
 CONTRADIÇÃO de dado, não a legibilidade geral que o usuário também
 apontou como confusa.
+
+### Addendum — copy incoerente no card "Já passou" sem motivo salvo (2026-09-13)
+
+Pesquisa de comunidade feita antes de planejar (Reddit bloqueado nesta sessão
+de novo, mesma restrição já registrada no projeto — usadas fontes de UX de
+dashboards/notificações e literatura de order-management como substituto):
+[Smashing Magazine — dashboards em tempo real](https://www.smashingmagazine.com/2025/09/ux-strategies-real-time-dashboards/),
+[Smashing Magazine — notificações](https://www.smashingmagazine.com/2025/07/design-guidelines-better-notifications-ux/)
+(a copy deve dizer o que aconteceu + a próxima ação em <15 palavras, sem
+exigir interpretação), [Pencil & Paper](https://www.pencilandpaper.io/articles/ux-pattern-analysis-data-dashboards)
+(indicador de status no topo, detalhe abaixo) e [Order Management System —
+DEV Community](https://dev.to/rhuturaj_takle/system-design-order-management-system-5g8m)
+(uma fonte única de verdade por entidade). O que essa pesquisa mudou na
+decisão: confirmou que "dizer o que aconteceu, sem contradizer o badge ao
+lado" é o padrão consolidado, não só gosto — e apontou um segundo bug real
+no mesmo card do achado acima, achado ao reler `signalStatus.js` com esse
+critério.
+
+**Achado**: `rejectionCopy(signal)` (`src/lib/signalStatus.js`), quando
+`SignalEvent.last_rejection_reason` está ausente, sempre devolvia "Checando
+agora" / "Aviso recém-chegado. O app está vendo se vale abrir uma operação e
+refaz a conta a cada 5 minutos." — **mesmo num sinal já EXPIRADO** (badge "Já
+passou" ao lado). `last_rejection_reason` só é gravado pelos laços de RETRY
+(`docs/known-risks.md` item 45.3/49) — um sinal rejeitado já na 1ª passada e
+nunca reavaliado depois (ex.: `pineConfig.rf1hExclusiveEnabled`, ou qualquer
+`continue` cedo nos laços de retry sem `recordRejection`) expira 4h depois
+SEM nunca ganhar um motivo — e o card mentia duas vezes ao mesmo tempo:
+"recém-chegado" (tinha horas) e "refaz a conta a cada 5 minutos" (não estava
+mais sendo avaliado).
+
+**Corrigido**: `rejectionCopy(signal, phase)` ganhou um 2º parâmetro
+opcional; sem motivo E com `phase === SIGNAL_PHASE.EXPIRED`, devolve um
+fallback honesto ("Sem detalhe salvo" / "O app não guardou o motivo técnico
+exato deste aviso — só sabe que passaram as 4 horas sem confirmar entrada.")
+em vez do texto de sinal fresco. Comportamento para `WAITING`/sem `phase`
+(chamada antiga, compatível) não muda — nesse caso "recém-chegado" continua
+verdadeiro. `Trades.jsx`'s único call site passou a repassar a `phase` que já
+calcula.
+
+**Reproduzido antes, confirmado depois**: `signalStatus.test.js` ("sem
+motivo registrado E sinal EXPIRADO, não finge que ainda está sendo checado")
+e `Trades.test.jsx` ("sinal expirado sem motivo salvo não finge que ainda
+está sendo checado a cada 5 minutos") — os dois falhavam contra o código
+anterior (confirmado por reintrodução via `git stash`), passam depois. Suíte
+completa (1742 testes) + lint + build verdes.
+
+**Ainda não feito**: revisão equivalente de "Operações Ativas"
+(`TradeCard.jsx`) — já passou por um redesenho dedicado (item 154, estrutura
+"o que está acontecendo cabe num olhar, o porquê fica a um clique") e nenhuma
+evidência concreta (print, relato) apontou um texto incoerente lá como neste
+achado; sem esse tipo de evidência, mexer seria opinião, não correção.
