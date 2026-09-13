@@ -112,6 +112,39 @@ describe('fetchWithRetry', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  // docs/known-risks.md item 175 addendum — achado investigando um relato
+  // real do usuário (LDOUSDT preso no backfill): `fetch(url)` sozinho não
+  // tinha NENHUM limite de tempo por tentativa — uma conexão que trava sem
+  // nunca responder (nem erro, nem dado; diferente de um TypeError/status
+  // ruim, que os testes acima já cobrem) ficava pendurada pra sempre, sem
+  // acionar nenhum retry, até o timeout EXTERNO do job inteiro matar o
+  // processo — consumindo o orçamento inteiro numa tentativa só.
+  it('a hung connection (fetch que nunca resolve nem rejeita) não trava para sempre — timeout por tentativa aborta e retenta', async () => {
+    const fetchMock = vi.fn()
+      // 1ª tentativa: nunca resolve por conta própria — só reage ao abort
+      // do AbortSignal, exatamente como o fetch nativo reagiria a um
+      // timeout real (rejeita com AbortError).
+      .mockImplementationOnce((url, opts) => new Promise((_, reject) => {
+        // Opcional de propósito: sem timeout por tentativa (código antigo),
+        // fetch(url) é chamado SEM 2º argumento — opts?.signal fica
+        // undefined e esta promise nunca resolve nem rejeita, reproduzindo
+        // o hang real. Com o timeout, opts.signal existe e o abort chega.
+        opts?.signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }));
+        });
+      }))
+      .mockResolvedValueOnce(mockResponse({ ok: true, status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const promise = fetchWithRetry('https://example.test', { attemptTimeoutMs: 5000 });
+    await vi.advanceTimersByTimeAsync(5000); // dispara o abort da 1ª tentativa
+    await vi.advanceTimersByTimeAsync(10_000); // espera o backoff pós-erro
+    const res = await promise;
+
+    expect(res.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  }, 10_000);
+
   it('honors Retry-After as an HTTP date', async () => {
     const retryAt = new Date(Date.now() + 1500).toUTCString();
     const fetchMock = vi.fn()

@@ -206,10 +206,20 @@ async function main() {
       await withTimeout(checkOneAsset(asset, pineConfig), BACKFILL_STEP_TIMEOUT_MS, `checkOneAsset:${asset.symbol}`);
     } catch (err) {
       console.error(`[backfill] ${asset.symbol} FALHOU: ${err.message}`);
+      // docs/known-risks.md item 174 — este .catch() existe pra não derrubar
+      // o job por uma falha SECUNDÁRIA de log/notificação, não pra engolir a
+      // PRÓPRIA escrita que marca o ativo como 'error'. Antes deste log,
+      // um `update()` que falhasse aqui (ex.: rowCount 0 — item 174) deixava
+      // `backfill_check_status` preso em 'pending' pra sempre, sem nenhum
+      // rastro: o LDOUSDT ficou preso em produção por dias mesmo depois do
+      // `update()` genérico passar a lançar erro de verdade (item 174), só
+      // porque este catch continuava silencioso.
       await backend.entities.MonitoredAsset.update(asset.id, {
         backfill_check_status: 'error',
         backfill_check_error: String(err.message || err).slice(0, 500),
-      }).catch(() => {});
+      }).catch((updateErr) => {
+        console.error(`[backfill] ${asset.symbol}: FALHA AO MARCAR 'error' (ativo continuará 'pending' e será retentado) — ${updateErr.message}`);
+      });
       // docs/known-risks.md itens 147/162 — mesmo alerta que run-scan.mjs
       // dispara, agora classificando cota × etapa travada.
       await alertOnFailure(err?.message);
