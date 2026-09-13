@@ -22557,7 +22557,9 @@ corrigido só PARCIALMENTE por `scripts/adminEntitiesBackfillCache.js`
 PRÉ-cutover (00:03 UTC, 2026-09-13) media isso de verdade e mostrava
 **3474 leituras + 1250 escritas Firestore reais** só para o LDOUSDT numa
 única checagem — volume compatível com esgotar 5 minutos por acúmulo de
-latência de rede (Render↔Neon), não por uma chamada travada. Pós-cutover,
+latência de rede (era Firestore nessa medição, pré-cutover — o runner do
+GitHub Actions fala com o backend DIRETO, sem Render no meio; nenhum
+`backfill.yml` roda em Render), não por uma chamada travada. Pós-cutover,
 `getAndResetOpCounts()` virou um stub que sempre devolve zero
 (`db/pgEntitiesCore.mjs`) — a MESMA visibilidade que resolveu o item 137
 da primeira vez está cega agora.
@@ -22627,8 +22629,8 @@ resposta registrada na própria thread do PR.
 Suíte completa (1747 testes, +1 novo) + lint + build + build:scan +
 build:backfill verdes depois desta correção.
 
-### Addendum 3 (2026-09-13, mesmo dia) — causa raiz CONFIRMADA com dado real:
-### não é um travamento, é um replay estruturalmente mais lento que o orçamento
+### Addendum 3 (2026-09-13, mesmo dia) — throughput CONFIRMADO acima do
+### orçamento; causa exata do custo por tick AINDA NÃO isolada
 
 Usuário reportou de novo ("Acabei de receber que travou de novo o mesmo
 par") logo depois do PR #353 mesclar. Ele mesmo disparou o workflow
@@ -22643,24 +22645,40 @@ seguidos com o log novo do `onStep`:
   em 272s → timeout aos 300s ainda em 18,0% — quase **3,5× mais lento**
   que o run anterior, 15 minutos antes, mesmo ativo, mesmo código.
 
-**O achado 4/addendum 1 estava certo — agora com prova, não só
-inferência.** Os dois runs avançam de forma CONTÍNUA (nunca zeram, nunca
-ficam presos num timestamp fixo) — não é uma conexão pendurada, não é um
-loop infinito num candle específico. É puro acúmulo de latência real
-(Render↔Neon) por tick, e o total é estruturalmente maior que os 5 minutos
-de orçamento: extrapolando a taxa MELHOR já observada (run #83, ~7%/30s
-nos primeiros 150s), a janela inteira levaria **~7-8 minutos**; na taxa do
-run #84, levaria **~28 minutos** — os dois acima do timeout de 5min, e o
-pior caso passaria até do `timeout-minutes: 20` do workflow inteiro.
+**O que isto prova, com dado, não mais inferência**: os dois runs avançam
+de forma CONTÍNUA (nunca zeram, nunca ficam presos num timestamp fixo) —
+não é uma conexão pendurada, não é um loop infinito num candle específico.
+O total é estruturalmente maior que os 5 minutos de orçamento:
+extrapolando a taxa MELHOR já observada (run #83, ~7%/30s nos primeiros
+150s), a janela inteira levaria **~7-8 minutos**; na taxa do run #84,
+levaria **~28 minutos** — os dois acima do timeout de 5min, e o pior caso
+passaria até do `timeout-minutes: 20` do workflow inteiro.
 
-**Achado novo: a variação de velocidade entre runs consecutivos (3,5×
-em 15 minutos, mesmo ativo) aponta para latência de rede/Postgres
-variável**, não custo computacional fixo por tick — coerente com Neon
-serverless (scale-to-zero após 5min ocioso, listado no `CLAUDE.md`): um
-compute que acabou de "acordar" atende mais devagar que um já aquecido.
-Não confirmado com certeza (não dá pra instrumentar round-trip individual
-sem tocar `db/pgEntitiesCore.mjs`), mas é a explicação mais simples para o
-padrão observado.
+**Correção sobre uma alegação errada da 1ª versão deste addendum** (achado
+do Codex review no PR #354): eu tinha escrito "latência real (Render↔Neon)"
+como se fosse confirmada. Está **errado de fato** —
+`.github/workflows/backfill.yml` roda `npm run backfill-check` direto num
+runner `ubuntu-latest` do GitHub Actions (`runs-on: ubuntu-latest`), sem
+NENHUM Render no caminho; é runner↔Neon direto. Mais importante que o erro
+factual: `onStep` só dispara DEPOIS que todo o trabalho do tick termina —
+leitura/escrita no Postgres, busca de candle na Binance E o cálculo dos
+indicadores, tudo junto. A medição prova que o CUSTO TOTAL por tick estourou
+o orçamento; **não isola qual das três fontes domina**. "Latência de rede
+Postgres" é uma hipótese plausível (é a mesma classe de causa do item 137
+antes do cutover), não algo que este log confirme sozinho — chamar isso de
+"causa raiz confirmada" na 1ª versão foi conclusão apressada demais para o
+que o dado realmente mostra. Corrigido aqui.
+
+**Achado real, esse sim direto do dado**: a variação de velocidade entre
+runs consecutivos (3,5× em 15 minutos, mesmo ativo, mesmo código) mostra
+que o custo por tick NÃO é fixo/determinístico — varia run a run. Isso é
+compatível tanto com latência de rede/Postgres variável (ex. Neon
+scale-to-zero, listado no `CLAUDE.md`) quanto com variação no tempo de
+resposta da API da Binance, ou mesmo contenção de CPU no runner
+compartilhado do GitHub Actions — nenhuma das três descartada pelo dado
+disponível. Medir qual pesa mais exigiria instrumentação adicional (ex.:
+cronometrar separadamente I/O do Postgres vs. fetch da Binance vs. tempo de
+CPU dentro de cada tick) — não feito nesta rodada.
 
 **Reconfirmado en passant**: o efeito colateral do relógio simulado
 vazando pro RTDB (addendum 2) reproduziu de novo, nos dois runs, exatamente
@@ -22678,6 +22696,12 @@ menor muda o que o backfill cobre; timeout maior consome mais minutos de
 GitHub Actions; estender o cache do item 137 exige tocar mais fundo no
 motor de scan):
 
+0. **Medir antes de escolher** — instrumentar separadamente o tempo gasto
+   em I/O do Postgres, fetch da Binance e computação pura dentro de cada
+   tick (não só o total que `onStep` já mostra), pra saber qual das três
+   fontes realmente domina antes de investir numa correção que pode estar
+   mirando a fonte errada (ex.: cachear mais coleções no Postgres não
+   ajuda nada se o gargalo real for a Binance).
 1. **Aumentar `BACKFILL_STEP_TIMEOUT_MS`/`timeout-minutes`** — mais
    simples e menor risco (não toca `scanner.js`/motor), mas o pior caso
    observado (run #84 extrapolado ~28min) pode não caber nem num teto
