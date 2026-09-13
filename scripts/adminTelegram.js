@@ -13,6 +13,7 @@
 // firebase-admin, mesmo padrão de scripts/adminPineConfig.js.
 import { closesFullyAtTp1, getEntryReferenceTime } from '../src/lib/opExitRules.js';
 import { formatBackfillLag } from '../src/lib/backfillDetection.js';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { withTimeout } from './scanTimeout.mjs';
 import { describeStep, formatStepDuration } from './failureClassification.mjs';
@@ -31,6 +32,14 @@ import { backend } from './adminEntities.js';
 // aqui puxaria o initializeApp() dele para o carregamento deste módulo,
 // acoplando um módulo de notificação ao bootstrap inteiro do admin Firestore
 // — e quebrando qualquer consumidor sem credencial, testes inclusive.
+// `ensureFirebaseAppInitialized()` (perto de markerRef, abaixo) faz esse
+// mesmo initializeApp(), só que TARDIO — chamado só quando o marcador é
+// realmente usado, não no carregamento do módulo. Ficou necessário na Fase
+// 10: antes, `adminEntities.js` (versão Firestore) chamava initializeApp()
+// como efeito colateral de ser importado (linha 27 acima); virando o
+// re-export do Postgres, parou de chamar — e este marcador ficou órfão,
+// lançando "The default Firebase app does not exist" em toda chamada
+// (docs/known-risks.md item 175 addendum).
 import { getDatabase } from 'firebase-admin/database';
 
 const DEFAULT_FILTERS = {
@@ -409,11 +418,45 @@ const QUOTA_MARKER_DOC = 'firestoreQuota';
 const STEP_TIMEOUT_MARKER_DOC = 'stepTimeout';
 
 /**
+ * Item 175 addendum (2026-09-13) — desde a Fase 10 (`adminEntities.js` virou
+ * o re-export do Postgres), NADA no processo do cron/backfill chama
+ * `initializeApp()` do firebase-admin mais — antes, isso acontecia de graça
+ * como efeito colateral de importar a versão Firestore de `adminEntities.js`
+ * (que este módulo evita importar de propósito, ver o comentário acima de
+ * `getDatabase` mais abaixo). O marcador de dedup abaixo
+ * (`readAlertMarker`/`writeAlertMarker`) ficou órfão: toda chamada lançava
+ * "The default Firebase app does not exist" — quebrando o cooldown de 1h dos
+ * DOIS alertas que o usam (etapa travada e cota do Firestore esgotada),
+ * confirmado em produção (LDOUSDT preso, `docs/known-risks.md` item 174).
+ *
+ * Preguiçoso e tolerante a falha, mesmo espírito do resto deste bloco: só
+ * tenta inicializar quando o marcador é de fato usado, nunca no carregamento
+ * do módulo (o comentário de `getDatabase` explica por que isso importa —
+ * acoplaria qualquer consumidor sem credencial, testes inclusive, ao
+ * bootstrap inteiro do Firebase Admin).
+ */
+function ensureFirebaseAppInitialized() {
+  if (getApps().length) return;
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) return;
+  try {
+    initializeApp({
+      credential: cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)),
+      ...(process.env.FIREBASE_DATABASE_URL ? { databaseURL: process.env.FIREBASE_DATABASE_URL } : {}),
+    });
+  } catch {
+    // Ignorado de propósito — os try/catch dos chamadores (markerRef,
+    // readAlertMarker, writeAlertMarker) já tratam a ausência/falha do app
+    // com o mesmo fallback que tratavam a ausência de RTDB antes disto.
+  }
+}
+
+/**
  * Handle do marcador no RTDB, ou `null` se o RTDB não estiver configurado
  * neste ambiente — mesmo guard de scripts/adminEntities.js.
  */
 function markerRef(doc) {
   if (!process.env.FIREBASE_DATABASE_URL) return null;
+  ensureFirebaseAppInitialized();
   try {
     return getDatabase().ref(`${ALERT_MARKER_COLLECTION}/${doc}`);
   } catch {
@@ -436,6 +479,7 @@ async function readAlertMarker(doc) {
     return snap.exists() ? (snap.val() ?? {}) : {};
   }
   // Sem RTDB configurado: cai no Firestore, o comportamento anterior.
+  ensureFirebaseAppInitialized();
   const ref = getFirestore().collection(ALERT_MARKER_COLLECTION).doc(doc);
   const snap = await withTimeout(ref.get(), QUOTA_DEDUP_TIMEOUT_MS, `readAlertMarker(${doc}): firestore.get()`);
   return snap.exists ? (snap.data() ?? {}) : {};
@@ -446,6 +490,7 @@ async function writeAlertMarker(doc, marker) {
   if (rtdbRef) {
     return withTimeout(rtdbRef.set(marker), QUOTA_DEDUP_TIMEOUT_MS, `writeAlertMarker(${doc}): rtdb.set()`);
   }
+  ensureFirebaseAppInitialized();
   const ref = getFirestore().collection(ALERT_MARKER_COLLECTION).doc(doc);
   return withTimeout(ref.set(marker), QUOTA_DEDUP_TIMEOUT_MS, `writeAlertMarker(${doc}): firestore.set()`);
 }

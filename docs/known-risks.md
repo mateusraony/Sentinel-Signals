@@ -22408,3 +22408,113 @@ completa (1742 testes) + lint + build verdes.
 "o que está acontecendo cabe num olhar, o porquê fica a um clique") e nenhuma
 evidência concreta (print, relato) apontou um texto incoerente lá como neste
 achado; sem esse tipo de evidência, mexer seria opinião, não correção.
+
+## 176. LDOUSDT continua travando o backfill mesmo após o item 174 — causa real era outra, e uma 2ª regressão real do cutover foi achada no processo (2026-09-13)
+
+### Contexto
+
+Usuário reportou: "ainda deu etapa travou do LDOUSDT" — DEPOIS da correção
+do item 174 (`update()` lançar erro em `rowCount===0`) já estar mesclada e
+rodando em produção. Investigado a partir dos logs REAIS do `backfill.yml`
+(runs #79/#80, ambos já no commit da correção), não por suposição.
+
+### Achado 1 — o item 174 não estava errado, mas não era a causa do travamento em si
+
+Confirmado nos 2 runs pós-correção: LDOUSDT continua travando em
+`checkOneAsset` (5min, silêncio total) e `backfill_check_status` continua
+preso em `'pending'` (senão o próximo ciclo não pescaria o LDOUSDT de novo
+no `filter({backfill_check_status:'pending'})`). Ou seja: mesmo com
+`update()` agora lançando erro de verdade, `run-backfill-check.mjs:209-212`
+(`.catch(() => {})` depois de tentar marcar `'error'`) continua engolindo
+esse erro — exatamente o "próximo passo não feito" que o item 174 já tinha
+sinalizado, agora confirmado ainda necessário por dado real de produção (2
+ciclos depois da correção, zero rastro).
+
+### Achado 2 — regressão real e separada, introduzida pelo cutover Postgres (Fase 10, 12/09)
+
+`scripts/adminTelegram.js`'s marcador de dedup (`readAlertMarker`/
+`writeAlertMarker`, usado tanto por `notifyStepTimeout` quanto por
+`notifyFirestoreQuotaExhausted`/`notifyFirestoreQuotaRecovered`) sempre
+dependeu de `firebase-admin` já estar inicializado por EFEITO COLATERAL —
+antes da Fase 10, isso acontecia de graça porque `adminEntities.js` (versão
+Firestore) chamava `initializeApp()` ao ser importado. Desde a Fase 10,
+`adminEntities.js` é o re-export do Postgres e nunca mais chama
+`initializeApp()`. Confirmado direto no log de produção de hoje:
+
+```
+[adminTelegram] Falha ao checar dedup de etapa travada, alertando mesmo assim: The default Firebase app does not exist. Make sure you call initializeApp() before using any of the Firebase services.
+[adminTelegram] Falha ao gravar dedup de etapa travada (não crítico): The default Firebase app does not exist. ...
+```
+
+Isso quebra o dedup dos DOIS alertas — todo alerta dispara sem respeitar o
+cooldown de 1h desde o cutover (2026-09-12). O alerta em si continua sendo
+entregue (comportamento fail-open já existente, "alertando mesmo assim"),
+só o COOLDOWN é que sumiu.
+
+### Achado 3 (correção de rota, não achado novo) — a métrica "leitura/escrita Firestore" citada numa hipótese inicial não significa mais nada
+
+`getAndResetOpCounts()` (`db/pgEntitiesCore.mjs:590`) virou um stub fixo que
+sempre devolve `{reads:0, writes:0}` no backend Postgres — Postgres não tem
+cota diária pra medir. O log `[backfill] LDOUSDT: 0 leitura(s) + 0
+escrita(s)` não indica mais "nenhum I/O aconteceu" — é sempre zero,
+regardless do que realmente rodou. Uma hipótese inicial baseada nesse número
+foi descartada ao confirmar a causa real (achado 4).
+
+### Achado 4 (hipótese forte, coerente com toda a evidência disponível) — causa provável do travamento em si
+
+`src/lib/httpRetry.js`'s `fetchWithRetry()` fazia só `await fetch(url)` —
+**sem nenhum timeout por tentativa**. Uma conexão que trava sem nunca
+responder (diferente de um erro de rede ou status ruim, que já disparavam
+retry) nunca cai em nenhum dos `catch`/checagem de status — fica pendurada
+até o timeout EXTERNO de 5min (`checkOneAsset:${symbol}`) matar o processo.
+Bate exatamente com o padrão observado: 5 minutos de silêncio total, sem
+nenhum log de retry, sem nenhum erro — só o timeout no final. Antes do
+cutover isso ficava mascarado por uma tempestade real de erros de
+credencial JWT do RTDB (`invalid_grant: Invalid JWT`) rodando em paralelo
+nos logs; sem essa poluição (RTDB não é mais tocado neste caminho), o
+silêncio total aparece limpo. Não é específico do LDOUSDT no código — ele é
+só o único ativo preso em `'pending'` há dias, então é sempre ele quem é
+escolhido a cada ciclo.
+
+### Correções
+
+1. `scripts/run-backfill-check.mjs:209-212` — o `.catch(() => {})` que
+   engolia a falha de marcar `'error'` agora loga explicitamente
+   (`console.error`) antes de seguir. Não muda comportamento nenhum além de
+   observabilidade — a próxima vez que `update()` falhar aqui, o log do job
+   vai dizer por quê.
+2. `scripts/adminTelegram.js` — `ensureFirebaseAppInitialized()` (nova
+   função, preguiçosa: só roda quando o marcador é de fato usado, nunca no
+   carregamento do módulo) reinicializa o Firebase Admin com
+   `FIREBASE_SERVICE_ACCOUNT_JSON` antes de qualquer uso de
+   `getDatabase()`/`getFirestore()` neste marcador, guardado por
+   `getApps().length` (idempotente).
+3. `src/lib/httpRetry.js` — `fetchWithRetry` agora usa `AbortController` com
+   um timeout de 20s POR TENTATIVA (`attemptTimeoutMs`, novo parâmetro
+   opcional). Usado pelo scan AO VIVO também (`marketDataProvider.js`/
+   `adminMarketDataProvider.js`), não só pelo backfill — mesma proteção
+   passa a valer lá.
+
+### Verificação
+
+Reproduzido antes da correção, confirmado depois (disciplina do projeto):
+- `scripts/adminTelegram.test.js`: "chama initializeApp() antes de usar o
+  RTDB quando nenhum app foi inicializado ainda" (+ 2 casos: idempotência,
+  ausência de credencial) — falhava sem a correção (confirmado por
+  reintrodução via `git stash`), passa depois.
+- `src/lib/httpRetry.test.js`: "a hung connection (fetch que nunca resolve
+  nem rejeita) não trava para sempre" — sem a correção, o teste TRAVA de
+  verdade (confirmado rodando com timeout de 10s: falha por timeout real,
+  não por assertion) — reproduz o sintoma exato de produção.
+
+Suíte completa (1746 testes) + lint + build + build:scan + build:backfill
+verdes depois das 3 correções.
+
+### Ainda não confirmado
+
+O achado 4 é a hipótese mais forte disponível, mas **não é certeza**: esta
+sessão não alcança a Binance nem o Postgres de produção diretamente, então
+não há como confirmar ao vivo que o próximo ciclo do LDOUSDT completa
+normalmente. A correção 1 (log explícito) é o que vai permitir confirmar ou
+refutar isso no PRÓXIMO travamento, se houver — algo que o item 174 sozinho
+não tinha conseguido entregar.

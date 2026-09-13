@@ -17,9 +17,35 @@ const DEFAULT_RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_BASE_DELAY_MS = 250;
 const DEFAULT_MAX_RETRY_AFTER_MS = 120_000;
+// docs/known-risks.md item 175 addendum — achado investigando um relato real
+// do usuário (LDOUSDT preso no backfill): `fetch(url)` sozinho não tinha
+// NENHUM limite de tempo por tentativa — só reagia a um erro/status já
+// resolvido. Uma conexão que trava sem nunca responder (nem erro, nem dado)
+// não caía em nenhum retry — ficava pendurada até o timeout EXTERNO do job
+// inteiro (5min em run-backfill-check.mjs) matar o processo, consumindo o
+// orçamento inteiro numa única tentativa em vez de falhar rápido e retentar.
+// 20s é generoso sobre o tempo de resposta normal da Binance (<1s) e curto o
+// bastante para nunca chegar perto do timeout externo mesmo esgotando todas
+// as tentativas.
+const DEFAULT_ATTEMPT_TIMEOUT_MS = 20_000;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** `fetch()` com um limite de tempo PRÓPRIO, via AbortController — sem isto,
+ * uma conexão pendurada nunca aciona nem sucesso nem os catches de retry
+ * abaixo. Um abort vira `AbortError`/`DOMException`, tratado pelo mesmo
+ * caminho de "falha de rede pura" que um `TypeError` já usava.
+ */
+async function fetchComTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // A janela de rate limit da Binance é por MINUTO — honrar o `Retry-After`
@@ -53,12 +79,13 @@ export async function fetchWithRetry(url, {
   retryStatuses = DEFAULT_RETRY_STATUSES,
   baseDelayMs = DEFAULT_BASE_DELAY_MS,
   maxRetryAfterMs = DEFAULT_MAX_RETRY_AFTER_MS,
+  attemptTimeoutMs = DEFAULT_ATTEMPT_TIMEOUT_MS,
 } = {}) {
   let ultimoErro;
   for (let tentativa = 0; tentativa <= maxRetries; tentativa++) {
     let res;
     try {
-      res = await fetch(url);
+      res = await fetchComTimeout(url, attemptTimeoutMs);
     } catch (err) {
       ultimoErro = err;
       if (tentativa === maxRetries) break;

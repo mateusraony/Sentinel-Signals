@@ -24,6 +24,28 @@ const { firestoreGetMock, firestoreSetMock, getFirestoreMock } = vi.hoisted(() =
 });
 vi.mock('firebase-admin/firestore', () => ({ getFirestore: getFirestoreMock }));
 
+// Item 175 addendum — controlados aqui pra testar ensureFirebaseAppInitialized()
+// sem depender do registro REAL do firebase-admin (que persistiria entre
+// testes/arquivos deste mesmo worker).
+const { initializeAppMock, getAppsMock, certMock } = vi.hoisted(() => ({
+  initializeAppMock: vi.fn(),
+  getAppsMock: vi.fn(() => []),
+  certMock: vi.fn((x) => x),
+}));
+vi.mock('firebase-admin/app', () => ({
+  initializeApp: initializeAppMock,
+  getApps: getAppsMock,
+  cert: certMock,
+}));
+
+const { rtdbGetMock, rtdbSetMock, getDatabaseMock } = vi.hoisted(() => {
+  const rtdbGetMock = vi.fn();
+  const rtdbSetMock = vi.fn();
+  const getDatabaseMock = vi.fn(() => ({ ref: () => ({ get: rtdbGetMock, set: rtdbSetMock }) }));
+  return { rtdbGetMock, rtdbSetMock, getDatabaseMock };
+});
+vi.mock('firebase-admin/database', () => ({ getDatabase: getDatabaseMock }));
+
 const { telegramFiltersGetMock, systemLogCreateMock } = vi.hoisted(() => ({
   telegramFiltersGetMock: vi.fn(),
   systemLogCreateMock: vi.fn(),
@@ -71,6 +93,23 @@ beforeEach(() => {
   process.env.TELEGRAM_BOT_TOKEN = 'x';
   process.env.TELEGRAM_CHAT_ID = 'y';
   global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+
+  // Item 175 addendum — isolamento explícito, não confiar na ausência
+  // "por acidente" destas duas vars: outro arquivo de teste do MESMO worker
+  // (scripts/adminEntitiesFirestoreLegacy.test.js) as seta e nunca limpa, e
+  // markerRef()/ensureFirebaseAppInitialized() mudam de comportamento se
+  // vazarem aqui. Sem isto os testes abaixo (inclusive os de dedup de cota
+  // já existentes) ficam reféns da ordem em que os arquivos rodam.
+  delete process.env.FIREBASE_DATABASE_URL;
+  delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  initializeAppMock.mockReset();
+  getAppsMock.mockReset();
+  getAppsMock.mockReturnValue([]);
+  certMock.mockReset();
+  certMock.mockImplementation((x) => x);
+  rtdbGetMock.mockReset();
+  rtdbSetMock.mockReset();
+  getDatabaseMock.mockClear();
 });
 
 describe('adminTelegram — filtro de origem do sinal (lido de TelegramFilters/current)', () => {
@@ -323,5 +362,63 @@ describe('notifyFirestoreQuotaExhausted — timeout no dedup (item 142 addendum)
     const delivered = await notifyFirestoreQuotaExhausted('Quota exceeded.');
     expect(delivered).toBe(false);
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// docs/known-risks.md item 175 addendum — achado investigando um relato real
+// do usuário ("ainda deu etapa travou do LDOUSDT"): desde a Fase 10
+// (adminEntities.js virou o re-export do Postgres), nada no processo do
+// cron/backfill chama initializeApp() do firebase-admin mais — antes disso
+// acontecia de graça como efeito colateral de importar a versão Firestore de
+// adminEntities.js. O marcador de dedup RTDB (readAlertMarker/
+// writeAlertMarker, usado por notifyStepTimeout E notifyFirestoreQuotaExhausted)
+// ficou órfão: toda chamada real lançava "The default Firebase app does not
+// exist", confirmado nos logs de produção do backfill.yml — quebrando o
+// cooldown de 1h dos dois alertas.
+describe('marcador de dedup (RTDB) — reinicializa o Firebase Admin quando necessário (item 175 addendum)', () => {
+  beforeEach(() => {
+    process.env.FIREBASE_DATABASE_URL = 'https://sentinel-signals-default-rtdb.firebaseio.com';
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({ project_id: 'sentinel-signals' });
+    rtdbGetMock.mockResolvedValue({ exists: () => false, val: () => null });
+    rtdbSetMock.mockResolvedValue(undefined);
+  });
+
+  it('chama initializeApp() antes de usar o RTDB quando nenhum app foi inicializado ainda', async () => {
+    getAppsMock.mockReturnValue([]); // nenhum app registrado — o estado real pós-Fase 10
+    // Mock com estado: simula getApps() real passando a devolver 1 app depois
+    // do 1º initializeApp() — sem isto, readAlertMarker + writeAlertMarker (2
+    // chamadas de markerRef nesta função) chamariam initializeApp() 2x, o que
+    // o guard `if (getApps().length) return;` existe pra evitar.
+    initializeAppMock.mockImplementation(() => getAppsMock.mockReturnValue([{}]));
+    const { notifyStepTimeout } = await import('./adminTelegram.js');
+    const delivered = await notifyStepTimeout('checkOneAsset:LDOUSDT', 300000);
+
+    expect(delivered).toBe(true);
+    expect(initializeAppMock).toHaveBeenCalledTimes(1);
+    expect(certMock).toHaveBeenCalledWith({ project_id: 'sentinel-signals' });
+    // O marcador foi de fato gravado via RTDB — não caiu pro fallback
+    // Firestore (o que aconteceria se getDatabase() tivesse lançado).
+    expect(rtdbSetMock).toHaveBeenCalled();
+    expect(getFirestoreMock).not.toHaveBeenCalled();
+  });
+
+  it('não tenta inicializar de novo se um app já existe (idempotente)', async () => {
+    getAppsMock.mockReturnValue([{}]); // já inicializado por outro caminho
+    const { notifyStepTimeout } = await import('./adminTelegram.js');
+    const delivered = await notifyStepTimeout('checkOneAsset:LDOUSDT', 300000);
+
+    expect(delivered).toBe(true);
+    expect(initializeAppMock).not.toHaveBeenCalled();
+    expect(rtdbSetMock).toHaveBeenCalled();
+  });
+
+  it('sem FIREBASE_SERVICE_ACCOUNT_JSON, não tenta inicializar (evita cert(undefined) explodir)', async () => {
+    delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    getAppsMock.mockReturnValue([]);
+    const { notifyStepTimeout } = await import('./adminTelegram.js');
+    await notifyStepTimeout('checkOneAsset:LDOUSDT', 300000);
+
+    expect(initializeAppMock).not.toHaveBeenCalled();
+    expect(certMock).not.toHaveBeenCalled();
   });
 });
