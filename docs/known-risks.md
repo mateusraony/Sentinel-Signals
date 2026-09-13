@@ -22578,3 +22578,51 @@ causa, ex.: um candle/sinal específico gerando um loop caro).
 produção desta sessão, só o PRÓXIMO ciclo real vai mostrar o progresso.
 Reportado ao usuário com essa honestidade — o problema não está resolvido,
 só mais instrumentado.
+
+### Addendum 2 (2026-09-13, mesmo dia) — Codex review do PR #353 achou uma
+### 5ª causa real possível: timeout por tentativa não cobria o CORPO da resposta
+
+Review automática (Codex, PR #353) sinalizou dois achados sobre as
+correções da rodada anterior deste mesmo item:
+
+**Corrigido nesta rodada — `fetchComTimeout` (`src/lib/httpRetry.js`) só
+protegia os CABEÇALHOS, não o corpo.** O timeout por tentativa (achado 4
+do corpo principal deste item, PR #352) usa `AbortController`, mas o timer
+era limpo no `finally` assim que `fetch()` resolvia — ou seja, assim que os
+CABEÇALHOS chegavam. Todo chamador real então faz `await response.json()`/
+`.text()` DEPOIS disso, já fora do escopo do timer —
+`scripts/backfillMarketDataProvider.js:73` é exatamente esse caso. Uma
+conexão que entrega cabeçalhos mas trava no CORPO (chunked incompleto,
+conexão caída no meio da transferência) reproduz a MESMA classe de sintoma
+que o achado 4 original resolveu só pela metade: nenhum retry aciona,
+fica pendurada até o timeout EXTERNO do job inteiro (5min em
+`run-backfill-check.mjs`) — **candidata real a ser a causa do próprio
+travamento do LDOUSDT**, mais direta que a hipótese de volume de I/O do
+achado 4/addendum 1 acima (não descarta a outra, as duas podem coexistir).
+Corrigido envolvendo a `Response` num `Proxy` (`wrapResponseBodyTimeout`)
+que só limpa o timer quando `json()`/`text()`/`arrayBuffer()`/`blob()`/
+`formData()` terminam — o MESMO `AbortSignal` passado a `fetch()` também
+aborta uma leitura de corpo em andamento no mesmo request (comportamento
+padrão do Fetch/undici), então o abort continua funcionando mesmo depois
+que a função já retornou a `Response` pro chamador. Reproduzido por teste
+antes da correção (`src/lib/httpRetry.test.js`, "hung response BODY... —
+não trava para sempre": travava de verdade, confirmado com timeout de
+10s), passa depois.
+
+**Documentado, não corrigido nesta rodada — RTDB acessado enquanto o
+relógio simulado do replay ainda pode estar ativo.** Mesmo achado do
+addendum 1 acima (o vazamento de `Date` simulado pro JWT do RTDB),
+sinalizado de novo pelo Codex no mesmo commit. Avaliado de novo: a
+correção correta (tornar o `runBacktest` de fundo cancelável em
+`backtestEngine.js`) segue sendo uma mudança maior, e uma correção rápida
+óbvia — forçar `restoreClock()` assim que o timeout vence a corrida, antes
+de notificar — é **insegura**: o `runBacktest` abandonado continua rodando
+IRIA usar `Date.now()` real no meio do replay para calcular idade de Time
+Stop/cooldown contra timestamps históricos, potencialmente fechando
+(`CLOSED`/`INVALIDATED`) ou pulando operações reais por engano — trocaria
+um bug cosmético (log ruidoso, marcador de dedup falha e cai pro
+Firestore) por um bug de CORRETUDE no motor de trading. Mantido como está;
+resposta registrada na própria thread do PR.
+
+Suíte completa (1747 testes, +1 novo) + lint + build + build:scan +
+build:backfill verdes depois desta correção.
