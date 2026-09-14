@@ -22,11 +22,18 @@ export function useAutoScan({ queryClient, onActivity } = {}) {
     const tick = async () => {
       const now = Date.now();
 
-      // Full scan every 60 min
+      // Full scan every 60 min. Achado do sentinel-security-review (P1,
+      // 2026-09-14): `lastFullScan.current` era setado ANTES da chamada —
+      // uma falha (rede, lock, etc.) marcava a tentativa como se fosse
+      // sucesso, e a próxima passagem completa só acontecia depois da janela
+      // de 60min INTEIRA. Movido pra depois do `await` resolver com sucesso:
+      // uma falha agora deixa `lastFullScan.current` intocado, e o próximo
+      // tick (2min depois, via PRICE_CHECK_INTERVAL) tenta de novo, sem
+      // esperar a janela cheia.
       if (now - lastFullScan.current >= FULL_SCAN_INTERVAL) {
-        lastFullScan.current = now;
         try {
           await scanAllAssets();
+          lastFullScan.current = now;
           if (queryClient) queryClient.invalidateQueries();
           if (onActivity) onActivity('full_scan');
         } catch (e) {

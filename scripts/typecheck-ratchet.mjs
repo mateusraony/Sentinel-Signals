@@ -40,12 +40,24 @@
  *
  * Uso: `npm run typecheck:ratchet`. Depois de corrigir erros,
  * `npm run typecheck:ratchet -- --update` baixa o teto (e recusa subir).
+ *
+ * ## 4º buraco fechado (achado do sentinel-security-review, P1, 2026-09-14)
+ *
+ * A contagem sozinha não distingue QUAIS erros existem, só QUANTOS — corrigir
+ * um erro antigo e introduzir um erro NOVO diferente mantém a contagem igual
+ * e passa. `TETO` continua valendo (barra crescimento bruto), mas agora soma
+ * uma checagem por fingerprint (`arquivo::TSxxxx::mensagem`, sem linha/coluna
+ * — que mudam quando código ACIMA do erro muda, sem o erro em si mudar):
+ * qualquer fingerprint que não esteja no baseline conhecido
+ * (`typecheck-baseline.json`, ao lado deste arquivo) falha o CI mesmo com a
+ * contagem total dentro do teto. `--update` regrava os dois juntos.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const ARQUIVO = fileURLToPath(import.meta.url);
+const ARQUIVO_BASELINE = fileURLToPath(new URL('./typecheck-baseline.json', import.meta.url));
 
 /**
  * Teto atual. **Só pode descer.**
@@ -61,6 +73,49 @@ const STATUS_NORMAIS = new Set([0, 1, 2]);
 /** Conta as linhas `error TSxxxx` da saída do tsc. */
 export function contarErros(saida) {
   return (String(saida ?? '').match(/error TS\d+:/g) ?? []).length;
+}
+
+/**
+ * Extrai `{ arquivo, codigo, mensagem }` de cada erro — formato padrão
+ * (não-`--pretty`, o que `tsc` usa quando a saída não é um TTY, caso do
+ * `spawnSync` abaixo): `caminho/arquivo.ts(12,34): error TS2345: mensagem`.
+ * Linha/coluna são capturadas mas DESCARTADAS do fingerprint de propósito —
+ * mudam sempre que código ACIMA do erro muda, mesmo sem o erro em si mudar.
+ */
+export function extrairErros(saida) {
+  const regex = /^(.+?)\(\d+,\d+\): error TS(\d+): (.+)$/gm;
+  const erros = [];
+  let m;
+  while ((m = regex.exec(String(saida ?? ''))) !== null) {
+    const [, arquivo, codigo, mensagem] = m;
+    erros.push({ arquivo, codigo, mensagem: mensagem.trim() });
+  }
+  return erros;
+}
+
+/** Identidade estável de um erro — mesmo raciocínio de dedupe por assinatura
+ * já usado em `scripts/failureClassification.mjs`. */
+export function fingerprintErro({ arquivo, codigo, mensagem }) {
+  return `${arquivo}::TS${codigo}::${mensagem.replace(/\s+/g, ' ')}`;
+}
+
+/** Conjunto de fingerprints presentes na saída atual do tsc. */
+export function fingerprintsDe(saida) {
+  return new Set(extrairErros(saida).map(fingerprintErro));
+}
+
+/** Baseline conhecido — vazio se o arquivo ainda não existe (1ª rodada). */
+function lerBaseline() {
+  try {
+    const conteudo = JSON.parse(readFileSync(ARQUIVO_BASELINE, 'utf8'));
+    return new Set(Array.isArray(conteudo) ? conteudo : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function escreverBaseline(fingerprints) {
+  writeFileSync(ARQUIVO_BASELINE, `${JSON.stringify([...fingerprints].sort(), null, 2)}\n`);
 }
 
 /**
@@ -142,6 +197,8 @@ function main() {
     process.exit(1);
   }
 
+  const fingerprintsAtuais = fingerprintsDe(saida);
+
   if (atualizar) {
     if (erros > TETO) {
       console.error(`\n❌ --update recusado: ${erros} erros é MAIOR que o teto ${TETO}.`);
@@ -151,7 +208,8 @@ function main() {
     }
     const src = readFileSync(ARQUIVO, 'utf8').replace(/^const TETO = \d+;$/m, `const TETO = ${erros};`);
     writeFileSync(ARQUIVO, src);
-    console.log(`[typecheck] teto baixado para ${erros} — comite esta mudança.`);
+    escreverBaseline(fingerprintsAtuais);
+    console.log(`[typecheck] teto baixado para ${erros} e baseline de fingerprints atualizado — comite as duas mudanças.`);
     process.exit(0);
   }
 
@@ -159,6 +217,20 @@ function main() {
     console.error(`\n❌ O typecheck REGREDIU: ${erros} erros, teto é ${TETO}.`);
     console.error('Os erros novos estão abaixo. Corrija-os — o teto não sobe.\n');
     console.error(saida);
+    process.exit(1);
+  }
+
+  // 4º buraco (ver o cabeçalho do arquivo): contagem igual não significa
+  // MESMOS erros — um erro antigo trocado por um novo diferente passaria
+  // pela checagem acima sem ninguém perceber a troca.
+  const baseline = lerBaseline();
+  const novos = [...fingerprintsAtuais].filter((fp) => !baseline.has(fp));
+  if (novos.length > 0) {
+    console.error(`\n❌ ${novos.length} erro(s) NOVO(S), fora do baseline conhecido (mesmo com a contagem total dentro do teto):`);
+    for (const fp of novos) console.error(`  - ${fp}`);
+    console.error('\nSe são erros novos de verdade, corrija-os. Se são erros que você já esperava');
+    console.error('(ex.: corrigiu um antigo e um diferente apareceu), rode --update para aceitar');
+    console.error('o novo baseline conscientemente — não é automático de propósito.\n');
     process.exit(1);
   }
 
