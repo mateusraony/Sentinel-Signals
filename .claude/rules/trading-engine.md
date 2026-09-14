@@ -175,7 +175,19 @@ nunca deve receber nova transição.**
   **observável**: toda transição descartada pelo CAS gera `logWarn` em
   `SystemLog` ("Transição descartada pelo CAS"). Só investir numa regra dura de
   precedência (stop autoritativo entre loops) se os logs mostrarem ocorrência
-  real.
+  real. **Nota (item 178, 2026-09-14)**: esse residual agora só se aplica a
+  operações de fonte compatível — o caso de fonte DIVERGENTE (Spot×Futures,
+  que também podia gerar decisões conflitantes entre loops) foi eliminado
+  pelo gate assimétrico `shouldSkipCrossSourceManagement`
+  (`src/lib/opTransition.js`), não expandido.
+- **Gate assimétrico Spot×Futures (`market_source`, item 178).**
+  `persistScanResults`/`priceCheckActiveOpsInner` agora checam
+  `shouldSkipCrossSourceManagement` antes de gerenciar uma op: cron NUNCA
+  pula (é o único executor confiável/quase-sempre-ativo); navegador PODE
+  pular uma op nascida com fonte diferente da atual (sem risco de
+  starvation — o cron cobre em ~5min). `market_source` ausente (op legada)
+  nunca bloqueia. Não participa do CAS — só decide SE `transitionTradeOp` é
+  chamado. Ver `docs/known-risks.md` item 178 para o desenho completo.
 - **Arbitragem entre cascatas** (`src/lib/signalArbitration.js` +
   `scanner.js:handleActiveOpArbitration`) — decide o que fazer quando um
   sinal candidato chega com a outra cascata já ativa (promoção em dois

@@ -299,3 +299,32 @@ export function groupActiveOpsByAsset(ops) {
   }
   return { validGroups, duplicateGroups };
 }
+
+// Gate assimétrico Spot×Futures (pedido explícito do usuário, 2026-09-14 —
+// docs/known-risks.md item 4/39: navegador busca preço via Binance FUTURES,
+// cron via SPOT porque Futures dá 451 em datacenters dos EUA; sem isto, uma
+// op nascida com preço de uma fonte podia ter TP1/stop decidido pela outra,
+// sem nenhuma checagem). Assimétrico DE PROPÓSITO, não simétrico: o cron é o
+// único executor confiável/quase-sempre-ativo (~5min via disparo externo) —
+// se ele recusasse gerenciar uma op nascida no navegador (Futures), ela
+// ficaria órfã na prática enquanto nenhuma aba estivesse aberta, pior que o
+// status quo. O navegador é oportunista (só com aba aberta) e PODE pular uma
+// op nascida no cron (Spot), porque o cron processa ela de novo em ~5min de
+// qualquer forma — sem risco de starvation nesse lado.
+//
+// Não participa do CAS — só decide SE `transitionTradeOp` é chamado, nunca
+// substitui esse caminho único de escrita (.claude/rules/trading-engine.md:
+// "não introduza um terceiro caminho de mutação de op"). Sem race condition
+// nova: `market_source` é gravado uma única vez na criação e nunca
+// reescrito depois (ao contrário de `status`/`current_stop`), então ler esse
+// campo fora da transação para decidir SE chama o CAS não tem janela de
+// corrida.
+//
+// `opMarketSource` ausente (op legada anterior a este campo, ou qualquer
+// caminho de criação futuro que por engano não o grave) NUNCA bloqueia —
+// fail-safe para o lado "continua gerenciando", nunca para o lado "trava".
+export function shouldSkipCrossSourceManagement({ opMarketSource, currentExecutor, currentMarketSource }) {
+  if (currentExecutor !== 'browser') return false;
+  if (opMarketSource == null) return false;
+  return opMarketSource !== currentMarketSource;
+}

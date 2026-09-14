@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, groupActiveOpsByAsset, isTerminalStatus, planTradeOpCreation, planTradeOpCreationSql, buildActiveOpsAnchorId, TERMINAL_STATUSES, TRADE_OP_STATUSES } from './opTransition.js';
+import { canApplyTransition, clampMonotonicStop, stopAdvanceCandidateWon, groupActiveOpsByAsset, isTerminalStatus, planTradeOpCreation, planTradeOpCreationSql, buildActiveOpsAnchorId, TERMINAL_STATUSES, TRADE_OP_STATUSES, shouldSkipCrossSourceManagement } from './opTransition.js';
 
 describe('isTerminalStatus', () => {
   it('recognises every terminal status', () => {
@@ -470,5 +470,38 @@ describe('buildActiveOpsAnchorId (Bloco 4 Fase 1)', () => {
   it('returns a composite id scoped to the cascade when provided', () => {
     expect(buildActiveOpsAnchorId('asset_1', '4h_15m')).toBe('asset_1__4h_15m');
     expect(buildActiveOpsAnchorId('asset_1', '1h_5m')).toBe('asset_1__1h_5m');
+  });
+});
+
+// Gate assimétrico Spot×Futures (pedido explícito do usuário, 2026-09-14 —
+// docs/known-risks.md item 4/39). Ver o comentário de
+// shouldSkipCrossSourceManagement em opTransition.js para o racional
+// completo da assimetria.
+describe('shouldSkipCrossSourceManagement', () => {
+  it('cron NUNCA pula, seja qual for a fonte da op (spot, futures, ou desconhecida)', () => {
+    expect(shouldSkipCrossSourceManagement({ opMarketSource: 'spot', currentExecutor: 'cron', currentMarketSource: 'spot' })).toBe(false);
+    expect(shouldSkipCrossSourceManagement({ opMarketSource: 'futures', currentExecutor: 'cron', currentMarketSource: 'spot' })).toBe(false);
+    expect(shouldSkipCrossSourceManagement({ opMarketSource: 'algum_valor_legado_desconhecido', currentExecutor: 'cron', currentMarketSource: 'spot' })).toBe(false);
+  });
+
+  it('cron nunca pula mesmo com opMarketSource ausente', () => {
+    expect(shouldSkipCrossSourceManagement({ opMarketSource: null, currentExecutor: 'cron', currentMarketSource: 'spot' })).toBe(false);
+    expect(shouldSkipCrossSourceManagement({ opMarketSource: undefined, currentExecutor: 'cron', currentMarketSource: 'spot' })).toBe(false);
+  });
+
+  it('navegador não pula quando a fonte da op bate com a fonte atual', () => {
+    expect(shouldSkipCrossSourceManagement({ opMarketSource: 'futures', currentExecutor: 'browser', currentMarketSource: 'futures' })).toBe(false);
+  });
+
+  it('navegador PULA quando a fonte da op diverge da fonte atual (ambas presentes)', () => {
+    expect(shouldSkipCrossSourceManagement({ opMarketSource: 'spot', currentExecutor: 'browser', currentMarketSource: 'futures' })).toBe(true);
+  });
+
+  // Fail-safe: op legada (anterior a este campo) ou qualquer caminho de
+  // criação futuro que por engano não grave market_source NUNCA trava —
+  // ausência sempre cai para "continua gerenciando".
+  it('navegador NÃO pula quando opMarketSource está ausente (op legada/manual antiga)', () => {
+    expect(shouldSkipCrossSourceManagement({ opMarketSource: null, currentExecutor: 'browser', currentMarketSource: 'futures' })).toBe(false);
+    expect(shouldSkipCrossSourceManagement({ opMarketSource: undefined, currentExecutor: 'browser', currentMarketSource: 'futures' })).toBe(false);
   });
 });

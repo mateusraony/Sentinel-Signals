@@ -25,6 +25,14 @@ global do usuário (ver `docs/claude/global-CLAUDE.md.example`).
 - **Verifique antes de concluir.** Rode `npm run lint && npm test && npm run
   build` para mudanças com superfície de runtime. Não afirme que algo passou sem
   ter rodado. Se pulou um passo, diga.
+- **Revisão final obrigatória (pedido explícito do usuário, 2026-09-14).**
+  Depois de qualquer execução/alteração/atualização, antes de dar por
+  concluído: não basta rodar lint/test/build — revise explicitamente se nada
+  quebrou em rotas/endpoints tocados (`server/routes/*.js`, workflows em
+  `.github/workflows/*.yml`, scripts que viram job agendado) e em outras
+  partes do sistema que consomem o que mudou (ex.: campo novo numa entidade —
+  quem mais lê isso? Dashboard, Telegram, backtest, health-audit?). Vale para
+  toda tarefa, não só motor de trading.
 - **Fato × hipótese × recomendação.** Sempre separe o que você observou no
   código do que é plausível e do que é opinião. Sem "parece bom" — traga
   evidência (`arquivo:linha`).

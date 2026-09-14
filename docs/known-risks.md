@@ -446,6 +446,11 @@ cleanup silencioso. Não reabrir sem pedido explícito do usuário.
 > escrito em nenhum lugar até agora. Não implementar `market_source`/
 > `manager_source` sem pedido explícito — mudaria o schema e o
 > comportamento de `priceCheckActiveOpsInner` para algo não solicitado.
+>
+> **Superado (2026-09-14) — item 178.** O usuário pediu explicitamente.
+> Implementado como gate ASSIMÉTRICO (não o `manager_source` simétrico
+> aventado aqui) e sem mudança de schema (o campo já vivia no JSONB `data`).
+> Ver item 178 para o desenho completo e o porquê da assimetria.
 
 ## 16. Queries Firestore sem corte de histórico — corrigido (P2-1)
 
@@ -6382,6 +6387,10 @@ fictício nas coleções reais.
    internamente. `market_source` é gravado em `SignalEvent`/`TradeOperation`
    mas nunca lido/exibido em nenhum componente. **Corrigido**: tooltip no
    badge "Dados em tempo real" do `Dashboard.jsx` explicando a divergência.
+   **Atualização (2026-09-14, item 178)**: "nunca lido" deixou de ser
+   verdade — os dois loops mutadores agora leem `market_source` para decidir
+   o gate assimétrico. Continua sem exibição própria na UI além do tooltip
+   já citado.
 2. **"Ajuste Fino (What-If)" não avisava ser uma aproximação simplificada.**
    O texto na tela só dizia "sem afetar o scanner" (deixa claro que é
    seguro), mas não que é uma simulação single-asset/single-timeframe sem a
@@ -22944,3 +22953,80 @@ refresh forçado" e "401 persistente... continua propagando o erro" — os
 dois falhavam contra o código anterior (confirmado via `git stash`: só 1
 chamada a `fetch`/`getIdToken` onde se esperava 2), passam depois. Suíte
 completa (1752 testes, 3 novos) + lint + build verdes.
+
+## 178. Gate assimétrico `market_source` — cron/navegador podiam gerenciar TP/Stop de operação nascida na outra fonte de preço sem nenhuma checagem (2026-09-14)
+
+**Pedido explícito do usuário**, superando o adendo (2026-07-18) do item 4
+acima e a nota do item 39 (PR #78) que diziam "não implementar
+`market_source`/`manager_source` sem pedido explícito" / "`market_source` é
+gravado... mas nunca lido" — as duas afirmações estão desatualizadas a partir
+desta mudança.
+
+**Problema**: o navegador consulta Binance **Futures**
+(`src/lib/marketDataProvider.js`, `MARKET_SOURCE='futures'`) e o cron (GitHub
+Actions) consulta **Spot** (`scripts/adminMarketDataProvider.js`,
+`MARKET_SOURCE='spot'` — Futures dá 451 em datacenters dos EUA).
+`market_source`/`data_exchange`/`executor` já eram gravados na criação da
+`TradeOperation` (`buildTradeOpData`/`buildSmcTradeOpData`,
+`scanner.js`) — inclusive por `activateSignalManually` (entrada manual do
+painel, que também passa por `buildTradeOpData`) — mas nenhum dos dois loops
+mutadores (`persistScanResults`, `priceCheckActiveOpsInner`) lia esse campo:
+uma operação nascida com preço de uma fonte podia ter TP1/stop decidido pela
+OUTRA fonte, sem nenhuma checagem.
+
+**Decisão de design — gate ASSIMÉTRICO, não simétrico**: o cron é o único
+executor confiável/quase-sempre-ativo (~5min via disparo externo); o
+navegador só roda enquanto uma aba está aberta (não existe workaround
+gratuito/confiável pra Futures 24/7, ver item 4 acima). Um gate simétrico
+faria o cron RECUSAR gerenciar uma op nascida no navegador — na prática,
+órfã indefinidamente, pior que o status quo. Por isso:
+
+- **Cron nunca pula** — continua gerenciando qualquer operação ativa,
+  comportamento preservado, zero risco de órfão. Grava `source_mismatch:
+  true` (sticky, nunca revertido) no patch de `transitionTradeOp` quando a
+  fonte diverge — só mede, não muda comportamento.
+- **Navegador PODE pular** uma operação nascida com `market_source`
+  diferente do atual — sem risco de starvation, o cron processa ela de
+  qualquer forma no próximo ciclo (~5min). Registra em `SystemLog`
+  (`level:'info'`, `reason:'source_mismatch_skip'`, deduplicado por op+dia),
+  sem chamar `transitionTradeOp`.
+- `market_source` ausente (op legada anterior a este campo) NUNCA bloqueia
+  em nenhum dos dois lados — fail-safe pro lado "continua gerenciando".
+- **Escopo desta rodada**: só os dois loops que decidem TP/Stop por
+  preço/candle (`persistScanResults`, `priceCheckActiveOpsInner`). Os 4
+  pontos de arbitragem entre cascatas RF×SMC e promoção de sinal pendente
+  (que decidem por indicador/score, não por preço) ficam de fora —
+  reduz superfície de regressão numa máquina de 2 estágios já auditada 7x
+  (PR #78, item 39). Considerar expandir só se os logs mostrarem
+  necessidade real.
+
+**Implementação**: `shouldSkipCrossSourceManagement` (nova, pura, sem I/O,
+`src/lib/opTransition.js`) — decide SE `transitionTradeOp` é chamado, nunca
+substitui esse caminho único de escrita (`.claude/rules/trading-engine.md`:
+"não introduza um terceiro caminho de mutação de op"). Sem race condition
+nova: `market_source` é gravado uma única vez na criação e nunca reescrito
+depois, então ler esse campo fora da transação não tem janela de corrida
+(diferente de `status`/`current_stop`, que mudam e por isso exigem o CAS).
+Zero migração de schema: `market_source` já vivia só dentro do JSONB `data`
+(`db/schema.sql`, não está em `TRADE_OPS_COLUMNS`) — o merge em produção
+(`UPDATE trade_operations SET data = data || $2 ...`,
+`db/pgEntitiesCore.mjs`) absorve o campo novo automaticamente.
+
+**Testes**: `opTransition.test.js` (função pura — cron nunca pula
+independente da fonte/ausência; navegador não pula quando bate; navegador
+pula quando diverge; navegador não pula quando ausente).
+`scannerStateMachine.test.js` (mock `EXECUTOR:'browser'`) — lado navegador:
+pula op cross-source em ambos os loops com log registrado; não pula op sem
+`market_source`; comportamento byte-idêntico quando a fonte bate.
+`scannerSourceGateCron.test.js` (arquivo novo, mock próprio
+`EXECUTOR:'cron'`/`MARKET_SOURCE:'spot'` — o mock de `marketDataProvider` é
+estático por arquivo, não dá pra mutar em runtime) — lado cron: nunca pula,
+grava `source_mismatch:true` quando a fonte diverge, nada quando bate.
+Reexecutado (sem alteração) o teste de concorrência real existente — segue
+passando, já que o gate roda ANTES do CAS, nunca dentro dele.
+
+**Nota sobre o item "RESIDUAL — aguardando dados" de precedência stop×TP
+entre loops** (`.claude/rules/trading-engine.md`): esse residual passa a
+valer só para operações de fonte compatível — o caso de fonte DIVERGENTE
+(que também contribuía pra decisões conflitantes entre loops) foi eliminado
+pelo gate acima, não expandido.
