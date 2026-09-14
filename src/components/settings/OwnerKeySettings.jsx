@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { getOwnerKey, setOwnerKey, isOwnerKeyConfigured } from '@/lib/ownerKey';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +10,7 @@ import { KeyRound, X, CheckCircle } from 'lucide-react';
 export default function OwnerKeySettings({ open, onClose }) {
   const [key, setKey] = useState('');
   const [saved, setSaved] = useState(false);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (open) {
@@ -22,6 +24,12 @@ export default function OwnerKeySettings({ open, onClose }) {
   const save = () => {
     setOwnerKey(key.trim());
     setSaved(true);
+    // Achado do Codex (PR #361): sem chave (ou com uma antiga/rotacionada),
+    // as queries montadas já falharam com 403 e ficam cacheadas como erro —
+    // só localStorage/estado do modal mudam ao salvar. Sem isto, o painel
+    // continuaria vazio até o próximo refetchOnWindowFocus/staleTime
+    // (src/lib/query-client.js) em vez de refletir a chave nova na hora.
+    queryClient.invalidateQueries();
   };
 
   return (
