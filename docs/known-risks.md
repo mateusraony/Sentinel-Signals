@@ -22839,12 +22839,39 @@ os achados 1-4 deste item explicavam sozinhos:
   escrita final de `'done'` continuaria sendo engolida pelo mesmo wrapper,
   e o ativo continuaria aparecendo como pendente para sempre.
 
-**Ainda não corrigido nesta rodada** — reportado ao usuário com o
-diagnóstico completo e uma correção proposta (tornar
-`createMonitoredAssetBackfillEntity.update()` seletivo pelo FORMATO do
-`data`, passando adiante para `real.update()` qualquer chamada que não
-seja exatamente a escrita per-tick de 4 campos do `scanner.js` — mesmo
-padrão defensivo já usado por `isAssetStateHotPathQuery`), aguardando
-confirmação explícita antes de implementar (mudança em código do motor de
-backfill, que reusa o caminho transacional real de `TradeOperation` —
-exige `sentinel-trading-engine-review` antes de mesclar).
+**Corrigido, com autorização explícita do usuário**:
+`createMonitoredAssetBackfillEntity.update()` agora reconhece o FORMATO
+exato da escrita per-tick do `scanner.js` (`isScanBookkeepingUpdate` —
+`last_scan_at`/`scan_status`/`scan_error`/`scan_error_since`, confirmados
+em `scanner.js:4057-4064` e `:4414-4420` como os únicos 4 campos que esse
+loop escreve) e só intercepta ESSE formato — mesmo padrão defensivo já
+usado por `isAssetStateHotPathQuery`. Qualquer outra chamada (em
+particular `backfill_check_status`/`backfill_checked_at`/
+`backfill_ops_found`/`backfill_check_error`, escritos pelo próprio
+`run-backfill-check.mjs`) passa direto para `real.update()`. A superfície
+tocada é só a detecção de formato deste wrapper — `scanner.js`,
+`opTransition.js`/CAS e o caminho transacional de `TradeOperation`
+continuam intocados; o risco de regressão é local a este arquivo.
+
+**Reproduzido antes, confirmado depois** (disciplina do projeto):
+`scripts/adminEntitiesBackfillCache.test.js` ganhou 2 casos novos
+("MonitoredAsset.update com backfill_check_status... chama o real update"
+e o equivalente para o caminho de erro/timeout) — confirmados FALHANDO
+contra o código anterior via `git stash` (0 chamadas ao mock real onde o
+teste esperava 1) e passando depois. `adminEntitiesBackfillCacheTripwire.test.js`
+teve sua asserção antiga ("nunca chama o real") invertida para refletir o
+desenho correto (existe um caminho real, gated por
+`isScanBookkeepingUpdate`). O caso pré-existente ("formato exato do
+bookkeeping per-tick nunca chama o real") continua passando — a proteção
+original contra o incidente de 2026-08-29 (replay sobrescrevendo o
+snapshot ao vivo) não regrediu. Suíte completa (1749 testes, 13 novos) +
+lint + build + `build:backfill` verdes depois da correção.
+
+**Efeito esperado no próximo ciclo do LDOUSDT**: `backfill_check_status`
+finalmente vai persistir de verdade — `'error'` se travar de novo (com
+`checked_at` preenchido, ao contrário de sempre `'nunca'` até aqui), ou
+`'done'` se completar dentro do orçamento de 5 minutos. De qualquer forma,
+o ativo deixa de reaparecer eternamente na fila sem nunca sair dela — a
+pergunta de throughput (opções 2/3 do addendum 3, ainda sem decisão) volta
+a ser sobre "quanto tempo o replay leva", não mais sobre "por que o
+resultado nunca é salvo".

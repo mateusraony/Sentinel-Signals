@@ -55,11 +55,20 @@ describe('adminEntitiesBackfillCache.js — tripwire de isolamento', () => {
     expect(body).toContain('real.deleteMany(filters)');
   });
 
-  it('MonitoredAsset.update nunca chama o método real — resto do objeto continua o real por spread', () => {
+  it('MonitoredAsset.update só intercepta o formato exato da escrita per-tick do scanner.js — qualquer outro formato (ex.: backfill_check_status) chama o real', () => {
     const body = extractFunctionBody('createMonitoredAssetBackfillEntity');
     expect(body).toContain('...real,');
-    const updateMethod = body.match(/async update\(id, data\)\s*\{[\s\S]*?\},/)[0];
-    expect(updateMethod).not.toMatch(/real\.update\(/);
+    const updateMethod = body.match(/async update\(id, data\)\s*\{[\s\S]*?\n {4}\},/)[0];
+    // docs/known-risks.md item 176 addendum 5 — a versão anterior deste
+    // guard interceptava o MÉTODO inteiro, sem olhar o `data`, e por isso
+    // também engolia a escrita real de backfill_check_status do próprio
+    // run-backfill-check.mjs (mesmo `backend`, mesmo objeto). A garantia
+    // agora é: existe um caminho que CHAMA real.update (para formato fora
+    // do bookkeeping do scanner), e um guard de formato que decide isso —
+    // não mais "nunca chama".
+    expect(updateMethod).toMatch(/real\.update\(/);
+    expect(updateMethod).toMatch(/isScanBookkeepingUpdate\(data\)/);
+    expect(source).toContain("const SCAN_BOOKKEEPING_KEYS = new Set(['last_scan_at', 'scan_status', 'scan_error', 'scan_error_since']);");
   });
 
   it('a query hot-path só intercepta o formato exato {asset_id, timeframe} sem sort/limit', () => {
