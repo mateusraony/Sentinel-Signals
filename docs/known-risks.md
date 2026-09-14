@@ -22875,3 +22875,24 @@ o ativo deixa de reaparecer eternamente na fila sem nunca sair dela — a
 pergunta de throughput (opções 2/3 do addendum 3, ainda sem decisão) volta
 a ser sobre "quanto tempo o replay leva", não mais sobre "por que o
 resultado nunca é salvo".
+
+### Addendum 6 (2026-09-14) — confirmado em produção real: a correção funcionou
+
+Usuário disparou `backfill.yml` manualmente (run #88, `workflow_dispatch`,
+01:06-01:12 UTC) logo após o PR #358 mesclar. LDOUSDT travou de novo no
+mesmo padrão (timeout aos 300s, 54,5% da janela — a pergunta de throughput
+das opções 2/3 do addendum 3 continua em aberto, sem mudança), mas **sem**
+o log "FALHA AO MARCAR 'error'" — indicando que a escrita de `'error'`
+desta vez chegou ao banco de verdade. Confirmação definitiva veio do
+PRÓXIMO run agendado, disparado automaticamente ~30s depois (run #89,
+01:12 UTC): `[backfill] nada pendente` — a fila que reencontrava o mesmo
+LDOUSDT em TODO ciclo desde pelo menos 2026-09-12 finalmente esvaziou.
+
+**A correção do item 176 addendum 5 está confirmada em produção, não só em
+teste.** A pergunta de throughput (LDOUSDT ainda não completa o replay
+dentro do orçamento de 5 minutos) permanece em aberto e vai gerar
+`'error'` de novo no próximo ciclo em que ele for reselecionado — mas
+agora isso fica visível (`checked_at` preenchido, sem se disfarçar de
+"nunca foi checado") e não trava mais a fila para os demais ativos. Decisão
+sobre reduzir `BACKFILL_LOOKBACK_DAYS` ou estender o cache (opções 2/3 do
+addendum 3) continua pendente com o usuário.
