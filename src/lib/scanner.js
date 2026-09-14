@@ -32,7 +32,7 @@ import { detectEngulfing, detectPinBar, detectMarubozu } from './indicators/cand
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
 import { getPineConfig } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, advancePreTp1Trailing, favorableExtremeFromMfe, advanceToBreakevenOnSiblingOpen, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
-import { groupActiveOpsByAsset, isTerminalStatus } from './opTransition';
+import { groupActiveOpsByAsset, isTerminalStatus, shouldSkipCrossSourceManagement } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { rejectionPatch, regimeDetail, trendReversedDetail } from './signalRejection';
 import { logInfo, logWarn, logError } from './logger';
@@ -3589,6 +3589,14 @@ export async function persistScanResults(scanResult) {
     // ops server-side, but this guard stays in case a concurrent transaction
     // terminated the op between the query above and this iteration.
     if (['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'].includes(op.status)) continue;
+    // Gate assimétrico Spot×Futures (src/lib/opTransition.js) — antes de
+    // computar QUALQUER coisa para esta op (nenhum trabalho é feito para uma
+    // op que não vai ser escrita nesta passada). Ver o comentário de
+    // shouldSkipCrossSourceManagement para o racional da assimetria.
+    if (shouldSkipCrossSourceManagement({ opMarketSource: op.market_source, currentExecutor: EXECUTOR, currentMarketSource: MARKET_SOURCE })) {
+      await logSourceMismatchSkip(op, 'persist_scan_results');
+      continue;
+    }
     // op.timeframe is the ENTRY-confirmation candle (15m/5m), which never
     // appears in `results` (only 1h/4h/1d are fetched here) — the indicators
     // this loop needs (RF, ATR, tier) live on the SIGNAL timeframe instead.
@@ -3627,6 +3635,14 @@ export async function persistScanResults(scanResult) {
     let tp2Hit = op.tp2_hit || false;
     let newCurrentStop = op.current_stop;
     const updatePayload = {};
+    // Observabilidade do gate assimétrico (src/lib/opTransition.js) — este
+    // ramo (cron, ou navegador com fonte igual) NUNCA pula, mas se a op
+    // nasceu com uma fonte diferente da atual, fica registrado. Sticky: só
+    // grava `true`, nunca `false` explícito (mesma convenção de
+    // `exit_ambiguous`/flags one-way já usada neste arquivo).
+    const sourceMismatchPatch = (op.market_source != null && op.market_source !== MARKET_SOURCE)
+      ? { source_mismatch: true }
+      : {};
     // Set below (RUNNER_ACTIVE branch only) when a trailing advance happens
     // this pass — passed to transitionTradeOp so it can drop the marker
     // transactionally if a racing worker's fresher stop wins the clamp
@@ -4004,6 +4020,7 @@ export async function persistScanResults(scanResult) {
         tp2_hit: tp2Hit,
         current_stop: newCurrentStop,
         ...updatePayload,
+        ...sourceMismatchPatch,
       }, {
         assetId: op.asset_id,
         stopAdvanceMarkerField,
@@ -4222,6 +4239,33 @@ async function logDuplicateActiveOpsPriceCheck(assetKey, ops) {
   });
 }
 
+// Observabilidade do gate assimétrico Spot×Futures (shouldSkipCrossSourceManagement,
+// src/lib/opTransition.js) — só o lado "navegador pula" precisa disto: o lado
+// "cron gerencia mesmo assim" fica registrado no patch da própria
+// transitionTradeOp (source_mismatch: true), não aqui. `level:'info'` — é
+// comportamento esperado do gate, não uma anomalia; dedupe por op+dia (mesmo
+// padrão de logDuplicateActiveOpsPriceCheck acima) mantém o volume baixo mesmo
+// com o price-check rodando a cada 2min de aba aberta.
+async function logSourceMismatchSkip(op, loop) {
+  const dedupKey = `source_mismatch_skip::${op.id}::${new Date().toISOString().slice(0, 10)}`;
+  await backend.entities.SystemLog.createUnique(dedupKey, {
+    level: 'info',
+    module: 'scanner',
+    message: `${op.symbol}: operação nasceu com market_source=${op.market_source} (executor=${op.executor ?? 'desconhecido'}); passada atual é ${EXECUTOR}/${MARKET_SOURCE} — gestão pulada (cron cobre em ~5min).`,
+    symbol: op.symbol,
+    details: {
+      reason: 'source_mismatch_skip',
+      loop,
+      op_id: op.id,
+      op_status: op.status,
+      op_market_source: op.market_source ?? null,
+      op_executor: op.executor ?? null,
+      current_market_source: MARKET_SOURCE,
+      current_executor: EXECUTOR,
+    },
+  });
+}
+
 async function priceCheckActiveOpsInner() {
   // Firestore-quota-exhaustion errors from the per-op catch below (item 138
   // addendum) — collected here so the caller (scripts/run-scan.mjs) can
@@ -4258,11 +4302,20 @@ async function priceCheckActiveOpsInner() {
   }));
 
   for (const op of opsToProcess) {
+    // Gate assimétrico Spot×Futures (src/lib/opTransition.js) — mesmo
+    // racional/comentário de persistScanResults acima.
+    if (shouldSkipCrossSourceManagement({ opMarketSource: op.market_source, currentExecutor: EXECUTOR, currentMarketSource: MARKET_SOURCE })) {
+      await logSourceMismatchSkip(op, 'price_check');
+      continue;
+    }
     const price = prices[op.symbol];
     if (!price) continue;
     // Isolated per-operation — see the same comment in persistScanResults.
     try {
     const isBuy = op.side === 'BUY';
+    const sourceMismatchPatch = (op.market_source != null && op.market_source !== MARKET_SOURCE)
+      ? { source_mismatch: true }
+      : {};
     let newStatus = op.status;
     let tp1Hit = op.tp1_hit || false;
     let tp2Hit = op.tp2_hit || false;
@@ -4313,7 +4366,7 @@ async function priceCheckActiveOpsInner() {
       // Same compare-and-set as persistScanResults — this price-check loop uses
       // a different lock ('price-check'), so it can race the full scan on the
       // same op; the transaction serialises the write and folds clearActiveOp.
-      const { applied, currentStatus } = await backend.tradeOps.transitionTradeOp(op.id, op.status, { status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit, current_stop: newCurrentStop, ...updatePayload }, {
+      const { applied, currentStatus } = await backend.tradeOps.transitionTradeOp(op.id, op.status, { status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit, current_stop: newCurrentStop, ...updatePayload, ...sourceMismatchPatch }, {
         assetId: op.asset_id,
         // Same fix as persistScanResults above (docs/known-risks.md item 80, B-2).
         cascade: op.hierarchical_cascade === true ? op.cascade : undefined,

@@ -963,6 +963,64 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
   });
 });
 
+// Gate assimétrico Spot×Futures (pedido explícito do usuário, 2026-09-14 —
+// docs/known-risks.md item 4/39). Mock deste arquivo é EXECUTOR:'browser',
+// MARKET_SOURCE:'futures' (topo do arquivo) — cobre o lado "navegador pode
+// pular". O lado "cron nunca pula" tem arquivo próprio (scannerSourceGateCron.test.js)
+// porque o mock de marketDataProvider é estático por arquivo.
+describe('gate assimétrico Spot×Futures — lado navegador (EXECUTOR=browser/MARKET_SOURCE=futures)', () => {
+  it('persistScanResults: PULA uma op nascida no cron (market_source=spot) mesmo com candle que cruzaria o stop', async () => {
+    backend._seed('TradeOperation', makeOp({ market_source: 'spot', executor: 'cron' }));
+    const results = { '4h': makeTfData({ lastCandleLow: 97, lastCandleHigh: 99, lastClose: 98 }) }; // cruzaria o stop (98)
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('SIGNAL_CONFIRMED'); // intocado — não virou STOP_HIT
+    const logs = await backend.entities.SystemLog.filter({});
+    const skipLog = logs.find((l) => l.details?.reason === 'source_mismatch_skip');
+    expect(skipLog).toBeTruthy();
+    expect(skipLog.details.loop).toBe('persist_scan_results');
+    expect(skipLog.details.op_market_source).toBe('spot');
+    expect(skipLog.details.current_market_source).toBe('futures');
+  });
+
+  it('priceCheckActiveOps: PULA uma op nascida no cron (market_source=spot) mesmo com preço que cruzaria o stop', async () => {
+    backend._seed('TradeOperation', makeOp({ market_source: 'spot', executor: 'cron' }));
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(97); // cruzaria o stop (98)
+    await priceCheckActiveOps();
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('SIGNAL_CONFIRMED');
+    const logs = await backend.entities.SystemLog.filter({});
+    const skipLog = logs.find((l) => l.details?.reason === 'source_mismatch_skip');
+    expect(skipLog).toBeTruthy();
+    expect(skipLog.details.loop).toBe('price_check');
+  });
+
+  // Fail-safe: op legada (anterior a este campo) nunca trava — regressão
+  // específica pra não bloquear operação real por acaso.
+  it('persistScanResults: NÃO pula uma op sem market_source (legada) — processa normalmente, sem log', async () => {
+    backend._seed('TradeOperation', makeOp({ market_source: undefined, executor: undefined }));
+    const results = { '4h': makeTfData({ lastCandleLow: 97, lastCandleHigh: 99, lastClose: 98 }) };
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('STOP_HIT'); // processada normalmente
+    const logs = await backend.entities.SystemLog.filter({});
+    expect(logs.find((l) => l.details?.reason === 'source_mismatch_skip')).toBeUndefined();
+  });
+
+  // Fonte bate com a atual — comportamento byte-idêntico ao pré-mudança,
+  // sem source_mismatch e sem log de skip. Prova de não-regressão.
+  it('persistScanResults: op com market_source=futures (bate) processa normalmente, sem source_mismatch', async () => {
+    backend._seed('TradeOperation', makeOp({ market_source: 'futures', executor: 'browser' }));
+    const results = { '4h': makeTfData({ lastCandleLow: 97, lastCandleHigh: 99, lastClose: 98 }) };
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('STOP_HIT');
+    expect(op.source_mismatch).toBeFalsy();
+    const logs = await backend.entities.SystemLog.filter({});
+    expect(logs.find((l) => l.details?.reason === 'source_mismatch_skip')).toBeUndefined();
+  });
+});
+
 // docs/known-risks.md items 53/54 — opt-in pre-TP1 stop protection. Default
 // op: BUY, entry 100, initial_stop 98 (risk 2), tp1 103. Default tfData
 // atrValue 2 -> with the default trigger 1.0x, breakeven fires once price
