@@ -58,7 +58,17 @@ describe('consultas da auditoria de saúde', () => {
     expect(
       SRC,
       'sem a amostra por nível, um erro antigo é expulso por log info e a auditoria reporta "nenhum erro"',
-    ).toMatch(/SystemLog\.filter\(\s*\{\s*level:\s*'error'\s*\}/);
+    ).toMatch(/SystemLog\.filter\(\s*\{\s*level:\s*'error'/);
+  });
+
+  // Achado do sentinel-security-review (2026-09-14): a amostra por nível sem
+  // corte de tempo pode ressuscitar um incidente antigo já resolvido como se
+  // fosse atual — foi exatamente isso que motivou a auditoria externa.
+  it('a amostra de erros por nível também tem corte de recência (created_date >= N dias atrás)', () => {
+    expect(
+      SRC,
+      'sem corte de recência, um erro histórico (ex.: de antes de uma migração de banco) pode reaparecer como incidente atual',
+    ).toMatch(/SystemLog\.filter\(\s*\{\s*level:\s*'error',\s*created_date:\s*\{\s*gte:/);
   });
 
   it('o orçamento declarado é a soma dos tetos reais', () => {

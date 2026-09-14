@@ -54,10 +54,22 @@
  *
  * Por isso são duas leituras com propósitos distintos, e o relatório diz qual
  * é qual: a **janela recente** (ordenada, todos os níveis) responde "o que
- * está acontecendo agora"; a **amostra de erros** (filtro por igualdade, sem
- * ordenação) responde "existe erro sistêmico?" sem poder ser despejada. A
- * amostra não tem garantia de recência — o Firestore devolve por ordem de ID
- * quando não há `orderBy` — e o relatório diz isso em vez de fingir.
+ * está acontecendo agora"; a **amostra de erros** (filtro por igualdade +
+ * range, sem ordenação) responde "existe erro sistêmico recente?" sem poder
+ * ser despejada pelo log rotineiro.
+ *
+ * **Corte de recência na amostra (2026-09-14, achado do sentinel-security-
+ * review).** Até aqui a amostra não tinha limite de tempo — herdado da época
+ * em que o backend era Firestore, onde combinar filtro+`orderBy` em campos
+ * diferentes exige índice composto (motivo original de não ordenar). Pós-
+ * cutover pra Postgres isso não se aplica mais do mesmo jeito, e a ausência
+ * de corte teve um custo real: um `RESOURCE_EXHAUSTED` de ~5,4 dias antes da
+ * migração Firestore→Postgres (já resolvido) voltou a aparecer como "erro em
+ * 9 ativos" nesta auditoria, indistinguível de um incidente atual — foi o que
+ * motivou a auditoria externa que achou isto. Agora a amostra também exige
+ * `created_date >= AMOSTRA_ERROS_JANELA_DIAS atrás` — ainda ampla o bastante
+ * pra pegar o erro da madrugada que a janela recente (300 registros) expulsa
+ * por log rotineiro, mas não mais "qualquer data desde o início dos tempos".
  */
 // backend segue o backend AO VIVO do motor de trading (Postgres pós-Fase 10
 // deste plano — scripts/adminEntities.js), mas rtdb continua vindo do
@@ -79,6 +91,12 @@ const LIMITE_ERROS = 200;
 const LIMITE_OPS = 120;
 const LIMITE_SINAIS = 150;
 const ORCAMENTO_TOTAL = LIMITE_LOGS + LIMITE_ERROS + LIMITE_OPS + LIMITE_SINAIS;
+
+// Corte de recência da amostra de erros (ver o cabeçalho do arquivo) — largo
+// o bastante pra não expulsar um erro da madrugada que já não está mais na
+// janela recente de LIMITE_LOGS, estreito o bastante pra não ressuscitar
+// incidente antigo já resolvido.
+const AMOSTRA_ERROS_JANELA_DIAS = 7;
 
 // Uma operação aberta há mais tempo que isto é suspeita em qualquer tier: o
 // Time Stop mais longo da tabela é 64 barras de 4h (~10,7 dias). O dobro disso
@@ -137,9 +155,11 @@ async function checarLogs() {
   // Leitura 1 — JANELA RECENTE: ordenada por data, todos os níveis. Responde
   // "o que está acontecendo agora", com recência confiável.
   const logs = await backend.entities.SystemLog.list('-created_date', LIMITE_LOGS);
-  // Leitura 2 — AMOSTRA DE ERROS: igualdade sem ordenação (não exige índice
-  // composto), imune ao despejo por log rotineiro. Ver o cabeçalho.
-  const amostraErros = await backend.entities.SystemLog.filter({ level: 'error' }, undefined, LIMITE_ERROS);
+  // Leitura 2 — AMOSTRA DE ERROS: igualdade + range de data, sem ordenação
+  // (não exige índice composto), imune ao despejo por log rotineiro E ao
+  // ressuscitamento de incidente antigo já resolvido. Ver o cabeçalho.
+  const amostraErrosDesde = new Date(Date.now() - AMOSTRA_ERROS_JANELA_DIAS * 24 * 60 * 60 * 1000).toISOString();
+  const amostraErros = await backend.entities.SystemLog.filter({ level: 'error', created_date: { gte: amostraErrosDesde } }, undefined, LIMITE_ERROS);
 
   if (logs.length === 0 && amostraErros.length === 0) { p('Nenhum registro de log.'); return; }
 
@@ -187,9 +207,9 @@ async function checarLogs() {
     p('');
     p(`### Erros fora da janela recente → ${grupos.length} problemas distintos`);
     p('');
-    p(`_Amostra de até ${LIMITE_ERROS} erros de QUALQUER data — é ela que impede um erro`);
-    p('da madrugada de ser expulso por log rotineiro. Sem garantia de recência: sem');
-    p('ordenação, o Firestore devolve por ordem de identificador._');
+    p(`_Amostra de até ${LIMITE_ERROS} erros dos últimos ${AMOSTRA_ERROS_JANELA_DIAS} dias — é ela que impede um erro`);
+    p('da madrugada de ser expulso por log rotineiro. Sem ordenação (evita índice');
+    p('composto), então dentro dessa janela a ordem não é garantida.');
     p('');
     p('| # | Módulo · problema | Ativos | Mais recente |');
     p('|---|---|---|---|');

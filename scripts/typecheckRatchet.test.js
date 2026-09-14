@@ -5,7 +5,10 @@
 // de 17 — a contagem DESPENCOU e a catraca teria aprovado um projeto quebrado.
 // Uma catraca que só olha o número tem exatamente o defeito que ela previne.
 import { describe, it, expect } from 'vitest';
-import { contarErros, temErroDeSintaxe, avaliarExecucao } from './typecheck-ratchet.mjs';
+import {
+  contarErros, temErroDeSintaxe, avaliarExecucao,
+  extrairErros, fingerprintErro, fingerprintsDe,
+} from './typecheck-ratchet.mjs';
 
 const SAIDA_TIPOS = [
   "src/lib/tradeMetrics.js(234,9): error TS2353: Object literal may only specify known properties.",
@@ -91,5 +94,52 @@ describe('erro de sintaxe × código de 5 dígitos', () => {
   it('TS1005 é sintaxe; TS18003 não é (é config, tratado à parte)', () => {
     expect(temErroDeSintaxe('error TS1005: expected')).toBe(true);
     expect(temErroDeSintaxe('error TS18003: No inputs')).toBe(false);
+  });
+});
+
+// Achado do sentinel-security-review (P1, 2026-09-14) — 4º buraco da catraca:
+// contagem igual não significa MESMOS erros. Corrigir um erro antigo e
+// introduzir um erro NOVO diferente mantinha a contagem igual e passava sem
+// ninguém perceber a troca.
+describe('extrairErros / fingerprintErro / fingerprintsDe', () => {
+  it('extrai arquivo, código e mensagem de cada erro', () => {
+    expect(extrairErros(SAIDA_TIPOS)).toEqual([
+      { arquivo: 'src/lib/tradeMetrics.js', codigo: '2353', mensagem: 'Object literal may only specify known properties.' },
+      { arquivo: 'src/pages/Assets.jsx', codigo: '2322', mensagem: "Type '{ title: string; }' is not assignable." },
+    ]);
+  });
+
+  it('saída limpa ou ausente não lança, devolve lista vazia', () => {
+    expect(extrairErros('')).toEqual([]);
+    expect(extrairErros(null)).toEqual([]);
+  });
+
+  it('fingerprint NÃO inclui linha/coluna — a mesma mensagem em linha diferente é o MESMO erro', () => {
+    const a = fingerprintErro({ arquivo: 'x.js', codigo: '2322', mensagem: 'nope' });
+    const b = fingerprintErro({ arquivo: 'x.js', codigo: '2322', mensagem: 'nope' });
+    expect(a).toBe(b);
+    expect(a).toMatch(/^x\.js::TS2322::nope$/);
+  });
+
+  // REGRESSÃO: é exatamente o cenário que a checagem por contagem sozinha não
+  // pega — mesma contagem (1), erro DIFERENTE. `fingerprintsDe` das duas
+  // saídas precisa divergir para a checagem de "erro novo fora do baseline"
+  // (em main(), scripts/typecheck-ratchet.mjs) conseguir detectar a troca.
+  it('REGRESSÃO: um erro trocado por outro, mesma contagem, tem fingerprint DIFERENTE', () => {
+    const erroAntigo = "src/lib/tradeMetrics.js(234,9): error TS2353: Object literal may only specify known properties.";
+    const erroNovo = "src/lib/scanner.js(999,1): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.";
+
+    expect(contarErros(erroAntigo)).toBe(contarErros(erroNovo)); // mesma contagem (1)
+
+    const antigos = fingerprintsDe(erroAntigo);
+    const novos = fingerprintsDe(erroNovo);
+    const trocaDetectada = [...novos].some((fp) => !antigos.has(fp));
+    expect(trocaDetectada).toBe(true); // a troca É detectável pelo fingerprint
+  });
+
+  it('mesmo erro repetido 2x colapsa num único fingerprint (Set)', () => {
+    const repetido = [SAIDA_TIPOS.split('\n')[0], SAIDA_TIPOS.split('\n')[0]].join('\n');
+    expect(contarErros(repetido)).toBe(2);
+    expect(fingerprintsDe(repetido).size).toBe(1);
   });
 });

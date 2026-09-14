@@ -1,0 +1,15 @@
+[
+  "src/api/entitiesFirestoreLegacy.js::TS2345::Argument of type 'string' is not assignable to parameter of type 'WhereFilterOp'.",
+  "src/lib/backtestEngine.js::TS2339::Property 'portfolioCapConfigured' does not exist on type 'BuildReportOptions'.",
+  "src/lib/backtestEngine.js::TS2339::Property 'portfolioCapOutcomes' does not exist on type 'BuildReportOptions'.",
+  "src/lib/backtestEngine.js::TS2353::Object literal may only specify known properties, and 'costModel' does not exist in type '{ epsilonR?: number; epsilonPct?: number; sortBy?: string; minTrades?: number; }'.",
+  "src/lib/backtestEngine.js::TS2353::Object literal may only specify known properties, and 'portfolioCapOutcomes' does not exist in type 'BuildReportOptions'.",
+  "src/lib/eventTimeline.js::TS2362::The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.",
+  "src/lib/eventTimeline.js::TS2363::The right-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type.",
+  "src/lib/priceProximity.js::TS2322::Type '{ key: \"stop\" | \"entry\" | \"tp1\" | \"tp2\"; label: \"Stop\" | \"Entrada\" | \"TP1\" | \"TP2\"; price: number; pct: number; absPct: number; position: string; isNearest: boolean; }[]' is not assignable to type '{ key: string; label: string; price: number; pct: number; absPct: number; position: \"at\" | \"above\" | \"below\"; isNearest: boolean; }[]'.",
+  "src/lib/priceProximity.js::TS2322::Type '{ pct: number; absPct: number; key: string; label: string; kind: string; price: number; }' is not assignable to type '{ key: \"stop\" | \"tp1\" | \"tp2\"; label: string; kind: \"target\" | \"risk\"; price: number; pct: number; absPct: number; }'.",
+  "src/lib/tradeMetrics.js::TS2339::Property 'costModel' does not exist on type '{ epsilonR?: number; epsilonPct?: number; sortBy?: string; minTrades?: number; }'.",
+  "src/lib/tradeMetrics.js::TS2353::Object literal may only specify known properties, and 'matchedSettlements' does not exist in type '{ cost: number; settlements: number; beforeTp1: number; afterTp1: number; source: \"series\" | \"constant\" | \"series_incomplete\"; expectedSettlements: number; }'.",
+  "src/pages/Assets.jsx::TS2322::Type '{ className: string; title: string; }' is not assignable to type 'IntrinsicAttributes & Omit<LucideProps, \"ref\"> & RefAttributes<SVGSVGElement>'.",
+  "src/pages/Trades.jsx::TS2339::Property 'id' does not exist on type 'void'."
+]

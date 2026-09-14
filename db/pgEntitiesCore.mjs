@@ -66,6 +66,31 @@ export const ENTITY_TABLES = Object.freeze({
 const TERMINAL_STATUSES_SQL = "('STOP_HIT','TP2_HIT','INVALIDATED','CLOSED')";
 
 let pool = null;
+
+// Achado do sentinel-security-review (P1, 2026-09-14): o pool era criado só
+// com `connectionString` — sem timeout, uma conexão travada (Neon lento,
+// rede ruim) podia prender o pool inteiro sem limite. Valores conservadores,
+// bem abaixo do timeout de aplicação de 90s do scan (scripts/scanTimeout.mjs)
+// para nunca ser a causa de um travamento que o timeout de fora já cobre.
+const POOL_TIMEOUTS = Object.freeze({
+  connectionTimeoutMillis: 10_000,
+  idleTimeoutMillis: 30_000,
+  statement_timeout: 30_000,
+});
+
+// SSL explícito só quando a própria connection string já pede TLS
+// (`sslmode=...`, caso do Neon em produção) — nunca força SSL numa conexão
+// que não pediu. O Postgres local do CI (`services: postgres:` em ci.yml,
+// db/CLAUDE.md) não tem TLS configurado; forçar `ssl` incondicionalmente
+// quebraria schema.test.js/concurrency.test.js/pgEntitiesCore.test.js. Isto
+// só FORTALECE o modo já pedido (fecha o aviso de depreciação do driver —
+// `prefer`/`require`/`verify-ca` viram alias de `verify-full` hoje, mas
+// deixariam de ser em versões futuras do pacote `pg`) — não muda
+// comportamento de quem não pediu SSL nenhum.
+function sslOptionsFor(databaseUrl) {
+  return databaseUrl.includes('sslmode=') ? { rejectUnauthorized: true } : undefined;
+}
+
 // Lazy + reset-able (não um singleton fixo no top-level): os testes de
 // integração trocam TEST_DATABASE_URL por execução; um pool cacheado cedo
 // demais amarraria todo o processo Node a uma única connection string.
@@ -74,7 +99,11 @@ export function getPool(databaseUrl = process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL não está setada.');
   }
   if (!pool || pool.__connectionString !== databaseUrl) {
-    pool = new pg.Pool({ connectionString: databaseUrl });
+    pool = new pg.Pool({
+      connectionString: databaseUrl,
+      ssl: sslOptionsFor(databaseUrl),
+      ...POOL_TIMEOUTS,
+    });
     pool.__connectionString = databaseUrl;
   }
   return pool;

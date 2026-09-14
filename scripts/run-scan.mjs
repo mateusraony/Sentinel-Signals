@@ -10,6 +10,7 @@ import {
 } from './adminTelegram.js';
 import { withTimeout, forceExit } from './scanTimeout.mjs';
 import { classifyFailure, isFirestoreQuotaExhausted } from './failureClassification.mjs';
+import { pathToFileURL } from 'node:url';
 
 // docs/known-risks.md item 142 — a scan normal termina em ~20s; 90s dá
 // folga generosa (retry de rede da Binance via httpRetry.js incluído) sem
@@ -163,32 +164,65 @@ async function main() {
   console.log(`[scan] finished in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   await announceQuotaRecoveryIfClean();
   await pingHealthcheck();
+
+  // Achado do sentinel-security-review (P1, 2026-09-14): falha por-ativo
+  // (dentro de scanAllAssets/priceCheckActiveOps) sempre foi só logada, nunca
+  // propagada — o job do GitHub Actions ficava verde mesmo com ativos
+  // falhando toda passada. As etapas acima já rodaram até o fim (diagnóstico
+  // completo, nada cortado no meio); só o código de saída final reflete o
+  // resultado agora.
+  return { hasPartialFailures: computeHasPartialFailures(failed, priceCheckErrors) };
 }
 
-main()
-  .then(() => {
-    // forceExit também no caminho de SUCESSO (docs/known-risks.md item 152)
-    // — desde que o mirror Firestore→RTDB entrou em produção
-    // (scripts/adminEntities.js, ativo quando FIREBASE_DATABASE_URL está
-    // setada), firebase-admin/database mantém uma conexão WebSocket
-    // persistente para o Realtime Database. main() completando com sucesso
-    // não fecha essa conexão sozinho, então o processo (e o job do GitHub
-    // Actions) ficava pendurado indefinidamente em vez de sair — sem esse
-    // forceExit, um scan bem-sucedido nunca terminava, colidindo com o
-    // próximo disparo de ~5min e cascateando exatamente como o hang de
-    // RESOURCE_EXHAUSTED do item 142, mas em TODA passada em vez de só
-    // quando a cota estoura. Mesmo padrão que scripts/run-backfill-check.mjs
-    // já usa (mesma razão, doc mais antiga).
-    forceExit(0);
-  })
-  .catch(async (err) => {
-    console.error('[scan] FAILED:', err);
-    await alertOnFailure(err?.message);
-    await pingHealthcheck('/fail');
-    // forceExit (não só process.exitCode) — docs/known-risks.md item 142: se o
-    // erro veio de um withTimeout acima, a chamada real ao Firestore perdeu a
-    // corrida mas continua rodando (e re-tentando) em segundo plano; sem um
-    // process.exit() explícito, o job do GitHub Actions ficaria vivo até ELA
-    // desistir sozinha, do mesmo jeito que travava antes desta correção.
-    forceExit(1);
-  });
+/**
+ * Funções puras — testáveis sem rodar o scan de verdade (mesmo raciocínio de
+ * `scripts/scanTimeout.mjs`'s `avaliarExecucao`: a decisão fica separada da
+ * chamada de rede pra poder ser exercitada com os dois cenários).
+ */
+export function computeHasPartialFailures(scanFailed, priceCheckErrors) {
+  return scanFailed.length > 0 || priceCheckErrors.length > 0;
+}
+
+export function exitCodeForScanResult({ hasPartialFailures }) {
+  return hasPartialFailures ? 1 : 0;
+}
+
+/**
+ * O corpo só roda quando o arquivo é EXECUTADO, nunca quando é importado —
+ * mesmo padrão de scripts/health-audit.mjs/typecheck-ratchet.mjs (item 166:
+ * "módulo que faz trabalho no carregamento é intestável"). Sem isto,
+ * `import { exitCodeForScanResult } from './run-scan.mjs'` num teste dispararia
+ * o scan de verdade contra produção.
+ */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+    .then(({ hasPartialFailures }) => {
+      // forceExit também no caminho de SUCESSO (docs/known-risks.md item 152)
+      // — desde que o mirror Firestore→RTDB entrou em produção
+      // (scripts/adminEntities.js, ativo quando FIREBASE_DATABASE_URL está
+      // setada), firebase-admin/database mantém uma conexão WebSocket
+      // persistente para o Realtime Database. main() completando com sucesso
+      // não fecha essa conexão sozinho, então o processo (e o job do GitHub
+      // Actions) ficava pendurado indefinidamente em vez de sair — sem esse
+      // forceExit, um scan bem-sucedido nunca terminava, colidindo com o
+      // próximo disparo de ~5min e cascateando exatamente como o hang de
+      // RESOURCE_EXHAUSTED do item 142, mas em TODA passada em vez de só
+      // quando a cota estoura. Mesmo padrão que scripts/run-backfill-check.mjs
+      // já usa (mesma razão, doc mais antiga).
+      if (hasPartialFailures) {
+        console.error('[scan] passada terminou com falha(s) parcial(is) — saindo com código 1 (ver logs acima).');
+      }
+      forceExit(exitCodeForScanResult({ hasPartialFailures }));
+    })
+    .catch(async (err) => {
+      console.error('[scan] FAILED:', err);
+      await alertOnFailure(err?.message);
+      await pingHealthcheck('/fail');
+      // forceExit (não só process.exitCode) — docs/known-risks.md item 142: se o
+      // erro veio de um withTimeout acima, a chamada real ao Firestore perdeu a
+      // corrida mas continua rodando (e re-tentando) em segundo plano; sem um
+      // process.exit() explícito, o job do GitHub Actions ficaria vivo até ELA
+      // desistir sozinha, do mesmo jeito que travava antes desta correção.
+      forceExit(1);
+    });
+}
