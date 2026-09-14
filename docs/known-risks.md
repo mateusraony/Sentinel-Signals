@@ -22896,3 +22896,51 @@ agora isso fica visível (`checked_at` preenchido, sem se disfarçar de
 "nunca foi checado") e não trava mais a fila para os demais ativos. Decisão
 sobre reduzir `BACKFILL_LOOKBACK_DAYS` ou estender o cache (opções 2/3 do
 addendum 3) continua pendente com o usuário.
+
+## 177. `callBackend` não retentava um ID token expirado — "Invalid or expired token." em vários ativos na mesma passada do scan do navegador (2026-09-14)
+
+**Achado a partir da auditoria diária** (`health-audit.yml`, Telegram):
+2 achados sinalizados como "suspeita de falha sistêmica" (mesmo erro em 3+
+ativos, assinatura de gravidade do item 136). Um era ruído antigo (`N
+RESOURCE_EXHAUSTED: Quota exceeded`, ~5,4 dias antes da migração
+Firestore→Postgres, já resolvido — a auditoria também amostra erros de
+qualquer data, sem garantia de recência). O outro era real: `scanner · Erro
+no scan de <ativo>: Invalid or expired token.` em 7 ativos, 8× na janela
+recente, o mais recente há 4h.
+
+**Causa raiz**: `"Invalid or expired token."` só existe em um lugar do
+código — `server/index.js:78`, resposta 401 do middleware `requireAuth`
+(`auth.verifyIdToken(idToken)` falhando). Isso só pode vir do scan feito
+pelo **navegador** (`useAutoScan.js`, full scan a cada 60min + price-check a
+cada 2min quando há operação ativa) — o cron do GitHub Actions nunca passa
+por essa camada HTTP, fala direto com o Postgres via `DATABASE_URL`.
+`callBackend` (`src/lib/apiBackend.js`) chamava `auth.currentUser.
+getIdToken()` sem `forceRefresh` e sem nenhuma tentativa de recuperação —
+se o SDK do Firebase devolvesse do cache um token já expirado (aba em
+segundo plano ou notebook em suspensão atrasando o refresh proativo
+automático, causa bem documentada na comunidade para esse SDK), a chamada
+falhava direto com 401, sem segunda chance.
+
+**Severidade avaliada como baixa**: o cron roda independente a cada ~5min
+sem tocar essa camada, então nenhum sinal real deixa de ser pego — é uma
+passada REDUNDANTE do navegador falhando, autocorrigida assim que a aba
+volta a ficar ativa (o SDK renova o token na próxima interação). Não é a
+mesma classe do item 136 (que quebrava a escrita transacional de
+`TradeOperation` em QUALQUER caminho, cron incluso, silenciosamente, por
+semanas).
+
+**Corrigido**: `callBackend` agora tenta de novo UMA vez com
+`getIdToken(true)` (refresh forçado) quando a resposta é 401, antes de
+desistir — não mascara uma falha de autenticação real (401 persistente
+mesmo após o refresh continua propagando o erro normalmente, sem retry
+infinito).
+
+**Reproduzido antes, confirmado depois** (disciplina do projeto):
+`src/lib/apiBackend.test.js` (arquivo novo — `callBackend` não tinha teste
+próprio até aqui, comentário em `src/api/entities.test.js` documentava a
+decisão de exercitá-lo só via produção real; a lógica de retry agora
+justifica o teste direto) — "token expirado (401) é retentado UMA vez com
+refresh forçado" e "401 persistente... continua propagando o erro" — os
+dois falhavam contra o código anterior (confirmado via `git stash`: só 1
+chamada a `fetch`/`getIdToken` onde se esperava 2), passam depois. Suíte
+completa (1752 testes, 3 novos) + lint + build verdes.
