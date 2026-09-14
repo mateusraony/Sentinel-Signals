@@ -22,16 +22,30 @@ export async function callBackend(path, body, { method, allow404 } = {}) {
   if (!auth.currentUser) {
     throw new Error('Não autenticado.');
   }
-  const idToken = await auth.currentUser.getIdToken();
   const httpMethod = method || (body !== undefined ? 'POST' : 'GET');
-  const response = await fetch(`${BASE_URL}${path}`, {
-    method: httpMethod,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
-    },
-    ...(httpMethod === 'GET' || httpMethod === 'DELETE' ? {} : { body: JSON.stringify(body || {}) }),
-  });
+  const doFetch = async (forceRefresh) => {
+    const idToken = await auth.currentUser.getIdToken(forceRefresh);
+    return fetch(`${BASE_URL}${path}`, {
+      method: httpMethod,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      ...(httpMethod === 'GET' || httpMethod === 'DELETE' ? {} : { body: JSON.stringify(body || {}) }),
+    });
+  };
+
+  let response = await doFetch(false);
+  // docs/known-risks.md item 177 — o SDK do Firebase pode devolver do cache
+  // um ID token já expirado (aba em segundo plano/notebook em suspensão
+  // atrasa o refresh proativo automático) — visto em produção como "Invalid
+  // or expired token." em `useAutoScan.js`, vários ativos na mesma passada.
+  // Uma única tentativa com refresh FORÇADO cobre esse caso sem mascarar uma
+  // falha de auth real: se o 401 persistir mesmo com token novo, continua
+  // propagando o erro normalmente.
+  if (response.status === 401) {
+    response = await doFetch(true);
+  }
   if (allow404 && response.status === 404) {
     return null;
   }
