@@ -6,9 +6,9 @@ const express = require('express');
 const { getPgCore, requireDatabaseUrl } = require('../pgCoreLoader');
 const { validateTradeOpPatch } = require('../tradeOpPatchGuard');
 
-function createTradeOpsRouter({ requireAuth }) {
+function createTradeOpsRouter({ requireAuth, requireOwner }) {
   const router = express.Router();
-  router.use(requireDatabaseUrl, requireAuth);
+  router.use(requireDatabaseUrl, requireAuth, requireOwner);
 
   router.post('/create-if-none-active', async (req, res) => {
     const { assetId, docId, data, cascade } = req.body || {};

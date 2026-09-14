@@ -13,16 +13,26 @@
 // o env.
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-const { getIdTokenMock } = vi.hoisted(() => ({ getIdTokenMock: vi.fn() }));
+const { getIdTokenMock, getOwnerKeyMock } = vi.hoisted(() => ({
+  getIdTokenMock: vi.fn(),
+  getOwnerKeyMock: vi.fn(),
+}));
 
 vi.mock('@/lib/firebaseClient', () => ({
   auth: { currentUser: { getIdToken: getIdTokenMock } },
+}));
+
+// requireOwner (server/requireOwner.js, achado P0 do sentinel-security-
+// review) — callBackend precisa mandar a chave em TODA chamada.
+vi.mock('@/lib/ownerKey', () => ({
+  getOwnerKey: getOwnerKeyMock,
 }));
 
 beforeEach(() => {
   vi.resetModules();
   import.meta.env.VITE_BACKEND_URL = 'https://api.example.com';
   getIdTokenMock.mockReset();
+  getOwnerKeyMock.mockReset().mockReturnValue('chave-do-dono');
   global.fetch = vi.fn();
 });
 
@@ -63,5 +73,16 @@ describe('callBackend', () => {
     expect(result).toEqual({ id: 'a1' });
     expect(getIdTokenMock).toHaveBeenCalledTimes(1);
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('toda chamada inclui o header X-Owner-Key (requireOwner no server)', async () => {
+    getIdTokenMock.mockResolvedValueOnce('token-bom');
+    global.fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 'a1' }) });
+
+    const { callBackend } = await import('./apiBackend');
+    await callBackend('/api/entities/MonitoredAsset');
+
+    const [, requestInit] = global.fetch.mock.calls[0];
+    expect(requestInit.headers['X-Owner-Key']).toBe('chave-do-dono');
   });
 });

@@ -317,7 +317,26 @@ function createEntity(entityName) {
 
   // Devolve os docs deletados (mesmo contrato de src/api/entities.js's
   // deleteMany hoje) — SELECT antes do DELETE, mesma transação.
+  //
+  // Defesa em profundidade (achado do sentinel-security-review, 2026-09-14):
+  // com `filters` vazio, `buildWhereClause` devolve `[]` e o DELETE sai SEM
+  // `WHERE` — apagaria a tabela inteira. requireOwner (server/) já fecha o
+  // acesso não autorizado a esta função, mas um filtro vazio continua sendo
+  // um erro fácil de cometer mesmo pelo dono (ex.: `deleteMany({})` por
+  // engano em vez de `deleteMany({ asset_id })`) — rejeitar aqui, na camada
+  // mais baixa, protege todo chamador (rota genérica, scripts admin, testes).
+  //
+  // `SystemLog` é a ÚNICA exceção deliberada: `ClearLogsButton`
+  // (src/components/layout/Sidebar.jsx) já é uma feature existente e real —
+  // "Limpar TODOS os logs do sistema?", com confirmação explícita do
+  // usuário — que depende de `deleteMany({})` esvaziar a tabela inteira.
+  // Bloquear isso quebraria algo que já funciona hoje, o que esta mudança
+  // não deve fazer.
   async function deleteMany(filters = {}) {
+    const isEmpty = !filters || typeof filters !== 'object' || Array.isArray(filters) || Object.keys(filters).length === 0;
+    if (isEmpty && entityName !== 'SystemLog') {
+      throw new Error('deleteMany requer pelo menos um filtro — filtro vazio apagaria a tabela inteira.');
+    }
     const client = await getPool().connect();
     try {
       await client.query('BEGIN');

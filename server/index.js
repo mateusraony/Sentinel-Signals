@@ -15,10 +15,16 @@ const { createTradeOpsRouter } = require('./routes/tradeOps');
 const { createLocksRouter } = require('./routes/locks');
 const { createMeRouter } = require('./routes/me');
 const { getPgCore } = require('./pgCoreLoader');
+const { requireOwner } = require('./requireOwner');
 
 // Fail fast with a clear message instead of an opaque JSON.parse crash if
-// this ever gets deployed without its secrets configured.
-const REQUIRED_ENV = ['FIREBASE_SERVICE_ACCOUNT_JSON', 'TELEGRAM_BOT_TOKEN'];
+// this ever gets deployed without its secrets configured. OWNER_ACCESS_KEY
+// (achado P0 do sentinel-security-review, 2026-09-14): sem ela, qualquer
+// sessão anônima com a URL da API (auth anônima automática — decisão
+// intencional #1 do CLAUDE.md) acessava /api/entities, /api/trade-ops e
+// /api/locks inteiros — requireAuth sozinho só prova "token válido", nunca
+// "é o dono". Ver server/requireOwner.js.
+const REQUIRED_ENV = ['FIREBASE_SERVICE_ACCOUNT_JSON', 'TELEGRAM_BOT_TOKEN', 'OWNER_ACCESS_KEY'];
 const missingEnv = REQUIRED_ENV.filter((key) => !process.env[key]);
 if (missingEnv.length) {
   console.error(`Missing required env var(s): ${missingEnv.join(', ')}`);
@@ -455,9 +461,12 @@ app.get('/api/backtest/artifact/:runId', requireAuth, requireGithubToken, async 
 // Chamadas de verdade pelo browser (src/api/entities.js) desde o cutover
 // (2026-09-12); sem DATABASE_URL configurada elas respondem 503
 // (requireDatabaseUrl em server/pgCoreLoader.js) em vez de tentar conectar.
-app.use('/api/entities', createEntitiesRouter({ requireAuth }));
-app.use('/api/trade-ops', createTradeOpsRouter({ requireAuth }));
-app.use('/api/locks', createLocksRouter({ requireAuth }));
+app.use('/api/entities', createEntitiesRouter({ requireAuth, requireOwner }));
+app.use('/api/trade-ops', createTradeOpsRouter({ requireAuth, requireOwner }));
+app.use('/api/locks', createLocksRouter({ requireAuth, requireOwner }));
+// /api/me fica de fora de propósito: sempre opera sobre req.uid (nunca um id
+// vindo do cliente), então é inerentemente seguro sob auth anônima — é o
+// único uso legítimo dela (criar/ler o PRÓPRIO perfil).
 app.use('/api/me', createMeRouter({ requireAuth }));
 
 const port = process.env.PORT || 3000;
