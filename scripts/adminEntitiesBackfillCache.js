@@ -107,17 +107,38 @@ function createAssetStateCache(real) {
   };
 }
 
-// scanner.js's only per-tick MonitoredAsset write (scan_status/last_scan_at/
-// scan_error/scan_error_since bookkeeping) becomes an in-memory-only no-op —
-// same return shape as the real adapter's update() so nothing that might
-// destructure the result breaks, just never reaches Firestore during
-// replay. Reads (filter/list — the one real lookup run-backfill-check.mjs
-// does per asset, outside the tick loop) stay real: the "already has an
-// active op" guard and the asset's live config must reflect production.
+// scanner.js's only per-tick MonitoredAsset write is exactly these 4
+// bookkeeping fields (scanner.js:4057-4064 and :4414-4420) — nothing else is
+// ever written from inside the tick loop. docs/known-risks.md item 176
+// addendum 5: the ORIGINAL version of this guard intercepted the update()
+// METHOD unconditionally, not just this shape — which also silently
+// swallowed run-backfill-check.mjs's OWN orchestration writes
+// (backfill_check_status/backfill_checked_at/backfill_ops_found/
+// backfill_check_error), since that script imports the exact same `backend`
+// object (the '@/api/entities' redirect in build-backfill.mjs isn't
+// importer-scoped, unlike the other 3 redirects). Result: the backfill's own
+// done/error outcome could never actually persist, no matter what happened —
+// explaining why the same asset (LDOUSDT) resurfaced as 'pending' forever
+// regardless of timeout/success. Same defensive shape-check pattern as
+// isAssetStateHotPathQuery below: recognize the exact per-tick shape and
+// no-op ONLY that; anything else (in particular the orchestrator's own
+// status fields) passes through to the real backend untouched.
+const SCAN_BOOKKEEPING_KEYS = new Set(['last_scan_at', 'scan_status', 'scan_error', 'scan_error_since']);
+function isScanBookkeepingUpdate(data) {
+  const keys = Object.keys(data ?? {});
+  return keys.length > 0 && keys.every((key) => SCAN_BOOKKEEPING_KEYS.has(key));
+}
+
+// Reads (filter/list — the one real lookup run-backfill-check.mjs does per
+// asset, outside the tick loop) stay real: the "already has an active op"
+// guard and the asset's live config must reflect production.
 function createMonitoredAssetBackfillEntity(real) {
   return {
     ...real,
-    async update(id, data) { return { id, ...data }; },
+    async update(id, data) {
+      if (isScanBookkeepingUpdate(data)) return { id, ...data };
+      return real.update(id, data);
+    },
   };
 }
 
