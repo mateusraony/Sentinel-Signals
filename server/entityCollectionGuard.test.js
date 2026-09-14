@@ -28,4 +28,29 @@ describe('checkCollectionAccess', () => {
     expect(result.status).toBe(403);
     expect(result.error).toMatch(/api\/me/);
   });
+
+  // Achado P0 (sentinel-security-review, 2026-09-14): TradeOperation tinha
+  // rota CAS dedicada (server/routes/tradeOps.js) E a rota CRUD genérica —
+  // um PATCH direto por aqui contornava a máquina de estados inteira.
+  it('allows GET on TradeOperation (read-only)', () => {
+    expect(checkCollectionAccess(ENTITY_TABLES, 'TradeOperation', 'GET')).toEqual({ allowed: true });
+  });
+
+  it('blocks every write verb on TradeOperation, pointing to /api/trade-ops', () => {
+    for (const method of ['POST', 'PATCH', 'DELETE', 'PUT']) {
+      const result = checkCollectionAccess(ENTITY_TABLES, 'TradeOperation', method);
+      expect(result.allowed).toBe(false);
+      expect(result.status).toBe(403);
+      expect(result.error).toMatch(/api\/trade-ops/);
+    }
+  });
+
+  it('does not block writes on other business collections', () => {
+    expect(checkCollectionAccess(ENTITY_TABLES, 'MonitoredAsset', 'PATCH')).toEqual({ allowed: true });
+    expect(checkCollectionAccess(ENTITY_TABLES, 'AssetState', 'DELETE')).toEqual({ allowed: true });
+  });
+
+  it('defaults the method to GET when the caller omits it (backward compatible)', () => {
+    expect(checkCollectionAccess(ENTITY_TABLES, 'TradeOperation')).toEqual({ allowed: true });
+  });
 });

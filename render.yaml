@@ -90,3 +90,11 @@ services:
         sync: false
       - key: ALLOWED_ORIGIN
         value: https://sentinel-signals.onrender.com
+      # Achado P0 do sentinel-security-review (2026-09-14): requireAuth
+      # sozinho só prova "token Firebase válido" — com auth anônima
+      # automática, qualquer sessão com a URL da API acessava
+      # /api/entities, /api/trade-ops e /api/locks inteiros. Gere um valor
+      # forte e cole o MESMO valor no painel (ícone de chave no topo) — ver
+      # server/requireOwner.js e .env.example.
+      - key: OWNER_ACCESS_KEY
+        sync: false

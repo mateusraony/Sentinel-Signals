@@ -119,6 +119,31 @@ describe.skipIf(!TEST_DATABASE_URL)('db/pgEntitiesCore.mjs', () => {
       expect(await backend.entities.VerificationTask.list()).toHaveLength(0);
     });
 
+    // Achado do sentinel-security-review (2026-09-14): filtro vazio faz
+    // buildWhereClause devolver [] e o DELETE sair sem WHERE — apaga a
+    // tabela inteira. Reproduzido aqui contra Postgres real antes da
+    // correção (a mensagem confirma que NADA foi deletado, não só que
+    // lançou).
+    it('deleteMany rejeita filtro vazio em vez de apagar a tabela inteira', async () => {
+      await backend.entities.VerificationTask.bulkCreate([
+        { priority: 'high', status: 'pending' },
+        { priority: 'low', status: 'pending' },
+      ]);
+      await expect(backend.entities.VerificationTask.deleteMany({})).rejects.toThrow(/pelo menos um filtro/);
+      await expect(backend.entities.VerificationTask.deleteMany()).rejects.toThrow(/pelo menos um filtro/);
+      expect(await backend.entities.VerificationTask.list()).toHaveLength(2);
+    });
+
+    // Exceção deliberada: ClearLogsButton (Sidebar.jsx) já depende de
+    // deleteMany({}) esvaziar SystemLog inteiro — feature existente, com
+    // confirmação explícita do usuário. Não pode quebrar com esta mudança.
+    it('deleteMany continua aceitando filtro vazio para SystemLog (ClearLogsButton)', async () => {
+      await backend.entities.SystemLog.bulkCreate([{ level: 'info' }, { level: 'error' }]);
+      const deleted = await backend.entities.SystemLog.deleteMany({});
+      expect(deleted).toHaveLength(2);
+      expect(await backend.entities.SystemLog.list()).toHaveLength(0);
+    });
+
     it('rejeita undefined em qualquer profundidade, mesma mensagem do guard compartilhado', async () => {
       await expect(backend.entities.TradeOperation.create({ symbol: 'X', tier: undefined }))
         .rejects.toThrow(/Cannot use "undefined" as a Firestore value/);

@@ -3,9 +3,9 @@
 const express = require('express');
 const { getPgCore, requireDatabaseUrl } = require('../pgCoreLoader');
 
-function createLocksRouter({ requireAuth }) {
+function createLocksRouter({ requireAuth, requireOwner }) {
   const router = express.Router();
-  router.use(requireDatabaseUrl, requireAuth);
+  router.use(requireDatabaseUrl, requireAuth, requireOwner);
 
   router.post('/acquire', async (req, res) => {
     const { lockName, ttlMs, holder } = req.body || {};

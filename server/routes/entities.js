@@ -1,19 +1,22 @@
 // Rota HTTP genérica para o CRUD de entidades (Fase 5 do plano de migração
 // Firestore→Neon) — o equivalente funcional do deny-by-default de
 // `firestore.rules`: NUNCA consulta uma tabela livre, só as registradas em
-// db/pgEntitiesCore.mjs's ENTITY_TABLES (nome fora do registro → 404), e
-// nunca a coleção `User` (dono only — ver server/entityCollectionGuard.js).
+// db/pgEntitiesCore.mjs's ENTITY_TABLES (nome fora do registro → 404), nunca
+// a coleção `User`, e só leitura em `TradeOperation` (ver
+// server/entityCollectionGuard.js). Exige `requireOwner` (achado P0 do
+// sentinel-security-review, 2026-09-14) — token Firebase válido sozinho não
+// basta mais, já que a auth é anônima automática.
 // Chamada de verdade pelo browser desde o cutover (2026-09-12).
 const express = require('express');
 const { getPgCore, requireDatabaseUrl } = require('../pgCoreLoader');
 const { checkCollectionAccess } = require('../entityCollectionGuard');
 
-function createEntitiesRouter({ requireAuth }) {
+function createEntitiesRouter({ requireAuth, requireOwner }) {
   const router = express.Router();
-  router.use(requireDatabaseUrl, requireAuth);
+  router.use(requireDatabaseUrl, requireAuth, requireOwner);
 
-  function checkCollection(ENTITY_TABLES, collection, res) {
-    const result = checkCollectionAccess(ENTITY_TABLES, collection);
+  function checkCollection(ENTITY_TABLES, collection, method, res) {
+    const result = checkCollectionAccess(ENTITY_TABLES, collection, method);
     if (!result.allowed) {
       res.status(result.status).json({ error: result.error });
       return false;
@@ -37,7 +40,7 @@ function createEntitiesRouter({ requireAuth }) {
     const { collection } = req.params;
     try {
       const { backend, ENTITY_TABLES } = await getPgCore();
-      if (!checkCollection(ENTITY_TABLES, collection, res)) return;
+      if (!checkCollection(ENTITY_TABLES, collection, req.method, res)) return;
       const filters = parseFilters(req, res);
       if (filters === null) return;
       const sort = typeof req.query.sort === 'string' ? req.query.sort : undefined;
@@ -57,7 +60,7 @@ function createEntitiesRouter({ requireAuth }) {
     const { collection, id } = req.params;
     try {
       const { backend, ENTITY_TABLES } = await getPgCore();
-      if (!checkCollection(ENTITY_TABLES, collection, res)) return;
+      if (!checkCollection(ENTITY_TABLES, collection, req.method, res)) return;
       const doc = await backend.entities[collection].get(id);
       if (!doc) return res.status(404).json({ error: 'Documento não encontrado.' });
       res.json(doc);
@@ -71,7 +74,7 @@ function createEntitiesRouter({ requireAuth }) {
     const { collection } = req.params;
     try {
       const { backend, ENTITY_TABLES } = await getPgCore();
-      if (!checkCollection(ENTITY_TABLES, collection, res)) return;
+      if (!checkCollection(ENTITY_TABLES, collection, req.method, res)) return;
       const doc = await backend.entities[collection].create(req.body || {});
       res.status(201).json(doc);
     } catch (e) {
@@ -84,7 +87,7 @@ function createEntitiesRouter({ requireAuth }) {
     const { collection } = req.params;
     try {
       const { backend, ENTITY_TABLES } = await getPgCore();
-      if (!checkCollection(ENTITY_TABLES, collection, res)) return;
+      if (!checkCollection(ENTITY_TABLES, collection, req.method, res)) return;
       const items = Array.isArray(req.body) ? req.body : req.body?.items;
       if (!Array.isArray(items)) return res.status(400).json({ error: 'Corpo precisa ser um array (ou { items: [...] }).' });
       const docs = await backend.entities[collection].bulkCreate(items);
@@ -99,7 +102,7 @@ function createEntitiesRouter({ requireAuth }) {
     const { collection } = req.params;
     try {
       const { backend, ENTITY_TABLES } = await getPgCore();
-      if (!checkCollection(ENTITY_TABLES, collection, res)) return;
+      if (!checkCollection(ENTITY_TABLES, collection, req.method, res)) return;
       const deleted = await backend.entities[collection].deleteMany(req.body || {});
       res.json(deleted);
     } catch (e) {
@@ -112,7 +115,7 @@ function createEntitiesRouter({ requireAuth }) {
     const { collection, id } = req.params;
     try {
       const { backend, ENTITY_TABLES } = await getPgCore();
-      if (!checkCollection(ENTITY_TABLES, collection, res)) return;
+      if (!checkCollection(ENTITY_TABLES, collection, req.method, res)) return;
       const result = await backend.entities[collection].createUnique(id, req.body || {});
       res.json(result);
     } catch (e) {
@@ -125,7 +128,7 @@ function createEntitiesRouter({ requireAuth }) {
     const { collection, id } = req.params;
     try {
       const { backend, ENTITY_TABLES } = await getPgCore();
-      if (!checkCollection(ENTITY_TABLES, collection, res)) return;
+      if (!checkCollection(ENTITY_TABLES, collection, req.method, res)) return;
       const doc = await backend.entities[collection].set(id, req.body || {});
       res.json(doc);
     } catch (e) {
@@ -138,7 +141,7 @@ function createEntitiesRouter({ requireAuth }) {
     const { collection, id } = req.params;
     try {
       const { backend, ENTITY_TABLES } = await getPgCore();
-      if (!checkCollection(ENTITY_TABLES, collection, res)) return;
+      if (!checkCollection(ENTITY_TABLES, collection, req.method, res)) return;
       const doc = await backend.entities[collection].update(id, req.body || {});
       res.json(doc);
     } catch (e) {
@@ -151,7 +154,7 @@ function createEntitiesRouter({ requireAuth }) {
     const { collection, id } = req.params;
     try {
       const { backend, ENTITY_TABLES } = await getPgCore();
-      if (!checkCollection(ENTITY_TABLES, collection, res)) return;
+      if (!checkCollection(ENTITY_TABLES, collection, req.method, res)) return;
       await backend.entities[collection].delete(id);
       res.status(204).end();
     } catch (e) {

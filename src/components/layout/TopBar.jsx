@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, Clock, Radar, BellRing } from 'lucide-react';
+import { Loader2, Clock, Radar, BellRing, KeyRound } from 'lucide-react';
 import { scanAllAssets } from '@/lib/scanner';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { isTelegramConfigured } from '@/lib/telegram';
+import { isOwnerKeyConfigured } from '@/lib/ownerKey';
 import TelegramSettings from '@/components/settings/TelegramSettings';
+import OwnerKeySettings from '@/components/settings/OwnerKeySettings';
 import GlobalSearch from './GlobalSearch';
 import { toast } from '@/components/ui/use-toast';
 
@@ -14,8 +16,10 @@ export default function TopBar() {
   const [progress, setProgress] = useState('');
   const [lastScan, setLastScan] = useState(null);
   const [showTelegram, setShowTelegram] = useState(false);
+  const [showOwnerKey, setShowOwnerKey] = useState(false);
   const queryClient = useQueryClient();
   const telegramActive = isTelegramConfigured();
+  const ownerKeyActive = isOwnerKeyConfigured();
 
   const handleScan = async () => {
     setScanning(true);
@@ -63,6 +67,7 @@ export default function TopBar() {
   return (
     <>
       <TelegramSettings open={showTelegram} onClose={() => setShowTelegram(false)} />
+      <OwnerKeySettings open={showOwnerKey} onClose={() => setShowOwnerKey(false)} />
       <header className="h-14 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30"
         style={{ background: 'rgba(8,10,18,0.7)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
       >
@@ -106,6 +111,15 @@ export default function TopBar() {
             ? { background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)' }
             : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
           <BellRing className="w-3.5 h-3.5" style={{ color: telegramActive ? '#00e5ff' : 'rgba(255,255,255,0.35)' }} />
+        </button>
+
+        <button onClick={() => setShowOwnerKey(true)}
+          className="flex items-center justify-center w-8 h-8 rounded-lg transition-all"
+          title="Chave de Acesso do Backend"
+          style={ownerKeyActive
+            ? { background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)' }
+            : { background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.25)' }}>
+          <KeyRound className="w-3.5 h-3.5" style={{ color: ownerKeyActive ? '#00e5ff' : '#ff1478' }} />
         </button>
 
         <Button

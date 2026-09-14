@@ -5,6 +5,7 @@
  * it with firebase-admin before doing anything.
  */
 import { auth } from '@/lib/firebaseClient';
+import { getOwnerKey } from '@/lib/ownerKey';
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -30,6 +31,9 @@ export async function callBackend(path, body, { method, allow404 } = {}) {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${idToken}`,
+        // requireOwner (server/requireOwner.js) — ignorado por rotas que não
+        // o exigem (ex.: /api/me), então é seguro mandar sempre.
+        'X-Owner-Key': getOwnerKey(),
       },
       ...(httpMethod === 'GET' || httpMethod === 'DELETE' ? {} : { body: JSON.stringify(body || {}) }),
     });
