@@ -22755,3 +22755,123 @@ estender o cache) — a opção 1 (só aumentar o timeout) não resolveria a
 causa, apenas adiaria a falha, e o processo ficaria minutos esperando
 I/O à toa. Nenhuma correção implementada ainda — decisão pendente com o
 usuário.
+
+### Addendum 5 (2026-09-13, mesmo dia) — causa raiz real de "por que só o
+### LDOUSDT": `backfill_check_status` nunca persiste NENHUM resultado, não
+### só o de timeout — bug estrutural, não sintoma do orçamento
+
+Usuário reportou de novo ("Deu o mesmo erro de trava") e perguntou
+explicitamente por que só o LDOUSDT trava. Hipótese inicial (usuário teria
+reativado o ativo manualmente) foi descartada — ele confirmou não ter
+mexido em nada. Investigação orientada por dado real, comparando o `id`
+interno do ativo pendente entre dois runs reais do `backfill.yml`:
+
+- Run #86 (20:54 UTC): `[backfill] pendente: LDOUSDT
+  (id=peioFyuwpDvKWrVQ3bky, status=pending, checked_at=nunca)`.
+- Run #87 (23:12 UTC, ~2h20 depois, timeout idêntico de ~5min32s):
+  `[backfill] pendente: LDOUSDT (id=peioFyuwpDvKWrVQ3bky, status=pending,
+  checked_at=nunca)` — **exatamente o MESMO `id`**.
+
+Isso descarta a hipótese de registro duplicado (dois `MonitoredAsset` de
+LDOUSDT no banco) — é sempre a MESMA linha, sempre `checked_at:'nunca'`
+mesmo tendo sido "checada" (e travado) em toda hora do dia. Um bug real
+está fazendo `backfill_check_status` nunca sair de `'pending'`, apesar do
+item 174 (rowCount) já corrigido e em produção.
+
+**Causa raiz encontrada lendo `scripts/adminEntitiesBackfillCache.js`
+linha a linha**: `createMonitoredAssetBackfillEntity` (linhas 117-122)
+intercepta **qualquer** chamada a `MonitoredAsset.update()` e devolve
+sucesso falso sem nunca chamar `real.update()`:
+
+```js
+function createMonitoredAssetBackfillEntity(real) {
+  return {
+    ...real,
+    async update(id, data) { return { id, ...data }; },
+  };
+}
+```
+
+O comentário do próprio arquivo (linhas 110-116) documenta a intenção:
+interceptar só a escrita **per-tick** que `scanner.js` faz de dentro do
+loop de replay (`scan_status`/`last_scan_at`/`scan_error`/
+`scan_error_since` — confirmado em `scanner.js:4057-4064` e `4414-4420`,
+são exatamente esses 4 campos e nenhum outro). Só que o `backend` que
+`run-backfill-check.mjs` importa (`@/api/entities`, redirecionado por
+`scripts/build-backfill.mjs:19-21` **sem checar o importer**, ao contrário
+dos outros 3 redirecionamentos que só valem quando o importer é
+`scanner.js`) é o MESMO objeto — e o próprio orquestrador
+(`run-backfill-check.mjs`) TAMBÉM chama `backend.entities.MonitoredAsset.
+update()` para gravar o resultado de verdade da checagem:
+`backfill_check_status`/`backfill_checked_at`/`backfill_ops_found`/
+`backfill_check_error`, nos três pontos que decidem o desfecho
+(`done` sem replay quando já há op ativa, `done`/`error` ao final do
+replay, `error` no `catch` de timeout). **Nenhuma dessas três escritas
+jamais chegou ao banco** — a implementação do wrapper é mais abrangente
+que a intenção documentada: em vez de reconhecer o FORMATO exato da
+escrita per-tick do scanner (mesmo padrão defensivo que
+`isAssetStateHotPathQuery` já usa para `AssetState`), ela intercepta o
+MÉTODO inteiro, sem olhar o conteúdo do `data`.
+
+Isso explica tudo observado até aqui, de um jeito que nem o item 174 nem
+os achados 1-4 deste item explicavam sozinhos:
+- Por que `checked_at` sempre aparece `'nunca'`, mesmo em ativo há dias
+  sendo "checado" a cada hora — o valor nunca é escrito de verdade.
+- Por que a marcação `'error'` do `catch` "funciona sem erro" (nenhum log
+  de falha do item 174/176 correção 1 apareceu) — o `update()` do
+  wrapper NUNCA lança, porque nunca chama o `real.update()` que poderia
+  lançar; ele sempre resolve com sucesso fabricado.
+- Por que é sempre o MESMO `id` — não é reativação nem duplicata, é a
+  MESMA linha que nunca de fato mudou de status desde que entrou em
+  `'pending'`.
+- Por que só o LDOUSDT é visto travado: qualquer outro ativo que já tenha
+  passado por um backfill teria o MESMO problema (nunca sai de
+  `'pending'` de verdade), mas com `MAX_ASSETS_PER_RUN=1` e sem
+  `ORDER BY` explícito no `filter({backfill_check_status:'pending'})`
+  (`run-backfill-check.mjs:213-217`), o mesmo ativo (provavelmente o mais
+  antigo/primeiro na ordem natural do Postgres) fica sempre na frente da
+  fila e nunca libera espaço pra outro ser tentado — os demais nunca têm
+  a chance de sequer expor o mesmo bug de forma visível.
+- Por que o achado 4 (timeout por tentativa) e a hipótese de throughput
+  (addenda 3/4) não resolveram: elas atacam **quanto tempo o replay leva**
+  ou **se uma conexão trava**, mas são ortogonais a este bug — mesmo se o
+  replay do LDOUSDT terminasse dentro do orçamento de 5 minutos amanhã, a
+  escrita final de `'done'` continuaria sendo engolida pelo mesmo wrapper,
+  e o ativo continuaria aparecendo como pendente para sempre.
+
+**Corrigido, com autorização explícita do usuário**:
+`createMonitoredAssetBackfillEntity.update()` agora reconhece o FORMATO
+exato da escrita per-tick do `scanner.js` (`isScanBookkeepingUpdate` —
+`last_scan_at`/`scan_status`/`scan_error`/`scan_error_since`, confirmados
+em `scanner.js:4057-4064` e `:4414-4420` como os únicos 4 campos que esse
+loop escreve) e só intercepta ESSE formato — mesmo padrão defensivo já
+usado por `isAssetStateHotPathQuery`. Qualquer outra chamada (em
+particular `backfill_check_status`/`backfill_checked_at`/
+`backfill_ops_found`/`backfill_check_error`, escritos pelo próprio
+`run-backfill-check.mjs`) passa direto para `real.update()`. A superfície
+tocada é só a detecção de formato deste wrapper — `scanner.js`,
+`opTransition.js`/CAS e o caminho transacional de `TradeOperation`
+continuam intocados; o risco de regressão é local a este arquivo.
+
+**Reproduzido antes, confirmado depois** (disciplina do projeto):
+`scripts/adminEntitiesBackfillCache.test.js` ganhou 2 casos novos
+("MonitoredAsset.update com backfill_check_status... chama o real update"
+e o equivalente para o caminho de erro/timeout) — confirmados FALHANDO
+contra o código anterior via `git stash` (0 chamadas ao mock real onde o
+teste esperava 1) e passando depois. `adminEntitiesBackfillCacheTripwire.test.js`
+teve sua asserção antiga ("nunca chama o real") invertida para refletir o
+desenho correto (existe um caminho real, gated por
+`isScanBookkeepingUpdate`). O caso pré-existente ("formato exato do
+bookkeeping per-tick nunca chama o real") continua passando — a proteção
+original contra o incidente de 2026-08-29 (replay sobrescrevendo o
+snapshot ao vivo) não regrediu. Suíte completa (1749 testes, 13 novos) +
+lint + build + `build:backfill` verdes depois da correção.
+
+**Efeito esperado no próximo ciclo do LDOUSDT**: `backfill_check_status`
+finalmente vai persistir de verdade — `'error'` se travar de novo (com
+`checked_at` preenchido, ao contrário de sempre `'nunca'` até aqui), ou
+`'done'` se completar dentro do orçamento de 5 minutos. De qualquer forma,
+o ativo deixa de reaparecer eternamente na fila sem nunca sair dela — a
+pergunta de throughput (opções 2/3 do addendum 3, ainda sem decisão) volta
+a ser sobre "quanto tempo o replay leva", não mais sobre "por que o
+resultado nunca é salvo".

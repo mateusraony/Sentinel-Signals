@@ -89,11 +89,37 @@ describe('adminEntitiesBackfillCache.js', () => {
     expect(assetStateFilterMock).toHaveBeenCalledTimes(2);
   });
 
-  it('MonitoredAsset.update nunca chama o real update — retorna o mesmo formato do adaptador real', async () => {
+  it('MonitoredAsset.update com o formato exato do bookkeeping per-tick do scanner nunca chama o real update', async () => {
     const { backend } = await import('./adminEntitiesBackfillCache.js');
     const result = await backend.entities.MonitoredAsset.update('m1', { scan_status: 'success' });
     expect(monitoredAssetUpdateMock).not.toHaveBeenCalled();
     expect(result).toEqual({ id: 'm1', scan_status: 'success' });
+  });
+
+  it('MonitoredAsset.update com backfill_check_status (escrita do PRÓPRIO run-backfill-check.mjs) chama o real update — docs/known-risks.md item 176 addendum 5', async () => {
+    monitoredAssetUpdateMock.mockResolvedValue({ id: 'm1', backfill_check_status: 'done' });
+    const { backend } = await import('./adminEntitiesBackfillCache.js');
+    const result = await backend.entities.MonitoredAsset.update('m1', {
+      backfill_check_status: 'done',
+      backfill_checked_at: '2026-09-14T00:00:00.000Z',
+      backfill_ops_found: 0,
+    });
+    expect(monitoredAssetUpdateMock).toHaveBeenCalledWith('m1', {
+      backfill_check_status: 'done',
+      backfill_checked_at: '2026-09-14T00:00:00.000Z',
+      backfill_ops_found: 0,
+    });
+    expect(result).toEqual({ id: 'm1', backfill_check_status: 'done' });
+  });
+
+  it('MonitoredAsset.update com backfill_check_status:error (caminho de timeout) também chama o real update', async () => {
+    monitoredAssetUpdateMock.mockResolvedValue({ id: 'm1', backfill_check_status: 'error' });
+    const { backend } = await import('./adminEntitiesBackfillCache.js');
+    await backend.entities.MonitoredAsset.update('m1', {
+      backfill_check_status: 'error',
+      backfill_check_error: 'Timeout: checkOneAsset:LDOUSDT não retornou em 300000ms',
+    });
+    expect(monitoredAssetUpdateMock).toHaveBeenCalledTimes(1);
   });
 
   it('MonitoredAsset.filter continua real — leitura de config/estado ativo tem que refletir produção', async () => {
