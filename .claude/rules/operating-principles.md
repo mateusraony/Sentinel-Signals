@@ -33,6 +33,19 @@ global do usuário (ver `docs/claude/global-CLAUDE.md.example`).
   partes do sistema que consomem o que mudou (ex.: campo novo numa entidade —
   quem mais lê isso? Dashboard, Telegram, backtest, health-audit?). Vale para
   toda tarefa, não só motor de trading.
+- **Passo manual de infra pendente = pedido explícito, não nota de rodapé
+  (achado real, 2026-09-15, `docs/known-risks.md` item 179 addendum).**
+  Código e migração de schema neste projeto não têm o mesmo timing de
+  deploy (código: automático a cada push em `main`; schema Postgres:
+  manual, via `db-migrate.yml`). Documentar um passo manual pendente no
+  PR/plano e seguir em frente não é suficiente quando o código que já foi
+  mesclado DEPENDE dele — isso já causou uma janela real de operações sem
+  gestão (10 ativos, PR #364). Sempre que um passo manual for
+  pré-requisito de código que já vai pro ar no merge (não um "quando
+  puder"), peça explicitamente pro usuário executá-lo, e só considere a
+  tarefa concluída depois de confirmar que ele rodou — mesma disciplina já
+  usada pro secret `DATABASE_URL_READONLY` na mesma rodada, que por isso
+  não teve o mesmo problema.
 - **Fato × hipótese × recomendação.** Sempre separe o que você observou no
   código do que é plausível e do que é opinião. Sem "parece bom" — traga
   evidência (`arquivo:linha`).

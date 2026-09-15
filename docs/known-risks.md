@@ -23171,3 +23171,57 @@ sem dependência nativa no repo (a classe de problema que costuma quebrar
 numa subida de major do Node); suíte completa (1851 testes, incluindo os
 gated por `TEST_DATABASE_URL`) e `npm run build` rodados de verdade sob
 Node 22 antes do merge.
+
+### Addendum (2026-09-15, mesmo dia) — incidente real em produção: passo manual do item 1 (AssetState) não foi pedido explicitamente após o merge, 10 ativos ficaram sem gestão de operação por candle por ~horas
+
+**O que aconteceu.** O merge da PR #364 (16:33 UTC-ish da tarde) deployou o
+código novo de `persistScanResults` (chama `backend.assetStates.upsert`)
+imediatamente — `scan.yml` roda a cada ~5min direto do `main`, sem esperar
+nenhum passo manual. Mas o índice `asset_states_asset_timeframe_uq` que
+esse upsert depende (`ON CONFLICT (asset_id, timeframe) WHERE ...`) só
+existe em produção depois de alguém disparar `db-migrate.yml` manualmente
+— documentado no plano e na descrição da PR, mas **nunca pedido de forma
+explícita e direta ao usuário depois do merge**, só deixado registrado em
+texto. Resultado: toda escrita de `AssetState` em produção passou a
+lançar `there is no unique or exclusion constraint matching the ON
+CONFLICT specification` (Postgres) — erro real, capturado em
+`docs/known-risks.md`-style pelo `health-audit.yml` (10 ativos, 10
+ocorrências, achado 🚨 "suspeita de falha sistêmica").
+
+**Por que isso foi mais grave do que "só o AssetState quebrou".**
+`scanAllAssetsInner` (`src/lib/scanner.js`, o loop principal por-ativo)
+envolve `scanAsset(asset)` E `persistScanResults(result)` no MESMO bloco
+`try`, com UM `catch` por ativo. Como a escrita de `AssetState` fica logo
+no INÍCIO de `persistScanResults` (antes de toda a lógica de gestão de
+`TradeOperation` — trailing, Time Stop, Chop Exit, TP/stop por candle,
+arbitragem entre cascatas), um erro ali derruba a função INTEIRA pra
+aquele ativo naquela passada — não só a persistência do indicador. Os 10
+ativos afetados ficaram sem gestão de operação por CANDLE (não por preço
+— `priceCheckActiveOpsInner` é um loop separado, independente, e
+continuou rodando normalmente) desde o deploy até a correção. Nenhuma
+posição foi perdida ou corrompida — é falha de "deixar de atualizar",
+não de dado incorreto — mas a janela de exposição foi real.
+
+**Como foi descoberto e corrigido.** O usuário disparou o
+`health-audit.yml` manualmente (pra confirmar o item 2 desta mesma
+rodada, a role read-only) e o achado apareceu no relatório por conta
+própria — não por eu ter monitorado ativamente. Diagnosticado na hora
+(confirmado lendo `scanAllAssetsInner` de novo, achando o mesmo bloco
+`try/catch` único). Corrigido pedindo pro usuário disparar `db-migrate.yml`
+manualmente (~16:33 UTC) — job `success`, step "Aplicar db/schema.sql"
+completou sem erro, confirmando que o `DELETE` de dedup + `CREATE UNIQUE
+INDEX` rodaram contra o Neon real pela primeira vez.
+
+**Lição registrada, não só o bug.** Documentar um passo manual no PR/plano
+não é suficiente quando o código que DEPENDE dele já vai pro ar no
+merge — o código e a migração de schema não têm o mesmo timing de deploy
+neste projeto (código: automático a cada push em `main`; schema: manual,
+via `db-migrate.yml`). Regra daqui pra frente: **toda vez que uma mudança
+de schema for um pré-requisito de código que já vai pro ar no merge
+(não um passo "quando puder"), pedir explicitamente pro usuário rodar o
+workflow de migração ANTES de considerar a tarefa concluída** — não só
+citar isso na descrição do PR ou num doc e seguir para o próximo assunto.
+Neste caso específico, o item 2 (role read-only) tinha seu próprio passo
+manual e RECEBEU esse pedido explícito; o item 1 (AssetState) tinha o
+dele documentado só no known-risks.md/PR e não recebeu — a assimetria
+entre os dois é exatamente o que causou o buraco.
