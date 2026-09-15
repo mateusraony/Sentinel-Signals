@@ -26,14 +26,26 @@ export function useAutoScan({ queryClient, onActivity } = {}) {
       // 2026-09-14): `lastFullScan.current` era setado ANTES da chamada —
       // uma falha (rede, lock, etc.) marcava a tentativa como se fosse
       // sucesso, e a próxima passagem completa só acontecia depois da janela
-      // de 60min INTEIRA. Movido pra depois do `await` resolver com sucesso:
-      // uma falha agora deixa `lastFullScan.current` intocado, e o próximo
-      // tick (2min depois, via PRICE_CHECK_INTERVAL) tenta de novo, sem
-      // esperar a janela cheia.
+      // de 60min INTEIRA. Movido pra depois do `await` resolver com sucesso.
+      //
+      // Achado da auditoria externa (2026-09-15, nunca portado até agora):
+      // isso só cobria a chamada INTEIRA lançando exceção. `scanAllAssets()`
+      // (src/lib/scanner.js) captura erro POR ATIVO e devolve
+      // `results: [{success:false, error}, ...]` sem nunca lançar — mesma
+      // classe de bug que já tinha sido corrigida no cron (`run-scan.mjs`) e
+      // no modo sombra (`run-scan-shadow.mjs`, PR #366), nunca replicada
+      // aqui. Uma passada com TODOS os ativos falhando resolvia normalmente
+      // e marcava `lastFullScan.current` como se a passada tivesse sido
+      // completa — só tentava de novo depois da janela de 60min inteira.
       if (now - lastFullScan.current >= FULL_SCAN_INTERVAL) {
         try {
-          await scanAllAssets();
-          lastFullScan.current = now;
+          const { results } = await scanAllAssets();
+          const failed = (results || []).filter((r) => !r.success);
+          if (failed.length > 0) {
+            console.warn(`[AutoScan] full scan: ${failed.length}/${results.length} ativo(s) falharam — tentando de novo no próximo tick (2min), sem esperar a janela de 60min.`);
+          } else {
+            lastFullScan.current = now;
+          }
           if (queryClient) queryClient.invalidateQueries();
           if (onActivity) onActivity('full_scan');
         } catch (e) {

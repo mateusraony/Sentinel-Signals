@@ -40,7 +40,7 @@ describe('useAutoScan — full scan não distingue tentativa de sucesso', () => 
   it('tenta o full scan de novo no PRÓXIMO tick (2min) depois de uma falha, sem esperar os 60min inteiros', async () => {
     scanAllAssetsMock
       .mockRejectedValueOnce(new Error('falha transitória de rede'))
-      .mockResolvedValueOnce(undefined);
+      .mockResolvedValueOnce({ total: 0, results: [] });
 
     renderHook(() => useAutoScan());
 
@@ -59,7 +59,7 @@ describe('useAutoScan — full scan não distingue tentativa de sucesso', () => 
   });
 
   it('sucesso na 1ª passada NÃO dispara um full scan de novo no tick seguinte (2min depois)', async () => {
-    scanAllAssetsMock.mockResolvedValue(undefined);
+    scanAllAssetsMock.mockResolvedValue({ total: 2, results: [{ success: true }, { success: true }] });
 
     renderHook(() => useAutoScan());
 
@@ -71,5 +71,28 @@ describe('useAutoScan — full scan não distingue tentativa de sucesso', () => 
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
     expect(scanAllAssetsMock).toHaveBeenCalledTimes(1);
     expect(hasActiveTradeOpsMock).toHaveBeenCalled();
+  });
+
+  // Achado da auditoria externa (2026-09-15): scanAllAssets() (src/lib/
+  // scanner.js) captura erro POR ATIVO e resolve normalmente com
+  // `results: [{success:false}, ...]`, nunca lança pra esse caso — os 2
+  // testes acima só cobriam a chamada INTEIRA rejeitando. Mesma classe de
+  // bug já corrigida no cron (run-scan.mjs) e no modo sombra
+  // (run-scan-shadow.mjs, PR #366), nunca portada pro auto-scan do painel.
+  it('falha PARCIAL (resolve, mas com ativo com success:false) também não marca a passada como completa', async () => {
+    scanAllAssetsMock
+      .mockResolvedValueOnce({ total: 2, results: [{ success: true }, { success: false, symbol: 'BTCUSDT', error: 'boom' }] })
+      .mockResolvedValueOnce({ total: 2, results: [{ success: true }, { success: true }] });
+
+    renderHook(() => useAutoScan());
+
+    await vi.advanceTimersByTimeAsync(90 * 1000);
+    expect(scanAllAssetsMock).toHaveBeenCalledTimes(1);
+
+    // Sob o bug, a promise resolvida (sem lançar) já marcava lastFullScan —
+    // só tentaria de novo depois dos 60min inteiros. Com a correção, a
+    // falha parcial também deixa lastFullScan intocado.
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    expect(scanAllAssetsMock).toHaveBeenCalledTimes(2);
   });
 });
