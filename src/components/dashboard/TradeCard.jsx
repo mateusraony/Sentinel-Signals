@@ -7,6 +7,7 @@ import {
   stopPosture, orderLevelsByRail,
 } from '@/lib/priceProximity';
 import { classifyOutcome } from '@/lib/tradeMetrics';
+import { closedReasonLabel } from '@/lib/eventTimeline';
 import { useLivePrice } from '@/hooks/useLivePrice';
 
 /**
@@ -67,6 +68,15 @@ const DATA_STATUS = {
   OFFLINE: { label: '⛔ OFFLINE', color: '#ff1478' },
   ERROR:   { label: '❌ ERROR',   color: '#ff1478' },
 };
+
+// Qual mercado da Binance gerou os dados desta operação — 'futures' quando
+// nasceu no painel (navegador), 'spot' quando nasceu no cron 24h (ver
+// docs/known-risks.md item 4: divergência Spot×Futures aceita como limitação
+// permanente do projeto gratuito, não é bug). Puramente informativo — não
+// tenta detectar/decidir divergência aqui, só mostra o fato já gravado na
+// operação (`market_source`); decidir SE isso importa é papel do motor
+// (`shouldSkipCrossSourceManagement`, src/lib/opTransition.js).
+const MARKET_SOURCE_LABEL = { spot: 'Spot', futures: 'Futures' };
 
 // Uma cor = um significado. Estrutura fica neutra de propósito: o card antigo
 // pintava tudo de neon, e quando tudo grita nada chama atenção.
@@ -323,16 +333,29 @@ const STOP_HIT_BANNER = {
   WIN: { text: '💰 Stop travou lucro — encerrado no lucro', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
   BE:  { text: '🔄 Stop no breakeven — sem prejuízo', color: LEVEL_COLOR.stopBe, bg: 'rgba(255,209,102,0.06)' },
 };
-const STOP_HIT_BANNER_DEFAULT = { text: '🛑 Stop atingido — revisar setup', color: LEVEL_COLOR.stop, bg: 'rgba(255,20,120,0.06)' };
+const STOP_HIT_BANNER_DEFAULT = { text: '🛑 Stop atingido — operação encerrada pela proteção inicial', color: LEVEL_COLOR.stop, bg: 'rgba(255,20,120,0.06)' };
+const CLOSED_BANNER_DEFAULT = { text: '✖ Operação encerrada manualmente', color: '#64748b', bg: 'rgba(100,116,139,0.06)' };
+
+// CLOSED cobre 3 encerramentos automáticos do motor (Time Stop, Chop Exit,
+// TP1_FULL quando o runner está desligado) além do fechamento manual — antes
+// o banner dizia sempre "encerrada manualmente", inclusive quando foi o
+// próprio motor que decidiu sair. `closedReasonLabel` (src/lib/eventTimeline.js)
+// já é a fonte única desse motivo — reaproveitada aqui em vez de duplicar o
+// mapa closed_reason→texto (a mesma leitura que Trades.jsx's HistoryRow usa).
+function closedBanner(op) {
+  const motivo = closedReasonLabel(op);
+  if (!motivo) return CLOSED_BANNER_DEFAULT;
+  return { text: `✖ Encerrada pelo motor — ${motivo}`, color: '#64748b', bg: 'rgba(100,116,139,0.06)' };
+}
 
 function StatusBanner({ op }) {
   const banners = {
     SIGNAL_CONFIRMED: { text: '👀 Monitorando — aguardar preço avançar para TP1', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
     RUNNER_ACTIVE:    { text: '🚀 Runner ativo — 50% realizado no TP1, deixar correr', color: '#ffd166', bg: 'rgba(255,209,102,0.06)' },
-    TP2_HIT:          { text: '🏆 Encerrado com lucro máximo no TP2 — parabéns!', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
+    TP2_HIT:          { text: '🏆 Encerrado no TP2 — alvo final atingido', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
     STOP_HIT:         STOP_HIT_BANNER[classifyOutcome(op)] ?? STOP_HIT_BANNER_DEFAULT,
     INVALIDATED:      { text: '⚠️ Sinal invalidado — não operar agora', color: '#ff9f43', bg: 'rgba(255,159,67,0.06)' },
-    CLOSED:           { text: '✖ Operação encerrada manualmente', color: '#64748b', bg: 'rgba(100,116,139,0.06)' },
+    CLOSED:           closedBanner(op),
   };
   const b = banners[op.status];
   if (!b) return null;
@@ -346,6 +369,7 @@ function StatusBanner({ op }) {
 function Details({ op }) {
   const status = STATUS_CONFIG[op.status] || STATUS_CONFIG.CLOSED;
   const dataStatus = DATA_STATUS[op.data_status] || DATA_STATUS.LIVE;
+  const marketSourceLabel = MARKET_SOURCE_LABEL[op.market_source];
   const exitModeLabel = { RANGE_FILTER: '🔵 RF', ATR_TRAILING: '🟡 ATR Trail', HYBRID_RF_ATR: '🟣 RF+ATR' }[op.exit_mode] || op.exit_mode;
   const reasons = op.signal_reasons || [];
 
@@ -373,6 +397,12 @@ function Details({ op }) {
             {op.candle_status === 'CLOSED' ? '✅ Fechado' : '⏳ Aberto'}
           </span>
           <span style={{ color: dataStatus.color }}>{dataStatus.label}</span>
+          {marketSourceLabel && (
+            <span style={{ color: 'rgba(255,255,255,0.35)' }}
+              title="De qual mercado da Binance vieram os dados desta operação (item 4, docs/known-risks.md — divergência Spot×Futures aceita como limitação do projeto gratuito).">
+              · {marketSourceLabel}
+            </span>
+          )}
         </div>
       </div>
 

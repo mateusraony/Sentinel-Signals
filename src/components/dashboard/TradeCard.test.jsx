@@ -78,6 +78,45 @@ describe('TradeCard — StatusBanner do STOP_HIT usa classifyOutcome(op), não a
 
   it('stop original (nunca avançou, sem TP1) continua mostrando o texto de risco', () => {
     renderCard(baseOp({ tp1_hit: false, tp1_hit_at: null, current_stop: 59000 }));
-    screen.getByText(/Stop atingido — revisar setup/i);
+    screen.getByText(/Stop atingido — operação encerrada pela proteção inicial/i);
+  });
+});
+
+describe('TradeCard — StatusBanner do CLOSED usa closedReasonLabel, não "encerrada manualmente" fixo', () => {
+  // Achado da revisão de UI (2026-09-15): CLOSED cobre 3 encerramentos
+  // AUTOMÁTICOS do motor (Time Stop, Chop Exit, TP1_FULL) além do fechamento
+  // manual, mas o banner sempre dizia "encerrada manualmente" — mesmo quando
+  // foi o motor que decidiu sair sozinho.
+  it('closed_reason TIME_STOP mostra o motivo real, não "manualmente"', () => {
+    renderCard(baseOp({ status: 'CLOSED', closed_reason: 'TIME_STOP' }));
+    screen.getByText(/Encerrada pelo motor — tempo esgotado/i);
+    expect(screen.queryByText(/encerrada manualmente/i)).toBeNull();
+  });
+
+  it('closed_reason CHOP_EXIT mostra o motivo real', () => {
+    renderCard(baseOp({ status: 'CLOSED', closed_reason: 'CHOP_EXIT' }));
+    screen.getByText(/Encerrada pelo motor — mercado sem direção/i);
+  });
+
+  it('sem closed_reason (fechamento manual de verdade) continua mostrando "encerrada manualmente"', () => {
+    renderCard(baseOp({ status: 'CLOSED', closed_reason: 'Encerrado manualmente' }));
+    screen.getByText(/Operação encerrada manualmente/i);
+  });
+});
+
+describe('TradeCard — market_source aparece nos detalhes técnicos', () => {
+  it('futures mostra "Futures" (dado já gravado na operação, sem recalcular nada)', () => {
+    renderCard(baseOp({ market_source: 'futures' }));
+    screen.getByText(/Futures/);
+  });
+
+  it('spot mostra "Spot"', () => {
+    renderCard(baseOp({ market_source: 'spot' }));
+    screen.getByText(/Spot/);
+  });
+
+  it('ausente (op legada) não quebra nem mostra nada', () => {
+    renderCard(baseOp({ market_source: undefined }));
+    expect(screen.queryByText(/Spot|Futures/)).toBeNull();
   });
 });

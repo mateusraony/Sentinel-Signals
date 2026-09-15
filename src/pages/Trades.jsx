@@ -57,7 +57,7 @@ function EditModal({ op, onClose, onSave }) {
             <select value={status} onChange={e => setStatus(e.target.value)}
               className="w-full px-3 py-2 rounded-lg text-xs font-mono"
               style={fieldStyle}>
-              <option value="SIGNAL_CONFIRMED">SIGNAL_CONFIRMED — Aguardando entrada</option>
+              <option value="SIGNAL_CONFIRMED">SIGNAL_CONFIRMED — Entrada confirmada, aguardando TP1</option>
               <option value="RUNNER_ACTIVE">RUNNER_ACTIVE — TP1 atingido, runner ativo</option>
               <option value="TP2_HIT">TP2_HIT — TP2 atingido (win)</option>
               <option value="STOP_HIT">STOP_HIT — Stop atingido</option>
