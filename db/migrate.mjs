@@ -4,10 +4,14 @@
 //
 // Aplica db/schema.sql inteiro. Cada `CREATE TABLE`/`CREATE INDEX` ali usa
 // `IF NOT EXISTS`, então rodar de novo é seguro (idempotente) — não há
-// controle de versão de migração incremental porque ainda não existe uma
-// 2ª mudança de schema; quando existir, este arquivo ganha um diretório
-// `db/migrations/` versionado em vez de reaplicar o schema inteiro (não
-// antes disso — YAGNI).
+// controle de versão de migração incremental. O índice único de
+// asset_states (item 179) FOI a "2ª mudança de schema" que este comentário
+// antecipava — resolvida como um DELETE de dedup + CREATE UNIQUE INDEX
+// idempotentes dentro do próprio schema.sql (ambos seguros de rodar de
+// novo), não como um diretório `db/migrations/` versionado — a dedup
+// continua YAGNI: se uma 3ª mudança precisar de passos que não são
+// idempotentes por natureza (ex.: renomear uma coluna com dado dependente
+// da ordem), aí sim vale introduzir o versionamento.
 //
 // Uso: DATABASE_URL=postgresql://... node db/migrate.mjs
 import { readFile } from 'node:fs/promises';

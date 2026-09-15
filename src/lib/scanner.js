@@ -1854,25 +1854,19 @@ export async function persistScanResults(scanResult) {
       processed_at: new Date().toISOString(),
     };
 
-    // Check if state exists
+    // Check if state exists — still used for the hasAssetStateChanged
+    // performance gate below (skip write when nothing changed, docs/
+    // known-risks.md item 17), NOT for correctness: the write itself
+    // (backend.assetStates.upsert) is atomic by (asset_id, timeframe),
+    // item 179 — two concurrent workers finding no existing row here can
+    // no longer produce two rows for the same pair.
     const existing = await backend.entities.AssetState.filter({
       asset_id: asset.id,
       timeframe: tf
     });
 
-    if (existing.length > 0) {
-      // Skip the write entirely when nothing about the state actually
-      // changed (candle hasn't closed yet, no new indicator values) — this
-      // block otherwise ran unconditionally on every 5-min pass for every
-      // timeframe, most of which are no-ops for slower timeframes like 4h/1d
-      // (see docs/known-risks.md item 17). processed_at is excluded from the
-      // comparison, so it's only refreshed when there's a real change to
-      // persist alongside it.
-      if (hasAssetStateChanged(existing[0], stateData)) {
-        await backend.entities.AssetState.update(existing[0].id, stateData);
-      }
-    } else {
-      await backend.entities.AssetState.create(stateData);
+    if (existing.length === 0 || hasAssetStateChanged(existing[0], stateData)) {
+      await backend.assetStates.upsert(asset.id, tf, stateData);
     }
   }
 

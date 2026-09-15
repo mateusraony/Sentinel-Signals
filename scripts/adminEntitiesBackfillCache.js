@@ -56,41 +56,40 @@ function isAssetStateHotPathQuery(filters, sort, limitCount) {
   return keys.length === 2 && filters.asset_id != null && filters.timeframe != null;
 }
 
+// Item 179: persistScanResults' AssetState write moved from filter+create/
+// update to a single atomic backend.assetStates.upsert(assetId, timeframe,
+// data) call. entity.filter/upsert below share the SAME cacheByKey Map on
+// purpose — a filter() right after an upsert() in the same tick needs to see
+// the write, and two separate Maps could silently drift out of sync.
 function createAssetStateCache(real) {
   const cacheByKey = new Map(); // "${asset_id}::${timeframe}" -> [doc] (mirrors .filter()'s array shape)
-  const keyOf = (f) => `${f.asset_id}::${f.timeframe}`;
+  const keyOf = (assetId, timeframe) => `${assetId}::${timeframe}`;
 
-  return {
+  const entity = {
     async list(...args) { return real.list(...args); },
 
     async filter(filters = {}, sort, limitCount) {
       if (!isAssetStateHotPathQuery(filters, sort, limitCount)) {
         return real.filter(filters, sort, limitCount);
       }
-      const key = keyOf(filters);
+      const key = keyOf(filters.asset_id, filters.timeframe);
       if (!cacheByKey.has(key)) {
         cacheByKey.set(key, await real.filter(filters, sort, limitCount));
       }
       return cacheByKey.get(key);
     },
 
-    // persistScanResults only ever calls create() right after a filter()
-    // that found nothing for that key — always caches under a synthetic id,
-    // never touches Firestore.
+    // Defensive passthroughs — scanner.js no longer calls create()/update()
+    // for AssetState (see upsert() below, the real per-tick call since item
+    // 179), kept only so this stays a complete drop-in replacement of the
+    // real shape for anything else that might still call them directly.
     async create(data) {
-      const key = keyOf(data);
+      const key = keyOf(data.asset_id, data.timeframe);
       const doc = { id: `backfill-cache::${key}`, ...data };
       cacheByKey.set(key, [doc]);
       return doc;
     },
-
-    // Never actually used for AssetState by scanner.js — passthrough kept
-    // only so this stays a complete drop-in replacement of the real shape.
     async createUnique(id, data) { return real.createUnique(id, data); },
-
-    // persistScanResults always calls update(existing[0].id, stateData)
-    // immediately after reading existing[0] from filter() above, so the
-    // owning key is always already cached here.
     async update(id, data) {
       for (const [key, docs] of cacheByKey) {
         if (docs[0]?.id === id) {
@@ -105,6 +104,23 @@ function createAssetStateCache(real) {
     async bulkCreate(items) { return real.bulkCreate(items); },
     async deleteMany(filters) { return real.deleteMany(filters); },
   };
+
+  // The interception that actually matters post-item-179: this is what
+  // persistScanResults calls once per timeframe per tick
+  // (backend.assetStates.upsert). Never touches `real` — verified by
+  // adminEntitiesBackfillCacheTripwire.test.js, same as the rest of this
+  // file.
+  async function upsert(assetId, timeframe, data) {
+    const key = keyOf(assetId, timeframe);
+    const existing = cacheByKey.get(key)?.[0];
+    const merged = existing
+      ? { ...existing, ...data, asset_id: assetId, timeframe, id: existing.id }
+      : { id: `backfill-cache::${key}`, asset_id: assetId, timeframe, ...data };
+    cacheByKey.set(key, [merged]);
+    return merged;
+  }
+
+  return { entity, upsert };
 }
 
 // scanner.js's only per-tick MonitoredAsset write is exactly these 4
@@ -142,12 +158,23 @@ function createMonitoredAssetBackfillEntity(real) {
   };
 }
 
+const assetStateCache = createAssetStateCache(realBackend.entities.AssetState);
+
 export const backend = {
   ...realBackend,
   entities: {
     ...realBackend.entities,
-    AssetState: createAssetStateCache(realBackend.entities.AssetState),
+    AssetState: assetStateCache.entity,
     MonitoredAsset: createMonitoredAssetBackfillEntity(realBackend.entities.MonitoredAsset),
+  },
+  // Item 179: realBackend.assetStates.upsert is Postgres-real (never cached
+  // by the ...realBackend spread above) — must be overridden explicitly,
+  // same reasoning as AssetState under `entities` above. Without this, a
+  // replay tick's write would go straight to production, reproducing the
+  // exact item 137 addendum hang this whole file exists to prevent.
+  assetStates: {
+    ...realBackend.assetStates,
+    upsert: assetStateCache.upsert,
   },
 };
 

@@ -50,4 +50,16 @@ describe.skipIf(!TEST_DATABASE_URL)('db/schema.sql', () => {
     expect(rows[0].indexdef).toMatch(/UNIQUE INDEX/);
     expect(rows[0].indexdef).toMatch(/WHERE/);
   });
+
+  // Item 179 — mesmo molde do teste acima, para o índice que fecha a
+  // corrida de AssetState (find-then-write não atômico → upsert atômico).
+  it('the asset_states unique index exists and is partial (asset_id/timeframe not null)', async () => {
+    const { rows } = await client.query(`
+      SELECT indexdef FROM pg_indexes
+      WHERE tablename = 'asset_states' AND indexname = 'asset_states_asset_timeframe_uq';
+    `);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].indexdef).toMatch(/UNIQUE INDEX/);
+    expect(rows[0].indexdef).toMatch(/WHERE/);
+  });
 });

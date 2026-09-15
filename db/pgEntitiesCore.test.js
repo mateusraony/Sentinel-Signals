@@ -339,4 +339,39 @@ describe.skipIf(!TEST_DATABASE_URL)('db/pgEntitiesCore.mjs', () => {
       expect(stillThere.status).toBe('SIGNAL_CONFIRMED');
     });
   });
+
+  // Item 179 — upsert atômico por (asset_id, timeframe), substitui o
+  // find-then-write de persistScanResults (src/lib/scanner.js).
+  describe('assetStates.upsert (upsert atômico por asset_id+timeframe)', () => {
+    it('primeira chamada cria; segunda faz merge raso preservando o id', async () => {
+      const first = await backend.assetStates.upsert('BTCUSDT', '1h', { symbol: 'BTCUSDT', last_close: 100 });
+      expect(first.last_close).toBe(100);
+      expect(first.asset_id).toBe('BTCUSDT');
+      expect(first.timeframe).toBe('1h');
+
+      const second = await backend.assetStates.upsert('BTCUSDT', '1h', { last_close: 105, rsi_value: 60 });
+      expect(second.id).toBe(first.id); // id preservado, não regenerado
+      expect(second.last_close).toBe(105);
+      expect(second.rsi_value).toBe(60);
+      expect(second.symbol).toBe('BTCUSDT'); // preservado do merge raso
+
+      const rows = await backend.entities.AssetState.filter({ asset_id: 'BTCUSDT', timeframe: '1h' });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(first.id);
+    });
+
+    it('pares diferentes (mesmo asset_id, timeframe diferente) não colidem', async () => {
+      await backend.assetStates.upsert('BTCUSDT', '1h', { last_close: 100 });
+      await backend.assetStates.upsert('BTCUSDT', '4h', { last_close: 200 });
+      const rows = await backend.entities.AssetState.filter({ asset_id: 'BTCUSDT' });
+      expect(rows).toHaveLength(2);
+    });
+
+    it('assets diferentes com o mesmo timeframe não colidem', async () => {
+      await backend.assetStates.upsert('BTCUSDT', '1h', { last_close: 100 });
+      await backend.assetStates.upsert('ETHUSDT', '1h', { last_close: 3000 });
+      const rows = await backend.entities.AssetState.filter({ timeframe: '1h' });
+      expect(rows).toHaveLength(2);
+    });
+  });
 });

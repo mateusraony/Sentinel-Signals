@@ -5,7 +5,9 @@ Todo acesso a dados passa pelo adaptador `backend` (`src/api/entities.js`).
 runbook.md`), `entities.js` é um cliente HTTP para o `sentinel-signals-api`
 (Postgres/Neon) — mesma forma externa de sempre
 (`backend.entities.<Nome>.{list,filter,get,set,create,createUnique,update,
-delete,bulkCreate,deleteMany}`, `backend.locks`, `backend.tradeOps`). O
+delete,bulkCreate,deleteMany}`, `backend.locks`, `backend.tradeOps`,
+`backend.assetStates.upsert` — item 179, upsert atômico de `AssetState` por
+`(asset_id, timeframe)`). O
 adaptador Firestore original foi preservado, intocado, como
 `src/api/entitiesFirestoreLegacy.js` — referência de rollback, não importado
 por nenhum código de produção. `src/api/rtdbEntities.js` (espelho de leitura

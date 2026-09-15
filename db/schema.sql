@@ -45,11 +45,45 @@ CREATE TABLE IF NOT EXISTS asset_states (
   created_date TIMESTAMPTZ,
   data JSONB NOT NULL DEFAULT '{}'::jsonb
 );
--- Não é UNIQUE: hoje o adaptador cria via ID auto-gerado (addDoc) e
--- localiza um estado existente por filter({asset_id, timeframe}) antes de
--- update() — check-then-write não atômico, não a chave primária, garante
--- (na prática) 1 doc por par. Porte fiel do comportamento atual, não uma
--- correção — ver docs/known-risks.md se isso virar um problema real.
+
+-- Dedup idempotente ANTES do índice único (item 179 — esta é a "2ª mudança
+-- de schema" que o comentário de db/migrate.mjs antecipava): produção
+-- provavelmente tem linhas duplicadas herdadas do check-then-write não
+-- atômico do adaptador (find-then-write via filter()+create()/update(),
+-- nunca verdadeiramente atômico até o índice abaixo existir). Por par
+-- (asset_id, timeframe) com AMBOS não nulos, mantém a linha com o
+-- data->>'processed_at' mais recente (a leitura mais fresca do scanner
+-- runtime); em empate ou processed_at ausente, desempata por id maior —
+-- arbitrário, mas determinístico, o que torna isto seguro de rodar de novo
+-- em todo db/migrate.mjs (a 2ª rodada não encontra nada com rn > 1, DELETE
+-- afeta 0 linhas). Linhas com asset_id/timeframe NULL (lixo legado) ficam
+-- de fora de propósito — o índice único abaixo também as ignora.
+DELETE FROM asset_states a
+USING (
+  SELECT id,
+         ROW_NUMBER() OVER (
+           PARTITION BY asset_id, timeframe
+           ORDER BY COALESCE(data->>'processed_at', '') DESC, id DESC
+         ) AS rn
+  FROM asset_states
+  WHERE asset_id IS NOT NULL AND timeframe IS NOT NULL
+) ranked
+WHERE a.id = ranked.id AND ranked.rn > 1;
+
+-- Índice único PARCIAL (não cobre asset_id/timeframe NULL — ver dedup
+-- acima) — a garantia de 1-linha-por-par deixa de ser "na prática" (era
+-- find-then-write não atômico) e passa a ser real, reforçada por
+-- upsertAssetState() em db/pgEntitiesCore.mjs, que faz INSERT ... ON
+-- CONFLICT (asset_id, timeframe) DO UPDATE contra ESTE índice. Ver
+-- db/concurrency.test.js para a prova real de concorrência.
+CREATE UNIQUE INDEX IF NOT EXISTS asset_states_asset_timeframe_uq
+  ON asset_states (asset_id, timeframe)
+  WHERE asset_id IS NOT NULL AND timeframe IS NOT NULL;
+
+-- Mantido: cobre também as linhas com asset_id/timeframe NULL que o índice
+-- único acima ignora, e serve de índice de leitura para o mesmo par nos
+-- casos normais. Redundante com o índice único para o caso comum
+-- (não-NULL) — dropar é cleanup futuro de baixo risco, não necessário aqui.
 CREATE INDEX IF NOT EXISTS asset_states_asset_timeframe_idx ON asset_states (asset_id, timeframe);
 
 -- ============================================================

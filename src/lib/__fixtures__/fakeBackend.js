@@ -134,6 +134,26 @@ export function createFakeBackend() {
     return { created: true, doc };
   }
 
+  // Mirrors db/pgEntitiesCore.mjs's upsertAssetState (item 179) — atomic by
+  // construction here since the fake is single-threaded JS, but the
+  // OBSERVABLE behavior matches: preserves the existing doc's `id` on
+  // update (never regenerates it), merges shallowly over the existing doc.
+  async function upsertAssetState(assetId, timeframe, data) {
+    const store = stores.AssetState;
+    const payload = { ...data, asset_id: assetId, timeframe };
+    assertNoUndefinedFields(payload, 'AssetState');
+    const existing = [...store.values()].find((d) => d.asset_id === assetId && d.timeframe === timeframe);
+    if (existing) {
+      const doc = { ...existing, ...payload, id: existing.id };
+      store.set(existing.id, doc);
+      return doc;
+    }
+    const id = nextId('AssetState');
+    const doc = { created_date: new Date().toISOString(), ...payload, id };
+    store.set(id, doc);
+    return doc;
+  }
+
   async function clearActiveOp(assetId, tradeOpId, cascade) {
     const anchorId = buildActiveOpsAnchorId(assetId, cascade);
     if (activeOps.get(anchorId) === tradeOpId) activeOps.set(anchorId, null);
@@ -179,6 +199,7 @@ export function createFakeBackend() {
     entities: Object.fromEntries(COLLECTIONS.map((name) => [name, createEntity(name)])),
     locks: { acquireScanLock, releaseScanLock },
     tradeOps: { createTradeOpIfNoneActive, clearActiveOp, transitionTradeOp },
+    assetStates: { upsert: upsertAssetState },
     quota: { getAndResetOpCounts: () => ({ reads: 0, writes: 0 }) },
     // Test-only escape hatch to seed/inspect docs directly without going
     // through the async entity API.
