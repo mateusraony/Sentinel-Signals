@@ -23225,3 +23225,121 @@ Neste caso específico, o item 2 (role read-only) tinha seu próprio passo
 manual e RECEBEU esse pedido explícito; o item 1 (AssetState) tinha o
 dele documentado só no known-risks.md/PR e não recebeu — a assimetria
 entre os dois é exatamente o que causou o buraco.
+
+---
+
+## 180. Conselho de revisão (sentinel-council-review): `SignalChecklist.jsx` parava de recalcular RF no navegador · Fase C de UI (histórico de stop/timeline rica) registrada como opção futura, não implementada (2026-09-15)
+
+Continuação da revisão de UI/UX de operações (item da Fase A, PR #368). Dois
+itens ficaram de fora da Fase A por exigirem julgamento maior — rodado o
+conselho de revisão (skill `sentinel-council-review`, 4 papéis independentes
+locais: Arquiteto, Especialista em trading, Especialista em concorrência,
+Especialista em testes) antes de decidir. Usuário aprovou implementar o
+achado do `SignalChecklist.jsx` e registrar a Fase C como opção futura.
+
+### Implementado — `SignalChecklist.jsx` parou de recalcular Range Filter no navegador
+
+**Achado do conselho (Arquiteto).** A versão anterior refazia
+`fetchCandles('15m', 100)` + `calculateRangeFilter()` NO NAVEGADOR para
+montar um checklist "ENTRADA LIBERADA/BLOQUEADA", duplicando parte da
+lógica de regime/confirmação que `src/lib/scanner.js` já roda de verdade —
+mesma classe de bug já registrada e corrigida **duas vezes antes** neste
+projeto (item 168, "UI reimplementando regra do motor", em
+`TradeCard.jsx`/`TradeEntryMarkers.jsx`). Era a 3ª ocorrência, ainda não
+corrigida.
+
+**Achado do conselho (Especialista em trading).** O componente não
+replicava ADX/Chop/tier, candle pattern, retest nem displacement — só 5
+checks simples (tendência 4h, 1D não contrária, RF 15m, preço no lado
+certo, sem op ativa). Como `regime_rejected` é **69% das rejeições reais**
+da cascata RF (item 50), o cenário mais provável na prática era o checklist
+mostrar "ENTRADA LIBERADA" quando o motor de verdade bloquearia por regime
+fraco. Gravidade: **cosmética, não financeira** — o componente é
+comprovadamente read-only (nunca chama `persistScanResults`/
+`backend.tradeOps`), então o risco é confiança do usuário mal calibrada,
+não execução de ordem incorreta.
+
+**Correção.** `src/components/dashboard/SignalChecklist.jsx` reescrito:
+zero fetch de mercado, zero recálculo. Lê só `SignalEvent.
+last_rejection_reason`/`last_rejection_detail` (gravado pelo motor de
+verdade em `persistScanResults`) via `rejectionCopy()`/`classifySignal()`
+de `src/lib/signalStatus.js` — mesma fonte que `Trades.jsx`'s
+`MonitoringCard` já usa para os avisos "Esperando confirmação". A checagem
+de operação ativa continua local (única exceção): é presença simples sobre
+`tradeOps` já buscado pelo componente pai, não recomputa gate nenhum, e
+cobre um caso que `last_rejection_reason` deliberadamente NÃO cobre
+(`active_op_exists` é contado no funil de entrada mas nunca gravado no
+campo — ver a seção "Funil de confirmação de entrada instrumentado" em
+`.claude/rules/trading-engine.md`).
+
+**Mudança de API.** Prop `asset` removida (não é mais necessária sem
+recálculo). Dois chamadores, dois formatos diferentes de dado disponível:
+- `AssetDrawer.jsx` já tinha o `SignalEvent` completo (`signal={sig}`) —
+  sem fetch adicional.
+- `Verification.jsx` só tinha um objeto reconstruído à mão (`{signal_type,
+  context}`, sem `last_rejection_reason`) a partir de `VerificationTask` —
+  esse objeto nunca teve o dado necessário, nem antes desta mudança. Trocado
+  por `signalEventId={task.signal_event_id}` (referência real que
+  `VerificationTask` já guarda desde sempre); o componente busca o
+  `SignalEvent` original sob demanda, só ao expandir (`enabled: expanded`,
+  mesmo padrão lazy-load da versão anterior — evita 1 leitura por tarefa
+  listada na página).
+
+**Teste novo.** `SignalChecklist.test.jsx` (não existia teste algum antes
+— achado do Especialista em testes do conselho) prova, com mock de
+`@/api/entities`: (1) com `signal` completo, mostra o motivo real e NUNCA
+chama `SignalEvent.get`; (2) operação ativa bloqueia mesmo sem
+`last_rejection_reason`; (3) com só `signalEventId`, busca só ao expandir;
+(4) erro de busca cai numa mensagem graciosa, não quebra.
+
+### Registrado, NÃO implementado — Fase C da proposta de UI (histórico de movimentos de stop, timeline rica com eventos intermediários)
+
+Proposta original (conversa completa nesta rodada): mostrar algo como
+"15:10 Stop $4.180 → 15:15 Stop $4.210 ↑, ADX 29→32" e uma timeline com
+eventos intermediários ("regime aprovado", "15m confirmou") em vez dos 5
+eventos que `src/lib/eventTimeline.js` produz hoje (`opened/tp1/tp2/stop/
+closed`). Exigiria campo novo no schema de `TradeOperation` (`current_stop`
+hoje é escalar, sem histórico) e novo write-path dentro de
+`persistScanResults` — cai sob `.claude/rules/trading-engine.md`, fora do
+escopo "zero dado novo, zero risco" da Fase A/deste item.
+
+**Veredito do conselho (unânime nos 4 papéis): não fazer agora.**
+
+- **Prioridade (Arquiteto/Trading).** É valor puramente de observabilidade/
+  UI — classificado como P2, atrás dos itens P0/P1 residuais já
+  documentados (155, 176, 178/179).
+- **Achado novo do Especialista em concorrência, não óbvio de antemão.** A
+  escrita no Postgres hoje é `data || patch` — merge RASO de JSONB
+  (`db/pgEntitiesCore.mjs`, dentro de `transitionTradeOp`). Um campo array
+  de histórico seria SOBRESCRITO inteiro a cada write, não é feito append
+  automaticamente — se dois workers concorrentes (navegador + cron)
+  escreverem quase ao mesmo tempo, um pode apagar silenciosamente a
+  entrada que o outro acabou de gravar. Precisaria de lógica de merge
+  dentro da transação, nos moldes de `clampMonotonicStop`
+  (`src/lib/opTransition.js`) — não é um `tx.update` gratuito.
+- **Mesma classe de bug já corrigida 2x nesta base, se feito sem cuidado**
+  (Especialista em concorrência). Duas passadas do cron sobre a MESMA vela
+  ainda não fechada (uma vela de 4h pode ficar "a última fechada" por
+  horas) geraria entradas duplicadas no log sem a mesma guarda de
+  dedupe-por-candle que `runner_stop_advanced_candle_time`/
+  `pre_tp1_stop_advanced_candle_time`/`rf_reverse_last_candle` já usam
+  para campos análogos.
+- **Alternativa mais barata, já disponível a custo zero.**
+  `pre_tp1_stop_advanced_at`/`runner_stop_advanced_candle_time`
+  (`docs/schema-reference/TradeOperation.jsonc`) já dão "quando o stop
+  avançou pela última vez", sem tocar o motor — cobre uma fatia real do
+  valor da proposta sem nenhum dos riscos acima.
+- **Testes (Especialista em testes).** Não há precedente de campo array/
+  timeline em `TradeOperation` — seria um molde de teste genuinamente
+  novo (concorrência + duplicação por candle), esforço médio-alto, não
+  reaproveito trivial do padrão de `mfe_r`/`mae_r` (que é escalar
+  monotônico, categoria diferente).
+
+**Se algum dia for retomado**, seguir as 4 regras que o conselho derivou:
+(1) escrever só dentro da mesma transação de `transitionTradeOp`, nunca em
+`update()` solto; (2) dedupar por candle, mesmo padrão de
+`rf_reverse_bars_count`/MFE-MAE; (3) manter fora de
+`priceCheckActiveOpsInner` (resolução de candle, não de tick — mesma
+decisão já tomada para MFE/MAE); (4) merge explícito do array contra o
+valor lido DENTRO da transação, nunca contra o array pré-computado pelo
+chamador antes de abrir a transação.

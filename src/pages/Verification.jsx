@@ -255,7 +255,6 @@ export default function Verification() {
           {filtered.map(task => {
             const badge = STATUS_BADGE[task.status] || STATUS_BADGE.pending;
             const asset = assets.find(a => a.id === task.asset_id);
-            const reconstructedSignal = { signal_type: task.signal_type, context: task.signal_context };
             return (
               <div key={task.id} className="glass-card rounded-xl p-4">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -288,7 +287,7 @@ export default function Verification() {
                     <NotesField task={task} onSave={(notes) => updateMutation.mutate({ id: task.id, data: { notes } })} />
 
                     {asset && (
-                      <SignalChecklist asset={asset} signal={reconstructedSignal} tradeOps={tradeOps} />
+                      <SignalChecklist signalEventId={task.signal_event_id} tradeOps={tradeOps} />
                     )}
                   </div>
 
