@@ -102,6 +102,14 @@ const checkBacktestStatusRateLimit = createCooldown(3_000);
 // tighter, since each call downloads+unzips a real file.
 const checkBacktestArtifactRateLimit = createCooldown(5_000);
 
+// requireOwner added here + on /api/backtest/status and /artifact below
+// (external audit finding, 2026-09-15): these 3 routes shipped with only
+// requireAuth (anonymous) — the P0 sweep that added requireOwner to
+// /api/entities, /api/trade-ops, /api/locks and /api/asset-states missed
+// them. Low real risk (no trading mutation, rate-limited, chatId hardcoded
+// below, GitHub token never exposed to the client), but inconsistent with
+// the post-P0 policy that anonymous auth alone never gates a real action.
+//
 // Sends a Telegram message on behalf of the caller. The bot token is a single
 // app-level secret (this app is single-tenant, see comment above) — the
 // destination is always THIS deployment's own configured channel
@@ -111,7 +119,7 @@ const checkBacktestArtifactRateLimit = createCooldown(5_000);
 // (auth is anonymous-only, docs/known-risks.md item 1) write an arbitrary
 // chat_id into their own doc and turn this endpoint into an open relay for
 // the real bot token (docs/known-risks.md item 80, D-1).
-app.post('/api/telegram-notify', requireAuth, async (req, res) => {
+app.post('/api/telegram-notify', requireAuth, requireOwner, async (req, res) => {
   const { text } = req.body || {};
   if (typeof text !== 'string' || !text.trim()) {
     return res.status(400).json({ error: 'text is required.' });
@@ -385,7 +393,7 @@ app.post('/api/backtest/trigger', requireAuth, requireGithubToken, requireAdmin,
   }
 });
 
-app.get('/api/backtest/status/:runId', requireAuth, requireGithubToken, async (req, res) => {
+app.get('/api/backtest/status/:runId', requireAuth, requireGithubToken, requireOwner, async (req, res) => {
   const { runId } = req.params;
   if (!/^\d+$/.test(runId)) {
     return res.status(400).json({ error: 'runId inválido.' });
@@ -406,7 +414,7 @@ app.get('/api/backtest/status/:runId', requireAuth, requireGithubToken, async (r
   }
 });
 
-app.get('/api/backtest/artifact/:runId', requireAuth, requireGithubToken, async (req, res) => {
+app.get('/api/backtest/artifact/:runId', requireAuth, requireGithubToken, requireOwner, async (req, res) => {
   const { runId } = req.params;
   if (!/^\d+$/.test(runId)) {
     return res.status(400).json({ error: 'runId inválido.' });
