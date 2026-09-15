@@ -423,7 +423,7 @@ export async function getPineConfig() {
       }
     }
   } catch (e) {
-    logWarn('pineParser', 'Falha ao ler strategyConfig do Firestore, usando localStorage/defaults', { error: e.message });
+    logWarn('pineParser', 'Falha ao ler strategyConfig do Postgres/Neon, usando localStorage/defaults', { error: e.message });
   }
 
   return config;
@@ -464,7 +464,7 @@ export async function syncPineToAssets() {
       updated_at: new Date().toISOString(),
     });
   } catch (e) {
-    logWarn('pineParser', 'Falha ao sincronizar strategyConfig com o Firestore', { error: e.message });
+    logWarn('pineParser', 'Falha ao sincronizar strategyConfig com o Postgres/Neon', { error: e.message });
   }
 
   try {
