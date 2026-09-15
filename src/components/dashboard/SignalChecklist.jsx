@@ -69,7 +69,27 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
     reason = rejectionCopy(effectiveSignal, phase);
   }
 
-  const blocked = hasActiveOp || phase === SIGNAL_PHASE.WAITING || phase === SIGNAL_PHASE.EXPIRED;
+  // Achado do Codex (review do PR #369): classifySignal() devolve INFO pra
+  // QUALQUER timeframe fora de 4h (isConfirmationEligible só aceita '4h') —
+  // com `blocked` derivado só da FASE, um sinal 1h/1d rejeitado (com
+  // last_rejection_reason já mostrado acima) caía no "senão" e mostrava
+  // ENTRADA LIBERADA verde, contradizendo o próprio motivo exibido. A
+  // cascata SMC 1h→5m É real e pode virar operação (trading-engine.md), mas
+  // replicar aqui QUAL timeframe tem cascata própria seria o mesmo
+  // recálculo de regra do motor que este componente existe para evitar.
+  //
+  // Correção: `blocked` passa a olhar o DADO real (existe motivo gravado?
+  // existe op ativa?) em vez da fase — funciona igual para qualquer
+  // timeframe, sem precisar saber qual cascata cada um usa. EXPIRED
+  // continua forçando bloqueado mesmo sem motivo salvo (item 175, sinal
+  // expirado sem `last_rejection_reason` — o prazo fechou, é terminal).
+  // O veredito só é OMITIDO (nem verde nem vermelho) quando não há dado
+  // algum — sinal INFO nunca avaliado por gate nenhum, `hasKnownObstacle`
+  // falso — mostra a mesma frase neutra que `Trades.jsx`'s `MonitoringCard`
+  // já usa pra fase INFO, em vez de inventar um veredito sem lastro.
+  const hasKnownObstacle = hasActiveOp || Boolean(effectiveSignal?.last_rejection_reason);
+  const blocked = hasKnownObstacle || phase === SIGNAL_PHASE.EXPIRED;
+  const showVerdict = hasKnownObstacle || phase !== SIGNAL_PHASE.INFO;
 
   return (
     <div className="mt-1.5">
@@ -106,12 +126,18 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
                   <p className="mt-0.5 leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>{reason.detail}</p>
                 </div>
               )}
-              <div className="pt-1.5 mt-1.5 flex items-center gap-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                {blocked ? <ShieldAlert className="w-3.5 h-3.5" style={{ color: '#ff1478' }} /> : <ShieldCheck className="w-3.5 h-3.5" style={{ color: '#00ff80' }} />}
-                <span className="text-[10px] font-mono font-bold" style={{ color: blocked ? '#ff1478' : '#00ff80' }}>
-                  {blocked ? 'BLOQUEADA' : 'ENTRADA LIBERADA'}
-                </span>
-              </div>
+              {showVerdict ? (
+                <div className="pt-1.5 mt-1.5 flex items-center gap-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                  {blocked ? <ShieldAlert className="w-3.5 h-3.5" style={{ color: '#ff1478' }} /> : <ShieldCheck className="w-3.5 h-3.5" style={{ color: '#00ff80' }} />}
+                  <span className="text-[10px] font-mono font-bold" style={{ color: blocked ? '#ff1478' : '#00ff80' }}>
+                    {blocked ? 'BLOQUEADA' : 'ENTRADA LIBERADA'}
+                  </span>
+                </div>
+              ) : (
+                <p className="text-[9px] font-mono leading-relaxed pt-1.5 mt-1.5" style={{ color: 'rgba(255,255,255,0.4)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                  {copy?.reassurance}
+                </p>
+              )}
               <p className="text-[7px] font-mono text-muted-foreground/60 pt-0.5">
                 Motivo lido direto do que o motor gravou ao avaliar este aviso — nenhum cálculo é refeito aqui.
               </p>

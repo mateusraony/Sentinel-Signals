@@ -63,6 +63,40 @@ describe('SignalChecklist — signal completo já em mãos (AssetDrawer.jsx), ze
   });
 });
 
+describe('SignalChecklist — achado do Codex (PR #369): timeframe fora de 4h não pode mostrar veredito contraditório', () => {
+  // classifySignal() dá fase INFO pra qualquer timeframe != '4h' — antes da
+  // correção, `blocked` olhava só a fase, então um sinal 1h REJEITADO (com
+  // motivo já mostrado acima) ainda caía em "ENTRADA LIBERADA" verde,
+  // contradizendo o próprio motivo.
+  it('sinal 1h com last_rejection_reason mostra BLOQUEADA, nunca ENTRADA LIBERADA', () => {
+    renderChecklist({
+      signal: { ...baseSignal, timeframe: '1h', last_rejection_reason: 'regime_rejected', last_rejection_detail: 'chop' },
+      tradeOps: [],
+    });
+    fireEvent.click(screen.getByText(/Por que ainda não virou operação\?/i));
+    screen.getByText(/Preço andando de lado/i);
+    screen.getByText(/BLOQUEADA/i);
+    expect(screen.queryByText(/ENTRADA LIBERADA/i)).toBeNull();
+  });
+
+  it('sinal 1d sem motivo e sem op ativa não afirma nenhum veredito (nem verde nem vermelho) — mostra a ressalva informativa', () => {
+    renderChecklist({ signal: { ...baseSignal, timeframe: '1d' }, tradeOps: [] });
+    fireEvent.click(screen.getByText(/Por que ainda não virou operação\?/i));
+    expect(screen.queryByText(/ENTRADA LIBERADA/i)).toBeNull();
+    expect(screen.queryByText(/BLOQUEADA/i)).toBeNull();
+    screen.getByText(/nunca vira operação/i);
+  });
+
+  it('sinal 1h sem motivo, mas com operação ativa, ainda mostra BLOQUEADA — fato universal, independe do timeframe', () => {
+    renderChecklist({
+      signal: { ...baseSignal, timeframe: '1h' },
+      tradeOps: [{ asset_id: 'asset1', status: 'RUNNER_ACTIVE' }],
+    });
+    fireEvent.click(screen.getByText(/Por que ainda não virou operação\?/i));
+    screen.getByText(/BLOQUEADA/i);
+  });
+});
+
 describe('SignalChecklist — só signalEventId (Verification.jsx), busca sob demanda', () => {
   it('não busca antes de expandir, busca só ao expandir', async () => {
     signalGetMock.mockResolvedValueOnce({ ...baseSignal, last_rejection_reason: 'trend_reversed', last_rejection_detail: 'now_down' });
