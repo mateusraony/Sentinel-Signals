@@ -95,4 +95,33 @@ describe('useAutoScan — full scan não distingue tentativa de sucesso', () => 
     await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
     expect(scanAllAssetsMock).toHaveBeenCalledTimes(2);
   });
+
+  // Achado do Codex (review do PR #370, P1): a correção acima (deixar
+  // lastFullScan.current intocado numa falha) tinha um `return` logo depois
+  // que impedia o price-check de rodar NESSA MESMA passada — inofensivo
+  // numa falha isolada, mas com um ativo com erro PERSISTENTE (ex.: símbolo
+  // deslistado), toda passada de 2min reentrava no bloco de full scan e
+  // retornava antes de chegar no price-check, suspendendo a checagem de
+  // stop/TP por preço de TODAS as operações ativas indefinidamente.
+  it('falha PERSISTENTE no full scan não trava o price-check — ele continua rodando a cada tick', async () => {
+    scanAllAssetsMock.mockResolvedValue({ total: 1, results: [{ success: false, symbol: 'BTCUSDT', error: 'falha persistente' }] });
+    hasActiveTradeOpsMock.mockResolvedValue(true);
+
+    renderHook(() => useAutoScan());
+
+    await vi.advanceTimersByTimeAsync(90 * 1000);
+    expect(scanAllAssetsMock).toHaveBeenCalledTimes(1);
+    expect(priceCheckActiveOpsMock).toHaveBeenCalledTimes(1);
+
+    // full scan segue "devido" em CADA tick (lastFullScan nunca avança com
+    // a falha persistente) — sob o bug, isso significava price-check NUNCA
+    // MAIS rodando. Com a correção, os dois rodam em toda passada.
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    expect(scanAllAssetsMock).toHaveBeenCalledTimes(2);
+    expect(priceCheckActiveOpsMock).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    expect(scanAllAssetsMock).toHaveBeenCalledTimes(3);
+    expect(priceCheckActiveOpsMock).toHaveBeenCalledTimes(3);
+  });
 });

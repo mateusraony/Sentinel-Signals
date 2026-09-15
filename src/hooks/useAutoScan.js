@@ -37,6 +37,18 @@ export function useAutoScan({ queryClient, onActivity } = {}) {
       // aqui. Uma passada com TODOS os ativos falhando resolvia normalmente
       // e marcava `lastFullScan.current` como se a passada tivesse sido
       // completa — só tentava de novo depois da janela de 60min inteira.
+      // Achado do Codex (review do PR #370, P1): o `return` que havia aqui
+      // combinado com a correção acima (deixar `lastFullScan.current`
+      // intocado numa falha) fazia um ativo com erro PERSISTENTE prender o
+      // tick pra sempre neste bloco — toda passada de 2min voltava a cair
+      // aqui (a janela de 60min nunca fechava) e retornava ANTES de chegar
+      // no price-check abaixo. Um único ativo problemático suspendia a
+      // checagem de stop/TP por preço de TODAS as operações ativas
+      // indefinidamente (o cron do GitHub Actions continua cobrindo em
+      // paralelo, mas o auto-scan do navegador ficava mudo enquanto a aba
+      // ficasse aberta). Removido o `return`: o full scan (quando devido)
+      // sempre cai no price-check logo abaixo, na mesma passada — os dois
+      // deixam de ser mutuamente exclusivos por tick.
       if (now - lastFullScan.current >= FULL_SCAN_INTERVAL) {
         try {
           const { results } = await scanAllAssets();
@@ -51,8 +63,6 @@ export function useAutoScan({ queryClient, onActivity } = {}) {
         } catch (e) {
           console.warn('[AutoScan] full scan error:', e.message);
         }
-        scheduleNext();
-        return;
       }
 
       // Price check if active trades exist
