@@ -147,3 +147,64 @@ describe.skipIf(!TEST_DATABASE_URL)('trade_operations_active_anchor_uq (real con
     expect(result.created).toBe(true);
   });
 });
+
+// Item 179 — mesmo mecanismo de fundo (índice único do Postgres fechando
+// uma corrida que um SELECT...FOR UPDATE sozinho não fecha), mas resultado
+// esperado DIFERENTE do bloco acima: aqui NENHUMA das duas conexões deve
+// falhar — a corrida se resolve via ON CONFLICT DO UPDATE (ambas "ganham",
+// a ordem de commit decide o valor final), ao contrário do CAS de
+// TradeOperation onde exatamente uma DEVE perder. Banco descartável
+// próprio, mesmo padrão do describe acima (não reaproveita o mesmo banco —
+// evita qualquer acoplamento entre os dois describes).
+async function attemptUpsertAssetState(client, { assetId, timeframe, lastClose }) {
+  const id = `race-${Math.random().toString(36).slice(2)}`;
+  await client.query(
+    `INSERT INTO asset_states (id, asset_id, timeframe, created_date, data)
+     VALUES ($1, $2, $3, now(), $4)
+     ON CONFLICT (asset_id, timeframe) WHERE asset_id IS NOT NULL AND timeframe IS NOT NULL
+     DO UPDATE SET data = asset_states.data || EXCLUDED.data`,
+    [id, assetId, timeframe, JSON.stringify({ last_close: lastClose })]
+  );
+}
+
+describe.skipIf(!TEST_DATABASE_URL)('asset_states_asset_timeframe_uq (real concurrency)', () => {
+  let adminClient;
+  let dbName;
+  let clientA;
+  let clientB;
+
+  beforeAll(async () => {
+    dbName = `assetstates_concurrency_test_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+    const dbUrl = withDbName(TEST_DATABASE_URL, dbName);
+    adminClient = new pg.Client({ connectionString: TEST_DATABASE_URL });
+    await adminClient.connect();
+    await adminClient.query(`CREATE DATABASE "${dbName}"`);
+    await applySchema(dbUrl);
+    clientA = new pg.Client({ connectionString: dbUrl });
+    clientB = new pg.Client({ connectionString: dbUrl });
+    await clientA.connect();
+    await clientB.connect();
+  });
+
+  afterAll(async () => {
+    await clientA.end();
+    await clientB.end();
+    await adminClient.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+    await adminClient.end();
+  });
+
+  it('duas conexões concorrentes fazendo upsert do MESMO par nunca produzem 2 linhas nem erro (repetido 25x)', async () => {
+    for (let i = 0; i < 25; i++) {
+      const assetId = `race-state-${i}`;
+      await Promise.all([
+        attemptUpsertAssetState(clientA, { assetId, timeframe: '1h', lastClose: 1 }),
+        attemptUpsertAssetState(clientB, { assetId, timeframe: '1h', lastClose: 2 }),
+      ]);
+      const { rows } = await clientA.query(
+        `SELECT id FROM asset_states WHERE asset_id = $1 AND timeframe = '1h'`,
+        [assetId]
+      );
+      expect(rows).toHaveLength(1); // nunca 2, nunca 0
+    }
+  });
+});

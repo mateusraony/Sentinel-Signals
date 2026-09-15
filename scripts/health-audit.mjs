@@ -129,6 +129,15 @@ async function checar(titulo, fn) {
   try {
     return await fn();
   } catch (e) {
+    // 42501 = permission denied no Postgres. Só pode acontecer se este
+    // script (contrato read-only) tentou ESCREVER e a role real bloqueou —
+    // ver DATABASE_URL_READONLY em main() (item 179). Isto NUNCA é "mais um
+    // achado": é o próprio bug que o contrato existe pra impedir, então
+    // propaga e derruba o processo inteiro (main().catch no fim do
+    // arquivo), em vez de virar uma linha discreta na lista abaixo.
+    if (e.code === '42501') {
+      throw e;
+    }
     const { kind } = classifyFailure(e.message);
     const explicacao = {
       quota: '**Cota do Firestore esgotada.** Este é um achado real, não um defeito do relatório.',
@@ -342,10 +351,28 @@ async function main() {
     ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
     : null;
 
+  // Contrato read-only real (item 179): quando a role somente-leitura existe
+  // no Neon (DATABASE_URL_READONLY setada), ela vira DATABASE_URL para o
+  // resto do script — getPool() (db/pgEntitiesCore.mjs) sempre lê
+  // process.env.DATABASE_URL por baixo, e não há como passar a connection
+  // string por argumento sem tocar scripts/adminEntities.js (usado, com a
+  // credencial normal, por scan.yml/backfill.yml também). Sem a secret
+  // (etapa manual no Neon, fora do alcance desta sessão), cai de volta pra
+  // DATABASE_URL (read-write) — mas nunca calado: um achado marca a lacuna
+  // em toda execução até a secret existir.
+  if (process.env.DATABASE_URL_READONLY) {
+    process.env.DATABASE_URL = process.env.DATABASE_URL_READONLY;
+  } else {
+    achados.push('auditoria rodando sem credencial Postgres somente-leitura dedicada (DATABASE_URL_READONLY ausente)');
+  }
+
   p('# 🩺 Auditoria de saúde do Sentinel');
   p('');
   p(`Gerado em **${new Date().toISOString()}** · leitura pura, nada foi escrito.`);
   p(`Orçamento máximo: **${ORCAMENTO_TOTAL} documentos** (~${(ORCAMENTO_TOTAL / 500).toFixed(1)}% do teto diário).`);
+  p(process.env.DATABASE_URL_READONLY
+    ? '🔒 Rodando com a role Postgres somente-leitura (DATABASE_URL_READONLY).'
+    : '⚠️ **DATABASE_URL_READONLY não configurada** — rodando com a credencial read-write (DATABASE_URL).');
 
   backend.quota.getAndResetOpCounts();
 
@@ -356,13 +383,9 @@ async function main() {
 
   const { reads, writes } = backend.quota.getAndResetOpCounts();
   p('\n---\n');
-  p(`**Custo real desta auditoria:** ${reads} leitura(s), ${writes} escrita(s).`);
-  if (writes > 0) {
-    p('');
-    p('🚨 **A auditoria escreveu alguma coisa.** Ela é read-only por contrato —');
-    p('qualquer escrita aqui é um bug e precisa ser investigada.');
-    process.exitCode = 1;
-  }
+  p(`**Custo real desta auditoria:** ${reads} leitura(s), ${writes} escrita(s) — Postgres não tem cota, `
+    + 'contador informativo (a proteção real contra escrita é o GRANT da role somente-leitura + o '
+    + 're-throw de erro 42501 em checar(), acima).');
 
   p('');
   if (achados.length === 0) {

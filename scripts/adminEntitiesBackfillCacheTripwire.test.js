@@ -30,29 +30,48 @@ function extractFunctionBody(fnName) {
 }
 
 describe('adminEntitiesBackfillCache.js — tripwire de isolamento', () => {
-  it('exporta o backend real por spread — toda coleção fora de AssetState/MonitoredAsset é passthrough, nunca reimplementada', () => {
+  it('exporta o backend real por spread — só AssetState/MonitoredAsset (entities) e upsert (assetStates) sobrescrevem', () => {
     expect(source).toContain('...realBackend,');
     expect(source).toContain('...realBackend.entities,');
-    // Só estas duas chaves podem sobrescrever o que o spread acima já trouxe.
-    const overrideBlock = source.match(/entities:\s*\{[\s\S]*?\},\n\};/)[0];
-    const overrideKeys = [...overrideBlock.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]);
-    expect(overrideKeys).toEqual(['AssetState', 'MonitoredAsset']);
+    expect(source).toContain('...realBackend.assetStates,');
+
+    const entitiesBlock = source.match(/entities:\s*\{[\s\S]*?\n {2}\},/)[0];
+    const entitiesKeys = [...entitiesBlock.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]);
+    expect(entitiesKeys).toEqual(['AssetState', 'MonitoredAsset']);
+
+    // Item 179: assetStates é a 2ª chave de override, fora de `entities` —
+    // sem isto, backend.assetStates.upsert bateria direto no Postgres real
+    // via o spread `...realBackend` (mesmo incidente do item 137 addendum).
+    const assetStatesBlock = source.match(/assetStates:\s*\{[\s\S]*?\n {2}\},/)[0];
+    const assetStatesKeys = [...assetStatesBlock.matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]);
+    expect(assetStatesKeys).toEqual(['upsert']);
   });
 
-  it('AssetState.create/update nunca chamam o método real correspondente (cache em memória, nunca Firestore)', () => {
+  it('AssetState.create/update/upsert nunca chamam o método real correspondente (cache em memória, nunca Postgres)', () => {
     const body = extractFunctionBody('createAssetStateCache');
     const createMethod = body.match(/async create\(data\)\s*\{[\s\S]*?\n {4}\},/)[0];
     const updateMethod = body.match(/async update\(id, data\)\s*\{[\s\S]*?\n {4}\},/)[0];
+    const upsertFn = body.match(/async function upsert\([^)]*\)\s*\{[\s\S]*?\n {2}\}/)[0];
     expect(createMethod).not.toMatch(/real\.create\(/);
     expect(updateMethod).not.toMatch(/real\.update\(/);
+    expect(upsertFn).not.toMatch(/real\./);
+    expect(upsertFn).toContain('cacheByKey.set(');
     // filter/list/delete/bulkCreate/deleteMany DEVEM continuar reais —
-    // só create/update de AssetState (as duas escritas do hot path) são
+    // só create/update/upsert de AssetState (as escritas do hot path) são
     // interceptadas.
     expect(body).toMatch(/async filter\(filters = \{\}, sort, limitCount\)/);
     expect(body).toContain('real.list(...args)');
     expect(body).toContain('real.delete(id)');
     expect(body).toContain('real.bulkCreate(items)');
     expect(body).toContain('real.deleteMany(filters)');
+  });
+
+  it('entity.filter e upsert compartilham o mesmo cacheByKey — uma leitura logo após uma escrita no mesmo tick vê o valor novo', () => {
+    const body = extractFunctionBody('createAssetStateCache');
+    // Só 1 `new Map()` no corpo inteiro da função — se um 2º Map aparecesse
+    // para o upsert, filter() e upsert() poderiam divergir silenciosamente.
+    const mapDeclarations = body.match(/new Map\(\)/g) || [];
+    expect(mapDeclarations).toHaveLength(1);
   });
 
   it('MonitoredAsset.update só intercepta o formato exato da escrita per-tick do scanner.js — qualquer outro formato (ex.: backfill_check_status) chama o real', () => {

@@ -3,7 +3,7 @@
 Webhook só loga/notifica, nunca envia ordem. Superfície sensível (secrets, CORS,
 auth).
 
-`routes/{entities,tradeOps,locks,me}.js` — API própria da migração
+`routes/{entities,tradeOps,locks,assetStates,me}.js` — API própria da migração
 Firestore→Neon (Fase 5, `/root/.claude/plans/baseando-nos-dados-que-partitioned-pixel.md`,
 `db/CLAUDE.md`). Montadas em `index.js`; sem `DATABASE_URL` configurada elas
 respondem 503 (`pgCoreLoader.js`'s `requireDatabaseUrl`) em vez de tentar

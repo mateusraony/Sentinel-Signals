@@ -58,6 +58,20 @@ porque um `SELECT ... FOR UPDATE` sozinho NÃO fecha a corrida de criar a
 primeira operação de um ativo (linhas que ainda não existem não têm o que
 travar); o índice único é o que fecha.
 
+`asset_states_asset_timeframe_uq` (índice único parcial, `asset_id`/
+`timeframe` não nulos) + `backend.assetStates.upsert(assetId, timeframe,
+data)` (item 179) fecham a mesma classe de corrida do CAS de
+`TradeOperation`, mas para `AssetState`: `persistScanResults`
+(`src/lib/scanner.js`) escrevia via find-then-write não atômico antes desta
+mudança. `schema.sql` embute um `DELETE` idempotente de dedup ANTES do
+`CREATE UNIQUE INDEX` (produção pode ter duplicatas herdadas) — ver o
+comentário no próprio arquivo e `docs/known-risks.md` item 179 para o
+desenho completo, incluindo por que isso não virou um diretório
+`db/migrations/` versionado. Exposto ao navegador via `server/routes/
+assetStates.js` (`POST /api/asset-states/upsert`, mesmo padrão de
+`locks.js`/`tradeOps.js`) — **não é coberto** pelo CRUD genérico de
+`server/routes/entities.js`.
+
 `insertWebhookEventIfNew` (item 4b do runbook de cutover,
 `docs/claude/postgres-cutover-runbook.md`) — equivalente Postgres da
 transação de dedup do webhook TradingView, **já chamada de verdade por

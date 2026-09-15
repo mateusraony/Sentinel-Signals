@@ -40,7 +40,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       # O script usa só APIs nativas do Node (fetch/fs/path) — sem npm ci.
       # Inputs passam por env: (nunca interpolados direto no script) — evita

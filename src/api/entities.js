@@ -102,6 +102,15 @@ async function transitionTradeOp(opId, fromStatus, patch, { assetId, stopAdvance
   return callBackend(`/api/trade-ops/${opId}/transition`, { fromStatus, patch, assetId, stopAdvanceMarkerField, cascade });
 }
 
+// Item 179 — upsert atômico de AssetState por (asset_id, timeframe),
+// espelhando db/pgEntitiesCore.mjs's backend.assetStates.upsert via
+// server/routes/assetStates.js. Rota dedicada, mesmo padrão de
+// locks/tradeOps acima — persistScanResults (src/lib/scanner.js) chama
+// isto no lugar do antigo filter+create/update.
+async function upsertAssetState(assetId, timeframe, data) {
+  return callBackend('/api/asset-states/upsert', { assetId, timeframe, data });
+}
+
 // Achado real do Codex review (PR #339): a versão Firestore
 // (entitiesFirestoreLegacy.js) envolvia SystemLog.create()/createUnique()
 // numa camada resiliente que engole falha de escrita não crítica — sem
@@ -167,5 +176,6 @@ export const backend = {
   },
   locks: { acquireScanLock, releaseScanLock },
   tradeOps: { createTradeOpIfNoneActive, clearActiveOp, transitionTradeOp },
+  assetStates: { upsert: upsertAssetState },
   quota: { getAndResetOpCounts },
 };

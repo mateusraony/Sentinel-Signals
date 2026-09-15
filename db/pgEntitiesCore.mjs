@@ -633,6 +633,42 @@ async function transitionTradeOp(opId, fromStatus, patch, { stopAdvanceMarkerFie
   }
 }
 
+// --- assetStates (item 179 — upsert atômico por (asset_id, timeframe)) ---
+//
+// Substitui só a ESCRITA do find-then-write de persistScanResults
+// (src/lib/scanner.js: filter + create/update). A LEITURA
+// (AssetState.filter({asset_id,timeframe})) continua em scanner.js,
+// inalterada — ela alimenta hasAssetStateChanged (src/lib/assetStateDiff.js),
+// um gate de PERFORMANCE que evita escrever a cada passada de 5min quando
+// nada mudou (docs/known-risks.md item 17), não uma garantia de correção. A
+// garantia de correção (nunca duas linhas para o mesmo par, mesmo sob dois
+// workers concorrentes) vem só daqui, do índice único parcial
+// asset_states_asset_timeframe_uq (db/schema.sql).
+//
+// O predicado do ON CONFLICT precisa bater EXATAMENTE com o predicado do
+// índice parcial — é assim que o Postgres infere qual índice usar para
+// resolver o conflito; testado em db/schema.test.js/db/concurrency.test.js.
+//
+// `id` de propósito NÃO entra no DO UPDATE SET: quando a linha já existe, o
+// Postgres preserva o `id` ORIGINAL (o novo `crypto.randomUUID()` é
+// descartado) — resolve de graça a exigência de manter o `id` estável para
+// quem lê AssetState (React Query, cache do backfill), sem lógica extra.
+async function upsertAssetState(assetId, timeframe, data) {
+  const payload = { ...data, asset_id: assetId, timeframe };
+  assertNoUndefinedFields(payload, 'AssetState');
+  const createdDateForInsert = data.created_date || nowIso();
+  const id = crypto.randomUUID();
+  const { rows } = await getPool().query(
+    `INSERT INTO asset_states (id, asset_id, timeframe, created_date, data)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (asset_id, timeframe) WHERE asset_id IS NOT NULL AND timeframe IS NOT NULL
+     DO UPDATE SET data = asset_states.data || EXCLUDED.data
+     RETURNING id, data`,
+    [id, assetId, timeframe, createdDateForInsert, JSON.stringify(payload)]
+  );
+  return docFromRow(rows[0]);
+}
+
 // Postgres/Neon não tem teto diário de operações — não há cota para
 // contar. Mantido como stub (sempre zero) só para o consumidor genérico
 // `backend.quota.getAndResetOpCounts()` não precisar de um caminho especial
@@ -645,5 +681,6 @@ export const backend = {
   entities: Object.fromEntries(Object.keys(ENTITY_TABLES).map((name) => [name, createEntity(name)])),
   locks: { acquireScanLock, releaseScanLock },
   tradeOps: { createTradeOpIfNoneActive, clearActiveOp, transitionTradeOp },
+  assetStates: { upsert: upsertAssetState },
   quota: { getAndResetOpCounts },
 };

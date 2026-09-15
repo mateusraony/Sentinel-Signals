@@ -162,6 +162,14 @@ paths:
   agora", e a amostra por nível impede que um erro da madrugada seja expulso
   por log rotineiro (~2.000 `info`/dia contra uma janela de 300). Travado por
   `scripts/healthAuditQueryTripwire.test.js`.
+  **Read-only real desde o item 179**: `DATABASE_URL_READONLY` (secret
+  opcional, role Postgres com só `GRANT SELECT`, criação manual no Neon) —
+  quando presente, o script troca `DATABASE_URL` por ela antes de qualquer
+  leitura; sem ela, cai de volta pra `DATABASE_URL` (read-write) e avisa alto
+  em todo relatório. Uma tentativa de escrita com a role read-only ativa
+  propaga `permission denied` (42501) e derruba o job — o contador
+  `reads`/`writes` no rodapé do relatório é só informativo (Postgres não tem
+  cota pra contar), a garantia real é o `GRANT` + o re-throw de `42501`.
 - `golden-fixture.yml` — congela candles reais da Binance Spot como fixture
   dos golden tests de paridade (`src/lib/indicators/goldenParity.test.js`,
   `.claude/rules/pine-parity.md`) — roda no runner do GitHub porque a rede das

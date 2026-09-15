@@ -13,6 +13,7 @@ const { createCooldown } = require('./rateLimit');
 const { createEntitiesRouter } = require('./routes/entities');
 const { createTradeOpsRouter } = require('./routes/tradeOps');
 const { createLocksRouter } = require('./routes/locks');
+const { createAssetStatesRouter } = require('./routes/assetStates');
 const { createMeRouter } = require('./routes/me');
 const { getPgCore } = require('./pgCoreLoader');
 const { requireOwner } = require('./requireOwner');
@@ -464,6 +465,7 @@ app.get('/api/backtest/artifact/:runId', requireAuth, requireGithubToken, async 
 app.use('/api/entities', createEntitiesRouter({ requireAuth, requireOwner }));
 app.use('/api/trade-ops', createTradeOpsRouter({ requireAuth, requireOwner }));
 app.use('/api/locks', createLocksRouter({ requireAuth, requireOwner }));
+app.use('/api/asset-states', createAssetStatesRouter({ requireAuth, requireOwner }));
 // /api/me fica de fora de propósito: sempre opera sobre req.uid (nunca um id
 // vindo do cliente), então é inerentemente seguro sob auth anônima — é o
 // único uso legítimo dela (criar/ler o PRÓPRIO perfil).

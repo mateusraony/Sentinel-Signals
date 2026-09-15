@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci
@@ -51,6 +51,13 @@ jobs:
           # health-audit.mjs lê o backend AO VIVO (scripts/adminEntities.js,
           # agora Postgres) para os dados de negócio.
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Item 179 — role Postgres com só GRANT SELECT, criada manualmente
+          # no Neon (esta sessão não alcança o Neon). Se ausente, o script
+          # cai de volta pra DATABASE_URL acima (read-write) e avisa alto —
+          # nunca falha calado. Seguro deixar aqui antes da secret existir:
+          # um secret ausente resolve como string vazia, tratado como
+          # "não configurada" pelo script.
+          DATABASE_URL_READONLY: ${{ secrets.DATABASE_URL_READONLY }}
           # Ainda necessário: health-audit.mjs também importa `rtdb` de
           # scripts/adminEntitiesFirestoreLegacy.js (Firestore, fora desta
           # migração) só para checar o marcador de cota do Firestore.
