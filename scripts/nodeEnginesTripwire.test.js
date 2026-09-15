@@ -15,22 +15,20 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import semver from 'semver';
 
-// A versão que o `setup-node` do ci.yml entrega. `node-version: 20` resolve
-// para o último 20.x, não para 20.0.0 — usar 20.0.0 acusaria falso positivo em
-// qualquer pacote que exija `^20.9.0` (eslint, por exemplo).
-const NODE_CI = '20.19.0';
+// A versão que o `setup-node` do ci.yml entrega. `node-version: 22` resolve
+// para o último 22.x, não para 22.0.0 — usar 22.0.0 acusaria falso positivo em
+// qualquer pacote que exija `^22.9.0` (firebase-admin, por exemplo).
+const NODE_CI = '22.11.0';
 
 /**
- * Passivo conhecido, aceito e NÃO crescente — mesma catraca do typecheck.
- *
- * `firebase-admin@14` declara `>=22` e o `scan.yml` roda Node 20. **É anterior
- * a este item e não foi introduzido aqui.** Hoje funciona (engines é
- * advisório), mas é o relógio de trading rodando um SDK numa versão que o
- * próprio SDK diz não suportar. A correção — subir o Node de todos os
- * workflows — toca o scan ao vivo e é decisão de produto, não de teste.
- * Registrado para não ser esquecido nem "descoberto" de novo do zero.
+ * Resolvido (P2, subida de Node 20→22 em todos os workflows exceto server/,
+ * que fica em Node 20 de propósito): `firebase-admin@14` exige `>=22` e
+ * agora está dentro da faixa suportada pelo CI — nada precisa de passivo
+ * aceito aqui. Set vazio mantido (não a constante inteira removida) porque o
+ * padrão "catraca" continua valendo pra qualquer dependência futura que
+ * precise do mesmo tratamento.
  */
-const PASSIVO_CONHECIDO = new Set(['firebase-admin']);
+const PASSIVO_CONHECIDO = new Set([]);
 
 function engineDe(nome) {
   try {

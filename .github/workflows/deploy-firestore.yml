@@ -23,7 +23,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Write service account credentials
         run: echo "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/service-account.json"
