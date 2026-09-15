@@ -96,4 +96,22 @@ describe('consultas da auditoria de saúde', () => {
       expect(SRC).toContain("achados.push('auditoria rodando sem credencial Postgres somente-leitura dedicada");
     });
   });
+
+  // Achado real (auditoria externa, 2026-09-15): as duas seções de falha
+  // sistêmica (dentro e fora da janela recente) imprimem até 5 grupos no
+  // corpo do relatório (`.slice(0, 5)`), mas só empurravam o PRIMEIRO
+  // (`sistemicos[0]`/`sistemicosFora[0]`) pra `achados` — uma 2ª falha
+  // sistêmica simultânea nunca chegava no resumo/Telegram, só ficava
+  // enterrada no corpo. Travado aqui pra nunca voltar a ser "só o índice 0".
+  describe('achados de falha sistêmica cobrem TODOS os grupos listados, não só o 1º', () => {
+    it('nenhum achado.push indexa só sistemicos[0]/sistemicosFora[0]', () => {
+      expect(SRC).not.toMatch(/achados\.push\(`erro em \$\{sistemicos\[0\]/);
+      expect(SRC).not.toMatch(/achados\.push\(`erro em \$\{sistemicosFora\[0\]/);
+    });
+
+    it('os dois blocos iteram os grupos listados (mesmo .slice(0, 5) do corpo) antes de empurrar achado', () => {
+      const matches = [...SRC.matchAll(/for \(const g of (sistemicos(?:Fora)?)\.slice\(0, 5\)\) \{\s*achados\.push/g)];
+      expect(matches.length).toBe(2);
+    });
+  });
 });
