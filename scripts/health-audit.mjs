@@ -203,7 +203,13 @@ async function checarLogs() {
         p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}`);
         p(`  - exemplo: \`${String(g.exemplo).slice(0, 200)}\``);
       }
-      achados.push(`erro em ${sistemicos[0].ativos.size} ativos ao mesmo tempo: ${sistemicos[0].chave}`);
+      // Achado real (auditoria externa, 2026-09-15): só o 1º grupo virava
+      // achado (Telegram/resumo), mesmo quando o relatório listava até 5 —
+      // uma 2ª falha sistêmica simultânea ficava enterrada no corpo do
+      // relatório e nunca chegava ao aviso. Um achado por grupo listado.
+      for (const g of sistemicos.slice(0, 5)) {
+        achados.push(`erro em ${g.ativos.size} ativos ao mesmo tempo: ${g.chave}`);
+      }
     }
   }
 
@@ -232,7 +238,10 @@ async function checarLogs() {
       for (const g of sistemicosFora.slice(0, 5)) {
         p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}`);
       }
-      achados.push(`erro em ${sistemicosFora[0].ativos.size} ativos (fora da janela recente): ${sistemicosFora[0].chave}`);
+      // Mesma correção do bloco acima — um achado por grupo listado, não só o 1º.
+      for (const g of sistemicosFora.slice(0, 5)) {
+        achados.push(`erro em ${g.ativos.size} ativos (fora da janela recente): ${g.chave}`);
+      }
     }
   }
 
