@@ -45,7 +45,7 @@ const OPEN_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
  * expandir — mesmo padrão lazy-load da versão anterior, evita 1 leitura por
  * tarefa listada).
  */
-export default function SignalChecklist({ signal, signalEventId, tradeOps = [] }) {
+export default function SignalChecklist({ signal = null, signalEventId = null, tradeOps = [] }) {
   const [expanded, setExpanded] = useState(false);
   const needsFetch = !signal && !!signalEventId;
 
