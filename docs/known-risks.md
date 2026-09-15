@@ -23030,3 +23030,144 @@ entre loops** (`.claude/rules/trading-engine.md`): esse residual passa a
 valer só para operações de fonte compatível — o caso de fonte DIVERGENTE
 (que também contribuía pra decisões conflitantes entre loops) foi eliminado
 pelo gate acima, não expandido.
+
+## 179. AssetState UNIQUE(asset_id, timeframe) + upsert atômico · role Postgres read-only real pro health-audit · Node 22 (2026-09-15)
+
+Rodada P2 — os 2 itens de maior risco real de uma lista de 5 candidatos de
+baixo risco levantados após o P0/P1 (PRs #361/#362), mais Node 22 incluído
+por decisão dos agentes durante o planejamento (couberam sem custo extra —
+ver abaixo).
+
+### AssetState — find-then-write não atômico virou upsert atômico
+
+**Problema**: `persistScanResults` (`src/lib/scanner.js`) escrevia
+`AssetState` via `filter({asset_id,timeframe})` seguido de `create`/`update`
+condicional — check-then-write, não atômico. Dois workers concorrentes
+(cron + navegador, ou dois disparos externos próximos via cron-job.org)
+podiam criar duas linhas para o mesmo par. `db/schema.sql` já documentava
+essa garantia como só "na prática", nunca real.
+
+**Correção**: índice único PARCIAL `asset_states_asset_timeframe_uq` em
+`db/schema.sql` (`WHERE asset_id IS NOT NULL AND timeframe IS NOT NULL` —
+linhas legadas com o par nulo ficam de fora, tanto do índice quanto da
+dedup abaixo) + `upsertAssetState(assetId, timeframe, data)` nova em
+`db/pgEntitiesCore.mjs` (`INSERT ... ON CONFLICT (asset_id, timeframe) ...
+DO UPDATE SET data = asset_states.data || EXCLUDED.data` — o predicado do
+`ON CONFLICT` precisa bater exatamente com o do índice parcial, é assim que
+o Postgres infere qual índice resolve o conflito). Como `id` não entra no
+`DO UPDATE SET`, o Postgres preserva o `id` original da linha quando ela já
+existe — resolve de graça a exigência de manter o `id` estável para quem lê
+`AssetState` (React Query no painel, cache do backfill), sem lógica extra.
+`persistScanResults` passou a chamar `backend.assetStates.upsert(...)` no
+lugar do bloco `if/else create/update`; a leitura (`filter`) continua —
+alimenta `hasAssetStateChanged` (`src/lib/assetStateDiff.js`), que é um
+gate de PERFORMANCE (evita escrever a cada passada de 5min quando nada
+mudou, item 17), não de correção.
+
+**Migração em produção**: como o banco provavelmente já tem duplicatas
+herdadas (find-then-write nunca foi atômico), `db/schema.sql` embute um
+`DELETE` idempotente ANTES do `CREATE UNIQUE INDEX` — por par com `ROW_NUMBER()
+OVER (PARTITION BY asset_id, timeframe ORDER BY processed_at DESC, id
+DESC)`, mantém a linha com `processed_at` mais recente, desempate por `id`.
+Rodar de novo não encontra nada com `rn > 1` — seguro de reaplicar. Decisão
+de design: **não** um diretório `db/migrations/` versionado — o comentário
+de `db/migrate.mjs` já antecipava "quando existir uma 2ª mudança de
+schema"; esta FOI essa mudança, resolvida como SQL idempotente dentro do
+`schema.sql` único (YAGNI — versionamento incremental só se uma 3ª mudança
+precisar de um passo genuinamente não-idempotente).
+
+**Gap achado na revisão final** (regra permanente,
+`.claude/rules/operating-principles.md`): `upsertAssetState` só existia no
+adaptador Postgres (`db/pgEntitiesCore.mjs`, usado pelo cron via
+`scripts/adminEntities.js`, um re-export fino). O NAVEGADOR usa
+`src/api/entities.js`, um cliente HTTP para `server/routes/*.js` — sem uma
+rota nova, `backend.assetStates` seria `undefined` ali e
+`persistScanResults` quebraria com `TypeError` em toda passada do scan no
+navegador. Corrigido: `server/routes/assetStates.js` (novo, mesmo padrão de
+`locks.js`/`tradeOps.js` — `requireAuth`+`requireOwner`, fora do CRUD
+genérico de `entities.js` porque a semântica não é nenhuma das genéricas),
+montado em `server/index.js` como `/api/asset-states`; `src/api/entities.js`
+ganhou `upsertAssetState` (chama a rota via `callBackend`, mesmo padrão de
+`createTradeOpIfNoneActive`/`acquireScanLock`) e `backend.assetStates.upsert`
+no export final.
+
+**Cache do backfill** (`scripts/adminEntitiesBackfillCache.js`, item 137
+addendum): interceptava `AssetState.filter/create/update` por assinatura
+exata. Restruturado para também interceptar `backend.assetStates.upsert`
+(compartilhando o MESMO `Map` de cache que `filter` — um `filter()` logo
+após um `upsert()` no mesmo tick precisa ver a escrita), senão o replay de
+60 dias voltaria a bater direto no Postgres real a cada tick, reproduzindo
+o incidente original. `scripts/adminEntitiesBackfillCacheTripwire.test.js`
+atualizado junto (regra do próprio arquivo: nunca mesclar o cache sem o
+teste que prova a interceptação).
+
+**Testes**: `db/schema.test.js` (índice existe, é `UNIQUE`, é parcial) ·
+`db/assetStatesDedup.test.js` (novo, banco descartável próprio — semeia
+duplicatas cruas SEM o índice, roda `applySchema`, confirma dedup +
+NULL preservado + bloqueio de nova duplicata + idempotência) ·
+`db/pgEntitiesCore.test.js` (upsert cria/atualiza preservando `id`, pares
+diferentes não colidem) · `db/concurrency.test.js` (2 conexões reais,
+`Promise.all` sem await individual, 25x — diferente do CAS de
+`TradeOperation`: aqui NENHUMA conexão deve falhar, a corrida se resolve
+via `DO UPDATE`, nunca 2 linhas nem erro).
+
+### Role Postgres read-only real pro health-audit
+
+**Problema**: o contrato "read-only por contrato, o job falha se escrever"
+de `health-audit.yml` virou decorativo pós-cutover —
+`getAndResetOpCounts()` (`db/pgEntitiesCore.mjs`) sempre retorna
+`{reads:0,writes:0}` (Postgres não tem cota pra contar, ao contrário do
+Firestore). Pior, achado ao ler `checar()` (`scripts/health-audit.mjs`): o
+`catch` genérico já engolia qualquer erro — inclusive um hipotético
+`permission denied` do Postgres — como "mais um achado" via
+`classifyFailure`, nunca chegando ao `if (writes > 0)` morto. Ou seja: hoje,
+mesmo se a role tentasse escrever e o banco rejeitasse, o job terminaria
+VERDE.
+
+**Correção**: `checar()` agora propaga `e.code === '42501'` (permission
+denied) em vez de classificar como achado comum — derruba o processo
+inteiro via `main().catch()`. O gate morto `if (writes > 0)` foi removido
+(nunca podia disparar). `main()` troca `DATABASE_URL` por
+`DATABASE_URL_READONLY` quando presente (única forma de mudar a connection
+string sem tocar `getPool()`, que sempre lê `process.env.DATABASE_URL`);
+sem a secret, cai de volta pra `DATABASE_URL` (read-write) e empurra um
+achado visível — nunca falha calado enquanto a etapa manual no Neon não
+tiver sido feita.
+
+**Etapa manual do usuário (fora do alcance desta sessão — sem rede pro
+Neon)**: criar a role `health_audit_readonly` no Console Neon (aba "Roles"),
+`GRANT CONNECT/USAGE/SELECT` + `ALTER DEFAULT PRIVILEGES` (pra uma tabela
+nova nascer legível sem GRANT manual de novo), copiar a connection string
+dela pro secret `DATABASE_URL_READONLY` no GitHub. Passo a passo completo
+entregue ao usuário na sessão.
+
+**Testes**: `db/readOnlyRole.test.js` (novo — cria uma role real de teste
+no Postgres do CI com só `GRANT SELECT`, confirma `SELECT` funciona e
+`INSERT`/`UPDATE`/`DELETE` são rejeitados com `42501`; prova o MECANISMO,
+não o Neon de produção em si) · `healthAuditQueryTripwire.test.js`
+(novo `describe` — `checar()` propaga `42501`, gate morto removido, troca
+de credencial + achado de aviso presentes no código).
+
+### Node 22
+
+**Achado real, não cosmético**: `firebase-admin@^14.1.0` (raiz, exige
+`>=22`) já era carregado de verdade no caminho AO VIVO do cron —
+`scripts/adminTelegram.js` (import estático de `firebase-admin/{app,
+firestore,database}`, usado pelo marcador de dedup do alerta de cota
+Telegram) é importado por `run-scan.mjs`/`run-backfill-check.mjs`/
+`health-audit.mjs`, todos rodando em Node 20 até esta rodada. Já havia um
+tripwire aceitando isso como dívida (`scripts/nodeEnginesTripwire.test.js`,
+`PASSIVO_CONHECIDO`).
+
+**Correção**: os 15 workflows do repositório (todos exceto `server/`, que
+fica em Node 20 + `firebase-admin@^13` de propósito — decisão intocável,
+serviço deployado separado no Render) subiram pra `node-version: 22`;
+`package.json` (raiz) ganhou `engines: {"node": ">=22"}` (ausente até
+aqui); `PASSIVO_CONHECIDO` esvaziado (o Set continua existindo, vazio, pro
+padrão "catraca" valer pra uma dependência futura). **Risco de quebra
+avaliado como baixo e confirmado empiricamente**: `vite`/`vitest`/`esbuild`/
+`pg`/`jsdom` (instalado hoje) todos compatíveis com `>=22` sem ressalva,
+sem dependência nativa no repo (a classe de problema que costuma quebrar
+numa subida de major do Node); suíte completa (1851 testes, incluindo os
+gated por `TEST_DATABASE_URL`) e `npm run build` rodados de verdade sob
+Node 22 antes do merge.

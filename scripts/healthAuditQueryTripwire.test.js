@@ -78,4 +78,22 @@ describe('consultas da auditoria de saúde', () => {
     expect(tetos.length).toBeGreaterThan(0);
     expect(Number(declarado[1]), 'o comentário do orçamento saiu de sincronia com os tetos').toBe(soma);
   });
+
+  // Item 179 — o contrato read-only decorativo (getAndResetOpCounts sempre
+  // {reads:0,writes:0} no Postgres, gate morto que nunca podia disparar) foi
+  // substituído por uma role Postgres real + propagação do erro de permissão.
+  describe('contrato read-only real (GRANT Postgres, não contador)', () => {
+    it('checar() propaga permission denied (42501) em vez de engolir como achado comum', () => {
+      expect(SRC).toMatch(/if \(e\.code === '42501'\) \{\s*throw e;/);
+    });
+
+    it('o gate morto de writes>0 foi removido — a proteção não finge ser 2 camadas', () => {
+      expect(SRC).not.toMatch(/if \(writes > 0\)/);
+    });
+
+    it('DATABASE_URL_READONLY: usa quando presente, avisa alto quando ausente (nunca falha calado)', () => {
+      expect(SRC).toContain('process.env.DATABASE_URL = process.env.DATABASE_URL_READONLY');
+      expect(SRC).toContain("achados.push('auditoria rodando sem credencial Postgres somente-leitura dedicada");
+    });
+  });
 });
