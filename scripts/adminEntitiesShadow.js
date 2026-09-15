@@ -217,6 +217,38 @@ async function createTradeOpIfNoneActive(assetId, docId, data) {
   });
 }
 
+// Item 179 addendum (Codex review, PR #364) — persistScanResults
+// (src/lib/scanner.js) passou a chamar backend.assetStates.upsert em vez de
+// filter+create/update para AssetState; este arquivo não tinha esse método
+// no backend exportado, então TODA passada do scan sombra quebrava com
+// `Cannot read properties of undefined (reading 'upsert')` — scanAllAssets
+// captura o erro por ativo e o workflow continuava verde, mas nenhum sinal
+// sombra era mais gerado. Firestore não tem upsert por campo composto nativo
+// (diferente do ON CONFLICT do Postgres em db/pgEntitiesCore.mjs) — resolvido
+// com uma transação: query por (asset_id, timeframe), update se achar,
+// create se não. Menos rigoroso que a garantia atômica do Postgres (uma
+// query dentro de transação do Firestore serializa concorrentes reais, mas
+// não é o mesmo mecanismo de índice único), aceitável aqui: dado
+// experimental de baixo risco, não o motor de trading real.
+async function upsertAssetState(assetId, timeframe, data) {
+  const collectionRef = db.collection(`${SHADOW_PREFIX}AssetStates`);
+  const payload = { ...data, asset_id: assetId, timeframe };
+  return db.runTransaction(async (tx) => {
+    const snapshot = await tx.get(
+      collectionRef.where('asset_id', '==', assetId).where('timeframe', '==', timeframe).limit(1)
+    );
+    if (!snapshot.empty) {
+      const docSnap = snapshot.docs[0];
+      tx.update(docSnap.ref, payload);
+      return { id: docSnap.id, ...docSnap.data(), ...payload };
+    }
+    const newRef = collectionRef.doc();
+    const created = { ...payload, created_date: data.created_date || new Date().toISOString() };
+    tx.set(newRef, created);
+    return { id: newRef.id, ...created };
+  });
+}
+
 async function clearActiveOp(assetId, tradeOpId) {
   const activeRef = db.collection(`${SHADOW_PREFIX}AssetActiveOps`).doc(assetId);
   await db.runTransaction(async (tx) => {
@@ -298,5 +330,6 @@ export const backend = {
   },
   locks: { acquireScanLock, releaseScanLock },
   tradeOps: { createTradeOpIfNoneActive, clearActiveOp, transitionTradeOp },
+  assetStates: { upsert: upsertAssetState },
   quota: { getAndResetOpCounts },
 };
