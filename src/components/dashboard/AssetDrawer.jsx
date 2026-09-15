@@ -141,7 +141,7 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
                         <div className="text-[8px] font-mono text-muted-foreground/60 mt-0.5">
                           {moment(sig.created_date).fromNow()}
                         </div>
-                        <SignalChecklist asset={asset} signal={sig} tradeOps={tradeOps} />
+                        <SignalChecklist signal={sig} tradeOps={tradeOps} />
                       </div>
                     </div>
                   );
