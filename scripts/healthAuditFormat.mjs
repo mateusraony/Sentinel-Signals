@@ -70,3 +70,20 @@ export function haQuantoTempo(iso, agora = Date.now()) {
 export function celula(texto) {
   return String(texto ?? '').replace(/\|/g, '\\|');
 }
+
+// Corte de recência para VIRAR ACHADO (e disparar Telegram) — achado real,
+// 2026-09-16: uma falha sistêmica (ex.: item 179, ON CONFLICT sem índice)
+// corrigida às 16:33 UTC continuou gerando o MESMO alerta no Telegram em
+// toda execução seguinte, porque `g.ultimo` (a ocorrência mais recente do
+// grupo) seguia dentro da janela de LIMITE_LOGS/AMOSTRA_ERROS_JANELA_DIAS —
+// um problema morto reaparecendo por dias até sair da janela sozinho. Só
+// afeta o que vira ACHADO (e portanto o Telegram); o corpo do relatório
+// continua listando o grupo inteiro, com "última há Xh" visível, pra quem
+// abrir o relatório ver o histórico. Um problema REALMENTE ativo nunca é
+// afetado: `g.ultimo` se renova a cada nova ocorrência, então continua
+// dentro da janela enquanto continuar acontecendo.
+export const ACHADO_SISTEMICO_RECENCIA_HORAS = 24;
+
+export function ocorreuRecentemente(g, agora = Date.now()) {
+  return (agora - new Date(g.ultimo).getTime()) <= ACHADO_SISTEMICO_RECENCIA_HORAS * 60 * 60 * 1000;
+}

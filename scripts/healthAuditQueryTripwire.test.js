@@ -110,8 +110,33 @@ describe('consultas da auditoria de saúde', () => {
     });
 
     it('os dois blocos iteram os grupos listados (mesmo .slice(0, 5) do corpo) antes de empurrar achado', () => {
-      const matches = [...SRC.matchAll(/for \(const g of (sistemicos(?:Fora)?)\.slice\(0, 5\)\) \{\s*achados\.push/g)];
+      const matches = [...SRC.matchAll(/for \(const g of (sistemicos(?:Fora)?)\.slice\(0, 5\)(?:\.filter\(\(g\) => ocorreuRecentemente\(g\)\))?\) \{\s*achados\.push/g)];
       expect(matches.length).toBe(2);
+    });
+  });
+
+  // Achado real (2026-09-16): um problema já corrigido continuava
+  // re-disparando o MESMO alerta no Telegram em toda execução seguinte do
+  // health-audit, porque `g.ultimo` seguia dentro da janela de leitura
+  // mesmo dias depois do fix já ter sido confirmado. `ocorreuRecentemente`
+  // (scripts/healthAuditFormat.mjs) filtra o que vira ACHADO — nunca o que
+  // aparece no corpo do relatório, que continua mostrando o histórico
+  // completo pra quem abrir o relatório.
+  describe('achados de falha sistêmica só disparam Telegram se ainda recentes', () => {
+    it('importa ocorreuRecentemente da parte pura, não reimplementa a regra aqui', () => {
+      expect(SRC).toMatch(/import \{[^}]*\bocorreuRecentemente\b[^}]*\} from '\.\/healthAuditFormat\.mjs';/);
+    });
+
+    it('os dois blocos de achado filtram por recência antes de empurrar pro Telegram', () => {
+      const matches = [...SRC.matchAll(/\.slice\(0, 5\)\.filter\(\(g\) => ocorreuRecentemente\(g\)\)\) \{\s*achados\.push/g)];
+      expect(matches.length).toBe(2);
+    });
+
+    it('o filtro de recência NÃO afeta o corpo do relatório — só o que vira achado', () => {
+      // As linhas que imprimem no corpo (via `p(...)`) continuam iterando o
+      // .slice(0, 5) sem filtro — mostrar o histórico completo é o ponto.
+      const corpo = [...SRC.matchAll(/for \(const g of (sistemicos(?:Fora)?)\.slice\(0, 5\)\) \{\s*p\(/g)];
+      expect(corpo.length).toBe(2);
     });
   });
 });
