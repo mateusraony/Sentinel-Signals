@@ -79,7 +79,7 @@
 // removido na decomissão, fase 11).
 import { backend } from './adminEntities.js';
 import { rtdb } from './adminEntitiesFirestoreLegacy.js';
-import { agrupar, celula, haQuantoTempo } from './healthAuditFormat.mjs';
+import { agrupar, celula, haQuantoTempo, ocorreuRecentemente } from './healthAuditFormat.mjs';
 import { classifyFailure } from './failureClassification.mjs';
 import { isTelegramConfigured, notifyHealthAudit } from './adminTelegram.js';
 
@@ -207,7 +207,10 @@ async function checarLogs() {
       // achado (Telegram/resumo), mesmo quando o relatório listava até 5 —
       // uma 2ª falha sistêmica simultânea ficava enterrada no corpo do
       // relatório e nunca chegava ao aviso. Um achado por grupo listado.
-      for (const g of sistemicos.slice(0, 5)) {
+      // Recência (2026-09-16): só quem ainda ocorreu nas últimas
+      // ACHADO_SISTEMICO_RECENCIA_HORAS vira achado — ver `ocorreuRecentemente`
+      // em ./healthAuditFormat.mjs.
+      for (const g of sistemicos.slice(0, 5).filter((g) => ocorreuRecentemente(g))) {
         achados.push(`erro em ${g.ativos.size} ativos ao mesmo tempo: ${g.chave}`);
       }
     }
@@ -238,8 +241,10 @@ async function checarLogs() {
       for (const g of sistemicosFora.slice(0, 5)) {
         p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}`);
       }
-      // Mesma correção do bloco acima — um achado por grupo listado, não só o 1º.
-      for (const g of sistemicosFora.slice(0, 5)) {
+      // Mesma correção do bloco acima — um achado por grupo listado, não só
+      // o 1º — e o mesmo filtro de recência (`ocorreuRecentemente`, ver
+      // ./healthAuditFormat.mjs).
+      for (const g of sistemicosFora.slice(0, 5).filter((g) => ocorreuRecentemente(g))) {
         achados.push(`erro em ${g.ativos.size} ativos (fora da janela recente): ${g.chave}`);
       }
     }
