@@ -38,7 +38,7 @@ import { rejectionPatch, regimeDetail, trendReversedDetail } from './signalRejec
 import {
   buildRegimeSnapshot, buildTrendReversedSnapshot, buildAwaitingTp1Snapshot,
   buildPreTp1BreakevenSnapshot, buildPreTp1TrailingSnapshot, buildRunnerTrailingSnapshot,
-  buildRunnerRfManagedSnapshot,
+  buildRunnerRfManagedSnapshot, buildTp1HitSnapshot,
 } from './decisionSnapshot';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -3853,6 +3853,16 @@ export async function persistScanResults(scanResult) {
           updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
         } else {
           newStatus = 'RUNNER_ACTIVE';
+          // Fase 3 — Explainability V2 (achado de revisão independente,
+          // 2026-09-17). Nesta MESMA passada nem o bloco pré-TP1 nem o
+          // pós-TP1 rodam (os dois são gateados por newStatus === op.status/
+          // 'RUNNER_ACTIVE', e newStatus acabou de mudar) — sem gravar algo
+          // aqui, o decision_snapshot ficaria congelado numa fase pré-TP1
+          // que já não existe (ver src/lib/decisionSnapshot.js).
+          updatePayload.decision_snapshot = buildTp1HitSnapshot({
+            stopBefore: newCurrentStop, stopAfter: op.entry_price, tp1: op.tp1,
+            executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+          });
           newCurrentStop = op.entry_price;
         }
       }

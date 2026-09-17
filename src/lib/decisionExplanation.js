@@ -38,14 +38,52 @@ function directionLabel(dir) {
   return 'indefinida';
 }
 
+// Achado de revisão independente (2026-09-17): `decision_snapshot` só é
+// regravado quando algo mais já ia gravar mesmo (write-on-change em
+// SignalEvent; carona nas escritas de mfe_r/current_stop em TradeOperation —
+// ver docs/known-risks.md itens 181/182). Isso significa que um snapshot com
+// `data_status: 'LIVE'` pode estar descrevendo uma avaliação de várias
+// passadas atrás, sem nenhum sinal visual disso. Em vez de tentar adivinhar
+// um limiar de "desatualizado" (que varia por timeframe — 4h vs 1h — e por
+// isso seria fácil de errar), expõe o horário em que os fatos foram medidos
+// e deixa o usuário julgar. Sem `moment` de propósito — este módulo é
+// dependency-free, mesmo padrão de src/lib/opExitRules.js.
+function formatMeasuredAt(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const brt = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+  const hh = String(brt.getUTCHours()).padStart(2, '0');
+  const mm = String(brt.getUTCMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function withMeasuredAt(evidence, snapshot) {
+  if (!evidence) return evidence;
+  const time = formatMeasuredAt(snapshot?.evaluated_at);
+  return time ? `${evidence} (medido às ${time} BRT)` : evidence;
+}
+
 /**
  * Formata `decision_snapshot.facts` numa frase curta, por `reason_code`.
  * Só os dois reason_codes que `decisionSnapshot.js` já produz nesta fase —
  * um reason_code sem formatador conhecido (ou fatos incompletos) devolve
  * `null`, nunca um texto genérico fingindo evidência.
+ *
+ * `currentReasonCode` é o motivo categórico ATUAL do sinal
+ * (`signal.last_rejection_reason`) — `recordRejection()` (scanner.js) só
+ * grava `decision_snapshot` nos motivos regime_rejected/trend_reversed; os
+ * outros ~8 motivos (candle_pattern_rejected, retest_pending, etc.) mudam
+ * `last_rejection_reason` via write-on-change SEM tocar `decision_snapshot`,
+ * que fica com o valor da última vez que um desses dois motivos esteve
+ * ativo. Sem este guard, a evidência numérica podia descrever um motivo já
+ * resolvido enquanto o chip/frase acima já mostra o motivo atual — achado
+ * de revisão independente (`sentinel-trading-engine-review` + `code-review`,
+ * 2026-09-17), não hipotético.
  */
-function formatEvidence(snapshot) {
+function formatEvidence(snapshot, currentReasonCode) {
   if (!snapshot || snapshot.data_status === 'UNKNOWN') return null;
+  if (currentReasonCode && snapshot.reason_code !== currentReasonCode) return null;
   const { reason_code: reasonCode, facts = {} } = snapshot;
 
   if (reasonCode === 'regime_rejected') {
@@ -94,7 +132,7 @@ export function explainDecision(signal, ctx = {}) {
   return {
     headline: copy.chip,
     why: copy.detail,
-    evidence: formatEvidence(snapshot),
+    evidence: withMeasuredAt(formatEvidence(snapshot, signal?.last_rejection_reason ?? null), snapshot),
     missing: null,
     nextStep: null,
     userAction: NOTHING_TO_DO,
@@ -131,6 +169,14 @@ const OPERATION_COPY = Object.freeze({
     headline: 'Proteção aumentada',
     why: 'O preço avançou o suficiente para a trilha de proteção elevar o stop.',
   },
+  tp1_hit_stop_to_breakeven: {
+    headline: 'TP1 atingido — proteção aumentada',
+    why: 'TP1 foi atingido: parte da posição foi realizada e o stop subiu para a entrada — o restante não pode mais fechar no vermelho.',
+  },
+  tp1_hit_stop_unchanged: {
+    headline: 'TP1 atingido',
+    why: 'TP1 foi atingido: parte da posição foi realizada. O stop já estava na entrada, então não houve mudança adicional.',
+  },
   runner_rf_managed: {
     headline: 'Runner ativo',
     why: 'TP1 já foi atingido. O restante da posição é encerrado pela reversão do indicador, não por uma trilha de stop.',
@@ -164,6 +210,15 @@ function formatOperationEvidence(snapshot) {
     const toStop = formatNum(facts.distance_to_stop);
     if (toTp1 == null || toStop == null) return null;
     return `Medido: faltam ${toTp1} até o TP1, ${toStop} de folga até o stop.`;
+  }
+
+  if (reasonCode === 'tp1_hit_stop_to_breakeven' || reasonCode === 'tp1_hit_stop_unchanged') {
+    const before = formatNum(facts.stop_before);
+    const after = formatNum(facts.stop_after);
+    if (before == null || after == null) return null;
+    return reasonCode === 'tp1_hit_stop_to_breakeven'
+      ? `Medido: stop foi de ${before} para ${after} (entrada).`
+      : `Medido: stop mantido em ${after} (já era a entrada).`;
   }
 
   if (reasonCode === 'pre_tp1_protection_armed_not_triggered' || reasonCode === 'breakeven_triggered') {
@@ -228,7 +283,7 @@ export function explainOperationDecision(op) {
   return {
     headline: copy.headline,
     why: copy.why,
-    evidence: formatOperationEvidence(snapshot),
+    evidence: withMeasuredAt(formatOperationEvidence(snapshot), snapshot),
     missing: null,
     nextStep: null,
     userAction: NOTHING_TO_DO,

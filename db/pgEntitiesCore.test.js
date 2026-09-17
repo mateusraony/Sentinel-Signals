@@ -323,6 +323,55 @@ describe.skipIf(!TEST_DATABASE_URL)('db/pgEntitiesCore.mjs', () => {
       expect(final.current_stop).toBe(105); // nunca regride pro pior valor
     });
 
+    // Achado de revisão independente (2026-09-17, Fase 3 Explainability V2):
+    // decision_snapshot carrega facts.stop_before/stop_after computados pelo
+    // CHAMADOR antes da transação, sob a suposição de que seu current_stop
+    // vai ser o gravado. Sem este fix, um worker mais lento perdendo o
+    // clampMonotonicStop ainda sobrescrevia decision_snapshot com um
+    // stop_after que nunca existiu no current_stop real — dado
+    // internamente inconsistente, exatamente o que Explainability V2 existe
+    // para evitar.
+    it('decision_snapshot é descartado quando o candidato de stop perde o clamp', async () => {
+      await backend.tradeOps.createTradeOpIfNoneActive('asset-1', 'op-a', { asset_id: 'asset-1', symbol: 'BTCUSDT', status: 'RUNNER_ACTIVE', side: 'BUY', current_stop: 100 });
+      // Worker rápido: avanço real e correto, com snapshot descrevendo-o.
+      await backend.tradeOps.transitionTradeOp('op-a', 'RUNNER_ACTIVE', {
+        status: 'RUNNER_ACTIVE', current_stop: 105,
+        decision_snapshot: { decision: 'PROTECTED', reason_code: 'runner_trailing_advanced', facts: { stop_before: 100, stop_after: 105 }, data_status: 'LIVE' },
+      });
+      // Worker lento: calculou um stop PIOR (102) antes de saber do avanço
+      // acima, e monta seu próprio snapshot em cima desse candidato.
+      const result = await backend.tradeOps.transitionTradeOp('op-a', 'RUNNER_ACTIVE', {
+        status: 'RUNNER_ACTIVE', current_stop: 102,
+        decision_snapshot: { decision: 'PROTECTED', reason_code: 'runner_trailing_advanced', facts: { stop_before: 100, stop_after: 102 }, data_status: 'LIVE' },
+      });
+      expect(result.applied).toBe(true); // CAS é só de status, deixa passar
+      const final = await backend.entities.TradeOperation.get('op-a');
+      expect(final.current_stop).toBe(105); // clamp mantém o melhor valor
+      // O snapshot do worker perdedor (stop_after: 102) NÃO foi persistido —
+      // o que sobrevive continua descrevendo o current_stop real.
+      expect(final.decision_snapshot.facts.stop_after).toBe(105);
+    });
+
+    it('decision_snapshot do candidato vencedor é preservado normalmente (caso positivo)', async () => {
+      await backend.tradeOps.createTradeOpIfNoneActive('asset-1', 'op-a', { asset_id: 'asset-1', symbol: 'BTCUSDT', status: 'RUNNER_ACTIVE', side: 'BUY', current_stop: 100 });
+      await backend.tradeOps.transitionTradeOp('op-a', 'RUNNER_ACTIVE', {
+        status: 'RUNNER_ACTIVE', current_stop: 105,
+        decision_snapshot: { decision: 'PROTECTED', reason_code: 'runner_trailing_advanced', facts: { stop_before: 100, stop_after: 105 }, data_status: 'LIVE' },
+      });
+      const final = await backend.entities.TradeOperation.get('op-a');
+      expect(final.decision_snapshot.facts.stop_after).toBe(105);
+    });
+
+    it('patch sem current_stop (ex.: HOLDING puro) nunca perde decision_snapshot por este guard', async () => {
+      await backend.tradeOps.createTradeOpIfNoneActive('asset-1', 'op-a', { asset_id: 'asset-1', symbol: 'BTCUSDT', status: 'RUNNER_ACTIVE', side: 'BUY', current_stop: 100 });
+      await backend.tradeOps.transitionTradeOp('op-a', 'RUNNER_ACTIVE', {
+        status: 'RUNNER_ACTIVE',
+        decision_snapshot: { decision: 'HOLDING', reason_code: 'runner_trailing_dormant', facts: { stop_before: 100, stop_after: 100 }, data_status: 'LIVE' },
+      });
+      const final = await backend.entities.TradeOperation.get('op-a');
+      expect(final.decision_snapshot.reason_code).toBe('runner_trailing_dormant');
+    });
+
     it('duas cascatas hierárquicas diferentes coexistem no mesmo ativo (concorrência real)', async () => {
       const [a, b] = await Promise.all([
         backend.tradeOps.createTradeOpIfNoneActive('asset-1', 'op-4h15m', { asset_id: 'asset-1', symbol: 'BTCUSDT', status: 'SIGNAL_CONFIRMED', hierarchical_cascade: true }, '4h_15m'),

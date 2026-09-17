@@ -203,6 +203,31 @@ export function buildPreTp1TrailingSnapshot({
   });
 }
 
+// Achado de revisão independente (2026-09-17): no candle EXATO em que TP1
+// dispara, `scanner.js` muda `newStatus` para `RUNNER_ACTIVE` e move o stop
+// pra entrada (breakeven) — mas nem o bloco pré-TP1 nem o pós-TP1 rodam
+// nessa mesma passada (os dois são gateados por `newStatus === op.status`/
+// `newStatus === 'RUNNER_ACTIVE' && candleUsable`, e o status já mudou
+// ANTES desses gates serem avaliados). Sem este builder, o `decision_snapshot`
+// ficava congelado no último valor PRÉ-TP1 (ex.: "Monitorando — faltam X até
+// o TP1") numa operação que já é runner. Não reusa `buildRunnerTrailingSnapshot`
+// de propósito: o stop não moveu por trilha ATR aqui, moveu porque TP1
+// disparou — atribuir à trilha seria descrever o motivo errado.
+export function buildTp1HitSnapshot({
+  stopBefore, stopAfter, tp1, executor = null, marketTime = null, evaluatedAt = new Date().toISOString(),
+}) {
+  const advanced = stopAfter !== stopBefore;
+  return baseSnapshot({
+    decision: advanced ? DECISION.PROTECTED : DECISION.HOLDING,
+    reasonCode: advanced ? 'tp1_hit_stop_to_breakeven' : 'tp1_hit_stop_unchanged',
+    facts: { stop_before: stopBefore, stop_after: stopAfter, tp1: Number.isFinite(tp1) ? tp1 : null },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: DATA_STATUS.LIVE,
+  });
+}
+
 // Pós-TP1, runner ATR-based (`op.exit_mode` é `HYBRID_RF_ATR`/`ATR_TRAILING`
 // — na prática toda operação real) — espelha
 // `opExitRules.js:advanceTrailingStop`. Mesma disciplina: decisão por

@@ -51,7 +51,7 @@ describe('explainDecision — com decision_snapshot (regime_rejected)', () => {
         executor: 'cron', data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: força do movimento (ADX) 14.2 — mínimo exigido 20 · lateralização (Chop) 40.1 — máximo permitido 58.');
+    expect(out.evidence).toBe('Medido: força do movimento (ADX) 14.2 — mínimo exigido 20 · lateralização (Chop) 40.1 — máximo permitido 58. (medido às 09:00 BRT)');
     expect(out.warnings).toEqual([]);
     expect(out.technical.reason_code).toBe('regime_rejected');
   });
@@ -81,6 +81,46 @@ describe('explainDecision — com decision_snapshot (regime_rejected)', () => {
     });
     expect(out.evidence).toBeNull();
   });
+
+  // Achado de revisão independente (sentinel-trading-engine-review +
+  // code-review, 2026-09-17): recordRejection() (scanner.js) só passa
+  // `snapshot` para regime_rejected/trend_reversed — os outros ~8 motivos de
+  // rejeição mudam `last_rejection_reason` via write-on-change SEM tocar
+  // `decision_snapshot`, que fica com o valor do último motivo que era um
+  // desses dois. Sem o guard de frescor, a evidência numérica descrevia um
+  // motivo JÁ RESOLVIDO enquanto o chip mostrava o motivo atual — pior que
+  // não mostrar nada.
+  it('REGRESSÃO: evidência de um motivo RESOLVIDO não pode vazar pro motivo ATUAL', () => {
+    const out = explainDecision({
+      timeframe: '4h', signal_type: 'BUY',
+      // Motivo ATUAL: padrão de vela não confirmou — recordRejection() nunca
+      // passa snapshot para candle_pattern_rejected.
+      last_rejection_reason: 'candle_pattern_rejected', last_rejection_detail: null,
+      // decision_snapshot STALE: sobrou de quando o motivo era regime_rejected.
+      decision_snapshot: {
+        decision: 'ENTRY_BLOCKED', reason_code: 'regime_rejected', reason_detail: 'adx',
+        facts: { adx: 14.2, adx_min: 20, chop: 40, chop_max: 58, tier: 'T2' },
+        rules: [], evaluated_at: '2026-09-17T08:00:00.000Z', market_time: null,
+        executor: 'cron', data_status: 'LIVE',
+      },
+    });
+    expect(out.headline).toBe('A vela não confirmou');
+    expect(out.evidence).toBeNull();
+  });
+
+  it('snapshot fresco (reason_code bate com last_rejection_reason) continua mostrando evidência', () => {
+    const out = explainDecision({
+      timeframe: '4h', signal_type: 'BUY',
+      last_rejection_reason: 'regime_rejected', last_rejection_detail: 'adx',
+      decision_snapshot: {
+        decision: 'ENTRY_BLOCKED', reason_code: 'regime_rejected', reason_detail: 'adx',
+        facts: { adx: 14.2, adx_min: 20, chop: 40, chop_max: 58, tier: 'T2' },
+        rules: [], evaluated_at: '2026-09-17T08:00:00.000Z', market_time: null,
+        executor: 'cron', data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toMatch(/ADX/);
+  });
 });
 
 describe('explainDecision — com decision_snapshot (trend_reversed)', () => {
@@ -93,7 +133,7 @@ describe('explainDecision — com decision_snapshot (trend_reversed)', () => {
         evaluated_at: '2026-09-17T12:00:00.000Z', market_time: null, executor: 'browser', data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: tendência atual aponta para venda; o aviso era de compra.');
+    expect(out.evidence).toBe('Medido: tendência atual aponta para venda; o aviso era de compra. (medido às 09:00 BRT)');
   });
 });
 
@@ -131,6 +171,33 @@ describe('explainOperationDecision — awaiting_tp1', () => {
     });
     expect(out.headline).toBe('Monitorando');
     expect(out.evidence).toBe('Medido: faltam 10 até o TP1, 5 de folga até o stop.');
+  });
+});
+
+// Achado de revisão independente (2026-09-17): no candle exato em que TP1
+// dispara, o decision_snapshot precisa refletir isso — sem ele, a tela
+// mostraria uma fase pré-TP1 numa operação que já é runner.
+describe('explainOperationDecision — TP1 atingido', () => {
+  it('stop moveu para a entrada', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'PROTECTED', reason_code: 'tp1_hit_stop_to_breakeven',
+        facts: { stop_before: 95, stop_after: 100, tp1: 110 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.headline).toBe('TP1 atingido — proteção aumentada');
+    expect(out.evidence).toBe('Medido: stop foi de 95 para 100 (entrada).');
+  });
+
+  it('stop já estava na entrada (caso raro)', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'tp1_hit_stop_unchanged',
+        facts: { stop_before: 100, stop_after: 100, tp1: 110 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.headline).toBe('TP1 atingido');
+    expect(out.evidence).toBe('Medido: stop mantido em 100 (já era a entrada).');
   });
 });
 
@@ -232,5 +299,57 @@ describe('explainOperationDecision — data_status não-LIVE nunca vira evidênc
     });
     expect(out.evidence).toBeNull();
     expect(out.warnings.length).toBe(1);
+  });
+});
+
+// Achado de revisão independente (2026-09-17): decision_snapshot só é
+// regravado quando outra escrita já ia acontecer (write-on-change em
+// SignalEvent, carona em mfe_r/current_stop em TradeOperation) — um
+// `data_status: 'LIVE'` não garante que os fatos são da passada mais
+// recente. Em vez de inventar um limiar de "desatualizado", expõe o
+// horário em que os fatos foram medidos (`evaluated_at`), deixando o
+// usuário julgar. Ver docs/known-risks.md item 182 (texto corrigido: a
+// cadência real é "novo extremo MFE/MAE", não "novo candle").
+describe('evidência mostra quando foi medida (staleness visível)', () => {
+  it('SignalEvent: evaluated_at vira "(medido às HH:MM BRT)" ao final da evidência', () => {
+    const out = explainDecision({
+      timeframe: '4h', signal_type: 'BUY', last_rejection_reason: 'trend_reversed', last_rejection_detail: 'now_down',
+      decision_snapshot: {
+        decision: 'ENTRY_BLOCKED', reason_code: 'trend_reversed', reason_detail: 'now_down',
+        facts: { current_direction: -1, signal_direction: 1 }, rules: [],
+        evaluated_at: '2026-09-17T18:45:00.000Z', market_time: null, executor: 'browser', data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toMatch(/\(medido às 15:45 BRT\)$/);
+  });
+
+  it('TradeOperation: mesmo comportamento quando evaluated_at está presente', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'awaiting_tp1', facts: { distance_to_tp1: 10, distance_to_stop: 5 },
+        evaluated_at: '2026-09-17T18:45:00.000Z', data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toMatch(/\(medido às 15:45 BRT\)$/);
+  });
+
+  it('sem evaluated_at (fixture legada) não inventa horário — evidência sem sufixo', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'awaiting_tp1', facts: { distance_to_tp1: 10, distance_to_stop: 5 },
+        data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: faltam 10 até o TP1, 5 de folga até o stop.');
+  });
+
+  it('evidência null continua null — não gruda horário em nada', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'algo_desconhecido', facts: {},
+        evaluated_at: '2026-09-17T18:45:00.000Z', data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBeNull();
   });
 });
