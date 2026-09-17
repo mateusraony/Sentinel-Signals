@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { backend } from '@/api/entities';
 import { classifySignal, phaseCopy, rejectionCopy, SIGNAL_PHASE } from '@/lib/signalStatus';
+import { explainDecision } from '@/lib/decisionExplanation';
 
 const OPEN_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
@@ -62,11 +63,18 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
     ? tradeOps.some(op => op.asset_id === effectiveSignal.asset_id && OPEN_STATUSES.includes(op.status))
     : false;
 
-  let phase = null, copy = null, reason = null;
+  let phase = null, copy = null, reason = null, evidence = null;
   if (effectiveSignal) {
     phase = classifySignal(effectiveSignal).phase;
     copy = phaseCopy(phase);
     reason = rejectionCopy(effectiveSignal, phase);
+    // Fase 1 — Explainability V2. Ao lado do motivo categórico acima
+    // (rejectionCopy), os números reais que embasaram a última reavaliação —
+    // só existe quando SignalEvent.decision_snapshot foi gravado (regime_
+    // rejected/trend_reversed nas cascatas de produção); ausente em sinal
+    // legado ou rejeitado por outro motivo ainda não instrumentado — null é
+    // o caso normal, não erro.
+    evidence = explainDecision(effectiveSignal, { now: Date.now() }).evidence;
   }
 
   // Achado do Codex (review do PR #369): classifySignal() devolve INFO pra
@@ -124,6 +132,9 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
                     {reason.icon} {reason.chip}
                   </div>
                   <p className="mt-0.5 leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>{reason.detail}</p>
+                  {evidence && (
+                    <p className="mt-0.5 leading-relaxed font-semibold" style={{ color: 'rgba(255,255,255,0.7)' }}>{evidence}</p>
+                  )}
                 </div>
               )}
               {showVerdict ? (
