@@ -194,6 +194,10 @@
       "format": "date-time",
       "description": "docs/known-risks.md item 163 — quando a recusa foi registrada. Pedido explícito do usuário: 'precisa colocar o horário que foi negado... pra poder comparar depois e ver como está agindo o sistema'. Carimbado SÓ quando last_rejection_reason ou last_rejection_detail mudam, nunca a cada passada — o que preserva o write-on-change E dá ao campo um significado melhor que 'última checagem': é DESDE QUANDO o sinal está travado neste motivo. Antes deste item o SignalEvent não tinha carimbo nenhum de rejeição nem updated_date (item 161), então a UI não podia mostrar horário sem inventar dado."
     },
+    "decision_snapshot": {
+      "type": ["object", "null"],
+      "description": "Fase 1 — Explainability V2 (src/lib/decisionSnapshot.js). Complemento NUMÉRICO de last_rejection_reason/_detail (que são deliberadamente categóricos — ver acima): { decision, reason_code, reason_detail, facts: {}, rules: [], evaluated_at, market_time, executor, data_status }. Grava os fatos (ex.: adx/adx_min/chop/chop_max) que scanner.js já calcula em evaluateRegime() mas historicamente descartava fora do relatório de backtest. Escrito com a MESMA regra write-on-change de last_rejection_reason (grava só quando o motivo muda — recordRejection em scanner.js), então os `facts` ficam 'congelados' no valor de quando o motivo mudou pela última vez, nunca 'agora' — decisionExplanation.js sempre expõe isso via `evaluated_at`. Ausente em sinais legados/sem rejeição registrada ainda; consumidores tratam ausência como caso normal, nunca erro. Sem histórico (decision_history) nesta fase — SignalEvent.update() não é transacional, um array append correria risco de perda de entrada entre browser e cron. Cobre só as rejeições de entrada (regime_rejected, trend_reversed) nas cascatas 4h_15m e 1h_5m; gestão de TradeOperation ativa (HOLDING/PROTECTED/EXIT) fica para uma próxima rodada."
+    },
     "market_source": {
       "type": "string",
       "enum": ["spot", "futures"],
