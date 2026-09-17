@@ -111,3 +111,141 @@ export function buildTrendReversedSnapshot({
     dataStatus,
   });
 }
+
+// Fase 3 — gestão de TradeOperation ATIVA (HOLDING/PROTECTED). Distância
+// "positiva" sempre significa a mesma coisa nos dois lados (BUY/SELL): quanto
+// falta/quanta folga existe, nunca um sinal que troca de significado por
+// lado. Mesma convenção de `sign` que o bloco de MFE/MAE de scanner.js já usa
+// (`sign = isBuy ? 1 : -1`) — não é um cálculo novo, é a mesma ideia aplicada
+// a displays diferentes.
+function signedMove(value, reference, isBuy) {
+  if (!Number.isFinite(value) || !Number.isFinite(reference)) return null;
+  return (isBuy ? 1 : -1) * (value - reference);
+}
+
+// Pré-TP1, proteção desligada (`op.pre_tp1_stop_protection_enabled !== true`)
+// ou dado insuficiente para avaliá-la nesta passada (`!tfData.atrValue`) —
+// scanner.js nem chega a chamar `advancePreTp1StopProtection`/
+// `advancePreTp1Trailing`. Não há avanço de stop possível aqui; os únicos
+// fatos genuínos são a distância até TP1 e até o stop já vigente.
+export function buildAwaitingTp1Snapshot({
+  closePrice, stop, tp1, isBuy, executor = null, marketTime = null,
+  evaluatedAt = new Date().toISOString(),
+}) {
+  const distanceToTp1 = signedMove(tp1, closePrice, isBuy);
+  const distanceToStop = signedMove(closePrice, stop, isBuy);
+  return baseSnapshot({
+    decision: DECISION.HOLDING,
+    reasonCode: 'awaiting_tp1',
+    facts: { distance_to_tp1: distanceToTp1, distance_to_stop: distanceToStop },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: (distanceToTp1 == null || distanceToStop == null) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// Pré-TP1, modo breakeven (`op.pre_tp1_stop_mode !== 'trailing'`) — espelha
+// `opExitRules.js:advancePreTp1StopProtection`. A decisão PROTECTED-vs-HOLDING
+// NUNCA re-testa o critério interno dela (`favorableMove < atrValue *
+// triggerAtrMult`) — compara os dois valores de stop que scanner.js já
+// calculou (antes/depois de chamá-la), então não há como divergir do que a
+// função realmente fez. `favorable_move`/`required_move` são só contexto de
+// exibição, não decidem nada.
+export function buildPreTp1BreakevenSnapshot({
+  isBuy, entry, stopBefore, stopAfter, closePrice, atrValue, triggerAtrMult,
+  executor = null, marketTime = null, evaluatedAt = new Date().toISOString(),
+}) {
+  const advanced = stopAfter !== stopBefore;
+  const favorableMove = signedMove(closePrice, entry, isBuy);
+  const requiredMove = Number.isFinite(atrValue) && Number.isFinite(triggerAtrMult) ? atrValue * triggerAtrMult : null;
+  return baseSnapshot({
+    decision: advanced ? DECISION.PROTECTED : DECISION.HOLDING,
+    reasonCode: advanced ? 'breakeven_triggered' : 'pre_tp1_protection_armed_not_triggered',
+    facts: {
+      favorable_move: favorableMove, required_move: requiredMove,
+      atr: Number.isFinite(atrValue) ? atrValue : null, trigger_atr_mult: triggerAtrMult ?? null,
+      stop_before: stopBefore, stop_after: stopAfter,
+    },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: (favorableMove == null || requiredMove == null) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// Pré-TP1, modo trailing contínuo (`op.pre_tp1_stop_mode === 'trailing'`) —
+// espelha `opExitRules.js:advancePreTp1Trailing`. Mesma disciplina do
+// breakeven acima: decisão por comparação de stop antes/depois, nunca por
+// re-testar o critério interno. `favorableExtreme === null` (ainda sem MFE
+// utilizável) é um estado genuíno, não dado ausente — `data_status` continua
+// LIVE, só `facts.favorable_move` fica `null`.
+export function buildPreTp1TrailingSnapshot({
+  isBuy, entry, stopBefore, stopAfter, favorableExtreme, atrValue, startAtrMult, trailAtrMult,
+  executor = null, marketTime = null, evaluatedAt = new Date().toISOString(),
+}) {
+  const advanced = stopAfter !== stopBefore;
+  const favorableMove = favorableExtreme == null ? null : signedMove(favorableExtreme, entry, isBuy);
+  const requiredMove = Number.isFinite(atrValue) && Number.isFinite(startAtrMult) ? atrValue * startAtrMult : null;
+  return baseSnapshot({
+    decision: advanced ? DECISION.PROTECTED : DECISION.HOLDING,
+    reasonCode: advanced ? 'pre_tp1_trailing_advanced' : 'pre_tp1_trailing_dormant',
+    facts: {
+      favorable_move: favorableMove, required_move: requiredMove,
+      atr: Number.isFinite(atrValue) ? atrValue : null,
+      start_atr_mult: startAtrMult ?? null, trail_atr_mult: trailAtrMult ?? null,
+      stop_before: stopBefore, stop_after: stopAfter,
+    },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: !Number.isFinite(atrValue) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// Pós-TP1, runner ATR-based (`op.exit_mode` é `HYBRID_RF_ATR`/`ATR_TRAILING`
+// — na prática toda operação real) — espelha
+// `opExitRules.js:advanceTrailingStop`. Mesma disciplina: decisão por
+// comparação de stop antes/depois.
+export function buildRunnerTrailingSnapshot({
+  stopBefore, stopAfter, closePrice, atrValue, trailMult,
+  executor = null, marketTime = null, evaluatedAt = new Date().toISOString(),
+}) {
+  const advanced = stopAfter !== stopBefore;
+  return baseSnapshot({
+    decision: advanced ? DECISION.PROTECTED : DECISION.HOLDING,
+    reasonCode: advanced ? 'runner_trailing_advanced' : 'runner_trailing_dormant',
+    facts: {
+      atr: Number.isFinite(atrValue) ? atrValue : null, trail_mult: trailMult ?? null,
+      stop_before: stopBefore, stop_after: stopAfter,
+      close_price: Number.isFinite(closePrice) ? closePrice : null,
+    },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: !Number.isFinite(atrValue) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// Pós-TP1, runner NÃO ATR-based (`op.exit_mode` legado/outro) ou ATR
+// indisponível nesta passada — o runner aqui é gerenciado pela invalidação
+// RF (branch separada em scanner.js), não por trailing de stop. Raro em
+// produção (os dois pontos de criação de operação sempre gravam
+// `exit_mode: 'HYBRID_RF_ATR'|`), mas cobre operações legadas sem cair em
+// ausência total de explicação.
+export function buildRunnerRfManagedSnapshot({
+  closePrice, stop, tp2, tp2Disabled = false, isBuy, executor = null,
+  marketTime = null, evaluatedAt = new Date().toISOString(),
+}) {
+  const distanceToStop = signedMove(closePrice, stop, isBuy);
+  const distanceToTp2 = tp2Disabled ? null : signedMove(tp2, closePrice, isBuy);
+  return baseSnapshot({
+    decision: DECISION.HOLDING,
+    reasonCode: 'runner_rf_managed',
+    facts: { distance_to_stop: distanceToStop, distance_to_tp2: distanceToTp2 },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: distanceToStop == null ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
