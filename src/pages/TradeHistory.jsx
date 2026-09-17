@@ -12,6 +12,7 @@ import { formatBackfillLag } from '@/lib/backfillDetection';
 import { formatPrice } from '@/lib/priceProximity';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 import { CandleBoundTag, DetectionLag } from '@/components/dashboard/EventTimeline';
+import { closedReasonLabel } from '@/lib/eventTimeline';
 
 // Planned risk/reward of the setup — always against the INITIAL stop. The old
 // version divided by current_stop, which post-TP1 is already breakeven and
@@ -261,7 +262,7 @@ function HistoryCard({ op }) {
           {/* Closed reason */}
           {op.closed_reason && (
             <div className="text-[9px] font-mono px-3 py-2 rounded-lg" style={{ background: 'rgba(255,159,67,0.06)', border: '1px solid rgba(255,159,67,0.15)', color: '#ff9f43' }}>
-              ⚠️ Motivo de encerramento: {op.closed_reason}
+              ⚠️ Motivo de encerramento: {closedReasonLabel(op) ?? op.closed_reason}
             </div>
           )}
 
