@@ -35,6 +35,7 @@ import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, adv
 import { groupActiveOpsByAsset, isTerminalStatus, shouldSkipCrossSourceManagement } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { rejectionPatch, regimeDetail, trendReversedDetail } from './signalRejection';
+import { buildRegimeSnapshot, buildTrendReversedSnapshot } from './decisionSnapshot';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
 import {
@@ -868,10 +869,20 @@ function stampDisplacementFields(opData, gate) {
 // os mesmos da passada anterior, então um sinal preso no mesmo gate continua
 // custando UMA escrita, não uma a cada 5 minutos. Por isso o detalhe é sempre
 // CATEGÓRICO, nunca numérico — ver o cabeçalho de src/lib/signalRejection.js.
-async function recordRejection(sig, cascade, reason, entryFunnelOutcomes, detail = null) {
+// `snapshot` (Fase 1 — Explainability V2, docs/known-risks.md item TBD) é o
+// `decision_snapshot` opcional já pronto (src/lib/decisionSnapshot.js) — só
+// grava quando `patch` também grava (mesma regra write-on-change de sempre,
+// Opção A): o motivo categórico e o snapshot numérico mudam juntos, nunca em
+// passadas separadas, então um sinal preso no mesmo gate por N retries
+// continua custando UMA escrita, não uma a cada 5 minutos. Isso significa que
+// os `facts` exibidos ficam "congelados" no valor de quando o motivo mudou
+// pela última vez — decisionExplanation.js precisa deixar isso explícito
+// (sempre "medido em `evaluated_at`", nunca "agora").
+async function recordRejection(sig, cascade, reason, entryFunnelOutcomes, detail = null, snapshot = null) {
   entryFunnelOutcomes.push({ dedup_key: sig.dedup_key, cascade, reason });
   const patch = rejectionPatch(sig, reason, detail);
   if (patch) {
+    if (snapshot) patch.decision_snapshot = snapshot;
     await backend.entities.SignalEvent.update(sig.id, patch);
     Object.assign(sig, patch);
   }
@@ -3045,7 +3056,15 @@ export async function persistScanResults(scanResult) {
     }
     const tf4hDir = tfData4h.rf.direction;
     const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
-    if (tf4hDir !== sigDir) { await recordRejection(sig, '4h_15m', 'trend_reversed', entryFunnelOutcomes, trendReversedDetail(tf4hDir)); continue; }
+    if (tf4hDir !== sigDir) {
+      const trendDetail = trendReversedDetail(tf4hDir);
+      const trendSnapshot = buildTrendReversedSnapshot({
+        currentDirection: tf4hDir, signalDirection: sigDir, detail: trendDetail,
+        executor: EXECUTOR, marketTime: tfData4h.lastCandleTime ?? null,
+      });
+      await recordRejection(sig, '4h_15m', 'trend_reversed', entryFunnelOutcomes, trendDetail, trendSnapshot);
+      continue;
+    }
 
     // Regime gate (ADX + Choppiness) — re-evaluated every retry pass since
     // conditions may have changed since the signal first fired.
@@ -3055,7 +3074,12 @@ export async function persistScanResults(scanResult) {
       ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
       adx: tfData4h.adx?.adx ?? null, chop: tfData4h.chop ?? null, tier: tfData4h.tier?.tier ?? null,
     });
-    if (!regime.ok) { await recordRejection(sig, '4h_15m', 'regime_rejected', entryFunnelOutcomes, regimeDetail(regime)); continue; }
+    if (!regime.ok) {
+      const regimeRejDetail = regimeDetail(regime);
+      const regimeSnapshot = buildRegimeSnapshot({ regime, tfData: tfData4h, detail: regimeRejDetail, executor: EXECUTOR });
+      await recordRejection(sig, '4h_15m', 'regime_rejected', entryFunnelOutcomes, regimeRejDetail, regimeSnapshot);
+      continue;
+    }
 
     // Candle pattern gate (engolfo) — re-evaluated every retry pass, same
     // reasoning as regime above: the signal candle doesn't change, but the
@@ -3418,7 +3442,15 @@ export async function persistScanResults(scanResult) {
       const tfData1h = results['1h'];
       if (!tfData1h || !tfData1h.atrValue || !tfData1h.smc) continue;
       const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
-      if (tfData1h.smc.trend !== sigDir) { await recordRejection(sig, '1h_5m', 'trend_reversed', entryFunnelOutcomes, trendReversedDetail(tfData1h.smc.trend)); continue; }
+      if (tfData1h.smc.trend !== sigDir) {
+        const trendDetail = trendReversedDetail(tfData1h.smc.trend);
+        const trendSnapshot = buildTrendReversedSnapshot({
+          currentDirection: tfData1h.smc.trend, signalDirection: sigDir, detail: trendDetail,
+          executor: EXECUTOR, marketTime: tfData1h.lastCandleTime ?? null,
+        });
+        await recordRejection(sig, '1h_5m', 'trend_reversed', entryFunnelOutcomes, trendDetail, trendSnapshot);
+        continue;
+      }
 
       // Fase 3 (docs/known-risks.md item 42) — off by default; silent on
       // reject, same reasoning as the retest/displacement retry loops below
@@ -3429,7 +3461,12 @@ export async function persistScanResults(scanResult) {
         ok: regime.ok, adxOk: regime.adxOk, chopOk: regime.chopOk,
         adx: tfData1h.adx?.adx ?? null, chop: tfData1h.chop ?? null, tier: tfData1h.tier?.tier ?? null,
       });
-      if (!regime.ok) { await recordRejection(sig, '1h_5m', 'regime_rejected', entryFunnelOutcomes, regimeDetail(regime)); continue; }
+      if (!regime.ok) {
+        const regimeRejDetail = regimeDetail(regime);
+        const regimeSnapshot = buildRegimeSnapshot({ regime, tfData: tfData1h, detail: regimeRejDetail, executor: EXECUTOR });
+        await recordRejection(sig, '1h_5m', 'regime_rejected', entryFunnelOutcomes, regimeRejDetail, regimeSnapshot);
+        continue;
+      }
 
       // Fase 2 rodada 1 (docs/known-risks.md item 40) — off by default;
       // silent on a miss, same reasoning as the RF retry loop above (the 1st

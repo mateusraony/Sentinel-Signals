@@ -23343,3 +23343,90 @@ escopo "zero dado novo, zero risco" da Fase A/deste item.
 decisão já tomada para MFE/MAE); (4) merge explícito do array contra o
 valor lido DENTRO da transação, nunca contra o array pré-computado pelo
 chamador antes de abrir a transação.
+
+## 181. Explainability V2 — Decision Snapshot para rejeição de entrada (fase 1 de N, 2026-09-17)
+
+Origem: comparação com o app Finesso (conversa completa desta rodada) apontou
+que a explicação de decisão do Sentinel podia ficar vaga/inconsistente entre
+telas. Auditoria (3 agentes Explore + 1 Plan, todos releram o código-fonte
+atual) confirmou o problema como real e concreto, mas também achou que duas
+das propostas do Finesso colidem com decisões já tomadas pelo projeto —
+registrado abaixo antes do que foi implementado.
+
+**Achados que mudaram o escopo antes de codar.**
+
+- Market Context Engine (OI/funding/liquidações) exigiria o endpoint Futures
+  da Binance — mesma causa do item 4 (451 em datacenter dos EUA, sem free
+  tier confiável). Não implementado; usuário optou por pesquisar fontes
+  alternativas antes de decidir, fora desta rodada.
+- Portfolio Risk Engine com poder de bloquear operação replicaria o teto de
+  exposição por lado (`maxConcurrentSameSideOps`, item 133) — já medido em
+  holdout genuíno e **despriorizado** por falta de edge. Não implementado;
+  usuário optou por, no máximo, uma versão shadow/informativa futura (o
+  `CorrelationWidget.jsx` já cobre parte disso, sobre ativos monitorados, não
+  posições abertas).
+
+**O que foi confirmado como problema real (evidência em código).**
+
+- `TradeCard.jsx` deduzia o texto de status no FRONTEND a partir do enum
+  `status`, sem receber o motivo pronto do motor.
+- `src/lib/telegram.js` não importa `signalStatus.js` — texto duplicado à
+  mão, painel e Telegram podem divergir hoje (não implementação, achado).
+- `scanner.js` calculava ADX/Chop em `evaluateRegime()` e OS DESCARTAVA em
+  produção — só sobreviviam em arrays (`rfRegimeOutcomes`/`smcRegimeOutcomes`)
+  que alimentam unicamente o relatório de backtest.
+- `SignalEvent.last_rejection_reason`/`_detail` já são estruturados, mas
+  deliberadamente CATEGÓRICOS (write-on-change, item 163) — nunca carregam o
+  valor medido.
+- `TradeHistory.jsx:264` mostrava `op.closed_reason` cru (`TIME_STOP`) em vez
+  de `closedReasonLabel()`, que `TradeCard.jsx` já usa — bug real e
+  independente, corrigido de graça no mesmo pacote (commit `e87f767`).
+
+**Implementado nesta rodada (só o lado `SignalEvent`/rejeição de entrada).**
+
+- `src/lib/decisionSnapshot.js` (novo) — builders puros e sem I/O
+  (`buildRegimeSnapshot`, `buildTrendReversedSnapshot`) que empacotam os
+  fatos que `scanner.js` já tem em escopo (ADX, Chop, tier, mínimos/máximos
+  do gate, direções) num objeto `{ decision, reason_code, reason_detail,
+  facts, rules, evaluated_at, market_time, executor, data_status }`.
+  `data_status` nunca vira `LIVE` quando falta algum fato — fail-closed.
+- Integrado nos 4 pontos de rejeição de PRODUÇÃO em `scanner.js`
+  (`regime_rejected`/`trend_reversed`, cascatas `4h_15m` e `1h_5m`) via um
+  parâmetro `snapshot` opcional em `recordRejection()`. Grava em
+  `SignalEvent.decision_snapshot` com a MESMA regra write-on-change de
+  `last_rejection_reason` (Opção A, decisão explícita do usuário): o
+  snapshot só é regravado quando o motivo categórico também muda — os
+  `facts` ficam "congelados" no valor de quando o motivo mudou pela última
+  vez, nunca "agora". Zero escrita extra, zero mudança de threshold/gate/
+  comportamento de trading — `opExitRules.js`/`opTransition.js` intocados.
+- `src/lib/decisionExplanation.js` (novo) — `explainDecision()`, camada
+  pura que COMPÕE com `rejectionCopy()`/`classifySignal()` de
+  `signalStatus.js` (que já é fail-closed) em vez de reescrevê-los. Adiciona
+  só `evidence`: os `facts` formatados em português, `null` quando o
+  snapshot está ausente ou `data_status !== 'LIVE'` — nunca um número
+  inventado.
+- `src/components/dashboard/SignalChecklist.jsx` passa a mostrar essa
+  evidência logo abaixo do motivo categórico já exibido, só quando existe.
+- `docs/schema-reference/SignalEvent.jsonc` documenta o campo novo.
+
+**Deliberadamente FORA desta rodada (fica para continuação futura, sob
+pedido explícito, não big-bang).**
+
+- `TradeOperation.decision_snapshot`/`decision_history` (HOLDING/PROTECTED/
+  EXIT — por que uma operação ATIVA continua aberta, por que o stop moveu)
+  — maior superfície de risco (`persistScanResults`), não tocado nesta
+  rodada.
+- `decision_history` em `SignalEvent` — mesma restrição já registrada no
+  item 180 (merge raso de JSONB + `SignalEvent.update()` não-transacional);
+  usuário optou por adiar em vez de aceitar perda rara de entrada.
+- `src/lib/telegram.js`/`scripts/adminTelegram.js` ainda não consomem
+  `explainDecision()` — a duplicação de texto do item permanece, só não é
+  mais o único lugar que mostra os fatos (o painel já mostra).
+- `eventTimeline.js` não ganhou eventos de mudança de decisão.
+
+**Verificação.** `npm run lint && npm test && npm run build && npm run
+build:scan` — 1839 testes passando (1831 + 8 novos: `decisionSnapshot.test.js`
+com 7, `decisionExplanation.test.js` com 8, `SignalChecklist.test.jsx`
+existente continua verde), zero regressão. Confirmado por leitura do bundle
+gerado (`scripts/dist/run-scan.mjs`) que os builders novos entram no bundle
+do cron, não só no do navegador — os dois executores continuam idênticos.
