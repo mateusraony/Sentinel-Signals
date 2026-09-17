@@ -3,7 +3,7 @@
 // decision_snapshot.facts. O caso mais importante é o primeiro: ausência de
 // decision_snapshot nunca pode lançar nem inventar um número.
 import { describe, it, expect } from 'vitest';
-import { explainDecision } from './decisionExplanation.js';
+import { explainDecision, explainOperationDecision } from './decisionExplanation.js';
 
 describe('explainDecision — fail-closed (sem decision_snapshot)', () => {
   it('sinal recém-chegado sem nenhum motivo salvo', () => {
@@ -94,5 +94,143 @@ describe('explainDecision — com decision_snapshot (trend_reversed)', () => {
       },
     });
     expect(out.evidence).toBe('Medido: tendência atual aponta para venda; o aviso era de compra.');
+  });
+});
+
+// Fase 3 — gestão de TradeOperation ativa (HOLDING/PROTECTED).
+describe('explainOperationDecision — fail-closed (sem decision_snapshot)', () => {
+  it('operação legada/sem decision_snapshot nunca lança e cai no fallback', () => {
+    const out = explainOperationDecision({ status: 'SIGNAL_CONFIRMED' });
+    expect(out.headline).toBe('Monitorando');
+    expect(out.evidence).toBeNull();
+    expect(out.technical).toBeNull();
+    expect(out.userAction).toMatch(/Nada a fazer/);
+  });
+
+  it('entidade nula/indefinida nunca lança', () => {
+    expect(() => explainOperationDecision(null)).not.toThrow();
+    expect(() => explainOperationDecision(undefined)).not.toThrow();
+  });
+
+  it('reason_code desconhecido (versão futura do motor) cai no fallback, não quebra', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: { decision: 'HOLDING', reason_code: 'algo_novo_do_futuro', facts: {}, data_status: 'LIVE' },
+    });
+    expect(out.headline).toBe('Monitorando');
+    expect(out.evidence).toBeNull();
+  });
+});
+
+describe('explainOperationDecision — awaiting_tp1', () => {
+  it('formata distância até TP1 e stop', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'awaiting_tp1', facts: { distance_to_tp1: 10, distance_to_stop: 5 },
+        data_status: 'LIVE',
+      },
+    });
+    expect(out.headline).toBe('Monitorando');
+    expect(out.evidence).toBe('Medido: faltam 10 até o TP1, 5 de folga até o stop.');
+  });
+});
+
+describe('explainOperationDecision — pré-TP1 breakeven', () => {
+  it('armado mas não disparado', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'pre_tp1_protection_armed_not_triggered',
+        facts: { favorable_move: 0.8, required_move: 2 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: movimento favorável 0.8, necessário 2 para acionar.');
+  });
+
+  it('disparado — inclui stop antes/depois', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'PROTECTED', reason_code: 'breakeven_triggered',
+        facts: { favorable_move: 2.1, required_move: 2, stop_before: 95, stop_after: 100 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.headline).toBe('Proteção aumentada');
+    expect(out.evidence).toBe('Medido: movimento favorável 2.1, necessário 2 para acionar. Stop foi de 95 para 100.');
+  });
+});
+
+describe('explainOperationDecision — pré-TP1 trailing', () => {
+  it('dormente sem MFE ainda (favorable_move null) não inventa um valor', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'pre_tp1_trailing_dormant',
+        facts: { favorable_move: null, required_move: 2 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: ainda sem movimento favorável registrado — necessário 2 para a trilha começar.');
+  });
+
+  it('avançado — inclui stop antes/depois', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'PROTECTED', reason_code: 'pre_tp1_trailing_advanced',
+        facts: { favorable_move: 5, required_move: 2, stop_before: 95, stop_after: 100 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: movimento favorável 5, gatilho da trilha em 2. Stop foi de 95 para 100.');
+  });
+});
+
+describe('explainOperationDecision — runner pós-TP1', () => {
+  it('runner_rf_managed com TP2 ativo', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'runner_rf_managed',
+        facts: { distance_to_stop: 10, distance_to_tp2: 30 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: 10 de folga até o stop, faltam 30 até o TP2.');
+  });
+
+  it('runner_rf_managed com TP2 desligado', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'runner_rf_managed',
+        facts: { distance_to_stop: 10, distance_to_tp2: null }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: 10 de folga até o stop.');
+  });
+
+  it('runner_trailing_dormant', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'runner_trailing_dormant',
+        facts: { stop_before: 100, stop_after: 100 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: stop mantido em 100.');
+  });
+
+  it('runner_trailing_advanced', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'PROTECTED', reason_code: 'runner_trailing_advanced',
+        facts: { stop_before: 100, stop_after: 104 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.headline).toBe('Runner ativo — proteção aumentada');
+    expect(out.evidence).toBe('Medido: stop foi de 100 para 104.');
+  });
+});
+
+describe('explainOperationDecision — data_status não-LIVE nunca vira evidência favorável', () => {
+  it('UNKNOWN esconde a evidência e avisa', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'awaiting_tp1', facts: { distance_to_tp1: null, distance_to_stop: null },
+        data_status: 'UNKNOWN',
+      },
+    });
+    expect(out.evidence).toBeNull();
+    expect(out.warnings.length).toBe(1);
   });
 });

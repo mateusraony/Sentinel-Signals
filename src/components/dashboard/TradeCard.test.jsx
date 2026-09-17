@@ -120,3 +120,33 @@ describe('TradeCard — market_source aparece nos detalhes técnicos', () => {
     expect(screen.queryByText(/Spot|Futures/)).toBeNull();
   });
 });
+
+describe('TradeCard — decision_snapshot (Fase 3, gestão HOLDING/PROTECTED)', () => {
+  it('operação aberta com decision_snapshot mostra headline + evidência', () => {
+    renderCard(baseOp({
+      status: 'SIGNAL_CONFIRMED', tp1_hit: false, tp1_hit_at: null,
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'awaiting_tp1',
+        facts: { distance_to_tp1: 10, distance_to_stop: 5 }, data_status: 'LIVE',
+      },
+    }));
+    screen.getByText('Monitorando');
+    screen.getByText(/faltam 10 até o TP1, 5 de folga até o stop/);
+  });
+
+  it('operação aberta sem decision_snapshot (legada) não mostra o bloco nem quebra', () => {
+    renderCard(baseOp({ status: 'SIGNAL_CONFIRMED', tp1_hit: false, tp1_hit_at: null }));
+    expect(screen.queryByText(/faltam.*até o TP1/)).toBeNull();
+  });
+
+  it('operação ENCERRADA com decision_snapshot residual (última passada antes do exit) não mostra o bloco — evitaria "monitorando" numa op já fechada', () => {
+    renderCard(baseOp({
+      status: 'STOP_HIT',
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'awaiting_tp1',
+        facts: { distance_to_tp1: 10, distance_to_stop: 5 }, data_status: 'LIVE',
+      },
+    }));
+    expect(screen.queryByText('Monitorando')).toBeNull();
+  });
+});
