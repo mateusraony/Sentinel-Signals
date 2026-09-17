@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DECISION, DATA_STATUS, buildRegimeSnapshot, buildTrendReversedSnapshot,
   buildAwaitingTp1Snapshot, buildPreTp1BreakevenSnapshot, buildPreTp1TrailingSnapshot,
-  buildRunnerTrailingSnapshot, buildRunnerRfManagedSnapshot,
+  buildRunnerTrailingSnapshot, buildRunnerRfManagedSnapshot, buildTp1HitSnapshot,
 } from './decisionSnapshot.js';
 
 const AGORA = '2026-09-17T12:00:00.000Z';
@@ -217,5 +217,24 @@ describe('buildRunnerRfManagedSnapshot', () => {
   it('fail-closed: preço ausente vira UNKNOWN', () => {
     const snap = buildRunnerRfManagedSnapshot({ closePrice: null, stop: 90, tp2: 130, isBuy: true });
     expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
+  });
+});
+
+// Achado de revisão independente: no candle exato em que TP1 dispara, nem o
+// bloco pré-TP1 nem o pós-TP1 rodam nessa passada — sem este builder, o
+// decision_snapshot ficava congelado numa fase pré-TP1 que já não existe.
+describe('buildTp1HitSnapshot', () => {
+  it('stop moveu para a entrada — PROTECTED, motivo específico de TP1 (não trilha ATR)', () => {
+    const snap = buildTp1HitSnapshot({ stopBefore: 95, stopAfter: 100, tp1: 110, evaluatedAt: AGORA });
+    expect(snap.decision).toBe(DECISION.PROTECTED);
+    expect(snap.reason_code).toBe('tp1_hit_stop_to_breakeven');
+    expect(snap.facts).toEqual({ stop_before: 95, stop_after: 100, tp1: 110 });
+    expect(snap.data_status).toBe(DATA_STATUS.LIVE);
+  });
+
+  it('caso raro: stop já estava na entrada (proteção pré-TP1 já tinha avançado) — HOLDING', () => {
+    const snap = buildTp1HitSnapshot({ stopBefore: 100, stopAfter: 100, tp1: 110 });
+    expect(snap.decision).toBe(DECISION.HOLDING);
+    expect(snap.reason_code).toBe('tp1_hit_stop_unchanged');
   });
 });

@@ -23469,9 +23469,14 @@ da regra write-on-change "Opção A" porque criava uma escrita nova em
 `SignalEvent`), aqui `decision_snapshot` só anda de carona nas escritas que o
 motor já faz: um avanço de stop (PROTECTED) já está no guard existente de
 `persistScanResults` (`newCurrentStop !== op.current_stop`); um HOLDING "puro"
-só persiste quando outra coisa já ia gravar mesmo (ex.: `mfe_r` mudou num
-candle novo do timeframe de sinal — 4h/1h, não a cada passada de 5min do
-cron). Nenhuma escrita nova foi introduzida.
+só persiste quando outra coisa já ia gravar mesmo (ex.: `mfe_r`/`mae_r`
+mudou porque houve um NOVO EXTREMO favorável/adverso — não a cada candle
+novo do timeframe de sinal; numa operação que consolida sem novo extremo por
+vários candles, nada dispara a escrita nesse meio tempo). Nenhuma escrita
+nova foi introduzida.
+**Correção (addendum abaixo, 2026-09-17):** a frase acima descrevia errado a
+cadência ("candle novo" em vez de "novo extremo MFE/MAE") — achado da
+revisão independente que segue.
 
 **Achado que limita a exibição, tratado na UI.** `decision_snapshot` NÃO é
 limpo quando um exit dispara nesta passada (`newStatus !== op.status` pula os
@@ -23498,3 +23503,98 @@ ENCERRADA com `decision_snapshot` residual não mostra o bloco), zero
 regressão. Revisão adversarial do diff completo de `scanner.js` contra
 `main`: puramente aditivo, nenhuma condição/threshold/gate existente mudou de
 valor.
+
+### Addendum (2026-09-17) — revisão independente achou 4 bugs reais, todos corrigidos
+
+Pedido explícito do usuário ("já revisou se está certo, blindado e certinho?")
+levou a uma 2ª revisão, independente da que já tinha sido feita durante a
+implementação — skills `sentinel-trading-engine-review` (releu
+`scanner.js`/`decisionSnapshot.js`/`decisionExplanation.js` com foco em
+concorrência/temporalidade/estado) e `code-review` (alta cobertura, mesmo
+diff). As duas acharam problemas reais; um 4º foi achado ao verificar o
+achado #2 diretamente no código. Nenhum dos 4 envolve threshold/gate/dinheiro
+— todos são sobre a camada de explicação mostrar dado que não corresponde à
+realidade, exatamente a categoria de bug que Explainability V2 existe para
+eliminar.
+
+**1. Evidência de `SignalEvent` podia descrever um motivo já RESOLVIDO.**
+`recordRejection()` (`scanner.js`) só recebe `snapshot` em 2 dos ~10 motivos
+de rejeição (`regime_rejected`/`trend_reversed`); os outros ~8
+(`candle_pattern_rejected`, `retest_pending`, etc.) mudam
+`last_rejection_reason` via write-on-change sem tocar `decision_snapshot`,
+que ficava com o valor da última vez que o motivo era um dos dois
+instrumentados. `explainDecision()` formatava a evidência pelo
+`reason_code` do snapshot sem checar se ainda batia com o motivo ATUAL —
+um sinal podia mostrar o chip certo ("A vela não confirmou") com a evidência
+numérica ERRADA embaixo ("ADX 15, mínimo 20", de uma rejeição já superada).
+**Correção**: `formatEvidence()` (`src/lib/decisionExplanation.js`) ganhou um
+2º parâmetro `currentReasonCode` — evidência só é usada quando
+`snapshot.reason_code === signal.last_rejection_reason`, senão `null`.
+Regressão em `decisionExplanation.test.js` (reproduzida e confirmada: falha
+sem o guard, passa com ele).
+
+**2. `data_status: 'LIVE'` não garantia que os fatos eram da passada mais
+recente, e o texto documentado sobre a cadência estava impreciso.** O
+parágrafo acima nesta mesma entrada dizia "mfe_r mudou num candle novo" — na
+verdade `mfe_r`/`mae_r` só mudam quando há um NOVO EXTREMO favorável/adverso
+(`if (favorableR > mfeR)`), não a cada candle; numa operação que consolida
+sem novo extremo por vários candles, nada dispara escrita nesse meio tempo,
+mas o snapshot armazenado continua rotulado `LIVE`. **Correção**: em vez de
+inventar um limiar de "desatualizado" (varia por timeframe — 4h vs 1h — fácil
+de errar), `evidence` agora expõe quando os fatos foram medidos:
+`withMeasuredAt()` (`decisionExplanation.js`) anexa "(medido às HH:MM BRT)"
+usando `snapshot.evaluated_at`, sem depender de `moment` (módulo continua
+dependency-free). Texto da cadência corrigido acima. 4 testes novos provando
+o formato, a ausência de sufixo quando `evaluated_at` falta, e que evidência
+`null` nunca ganha sufixo.
+
+**3. `decision_snapshot` podia contradizer o `current_stop` real sob corrida
+entre navegador e cron.** Confirmado lendo `db/pgEntitiesCore.mjs` direto:
+`transitionTradeOp` clampa `current_stop` contra o valor lido na transação
+(`clampMonotonicStop`), mas o resto do `patch` — incluindo
+`decision_snapshot.facts.stop_before`/`stop_after`, computados pelo CHAMADOR
+antes da transação — passava intocado. Um worker que perdesse o clamp
+(candidato pior que o já gravado por outro worker) ainda persistia seu
+`decision_snapshot` descrevendo um `stop_after` que nunca existiu no
+`current_stop` real. **Correção**: mesmo padrão já usado para
+`stopAdvanceMarkerField` (linha acima no código) — se
+`clampedStop !== patch.current_stop`, `decision_snapshot` é descartado do
+patch antes de gravar (o snapshot de quem VENCEU o clamp já descreve o
+`current_stop` real corretamente; a próxima passada do perdedor recalcula do
+zero). Aplicado nos dois backends que implementam `transitionTradeOp` de
+verdade — `db/pgEntitiesCore.mjs` (produção) e
+`src/lib/__fixtures__/fakeBackend.js` (testes). Regressão determinística
+(sem depender de timing real) em `db/pgEntitiesCore.test.js` (3 casos, contra
+Postgres local real — reproduzida e confirmada) e
+`scannerStateMachine.test.js` (1 caso, mesmo padrão dos testes de
+`runner_stop_advanced_candle_time`/`pre_tp1_stop_advanced_candle_time` já
+existentes ali).
+
+**4. `decision_snapshot` sobrevivia numa fase pré-TP1 no candle exato em que
+TP1 dispara.** No candle em que `tp1Touched` fires, `newStatus` muda para
+`RUNNER_ACTIVE` e o stop move pra entrada — mas NENHUM dos dois blocos de
+gestão (pré-TP1 nem pós-TP1) roda nessa mesma passada, porque os dois são
+gateados por `newStatus === op.status`/`newStatus === 'RUNNER_ACTIVE'` e
+`newStatus` já mudou antes desses gates serem avaliados. Sem gravar nada
+aqui, `TradeCard` podia mostrar "Monitorando — faltam X até o TP1" numa
+operação que JÁ é runner. **Correção**: novo builder
+`buildTp1HitSnapshot()` (`src/lib/decisionSnapshot.js`) + novos `reason_code`
+`tp1_hit_stop_to_breakeven`/`tp1_hit_stop_unchanged`, chamado no exato ponto
+em que `newCurrentStop = op.entry_price` é decidido. Deliberadamente NÃO
+reaproveita `buildRunnerTrailingSnapshot` — o stop não moveu por trilha ATR
+aqui, moveu porque TP1 disparou; usar o texto da trilha atribuiria o motivo
+errado. Regressão em `scannerStateMachine.test.js` (reproduzida e
+confirmada: sem o fix, `decision_snapshot.reason_code` fica em
+`awaiting_tp1` mesmo com a op já em `RUNNER_ACTIVE`).
+
+**Metodologia**: os 4 fixes foram cada um confirmado por regressão
+reproduzida (teste falha sem o fix, revertido temporariamente e confirmado
+falhando, depois restaurado e confirmado passando) — não só "teste novo
+passa", que sozinho não prova que o teste pega o bug. Achado #3 exigiu subir
+Postgres 16 local (já instalado no ambiente, só não estava rodando) para
+testar contra o backend real, não só o fake.
+
+**Verificação final**: `npm run lint && npm test && npm run build && npm run
+build:scan` limpos; suíte completa 1884 testes (1872 + 12 novos não-DB) +
+49 testes de `db/` contra Postgres local real (`TEST_DATABASE_URL`), zero
+regressão em nenhum dos dois.

@@ -185,6 +185,14 @@ export function createFakeBackend() {
       })) {
         delete safePatch[stopAdvanceMarkerField];
       }
+      // Mesmo achado do espelho real (db/pgEntitiesCore.mjs) — ver o
+      // comentário completo lá. decision_snapshot descreve o candidato
+      // DESTE worker; se ele perdeu o clamp, descartar em vez de persistir
+      // um stop_after que nunca existiu no current_stop real.
+      if (clampedStop !== patch.current_stop && safePatch.decision_snapshot) {
+        safePatch = { ...safePatch };
+        delete safePatch.decision_snapshot;
+      }
     }
     assertNoUndefinedFields(safePatch, 'TradeOperation');
     opStore.set(opId, { ...current, ...safePatch });

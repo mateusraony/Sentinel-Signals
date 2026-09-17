@@ -769,6 +769,27 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     expect(op.current_stop).toBe(100); // entry_price
   });
 
+  // Achado de revisão independente (2026-09-17): no candle exato em que TP1
+  // dispara, nem o bloco pré-TP1 nem o pós-TP1 (gestão de decision_snapshot)
+  // rodam nessa mesma passada — sem buildTp1HitSnapshot, o decision_snapshot
+  // ficaria congelado numa fase pré-TP1 (ex.: "awaiting_tp1") numa operação
+  // que já é runner, exibindo "Monitorando — faltam X até o TP1" numa op que
+  // já bateu o TP1.
+  it('RUNNER_ACTIVE (TP1): decision_snapshot reflete o TP1 nesta MESMA passada, não fica preso na fase pré-TP1', async () => {
+    backend._seed('TradeOperation', makeOp({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'awaiting_tp1',
+        facts: { distance_to_tp1: 5, distance_to_stop: 2 }, data_status: 'LIVE',
+      },
+    }));
+    const results = { '4h': makeTfData({ lastCandleHigh: 104, lastCandleLow: 99, lastClose: 103 }) };
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.decision_snapshot.reason_code).toBe('tp1_hit_stop_to_breakeven');
+    expect(op.decision_snapshot.decision).toBe('PROTECTED');
+    expect(op.decision_snapshot.facts).toEqual({ stop_before: 98, stop_after: 100, tp1: 103 });
+  });
+
   // Formalizes the "stop wins" policy scanner.js already applied inline —
   // industry-standard conservative assumption (backtesting.py, QuantConnect,
   // NinjaTrader) when a closed candle's high AND low both cross the stop
@@ -4965,6 +4986,32 @@ describe('cross-loop concurrency invariant (persistScanResults vs priceCheckActi
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.current_stop).toBe(100); // both workers agree on the value — nothing for clampMonotonicStop to reject
     expect(stored.pre_tp1_stop_advanced_candle_time).toBe('T2'); // marker matches the fresher candle, not worker B's stale one it merely tied with in value
+  });
+
+  // Independent-review finding (2026-09-17, Fase 3 Explainability V2):
+  // decision_snapshot (src/lib/decisionSnapshot.js) carries facts.stop_before/
+  // stop_after computed by the CALLER before the transaction, assuming its own
+  // current_stop candidate is what gets stored. Same race as the two tests
+  // above, but for decision_snapshot instead of a candle-time marker — a
+  // losing candidate's snapshot must not overwrite the stored data with a
+  // stop_after that never existed in the real current_stop.
+  it('a losing candidate stop must not overwrite decision_snapshot with facts describing a stop that was never stored', async () => {
+    backend._seed('TradeOperation', makeOp({ status: 'RUNNER_ACTIVE', current_stop: 100 }));
+
+    const workerA = await backend.tradeOps.transitionTradeOp('op1', 'RUNNER_ACTIVE', {
+      status: 'RUNNER_ACTIVE', current_stop: 105,
+      decision_snapshot: { decision: 'PROTECTED', reason_code: 'runner_trailing_advanced', facts: { stop_before: 100, stop_after: 105 }, data_status: 'LIVE' },
+    });
+    const workerB = await backend.tradeOps.transitionTradeOp('op1', 'RUNNER_ACTIVE', {
+      status: 'RUNNER_ACTIVE', current_stop: 102,
+      decision_snapshot: { decision: 'PROTECTED', reason_code: 'runner_trailing_advanced', facts: { stop_before: 100, stop_after: 102 }, data_status: 'LIVE' },
+    });
+
+    expect(workerA.applied).toBe(true);
+    expect(workerB.applied).toBe(true);
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.current_stop).toBe(105);
+    expect(stored.decision_snapshot.facts.stop_after).toBe(105); // matches the real current_stop, never worker B's losing 102
   });
 });
 

@@ -607,6 +607,26 @@ async function transitionTradeOp(opId, fromStatus, patch, { stopAdvanceMarkerFie
       })) {
         delete safePatch[stopAdvanceMarkerField];
       }
+      // Achado de revisão independente (2026-09-17, Fase 3 Explainability
+      // V2): `decision_snapshot` (src/lib/decisionSnapshot.js) carrega
+      // `facts.stop_before`/`stop_after` computados pelo CHAMADOR antes desta
+      // transação, sob a suposição de que `patch.current_stop` (seu
+      // candidato) é o que vai ser gravado. Quando este worker PERDE o clamp
+      // (outro worker já tinha um stop melhor — mesmo critério de
+      // `stopAdvanceCandidateWon` acima, sem a parte de candle time, que é
+      // específica do marcador de look-ahead), manter o snapshot gravaria um
+      // `stop_after` que nunca existiu no `current_stop` real — o próprio
+      // problema que este módulo existe para evitar (mostrar dado que não
+      // corresponde ao que realmente aconteceu). Descartar aqui é mais
+      // seguro que corrigir o valor: o `decision_snapshot` de quem VENCEU o
+      // clamp (o outro worker) já descreve o `current_stop` real
+      // corretamente, então esta passada simplesmente não sobrescreve com
+      // informação errada — a próxima avaliação deste worker recalcula do
+      // zero contra o stop já correto.
+      if (clampedStop !== patch.current_stop && safePatch.decision_snapshot) {
+        safePatch = { ...safePatch };
+        delete safePatch.decision_snapshot;
+      }
     }
     assertNoUndefinedFields(safePatch, 'TradeOperation');
 
