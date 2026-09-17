@@ -23430,3 +23430,71 @@ com 7, `decisionExplanation.test.js` com 8, `SignalChecklist.test.jsx`
 existente continua verde), zero regressão. Confirmado por leitura do bundle
 gerado (`scripts/dist/run-scan.mjs`) que os builders novos entram no bundle
 do cron, não só no do navegador — os dois executores continuam idênticos.
+
+## 182. Explainability V2 — Decision Snapshot para gestão de TradeOperation ativa (fase 3 de N, 2026-09-17)
+
+Continuação do item 181, escopo explicitamente pedido pelo usuário: só as
+decisões **HOLDING** (nada mudou, operação mantida) e **PROTECTED** (o stop
+avançou) de uma operação já aberta — `EXIT` (STOP_HIT/TP2_HIT/INVALIDATED/
+CLOSED), `decision_history`, Telegram e `eventTimeline.js` continuam fora,
+para uma rodada futura.
+
+**Melhoria de design sobre o item 181.** Lá, o risco residual aceito era o
+builder precisar re-testar a mesma condição booleana que `opExitRules.js`
+avalia internamente (`favorableMove < atrValue * startAtrMult`) só para
+escolher HOLDING vs. PROTECTED — um duplicado de 1 linha, aceito mas
+imperfeito. Nesta fase isso foi eliminado: `scanner.js` já tem, em escopo, o
+stop ANTES e DEPOIS de chamar `advancePreTp1StopProtection`/
+`advancePreTp1Trailing`/`advanceTrailingStop`, então a decisão é simplesmente
+`stopAfter !== stopBefore` — uma comparação de dois números que o motor já
+calculou, não uma reconstrução do critério que os decidiu. Os `facts` de
+contexto (`favorable_move`, `required_move`) continuam sendo calculados pelo
+builder só para exibição — um erro neles seria cosmético, nunca uma decisão
+errada.
+
+**Implementado.** `src/lib/decisionSnapshot.js` ganhou 5 builders novos —
+`buildAwaitingTp1Snapshot`, `buildPreTp1BreakevenSnapshot`,
+`buildPreTp1TrailingSnapshot`, `buildRunnerTrailingSnapshot`,
+`buildRunnerRfManagedSnapshot` — cobrindo 8 `reason_code` fechados. Integrados
+nos dois blocos de gestão de `persistScanResults` (pré-TP1, linhas ~3866-3966;
+runner pós-TP1, linhas ~4047-4092) sem tocar `opExitRules.js`/`opTransition.js`
+nem nenhum threshold/gate — só `updatePayload.decision_snapshot = ...` a mais
+em cada branch. `src/lib/decisionExplanation.js` ganhou
+`explainOperationDecision(op)`, mesmo contrato de saída de `explainDecision()`
+e mesma disciplina fail-closed. `TradeCard.jsx` mostra o resultado (headline +
+evidência) sob o `StatusBanner` existente.
+
+**Sem gate de escrita novo (piggyback).** Diferente do item 181 (que precisou
+da regra write-on-change "Opção A" porque criava uma escrita nova em
+`SignalEvent`), aqui `decision_snapshot` só anda de carona nas escritas que o
+motor já faz: um avanço de stop (PROTECTED) já está no guard existente de
+`persistScanResults` (`newCurrentStop !== op.current_stop`); um HOLDING "puro"
+só persiste quando outra coisa já ia gravar mesmo (ex.: `mfe_r` mudou num
+candle novo do timeframe de sinal — 4h/1h, não a cada passada de 5min do
+cron). Nenhuma escrita nova foi introduzida.
+
+**Achado que limita a exibição, tratado na UI.** `decision_snapshot` NÃO é
+limpo quando um exit dispara nesta passada (`newStatus !== op.status` pula os
+dois blocos de gestão) — o valor anterior (de uma passada HOLDING/PROTECTED
+legítima) permanece no doc mesmo depois da operação fechar, porque o `patch`
+daquela passada de exit simplesmente não inclui a chave. Mostrar isso numa
+operação já ENCERRADA seria enganoso ("Monitorando" numa op que já acabou).
+`TradeCard.jsx` gateia a exibição por `isOpenOp` (`SIGNAL_CONFIRMED`/
+`RUNNER_ACTIVE`) — operação fechada nunca mostra o bloco, independente do
+que sobrou em `decision_snapshot`. Resolver isso de verdade (limpar/congelar
+o campo no momento do exit) fica para a fase de `EXIT`.
+
+**Deliberadamente fora desta rodada.** `EXIT` como `decision_snapshot`,
+`decision_history` em `TradeOperation`, consumo em
+`telegram.js`/`scripts/adminTelegram.js`/`eventTimeline.js`,
+`priceCheckActiveOpsInner` ("snapshot magro"). Market Context Engine e
+Portfolio Risk Engine seguem fora, como já registrado no item 181.
+
+**Verificação.** `npm run lint && npm test && npm run build && npm run
+build:scan` — 1872 testes passando (1839 no item 181 + 33 novos desta fase:
+17 casos em `decisionSnapshot.test.js`, 13 em `decisionExplanation.test.js`,
+3 em `TradeCard.test.jsx` — dos quais um prova explicitamente que uma op
+ENCERRADA com `decision_snapshot` residual não mostra o bloco), zero
+regressão. Revisão adversarial do diff completo de `scanner.js` contra
+`main`: puramente aditivo, nenhuma condição/threshold/gate existente mudou de
+valor.
