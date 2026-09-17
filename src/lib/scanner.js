@@ -35,7 +35,11 @@ import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, adv
 import { groupActiveOpsByAsset, isTerminalStatus, shouldSkipCrossSourceManagement } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { rejectionPatch, regimeDetail, trendReversedDetail } from './signalRejection';
-import { buildRegimeSnapshot, buildTrendReversedSnapshot } from './decisionSnapshot';
+import {
+  buildRegimeSnapshot, buildTrendReversedSnapshot, buildAwaitingTp1Snapshot,
+  buildPreTp1BreakevenSnapshot, buildPreTp1TrailingSnapshot, buildRunnerTrailingSnapshot,
+  buildRunnerRfManagedSnapshot,
+} from './decisionSnapshot';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
 import {
@@ -3873,6 +3877,14 @@ export async function persistScanResults(scanResult) {
         // 'trailing' acompanha o extremo favorável a uma distância fixa de
         // ATR e nunca satura.
         const trailingMode = op.pre_tp1_stop_mode === 'trailing';
+        // Fase 3 — Explainability V2 (Decision Snapshot de gestão). Capturado
+        // ANTES de chamar advancePreTp1Trailing/advancePreTp1StopProtection —
+        // dentro deste bloco `newCurrentStop` ainda é o stop armazenado (o
+        // guard `newStatus === op.status` acima garante que nenhum exit desta
+        // passada já o alterou). A decisão HOLDING/PROTECTED nunca re-testa o
+        // critério interno dessas funções, só compara este valor com o
+        // resultado delas — ver src/lib/decisionSnapshot.js.
+        const stopBeforeProtection = newCurrentStop;
         if (trailingMode) {
           // Ancorado no extremo favorável reconstruído do mfe_r que o próprio
           // loop acabou de atualizar (bloco MFE/MAE acima), em vez de um 2º
@@ -3893,6 +3905,12 @@ export async function persistScanResults(scanResult) {
               trailAtrMult: op.pre_tp1_trail_atr_mult ?? 2.5,
             });
           }
+          updatePayload.decision_snapshot = buildPreTp1TrailingSnapshot({
+            isBuy, entry: op.entry_price, stopBefore: stopBeforeProtection, stopAfter: newCurrentStop,
+            favorableExtreme, atrValue: tfData.atrValue,
+            startAtrMult: op.pre_tp1_trail_start_atr_mult ?? 1.0, trailAtrMult: op.pre_tp1_trail_atr_mult ?? 2.5,
+            executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+          });
         } else {
           newCurrentStop = advancePreTp1StopProtection({
             isBuy,
@@ -3901,6 +3919,11 @@ export async function persistScanResults(scanResult) {
             closePrice,
             atrValue: tfData.atrValue,
             triggerAtrMult: op.pre_tp1_stop_advance_trigger_atr_mult ?? 1.0,
+          });
+          updatePayload.decision_snapshot = buildPreTp1BreakevenSnapshot({
+            isBuy, entry: op.entry_price, stopBefore: stopBeforeProtection, stopAfter: newCurrentStop,
+            closePrice, atrValue: tfData.atrValue, triggerAtrMult: op.pre_tp1_stop_advance_trigger_atr_mult ?? 1.0,
+            executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
           });
         }
         // O breakeven avança UMA vez só (satura na entrada, então um 2º
@@ -3924,6 +3947,15 @@ export async function persistScanResults(scanResult) {
           // resolves by candle recency (item 80, B-1).
           stopAdvanceMarkerField = 'pre_tp1_stop_advanced_candle_time';
         }
+      } else if (newStatus === op.status) {
+        // Fase 3 — proteção desligada nesta operação, ou dado insuficiente
+        // para avaliá-la nesta passada (candle não utilizável / ATR ausente).
+        // Nenhum avanço de stop é possível aqui — só a distância genérica até
+        // TP1/stop, sempre disponível.
+        updatePayload.decision_snapshot = buildAwaitingTp1Snapshot({
+          closePrice, stop: newCurrentStop, tp1: op.tp1, isBuy,
+          executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+        });
       }
     } else {
       // rf_reverse_bars_count only matters pre-TP1 (Chop Exit/Invalidation
@@ -4015,12 +4047,22 @@ export async function persistScanResults(scanResult) {
       // move the stop.
       if (newStatus === 'RUNNER_ACTIVE' && candleUsable
           && (op.exit_mode === 'HYBRID_RF_ATR' || op.exit_mode === 'ATR_TRAILING') && tfData.atrValue) {
+        // Fase 3 — Explainability V2. Capturado ANTES de chamar
+        // advanceTrailingStop — `newCurrentStop` ainda é o stop armazenado
+        // (nada nesta branch o alterou antes deste ponto, ver runnerStopHit
+        // acima, que testa contra `op.current_stop` diretamente).
+        const stopBeforeRunner = newCurrentStop;
         newCurrentStop = advanceTrailingStop({
           isBuy,
           currentStop: newCurrentStop,
           closePrice,
           atrValue: tfData.atrValue,
           trailMult: pineConfig.trailAtrMult ?? 2.0,
+        });
+        updatePayload.decision_snapshot = buildRunnerTrailingSnapshot({
+          stopBefore: stopBeforeRunner, stopAfter: newCurrentStop, closePrice,
+          atrValue: tfData.atrValue, trailMult: pineConfig.trailAtrMult ?? 2.0,
+          executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
         });
         // Mark this candle as the source of the advance so runnerStopHit
         // above excludes it on a repeat pass — see that guard's comment.
@@ -4036,6 +4078,14 @@ export async function persistScanResults(scanResult) {
           updatePayload.runner_stop_advanced_candle_time = tfData.lastCandleTime;
           stopAdvanceMarkerField = 'runner_stop_advanced_candle_time';
         }
+      } else if (newStatus === 'RUNNER_ACTIVE') {
+        // Fase 3 — runner gerenciado por invalidação RF (exit_mode não
+        // ATR-based, raro/legado) ou ATR indisponível nesta passada. Nenhum
+        // trailing de stop roda aqui — só a distância genérica até stop/TP2.
+        updatePayload.decision_snapshot = buildRunnerRfManagedSnapshot({
+          closePrice, stop: newCurrentStop, tp2: op.tp2, tp2Disabled: Boolean(op.tp2_cap_disabled), isBuy,
+          executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+        });
       }
     }
     if (newStatus !== op.status || tp1Hit !== op.tp1_hit || tp2Hit !== op.tp2_hit || newCurrentStop !== op.current_stop

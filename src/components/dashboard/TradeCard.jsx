@@ -8,6 +8,7 @@ import {
 } from '@/lib/priceProximity';
 import { classifyOutcome } from '@/lib/tradeMetrics';
 import { closedReasonLabel } from '@/lib/eventTimeline';
+import { explainOperationDecision } from '@/lib/decisionExplanation';
 import { useLivePrice } from '@/hooks/useLivePrice';
 
 /**
@@ -366,16 +367,36 @@ function StatusBanner({ op }) {
   );
 }
 
+// Fase 3 — Explainability V2. Só para operação ABERTA (SIGNAL_CONFIRMED/
+// RUNNER_ACTIVE): `decision_snapshot` não é limpo quando um exit dispara
+// nesta fase (EXIT ainda não tem builder — ver src/lib/decisionSnapshot.js),
+// então uma op FECHADA pode carregar um snapshot HOLDING/PROTECTED da
+// última passada em que ainda estava aberta. Mostrar isso numa op encerrada
+// seria enganoso ("ainda monitorando" numa operação que já acabou) — o
+// `StatusBanner`/`closedBanner` já cobre o encerramento corretamente.
+function OperationDecisionNote({ op }) {
+  if (!op.decision_snapshot) return null;
+  const { headline, evidence } = explainOperationDecision(op);
+  return (
+    <div className="text-[9px] font-mono px-3 py-2 rounded-lg" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.12)' }}>
+      <div className="font-semibold" style={{ color: 'rgba(0,229,255,0.8)' }}>{headline}</div>
+      {evidence && <p className="mt-0.5 leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>{evidence}</p>}
+    </div>
+  );
+}
+
 function Details({ op }) {
   const status = STATUS_CONFIG[op.status] || STATUS_CONFIG.CLOSED;
   const dataStatus = DATA_STATUS[op.data_status] || DATA_STATUS.LIVE;
   const marketSourceLabel = MARKET_SOURCE_LABEL[op.market_source];
   const exitModeLabel = { RANGE_FILTER: '🔵 RF', ATR_TRAILING: '🟡 ATR Trail', HYBRID_RF_ATR: '🟣 RF+ATR' }[op.exit_mode] || op.exit_mode;
   const reasons = op.signal_reasons || [];
+  const isOpenOp = OPEN_STATUSES.has(op.status);
 
   return (
     <div className="space-y-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
       <StatusBanner op={op} />
+      {isOpenOp && <OperationDecisionNote op={op} />}
 
       <ScoreBar score={op.score} />
       <TFTrendRow op={op} />
