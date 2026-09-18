@@ -102,7 +102,12 @@ export async function fetchCurrentPrice(symbol) {
   const response = await fetchWithRetry(url, { context: `${symbol} price` });
 
   if (!response.ok) {
-    throw new Error(`Erro ao buscar preço de ${symbol}`);
+    // Status HTTP no texto do erro — achado da investigação de "SEM
+    // COTAÇÃO" (2026-09-18): sem ele, um 429 (rate limit) e um CORS/erro de
+    // rede genérico chegavam idênticos em quem consome o erro
+    // (src/hooks/useLivePrice.js), tornando a causa raiz impossível de
+    // distinguir depois do fato.
+    throw new Error(`Erro ao buscar preço de ${symbol} (HTTP ${response.status})`);
   }
 
   const data = await response.json();

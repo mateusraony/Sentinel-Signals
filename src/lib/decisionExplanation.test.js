@@ -170,7 +170,61 @@ describe('explainOperationDecision — awaiting_tp1', () => {
       },
     });
     expect(out.headline).toBe('Monitorando');
-    expect(out.evidence).toBe('Medido: faltam 10 até o TP1, 5 de folga até o stop.');
+    expect(out.evidence).toBe('Medido: faltam 10.0000 até o TP1, 5.0000 de folga até o stop.');
+  });
+});
+
+// Achado real (2026-09-18): usuário reportou, com screenshot do painel em
+// produção, "Stop foi de 0.6 para 0.7" para um ativo (ETHFI) cujo stop real
+// era ~0.687730 — o antigo `formatNum` (Math.round(v*10)/10) esmagava
+// qualquer preço sub-$1 em 1 casa decimal. `formatPriceNum` reusa a escala
+// adaptativa de `formatPrice` (src/lib/priceProximity.js), a mesma já usada
+// nos chips STOP/ENTRADA/TP1/TP2 do card.
+describe('explainOperationDecision — precisão adaptativa por escala de preço (regressão do achado real)', () => {
+  it('ativo sub-$1 (estilo ETHFI): stop_before/stop_after preservam casas decimais reais', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'PROTECTED', reason_code: 'tp1_hit_stop_to_breakeven',
+        facts: { stop_before: 0.612345, stop_after: 0.68773, tp1: 0.75 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: stop foi de 0.61235 para 0.68773 (entrada).');
+    // Nunca "0.6"/"0.7" (o bug relatado) nem um único valor colapsado.
+    expect(out.evidence).not.toMatch(/de 0\.6 para 0\.7/);
+  });
+
+  it('ativo sub-$1: movimento favorável não vira "0"', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'pre_tp1_trailing_dormant',
+        facts: { favorable_move: 0.034, required_move: 0.12 }, data_status: 'LIVE',
+      },
+    });
+    // Valor real preservado (0.034), nunca esmagado para "0" pelo antigo
+    // Math.round(v*10)/10 — que teria produzido "0" para qualquer coisa
+    // abaixo de 0.05.
+    expect(out.evidence).toBe('Medido: movimento favorável 0.03400, gatilho da trilha em 0.12000.');
+  });
+
+  it('ativo BTC-like (>1000): não regride para formatação grosseira nem quebra a faixa alta', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'awaiting_tp1',
+        facts: { distance_to_tp1: 1234.5678, distance_to_stop: 987.654 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: faltam 1,234.57 até o TP1, 987.65 de folga até o stop.');
+  });
+
+  it('movimento favorável NEGATIVO (gap contra a posição logo após entrada) não é rotulado de "favorável"', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'pre_tp1_protection_armed_not_triggered',
+        facts: { favorable_move: -0.8, required_move: 2 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: ainda sem movimento favorável (-0.80000), necessário 2.0000 para acionar.');
+    expect(out.evidence).not.toMatch(/movimento favorável -/);
   });
 });
 
@@ -186,7 +240,7 @@ describe('explainOperationDecision — TP1 atingido', () => {
       },
     });
     expect(out.headline).toBe('TP1 atingido — proteção aumentada');
-    expect(out.evidence).toBe('Medido: stop foi de 95 para 100 (entrada).');
+    expect(out.evidence).toBe('Medido: stop foi de 95.0000 para 100.00 (entrada).');
   });
 
   it('stop já estava na entrada (caso raro)', () => {
@@ -197,7 +251,7 @@ describe('explainOperationDecision — TP1 atingido', () => {
       },
     });
     expect(out.headline).toBe('TP1 atingido');
-    expect(out.evidence).toBe('Medido: stop mantido em 100 (já era a entrada).');
+    expect(out.evidence).toBe('Medido: stop mantido em 100.00 (já era a entrada).');
   });
 });
 
@@ -209,7 +263,7 @@ describe('explainOperationDecision — pré-TP1 breakeven', () => {
         facts: { favorable_move: 0.8, required_move: 2 }, data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: movimento favorável 0.8, necessário 2 para acionar.');
+    expect(out.evidence).toBe('Medido: movimento favorável 0.80000, necessário 2.0000 para acionar.');
   });
 
   it('disparado — inclui stop antes/depois', () => {
@@ -220,7 +274,7 @@ describe('explainOperationDecision — pré-TP1 breakeven', () => {
       },
     });
     expect(out.headline).toBe('Proteção aumentada');
-    expect(out.evidence).toBe('Medido: movimento favorável 2.1, necessário 2 para acionar. Stop foi de 95 para 100.');
+    expect(out.evidence).toBe('Medido: movimento favorável 2.1000, necessário 2.0000 para acionar. Stop foi de 95.0000 para 100.00.');
   });
 });
 
@@ -232,7 +286,7 @@ describe('explainOperationDecision — pré-TP1 trailing', () => {
         facts: { favorable_move: null, required_move: 2 }, data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: ainda sem movimento favorável registrado — necessário 2 para a trilha começar.');
+    expect(out.evidence).toBe('Medido: ainda sem movimento favorável registrado — necessário 2.0000 para a trilha começar.');
   });
 
   it('avançado — inclui stop antes/depois', () => {
@@ -242,7 +296,7 @@ describe('explainOperationDecision — pré-TP1 trailing', () => {
         facts: { favorable_move: 5, required_move: 2, stop_before: 95, stop_after: 100 }, data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: movimento favorável 5, gatilho da trilha em 2. Stop foi de 95 para 100.');
+    expect(out.evidence).toBe('Medido: movimento favorável 5.0000, gatilho da trilha em 2.0000. Stop foi de 95.0000 para 100.00.');
   });
 });
 
@@ -254,7 +308,7 @@ describe('explainOperationDecision — runner pós-TP1', () => {
         facts: { distance_to_stop: 10, distance_to_tp2: 30 }, data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: 10 de folga até o stop, faltam 30 até o TP2.');
+    expect(out.evidence).toBe('Medido: 10.0000 de folga até o stop, faltam 30.0000 até o TP2.');
   });
 
   it('runner_rf_managed com TP2 desligado', () => {
@@ -264,7 +318,7 @@ describe('explainOperationDecision — runner pós-TP1', () => {
         facts: { distance_to_stop: 10, distance_to_tp2: null }, data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: 10 de folga até o stop.');
+    expect(out.evidence).toBe('Medido: 10.0000 de folga até o stop.');
   });
 
   it('runner_trailing_dormant', () => {
@@ -274,7 +328,7 @@ describe('explainOperationDecision — runner pós-TP1', () => {
         facts: { stop_before: 100, stop_after: 100 }, data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: stop mantido em 100.');
+    expect(out.evidence).toBe('Medido: stop mantido em 100.00.');
   });
 
   it('runner_trailing_advanced', () => {
@@ -285,7 +339,7 @@ describe('explainOperationDecision — runner pós-TP1', () => {
       },
     });
     expect(out.headline).toBe('Runner ativo — proteção aumentada');
-    expect(out.evidence).toBe('Medido: stop foi de 100 para 104.');
+    expect(out.evidence).toBe('Medido: stop foi de 100.00 para 104.00.');
   });
 });
 
@@ -340,7 +394,7 @@ describe('evidência mostra quando foi medida (staleness visível)', () => {
         data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: faltam 10 até o TP1, 5 de folga até o stop.');
+    expect(out.evidence).toBe('Medido: faltam 10.0000 até o TP1, 5.0000 de folga até o stop.');
   });
 
   it('evidência null continua null — não gruda horário em nada', () => {
@@ -365,7 +419,7 @@ describe('explainOperationDecision — EXIT', () => {
       },
     });
     expect(out.headline).toBe('Stop atingido');
-    expect(out.evidence).toBe('Medido: stop em 98, preço tocou 97.5.');
+    expect(out.evidence).toBe('Medido: stop em 98.0000, preço tocou 97.5000.');
   });
 
   it('stop_hit_runner', () => {
@@ -376,7 +430,7 @@ describe('explainOperationDecision — EXIT', () => {
       },
     });
     expect(out.why).toMatch(/já protegido/);
-    expect(out.evidence).toBe('Medido: stop em 102.');
+    expect(out.evidence).toBe('Medido: stop em 102.00.');
   });
 
   it('tp2_hit', () => {
@@ -387,7 +441,7 @@ describe('explainOperationDecision — EXIT', () => {
       },
     });
     expect(out.headline).toBe('TP2 atingido — operação completa');
-    expect(out.evidence).toBe('Medido: TP2 em 130, preço tocou 130.5.');
+    expect(out.evidence).toBe('Medido: TP2 em 130.00, preço tocou 130.50.');
   });
 
   it('invalidated_rf_bars_pre_tp1', () => {
@@ -397,7 +451,7 @@ describe('explainOperationDecision — EXIT', () => {
         facts: { reverse_bars: 2, invalid_rf_bars: 2 }, data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: 2 de 2 candles necessários com o indicador contra a posição.');
+    expect(out.evidence).toBe('Medido: 2 candles com o indicador contra a posição (necessário: 2).');
   });
 
   it('invalidated_rf_direct_runner', () => {
@@ -407,7 +461,7 @@ describe('explainOperationDecision — EXIT', () => {
         facts: { rf_filter_value: 105, close_price: 104 }, data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: preço 104 contra o filtro em 105.');
+    expect(out.evidence).toBe('Medido: preço 104.00 contra o filtro em 105.00.');
   });
 
   it('invalidated_smc_structure', () => {
@@ -437,7 +491,24 @@ describe('explainOperationDecision — EXIT', () => {
         facts: { bars_open: 40, time_stop_bars: 36 }, data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: 40 de 36 candles permitidos sem atingir TP1.');
+    expect(out.evidence).toBe('Medido: 40 candles em aberto sem atingir TP1 (limite: 36).');
+  });
+
+  // Achado da varredura geral (2026-09-18): `bars_open` é contado por tempo
+  // decorrido (relógio), não por candle incrementado — pode ultrapassar
+  // `time_stop_bars` de verdade quando o cron fica indisponível (gap real
+  // documentado em `.claude/rules/trading-engine.md`). A frase antiga "X de
+  // Y candles permitidos" ficava gramaticalmente sem sentido quando X>Y
+  // ("72 de 48"); a nova frase não depende da ordem dos dois números.
+  it('REGRESSÃO: bars_open MAIOR que time_stop_bars não produz frase invertida', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'time_stop',
+        facts: { bars_open: 72, time_stop_bars: 48 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: 72 candles em aberto sem atingir TP1 (limite: 48).');
+    expect(out.evidence).not.toMatch(/72 de 48/);
   });
 
   it('tp1_full_close', () => {
@@ -448,7 +519,7 @@ describe('explainOperationDecision — EXIT', () => {
       },
     });
     expect(out.headline).toBe('TP1 atingido — operação encerrada');
-    expect(out.evidence).toBe('Medido: TP1 em 110.');
+    expect(out.evidence).toBe('Medido: TP1 em 110.00.');
   });
 
   it('stop_hit_price_check (priceCheckActiveOpsInner — snapshot magro)', () => {
@@ -458,7 +529,7 @@ describe('explainOperationDecision — EXIT', () => {
         facts: { stop: 98, price: 97 }, data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: stop em 98, preço ao vivo 97.');
+    expect(out.evidence).toBe('Medido: stop em 98.0000, preço ao vivo 97.0000.');
   });
 
   it('tp2_hit_price_check', () => {
@@ -468,7 +539,7 @@ describe('explainOperationDecision — EXIT', () => {
         facts: { tp2: 130, price: 131 }, data_status: 'LIVE',
       },
     });
-    expect(out.evidence).toBe('Medido: TP2 em 130, preço ao vivo 131.');
+    expect(out.evidence).toBe('Medido: TP2 em 130.00, preço ao vivo 131.00.');
   });
 
   it('tp1_full_close_price_check', () => {
@@ -479,7 +550,7 @@ describe('explainOperationDecision — EXIT', () => {
       },
     });
     expect(out.headline).toBe('TP1 atingido — operação encerrada');
-    expect(out.evidence).toBe('Medido: TP1 em 110, preço ao vivo 110.5.');
+    expect(out.evidence).toBe('Medido: TP1 em 110.00, preço ao vivo 110.50.');
   });
 
   it('manual_closed: facts vazio, sem evidência inventada', () => {
