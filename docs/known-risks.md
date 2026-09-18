@@ -22418,6 +22418,80 @@ completa (1742 testes) + lint + build verdes.
 evidência concreta (print, relato) apontou um texto incoerente lá como neste
 achado; sem esse tipo de evidência, mexer seria opinião, não correção.
 
+### Addendum (2026-09-18) — a evidência concreta chegou; revisão de clareza feita nas 3 telas (Histórico, Trades Ativas/Aguardando/Histórico Completo)
+
+Pedido do usuário: *"quando esta na aba history tem coisas que não esta claro
+o porque a operação deu errado ou deu certo, e isso ja mencionei pra colocar.
+na aba trades o mesmo, esta bem vago tanto nas operacoes ativas quanto em
+aguardando quanto em historico completo."* — é a evidência que faltava para
+os dois "ainda não feito" registrados acima (este e o do item 175 principal).
+2 agentes Explore mapearam o estado atual de `TradeHistory.jsx`/`Trades.jsx`
+antes de qualquer mudança; achados e correções, tudo puramente de EXIBIÇÃO
+(reusa 100% a infraestrutura de dado da Fase 4, `explainOperationDecision`/
+`explainDecision`/`OPERATION_COPY` — nenhum `reason_code` novo, nenhuma
+lógica de `scanner.js` tocada, `.claude/rules/frontend-ui.md`).
+
+**1. `TradeHistory.jsx` — o "por quê" era o ÚLTIMO elemento do bloco
+expandido**, atrás de grid de preços/milestones/timeline; o card fechado
+(visão padrão) mostrava só badge + número. Corrigido: uma linha de resumo
+(`whyText`) sempre visível no card fechado, computada uma vez e reusada no
+bloco expandido (que agora mostra só a evidência numérica — `closedReasonLabel`
+e `decisionOut.why` eram 2 blocos fragmentados respondendo à mesma pergunta;
+`closedReasonLabel` só aparece quando não há `decisionOut`).
+
+**2. Fallback de op legada (sem `decision_snapshot` de EXIT) tinha uma causa
+FIXA e às vezes incorreta pro caso BE** — "stop movido para entrada após
+TP1" mesmo quando `tp1_hit` é `false` (breakeven veio do trailing PRÉ-TP1,
+não do salto pós-TP1). Extraído para `legacyClosedOperationText` (novo,
+exportado de `decisionExplanation.js` — reusado por `TradeHistory.jsx` E
+`Trades.jsx`, sem duplicar a lógica): condiciona no que o dado legado
+garante (`tp1_hit`, `closedReasonLabel`), nunca afirma um mecanismo que não
+pode confirmar.
+
+**3. `Trades.jsx`'s "Histórico Completo" (`HistoryRow`, componente
+DIFERENTE do `HistoryCard` de `TradeHistory.jsx`) era a seção mais vaga de
+todas** — nenhum "por quê", só status de 1-2 palavras + motivo escondido
+num `title=` (tooltip que morre no toque em mobile, mesmo antipadrão que o
+item 156 já tinha corrigido no `MonitoringCard`, nunca replicado aqui até
+agora). Corrigido com o mesmo `explainOperationDecision`/
+`legacyClosedOperationText` de `TradeHistory.jsx`, texto sempre visível.
+
+**4. `Trades.jsx`'s "Operações Ativas" (`TradeCard`) escondia headline+why
+inteiro dentro de "Detalhes técnicos"** (fechado por padrão) — na visão
+compacta só existia geometria (`MilestoneLine`, "faltam X% até o stop"), sem
+explicar POR QUE a proteção está onde está. Novo componente
+`OperationWhySummary` promove um resumo (`headline — why`) pra fora do
+acordeão; `OperationDecisionNote` (dentro do acordeão) passou a mostrar só a
+evidência numérica granular, sem repetir o headline+why de cima.
+
+**5. `Trades.jsx`'s "Avisos em análise"/"Observações de mercado"
+(`MonitoringCard`) nunca chamava `explainDecision()`** — só a frase
+categórica de `rejectionCopy()` (`signalStatus.js`), sem o número medido por
+trás ("ADX 18 — mínimo exigido 22"). A camada Fase 1 do Explainability V2
+ficava "órfã" nesta página. Corrigido: `evidence` de `explainDecision(signal)`
+incluída (fail-closed, só quando o snapshot descreve o motivo ATUAL — mesmo
+guard que o resto do módulo usa) nos dois estados (WAITING e EXPIRED).
+
+**6. Jargão residual em 3 frases de `OPERATION_COPY`** (`stop_hit_runner`:
+"trilha"/"breakeven"; `invalidated_rf_bars_pre_tp1`: "o indicador"/"barras";
+`chop_exit`: "lateralização (Choppiness)") — reescritas seguindo o MESMO
+critério já estabelecido em `signalStatus.js` (item 163: "sem o nome técnico
+do indicador... mas com a coisa em si") e o mesmo vocabulário de
+`REJECTION_COPY.regime_rejected.by.chop` ("preço andando de lado"). Nenhum
+`reason_code`/headline mudou, só o texto do `why`.
+
+**Verificação.** Todo fix com regressão confirmada falha-antes/passa-depois
+(reversão temporária via `git stash`, não só leitura de código) —
+`TradeHistory.test.jsx` (novo arquivo), `TradeCard.test.jsx` (+2 testes,
+incluindo um describe novo que renderiza SEM `expandAll` — os testes
+anteriores todos usavam `expandAll`, então nunca tinham exercitado a visão
+compacta de verdade), `Trades.test.jsx` (+3 testes). `npm run lint && npm
+test (1949, +5) && npm run build && npm run build:scan` limpos.
+`npm run typecheck:ratchet` achou 2 erros novos na 1ª rodada (JSDoc de
+`legacyClosedOperationText`'s parâmetro `outcome` não incluía o tipo `'OPEN'`
+que `classifyOutcome` pode devolver genericamente) — corrigido ampliando a
+anotação JSDoc, teto de 16 confirmado sem regressão na 2ª rodada.
+
 ## 176. LDOUSDT continua travando o backfill mesmo após o item 174 — causa real era outra, e uma 2ª regressão real do cutover foi achada no processo (2026-09-13)
 
 ### Contexto

@@ -142,6 +142,36 @@ describe('TradeCard — market_source aparece nos detalhes técnicos', () => {
   });
 });
 
+// Achado de clareza (pedido do usuário, 2026-09-18): headline+why só
+// apareciam dentro de "Detalhes técnicos" (fechado por padrão) — os testes
+// acima usam `expandAll`, que nunca exercitou esse ponto cego. Este bloco
+// renderiza SEM expandAll (o estado real que o usuário vê primeiro).
+describe('TradeCard — resumo do "por quê" visível sem expandir', () => {
+  function renderCompact(op) {
+    const client = makeTestQueryClient();
+    return render(
+      <QueryClientProvider client={client}>
+        <TradeCard operation={op} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it('REGRESSÃO: headline + why aparecem sem clicar em "Detalhes técnicos"', () => {
+    renderCompact(baseOp({
+      status: 'SIGNAL_CONFIRMED', tp1_hit: false, tp1_hit_at: null,
+      decision_snapshot: {
+        decision: 'HOLDING', reason_code: 'awaiting_tp1',
+        facts: { distance_to_tp1: 10, distance_to_stop: 5 }, data_status: 'LIVE',
+      },
+    }));
+    screen.getByText('Monitorando');
+    screen.getByText(/Nenhuma condição de saída foi atingida/);
+    // A evidência numérica (detalhe granular) continua fora da visão
+    // compacta — só o resumo sobe, não o bloco inteiro.
+    expect(screen.queryByText(/faltam 10\.0000 até o TP1/)).toBeNull();
+  });
+});
+
 describe('TradeCard — decision_snapshot (Fase 3, gestão HOLDING/PROTECTED)', () => {
   it('operação aberta com decision_snapshot mostra headline + evidência', () => {
     renderCard(baseOp({

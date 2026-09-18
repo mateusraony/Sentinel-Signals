@@ -19,6 +19,7 @@ import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summariz
 import { logError } from '@/lib/logger';
 import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 import { buildManualCloseSnapshot } from '@/lib/decisionSnapshot';
+import { explainDecision, explainOperationDecision, legacyClosedOperationText } from '@/lib/decisionExplanation';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
@@ -145,6 +146,14 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
   const { phase, msLeft, expiresAt } = classifySignal(signal);
   const copy = phaseCopy(phase);
   const reason = rejectionCopy(signal, phase);
+  // Achado de clareza (pedido do usuário, 2026-09-18): esta seção só usava
+  // rejectionCopy() — a frase categórica ("força do movimento insuficiente")
+  // sem o número medido por trás. explainDecision (Fase 1 do Explainability
+  // V2, já consumida por Dashboard/SignalChecklist) traduz
+  // decision_snapshot.facts em "ADX 18 — mínimo exigido 22"; nada novo é
+  // medido, só reconectado aqui. Fail-closed: evidence fica null quando o
+  // snapshot não descreve o motivo ATUAL (ver decisionExplanation.js).
+  const evidence = explainDecision(signal).evidence;
   const isBuy = signal.signal_type === 'BUY';
   const timeLeft = formatTimeLeft(msLeft);
 
@@ -186,6 +195,11 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
             <p className="text-[9px] font-mono leading-relaxed mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
               {reason.detail}
             </p>
+            {evidence && (
+              <p className="text-[9px] font-mono leading-relaxed mt-1 opacity-70" style={{ color: 'rgba(0,229,255,0.6)' }}>
+                📐 {evidence}
+              </p>
+            )}
           </div>
 
           <EventTimeline events={signalTimeline(signal)} title={null} />
@@ -267,6 +281,11 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
         <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
           {reason.detail}
         </p>
+        {evidence && (
+          <p className="text-[9px] font-mono leading-relaxed mt-1 opacity-70" style={{ color: 'rgba(0,229,255,0.6)' }}>
+            📐 {evidence}
+          </p>
+        )}
       </div>
 
       {/* 4 · Quem age, e até quando */}
@@ -317,7 +336,8 @@ function HistoryRow({ op }) {
   const isBuy = op.side === 'BUY';
   const exitPrice = getExitPrice(op);
   const pnlPct = calcRealizedPnlPct(op);
-  const isBE = classifyOutcome(op) === 'BE';
+  const outcome = classifyOutcome(op);
+  const isBE = outcome === 'BE';
 
   const STATUS_MAP = {
     TP2_HIT:     { label: '🏆 TP2', color: '#00ff80' },
@@ -330,31 +350,45 @@ function HistoryRow({ op }) {
   const fechamento = eventos.length > 1 ? eventos[eventos.length - 1] : null;
   const motivo = closedReasonLabel(op);
 
+  // Achado de clareza (pedido do usuário, 2026-09-18): esta era a seção mais
+  // vaga de todas — nenhum "por quê" visível, só o status de 1-2 palavras +
+  // o motivo escondido num `title=` (tooltip que morre no toque em mobile,
+  // mesmo antipadrão já corrigido em MonitoringCard pelo item 156). Reusa a
+  // mesma explicação (Fase 4) que TradeHistory.jsx/TradeCard.jsx já mostram
+  // — nada novo é medido, só reconectado aqui.
+  const decisionOut = op.decision_snapshot?.decision === 'EXIT' ? explainOperationDecision(op) : null;
+  const whyText = decisionOut?.why ?? legacyClosedOperationText(op, pnlPct, outcome, motivo);
+
   return (
-    <div className="rounded-xl px-4 py-2.5 flex items-center gap-3 transition-opacity"
+    <div className="rounded-xl px-4 py-2.5 flex flex-col gap-1.5 transition-opacity"
       style={{ background: 'rgba(12,15,26,0.55)', border: '1px solid rgba(255,255,255,0.05)', opacity: 0.8 }}>
-      <div className="flex items-center gap-2 min-w-0 flex-1">
-        <span className="font-semibold text-xs text-foreground shrink-0">{op.symbol?.replace('USDT', '/USDT')}</span>
-        <span className="text-[9px] font-mono text-muted-foreground">{op.timeframe?.toUpperCase()}</span>
-        <span className="text-[9px] font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</span>
-        <span className="text-[9px] font-mono text-muted-foreground hidden sm:block">${formatPrice(op.entry_price)}</span>
-        {exitPrice && <span className="text-[9px] font-mono text-muted-foreground hidden md:block">→ ${formatPrice(exitPrice)}</span>}
-      </div>
-      <div className="flex items-center gap-3 shrink-0">
-        {pnlPct !== null && (
-          <span className="text-sm font-mono font-bold" style={{ color: pnlPct >= 0 ? '#00ff80' : '#ff1478' }}>
-            {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="font-semibold text-xs text-foreground shrink-0">{op.symbol?.replace('USDT', '/USDT')}</span>
+          <span className="text-[9px] font-mono text-muted-foreground">{op.timeframe?.toUpperCase()}</span>
+          <span className="text-[9px] font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</span>
+          <span className="text-[9px] font-mono text-muted-foreground hidden sm:block">${formatPrice(op.entry_price)}</span>
+          {exitPrice && <span className="text-[9px] font-mono text-muted-foreground hidden md:block">→ ${formatPrice(exitPrice)}</span>}
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          {pnlPct !== null && (
+            <span className="text-sm font-mono font-bold" style={{ color: pnlPct >= 0 ? '#00ff80' : '#ff1478' }}>
+              {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
+            </span>
+          )}
+          <span className="text-[9px] font-mono font-semibold" style={{ color: s.color }}>{s.label}</span>
+          {/* Aberta -> fechada, ambos absolutos. Antes só havia a data de
+              criação (item 161); o motivo saiu daqui — agora está sempre
+              visível na linha de "por quê" abaixo, sem depender de hover. */}
+          <span className="text-[9px] font-mono text-muted-foreground hidden sm:block text-right leading-tight">
+            {fmtBRT(op.created_date)}
+            {fechamento ? <><br />→ {fmtBRT(fechamento.at)}</> : null}
           </span>
-        )}
-        <span className="text-[9px] font-mono font-semibold" style={{ color: s.color }}>{s.label}</span>
-        {/* Aberta -> fechada, ambos absolutos, com o motivo quando existe.
-            Antes só havia a data de criação (item 161). */}
-        <span className="text-[9px] font-mono text-muted-foreground hidden sm:block text-right leading-tight"
-          title={motivo ? `Encerrada por: ${motivo}` : undefined}>
-          {fmtBRT(op.created_date)}
-          {fechamento ? <><br />→ {fmtBRT(fechamento.at)}{motivo ? ` (${motivo})` : ''}</> : null}
-        </span>
+        </div>
       </div>
+      <p className="text-[9px] font-mono leading-relaxed line-clamp-2 pl-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
+        💡 {whyText}
+      </p>
     </div>
   );
 }

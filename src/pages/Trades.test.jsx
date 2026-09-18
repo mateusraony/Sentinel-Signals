@@ -14,8 +14,8 @@
  * operação nunca era escondido.
  */
 import React from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { screen, cleanup, fireEvent } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 
 const SIGNAL_4H = {
@@ -68,6 +68,13 @@ afterEach(() => {
   vi.doUnmock('@/lib/marketDataProvider');
 });
 
+// jsdom não implementa ResizeObserver — necessário só quando `history` tem
+// operações (o bloco "Performance Report + Charts", recharts, monta). Mesmo
+// polyfill mínimo de src/pages/pagesSmoke.test.jsx, não um mecanismo novo.
+beforeEach(() => {
+  globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
+});
+
 describe('Trades — "Avisos em análise" nunca contradiz "Operações Ativas"', () => {
   it('esconde o aviso de um sinal cuja operação já está ativa', async () => {
     mockBackend({ operations: [ACTIVE_OP], signals: [SIGNAL_4H] });
@@ -109,5 +116,67 @@ describe('Trades — "Avisos em análise" nunca contradiz "Operações Ativas"',
     await screen.findByText('PENDLE/USDT');
     expect(screen.queryByText(/rec[ée]m-chegado/i)).toBeNull();
     expect(screen.queryByText(/a cada 5 minutos/i)).toBeNull();
+  });
+});
+
+// Achado de clareza (pedido do usuário, 2026-09-18): "Histórico Completo"
+// (HistoryRow) era a seção mais vaga de todas — nenhum "por quê" visível,
+// só um status badge de 1-2 palavras + o motivo escondido num `title=`
+// (tooltip que morre no toque em mobile).
+const CLOSED_OP_COM_SNAPSHOT = {
+  id: 'op_hist1', asset_id: 'a3', symbol: 'SOLUSDT', side: 'BUY',
+  status: 'STOP_HIT', timeframe: '15m', signal_timeframe: '4h',
+  entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 110, tp2: 120,
+  exit_price: 95, tp1_hit: false, created_date: '2026-09-18T09:00:00.000Z',
+  stop_hit_at: '2026-09-18T10:00:00.000Z', closed_at: '2026-09-18T10:00:00.000Z',
+  decision_snapshot: {
+    decision: 'EXIT', reason_code: 'stop_hit_pre_tp1',
+    facts: { stop: 95, stop_check_price: 94.8 }, data_status: 'LIVE',
+  },
+};
+
+// Achado de clareza (pedido do usuário, 2026-09-18): "Avisos em análise"
+// (MonitoringCard) só usava rejectionCopy() — a frase categórica, nunca a
+// evidência numérica de explainDecision (Fase 1 do Explainability V2, já
+// consumida em outras telas).
+const SIGNAL_WAITING_COM_EVIDENCIA = {
+  id: 'sig_wait1', asset_id: 'a4', symbol: 'ADAUSDT', timeframe: '4h',
+  signal_type: 'BUY', source: 'range_filter', dedup_key: 'sig_wait1',
+  price_at_signal: 0.5, candle_time: '2026-09-18T09:00:00.000Z',
+  created_date: '2026-09-18T09:00:00.000Z',
+  last_rejection_reason: 'regime_rejected', last_rejection_detail: 'adx',
+  decision_snapshot: {
+    decision: 'ENTRY_BLOCKED', reason_code: 'regime_rejected', reason_detail: 'adx',
+    facts: { adx: 14.2, adx_min: 20, chop: 40, chop_max: 58, tier: 'T2' },
+    data_status: 'LIVE', evaluated_at: '2026-09-18T09:00:00.000Z', executor: 'cron',
+  },
+};
+
+describe('Trades — "Avisos em análise" (MonitoringCard) mostra a evidência numérica', () => {
+  it('REGRESSÃO: o número medido (ADX/Chop) aparece, não só a frase categórica', async () => {
+    mockBackend({ operations: [], signals: [SIGNAL_WAITING_COM_EVIDENCIA] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    await screen.findByText('ADA/USDT');
+    // "força do movimento (ADX) 14.2 — mínimo exigido 20" é a evidência de
+    // regime_rejected (decisionExplanation.js's formatEvidence).
+    await screen.findByText(/ADX\) 14\.2 — mínimo exigido 20/i);
+  });
+});
+
+describe('Trades — "Histórico Completo" (HistoryRow) mostra o "por quê" sem precisar de hover', () => {
+  it('REGRESSÃO: o texto de explicação aparece direto na linha, não só num title= (tooltip)', async () => {
+    mockBackend({ operations: [CLOSED_OP_COM_SNAPSHOT], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    fireEvent.click(await screen.findByText('Histórico Completo'));
+    // "O preço tocou o stop antes de TP1 ser atingido." é o `why` de
+    // stop_hit_pre_tp1 — precisa estar no texto renderizado (não só num
+    // atributo title, que findByText não enxerga). SOL/USDT aparece 2x na
+    // tela (chart de performance + a linha do histórico), então a asserção
+    // âncora no texto único do "por quê", não no símbolo.
+    await screen.findByText(/tocou o stop antes de TP1/i);
   });
 });

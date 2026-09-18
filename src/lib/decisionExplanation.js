@@ -223,7 +223,11 @@ const OPERATION_COPY = Object.freeze({
   },
   stop_hit_runner: {
     headline: 'Stop atingido',
-    why: 'O preço tocou o stop já protegido (breakeven ou trilha) depois do TP1.',
+    // Achado de clareza (pedido do usuário, 2026-09-18): "trilha"/"breakeven"
+    // são jargão de trading — reescrito pra dizer a coisa em si (mesmo
+    // critério de src/lib/signalStatus.js: "sem o nome técnico... mas com a
+    // coisa em si").
+    why: 'O preço voltou e tocou o stop depois do TP1 — o stop já tinha sido ajustado pra travar parte do lucro antes disso.',
   },
   tp2_hit: {
     headline: 'TP2 atingido — operação completa',
@@ -231,7 +235,8 @@ const OPERATION_COPY = Object.freeze({
   },
   invalidated_rf_bars_pre_tp1: {
     headline: 'Invalidada — tendência reverteu',
-    why: 'O indicador ficou contra a posição por barras suficientes antes de TP1.',
+    // "O indicador"/"barras" eram jargão sem explicar a coisa em si.
+    why: 'A tendência que gerou esta entrada virou contra a posição por tempo suficiente antes do TP1, invalidando a operação.',
   },
   invalidated_rf_direct_runner: {
     headline: 'Invalidada — tendência reverteu',
@@ -243,7 +248,10 @@ const OPERATION_COPY = Object.freeze({
   },
   chop_exit: {
     headline: 'Encerrada — mercado sem direção',
-    why: 'A lateralização (Choppiness) passou do limite tolerado antes de TP1.',
+    // "Lateralização (Choppiness)" era jargão parcialmente traduzido —
+    // mesmo vocabulário de REJECTION_COPY.regime_rejected.by.chop
+    // (signalStatus.js: "preço andando de lado").
+    why: 'O preço passou a andar de lado (sem direção clara), além do limite tolerado, antes de TP1.',
   },
   time_stop: {
     headline: 'Encerrada — prazo esgotado',
@@ -441,6 +449,50 @@ function formatOperationEvidence(snapshot) {
   }
 
   return null;
+}
+
+/**
+ * Fallback textual pra operação FECHADA sem `decision_snapshot` de EXIT (op
+ * legada, anterior à Fase 4, ou `reason_code` fora do dicionário) — usado
+ * por `TradeHistory.jsx`/`Trades.jsx`. Reusa só o que o dado legado
+ * garante (`closed_reason` já traduzido pelo chamador, `tp1_hit`) em vez de
+ * uma frase fixa por outcome — mesmo espírito fail-closed do resto deste
+ * módulo: nunca afirma um mecanismo que o dado não confirma.
+ *
+ * Achado de revisão de clareza (pedido do usuário, 2026-09-18): o texto de
+ * BE antigo afirmava categoricamente "stop movido para entrada após TP1",
+ * que é falso quando o breakeven veio do trailing PRÉ-TP1 (sem `tp1_hit`).
+ *
+ * `reasonLabel` é injetado (não importado direto de `eventTimeline.js`, que
+ * JÁ importa deste módulo — evitaria um ciclo) pelo chamador via
+ * `closedReasonLabel(op)`.
+ *
+ * @param {object} op TradeOperation fechada
+ * @param {number|null} pnl calcRealizedPnlPct(op)
+ * @param {'WIN'|'BE'|'LOSS'|'UNKNOWN'|'OPEN'} outcome classifyOutcome(op) — o
+ *   tipo inclui 'OPEN' só porque é o que `classifyOutcome` pode devolver
+ *   genericamente; esta função só é chamada com op já fechada.
+ * @param {string|null} reasonLabel closedReasonLabel(op)
+ */
+export function legacyClosedOperationText(op, pnl, outcome, reasonLabel) {
+  const isWin = outcome === 'WIN';
+  const isBE = outcome === 'BE';
+  if (isWin) {
+    if (op.tp1_hit && op.tp2_hit) return `Operação lucrativa com ${pnl?.toFixed(2)}% — TP1 e TP2 atingidos, saída ideal.`;
+    if (op.tp1_hit) return `Operação lucrativa com ${pnl?.toFixed(2)}% — TP1 atingido, o runner não completou TP2.`;
+    return reasonLabel ? `Operação lucrativa com ${pnl?.toFixed(2)}% — encerrada pelo motor (${reasonLabel}).` : `Operação lucrativa com ${pnl?.toFixed(2)}%.`;
+  }
+  if (isBE) {
+    return op.tp1_hit
+      ? 'Breakeven — TP1 foi realizado e o restante fechou sem lucro nem prejuízo adicional (após custos).'
+      : 'Breakeven — o stop avançou o suficiente antes do TP1 para a operação fechar sem lucro nem prejuízo real (após custos).';
+  }
+  if (pnl !== null) {
+    const base = `Operação com perda de ${Math.abs(pnl).toFixed(2)}%`;
+    if (reasonLabel) return `${base} — encerrada pelo motor (${reasonLabel}).`;
+    return op.tp1_hit ? `${base} — TP1 já tinha sido realizado antes do stop fechar o restante.` : `${base} — o stop foi atingido antes de TP1.`;
+  }
+  return 'Operação sem resultado calculável.';
 }
 
 /**
