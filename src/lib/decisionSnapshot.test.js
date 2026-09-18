@@ -6,6 +6,10 @@ import {
   DECISION, DATA_STATUS, buildRegimeSnapshot, buildTrendReversedSnapshot,
   buildAwaitingTp1Snapshot, buildPreTp1BreakevenSnapshot, buildPreTp1TrailingSnapshot,
   buildRunnerTrailingSnapshot, buildRunnerRfManagedSnapshot, buildTp1HitSnapshot,
+  buildStopHitSnapshot, buildTp2HitSnapshot, buildInvalidatedRfBarsSnapshot,
+  buildInvalidatedRfDirectSnapshot, buildInvalidatedSmcStructureSnapshot,
+  buildChopExitSnapshot, buildTimeStopSnapshot, buildTp1FullCloseSnapshot,
+  buildStopHitPriceCheckSnapshot, buildTp2HitPriceCheckSnapshot, buildManualCloseSnapshot,
 } from './decisionSnapshot.js';
 
 const AGORA = '2026-09-17T12:00:00.000Z';
@@ -236,5 +240,182 @@ describe('buildTp1HitSnapshot', () => {
     const snap = buildTp1HitSnapshot({ stopBefore: 100, stopAfter: 100, tp1: 110 });
     expect(snap.decision).toBe(DECISION.HOLDING);
     expect(snap.reason_code).toBe('tp1_hit_stop_unchanged');
+  });
+});
+
+// Fase 4 — EXIT. Todos os builders abaixo produzem decision: DECISION.EXIT
+// sempre — o reason_code é o único diferenciador do motivo.
+describe('buildStopHitSnapshot', () => {
+  it('stage pre_tp1', () => {
+    const snap = buildStopHitSnapshot({
+      stage: 'pre_tp1', stop: 95, closePrice: 94, stopCheckPrice: 94.5, entryPrice: 100,
+      barsSinceEntry: 3, ambiguous: false, isBuy: true, evaluatedAt: AGORA,
+    });
+    expect(snap.decision).toBe(DECISION.EXIT);
+    expect(snap.reason_code).toBe('stop_hit_pre_tp1');
+    expect(snap.facts).toEqual({
+      stop: 95, close_price: 94, stop_check_price: 94.5, entry_price: 100,
+      bars_since_entry: 3, exit_ambiguous: false,
+    });
+    expect(snap.data_status).toBe(DATA_STATUS.LIVE);
+  });
+
+  it('stage runner', () => {
+    const snap = buildStopHitSnapshot({
+      stage: 'runner', stop: 102, closePrice: 101, stopCheckPrice: 101.5, entryPrice: 100,
+      barsSinceEntry: 10, ambiguous: true, isBuy: true,
+    });
+    expect(snap.reason_code).toBe('stop_hit_runner');
+    expect(snap.facts.exit_ambiguous).toBe(true);
+  });
+
+  it('fail-closed: stop ausente vira UNKNOWN', () => {
+    const snap = buildStopHitSnapshot({ stage: 'pre_tp1', stop: null, closePrice: 94, stopCheckPrice: 94.5 });
+    expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
+  });
+});
+
+describe('buildTp2HitSnapshot', () => {
+  it('facts do TP2', () => {
+    const snap = buildTp2HitSnapshot({ tp2: 130, tpCheckPrice: 130.5, entryPrice: 100, evaluatedAt: AGORA });
+    expect(snap.decision).toBe(DECISION.EXIT);
+    expect(snap.reason_code).toBe('tp2_hit');
+    expect(snap.facts).toEqual({ tp2: 130, tp_check_price: 130.5, entry_price: 100 });
+    expect(snap.data_status).toBe(DATA_STATUS.LIVE);
+  });
+
+  it('fail-closed: tp2 ausente vira UNKNOWN', () => {
+    const snap = buildTp2HitSnapshot({ tp2: null, tpCheckPrice: 130.5 });
+    expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
+  });
+});
+
+describe('buildInvalidatedRfBarsSnapshot', () => {
+  it('pré-TP1: contagem de barras revertidas', () => {
+    const snap = buildInvalidatedRfBarsSnapshot({
+      reverseBars: 2, invalidRfBars: 2, rfDir: -1, rfFilt: 98, closePrice: 97, isBuy: true, evaluatedAt: AGORA,
+    });
+    expect(snap.decision).toBe(DECISION.EXIT);
+    expect(snap.reason_code).toBe('invalidated_rf_bars_pre_tp1');
+    expect(snap.facts).toEqual({
+      reverse_bars: 2, invalid_rf_bars: 2, rf_direction: -1, rf_filter_value: 98, close_price: 97,
+    });
+  });
+
+  it('fail-closed: reverseBars ausente vira UNKNOWN', () => {
+    const snap = buildInvalidatedRfBarsSnapshot({ reverseBars: null, invalidRfBars: 2, rfDir: -1, rfFilt: 98, closePrice: 97 });
+    expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
+  });
+});
+
+describe('buildInvalidatedRfDirectSnapshot', () => {
+  it('pós-TP1: comparação direta no candle, sem contador', () => {
+    const snap = buildInvalidatedRfDirectSnapshot({ rfDir: -1, rfFilt: 98, closePrice: 97, isBuy: true, evaluatedAt: AGORA });
+    expect(snap.decision).toBe(DECISION.EXIT);
+    expect(snap.reason_code).toBe('invalidated_rf_direct_runner');
+    expect(snap.facts).toEqual({ rf_direction: -1, rf_filter_value: 98, close_price: 97 });
+    expect(snap.facts.reverse_bars).toBeUndefined();
+  });
+
+  it('fail-closed: rfFilt ausente vira UNKNOWN', () => {
+    const snap = buildInvalidatedRfDirectSnapshot({ rfDir: -1, rfFilt: null, closePrice: 97 });
+    expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
+  });
+});
+
+describe('buildInvalidatedSmcStructureSnapshot', () => {
+  it('estrutura SMC reverteu', () => {
+    const snap = buildInvalidatedSmcStructureSnapshot({ smcTrend: -1, isBuy: true, closePrice: 97, evaluatedAt: AGORA });
+    expect(snap.decision).toBe(DECISION.EXIT);
+    expect(snap.reason_code).toBe('invalidated_smc_structure');
+    expect(snap.facts).toEqual({ smc_trend: -1, signal_direction: 1, close_price: 97 });
+  });
+
+  it('fail-closed: smcTrend ausente vira UNKNOWN', () => {
+    const snap = buildInvalidatedSmcStructureSnapshot({ smcTrend: null, isBuy: true, closePrice: 97 });
+    expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
+  });
+});
+
+describe('buildChopExitSnapshot', () => {
+  it('facts de chop', () => {
+    const snap = buildChopExitSnapshot({ chop: 63, chopMax: 58, closePrice: 100, evaluatedAt: AGORA });
+    expect(snap.decision).toBe(DECISION.EXIT);
+    expect(snap.reason_code).toBe('chop_exit');
+    expect(snap.facts).toEqual({ chop: 63, chop_max: 58, close_price: 100 });
+  });
+
+  it('fail-closed: chop ausente vira UNKNOWN', () => {
+    const snap = buildChopExitSnapshot({ chop: null, chopMax: 58, closePrice: 100 });
+    expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
+  });
+});
+
+describe('buildTimeStopSnapshot', () => {
+  it('facts de prazo', () => {
+    const snap = buildTimeStopSnapshot({
+      barsOpen: 40, timeStopBars: 36, entryRef: '2026-09-15T00:00:00.000Z', closePrice: 100, evaluatedAt: AGORA,
+    });
+    expect(snap.decision).toBe(DECISION.EXIT);
+    expect(snap.reason_code).toBe('time_stop');
+    expect(snap.facts).toEqual({
+      bars_open: 40, time_stop_bars: 36, entry_ref: '2026-09-15T00:00:00.000Z', close_price: 100,
+    });
+  });
+
+  it('fail-closed: barsOpen ausente vira UNKNOWN', () => {
+    const snap = buildTimeStopSnapshot({ barsOpen: null, timeStopBars: 36, entryRef: null, closePrice: 100 });
+    expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
+  });
+});
+
+describe('buildTp1FullCloseSnapshot', () => {
+  it('sem runner: TP1 encerra por completo', () => {
+    const snap = buildTp1FullCloseSnapshot({ tp1: 110, entryPrice: 100, barsSinceEntry: 5, evaluatedAt: AGORA });
+    expect(snap.decision).toBe(DECISION.EXIT);
+    expect(snap.reason_code).toBe('tp1_full_close');
+    expect(snap.facts).toEqual({ tp1: 110, entry_price: 100, bars_since_entry: 5 });
+    expect(snap.data_status).toBe(DATA_STATUS.LIVE);
+  });
+});
+
+describe('builders magros de priceCheckActiveOpsInner', () => {
+  it('buildStopHitPriceCheckSnapshot só tem stop/price', () => {
+    const snap = buildStopHitPriceCheckSnapshot({ stop: 95, price: 94.8, evaluatedAt: AGORA });
+    expect(snap.decision).toBe(DECISION.EXIT);
+    expect(snap.reason_code).toBe('stop_hit_price_check');
+    expect(snap.facts).toEqual({ stop: 95, price: 94.8 });
+    expect(snap.market_time).toBeNull();
+  });
+
+  it('buildStopHitPriceCheckSnapshot fail-closed', () => {
+    const snap = buildStopHitPriceCheckSnapshot({ stop: null, price: 94.8 });
+    expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
+  });
+
+  it('buildTp2HitPriceCheckSnapshot só tem tp2/price', () => {
+    const snap = buildTp2HitPriceCheckSnapshot({ tp2: 130, price: 130.2, evaluatedAt: AGORA });
+    expect(snap.reason_code).toBe('tp2_hit_price_check');
+    expect(snap.facts).toEqual({ tp2: 130, price: 130.2 });
+  });
+
+  it('buildTp2HitPriceCheckSnapshot fail-closed', () => {
+    const snap = buildTp2HitPriceCheckSnapshot({ tp2: null, price: 130.2 });
+    expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
+  });
+});
+
+describe('buildManualCloseSnapshot', () => {
+  it('fechamento manual — facts vazio, sem inventar números', () => {
+    const snap = buildManualCloseSnapshot({ status: 'CLOSED', executor: 'manual', evaluatedAt: AGORA });
+    expect(snap.decision).toBe(DECISION.EXIT);
+    expect(snap.reason_code).toBe('manual_closed');
+    expect(snap.facts).toEqual({});
+    expect(snap.data_status).toBe(DATA_STATUS.LIVE);
+  });
+
+  it('invalidação manual', () => {
+    const snap = buildManualCloseSnapshot({ status: 'INVALIDATED', evaluatedAt: AGORA });
+    expect(snap.reason_code).toBe('manual_invalidated');
   });
 });

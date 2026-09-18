@@ -39,6 +39,10 @@ import {
   buildRegimeSnapshot, buildTrendReversedSnapshot, buildAwaitingTp1Snapshot,
   buildPreTp1BreakevenSnapshot, buildPreTp1TrailingSnapshot, buildRunnerTrailingSnapshot,
   buildRunnerRfManagedSnapshot, buildTp1HitSnapshot,
+  buildStopHitSnapshot, buildTp2HitSnapshot, buildInvalidatedRfBarsSnapshot,
+  buildInvalidatedRfDirectSnapshot, buildInvalidatedSmcStructureSnapshot,
+  buildChopExitSnapshot, buildTimeStopSnapshot, buildTp1FullCloseSnapshot,
+  buildStopHitPriceCheckSnapshot, buildTp2HitPriceCheckSnapshot,
 } from './decisionSnapshot';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -3811,18 +3815,31 @@ export async function persistScanResults(scanResult) {
         updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
         updatePayload.bars_to_stop = barsSinceEntry;
         if (stopTp1Ambiguous) updatePayload.exit_ambiguous = true;
+        updatePayload.decision_snapshot = buildStopHitSnapshot({
+          stage: 'pre_tp1', stop: op.current_stop, closePrice, stopCheckPrice,
+          entryPrice: op.entry_price, barsSinceEntry, ambiguous: stopTp1Ambiguous,
+          executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+        });
       } else if (invalidationTriggered) {
         newStatus = 'INVALIDATED';
         updatePayload.closed_reason = 'INVALIDATION';
         updatePayload.exit_price = closePrice;
         updatePayload.closed_at = nowIso;
         updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
+        updatePayload.decision_snapshot = buildInvalidatedRfBarsSnapshot({
+          reverseBars, invalidRfBars: pineConfig.invalidRFBars ?? 2, rfDir, rfFilt, closePrice,
+          executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+        });
       } else if (chopExitTriggered) {
         newStatus = 'CLOSED';
         updatePayload.closed_reason = 'CHOP_EXIT';
         updatePayload.exit_price = closePrice;
         updatePayload.closed_at = nowIso;
         updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
+        updatePayload.decision_snapshot = buildChopExitSnapshot({
+          chop: tfData.chop, chopMax: tfData.tier?.chopMaxVal, closePrice,
+          executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+        });
       } else if (timeStopTriggered) {
         newStatus = 'CLOSED';
         updatePayload.closed_reason = 'TIME_STOP';
@@ -3836,6 +3853,10 @@ export async function persistScanResults(scanResult) {
         updatePayload.closed_at_real_time = entryRef
           ? new Date(new Date(entryRef).getTime() + timeStopBars * barMs).toISOString()
           : null;
+        updatePayload.decision_snapshot = buildTimeStopSnapshot({
+          barsOpen, timeStopBars, entryRef, closePrice,
+          executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+        });
       } else if (tp1Touched) {
         tp1Hit = true;
         updatePayload.tp1_hit_at = nowIso;
@@ -3851,6 +3872,10 @@ export async function persistScanResults(scanResult) {
           updatePayload.exit_price = op.tp1;
           updatePayload.closed_at = nowIso;
           updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
+          updatePayload.decision_snapshot = buildTp1FullCloseSnapshot({
+            tp1: op.tp1, entryPrice: op.entry_price, barsSinceEntry,
+            executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+          });
         } else {
           newStatus = 'RUNNER_ACTIVE';
           // Fase 3 — Explainability V2 (achado de revisão independente,
@@ -4013,6 +4038,11 @@ export async function persistScanResults(scanResult) {
         updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
         updatePayload.bars_to_stop = barsSinceEntry;
         if (stopTp2Ambiguous) updatePayload.exit_ambiguous = true;
+        updatePayload.decision_snapshot = buildStopHitSnapshot({
+          stage: 'runner', stop: op.current_stop, closePrice, stopCheckPrice,
+          entryPrice: op.entry_price, barsSinceEntry, ambiguous: stopTp2Ambiguous,
+          executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+        });
       } else if (tp2Touched) {
         tp2Hit = true;
         newStatus = 'TP2_HIT';
@@ -4022,6 +4052,10 @@ export async function persistScanResults(scanResult) {
         updatePayload.exit_price = op.tp2;
         updatePayload.closed_at = nowIso;
         updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
+        updatePayload.decision_snapshot = buildTp2HitSnapshot({
+          tp2: op.tp2, tpCheckPrice, entryPrice: op.entry_price,
+          executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+        });
       } else if (op.cascade === '1h_5m') {
         // SMC cascade: the runner's invalidation must come from the same
         // structure that opened the trade (CHoCH against the position), not
@@ -4039,6 +4073,10 @@ export async function persistScanResults(scanResult) {
           updatePayload.exit_price = closePrice;
           updatePayload.closed_at = nowIso;
           updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
+          updatePayload.decision_snapshot = buildInvalidatedSmcStructureSnapshot({
+            smcTrend: tfData.smc?.trend, isBuy, closePrice,
+            executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+          });
         }
       } else if (rfFilt && op.exit_mode !== 'ATR_TRAILING') {
         const rfInval = isBuy ? (rfDir === -1 && closePrice < rfFilt) : (rfDir === 1 && closePrice > rfFilt);
@@ -4048,6 +4086,10 @@ export async function persistScanResults(scanResult) {
           updatePayload.exit_price = closePrice;
           updatePayload.closed_at = nowIso;
           updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
+          updatePayload.decision_snapshot = buildInvalidatedRfDirectSnapshot({
+            rfDir, rfFilt, closePrice,
+            executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
+          });
         }
       }
 
@@ -4421,6 +4463,9 @@ async function priceCheckActiveOpsInner() {
         updatePayload.stop_hit_price = price;
         updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
+        updatePayload.decision_snapshot = buildStopHitPriceCheckSnapshot({
+          stop: op.current_stop, price, executor: EXECUTOR, evaluatedAt: nowIso,
+        });
       } else if ((isBuy && price >= op.tp1) || (!isBuy && price <= op.tp1)) {
         tp1Hit = true;
         updatePayload.tp1_hit_at = nowIso;
@@ -4444,12 +4489,18 @@ async function priceCheckActiveOpsInner() {
         updatePayload.stop_hit_price = price;
         updatePayload.exit_price = op.current_stop;
         updatePayload.closed_at = nowIso;
+        updatePayload.decision_snapshot = buildStopHitPriceCheckSnapshot({
+          stop: op.current_stop, price, executor: EXECUTOR, evaluatedAt: nowIso,
+        });
       } else if (!op.tp2_cap_disabled && ((isBuy && price >= op.tp2) || (!isBuy && price <= op.tp2))) {
         tp2Hit = true; newStatus = 'TP2_HIT';
         updatePayload.tp2_hit_at = nowIso;
         updatePayload.tp2_hit_price = price;
         updatePayload.exit_price = op.tp2;
         updatePayload.closed_at = nowIso;
+        updatePayload.decision_snapshot = buildTp2HitPriceCheckSnapshot({
+          tp2: op.tp2, price, executor: EXECUTOR, evaluatedAt: nowIso,
+        });
       }
     }
 

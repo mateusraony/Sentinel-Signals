@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  opTimeline, signalTimeline, closedReasonLabel, CONFIRMATION_WINDOW_MS,
+  opTimeline, signalTimeline, closedReasonLabel, CONFIRMATION_WINDOW_MS, decisionSnapshotEvent,
 } from './eventTimeline';
 
 const T = (h, m = 0) => `2026-09-05T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
@@ -54,6 +54,51 @@ describe('opTimeline', () => {
     expect(opTimeline(null)).toEqual([]);
     expect(opTimeline({})).toEqual([]);
     expect(opTimeline({ created_date: 'lixo' })).toEqual([]);
+  });
+
+  // Fase 4 — decisionSnapshotEvent: um ponto com a ÚLTIMA decisão registrada,
+  // não um histórico. Ver o cabeçalho do módulo para o porquê de não ser
+  // decision_history completo nesta fase.
+  it('inclui a decisão atual quando decision_snapshot existe e diverge dos demais eventos', () => {
+    const op = {
+      created_date: T(8), status: 'RUNNER_ACTIVE',
+      tp1_hit_real_time: T(10), tp1_hit_at: T(10),
+      decision_snapshot: {
+        decision: 'PROTECTED', reason_code: 'runner_trailing_advanced',
+        facts: { stop_before: 100, stop_after: 104 }, data_status: 'LIVE',
+        evaluated_at: T(14), market_time: T(14),
+      },
+    };
+    const decision = opTimeline(op).find(e => e.key === 'decision');
+    expect(decision).toBeTruthy();
+    expect(decision.at).toBe(T(14));
+    expect(decision.label).toBe('Última avaliação: Runner ativo — proteção aumentada');
+  });
+
+  it('NÃO duplica quando a decisão de EXIT coincide com o evento de fechamento (mesma transação)', () => {
+    const op = {
+      created_date: T(8), status: 'STOP_HIT',
+      stop_hit_real_time: T(11), closed_at_real_time: T(11),
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'stop_hit_pre_tp1',
+        facts: { stop: 98 }, data_status: 'LIVE',
+        evaluated_at: T(11), market_time: T(11),
+      },
+    };
+    expect(opTimeline(op).map(e => e.key)).toEqual(['opened', 'stop']);
+  });
+
+  it('sem decision_snapshot, nenhum evento "decision" aparece', () => {
+    const op = { created_date: T(8), status: 'SIGNAL_CONFIRMED' };
+    expect(opTimeline(op).map(e => e.key)).not.toContain('decision');
+  });
+});
+
+describe('decisionSnapshotEvent', () => {
+  it('degrada sem lançar quando decision_snapshot está ausente ou sem evaluated_at', () => {
+    expect(decisionSnapshotEvent(null)).toBeNull();
+    expect(decisionSnapshotEvent({})).toBeNull();
+    expect(decisionSnapshotEvent({ decision_snapshot: { reason_code: 'awaiting_tp1', facts: {} } })).toBeNull();
   });
 });
 

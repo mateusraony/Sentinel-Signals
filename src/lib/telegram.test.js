@@ -20,7 +20,7 @@ vi.mock('@/api/entities', () => ({
   backend: { entities: { TelegramFilters: { set: telegramFiltersSetMock } } },
 }));
 
-import { getTelegramFilters, notifyNewSignal, notifyVerificationTask, notifyTradeCreated, notifyStopHit, setTelegramFilters } from './telegram.js';
+import { getTelegramFilters, notifyNewSignal, notifyVerificationTask, notifyTradeCreated, notifyStopHit, notifyInvalidated, setTelegramFilters } from './telegram.js';
 import { logWarn } from './logger';
 
 function makeLocalStorage() {
@@ -438,5 +438,40 @@ describe('notifyStopHit — nota de ambiguidade stop/TP na mesma vela (item 140)
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
     expect(text).not.toContain('tocou o stop e o take ao mesmo tempo');
+  });
+});
+
+// Fase 4 — Explainability V2 (EXIT). notify* de fechamento passam a usar
+// explainOperationDecision(op) em vez de texto 100% hardcoded — mesma
+// explicação que o painel mostra (elimina a divergência painel×Telegram).
+describe('notify* de fechamento — why/evidence de explainOperationDecision (Fase 4)', () => {
+  beforeEach(() => {
+    localStorage.setItem('cryptoradar_telegram_cfg', JSON.stringify({ botToken: 'x', chatId: 'y' }));
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+  });
+
+  it('notifyStopHit inclui why/evidence do decision_snapshot', async () => {
+    await notifyStopHit({
+      symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h', current_stop: 95, tp1_hit: false,
+      decision_snapshot: { decision: 'EXIT', reason_code: 'stop_hit_pre_tp1', facts: { stop: 95, stop_check_price: 94.5 }, data_status: 'LIVE' },
+    }, 95);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('O preço tocou o stop antes de TP1 ser atingido.');
+    expect(text).toContain('Medido: stop em 95, preço tocou 94.5.');
+  });
+
+  it('notifyInvalidated inclui why/evidence do decision_snapshot', async () => {
+    await notifyInvalidated({
+      symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h', entry_price: 100, tp1_hit: false,
+      decision_snapshot: { decision: 'EXIT', reason_code: 'invalidated_rf_bars_pre_tp1', facts: { reverse_bars: 2, invalid_rf_bars: 2 }, data_status: 'LIVE' },
+    }, 97);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('O indicador ficou contra a posição por barras suficientes antes de TP1.');
+    expect(text).toContain('Medido: 2 de 2 candles necessários com o indicador contra a posição.');
+  });
+
+  it('notifyStopHit sem decision_snapshot (op legada) usa o fallback genérico, nunca lança', async () => {
+    await notifyStopHit({ symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h', current_stop: 95, tp1_hit: false }, 95);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });

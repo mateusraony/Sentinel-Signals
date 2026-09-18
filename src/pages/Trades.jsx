@@ -18,6 +18,7 @@ import moment from 'moment';
 import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
 import { logError } from '@/lib/logger';
 import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
+import { buildManualCloseSnapshot } from '@/lib/decisionSnapshot';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
@@ -436,7 +437,10 @@ export default function Trades() {
 
   const closeMutation = useMutation({
     /** @param {object} op */
-    mutationFn: (op) => manualTransition(op, { status: 'CLOSED', closed_reason: 'Encerrado manualmente' }),
+    mutationFn: (op) => manualTransition(op, {
+      status: 'CLOSED', closed_reason: 'Encerrado manualmente',
+      decision_snapshot: buildManualCloseSnapshot({ status: 'CLOSED' }),
+    }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trade-operations'] }),
     onError: (err) => {
       logError('Trades', 'Falha ao encerrar operação manualmente', { error: err.message });
@@ -446,7 +450,10 @@ export default function Trades() {
 
   const invalidateMutation = useMutation({
     /** @param {object} op */
-    mutationFn: (op) => manualTransition(op, { status: 'INVALIDATED', closed_reason: 'Invalidado manualmente' }),
+    mutationFn: (op) => manualTransition(op, {
+      status: 'INVALIDATED', closed_reason: 'Invalidado manualmente',
+      decision_snapshot: buildManualCloseSnapshot({ status: 'INVALIDATED' }),
+    }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trade-operations'] }),
     onError: (err) => {
       logError('Trades', 'Falha ao invalidar operação manualmente', { error: err.message });

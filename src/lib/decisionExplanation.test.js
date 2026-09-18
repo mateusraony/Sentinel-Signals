@@ -353,3 +353,163 @@ describe('evidência mostra quando foi medida (staleness visível)', () => {
     expect(out.evidence).toBeNull();
   });
 });
+
+// Fase 4 — EXIT (a operação encerrou), um reason_code por ponto de
+// interceptação de scanner.js.
+describe('explainOperationDecision — EXIT', () => {
+  it('stop_hit_pre_tp1', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'stop_hit_pre_tp1',
+        facts: { stop: 98, stop_check_price: 97.5 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.headline).toBe('Stop atingido');
+    expect(out.evidence).toBe('Medido: stop em 98, preço tocou 97.5.');
+  });
+
+  it('stop_hit_runner', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'stop_hit_runner',
+        facts: { stop: 102 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.why).toMatch(/já protegido/);
+    expect(out.evidence).toBe('Medido: stop em 102.');
+  });
+
+  it('tp2_hit', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'tp2_hit',
+        facts: { tp2: 130, tp_check_price: 130.5 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.headline).toBe('TP2 atingido — operação completa');
+    expect(out.evidence).toBe('Medido: TP2 em 130, preço tocou 130.5.');
+  });
+
+  it('invalidated_rf_bars_pre_tp1', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'invalidated_rf_bars_pre_tp1',
+        facts: { reverse_bars: 2, invalid_rf_bars: 2 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: 2 de 2 candles necessários com o indicador contra a posição.');
+  });
+
+  it('invalidated_rf_direct_runner', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'invalidated_rf_direct_runner',
+        facts: { rf_filter_value: 105, close_price: 104 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: preço 104 contra o filtro em 105.');
+  });
+
+  it('invalidated_smc_structure', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'invalidated_smc_structure',
+        facts: { smc_trend: -1, signal_direction: 1 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: estrutura agora aponta para venda; a operação era de compra.');
+  });
+
+  it('chop_exit', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'chop_exit',
+        facts: { chop: 63, chop_max: 58 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: lateralização (Chop) 63 — máximo permitido 58.');
+  });
+
+  it('time_stop', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'time_stop',
+        facts: { bars_open: 40, time_stop_bars: 36 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: 40 de 36 candles permitidos sem atingir TP1.');
+  });
+
+  it('tp1_full_close', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'tp1_full_close',
+        facts: { tp1: 110 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.headline).toBe('TP1 atingido — operação encerrada');
+    expect(out.evidence).toBe('Medido: TP1 em 110.');
+  });
+
+  it('stop_hit_price_check (priceCheckActiveOpsInner — snapshot magro)', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'stop_hit_price_check',
+        facts: { stop: 98, price: 97 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: stop em 98, preço ao vivo 97.');
+  });
+
+  it('tp2_hit_price_check', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'tp2_hit_price_check',
+        facts: { tp2: 130, price: 131 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: TP2 em 130, preço ao vivo 131.');
+  });
+
+  it('manual_closed: facts vazio, sem evidência inventada', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: { decision: 'EXIT', reason_code: 'manual_closed', facts: {}, data_status: 'LIVE' },
+    });
+    expect(out.headline).toBe('Encerrada manualmente');
+    expect(out.evidence).toBeNull();
+  });
+
+  it('manual_invalidated: facts vazio, sem evidência inventada', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: { decision: 'EXIT', reason_code: 'manual_invalidated', facts: {}, data_status: 'LIVE' },
+    });
+    expect(out.headline).toBe('Invalidada manualmente');
+    expect(out.evidence).toBeNull();
+  });
+});
+
+// notifyTP1Hit (telegram.js) chega em qualquer um destes 3 reason_code
+// possíveis no momento do TP1 — explainOperationDecision já resolve
+// corretamente porque olha só reason_code, agnóstico de qual fase o criou.
+describe('explainOperationDecision — ambiguidade do TP1 entre 3 reason_code possíveis', () => {
+  it('runner com stop movido para breakeven (Fase 3)', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: { decision: 'PROTECTED', reason_code: 'tp1_hit_stop_to_breakeven', facts: { stop_before: 95, stop_after: 100 }, data_status: 'LIVE' },
+    });
+    expect(out.headline).toBe('TP1 atingido — proteção aumentada');
+  });
+
+  it('runner com stop já na entrada (Fase 3)', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: { decision: 'HOLDING', reason_code: 'tp1_hit_stop_unchanged', facts: { stop_before: 100, stop_after: 100 }, data_status: 'LIVE' },
+    });
+    expect(out.headline).toBe('TP1 atingido');
+  });
+
+  it('sem runner, encerramento total (Fase 4)', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: { decision: 'EXIT', reason_code: 'tp1_full_close', facts: { tp1: 110 }, data_status: 'LIVE' },
+    });
+    expect(out.headline).toBe('TP1 atingido — operação encerrada');
+  });
+});

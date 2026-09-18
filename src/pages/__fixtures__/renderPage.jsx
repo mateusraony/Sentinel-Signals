@@ -108,6 +108,13 @@ export const LINHAS_EXEMPLO = {
     current_stop: 3100, tp1: 2900, tp2: 2800, exit_price: 3100,
     stop_hit_at: AGORA, stop_hit_real_time: AGORA, closed_at: AGORA,
     partial_percent: 50, cascade: '4h_15m', created_date: HA_2H,
+    // Fase 4 — Explainability V2 (EXIT). Exercita o render de
+    // TradeCard/TradeHistory com decision_snapshot de EXIT populado.
+    decision_snapshot: {
+      decision: 'EXIT', reason_code: 'stop_hit_pre_tp1',
+      facts: { stop: 3100, stop_check_price: 3105 }, data_status: 'LIVE',
+      evaluated_at: AGORA, market_time: AGORA, executor: 'cron',
+    },
   }],
   PriceAlert: [{ id: 'p1', asset_id: 'a1', symbol: 'BTCUSDT', target_price: 65000, direction: 'above', is_active: true, created_date: HA_2H }],
   SystemLog: [{ id: 'l1', level: 'error', module: 'scanner', message: 'BTCUSDT falhou', symbol: 'BTCUSDT', created_date: HA_2H }],

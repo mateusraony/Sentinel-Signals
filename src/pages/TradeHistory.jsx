@@ -13,6 +13,7 @@ import { formatPrice } from '@/lib/priceProximity';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 import { CandleBoundTag, DetectionLag } from '@/components/dashboard/EventTimeline';
 import { closedReasonLabel } from '@/lib/eventTimeline';
+import { explainOperationDecision } from '@/lib/decisionExplanation';
 
 // Planned risk/reward of the setup — always against the INITIAL stop. The old
 // version divided by current_stop, which post-TP1 is already breakeven and
@@ -266,14 +267,33 @@ function HistoryCard({ op }) {
             </div>
           )}
 
-          {/* Analysis hint */}
-          <div className="text-[9px] font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.1)', color: 'rgba(0,229,255,0.6)' }}>
-            💡 {isWin
-              ? `Operação lucrativa com ${pnl?.toFixed(2)}%${op.tp1_hit && op.tp2_hit ? ' — TP1 e TP2 atingidos, saída ideal.' : op.tp1_hit ? ' — TP1 atingido, runner não completou TP2.' : '.'}`
-              : isBE ? 'Breakeven — stop movido para entrada após TP1. Capital preservado.'
-              : pnl !== null ? `Operação com perda de ${Math.abs(pnl).toFixed(2)}%. Revisar o setup e contexto de mercado.`
-              : 'Operação sem resultado calculável.'}
-          </div>
+          {/* Analysis hint — Fase 4: mesma explicação que o painel/Telegram
+              usam (explainOperationDecision), em vez de texto duplicado.
+              Sem decision_snapshot (op legada, anterior a esta fase), cai no
+              texto hardcoded de sempre — zero regressão em histórico antigo.
+              Achado de revisão (Codex, PR #376): toda linha aqui já é uma op
+              FECHADA — um decision_snapshot residual de HOLDING/PROTECTED
+              (op fechada ANTES da Fase 4, quando EXIT ainda não gravava seu
+              próprio snapshot) mostraria "Nenhuma condição de saída foi
+              atingida" no lugar do resultado real. Só usa a explicação nova
+              quando o snapshot é realmente de EXIT. */}
+          {(() => {
+            const decisionOut = op.decision_snapshot?.decision === 'EXIT' ? explainOperationDecision(op) : null;
+            return (
+              <div className="text-[9px] font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.1)', color: 'rgba(0,229,255,0.6)' }}>
+                💡 {decisionOut
+                  ? decisionOut.why
+                  : isWin
+                    ? `Operação lucrativa com ${pnl?.toFixed(2)}%${op.tp1_hit && op.tp2_hit ? ' — TP1 e TP2 atingidos, saída ideal.' : op.tp1_hit ? ' — TP1 atingido, runner não completou TP2.' : '.'}`
+                    : isBE ? 'Breakeven — stop movido para entrada após TP1. Capital preservado.'
+                    : pnl !== null ? `Operação com perda de ${Math.abs(pnl).toFixed(2)}%. Revisar o setup e contexto de mercado.`
+                    : 'Operação sem resultado calculável.'}
+                {decisionOut?.evidence && (
+                  <div className="mt-0.5 opacity-70">{decisionOut.evidence}</div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

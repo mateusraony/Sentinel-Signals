@@ -139,7 +139,28 @@ describe('TradeCard — decision_snapshot (Fase 3, gestão HOLDING/PROTECTED)', 
     expect(screen.queryByText(/faltam.*até o TP1/)).toBeNull();
   });
 
-  it('operação ENCERRADA com decision_snapshot residual (última passada antes do exit) não mostra o bloco — evitaria "monitorando" numa op já fechada', () => {
+  // Fase 4 — EXIT ganhou builder próprio (buildStopHitSnapshot etc.), então
+  // toda op que fecha a partir de agora carrega um decision_snapshot de EXIT
+  // fresco, nunca mais o HOLDING/PROTECTED residual da última passada aberta
+  // (o gate isOpenOp que escondia esse residual foi removido — ver
+  // docs/known-risks.md). Este teste cobre o caso comum: EXIT.
+  it('operação ENCERRADA com decision_snapshot de EXIT mostra o bloco', () => {
+    renderCard(baseOp({
+      status: 'STOP_HIT',
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'stop_hit_pre_tp1',
+        facts: { stop: 98, stop_check_price: 97.5 }, data_status: 'LIVE',
+      },
+    }));
+    screen.getByText('Stop atingido');
+    screen.getByText(/stop em 98, preço tocou 97.5/);
+  });
+
+  // Achado de revisão (Codex, PR #376): uma op fechada ANTES da Fase 4 pode
+  // carregar um decision_snapshot residual de HOLDING/PROTECTED (Fase 3
+  // nunca escrevia snapshot de EXIT) — sem o guard, o bloco mostraria
+  // "Monitorando" numa operação já encerrada há muito tempo.
+  it('operação ENCERRADA com decision_snapshot residual de HOLDING (op fechada antes da Fase 4) NÃO mostra o bloco', () => {
     renderCard(baseOp({
       status: 'STOP_HIT',
       decision_snapshot: {

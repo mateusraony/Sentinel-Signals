@@ -16,13 +16,20 @@
  * pareça mais preciso do que os dados registrados permitem.
  *
  * Fase 3 — Explainability V2 estende este módulo com `explainOperationDecision`
- * para `TradeOperation` ativa (HOLDING/PROTECTED). `EXIT` (STOP_HIT/TP2_HIT/
- * INVALIDATED/CLOSED) ainda não tem `decision_snapshot` — ver docs/known-risks.md.
+ * para `TradeOperation` ativa (HOLDING/PROTECTED). Fase 4 estende o mesmo
+ * `OPERATION_COPY`/`formatOperationEvidence` para EXIT (STOP_HIT/TP2_HIT/
+ * INVALIDATED/CLOSED, automático ou manual) — ver docs/known-risks.md.
  *
  * Módulo puro: sem React, sem I/O, sem Firestore.
  */
 
-import { rejectionCopy, classifySignal } from './signalStatus';
+// Extensão .js explícita — este módulo agora também é alcançado por
+// scripts/adminTelegram.js (Fase 4), que scripts/health-audit.mjs importa
+// via Node ESM NATIVO (sem passar pelo esbuild de scripts/build-scan.mjs,
+// que resolve extensão sozinho). Sem a extensão, `node scripts/health-audit.mjs`
+// quebra com ERR_MODULE_NOT_FOUND antes de rodar qualquer checagem —
+// achado de revisão (Codex, PR #376).
+import { rejectionCopy, classifySignal } from './signalStatus.js';
 
 const NOTHING_TO_DO = 'Nada a fazer — o app continua verificando sozinho.';
 
@@ -189,6 +196,61 @@ const OPERATION_COPY = Object.freeze({
     headline: 'Runner ativo — proteção aumentada',
     why: 'TP1 já foi atingido e o preço avançou o suficiente para a trilha elevar o stop.',
   },
+  // Fase 4 — EXIT (a operação encerrou). Um reason_code por ponto de
+  // interceptação de scanner.js — ver src/lib/decisionSnapshot.js para o
+  // porquê de não haver um texto genérico "operação encerrada".
+  stop_hit_pre_tp1: {
+    headline: 'Stop atingido',
+    why: 'O preço tocou o stop antes de TP1 ser atingido.',
+  },
+  stop_hit_runner: {
+    headline: 'Stop atingido',
+    why: 'O preço tocou o stop já protegido (breakeven ou trilha) depois do TP1.',
+  },
+  tp2_hit: {
+    headline: 'TP2 atingido — operação completa',
+    why: 'O preço atingiu o alvo final; o restante da posição foi encerrado.',
+  },
+  invalidated_rf_bars_pre_tp1: {
+    headline: 'Invalidada — tendência reverteu',
+    why: 'O indicador ficou contra a posição por barras suficientes antes de TP1.',
+  },
+  invalidated_rf_direct_runner: {
+    headline: 'Invalidada — tendência reverteu',
+    why: 'O indicador virou contra a posição, já com TP1 realizado.',
+  },
+  invalidated_smc_structure: {
+    headline: 'Invalidada — estrutura reverteu',
+    why: 'A estrutura de mercado que sustentava a posição se rompeu no lado oposto.',
+  },
+  chop_exit: {
+    headline: 'Encerrada — mercado sem direção',
+    why: 'A lateralização (Choppiness) passou do limite tolerado antes de TP1.',
+  },
+  time_stop: {
+    headline: 'Encerrada — prazo esgotado',
+    why: 'A operação não atingiu TP1 dentro do prazo máximo permitido.',
+  },
+  tp1_full_close: {
+    headline: 'TP1 atingido — operação encerrada',
+    why: 'Sem runner ativo nesta operação, o TP1 encerra a posição por completo.',
+  },
+  stop_hit_price_check: {
+    headline: 'Stop atingido',
+    why: 'O preço ao vivo tocou o stop.',
+  },
+  tp2_hit_price_check: {
+    headline: 'TP2 atingido — operação completa',
+    why: 'O preço ao vivo atingiu o alvo final.',
+  },
+  manual_closed: {
+    headline: 'Encerrada manualmente',
+    why: 'Um usuário encerrou esta operação manualmente pelo painel.',
+  },
+  manual_invalidated: {
+    headline: 'Invalidada manualmente',
+    why: 'Um usuário invalidou esta operação manualmente pelo painel.',
+  },
 });
 
 const FALLBACK_OPERATION_COPY = Object.freeze({
@@ -266,6 +328,73 @@ function formatOperationEvidence(snapshot) {
       return `Medido: stop foi de ${before} para ${after}.`;
     }
     return before != null ? `Medido: stop mantido em ${before}.` : null;
+  }
+
+  // Fase 4 — EXIT.
+  if (reasonCode === 'stop_hit_pre_tp1' || reasonCode === 'stop_hit_runner') {
+    const stop = formatNum(facts.stop);
+    if (stop == null) return null;
+    const price = formatNum(facts.stop_check_price);
+    return price != null ? `Medido: stop em ${stop}, preço tocou ${price}.` : `Medido: stop em ${stop}.`;
+  }
+
+  if (reasonCode === 'tp2_hit') {
+    const tp2 = formatNum(facts.tp2);
+    if (tp2 == null) return null;
+    const price = formatNum(facts.tp_check_price);
+    return price != null ? `Medido: TP2 em ${tp2}, preço tocou ${price}.` : `Medido: TP2 em ${tp2}.`;
+  }
+
+  if (reasonCode === 'invalidated_rf_bars_pre_tp1') {
+    const bars = formatNum(facts.reverse_bars);
+    const req = formatNum(facts.invalid_rf_bars);
+    if (bars == null || req == null) return null;
+    return `Medido: ${bars} de ${req} candles necessários com o indicador contra a posição.`;
+  }
+
+  if (reasonCode === 'invalidated_rf_direct_runner') {
+    const filt = formatNum(facts.rf_filter_value);
+    const close = formatNum(facts.close_price);
+    if (filt == null || close == null) return null;
+    return `Medido: preço ${close} contra o filtro em ${filt}.`;
+  }
+
+  if (reasonCode === 'invalidated_smc_structure') {
+    if (!Number.isFinite(facts.smc_trend) || !Number.isFinite(facts.signal_direction)) return null;
+    return `Medido: estrutura agora aponta para ${directionLabel(facts.smc_trend)}; a operação era de ${directionLabel(facts.signal_direction)}.`;
+  }
+
+  if (reasonCode === 'chop_exit') {
+    const chop = formatNum(facts.chop);
+    const max = formatNum(facts.chop_max);
+    if (chop == null) return null;
+    return max != null ? `Medido: lateralização (Chop) ${chop} — máximo permitido ${max}.` : `Medido: lateralização (Chop) ${chop}.`;
+  }
+
+  if (reasonCode === 'time_stop') {
+    const open = formatNum(facts.bars_open);
+    const max = formatNum(facts.time_stop_bars);
+    if (open == null || max == null) return null;
+    return `Medido: ${open} de ${max} candles permitidos sem atingir TP1.`;
+  }
+
+  if (reasonCode === 'tp1_full_close') {
+    const tp1 = formatNum(facts.tp1);
+    return tp1 != null ? `Medido: TP1 em ${tp1}.` : null;
+  }
+
+  if (reasonCode === 'stop_hit_price_check') {
+    const stop = formatNum(facts.stop);
+    const price = formatNum(facts.price);
+    if (stop == null || price == null) return null;
+    return `Medido: stop em ${stop}, preço ao vivo ${price}.`;
+  }
+
+  if (reasonCode === 'tp2_hit_price_check') {
+    const tp2 = formatNum(facts.tp2);
+    const price = formatNum(facts.price);
+    if (tp2 == null || price == null) return null;
+    return `Medido: TP2 em ${tp2}, preço ao vivo ${price}.`;
   }
 
   return null;

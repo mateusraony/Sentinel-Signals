@@ -241,6 +241,31 @@ describe('notifyStopHit — nota de ambiguidade stop/TP na mesma vela (item 140)
   });
 });
 
+// Fase 4 — Explainability V2 (EXIT). Espelho do describe de mesmo nome em
+// src/lib/telegram.test.js — notify* de fechamento passam a usar
+// explainOperationDecision(op) em vez de texto 100% hardcoded.
+describe('notify* de fechamento — why/evidence de explainOperationDecision (Fase 4)', () => {
+  function baseOp(overrides = {}) {
+    return { symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h', current_stop: 95, tp1_hit: false, ...overrides };
+  }
+
+  it('notifyStopHit inclui why/evidence do decision_snapshot', async () => {
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    await notifyStopHit(baseOp({
+      decision_snapshot: { decision: 'EXIT', reason_code: 'stop_hit_pre_tp1', facts: { stop: 95, stop_check_price: 94.5 }, data_status: 'LIVE' },
+    }), 95);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('O preço tocou o stop antes de TP1 ser atingido.');
+    expect(text).toContain('Medido: stop em 95, preço tocou 94.5.');
+  });
+
+  it('notifyStopHit sem decision_snapshot (op legada) usa o fallback genérico, nunca lança', async () => {
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    await notifyStopHit(baseOp(), 95);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
 // send() (item 166 Fase 2, "falha silenciosa") só fazia console.warn quando
 // o envio falhava — invisível pro Debug Log do painel e pro
 // scripts/health-audit.mjs, que só lê SystemLog.
