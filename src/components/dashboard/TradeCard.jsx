@@ -374,8 +374,16 @@ function StatusBanner({ op }) {
 // restrito a operação aberta: renderiza sempre que decision_snapshot existir,
 // como acréscimo abaixo do StatusBanner/closedBanner (que continuam sendo a
 // fonte do resultado categórico + cor).
+//
+// Achado de revisão (Codex, PR #376): uma op fechada ANTES da Fase 4 pode
+// carregar um decision_snapshot residual de HOLDING/PROTECTED (Fase 3 nunca
+// escrevia snapshot de EXIT) — sem este guard, o bloco mostraria
+// "Monitorando"/"Runner ativo" numa operação já encerrada há muito tempo.
+// Op fechada só mostra o bloco quando o snapshot é realmente de EXIT.
 function OperationDecisionNote({ op }) {
-  if (!op.decision_snapshot) return null;
+  const snapshot = op.decision_snapshot;
+  if (!snapshot) return null;
+  if (!OPEN_STATUSES.has(op.status) && snapshot.decision !== 'EXIT') return null;
   const { headline, evidence } = explainOperationDecision(op);
   return (
     <div className="text-[9px] font-mono px-3 py-2 rounded-lg" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.12)' }}>

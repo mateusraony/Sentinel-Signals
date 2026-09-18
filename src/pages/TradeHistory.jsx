@@ -270,9 +270,15 @@ function HistoryCard({ op }) {
           {/* Analysis hint — Fase 4: mesma explicação que o painel/Telegram
               usam (explainOperationDecision), em vez de texto duplicado.
               Sem decision_snapshot (op legada, anterior a esta fase), cai no
-              texto hardcoded de sempre — zero regressão em histórico antigo. */}
+              texto hardcoded de sempre — zero regressão em histórico antigo.
+              Achado de revisão (Codex, PR #376): toda linha aqui já é uma op
+              FECHADA — um decision_snapshot residual de HOLDING/PROTECTED
+              (op fechada ANTES da Fase 4, quando EXIT ainda não gravava seu
+              próprio snapshot) mostraria "Nenhuma condição de saída foi
+              atingida" no lugar do resultado real. Só usa a explicação nova
+              quando o snapshot é realmente de EXIT. */}
           {(() => {
-            const decisionOut = op.decision_snapshot ? explainOperationDecision(op) : null;
+            const decisionOut = op.decision_snapshot?.decision === 'EXIT' ? explainOperationDecision(op) : null;
             return (
               <div className="text-[9px] font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.1)', color: 'rgba(0,229,255,0.6)' }}>
                 💡 {decisionOut

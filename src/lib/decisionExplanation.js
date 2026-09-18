@@ -23,7 +23,13 @@
  * Módulo puro: sem React, sem I/O, sem Firestore.
  */
 
-import { rejectionCopy, classifySignal } from './signalStatus';
+// Extensão .js explícita — este módulo agora também é alcançado por
+// scripts/adminTelegram.js (Fase 4), que scripts/health-audit.mjs importa
+// via Node ESM NATIVO (sem passar pelo esbuild de scripts/build-scan.mjs,
+// que resolve extensão sozinho). Sem a extensão, `node scripts/health-audit.mjs`
+// quebra com ERR_MODULE_NOT_FOUND antes de rodar qualquer checagem —
+// achado de revisão (Codex, PR #376).
+import { rejectionCopy, classifySignal } from './signalStatus.js';
 
 const NOTHING_TO_DO = 'Nada a fazer — o app continua verificando sozinho.';
 
