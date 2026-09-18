@@ -7,6 +7,7 @@
 import { logWarn } from './logger';
 import { closesFullyAtTp1, getEntryReferenceTime } from './opExitRules';
 import { formatBackfillLag } from './backfillDetection';
+import { explainOperationDecision } from './decisionExplanation';
 
 const STORAGE_KEY = 'cryptoradar_telegram_cfg';
 const FILTERS_KEY = 'tg_filters';
@@ -337,6 +338,11 @@ export async function notifyTradeCreated(op) {
 
 export async function notifyTP1Hit(op, price) {
   if (!shouldSend('tp1_hit', op)) return;
+  // op.decision_snapshot chega aqui em um de 3 reason_code possíveis
+  // (tp1_hit_stop_to_breakeven/tp1_hit_stop_unchanged da Fase 3,
+  // tp1_full_close da Fase 4) — explainOperationDecision resolve o texto
+  // certo em qualquer um dos três, agnóstica de qual fase o criou.
+  const { why, evidence } = explainOperationDecision(op);
   return send(
     `🎯 <b>TP1 Atingido!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
@@ -345,23 +351,28 @@ export async function notifyTP1Hit(op, price) {
     // Sem runner (known-risks item 46) o TP1 é saída TERMINAL — anunciar
     // "runner ativo, aguardando TP2" seria mentira no canal.
     (closesFullyAtTp1(op)
-      ? `✅ Posição encerrada 100% no TP1\n\n<i>⚡ CryptoRadar — operação fechada</i>`
+      ? `✅ Posição encerrada 100% no TP1\n`
       : `✅ ${op.partial_percent ?? 50}% da posição realizada\n`
         + `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n`
-        + `🏃 Runner ${op.runner_percent ?? 50}% ativo — aguardando TP2: $${fmtP(op.tp2)}\n\n`
-        + `<i>⚡ CryptoRadar — gerencie o runner</i>`)
+        + `🏃 Runner ${op.runner_percent ?? 50}% ativo — aguardando TP2: $${fmtP(op.tp2)}\n`) +
+    `\n<i>${why}</i>\n` +
+    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
+    `<i>⚡ CryptoRadar</i>`
   );
 }
 
 export async function notifyTP2Hit(op, price) {
   if (!shouldSend('tp2_hit', op)) return;
+  const { why, evidence } = explainOperationDecision(op);
   return send(
     `🏆 <b>TP2 Atingido — Operação Completa!</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.tp2_hit_real_time, true) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)} → TP2: $${fmtP(op.tp2)}\n\n` +
-    `<i>✅ Lucro completo realizado — CryptoRadar</i>`
+    `<i>${why}</i>\n` +
+    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
+    `<i>⚡ CryptoRadar</i>`
   );
 }
 
@@ -380,6 +391,7 @@ const AMBIGUOUS_EXIT_NOTE =
 export async function notifyStopHit(op, price) {
   if (!shouldSend('stop_hit', op)) return;
   const beMsg = op.tp1_hit ? '(breakeven — sem prejuízo)' : '(stop inicial)';
+  const { why, evidence } = explainOperationDecision(op);
   return send(
     `🛑 <b>Stop Atingido ${beMsg}</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
@@ -387,6 +399,8 @@ export async function notifyStopHit(op, price) {
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Stop em: $${fmtP(op.current_stop)}\n` +
     (op.exit_ambiguous ? AMBIGUOUS_EXIT_NOTE : '\n') +
+    `<i>${why}</i>\n` +
+    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
     `<i>⚡ CryptoRadar</i>`
   );
 }
@@ -394,36 +408,45 @@ export async function notifyStopHit(op, price) {
 export async function notifyInvalidated(op, price) {
   if (!shouldSend('invalidated', op)) return;
   const stageMsg = op.tp1_hit ? '(após TP1 — parcial já realizada)' : '(pré-TP1)';
+  const { why, evidence } = explainOperationDecision(op);
   return send(
     `⚠️ <b>Sinal Invalidado ${stageMsg}</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>🔄 Estrutura/tendência reverteu — CryptoRadar</i>`
+    `<i>${why}</i>\n` +
+    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
+    `<i>⚡ CryptoRadar</i>`
   );
 }
 
 export async function notifyTimeStop(op, price) {
   if (!shouldSend('time_stop', op)) return;
+  const { why, evidence } = explainOperationDecision(op);
   return send(
     `⏱️ <b>Time Stop — Operação Encerrada</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>⌛ Prazo máximo sem atingir TP1 — CryptoRadar</i>`
+    `<i>${why}</i>\n` +
+    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
+    `<i>⚡ CryptoRadar</i>`
   );
 }
 
 export async function notifyChopExit(op, price) {
   if (!shouldSend('chop_exit', op)) return;
+  const { why, evidence } = explainOperationDecision(op);
   return send(
     `🌊 <b>Chop Exit — Operação Encerrada</b>\n\n` +
     `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>📉 Mercado lateralizado (choppiness alto) — CryptoRadar</i>`
+    `<i>${why}</i>\n` +
+    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
+    `<i>⚡ CryptoRadar</i>`
   );
 }

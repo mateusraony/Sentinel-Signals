@@ -25,7 +25,16 @@
  * `at` aqui é sempre o horário de mercado quando ele existe, e `detectedAt`
  * carrega o outro para o componente poder mostrar a defasagem — que é
  * justamente o sinal de diagnóstico que o usuário quer poder comparar.
+ *
+ * Fase 4 — Explainability V2: `decisionSnapshotEvent` acrescenta um ponto
+ * na timeline com a ÚLTIMA decisão registrada (decision_snapshot atual) —
+ * não um histórico completo de mudanças de decisão. Um histórico real
+ * (`decision_history`) exigiria alterar a transação de `transitionTradeOp`
+ * (o código mais sensível do projeto) para acumular um array — decisão
+ * deliberada de NÃO fazer isso nesta fase; ver docs/known-risks.md.
  */
+
+import { explainOperationDecision } from './decisionExplanation';
 
 /** Janela de confirmação de um sinal (scanner.js FOUR_HOURS_MS). */
 export const CONFIRMATION_WINDOW_MS = 4 * 60 * 60 * 1000;
@@ -82,6 +91,21 @@ function event(key, label, realTime, detectedAt) {
 }
 
 /**
+ * Fase 4 — ponto na timeline com a ÚLTIMA decisão registrada
+ * (`op.decision_snapshot`), não um histórico — ver o cabeçalho do módulo.
+ * `headline` vem de `explainOperationDecision` (mesmo texto do painel/
+ * Telegram) para manter o rótulo em português simples, igual aos demais.
+ *
+ * @returns {TimelineEvent|null}
+ */
+export function decisionSnapshotEvent(op) {
+  const snap = op?.decision_snapshot;
+  if (!snap?.evaluated_at) return null;
+  const { headline } = explainOperationDecision(op);
+  return event('decision', `Última avaliação: ${headline}`, snap.market_time, snap.evaluated_at);
+}
+
+/**
  * Eventos de uma operação, em ordem cronológica.
  *
  * Só entra o que realmente aconteceu — nada de linha vazia para um TP que
@@ -103,6 +127,15 @@ export function opTimeline(op) {
   const closed = event('closed', EXIT_LABEL[op.status] ?? 'Encerrada', op.closed_at_real_time, op.closed_at);
   if (closed && !events.some((e) => e.at === closed.at && e.key !== 'opened')) {
     events.push(closed);
+  }
+
+  // A decisão atual só entra se não coincidir com um evento já listado — um
+  // EXIT grava decision_snapshot na MESMA transação que fecha a operação, o
+  // que produziria "Stop atingido" duas vezes (uma vinda daqui, outra do
+  // decisionSnapshotEvent) no mesmo instante.
+  const decision = decisionSnapshotEvent(op);
+  if (decision && !events.some((e) => e.at === decision.at)) {
+    events.push(decision);
   }
 
   return events.sort((a, b) => new Date(a.at) - new Date(b.at));

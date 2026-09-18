@@ -756,6 +756,10 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
       const op = backend._get('TradeOperation', 'op1');
       expect(op.status).toBe('STOP_HIT');
       expect(op.exit_price).toBe(98); // op.current_stop, not the touched price
+      // Fase 4 — Explainability V2 (EXIT).
+      expect(op.decision_snapshot.decision).toBe('EXIT');
+      expect(op.decision_snapshot.reason_code).toBe('stop_hit_pre_tp1');
+      expect(op.decision_snapshot.facts.stop).toBe(98);
     });
   });
 
@@ -876,6 +880,9 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     // known-risks item 29 — TIME_STOP was previously a silent closure.
     expect(notifyTimeStop).toHaveBeenCalledTimes(1);
     expect(notifyTimeStop).toHaveBeenCalledWith(expect.objectContaining({ id: 'op1' }), expect.any(Number));
+    // Fase 4 — Explainability V2 (EXIT).
+    expect(stored.decision_snapshot.decision).toBe('EXIT');
+    expect(stored.decision_snapshot.reason_code).toBe('time_stop');
     vi.mocked(isTelegramConfigured).mockReturnValue(false);
   });
 
@@ -952,6 +959,10 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     // known-risks item 29 — CHOP_EXIT was previously a silent closure.
     expect(notifyChopExit).toHaveBeenCalledTimes(1);
     expect(notifyChopExit).toHaveBeenCalledWith(expect.objectContaining({ id: 'op1' }), expect.any(Number));
+    // Fase 4 — Explainability V2 (EXIT).
+    expect(stored.decision_snapshot.decision).toBe('EXIT');
+    expect(stored.decision_snapshot.reason_code).toBe('chop_exit');
+    expect(stored.decision_snapshot.facts.chop).toBe(60);
     vi.mocked(isTelegramConfigured).mockReturnValue(false);
   });
 
@@ -980,6 +991,10 @@ describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
     // known-risks item 29 — INVALIDATED was previously a silent closure.
     expect(notifyInvalidated).toHaveBeenCalledTimes(1);
     expect(notifyInvalidated).toHaveBeenCalledWith(expect.objectContaining({ id: 'op1' }), expect.any(Number));
+    // Fase 4 — Explainability V2 (EXIT).
+    expect(stored.decision_snapshot.decision).toBe('EXIT');
+    expect(stored.decision_snapshot.reason_code).toBe('invalidated_rf_bars_pre_tp1');
+    expect(stored.decision_snapshot.facts.reverse_bars).toBe(2);
     vi.mocked(isTelegramConfigured).mockReturnValue(false);
   });
 });
@@ -1373,6 +1388,9 @@ describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTI
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('TP2_HIT');
     expect(stored.exit_price).toBe(106); // tp2
+    // Fase 4 — Explainability V2 (EXIT).
+    expect(stored.decision_snapshot.decision).toBe('EXIT');
+    expect(stored.decision_snapshot.reason_code).toBe('tp2_hit');
   });
 
   // docs/known-risks.md item 114 — same candle/price as the test above
@@ -1396,6 +1414,9 @@ describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTI
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('STOP_HIT');
     expect(stored.exit_price).toBe(100); // the stop that was active THIS candle
+    // Fase 4 — Explainability V2 (EXIT).
+    expect(stored.decision_snapshot.decision).toBe('EXIT');
+    expect(stored.decision_snapshot.reason_code).toBe('stop_hit_runner');
   });
 
   it('exit_ambiguous: true when the same candle touches BOTH the runner stop and TP2', async () => {
@@ -1472,6 +1493,9 @@ describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTI
     // a silent closure, AND closed_reason was missing on this branch.
     expect(notifyInvalidated).toHaveBeenCalledTimes(1);
     expect(notifyInvalidated).toHaveBeenCalledWith(expect.objectContaining({ id: 'op1' }), expect.any(Number));
+    // Fase 4 — Explainability V2 (EXIT).
+    expect(stored.decision_snapshot.decision).toBe('EXIT');
+    expect(stored.decision_snapshot.reason_code).toBe('invalidated_rf_direct_runner');
     vi.mocked(isTelegramConfigured).mockReturnValue(false);
   });
 
@@ -1489,6 +1513,10 @@ describe('persistScanResults — candle-based transitions (post-TP1, RUNNER_ACTI
     // a silent closure, AND closed_reason was missing on this branch.
     expect(notifyInvalidated).toHaveBeenCalledTimes(1);
     expect(notifyInvalidated).toHaveBeenCalledWith(expect.objectContaining({ id: 'op1' }), expect.any(Number));
+    // Fase 4 — Explainability V2 (EXIT).
+    expect(stored.decision_snapshot.decision).toBe('EXIT');
+    expect(stored.decision_snapshot.reason_code).toBe('invalidated_smc_structure');
+    expect(stored.decision_snapshot.facts.smc_trend).toBe(-1);
     vi.mocked(isTelegramConfigured).mockReturnValue(false);
   });
 });
@@ -1510,6 +1538,11 @@ describe('priceCheckActiveOps — price-based transitions', () => {
     await priceCheckActiveOps();
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('STOP_HIT');
+    // Fase 4 — Explainability V2 (EXIT). priceCheckActiveOpsInner não tem
+    // candle/ATR em escopo — snapshot "magro", reason_code próprio.
+    expect(stored.decision_snapshot.decision).toBe('EXIT');
+    expect(stored.decision_snapshot.reason_code).toBe('stop_hit_price_check');
+    expect(stored.decision_snapshot.facts).toEqual({ stop: 98, price: 97 });
   });
 
   it('TP2_HIT when the live price crosses tp2 post-TP1', async () => {
@@ -1518,6 +1551,10 @@ describe('priceCheckActiveOps — price-based transitions', () => {
     await priceCheckActiveOps();
     const stored = backend._get('TradeOperation', 'op1');
     expect(stored.status).toBe('TP2_HIT');
+    // Fase 4 — Explainability V2 (EXIT).
+    expect(stored.decision_snapshot.decision).toBe('EXIT');
+    expect(stored.decision_snapshot.reason_code).toBe('tp2_hit_price_check');
+    expect(stored.decision_snapshot.facts).toEqual({ tp2: 106, price: 107 });
   });
 
   // docs/known-risks.md item 114 — same price as the test above (crosses
@@ -1602,6 +1639,9 @@ describe('TP1 sem runner — saída terminal (item 46)', () => {
     expect(op.closed_at).toBeTruthy();
     // Nunca move o stop para breakeven: não sobrou posição para proteger.
     expect(op.current_stop).toBe(98);
+    // Fase 4 — Explainability V2 (EXIT).
+    expect(op.decision_snapshot.decision).toBe('EXIT');
+    expect(op.decision_snapshot.reason_code).toBe('tp1_full_close');
   });
 
   it('loop por PREÇO: mesma decisão — os dois loops não podem divergir (lição do item 39.1)', async () => {

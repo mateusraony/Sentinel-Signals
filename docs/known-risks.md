@@ -23598,3 +23598,145 @@ testar contra o backend real, não só o fake.
 build:scan` limpos; suíte completa 1884 testes (1872 + 12 novos não-DB) +
 49 testes de `db/` contra Postgres local real (`TEST_DATABASE_URL`), zero
 regressão em nenhum dos dois.
+
+## 183. Explainability V2 — Decision Snapshot para EXIT + Telegram/Histórico/timeline consumindo a mesma explicação (fase 4 de N, 2026-09-18)
+
+Continuação dos itens 181/182, ordem pedida explicitamente pelo usuário:
+"EXIT no Decision Snapshot → Telegram/Histórico consumindo a mesma explicação
+→ timeline" — "é aí que a divergência painel×Telegram original ainda existe".
+Planejado com 3 agentes Explore (mapeamento de `scanner.js`, `telegram.js`/
+`TradeHistory.jsx`, `eventTimeline.js`/viabilidade de `decision_history`) + 1
+agente Plan, achados verificados por leitura direta do código.
+
+**Sub-fase 1 — EXIT no Decision Snapshot.**
+
+- 11 builders novos em `src/lib/decisionSnapshot.js`, todos
+  `decision: DECISION.EXIT` (enum já existia desde o item 181, nunca usado):
+  `buildStopHitSnapshot` (`stage: 'pre_tp1'|'runner'` → `reason_code`
+  `stop_hit_pre_tp1`/`stop_hit_runner`), `buildTp2HitSnapshot`,
+  `buildInvalidatedRfBarsSnapshot` (pré-TP1, por CONTAGEM de candles
+  revertidos), `buildInvalidatedRfDirectSnapshot` (pós-TP1, comparação
+  DIRETA no candle — gate diferente do anterior, por isso `reason_code`
+  separado), `buildInvalidatedSmcStructureSnapshot`, `buildChopExitSnapshot`,
+  `buildTimeStopSnapshot`, `buildTp1FullCloseSnapshot` (TP1 sem runner,
+  distinto do `buildTp1HitSnapshot` da Fase 3 — ali a op CONTINUA gerenciada,
+  aqui ela TERMINA), `buildStopHitPriceCheckSnapshot`/
+  `buildTp2HitPriceCheckSnapshot` (`priceCheckActiveOpsInner` não tem
+  candle/ATR/Chop/RF/SMC em escopo — snapshot deliberadamente "magro",
+  `reason_code` com sufixo `_price_check` para não fingir paridade com o
+  loop candle-based) e `buildManualCloseSnapshot` (fechamento/invalidação
+  manual via `Trades.jsx`, `facts: {}` — decisão humana, não medida).
+- Integrados em 9 pontos de `scanner.js` (8 em `persistScanResults`
+  candle-based + 3 em `priceCheckActiveOpsInner`, sendo TP1_FULL do
+  price-check deixado de fora, ver "fora desta rodada" abaixo): uma linha
+  `updatePayload.decision_snapshot = build...({...})` logo após cada
+  `if`/`else if` que já decide `newStatus`, usando só variáveis já em
+  escopo — nenhum fetch novo, nenhum recálculo de indicador, nenhum
+  threshold/gate tocado. Confirmado por leitura direta que os gates de
+  HOLDING/PROTECTED (`if (newStatus === op.status...)`/`if (newStatus ===
+  'RUNNER_ACTIVE'...)`) já ficam falsos automaticamente quando um EXIT da
+  MESMA passada mudou `newStatus` — exclusão mútua por construção, sem
+  guard extra necessário. Nenhuma escrita nova ao Postgres: a transação de
+  `transitionTradeOp` já ia acontecer para gravar o EXIT em si (diferente
+  do item 181, que precisou de write-on-change porque criava uma escrita
+  nova). Confirmado também que nenhum branch de EXIT altera `newCurrentStop`
+  antes da transação — o guard que descarta `decision_snapshot` quando
+  `clampMonotonicStop` rejeita o candidato (`db/pgEntitiesCore.mjs:626`,
+  item 182 addendum) nunca dispara para estes 9 pontos, porque
+  `clampedStop === patch.current_stop` sempre que o stop não muda.
+- `src/pages/Trades.jsx`: `closeMutation`/`invalidateMutation` ganharam
+  `decision_snapshot: buildManualCloseSnapshot(...)` no patch — mesmo
+  `manualTransition`/CAS de sempre, só um campo a mais, sem novo caminho de
+  mutação.
+
+**Sub-fase 2 — Telegram + Histórico consumindo a mesma explicação (fecha a
+divergência original).**
+
+- `src/lib/decisionExplanation.js`: 11 entradas novas em `OPERATION_COPY` +
+  `formatOperationEvidence` (9 automáticas + 2 manuais), mesmo padrão
+  fail-closed das 9 já existentes. `explainOperationDecision` não precisou
+  de nenhuma mudança estrutural — só popular o dicionário.
+- `src/lib/telegram.js` + `scripts/adminTelegram.js` (espelho manual,
+  mantido — sem build step compartilhado): as 6 funções `notify*` de
+  fechamento (`notifyTP1Hit`, `notifyTP2Hit`, `notifyStopHit`,
+  `notifyInvalidated`, `notifyTimeStop`, `notifyChopExit`) passaram a
+  acrescentar `why`/`evidence` de `explainOperationDecision(op)`, no lugar
+  do texto solto 100% hardcoded que cada uma tinha (ex.: `"🔄 Estrutura/
+  tendência reverteu"`) — título/emoji/preços/`AMBIGUOUS_EXIT_NOTE`
+  continuam intocados. `op` já chega em `notify*` mesclado com
+  `updatePayload` (`notifiedOp = {...op, ...updatePayload,...}`,
+  `scanner.js`), então o `decision_snapshot` novo já estava disponível sem
+  nenhuma mudança estrutural nos pontos de chamada. `notifyTP1Hit` resolve
+  corretamente entre 3 `reason_code` possíveis no momento do TP1
+  (`tp1_hit_stop_to_breakeven`/`tp1_hit_stop_unchanged` da Fase 3,
+  `tp1_full_close` desta fase) — `explainOperationDecision` só olha
+  `reason_code`, agnóstica de qual fase o criou.
+- `src/pages/TradeHistory.jsx`: bloco "Analysis hint" (texto 100%
+  duplicado e hardcoded por outcome win/BE/loss) agora usa
+  `explainOperationDecision(op)` quando `decision_snapshot` existe, com
+  fallback para o texto antigo em op legada — zero regressão em histórico
+  anterior a esta fase. Banner de `exit_ambiguous` NÃO foi tocado
+  (informação ortogonal, fora do que foi pedido).
+- `src/components/dashboard/TradeCard.jsx`: removido o gate `isOpenOp` de
+  `OperationDecisionNote` — antes só renderizava em operação ABERTA porque
+  EXIT não tinha snapshot próprio (comentário do item 182 explicava isso);
+  agora renderiza sempre que `decision_snapshot` existir, como acréscimo
+  abaixo do `StatusBanner`/`closedBanner` existente (design visual
+  intocado). Fixture compartilhada de smoke test
+  (`src/pages/__fixtures__/renderPage.jsx`) ganhou `decision_snapshot` na
+  op STOP_HIT de exemplo, para exercitar esse render em todas as páginas
+  que a usam.
+
+**Sub-fase 3 — Timeline: v1 barata, sem `decision_history` (decisão
+deliberada, avaliação honesta abaixo).**
+
+`decision_history` completo em `TradeOperation` exigiria alterar
+`transitionTradeOp` (`db/pgEntitiesCore.mjs`, o código mais sensível do
+projeto) para ler o array dentro da transação, fazer append com cap e
+dedupe por candle — lógica nova na seção mais crítica do motor, sem nenhum
+teste hoje que exercite HOLDING→PROTECTED→EXIT em sequência para validar.
+O pedido do usuário ("mostrar mudanças de decisão ao longo do tempo") não
+exige necessariamente reter TODO o histórico. Implementado em vez disso:
+`decisionSnapshotEvent(op)` (novo, `src/lib/eventTimeline.js`) — um ponto
+na timeline com a decisão ATUAL (não histórico), no mesmo shape
+`TimelineEvent` que `EventTimeline.jsx` já renderiza genericamente via
+`.map()` sem `switch` por tipo — **zero mudança em `EventTimeline.jsx`**.
+Dedup explícito contra os demais eventos (`opened`/`tp1`/`tp2`/`stop`/
+`closed`): um EXIT grava `decision_snapshot` na MESMA transação que fecha a
+operação, então sem o guard o evento "Última avaliação: Stop atingido"
+apareceria duas vezes no mesmo instante que "Stop atingido". `label` usa
+`explainOperationDecision(op).headline` (português simples, mesmo texto do
+painel/Telegram) em vez do `reason_code` cru. `decision_history` completo
+fica registrado como extensão futura explícita, só se pedida separadamente,
+com sua própria rodada de teste de concorrência dedicado.
+
+**Fora desta rodada (deliberado, documentado).**
+
+- `decision_history` completo (ver acima).
+- `TP1_FULL` dentro de `priceCheckActiveOpsInner` — sem candle,
+  `barsSinceEntry` não existe ali com o mesmo significado; trivial de
+  adicionar depois se pedido, não inventado aqui.
+- Unificação do banner `exit_ambiguous` entre Telegram/`TradeCard.jsx`/
+  `TradeHistory.jsx` (hoje formatado 3x, um por canal) — ortogonal ao que
+  foi pedido ("a MESMA explicação" se refere ao motivo da decisão, não a
+  este aviso lateral).
+
+**Riscos residuais conhecidos.**
+
+- 13 textos novos em português (11 `reason_code` de EXIT + 2 manuais) —
+  superfície de revisão de copy real, não só código.
+- `scripts/adminTelegram.js` não tinha teste automatizado direto para
+  `notify*` antes desta rodada — ganhou cobertura simétrica ao
+  `telegram.test.js` nesta mesma rodada, mas é espelho manual sem build
+  step compartilhado; uma divergência futura entre os dois arquivos só
+  seria pega manualmente ou em produção (risco pré-existente, não
+  introduzido aqui).
+
+**Verificação final.** `npm run lint && npm test && npm run build && npm run
+build:scan` limpos; suíte completa 1931 testes, zero regressão. Confirmado
+por leitura do bundle gerado (`scripts/dist/run-scan.mjs`) que os builders
+novos e `explainOperationDecision` entram no bundle do cron. Revisão
+adversarial do diff de `scanner.js` (skill `sentinel-trading-engine-review`):
+nenhum threshold/gate mudou, nenhuma escrita nova foi introduzida, operação
+legada sem `decision_snapshot` continua renderizando normalmente nos 4
+consumidores (painel, Telegram, histórico, timeline).

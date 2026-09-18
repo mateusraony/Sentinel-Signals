@@ -274,3 +274,250 @@ export function buildRunnerRfManagedSnapshot({
     dataStatus: distanceToStop == null ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
   });
 }
+
+// Fase 4 — Explainability V2 (EXIT). decision é sempre DECISION.EXIT. Cada
+// ponto de interceptação de scanner.js ganha seu PRÓPRIO reason_code — nunca
+// um builder genérico "exit" — porque os gates por trás de cada saída são
+// diferentes (ex.: INVALIDATED pré-TP1 é decidido por CONTAGEM de candles
+// contra o RF revertido; INVALIDATED pós-TP1/RF é uma comparação DIRETA no
+// candle atual, sem contador nenhum — misturar os dois num só reason_code
+// descreveria o mecanismo errado num dos dois casos). reason_code aqui NÃO é
+// o mesmo vocabulário de TradeOperation.closed_reason (que continua existindo
+// e é gravado do mesmo jeito de sempre) — é sempre igual ou MAIS granular,
+// nunca mais grosseiro (STOP_HIT/TP2_HIT nem têm closed_reason hoje). Cada
+// builder só empacota facts que scanner.js já tem em escopo no ponto exato da
+// decisão — nunca reimplementa o if/else que decidiu newStatus.
+
+// STOP_HIT, pré-TP1 (scanner.js ~3804) ou pós-TP1/runner (~4005) — `stage`
+// distingue os dois só para o reason_code; os facts são os mesmos porque o
+// gate em si (stopCheckPrice cruzou op.current_stop) é idêntico nos dois
+// pontos.
+export function buildStopHitSnapshot({
+  stage, stop, closePrice, stopCheckPrice, entryPrice, barsSinceEntry, ambiguous = false,
+  executor = null, marketTime = null, evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: stage === 'runner' ? 'stop_hit_runner' : 'stop_hit_pre_tp1',
+    facts: {
+      stop: Number.isFinite(stop) ? stop : null,
+      close_price: Number.isFinite(closePrice) ? closePrice : null,
+      stop_check_price: Number.isFinite(stopCheckPrice) ? stopCheckPrice : null,
+      entry_price: Number.isFinite(entryPrice) ? entryPrice : null,
+      bars_since_entry: Number.isFinite(barsSinceEntry) ? barsSinceEntry : null,
+      exit_ambiguous: Boolean(ambiguous),
+    },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: (stop == null || stopCheckPrice == null) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// TP2_HIT (scanner.js ~4016) — sempre pós-TP1/runner, único ponto candle-based.
+export function buildTp2HitSnapshot({
+  tp2, tpCheckPrice, entryPrice, executor = null, marketTime = null,
+  evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: 'tp2_hit',
+    facts: {
+      tp2: Number.isFinite(tp2) ? tp2 : null,
+      tp_check_price: Number.isFinite(tpCheckPrice) ? tpCheckPrice : null,
+      entry_price: Number.isFinite(entryPrice) ? entryPrice : null,
+    },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: (tp2 == null || tpCheckPrice == null) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// INVALIDATED, pré-TP1 (scanner.js ~3814) — único gate movido por CONTAGEM de
+// candles com RF revertido (rf_reverse_bars_count/nextRfReverseCount, P0-e).
+// reverseBars/invalidRfBars são os dois valores que invalidationTriggered de
+// fato compara — nunca reusar este builder no pós-TP1, que não tem contador.
+export function buildInvalidatedRfBarsSnapshot({
+  reverseBars, invalidRfBars, rfDir, rfFilt, closePrice,
+  executor = null, marketTime = null, evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: 'invalidated_rf_bars_pre_tp1',
+    facts: {
+      reverse_bars: Number.isFinite(reverseBars) ? reverseBars : null,
+      invalid_rf_bars: Number.isFinite(invalidRfBars) ? invalidRfBars : null,
+      rf_direction: rfDir ?? null,
+      rf_filter_value: Number.isFinite(rfFilt) ? rfFilt : null,
+      close_price: Number.isFinite(closePrice) ? closePrice : null,
+    },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: !Number.isFinite(reverseBars) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// INVALIDATED, pós-TP1, cascata RF (scanner.js ~4043) — comparação DIRETA no
+// candle atual (rfInval), sem contador de barras. Reason_code separado do
+// builder acima de propósito (ver comentário de cabeçalho desta seção).
+export function buildInvalidatedRfDirectSnapshot({
+  rfDir, rfFilt, closePrice, executor = null, marketTime = null,
+  evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: 'invalidated_rf_direct_runner',
+    facts: {
+      rf_direction: rfDir ?? null,
+      rf_filter_value: Number.isFinite(rfFilt) ? rfFilt : null,
+      close_price: Number.isFinite(closePrice) ? closePrice : null,
+    },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: (rfFilt == null || closePrice == null) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// INVALIDATED, pós-TP1, cascata SMC 1h_5m (scanner.js ~4025) — estrutura
+// reverteu (tfData.smc.trend), gate independente da RF.
+export function buildInvalidatedSmcStructureSnapshot({
+  smcTrend, isBuy, closePrice, executor = null, marketTime = null,
+  evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: 'invalidated_smc_structure',
+    facts: {
+      smc_trend: smcTrend ?? null,
+      signal_direction: isBuy ? 1 : -1,
+      close_price: Number.isFinite(closePrice) ? closePrice : null,
+    },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: smcTrend == null ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// CLOSED/CHOP_EXIT (scanner.js ~3820) — Choppiness passou do limite pré-TP1.
+export function buildChopExitSnapshot({
+  chop, chopMax, closePrice, executor = null, marketTime = null,
+  evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: 'chop_exit',
+    facts: {
+      chop: Number.isFinite(chop) ? chop : null,
+      chop_max: chopMax ?? null,
+      close_price: Number.isFinite(closePrice) ? closePrice : null,
+    },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: chop == null ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// CLOSED/TIME_STOP (scanner.js ~3826) — prazo máximo sem TP1, por tempo
+// decorrido (barsOpen), não candle novo.
+export function buildTimeStopSnapshot({
+  barsOpen, timeStopBars, entryRef, closePrice, executor = null, marketTime = null,
+  evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: 'time_stop',
+    facts: {
+      bars_open: Number.isFinite(barsOpen) ? barsOpen : null,
+      time_stop_bars: Number.isFinite(timeStopBars) ? timeStopBars : null,
+      entry_ref: entryRef ?? null,
+      close_price: Number.isFinite(closePrice) ? closePrice : null,
+    },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: !Number.isFinite(barsOpen) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// CLOSED/TP1_FULL (scanner.js ~3845) — sem runner, TP1 encerra a posição por
+// completo. Distinto de buildTp1HitSnapshot (Fase 3, que é HOLDING/PROTECTED
+// com runner ativo) — aqui a operação termina, não continua gerenciada.
+export function buildTp1FullCloseSnapshot({
+  tp1, entryPrice, barsSinceEntry, executor = null, marketTime = null,
+  evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: 'tp1_full_close',
+    facts: {
+      tp1: Number.isFinite(tp1) ? tp1 : null,
+      entry_price: Number.isFinite(entryPrice) ? entryPrice : null,
+      bars_since_entry: Number.isFinite(barsSinceEntry) ? barsSinceEntry : null,
+    },
+    evaluatedAt,
+    marketTime,
+    executor,
+    dataStatus: DATA_STATUS.LIVE,
+  });
+}
+
+// priceCheckActiveOpsInner não tem candle/ATR/Chop/ADX/RF/SMC em escopo —
+// nunca inventar esses facts aqui. reason_code com sufixo _price_check para
+// não fingir paridade com os builders candle-based acima, que têm muito mais
+// contexto disponível.
+export function buildStopHitPriceCheckSnapshot({
+  stop, price, executor = null, evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: 'stop_hit_price_check',
+    facts: {
+      stop: Number.isFinite(stop) ? stop : null,
+      price: Number.isFinite(price) ? price : null,
+    },
+    evaluatedAt,
+    marketTime: null,
+    executor,
+    dataStatus: (stop == null || price == null) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+export function buildTp2HitPriceCheckSnapshot({
+  tp2, price, executor = null, evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: 'tp2_hit_price_check',
+    facts: {
+      tp2: Number.isFinite(tp2) ? tp2 : null,
+      price: Number.isFinite(price) ? price : null,
+    },
+    evaluatedAt,
+    marketTime: null,
+    executor,
+    dataStatus: (tp2 == null || price == null) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
+// Fechamento manual (src/pages/Trades.jsx) — decisão humana pelo painel, não
+// uma condição medida pelo motor. `facts` fica vazio de propósito: não há
+// nada numérico a atribuir a um clique do usuário; o motivo já é o próprio
+// reason_code/closed_reason correspondente.
+export function buildManualCloseSnapshot({
+  status, executor = 'manual', evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: status === 'INVALIDATED' ? 'manual_invalidated' : 'manual_closed',
+    facts: {},
+    evaluatedAt,
+    marketTime: null,
+    executor,
+    dataStatus: DATA_STATUS.LIVE,
+  });
+}

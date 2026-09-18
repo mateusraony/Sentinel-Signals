@@ -139,14 +139,20 @@ describe('TradeCard — decision_snapshot (Fase 3, gestão HOLDING/PROTECTED)', 
     expect(screen.queryByText(/faltam.*até o TP1/)).toBeNull();
   });
 
-  it('operação ENCERRADA com decision_snapshot residual (última passada antes do exit) não mostra o bloco — evitaria "monitorando" numa op já fechada', () => {
+  // Fase 4 — EXIT ganhou builder próprio (buildStopHitSnapshot etc.), então
+  // toda op que fecha a partir de agora carrega um decision_snapshot de EXIT
+  // fresco, nunca mais o HOLDING/PROTECTED residual da última passada aberta
+  // (o gate isOpenOp que escondia esse residual foi removido — ver
+  // docs/known-risks.md). Este teste cobre o caso comum: EXIT.
+  it('operação ENCERRADA com decision_snapshot de EXIT mostra o bloco', () => {
     renderCard(baseOp({
       status: 'STOP_HIT',
       decision_snapshot: {
-        decision: 'HOLDING', reason_code: 'awaiting_tp1',
-        facts: { distance_to_tp1: 10, distance_to_stop: 5 }, data_status: 'LIVE',
+        decision: 'EXIT', reason_code: 'stop_hit_pre_tp1',
+        facts: { stop: 98, stop_check_price: 97.5 }, data_status: 'LIVE',
       },
     }));
-    expect(screen.queryByText('Monitorando')).toBeNull();
+    screen.getByText('Stop atingido');
+    screen.getByText(/stop em 98, preço tocou 97.5/);
   });
 });

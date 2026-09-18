@@ -367,13 +367,13 @@ function StatusBanner({ op }) {
   );
 }
 
-// Fase 3 — Explainability V2. Só para operação ABERTA (SIGNAL_CONFIRMED/
-// RUNNER_ACTIVE): `decision_snapshot` não é limpo quando um exit dispara
-// nesta fase (EXIT ainda não tem builder — ver src/lib/decisionSnapshot.js),
-// então uma op FECHADA pode carregar um snapshot HOLDING/PROTECTED da
-// última passada em que ainda estava aberta. Mostrar isso numa op encerrada
-// seria enganoso ("ainda monitorando" numa operação que já acabou) — o
-// `StatusBanner`/`closedBanner` já cobre o encerramento corretamente.
+// Fase 3 — Explainability V2 (HOLDING/PROTECTED, operação aberta). Fase 4
+// estendeu decision_snapshot para cobrir EXIT também (scanner.js grava um
+// snapshot de EXIT no MESMO momento em que a operação fecha — ver
+// src/lib/decisionSnapshot.js) — por isso este componente não é mais
+// restrito a operação aberta: renderiza sempre que decision_snapshot existir,
+// como acréscimo abaixo do StatusBanner/closedBanner (que continuam sendo a
+// fonte do resultado categórico + cor).
 function OperationDecisionNote({ op }) {
   if (!op.decision_snapshot) return null;
   const { headline, evidence } = explainOperationDecision(op);
@@ -391,12 +391,11 @@ function Details({ op }) {
   const marketSourceLabel = MARKET_SOURCE_LABEL[op.market_source];
   const exitModeLabel = { RANGE_FILTER: '🔵 RF', ATR_TRAILING: '🟡 ATR Trail', HYBRID_RF_ATR: '🟣 RF+ATR' }[op.exit_mode] || op.exit_mode;
   const reasons = op.signal_reasons || [];
-  const isOpenOp = OPEN_STATUSES.has(op.status);
 
   return (
     <div className="space-y-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
       <StatusBanner op={op} />
-      {isOpenOp && <OperationDecisionNote op={op} />}
+      <OperationDecisionNote op={op} />
 
       <ScoreBar score={op.score} />
       <TFTrendRow op={op} />
