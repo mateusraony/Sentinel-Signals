@@ -30,13 +30,31 @@
 // quebra com ERR_MODULE_NOT_FOUND antes de rodar qualquer checagem —
 // achado de revisão (Codex, PR #376).
 import { rejectionCopy, classifySignal } from './signalStatus.js';
+import { formatPrice } from './priceProximity.js';
 
 const NOTHING_TO_DO = 'Nada a fazer — o app continua verificando sozinho.';
 
+// Osciladores/contagens de barra (ADX, Chop, bars_open etc.) — arredondamento
+// fixo de 1 casa é correto aqui (escala 0-100 ou inteiro), NUNCA usar para
+// preço/distância de preço (ver formatPriceNum abaixo).
 function formatNum(value) {
   if (!Number.isFinite(value)) return null;
   const rounded = Math.round(value * 10) / 10;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+// Fatos em escala de PREÇO do ativo (distâncias, stop/tp, deltas assinados —
+// ver src/lib/decisionSnapshot.js's signedMove()). `formatNum` acima esmaga
+// esses valores em 1 casa fixa: correto para BTC (~65000), destrutivo para um
+// ativo sub-$1 (ex.: ETHFI ~0.69 vira "0.7"). Reusa a escala adaptativa já em
+// produção nos chips STOP/ENTRADA/TP1/TP2 (`formatPrice`,
+// src/lib/priceProximity.js) — mesma fonte de verdade, sem duplicar limiares.
+// Contrato diferente de propósito: `formatPrice` nunca devolve `null` (usa
+// '—' para entrada inválida); aqui preservamos o `null` de `formatNum`
+// porque os call-sites abaixo dependem dele para omitir a frase inteira.
+function formatPriceNum(value) {
+  if (!Number.isFinite(value)) return null;
+  return formatPrice(value);
 }
 
 function directionLabel(dir) {
@@ -272,15 +290,15 @@ function formatOperationEvidence(snapshot) {
   const { reason_code: reasonCode, facts = {} } = snapshot;
 
   if (reasonCode === 'awaiting_tp1') {
-    const toTp1 = formatNum(facts.distance_to_tp1);
-    const toStop = formatNum(facts.distance_to_stop);
+    const toTp1 = formatPriceNum(facts.distance_to_tp1);
+    const toStop = formatPriceNum(facts.distance_to_stop);
     if (toTp1 == null || toStop == null) return null;
     return `Medido: faltam ${toTp1} até o TP1, ${toStop} de folga até o stop.`;
   }
 
   if (reasonCode === 'tp1_hit_stop_to_breakeven' || reasonCode === 'tp1_hit_stop_unchanged') {
-    const before = formatNum(facts.stop_before);
-    const after = formatNum(facts.stop_after);
+    const before = formatPriceNum(facts.stop_before);
+    const after = formatPriceNum(facts.stop_after);
     if (before == null || after == null) return null;
     return reasonCode === 'tp1_hit_stop_to_breakeven'
       ? `Medido: stop foi de ${before} para ${after} (entrada).`
@@ -288,46 +306,55 @@ function formatOperationEvidence(snapshot) {
   }
 
   if (reasonCode === 'pre_tp1_protection_armed_not_triggered' || reasonCode === 'breakeven_triggered') {
-    const move = formatNum(facts.favorable_move);
-    const required = formatNum(facts.required_move);
+    const move = formatPriceNum(facts.favorable_move);
+    const required = formatPriceNum(facts.required_move);
     if (move == null || required == null) return null;
-    const base = `Medido: movimento favorável ${move}, necessário ${required} para acionar.`;
+    // facts.favorable_move nasce negativo quando o preço abre CONTRA a
+    // posição logo após a entrada (gap) — comum, não um caso raro. Chamar
+    // um valor negativo de "favorável" é uma contradição de linguagem
+    // (achado da varredura geral, 2026-09-18).
+    const base = facts.favorable_move < 0
+      ? `Medido: ainda sem movimento favorável (${move}), necessário ${required} para acionar.`
+      : `Medido: movimento favorável ${move}, necessário ${required} para acionar.`;
     if (reasonCode === 'breakeven_triggered') {
-      const before = formatNum(facts.stop_before);
-      const after = formatNum(facts.stop_after);
+      const before = formatPriceNum(facts.stop_before);
+      const after = formatPriceNum(facts.stop_after);
       return before != null && after != null ? `${base} Stop foi de ${before} para ${after}.` : base;
     }
     return base;
   }
 
   if (reasonCode === 'pre_tp1_trailing_dormant' || reasonCode === 'pre_tp1_trailing_advanced') {
-    const required = formatNum(facts.required_move);
+    const required = formatPriceNum(facts.required_move);
     if (facts.favorable_move == null) {
       return required != null ? `Medido: ainda sem movimento favorável registrado — necessário ${required} para a trilha começar.` : null;
     }
-    const move = formatNum(facts.favorable_move);
+    const move = formatPriceNum(facts.favorable_move);
     if (move == null || required == null) return null;
-    const base = `Medido: movimento favorável ${move}, gatilho da trilha em ${required}.`;
+    // Mesma correção de linguagem do bloco acima para valor negativo.
+    const base = facts.favorable_move < 0
+      ? `Medido: ainda sem movimento favorável (${move}), gatilho da trilha em ${required}.`
+      : `Medido: movimento favorável ${move}, gatilho da trilha em ${required}.`;
     if (reasonCode === 'pre_tp1_trailing_advanced') {
-      const before = formatNum(facts.stop_before);
-      const after = formatNum(facts.stop_after);
+      const before = formatPriceNum(facts.stop_before);
+      const after = formatPriceNum(facts.stop_after);
       return before != null && after != null ? `${base} Stop foi de ${before} para ${after}.` : base;
     }
     return base;
   }
 
   if (reasonCode === 'runner_rf_managed') {
-    const toStop = formatNum(facts.distance_to_stop);
+    const toStop = formatPriceNum(facts.distance_to_stop);
     if (toStop == null) return null;
-    const toTp2 = formatNum(facts.distance_to_tp2);
+    const toTp2 = formatPriceNum(facts.distance_to_tp2);
     return toTp2 != null
       ? `Medido: ${toStop} de folga até o stop, faltam ${toTp2} até o TP2.`
       : `Medido: ${toStop} de folga até o stop.`;
   }
 
   if (reasonCode === 'runner_trailing_dormant' || reasonCode === 'runner_trailing_advanced') {
-    const before = formatNum(facts.stop_before);
-    const after = formatNum(facts.stop_after);
+    const before = formatPriceNum(facts.stop_before);
+    const after = formatPriceNum(facts.stop_after);
     if (reasonCode === 'runner_trailing_advanced' && before != null && after != null) {
       return `Medido: stop foi de ${before} para ${after}.`;
     }
@@ -336,16 +363,16 @@ function formatOperationEvidence(snapshot) {
 
   // Fase 4 — EXIT.
   if (reasonCode === 'stop_hit_pre_tp1' || reasonCode === 'stop_hit_runner') {
-    const stop = formatNum(facts.stop);
+    const stop = formatPriceNum(facts.stop);
     if (stop == null) return null;
-    const price = formatNum(facts.stop_check_price);
+    const price = formatPriceNum(facts.stop_check_price);
     return price != null ? `Medido: stop em ${stop}, preço tocou ${price}.` : `Medido: stop em ${stop}.`;
   }
 
   if (reasonCode === 'tp2_hit') {
-    const tp2 = formatNum(facts.tp2);
+    const tp2 = formatPriceNum(facts.tp2);
     if (tp2 == null) return null;
-    const price = formatNum(facts.tp_check_price);
+    const price = formatPriceNum(facts.tp_check_price);
     return price != null ? `Medido: TP2 em ${tp2}, preço tocou ${price}.` : `Medido: TP2 em ${tp2}.`;
   }
 
@@ -353,12 +380,12 @@ function formatOperationEvidence(snapshot) {
     const bars = formatNum(facts.reverse_bars);
     const req = formatNum(facts.invalid_rf_bars);
     if (bars == null || req == null) return null;
-    return `Medido: ${bars} de ${req} candles necessários com o indicador contra a posição.`;
+    return `Medido: ${bars} candles com o indicador contra a posição (necessário: ${req}).`;
   }
 
   if (reasonCode === 'invalidated_rf_direct_runner') {
-    const filt = formatNum(facts.rf_filter_value);
-    const close = formatNum(facts.close_price);
+    const filt = formatPriceNum(facts.rf_filter_value);
+    const close = formatPriceNum(facts.close_price);
     if (filt == null || close == null) return null;
     return `Medido: preço ${close} contra o filtro em ${filt}.`;
   }
@@ -379,31 +406,36 @@ function formatOperationEvidence(snapshot) {
     const open = formatNum(facts.bars_open);
     const max = formatNum(facts.time_stop_bars);
     if (open == null || max == null) return null;
-    return `Medido: ${open} de ${max} candles permitidos sem atingir TP1.`;
+    // Frase reescrita para não depender de open <= max: `bars_open` conta
+    // por tempo decorrido (não por candle), então pode ultrapassar
+    // `time_stop_bars` de verdade quando o cron fica indisponível — "X de Y"
+    // vira gramaticalmente sem sentido nesse caso (achado da varredura
+    // geral, 2026-09-18).
+    return `Medido: ${open} candles em aberto sem atingir TP1 (limite: ${max}).`;
   }
 
   if (reasonCode === 'tp1_full_close') {
-    const tp1 = formatNum(facts.tp1);
+    const tp1 = formatPriceNum(facts.tp1);
     return tp1 != null ? `Medido: TP1 em ${tp1}.` : null;
   }
 
   if (reasonCode === 'stop_hit_price_check') {
-    const stop = formatNum(facts.stop);
-    const price = formatNum(facts.price);
+    const stop = formatPriceNum(facts.stop);
+    const price = formatPriceNum(facts.price);
     if (stop == null || price == null) return null;
     return `Medido: stop em ${stop}, preço ao vivo ${price}.`;
   }
 
   if (reasonCode === 'tp2_hit_price_check') {
-    const tp2 = formatNum(facts.tp2);
-    const price = formatNum(facts.price);
+    const tp2 = formatPriceNum(facts.tp2);
+    const price = formatPriceNum(facts.price);
     if (tp2 == null || price == null) return null;
     return `Medido: TP2 em ${tp2}, preço ao vivo ${price}.`;
   }
 
   if (reasonCode === 'tp1_full_close_price_check') {
-    const tp1 = formatNum(facts.tp1);
-    const price = formatNum(facts.price);
+    const tp1 = formatPriceNum(facts.tp1);
+    const price = formatPriceNum(facts.price);
     if (tp1 == null || price == null) return null;
     return `Medido: TP1 em ${tp1}, preço ao vivo ${price}.`;
   }

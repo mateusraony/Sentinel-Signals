@@ -23771,3 +23771,132 @@ pré-TP1). Zero gate/threshold tocado, zero escrita nova. Regressão em
 limpos; `npx tsc -p ./jsconfig.json` continua nos mesmos 16 erros de baseline
 (nenhum novo, lição do addendum anterior sobre excesso de propriedade em
 literal de objeto aplicada desde o início aqui).
+
+**Addendum (2026-09-18) — "SEM COTAÇÃO" investigado + precisão de
+arredondamento corrigida + 3 achados de varredura geral, todos corrigidos.**
+Disparado por screenshot real do usuário (painel de produção, Brave/macOS):
+duas operações abertas (ETHFI/USDT, FET/USDT) mostrando "SEM COTAÇÃO" e texto
+de evidência com arredondamento grosseiro ("Stop foi de 0.6 para 0.7" para um
+ativo em ~0.68773). Pedido explícito: investigar os dois, usar agentes, e ao
+final fazer uma varredura por qualquer outro problema não mencionado. 3
+agentes Explore em paralelo (causa raiz de "SEM COTAÇÃO", alcance do bug de
+arredondamento, varredura geral), achados abaixo — todos verificados por
+leitura direta do código antes de corrigir, nenhum aceito por relato do
+agente sozinho.
+
+1. **Bug real: `formatNum` (`decisionExplanation.js`) arredondava PREÇO com a
+   mesma régua de OSCILADOR.** `Math.round(v*10)/10` é correto para ADX/Chop
+   (0-100) e contagem de barras, mas **24 das 29 chamadas** formatavam
+   valores em escala de PREÇO (distâncias, stop/tp, deltas assinados —
+   `signedMove()`/`atrValue*mult` em `decisionSnapshot.js`) — em ETHFI
+   (~0.69)/FET (~0.17) isso esmagava para "0" ou 1 casa só, exatamente o
+   sintoma do screenshot. Corrigido com um formatador novo
+   (`formatPriceNum`) que reusa a escala adaptativa já em produção nos
+   chips STOP/ENTRADA/TP1/TP2 (`formatPrice`, `src/lib/priceProximity.js`),
+   preservando o contrato `null`-para-ausente que os call-sites de
+   `decisionExplanation.js` dependem (diferente de `formatPrice`, que
+   devolve `'—'`). `formatNum` original mantido, sem tocar, para os 5 campos
+   legitimamente 1-casa/inteiros (adx/chop/contagens de barra). Sem risco de
+   ciclo de import (`priceProximity.js`/`signalStatus.js` são ambos
+   dependency-free). Regressão: casos concretos ETHFI-like (~0.69, stop
+   0.612345→0.68773 preservando 5 casas) e BTC-like (>1000, sem regredir
+   pra formatação grosseira) em `decisionExplanation.test.js`, mais
+   atualização de ~20 asserções pré-existentes que hard-codavam o resultado
+   antigo do bug (10, 95, 100, 98... viravam "10.0000"/"95.0000"/"100.00"
+   etc. — números redondos escondiam o bug nos testes originais).
+   `telegram.test.js`/`adminTelegram.test.js`/`TradeCard.test.jsx` também
+   atualizados (mesmo texto de evidência, consumido nos 3 lugares).
+   **Encontrado mas não corrigido nesta rodada** (fora do bug relatado,
+   registrado para decisão separada): `src/lib/telegram.js`/
+   `scripts/adminTelegram.js` têm uma `fmtP()` própria, já com escala
+   adaptativa mas com thresholds divergentes de `formatPrice` (corta em
+   10000 em vez de 1000, sem faixa própria de 0.01/0.0001) — duplicação
+   pré-existente da mesma família resolvida por `priceProximity.js` em
+   2026-09-04 (ver acima), mas esses dois arquivos nunca migraram para lá.
+
+2. **"SEM COTAÇÃO": comportamento intencional (não mostrar preço velho como
+   "ao vivo", item 153/154) — mas zero instrumentação em todo o caminho.**
+   `useLivePrice.js` (`TradeCard.jsx`) chama `fetchCurrentPrice`
+   (`marketDataProvider.js`, Binance Futures direto do navegador) via
+   TanStack Query; "Sem cotação" só aparece quando NENHUMA leitura teve
+   sucesso desde a montagem do card. Descartado com confiança: símbolo
+   inválido/deslistado (ETHFIUSDT e FETUSDT são pares ativos hoje — FET
+   nunca foi de fato renomeado pra ASI nas exchanges apesar da fusão de
+   protocolo) e normalização de símbolo (sempre maiúsculo/trim, validado na
+   criação do ativo). **Achado real**: zero `logWarn`/`logError`/`console.*`
+   em `TradeCard.jsx` → `useLivePrice.js` → `fetchCurrentPrice` — o erro é
+   engolido pelo `isError` do TanStack Query sem deixar rastro nenhum,
+   tornando a causa HTTP exata (429? CORS? timeout?) impossível de
+   diagnosticar remotamente depois do fato — inclusive esta própria
+   investigação não conseguiu confirmar a causa HTTP da ocorrência relatada
+   porque a sessão do Claude Code não alcança `fapi.binance.com` (mesma
+   classe de bloqueio de rede que já afeta a Binance/Neon aqui, não um 451
+   de datacenter). Corrigido com instrumentação pura (sem mudar retry nem
+   nenhum outro comportamento): `fetchCurrentPrice` agora inclui o status
+   HTTP na mensagem de erro; `useLivePrice.js` loga via `logWarn` (convenção
+   do projeto) quando `isError` e nunca houve leitura bem-sucedida,
+   dedupado por símbolo+mensagem via `useRef` para não repetir a cada ciclo
+   de refetch (30s) enquanto o mesmo erro persistir — não loga o caso
+   "Desatualizado" (`isStale`), que já é visível na UI. **Achado de
+   regressão durante a implementação**: importar `src/lib/logger.js` em
+   `useLivePrice.js` puxa `@/api/entities` → `apiBackend.js` →
+   `firebaseClient.js`, que chama `getAuth(app)` NO CARREGAMENTO DO MÓDULO —
+   quebrou `TradeCard.test.jsx` (que nunca precisou mockar Firebase antes,
+   já que `TradeCard.jsx` não tinha esse caminho). Corrigido com o MESMO
+   mock que `src/pages/pagesSmoke.test.jsx` já usa pelo mesmo motivo
+   (`vi.mock('@/lib/firebaseClient', ...)`) — não inventado um mecanismo
+   novo. Suíte completa (1944 testes) rodada depois da correção para
+   confirmar que nenhum outro consumidor de `TradeCard`/`useLivePrice` tinha
+   o mesmo problema (nenhum tinha — os demais já mockavam
+   `marketDataProvider` para nunca entrar em `isError`). Regressão em
+   `useLivePrice.test.jsx` (novo arquivo): confirmada falha antes/passa
+   depois via `git stash` temporário do arquivo de produção.
+   **Causa HTTP exata da ocorrência relatada pelo usuário permanece
+   desconhecida** — só instrumentada para a próxima vez; não é alegado que
+   o problema foi "resolvido" no sentido de causa-raiz identificada.
+
+3. **3 achados reais da varredura geral** (cross-check reason_code↔
+   `OPERATION_COPY`: sem órfãos; offset BRT fixo UTC-3: não é bug, ms UTC
+   absolutos + Brasil sem horário de verão desde 2019; sem TODO/FIXME/typo):
+   - **Banner de STOP_HIT contradizia a evidência quando a operação perdia
+     DEPOIS do TP1.** `TradeCard.jsx`'s `STOP_HIT_BANNER_DEFAULT` sempre
+     dizia "encerrada pela proteção INICIAL" quando `classifyOutcome(op)`
+     era `LOSS`/`UNKNOWN`, mas se `reason_code === 'stop_hit_runner'` o
+     `OperationDecisionNote` logo abaixo dizia "stop já protegido
+     (breakeven ou trilha) DEPOIS do TP1" — contradição direta sobre o
+     mesmo evento. Plausível em produção real (mesma classe do PR #318: um
+     stop pós-TP1 pode fechar líquido em prejuízo por custo/slippage).
+     Corrigido: banner diferenciado por `op.tp1_hit` no fallback
+     (`STOP_HIT_BANNER_DEFAULT_POST_TP1`, novo). Regressão em
+     `TradeCard.test.jsx` (cenário LOSS com TP1 já bancado e stop nunca
+     avançado).
+   - **Frase "X de Y" ficava gramaticalmente invertida quando X>Y.**
+     `time_stop`: `bars_open` conta por tempo decorrido (relógio), não por
+     candle — pode ultrapassar `time_stop_bars` de verdade quando o cron
+     fica indisponível (gap real, já documentado em
+     `.claude/rules/trading-engine.md`), produzindo "Medido: 72 de 48
+     candles permitidos" (sem sentido em português). Reescrito para não
+     depender da ordem dos dois números ("X candles em aberto... (limite:
+     Y)"), mesmo tratamento em `invalidated_rf_bars_pre_tp1`. Regressão com
+     `bars_open > time_stop_bars` explícito.
+   - **"Movimento favorável" rotulando um valor negativo.**
+     `favorable_move` nasce negativo quando o preço abre CONTRA a posição
+     logo após a entrada (gap, confirmado em `scanner.js`) — comum, não
+     raro (qualquer operação ainda no vermelho antes da proteção armar).
+     Corrigido com frase condicional que não chama um valor negativo de
+     "favorável" nos dois reason_codes afetados
+     (`pre_tp1_protection_armed_not_triggered`/`breakeven_triggered` e
+     `pre_tp1_trailing_dormant`/`pre_tp1_trailing_advanced`). Regressão com
+     `favorable_move: -0.8`.
+   - Nota (não é achado novo): `beMsg` em `telegram.js`/`adminTelegram.js`
+     tem a mesma limitação do 1º achado (só olha `op.tp1_hit`, não
+     `classifyOutcome`), mas seu texto já é neutro o bastante para não
+     contradizer o `why` ao lado — não mexido nesta rodada.
+
+**Verificação final.** `npm run lint && npm test (1944, +9 vs. baseline) &&
+npm run build && npm run build:scan` limpos; `npm run typecheck:ratchet`
+no mesmo teto de 16 erros (nenhum novo). Import nativo de
+`decisionExplanation.js` confirmado via `node -e "import(...)"` (caminho do
+`health-audit.mjs`, que não passa pelo esbuild). Todo fix teve regressão
+confirmada falha-antes/passa-depois (reversão temporária de arquivo via
+`git stash`, não só leitura de código).

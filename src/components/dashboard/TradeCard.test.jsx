@@ -12,11 +12,19 @@
 // realized-result source of truth PerformanceOverview.jsx/
 // TradeEntryMarkers.jsx already use — never the stop's geometric posture.
 import React from 'react';
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import TradeCard from './TradeCard.jsx';
+
+// useLivePrice (via TradeCard) passou a logar falha de cotação com
+// src/lib/logger.js (achado "SEM COTAÇÃO", 2026-09-18), que importa
+// @/api/entities → @/lib/apiBackend → @/lib/firebaseClient — e este último
+// chama `getAuth(app)` NO CARREGAMENTO DO MÓDULO, o que lança sem env vars
+// reais de Firebase. Mesmo mock que src/pages/pagesSmoke.test.jsx já usa
+// pelo mesmo motivo — não inventa um mecanismo novo.
+vi.mock('@/lib/firebaseClient', () => ({ db: {}, auth: {}, rtdb: null, app: {} }));
 
 // Sem test.globals no vite.config.js, o cleanup automático do RTL entre
 // testes não é acionado — dois cenários que produzem o MESMO texto de banner
@@ -80,6 +88,19 @@ describe('TradeCard — StatusBanner do STOP_HIT usa classifyOutcome(op), não a
     renderCard(baseOp({ tp1_hit: false, tp1_hit_at: null, current_stop: 59000 }));
     screen.getByText(/Stop atingido — operação encerrada pela proteção inicial/i);
   });
+
+  // Achado da varredura geral (2026-09-18): quando o TP1 já foi bancado mas
+  // o resultado LÍQUIDO ainda assim fecha em prejuízo (ex.: o stop pós-TP1
+  // nunca avançou e o preço despencou até ele), o banner alegava "proteção
+  // INICIAL" enquanto o texto de evidência logo abaixo (OperationDecisionNote,
+  // reason_code stop_hit_runner) diz explicitamente "depois do TP1" —
+  // contradição direta sobre o mesmo evento. `TradeCard.test.jsx` só cobria
+  // o ramo pré-TP1 até esta rodada.
+  it('REGRESSÃO: TP1 já bancado mas resultado líquido é prejuízo — banner não alega mais "proteção inicial"', () => {
+    renderCard(baseOp({ tp1_hit: true, initial_stop: 55000, current_stop: 55000 }));
+    screen.getByText(/Stop atingido — operação encerrada pela proteção pós-TP1/i);
+    expect(screen.queryByText(/proteção inicial/i)).toBeNull();
+  });
 });
 
 describe('TradeCard — StatusBanner do CLOSED usa closedReasonLabel, não "encerrada manualmente" fixo', () => {
@@ -131,7 +152,7 @@ describe('TradeCard — decision_snapshot (Fase 3, gestão HOLDING/PROTECTED)', 
       },
     }));
     screen.getByText('Monitorando');
-    screen.getByText(/faltam 10 até o TP1, 5 de folga até o stop/);
+    screen.getByText(/faltam 10\.0000 até o TP1, 5\.0000 de folga até o stop/);
   });
 
   it('operação aberta sem decision_snapshot (legada) não mostra o bloco nem quebra', () => {
@@ -153,7 +174,7 @@ describe('TradeCard — decision_snapshot (Fase 3, gestão HOLDING/PROTECTED)', 
       },
     }));
     screen.getByText('Stop atingido');
-    screen.getByText(/stop em 98, preço tocou 97.5/);
+    screen.getByText(/stop em 98\.0000, preço tocou 97\.5000/);
   });
 
   // Achado de revisão (Codex, PR #376): uma op fechada ANTES da Fase 4 pode

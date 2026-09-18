@@ -457,7 +457,7 @@ describe('notify* de fechamento — why/evidence de explainOperationDecision (Fa
     }, 95);
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
     expect(text).toContain('O preço tocou o stop antes de TP1 ser atingido.');
-    expect(text).toContain('Medido: stop em 95, preço tocou 94.5.');
+    expect(text).toContain('Medido: stop em 95.0000, preço tocou 94.5000.');
   });
 
   it('notifyInvalidated inclui why/evidence do decision_snapshot', async () => {
@@ -467,7 +467,7 @@ describe('notify* de fechamento — why/evidence de explainOperationDecision (Fa
     }, 97);
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
     expect(text).toContain('O indicador ficou contra a posição por barras suficientes antes de TP1.');
-    expect(text).toContain('Medido: 2 de 2 candles necessários com o indicador contra a posição.');
+    expect(text).toContain('Medido: 2 candles com o indicador contra a posição (necessário: 2).');
   });
 
   it('notifyStopHit sem decision_snapshot (op legada) usa o fallback genérico, nunca lança', async () => {

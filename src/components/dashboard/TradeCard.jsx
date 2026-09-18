@@ -335,6 +335,15 @@ const STOP_HIT_BANNER = {
   BE:  { text: '🔄 Stop no breakeven — sem prejuízo', color: LEVEL_COLOR.stopBe, bg: 'rgba(255,209,102,0.06)' },
 };
 const STOP_HIT_BANNER_DEFAULT = { text: '🛑 Stop atingido — operação encerrada pela proteção inicial', color: LEVEL_COLOR.stop, bg: 'rgba(255,20,120,0.06)' };
+// Achado da varredura geral (2026-09-18): quando classifyOutcome cai em
+// LOSS/UNKNOWN mas o TP1 já tinha sido atingido, o stop que fechou a
+// operação não é mais o "inicial" — é o breakeven/trilha pós-TP1
+// (reason_code `stop_hit_runner`, ver OPERATION_COPY em
+// decisionExplanation.js: "O preço tocou o stop já protegido (breakeven ou
+// trilha) depois do TP1."). O texto abaixo do banner (OperationDecisionNote)
+// já dizia isso — o banner alegando "proteção inicial" ao lado contradizia
+// diretamente a própria explicação da operação.
+const STOP_HIT_BANNER_DEFAULT_POST_TP1 = { text: '🛑 Stop atingido — operação encerrada pela proteção pós-TP1', color: LEVEL_COLOR.stop, bg: 'rgba(255,20,120,0.06)' };
 const CLOSED_BANNER_DEFAULT = { text: '✖ Operação encerrada manualmente', color: '#64748b', bg: 'rgba(100,116,139,0.06)' };
 
 // CLOSED cobre 3 encerramentos automáticos do motor (Time Stop, Chop Exit,
@@ -354,7 +363,7 @@ function StatusBanner({ op }) {
     SIGNAL_CONFIRMED: { text: '👀 Monitorando — aguardar preço avançar para TP1', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
     RUNNER_ACTIVE:    { text: '🚀 Runner ativo — 50% realizado no TP1, deixar correr', color: '#ffd166', bg: 'rgba(255,209,102,0.06)' },
     TP2_HIT:          { text: '🏆 Encerrado no TP2 — alvo final atingido', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
-    STOP_HIT:         STOP_HIT_BANNER[classifyOutcome(op)] ?? STOP_HIT_BANNER_DEFAULT,
+    STOP_HIT:         STOP_HIT_BANNER[classifyOutcome(op)] ?? (op.tp1_hit ? STOP_HIT_BANNER_DEFAULT_POST_TP1 : STOP_HIT_BANNER_DEFAULT),
     INVALIDATED:      { text: '⚠️ Sinal invalidado — não operar agora', color: '#ff9f43', bg: 'rgba(255,159,67,0.06)' },
     CLOSED:           closedBanner(op),
   };
