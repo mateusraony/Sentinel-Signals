@@ -23740,3 +23740,34 @@ adversarial do diff de `scanner.js` (skill `sentinel-trading-engine-review`):
 nenhum threshold/gate mudou, nenhuma escrita nova foi introduzida, operação
 legada sem `decision_snapshot` continua renderizando normalmente nos 4
 consumidores (painel, Telegram, histórico, timeline).
+
+**Addendum (2026-09-18) — 2 bugs reais achados por revisão automática (Codex)
+no PR, corrigidos antes do merge.** (1) `decisionExplanation.js` importava
+`./signalStatus` sem extensão `.js` — Node ESM nativo não resolve isso, e
+`scripts/adminTelegram.js` (novo consumidor desta fase) é importado
+diretamente por `scripts/health-audit.mjs` via `node scripts/health-audit.mjs`
+(sem passar pelo esbuild de `scripts/build-scan.mjs`, que resolveria a
+extensão sozinho) — o job agendado de auditoria de saúde quebraria com
+`ERR_MODULE_NOT_FOUND` antes de checar qualquer coisa. Reproduzido localmente
+(`node -e "import('./scripts/adminTelegram.js')"`) antes e depois da correção.
+(2) `TradeCard.jsx`/`TradeHistory.jsx` tratavam `decision_snapshot` como
+explicação do fechamento em QUALQUER operação fechada — mas uma op fechada
+ANTES desta fase pode carregar um snapshot residual de HOLDING/PROTECTED (a
+Fase 3 nunca escrevia snapshot de EXIT), mostrando "Monitorando"/"Runner
+ativo" numa operação já encerrada há muito tempo. Corrigido: os dois só
+tratam o snapshot como explicação do fechamento quando
+`snapshot.decision === 'EXIT'`. Regressão em `TradeCard.test.jsx` confirmada
+por reversão temporária do guard.
+
+**Addendum (2026-09-18) — TP1_FULL no price-check, última lacuna fechada.**
+`priceCheckActiveOpsInner` ganhou o 3º builder "magro"
+(`buildTp1FullClosePriceCheckSnapshot`, `reason_code:
+tp1_full_close_price_check`), fechando a pendência documentada acima. Mesmo
+padrão dos outros dois builders "magros" (só `tp1`/`price`, sem candle/ATR),
+mesmo ponto de interceptação (dentro do `if (closesFullyAtTp1(op))` do ramo
+pré-TP1). Zero gate/threshold tocado, zero escrita nova. Regressão em
+`scannerStateMachine.test.js` confirmada por reversão temporária. Verificação:
+`npm run lint && npm test (1935) && npm run build && npm run build:scan`
+limpos; `npx tsc -p ./jsconfig.json` continua nos mesmos 16 erros de baseline
+(nenhum novo, lição do addendum anterior sobre excesso de propriedade em
+literal de objeto aplicada desde o início aqui).

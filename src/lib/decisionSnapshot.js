@@ -504,6 +504,27 @@ export function buildTp2HitPriceCheckSnapshot({
   });
 }
 
+// TP1_FULL, price-check (scanner.js priceCheckActiveOpsInner) — 3º ponto
+// "magro" deste loop, fechando a lacuna deixada aberta de propósito na Fase 4
+// (docs/known-risks.md item 183). reason_code próprio (sufixo _price_check),
+// distinto de tp1_full_close (candle-based), mesma disciplina dos outros dois.
+export function buildTp1FullClosePriceCheckSnapshot({
+  tp1, price, executor = null, evaluatedAt = new Date().toISOString(),
+}) {
+  return baseSnapshot({
+    decision: DECISION.EXIT,
+    reasonCode: 'tp1_full_close_price_check',
+    facts: {
+      tp1: Number.isFinite(tp1) ? tp1 : null,
+      price: Number.isFinite(price) ? price : null,
+    },
+    evaluatedAt,
+    marketTime: null,
+    executor,
+    dataStatus: (tp1 == null || price == null) ? DATA_STATUS.UNKNOWN : DATA_STATUS.LIVE,
+  });
+}
+
 // Fechamento manual (src/pages/Trades.jsx) — decisão humana pelo painel, não
 // uma condição medida pelo motor. `facts` fica vazio de propósito: não há
 // nada numérico a atribuir a um clique do usuário; o motivo já é o próprio

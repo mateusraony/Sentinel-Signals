@@ -243,6 +243,10 @@ const OPERATION_COPY = Object.freeze({
     headline: 'TP2 atingido — operação completa',
     why: 'O preço ao vivo atingiu o alvo final.',
   },
+  tp1_full_close_price_check: {
+    headline: 'TP1 atingido — operação encerrada',
+    why: 'Sem runner ativo nesta operação, o TP1 encerra a posição por completo.',
+  },
   manual_closed: {
     headline: 'Encerrada manualmente',
     why: 'Um usuário encerrou esta operação manualmente pelo painel.',
@@ -395,6 +399,13 @@ function formatOperationEvidence(snapshot) {
     const price = formatNum(facts.price);
     if (tp2 == null || price == null) return null;
     return `Medido: TP2 em ${tp2}, preço ao vivo ${price}.`;
+  }
+
+  if (reasonCode === 'tp1_full_close_price_check') {
+    const tp1 = formatNum(facts.tp1);
+    const price = formatNum(facts.price);
+    if (tp1 == null || price == null) return null;
+    return `Medido: TP1 em ${tp1}, preço ao vivo ${price}.`;
   }
 
   return null;

@@ -1652,6 +1652,10 @@ describe('TP1 sem runner — saída terminal (item 46)', () => {
     expect(op.status).toBe('CLOSED');
     expect(op.closed_reason).toBe('TP1_FULL');
     expect(op.exit_price).toBe(103);
+    // Fecha a lacuna deixada aberta de propósito na Fase 4 (known-risks item 183).
+    expect(op.decision_snapshot.decision).toBe('EXIT');
+    expect(op.decision_snapshot.reason_code).toBe('tp1_full_close_price_check');
+    expect(op.decision_snapshot.facts).toEqual({ tp1: 103, price: 104 });
   });
 
   it('libera o ponteiro assetActiveOps na MESMA transação — o ativo volta a poder operar', async () => {
