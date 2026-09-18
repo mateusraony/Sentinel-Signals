@@ -471,6 +471,17 @@ describe('explainOperationDecision — EXIT', () => {
     expect(out.evidence).toBe('Medido: TP2 em 130, preço ao vivo 131.');
   });
 
+  it('tp1_full_close_price_check', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'EXIT', reason_code: 'tp1_full_close_price_check',
+        facts: { tp1: 110, price: 110.5 }, data_status: 'LIVE',
+      },
+    });
+    expect(out.headline).toBe('TP1 atingido — operação encerrada');
+    expect(out.evidence).toBe('Medido: TP1 em 110, preço ao vivo 110.5.');
+  });
+
   it('manual_closed: facts vazio, sem evidência inventada', () => {
     const out = explainOperationDecision({
       decision_snapshot: { decision: 'EXIT', reason_code: 'manual_closed', facts: {}, data_status: 'LIVE' },

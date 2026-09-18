@@ -9,7 +9,8 @@ import {
   buildStopHitSnapshot, buildTp2HitSnapshot, buildInvalidatedRfBarsSnapshot,
   buildInvalidatedRfDirectSnapshot, buildInvalidatedSmcStructureSnapshot,
   buildChopExitSnapshot, buildTimeStopSnapshot, buildTp1FullCloseSnapshot,
-  buildStopHitPriceCheckSnapshot, buildTp2HitPriceCheckSnapshot, buildManualCloseSnapshot,
+  buildStopHitPriceCheckSnapshot, buildTp2HitPriceCheckSnapshot, buildTp1FullClosePriceCheckSnapshot,
+  buildManualCloseSnapshot,
 } from './decisionSnapshot.js';
 
 const AGORA = '2026-09-17T12:00:00.000Z';
@@ -401,6 +402,19 @@ describe('builders magros de priceCheckActiveOpsInner', () => {
 
   it('buildTp2HitPriceCheckSnapshot fail-closed', () => {
     const snap = buildTp2HitPriceCheckSnapshot({ tp2: null, price: 130.2 });
+    expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
+  });
+
+  it('buildTp1FullClosePriceCheckSnapshot só tem tp1/price', () => {
+    const snap = buildTp1FullClosePriceCheckSnapshot({ tp1: 110, price: 110.3, evaluatedAt: AGORA });
+    expect(snap.decision).toBe(DECISION.EXIT);
+    expect(snap.reason_code).toBe('tp1_full_close_price_check');
+    expect(snap.facts).toEqual({ tp1: 110, price: 110.3 });
+    expect(snap.market_time).toBeNull();
+  });
+
+  it('buildTp1FullClosePriceCheckSnapshot fail-closed', () => {
+    const snap = buildTp1FullClosePriceCheckSnapshot({ tp1: null, price: 110.3 });
     expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
   });
 });

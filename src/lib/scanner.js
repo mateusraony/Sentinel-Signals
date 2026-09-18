@@ -42,7 +42,7 @@ import {
   buildStopHitSnapshot, buildTp2HitSnapshot, buildInvalidatedRfBarsSnapshot,
   buildInvalidatedRfDirectSnapshot, buildInvalidatedSmcStructureSnapshot,
   buildChopExitSnapshot, buildTimeStopSnapshot, buildTp1FullCloseSnapshot,
-  buildStopHitPriceCheckSnapshot, buildTp2HitPriceCheckSnapshot,
+  buildStopHitPriceCheckSnapshot, buildTp2HitPriceCheckSnapshot, buildTp1FullClosePriceCheckSnapshot,
 } from './decisionSnapshot';
 import { logInfo, logWarn, logError } from './logger';
 import { backend } from '@/api/entities';
@@ -4477,6 +4477,9 @@ async function priceCheckActiveOpsInner() {
           updatePayload.closed_reason = 'TP1_FULL';
           updatePayload.exit_price = op.tp1;
           updatePayload.closed_at = nowIso;
+          updatePayload.decision_snapshot = buildTp1FullClosePriceCheckSnapshot({
+            tp1: op.tp1, price, executor: EXECUTOR, evaluatedAt: nowIso,
+          });
         } else {
           newStatus = 'RUNNER_ACTIVE';
           newCurrentStop = op.entry_price;
