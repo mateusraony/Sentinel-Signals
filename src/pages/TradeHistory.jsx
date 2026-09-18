@@ -13,7 +13,7 @@ import { formatPrice } from '@/lib/priceProximity';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 import { CandleBoundTag, DetectionLag } from '@/components/dashboard/EventTimeline';
 import { closedReasonLabel } from '@/lib/eventTimeline';
-import { explainOperationDecision } from '@/lib/decisionExplanation';
+import { explainOperationDecision, legacyClosedOperationText } from '@/lib/decisionExplanation';
 
 // Planned risk/reward of the setup — always against the INITIAL stop. The old
 // version divided by current_stop, which post-TP1 is already breakeven and
@@ -49,6 +49,15 @@ function HistoryCard({ op }) {
   const outcome = classifyOutcome(op);
   const isWin = outcome === 'WIN';
   const isBE = outcome === 'BE';
+  // Achado de revisão de clareza (pedido do usuário, 2026-09-18 — precedente
+  // em docs/known-risks.md item 175): a explicação de "por quê" (Fase 4,
+  // explainOperationDecision) só aparecia dentro do bloco expandido, ÚLTIMO
+  // elemento depois de grid de preços/milestones/timeline — o usuário via só
+  // um badge + número ao bater o olho no card fechado. Calculado uma vez,
+  // usado tanto na linha compacta (sempre visível) quanto no bloco expandido
+  // (que agora só acrescenta a evidência numérica, sem repetir o texto).
+  const decisionOut = op.decision_snapshot?.decision === 'EXIT' ? explainOperationDecision(op) : null;
+  const whyText = decisionOut?.why ?? legacyClosedOperationText(op, pnl, outcome, closedReasonLabel(op));
   // BE reclassifica cor E label juntos — antes só o label mudava, deixando o
   // badge rosa (cor de STOP_HIT) ao lado de um P&L amarelo (neutro) no mesmo
   // card. Mesmo padrão que Trades.jsx:226 já usa pro caso equivalente.
@@ -119,6 +128,13 @@ function HistoryCard({ op }) {
               </span>
             )}
           </div>
+          {/* Por quê — sempre visível, sem precisar expandir (achado de
+              clareza acima). Trunca em 2 linhas em telas estreitas em vez de
+              forçar o card a crescer descontroladamente; o texto completo +
+              evidência numérica continuam no expand pra quem quiser mais. */}
+          <p className="mt-1 text-[9px] font-mono leading-relaxed line-clamp-2" style={{ color: 'rgba(255,255,255,0.45)' }}>
+            💡 {whyText}
+          </p>
           <div className="flex items-center gap-3 mt-1 text-[8px] font-mono text-muted-foreground flex-wrap">
             <span>📍 ${formatPrice(op.entry_price)}</span>
             {exitPrice && <span>🚪 ${formatPrice(exitPrice)}</span>}
@@ -260,40 +276,28 @@ function HistoryCard({ op }) {
             </div>
           )}
 
-          {/* Closed reason */}
-          {op.closed_reason && (
+          {/* Motivo de encerramento — só aparece aqui quando NÃO há
+              decision_snapshot de EXIT: nesse caso o "por quê" (linha
+              compacta acima) já é o texto completo e mais informativo que
+              closedReasonLabel; mostrar os dois juntos seria a mesma
+              pergunta respondida 2x de forma fragmentada (achado da revisão
+              de clareza, 2026-09-18). closedReasonLabel só cobre 4 motivos
+              (TIME_STOP/CHOP_EXIT/INVALIDATION/TP1_FULL) — continua útil de
+              propósito nos casos que a explicação nova não cobre. */}
+          {!decisionOut && op.closed_reason && (
             <div className="text-[9px] font-mono px-3 py-2 rounded-lg" style={{ background: 'rgba(255,159,67,0.06)', border: '1px solid rgba(255,159,67,0.15)', color: '#ff9f43' }}>
               ⚠️ Motivo de encerramento: {closedReasonLabel(op) ?? op.closed_reason}
             </div>
           )}
 
-          {/* Analysis hint — Fase 4: mesma explicação que o painel/Telegram
-              usam (explainOperationDecision), em vez de texto duplicado.
-              Sem decision_snapshot (op legada, anterior a esta fase), cai no
-              texto hardcoded de sempre — zero regressão em histórico antigo.
-              Achado de revisão (Codex, PR #376): toda linha aqui já é uma op
-              FECHADA — um decision_snapshot residual de HOLDING/PROTECTED
-              (op fechada ANTES da Fase 4, quando EXIT ainda não gravava seu
-              próprio snapshot) mostraria "Nenhuma condição de saída foi
-              atingida" no lugar do resultado real. Só usa a explicação nova
-              quando o snapshot é realmente de EXIT. */}
-          {(() => {
-            const decisionOut = op.decision_snapshot?.decision === 'EXIT' ? explainOperationDecision(op) : null;
-            return (
-              <div className="text-[9px] font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.1)', color: 'rgba(0,229,255,0.6)' }}>
-                💡 {decisionOut
-                  ? decisionOut.why
-                  : isWin
-                    ? `Operação lucrativa com ${pnl?.toFixed(2)}%${op.tp1_hit && op.tp2_hit ? ' — TP1 e TP2 atingidos, saída ideal.' : op.tp1_hit ? ' — TP1 atingido, runner não completou TP2.' : '.'}`
-                    : isBE ? 'Breakeven — stop movido para entrada após TP1. Capital preservado.'
-                    : pnl !== null ? `Operação com perda de ${Math.abs(pnl).toFixed(2)}%. Revisar o setup e contexto de mercado.`
-                    : 'Operação sem resultado calculável.'}
-                {decisionOut?.evidence && (
-                  <div className="mt-0.5 opacity-70">{decisionOut.evidence}</div>
-                )}
-              </div>
-            );
-          })()}
+          {/* Evidência numérica — o "por quê" (why) já apareceu na linha
+              compacta do card (sempre visível, sem clique); aqui só o dado
+              medido, pra quem quiser o detalhe granular. */}
+          {decisionOut?.evidence && (
+            <div className="text-[9px] font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.1)', color: 'rgba(0,229,255,0.6)' }}>
+              📐 {decisionOut.evidence}
+            </div>
+          )}
         </div>
       )}
     </div>

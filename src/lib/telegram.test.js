@@ -466,7 +466,7 @@ describe('notify* de fechamento — why/evidence de explainOperationDecision (Fa
       decision_snapshot: { decision: 'EXIT', reason_code: 'invalidated_rf_bars_pre_tp1', facts: { reverse_bars: 2, invalid_rf_bars: 2 }, data_status: 'LIVE' },
     }, 97);
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
-    expect(text).toContain('O indicador ficou contra a posição por barras suficientes antes de TP1.');
+    expect(text).toContain('A tendência que gerou esta entrada virou contra a posição por tempo suficiente antes do TP1, invalidando a operação.');
     expect(text).toContain('Medido: 2 candles com o indicador contra a posição (necessário: 2).');
   });
 

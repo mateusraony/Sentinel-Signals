@@ -429,7 +429,7 @@ describe('explainOperationDecision — EXIT', () => {
         facts: { stop: 102 }, data_status: 'LIVE',
       },
     });
-    expect(out.why).toMatch(/já protegido/);
+    expect(out.why).toMatch(/depois do TP1/);
     expect(out.evidence).toBe('Medido: stop em 102.00.');
   });
 

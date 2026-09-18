@@ -389,16 +389,37 @@ function StatusBanner({ op }) {
 // escrevia snapshot de EXIT) — sem este guard, o bloco mostraria
 // "Monitorando"/"Runner ativo" numa operação já encerrada há muito tempo.
 // Op fechada só mostra o bloco quando o snapshot é realmente de EXIT.
+//
+// Achado de clareza (pedido do usuário, 2026-09-18): headline+why só
+// apareciam AQUI, dentro de "Detalhes técnicos" (fechado por padrão) — o
+// resumo agora sobe pra `OperationWhySummary` (sempre visível, sem clique);
+// este bloco vira só a evidência numérica granular, pra quem quiser mais.
 function OperationDecisionNote({ op }) {
   const snapshot = op.decision_snapshot;
   if (!snapshot) return null;
   if (!OPEN_STATUSES.has(op.status) && snapshot.decision !== 'EXIT') return null;
-  const { headline, evidence } = explainOperationDecision(op);
+  const { evidence } = explainOperationDecision(op);
+  if (!evidence) return null;
   return (
-    <div className="text-[9px] font-mono px-3 py-2 rounded-lg" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.12)' }}>
-      <div className="font-semibold" style={{ color: 'rgba(0,229,255,0.8)' }}>{headline}</div>
-      {evidence && <p className="mt-0.5 leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>{evidence}</p>}
+    <div className="text-[9px] font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.12)', color: 'rgba(255,255,255,0.5)' }}>
+      📐 {evidence}
     </div>
+  );
+}
+
+// Resumo compacto do "por quê" — SEMPRE visível (achado de clareza acima),
+// mesmo guard de `OperationDecisionNote` (fail-closed: só quando o snapshot
+// realmente descreve o estado atual da operação).
+function OperationWhySummary({ op }) {
+  const snapshot = op.decision_snapshot;
+  if (!snapshot) return null;
+  if (!OPEN_STATUSES.has(op.status) && snapshot.decision !== 'EXIT') return null;
+  const { headline, why } = explainOperationDecision(op);
+  return (
+    <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
+      💡 <span className="font-semibold" style={{ color: 'rgba(0,229,255,0.8)' }}>{headline}</span>
+      {why ? ` — ${why}` : ''}
+    </p>
   );
 }
 
@@ -571,7 +592,10 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
         {/* 4 · O que acontece a seguir */}
         {isOpenOp && <MilestoneLine op={op} price={price} isStale={isStale} />}
 
-        {/* 5 · O porquê, a um clique */}
+        {/* 4.5 · Por quê — resumo sempre visível, achado de clareza acima */}
+        <OperationWhySummary op={op} />
+
+        {/* 5 · O porquê completo (evidência numérica), a um clique */}
         <button onClick={() => setOpen(!open)}
           aria-expanded={open}
           className="flex items-center gap-1 text-[10px] font-mono transition-colors hover:text-foreground/70"
