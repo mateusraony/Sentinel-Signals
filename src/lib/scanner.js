@@ -3817,7 +3817,7 @@ export async function persistScanResults(scanResult) {
         if (stopTp1Ambiguous) updatePayload.exit_ambiguous = true;
         updatePayload.decision_snapshot = buildStopHitSnapshot({
           stage: 'pre_tp1', stop: op.current_stop, closePrice, stopCheckPrice,
-          entryPrice: op.entry_price, barsSinceEntry, ambiguous: stopTp1Ambiguous, isBuy,
+          entryPrice: op.entry_price, barsSinceEntry, ambiguous: stopTp1Ambiguous,
           executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
         });
       } else if (invalidationTriggered) {
@@ -3827,7 +3827,7 @@ export async function persistScanResults(scanResult) {
         updatePayload.closed_at = nowIso;
         updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
         updatePayload.decision_snapshot = buildInvalidatedRfBarsSnapshot({
-          reverseBars, invalidRfBars: pineConfig.invalidRFBars ?? 2, rfDir, rfFilt, closePrice, isBuy,
+          reverseBars, invalidRfBars: pineConfig.invalidRFBars ?? 2, rfDir, rfFilt, closePrice,
           executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
         });
       } else if (chopExitTriggered) {
@@ -4040,7 +4040,7 @@ export async function persistScanResults(scanResult) {
         if (stopTp2Ambiguous) updatePayload.exit_ambiguous = true;
         updatePayload.decision_snapshot = buildStopHitSnapshot({
           stage: 'runner', stop: op.current_stop, closePrice, stopCheckPrice,
-          entryPrice: op.entry_price, barsSinceEntry, ambiguous: stopTp2Ambiguous, isBuy,
+          entryPrice: op.entry_price, barsSinceEntry, ambiguous: stopTp2Ambiguous,
           executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
         });
       } else if (tp2Touched) {
@@ -4087,7 +4087,7 @@ export async function persistScanResults(scanResult) {
           updatePayload.closed_at = nowIso;
           updatePayload.closed_at_real_time = tfData.lastCandleTime || null;
           updatePayload.decision_snapshot = buildInvalidatedRfDirectSnapshot({
-            rfDir, rfFilt, closePrice, isBuy,
+            rfDir, rfFilt, closePrice,
             executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
           });
         }
