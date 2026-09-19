@@ -23974,3 +23974,81 @@ no mesmo teto de 16 erros (nenhum novo). Import nativo de
 `health-audit.mjs`, que não passa pelo esbuild). Todo fix teve regressão
 confirmada falha-antes/passa-depois (reversão temporária de arquivo via
 `git stash`, não só leitura de código).
+
+## 184. Causa raiz real de "SEM COTAÇÃO" — bug de `Proxy` em `httpRetry.js` quebrava toda leitura de `.ok`/`.status`/`.headers` num browser real (2026-09-19)
+
+Usuário colou o Debug Log real de produção (botão 🐛) e apontou, com razão,
+que os itens 34 e 57 (instrumentação de "SEM COTAÇÃO" e retry de rede)
+não tinham corrigido a causa raiz — só deixado o sintoma mais visível. O
+log mostrou um padrão sistêmico e contínuo desde pelo menos 2026-09-18:
+quase todo ativo monitorado falhando a busca de candle 1h/4h/1d com
+`"error":"Illegal invocation"`, em rajadas rápidas (~500-1300ms, sem delay
+de backoff visível) — `WARN (scanner <SYMBOL>) Scan completo: <SYMBOL> — 0
+novos sinais, 3 erros`, repetido.
+
+**Causa raiz.** `wrapResponseBodyTimeout` (`src/lib/httpRetry.js`) envolve o
+`Response` do `fetch()` num `Proxy` pra garantir que o timer do
+`AbortController` seja limpo quando o corpo é lido (item 176 addendum 2). O
+trap `get` fazia `Reflect.get(target, prop, receiver)`, passando o próprio
+Proxy como `receiver`. Para métodos (`.json()` etc.) isso nunca importou — o
+código já forçava `value.apply(target, args)`/`.bind(target)` explicitamente.
+Mas para os **getters nativos com internal slot** do `Response`
+(`res.ok`/`res.status`/`res.headers`), um browser real (V8/Blink) invoca o
+getter com `this = receiver` — e como o Proxy não é um `Response` de
+verdade, o getter nativo rejeita com `TypeError: Illegal invocation`. Como
+`fetchWithRetry` faz `if (res.ok) return res;` **fora** do `try/catch` do
+loop de retry, a exceção nunca era retentada — propagava na hora, batendo
+exatamente com o padrão observado no log (falha rápida, sem backoff).
+
+**Confirmado com um browser real, não com suposição.** Um teste em Node
+puro reconstruindo o mesmo `Proxy` contra um `new Response(...)` do
+`undici` **não reproduziu o erro** (`.ok`/`.status` leram normalmente) — o
+`undici` não faz o mesmo brand-check estrito que o V8/Blink faz em Web APIs
+nativas. Só reproduziu com Chromium real (via Playwright, contra um
+servidor HTTP local — não a Binance, pra não depender de rede externa):
+
+```json
+{ "okError": "Illegal invocation", "statusError": "Illegal invocation", "headersError": "Illegal invocation", "jsonOk": true }
+```
+
+Isso também explica por que `.json()` nunca falhava (só as 3 respostas de
+sucesso completo — sem sinal — do padrão relatado): o caminho de métodos de
+leitura de corpo já usava `target` explicitamente, só os getters simples
+quebravam.
+
+**Fix** (mesmo teste Chromium confirmou): trocar `Reflect.get(target, prop,
+receiver)` por `Reflect.get(target, prop)` (2 argumentos — o `this` do
+getter passa a ser `target`, o `Response` real, nunca o Proxy). Uma linha;
+`receiver` nunca foi necessário aqui porque o objeto proxiado nunca é
+subclassificado. Arquivo único e compartilhado — cobre de uma vez o browser
+(`marketDataProvider.js`, via `useAutoScan.js`) e todo consumidor Node
+(`scripts/adminMarketDataProvider.js`/cron, `scripts/run-backfill-check.mjs`,
+`scripts/backfillMarketDataProvider.js`,
+`scripts/fetch-backtest-data-futures.mjs`,
+`scripts/fetch-backtest-funding.mjs`) — estes últimos não sofriam o bug em
+si (Node/`undici` não reproduz), mas ganham a mesma correção sem mudança de
+comportamento, por serem o mesmo arquivo.
+
+**Regressão** (`src/lib/httpRetry.test.js`): como `mockResponse()` (as
+demais 10 asserções do arquivo) usa propriedades de DADO simples
+(`{ ok: true }`), nunca exercitava este bug — é exatamente por isso que
+passou despercebido antes. Novo teste constrói manualmente um objeto cujos
+getters `ok`/`status`/`headers` fazem brand-check de `this` (rejeitam se
+`this !== instância original`), reproduzindo o comportamento do V8 sem
+depender de um browser real no CI. Confirmado falha-antes/passa-depois via
+`git stash` do arquivo de produção.
+
+**Verificação final.** `npm run lint && npm test (1950, todos passando) &&
+npm run build && npm run build:scan` limpos; confirmado por grep que o
+bundle do cron (`scripts/dist/run-scan.mjs`) recebeu a versão corrigida
+(sem `receiver` no `Reflect.get`). `npm run typecheck:ratchet` no mesmo
+teto de 16 (nenhuma regressão). Revisão de quem mais consome
+`httpRetry.js` (regra "Revisão final obrigatória"): 6 consumidores reais
+via grep, todos listados acima — nenhum fora do escopo desta correção
+(arquivo único, sem mudança de assinatura/comportamento pra quem já
+funcionava).
+
+**Só confirmável como resolvido em produção depois do deploy real** — o
+usuário precisa checar o Debug Log de novo após o deploy pra confirmar que
+o padrão sistêmico de `"Illegal invocation"` parou. Não prometido como
+100% certo até essa confirmação.
