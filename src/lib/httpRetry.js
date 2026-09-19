@@ -66,10 +66,18 @@ async function fetchComTimeout(url, timeoutMs) {
   return wrapResponseBodyTimeout(res, timer);
 }
 
+// NUNCA passar `receiver` (o próprio Proxy) pro `Reflect.get` de um Web API
+// nativo com internal slot: getters como `res.ok`/`res.status`/`res.headers`
+// são invocados pelo engine com `this = receiver` quando o 3º argumento é
+// passado, e num browser real (V8/Blink) isso lança `TypeError: Illegal
+// invocation` — o `Response` genuíno é `target`, não o Proxy. Confirmado ao
+// vivo (docs/known-risks.md): era a causa raiz de "SEM COTAÇÃO" — Node/undici
+// não reproduz (não faz o mesmo brand-check), por isso passou despercebido em
+// teste local; só apareceu num Chromium real.
 function wrapResponseBodyTimeout(res, timer) {
   return new Proxy(res, {
-    get(target, prop, receiver) {
-      const value = Reflect.get(target, prop, receiver);
+    get(target, prop) {
+      const value = Reflect.get(target, prop);
       if (typeof value !== 'function' || typeof prop !== 'string' || !BODY_READ_METHODS.includes(prop)) {
         return typeof value === 'function' ? value.bind(target) : value;
       }

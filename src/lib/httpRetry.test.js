@@ -176,6 +176,56 @@ describe('fetchWithRetry', () => {
     await jsonAssertion;
   }, 10_000);
 
+  // docs/known-risks.md — causa raiz real de "SEM COTAÇÃO" em produção.
+  // `mockResponse()` acima usa propriedades de DADO simples (`ok: true`),
+  // então nunca exercitou o bug: um `Response` nativo de browser real tem
+  // `ok`/`status`/`headers` como GETTERS com brand-check (o getter rejeita
+  // se `this` não for a instância original) — exatamente o que
+  // `wrapResponseBodyTimeout`'s Proxy quebrava ao passar `receiver` (o
+  // próprio Proxy) pro `Reflect.get`. Este teste reproduz o brand-check
+  // manualmente (sem depender de um engine de browser real) construindo um
+  // objeto cujos getters de `ok`/`status` só funcionam quando `this` é a
+  // instância original — é o suficiente para provar a regressão: falhava
+  // (Illegal invocation, sem retry, propagado na hora) antes do fix em
+  // `wrapResponseBodyTimeout`, passa depois.
+  it('lê .ok/.status de um Response cujo getter faz brand-check de `this` (mimetiza Response nativo de browser) — não deve lançar "Illegal invocation"', async () => {
+    function makeBrandCheckedResponse({ ok, status }) {
+      const real = {};
+      Object.defineProperties(real, {
+        ok: {
+          get() {
+            if (this !== real) throw new TypeError('Illegal invocation');
+            return ok;
+          },
+        },
+        status: {
+          get() {
+            if (this !== real) throw new TypeError('Illegal invocation');
+            return status;
+          },
+        },
+        headers: {
+          get() {
+            if (this !== real) throw new TypeError('Illegal invocation');
+            return { get: () => null };
+          },
+        },
+        json: { value: async () => ({}) },
+        text: { value: async () => 'body' },
+      });
+      return real;
+    }
+
+    const fetchMock = vi.fn().mockResolvedValue(makeBrandCheckedResponse({ ok: true, status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await fetchWithRetry('https://example.test');
+
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('honors Retry-After as an HTTP date', async () => {
     const retryAt = new Date(Date.now() + 1500).toUTCString();
     const fetchMock = vi.fn()
