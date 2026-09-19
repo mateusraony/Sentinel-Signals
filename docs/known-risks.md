@@ -24052,3 +24052,32 @@ funcionava).
 usuário precisa checar o Debug Log de novo após o deploy pra confirmar que
 o padrão sistêmico de `"Illegal invocation"` parou. Não prometido como
 100% certo até essa confirmação.
+
+### Addendum (2026-09-19, mesmo dia) — confirmado em produção real
+
+O usuário reportou `"Illegal invocation"` ainda aparecendo no Debug Log
+depois do merge — investigação em conjunto (não suposição) confirmou que:
+
+1. **O deploy do merge (PR #380, ~10:51 UTC) de fato foi ao ar** — o
+   usuário confirmou via log de build do Render, hash de commit
+   `3a380ae9e5cee28fa1c2e226d956e3fe43c12246` batendo exatamente com o
+   commit do merge, "Your site is live" às 16:56:32 UTC (redeploy manual
+   de precaução, o auto-deploy do push em `main` já tinha rodado antes).
+2. **Todo `"Illegal invocation"` que o usuário colou era de ANTES desse
+   deploy confirmado** — o Debug Log mostra os últimos 50 registros
+   (`DebugLogButton.jsx`), então entradas antigas continuam visíveis por
+   um tempo mesmo depois do fix estar no ar; não é reincidência.
+3. **Confirmação real, não inferência**: novo Debug Log colado pelo
+   usuário depois do redeploy mostrou zero ocorrências novas de
+   `"Illegal invocation"` — só scans limpos (`0 erros`) e reinicializações
+   do logger (recarregamentos de teste do usuário) a partir das 13:56
+   (horário local). **Confirmado, não hipótese**: o fix resolveu o
+   problema em produção.
+
+Lição do processo (não do código): ao investigar um "o fix não funcionou"
+reportado logo após um deploy, a pergunta certa é **"o log mostrado é de
+antes ou depois do deploy confirmado?"** antes de suspeitar do fix em si —
+neste caso levou a descartar duas hipóteses (aba do browser desatualizada;
+deploy que não subiu) antes de confirmar que o fix estava correto desde o
+início, só ainda não tinha tido tempo de se refletir no log que o usuário
+via.
