@@ -24081,3 +24081,70 @@ neste caso levou a descartar duas hipóteses (aba do browser desatualizada;
 deploy que não subiu) antes de confirmar que o fix estava correto desde o
 início, só ainda não tinha tido tempo de se refletir no log que o usuário
 via.
+## 185. Modo sombra (item 56) — checkpoint 2026-09-21 e recomendação de pausa
+
+Usuário pediu leitura do estado atual do modo sombra prospectivo (48
+rodadas do relatório diário `analyze-shadow.yml`, lido via `get_job_logs`
+— nenhum acesso a Firestore de produção nesta rodada).
+
+**Dado acumulado (desde 2026-08-03, ~7 semanas):**
+
+| | `4h_15m` (nativa, sombreada) | `rf1h_cond4h_15m` (experimental) |
+|---|---|---|
+| Operações fechadas | 5 | 1 |
+| Win/Loss/BE | 2/3/0 | 0/0/1 |
+| Expectância líquida | -0,353 R | -0,017 R |
+| IC 95% | [-1,015, +0,310] | — (n=1) |
+| Operações/mês | 3,60 | 0,72 |
+| Veredito | INCONCLUSIVO (amostra < 30) | INCONCLUSIVO (amostra < 30) |
+
+**Comparação de volume** (objetivo original do experimento — aumentar
+frequência de operação): experimental gera 0,20x o volume da nativa
+sombreada — hoje está pior no critério que motivou o teste, não melhor
+(amostra grande demais pra afirmar isso com confiança, mas é o dado que
+existe).
+
+**Achado novo desta leitura — projeção de tempo até amostra decisória.**
+Na taxa real observada (0,72 op/mês, portfólio inteiro, não por ativo):
+
+- n=30 (piso mínimo do critério original, item 56): **~42 meses (~3,5
+  anos)**.
+- n=100 (alvo do critério original): **~139 meses (~11,6 anos)**.
+
+Isso não estava calculado explicitamente no desenho original do item 56 —
+só "amostra mínima n≥30, alvo n≈100" sem projeção de quanto tempo isso
+levaria na prática. Com o dado real de 7 semanas em mãos, a resposta é:
+**nesse ritmo, o experimento nunca chega a decisão-grade em prazo útil.**
+
+**Causa parcialmente conhecida, não só "setup raro".** O próprio item 56
+documenta que a cadência declarada de `scan-shadow.yml` foi cortada duas
+vezes por cota compartilhada com produção (15min→30min→60min, itens
+106/148) — e que a cadência REAL é ainda mais baixa que a declarada
+(~5,6 passadas/dia, GitHub despriorizando o `schedule:` sob carga,
+mesmo achado do item 134/148). Isso reintroduz exatamente o problema que
+a correção P1 original do item 56 tinha fechado (cadência de 15min
+alinhada 1:1 com o candle de confirmação, pra não perder nenhum
+fechamento de 15m) — parte da lentidão observada é efeito colateral do
+corte de cota, não só raridade do setup em si.
+
+**Recomendação (usuário concordou, decisão dele, registrada aqui).**
+Continuar rodando o modo sombra no ritmo atual consome cota Firestore
+compartilhada com produção (mesmo recurso que já causou incidente real —
+item 106) por um experimento que não vai produzir leitura útil em prazo
+razoável, e cada checagem manual por uma sessão do Claude Code custa
+tokens reais (o relatório em JSON bruto tem ~50KB, a maior parte
+detalhe por-operação já redundante com o resumo humano do Job Summary).
+**Pausar `scan-shadow.yml` e `analyze-shadow.yml`** (reversível — só o
+`cron:`/desabilitar o workflow, sem apagar as coleções
+`experimentalRf1hShadow*` nem o código) é a chamada certa dado esse
+dado: o custo (cota + atenção) não se justifica mais pelo benefício
+(nenhuma leitura decisória plausível em anos). Foco passa a ser os dados
+REAIS já acumulados em produção (ex.: item 46 — 344 operações reais
+medidas; item 132 — 120 vs. 103 operações reais na comparação de
+trailing pré-TP1) em vez de esperar o braço experimental.
+
+**Verificação**: leitura direta do relatório mais recente
+(`analyze-shadow.yml` run 48, 2026-09-20T16:43Z) via GitHub Actions API
+(`get_job_logs`), sem mudança de código nesta análise. Ação de pausar os
+workflows é decisão de infraestrutura separada, pendente de execução.
+
