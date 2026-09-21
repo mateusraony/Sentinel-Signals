@@ -17,13 +17,17 @@ name: Modo sombra — relatório de amostra (Fase 1)
 # próprio script: o critério de decisão completo vive em
 # docs/known-risks.md item 56.
 on:
-  schedule:
-    # 1x/dia — o acúmulo é lento (sinal 1h, cadência de scan agora HORÁRIA
-    # — docs/known-risks.md item 148, achado 2 — piso de 30 operações
-    # fechadas), não precisa de cadência maior; muito mais barato que
-    # reusar a cadência do scan-shadow.yml para algo que só LÊ o que já
-    # foi escrito.
-    - cron: "0 13 * * *"
+  # PAUSADO em 2026-09-21 junto com scan-shadow.yml (docs/known-risks.md
+  # item 185) — sem novo dado se acumulando, um relatório diário não tem
+  # nada novo pra reportar. Reversível — descomente o `schedule:` abaixo
+  # (e o de scan-shadow.yml) pra religar os dois juntos.
+  # schedule:
+  #   # 1x/dia — o acúmulo é lento (sinal 1h, cadência de scan agora HORÁRIA
+  #   # — docs/known-risks.md item 148, achado 2 — piso de 30 operações
+  #   # fechadas), não precisa de cadência maior; muito mais barato que
+  #   # reusar a cadência do scan-shadow.yml para algo que só LÊ o que já
+  #   # foi escrito.
+  #   - cron: "0 13 * * *"
   workflow_dispatch: {}
 
 permissions:
