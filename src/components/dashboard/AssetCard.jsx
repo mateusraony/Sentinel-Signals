@@ -6,7 +6,8 @@ import { activateSignalManually } from '@/lib/scanner';
 import { logError } from '@/lib/logger';
 import moment from 'moment';
 import ProximityBar, { calcProximity } from '@/components/dashboard/ProximityBar';
-import { formatPrice } from '@/lib/priceProximity';
+import { formatPrice, formatSignedPct } from '@/lib/priceProximity';
+import { useFundingRate } from '@/hooks/useFundingRate';
 
 function Dot({ color, filled = true }) {
   return (
@@ -100,6 +101,8 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
     refetchInterval: 60000,
     staleTime: 30000,
   });
+
+  const { fundingRate, nextFundingTime } = useFundingRate(asset.symbol);
 
   // "Activate signal" mutation — delega ao motor (activateSignalManually).
   //
@@ -297,6 +300,15 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
             >
               Confl.: <span style={{ color: score >= 85 ? '#00ff80' : score >= 65 ? '#ffd166' : '#ff9f43' }}>{score}</span>
             </div>
+            {fundingRate !== null && (
+              <div
+                className="text-[8px] font-mono mt-0.5"
+                style={{ color: 'rgba(255,255,255,0.3)' }}
+                title={`Funding rate (Futures): taxa paga entre posições compradas e vendidas a cada 8h. Só informativo — não influencia nenhum sinal ou operação.${nextFundingTime ? ` Próximo: ${moment(nextFundingTime).utcOffset(-3).format('DD/MM HH:mm')} BRT.` : ''}`}
+              >
+                Fund.: <span style={{ color: fundingRate >= 0 ? '#00ff80' : '#ff1478' }}>{formatSignedPct(fundingRate * 100, 4)}</span>
+              </div>
+            )}
           </div>
         </div>
 

@@ -57,6 +57,7 @@ vi.mock('@/lib/marketDataProvider', () => ({
   fetchCandles: async () => [],
   fetchCurrentPrice: async () => null,
   fetch24hStats: async () => null,
+  fetchMarkPrice: async () => ({ markPrice: null, lastFundingRate: null, nextFundingTime: null }),
   MARKET_SOURCE: 'spot',
   DATA_EXCHANGE: 'binance',
   EXECUTOR: 'browser',
