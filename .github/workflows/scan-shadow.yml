@@ -40,8 +40,15 @@ name: Shadow scan (Fase 1 — RF 1h condicionado ao 4h)
 # si nem com o disparo externo do scan real (cron-job.org, ~5min). Reversível
 # sem custo (só o `cron:` abaixo) — nenhum estado de produção pra desfazer.
 on:
-  schedule:
-    - cron: "41 * * * *"
+  # PAUSADO em 2026-09-21 (docs/known-risks.md item 185) — na taxa real de
+  # acúmulo observada (~0,72 op/mês fechada na cascata experimental), o
+  # piso de amostra decisória (n=30) levaria ~3,5 anos e o alvo (n=100)
+  # ~11,6 anos: não compensa o custo de cota Firestore compartilhada com
+  # produção nem a atenção recorrente de sessão. Reversível — descomente o
+  # `schedule:` abaixo pra religar; nenhuma coleção `experimentalRf1hShadow*`
+  # nem código foi tocado.
+  # schedule:
+  #   - cron: "41 * * * *"
   workflow_dispatch: {}
 
 concurrency:

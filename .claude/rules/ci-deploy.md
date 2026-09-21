@@ -61,22 +61,21 @@ paths:
   "cota esgotada" — quem classifica agora é
   `scripts/failureClassification.mjs`, único lugar autorizado a decidir isso
   (`docs/known-risks.md` item 162).
-- `scan-shadow.yml` — braço decisório do modo sombra prospectivo (Fase 1, RF
-  1h condicionado ao 4h, `docs/known-risks.md` item 56): roda `npm run
-  scan:shadow`, declarado a cada hora (`cron: "41 * * * *"`, reduzido de
-  15min→30min — item 106/107 — e depois de 30min→60min — item 148, achado
-  2 — sempre por folga de cota do Firestore compartilhado com a produção).
-  **A cadência REAL diverge da declarada** — GitHub despriorizando o
-  `schedule:` interno deste workflow sob a carga do `scan.yml` (item 134,
-  confirmado de novo no item 148: ~5,6 passadas/dia reais em vez das ~48
-  que 30min prometia) — então o ganho do aperto 30min→60min é incerto, não
-  garantido. Escreve só em coleções Firestore isoladas
-  (`experimentalRf1hShadow*`), nunca abre operação real nem notifica
-  Telegram.
-- `analyze-shadow.yml` — relatório **só leitura** do acúmulo do modo sombra
-  acima: `npm run analyze-shadow-rf1h` 1x/dia (+ `workflow_dispatch` manual),
-  publica no Job Summary (humano) e em JSON no log do job (leitura
-  programática). Mesmo secret de `scan-shadow.yml`, nunca escreve nada.
+- `scan-shadow.yml` / `analyze-shadow.yml` — **PAUSADOS em 2026-09-21**
+  (`docs/known-risks.md` item 185) — `schedule:` comentado nos dois
+  (`workflow_dispatch` continua disponível pra rodar manualmente se
+  precisar). Eram o braço decisório do modo sombra prospectivo (Fase 1, RF
+  1h condicionado ao 4h, item 56): `scan-shadow.yml` rodava `npm run
+  scan:shadow` escrevendo só em coleções Firestore isoladas
+  (`experimentalRf1hShadow*`, nunca operação real nem Telegram);
+  `analyze-shadow.yml` era o relatório só-leitura do acúmulo (`npm run
+  analyze-shadow-rf1h`, Job Summary + JSON no log). Pausados porque, na
+  taxa real de acúmulo medida em 7 semanas (~0,72 op/mês na cascata
+  experimental), o piso de amostra decisória (n=30) levaria ~3,5 anos e o
+  alvo (n=100) ~11,6 anos — não compensa o custo de cota Firestore
+  compartilhada com produção nem a atenção recorrente de sessão.
+  Reversível — descomentar o `schedule:` nos dois arquivos religa; nenhuma
+  coleção nem código foi apagado.
 - `keep-warm.yml` — ping `/health` a cada 10 min (Render free não hibernar).
 - `backup.yml` — backup diário das coleções de negócio → branch `backups`.
 - `deploy-firestore.yml` — deploy **manual** de rules/índices.
