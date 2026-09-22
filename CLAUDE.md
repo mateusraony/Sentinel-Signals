@@ -19,16 +19,21 @@ reintroduza `@base44/*`, `base44.com` nem nada do ecossistema Base44.
 - **Frontend**: Vite + React 18 (JSX, não TS — `checkJs` é best-effort),
   Tailwind, shadcn/ui, TanStack Query, React Router. **Static Site gratuito no
   Render** (`render.yaml`, serviço `sentinel-signals`, deploy a cada push em `main`).
-- **Backend**: Firebase — **apenas Firestore + Authentication**.
-  - **Firestore**: banco principal (NoSQL).
+- **Backend**: **Postgres/Neon** para as entidades de negócio (`TradeOperation`,
+  `SignalEvent`, `MonitoredAsset` etc. — cutover concluído 2026-09-12,
+  `docs/claude/postgres-cutover-runbook.md`) + **Firebase** para Auth e um
+  punhado de docs que não migraram (`strategyConfig`, `telegramFilters` — ver
+  `.claude/rules/firestore-concurrency.md`). `src/api/entities.js` é hoje um
+  cliente HTTP para `server/` (Postgres), não mais um SDK Firestore direto.
   - **Auth**: anônima temporária (ver decisões abaixo).
   - **Sem Cloud Functions / sem Blaze** — restrição **permanente** (o usuário
     recusou cartão/custo). `functions/` existe mas nunca é deployado. Não sugira
     Cloud Functions/Blaze de novo sem pedido explícito.
-- **`server/`** (Express + `firebase-admin`): **está deployado** no Render como
-  `sentinel-signals-api`. Recebe `POST /webhook/tradingview` (só loga + notifica
-  Telegram, **nunca envia ordem**), `GET /health`, `POST /api/telegram-notify`
-  (não usado pelo frontend hoje). Secrets via env do Render (nunca no repo).
+- **`server/`** (Express + `firebase-admin` + `pg`): **está deployado** no
+  Render como `sentinel-signals-api` — API de entidades sobre Postgres/Neon
+  (ver acima) + `POST /webhook/tradingview` (só loga + notifica Telegram,
+  **nunca envia ordem**), `GET /health`, `POST /api/telegram-notify` (não
+  usado pelo frontend hoje). Secrets via env do Render (nunca no repo).
 
 ## Arquitetura de dados
 
