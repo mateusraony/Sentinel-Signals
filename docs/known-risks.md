@@ -24360,3 +24360,40 @@ de uma análise única. Nenhuma mudança de trading/execução nesta rodada
 (análise + 2 correções de documentação); nenhum flag ativado, nenhum
 backtest novo rodado.
 
+## 187. "Confiança ao Vivo" ganha quebra por fonte de dado — Spot × Futures (2026-09-22)
+
+Primeiro dos dois próximos passos recomendados pelo item 186: `market_source`
+(item 178, 2026-09-14) já era gravado em toda `TradeOperation` real
+(`'spot'` quando o cron criou, `'futures'` quando foi o navegador), mas
+nenhum relatório agregado consumia o campo — só `TradeCard.jsx` mostrava
+numa operação individual (nos "Detalhes técnicos").
+
+**Implementado.** `src/components/dashboard/LiveConfidenceCard.jsx` (o
+card "Confiança ao Vivo" do item 129) ganhou uma 2ª seção, separada do
+grid Geral/BUY/SELL existente — reusa exatamente o mesmo padrão
+(`summarizeOps(operations.filter(...))`) já usado para BUY/SELL, agora
+filtrando por `op.market_source`. Três baldes: `spot`, `futures` e
+`semFonte` (operações de antes de 2026-09-14, sem o campo — nunca somem
+silenciosamente). Cada linha só aparece se tiver pelo menos 1 operação
+(mesmo guard que o card já usava no nível geral). Rótulo reaproveita a
+mesma convenção de texto de `TradeCard.jsx`
+(`MARKET_SOURCE_LABEL = { spot: 'Spot', futures: 'Futures' }`).
+
+**Deliberadamente separado do grid BUY/SELL**, não misturado nas mesmas 3
+colunas: são dois eixos diferentes (lado da operação × de onde veio o
+preço) — o próprio card já tem um comentário avisando para nunca combinar
+eixos diferentes no mesmo IC (item 88), e um quinto/sexto card no mesmo
+grid sugeriria visualmente que são a mesma categoria de corte.
+
+**Testado.** `LiveConfidenceCard.test.jsx` (novo — o componente não tinha
+teste nenhum antes desta rodada): Spot isolado, Spot+Futures misturados,
+operação legada sem `market_source` cai em "Sem registro" sem quebrar,
+e regressão de Geral/BUY/SELL (que já existiam sem cobertura). 5 casos,
+todos verdes.
+
+**Sem mudança de lógica de trading** — `scanner.js`/`tradeMetrics.js`
+intocados; `market_source` já existia, só passou a ser exibido. Segundo
+passo recomendado pelo item 186 (reanálise fria de relatórios já
+existentes sob correção de família Bonferroni unificada) segue pendente,
+fora do escopo desta rodada.
+

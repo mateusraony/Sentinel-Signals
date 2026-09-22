@@ -784,11 +784,12 @@ justificativa nova para reabrir isso com o resultado acima.
   trading-chain-audit.md` (mapa dados→...→experimentos, arquivo:linha).
   Conselho confirmou: não reabrir Bloco 1, não ampliar carteira de
   símbolos (refutado com dado, item 110). Duas pendências de baixo custo,
-  sem gate de amostra: (a) consumir `market_source` (já instrumentado,
-  item 178) numa quebra Spot×Futures em pelo menos um relatório agregado;
-  (b) reanálise fria de relatórios já existentes (itens 104/105/110/111)
-  sob correção de família Bonferroni unificada, antes de qualquer novo
-  backtest.
+  sem gate de amostra: (a) ~~consumir `market_source` (já instrumentado,
+  item 178) numa quebra Spot×Futures em pelo menos um relatório
+  agregado~~ **FEITO (item 187, 2026-09-22)** — card "Confiança ao Vivo"
+  agora mostra a quebra; (b) reanálise fria de relatórios já existentes
+  (itens 104/105/110/111) sob correção de família Bonferroni unificada,
+  antes de qualquer novo backtest — **ainda pendente**.
 
 ---
 
