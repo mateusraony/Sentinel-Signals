@@ -14,7 +14,17 @@
 // docs/known-risks.md para o achado completo.
 
 const DEFAULT_RETRY_STATUSES = new Set([429, 500, 502, 503, 504]);
-const DEFAULT_MAX_RETRIES = 3;
+// docs/known-risks.md item 57 addendum (2026-09-22) — auditoria de saúde
+// achou "Failed to fetch" em 8 ativos na MESMA passada do scan (recorrente,
+// ~1-2x/semana pela amostra de 7 dias). Causa: com maxRetries=3, o orçamento
+// de espera entre tentativas (500ms+1s+2s ≈ 3,5s) é curto demais para
+// sobreviver a um blip de rede de alguns segundos — e o scanner varre os
+// ativos SEQUENCIALMENTE (scanner.js:scanAllAssetsInner), então um blip que
+// dure a duração de várias buscas em sequência derruba vários ativos na
+// mesma passada, não só um. Subir para 5 estende o orçamento de espera para
+// ~15,5s (500ms+1s+2s+4s+8s), sem mudar o comportamento em erro persistente
+// de verdade — esse caso já se autocorrige no próximo scan, ~5min depois.
+const DEFAULT_MAX_RETRIES = 5;
 const DEFAULT_BASE_DELAY_MS = 250;
 const DEFAULT_MAX_RETRY_AFTER_MS = 120_000;
 // docs/known-risks.md item 175 addendum — achado investigando um relato real

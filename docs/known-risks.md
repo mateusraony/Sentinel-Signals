@@ -5622,6 +5622,47 @@ bloqueia, `.claude/rules/pine-parity.md`) — a prova real vem depois,
 olhando a tela "Logs" em produção pra confirmar queda de `"Failed to
 fetch"` e comparando o volume de operações do próximo período.
 
+### Addendum (2026-09-22) — retry ainda insuficiente contra blip mais longo, orçamento estendido
+
+O retry do item 57 reduziu o problema, mas não o eliminou: a auditoria de
+saúde (`health-audit.mjs`) do dia achou `"Failed to fetch"` em **8 ativos na
+MESMA passada** do scan (13h antes da auditoria rodar), e a amostra de 7 dias
+mostrou o mesmo padrão se repetindo — 10 ativos/16 ocorrências fora da janela
+recente, aproximadamente 1-2x/semana. Usuário recebeu o alerta via Telegram
+(o próprio `health-audit.mjs` dispara quando acha o mesmo erro em 3+ ativos)
+e pediu correção.
+
+**Causa raiz confirmada por leitura de código**, não suposição: com
+`DEFAULT_MAX_RETRIES = 3` (`src/lib/httpRetry.js`), o orçamento de ESPERA
+entre tentativas para uma falha de rede pura (`TypeError: Failed to fetch`,
+sem `Retry-After` do servidor pra guiar o tempo) somava só
+`500ms+1s+2s ≈ 3,5s` antes de desistir e propagar o erro. `scanAllAssetsInner`
+(`scanner.js:4579`) varre os ativos **sequencialmente** (`for` com `await`,
+mais um delay de 500ms entre cada um) — então um blip de rede que dure mais
+que ~3,5s, na hora em que o loop passa por vários ativos em sequência, derruba
+cada um deles independentemente, todos na mesma passada. Não é bug de lógica
+do motor (0 operações presas na auditoria do dia) — é o orçamento de retry
+sendo curto demais frente à duração real dos blips observados.
+
+**Correção**: `DEFAULT_MAX_RETRIES` subiu de 3 para 5 — orçamento de espera
+~15,5s (`500ms+1s+2s+4s+8s`), sem mudar nenhum outro comportamento (o caminho
+de `Retry-After`/status 5xx continua igual; um erro genuinamente persistente
+continua se autocorrigindo sozinho no próximo scan, ~5min depois, via o
+disparo externo já documentado no item 18). Teste de regressão em
+`httpRetry.test.js` (`REGRESSÃO: sobrevive a um blip de rede que só se
+resolve na 5a tentativa`) prova que um blip de 4 tentativas consecutivas —
+que esgotava o orçamento antigo e derrubava a busca — agora se recupera,
+usando o `DEFAULT_MAX_RETRIES` real (sem override), não só o mecanismo.
+
+**Residual, honesto**: isto reduz a frequência do padrão, não garante
+eliminação — um blip mais longo que ~15,5s ainda esgota o novo orçamento
+também. O impacto de uma passada perdida continua baixo (o próximo scan, a
+~5min, cobre o ativo de novo; nenhuma operação fica presa ou com dado
+corrompido) — mas se o volume de "Failed to fetch" na tela Logs não cair
+visivelmente depois deste fix, a causa provável muda de "blip de rede curto"
+para algo mais estrutural (ex.: throttling do espelho público da Binance
+contra o range de IP do GitHub Actions), que exigiria investigação separada.
+
 ## 58. Gate de padrão de vela na cascata RF — mecanismo opt-in, desligado por padrão (2026-08-02)
 
 Pedido explícito do usuário, na sequência da conversa sobre volume/qualidade

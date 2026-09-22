@@ -226,6 +226,30 @@ describe('fetchWithRetry', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  // docs/known-risks.md item 57 addendum (2026-09-22) — REGRESSÃO real: a
+  // auditoria de saúde achou "Failed to fetch" em 8 ativos na mesma passada
+  // do scan. Com o maxRetries antigo (3 = 4 tentativas no total), um blip de
+  // rede que só se resolve na 5ª tentativa esgotava o orçamento e derrubava a
+  // busca — este teste falhava antes do fix (subir DEFAULT_MAX_RETRIES pra
+  // 5 = 6 tentativas) e passa depois, usando o DEFAULT (sem override), para
+  // travar o valor real usado em produção, não só o mecanismo de retry.
+  it('REGRESSÃO: sobrevive a um blip de rede que só se resolve na 5a tentativa (orçamento default, sem override)', async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(mockResponse({ ok: true, status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const promise = fetchWithRetry('https://example.test', { context: 'BTCUSDT 4h' });
+    await vi.advanceTimersByTimeAsync(30_000);
+    const res = await promise;
+
+    expect(res.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
   it('honors Retry-After as an HTTP date', async () => {
     const retryAt = new Date(Date.now() + 1500).toUTCString();
     const fetchMock = vi.fn()
