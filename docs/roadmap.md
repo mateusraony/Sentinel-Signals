@@ -779,6 +779,17 @@ justificativa nova para reabrir isso com o resultado acima.
   TODA página. `date-fns`/`framer-motion`/`@hello-pangea/dnd` removidos
   do `package.json` — sem nenhum import em `src/`, dependências mortas.
 
+- **Auditoria em cadeia + conselho sobre o próximo passo real (item 186,
+  2026-09-22).** Documento de referência novo: `docs/claude/
+  trading-chain-audit.md` (mapa dados→...→experimentos, arquivo:linha).
+  Conselho confirmou: não reabrir Bloco 1, não ampliar carteira de
+  símbolos (refutado com dado, item 110). Duas pendências de baixo custo,
+  sem gate de amostra: (a) consumir `market_source` (já instrumentado,
+  item 178) numa quebra Spot×Futures em pelo menos um relatório agregado;
+  (b) reanálise fria de relatórios já existentes (itens 104/105/110/111)
+  sob correção de família Bonferroni unificada, antes de qualquer novo
+  backtest.
+
 ---
 
 ## Fora de escopo permanente (não são pendências)

@@ -24243,3 +24243,120 @@ trailing pré-TP1) em vez de esperar o braço experimental.
 (`get_job_logs`), sem mudança de código nesta análise. Ação de pausar os
 workflows é decisão de infraestrutura separada, pendente de execução.
 
+> **Atualização (item 186, 2026-09-22): a pausa acima foi executada no MESMO
+> PR que registrou este item** (`812b268`, "chore: pausar scan-shadow.yml/
+> analyze-shadow.yml (modo sombra, item 185) #383", 2026-09-21 12:21
+> -03:00) — o parágrafo "pendente de execução" ficou desatualizado porque
+> descreve a análise que MOTIVOU a ação, não o estado final dela. Achado do
+> conselho de revisão do item 186 (papel Segurança, via `git log`).
+
+## 186. Conselho de revisão — auditoria em cadeia do motor + próximo passo real (2026-09-22)
+
+Usuário pediu uma auditoria completa da cadeia dados→indicador→sinal
+bruto→score→arbitragem→confirmação→abertura→gestão→TP/stop/trailing→
+custos/funding→fechamento→métricas→backtest→OOS→experimentos, "para que
+o sistema seja aperfeiçoado... em vez de ficar aguardando e perdendo
+oportunidade" — e um conselho de revisão sobre como.
+
+**Produzido**: `docs/claude/trading-chain-audit.md` — mapa de referência da
+cadeia inteira, com arquivo:linha de cada estágio (não duplica este log,
+referencia os itens aqui). `sentinel-council-review` com 5 papéis
+independentes (Arquiteto, Trading, Concorrência, Segurança, Testes),
+pergunta única: dado que o Bloco 0 encerrou sem edge provado (item 133), o
+Bloco 1 segue trancado, e o modo sombra tinha pausa recomendada — qual o
+conjunto de 2-4 próximos passos de maior valor que respeitam a disciplina
+estatística já estabelecida?
+
+**Refutação real entre papéis (o motivo de rodar em papéis separados).**
+4 dos 5 papéis (Arquiteto, Trading, Concorrência, Testes) leram o texto do
+item 185 literalmente ("pendente de execução") e recomendaram, como passo
+#1, executar a pausa do modo sombra. O papel Segurança, em vez de confiar
+no texto, rodou `git log` e achou que a pausa **já tinha sido executada no
+mesmo PR** (ver atualização acima) — os outros 4 papéis estavam prestes a
+gastar a recomendação #1 do conselho em algo já feito. Corrigido antes de
+finalizar esta entrada.
+
+**Achado novo, não estava em nenhum item anterior**: `market_source` (item
+178, 2026-09-14) já instrumenta Spot×Futures por operação — grava na
+criação (`scanner.js:515/1115/2157`), 1:1 com qual dos dois loops
+(cron/navegador) criou a op, fechando de fato a lacuna que o item 4
+addendum (2026-08-24) tinha apontado como não instrumentada, só que os dois
+itens nunca se referenciaram. Mas **nenhum consumidor agregado usa o
+campo** — `summarizeOps`/`tradeMetrics.js`/card "Confiança ao Vivo" nunca
+agrupam por ele; só aparece em `scanner.js`/`opTransition.js` (o próprio
+gate) e `TradeCard.jsx` (exibição de uma operação isolada). Quando a
+amostra orgânica de produção crescer o bastante para decidir algo, não dar
+para segmentar por fonte de preço seria um confound silencioso — e não dá
+pra corrigir retroativamente depois que a amostra já existe sem o rótulo
+agregado.
+
+**"Ampliar a carteira de símbolos para ganhar poder estatístico" já foi
+testado e refutado com dado, não é uma ideia nova a considerar** (papel
+Trading, citando item 110): 42 símbolos novos na mesma janela deram G=3 no
+cluster (DEFF 0,08 pooled) — a unidade independente é TEMPO, não ativo;
+somar símbolos na mesma janela soma operações correlacionadas com beta de
+BTC, não informação nova. Reabrir o Bloco 1 reproduziria o mesmo padrão de
+falso positivo já documentado (item 73/88) — a base (RF nativa) segue sem
+edge OOS demonstrado.
+
+**O único mecanismo com efeito real medido desde o Bloco 0 está do lado da
+SAÍDA, não da entrada** (papel Trading): trailing pré-TP1 contínuo (item
+132) — sd(R) −35%, drawdown pela metade — já ligado por padrão. Se houver
+alavanca nova a buscar, é aqui (ex.: revisitar o stop estrutural SMC do
+item 104, que ficou com G=8 — abaixo do piso de confiabilidade de 20 —
+precisa de mais clusters TEMPORAIS, não mais símbolos), não em mais filtro
+de entrada.
+
+**O passo estatisticamente mais barato disponível é reanálise fria de
+relatórios já existentes** (papel Testes) — não consome amostra nova nem
+"tentativa" no ledger: reprocessar `indicatorAttribution.records` do pool
+de 1.893 sinais (itens 110/111) tratando os 4 componentes como UMA família
+Bonferroni desde o início (não pós-hoc) provavelmente já invalida
+formalmente o "achado" RSI isolado sem precisar de dado novo; e rodar
+`backtest-correlation-check.mjs` sobre os relatórios do item 104/105
+pooled pode elevar G acima do piso de 20.
+
+### Recomendação final (fato/hipótese/recomendação, avaliador)
+
+**Feito nesta rodada** (custo mínimo, convergência independente de 3
+papéis — Arquiteto/Segurança/Testes — sem coordenação entre si):
+1. `CLAUDE.md` (seção Stack) corrigido — descrevia o backend como "Firebase
+   — apenas Firestore + Authentication", sem mencionar o cutover Postgres/
+   Neon de `TradeOperation` e demais entidades (item 170, 2026-09-12).
+2. Este item registra que a pausa do modo sombra já ocorreu — evita
+   qualquer sessão futura "redecidir" algo já feito.
+
+**Não fazer** (refutado com dado, não é falta de tentativa):
+3. Não reabrir o Bloco 1. Não ampliar a carteira de símbolos do backtest
+   para ganhar poder estatístico (item 110 já mostrou que isso não compra
+   graus de liberdade de cluster).
+
+**Próximos passos reais, em ordem de valor esperado/custo**:
+4. Consumir `market_source` numa quebra Spot×Futures em pelo menos um
+   relatório agregado (o card "Confiança ao Vivo" é o candidato natural,
+   já que é onde a amostra orgânica cresce) — mudança de baixo custo
+   (dado já existe, só falta agregação), pré-requisito para qualquer
+   leitura futura desse dado sem confound.
+5. Reanálise fria de relatórios já existentes (itens 104/105/110/111) sob
+   correção de família Bonferroni unificada — zero amostra nova.
+6. Se e somente se o passo 5 sobrar algo: desenhar UM novo trial na camada
+   de SAÍDA (Bloco 2, não entrada), registrado a priori no
+   `backtest-trial-registry.mjs`.
+
+**Checklist de aceitação de qualquer próximo passo como conclusivo** (papel
+Testes, consolida disciplina já espalhada pelo projeto): (i) registrado no
+ledger ANTES do run, família nomeada; (ii) IC relatado via
+`clusteredCIStudentT`/DEFF, nunca o ingênuo isolado; (iii) G (nº clusters)
+≥ 20, senão reportar como não-confiável mesmo que "passe" no ingênuo (caso
+do item 104); (iv) checar acoplamento de parâmetro (item 116) e tautologia
+geométrica (itens 35/38) antes de interpretar taxa de rejeição/efeito; (v)
+`correctedConclusiveVerdict` aplicado — nunca resgatar trial com amostra
+insuficiente via correção.
+
+**Meta-achado**: o processo de papéis independentes funcionou como
+desenhado — a refutação real entre papéis (item Segurança corrigindo os
+outros 4) é exatamente o motivo de rodar `sentinel-council-review` em vez
+de uma análise única. Nenhuma mudança de trading/execução nesta rodada
+(análise + 2 correções de documentação); nenhum flag ativado, nenhum
+backtest novo rodado.
+
