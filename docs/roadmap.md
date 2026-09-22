@@ -787,9 +787,12 @@ justificativa nova para reabrir isso com o resultado acima.
   sem gate de amostra: (a) ~~consumir `market_source` (já instrumentado,
   item 178) numa quebra Spot×Futures em pelo menos um relatório
   agregado~~ **FEITO (item 187, 2026-09-22)** — card "Confiança ao Vivo"
-  agora mostra a quebra; (b) reanálise fria de relatórios já existentes
-  (itens 104/105/110/111) sob correção de família Bonferroni unificada,
-  antes de qualquer novo backtest — **ainda pendente**.
+  agora mostra a quebra; (b) ~~reanálise fria de relatórios já existentes
+  (itens 104/105/110/111) sob correção de família Bonferroni unificada~~
+  **JÁ ESTAVA FEITA (item 188, 2026-09-22)** — itens 104/112/113 (2026-08)
+  já tinham aplicado `clusterSignFlipTest`/Bonferroni por família a essas
+  mesmas hipóteses, um mês antes do item 186 recomendar refazer; nenhum
+  backtest novo foi necessário.
 
 ---
 

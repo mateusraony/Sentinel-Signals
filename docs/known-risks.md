@@ -24397,3 +24397,90 @@ passo recomendado pelo item 186 (reanálise fria de relatórios já
 existentes sob correção de família Bonferroni unificada) segue pendente,
 fora do escopo desta rodada.
 
+## 188. Reanálise fria dos itens 104/105/110/111 (2ª recomendação do item 186) — achado: já tinha sido feita um mês antes do item 186 existir
+
+Usuário pediu para executar o 2º passo recomendado pelo item 186: reprocessar
+os relatórios dos itens 104/105 (stop estrutural) e 110/111 (RSI) sob
+correção estatística de família, sem gastar amostra nova.
+
+**Bloqueio real, checado primeiro.** Relatório de backtest nunca é commitado
+no repo (`docs/claude/backtest-usage.md`), e o GitHub Actions só guarda o
+artifact do relatório por 30 dias (`retention-days: 30`,
+`.github/workflows/backtest.yml:393`). Os runs dos itens 104/105
+(2026-08-18) e 110/111 (2026-08-20) são de 33-35 dias atrás — já expirados,
+confirmado consultando a lista de runs de `backtest.yml` via API. O único
+arquivo `backtest-report.json` que sobrou no repo (raiz, rastreado por
+acidente desde o PR #331) é um artefato de teste vazio
+(`trialLabel: "guard-test"`, `totalOps: 0`), não dado real.
+
+**Achado real, procurando uma alternativa**: a reanálise pedida **já tinha
+sido feita** — em 2026-08-18/20, um mês antes do item 186 sequer existir.
+O papel "Testes" do conselho do item 186 recomendou refazer um trabalho já
+concluído, porque não checou a história completa (mesma classe de erro que
+o papel "Segurança" daquele conselho corrigiu para o modo sombra — só que
+desta vez ninguém pegou antes do item 186 ser escrito).
+
+**Item 104/105 (cluster G=8) — já reanalisado com o teste certo.** A própria
+seção "Re-run sob o código corrigido" do item 104 já aplicou
+`clusterSignFlipTest` (randomização exata, válida para qualquer G —
+diferente do CR1, que o próprio item marca como não confiável em G=8):
+**p=0,156, não significativo.** O item já registra, por escrito, que reabrir
+"exigiria uma medição independente nova (janela/carteira diferente...), não
+repetir a mesma janela" — G=8 é propriedade estrutural daquela janela de
+20 símbolos/12 meses, não algo que um re-run do mesmo período mudaria.
+
+**Item 110/111 (RSI) — já reanalisado em duas camadas independentes.** O
+achado de mineração do item 111 (`indicatorAttribution`, simulação, não
+teste real) já tinha sido rotulado **ruído recorrente** pelo item 112
+(conselho de revisão do mesmo dia): RSI já tinha sido medido 2× antes pelo
+mesmo mecanismo (item 69, 7 e 20 símbolos) com direção invertida a cada
+vez — item 111 foi a 3ª medição, não a 1ª pista. E o item 113 (mesmo dia)
+já rodou o **teste real** (`rsiOnlyGateEnabled` de verdade como gate de
+entrada, não a simulação de mineração) nos mesmos 2 lotes de 42 símbolos do
+item 110, registrado como família NOVA no ledger
+(`rsi-only-gate-hypothesis`, N=2) exatamente como o item 112 exigiu, com as
+DUAS correções que o item 186 pediu já aplicadas:
+
+| Correção | Ferramenta | Resultado |
+|---|---|---|
+| Bonferroni por família (N=2) | `backtest-trial-registry.mjs --summarize-family` | não muda nenhum veredito |
+| Cluster sign-flip por lote | `backtest-correlation-check.mjs` | RSI-A p=0,909; RSI-B p=0,859 — nenhum significativo |
+
+Confirmado direto em `docs/backtest-trial-registry.json`: as entradas
+`rsi-only-gate-hypothesis` (`rsi-only-gate-batchA` n=222, IC95
+[-0,149; 0,165]; `rsi-only-gate-batchB` n=251, IC95 [-0,161; 0,132]) e
+`no-score-gate-hypothesis` (2 entradas análogas) batem com o texto do
+item 113 — os dois lotes seguem com IC cruzando zero sob as duas correções.
+
+**O que genuinamente não foi feito** (e não vale gastar CI agora): tratar
+os 4 componentes da mineração ORIGINAL (`indicatorAttribution`:
+MACD/EMA/RSI/Volume) como uma família Bonferroni única desde o início, em
+vez de julgados isolados. Mas o relatório bruto com os 1.893 registros por
+sinal também expirou nos mesmos 30 dias — faria isso deixar de ser
+"reanálise fria" (exigiria backtest novo) — e o valor marginal é baixo: a
+conclusão "é ruído" já tem evidência mais forte (3 medições independentes,
+direção invertida a cada vez) e o teste real do gate já confirma "sem
+sinal utilizável" por um caminho independente.
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: as duas reanálises que o item 186 recomendou como próximo passo
+já existiam, com a metodologia correta, desde 2026-08-18/20.
+
+**Recomendação**: não rodar backtest novo para isso. `rsiOnlyGateEnabled`/
+`no-score-gate`/`rfStructuralStopEnabled` permanecem não promovidos —
+nenhum teve resultado significativo sob nenhuma correção válida aplicada.
+
+**Meta-achado**: registrar uma recomendação de "próximo passo" num conselho
+de revisão não substitui checar se aquele passo já foi dado — vale para
+qualquer conselho futuro, não só este.
+
+### Verificação
+
+Números conferidos direto em `docs/backtest-trial-registry.json`
+(`rsi-only-gate-hypothesis`/`no-score-gate-hypothesis`) e no texto dos
+itens 104/112/113 já registrados. Runs de `backtest.yml` consultados via
+API (GitHub Actions) para confirmar expiração de artifact — nenhum novo
+run disparado. Nenhuma mudança de código, nenhum flag, nenhum backtest
+nesta rodada.
+
