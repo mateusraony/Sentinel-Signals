@@ -24484,3 +24484,144 @@ API (GitHub Actions) para confirmar expiração de artifact — nenhum novo
 run disparado. Nenhuma mudança de código, nenhum flag, nenhum backtest
 nesta rodada.
 
+## 189. ICT/SMC — já implementado, já medido, e por que o achado bate com a comunidade quant (2026-09-22)
+
+Usuário perguntou se a técnica ICT (Inner Circle Trader) dá para ser usada
+para melhorar o motor, e se ela (ou outra) já foi analisada. Resposta
+curta: **já foi — de forma bastante fiel — e o veredito medido é "quase
+nunca dispara", não "dispara e perde".**
+
+### O que já está implementado (arquivo:linha)
+
+- **BOS/CHoCH/liquidity sweep/premium-discount/OTE** — porte fiel do Pine
+  SMC real do usuário: `calculateStructure` (`src/lib/indicators/
+  smcStructure.js:64-183`), `calculateLiquiditySweep` (`:189-205`),
+  `classifyZone`/`calculatePdZone` (`:217-254`), `buildOteLeg` (`:277-283`).
+- **Fair Value Gap** — porte fiel (`src/lib/indicators/fvg.js:48-114`,
+  comentário no topo diz "a parte de FVG é portável na íntegra").
+- **Order Block** — **aproximação geométrica deliberada, não porte fiel**
+  (`orderBlock.js:1-24`): o real usa `align_edge_to_value_area`/
+  `align_break_price_to_poc`, dependentes de perfil de volume (lib externa
+  inacessível) — parte da divergência é declarada impossível de fechar,
+  não falta de esforço. Linha 22-24: "esta função NÃO é candidata a golden
+  test contra o TradingView".
+- **Score de confluência SMC** — `smcConfluence.js:12-16`: "ADVISORY
+  ONLY — feeds arbitration and audit trails, does NOT gate signal
+  emission" — decisão deliberada para não repetir a tautologia geométrica
+  já cometida 2× (itens 35/38, ver abaixo).
+- **`retestEnabled`/`displacementEnabled`** — conceitos ICT-adjacent, mas
+  **originais ao projeto**: os comentários no topo dos dois arquivos
+  (`retest.js:1-4`, `displacement.js:1-13`) dizem explicitamente que o
+  Pine real do usuário não usa esses conceitos — não há paridade a
+  validar, porque não há o que espelhar.
+
+### O achado central: a cascata que abre operação é invenção do Sentinel
+
+O Pine real do usuário (`docs/reference-pine/smc-a-unified-v2.3.pine:42`)
+é um **`indicator()`**, não `strategy()` — sem `strategy.entry()`/
+`strategy.exit()` em lugar nenhum do arquivo. Ele só calcula estrutura/OB/
+FVG/zona/sweep e produz um score de confluência 0-7 exibido em tabela —
+**nunca abre operação sozinho, nem no TradingView do próprio usuário**
+(item 77, repetido em `.claude/rules/trading-engine.md`). A cascata
+`1h_5m` que o Sentinel construiu (`check5mSmcConfirmation`, `scanner.js:
+658-758`) — que de fato decide entrada/saída de `TradeOperation` — **não
+tem correspondência 1:1 no script real do usuário**. Isso não é um bug de
+paridade a corrigir; é uma decisão de produto já tomada (estender um
+indicador visual do usuário para um gerador de sinal próprio), e o
+resultado medido reflete essa origem.
+
+### O veredito medido: 93% nunca chega a avaliar o próprio gatilho
+
+Item 75: em ~19,5 meses de BTCUSDT, **78 eventos de estrutura → 78 sinais
+confirmados no viés 1h → 0 operações criadas.** Distribuição real de
+rejeição (n=57): `no_trigger` **93,0%**, `ote_zone_unfavorable` 5,3%,
+`wrong_direction_trigger` 1,8%. Diagnóstico: não é a zona OTE rejeitando
+demais (hipótese testada e refutada) — é que o próprio gatilho de 5m
+(evento pontual, `swingLen=10`, ~50min de janela) quase nunca dispara
+dentro da retry window de 4h (48 candles). **A cascata não "perde
+dinheiro" — ela quase nunca chega a operar.** O gate `smc_confirm_4h15m`
+(usa SMC pra filtrar a cascata RF nativa) teve o mesmo padrão: ligado, deu
+**0 operações** em 7 símbolos/12 meses (item 108) — já desligado nos 10
+ativos monitorados desde então (item 108).
+
+Duas rodadas anteriores já tinham tropeçado no mesmo tipo de erro antes de
+chegar a este diagnóstico: itens 35 e 38 descobriram que um gate de zona
+compartilhando o mesmo `closedCandles` da função que ele filtra rejeita
+por **tautologia geométrica**, não por raridade estatística real (74/74
+rompimentos rejeitados, medido) — padrão registrado em
+`.claude/rules/trading-engine.md` como armadilha a não repetir.
+
+### Por que isso ecoa a comunidade quant, não é peculiaridade do Sentinel
+
+Pesquisa externa (2026-09-22): quando analistas quantitativos codificam
+regras ICT mecanicamente (em vez de aplicação discricionária), o win rate
+medido cai para a faixa de ~41% e "none of the core ICT entries showed
+statistically significant forward-return edge on SPY" em pelo menos um
+backtest citado; filtros adicionais de contexto (HTF narrative + session
+timing) sobem o win rate mecânico de 41,2% para 58,4% — mas isso é
+adicionar MAIS filtro, não confirmar o ICT puro. A leitura recorrente é
+"o que discricionário reporta 70-80% de acerto, mecanizado cai pra 41%" —
+consistente com o próprio achado do Sentinel: o problema não é "ICT
+mecânico erra a entrada", é "ICT mecânico, neste timeframe/gatilho, quase
+nunca decide entrar". Fontes: [I Backtested 2,600 Trades Using Smart
+Money Concepts](https://medium.com/@QuantumAlgo/i-backtested-2-600-trades-using-smart-money-concepts-heres-what-actually-works-bb3c671098c6),
+[I Backtested ICT/SMC — What Survives](https://statoasis.com/overfit/research/ict-backtest-what-survives),
+[Do Smart Money Concepts Work? Backtest Data Revealed](https://fxnx.com/en/blog/smart-money-concepts-work-backtest-evidence).
+
+### O que genuinamente não foi medido (e por quê)
+
+3 dos 4 flags do Bloco 1 (`docs/roadmap.md`, "Bloco 1 — os quatro flags
+dormentes") são especificamente SMC: `displacementEnabled`,
+`smcTierEnabled`, `smcObFvgEnabled` (o 4º, `retestEnabled`, toca as duas
+cascatas). **Nenhum foi medido** — trancados por decisão de conselho
+anterior (item 73: "testar filtro em cima de base sem edge reproduziria o
+mesmo falso positivo"), e quando alguém tentou medir 3 deles mesmo assim
+(item 113), **o backtest estourou o timeout** — a cascata SMC sozinha já
+satura o limite de 20 símbolos/12 meses que a RF pura cabe folgada. Não é
+"testado e sem efeito" — é "não deu pra testar" por limite de engenharia,
+separado da decisão de política.
+
+### Ideia alternativa levantada (pesquisa externa), NÃO recomendada para construir agora
+
+Funding-rate carry/arbitragem tem evidência acadêmica real de retorno
+positivo (Sharpe alto, drawdown baixo em alguns backtests) — mas é uma
+categoria de produto fundamentalmente diferente: exige segurar posição
+real em duas pernas simultâneas (spot + perp), incompatível com a
+política read-only/virtual do projeto (`.claude/rules/trading-safety.md`).
+Order flow/footprint/volume profile — evidência empírica fraca mesmo fora
+de cripto, e exigiria dado de order book (não candle REST) que o projeto
+não tem acesso gratuito. **O único ângulo que parece genuinamente
+compatível com as restrições do projeto**: o Sentinel já mede que funding
+é 58-61% do custo real (item 131) e que SELL é positivo em 5/5 medições —
+parcialmente explicável pela direção do funding, não só edge de sinal.
+Transformar essa assimetria já medida num FATOR de sinal (não numa
+estratégia de carry separada) seria a classe de ideia que o próprio
+conselho do item 112 já apontou como a única capaz de escapar da parede
+estatística ("atacar estrutura de custo/frequência, não só o gatilho de
+entrada") — **registrado aqui como opção para uma rodada futura, se o
+usuário quiser, não como recomendação de agora.**
+
+### Leitura (fato × hipótese × recomendação)
+
+**Fato**: ICT/SMC já está implementado com fidelidade alta nos componentes
+com definição consensual (estrutura, sweep, FVG), aproximação deliberada
+onde não há consenso (Order Block), e nunca virou gate sem medição
+prévia — disciplina já seguida antes desta pergunta existir.
+
+**Recomendação**: não investir em mais ICT agora. O gargalo diagnosticado
+(gatilho raro demais, não qualidade de sinal) não se resolve trocando de
+conceito ICT — resolveria só mudando a NATUREZA do gatilho (evento pontual
+→ estado persistente, ou timeframe mais largo), o que é uma mudança de
+comportamento real, não medição, e está fora do escopo desta pergunta.
+
+### Verificação
+
+Levantamento via Explore agent (26 buscas/leituras, arquivo:linha
+conferido: `smcStructure.js`, `orderBlock.js`, `fvg.js`, `retest.js`,
+`displacement.js`, `smcConfluence.js`, `scanner.js`, `docs/reference-pine/
+smc-a-unified-v2.3.pine`, itens 34/35/38/43/75/77/104/108/125 do
+`known-risks.md`, `roadmap.md` Bloco 1). Pesquisa de comunidade via
+WebSearch (3 buscas: ICT/SMC backtest evidence, order flow/footprint
+crypto, funding-rate carry). Nenhuma mudança de código, nenhum flag,
+nenhum backtest.
+
