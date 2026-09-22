@@ -24122,6 +24122,60 @@ neste caso levou a descartar duas hipóteses (aba do browser desatualizada;
 deploy que não subiu) antes de confirmar que o fix estava correto desde o
 início, só ainda não tinha tido tempo de se refletir no log que o usuário
 via.
+
+### Addendum (2026-09-22) — a mesma aba desatualizada, dias depois, e a correção preventiva
+
+Usuário colou outro Debug Log, mostrando `"Illegal invocation"` de novo,
+repetido em rajadas espalhadas entre 2026-09-21 08:02 e 2026-09-22 09:27 —
+**dias depois** do deploy confirmado (2026-09-19, ~16:56 UTC). Desta vez não
+é "log antigo ainda visível": as datas são posteriores ao deploy confirmado.
+
+**Causa raiz confirmada, não suposição.** O mesmo log continha:
+```
+ERROR (errorBoundary) Erro de renderização: Failed to fetch dynamically
+imported module: https://sentinel-signals.onrender.com/assets/Alerts-4Xx17WQA.js
+```
+Essa é a assinatura clássica de uma aba do navegador que ficou aberta desde
+ANTES de um deploy novo: os arquivos de cada página (`chunks`, nomeados com
+hash) trocam de nome a cada build; uma aba já carregada continua rodando o
+JS antigo na memória (SPA não se autoatualiza) e, ao tentar abrir uma
+página, pede um arquivo que o deploy seguinte já substituiu. Reforçado por
+código: `useAutoScan.js` roda scan completo a cada 60min e price-check a
+cada 2min **silenciosamente em qualquer aba aberta**, então uma aba
+esquecida (do usuário ou de qualquer dispositivo com o painel aberto)
+continua batendo no bug antigo indefinidamente, sem ninguém olhando. O cron
+(GitHub Actions, a cada ~5min) seguiu limpo o tempo todo — confirmado pelos
+`INFO ... 0 erros` do próprio log, agrupados perto de cada hora fechada.
+
+**Não é regressão do fix do item 184** — conferido no código de produção
+atual (`src/lib/httpRetry.js`): `Reflect.get(target, prop)` sem `receiver`,
+igual ao commit corrigido. O bug nunca voltou; é a MESMA aba velha, ainda
+rodando o bundle de antes do fix, três dias depois.
+
+**Correção preventiva** (pedido explícito do usuário): `src/lib/
+lazyWithReload.js` — substitui `React.lazy` puro (usado pelas páginas
+lazy-loaded de `App.jsx`) por uma versão que detecta especificamente
+`"Failed to fetch dynamically imported module"` (e as variações de
+Firefox/Safari) e recarrega a página **uma única vez** por sessão de aba
+(`sessionStorage`, nunca sobrevive a fechar a aba) em vez de propagar pro
+ErrorBoundary. Uma falha de qualquer outro tipo (rede offline, etc.)
+continua propagando normalmente — sem loop de reload se a causa não for
+staleness. Não resolve a causa (aba esquecida ainda existe, o auto-scan
+ainda falha até o reload acontecer), mas fecha a lacuna: da próxima vez que
+isso acontecer, a aba se autorrecupera na próxima navegação em vez de ficar
+presa até alguém notar e atualizar manualmente.
+
+**Teste**: `src/lib/lazyWithReload.test.js` — sucesso não recarrega;
+REGRESSÃO real (erro de chunk recarrega uma vez); não recarrega de novo se
+já tentou nesta aba (evita loop); erro que não é de chunk propaga normal.
+`npm run lint && npm test (1958) && npm run build` limpos — os chunks por
+página (`Alerts-*.js`, `Dashboard-*.js` etc.) continuam sendo gerados
+normalmente, o wrapper não quebra a análise estática do Vite do `import()`.
+
+**Ação do usuário, fora do código**: encontrar e atualizar/fechar a aba
+antiga que gerou esse log — a correção acima evita a PRÓXIMA vez, não
+limpa a aba que já está presa agora.
+
 ## 185. Modo sombra (item 56) — checkpoint 2026-09-21 e recomendação de pausa
 
 Usuário pediu leitura do estado atual do modo sombra prospectivo (48

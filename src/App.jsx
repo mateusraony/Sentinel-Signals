@@ -1,4 +1,4 @@
-import { useEffect, lazy, Suspense } from 'react'
+import { useEffect, Suspense } from 'react'
 import { Toaster } from "@/components/ui/toaster"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -8,6 +8,7 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { lazyWithReload } from '@/lib/lazyWithReload';
 
 import AppLayout from '@/components/layout/AppLayout';
 // docs/roadmap.md Bloco 5 (bundle >500kB) — cada página vira seu próprio
@@ -15,18 +16,26 @@ import AppLayout from '@/components/layout/AppLayout';
 // principal. AppLayout fica estático (é o shell, sempre necessário). O
 // fallback do Suspense reusa o mesmo spinner de tela cheia que já existia
 // para o carregamento de auth, abaixo — nenhuma UI nova.
-const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const Assets = lazy(() => import('@/pages/Assets'));
-const Alerts = lazy(() => import('@/pages/Alerts'));
-const Logs = lazy(() => import('@/pages/Logs'));
-const Trades = lazy(() => import('@/pages/Trades'));
-const TradeHistory = lazy(() => import('@/pages/TradeHistory'));
-const PineScript = lazy(() => import('@/pages/PineScript'));
-const StrategyReviewer = lazy(() => import('@/pages/StrategyReviewer'));
-const MonthlyReport = lazy(() => import('@/pages/MonthlyReport'));
-const Settings = lazy(() => import('@/pages/Settings'));
-const Backtest = lazy(() => import('@/pages/Backtest'));
-const Verification = lazy(() => import('@/pages/Verification'));
+//
+// lazyWithReload (não React.lazy puro) — docs/known-risks.md item 184
+// addendum: uma aba aberta desde antes de um deploy novo tenta buscar um
+// chunk cujo nome de arquivo já não existe mais no servidor ("Failed to
+// fetch dynamically imported module") e fica presa nesse erro para sempre,
+// já que a aba não recarrega sozinha. Recarrega uma vez automaticamente
+// nesse caso específico; qualquer outra falha continua propagando pro
+// ErrorBoundary normalmente.
+const Dashboard = lazyWithReload(() => import('@/pages/Dashboard'));
+const Assets = lazyWithReload(() => import('@/pages/Assets'));
+const Alerts = lazyWithReload(() => import('@/pages/Alerts'));
+const Logs = lazyWithReload(() => import('@/pages/Logs'));
+const Trades = lazyWithReload(() => import('@/pages/Trades'));
+const TradeHistory = lazyWithReload(() => import('@/pages/TradeHistory'));
+const PineScript = lazyWithReload(() => import('@/pages/PineScript'));
+const StrategyReviewer = lazyWithReload(() => import('@/pages/StrategyReviewer'));
+const MonthlyReport = lazyWithReload(() => import('@/pages/MonthlyReport'));
+const Settings = lazyWithReload(() => import('@/pages/Settings'));
+const Backtest = lazyWithReload(() => import('@/pages/Backtest'));
+const Verification = lazyWithReload(() => import('@/pages/Verification'));
 
 const PageLoadingFallback = () => (
   <div className="fixed inset-0 flex items-center justify-center bg-background">
