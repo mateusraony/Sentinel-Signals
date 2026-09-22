@@ -10,6 +10,11 @@ import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 // cache do TanStack Query, sem fetch extra.
 const OPS_LIMIT = 500;
 
+// Mesma convenção de rótulo já usada em TradeCard.jsx — de qual mercado da
+// Binance veio o preço desta operação ('futures' = painel/navegador,
+// 'spot' = cron 24h). Ver docs/known-risks.md item 4/178.
+const MARKET_SOURCE_LABEL = { spot: 'Spot', futures: 'Futures' };
+
 function ConfidenceRow({ label, summary }) {
   const hasSamples = summary.rCounted > 0;
   const ci = summary.expectancyRCI95;
@@ -68,13 +73,28 @@ export default function LiveConfidenceCard() {
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
-  const { all, buy, sell } = useMemo(() => ({
+  const { all, buy, sell, spot, futures, semFonte } = useMemo(() => ({
     all: summarizeOps(operations),
     buy: summarizeOps(operations.filter(op => op.side === 'BUY')),
     sell: summarizeOps(operations.filter(op => op.side === 'SELL')),
+    // Eixo DIFERENTE de BUY/SELL acima (de onde veio o preço, não o lado da
+    // operação) — item 186/178: já era gravado em toda op, mas nenhum
+    // relatório agregado consumia. `market_source` só existe desde
+    // 2026-09-14 (item 178); operações mais antigas caem em `semFonte`.
+    spot: summarizeOps(operations.filter(op => op.market_source === 'spot')),
+    futures: summarizeOps(operations.filter(op => op.market_source === 'futures')),
+    semFonte: summarizeOps(operations.filter(op => op.market_source == null)),
   }), [operations]);
 
   if (all.total === 0) return null;
+
+  // Só mostra a seção "por fonte" quando há pelo menos uma operação com (ou
+  // sem) o campo — evita 3 linhas vazias enquanto a amostra ainda é pequena.
+  const sourceRows = [
+    { key: 'spot', label: MARKET_SOURCE_LABEL.spot, summary: spot },
+    { key: 'futures', label: MARKET_SOURCE_LABEL.futures, summary: futures },
+    { key: 'semFonte', label: 'Sem registro', summary: semFonte },
+  ].filter(row => row.summary.total > 0);
 
   return (
     <div className="rounded-2xl p-4"
@@ -92,6 +112,27 @@ export default function LiveConfidenceCard() {
         <ConfidenceRow label="BUY" summary={buy} />
         <ConfidenceRow label="SELL" summary={sell} />
       </div>
+      {sourceRows.length > 0 && (
+        <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="flex items-center gap-2 mb-2.5">
+            <span className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground">Por fonte de dado</span>
+            <Tooltip>
+              <TooltipTrigger type="button" className="text-[8px] font-mono px-1.5 py-0.5 rounded cursor-help"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}>
+                Spot × Futures
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[280px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                Eixo diferente do BUY/SELL acima — aqui é de onde veio o preço da operação (cron 24h = Spot, painel aberto no navegador = Futures, item 4/178). Nunca combine com BUY/SELL no mesmo IC. &quot;Sem registro&quot; são operações de antes de 2026-09-14, quando esse campo passou a existir.
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+            {sourceRows.map(row => (
+              <ConfidenceRow key={row.key} label={row.label} summary={row.summary} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
