@@ -681,7 +681,7 @@ function RealPeriodTab() {
 
       {isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-      ) : isError ? (
+      ) : isError && allOps.length === 0 ? (
         <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar as operações reais agora." onRetry={refetch} />
         </div>

@@ -567,7 +567,7 @@ export default function TradeHistory() {
         <div className="flex justify-center py-16">
           <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
         </div>
-      ) : isError ? (
+      ) : isError && operations.length === 0 ? (
         <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
           <QueryErrorState message="Não foi possível carregar o histórico agora." onRetry={refetch} />
         </div>

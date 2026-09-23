@@ -347,7 +347,7 @@ export default function Dashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {[1,2,3].map(i => <div key={i} className="glass-card rounded-xl h-52 shimmer" />)}
                 </div>
-              ) : assetsError ? (
+              ) : assetsError && assets.length === 0 ? (
                 <div className="glass-card rounded-xl p-8">
                   <QueryErrorState message="Não foi possível carregar os ativos monitorados agora." onRetry={refetchAssets} />
                 </div>

@@ -749,7 +749,7 @@ export default function Trades() {
             <div className="flex justify-center py-16">
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
-          ) : isError ? (
+          ) : isError && operations.length === 0 ? (
             <div className="glass-card rounded-xl p-8">
               <QueryErrorState message="Não foi possível carregar as operações agora." onRetry={refetch} />
             </div>

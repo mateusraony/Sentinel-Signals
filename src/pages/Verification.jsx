@@ -246,7 +246,7 @@ export default function Verification() {
         <div className="space-y-3">
           {[1, 2, 3].map(i => <div key={i} className="glass-card rounded-xl h-28 shimmer" />)}
         </div>
-      ) : isError ? (
+      ) : isError && tasks.length === 0 ? (
         <div className="glass-card rounded-xl p-8">
           <QueryErrorState message="Não foi possível carregar as tarefas de verificação agora." onRetry={refetch} />
         </div>

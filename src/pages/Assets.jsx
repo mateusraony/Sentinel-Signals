@@ -203,7 +203,7 @@ export default function Assets() {
       {/* List */}
       {isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
-      ) : isError ? (
+      ) : isError && assets.length === 0 ? (
         <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar os ativos agora." onRetry={refetch} />
         </div>
