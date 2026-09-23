@@ -4558,6 +4558,24 @@ export async function scanAllAssets(onProgress) {
   }
 }
 
+// "Failed to fetch" (fetch() do BROWSER) e "fetch failed" (Node/undici)
+// compartilham forma de mensagem mas não name/cause — dedupKey do log de
+// erro abaixo continua chaveado só por err.message (contrato do item
+// 39.1/scanErrorDedupKey, não mexer), isto é só o detalhe extra que falta
+// pra distinguir os dois depois do fato (docs/known-risks.md item 57
+// addendum, 2026-09-22/23). err.cause do undici é um objeto simples
+// (errno/code/syscall), nunca assuma que é uma instância de Error.
+function describeErrorCause(cause) {
+  if (cause == null) return null;
+  if (typeof cause !== 'object') return String(cause);
+  return {
+    message: cause.message ?? null,
+    code: cause.code ?? null,
+    errno: cause.errno ?? null,
+    syscall: cause.syscall ?? null,
+  };
+}
+
 async function scanAllAssetsInner(onProgress) {
   const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
 
@@ -4634,6 +4652,11 @@ async function scanAllAssetsInner(onProgress) {
         module: 'scanner',
         message: `Erro no scan de ${asset.symbol}: ${err.message}`,
         symbol: asset.symbol,
+        executor: EXECUTOR,
+        details: {
+          error_name: err.name ?? null,
+          error_cause: describeErrorCause(err.cause),
+        },
       });
     }
   }
