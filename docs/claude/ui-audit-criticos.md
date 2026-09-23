@@ -50,10 +50,23 @@ rodada de correção — não é um resumo escrito de uma vez só. Convenção:
   `src/pages/TradeHistory.jsx`, `src/pages/Verification.jsx`,
   `src/pages/Backtest.jsx`, `src/pages/Alerts.jsx`, `src/pages/Logs.jsx`.
 
-**Verificação rodada:** `npm run lint && npm test && npm run build` (ver
-resultado abaixo, atualizado após rodar). Não foi possível testar
-visualmente com dado real — mesma limitação de sandbox sem credenciais
-Firebase já registrada na auditoria original.
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet`. Não foi possível testar visualmente com dado
+real — mesma limitação de sandbox sem credenciais Firebase já registrada
+na auditoria original.
+
+**PR:** https://github.com/mateusraony/Sentinel-Signals/pull/396.
+
+**Correções pós-push (CI + review):**
+- CI acusou regressão no `typecheck:ratchet` (17 erros vs. teto 16) —
+  `reloadLabel` e outros props opcionais de `ErrorFallback.jsx` sem valor
+  default faziam o TypeScript inferi-los como obrigatórios. Corrigido com
+  defaults explícitos na desestruturação (commit `2a6b9dd`).
+- Review automático (Codex) achou um bug real no C-3: os branches de
+  `isError` substituíam dado em cache já carregado por uma tela de erro
+  cheia sempre que um refetch em BACKGROUND falhava (não só na carga
+  inicial). Corrigido nas 8 páginas: erro cheio só quando `isError` E não
+  há nenhum dado em cache (commit `1d9fba5`).
 
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
