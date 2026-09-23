@@ -24625,3 +24625,106 @@ WebSearch (3 buscas: ICT/SMC backtest evidence, order flow/footprint
 crypto, funding-rate carry). Nenhuma mudança de código, nenhum flag,
 nenhum backtest.
 
+## 190. Existe algum padrão pra mais acertividade ou mais operações? Síntese honesta de todo o histórico (2026-09-23)
+
+Usuário perguntou, olhando pra tudo que já foi medido (189 itens), se há
+algum padrão que ajude a ter mais acertividade e mais operações. Duas
+respostas, tratadas separadamente porque a evidência pra cada uma é
+diferente.
+
+### Acertividade — nenhum padrão novo. O projeto já decidiu formalmente parar de procurar.
+
+**Item 133 (fechado 2026-08-27)** trocou o alvo declarado do projeto de
+"provar edge" para "estreitar o intervalo de confiança" — citação exata:
+*"o edge MEDIDO é +0,0262R — provar isso exige n=8.422, ~70 anos. Nunca."*
+Meta-alvo agora: meia-largura do IC de 0,15R em ~1 ano, 0,10R em ~2,4
+anos — falsificação real, não caça a padrão.
+
+O achado mais robusto de todo o histórico é o único que sobrevive às DUAS
+correções estatísticas simultâneas (cluster-robustez E Bonferroni por
+família): **BUY perde −0,344R** (trial `allowedside-ab-buy-only`, n=181,
+IC final empilhando as duas correções **[−0,566; −0,122]**, exclui zero
+com folga — item 126/133). Mas isso é evidência NEGATIVA sobre BUY, não
+"SELL ganha": o único teste pré-registrado de SELL **fora** da amostra que
+gerou a hipótese **falhou** — `allowedside-holdout-sell-only`, n=150,
+regrediu de +0,22R (hipótese) para **+0,078R real, IC [−0,115; +0,27]
+cruzando zero** — assinatura clássica de overfitting. 0 dos 14 trials da
+família SELL-only sobrevivem ao Bonferroni da própria família. Frase
+exata do item 133: *"o achado robusto do projeto é que BUY PERDE, não que
+SELL ganha."*
+
+O único mecanismo com efeito real medido (não ruído) é o **trailing
+pré-TP1** (item 132, produção desde 2026-08-26): sd(R) por operação
+**−35%** (1,2493→0,8063), max drawdown **pela metade** (12,66%→6,40%),
+aceleração estatística **1,85×**. Mas a **expectância não mudou de forma
+detectável** (Δ+0,0005R, z=0,004 — ruído puro). Ou seja: o único ganho
+real medido é **risco menor pro mesmo edge**, não **taxa de acerto
+maior**. Já está em produção — não é uma alavanca nova a puxar.
+
+Funding real por lado (item 131) é correção de contabilidade de custo
+(inverteu o sinal do líquido nessa janela, −0,0042R→+0,0257R), não um
+sinal/filtro — segue `conclusive: false`.
+
+**Recomendação**: não há padrão escondido para desenterrar. O que o
+projeto faz bem, documentado no próprio item 133, é falsificar com
+honestidade — matou runner-sempre-bom, breakeven, RSI-only, stop
+estrutural, ICT/SMC (item 189), arb-invalidate, Time Stop encurtado.
+Continuar procurando "o padrão que falta" nos mesmos dados já teria o
+mesmo resultado — é exatamente o problema de múltiplas comparações que o
+projeto já documentou repetidas vezes (itens 58/88/99).
+
+### Volume de operações — achado genuinamente novo: uma alavanca destravada, nunca reavaliada
+
+O teto informal de **~10 ativos monitorados** (reduzido de 14→10 no item
+106, 2026-08-19) foi decisão motivada pela cota diária do Firestore Spark
+(50k leituras/dia, ~86% consumida, item 150). **O projeto migrou de
+Firestore para Postgres/Neon em 2026-09-12 (item 170)** —
+`.claude/rules/firestore-concurrency.md` confirma: *"Não se aplica mais
+desde o cutover — Postgres/Neon não tem teto diário de operações."*
+
+**Mas essa conexão nunca foi feita.** Busca exaustiva nos itens 170-189 e
+em `roadmap.md`: nenhum registro revisitando a decisão de 10 ativos à luz
+da migração. Não há teto codificado em lugar nenhum (`AddAssetForm.jsx`,
+`Assets.jsx`, `firestore.rules`, rotas do `server/`) — "10" é hoje só uma
+lista cadastrada manualmente. É uma alavanca **tecnicamente destravada e
+nunca reavaliada**, nem pra manter nem pra expandir — silêncio, não
+decisão.
+
+**Achado colateral**: o guard de projeção de cota em `scanner.js:4641-
+4658` (compara contra `READ_LIMIT=50000`/`WRITE_LIMIT=20000`) roda hoje
+sobre dado **sempre zerado** — `getAndResetOpCounts()` virou stub fixo
+`{reads:0, writes:0}` no backend Postgres (item 176, `db/pgEntitiesCore.
+mjs:590`). Código decorativo pós-cutover, inofensivo mas nunca limpo.
+**Não removido nesta rodada** — achado de análise, não pedido de mudança.
+
+**Ressalvas reais antes de expandir**:
+1. Mais ativos monitorados em produção **não é a mesma coisa** que mais
+   símbolos no BACKTEST — isso já foi testado e **piora** a capacidade de
+   provar edge (item 110: 42 símbolos novos encolheram o G de cluster
+   pooled pra 3, "a unidade independente é TEMPO, não ativo"). Expandir
+   ativos monitorados dá mais volume de sinal real, não mais poder
+   estatístico de backtest.
+2. Limites técnicos nunca medidos em N maior: delay serial de 500ms/ativo
+   em `scanner.js:4601-4604` (~4,5s só de delay com 10 ativos, escala
+   linear), timeout de 12min do `scan.yml`, rate limit da API pública da
+   Binance (nunca medido contra o padrão de uso deste projeto).
+3. Mais operações com um edge ainda não confirmado (`conclusive: false`)
+   significa mais dado pra estreitar o IC mais rápido — não mais lucro
+   garantido. Como é sinalização virtual (sem execução real), o risco
+   de "mais operações" é baixo, mas a expectativa certa é "resposta mais
+   rápida", não "mais acerto".
+
+**Recomendação**: decisão do usuário, não ação automática. Se quiser
+seguir, o próximo passo seria medir o item 3 (limites técnicos) antes de
+cadastrar muitos ativos de uma vez — mesma disciplina de "meça antes de
+decidir" do resto do projeto.
+
+### Verificação
+
+Compilação via 2 Explore agents em paralelo: um conferiu com precisão
+numérica os itens 46/126/131/132/133 e varreu os títulos 150-189 por
+achados de edge não mapeados (nenhum encontrado); outro rastreou a
+história completa da cota de ativos (itens 106/145/148/150/151/152/170/
+176) e confirmou a ausência de teto codificado. Nenhuma mudança de
+código, nenhum flag, nenhum backtest nesta rodada.
+
