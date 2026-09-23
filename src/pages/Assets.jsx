@@ -9,6 +9,7 @@ import AddAssetForm from '@/components/assets/AddAssetForm';
 import AssetConfigPanel from '@/components/assets/AssetConfigPanel';
 import AssetDetailPanel from '@/components/assets/AssetDetailPanel';
 import { calcProximity } from '@/components/dashboard/ProximityBar';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import moment from 'moment';
 import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 
@@ -34,7 +35,7 @@ export default function Assets() {
     return () => window.removeEventListener('app-reset-filters', handler);
   }, []);
 
-  const { data: assets = [], isLoading } = useQuery({
+  const { data: assets = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['all-assets'],
     queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
     refetchInterval: POLL_OPERATIONAL_MS,
@@ -202,6 +203,10 @@ export default function Assets() {
       {/* List */}
       {isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : isError ? (
+        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <QueryErrorState message="Não foi possível carregar os ativos agora." onRetry={refetch} />
+        </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <Coins className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />

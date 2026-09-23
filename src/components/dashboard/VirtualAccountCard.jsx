@@ -28,8 +28,11 @@ function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefine
 }
 
 // Conta virtual (capital+drawdown reais, compostos) sobre TODAS as operações
-// fechadas — query própria (não a de 100 ops que PerformanceMetricsBar/
-// PerformanceOverview já usam), com o mesmo teto de 500 que MonthlyReport.jsx
+// fechadas. Mesma queryKey usada por LiveConfidenceCard.jsx e (desde o
+// achado C-2 do Raio-X de UI/UX, docs/claude/ui-audit-criticos.md) por
+// PerformanceMetricsBar.jsx/PerformanceOverview.jsx — os 4 cards de
+// performance do Dashboard agora sempre concordam sobre a mesma amostra.
+// Teto de 500, mesmo que MonthlyReport.jsx
 // tinha antes do item 141 (agora MonthlyReport busca por intervalo de data
 // em vez desse teto — aqui ele segue valendo, sem filtro de mês possível,
 // já que a conta virtual precisa do histórico inteiro). Sujeito à mesma

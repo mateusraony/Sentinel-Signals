@@ -72,7 +72,7 @@ export default function PerformanceReport({ trades }) {
           icon={TrendingUp}
           label="PnL Acumulado"
           value={fmtPct(metrics.totalPnl)}
-          sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`}
+          sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L · soma simples, não composta`}
           color={metrics.totalPnl >= 0 ? '#00ff80' : '#ff1478'}
           glowColor={metrics.totalPnl >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'}
         />

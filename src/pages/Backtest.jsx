@@ -19,6 +19,7 @@ import { fetchCandles } from '@/lib/marketDataProvider';
 import { runQuickBacktest } from '@/lib/quickBacktest';
 import { Slider } from '@/components/ui/slider';
 import TriggerBacktestPanel from '@/components/backtest/TriggerBacktestPanel';
+import { QueryErrorState } from '@/components/QueryErrorState';
 
 function fmtPct(v, digits = 2) {
   if (v === null || v === undefined || Number.isNaN(v)) return '—';
@@ -639,7 +640,7 @@ function RealPeriodTab() {
     return { from: from.toDate(), to: to.toDate() };
   }, [preset]);
 
-  const { data: allOps = [], isLoading } = useQuery({
+  const { data: allOps = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['backtest-real-ops'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', REAL_OPS_LIMIT),
     staleTime: 60000,
@@ -680,6 +681,10 @@ function RealPeriodTab() {
 
       {isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : isError ? (
+        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <QueryErrorState message="Não foi possível carregar as operações reais agora." onRetry={refetch} />
+        </div>
       ) : !report ? (
         <div className="rounded-xl p-10 text-center" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <History className="w-8 h-8 mx-auto mb-3 text-muted-foreground opacity-30" />

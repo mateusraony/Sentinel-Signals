@@ -794,6 +794,16 @@ justificativa nova para reabrir isso com o resultado acima.
   mesmas hipóteses, um mês antes do item 186 recomendar refazer; nenhum
   backtest novo foi necessário.
 
+- **Raio-X de UI/UX + 3 críticos corrigidos (item 193, 2026-09-23).**
+  Auditoria completa somente leitura (Artifact: https://claude.ai/artifact/
+  TMJxxVWhyQxLw9QXMR8YZF); os 3 achados críticos (tela branca no erro de
+  auth, cards de performance do Dashboard com amostras divergentes, PnL
+  somado de 2 formas sem aviso, erro de rede indistinguível de "vazio" em
+  8 páginas) foram corrigidos na sequência, a pedido do usuário. **Pendente:
+  todo o resto do backlog** (15 achados de Alta prioridade, 17 de Média,
+  reorganização do Dashboard) — status detalhado e atualizado em
+  `docs/claude/ui-audit-criticos.md`.
+
 ---
 
 ## Fora de escopo permanente (não são pendências)

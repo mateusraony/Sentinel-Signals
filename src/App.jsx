@@ -8,6 +8,7 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ErrorFallback } from '@/components/ErrorFallback';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 
 import AppLayout from '@/components/layout/AppLayout';
@@ -47,10 +48,27 @@ const PageLoadingFallback = () => (
 );
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth } = useAuth();
+  const { isLoadingAuth, authError } = useAuth();
 
   if (isLoadingAuth) {
     return <PageLoadingFallback />;
+  }
+
+  // Sem isto, uma falha de autenticação (Firebase fora do ar, chave
+  // inválida) não tinha NENHUMA UI — a tela ficava em branco pra sempre,
+  // já que authError nunca era consultado aqui (achado C-1 do Raio-X de
+  // UI/UX, docs/claude/ui-audit-criticos.md).
+  if (authError) {
+    return (
+      <ErrorFallback
+        fullPage
+        title="Sem conexão com o servidor"
+        message="Não conseguimos confirmar sua sessão agora. Seus dados estão salvos e seguros — isso costuma ser uma instabilidade temporária de conexão."
+        diagnosticText={authError.message}
+        diagnosticLabel="Diagnóstico"
+        onReload={() => window.location.reload()}
+      />
+    );
   }
 
   return (
