@@ -24728,3 +24728,109 @@ história completa da cota de ativos (itens 106/145/148/150/151/152/170/
 176) e confirmou a ausência de teto codificado. Nenhuma mudança de
 código, nenhum flag, nenhum backtest nesta rodada.
 
+## 191. Limites técnicos medidos de verdade antes de expandir ativos monitorados (ressalva 2 do item 190, 2026-09-23)
+
+Pedido explícito do usuário: "pode medir os limites tecnicos antes de
+expandir". Medição real via GitHub Actions API (histórico de runs/jobs do
+`scan.yml`) e leitura de código — não estimativa.
+
+### Duração real do scan (10 ativos, produção)
+
+Amostra de 15 runs consecutivos do `scan.yml` (2026-09-23, 12:25–13:35,
+todos `conclusion: success`), confirmando a cadência de ~5min já
+documentada (item 18). Duas amostras com granularidade por STEP (não só
+job inteiro):
+
+| Run | Passo `npm run scan` | Job completo (checkout+setup+`npm ci`+scan) |
+|---|---|---|
+| 20554 (run 35868080706) | **18s** (13:35:31→13:35:49) | 58s |
+| 20545 (run 35863005333) | **15s** (12:50:28→12:50:43) | 40s |
+
+Contra `timeout-minutes: 12` (720s, `.github/workflows/scan.yml:31`): o
+passo real usa **~2-2,5% do orçamento do timeout**. `npm ci` (~12-15s, com
+cache `npm` do `setup-node`) domina o tempo fora do scan em si, não o
+scan.
+
+### Custo por ativo, decomposto
+
+- **Delay serial fixo**: `scanner.js:4601-4604`, 500ms entre ativos,
+  `assets.length - 1` vezes — com 10 ativos, **4,5s fixos**, ~25-30% dos
+  15-18s medidos.
+- **Custo de rede/DB por ativo (residual)**: (15-18s − 4,5s) / 10 ≈
+  **1,0-1,35s/ativo** — 3 chamadas `fetchCandles` sequenciais
+  incondicionais por ativo por passada (`TIMEFRAMES = ['1h','4h','1d']`,
+  `scanner.js:62,1327-1334`) + a escrita em Postgres
+  (`persistScanResults`). **Não** inclui 15m/5m: `check15mConfirmation`
+  (`scanner.js:565`) e `check5mSmcConfirmation` (`scanner.js:661`) só
+  disparam quando um sinal candidato já passou pelo gate de 1h/4h — custo
+  condicional, não por-ativo-por-passada.
+- **Extrapolação linear (não é nova medição em N maior — nenhum teste real
+  rodou com mais de 10 ativos hoje)**: a 500ms delay + ~1,2s/ativo, cada
+  ativo adicional custa ~1,7s. Pra consumir metade do orçamento do
+  timeout (360s, margem de segurança antes do timeout de 12min) seriam
+  necessários ~210 ativos — número claramente não realista como meta, só
+  ilustra que o teto de 10 está muito longe de qualquer limite técnico do
+  PASSE DE SCAN em si, ao contrário do que a cota do Firestore (item 190)
+  fazia crer.
+
+### Rate limit da Binance
+
+`src/lib/marketDataProvider.js:11` documenta 2400 req/min no `fapi`
+(Futures, usado pelo navegador). O cron usa Spot
+(`data-api.binance.vision`, `scripts/adminMarketDataProvider.js`) — sem
+comentário de rate limit no código deste repo; os limites públicos da
+Binance Spot são conhecidos por serem generosos o bastante para este
+padrão de uso (dezenas de chamadas por passada de 5min), mas **isso não
+foi reverificado nesta sessão contra a documentação oficial atual da
+Binance** — fica como hipótese não certificada, não fato medido. Runners
+do GitHub Actions são efêmeros com IP rotativo por run, então não há
+acúmulo de uso entre passadas do jeito que haveria num servidor fixo.
+
+### Achado novo e mais concreto: o teto real não é o scan, é o backfill de ativo novo
+
+`scripts/run-backfill-check.mjs:93` — `MAX_ASSETS_PER_RUN = 1`. O workflow
+que roda essa checagem retroativa de 60 dias para ativo novo/reativado
+(`.github/workflows/backfill.yml`, item 137) tem cadência própria de
+**1x/hora** (`cron: "23 * * * *"`), concurrency group separado do scan ao
+vivo (`backfill-check`, não `scheduled-scan` — corrigido no item 137
+addendum 2026-08-29, depois de um incidente real onde esse replay travou
+11m32s dentro do MESMO job do scan e atrasou os 10 ativos inteiros; a
+causa raiz — leituras/escritas incondicionais de `MonitoredAsset`/
+`AssetState` a cada tick do replay — foi corrigida via cache em memória,
+item 137 addendum 2026-08-31).
+
+**Consequência prática pra expansão**: cadastrar vários ativos NOVOS de
+uma vez não trava nem estoura timeout (isso já foi resolvido), mas cada
+ativo só ganha sua checagem retroativa de 60 dias **1 por hora** — 20
+ativos novos cadastrados juntos levariam **~20 horas** até todos saírem
+de `backfill_check_status:'pending'`. Não é risco, é latência de
+rollout — o ativo já aparece e é escaneado ao vivo antes disso (o
+backfill só preenche o HISTÓRICO retroativo de 60 dias, não bloqueia o
+scan ao vivo do ativo).
+
+### Conclusão
+
+- **O passe de scan em si não é o fator limitante** — a folga medida
+  contra o timeout de 12min é grande (>95% livre com 10 ativos) e a
+  extrapolação linear (não testada de verdade) sugere folga por dezenas
+  de ativos antes de qualquer risco real de timeout.
+- **O fator limitante real e já medido é o throughput de backfill de
+  ativo NOVO**: 1/hora, não o scan recorrente dos ativos já
+  estabelecidos.
+- Não incluído nesta medição (fora do que foi pedido — "medir limites
+  técnicos", não "decidir expandir"): poder estatístico de backtest com
+  mais símbolos (já respondido, item 190 ressalva 1: piora, não ajuda) e
+  se o `rate limit` real da Binance Spot bate com o número documentado no
+  código do lado Futures.
+- **Nenhuma mudança de código, nenhum flag, nenhuma expansão real** —
+  decisão de quantos ativos cadastrar continua do usuário.
+
+### Verificação
+
+Duração de scan: GitHub Actions API (`list_workflow_runs`/
+`list_workflow_jobs`, `scan.yml`, runs 35868080706 e 35863005333,
+2026-09-23) — dado real de produção, não simulado. Custo por ativo e
+gates condicionais: leitura direta de `scanner.js` (linhas citadas
+acima). Throughput de backfill: leitura direta de
+`scripts/run-backfill-check.mjs:93` e `.github/workflows/backfill.yml`.
+
