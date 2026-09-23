@@ -7,7 +7,17 @@ import { Radar, RefreshCw, Copy, Check, AlertTriangle } from 'lucide-react';
  * visual, dois gatilhos diferentes. Extraído de ErrorBoundary.jsx sem
  * mudança de markup/estilo.
  */
-export function ErrorFallback({ fullPage, title, message, diagnosticText, diagnosticLabel, onReload, reloadLabel, onCopy, copied }) {
+export function ErrorFallback({
+  fullPage = false,
+  title = undefined,
+  message = undefined,
+  diagnosticText = undefined,
+  diagnosticLabel = undefined,
+  onReload,
+  reloadLabel = undefined,
+  onCopy = undefined,
+  copied = false,
+}) {
   return (
     <div className={fullPage ? 'fixed inset-0 z-50 flex items-center justify-center bg-background p-6 overflow-auto' : 'flex items-center justify-center p-6 sm:p-10'}>
       <div className="grid-overlay" />
