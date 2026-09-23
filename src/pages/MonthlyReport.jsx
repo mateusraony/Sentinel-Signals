@@ -1,16 +1,17 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { FileText, Download, TrendingUp, TrendingDown, Target, Award, Calendar, Loader2 } from 'lucide-react';
+import { FileText, Download, TrendingUp, TrendingDown, Target, Award, Calendar, Loader2, Copy, Check } from 'lucide-react';
 import moment from 'moment';
 import {
   ComposedChart, Bar, Line, PieChart, Pie, Cell,
   ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
-import { isClosedOp, getExitPrice, getClosedAt, calcRealizedPnlPct, summarizeOps } from '@/lib/tradeMetrics';
+import { isClosedOp, getExitPrice, getClosedAt, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
 import { Tooltip as InfoTooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { formatPrice } from '@/lib/priceProximity';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
+import { useCopyToClipboard, formatTradeOpLine } from '@/lib/clipboardText';
 
 function fmtPct(v) {
   if (v === null || v === undefined || isNaN(v)) return '—';
@@ -31,6 +32,30 @@ const STATUS_COLORS = {
   INVALIDATED: '#ff9f43',
   CLOSED: '#64748b',
 };
+
+// STOP_HIT sozinho não diz se foi lucro protegido (trailing pré-TP1 levou o
+// stop positivo antes de reverter) ou prejuízo real. classifyOutcome (fonte
+// única, tradeMetrics.js) já resolve isso pelo R/PnL realizado — mesmo
+// padrão que TradeHistory.jsx já usa pra BE, estendido aqui pra também
+// cobrir WIN. TP2_HIT/INVALIDATED/CLOSED continuam fixos — só STOP_HIT é
+// ambíguo.
+function statusLabel(op) {
+  if (op.status === 'STOP_HIT') {
+    const outcome = classifyOutcome(op);
+    if (outcome === 'WIN') return '✅ Stop (lucro)';
+    if (outcome === 'BE') return '🔄 Stop (BE)';
+  }
+  return STATUS_LABELS[op.status] || op.status;
+}
+
+function statusColor(op) {
+  if (op.status === 'STOP_HIT') {
+    const outcome = classifyOutcome(op);
+    if (outcome === 'WIN') return '#00ff80';
+    if (outcome === 'BE') return '#ffd166';
+  }
+  return STATUS_COLORS[op.status] || '#64748b';
+}
 
 function SummaryCard({ icon: Icon, label, value, sublabel, color, glowColor, tooltip = undefined }) {
   return (
@@ -266,7 +291,7 @@ export default function MonthlyReport() {
           `$${formatPrice(op.entry_price)}`,
           exitPrice ? `$${formatPrice(exitPrice)}` : '—',
           pnl !== null ? fmtPct(pnl) : '—',
-          (STATUS_LABELS[op.status] || op.status).replace(/[^\x20-\x7E]/g, ''),
+          statusLabel(op).replace(/[^\x20-\x7E]/g, ''),
         ];
         xPos = 16;
         rowData.forEach((val, i) => {
@@ -298,6 +323,21 @@ export default function MonthlyReport() {
     }
   };
 
+  // Reaproveita os MESMOS metrics/monthOps que já alimentam o PDF acima —
+  // texto plano em vez de arquivo, pra colar direto numa conversa (pedido
+  // do usuário). PDF continua existindo, isto é adicional.
+  const { copied, copy } = useCopyToClipboard();
+  const handleCopyText = () => {
+    if (!metrics || monthOps.length === 0) return;
+    const monthLabel = moment(selectedMonth + '-01').format('MMMM [de] YYYY');
+    const header = `Relatório Mensal — ${monthLabel}\n` +
+      `P&L ${fmtPct(metrics.totalPnl)} · WR ${metrics.winRate.toFixed(1)}% ` +
+      `(${metrics.wins}W/${metrics.be}BE/${metrics.losses}L) · ` +
+      `PF ${metrics.profitFactor === null ? '∞' : metrics.profitFactor.toFixed(2)}\n`;
+    const lines = monthOps.map(op => formatTradeOpLine(op, { getExitPrice, calcRealizedPnlPct, classifyOutcome, formatPrice, moment }));
+    copy([header, ...lines].join('\n'));
+  };
+
   return (
     <div className="space-y-5 max-w-7xl mx-auto">
       {/* Header */}
@@ -315,6 +355,14 @@ export default function MonthlyReport() {
               {monthOptions.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           </div>
+          <button onClick={handleCopyText} disabled={!metrics || monthOps.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono transition-all disabled:opacity-40"
+            style={copied
+              ? { background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }
+              : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
+            {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            {copied ? 'Copiado!' : 'Copiar'}
+          </button>
           <button onClick={handleExportPDF} disabled={exporting || !metrics || monthOps.length === 0}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[11px] font-mono font-bold transition-all hover:opacity-90 disabled:opacity-40"
             style={{ background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }}>
@@ -438,7 +486,7 @@ export default function MonthlyReport() {
                         <td className="px-4 py-2 text-right text-muted-foreground">${formatPrice(op.entry_price)}</td>
                         <td className="px-4 py-2 text-right text-muted-foreground">{exitPrice ? `$${formatPrice(exitPrice)}` : '—'}</td>
                         <td className="px-4 py-2 text-right font-bold" style={{ color: pnl >= 0 ? '#00ff80' : '#ff1478' }}>{pnl !== null ? fmtPct(pnl) : '—'}</td>
-                        <td className="px-4 py-2" style={{ color: STATUS_COLORS[op.status] || '#64748b' }}>{STATUS_LABELS[op.status] || op.status}</td>
+                        <td className="px-4 py-2" style={{ color: statusColor(op) }}>{statusLabel(op)}</td>
                       </tr>
                     );
                   })}

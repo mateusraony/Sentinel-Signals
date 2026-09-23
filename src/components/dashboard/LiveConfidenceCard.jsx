@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Gauge } from 'lucide-react';
+import { Gauge, Copy, Check } from 'lucide-react';
 import { backend } from '@/api/entities';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { summarizeOps } from '@/lib/tradeMetrics';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
+import { useCopyToClipboard } from '@/lib/clipboardText';
 
 // Mesmo teto/queryKey de VirtualAccountCard.jsx — dados compartilhados via
 // cache do TanStack Query, sem fetch extra.
@@ -86,6 +87,10 @@ export default function LiveConfidenceCard() {
     semFonte: summarizeOps(operations.filter(op => op.market_source == null)),
   }), [operations]);
 
+  // Hook antes do early return abaixo — regra de hooks do React não permite
+  // chamada condicional.
+  const { copied, copy } = useCopyToClipboard();
+
   if (all.total === 0) return null;
 
   // Só mostra a seção "por fonte" quando há pelo menos uma operação com (ou
@@ -95,6 +100,23 @@ export default function LiveConfidenceCard() {
     { key: 'futures', label: MARKET_SOURCE_LABEL.futures, summary: futures },
     { key: 'semFonte', label: 'Sem registro', summary: semFonte },
   ].filter(row => row.summary.total > 0);
+
+  // Agregados por cohort, não lista de operação — formato próprio (não usa
+  // formatTradeOpLine, que é pra linha-por-operação). Pedido do usuário pra
+  // colar direto numa conversa.
+  const fmtRow = (label, s) => {
+    const expectancy = s.rCounted > 0 ? `${s.expectancyR >= 0 ? '+' : ''}${s.expectancyR.toFixed(3)}R` : '—';
+    const ci = s.expectancyRCI95 ? ` IC[${s.expectancyRCI95[0].toFixed(3)}; ${s.expectancyRCI95[1].toFixed(3)}]` : '';
+    return `${label}: ${s.counted}/${s.minTrades} ops · expectância ${expectancy}${ci} · ${s.conclusive ? 'CONCLUSIVO' : 'INCONCLUSIVO'}`;
+  };
+  const handleCopy = () => {
+    const lines = [
+      'Confiança ao Vivo (amostra real)',
+      fmtRow('Geral', all), fmtRow('BUY', buy), fmtRow('SELL', sell),
+      ...sourceRows.map(r => fmtRow(r.label, r.summary)),
+    ];
+    copy(lines.join('\n'));
+  };
 
   return (
     <div className="rounded-2xl p-4"
@@ -106,6 +128,14 @@ export default function LiveConfidenceCard() {
           style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
           cresce a cada operação fechada
         </span>
+        <button onClick={handleCopy} type="button"
+          className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono transition-all"
+          style={copied
+            ? { background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }
+            : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
+          {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+          {copied ? 'Copiado!' : 'Copiar'}
+        </button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
         <ConfidenceRow label="Geral" summary={all} />

@@ -12,11 +12,20 @@ import { withTimeout, forceExit } from './scanTimeout.mjs';
 import { classifyFailure, isFirestoreQuotaExhausted } from './failureClassification.mjs';
 import { pathToFileURL } from 'node:url';
 
-// docs/known-risks.md item 142 — a scan normal termina em ~20s; 90s dá
-// folga generosa (retry de rede da Binance via httpRetry.js incluído) sem
-// chegar perto dos minutos que uma chamada Firestore presa em retry de
-// RESOURCE_EXHAUSTED levaria para desistir sozinha.
-const SCAN_STEP_TIMEOUT_MS = 90 * 1000;
+// docs/known-risks.md item 142/191 — uma passada limpa termina em ~15-18s.
+// 200s dá folga real para o pior caso de retry: desde o item 57 addendum
+// (2026-09-22/23, DEFAULT_MAX_RETRIES 3→5 em httpRetry.js), uma falha de
+// rede pura esgota ~15,5s por chamada fetchCandles (antes ~3,5s); com
+// scanAsset fazendo 3 chamadas sequenciais/ativo e 7-10 dos ~10 ativos
+// afetados na mesma passada (observado em produção), o acumulado só de
+// retry pode passar de 90s mesmo sem nenhuma chamada travando de verdade —
+// o valor antigo arriscava matar o processo (forceExit) no MEIO de uma
+// passada degradada, fazendo ativos ainda não alcançados desaparecerem do
+// log sem nenhum "Failed to fetch" explícito. 200s ainda fica bem longe
+// dos minutos que uma chamada Postgres presa levaria para desistir
+// sozinha, e a soma dos 3 usos (scanAllAssets/priceCheckActiveOps/
+// checkAssetHealthchecks) segue com folga contra timeout-minutes:12 do job.
+const SCAN_STEP_TIMEOUT_MS = 200 * 1000;
 
 // Real Firestore quota exhaustion (docs/known-risks.md item 138), distinct
 // from scanner.js's "projected near limit" warning (SystemLog-only, fires

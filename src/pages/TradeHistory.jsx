@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { History, Filter, BarChart2, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { History, Filter, BarChart2, ChevronDown, ChevronUp, Search, Copy, Check } from 'lucide-react';
 import PnLChart from '@/components/trades/PnLChart';
 import moment from 'moment';
 import {
@@ -14,6 +14,7 @@ import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 import { CandleBoundTag, DetectionLag } from '@/components/dashboard/EventTimeline';
 import { closedReasonLabel } from '@/lib/eventTimeline';
 import { explainOperationDecision, legacyClosedOperationText } from '@/lib/decisionExplanation';
+import { useCopyToClipboard, formatTradeOpLine } from '@/lib/clipboardText';
 
 // Planned risk/reward of the setup — always against the INITIAL stop. The old
 // version divided by current_stop, which post-TP1 is already breakeven and
@@ -401,6 +402,18 @@ export default function TradeHistory() {
   const ambiguousCount = filtered.filter(op => op.exit_ambiguous === true).length;
   const ambiguousPct = filtered.length > 0 ? ((ambiguousCount / filtered.length) * 100).toFixed(1) : '0.0';
 
+  // Reaproveita filtered/summarizeOps já calculados acima — respeita os
+  // filtros ativos na tela (mesmo critério de Logs.jsx: "o que está na tela
+  // é o que o usuário quer copiar"), pedido do usuário pra colar direto
+  // numa conversa.
+  const { copied, copy } = useCopyToClipboard();
+  const handleCopy = () => {
+    const header = `Histórico de Operações — ${filtered.length} operação(ões) filtrada(s)\n` +
+      `WR ${wr}% (${wins}W/${be}BE/${losses}L) · P&L acumulado ${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}%\n`;
+    const lines = filtered.map(op => formatTradeOpLine(op, { getExitPrice, calcRealizedPnlPct, classifyOutcome, formatPrice, moment }));
+    copy([header, ...lines].join('\n'));
+  };
+
   const inputStyle = { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', outline: 'none', fontFamily: 'monospace', fontSize: 10 };
   const filterBtnStyle = (active) => active
     ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
@@ -414,9 +427,19 @@ export default function TradeHistory() {
           <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Análise de Performance</p>
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Histórico de Trades</h1>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="live-dot" style={{ width: 5, height: 5 }} />
-          <span className="text-[10px] font-mono text-muted-foreground">{history.length} trades fechados</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <span className="live-dot" style={{ width: 5, height: 5 }} />
+            <span className="text-[10px] font-mono text-muted-foreground">{history.length} trades fechados</span>
+          </div>
+          <button onClick={handleCopy} disabled={filtered.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all disabled:opacity-40"
+            style={copied
+              ? { background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }
+              : { background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)', color: '#00e5ff' }}>
+            {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+            {copied ? 'Copiado!' : `Copiar (${filtered.length})`}
+          </button>
         </div>
       </div>
 
