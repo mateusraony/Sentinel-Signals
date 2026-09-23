@@ -133,6 +133,17 @@ export default function Logs() {
 
           <div className="w-px h-4" style={{ background: 'rgba(255,255,255,0.08)' }} />
 
+          {/* Atalho pro item 192 (docs/known-risks.md) — achar rápido as
+              ocorrências de "Failed to fetch" (cron vs navegador, item 57
+              addendum) sem digitar/selecionar os 3 filtros na mão toda vez. */}
+          <button onClick={() => { setSearch('Failed to fetch'); setFilterLevel('error'); setFilterModule('scanner'); }}
+            className="text-[9px] font-mono px-2 py-1.5 rounded-lg transition-all"
+            style={{ background: 'rgba(255,20,120,0.06)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
+            ⚡ Failed to fetch
+          </button>
+
+          <div className="w-px h-4" style={{ background: 'rgba(255,255,255,0.08)' }} />
+
           {['all', 'error', 'warn', 'info', 'debug'].map(level => {
             const cfg = LEVEL_CONFIG[level];
             return (
