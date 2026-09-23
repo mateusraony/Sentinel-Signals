@@ -24944,3 +24944,71 @@ alguns dias pra ver se `executor`/`error_cause` respondem cron-vs-
 navegador — só aí dá pra decidir o próximo passo real contra o "Failed
 to fetch".
 
+## 193. Auditoria de UI/UX (Raio-X) + 3 críticos corrigidos (2026-09-23)
+
+Pedido do usuário: auditoria completa, somente leitura, de UI/UX do painel
+inteiro (skill `sentinel-ui-review`, roteiro de 18 seções). Relatório
+publicado como Artifact: https://claude.ai/artifact/TMJxxVWhyQxLw9QXMR8YZF —
+4 frentes de investigação em paralelo (Dashboard+cards, páginas de trading,
+páginas de config+glossário, transversal de navegação/acessibilidade/
+consistência) + síntese com leitura crítica própria. Sandbox sem
+credenciais Firebase — só um achado (tela branca no erro de auth) foi
+confirmado por screenshot real; o resto é leitura de código, rotulado como
+tal.
+
+Na sequência, o usuário pediu para priorizar os 3 achados críticos e manter
+registro persistente do que foi feito/falta — runbook detalhado em
+`docs/claude/ui-audit-criticos.md`, atualizado a cada rodada (não só neste
+item).
+
+### Os 3 críticos, corrigidos nesta rodada
+
+- **Tela branca sem nenhum aviso quando a autenticação Firebase falha.**
+  `AuthenticatedApp` (`src/App.jsx`) só checava `isLoadingAuth`, nunca
+  `authError` (que `AuthContext.jsx` já preenchia corretamente). Corrigido:
+  fallback visual "sinal perdido" extraído de `ErrorBoundary.jsx` para um
+  componente reutilizável (`src/components/ErrorFallback.jsx`, refactor
+  puro, sem mudar o visual existente); `AuthenticatedApp` passa a renderizar
+  esse fallback com botão de recarregar quando `authError` está presente.
+- **4 cards de performance do Dashboard liam amostras diferentes de
+  operações** — `PerformanceMetricsBar`/`PerformanceOverview` recebiam o
+  `tradeOps` de 100 itens (todos os status) do Dashboard;
+  `VirtualAccountCard`/`LiveConfidenceCard` já usavam sua própria query de
+  500. Com mais de 100 operações no histórico, os 4 números podiam
+  divergir na mesma tela, sem aviso. Corrigido: os dois primeiros passam a
+  ter `useQuery` próprio com a MESMA `queryKey: ['trade-operations-closed-
+  all']` dos outros dois — o React Query reaproveita o cache, sem
+  requisição extra, e os 4 cards agora sempre concordam. O `tradeOps` de
+  100 itens do Dashboard continua exatamente igual pra tudo que já
+  dependia dele (contadores de prioridade/atividade recente, ComparePanel).
+- **PnL somado de duas formas matematicamente diferentes sem aviso** —
+  `PerformanceReport.jsx`/`TradeEntryMarkers.jsx` somam de forma aditiva
+  simples; `PortfolioVsMarket.jsx` já soma composto e já avisa disso;
+  `Backtest.jsx:224` já tinha a redação-modelo ("soma % simples, NÃO
+  composta"). Corrigido: mesmo rótulo replicado nos dois componentes que
+  não avisavam — só texto, nenhum cálculo mudou.
+- **Falha de rede indistinguível de "nada aqui" em 8 páginas** (Dashboard,
+  Assets, Trades, TradeHistory, Verification, Backtest, Alerts, Logs) —
+  nenhuma lia `isError` do `useQuery` principal, então uma falha real de
+  rede/backend caía no mesmo estado "Nenhum X encontrado" que a ausência
+  real de dado. Corrigido: novo componente `src/components/
+  QueryErrorState.jsx` (mesmo visual já usado em `CorrelationWidget.jsx`/
+  `RFHistoryChart.jsx` — ícone + texto + botão "Tentar de novo" chamando
+  `refetch`), aplicado nas 8 páginas antes do estado vazio existente.
+
+### O que ainda está pendente (não é o relatório inteiro resolvido)
+
+O Raio-X listou 15 achados de Alta prioridade, 17 de Média e uma lista de
+Refinamentos — nenhum foi tocado nesta rodada além dos 3 críticos acima.
+Lista completa e priorização em `docs/claude/ui-audit-criticos.md` e no
+Artifact original.
+
+### Verificação
+
+`npm run lint && npm test && npm run build` (ver saída no PR). Não foi
+possível verificar visualmente com dado real (mesma limitação de sandbox
+sem Firebase da auditoria original) — verificação por leitura de código +
+compatibilidade confirmada com o mock de `backend` usado em
+`pagesSmoke.test.jsx` (cobre toda a camada de dados, então a mudança de
+"prop" para "query própria" em `PerformanceMetricsBar`/`PerformanceOverview`
+não exige mock novo).

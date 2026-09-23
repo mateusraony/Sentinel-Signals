@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { ScrollText, Filter, RefreshCw, AlertTriangle, Info, Bug, AlertCircle, X, Search, Trash2, Copy, Check } from 'lucide-react';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
@@ -17,7 +18,7 @@ export default function Logs() {
   const [filterModule, setFilterModule] = useState('all');
   const [search, setSearch] = useState('');
 
-  const { data: logs = [], isLoading, refetch, isFetching } = useQuery({
+  const { data: logs = [], isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['system-logs'],
     queryFn: () => backend.entities.SystemLog.list('-created_date', 200),
     refetchInterval: POLL_DIAGNOSTIC_MS,
@@ -182,6 +183,10 @@ export default function Logs() {
       {isLoading ? (
         <div className="flex justify-center py-20">
           <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+        </div>
+      ) : isError && logs.length === 0 ? (
+        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <QueryErrorState message="Não foi possível carregar os logs agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>

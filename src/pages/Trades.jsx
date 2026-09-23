@@ -13,6 +13,7 @@ import { describeProximity, formatPrice, formatSignedPct } from '@/lib/priceProx
 import { classifySignal, phaseCopy, rejectionCopy, formatTimeLeft, SIGNAL_PHASE } from '@/lib/signalStatus';
 import { signalTimeline, opTimeline, closedReasonLabel } from '@/lib/eventTimeline';
 import { EventTimeline, fmtBRT } from '@/components/dashboard/EventTimeline';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import { useLivePrice } from '@/hooks/useLivePrice';
 import moment from 'moment';
 import { isClosedOp, getExitPrice, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
@@ -428,7 +429,7 @@ export default function Trades() {
     return { from: from.toDate(), to: to.toDate() };
   }, [datePreset]);
 
-  const { data: operations = [], isLoading, dataUpdatedAt } = useQuery({
+  const { data: operations = [], isLoading, isError, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['trade-operations'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
     refetchInterval: POLL_OPERATIONAL_MS,
@@ -747,6 +748,10 @@ export default function Trades() {
           {isLoading ? (
             <div className="flex justify-center py-16">
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : isError && operations.length === 0 ? (
+            <div className="glass-card rounded-xl p-8">
+              <QueryErrorState message="Não foi possível carregar as operações agora." onRetry={refetch} />
             </div>
           ) : applyFilters(active).length === 0 ? (
             <div className="glass-card rounded-xl p-12 text-center">

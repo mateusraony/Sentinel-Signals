@@ -6,6 +6,7 @@ import AssetCard from '@/components/dashboard/AssetCard';
 import RecentAlertsList from '@/components/dashboard/RecentAlertsList';
 import StatsCard from '@/components/dashboard/StatsCard';
 import AssetDrawer from '@/components/dashboard/AssetDrawer';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import SignalToast from '@/components/dashboard/SignalToast';
 import SignalAlertBanner from '@/components/dashboard/SignalAlertBanner';
 import PerformanceOverview from '@/components/dashboard/PerformanceOverview';
@@ -42,7 +43,7 @@ export default function Dashboard() {
     return () => window.removeEventListener('app-reset-filters', handler);
   }, []);
 
-  const { data: assets = [], isLoading: loadingAssets } = useQuery({
+  const { data: assets = [], isLoading: loadingAssets, isError: assetsError, refetch: refetchAssets } = useQuery({
     queryKey: ['monitored-assets'],
     queryFn: () => backend.entities.MonitoredAsset.filter({ is_active: true }),
     refetchInterval: POLL_OPERATIONAL_MS,
@@ -239,11 +240,14 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Real performance metrics */}
-            <PerformanceMetricsBar tradeOps={tradeOps} />
+            {/* Real performance metrics — busca sua própria amostra (500 ops
+                fechadas), a mesma de VirtualAccountCard/LiveConfidenceCard,
+                não o tradeOps de 100 (recentes, qualquer status) usado acima
+                para prioridade/atividade */}
+            <PerformanceMetricsBar />
 
             {/* Consolidated performance chart — appears only when there's history */}
-            <PerformanceOverview tradeOps={tradeOps} />
+            <PerformanceOverview />
 
             {/* Conta virtual real (capital+drawdown compostos, position sizing por risco) */}
             <VirtualAccountCard />
@@ -342,6 +346,10 @@ export default function Dashboard() {
               {loadingAssets ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {[1,2,3].map(i => <div key={i} className="glass-card rounded-xl h-52 shimmer" />)}
+                </div>
+              ) : assetsError && assets.length === 0 ? (
+                <div className="glass-card rounded-xl p-8">
+                  <QueryErrorState message="Não foi possível carregar os ativos monitorados agora." onRetry={refetchAssets} />
                 </div>
               ) : assets.length === 0 ? (
                 <div className="glass-card rounded-xl p-12 text-center">

@@ -15,6 +15,7 @@ import { CandleBoundTag, DetectionLag } from '@/components/dashboard/EventTimeli
 import { closedReasonLabel } from '@/lib/eventTimeline';
 import { explainOperationDecision, legacyClosedOperationText } from '@/lib/decisionExplanation';
 import { useCopyToClipboard, formatTradeOpLine } from '@/lib/clipboardText';
+import { QueryErrorState } from '@/components/QueryErrorState';
 
 // Planned risk/reward of the setup — always against the INITIAL stop. The old
 // version divided by current_stop, which post-TP1 is already breakeven and
@@ -352,7 +353,7 @@ export default function TradeHistory() {
   const [showChart, setShowChart] = useState(true);
   const [sortBy, setSortBy] = useState('date_desc');
 
-  const { data: operations = [], isLoading } = useQuery({
+  const { data: operations = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['trade-history'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', 200),
     refetchInterval: POLL_DIAGNOSTIC_MS,
@@ -565,6 +566,10 @@ export default function TradeHistory() {
       {isLoading ? (
         <div className="flex justify-center py-16">
           <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+        </div>
+      ) : isError && operations.length === 0 ? (
+        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <QueryErrorState message="Não foi possível carregar o histórico agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>

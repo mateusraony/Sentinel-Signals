@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { Bell, Filter, Trash2, TrendingUp, TrendingDown, Search, X, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
@@ -29,7 +30,7 @@ export default function Alerts() {
   const [selectedSignal, setSelectedSignal] = useState(null);
   const queryClient = useQueryClient();
 
-  const { data: signals = [], isLoading } = useQuery({
+  const { data: signals = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['all-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 200),
     refetchInterval: POLL_DIAGNOSTIC_MS,
@@ -165,6 +166,10 @@ export default function Alerts() {
       {isLoading ? (
         <div className="flex justify-center py-20">
           <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+        </div>
+      ) : isError && signals.length === 0 ? (
+        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <QueryErrorState message="Não foi possível carregar os alertas agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>

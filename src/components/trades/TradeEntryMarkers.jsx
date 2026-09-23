@@ -157,6 +157,7 @@ export default function TradeEntryMarkers({ history }) {
           <div className="text-xl font-bold font-mono mt-0.5" style={{ color: isPositive ? '#00ff80' : '#ff1478' }}>
             {finalCum >= 0 ? '+' : ''}{finalCum.toFixed(2)}%
           </div>
+          <div className="text-[9px] font-mono text-muted-foreground/70 mt-0.5">soma % simples, não composta</div>
         </div>
         <div className="flex items-center gap-3 text-[10px] font-mono flex-wrap">
           <span className="flex items-center gap-1.5">

@@ -1,6 +1,9 @@
 import React, { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { TrendingUp, TrendingDown, Target, Shield, BarChart2, Zap } from 'lucide-react';
+import { backend } from '@/api/entities';
 import { summarizeOps } from '@/lib/tradeMetrics';
+import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefined }) {
   return (
@@ -24,7 +27,21 @@ function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefine
   );
 }
 
-export default function PerformanceMetricsBar({ tradeOps }) {
+// Mesma queryKey/teto de VirtualAccountCard.jsx e LiveConfidenceCard.jsx —
+// os 4 cards de performance do Dashboard precisam concordar sobre a mesma
+// amostra de operações (achado C-2 do Raio-X de UI/UX,
+// docs/claude/ui-audit-criticos.md). Antes deste componente recebia
+// `tradeOps` via prop (a lista de 100 operações recentes do Dashboard, sem
+// filtro de status) — com mais de 100 operações no histórico, os números
+// podiam divergir dos de VirtualAccountCard/LiveConfidenceCard. O React
+// Query reaproveita o cache desta queryKey, sem requisição extra.
+export default function PerformanceMetricsBar() {
+  const { data: tradeOps = [] } = useQuery({
+    queryKey: ['trade-operations-closed-all'],
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', 500),
+    refetchInterval: POLL_DIAGNOSTIC_MS,
+  });
+
   const metrics = useMemo(() => {
     const s = summarizeOps(tradeOps);
     if (s.counted === 0) return null;

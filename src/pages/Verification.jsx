@@ -4,6 +4,7 @@ import { backend } from '@/api/entities';
 import { notifyVerificationTask, isTelegramConfigured } from '@/lib/telegram';
 import { ClipboardCheck, Check, X as XIcon, Search, ArrowUpDown, Send, Loader2 } from 'lucide-react';
 import SignalChecklist from '@/components/dashboard/SignalChecklist';
+import { QueryErrorState } from '@/components/QueryErrorState';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
@@ -95,7 +96,7 @@ export default function Verification() {
   // (undefined) se comporta como o `.list()` de antes; os índices compostos
   // status+created_date / status+priority+created_date já existem para os
   // dois casos.
-  const { data: tasks = [], isLoading } = useQuery({
+  const { data: tasks = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['verification-tasks-all', statusFilter, priorityFilter],
     queryFn: () => backend.entities.VerificationTask.filter({
       status: statusFilter !== 'all' ? statusFilter : undefined,
@@ -244,6 +245,10 @@ export default function Verification() {
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => <div key={i} className="glass-card rounded-xl h-28 shimmer" />)}
+        </div>
+      ) : isError && tasks.length === 0 ? (
+        <div className="glass-card rounded-xl p-8">
+          <QueryErrorState message="Não foi possível carregar as tarefas de verificação agora." onRetry={refetch} />
         </div>
       ) : filtered.length === 0 ? (
         <div className="glass-card rounded-xl p-12 text-center">

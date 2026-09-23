@@ -1,8 +1,11 @@
 import React, { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { TrendingUp, Award, BarChart2, Target } from 'lucide-react';
 import moment from 'moment';
+import { backend } from '@/api/entities';
 import { summarizeOps } from '@/lib/tradeMetrics';
+import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
 /** @param {{ active?: boolean, payload?: Array<any> }} props */
 const CustomTooltip = ({ active, payload }) => {
@@ -23,7 +26,16 @@ const CustomTooltip = ({ active, payload }) => {
   );
 };
 
-export default function PerformanceOverview({ tradeOps }) {
+// Mesma queryKey/teto de VirtualAccountCard.jsx e LiveConfidenceCard.jsx —
+// ver comentário equivalente em PerformanceMetricsBar.jsx (achado C-2 do
+// Raio-X de UI/UX, docs/claude/ui-audit-criticos.md).
+export default function PerformanceOverview() {
+  const { data: tradeOps = [] } = useQuery({
+    queryKey: ['trade-operations-closed-all'],
+    queryFn: () => backend.entities.TradeOperation.list('-created_date', 500),
+    refetchInterval: POLL_DIAGNOSTIC_MS,
+  });
+
   const { chartData, total, wins, losses, be, totalPnl, winRate, avgWin, avgLoss } = useMemo(() => {
     const s = summarizeOps(tradeOps);
 
