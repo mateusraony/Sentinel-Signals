@@ -24834,3 +24834,113 @@ gates condicionais: leitura direta de `scanner.js` (linhas citadas
 acima). Throughput de backfill: leitura direta de
 `scripts/run-backfill-check.mjs:93` e `.github/workflows/backfill.yml`.
 
+## 192. "Poucas operações e muitos loss" — investigação real de produção, não backtest (PR #393, 2026-09-23)
+
+Usuário deixou claro que o item 190 respondeu a pergunta errada (padrões de
+backtest) — a pergunta real era: o motor está online, teve poucas
+operações e muitas perdas, o que aprendemos e o que fazer. Pediu
+investigação de causa raiz real e mandou prints do painel (Histórico,
+Confiança ao Vivo, Relatório Mensal de setembro).
+
+### Amostra real é mesmo pequena — confirmado
+
+`health-audit.mjs` (lê Postgres de produção) leu **25 operações no
+total, 0 ativas** — não uma amostra recente, o total da tabela inteira
+(pediu até 120, teto nunca chegou perto). Os prints do usuário batem:
+25 trades (10W/15L, WR 40%), setembro sozinho 11 trades (4W/7L, PF 0,47,
+-14,76%).
+
+### Achado 1 (o mais concreto) — "Failed to fetch" persiste, causa raiz ainda não confirmada
+
+7-10 dos ~10 ativos monitorados vinham falhando a busca de candle com
+`"Failed to fetch"` repetidamente — inclusive **~19h depois** do fix de
+ontem (PR #385, item 57 addendum, `DEFAULT_MAX_RETRIES` 3→5 em
+`httpRetry.js`), exatamente o cenário que o próprio addendum já previa
+("se o volume não cair, a causa muda pra algo mais estrutural — throttling
+do range de IP do GitHub Actions contra a Binance").
+
+Investigação (3 Explore agents + 1 Plan agent) achou dois problemas reais,
+corrigidos no PR #393:
+
+1. **Lacuna de diagnóstico.** `scanner.js:4605-4637` só gravava
+   `err.message` no `SystemLog` — descartava `err.name`/`err.cause`
+   (que `fetchWithRetry` preserva intactos) e nunca gravava `executor`
+   (cron vs navegador, usado em ~15 outros pontos do mesmo arquivo,
+   ausente só aqui). A string exata gravada, `"Failed to fetch"` (com
+   "to", maiúsculo), é a assinatura do fetch() do **navegador** (V8/
+   Blink) — Node/undici lança `"fetch failed"` (minúsculo) com `.cause`
+   aninhado. Isso é evidência indireta de que parte do problema pode ser
+   do navegador, não só do cron — mas sem o campo `executor` no log,
+   nunca dava pra confirmar. **Corrigido**: `executor: EXECUTOR` +
+   `details: {error_name, error_cause}` (helper `describeErrorCause`,
+   só campos primitivos seguros pra JSON). `dedupKey` intocado (contrato
+   do item 39.1). `Logs.jsx`/`DebugLogButton.jsx` já renderizam `details`
+   genericamente — a próxima ocorrência já vem com o detalhe, sem UI
+   nova.
+2. **Risco introduzido pelo próprio fix de ontem.** O orçamento de retry
+   subiu de ~3,5s pra ~15,5s por chamada. `scanAsset` faz 3 `fetchCandles`
+   sequenciais por ativo; com 7-10 ativos afetados na mesma passada, o
+   acumulado só de retry podia passar de 90s — exatamente
+   `SCAN_STEP_TIMEOUT_MS` (`scripts/run-scan.mjs`), que ao vencer mata o
+   processo inteiro (`forceExit`) **sem log nenhum** pros ativos ainda não
+   alcançados. O aumento de retry de ontem podia estar trocando "erro
+   explícito e limitado" por "silêncio pior". **Corrigido**: subido pra
+   200s, com folga real contra o pior caso calculado (~124-173s) e ainda
+   longe do `timeout-minutes: 12` do job.
+
+**Honestidade**: isto é diagnóstico + correção de um risco real, **não é
+garantia de que o "Failed to fetch" para** — a causa mais provável
+(throttling do lado da Binance contra range de IP do GitHub Actions) pode
+não ser resolvível do nosso lado. Só depois de uma nova ocorrência
+(agora com `executor`/`error_cause` no log) dá pra saber se é cron,
+navegador, ou os dois, e refinar a partir daí.
+
+### Achado 2 — a perda de -10,92% do ZRO/USDT é normal, não é o "Failed to fetch"
+
+O usuário estranhou a maior perda de setembro (ZRO/USDT -10,92%, quase
+2× as outras). Mecanicamente descartado que tenha relação com o
+problema de dados: o motor **sempre** grava `exit_price = op.current_stop`
+em toda saída `STOP_HIT` (`scanner.js`, `tradeMetrics.js:330-342`) —
+nunca o preço real observado — então um gap de price-check não pode
+inflar o tamanho de uma perda registrada (o motor é otimista aqui, nunca
+modela slippage/gap-through). A explicação real é volatilidade do ativo:
+stop = `ATR(4h) × atrStopMult` (2,0-3,0× por tier), com precedente
+idêntico já medido no item 108 — a mesma perda em R (~-1,0R) já variou
+de -3,09% a -16,55% só por causa do ATR% do símbolo. -10,92% cai dentro
+dessa faixa normal.
+
+### Achado 3 — rótulo "Stop" no relatório mensal fazia perdas parecerem piores do que são
+
+`MonthlyReport.jsx` rotulava/coloria TODO `STOP_HIT` como "🛑 Stop"
+vermelho, mesmo quando o resultado é LUCRO protegido por trailing
+pré-TP1 (ex. ETHFI +1,86%, FET +5,87%, PENDLE +5,23% nos prints do
+usuário apareciam idênticos a uma perda real). `classifyOutcome`
+(`tradeMetrics.js:434`, fonte única) já existia e já era usada em
+`TradeHistory.jsx` pra distinguir BE, mas nunca pra WIN. **Corrigido**:
+"✅ Stop (lucro)" verde / "🔄 Stop (BE)" âmbar quando aplicável, tanto na
+tabela quanto no PDF exportado.
+
+### Extra — botão "Copiar" em 3 telas
+
+Pedido do usuário: replicar o botão de copiar texto plano que já existe
+em `Logs.jsx` (`navigator.clipboard.writeText`, sem lib nova) em
+`TradeHistory.jsx`, `LiveConfidenceCard.jsx` e `MonthlyReport.jsx` (ao
+lado do PDF, que continua existindo) — pra colar dados reais direto numa
+conversa, mais rápido que print. Novo `src/lib/clipboardText.js`
+(hook `useCopyToClipboard` + `formatTradeOpLine`) reaproveita os dados já
+calculados no render de cada tela (`filtered`/`summarizeOps`, os 6
+objetos do card, `metrics`/`monthOps`) — zero query/cálculo novo.
+
+### Verificação
+
+`npm run lint && npm test (1966 passando) && npm run build && npm run
+build:scan` limpos. Teste novo `scanErrorLogging.test.js` (força erro
+com `name`/`cause` conhecidos, confirma `executor`/`details` no
+`SystemLog`, `dedupKey` intocado). `pagesSmoke.test.jsx`/
+`LiveConfidenceCard.test.jsx` confirmam que as 3 telas tocadas continuam
+renderizando. Mesclado via PR #393 (squash `2cd3a76`). **Pendente,
+fora desta rodada**: rodar `health-audit.yml` manualmente depois de
+alguns dias pra ver se `executor`/`error_cause` respondem cron-vs-
+navegador — só aí dá pra decidir o próximo passo real contra o "Failed
+to fetch".
+
