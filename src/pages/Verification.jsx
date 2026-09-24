@@ -16,11 +16,19 @@ const STATUS_FILTERS = [
   { id: 'superseded', label: 'Superadas' },
 ];
 
+// Achado A-11 do Raio-X de UI/UX: `VerificationTask.priority` é SEMPRE
+// 'high' por desenho — scanner.js só chama VerificationTask.createUnique()
+// dentro de `if (signal.priority === 'high')`, o único ponto de criação em
+// todo o código. Sinais medium/low existem noutros contextos (Telegram
+// etc.) mas nunca viram VerificationTask
+// (docs/schema-reference/VerificationTask.jsonc). Os filtros "Média"/
+// "Baixa" nunca mudavam o resultado da lista — removidos pra UI não
+// prometer um filtro sem dado correspondente. Mudar esse gate em
+// scanner.js é decisão de motor de trading, fora de escopo de UI
+// (.claude/rules/frontend-ui.md).
 const PRIORITY_FILTERS = [
   { id: 'all', label: 'Todas' },
   { id: 'high', label: 'Alta' },
-  { id: 'medium', label: 'Média' },
-  { id: 'low', label: 'Baixa' },
 ];
 
 const STATUS_BADGE = {

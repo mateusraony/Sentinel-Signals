@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Gauge, Copy, Check } from 'lucide-react';
+import { Gauge, Copy, Check, AlertTriangle } from 'lucide-react';
 import { backend } from '@/api/entities';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { summarizeOps } from '@/lib/tradeMetrics';
@@ -16,7 +16,7 @@ const OPS_LIMIT = 500;
 // 'spot' = cron 24h). Ver docs/known-risks.md item 4/178.
 const MARKET_SOURCE_LABEL = { spot: 'Spot', futures: 'Futures' };
 
-function ConfidenceRow({ label, summary }) {
+function ConfidenceRow({ label, summary, divergenceWarning = false }) {
   const hasSamples = summary.rCounted > 0;
   const ci = summary.expectancyRCI95;
   const positive = hasSamples && summary.expectancyR >= 0;
@@ -27,17 +27,30 @@ function ConfidenceRow({ label, summary }) {
     <div className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="flex items-center justify-between mb-1">
         <span className="text-[8px] font-mono uppercase text-muted-foreground">{label}</span>
-        <Tooltip>
-          <TooltipTrigger type="button" className="text-[8px] font-mono px-1.5 py-0.5 rounded cursor-help"
-            style={{ background: `${badgeColor}18`, border: `1px solid ${badgeColor}40`, color: badgeColor }}>
-            {badgeLabel}
-          </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
-            {summary.conclusive
-              ? 'CONCLUSIVO: o intervalo de confiança de 95% da expectância não cruza zero — a amostra já descarta "sem edge nenhum" nesse sentido (não prova o tamanho do edge).'
-              : 'INCONCLUSIVO: amostra pequena demais ou o intervalo de confiança de 95% da expectância ainda cruza zero — não dá para descartar "sem edge nenhum" com esta amostra.'}
-          </TooltipContent>
-        </Tooltip>
+        <div className="flex items-center gap-1">
+          {divergenceWarning && (
+            <Tooltip>
+              <TooltipTrigger type="button" className="flex items-center gap-0.5 text-[8px] font-mono px-1.5 py-0.5 rounded cursor-help"
+                style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.35)', color: '#ff9f43' }}>
+                <AlertTriangle className="w-2.5 h-2.5" />DIVERGENTE
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                BUY e SELL têm expectância (R por operação) em direções opostas — uma positiva, outra negativa. &quot;Geral&quot; mistura os dois numa média só, o que pode esconder essa discordância; prefira olhar as linhas BUY/SELL separadas.
+              </TooltipContent>
+            </Tooltip>
+          )}
+          <Tooltip>
+            <TooltipTrigger type="button" className="text-[8px] font-mono px-1.5 py-0.5 rounded cursor-help"
+              style={{ background: `${badgeColor}18`, border: `1px solid ${badgeColor}40`, color: badgeColor }}>
+              {badgeLabel}
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              {summary.conclusive
+                ? 'CONCLUSIVO: o intervalo de confiança de 95% da expectância não cruza zero — a amostra já descarta "sem edge nenhum" nesse sentido (não prova o tamanho do edge).'
+                : 'INCONCLUSIVO: amostra pequena demais ou o intervalo de confiança de 95% da expectância ainda cruza zero — não dá para descartar "sem edge nenhum" com esta amostra.'}
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </div>
       <div className="text-base font-bold font-mono"
         style={{ color: hasSamples ? (positive ? '#00ff80' : '#ff1478') : 'rgba(255,255,255,0.3)' }}>
@@ -74,18 +87,33 @@ export default function LiveConfidenceCard() {
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
-  const { all, buy, sell, spot, futures, semFonte } = useMemo(() => ({
-    all: summarizeOps(operations),
-    buy: summarizeOps(operations.filter(op => op.side === 'BUY')),
-    sell: summarizeOps(operations.filter(op => op.side === 'SELL')),
-    // Eixo DIFERENTE de BUY/SELL acima (de onde veio o preço, não o lado da
-    // operação) — item 186/178: já era gravado em toda op, mas nenhum
-    // relatório agregado consumia. `market_source` só existe desde
-    // 2026-09-14 (item 178); operações mais antigas caem em `semFonte`.
-    spot: summarizeOps(operations.filter(op => op.market_source === 'spot')),
-    futures: summarizeOps(operations.filter(op => op.market_source === 'futures')),
-    semFonte: summarizeOps(operations.filter(op => op.market_source == null)),
-  }), [operations]);
+  const { all, buy, sell, spot, futures, semFonte, divergentGeral } = useMemo(() => {
+    const buySummary = summarizeOps(operations.filter(op => op.side === 'BUY'));
+    const sellSummary = summarizeOps(operations.filter(op => op.side === 'SELL'));
+    // Achado A-10 do Raio-X de UI/UX: "Geral" mistura BUY/SELL numa média
+    // só, sem avisar quando os dois lados divergem (ex. BUY com edge
+    // positivo, SELL com edge negativo — "Geral" pode sair perto de zero
+    // e esconder os dois). Critério simples de propósito: sinal bruto de
+    // expectancyR oposto nos 2 lados, exigindo rCounted>0 nos dois — NÃO
+    // exige `conclusive` (quase sempre false neste projeto, ver
+    // tradeMetrics.js, provar o edge medido exigiria ~8.400 operações;
+    // exigir isso faria o aviso nunca aparecer na prática).
+    const buySign = buySummary.rCounted > 0 ? Math.sign(buySummary.expectancyR) : 0;
+    const sellSign = sellSummary.rCounted > 0 ? Math.sign(sellSummary.expectancyR) : 0;
+    return {
+      all: summarizeOps(operations),
+      buy: buySummary,
+      sell: sellSummary,
+      // Eixo DIFERENTE de BUY/SELL acima (de onde veio o preço, não o lado
+      // da operação) — item 186/178: já era gravado em toda op, mas nenhum
+      // relatório agregado consumia. `market_source` só existe desde
+      // 2026-09-14 (item 178); operações mais antigas caem em `semFonte`.
+      spot: summarizeOps(operations.filter(op => op.market_source === 'spot')),
+      futures: summarizeOps(operations.filter(op => op.market_source === 'futures')),
+      semFonte: summarizeOps(operations.filter(op => op.market_source == null)),
+      divergentGeral: buySign !== 0 && sellSign !== 0 && buySign !== sellSign,
+    };
+  }, [operations]);
 
   // Hook antes do early return abaixo — regra de hooks do React não permite
   // chamada condicional.
@@ -138,7 +166,7 @@ export default function LiveConfidenceCard() {
         </button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-        <ConfidenceRow label="Geral" summary={all} />
+        <ConfidenceRow label="Geral" summary={all} divergenceWarning={divergentGeral} />
         <ConfidenceRow label="BUY" summary={buy} />
         <ConfidenceRow label="SELL" summary={sell} />
       </div>

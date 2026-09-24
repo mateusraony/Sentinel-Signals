@@ -25767,3 +25767,103 @@ confirmado por grep que `aria-current` não tem nenhum seletor CSS global
 no projeto que pudesse mudar a aparência da sidebar como efeito colateral
 (só usos locais em `breadcrumb.jsx`/`pagination.jsx`, sem relação); diff
 final revisado linha a linha, sem sobra de código morto.
+
+## 202. Backlog do Raio-X — A-4, A-10 e A-11 corrigidos (3 achados isolados de médio esforço) (2026-09-24)
+
+Sexta rodada do backlog "Alta prioridade". Usuário pediu pra seguir pelo
+que eu achasse melhor. Investiguei os 3 itens isolados restantes (A-4,
+A-10, A-11) com 3 agentes Explore em paralelo — todos confirmados como
+esforço pequeno, escopo 100% contido na camada de UI (nenhum precisou
+tocar `src/lib/scanner.js`/`pineParser.js`/`tradeMetrics.js`/
+`indicators/tier.js`, só leitura de campo já existente), em 3 arquivos
+totalmente independentes entre si — corrigidos na mesma rodada (mesmo
+padrão já usado em A-1+A-3 e A-5+A-8).
+
+### A-4 — Aba "Sincronização" do Pine Script com números hardcoded
+
+`src/pages/PineScript.jsx`'s `SYNC_NOTES` era um array de strings
+LITERAIS no escopo do MÓDULO (fora do componente), com números chumbados
+na criação do arquivo ("padrão 20 / 3.5", "mínimo 75 para entrar", TP1
+"* 1.5", Time Stop "48/64/96") — nunca lia `parsedConfig`, o mesmo state
+que a aba "Editor" (grid de preview) já usa corretamente. Editar e salvar
+o Pine Script atualizava o Editor mas a Sincronização ficava presa aos
+valores do momento em que o arquivo foi escrito, pra sempre. Confirmado
+que `timeStopT1/T2/T3` e `tier2Threshold` SÃO campos reais e sincronizados
+de `parsedConfig` (`src/lib/pineParser.js` `DEFAULTS`/
+`SYNCED_STRATEGY_KEYS`, e efetivamente usados em produção —
+`scanner.js:1402-1406` passa `timeStopT1/T2/T3` como override pra
+`classifyTier`) — só o multiplicador de stop por Tier (2x/2.5x/3x ATR)
+é constante REAL do Pine sem `input.*()`, fora de `DEFAULTS`, então esse
+trecho específico continua literal de propósito (não é bug, é decisão já
+documentada). Corrigido: `SYNC_NOTES` virou `syncNotes`, um `useMemo`
+dentro do componente que interpola `parsedConfig.rng_per`/`.rng_qty`/
+`.minScore`/`.tp1R`/`.tier2Threshold`/`.timeStopT1/T2/T3` nas frases; a
+prosa solta "score ≥ 75" do bloco "Fluxo de entrada 4h → 15m" também
+passou a usar `parsedConfig.minScore`. **Arquivo:** `src/pages/
+PineScript.jsx`. **Teste novo:** `src/pages/PineScript.test.jsx` (não
+existia — página só tinha o smoke test genérico de `pagesSmoke.test.jsx`,
+que nunca clica na aba "sync") — mock de `getLocalPineConfig`/
+`getPineConfig` com um config CUSTOM, confirma que os valores custom
+aparecem e os hardcoded originais não aparecem mais; confirmado falhando
+sem o fix via `git stash`.
+
+### A-10 — "Geral" na Confiança ao Vivo mistura BUY/SELL sem aviso
+
+`src/components/dashboard/LiveConfidenceCard.jsx` já calculava `all`
+(todas operações)/`buy`/`sell` via `summarizeOps` (`src/lib/
+tradeMetrics.js`, pura) e os exibia lado a lado — mas "Geral" mistura os
+2 lados numa única expectância/IC sem nenhum aviso quando eles divergem
+(ex.: BUY com edge positivo, SELL com edge negativo — "Geral" pode sair
+perto de zero e esconder os dois). O próprio arquivo já tinha essa
+preocupação documentada pra OUTRO eixo (tooltip Spot×Futures: "Nunca
+combine com BUY/SELL no mesmo IC") mas não implementava nada pro par
+BUY/SELL em si. Heurística escolhida, deliberadamente simples: sinal
+bruto de `expectancyR` oposto nos 2 lados, exigindo `rCounted > 0` nos
+dois — **sem** exigir `conclusive` (que é quase sempre `false` neste
+projeto, provar o edge medido exigiria ~8.400 operações; exigir isso
+faria o aviso nunca aparecer na prática). Nenhuma função nova em
+`src/lib/` — é composição de dado já calculado no mesmo `useMemo`.
+Corrigido: `ConfidenceRow` ganhou prop `divergenceWarning`, que quando
+`true` mostra um badge "DIVERGENTE" (laranja, ícone `AlertTriangle`) com
+tooltip explicando, reusando o mesmo padrão visual do badge CONCLUSIVO/
+INCONCLUSIVO já existente ao lado. **Arquivo:** `src/components/
+dashboard/LiveConfidenceCard.jsx`. **Testes novos:** 3 casos em
+`LiveConfidenceCard.test.jsx` — divergência mostra o badge (confirmado
+falhando sem o fix via `git stash`), convergência não mostra, só 1 lado
+com operação fechada não mostra; os 4 testes pré-existentes (Geral/BUY/
+SELL, seção "Por fonte de dado") continuam verdes sem alteração.
+
+### A-11 — Filtro de prioridade Média/Baixa morto em Verification
+
+`src/pages/Verification.jsx`'s `PRIORITY_FILTERS` tinha 4 opções (Todas/
+Alta/Média/Baixa), mas `VerificationTask.priority` é SEMPRE `'high'` por
+desenho: `scanner.js` só chama `VerificationTask.createUnique()` dentro
+de `if (signal.priority === 'high')` (~linha 2189), único ponto de
+criação em todo o código (confirmado por grep). Sinais `medium`/`low`
+existem em outros contextos (Telegram etc.) mas nunca viram
+`VerificationTask` — já documentado em `docs/schema-reference/
+VerificationTask.jsonc`. Não é filtro quebrado (o mecanismo client→server
+está correto, `priorityFilter` já ignora `'all'` corretamente), é filtro
+sem dado correspondente — "Média"/"Baixa" nunca mudavam o resultado da
+lista. Mudar o gate em `scanner.js` pra também gerar tarefas medium/low
+seria decisão de produto/motor de trading (mais volume de tarefas, mais
+notificações Telegram), fora do escopo desta correção de UI. Corrigido:
+removidas as 2 opções mortas de `PRIORITY_FILTERS`, com comentário
+explicando o motivo. Confirmado por grep que nada mais no arquivo
+depende de "4 opções" (container é `flex flex-wrap`, não grid fixo).
+**Arquivo:** `src/pages/Verification.jsx`. **Teste novo:** describe
+block em `Verification.test.jsx` (já existia, cobria degradação de
+query) confirmando que só "Todas"/"Alta" aparecem; confirmado falhando
+sem o fix via `git stash`.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (1997 testes, +6 dos testes novos). Revisão cética própria:
+reconferido que nenhum dos 3 arquivos importou algo NOVO de
+`src/lib/scanner.js`/`pineParser.js`/`tradeMetrics.js`/`indicators/
+tier.js` além do que já importavam antes (leitura de campo já existente);
+reconferido que A-10 não quebrou nenhum teste pré-existente do mesmo
+arquivo; reconferido que `priorityFilter` (A-11) não é alcançável como
+`'medium'`/`'low'` por nenhum outro caminho (`useState('all')` inicial,
+sem persistência em storage/URL controlando esse filtro).

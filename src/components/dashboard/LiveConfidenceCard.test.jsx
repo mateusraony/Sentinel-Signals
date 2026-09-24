@@ -79,6 +79,43 @@ describe('LiveConfidenceCard — Geral/BUY/SELL continuam aparecendo (não regri
   });
 });
 
+// Achado A-10 do Raio-X de UI/UX: "Geral" mistura BUY/SELL numa média só
+// sem avisar quando os 2 lados divergem (ex. BUY com edge positivo, SELL
+// com edge negativo — "Geral" pode sair perto de zero e esconder os dois).
+// Heurística: sinal bruto de expectancyR oposto nos 2 lados. Usa
+// exit_price explícito (prioridade máxima em getExitPrice) pra controlar o
+// sinal do R sem depender do status STOP_HIT combinar com o preço.
+describe('LiveConfidenceCard — aviso DIVERGENTE em "Geral" (achado A-10)', () => {
+  it('mostra DIVERGENTE quando BUY e SELL têm expectância em direções opostas', async () => {
+    renderCard([
+      // BUY: entrou a 100, saiu a 110 — lucro (R positivo).
+      makeOp({ id: 'b1', side: 'BUY', entry_price: 100, initial_stop: 95, exit_price: 110 }),
+      // SELL: entrou a 100, saiu a 110 (preço subiu contra a venda) — prejuízo (R negativo).
+      makeOp({ id: 's1', side: 'SELL', entry_price: 100, initial_stop: 105, exit_price: 110 }),
+    ]);
+    await screen.findByText('Geral');
+    screen.getByText('DIVERGENTE');
+  });
+
+  it('não mostra aviso quando BUY e SELL convergem na mesma direção (ambos lucro)', async () => {
+    renderCard([
+      makeOp({ id: 'b1', side: 'BUY', entry_price: 100, initial_stop: 95, exit_price: 110 }),
+      // SELL: entrou a 100, saiu a 90 (preço caiu a favor da venda) — lucro também.
+      makeOp({ id: 's1', side: 'SELL', entry_price: 100, initial_stop: 105, exit_price: 90 }),
+    ]);
+    await screen.findByText('Geral');
+    expect(screen.queryByText('DIVERGENTE')).toBeNull();
+  });
+
+  it('não mostra aviso quando só um dos lados tem operação fechada', async () => {
+    renderCard([
+      makeOp({ id: 'b1', side: 'BUY', entry_price: 100, initial_stop: 95, exit_price: 110 }),
+    ]);
+    await screen.findByText('Geral');
+    expect(screen.queryByText('DIVERGENTE')).toBeNull();
+  });
+});
+
 describe('LiveConfidenceCard — seção "Por fonte de dado" (item 186/187)', () => {
   it('só Spot: mostra a linha Spot, não mostra Futures nem Sem registro', async () => {
     renderCard([

@@ -329,6 +329,43 @@ rodada separada.
 npm run typecheck:ratchet` limpos (1991 testes). Revisão cética própria
 sem achado novo, detalhe completo em `docs/known-risks.md` item 201.
 
+## Backlog Alta prioridade — 6ª rodada (2026-09-24): A-4, A-10 e A-11 corrigidos
+
+Usuário pediu pra seguir pelo que eu achasse melhor. Investigados os 3
+itens isolados restantes de médio esforço (A-4, A-10, A-11) com 3 agentes
+Explore em paralelo — todos confirmados como esforço pequeno, escopo
+100% contido na camada de UI, em 3 arquivos independentes entre si.
+Corrigidos na mesma rodada.
+
+- [x] **A-4 — Aba "Sincronização" do Pine Script com números hardcoded.**
+  `SYNC_NOTES` era um array de strings literais no escopo do módulo,
+  nunca lia `parsedConfig` (o state que a aba "Editor" já usa
+  corretamente). Virou `syncNotes`, um `useMemo` dentro do componente
+  interpolando `parsedConfig.rng_per`/`.rng_qty`/`.minScore`/`.tp1R`/
+  `.tier2Threshold`/`.timeStopT1/T2/T3`. O multiplicador de stop por Tier
+  (2x/2.5x/3x ATR) continua literal de propósito — constante real do
+  Pine, não editável. **Arquivo:** `src/pages/PineScript.jsx`. **Teste
+  novo:** `PineScript.test.jsx` (não existia).
+- [x] **A-10 — "Geral" na Confiança ao Vivo mistura BUY/SELL sem aviso.**
+  `buy`/`sell` já eram calculados no mesmo `useMemo` que produz `all` —
+  heurística nova (sinal bruto de `expectancyR` oposto nos 2 lados, sem
+  exigir `conclusive` — quase sempre `false` neste projeto) mostra um
+  badge "DIVERGENTE" em "Geral" quando os lados discordam, reusando o
+  padrão visual do badge CONCLUSIVO/INCONCLUSIVO já existente. **Arquivo:**
+  `src/components/dashboard/LiveConfidenceCard.jsx`. **Testes novos:** +3
+  casos em `LiveConfidenceCard.test.jsx`.
+- [x] **A-11 — Filtro de prioridade Média/Baixa morto em Verification.**
+  `VerificationTask.priority` é sempre `'high'` por desenho
+  (`scanner.js` só cria a tarefa dentro de `if (signal.priority ===
+  'high')`) — "Média"/"Baixa" nunca mudavam o resultado da lista.
+  Removidas as 2 opções mortas de `PRIORITY_FILTERS`. **Arquivo:**
+  `src/pages/Verification.jsx`. **Teste novo:** describe block em
+  `Verification.test.jsx` (já existia).
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (1997 testes). Revisão cética própria
+sem achado novo, detalhe completo em `docs/known-risks.md` item 202.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -339,14 +376,14 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] A-1 — `RecentAlertsList` finge ser clicável, não tem `onClick`. **Corrigido, ver seção acima.**
 - [x] A-2 — Horário de abertura do candle sempre `-1h`, ignora o timeframe. **Corrigido, ver seção acima.**
 - [x] A-3 — Logs.jsx diz "atualiza a cada 15s", o real é 2 minutos. **Corrigido, ver seção acima.**
-- [ ] A-4 — Aba "Sincronização" do Pine Script com números desatualizados.
+- [x] A-4 — Aba "Sincronização" do Pine Script com números desatualizados. **Corrigido, ver seção acima.**
 - [x] A-5 — Sidebar desktop sem nome acessível em nenhum dos 12 itens. **Corrigido, ver seção acima.**
 - [ ] A-6 — `title=` nativo em vez de Tooltip acessível (~15 arquivos).
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
-- [ ] A-10 — "Geral" na Confiança ao Vivo mistura BUY/SELL sem aviso.
-- [ ] A-11 — Filtro de prioridade Média/Baixa morto em Verification.
+- [x] A-10 — "Geral" na Confiança ao Vivo mistura BUY/SELL sem aviso. **Corrigido, ver seção acima.**
+- [x] A-11 — Filtro de prioridade Média/Baixa morto em Verification. **Corrigido, ver seção acima.**
 - [ ] A-12 — Modal de edição em Trades sem acessibilidade (Esc, foco).
 - [ ] A-13 — Gráfico do RFHistoryChart sem eixos visíveis.
 - [ ] A-14 — Feed de "o que aconteceu" efêmero/no fim do Dashboard.
@@ -357,12 +394,14 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 
 ## Como continuar
 
-Próxima rodada sugerida (não decidida): A-1, A-2, A-3, A-5, A-8 e A-9 já
-corrigidos. Restam 9 itens de Alta prioridade — A-6 (`title=` nativo em
-~15 arquivos) e A-7 (foco de teclado invisível em ~15 pontos) fecham o
-resto do cluster de acessibilidade, mas são varreduras maiores (cada
-achado é 1 de ~15 ocorrências, não um bug isolado — provavelmente vale
-dividir em sub-rodadas); A-4 (Pine Script desatualizado), A-10 (Confiança
-ao Vivo mistura BUY/SELL), A-11 (filtro morto em Verification) são achados
-isolados de médio esforço. Decisão de qual seguir é do usuário (ou "seguir
-conforme achar melhor", como já autorizado nesta sessão).
+Próxima rodada sugerida (não decidida): A-1, A-2, A-3, A-4, A-5, A-8, A-9,
+A-10 e A-11 já corrigidos. Restam 6 itens de Alta prioridade — A-6
+(`title=` nativo em ~15 arquivos) e A-7 (foco de teclado invisível em ~15
+pontos) fecham o resto do cluster de acessibilidade, mas são varreduras
+maiores (cada achado é 1 de ~15 ocorrências, não um bug isolado —
+provavelmente vale dividir em sub-rodadas); A-12 (modal de edição em
+Trades sem acessibilidade), A-13 (RFHistoryChart sem eixos visíveis),
+A-14 (feed efêmero no fim do Dashboard), A-15 (AssetCard sem divulgação
+progressiva) ainda não foram investigados nesta sessão. Decisão de qual
+seguir é do usuário (ou "seguir conforme achar melhor", como já
+autorizado nesta sessão).
