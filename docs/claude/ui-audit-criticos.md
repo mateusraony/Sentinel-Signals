@@ -401,6 +401,33 @@ correção pontual.
 npm run typecheck:ratchet` limpos (2001 testes). Revisão cética própria
 sem achado novo, detalhe completo em `docs/known-risks.md` item 203.
 
+## Backlog Alta prioridade — 8ª rodada (2026-09-24): A-6 (1ª sub-rodada) corrigido
+
+Investigado A-6 (`title=` nativo em vez de `Tooltip` acessível) com
+varredura completa: **a contagem real é 43 ocorrências em 16 arquivos**
+(a auditoria original estimou "~15 arquivos" — a contagem de arquivos
+bateu, a de ocorrências não). Grande demais pra uma rodada só, dividido
+em sub-rodadas por padrão de fix (detalhe completo em
+`docs/known-risks.md` item 204). Esta rodada cobre só a 1ª sub-rodada:
+`Backtest.jsx` (3 ocorrências), escolhida por já usar `Tooltip` no mesmo
+arquivo — menor risco, serve de piloto.
+
+- [x] **A-6 (1ª sub-rodada) — `Backtest.jsx`.** Cabeçalhos "Expectância"/
+  "Profit Factor" da tabela "Por cascata" (2 `<th title=...>`) viraram
+  `Tooltip`/`TooltipTrigger asChild` envolvendo `<span tabIndex={0}>`
+  (preserva semântica de tabela). Botão "Aplicar ao Scanner" desabilitado
+  (1 `title=` condicional) ganhou wrapper focável em volta — achado
+  adicional: eventos de mouse não chegam a `<button disabled>` nativo,
+  então um Tooltip direto no botão nunca dispararia. **Arquivo:**
+  `src/pages/Backtest.jsx`. **Teste novo:** `Backtest.test.jsx` (não
+  existia).
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2003 testes). Revisão cética própria
+sem achado novo, detalhe completo em `docs/known-risks.md` item 204
+(inclui a divisão sugerida das próximas sub-rodadas de A-6 e a exceção
+de código morto em `src/components/ui/sidebar.jsx`).
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -413,7 +440,11 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] A-3 — Logs.jsx diz "atualiza a cada 15s", o real é 2 minutos. **Corrigido, ver seção acima.**
 - [x] A-4 — Aba "Sincronização" do Pine Script com números desatualizados. **Corrigido, ver seção acima.**
 - [x] A-5 — Sidebar desktop sem nome acessível em nenhum dos 12 itens. **Corrigido, ver seção acima.**
-- [ ] A-6 — `title=` nativo em vez de Tooltip acessível (~15 arquivos).
+- [ ] A-6 — `title=` nativo em vez de Tooltip acessível. **Contagem real:
+  43 ocorrências/16 arquivos (não ~15 como estimado). 1ª sub-rodada
+  (`Backtest.jsx`, 3 ocorrências) corrigida — ver 8ª rodada acima. Restam
+  ~15 arquivos/40 ocorrências, divisão sugerida em `docs/known-risks.md`
+  item 204.**
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
@@ -431,11 +462,17 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 ## Como continuar
 
 Próxima rodada sugerida (não decidida): A-1 a A-5, A-8 a A-14 já
-corrigidos (12 de 15 itens de Alta prioridade). Restam A-6 (`title=`
-nativo em ~15 arquivos) e A-7 (foco de teclado invisível em ~15 pontos) —
-fecham o resto do cluster de acessibilidade, mas são varreduras maiores
-(cada achado é 1 de ~15 ocorrências, não um bug isolado — provavelmente
-vale dividir em sub-rodadas); A-15 (AssetCard sem divulgação progressiva)
+corrigidos (12 de 15 itens de Alta prioridade); A-6 com a 1ª de várias
+sub-rodadas corrigida (`Backtest.jsx`, 3 de 43 ocorrências). Próximas
+sub-rodadas sugeridas pra A-6 (detalhe em `docs/known-risks.md` item
+204): Grupo 1 (13 botões ícone-only interativos, fix mecânico com
+`asChild`); `TradeCard.jsx` sozinho (9 ocorrências, componente mais
+usado — merece revisão visual própria); `EventTimeline.jsx` (componente
+compartilhado, propaga pra 3+ telas); Grupo 2 restante (~15 badges/textos
+com abreviação fora de TradeCard); casos especiais (botão desabilitado
+já resolvido pro padrão do Backtest, ícones SVG não focáveis em
+Assets.jsx que roçam o tema do A-7). A-7 (foco de teclado invisível em
+~15 pontos) nem começou. A-15 (AssetCard sem divulgação progressiva)
 fica deliberadamente pra junto da reorganização completa do Dashboard
 (seção L), não como item isolado. Depois disso, restam os 17 itens de
 Média prioridade e a própria seção L. Decisão de qual seguir é do usuário
