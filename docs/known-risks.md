@@ -25633,3 +25633,92 @@ achado novo.
 
 `npm run lint && npm test && npm run build && npm run typecheck:ratchet`
 limpos (1985 testes, +5 dos testes novos).
+
+## 201. Backlog do Raio-X — A-5 e A-8 corrigidos (cluster de acessibilidade, primeira metade) (2026-09-24)
+
+Quinta rodada do backlog "Alta prioridade" — usuário pediu pra seguir.
+Escolhido o cluster de acessibilidade (A-5/A-6/A-7/A-8), começando pelos 2
+itens mais concretos e bem delimitados (A-5, A-8); A-6 (`title=` nativo em
+~15 arquivos) e A-7 (foco de teclado invisível em ~15 pontos) ficam pra
+uma rodada separada — são varreduras maiores, cada achado ali é 1 de ~15
+ocorrências, não um bug isolado.
+
+### A-5 — Sidebar desktop sem nome acessível
+
+`src/components/layout/Sidebar.jsx`'s `DesktopSidebar` (ícone-só, 12
+itens) tinha cada `<Link>` sem `aria-label` — o único texto (`item.label`)
+ficava num tooltip `opacity-0`/`pointer-events-none`, visível só via CSS
+`:hover`, nunca associado ao link via `aria-labelledby`. Um usuário de
+leitor de tela navegando pela sidebar desktop não tinha nome nenhum pros
+12 links.
+
+**Achado do processo de investigação**: o `MobileBottomNav` do MESMO
+arquivo já tinha o padrão certo (`aria-label={item.label}` +
+`aria-current={isActive ? 'page' : undefined}`) — não foi preciso inventar
+nada, só replicar pro `DesktopSidebar`. **Fix:** `Sidebar.jsx` (link do
+`DesktopSidebar`, dentro do `.map(NAV_ITEMS)`) — mesmas 2 props do
+`MobileBottomNav`. Nenhuma mudança visual (tooltip continua igual).
+
+**Teste de regressão novo:** `Sidebar.test.jsx` (arquivo novo) — 2 casos:
+todos os 12 links têm nome acessível em AMBAS as instâncias
+(desktop+mobile, não só uma), e o link ativo tem `aria-current="page"` nas
+2 instâncias. O 2º teste foi reforçado depois de notar que a 1ª versão
+(`>= 1` instância) passava mesmo sem o fix, porque o `MobileBottomNav` já
+garantia sozinho — exigir exatamente `2` é o que prova a adição no
+desktop.
+
+### A-8 — AssetCard só abre por clique de mouse
+
+A `<div>` raiz do card (`AssetCard.jsx`) tinha `onClick` mas nenhum
+`tabIndex`, `role` ou `onKeyDown` — um usuário só-teclado não conseguia
+focar nem ativar o card.
+
+**Achado do processo de investigação**: existe 1 precedente no projeto
+(`src/pages/TradeHistory.jsx`, linha clicável expansível, já em produção)
+com o padrão `role="button"`+`tabIndex={0}`+`onKeyDown` tratando
+Enter/Espaço — mas esse precedente NÃO cobre o caso do AssetCard, que tem
+2 botões FILHOS interativos dentro da área clicável (TF Quick Switcher,
+"Ativar sinal agora") — os dois já isolam o próprio `onClick` com
+`e.stopPropagation()`, mas isso não impede o `keydown` de um Enter/Espaço
+apertado NUM DESSES BOTÕES de borbulhar até o card e disparar a ação dele
+TAMBÉM — duplo efeito (o botão filho já reage nativamente a Enter, e o
+card reagiria de novo ao mesmo evento borbulhando).
+
+**Fix:** `role="button"`, `tabIndex={0}`, `aria-label` descritivo
+(`"${asset.display_name} — abrir detalhes"`, já que o card não tem um
+texto único curto que sirva de nome), `onKeyDown` tratando Enter/Espaço
+com `e.preventDefault()`. O duplo-disparo é evitado com um guard
+`if (e.target !== e.currentTarget) return;` — mais simples que adicionar
+`stopPropagation` no `onKeyDown` dos 2 botões filhos (a alternativa que a
+investigação tinha sugerido): como o handler só age quando o PRÓPRIO card
+é o alvo do evento (não um filho que borbulhou), nenhum botão filho
+precisou ser tocado. Foco visível via `focus-visible:ring-1
+focus-visible:ring-ring` — mesmo token de cor já usado em ~7 outros
+lugares do projeto (`Dashboard.jsx`, `Logs.jsx`, `Assets.jsx`,
+`checkbox.jsx`, `slider.jsx`), não uma cor nova inventada.
+
+**Nota honesta sobre o trade-off aceito**: aninhar `<button>` reais dentro
+de um `div[role="button"]` não é uma violação de HTML (é uma `div`, não
+um `<button>` nativo — `<button>` dentro de `<button>` seria inválido, mas
+não é o caso aqui), mas é um padrão que pede atenção de leitor de tela
+(o card inteiro é anunciado como "botão", e dentro dele existem outros
+botões focáveis via Tab). É o mesmo trade-off aceito implicitamente em
+várias interfaces "card com ações" — não tem uma alternativa mais simples
+sem redesenhar a estrutura do card (fora de escopo desta correção
+pontual).
+
+**Testes de regressão novos:** `AssetCard.test.jsx` +4 casos —
+`role="button"`+`tabIndex={0}` presentes, Enter no card chama `onClick`,
+Espaço no card chama `onClick`, Enter num botão filho (TF Quick Switcher)
+NÃO chama `onClick` do card. 3 dos 4 confirmados falhando sem o fix via
+`git stash` (o 4º — "não duplica" — é trivialmente verdadeiro mesmo no
+código antigo, já que ele nunca tinha handler de teclado nenhum).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (1991 testes, +6 dos testes novos). Revisão cética própria:
+confirmado por grep que `aria-current` não tem nenhum seletor CSS global
+no projeto que pudesse mudar a aparência da sidebar como efeito colateral
+(só usos locais em `breadcrumb.jsx`/`pagination.jsx`, sem relação); diff
+final revisado linha a linha, sem sobra de código morto.

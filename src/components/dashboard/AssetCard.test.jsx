@@ -7,8 +7,8 @@
 // como se tivesse durado só 1h). Este teste prova o fix: a duração
 // subtraída agora depende do timeframe do estado exibido.
 import React from 'react';
-import { describe, it, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import AssetCard from './AssetCard.jsx';
@@ -104,5 +104,49 @@ describe('AssetCard — badge LIVE/STALE reflete o dead-man\'s-switch real (acha
       latestSignal,
     });
     screen.getByText(/Ativar BUY agora/i);
+  });
+});
+
+// Achado A-8 do Raio-X de UI/UX: o card só abria por clique de mouse — sem
+// `tabIndex`, `role="button"` nem `onKeyDown`, um usuário só-teclado não
+// conseguia focar nem ativar o card. Este teste prova o fix, incluindo o
+// caso de atenção que a investigação achou: Enter/Espaço disparado num
+// botão FILHO (ex. TF Quick Switcher) não pode duplicar a ação do card.
+describe('AssetCard — suporte a teclado (achado A-8)', () => {
+  it('tem role="button" e tabIndex={0} pra navegação só-teclado', () => {
+    const { container } = renderCard({});
+    const card = container.querySelector('[role="button"]');
+    expect(card).toBeTruthy();
+    expect(card.tabIndex).toBe(0);
+  });
+
+  it('Enter no card (foco no próprio card) chama onClick', () => {
+    const onClick = vi.fn();
+    const { container } = renderCard({ onClick });
+    const card = container.querySelector('[role="button"]');
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('Espaço no card chama onClick', () => {
+    const onClick = vi.fn();
+    const { container } = renderCard({ onClick });
+    const card = container.querySelector('[role="button"]');
+    fireEvent.keyDown(card, { key: ' ' });
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('Enter num botão filho (TF Quick Switcher) NÃO duplica a ação do card', () => {
+    const onClick = vi.fn();
+    renderCard({
+      onClick,
+      states: [
+        { timeframe: '1h', last_close: 60000 },
+        { timeframe: '4h', last_close: 60000 },
+      ],
+    });
+    const tfButton = screen.getByRole('button', { name: '4H' });
+    fireEvent.keyDown(tfButton, { key: 'Enter' });
+    expect(onClick).not.toHaveBeenCalled();
   });
 });

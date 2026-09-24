@@ -57,6 +57,8 @@ function DesktopSidebar() {
             <div key={item.path} className="relative w-full group">
               <Link
                 to={item.path}
+                aria-label={item.label}
+                aria-current={isActive ? 'page' : undefined}
                 className="flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200 relative"
                 style={{
                   background: isActive ? 'rgba(0,255,128,0.07)' : hovered === item.path ? 'rgba(255,255,255,0.04)' : 'transparent',
