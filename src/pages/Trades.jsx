@@ -5,6 +5,7 @@ import {
   Loader2, Target, History, XCircle, Eye, AlertTriangle,
   BarChart2, Edit3, X, Search, Calendar, ChevronDown, ChevronUp
 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import TradeCard, { ScoreBar } from '@/components/dashboard/TradeCard';
 import TradeEntryMarkers from '@/components/trades/TradeEntryMarkers';
 import PortfolioVsMarket from '@/components/trades/PortfolioVsMarket';
@@ -40,18 +41,14 @@ function EditModal({ op, onClose, onSave }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
-      <div className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+    <Dialog open={!!op} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        className="max-w-sm p-5 rounded-2xl"
         style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 0 40px rgba(0,0,0,0.5)' }}>
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="font-bold text-sm text-foreground">{op.symbol?.replace('USDT', '/USDT')}</div>
-            <div className="text-[9px] font-mono text-muted-foreground">{op.timeframe?.toUpperCase()} · {op.side}</div>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/[0.05] transition-colors">
-            <X className="w-4 h-4 text-muted-foreground" />
-          </button>
-        </div>
+        <DialogHeader>
+          <DialogTitle className="font-bold text-sm text-foreground text-left">{op.symbol?.replace('USDT', '/USDT')}</DialogTitle>
+          <div className="text-[9px] font-mono text-muted-foreground">{op.timeframe?.toUpperCase()} · {op.side}</div>
+        </DialogHeader>
 
         <div className="space-y-3">
           {/* Status manual */}
@@ -119,8 +116,8 @@ function EditModal({ op, onClose, onSave }) {
             Salvar Alterações
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

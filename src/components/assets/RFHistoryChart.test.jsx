@@ -18,7 +18,7 @@
 // `backend.entities`.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import RFHistoryChart from './RFHistoryChart.jsx';
@@ -48,6 +48,14 @@ afterEach(cleanup);
 // Precisa ser repetido aqui porque cada arquivo de teste do Vitest tem seu
 // próprio registro de módulos/globais.
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
+
+// jsdom também não faz layout real: `getBoundingClientRect()` sempre devolve
+// 0x0. `ResponsiveContainer` do recharts usa isso pra medir o container ANTES
+// do ResizeObserver disparar — com 0x0, o SVG interno nunca ganha dimensão e
+// os eixos (achado A-13) não chegam a desenhar ticks, mesmo sem `hide`.
+// Necessário só pro teste de eixos abaixo; os outros 3 testes deste arquivo
+// não dependem de dimensão real (só checam texto fora do SVG).
+const realGetBoundingClientRect = Element.prototype.getBoundingClientRect;
 
 function renderChart(asset) {
   const client = makeTestQueryClient();
@@ -85,5 +93,32 @@ describe('RFHistoryChart — SignalEvent lido via backend.entities (item 169; RT
     renderChart(baseAsset);
     await screen.findByText(/Histórico Range Filter/i);
     expect(screen.queryByText('BUY')).toBeNull();
+  });
+});
+
+// Achado A-13 do Raio-X de UI/UX: os dois eixos do gráfico Preço+RF tinham
+// `hide`, que faz o CartesianAxis do recharts retornar null — sem escala de
+// preço nem intervalo de tempo visíveis, só a tooltip no hover. Este teste
+// prova que os dois eixos voltaram a ser renderizados no SVG.
+describe('RFHistoryChart — eixos do gráfico Preço+RF visíveis (achado A-13)', () => {
+  it('REGRESSÃO: renderiza os grupos SVG de eixo X e Y (antes vinham com hide, sem eixo nenhum)', async () => {
+    filterMock.mockResolvedValue([]);
+    // eslint-disable-next-line func-names -- precisa de `this` (o elemento) pra decidir a dimensão
+    Element.prototype.getBoundingClientRect = function () {
+      return { width: 400, height: 180, top: 0, left: 0, bottom: 180, right: 400, x: 0, y: 0, toJSON() {} };
+    };
+    try {
+      const { container } = renderChart(baseAsset);
+      await screen.findByText(/Histórico Range Filter/i);
+
+      // O ComposedChart só monta depois que a query de candles (isLoading)
+      // resolve — um tick depois do texto do título, que é sempre visível.
+      await waitFor(() => {
+        expect(container.querySelector('.recharts-xAxis')).not.toBeNull();
+        expect(container.querySelector('.recharts-yAxis')).not.toBeNull();
+      });
+    } finally {
+      Element.prototype.getBoundingClientRect = realGetBoundingClientRect;
+    }
   });
 });

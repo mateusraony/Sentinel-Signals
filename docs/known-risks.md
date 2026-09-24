@@ -25867,3 +25867,99 @@ reconferido que A-10 não quebrou nenhum teste pré-existente do mesmo
 arquivo; reconferido que `priorityFilter` (A-11) não é alcançável como
 `'medium'`/`'low'` por nenhum outro caminho (`useState('all')` inicial,
 sem persistência em storage/URL controlando esse filtro).
+
+## 203. Backlog do Raio-X — A-12, A-13 e A-14 corrigidos (3 achados isolados de médio esforço) (2026-09-24)
+
+Sétima rodada do backlog "Alta prioridade". Investigados os 4 itens
+restantes (A-12 a A-15) com 3 agentes Explore em paralelo (A-14/A-15
+combinados por serem ambos do Dashboard). A-12, A-13, A-14 confirmados
+como esforço pequeno, escopo 100% contido na camada de UI, em arquivos
+independentes entre si — corrigidos na mesma rodada. **A-15 (AssetCard
+com ~20 blocos, sem divulgação progressiva) ficou de fora, deliberadamente**
+— a investigação concluiu que resolvê-lo por completo exige reorganizar a
+hierarquia visual do card inteiro (~470 linhas), decisão de design maior
+que a própria auditoria já separa como seção L ("reorganização completa
+do Dashboard"); uma correção parcial (esconder 2-3 blocos secundários) foi
+cogitada e descartada por não resolver a causa raiz e arriscar
+inconsistência com o redesenho futuro da mesma seção.
+
+### A-12 — Modal de edição em Trades sem acessibilidade (Esc, foco)
+
+`EditModal` (`src/pages/Trades.jsx`) era uma `<div>` de overlay MANUAL —
+sem Esc pra fechar, sem focus trap, sem foco inicial/retorno, sem
+`role="dialog"`. O projeto já tem `src/components/ui/dialog.jsx` (wrapper
+Radix `Dialog`/`DialogContent`/`DialogHeader`/`DialogTitle`) com todos
+esses comportamentos nativos, já usado em `Assets.jsx` (2 dialogs) e
+`Alerts.jsx`. Corrigido: as `<div>`s de overlay/card viraram
+`<Dialog open={!!op} onOpenChange={...}><DialogContent>`, cabeçalho virou
+`<DialogHeader><DialogTitle>`; o corpo dos campos e os 2 botões de ação
+ficaram **exatamente inalterados**, só mudaram de container — nenhuma
+linha de `editMutation`/`data.*` foi tocada. O botão `X` manual foi
+removido (o `DialogContent` já injeta um próprio). **Arquivo:**
+`src/pages/Trades.jsx`. **Teste novo:** describe block em
+`Trades.test.jsx` — abre o modal, confirma `role="dialog"` presente,
+dispara Esc, confirma que fecha; confirmado falhando sem o fix via
+`git stash` (sem o Dialog real, `findByRole('dialog')` nunca encontra
+nada).
+
+### A-13 — Gráfico RFHistoryChart sem eixos visíveis
+
+`RFHistoryChart.jsx` tinha `<YAxis hide />`/`<XAxis hide />` — não é
+problema de cor/fonte, `hide` faz o `CartesianAxis` do recharts retornar
+`null` (confirmado lendo o source de `node_modules/recharts`). O usuário
+não tinha como ler a escala de preço nem o intervalo de tempo do gráfico
+Preço+RF, só via tooltip no hover. Corrigido: removido `hide` dos 2
+eixos, aplicado o padrão de estilo (`tick`/`tickLine`/`axisLine`
+discretos, `fontFamily: monospace`) já usado em `PortfolioVsMarket.jsx`
+(único outro gráfico do projeto com os 2 eixos visíveis). **Arquivo:**
+`src/components/assets/RFHistoryChart.jsx`. **Teste novo:** describe
+block em `RFHistoryChart.test.jsx` confirmando `.recharts-xAxis`/
+`.recharts-yAxis` presentes no SVG; precisou de um stub de
+`Element.prototype.getBoundingClientRect` (jsdom não faz layout real —
+o `ResponsiveContainer` do recharts mede o container via
+`getBoundingClientRect()` ANTES do `ResizeObserver` disparar, e sem
+dimensão real o SVG nunca ganha tamanho e os eixos não desenham ticks,
+mesmo sem `hide`; achado ao rodar o teste pela primeira vez, não estava
+no plano original). Confirmado falhando sem o fix via `git stash`.
+**Nota honesta:** o `width={54}` do eixo Y (espaço reservado pro rótulo
+de preço formatado) é um valor de partida, não validado visualmente num
+navegador real — mesma limitação de sandbox sem credenciais Firebase já
+registrada nas rodadas anteriores da auditoria; se cortar em produção, é
+um ajuste de uma linha.
+
+### A-14 — Feed "Alertas Recentes" no fim do Dashboard, sem link pra ver todos
+
+`RecentAlertsList` era a ÚLTIMA seção do Dashboard (`src/pages/
+Dashboard.jsx`, depois de ~13 blocos incluindo o grid inteiro de
+`AssetCard`), mostrava no máximo 8 itens (`slice(0,8)`) sem nenhum
+caminho pra ver o resto — existe uma página dedicada `/alerts` com os
+mesmos dados, mais volume e filtros, que o Dashboard nunca linkava.
+Corrigido em 2 partes: (1) `<RecentAlertsList>` movida de depois do grid
+de ativos para logo após `<TelegramStatusBanner>` — mantém os avisos/
+ações urgentes primeiro (`SignalAlertBanner`, `VerificationWidget`,
+`TelegramStatusBanner`), com o feed informativo em seguida, antes da
+análise pesada (métricas, correlação, grid de ativos); nenhuma prop
+mudou. (2) Link "Ver todos →" no cabeçalho de `RecentAlertsList.jsx`
+apontando pra `/alerts`, reusando o padrão exato já usado em
+`VerificationWidget.jsx` ("Ver todas" + `ChevronRight`). **Efeito
+colateral corrigido:** `RecentAlertsList.test.jsx` (3 testes
+pré-existentes do achado A-1) renderizava sem `MemoryRouter` — quebrava
+com o `Link` novo (`useContext` do Router é `null` fora de `<Router>`);
+os 3 `render(...)` foram envolvidos em `<MemoryRouter>`. **Arquivos:**
+`src/pages/Dashboard.jsx`, `src/components/dashboard/
+RecentAlertsList.jsx`. **Testes novos:** describe block em
+`RecentAlertsList.test.jsx` confirmando o link (`href="/alerts"`);
+`src/pages/Dashboard.test.jsx` (não existia — criado) confirmando via
+`compareDocumentPosition` que "Alertas Recentes" vem antes de "Ativos"
+no DOM. Ambos confirmados falhando sem o fix via `git stash`.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2001 testes, +4 dos testes novos). Revisão cética própria:
+confirmado por grep que os únicos imports novos nos 4 arquivos tocados
+são `Link` (`react-router-dom`) e `Dialog`/`DialogContent`/
+`DialogHeader`/`DialogTitle` (`@/components/ui/dialog`) — nenhum import
+novo de `src/lib/scanner.js` ou qualquer lógica de trading; diff de
+`Dashboard.jsx` confirmado como reordenação pura (mesma prop, mesmo
+componente, só posição no JSX mudou).
