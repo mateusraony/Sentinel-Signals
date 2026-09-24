@@ -9,6 +9,12 @@ import ProximityBar, { calcProximity } from '@/components/dashboard/ProximityBar
 import { formatPrice, formatSignedPct } from '@/lib/priceProximity';
 import { useFundingRate } from '@/hooks/useFundingRate';
 
+// Duração de cada timeframe suportado (states só existem pra 1h/4h/1d —
+// ver `timeframes_enabled` em MonitoredAsset). Usado só pra calcular o
+// horário de ABERTURA do candle a partir do horário de fechamento
+// (`last_candle_time`), que o backend só grava o fechamento.
+const TF_DURATION_HOURS = { '1h': 1, '4h': 4, '1d': 24 };
+
 function Dot({ color, filled = true }) {
   return (
     <span style={{
@@ -205,7 +211,11 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   const strengthLabel = strengthMap[latestSignal?.strength] || '⚡ Mod.';
 
   const candleCloseTime = primaryState?.last_candle_time;
-  const candleOpen = candleCloseTime ? moment(candleCloseTime).utcOffset(-3).subtract(1, 'hour').format('DD/MM HH:mm') : null;
+  // Achado A-2 do Raio-X de UI/UX: subtraía 1h fixo do fechamento pra achar
+  // a abertura, certo só pro TF 1h — pra 4h/1d mostrava uma janela de
+  // candle errada (ex.: um candle 4h aparecia como se durasse 1h).
+  const candleDurationHours = TF_DURATION_HOURS[primaryState?.timeframe] ?? 1;
+  const candleOpen = candleCloseTime ? moment(candleCloseTime).utcOffset(-3).subtract(candleDurationHours, 'hours').format('DD/MM HH:mm') : null;
   const candleClose = candleCloseTime ? moment(candleCloseTime).utcOffset(-3).format('HH:mm') : null;
 
   // Border & glow

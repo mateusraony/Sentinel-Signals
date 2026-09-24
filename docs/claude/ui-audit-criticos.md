@@ -244,6 +244,30 @@ do diff antes de reportar como pronto (pedido padrão do usuário para
 toda implementação nesta sessão) — sem achado novo, detalhe completo em
 `docs/known-risks.md` item 198.
 
+## Backlog Alta prioridade — 2ª rodada (2026-09-24): A-2 corrigido
+
+Usuário pediu pra seguir pelo que eu achasse melhor, sempre com os mesmos
+padrões. Escolhido A-2 por já ter evidência concreta de uma leitura
+anterior e por ser bug de DADO exibido (horário errado), não só
+affordance/texto.
+
+- [x] **A-2 — Horário de abertura do candle sempre `-1h`, ignora o
+  timeframe.** `AssetCard.jsx` calculava a abertura subtraindo 1h fixa do
+  fechamento (`last_candle_time`) — certo só pro TF 1h; com 4h/1d
+  selecionados no "TF Quick Switcher", mostrava uma janela de candle
+  errada (ex.: candle 4h real aparecia como se durasse 1h). Confirmado
+  antes do fix que `last_candle_time` é mesmo o fechamento
+  (`scanner.js:1491`) e que nenhum outro componente tinha o mesmo padrão
+  (grep em todo `src/`). Nova constante local `TF_DURATION_HOURS`
+  substitui o `1` fixo. **Arquivo:**
+  `src/components/dashboard/AssetCard.jsx`. **Teste novo:**
+  `AssetCard.test.jsx` (3 casos — 1h/4h/1d; 4h e 1d confirmados falhando
+  sem o fix via `git stash`, 1h já estava correto).
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (1980 testes). Revisão cética própria
+sem achado novo, detalhe completo em `docs/known-risks.md` item 199.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -252,7 +276,7 @@ completo no Artifact (seções C-E do relatório); resumo dos itens de
 Alta prioridade (rótulos A-1 a A-15 no relatório):
 
 - [x] A-1 — `RecentAlertsList` finge ser clicável, não tem `onClick`. **Corrigido, ver seção acima.**
-- [ ] A-2 — Horário de abertura do candle sempre `-1h`, ignora o timeframe.
+- [x] A-2 — Horário de abertura do candle sempre `-1h`, ignora o timeframe. **Corrigido, ver seção acima.**
 - [x] A-3 — Logs.jsx diz "atualiza a cada 15s", o real é 2 minutos. **Corrigido, ver seção acima.**
 - [ ] A-4 — Aba "Sincronização" do Pine Script com números desatualizados.
 - [ ] A-5 — Sidebar desktop sem nome acessível em nenhum dos 12 itens.
@@ -272,10 +296,10 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 
 ## Como continuar
 
-Próxima rodada sugerida (não decidida): A-1 e A-3 já corrigidos. Restam
-13 itens de Alta prioridade — A-2 (horário do candle errado) e A-9
-(threshold LIVE/STALE impreciso) são achados de dado/lógica visual, não
-só texto; A-5/A-6/A-7 formam um cluster de acessibilidade (nome acessível
-na sidebar, `title=` nativo → Tooltip, foco de teclado visível) que talvez
-valha corrigir junto por serem do mesmo tema. Decisão de qual seguir é do
-usuário.
+Próxima rodada sugerida (não decidida): A-1, A-2 e A-3 já corrigidos.
+Restam 12 itens de Alta prioridade — A-9 (threshold LIVE/STALE impreciso)
+é outro achado de dado/lógica visual, não só texto; A-5/A-6/A-7 formam um
+cluster de acessibilidade (nome acessível na sidebar, `title=` nativo →
+Tooltip, foco de teclado visível) que talvez valha corrigir junto por
+serem do mesmo tema. Decisão de qual seguir é do usuário (ou "seguir
+conforme achar melhor", como já autorizado nesta sessão).

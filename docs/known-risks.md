@@ -25490,3 +25490,54 @@ limpos (1977 testes, +3 do teste novo). Teste de regressão confirmado
 falhando sem o fix via `git stash`. Backlog restante do Raio-X (14 achados
 de Alta + 17 de Média + reorganização do Dashboard) segue pendente,
 detalhado em `docs/claude/ui-audit-criticos.md`.
+
+## 199. Backlog do Raio-X — A-2 (horário de abertura do candle sempre -1h) corrigido (2026-09-24)
+
+Segunda rodada do backlog "Alta prioridade" — usuário pediu pra seguir
+pelo que eu achasse melhor, sempre com os mesmos padrões (verificação
+completa + revisão cética própria). Escolhido A-2 por já ter evidência
+concreta de uma leitura anterior desta sessão (`AssetCard.jsx`) e por ser
+um bug de DADO exibido (horário errado), não só affordance/texto como
+A-1/A-3.
+
+### Achado
+
+`src/components/dashboard/AssetCard.jsx:208` (antes do fix) calculava o
+horário de ABERTURA do candle subtraindo **1 hora fixa** do horário de
+FECHAMENTO (`primaryState.last_candle_time`) — correto só quando o
+timeframe exibido é 1h. Com o "TF Quick Switcher" do card em 4h ou 1d, o
+card mostrava uma janela de candle errada: um candle 4h real (ex.:
+09:00→13:00) aparecia como se tivesse durado só 1h (12:00→13:00),
+informação de mercado ativamente enganosa, não só um texto desatualizado.
+
+**Confirmado antes de corrigir** que `last_candle_time` é mesmo o
+FECHAMENTO, não a abertura — `src/lib/scanner.js:1491`:
+`lastCandleTime: new Date(lastCandle.closeTime).toISOString()` — e que
+nenhum outro componente tinha o mesmo padrão (`grep` por
+`subtract(1, 'hour')`/`candleOpen` em todo `src/` só achou essa 1
+ocorrência).
+
+### Fix
+
+Nova constante local `TF_DURATION_HOURS = { '1h': 1, '4h': 4, '1d': 24 }`
+(só neste arquivo — é o único lugar com o bug, não criei abstração
+compartilhada sem um 2º uso real). `candleDurationHours =
+TF_DURATION_HOURS[primaryState?.timeframe] ?? 1` substitui o `1` fixo na
+subtração. **Arquivo:** `src/components/dashboard/AssetCard.jsx`.
+
+**Teste de regressão novo:** `AssetCard.test.jsx` — 3 casos (candle 1h,
+4h, 1d) confirmando o horário de abertura exibido pra cada timeframe.
+Confirmado que os casos 4h/1d falham sem o fix (o caso 1h continua
+passando, como esperado — era o único timeframe já correto) via
+`git stash` temporário.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (1980 testes, +3 do teste novo). Revisão cética própria: conferido
+que `last_candle_time` é de fato o fechamento (não a abertura, o que
+inverteria o sentido do fix) direto na fonte que grava o campo
+(`scanner.js`), não só pela descrição genérica do schema-reference
+("ISO timestamp of the last processed candle", ambígua por si só); grep
+confirmou que não sobrou nenhum outro lugar com o mesmo padrão de bug.
+Nenhum achado novo.
