@@ -218,6 +218,32 @@ npm run typecheck:ratchet` — incluindo os testes novos
 (`SignalChecklist.test.jsx`, `Verification.test.jsx`), ambos confirmados
 falhando sem o fix via `git stash`.
 
+## Backlog Alta prioridade — 1ª rodada (2026-09-24): A-1 e A-3 corrigidos
+
+Primeiros 2 itens do backlog abaixo, pedido explícito do usuário pra
+continuar pelos quick wins já sugeridos. Confirmado antes de mexer que os
+dois ainda existiam no código atual (mudou bastante nas rodadas 194-196).
+
+- [x] **A-1 — `RecentAlertsList` sem `onClick`, falsa affordance.**
+  Reusado o padrão já existente em `AssetCard.jsx` (`onClick` → abre
+  `AssetDrawer` via `setSelectedAsset`). Nova prop `onSelectAsset` +
+  `assets` (pra resolver `asset_id` → objeto ativo); clique só age quando
+  o ativo é encontrado. Limitação herdada (não nova): só mouse, sem
+  teclado — mesmo gap já registrado como A-8, não duplicado aqui.
+  **Arquivos:** `src/components/dashboard/RecentAlertsList.jsx`,
+  `src/pages/Dashboard.jsx`. **Teste novo:**
+  `RecentAlertsList.test.jsx` (falha sem o fix, confirmado via
+  `git stash`).
+- [x] **A-3 — `Logs.jsx` dizia "15s", real é 2min.** Texto trocado por
+  valor derivado de `POLL_DIAGNOSTIC_MS` (não descola de novo se a
+  constante mudar). **Arquivo:** `src/pages/Logs.jsx`.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (1977 testes). Revisão cética própria
+do diff antes de reportar como pronto (pedido padrão do usuário para
+toda implementação nesta sessão) — sem achado novo, detalhe completo em
+`docs/known-risks.md` item 198.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -225,9 +251,9 @@ impressão de que os 3 críticos resumem o relatório inteiro. Ordem e detalhe
 completo no Artifact (seções C-E do relatório); resumo dos itens de
 Alta prioridade (rótulos A-1 a A-15 no relatório):
 
-- [ ] A-1 — `RecentAlertsList` finge ser clicável, não tem `onClick`.
+- [x] A-1 — `RecentAlertsList` finge ser clicável, não tem `onClick`. **Corrigido, ver seção acima.**
 - [ ] A-2 — Horário de abertura do candle sempre `-1h`, ignora o timeframe.
-- [ ] A-3 — Logs.jsx diz "atualiza a cada 15s", o real é 2 minutos.
+- [x] A-3 — Logs.jsx diz "atualiza a cada 15s", o real é 2 minutos. **Corrigido, ver seção acima.**
 - [ ] A-4 — Aba "Sincronização" do Pine Script com números desatualizados.
 - [ ] A-5 — Sidebar desktop sem nome acessível em nenhum dos 12 itens.
 - [ ] A-6 — `title=` nativo em vez de Tooltip acessível (~15 arquivos).
@@ -246,7 +272,10 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 
 ## Como continuar
 
-Próxima rodada sugerida (não decidida): revisar este arquivo com o usuário
-e escolher os próximos itens do backlog acima — provavelmente A-1
-(falsa affordance) e A-3 (texto errado em Logs) são os quick wins mais
-óbvios pra seguir, mas a decisão é do usuário.
+Próxima rodada sugerida (não decidida): A-1 e A-3 já corrigidos. Restam
+13 itens de Alta prioridade — A-2 (horário do candle errado) e A-9
+(threshold LIVE/STALE impreciso) são achados de dado/lógica visual, não
+só texto; A-5/A-6/A-7 formam um cluster de acessibilidade (nome acessível
+na sidebar, `title=` nativo → Tooltip, foco de teclado visível) que talvez
+valha corrigir junto por serem do mesmo tema. Decisão de qual seguir é do
+usuário.
