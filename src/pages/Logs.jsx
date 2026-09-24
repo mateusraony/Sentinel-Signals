@@ -53,7 +53,7 @@ export default function Logs() {
   const handleCopy = async () => {
     const text = filtered.map(log => {
       const time = moment(log.created_date).format('YYYY-MM-DD HH:mm:ss');
-      const tags = [log.module, log.symbol, log.timeframe].filter(Boolean).join(' ');
+      const tags = [log.module, log.symbol, log.timeframe, log.executor].filter(Boolean).join(' ');
       const details = log.details ? `\n  ${JSON.stringify(log.details)}` : '';
       return `[${time}] ${log.level?.toUpperCase() || 'INFO'} ${tags ? `(${tags}) ` : ''}${log.message}${details}`;
     }).join('\n');
@@ -218,6 +218,12 @@ export default function Logs() {
                     {log.symbol && <span className="text-[9px]" style={{ color: 'rgba(0,229,255,0.6)' }}>{log.symbol}</span>}
                     {log.timeframe && <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>{log.timeframe}</span>}
                     {log.duration_ms && <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.2)' }}>{log.duration_ms}ms</span>}
+                    {/* item 197 addendum — o PR #393 passou a gravar executor
+                        ('cron'/'browser') em todo SystemLog de erro do scanner,
+                        mas o campo é de 1º nível (fora de `details`) e nunca
+                        aparecia na tela — a peça que faltava pra decidir cron×
+                        navegador sem inferência indireta. */}
+                    {log.executor && <span className="text-[9px] px-1 rounded" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)' }}>{log.executor}</span>}
                   </div>
                   <p className="text-[11px] text-foreground/80 mt-0.5 leading-relaxed">{log.message}</p>
                   {log.details && (
