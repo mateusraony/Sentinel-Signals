@@ -10,8 +10,19 @@ import AssetConfigPanel from '@/components/assets/AssetConfigPanel';
 import AssetDetailPanel from '@/components/assets/AssetDetailPanel';
 import { calcProximity } from '@/components/dashboard/ProximityBar';
 import { QueryErrorState } from '@/components/QueryErrorState';
+import { assetHealthcheckReason } from '@/lib/assetHealthcheck';
 import moment from 'moment';
 import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
+
+// Achado A-9 do Raio-X de UI/UX — mesmo mapeamento de
+// src/components/dashboard/AssetCard.jsx (ver comentário lá pro porquê do
+// threshold de 2h fixo estar errado). O CÁLCULO (a parte que importa não
+// divergir) agora vem de `assetHealthcheckReason`, a mesma função pura nos
+// 2 arquivos — só o texto/cor de apresentação é local a cada um.
+const STALE_REASON_META = {
+  persistent_error: { label: 'ERRO', color: '#ff1478' },
+  silent: { label: 'STALE', color: '#ff9f43' },
+};
 
 export default function Assets() {
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -236,10 +247,11 @@ export default function Assets() {
         <div className="space-y-2">
           {filtered.map(asset => {
             const assetStates = states.filter(s => s.asset_id === asset.id);
-            const lastScanMs = asset.last_scan_at ? Date.now() - new Date(asset.last_scan_at).getTime() : null;
-            const isStale = lastScanMs && lastScanMs > 2 * 60 * 60 * 1000;
-            const liveColor = isStale ? '#ff9f43' : asset.is_active ? '#00ff80' : '#64748b';
-            const liveLabel = isStale ? 'STALE' : asset.is_active ? 'LIVE' : 'OFF';
+            const healthReason = assetHealthcheckReason(asset); // 'persistent_error' | 'silent' | null
+            const isStale = Boolean(healthReason);
+            const staleMeta = healthReason ? STALE_REASON_META[healthReason] : null;
+            const liveColor = isStale ? staleMeta.color : asset.is_active ? '#00ff80' : '#64748b';
+            const liveLabel = isStale ? staleMeta.label : asset.is_active ? 'LIVE' : 'OFF';
             const proximity = assetsNearEntry.get(asset.id);
             const zoneColor = proximity?.side === 'SELL' ? '#ff1478' : '#00ff80';
             const zoneStyle = proximity

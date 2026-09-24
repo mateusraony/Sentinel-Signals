@@ -268,6 +268,36 @@ affordance/texto.
 npm run typecheck:ratchet` limpos (1980 testes). Revisão cética própria
 sem achado novo, detalhe completo em `docs/known-risks.md` item 199.
 
+## Backlog Alta prioridade — 3ª rodada (2026-09-24): A-9 corrigido
+
+Investigação mostrou que o problema era mais profundo que um número errado
+— `AssetCard.jsx`/`Assets.jsx` tinham cada um sua cópia duplicada do
+cálculo, com threshold arbitrário (2h vs. cadência real de ~5min) e cego
+ao caso "falha toda passada mas segue tocado". Perguntei ao usuário se o
+fix devia ficar só na UI ou reusar a lógica de domínio já existente
+(`assetHealthcheckReason`, o dead-man's-switch real do sistema) — a regra
+`frontend-ui.md` pede pra parar e tratar como tarefa separada quando
+aparece necessidade de mexer em lógica. **Usuário escolheu o fix
+completo.**
+
+- [x] **A-9 — LIVE/STALE com threshold fixo de 2h, impreciso.** Os 2
+  cálculos duplicados (`lastScanMs > 2h`) viram uma chamada à mesma função
+  pura `assetHealthcheckReason` (`src/lib/assetHealthcheck.js`,
+  `graceMs=30min`, já testada, já usada pelo cron) — elimina a duplicação
+  por construção e distingue 2 motivos (`'persistent_error'`, mais grave,
+  vs `'silent'`) em vez de um "STALE" genérico. `scan_status` (ícone da
+  ÚLTIMA passada, em `Assets.jsx`) fica intocado — sinal complementar, não
+  o mesmo dado. **Arquivos:**
+  `src/components/dashboard/AssetCard.jsx`, `src/pages/Assets.jsx`.
+  **Testes novos:** `AssetCard.test.jsx` (+4 casos) e `Assets.test.jsx`
+  (novo arquivo, 1 teste) — confirmados falhando sem o fix via
+  `git stash` (o caso do `Assets.test.jsx` é revelador: sem o fix, os 3
+  ativos de teste — inclusive os "velhos" — aparecem TODOS como "LIVE").
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (1985 testes). Revisão cética própria
+sem achado novo, detalhe completo em `docs/known-risks.md` item 200.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -283,7 +313,7 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [ ] A-6 — `title=` nativo em vez de Tooltip acessível (~15 arquivos).
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
 - [ ] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado.
-- [ ] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso.
+- [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
 - [ ] A-10 — "Geral" na Confiança ao Vivo mistura BUY/SELL sem aviso.
 - [ ] A-11 — Filtro de prioridade Média/Baixa morto em Verification.
 - [ ] A-12 — Modal de edição em Trades sem acessibilidade (Esc, foco).
@@ -296,10 +326,11 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 
 ## Como continuar
 
-Próxima rodada sugerida (não decidida): A-1, A-2 e A-3 já corrigidos.
-Restam 12 itens de Alta prioridade — A-9 (threshold LIVE/STALE impreciso)
-é outro achado de dado/lógica visual, não só texto; A-5/A-6/A-7 formam um
-cluster de acessibilidade (nome acessível na sidebar, `title=` nativo →
-Tooltip, foco de teclado visível) que talvez valha corrigir junto por
-serem do mesmo tema. Decisão de qual seguir é do usuário (ou "seguir
-conforme achar melhor", como já autorizado nesta sessão).
+Próxima rodada sugerida (não decidida): A-1, A-2, A-3 e A-9 já corrigidos.
+Restam 11 itens de Alta prioridade — A-5/A-6/A-7/A-8 formam um cluster de
+acessibilidade (nome acessível na sidebar, `title=` nativo → Tooltip, foco
+de teclado visível, AssetCard só abre por mouse) que talvez valha corrigir
+junto por serem do mesmo tema; A-4 (Pine Script desatualizado), A-10
+(Confiança ao Vivo mistura BUY/SELL), A-11 (filtro morto em Verification)
+são achados isolados de médio esforço. Decisão de qual seguir é do usuário
+(ou "seguir conforme achar melhor", como já autorizado nesta sessão).
