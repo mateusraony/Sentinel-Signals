@@ -25364,6 +25364,51 @@ não o cron.
 `details.executor`/`details.error_cause` de uma dessas 8 ocorrências)
 resolve isso de vez — pedido ao usuário, aguardando.
 
+### Addendum 2026-09-24 — contradição em aberto: evidência do usuário também descarta o navegador
+
+O usuário colou 4 linhas reais da tela `/logs` (hora local do navegador,
+UTC-3): `LDOUSDT` 24/09 03:56:33, `ETHFIUSDT` 23/09 19:07:32, `ZROUSDT`
+23/09 03:31:06, `FETUSDT` 23/09 01:35:00. Convertendo o LDOUSDT pra UTC
+(06:56:33) ele cai dentro da janela corrigida acima (05:59:41-06:59:41) —
+confirma que é a MESMA ocorrência já investigada, não uma nova.
+
+O usuário afirmou que o MacBook (onde TODOS os ativos monitorados foram
+cadastrados, via Brave — único navegador em uso) estava **desligado** no
+horário do LDOUSDT, e confirmou explicitamente, quando perguntado, que
+**nenhum outro dispositivo** (celular, outro PC, tablet) tinha o painel
+aberto. `useAutoScan.js` (`src/hooks/useAutoScan.js:83-91`) roda via
+`setTimeout` dentro de um `useEffect` — sem service worker, sem
+background sync — só executa com uma aba do painel aberta em algum
+dispositivo. Com o MacBook desligado e nenhum outro aparelho, a hipótese
+"navegador" fica descartada para este evento específico.
+
+**Isso contradiz a eliminação do cron feita acima** (12/12 execuções do
+`scan.yml` na janela certa, todas limpas). Ou seja: **nem cron nem
+navegador batem com a evidência disponível agora** — uma contradição real
+que a dedução não resolve. Também descartada uma 3ª via (o script de
+backfill, `scripts/backfillMarketDataProvider.js`/
+`run-backfill-check.mjs`): seu catch de erro (`run-backfill-check.mjs:
+269-284`) nunca escreve em `SystemLog` no formato `Erro no scan de
+{symbol}: ...` — só grava `backfill_check_error` no próprio
+`MonitoredAsset`. Esse formato é exclusivo do catch de
+`scanAllAssetsInner` (`scanner.js`), alimentado só por cron ou navegador.
+
+**Causa raiz identificada da lacuna de confirmação**: `Logs.jsx` nunca
+exibia o campo `executor` — ele é gravado desde o PR #393 mas é campo de
+1º nível do registro (fora de `details`), e a tela só mostra
+`log.details` no "ver payload →". Por isso nunca apareceu no que o
+usuário colou, mesmo estando gravado. Corrigido nesta rodada: `executor`
+agora aparece como tag ao lado de módulo/símbolo/timeframe, e também
+entra no texto copiado pelo botão "Copiar" — a próxima ocorrência real
+(ou uma nova checagem destas 4) resolve a contradição com dado direto,
+sem inferência.
+
+**Decisão**: não decidir cron ou navegador por dedução aqui — já errei
+2x neste mesmo item por concluir rápido demais sem o dado definitivo
+(pego pelo Codex nas duas vezes, ver correções acima). Fica registrado
+como contradição em aberto até o campo `executor` (agora visível) ser
+conferido.
+
 ### Achado colateral novo — DUAS lacunas curtas de "0 ativo(s)", não uma janela contínua (05:25-05:55 UTC hoje)
 
 Ao varrer a janela original (errada) 05:25-05:55 UTC pra achar a
