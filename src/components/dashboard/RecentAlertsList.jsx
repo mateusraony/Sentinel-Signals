@@ -4,7 +4,7 @@ import { PriorityBadge } from './StrengthBadge';
 import moment from 'moment';
 import { Activity, ChevronRight, WifiOff } from 'lucide-react';
 
-export default function RecentAlertsList({ signals = [], unavailable = false }) {
+export default function RecentAlertsList({ signals = [], unavailable = false, assets = [], onSelectAsset }) {
   const rangeFilterSignals = signals.filter(s => s.source === 'range_filter');
 
   return (
@@ -38,26 +38,30 @@ export default function RecentAlertsList({ signals = [], unavailable = false }) 
           </div>
         ) : (
           <div>
-            {rangeFilterSignals.slice(0, 8).map((signal, i) => (
-              <div key={signal.id}
-                className="px-4 py-3 flex items-center gap-3 hover:bg-white/[0.02] transition-colors cursor-pointer group"
-                style={{ borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
-              >
-                <SignalBadge signal={signal.signal_type} size="sm" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-foreground">{signal.symbol}</span>
-                    <span className="text-[10px] font-mono text-muted-foreground">{signal.timeframe?.toUpperCase()}</span>
-                    <PriorityBadge priority={signal.priority} />
+            {rangeFilterSignals.slice(0, 8).map((signal, i) => {
+              const asset = assets.find(a => a.id === signal.asset_id);
+              return (
+                <div key={signal.id}
+                  onClick={() => asset && onSelectAsset?.(asset)}
+                  className="px-4 py-3 flex items-center gap-3 hover:bg-white/[0.02] transition-colors cursor-pointer group"
+                  style={{ borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
+                >
+                  <SignalBadge signal={signal.signal_type} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-foreground">{signal.symbol}</span>
+                      <span className="text-[10px] font-mono text-muted-foreground">{signal.timeframe?.toUpperCase()}</span>
+                      <PriorityBadge priority={signal.priority} />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground truncate mt-0.5">{signal.reason}</p>
                   </div>
-                  <p className="text-[11px] text-muted-foreground truncate mt-0.5">{signal.reason}</p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] font-mono text-muted-foreground">{moment(signal.created_date).fromNow()}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[10px] font-mono text-muted-foreground">{moment(signal.created_date).fromNow()}</span>
-                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

@@ -404,7 +404,7 @@ export default function Dashboard() {
             </div>
 
             {/* Recent Alerts */}
-            <RecentAlertsList signals={recentSignals} unavailable={signalsUnavailable} />
+            <RecentAlertsList signals={recentSignals} unavailable={signalsUnavailable} assets={assets} onSelectAsset={setSelectedAsset} />
           </TabsContent>
 
           <TabsContent value="predictive" className="mt-4">

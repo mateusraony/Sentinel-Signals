@@ -78,7 +78,7 @@ export default function Logs() {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
             <div className="live-dot" style={{ width: 5, height: 5 }} />
-            <span>Auto-atualiza a cada 15s</span>
+            <span>Auto-atualiza a cada {POLL_DIAGNOSTIC_MS / 60000}min</span>
           </div>
           <button onClick={() => refetch()}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all"

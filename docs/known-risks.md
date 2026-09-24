@@ -25408,3 +25408,85 @@ usuário via tela Logs antes de decidir próximo passo. Dois achados de
 review (Codex, PR #399) corrigidos nesta versão: janela de busca errada
 (arredondamento vs truncamento) e caracterização errada da lacuna de
 "0 ativos" (uma janela contínua vs. duas lacunas curtas separadas).
+
+## 198. Backlog do Raio-X — A-1 (falsa affordance em RecentAlertsList) e A-3 (texto de intervalo errado em Logs.jsx) corrigidos (2026-09-24)
+
+Primeira rodada do backlog "Alta prioridade" do Raio-X original (item 193),
+pedido explícito do usuário pra continuar pelos 2 quick wins já sugeridos.
+Confirmado antes de mexer que os dois ainda existiam no código atual — o
+código mudou bastante nas 3 rodadas seguintes (194/195/196) e não dava
+pra assumir sem checar de novo.
+
+### A-1 — `RecentAlertsList` fingia ser clicável
+
+Cada linha de sinal em `src/components/dashboard/RecentAlertsList.jsx`
+tinha `cursor-pointer group` e um `ChevronRight` que aparecia no hover
+(`group-hover:opacity-100`) — toda a linguagem visual de "clique aqui" —
+mas nenhum `onClick` existia. Usuário clicava esperando ver detalhe do
+ativo/sinal e nada acontecia.
+
+**Fix**: reusado o padrão já existente em `AssetCard.jsx` (que já resolve
+o mesmo problema pra outro componente — recebe `onClick`, aplica na
+`<div>` raiz, `Dashboard.jsx` passa `onClick={() => setSelectedAsset(asset)}`
+pra abrir o `AssetDrawer` já existente). `RecentAlertsList` ganhou 2 props
+novas (`assets`, `onSelectAsset`); resolve `asset = assets.find(a => a.id
+=== signal.asset_id)` por linha e chama `onSelectAsset(asset)` no clique
+— só quando o ativo é encontrado (`asset &&`), pra não abrir o drawer com
+`undefined` se o sinal referenciar um ativo removido/desativado (`assets`
+só tem os ativos com `is_active: true`) ou ainda não carregado.
+`Dashboard.jsx` passa `assets={assets}` (já buscado na página) e
+`onSelectAsset={setSelectedAsset}` (mesmo setter que `AssetCard` já usa).
+
+**Limitação herdada, não nova**: igual ao `AssetCard` de onde o padrão foi
+copiado, o clique só funciona por mouse (`onClick` numa `div`, sem
+`tabIndex`/`onKeyDown`/`role="button"`) — é o mesmo gap de acessibilidade
+já registrado como achado A-8 do Raio-X (pendente, não corrigido aqui;
+corrigir os dois juntos, quando A-8 for priorizado, é mais eficiente que
+duplicar o esforço agora).
+
+**Teste de regressão novo**: `src/components/dashboard/RecentAlertsList.test.jsx`
+— confirma que o clique chama `onSelectAsset` com o ativo certo, que não
+chama nada (nem quebra) quando o ativo não é encontrado em `assets`, e
+que não quebra quando `onSelectAsset` não é passado. Confirmado que falha
+sem o fix via `git stash` temporário do arquivo (mesma disciplina das
+rodadas 194-196).
+
+### A-3 — `Logs.jsx` dizia "Auto-atualiza a cada 15s", real é 2 minutos
+
+`src/pages/Logs.jsx:81` tinha um texto fixo desatualizado — a query real
+usa `refetchInterval: POLL_DIAGNOSTIC_MS` (`src/lib/pollingIntervals.js`,
+120.000ms = 2min). O próprio comentário do arquivo já registrava 15s como
+o comportamento ANTIGO, trocado de propósito; só o texto da UI nunca
+acompanhou. Sem texto espelhado em `DebugLogButton.jsx` nem em outro
+lugar (confirmado por busca) — correção isolada de 1 linha, trocando o
+texto fixo por `` `Auto-atualiza a cada ${POLL_DIAGNOSTIC_MS / 60000}min` ``
+(derivado da própria constante, pra não descolar de novo se ela mudar).
+
+### Revisão cética própria antes de reportar como pronto
+
+Releitura adversarial do diff (pedido explícito do usuário — mesma
+disciplina das rodadas 193-196, aplicada aqui de forma proativa mesmo sem
+o usuário ter perguntado "tem certeza?" desta vez):
+
+- `RecentAlertsList` só é usado em `Dashboard.jsx` (confirmado via grep) —
+  sem outro chamador que ficasse com props faltando.
+- `assets.find()` por linha, no máximo 8 linhas renderizadas — custo
+  desprezível, não é um `O(n²)` relevante.
+- O smoke test de página já existente (`pagesSmoke.test.jsx`, variante
+  "com dados") já exercita exatamente este caminho novo (`SignalEvent`
+  fixture tem `source: 'range_filter'` e `asset_id` batendo com o
+  `MonitoredAsset` fixture) — passou sem erro de console antes mesmo do
+  teste dedicado.
+- `POLL_DIAGNOSTIC_MS / 60000` dá exatamente `2` (divisão exata, sem
+  arredondamento estranho) — se a constante mudar para um valor não
+  múltiplo de 60000 no futuro, o texto mostraria um decimal (ex.
+  "1.5min"); aceitável, ainda é mais correto que um texto fixo que nunca
+  acompanha a constante.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (1977 testes, +3 do teste novo). Teste de regressão confirmado
+falhando sem o fix via `git stash`. Backlog restante do Raio-X (14 achados
+de Alta + 17 de Média + reorganização do Dashboard) segue pendente,
+detalhado em `docs/claude/ui-audit-criticos.md`.
