@@ -326,8 +326,26 @@ function ReportBody({ report, hideCascadeTable = false }) {
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Cascata</th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium">Operações</th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium">Taxa de acerto</th>
-                  <th className="text-right px-3 py-2 text-muted-foreground font-medium" title="Média de R (resultado ÷ risco inicial) por operação">Expectância</th>
-                  <th className="text-right px-3 py-2 text-muted-foreground font-medium" title="Soma dos ganhos ÷ soma das perdas — acima de 1 significa que os ganhos superam as perdas no total">Profit Factor</th>
+                  <th className="text-right px-3 py-2 text-muted-foreground font-medium">
+                    <InfoTooltip>
+                      <TooltipTrigger asChild>
+                        <span tabIndex={0} className="cursor-help underline decoration-dotted underline-offset-2">Expectância</span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                        Média de R (resultado ÷ risco inicial) por operação
+                      </TooltipContent>
+                    </InfoTooltip>
+                  </th>
+                  <th className="text-right px-3 py-2 text-muted-foreground font-medium">
+                    <InfoTooltip>
+                      <TooltipTrigger asChild>
+                        <span tabIndex={0} className="cursor-help underline decoration-dotted underline-offset-2">Profit Factor</span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                        Soma dos ganhos ÷ soma das perdas — acima de 1 significa que os ganhos superam as perdas no total
+                      </TooltipContent>
+                    </InfoTooltip>
+                  </th>
                   <th className="text-right px-3 py-2 text-muted-foreground font-medium">Máx. Drawdown</th>
                 </tr>
               </thead>
@@ -835,16 +853,33 @@ function JsonReportTab() {
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>
             Carregar outro relatório
           </button>
-          <button onClick={handleApplyToScanner} disabled={!report.reproducibility?.pineConfig || applyStatus === 'applying'}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all disabled:opacity-40"
-            style={{
-              background: applyStatus === 'applied' ? 'rgba(0,255,128,0.15)' : 'rgba(0,255,128,0.08)',
-              border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80',
-            }}
-            title={!report.reproducibility?.pineConfig ? 'Relatório sem reproducibility.pineConfig — rode com run-backtest.mjs mais recente' : ''}>
-            {applyStatus === 'applying' ? <Loader2 className="w-3 h-3 animate-spin" /> : applyStatus === 'applied' ? <CheckCircle2 className="w-3 h-3" /> : <Rocket className="w-3 h-3" />}
-            {applyStatus === 'applying' ? 'Aplicando...' : applyStatus === 'applied' ? 'Aplicado!' : applyStatus === 'error' ? 'Erro' : 'Aplicar ao Scanner'}
-          </button>
+          {(() => {
+            const applyButton = (
+              <button onClick={handleApplyToScanner} disabled={!report.reproducibility?.pineConfig || applyStatus === 'applying'}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all disabled:opacity-40"
+                style={{
+                  background: applyStatus === 'applied' ? 'rgba(0,255,128,0.15)' : 'rgba(0,255,128,0.08)',
+                  border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80',
+                }}>
+                {applyStatus === 'applying' ? <Loader2 className="w-3 h-3 animate-spin" /> : applyStatus === 'applied' ? <CheckCircle2 className="w-3 h-3" /> : <Rocket className="w-3 h-3" />}
+                {applyStatus === 'applying' ? 'Aplicando...' : applyStatus === 'applied' ? 'Aplicado!' : applyStatus === 'error' ? 'Erro' : 'Aplicar ao Scanner'}
+              </button>
+            );
+            if (report.reproducibility?.pineConfig) return applyButton;
+            // Botão desabilitado: eventos de mouse não chegam ao <button disabled>
+            // nativo, então o Tooltip do Radix nunca dispararia nele direto —
+            // precisa de um wrapper focável/hoverável em volta (achado A-6).
+            return (
+              <InfoTooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0} className="inline-block">{applyButton}</span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  Relatório sem reproducibility.pineConfig — rode com run-backtest.mjs mais recente
+                </TooltipContent>
+              </InfoTooltip>
+            );
+          })()}
         </div>
       </div>
       <ReportBody report={report} />

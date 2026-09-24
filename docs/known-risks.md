@@ -25963,3 +25963,69 @@ são `Link` (`react-router-dom`) e `Dialog`/`DialogContent`/
 novo de `src/lib/scanner.js` ou qualquer lógica de trading; diff de
 `Dashboard.jsx` confirmado como reordenação pura (mesma prop, mesmo
 componente, só posição no JSX mudou).
+
+## 204. Backlog do Raio-X — A-6 (1ª sub-rodada, `Backtest.jsx`) corrigido (2026-09-24)
+
+Oitava rodada do backlog "Alta prioridade". Restava só o cluster A-6/A-7
+(varreduras grandes, deliberadamente adiadas nas rodadas anteriores).
+Investiguei A-6 (`title=` nativo em vez de `Tooltip` acessível) com um
+agente Explore em varredura completa: **a auditoria original estimava
+"~15 arquivos", mas a contagem real de ocorrências é 43 `title=` HTML
+nativos em 16 arquivos** (a contagem de arquivos bateu; a de ocorrências,
+não — cada arquivo tinha várias). Grande demais pra uma rodada só;
+dividido em sub-rodadas por padrão de fix + arquivo/risco (detalhe
+completo da divisão sugerida abaixo). Esta rodada cobre só a 1ª
+sub-rodada: `Backtest.jsx` (3 ocorrências), escolhida por já importar e
+usar `Tooltip`/`TooltipTrigger`/`TooltipContent` no mesmo arquivo —
+menor risco, serve de piloto pro processo antes de escalar pras próximas.
+
+### O que mudou
+
+`src/pages/Backtest.jsx`, tabela "Por cascata": os cabeçalhos
+`<th title="...">Expectância</th>`/`<th title="...">Profit Factor</th>`
+(linhas 329-330) viraram `<th>` com um `Tooltip`/`TooltipTrigger asChild`
+envolvendo um `<span tabIndex={0}>` — preserva a semântica de tabela
+(`<button>` dentro de `<th>` seria estranho) enquanto ganha foco de
+teclado real, ausente no `title=` nativo. Botão "Aplicar ao Scanner"
+(linha 844): tinha `title={condicional}` só quando `disabled` (sem
+`reproducibility.pineConfig` no relatório carregado) — problema
+adicional: eventos de mouse não chegam a um `<button disabled>` nativo,
+então mesmo um Tooltip Radix colocado diretamente nele nunca dispararia.
+Corrigido envolvendo o botão (quando desabilitado) num
+`<span tabIndex={0}>` que carrega o `TooltipTrigger`; quando habilitado,
+o botão renderiza sem nenhum wrapper (era isso que o `title=""` vazio já
+expressava). Nenhuma linha de `handleApplyToScanner` foi tocada.
+**Arquivo:** `src/pages/Backtest.jsx`. **Teste novo:**
+`src/pages/Backtest.test.jsx` (não existia — página só tinha o smoke
+test genérico) — carrega um relatório JSON colado (fluxo real da UI, via
+"Analisar relatório colado", não acesso direto a componente interno),
+confirma que os 2 `<th>` não têm mais `title=` nativo e que o gatilho do
+Tooltip dentro deles é focável (`tabIndex=0`); confirma que o botão
+"Aplicar ao Scanner" desabilitado não tem `title=` nativo e ganhou o
+wrapper `<span tabIndex="0">`. Ambos confirmados falhando sem o fix via
+`git stash`.
+
+### Divisão sugerida pra escalar (não implementada ainda)
+
+Da investigação: Grupo 1 — 13 botões ícone-only interativos (fix mecânico
+com `asChild`, baixo risco); Grupo 2 — ~19 badges/textos com abreviação +
+`title` explicando (maior grupo, span/div/th→Tooltip, pode exigir ajuste
+fino de CSS por lugar); `TradeCard.jsx` sozinho (9 ocorrências, componente
+mais usado — Dashboard/Trades/TradeHistory renderizam via ele, merece
+rodada própria com revisão visual cuidadosa); `EventTimeline.jsx`
+(componente compartilhado, propaga pra 3+ telas de uma vez); casos
+especiais (botões desabilitados+tooltip — já resolvido aqui pro caso do
+Backtest, mesmo padrão serve pro de `Verification.jsx:345`; ícones SVG
+não focáveis em `Assets.jsx` que roçam o tema de foco de teclado do A-7).
+Exceção sinalizada: `src/components/ui/sidebar.jsx:258` é código morto
+(nenhum arquivo importa esse primitivo shadcn vendorizado) — não vale a
+pena "consertar" um `title=` que nunca renderiza; decisão sobre remover o
+arquivo fica pra outra tarefa, fora do escopo de UI pontual.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2003 testes, +2 dos testes novos). Revisão cética própria:
+diff revisado linha a linha — nenhum import novo (Tooltip já estava
+importado no arquivo), `handleApplyToScanner` intocado, nenhuma prop de
+`ReportBody` mudou.
