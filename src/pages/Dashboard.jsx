@@ -220,6 +220,12 @@ export default function Dashboard() {
             {/* Telegram status */}
             <TelegramStatusBanner />
 
+            {/* Recent Alerts — movido do fim da página (achado A-14 do
+                Raio-X de UI/UX): o feed de "o que aconteceu agora" pertence
+                perto dos outros avisos/ações, não depois do grid inteiro de
+                ativos e de todos os gráficos de performance. */}
+            <RecentAlertsList signals={recentSignals} unavailable={signalsUnavailable} assets={assets} onSelectAsset={setSelectedAsset} />
+
             {/* Compare mode */}
             {compareMode && (
               <div className="space-y-3">
@@ -402,9 +408,6 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-
-            {/* Recent Alerts */}
-            <RecentAlertsList signals={recentSignals} unavailable={signalsUnavailable} assets={assets} onSelectAsset={setSelectedAsset} />
           </TabsContent>
 
           <TabsContent value="predictive" className="mt-4">

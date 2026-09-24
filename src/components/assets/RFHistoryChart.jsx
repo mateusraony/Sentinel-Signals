@@ -176,10 +176,23 @@ export default function RFHistoryChart({ asset }) {
           {/* Price + RF + bands chart */}
           <div style={{ height: 180 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={analysis.chartData} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+              <ComposedChart data={analysis.chartData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                <YAxis domain={['auto', 'auto']} hide />
-                <XAxis dataKey="time" hide />
+                <YAxis
+                  domain={['auto', 'auto']}
+                  tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 9, fontFamily: 'monospace' }}
+                  tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                  axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                  tickFormatter={(v) => formatPrice(v)}
+                  width={54}
+                />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9, fontFamily: 'monospace' }}
+                  tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                  axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                  minTickGap={40}
+                />
                 <Tooltip
                   contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                   labelStyle={{ color: 'rgba(255,255,255,0.5)', fontSize: 9 }}

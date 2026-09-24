@@ -15,7 +15,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { screen, cleanup, fireEvent, render } from '@testing-library/react';
+import { screen, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -278,5 +278,24 @@ describe('Trades — "Avisos em análise" não some silenciosamente quando recen
     renderPage(<Trades />);
 
     await screen.findByText(/não foi possível verificar avisos\/sinais recentes/i);
+  });
+});
+
+// Achado A-12 do Raio-X de UI/UX: EditModal era uma <div> de overlay manual
+// — sem Esc pra fechar, sem role="dialog", sem focus trap. Trocado pelo
+// Dialog do Radix (mesmo padrão já usado em Assets.jsx/Alerts.jsx). Este
+// teste prova que é o Dialog REAL montado, não só uma div parecida: existe
+// um elemento com role="dialog" e Esc fecha.
+describe('Trades — modal de edição (EditModal) usa Dialog acessível (achado A-12)', () => {
+  it('REGRESSÃO: tem role="dialog" e fecha ao pressionar Esc', async () => {
+    mockBackend({ operations: [ACTIVE_OP], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    fireEvent.click(await screen.findByText('Editar'));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

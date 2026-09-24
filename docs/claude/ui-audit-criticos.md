@@ -366,6 +366,41 @@ Corrigidos na mesma rodada.
 npm run typecheck:ratchet` limpos (1997 testes). Revisão cética própria
 sem achado novo, detalhe completo em `docs/known-risks.md` item 202.
 
+## Backlog Alta prioridade — 7ª rodada (2026-09-24): A-12, A-13 e A-14 corrigidos
+
+Investigados os 4 itens restantes (A-12 a A-15) com 3 agentes Explore em
+paralelo. A-12/A-13/A-14 confirmados como esforço pequeno, escopo 100%
+contido na UI, corrigidos na mesma rodada. **A-15 deliberadamente deixado
+de fora** — resolvê-lo por completo exige reorganizar a hierarquia visual
+inteira do `AssetCard` (~470 linhas), melhor tratado junto da
+reorganização completa do Dashboard (seção L do relatório), não como
+correção pontual.
+
+- [x] **A-12 — Modal de edição em Trades sem acessibilidade.**
+  `EditModal` era uma `<div>` de overlay manual, sem Esc/focus trap/
+  `role="dialog"`. Migrado pro `Dialog` do Radix (`src/components/ui/
+  dialog.jsx`), mesmo padrão já usado em `Assets.jsx`/`Alerts.jsx` — corpo
+  dos campos e botões de ação ficaram intactos. **Arquivo:**
+  `src/pages/Trades.jsx`. **Teste novo:** describe block em
+  `Trades.test.jsx` (role="dialog" + Esc fecha).
+- [x] **A-13 — Gráfico RFHistoryChart sem eixos visíveis.** `<YAxis
+  hide />`/`<XAxis hide />` removiam os eixos por completo. Removido
+  `hide`, aplicado o padrão de estilo já usado em `PortfolioVsMarket.jsx`.
+  **Arquivo:** `src/components/assets/RFHistoryChart.jsx`. **Teste novo:**
+  describe block em `RFHistoryChart.test.jsx` (`.recharts-xAxis`/
+  `.recharts-yAxis` presentes).
+- [x] **A-14 — Feed "Alertas Recentes" no fim do Dashboard, sem link pra
+  ver todos.** Movido pra logo após `TelegramStatusBanner` (antes do grid
+  de ativos); adicionado link "Ver todos →" pra `/alerts`. **Arquivos:**
+  `src/pages/Dashboard.jsx`, `src/components/dashboard/
+  RecentAlertsList.jsx`. **Testes novos:** describe block em
+  `RecentAlertsList.test.jsx` (link) + `Dashboard.test.jsx` (novo — ordem
+  das seções via `compareDocumentPosition`).
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2001 testes). Revisão cética própria
+sem achado novo, detalhe completo em `docs/known-risks.md` item 203.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -384,24 +419,24 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
 - [x] A-10 — "Geral" na Confiança ao Vivo mistura BUY/SELL sem aviso. **Corrigido, ver seção acima.**
 - [x] A-11 — Filtro de prioridade Média/Baixa morto em Verification. **Corrigido, ver seção acima.**
-- [ ] A-12 — Modal de edição em Trades sem acessibilidade (Esc, foco).
-- [ ] A-13 — Gráfico do RFHistoryChart sem eixos visíveis.
-- [ ] A-14 — Feed de "o que aconteceu" efêmero/no fim do Dashboard.
+- [x] A-12 — Modal de edição em Trades sem acessibilidade (Esc, foco). **Corrigido, ver seção acima.**
+- [x] A-13 — Gráfico do RFHistoryChart sem eixos visíveis. **Corrigido, ver seção acima.**
+- [x] A-14 — Feed de "o que aconteceu" efêmero/no fim do Dashboard. **Corrigido, ver seção acima.**
 - [ ] A-15 — AssetCard com ~20 blocos de informação, sem divulgação
-  progressiva.
+  progressiva. **Investigado, deliberadamente adiado pra junto da
+  reorganização do Dashboard (seção L) — ver 7ª rodada acima.**
 - [ ] Todos os itens de Média prioridade (M-1 a M-17), Refinamentos e a
   reorganização completa do Dashboard (seção L do relatório) — nada iniciado.
 
 ## Como continuar
 
-Próxima rodada sugerida (não decidida): A-1, A-2, A-3, A-4, A-5, A-8, A-9,
-A-10 e A-11 já corrigidos. Restam 6 itens de Alta prioridade — A-6
-(`title=` nativo em ~15 arquivos) e A-7 (foco de teclado invisível em ~15
-pontos) fecham o resto do cluster de acessibilidade, mas são varreduras
-maiores (cada achado é 1 de ~15 ocorrências, não um bug isolado —
-provavelmente vale dividir em sub-rodadas); A-12 (modal de edição em
-Trades sem acessibilidade), A-13 (RFHistoryChart sem eixos visíveis),
-A-14 (feed efêmero no fim do Dashboard), A-15 (AssetCard sem divulgação
-progressiva) ainda não foram investigados nesta sessão. Decisão de qual
-seguir é do usuário (ou "seguir conforme achar melhor", como já
-autorizado nesta sessão).
+Próxima rodada sugerida (não decidida): A-1 a A-5, A-8 a A-14 já
+corrigidos (12 de 15 itens de Alta prioridade). Restam A-6 (`title=`
+nativo em ~15 arquivos) e A-7 (foco de teclado invisível em ~15 pontos) —
+fecham o resto do cluster de acessibilidade, mas são varreduras maiores
+(cada achado é 1 de ~15 ocorrências, não um bug isolado — provavelmente
+vale dividir em sub-rodadas); A-15 (AssetCard sem divulgação progressiva)
+fica deliberadamente pra junto da reorganização completa do Dashboard
+(seção L), não como item isolado. Depois disso, restam os 17 itens de
+Média prioridade e a própria seção L. Decisão de qual seguir é do usuário
+(ou "seguir conforme achar melhor", como já autorizado nesta sessão).
