@@ -298,6 +298,37 @@ completo.**
 npm run typecheck:ratchet` limpos (1985 testes). Revisão cética própria
 sem achado novo, detalhe completo em `docs/known-risks.md` item 200.
 
+## Backlog Alta prioridade — 4ª rodada (2026-09-24): A-5 e A-8 corrigidos (metade do cluster de acessibilidade)
+
+Cluster A-5/A-6/A-7/A-8. Começado pelos 2 itens concretos e bem
+delimitados (A-5, A-8) — A-6 (`title=` nativo em ~15 arquivos) e A-7 (foco
+de teclado invisível em ~15 pontos) são varreduras maiores, ficam pra uma
+rodada separada.
+
+- [x] **A-5 — Sidebar desktop sem nome acessível.** `MobileBottomNav` (no
+  mesmo arquivo) já tinha o padrão certo (`aria-label`/`aria-current`) —
+  só replicado pro `DesktopSidebar`, sem inventar nada novo. Nenhuma
+  mudança visual. **Arquivo:** `src/components/layout/Sidebar.jsx`.
+  **Teste novo:** `Sidebar.test.jsx` (2 casos; o 2º foi reforçado depois
+  de notar que a 1ª versão passava mesmo sem o fix, porque
+  `MobileBottomNav` já garantia sozinho).
+- [x] **A-8 — AssetCard só abre por clique de mouse.** `role="button"` +
+  `tabIndex={0}` + `onKeyDown` (Enter/Espaço). Achado da investigação: o
+  precedente do projeto (`TradeHistory.jsx`) não cobre o caso do AssetCard
+  porque ele tem 2 botões FILHOS interativos — resolvido com um guard
+  (`e.target !== e.currentTarget`) em vez de mexer nos filhos. Foco
+  visível via `focus-visible:ring-ring`, mesmo token já usado em ~7
+  lugares do projeto. **Trade-off registrado, não corrigido**: aninhar
+  `<button>`s reais dentro do `div[role="button"]` pede atenção extra de
+  leitor de tela — aceito, sem alternativa simples sem redesenhar o card.
+  **Arquivo:** `src/components/dashboard/AssetCard.jsx`. **Teste novo:**
+  +4 casos em `AssetCard.test.jsx`, incluindo o caso de não duplicar a
+  ação quando o Enter é apertado num botão filho.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (1991 testes). Revisão cética própria
+sem achado novo, detalhe completo em `docs/known-risks.md` item 201.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -309,10 +340,10 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] A-2 — Horário de abertura do candle sempre `-1h`, ignora o timeframe. **Corrigido, ver seção acima.**
 - [x] A-3 — Logs.jsx diz "atualiza a cada 15s", o real é 2 minutos. **Corrigido, ver seção acima.**
 - [ ] A-4 — Aba "Sincronização" do Pine Script com números desatualizados.
-- [ ] A-5 — Sidebar desktop sem nome acessível em nenhum dos 12 itens.
+- [x] A-5 — Sidebar desktop sem nome acessível em nenhum dos 12 itens. **Corrigido, ver seção acima.**
 - [ ] A-6 — `title=` nativo em vez de Tooltip acessível (~15 arquivos).
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
-- [ ] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado.
+- [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
 - [ ] A-10 — "Geral" na Confiança ao Vivo mistura BUY/SELL sem aviso.
 - [ ] A-11 — Filtro de prioridade Média/Baixa morto em Verification.
@@ -326,11 +357,12 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 
 ## Como continuar
 
-Próxima rodada sugerida (não decidida): A-1, A-2, A-3 e A-9 já corrigidos.
-Restam 11 itens de Alta prioridade — A-5/A-6/A-7/A-8 formam um cluster de
-acessibilidade (nome acessível na sidebar, `title=` nativo → Tooltip, foco
-de teclado visível, AssetCard só abre por mouse) que talvez valha corrigir
-junto por serem do mesmo tema; A-4 (Pine Script desatualizado), A-10
-(Confiança ao Vivo mistura BUY/SELL), A-11 (filtro morto em Verification)
-são achados isolados de médio esforço. Decisão de qual seguir é do usuário
-(ou "seguir conforme achar melhor", como já autorizado nesta sessão).
+Próxima rodada sugerida (não decidida): A-1, A-2, A-3, A-5, A-8 e A-9 já
+corrigidos. Restam 9 itens de Alta prioridade — A-6 (`title=` nativo em
+~15 arquivos) e A-7 (foco de teclado invisível em ~15 pontos) fecham o
+resto do cluster de acessibilidade, mas são varreduras maiores (cada
+achado é 1 de ~15 ocorrências, não um bug isolado — provavelmente vale
+dividir em sub-rodadas); A-4 (Pine Script desatualizado), A-10 (Confiança
+ao Vivo mistura BUY/SELL), A-11 (filtro morto em Verification) são achados
+isolados de médio esforço. Decisão de qual seguir é do usuário (ou "seguir
+conforme achar melhor", como já autorizado nesta sessão).

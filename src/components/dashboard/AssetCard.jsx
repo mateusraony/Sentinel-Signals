@@ -283,8 +283,19 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
         .flash-sell { animation: flash-sell 0.8s ease-in-out 5; }
       `}</style>
       <div
-        className={`rounded-xl p-4 relative overflow-hidden transition-all duration-300 cursor-pointer hover:scale-[1.01] ${flashStyle}`}
+        role="button"
+        tabIndex={0}
+        aria-label={`${asset.display_name} — abrir detalhes`}
+        className={`rounded-xl p-4 relative overflow-hidden transition-all duration-300 cursor-pointer hover:scale-[1.01] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${flashStyle}`}
         onClick={onClick}
+        onKeyDown={(e) => {
+          // Achado A-8 do Raio-X de UI/UX: card só abria por clique de
+          // mouse. Ignora key events que borbulharem dos 2 botões filhos
+          // (TF Quick Switcher, "Ativar sinal") — eles já tratam o próprio
+          // Enter/Space nativamente; sem isso, o card duplicaria a ação.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); }
+        }}
         style={{ background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)', border: `1px solid ${cardBorder}`, boxShadow: cardGlow, ...zonePulseVars }}>
 
         {/* Row 1: Symbol + Price */}
