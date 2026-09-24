@@ -113,3 +113,22 @@ describe('Verification — filtro de prioridade só mostra Todas/Alta (achado A-
     expect(screen.queryByRole('button', { name: 'Baixa' })).toBeNull();
   });
 });
+
+// Achado A-6 do Raio-X de UI/UX (2ª sub-rodada, Grupo 1): os botões
+// ícone-só "Marcar como revisado (OK)"/"Pular" usavam `title=` nativo.
+// Migrados pro Tooltip do Radix + `aria-label` (sem o aria-label, o botão
+// perderia o nome acessível por completo ao perder o title=).
+describe('Verification — botões de ação usam Tooltip em vez de title= nativo (achado A-6)', () => {
+  it('REGRESSÃO: "Marcar como revisado"/"Pular" não têm title= nativo, mantêm nome acessível', async () => {
+    verificationTaskFilterMock.mockResolvedValue([TASK]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+
+    renderPage(<Verification />);
+
+    const reviewButton = await screen.findByRole('button', { name: 'Marcar como revisado (OK)' });
+    const skipButton = screen.getByRole('button', { name: 'Pular' });
+    expect(reviewButton.getAttribute('title')).toBeNull();
+    expect(skipButton.getAttribute('title')).toBeNull();
+  });
+});

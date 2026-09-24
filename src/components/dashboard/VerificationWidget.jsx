@@ -5,6 +5,7 @@ import { backend } from '@/api/entities';
 import { ClipboardCheck, Check, X as XIcon, ChevronRight, AlertTriangle } from 'lucide-react';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 // Age thresholds for the visual "don't forget this one" cue — a sinal de
 // alta prioridade perde relevância com o tempo (mesmo raciocínio do Time
@@ -109,16 +110,30 @@ export default function VerificationWidget() {
                   </span>
                 </div>
               </div>
-              <button onClick={() => reviewMutation.mutate({ id: task.id, status: 'reviewed' })}
-                title="Marcar como revisado (OK)"
-                className="shrink-0 p-1.5 rounded-md hover:bg-white/[0.08] transition-colors">
-                <Check className="w-3.5 h-3.5" style={{ color: '#00ff80' }} />
-              </button>
-              <button onClick={() => reviewMutation.mutate({ id: task.id, status: 'skipped' })}
-                title="Pular"
-                className="shrink-0 p-1.5 rounded-md hover:bg-white/[0.08] transition-colors">
-                <XIcon className="w-3.5 h-3.5 text-muted-foreground" />
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button onClick={() => reviewMutation.mutate({ id: task.id, status: 'reviewed' })}
+                    aria-label="Marcar como revisado (OK)"
+                    className="shrink-0 p-1.5 rounded-md hover:bg-white/[0.08] transition-colors">
+                    <Check className="w-3.5 h-3.5" style={{ color: '#00ff80' }} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  Marcar como revisado (OK)
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button onClick={() => reviewMutation.mutate({ id: task.id, status: 'skipped' })}
+                    aria-label="Pular"
+                    className="shrink-0 p-1.5 rounded-md hover:bg-white/[0.08] transition-colors">
+                    <XIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  Pular
+                </TooltipContent>
+              </Tooltip>
             </div>
           ))}
         </div>

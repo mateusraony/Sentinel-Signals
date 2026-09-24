@@ -299,3 +299,46 @@ describe('Trades — modal de edição (EditModal) usa Dialog acessível (achado
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });
+
+// Achado A-6 do Raio-X de UI/UX (2ª sub-rodada, Grupo 1 — botões
+// interativos): 3 botões usavam o atributo HTML nativo `title=` — tooltip
+// feio do navegador, não acionável por teclado. Migrados pro Tooltip do
+// Radix (mesmo padrão do resto do projeto). O botão só-ícone (dismiss X)
+// também ganhou `aria-label`, sem o qual perderia o nome acessível por
+// completo ao perder o `title=` (os outros 2 já têm texto visível, não
+// precisam).
+describe('Trades — botões usam Tooltip em vez de title= nativo (achado A-6)', () => {
+  it('REGRESSÃO: botão de dispensar aviso expirado (só-ícone) não tem title=, tem aria-label', async () => {
+    mockBackend({ operations: [], signals: [SIGNAL_4H] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    await screen.findByText('PENDLE/USDT');
+    const dismissButton = screen.getByRole('button', { name: 'Tirar este aviso da lista' });
+    expect(dismissButton.getAttribute('title')).toBeNull();
+  });
+
+  it('REGRESSÃO: botão "Dispensar" (aviso em espera) não tem title= nativo', async () => {
+    // created_date recente (dentro da janela de 4h de CONFIRMATION_WINDOW_MS,
+    // signalStatus.js) — garante fase WAITING, não EXPIRED (que usa o botão
+    // ícone-só já coberto no teste anterior, não o "Dispensar" com texto).
+    const freshSignal = { ...SIGNAL_WAITING_COM_EVIDENCIA, created_date: new Date().toISOString() };
+    mockBackend({ operations: [], signals: [freshSignal] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    await screen.findByText('ADA/USDT');
+    const dismissButton = screen.getByText('Dispensar').closest('button');
+    expect(dismissButton.getAttribute('title')).toBeNull();
+  });
+
+  it('REGRESSÃO: botão "Detalhado/Compacto" (densidade dos cards ativos) não tem title= nativo', async () => {
+    mockBackend({ operations: [ACTIVE_OP], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    await screen.findByText('Operações Ativas');
+    const densityButton = screen.getByText('Compacto').closest('button');
+    expect(densityButton.getAttribute('title')).toBeNull();
+  });
+});

@@ -26029,3 +26029,94 @@ limpos (2003 testes, +2 dos testes novos). Revisão cética própria:
 diff revisado linha a linha — nenhum import novo (Tooltip já estava
 importado no arquivo), `handleApplyToScanner` intocado, nenhuma prop de
 `ReportBody` mudou.
+
+## 205. Backlog do Raio-X — A-6, 2ª sub-rodada (Grupo 1: 11 botões ícone-só/interativos em 6 arquivos) corrigida (2026-09-24)
+
+Continuação de A-6. Grupo 1 da divisão registrada no item 204: botões
+interativos com `title=` nativo, fix mecânico com `TooltipTrigger asChild`
+(sem wrapper extra — o Radix clona o `<button>` já focável). 6 arquivos,
+11 ocorrências reais (a investigação original contou 13, mas
+`ui/sidebar.jsx:258` é código morto — sinalizado, não corrigido — e
+`Verification.jsx:345` é na verdade o caso "botão desabilitado" do Grupo
+4, deixado pra rodada própria por consistência de escopo).
+
+### Achado real durante a implementação: nome acessível desaparecia por completo
+
+`title=` nativo, além do tooltip visual, também serve de FALLBACK de nome
+acessível quando não há `aria-label`. Ao trocar por `Tooltip` (hover/foco-
+only, só visual) em botões ÍCONE-SÓ (sem texto visível), o nome acessível
+sumia por completo — regressão de acessibilidade pior que o achado
+original, não coberta pelo plano inicial (que só previa `asChild`).
+Corrigido adicionando `aria-label` (mesmo texto do `title=` removido) em
+todo botão ícone-só; botões que já têm texto visível ("Dispensar",
+"Detalhado/Compacto", "Reenviar") não precisaram — o texto já é o nome
+acessível. Detectado porque o teste pré-existente de
+`DebugLogButton.test.jsx` (`screen.getByTitle('Debug Log')`) quebrou
+imediatamente ao rodar a suíte completa após a mudança — a disciplina de
+rodar `npm test` no repo inteiro (não só o arquivo tocado) antes de
+declarar pronto pegou isso antes de qualquer revisão externa.
+
+### Arquivos e ocorrências
+
+- **`src/pages/Trades.jsx`** (3): botão dispensar aviso expirado
+  (`X`, ícone-só → `aria-label="Tirar este aviso da lista"`); botão
+  "Dispensar" (aviso em espera, texto visível); botão "Detalhado/
+  Compacto" (densidade dos cards ativos, texto visível).
+- **`src/pages/Verification.jsx`** (2) e **`src/components/dashboard/
+  VerificationWidget.jsx`** (2, mesmo par de botões, telas diferentes):
+  "Marcar como revisado (OK)"/"Pular" (`Check`/`XIcon`, ícone-só →
+  `aria-label`).
+- **`src/components/layout/TopBar.jsx`** (2): "Alertas Telegram"
+  (`BellRing`)/"Chave de Acesso do Backend" (`KeyRound`), ambos ícone-só
+  → `aria-label`.
+- **`src/components/layout/DebugLogButton.jsx`** (1): botão flutuante
+  "Debug Log" (`Bug`, ícone-só → `aria-label`).
+- **`src/components/backtest/TriggerBacktestPanel.jsx`** (1): "Parar de
+  acompanhar este run" (`XCircle`, ícone-só → `aria-label`), só visível
+  com um run em polling (`isBusy && runId`).
+
+**Exceção mantida (não corrigida, sinalizada no item 204):**
+`src/components/ui/sidebar.jsx:258` é um primitivo shadcn vendorizado sem
+nenhum import no projeto (o sidebar real é `src/components/layout/
+Sidebar.jsx`, componente próprio) — código morto, não vale corrigir um
+`title=` que nunca renderiza.
+
+**Adiado de propósito (Grupo 4, não Grupo 1):**
+`Verification.jsx:345` (botão "Reenviar" com `title=` condicional
+explicando por que está desabilitado) segue o mesmo padrão já resolvido
+pro "Aplicar ao Scanner" do item 204 (wrapper focável em volta do botão
+`disabled`, que não recebe eventos de mouse) — fica pra próxima
+sub-rodada por consistência de escopo (Grupo 1 é só botões sempre-
+habilitados).
+
+### Testes
+
+- `src/pages/Trades.test.jsx` (+1 describe, 3 casos) — os 3 botões.
+- `src/pages/Verification.test.jsx` (+1 describe) — os 2 botões.
+- `src/components/dashboard/VerificationWidget.test.jsx` (novo —
+  componente não tinha teste dedicado) — os 2 botões.
+- `src/components/layout/TopBar.test.jsx` (novo — componente não tinha
+  teste dedicado; precisou dos mesmos mocks de `@/api/entities` que
+  `GlobalSearch.jsx`, renderizado dentro de `TopBar`, já usa desde o item
+  169, mais `@/lib/scanner` mockado por ser módulo pesado).
+- `src/components/layout/DebugLogButton.jsx` — teste pré-existente
+  corrigido (`getByTitle` → `getByRole('button', {name})`, já que o
+  seletor antigo dependia do `title=` removido) + 1 caso novo dedicado ao
+  achado.
+- `src/pages/Backtest.test.jsx` (+1 describe) — botão "Parar de
+  acompanhar" do `TriggerBacktestPanel`; pré-popula o `localStorage` que
+  o componente já lê ao montar pra retomar um run em polling (mesmo
+  mecanismo de produção), em vez de simular o fluxo completo de disparo.
+- Todos os casos novos confirmados falhando sem o fix via `git stash`
+  (cada arquivo tocado individualmente).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2011 testes, +8 dos testes novos). Revisão cética própria:
+confirmado por grep que os únicos imports novos nos 6 arquivos são
+`Tooltip`/`TooltipTrigger`/`TooltipContent`; confirmado que os `title=`
+restantes nesses mesmos arquivos são deliberadamente fora de escopo desta
+rodada (props de componente custom, ou casos do Grupo 2/4 registrados
+pra depois); rodei a suíte completa (não só os arquivos tocados) antes de
+declarar pronto — foi assim que o achado do nome acessível apareceu.

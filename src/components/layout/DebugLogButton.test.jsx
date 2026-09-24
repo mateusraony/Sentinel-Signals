@@ -16,6 +16,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import DebugLogButton from './DebugLogButton.jsx';
 
 const systemLogListMock = vi.fn();
@@ -37,7 +38,9 @@ function renderButton() {
   const client = makeTestQueryClient();
   return render(
     <QueryClientProvider client={client}>
-      <DebugLogButton />
+      <TooltipProvider>
+        <DebugLogButton />
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }
@@ -52,7 +55,7 @@ describe('DebugLogButton — SystemLog lido via backend.entities (item 169; RTDB
   it('ao abrir o painel, chama backend.entities.SystemLog.list("-created_date", 50) — prova que a wiring está de fato ligada', async () => {
     systemLogListMock.mockResolvedValue([]);
     renderButton();
-    fireEvent.click(screen.getByTitle('Debug Log'));
+    fireEvent.click(screen.getByRole('button', { name: 'Debug Log' }));
     await vi.waitFor(() => expect(systemLogListMock).toHaveBeenCalledWith('-created_date', 50));
   });
 
@@ -61,7 +64,7 @@ describe('DebugLogButton — SystemLog lido via backend.entities (item 169; RTDB
       { id: 'l1', level: 'error', module: 'scanner', message: 'BTCUSDT falhou', created_date: new Date().toISOString() },
     ]);
     renderButton();
-    fireEvent.click(screen.getByTitle('Debug Log'));
+    fireEvent.click(screen.getByRole('button', { name: 'Debug Log' }));
     await screen.findByText('BTCUSDT falhou');
   });
 
@@ -70,9 +73,21 @@ describe('DebugLogButton — SystemLog lido via backend.entities (item 169; RTDB
       { id: 'l1', level: 'error', module: 'scanner', message: 'BTCUSDT falhou', created_date: new Date().toISOString() },
     ]);
     renderButton();
-    fireEvent.click(screen.getByTitle('Debug Log'));
+    fireEvent.click(screen.getByRole('button', { name: 'Debug Log' }));
     const trashButton = await screen.findByText('BTCUSDT falhou').then((el) => el.closest('.group').querySelector('button:last-child'));
     fireEvent.click(trashButton);
     await vi.waitFor(() => expect(systemLogDeleteMock).toHaveBeenCalledWith('l1'));
+  });
+});
+
+// Achado A-6 do Raio-X de UI/UX (2ª sub-rodada, Grupo 1): o botão
+// flutuante usava `title="Debug Log"` nativo. Migrado pro Tooltip do Radix
+// + `aria-label` (sem o aria-label, o botão ícone-só perderia o nome
+// acessível por completo).
+describe('DebugLogButton — usa Tooltip em vez de title= nativo (achado A-6)', () => {
+  it('REGRESSÃO: o botão flutuante não tem title= nativo, mantém nome acessível via aria-label', () => {
+    renderButton();
+    const button = screen.getByRole('button', { name: 'Debug Log' });
+    expect(button.getAttribute('title')).toBeNull();
   });
 });

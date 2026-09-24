@@ -4,6 +4,7 @@ import { backend } from '@/api/entities';
 import { Bug, X, Trash2 } from 'lucide-react';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 const LEVEL_CONFIG = {
   error: { color: '#ff1478', label: 'ERR', bg: 'rgba(255,20,120,0.1)', border: 'rgba(255,20,120,0.25)' },
@@ -36,23 +37,30 @@ export default function DebugLogButton() {
   return (
     <>
       {/* Floating button */}
-      <button
-        onClick={() => setOpen(!open)}
-        className="fixed bottom-5 right-5 z-50 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110"
-        style={{
-          background: anomalies.length > 0 ? 'rgba(255,20,120,0.15)' : 'rgba(10,13,22,0.9)',
-          border: anomalies.length > 0 ? '1px solid rgba(255,20,120,0.4)' : '1px solid rgba(255,255,255,0.1)',
-          boxShadow: anomalies.length > 0 ? '0 0 16px rgba(255,20,120,0.3)' : '0 4px 20px rgba(0,0,0,0.4)',
-        }}
-        title="Debug Log">
-        <Bug className="w-4 h-4" style={{ color: anomalies.length > 0 ? '#ff1478' : 'rgba(255,255,255,0.4)' }} />
-        {anomalies.length > 0 && (
-          <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[8px] font-mono font-bold flex items-center justify-center"
-            style={{ background: '#ff1478', color: '#fff' }}>
-            {anomalies.length > 9 ? '9+' : anomalies.length}
-          </span>
-        )}
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() => setOpen(!open)}
+            aria-label="Debug Log"
+            className="fixed bottom-5 right-5 z-50 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110"
+            style={{
+              background: anomalies.length > 0 ? 'rgba(255,20,120,0.15)' : 'rgba(10,13,22,0.9)',
+              border: anomalies.length > 0 ? '1px solid rgba(255,20,120,0.4)' : '1px solid rgba(255,255,255,0.1)',
+              boxShadow: anomalies.length > 0 ? '0 0 16px rgba(255,20,120,0.3)' : '0 4px 20px rgba(0,0,0,0.4)',
+            }}>
+            <Bug className="w-4 h-4" style={{ color: anomalies.length > 0 ? '#ff1478' : 'rgba(255,255,255,0.4)' }} />
+            {anomalies.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[8px] font-mono font-bold flex items-center justify-center"
+                style={{ background: '#ff1478', color: '#fff' }}>
+                {anomalies.length > 9 ? '9+' : anomalies.length}
+              </span>
+            )}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          Debug Log
+        </TooltipContent>
+      </Tooltip>
 
       {/* Panel */}
       {open && (

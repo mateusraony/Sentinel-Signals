@@ -6,6 +6,7 @@ import {
   BarChart2, Edit3, X, Search, Calendar, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import TradeCard, { ScoreBar } from '@/components/dashboard/TradeCard';
 import TradeEntryMarkers from '@/components/trades/TradeEntryMarkers';
 import PortfolioVsMarket from '@/components/trades/PortfolioVsMarket';
@@ -202,11 +203,18 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
 
           <EventTimeline events={signalTimeline(signal)} title={null} />
         </div>
-        <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
-          title="Tirar este aviso da lista"
-          className="shrink-0 p-1 rounded-lg transition-colors hover:bg-white/[0.06]">
-          <X className="w-3.5 h-3.5" style={{ color: 'rgba(255,255,255,0.35)' }} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
+              aria-label="Tirar este aviso da lista"
+              className="shrink-0 p-1 rounded-lg transition-colors hover:bg-white/[0.06]">
+              <X className="w-3.5 h-3.5" style={{ color: 'rgba(255,255,255,0.35)' }} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            Tirar este aviso da lista
+          </TooltipContent>
+        </Tooltip>
       </div>
     );
   }
@@ -303,12 +311,18 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
           {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           Detalhes técnicos
         </button>
-        <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
-          title="Tirar este aviso da lista"
-          className="text-[10px] font-mono px-2 py-1 rounded-lg transition-colors hover:bg-white/[0.06]"
-          style={{ color: 'rgba(255,255,255,0.3)' }}>
-          Dispensar
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
+              className="text-[10px] font-mono px-2 py-1 rounded-lg transition-colors hover:bg-white/[0.06]"
+              style={{ color: 'rgba(255,255,255,0.3)' }}>
+              Dispensar
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            Tirar este aviso da lista
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {showDetails && (
@@ -667,16 +681,22 @@ export default function Trades() {
           {/* Densidade — abre/fecha os detalhes técnicos de TODOS os cards de
               uma vez. Cada card continua podendo ser aberto sozinho depois. */}
           <div className="w-px h-4 mx-1" style={{ background: 'rgba(255,255,255,0.08)' }} />
-          <button onClick={() => setShowDetails(v => !v)}
-            aria-pressed={showDetails}
-            title="Abre ou fecha os detalhes técnicos de todos os cards de operação ao mesmo tempo."
-            className="flex items-center gap-1 text-[10px] font-mono px-2.5 py-1 rounded-md transition-all"
-            style={showDetails
-              ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
-              : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
-            {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            {showDetails ? 'Detalhado' : 'Compacto'}
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button onClick={() => setShowDetails(v => !v)}
+                aria-pressed={showDetails}
+                className="flex items-center gap-1 text-[10px] font-mono px-2.5 py-1 rounded-md transition-all"
+                style={showDetails
+                  ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
+                  : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+                {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                {showDetails ? 'Detalhado' : 'Compacto'}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              Abre ou fecha os detalhes técnicos de todos os cards de operação ao mesmo tempo.
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         {/* "Avisos em análise"/"Observações de mercado" dependem de
