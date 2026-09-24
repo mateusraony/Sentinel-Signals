@@ -41,23 +41,29 @@ export default function Assets() {
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: states = [] } = useQuery({
+  const { data: states = [], isError: statesError } = useQuery({
     queryKey: ['asset-states'],
     queryFn: () => backend.entities.AssetState.list(),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: recentSignals = [] } = useQuery({
+  const { data: recentSignals = [], isError: recentSignalsError } = useQuery({
     queryKey: ['recent-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 100),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: tradeOps = [] } = useQuery({
+  const { data: tradeOps = [], isError: tradeOpsError } = useQuery({
     queryKey: ['trade-operations-assets'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
+
+  // Achado da varredura sistemática (item 196) — mesmo critério das outras
+  // páginas: só "indisponível" quando não sobrou dado algum em cache.
+  const statesUnavailable = statesError && states.length === 0;
+  const signalsFilterUnavailable = (recentSignalsError && recentSignals.length === 0)
+    || (tradeOpsError && tradeOps.length === 0);
 
   const toggleMutation = useMutation({
     /** @param {{ id: string, is_active: boolean }} args */
@@ -207,6 +213,14 @@ export default function Assets() {
         <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <QueryErrorState message="Não foi possível carregar os ativos agora." onRetry={refetch} />
         </div>
+      ) : filtered.length === 0 && filterStatus === 'proximity' && statesUnavailable ? (
+        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <QueryErrorState message="Não foi possível carregar os indicadores agora — o filtro 'Próximos' pode estar escondendo ativos incorretamente." />
+        </div>
+      ) : filtered.length === 0 && filterStatus === 'signals' && signalsFilterUnavailable ? (
+        <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <QueryErrorState message="Não foi possível carregar sinais/operações agora — o filtro 'Sinais' pode estar escondendo ativos incorretamente." />
+        </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <Coins className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
@@ -338,6 +352,7 @@ export default function Assets() {
                 <AssetDetailPanel
                   asset={asset}
                   states={assetStates}
+                  statesUnavailable={statesUnavailable}
                   expanded={expandedId === asset.id}
                   onToggle={() => setExpandedId(expandedId === asset.id ? null : asset.id)}
                 />

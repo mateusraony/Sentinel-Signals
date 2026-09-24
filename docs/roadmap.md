@@ -809,6 +809,24 @@ justificativa nova para reabrir isso com o resultado acima.
   PerformanceMetricsBar, rótulo do C-2b quebrando o grid) — todos
   corrigidos, com teste de regressão pro mais sério. Backlog do Raio-X em
   si (Alta/Média) continua igual, nada novo tocado.
+  **Addendum 2 (item 195, 2026-09-24):** 3ª revisão cética confirmou que os
+  3 fixes do item 194 estão corretos, mas achou 1 problema adjacente
+  (recentSignals silencioso em Trades.jsx, mesma classe do C-3 mas numa
+  query secundária fora do escopo original) — corrigido, com teste de
+  regressão. **Pendência nova registrada:** o mesmo padrão pode existir em
+  queries secundárias de outras páginas do C-3, não auditado
+  sistematicamente ainda.
+  **Addendum 3 (item 196, 2026-09-24):** varredura sistemática das outras 7
+  páginas confirmou a pendência acima — mesmo padrão em Dashboard.jsx (3
+  queries), Assets.jsx (2 filtros + painel de detalhe), Backtest.jsx (1) e
+  Verification.jsx (2 achados adicionais, incluindo `SignalChecklist`
+  afirmando "ENTRADA LIBERADA" falsa quando `tradeOps` não pôde ser
+  confirmado — o achado mais grave de toda a série 193-196, único
+  componente que emite veredito operacional afirmativo). Todos corrigidos
+  na mesma rodada (pedido explícito do usuário — "corrige tudo agora"),
+  com teste de regressão pros dois mais graves. TradeHistory.jsx/
+  Alerts.jsx/Logs.jsx confirmadas limpas. Detalhe completo por página em
+  `docs/known-risks.md` item 196.
 
 ---
 

@@ -59,7 +59,7 @@ function outcomeStats(ops) {
   };
 }
 
-export default function PredictiveAnalysis({ recentSignals = [] }) {
+export default function PredictiveAnalysis({ recentSignals = [], signalsUnavailable = false }) {
   // Dedicated query instead of reusing the Dashboard's `tradeOps` prop — that
   // list is capped at 100 most-recently-CREATED operations and mixes
   // active+closed, so with more than ~100 operations total it could hand
@@ -130,6 +130,15 @@ export default function PredictiveAnalysis({ recentSignals = [] }) {
       })
       .filter(b => b.n > 0);
   }, [sameShape]);
+
+  if (candidates.length === 0 && signalsUnavailable) {
+    return (
+      <div className="glass-card rounded-xl p-8 text-center">
+        <AlertTriangle className="w-8 h-8 mx-auto mb-3" style={{ color: '#ff9f43', opacity: 0.6 }} />
+        <p className="text-muted-foreground text-sm">Não foi possível carregar os sinais recentes agora — falha ao atualizar.</p>
+      </div>
+    );
+  }
 
   if (candidates.length === 0) {
     return (

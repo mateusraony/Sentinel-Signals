@@ -456,7 +456,7 @@ function QuickBacktestTab() {
   const [status, setStatus] = useState('idle'); // idle | running | error
   const [errorMsg, setErrorMsg] = useState(null);
 
-  const { data: assets = [] } = useQuery({
+  const { data: assets = [], isError: assetsError, refetch: refetchAssets } = useQuery({
     queryKey: ['all-assets'],
     queryFn: () => backend.entities.MonitoredAsset.list('-created_date'),
     staleTime: 60000,
@@ -503,6 +503,11 @@ function QuickBacktestTab() {
   return (
     <div className="space-y-4">
       <Section title="Configuração do Backtest">
+        {assetsError && assets.length === 0 && (
+          <div className="rounded-lg p-4" style={{ background: 'rgba(255,159,67,0.06)', border: '1px solid rgba(255,159,67,0.2)' }}>
+            <QueryErrorState message="Não foi possível carregar os ativos agora — o seletor abaixo está vazio e 'Executar Backtest' fica desativado até a próxima atualização." onRetry={refetchAssets} />
+          </div>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="text-[9px] font-mono text-muted-foreground block mb-1">Ativo</label>

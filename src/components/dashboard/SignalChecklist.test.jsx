@@ -97,6 +97,44 @@ describe('SignalChecklist — achado do Codex (PR #369): timeframe fora de 4h n�
   });
 });
 
+describe('SignalChecklist — achado da varredura sistemática (item 196): ENTRADA LIBERADA falsa quando tradeOps não pôde ser confirmado', () => {
+  it('sinal 4h sem motivo e sem op ativa mostra ENTRADA LIBERADA quando tradeOps é confiável (baseline)', () => {
+    renderChecklist({ signal: baseSignal, tradeOps: [], tradeOpsUnavailable: false });
+    fireEvent.click(screen.getByText(/Por que ainda não virou operação\?/i));
+    screen.getByText(/ENTRADA LIBERADA/i);
+  });
+
+  it('mesmo sinal com tradeOpsUnavailable=true NUNCA afirma ENTRADA LIBERADA — mostra "não verificado"', () => {
+    renderChecklist({ signal: baseSignal, tradeOps: [], tradeOpsUnavailable: true });
+    fireEvent.click(screen.getByText(/Por que ainda não virou operação\?/i));
+    expect(screen.queryByText(/ENTRADA LIBERADA/i)).toBeNull();
+    screen.getByText(/NÃO VERIFICADO/i);
+    screen.getByText(/não foi possível confirmar se já existe uma operação ativa/i);
+  });
+
+  it('um bloqueio já conhecido (last_rejection_reason) continua BLOQUEADA mesmo com tradeOpsUnavailable=true', () => {
+    renderChecklist({
+      signal: { ...baseSignal, last_rejection_reason: 'regime_rejected', last_rejection_detail: 'adx' },
+      tradeOps: [],
+      tradeOpsUnavailable: true,
+    });
+    fireEvent.click(screen.getByText(/Por que ainda não virou operação\?/i));
+    screen.getByText(/BLOQUEADA/i);
+    expect(screen.queryByText(/ENTRADA LIBERADA/i)).toBeNull();
+  });
+
+  it('operação ativa CONFIRMADA continua BLOQUEADA mesmo com tradeOpsUnavailable=true (dado real presente, não é o caso incerto)', () => {
+    renderChecklist({
+      signal: baseSignal,
+      tradeOps: [{ asset_id: 'asset1', status: 'SIGNAL_CONFIRMED' }],
+      tradeOpsUnavailable: true,
+    });
+    fireEvent.click(screen.getByText(/Por que ainda não virou operação\?/i));
+    screen.getByText(/BLOQUEADA/i);
+    expect(screen.queryByText(/NÃO VERIFICADO/i)).toBeNull();
+  });
+});
+
 describe('SignalChecklist — só signalEventId (Verification.jsx), busca sob demanda', () => {
   it('não busca antes de expandir, busca só ao expandir', async () => {
     signalGetMock.mockResolvedValueOnce({ ...baseSignal, last_rejection_reason: 'trend_reversed', last_rejection_detail: 'now_down' });

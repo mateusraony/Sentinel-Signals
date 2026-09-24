@@ -48,7 +48,7 @@ function MetricRow({ label, value, color }) {
   );
 }
 
-function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, label }) {
+function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, label, dataUnavailable }) {
   const TERMINAL = ['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'];
   const hasActive = tradeOp && !TERMINAL.includes(tradeOp.status);
   const price = states.find(s => s.timeframe === '1h')?.last_close || states[0]?.last_close;
@@ -137,8 +137,11 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
               <MetricRow label="Score" value={score > 0 ? `${score}/100` : '—'}
                 color={score >= 85 ? '#00ff80' : score >= 75 ? '#ffd166' : 'rgba(255,255,255,0.5)'} />
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }} />
-              <MetricRow label="Trade" value={hasActive ? `${tradeOp.status}` : signal ? 'Aguardando' : 'Livre'}
-                color={hasActive ? '#00e5ff' : signal ? '#ffd166' : '#64748b'} />
+              <MetricRow
+                label="Trade"
+                value={hasActive ? `${tradeOp.status}` : signal ? 'Aguardando' : dataUnavailable ? 'Não verificado' : 'Livre'}
+                color={hasActive ? '#00e5ff' : signal ? '#ffd166' : dataUnavailable ? '#ff9f43' : '#64748b'}
+              />
             </>
           );
         })()}
@@ -167,7 +170,7 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
   );
 }
 
-export default function ComparePanel({ assetA, assetB, statesA, statesB, signalA, signalB, opA, opB }) {
+export default function ComparePanel({ assetA, assetB, statesA, statesB, signalA, signalB, opA, opB, dataUnavailable = false }) {
   const { data: statsA } = useQuery({
     queryKey: ['24h-stats', assetA.symbol],
     queryFn: () => fetch24hStats(assetA.symbol),
@@ -200,8 +203,8 @@ export default function ComparePanel({ assetA, assetB, statesA, statesB, signalA
 
       {/* Columns */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <CompareColumn asset={assetA} states={statesA} signal={signalA} tradeOp={opA} stats={statsA} opp={oppA} isWinner={winner === 'A'} label="A" />
-        <CompareColumn asset={assetB} states={statesB} signal={signalB} tradeOp={opB} stats={statsB} opp={oppB} isWinner={winner === 'B'} label="B" />
+        <CompareColumn asset={assetA} states={statesA} signal={signalA} tradeOp={opA} stats={statsA} opp={oppA} isWinner={winner === 'A'} label="A" dataUnavailable={dataUnavailable} />
+        <CompareColumn asset={assetB} states={statesB} signal={signalB} tradeOp={opB} stats={statsB} opp={oppB} isWinner={winner === 'B'} label="B" dataUnavailable={dataUnavailable} />
       </div>
     </div>
   );

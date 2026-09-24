@@ -243,3 +243,40 @@ describe('Trades — "Operações Ativas" não afirma "Nenhuma" quando a atualiz
     expect(screen.queryByText('Nenhuma operação ativa.')).toBeNull();
   });
 });
+
+// Achado da 3ª revisão cética (docs/claude/ui-audit-criticos.md): as seções
+// "Avisos em análise"/"Observações de mercado" só renderizam quando há sinal
+// (`.length > 0`) — uma falha em recentSignals fazia as duas simplesmente
+// sumirem da tela, sem nenhum indício de que algo deu errado. Mesma classe
+// de silêncio enganoso que o C-3 original corrigiu na query principal de
+// cada página, só que numa query secundária fora daquele escopo.
+describe('Trades — "Avisos em análise" não some silenciosamente quando recentSignals falha', () => {
+  it('REGRESSÃO: erro ao carregar sinais recentes mostra aviso, em vez das seções sumirem sem explicação', async () => {
+    vi.doMock('@/api/entities', () => ({
+      backend: {
+        entities: {
+          TradeOperation: { list: async () => [], filter: async () => [] },
+          SignalEvent: {
+            list: async () => { throw new Error('Failed to fetch'); },
+            filter: async () => [],
+            update: async (id, data) => ({ id, ...data }),
+          },
+        },
+        tradeOps: { transitionTradeOp: async () => ({ applied: false }) },
+      },
+    }));
+    vi.doMock('@/lib/marketDataProvider', () => ({
+      fetchCandles: async () => [],
+      fetchCurrentPrice: async () => null,
+      fetch24hStats: async () => null,
+      MARKET_SOURCE: 'spot',
+      DATA_EXCHANGE: 'binance',
+      EXECUTOR: 'browser',
+    }));
+
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    await screen.findByText(/não foi possível verificar avisos\/sinais recentes/i);
+  });
+});

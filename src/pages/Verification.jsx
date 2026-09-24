@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { notifyVerificationTask, isTelegramConfigured } from '@/lib/telegram';
-import { ClipboardCheck, Check, X as XIcon, Search, ArrowUpDown, Send, Loader2 } from 'lucide-react';
+import { ClipboardCheck, Check, X as XIcon, Search, ArrowUpDown, Send, Loader2, AlertTriangle } from 'lucide-react';
 import SignalChecklist from '@/components/dashboard/SignalChecklist';
 import { QueryErrorState } from '@/components/QueryErrorState';
 import moment from 'moment';
@@ -108,21 +108,26 @@ export default function Verification() {
   // Contagem do badge do cabeçalho é independente do filtro ativo — sem isso,
   // trocar para a aba "Revisadas"/"Puladas" faria o número de pendentes
   // sumir ou ficar desatualizado.
-  const { data: pendingTasks = [] } = useQuery({
+  const { data: pendingTasks = [], isError: pendingCountError } = useQuery({
     queryKey: ['verification-tasks-pending-count'],
     queryFn: () => backend.entities.VerificationTask.filter({ status: 'pending' }, '-created_date', 200),
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
-  const { data: assets = [] } = useQuery({
+  const { data: assets = [], isError: assetsError } = useQuery({
     queryKey: ['monitored-assets-verification'],
     queryFn: () => backend.entities.MonitoredAsset.list(),
   });
 
-  const { data: tradeOps = [] } = useQuery({
+  const { data: tradeOps = [], isError: tradeOpsError } = useQuery({
     queryKey: ['trade-operations-verification'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
   });
+  // Achado da varredura sistemática (item 196): só degrada o veredito do
+  // SignalChecklist pra "não verificado" quando não há NENHUM dado em cache
+  // (mesmo critério já usado nas 8 páginas do item 194) — um refetch em
+  // background que falha mas mantém cache bom não deve gerar falso alarme.
+  const tradeOpsUnavailable = tradeOpsError && tradeOps.length === 0;
 
   const updateMutation = useMutation({
     /** @param {{ id: string, data: object }} args */
@@ -148,6 +153,7 @@ export default function Verification() {
   }, [tasks, search, sortBy]);
 
   const pendingCount = pendingTasks.length;
+  const pendingCountUnknown = pendingCountError && pendingTasks.length === 0;
 
   const setStatus = (task, status) => updateMutation.mutate({
     id: task.id,
@@ -179,7 +185,12 @@ export default function Verification() {
         <div className="flex items-center gap-2">
           <ClipboardCheck className="w-6 h-6" style={{ color: '#ffd166' }} />
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Verificação</h1>
-          {pendingCount > 0 && (
+          {pendingCountUnknown ? (
+            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.4)' }}>
+              pendentes: não verificado
+            </span>
+          ) : pendingCount > 0 && (
             <span className="text-[11px] font-mono px-2 py-0.5 rounded-full"
               style={{ background: 'rgba(255,209,102,0.1)', border: '1px solid rgba(255,209,102,0.25)', color: '#ffd166' }}>
               {pendingCount} pendente{pendingCount === 1 ? '' : 's'}
@@ -190,6 +201,14 @@ export default function Verification() {
           Tarefas criadas automaticamente para todo sinal de alta prioridade — inclusive pelo scan agendado, sem precisar do navegador aberto.
         </p>
       </div>
+
+      {assetsError && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg text-[10px] font-mono"
+          style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
+          <span>Não foi possível carregar os ativos monitorados agora — o "Reenviar" foi desativado (o filtro por ativo do Telegram não pode ser confirmado) até a próxima atualização.</span>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
@@ -291,9 +310,11 @@ export default function Verification() {
 
                     <NotesField task={task} onSave={(notes) => updateMutation.mutate({ id: task.id, data: { notes } })} />
 
-                    {asset && (
-                      <SignalChecklist signalEventId={task.signal_event_id} tradeOps={tradeOps} />
-                    )}
+                    <SignalChecklist
+                      signalEventId={task.signal_event_id}
+                      tradeOps={tradeOps}
+                      tradeOpsUnavailable={tradeOpsUnavailable}
+                    />
                   </div>
 
                   <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -312,8 +333,12 @@ export default function Verification() {
                       </button>
                     </div>
                     <button onClick={() => resend(task)}
-                      disabled={resendingId === task.id || !isTelegramConfigured()}
-                      title={isTelegramConfigured() ? 'Reenviar notificação Telegram' : 'Configure o Telegram em Ajustes primeiro'}
+                      disabled={resendingId === task.id || !isTelegramConfigured() || assetsError}
+                      title={
+                        assetsError
+                          ? 'Ativos monitorados indisponíveis agora — reenvio desativado para não usar o filtro errado'
+                          : isTelegramConfigured() ? 'Reenviar notificação Telegram' : 'Configure o Telegram em Ajustes primeiro'
+                      }
                       className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 rounded-md transition-all disabled:opacity-40"
                       style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)', color: '#00e5ff' }}>
                       {resendingId === task.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
