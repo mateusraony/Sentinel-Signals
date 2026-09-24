@@ -93,3 +93,23 @@ describe('Verification — SignalChecklist nunca afirma ENTRADA LIBERADA quando 
     expect(screen.queryByText(/ENTRADA LIBERADA/i)).toBeNull();
   });
 });
+
+// Achado A-11 do Raio-X de UI/UX: o filtro de prioridade tinha 4 opções
+// (Todas/Alta/Média/Baixa), mas `VerificationTask.priority` é SEMPRE
+// 'high' por desenho (scanner.js só cria a tarefa dentro de
+// `if (signal.priority === 'high')`) — "Média"/"Baixa" nunca mudavam o
+// resultado, filtro morto. Este teste prova que a UI parou de prometer um
+// filtro sem dado correspondente.
+describe('Verification — filtro de prioridade só mostra Todas/Alta (achado A-11)', () => {
+  it('não renderiza os botões Média/Baixa', async () => {
+    verificationTaskFilterMock.mockResolvedValue([TASK]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+
+    renderPage(<Verification />);
+
+    await screen.findByRole('button', { name: 'Alta' });
+    expect(screen.queryByRole('button', { name: 'Média' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Baixa' })).toBeNull();
+  });
+});

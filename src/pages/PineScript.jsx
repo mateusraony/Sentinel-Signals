@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { backend } from '@/api/entities';
 import { Save, Copy, RefreshCw, Code2, AlertTriangle, CheckCircle2, Info, Layers, Zap } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1017,18 +1017,6 @@ if barstate.islast and tableMode != "Oculta"
         table.cell(dbg, 1, 27, sessionOk ? "Aberta ✓" : "Fechada ✗", text_color=sessionOk ? bullColor : blockedColor, text_size=size.tiny)
 `;
 
-const SYNC_NOTES = [
-  { icon: '🔄', label: 'rng_per / rng_qty (RF Period / Multiplier)', desc: 'Sincronizado com MonitoredAsset.rf_period e rf_multiplier — padrão 20 / 3.5' },
-  { icon: '📊', label: 'ADX + Choppiness (Filtros de Regime)', desc: 'ADX mín e Chop máx são auto-ajustados pelo Tier do ativo (ATR%)' },
-  { icon: '🏗️', label: 'Auto-Tier: T1 / T2 / T3', desc: 'T1 Blue chip ATR%<0.8 → stop 2x | T2 Mid cap → 2.5x | T3 Altcoin → 3x' },
-  { icon: '📈', label: 'Filtro MTF 4h (mtfTF = "240")', desc: 'Scanner valida direção 4h antes de emitir sinal — só entra a favor do 4h' },
-  { icon: '⏱️', label: 'Entrada em 15m após sinal 4h', desc: 'Scanner detecta sinal 4h e aguarda confirmação no 15m para entrada precisa' },
-  { icon: '⚡', label: 'Score 0–100 (minScore = 75)', desc: 'BuyScore/SellScore calculados via RF+MACD+EMA+RSI+Volume — mínimo 75 para entrar' },
-  { icon: '🎯', label: 'TP1 em 1.5R + Runner', desc: 'TP1 = entry ± (atr * atrStopMult) * 1.5 | Runner com trailing ATR ou RF exit' },
-  { icon: '🛑', label: 'Stop = entry ± atr * atrStopMult', desc: 'Stop dinâmico por Tier: 2x / 2.5x / 3x ATR — move para BE após TP1' },
-  { icon: '⏰', label: 'Time Stop por Tier', desc: 'T1: 48 candles | T2: 64 candles | T3: 96 candles sem TP1 → fecha posição' },
-];
-
 export default function PineScript() {
   const queryClient = useQueryClient();
   const [code, setCode] = useState(() => localStorage.getItem('pine_script_code_v12') || DEFAULT_PINE);
@@ -1047,6 +1035,37 @@ export default function PineScript() {
     });
     return () => { cancelled = true; };
   }, []);
+
+  // Achado A-4 do Raio-X de UI/UX: a aba "Sincronização" tinha um array de
+  // strings LITERAIS declarado fora do componente, com números chumbados na
+  // criação do arquivo — nunca lia `parsedConfig` (o mesmo state que o grid
+  // de preview da aba "Editor" já usa corretamente). Editar e salvar o Pine
+  // Script atualizava o Editor mas a Sincronização ficava presa aos valores
+  // originais pra sempre. O multiplicador de stop por Tier (2x/2.5x/3x ATR)
+  // continua literal DE PROPÓSITO: é constante real de
+  // src/lib/indicators/tier.js sem input.*() no Pine, fora de
+  // DEFAULTS/SYNCED_STRATEGY_KEYS — não é editável, não há "valor atual"
+  // pra sincronizar.
+  const syncNotes = useMemo(() => [
+    { id: 'rf', icon: '🔄', label: 'rng_per / rng_qty (RF Period / Multiplier)',
+      desc: `Sincronizado com MonitoredAsset.rf_period e rf_multiplier — padrão ${parsedConfig.rng_per} / ${parsedConfig.rng_qty}` },
+    { id: 'regime', icon: '📊', label: 'ADX + Choppiness (Filtros de Regime)',
+      desc: 'ADX mín e Chop máx são auto-ajustados pelo Tier do ativo (ATR%)' },
+    { id: 'tier', icon: '🏗️', label: 'Auto-Tier: T1 / T2 / T3',
+      desc: `T1 Blue chip ATR%<${parsedConfig.tier2Threshold} → stop 2x | T2 Mid cap → 2.5x | T3 Altcoin → 3x` },
+    { id: 'mtf', icon: '📈', label: 'Filtro MTF 4h (mtfTF = "240")',
+      desc: 'Scanner valida direção 4h antes de emitir sinal — só entra a favor do 4h' },
+    { id: 'entry', icon: '⏱️', label: 'Entrada em 15m após sinal 4h',
+      desc: 'Scanner detecta sinal 4h e aguarda confirmação no 15m para entrada precisa' },
+    { id: 'score', icon: '⚡', label: `Score 0–100 (minScore = ${parsedConfig.minScore})`,
+      desc: `BuyScore/SellScore calculados via RF+MACD+EMA+RSI+Volume — mínimo ${parsedConfig.minScore} para entrar` },
+    { id: 'tp1', icon: '🎯', label: `TP1 em ${parsedConfig.tp1R}R + Runner`,
+      desc: `TP1 = entry ± (atr * atrStopMult) * ${parsedConfig.tp1R} | Runner com trailing ATR ou RF exit` },
+    { id: 'stop', icon: '🛑', label: 'Stop = entry ± atr * atrStopMult',
+      desc: 'Stop dinâmico por Tier: 2x / 2.5x / 3x ATR — move para BE após TP1' },
+    { id: 'timestop', icon: '⏰', label: 'Time Stop por Tier',
+      desc: `T1: ${parsedConfig.timeStopT1} candles | T2: ${parsedConfig.timeStopT2} candles | T3: ${parsedConfig.timeStopT3} candles sem TP1 → fecha posição` },
+  ], [parsedConfig]);
 
   const { data: assets = [] } = useQuery({
     queryKey: ['all-assets'],
@@ -1236,8 +1255,8 @@ export default function PineScript() {
         <div className="space-y-3" id="pine-tabpanel-sync" role="tabpanel" aria-labelledby="pine-tab-sync">
           <div className="rounded-xl p-4 space-y-3" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(0,255,128,0.12)' }}>
             <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-2">🔗 NE RF v13.2 → Sistema</div>
-            {SYNC_NOTES.map(note => (
-              <div key={note.label} className="flex items-start gap-3 py-2.5 px-3 rounded-lg"
+            {syncNotes.map(note => (
+              <div key={note.id} className="flex items-start gap-3 py-2.5 px-3 rounded-lg"
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <span className="text-base shrink-0">{note.icon}</span>
                 <div className="min-w-0">
@@ -1255,7 +1274,7 @@ export default function PineScript() {
               <span className="font-bold">Fluxo de entrada 4h → 15m</span>
             </div>
             <div className="text-[9px] font-mono space-y-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
-              <p>1. Scanner detecta sinal RF no <span className="text-yellow-400">4h</span> com score ≥ 75 e direção MTF alinhada</p>
+              <p>1. Scanner detecta sinal RF no <span className="text-yellow-400">4h</span> com score ≥ {parsedConfig.minScore} e direção MTF alinhada</p>
               <p>2. Sistema entra em modo de observação no <span className="text-yellow-400">15m</span> para aquele ativo</p>
               <p>3. Aguarda confirmação RF no 15m <strong className="text-white">na mesma direção</strong> do 4h</p>
               <p>4. Quando o 15m confirma, cria o TradeOperation com entry/stop/TP do 4h (ATR do 4h)</p>
