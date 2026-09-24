@@ -25314,3 +25314,66 @@ grave, com a nota acima sobre o próprio processo) e `Verification.test.jsx`
 (novo arquivo — wiring ponta a ponta do `tradeOpsUnavailable` e do botão
 "Reenviar" desativado), ambos confirmados falhando sem o fix via
 `git stash`. Detalhe operacional em `docs/claude/ui-audit-criticos.md`.
+
+## 197. Nova ocorrência de "Failed to fetch" pós-deploy — evidência forte de que NÃO é o cron (addendum item 192, 2026-09-24)
+
+Usuário pediu análise de uma nova ocorrência de "Failed to fetch" reportada
+pelo `health-audit.yml` (run 09:29:41 UTC, 2026-09-24): **7 ativos, 8×,
+última há 3h** (exemplo: `Erro no scan de LDOUSDT: Failed to fetch`) — a
+primeira ocorrência real desde o deploy do PR #393 (item 192, que
+adicionou `executor`/`error_cause` ao `SystemLog`) e do PR #395 (atalho
+"⚡ Failed to fetch" na tela Logs).
+
+**Investigação**: como o relatório do `health-audit.yml` não grava os
+campos novos (só módulo/mensagem, `healthAuditFormat.mjs`), não dá pra
+confirmar `executor` por ele — só a tela Logs (`/logs`, agora com o
+atalho do PR #395) mostra o payload completo. Sem acesso a banco nesta
+sessão, a alternativa foi inspecionar o console de CADA execução do
+`scan.yml` (via GitHub Actions API) na janela onde a ocorrência mais
+recente ("há 3h" relativo a 09:29:41 UTC ≈ entre 05:29 e 06:29 UTC)
+poderia ter acontecido.
+
+**Achado — checados TODOS os 14 runs do `scan.yml` entre 05:25 e 06:30
+UTC de hoje (cadência de 5min), nenhum reporta `Failed to fetch`:**
+
+| Run (UTC) | `[scan] scanAllAssets:` |
+|---|---|
+| 05:25, 05:40, 05:55, 06:00, 06:05, 06:10, 06:15, 06:20, 06:25, 06:30 | `10 ativo(s), 0 falha(s)` |
+| 05:30, 05:35, 05:45, 05:50 | `0 ativo(s), 0 falha(s)` (achado novo, ver abaixo) |
+
+Nenhum desses 14 runs — que cobrem toda a janela onde "há 3h" poderia
+apontar, dado o arredondamento de `haQuantoTempo` — logou qualquer
+`"Failed to fetch"`. Como todo run de `scan.yml` roda em Node/GitHub
+Actions (`scripts/adminMarketDataProvider.js`, `EXECUTOR='cron'`), isso é
+**evidência forte (não prova definitiva — resta a chance de a ocorrência
+estar fora da janela de arredondamento) de que a ocorrência reportada
+NÃO veio do cron** — reforça a hipótese já registrada no item 192 (a
+string exata "Failed to fetch" é a assinatura do fetch() do navegador,
+não do Node/undici). Combinado com o fato de `useAutoScan.js` rodar
+silenciosamente em qualquer aba aberta do painel (item 184 addendum), o
+suspeito mais provável agora é o **navegador**, não o cron.
+
+**Confirmação definitiva pendente**: só a tela Logs (payload
+`details.executor`/`details.error_cause` de uma dessas 8 ocorrências)
+resolve isso de vez — pedido ao usuário, aguardando.
+
+### Achado colateral novo — 4 passadas seguidas com "0 ativo(s)" (05:30-05:50 UTC hoje)
+
+Durante a mesma varredura, 4 dos 14 runs (05:30, 05:35, 05:45, 05:50 UTC)
+reportaram `scanAllAssets: 0 ativo(s), 0 falha(s)` — ou seja,
+`MonitoredAsset.filter({is_active: true})` devolveu uma lista **vazia**
+por ~20 minutos seguidos (4 passadas), sem erro nenhum logado (o job
+terminou "success" normalmente, só processou zero ativos). Recuperou
+sozinho às 05:55 (`10 ativo(s)` de novo). **Não investigado a fundo
+nesta rodada** — hipótese não confirmada: uma leitura transitória do
+Postgres/Neon devolvendo vazio (não é erro de conexão, que apareceria
+como exceção — a query simplesmente não achou nenhum ativo `is_active`).
+Registrado como achado, não como causa raiz determinada.
+
+### Verificação
+
+14 runs de `scan.yml` (05:25-06:30 UTC, 2026-09-24) e 1 run de
+`health-audit.yml` (09:29:41 UTC) lidos via GitHub Actions API
+(`list_workflow_jobs`/`get_job_logs`) — dado real, não simulado. Nenhuma
+mudança de código nesta rodada — achado de investigação, aguardando
+confirmação do usuário via tela Logs antes de decidir próximo passo.
