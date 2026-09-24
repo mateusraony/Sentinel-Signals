@@ -45,8 +45,19 @@ const OPEN_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
  * original); o componente busca o `SignalEvent` real sob demanda (só ao
  * expandir — mesmo padrão lazy-load da versão anterior, evita 1 leitura por
  * tarefa listada).
+ *
+ * `tradeOpsUnavailable`: o chamador passa `true` quando a query de onde
+ * `tradeOps` vem falhou (network/servidor) sem nenhum dado em cache —
+ * achado da varredura sistemática, 2026-09-24, docs/known-risks.md item 196.
+ * Sem isso, uma falha de query zera `tradeOps` para `[]` e `hasActiveOp`
+ * fica `false` do mesmo jeito que "confirmado, não há operação ativa" —
+ * o componente então afirmava "ENTRADA LIBERADA" com confiança total sobre
+ * um dado que na verdade nunca foi checado. Mesma classe de bug do item 194
+ * (Trades.jsx "Nenhuma operação ativa"), aqui na consequência mais grave:
+ * este componente é o único do painel que emite um veredito operacional
+ * explícito ("libera"/"bloqueia" a entrada).
  */
-export default function SignalChecklist({ signal = null, signalEventId = null, tradeOps = [] }) {
+export default function SignalChecklist({ signal = null, signalEventId = null, tradeOps = [], tradeOpsUnavailable = false }) {
   const [expanded, setExpanded] = useState(false);
   const needsFetch = !signal && !!signalEventId;
 
@@ -98,6 +109,10 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
   const hasKnownObstacle = hasActiveOp || Boolean(effectiveSignal?.last_rejection_reason);
   const blocked = hasKnownObstacle || phase === SIGNAL_PHASE.EXPIRED;
   const showVerdict = hasKnownObstacle || phase !== SIGNAL_PHASE.INFO;
+  // Só degrada pra "não verificado" quando o veredito SERIA "liberada" —
+  // um bloqueio por motivo já conhecido (last_rejection_reason/EXPIRED)
+  // continua válido mesmo sem confirmar operação ativa.
+  const verdictUncertain = showVerdict && !blocked && tradeOpsUnavailable;
 
   return (
     <div className="mt-1.5">
@@ -126,6 +141,12 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
                   <span style={{ color: 'rgba(255,255,255,0.6)' }}>Já existe uma operação ativa neste ativo — o motor não abre uma segunda.</span>
                 </div>
               )}
+              {!hasActiveOp && tradeOpsUnavailable && (
+                <div className="flex items-start gap-1.5 text-[9px] font-mono">
+                  <span style={{ color: '#ff9f43' }}>·</span>
+                  <span style={{ color: 'rgba(255,255,255,0.6)' }}>Não foi possível confirmar se já existe uma operação ativa neste ativo agora (falha ao atualizar).</span>
+                </div>
+              )}
               {reason && (
                 <div className="text-[9px] font-mono">
                   <div className="font-semibold" style={{ color: copy?.color ?? 'rgba(255,255,255,0.6)' }}>
@@ -139,9 +160,11 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
               )}
               {showVerdict ? (
                 <div className="pt-1.5 mt-1.5 flex items-center gap-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                  {blocked ? <ShieldAlert className="w-3.5 h-3.5" style={{ color: '#ff1478' }} /> : <ShieldCheck className="w-3.5 h-3.5" style={{ color: '#00ff80' }} />}
-                  <span className="text-[10px] font-mono font-bold" style={{ color: blocked ? '#ff1478' : '#00ff80' }}>
-                    {blocked ? 'BLOQUEADA' : 'ENTRADA LIBERADA'}
+                  {verdictUncertain
+                    ? <ShieldAlert className="w-3.5 h-3.5" style={{ color: '#ff9f43' }} />
+                    : blocked ? <ShieldAlert className="w-3.5 h-3.5" style={{ color: '#ff1478' }} /> : <ShieldCheck className="w-3.5 h-3.5" style={{ color: '#00ff80' }} />}
+                  <span className="text-[10px] font-mono font-bold" style={{ color: verdictUncertain ? '#ff9f43' : blocked ? '#ff1478' : '#00ff80' }}>
+                    {verdictUncertain ? 'NÃO VERIFICADO' : blocked ? 'BLOQUEADA' : 'ENTRADA LIBERADA'}
                   </span>
                 </div>
               ) : (

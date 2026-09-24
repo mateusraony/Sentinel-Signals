@@ -86,7 +86,7 @@ function TFTrendRow({ states }) {
   );
 }
 
-export default function AssetCard({ asset, states, latestSignal, tradeOp, onClick }) {
+export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeOpsUnavailable = false, onClick }) {
   const queryClient = useQueryClient();
   const availableTfs = states?.map(s => s.timeframe).filter(Boolean) || [];
   const defaultTf = availableTfs.includes('1h') ? '1h' : availableTfs[0] || '1h';
@@ -273,6 +273,12 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, onClic
                 <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: isStale ? '#ff9f43' : '#00ff80', boxShadow: isStale ? 'none' : '0 0 5px #00ff80' }} />
                 <span className="text-[8px] font-mono" style={{ color: isStale ? '#ff9f43' : '#00ff80' }}>{isStale ? 'STALE' : 'LIVE'}</span>
               </span>
+              {tradeOpsUnavailable && (
+                <span className="flex items-center gap-0.5" title="Não foi possível confirmar operações ativas agora — o status abaixo pode estar desatualizado.">
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: '#ff9f43' }} />
+                  <span className="text-[8px] font-mono" style={{ color: '#ff9f43' }}>OP?</span>
+                </span>
+              )}
             </div>
             {/* TF Trend row — always visible, subtle */}
             <div className="mt-1">

@@ -25162,3 +25162,155 @@ não só a principal de cada uma.
 `npm run lint && npm test && npm run build && npm run typecheck:ratchet`
 limpos, incluindo o teste de regressão novo. Detalhe operacional em
 `docs/claude/ui-audit-criticos.md`.
+
+## 196. Varredura sistemática das outras 7 páginas — mesmo padrão do item 195, achado em cascata (2026-09-24)
+
+O item 195 tinha registrado como backlog "o mesmo padrão (query secundária
+cujo `isError` nunca é lido) pode existir nas outras 7 páginas do C-3, não
+auditado sistematicamente ainda". Usuário pediu a varredura completa e,
+depois de mapeados os achados, pediu para corrigir tudo na mesma rodada em
+vez de dosar por severidade. Resultado: o padrão realmente se repetia,
+inclusive numa variante mais grave que a de Trades.jsx/item 195 — não só
+"seção some da tela", mas um componente afirmando um **veredito de
+segurança operacional falso**.
+
+### Achado mais grave — `SignalChecklist.jsx`: "ENTRADA LIBERADA" falsa
+
+`SignalChecklist` (usado em `Verification.jsx` e `AssetDrawer.jsx`) deriva
+`hasActiveOp` de um array `tradeOps` passado pelo componente pai. Quando a
+query de origem desse array falha, o array chega vazio — indistinguível de
+"confirmado, não há operação ativa" — e o componente afirmava **ENTRADA
+LIBERADA** (ícone verde, texto em negrito) sobre um dado que na verdade
+nunca foi checado. É o único componente do painel que emite um veredito
+operacional explícito desse tipo — a consequência mais séria de toda a
+classe de bug que os itens 193/194/195 já vinham corrigindo em outras
+formas (mensagens neutras "nenhum X" ou "não confirmado"), nunca antes um
+veredito afirmativo e colorido.
+
+**Fix:** nova prop `tradeOpsUnavailable` (default `false`) — quando `true`
+E o veredito seria "liberada" (nenhum motivo de bloqueio já conhecido), o
+componente mostra **NÃO VERIFICADO** (âmbar) em vez de ENTRADA LIBERADA,
+mais uma linha explicando que a operação ativa não pôde ser confirmada. Um
+bloqueio já conhecido (`last_rejection_reason`/`EXPIRED`/operação ativa
+CONFIRMADA) continua válido mesmo com `tradeOpsUnavailable=true` — só
+degrada o caso que dependia do array vazio para "liberar". `Verification.jsx`
+passa a prop a partir do `isError` da query `trade-operations-verification`
+(só quando não sobrou nenhum dado em cache, mesmo critério do item 194);
+`AssetDrawer.jsx`/`Dashboard.jsx` fazem o mesmo com `trade-operations-dashboard`.
+**Arquivo:** `src/components/dashboard/SignalChecklist.jsx`.
+
+**Nota sobre o próprio processo de correção:** ao escrever o teste de
+regressão (disciplina de sempre — escrever o teste, confirmar que falha
+sem o fix via `git stash`, só então aceitar como corrigido), o primeiro
+teste falhou mesmo com o fix "aplicado": eu tinha computado a variável
+`verdictUncertain` mas esquecido de usá-la no JSX — o componente continuava
+renderizando ENTRADA LIBERADA porque o `render` nunca foi atualizado, só a
+lógica acima dele. O teste pegou isso imediatamente. Registro isto porque é
+exatamente o tipo de erro que "rodei os testes e passou" não teria pego
+sem um teste que primeiro comprova estar RED — reforça por que a
+disciplina de reprodução continua sendo aplicada em toda correção séria
+deste projeto, inclusive nas minhas próprias.
+
+### Outros achados corrigidos, por página
+
+**Verification.jsx** (além do `SignalChecklist` acima):
+- Guarda `{asset && <SignalChecklist .../>}` escondia o checklist de
+  **todas** as tarefas quando a query `monitored-assets-verification`
+  falhava (array `assets` zerado → `.find()` sempre `undefined` →
+  guarda sempre falsa) — removida; `SignalChecklist` não depende de
+  `asset`, só de `signalEventId`/`tradeOps`.
+- `resend()` chamava `notifyVerificationTask(signal, asset)` com `asset`
+  `undefined` na mesma falha acima — `src/lib/telegram.js:145/162` usa
+  `asset?.notify_sources`/`notify_signal_types` como override POR ATIVO
+  do filtro global; com `asset` indisponível, o override silenciosamente
+  vira o filtro GLOBAL, que pode ser mais permissivo ou mais restritivo
+  que o configurado pro ativo — reenvio parecia funcionar, mas com filtro
+  errado. Corrigido: botão "Reenviar" desativado + aviso visível enquanto
+  `monitored-assets-verification` não puder ser confirmada.
+- Badge "N pendente(s)" do cabeçalho (query `verification-tasks-pending-
+  count`) sumia (virava "0 pendentes" implícito) na mesma falha — agora
+  mostra "pendentes: não verificado" em vez de desaparecer.
+
+**Dashboard.jsx** (3 queries secundárias — `asset-states`, `recent-signals`,
+`trade-operations-dashboard` — nunca tinham `isError` lido; cascata de
+efeitos, cada um corrigido com uma prop nova no componente afetado):
+- 5 `StatsCard` (Alta Prioridade, Operações Ativas, Aguardando, Sinais
+  BUY/SELL) mostravam "0" com confiança total. `StatsCard` ganhou prop
+  `error` — quando `true`, troca o `AnimatedNumber` por um "—" com ícone
+  de aviso. **Achado ao planejar o fix:** `AnimatedNumber` coage `value`
+  via `Number(value) || 0` — um sentinel ingênuo tipo `value={error ? '—'
+  : count}` teria animado pra 0 do mesmo jeito, reproduzindo o próprio bug
+  sendo corrigido; por isso a prop nova bypassa o subcomponente inteiro
+  em vez de tentar disfarçar o valor.
+- `RecentAlertsList` e `PredictiveAnalysis` mostravam "Nenhum alerta"/
+  "Nenhum sinal recente" quando `recentSignals` falhava — ambos ganharam
+  prop (`unavailable`/`signalsUnavailable`) para uma mensagem distinta.
+- `ComparePanel` mostrava "Livre" (Trade: Livre) para um ativo que na
+  verdade só não teve seu sinal/operação confirmados — ganhou
+  `dataUnavailable`, mostra "Não verificado" em âmbar nesse caso.
+- `AssetCard` omitia silenciosamente o status de operação ativa quando
+  `tradeOps` falhava (card parecia "sem operação" mesmo que a operação
+  real continuasse ativa) — ganhou badge `OP?` ao lado do LIVE/STALE
+  quando `tradeOpsUnavailable`.
+- `AssetDrawer` mostrava "Nenhuma operação registrada."/"Nenhum sinal
+  registrado." nas mesmas condições — mensagem distinta quando
+  indisponível em vez de genuinamente vazio.
+- `VerificationWidget` tinha `if (tasks.length === 0) return null`
+  incondicional — escondia o widget inteiro (sinais de alta prioridade
+  pendentes de revisão) quando a própria query falhava, não só quando
+  genuinamente não havia nada pendente. Agora só retorna `null` quando é
+  de fato "nada pendente"; numa falha, mostra um card de erro com retry.
+- Filtro de timeframe (TF All/1H/4H/1D): com `asset-states` indisponível,
+  qualquer TF específico escondia TODOS os ativos ("Nenhum ativo
+  encontrado" — falso). Mensagem distinta quando a causa é a query, não a
+  ausência real de ativos naquele TF.
+
+**Assets.jsx:**
+- Filtro "🎯 Próximos" (depende de `asset-states`) e "⚡ Sinais" (depende
+  de `recent-signals`/`trade-operations-assets`) escondiam todos os
+  ativos da mesma forma que o TF filter do Dashboard — mensagem distinta
+  por filtro quando a causa é a query correspondente indisponível.
+- `AssetDetailPanel`'s `TFStateCard` dizia "Sem dados" (implica "o scan
+  nunca gerou estado pra este TF") tanto pra ausência real quanto pra
+  falha de `asset-states` — ganhou prop `statesUnavailable`/`unavailable`,
+  mensagem "Falha ao carregar" na segunda situação.
+
+**Backtest.jsx:** `QuickBacktestTab`'s query `all-assets` sem `isError` —
+falha deixava o seletor de ativo vazio e o botão "Executar Backtest"
+travado desabilitado (por `!asset`) sem nenhuma explicação visível.
+Adicionado aviso com retry quando a lista não pôde ser carregada.
+
+**Confirmadas limpas, sem achado forçado:** `TradeHistory.jsx`,
+`Alerts.jsx`, `Logs.jsx` — as 3 páginas restantes do C-3 original não
+tinham query secundária nesse padrão.
+
+### Efeito colateral corrigido — `QueryErrorState` com `onRetry` opcional
+
+Duas mensagens novas (filtros "🎯 Próximos"/"⚡ Sinais" sem retry próprio,
+por não terem uma única query de origem a refazer) não passavam `onRetry`
+para `QueryErrorState`, e o componente não tinha default pra essa prop —
+regrediu o `typecheck:ratchet` de 16 para 18. Mesma causa raiz do bug do
+`ErrorFallback.jsx` no item 193 (TypeScript infere prop desestruturada sem
+default como obrigatória): `onRetry`/`message` ganharam `= undefined`
+explícito. Teto do ratchet voltou a 16.
+
+### Backlog registrado, não corrigido nesta rodada
+
+- O mesmo padrão pode teoricamente existir em queries de terceiro nível
+  (ex.: uma query DENTRO de um componente já corrigido, como
+  `ComparePanel`'s `24h-stats` ou `PredictiveAnalysis`'s
+  `trade-operations-history-predictive`) — não auditado; só os componentes
+  já tocados pelas 8 páginas do C-3 e suas dependências diretas foram
+  cobertos nesta rodada.
+- Nenhuma indicação visual geral de staleness/cache (mesmo item registrado
+  como backlog desde o C-3 original, item 193) — segue como limitação
+  aceita, não regressão.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos. Teste de regressão novo em `SignalChecklist.test.jsx` (achado mais
+grave, com a nota acima sobre o próprio processo) e `Verification.test.jsx`
+(novo arquivo — wiring ponta a ponta do `tradeOpsUnavailable` e do botão
+"Reenviar" desativado), ambos confirmados falhando sem o fix via
+`git stash`. Detalhe operacional em `docs/claude/ui-audit-criticos.md`.

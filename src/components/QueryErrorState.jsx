@@ -10,7 +10,7 @@ import { WifiOff, RefreshCw } from 'lucide-react';
  * muted) já usado em CorrelationWidget.jsx/RFHistoryChart.jsx para o
  * mesmo tipo de estado.
  */
-export function QueryErrorState({ message, onRetry }) {
+export function QueryErrorState({ message = undefined, onRetry = undefined }) {
   return (
     <div className="text-center py-8 px-4">
       <WifiOff className="w-5 h-5 mx-auto mb-2 text-muted-foreground opacity-40" />

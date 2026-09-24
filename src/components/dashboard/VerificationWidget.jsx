@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { ClipboardCheck, Check, X as XIcon, ChevronRight } from 'lucide-react';
+import { ClipboardCheck, Check, X as XIcon, ChevronRight, AlertTriangle } from 'lucide-react';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
@@ -26,7 +26,7 @@ function ageColor(createdDate) {
 export default function VerificationWidget() {
   const queryClient = useQueryClient();
 
-  const { data: tasks = [] } = useQuery({
+  const { data: tasks = [], isError, refetch } = useQuery({
     queryKey: ['verification-tasks-recent'],
     queryFn: () => backend.entities.VerificationTask.list('-created_date', 50),
     refetchInterval: POLL_DIAGNOSTIC_MS,
@@ -41,6 +41,26 @@ export default function VerificationWidget() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['verification-tasks-recent'] }),
   });
 
+  // Achado da varredura sistemática (item 196): `return null` incondicional
+  // em `tasks.length === 0` também escondia o widget inteiro quando a query
+  // FALHAVA (array zerado do mesmo jeito que "nada pendente") — sinais de
+  // alta prioridade pendentes de revisão sumiam do Dashboard sem nenhum
+  // aviso. Só continua null quando de fato não há erro (genuinamente nada
+  // pra mostrar, comportamento intencional de sempre).
+  if (tasks.length === 0 && isError) {
+    return (
+      <div className="glass-card rounded-xl p-4">
+        <div className="flex items-center gap-2 text-[11px] font-mono" style={{ color: '#ff9f43' }}>
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span>Não foi possível carregar a Verificação de Sinais agora.</span>
+          <button onClick={() => refetch()} className="ml-auto text-[10px] px-2 py-1 rounded-md hover:bg-white/[0.08] transition-colors"
+            style={{ border: '1px solid rgba(255,159,67,0.3)' }}>
+            Tentar de novo
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (tasks.length === 0) return null;
 
   const pending = tasks.filter(t => t.status === 'pending');

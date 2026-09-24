@@ -164,6 +164,60 @@ ainda, só encontrado por acaso neste caso específico. Próxima rodada, se o
 usuário quiser fechar essa classe de bug por completo, seria auditar as
 outras 7 páginas atrás do mesmo padrão, não assumir que só Trades.jsx tinha.
 
+## Varredura sistemática das outras 7 páginas (2026-09-24) — item 196
+
+Pendência registrada pelo item 195 ("o mesmo padrão pode existir em
+queries secundárias de outras páginas, não auditado sistematicamente")
+virou tarefa: usuário pediu a varredura completa e, com os achados em
+mãos, pediu para corrigir tudo na mesma rodada. Detalhe completo por
+página, incluindo os textos exatos e o raciocínio de cada prop nova, em
+`docs/known-risks.md` item 196 — resumo abaixo.
+
+- [x] **`SignalChecklist.jsx` — ENTRADA LIBERADA falsa (achado mais grave
+  de toda a série 193-196).** Único componente do painel que emite um
+  veredito operacional afirmativo (verde/vermelho); mostrava "ENTRADA
+  LIBERADA" quando a query de operações ativas só tinha FALHADO, não
+  confirmado ausência real. Nova prop `tradeOpsUnavailable` degrada esse
+  caso específico para "NÃO VERIFICADO" (âmbar) — um bloqueio já conhecido
+  continua válido. Usado por `Verification.jsx` e `AssetDrawer.jsx`.
+- [x] **Verification.jsx** — checklist escondido de todas as tarefas
+  quando `monitored-assets-verification` falhava (guarda `asset &&`
+  removida); `resend()` podia reenviar com o filtro POR ATIVO do Telegram
+  silenciosamente substituído pelo global na mesma falha (botão desativado
+  agora); badge "N pendente(s)" virava "0" implícito, agora diz "não
+  verificado".
+- [x] **Dashboard.jsx** — 3 queries secundárias (`asset-states`,
+  `recent-signals`, `trade-operations-dashboard`) sem `isError` afetavam em
+  cascata: 5 `StatsCard` (nova prop `error`, bypassa o `AnimatedNumber` que
+  coage qualquer sentinel string pra 0), `RecentAlertsList`,
+  `PredictiveAnalysis`, `ComparePanel` ("Livre" falso → "Não verificado"),
+  `AssetCard` (badge `OP?` novo), `AssetDrawer` (mensagens distintas),
+  `VerificationWidget` (`return null` incondicional escondia o widget
+  inteiro numa falha), filtro de TF.
+- [x] **Assets.jsx** — filtros "🎯 Próximos"/"⚡ Sinais" escondiam todos os
+  ativos na mesma falha das queries correspondentes;
+  `AssetDetailPanel`'s "Sem dados" virou "Falha ao carregar" quando a
+  causa é a query, não ausência real de dado.
+- [x] **Backtest.jsx** — `QuickBacktestTab`'s seletor de ativo ficava
+  vazio e o botão travado sem explicação quando `all-assets` falhava.
+- [x] **TradeHistory.jsx/Alerts.jsx/Logs.jsx** — confirmadas limpas, sem
+  achado forçado.
+- [x] **Efeito colateral corrigido:** duas mensagens novas sem `onRetry`
+  regrediram o `typecheck:ratchet` (16→18) — `QueryErrorState` ganhou
+  defaults explícitos nas props opcionais (mesma causa raiz do bug do
+  `ErrorFallback.jsx` no item 193). Teto voltou a 16.
+
+**Nota sobre o processo:** o primeiro teste de regressão do
+`SignalChecklist` falhou mesmo com o fix "aplicado" — a lógica nova
+(`verdictUncertain`) tinha sido computada mas esquecida no JSX. O teste
+pegou isso antes de qualquer revisão externa pedir. Detalhe em
+`docs/known-risks.md` item 196.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` — incluindo os testes novos
+(`SignalChecklist.test.jsx`, `Verification.test.jsx`), ambos confirmados
+falhando sem o fix via `git stash`.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a

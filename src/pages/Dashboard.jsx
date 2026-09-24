@@ -49,23 +49,34 @@ export default function Dashboard() {
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: states = [] } = useQuery({
+  const { data: states = [], isError: statesError, refetch: refetchStates } = useQuery({
     queryKey: ['asset-states'],
     queryFn: () => backend.entities.AssetState.list(),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: recentSignals = [] } = useQuery({
+  const { data: recentSignals = [], isError: recentSignalsError } = useQuery({
     queryKey: ['recent-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 50),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: tradeOps = [] } = useQuery({
+  const { data: tradeOps = [], isError: tradeOpsError } = useQuery({
     queryKey: ['trade-operations-dashboard'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
+
+  // Achado da varredura sistemática (item 196): estas 3 queries secundárias
+  // nunca tinham `isError` lido — uma falha zerava o array (mesmo efeito de
+  // "confirmado, não há dado") e vazava em cascata para StatsCard,
+  // RecentAlertsList, PredictiveAnalysis, ComparePanel, AssetCard,
+  // AssetDrawer e o filtro de TF, todos afirmando "nada" com confiança total
+  // sobre um dado que só falhou ao atualizar. Só marca indisponível quando
+  // não sobrou NENHUM dado em cache (mesmo critério do item 194).
+  const statesUnavailable = statesError && states.length === 0;
+  const signalsUnavailable = recentSignalsError && recentSignals.length === 0;
+  const tradeOpsUnavailable = tradeOpsError && tradeOps.length === 0;
 
   // Browser + in-app notifications
   useBrowserNotifications(recentSignals);
@@ -146,6 +157,8 @@ export default function Dashboard() {
           asset={selectedAsset}
           signals={recentSignals}
           tradeOps={tradeOps}
+          tradeOpsUnavailable={tradeOpsUnavailable}
+          signalsUnavailable={signalsUnavailable}
           onClose={() => setSelectedAsset(null)}
         />
       )}
@@ -235,6 +248,7 @@ export default function Dashboard() {
                     signalB={recentSignals.find(s => s.asset_id === compareB.id && s.source === 'range_filter')}
                     opA={tradeOps.find(o => o.asset_id === compareA.id && ACTIVE_STATUSES.includes(o.status))}
                     opB={tradeOps.find(o => o.asset_id === compareB.id && ACTIVE_STATUSES.includes(o.status))}
+                    dataUnavailable={signalsUnavailable || tradeOpsUnavailable}
                   />
                 )}
               </div>
@@ -260,12 +274,12 @@ export default function Dashboard() {
 
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-              <StatsCard icon={Coins} label="Monitorados" value={assets.length} color="#00e5ff" glowColor="rgba(0,229,255,0.1)" />
-              <StatsCard icon={Bell} label="Alta Prioridade" value={highPriorityCount} color="#ff9f43" glowColor="rgba(255,159,67,0.1)" />
-              <StatsCard icon={Target} label="Operações Ativas" value={activeOpsCount} color="#00ff80" glowColor="rgba(0,255,128,0.1)" />
-              <StatsCard icon={Clock} label="Aguardando" value={waitingCount} color="#ffd166" glowColor="rgba(255,209,102,0.1)" />
-              <StatsCard icon={TrendingUp} label="Sinais BUY" value={buySignals} color="#00ff80" glowColor="rgba(0,255,128,0.1)" />
-              <StatsCard icon={TrendingDown} label="Sinais SELL" value={sellSignals} color="#ff1478" glowColor="rgba(255,20,120,0.1)" />
+              <StatsCard icon={Coins} label="Monitorados" value={assets.length} color="#00e5ff" glowColor="rgba(0,229,255,0.1)" error={assetsError && assets.length === 0} />
+              <StatsCard icon={Bell} label="Alta Prioridade" value={highPriorityCount} color="#ff9f43" glowColor="rgba(255,159,67,0.1)" error={signalsUnavailable || tradeOpsUnavailable} />
+              <StatsCard icon={Target} label="Operações Ativas" value={activeOpsCount} color="#00ff80" glowColor="rgba(0,255,128,0.1)" error={tradeOpsUnavailable} />
+              <StatsCard icon={Clock} label="Aguardando" value={waitingCount} color="#ffd166" glowColor="rgba(255,209,102,0.1)" error={signalsUnavailable || tradeOpsUnavailable} />
+              <StatsCard icon={TrendingUp} label="Sinais BUY" value={buySignals} color="#00ff80" glowColor="rgba(0,255,128,0.1)" error={signalsUnavailable} />
+              <StatsCard icon={TrendingDown} label="Sinais SELL" value={sellSignals} color="#ff1478" glowColor="rgba(255,20,120,0.1)" error={signalsUnavailable} />
             </div>
 
             {/* Assets */}
@@ -358,9 +372,15 @@ export default function Dashboard() {
                   <p className="text-xs text-muted-foreground mt-1">Vá em "Ativos" para adicionar pares.</p>
                 </div>
               ) : displayAssets.length === 0 ? (
-                <div className="glass-card rounded-xl p-8 text-center">
-                  <p className="text-muted-foreground text-sm">Nenhum ativo encontrado.</p>
-                </div>
+                statesUnavailable && filterTf !== 'all' ? (
+                  <div className="glass-card rounded-xl p-8">
+                    <QueryErrorState message="Não foi possível carregar os indicadores por timeframe agora — o filtro de TF pode estar escondendo ativos incorretamente." onRetry={refetchStates} />
+                  </div>
+                ) : (
+                  <div className="glass-card rounded-xl p-8 text-center">
+                    <p className="text-muted-foreground text-sm">Nenhum ativo encontrado.</p>
+                  </div>
+                )
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {displayAssets.map(asset => {
@@ -374,6 +394,7 @@ export default function Dashboard() {
                         states={assetStates}
                         latestSignal={latestSignal}
                         tradeOp={activeOp}
+                        tradeOpsUnavailable={tradeOpsUnavailable}
                         onClick={() => setSelectedAsset(asset)}
                       />
                     );
@@ -383,11 +404,11 @@ export default function Dashboard() {
             </div>
 
             {/* Recent Alerts */}
-            <RecentAlertsList signals={recentSignals} />
+            <RecentAlertsList signals={recentSignals} unavailable={signalsUnavailable} />
           </TabsContent>
 
           <TabsContent value="predictive" className="mt-4">
-            <PredictiveAnalysis recentSignals={recentSignals} />
+            <PredictiveAnalysis recentSignals={recentSignals} signalsUnavailable={signalsUnavailable} />
           </TabsContent>
         </Tabs>
       </div>

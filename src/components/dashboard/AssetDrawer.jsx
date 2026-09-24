@@ -14,7 +14,7 @@ const STATUS_CFG = {
   CLOSED:           { label: 'Encerrado',           color: '#64748b' },
 };
 
-export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
+export default function AssetDrawer({ asset, signals, tradeOps, tradeOpsUnavailable = false, signalsUnavailable = false, onClose }) {
   if (!asset) return null;
 
   const assetSignals = signals
@@ -58,7 +58,9 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
               <span className="text-xs font-bold text-foreground">Operações</span>
               <span className="text-[9px] font-mono text-muted-foreground">({assetOps.length})</span>
             </div>
-            {assetOps.length === 0 ? (
+            {assetOps.length === 0 && tradeOpsUnavailable ? (
+              <p className="text-[10px] font-mono" style={{ color: '#ff9f43' }}>Não foi possível carregar as operações agora — falha ao atualizar.</p>
+            ) : assetOps.length === 0 ? (
               <p className="text-[10px] font-mono text-muted-foreground">Nenhuma operação registrada.</p>
             ) : (
               <div className="space-y-2">
@@ -115,7 +117,9 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
                 "Confl." = confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
               </p>
             )}
-            {assetSignals.length === 0 ? (
+            {assetSignals.length === 0 && signalsUnavailable ? (
+              <p className="text-[10px] font-mono" style={{ color: '#ff9f43' }}>Não foi possível carregar os sinais agora — falha ao atualizar.</p>
+            ) : assetSignals.length === 0 ? (
               <p className="text-[10px] font-mono text-muted-foreground">Nenhum sinal registrado.</p>
             ) : (
               <div className="space-y-1.5">
@@ -141,7 +145,7 @@ export default function AssetDrawer({ asset, signals, tradeOps, onClose }) {
                         <div className="text-[8px] font-mono text-muted-foreground/60 mt-0.5">
                           {moment(sig.created_date).fromNow()}
                         </div>
-                        <SignalChecklist signal={sig} tradeOps={tradeOps} />
+                        <SignalChecklist signal={sig} tradeOps={tradeOps} tradeOpsUnavailable={tradeOpsUnavailable} />
                       </div>
                     </div>
                   );

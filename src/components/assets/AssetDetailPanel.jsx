@@ -16,7 +16,7 @@ function ParamCard({ label, value, pineVar, color }) {
   );
 }
 
-function TFStateCard({ tf, state, enabled }) {
+function TFStateCard({ tf, state, enabled, unavailable = false }) {
   if (!enabled) {
     return (
       <div className="rounded-lg p-3 text-center opacity-40"
@@ -28,11 +28,16 @@ function TFStateCard({ tf, state, enabled }) {
   }
 
   if (!state) {
+    // Achado da varredura sistemática (item 196): "Sem dados" afirmava com
+    // confiança que o scan nunca produziu estado pra este TF — mas a mesma
+    // tela vazia acontece quando a query de `states` só FALHOU ao atualizar.
     return (
       <div className="rounded-lg p-3 text-center"
-        style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+        style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${unavailable ? 'rgba(255,159,67,0.2)' : 'rgba(255,255,255,0.04)'}` }}>
         <div className="text-[9px] font-mono text-muted-foreground">{tf.toUpperCase()}</div>
-        <div className="text-[10px] font-mono text-muted-foreground mt-1">Sem dados</div>
+        <div className="text-[10px] font-mono text-muted-foreground mt-1" style={unavailable ? { color: '#ff9f43' } : undefined}>
+          {unavailable ? 'Falha ao carregar' : 'Sem dados'}
+        </div>
       </div>
     );
   }
@@ -109,7 +114,7 @@ function TFStateCard({ tf, state, enabled }) {
   );
 }
 
-export default function AssetDetailPanel({ asset, states, expanded, onToggle }) {
+export default function AssetDetailPanel({ asset, states, expanded, onToggle, statesUnavailable = false }) {
   if (!expanded) return null;
 
   return (
@@ -170,7 +175,7 @@ export default function AssetDetailPanel({ asset, states, expanded, onToggle }) 
           {['1h', '4h', '1d'].map(tf => {
             const state = states.find(s => s.timeframe === tf);
             const enabled = asset.timeframes_enabled?.[tf] !== false;
-            return <TFStateCard key={tf} tf={tf} state={state} enabled={enabled} />;
+            return <TFStateCard key={tf} tf={tf} state={state} enabled={enabled} unavailable={statesUnavailable} />;
           })}
         </div>
       </div>

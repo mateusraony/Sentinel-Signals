@@ -2,9 +2,9 @@ import React from 'react';
 import SignalBadge from './SignalBadge';
 import { PriorityBadge } from './StrengthBadge';
 import moment from 'moment';
-import { Activity, ChevronRight } from 'lucide-react';
+import { Activity, ChevronRight, WifiOff } from 'lucide-react';
 
-export default function RecentAlertsList({ signals = [] }) {
+export default function RecentAlertsList({ signals = [], unavailable = false }) {
   const rangeFilterSignals = signals.filter(s => s.source === 'range_filter');
 
   return (
@@ -18,7 +18,16 @@ export default function RecentAlertsList({ signals = [] }) {
       </div>
 
       <div className="glass-card rounded-xl overflow-hidden">
-        {rangeFilterSignals.length === 0 ? (
+        {unavailable ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center"
+              style={{ background: 'rgba(255,159,67,0.06)', border: '1px solid rgba(255,159,67,0.15)' }}
+            >
+              <WifiOff className="w-5 h-5" style={{ color: '#ff9f43', opacity: 0.6 }} />
+            </div>
+            <p className="text-sm">Não foi possível carregar os alertas recentes agora.</p>
+          </div>
+        ) : rangeFilterSignals.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}

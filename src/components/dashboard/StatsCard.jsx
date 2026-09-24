@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
 
 function AnimatedNumber({ value }) {
   const [display, setDisplay] = useState(0);
@@ -25,7 +26,12 @@ function AnimatedNumber({ value }) {
   return <span>{display}</span>;
 }
 
-export default function StatsCard({ icon: Icon, label, value, color, glowColor }) {
+// error=true: falha de query sem cache por trás deste número — bypassa o
+// AnimatedNumber de propósito (achado da varredura sistemática, item 196:
+// AnimatedNumber coage `value` via `Number(value) || 0`, então um sentinel
+// tipo '—' animaria pra 0 do mesmo jeito, reproduzindo o falso "0" que este
+// prop existe pra evitar).
+export default function StatsCard({ icon: Icon, label, value, color, glowColor, error = false }) {
   return (
     <div className="glass-card rounded-xl p-4 relative overflow-hidden group hover:scale-[1.02] transition-transform duration-300">
       {/* Subtle gradient bg */}
@@ -35,9 +41,16 @@ export default function StatsCard({ icon: Icon, label, value, color, glowColor }
       <div className="relative flex items-start justify-between">
         <div>
           <p className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-1">{label}</p>
-          <p className="text-3xl font-bold font-mono number-glow" style={{ color: color || '#fff' }}>
-            <AnimatedNumber value={value} />
-          </p>
+          {error ? (
+            <p className="text-2xl font-bold font-mono flex items-center gap-1.5" style={{ color: 'rgba(255,255,255,0.35)' }}
+              title="Não foi possível confirmar este número agora — falha ao atualizar.">
+              <AlertTriangle className="w-4 h-4" style={{ color: '#ff9f43' }} />—
+            </p>
+          ) : (
+            <p className="text-3xl font-bold font-mono number-glow" style={{ color: color || '#fff' }}>
+              <AnimatedNumber value={value} />
+            </p>
+          )}
         </div>
         <div className="w-10 h-10 rounded-xl flex items-center justify-center"
           style={{ background: `${glowColor || 'rgba(0,255,128,0.1)'}`, border: `1px solid ${glowColor ? glowColor.replace('0.1', '0.3') : 'rgba(0,255,128,0.3)'}` }}
