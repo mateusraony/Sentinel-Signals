@@ -754,10 +754,20 @@ export default function Trades() {
               <QueryErrorState message="Não foi possível carregar as operações agora." onRetry={refetch} />
             </div>
           ) : applyFilters(active).length === 0 ? (
-            <div className="glass-card rounded-xl p-12 text-center">
-              <Target className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
-              <p className="text-muted-foreground text-sm">Nenhuma operação ativa.</p>
-            </div>
+            isError ? (
+              // Há dado em cache (por isso não caiu no ramo acima), mas a
+              // atualização mais recente falhou — "Nenhuma operação ativa"
+              // seria uma afirmação que não foi confirmada de verdade (achado
+              // da revisão pós-PR #396, docs/claude/ui-audit-criticos.md).
+              <div className="glass-card rounded-xl p-8">
+                <QueryErrorState message="Não foi possível confirmar se há operações ativas agora — a atualização falhou. Mostrando o último dado conhecido." onRetry={refetch} />
+              </div>
+            ) : (
+              <div className="glass-card rounded-xl p-12 text-center">
+                <Target className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
+                <p className="text-muted-foreground text-sm">Nenhuma operação ativa.</p>
+              </div>
+            )
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {applyFilters(active).map(op => (

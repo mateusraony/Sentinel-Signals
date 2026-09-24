@@ -35,7 +35,14 @@ function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefine
 // filtro de status) — com mais de 100 operações no histórico, os números
 // podiam divergir dos de VirtualAccountCard/LiveConfidenceCard. O React
 // Query reaproveita o cache desta queryKey, sem requisição extra.
-export default function PerformanceMetricsBar() {
+//
+// `activeOpsCount` vem via prop (calculado em Dashboard.jsx a partir do
+// tradeOps de 100 itens, ACTIVE_STATUSES) — não deriva da query de 500 deste
+// componente. As duas queries têm teto/cadência de refetch diferentes; se o
+// badge "N ativas" derivasse da de 500, ele podia divergir por até ~2min do
+// StatsCard "Operações Ativas" do próprio Dashboard, visível na mesma tela
+// (achado da revisão pós-PR #396, docs/claude/ui-audit-criticos.md).
+export default function PerformanceMetricsBar({ activeOpsCount = 0 }) {
   const { data: tradeOps = [] } = useQuery({
     queryKey: ['trade-operations-closed-all'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', 500),
@@ -47,7 +54,6 @@ export default function PerformanceMetricsBar() {
     if (s.counted === 0) return null;
 
     const rr = s.avgLossPct > 0 ? s.avgWinPct / s.avgLossPct : null;
-    const active = (tradeOps || []).filter(o => ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'].includes(o.status));
 
     return {
       totalPnl: s.totalPnlPct,
@@ -61,13 +67,12 @@ export default function PerformanceMetricsBar() {
       avgLoss: s.avgLossPct,
       expectancyR: s.expectancyR,
       rr,
-      activeCount: active.length,
     };
   }, [tradeOps]);
 
   if (!metrics) return null;
 
-  const { totalPnl, maxDrawdown, winRate, wins, losses, be, total, avgWin, avgLoss, expectancyR, rr, activeCount } = metrics;
+  const { totalPnl, maxDrawdown, winRate, wins, losses, be, total, avgWin, avgLoss, expectancyR, rr } = metrics;
 
   const pnlColor = totalPnl >= 0 ? '#00ff80' : '#ff1478';
   const pnlGlow = totalPnl >= 0 ? 'rgba(0,255,128,0.06)' : 'rgba(255,20,120,0.06)';
@@ -85,10 +90,10 @@ export default function PerformanceMetricsBar() {
           style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
           {total} trades fechados
         </span>
-        {activeCount > 0 && (
+        {activeOpsCount > 0 && (
           <span className="text-[9px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1"
             style={{ background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.2)', color: '#00ff80' }}>
-            <Zap className="w-2.5 h-2.5" />{activeCount} ativas
+            <Zap className="w-2.5 h-2.5" />{activeOpsCount} ativas
           </span>
         )}
       </div>
