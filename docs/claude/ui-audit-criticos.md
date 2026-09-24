@@ -126,6 +126,44 @@ consciente):**
 **Verificação rodada:** `npm run lint && npm test && npm run build &&
 npm run typecheck:ratchet` — incluindo o teste novo de regressão.
 
+**PR:** https://github.com/mateusraony/Sentinel-Signals/pull/397.
+
+## Terceira revisão cética (2026-09-24) — os 3 fixes acima, mais 1 achado adjacente
+
+O usuário perguntou de novo "tem certeza que não tem mais bug?" depois do
+merge do PR #397. Antes de responder, rodei uma 3ª revisão cética — desta
+vez sobre os 3 fixes que ninguém tinha revisado com ceticismo ainda (os da
+rodada anterior). **Resultado: os 3 fixes em si estão corretos**, sem bug
+novo neles — mas a revisão achou um problema real e adjacente que nenhuma
+das 2 rodadas anteriores tinha coberto.
+
+- [x] **Trades.jsx: "Avisos em análise"/"Observações de mercado" somem da
+  tela sem nenhum aviso quando `recentSignals` falha.** As duas seções só
+  renderizam com `.length > 0` — uma falha nessa query secundária (fora do
+  escopo do C-3 original, que mirou a query PRINCIPAL de cada página) fazia
+  as seções desaparecerem por completo, mesmo silêncio enganoso que o C-3
+  deveria ter eliminado. Corrigido: aviso de erro sempre visível quando
+  `isError` da query de sinais, com retry. **Arquivo:** `src/pages/Trades.jsx`.
+  **Teste de regressão** em `Trades.test.jsx` (confirmado que falha sem o
+  fix, mesmo processo de `git stash` das rodadas anteriores).
+
+Achados confirmados como **sem problema** nesta rodada (não é lista vazia
+por preguiça — a revisão checou de verdade): a lógica `isLoading`/`isError`
+de Trades.jsx não tem estado ambíguo (react-query v5 trata os dois como
+mutuamente exclusivos); o `refetch` é compartilhado corretamente; o
+`activeOpsCount` do `PerformanceMetricsBar` tem fonte única, sem
+possibilidade de divergir de novo; nenhum import morto nem variável
+residual (`activeCount`); a legenda do `PerformanceReport.jsx` não tem
+risco de overflow em mobile.
+
+**Registrado como backlog (não é infinito — mas vale nomear o que ainda
+não foi checado):** o mesmo padrão ("query secundária cujo `isError` nunca
+é lido, seção inteira soma sem aviso") pode existir em outras das 8
+páginas do C-3 além de Trades.jsx — não foi auditado sistematicamente
+ainda, só encontrado por acaso neste caso específico. Próxima rodada, se o
+usuário quiser fechar essa classe de bug por completo, seria auditar as
+outras 7 páginas atrás do mesmo padrão, não assumir que só Trades.jsx tinha.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a

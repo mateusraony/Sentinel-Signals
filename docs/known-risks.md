@@ -25100,3 +25100,65 @@ aqui confirmado por um caso real.
 limpos, incluindo o teste de regressão novo. Detalhe operacional (status
 vivo, o que ainda falta do Raio-X inteiro) em
 `docs/claude/ui-audit-criticos.md`.
+
+## 195. Terceira revisão cética — os 3 fixes do item 194 estão corretos, achado 1 adjacente novo (2026-09-24)
+
+Usuário perguntou pela 2ª vez "tem certeza que não tem mais bug?" depois do
+merge do PR #397 (item 194). Antes de responder, rodei uma 3ª revisão
+cética — desta vez focada especificamente nos 3 fixes que ninguém tinha
+revisado com ceticismo ainda (os da própria rodada 194), já que a lógica
+que motivou a pergunta é "quem revisa o revisor?". Resultado: **os 3 fixes
+em si não tinham bug** — mas a revisão achou um problema real e adjacente,
+que nenhuma das 2 rodadas anteriores tinha coberto porque estava fora do
+escopo que cada uma definiu.
+
+### Achado — recentSignals silencioso em Trades.jsx
+
+`Trades.jsx` tem 2 queries: `trade-operations` (principal, já corrigida no
+item 193/194) e `recent-signals` (secundária, alimenta "Avisos em análise"
+e "Observações de mercado"). O C-3 original (item 193) mirou a query
+PRINCIPAL de cada uma das 8 páginas — `recent-signals` nunca entrou no
+escopo porque não é "a" query principal de Trades.jsx, é uma segunda. Só
+que as duas seções que ela alimenta renderizam condicionalmente
+(`.length > 0`) sem NENHUM estado de erro — uma falha de rede fazia as
+duas seções simplesmente sumirem da tela, o mesmo silêncio enganoso que o
+C-3 deveria ter eliminado, só que numa query que ninguém tinha olhado
+ainda. Corrigido: aviso de erro sempre visível (`isError` da query de
+sinais) com retry, mesmo componente `QueryErrorState` já usado em todo o
+resto do projeto. Teste de regressão em `Trades.test.jsx`, confirmado que
+falha sem o fix.
+
+### O que a revisão confirmou como correto (não é lista vazia por preguiça)
+
+- Lógica `isLoading`/`isError` de `Trades.jsx`: sem estado ambíguo — no
+  React Query v5, `status` é um enum mutuamente exclusivo
+  (`pending`/`error`/`success`), então `isLoading` e `isError` nunca
+  competem de verdade.
+- `refetch` do botão "Tentar de novo" (achado do item 194): é a mesma
+  referência de função em todos os branches da mesma seção — sem
+  dessincronia possível.
+- `activeOpsCount` do `PerformanceMetricsBar` (achado do item 194): fonte
+  única (`Dashboard.jsx`), sem possibilidade de divergir de novo do
+  `StatsCard`.
+- Sem import morto nem resíduo da variável `activeCount` removida.
+- Legenda nova do `PerformanceReport.jsx` sem risco de overflow em mobile.
+
+### Padrão que se repete: escopo definido por "a query principal" deixa querys secundárias de fora
+
+Isto é o MESMO padrão do item 194 achado 1/2/3 — uma correção resolve o
+problema no nível em que foi reportado (aqui: "a query principal de cada
+página"), mas o mesmo bug pode existir em queries SECUNDÁRIAS da mesma
+página, fora da definição de escopo original. Registrado como backlog, não
+auditado sistematicamente ainda: as outras 7 páginas do C-3 podem ter
+queries secundárias com o mesmo problema — só foi achado em Trades.jsx
+porque a revisão cética olhou aquele arquivo especificamente, não por uma
+varredura completa. Se o usuário quiser fechar essa classe de bug por
+completo (não só onde já foi achada por acaso), a próxima rodada seria
+auditar sistematicamente TODAS as queries de TODAS as 8 páginas do C-3,
+não só a principal de cada uma.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos, incluindo o teste de regressão novo. Detalhe operacional em
+`docs/claude/ui-audit-criticos.md`.

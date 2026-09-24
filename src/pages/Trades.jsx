@@ -435,7 +435,7 @@ export default function Trades() {
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
-  const { data: recentSignals = [] } = useQuery({
+  const { data: recentSignals = [], isError: signalsError, refetch: refetchSignals } = useQuery({
     queryKey: ['recent-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 50),
     refetchInterval: POLL_OPERATIONAL_MS,
@@ -681,6 +681,19 @@ export default function Trades() {
             {showDetails ? 'Detalhado' : 'Compacto'}
           </button>
         </div>
+
+        {/* "Avisos em análise"/"Observações de mercado" dependem de
+            recentSignals — uma falha de rede aqui fazia as duas seções
+            simplesmente sumirem da tela (ambas só renderizam com
+            `.length > 0`), sem nenhum aviso: o mesmo silêncio enganoso que
+            o C-3 original corrigiu na query principal de cada página, só
+            que numa query secundária fora do escopo daquela rodada (achado
+            da 3ª revisão cética, docs/claude/ui-audit-criticos.md). */}
+        {signalsError && (
+          <div className="glass-card rounded-xl p-6">
+            <QueryErrorState message="Não foi possível verificar avisos/sinais recentes agora." onRetry={refetchSignals} />
+          </div>
+        )}
 
         {/* Avisos em análise — rótulo antigo ("Em Monitoramento") mentia para
             2 dos 3 estados: expirado não está sendo monitorado e informativo

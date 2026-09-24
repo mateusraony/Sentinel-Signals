@@ -809,6 +809,13 @@ justificativa nova para reabrir isso com o resultado acima.
   PerformanceMetricsBar, rótulo do C-2b quebrando o grid) — todos
   corrigidos, com teste de regressão pro mais sério. Backlog do Raio-X em
   si (Alta/Média) continua igual, nada novo tocado.
+  **Addendum 2 (item 195, 2026-09-24):** 3ª revisão cética confirmou que os
+  3 fixes do item 194 estão corretos, mas achou 1 problema adjacente
+  (recentSignals silencioso em Trades.jsx, mesma classe do C-3 mas numa
+  query secundária fora do escopo original) — corrigido, com teste de
+  regressão. **Pendência nova registrada:** o mesmo padrão pode existir em
+  queries secundárias de outras páginas do C-3, não auditado
+  sistematicamente ainda.
 
 ---
 
