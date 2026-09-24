@@ -25541,3 +25541,95 @@ inverteria o sentido do fix) direto na fonte que grava o campo
 ("ISO timestamp of the last processed candle", ambígua por si só); grep
 confirmou que não sobrou nenhum outro lugar com o mesmo padrão de bug.
 Nenhum achado novo.
+
+## 200. Backlog do Raio-X — A-9 (threshold LIVE/STALE fixo em 2h) corrigido reusando o dead-man's-switch real (2026-09-24)
+
+Quarta rodada do backlog "Alta prioridade" — usuário pediu pra seguir pelo
+que eu achasse melhor. Escolhido A-9 ("LIVE/STALE com threshold fixo de
+2h, impreciso").
+
+### Achado
+
+Investigação (agente Explore) mostrou que o problema era mais profundo que
+um número errado: `AssetCard.jsx` e `Assets.jsx` tinham CADA UM sua própria
+cópia idêntica de `lastScanMs > 2h` — um threshold arbitrário (24× maior
+que a cadência real de scan, ~5min via cron-job.org disparando
+`workflow_dispatch`) e sem relação com o dead-man's-switch OFICIAL do
+sistema (`assetHealthcheckReason`, `src/lib/assetHealthcheck.js`,
+`graceMs=30min`, já testado, já usado por `scripts/run-scan.mjs` pra
+decidir alerta no Telegram). Pior: o cálculo da UI só olhava
+`last_scan_at`, que é atualizado em TODA passada (sucesso ou erro) — por
+isso nunca pegava um ativo que estava falhando em toda passada mas
+seguindo "tocado" (`asset.scan_error_since` teria capturado esse caso,
+mas a UI não olhava esse campo).
+
+Descartada a hipótese alternativa (recalibrar por `timeframes_enabled`) —
+`asset.timeframes_enabled` só filtra QUAIS timeframes são processados
+DENTRO de uma passada do scan daquele ativo; não muda a frequência com que
+o ativo em si é escaneado nem a frequência de escrita de `last_scan_at`
+(confirmado em `scanner.js` e no comentário de `assetHealthcheck.js`).
+
+**Decisão de escopo** (`AskUserQuestion` ao usuário, já que a regra
+`frontend-ui.md` pede pra "parar e tratar como tarefa separada" quando
+aparece necessidade de mexer em lógica): usuário escolheu o fix completo,
+reusando `assetHealthcheckReason` em vez de só recalibrar o número cru na
+UI.
+
+### Fix
+
+Nos dois arquivos (`src/components/dashboard/AssetCard.jsx`,
+`src/pages/Assets.jsx`), o cálculo local vira uma chamada à mesma função
+pura:
+
+```js
+const healthReason = assetHealthcheckReason(asset); // 'persistent_error' | 'silent' | null
+const isStale = Boolean(healthReason);
+```
+
+Isso elimina a duplicação por construção — os dois arquivos passam a
+compartilhar a MESMA fonte de verdade em vez de 2 cópias que podiam
+divergir. `assetHealthcheckReason` é pura (zero imports, zero I/O, só lê
+`is_active`/`scan_error_since`/`last_scan_at` do objeto `asset` que a UI
+já recebe) — mesmo padrão de reuso já estabelecido pra
+`opTransition.js`/`opExitRules.js`. Não foi importado `shouldAlertStale`/
+`shouldClearStaleAlert` (semântica de "disparar alerta", fora do escopo de
+leitura da UI). Nenhum campo novo no schema — `scan_error_since` já
+existia e já era gravado pelo scanner.
+
+Label/cor agora distinguem o motivo (antes só um "STALE" genérico): `'persistent_error'` (ativo falha toda passada, mais grave) → vermelho;
+`'silent'` (só parou de ser tocado) → laranja, texto igual ao anterior.
+`Assets.jsx`'s ícones de `scan_status` (resultado da ÚLTIMA passada) ficam
+intocados — é um sinal complementar, não o mesmo dado.
+
+### Testes de regressão
+
+- `AssetCard.test.jsx` — novo describe block, 4 casos: LIVE (recente),
+  STALE/`silent` (last_scan_at velho), `persistent_error` (scan_error_since
+  velho, label mais grave), e o botão "Ativar" sumindo/aparecendo
+  corretamente conforme o estado. 3 dos 4 confirmados falhando sem o fix
+  via `git stash` (o caso LIVE trivial concorda nos dois thresholds).
+- `Assets.test.jsx` (arquivo novo — a página não tinha teste dedicado, só
+  a smoke test genérica) — 1 teste com 3 ativos na mesma lista (LIVE,
+  STALE, ERRO); confirmado falhando sem o fix de um jeito revelador: SEM o
+  fix, os 3 ativos (inclusive os "velhos") aparecem todos como "LIVE"
+  (`getByText` falha por múltiplos matches) — evidência direta do bug.
+
+### Revisão cética própria
+
+Confirmado por grep que não sobra nenhum `lastScanMs`/`2 * 60 * 60`
+remanescente em código de produção (só a menção no próprio teste novo e um
+número igual, mas de domínio totalmente diferente, em
+`signalStatus.test.js` — prazo de expiração de sinal, não staleness de
+scan). Confirmado que `is_active === false` continua caindo em "OFF" em
+`Assets.jsx` (o `null` que a função devolve pra ativo inativo cai no mesmo
+`else` de sempre) e que `AssetCard.jsx` só recebe ativos ATIVOS via
+`Dashboard.jsx` (`MonitoredAsset.filter({is_active: true})`), então o ramo
+`is_active === false` da função nunca dispara ali. Todos os 6 usos de
+`isStale` em `AssetCard.jsx` e os 2 em `Assets.jsx` foram conferidos um a
+um (grep) pra garantir que nenhum ficou preso no cálculo antigo. Nenhum
+achado novo.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (1985 testes, +5 dos testes novos).

@@ -8,12 +8,25 @@ import moment from 'moment';
 import ProximityBar, { calcProximity } from '@/components/dashboard/ProximityBar';
 import { formatPrice, formatSignedPct } from '@/lib/priceProximity';
 import { useFundingRate } from '@/hooks/useFundingRate';
+import { assetHealthcheckReason } from '@/lib/assetHealthcheck';
 
 // Duração de cada timeframe suportado (states só existem pra 1h/4h/1d —
 // ver `timeframes_enabled` em MonitoredAsset). Usado só pra calcular o
 // horário de ABERTURA do candle a partir do horário de fechamento
 // (`last_candle_time`), que o backend só grava o fechamento.
 const TF_DURATION_HOURS = { '1h': 1, '4h': 4, '1d': 24 };
+
+// Achado A-9 do Raio-X de UI/UX: o badge LIVE/STALE usava um threshold de
+// 2h fixo, arbitrário (24x maior que a cadência real de scan, ~5min) e sem
+// relação com o dead-man's-switch OFICIAL do sistema
+// (`assetHealthcheckReason`, `src/lib/assetHealthcheck.js`, graceMs=30min,
+// já testado, já usado pelo cron pra alertar no Telegram). Texto/cor por
+// motivo — 'persistent_error' (o ativo falha toda passada) é mais grave que
+// 'silent' (só parou de ser tocado).
+const STALE_REASON_META = {
+  persistent_error: { label: '⚠️ Falha persistente', shortLabel: 'ERRO', color: '#ff1478' },
+  silent: { label: '⚠️ STALE', shortLabel: 'STALE', color: '#ff9f43' },
+};
 
 function Dot({ color, filled = true }) {
   return (
@@ -144,8 +157,9 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   const lastPrice = primaryState?.last_close;
   const priceChange = stats24h?.priceChangePercent;
 
-  const lastScanMs = asset.last_scan_at ? Date.now() - new Date(asset.last_scan_at).getTime() : null;
-  const isStale = lastScanMs && lastScanMs > 2 * 60 * 60 * 1000;
+  const healthReason = assetHealthcheckReason(asset); // 'persistent_error' | 'silent' | null
+  const isStale = Boolean(healthReason);
+  const staleMeta = healthReason ? STALE_REASON_META[healthReason] : null;
 
   const TERMINAL = ['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'];
   const hasActiveOp = tradeOp && !TERMINAL.includes(tradeOp.status);
@@ -191,7 +205,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   let statusLabel = null;
   let statusColor = '#64748b';
   if (isStale) {
-    statusLabel = '⚠️ STALE'; statusColor = '#ff9f43';
+    statusLabel = staleMeta.label; statusColor = staleMeta.color;
   } else if (hasActiveOp) {
     if (tradeOp.status === 'RUNNER_ACTIVE') { statusLabel = '⚡ Runner Ativo'; statusColor = '#00e5ff'; }
     else if (opSide === 'BUY') { statusLabel = '🟢 Compra Ativa'; statusColor = '#00ff80'; }
@@ -245,7 +259,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
     const bc = sigSide === 'BUY' ? 'rgba(0,255,128,0.12)' : 'rgba(255,20,120,0.12)';
     cardBorder = bc;
   } else if (isStale) {
-    cardBorder = 'rgba(255,159,67,0.22)';
+    cardBorder = healthReason === 'persistent_error' ? 'rgba(255,20,120,0.22)' : 'rgba(255,159,67,0.22)';
   }
 
   const priceVals = hasActiveOp
@@ -280,8 +294,8 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
               <span className="font-bold text-sm text-foreground tracking-tight">{asset.display_name}</span>
               <span className="text-[8px] font-mono text-muted-foreground">{asset.exchange?.toUpperCase() || 'BINANCE'}</span>
               <span className="flex items-center gap-0.5">
-                <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: isStale ? '#ff9f43' : '#00ff80', boxShadow: isStale ? 'none' : '0 0 5px #00ff80' }} />
-                <span className="text-[8px] font-mono" style={{ color: isStale ? '#ff9f43' : '#00ff80' }}>{isStale ? 'STALE' : 'LIVE'}</span>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: isStale ? staleMeta.color : '#00ff80', boxShadow: isStale ? 'none' : '0 0 5px #00ff80' }} />
+                <span className="text-[8px] font-mono" style={{ color: isStale ? staleMeta.color : '#00ff80' }}>{isStale ? staleMeta.shortLabel : 'LIVE'}</span>
               </span>
               {tradeOpsUnavailable && (
                 <span className="flex items-center gap-0.5" title="Não foi possível confirmar operações ativas agora — o status abaixo pode estar desatualizado.">

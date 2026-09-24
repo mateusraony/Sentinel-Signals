@@ -58,3 +58,51 @@ describe('AssetCard — horário de abertura do candle (achado A-2)', () => {
     screen.getByText(/23\/09 13:00 → 13:00 BRT/);
   });
 });
+
+// Achado A-9 do Raio-X de UI/UX: o badge LIVE/STALE usava um threshold de
+// 2h fixo (arbitrário, 24x maior que a cadência real de ~5min) em vez do
+// dead-man's-switch oficial (`assetHealthcheckReason`, graceMs=30min). Este
+// teste prova que o badge agora reflete os 2 motivos reais da função —
+// 'silent' (last_scan_at velho) e 'persistent_error' (scan_error_since
+// velho, mais grave) — em vez do booleano cru de antes.
+const OLD_40MIN = () => new Date(Date.now() - 40 * 60000).toISOString();
+const RECENT_5MIN = () => new Date(Date.now() - 5 * 60000).toISOString();
+
+describe('AssetCard — badge LIVE/STALE reflete o dead-man\'s-switch real (achado A-9)', () => {
+  it('LIVE quando last_scan_at é recente (< 30min)', () => {
+    renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN() } });
+    screen.getByText('LIVE');
+  });
+
+  it('STALE quando last_scan_at está velho (> 30min), motivo silent', () => {
+    renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: OLD_40MIN() } });
+    screen.getByText('STALE');
+  });
+
+  it('ERRO (persistent_error) quando scan_error_since está velho — motivo mais grave que silent', () => {
+    renderCard({
+      asset: {
+        id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT',
+        last_scan_at: RECENT_5MIN(), scan_error_since: OLD_40MIN(),
+      },
+    });
+    screen.getByText('ERRO');
+  });
+
+  it('esconde o botão "Ativar" quando stale, mostra quando live (mesmo sinal pendente)', () => {
+    const latestSignal = { id: 'sig1', signal_type: 'BUY' };
+
+    const { unmount } = renderCard({
+      asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: OLD_40MIN() },
+      latestSignal,
+    });
+    if (screen.queryByText(/Ativar BUY agora/i)) throw new Error('botão "Ativar" não deveria aparecer com o ativo stale');
+    unmount();
+
+    renderCard({
+      asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN() },
+      latestSignal,
+    });
+    screen.getByText(/Ativar BUY agora/i);
+  });
+});
