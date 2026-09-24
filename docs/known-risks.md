@@ -25012,3 +25012,91 @@ compatibilidade confirmada com o mock de `backend` usado em
 `pagesSmoke.test.jsx` (cobre toda a camada de dados, então a mudança de
 "prop" para "query própria" em `PerformanceMetricsBar`/`PerformanceOverview`
 não exige mock novo).
+
+## 194. Revisão cética pós-merge do item 193 — 3 bugs reais achados numa correção já mesclada (2026-09-24)
+
+Usuário perguntou, depois do merge do PR #396 (item 193): "tem certeza que
+está tudo certo, sem bugs? Se sim, o que falta?" Em vez de reafirmar que
+lint/test/build tinham passado, rodei uma revisão independente: 2 agentes
+Explore, somente leitura, sobre o código já em `main`, cada um instruído
+explicitamente a caçar problema — não confirmar que estava bom, não aceitar
+"os testes passaram" como prova de correção. Achado real: **não estava
+100% certo** — a lógica central dos 3 críticos estava correta (cache
+genuinamente compartilhado, sem race de estado no auth, sem array trocado
+nos 8 branches de erro), mas as correções do C-2 e do C-3 cada uma abriu um
+problema novo, mais estreito, numa camada abaixo do que eu tinha testado.
+
+### Achado 1 (mais sério) — Trades.jsx reintroduzia o próprio C-3, uma camada abaixo
+
+A correção original do C-3 (item 193) checava `isError && <array bruto>
+.length === 0` pra decidir entre erro cheio e o texto de "vazio" — mas em
+`Trades.jsx` o texto de "vazio" da seção "Operações Ativas" é sobre
+`applyFilters(active)` (recorte por status, uma dimensão que muda com o
+tempo), não sobre o array bruto (`operations`, que carrega qualquer
+status). Com cache só de operações FECHADAS e um refetch em background que
+falha: `operations.length > 0` (pula o erro cheio) e `active` fica vazio
+(cai em "Nenhuma operação ativa.") — a tela afirmava com confiança total
+algo que não tinha sido confirmado. Num painel de trading, essa afirmação
+tem peso operacional real. Corrigido: quando `isError` E a lista ativa
+filtrada está vazia, mostra "Não foi possível confirmar se há operações
+ativas agora" em vez do texto confiante. Teste de regressão em
+`Trades.test.jsx` — confirmado que falha sem o fix (revertido
+temporariamente via `git stash` só do arquivo, rodado, restaurado) antes
+de reportar como corrigido.
+
+### Achado 2 — PerformanceMetricsBar resolveu uma divergência e abriu outra
+
+Antes do PR #396, o badge "N ativas" de `PerformanceMetricsBar.jsx` vinha
+do MESMO array que o `StatsCard` "Operações Ativas" do Dashboard usa —
+garantidamente idênticos. A correção do C-2a deu ao componente sua própria
+query (500 itens, refetch 120s, certo para as métricas de performance
+sobre operações FECHADAS) — mas o `activeCount` interno passou a derivar
+dessa mesma query, em vez do `tradeOps` de 100 do Dashboard (refetch 60s).
+Duas fontes independentes da mesma contagem, visíveis na mesma tela,
+podendo divergir por até ~2min a cada mudança de status. Corrigido:
+`activeOpsCount` passa a vir via prop de `Dashboard.jsx` (mesmo array de
+sempre) só para o badge; as métricas de performance continuam da query de
+500, que é o ponto real do C-2a.
+
+### Achado 3 — PnL disclaimer do C-2b quebrava o grid que devia só explicar
+
+O rótulo "soma simples, não composta" adicionado ao sublabel do card "PnL
+Acumulado" em `PerformanceReport.jsx` (`${wins}W · ${be}BE · ${losses}L ·
+soma simples, não composta`, ~44 caracteres, sem `truncate`) ia quebrar
+linha num grid de até 6 colunas — como CSS grid iguala a altura de linha,
+isso esticaria as 6 cards da mesma linha, mesmo as que não tinham nada a
+ver com o disclaimer. Corrigido: disclaimer virou uma legenda única acima
+do grid inteiro (mesmo padrão que `Backtest.jsx` já usava para o mesmo
+tipo de aviso), sublabel do card voltou a ser só `W · BE · L`.
+
+### Padrão a vigiar em próximas correções de UI
+
+Os 3 achados têm a mesma forma: uma correção resolve o problema no nível
+em que foi reportado, mas introduz (ou deixa exposta) uma inconsistência
+análoga um nível abaixo — porque a correção olhou só o caminho feliz do
+que estava sendo trocado, não todos os consumidores/dimensões que dependiam
+do estado anterior. Vale checar explicitamente, ao trocar a fonte de um
+dado (query, array, prop) que já tinha outros consumidores: **quem mais
+lia esse valor, e essa mudança quebra a garantia de que eram sempre
+iguais?** — é essencialmente o mesmo princípio já registrado nas
+"Revisão final obrigatória" de `.claude/rules/operating-principles.md`,
+aqui confirmado por um caso real.
+
+### Backlog registrado, não corrigido nesta rodada
+
+- Nenhuma das 8 páginas do C-3 sinaliza visualmente quando o dado exibido
+  é de cache por trás de uma falha (`isError=true`) — limitação aceita,
+  não regressão; vira item de produto se o usuário quiser.
+- `Login.jsx`/`ProtectedRoute.jsx` (código morto, nenhuma rota aponta pra
+  lá) têm conflito latente com o `authError` global do C-1 — documentado
+  como armadilha conhecida pra quando/se a tela de login for religada.
+- `QueryErrorState`'s `onClick={onRetry}` sem `.catch` defensivo — sem
+  risco real hoje, quick win barato se algum dia uma query ligar
+  `throwOnError`.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos, incluindo o teste de regressão novo. Detalhe operacional (status
+vivo, o que ainda falta do Raio-X inteiro) em
+`docs/claude/ui-audit-criticos.md`.

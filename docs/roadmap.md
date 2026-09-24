@@ -803,6 +803,12 @@ justificativa nova para reabrir isso com o resultado acima.
   todo o resto do backlog** (15 achados de Alta prioridade, 17 de Média,
   reorganização do Dashboard) — status detalhado e atualizado em
   `docs/claude/ui-audit-criticos.md`.
+  **Addendum (item 194, 2026-09-24):** revisão cética pós-merge achou 3
+  bugs reais que as correções acima tinham introduzido/exposto uma camada
+  abaixo (Trades.jsx reintroduzindo o próprio C-3, badge divergente em
+  PerformanceMetricsBar, rótulo do C-2b quebrando o grid) — todos
+  corrigidos, com teste de regressão pro mais sério. Backlog do Raio-X em
+  si (Alta/Média) continua igual, nada novo tocado.
 
 ---
 

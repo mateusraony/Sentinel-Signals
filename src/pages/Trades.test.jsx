@@ -15,8 +15,11 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { screen, cleanup, fireEvent } from '@testing-library/react';
-import { renderPage } from './__fixtures__/renderPage.jsx';
+import { screen, cleanup, fireEvent, render } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { renderPage, makeTestQueryClient } from './__fixtures__/renderPage.jsx';
 
 const SIGNAL_4H = {
   id: 'sig1', asset_id: 'a1', symbol: 'PENDLEUSDT', timeframe: '4h',
@@ -178,5 +181,65 @@ describe('Trades — "Histórico Completo" (HistoryRow) mostra o "por quê" sem 
     // tela (chart de performance + a linha do histórico), então a asserção
     // âncora no texto único do "por quê", não no símbolo.
     await screen.findByText(/tocou o stop antes de TP1/i);
+  });
+});
+
+// Achado da revisão cética pós-PR #396 (docs/claude/ui-audit-criticos.md):
+// a correção original do C-3 (estado de erro de rede) checava só o array
+// BRUTO (`operations.length === 0`) pra decidir entre erro cheio e o texto
+// vazio da seção "Operações Ativas" — mas o texto vazio ali é sobre o
+// recorte FILTRADO por status ativo (`applyFilters(active)`), uma dimensão
+// diferente. Com cache só de operações FECHADAS e um refetch que falha, a
+// tela afirmava "Nenhuma operação ativa." com confiança total quando, na
+// verdade, não foi confirmado — o mesmo tipo de silêncio enganoso que o C-3
+// deveria ter eliminado, reaparecendo uma camada abaixo.
+const OPERACAO_SO_FECHADA = {
+  id: 'closed_cache1', asset_id: 'a9', symbol: 'BTCUSDT', side: 'BUY',
+  status: 'STOP_HIT', timeframe: '15m', signal_timeframe: '4h',
+  entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 110, tp2: 120,
+  exit_price: 95, created_date: '2026-09-20T09:00:00.000Z',
+};
+
+describe('Trades — "Operações Ativas" não afirma "Nenhuma" quando a atualização falhou', () => {
+  it('REGRESSÃO: cache só com operação fechada + refetch que falha mostra "não confirmado", não "Nenhuma operação ativa."', async () => {
+    vi.doMock('@/api/entities', () => ({
+      backend: {
+        entities: {
+          TradeOperation: {
+            list: async () => { throw new Error('Failed to fetch'); },
+            filter: async () => [],
+          },
+          SignalEvent: { list: async () => [], filter: async () => [], update: async (id, data) => ({ id, ...data }) },
+        },
+        tradeOps: { transitionTradeOp: async () => ({ applied: false }) },
+      },
+    }));
+    vi.doMock('@/lib/marketDataProvider', () => ({
+      fetchCandles: async () => [],
+      fetchCurrentPrice: async () => null,
+      fetch24hStats: async () => null,
+      MARKET_SOURCE: 'spot',
+      DATA_EXCHANGE: 'binance',
+      EXECUTOR: 'browser',
+    }));
+
+    const { default: Trades } = await import('./Trades.jsx');
+    // Simula "carga anterior bem-sucedida, refetch em background falhou":
+    // semeia o cache com dado real e deixa o queryFn sempre rejeitar — o
+    // React Query mantém `data` do cache e vira `isError=true` no fetch
+    // automático de montagem (staleTime 0 no client de teste).
+    const client = makeTestQueryClient();
+    client.setQueryData(['trade-operations'], [OPERACAO_SO_FECHADA]);
+
+    render(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <MemoryRouter><Trades /></MemoryRouter>
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText(/não foi possível confirmar se há operações ativas/i);
+    expect(screen.queryByText('Nenhuma operação ativa.')).toBeNull();
   });
 });

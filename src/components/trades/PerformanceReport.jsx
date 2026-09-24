@@ -66,13 +66,18 @@ export default function PerformanceReport({ trades }) {
         <h2 className="text-base font-bold text-foreground/80">Relatório de Performance</h2>
         <span className="text-[10px] font-mono text-muted-foreground">({metrics.totalTrades} trades fechados)</span>
       </div>
+      {/* Legenda única (não repetida por card, que quebrava o grid — achado
+          da revisão pós-PR #396, docs/claude/ui-audit-criticos.md) */}
+      <p className="text-[9px] font-mono text-muted-foreground/70">
+        PnL Acumulado é soma % simples, não composta.
+      </p>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <MetricCard
           icon={TrendingUp}
           label="PnL Acumulado"
           value={fmtPct(metrics.totalPnl)}
-          sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L · soma simples, não composta`}
+          sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`}
           color={metrics.totalPnl >= 0 ? '#00ff80' : '#ff1478'}
           glowColor={metrics.totalPnl >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'}
         />

@@ -244,7 +244,7 @@ export default function Dashboard() {
                 fechadas), a mesma de VirtualAccountCard/LiveConfidenceCard,
                 não o tradeOps de 100 (recentes, qualquer status) usado acima
                 para prioridade/atividade */}
-            <PerformanceMetricsBar />
+            <PerformanceMetricsBar activeOpsCount={activeOpsCount} />
 
             {/* Consolidated performance chart — appears only when there's history */}
             <PerformanceOverview />

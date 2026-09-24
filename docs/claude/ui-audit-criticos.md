@@ -68,6 +68,64 @@ na auditoria original.
   inicial). Corrigido nas 8 páginas: erro cheio só quando `isError` E não
   há nenhum dado em cache (commit `1d9fba5`).
 
+## Revisão cética pós-merge (2026-09-24) — bugs reais achados e corrigidos
+
+O usuário perguntou se os 3 críticos estavam mesmo corretos. Resposta
+honesta: não 100% — rodei 2 revisões independentes e adversariais (Explore
+agents instruídos a caçar problema, não confirmar) sobre o código já em
+`main`, e elas acharam 3 bugs reais que eu não tinha pego (nem no commit
+original, nem nas 2 rodadas de correção pós-CI/review do PR #396). Log
+completo da revisão em `docs/known-risks.md` item 194.
+
+- [x] **Trades.jsx afirmava "Nenhuma operação ativa." com confiança total
+  mesmo quando a atualização tinha falhado** (achado mais sério). Se o
+  cache só tinha operações fechadas e um refetch em background falhava, a
+  condição `isError && operations.length === 0` (array bruto) não pegava
+  o caso — caía direto no texto vazio, que é sobre `applyFilters(active)`
+  (uma dimensão diferente, que muda com o tempo). Corrigido: quando
+  `isError` E a lista ativa filtrada está vazia, mostra "Não foi possível
+  confirmar se há operações ativas agora" em vez do texto confiante.
+  **Arquivo:** `src/pages/Trades.jsx`. **Teste de regressão** em
+  `src/pages/Trades.test.jsx` (confirmei que falha sem o fix, revertendo
+  temporariamente, antes de reportar como corrigido).
+- [x] **PerformanceMetricsBar badge "N ativas" divergia do resto do
+  Dashboard.** Ao ganhar query própria de 500 (C-2a), o `activeCount`
+  interno passou a vir dessa mesma query (refetch 120s) em vez do
+  `tradeOps` de 100 do Dashboard (refetch 60s, mesmo array do StatsCard
+  "Operações Ativas") — resolvi uma divergência e abri outra, menor, entre
+  esse badge e o resto da página. Corrigido: `activeOpsCount` passa a vir
+  via prop de `Dashboard.jsx` (mesmo array de sempre), só as métricas de
+  performance (win rate/PnL/drawdown) continuam da query de 500.
+  **Arquivos:** `src/components/dashboard/PerformanceMetricsBar.jsx`,
+  `src/pages/Dashboard.jsx`.
+- [x] **PerformanceReport.jsx: o rótulo do C-2b quebrava o grid.** "soma
+  simples, não composta" colado ao sublabel (`${wins}W · ${be}BE ·
+  ${losses}L · soma simples, não composta`, ~44 caracteres, sem
+  `truncate`) ia quebrar linha num grid de 6 colunas e esticar a altura de
+  todas as cards da mesma linha. Corrigido: disclaimer virou uma legenda
+  única acima do grid inteiro (mesmo padrão do `Backtest.jsx`), sublabel
+  do card voltou a ser só `W · BE · L`. **Arquivo:**
+  `src/components/trades/PerformanceReport.jsx`.
+
+**Registrado como backlog, não corrigido nesta rodada (decisão
+consciente):**
+- Nenhuma das 8 páginas do C-3 indica visualmente quando há erro mas o
+  dado exibido é de cache (nenhum "atualizado há Xs"/aviso de staleness)
+  — limitação aceita do design atual, não regressão; vira item de produto
+  novo se o usuário quiser.
+- `src/pages/Login.jsx`/`src/components/ProtectedRoute.jsx` são código
+  morto (nenhuma rota aponta pra lá) mas têm um conflito latente com o
+  `authError` global do C-1: se a tela de login for religada um dia, uma
+  senha errada dispararia a tela cheia de erro do C-1 por cima do
+  formulário (que já tem seu próprio erro local). Documentado como
+  armadilha conhecida, não corrigido agora — é código desconectado.
+- `QueryErrorState`'s `onClick={onRetry}` sem `.catch` defensivo — sem
+  risco real hoje (nenhuma query usa `throwOnError`), fica como quick win
+  barato se algum dia alguém ligar essa opção.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` — incluindo o teste novo de regressão.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
