@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { getTelegramConfig, setTelegramConfig, isTelegramConfigured, getTelegramFilters, setTelegramFilters } from '@/lib/telegram';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import MultiToggle from '@/components/ui/multi-toggle';
-import { BellRing, X, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { BellRing, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 
 const TF_OPTIONS = ['1h', '4h', '1d'];
 const PRIORITY_OPTIONS = [
@@ -62,8 +63,6 @@ export default function TelegramSettings({ open, onClose }) {
     }
   }, [open]);
 
-  if (!open) return null;
-
   const save = async () => {
     await setTelegramConfig(cfg);
     await setTelegramFilters(filters);
@@ -94,17 +93,15 @@ export default function TelegramSettings({ open, onClose }) {
   const setF = (key, val) => setFilters(f => ({ ...f, [key]: val }));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
-      style={{ background: 'rgba(0,0,0,0.8)' }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-lg my-auto rounded-2xl p-6 space-y-5"
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-lg rounded-2xl p-6"
         style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(20px)' }}>
 
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <DialogHeader>
           <div className="flex items-center gap-2">
             <BellRing className="w-5 h-5" style={{ color: '#00e5ff' }} />
-            <h2 className="font-bold text-foreground text-base">Alertas Telegram</h2>
+            <DialogTitle className="font-bold text-foreground text-base">Alertas Telegram</DialogTitle>
             {isTelegramConfigured() && (
               <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(0,255,128,0.1)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.2)' }}>
@@ -112,11 +109,13 @@ export default function TelegramSettings({ open, onClose }) {
               </span>
             )}
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-white/[0.05]">
-            <X className="w-4 h-4 text-muted-foreground" />
-          </button>
-        </div>
+        </DialogHeader>
 
+        {/* Corpo rolável — mesmo padrão de AssetConfigPanel.jsx (max-h+
+            overflow-y-auto num wrapper interno, não no DialogContent), já
+            que com "Filtros Avançados" expandido o conteúdo facilmente
+            passa da altura da viewport. */}
+        <div className="max-h-[70vh] overflow-y-auto pr-1 space-y-5">
         {/* Instructions */}
         <div className="rounded-xl p-3 space-y-1.5" style={{ background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.1)' }}>
           <p className="text-[10px] font-mono font-bold" style={{ color: '#00e5ff' }}>COMO CONFIGURAR:</p>
@@ -281,7 +280,8 @@ export default function TelegramSettings({ open, onClose }) {
             💾 Salvar Configurações
           </Button>
         </div>
-      </div>
-    </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

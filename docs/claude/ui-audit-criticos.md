@@ -703,6 +703,31 @@ ocorrências fechadas** (só restam os 2 modais caseiros, 5ª sub-rodada)
 e **A-6 fica 100% fechado**. Detalhe completo em `docs/known-risks.md`
 item 217.
 
+## Backlog Alta prioridade — 20ª rodada (2026-09-25): A-7 (5ª e última sub-rodada, os 2 modais caseiros) corrigida — A-7 100% fechado
+
+Fecha o último item de A-7: `OwnerKeySettings.jsx` e
+`TelegramSettings.jsx` eram modais caseiros (`<div className="fixed
+inset-0...">`) sem `role="dialog"`, focus-trap, Escape ou devolução de
+foco.
+
+- [x] **A-7 (5ª sub-rodada) — 2 modais migrados pro `Dialog` do
+  Radix.** Decisão de design: reaproveitar `src/components/ui/dialog.jsx`
+  (já usado em `Trades.jsx`, achado A-12, e em `Assets.jsx`) em vez de
+  focus-trap manual — ganha focus-trap/Escape/overlay-click/devolução
+  de foco de graça. Botão X caseiro removido (`DialogContent` já tem o
+  seu). `TelegramSettings.jsx` ganhou um wrapper `max-h-[70vh]
+  overflow-y-auto` interno (mesmo padrão de `AssetConfigPanel.jsx`),
+  já que o `DialogContent` do Radix não trata overflow sozinho e o
+  corpo (com "Filtros Avançados" expandido) facilmente passa da altura
+  da viewport. **Testes novos:** `OwnerKeySettings.test.jsx` (3 casos)
+  e `TelegramSettings.test.jsx` (4 casos) — nenhum dos 2 componentes
+  tinha teste dedicado antes.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2067 testes; teto de typecheck em
+13, inalterado). **Com esta rodada, A-7 fica 100% fechado: 24 de 24
+ocorrências.** Detalhe completo em `docs/known-risks.md` item 218.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -724,18 +749,17 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
   SVG de `Assets.jsx` (284-288), que dependiam de A-7 (foco de
   teclado) resolvido primeiro, corrigidos na 19ª rodada (item 217).
   Nenhum item mecânico ou de decisão isolada pendente.
-- [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca
-  Global). **Varredura fresca (16ª rodada, item 214): contagem real
-  de 24 ocorrências em ~11 arquivos (estimativa original também abaixo
-  da realidade, igual A-6), divididas em 5 sub-rodadas sugeridas. 1ª
+- [x] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca
+  Global). **100% fechado (20ª rodada, item 218).** Varredura fresca
+  (16ª rodada, item 214) revisou a contagem original pra 24 ocorrências
+  reais em ~11 arquivos, divididas em 5 sub-rodadas: 1ª
   (`TriggerBacktestPanel.jsx`, 16ª rodada), 2ª (11 ocorrências avulsas,
   inclui `GlobalSearch.jsx`, 17ª rodada), 3ª (2 linhas clicáveis —
-  `Alerts.jsx`/`RecentAlertsList.jsx`, 18ª rodada) e 4ª (os 3 ícones de
-  `Assets.jsx`, 19ª rodada, também fecha A-6) corrigidas — **22 de 24
-  ocorrências fechadas.** Resta só a 5ª sub-rodada: os 2 modais
-  caseiros (`OwnerKeySettings.jsx`/`TelegramSettings.jsx`), que exigem
-  decisão de design (Radix `Dialog` vs. focus-trap manual). Detalhe em
-  `docs/known-risks.md` item 214/215/216/217.**
+  `Alerts.jsx`/`RecentAlertsList.jsx`, 18ª rodada), 4ª (os 3 ícones de
+  `Assets.jsx`, 19ª rodada, também fechou A-6) e 5ª (os 2 modais
+  caseiros migrados pro `Dialog` do Radix, 20ª rodada) — **24 de 24
+  ocorrências fechadas.** Detalhe em `docs/known-risks.md` item
+  214/215/216/217/218.**
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
 - [x] A-10 — "Geral" na Confiança ao Vivo mistura BUY/SELL sem aviso. **Corrigido, ver seção acima.**
@@ -751,27 +775,28 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 
 ## Como continuar
 
-Próxima rodada sugerida (não decidida): A-1 a A-6, A-8 a A-14 já
-corrigidos (13 de 15 itens de Alta prioridade — **A-6 fechado 100%**
-na 19ª rodada, item 217).
+**A-1 a A-14 estão todos corrigidos (14 de 15 itens de Alta
+prioridade) — A-6 e A-7 fechados 100% (19ª e 20ª rodadas, itens 217 e
+218).** Só resta A-15 do bloco de Alta prioridade, e é deliberadamente
+adiado (ver abaixo).
 
-A-7 (foco de teclado invisível) tem varredura fresca completa (item
-214, 24 ocorrências reais em ~11 arquivos, 5 sub-rodadas sugeridas) e
-as 1ª (`TriggerBacktestPanel.jsx`), 2ª (11 ocorrências avulsas, inclui
+A-7 (foco de teclado invisível) teve varredura fresca completa (item
+214, 24 ocorrências reais em ~11 arquivos) resolvida em 5 sub-rodadas:
+1ª (`TriggerBacktestPanel.jsx`), 2ª (11 ocorrências avulsas, inclui
 `GlobalSearch.jsx`), 3ª (2 linhas clicáveis —
-`Alerts.jsx:185-197`/`RecentAlertsList.jsx:52-56`) e 4ª (os 3 ícones
-SVG de `Assets.jsx:284-288`, que também fechou A-6) sub-rodadas
-corrigidas — **22 de 24 ocorrências fechadas**. Próxima sub-rodada
-natural: a 5ª e última, os 2 modais caseiros
-(`OwnerKeySettings.jsx`/`TelegramSettings.jsx`) — exige decisão de
-design (portar pro `Dialog` do Radix, já usado em outros lugares do
-repo — ex. achado A-12 — vs. implementar focus-trap manual), maior
-risco por tocar estado de abertura/fechamento de telas de configuração
-sensíveis (chave de acesso, Telegram). Fechar essa sub-rodada fecha
-A-7 por completo.
+`Alerts.jsx`/`RecentAlertsList.jsx`), 4ª (os 3 ícones SVG de
+`Assets.jsx`, que também fechou A-6) e 5ª (os 2 modais caseiros —
+`OwnerKeySettings.jsx`/`TelegramSettings.jsx` — migrados pro `Dialog`
+do Radix, mesmo componente já usado em `Trades.jsx`/`Assets.jsx`).
 
 A-15 (AssetCard sem divulgação progressiva) fica deliberadamente pra
 junto da reorganização completa do Dashboard (seção L), não como item
-isolado. Depois de A-7 fechado, restam os 17 itens de Média prioridade
-e a própria seção L. Decisão de qual seguir é do usuário (ou "seguir
-conforme achar melhor", como já autorizado nesta sessão).
+isolado. Com A-1 a A-14 fechados, restam os 17 itens de Média
+prioridade e a própria seção L (que inclui A-15). Decisão de qual
+seguir é do usuário (ou "seguir conforme achar melhor", como já
+autorizado nesta sessão) — nenhum dos dois tem investigação prévia
+como A-6/A-7 tiveram; o próximo passo natural, se for seguir
+autonomamente, é uma varredura fresca dos itens de Média prioridade
+(mesmo processo do item 204/214: agente Explore + leitura direta),
+já que a lista original (M-1 a M-17) nunca foi revisitada com o mesmo
+rigor que os itens de Alta prioridade tiveram.

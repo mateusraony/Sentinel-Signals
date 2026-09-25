@@ -3,10 +3,18 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getOwnerKey, setOwnerKey, isOwnerKeyConfigured } from '@/lib/ownerKey';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { KeyRound, X, CheckCircle } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { KeyRound, CheckCircle } from 'lucide-react';
 
 // Mesmo padrão visual/estrutural de TelegramSettings.jsx — reaproveitado de
 // propósito para não introduzir um segundo estilo de modal só pra um campo.
+//
+// Achado A-7 do Raio-X de UI/UX (5ª sub-rodada, docs/known-risks.md item
+// 214): era um modal caseiro (2 <div> fixos) sem role="dialog"/aria-modal,
+// sem focus-trap nem devolução de foco ao fechar. Migrado pro Dialog do
+// Radix (mesmo componente já usado em Trades.jsx, achado A-12) — ganha
+// focus-trap, Escape, clique no overlay e devolução de foco de graça, sem
+// reimplementar nada disso à mão.
 export default function OwnerKeySettings({ open, onClose }) {
   const [key, setKey] = useState('');
   const [saved, setSaved] = useState(false);
@@ -18,8 +26,6 @@ export default function OwnerKeySettings({ open, onClose }) {
       setSaved(false);
     }
   }, [open]);
-
-  if (!open) return null;
 
   const save = () => {
     setOwnerKey(key.trim());
@@ -33,16 +39,13 @@ export default function OwnerKeySettings({ open, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
-      style={{ background: 'rgba(0,0,0,0.8)' }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-md my-auto rounded-2xl p-6 space-y-5"
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md rounded-2xl p-6"
         style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(20px)' }}>
-
-        <div className="flex items-center justify-between">
+        <DialogHeader>
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5" style={{ color: '#00e5ff' }} />
-            <h2 className="font-bold text-foreground text-base">Chave de Acesso</h2>
+            <DialogTitle className="font-bold text-foreground text-base">Chave de Acesso</DialogTitle>
             {isOwnerKeyConfigured() && (
               <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(0,255,128,0.1)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.2)' }}>
@@ -50,10 +53,7 @@ export default function OwnerKeySettings({ open, onClose }) {
               </span>
             )}
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-white/[0.05]">
-            <X className="w-4 h-4 text-muted-foreground" />
-          </button>
-        </div>
+        </DialogHeader>
 
         <div className="rounded-xl p-3 space-y-1.5" style={{ background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.1)' }}>
           <p className="text-[10px] font-mono font-bold" style={{ color: '#00e5ff' }}>O QUE É ISTO:</p>
@@ -91,7 +91,7 @@ export default function OwnerKeySettings({ open, onClose }) {
             💾 Salvar Chave
           </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
