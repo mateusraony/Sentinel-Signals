@@ -7,18 +7,41 @@
 // dedicado antes.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup } from '@testing-library/react';
-import { renderPage, makeFakeBackendModule } from './__fixtures__/renderPage.jsx';
+import { screen, cleanup, fireEvent } from '@testing-library/react';
+import { renderPage } from './__fixtures__/renderPage.jsx';
 import Alerts from './Alerts.jsx';
 
-vi.mock('@/api/entities', () => makeFakeBackendModule({ populated: false }));
+// `populated` precisa ser trocável por describe (o teste de A-7 abaixo
+// precisa de 1 sinal real pra ter uma linha clicável pra focar) — mesmo
+// padrão `vi.hoisted` + import dinâmico já usado em pagesSmoke.test.jsx.
+const estadoBackend = vi.hoisted(() => ({ populated: false }));
+vi.mock('@/api/entities', async () => {
+  const { makeFakeBackendModule } = await import('./__fixtures__/renderPage.jsx');
+  return { get backend() { return makeFakeBackendModule({ populated: estadoBackend.populated }).backend; } };
+});
 
 afterEach(cleanup);
 
 describe('Alerts — filtro "Buscar símbolo..." tem foco visível (achado A-7)', () => {
   it('REGRESSÃO: input tem focus-visible:ring', async () => {
+    estadoBackend.populated = false;
     renderPage(<Alerts />);
     const search = await screen.findByPlaceholderText('Buscar símbolo...');
     expect(search.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
+  });
+});
+
+// Achado A-7 do Raio-X de UI/UX (varredura fresca, docs/known-risks.md item
+// 214, 3ª sub-rodada): a linha de alerta clicável não tinha `role`,
+// `tabIndex` nem `onKeyDown` — mesmo padrão já resolvido em
+// RecentAlertsList.jsx na mesma rodada.
+describe('Alerts — linha de alerta é focável e ativável por teclado (achado A-7)', () => {
+  it('REGRESSÃO: linha tem role="button", tabIndex=0 e Enter abre o detalhe', async () => {
+    estadoBackend.populated = true;
+    renderPage(<Alerts />);
+    const row = await screen.findByRole('button', { name: /ver detalhes do alerta/i });
+    expect(row.getAttribute('tabindex')).toBe('0');
+    fireEvent.keyDown(row, { key: 'Enter' });
+    await screen.findByRole('dialog');
   });
 });

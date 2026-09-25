@@ -26730,3 +26730,59 @@ Com esta rodada, A-7 fica com **13 de 24 ocorrências fechadas**
 mecânica — `Alerts.jsx:185-197` + `RecentAlertsList.jsx:52-56`), 4ª
 (os 3 ícones de `Assets.jsx`, fecha o último item de A-6) e 5ª (os 2
 modais caseiros, decisão de design).
+
+## 216. Backlog do Raio-X — A-7 (3ª sub-rodada, linhas clicáveis sem foco por teclado) corrigida (2026-09-25)
+
+Fecha a Categoria 2 mecânica de A-7 (item 214): 2 linhas clicáveis
+(`<div onClick=...>`) sem `role`, `tabIndex` nem `onKeyDown` — tinham
+`onClick` (uma delas do próprio achado A-1, já corrigido antes), mas
+nenhum jeito de alcançá-las ou ativá-las por teclado.
+
+### As 2 ocorrências corrigidas
+
+Mesmo padrão já em produção em `AssetCard.jsx`/`TradeHistory.jsx`
+(achado A-8): `role="button"` + `tabIndex={0}` + `aria-label` + classe
+`focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring`
++ `onKeyDown` tratando Enter/Espaço.
+
+- **`src/components/dashboard/RecentAlertsList.jsx:52-56`** — linha do
+  widget "Alertas Recentes" (Dashboard). Sem filho interativo dentro da
+  linha, então o `onKeyDown` é direto, sem guarda de bubbling.
+- **`src/pages/Alerts.jsx:185-197`** — linha de alerta na página
+  `/alerts`. Tem um `<button>` filho (dispensar, ícone `Trash2`) que já
+  faz `e.stopPropagation()` no próprio `onClick` — o `onKeyDown` da
+  linha precisou do mesmo guard `if (e.target !== e.currentTarget)
+  return;` já usado em `AssetCard.jsx`, senão Enter no botão de
+  dispensar duplicaria a ação de abrir o detalhe (o clique sintético que
+  o navegador dispara ao ativar um `<button>` por teclado já é parado
+  pelo `stopPropagation()` do próprio botão, mas o `keydown` que
+  precede esse clique ainda borbulha até a linha antes disso — daí a
+  guarda ser necessária mesmo assim).
+
+### Testes novos
+
+- `RecentAlertsList.test.jsx` (já existia): +2 casos (Enter e Espaço
+  chamam `onSelectAsset` com o ativo certo).
+- `Alerts.test.jsx` (já existia, criado na 2ª sub-rodada): +1 caso —
+  exigiu tornar o mock de `@/api/entities` trocável por teste (`vi.hoisted`
+  + import dinâmico, mesmo padrão de `pagesSmoke.test.jsx`), já que o
+  teste de A-7 precisa de 1 sinal real populado pra ter uma linha
+  clicável pra focar, diferente do teste de foco do filtro (que usa
+  lista vazia).
+
+Ambos confirmados falhando sem o fix via `git stash` (stash só dos 2
+arquivos de produção, pop depois) antes de aceitar.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2056 testes, +3 desta rodada; teto de typecheck em 16,
+inalterado). Revisão cética: diff nos 2 arquivos de produção mostra só
+as adições de `role`/`tabIndex`/`aria-label`/`onKeyDown`/classe de
+foco — nenhuma lógica de `onClick`/`onSelectAsset`/`setSelectedSignal`
+existente foi alterada, só reusada dentro do novo `onKeyDown`.
+
+Com esta rodada, A-7 fica com **15 de 24 ocorrências fechadas**
+(Categoria 1 inteira + Categoria 2 mecânica inteira). Restam: 4ª
+sub-rodada (os 3 ícones de `Assets.jsx`, fecha o último item de A-6) e
+5ª (os 2 modais caseiros, decisão de design).

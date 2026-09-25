@@ -53,3 +53,27 @@ describe('RecentAlertsList — link "Ver todos" para /alerts (achado A-14)', () 
     expect(link.getAttribute('href')).toBe('/alerts');
   });
 });
+
+// Achado A-7 do Raio-X de UI/UX (varredura fresca, docs/known-risks.md item
+// 214, 3ª sub-rodada): a linha clicável tinha `onClick` (achado A-1, acima)
+// mas nenhum jeito de alcançá-la ou ativá-la por teclado — sem `role`,
+// `tabIndex` nem `onKeyDown`. Corrigido reusando o mesmo padrão já em
+// produção em `AssetCard.jsx`/`TradeHistory.jsx` (achado A-8).
+describe('RecentAlertsList — linha é focável e ativável por teclado (achado A-7)', () => {
+  it('REGRESSÃO: linha tem role="button", tabIndex=0 e Enter chama onSelectAsset', () => {
+    const onSelectAsset = vi.fn();
+    render(<MemoryRouter><RecentAlertsList signals={[SIGNAL]} assets={[ASSET]} onSelectAsset={onSelectAsset} /></MemoryRouter>);
+    const row = screen.getByRole('button', { name: /BTCUSDT/i });
+    expect(row.getAttribute('tabindex')).toBe('0');
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(onSelectAsset).toHaveBeenCalledWith(ASSET);
+  });
+
+  it('REGRESSÃO: Espaço também ativa a linha', () => {
+    const onSelectAsset = vi.fn();
+    render(<MemoryRouter><RecentAlertsList signals={[SIGNAL]} assets={[ASSET]} onSelectAsset={onSelectAsset} /></MemoryRouter>);
+    const row = screen.getByRole('button', { name: /BTCUSDT/i });
+    fireEvent.keyDown(row, { key: ' ' });
+    expect(onSelectAsset).toHaveBeenCalledWith(ASSET);
+  });
+});
