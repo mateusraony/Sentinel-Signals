@@ -27140,3 +27140,51 @@ fonte arbitrária em 51 arquivos) e M-17 (glossário de termos técnicos,
 10 termos) são varreduras grandes que merecem rodada própria; M-1/M-2/
 M-5/M-6/M-8/M-9/M-12 são candidatos a rodadas mecânicas subsequentes,
 mesmo padrão desta.
+
+## 221. Backlog do Raio-X — 2ª rodada de Média Prioridade: M-1 e M-2 (2026-09-25)
+
+Continuação do backlog M (item 220). M-1 e M-2 escolhidos por estarem
+no mesmo arquivo já tocado na rodada anterior (`WeeklySummary.jsx`,
+M-3) — investigação direta confirmou os 2 exatamente como descritos no
+relatório, sem divergência.
+
+### As 2 correções (mesmo arquivo)
+
+1. **M-1** — nenhuma das 2 queries (`TradeOperation`/`SignalEvent`)
+   lia `isLoading`; os defaults `[]` faziam os 3 cards de stat
+   (P&L Semana, Taxa de Acerto, Sinais Processados) mostrarem
+   "+0.00%"/0 como se fosse resultado real por 1-2s antes do fetch
+   responder. Adicionado `isLoading = loadingOps || loadingSignals`;
+   os 3 valores mostram `···` (cor neutra) enquanto carrega, e o
+   subtítulo de "Taxa de Acerto" mostra "carregando…" em vez de "sem
+   trades ainda" nesse intervalo.
+2. **M-2** — `signalsThisWeek` contava sinal de qualquer `source`
+   (RF/SMC/MACD/EMA/RSI), inconsistente com `buySignals`/`sellSignals`
+   do `Dashboard.jsx`, que só contam `source === 'range_filter'`.
+   Adicionado o mesmo filtro.
+
+### Testes novos
+
+3 novos em `WeeklySummary.test.jsx` (já existia por causa de M-3): um
+mockando as 2 queries com uma Promise que nunca resolve pra capturar o
+estado `isLoading` e confirmar `···` nos 3 cards; um com sinais de 2
+fontes diferentes confirmando que só `range_filter` entra na
+contagem. Falha de cada um reproduzida via `git stash` antes do fix
+(2 dos 3 testes falharam sem o fix — o de M-3 seguiu verde, já
+mesclado antes).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2073 testes, teto de typecheck em 13, sem
+mudança). `git diff --stat` só em `WeeklySummary.jsx` (produção) +
+`WeeklySummary.test.jsx` — nenhuma mudança em `backend.`/lógica de
+negócio/scanner, puramente apresentação.
+
+### Itens M pendentes (12 dos 17)
+
+M-4, M-5, M-6, M-8, M-9, M-10, M-11, M-12, M-13, M-15, M-17 (M-1/M-2/
+M-3/M-7/M-14/M-16 já fechados ou já estavam corrigidos). Mesma
+triagem do item 220: M-4/M-10/M-13/M-15 esperam a reorganização do
+Dashboard; M-11/M-17 são varreduras grandes; M-5/M-6/M-8/M-9/M-12
+seguem como candidatos a rodadas mecânicas.
