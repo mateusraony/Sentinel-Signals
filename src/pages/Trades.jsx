@@ -278,10 +278,16 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
               (item 163) — é há quanto tempo o aviso está preso nisto, o que
               é justamente o que o usuário quer comparar depois. */}
           {signal.last_rejection_at && (
-            <span className="text-[9px] font-mono shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}
-              title="Desde quando este aviso está travado neste mesmo motivo (horário de Brasília)">
-              desde {fmtBRT(signal.last_rejection_at)}
-            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-[9px] font-mono shrink-0 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                  desde {fmtBRT(signal.last_rejection_at)}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                Desde quando este aviso está travado neste mesmo motivo (horário de Brasília)
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
         <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>

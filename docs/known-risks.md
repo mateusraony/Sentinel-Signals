@@ -26252,3 +26252,81 @@ topo do próprio arquivo) não foi tocada, só a apresentação.
 já inclui `TooltipProvider`) continuam verdes sem nenhuma mudança.
 **Não rodei verificação visual via navegador real nesta rodada** — mesma
 ressalva das 2 rodadas anteriores, padrão mecânico idêntico.
+
+## 208. Backlog do Raio-X — A-6, 5ª sub-rodada (`TradeHistory.jsx`, 5 ocorrências) corrigida (2026-09-25)
+
+Continuação de A-6. Uma varredura atualizada do que sobrou do "Grupo 2"
+(badges/textos com abreviação, item 204) — feita de novo do zero em vez
+de confiar na estimativa antiga de ~19, já que arquivos mudaram desde a
+1ª investigação — encontrou **15 ocorrências reais restantes** (mais 4
+sinalizadas à parte, ver abaixo), divididas por arquivo: `TradeHistory.jsx`
+(5, maior bloco isolado — esta rodada), `Assets.jsx` (4, mas 3 são
+ícones SVG não focáveis, tema A-7 — sinalizado à parte, não corrigido
+aqui), `AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx` (5, com
+o mesmo texto "Confluência de indicadores técnicos..." repetido nos 3),
+`StatsCard.jsx` (1). **Nota de contagem:** 25 (já fechadas) + 15 (achado
+desta varredura) = 40, não 43 — pequena divergência com a contagem
+original do item 204, provavelmente por arquivos que mudaram entre as
+duas investigações; não force a diferença de 3, é imprecisão de
+contagem manual, não um erro de lógica. Com esta rodada (5), o total
+fechado sobe pra 30; sobram ~10 pela contagem nova (4 `Assets.jsx` SVG +
+3 `AssetCard.jsx` + 1 cada em `SignalToast.jsx`/`SignalAlertBanner.jsx`/
+`StatsCard.jsx`).
+
+### As 5 ocorrências (todas em `<span>` não focável, texto visível ao lado, sem `disabled`)
+
+- Badge de Tier (`{op.tier}`, camada 1 sempre visível).
+- Badge "ℹ️ Situação rara" (`op.exit_ambiguous`, camada 1 sempre
+  visível).
+- Badge MFE (dentro do bloco `{expanded && (...)}`, só com `op.mfe_r`
+  finito).
+- Badge MAE (mesmo bloco expandido, só com `op.mae_r` finito).
+- Resumo "⚠️ N ambíguo(s) (X%)*" no rodapé da lista (`ambiguousCount`
+  computado sobre `filtered`, mesmo campo `exit_ambiguous` do badge
+  acima — uma única op com `exit_ambiguous: true` aciona os dois ao
+  mesmo tempo).
+
+Todas viraram `Tooltip`/`TooltipTrigger asChild` com `tabIndex={0}` novo
+— mesmo Padrão 3 das rodadas anteriores. `TradeHistory.jsx` já tinha
+teste dedicado (`TradeHistory.test.jsx`, achado de clareza anterior);
+usa `renderPage()`, que já inclui `TooltipProvider` — não precisou do
+fix de harness visto em rodadas com teste isolado (`DebugLogButton.test.jsx`,
+`TradeCard.test.jsx`).
+
+### Testes
+
+4 casos novos em `TradeHistory.test.jsx`, cobrindo as 5 ocorrências (o
+resumo de ambíguos e o badge "Situação rara" compartilham a mesma op de
+fixture, mas são elementos DOM distintos — testados em `it()`s
+separados). MFE/MAE precisam expandir o card primeiro
+(`fireEvent.click` no elemento com `aria-expanded`, mesmo padrão de
+interação já usado pelo componente — não um mecanismo de teste novo).
+Todos os 4 confirmados falhando sem o fix via `git stash`.
+
+### Achado extra: `Trades.jsx:282` também corrigido nesta rodada
+
+A varredura nova (acima) excluiu **o arquivo inteiro** de `Trades.jsx`
+por já constar entre os "já corrigidos" (Grupo 1, item 205) — mas o
+item 205 só cobriu os BOTÕES daquele arquivo; um `title=` de badge
+("desde {data}", quando um aviso fica travado no mesmo motivo de
+rejeição — já sinalizado como deliberadamente fora de escopo naquela
+rodada) continuava lá. Corrigido junto por ser o mesmo padrão exato
+(`<span>` não focável, texto visível, sem `disabled`) e já ter o import
+de `Tooltip` disponível no arquivo. **Lição:** ao excluir "arquivos já
+corrigidos" de uma varredura, confirmar que o arquivo foi corrigido POR
+INTEIRO, não só numa categoria/rodada anterior — um arquivo pode ter
+ocorrências de mais de um grupo. Teste novo em `Trades.test.jsx`
+(reusa `SIGNAL_WAITING_COM_EVIDENCIA` com `last_rejection_at` setado),
+confirmado falhando sem o fix via `git stash`.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2028 testes, +5 dos testes novos ao todo — 4 de `TradeHistory.jsx`
++ 1 de `Trades.jsx`; teto de typecheck em 16, inalterado). Revisão
+cética própria: `git diff --stat` confirma só os 2 arquivos tocados
+(`TradeHistory.jsx`, `Trades.jsx`); grep no diff por `backend.`/
+`scanner.js`/`transitionTradeOp`/`classifySignal`/`rejectionCopy` não
+encontra nada — nenhuma lógica de trading tocada. **Não rodei
+verificação visual via navegador real nesta rodada** — mesma ressalva
+das rodadas anteriores, padrão mecânico idêntico.

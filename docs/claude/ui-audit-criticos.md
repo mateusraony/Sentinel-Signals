@@ -501,6 +501,29 @@ inalterado). Revisão cética própria (sem verificação visual via
 navegador real — mesma ressalva de sempre), detalhe completo em
 `docs/known-risks.md` item 207.
 
+## Backlog Alta prioridade — 12ª rodada (2026-09-25): A-6 (5ª sub-rodada, `TradeHistory.jsx` + achado extra em `Trades.jsx`) corrigida
+
+Varredura fresca do que sobrou do "Grupo 2" (badges/textos com
+abreviação) encontrou 15 ocorrências reais restantes em 6 arquivos —
+maior bloco isolado: `TradeHistory.jsx` (5). Durante a implementação,
+achado extra: um `title=` de `Trades.jsx` (badge "desde {data}") tinha
+ficado pra trás na 2ª sub-rodada (só cobriu botões) e a varredura nova
+também o pulou por engano (excluiu o arquivo inteiro por já constar
+"corrigido"). Corrigido junto.
+
+- [x] **A-6 (5ª sub-rodada) — `TradeHistory.jsx` (5) + `Trades.jsx:282`
+  (1).** Tier, "Situação rara", MFE, MAE e o resumo "N ambíguo(s)" do
+  rodapé viraram `Tooltip`/`TooltipTrigger asChild` com `tabIndex={0}`
+  novo — mesmo Padrão 3 das rodadas anteriores. **Testes novos:** 4 em
+  `TradeHistory.test.jsx` (MFE/MAE exigem expandir o card primeiro) + 1
+  em `Trades.test.jsx`.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2028 testes; teto de typecheck 16,
+inalterado). Revisão cética própria (sem verificação visual via
+navegador real — mesma ressalva de sempre), detalhe completo em
+`docs/known-risks.md` item 208.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -513,13 +536,20 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] A-3 — Logs.jsx diz "atualiza a cada 15s", o real é 2 minutos. **Corrigido, ver seção acima.**
 - [x] A-4 — Aba "Sincronização" do Pine Script com números desatualizados. **Corrigido, ver seção acima.**
 - [x] A-5 — Sidebar desktop sem nome acessível em nenhum dos 12 itens. **Corrigido, ver seção acima.**
-- [ ] A-6 — `title=` nativo em vez de Tooltip acessível. **Contagem real:
-  43 ocorrências/16 arquivos (não ~15 como estimado). 1ª sub-rodada
+- [ ] A-6 — `title=` nativo em vez de Tooltip acessível. **Contagem
+  original de 43 ocorrências/16 arquivos revista numa varredura fresca
+  (item 208): ~40 reais no total (pequena divergência de contagem
+  manual, não um erro de lógica — ver item 208). 1ª sub-rodada
   (`Backtest.jsx`, 3), 2ª sub-rodada (Grupo 1, 6 arquivos/11), 3ª
-  sub-rodada (`TradeCard.jsx`, 9) e 4ª sub-rodada (`EventTimeline.jsx`,
-  2) corrigidas — ver 8ª/9ª/10ª/11ª rodadas acima. 25 de 43 ocorrências
-  fechadas. Restam ~7 arquivos/~18 ocorrências (Grupo 2 restante, casos
-  especiais), divisão em `docs/known-risks.md` item 204.**
+  sub-rodada (`TradeCard.jsx`, 9), 4ª sub-rodada (`EventTimeline.jsx`,
+  2) e 5ª sub-rodada (`TradeHistory.jsx` + `Trades.jsx:282`, 6)
+  corrigidas — ver 8ª-12ª rodadas acima. 31 de ~40 ocorrências fechadas.
+  Restam ~10: `Assets.jsx` (4, mas 3 são ícones SVG não focáveis — tema
+  A-7, decisão separada), `AssetCard.jsx`/`SignalToast.jsx`/
+  `SignalAlertBanner.jsx` (5, texto "Confluência" repetido nos 3),
+  `StatsCard.jsx` (1), mais os casos especiais de sempre
+  (`Verification.jsx:345`, `sidebar.jsx` dead code). Divisão detalhada em
+  `docs/known-risks.md` item 208.**
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
@@ -537,17 +567,23 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 ## Como continuar
 
 Próxima rodada sugerida (não decidida): A-1 a A-5, A-8 a A-14 já
-corrigidos (12 de 15 itens de Alta prioridade); A-6 com 4 de várias
-sub-rodadas corrigidas (`Backtest.jsx` + Grupo 1 + `TradeCard.jsx` +
-`EventTimeline.jsx`, 25 de 43 ocorrências). Próximas sub-rodadas
-sugeridas pra A-6 (detalhe em `docs/known-risks.md` item
-204/205/206/207): Grupo 2 restante (~15 badges/textos com abreviação,
-incluindo `Trades.jsx:282` já identificado — próximo natural, maior bloco
-que resta); casos especiais (botão desabilitado — mesmo padrão já
-resolvido 2x, falta só `Verification.jsx:345`; ícones SVG não focáveis em
-Assets.jsx que roçam o tema do A-7; decisão sobre remover
+corrigidos (12 de 15 itens de Alta prioridade); A-6 com 5 sub-rodadas
+corrigidas (`Backtest.jsx` + Grupo 1 + `TradeCard.jsx` +
+`EventTimeline.jsx` + `TradeHistory.jsx`/`Trades.jsx:282`, 31 de ~40
+ocorrências). Próximas sub-rodadas sugeridas pra A-6 (detalhe em
+`docs/known-risks.md` item 204/205/206/207/208): `AssetCard.jsx` (3) +
+`SignalToast.jsx` (1) + `SignalAlertBanner.jsx` (1) — agrupáveis numa
+rodada só (5 ocorrências, 3 arquivos pequenos), com o texto de
+"Confluência de indicadores técnicos..." repetido idêntico nos 3 (avaliar
+se vale extrair um componente/wrapper compartilhado em vez de repetir o
+Tooltip 3x); `StatsCard.jsx` (1, trivial); casos especiais (botão
+desabilitado — mesmo padrão já resolvido 2x, falta só
+`Verification.jsx:345`; `Assets.jsx` — 3 dos 4 `title=` são ícones SVG
+NÃO FOCÁVEIS, então corrigir ali exige decidir/implementar o tema do A-7
+primeiro, não é fix mecânico isolado; decisão sobre remover
 `src/components/ui/sidebar.jsx`, código morto). A-7 (foco de teclado
-invisível em ~15 pontos) nem começou. A-15 (AssetCard sem divulgação
+invisível em ~15 pontos) nem começou — `Assets.jsx` é candidato a
+"empurrar" essa decisão pra frente. A-15 (AssetCard sem divulgação
 progressiva) fica deliberadamente pra junto da reorganização completa do
 Dashboard (seção L), não como item isolado. Depois disso, restam os 17
 itens de Média prioridade e a própria seção L. Decisão de qual seguir é
