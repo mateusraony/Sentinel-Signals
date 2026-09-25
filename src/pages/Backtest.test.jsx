@@ -62,6 +62,29 @@ const REPORT_JSON = JSON.stringify({
   costs: { model: {} },
 });
 
+// Mesmo REPORT_JSON, mas com `overall.curve` populado com 1 op fechada real
+// (mínimo pra `equitySim`, em ReportBody, não ficar `null` — só usado no
+// teste do achado A-7 que precisa do campo "Capital inicial" renderizado,
+// que só aparece com `equitySim` não-nulo).
+const REPORT_JSON_COM_CURVE = JSON.stringify({
+  range: { from: '2026-01-01T00:00:00.000Z', to: '2026-06-01T00:00:00.000Z' },
+  overall: {
+    ...CASCADE_STATS, total: 1, counted: 1, wins: 0, losses: 1,
+    curve: [{
+      cumulativePct: -1.67, outcome: 'LOSS',
+      op: {
+        id: 'op1', asset_id: 'a1', symbol: 'BTCUSDT', side: 'BUY',
+        status: 'STOP_HIT', entry_price: 60000, initial_stop: 59000,
+        current_stop: 59000, exit_price: 59000,
+        stop_hit_at: '2026-01-05T00:00:00.000Z', closed_at: '2026-01-05T00:00:00.000Z',
+        created_date: '2026-01-01T00:00:00.000Z',
+      },
+    }],
+  },
+  byCascade: { '4h_15m': CASCADE_STATS },
+  costs: { model: {} },
+});
+
 async function loadReport() {
   renderPage(<Backtest />);
   fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
@@ -130,5 +153,44 @@ describe('Backtest — botão "Parar de acompanhar" (TriggerBacktestPanel) usa T
 
     const cancelButton = await screen.findByRole('button', { name: /Parar de acompanhar este run/i });
     expect(cancelButton.getAttribute('title')).toBeNull();
+  });
+});
+
+// Achado A-7 do Raio-X de UI/UX (varredura fresca, docs/known-risks.md item
+// 214, 2ª sub-rodada): 4 campos desta página usavam `outline-none` sem
+// substituto visível de foco — mesmo achado/fix de TriggerBacktestPanel.jsx
+// (1ª sub-rodada): "Capital inicial" (aba "Desempenho Real", só aparece com
+// relatório carregado), "Ativo"/"Período (candles)" (aba "Ajuste Fino") e o
+// textarea "— ou cole o JSON —" (aba "Simulação").
+describe('Backtest — campos têm foco visível (achado A-7)', () => {
+  it('REGRESSÃO: "Capital inicial" tem focus-visible:ring', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    fireEvent.change(textarea, { target: { value: REPORT_JSON_COM_CURVE } });
+    fireEvent.click(screen.getByText(/Analisar relatório colado/i));
+    await screen.findByText('Expectância');
+
+    const capitalInicial = await screen.findByText('Capital inicial');
+    const input = capitalInicial.parentElement.querySelector('input');
+    expect(input.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
+  });
+
+  it('REGRESSÃO: "Ativo" e "Período (candles)" (aba Ajuste Fino) têm focus-visible:ring', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Ajuste Fino \(What-If\)/i));
+
+    const ativoSelect = screen.getByText('Ativo').parentElement.querySelector('select');
+    const periodoSelect = screen.getByText('Período (candles)').parentElement.querySelector('select');
+    expect(ativoSelect.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
+    expect(periodoSelect.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
+  });
+
+  it('REGRESSÃO: textarea "— ou cole o JSON —" tem focus-visible:ring', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    expect(textarea.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
   });
 });

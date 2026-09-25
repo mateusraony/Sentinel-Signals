@@ -267,7 +267,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
               <label className="text-[9px] font-mono text-muted-foreground block mb-1">Capital inicial</label>
               <input type="number" min={1} step={100} value={initialCapital}
                 onChange={e => setInitialCapital(Math.max(1, Number(e.target.value) || DEFAULT_INITIAL_CAPITAL))}
-                className="w-28 px-3 py-1.5 rounded-lg text-[11px] font-mono outline-none"
+                className="w-28 px-3 py-1.5 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }} />
             </div>
             <div className="w-40">
@@ -530,7 +530,7 @@ function QuickBacktestTab() {
           <div>
             <label className="text-[9px] font-mono text-muted-foreground block mb-1">Ativo</label>
             <select value={assetId} onChange={e => setAssetId(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg text-[11px] font-mono outline-none"
+              className="w-full px-3 py-2 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
               <option value="">Selecione...</option>
               {assets.map(a => <option key={a.id} value={a.id}>{a.display_name || a.symbol}</option>)}
@@ -554,7 +554,7 @@ function QuickBacktestTab() {
           <div>
             <label className="text-[9px] font-mono text-muted-foreground block mb-1">Período (candles)</label>
             <select value={candleCount} onChange={e => setCandleCount(Number(e.target.value))}
-              className="w-full px-3 py-2 rounded-lg text-[11px] font-mono outline-none"
+              className="w-full px-3 py-2 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
               {QBT_CANDLE_OPTIONS.map(n => <option key={n} value={n}>{n} candles</option>)}
             </select>
@@ -760,7 +760,7 @@ function UploadPanel({ onLoad, error }) {
           onChange={(e) => setPasted(e.target.value)}
           placeholder="{ &quot;range&quot;: ..., &quot;overall&quot;: ... }"
           rows={5}
-          className="w-full rounded-lg p-3 text-[10px] font-mono outline-none resize-none"
+          className="w-full rounded-lg p-3 text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
           style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}
         />
         <button onClick={() => onLoad(pasted)} disabled={!pasted.trim()}

@@ -96,7 +96,7 @@ export default function GlobalSearch() {
             }}
             onBlur={() => { if (!search) setShowSearch(false); }}
             placeholder="Buscar ativo ou alerta..."
-            className="h-8 w-44 sm:w-52 font-mono text-xs rounded-lg px-3 outline-none"
+            className="h-8 w-44 sm:w-52 font-mono text-xs rounded-lg px-3 outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(255,255,255,0.8)' }}
           />
           {showDropdown && search.trim() && hasResults && (

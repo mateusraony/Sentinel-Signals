@@ -89,3 +89,18 @@ describe('GlobalSearch — MonitoredAsset lido via backend.entities (rodada 3b, 
     await screen.findByText('Bitcoin');
   });
 });
+
+// Achado A-7 do Raio-X de UI/UX (varredura fresca, docs/known-risks.md item
+// 214, 2ª sub-rodada): o input da própria Busca Global usava `outline-none`
+// sem nenhum substituto visível de foco — mesmo achado e mesmo fix mecânico
+// já aplicado em TriggerBacktestPanel.jsx (1ª sub-rodada).
+describe('GlobalSearch — input tem foco visível (achado A-7)', () => {
+  it('REGRESSÃO: o input de busca tem focus-visible:ring', async () => {
+    signalListMock.mockResolvedValue([]);
+    monitoredAssetListMock.mockResolvedValue([]);
+    renderSearch();
+    fireEvent.click(screen.getByRole('button', { name: /Buscar ativo ou alerta/i }));
+    const input = screen.getByPlaceholderText(/Buscar ativo ou alerta/i);
+    expect(input.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
+  });
+});

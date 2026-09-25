@@ -189,3 +189,31 @@ describe('Verification — botão "Reenviar" usa Tooltip em vez de title= nativo
     expect(resendButton.getAttribute('title')).toBeNull();
   });
 });
+
+// Achado A-7 do Raio-X de UI/UX (varredura fresca, docs/known-risks.md item
+// 214, 2ª sub-rodada): o campo "Anotações sobre esta revisão..." e o filtro
+// "Buscar símbolo..." usavam `outline-none` sem substituto visível de foco —
+// mesmo achado/fix de TriggerBacktestPanel.jsx (1ª sub-rodada).
+describe('Verification — campos têm foco visível (achado A-7)', () => {
+  it('REGRESSÃO: "Anotações sobre esta revisão..." tem focus-visible:ring', async () => {
+    verificationTaskFilterMock.mockResolvedValue([TASK]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+
+    renderPage(<Verification />);
+
+    const notes = await screen.findByPlaceholderText('Anotações sobre esta revisão...');
+    expect(notes.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
+  });
+
+  it('REGRESSÃO: filtro "Buscar símbolo..." tem focus-visible:ring', async () => {
+    verificationTaskFilterMock.mockResolvedValue([TASK]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+
+    renderPage(<Verification />);
+
+    const search = await screen.findByPlaceholderText('Buscar símbolo...');
+    expect(search.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
+  });
+});

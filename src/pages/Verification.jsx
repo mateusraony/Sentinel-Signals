@@ -59,7 +59,7 @@ function NotesField({ task, onSave }) {
       onBlur={() => { if (value !== (task.notes || '')) onSave(value); }}
       placeholder="Anotações sobre esta revisão..."
       rows={2}
-      className="w-full px-2.5 py-1.5 rounded-lg text-[11px] font-mono outline-none resize-none"
+      className="w-full px-2.5 py-1.5 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
       style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }}
     />
   );
@@ -228,7 +228,7 @@ export default function Verification() {
             placeholder="Buscar símbolo..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-7 pr-3 py-1.5 rounded-lg text-[10px] font-mono outline-none"
+            className="w-full pl-7 pr-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}
           />
         </div>

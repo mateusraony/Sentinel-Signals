@@ -364,3 +364,18 @@ describe('Trades — botões usam Tooltip em vez de title= nativo (achado A-6)',
     expect(badge.getAttribute('tabindex')).toBe('0');
   });
 });
+
+// Achado A-7 do Raio-X de UI/UX (varredura fresca, docs/known-risks.md item
+// 214, 2ª sub-rodada): o filtro "Buscar operação..." usava `outline-none`
+// sem substituto visível de foco — mesmo achado/fix de
+// TriggerBacktestPanel.jsx (1ª sub-rodada).
+describe('Trades — filtro "Buscar operação..." tem foco visível (achado A-7)', () => {
+  it('REGRESSÃO: input tem focus-visible:ring', async () => {
+    mockBackend({ operations: [], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    const search = await screen.findByPlaceholderText('Buscar operação...');
+    expect(search.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
+  });
+});

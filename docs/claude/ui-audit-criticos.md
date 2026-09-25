@@ -632,6 +632,28 @@ inalterado). Revisão cética própria (sem verificação visual via
 navegador real — mesma ressalva de sempre), detalhe completo em
 `docs/known-risks.md` item 214.
 
+## Backlog Alta prioridade — 17ª rodada (2026-09-25): A-7 (2ª sub-rodada, `outline-none` avulsos) corrigida
+
+Fecha os 11 achados avulsos restantes da Categoria 1 de A-7 — inclui o
+input da própria **Busca Global** (`GlobalSearch.jsx`, citada
+explicitamente no achado original).
+
+- [x] **A-7 (2ª sub-rodada) — 11 ocorrências, 7 arquivos.**
+  `GlobalSearch.jsx` (1, Busca Global), `PredictiveAnalysis.jsx` (1),
+  `Alerts.jsx` (1), `Verification.jsx` (2), `MonthlyReport.jsx` (1),
+  `Trades.jsx` (1), `Backtest.jsx` (4). Mesmo fix mecânico da 1ª
+  sub-rodada: `outline-none` → `outline-none focus-visible:ring-1
+  focus-visible:ring-ring`. **Testes novos:** `PredictiveAnalysis.test.jsx`,
+  `Alerts.test.jsx` e `MonthlyReport.test.jsx` (não existiam) + casos
+  novos em `GlobalSearch.test.jsx`/`Verification.test.jsx`/
+  `Trades.test.jsx`/`Backtest.test.jsx`.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2053 testes; teto de typecheck 16,
+inalterado). Com esta rodada, **A-7 tem a Categoria 1 inteira fechada**
+(17/17) — 13 de 24 ocorrências totais. Detalhe completo em
+`docs/known-risks.md` item 215.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -665,13 +687,14 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
   Global). **Varredura fresca (16ª rodada, item 214): contagem real
   de 24 ocorrências em ~11 arquivos (estimativa original também abaixo
   da realidade, igual A-6), divididas em 5 sub-rodadas sugeridas. 1ª
-  sub-rodada (`TriggerBacktestPanel.jsx`, 6 ocorrências) corrigida —
-  ver 16ª rodada acima. 18 de 24 ocorrências restantes: 11 avulsas de
-  `outline-none` (2ª sub-rodada, inclui `GlobalSearch.jsx`), 2 linhas
-  clicáveis (3ª sub-rodada), os 3 ícones de `Assets.jsx` (4ª
-  sub-rodada, fecha o último item de A-6) e os 2 modais caseiros que
-  exigem decisão de design (5ª sub-rodada). Detalhe em
-  `docs/known-risks.md` item 214.**
+  sub-rodada (`TriggerBacktestPanel.jsx`, 6 ocorrências, 16ª rodada) e
+  2ª sub-rodada (11 ocorrências avulsas, inclui `GlobalSearch.jsx`, 17ª
+  rodada) corrigidas — **Categoria 1 (`outline-none`) inteira fechada,
+  13 de 24 ocorrências totais.** Restam: 3ª sub-rodada (2 linhas
+  clicáveis — `Alerts.jsx`/`RecentAlertsList.jsx`), 4ª (os 3 ícones de
+  `Assets.jsx`, fecha o último item de A-6) e 5ª (os 2 modais caseiros
+  que exigem decisão de design). Detalhe em `docs/known-risks.md`
+  item 214/215.**
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
 - [x] A-10 — "Geral" na Confiança ao Vivo mistura BUY/SELL sem aviso. **Corrigido, ver seção acima.**
@@ -703,15 +726,17 @@ pra próxima rodada: puxar A-7 pra frente resolve esse último item de
 A-6 de quebra.
 
 A-7 (foco de teclado invisível) já tem varredura fresca completa (item
-214, 24 ocorrências reais em ~11 arquivos, 5 sub-rodadas sugeridas) e a
-1ª sub-rodada (`TriggerBacktestPanel.jsx`) corrigida. Próxima sub-rodada
-natural: a 2ª, os 11 achados avulsos de `outline-none` restantes
-(inclui `GlobalSearch.jsx`, a própria Busca Global citada no achado
-original) — mesmo padrão mecânico já validado na 1ª sub-rodada, só
-espalhado por mais arquivos. Depois dela: 3ª (linhas clicáveis de
-`Alerts.jsx`/`RecentAlertsList.jsx`), 4ª (os 3 ícones de `Assets.jsx`,
-que fecha o último item pendente de A-6) e 5ª (os 2 modais caseiros,
-que exigem decisão de design — maior risco, por último).
+214, 24 ocorrências reais em ~11 arquivos, 5 sub-rodadas sugeridas) e
+as 1ª (`TriggerBacktestPanel.jsx`) e 2ª (11 ocorrências avulsas, inclui
+`GlobalSearch.jsx`) sub-rodadas corrigidas — **Categoria 1
+(`outline-none`) inteira fechada, 13 de 24 ocorrências totais**.
+Próxima sub-rodada natural: a 3ª, as 2 linhas clicáveis sem foco por
+teclado (`Alerts.jsx:185-197` + `RecentAlertsList.jsx:52-56`) —
+reusando o padrão `role="button"`+`tabIndex={0}`+`onKeyDown` já em
+produção em `AssetCard.jsx`/`TradeHistory.jsx` (achado A-8). Depois
+dela: 4ª (os 3 ícones de `Assets.jsx`, que fecha o último item
+pendente de A-6) e 5ª (os 2 modais caseiros, que exigem decisão de
+design — maior risco, por último).
 
 A-15 (AssetCard sem divulgação progressiva) fica deliberadamente pra
 junto da reorganização completa do Dashboard (seção L), não como item
