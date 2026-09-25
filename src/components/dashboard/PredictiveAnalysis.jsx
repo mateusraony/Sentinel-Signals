@@ -236,21 +236,23 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
           {scoreBuckets.length > 0 && (
             <div className="glass-card rounded-xl p-4">
               <h3 className="text-xs font-bold text-foreground mb-3">Taxa de acerto por faixa de score — {selected.signal_type} {selected.timeframe?.toUpperCase()}</h3>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={scoreBuckets} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} axisLine={false} tickLine={false} />
-                  <Tooltip
-                    contentStyle={{ background: 'rgba(6,8,15,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }}
-                    formatter={(value, name, props) => [`${Number(value).toFixed(0)}% (${props.payload.n} op.)`, 'Taxa de acerto']}
-                  />
-                  <Bar dataKey="winRate" radius={[4, 4, 0, 0]}>
-                    {scoreBuckets.map((b, i) => (
-                      <Cell key={i} fill={b.winRate >= 55 ? '#00ff80' : b.winRate >= 45 ? '#ffd166' : '#ff1478'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <div role="img" aria-label={`Gráfico de barras da taxa de acerto por faixa de score de ${scoreBuckets.length} faixas, para ${selected.signal_type} ${selected.timeframe?.toUpperCase()}`}>
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={scoreBuckets} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} axisLine={false} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{ background: 'rgba(6,8,15,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }}
+                      formatter={(value, name, props) => [`${Number(value).toFixed(0)}% (${props.payload.n} op.)`, 'Taxa de acerto']}
+                    />
+                    <Bar dataKey="winRate" radius={[4, 4, 0, 0]}>
+                      {scoreBuckets.map((b, i) => (
+                        <Cell key={i} fill={b.winRate >= 55 ? '#00ff80' : b.winRate >= 45 ? '#ffd166' : '#ff1478'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
               <p className="text-[10px] font-mono text-muted-foreground mt-1">
                 Cada barra é uma faixa de score de {SCORE_BUCKET_SIZE} pontos, entre operações fechadas com a mesma direção/timeframe do sinal selecionado.
               </p>

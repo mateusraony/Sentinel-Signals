@@ -120,7 +120,7 @@ export default function PerformanceOverview() {
               {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}% total
             </span>
           </div>
-          <div style={{ height: 140 }}>
+          <div style={{ height: 140 }} role="img" aria-label={`Gráfico de área da evolução do saldo acumulado, ${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}% no total`}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -28, bottom: 0 }}>
                 <defs>

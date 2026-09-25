@@ -120,7 +120,7 @@ export default function WeeklySummary() {
 
         <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <div className="text-[8px] font-mono uppercase text-muted-foreground mb-1">P&L por dia</div>
-          <div style={{ height: 64 }}>
+          <div style={{ height: 64 }} role="img" aria-label={`Gráfico de barras do P&L por dia da semana, ${data.totalPnl >= 0 ? '+' : ''}${data.totalPnl.toFixed(2)}% no total`}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.daily} margin={{ top: 2, right: 2, bottom: 0, left: 2 }}>
                 <Tooltip
