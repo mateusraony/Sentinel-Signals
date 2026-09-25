@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 function AnimatedNumber({ value }) {
   const [display, setDisplay] = useState(0);
@@ -42,10 +43,16 @@ export default function StatsCard({ icon: Icon, label, value, color, glowColor, 
         <div>
           <p className="text-xs font-mono text-muted-foreground uppercase tracking-wider mb-1">{label}</p>
           {error ? (
-            <p className="text-2xl font-bold font-mono flex items-center gap-1.5" style={{ color: 'rgba(255,255,255,0.35)' }}
-              title="Não foi possível confirmar este número agora — falha ao atualizar.">
-              <AlertTriangle className="w-4 h-4" style={{ color: '#ff9f43' }} />—
-            </p>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="text-2xl font-bold font-mono flex items-center gap-1.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  <AlertTriangle className="w-4 h-4" style={{ color: '#ff9f43' }} />—
+                </p>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                Não foi possível confirmar este número agora — falha ao atualizar.
+              </TooltipContent>
+            </Tooltip>
           ) : (
             <p className="text-3xl font-bold font-mono number-glow" style={{ color: color || '#fff' }}>
               <AnimatedNumber value={value} />

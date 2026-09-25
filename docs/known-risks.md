@@ -26437,3 +26437,44 @@ propriedade que não pode regredir).
   fail-open **intencional** (`scanner.js:277-285`, `.claude/rules/
   trading-engine.md`), com o nível de log subido de `console.warn` para
   `logError` DE PROPÓSITO para não passar despercebido. Não é bug.
+
+## 211. Backlog do Raio-X — A-6, 7ª sub-rodada (`StatsCard.jsx` + `Assets.jsx:292`, 2 ocorrências) corrigida (2026-09-25)
+
+Continuação de A-6. Fecha o que restava de **mecânico** no backlog:
+`StatsCard.jsx:44-48` (badge "—" quando `error=true`, componente só
+usado por `Dashboard.jsx`, sem teste dedicado antes) e
+`Assets.jsx:289-295` (badge "backfill pendente"). Ambos `<span>`/`<p>`
+não focáveis com texto visível, mesmo Padrão 3 de sempre —
+`Tooltip`/`TooltipTrigger asChild` + `tabIndex={0}` novo.
+
+**Deliberadamente NÃO tocado nesta rodada:** os 3 ícones SVG de
+`Assets.jsx:284-288` (`XCircle`/`CheckCircle2`/`MinusCircle`, status de
+scan) — são elementos ícone-só **sem nenhum wrapper focável**, e
+corrigi-los de verdade exige primeiro decidir/implementar o tema A-7
+(foco de teclado), não é um fix mecânico isolado como os dois desta
+rodada.
+
+### Testes
+
+`StatsCard.jsx` não tinha teste dedicado — criado `StatsCard.test.jsx`
+novo (2 casos: erro vira gatilho focável; sem erro, não renderiza o
+Tooltip). `Assets.test.jsx` já existia — 1 caso novo com fixture
+`backfill_check_status: 'pending'`. Ambos confirmados falhando sem o
+fix via `git stash`.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2036 testes, +3 dos testes novos; teto de typecheck em 16,
+inalterado). Revisão cética própria: `git diff --stat` confirma só os
+2 arquivos esperados tocados; grep no diff por `backend.`/`scanner.js`/
+`assetHealthcheckReason` não encontra nada — nenhuma lógica de trading
+tocada. **Não rodei verificação visual via navegador real nesta
+rodada** — mesma ressalva das rodadas anteriores, padrão mecânico
+idêntico.
+
+Com esta rodada, A-6 fica reduzido a itens que exigem decisão/escopo
+maior, não mais trabalho mecânico isolado: os 3 ícones SVG de
+`Assets.jsx` (tema A-7), `Verification.jsx:345` (botão desabilitado,
+mesmo padrão já resolvido 2x, só não priorizado ainda) e
+`src/components/ui/sidebar.jsx` (dead code, decisão de remover ou não).

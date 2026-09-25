@@ -8,7 +8,7 @@
 // motivo certo por ativo. A lógica da função em si já é testada em
 // `src/lib/assetHealthcheck.test.js` — aqui só confirmamos a integração/UI.
 import React from 'react';
-import { describe, it, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, cleanup } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 import Assets from './Assets.jsx';
@@ -48,5 +48,24 @@ describe('Assets — badge LIVE/STALE reflete o dead-man\'s-switch real (achado 
     screen.getByText('LIVE');
     screen.getByText('STALE');
     screen.getByText('ERRO');
+  });
+});
+
+// Achado A-6 do Raio-X de UI/UX (7ª sub-rodada): o badge "backfill
+// pendente" usava title= nativo. Migrado pro Tooltip do Radix
+// (TooltipTrigger asChild + tabIndex={0} novo, já que o <span> não é
+// focável por padrão).
+describe('Assets — badge "backfill pendente" usa Tooltip em vez de title= nativo (achado A-6)', () => {
+  it('REGRESSÃO: não tem title= nativo, vira gatilho focável', async () => {
+    monitoredAssetListMock.mockResolvedValue([
+      { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN(), backfill_check_status: 'pending' },
+    ]);
+
+    renderPage(<Assets />);
+
+    await screen.findByText('BTC/USDT');
+    const badge = screen.getByText(/backfill pendente/).closest('[tabindex="0"]');
+    expect(badge).not.toBeNull();
+    expect(badge.getAttribute('title')).toBeNull();
   });
 });
