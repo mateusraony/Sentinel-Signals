@@ -282,6 +282,9 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
         @keyframes flash-sell { 0%,100%{box-shadow:0 0 20px rgba(255,20,120,0.07)} 50%{box-shadow:0 0 40px rgba(255,20,120,0.5),0 0 80px rgba(255,20,120,0.2)} }
         .flash-buy { animation: flash-buy 0.8s ease-in-out 5; }
         .flash-sell { animation: flash-sell 0.8s ease-in-out 5; }
+        @media (prefers-reduced-motion: reduce) {
+          .flash-buy, .flash-sell { animation: none; }
+        }
       `}</style>
       <div
         role="button"

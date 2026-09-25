@@ -64,3 +64,16 @@ describe('PineScript — aba Sincronização reflete parsedConfig (achado A-4)',
     expect(screen.queryByText(/score ≥ 75/)).toBeNull();
   });
 });
+
+// Achado M-12 do Raio-X de UI/UX (Média Prioridade): Settings.jsx e
+// PineScript.jsx editam os mesmos parâmetros (rng_per, minScore, ATR
+// mult, TP1R etc.) sem nenhum aviso cruzado visível — só um comentário
+// de código mencionava a duplicidade. Este teste prova o link novo no
+// aviso "Sincronização automática ativa" (aba Editor, sempre visível).
+describe('PineScript — aviso de sincronização linka pra Ajuste Fino (achado M-12)', () => {
+  it('REGRESSÃO: o aviso "Sincronização automática ativa" tem um link pra /settings', async () => {
+    renderPage(<PineScript />);
+    const link = await screen.findByRole('link', { name: 'Ajuste Fino' });
+    expect(link.getAttribute('href')).toBe('/settings');
+  });
+});

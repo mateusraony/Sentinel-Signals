@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { backend } from '@/api/entities';
 import { Save, Copy, RefreshCw, Code2, AlertTriangle, CheckCircle2, Info, Layers, Zap } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -1227,7 +1228,9 @@ export default function PineScript() {
               <strong style={{ color: '#00e5ff' }}>Sincronização automática ativa.</strong> Ao salvar, o sistema
               extrai os parâmetros do Pine Script (rng_per, rng_qty, minScore, ATR mult, TP1R, etc.) e os
               aplica automaticamente ao scanner e aos ativos — <strong style={{ color: '#00ff80' }}>sem precisar
-              alterar nada no bot</strong>. Os parâmetros ativos são:
+              alterar nada no bot</strong>. Os mesmos parâmetros também aparecem em{' '}
+              <Link to="/settings" className="font-bold underline underline-offset-2">Ajuste Fino</Link>
+              {' '}— quem salvar por último vence. Os parâmetros ativos são:
             </span>
           </div>
           {/* Parsed config preview */}
