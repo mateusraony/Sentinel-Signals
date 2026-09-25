@@ -26198,3 +26198,57 @@ verificação visual via navegador real nesta rodada** (padrão mecânico
 idêntico ao já usado nas duas sub-rodadas anteriores, sem CSS novo além
 de `cursor-help`, já usado em `Backtest.jsx`) — registrado aqui por
 disciplina de verdade documental, não confirmado por screenshot.
+
+## 207. Backlog do Raio-X — A-6, 4ª sub-rodada (`EventTimeline.jsx`, 2 ocorrências) corrigida (2026-09-25)
+
+Continuação de A-6. Alvo: `EventTimeline.jsx`, componente **compartilhado**
+(`CandleBoundTag`/`DetectionLag` são usados por `TradeCard.jsx` — via
+`EventRow` — e diretamente por `src/pages/TradeHistory.jsx`; `Trades.jsx`
+também usa `EventTimeline`/`fmtBRT` do mesmo arquivo). Rodada pequena:
+só 2 ocorrências de `title=` nativo no arquivo inteiro (89 linhas),
+ambas em `<span>` não focável com texto visível ao lado — mesmo Padrão 3
+já usado em `Backtest.jsx`/`TradeCard.jsx` (`TooltipTrigger asChild` +
+`tabIndex={0}` novo).
+
+### As 2 ocorrências
+
+- `CandleBoundTag` (o sufixo "(vela)" que aparece ao lado de um horário
+  quando o evento veio de fechamento de candle, não de tick) — sempre
+  renderiza quando o componente é chamado; o pai (`EventRow`) já decide
+  condicionalmente SE ele é chamado (`event.candleBound && <CandleBoundTag
+  />`), então o componente em si não precisou de nenhuma ramificação
+  interna.
+- `DetectionLag` (o sufixo "(detectado Xh depois)" que aparece quando o
+  atraso entre o fechamento real do candle e a detecção do scan passa de
+  20min) — já tinha 2 `if (...) return null` antes do JSX decidindo se o
+  componente inteiro renderiza; o `title=`→`Tooltip` não tocou esse gate.
+
+Nenhuma das duas é ícone-só, tem `disabled` ou é puramente decorativa —
+perfil mais simples que as 2 rodadas anteriores (sem casos especiais).
+
+### Testes
+
+`EventTimeline.jsx` não tinha teste dedicado (só coberto indiretamente
+via `Trades.test.jsx`/`TradeHistory.test.jsx`) — criado
+`EventTimeline.test.jsx` novo, com `TooltipProvider` (único provedor
+necessário; o componente não usa TanStack Query nem rotas). 3 casos: os 2
+achados A-6 (title nulo + tabindex="0" em cada componente) + 1 caso de
+regressão trivial confirmando que o gate de `LAG_THRESHOLD_MS` do
+`DetectionLag` não foi alterado pela migração (gap abaixo do threshold
+continua renderizando `null`). Os 2 primeiros confirmados falhando sem o
+fix via `git stash`; o 3º não depende do fix (é sobre o gate
+pré-existente) e passa nos dois lados, como esperado.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2023 testes, +3 dos testes novos; teto de typecheck em 16,
+inalterado). Revisão cética própria: `git diff --stat` confirma só o
+arquivo esperado tocado; grep no diff por `eventTimeline.js`/
+`scanner.js`/`backend.` não encontra nada — a lógica que decide QUAIS
+eventos existem (`src/lib/eventTimeline.js`, mencionada no comentário de
+topo do próprio arquivo) não foi tocada, só a apresentação.
+`Trades.test.jsx`/`TradeHistory.test.jsx` (ambos usam `renderPage()`, que
+já inclui `TooltipProvider`) continuam verdes sem nenhuma mudança.
+**Não rodei verificação visual via navegador real nesta rodada** — mesma
+ressalva das 2 rodadas anteriores, padrão mecânico idêntico.

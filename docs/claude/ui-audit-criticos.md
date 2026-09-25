@@ -479,6 +479,28 @@ inalterado). Revisão cética própria (sem verificação visual via
 navegador real — padrão mecânico idêntico às rodadas anteriores),
 detalhe completo em `docs/known-risks.md` item 206.
 
+## Backlog Alta prioridade — 11ª rodada (2026-09-25): A-6 (4ª sub-rodada, `EventTimeline.jsx`) corrigida
+
+Componente compartilhado (`CandleBoundTag`/`DetectionLag` usados por
+`TradeCard.jsx` e `TradeHistory.jsx`; `EventTimeline`/`fmtBRT` usados
+direto por `Trades.jsx`). Rodada pequena: só 2 ocorrências de `title=`
+nativo no arquivo inteiro, ambas em `<span>` não focável, mesmo Padrão 3
+já usado nas 2 rodadas anteriores.
+
+- [x] **A-6 (4ª sub-rodada) — `EventTimeline.jsx`, 2 ocorrências.**
+  `CandleBoundTag` ("(vela)") e `DetectionLag` ("(detectado Xh depois)")
+  viraram `Tooltip`/`TooltipTrigger asChild` com `tabIndex={0}` novo, sem
+  casos especiais (nenhuma ícone-só, `disabled` ou decorativa).
+  **Testes novos:** `EventTimeline.test.jsx` (não existia) — 2 casos do
+  achado A-6 + 1 caso confirmando que o gate de `LAG_THRESHOLD_MS` do
+  `DetectionLag` não foi alterado.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2023 testes; teto de typecheck 16,
+inalterado). Revisão cética própria (sem verificação visual via
+navegador real — mesma ressalva de sempre), detalhe completo em
+`docs/known-risks.md` item 207.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -493,11 +515,11 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] A-5 — Sidebar desktop sem nome acessível em nenhum dos 12 itens. **Corrigido, ver seção acima.**
 - [ ] A-6 — `title=` nativo em vez de Tooltip acessível. **Contagem real:
   43 ocorrências/16 arquivos (não ~15 como estimado). 1ª sub-rodada
-  (`Backtest.jsx`, 3), 2ª sub-rodada (Grupo 1, 6 arquivos/11) e 3ª
-  sub-rodada (`TradeCard.jsx`, 9) corrigidas — ver 8ª/9ª/10ª rodadas
-  acima. 23 de 43 ocorrências fechadas. Restam ~8 arquivos/~20
-  ocorrências (`EventTimeline.jsx`, Grupo 2 restante, casos especiais),
-  divisão em `docs/known-risks.md` item 204.**
+  (`Backtest.jsx`, 3), 2ª sub-rodada (Grupo 1, 6 arquivos/11), 3ª
+  sub-rodada (`TradeCard.jsx`, 9) e 4ª sub-rodada (`EventTimeline.jsx`,
+  2) corrigidas — ver 8ª/9ª/10ª/11ª rodadas acima. 25 de 43 ocorrências
+  fechadas. Restam ~7 arquivos/~18 ocorrências (Grupo 2 restante, casos
+  especiais), divisão em `docs/known-risks.md` item 204.**
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
@@ -515,14 +537,13 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 ## Como continuar
 
 Próxima rodada sugerida (não decidida): A-1 a A-5, A-8 a A-14 já
-corrigidos (12 de 15 itens de Alta prioridade); A-6 com 3 de várias
-sub-rodadas corrigidas (`Backtest.jsx` + Grupo 1 + `TradeCard.jsx`, 23 de
-43 ocorrências). Próximas sub-rodadas sugeridas pra A-6 (detalhe em
-`docs/known-risks.md` item 204/205/206): `EventTimeline.jsx`
-(componente compartilhado, propaga pra 3+ telas — próximo natural, ainda
-não investigado a fundo); Grupo 2 restante (~15 badges/textos com
-abreviação fora de TradeCard, incluindo `Trades.jsx:282` já
-identificado); casos especiais (botão desabilitado — mesmo padrão já
+corrigidos (12 de 15 itens de Alta prioridade); A-6 com 4 de várias
+sub-rodadas corrigidas (`Backtest.jsx` + Grupo 1 + `TradeCard.jsx` +
+`EventTimeline.jsx`, 25 de 43 ocorrências). Próximas sub-rodadas
+sugeridas pra A-6 (detalhe em `docs/known-risks.md` item
+204/205/206/207): Grupo 2 restante (~15 badges/textos com abreviação,
+incluindo `Trades.jsx:282` já identificado — próximo natural, maior bloco
+que resta); casos especiais (botão desabilitado — mesmo padrão já
 resolvido 2x, falta só `Verification.jsx:345`; ícones SVG não focáveis em
 Assets.jsx que roçam o tema do A-7; decisão sobre remover
 `src/components/ui/sidebar.jsx`, código morto). A-7 (foco de teclado

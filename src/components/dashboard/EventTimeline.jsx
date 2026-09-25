@@ -1,5 +1,6 @@
 import React from 'react';
 import moment from 'moment';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 /**
  * Apresentação da linha do tempo (docs/known-risks.md item 161).
@@ -26,10 +27,16 @@ export function fmtBRT(iso, { withDate = true } = {}) {
 // vez de fingir precisão de tick.
 export function CandleBoundTag() {
   return (
-    <span className="text-[8px] text-muted-foreground/50"
-      title="Fechamento da vela que confirmou o toque — cota máxima; o cruzamento real do nível pode ter sido antes, dentro da mesma vela (só há dado OHLC, sem tick intrabar)">
-      {' '}(vela)
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="text-[8px] text-muted-foreground/50 cursor-help" tabIndex={0}>
+          {' '}(vela)
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+        Fechamento da vela que confirmou o toque — cota máxima; o cruzamento real do nível pode ter sido antes, dentro da mesma vela (só há dado OHLC, sem tick intrabar)
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -46,10 +53,16 @@ export function DetectionLag({ realTime, detectedAt }) {
   const hours = gapMs / 3_600_000;
   const label = hours >= 1 ? `${hours.toFixed(1)}h` : `${Math.round(gapMs / 60_000)}min`;
   return (
-    <span className="text-[8px] text-amber-500/80"
-      title="Diferença entre o fechamento real do candle e quando o scan detectou/gravou — atraso grande aqui indica falha do cron ou queda de cota">
-      {' '}(detectado {label} depois)
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="text-[8px] text-amber-500/80 cursor-help" tabIndex={0}>
+          {' '}(detectado {label} depois)
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+        Diferença entre o fechamento real do candle e quando o scan detectou/gravou — atraso grande aqui indica falha do cron ou queda de cota
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
