@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TrendingUp, TrendingDown, Zap } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { fetch24hStats } from '@/lib/marketDataProvider';
 import { activateSignalManually } from '@/lib/scanner';
 import { logError } from '@/lib/logger';
@@ -309,10 +310,17 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
                 <span className="text-[8px] font-mono" style={{ color: isStale ? staleMeta.color : '#00ff80' }}>{isStale ? staleMeta.shortLabel : 'LIVE'}</span>
               </span>
               {tradeOpsUnavailable && (
-                <span className="flex items-center gap-0.5" title="Não foi possível confirmar operações ativas agora — o status abaixo pode estar desatualizado.">
-                  <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: '#ff9f43' }} />
-                  <span className="text-[8px] font-mono" style={{ color: '#ff9f43' }}>OP?</span>
-                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="flex items-center gap-0.5 cursor-help" tabIndex={0}>
+                      <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: '#ff9f43' }} />
+                      <span className="text-[8px] font-mono" style={{ color: '#ff9f43' }}>OP?</span>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                    Não foi possível confirmar operações ativas agora — o status abaixo pode estar desatualizado.
+                  </TooltipContent>
+                </Tooltip>
               )}
             </div>
             {/* TF Trend row — always visible, subtle */}
@@ -334,21 +342,27 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
                 )}
               </>
             ) : <span className="text-xs text-muted-foreground">—</span>}
-            <div
-              className="text-[8px] font-mono mt-0.5"
-              style={{ color: 'rgba(255,255,255,0.3)' }}
-              title="Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade."
-            >
-              Confl.: <span style={{ color: score >= 85 ? '#00ff80' : score >= 65 ? '#ffd166' : '#ff9f43' }}>{score}</span>
-            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="text-[8px] font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                  Confl.: <span style={{ color: score >= 85 ? '#00ff80' : score >= 65 ? '#ffd166' : '#ff9f43' }}>{score}</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
+              </TooltipContent>
+            </Tooltip>
             {fundingRate !== null && (
-              <div
-                className="text-[8px] font-mono mt-0.5"
-                style={{ color: 'rgba(255,255,255,0.3)' }}
-                title={`Funding rate (Futures): taxa paga entre posições compradas e vendidas a cada 8h. Só informativo — não influencia nenhum sinal ou operação.${nextFundingTime ? ` Próximo: ${moment(nextFundingTime).utcOffset(-3).format('DD/MM HH:mm')} BRT.` : ''}`}
-              >
-                Fund.: <span style={{ color: fundingRate >= 0 ? '#00ff80' : '#ff1478' }}>{formatSignedPct(fundingRate * 100, 4)}</span>
-              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="text-[8px] font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                    Fund.: <span style={{ color: fundingRate >= 0 ? '#00ff80' : '#ff1478' }}>{formatSignedPct(fundingRate * 100, 4)}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  {`Funding rate (Futures): taxa paga entre posições compradas e vendidas a cada 8h. Só informativo — não influencia nenhum sinal ou operação.${nextFundingTime ? ` Próximo: ${moment(nextFundingTime).utcOffset(-3).format('DD/MM HH:mm')} BRT.` : ''}`}
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
         </div>

@@ -26330,3 +26330,58 @@ cética própria: `git diff --stat` confirma só os 2 arquivos tocados
 encontra nada — nenhuma lógica de trading tocada. **Não rodei
 verificação visual via navegador real nesta rodada** — mesma ressalva
 das rodadas anteriores, padrão mecânico idêntico.
+
+## 209. Backlog do Raio-X — A-6, 6ª sub-rodada (`AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx`, 5 ocorrências) corrigida (2026-09-25)
+
+Continuação de A-6. Terceiro bloco da varredura do item 208: 3 arquivos
+pequenos, agrupados numa rodada só — `AssetCard.jsx` (3: badge "OP?"
+quando operações ativas não puderam ser confirmadas, badge "Confl."
+sempre visível, badge "Fund." condicional a `fundingRate !== null`),
+`SignalToast.jsx` (1) e `SignalAlertBanner.jsx` (1). Os 3 últimos
+compartilham o MESMO texto de tooltip ("Confluência de indicadores
+técnicos alinhados — não é uma probabilidade de acerto do trade."), mas
+com markup/wrapper diferentes em cada arquivo — decisão: **não extrair
+um componente compartilhado** pra esse 1 texto duplicado 3x; o ganho de
+DRY é mínimo (uma string) e cada instância já teria que reimplementar o
+`className`/conteúdo visível em volta de qualquer forma, então a
+indireção não paga o próprio custo — mantido o padrão mecânico já usado
+em toda rodada anterior (repetir o `TooltipContent`).
+
+### Nuance de acessibilidade verificada (não achado novo, confirmação de precedente)
+
+`AssetCard.jsx` já é `role="button"`/`tabIndex={0}` no `<div>` do card
+inteiro (achado A-8) — adicionar `tabIndex={0}` em `<span>`/`<div>`
+ANINHADOS dentro dele levantou a pergunta: um elemento focável dentro de
+outro focável quebra alguma coisa? Não: o card já tem 2 `<button>` reais
+aninhados (TF Quick Switcher, "Ativar sinal", ambos de antes desta
+rodada) com uma guarda explícita no `onKeyDown` do card
+(`if (e.target !== e.currentTarget) return;`, já testada em
+`AssetCard.test.jsx`) que impede o Enter/Espaço num filho de disparar
+TAMBÉM a ação do card — o mesmo mecanismo protege os novos `<span>`/
+`<div tabIndex={0}>` sem precisar de nenhuma mudança na guarda.
+
+### Testes
+
+`AssetCard.test.jsx` (existia) ganhou `TooltipProvider` no `renderCard()`
++ 3 casos novos; o badge "Fund." precisou de um mock controlável de
+`fetchMarkPrice` (`vi.hoisted`, mesmo padrão de
+`src/hooks/useLivePrice.test.jsx`) pra poder testar com
+`fundingRate !== null` sem quebrar os 11 testes pré-existentes (que
+assumem `fundingRate === null`, comportamento padrão preservado via
+`beforeEach`). `SignalToast.jsx`/`SignalAlertBanner.jsx` não tinham
+teste dedicado — criados `SignalToast.test.jsx`/
+`SignalAlertBanner.test.jsx` novos. Todos os 4 casos novos (o "Confl."
+não depende de mock, sempre renderiza) confirmados falhando sem o fix
+via `git stash`.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2033 testes, +5 dos testes novos; teto de typecheck em 16,
+inalterado). Revisão cética própria: `git diff --stat` confirma só os 3
+arquivos esperados tocados; grep no diff por `backend.`/`scanner.js`/
+`activateSignalManually` não encontra nada — nenhuma lógica de trading
+tocada (`AssetCard.jsx` importa `activateSignalManually` pro botão
+"Ativar sinal", intocado por esta rodada). **Não rodei verificação
+visual via navegador real nesta rodada** — mesma ressalva das rodadas
+anteriores, padrão mecânico idêntico.

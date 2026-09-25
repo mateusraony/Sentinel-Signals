@@ -524,6 +524,34 @@ inalterado). Revisão cética própria (sem verificação visual via
 navegador real — mesma ressalva de sempre), detalhe completo em
 `docs/known-risks.md` item 208.
 
+## Backlog Alta prioridade — 13ª rodada (2026-09-25): A-6 (6ª sub-rodada, `AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx`) corrigida
+
+3 arquivos pequenos, agrupados numa rodada só (5 ocorrências). 3 dos 5
+compartilham o mesmo texto de tooltip ("Confluência de indicadores
+técnicos..."); decisão: não extrair componente compartilhado (ganho de
+DRY mínimo, markup em volta diferente em cada um) — mantido o padrão
+mecânico de sempre.
+
+- [x] **A-6 (6ª sub-rodada) — `AssetCard.jsx` (3) + `SignalToast.jsx`
+  (1) + `SignalAlertBanner.jsx` (1).** Badges "OP?"/"Confl."/"Fund."
+  (`AssetCard.jsx`) e "Score .../100" (`SignalToast.jsx`,
+  `SignalAlertBanner.jsx`) viraram `Tooltip`/`TooltipTrigger asChild`
+  com `tabIndex={0}` novo. Nuance verificada (não achado novo): o card
+  do `AssetCard.jsx` já é `role="button"`/`tabIndex={0}` inteiro (A-8) —
+  confirmado que a guarda existente no `onKeyDown` do card
+  (`e.target !== e.currentTarget`) já protege contra duplicar a ação ao
+  focar um filho, mesmo mecanismo que já protegia os `<button>`
+  aninhados (TF Quick Switcher). **Testes novos:**
+  `SignalToast.test.jsx`/`SignalAlertBanner.test.jsx` (não existiam) +
+  3 casos novos em `AssetCard.test.jsx` (badge "Fund." exigiu mock
+  controlável de `fetchMarkPrice`).
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2033 testes; teto de typecheck 16,
+inalterado). Revisão cética própria (sem verificação visual via
+navegador real — mesma ressalva de sempre), detalhe completo em
+`docs/known-risks.md` item 209.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -542,14 +570,14 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
   manual, não um erro de lógica — ver item 208). 1ª sub-rodada
   (`Backtest.jsx`, 3), 2ª sub-rodada (Grupo 1, 6 arquivos/11), 3ª
   sub-rodada (`TradeCard.jsx`, 9), 4ª sub-rodada (`EventTimeline.jsx`,
-  2) e 5ª sub-rodada (`TradeHistory.jsx` + `Trades.jsx:282`, 6)
-  corrigidas — ver 8ª-12ª rodadas acima. 31 de ~40 ocorrências fechadas.
-  Restam ~10: `Assets.jsx` (4, mas 3 são ícones SVG não focáveis — tema
-  A-7, decisão separada), `AssetCard.jsx`/`SignalToast.jsx`/
-  `SignalAlertBanner.jsx` (5, texto "Confluência" repetido nos 3),
-  `StatsCard.jsx` (1), mais os casos especiais de sempre
-  (`Verification.jsx:345`, `sidebar.jsx` dead code). Divisão detalhada em
-  `docs/known-risks.md` item 208.**
+  2), 5ª sub-rodada (`TradeHistory.jsx` + `Trades.jsx:282`, 6) e 6ª
+  sub-rodada (`AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx`,
+  5) corrigidas — ver 8ª-13ª rodadas acima. 36 de ~40 ocorrências
+  fechadas. Restam ~4: `Assets.jsx` (3 são ícones SVG não focáveis —
+  tema A-7, decisão separada; a 4ª, "backfill pendente", é um `<span>`
+  comum, Padrão 3), `StatsCard.jsx` (1), mais os casos especiais de
+  sempre (`Verification.jsx:345`, `sidebar.jsx` dead code). Divisão
+  detalhada em `docs/known-risks.md` item 208/209.**
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
@@ -567,23 +595,22 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 ## Como continuar
 
 Próxima rodada sugerida (não decidida): A-1 a A-5, A-8 a A-14 já
-corrigidos (12 de 15 itens de Alta prioridade); A-6 com 5 sub-rodadas
+corrigidos (12 de 15 itens de Alta prioridade); A-6 com 6 sub-rodadas
 corrigidas (`Backtest.jsx` + Grupo 1 + `TradeCard.jsx` +
-`EventTimeline.jsx` + `TradeHistory.jsx`/`Trades.jsx:282`, 31 de ~40
-ocorrências). Próximas sub-rodadas sugeridas pra A-6 (detalhe em
-`docs/known-risks.md` item 204/205/206/207/208): `AssetCard.jsx` (3) +
-`SignalToast.jsx` (1) + `SignalAlertBanner.jsx` (1) — agrupáveis numa
-rodada só (5 ocorrências, 3 arquivos pequenos), com o texto de
-"Confluência de indicadores técnicos..." repetido idêntico nos 3 (avaliar
-se vale extrair um componente/wrapper compartilhado em vez de repetir o
-Tooltip 3x); `StatsCard.jsx` (1, trivial); casos especiais (botão
-desabilitado — mesmo padrão já resolvido 2x, falta só
-`Verification.jsx:345`; `Assets.jsx` — 3 dos 4 `title=` são ícones SVG
-NÃO FOCÁVEIS, então corrigir ali exige decidir/implementar o tema do A-7
-primeiro, não é fix mecânico isolado; decisão sobre remover
-`src/components/ui/sidebar.jsx`, código morto). A-7 (foco de teclado
-invisível em ~15 pontos) nem começou — `Assets.jsx` é candidato a
-"empurrar" essa decisão pra frente. A-15 (AssetCard sem divulgação
+`EventTimeline.jsx` + `TradeHistory.jsx`/`Trades.jsx:282` +
+`AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx`, 36 de ~40
+ocorrências). Falta pouco pra fechar A-6 por completo — próximas
+sub-rodadas sugeridas (detalhe em `docs/known-risks.md` item
+204/205/206/207/208/209): `StatsCard.jsx` (1, trivial — candidato a
+"limpar o resto" numa rodada final pequena, junto com
+`Assets.jsx:292` "backfill pendente", que é um `<span>` comum, Padrão
+3, não SVG); casos especiais (botão desabilitado — mesmo padrão já
+resolvido 2x, falta só `Verification.jsx:345`; `Assets.jsx:284/285/287`
+— os 3 ícones SVG NÃO FOCÁVEIS, corrigir ali exige decidir/implementar
+o tema do A-7 primeiro, não é fix mecânico isolado; decisão sobre
+remover `src/components/ui/sidebar.jsx`, código morto). A-7 (foco de
+teclado invisível em ~15 pontos) nem começou — `Assets.jsx` é candidato
+a "empurrar" essa decisão pra frente. A-15 (AssetCard sem divulgação
 progressiva) fica deliberadamente pra junto da reorganização completa do
 Dashboard (seção L), não como item isolado. Depois disso, restam os 17
 itens de Média prioridade e a própria seção L. Decisão de qual seguir é

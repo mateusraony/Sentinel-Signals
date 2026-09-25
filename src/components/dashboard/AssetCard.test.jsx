@@ -7,25 +7,36 @@
 // como se tivesse durado só 1h). Este teste prova o fix: a duração
 // subtraída agora depende do timeframe do estado exibido.
 import React from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import AssetCard from './AssetCard.jsx';
 
+// fetchMarkPrice precisa ser controlável por teste (achado A-6, badge
+// "Fund." só vira Tooltip focável quando fundingRate !== null) — mesmo
+// padrão vi.hoisted já usado em src/hooks/useLivePrice.test.jsx.
+const { fetchMarkPriceMock } = vi.hoisted(() => ({ fetchMarkPriceMock: vi.fn() }));
 vi.mock('@/lib/marketDataProvider', () => ({
   fetch24hStats: async () => null,
-  fetchMarkPrice: async () => ({ markPrice: null, lastFundingRate: null, nextFundingTime: null }),
+  fetchMarkPrice: fetchMarkPriceMock,
 }));
 vi.mock('@/lib/firebaseClient', () => ({ db: {}, auth: {}, rtdb: null, app: {} }));
 
+beforeEach(() => {
+  fetchMarkPriceMock.mockReset();
+  fetchMarkPriceMock.mockResolvedValue({ markPrice: null, lastFundingRate: null, nextFundingTime: null });
+});
 afterEach(() => cleanup());
 
 function renderCard(props) {
   const client = makeTestQueryClient();
   return render(
     <QueryClientProvider client={client}>
-      <AssetCard asset={{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }} {...props} />
+      <TooltipProvider>
+        <AssetCard asset={{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }} {...props} />
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }
@@ -148,5 +159,40 @@ describe('AssetCard — suporte a teclado (achado A-8)', () => {
     const tfButton = screen.getByRole('button', { name: '4H' });
     fireEvent.keyDown(tfButton, { key: 'Enter' });
     expect(onClick).not.toHaveBeenCalled();
+  });
+});
+
+// Achado A-6 do Raio-X de UI/UX (6ª sub-rodada): 3 ocorrências de title=
+// nativo em AssetCard.jsx (badge "OP?", "Confl.", "Fund.") — todas em
+// elemento não focável com texto visível, migradas pro Tooltip do Radix
+// (TooltipTrigger asChild + tabIndex={0} novo). O card inteiro já é
+// role="button"/tabIndex={0} (achado A-8) com botões filhos reais (TF
+// Quick Switcher, testado acima) — precedente já confirmado de que
+// elemento focável aninhado dentro do card não duplica a ação dele
+// (guarda `e.target !== e.currentTarget` no onKeyDown do card).
+describe('AssetCard — badges usam Tooltip em vez de title= nativo (achado A-6)', () => {
+  it('REGRESSÃO: badge "Confl." não tem title= nativo, vira gatilho focável', () => {
+    renderCard({ latestSignal: { context: { score: 85 } } });
+    const badge = screen.getByText(/Confl\.:/);
+    expect(badge.getAttribute('title')).toBeNull();
+    expect(badge.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: badge "OP?" (operações não confirmadas) não tem title= nativo, vira gatilho focável', () => {
+    renderCard({ tradeOpsUnavailable: true });
+    const badge = screen.getByText('OP?').closest('[tabindex="0"]');
+    expect(badge).not.toBeNull();
+    expect(badge.getAttribute('title')).toBeNull();
+  });
+
+  it('REGRESSÃO: badge "Fund." (funding rate) não tem title= nativo, vira gatilho focável', async () => {
+    fetchMarkPriceMock.mockResolvedValue({ markPrice: 60000, lastFundingRate: 0.0001, nextFundingTime: null });
+    renderCard({});
+    const badge = await waitFor(() => {
+      const el = screen.getByText(/Fund\.:/);
+      expect(el.getAttribute('tabindex')).toBe('0');
+      return el;
+    });
+    expect(badge.getAttribute('title')).toBeNull();
   });
 });
