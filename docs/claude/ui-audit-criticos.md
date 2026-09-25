@@ -776,8 +776,10 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
   correção nova desta leva.**
 - [x] M-14 — CorrelationWidget: botão de remover símbolo sem aria-label. **Corrigido, ver seção "Backlog Média prioridade" abaixo.**
 - [x] M-16 — StatsCard: cor de "atenção" fixa mesmo com valor 0. **Corrigido (bug estava em `Dashboard.jsx`, não em `StatsCard.jsx`) — ver seção "Backlog Média prioridade" abaixo.**
-- [ ] Demais itens de Média prioridade (M-1, M-2, M-4, M-5, M-6, M-8,
-  M-9, M-10, M-11, M-12, M-13, M-15, M-17 — 13 de 17), Refinamentos e a
+- [x] M-1 — WeeklySummary: sem estado de carregamento, mostra "+0.00%"/0 como resultado real. **Corrigido, ver 2ª rodada abaixo.**
+- [x] M-2 — WeeklySummary: "Sinais Processados" conta qualquer fonte, não só Range Filter. **Corrigido, ver 2ª rodada abaixo.**
+- [ ] Demais itens de Média prioridade (M-4, M-5, M-6, M-8, M-9, M-10,
+  M-11, M-12, M-13, M-15, M-17 — 11 de 17), Refinamentos e a
   reorganização completa do Dashboard (seção L do relatório) — nada iniciado.
 
 ## Como continuar
@@ -800,14 +802,33 @@ A-15 (AssetCard sem divulgação progressiva) fica deliberadamente pra
 junto da reorganização completa do Dashboard (seção L), não como item
 isolado.
 
-**Backlog de Média prioridade iniciado (1ª rodada, item 220 —
-M-3/M-14/M-16 fechados; M-7 descoberto já corrigido).** Restam 13 dos
-17 itens M. Próximos candidatos a rodada mecânica (mesmo padrão desta):
-M-1, M-2, M-5, M-6, M-8, M-9, M-12. M-4/M-10/M-13/M-15 se sobrepõem à
-reorganização do Dashboard (seção L, que também inclui A-15) — decisão
-de produto maior, não mexer sem alinhamento explícito. M-11 (632
-ocorrências de fonte arbitrária em 51 arquivos) e M-17 (glossário de
-10 termos técnicos) são varreduras grandes, merecem rodada própria.
+**Backlog de Média prioridade em andamento (1ª rodada, item 220 —
+M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; M-7 descoberto já
+corrigido).** Restam 11 dos 17 itens M. Próximos candidatos a rodada
+mecânica (mesmo padrão): M-5, M-6, M-8, M-9, M-12. M-4/M-10/M-13/M-15
+se sobrepõem à reorganização do Dashboard (seção L, que também inclui
+A-15) — decisão de produto maior, não mexer sem alinhamento explícito.
+M-11 (632 ocorrências de fonte arbitrária em 51 arquivos) e M-17
+(glossário de 10 termos técnicos) são varreduras grandes, merecem
+rodada própria.
+
+## Backlog Média prioridade — 2ª rodada (2026-09-25): M-1 e M-2 corrigidos
+
+Mesmo arquivo da 1ª rodada (`WeeklySummary.jsx`, M-3) — investigação
+direta confirmou os 2 exatamente como descritos no relatório.
+
+- **M-1** — nenhuma das 2 queries lia `isLoading`; os 3 cards de stat
+  mostravam "+0.00%"/0 como resultado real antes do fetch responder.
+  Agora mostram `···` enquanto carrega.
+- **M-2** — "Sinais Processados" contava sinal de qualquer `source`,
+  inconsistente com `buySignals`/`sellSignals` do Dashboard (só
+  `range_filter`). Filtro adicionado.
+
+3 testes novos em `WeeklySummary.test.jsx`, falha reproduzida via
+`git stash` antes do fix. `npm run lint && npm test && npm run build
+&& npm run typecheck:ratchet` limpos (2073 testes, teto de typecheck
+em 13, sem mudança). Detalhe completo em `docs/known-risks.md` item
+221.
 
 ## Backlog Média prioridade — 1ª rodada (2026-09-25): M-3, M-14, M-16 corrigidos
 

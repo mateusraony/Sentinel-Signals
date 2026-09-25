@@ -15,17 +15,22 @@ const WEEK_OPS_LIMIT = 500;
 const WEEK_SIGNALS_LIMIT = 300;
 
 export default function WeeklySummary() {
-  const { data: tradeOps = [] } = useQuery({
+  const { data: tradeOps = [], isLoading: loadingOps } = useQuery({
     queryKey: ['weekly-summary-ops'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', WEEK_OPS_LIMIT),
     staleTime: 60000,
   });
 
-  const { data: recentSignals = [] } = useQuery({
+  const { data: recentSignals = [], isLoading: loadingSignals } = useQuery({
     queryKey: ['weekly-summary-signals'],
     queryFn: () => backend.entities.SignalEvent.list('-created_date', WEEK_SIGNALS_LIMIT),
     staleTime: 60000,
   });
+
+  // Achado M-1 do Raio-X: sem isto, os defaults `[]` das queries acima
+  // faziam os 3 cards mostrarem "+0.00%"/0 como se fosse resultado real
+  // por 1-2s antes do fetch responder, não como "ainda carregando".
+  const isLoading = loadingOps || loadingSignals;
 
   const data = useMemo(() => {
     const weekStart = moment().startOf('isoWeek');
@@ -35,7 +40,11 @@ export default function WeeklySummary() {
       return moment(closedAt).isSameOrAfter(weekStart);
     });
     const summary = summarizeOps(weekOps);
-    const signalsThisWeek = (recentSignals || []).filter(s => moment(s.created_date).isSameOrAfter(weekStart)).length;
+    // Achado M-2 do Raio-X: sem o filtro de source, contava sinal de
+    // qualquer origem (SMC/MACD/EMA/RSI) — inconsistente com o resto do
+    // Dashboard, onde buySignals/sellSignals só contam Range Filter.
+    const signalsThisWeek = (recentSignals || [])
+      .filter(s => s.source === 'range_filter' && moment(s.created_date).isSameOrAfter(weekStart)).length;
 
     const daily = WEEKDAY_LABELS.map((label, i) => {
       const day = moment(weekStart).add(i, 'days');
@@ -80,8 +89,8 @@ export default function WeeklySummary() {
               {data.totalPnl >= 0 ? <TrendingUp className="w-3 h-3" style={{ color: pnlColor }} /> : <TrendingDown className="w-3 h-3" style={{ color: pnlColor }} />}
               <span className="text-[8px] font-mono uppercase text-muted-foreground">P&L Semana</span>
             </div>
-            <div className="text-base font-bold font-mono" style={{ color: pnlColor }}>
-              {data.totalPnl >= 0 ? '+' : ''}{data.totalPnl.toFixed(2)}%
+            <div className="text-base font-bold font-mono" style={{ color: isLoading ? 'rgba(255,255,255,0.3)' : pnlColor }}>
+              {isLoading ? '···' : `${data.totalPnl >= 0 ? '+' : ''}${data.totalPnl.toFixed(2)}%`}
             </div>
             <div className="text-[8px] font-mono text-muted-foreground mt-0.5">{data.wins}W · {data.be}BE · {data.losses}L</div>
           </div>
@@ -90,11 +99,11 @@ export default function WeeklySummary() {
               <Target className="w-3 h-3" style={{ color: '#ffd166' }} />
               <span className="text-[8px] font-mono uppercase text-muted-foreground">Taxa de Acerto</span>
             </div>
-            <div className="text-base font-bold font-mono" style={{ color: '#ffd166' }}>
-              {data.winRate !== null ? `${data.winRate}%` : '—'}
+            <div className="text-base font-bold font-mono" style={{ color: isLoading ? 'rgba(255,255,255,0.3)' : '#ffd166' }}>
+              {isLoading ? '···' : (data.winRate !== null ? `${data.winRate}%` : '—')}
             </div>
             <div className="text-[8px] font-mono text-muted-foreground mt-0.5">
-              {data.counted > 0 ? `${data.counted} trades fechados` : 'sem trades ainda'}
+              {isLoading ? 'carregando…' : (data.counted > 0 ? `${data.counted} trades fechados` : 'sem trades ainda')}
             </div>
           </div>
           <div className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -102,7 +111,9 @@ export default function WeeklySummary() {
               <Zap className="w-3 h-3" style={{ color: '#00e5ff' }} />
               <span className="text-[8px] font-mono uppercase text-muted-foreground">Sinais Processados</span>
             </div>
-            <div className="text-base font-bold font-mono" style={{ color: '#00e5ff' }}>{data.signalsThisWeek}</div>
+            <div className="text-base font-bold font-mono" style={{ color: isLoading ? 'rgba(255,255,255,0.3)' : '#00e5ff' }}>
+              {isLoading ? '···' : data.signalsThisWeek}
+            </div>
             <div className="text-[8px] font-mono text-muted-foreground mt-0.5">desde segunda-feira</div>
           </div>
         </div>
