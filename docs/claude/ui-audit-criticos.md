@@ -552,6 +552,25 @@ inalterado). Revisão cética própria (sem verificação visual via
 navegador real — mesma ressalva de sempre), detalhe completo em
 `docs/known-risks.md` item 209.
 
+## Backlog Alta prioridade — 14ª rodada (2026-09-25): A-6 (7ª sub-rodada, `StatsCard.jsx` + `Assets.jsx:292`) corrigida
+
+Fecha o que restava de **mecânico** em A-6. 2 ocorrências: badge "—" de
+erro em `StatsCard.jsx` e badge "backfill pendente" em `Assets.jsx`.
+**Deliberadamente não tocado:** os 3 ícones SVG de `Assets.jsx`
+(status de scan) — são ícone-só sem nenhum wrapper focável, corrigir
+de verdade exige primeiro decidir/implementar o tema A-7.
+
+- [x] **A-6 (7ª sub-rodada) — `StatsCard.jsx` (1) + `Assets.jsx:292`
+  (1).** `Tooltip`/`TooltipTrigger asChild` + `tabIndex={0}` novo,
+  mesmo Padrão 3 de sempre. **Testes novos:** `StatsCard.test.jsx`
+  (não existia) + 1 caso novo em `Assets.test.jsx`.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2036 testes; teto de typecheck 16,
+inalterado). Revisão cética própria (sem verificação visual via
+navegador real — mesma ressalva de sempre), detalhe completo em
+`docs/known-risks.md` item 210.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -570,14 +589,16 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
   manual, não um erro de lógica — ver item 208). 1ª sub-rodada
   (`Backtest.jsx`, 3), 2ª sub-rodada (Grupo 1, 6 arquivos/11), 3ª
   sub-rodada (`TradeCard.jsx`, 9), 4ª sub-rodada (`EventTimeline.jsx`,
-  2), 5ª sub-rodada (`TradeHistory.jsx` + `Trades.jsx:282`, 6) e 6ª
+  2), 5ª sub-rodada (`TradeHistory.jsx` + `Trades.jsx:282`, 6), 6ª
   sub-rodada (`AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx`,
-  5) corrigidas — ver 8ª-13ª rodadas acima. 36 de ~40 ocorrências
-  fechadas. Restam ~4: `Assets.jsx` (3 são ícones SVG não focáveis —
-  tema A-7, decisão separada; a 4ª, "backfill pendente", é um `<span>`
-  comum, Padrão 3), `StatsCard.jsx` (1), mais os casos especiais de
-  sempre (`Verification.jsx:345`, `sidebar.jsx` dead code). Divisão
-  detalhada em `docs/known-risks.md` item 208/209.**
+  5) e 7ª sub-rodada (`StatsCard.jsx` + `Assets.jsx:292`, 2) corrigidas
+  — ver 8ª-14ª rodadas acima. **38 de ~40 ocorrências fechadas — todo o
+  trabalho mecânico está feito.** Só restam casos que exigem decisão:
+  os 3 ícones SVG de `Assets.jsx` (tema A-7, foco de teclado, ver seção
+  abaixo), `Verification.jsx:345` (botão desabilitado — mesmo padrão já
+  resolvido 2x, só não priorizado ainda) e `src/components/ui/sidebar.jsx`
+  (dead code — decisão de remover ou não). Divisão detalhada em
+  `docs/known-risks.md` item 208/209/210.**
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
@@ -595,24 +616,27 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 ## Como continuar
 
 Próxima rodada sugerida (não decidida): A-1 a A-5, A-8 a A-14 já
-corrigidos (12 de 15 itens de Alta prioridade); A-6 com 6 sub-rodadas
+corrigidos (12 de 15 itens de Alta prioridade); A-6 com 7 sub-rodadas
 corrigidas (`Backtest.jsx` + Grupo 1 + `TradeCard.jsx` +
 `EventTimeline.jsx` + `TradeHistory.jsx`/`Trades.jsx:282` +
-`AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx`, 36 de ~40
-ocorrências). Falta pouco pra fechar A-6 por completo — próximas
-sub-rodadas sugeridas (detalhe em `docs/known-risks.md` item
-204/205/206/207/208/209): `StatsCard.jsx` (1, trivial — candidato a
-"limpar o resto" numa rodada final pequena, junto com
-`Assets.jsx:292` "backfill pendente", que é um `<span>` comum, Padrão
-3, não SVG); casos especiais (botão desabilitado — mesmo padrão já
-resolvido 2x, falta só `Verification.jsx:345`; `Assets.jsx:284/285/287`
-— os 3 ícones SVG NÃO FOCÁVEIS, corrigir ali exige decidir/implementar
-o tema do A-7 primeiro, não é fix mecânico isolado; decisão sobre
-remover `src/components/ui/sidebar.jsx`, código morto). A-7 (foco de
-teclado invisível em ~15 pontos) nem começou — `Assets.jsx` é candidato
-a "empurrar" essa decisão pra frente. A-15 (AssetCard sem divulgação
-progressiva) fica deliberadamente pra junto da reorganização completa do
-Dashboard (seção L), não como item isolado. Depois disso, restam os 17
-itens de Média prioridade e a própria seção L. Decisão de qual seguir é
-do usuário (ou "seguir conforme achar melhor", como já autorizado nesta
+`AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx` +
+`StatsCard.jsx`/`Assets.jsx:292`, 38 de ~40 ocorrências). **Todo o
+trabalho mecânico de A-6 está feito** — o que resta são só decisões
+(detalhe em `docs/known-risks.md` item 204-210):
+- `Assets.jsx:284/285/287` — os 3 ícones SVG de status de scan são
+  ícone-só sem nenhum wrapper focável; corrigir de verdade exige
+  primeiro decidir/implementar A-7 (foco de teclado). Bom candidato
+  a puxar A-7 pra frente, já que resolve os 2 de uma vez.
+- `Verification.jsx:345` — botão "Reenviar" desabilitado, mesmo
+  padrão já resolvido 2x (Backtest.jsx, TradeCard.jsx), só não
+  priorizado ainda; fix isolado de baixo risco quando quiser fechar.
+- `src/components/ui/sidebar.jsx` — dead code, decisão de remover ou
+  não (fora do escopo de UI pontual).
+
+A-7 (foco de teclado invisível em ~15 pontos, incluindo Busca Global)
+nem começou. A-15 (AssetCard sem divulgação progressiva) fica
+deliberadamente pra junto da reorganização completa do Dashboard
+(seção L), não como item isolado. Depois disso, restam os 17 itens de
+Média prioridade e a própria seção L. Decisão de qual seguir é do
+usuário (ou "seguir conforme achar melhor", como já autorizado nesta
 sessão).

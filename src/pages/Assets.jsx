@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Plus, Trash2, Loader2, CheckCircle2, XCircle, MinusCircle, History, Settings2, Coins, Clock, Activity, Search, ChevronDown, ChevronUp, TrendingUp, Crosshair } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import AddAssetForm from '@/components/assets/AddAssetForm';
 import AssetConfigPanel from '@/components/assets/AssetConfigPanel';
 import AssetDetailPanel from '@/components/assets/AssetDetailPanel';
@@ -287,11 +288,17 @@ export default function Assets() {
                           <MinusCircle className="w-3 h-3 text-muted-foreground/40" title="Ainda não escaneado" />
                         )}
                         {asset.backfill_check_status === 'pending' && (
-                          <span className="flex items-center gap-0.5 text-[8px] font-mono px-1.5 py-0.5 rounded"
-                            style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.25)', color: '#ff9f43' }}
-                            title="Verificação retroativa de sinais ainda pendente para este ativo">
-                            <History className="w-2.5 h-2.5" />backfill pendente
-                          </span>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="flex items-center gap-0.5 text-[8px] font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
+                                style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.25)', color: '#ff9f43' }}>
+                                <History className="w-2.5 h-2.5" />backfill pendente
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                              Verificação retroativa de sinais ainda pendente para este ativo
+                            </TooltipContent>
+                          </Tooltip>
                         )}
                       </div>
 
