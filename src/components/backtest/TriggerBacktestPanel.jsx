@@ -200,20 +200,20 @@ export default function TriggerBacktestPanel({ onReportReady }) {
           <label className="text-[9px] font-mono text-muted-foreground block mb-1">Rótulo do teste (obrigatório)</label>
           <input value={trialLabel} onChange={e => setTrialLabel(e.target.value)} placeholder="ex.: bull-baseline"
             disabled={isBusy}
-            className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none disabled:opacity-50"
+            className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
             <label className="text-[9px] font-mono text-muted-foreground block mb-1">De (opcional)</label>
             <input type="date" value={from} onChange={e => setFrom(e.target.value)} disabled={isBusy}
-              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none disabled:opacity-50"
+              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
           </div>
           <div>
             <label className="text-[9px] font-mono text-muted-foreground block mb-1">Até (opcional)</label>
             <input type="date" value={to} onChange={e => setTo(e.target.value)} disabled={isBusy}
-              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none disabled:opacity-50"
+              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
           </div>
         </div>
@@ -228,14 +228,14 @@ export default function TriggerBacktestPanel({ onReportReady }) {
           <div>
             <label className="text-[9px] font-mono text-muted-foreground block mb-1">Símbolos (vazio = padrão do workflow)</label>
             <input value={symbols} onChange={e => setSymbols(e.target.value)} placeholder="BTCUSDT,ETHUSDT,..." disabled={isBusy}
-              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none disabled:opacity-50"
+              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
           </div>
           <div className="grid grid-cols-2 gap-2 items-end">
             <div>
               <label className="text-[9px] font-mono text-muted-foreground block mb-1">Mínimo de operações</label>
               <input value={minTrades} onChange={e => setMinTrades(e.target.value)} placeholder="30" disabled={isBusy}
-                className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none disabled:opacity-50"
+                className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
             </div>
             <label className="flex items-center gap-1.5 text-[9px] font-mono text-muted-foreground pb-1.5">
@@ -247,7 +247,7 @@ export default function TriggerBacktestPanel({ onReportReady }) {
             <label className="text-[9px] font-mono text-muted-foreground block mb-1">Overrides de pineConfig (JSON, opcional)</label>
             <textarea value={pineConfigText} onChange={e => setPineConfigText(e.target.value)} rows={2} disabled={isBusy}
               placeholder='{"minScore":80}'
-              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none resize-none disabled:opacity-50"
+              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none disabled:opacity-50"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
           </div>
         </div>
