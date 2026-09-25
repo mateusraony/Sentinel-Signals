@@ -26465,9 +26465,14 @@ fix via `git stash`.
 ### Verificação
 
 `npm run lint && npm test && npm run build && npm run typecheck:ratchet`
-limpos (2036 testes, +3 dos testes novos; teto de typecheck em 16,
-inalterado). Revisão cética própria: `git diff --stat` confirma só os
-2 arquivos esperados tocados; grep no diff por `backend.`/`scanner.js`/
+limpos (2037 testes — **correção** de 2026-09-25, achada no pente fino
+pós-item-218: dizia "2036", mas o teste de regressão adicionado no
+item 210/PR #413 nunca tinha sido contabilizado no acumulado (2033 +
+1 do item 210 + 3 desta rodada = 2037); a discrepância "sumia"
+silenciosamente a partir do item 212 em diante, todos corretos —, +3
+dos testes novos; teto de typecheck em 16, inalterado). Revisão cética
+própria: `git diff --stat` confirma só os 2 arquivos esperados
+tocados; grep no diff por `backend.`/`scanner.js`/
 `assetHealthcheckReason` não encontra nada — nenhuma lógica de trading
 tocada. **Não rodei verificação visual via navegador real nesta
 rodada** — mesma ressalva das rodadas anteriores, padrão mecânico
@@ -26979,3 +26984,79 @@ o backlog de Alta prioridade do Raio-X de UI/UX relacionado a A-1 até
 A-14 está resolvido (A-15 deliberadamente adiado pra reorganização do
 Dashboard, seção L). Restam os 17 itens de Média prioridade e a
 própria seção L, nenhum tocado ainda.
+
+## 219. Pente fino pós-A-14: 14 itens confirmados corretos + achado novo em `Sidebar.jsx` (2026-09-25)
+
+Pedido do usuário: verificação rigorosa de tudo que A-1 a A-14
+alegavam ter corrigido, antes de seguir pro backlog de Média
+prioridade. Rodei 3 agentes Explore em paralelo (workspaces isolados,
+só leitura): um cobrindo suite completa + integridade do histórico git
++ consistência numérica da documentação; dois auditando o conteúdo
+real de cada achado (A-1 a A-7 e A-8 a A-14) — reler cada arquivo
+tocado, confirmar que a correção alegada está presente e não foi
+revertida/sobrescrita por uma rodada posterior, rodar o teste de
+regressão específico de cada achado.
+
+### Resultado: os 14 itens estão corretos — nenhuma regressão
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2067 testes, 0 falhas, 58 pulados; build
+ok; teto de typecheck em 13, exato). Histórico git íntegro: PRs
+#407-#421 mesclados em sequência, sem reverts, sem marcador de
+conflito malresolvido, branch sincronizada com `origin/main`.
+`src/components/ui/sidebar.jsx` (dead code, A-6) confirmado removido e
+sem importadores. Cada um dos 14 achados (A-1 a A-14) confirmado
+presente no código atual, com o teste de regressão correspondente
+passando. Escopo isolado respeitado em todos os arquivos revisados —
+nenhuma mudança de UI vazou pra lógica de trading/scanner/Firestore/
+Postgres. Detalhe item a item nos relatórios dos 2 agentes de
+conteúdo, ambos "PASSOU" em todos os pontos.
+
+Um erro de aritmética residual foi encontrado e corrigido no processo:
+item 211 (linha ~26468) dizia "2036 testes", deveria ser "2037" (o
+teste de regressão do item 210/PR #413 nunca tinha sido contabilizado
+no acumulado) — mesma classe dos 2 erros já corrigidos nos itens
+215/216, só que este ainda não tinha sido pego. Corrigido diretamente
+na seção do item 211, com nota de correção honesta (não apagando o
+valor original).
+
+### Achado novo (fora do escopo literal de A-1 a A-15): `Sidebar.jsx` — 3 botões ícone-só sem nome acessível
+
+`src/components/layout/Sidebar.jsx`: `QuickToggleButton` (linha 114),
+`QuickActionButton` (linha 137, instanciado na linha 97 com
+`title="Redefinir Filtros"`) e `ClearLogsButton` (linha 157) — os 3 na
+coluna de ações rápidas do sidebar desktop — não têm `aria-label`
+nenhum nos seus `<button>`, e o texto explicativo (`title` como PROP
+JS de componente customizado, não atributo HTML) só aparece num
+`<span>` com `opacity-0 group-hover:opacity-100` — sem `group-focus`/
+`focus-within` equivalente. Resultado: leitor de tela não tem nome
+acessível pra esses 3 botões (só o ícone SVG sem texto), e o texto do
+tooltip é completamente inacessível por teclado (nunca aparece ao dar
+Tab).
+
+É a MESMA classe de bug que A-6 resolveu pra outros botões ícone-só do
+projeto (ex. item 205, 2ª sub-rodada), mas nenhuma das 8 sub-rodadas
+de A-6 pegou este caso porque todas buscavam `title="`/`title={`
+como **atributo HTML nativo** — aqui `title` é uma prop de componente
+(`QuickActionButton({ title, ... })`), então nunca apareceu nos greps
+como ocorrência real (o grep até bate no texto `title=` da chamada na
+linha 97, mas o contexto mostra que é uma prop de componente, não
+atributo HTML, e por isso a leitura manual de cada sub-rodada sempre
+descartou como falso positivo — corretamente, dado o escopo literal de
+A-6, mas sem perceber que havia um problema real ali, só de outra
+natureza).
+
+**Não é regressão de nenhum dos 14 itens fechados** — é uma lacuna que
+nunca esteve no escopo literal de nenhum achado do relatório original
+do Raio-X. Não corrigido nesta rodada (fora do escopo da verificação
+pedida) — registrado aqui como candidato a uma rodada futura, mesmo
+padrão mecânico já usado ~20 vezes nesta sessão: envolver o ícone em
+`Tooltip`/`TooltipTrigger asChild`, adicionar `aria-label` no
+`<button>`, mover o texto pro `TooltipContent`.
+
+### Verificação
+
+Mudança desta rodada é só de documentação (correção do item 211 +
+este registro) — nenhum arquivo de código tocado, então não há suite
+nova pra rodar. `git diff --stat` confirma só `docs/known-risks.md`
+modificado.

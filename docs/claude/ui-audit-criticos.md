@@ -800,3 +800,20 @@ autonomamente, é uma varredura fresca dos itens de Média prioridade
 (mesmo processo do item 204/214: agente Explore + leitura direta),
 já que a lista original (M-1 a M-17) nunca foi revisitada com o mesmo
 rigor que os itens de Alta prioridade tiveram.
+
+## Pente fino pós-A-14 (2026-09-25): 14 itens confirmados corretos
+
+Auditoria rigorosa de A-1 a A-14 com 3 agentes Explore em paralelo
+(suite completa + integridade do histórico git + conteúdo de cada
+achado contra o código atual). **Os 14 itens confirmados corretos,
+nenhuma regressão entre rodadas.** Suite completa verde (2067 testes,
+lint/build/typecheck limpos). Achou e corrigiu 1 erro de aritmética
+residual (item 211: "2036"→"2037" testes) e registrou 1 achado novo
+fora do escopo original — `src/components/layout/Sidebar.jsx`, 3
+botões ícone-só (`QuickToggleButton`/`QuickActionButton`/
+`ClearLogsButton`) sem `aria-label` e com tooltip caseiro inacessível
+por teclado, nunca pego por nenhuma sub-rodada de A-6 (usa uma prop
+`title` de componente, não o atributo HTML nativo que os greps
+buscavam). Não corrigido ainda — candidato a rodada futura, mesmo
+padrão mecânico já usado no resto de A-6/A-7. Detalhe completo em
+`docs/known-risks.md` item 219.
