@@ -573,6 +573,27 @@ navegador real — mesma ressalva de sempre), detalhe completo em
 outra correção não relacionada — `lazyWithReload.js`, PR #413 — resolvido
 por conflito de merge nesta rodada, renumerado sem perda de conteúdo).
 
+## Backlog Alta prioridade — 15ª rodada (2026-09-25): A-6 (8ª sub-rodada, botão "Reenviar" de `Verification.jsx`) corrigida
+
+Fecha o último item isolado de A-6 que não exige decisão de escopo
+maior: o botão "Reenviar", com `title=` condicional em **3 textos**
+(não binário como o já resolvido "Aplicar ao Scanner" de `Backtest.jsx`).
+
+- [x] **A-6 (8ª sub-rodada) — `Verification.jsx`, botão "Reenviar"
+  (1).** Mesmo padrão do "Aplicar ao Scanner" (item 204), adaptado pra
+  3 textos de tooltip: `Tooltip` sempre presente; wrapper
+  `<span tabIndex={0}>` só quando `disabled` (por ativos indisponíveis
+  OU Telegram não configurado). **Testes novos:** 3 casos em
+  `Verification.test.jsx`, um por motivo de desabilitar + o caso
+  habilitado; `isTelegramConfigured` (mock) virou controlável por
+  teste.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2040 testes; teto de typecheck 16,
+inalterado). Revisão cética própria (sem verificação visual via
+navegador real — mesma ressalva de sempre), detalhe completo em
+`docs/known-risks.md` item 212.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -593,14 +614,15 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
   sub-rodada (`TradeCard.jsx`, 9), 4ª sub-rodada (`EventTimeline.jsx`,
   2), 5ª sub-rodada (`TradeHistory.jsx` + `Trades.jsx:282`, 6), 6ª
   sub-rodada (`AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx`,
-  5) e 7ª sub-rodada (`StatsCard.jsx` + `Assets.jsx:292`, 2) corrigidas
-  — ver 8ª-14ª rodadas acima. **38 de ~40 ocorrências fechadas — todo o
-  trabalho mecânico está feito.** Só restam casos que exigem decisão:
-  os 3 ícones SVG de `Assets.jsx` (tema A-7, foco de teclado, ver seção
-  abaixo), `Verification.jsx:345` (botão desabilitado — mesmo padrão já
-  resolvido 2x, só não priorizado ainda) e `src/components/ui/sidebar.jsx`
-  (dead code — decisão de remover ou não). Divisão detalhada em
-  `docs/known-risks.md` item 208/209/211.**
+  5), 7ª sub-rodada (`StatsCard.jsx` + `Assets.jsx:292`, 2) e 8ª
+  sub-rodada (`Verification.jsx`, botão "Reenviar", 1) corrigidas — ver
+  8ª-15ª rodadas acima. **39 de ~40 ocorrências fechadas — todo o
+  trabalho mecânico e todos os casos especiais isolados estão
+  resolvidos.** Só restam os 3 ícones SVG de `Assets.jsx` (tema A-7,
+  foco de teclado — exige decidir/implementar A-7 primeiro, não é fix
+  isolado) e `src/components/ui/sidebar.jsx` (dead code, decisão de
+  remover ou não — fora do escopo de UI pontual). Divisão detalhada em
+  `docs/known-risks.md` item 208/209/211/212.**
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
@@ -618,20 +640,18 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 ## Como continuar
 
 Próxima rodada sugerida (não decidida): A-1 a A-5, A-8 a A-14 já
-corrigidos (12 de 15 itens de Alta prioridade); A-6 com 7 sub-rodadas
+corrigidos (12 de 15 itens de Alta prioridade); A-6 com 8 sub-rodadas
 corrigidas (`Backtest.jsx` + Grupo 1 + `TradeCard.jsx` +
 `EventTimeline.jsx` + `TradeHistory.jsx`/`Trades.jsx:282` +
 `AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx` +
-`StatsCard.jsx`/`Assets.jsx:292`, 38 de ~40 ocorrências). **Todo o
-trabalho mecânico de A-6 está feito** — o que resta são só decisões
-(detalhe em `docs/known-risks.md` item 204-209/211):
+`StatsCard.jsx`/`Assets.jsx:292` + `Verification.jsx` "Reenviar", 39 de
+~40 ocorrências). **A-6 está praticamente fechado** — só restam 2 itens,
+os dois decisões de escopo maior, não fix isolado (detalhe em
+`docs/known-risks.md` item 204-209/211/212):
 - `Assets.jsx:284/285/287` — os 3 ícones SVG de status de scan são
   ícone-só sem nenhum wrapper focável; corrigir de verdade exige
   primeiro decidir/implementar A-7 (foco de teclado). Bom candidato
   a puxar A-7 pra frente, já que resolve os 2 de uma vez.
-- `Verification.jsx:345` — botão "Reenviar" desabilitado, mesmo
-  padrão já resolvido 2x (Backtest.jsx, TradeCard.jsx), só não
-  priorizado ainda; fix isolado de baixo risco quando quiser fechar.
 - `src/components/ui/sidebar.jsx` — dead code, decisão de remover ou
   não (fora do escopo de UI pontual).
 

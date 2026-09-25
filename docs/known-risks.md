@@ -26478,3 +26478,50 @@ maior, não mais trabalho mecânico isolado: os 3 ícones SVG de
 `Assets.jsx` (tema A-7), `Verification.jsx:345` (botão desabilitado,
 mesmo padrão já resolvido 2x, só não priorizado ainda) e
 `src/components/ui/sidebar.jsx` (dead code, decisão de remover ou não).
+
+## 212. Backlog do Raio-X — A-6, 8ª sub-rodada (`Verification.jsx`, botão "Reenviar" desabilitado) corrigida (2026-09-25)
+
+Continuação de A-6. Fecha o último item isolado que não exigia decisão
+de escopo maior: o botão "Reenviar" (`Verification.jsx`, ~linha 358) —
+`title=` **condicional em 3 textos** (conforme o motivo real do
+`disabled={resendingId === task.id || !isTelegramConfigured() ||
+assetsError}`), não um `title=` binário como o "Aplicar ao Scanner" de
+`Backtest.jsx` (item 204).
+
+### Mudança
+
+Mesmo padrão já resolvido pro Backtest, adaptado pro caso de 3 textos:
+extraídos `resendDisabled`/`resendTooltip`/`resendButton` numa IIFE, e
+`Tooltip` sempre presente — quando `resendDisabled`, o botão ganha um
+wrapper `<span tabIndex={0}>` que carrega o `TooltipTrigger` (eventos de
+mouse não chegam a um `<button disabled>` nativo); quando habilitado, o
+`TooltipTrigger asChild` fica direto no `<button>`, já focável por
+padrão, sem wrapper extra. Nenhuma linha de `resend()`/`setStatus()` foi
+tocada — só a apresentação do botão.
+
+### Testes
+
+3 casos novos em `Verification.test.jsx`, um por motivo de `disabled`
+(ativos indisponíveis, Telegram não configurado) + o caso habilitado.
+`isTelegramConfigured` (mock de `@/lib/telegram`) precisou virar
+controlável por teste (`vi.hoisted`, mesmo padrão de outras rodadas) —
+antes era uma função estática `() => true`, sem como simular o 2º motivo
+de desabilitar. O teste pré-existente que já cobria o 1º motivo (ativos
+indisponíveis, item 196) continua intacto e verde. Todos os 3 casos
+novos confirmados falhando sem o fix via `git stash`.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2040 testes, +3 dos testes novos; teto de typecheck em 16,
+inalterado). Revisão cética própria: `git diff --stat` confirma só o
+arquivo esperado tocado; grep no diff por `backend.`/`scanner.js` não
+encontra nada — a única ocorrência de `resend(task)` no diff é a mesma
+chamada apenas reindentada (movida pra dentro da IIFE), sem mudança de
+lógica. **Não rodei verificação visual via navegador real nesta
+rodada** — mesma ressalva das rodadas anteriores, padrão mecânico
+idêntico.
+
+Com esta rodada, A-6 fica com **só 2 itens pendentes, ambos decisões**:
+os 3 ícones SVG de `Assets.jsx` (precisam do tema A-7 primeiro) e
+`src/components/ui/sidebar.jsx` (dead code, decisão de remover ou não).

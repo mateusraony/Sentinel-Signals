@@ -17,7 +17,7 @@
 // não puderem ser confirmados, e o checklist nunca afirmando liberação
 // quando as operações não puderem ser confirmadas.
 import React from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 import Verification from './Verification.jsx';
@@ -41,10 +41,19 @@ vi.mock('@/api/entities', () => ({
   },
 }));
 
+// isTelegramConfigured precisa ser controlável por teste (achado A-6, o
+// botão "Reenviar" mostra um 3º texto de tooltip quando o Telegram não
+// está configurado) — vi.hoisted, mesmo padrão já usado noutras rodadas.
+const { isTelegramConfiguredMock } = vi.hoisted(() => ({ isTelegramConfiguredMock: vi.fn() }));
 vi.mock('@/lib/telegram', () => ({
   notifyVerificationTask: vi.fn(async () => true),
-  isTelegramConfigured: () => true,
+  isTelegramConfigured: isTelegramConfiguredMock,
 }));
+
+beforeEach(() => {
+  isTelegramConfiguredMock.mockReset();
+  isTelegramConfiguredMock.mockReturnValue(true);
+});
 
 const TASK = {
   id: 'task1', asset_id: 'a1', symbol: 'BTCUSDT', timeframe: '4h',
@@ -130,5 +139,53 @@ describe('Verification — botões de ação usam Tooltip em vez de title= nativ
     const skipButton = screen.getByRole('button', { name: 'Pular' });
     expect(reviewButton.getAttribute('title')).toBeNull();
     expect(skipButton.getAttribute('title')).toBeNull();
+  });
+});
+
+// Achado A-6 do Raio-X de UI/UX (8ª sub-rodada, Grupo 4): o botão
+// "Reenviar" tinha `title=` condicional (3 textos possíveis, conforme o
+// motivo do `disabled`) — mesmo padrão já resolvido em Backtest.jsx
+// ("Aplicar ao Scanner"): Tooltip sempre presente; quando desabilitado,
+// o botão ganha um wrapper `<span tabIndex={0}>` (eventos de mouse não
+// chegam a um `<button disabled>` nativo, então o Tooltip nunca
+// dispararia sem ele).
+describe('Verification — botão "Reenviar" usa Tooltip em vez de title= nativo (achado A-6)', () => {
+  it('REGRESSÃO: desabilitado por ativos indisponíveis, não tem title= nativo, ganha wrapper focável', async () => {
+    verificationTaskFilterMock.mockResolvedValue([TASK]);
+    monitoredAssetListMock.mockRejectedValue(new Error('network'));
+    tradeOperationListMock.mockResolvedValue([]);
+
+    renderPage(<Verification />);
+
+    const resendButton = await screen.findByRole('button', { name: /reenviar/i });
+    expect(resendButton.disabled).toBe(true);
+    expect(resendButton.getAttribute('title')).toBeNull();
+    expect(resendButton.closest('span[tabindex="0"]')).not.toBeNull();
+  });
+
+  it('REGRESSÃO: desabilitado por Telegram não configurado, não tem title= nativo, ganha wrapper focável', async () => {
+    isTelegramConfiguredMock.mockReturnValue(false);
+    verificationTaskFilterMock.mockResolvedValue([TASK]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+
+    renderPage(<Verification />);
+
+    const resendButton = await screen.findByRole('button', { name: /reenviar/i });
+    expect(resendButton.disabled).toBe(true);
+    expect(resendButton.getAttribute('title')).toBeNull();
+    expect(resendButton.closest('span[tabindex="0"]')).not.toBeNull();
+  });
+
+  it('REGRESSÃO: habilitado, não tem title= nativo (Tooltip sem wrapper extra)', async () => {
+    verificationTaskFilterMock.mockResolvedValue([TASK]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+
+    renderPage(<Verification />);
+
+    const resendButton = await screen.findByRole('button', { name: /reenviar/i });
+    expect(resendButton.disabled).toBe(false);
+    expect(resendButton.getAttribute('title')).toBeNull();
   });
 });
