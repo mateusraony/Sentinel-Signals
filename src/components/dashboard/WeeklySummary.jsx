@@ -126,7 +126,7 @@ export default function WeeklySummary() {
             </ResponsiveContainer>
           </div>
           <div className="grid grid-cols-7 gap-0 text-center mt-0.5">
-            {WEEKDAY_LABELS.map(l => <span key={l} className="text-[7px] font-mono text-muted-foreground">{l[0]}</span>)}
+            {WEEKDAY_LABELS.map(l => <span key={l} className="text-[7px] font-mono text-muted-foreground">{l}</span>)}
           </div>
         </div>
       </div>
