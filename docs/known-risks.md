@@ -26525,3 +26525,36 @@ idêntico.
 Com esta rodada, A-6 fica com **só 2 itens pendentes, ambos decisões**:
 os 3 ícones SVG de `Assets.jsx` (precisam do tema A-7 primeiro) e
 `src/components/ui/sidebar.jsx` (dead code, decisão de remover ou não).
+
+## 213. Backlog do Raio-X — `src/components/ui/sidebar.jsx` removido (dead code confirmado, decisão A-6) (2026-09-25)
+
+Sinalizado como código morto desde a investigação original de A-6 (item
+204): primitivo shadcn vendorizado, nunca importado (o sidebar real do
+projeto é `src/components/layout/Sidebar.jsx`, componente próprio, sem
+relação). Reconfirmado de novo antes de remover — `grep` por
+`ui/sidebar`/`from '@/components/ui/sidebar'` em todo `src/` (case
+insensitive) só bate nas referências ao `Sidebar.jsx` de
+`src/components/layout/` (arquivo diferente, letra maiúscula) — zero
+importadores do arquivo `ui/sidebar.jsx`.
+
+**Decisão:** remover o arquivo. Ficava pendente nas rodadas anteriores
+de A-6 só porque cada uma delas era escopo de UI pontual (achado A-6 =
+`title=`→Tooltip), não decisão de remover arquivo — mas com a
+reconfirmação de zero uso, não há razão pra manter 20KB de código morto
+no repositório.
+
+Conferido que nenhuma dependência (`@radix-ui/react-slot`,
+`class-variance-authority`, `useIsMobile`, `Button`/`Input`/`Separator`/
+`Sheet`/`Skeleton`/`Tooltip` de `@/components/ui/*`) ficou órfã — todas
+são usadas amplamente em outros componentes do projeto, nenhuma delas
+exclusiva deste arquivo.
+
+**Verificação:** `npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2040 testes — nenhuma mudança, como esperado
+pra remoção de código morto; teto de typecheck em 16, inalterado;
+tamanho dos chunks do build idêntico, já que o arquivo nunca era
+importado/bundlado).
+
+Com esta remoção, **A-6 fica com só 1 item pendente**: os 3 ícones SVG
+de `Assets.jsx` (284/285/287), que precisam do tema A-7 (foco de
+teclado) resolvido primeiro.

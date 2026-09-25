@@ -594,6 +594,16 @@ inalterado). Revisão cética própria (sem verificação visual via
 navegador real — mesma ressalva de sempre), detalhe completo em
 `docs/known-risks.md` item 212.
 
+## Limpeza (2026-09-25): `src/components/ui/sidebar.jsx` removido (dead code)
+
+Sinalizado como código morto em toda investigação de A-6 desde o item
+204 (primitivo shadcn vendorizado, zero imports — o sidebar real é
+`src/components/layout/Sidebar.jsx`, componente próprio). Reconfirmado
+de novo (grep case-insensitive em todo `src/`) e removido — nenhuma
+dependência ficou órfã. Detalhe completo em `docs/known-risks.md` item
+213. Com esta remoção, **A-6 fica com só 1 item pendente**: os 3 ícones
+SVG de `Assets.jsx` (precisam do tema A-7 resolvido primeiro).
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -618,11 +628,11 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
   sub-rodada (`Verification.jsx`, botão "Reenviar", 1) corrigidas — ver
   8ª-15ª rodadas acima. **39 de ~40 ocorrências fechadas — todo o
   trabalho mecânico e todos os casos especiais isolados estão
-  resolvidos.** Só restam os 3 ícones SVG de `Assets.jsx` (tema A-7,
-  foco de teclado — exige decidir/implementar A-7 primeiro, não é fix
-  isolado) e `src/components/ui/sidebar.jsx` (dead code, decisão de
-  remover ou não — fora do escopo de UI pontual). Divisão detalhada em
-  `docs/known-risks.md` item 208/209/211/212.**
+  resolvidos.** `src/components/ui/sidebar.jsx` (dead code) removido
+  separadamente (item 213). **Só resta 1 item, e é uma decisão, não um
+  fix isolado:** os 3 ícones SVG de `Assets.jsx` (284/285/287), que
+  exigem decidir/implementar A-7 (foco de teclado) primeiro. Detalhe em
+  `docs/known-risks.md` item 208/209/211/212/213.**
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
@@ -645,20 +655,21 @@ corrigidas (`Backtest.jsx` + Grupo 1 + `TradeCard.jsx` +
 `EventTimeline.jsx` + `TradeHistory.jsx`/`Trades.jsx:282` +
 `AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx` +
 `StatsCard.jsx`/`Assets.jsx:292` + `Verification.jsx` "Reenviar", 39 de
-~40 ocorrências). **A-6 está praticamente fechado** — só restam 2 itens,
-os dois decisões de escopo maior, não fix isolado (detalhe em
-`docs/known-risks.md` item 204-209/211/212):
-- `Assets.jsx:284/285/287` — os 3 ícones SVG de status de scan são
-  ícone-só sem nenhum wrapper focável; corrigir de verdade exige
-  primeiro decidir/implementar A-7 (foco de teclado). Bom candidato
-  a puxar A-7 pra frente, já que resolve os 2 de uma vez.
-- `src/components/ui/sidebar.jsx` — dead code, decisão de remover ou
-  não (fora do escopo de UI pontual).
+~40 ocorrências) + `src/components/ui/sidebar.jsx` removido (dead code,
+item 213). **A-6 está com só 1 item pendente, e é uma decisão, não fix
+isolado** (detalhe em `docs/known-risks.md` item 204-209/211/212/213):
+`Assets.jsx:284/285/287` — os 3 ícones SVG de status de scan são
+ícone-só sem nenhum wrapper focável; corrigir de verdade exige primeiro
+decidir/implementar **A-7** (foco de teclado). É o candidato natural
+pra próxima rodada: puxar A-7 pra frente resolve esse último item de
+A-6 de quebra.
 
 A-7 (foco de teclado invisível em ~15 pontos, incluindo Busca Global)
-nem começou. A-15 (AssetCard sem divulgação progressiva) fica
-deliberadamente pra junto da reorganização completa do Dashboard
-(seção L), não como item isolado. Depois disso, restam os 17 itens de
-Média prioridade e a própria seção L. Decisão de qual seguir é do
-usuário (ou "seguir conforme achar melhor", como já autorizado nesta
+nem começou — precisa de investigação fresca (varredura tipo a que A-6
+teve no item 204) antes de dividir em sub-rodadas. A-15 (AssetCard sem
+divulgação progressiva) fica deliberadamente pra junto da reorganização
+completa do Dashboard (seção L), não como item isolado. Depois disso,
+restam os 17 itens de Média prioridade e a própria seção L. Decisão de
+qual seguir é do usuário (ou "seguir conforme achar melhor", como já
+autorizado nesta
 sessão).
