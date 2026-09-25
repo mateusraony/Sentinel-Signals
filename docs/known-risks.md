@@ -26894,3 +26894,88 @@ Com esta rodada, **A-7 fica com 22 de 24 ocorrências fechadas**
 caseiros (`OwnerKeySettings.jsx`/`TelegramSettings.jsx`), que exigem
 decisão de design. **A-6 está agora 100% fechado** — nenhum item
 mecânico ou de decisão isolada pendente.
+
+## 218. Backlog do Raio-X — A-7 (5ª e última sub-rodada, os 2 modais caseiros) corrigida — A-7 100% fechado (2026-09-25)
+
+Fecha o último item de A-7 (item 214): `OwnerKeySettings.jsx` e
+`TelegramSettings.jsx` eram modais caseiros (`<div className="fixed
+inset-0 z-50 ...">` + overlay) sem `role="dialog"`/`aria-modal`, sem
+focus-trap, sem Escape e sem devolução de foco ao fechar — exatamente
+o achado que a estimativa original de A-7 citava como exemplo.
+
+### Decisão de design: `Dialog` do Radix, não focus-trap manual
+
+Escolhido reaproveitar `src/components/ui/dialog.jsx` (o mesmo
+componente já em produção em `Trades.jsx`, achado A-12, e em
+`Assets.jsx` para `AddAssetForm`/`AssetConfigPanel`) em vez de
+implementar focus-trap/Escape/`aria-modal` à mão nos 2 modais. Motivo:
+`.claude/rules/frontend-ui.md` ("Stack existente... reuse os
+componentes de `src/components/ui/`") e `operating-principles.md`
+("reuse antes de criar") — o componente já existe, já é usado por 2
+telas distintas do mesmo projeto, e reimplementar a mesma lógica de
+acessibilidade à mão só pra estes 2 modais seria dívida técnica nova
+sem ganho nenhum. `DialogContent` do Radix já dá de graça: focus-trap,
+fechar com Escape, fechar clicando no overlay, `role="dialog"` +
+`aria-modal="true"`, devolução de foco ao elemento que abriu o modal
+ao fechar — tudo que os 2 modais caseiros não tinham.
+
+### O que mudou (mesmo padrão nos 2 arquivos)
+
+- `if (!open) return null;` removido — `<Dialog open={open}
+  onOpenChange={(o) => !o && onClose()}>` já controla montagem/
+  desmontagem (Radix só renderiza o conteúdo via Portal quando
+  `open=true`), mesmo padrão do `EditModal` de `Trades.jsx`.
+- O `<div>` de overlay + o `<div>` de conteúdo viraram
+  `<Dialog>`/`<DialogContent>`; o header (ícone + título + badge
+  "CONFIGURADA"/"ATIVO") virou `<DialogHeader>` com o texto do título
+  dentro de `<DialogTitle>` (só o texto — ícone e badge continuam como
+  irmãos no mesmo `<div>` de layout, não dentro do `<DialogTitle>`,
+  pra manter o nome acessível do modal só com o texto relevante).
+- O botão `X` de fechar caseiro (`<button onClick={onClose}><X
+  /></button>`) foi **removido** — `DialogContent` já renderiza seu
+  próprio botão de fechar (canto superior direito, com
+  `aria-label`/texto `sr-only` "Close" já embutidos), mesmo padrão do
+  `EditModal` de `Trades.jsx` (que também não duplica o X).
+- `TelegramSettings.jsx` especificamente: como o corpo (instruções +
+  campos + "Filtros Avançados" expandido) facilmente passa da altura
+  da viewport, e o `DialogContent` do Radix não trata overflow sozinho
+  (confirmado lendo `src/components/ui/dialog.jsx` — sem
+  `max-h`/`overflow` no componente base), o corpo (tudo exceto o
+  header) ganhou um wrapper `<div className="max-h-[70vh]
+  overflow-y-auto pr-1 space-y-5">` — **mesmo padrão exato** já usado
+  em `AssetConfigPanel.jsx:110` (`space-y-5 max-h-[70vh] overflow-y-auto
+  pr-1`), não inventado agora. `OwnerKeySettings.jsx` não precisou
+  disso (conteúdo sempre curto).
+- Nenhuma lógica de `save`/`test`/`getOwnerKey`/`setTelegramConfig`/
+  `setTelegramFilters` foi tocada — só a estrutura do modal em volta.
+
+### Testes novos
+
+Nenhum dos 2 componentes tinha teste dedicado antes.
+`OwnerKeySettings.test.jsx` (novo, 3 casos) e `TelegramSettings.test.jsx`
+(novo, 4 casos, incluindo o wrapper rolável com "Filtros Avançados"
+expandido): `role="dialog"` presente, Escape chama `onClose`, nada
+renderiza com `open=false`. `TelegramSettings.test.jsx` precisou mockar
+`@/lib/firebaseClient` (import transitivo de `telegram.js`, usado só
+pelas funções `notify*`/`setTelegramFilters` não exercitadas aqui —
+sem o mock, `initializeAuth` quebra em ambiente de teste por falta de
+config real). Todos os 5 casos que dependem do fix (exceto os 2 de
+`open=false`, que já passavam antes) confirmados falhando sem ele via
+`git stash` antes de aceitar.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2067 testes, +7 desta rodada; teto de typecheck em 13,
+inalterado). Revisão cética: diff nos 2 arquivos de produção troca só
+a casca do modal (`<div>` → `Dialog`/`DialogContent`/`DialogHeader`/
+`DialogTitle`, botão X removido) — nenhuma lógica de negócio
+(`save`/`test`/chamadas a `@/lib/ownerKey`/`@/lib/telegram`) tocada.
+Sem verificação visual via navegador real (mesma ressalva de sempre —
+sandbox sem credenciais Firebase pra autenticar e abrir o painel).
+
+**Com esta rodada, A-7 fica 100% fechado: 24 de 24 ocorrências.** Todo
+o backlog de Alta prioridade do Raio-X de UI/UX relacionado a A-1 até
+A-14 está resolvido (A-15 deliberadamente adiado pra reorganização do
+Dashboard, seção L). Restam os 17 itens de Média prioridade e a
+própria seção L, nenhum tocado ainda.
