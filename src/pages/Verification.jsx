@@ -355,18 +355,34 @@ export default function Verification() {
                         </TooltipContent>
                       </Tooltip>
                     </div>
-                    <button onClick={() => resend(task)}
-                      disabled={resendingId === task.id || !isTelegramConfigured() || assetsError}
-                      title={
-                        assetsError
-                          ? 'Ativos monitorados indisponíveis agora — reenvio desativado para não usar o filtro errado'
-                          : isTelegramConfigured() ? 'Reenviar notificação Telegram' : 'Configure o Telegram em Ajustes primeiro'
-                      }
-                      className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 rounded-md transition-all disabled:opacity-40"
-                      style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)', color: '#00e5ff' }}>
-                      {resendingId === task.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                      Reenviar
-                    </button>
+                    {(() => {
+                      const resendDisabled = resendingId === task.id || !isTelegramConfigured() || assetsError;
+                      const resendTooltip = assetsError
+                        ? 'Ativos monitorados indisponíveis agora — reenvio desativado para não usar o filtro errado'
+                        : isTelegramConfigured() ? 'Reenviar notificação Telegram' : 'Configure o Telegram em Ajustes primeiro';
+                      const resendButton = (
+                        <button onClick={() => resend(task)}
+                          disabled={resendDisabled}
+                          className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 rounded-md transition-all disabled:opacity-40"
+                          style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)', color: '#00e5ff' }}>
+                          {resendingId === task.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                          Reenviar
+                        </button>
+                      );
+                      // Botão desabilitado não recebe eventos de mouse — sem o
+                      // wrapper focável, o Tooltip nunca dispararia (mesmo
+                      // padrão já usado no "Aplicar ao Scanner" de Backtest.jsx).
+                      return (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            {resendDisabled ? <span tabIndex={0} className="inline-block">{resendButton}</span> : resendButton}
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                            {resendTooltip}
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    })()}
                     {task.telegram_notified_at && (
                       <span className="text-[8px] font-mono text-muted-foreground">
                         Enviado {moment(task.telegram_notified_at).fromNow()}
