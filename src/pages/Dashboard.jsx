@@ -281,7 +281,10 @@ export default function Dashboard() {
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
               <StatsCard icon={Coins} label="Monitorados" value={assets.length} color="#00e5ff" glowColor="rgba(0,229,255,0.1)" error={assetsError && assets.length === 0} />
-              <StatsCard icon={Bell} label="Alta Prioridade" value={highPriorityCount} color="#ff9f43" glowColor="rgba(255,159,67,0.1)" error={signalsUnavailable || tradeOpsUnavailable} />
+              <StatsCard icon={Bell} label="Alta Prioridade" value={highPriorityCount}
+                color={highPriorityCount > 0 ? '#ff9f43' : '#00e5ff'}
+                glowColor={highPriorityCount > 0 ? 'rgba(255,159,67,0.1)' : 'rgba(0,229,255,0.1)'}
+                error={signalsUnavailable || tradeOpsUnavailable} />
               <StatsCard icon={Target} label="Operações Ativas" value={activeOpsCount} color="#00ff80" glowColor="rgba(0,255,128,0.1)" error={tradeOpsUnavailable} />
               <StatsCard icon={Clock} label="Aguardando" value={waitingCount} color="#ffd166" glowColor="rgba(255,209,102,0.1)" error={signalsUnavailable || tradeOpsUnavailable} />
               <StatsCard icon={TrendingUp} label="Sinais BUY" value={buySignals} color="#00ff80" glowColor="rgba(0,255,128,0.1)" error={signalsUnavailable} />

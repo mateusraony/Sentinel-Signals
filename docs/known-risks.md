@@ -27060,3 +27060,83 @@ Mudança desta rodada é só de documentação (correção do item 211 +
 este registro) — nenhum arquivo de código tocado, então não há suite
 nova pra rodar. `git diff --stat` confirma só `docs/known-risks.md`
 modificado.
+
+## 220. Backlog do Raio-X — 1ª rodada de Média Prioridade: M-3, M-14, M-16 (2026-09-25)
+
+Com A-1 a A-14 fechados e verificados (item 219), início do backlog de
+Média Prioridade (M-1 a M-17), que nunca tinha sido revisitado com o
+mesmo rigor. Reli o relatório completo (Artifact do Raio-X, seções
+D/E/L/M/N/O — `ui-audit-criticos.md` só referenciava os IDs, sem
+descrição) e rodei um agente Explore pra confirmar o estado atual de 4
+candidatos a "quick win" contra o código de hoje, já que várias
+rodadas de Alta Prioridade mescladas desde a escrita do relatório
+podem ter resolvido algum M de forma incidental.
+
+### Resultado da verificação prévia
+
+- **M-7** (TradeHistory, badge "ambíguo" via `title=` nativo) — **já
+  corrigido** incidentalmente na 12ª rodada de A-6 (migrado pra
+  Tooltip/TooltipTrigger, achado A-6). Não é uma correção nova.
+- **M-16** (StatsCard, cor de "atenção" fixa mesmo com valor 0) —
+  **divergente do relatório**: a lógica não está em `StatsCard.jsx`
+  (componente "burro", só recebe `color`/`glowColor` via prop) — o bug
+  real é em quem consome, `src/pages/Dashboard.jsx`, que passava uma
+  cor literal fixa (`color="#ff9f43"`) pro card "Alta Prioridade"
+  independente do valor de `highPriorityCount`.
+- **M-3** e **M-14** — confirmados exatamente como descritos no
+  relatório.
+
+### As 3 correções
+
+1. **M-3** — `src/components/dashboard/WeeklySummary.jsx:129`: os
+   rótulos de dia do mini-gráfico "P&L por dia" usavam só `l[0]` (1ª
+   letra de `WEEKDAY_LABELS`), colidindo em "S" pra Segunda/Sexta/
+   Sábado. Trocado por `{l}` (rótulo completo de 3 letras, já sem
+   colisão nenhuma — mais simples e seguro que inventar uma abreviação
+   de 2 letras, que colidiria de novo em Quarta/Quinta → "Qu"/"Qu").
+2. **M-14** — `src/components/dashboard/CorrelationWidget.jsx:140`: o
+   botão de remover símbolo da comparação (ícone `X` puro) não tinha
+   `aria-label`. Adicionado
+   `aria-label={\`Remover ${sym} da comparação\`}`.
+3. **M-16** — `src/pages/Dashboard.jsx:284`: o StatsCard "Alta
+   Prioridade" agora recebe `color`/`glowColor` condicionais a
+   `highPriorityCount > 0` — cor neutra (mesmo ciano de "Monitorados",
+   `#00e5ff`) quando zero, cor de atenção (`#ff9f43`) quando há
+   contagem real. `StatsCard.jsx` não foi tocado (correto, só decide
+   `error` vs. normal).
+
+### Testes novos
+
+`WeeklySummary.jsx` e `CorrelationWidget.jsx` não tinham teste
+dedicado — criados `WeeklySummary.test.jsx` (confirma os 7 rótulos
+distintos) e `CorrelationWidget.test.jsx` (confirma `aria-label` nos 3
+botões de remover padrão). `Dashboard.test.jsx` ganhou 2 casos novos
+(count=0 → cor neutra, count>0 → cor de atenção), usando um mecanismo
+de override (`priorityOverride`) sobre o mock existente de
+`@/api/entities` pra controlar `SignalEvent`/`TradeOperation` sem
+afetar o teste A-14 já existente no arquivo. Os 3 fixes tiveram a
+falha reproduzida via `git stash` antes do fix ser aceito (disciplina
+de toda a sessão) — a asserção de M-16 precisou de `waitFor` porque o
+`AnimatedNumber` some o `label.nextElementSibling` no estado inicial
+(antes do fetch resolver), que coincidia com o valor esperado no caso
+`count=0` e mascarava a asserção.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2071 testes, 0 falhas, 58 pulados; build
+ok; teto de typecheck em 13, sem mudança). `git diff --stat` só nos 3
+arquivos de produção esperados + `Dashboard.test.jsx` + 2 testes
+novos — nenhuma mudança em `backend.`/lógica de negócio/scanner, os 3
+fixes são puramente apresentação.
+
+### Itens M pendentes (14 dos 17)
+
+M-1, M-2, M-4, M-5, M-6, M-8, M-9, M-10, M-11, M-12, M-13, M-15, M-17
+(M-7 já estava corrigido). M-4/M-10/M-13/M-15 se sobrepõem à
+reorganização do Dashboard (seção L do Raio-X, decisão de produto
+maior — não mexer sem alinhamento explícito); M-11 (632 ocorrências de
+fonte arbitrária em 51 arquivos) e M-17 (glossário de termos técnicos,
+10 termos) são varreduras grandes que merecem rodada própria; M-1/M-2/
+M-5/M-6/M-8/M-9/M-12 são candidatos a rodadas mecânicas subsequentes,
+mesmo padrão desta.

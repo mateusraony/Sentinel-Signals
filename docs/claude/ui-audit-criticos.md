@@ -770,7 +770,14 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [ ] A-15 — AssetCard com ~20 blocos de informação, sem divulgação
   progressiva. **Investigado, deliberadamente adiado pra junto da
   reorganização do Dashboard (seção L) — ver 7ª rodada acima.**
-- [ ] Todos os itens de Média prioridade (M-1 a M-17), Refinamentos e a
+- [x] M-3 — WeeklySummary: rótulo de dia colide em "S" (1ª letra só). **Corrigido, ver seção "Backlog Média prioridade" abaixo.**
+- [x] M-7 — TradeHistory: badge "ambíguo" via `title=` nativo. **Já
+  estava corrigido incidentalmente na 12ª rodada de A-6 — não foi uma
+  correção nova desta leva.**
+- [x] M-14 — CorrelationWidget: botão de remover símbolo sem aria-label. **Corrigido, ver seção "Backlog Média prioridade" abaixo.**
+- [x] M-16 — StatsCard: cor de "atenção" fixa mesmo com valor 0. **Corrigido (bug estava em `Dashboard.jsx`, não em `StatsCard.jsx`) — ver seção "Backlog Média prioridade" abaixo.**
+- [ ] Demais itens de Média prioridade (M-1, M-2, M-4, M-5, M-6, M-8,
+  M-9, M-10, M-11, M-12, M-13, M-15, M-17 — 13 de 17), Refinamentos e a
   reorganização completa do Dashboard (seção L do relatório) — nada iniciado.
 
 ## Como continuar
@@ -791,15 +798,43 @@ do Radix, mesmo componente já usado em `Trades.jsx`/`Assets.jsx`).
 
 A-15 (AssetCard sem divulgação progressiva) fica deliberadamente pra
 junto da reorganização completa do Dashboard (seção L), não como item
-isolado. Com A-1 a A-14 fechados, restam os 17 itens de Média
-prioridade e a própria seção L (que inclui A-15). Decisão de qual
-seguir é do usuário (ou "seguir conforme achar melhor", como já
-autorizado nesta sessão) — nenhum dos dois tem investigação prévia
-como A-6/A-7 tiveram; o próximo passo natural, se for seguir
-autonomamente, é uma varredura fresca dos itens de Média prioridade
-(mesmo processo do item 204/214: agente Explore + leitura direta),
-já que a lista original (M-1 a M-17) nunca foi revisitada com o mesmo
-rigor que os itens de Alta prioridade tiveram.
+isolado.
+
+**Backlog de Média prioridade iniciado (1ª rodada, item 220 —
+M-3/M-14/M-16 fechados; M-7 descoberto já corrigido).** Restam 13 dos
+17 itens M. Próximos candidatos a rodada mecânica (mesmo padrão desta):
+M-1, M-2, M-5, M-6, M-8, M-9, M-12. M-4/M-10/M-13/M-15 se sobrepõem à
+reorganização do Dashboard (seção L, que também inclui A-15) — decisão
+de produto maior, não mexer sem alinhamento explícito. M-11 (632
+ocorrências de fonte arbitrária em 51 arquivos) e M-17 (glossário de
+10 termos técnicos) são varreduras grandes, merecem rodada própria.
+
+## Backlog Média prioridade — 1ª rodada (2026-09-25): M-3, M-14, M-16 corrigidos
+
+Reli o relatório completo do Raio-X (Artifact, seções D/E/L/M/N/O) pra
+recuperar a lista M-1 a M-17 (nunca documentada aqui além dos IDs).
+Agente Explore confirmou o estado atual de 4 candidatos a "quick win"
+contra o código de hoje antes de implementar — M-7 já estava corrigido
+incidentalmente (12ª rodada de A-6); M-16 tinha o bug num arquivo
+diferente do descrito no relatório original.
+
+- **M-3** — `WeeklySummary.jsx:129`: rótulo de dia usava só `l[0]` (1ª
+  letra), colidindo em "S" pra Segunda/Sexta/Sábado. Trocado por `{l}`
+  (rótulo completo de 3 letras, já único).
+- **M-14** — `CorrelationWidget.jsx:140`: botão de remover símbolo
+  (ícone `X` puro) sem `aria-label`. Adicionado.
+- **M-16** — `Dashboard.jsx:284`: StatsCard "Alta Prioridade" recebia
+  cor de atenção fixa (`#ff9f43`) independente de `highPriorityCount`.
+  Agora condicional: neutra (`#00e5ff`, mesma de "Monitorados") quando
+  zero, atenção quando há contagem real. `StatsCard.jsx` não foi
+  tocado — a lógica errada estava em quem consome o componente.
+
+Testes novos: `WeeklySummary.test.jsx` e `CorrelationWidget.test.jsx`
+(nenhum dos dois tinha teste antes), + 2 casos em `Dashboard.test.jsx`
+(cor neutra/atenção). Falha de cada um reproduzida via `git stash`
+antes do fix. `npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2071 testes, teto de typecheck em 13, sem
+mudança). Detalhe completo em `docs/known-risks.md` item 220.
 
 ## Pente fino pós-A-14 (2026-09-25): 14 itens confirmados corretos
 

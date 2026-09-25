@@ -137,7 +137,8 @@ export default function CorrelationWidget() {
             <span key={sym} className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 rounded-md"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}>
               {sym.replace('USDT', '')}
-              <button onClick={() => setSymbols(s => s.filter(x => x !== sym))} className="hover:opacity-70">
+              <button onClick={() => setSymbols(s => s.filter(x => x !== sym))} className="hover:opacity-70"
+                aria-label={`Remover ${sym.replace('USDT', '')} da comparação`}>
                 <X className="w-2.5 h-2.5" />
               </button>
             </span>
