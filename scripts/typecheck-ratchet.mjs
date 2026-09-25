@@ -65,7 +65,7 @@ const ARQUIVO_BASELINE = fileURLToPath(new URL('./typecheck-baseline.json', impo
  * Medido em 2026-09-05, em `tradeMetrics.js`, `Assets.jsx`, `Trades.jsx` e
  * `scanner.js` — nenhum deles regressão de runtime, todos atrito de tipagem.
  */
-const TETO = 16;
+const TETO = 13;
 
 /** Códigos de saída que significam "o tsc rodou e reportou diagnósticos". */
 const STATUS_NORMAIS = new Set([0, 1, 2]);

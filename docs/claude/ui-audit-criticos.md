@@ -651,8 +651,9 @@ explicitamente no achado original).
 **Verificação rodada:** `npm run lint && npm test && npm run build &&
 npm run typecheck:ratchet` limpos (2053 testes; teto de typecheck 16,
 inalterado). Com esta rodada, **A-7 tem a Categoria 1 inteira fechada**
-(17/17) — 13 de 24 ocorrências totais. Detalhe completo em
-`docs/known-risks.md` item 215.
+(17/17) — 17 de 24 ocorrências totais (correção 2026-09-25: dizia "13"
+por erro de aritmética, ver `docs/known-risks.md` item 215). Detalhe
+completo em `docs/known-risks.md` item 215.
 
 ## Backlog Alta prioridade — 18ª rodada (2026-09-25): A-7 (3ª sub-rodada, linhas clicáveis sem foco por teclado) corrigida
 
@@ -670,9 +671,37 @@ Fecha a Categoria 2 mecânica de A-7: 2 linhas clicáveis sem `role`/
 
 **Verificação rodada:** `npm run lint && npm test && npm run build &&
 npm run typecheck:ratchet` limpos (2056 testes; teto de typecheck 16,
-inalterado). Com esta rodada, **A-7 tem Categoria 1 + Categoria 2
-inteiras fechadas** — 15 de 24 ocorrências totais. Detalhe completo em
+inalterado). Com esta rodada, **A-7 tem Categoria 1 inteira + as 2
+linhas de Categoria 2 fechadas** — 19 de 24 ocorrências totais
+(correção 2026-09-25: dizia "15" e "Categoria 2 mecânica inteira" por
+erro de aritmética — Categoria 2 tem 7 no total, não 2; ver
+`docs/known-risks.md` item 216). Detalhe completo em
 `docs/known-risks.md` item 216.
+
+## Backlog Alta prioridade — 19ª rodada (2026-09-25): A-7 (4ª sub-rodada, 3 ícones de `Assets.jsx`) corrigida — fecha A-6
+
+Fecha a 4ª sub-rodada de A-7 e, ao mesmo tempo, **o último item
+pendente de A-6**: os 3 ícones de status de scan em `Assets.jsx`
+(`XCircle`/`CheckCircle2`/`MinusCircle`) tinham `title=` nativo E eram
+ícone-só sem wrapper focável — por isso ficaram esperando A-7 (foco de
+teclado) resolvido antes de poderem ser corrigidos de verdade.
+
+- [x] **A-7 (4ª sub-rodada) — 3 ícones de `Assets.jsx` (284-288).**
+  Mesmo padrão do badge "backfill pendente" no mesmo arquivo (item
+  211): cada ícone envolvido num `<span tabIndex={0}>` carregando
+  `TooltipTrigger asChild`, texto do `title=` movido pro
+  `TooltipContent`. **Testes novos:** 3 casos em `Assets.test.jsx`
+  (já existia).
+  **Efeito colateral:** o teto do `typecheck:ratchet` baixou de 16
+  pra 13 (os `title=` nativos removidos dos ícones lucide-react
+  provavelmente eram atrito de tipagem) — atualizado via `--update`.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2060 testes; teto de typecheck
+baixado de 16 pra 13). Com esta rodada, **A-7 fica com 22 de 24
+ocorrências fechadas** (só restam os 2 modais caseiros, 5ª sub-rodada)
+e **A-6 fica 100% fechado**. Detalhe completo em `docs/known-risks.md`
+item 217.
 
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
@@ -686,34 +715,27 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] A-3 — Logs.jsx diz "atualiza a cada 15s", o real é 2 minutos. **Corrigido, ver seção acima.**
 - [x] A-4 — Aba "Sincronização" do Pine Script com números desatualizados. **Corrigido, ver seção acima.**
 - [x] A-5 — Sidebar desktop sem nome acessível em nenhum dos 12 itens. **Corrigido, ver seção acima.**
-- [ ] A-6 — `title=` nativo em vez de Tooltip acessível. **Contagem
-  original de 43 ocorrências/16 arquivos revista numa varredura fresca
-  (item 208): ~40 reais no total (pequena divergência de contagem
-  manual, não um erro de lógica — ver item 208). 1ª sub-rodada
-  (`Backtest.jsx`, 3), 2ª sub-rodada (Grupo 1, 6 arquivos/11), 3ª
-  sub-rodada (`TradeCard.jsx`, 9), 4ª sub-rodada (`EventTimeline.jsx`,
-  2), 5ª sub-rodada (`TradeHistory.jsx` + `Trades.jsx:282`, 6), 6ª
-  sub-rodada (`AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx`,
-  5), 7ª sub-rodada (`StatsCard.jsx` + `Assets.jsx:292`, 2) e 8ª
-  sub-rodada (`Verification.jsx`, botão "Reenviar", 1) corrigidas — ver
-  8ª-15ª rodadas acima. **39 de ~40 ocorrências fechadas — todo o
-  trabalho mecânico e todos os casos especiais isolados estão
-  resolvidos.** `src/components/ui/sidebar.jsx` (dead code) removido
-  separadamente (item 213). **Só resta 1 item, e é uma decisão, não um
-  fix isolado:** os 3 ícones SVG de `Assets.jsx` (284/285/287), que
-  exigem decidir/implementar A-7 (foco de teclado) primeiro. Detalhe em
-  `docs/known-risks.md` item 208/209/211/212/213.**
+- [x] A-6 — `title=` nativo em vez de Tooltip acessível. **100%
+  fechado (19ª rodada, item 217).** Contagem original de 43
+  ocorrências/16 arquivos revista numa varredura fresca (item 208):
+  ~40 reais no total. 8 sub-rodadas mecânicas (itens 204/205/206/207/
+  208/209/211/212, ver 8ª-15ª rodadas acima) + `src/components/ui/
+  sidebar.jsx` removido (dead code, item 213) + os 3 últimos ícones
+  SVG de `Assets.jsx` (284-288), que dependiam de A-7 (foco de
+  teclado) resolvido primeiro, corrigidos na 19ª rodada (item 217).
+  Nenhum item mecânico ou de decisão isolada pendente.
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca
   Global). **Varredura fresca (16ª rodada, item 214): contagem real
   de 24 ocorrências em ~11 arquivos (estimativa original também abaixo
   da realidade, igual A-6), divididas em 5 sub-rodadas sugeridas. 1ª
   (`TriggerBacktestPanel.jsx`, 16ª rodada), 2ª (11 ocorrências avulsas,
-  inclui `GlobalSearch.jsx`, 17ª rodada) e 3ª (2 linhas clicáveis —
-  `Alerts.jsx`/`RecentAlertsList.jsx`, 18ª rodada) corrigidas —
-  **Categoria 1 + Categoria 2 inteiras fechadas, 15 de 24 ocorrências
-  totais.** Restam: 4ª sub-rodada (os 3 ícones de `Assets.jsx`, fecha
-  o último item de A-6) e 5ª (os 2 modais caseiros que exigem decisão
-  de design). Detalhe em `docs/known-risks.md` item 214/215/216.**
+  inclui `GlobalSearch.jsx`, 17ª rodada), 3ª (2 linhas clicáveis —
+  `Alerts.jsx`/`RecentAlertsList.jsx`, 18ª rodada) e 4ª (os 3 ícones de
+  `Assets.jsx`, 19ª rodada, também fecha A-6) corrigidas — **22 de 24
+  ocorrências fechadas.** Resta só a 5ª sub-rodada: os 2 modais
+  caseiros (`OwnerKeySettings.jsx`/`TelegramSettings.jsx`), que exigem
+  decisão de design (Radix `Dialog` vs. focus-trap manual). Detalhe em
+  `docs/known-risks.md` item 214/215/216/217.**
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
 - [x] A-10 — "Geral" na Confiança ao Vivo mistura BUY/SELL sem aviso. **Corrigido, ver seção acima.**
@@ -729,34 +751,24 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 
 ## Como continuar
 
-Próxima rodada sugerida (não decidida): A-1 a A-5, A-8 a A-14 já
-corrigidos (12 de 15 itens de Alta prioridade); A-6 com 8 sub-rodadas
-corrigidas (`Backtest.jsx` + Grupo 1 + `TradeCard.jsx` +
-`EventTimeline.jsx` + `TradeHistory.jsx`/`Trades.jsx:282` +
-`AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx` +
-`StatsCard.jsx`/`Assets.jsx:292` + `Verification.jsx` "Reenviar", 39 de
-~40 ocorrências) + `src/components/ui/sidebar.jsx` removido (dead code,
-item 213). **A-6 está com só 1 item pendente, e é uma decisão, não fix
-isolado** (detalhe em `docs/known-risks.md` item 204-209/211/212/213):
-`Assets.jsx:284/285/287` — os 3 ícones SVG de status de scan são
-ícone-só sem nenhum wrapper focável; corrigir de verdade exige primeiro
-decidir/implementar **A-7** (foco de teclado). É o candidato natural
-pra próxima rodada: puxar A-7 pra frente resolve esse último item de
-A-6 de quebra.
+Próxima rodada sugerida (não decidida): A-1 a A-6, A-8 a A-14 já
+corrigidos (13 de 15 itens de Alta prioridade — **A-6 fechado 100%**
+na 19ª rodada, item 217).
 
-A-7 (foco de teclado invisível) já tem varredura fresca completa (item
+A-7 (foco de teclado invisível) tem varredura fresca completa (item
 214, 24 ocorrências reais em ~11 arquivos, 5 sub-rodadas sugeridas) e
 as 1ª (`TriggerBacktestPanel.jsx`), 2ª (11 ocorrências avulsas, inclui
-`GlobalSearch.jsx`) e 3ª (2 linhas clicáveis —
-`Alerts.jsx:185-197`/`RecentAlertsList.jsx:52-56`) sub-rodadas
-corrigidas — **Categoria 1 + Categoria 2 inteiras fechadas, 15 de 24
-ocorrências totais**. Próxima sub-rodada natural: a 4ª, os 3 ícones SVG
-de `Assets.jsx:284/285/287` (status de scan) — reusando o padrão
-`Tooltip`+`tabIndex={0}` já usado no mesmo arquivo (mesma técnica da
-varredura A-6), que **fecha o último item pendente de A-6**. Depois
-dela: 5ª (os 2 modais caseiros — `OwnerKeySettings.jsx`/
-`TelegramSettings.jsx` — que exigem decisão de design: portar pro
-`Dialog` do Radix vs. focus-trap manual — maior risco, por último).
+`GlobalSearch.jsx`), 3ª (2 linhas clicáveis —
+`Alerts.jsx:185-197`/`RecentAlertsList.jsx:52-56`) e 4ª (os 3 ícones
+SVG de `Assets.jsx:284-288`, que também fechou A-6) sub-rodadas
+corrigidas — **22 de 24 ocorrências fechadas**. Próxima sub-rodada
+natural: a 5ª e última, os 2 modais caseiros
+(`OwnerKeySettings.jsx`/`TelegramSettings.jsx`) — exige decisão de
+design (portar pro `Dialog` do Radix, já usado em outros lugares do
+repo — ex. achado A-12 — vs. implementar focus-trap manual), maior
+risco por tocar estado de abertura/fechamento de telas de configuração
+sensíveis (chave de acesso, Telegram). Fechar essa sub-rodada fecha
+A-7 por completo.
 
 A-15 (AssetCard sem divulgação progressiva) fica deliberadamente pra
 junto da reorganização completa do Dashboard (seção L), não como item

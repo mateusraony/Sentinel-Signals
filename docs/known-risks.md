@@ -26725,11 +26725,14 @@ produção mostra exatamente 11 linhas alteradas (uma por ocorrência),
 todas `className`, nenhuma lógica de negócio tocada — confirmado por
 leitura do diff completo, não só do stat.
 
-Com esta rodada, A-7 fica com **13 de 24 ocorrências fechadas**
-(Categoria 1 inteira: 17/17). Restam: 3ª sub-rodada (Categoria 2
-mecânica — `Alerts.jsx:185-197` + `RecentAlertsList.jsx:52-56`), 4ª
-(os 3 ícones de `Assets.jsx`, fecha o último item de A-6) e 5ª (os 2
-modais caseiros, decisão de design).
+Com esta rodada, A-7 fica com **17 de 24 ocorrências fechadas**
+(Categoria 1 inteira: 17/17) — **correção** (2026-09-25, ao escrever o
+item 217): a versão original deste parágrafo dizia "13 de 24", conta
+errada — 17/17 da Categoria 1 fechada É 17, não 13. Erro de aritmética
+simples, corrigido aqui sem reabrir a rodada em si. Restam: 3ª
+sub-rodada (Categoria 2 mecânica — `Alerts.jsx:185-197` +
+`RecentAlertsList.jsx:52-56`), 4ª (os 3 ícones de `Assets.jsx`, fecha o
+último item de A-6) e 5ª (os 2 modais caseiros, decisão de design).
 
 ## 216. Backlog do Raio-X — A-7 (3ª sub-rodada, linhas clicáveis sem foco por teclado) corrigida (2026-09-25)
 
@@ -26782,10 +26785,17 @@ as adições de `role`/`tabIndex`/`aria-label`/`onKeyDown`/classe de
 foco — nenhuma lógica de `onClick`/`onSelectAsset`/`setSelectedSignal`
 existente foi alterada, só reusada dentro do novo `onKeyDown`.
 
-Com esta rodada, A-7 fica com **15 de 24 ocorrências fechadas**
-(Categoria 1 inteira + Categoria 2 mecânica inteira). Restam: 4ª
-sub-rodada (os 3 ícones de `Assets.jsx`, fecha o último item de A-6) e
-5ª (os 2 modais caseiros, decisão de design).
+Com esta rodada, A-7 fica com **19 de 24 ocorrências fechadas**
+(Categoria 1 inteira, 17, + as 2 linhas clicáveis desta rodada) —
+**correção**: a versão original deste parágrafo dizia "15 de 24" e
+"Categoria 2 mecânica inteira" fechada; a conta certa é 17+2=19, e
+"mecânica inteira" estava errado — Categoria 2 tem 7 no total (2
+linhas + 3 ícones de `Assets.jsx` + 2 modais), só as 2 linhas foram
+fechadas nesta rodada, os 3 ícones ficaram pra 4ª sub-rodada (ver item
+217). Erro de aritmética simples, não de lógica — corrigido aqui sem
+reabrir a rodada em si. Restam: 4ª sub-rodada (os 3 ícones de
+`Assets.jsx`, fecha o último item de A-6) e 5ª (os 2 modais caseiros,
+decisão de design).
 
 ### Addendum (2026-09-25): 2 achados reais do Codex review no PR #419, corrigidos antes do merge
 
@@ -26827,3 +26837,60 @@ typecheck:ratchet` limpos (2057 testes; teto de typecheck em 16,
 inalterado). Revisão cética: diff nos 2 arquivos de produção só mexe
 em `role`/`tabIndex`/`onKeyDown` — nenhuma lógica de negócio tocada.
 Push adicional no mesmo PR #419 (não abriu PR novo).
+
+## 217. Backlog do Raio-X — A-7 (4ª sub-rodada, 3 ícones de `Assets.jsx`) corrigida, fecha o último item de A-6 (2026-09-25)
+
+Fecha a 4ª sub-rodada de A-7 (item 214) e, ao mesmo tempo, **o último
+item pendente de A-6** (item 208/211/212/213): os 3 ícones de status de
+scan em `src/pages/Assets.jsx:284-288` (`XCircle`/`CheckCircle2`/
+`MinusCircle`) eram ícone-só, **com `title=` nativo E sem nenhum
+wrapper focável** — por isso o fix mecânico simples de A-6 não bastava
+(não tinham elemento algum pra virar gatilho de `Tooltip`), precisavam
+esperar A-7 (foco de teclado) ser resolvido primeiro.
+
+### O fix
+
+Mesmo padrão já em produção no mesmo arquivo (badge "backfill
+pendente", item 211): cada ícone envolvido num `<span
+className="inline-flex cursor-help" tabIndex={0}>` carregando o
+`TooltipTrigger asChild`, com o texto do `title=` antigo movido pro
+`TooltipContent`. 3 blocos condicionais idênticos em estrutura
+(`scan_status === 'error'` / `'success'` / ausente-ou-`'idle'`), cada
+um com seu próprio `Tooltip` — não dava pra compartilhar um só `Tooltip`
+entre os 3 porque são mutuamente exclusivos (só 1 renderiza por vez) e
+o texto/ícone mudam.
+
+**Arquivo:** `src/pages/Assets.jsx`. **Teste novo:** 3 casos em
+`Assets.test.jsx` (arquivo já existia) — um por `scan_status`,
+confirmando `title` nulo no ícone e `tabindex="0"` no wrapper. Query
+via `container.querySelector('.text-rose-400'|'.text-emerald-400')`
+`.closest('[tabindex="0"]')` pros 2 primeiros (cor do ícone é única na
+tela); pro terceiro (`idle`, sem cor distintiva reaproveitável como
+seletor), `container.querySelector('[tabindex="0"]')` sozinho já é
+único nesse fixture (sem badge "backfill pendente" nele). Confirmados
+falhando sem o fix via `git stash` antes de aceitar.
+
+### Efeito colateral positivo: teto do typecheck baixou de 16 pra 13
+
+`npm run typecheck:ratchet` reportou 13 erros (não 16) depois do fix —
+3 a menos. Os `title=` nativos removidos dos 3 ícones lucide-react
+provavelmente eram o atrito de tipagem (lucide-react não tipa `title`
+como prop válida do componente SVG em todas as versões/configurações;
+não investigado a fundo, o interesse aqui é só confirmar que a queda é
+uma correção correta, não uma regressão mascarada). Teto atualizado via
+`npm run typecheck:ratchet -- --update` (`scripts/typecheck-ratchet.mjs`
++ `scripts/typecheck-baseline.json`), conforme convenção documentada no
+próprio script/CLAUDE.md ("Corrigiu erros? baixa o teto").
+
+**Verificação:** `npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2060 testes; teto de typecheck baixado de 16
+pra 13). Revisão cética: diff só troca `title=` nativo por
+`Tooltip`/`TooltipTrigger`/`TooltipContent` + wrapper `<span
+tabIndex={0}>`, nenhuma lógica de `scan_status`/dados tocada.
+
+Com esta rodada, **A-7 fica com 22 de 24 ocorrências fechadas**
+(Categoria 1, 17, + as 2 linhas clicáveis + estes 3 ícones — Categoria
+2 completa exceto os modais). Resta só a 5ª sub-rodada: os 2 modais
+caseiros (`OwnerKeySettings.jsx`/`TelegramSettings.jsx`), que exigem
+decisão de design. **A-6 está agora 100% fechado** — nenhum item
+mecânico ou de decisão isolada pendente.
