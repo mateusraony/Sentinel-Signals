@@ -428,6 +428,31 @@ sem achado novo, detalhe completo em `docs/known-risks.md` item 204
 (inclui a divisão sugerida das próximas sub-rodadas de A-6 e a exceção
 de código morto em `src/components/ui/sidebar.jsx`).
 
+## Backlog Alta prioridade — 9ª rodada (2026-09-24): A-6 (2ª sub-rodada, Grupo 1) corrigida
+
+Grupo 1 da divisão sugerida no item 204: botões interativos com `title=`
+nativo, fix mecânico com `TooltipTrigger asChild`. 6 arquivos, 11
+ocorrências reais.
+
+- [x] **A-6 (2ª sub-rodada) — Grupo 1: botões ícone-só/interativos.**
+  `Trades.jsx` (3), `Verification.jsx` (2), `VerificationWidget.jsx` (2),
+  `TopBar.jsx` (2), `DebugLogButton.jsx` (1), `TriggerBacktestPanel.jsx`
+  (1). **Achado real durante a implementação:** `title=` nativo também
+  serve de fallback de nome acessível — botões ÍCONE-SÓ perderam o nome
+  acessível por completo ao trocar só pelo Tooltip (visual/hover-only).
+  Corrigido adicionando `aria-label` em todo botão ícone-só (os com texto
+  visível não precisaram). Pego pela disciplina de rodar a suíte completa
+  antes de declarar pronto — um teste pré-existente
+  (`DebugLogButton.test.jsx`) quebrou por depender do `title=` removido.
+  **Testes novos:** `VerificationWidget.test.jsx`/`TopBar.test.jsx`
+  (componentes sem teste dedicado antes), + describe blocks novos em
+  `Trades.test.jsx`/`Verification.test.jsx`/`Backtest.test.jsx`, +
+  correção do teste pré-existente de `DebugLogButton.test.jsx`.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2011 testes). Revisão cética própria,
+detalhe completo em `docs/known-risks.md` item 205.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -442,9 +467,10 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] A-5 — Sidebar desktop sem nome acessível em nenhum dos 12 itens. **Corrigido, ver seção acima.**
 - [ ] A-6 — `title=` nativo em vez de Tooltip acessível. **Contagem real:
   43 ocorrências/16 arquivos (não ~15 como estimado). 1ª sub-rodada
-  (`Backtest.jsx`, 3 ocorrências) corrigida — ver 8ª rodada acima. Restam
-  ~15 arquivos/40 ocorrências, divisão sugerida em `docs/known-risks.md`
-  item 204.**
+  (`Backtest.jsx`, 3 ocorrências) e 2ª sub-rodada (Grupo 1, 6 arquivos/11
+  ocorrências) corrigidas — ver 8ª/9ª rodadas acima. Restam ~9 arquivos/
+  ~29 ocorrências (Grupo 2 restante, `TradeCard.jsx`, `EventTimeline.jsx`,
+  casos especiais), divisão em `docs/known-risks.md` item 204.**
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
@@ -462,18 +488,20 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 ## Como continuar
 
 Próxima rodada sugerida (não decidida): A-1 a A-5, A-8 a A-14 já
-corrigidos (12 de 15 itens de Alta prioridade); A-6 com a 1ª de várias
-sub-rodadas corrigida (`Backtest.jsx`, 3 de 43 ocorrências). Próximas
-sub-rodadas sugeridas pra A-6 (detalhe em `docs/known-risks.md` item
-204): Grupo 1 (13 botões ícone-only interativos, fix mecânico com
-`asChild`); `TradeCard.jsx` sozinho (9 ocorrências, componente mais
+corrigidos (12 de 15 itens de Alta prioridade); A-6 com 2 de várias
+sub-rodadas corrigidas (`Backtest.jsx` + Grupo 1, 14 de 43 ocorrências).
+Próximas sub-rodadas sugeridas pra A-6 (detalhe em `docs/known-risks.md`
+item 204/205): `TradeCard.jsx` sozinho (9 ocorrências, componente mais
 usado — merece revisão visual própria); `EventTimeline.jsx` (componente
 compartilhado, propaga pra 3+ telas); Grupo 2 restante (~15 badges/textos
-com abreviação fora de TradeCard); casos especiais (botão desabilitado
-já resolvido pro padrão do Backtest, ícones SVG não focáveis em
-Assets.jsx que roçam o tema do A-7). A-7 (foco de teclado invisível em
-~15 pontos) nem começou. A-15 (AssetCard sem divulgação progressiva)
-fica deliberadamente pra junto da reorganização completa do Dashboard
-(seção L), não como item isolado. Depois disso, restam os 17 itens de
-Média prioridade e a própria seção L. Decisão de qual seguir é do usuário
-(ou "seguir conforme achar melhor", como já autorizado nesta sessão).
+com abreviação fora de TradeCard, incluindo `Trades.jsx:282` já
+identificado); casos especiais (botão desabilitado — mesmo padrão já
+resolvido 2x, falta só `Verification.jsx:345`; ícones SVG não focáveis em
+Assets.jsx que roçam o tema do A-7; decisão sobre remover
+`src/components/ui/sidebar.jsx`, código morto). A-7 (foco de teclado
+invisível em ~15 pontos) nem começou. A-15 (AssetCard sem divulgação
+progressiva) fica deliberadamente pra junto da reorganização completa do
+Dashboard (seção L), não como item isolado. Depois disso, restam os 17
+itens de Média prioridade e a própria seção L. Decisão de qual seguir é
+do usuário (ou "seguir conforme achar melhor", como já autorizado nesta
+sessão).

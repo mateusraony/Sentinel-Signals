@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Rocket, Loader2, CheckCircle2, AlertTriangle, ExternalLink, ChevronDown, ChevronUp, XCircle } from 'lucide-react';
 import { callBackend } from '@/lib/apiBackend';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 const STATUS_POLL_MS = 10000;
 const STORAGE_KEY = 'sentinel_backtest_trigger_v1';
@@ -260,11 +261,19 @@ export default function TriggerBacktestPanel({ onReportReady }) {
           {isBusy ? STATUS_LABELS[status] : 'Disparar backtest'}
         </button>
         {isBusy && runId && (
-          <button onClick={handleCancelTracking} title="Parar de acompanhar este run (não cancela o run no GitHub)"
-            className="shrink-0 px-3 py-2.5 rounded-lg text-[10px] font-mono transition-all"
-            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
-            <XCircle className="w-4 h-4" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button onClick={handleCancelTracking}
+                aria-label="Parar de acompanhar este run (não cancela o run no GitHub)"
+                className="shrink-0 px-3 py-2.5 rounded-lg text-[10px] font-mono transition-all"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
+                <XCircle className="w-4 h-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              Parar de acompanhar este run (não cancela o run no GitHub)
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
 

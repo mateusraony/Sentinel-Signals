@@ -29,6 +29,12 @@ vi.mock('@/lib/marketDataProvider', () => ({
   DATA_EXCHANGE: 'binance',
   EXECUTOR: 'browser',
 }));
+// Usado só pelo describe do achado A-6 (botão "Parar de acompanhar") no
+// fim do arquivo — mantém um run em polling pra exercitar o botão de
+// cancelar sem depender de rede real.
+vi.mock('@/lib/apiBackend', () => ({
+  callBackend: vi.fn(async () => ({ status: 'in_progress' })),
+}));
 
 afterEach(() => cleanup());
 
@@ -104,5 +110,25 @@ describe('Backtest — botão "Aplicar ao Scanner" desabilitado usa Tooltip em v
     // chegam a um <button disabled> nativo).
     const wrapper = applyButton.closest('span[tabindex="0"]');
     expect(wrapper).not.toBeNull();
+  });
+});
+
+// Achado A-6 do Raio-X de UI/UX (2ª sub-rodada, Grupo 1): o botão "Parar
+// de acompanhar este run" (TriggerBacktestPanel, ícone-só) usava `title=`
+// nativo. Migrado pro Tooltip do Radix + `aria-label` (sem o aria-label,
+// perderia o nome acessível por completo). O botão só aparece com um run
+// em polling (`isBusy && runId`) — pré-populamos o localStorage que o
+// componente lê ao montar (mesmo mecanismo de retomada após reload já
+// usado em produção) em vez de simular o fluxo completo de disparo.
+describe('Backtest — botão "Parar de acompanhar" (TriggerBacktestPanel) usa Tooltip em vez de title= (achado A-6)', () => {
+  afterEach(() => localStorage.removeItem('sentinel_backtest_trigger_v1'));
+
+  it('REGRESSÃO: não tem title= nativo, mantém nome acessível via aria-label', async () => {
+    localStorage.setItem('sentinel_backtest_trigger_v1', JSON.stringify({ runId: 'run123', htmlUrl: null, trialLabel: null }));
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+
+    const cancelButton = await screen.findByRole('button', { name: /Parar de acompanhar este run/i });
+    expect(cancelButton.getAttribute('title')).toBeNull();
   });
 });

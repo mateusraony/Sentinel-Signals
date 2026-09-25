@@ -5,6 +5,7 @@ import { notifyVerificationTask, isTelegramConfigured } from '@/lib/telegram';
 import { ClipboardCheck, Check, X as XIcon, Search, ArrowUpDown, Send, Loader2, AlertTriangle } from 'lucide-react';
 import SignalChecklist from '@/components/dashboard/SignalChecklist';
 import { QueryErrorState } from '@/components/QueryErrorState';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
@@ -327,18 +328,32 @@ export default function Verification() {
 
                   <div className="flex flex-col items-end gap-1.5 shrink-0">
                     <div className="flex items-center gap-1.5">
-                      <button onClick={() => setStatus(task, 'reviewed')}
-                        title="Marcar como revisado (OK)"
-                        className="p-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
-                        style={{ background: task.status === 'reviewed' ? 'rgba(0,255,128,0.1)' : 'transparent' }}>
-                        <Check className="w-4 h-4" style={{ color: '#00ff80' }} />
-                      </button>
-                      <button onClick={() => setStatus(task, 'skipped')}
-                        title="Pular"
-                        className="p-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
-                        style={{ background: task.status === 'skipped' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>
-                        <XIcon className="w-4 h-4 text-muted-foreground" />
-                      </button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button onClick={() => setStatus(task, 'reviewed')}
+                            aria-label="Marcar como revisado (OK)"
+                            className="p-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
+                            style={{ background: task.status === 'reviewed' ? 'rgba(0,255,128,0.1)' : 'transparent' }}>
+                            <Check className="w-4 h-4" style={{ color: '#00ff80' }} />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                          Marcar como revisado (OK)
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button onClick={() => setStatus(task, 'skipped')}
+                            aria-label="Pular"
+                            className="p-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
+                            style={{ background: task.status === 'skipped' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>
+                            <XIcon className="w-4 h-4 text-muted-foreground" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                          Pular
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                     <button onClick={() => resend(task)}
                       disabled={resendingId === task.id || !isTelegramConfigured() || assetsError}

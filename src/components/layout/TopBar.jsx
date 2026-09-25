@@ -10,6 +10,7 @@ import TelegramSettings from '@/components/settings/TelegramSettings';
 import OwnerKeySettings from '@/components/settings/OwnerKeySettings';
 import GlobalSearch from './GlobalSearch';
 import { toast } from '@/components/ui/use-toast';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 export default function TopBar() {
   const [scanning, setScanning] = useState(false);
@@ -104,23 +105,37 @@ export default function TopBar() {
             {lastScan.toLocaleTimeString()}
           </span>
         )}
-        <button onClick={() => setShowTelegram(true)}
-          className="flex items-center justify-center w-8 h-8 rounded-lg transition-all"
-          title="Alertas Telegram"
-          style={telegramActive
-            ? { background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)' }
-            : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
-          <BellRing className="w-3.5 h-3.5" style={{ color: telegramActive ? '#00e5ff' : 'rgba(255,255,255,0.35)' }} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button onClick={() => setShowTelegram(true)}
+              aria-label="Alertas Telegram"
+              className="flex items-center justify-center w-8 h-8 rounded-lg transition-all"
+              style={telegramActive
+                ? { background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)' }
+                : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <BellRing className="w-3.5 h-3.5" style={{ color: telegramActive ? '#00e5ff' : 'rgba(255,255,255,0.35)' }} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            Alertas Telegram
+          </TooltipContent>
+        </Tooltip>
 
-        <button onClick={() => setShowOwnerKey(true)}
-          className="flex items-center justify-center w-8 h-8 rounded-lg transition-all"
-          title="Chave de Acesso do Backend"
-          style={ownerKeyActive
-            ? { background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)' }
-            : { background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.25)' }}>
-          <KeyRound className="w-3.5 h-3.5" style={{ color: ownerKeyActive ? '#00e5ff' : '#ff1478' }} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button onClick={() => setShowOwnerKey(true)}
+              aria-label="Chave de Acesso do Backend"
+              className="flex items-center justify-center w-8 h-8 rounded-lg transition-all"
+              style={ownerKeyActive
+                ? { background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)' }
+                : { background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.25)' }}>
+              <KeyRound className="w-3.5 h-3.5" style={{ color: ownerKeyActive ? '#00e5ff' : '#ff1478' }} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            Chave de Acesso do Backend
+          </TooltipContent>
+        </Tooltip>
 
         <Button
           onClick={handleScan}
