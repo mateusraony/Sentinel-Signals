@@ -181,9 +181,17 @@ export default function Alerts() {
           {filtered.map(signal => {
             const isBuy = signal.signal_type === 'BUY';
             const prio = PRIORITY_CONFIG[signal.priority] || PRIORITY_CONFIG.low;
+            // Sem role="button" de propósito (achado do Codex review no PR
+            // #419): esta linha contém um <button> real (dispensar) — um
+            // role de widget (button/link/...) torna os filhos
+            // "presentational" pra árvore de acessibilidade, escondendo o
+            // botão de dispensar como controle próprio. tabIndex+onKeyDown
+            // já bastam pra foco/ativação por teclado sem precisar do role.
             return (
               <div key={signal.id}
-                className="rounded-xl px-4 py-3 flex items-center gap-3 transition-all duration-200 cursor-pointer group hover:scale-[1.002]"
+                tabIndex={0}
+                aria-label={`${signal.symbol?.replace('USDT', '/USDT')} — ver detalhes do alerta`}
+                className="rounded-xl px-4 py-3 flex items-center gap-3 transition-all duration-200 cursor-pointer group hover:scale-[1.002] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 style={{
                   background: 'rgba(10,13,22,0.82)',
                   backdropFilter: 'blur(12px)',
@@ -194,7 +202,16 @@ export default function Alerts() {
                     ? (isBuy ? '0 0 16px rgba(0,255,128,0.08)' : '0 0 16px rgba(255,20,120,0.08)')
                     : 'none',
                 }}
-                onClick={() => setSelectedSignal(signal)}>
+                onClick={() => setSelectedSignal(signal)}
+                onKeyDown={(e) => {
+                  // Achado A-7 do Raio-X de UI/UX: ignora key events que
+                  // borbulharem do botão de dispensar (já trata o próprio
+                  // Enter/Space nativamente e faz stopPropagation no clique;
+                  // sem isso, Enter no botão duplicaria a ação de abrir o
+                  // detalhe, igual ao mesmo cuidado já tomado em AssetCard.jsx).
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedSignal(signal); }
+                }}>
 
                 {/* Side bar */}
                 <div className="w-0.5 self-stretch rounded-full shrink-0" style={{ background: isBuy ? '#00ff80' : '#ff1478' }} />

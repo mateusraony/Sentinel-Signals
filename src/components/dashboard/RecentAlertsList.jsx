@@ -50,8 +50,16 @@ export default function RecentAlertsList({ signals = [], unavailable = false, as
               const asset = assets.find(a => a.id === signal.asset_id);
               return (
                 <div key={signal.id}
+                  {...(asset ? {
+                    role: 'button',
+                    tabIndex: 0,
+                    'aria-label': `${signal.symbol} — abrir ativo`,
+                    onKeyDown: (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectAsset?.(asset); }
+                    },
+                  } : {})}
                   onClick={() => asset && onSelectAsset?.(asset)}
-                  className="px-4 py-3 flex items-center gap-3 hover:bg-white/[0.02] transition-colors cursor-pointer group"
+                  className="px-4 py-3 flex items-center gap-3 hover:bg-white/[0.02] transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   style={{ borderTop: i > 0 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
                 >
                   <SignalBadge signal={signal.signal_type} size="sm" />

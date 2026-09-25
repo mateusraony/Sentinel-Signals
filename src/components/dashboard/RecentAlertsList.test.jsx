@@ -53,3 +53,43 @@ describe('RecentAlertsList — link "Ver todos" para /alerts (achado A-14)', () 
     expect(link.getAttribute('href')).toBe('/alerts');
   });
 });
+
+// Achado A-7 do Raio-X de UI/UX (varredura fresca, docs/known-risks.md item
+// 214, 3ª sub-rodada): a linha clicável tinha `onClick` (achado A-1, acima)
+// mas nenhum jeito de alcançá-la ou ativá-la por teclado — sem `role`,
+// `tabIndex` nem `onKeyDown`. Corrigido reusando o mesmo padrão já em
+// produção em `AssetCard.jsx`/`TradeHistory.jsx` (achado A-8).
+describe('RecentAlertsList — linha é focável e ativável por teclado (achado A-7)', () => {
+  it('REGRESSÃO: linha tem role="button", tabIndex=0 e Enter chama onSelectAsset', () => {
+    const onSelectAsset = vi.fn();
+    render(<MemoryRouter><RecentAlertsList signals={[SIGNAL]} assets={[ASSET]} onSelectAsset={onSelectAsset} /></MemoryRouter>);
+    const row = screen.getByRole('button', { name: /BTCUSDT/i });
+    expect(row.getAttribute('tabindex')).toBe('0');
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(onSelectAsset).toHaveBeenCalledWith(ASSET);
+  });
+
+  it('REGRESSÃO: Espaço também ativa a linha', () => {
+    const onSelectAsset = vi.fn();
+    render(<MemoryRouter><RecentAlertsList signals={[SIGNAL]} assets={[ASSET]} onSelectAsset={onSelectAsset} /></MemoryRouter>);
+    const row = screen.getByRole('button', { name: /BTCUSDT/i });
+    fireEvent.keyDown(row, { key: ' ' });
+    expect(onSelectAsset).toHaveBeenCalledWith(ASSET);
+  });
+
+  // Achado do Codex review no PR #419: `role`/`tabIndex` eram aplicados
+  // incondicionalmente, mesmo quando `asset` não é resolvido (query separada
+  // ainda não carregou, ou o ativo foi removido) — a linha era anunciada
+  // como botão operável pro teclado, mas o handler não fazia nada. Corrigido
+  // tornando `role`/`tabIndex`/`onKeyDown` condicionais a `asset` existir.
+  it('REGRESSÃO: sem ativo resolvido, a linha NÃO tem role="button" nem tabIndex', () => {
+    const { container } = render(<MemoryRouter><RecentAlertsList signals={[SIGNAL]} assets={[]} /></MemoryRouter>);
+    // A linha em si é o único elemento com a classe `group` (as divs internas
+    // de conteúdo não a têm) — mais confiável que `.closest('div')`, que
+    // pararia numa das divs de conteúdo aninhadas antes de chegar na linha.
+    const row = container.querySelector('.group');
+    expect(row).toBeTruthy();
+    expect(row.getAttribute('role')).toBeNull();
+    expect(row.getAttribute('tabindex')).toBeNull();
+  });
+});

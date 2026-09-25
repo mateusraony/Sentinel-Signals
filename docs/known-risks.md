@@ -26730,3 +26730,100 @@ Com esta rodada, A-7 fica com **13 de 24 ocorrências fechadas**
 mecânica — `Alerts.jsx:185-197` + `RecentAlertsList.jsx:52-56`), 4ª
 (os 3 ícones de `Assets.jsx`, fecha o último item de A-6) e 5ª (os 2
 modais caseiros, decisão de design).
+
+## 216. Backlog do Raio-X — A-7 (3ª sub-rodada, linhas clicáveis sem foco por teclado) corrigida (2026-09-25)
+
+Fecha a Categoria 2 mecânica de A-7 (item 214): 2 linhas clicáveis
+(`<div onClick=...>`) sem `role`, `tabIndex` nem `onKeyDown` — tinham
+`onClick` (uma delas do próprio achado A-1, já corrigido antes), mas
+nenhum jeito de alcançá-las ou ativá-las por teclado.
+
+### As 2 ocorrências corrigidas
+
+Mesmo padrão já em produção em `AssetCard.jsx`/`TradeHistory.jsx`
+(achado A-8): `role="button"` + `tabIndex={0}` + `aria-label` + classe
+`focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring`
++ `onKeyDown` tratando Enter/Espaço.
+
+- **`src/components/dashboard/RecentAlertsList.jsx:52-56`** — linha do
+  widget "Alertas Recentes" (Dashboard). Sem filho interativo dentro da
+  linha, então o `onKeyDown` é direto, sem guarda de bubbling.
+- **`src/pages/Alerts.jsx:185-197`** — linha de alerta na página
+  `/alerts`. Tem um `<button>` filho (dispensar, ícone `Trash2`) que já
+  faz `e.stopPropagation()` no próprio `onClick` — o `onKeyDown` da
+  linha precisou do mesmo guard `if (e.target !== e.currentTarget)
+  return;` já usado em `AssetCard.jsx`, senão Enter no botão de
+  dispensar duplicaria a ação de abrir o detalhe (o clique sintético que
+  o navegador dispara ao ativar um `<button>` por teclado já é parado
+  pelo `stopPropagation()` do próprio botão, mas o `keydown` que
+  precede esse clique ainda borbulha até a linha antes disso — daí a
+  guarda ser necessária mesmo assim).
+
+### Testes novos
+
+- `RecentAlertsList.test.jsx` (já existia): +2 casos (Enter e Espaço
+  chamam `onSelectAsset` com o ativo certo).
+- `Alerts.test.jsx` (já existia, criado na 2ª sub-rodada): +1 caso —
+  exigiu tornar o mock de `@/api/entities` trocável por teste (`vi.hoisted`
+  + import dinâmico, mesmo padrão de `pagesSmoke.test.jsx`), já que o
+  teste de A-7 precisa de 1 sinal real populado pra ter uma linha
+  clicável pra focar, diferente do teste de foco do filtro (que usa
+  lista vazia).
+
+Ambos confirmados falhando sem o fix via `git stash` (stash só dos 2
+arquivos de produção, pop depois) antes de aceitar.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2056 testes, +3 desta rodada; teto de typecheck em 16,
+inalterado). Revisão cética: diff nos 2 arquivos de produção mostra só
+as adições de `role`/`tabIndex`/`aria-label`/`onKeyDown`/classe de
+foco — nenhuma lógica de `onClick`/`onSelectAsset`/`setSelectedSignal`
+existente foi alterada, só reusada dentro do novo `onKeyDown`.
+
+Com esta rodada, A-7 fica com **15 de 24 ocorrências fechadas**
+(Categoria 1 inteira + Categoria 2 mecânica inteira). Restam: 4ª
+sub-rodada (os 3 ícones de `Assets.jsx`, fecha o último item de A-6) e
+5ª (os 2 modais caseiros, decisão de design).
+
+### Addendum (2026-09-25): 2 achados reais do Codex review no PR #419, corrigidos antes do merge
+
+O bot `chatgpt-codex-connector` revisou o PR e apontou 2 problemas
+concretos e corretos na própria correção acima — não nit/estilo,
+achados de acessibilidade genuínos:
+
+1. **`Alerts.jsx:187`** — a linha ganhou `role="button"` mas contém um
+   `<button>` real (dispensar) dentro. Pela spec de ARIA, um elemento
+   com role de widget (`button`, `link` etc.) torna os descendentes
+   "presentational" pra árvore de acessibilidade — o `<button>` de
+   dispensar perde a própria semântica de controle separado pra leitor
+   de tela. O guard de `onKeyDown` evita duplicar a AÇÃO ao ativar por
+   teclado, mas não resolve essa hierarquia de ARIA inválida.
+   **Corrigido:** removido `role="button"` da linha (mantendo
+   `tabIndex`/`aria-label`/`onKeyDown`/classe de foco) — a linha segue
+   alcançável por Tab e ativável por Enter/Espaço via `onKeyDown`
+   explícito (não depende do role do navegador pra isso), só parou de
+   anunciar globalmente "button" pra árvore de acessibilidade, o que
+   devolve ao `<button>` de dispensar sua própria semântica.
+2. **`RecentAlertsList.jsx:54`** — `role`/`tabIndex` aplicados
+   incondicionalmente, mas `onClick`/`onKeyDown` só fazem algo quando
+   `asset` existe (`asset && onSelectAsset?.(asset)`) — quando o
+   `asset_id` do sinal não bate com nenhum item de `assets` (query
+   separada ainda não resolvida, ou ativo removido), a linha era
+   anunciada como botão operável pro teclado mas não fazia nada ao
+   ativar. **Corrigido:** `role`/`tabIndex`/`aria-label`/`onKeyDown`
+   agora só se aplicam quando `asset` existe (spread condicional);
+   `onClick` continua igual (já era no-op sem `asset`).
+
+**Testes:** +1 caso em `RecentAlertsList.test.jsx` (sem `asset`, linha
+sem `role`/`tabIndex`) + 1 caso reescrito em `Alerts.test.jsx` (query
+trocada de `getByRole('button', ...)` pra `.closest('[tabindex]')`,
+já que o role não existe mais; confirma `role` nulo e `tabindex="0"`).
+Ambos confirmados falhando sem o fix via `git stash` antes de aceitar.
+
+**Verificação:** `npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2057 testes; teto de typecheck em 16,
+inalterado). Revisão cética: diff nos 2 arquivos de produção só mexe
+em `role`/`tabIndex`/`onKeyDown` — nenhuma lógica de negócio tocada.
+Push adicional no mesmo PR #419 (não abriu PR novo).
