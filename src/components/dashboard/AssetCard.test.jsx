@@ -196,3 +196,13 @@ describe('AssetCard — badges usam Tooltip em vez de title= nativo (achado A-6)
     expect(badge.getAttribute('title')).toBeNull();
   });
 });
+
+describe('AssetCard — animações de flash respeitam prefers-reduced-motion (achado M-5)', () => {
+  it('REGRESSÃO: .flash-buy/.flash-sell têm animation:none sob @media (prefers-reduced-motion: reduce)', () => {
+    const { container } = renderCard({});
+    const styleTag = container.querySelector('style');
+    expect(styleTag).not.toBeNull();
+    expect(styleTag.textContent).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
+    expect(styleTag.textContent).toMatch(/\.flash-buy,\s*\.flash-sell\s*\{\s*animation:\s*none;?\s*\}/);
+  });
+});

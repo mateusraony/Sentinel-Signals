@@ -778,9 +778,13 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] M-16 — StatsCard: cor de "atenção" fixa mesmo com valor 0. **Corrigido (bug estava em `Dashboard.jsx`, não em `StatsCard.jsx`) — ver seção "Backlog Média prioridade" abaixo.**
 - [x] M-1 — WeeklySummary: sem estado de carregamento, mostra "+0.00%"/0 como resultado real. **Corrigido, ver 2ª rodada abaixo.**
 - [x] M-2 — WeeklySummary: "Sinais Processados" conta qualquer fonte, não só Range Filter. **Corrigido, ver 2ª rodada abaixo.**
-- [ ] Demais itens de Média prioridade (M-4, M-5, M-6, M-8, M-9, M-10,
-  M-11, M-12, M-13, M-15, M-17 — 11 de 17), Refinamentos e a
-  reorganização completa do Dashboard (seção L do relatório) — nada iniciado.
+- [x] M-5 — AssetCard/SignalToast: animações de flash/pulso sem prefers-reduced-motion. **Corrigido, ver 3ª rodada abaixo.**
+- [x] M-6 — PerformanceReport (Trades): cards de métrica sem tooltip. **Corrigido (só Profit Factor, único com texto já validado) — ver 3ª rodada abaixo.**
+- [x] M-8 — Verificação: RSI/MACD/EMA sem cor de zona. **Corrigido, ver 3ª rodada abaixo.**
+- [x] M-12 — Settings/Pine Script sem link cruzado. **Corrigido, ver 3ª rodada abaixo.**
+- [ ] Demais itens de Média prioridade (M-4, M-9, M-10, M-11, M-13,
+  M-15, M-17 — 7 de 17), Refinamentos e a reorganização completa do
+  Dashboard (seção L do relatório) — nada iniciado.
 
 ## Como continuar
 
@@ -803,14 +807,51 @@ junto da reorganização completa do Dashboard (seção L), não como item
 isolado.
 
 **Backlog de Média prioridade em andamento (1ª rodada, item 220 —
-M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; M-7 descoberto já
-corrigido).** Restam 11 dos 17 itens M. Próximos candidatos a rodada
-mecânica (mesmo padrão): M-5, M-6, M-8, M-9, M-12. M-4/M-10/M-13/M-15
+M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
+M-5/M-6/M-8/M-12; M-7 descoberto já corrigido).** Restam 7 dos 17
+itens M: M-4, M-9, M-10, M-11, M-13, M-15, M-17. M-4/M-10/M-13/M-15
 se sobrepõem à reorganização do Dashboard (seção L, que também inclui
 A-15) — decisão de produto maior, não mexer sem alinhamento explícito.
-M-11 (632 ocorrências de fonte arbitrária em 51 arquivos) e M-17
-(glossário de 10 termos técnicos) são varreduras grandes, merecem
-rodada própria.
+M-9 (17 instâncias de gráfico Recharts sem `role="img"`/`aria-label`
+em 10 arquivos — mapa completo no item 222 do known-risks.md), M-11
+(632 ocorrências de fonte arbitrária em 51 arquivos) e M-17 (glossário
+de 10 termos técnicos) são varreduras grandes, merecem rodada própria.
+
+## Backlog Média prioridade — 3ª rodada (2026-09-25): M-5, M-6, M-8, M-12 corrigidos
+
+Agente Explore confirmou 5 candidatos (M-5, M-6, M-8, M-9, M-12)
+contra o código atual antes de implementar — todos confirmados sem
+divergência. M-9 ficou de fora (17 instâncias/10 arquivos, escopo
+grande demais pra rodada mecânica — mapa completo registrado pra
+rodada futura).
+
+- **M-5** — animações de flash/pulso (`AssetCard.jsx`, `index.css`
+  `.signal-zone-pulse`, `SignalToast.jsx`) sem `prefers-reduced-motion`,
+  mesmo padrão já correto em `TradeCard.jsx`. Todas ganharam o guard
+  (CSS `@media` ou `motion-reduce:`/`matchMedia` conforme o caso).
+- **M-6** — `PerformanceReport.jsx` sem tooltip nos cards de métrica,
+  diferente de `Backtest.jsx`/`MonthlyReport.jsx`. Adicionado tooltip
+  só no card "Profit Factor" (texto reaproveitado ipsis litteris de
+  `Backtest.jsx`) — os outros 5 cards não têm precedente de tooltip em
+  nenhuma tela do projeto.
+- **M-8** — `Verification.jsx`: RSI/MACD/EMA sem cor de zona no
+  `ContextGrid`. Cor recalculada a partir dos valores brutos de
+  `signal_context`, reaproveitando `getRSIZone`
+  (`src/lib/indicators/rsi.js`) e a mesma lógica de sinal/comparação
+  já usada em `AssetDetailPanel.jsx`/`quickBacktest.js`.
+- **M-12** — `Settings.jsx`/`PineScript.jsx` sem aviso cruzado sobre
+  editarem os mesmos parâmetros. Cada página já tinha uma caixa de
+  aviso pronta — estendida com um `Link` pra outra página + "quem
+  salvar por último vence", em vez de criar caixa nova.
+
+Testes novos: `AssetCard.test.jsx` (caso novo), `src/
+indexCssReducedMotion.test.js` (novo, lê CSS via `fs`),
+`SignalToast.test.jsx` (2 casos novos), `PerformanceReport.test.jsx`
+(novo — componente não tinha teste), `Verification.test.jsx` (5 casos
+novos), `Settings.test.jsx` (novo) e `PineScript.test.jsx` (1 caso
+novo). `npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2087 testes, teto de typecheck em 13, sem
+mudança). Detalhe completo em `docs/known-risks.md` item 222.
 
 ## Backlog Média prioridade — 2ª rodada (2026-09-25): M-1 e M-2 corrigidos
 

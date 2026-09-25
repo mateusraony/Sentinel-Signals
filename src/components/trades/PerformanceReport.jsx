@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { TrendingUp, TrendingDown, Target, Activity, AlertTriangle, Award } from 'lucide-react';
 import { summarizeOps } from '@/lib/tradeMetrics';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 function fmtPct(v) {
   if (v === null || v === undefined || isNaN(v)) return '—';
@@ -8,7 +9,12 @@ function fmtPct(v) {
   return `${sign}${v.toFixed(2)}%`;
 }
 
-function MetricCard({ icon: Icon, label, value, sublabel, color, glowColor }) {
+// Achado M-6 do Raio-X: os cards de métrica aqui não tinham tooltip
+// nenhum, diferente dos equivalentes em Backtest.jsx/MonthlyReport.jsx
+// (prop `tooltip` opcional, mesmo molde). Só Profit Factor reaproveita
+// texto já validado nos 2 irmãos — os outros 5 cards não têm precedente
+// de tooltip em nenhuma tela do projeto.
+function MetricCard({ icon: Icon, label, value, sublabel, color, glowColor, tooltip = undefined }) {
   return (
     <div className="rounded-xl p-4 relative overflow-hidden"
       style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -16,7 +22,18 @@ function MetricCard({ icon: Icon, label, value, sublabel, color, glowColor }) {
         style={{ background: `radial-gradient(circle, ${glowColor}, transparent 70%)`, transform: 'translate(30%, -30%)' }} />
       <div className="flex items-center gap-2 mb-2">
         <Icon className="w-4 h-4" style={{ color }} />
-        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
+        {tooltip ? (
+          <Tooltip>
+            <TooltipTrigger type="button" className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
+              {label}
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              {tooltip}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
+        )}
       </div>
       <div className="text-2xl font-bold font-mono" style={{ color }}>{value}</div>
       {sublabel && <div className="text-[9px] font-mono text-muted-foreground mt-1">{sublabel}</div>}
@@ -104,6 +121,7 @@ export default function PerformanceReport({ trades }) {
           sublabel={pfHealthy ? '✓ Saudável' : pfMarginal ? '⚠ Marginal' : '✗ Baixo'}
           color={pfHealthy ? '#00ff80' : '#ff9f43'}
           glowColor={pfHealthy ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'}
+          tooltip="Soma dos ganhos ÷ soma das perdas (valor absoluto). Acima de 1 = ganhos superam perdas no total; ≥ 1,5 é o piso considerado saudável aqui. '∞' quando não houve nenhuma perda na amostra."
         />
         <MetricCard
           icon={TrendingUp}

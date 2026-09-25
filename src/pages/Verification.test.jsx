@@ -217,3 +217,53 @@ describe('Verification — campos têm foco visível (achado A-7)', () => {
     expect(search.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
   });
 });
+
+// Achado M-8 do Raio-X de UI/UX (Média Prioridade): RSI/MACD Hist/EMA
+// Curta/EMA Longa no ContextGrid apareciam todos com a mesma cor fixa
+// (text-foreground/80), sem indicar sobrecompra/sobrevenda/tendência —
+// diferente do padrão já usado no detalhe do ativo (AssetDetailPanel.jsx).
+describe('Verification — RSI/MACD/EMA com cor de zona no ContextGrid (achado M-8)', () => {
+  const GREEN = 'rgb(0, 255, 128)';
+  const RED = 'rgb(255, 20, 120)';
+
+  // Contexto sempre completo (RSI/MACD/EMA juntos, como no dado real) —
+  // só o campo sob teste muda de valor entre os casos; assim o rótulo
+  // usado pra aguardar o render ("RSI") sempre está presente.
+  async function renderWithContext(overrides) {
+    const signal_context = { rsi: 50, macd_histogram: 0, ema_short: 100, ema_long: 100, ...overrides };
+    verificationTaskFilterMock.mockResolvedValue([{ ...TASK, signal_context }]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+    renderPage(<Verification />);
+    return screen.findByText('RSI');
+  }
+
+  it('REGRESSÃO: RSI overbought (>=70) fica vermelho', async () => {
+    await renderWithContext({ rsi: 75 });
+    const value = screen.getByText('75.0');
+    expect(value.style.color).toBe(RED);
+  });
+
+  it('REGRESSÃO: RSI oversold (<=30) fica verde', async () => {
+    await renderWithContext({ rsi: 25 });
+    const value = screen.getByText('25.0');
+    expect(value.style.color).toBe(GREEN);
+  });
+
+  it('REGRESSÃO: MACD Hist positivo fica verde, negativo fica vermelho', async () => {
+    await renderWithContext({ macd_histogram: 0.5 });
+    expect(screen.getByText('0.5000').style.color).toBe(GREEN);
+  });
+
+  it('REGRESSÃO: EMA Curta > EMA Longa (bullish) fica verde nas 2 células', async () => {
+    await renderWithContext({ ema_short: 105, ema_long: 100 });
+    expect(screen.getByText('105.0000').style.color).toBe(GREEN);
+    expect(screen.getByText('100.0000').style.color).toBe(GREEN);
+  });
+
+  it('EMA Curta < EMA Longa (bearish) fica vermelho nas 2 células', async () => {
+    await renderWithContext({ ema_short: 95, ema_long: 100 });
+    expect(screen.getByText('95.0000').style.color).toBe(RED);
+    expect(screen.getByText('100.0000').style.color).toBe(RED);
+  });
+});

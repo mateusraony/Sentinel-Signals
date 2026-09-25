@@ -229,7 +229,10 @@ export default function Settings() {
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>
             Alterações são aplicadas instantaneamente ao scanner no próximo scan. Use o{' '}
-            <Link to="/backtest" className="font-bold underline underline-offset-2">Backtest</Link> para validar antes.
+            <Link to="/backtest" className="font-bold underline underline-offset-2">Backtest</Link> para validar antes.{' '}
+            Estes parâmetros também podem ser editados no{' '}
+            <Link to="/pine" className="font-bold underline underline-offset-2">Pine Script</Link>{' '}
+            — quem salvar por último vence.
           </span>
         </div>
 

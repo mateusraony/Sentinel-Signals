@@ -8,6 +8,32 @@ import { QueryErrorState } from '@/components/QueryErrorState';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
+import { getRSIZone } from '@/lib/indicators/rsi';
+
+// Achado M-8 do Raio-X: cor de zona pra RSI/MACD/EMA, mesma paleta e
+// mesma lógica já usadas no detalhe do ativo
+// (AssetDetailPanel.jsx:47-53). `signal_context` só tem os valores
+// brutos (rsi/macd_histogram/ema_short/ema_long), não os campos já
+// processados (rsi_zone/trend_ema) que AssetState tem — por isso a
+// zona é recalculada aqui, reaproveitando as mesmas funções/thresholds
+// do motor (getRSIZone, default 70/30) em vez de inventar uma nova.
+const ZONE_GREEN = '#00ff80';
+const ZONE_RED = '#ff1478';
+const ZONE_NEUTRAL = 'rgba(255,255,255,0.6)';
+
+function rsiColor(value) {
+  if (value === undefined || value === null) return undefined;
+  const zone = getRSIZone(value);
+  return zone === 'overbought' ? ZONE_RED : zone === 'oversold' ? ZONE_GREEN : ZONE_NEUTRAL;
+}
+function macdColor(value) {
+  if (value === undefined || value === null) return undefined;
+  return value > 0 ? ZONE_GREEN : value < 0 ? ZONE_RED : ZONE_NEUTRAL;
+}
+function emaColor(shortValue, longValue) {
+  if (shortValue === undefined || longValue === undefined || shortValue === null || longValue === null) return undefined;
+  return shortValue > longValue ? ZONE_GREEN : shortValue < longValue ? ZONE_RED : ZONE_NEUTRAL;
+}
 
 const STATUS_FILTERS = [
   { id: 'all', label: 'Todas' },
@@ -70,20 +96,20 @@ function ContextGrid({ ctx }) {
   const items = [
     ['RF', ctx.rf_value?.toFixed?.(4)],
     ['RF Dir', ctx.rf_direction === 1 ? 'Alta' : ctx.rf_direction === -1 ? 'Baixa' : '—'],
-    ['RSI', ctx.rsi?.toFixed?.(1)],
-    ['MACD Hist', ctx.macd_histogram?.toFixed?.(4)],
-    ['EMA Curta', ctx.ema_short?.toFixed?.(4)],
-    ['EMA Longa', ctx.ema_long?.toFixed?.(4)],
+    ['RSI', ctx.rsi?.toFixed?.(1), rsiColor(ctx.rsi)],
+    ['MACD Hist', ctx.macd_histogram?.toFixed?.(4), macdColor(ctx.macd_histogram)],
+    ['EMA Curta', ctx.ema_short?.toFixed?.(4), emaColor(ctx.ema_short, ctx.ema_long)],
+    ['EMA Longa', ctx.ema_long?.toFixed?.(4), emaColor(ctx.ema_short, ctx.ema_long)],
     ['4H', ctx.tf_4h_direction === 1 ? 'Alta' : ctx.tf_4h_direction === -1 ? 'Baixa' : 'Neutra'],
     ['1D', ctx.tf_1d_direction === 1 ? 'Alta' : ctx.tf_1d_direction === -1 ? 'Baixa' : 'Neutra'],
   ].filter(([, v]) => v !== undefined);
   if (items.length === 0) return null;
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1 text-[10px] font-mono">
-      {items.map(([label, value]) => (
+      {items.map(([label, value, color]) => (
         <div key={label} className="flex items-center justify-between gap-1">
           <span className="text-muted-foreground">{label}</span>
-          <span className="text-foreground/80">{value ?? '—'}</span>
+          <span className={color ? undefined : 'text-foreground/80'} style={color ? { color } : undefined}>{value ?? '—'}</span>
         </div>
       ))}
     </div>

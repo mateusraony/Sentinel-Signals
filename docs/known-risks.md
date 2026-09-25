@@ -27188,3 +27188,94 @@ M-3/M-7/M-14/M-16 já fechados ou já estavam corrigidos). Mesma
 triagem do item 220: M-4/M-10/M-13/M-15 esperam a reorganização do
 Dashboard; M-11/M-17 são varreduras grandes; M-5/M-6/M-8/M-9/M-12
 seguem como candidatos a rodadas mecânicas.
+
+## 222. Backlog do Raio-X — 3ª rodada de Média Prioridade: M-5, M-6, M-8, M-12 (2026-09-25)
+
+Continuação do backlog M (itens 220/221). Rodei um agente Explore pra
+confirmar 5 candidatos (M-5, M-6, M-8, M-9, M-12) contra o código
+atual — todos os 5 CONFIRMADOS, nenhuma divergência do relatório
+original. **M-9 ficou de fora desta rodada**: mapeamento completo deu
+17 instâncias de gráfico Recharts em 10 arquivos
+(`WeeklySummary.jsx`, `CorrelationWidget.jsx`, `PredictiveAnalysis.jsx`,
+`Backtest.jsx` ×4, `MonthlyReport.jsx` ×3, `RFHistoryChart.jsx`,
+`TradeEntryMarkers.jsx`, `PerformanceOverview.jsx`, `PnLChart.jsx`,
+`PortfolioVsMarket.jsx`), nenhum com `role="img"`/`aria-label` — mesmo
+tratamento já dado a M-11/M-17, escopo grande demais pra rodada
+mecânica, registrado abaixo como candidato a rodada própria.
+
+### As 4 correções
+
+1. **M-5** — animações de flash/pulso sem `prefers-reduced-motion`,
+   mesmo padrão já correto em `TradeCard.jsx:613`
+   (`motion-reduce:animate-none`). Corrigido em 3 arquivos:
+   - `AssetCard.jsx` — `.flash-buy`/`.flash-sell` (keyframes CSS
+     inline) ganharam `@media (prefers-reduced-motion: reduce) {
+     animation: none }` no mesmo bloco `<style>`.
+   - `src/index.css` — `.signal-zone-pulse` (compartilhada com
+     `Assets.jsx`, corrigir aqui resolve os 2 de uma vez) ganhou o
+     mesmo guard.
+   - `SignalToast.jsx` — entrada (`animate-in`, utilitário Tailwind)
+     ganhou `motion-reduce:animate-none` na className; a barra de
+     progresso (via `style` inline, não dá pra usar classe Tailwind
+     nesse atributo) passou a checar
+     `window.matchMedia('(prefers-reduced-motion: reduce)').matches`
+     em JS e omitir a animação quando ativo.
+2. **M-6** — `PerformanceReport.jsx` (Trades.jsx) não tinha tooltip
+   em nenhum dos 6 cards de métrica, diferente dos equivalentes em
+   `Backtest.jsx`/`MonthlyReport.jsx` (`SummaryCard`, prop `tooltip`
+   opcional). Adicionada a mesma prop ao `MetricCard` local, aplicada
+   só no card "Profit Factor" — único com texto já validado nos 2
+   irmãos (reaproveitado ipsis litteris de `Backtest.jsx:211-214`); os
+   outros 5 cards não têm precedente de tooltip em nenhuma tela do
+   projeto, ficaram de fora.
+3. **M-8** — `Verification.jsx`: RSI/MACD Hist/EMA Curta/EMA Longa no
+   `ContextGrid` apareciam todos com a mesma cor fixa
+   (`text-foreground/80`), sem indicar zona/tendência — diferente do
+   padrão já usado no detalhe do ativo (`AssetDetailPanel.jsx:47-53`).
+   `signal_context` (o dado disponível aqui) só tem valores brutos,
+   não os campos já processados (`rsi_zone`/`trend_ema`) que
+   `AssetState` tem — a cor é recalculada reaproveitando as mesmas
+   funções/thresholds do motor: `getRSIZone` (`src/lib/indicators/
+   rsi.js`, default 70/30) pro RSI, sinal de `macd_histogram` (mesmo
+   padrão trivial do `AssetDetailPanel.jsx`) pro MACD, comparação
+   `ema_short`/`ema_long` (mesma lógica de `quickBacktest.js:130`) pro
+   par de EMAs.
+4. **M-12** — `Settings.jsx`/`PineScript.jsx` editam os mesmos
+   parâmetros de estratégia (via `strategyConfig/current`) sem nenhum
+   aviso cruzado visível — só um comentário de código mencionava a
+   duplicidade. Cada página já tinha uma caixa de aviso pronta
+   (`Settings.jsx`: "Alterações são aplicadas instantaneamente...";
+   `PineScript.jsx`: "Sincronização automática ativa...") — estendida
+   a MESMA frase em cada uma com um `Link` pra outra página
+   (`/pine`/`/settings`) + "quem salvar por último vence", em vez de
+   criar caixa nova.
+
+### Testes novos
+
+`AssetCard.test.jsx` (caso novo — confirma o `<style>` inline com a
+media query), `src/indexCssReducedMotion.test.js` (novo arquivo — lê
+`index.css` via `fs.readFileSync`, já que é CSS global, não algo que
+jsdom aplica a partir de JSX; mesmo padrão dos tripwires de
+`src/lib/*Tripwire.test.js`), `SignalToast.test.jsx` (2 casos novos,
+com `window.matchMedia` mockado), `PerformanceReport.test.jsx` (novo
+— componente não tinha teste), `Verification.test.jsx` (5 casos
+novos, RSI overbought/oversold/MACD/EMA), `Settings.test.jsx` (novo)
+e `PineScript.test.jsx` (1 caso novo). Falha de cada um reproduzida
+via `git stash` antes do fix ser aceito.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2087 testes, teto de typecheck em 13, sem
+mudança). `git diff --stat` só nos 7 arquivos de produção esperados +
+testes — nenhuma mudança em `backend.`/lógica de negócio/scanner, os
+4 fixes são puramente apresentação (M-8 lê `signal_context` já
+existente, não adiciona campo novo nem muda o que é gravado).
+
+### Itens M pendentes (7 dos 17)
+
+M-4, M-9, M-10, M-11, M-13, M-15, M-17. M-4/M-10/M-13/M-15 esperam a
+reorganização do Dashboard (seção L); M-9 (17 instâncias/10 arquivos,
+mapa completo acima), M-11 (632 ocorrências/51 arquivos) e M-17
+(glossário de 10 termos) são varreduras grandes, cada uma merece
+rodada própria.

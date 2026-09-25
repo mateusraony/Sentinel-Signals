@@ -9,6 +9,14 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 export default function SignalToast({ signals = [] }) {
   const [queue, setQueue] = useState([]);
   const seenIds = useRef(new Set());
+  // Achado M-5 do Raio-X: a barra de progresso abaixo usa `style` inline
+  // (não dá pra usar a classe Tailwind motion-reduce: num atributo style),
+  // então o guard precisa ser lido em JS. Computado uma vez (sem listener
+  // de mudança ao vivo — o projeto não tem hook usePrefersReducedMotion
+  // hoje, e um toast dura só 7s, não vale a pena reagir a mudança durante
+  // sua vida).
+  const prefersReducedMotion = typeof window !== 'undefined'
+    && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
   useEffect(() => {
     const cutoff = Date.now() - 3 * 60 * 1000;
@@ -63,7 +71,7 @@ export default function SignalToast({ signals = [] }) {
 
         return (
           <div key={sig._toastId}
-            className="rounded-xl px-4 py-3 pointer-events-auto animate-in slide-in-from-right-4 fade-in duration-300"
+            className="rounded-xl px-4 py-3 pointer-events-auto animate-in slide-in-from-right-4 fade-in duration-300 motion-reduce:animate-none"
             style={{
               background: 'rgba(8,10,18,0.97)',
               border: `1px solid ${borderColor}`,
@@ -112,7 +120,7 @@ export default function SignalToast({ signals = [] }) {
               <div className="h-full rounded-full" style={{
                 width: '100%',
                 background: textColor,
-                animation: 'shrink-progress 7s linear forwards',
+                animation: prefersReducedMotion ? 'none' : 'shrink-progress 7s linear forwards',
                 opacity: 0.5,
               }} />
             </div>

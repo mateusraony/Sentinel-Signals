@@ -373,6 +373,9 @@
 .signal-zone-pulse {
   animation: signal-zone-pulse 1.6s ease-in-out infinite;
 }
+@media (prefers-reduced-motion: reduce) {
+  .signal-zone-pulse { animation: none; }
+}
 
 /* =============================================
    ERROR BOUNDARY — "SIGNAL LOST" RADAR
