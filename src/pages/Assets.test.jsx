@@ -69,3 +69,50 @@ describe('Assets — badge "backfill pendente" usa Tooltip em vez de title= nati
     expect(badge.getAttribute('title')).toBeNull();
   });
 });
+
+// Achado A-6 (último item pendente) + A-7 do Raio-X de UI/UX (varredura
+// fresca, docs/known-risks.md item 214, 4ª sub-rodada): os 3 ícones de
+// status de scan (XCircle/CheckCircle2/MinusCircle) eram ícone-só, com
+// `title=` nativo E sem nenhum wrapper focável — corrigir de verdade exigia
+// primeiro A-7 (foco de teclado) resolvido, por isso ficaram pendentes até
+// agora. Migrados pro mesmo padrão Tooltip+tabIndex já usado no badge
+// "backfill pendente" (acima, no mesmo arquivo).
+describe('Assets — ícones de status de scan usam Tooltip em vez de title= nativo (achados A-6/A-7)', () => {
+  it('REGRESSÃO: ícone de erro (XCircle) não tem title= nativo, vira gatilho focável', async () => {
+    monitoredAssetListMock.mockResolvedValue([
+      { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN(), scan_status: 'error' },
+    ]);
+    const { container } = renderPage(<Assets />);
+
+    await screen.findByText('BTC/USDT');
+    const icon = container.querySelector('.text-rose-400');
+    const trigger = icon.closest('[tabindex="0"]');
+    expect(trigger).not.toBeNull();
+    expect(icon.getAttribute('title')).toBeNull();
+  });
+
+  it('REGRESSÃO: ícone de sucesso (CheckCircle2) não tem title= nativo, vira gatilho focável', async () => {
+    monitoredAssetListMock.mockResolvedValue([
+      { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN(), scan_status: 'success' },
+    ]);
+    const { container } = renderPage(<Assets />);
+
+    await screen.findByText('BTC/USDT');
+    const icon = container.querySelector('.text-emerald-400');
+    const trigger = icon.closest('[tabindex="0"]');
+    expect(trigger).not.toBeNull();
+    expect(icon.getAttribute('title')).toBeNull();
+  });
+
+  it('REGRESSÃO: ícone "ainda não escaneado" (MinusCircle) não tem title= nativo, vira gatilho focável', async () => {
+    monitoredAssetListMock.mockResolvedValue([
+      { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN(), scan_status: 'idle' },
+    ]);
+    const { container } = renderPage(<Assets />);
+
+    await screen.findByText('BTC/USDT');
+    const trigger = container.querySelector('[tabindex="0"]');
+    expect(trigger).not.toBeNull();
+    expect(trigger.querySelector('svg').getAttribute('title')).toBeNull();
+  });
+});

@@ -282,10 +282,41 @@ export default function Assets() {
                           <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: liveColor, boxShadow: asset.is_active && !isStale ? `0 0 5px ${liveColor}` : 'none' }} />
                           <span className="text-[8px] font-mono" style={{ color: liveColor }}>{liveLabel}</span>
                         </span>
-                        {asset.scan_status === 'error' && <XCircle className="w-3 h-3 text-rose-400" title="Último scan falhou" />}
-                        {asset.scan_status === 'success' && <CheckCircle2 className="w-3 h-3 text-emerald-400" title="Último scan ok" />}
+                        {asset.scan_status === 'error' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex cursor-help" tabIndex={0}>
+                                <XCircle className="w-3 h-3 text-rose-400" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                              Último scan falhou
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                        {asset.scan_status === 'success' && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex cursor-help" tabIndex={0}>
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                              Último scan ok
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                         {(!asset.scan_status || asset.scan_status === 'idle') && (
-                          <MinusCircle className="w-3 h-3 text-muted-foreground/40" title="Ainda não escaneado" />
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="inline-flex cursor-help" tabIndex={0}>
+                                <MinusCircle className="w-3 h-3 text-muted-foreground/40" />
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                              Ainda não escaneado
+                            </TooltipContent>
+                          </Tooltip>
                         )}
                         {asset.backfill_check_status === 'pending' && (
                           <Tooltip>
