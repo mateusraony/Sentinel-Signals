@@ -26120,3 +26120,81 @@ restantes nesses mesmos arquivos são deliberadamente fora de escopo desta
 rodada (props de componente custom, ou casos do Grupo 2/4 registrados
 pra depois); rodei a suíte completa (não só os arquivos tocados) antes de
 declarar pronto — foi assim que o achado do nome acessível apareceu.
+
+## 206. Backlog do Raio-X — A-6, 3ª sub-rodada (`TradeCard.jsx`, 9 ocorrências) corrigida (2026-09-25)
+
+Continuação de A-6. Alvo: `TradeCard.jsx`, componente mais usado do
+projeto (card de operação em `src/pages/Trades.jsx`). Perfil diferente
+das duas sub-rodadas anteriores (que eram todas `<button>`/cabeçalhos de
+tabela): as 9 ocorrências aqui são todas em `<div>`/`<span>` **não
+focáveis nativamente** — mais parecido com o padrão dos cabeçalhos `<th>`
+de `Backtest.jsx` (item 204) do que com os botões do item 205.
+
+### As 9 ocorrências
+
+8 de 9 viraram `Tooltip`/`TooltipTrigger asChild` com `tabIndex={0}` novo
+(o elemento não é focável por padrão, então precisa ganhar foco pra o
+tooltip ser acessível por teclado — diferente de um `<button>`, que já é
+focável): badge "aberta {data}" (camada 1, sempre visível), badge de
+status curto (tooltip = `status.desc`, dinâmico por `op.status`), "🎚
+Tier" (só com `op.tier`), fonte do mercado Spot/Futures (só com
+`marketSourceLabel`), bloco MFE/MAE (só com algum finito), legenda "em
+aberto · bruto" (só com posição aberta), aviso `⚠️` de cotação
+desatualizada (`MilestoneLine`, só com `isStale`), e a célula de nível no
+grid de 4 (stop/entrada/TP1/TP2, `title` já era condicional — só vira
+`Tooltip` quando `level.pct !== null`, preservada a condicional original;
+teve que virar 2 ramos de `map` — `level.pct === null` continua `<div>`
+plano, senão `<div>` envolto em `Tooltip`, com a `key` no elemento comum
+aos dois ramos pra não duplicar).
+
+A 9ª (agulha de preço dentro da `LevelRail`, um marcador de 3px sem
+nenhum texto) **não** virou `Tooltip` — decisão de design (Grupo 5,
+mesma categoria já sinalizada no item 205 mas não resolvida até agora):
+é puramente decorativa, sem foco nem clique possível, e o `<div
+role="img">` pai já tem um `aria-label` descrevendo stop/entrada/TP1/
+TP2/preço atual por completo — forçar um `TooltipTrigger` focável ali
+duplicaria informação já acessível. Só o `title=` saiu, com um
+comentário de 1 linha explicando o porquê. Perda aceita: o hover nativo
+de mouse nessa sub-marca de 3px some; não há equivalente por teclado
+sendo removido, porque não havia foco possível nela antes.
+
+### Testes
+
+`TradeCard.test.jsx` não tinha `TooltipProvider` no `renderCard()`/
+`renderCompact()` (mesma classe de quebra já vista no item 205 com
+`DebugLogButton.test.jsx`) — corrigido. As 6 ocorrências de texto
+sempre/condicionalmente visível (aberta/status/tier/market_source/MFE-
+MAE/legenda PnL) testadas direto com `baseOp()`. As 2 que dependem de
+`level.pct`/`geo.currentPct` (célula de nível e a decisão de NÃO
+adicionar Tooltip na agulha) precisaram de preço real — `useLivePrice`
+fica `null` por padrão em teste (sem mock, `fetchCurrentPrice` tentaria
+rede de verdade e falharia) — adicionado `vi.mock('@/lib/
+marketDataProvider', ...)` com um `fetchCurrentPriceMock` hoisted (mesmo
+padrão já usado em `src/hooks/useLivePrice.test.jsx`), default `null`
+pra não mudar o comportamento dos testes pré-existentes, sobrescrito por
+teste onde um preço real é necessário. O aviso `⚠️` de cotação
+desatualizada (`isStale = price !== null && (isError || idade > 90s)`)
+foi o mais delicado: em vez de simular uma falha de rede (que corre risco
+de o refetch em segundo plano do TanStack Query — `staleTime:0` no
+harness de teste — sobrescrever o dado antes da asserção rodar), o teste
+semeia `client.setQueryData(key, preço, { updatedAt: Date.now() -
+200_000 })` (sucesso, mas velho) e faz o mock nunca resolver
+(`new Promise(() => {})`) — a idade fica estável durante o teste inteiro,
+sem corrida. Todos os 9 casos novos confirmados falhando sem o fix via
+`git stash` (8 falharam de fato — o caso da agulha só verifica ausência
+de `title`/presença do `aria-label` do pai, que já existiam antes desta
+rodada).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2020 testes, +9 dos testes novos; teto de typecheck em 16,
+inalterado). Revisão cética própria: `git diff --stat` confirma só os 2
+arquivos esperados tocados; grep no diff por `backend.`/`firestore`/
+`scanner.js`/`transitionTradeOp`/`onSave`/`actions(` não encontra nada —
+nenhuma lógica de trading tocada (`TradeCard` continua um componente de
+apresentação pura, `actions` seguem vindo de fora). **Não rodei
+verificação visual via navegador real nesta rodada** (padrão mecânico
+idêntico ao já usado nas duas sub-rodadas anteriores, sem CSS novo além
+de `cursor-help`, já usado em `Backtest.jsx`) — registrado aqui por
+disciplina de verdade documental, não confirmado por screenshot.

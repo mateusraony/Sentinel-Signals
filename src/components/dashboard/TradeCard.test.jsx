@@ -12,10 +12,11 @@
 // realized-result source of truth PerformanceOverview.jsx/
 // TradeEntryMarkers.jsx already use — never the stop's geometric posture.
 import React from 'react';
-import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import TradeCard from './TradeCard.jsx';
 
 // useLivePrice (via TradeCard) passou a logar falha de cotação com
@@ -25,6 +26,21 @@ import TradeCard from './TradeCard.jsx';
 // reais de Firebase. Mesmo mock que src/pages/pagesSmoke.test.jsx já usa
 // pelo mesmo motivo — não inventa um mecanismo novo.
 vi.mock('@/lib/firebaseClient', () => ({ db: {}, auth: {}, rtdb: null, app: {} }));
+
+// Achado A-6 (3ª sub-rodada): TradeCard ganhou Tooltip/TooltipTrigger, que
+// precisam de um preço real pra exercitar a agulha da LevelRail e as
+// células de nível (só viram gatilho quando `level.pct !== null`, e isso
+// depende de `useLivePrice` → `fetchCurrentPrice`). Mesmo padrão de mock já
+// usado em src/hooks/useLivePrice.test.jsx (vi.hoisted + vi.fn, pra poder
+// trocar o valor resolvido por teste). Default null preserva o
+// comportamento que os testes pré-existentes abaixo já assumiam (nenhum
+// deles depende de preço real).
+const { fetchCurrentPriceMock } = vi.hoisted(() => ({ fetchCurrentPriceMock: vi.fn() }));
+vi.mock('@/lib/marketDataProvider', () => ({ fetchCurrentPrice: fetchCurrentPriceMock }));
+beforeEach(() => {
+  fetchCurrentPriceMock.mockReset();
+  fetchCurrentPriceMock.mockResolvedValue(null);
+});
 
 // Sem test.globals no vite.config.js, o cleanup automático do RTL entre
 // testes não é acionado — dois cenários que produzem o MESMO texto de banner
@@ -37,7 +53,9 @@ function renderCard(op) {
   const client = makeTestQueryClient();
   return render(
     <QueryClientProvider client={client}>
-      <TradeCard operation={op} expandAll />
+      <TooltipProvider>
+        <TradeCard operation={op} expandAll />
+      </TooltipProvider>
     </QueryClientProvider>,
   );
 }
@@ -151,7 +169,9 @@ describe('TradeCard — resumo do "por quê" visível sem expandir', () => {
     const client = makeTestQueryClient();
     return render(
       <QueryClientProvider client={client}>
-        <TradeCard operation={op} />
+        <TooltipProvider>
+          <TradeCard operation={op} />
+        </TooltipProvider>
       </QueryClientProvider>,
     );
   }
@@ -220,5 +240,100 @@ describe('TradeCard — decision_snapshot (Fase 3, gestão HOLDING/PROTECTED)', 
       },
     }));
     expect(screen.queryByText('Monitorando')).toBeNull();
+  });
+});
+
+// Achado A-6 do Raio-X de UI/UX (3ª sub-rodada): 9 ocorrências de title=
+// nativo em TradeCard.jsx. 8 viraram Tooltip/TooltipTrigger asChild com
+// tabIndex={0} (elementos não focáveis por padrão — diferente da 2ª
+// sub-rodada, que era só botões); a 9ª (agulha de preço na LevelRail, sem
+// texto/foco) só teve o title= removido, sem Tooltip — decisão de design:
+// é puramente decorativa e o aria-label do <div role="img"> pai já
+// descreve a mesma informação por completo (docs/known-risks.md item 206).
+describe('TradeCard — elementos usam Tooltip em vez de title= nativo (achado A-6)', () => {
+  it('REGRESSÃO: badge "aberta ..." (camada 1, sempre visível) não tem title=, vira gatilho focável', () => {
+    renderCard(baseOp());
+    const badge = screen.getByText(/^aberta /);
+    expect(badge.getAttribute('title')).toBeNull();
+    expect(badge.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: badge de status curto não tem title= nativo, vira gatilho focável (tooltip = status.desc)', () => {
+    renderCard(baseOp({ status: 'RUNNER_ACTIVE', tp1_hit: true }));
+    const badge = screen.getByText('Runner');
+    expect(badge.getAttribute('title')).toBeNull();
+    expect(badge.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: "🎚 Tier" não tem title= nativo, vira gatilho focável', () => {
+    renderCard(baseOp({ tier: 'B' }));
+    const tierLine = screen.getByText(/Tier B/);
+    expect(tierLine.getAttribute('title')).toBeNull();
+    expect(tierLine.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: fonte do mercado (Spot/Futures) não tem title= nativo, vira gatilho focável', () => {
+    renderCard(baseOp({ market_source: 'futures' }));
+    const marketBadge = screen.getByText(/Futures/);
+    expect(marketBadge.getAttribute('title')).toBeNull();
+    expect(marketBadge.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: bloco MFE/MAE não tem title= nativo, vira gatilho focável', () => {
+    renderCard(baseOp({ mfe_r: 1.2, mae_r: -0.5 }));
+    const mfeBlock = screen.getByText(/MFE/).closest('[tabindex="0"]');
+    expect(mfeBlock).not.toBeNull();
+    expect(mfeBlock.getAttribute('title')).toBeNull();
+  });
+
+  it('REGRESSÃO: legenda "em aberto · bruto" (só com posição aberta) não tem title= nativo, vira gatilho focável', async () => {
+    fetchCurrentPriceMock.mockResolvedValue(60500);
+    renderCard(baseOp({ status: 'SIGNAL_CONFIRMED', tp1_hit: false, tp1_hit_at: null }));
+    const legend = await screen.findByText('em aberto · bruto');
+    expect(legend.getAttribute('title')).toBeNull();
+    expect(legend.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: aviso de cotação desatualizada (MilestoneLine, ⚠️) não tem title= nativo, vira gatilho focável', async () => {
+    // isStale = price !== null && (isError || idade > 90s). Semeia dado
+    // "sucesso, mas velho" (updatedAt no passado) e nunca resolve o
+    // refetch em segundo plano (staleTime:0 dispara um automaticamente) —
+    // assim a idade não é apagada por um refetch concorrente durante o
+    // teste, sem precisar simular erro de rede.
+    const client = makeTestQueryClient();
+    client.setQueryData(['live-price', 'BTCUSDT'], 60500, { updatedAt: Date.now() - 200_000 });
+    fetchCurrentPriceMock.mockReturnValue(new Promise(() => {}));
+    render(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <TradeCard operation={baseOp({ status: 'SIGNAL_CONFIRMED', tp1_hit: false, tp1_hit_at: null, current_stop: 59000 })} expandAll />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+    const warning = await screen.findByText('⚠️');
+    expect(warning.getAttribute('title')).toBeNull();
+    expect(warning.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: célula de nível (grid stop/entrada/TP1/TP2) não tem title= nativo, vira gatilho focável quando há preço', async () => {
+    fetchCurrentPriceMock.mockResolvedValue(60500);
+    renderCard(baseOp({ current_stop: 59000 }));
+    const tp1Cell = await waitFor(() => {
+      const cell = screen.getByText('TP1 ✓').closest('[tabindex="0"]');
+      expect(cell).not.toBeNull();
+      return cell;
+    });
+    expect(tp1Cell.getAttribute('title')).toBeNull();
+  });
+
+  it('a agulha de preço na LevelRail não vira Tooltip (decorativa, sem foco) — só o title= sai, coberto pelo aria-label do pai', async () => {
+    fetchCurrentPriceMock.mockResolvedValue(60500);
+    const { container } = renderCard(baseOp({ current_stop: 59000 }));
+    await waitFor(() => {
+      const rail = container.querySelector('[role="img"]');
+      expect(rail).not.toBeNull();
+      expect(rail.querySelector('[title]')).toBeNull();
+      expect(rail.getAttribute('aria-label')).toMatch(/Stop \$.*entrada \$.*TP1 \$.*TP2 \$/);
+    });
   });
 });

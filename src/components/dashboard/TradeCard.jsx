@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import moment from 'moment';
 import { Clock, TrendingUp, TrendingDown, ChevronDown, ChevronUp, History } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { formatBackfillLag } from '@/lib/backfillDetection';
 import {
   formatPrice, formatSignedPct, describeProximity, rrGeometry, nextMilestone,
@@ -151,12 +152,12 @@ function LevelRail({ op, price, isStale }) {
           {/* entrada — referência de origem do resultado */}
           <div className="absolute -top-0.5 -bottom-0.5 w-px"
             style={{ left: `${geo.positions.entry}%`, background: 'rgba(255,255,255,0.8)', transform: 'translateX(-50%)' }} />
-          {/* agulha do preço */}
+          {/* agulha do preço — sem title=/Tooltip de propósito (achado A-6,
+              Grupo 5): é um marcador de 3px sem foco nem texto, e o
+              aria-label do <div role="img"> pai (acima) já descreve
+              stop/entrada/TP1/TP2/preço atual por completo. */}
           {geo.currentPct !== null && (
             <div className="absolute -top-1.5 -bottom-1.5 rounded-full"
-              title={geo.currentOutOfRange
-                ? 'Preço fora do intervalo stop–TP2 (agulha presa na borda)'
-                : (isStale ? 'Última cotação recebida' : 'Preço agora')}
               style={{
                 left: `${geo.currentPct}%`,
                 width: 3,
@@ -172,11 +173,8 @@ function LevelRail({ op, price, isStale }) {
       <div className="grid grid-cols-4 gap-1">
         {orderLevelsByRail(levels).map((level) => {
           const color = levelColor(level.key, op);
-          return (
-            <div key={level.key} className="min-w-0"
-              title={level.pct === null
-                ? undefined
-                : `O preço precisa andar ${formatSignedPct(level.pct)} para chegar em ${levelLabel(level.key, op)}.`}>
+          const cellBody = (
+            <>
               <div className="flex items-center gap-1 mb-0.5">
                 <span className="w-1 h-1 rounded-full shrink-0" style={{ background: color }} />
                 <span className="text-[8px] font-mono uppercase tracking-wide truncate"
@@ -191,7 +189,20 @@ function LevelRail({ op, price, isStale }) {
                   ? '—'
                   : `${level.position === 'above' ? '↑' : level.position === 'below' ? '↓' : '='} ${Math.abs(level.pct).toFixed(2)}%`}
               </div>
-            </div>
+            </>
+          );
+          if (level.pct === null) {
+            return <div key={level.key} className="min-w-0">{cellBody}</div>;
+          }
+          return (
+            <Tooltip key={level.key}>
+              <TooltipTrigger asChild>
+                <div className="min-w-0 cursor-help" tabIndex={0}>{cellBody}</div>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                {`O preço precisa andar ${formatSignedPct(level.pct)} para chegar em ${levelLabel(level.key, op)}.`}
+              </TooltipContent>
+            </Tooltip>
           );
         })}
       </div>
@@ -226,9 +237,16 @@ function MilestoneLine({ op, price, isStale }) {
         {isRisk ? riskText : `para o ${milestone.label}`}
       </span>
       {isStale && (
-        <span className="ml-auto text-[9px] shrink-0" style={{ color: '#ff9f43' }} title="Calculado sobre a última cotação recebida.">
-          ⚠️
-        </span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="ml-auto text-[9px] shrink-0 cursor-help" tabIndex={0} style={{ color: '#ff9f43' }}>
+              ⚠️
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            Calculado sobre a última cotação recebida.
+          </TooltipContent>
+        </Tooltip>
       )}
     </div>
   );
@@ -439,10 +457,16 @@ function Details({ op }) {
       <TFTrendRow op={op} />
 
       {op.tier && (
-        <div className="text-[9px] font-mono" style={{ color: 'rgba(0,229,255,0.7)' }}
-          title="Tier de volatilidade (ATR%) classificado na entrada — ver Pine v13.2 Grupo 03">
-          🎚 Tier {op.tier}
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="text-[9px] font-mono cursor-help" tabIndex={0} style={{ color: 'rgba(0,229,255,0.7)' }}>
+              🎚 Tier {op.tier}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            Tier de volatilidade (ATR%) classificado na entrada — ver Pine v13.2 Grupo 03
+          </TooltipContent>
+        </Tooltip>
       )}
 
       <div className="flex items-center justify-between text-[9px] font-mono flex-wrap gap-2">
@@ -456,10 +480,16 @@ function Details({ op }) {
           </span>
           <span style={{ color: dataStatus.color }}>{dataStatus.label}</span>
           {marketSourceLabel && (
-            <span style={{ color: 'rgba(255,255,255,0.35)' }}
-              title="De qual mercado da Binance vieram os dados desta operação (item 4, docs/known-risks.md — divergência Spot×Futures aceita como limitação do projeto gratuito).">
-              · {marketSourceLabel}
-            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  · {marketSourceLabel}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                De qual mercado da Binance vieram os dados desta operação (item 4, docs/known-risks.md — divergência Spot×Futures aceita como limitação do projeto gratuito).
+              </TooltipContent>
+            </Tooltip>
           )}
         </div>
       </div>
@@ -473,15 +503,21 @@ function Details({ op }) {
           Ausente em ops legadas ou cujo candle de gerenciamento não era
           utilizável (P0-c/P0-g) — não mostra nada nesse caso em vez de 0. */}
       {(Number.isFinite(op.mfe_r) || Number.isFinite(op.mae_r)) && (
-        <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground"
-          title="MFE: maior lucro flutuante já visto nesta operação. MAE: maior perda flutuante já vista. Ambos em múltiplos do risco inicial (R).">
-          {Number.isFinite(op.mfe_r) && (
-            <span>📈 MFE <span style={{ color: '#00ff80' }}>{op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R</span></span>
-          )}
-          {Number.isFinite(op.mae_r) && (
-            <span>📉 MAE <span style={{ color: '#ff1478' }}>{op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R</span></span>
-          )}
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground cursor-help" tabIndex={0}>
+              {Number.isFinite(op.mfe_r) && (
+                <span>📈 MFE <span style={{ color: '#00ff80' }}>{op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R</span></span>
+              )}
+              {Number.isFinite(op.mae_r) && (
+                <span>📉 MAE <span style={{ color: '#ff1478' }}>{op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R</span></span>
+              )}
+            </div>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            MFE: maior lucro flutuante já visto nesta operação. MAE: maior perda flutuante já vista. Ambos em múltiplos do risco inicial (R).
+          </TooltipContent>
+        </Tooltip>
       )}
 
       {reasons.length > 0 && (
@@ -540,16 +576,28 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
             </span>
             {/* Horário absoluto de abertura já na camada 1: é o âncora de
                 qualquer comparação posterior (item 161). */}
-            <span className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.25)' }}
-              title="Quando esta operação foi aberta (horário de Brasília)">
-              aberta {fmtBRT(op.created_date)}
-            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-[9px] font-mono cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.25)' }}>
+                  aberta {fmtBRT(op.created_date)}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                Quando esta operação foi aberta (horário de Brasília)
+              </TooltipContent>
+            </Tooltip>
           </div>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded shrink-0 font-semibold"
-            title={status.desc}
-            style={{ background: status.bg, color: status.color, border: `1px solid ${status.border}` }}>
-            {status.short}
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded shrink-0 font-semibold cursor-help" tabIndex={0}
+                style={{ background: status.bg, color: status.color, border: `1px solid ${status.border}` }}>
+                {status.short}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              {status.desc}
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         <BackfillBanner op={op} />
@@ -578,10 +626,16 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
               <div className="text-xl font-mono font-bold leading-none" style={{ color: pnlColor, opacity: isStale ? 0.55 : 1 }}>
                 {formatSignedPct(openPnlPct)}
               </div>
-              <div className="text-[8px] font-mono uppercase tracking-widest mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}
-                title="Resultado em aberto sobre a entrada, sem descontar taxas nem funding.">
-                em aberto · bruto
-              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="text-[8px] font-mono uppercase tracking-widest mt-1 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                    em aberto · bruto
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  Resultado em aberto sobre a entrada, sem descontar taxas nem funding.
+                </TooltipContent>
+              </Tooltip>
             </div>
           )}
         </div>
