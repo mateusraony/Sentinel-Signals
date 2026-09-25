@@ -107,7 +107,7 @@ export default function Alerts() {
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <input type="text" placeholder="Buscar símbolo..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-6 pr-3 py-1.5 rounded-lg w-32 text-[10px] font-mono outline-none"
+              className="pl-6 pr-3 py-1.5 rounded-lg w-32 text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }} />
           </div>
 

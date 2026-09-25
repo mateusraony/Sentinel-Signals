@@ -163,7 +163,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
         <select
           value={selected?.id || ''}
           onChange={e => setSelectedId(e.target.value)}
-          className="px-2.5 py-1.5 rounded-lg text-[11px] font-mono outline-none"
+          className="px-2.5 py-1.5 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.85)' }}>
           {candidates.map(c => (
             <option key={c.id} value={c.id}>

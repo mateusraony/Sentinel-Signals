@@ -350,7 +350,7 @@ export default function MonthlyReport() {
           <div className="flex items-center gap-2">
             <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
             <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-mono outline-none capitalize"
+              className="px-3 py-1.5 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring capitalize"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}>
               {monthOptions.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>

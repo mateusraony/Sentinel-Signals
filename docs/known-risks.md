@@ -26656,3 +26656,77 @@ typecheck em 16, inalterado). Revisão cética: `git diff --stat` só em
 `TriggerBacktestPanel.jsx`, diff inteiro são as 6 linhas de `className`
 esperadas — nenhuma lógica de `handleTrigger`/`checkStatusOnce`/
 `startPolling`/persistência em `localStorage` tocada.
+
+## 215. Backlog do Raio-X — A-7 (2ª sub-rodada, `outline-none` avulsos) corrigida (2026-09-25)
+
+Fecha os 11 achados avulsos restantes da Categoria 1 de A-7 (item 214):
+`outline-none` sem substituto visível de foco, espalhados por 7
+arquivos — inclui o input da própria **Busca Global**
+(`GlobalSearch.jsx`), citada explicitamente no achado original.
+
+### As 11 ocorrências corrigidas
+
+Mesmo fix mecânico da 1ª sub-rodada (item 214), reusando o padrão já em
+produção (`Assets.jsx`/`Logs.jsx`/`Dashboard.jsx`/`PineScript.jsx`/
+`TriggerBacktestPanel.jsx`): `outline-none` → `outline-none
+focus-visible:ring-1 focus-visible:ring-ring`.
+
+- `src/components/layout/GlobalSearch.jsx:99` — input "Buscar ativo ou
+  alerta..." (a própria Busca Global).
+- `src/components/dashboard/PredictiveAnalysis.jsx:166` — select
+  "Analisando:" (escolha de ativo/sinal a comparar).
+- `src/pages/Alerts.jsx:110` — input "Buscar símbolo..." (filtro).
+- `src/pages/Verification.jsx:62` — textarea "Anotações sobre esta
+  revisão..." (`NotesField`).
+- `src/pages/Verification.jsx:231` — input "Buscar símbolo..." (filtro).
+- `src/pages/MonthlyReport.jsx:353` — select de mês.
+- `src/pages/Trades.jsx:637` — input "Buscar operação..." (filtro).
+- `src/pages/Backtest.jsx:270` — input "Capital inicial" (aba
+  "Desempenho Real", dentro de `ReportBody`, só aparece com relatório
+  carregado e `equitySim` calculável).
+- `src/pages/Backtest.jsx:533` — select "Ativo" (aba "Ajuste Fino").
+- `src/pages/Backtest.jsx:557` — select "Período (candles)" (aba
+  "Ajuste Fino").
+- `src/pages/Backtest.jsx:763` — textarea "— ou cole o JSON —" (aba
+  "Simulação").
+
+Confirmado na varredura original (item 214) e reconfirmado aqui por
+leitura direta: nenhum dos 11 tem `disabled`, é ícone-só ou já tem
+tratamento de foco próprio — Padrão mecânico puro em todos.
+
+### Testes novos
+
+10 casos novos (1 ocorrência a menos que campos, porque
+`Verification.jsx` tem 2 ocorrências cobertas por 2 testes cada):
+
+- `GlobalSearch.test.jsx` (já existia): +1 caso.
+- `Verification.test.jsx` (já existia): +2 casos (um por campo).
+- `Trades.test.jsx` (já existia): +1 caso.
+- `Backtest.test.jsx` (já existia): +3 casos — o de "Capital inicial"
+  exigiu um `REPORT_JSON_COM_CURVE` novo (fixture com `overall.curve`
+  populado por 1 operação fechada real, já que o `REPORT_JSON` existente
+  tinha `curve: []` e por isso `equitySim` (em `ReportBody`) nunca
+  ficava não-nulo — o campo só renderiza dentro do bloco condicional
+  `equitySim &&`).
+- `PredictiveAnalysis.test.jsx` (novo — sem teste dedicado antes): +1
+  caso.
+- `Alerts.test.jsx` (novo — sem teste dedicado antes): +1 caso.
+- `MonthlyReport.test.jsx` (novo — sem teste dedicado antes): +1 caso.
+
+Todos os 10 confirmados falhando sem o fix via `git stash` (stash só
+dos 7 arquivos de produção, pop depois) antes de aceitar.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2053 testes, +10 desta rodada; teto de typecheck em 16,
+inalterado). Revisão cética: `git diff --stat` nos 7 arquivos de
+produção mostra exatamente 11 linhas alteradas (uma por ocorrência),
+todas `className`, nenhuma lógica de negócio tocada — confirmado por
+leitura do diff completo, não só do stat.
+
+Com esta rodada, A-7 fica com **13 de 24 ocorrências fechadas**
+(Categoria 1 inteira: 17/17). Restam: 3ª sub-rodada (Categoria 2
+mecânica — `Alerts.jsx:185-197` + `RecentAlertsList.jsx:52-56`), 4ª
+(os 3 ícones de `Assets.jsx`, fecha o último item de A-6) e 5ª (os 2
+modais caseiros, decisão de design).
