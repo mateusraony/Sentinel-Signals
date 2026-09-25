@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { History, Filter, BarChart2, ChevronDown, ChevronUp, Search, Copy, Check } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import PnLChart from '@/components/trades/PnLChart';
 import moment from 'moment';
 import {
@@ -103,11 +104,17 @@ function HistoryCard({ op }) {
               {op.timeframe?.toUpperCase()}
             </span>
             {op.tier && (
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
-                title="Tier de volatilidade (ATR%) classificado na entrada — ver Pine v13.2 Grupo 03"
-                style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.6)', border: '1px solid rgba(0,229,255,0.15)' }}>
-                {op.tier}
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
+                    style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.6)', border: '1px solid rgba(0,229,255,0.15)' }}>
+                    {op.tier}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  Tier de volatilidade (ATR%) classificado na entrada — ver Pine v13.2 Grupo 03
+                </TooltipContent>
+              </Tooltip>
             )}
             <span className="text-[9px] font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>
               {isBuy ? '▲' : '▼'} {op.side}
@@ -123,11 +130,17 @@ function HistoryCard({ op }) {
               </span>
             )}
             {op.exit_ambiguous && (
-              <span className="text-[9px] font-mono font-semibold px-2 py-0.5 rounded"
-                style={{ background: 'rgba(0,229,255,0.1)', color: '#00e5ff', border: '1px solid rgba(0,229,255,0.3)' }}
-                title="Nessa vela, o preço tocou o stop e o take ao mesmo tempo — veja detalhes ao expandir">
-                ℹ️ Situação rara
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="text-[9px] font-mono font-semibold px-2 py-0.5 rounded cursor-help" tabIndex={0}
+                    style={{ background: 'rgba(0,229,255,0.1)', color: '#00e5ff', border: '1px solid rgba(0,229,255,0.3)' }}>
+                    ℹ️ Situação rara
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  Nessa vela, o preço tocou o stop e o take ao mesmo tempo — veja detalhes ao expandir
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
           {/* Por quê — sempre visível, sem precisar expandir (achado de
@@ -230,16 +243,30 @@ function HistoryCard({ op }) {
                 ops legadas ou cujo candle de gerenciamento não era utilizável
                 (P0-c/P0-g) — não mostra nada nesse caso em vez de 0. */}
             {Number.isFinite(op.mfe_r) && (
-              <span className="px-2 py-1 rounded" style={{ background: 'rgba(0,255,128,0.06)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.15)' }}
-                title="Maior lucro flutuante já visto nesta operação, em múltiplos do risco inicial (R)">
-                📈 MFE {op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="px-2 py-1 rounded cursor-help" tabIndex={0}
+                    style={{ background: 'rgba(0,255,128,0.06)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.15)' }}>
+                    📈 MFE {op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  Maior lucro flutuante já visto nesta operação, em múltiplos do risco inicial (R)
+                </TooltipContent>
+              </Tooltip>
             )}
             {Number.isFinite(op.mae_r) && (
-              <span className="px-2 py-1 rounded" style={{ background: 'rgba(255,20,120,0.06)', color: '#ff1478', border: '1px solid rgba(255,20,120,0.15)' }}
-                title="Maior perda flutuante já vista nesta operação, em múltiplos do risco inicial (R)">
-                📉 MAE {op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R
-              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="px-2 py-1 rounded cursor-help" tabIndex={0}
+                    style={{ background: 'rgba(255,20,120,0.06)', color: '#ff1478', border: '1px solid rgba(255,20,120,0.15)' }}>
+                    📉 MAE {op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  Maior perda flutuante já vista nesta operação, em múltiplos do risco inicial (R)
+                </TooltipContent>
+              </Tooltip>
             )}
           </div>
 
@@ -552,9 +579,16 @@ export default function TradeHistory() {
           <span style={{ color: '#ff1478' }}>🛑 {losses} loss</span>
           <span style={{ color: wr >= 50 ? '#00ff80' : '#ff9f43' }}>WR {wr}%</span>
           {ambiguousCount > 0 && (
-            <span style={{ color: '#ffd166' }} title="Candle fechado tocou stop e TP no mesmo candle (política: stop vence). Calculado sobre as últimas 200 operações carregadas nesta tela — não o histórico completo de produção.">
-              ⚠️ {ambiguousCount} ambíguo{ambiguousCount !== 1 ? 's' : ''} ({ambiguousPct}%)*
-            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="cursor-help" tabIndex={0} style={{ color: '#ffd166' }}>
+                  ⚠️ {ambiguousCount} ambíguo{ambiguousCount !== 1 ? 's' : ''} ({ambiguousPct}%)*
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                Candle fechado tocou stop e TP no mesmo candle (política: stop vence). Calculado sobre as últimas 200 operações carregadas nesta tela — não o histórico completo de produção.
+              </TooltipContent>
+            </Tooltip>
           )}
           <span className="ml-auto font-bold" style={{ color: totalPnl >= 0 ? '#00ff80' : '#ff1478' }}>
             Total: {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}%

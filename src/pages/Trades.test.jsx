@@ -341,4 +341,26 @@ describe('Trades — botões usam Tooltip em vez de title= nativo (achado A-6)',
     const densityButton = screen.getByText('Compacto').closest('button');
     expect(densityButton.getAttribute('title')).toBeNull();
   });
+
+  // 5ª sub-rodada (docs/known-risks.md item 208): achado durante a
+  // varredura fresca do Grupo 2 — este `title=` de Trades.jsx (badge
+  // "desde ...", quando um aviso fica travado no mesmo motivo de rejeição)
+  // tinha sido deliberadamente deixado de fora da 2ª sub-rodada (item 205,
+  // só cobria botões), mas a varredura nova o excluiu por engano ao
+  // ignorar o arquivo inteiro (já tinha OUTRAS ocorrências corrigidas).
+  it('REGRESSÃO: badge "desde ..." (motivo travado) não tem title= nativo, vira gatilho focável', async () => {
+    const freshSignal = {
+      ...SIGNAL_WAITING_COM_EVIDENCIA,
+      created_date: new Date().toISOString(),
+      last_rejection_at: new Date().toISOString(),
+    };
+    mockBackend({ operations: [], signals: [freshSignal] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    await screen.findByText('ADA/USDT');
+    const badge = screen.getByText(/^desde /);
+    expect(badge.getAttribute('title')).toBeNull();
+    expect(badge.getAttribute('tabindex')).toBe('0');
+  });
 });

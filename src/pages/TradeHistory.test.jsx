@@ -13,7 +13,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup } from '@testing-library/react';
+import { screen, cleanup, fireEvent } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 
 const AGORA = '2026-09-18T12:00:00.000Z';
@@ -82,5 +82,71 @@ describe('TradeHistory — "por quê" visível sem precisar expandir', () => {
     expect(screen.queryByText(/stop movido para entrada após TP1/i)).toBeNull();
     // Texto honesto pro caso: veio do trailing pré-TP1, não do breakeven pós-TP1.
     screen.getByText(/avançou o suficiente antes do TP1/i);
+  });
+});
+
+// Achado A-6 do Raio-X de UI/UX (5ª sub-rodada): 5 ocorrências de title=
+// nativo em TradeHistory.jsx (Tier, "Situação rara", resumo de ambíguos,
+// MFE, MAE) — todas em <span> não focável com texto visível ao lado.
+// Migradas pro Tooltip do Radix (TooltipTrigger asChild + tabIndex={0}
+// novo), mesmo Padrão 3 já usado em Backtest.jsx/TradeCard.jsx/
+// EventTimeline.jsx.
+const OP_A6 = {
+  id: 'op3', asset_id: 'a3', symbol: 'PENDLEUSDT', side: 'BUY',
+  status: 'STOP_HIT', entry_price: 5, initial_stop: 4.8,
+  current_stop: 4.8, tp1: 5.2, tp2: 5.4, exit_price: 4.8,
+  stop_hit_at: AGORA, closed_at: AGORA, tp1_hit: false,
+  partial_percent: 50, created_date: AGORA,
+  tier: 'B', exit_ambiguous: true, mfe_r: 1.2, mae_r: -0.5,
+};
+
+describe('TradeHistory — badges usam Tooltip em vez de title= nativo (achado A-6)', () => {
+  it('REGRESSÃO: badge de Tier não tem title= nativo, vira gatilho focável', async () => {
+    mockBackend([OP_A6]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+
+    await screen.findByText('PENDLE/USDT');
+    const tierBadge = screen.getByText('B');
+    expect(tierBadge.getAttribute('title')).toBeNull();
+    expect(tierBadge.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: badge "Situação rara" não tem title= nativo, vira gatilho focável', async () => {
+    mockBackend([OP_A6]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+
+    await screen.findByText('PENDLE/USDT');
+    const badge = screen.getByText(/Situação rara/);
+    expect(badge.getAttribute('title')).toBeNull();
+    expect(badge.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: resumo "N ambíguo(s)" (rodapé) não tem title= nativo, vira gatilho focável', async () => {
+    mockBackend([OP_A6]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+
+    await screen.findByText('PENDLE/USDT');
+    const summary = screen.getByText(/ambíguo/);
+    expect(summary.getAttribute('title')).toBeNull();
+    expect(summary.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: MFE/MAE (bloco expandido) não têm title= nativo, viram gatilho focável', async () => {
+    mockBackend([OP_A6]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    const { container } = renderPage(<TradeHistory />);
+
+    await screen.findByText('PENDLE/USDT');
+    fireEvent.click(container.querySelector('[aria-expanded]'));
+
+    const mfe = await screen.findByText(/MFE/);
+    const mae = screen.getByText(/MAE/);
+    expect(mfe.getAttribute('title')).toBeNull();
+    expect(mfe.getAttribute('tabindex')).toBe('0');
+    expect(mae.getAttribute('title')).toBeNull();
+    expect(mae.getAttribute('tabindex')).toBe('0');
   });
 });
