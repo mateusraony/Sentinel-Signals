@@ -93,3 +93,12 @@ describe('WeeklySummary — "Sinais Processados" só conta Range Filter (achado 
     await waitFor(() => expect(valueEl.textContent).toBe('2'));
   });
 });
+
+describe('WeeklySummary — gráfico "P&L por dia" tem role="img"/aria-label (achado M-9)', () => {
+  it('REGRESSÃO: o wrapper do BarChart tem role="img" e aria-label descritivo', () => {
+    const { container } = renderWidget();
+    const chart = container.querySelector('[role="img"]');
+    expect(chart).not.toBeNull();
+    expect(chart.getAttribute('aria-label')).toMatch(/Gráfico de barras do P&L por dia da semana/);
+  });
+});

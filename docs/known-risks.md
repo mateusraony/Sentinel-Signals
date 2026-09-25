@@ -27279,3 +27279,70 @@ reorganização do Dashboard (seção L); M-9 (17 instâncias/10 arquivos,
 mapa completo acima), M-11 (632 ocorrências/51 arquivos) e M-17
 (glossário de 10 termos) são varreduras grandes, cada uma merece
 rodada própria.
+
+## 223. Backlog do Raio-X — M-9 (1ª sub-rodada, 4 widgets do Dashboard) (2026-09-25)
+
+M-9 mapeado no item 222 (17 instâncias de gráfico Recharts sem
+`role="img"`/`aria-label` em 10 arquivos) — grande demais pra rodada
+única, dividido em sub-rodadas por área, mesmo padrão de A-6/A-7.
+Esta 1ª sub-rodada cobre os 4 widgets do Dashboard.
+
+### Padrão de fix (reutilizado nas próximas sub-rodadas)
+
+`ResponsiveContainer` (Recharts) não aceita `role`/`aria-label` como
+prop — o componente só repassa um conjunto fechado de props conhecidas
+pro `<div>` interno (`id`/`className`/`style`/`ref`), então passar
+`role`/`aria-label` direto nele é descartado silenciosamente
+(confirmado lendo `node_modules/recharts/lib/component/
+ResponsiveContainer.js`). Fix: `role="img"` + `aria-label` descritivo
+no `<div>` que já envolve (ou passa a envolver) o
+`<ResponsiveContainer>` — WCAG trata gráfico como conteúdo não-textual
+complexo, `aria-label` com um resumo (o que o gráfico mostra + o
+número-chave, quando fizer sentido) é a alternativa textual adequada.
+Deliberadamente **não** usei a prop `accessibilityLayer` do Recharts
+(existe na versão instalada, 2.15.4) — ela adiciona navegação por
+teclado dentro do gráfico (tabIndex, setas, live region), mudança de
+comportamento bem maior que o achado pede (só "visível pro leitor de
+tela", não "navegável por teclado") — fica registrado aqui como opção
+pra quando/se o achado de navegação por teclado em gráficos for
+levantado separadamente.
+
+### Os 4 fixes
+
+1. `WeeklySummary.jsx` (`BarChart`, "P&L por dia") — wrapper `<div
+   style={{ height: 64 }}>` já existia, só ganhou `role`/`aria-label`.
+2. `CorrelationWidget.jsx` (`LineChart`, variação % por símbolo) —
+   mesmo padrão, `aria-label` cita os símbolos comparados.
+3. `PredictiveAnalysis.jsx` (`BarChart`, "Taxa de acerto por faixa de
+   score") — não tinha wrapper próprio (`ResponsiveContainer` filho
+   direto do card); adicionado um novo `<div role="img" ...>`
+   envolvendo só o gráfico, sem tocar o `<h3>`/`<p>` ao redor.
+4. `PerformanceOverview.jsx` (`AreaChart`, "Evolução do Saldo
+   Acumulado") — mesmo padrão de 1/2, `aria-label` cita o PnL total.
+
+### Testes novos
+
+`WeeklySummary.test.jsx` (caso novo), `CorrelationWidget.test.jsx`
+(caso novo — precisou de fixture de candles fechados pra
+`analysis` ficar não-nulo e o gráfico renderizar),
+`PredictiveAnalysis.test.jsx` (caso novo — fixture de operação
+fechada com `entry_score` pra popular `scoreBuckets`),
+`PerformanceOverview.test.jsx` (novo arquivo — componente não tinha
+teste). Falha de cada um reproduzida via `git stash` dos 4 arquivos
+de produção juntos (mesmo fix pattern, mesma verificação).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2091 testes, teto de typecheck em 13, sem
+mudança). `git diff --stat` só nos 4 arquivos de produção esperados +
+testes — nenhuma mudança em `backend.`/lógica de negócio/scanner,
+puramente apresentação (só `aria-label`/`role` novos, nenhum dado novo
+lido/gravado).
+
+### M-9 restante (13 dos 17 instâncias, 6 arquivos)
+
+`Backtest.jsx` (4 instâncias), `MonthlyReport.jsx` (3),
+`RFHistoryChart.jsx`, `TradeEntryMarkers.jsx`, `PnLChart.jsx`,
+`PortfolioVsMarket.jsx` (1 cada) — candidatos a 1-2 sub-rodadas
+futuras, mesmo padrão de fix acima.

@@ -176,7 +176,7 @@ export default function CorrelationWidget() {
 
       {!isLoading && analysis && (
         <>
-          <div style={{ height: 160 }}>
+          <div style={{ height: 160 }} role="img" aria-label={`Gráfico de linha da variação percentual de preço: ${analysis.validSymbols.map(s => s.replace('USDT', '')).join(', ')}`}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={analysis.chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />

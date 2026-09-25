@@ -782,9 +782,11 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] M-6 — PerformanceReport (Trades): cards de métrica sem tooltip. **Corrigido (só Profit Factor, único com texto já validado) — ver 3ª rodada abaixo.**
 - [x] M-8 — Verificação: RSI/MACD/EMA sem cor de zona. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-12 — Settings/Pine Script sem link cruzado. **Corrigido, ver 3ª rodada abaixo.**
-- [ ] Demais itens de Média prioridade (M-4, M-9, M-10, M-11, M-13,
-  M-15, M-17 — 7 de 17), Refinamentos e a reorganização completa do
-  Dashboard (seção L do relatório) — nada iniciado.
+- [~] M-9 — 17 gráficos Recharts sem role="img"/aria-label em 10 arquivos. **1ª de ~3 sub-rodadas feita (4/10 arquivos) — ver seção própria abaixo.**
+- [ ] Demais itens de Média prioridade (M-4, M-10, M-11, M-13, M-15,
+  M-17 — 6 de 17, mais 6 dos 10 arquivos de M-9), Refinamentos e a
+  reorganização completa do Dashboard (seção L do relatório) — nada
+  iniciado.
 
 ## Como continuar
 
@@ -808,14 +810,41 @@ isolado.
 
 **Backlog de Média prioridade em andamento (1ª rodada, item 220 —
 M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
-M-5/M-6/M-8/M-12; M-7 descoberto já corrigido).** Restam 7 dos 17
-itens M: M-4, M-9, M-10, M-11, M-13, M-15, M-17. M-4/M-10/M-13/M-15
-se sobrepõem à reorganização do Dashboard (seção L, que também inclui
-A-15) — decisão de produto maior, não mexer sem alinhamento explícito.
+M-5/M-6/M-8/M-12; M-9 em sub-rodadas, item 223 — 1ª feita; M-7
+descoberto já corrigido).** Restam 6 dos 17 itens M inteiros (M-4,
+M-10, M-11, M-13, M-15, M-17) + 6 dos 10 arquivos de M-9. M-4/M-10/
+M-13/M-15 se sobrepõem à reorganização do Dashboard (seção L, que
+também inclui A-15) — decisão de produto maior, não mexer sem
+alinhamento explícito. M-11 (632 ocorrências de fonte arbitrária em 51
+arquivos) e M-17 (glossário de 10 termos técnicos) são varreduras
+grandes, merecem rodada própria.
+
+## Backlog M-9 — 1ª sub-rodada (2026-09-25): 4 widgets do Dashboard
+
 M-9 (17 instâncias de gráfico Recharts sem `role="img"`/`aria-label`
-em 10 arquivos — mapa completo no item 222 do known-risks.md), M-11
-(632 ocorrências de fonte arbitrária em 51 arquivos) e M-17 (glossário
-de 10 termos técnicos) são varreduras grandes, merecem rodada própria.
+em 10 arquivos, mapa completo no item 222 do known-risks.md) é grande
+demais pra rodada única — dividido em sub-rodadas por área, mesmo
+padrão de A-6/A-7. Esta 1ª cobre `WeeklySummary.jsx`,
+`CorrelationWidget.jsx`, `PredictiveAnalysis.jsx` e
+`PerformanceOverview.jsx` (1 gráfico cada).
+
+Padrão de fix: `role="img"` + `aria-label` descritivo no `<div>` que
+envolve o `<ResponsiveContainer>` — o próprio `ResponsiveContainer` não
+repassa essas props pro DOM (confirmado lendo o código-fonte do
+Recharts), então precisam ir no wrapper. Deliberadamente **não** usei
+`accessibilityLayer` (prop do Recharts que adiciona navegação por
+teclado dentro do gráfico) — mudança de comportamento maior que o
+achado pede, registrada como opção separada se o achado de navegação
+por teclado for levantado no futuro.
+
+4 testes novos (`PerformanceOverview.test.jsx` é arquivo novo, os
+outros 3 já existiam por achados anteriores). `npm run lint && npm
+test && npm run build && npm run typecheck:ratchet` limpos (2091
+testes, teto de typecheck em 13, sem mudança). Detalhe completo em
+`docs/known-risks.md` item 223. Restam 13 das 17 instâncias (6
+arquivos): `Backtest.jsx` (4), `MonthlyReport.jsx` (3),
+`RFHistoryChart.jsx`, `TradeEntryMarkers.jsx`, `PnLChart.jsx`,
+`PortfolioVsMarket.jsx` (1 cada).
 
 ## Backlog Média prioridade — 3ª rodada (2026-09-25): M-5, M-6, M-8, M-12 corrigidos
 
