@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Bell } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import moment from 'moment';
 
 /**
@@ -66,10 +67,16 @@ export default function SignalAlertBanner({ signals = [] }) {
                 {sig.timeframe?.toUpperCase()}
               </span>
               {score > 0 && (
-                <span className="text-[9px] font-mono" style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}
-                  title="Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.">
-                  🔥 Score {score}/100
-                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-[9px] font-mono cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                      🔥 Score {score}/100
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                    Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
+                  </TooltipContent>
+                </Tooltip>
               )}
               {sig.priority && (
                 <span className="text-[9px] font-mono" style={{ color: sig.priority === 'high' ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>

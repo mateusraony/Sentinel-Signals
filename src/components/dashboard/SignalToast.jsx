@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TrendingUp, TrendingDown, X } from 'lucide-react';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 /**
  * In-app visual notification for new signals.
@@ -89,10 +90,16 @@ export default function SignalToast({ signals = [] }) {
                       {sig.signal_type}
                     </span>
                   </div>
-                  <div className="text-[9px] font-mono mt-0.5" style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}
-                    title="Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.">
-                    Score {score}/100 · Sinal Confirmado
-                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="text-[9px] font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                        Score {score}/100 · Sinal Confirmado
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                      Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
               </div>
               <button onClick={() => dismiss(sig._toastId)}
