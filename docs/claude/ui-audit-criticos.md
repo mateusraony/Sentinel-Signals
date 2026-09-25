@@ -604,6 +604,34 @@ dependência ficou órfã. Detalhe completo em `docs/known-risks.md` item
 213. Com esta remoção, **A-6 fica com só 1 item pendente**: os 3 ícones
 SVG de `Assets.jsx` (precisam do tema A-7 resolvido primeiro).
 
+## Backlog Alta prioridade — 16ª rodada (2026-09-25): A-7 (varredura fresca + 1ª sub-rodada, `TriggerBacktestPanel.jsx`) corrigida
+
+Com A-6 praticamente fechado, investiguei A-7 ("foco de teclado
+invisível em ~15 pontos, incl. Busca Global") com uma varredura fresca
+via agente Explore — mesmo processo do item 204 (que fez o mesmo por
+A-6). **A estimativa original também ficou abaixo da realidade:**
+contagem real de **24 ocorrências em ~11 arquivos únicos**, em duas
+categorias — (1) `outline-none` sem substituto de foco visível, 17
+ocorrências/8 arquivos; (2) clicável sem foco por teclado, 7
+ocorrências/4 arquivos (inclui os 3 ícones de `Assets.jsx` já
+conhecidos e 2 modais caseiros que exigem decisão de design). Detalhe
+completo, com a lista arquivo-por-arquivo e a divisão em 5 sub-rodadas
+sugerida, em `docs/known-risks.md` item 214.
+
+- [x] **A-7 (1ª sub-rodada) — `TriggerBacktestPanel.jsx` (6
+  ocorrências).** Escolhida como piloto: único arquivo, mesmo padrão
+  mecânico repetido 6x (`outline-none` → `outline-none
+  focus-visible:ring-1 focus-visible:ring-ring`, o mesmo já em produção
+  em `Assets.jsx`/`Logs.jsx`/`Dashboard.jsx`/`PineScript.jsx`). **Teste
+  novo:** `TriggerBacktestPanel.test.jsx` (não existia) — 3 casos
+  confirmando o foco visível nos 6 campos.
+
+**Verificação rodada:** `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2043 testes; teto de typecheck 16,
+inalterado). Revisão cética própria (sem verificação visual via
+navegador real — mesma ressalva de sempre), detalhe completo em
+`docs/known-risks.md` item 214.
+
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
 Nada abaixo foi tocado nesta rodada — listado aqui pra não passar a
@@ -633,7 +661,17 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
   fix isolado:** os 3 ícones SVG de `Assets.jsx` (284/285/287), que
   exigem decidir/implementar A-7 (foco de teclado) primeiro. Detalhe em
   `docs/known-risks.md` item 208/209/211/212/213.**
-- [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
+- [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca
+  Global). **Varredura fresca (16ª rodada, item 214): contagem real
+  de 24 ocorrências em ~11 arquivos (estimativa original também abaixo
+  da realidade, igual A-6), divididas em 5 sub-rodadas sugeridas. 1ª
+  sub-rodada (`TriggerBacktestPanel.jsx`, 6 ocorrências) corrigida —
+  ver 16ª rodada acima. 18 de 24 ocorrências restantes: 11 avulsas de
+  `outline-none` (2ª sub-rodada, inclui `GlobalSearch.jsx`), 2 linhas
+  clicáveis (3ª sub-rodada), os 3 ícones de `Assets.jsx` (4ª
+  sub-rodada, fecha o último item de A-6) e os 2 modais caseiros que
+  exigem decisão de design (5ª sub-rodada). Detalhe em
+  `docs/known-risks.md` item 214.**
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
 - [x] A-10 — "Geral" na Confiança ao Vivo mistura BUY/SELL sem aviso. **Corrigido, ver seção acima.**
@@ -664,12 +702,19 @@ decidir/implementar **A-7** (foco de teclado). É o candidato natural
 pra próxima rodada: puxar A-7 pra frente resolve esse último item de
 A-6 de quebra.
 
-A-7 (foco de teclado invisível em ~15 pontos, incluindo Busca Global)
-nem começou — precisa de investigação fresca (varredura tipo a que A-6
-teve no item 204) antes de dividir em sub-rodadas. A-15 (AssetCard sem
-divulgação progressiva) fica deliberadamente pra junto da reorganização
-completa do Dashboard (seção L), não como item isolado. Depois disso,
-restam os 17 itens de Média prioridade e a própria seção L. Decisão de
-qual seguir é do usuário (ou "seguir conforme achar melhor", como já
-autorizado nesta
-sessão).
+A-7 (foco de teclado invisível) já tem varredura fresca completa (item
+214, 24 ocorrências reais em ~11 arquivos, 5 sub-rodadas sugeridas) e a
+1ª sub-rodada (`TriggerBacktestPanel.jsx`) corrigida. Próxima sub-rodada
+natural: a 2ª, os 11 achados avulsos de `outline-none` restantes
+(inclui `GlobalSearch.jsx`, a própria Busca Global citada no achado
+original) — mesmo padrão mecânico já validado na 1ª sub-rodada, só
+espalhado por mais arquivos. Depois dela: 3ª (linhas clicáveis de
+`Alerts.jsx`/`RecentAlertsList.jsx`), 4ª (os 3 ícones de `Assets.jsx`,
+que fecha o último item pendente de A-6) e 5ª (os 2 modais caseiros,
+que exigem decisão de design — maior risco, por último).
+
+A-15 (AssetCard sem divulgação progressiva) fica deliberadamente pra
+junto da reorganização completa do Dashboard (seção L), não como item
+isolado. Depois de A-7 fechado, restam os 17 itens de Média prioridade
+e a própria seção L. Decisão de qual seguir é do usuário (ou "seguir
+conforme achar melhor", como já autorizado nesta sessão).

@@ -26558,3 +26558,101 @@ importado/bundlado).
 Com esta remoção, **A-6 fica com só 1 item pendente**: os 3 ícones SVG
 de `Assets.jsx` (284/285/287), que precisam do tema A-7 (foco de
 teclado) resolvido primeiro.
+
+## 214. Backlog do Raio-X — A-7 (varredura fresca) + 1ª sub-rodada (`TriggerBacktestPanel.jsx`) corrigida (2026-09-25)
+
+### Varredura fresca de A-7
+
+Com A-6 praticamente fechado (item 213), próximo item do backlog "Alta
+prioridade": A-7 ("foco de teclado invisível em ~15 pontos, incl. Busca
+Global"), estimativa original nunca detalhada ponto a ponto — mesma
+situação que A-6 tinha antes do item 204. Investiguei com um agente
+Explore em varredura completa, mesmo processo do item 204: **a
+estimativa original ("~15 pontos") também ficou abaixo da realidade,
+igual A-6** ("~15 arquivos" virou 43/16). Contagem real: **24
+ocorrências em ~11 arquivos únicos**, em duas categorias:
+
+- **Categoria 1 — `outline-none` sem substituto de foco (17
+  ocorrências, 8 arquivos):** `TriggerBacktestPanel.jsx` (6),
+  `GlobalSearch.jsx` (1, o input da própria Busca Global citada no
+  achado original), `PredictiveAnalysis.jsx` (1), `Alerts.jsx` (1),
+  `Verification.jsx` (2), `MonthlyReport.jsx` (1), `Trades.jsx` (1),
+  `Backtest.jsx` (4). `src/index.css` tem
+  `outline-ring/50` num `@layer base` — isso só recolore o outline
+  padrão do navegador, não força `outline-style`; confirma que
+  `outline-none` sozinho realmente apaga o único indicador de foco que
+  existiria (não há reset global escondido cobrindo isso). Todas as 17
+  seguem o mesmo fix mecânico já em produção em 8 outros lugares do
+  repo (`Assets.jsx:202`, `Logs.jsx:131/164`, `Dashboard.jsx:234/241/303`,
+  `PineScript.jsx:1218`): `outline-none` → `outline-none
+  focus-visible:ring-1 focus-visible:ring-ring`. Descartados como falso
+  positivo: 44 dos 61 `outline-none` totais do `src/` — primitivos
+  `src/components/ui/*` (shadcn/Radix) que já levam
+  `focus-visible:ring-*`/`focus:ring-*`, mais 8 usos de app-code já
+  corrigidos em rodadas anteriores de A-6/A-9, e containers
+  não-interativos (`popover.jsx`, `hover-card.jsx`, `chart.jsx`).
+- **Categoria 2 — clicável sem foco por teclado (7 ocorrências, 4
+  arquivos):** `Alerts.jsx:185-197` (linha de alerta clicável, `<div
+  onClick>` sem `role`/`tabIndex`/`onKeyDown`, mas já tem `<button>`
+  filho com `stopPropagation`, então o fix não duplica ação),
+  `RecentAlertsList.jsx:52-56` (mesmo padrão, ainda mais simples, sem
+  filho focável), os 3 ícones SVG de `Assets.jsx:285-288` (já mapeados
+  desde o item 208/213, aguardando justamente este tema), e 2 modais
+  caseiros não-Radix (`OwnerKeySettings.jsx`, `TelegramSettings.jsx` —
+  sem `role="dialog"`/`aria-modal`/focus-trap/`Escape`/devolução de
+  foco; o próprio código de `OwnerKeySettings.jsx` comenta que reusa de
+  propósito a estrutura de `TelegramSettings.jsx`). Confirmado que a
+  Busca Global não tem um botão só-mobile fora de alcance de teclado —
+  o mesmo `<button>` nativo (focável) renderiza em qualquer largura, só
+  o texto ao lado some com `hidden md:block`; o único problema real ali
+  é a Categoria 1 (o `outline-none` do input, listado acima).
+
+Descartados como falso positivo/fora de escopo: `AssetCard.jsx` e
+`TradeHistory.jsx` (cards já corrigidos no achado A-8, com `role`/
+`tabIndex`/`onKeyDown`); os demais 127 `onClick` do repo (37 arquivos),
+todos em `<button>`/`<Button>`/`<Link>` nativos, focáveis por padrão;
+itens de menu Radix (`dropdown-menu.jsx` etc.) que já usam
+`focus:bg-accent` como indicador de foco (mudança de cor, não
+"invisível" — vale nota de UX menor, mas não é o achado); os tooltips
+de label na `Sidebar.jsx`, que aparecem só em `group-hover` sem
+`group-focus` equivalente — problema de nome acessível por teclado,
+não de foco invisível, não contabilizado aqui.
+
+**Divisão em 5 sub-rodadas sugerida** (mais isolado/baixo risco →
+mais arriscado, mesmo critério de A-6): 1ª `TriggerBacktestPanel.jsx`
+(piloto, único arquivo, padrão idêntico 6x); 2ª os 11 achados avulsos
+restantes da Categoria 1 (inclui `GlobalSearch.jsx`); 3ª Categoria 2
+mecânica (`Alerts.jsx` + `RecentAlertsList.jsx`, reusando o padrão já
+em produção em `AssetCard.jsx`/`TradeHistory.jsx`); 4ª os 3 ícones de
+`Assets.jsx` (fecha o último item pendente de A-6); 5ª os 2 modais
+caseiros — exige decidir entre focus-trap manual ou migrar para o
+`Dialog` do Radix (`src/components/ui/dialog.jsx`, já usado em outros
+lugares do repo, ex. achado A-12), maior risco por tocar estado de
+abertura/fechamento de telas de configuração sensíveis (chave de
+acesso, Telegram) — decisão explícita adiada, não tomada nesta rodada.
+
+### 1ª sub-rodada corrigida: `TriggerBacktestPanel.jsx`
+
+Escolhida como piloto por ser um único arquivo com o mesmo padrão
+mecânico repetido 6x (inputs "Rótulo do teste"/"De"/"Até"/"Símbolos"/
+"Mínimo de operações", textarea "Overrides de pineConfig"), sem tocar
+nenhuma outra página — menor superfície de regressão possível pra
+validar o padrão de fix antes de escalar pras próximas sub-rodadas (o
+componente é usado só na seção "Avançado" de `Backtest.jsx`, disparo
+do workflow real de backtest via GitHub Actions — nenhuma lógica de
+disparo/polling/persistência foi tocada, só a `className` dos 6
+campos).
+
+**Arquivo:** `src/components/backtest/TriggerBacktestPanel.jsx`.
+**Teste novo:** `TriggerBacktestPanel.test.jsx` (não existia — 1º teste
+dedicado do componente) — 3 casos confirmando `focus-visible:ring-1
+focus-visible:ring-ring` presente nos 6 campos (2 deles no fluxo
+"Avançado", que exige clicar em "Avançado" pra expandir antes).
+Confirmados falhando sem o fix via `git stash`.
+
+**Verificação:** `npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2043 testes, +3 desta rodada; teto de
+typecheck em 16, inalterado). Revisão cética: `git diff --stat` só em
+`TriggerBacktestPanel.jsx`, diff inteiro são as 6 linhas de `className`
+esperadas — nenhuma lógica de `handleTrigger`/`checkStatusOnce`/
+`startPolling`/persistência em `localStorage` tocada.
