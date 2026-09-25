@@ -9,11 +9,21 @@ import { lazy } from 'react';
 // aparecendo no log porque a aba nunca tinha sido atualizada.
 const CHUNK_LOAD_ERROR = /failed to fetch dynamically imported module|error loading dynamically imported module|importing a module script failed/i;
 
-// Uma única tentativa de recarregar por sessão de aba (sessionStorage — não
-// sobrevive a fechar a aba, então uma aba nova sempre tenta de novo se
-// precisar). Sem esse limite, uma falha REAL e persistente (ex.: usuário
-// offline) entraria num loop de recarregamento infinito em vez de cair no
-// ErrorBoundary com o botão manual.
+// Uma única tentativa de recarregar por INCIDENTE (sessionStorage — limpa no
+// próximo import que carregar com sucesso, ver abaixo; também não sobrevive a
+// fechar a aba). Sem esse limite, uma falha REAL e persistente (ex.: usuário
+// offline, ou o próprio reload não resolve nada) entraria num loop de
+// recarregamento infinito em vez de cair no ErrorBoundary com o botão manual.
+//
+// Achado real (docs/known-risks.md, auditoria de 2026-09-25): a flag nunca
+// era limpa após um reload bem-sucedido, então virava "uma tentativa pra
+// sempre nesta aba", não "uma tentativa por incidente" — numa aba deixada
+// aberta por dias (item 184 addendum), um 2º deploy mais tarde produzia um
+// 2º chunk-error genuíno (página diferente) que já não se autocurava, caindo
+// direto no ErrorBoundary. Limpar no sucesso resolve isso sem reabrir o
+// risco de loop: se a MESMA importação continuar falhando, o sucesso nunca
+// acontece, a flag nunca é limpa, e um 2º reload da mesma falha continua
+// bloqueado.
 const RELOAD_FLAG_KEY = 'sentinel_chunk_reload_attempted';
 
 /**
@@ -28,7 +38,9 @@ const RELOAD_FLAG_KEY = 'sentinel_chunk_reload_attempted';
  */
 export async function loadWithReload(factory) {
   try {
-    return await factory();
+    const mod = await factory();
+    sessionStorage.removeItem(RELOAD_FLAG_KEY);
+    return mod;
   } catch (err) {
     const isChunkError = CHUNK_LOAD_ERROR.test(err?.message || '');
     const alreadyTried = sessionStorage.getItem(RELOAD_FLAG_KEY) === '1';
