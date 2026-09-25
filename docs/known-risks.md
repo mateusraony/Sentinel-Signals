@@ -26386,7 +26386,59 @@ tocada (`AssetCard.jsx` importa `activateSignalManually` pro botão
 visual via navegador real nesta rodada** — mesma ressalva das rodadas
 anteriores, padrão mecânico idêntico.
 
-## 210. Backlog do Raio-X — A-6, 7ª sub-rodada (`StatsCard.jsx` + `Assets.jsx:292`, 2 ocorrências) corrigida (2026-09-25)
+## 210. Auto-heal de chunk desatualizado (`lazyWithReload.js`) só funcionava uma vez por aba, para sempre (2026-09-25)
+
+Usuário pediu para corrigir os erros que a auditoria (`health-audit.yml`,
+run 09:46 UTC) pegou. Entre os 4 problemas distintos do relatório, um era
+novo e real: `errorBoundary · Erro de renderização: Failed to fetch
+dynamically imported module: .../Alerts-NXxNWQA.js`, há 2.9d, ocorrência
+única (sem repetição) — consistente com um incidente que não se
+autocurou.
+
+**Causa raiz**: `src/lib/lazyWithReload.js` (item 184 addendum) já existe
+pra esse cenário — quando um deploy novo troca os nomes dos arquivos de
+chunk, a 1ª falha de import recarrega a aba automaticamente uma vez,
+marcando `sessionStorage.sentinel_chunk_reload_attempted = '1'` antes de
+recarregar. O bug: essa flag **nunca era limpa** depois de um reload
+bem-sucedido. O comentário do código dizia "uma tentativa por sessão de
+aba", mas na prática virava "uma tentativa pra sempre nesta aba" — numa
+aba deixada aberta por dias (comportamento documentado, item 184), um 2º
+deploy mais tarde produz um 2º chunk-error genuíno, de uma página
+DIFERENTE — um incidente novo e distinto — que já não se autocura mais,
+caindo direto no `ErrorBoundary` e exigindo clique manual em
+"Recarregar".
+
+**Correção**: `loadWithReload` agora limpa
+`sessionStorage.removeItem(RELOAD_FLAG_KEY)` no caminho de SUCESSO
+(depois de `await factory()` resolver), não só no de falha. Preserva
+100% a proteção contra loop infinito que a flag existe pra dar: se a
+MESMA importação continuar falhando, o sucesso nunca acontece, a flag
+nunca é limpa, e um 2º reload da mesma falha continua bloqueado — só
+muda o caso em que QUALQUER chunk carrega com sucesso no meio (prova de
+que a aba já está rodando o deploy atual), que agora devolve o
+orçamento de 1 reload pro próximo incidente distinto, em vez de gastá-lo
+pra sempre no primeiro.
+
+**Teste de regressão** (`lazyWithReload.test.js`): reproduz o cenário
+exato (falha → reload → sucesso → nova falha de OUTRO chunk) — falha sem
+o fix (flag continua `'1'` depois do sucesso, 2º reload nunca dispara),
+passa com o fix. O teste existente que prova que a MESMA falha repetida
+SEM sucesso no meio continua bloqueada foi mantido intacto (é a
+propriedade que não pode regredir).
+
+**Os outros 3 problemas do relatório, não corrigidos nesta rodada**:
+- `scanner · Erro no scan de <ativo>: Failed to fetch` (6 ativos) — é a
+  MESMA investigação em andamento nos itens 192/197: o PR #404 (mesclado
+  ontem) tornou o campo `executor` visível em `/logs`, mas ainda não foi
+  conferido. Corrigir "às cegas" aqui repetiria o erro já cometido 2x
+  nesse item (concluir sem o dado definitivo) — decisão consciente de
+  não mexer, aguardando o usuário checar `/logs`.
+- `Falha ao adquirir lock "price-check"/"full-scan"` — comportamento
+  fail-open **intencional** (`scanner.js:277-285`, `.claude/rules/
+  trading-engine.md`), com o nível de log subido de `console.warn` para
+  `logError` DE PROPÓSITO para não passar despercebido. Não é bug.
+
+## 211. Backlog do Raio-X — A-6, 7ª sub-rodada (`StatsCard.jsx` + `Assets.jsx:292`, 2 ocorrências) corrigida (2026-09-25)
 
 Continuação de A-6. Fecha o que restava de **mecânico** no backlog:
 `StatsCard.jsx:44-48` (badge "—" quando `error=true`, componente só

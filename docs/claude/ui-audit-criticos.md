@@ -569,7 +569,9 @@ de verdade exige primeiro decidir/implementar o tema A-7.
 npm run typecheck:ratchet` limpos (2036 testes; teto de typecheck 16,
 inalterado). Revisão cética própria (sem verificação visual via
 navegador real — mesma ressalva de sempre), detalhe completo em
-`docs/known-risks.md` item 210.
+`docs/known-risks.md` item 211 (item 210 foi ocupado em paralelo por
+outra correção não relacionada — `lazyWithReload.js`, PR #413 — resolvido
+por conflito de merge nesta rodada, renumerado sem perda de conteúdo).
 
 ## Backlog do Raio-X ainda **pendente, não iniciado**
 
@@ -598,7 +600,7 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
   abaixo), `Verification.jsx:345` (botão desabilitado — mesmo padrão já
   resolvido 2x, só não priorizado ainda) e `src/components/ui/sidebar.jsx`
   (dead code — decisão de remover ou não). Divisão detalhada em
-  `docs/known-risks.md` item 208/209/210.**
+  `docs/known-risks.md` item 208/209/211.**
 - [ ] A-7 — Foco de teclado invisível em ~15 pontos (incl. Busca Global).
 - [x] A-8 — AssetCard só abre por clique de mouse, sem suporte a teclado. **Corrigido, ver seção acima.**
 - [x] A-9 — LIVE/STALE com threshold fixo de 2h, impreciso. **Corrigido, ver seção acima.**
@@ -622,7 +624,7 @@ corrigidas (`Backtest.jsx` + Grupo 1 + `TradeCard.jsx` +
 `AssetCard.jsx`/`SignalToast.jsx`/`SignalAlertBanner.jsx` +
 `StatsCard.jsx`/`Assets.jsx:292`, 38 de ~40 ocorrências). **Todo o
 trabalho mecânico de A-6 está feito** — o que resta são só decisões
-(detalhe em `docs/known-risks.md` item 204-210):
+(detalhe em `docs/known-risks.md` item 204-209/211):
 - `Assets.jsx:284/285/287` — os 3 ícones SVG de status de scan são
   ícone-só sem nenhum wrapper focável; corrigir de verdade exige
   primeiro decidir/implementar A-7 (foco de teclado). Bom candidato
