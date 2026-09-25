@@ -181,9 +181,14 @@ export default function Alerts() {
           {filtered.map(signal => {
             const isBuy = signal.signal_type === 'BUY';
             const prio = PRIORITY_CONFIG[signal.priority] || PRIORITY_CONFIG.low;
+            // Sem role="button" de propósito (achado do Codex review no PR
+            // #419): esta linha contém um <button> real (dispensar) — um
+            // role de widget (button/link/...) torna os filhos
+            // "presentational" pra árvore de acessibilidade, escondendo o
+            // botão de dispensar como controle próprio. tabIndex+onKeyDown
+            // já bastam pra foco/ativação por teclado sem precisar do role.
             return (
               <div key={signal.id}
-                role="button"
                 tabIndex={0}
                 aria-label={`${signal.symbol?.replace('USDT', '/USDT')} — ver detalhes do alerta`}
                 className="rounded-xl px-4 py-3 flex items-center gap-3 transition-all duration-200 cursor-pointer group hover:scale-[1.002] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

@@ -35,11 +35,20 @@ describe('Alerts — filtro "Buscar símbolo..." tem foco visível (achado A-7)'
 // 214, 3ª sub-rodada): a linha de alerta clicável não tinha `role`,
 // `tabIndex` nem `onKeyDown` — mesmo padrão já resolvido em
 // RecentAlertsList.jsx na mesma rodada.
+//
+// Sem `role="button"` de propósito (achado do Codex review no PR #419): a
+// linha contém um `<button>` real (dispensar) — `role="button"` no pai
+// tornaria os filhos "presentational" pra árvore de acessibilidade,
+// escondendo o botão de dispensar como controle próprio. `tabIndex` +
+// `onKeyDown` já bastam pra foco/ativação por teclado.
 describe('Alerts — linha de alerta é focável e ativável por teclado (achado A-7)', () => {
-  it('REGRESSÃO: linha tem role="button", tabIndex=0 e Enter abre o detalhe', async () => {
+  it('REGRESSÃO: linha tem tabIndex=0 (sem role="button", por ter um <button> real dentro) e Enter abre o detalhe', async () => {
     estadoBackend.populated = true;
     renderPage(<Alerts />);
-    const row = await screen.findByRole('button', { name: /ver detalhes do alerta/i });
+    const symbol = await screen.findByText('BTC/USDT');
+    const row = symbol.closest('[tabindex]');
+    expect(row).toBeTruthy();
+    expect(row.getAttribute('role')).toBeNull();
     expect(row.getAttribute('tabindex')).toBe('0');
     fireEvent.keyDown(row, { key: 'Enter' });
     await screen.findByRole('dialog');

@@ -26786,3 +26786,44 @@ Com esta rodada, A-7 fica com **15 de 24 ocorrências fechadas**
 (Categoria 1 inteira + Categoria 2 mecânica inteira). Restam: 4ª
 sub-rodada (os 3 ícones de `Assets.jsx`, fecha o último item de A-6) e
 5ª (os 2 modais caseiros, decisão de design).
+
+### Addendum (2026-09-25): 2 achados reais do Codex review no PR #419, corrigidos antes do merge
+
+O bot `chatgpt-codex-connector` revisou o PR e apontou 2 problemas
+concretos e corretos na própria correção acima — não nit/estilo,
+achados de acessibilidade genuínos:
+
+1. **`Alerts.jsx:187`** — a linha ganhou `role="button"` mas contém um
+   `<button>` real (dispensar) dentro. Pela spec de ARIA, um elemento
+   com role de widget (`button`, `link` etc.) torna os descendentes
+   "presentational" pra árvore de acessibilidade — o `<button>` de
+   dispensar perde a própria semântica de controle separado pra leitor
+   de tela. O guard de `onKeyDown` evita duplicar a AÇÃO ao ativar por
+   teclado, mas não resolve essa hierarquia de ARIA inválida.
+   **Corrigido:** removido `role="button"` da linha (mantendo
+   `tabIndex`/`aria-label`/`onKeyDown`/classe de foco) — a linha segue
+   alcançável por Tab e ativável por Enter/Espaço via `onKeyDown`
+   explícito (não depende do role do navegador pra isso), só parou de
+   anunciar globalmente "button" pra árvore de acessibilidade, o que
+   devolve ao `<button>` de dispensar sua própria semântica.
+2. **`RecentAlertsList.jsx:54`** — `role`/`tabIndex` aplicados
+   incondicionalmente, mas `onClick`/`onKeyDown` só fazem algo quando
+   `asset` existe (`asset && onSelectAsset?.(asset)`) — quando o
+   `asset_id` do sinal não bate com nenhum item de `assets` (query
+   separada ainda não resolvida, ou ativo removido), a linha era
+   anunciada como botão operável pro teclado mas não fazia nada ao
+   ativar. **Corrigido:** `role`/`tabIndex`/`aria-label`/`onKeyDown`
+   agora só se aplicam quando `asset` existe (spread condicional);
+   `onClick` continua igual (já era no-op sem `asset`).
+
+**Testes:** +1 caso em `RecentAlertsList.test.jsx` (sem `asset`, linha
+sem `role`/`tabIndex`) + 1 caso reescrito em `Alerts.test.jsx` (query
+trocada de `getByRole('button', ...)` pra `.closest('[tabindex]')`,
+já que o role não existe mais; confirma `role` nulo e `tabindex="0"`).
+Ambos confirmados falhando sem o fix via `git stash` antes de aceitar.
+
+**Verificação:** `npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2057 testes; teto de typecheck em 16,
+inalterado). Revisão cética: diff nos 2 arquivos de produção só mexe
+em `role`/`tabIndex`/`onKeyDown` — nenhuma lógica de negócio tocada.
+Push adicional no mesmo PR #419 (não abriu PR novo).

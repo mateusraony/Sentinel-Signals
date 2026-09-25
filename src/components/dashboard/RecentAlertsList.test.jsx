@@ -76,4 +76,20 @@ describe('RecentAlertsList — linha é focável e ativável por teclado (achado
     fireEvent.keyDown(row, { key: ' ' });
     expect(onSelectAsset).toHaveBeenCalledWith(ASSET);
   });
+
+  // Achado do Codex review no PR #419: `role`/`tabIndex` eram aplicados
+  // incondicionalmente, mesmo quando `asset` não é resolvido (query separada
+  // ainda não carregou, ou o ativo foi removido) — a linha era anunciada
+  // como botão operável pro teclado, mas o handler não fazia nada. Corrigido
+  // tornando `role`/`tabIndex`/`onKeyDown` condicionais a `asset` existir.
+  it('REGRESSÃO: sem ativo resolvido, a linha NÃO tem role="button" nem tabIndex', () => {
+    const { container } = render(<MemoryRouter><RecentAlertsList signals={[SIGNAL]} assets={[]} /></MemoryRouter>);
+    // A linha em si é o único elemento com a classe `group` (as divs internas
+    // de conteúdo não a têm) — mais confiável que `.closest('div')`, que
+    // pararia numa das divs de conteúdo aninhadas antes de chegar na linha.
+    const row = container.querySelector('.group');
+    expect(row).toBeTruthy();
+    expect(row.getAttribute('role')).toBeNull();
+    expect(row.getAttribute('tabindex')).toBeNull();
+  });
 });
