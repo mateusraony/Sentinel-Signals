@@ -1101,6 +1101,26 @@ typecheck em 13 — checado logo após o código desta vez, lição do item
 229/230/232/234). `PerformanceMetricsBar.jsx` deliberadamente fora de
 escopo (baixa prioridade, ver acima).
 
+## Colisão DebugLogButton × botão "Mais" (2026-09-26): regressão pós-M-10, fora do escopo original do Raio-X
+
+Usuário relatou pelo celular que não conseguia acessar "outras abas" —
+esclareceu via `AskUserQuestion` que era o ícone de log/erro flutuante
+por cima do botão "Mais". Não é um item do relatório original — é
+efeito colateral da própria correção do M-10: o botão fixo
+`DebugLogButton.jsx` (`bottom-5 right-5`, `z-50`) já colidia
+parcialmente com a borda do último item da barra antiga de 12 itens,
+mas o M-10 alargou esse item ("Mais") pra ~65px, cobrindo o botão de
+debug por completo (~62% da área do "Mais") e bloqueando o toque.
+
+**Fix**: `bottom-5`→`bottom-20 md:bottom-5` no botão,
+`bottom-18` (classe inválida, nunca existiu no Tailwind)→`bottom-32
+md:bottom-20` no painel — reaproveitando o padrão de reposicionamento
+por breakpoint já usado em `AppLayout.jsx` (`pb-16 md:pb-0`) e
+`toast.jsx`. 2 testes novos em `DebugLogButton.test.jsx`, ambos falham
+sem o fix (`git stash`). `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2140 testes, teto de typecheck em
+13, sem mudança). Detalhe completo em `docs/known-risks.md` item 240.
+
 ## M-10 (2026-09-26): menu "Mais" na nav mobile — fecha M-10 e todo o backlog Média Prioridade
 
 Com a reorganização do Dashboard fechada (PRs #434/#435), M-10 era o

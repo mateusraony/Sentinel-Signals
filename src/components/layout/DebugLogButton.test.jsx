@@ -91,3 +91,29 @@ describe('DebugLogButton — usa Tooltip em vez de title= nativo (achado A-6)', 
     expect(button.getAttribute('title')).toBeNull();
   });
 });
+
+// Achado pós-M-10 (docs/known-risks.md): a barra mobile ganhou um item
+// "Mais" mais largo (~65px) que passou a cobrir por completo este botão
+// fixo (`bottom-5 right-5`, 40×40px, z-50 — maior que o z-40 da nav),
+// bloqueando o toque nele. `bottom-20`/`md:bottom-5` sobe o botão acima
+// dos 64px da nav mobile, restaurando a posição original a partir do
+// breakpoint desktop.
+describe('DebugLogButton — não colide com a barra de navegação mobile (achado pós-M-10)', () => {
+  it('REGRESSÃO: o botão flutuante sobe acima da nav mobile e restaura a posição original no desktop', () => {
+    renderButton();
+    const button = screen.getByRole('button', { name: 'Debug Log' });
+    expect(button.className).toMatch(/\bbottom-20\b/);
+    expect(button.className).toMatch(/\bmd:bottom-5\b/);
+  });
+
+  it('REGRESSÃO: o painel expandido usa uma classe de posição válida (não mais "bottom-18", inexistente no Tailwind)', async () => {
+    systemLogListMock.mockResolvedValue([]);
+    renderButton();
+    fireEvent.click(screen.getByRole('button', { name: 'Debug Log' }));
+    const footer = await screen.findByText('Sistema operando normalmente');
+    const panelRoot = footer.closest('.fixed');
+    expect(panelRoot.className).toMatch(/\bbottom-32\b/);
+    expect(panelRoot.className).toMatch(/\bmd:bottom-20\b/);
+    expect(panelRoot.className).not.toMatch(/\bbottom-18\b/);
+  });
+});
