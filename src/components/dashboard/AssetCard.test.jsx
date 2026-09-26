@@ -12,7 +12,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import AssetCard from './AssetCard.jsx';
+import AssetCard, { getTp1Tooltip, getTp2Tooltip } from './AssetCard.jsx';
 
 // fetchMarkPrice precisa ser controlável por teste (achado A-6, badge
 // "Fund." só vira Tooltip focável quando fundingRate !== null) — mesmo
@@ -240,5 +240,41 @@ describe('AssetCard — indicadores RF/MACD/EMA/RSI e colunas TP1/TP2 têm toolt
     // Entrada/Stop/Stop+ são autoexplicativos — não deveriam virar gatilho de tooltip.
     expect(screen.getByText('Entrada').closest('.cursor-help')).toBeNull();
     expect(screen.getByText('Stop+').closest('.cursor-help')).toBeNull();
+  });
+
+  // Achado do Codex review no PR #430: o texto de TP1/TP2 era estático e
+  // sempre falava de um "runner" indo pro TP2 — falso quando a operação foi
+  // criada com partial_percent:100 (fecha tudo no TP1, sem runner) ou
+  // tp2_cap_disabled:true (TP2 nunca é usado, runner segue em trailing).
+  // Testado direto contra a função pura exportada (`getTp1Tooltip`/
+  // `getTp2Tooltip`), não via abrir o Tooltip do Radix por foco — esse
+  // caminho provou ser lento/instável em jsdom neste arquivo (o card tem 3
+  // `useQuery` ativos re-renderizando; tentativas com `fireEvent.focus` +
+  // `findByText` chegaram a travar >30s num timeout de 5s). A cobertura de
+  // que a COLUNA em si é focável/tem tooltip já existe no teste acima
+  // ("colunas TP1/TP2 do grid de preços são focáveis") — este cobre só o
+  // TEXTO, que é o que o achado do Codex mudou.
+  const TP_OP_BASE = {
+    id: 'op1', entry_price: 100, initial_stop: 90, tp1: 110, tp2: 120, current_stop: 95, status: 'SIGNAL_CONFIRMED',
+  };
+
+  it('REGRESSÃO: operação normal (com runner) mantém o texto original de TP1/TP2', () => {
+    expect(getTp1Tooltip({ ...TP_OP_BASE })).toMatch(/o restante \(runner\) segue para o TP2/);
+    expect(getTp2Tooltip({ ...TP_OP_BASE })).toMatch(/o que sobrou da posição \(runner\) depois do TP1/);
+  });
+
+  it('REGRESSÃO: sem operação ativa (op indefinida) usa o texto padrão, não quebra', () => {
+    expect(getTp1Tooltip(undefined)).toMatch(/o restante \(runner\) segue para o TP2/);
+    expect(getTp2Tooltip(undefined)).toMatch(/o que sobrou da posição \(runner\) depois do TP1/);
+  });
+
+  it('REGRESSÃO: partial_percent:100 (sem runner) — TP1 vira alvo único, TP2 vira "não aplicável"', () => {
+    expect(getTp1Tooltip({ ...TP_OP_BASE, partial_percent: 100 })).toMatch(/Único alvo de lucro desta operação/);
+    expect(getTp2Tooltip({ ...TP_OP_BASE, partial_percent: 100 })).toMatch(/Não aplicável nesta operação — a posição já foi fechada inteira no TP1/);
+  });
+
+  it('REGRESSÃO: tp2_cap_disabled:true — TP2 explica que o runner ignora o teto e segue em trailing', () => {
+    expect(getTp1Tooltip({ ...TP_OP_BASE, tp2_cap_disabled: true })).toMatch(/o restante \(runner\) segue para o TP2/);
+    expect(getTp2Tooltip({ ...TP_OP_BASE, tp2_cap_disabled: true })).toMatch(/o runner ignora este teto e segue em trailing/);
   });
 });

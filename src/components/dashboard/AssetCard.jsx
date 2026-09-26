@@ -10,6 +10,7 @@ import ProximityBar, { calcProximity } from '@/components/dashboard/ProximityBar
 import { formatPrice, formatSignedPct } from '@/lib/priceProximity';
 import { useFundingRate } from '@/hooks/useFundingRate';
 import { assetHealthcheckReason } from '@/lib/assetHealthcheck';
+import { closesFullyAtTp1 } from '@/lib/opExitRules';
 
 // Duração de cada timeframe suportado (states só existem pra 1h/4h/1d —
 // ver `timeframes_enabled` em MonitoredAsset). Usado só pra calcular o
@@ -32,10 +33,34 @@ const STALE_REASON_META = {
 // Achado M-17 do Raio-X de UI/UX: coluna do grid de preços — só TP1/TP2
 // precisam de explicação (Entrada/Stop/Stop+ já são autoexplicativos em
 // português). Texto reaproveitado do glossário da auditoria (seção I).
-const PRICE_COL_TOOLTIPS = {
-  TP1: 'Primeiro alvo de lucro — realiza parte da posição quando atingido.',
-  TP2: 'Segundo e último alvo de lucro — o que sobrou da posição (runner) depois do TP1.',
-};
+//
+// Achado do Codex review no PR #430: o texto original era estático e
+// descrevia sempre um runner saindo do TP1 rumo ao TP2 — falso quando a
+// operação foi criada com `partial_percent: 100` (fecha 100% no TP1, sem
+// runner — `runnerEnabled: false` congelado na criação) ou com
+// `tp2_cap_disabled: true` (o runner ignora o teto de TP2 e segue em
+// trailing, ver `scanner.js`/`opExitRules.js`). Deriva do estado REAL da
+// própria operação (mesma regra pura que o motor usa,
+// `closesFullyAtTp1`), nunca de config ao vivo — igual ao resto do motor.
+// Exportadas (não só usadas localmente) pra teste de regressão unitário —
+// testar via render+foco do Radix Tooltip provou ser lento/instável em
+// jsdom neste projeto (o componente tem 3 useQuery ativos), então a lógica
+// pura é testada isolada, sem depender de abrir o tooltip de verdade.
+export function getTp1Tooltip(op) {
+  if (op && closesFullyAtTp1(op)) {
+    return 'Único alvo de lucro desta operação — fecha 100% da posição quando atingido (sem runner).';
+  }
+  return 'Primeiro alvo de lucro — realiza parte da posição quando atingido; o restante (runner) segue para o TP2.';
+}
+export function getTp2Tooltip(op) {
+  if (op?.tp2_cap_disabled) {
+    return 'Não usado nesta operação — o runner ignora este teto e segue em trailing, sem alvo fixo.';
+  }
+  if (op && closesFullyAtTp1(op)) {
+    return 'Não aplicável nesta operação — a posição já foi fechada inteira no TP1 (sem runner).';
+  }
+  return 'Segundo e último alvo de lucro — o que sobrou da posição (runner) depois do TP1.';
+}
 
 function Dot({ color, filled = true }) {
   return (
@@ -308,6 +333,10 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
     tradeOp?.tp2_hit ? '#00ff80' : 'rgba(255,209,102,0.55)',
     tradeOp?.tp1_hit ? '#ffd166' : '#ff1478',
   ];
+  const priceColTooltips = {
+    TP1: getTp1Tooltip(tradeOp),
+    TP2: getTp2Tooltip(tradeOp),
+  };
 
   const candleStatus = tradeOp?.candle_status || 'CLOSED';
 
@@ -475,13 +504,13 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           {['Entrada', 'Stop', 'TP1', 'TP2', 'Stop+'].map((col, i) => (
             <div key={col} className="text-center px-1 py-1.5 rounded min-w-[48px]"
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
-              {PRICE_COL_TOOLTIPS[col] ? (
+              {priceColTooltips[col] ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="text-[8px] font-mono text-muted-foreground mb-0.5 leading-tight truncate cursor-help" tabIndex={0}>{col}</div>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
-                    {PRICE_COL_TOOLTIPS[col]}
+                    {priceColTooltips[col]}
                   </TooltipContent>
                 </Tooltip>
               ) : (

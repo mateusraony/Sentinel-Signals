@@ -27767,3 +27767,64 @@ componente de UI puro, sem tocar `onChange`/seleção).
 `Backtest.jsx` (+ `PerformanceMetricsBar.jsx`, baixa prioridade) —
 candidatos a 2 sub-rodadas subsequentes (plano completo já escrito em
 `/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`).
+
+## 231. Corrigir achado do Codex review no PR #430 (M-17, 1ª sub-rodada) — tooltip de TP1/TP2 era estático e descrevia sempre um runner
+
+O Codex revisou o PR #430 (item 229/230) e apontou que o texto novo de
+TP1/TP2 em `AssetCard.jsx` (item 229) era **estático** e sempre falava
+de um runner saindo do TP1 rumo ao TP2 — falso em 2 configurações reais
+suportadas pelo motor:
+
+- `tradeOp.partial_percent === 100` (`closesFullyAtTp1`,
+  `opExitRules.js` — operação criada com `pineConfig.runnerEnabled:
+  false`, congelado na criação): o TP1 fecha **100%** da posição, não
+  "parte" dela, e não existe runner nem TP2 de fato.
+- `tradeOp.tp2_cap_disabled === true` (`scanner.js`/`opExitRules.js`):
+  os loops de saída **ignoram deliberadamente** o TP2 e deixam o
+  runner em trailing sem alvo fixo — o texto antigo dizia que o TP2 era
+  "o alvo final", o que nunca acontece nesse modo.
+
+Achado correto (P2, não "nit") — o texto chegava a induzir o usuário a
+erro sobre a própria gestão de risco da operação ativa.
+
+### Fix
+
+`getTp1Tooltip(op)`/`getTp2Tooltip(op)` (funções puras, exportadas de
+`AssetCard.jsx` — antes eram um objeto estático `PRICE_COL_TOOLTIPS`)
+derivam o texto do estado REAL da operação, reusando a mesma regra pura
+que o motor usa (`closesFullyAtTp1` de `src/lib/opExitRules.js`, import
+só de leitura — nenhuma lógica de trading tocada, mesmo padrão já usado
+pra `assetHealthcheckReason`):
+
+- Normal (com runner): texto original, inalterado.
+- `partial_percent: 100`: TP1 vira "Único alvo de lucro... fecha 100%
+  da posição... (sem runner)"; TP2 vira "Não aplicável nesta operação —
+  a posição já foi fechada inteira no TP1 (sem runner)."
+- `tp2_cap_disabled: true`: TP1 mantém o texto normal (o TP1 ainda
+  acontece do jeito de sempre); TP2 vira "Não usado nesta operação — o
+  runner ignora este teto e segue em trailing, sem alvo fixo."
+
+### Testes
+
+Tentativa inicial testou via `render` + `fireEvent.focus` (abrir o
+Tooltip do Radix de verdade) + `findAllByText` no conteúdo — **provou
+ser lento/instável em jsdom neste arquivo especificamente**:
+`AssetCard.jsx` tem 3 `useQuery` ativos (`fetch24hStats`,
+`fetchMarkPrice` via `useFundingRate`, mais o próprio card) causando
+re-renders contínuos; testes chegaram a levar >30s pra um timeout
+nominal de 5s antes de falhar. Trocado pra testar as funções puras
+`getTp1Tooltip`/`getTp2Tooltip` diretamente (exportadas do módulo, sem
+`render`) — 4 casos novos (normal, `op` indefinida, `partial_percent:
+100`, `tp2_cap_disabled: true`), execução em milissegundos. A cobertura
+de que a COLUNA em si é focável/tem `cursor-help` já existia (teste
+anterior do item 229) e continua intacta — este item cobre só o TEXTO,
+que é o que mudou.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2114 testes, 0 falhas; teto de typecheck em
+13, sem mudança). Falha dos 4 casos novos reproduzida via `git stash`
+de `AssetCard.jsx` antes de aceitar (o arquivo stashado nem exportava
+as funções — `TypeError: getTp1Tooltip is not a function`). `git diff
+--stat` só em `AssetCard.jsx` + `AssetCard.test.jsx`.
