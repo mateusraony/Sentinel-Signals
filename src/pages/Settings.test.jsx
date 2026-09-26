@@ -50,3 +50,15 @@ describe('Settings — aviso de alterações instantâneas linka pro Pine Script
     expect(backtestLink.getAttribute('href')).toBe('/backtest');
   });
 });
+
+// Refinamentos (seção E do Raio-X): "Configuração Ativa" repetia, pill a
+// pill, o mesmo valor já visível ao lado do slider correspondente mais
+// acima na mesma tela — removida por ser redundante, sem substituto.
+describe('Settings — seção "Configuração Ativa" removida (Refinamentos)', () => {
+  it('REGRESSÃO: não existe mais a seção de pills redundante com os sliders', async () => {
+    renderPage(<Settings />);
+
+    await screen.findByRole('link', { name: 'Pine Script' });
+    expect(screen.queryByText('Configuração Ativa (lida pelo scanner):')).toBeNull();
+  });
+});

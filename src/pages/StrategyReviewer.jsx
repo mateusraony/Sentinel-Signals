@@ -10,7 +10,7 @@ export default function StrategyReviewer() {
       <Bot className="w-12 h-12 text-muted-foreground opacity-20" />
       <h1 className="text-xl font-bold text-foreground">Strategy Reviewer</h1>
       <p className="text-sm text-muted-foreground max-w-md">
-        O assistente de IA está temporariamente pausado enquanto preparamos o backend que guarda a chave da API com segurança. Volta em breve.
+        O assistente de IA está temporariamente pausado enquanto preparamos a infraestrutura de segurança necessária. Volta em breve.
       </p>
     </div>
   );

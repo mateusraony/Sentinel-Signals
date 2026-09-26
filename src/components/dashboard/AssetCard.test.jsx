@@ -325,3 +325,14 @@ describe('AssetCard — indicadores RF/MACD/EMA/RSI e colunas TP1/TP2 têm toolt
     expect(getTp2Tooltip({ ...TP_OP_BASE, tp2_cap_disabled: true })).toMatch(/o runner ignora este teto e segue em trailing/);
   });
 });
+
+// Refinamentos (seção E do Raio-X): o hint "detalhes →" só aparecia em
+// :hover, que não existe em touch — mobile/tablet nunca viam a dica.
+describe('AssetCard — hint "detalhes →" sempre visível, não só em :hover (Refinamentos)', () => {
+  it('REGRESSÃO: a classe do hint não depende mais de hover:opacity-100/opacity-0', () => {
+    renderCard({});
+    const hint = screen.getByText('detalhes →');
+    expect(hint.className).not.toMatch(/opacity-0/);
+    expect(hint.className).not.toMatch(/hover:opacity-100/);
+  });
+});

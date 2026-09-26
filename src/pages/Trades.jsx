@@ -138,8 +138,12 @@ function EditModal({ op, onClose, onSave }) {
  *     morre no toque) → rótulos na tela, e o score reusa a ScoreBar do card
  *     de operação, que já carrega a ressalva "não é probabilidade de acerto".
  */
-function MonitoringCard({ signal, onDismiss, isDismissing }) {
-  const [showDetails, setShowDetails] = useState(false);
+function MonitoringCard({ signal, onDismiss, isDismissing, expandAll = false }) {
+  const [showDetails, setShowDetails] = useState(expandAll);
+  // Refinamentos (seção E): mesmo padrão de sincronização já usado em
+  // TradeCard.jsx (open/expandAll) — sem isso, o toggle Compacto/Detalhado
+  // da página não tinha efeito nenhum sobre estes cards.
+  useEffect(() => { setShowDetails(expandAll); }, [expandAll]);
   const { price, isStale } = useLivePrice(signal.symbol);
 
   const { phase, msLeft, expiresAt } = classifySignal(signal);
@@ -740,6 +744,7 @@ export default function Trades() {
                   signal={signal}
                   onDismiss={(sig) => dismissSignalMutation.mutate(sig)}
                   isDismissing={dismissSignalMutation.isPending}
+                  expandAll={showDetails}
                 />
               ))}
             </div>
@@ -766,6 +771,7 @@ export default function Trades() {
                     signal={signal}
                     onDismiss={(sig) => dismissSignalMutation.mutate(sig)}
                     isDismissing={dismissSignalMutation.isPending}
+                    expandAll={showDetails}
                   />
                 ))}
               </div>

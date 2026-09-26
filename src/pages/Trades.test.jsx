@@ -168,6 +168,39 @@ describe('Trades — "Avisos em análise" (MonitoringCard) mostra a evidência n
   });
 });
 
+// Refinamentos (seção E do Raio-X): o toggle global "Compacto/Detalhado"
+// (showDetails, passado como expandAll pra TradeCard) não tinha efeito
+// nenhum sobre MonitoringCard — cada "Aviso em análise" tinha seu próprio
+// showDetails local, sempre começando fechado, ignorando o toggle da página.
+describe('Trades — toggle "Compacto/Detalhado" também abre os cards de "Avisos em análise" (Refinamentos)', () => {
+  it('REGRESSÃO: clicar em "Compacto" (vira "Detalhado") expande o MonitoringCard sem precisar clicar em "Detalhes técnicos"', async () => {
+    // Precisa de um sinal na fase WAITING (não EXPIRED) — a fase EXPIRED
+    // usa um JSX totalmente diferente, sem o toggle "Detalhes técnicos".
+    // created_date "agora" garante que a janela de confirmação (4h) ainda
+    // não passou.
+    const SIGNAL_WAITING_FRESH = {
+      id: 'sig_fresh1', asset_id: 'a5', symbol: 'DOTUSDT', timeframe: '4h',
+      signal_type: 'BUY', source: 'range_filter', dedup_key: 'sig_fresh1',
+      price_at_signal: 5.0, candle_time: new Date().toISOString(),
+      created_date: new Date().toISOString(),
+    };
+    mockBackend({ operations: [], signals: [SIGNAL_WAITING_FRESH] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    await screen.findByText('DOT/USDT');
+    // "Gráfico de {timeframe}" é quebrado em 2 nós de texto pelo JSX
+    // ({signal.timeframe?.toUpperCase()} interpolado) — matcher por função
+    // olha o textContent do elemento inteiro, não um nó de texto isolado.
+    const graficoMatcher = (_, el) => el.textContent === 'Gráfico de 4H';
+    expect(screen.queryByText(graficoMatcher)).toBeNull();
+
+    fireEvent.click(screen.getByText('Compacto'));
+
+    await screen.findByText(graficoMatcher);
+  });
+});
+
 describe('Trades — "Histórico Completo" (HistoryRow) mostra o "por quê" sem precisar de hover', () => {
   it('REGRESSÃO: o texto de explicação aparece direto na linha, não só num title= (tooltip)', async () => {
     mockBackend({ operations: [CLOSED_OP_COM_SNAPSHOT], signals: [] });

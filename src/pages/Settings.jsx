@@ -75,16 +75,6 @@ const BOOL_FIELDS = [
 
 const STRATEGY_KEYS = [...FIELDS.filter(f => f.target === 'strategyConfig').map(f => f.key), ...BOOL_FIELDS.map(f => f.key)];
 
-const ACTIVE_CONFIG_PILLS = [
-  { key: 'rng_per', label: 'RF Period' },
-  { key: 'rng_qty', label: 'RF Mult' },
-  { key: 'trailAtrMult', label: 'ATR Mult' },
-  { key: 'tp1R', label: 'TP1 R' },
-  { key: 'tp1QtyPercent', label: 'TP1 %' },
-  { key: 'minScore', label: 'Min Score' },
-  { key: 'atrLen', label: 'ATR Len' },
-];
-
 function fmtValue(value, suffix) {
   if (value == null) return '—';
   const rounded = Number.isInteger(value) ? value : Math.round(value * 100) / 100;
@@ -286,18 +276,6 @@ export default function Settings() {
               />
             </div>
           ))}
-        </div>
-
-        <div className="pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <p className="text-9px font-mono text-muted-foreground mb-2">Configuração Ativa (lida pelo scanner):</p>
-          <div className="flex items-center gap-2 flex-wrap">
-            {ACTIVE_CONFIG_PILLS.map(p => (
-              <span key={p.key} className="text-9px font-mono px-2.5 py-1 rounded-md"
-                style={{ background: 'rgba(0,255,128,0.06)', border: '1px solid rgba(0,255,128,0.2)', color: '#00ff80' }}>
-                {p.label}: {fmtValue(values[p.key], '')}
-              </span>
-            ))}
-          </div>
         </div>
       </div>
     </div>

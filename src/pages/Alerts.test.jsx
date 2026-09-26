@@ -84,3 +84,49 @@ describe('Alerts — botões de filtro "Fonte" e badge do card têm tooltip expl
     expect(instancias.length).toBe(2);
   });
 });
+
+// Refinamentos (seção E do Raio-X): o "Contexto Técnico" (JSON cru) do
+// modal ficava sempre visível — mesmo padrão de <details> já usado em
+// Logs.jsx pra payload técnico.
+describe('Alerts — JSON de "Contexto Técnico" fica dentro de <details>, fechado por padrão (Refinamentos)', () => {
+  it('REGRESSÃO: o payload não aparece até clicar em "ver payload →"', async () => {
+    estadoBackend.populated = true;
+    renderPage(<Alerts />);
+    const row = (await screen.findByText('BTC/USDT')).closest('[tabindex]');
+    fireEvent.keyDown(row, { key: 'Enter' });
+    await screen.findByRole('dialog');
+
+    const summary = await screen.findByText('ver payload →');
+    const details = summary.closest('details');
+    expect(details).toBeTruthy();
+    expect(details.hasAttribute('open')).toBe(false);
+
+    fireEvent.click(summary);
+    await screen.findByText(/"rf_value": 60000/);
+  });
+});
+
+// Refinamentos (seção E do Raio-X): campo de busca (`w-32`) mais estreito
+// que o próprio placeholder — cortava o fim do texto visualmente.
+describe('Alerts — campo de busca não corta o placeholder (Refinamentos)', () => {
+  it('REGRESSÃO: input não usa mais w-32, agora w-40', async () => {
+    estadoBackend.populated = false;
+    renderPage(<Alerts />);
+    const search = await screen.findByPlaceholderText('Buscar símbolo...');
+    expect(search.className).not.toMatch(/\bw-32\b/);
+    expect(search.className).toMatch(/\bw-40\b/);
+  });
+});
+
+// Refinamentos (seção E do Raio-X): timestamp em opacidade branca 25% sobre
+// fundo quase preto — abaixo do contraste mínimo recomendado pra texto
+// pequeno (4.5:1).
+describe('Alerts — timestamp do card tem contraste maior (Refinamentos)', () => {
+  it('REGRESSÃO: opacidade do timestamp sobe de 0.25 para 0.45', async () => {
+    estadoBackend.populated = true;
+    renderPage(<Alerts />);
+    await screen.findByText('BTC/USDT');
+    const timestamp = screen.getByText(/^\d{2}\/\d{2} \d{2}:\d{2}$/);
+    expect(timestamp.style.color).toBe('rgba(255, 255, 255, 0.45)');
+  });
+});

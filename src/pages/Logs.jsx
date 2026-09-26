@@ -128,7 +128,7 @@ export default function Logs() {
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <input type="text" placeholder="Buscar na mensagem..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-6 pr-3 py-1.5 rounded-lg w-40 text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="pl-6 pr-3 py-1.5 rounded-lg w-44 text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }} />
           </div>
 
@@ -236,7 +236,7 @@ export default function Logs() {
                   )}
                 </div>
 
-                <span className="text-9px shrink-0 pt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                <span className="text-9px shrink-0 pt-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>
                   {moment(log.created_date).format('HH:mm:ss')}
                 </span>
               </div>
