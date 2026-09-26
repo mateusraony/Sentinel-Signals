@@ -13,7 +13,7 @@
 // teste controlar `SignalEvent`/`TradeOperation` sem afetar os demais.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, cleanup, waitFor } from '@testing-library/react';
+import { screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 
 let priorityOverride = null;
@@ -97,5 +97,52 @@ describe('Dashboard — cor do StatsCard "Alta Prioridade" reflete a contagem (a
     const label = await screen.findByText('Alta Prioridade');
     const numberEl = label.nextElementSibling;
     await waitFor(() => expect(numberEl.style.color).toBe('rgb(255, 159, 67)'));
+  });
+});
+
+// Achados M-4/M-13/M-15 do Raio-X de UI/UX (reorganização do Dashboard,
+// docs/known-risks.md item 236/237): a seção "Desempenho" (WeeklySummary +
+// os 4 cards de performance + Correlação) fica colapsada por padrão; o
+// grupo "Atenção" (VerificationWidget + StatsCard Alta Prioridade/
+// Aguardando) vem antes da grade de "Ativos"; TelegramStatusBanner sai da
+// 4ª posição e vai para o fim da página.
+describe('Dashboard — reorganização em grupos (achados M-4/M-13/M-15)', () => {
+  it('REGRESSÃO: a seção "Desempenho" fica colapsada por padrão e expande ao clicar', async () => {
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+
+    await screen.findByText('Ativos');
+    expect(screen.queryByText('Resumo da Semana')).toBeNull();
+
+    const toggle = screen.getByRole('button', { name: /desempenho/i });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    await screen.findByText('Resumo da Semana');
+  });
+
+  it('REGRESSÃO: "Atenção" vem depois de "Agora" e antes de "Ativos" no DOM', async () => {
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+
+    const agora = await screen.findByText('Agora');
+    const atencao = await screen.findByText('Atenção');
+    const ativos = await screen.findByText('Ativos');
+
+    expect(agora.compareDocumentPosition(atencao) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(atencao.compareDocumentPosition(ativos) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('REGRESSÃO: TelegramStatusBanner aparece depois da grade de "Ativos" no DOM (achado M-15)', async () => {
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+
+    const ativos = await screen.findByText('Ativos');
+    const telegram = await screen.findByText(/Telegram não configurado/);
+
+    const position = ativos.compareDocumentPosition(telegram);
+    if (!(position & Node.DOCUMENT_POSITION_FOLLOWING)) {
+      throw new Error('TelegramStatusBanner deveria vir DEPOIS de "Ativos" no DOM');
+    }
   });
 });

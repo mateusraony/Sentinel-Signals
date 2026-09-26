@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { Bell, Coins, TrendingUp, TrendingDown, Target, Clock, Search, ArrowUpDown, Swords } from 'lucide-react';
+import { Bell, Coins, TrendingUp, TrendingDown, Target, Clock, Search, ArrowUpDown, Swords, ChevronDown, ChevronUp } from 'lucide-react';
 import AssetCard from '@/components/dashboard/AssetCard';
 import RecentAlertsList from '@/components/dashboard/RecentAlertsList';
 import StatsCard from '@/components/dashboard/StatsCard';
@@ -35,6 +35,12 @@ export default function Dashboard() {
   const [compareMode, setCompareMode] = useState(false);
   const [compareAId, setCompareAId] = useState(null);
   const [compareBId, setCompareBId] = useState(null);
+  // Achado M-4/M-13 do Raio-X de UI/UX: os blocos de "Desempenho" (4 cards
+  // quase-sinônimos + correlação) ficavam sempre visíveis antes do conteúdo
+  // acionável do dia a dia — colapsados por padrão, mesmo padrão de
+  // divulgação progressiva já validado no toggle "Detalhes técnicos" do
+  // AssetCard/TradeCard.
+  const [showPerformance, setShowPerformance] = useState(false);
 
   // Reset filters on global event
   useEffect(() => {
@@ -208,24 +214,45 @@ export default function Dashboard() {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-5 mt-4">
-            {/* Weekly summary */}
-            <WeeklySummary />
+            {/* AGORA — sinais recém-confirmados + feed persistente (achado
+                A-14 do Raio-X de UI/UX): os dois únicos lugares que
+                respondem "o que aconteceu?" agrupados no topo, não mais
+                separados entre um banner efêmero e uma lista no fim da
+                página. */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Bell className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
+                <h2 className="text-sm font-bold text-foreground tracking-tight">Agora</h2>
+              </div>
+              <div className="space-y-3">
+                <SignalAlertBanner signals={recentSignals} />
+                <RecentAlertsList signals={recentSignals} unavailable={signalsUnavailable} assets={assets} onSelectAsset={setSelectedAsset} />
+              </div>
+            </div>
 
-            {/* Signal alert banner */}
-            <SignalAlertBanner signals={recentSignals} />
+            {/* ATENÇÃO — verificação pendente + contadores que pedem revisão
+                humana (achado M-13 do Raio-X: agrupados por propósito, não
+                por "são todos números" junto do resto das stats). */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="w-3.5 h-3.5" style={{ color: '#ffd166' }} />
+                <h2 className="text-sm font-bold text-foreground tracking-tight">Atenção</h2>
+              </div>
+              <div className="space-y-3">
+                <VerificationWidget />
+                <div className="grid grid-cols-2 gap-3">
+                  <StatsCard icon={Bell} label="Alta Prioridade" value={highPriorityCount}
+                    color={highPriorityCount > 0 ? '#ff9f43' : '#00e5ff'}
+                    glowColor={highPriorityCount > 0 ? 'rgba(255,159,67,0.1)' : 'rgba(0,229,255,0.1)'}
+                    error={signalsUnavailable || tradeOpsUnavailable} />
+                  <StatsCard icon={Clock} label="Aguardando" value={waitingCount} color="#ffd166" glowColor="rgba(255,209,102,0.1)" error={signalsUnavailable || tradeOpsUnavailable} />
+                </div>
+              </div>
+            </div>
 
-            {/* Verification tasks — created automatically for high-priority signals */}
-            <VerificationWidget />
-
-            {/* Telegram status */}
-            <TelegramStatusBanner />
-
-            {/* Recent Alerts — movido do fim da página (achado A-14 do
-                Raio-X de UI/UX): o feed de "o que aconteceu agora" pertence
-                perto dos outros avisos/ações, não depois do grid inteiro de
-                ativos e de todos os gráficos de performance. */}
-            <RecentAlertsList signals={recentSignals} unavailable={signalsUnavailable} assets={assets} onSelectAsset={setSelectedAsset} />
-
+            {/* OPORTUNIDADES / OPERAÇÕES — núcleo operacional (achado M-13:
+                hoje no meio da página, deveria ser o conteúdo logo após
+                agora/atenção). */}
             {/* Compare mode */}
             {compareMode && (
               <div className="space-y-3">
@@ -260,33 +287,11 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Real performance metrics — busca sua própria amostra (500 ops
-                fechadas), a mesma de VirtualAccountCard/LiveConfidenceCard,
-                não o tradeOps de 100 (recentes, qualquer status) usado acima
-                para prioridade/atividade */}
-            <PerformanceMetricsBar activeOpsCount={activeOpsCount} />
-
-            {/* Consolidated performance chart — appears only when there's history */}
-            <PerformanceOverview />
-
-            {/* Conta virtual real (capital+drawdown compostos, position sizing por risco) */}
-            <VirtualAccountCard />
-
-            {/* Confiança ao vivo — mesmo IC/gate de amostra do backtest, sobre operações reais */}
-            <LiveConfidenceCard />
-
-            {/* Cross-asset price correlation */}
-            <CorrelationWidget />
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+            {/* Visão rápida — os 4 contadores que não pedem ação imediata
+                (os 2 que pedem já estão em "Atenção" acima). */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <StatsCard icon={Coins} label="Monitorados" value={assets.length} color="#00e5ff" glowColor="rgba(0,229,255,0.1)" error={assetsError && assets.length === 0} />
-              <StatsCard icon={Bell} label="Alta Prioridade" value={highPriorityCount}
-                color={highPriorityCount > 0 ? '#ff9f43' : '#00e5ff'}
-                glowColor={highPriorityCount > 0 ? 'rgba(255,159,67,0.1)' : 'rgba(0,229,255,0.1)'}
-                error={signalsUnavailable || tradeOpsUnavailable} />
               <StatsCard icon={Target} label="Operações Ativas" value={activeOpsCount} color="#00ff80" glowColor="rgba(0,255,128,0.1)" error={tradeOpsUnavailable} />
-              <StatsCard icon={Clock} label="Aguardando" value={waitingCount} color="#ffd166" glowColor="rgba(255,209,102,0.1)" error={signalsUnavailable || tradeOpsUnavailable} />
               <StatsCard icon={TrendingUp} label="Sinais BUY" value={buySignals} color="#00ff80" glowColor="rgba(0,255,128,0.1)" error={signalsUnavailable} />
               <StatsCard icon={TrendingDown} label="Sinais SELL" value={sellSignals} color="#ff1478" glowColor="rgba(255,20,120,0.1)" error={signalsUnavailable} />
             </div>
@@ -411,6 +416,46 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+
+            {/* DESEMPENHO / ANÁLISE — seção secundária, colapsada por
+                padrão (achado M-4/M-13 do Raio-X): os 4 cards de
+                performance quase-sinônimos (M-4) + correlação, agora sob 1
+                heading em vez de blocos soltos. Todos os 5 já se
+                auto-escondem quando não há dado suficiente. */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowPerformance(o => !o)}
+                aria-expanded={showPerformance}
+                className="flex items-center gap-1.5 text-sm font-bold text-foreground tracking-tight transition-colors hover:opacity-80">
+                {showPerformance ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                Desempenho
+              </button>
+              {showPerformance && (
+                <div className="space-y-5 mt-3">
+                  <WeeklySummary />
+                  {/* Real performance metrics — busca sua própria amostra
+                      (500 ops fechadas), a mesma de
+                      VirtualAccountCard/LiveConfidenceCard, não o tradeOps
+                      de 100 (recentes, qualquer status) usado acima para
+                      prioridade/atividade */}
+                  <PerformanceMetricsBar activeOpsCount={activeOpsCount} />
+                  {/* Consolidated performance chart — appears only when there's history */}
+                  <PerformanceOverview />
+                  {/* Conta virtual real (capital+drawdown compostos, position sizing por risco) */}
+                  <VirtualAccountCard />
+                  {/* Confiança ao vivo — mesmo IC/gate de amostra do backtest, sobre operações reais */}
+                  <LiveConfidenceCard />
+                  {/* Cross-asset price correlation */}
+                  <CorrelationWidget />
+                </div>
+              )}
+            </div>
+
+            {/* Telegram status — achado M-15 do Raio-X: é config/meta, não
+                sinal de mercado, não deveria competir por atenção com
+                sinais reais logo no topo. */}
+            <TelegramStatusBanner />
           </TabsContent>
 
           <TabsContent value="predictive" className="mt-4">

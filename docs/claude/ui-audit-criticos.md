@@ -788,9 +788,19 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] M-9 — 17 gráficos Recharts sem role="img"/aria-label em 10 arquivos. **Fechado: 3 sub-rodadas, 17/17 instâncias — ver seção própria abaixo.**
 - [x] M-17 — termos técnicos sem explicação (glossário, seção I). **Fechado: 4 sub-rodadas, 8/8 arquivos-alvo (+ 2 fixes de review do Codex) — ver seção própria abaixo.**
 - [x] M-11 — 632 ocorrências de tamanho de fonte arbitrário em 51 arquivos. **Fechado: número real era 676/54, formalizado como tokens do Tailwind numa rodada única — ver seção própria abaixo.**
-- [ ] Demais itens de Média prioridade (M-4, M-10, M-13, M-15),
-  Refinamentos e a reorganização completa do Dashboard (seção L do
-  relatório) — nada iniciado.
+- [x] M-4 — 4 cards de "performance" sem hierarquia visual entre eles.
+  **Corrigido — agrupados sob 1 seção "Desempenho" colapsável. Ver
+  `docs/known-risks.md` item 237.**
+- [x] M-13 — ~10 widgets + 6 StatsCard sempre visíveis antes da grade
+  de ativos. **Corrigido — reagrupados em Agora/Atenção/núcleo
+  operacional + seção "Desempenho" colapsada por padrão. Ver item 237.**
+- [x] M-15 — Status do Telegram na 4ª posição, competindo com sinais
+  reais. **Corrigido — movido para o fim da página. Ver item 237.**
+- [ ] M-10 — Nav mobile com 12 itens numa barra de 64px (~32px por
+  alvo de toque). **Não é sobre `Dashboard.jsx`, é `Sidebar.jsx` —
+  confirmado por investigação (item 236), item separado ainda não
+  escopado.**
+- [ ] Refinamentos (seção E do relatório) — nada iniciado.
 
 ## Como continuar
 
@@ -818,13 +828,15 @@ M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
 M-5/M-6/M-8/M-12; M-9 fechado em 3 sub-rodadas, itens 223/225/226/227;
 M-17 fechado em 4 sub-rodadas, itens 229/230/232/234 (+ fixes de review
 231/233); M-11 fechado numa rodada única, item 235; M-7 descoberto já
-corrigido).** Restam 3 dos 17 itens M inteiros: M-4, M-13, M-15 — os 3
-fazem parte do PR 2 da reorganização do Dashboard (mesmo plano do item
-236), já escopado e em implementação. **M-10 não é sobre `Dashboard.jsx`
-— é `Sidebar.jsx` (nav mobile), item separado, ainda não escopado.**
-A-1 (RecentAlertsList sem onClick) e C-2 (4 cards de performance com
-amostras diferentes) já estavam corrigidos em rodadas anteriores desta
-mesma sessão — achado da investigação do item 236, não itens novos.
+corrigido; M-4/M-13/M-15 fechados no PR 2 da reorganização do
+Dashboard, item 237).** A reorganização do Dashboard (seção L) está
+completa: PR 1 (item 236, A-15) + PR 2 (item 237, M-4/M-13/M-15/resto
+de A-14). **Único item de Média prioridade ainda pendente: M-10 — não
+é sobre `Dashboard.jsx`, é `Sidebar.jsx` (nav mobile), item separado,
+ainda não escopado.** A-1 (RecentAlertsList sem onClick) e C-2 (4
+cards de performance com amostras diferentes) já estavam corrigidos em
+rodadas anteriores desta mesma sessão — achado da investigação do item
+236, não itens novos.
 
 ## Backlog M-9 — 1ª sub-rodada (2026-09-25): 4 widgets do Dashboard
 
@@ -1087,6 +1099,41 @@ typecheck em 13 — checado logo após o código desta vez, lição do item
 2 fixes de review do Codex (itens 231/233), em 4 sub-rodadas (itens
 229/230/232/234). `PerformanceMetricsBar.jsx` deliberadamente fora de
 escopo (baixa prioridade, ver acima).
+
+## Reorganização do Dashboard — PR 2/2 (2026-09-26): M-4/M-13/M-15/A-14 fechados
+
+Continuação direta do PR 1 (A-15, ver seção abaixo) — mesmo plano
+(`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`), mesma
+investigação prévia. Este PR fecha a reorganização do Dashboard em si:
+`src/pages/Dashboard.jsx` reagrupado em 3 seções + 1 colapsável.
+
+**Nova ordem**: "Agora" (`SignalAlertBanner` + `RecentAlertsList`) →
+"Atenção" (`VerificationWidget` + StatsCard "Alta Prioridade"/
+"Aguardando") → núcleo operacional (Compare + faixa de 4 StatsCard
+"visão rápida" + busca/filtro/sort + grade de `AssetCard`) →
+"Desempenho" colapsado por padrão (`WeeklySummary` + os 4 cards de
+performance do M-4 + `CorrelationWidget`, toggle reaproveitando o
+mesmo padrão `useState`+chevron do item 236) → `TelegramStatusBanner`
+(fim da página, M-15).
+
+`SignalAlertBanner` e `RecentAlertsList` **não foram fundidos** —
+regras de filtro diferentes (timeout 15s/janela 5min vs. sem timeout);
+fundir seria mudar lógica de notificação, fora de escopo de tarefa de
+UI. Usuária confirmou via `AskUserQuestion`: manter o timeout de 15s
+como está nesta leva. `StatsCard.jsx` não foi tocado — só
+reparticionado de onde cada card é montado.
+
+3 testes novos em `Dashboard.test.jsx` (seção colapsada por padrão +
+expande; ordem Agora→Atenção→Ativos; Telegram depois de Ativos), falha
+reproduzida via `git stash` antes do fix. `npm run lint && npm test &&
+npm run build && npm run typecheck:ratchet` limpos (2129 testes, teto
+de typecheck em 13, sem mudança). Detalhe completo em
+`docs/known-risks.md` item 237.
+
+**Fecha a reorganização do Dashboard (seção L do Raio-X) por completo**
+— M-4, M-13, M-15 e o resto de A-14. Único item de Média prioridade
+restante: M-10 (nav mobile, `Sidebar.jsx` — não é sobre `Dashboard.jsx`,
+item separado ainda não escopado).
 
 ## Reorganização do Dashboard — PR 1/2 (2026-09-26): A-15 fechado (AssetCard)
 
