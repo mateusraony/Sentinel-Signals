@@ -27643,3 +27643,188 @@ typecheck:ratchet` limpos (2103 testes, 0 falhas; teto de typecheck em
 13, sem mudança). `git diff` nos 5 arquivos de produção mostra só a
 troca do nome do atributo + comentários explicando a troca — nenhuma
 mudança em `backend.`/lógica de negócio.
+
+## 229. M-17 (1ª sub-rodada): glossário de termos técnicos — tooltip em `AssetCard.jsx` + `AssetDetailPanel.jsx`
+
+M-17 do Raio-X ("termos técnicos sem explicação", seção I do relatório
+original — glossário completo com a redação exata sugerida pra cada
+termo, ex.: RF, SMC, RSI, MACD, EMA, Confl., Funding, R:R, Expectância,
+Tier, ADX, Choppiness, Runner, Time Stop/Chop Exit, TP1/TP2, CAGR).
+Rodei um agente Explore pra mapear, termo a termo, onde cada um
+aparece como rótulo "nu" (sem `Tooltip` do Radix nem texto explicativo
+ao lado) em `src/pages`/`src/components` — 8 arquivos-alvo
+identificados, mais 1 de baixa prioridade (`PerformanceMetricsBar.jsx`,
+sub-texto, não título). Vários termos já estavam resolvidos em
+`TradeCard.jsx`, `SignalToast.jsx`, `SignalAlertBanner.jsx`,
+`LiveConfidenceCard.jsx`, `PortfolioVsMarket.jsx` e nos textos de
+`decisionExplanation.js` (ADX/Choppiness sempre vêm com frase
+explicativa quando exibidos com valor real) — não precisam de nova
+rodada.
+
+Esta 1ª sub-rodada cobre os 2 arquivos com mais ocorrências:
+
+- **`AssetCard.jsx`** — `IndicatorDots` (RF/MACD/EMA/RSI, mini-badges
+  do card) e o grid de preços (colunas TP1/TP2 — Entrada/Stop/Stop+
+  já são autoexplicativos em português, ficam sem tooltip). Texto
+  reaproveitado do glossário da auditoria (seção I), sem invenção de
+  conceito novo.
+- **`AssetDetailPanel.jsx`** — `TFStateCard` (mini-grid RSI/MACD/EMA
+  por timeframe) e `ParamCard` (RSI Period/RSI OB/OS/MACD/EMA nos
+  "Parâmetros Range Filter" — RF Period/RF Mult ficam de fora, já
+  contextualizados pelo título da seção). `ParamCard` ganhou prop
+  opcional `tooltip`, mesmo padrão já usado em `SummaryCard`
+  (`Backtest.jsx`)/`MetricCard` (`MonthlyReport.jsx`).
+
+Padrão de fix idêntico ao resto do projeto (achado A-6): `Tooltip`/
+`TooltipTrigger asChild`/`TooltipContent` do Radix, com `tabIndex={0}`
++ classe `cursor-help` no elemento que vira gatilho.
+
+### Testes novos
+
+`AssetCard.test.jsx` (já existia): 2 casos novos confirmando que RF/
+MACD/EMA/RSI e as colunas TP1/TP2 ganham um wrapper focável
+(`tabindex="0"`) com classe `cursor-help`, e que Entrada/Stop/Stop+
+continuam sem esse wrapper. **Achado de teste durante a implementação**:
+a primeira versão usava `.closest('[tabindex="0"]')`, que dava falso
+positivo — o card inteiro já é `role="button"`/`tabIndex={0}` (achado
+A-8), então esse seletor encontrava o card mesmo SEM o fix aplicado
+(confirmado ao reproduzir via `git stash`: o teste passava mesmo com o
+`AssetCard.jsx` revertido). Corrigido pra `.closest('.cursor-help')`
+— classe exclusiva do novo wrapper — e reconfirmado que falha sem o
+fix antes de aceitar. `AssetDetailPanel.test.jsx` (novo — arquivo não
+tinha teste dedicado antes): 2 casos confirmando o mesmo padrão no
+mini-grid e nos `ParamCard` afetados.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2107 testes, 0 falhas; teto de typecheck em
+13, sem mudança). `git diff` nos 2 arquivos de produção mostra só a
+adição do wrapper de tooltip (prop `tooltip` no `ParamCard`, `Tooltip`/
+`TooltipTrigger`/`TooltipContent` nos outros pontos) — nenhuma mudança
+em `backend.`/lógica de negócio/cálculo de indicador.
+
+### M-17 restante após esta rodada
+
+6 arquivos: `AssetConfigPanel.jsx`, `TelegramSettings.jsx`,
+`Alerts.jsx`, `ComparePanel.jsx`, `TradeHistory.jsx`, `Backtest.jsx`
+(+ `PerformanceMetricsBar.jsx`, baixa prioridade) — candidatos a 3
+sub-rodadas subsequentes, mapa completo já levantado por agente
+Explore nesta rodada.
+
+## 230. M-17 (2ª sub-rodada): tooltips em `AssetConfigPanel.jsx` + `TelegramSettings.jsx` — fix compartilhado em `MultiToggle.jsx`
+
+Continuação do backlog M-17 (item 229 — 1ª sub-rodada). `AssetConfigPanel.jsx`
+e `TelegramSettings.jsx` compartilham o mesmo array de badges (RF/SMC/
+MACD/EMA Cross/RSI) renderizado pelo componente **compartilhado**
+`src/components/ui/multi-toggle.jsx` — corrigir uma vez ali resolveu os
+2 arquivos ao mesmo tempo, sem duplicar lógica (mesmo padrão de "fix
+uma vez no componente compartilhado" já usado em M-9/item 226-227 pra
+`ResponsiveContainer`).
+
+- **`MultiToggle.jsx`**: campo opcional `tooltip` por item de `options`
+  — quando presente, envolve o `<button>` existente num `Tooltip`/
+  `TooltipTrigger asChild` do Radix (`cursor-help` + `tabIndex={0}`),
+  sem mudar `onClick`/seleção/estilo. Opções sem `tooltip` continuam
+  exatamente como antes (`PRIORITY_OPTIONS`/`SIGNAL_TYPES`/timeframes
+  não usam o campo nesta rodada — BUY/SELL/1H/4H/1D não são termos do
+  glossário).
+- **`AssetConfigPanel.jsx`**: `NOTIFY_SOURCE_OPTIONS` ganhou `tooltip`
+  em RF/SMC/MACD/EMA Cross/RSI (texto do glossário da auditoria);
+  `<Label>` de seção "RSI"/"MACD" (fora do MultiToggle, no form de
+  parâmetros) também ganharam `Tooltip` própria.
+- **`TelegramSettings.jsx`**: `SOURCE_OPTIONS` (idêntico array) ganhou
+  os mesmos 5 `tooltip`.
+
+### Testes novos
+
+`TelegramSettings.test.jsx` (já existia): caso novo confirmando que os
+5 badges de "Origem do sinal" (dentro de "Filtros Avançados") ficam
+focáveis, e que Timeframes/tipos de sinal continuam sem — precisou
+também envolver o `renderModal` helper existente num `TooltipProvider`
+(achado durante a implementação: o Radix desta versão exige um
+`TooltipProvider` ancestor — sem ele, `Tooltip` lança exceção; em
+produção vem de `App.jsx`, mas o teste renderiza o componente isolado).
+`AssetConfigPanel.test.jsx` (novo — arquivo não tinha teste dedicado
+antes): 2 casos confirmando o mesmo padrão nas labels de seção e nos
+badges do MultiToggle.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2110 testes, 0 falhas; teto de typecheck em
+13, sem mudança). Falha de cada teste reproduzida via `git stash` dos
+3 arquivos de produção juntos (`multi-toggle.jsx` +
+`AssetConfigPanel.jsx` + `TelegramSettings.jsx`) — confirmado: os 3
+casos novos falham sem o fix. `git diff` nos 3 arquivos mostra só o
+campo `tooltip=`/wrapper `Tooltip`/`TooltipTrigger`/`TooltipContent` —
+nenhuma mudança em `backend.`/lógica de negócio (`MultiToggle.jsx` é
+componente de UI puro, sem tocar `onChange`/seleção).
+
+### M-17 restante após esta rodada
+
+4 arquivos: `Alerts.jsx`, `ComparePanel.jsx`, `TradeHistory.jsx`,
+`Backtest.jsx` (+ `PerformanceMetricsBar.jsx`, baixa prioridade) —
+candidatos a 2 sub-rodadas subsequentes (plano completo já escrito em
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`).
+
+## 231. Corrigir achado do Codex review no PR #430 (M-17, 1ª sub-rodada) — tooltip de TP1/TP2 era estático e descrevia sempre um runner
+
+O Codex revisou o PR #430 (item 229/230) e apontou que o texto novo de
+TP1/TP2 em `AssetCard.jsx` (item 229) era **estático** e sempre falava
+de um runner saindo do TP1 rumo ao TP2 — falso em 2 configurações reais
+suportadas pelo motor:
+
+- `tradeOp.partial_percent === 100` (`closesFullyAtTp1`,
+  `opExitRules.js` — operação criada com `pineConfig.runnerEnabled:
+  false`, congelado na criação): o TP1 fecha **100%** da posição, não
+  "parte" dela, e não existe runner nem TP2 de fato.
+- `tradeOp.tp2_cap_disabled === true` (`scanner.js`/`opExitRules.js`):
+  os loops de saída **ignoram deliberadamente** o TP2 e deixam o
+  runner em trailing sem alvo fixo — o texto antigo dizia que o TP2 era
+  "o alvo final", o que nunca acontece nesse modo.
+
+Achado correto (P2, não "nit") — o texto chegava a induzir o usuário a
+erro sobre a própria gestão de risco da operação ativa.
+
+### Fix
+
+`getTp1Tooltip(op)`/`getTp2Tooltip(op)` (funções puras, exportadas de
+`AssetCard.jsx` — antes eram um objeto estático `PRICE_COL_TOOLTIPS`)
+derivam o texto do estado REAL da operação, reusando a mesma regra pura
+que o motor usa (`closesFullyAtTp1` de `src/lib/opExitRules.js`, import
+só de leitura — nenhuma lógica de trading tocada, mesmo padrão já usado
+pra `assetHealthcheckReason`):
+
+- Normal (com runner): texto original, inalterado.
+- `partial_percent: 100`: TP1 vira "Único alvo de lucro... fecha 100%
+  da posição... (sem runner)"; TP2 vira "Não aplicável nesta operação —
+  a posição já foi fechada inteira no TP1 (sem runner)."
+- `tp2_cap_disabled: true`: TP1 mantém o texto normal (o TP1 ainda
+  acontece do jeito de sempre); TP2 vira "Não usado nesta operação — o
+  runner ignora este teto e segue em trailing, sem alvo fixo."
+
+### Testes
+
+Tentativa inicial testou via `render` + `fireEvent.focus` (abrir o
+Tooltip do Radix de verdade) + `findAllByText` no conteúdo — **provou
+ser lento/instável em jsdom neste arquivo especificamente**:
+`AssetCard.jsx` tem 3 `useQuery` ativos (`fetch24hStats`,
+`fetchMarkPrice` via `useFundingRate`, mais o próprio card) causando
+re-renders contínuos; testes chegaram a levar >30s pra um timeout
+nominal de 5s antes de falhar. Trocado pra testar as funções puras
+`getTp1Tooltip`/`getTp2Tooltip` diretamente (exportadas do módulo, sem
+`render`) — 4 casos novos (normal, `op` indefinida, `partial_percent:
+100`, `tp2_cap_disabled: true`), execução em milissegundos. A cobertura
+de que a COLUNA em si é focável/tem `cursor-help` já existia (teste
+anterior do item 229) e continua intacta — este item cobre só o TEXTO,
+que é o que mudou.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2114 testes, 0 falhas; teto de typecheck em
+13, sem mudança). Falha dos 4 casos novos reproduzida via `git stash`
+de `AssetCard.jsx` antes de aceitar (o arquivo stashado nem exportava
+as funções — `TypeError: getTp1Tooltip is not a function`). `git diff
+--stat` só em `AssetCard.jsx` + `AssetCard.test.jsx`.

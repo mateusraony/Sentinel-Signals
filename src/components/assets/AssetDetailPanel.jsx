@@ -3,13 +3,25 @@ import { Sliders, Activity, Clock } from 'lucide-react';
 import RFHistoryChart from './RFHistoryChart';
 import moment from 'moment';
 import { formatPrice } from '@/lib/priceProximity';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
-/** @param {{ label: string, value: any, pineVar?: string, color?: string }} props */
-function ParamCard({ label, value, pineVar, color }) {
+/** @param {{ label: string, value: any, pineVar?: string, color?: string, tooltip?: string }} props */
+function ParamCard({ label, value, pineVar, color, tooltip }) {
   return (
     <div className="rounded-lg px-2.5 py-2 text-center"
       style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-      <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-wider">{label}</div>
+      {tooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-wider cursor-help" tabIndex={0}>{label}</div>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            {tooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-wider">{label}</div>
+      )}
       <div className="text-sm font-mono font-bold mt-0.5" style={{ color: color || 'rgba(255,255,255,0.8)' }}>{value}</div>
       {pineVar && <div className="text-[7px] font-mono mt-0.5" style={{ color: 'rgba(0,255,128,0.35)' }}>{pineVar}</div>}
     </div>
@@ -80,24 +92,45 @@ function TFStateCard({ tf, state, enabled, unavailable = false }) {
       <div style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
 
       <div className="grid grid-cols-3 gap-1 text-center">
-        <div>
-          <div className="text-[7px] font-mono text-muted-foreground">RSI</div>
-          <div className="text-[10px] font-mono font-bold" style={{ color: rsiColor }}>
-            {Number.isFinite(state.rsi_value) ? state.rsi_value.toFixed(0) : '—'}
-          </div>
-        </div>
-        <div>
-          <div className="text-[7px] font-mono text-muted-foreground">MACD</div>
-          <div className="text-[10px] font-mono font-bold" style={{ color: macdColor }}>
-            {macdH > 0 ? '▲' : macdH < 0 ? '▼' : '—'}
-          </div>
-        </div>
-        <div>
-          <div className="text-[7px] font-mono text-muted-foreground">EMA</div>
-          <div className="text-[10px] font-mono font-bold" style={{ color: emaColor }}>
-            {emaTrend === 'bullish' ? '▲' : emaTrend === 'bearish' ? '▼' : '—'}
-          </div>
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="cursor-help" tabIndex={0}>
+              <div className="text-[7px] font-mono text-muted-foreground">RSI</div>
+              <div className="text-[10px] font-mono font-bold" style={{ color: rsiColor }}>
+                {Number.isFinite(state.rsi_value) ? state.rsi_value.toFixed(0) : '—'}
+              </div>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            RSI (Índice de Força Relativa): mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100) — aqui, só confirmação, nunca sinal sozinho.
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="cursor-help" tabIndex={0}>
+              <div className="text-[7px] font-mono text-muted-foreground">MACD</div>
+              <div className="text-[10px] font-mono font-bold" style={{ color: macdColor }}>
+                {macdH > 0 ? '▲' : macdH < 0 ? '▼' : '—'}
+              </div>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            MACD: compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="cursor-help" tabIndex={0}>
+              <div className="text-[7px] font-mono text-muted-foreground">EMA</div>
+              <div className="text-[10px] font-mono font-bold" style={{ color: emaColor }}>
+                {emaTrend === 'bullish' ? '▲' : emaTrend === 'bearish' ? '▼' : '—'}
+              </div>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            EMA: média móvel exponencial — reage mais rápido a mudanças recentes que uma média comum. Quando uma EMA curta cruza uma longa, é sinal de mudança de tendência.
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* processed_at only advances when the state actually changes (see
@@ -132,10 +165,14 @@ export default function AssetDetailPanel({ asset, states, expanded, onToggle, st
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
           <ParamCard label="RF Period" value={asset.rf_period ?? 20} pineVar="rng_per" color="#00e5ff" />
           <ParamCard label="RF Mult" value={asset.rf_multiplier ?? 3.5} pineVar="rng_qty" color="#00e5ff" />
-          <ParamCard label="RSI Period" value={asset.rsi_period ?? 14} pineVar="rsiLen" />
-          <ParamCard label="RSI OB/OS" value={`${asset.rsi_overbought ?? 70}/${asset.rsi_oversold ?? 30}`} />
-          <ParamCard label="MACD" value={`${asset.macd_fast ?? 12}/${asset.macd_slow ?? 26}/${asset.macd_signal ?? 9}`} />
-          <ParamCard label="EMA" value={`${asset.ema_short ?? 20}/${asset.ema_long ?? 50}`} />
+          <ParamCard label="RSI Period" value={asset.rsi_period ?? 14} pineVar="rsiLen"
+            tooltip="RSI (Índice de Força Relativa): nº de candles usados no cálculo do indicador." />
+          <ParamCard label="RSI OB/OS" value={`${asset.rsi_overbought ?? 70}/${asset.rsi_oversold ?? 30}`}
+            tooltip="RSI: limites de sobrecompra (OB) e sobrevenda (OS) — acima do 1º ou abaixo do 2º, o RSI sinaliza força incomum." />
+          <ParamCard label="MACD" value={`${asset.macd_fast ?? 12}/${asset.macd_slow ?? 26}/${asset.macd_signal ?? 9}`}
+            tooltip="MACD: compara duas médias de preço (rápida/lenta) e uma linha de sinal — indica se a força do movimento está aumentando ou diminuindo." />
+          <ParamCard label="EMA" value={`${asset.ema_short ?? 20}/${asset.ema_long ?? 50}`}
+            tooltip="EMA: médias móveis exponenciais curta/longa — quando a curta cruza a longa, é sinal de mudança de tendência." />
         </div>
       </div>
 

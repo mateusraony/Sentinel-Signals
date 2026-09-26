@@ -12,7 +12,7 @@ import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/re
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import AssetCard from './AssetCard.jsx';
+import AssetCard, { getTp1Tooltip, getTp2Tooltip } from './AssetCard.jsx';
 
 // fetchMarkPrice precisa ser controlável por teste (achado A-6, badge
 // "Fund." só vira Tooltip focável quando fundingRate !== null) — mesmo
@@ -204,5 +204,77 @@ describe('AssetCard — animações de flash respeitam prefers-reduced-motion (a
     expect(styleTag).not.toBeNull();
     expect(styleTag.textContent).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
     expect(styleTag.textContent).toMatch(/\.flash-buy,\s*\.flash-sell\s*\{\s*animation:\s*none;?\s*\}/);
+  });
+});
+
+// Achado M-17 do Raio-X de UI/UX (glossário de termos técnicos, item
+// 229): RF/MACD/EMA/RSI no IndicatorDots e TP1/TP2 no grid de preços eram
+// rótulos "nus" — sem tooltip nem texto explicando o termo. Padrão já
+// usado no resto do arquivo (Tooltip/TooltipTrigger asChild/tabIndex={0}).
+describe('AssetCard — indicadores RF/MACD/EMA/RSI e colunas TP1/TP2 têm tooltip explicando o termo (achado M-17)', () => {
+  // Nota: o card inteiro já é role="button"/tabIndex={0} (achado A-8), então
+  // `.closest('[tabindex="0"]')` sozinho encontraria o card mesmo sem o fix
+  // (falso positivo) — `.closest('.cursor-help')` é o discriminador certo,
+  // já que só o novo wrapper do achado M-17 usa essa classe (o card usa
+  // `cursor-pointer`).
+  it('REGRESSÃO: RF/MACD/EMA/RSI (IndicatorDots) são focáveis e têm tooltip próprio', () => {
+    renderCard({
+      states: [{ timeframe: '1h', rf_direction: 1, macd_histogram: 0.5, trend_ema: 'bullish', rsi_zone: 'neutral', rsi_value: 55, last_close: 60000 }],
+    });
+    const rf = screen.getByText('RF').closest('.cursor-help');
+    const macd = screen.getByText('MACD').closest('.cursor-help');
+    const ema = screen.getByText('EMA').closest('.cursor-help');
+    const rsi = screen.getByText('RSI').closest('.cursor-help');
+    expect(rf?.getAttribute('tabindex')).toBe('0');
+    expect(macd?.getAttribute('tabindex')).toBe('0');
+    expect(ema?.getAttribute('tabindex')).toBe('0');
+    expect(rsi?.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: colunas TP1/TP2 do grid de preços são focáveis com tooltip; Entrada/Stop/Stop+ continuam sem tooltip', () => {
+    renderCard({});
+    const tp1 = screen.getByText('TP1').closest('.cursor-help');
+    const tp2 = screen.getByText('TP2').closest('.cursor-help');
+    expect(tp1?.getAttribute('tabindex')).toBe('0');
+    expect(tp2?.getAttribute('tabindex')).toBe('0');
+    // Entrada/Stop/Stop+ são autoexplicativos — não deveriam virar gatilho de tooltip.
+    expect(screen.getByText('Entrada').closest('.cursor-help')).toBeNull();
+    expect(screen.getByText('Stop+').closest('.cursor-help')).toBeNull();
+  });
+
+  // Achado do Codex review no PR #430: o texto de TP1/TP2 era estático e
+  // sempre falava de um "runner" indo pro TP2 — falso quando a operação foi
+  // criada com partial_percent:100 (fecha tudo no TP1, sem runner) ou
+  // tp2_cap_disabled:true (TP2 nunca é usado, runner segue em trailing).
+  // Testado direto contra a função pura exportada (`getTp1Tooltip`/
+  // `getTp2Tooltip`), não via abrir o Tooltip do Radix por foco — esse
+  // caminho provou ser lento/instável em jsdom neste arquivo (o card tem 3
+  // `useQuery` ativos re-renderizando; tentativas com `fireEvent.focus` +
+  // `findByText` chegaram a travar >30s num timeout de 5s). A cobertura de
+  // que a COLUNA em si é focável/tem tooltip já existe no teste acima
+  // ("colunas TP1/TP2 do grid de preços são focáveis") — este cobre só o
+  // TEXTO, que é o que o achado do Codex mudou.
+  const TP_OP_BASE = {
+    id: 'op1', entry_price: 100, initial_stop: 90, tp1: 110, tp2: 120, current_stop: 95, status: 'SIGNAL_CONFIRMED',
+  };
+
+  it('REGRESSÃO: operação normal (com runner) mantém o texto original de TP1/TP2', () => {
+    expect(getTp1Tooltip({ ...TP_OP_BASE })).toMatch(/o restante \(runner\) segue para o TP2/);
+    expect(getTp2Tooltip({ ...TP_OP_BASE })).toMatch(/o que sobrou da posição \(runner\) depois do TP1/);
+  });
+
+  it('REGRESSÃO: sem operação ativa (op indefinida) usa o texto padrão, não quebra', () => {
+    expect(getTp1Tooltip(undefined)).toMatch(/o restante \(runner\) segue para o TP2/);
+    expect(getTp2Tooltip(undefined)).toMatch(/o que sobrou da posição \(runner\) depois do TP1/);
+  });
+
+  it('REGRESSÃO: partial_percent:100 (sem runner) — TP1 vira alvo único, TP2 vira "não aplicável"', () => {
+    expect(getTp1Tooltip({ ...TP_OP_BASE, partial_percent: 100 })).toMatch(/Único alvo de lucro desta operação/);
+    expect(getTp2Tooltip({ ...TP_OP_BASE, partial_percent: 100 })).toMatch(/Não aplicável nesta operação — a posição já foi fechada inteira no TP1/);
+  });
+
+  it('REGRESSÃO: tp2_cap_disabled:true — TP2 explica que o runner ignora o teto e segue em trailing', () => {
+    expect(getTp1Tooltip({ ...TP_OP_BASE, tp2_cap_disabled: true })).toMatch(/o restante \(runner\) segue para o TP2/);
+    expect(getTp2Tooltip({ ...TP_OP_BASE, tp2_cap_disabled: true })).toMatch(/o runner ignora este teto e segue em trailing/);
   });
 });

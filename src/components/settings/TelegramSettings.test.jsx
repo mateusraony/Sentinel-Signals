@@ -12,6 +12,7 @@
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import TelegramSettings from './TelegramSettings.jsx';
 
 // telegram.js importa @/lib/firebaseClient de forma transitiva (usado só
@@ -24,8 +25,15 @@ afterEach(() => {
   localStorage.clear();
 });
 
+// Achado M-17 (item 230): MultiToggle passou a usar Tooltip do Radix, que
+// exige um TooltipProvider ancestor (em produção vem de App.jsx) — sem ele
+// aqui, o Radix lança "Tooltip must be used within TooltipProvider".
 function renderModal(props) {
-  return render(<TelegramSettings open onClose={vi.fn()} {...props} />);
+  return render(
+    <TooltipProvider>
+      <TelegramSettings open onClose={vi.fn()} {...props} />
+    </TooltipProvider>,
+  );
 }
 
 describe('TelegramSettings — modal acessível via Radix Dialog (achado A-7)', () => {
@@ -54,5 +62,26 @@ describe('TelegramSettings — modal acessível via Radix Dialog (achado A-7)', 
     await screen.findByText(/TIMEFRAMES A MONITORAR/);
     const scrollArea = screen.getByText(/TIMEFRAMES A MONITORAR/).closest('.overflow-y-auto');
     expect(scrollArea).not.toBeNull();
+  });
+});
+
+// Achado M-17 do Raio-X de UI/UX (docs/known-risks.md item 230): as opções
+// RF/SMC/MACD/RSI/EMA Cross de "Origem do sinal" eram siglas "nuas" — sem
+// tooltip explicando o termo. Fix em MultiToggle.jsx (campo `tooltip`
+// opcional por opção), reusado aqui e em AssetConfigPanel.jsx.
+describe('TelegramSettings — badges de "Origem do sinal" têm tooltip explicando o termo (achado M-17)', () => {
+  it('REGRESSÃO: RF/SMC/MACD/EMA Cross/RSI são focáveis (têm tooltip); TF/BUY/SELL continuam sem', async () => {
+    renderModal();
+    await screen.findByRole('dialog');
+    fireEvent.click(screen.getByText(/Filtros Avançados de Notificação/));
+    await screen.findByText(/ORIGEM DO SINAL/);
+
+    for (const label of ['RF', 'SMC', 'MACD', 'EMA Cross', 'RSI']) {
+      const btn = screen.getByText(label).closest('button');
+      expect(btn?.getAttribute('tabindex')).toBe('0');
+    }
+    // Timeframes (1H/4H/1D) e tipos de sinal (BUY/SELL) não são termos do
+    // glossário — não deveriam ganhar o wrapper de tooltip.
+    expect(screen.getByText('1H').closest('button')?.getAttribute('tabindex')).toBeNull();
   });
 });
