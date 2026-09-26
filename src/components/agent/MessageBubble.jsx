@@ -36,7 +36,7 @@ function FunctionDisplay({ toolCall }) {
 
   if (hideDetails) {
     return (
-      <div className="mt-2 flex items-center gap-2 text-[10px] font-mono" style={{ color: statusColor }}>
+      <div className="mt-2 flex items-center gap-2 text-10px font-mono" style={{ color: statusColor }}>
         <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor }} />
         {displayLabel} — {statusText}
       </div>
@@ -46,7 +46,7 @@ function FunctionDisplay({ toolCall }) {
   return (
     <div className="mt-2 text-xs">
       <button onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-[10px] font-mono transition-all"
+        className="flex items-center gap-1.5 text-10px font-mono transition-all"
         style={{ color: statusColor }}>
         {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor }} />
@@ -56,8 +56,8 @@ function FunctionDisplay({ toolCall }) {
         <div className="mt-1.5 space-y-1.5 pl-4">
           {parsedArgs && (
             <div>
-              <span className="text-[9px] font-mono text-muted-foreground">Parâmetros:</span>
-              <pre className="text-[9px] font-mono mt-0.5 p-2 rounded overflow-x-auto"
+              <span className="text-9px font-mono text-muted-foreground">Parâmetros:</span>
+              <pre className="text-9px font-mono mt-0.5 p-2 rounded overflow-x-auto"
                 style={{ background: 'rgba(0,0,0,0.3)', color: 'rgba(0,229,255,0.6)' }}>
                 {JSON.stringify(parsedArgs, null, 2)}
               </pre>
@@ -65,8 +65,8 @@ function FunctionDisplay({ toolCall }) {
           )}
           {parsedResults && (
             <div>
-              <span className="text-[9px] font-mono text-muted-foreground">Resultado:</span>
-              <pre className="text-[9px] font-mono mt-0.5 p-2 rounded overflow-x-auto"
+              <span className="text-9px font-mono text-muted-foreground">Resultado:</span>
+              <pre className="text-9px font-mono mt-0.5 p-2 rounded overflow-x-auto"
                 style={{ background: 'rgba(0,0,0,0.3)', color: isFailed ? '#ff1478' : 'rgba(0,255,128,0.6)' }}>
                 {typeof parsedResults === 'string' ? parsedResults : JSON.stringify(parsedResults, null, 2)}
               </pre>
@@ -91,7 +91,7 @@ export default function MessageBubble({ message }) {
           {isUser
             ? <User className="w-3 h-3" style={{ color: '#00e5ff' }} />
             : <Bot className="w-3 h-3" style={{ color: '#00ff80' }} />}
-          <span className="text-[8px] font-mono uppercase tracking-wider"
+          <span className="text-8px font-mono uppercase tracking-wider"
             style={{ color: isUser ? '#00e5ff' : '#00ff80' }}>
             {isUser ? 'Você' : 'Strategy Reviewer'}
           </span>

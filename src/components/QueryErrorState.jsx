@@ -20,7 +20,7 @@ export function QueryErrorState({ message = undefined, onRetry = undefined }) {
       {onRetry && (
         <button
           onClick={onRetry}
-          className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-mono rounded-lg border border-white/10 hover:bg-white/5 transition-colors text-muted-foreground"
+          className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-11px font-mono rounded-lg border border-white/10 hover:bg-white/5 transition-colors text-muted-foreground"
         >
           <RefreshCw className="w-3 h-3" />
           Tentar de novo

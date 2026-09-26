@@ -7,7 +7,7 @@ export default function DirectionIndicator({ direction, label }) {
 
   return (
     <div className="flex flex-col items-center gap-0.5">
-      <span className="text-[9px] font-mono tracking-widest uppercase"
+      <span className="text-9px font-mono tracking-widest uppercase"
         style={{ color: 'rgba(255,255,255,0.3)' }}
       >{label}</span>
       <div

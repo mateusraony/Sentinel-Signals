@@ -20,7 +20,7 @@ export default function MultiToggle({ options, selected, onChange }) {
         const on = selected.includes(o.id);
         const button = (
           <button key={o.id} onClick={() => toggle(o.id)}
-            className={`text-[10px] font-mono px-2 py-1 rounded-md transition-all${o.tooltip ? ' cursor-help' : ''}`}
+            className={`text-10px font-mono px-2 py-1 rounded-md transition-all${o.tooltip ? ' cursor-help' : ''}`}
             tabIndex={o.tooltip ? 0 : undefined}
             style={on
               ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.35)', color: '#00e5ff' }
@@ -32,7 +32,7 @@ export default function MultiToggle({ options, selected, onChange }) {
         return (
           <Tooltip key={o.id}>
             <TooltipTrigger asChild>{button}</TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
               {o.tooltip}
             </TooltipContent>
           </Tooltip>

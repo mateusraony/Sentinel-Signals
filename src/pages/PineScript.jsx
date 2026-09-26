@@ -1126,18 +1126,18 @@ export default function PineScript() {
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Estratégia</p>
+          <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Estratégia</p>
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Pine Script</h1>
-          <p className="text-[10px] font-mono text-muted-foreground mt-1">NEW ERA — Range Filter Strategy v13.2</p>
+          <p className="text-10px font-mono text-muted-foreground mt-1">NEW ERA — Range Filter Strategy v13.2</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-[9px] font-mono px-2 py-1 rounded"
+          <div className="flex items-center gap-1.5 text-9px font-mono px-2 py-1 rounded"
             style={{ background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.2)', color: '#00ff80' }}>
             <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#00ff80', boxShadow: '0 0 4px #00ff80' }} />
             v13.2 · MTF 4h + Entrada 15m
           </div>
           {/* Auto-sync indicator */}
-          <div className="flex items-center gap-1.5 text-[9px] font-mono px-2 py-1 rounded"
+          <div className="flex items-center gap-1.5 text-9px font-mono px-2 py-1 rounded"
             style={{
               background: syncStatus === 'syncing' ? 'rgba(0,229,255,0.1)' : syncStatus === 'synced' ? 'rgba(0,255,128,0.1)' : syncStatus === 'error' ? 'rgba(255,20,120,0.1)' : 'rgba(0,229,255,0.06)',
               border: syncStatus === 'syncing' ? '1px solid rgba(0,229,255,0.3)' : syncStatus === 'synced' ? '1px solid rgba(0,255,128,0.3)' : syncStatus === 'error' ? '1px solid rgba(255,20,120,0.3)' : '1px solid rgba(0,229,255,0.15)',
@@ -1166,7 +1166,7 @@ export default function PineScript() {
             role="tab"
             aria-selected={activeTab === tab.id}
             aria-controls={`pine-tabpanel-${tab.id}`}
-            className="text-[10px] font-mono px-3 py-2 rounded-lg transition-all"
+            className="text-10px font-mono px-3 py-2 rounded-lg transition-all"
             style={activeTab === tab.id
               ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
               : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' }}>
@@ -1179,30 +1179,30 @@ export default function PineScript() {
         <div className="space-y-3" id="pine-tabpanel-editor" role="tabpanel" aria-labelledby="pine-tab-editor">
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={handleSave}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono font-bold transition-all"
               style={{ background: saved ? 'rgba(0,255,128,0.15)' : 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }}>
               {saved ? <CheckCircle2 className="w-3 h-3" /> : <Save className="w-3 h-3" />}
               {saved ? 'Salvo!' : 'Salvar'}
             </button>
             <button onClick={handleCopy}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all"
               style={{ background: 'rgba(0,229,255,0.07)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
               <Copy className="w-3 h-3" />
               {copied ? 'Copiado!' : 'Copiar'}
             </button>
             <button onClick={handleReset}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all"
               style={{ background: 'rgba(255,159,67,0.07)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
               <RefreshCw className="w-3 h-3" />Restaurar v13.2
             </button>
-            <span className="text-[9px] font-mono text-muted-foreground ml-auto">Auto-salvo · {code.split('\n').length} linhas</span>
+            <span className="text-9px font-mono text-muted-foreground ml-auto">Auto-salvo · {code.split('\n').length} linhas</span>
           </div>
 
           <div className="relative rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,255,128,0.15)' }}>
             <div className="flex items-center gap-2 px-4 py-2" style={{ background: 'rgba(6,8,15,0.9)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
               <Code2 className="w-3 h-3" style={{ color: '#00e5ff' }} />
-              <span className="text-[9px] font-mono" style={{ color: '#00e5ff' }}>NE_RF_v13.2.pine</span>
-              <span className="text-[8px] font-mono px-1.5 py-0.5 rounded ml-2"
+              <span className="text-9px font-mono" style={{ color: '#00e5ff' }}>NE_RF_v13.2.pine</span>
+              <span className="text-8px font-mono px-1.5 py-0.5 rounded ml-2"
                 style={{ background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
                 @version=6
               </span>
@@ -1216,12 +1216,12 @@ export default function PineScript() {
               value={code}
               onChange={e => setCode(e.target.value)}
               spellCheck={false}
-              className="w-full font-mono text-[11px] outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none leading-relaxed p-4"
+              className="w-full font-mono text-11px outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none leading-relaxed p-4"
               style={{ background: 'rgba(6,8,15,0.95)', color: 'rgba(0,255,128,0.85)', minHeight: '60vh', tabSize: 4 }}
             />
           </div>
 
-          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-[9px] font-mono"
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-9px font-mono"
             style={{ background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.12)', color: 'rgba(0,229,255,0.6)' }}>
             <Info className="w-3 h-3 shrink-0 mt-0.5" />
             <span>
@@ -1245,9 +1245,9 @@ export default function PineScript() {
             ].map(p => (
               <div key={p.label} className="rounded-lg px-2 py-2 text-center"
                 style={{ background: 'rgba(0,255,128,0.04)', border: '1px solid rgba(0,255,128,0.1)' }}>
-                <div className="text-[8px] font-mono text-muted-foreground">{p.label}</div>
+                <div className="text-8px font-mono text-muted-foreground">{p.label}</div>
                 <div className="text-sm font-mono font-bold" style={{ color: '#00ff80' }}>{p.value}</div>
-                <div className="text-[7px] font-mono" style={{ color: 'rgba(0,255,128,0.35)' }}>{p.pine}</div>
+                <div className="text-7px font-mono" style={{ color: 'rgba(0,255,128,0.35)' }}>{p.pine}</div>
               </div>
             ))}
           </div>
@@ -1257,14 +1257,14 @@ export default function PineScript() {
       {activeTab === 'sync' && (
         <div className="space-y-3" id="pine-tabpanel-sync" role="tabpanel" aria-labelledby="pine-tab-sync">
           <div className="rounded-xl p-4 space-y-3" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(0,255,128,0.12)' }}>
-            <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-2">🔗 NE RF v13.2 → Sistema</div>
+            <div className="text-10px font-mono text-muted-foreground uppercase tracking-widest mb-2">🔗 NE RF v13.2 → Sistema</div>
             {syncNotes.map(note => (
               <div key={note.id} className="flex items-start gap-3 py-2.5 px-3 rounded-lg"
                 style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <span className="text-base shrink-0">{note.icon}</span>
                 <div className="min-w-0">
-                  <div className="text-[10px] font-mono font-bold text-foreground">{note.label}</div>
-                  <div className="text-[9px] font-mono text-muted-foreground mt-0.5">{note.desc}</div>
+                  <div className="text-10px font-mono font-bold text-foreground">{note.label}</div>
+                  <div className="text-9px font-mono text-muted-foreground mt-0.5">{note.desc}</div>
                 </div>
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0 ml-auto mt-0.5" style={{ color: '#00ff80' }} />
               </div>
@@ -1272,11 +1272,11 @@ export default function PineScript() {
           </div>
 
           <div className="rounded-xl p-4 space-y-2" style={{ background: 'rgba(255,159,67,0.05)', border: '1px solid rgba(255,159,67,0.15)' }}>
-            <div className="flex items-center gap-2 text-[10px] font-mono" style={{ color: '#ff9f43' }}>
+            <div className="flex items-center gap-2 text-10px font-mono" style={{ color: '#ff9f43' }}>
               <AlertTriangle className="w-3.5 h-3.5" />
               <span className="font-bold">Fluxo de entrada 4h → 15m</span>
             </div>
-            <div className="text-[9px] font-mono space-y-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            <div className="text-9px font-mono space-y-1.5" style={{ color: 'rgba(255,255,255,0.5)' }}>
               <p>1. Scanner detecta sinal RF no <span className="text-yellow-400">4h</span> com score ≥ {parsedConfig.minScore} e direção MTF alinhada</p>
               <p>2. Sistema entra em modo de observação no <span className="text-yellow-400">15m</span> para aquele ativo</p>
               <p>3. Aguarda confirmação RF no 15m <strong className="text-white">na mesma direção</strong> do 4h</p>
@@ -1289,7 +1289,7 @@ export default function PineScript() {
 
       {activeTab === 'params' && (
         <div className="space-y-3" id="pine-tabpanel-params" role="tabpanel" aria-labelledby="pine-tab-params">
-          <div className="text-[10px] font-mono text-muted-foreground mb-2">
+          <div className="text-10px font-mono text-muted-foreground mb-2">
             Parâmetros NE RF v13.2 por ativo — sincronizados com o scanner:
           </div>
           {assets.length === 0 ? (
@@ -1303,7 +1303,7 @@ export default function PineScript() {
                   style={{ background: 'rgba(10,13,22,0.85)', border: asset.is_active ? '1px solid rgba(0,255,128,0.1)' : '1px solid rgba(255,255,255,0.05)' }}>
                   <div className="flex items-center gap-2 mb-3">
                     <span className="font-bold text-sm text-foreground">{asset.display_name}</span>
-                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded"
+                    <span className="text-8px font-mono px-1.5 py-0.5 rounded"
                       style={asset.is_active
                         ? { background: 'rgba(0,255,128,0.1)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.2)' }
                         : { background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.3)', border: '1px solid rgba(255,255,255,0.07)' }}>
@@ -1321,9 +1321,9 @@ export default function PineScript() {
                     ].map(p => (
                       <div key={p.label} className="rounded-lg px-2.5 py-2"
                         style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <div className="text-[8px] font-mono text-muted-foreground">{p.label}</div>
+                        <div className="text-8px font-mono text-muted-foreground">{p.label}</div>
                         <div className="text-sm font-mono font-bold text-foreground mt-0.5">{p.value}</div>
-                        <div className="text-[7px] font-mono" style={{ color: 'rgba(0,255,128,0.4)' }}>{p.pine}</div>
+                        <div className="text-7px font-mono" style={{ color: 'rgba(0,255,128,0.4)' }}>{p.pine}</div>
                       </div>
                     ))}
                   </div>

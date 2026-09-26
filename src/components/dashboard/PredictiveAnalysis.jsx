@@ -159,11 +159,11 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
       {/* Selector */}
       <div className="flex items-center gap-2 flex-wrap">
         <Sparkles className="w-4 h-4" style={{ color: '#00e5ff' }} />
-        <span className="text-[11px] font-mono text-muted-foreground">Analisando:</span>
+        <span className="text-11px font-mono text-muted-foreground">Analisando:</span>
         <select
           value={selected?.id || ''}
           onChange={e => setSelectedId(e.target.value)}
-          className="px-2.5 py-1.5 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="px-2.5 py-1.5 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.85)' }}>
           {candidates.map(c => (
             <option key={c.id} value={c.id}>
@@ -186,13 +186,13 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
                   {selected.symbol?.replace('USDT', '/USDT')} — {selected.signal_type} {selected.timeframe?.toUpperCase()}
                 </span>
               </div>
-              <span className="text-[10px] font-mono text-muted-foreground">
+              <span className="text-10px font-mono text-muted-foreground">
                 {matches.length} operaç{matches.length === 1 ? 'ão' : 'ões'} similar{matches.length === 1 ? '' : 'es'}
               </span>
             </div>
 
             {!conclusive ? (
-              <div className="flex items-center gap-2 py-3 text-[11px] font-mono" style={{ color: 'rgba(255,209,102,0.85)' }}>
+              <div className="flex items-center gap-2 py-3 text-11px font-mono" style={{ color: 'rgba(255,209,102,0.85)' }}>
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
                 Amostra insuficiente ({headline?.decided ?? 0}/{MIN_SAMPLE} operações fechadas com direção, timeframe
                 {Number.isFinite(selected.context?.tf_4h_direction) ? ', alinhamento 4h' : ''} e score ±{SCORE_TOLERANCE} similares) —
@@ -202,7 +202,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
               <>
                 <div className="flex items-baseline gap-2 mb-1.5">
                   <span className="text-3xl font-bold" style={{ color: gaugeColor }}>{winRate.toFixed(0)}%</span>
-                  <span className="text-[11px] font-mono text-muted-foreground">taxa de acerto histórica em padrões similares</span>
+                  <span className="text-11px font-mono text-muted-foreground">taxa de acerto histórica em padrões similares</span>
                 </div>
                 <div className="w-full h-2.5 rounded-full overflow-hidden mb-4" style={{ background: 'rgba(255,255,255,0.06)' }}>
                   <div className="h-full rounded-full transition-all" style={{ width: `${winRate}%`, background: gaugeColor }} />
@@ -212,19 +212,19 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
               <div className="rounded-lg p-2.5" style={{ background: 'rgba(0,255,128,0.06)', border: '1px solid rgba(0,255,128,0.15)' }}>
-                <div className="text-[9px] font-mono text-muted-foreground mb-0.5">Vitórias</div>
+                <div className="text-9px font-mono text-muted-foreground mb-0.5">Vitórias</div>
                 <div className="text-base font-bold" style={{ color: '#00ff80' }}>{headline?.wins ?? 0}</div>
               </div>
               <div className="rounded-lg p-2.5" style={{ background: 'rgba(255,20,120,0.06)', border: '1px solid rgba(255,20,120,0.15)' }}>
-                <div className="text-[9px] font-mono text-muted-foreground mb-0.5">Derrotas</div>
+                <div className="text-9px font-mono text-muted-foreground mb-0.5">Derrotas</div>
                 <div className="text-base font-bold" style={{ color: '#ff1478' }}>{headline?.losses ?? 0}</div>
               </div>
               <div className="rounded-lg p-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div className="text-[9px] font-mono text-muted-foreground mb-0.5 flex items-center gap-1"><Minus className="w-2.5 h-2.5" />Breakeven</div>
+                <div className="text-9px font-mono text-muted-foreground mb-0.5 flex items-center gap-1"><Minus className="w-2.5 h-2.5" />Breakeven</div>
                 <div className="text-base font-bold text-foreground">{headline?.be ?? 0}</div>
               </div>
               <div className="rounded-lg p-2.5" style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)' }}>
-                <div className="text-[9px] font-mono text-muted-foreground mb-0.5">R médio</div>
+                <div className="text-9px font-mono text-muted-foreground mb-0.5">R médio</div>
                 <div className="text-base font-bold" style={{ color: '#00e5ff' }}>
                   {Number.isFinite(headline?.avgR) ? `${headline.avgR >= 0 ? '+' : ''}${headline.avgR.toFixed(2)}R` : '—'}
                 </div>
@@ -253,13 +253,13 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+              <p className="text-10px font-mono text-muted-foreground mt-1">
                 Cada barra é uma faixa de score de {SCORE_BUCKET_SIZE} pontos, entre operações fechadas com a mesma direção/timeframe do sinal selecionado.
               </p>
             </div>
           )}
 
-          <p className="text-[10px] font-mono text-muted-foreground">
+          <p className="text-10px font-mono text-muted-foreground">
             Estimativa baseada em confluência de indicadores e desempenho histórico de padrões similares — não é garantia de resultado.
           </p>
         </>

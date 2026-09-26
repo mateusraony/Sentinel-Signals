@@ -8,6 +8,18 @@ module.exports = {
         sans: ['var(--font-sans)'],
         mono: ['var(--font-mono)'],
       },
+      // M-11 do Raio-X de UI/UX: formaliza os 5 tamanhos de fonte que já
+      // eram usados como valor arbitrário (`text-[Npx]`) em 676 lugares —
+      // string plana, sem line-height, de propósito: garante que o CSS
+      // gerado seja byte-idêntico ao valor arbitrário anterior (zero
+      // mudança visual), ver docs/known-risks.md.
+      fontSize: {
+        '7px': '7px',
+        '8px': '8px',
+        '9px': '9px',
+        '10px': '10px',
+        '11px': '11px',
+      },
   		borderRadius: {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',

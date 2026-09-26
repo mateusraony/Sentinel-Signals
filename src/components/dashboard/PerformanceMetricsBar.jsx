@@ -19,9 +19,9 @@ function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefine
         <Icon className="w-4 h-4" style={{ color }} />
       </div>
       <div className="min-w-0">
-        <div className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground leading-none mb-1">{label}</div>
+        <div className="text-9px font-mono uppercase tracking-widest text-muted-foreground leading-none mb-1">{label}</div>
         <div className="text-lg font-bold font-mono leading-none truncate" style={{ color }}>{value}</div>
-        {sub && <div className="text-[9px] font-mono mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.3)' }}>{sub}</div>}
+        {sub && <div className="text-9px font-mono mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.3)' }}>{sub}</div>}
       </div>
     </div>
   );
@@ -85,13 +85,13 @@ export default function PerformanceMetricsBar({ activeOpsCount = 0 }) {
       {/* Section label */}
       <div className="flex items-center gap-2 mb-3">
         <BarChart2 className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
-        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Performance Real</span>
-        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+        <span className="text-10px font-mono uppercase tracking-widest text-muted-foreground">Performance Real</span>
+        <span className="text-9px font-mono px-1.5 py-0.5 rounded"
           style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
           {total} trades fechados
         </span>
         {activeOpsCount > 0 && (
-          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1"
+          <span className="text-9px font-mono px-1.5 py-0.5 rounded flex items-center gap-1"
             style={{ background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.2)', color: '#00ff80' }}>
             <Zap className="w-2.5 h-2.5" />{activeOpsCount} ativas
           </span>

@@ -12,7 +12,7 @@ const CustomTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div className="rounded-lg px-3 py-2 text-[10px] font-mono space-y-1"
+    <div className="rounded-lg px-3 py-2 text-10px font-mono space-y-1"
       style={{ background: 'rgba(6,8,15,0.95)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}>
       <div className="text-muted-foreground">{d.label}</div>
       <div style={{ color: d.pnl >= 0 ? '#00ff80' : '#ff1478' }}>
@@ -89,11 +89,11 @@ export default function PerformanceOverview() {
         <div className="flex items-center gap-2">
           <BarChart2 className="w-4 h-4" style={{ color: '#00e5ff' }} />
           <span className="text-sm font-bold text-foreground">Performance Consolidada</span>
-          <span className="text-[9px] font-mono text-muted-foreground">— {total} trades fechados</span>
+          <span className="text-9px font-mono text-muted-foreground">— {total} trades fechados</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#00ff80', boxShadow: '0 0 5px #00ff80' }} />
-          <span className="text-[9px] font-mono text-muted-foreground">Atualizado em tempo real</span>
+          <span className="text-9px font-mono text-muted-foreground">Atualizado em tempo real</span>
         </div>
       </div>
 
@@ -104,7 +104,7 @@ export default function PerformanceOverview() {
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
             <MetricIcon className="w-3.5 h-3.5 shrink-0" style={{ color }} />
             <div className="min-w-0">
-              <div className="text-[8px] font-mono text-muted-foreground leading-none mb-0.5">{label}</div>
+              <div className="text-8px font-mono text-muted-foreground leading-none mb-0.5">{label}</div>
               <div className="text-xs font-mono font-bold truncate" style={{ color }}>{value}</div>
             </div>
           </div>
@@ -115,8 +115,8 @@ export default function PerformanceOverview() {
       {chartData.length > 1 && (
         <>
           <div className="flex items-center justify-between">
-            <span className="text-[9px] font-mono text-muted-foreground">Evolução do Saldo Acumulado (%)</span>
-            <span className="text-[9px] font-mono font-bold" style={{ color: pnlColor }}>
+            <span className="text-9px font-mono text-muted-foreground">Evolução do Saldo Acumulado (%)</span>
+            <span className="text-9px font-mono font-bold" style={{ color: pnlColor }}>
               {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}% total
             </span>
           </div>

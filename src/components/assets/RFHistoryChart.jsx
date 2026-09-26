@@ -127,14 +127,14 @@ export default function RFHistoryChart({ asset }) {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-1.5">
           <BarChart2 className="w-3 h-3" style={{ color: '#00e5ff' }} />
-          <span className="text-[9px] font-mono font-bold text-muted-foreground uppercase tracking-wider">
+          <span className="text-9px font-mono font-bold text-muted-foreground uppercase tracking-wider">
             Histórico Range Filter
           </span>
         </div>
         <div className="flex items-center gap-1">
           {TIMEFRAMES.map(tf => (
             <button key={tf} onClick={() => setTimeframe(tf)}
-              className="px-2 py-0.5 rounded text-[9px] font-mono font-bold transition-all"
+              className="px-2 py-0.5 rounded text-9px font-mono font-bold transition-all"
               style={timeframe === tf
                 ? { background: 'rgba(0,229,255,0.15)', border: '1px solid rgba(0,229,255,0.4)', color: '#00e5ff' }
                 : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
@@ -145,7 +145,7 @@ export default function RFHistoryChart({ asset }) {
       </div>
 
       {isLoading && (
-        <div className="text-[9px] font-mono text-muted-foreground animate-pulse text-center py-6">
+        <div className="text-9px font-mono text-muted-foreground animate-pulse text-center py-6">
           Carregando candles de {timeframe}...
         </div>
       )}
@@ -153,7 +153,7 @@ export default function RFHistoryChart({ asset }) {
       {!isLoading && (error || !analysis) && (
         <div className="text-center py-4">
           <AlertTriangle className="w-4 h-4 mx-auto mb-1 text-muted-foreground opacity-30" />
-          <div className="text-[9px] font-mono text-muted-foreground">
+          <div className="text-9px font-mono text-muted-foreground">
             Não foi possível calcular o Range Filter para {timeframe} agora.
           </div>
         </div>
@@ -164,23 +164,23 @@ export default function RFHistoryChart({ asset }) {
           {/* Stability metrics */}
           <div className="grid grid-cols-4 gap-1.5">
             <div className="rounded px-2 py-1.5 text-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
-              <div className="text-[7px] font-mono text-muted-foreground uppercase">Mudança RF</div>
-              <div className="text-[10px] font-mono font-bold" style={{ color: analysis.rfChangePct >= 0 ? '#00ff80' : '#ff1478' }}>
+              <div className="text-7px font-mono text-muted-foreground uppercase">Mudança RF</div>
+              <div className="text-10px font-mono font-bold" style={{ color: analysis.rfChangePct >= 0 ? '#00ff80' : '#ff1478' }}>
                 {analysis.rfChangePct >= 0 ? '+' : ''}{analysis.rfChangePct.toFixed(2)}%
               </div>
             </div>
             <div className="rounded px-2 py-1.5 text-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
-              <div className="text-[7px] font-mono text-muted-foreground uppercase">Volatilidade</div>
-              <div className="text-[10px] font-mono font-bold" style={{ color: '#00e5ff' }}>{analysis.volatilityPct.toFixed(2)}%</div>
+              <div className="text-7px font-mono text-muted-foreground uppercase">Volatilidade</div>
+              <div className="text-10px font-mono font-bold" style={{ color: '#00e5ff' }}>{analysis.volatilityPct.toFixed(2)}%</div>
             </div>
             <div className="rounded px-2 py-1.5 text-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
-              <div className="text-[7px] font-mono text-muted-foreground uppercase">Flips de direção</div>
-              <div className="text-[10px] font-mono font-bold text-foreground">{analysis.flips}</div>
+              <div className="text-7px font-mono text-muted-foreground uppercase">Flips de direção</div>
+              <div className="text-10px font-mono font-bold text-foreground">{analysis.flips}</div>
             </div>
             <div className="rounded px-2 py-1.5 text-center" style={{ background: 'rgba(255,255,255,0.02)' }}>
-              <div className="text-[7px] font-mono text-muted-foreground uppercase">Bias / Estabilidade</div>
-              <div className="text-[10px] font-mono font-bold" style={{ color: analysis.biasColor }}>{analysis.bias}</div>
-              <div className="text-[8px] font-mono" style={{ color: analysis.stabColor }}>{analysis.stability}</div>
+              <div className="text-7px font-mono text-muted-foreground uppercase">Bias / Estabilidade</div>
+              <div className="text-10px font-mono font-bold" style={{ color: analysis.biasColor }}>{analysis.bias}</div>
+              <div className="text-8px font-mono" style={{ color: analysis.stabColor }}>{analysis.stability}</div>
             </div>
           </div>
 
@@ -245,9 +245,9 @@ export default function RFHistoryChart({ asset }) {
       {/* Recent real signals table */}
       {signalRows.length > 0 && (
         <div className="space-y-0.5 max-h-32 overflow-y-auto pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-          <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-wider px-1 pb-0.5">Sinais recentes</div>
+          <div className="text-8px font-mono text-muted-foreground uppercase tracking-wider px-1 pb-0.5">Sinais recentes</div>
           {signalRows.map((d, i) => (
-            <div key={i} className="flex items-center justify-between text-[8px] font-mono px-1 py-0.5 rounded"
+            <div key={i} className="flex items-center justify-between text-8px font-mono px-1 py-0.5 rounded"
               style={{ background: i % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent' }}>
               <span className="text-muted-foreground">{d.time}</span>
               <span style={{ color: dirColor(d.dir) }}>

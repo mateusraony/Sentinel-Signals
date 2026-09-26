@@ -72,21 +72,21 @@ export default function Logs() {
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Observabilidade</p>
+          <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Observabilidade</p>
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Logs do Sistema</h1>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-10px font-mono text-muted-foreground">
             <div className="live-dot" style={{ width: 5, height: 5 }} />
             <span>Auto-atualiza a cada {POLL_DIAGNOSTIC_MS / 60000}min</span>
           </div>
           <button onClick={() => refetch()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
             <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />Atualizar
           </button>
           <button onClick={handleCopy} disabled={filtered.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all disabled:opacity-40"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all disabled:opacity-40"
             style={copied
               ? { background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }
               : { background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)', color: '#00e5ff' }}>
@@ -94,7 +94,7 @@ export default function Logs() {
             {copied ? 'Copiado!' : `Copiar (${filtered.length})`}
           </button>
           <button onClick={() => clearLogsMutation.mutate()} disabled={clearLogsMutation.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all hover:opacity-80"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-80"
             style={{ background: 'rgba(255,159,67,0.06)', border: '1px solid rgba(255,159,67,0.15)', color: '#ff9f43' }}>
             <Trash2 className="w-3 h-3" />Limpar antigos
           </button>
@@ -113,7 +113,7 @@ export default function Logs() {
             style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <Icon className="w-4 h-4 shrink-0" style={{ color }} />
             <div>
-              <div className="text-[9px] font-mono text-muted-foreground">{label}</div>
+              <div className="text-9px font-mono text-muted-foreground">{label}</div>
               <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
             </div>
           </div>
@@ -128,7 +128,7 @@ export default function Logs() {
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <input type="text" placeholder="Buscar na mensagem..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-6 pr-3 py-1.5 rounded-lg w-40 text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="pl-6 pr-3 py-1.5 rounded-lg w-40 text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }} />
           </div>
 
@@ -138,7 +138,7 @@ export default function Logs() {
               ocorrências de "Failed to fetch" (cron vs navegador, item 57
               addendum) sem digitar/selecionar os 3 filtros na mão toda vez. */}
           <button onClick={() => { setSearch('Failed to fetch'); setFilterLevel('error'); setFilterModule('scanner'); }}
-            className="text-[9px] font-mono px-2 py-1.5 rounded-lg transition-all"
+            className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all"
             style={{ background: 'rgba(255,20,120,0.06)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
             ⚡ Failed to fetch
           </button>
@@ -149,7 +149,7 @@ export default function Logs() {
             const cfg = LEVEL_CONFIG[level];
             return (
               <button key={level} onClick={() => setFilterLevel(level)}
-                className="text-[9px] font-mono px-2 py-1.5 rounded-lg transition-all"
+                className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all"
                 style={filterLevel === level
                   ? { background: cfg ? cfg.bg : 'rgba(0,229,255,0.12)', border: `1px solid ${cfg ? cfg.border : 'rgba(0,229,255,0.3)'}`, color: cfg ? cfg.color : '#00e5ff' }
                   : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
@@ -161,7 +161,7 @@ export default function Logs() {
           <div className="w-px h-4" style={{ background: 'rgba(255,255,255,0.08)' }} />
 
           <select value={filterModule} onChange={e => setFilterModule(e.target.value)}
-            className="px-2 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="px-2 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
             <option value="all">Todos módulos</option>
             {modules.map(m => <option key={m} value={m}>{m}</option>)}
@@ -169,13 +169,13 @@ export default function Logs() {
 
           {hasActiveFilters && (
             <button onClick={() => { setSearch(''); setFilterLevel('all'); setFilterModule('all'); }}
-              className="ml-auto text-[9px] font-mono px-2 py-1.5 rounded-lg flex items-center gap-1 transition-all"
+              className="ml-auto text-9px font-mono px-2 py-1.5 rounded-lg flex items-center gap-1 transition-all"
               style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
               <X className="w-3 h-3" />Limpar
             </button>
           )}
 
-          <span className="text-[9px] font-mono text-muted-foreground ml-1">{filtered.length} registros</span>
+          <span className="text-9px font-mono text-muted-foreground ml-1">{filtered.length} registros</span>
         </div>
       </div>
 
@@ -203,7 +203,7 @@ export default function Logs() {
                 style={{ background: i % 2 === 0 ? 'rgba(10,13,22,0.85)' : 'rgba(12,15,24,0.7)', borderTop: i > 0 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}>
 
                 <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
-                  <span className="text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest"
+                  <span className="text-8px px-1.5 py-0.5 rounded font-bold uppercase tracking-widest"
                     style={{ background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color }}>
                     {cfg.label}
                   </span>
@@ -211,32 +211,32 @@ export default function Logs() {
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[9px] px-1.5 py-0.5 rounded"
+                    <span className="text-9px px-1.5 py-0.5 rounded"
                       style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.4)' }}>
                       {log.module}
                     </span>
-                    {log.symbol && <span className="text-[9px]" style={{ color: 'rgba(0,229,255,0.6)' }}>{log.symbol}</span>}
-                    {log.timeframe && <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.3)' }}>{log.timeframe}</span>}
-                    {log.duration_ms && <span className="text-[9px]" style={{ color: 'rgba(255,255,255,0.2)' }}>{log.duration_ms}ms</span>}
+                    {log.symbol && <span className="text-9px" style={{ color: 'rgba(0,229,255,0.6)' }}>{log.symbol}</span>}
+                    {log.timeframe && <span className="text-9px" style={{ color: 'rgba(255,255,255,0.3)' }}>{log.timeframe}</span>}
+                    {log.duration_ms && <span className="text-9px" style={{ color: 'rgba(255,255,255,0.2)' }}>{log.duration_ms}ms</span>}
                     {/* item 197 addendum — o PR #393 passou a gravar executor
                         ('cron'/'browser') em todo SystemLog de erro do scanner,
                         mas o campo é de 1º nível (fora de `details`) e nunca
                         aparecia na tela — a peça que faltava pra decidir cron×
                         navegador sem inferência indireta. */}
-                    {log.executor && <span className="text-[9px] px-1 rounded" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)' }}>{log.executor}</span>}
+                    {log.executor && <span className="text-9px px-1 rounded" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)' }}>{log.executor}</span>}
                   </div>
-                  <p className="text-[11px] text-foreground/80 mt-0.5 leading-relaxed">{log.message}</p>
+                  <p className="text-11px text-foreground/80 mt-0.5 leading-relaxed">{log.message}</p>
                   {log.details && (
                     <details className="mt-1">
-                      <summary className="text-[9px] cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.25)' }}>ver payload →</summary>
-                      <pre className="mt-1 text-[10px] overflow-x-auto py-1 rounded" style={{ color: 'rgba(0,255,128,0.6)', background: 'rgba(0,0,0,0.3)', padding: '4px 8px' }}>
+                      <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.25)' }}>ver payload →</summary>
+                      <pre className="mt-1 text-10px overflow-x-auto py-1 rounded" style={{ color: 'rgba(0,255,128,0.6)', background: 'rgba(0,0,0,0.3)', padding: '4px 8px' }}>
                         {JSON.stringify(log.details, null, 2)}
                       </pre>
                     </details>
                   )}
                 </div>
 
-                <span className="text-[9px] shrink-0 pt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                <span className="text-9px shrink-0 pt-0.5" style={{ color: 'rgba(255,255,255,0.2)' }}>
                   {moment(log.created_date).format('HH:mm:ss')}
                 </span>
               </div>

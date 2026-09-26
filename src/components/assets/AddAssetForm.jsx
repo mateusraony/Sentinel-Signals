@@ -86,11 +86,11 @@ export default function AddAssetForm({ onSuccess }) {
     <div className="space-y-5">
       {/* Quick Add */}
       <div>
-        <Label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-2 block">Adicionar rápido</Label>
+        <Label className="text-10px font-mono uppercase tracking-widest text-muted-foreground mb-2 block">Adicionar rápido</Label>
         <div className="flex flex-wrap gap-1.5">
           {POPULAR_PAIRS.map(pair => (
             <button key={pair.symbol} onClick={() => handleQuickAdd(pair)}
-              className="text-[10px] font-mono px-2 py-1 rounded transition-all duration-200"
+              className="text-10px font-mono px-2 py-1 rounded transition-all duration-200"
               style={{
                 background: symbol === pair.symbol ? 'rgba(0,255,128,0.12)' : 'rgba(255,255,255,0.04)',
                 border: symbol === pair.symbol ? '1px solid rgba(0,255,128,0.35)' : '1px solid rgba(255,255,255,0.07)',

@@ -30,7 +30,7 @@ export default function TickerBar() {
     <div className="h-8 border-b border-border/50 bg-card/30 backdrop-blur-sm flex items-center overflow-hidden rounded-lg my-1">
       <div className="flex items-center gap-2 px-3 shrink-0 border-r border-border/40">
         <div className="live-dot" />
-        <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest">Live</span>
+        <span className="text-10px text-muted-foreground font-mono uppercase tracking-widest">Live</span>
       </div>
       <div className="ticker-container flex-1">
         <div className="ticker-inner">

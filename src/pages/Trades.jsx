@@ -48,13 +48,13 @@ function EditModal({ op, onClose, onSave }) {
         style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 0 40px rgba(0,0,0,0.5)' }}>
         <DialogHeader>
           <DialogTitle className="font-bold text-sm text-foreground text-left">{op.symbol?.replace('USDT', '/USDT')}</DialogTitle>
-          <div className="text-[9px] font-mono text-muted-foreground">{op.timeframe?.toUpperCase()} · {op.side}</div>
+          <div className="text-9px font-mono text-muted-foreground">{op.timeframe?.toUpperCase()} · {op.side}</div>
         </DialogHeader>
 
         <div className="space-y-3">
           {/* Status manual */}
           <div>
-            <label className="text-[9px] font-mono mb-1 block" style={{ color: '#00e5ff' }}>Status Manual</label>
+            <label className="text-9px font-mono mb-1 block" style={{ color: '#00e5ff' }}>Status Manual</label>
             <select value={status} onChange={e => setStatus(e.target.value)}
               className="w-full px-3 py-2 rounded-lg text-xs font-mono"
               style={fieldStyle}>
@@ -70,7 +70,7 @@ function EditModal({ op, onClose, onSave }) {
           {/* Preço de saída (para status terminais) */}
           {['TP2_HIT','STOP_HIT','INVALIDATED','CLOSED'].includes(status) && (
             <div>
-              <label className="text-[9px] font-mono mb-1 block" style={{ color: '#ffd166' }}>Preço de Saída (exit_price)</label>
+              <label className="text-9px font-mono mb-1 block" style={{ color: '#ffd166' }}>Preço de Saída (exit_price)</label>
               <input type="number" step="any" value={exitPrice} onChange={e => setExitPrice(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg text-xs font-mono" style={fieldStyle} />
             </div>
@@ -82,7 +82,7 @@ function EditModal({ op, onClose, onSave }) {
             { label: 'TP2', value: tp2, set: setTp2, color: '#00ff80' },
           ].map(({ label, value, set, color }) => (
             <div key={label}>
-              <label className="text-[9px] font-mono mb-1 block" style={{ color }}>{label}</label>
+              <label className="text-9px font-mono mb-1 block" style={{ color }}>{label}</label>
               <input type="number" step="any" value={value} onChange={e => set(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg text-xs font-mono" style={fieldStyle} />
             </div>
@@ -91,7 +91,7 @@ function EditModal({ op, onClose, onSave }) {
 
         <div className="flex gap-2 pt-1">
           <button onClick={onClose}
-            className="flex-1 py-2 rounded-lg text-[10px] font-mono transition-all"
+            className="flex-1 py-2 rounded-lg text-10px font-mono transition-all"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
             Cancelar
           </button>
@@ -112,7 +112,7 @@ function EditModal({ op, onClose, onSave }) {
               if (status === 'RUNNER_ACTIVE') data.tp1_hit = true;
               onSave(data);
             }}
-            className="flex-1 py-2 rounded-lg text-[10px] font-mono font-bold transition-all"
+            className="flex-1 py-2 rounded-lg text-10px font-mono font-bold transition-all"
             style={{ background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }}>
             Salvar Alterações
           </button>
@@ -171,16 +171,16 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
             <span className="text-xs font-semibold" style={{ color: 'rgba(255,255,255,0.6)' }}>
               {signal.symbol?.replace('USDT', '/USDT')}
             </span>
-            <span className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>
+            <span className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.3)' }}>
               {isBuy ? 'alta' : 'baixa'}
             </span>
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+            <span className="text-9px font-mono px-1.5 py-0.5 rounded"
               style={{ background: `${copy.color}1a`, color: copy.color, border: `1px solid ${copy.color}40` }}>
               {copy.icon} {copy.badge}
             </span>
           </div>
 
-          <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.4)' }}>
+          <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.4)' }}>
             {copy.reassurance}
           </p>
 
@@ -188,14 +188,14 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
               nada foi aberto e engolia o motivo — que estava ali, em
               last_rejection_reason. Pedido do usuário, item 161. */}
           <div className="rounded-lg px-2 py-1.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div className="text-[9px] font-mono font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            <div className="text-9px font-mono font-semibold" style={{ color: 'rgba(255,255,255,0.5)' }}>
               {reason.icon} O que travou: {reason.chip}
             </div>
-            <p className="text-[9px] font-mono leading-relaxed mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            <p className="text-9px font-mono leading-relaxed mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
               {reason.detail}
             </p>
             {evidence && (
-              <p className="text-[9px] font-mono leading-relaxed mt-1 opacity-70" style={{ color: 'rgba(0,229,255,0.6)' }}>
+              <p className="text-9px font-mono leading-relaxed mt-1 opacity-70" style={{ color: 'rgba(0,229,255,0.6)' }}>
                 📐 {evidence}
               </p>
             )}
@@ -211,7 +211,7 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
               <X className="w-3.5 h-3.5" style={{ color: 'rgba(255,255,255,0.35)' }} />
             </button>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             Tirar este aviso da lista
           </TooltipContent>
         </Tooltip>
@@ -229,16 +229,16 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="font-bold text-sm text-foreground truncate">{signal.symbol?.replace('USDT', '/USDT')}</div>
-          <div className="text-[10px] font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
+          <div className="text-10px font-mono mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
             {isBuy ? 'Aviso de alta (compra)' : 'Aviso de baixa (venda)'} · {moment(signal.created_date).fromNow()}
           </div>
           {/* Horário absoluto ao lado do relativo: "há 2 horas" não serve
               para conferir nada depois (item 161). */}
-          <div className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.28)' }}>
+          <div className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.28)' }}>
             apareceu {fmtBRT(signal.created_date)} BRT
           </div>
         </div>
-        <span className="text-[10px] font-mono px-2 py-0.5 rounded shrink-0 font-semibold"
+        <span className="text-10px font-mono px-2 py-0.5 rounded shrink-0 font-semibold"
           style={{ background: `${copy.color}1a`, color: copy.color, border: `1px solid ${copy.color}45` }}>
           {copy.icon} {copy.badge}
         </span>
@@ -251,17 +251,17 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
             style={{ color: price === null ? 'rgba(255,255,255,0.35)' : isStale ? '#ff9f43' : 'rgba(255,255,255,0.95)' }}>
             {price !== null ? `$${formatPrice(price)}` : '—'}
           </div>
-          <div className="text-[9px] font-mono uppercase tracking-widest mt-1"
+          <div className="text-9px font-mono uppercase tracking-widest mt-1"
             style={{ color: isStale ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>
             {isStale ? 'preço desatualizado' : 'preço agora'}
           </div>
         </div>
         <div className="text-right shrink-0">
-          <div className="text-[11px] font-mono" style={{ color: 'rgba(255,255,255,0.5)' }}>
+          <div className="text-11px font-mono" style={{ color: 'rgba(255,255,255,0.5)' }}>
             avisou em ${formatPrice(signal.price_at_signal)}
           </div>
           {unrealizedPct !== null && (
-            <div className="text-[10px] font-mono font-bold" style={{ color: moveColor, opacity: isStale ? 0.55 : 1 }}>
+            <div className="text-10px font-mono font-bold" style={{ color: moveColor, opacity: isStale ? 0.55 : 1 }}>
               {formatSignedPct(unrealizedPct)} a favor do aviso
             </div>
           )}
@@ -271,7 +271,7 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
       {/* 3 · O que falta — chip curto + frase que termina em "nada a fazer" */}
       <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-baseline justify-between gap-2 mb-1">
-          <div className="text-[10px] font-mono font-semibold" style={{ color: copy.color }}>
+          <div className="text-10px font-mono font-semibold" style={{ color: copy.color }}>
             {reason.icon} {reason.chip}
           </div>
           {/* "desde", não "às": o motor só recarimba quando o MOTIVO muda
@@ -280,28 +280,28 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
           {signal.last_rejection_at && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="text-[9px] font-mono shrink-0 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                <span className="text-9px font-mono shrink-0 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
                   desde {fmtBRT(signal.last_rejection_at)}
                 </span>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                 Desde quando este aviso está travado neste mesmo motivo (horário de Brasília)
               </TooltipContent>
             </Tooltip>
           )}
         </div>
-        <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
+        <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>
           {reason.detail}
         </p>
         {evidence && (
-          <p className="text-[9px] font-mono leading-relaxed mt-1 opacity-70" style={{ color: 'rgba(0,229,255,0.6)' }}>
+          <p className="text-9px font-mono leading-relaxed mt-1 opacity-70" style={{ color: 'rgba(0,229,255,0.6)' }}>
             📐 {evidence}
           </p>
         )}
       </div>
 
       {/* 4 · Quem age, e até quando */}
-      <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
+      <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>
         {copy.reassurance}
         {phase === SIGNAL_PHASE.WAITING && expiresAt && timeLeft
           ? ` Prazo: até ${moment(expiresAt).utcOffset(-3).format('DD/MM [às] HH[h]mm')} (faltam ${timeLeft}).`
@@ -312,7 +312,7 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
       <div className="flex items-center justify-between gap-2">
         <button onClick={() => setShowDetails(!showDetails)}
           aria-expanded={showDetails}
-          className="flex items-center gap-1 text-[10px] font-mono transition-colors hover:text-foreground/70"
+          className="flex items-center gap-1 text-10px font-mono transition-colors hover:text-foreground/70"
           style={{ color: 'rgba(255,255,255,0.35)' }}>
           {showDetails ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           Detalhes técnicos
@@ -320,12 +320,12 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <button onClick={() => onDismiss?.(signal)} disabled={isDismissing}
-              className="text-[10px] font-mono px-2 py-1 rounded-lg transition-colors hover:bg-white/[0.06]"
+              className="text-10px font-mono px-2 py-1 rounded-lg transition-colors hover:bg-white/[0.06]"
               style={{ color: 'rgba(255,255,255,0.3)' }}>
               Dispensar
             </button>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             Tirar este aviso da lista
           </TooltipContent>
         </Tooltip>
@@ -333,13 +333,13 @@ function MonitoringCard({ signal, onDismiss, isDismissing }) {
 
       {showDetails && (
         <div className="space-y-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
+          <div className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
             Gráfico de {signal.timeframe?.toUpperCase()}
           </div>
           <EventTimeline events={signalTimeline(signal)} />
           <ScoreBar score={signal.context?.score || 0} />
           {signal.reason && (
-            <p className="text-[9px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            <p className="text-9px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.35)' }}>
               {signal.reason}
             </p>
           )}
@@ -383,10 +383,10 @@ function HistoryRow({ op }) {
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <span className="font-semibold text-xs text-foreground shrink-0">{op.symbol?.replace('USDT', '/USDT')}</span>
-          <span className="text-[9px] font-mono text-muted-foreground">{op.timeframe?.toUpperCase()}</span>
-          <span className="text-[9px] font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</span>
-          <span className="text-[9px] font-mono text-muted-foreground hidden sm:block">${formatPrice(op.entry_price)}</span>
-          {exitPrice && <span className="text-[9px] font-mono text-muted-foreground hidden md:block">→ ${formatPrice(exitPrice)}</span>}
+          <span className="text-9px font-mono text-muted-foreground">{op.timeframe?.toUpperCase()}</span>
+          <span className="text-9px font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>{op.side}</span>
+          <span className="text-9px font-mono text-muted-foreground hidden sm:block">${formatPrice(op.entry_price)}</span>
+          {exitPrice && <span className="text-9px font-mono text-muted-foreground hidden md:block">→ ${formatPrice(exitPrice)}</span>}
         </div>
         <div className="flex items-center gap-3 shrink-0">
           {pnlPct !== null && (
@@ -394,17 +394,17 @@ function HistoryRow({ op }) {
               {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
             </span>
           )}
-          <span className="text-[9px] font-mono font-semibold" style={{ color: s.color }}>{s.label}</span>
+          <span className="text-9px font-mono font-semibold" style={{ color: s.color }}>{s.label}</span>
           {/* Aberta -> fechada, ambos absolutos. Antes só havia a data de
               criação (item 161); o motivo saiu daqui — agora está sempre
               visível na linha de "por quê" abaixo, sem depender de hover. */}
-          <span className="text-[9px] font-mono text-muted-foreground hidden sm:block text-right leading-tight">
+          <span className="text-9px font-mono text-muted-foreground hidden sm:block text-right leading-tight">
             {fmtBRT(op.created_date)}
             {fechamento ? <><br />→ {fmtBRT(fechamento.at)}</> : null}
           </span>
         </div>
       </div>
-      <p className="text-[9px] font-mono leading-relaxed line-clamp-2 pl-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
+      <p className="text-9px font-mono leading-relaxed line-clamp-2 pl-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
         💡 {whyText}
       </p>
     </div>
@@ -587,10 +587,10 @@ export default function Trades() {
         {/* Header */}
         <div className="flex items-end justify-between flex-wrap gap-3">
           <div>
-            <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Gestão de Operações</p>
+            <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Gestão de Operações</p>
             <h1 className="text-3xl font-bold text-foreground tracking-tight">Plano de Trade</h1>
           </div>
-          <div className="flex items-center gap-3 text-[10px] font-mono flex-wrap">
+          <div className="flex items-center gap-3 text-10px font-mono flex-wrap">
             <span className="flex items-center gap-1.5">
               <span className="live-dot" style={{ width: 5, height: 5 }} />
               <span className="text-muted-foreground">Atualizado há {secAgo}s</span>
@@ -612,7 +612,7 @@ export default function Trades() {
               <h2 className="text-base font-bold text-foreground/80 group-hover:text-foreground transition-colors">
                 Performance Acumulada
               </h2>
-              <span className="text-[10px] font-mono" style={{ color: '#00e5ff' }}>
+              <span className="text-10px font-mono" style={{ color: '#00e5ff' }}>
                 {showChart ? '▲ esconder' : '▼ mostrar'}
               </span>
             </button>
@@ -634,7 +634,7 @@ export default function Trades() {
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <input type="text" placeholder="Buscar operação..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-7 pr-3 h-8 w-44 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="pl-7 pr-3 h-8 w-44 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }} />
           </div>
 
@@ -652,7 +652,7 @@ export default function Trades() {
             { id: 'year', label: 'Ano' },
           ].map(p => (
             <button key={p.id} onClick={() => setDatePreset(p.id)}
-              className="text-[10px] font-mono px-2.5 py-1 rounded-md transition-all"
+              className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
               style={datePreset === p.id
                 ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
                 : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
@@ -664,7 +664,7 @@ export default function Trades() {
 
           {TF_BTNS.map(tf => (
             <button key={tf} onClick={() => setFilterTf(tf)}
-              className="text-[10px] font-mono px-2.5 py-1 rounded-md transition-all"
+              className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
               style={filterTf === tf
                 ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
                 : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
@@ -674,7 +674,7 @@ export default function Trades() {
           <div className="w-px h-4 mx-1" style={{ background: 'rgba(255,255,255,0.08)' }} />
           {SIDE_BTNS.map(side => (
             <button key={side} onClick={() => setFilterSide(side)}
-              className="text-[10px] font-mono px-2.5 py-1 rounded-md transition-all"
+              className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
               style={filterSide === side
                 ? side === 'BUY' ? { background: 'rgba(0,255,128,0.12)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }
                   : side === 'SELL' ? { background: 'rgba(255,20,120,0.12)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }
@@ -691,7 +691,7 @@ export default function Trades() {
             <TooltipTrigger asChild>
               <button onClick={() => setShowDetails(v => !v)}
                 aria-pressed={showDetails}
-                className="flex items-center gap-1 text-[10px] font-mono px-2.5 py-1 rounded-md transition-all"
+                className="flex items-center gap-1 text-10px font-mono px-2.5 py-1 rounded-md transition-all"
                 style={showDetails
                   ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
                   : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
@@ -699,7 +699,7 @@ export default function Trades() {
                 {showDetails ? 'Detalhado' : 'Compacto'}
               </button>
             </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
               Abre ou fecha os detalhes técnicos de todos os cards de operação ao mesmo tempo.
             </TooltipContent>
           </Tooltip>
@@ -730,7 +730,7 @@ export default function Trades() {
                 ({applyFilters(monitoringActionable.map(s => ({ ...s, side: s.signal_type }))).length})
               </span>
             </div>
-            <p className="text-[10px] font-mono mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            <p className="text-10px font-mono mb-3" style={{ color: 'rgba(255,255,255,0.35)' }}>
               O app está checando estes. Se algum virar operação, ele abre sozinho e ela aparece em Operações Ativas.
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -752,7 +752,7 @@ export default function Trades() {
           <div>
             <button onClick={() => setShowInfoSignals(!showInfoSignals)}
               aria-expanded={showInfoSignals}
-              className="flex items-center gap-2 text-[11px] font-mono transition-colors hover:text-foreground/70"
+              className="flex items-center gap-2 text-11px font-mono transition-colors hover:text-foreground/70"
               style={{ color: '#60a5fa' }}>
               {showInfoSignals ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               ℹ {applyFilters(monitoringInfoOnly.map(s => ({ ...s, side: s.signal_type }))).length} observações de mercado
@@ -815,7 +815,7 @@ export default function Trades() {
                     <div className="flex items-center gap-1.5 p-2">
                       <button
                         onClick={() => setEditingOp(op)}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all hover:opacity-90"
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-90"
                         style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
                         <Edit3 className="w-3 h-3" />
                         Editar
@@ -825,7 +825,7 @@ export default function Trades() {
                           if (window.confirm(`Invalidar ${op.symbol} ${op.side}?`)) invalidateMutation.mutate(op);
                         }}
                         disabled={invalidateMutation.isPending}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all hover:opacity-90"
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-90"
                         style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
                         <AlertTriangle className="w-3 h-3" />
                         Invalidar
@@ -835,7 +835,7 @@ export default function Trades() {
                           if (window.confirm(`Encerrar ${op.symbol} ${op.side}?`)) closeMutation.mutate(op);
                         }}
                         disabled={closeMutation.isPending}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-mono ml-auto transition-all hover:opacity-90"
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-10px font-mono ml-auto transition-all hover:opacity-90"
                         style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.25)', color: '#ff1478' }}>
                         <XCircle className="w-3 h-3" />
                         Encerrar
@@ -857,7 +857,7 @@ export default function Trades() {
                 Histórico Completo
               </h2>
               <span className="text-xs font-mono text-muted-foreground">({applyFilters(history).length})</span>
-              <span className="text-[10px] font-mono" style={{ color: '#00e5ff' }}>
+              <span className="text-10px font-mono" style={{ color: '#00e5ff' }}>
                 {showHistory ? '▲ esconder' : '▼ mostrar'}
               </span>
             </button>
@@ -867,7 +867,7 @@ export default function Trades() {
                 {(() => {
                   const { wins, losses, be, total } = summarizeOps(applyFilters(history));
                   return (
-                    <div className="flex items-center gap-4 px-3 py-2 rounded-lg mb-3 text-[10px] font-mono"
+                    <div className="flex items-center gap-4 px-3 py-2 rounded-lg mb-3 text-10px font-mono"
                       style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
                       <span style={{ color: '#00ff80' }}>✓ Win: {wins}</span>
                       <span style={{ color: '#ffd166' }}>↔ BE: {be}</span>

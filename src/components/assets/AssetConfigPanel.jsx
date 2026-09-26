@@ -149,7 +149,7 @@ export default function AssetConfigPanel({ asset, onSave }) {
           <TooltipTrigger asChild>
             <Label className="text-sm font-medium mb-2 block cursor-help" tabIndex={0}>RSI</Label>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             RSI (Índice de Força Relativa): mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100).
           </TooltipContent>
         </Tooltip>
@@ -175,7 +175,7 @@ export default function AssetConfigPanel({ asset, onSave }) {
           <TooltipTrigger asChild>
             <Label className="text-sm font-medium mb-2 block cursor-help" tabIndex={0}>MACD</Label>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             MACD: compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.
           </TooltipContent>
         </Tooltip>

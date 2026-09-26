@@ -15,7 +15,7 @@ const PRIORITY = {
 export function StrengthBadge({ strength }) {
   const c = STRENGTH[strength] || STRENGTH.weak;
   return (
-    <span className="text-[10px] font-mono px-2 py-0.5 rounded"
+    <span className="text-10px font-mono px-2 py-0.5 rounded"
       style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.color }}
     >{c.label}</span>
   );
@@ -24,7 +24,7 @@ export function StrengthBadge({ strength }) {
 export function PriorityBadge({ priority }) {
   const c = PRIORITY[priority] || PRIORITY.low;
   return (
-    <span className="text-[10px] font-mono px-2 py-0.5 rounded"
+    <span className="text-10px font-mono px-2 py-0.5 rounded"
       style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.color }}
     >{c.label}</span>
   );

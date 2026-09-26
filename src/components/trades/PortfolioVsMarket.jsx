@@ -72,7 +72,7 @@ function CustomTooltip({ active, payload, marketLabel }) {
   return (
     <div className="rounded-lg p-3 text-xs font-mono"
       style={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
-      <div className="text-[10px] text-muted-foreground mb-1.5">{data?.date}</div>
+      <div className="text-10px text-muted-foreground mb-1.5">{data?.date}</div>
       {payload.map((entry, i) => (
         <div key={i} className="flex items-center justify-between gap-4">
           <span className="flex items-center gap-1.5" style={{ color: entry.color }}>
@@ -85,7 +85,7 @@ function CustomTooltip({ active, payload, marketLabel }) {
         </div>
       ))}
       {data?.symbol && (
-        <div className="mt-1.5 pt-1.5 text-[9px] text-muted-foreground" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="mt-1.5 pt-1.5 text-9px text-muted-foreground" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           Trade: {data.symbol} {data.side} → {data.status}
         </div>
       )}
@@ -166,12 +166,12 @@ export default function PortfolioVsMarket({ trades }) {
           <Activity className="w-4 h-4 shrink-0" style={{ color: '#00e5ff' }} />
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-foreground">Carteira vs Mercado ({benchmarkOption.label})</h3>
-            <p className="text-[9px] font-mono text-muted-foreground/60 leading-tight">
+            <p className="text-9px font-mono text-muted-foreground/60 leading-tight">
               100% do capital realocado a cada trade (composto) — comparável ao {benchmarkOption.label}, que também compõe
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3 text-[10px] font-mono">
+        <div className="flex items-center gap-3 text-10px font-mono">
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full" style={{ background: '#00ff80' }} />
             <span style={{ color: 'rgba(255,255,255,0.5)' }}>Carteira</span>
@@ -205,7 +205,7 @@ export default function PortfolioVsMarket({ trades }) {
       <div className="flex items-center gap-1.5 mb-3 flex-wrap">
         {BENCHMARK_OPTIONS.map((option) => (
           <button key={option.key} onClick={() => setBenchmarkKey(option.key)}
-            className="text-[10px] font-mono px-2.5 py-1 rounded-md transition-all"
+            className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
             style={benchmarkKey === option.key
               ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
               : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
@@ -286,7 +286,7 @@ export default function PortfolioVsMarket({ trades }) {
       </table>
 
       {/* Summary bar */}
-      <div className="flex items-center justify-between mt-3 pt-3 text-[10px] font-mono"
+      <div className="flex items-center justify-between mt-3 pt-3 text-10px font-mono"
         style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
         <span style={{ color: 'rgba(255,255,255,0.35)' }}>
           {portfolioCurve.length} trades fechados · {portfolioCurve[0]?.date} → {portfolioCurve[portfolioCurve.length - 1]?.date}

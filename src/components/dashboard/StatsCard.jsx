@@ -49,7 +49,7 @@ export default function StatsCard({ icon: Icon, label, value, color, glowColor, 
                   <AlertTriangle className="w-4 h-4" style={{ color: '#ff9f43' }} />—
                 </p>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                 Não foi possível confirmar este número agora — falha ao atualizar.
               </TooltipContent>
             </Tooltip>

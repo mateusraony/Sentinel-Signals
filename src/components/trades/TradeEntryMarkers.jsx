@@ -75,7 +75,7 @@ const CustomTooltip = ({ active, payload }) => {
   if (!d) return null;
   const isEntry = d.type === 'entry';
   return (
-    <div className="rounded-lg px-3 py-2.5 text-[10px] font-mono space-y-1"
+    <div className="rounded-lg px-3 py-2.5 text-10px font-mono space-y-1"
       style={{ background: 'rgba(6,8,15,0.97)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 180, boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
       <div className="font-bold flex items-center gap-1.5" style={{ color: d.side === 'BUY' ? '#00ff80' : '#ff1478' }}>
         {isEntry ? '▲ ENTRADA' : '● SAÍDA'} — {d.side} {d.symbol}
@@ -89,7 +89,7 @@ const CustomTooltip = ({ active, payload }) => {
       <div style={{ color: '#94a3b8' }}>
         Cumulativo: {d.cumulative >= 0 ? '+' : ''}{d.cumulative?.toFixed(2)}%
       </div>
-      {!isEntry && <div className="text-[9px]" style={{ color: '#64748b' }}>{d.statusLabel}</div>}
+      {!isEntry && <div className="text-9px" style={{ color: '#64748b' }}>{d.statusLabel}</div>}
     </div>
   );
 };
@@ -160,13 +160,13 @@ export default function TradeEntryMarkers({ history }) {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <div className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground">Curva de Capital + Execuções de Entrada/Saída</div>
+          <div className="text-9px font-mono uppercase tracking-widest text-muted-foreground">Curva de Capital + Execuções de Entrada/Saída</div>
           <div className="text-xl font-bold font-mono mt-0.5" style={{ color: isPositive ? '#00ff80' : '#ff1478' }}>
             {finalCum >= 0 ? '+' : ''}{finalCum.toFixed(2)}%
           </div>
-          <div className="text-[9px] font-mono text-muted-foreground/70 mt-0.5">soma % simples, não composta</div>
+          <div className="text-9px font-mono text-muted-foreground/70 mt-0.5">soma % simples, não composta</div>
         </div>
-        <div className="flex items-center gap-3 text-[10px] font-mono flex-wrap">
+        <div className="flex items-center gap-3 text-10px font-mono flex-wrap">
           <span className="flex items-center gap-1.5">
             <svg width="12" height="10"><polygon points="6,0 0,10 12,10" fill="#00ff80" opacity={0.9} /></svg>
             <span style={{ color: 'rgba(255,255,255,0.5)' }}>Entrada BUY</span>
@@ -244,7 +244,7 @@ export default function TradeEntryMarkers({ history }) {
         {chartData.filter(d => d.type === 'exit').slice(-12).map((d, i) => {
           const color = d.pnl >= 0 ? '#00ff80' : '#ff1478';
           return (
-            <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-mono"
+            <div key={i} className="flex items-center gap-1 px-2 py-1 rounded-lg text-9px font-mono"
               style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${color}22` }}>
               <span style={{ color: d.side === 'BUY' ? '#00ff80' : '#ff1478' }}>{d.side === 'BUY' ? '▲' : '▼'}</span>
               <span style={{ color: 'rgba(255,255,255,0.5)' }}>{d.symbol}</span>

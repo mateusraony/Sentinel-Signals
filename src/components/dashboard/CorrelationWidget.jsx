@@ -124,9 +124,9 @@ export default function CorrelationWidget() {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <GitCompareArrows className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
-          <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Correlação de Preço</span>
+          <span className="text-10px font-mono uppercase tracking-widest text-muted-foreground">Correlação de Preço</span>
           {banner && (
-            <span className="text-[9px] font-mono px-2 py-0.5 rounded font-bold"
+            <span className="text-9px font-mono px-2 py-0.5 rounded font-bold"
               style={{ background: banner.bg, border: `1px solid ${banner.border}`, color: banner.color }}>
               {banner.label}
             </span>
@@ -134,7 +134,7 @@ export default function CorrelationWidget() {
         </div>
         <div className="flex items-center gap-1.5 flex-wrap relative">
           {symbols.map(sym => (
-            <span key={sym} className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 rounded-md"
+            <span key={sym} className="flex items-center gap-1 text-9px font-mono px-2 py-1 rounded-md"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}>
               {sym.replace('USDT', '')}
               <button onClick={() => setSymbols(s => s.filter(x => x !== sym))} className="hover:opacity-70"
@@ -144,7 +144,7 @@ export default function CorrelationWidget() {
             </span>
           ))}
           <button onClick={() => setShowAdd(v => !v)}
-            className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 rounded-md transition-all"
+            className="flex items-center gap-1 text-9px font-mono px-2 py-1 rounded-md transition-all"
             style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
             <Plus className="w-2.5 h-2.5" />Add
           </button>
@@ -152,10 +152,10 @@ export default function CorrelationWidget() {
             <div className="absolute top-full right-0 mt-1 rounded-lg overflow-hidden z-20 max-h-48 overflow-y-auto"
               style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)', minWidth: 160 }}>
               {addableAssets.length === 0 ? (
-                <div className="px-3 py-2 text-[9px] font-mono text-muted-foreground">Nenhum outro ativo monitorado</div>
+                <div className="px-3 py-2 text-9px font-mono text-muted-foreground">Nenhum outro ativo monitorado</div>
               ) : addableAssets.map(a => (
                 <button key={a.id} onClick={() => { setSymbols(s => [...s, a.symbol]); setShowAdd(false); }}
-                  className="block w-full text-left px-3 py-1.5 text-[9px] font-mono hover:bg-white/[0.04]"
+                  className="block w-full text-left px-3 py-1.5 text-9px font-mono hover:bg-white/[0.04]"
                   style={{ color: 'rgba(255,255,255,0.7)' }}>
                   {a.display_name} <span className="text-muted-foreground">({a.symbol})</span>
                 </button>
@@ -165,12 +165,12 @@ export default function CorrelationWidget() {
         </div>
       </div>
 
-      {isLoading && <div className="text-[9px] font-mono text-muted-foreground animate-pulse py-6 text-center">Carregando preços...</div>}
+      {isLoading && <div className="text-9px font-mono text-muted-foreground animate-pulse py-6 text-center">Carregando preços...</div>}
 
       {!isLoading && (error || !analysis) && (
         <div className="text-center py-4">
           <AlertTriangle className="w-4 h-4 mx-auto mb-1 text-muted-foreground opacity-30" />
-          <div className="text-[9px] font-mono text-muted-foreground">Selecione ao menos 2 ativos com dados suficientes.</div>
+          <div className="text-9px font-mono text-muted-foreground">Selecione ao menos 2 ativos com dados suficientes.</div>
         </div>
       )}
 
@@ -195,7 +195,7 @@ export default function CorrelationWidget() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="text-[9px] font-mono w-full">
+            <table className="text-9px font-mono w-full">
               <thead>
                 <tr>
                   <th className="text-left px-2 py-1 text-muted-foreground"></th>

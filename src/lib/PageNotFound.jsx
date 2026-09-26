@@ -7,7 +7,7 @@ export default function PageNotFound() {
     <div className="min-h-screen bg-background relative flex items-center justify-center p-6">
       <AuroraBg />
       <div className="relative z-10 text-center">
-        <p className="text-[11px] font-mono uppercase tracking-[0.3em] text-muted-foreground mb-4">404</p>
+        <p className="text-11px font-mono uppercase tracking-[0.3em] text-muted-foreground mb-4">404</p>
         <h1 className="text-6xl font-bold font-mono mb-3" style={{ color: '#00ff80', textShadow: '0 0 40px rgba(0,255,128,0.3)' }}>
           Not Found
         </h1>

@@ -58,32 +58,32 @@ export default function SignalAlertBanner({ signals = [] }) {
             style={{ background: bgColor, border: `1px solid ${borderColor}`, boxShadow: `0 0 16px ${isBuy ? 'rgba(0,255,128,0.08)' : 'rgba(255,20,120,0.08)'}` }}>
             <Bell className="w-3.5 h-3.5 shrink-0 animate-pulse" style={{ color: textColor }} />
             <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
-              <span className="text-[10px] font-mono font-bold" style={{ color: textColor }}>
+              <span className="text-10px font-mono font-bold" style={{ color: textColor }}>
                 🆕 SINAL {sig.signal_type}
               </span>
               <span className="font-bold text-xs text-foreground">{symbol}</span>
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+              <span className="text-9px font-mono px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' }}>
                 {sig.timeframe?.toUpperCase()}
               </span>
               {score > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="text-[9px] font-mono cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                    <span className="text-9px font-mono cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
                       🔥 Score {score}/100
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                     Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
                   </TooltipContent>
                 </Tooltip>
               )}
               {sig.priority && (
-                <span className="text-[9px] font-mono" style={{ color: sig.priority === 'high' ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>
+                <span className="text-9px font-mono" style={{ color: sig.priority === 'high' ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>
                   {sig.priority === 'high' ? '⚡ Alta' : sig.priority === 'medium' ? 'Média' : 'Baixa'} prioridade
                 </span>
               )}
-              <span className="text-[9px] font-mono text-muted-foreground">{moment(sig.created_date).fromNow()}</span>
+              <span className="text-9px font-mono text-muted-foreground">{moment(sig.created_date).fromNow()}</span>
             </div>
             <button onClick={() => dismiss(sig.id)}
               className="shrink-0 p-1 rounded hover:bg-white/[0.06] transition-colors">

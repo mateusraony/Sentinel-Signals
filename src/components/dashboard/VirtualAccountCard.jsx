@@ -19,9 +19,9 @@ function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefine
         <Icon className="w-4 h-4" style={{ color }} />
       </div>
       <div className="min-w-0">
-        <div className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground leading-none mb-1">{label}</div>
+        <div className="text-9px font-mono uppercase tracking-widest text-muted-foreground leading-none mb-1">{label}</div>
         <div className="text-lg font-bold font-mono leading-none truncate" style={{ color }}>{value}</div>
-        {sub && <div className="text-[9px] font-mono mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.3)' }}>{sub}</div>}
+        {sub && <div className="text-9px font-mono mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.3)' }}>{sub}</div>}
       </div>
     </div>
   );
@@ -63,13 +63,13 @@ export default function VirtualAccountCard() {
       style={{ background: 'rgba(6,8,15,0.7)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(20px)' }}>
       <div className="flex items-center gap-2 mb-3">
         <Wallet className="w-3.5 h-3.5" style={{ color: '#ffd166' }} />
-        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Conta Virtual (real, composta)</span>
-        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+        <span className="text-10px font-mono uppercase tracking-widest text-muted-foreground">Conta Virtual (real, composta)</span>
+        <span className="text-9px font-mono px-1.5 py-0.5 rounded"
           style={{ background: 'rgba(255,209,102,0.08)', border: '1px solid rgba(255,209,102,0.2)', color: '#ffd166' }}>
           ${DEFAULT_INITIAL_CAPITAL} inicial · {DEFAULT_RISK_PCT}% risco/op
         </span>
         {accountBlown && (
-          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+          <span className="text-9px font-mono px-1.5 py-0.5 rounded"
             style={{ background: 'rgba(255,20,120,0.15)', border: '1px solid rgba(255,20,120,0.4)', color: '#ff1478' }}>
             CONTA ZERADA
           </span>

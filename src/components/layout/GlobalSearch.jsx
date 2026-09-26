@@ -106,14 +106,14 @@ export default function GlobalSearch() {
                 <div>
                   <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     <Coins className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">Ativos</span>
+                    <span className="text-9px font-mono text-muted-foreground uppercase tracking-wider">Ativos</span>
                   </div>
                   {results.assets.map(a => (
                     <button key={a.id} onClick={() => handleSelectAsset(a)}
                       className="flex items-center justify-between w-full px-3 py-2 text-left transition-colors hover:bg-white/[0.04]"
                       style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                       <span className="text-xs font-mono text-foreground">{a.display_name}</span>
-                      <span className="text-[9px] font-mono text-muted-foreground">{a.symbol}</span>
+                      <span className="text-9px font-mono text-muted-foreground">{a.symbol}</span>
                     </button>
                   ))}
                 </div>
@@ -122,16 +122,16 @@ export default function GlobalSearch() {
                 <div>
                   <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     <Bell className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">Alertas</span>
+                    <span className="text-9px font-mono text-muted-foreground uppercase tracking-wider">Alertas</span>
                   </div>
                   {results.alerts.map(s => (
                     <button key={s.id} onClick={handleSelectAlert}
                       className="flex items-center justify-between w-full px-3 py-2 text-left transition-colors hover:bg-white/[0.04]">
                       <div className="min-w-0">
                         <span className="text-xs font-mono text-foreground">{s.symbol?.replace('USDT', '/USDT')}</span>
-                        <span className="text-[9px] font-mono ml-1.5" style={{ color: s.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>{s.signal_type}</span>
+                        <span className="text-9px font-mono ml-1.5" style={{ color: s.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>{s.signal_type}</span>
                       </div>
-                      <span className="text-[9px] font-mono text-muted-foreground truncate ml-2">{s.timeframe?.toUpperCase()}</span>
+                      <span className="text-9px font-mono text-muted-foreground truncate ml-2">{s.timeframe?.toUpperCase()}</span>
                     </button>
                   ))}
                 </div>
@@ -140,16 +140,16 @@ export default function GlobalSearch() {
                 <div>
                   <div className="px-3 py-1.5 flex items-center gap-1.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     <History className="w-3 h-3 text-muted-foreground" />
-                    <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">Histórico</span>
+                    <span className="text-9px font-mono text-muted-foreground uppercase tracking-wider">Histórico</span>
                   </div>
                   {results.history.map(op => (
                     <button key={op.id} onClick={handleSelectHistory}
                       className="flex items-center justify-between w-full px-3 py-2 text-left transition-colors hover:bg-white/[0.04]">
                       <div className="min-w-0">
                         <span className="text-xs font-mono text-foreground">{op.symbol?.replace('USDT', '/USDT')}</span>
-                        <span className="text-[9px] font-mono ml-1.5" style={{ color: op.side === 'BUY' ? '#00ff80' : '#ff1478' }}>{op.side}</span>
+                        <span className="text-9px font-mono ml-1.5" style={{ color: op.side === 'BUY' ? '#00ff80' : '#ff1478' }}>{op.side}</span>
                       </div>
-                      <span className="text-[9px] font-mono text-muted-foreground truncate ml-2">{op.status}</span>
+                      <span className="text-9px font-mono text-muted-foreground truncate ml-2">{op.status}</span>
                     </button>
                   ))}
                 </div>
@@ -159,13 +159,13 @@ export default function GlobalSearch() {
           {showDropdown && search.trim() && !hasResults && (
             <div className="absolute top-full mt-1.5 left-0 w-64 sm:w-72 rounded-xl overflow-hidden z-50"
               style={{ background: 'rgba(10,13,22,0.98)', border: '1px solid rgba(255,255,255,0.1)' }}>
-              <div className="px-3 py-3 text-center text-[10px] font-mono text-muted-foreground">Nenhum resultado</div>
+              <div className="px-3 py-3 text-center text-10px font-mono text-muted-foreground">Nenhum resultado</div>
             </div>
           )}
         </>
       ) : (
         <button onClick={() => setShowSearch(true)}
-          className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[11px] font-mono transition-colors"
+          className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-11px font-mono transition-colors"
           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
           <Search className="w-3 h-3" />
           <span className="hidden md:block">Buscar ativo ou alerta...</span>

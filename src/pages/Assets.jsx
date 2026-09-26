@@ -152,11 +152,11 @@ export default function Assets() {
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Configuração</p>
+          <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Configuração</p>
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Ativos</h1>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
+          <div className="flex items-center gap-1.5 text-10px font-mono text-muted-foreground">
             <div className="live-dot" style={{ width: 5, height: 5 }} />
             <span>{active.length} ativos monitorados</span>
           </div>
@@ -187,7 +187,7 @@ export default function Assets() {
             style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <Icon className="w-4 h-4 shrink-0" style={{ color }} />
             <div>
-              <div className="text-[9px] font-mono text-muted-foreground">{label}</div>
+              <div className="text-9px font-mono text-muted-foreground">{label}</div>
               <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
             </div>
           </div>
@@ -199,7 +199,7 @@ export default function Assets() {
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground pointer-events-none" />
           <input type="text" placeholder="Buscar ativo..." value={search} onChange={e => setSearch(e.target.value)}
-            className="w-full pl-7 pr-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="w-full pl-7 pr-3 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }} />
         </div>
         {[{ id: 'all', label: 'Todos' }, { id: 'active', label: '● Ativos' }, { id: 'inactive', label: '○ Inativos' },
@@ -207,7 +207,7 @@ export default function Assets() {
           { id: 'proximity', label: '🎯 Próximos' },
         ].map(f => (
           <button key={f.id} onClick={() => setFilterStatus(f.id)}
-            className="text-[9px] font-mono px-2 py-1.5 rounded-lg transition-all flex items-center gap-1"
+            className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all flex items-center gap-1"
             style={filterStatus === f.id
               ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
               : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
@@ -273,14 +273,14 @@ export default function Assets() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-sm text-foreground">{asset.display_name}</span>
-                        <span className="text-[9px] font-mono text-muted-foreground">{asset.symbol}</span>
-                        <span className="text-[8px] font-mono px-1.5 py-0.5 rounded uppercase tracking-widest"
+                        <span className="text-9px font-mono text-muted-foreground">{asset.symbol}</span>
+                        <span className="text-8px font-mono px-1.5 py-0.5 rounded uppercase tracking-widest"
                           style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.15)', color: 'rgba(0,229,255,0.7)' }}>
                           {asset.exchange || 'binance'}
                         </span>
                         <span className="flex items-center gap-0.5">
                           <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: liveColor, boxShadow: asset.is_active && !isStale ? `0 0 5px ${liveColor}` : 'none' }} />
-                          <span className="text-[8px] font-mono" style={{ color: liveColor }}>{liveLabel}</span>
+                          <span className="text-8px font-mono" style={{ color: liveColor }}>{liveLabel}</span>
                         </span>
                         {asset.scan_status === 'error' && (
                           <Tooltip>
@@ -289,7 +289,7 @@ export default function Assets() {
                                 <XCircle className="w-3 h-3 text-rose-400" />
                               </span>
                             </TooltipTrigger>
-                            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                               Último scan falhou
                             </TooltipContent>
                           </Tooltip>
@@ -301,7 +301,7 @@ export default function Assets() {
                                 <CheckCircle2 className="w-3 h-3 text-emerald-400" />
                               </span>
                             </TooltipTrigger>
-                            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                               Último scan ok
                             </TooltipContent>
                           </Tooltip>
@@ -313,7 +313,7 @@ export default function Assets() {
                                 <MinusCircle className="w-3 h-3 text-muted-foreground/40" />
                               </span>
                             </TooltipTrigger>
-                            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                               Ainda não escaneado
                             </TooltipContent>
                           </Tooltip>
@@ -321,12 +321,12 @@ export default function Assets() {
                         {asset.backfill_check_status === 'pending' && (
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <span className="flex items-center gap-0.5 text-[8px] font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
+                              <span className="flex items-center gap-0.5 text-8px font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
                                 style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.25)', color: '#ff9f43' }}>
                                 <History className="w-2.5 h-2.5" />backfill pendente
                               </span>
                             </TooltipTrigger>
-                            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                               Verificação retroativa de sinais ainda pendente para este ativo
                             </TooltipContent>
                           </Tooltip>
@@ -341,7 +341,7 @@ export default function Assets() {
                           const rfDir = tfState?.rf_direction;
                           const dirColor = rfDir === 1 ? '#00ff80' : rfDir === -1 ? '#ff1478' : null;
                           return (
-                            <span key={tf} className="text-[8px] font-mono px-1.5 py-0.5 rounded flex items-center gap-0.5"
+                            <span key={tf} className="text-8px font-mono px-1.5 py-0.5 rounded flex items-center gap-0.5"
                               style={enabled
                                 ? { background: 'rgba(0,255,128,0.06)', border: '1px solid rgba(0,255,128,0.18)', color: 'rgba(0,255,128,0.7)' }
                                 : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.18)' }}>
@@ -351,12 +351,12 @@ export default function Assets() {
                           );
                         })}
                         {asset.last_scan_at && (
-                          <span className="text-[8px] font-mono text-muted-foreground flex items-center gap-0.5">
+                          <span className="text-8px font-mono text-muted-foreground flex items-center gap-0.5">
                             <Clock className="w-2 h-2" />{moment(asset.last_scan_at).fromNow()}
                           </span>
                         )}
                         {asset.scan_error && (
-                          <span className="text-[8px] font-mono truncate max-w-xs" style={{ color: '#ff9f43' }}>⚠ {asset.scan_error}</span>
+                          <span className="text-8px font-mono truncate max-w-xs" style={{ color: '#ff9f43' }}>⚠ {asset.scan_error}</span>
                         )}
                       </div>
 
@@ -364,7 +364,7 @@ export default function Assets() {
                       {assetStates.length > 0 && (
                         <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                           {assetStates.map(s => (
-                            <div key={s.timeframe} className="flex items-center gap-1 text-[7px] font-mono">
+                            <div key={s.timeframe} className="flex items-center gap-1 text-7px font-mono">
                               <span style={{ color: 'rgba(255,255,255,0.25)' }}>{s.timeframe?.toUpperCase()}</span>
                               {s.rsi_value && <span style={{ color: s.rsi_zone === 'overbought' ? '#ff1478' : s.rsi_zone === 'oversold' ? '#00ff80' : '#64748b' }}>RSI {s.rsi_value.toFixed(0)}</span>}
                               {s.macd_histogram !== undefined && <span style={{ color: s.macd_histogram > 0 ? '#00ff80' : '#ff1478' }}>MACD{s.macd_histogram > 0 ? '▲' : '▼'}</span>}
@@ -377,7 +377,7 @@ export default function Assets() {
 
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
-                      className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-[10px] font-mono font-semibold transition-all hover:opacity-80"
+                      className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-10px font-mono font-semibold transition-all hover:opacity-80"
                       style={expandedId === asset.id
                         ? { background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }
                         : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}
@@ -385,13 +385,13 @@ export default function Assets() {
                       {expandedId === asset.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
                     <button
-                      className="flex items-center gap-1 px-3 py-2 rounded-lg text-[10px] font-mono font-semibold transition-all hover:opacity-80"
+                      className="flex items-center gap-1 px-3 py-2 rounded-lg text-10px font-mono font-semibold transition-all hover:opacity-80"
                       style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}
                       onClick={() => setConfigAsset(asset)}>
                       <Settings2 className="w-3.5 h-3.5" /><span className="hidden sm:inline">Config</span>
                     </button>
                     <button
-                      className="flex items-center gap-1 px-3 py-2 rounded-lg text-[10px] font-mono font-semibold transition-all hover:opacity-80"
+                      className="flex items-center gap-1 px-3 py-2 rounded-lg text-10px font-mono font-semibold transition-all hover:opacity-80"
                       style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}
                       onClick={() => { if (confirm(`Remover ${asset.display_name}?`)) deleteMutation.mutate(asset.id); }}>
                       <Trash2 className="w-3.5 h-3.5" />

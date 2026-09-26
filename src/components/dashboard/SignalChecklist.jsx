@@ -117,7 +117,7 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
   return (
     <div className="mt-1.5">
       <button onClick={() => setExpanded(v => !v)}
-        className="flex items-center gap-1 text-[8px] font-mono px-2 py-1 rounded transition-all"
+        className="flex items-center gap-1 text-8px font-mono px-2 py-1 rounded transition-all"
         style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
         {expanded ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
         Por que ainda não virou operação?
@@ -126,29 +126,29 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
       {expanded && (
         <div className="mt-1.5 rounded-lg p-2.5 space-y-1.5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
           {needsFetch && isLoading && (
-            <div className="flex items-center gap-1.5 text-[9px] font-mono text-muted-foreground py-2">
+            <div className="flex items-center gap-1.5 text-9px font-mono text-muted-foreground py-2">
               <Loader2 className="w-3 h-3 animate-spin" />Buscando o aviso original...
             </div>
           )}
           {needsFetch && !isLoading && (error || !effectiveSignal) && (
-            <div className="text-[9px] font-mono text-muted-foreground py-1">Não foi possível carregar o aviso original agora.</div>
+            <div className="text-9px font-mono text-muted-foreground py-1">Não foi possível carregar o aviso original agora.</div>
           )}
           {effectiveSignal && (
             <>
               {hasActiveOp && (
-                <div className="flex items-start gap-1.5 text-[9px] font-mono">
+                <div className="flex items-start gap-1.5 text-9px font-mono">
                   <span style={{ color: '#ff9f43' }}>·</span>
                   <span style={{ color: 'rgba(255,255,255,0.6)' }}>Já existe uma operação ativa neste ativo — o motor não abre uma segunda.</span>
                 </div>
               )}
               {!hasActiveOp && tradeOpsUnavailable && (
-                <div className="flex items-start gap-1.5 text-[9px] font-mono">
+                <div className="flex items-start gap-1.5 text-9px font-mono">
                   <span style={{ color: '#ff9f43' }}>·</span>
                   <span style={{ color: 'rgba(255,255,255,0.6)' }}>Não foi possível confirmar se já existe uma operação ativa neste ativo agora (falha ao atualizar).</span>
                 </div>
               )}
               {reason && (
-                <div className="text-[9px] font-mono">
+                <div className="text-9px font-mono">
                   <div className="font-semibold" style={{ color: copy?.color ?? 'rgba(255,255,255,0.6)' }}>
                     {reason.icon} {reason.chip}
                   </div>
@@ -163,16 +163,16 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
                   {verdictUncertain
                     ? <ShieldAlert className="w-3.5 h-3.5" style={{ color: '#ff9f43' }} />
                     : blocked ? <ShieldAlert className="w-3.5 h-3.5" style={{ color: '#ff1478' }} /> : <ShieldCheck className="w-3.5 h-3.5" style={{ color: '#00ff80' }} />}
-                  <span className="text-[10px] font-mono font-bold" style={{ color: verdictUncertain ? '#ff9f43' : blocked ? '#ff1478' : '#00ff80' }}>
+                  <span className="text-10px font-mono font-bold" style={{ color: verdictUncertain ? '#ff9f43' : blocked ? '#ff1478' : '#00ff80' }}>
                     {verdictUncertain ? 'NÃO VERIFICADO' : blocked ? 'BLOQUEADA' : 'ENTRADA LIBERADA'}
                   </span>
                 </div>
               ) : (
-                <p className="text-[9px] font-mono leading-relaxed pt-1.5 mt-1.5" style={{ color: 'rgba(255,255,255,0.4)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                <p className="text-9px font-mono leading-relaxed pt-1.5 mt-1.5" style={{ color: 'rgba(255,255,255,0.4)', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                   {copy?.reassurance}
                 </p>
               )}
-              <p className="text-[7px] font-mono text-muted-foreground/60 pt-0.5">
+              <p className="text-7px font-mono text-muted-foreground/60 pt-0.5">
                 Motivo lido direto do que o motor gravou ao avaliar este aviso — nenhum cálculo é refeito aqui.
               </p>
             </>

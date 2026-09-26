@@ -13,17 +13,17 @@ function ParamCard({ label, value, pineVar, color, tooltip }) {
       {tooltip ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-wider cursor-help" tabIndex={0}>{label}</div>
+            <div className="text-8px font-mono text-muted-foreground uppercase tracking-wider cursor-help" tabIndex={0}>{label}</div>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             {tooltip}
           </TooltipContent>
         </Tooltip>
       ) : (
-        <div className="text-[8px] font-mono text-muted-foreground uppercase tracking-wider">{label}</div>
+        <div className="text-8px font-mono text-muted-foreground uppercase tracking-wider">{label}</div>
       )}
       <div className="text-sm font-mono font-bold mt-0.5" style={{ color: color || 'rgba(255,255,255,0.8)' }}>{value}</div>
-      {pineVar && <div className="text-[7px] font-mono mt-0.5" style={{ color: 'rgba(0,255,128,0.35)' }}>{pineVar}</div>}
+      {pineVar && <div className="text-7px font-mono mt-0.5" style={{ color: 'rgba(0,255,128,0.35)' }}>{pineVar}</div>}
     </div>
   );
 }
@@ -33,8 +33,8 @@ function TFStateCard({ tf, state, enabled, unavailable = false }) {
     return (
       <div className="rounded-lg p-3 text-center opacity-40"
         style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-        <div className="text-[9px] font-mono text-muted-foreground">{tf.toUpperCase()}</div>
-        <div className="text-[10px] font-mono text-muted-foreground mt-1">Desativado</div>
+        <div className="text-9px font-mono text-muted-foreground">{tf.toUpperCase()}</div>
+        <div className="text-10px font-mono text-muted-foreground mt-1">Desativado</div>
       </div>
     );
   }
@@ -46,8 +46,8 @@ function TFStateCard({ tf, state, enabled, unavailable = false }) {
     return (
       <div className="rounded-lg p-3 text-center"
         style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${unavailable ? 'rgba(255,159,67,0.2)' : 'rgba(255,255,255,0.04)'}` }}>
-        <div className="text-[9px] font-mono text-muted-foreground">{tf.toUpperCase()}</div>
-        <div className="text-[10px] font-mono text-muted-foreground mt-1" style={unavailable ? { color: '#ff9f43' } : undefined}>
+        <div className="text-9px font-mono text-muted-foreground">{tf.toUpperCase()}</div>
+        <div className="text-10px font-mono text-muted-foreground mt-1" style={unavailable ? { color: '#ff9f43' } : undefined}>
           {unavailable ? 'Falha ao carregar' : 'Sem dados'}
         </div>
       </div>
@@ -68,11 +68,11 @@ function TFStateCard({ tf, state, enabled, unavailable = false }) {
     <div className="rounded-lg p-3 space-y-2"
       style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${dirColor}30` }}>
       <div className="flex items-center justify-between">
-        <span className="text-[9px] font-mono font-bold text-foreground">{tf.toUpperCase()}</span>
-        <span className="text-[9px] font-mono font-bold" style={{ color: dirColor }}>{dirLabel}</span>
+        <span className="text-9px font-mono font-bold text-foreground">{tf.toUpperCase()}</span>
+        <span className="text-9px font-mono font-bold" style={{ color: dirColor }}>{dirLabel}</span>
       </div>
 
-      <div className="space-y-1 text-[9px] font-mono">
+      <div className="space-y-1 text-9px font-mono">
         <div className="flex justify-between">
           <span className="text-muted-foreground">RF Value</span>
           <span style={{ color: 'rgba(0,229,255,0.7)' }}>${formatPrice(state.rf_filter_value)}</span>
@@ -95,39 +95,39 @@ function TFStateCard({ tf, state, enabled, unavailable = false }) {
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="cursor-help" tabIndex={0}>
-              <div className="text-[7px] font-mono text-muted-foreground">RSI</div>
-              <div className="text-[10px] font-mono font-bold" style={{ color: rsiColor }}>
+              <div className="text-7px font-mono text-muted-foreground">RSI</div>
+              <div className="text-10px font-mono font-bold" style={{ color: rsiColor }}>
                 {Number.isFinite(state.rsi_value) ? state.rsi_value.toFixed(0) : '—'}
               </div>
             </div>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             RSI (Índice de Força Relativa): mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100) — aqui, só confirmação, nunca sinal sozinho.
           </TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="cursor-help" tabIndex={0}>
-              <div className="text-[7px] font-mono text-muted-foreground">MACD</div>
-              <div className="text-[10px] font-mono font-bold" style={{ color: macdColor }}>
+              <div className="text-7px font-mono text-muted-foreground">MACD</div>
+              <div className="text-10px font-mono font-bold" style={{ color: macdColor }}>
                 {macdH > 0 ? '▲' : macdH < 0 ? '▼' : '—'}
               </div>
             </div>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             MACD: compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.
           </TooltipContent>
         </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <div className="cursor-help" tabIndex={0}>
-              <div className="text-[7px] font-mono text-muted-foreground">EMA</div>
-              <div className="text-[10px] font-mono font-bold" style={{ color: emaColor }}>
+              <div className="text-7px font-mono text-muted-foreground">EMA</div>
+              <div className="text-10px font-mono font-bold" style={{ color: emaColor }}>
                 {emaTrend === 'bullish' ? '▲' : emaTrend === 'bearish' ? '▼' : '—'}
               </div>
             </div>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             EMA: média móvel exponencial — reage mais rápido a mudanças recentes que uma média comum. Quando uma EMA curta cruza uma longa, é sinal de mudança de tendência.
           </TooltipContent>
         </Tooltip>
@@ -139,7 +139,7 @@ function TFStateCard({ tf, state, enabled, unavailable = false }) {
           the asset's own healthcheck (docs/known-risks.md item 12) to judge
           whether the scan itself is still running. */}
       {state.processed_at && (
-        <div className="text-[7px] font-mono text-muted-foreground/60 text-center">
+        <div className="text-7px font-mono text-muted-foreground/60 text-center">
           {moment(state.processed_at).fromNow()}
         </div>
       )}
@@ -158,7 +158,7 @@ export default function AssetDetailPanel({ asset, states, expanded, onToggle, st
       <div>
         <div className="flex items-center gap-1.5 mb-2">
           <Sliders className="w-3 h-3" style={{ color: '#00e5ff' }} />
-          <span className="text-[9px] font-mono font-bold text-muted-foreground uppercase tracking-wider">
+          <span className="text-9px font-mono font-bold text-muted-foreground uppercase tracking-wider">
             Parâmetros Range Filter
           </span>
         </div>
@@ -177,7 +177,7 @@ export default function AssetDetailPanel({ asset, states, expanded, onToggle, st
       </div>
 
       {/* Section: Config */}
-      <div className="flex items-center gap-4 flex-wrap text-[9px] font-mono">
+      <div className="flex items-center gap-4 flex-wrap text-9px font-mono">
         <div className="flex items-center gap-1.5">
           <Clock className="w-3 h-3 text-muted-foreground" />
           <span className="text-muted-foreground">Alert Cooldown:</span>
@@ -204,7 +204,7 @@ export default function AssetDetailPanel({ asset, states, expanded, onToggle, st
       <div>
         <div className="flex items-center gap-1.5 mb-2">
           <Activity className="w-3 h-3" style={{ color: '#00ff80' }} />
-          <span className="text-[9px] font-mono font-bold text-muted-foreground uppercase tracking-wider">
+          <span className="text-9px font-mono font-bold text-muted-foreground uppercase tracking-wider">
             Estado por Timeframe
           </span>
         </div>

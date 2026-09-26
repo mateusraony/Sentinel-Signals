@@ -67,19 +67,19 @@ function SummaryCard({ icon: Icon, label, value, sublabel, color, glowColor, too
         <Icon className="w-4 h-4" style={{ color }} />
         {tooltip ? (
           <InfoTooltip>
-            <TooltipTrigger type="button" className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
+            <TooltipTrigger type="button" className="text-10px font-mono uppercase tracking-wider text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
               {label}
             </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
               {tooltip}
             </TooltipContent>
           </InfoTooltip>
         ) : (
-          <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
+          <span className="text-10px font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
         )}
       </div>
       <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
-      {sublabel && <div className="text-[9px] font-mono text-muted-foreground mt-1">{sublabel}</div>}
+      {sublabel && <div className="text-9px font-mono text-muted-foreground mt-1">{sublabel}</div>}
     </div>
   );
 }
@@ -87,7 +87,7 @@ function SummaryCard({ icon: Icon, label, value, sublabel, color, glowColor, too
 function MiniMetric({ label, value, color }) {
   return (
     <div className="rounded-lg px-3 py-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-      <div className="text-[9px] font-mono text-muted-foreground mb-0.5">{label}</div>
+      <div className="text-9px font-mono text-muted-foreground mb-0.5">{label}</div>
       <div className="text-sm font-mono font-bold" style={{ color }}>{value}</div>
     </div>
   );
@@ -343,20 +343,20 @@ export default function MonthlyReport() {
       {/* Header */}
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Relatórios</p>
+          <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Relatórios</p>
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Resumo Mensal</h1>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
             <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
-              className="px-3 py-1.5 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring capitalize"
+              className="px-3 py-1.5 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring capitalize"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}>
               {monthOptions.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           </div>
           <button onClick={handleCopyText} disabled={!metrics || monthOps.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono transition-all disabled:opacity-40"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-11px font-mono transition-all disabled:opacity-40"
             style={copied
               ? { background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }
               : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
@@ -364,7 +364,7 @@ export default function MonthlyReport() {
             {copied ? 'Copiado!' : 'Copiar'}
           </button>
           <button onClick={handleExportPDF} disabled={exporting || !metrics || monthOps.length === 0}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[11px] font-mono font-bold transition-all hover:opacity-90 disabled:opacity-40"
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-11px font-mono font-bold transition-all hover:opacity-90 disabled:opacity-40"
             style={{ background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }}>
             {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
             Exportar PDF
@@ -461,10 +461,10 @@ export default function MonthlyReport() {
             <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
               <FileText className="w-4 h-4" style={{ color: '#00e5ff' }} />
               <h2 className="text-sm font-bold text-foreground">Operações do Mês</h2>
-              <span className="text-[10px] font-mono text-muted-foreground">({monthOps.length} trades)</span>
+              <span className="text-10px font-mono text-muted-foreground">({monthOps.length} trades)</span>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-[10px] font-mono">
+              <table className="w-full text-10px font-mono">
                 <thead>
                   <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
                     <th className="text-left px-4 py-2 text-muted-foreground font-medium">Data</th>

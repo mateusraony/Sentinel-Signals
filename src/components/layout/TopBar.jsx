@@ -100,7 +100,7 @@ export default function TopBar() {
       {/* Right */}
       <div className="flex items-center gap-3">
         {lastScan && !scanning && (
-          <span className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground">
+          <span className="hidden sm:flex items-center gap-1.5 text-11px font-mono text-muted-foreground">
             <Clock className="w-3 h-3" />
             {lastScan.toLocaleTimeString()}
           </span>
@@ -116,7 +116,7 @@ export default function TopBar() {
               <BellRing className="w-3.5 h-3.5" style={{ color: telegramActive ? '#00e5ff' : 'rgba(255,255,255,0.35)' }} />
             </button>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             Alertas Telegram
           </TooltipContent>
         </Tooltip>
@@ -132,7 +132,7 @@ export default function TopBar() {
               <KeyRound className="w-3.5 h-3.5" style={{ color: ownerKeyActive ? '#00e5ff' : '#ff1478' }} />
             </button>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             Chave de Acesso do Backend
           </TooltipContent>
         </Tooltip>
