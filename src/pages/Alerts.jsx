@@ -24,7 +24,7 @@ const SOURCE_LABELS = {
 const SOURCE_TOOLTIPS = {
   range_filter: 'Indicador que filtra o ruído do preço e define uma banda de tendência: o sistema só considera um movimento válido quando o preço rompe essa banda de forma consistente.',
   smc_structure: 'Smart Money Concepts: análise de topos/fundos e zonas de rompimento, usada como fonte alternativa de sinal além do Range Filter.',
-  rsi: 'Índice de Força Relativa: mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100) — aqui, só confirmação, nunca sinal sozinho.',
+  rsi: 'Índice de Força Relativa: mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100) — aqui vira alerta próprio, de prioridade baixa, quando entra em sobrecompra/sobrevenda.',
   macd: 'Compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.',
   ema_cross: 'Média móvel exponencial — reage mais rápido a mudanças recentes que uma média comum. Quando uma EMA curta cruza uma longa, é sinal de mudança de tendência.',
   confluence: 'Pontuação de 0 a 100 somando quantos indicadores concordam na mesma direção ao mesmo tempo. Quanto mais alto, mais confirmações.',

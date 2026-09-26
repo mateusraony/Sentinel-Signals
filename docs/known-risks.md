@@ -27895,3 +27895,47 @@ plano completo já escrito em
 `/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`. Última
 sub-rodada planejada — fecha M-17 (17/17 do backlog Alta+Média já
 revisitados, contando M-9).
+
+## 233. Corrigir achado do Codex review no PR #431 (M-17, 3ª sub-rodada) — tooltip de RSI em `Alerts.jsx` contradizia o próprio scanner
+
+O Codex revisou o PR #431 (item 232) e apontou que o texto de RSI em
+`SOURCE_TOOLTIPS` (`Alerts.jsx`) dizia "aqui, só confirmação, nunca
+sinal sozinho" — mas isso é falso NESTA tela especificamente.
+Verificado em `src/lib/scanner.js:1803-1820`: `scanAsset` cria um
+`SignalEvent` **standalone** com `source: 'rsi'` (prioridade `low`,
+força `weak`) sempre que a zona de RSI não é neutra — exatamente o
+tipo de alerta que `Alerts.jsx` lista e filtra por essa mesma fonte.
+
+O texto original vinha copiado do contexto de `AssetCard.jsx`
+(`IndicatorDots`, item 229), onde RSI de fato é só um dos 4 pontos de
+confirmação ao lado de RF/MACD/EMA, nunca gera sinal sozinho ali — mas
+o glossário da auditoria é um texto por TERMO, não por TELA, e a
+mesma frase não se aplica a todo contexto onde "RSI" aparece. Achado
+correto (P2) — o tooltip induzia o usuário a subestimar um alerta que
+o próprio sistema gera de propósito.
+
+### Fix
+
+Só o texto de `SOURCE_TOOLTIPS.rsi` em `Alerts.jsx` mudou, pra refletir
+o comportamento real desta tela: "...aqui vira alerta próprio, de
+prioridade baixa, quando entra em sobrecompra/sobrevenda." O tooltip de
+RSI em `AssetCard.jsx` (`IndicatorDots`, item 229) **não foi tocado** —
+continua correto no próprio contexto (confirmação, nunca sinal
+sozinho ali).
+
+**Lição pra futuras sub-rodadas de M-17**: o glossário da auditoria dá
+o texto-base do TERMO, mas o comportamento real pode divergir por TELA
+(mesmo termo, papel diferente no sistema) — confirmar contra o código
+que gera o dado (aqui, `scanner.js`) antes de copiar o texto ipsis
+litteris pra um contexto novo, em vez de assumir que "já foi validado
+uma vez" cobre todo lugar onde o termo aparece.
+
+### Verificação
+
+`npx vitest run src/pages/Alerts.test.jsx
+src/components/dashboard/ComparePanel.test.jsx` verde (5 testes, texto
+de RSI não é asserted diretamente — os testes cobrem foco/tooltip
+estrutural, não o conteúdo exato). `npm run lint && npm test && npm
+run build && npm run typecheck:ratchet` limpos (2117 testes, teto de
+typecheck em 13, sem mudança). `git diff --stat` só 1 linha em
+`Alerts.jsx`.
