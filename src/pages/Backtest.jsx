@@ -328,7 +328,8 @@ function ReportBody({ report, hideCascadeTable = false }) {
             <SummaryCard icon={Award} label="CAGR"
               value={equitySim.cagrPct === null ? 'N/A' : fmtPct(equitySim.cagrPct)}
               sublabel={equitySim.cagrPct === null ? (CAGR_UNAVAILABLE_LABEL[equitySim.cagrUnavailableReason] || equitySim.cagrUnavailableReason) : `~${equitySim.years?.toFixed(2)} anos`}
-              color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
+              color="#00e5ff" glowColor="rgba(0,229,255,0.4)"
+              tooltip="Taxa de crescimento anual composta, extrapolada a partir do período coberto pela simulação — não é garantia de retorno futuro." />
             <SummaryCard icon={FlaskConical} label="Operações dimensionadas" value={`${equitySim.sized}/${equitySim.total}`}
               sublabel={equitySim.unsized > 0 ? `${equitySim.unsized} sem risco definido` : 'todas dimensionadas'}
               color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />

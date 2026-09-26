@@ -783,7 +783,7 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] M-8 — Verificação: RSI/MACD/EMA sem cor de zona. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-12 — Settings/Pine Script sem link cruzado. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-9 — 17 gráficos Recharts sem role="img"/aria-label em 10 arquivos. **Fechado: 3 sub-rodadas, 17/17 instâncias — ver seção própria abaixo.**
-- [~] M-17 — termos técnicos sem explicação (glossário, seção I). **3ª de ~4 sub-rodadas feita (6/8 arquivos-alvo) — ver seção própria abaixo.**
+- [x] M-17 — termos técnicos sem explicação (glossário, seção I). **Fechado: 4 sub-rodadas, 8/8 arquivos-alvo (+ 2 fixes de review do Codex) — ver seção própria abaixo.**
 - [ ] Demais itens de Média prioridade (M-4, M-10, M-11, M-13, M-15),
   Refinamentos e a reorganização completa do Dashboard (seção L do
   relatório) — nada iniciado.
@@ -811,11 +811,9 @@ isolado.
 **Backlog de Média prioridade em andamento (1ª rodada, item 220 —
 M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
 M-5/M-6/M-8/M-12; M-9 fechado em 3 sub-rodadas, itens 223/225/226/227;
-M-17 em sub-rodadas, itens 229/230/232 — 3 de ~4 feitas; M-7 descoberto
-já corrigido).** Restam 5 dos 17 itens M inteiros (M-4, M-10, M-11,
-M-13, M-15) + 2 dos 8 arquivos-alvo de M-17 (`TradeHistory.jsx` +
-`Backtest.jsx`, + `PerformanceMetricsBar.jsx` opcional — última
-sub-rodada planejada, fecha M-17). M-4/M-10/M-13/M-15 se
+M-17 fechado em 4 sub-rodadas, itens 229/230/232/234 (+ fixes de review
+231/233); M-7 descoberto já corrigido).** Restam 5 dos 17 itens M
+inteiros: M-4, M-10, M-11, M-13, M-15. M-4/M-10/M-13/M-15 se
 sobrepõem à reorganização do Dashboard (seção L, que também inclui
 A-15) — decisão de produto maior, não mexer sem alinhamento explícito.
 M-11 (632 ocorrências de fonte arbitrária em 51 arquivos) é varredura
@@ -1027,10 +1025,61 @@ novos; `ComparePanel.test.jsx` é novo — arquivo não tinha teste antes).
 `npm run lint && npm test && npm run build && npm run
 typecheck:ratchet` limpos (2117 testes, teto de typecheck em 13, sem
 mudança líquida). Detalhe completo em `docs/known-risks.md` item 232.
-Resta 1 arquivo-alvo (+ 1 de baixa prioridade): `TradeHistory.jsx` +
-`Backtest.jsx` (+ `PerformanceMetricsBar.jsx`) — última sub-rodada
-planejada, fecha M-17 — plano completo já escrito em
-`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.
+
+**Fix de review (Codex, PR #431)**: o tooltip de RSI em
+`SOURCE_TOOLTIPS` dizia "só confirmação, nunca sinal sozinho" —
+copiado do contexto de `AssetCard.jsx`, onde isso é verdade. Mas em
+`Alerts.jsx` RSI é uma FONTE PRÓPRIA de alerta: `scanAsset`
+(`scanner.js:1803-1820`) cria um `SignalEvent` standalone com
+`source: 'rsi'` (prioridade baixa) sempre que a zona não é neutra.
+Corrigido só o texto de RSI nesta tela — o de `AssetCard.jsx` continua
+correto no próprio contexto. Lição: o glossário dá o texto-base do
+TERMO, mas o comportamento pode divergir por TELA — confirmar contra o
+código que gera o dado antes de reaproveitar texto ipsis litteris num
+contexto novo. Detalhe completo em `docs/known-risks.md` item 233.
+
+## Backlog M-17 — 4ª sub-rodada (2026-09-26): `TradeHistory.jsx` + `Backtest.jsx` — fecha M-17
+
+Última sub-rodada. Fecha os 2 arquivos-alvo restantes (8/8 no total):
+
+- **`TradeHistory.jsx`**: grid de preços (TP1/TP2), chips de milestone
+  e o chip de saída "RF" (só quando `exit_mode === 'RANGE_FILTER'`) +
+  a linha "⚖️ RR 1:{rr}" ganharam tooltip. **Reusou
+  `getTp1Tooltip`/`getTp2Tooltip` exportadas de `AssetCard.jsx`** (item
+  231) em vez de duplicar texto estático — a mesma operação histórica
+  tem os campos (`partial_percent`/`tp2_cap_disabled`) que motivaram
+  aquele fix do Codex, então duplicar reintroduziria o mesmo bug.
+- **`Backtest.jsx`**: `CAGR` era o único `SummaryCard` sem `tooltip` —
+  só adicionada a prop (o componente já sabia renderizar).
+- **`PerformanceMetricsBar.jsx`** (opcional no plano) — decisão: não
+  fazer. É sub-texto dentro de card cujo título já contextualiza,
+  valor marginal baixo pra esta rodada final.
+
+**Achado durante a implementação**: o `SummaryCard` de `Backtest.jsx`
+renderiza o `TooltipTrigger` como `<button>` nativo direto (sem
+`asChild`) — diferente do padrão `<span tabIndex={0}>` do resto do
+projeto. Um `<button>` já é focável sem `tabIndex` explícito; o teste
+inicial checava `tabindex === '0'` (padrão de sempre) e falhava mesmo
+com o fix certo (falso NEGATIVO — inverso da lição do item 229).
+Corrigido checando `tagName === 'BUTTON'`. Lição: confirmar como o
+componente já implementa `tooltip` antes de escrever a asserção de
+foco, não assumir o mesmo template em todo lugar.
+
+2 arquivos de teste (ambos já existiam): `TradeHistory.test.jsx`
+ganhou 4 casos (precisou do mesmo polyfill de `ResizeObserver` de
+`PnLChart.test.jsx` — um dos casos passa 2 operações, ativando o
+`PnLChart`); `Backtest.test.jsx` ganhou 1 caso, reusando a fixture
+`REPORT_JSON_COM_CURVE` já existente. `npm run lint && npm test && npm
+run build && npm run typecheck:ratchet` limpos (2122 testes, teto de
+typecheck em 13 — checado logo após o código desta vez, lição do item
+232). Detalhe completo em `docs/known-risks.md` item 234.
+
+**M-17 fechado**: 8/8 arquivos-alvo (`AssetCard.jsx`,
+`AssetDetailPanel.jsx`, `AssetConfigPanel.jsx`, `TelegramSettings.jsx`,
+`Alerts.jsx`, `ComparePanel.jsx`, `TradeHistory.jsx`, `Backtest.jsx`) +
+2 fixes de review do Codex (itens 231/233), em 4 sub-rodadas (itens
+229/230/232/234). `PerformanceMetricsBar.jsx` deliberadamente fora de
+escopo (baixa prioridade, ver acima).
 
 ## Backlog Média prioridade — 3ª rodada (2026-09-25): M-5, M-6, M-8, M-12 corrigidos
 

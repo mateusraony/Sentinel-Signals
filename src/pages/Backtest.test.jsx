@@ -120,6 +120,28 @@ describe('Backtest — tabela "Por cascata" usa Tooltip em vez de title= nativo 
   });
 });
 
+// Achado M-17 do Raio-X de UI/UX (glossário de termos técnicos): "CAGR" era
+// o único SummaryCard da tela sem a prop `tooltip` — os outros já usam o
+// mesmo padrão (`InfoTooltip`/`TooltipTrigger`, achado A-6). Precisa de
+// `equitySim` não-nulo (curve populada), daí reusar REPORT_JSON_COM_CURVE.
+describe('Backtest — SummaryCard "CAGR" tem tooltip explicando o termo (achado M-17)', () => {
+  it('REGRESSÃO: label "CAGR" é focável (tem tooltip)', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    fireEvent.change(textarea, { target: { value: REPORT_JSON_COM_CURVE } });
+    fireEvent.click(screen.getByText(/Analisar relatório colado/i));
+    await screen.findByText('Expectância');
+
+    // SummaryCard renderiza o gatilho como <button> nativo (sem `asChild`,
+    // diferente do padrão `<span tabIndex={0}>` usado noutros lugares) —
+    // um <button> já é focável por padrão, sem precisar de tabIndex
+    // explícito, então o discriminador aqui é a própria tag.
+    const cagr = await screen.findByText('CAGR');
+    expect(cagr.tagName).toBe('BUTTON');
+  });
+});
+
 describe('Backtest — botão "Aplicar ao Scanner" desabilitado usa Tooltip em vez de title= (achado A-6)', () => {
   it('REGRESSÃO: sem reproducibility.pineConfig, o botão não tem title= nativo e ganha wrapper focável', async () => {
     await loadReport();

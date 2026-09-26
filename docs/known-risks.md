@@ -27939,3 +27939,78 @@ estrutural, não o conteúdo exato). `npm run lint && npm test && npm
 run build && npm run typecheck:ratchet` limpos (2117 testes, teto de
 typecheck em 13, sem mudança). `git diff --stat` só 1 linha em
 `Alerts.jsx`.
+
+## 234. M-17 (4ª e última sub-rodada): tooltips em `TradeHistory.jsx` + `Backtest.jsx` — fecha M-17 (8/8 arquivos-alvo)
+
+Última sub-rodada do backlog M-17 (itens 229/230/232 + fixes de review
+231/233). Fecha os 2 arquivos-alvo restantes.
+
+- **`TradeHistory.jsx`**: grid de preços expandido (TP1/TP2), chips de
+  milestone ("✅/○ TP1"/"TP2") e o chip de saída "RF" (só quando
+  `exit_mode === 'RANGE_FILTER'`, não nos outros 2 valores possíveis —
+  `ATR Trail`/`RF+ATR` não são termos do glossário) e a linha "⚖️ RR
+  1:{rr}" (sempre visível, sem precisar expandir) ganharam tooltip.
+  **Reusou `getTp1Tooltip`/`getTp2Tooltip` exportadas de `AssetCard.jsx`**
+  (item 231, fix do Codex) em vez de duplicar texto estático — essa
+  operação histórica tem os MESMOS campos (`partial_percent`,
+  `tp2_cap_disabled`) que motivaram aquele fix, então duplicar o texto
+  reintroduziria o mesmo bug já corrigido ali.
+- **`Backtest.jsx`**: `CAGR` era o único `SummaryCard` da tela sem a
+  prop `tooltip` (os outros — Profit Factor, Expectância — já usam o
+  mesmo padrão desde achados anteriores). Só adicionada a prop; o
+  componente já sabia renderizar via `InfoTooltip` quando presente.
+- **`PerformanceMetricsBar.jsx`** (marcado como opcional/baixa
+  prioridade no plano) — decisão: **não fazer**. É sub-texto (não
+  título) dentro de cards cujo título já contextualiza (ex.: card
+  "Risk/Reward" já tem o nome por extenso acima do sub-texto "R:R"),
+  valor marginal baixo pra justificar tocar mais um arquivo nesta
+  rodada final.
+
+### Achado durante a implementação
+
+`SummaryCard` de `Backtest.jsx` renderiza o `TooltipTrigger` como
+`<button>` nativo direto (sem `asChild`), diferente do padrão
+`<span tabIndex={0}>` usado em quase todo o resto do projeto — um
+`<button>` já é focável sem precisar de `tabIndex` explícito. O teste
+inicial verificava `getAttribute('tabindex') === '0'` (padrão de
+sempre) e falhava mesmo com o fix aplicado (falso negativo, não falso
+positivo — o inverso da lição do item 229). Corrigido checando
+`tagName === 'BUTTON'` em vez de `tabindex`. **Lição pra próximas
+rodadas**: o discriminador de foco certo depende de COMO o componente
+já implementa `tooltip` — confirmar o padrão exato (span com tabIndex
+explícito vs. button nativo) antes de escrever a asserção, não assumir
+que todo `Tooltip` do projeto segue o mesmo template.
+
+### Testes
+
+`TradeHistory.test.jsx` (já existia): 4 casos novos (R:R focável; grid
+TP1/TP2 focável, Entrada/Stop Inicial continuam sem; chips de milestone
+focáveis; chip "RF" focável, "RF+ATR" default continua sem) — precisou
+do mesmo polyfill de `ResizeObserver` já usado em `PnLChart.test.jsx`
+(o teste do chip RF passa 2 operações, o que ativa o `PnLChart`).
+`Backtest.test.jsx` (já existia): 1 caso novo, reusando a fixture
+`REPORT_JSON_COM_CURVE` já existente (única forma de popular
+`equitySim`, que a seção do CAGR exige). Falha de cada teste
+reproduzida via `git stash` do arquivo de produção correspondente
+antes de aceitar.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2122 testes, 0 falhas; teto de typecheck em
+13, checado logo após a mudança de código desta vez — lição do item 232
+aplicada). `git diff --stat` só em `TradeHistory.jsx`/
+`TradeHistory.test.jsx`/`Backtest.jsx`/`Backtest.test.jsx` — nenhuma
+mudança em `backend.`/lógica de negócio (o import de
+`getTp1Tooltip`/`getTp2Tooltip` de `AssetCard.jsx` é só leitura de
+texto de exibição, não lógica de trading).
+
+### M-17 fechado (8/8 arquivos-alvo)
+
+Todos os 8 arquivos-alvo do levantamento original cobertos:
+`AssetCard.jsx`/`AssetDetailPanel.jsx` (item 229), `AssetConfigPanel.jsx`/
+`TelegramSettings.jsx` (item 230), `Alerts.jsx`/`ComparePanel.jsx` (item
+232), `TradeHistory.jsx`/`Backtest.jsx` (este item) — mais 2 fixes de
+review do Codex (itens 231/233). `PerformanceMetricsBar.jsx` (baixa
+prioridade) deliberadamente não feito, ver acima. Marcar `[x]` fechado
+em `docs/claude/ui-audit-criticos.md`.

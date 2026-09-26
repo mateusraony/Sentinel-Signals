@@ -4,6 +4,12 @@ import { backend } from '@/api/entities';
 import { History, Filter, BarChart2, ChevronDown, ChevronUp, Search, Copy, Check } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import PnLChart from '@/components/trades/PnLChart';
+// Achado M-17 do Raio-X de UI/UX: reusa as MESMAS funções puras já
+// corrigidas em AssetCard.jsx (achado do Codex review, PR #430) em vez
+// de duplicar texto estático de TP1/TP2 — evita repetir o mesmo bug
+// (texto que assume runner mesmo quando a operação foi criada com
+// partial_percent:100/tp2_cap_disabled:true).
+import { getTp1Tooltip, getTp2Tooltip } from '@/components/dashboard/AssetCard.jsx';
 import moment from 'moment';
 import {
   isClosedOp, getClosedAt, getExitPrice,
@@ -153,7 +159,16 @@ function HistoryCard({ op }) {
           <div className="flex items-center gap-3 mt-1 text-[8px] font-mono text-muted-foreground flex-wrap">
             <span>📍 ${formatPrice(op.entry_price)}</span>
             {exitPrice && <span>🚪 ${formatPrice(exitPrice)}</span>}
-            {rr && <span>⚖️ RR 1:{rr}</span>}
+            {rr && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="cursor-help" tabIndex={0}>⚖️ RR 1:{rr}</span>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  "R" é a unidade de risco de uma operação: 1R = o valor que seria perdido se o stop fosse atingido. "R:R 1:{rr}" significa que o alvo vale {rr}× o que se arrisca no stop.
+                </TooltipContent>
+              </Tooltip>
+            )}
             {duration && <span>⏱ {duration}</span>}
             <span>🕐 Sinal: {moment(op.created_date).format('DD/MM/YY HH:mm')}</span>
             {closedAt && closedAt !== op.created_date && (
@@ -210,16 +225,32 @@ function HistoryCard({ op }) {
             </div>
           )}
 
-          {/* Price breakdown grid */}
+          {/* Price breakdown grid — só TP1/TP2 precisam de tooltip
+              (Entrada/Stop Inicial já são autoexplicativos). Texto
+              dinâmico (getTp1Tooltip/getTp2Tooltip) porque o mesmo
+              achado do Codex review no PR #430 se aplicaria aqui: uma
+              operação com partial_percent:100 ou tp2_cap_disabled:true
+              não tem runner de verdade. */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[
               { label: '📍 Entrada', value: op.entry_price, color: 'rgba(255,255,255,0.8)' },
               { label: '🛑 Stop Inicial', value: op.initial_stop, color: '#ff1478' },
-              { label: '🎯 TP1', value: op.tp1, color: op.tp1_hit ? '#00ff80' : '#ffd166' },
-              { label: '🏆 TP2', value: op.tp2, color: op.tp2_hit ? '#00ff80' : 'rgba(255,209,102,0.6)' },
-            ].map(({ label, value, color }) => (
+              { label: '🎯 TP1', value: op.tp1, color: op.tp1_hit ? '#00ff80' : '#ffd166', tooltip: getTp1Tooltip(op) },
+              { label: '🏆 TP2', value: op.tp2, color: op.tp2_hit ? '#00ff80' : 'rgba(255,209,102,0.6)', tooltip: getTp2Tooltip(op) },
+            ].map(({ label, value, color, tooltip }) => (
               <div key={label} className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <div className="text-[9px] font-mono text-muted-foreground">{label}</div>
+                {tooltip ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="text-[9px] font-mono text-muted-foreground cursor-help" tabIndex={0}>{label}</div>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                      {tooltip}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <div className="text-[9px] font-mono text-muted-foreground">{label}</div>
+                )}
                 <div className="text-sm font-mono font-bold mt-0.5" style={{ color }}>{value ? `$${formatPrice(value)}` : '—'}</div>
               </div>
             ))}
@@ -227,18 +258,47 @@ function HistoryCard({ op }) {
 
           {/* Milestones */}
           <div className="flex flex-wrap gap-2 text-[9px] font-mono">
-            <span className="px-2 py-1 rounded" style={{ background: op.tp1_hit ? 'rgba(0,255,128,0.1)' : 'rgba(255,255,255,0.04)', color: op.tp1_hit ? '#00ff80' : 'rgba(255,255,255,0.25)', border: `1px solid ${op.tp1_hit ? 'rgba(0,255,128,0.25)' : 'rgba(255,255,255,0.06)'}` }}>
-              {op.tp1_hit ? '✅' : '○'} TP1
-            </span>
-            <span className="px-2 py-1 rounded" style={{ background: op.tp2_hit ? 'rgba(0,255,128,0.1)' : 'rgba(255,255,255,0.04)', color: op.tp2_hit ? '#00ff80' : 'rgba(255,255,255,0.25)', border: `1px solid ${op.tp2_hit ? 'rgba(0,255,128,0.25)' : 'rgba(255,255,255,0.06)'}` }}>
-              {op.tp2_hit ? '✅' : '○'} TP2
-            </span>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="px-2 py-1 rounded cursor-help" tabIndex={0} style={{ background: op.tp1_hit ? 'rgba(0,255,128,0.1)' : 'rgba(255,255,255,0.04)', color: op.tp1_hit ? '#00ff80' : 'rgba(255,255,255,0.25)', border: `1px solid ${op.tp1_hit ? 'rgba(0,255,128,0.25)' : 'rgba(255,255,255,0.06)'}` }}>
+                  {op.tp1_hit ? '✅' : '○'} TP1
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                {getTp1Tooltip(op)}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="px-2 py-1 rounded cursor-help" tabIndex={0} style={{ background: op.tp2_hit ? 'rgba(0,255,128,0.1)' : 'rgba(255,255,255,0.04)', color: op.tp2_hit ? '#00ff80' : 'rgba(255,255,255,0.25)', border: `1px solid ${op.tp2_hit ? 'rgba(0,255,128,0.25)' : 'rgba(255,255,255,0.06)'}` }}>
+                  {op.tp2_hit ? '✅' : '○'} TP2
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                {getTp2Tooltip(op)}
+              </TooltipContent>
+            </Tooltip>
             <span className="px-2 py-1 rounded" style={{ background: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.06)' }}>
               📊 {op.partial_percent || 50}% TP1 · {op.runner_percent || 50}% runner
             </span>
-            <span className="px-2 py-1 rounded" style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.6)', border: '1px solid rgba(0,229,255,0.15)' }}>
-              🔵 Saída: {{ RANGE_FILTER: 'RF', ATR_TRAILING: 'ATR Trail', HYBRID_RF_ATR: 'RF+ATR' }[op.exit_mode] || op.exit_mode || 'RF+ATR'}
-            </span>
+            {(() => {
+              const exitLabel = { RANGE_FILTER: 'RF', ATR_TRAILING: 'ATR Trail', HYBRID_RF_ATR: 'RF+ATR' }[op.exit_mode] || op.exit_mode || 'RF+ATR';
+              const chip = (
+                <span className={`px-2 py-1 rounded${exitLabel === 'RF' ? ' cursor-help' : ''}`} tabIndex={exitLabel === 'RF' ? 0 : undefined}
+                  style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.6)', border: '1px solid rgba(0,229,255,0.15)' }}>
+                  🔵 Saída: {exitLabel}
+                </span>
+              );
+              if (exitLabel !== 'RF') return chip;
+              return (
+                <Tooltip>
+                  <TooltipTrigger asChild>{chip}</TooltipTrigger>
+                  <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                    Indicador que filtra o ruído do preço e define uma banda de tendência: o sistema só considera um movimento válido quando o preço rompe essa banda de forma consistente.
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })()}
             {/* MFE/MAE — maior favorável/adverso já visto, em R. Ausente em
                 ops legadas ou cujo candle de gerenciamento não era utilizável
                 (P0-c/P0-g) — não mostra nada nesse caso em vez de 0. */}
