@@ -782,11 +782,10 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] M-6 — PerformanceReport (Trades): cards de métrica sem tooltip. **Corrigido (só Profit Factor, único com texto já validado) — ver 3ª rodada abaixo.**
 - [x] M-8 — Verificação: RSI/MACD/EMA sem cor de zona. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-12 — Settings/Pine Script sem link cruzado. **Corrigido, ver 3ª rodada abaixo.**
-- [~] M-9 — 17 gráficos Recharts sem role="img"/aria-label em 10 arquivos. **2ª de ~3 sub-rodadas feita (7/10 arquivos, 13/17 instâncias) — ver seção própria abaixo.**
+- [x] M-9 — 17 gráficos Recharts sem role="img"/aria-label em 10 arquivos. **Fechado: 3 sub-rodadas, 17/17 instâncias — ver seção própria abaixo.**
 - [ ] Demais itens de Média prioridade (M-4, M-10, M-11, M-13, M-15,
-  M-17 — 6 de 17, mais 3 dos 10 arquivos de M-9), Refinamentos e a
-  reorganização completa do Dashboard (seção L do relatório) — nada
-  iniciado.
+  M-17 — 6 de 17), Refinamentos e a reorganização completa do
+  Dashboard (seção L do relatório) — nada iniciado.
 
 ## Como continuar
 
@@ -810,11 +809,11 @@ isolado.
 
 **Backlog de Média prioridade em andamento (1ª rodada, item 220 —
 M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
-M-5/M-6/M-8/M-12; M-9 em sub-rodadas, itens 223/225 — 2 de ~3 feitas;
+M-5/M-6/M-8/M-12; M-9 fechado em 3 sub-rodadas, itens 223/225/226/227;
 M-7 descoberto já corrigido).** Restam 6 dos 17 itens M inteiros (M-4,
-M-10, M-11, M-13, M-15, M-17) + 3 dos 10 arquivos de M-9. M-4/M-10/
-M-13/M-15 se sobrepõem à reorganização do Dashboard (seção L, que
-também inclui A-15) — decisão de produto maior, não mexer sem
+M-10, M-11, M-13, M-15, M-17). M-4/M-10/M-13/M-15 se sobrepõem à
+reorganização do Dashboard (seção L, que também inclui A-15) —
+decisão de produto maior, não mexer sem
 alinhamento explícito. M-11 (632 ocorrências de fonte arbitrária em 51
 arquivos) e M-17 (glossário de 10 termos técnicos) são varreduras
 grandes, merecem rodada própria.
@@ -879,6 +878,43 @@ em `docs/known-risks.md` item 225. Restam 4 das 17 instâncias (4
 arquivos, 1 cada): `RFHistoryChart.jsx`, `TradeEntryMarkers.jsx`,
 `PnLChart.jsx`, `PortfolioVsMarket.jsx` — candidato a sub-rodada final,
 fechando M-9 por completo (17/17).
+
+**Correção pós-merge (item 226 do known-risks.md):** o Codex review
+pegou 2 achados reais (P2) ainda dentro da janela do próprio PR desta
+vez (CI ainda não tinha fechado): `MonthlyReport.jsx` ("Evolução de
+P&L") não enumerava os dias individuais (meses com mesmo nº de dias e
+mesmo total geravam o mesmo `aria-label`) — corrigido enumerando cada
+dia (dataset bounded, ≤31 entradas). `Backtest.jsx` (curva ingênua e
+curva de capital real) só citava o ponto final, não cada operação —
+como o nº de operações não tem teto, a correção usou uma técnica nova
+nesta sessão: tabela `sr-only` (Tailwind, oculta visualmente, presente
+na árvore de acessibilidade) linkada via `aria-describedby`, carregando
+o dado ponto a ponto sem inflar o `aria-label`. Ambos corrigidos com
+push adicional no mesmo PR (não precisou de PR de acompanhamento desta
+vez).
+
+## Backlog M-9 — 3ª sub-rodada, final (2026-09-26): fecha M-9 (17/17)
+
+Última sub-rodada: os 4 arquivos com 1 instância cada —
+`RFHistoryChart.jsx`, `TradeEntryMarkers.jsx`, `PnLChart.jsx`,
+`PortfolioVsMarket.jsx`. Todos tinham nº de pontos sem teto (histórico
+completo de operações, ou até 60 candles no RF) — mesma classe de
+problema do achado do Codex na 2ª sub-rodada (item 226), então a
+técnica de tabela `sr-only` + `aria-describedby` já validada ali foi
+aplicada desde o início aqui (não repetiu o erro de tentar enumerar
+tudo direto no `aria-label`). `RFHistoryChart.jsx` usa um resumo
+curto com as métricas já calculadas no componente (bias/mudança RF/
+estabilidade/volatilidade/flips); os outros 3 citam nº de
+trades/W-L/acumulado.
+
+4 testes novos (`RFHistoryChart.test.jsx` já existia, ganhou um caso
+novo; `TradeEntryMarkers.test.jsx`/`PnLChart.test.jsx`/
+`PortfolioVsMarket.test.jsx` são arquivos novos — nenhum tinha teste
+dedicado antes). `npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2103 testes, teto de typecheck em 13, sem
+mudança). Detalhe completo em `docs/known-risks.md` item 227.
+
+**M-9 fechado: 17 de 17 instâncias, 3 sub-rodadas, 0 restante.**
 
 ## Backlog Média prioridade — 3ª rodada (2026-09-25): M-5, M-6, M-8, M-12 corrigidos
 

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import {
   ComposedChart, Area, XAxis, YAxis, Tooltip,
   ResponsiveContainer, ReferenceLine, CartesianGrid
@@ -95,6 +95,13 @@ const CustomTooltip = ({ active, payload }) => {
 };
 
 export default function TradeEntryMarkers({ history }) {
+  // Achado M-9 do Raio-X: nº de operações não tem teto — mesma técnica do
+  // fix em Backtest.jsx (item 226): aria-label vira resumo curto, tabela
+  // `sr-only` linkada via aria-details carrega o dado ponto a ponto.
+  // Achado do Codex review no PR #429 (item 228): `aria-describedby`
+  // colapsaria a tabela inteira num texto único — `aria-details` (ARIA
+  // 1.2) preserva a estrutura, deixando a tabela navegável por conta própria.
+  const tableId = useId();
   const { chartData, finalCum, wins, losses } = useMemo(() => {
     const valid = history
       .filter(op => calcPnl(op) !== null && op.created_date && op.closed_at)
@@ -182,7 +189,8 @@ export default function TradeEntryMarkers({ history }) {
       </div>
 
       {/* Chart */}
-      <div style={{ height: 260 }}>
+      <div style={{ height: 260 }} role="img" aria-details={tableId}
+        aria-label={`Gráfico de área da curva de capital com marcadores de entrada/saída, ${wins}W ${losses}L, ${finalCum >= 0 ? '+' : ''}${finalCum.toFixed(2)}% acumulado (soma simples)`}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 10, right: 8, left: -20, bottom: 0 }}>
             <defs>
@@ -211,6 +219,25 @@ export default function TradeEntryMarkers({ history }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      <table id={tableId} className="sr-only">
+        <caption>Curva de capital com execuções de entrada e saída, ponto por ponto</caption>
+        <thead>
+          <tr><th scope="col">Data</th><th scope="col">Tipo</th><th scope="col">Lado</th><th scope="col">Símbolo</th><th scope="col">P&L</th><th scope="col">Cumulativo</th><th scope="col">Status</th></tr>
+        </thead>
+        <tbody>
+          {chartData.map((d, i) => (
+            <tr key={i}>
+              <td>{d.date}</td>
+              <td>{d.type === 'entry' ? 'Entrada' : 'Saída'}</td>
+              <td>{d.side}</td>
+              <td>{d.symbol}</td>
+              <td>{d.type === 'exit' ? `${d.pnl >= 0 ? '+' : ''}${d.pnl?.toFixed(2)}%` : '—'}</td>
+              <td>{d.cumulative >= 0 ? '+' : ''}{d.cumulative?.toFixed(2)}%</td>
+              <td>{d.type === 'exit' ? d.statusLabel : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       {/* Recent exits */}
       <div className="flex gap-1.5 flex-wrap pt-1 max-h-24 overflow-y-auto">

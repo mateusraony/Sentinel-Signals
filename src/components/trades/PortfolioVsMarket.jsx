@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid,
@@ -94,6 +94,13 @@ function CustomTooltip({ active, payload, marketLabel }) {
 }
 
 export default function PortfolioVsMarket({ trades }) {
+  // Achado M-9 do Raio-X: nº de trades não tem teto — mesma técnica do fix
+  // em Backtest.jsx (item 226): aria-label vira resumo curto, tabela
+  // `sr-only` linkada via aria-details carrega o dado ponto a ponto.
+  // Achado do Codex review no PR #429 (item 228): `aria-describedby`
+  // colapsaria a tabela inteira num texto único — `aria-details` (ARIA
+  // 1.2) preserva a estrutura, deixando a tabela navegável por conta própria.
+  const tableId = useId();
   const [benchmarkKey, setBenchmarkKey] = useState('BTC');
   const benchmarkOption = BENCHMARK_OPTIONS.find((o) => o.key === benchmarkKey) ?? BENCHMARK_OPTIONS[0];
   const portfolioCurve = useMemo(() => calcPortfolioCurve(trades), [trades]);
@@ -208,54 +215,75 @@ export default function PortfolioVsMarket({ trades }) {
       </div>
 
       {/* Chart */}
-      <ResponsiveContainer width="100%" height={280}>
-        <ComposedChart data={mergedData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-          <defs>
-            <linearGradient id="portfolioGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#00ff80" stopOpacity={0.25} />
-              <stop offset="100%" stopColor="#00ff80" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-          <XAxis
-            dataKey="date"
-            tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9, fontFamily: 'monospace' }}
-            tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-            axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-            minTickGap={40}
-          />
-          <YAxis
-            tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9, fontFamily: 'monospace' }}
-            tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-            axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-            tickFormatter={(v) => `${v.toFixed(1)}%`}
-            width={48}
-          />
-          <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" />
-          <Tooltip content={<CustomTooltip marketLabel={benchmarkOption.label} />} />
-          <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'monospace' }} />
-          <Area
-            type="monotone"
-            dataKey="portfolio"
-            name="portfolio"
-            stroke="#00ff80"
-            strokeWidth={2}
-            fill="url(#portfolioGrad)"
-            dot={{ fill: '#00ff80', r: 3 }}
-            activeDot={{ r: 5, fill: '#00ff80' }}
-          />
-          <Line
-            type="monotone"
-            dataKey="market"
-            name="market"
-            stroke="#ff9f43"
-            strokeWidth={1.5}
-            strokeDasharray="5 3"
-            dot={false}
-            activeDot={{ r: 4, fill: '#ff9f43' }}
-          />
-        </ComposedChart>
-      </ResponsiveContainer>
+      <div role="img" aria-details={tableId}
+        aria-label={`Gráfico de área e linha comparando carteira vs ${benchmarkOption.label}, ${portfolioCurve.length} trades fechados, carteira ${fmtPct(finalPnl)}${hasMarketData ? `, ${benchmarkOption.label} ${fmtPct(finalMarket)}` : ''}`}>
+        <ResponsiveContainer width="100%" height={280}>
+          <ComposedChart data={mergedData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+            <defs>
+              <linearGradient id="portfolioGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#00ff80" stopOpacity={0.25} />
+                <stop offset="100%" stopColor="#00ff80" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+            <XAxis
+              dataKey="date"
+              tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9, fontFamily: 'monospace' }}
+              tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+              axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+              minTickGap={40}
+            />
+            <YAxis
+              tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9, fontFamily: 'monospace' }}
+              tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+              axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+              tickFormatter={(v) => `${v.toFixed(1)}%`}
+              width={48}
+            />
+            <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" />
+            <Tooltip content={<CustomTooltip marketLabel={benchmarkOption.label} />} />
+            <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'monospace' }} />
+            <Area
+              type="monotone"
+              dataKey="portfolio"
+              name="portfolio"
+              stroke="#00ff80"
+              strokeWidth={2}
+              fill="url(#portfolioGrad)"
+              dot={{ fill: '#00ff80', r: 3 }}
+              activeDot={{ r: 5, fill: '#00ff80' }}
+            />
+            <Line
+              type="monotone"
+              dataKey="market"
+              name="market"
+              stroke="#ff9f43"
+              strokeWidth={1.5}
+              strokeDasharray="5 3"
+              dot={false}
+              activeDot={{ r: 4, fill: '#ff9f43' }}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <table id={tableId} className="sr-only">
+        <caption>Carteira vs {benchmarkOption.label}, ponto por ponto</caption>
+        <thead>
+          <tr><th scope="col">Data</th><th scope="col">Carteira</th><th scope="col">{benchmarkOption.label}</th><th scope="col">Símbolo</th><th scope="col">Lado</th><th scope="col">Status</th></tr>
+        </thead>
+        <tbody>
+          {mergedData.map((d, i) => (
+            <tr key={i}>
+              <td>{d.date}</td>
+              <td>{fmtPct(d.portfolio)}</td>
+              <td>{d.market != null ? fmtPct(d.market) : '—'}</td>
+              <td>{d.symbol}</td>
+              <td>{d.side}</td>
+              <td>{d.status}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
 
       {/* Summary bar */}
       <div className="flex items-center justify-between mt-3 pt-3 text-[10px] font-mono"
