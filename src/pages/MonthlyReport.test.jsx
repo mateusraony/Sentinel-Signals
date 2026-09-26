@@ -76,7 +76,17 @@ describe('MonthlyReport — gráficos Recharts têm role="img"/aria-label descre
     const images = await screen.findAllByRole('img');
     const labels = images.map(el => el.getAttribute('aria-label')).filter(Boolean);
 
-    expect(labels.some(l => l.includes('evolução de P&L diário e acumulado no mês') && l.includes('2 dias'))).toBe(true);
+    // Achado do Codex review no PR #428: um aria-label só com contagem/total
+    // fica idêntico entre 2 meses de trajetória diferente — o aria-label
+    // precisa enumerar cada dia (não só a contagem), então o teste confirma
+    // que os 2 dias distintos da fixture aparecem individualmente.
+    const ontem = moment().subtract(1, 'day').format('DD/MM');
+    const hoje = moment().format('DD/MM');
+    expect(labels.some(l =>
+      l.includes('evolução de P&L diário e acumulado no mês')
+      && l.includes(`${ontem} `) && l.includes('no dia')
+      && l.includes(`${hoje} `) && l.includes('acumulado')
+    )).toBe(true);
     expect(labels.some(l => l.includes('taxa de acerto do mês') && l.includes('Vitórias 1') && l.includes('Derrotas 1'))).toBe(true);
     expect(labels.some(l => l.includes('distribuição de status') && l.includes('🏆 TP2 1') && l.includes('🛑 Stop 1'))).toBe(true);
   });

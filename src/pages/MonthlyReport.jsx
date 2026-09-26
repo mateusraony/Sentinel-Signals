@@ -408,7 +408,7 @@ export default function MonthlyReport() {
             <div className="lg:col-span-2 rounded-xl p-4 space-y-2" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <h2 className="text-sm font-bold text-foreground">Evolução de P&L (acumulado + diário)</h2>
               <div style={{ height: 240 }} role="img"
-                aria-label={`Gráfico combinado de barras e linha da evolução de P&L diário e acumulado no mês, ${dailyPnlData.length} dias, ${fmtPct(metrics.totalPnl)} acumulado no total`}>
+                aria-label={`Gráfico combinado de barras e linha da evolução de P&L diário e acumulado no mês: ${dailyPnlData.map(d => `${d.day} ${fmtPct(d.pnlPct)} no dia, ${fmtPct(d.cumulativePct)} acumulado`).join('; ')}`}>
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={dailyPnlData} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />

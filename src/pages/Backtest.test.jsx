@@ -260,4 +260,44 @@ describe('Backtest — gráficos Recharts têm role="img"/aria-label descrevendo
       && l.includes('choppiness: 2 em 4h→15m, 4 em 1h→5m')
     )).toBe(true);
   });
+
+  // Achado do Codex review no PR #428: com nº de operações sem teto (ao
+  // contrário dos widgets do Dashboard, com poucas categorias fixas),
+  // enumerar tudo no aria-label seria impraticável — o dado ponto a ponto
+  // (operação/símbolo/resultado/capital) vai numa tabela `sr-only` (oculta
+  // visualmente, presente na árvore de acessibilidade) linkada via
+  // aria-describedby, mantendo o aria-label como resumo curto.
+  it('REGRESSÃO: curva ingênua e curva de capital real têm tabela sr-only com dado ponto a ponto, linkada via aria-describedby', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    fireEvent.change(textarea, { target: { value: REPORT_JSON_M9 } });
+    fireEvent.click(screen.getByText(/Analisar relatório colado/i));
+    await screen.findByText('Expectância');
+
+    const images = await screen.findAllByRole('img');
+    const equityCurveImg = images.find(el => (el.getAttribute('aria-label') || '').includes('curva ingênua de PnL acumulado'));
+    const realEquityImg = images.find(el => (el.getAttribute('aria-label') || '').includes('curva de capital real'));
+    expect(equityCurveImg).toBeTruthy();
+    expect(realEquityImg).toBeTruthy();
+
+    const equityCurveTableId = equityCurveImg.getAttribute('aria-describedby');
+    const realEquityTableId = realEquityImg.getAttribute('aria-describedby');
+    expect(equityCurveTableId).toBeTruthy();
+    expect(realEquityTableId).toBeTruthy();
+
+    const equityCurveTable = document.getElementById(equityCurveTableId);
+    const realEquityTable = document.getElementById(realEquityTableId);
+    expect(equityCurveTable).toBeTruthy();
+    expect(realEquityTable).toBeTruthy();
+    expect(equityCurveTable.className).toMatch(/sr-only/);
+    expect(realEquityTable.className).toMatch(/sr-only/);
+
+    // BTCUSDT/ETHUSDT são os 2 símbolos das operações da fixture — precisam
+    // aparecer linha a linha nas 2 tabelas, não só resumidos.
+    expect(equityCurveTable.textContent).toMatch(/BTCUSDT/);
+    expect(equityCurveTable.textContent).toMatch(/ETHUSDT/);
+    expect(realEquityTable.textContent).toMatch(/BTCUSDT/);
+    expect(realEquityTable.textContent).toMatch(/ETHUSDT/);
+  });
 });

@@ -27462,3 +27462,63 @@ negócio/cálculo de métricas.
 4 instâncias em 4 arquivos (1 cada): `RFHistoryChart.jsx`,
 `TradeEntryMarkers.jsx`, `PnLChart.jsx`, `PortfolioVsMarket.jsx` —
 candidato a 1 sub-rodada final, fechando M-9 por completo (17/17).
+
+## 226. Corrigir 2 achados do Codex review no PR #428 (M-9, 2ª sub-rodada)
+
+`chatgpt-codex-connector` revisou o PR #428 e postou 2 comentários (P2,
+achado de correção real) sobre o item 225 acima — a mesma classe de
+problema do item 224 (PR #426): `role="img"` colapsa todo o conteúdo
+descendente do gráfico pra árvore de acessibilidade, então um
+`aria-label` que não representa o dado real de forma única esconde
+informação de leitor de tela.
+
+### 1. `MonthlyReport.jsx` — "Evolução de P&L" não enumerava os dias
+
+O `aria-label` citava só a contagem de dias + total acumulado do mês
+— 2 meses com o mesmo nº de dias de trade e o mesmo total, mas
+trajetórias diárias diferentes, geravam o MESMO texto. `dailyPnlData`
+tem no máximo ~31 entradas (1 por dia distinto do mês) — tamanho
+prático pra enumerar todas inline.
+
+**Fix:** `aria-label` agora lista cada dia com o P&L do dia e o
+acumulado até ali (`"25/09 +1.50% no dia, +1.50% acumulado; 26/09
+-0.17% no dia, +1.33% acumulado"`), mesma técnica já usada em
+`PredictiveAnalysis.jsx` no item 224.
+
+### 2. `Backtest.jsx` — curva ingênua e curva de capital real só citavam o ponto final
+
+Mesmo problema nos 2 gráficos de linha por-operação (`equityCurve`,
+`realEquityChart`) — o `aria-label` só citava contagem/capital final,
+não os pontos individuais (símbolo + resultado/capital de cada
+operação). Diferente do caso de `MonthlyReport.jsx`, aqui o nº de
+operações **não tem teto** (um backtest pode ter centenas/milhares de
+trades) — enumerar tudo inline no `aria-label` produziria uma string
+gigante, pouco prática de ouvir num leitor de tela.
+
+**Fix:** técnica diferente da usada nos outros casos — o `aria-label`
+continua um resumo curto, e uma tabela HTML com classe `sr-only`
+(Tailwind — oculta visualmente, presente na árvore de acessibilidade)
+linkada via `aria-describedby` carrega o dado ponto a ponto (operação/
+símbolo/resultado ou capital). Cada `ReportBody` só monta 1 vez por
+vez (as 3 abas da página são mutuamente exclusivas, renderização
+condicional `tab === X && <Component />`, confirmado por leitura), mas
+o id da tabela usa `useId()` do React por robustez, não uma string
+fixa.
+
+### Testes novos
+
+`MonthlyReport.test.jsx`: teste ajustado pra confirmar que os 2 dias
+distintos da fixture aparecem individualmente no `aria-label` (não só
+a contagem). `Backtest.test.jsx`: caso novo confirmando que os 2
+gráficos afetados têm `aria-describedby` apontando pra uma tabela
+`sr-only` existente no DOM, com os 2 símbolos da fixture
+(BTCUSDT/ETHUSDT) presentes linha a linha. Falha de cada um
+reproduzida via `git stash` dos 2 arquivos de produção juntos antes de
+aceitar.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2096 testes, 0 falhas; teto de typecheck em
+13, sem mudança). `git diff --stat` só nos 2 arquivos de produção + 2
+de teste — nenhuma mudança em `backend.`/lógica de negócio.
