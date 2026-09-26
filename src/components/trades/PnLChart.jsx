@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useId, useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import moment from 'moment';
 import { summarizeOps } from '@/lib/tradeMetrics';
@@ -26,6 +26,10 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export default function PnLChart({ history }) {
+  // Achado M-9 do Raio-X: nº de trades não tem teto — mesma técnica do fix
+  // em Backtest.jsx (item 226): aria-label vira resumo curto, tabela
+  // `sr-only` linkada via aria-describedby carrega o dado ponto a ponto.
+  const tableId = useId();
   const { data, wins, losses } = useMemo(() => {
     const s = summarizeOps(history);
     return {
@@ -78,29 +82,47 @@ export default function PnLChart({ history }) {
         </div>
       </div>
 
-      <ResponsiveContainer width="100%" height={140}>
-        <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-          <defs>
-            <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={gradColor} stopOpacity={0.3} />
-              <stop offset="95%" stopColor={gradColor} stopOpacity={0.02} />
-            </linearGradient>
-          </defs>
-          <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.45)', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fill: 'rgba(255,255,255,0.45)', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
-          <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
-          <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }} />
-          <Area
-            type="monotone"
-            dataKey="cumulative"
-            stroke={gradColor}
-            strokeWidth={1.5}
-            fill="url(#pnlGrad)"
-            dot={false}
-            activeDot={{ r: 3, fill: gradColor, stroke: 'none' }}
-          />
-        </AreaChart>
-      </ResponsiveContainer>
+      <div role="img" aria-describedby={tableId}
+        aria-label={`Gráfico de área da performance acumulada, ${data.length} trades (${wins}W ${losses}L), ${finalCum >= 0 ? '+' : ''}${finalCum.toFixed(2)}% acumulado`}>
+        <ResponsiveContainer width="100%" height={140}>
+          <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+            <defs>
+              <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={gradColor} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={gradColor} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.45)', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: 'rgba(255,255,255,0.45)', fontSize: 9, fontFamily: 'monospace' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
+            <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
+            <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }} />
+            <Area
+              type="monotone"
+              dataKey="cumulative"
+              stroke={gradColor}
+              strokeWidth={1.5}
+              fill="url(#pnlGrad)"
+              dot={false}
+              activeDot={{ r: 3, fill: gradColor, stroke: 'none' }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      <table id={tableId} className="sr-only">
+        <caption>Performance acumulada por trade</caption>
+        <thead>
+          <tr><th scope="col">Data</th><th scope="col">Símbolo</th><th scope="col">Lado</th><th scope="col">TF</th><th scope="col">P&L</th><th scope="col">Acumulado</th></tr>
+        </thead>
+        <tbody>
+          {data.map((d, i) => (
+            <tr key={i}>
+              <td>{d.date}</td><td>{d.symbol}</td><td>{d.side}</td><td>{d.tf}</td>
+              <td>{d.pnl >= 0 ? '+' : ''}{d.pnl?.toFixed(2)}%</td>
+              <td>{d.cumulative >= 0 ? '+' : ''}{d.cumulative?.toFixed(2)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { fetchCandles } from '@/lib/marketDataProvider';
@@ -27,6 +27,14 @@ function stdDevPct(values) {
 
 export default function RFHistoryChart({ asset }) {
   const [timeframe, setTimeframe] = useState('4h');
+  // Achado M-9 do Raio-X: role="img" colapsa o SVG do gráfico pra árvore de
+  // acessibilidade (leitor de tela não enxerga o eixo nem o tooltip). Os
+  // até 60 candles (DISPLAY_BARS) são demais pra enumerar num aria-label só
+  // — mesma lição do achado do Codex review em Backtest.jsx (item 226):
+  // aria-label vira resumo curto usando as métricas já calculadas (bias/
+  // estabilidade/volatilidade/flips), e uma tabela `sr-only` linkada via
+  // aria-describedby carrega o dado candle a candle.
+  const rfHistoryTableId = useId();
 
   const { data: candles, isLoading, error } = useQuery({
     queryKey: ['rf-history-candles', asset.symbol, timeframe],
@@ -174,7 +182,8 @@ export default function RFHistoryChart({ asset }) {
           </div>
 
           {/* Price + RF + bands chart */}
-          <div style={{ height: 180 }}>
+          <div style={{ height: 180 }} role="img" aria-describedby={analysis.chartData.length > 0 ? rfHistoryTableId : undefined}
+            aria-label={`Gráfico de linha de preço e Range Filter em ${timeframe.toUpperCase()}, últimos ${analysis.chartData.length} candles — bias ${analysis.bias}, RF ${analysis.rfChangePct >= 0 ? '+' : ''}${analysis.rfChangePct.toFixed(2)}%, estabilidade ${analysis.stability}, volatilidade ${analysis.volatilityPct.toFixed(2)}%, ${analysis.flips} flips de direção`}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={analysis.chartData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
@@ -209,6 +218,24 @@ export default function RFHistoryChart({ asset }) {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+          {analysis.chartData.length > 0 && (
+            <table id={rfHistoryTableId} className="sr-only">
+              <caption>Preço, Range Filter e banda por candle</caption>
+              <thead>
+                <tr><th scope="col">Horário</th><th scope="col">Preço</th><th scope="col">RF</th><th scope="col">Banda</th></tr>
+              </thead>
+              <tbody>
+                {analysis.chartData.map((d, i) => (
+                  <tr key={i}>
+                    <td>{d.time}</td>
+                    <td>${formatPrice(d.price)}</td>
+                    <td>{d.rf != null ? `$${formatPrice(d.rf)}` : '—'}</td>
+                    <td>{d.band?.[0] != null && d.band?.[1] != null ? `$${formatPrice(d.band[0])} ~ $${formatPrice(d.band[1])}` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </>
       )}
 

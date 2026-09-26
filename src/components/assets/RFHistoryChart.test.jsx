@@ -122,3 +122,36 @@ describe('RFHistoryChart — eixos do gráfico Preço+RF visíveis (achado A-13)
     }
   });
 });
+
+// Achado M-9 do Raio-X de UI/UX (docs/known-risks.md item 222/223/226): o
+// gráfico Preço+RF não tinha role="img"/aria-label. Como o nº de candles
+// (até DISPLAY_BARS=60) é grande demais pra enumerar num aria-label só
+// (mesma lição do achado do Codex review em Backtest.jsx, item 226), o fix
+// usa a técnica de resumo curto + tabela `sr-only` linkada via
+// aria-describedby.
+describe('RFHistoryChart — gráfico Preço+RF tem role="img"/aria-label com resumo e tabela sr-only (achado M-9)', () => {
+  it('REGRESSÃO: role=img com resumo (bias/estabilidade) e tabela sr-only com candle a candle', async () => {
+    filterMock.mockResolvedValue([]);
+    const { container } = renderChart(baseAsset);
+    await screen.findByText(/Histórico Range Filter/i);
+
+    const img = await waitFor(() => {
+      const el = container.querySelector('[role="img"]');
+      expect(el).not.toBeNull();
+      return el;
+    });
+
+    const label = img.getAttribute('aria-label');
+    expect(label).toMatch(/bias/i);
+    expect(label).toMatch(/estabilidade/i);
+    expect(label).toMatch(/volatilidade/i);
+    expect(label).toMatch(/flips de direção/i);
+
+    const tableId = img.getAttribute('aria-describedby');
+    expect(tableId).toBeTruthy();
+    const table = document.getElementById(tableId);
+    expect(table).toBeTruthy();
+    expect(table.className).toMatch(/sr-only/);
+    expect(table.querySelectorAll('tbody tr').length).toBeGreaterThan(0);
+  });
+});

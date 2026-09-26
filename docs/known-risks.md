@@ -27522,3 +27522,73 @@ aceitar.
 typecheck:ratchet` limpos (2096 testes, 0 falhas; teto de typecheck em
 13, sem mudança). `git diff --stat` só nos 2 arquivos de produção + 2
 de teste — nenhuma mudança em `backend.`/lógica de negócio.
+
+## 227. M-9 (3ª sub-rodada, final): `role="img"`/`aria-label` nos 4 arquivos restantes — fecha M-9 (17/17)
+
+Última sub-rodada do mapeamento original (item 222/223): os 4 arquivos
+com 1 instância de gráfico Recharts cada, todos consumidos por
+`Trades.jsx`/`TradeHistory.jsx` (via componentes de gráfico
+compartilhados) ou `AssetDetailPanel.jsx` — `RFHistoryChart.jsx`,
+`TradeEntryMarkers.jsx`, `PnLChart.jsx`, `PortfolioVsMarket.jsx`.
+
+Todos os 4 tinham nº de pontos sem teto (operações do histórico
+completo, ou até 60 candles no caso do RF) — mesma classe de problema
+já resolvida em `Backtest.jsx` (item 226): um `aria-label` só com
+contagem/resumo pode ficar idêntico entre 2 séries de trajetória
+diferente. Aplicada a MESMA técnica validada e já revisada pelo Codex
+sem novo achado (item 226): `aria-label` como resumo curto usando
+métricas já calculadas no componente (W/L, acumulado, bias/
+estabilidade/volatilidade/flips no caso do RF), e uma tabela `sr-only`
+(Tailwind, oculta visualmente, presente na árvore de acessibilidade)
+linkada via `aria-describedby` carregando o dado ponto a ponto.
+
+- **`RFHistoryChart.jsx`** — gráfico de preço + Range Filter + banda,
+  até 60 candles. `aria-label` cita bias/mudança RF/estabilidade/
+  volatilidade/flips (métricas que já existem, mostradas nos cards
+  acima do gráfico); tabela `sr-only` com horário/preço/RF/banda por
+  candle.
+- **`TradeEntryMarkers.jsx`** — curva de capital com marcadores de
+  entrada/saída, todas as operações do histórico. `aria-label` cita
+  W/L + acumulado; tabela `sr-only` com data/tipo/lado/símbolo/P&L/
+  cumulativo/status por ponto (2 pontos por operação: entrada+saída).
+- **`PnLChart.jsx`** — performance acumulada, todas as operações.
+  `aria-label` cita nº de trades + W/L + acumulado; tabela `sr-only`
+  com data/símbolo/lado/timeframe/P&L/acumulado por trade.
+- **`PortfolioVsMarket.jsx`** — carteira vs benchmark (BTC/CDI/Selic/
+  IPCA), todas as operações fechadas mescladas com a curva do
+  benchmark. `aria-label` cita nº de trades + retorno da carteira +
+  do benchmark; tabela `sr-only` com data/carteira %/benchmark %/
+  símbolo/lado/status por ponto.
+
+`useId()` do React usado em todos os 4 pra gerar o id da tabela
+(nenhum tem múltiplas instâncias simultâneas na mesma tela, mas evita
+id fixo colidindo se isso mudar no futuro).
+
+### Testes novos
+
+`RFHistoryChart.test.jsx` (já existia): caso novo confirmando
+`role="img"` com resumo (bias/estabilidade/volatilidade/flips) +
+tabela `sr-only` não vazia. `TradeEntryMarkers.test.jsx`,
+`PnLChart.test.jsx`, `PortfolioVsMarket.test.jsx` (novos — nenhum
+tinha teste dedicado antes): cada um confirma o `aria-label`, o
+`aria-describedby` apontando pra uma tabela `sr-only` existente com os
+símbolos da fixture presentes linha a linha, e o caso de "sem dado
+suficiente" (não renderiza `role="img"` nenhum). `PortfolioVsMarket`
+precisou mockar `@/lib/marketBenchmarks` (a fonte real busca
+Binance/BCB direto do browser). Falha de cada um reproduzida via `git
+stash` dos 4 arquivos de produção juntos — confirmado: todos os 4
+falham sem o fix.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2103 testes, 0 falhas; teto de typecheck em
+13, sem mudança). `git diff --stat` só nos 4 arquivos de produção + 4
+de teste (3 novos); toda linha adicionada nos 4 arquivos de produção é
+`role="img"`/`aria-label`/`aria-describedby`/`useId`/tabela `sr-only`
+(confirmado via `git diff -b`, que também prova que o JSX do gráfico em
+si só teve reindentação, sem mudança de lógica) — nenhuma mudança em
+`backend.`/lógica de negócio/cálculo de métricas.
+
+**M-9 fechado: 17 de 17 instâncias corrigidas**, em 3 sub-rodadas
+(itens 223/225/226/227) — nenhuma instância restante.
