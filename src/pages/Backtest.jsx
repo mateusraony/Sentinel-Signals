@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import moment from 'moment';
 import {
@@ -127,6 +127,19 @@ function ReportBody({ report, hideCascadeTable = false }) {
   const [initialCapital, setInitialCapital] = useState(DEFAULT_INITIAL_CAPITAL);
   const [riskPct, setRiskPct] = useState(DEFAULT_RISK_PCT);
 
+  // Achado M-9 do Raio-X (Codex review no PR #428): role="img" colapsa todo
+  // o SVG do gráfico numa "caixa preta" pra leitor de tela — um aria-label só
+  // com contagem/total fica idêntico entre 2 séries de trajetória diferente
+  // (mesmo nº de operações, mesmo total, caminho diferente). Como o nº de
+  // operações aqui não tem teto (ao contrário dos widgets do Dashboard, com
+  // poucas categorias fixas), enumerar tudo no aria-label seria uma string
+  // gigante lida ponto a ponto — em vez disso, o aria-label continua um
+  // resumo curto e uma tabela `sr-only` (oculta visualmente, presente na
+  // árvore de acessibilidade) linkada via aria-describedby carrega o dado
+  // ponto a ponto.
+  const equityCurveTableId = useId();
+  const realEquityTableId = useId();
+
   const equityCurve = useMemo(() => {
     if (!overall?.curve) return [];
     return overall.curve
@@ -223,7 +236,8 @@ function ReportBody({ report, hideCascadeTable = false }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
           <Section title="Curva ingênua (soma % simples, NÃO composta — ver curva de capital real abaixo)">
-            <div style={{ height: 260 }}>
+            <div style={{ height: 260 }} role="img" aria-describedby={equityCurve.length > 0 ? equityCurveTableId : undefined}
+              aria-label={`Gráfico de linha da curva ingênua de PnL acumulado (soma simples), ${equityCurve.length} operações${equityCurve.length > 0 ? `, ${fmtPct(equityCurve[equityCurve.length - 1].cumulativePct)} no total` : ''}`}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={equityCurve} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
@@ -237,10 +251,26 @@ function ReportBody({ report, hideCascadeTable = false }) {
                 </LineChart>
               </ResponsiveContainer>
             </div>
+            {equityCurve.length > 0 && (
+              <table id={equityCurveTableId} className="sr-only">
+                <caption>Curva ingênua de PnL acumulado, operação por operação</caption>
+                <thead>
+                  <tr><th scope="col">Operação</th><th scope="col">Símbolo</th><th scope="col">Resultado</th><th scope="col">PnL acumulado</th></tr>
+                </thead>
+                <tbody>
+                  {equityCurve.map(p => (
+                    <tr key={p.trade}>
+                      <td>{p.trade}</td><td>{p.symbol || '—'}</td><td>{p.outcome || '—'}</td><td>{fmtPct(p.cumulativePct)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </Section>
         </div>
         <Section title="Distribuição de resultados">
-          <div style={{ height: 260 }}>
+          <div style={{ height: 260 }} role="img"
+            aria-label={`Gráfico de pizza da distribuição de resultados: ${outcomePie.map(d => `${d.name} ${d.value}`).join(', ')}`}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={outcomePie} dataKey="value" nameKey="name" innerRadius={45} outerRadius={80} paddingAngle={2}>
@@ -300,7 +330,8 @@ function ReportBody({ report, hideCascadeTable = false }) {
               color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
           </div>
 
-          <div style={{ height: 220 }}>
+          <div style={{ height: 220 }} role="img" aria-describedby={realEquityChart.length > 0 ? realEquityTableId : undefined}
+            aria-label={`Gráfico de linha da curva de capital real, capital final ${fmtUsd(equitySim.finalCapital)} (${fmtPct(equitySim.totalReturnPct)})`}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={realEquityChart} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
@@ -314,6 +345,19 @@ function ReportBody({ report, hideCascadeTable = false }) {
               </LineChart>
             </ResponsiveContainer>
           </div>
+          {realEquityChart.length > 0 && (
+            <table id={realEquityTableId} className="sr-only">
+              <caption>Curva de capital real, capital após cada operação</caption>
+              <thead>
+                <tr><th scope="col">Operação</th><th scope="col">Símbolo</th><th scope="col">Capital após</th></tr>
+              </thead>
+              <tbody>
+                {realEquityChart.map(p => (
+                  <tr key={p.trade}><td>{p.trade}</td><td>{p.symbol || '—'}</td><td>{fmtUsd(p.capitalAfter)}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </Section>
       )}
 
@@ -368,7 +412,8 @@ function ReportBody({ report, hideCascadeTable = false }) {
 
       {entryFunnelData.length > 0 && (
         <Section title="Funil de rejeição de entrada (por gate, todas as tentativas do replay)">
-          <div style={{ height: 280 }}>
+          <div style={{ height: 280 }} role="img"
+            aria-label={`Gráfico de barras do funil de rejeição de entrada por motivo: ${entryFunnelData.map(r => `${r.reason}: ${r['4h_15m']} em 4h→15m, ${r['1h_5m']} em 1h→5m`).join('; ')}`}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={entryFunnelData} layout="vertical" margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />

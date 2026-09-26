@@ -27400,3 +27400,125 @@ de produção juntos.
 typecheck:ratchet` limpos (2093 testes, teto de typecheck em 13, sem
 mudança). `git diff --stat` só nos 2 arquivos de produção + 2 de
 teste — nenhuma mudança em `backend.`/lógica de negócio.
+
+## 225. M-9 (2ª sub-rodada): `role="img"`/`aria-label` em `Backtest.jsx` (4) + `MonthlyReport.jsx` (3)
+
+Continuação do mapeamento do item 222/223 (17 instâncias/10 arquivos,
+sub-rodada A fechou os 4 widgets do Dashboard). Esta rodada fecha os 7
+instâncias dos 2 relatórios de performance — mesmo padrão (wrapper
+`<div>` em volta de `ResponsiveContainer` carregando `role="img"` +
+`aria-label`, já que `ResponsiveContainer` não repassa esses atributos
+pro `<div>` interno), aplicando desde o início a lição do item 224
+(Codex review, sub-rodada A): todo `aria-label` cita o dado
+subjacente completo (valores/rótulos de cada série/fatia), não só uma
+contagem ou resumo genérico.
+
+### `Backtest.jsx` (4 instâncias, todas em `ReportBody`)
+
+1. **Curva ingênua** (`equityCurve`, LineChart) — `aria-label` cita o
+   nº de operações e o total acumulado (`fmtPct` do último ponto).
+2. **Distribuição de resultados** (`outcomePie`, PieChart) — cita
+   nome+valor de cada fatia (Vitórias/Derrotas/Empate).
+3. **Curva de capital real** (`realEquityChart`, LineChart) — cita
+   capital final (`fmtUsd`) e retorno total (`fmtPct`) de `equitySim`.
+4. **Funil de rejeição de entrada** (`entryFunnelData`, BarChart
+   vertical) — cita cada motivo com a contagem nas 2 cascatas
+   (4h→15m e 1h→5m).
+
+### `MonthlyReport.jsx` (3 instâncias)
+
+1. **Evolução de P&L** (`dailyPnlData`, ComposedChart) — cita o nº de
+   dias e o P&L acumulado do mês (`metrics.totalPnl`).
+2. **Taxa de acerto** (`outcomePie`, PieChart) — mesmo padrão do
+   Backtest, nome+valor de cada fatia.
+3. **Distribuição de status** (`statusDistribution`, PieChart) — cita
+   nome+valor de cada status (🏆 TP2, 🛑 Stop etc.).
+
+### Testes novos
+
+`Backtest.test.jsx`: novo caso com relatório colado incluindo `curve`
+(2 operações) e `entryFunnel` populados — confirma que os 4
+`role="img"` existem e cada `aria-label` contém o dado esperado
+(nº de operações, fatias da pizza, capital final, motivos do funil).
+`MonthlyReport.test.jsx`: refatorado o mock de `TradeOperation.filter`
+pra ser controlável por teste (mesmo padrão já usado em
+`PredictiveAnalysis.test.jsx`, item 223) — novo caso com 2 operações
+fechadas (1 TP2_HIT, 1 STOP_HIT) confirma os 3 `role="img"` com dado
+correto. Falha de cada um reproduzida via `git stash` do arquivo de
+produção correspondente antes de aceitar (confirmado: ambos falham
+sem o fix, com `findAllByRole('img')` não encontrando nada).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2095 testes, 0 falhas; teto de typecheck em
+13, sem mudança). `git diff --stat` só nos 2 arquivos de produção + 2
+de teste; toda linha adicionada nos 2 arquivos de produção é
+`role="img"` ou `aria-label` — nenhuma mudança em `backend.`/lógica de
+negócio/cálculo de métricas.
+
+### M-9 restante após esta rodada
+
+4 instâncias em 4 arquivos (1 cada): `RFHistoryChart.jsx`,
+`TradeEntryMarkers.jsx`, `PnLChart.jsx`, `PortfolioVsMarket.jsx` —
+candidato a 1 sub-rodada final, fechando M-9 por completo (17/17).
+
+## 226. Corrigir 2 achados do Codex review no PR #428 (M-9, 2ª sub-rodada)
+
+`chatgpt-codex-connector` revisou o PR #428 e postou 2 comentários (P2,
+achado de correção real) sobre o item 225 acima — a mesma classe de
+problema do item 224 (PR #426): `role="img"` colapsa todo o conteúdo
+descendente do gráfico pra árvore de acessibilidade, então um
+`aria-label` que não representa o dado real de forma única esconde
+informação de leitor de tela.
+
+### 1. `MonthlyReport.jsx` — "Evolução de P&L" não enumerava os dias
+
+O `aria-label` citava só a contagem de dias + total acumulado do mês
+— 2 meses com o mesmo nº de dias de trade e o mesmo total, mas
+trajetórias diárias diferentes, geravam o MESMO texto. `dailyPnlData`
+tem no máximo ~31 entradas (1 por dia distinto do mês) — tamanho
+prático pra enumerar todas inline.
+
+**Fix:** `aria-label` agora lista cada dia com o P&L do dia e o
+acumulado até ali (`"25/09 +1.50% no dia, +1.50% acumulado; 26/09
+-0.17% no dia, +1.33% acumulado"`), mesma técnica já usada em
+`PredictiveAnalysis.jsx` no item 224.
+
+### 2. `Backtest.jsx` — curva ingênua e curva de capital real só citavam o ponto final
+
+Mesmo problema nos 2 gráficos de linha por-operação (`equityCurve`,
+`realEquityChart`) — o `aria-label` só citava contagem/capital final,
+não os pontos individuais (símbolo + resultado/capital de cada
+operação). Diferente do caso de `MonthlyReport.jsx`, aqui o nº de
+operações **não tem teto** (um backtest pode ter centenas/milhares de
+trades) — enumerar tudo inline no `aria-label` produziria uma string
+gigante, pouco prática de ouvir num leitor de tela.
+
+**Fix:** técnica diferente da usada nos outros casos — o `aria-label`
+continua um resumo curto, e uma tabela HTML com classe `sr-only`
+(Tailwind — oculta visualmente, presente na árvore de acessibilidade)
+linkada via `aria-describedby` carrega o dado ponto a ponto (operação/
+símbolo/resultado ou capital). Cada `ReportBody` só monta 1 vez por
+vez (as 3 abas da página são mutuamente exclusivas, renderização
+condicional `tab === X && <Component />`, confirmado por leitura), mas
+o id da tabela usa `useId()` do React por robustez, não uma string
+fixa.
+
+### Testes novos
+
+`MonthlyReport.test.jsx`: teste ajustado pra confirmar que os 2 dias
+distintos da fixture aparecem individualmente no `aria-label` (não só
+a contagem). `Backtest.test.jsx`: caso novo confirmando que os 2
+gráficos afetados têm `aria-describedby` apontando pra uma tabela
+`sr-only` existente no DOM, com os 2 símbolos da fixture
+(BTCUSDT/ETHUSDT) presentes linha a linha. Falha de cada um
+reproduzida via `git stash` dos 2 arquivos de produção juntos antes de
+aceitar.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2096 testes, 0 falhas; teto de typecheck em
+13, sem mudança). `git diff --stat` só nos 2 arquivos de produção + 2
+de teste — nenhuma mudança em `backend.`/lógica de negócio.

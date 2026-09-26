@@ -194,3 +194,110 @@ describe('Backtest — campos têm foco visível (achado A-7)', () => {
     expect(textarea.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
   });
 });
+
+// Achado M-9 do Raio-X de UI/UX (docs/known-risks.md item 222/223, sub-rodada
+// B): os 4 gráficos Recharts desta página (curva ingênua, distribuição de
+// resultados, curva de capital real, funil de rejeição de entrada) não
+// tinham `role="img"`/`aria-label` — ResponsiveContainer não repassa esses
+// atributos pro <div> interno (confirmado lendo node_modules/recharts), daí
+// o wrapper <div> em volta é quem carrega o role/aria-label. O aria-label
+// cita os dados subjacentes (não só uma contagem/rótulo genérico) — lição do
+// achado do Codex review no PR #426 (M-9 sub-rodada A), que pegou um
+// aria-label incompleto escondendo dado real de leitor de tela.
+const REPORT_JSON_M9 = JSON.stringify({
+  range: { from: '2026-01-01T00:00:00.000Z', to: '2026-06-01T00:00:00.000Z' },
+  overall: {
+    ...CASCADE_STATS, total: 2, counted: 2, wins: 1, losses: 1,
+    curve: [
+      {
+        cumulativePct: 1.5, outcome: 'WIN',
+        op: {
+          id: 'op1', asset_id: 'a1', symbol: 'BTCUSDT', side: 'BUY',
+          status: 'TP2_HIT', entry_price: 60000, initial_stop: 59000,
+          current_stop: 59000, exit_price: 61000,
+          tp2_hit_at: '2026-01-03T00:00:00.000Z', closed_at: '2026-01-03T00:00:00.000Z',
+          created_date: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      {
+        cumulativePct: -0.17, outcome: 'LOSS',
+        op: {
+          id: 'op2', asset_id: 'a2', symbol: 'ETHUSDT', side: 'SELL',
+          status: 'STOP_HIT', entry_price: 3000, initial_stop: 3100,
+          current_stop: 3100, exit_price: 3100,
+          stop_hit_at: '2026-01-05T00:00:00.000Z', closed_at: '2026-01-05T00:00:00.000Z',
+          created_date: '2026-01-02T00:00:00.000Z',
+        },
+      },
+    ],
+  },
+  byCascade: { '4h_15m': CASCADE_STATS },
+  costs: { model: {} },
+  entryFunnel: {
+    '4h_15m': { byReason: { adx_low: 3, choppiness: 2 } },
+    '1h_5m': { byReason: { adx_low: 1, choppiness: 4 } },
+  },
+});
+
+describe('Backtest — gráficos Recharts têm role="img"/aria-label descrevendo os dados (achado M-9)', () => {
+  it('REGRESSÃO: os 4 gráficos (curva ingênua, distribuição, capital real, funil) expõem role=img com aria-label com dados', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    fireEvent.change(textarea, { target: { value: REPORT_JSON_M9 } });
+    fireEvent.click(screen.getByText(/Analisar relatório colado/i));
+    await screen.findByText('Expectância');
+
+    const images = await screen.findAllByRole('img');
+    const labels = images.map(el => el.getAttribute('aria-label')).filter(Boolean);
+
+    expect(labels.some(l => l.includes('curva ingênua de PnL acumulado') && l.includes('2 operações'))).toBe(true);
+    expect(labels.some(l => l.includes('distribuição de resultados') && l.includes('Vitórias 1') && l.includes('Derrotas 1'))).toBe(true);
+    expect(labels.some(l => l.includes('curva de capital real') && l.includes('capital final $'))).toBe(true);
+    expect(labels.some(l =>
+      l.includes('funil de rejeição de entrada')
+      && l.includes('adx_low: 3 em 4h→15m, 1 em 1h→5m')
+      && l.includes('choppiness: 2 em 4h→15m, 4 em 1h→5m')
+    )).toBe(true);
+  });
+
+  // Achado do Codex review no PR #428: com nº de operações sem teto (ao
+  // contrário dos widgets do Dashboard, com poucas categorias fixas),
+  // enumerar tudo no aria-label seria impraticável — o dado ponto a ponto
+  // (operação/símbolo/resultado/capital) vai numa tabela `sr-only` (oculta
+  // visualmente, presente na árvore de acessibilidade) linkada via
+  // aria-describedby, mantendo o aria-label como resumo curto.
+  it('REGRESSÃO: curva ingênua e curva de capital real têm tabela sr-only com dado ponto a ponto, linkada via aria-describedby', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    fireEvent.change(textarea, { target: { value: REPORT_JSON_M9 } });
+    fireEvent.click(screen.getByText(/Analisar relatório colado/i));
+    await screen.findByText('Expectância');
+
+    const images = await screen.findAllByRole('img');
+    const equityCurveImg = images.find(el => (el.getAttribute('aria-label') || '').includes('curva ingênua de PnL acumulado'));
+    const realEquityImg = images.find(el => (el.getAttribute('aria-label') || '').includes('curva de capital real'));
+    expect(equityCurveImg).toBeTruthy();
+    expect(realEquityImg).toBeTruthy();
+
+    const equityCurveTableId = equityCurveImg.getAttribute('aria-describedby');
+    const realEquityTableId = realEquityImg.getAttribute('aria-describedby');
+    expect(equityCurveTableId).toBeTruthy();
+    expect(realEquityTableId).toBeTruthy();
+
+    const equityCurveTable = document.getElementById(equityCurveTableId);
+    const realEquityTable = document.getElementById(realEquityTableId);
+    expect(equityCurveTable).toBeTruthy();
+    expect(realEquityTable).toBeTruthy();
+    expect(equityCurveTable.className).toMatch(/sr-only/);
+    expect(realEquityTable.className).toMatch(/sr-only/);
+
+    // BTCUSDT/ETHUSDT são os 2 símbolos das operações da fixture — precisam
+    // aparecer linha a linha nas 2 tabelas, não só resumidos.
+    expect(equityCurveTable.textContent).toMatch(/BTCUSDT/);
+    expect(equityCurveTable.textContent).toMatch(/ETHUSDT/);
+    expect(realEquityTable.textContent).toMatch(/BTCUSDT/);
+    expect(realEquityTable.textContent).toMatch(/ETHUSDT/);
+  });
+});
