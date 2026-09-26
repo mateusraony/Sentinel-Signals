@@ -69,4 +69,19 @@ describe('PredictiveAnalysis — gráfico "Taxa de acerto por faixa de score" te
     expect(chart.getAttribute('role')).toBe('img');
     expect(chart.getAttribute('aria-label')).toMatch(/Gráfico de barras da taxa de acerto por faixa de score/);
   });
+
+  // Achado do Codex review no PR #426: role="img" transforma o gráfico
+  // inteiro num "black box" pra leitor de tela — o aria-label anterior só
+  // citava a contagem de faixas, sem expor o dado real (label/winRate/n de
+  // cada faixa), que ficava inacessível por trás do role="img".
+  it('REGRESSÃO: o aria-label expõe o dado de cada faixa (rótulo, taxa de acerto, nº de operações)', async () => {
+    tradeOperationFilterMock.mockResolvedValue([CLOSED_OP_SIMILAR_SHAPE]);
+    renderPredictive();
+    const heading = await screen.findByText(/Taxa de acerto por faixa de score/);
+    const chart = heading.nextElementSibling;
+    const label = chart.getAttribute('aria-label');
+    expect(label).toMatch(/60-80/);
+    expect(label).toMatch(/0% de acerto/);
+    expect(label).toMatch(/1 operação/);
+  });
 });

@@ -95,10 +95,26 @@ describe('WeeklySummary — "Sinais Processados" só conta Range Filter (achado 
 });
 
 describe('WeeklySummary — gráfico "P&L por dia" tem role="img"/aria-label (achado M-9)', () => {
-  it('REGRESSÃO: o wrapper do BarChart tem role="img" e aria-label descritivo', () => {
+  it('REGRESSÃO: o wrapper do BarChart tem role="img" e aria-label descritivo', async () => {
+    listOpsMock.mockResolvedValue([]);
+    listSignalsMock.mockResolvedValue([]);
+    const { container } = renderWidget();
+    await waitFor(() => {
+      const chart = container.querySelector('[role="img"]');
+      expect(chart.getAttribute('aria-label')).toMatch(/no total/);
+    });
+  });
+
+  // Achado do Codex review no PR #426: o aria-label lia `data.totalPnl`
+  // direto (default 0 enquanto as 2 queries carregam), sem o guard de
+  // `isLoading` que o card visível já usa (achado M-1) — leitor de tela
+  // anunciava "+0.00% no total" como se fosse resultado real.
+  it('REGRESSÃO: enquanto carrega, o aria-label não anuncia "+0.00%" (achado do Codex review)', () => {
+    listOpsMock.mockReturnValue(new Promise(() => {})); // nunca resolve
+    listSignalsMock.mockReturnValue(new Promise(() => {}));
     const { container } = renderWidget();
     const chart = container.querySelector('[role="img"]');
-    expect(chart).not.toBeNull();
-    expect(chart.getAttribute('aria-label')).toMatch(/Gráfico de barras do P&L por dia da semana/);
+    expect(chart.getAttribute('aria-label')).not.toMatch(/0\.00%/);
+    expect(chart.getAttribute('aria-label')).toMatch(/carregando/);
   });
 });
