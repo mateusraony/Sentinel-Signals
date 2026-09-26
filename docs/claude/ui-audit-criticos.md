@@ -846,6 +846,16 @@ arquivos): `Backtest.jsx` (4), `MonthlyReport.jsx` (3),
 `RFHistoryChart.jsx`, `TradeEntryMarkers.jsx`, `PnLChart.jsx`,
 `PortfolioVsMarket.jsx` (1 cada).
 
+**Correção pós-merge (item 224 do known-risks.md):** o PR #426
+mesclou antes da review do Codex chegar — 2 achados reais (P2):
+`WeeklySummary.jsx` anunciava "+0.00%" falso no `aria-label` durante o
+carregamento (mesma classe de bug que M-1 já tinha corrigido no card
+visível, só não propagada pro `aria-label` novo); `PredictiveAnalysis.jsx`
+tinha `role="img"` escondendo o dado de cada faixa de score (label/
+winRate/n) da árvore de acessibilidade — o `aria-label` só citava a
+contagem de faixas. Ambos corrigidos num PR de acompanhamento pequeno
+(o original já estava fechado).
+
 ## Backlog Média prioridade — 3ª rodada (2026-09-25): M-5, M-6, M-8, M-12 corrigidos
 
 Agente Explore confirmou 5 candidatos (M-5, M-6, M-8, M-9, M-12)

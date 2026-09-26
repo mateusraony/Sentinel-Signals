@@ -27346,3 +27346,57 @@ lido/gravado).
 `RFHistoryChart.jsx`, `TradeEntryMarkers.jsx`, `PnLChart.jsx`,
 `PortfolioVsMarket.jsx` (1 cada) — candidatos a 1-2 sub-rodadas
 futuras, mesmo padrão de fix acima.
+
+## 224. Corrigir 2 achados do Codex review no PR #426 (M-9, 1ª sub-rodada)
+
+PR #426 mesclou antes da review do Codex chegar (corrida — merge
+automático rodou no mesmo instante que o bot postava). Os 2 comentários
+(P2, achado de correção real, não nit) chegaram depois do merge — como
+não dá mais pra empurrar commit no PR já fechado, virou um PR de
+acompanhamento pequeno.
+
+### 1. `WeeklySummary.jsx` — aria-label anunciava "+0.00%" falso durante o carregamento
+
+O `aria-label` novo do item 223 lia `data.totalPnl` direto, sem o
+guard de `isLoading` que o card visível já usa (achado M-1, item 221)
+— `data.totalPnl` vem de `useMemo` sobre as 2 queries, default 0
+enquanto elas carregam. Resultado: por 1-2s, leitor de tela anunciava
+"+0.00% no total" como se fosse resultado real, exatamente o falso
+positivo que M-1 já tinha eliminado do card visível ("···" durante o
+load) — só não tinha se propagado pro `aria-label` novo, que é
+independente do texto visível.
+
+**Fix:** condicionar o texto do `aria-label` a `isLoading`, mesmo
+padrão do card visível — "— carregando" em vez do número.
+
+### 2. `PredictiveAnalysis.jsx` — `role="img"` escondia o dado de cada faixa de score
+
+`role="img"` transforma o `<div>` inteiro (e tudo dentro, incluindo o
+texto dos eixos do SVG) num "black box" pra árvore de acessibilidade —
+só o `aria-label` fica exposto. O `aria-label` original só citava a
+contagem de faixas + direção/timeframe, sem o dado real (label de cada
+faixa, taxa de acerto, nº de operações) — exatamente a informação que
+o gráfico existe pra mostrar ficava inacessível.
+
+**Fix:** o `aria-label` agora lista cada faixa com seu label, taxa de
+acerto e nº de operações (`"faixa 60-80 pontos, 50% de acerto em 3
+operações; ..."`) — mesma técnica (resumo textual completo dentro do
+`aria-label`) recomendada pelo WCAG pra `role="img"` em gráfico
+complexo, sem precisar de uma estrutura visualmente oculta separada
+(tabela sr-only), que seria uma mudança maior de escopo.
+
+### Testes novos
+
+`WeeklySummary.test.jsx`: caso novo confirmando que, com as 2 queries
+nunca resolvendo, o `aria-label` não contém "0.00%" e contém
+"carregando". `PredictiveAnalysis.test.jsx`: caso novo confirmando que
+o `aria-label` contém o label da faixa, a taxa de acerto e o número de
+operações. Falha de cada um reproduzida via `git stash` dos 2 arquivos
+de produção juntos.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2093 testes, teto de typecheck em 13, sem
+mudança). `git diff --stat` só nos 2 arquivos de produção + 2 de
+teste — nenhuma mudança em `backend.`/lógica de negócio.

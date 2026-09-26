@@ -236,7 +236,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
           {scoreBuckets.length > 0 && (
             <div className="glass-card rounded-xl p-4">
               <h3 className="text-xs font-bold text-foreground mb-3">Taxa de acerto por faixa de score — {selected.signal_type} {selected.timeframe?.toUpperCase()}</h3>
-              <div role="img" aria-label={`Gráfico de barras da taxa de acerto por faixa de score de ${scoreBuckets.length} faixas, para ${selected.signal_type} ${selected.timeframe?.toUpperCase()}`}>
+              <div role="img" aria-label={`Gráfico de barras da taxa de acerto por faixa de score, para ${selected.signal_type} ${selected.timeframe?.toUpperCase()}: ${scoreBuckets.map(b => `faixa ${b.label} pontos, ${b.winRate.toFixed(0)}% de acerto em ${b.n} operaç${b.n === 1 ? 'ão' : 'ões'}`).join('; ')}`}>
                 <ResponsiveContainer width="100%" height={180}>
                   <BarChart data={scoreBuckets} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                     <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
