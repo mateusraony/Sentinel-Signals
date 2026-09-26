@@ -121,7 +121,7 @@ export default function Alerts() {
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
             <input type="text" placeholder="Buscar símbolo..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-6 pr-3 py-1.5 rounded-lg w-32 text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="pl-6 pr-3 py-1.5 rounded-lg w-40 text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }} />
           </div>
 
@@ -299,7 +299,7 @@ export default function Alerts() {
                       ${signal.price_at_signal?.toLocaleString(undefined, { maximumFractionDigits: 4 })}
                     </span>
                   )}
-                  <span className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                  <span className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>
                     {moment(signal.created_date).format('DD/MM HH:mm')}
                   </span>
                   <button
@@ -349,9 +349,15 @@ export default function Alerts() {
               {selectedSignal.context && (
                 <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                   <p className="text-9px font-mono text-muted-foreground uppercase tracking-wider mb-2">Contexto Técnico</p>
-                  <pre className="text-10px font-mono overflow-x-auto" style={{ color: 'rgba(0,255,128,0.7)' }}>
-                    {JSON.stringify(selectedSignal.context, null, 2)}
-                  </pre>
+                  {/* Refinamentos (seção E): JSON cru ficava sempre visível
+                      no modal — mesmo padrão de <details> já usado em
+                      Logs.jsx pra payload técnico, fechado por padrão. */}
+                  <details>
+                    <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.25)' }}>ver payload →</summary>
+                    <pre className="mt-1 text-10px font-mono overflow-x-auto" style={{ color: 'rgba(0,255,128,0.7)' }}>
+                      {JSON.stringify(selectedSignal.context, null, 2)}
+                    </pre>
+                  </details>
                 </div>
               )}
             </div>

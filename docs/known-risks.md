@@ -28495,3 +28495,109 @@ typecheck:ratchet` limpos (2140 testes, 0 falhas, 58 pulados; teto de
 typecheck em 13, sem mudança). `git diff` grepado por
 `backend\.|scanner|firestore|postgres|mutation|useQuery\(` → vazio —
 só CSS de posicionamento.
+
+## 241. Seção "Refinamentos" do Raio-X de UI/UX — última seção pendente, fecha o relatório original por completo
+
+Com o backlog de Média Prioridade 100% fechado e a regressão do
+`DebugLogButton` corrigida (item 240), só restava a seção E do
+relatório original ("Refinamentos" — menores, mas reais, 10 itens).
+Usuário confirmou via `AskUserQuestion`: escopar e corrigir. Rodei 2
+agentes Explore em paralelo (4 itens + 6 itens) pra confirmar cada item
+contra o código ATUAL antes de planejar — várias rodadas de Alta/Média
+Prioridade já tinham mudado ou invalidado parte do relatório original
+sem que ele fosse atualizado.
+
+### Descartados (3 de 10, não corrigidos)
+
+- **Verificação: `task.priority` nunca aparece no card** — obsoleto. A-11
+  já removeu os filtros de Média/Baixa (só resta "Alta", e
+  `VerificationTask.priority` é sempre `'high'` por desenho do
+  scanner, `Verification.jsx`). Mostrar a prioridade seria sempre o
+  mesmo texto repetido, sem ganho.
+- **`Login.jsx` genérico** — é placeholder morto, fora de qualquer rota
+  (`App.jsx` não o referencia), decisão intencional já documentada
+  (`CLAUDE.md`, auth anônima). Retrabalhar visual de tela nunca
+  renderizada não compensa até a reativação ser decidida.
+- **`PineScript.jsx`: timestamps com contraste baixo** — não existe.
+  Não há nenhum timestamp/horário renderizado na UI de `PineScript.jsx`
+  (confirmado por busca de `moment(`/`fromNow`/`HH:mm`/`Clock` — só
+  ocorrências dentro do template de código Pine, não elementos de
+  interface). Provável confusão da auditoria original com Alerts/Logs
+  — o item 7 abaixo cobre a parte real do achado (Alerts/Logs).
+
+### Corrigidos (8 fixes, 1 PR, 7 arquivos de produção)
+
+1. **`AssetCard.jsx` — hint "detalhes →" só em hover.** `opacity-0
+   hover:opacity-100` nunca aparecia em touch (mobile/tablet nunca
+   viam a dica). Card já é clicável e acessível por outro meio
+   (`role="button"` + `aria-label`) — hint é decorativo. Fix: removida
+   a dependência de hover, opacidade fixa baixa
+   (`rgba(255,255,255,0.15)`, mesmo tom de antes).
+2. **`Trades.jsx` — toggle "Compacto/Detalhado" não cobria
+   `MonitoringCard`.** O toggle global (`showDetails`, já passado como
+   `expandAll` pra `TradeCard`) não tinha efeito nenhum sobre os cards
+   de "Avisos em análise" — cada um tinha seu próprio estado local,
+   sempre começando fechado. Fix: `MonitoringCard` ganhou prop
+   `expandAll` no mesmo padrão exato de `TradeCard.jsx`
+   (`useState(expandAll)` + `useEffect` de sincronização), passada nas
+   2 chamadas (`monitoringActionable` e `monitoringInfoOnly`).
+3. **`Settings.jsx` — pills de "Configuração Ativa" redundantes.** Os 7
+   pills (`ACTIVE_CONFIG_PILLS`) repetiam, valor a valor, o que já
+   estava visível ao lado do slider correspondente mais acima na mesma
+   tela. Fix: removida a constante e a seção inteira — sem substituto,
+   os sliders já cobrem a informação.
+4. **`AssetDrawer.jsx` — "Sinais Recentes" sem rótulo em alguns
+   campos.** Timeframe, motivo (`reason`) e horário relativo apareciam
+   nus, sem indicar o que representavam (BUY/SELL e "Confl." já eram
+   autoexplicativos). Fix: rótulos curtos inline ("TF", "Motivo:",
+   "Quando:") antes desses 3 campos, mesmo padrão visual de rótulo em
+   caixa alta/`tracking-wider` já usado em `AssetDetailPanel.jsx`
+   (`ParamCard`).
+5. **`Alerts.jsx` — modal mostra JSON cru sempre visível.** O
+   `JSON.stringify(selectedSignal.context)` do "Contexto Técnico"
+   nunca estava escondido. Fix: envolvido num `<details>`/`<summary>ver
+   payload →</summary>`, reaproveitando 1:1 o padrão já usado em
+   `Logs.jsx` pro mesmo tipo de payload técnico.
+6. **`Alerts.jsx`/`Logs.jsx` — campo de busca mais estreito que o
+   placeholder.** `Alerts.jsx` (`w-32` pro placeholder "Buscar
+   símbolo...") e `Logs.jsx` (`w-40` pro placeholder "Buscar na
+   mensagem...") cortavam visualmente o fim do texto. Fix: `w-32`→`w-40`
+   em Alerts, `w-40`→`w-44` em Logs.
+7. **`Alerts.jsx`/`Logs.jsx` — timestamps em opacidade branca 20-25%
+   sobre fundo quase preto.** Texto pequeno (`text-9px`) exige
+   contraste ≥4.5:1; a opacidade anterior (`rgba(255,255,255,0.25)` em
+   Alerts, `0.2` em Logs) ficava bem abaixo disso. Fix: subida pra
+   `rgba(255,255,255,0.45)` nos dois — mesma faixa já usada em texto
+   secundário do próprio `Logs.jsx` (`0.5` em outro trecho).
+8. **`StrategyReviewer.jsx` — texto menciona "backend"/"API" sem
+   necessidade.** A frase completa citava "o backend que guarda a
+   chave da API com segurança" — jargão técnico que a tela não expõe
+   em nenhum outro lugar. Fix: reescrita para "a infraestrutura de
+   segurança necessária" — só texto, não muda a decisão de manter o
+   Strategy Reviewer pausado (`CLAUDE.md`, decisão intencional).
+
+### Testes
+
+Cada arquivo ganhou (ou já tinha) teste de regressão dedicado —
+reproduzido falhando via `git stash` das mudanças de produção antes de
+aceitar: `AssetCard.test.jsx`, `Trades.test.jsx`, `Settings.test.jsx`
+(já existiam) + `AssetDrawer.test.jsx`, `Logs.test.jsx`,
+`StrategyReviewer.test.jsx` (novos — nenhum dos 3 componentes tinha
+teste dedicado antes) + `Alerts.test.jsx` (3 casos novos: `<details>`
+fechado por padrão, largura do campo de busca, contraste do
+timestamp).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2150 testes, 0 falhas, 58 pulados; teto de
+typecheck em 13, sem mudança). `git diff` grepado por
+`backend\.|scanner|firestore|postgres|useQuery\(|useMutation\(` só
+encontrou a palavra "scanner" dentro do TEXTO removido do pill de
+Settings ("lida pelo scanner") — não é lógica, é rótulo de UI. Os 8
+fixes tocam só apresentação/texto/prop, sem tocar `backend.entities`,
+`scanner.js` ou qualquer regra de negócio.
+
+**Com esta rodada, o Raio-X de UI/UX (relatório original completo —
+Alta Prioridade, Média Prioridade e Refinamentos) está fechado por
+completo.**

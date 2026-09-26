@@ -133,6 +133,7 @@ export default function AssetDrawer({ asset, signals, tradeOps, tradeOpsUnavaila
                       </span>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-8px font-mono text-muted-foreground/60 uppercase tracking-wider">TF</span>
                           <span className="text-9px font-mono text-muted-foreground">{sig.timeframe?.toUpperCase()}</span>
                           <span className="text-9px font-mono text-foreground/60">${formatPrice(sig.price_at_signal)}</span>
                           {sig.context?.score && (
@@ -141,8 +142,12 @@ export default function AssetDrawer({ asset, signals, tradeOps, tradeOpsUnavaila
                             </span>
                           )}
                         </div>
-                        <p className="text-8px font-mono text-muted-foreground mt-0.5 leading-tight line-clamp-2">{sig.reason}</p>
+                        <p className="text-8px font-mono text-muted-foreground mt-0.5 leading-tight line-clamp-2">
+                          <span className="text-muted-foreground/60 uppercase tracking-wider">Motivo: </span>
+                          {sig.reason}
+                        </p>
                         <div className="text-8px font-mono text-muted-foreground/60 mt-0.5">
+                          <span className="uppercase tracking-wider">Quando: </span>
                           {moment(sig.created_date).fromNow()}
                         </div>
                         <SignalChecklist signal={sig} tradeOps={tradeOps} tradeOpsUnavailable={tradeOpsUnavailable} />

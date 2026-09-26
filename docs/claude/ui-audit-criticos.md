@@ -802,7 +802,10 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
   sheet, reaproveitando o `Sheet` já usado em `AssetDrawer.jsx`) para
   os outros 7. Alvo de toque dobra pra ~65px. Ver
   `docs/known-risks.md` item 238.**
-- [ ] Refinamentos (seção E do relatório) — nada iniciado.
+- [x] Refinamentos (seção E do relatório) — **Fechado: 8 fixes
+  aplicados; 3 achados adicionais descartados (2 obsoletos por rodadas
+  anteriores, 1 nunca existiu como descrito — ver seção própria
+  abaixo). Ver `docs/known-risks.md` item 241.**
 
 ## Como continuar
 
@@ -838,6 +841,64 @@ pendente.** A-1 (RecentAlertsList sem onClick) e C-2 (4
 cards de performance com amostras diferentes) já estavam corrigidos em
 rodadas anteriores desta mesma sessão — achado da investigação do item
 236, não itens novos.
+
+**Refinamentos (seção E) — fechado (item 241).** 8 fixes de UI mecânicos
+em 7 arquivos, ver seção própria abaixo.
+
+**Com isto, o Raio-X de UI/UX (Críticos + Alta Prioridade + Média
+Prioridade + Refinamentos — relatório original completo) está 100%
+fechado.** Qualquer trabalho de UI/UX futuro é achado novo, fora do
+escopo do relatório de 2026-09-23.
+
+## Refinamentos (seção E, 2026-09-26): último bloco do Raio-X — fecha o relatório original por completo
+
+Última seção pendente do relatório original ("Refinamentos" — 10 itens
+menores, mas reais). Usuário confirmou via `AskUserQuestion`: escopar e
+corrigir. Rodei 2 agentes Explore em paralelo pra confirmar cada item
+contra o código atual antes de planejar.
+
+**3 descartados** (não corrigidos, motivo documentado em
+`docs/known-risks.md` item 241): "Verificação: `task.priority` nunca
+aparece" (obsoleto pós-A-11), "`Login.jsx` genérico" (placeholder morto,
+fora de rota), "`PineScript.jsx`: timestamps com contraste baixo" (não
+existe — provável confusão com Alerts/Logs, cuja parte real entra no
+fix 7 abaixo).
+
+**8 corrigidos**, todos reaproveitando padrão já existente no próprio
+arquivo/projeto (nenhum mecanismo novo):
+1. `AssetCard.jsx` — hint "detalhes →" deixou de depender de `:hover`
+   (nunca aparecia em touch).
+2. `Trades.jsx` — `MonitoringCard` ganhou prop `expandAll` (mesmo
+   padrão de `TradeCard.jsx`); o toggle global "Compacto/Detalhado"
+   agora também abre os cards de "Avisos em análise".
+3. `Settings.jsx` — removida a seção "Configuração Ativa" (pills
+   redundantes com os sliders acima).
+4. `AssetDrawer.jsx` — rótulos inline ("TF", "Motivo:", "Quando:") nos
+   3 campos sem legenda de "Sinais Recentes".
+5. `Alerts.jsx` — JSON de "Contexto Técnico" movido pra dentro de um
+   `<details>` fechado por padrão (mesmo padrão de `Logs.jsx`).
+6. `Alerts.jsx`/`Logs.jsx` — campo de busca alargado (`w-32`→`w-40` /
+   `w-40`→`w-44`), não corta mais o placeholder.
+7. `Alerts.jsx`/`Logs.jsx` — opacidade do timestamp subiu de 0.2-0.25
+   pra 0.45 (contraste insuficiente pra texto pequeno).
+8. `StrategyReviewer.jsx` — texto reescrito sem "backend"/"API".
+
+**Testes**: `AssetCard.test.jsx`/`Trades.test.jsx`/`Settings.test.jsx`
+(já existiam) ganharam casos novos; `AssetDrawer.test.jsx`/
+`Logs.test.jsx`/`StrategyReviewer.test.jsx` criados (nenhum tinha teste
+antes); `Alerts.test.jsx` ganhou 3 casos novos. Cada um reproduzido
+falhando via `git stash` das mudanças de produção antes do fix.
+
+**Verificação**: `npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2150 testes, 0 falhas, 58 pulados; teto de
+typecheck em 13, sem mudança). `git diff` grepado por
+`backend\.|scanner|firestore|postgres|useQuery\(|useMutation\(` — só
+achado é a palavra "scanner" dentro do TEXTO removido do pill de
+Settings, não é lógica. 8 fixes, 1 PR, 7 arquivos de produção. Detalhe
+completo em `docs/known-risks.md` item 241.
+
+**Com esta rodada, o Raio-X de UI/UX (Críticos + Alta Prioridade +
+Média Prioridade + Refinamentos) está fechado por completo.**
 
 ## Backlog M-9 — 1ª sub-rodada (2026-09-25): 4 widgets do Dashboard
 

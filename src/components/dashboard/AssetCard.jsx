@@ -589,8 +589,11 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           </button>
         )}
 
-        {/* Click hint */}
-        <div className="absolute bottom-1.5 right-2.5 text-7px font-mono opacity-0 hover:opacity-100 transition-opacity" style={{ color: 'rgba(255,255,255,0.15)' }}>
+        {/* Click hint — opacidade fixa baixa (Refinamentos, seção E): o hint só
+            aparecia em :hover, que não existe em touch (mobile/tablet nunca
+            viam esta dica). Card já é clicável e acessível por outro meio
+            (role="button" + aria-label) — hint é só reforço decorativo. */}
+        <div className="absolute bottom-1.5 right-2.5 text-7px font-mono" style={{ color: 'rgba(255,255,255,0.15)' }}>
           detalhes →
         </div>
       </div>
