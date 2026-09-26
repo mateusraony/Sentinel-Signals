@@ -351,9 +351,14 @@ export default function Alerts() {
                   <p className="text-9px font-mono text-muted-foreground uppercase tracking-wider mb-2">Contexto Técnico</p>
                   {/* Refinamentos (seção E): JSON cru ficava sempre visível
                       no modal — mesmo padrão de <details> já usado em
-                      Logs.jsx pra payload técnico, fechado por padrão. */}
+                      Logs.jsx pra payload técnico, fechado por padrão.
+                      Achado do Codex review (PR #439): 0.25 dava ~2.3:1 de
+                      contraste sobre o fundo escuro do dialog, abaixo do
+                      4.5:1 exigido pra texto pequeno — mesmo problema já
+                      corrigido pro timestamp nesta mesma rodada, aqui é o
+                      único controle visível pra revelar o payload. */}
                   <details>
-                    <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.25)' }}>ver payload →</summary>
+                    <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.45)' }}>ver payload →</summary>
                     <pre className="mt-1 text-10px font-mono overflow-x-auto" style={{ color: 'rgba(0,255,128,0.7)' }}>
                       {JSON.stringify(selectedSignal.context, null, 2)}
                     </pre>

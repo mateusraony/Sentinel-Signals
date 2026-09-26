@@ -54,3 +54,18 @@ describe('Logs — timestamp de cada linha tem contraste maior (Refinamentos)', 
     expect(timestamp.style.color).toBe('rgba(255, 255, 255, 0.45)');
   });
 });
+
+// Achado do Codex review no PR #439 (Alerts.jsx tinha a mesma classe de bug
+// — copiada 1:1 desta linha; corrigido nos dois ao mesmo tempo): 0.25 dava
+// ~2.3:1 de contraste sobre o fundo escuro, abaixo do 4.5:1 exigido pra
+// texto pequeno — e é o único controle visível pra revelar o payload.
+describe('Logs — "ver payload →" tem contraste suficiente (achado do Codex, PR #439)', () => {
+  it('REGRESSÃO: opacidade do summary sobe de 0.25 para 0.45', async () => {
+    systemLogListMock.mockResolvedValue([
+      { id: 'l1', level: 'error', module: 'scanner', message: 'BTCUSDT falhou', created_date: '2026-09-26T10:00:00.000Z', details: { foo: 'bar' } },
+    ]);
+    renderLogs();
+    const summary = await screen.findByText('ver payload →');
+    expect(summary.style.color).toBe('rgba(255, 255, 255, 0.45)');
+  });
+});
