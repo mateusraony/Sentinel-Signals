@@ -206,3 +206,39 @@ describe('AssetCard — animações de flash respeitam prefers-reduced-motion (a
     expect(styleTag.textContent).toMatch(/\.flash-buy,\s*\.flash-sell\s*\{\s*animation:\s*none;?\s*\}/);
   });
 });
+
+// Achado M-17 do Raio-X de UI/UX (glossário de termos técnicos, item
+// 229): RF/MACD/EMA/RSI no IndicatorDots e TP1/TP2 no grid de preços eram
+// rótulos "nus" — sem tooltip nem texto explicando o termo. Padrão já
+// usado no resto do arquivo (Tooltip/TooltipTrigger asChild/tabIndex={0}).
+describe('AssetCard — indicadores RF/MACD/EMA/RSI e colunas TP1/TP2 têm tooltip explicando o termo (achado M-17)', () => {
+  // Nota: o card inteiro já é role="button"/tabIndex={0} (achado A-8), então
+  // `.closest('[tabindex="0"]')` sozinho encontraria o card mesmo sem o fix
+  // (falso positivo) — `.closest('.cursor-help')` é o discriminador certo,
+  // já que só o novo wrapper do achado M-17 usa essa classe (o card usa
+  // `cursor-pointer`).
+  it('REGRESSÃO: RF/MACD/EMA/RSI (IndicatorDots) são focáveis e têm tooltip próprio', () => {
+    renderCard({
+      states: [{ timeframe: '1h', rf_direction: 1, macd_histogram: 0.5, trend_ema: 'bullish', rsi_zone: 'neutral', rsi_value: 55, last_close: 60000 }],
+    });
+    const rf = screen.getByText('RF').closest('.cursor-help');
+    const macd = screen.getByText('MACD').closest('.cursor-help');
+    const ema = screen.getByText('EMA').closest('.cursor-help');
+    const rsi = screen.getByText('RSI').closest('.cursor-help');
+    expect(rf?.getAttribute('tabindex')).toBe('0');
+    expect(macd?.getAttribute('tabindex')).toBe('0');
+    expect(ema?.getAttribute('tabindex')).toBe('0');
+    expect(rsi?.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: colunas TP1/TP2 do grid de preços são focáveis com tooltip; Entrada/Stop/Stop+ continuam sem tooltip', () => {
+    renderCard({});
+    const tp1 = screen.getByText('TP1').closest('.cursor-help');
+    const tp2 = screen.getByText('TP2').closest('.cursor-help');
+    expect(tp1?.getAttribute('tabindex')).toBe('0');
+    expect(tp2?.getAttribute('tabindex')).toBe('0');
+    // Entrada/Stop/Stop+ são autoexplicativos — não deveriam virar gatilho de tooltip.
+    expect(screen.getByText('Entrada').closest('.cursor-help')).toBeNull();
+    expect(screen.getByText('Stop+').closest('.cursor-help')).toBeNull();
+  });
+});

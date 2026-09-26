@@ -27643,3 +27643,71 @@ typecheck:ratchet` limpos (2103 testes, 0 falhas; teto de typecheck em
 13, sem mudança). `git diff` nos 5 arquivos de produção mostra só a
 troca do nome do atributo + comentários explicando a troca — nenhuma
 mudança em `backend.`/lógica de negócio.
+
+## 229. M-17 (1ª sub-rodada): glossário de termos técnicos — tooltip em `AssetCard.jsx` + `AssetDetailPanel.jsx`
+
+M-17 do Raio-X ("termos técnicos sem explicação", seção I do relatório
+original — glossário completo com a redação exata sugerida pra cada
+termo, ex.: RF, SMC, RSI, MACD, EMA, Confl., Funding, R:R, Expectância,
+Tier, ADX, Choppiness, Runner, Time Stop/Chop Exit, TP1/TP2, CAGR).
+Rodei um agente Explore pra mapear, termo a termo, onde cada um
+aparece como rótulo "nu" (sem `Tooltip` do Radix nem texto explicativo
+ao lado) em `src/pages`/`src/components` — 8 arquivos-alvo
+identificados, mais 1 de baixa prioridade (`PerformanceMetricsBar.jsx`,
+sub-texto, não título). Vários termos já estavam resolvidos em
+`TradeCard.jsx`, `SignalToast.jsx`, `SignalAlertBanner.jsx`,
+`LiveConfidenceCard.jsx`, `PortfolioVsMarket.jsx` e nos textos de
+`decisionExplanation.js` (ADX/Choppiness sempre vêm com frase
+explicativa quando exibidos com valor real) — não precisam de nova
+rodada.
+
+Esta 1ª sub-rodada cobre os 2 arquivos com mais ocorrências:
+
+- **`AssetCard.jsx`** — `IndicatorDots` (RF/MACD/EMA/RSI, mini-badges
+  do card) e o grid de preços (colunas TP1/TP2 — Entrada/Stop/Stop+
+  já são autoexplicativos em português, ficam sem tooltip). Texto
+  reaproveitado do glossário da auditoria (seção I), sem invenção de
+  conceito novo.
+- **`AssetDetailPanel.jsx`** — `TFStateCard` (mini-grid RSI/MACD/EMA
+  por timeframe) e `ParamCard` (RSI Period/RSI OB/OS/MACD/EMA nos
+  "Parâmetros Range Filter" — RF Period/RF Mult ficam de fora, já
+  contextualizados pelo título da seção). `ParamCard` ganhou prop
+  opcional `tooltip`, mesmo padrão já usado em `SummaryCard`
+  (`Backtest.jsx`)/`MetricCard` (`MonthlyReport.jsx`).
+
+Padrão de fix idêntico ao resto do projeto (achado A-6): `Tooltip`/
+`TooltipTrigger asChild`/`TooltipContent` do Radix, com `tabIndex={0}`
++ classe `cursor-help` no elemento que vira gatilho.
+
+### Testes novos
+
+`AssetCard.test.jsx` (já existia): 2 casos novos confirmando que RF/
+MACD/EMA/RSI e as colunas TP1/TP2 ganham um wrapper focável
+(`tabindex="0"`) com classe `cursor-help`, e que Entrada/Stop/Stop+
+continuam sem esse wrapper. **Achado de teste durante a implementação**:
+a primeira versão usava `.closest('[tabindex="0"]')`, que dava falso
+positivo — o card inteiro já é `role="button"`/`tabIndex={0}` (achado
+A-8), então esse seletor encontrava o card mesmo SEM o fix aplicado
+(confirmado ao reproduzir via `git stash`: o teste passava mesmo com o
+`AssetCard.jsx` revertido). Corrigido pra `.closest('.cursor-help')`
+— classe exclusiva do novo wrapper — e reconfirmado que falha sem o
+fix antes de aceitar. `AssetDetailPanel.test.jsx` (novo — arquivo não
+tinha teste dedicado antes): 2 casos confirmando o mesmo padrão no
+mini-grid e nos `ParamCard` afetados.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2107 testes, 0 falhas; teto de typecheck em
+13, sem mudança). `git diff` nos 2 arquivos de produção mostra só a
+adição do wrapper de tooltip (prop `tooltip` no `ParamCard`, `Tooltip`/
+`TooltipTrigger`/`TooltipContent` nos outros pontos) — nenhuma mudança
+em `backend.`/lógica de negócio/cálculo de indicador.
+
+### M-17 restante após esta rodada
+
+6 arquivos: `AssetConfigPanel.jsx`, `TelegramSettings.jsx`,
+`Alerts.jsx`, `ComparePanel.jsx`, `TradeHistory.jsx`, `Backtest.jsx`
+(+ `PerformanceMetricsBar.jsx`, baixa prioridade) — candidatos a 3
+sub-rodadas subsequentes, mapa completo já levantado por agente
+Explore nesta rodada.

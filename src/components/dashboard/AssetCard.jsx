@@ -29,6 +29,14 @@ const STALE_REASON_META = {
   silent: { label: '⚠️ STALE', shortLabel: 'STALE', color: '#ff9f43' },
 };
 
+// Achado M-17 do Raio-X de UI/UX: coluna do grid de preços — só TP1/TP2
+// precisam de explicação (Entrada/Stop/Stop+ já são autoexplicativos em
+// português). Texto reaproveitado do glossário da auditoria (seção I).
+const PRICE_COL_TOOLTIPS = {
+  TP1: 'Primeiro alvo de lucro — realiza parte da posição quando atingido.',
+  TP2: 'Segundo e último alvo de lucro — o que sobrou da posição (runner) depois do TP1.',
+};
+
 function Dot({ color, filled = true }) {
   return (
     <span style={{
@@ -55,26 +63,54 @@ function IndicatorDots({ state }) {
 
   return (
     <div className="flex items-center gap-3 sm:gap-2 flex-wrap">
-      <span className="flex items-center gap-1">
-        <Dot color={rfColor} />
-        <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>RF</span>
-        <span className="text-[10px] font-mono font-semibold" style={{ color: rfColor }}>{rfLabel}</span>
-      </span>
-      <span className="flex items-center gap-1">
-        <Dot color={macdColor} />
-        <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>MACD</span>
-        <span className="text-[10px] font-mono" style={{ color: macdColor }}>{macdH > 0 ? '▲' : macdH < 0 ? '▼' : '—'}</span>
-      </span>
-      <span className="flex items-center gap-1">
-        <Dot color={emaColor} />
-        <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>EMA</span>
-        <span className="text-[10px] font-mono" style={{ color: emaColor }}>{emaTrend === 'bullish' ? '▲' : emaTrend === 'bearish' ? '▼' : '—'}</span>
-      </span>
-      <span className="flex items-center gap-1">
-        <Dot color={rsiColor} filled={rsiZone !== 'neutral'} />
-        <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>RSI</span>
-        <span className="text-[10px] font-mono" style={{ color: rsiColor }}>{rsiVal}</span>
-      </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
+            <Dot color={rfColor} />
+            <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>RF</span>
+            <span className="text-[10px] font-mono font-semibold" style={{ color: rfColor }}>{rfLabel}</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          Range Filter: indicador que filtra o ruído do preço e define uma banda de tendência — o sistema só considera um movimento válido quando o preço rompe essa banda de forma consistente.
+        </TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
+            <Dot color={macdColor} />
+            <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>MACD</span>
+            <span className="text-[10px] font-mono" style={{ color: macdColor }}>{macdH > 0 ? '▲' : macdH < 0 ? '▼' : '—'}</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          MACD: compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.
+        </TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
+            <Dot color={emaColor} />
+            <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>EMA</span>
+            <span className="text-[10px] font-mono" style={{ color: emaColor }}>{emaTrend === 'bullish' ? '▲' : emaTrend === 'bearish' ? '▼' : '—'}</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          EMA: média móvel exponencial — reage mais rápido a mudanças recentes que uma média comum. Quando uma EMA curta cruza uma longa, é sinal de mudança de tendência.
+        </TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
+            <Dot color={rsiColor} filled={rsiZone !== 'neutral'} />
+            <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>RSI</span>
+            <span className="text-[10px] font-mono" style={{ color: rsiColor }}>{rsiVal}</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          RSI (Índice de Força Relativa): mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100) — aqui, só confirmação, nunca sinal sozinho.
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -439,7 +475,18 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           {['Entrada', 'Stop', 'TP1', 'TP2', 'Stop+'].map((col, i) => (
             <div key={col} className="text-center px-1 py-1.5 rounded min-w-[48px]"
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
-              <div className="text-[8px] font-mono text-muted-foreground mb-0.5 leading-tight truncate">{col}</div>
+              {PRICE_COL_TOOLTIPS[col] ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="text-[8px] font-mono text-muted-foreground mb-0.5 leading-tight truncate cursor-help" tabIndex={0}>{col}</div>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                    {PRICE_COL_TOOLTIPS[col]}
+                  </TooltipContent>
+                </Tooltip>
+              ) : (
+                <div className="text-[8px] font-mono text-muted-foreground mb-0.5 leading-tight truncate">{col}</div>
+              )}
               <div className="text-[10px] font-mono font-semibold" style={{ color: priceVals[i] ? priceColColors[i] : 'rgba(255,255,255,0.15)' }}>
                 {formatPrice(priceVals[i])}
               </div>

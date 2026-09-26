@@ -783,9 +783,10 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] M-8 — Verificação: RSI/MACD/EMA sem cor de zona. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-12 — Settings/Pine Script sem link cruzado. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-9 — 17 gráficos Recharts sem role="img"/aria-label em 10 arquivos. **Fechado: 3 sub-rodadas, 17/17 instâncias — ver seção própria abaixo.**
-- [ ] Demais itens de Média prioridade (M-4, M-10, M-11, M-13, M-15,
-  M-17 — 6 de 17), Refinamentos e a reorganização completa do
-  Dashboard (seção L do relatório) — nada iniciado.
+- [~] M-17 — termos técnicos sem explicação (glossário, seção I). **1ª de ~4 sub-rodadas feita (2/8 arquivos-alvo) — ver seção própria abaixo.**
+- [ ] Demais itens de Média prioridade (M-4, M-10, M-11, M-13, M-15),
+  Refinamentos e a reorganização completa do Dashboard (seção L do
+  relatório) — nada iniciado.
 
 ## Como continuar
 
@@ -810,13 +811,13 @@ isolado.
 **Backlog de Média prioridade em andamento (1ª rodada, item 220 —
 M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
 M-5/M-6/M-8/M-12; M-9 fechado em 3 sub-rodadas, itens 223/225/226/227;
-M-7 descoberto já corrigido).** Restam 6 dos 17 itens M inteiros (M-4,
-M-10, M-11, M-13, M-15, M-17). M-4/M-10/M-13/M-15 se sobrepõem à
-reorganização do Dashboard (seção L, que também inclui A-15) —
-decisão de produto maior, não mexer sem
-alinhamento explícito. M-11 (632 ocorrências de fonte arbitrária em 51
-arquivos) e M-17 (glossário de 10 termos técnicos) são varreduras
-grandes, merecem rodada própria.
+M-17 em sub-rodadas, item 229 — 1ª feita; M-7 descoberto já
+corrigido).** Restam 5 dos 17 itens M inteiros (M-4, M-10, M-11, M-13,
+M-15) + 6 dos 8 arquivos-alvo de M-17. M-4/M-10/M-13/M-15 se
+sobrepõem à reorganização do Dashboard (seção L, que também inclui
+A-15) — decisão de produto maior, não mexer sem alinhamento explícito.
+M-11 (632 ocorrências de fonte arbitrária em 51 arquivos) é varredura
+grande, merece rodada própria.
 
 ## Backlog M-9 — 1ª sub-rodada (2026-09-25): 4 widgets do Dashboard
 
@@ -915,6 +916,48 @@ typecheck:ratchet` limpos (2103 testes, teto de typecheck em 13, sem
 mudança). Detalhe completo em `docs/known-risks.md` item 227.
 
 **M-9 fechado: 17 de 17 instâncias, 3 sub-rodadas, 0 restante.**
+
+## Backlog M-17 — 1ª sub-rodada (2026-09-26): `AssetCard.jsx` + `AssetDetailPanel.jsx`
+
+M-17 ("termos técnicos sem explicação") tem a redação completa do
+glossário na seção I do relatório original (Artifact), com o texto
+exato sugerido pra cada termo — reaproveitado aqui sem invenção.
+Rodei um agente Explore pra mapear onde cada termo (RF, SMC, RSI,
+MACD, EMA, Confl., Funding, R:R, Expectância, Tier, ADX, Choppiness,
+Runner, Time Stop/Chop Exit, TP1/TP2, CAGR) aparece como rótulo "nu"
+em `src/pages`/`src/components` — 8 arquivos-alvo identificados
+(`AssetCard.jsx`, `AssetDetailPanel.jsx`, `AssetConfigPanel.jsx`,
+`TelegramSettings.jsx`, `Alerts.jsx`, `ComparePanel.jsx`,
+`TradeHistory.jsx`, `Backtest.jsx`), mais `PerformanceMetricsBar.jsx`
+como baixa prioridade (sub-texto, não título). Muitos termos já
+estavam resolvidos em outros componentes (`TradeCard.jsx`,
+`SignalToast.jsx`, `LiveConfidenceCard.jsx`, `PortfolioVsMarket.jsx`,
+`decisionExplanation.js`) — mapa completo em `docs/known-risks.md`
+item 229.
+
+Esta 1ª sub-rodada cobre `AssetCard.jsx` (RF/MACD/EMA/RSI no
+`IndicatorDots`, TP1/TP2 no grid de preços) e `AssetDetailPanel.jsx`
+(RSI/MACD/EMA no mini-grid `TFStateCard` e no `ParamCard` dos
+parâmetros do RF) — mesmo padrão `Tooltip`/`TooltipTrigger asChild`/
+`TooltipContent` já usado no resto do projeto (achado A-6).
+
+**Achado durante a implementação**: a 1ª versão dos testes de
+`AssetCard.jsx` usava `.closest('[tabindex="0"]')`, que dava falso
+positivo — o card inteiro já é `role="button"`/`tabIndex={0}`
+(achado A-8), então o seletor encontrava o card mesmo sem o fix
+aplicado (só descoberto ao reproduzir via `git stash`, disciplina
+padrão desta sessão — sem isso, o teste teria passado "verde" sem
+testar nada). Corrigido pra `.closest('.cursor-help')`, classe
+exclusiva do novo wrapper, e reconfirmado que falha sem o fix.
+
+2 arquivos de teste (`AssetCard.test.jsx` já existia, ganhou 2 casos
+novos; `AssetDetailPanel.test.jsx` é novo — arquivo não tinha teste
+dedicado antes). `npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2107 testes, teto de typecheck em 13, sem
+mudança). Detalhe completo em `docs/known-risks.md` item 229. Restam
+6 arquivos-alvo (+ 1 de baixa prioridade): `AssetConfigPanel.jsx`,
+`TelegramSettings.jsx`, `Alerts.jsx`, `ComparePanel.jsx`,
+`TradeHistory.jsx`, `Backtest.jsx` (+ `PerformanceMetricsBar.jsx`).
 
 ## Backlog Média prioridade — 3ª rodada (2026-09-25): M-5, M-6, M-8, M-12 corrigidos
 
