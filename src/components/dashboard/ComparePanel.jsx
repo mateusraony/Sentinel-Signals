@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Crown, Swords, TrendingUp, TrendingDown } from 'lucide-react';
 import { fetch24hStats } from '@/lib/marketDataProvider';
 import { formatPrice } from '@/lib/priceProximity';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 function dirCfg(dir) {
   if (dir === 1) return { icon: '▲', color: '#00ff80', label: 'Bull' };
@@ -37,10 +38,26 @@ function computeOpportunity(states, signal, tradeOp) {
   return { score, reasons, hasActive };
 }
 
-function MetricRow({ label, value, color }) {
+// Achado M-17 do Raio-X de UI/UX: RSI/MACD/EMA são termos técnicos "nus"
+// nesta tela — prop opcional `tooltip` (mesmo padrão de `ParamCard`/
+// `SummaryCard` já usado no resto do projeto) envolve a label num Tooltip
+// do Radix quando presente; sem a prop, renderiza igual a antes.
+/** @param {{ label: string, value: any, color?: string, tooltip?: string }} props */
+function MetricRow({ label, value, color, tooltip }) {
   return (
     <div className="flex items-center justify-between py-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-      <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">{label}</span>
+      {tooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider cursor-help" tabIndex={0}>{label}</span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            {tooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">{label}</span>
+      )}
       <span className="text-[10px] font-mono font-semibold" style={{ color: color || 'rgba(255,255,255,0.7)' }}>
         {value}
       </span>
@@ -129,11 +146,14 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
             <>
               <MetricRow label="RF Valor (4h)" value={s4h ? `$${formatPrice(s4h.rf_filter_value)}` : '—'} color="rgba(0,229,255,0.7)" />
               <MetricRow label="RSI (1h)" value={Number.isFinite(s1h?.rsi_value) ? s1h.rsi_value.toFixed(0) : '—'}
-                color={s1h?.rsi_zone === 'overbought' ? '#ff1478' : s1h?.rsi_zone === 'oversold' ? '#00ff80' : 'rgba(255,255,255,0.7)'} />
+                color={s1h?.rsi_zone === 'overbought' ? '#ff1478' : s1h?.rsi_zone === 'oversold' ? '#00ff80' : 'rgba(255,255,255,0.7)'}
+                tooltip="Índice de Força Relativa: mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100) — aqui, só confirmação, nunca sinal sozinho." />
               <MetricRow label="MACD Hist" value={s1h?.macd_histogram !== undefined ? (s1h.macd_histogram > 0 ? '▲ Pos' : '▼ Neg') : '—'}
-                color={s1h?.macd_histogram > 0 ? '#00ff80' : s1h?.macd_histogram < 0 ? '#ff1478' : '#64748b'} />
+                color={s1h?.macd_histogram > 0 ? '#00ff80' : s1h?.macd_histogram < 0 ? '#ff1478' : '#64748b'}
+                tooltip="Compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo." />
               <MetricRow label="EMA Trend" value={s1h?.trend_ema === 'bullish' ? '▲ Bull' : s1h?.trend_ema === 'bearish' ? '▼ Bear' : '— Neu'}
-                color={s1h?.trend_ema === 'bullish' ? '#00ff80' : s1h?.trend_ema === 'bearish' ? '#ff1478' : '#64748b'} />
+                color={s1h?.trend_ema === 'bullish' ? '#00ff80' : s1h?.trend_ema === 'bearish' ? '#ff1478' : '#64748b'}
+                tooltip="Média móvel exponencial — reage mais rápido a mudanças recentes que uma média comum. Quando uma EMA curta cruza uma longa, é sinal de mudança de tendência." />
               <MetricRow label="Score" value={score > 0 ? `${score}/100` : '—'}
                 color={score >= 85 ? '#00ff80' : score >= 75 ? '#ffd166' : 'rgba(255,255,255,0.5)'} />
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }} />

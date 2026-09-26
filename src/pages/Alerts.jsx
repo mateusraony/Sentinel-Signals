@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { Bell, Filter, Trash2, TrendingUp, TrendingDown, Search, X, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { QueryErrorState } from '@/components/QueryErrorState';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
@@ -14,6 +15,19 @@ const SOURCE_LABELS = {
   macd: 'MACD',
   ema_cross: 'EMA Cross',
   confluence: 'Confluência',
+};
+
+// Achado M-17 do Raio-X de UI/UX: os nomes de fonte de sinal (botões de
+// filtro + badge do card) eram siglas/termos técnicos "nus". Texto
+// reaproveitado do glossário da auditoria (seção I) — mesmas chaves de
+// SOURCE_LABELS.
+const SOURCE_TOOLTIPS = {
+  range_filter: 'Indicador que filtra o ruído do preço e define uma banda de tendência: o sistema só considera um movimento válido quando o preço rompe essa banda de forma consistente.',
+  smc_structure: 'Smart Money Concepts: análise de topos/fundos e zonas de rompimento, usada como fonte alternativa de sinal além do Range Filter.',
+  rsi: 'Índice de Força Relativa: mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100) — aqui vira alerta próprio, de prioridade baixa, quando entra em sobrecompra/sobrevenda.',
+  macd: 'Compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.',
+  ema_cross: 'Média móvel exponencial — reage mais rápido a mudanças recentes que uma média comum. Quando uma EMA curta cruza uma longa, é sinal de mudança de tendência.',
+  confluence: 'Pontuação de 0 a 100 somando quantos indicadores concordam na mesma direção ao mesmo tempo. Quanto mais alto, mais confirmações.',
 };
 
 const PRIORITY_CONFIG = {
@@ -142,15 +156,27 @@ export default function Alerts() {
           <div className="w-px h-4" style={{ background: 'rgba(255,255,255,0.08)' }} />
 
           {/* Fonte */}
-          {['all', 'range_filter', 'smc_structure', 'rsi', 'macd', 'ema_cross'].map(src => (
-            <button key={src} onClick={() => setFilterSource(src)}
-              className="text-[9px] font-mono px-2 py-1.5 rounded-lg transition-all"
-              style={filterSource === src
-                ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
-                : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
-              {src === 'all' ? 'Todas Fontes' : SOURCE_LABELS[src]}
-            </button>
-          ))}
+          {['all', 'range_filter', 'smc_structure', 'rsi', 'macd', 'ema_cross'].map(src => {
+            const button = (
+              <button key={src} onClick={() => setFilterSource(src)}
+                className={`text-[9px] font-mono px-2 py-1.5 rounded-lg transition-all${src !== 'all' ? ' cursor-help' : ''}`}
+                tabIndex={src !== 'all' ? 0 : undefined}
+                style={filterSource === src
+                  ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
+                  : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
+                {src === 'all' ? 'Todas Fontes' : SOURCE_LABELS[src]}
+              </button>
+            );
+            if (src === 'all') return button;
+            return (
+              <Tooltip key={src}>
+                <TooltipTrigger asChild>{button}</TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  {SOURCE_TOOLTIPS[src]}
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
 
           {hasActiveFilters && (
             <button onClick={() => { setSearch(''); setFilterSource('all'); setFilterPriority('all'); setFilterType('all'); }}
@@ -233,10 +259,24 @@ export default function Alerts() {
                       style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.07)' }}>
                       {signal.timeframe?.toUpperCase()}
                     </span>
-                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded"
-                      style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.5)', border: '1px solid rgba(0,229,255,0.12)' }}>
-                      {SOURCE_LABELS[signal.source] || signal.source}
-                    </span>
+                    {SOURCE_TOOLTIPS[signal.source] ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="text-[8px] font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
+                            style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.5)', border: '1px solid rgba(0,229,255,0.12)' }}>
+                            {SOURCE_LABELS[signal.source] || signal.source}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                          {SOURCE_TOOLTIPS[signal.source]}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <span className="text-[8px] font-mono px-1.5 py-0.5 rounded"
+                        style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.5)', border: '1px solid rgba(0,229,255,0.12)' }}>
+                        {SOURCE_LABELS[signal.source] || signal.source}
+                      </span>
+                    )}
                     <span className="text-[8px] font-mono px-1.5 py-0.5 rounded"
                       style={{ background: prio.bg, color: prio.color, border: `1px solid ${prio.border}` }}>
                       {prio.label}
