@@ -16,6 +16,11 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { screen, cleanup, fireEvent } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 
+// PnLChart (Recharts ResponsiveContainer) renderiza sempre que houver >1
+// operação filtrada — jsdom não tem ResizeObserver; mesmo polyfill mínimo já
+// usado em PnLChart.test.jsx.
+globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
+
 const AGORA = '2026-09-18T12:00:00.000Z';
 
 // Op fechada com decision_snapshot de EXIT (Fase 4) — deve mostrar o `why`
@@ -148,5 +153,76 @@ describe('TradeHistory — badges usam Tooltip em vez de title= nativo (achado A
     expect(mfe.getAttribute('tabindex')).toBe('0');
     expect(mae.getAttribute('title')).toBeNull();
     expect(mae.getAttribute('tabindex')).toBe('0');
+  });
+});
+
+// Achado M-17 do Raio-X de UI/UX (glossário de termos técnicos): TP1/TP2 (no
+// grid de preços e nos chips de milestone), R:R (linha compacta) e a fonte
+// "RF" (chip de saída) eram rótulos "nus" — sem tooltip explicando o termo.
+// `.closest('.cursor-help')`, não `.closest('[tabindex]')`, porque o card
+// inteiro já é `role="button"`/`tabIndex={0}` (linha compacta clicável) —
+// mesmo discriminador/lição já documentado no item 229 desta sessão.
+const OP_M17_RF = {
+  ...OP_A6, id: 'op4', symbol: 'SOLUSDT', exit_mode: 'RANGE_FILTER',
+};
+
+describe('TradeHistory — TP1/TP2/R:R/RF têm tooltip explicando o termo (achado M-17)', () => {
+  it('REGRESSÃO: R:R (linha compacta, sempre visível) é focável com tooltip', async () => {
+    mockBackend([OP_A6]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+
+    await screen.findByText('PENDLE/USDT');
+    const rr = screen.getByText(/RR 1:/).closest('.cursor-help');
+    expect(rr?.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: grid de preços — TP1/TP2 focáveis com tooltip; Entrada/Stop Inicial continuam sem', async () => {
+    mockBackend([OP_A6]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    const { container } = renderPage(<TradeHistory />);
+
+    await screen.findByText('PENDLE/USDT');
+    fireEvent.click(container.querySelector('[aria-expanded]'));
+
+    const tp1Label = await screen.findByText('🎯 TP1');
+    const tp2Label = screen.getByText('🏆 TP2');
+    expect(tp1Label.closest('.cursor-help')?.getAttribute('tabindex')).toBe('0');
+    expect(tp2Label.closest('.cursor-help')?.getAttribute('tabindex')).toBe('0');
+    expect(screen.getByText('📍 Entrada').closest('.cursor-help')).toBeNull();
+    expect(screen.getByText('🛑 Stop Inicial').closest('.cursor-help')).toBeNull();
+  });
+
+  it('REGRESSÃO: chips de milestone "TP1"/"TP2" (bloco expandido) são focáveis com tooltip', async () => {
+    mockBackend([OP_A6]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    const { container } = renderPage(<TradeHistory />);
+
+    await screen.findByText('PENDLE/USDT');
+    fireEvent.click(container.querySelector('[aria-expanded]'));
+
+    const tp1Chip = await screen.findByText(/○ TP1|✅ TP1/);
+    const tp2Chip = screen.getByText(/○ TP2|✅ TP2/);
+    expect(tp1Chip.closest('.cursor-help')?.getAttribute('tabindex')).toBe('0');
+    expect(tp2Chip.closest('.cursor-help')?.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('REGRESSÃO: chip "Saída: RF" é focável com tooltip; "Saída: RF+ATR" (default) continua sem', async () => {
+    mockBackend([OP_A6, OP_M17_RF]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    const { container } = renderPage(<TradeHistory />);
+
+    // "PENDLE/USDT" também aparece num <td> do PnLChart (2 ops → curva
+    // renderizada) — findAllByText + filtro pelo <span> do card, não pelo
+    // texto sozinho.
+    await screen.findAllByText('PENDLE/USDT');
+    const rows = container.querySelectorAll('[aria-expanded]');
+    fireEvent.click(rows[0]); // OP_A6 — sem exit_mode, default RF+ATR
+    fireEvent.click(rows[1]); // OP_M17_RF — exit_mode: RANGE_FILTER
+
+    const rfAtrChip = await screen.findByText(/Saída: RF\+ATR/);
+    const rfChip = screen.getByText(/Saída: RF$/);
+    expect(rfAtrChip.closest('.cursor-help')).toBeNull();
+    expect(rfChip.closest('.cursor-help')?.getAttribute('tabindex')).toBe('0');
   });
 });
