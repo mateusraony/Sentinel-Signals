@@ -783,7 +783,7 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] M-8 — Verificação: RSI/MACD/EMA sem cor de zona. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-12 — Settings/Pine Script sem link cruzado. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-9 — 17 gráficos Recharts sem role="img"/aria-label em 10 arquivos. **Fechado: 3 sub-rodadas, 17/17 instâncias — ver seção própria abaixo.**
-- [~] M-17 — termos técnicos sem explicação (glossário, seção I). **2ª de ~4 sub-rodadas feita (4/8 arquivos-alvo) — ver seção própria abaixo.**
+- [~] M-17 — termos técnicos sem explicação (glossário, seção I). **3ª de ~4 sub-rodadas feita (6/8 arquivos-alvo) — ver seção própria abaixo.**
 - [ ] Demais itens de Média prioridade (M-4, M-10, M-11, M-13, M-15),
   Refinamentos e a reorganização completa do Dashboard (seção L do
   relatório) — nada iniciado.
@@ -811,9 +811,11 @@ isolado.
 **Backlog de Média prioridade em andamento (1ª rodada, item 220 —
 M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
 M-5/M-6/M-8/M-12; M-9 fechado em 3 sub-rodadas, itens 223/225/226/227;
-M-17 em sub-rodadas, itens 229/230 — 2 de ~4 feitas; M-7 descoberto já
-corrigido).** Restam 5 dos 17 itens M inteiros (M-4, M-10, M-11, M-13,
-M-15) + 4 dos 8 arquivos-alvo de M-17. M-4/M-10/M-13/M-15 se
+M-17 em sub-rodadas, itens 229/230/232 — 3 de ~4 feitas; M-7 descoberto
+já corrigido).** Restam 5 dos 17 itens M inteiros (M-4, M-10, M-11,
+M-13, M-15) + 2 dos 8 arquivos-alvo de M-17 (`TradeHistory.jsx` +
+`Backtest.jsx`, + `PerformanceMetricsBar.jsx` opcional — última
+sub-rodada planejada, fecha M-17). M-4/M-10/M-13/M-15 se
 sobrepõem à reorganização do Dashboard (seção L, que também inclui
 A-15) — decisão de produto maior, não mexer sem alinhamento explícito.
 M-11 (632 ocorrências de fonte arbitrária em 51 arquivos) é varredura
@@ -982,10 +984,52 @@ caso novo; `AssetConfigPanel.test.jsx` é novo — arquivo não tinha
 teste dedicado antes). `npm run lint && npm test && npm run build &&
 npm run typecheck:ratchet` limpos (2110 testes, teto de typecheck em
 13, sem mudança). Detalhe completo em `docs/known-risks.md` item 230.
-Restam 4 arquivos-alvo (+ 1 de baixa prioridade): `Alerts.jsx`,
-`ComparePanel.jsx`, `TradeHistory.jsx`, `Backtest.jsx` (+
-`PerformanceMetricsBar.jsx`) — plano completo das 2 sub-rodadas
-restantes já escrito em
+
+**Fix de review (Codex, PR #430)**: o texto de TP1/TP2 em
+`AssetCard.jsx` (1ª sub-rodada) era estático e sempre descrevia um
+runner saindo do TP1 rumo ao TP2 — falso quando a operação foi criada
+com `partial_percent: 100` (fecha 100% no TP1, sem runner) ou
+`tp2_cap_disabled: true` (o runner ignora o teto de TP2 e segue em
+trailing). `getTp1Tooltip`/`getTp2Tooltip` (funções puras exportadas
+de `AssetCard.jsx`) agora derivam o texto do estado real da operação,
+reusando `closesFullyAtTp1` de `src/lib/opExitRules.js`. Testar via
+`render` + `fireEvent.focus` (abrir o Tooltip do Radix de verdade)
+provou ser lento/instável em jsdom neste arquivo (3 `useQuery` ativos
+causam re-renders contínuos) — trocado por testar as funções puras
+diretamente. Detalhe completo em `docs/known-risks.md` item 231.
+
+## Backlog M-17 — 3ª sub-rodada (2026-09-26): `Alerts.jsx` + `ComparePanel.jsx`
+
+Continuação da 2ª sub-rodada (item 230). Cobre mais 2 dos 8
+arquivos-alvo:
+
+- **`Alerts.jsx`**: novo mapa `SOURCE_TOOLTIPS` paralelo ao
+  `SOURCE_LABELS` já existente — aplicado nos botões de filtro de
+  fonte e no badge de fonte do card de cada sinal. O grid de detalhe
+  do dialog ("Fonte: X") ficou de fora, de propósito (já vem
+  contextualizado, menor prioridade).
+- **`ComparePanel.jsx`**: `MetricRow` (componente local) ganhou prop
+  opcional `tooltip`, aplicado em "RSI (1h)"/"MACD Hist"/"EMA Trend"
+  ("RF Valor (4h)"/"Score" ficaram de fora).
+
+**Achado durante a implementação**: adicionar a prop `tooltip` a
+`MetricRow` sem anotação de tipo regrediu o typecheck de 13 pra 16
+erros (`TS2741`, TypeScript trata parâmetro desestruturado sem JSDoc
+como obrigatório por padrão quando nem toda chamada passa a prop).
+Corrigido copiando a mesma anotação `/** @param {{...,
+tooltip?: string}} props */` que `ParamCard` (item 229) já usava —
+teto voltou a 13. Lição registrada em `docs/known-risks.md` item 232:
+rodar `typecheck:ratchet` sempre que uma prop opcional for adicionada
+a um componente local já existente, mesmo com lint/test verdes.
+
+2 arquivos de teste (`Alerts.test.jsx` já existia, ganhou 2 casos
+novos; `ComparePanel.test.jsx` é novo — arquivo não tinha teste antes).
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2117 testes, teto de typecheck em 13, sem
+mudança líquida). Detalhe completo em `docs/known-risks.md` item 232.
+Resta 1 arquivo-alvo (+ 1 de baixa prioridade): `TradeHistory.jsx` +
+`Backtest.jsx` (+ `PerformanceMetricsBar.jsx`) — última sub-rodada
+planejada, fecha M-17 — plano completo já escrito em
 `/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.
 
 ## Backlog Média prioridade — 3ª rodada (2026-09-25): M-5, M-6, M-8, M-12 corrigidos

@@ -54,3 +54,33 @@ describe('Alerts — linha de alerta é focável e ativável por teclado (achado
     await screen.findByRole('dialog');
   });
 });
+
+// Achado M-17 do Raio-X de UI/UX (glossário de termos técnicos): os botões
+// de filtro "Fonte" e o badge de fonte no card do alerta eram siglas/termos
+// técnicos "nus" (Range Filter/SMC Structure/RSI/MACD/EMA Cross) — sem
+// tooltip explicando o termo. `.closest('.cursor-help')`, não
+// `.closest('[tabindex]')`, porque a própria linha do alerta já é
+// `tabIndex={0}` (achado A-7 acima) — usar o seletor genérico daria falso
+// positivo (achado já documentado em item 229/230 desta sessão).
+describe('Alerts — botões de filtro "Fonte" e badge do card têm tooltip explicando o termo (achado M-17)', () => {
+  it('REGRESSÃO: botão de filtro "Range Filter" é focável com tooltip; "Todas Fontes" continua sem', () => {
+    estadoBackend.populated = false;
+    renderPage(<Alerts />);
+    const rf = screen.getByText('Range Filter').closest('.cursor-help');
+    expect(rf?.getAttribute('tabindex')).toBe('0');
+    expect(screen.getByText('Todas Fontes').closest('.cursor-help')).toBeNull();
+  });
+
+  it('REGRESSÃO: badge de fonte do card ("Range Filter") é focável com tooltip', async () => {
+    estadoBackend.populated = true;
+    renderPage(<Alerts />);
+    await screen.findByText('BTC/USDT');
+    // "Range Filter" aparece 2x: botão de filtro + badge do card — o badge
+    // é o que NÃO tem onClick de filtro (mesmo texto visível, instância
+    // diferente); confirmamos que AMBAS as instâncias visíveis viraram
+    // gatilho focável (o achado cobre os 2 pontos).
+    const instancias = screen.getAllByText('Range Filter').map(el => el.closest('.cursor-help'));
+    expect(instancias.every(el => el?.getAttribute('tabindex') === '0')).toBe(true);
+    expect(instancias.length).toBe(2);
+  });
+});

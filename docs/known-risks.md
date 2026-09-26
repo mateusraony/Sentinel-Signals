@@ -27828,3 +27828,70 @@ typecheck:ratchet` limpos (2114 testes, 0 falhas; teto de typecheck em
 de `AssetCard.jsx` antes de aceitar (o arquivo stashado nem exportava
 as funções — `TypeError: getTp1Tooltip is not a function`). `git diff
 --stat` só em `AssetCard.jsx` + `AssetCard.test.jsx`.
+
+## 232. M-17 (3ª sub-rodada): tooltips em `Alerts.jsx` + `ComparePanel.jsx`
+
+Continuação do backlog M-17 (itens 229-231). 3ª de ~4 sub-rodadas —
+cobre mais 2 dos arquivos-alvo restantes.
+
+- **`Alerts.jsx`**: `SOURCE_LABELS` já mapeava `range_filter`/
+  `smc_structure`/`rsi`/`macd`/`ema_cross`/`confluence` pro nome por
+  extenso, mas sem explicação do termo em si. Novo mapa paralelo
+  `SOURCE_TOOLTIPS` (mesmas chaves, texto do glossário da auditoria)
+  aplicado em 2 pontos: os botões de filtro de fonte (`Range
+  Filter`/`SMC Structure`/`RSI`/`MACD`/`EMA Cross`, exceto "Todas
+  Fontes") e o badge de fonte no card de cada sinal. O grid de detalhe
+  do dialog ("Fonte: X") ficou de fora — já vem contextualizado, menor
+  prioridade, evita ampliar escopo. A linha do card já é `tabIndex={0}`
+  própria (achado A-7) — o discriminador de teste usa `.cursor-help`,
+  nunca `[tabindex]` genérico, pela mesma razão documentada no item 229.
+- **`ComparePanel.jsx`**: `MetricRow` (componente local) ganhou prop
+  opcional `tooltip`, mesmo padrão de `ParamCard`/`SummaryCard`.
+  Aplicado em "RSI (1h)"/"MACD Hist"/"EMA Trend" (as 3 linhas do
+  indicador técnico por coluna) — "RF Valor (4h)" e "Score" ficaram de
+  fora (não listados como "nus" no levantamento original).
+
+### Achado durante a implementação
+
+Adicionar `tooltip` a `MetricRow` sem anotação de tipo **regrediu o
+typecheck de 13 para 16** — TypeScript (`checkJs`) infere um parâmetro
+desestruturado sem JSDoc como obrigatório por padrão; como só 3 das 6
+chamadas passam `tooltip`, as outras 3 ("RF Valor (4h)"/"Score"/
+"Trade") viravam erro `TS2741` ("Property 'tooltip' is missing").
+`ParamCard` (`AssetDetailPanel.jsx`, item 229) já tinha o mesmo
+formato de prop opcional sem dar erro — investigado e confirmado: ele
+já tem `/** @param {{..., tooltip?: string}} props */` acima da
+função. Mesma anotação copiada pra `MetricRow` — teto voltou a 13.
+**Lição pra próximas sub-rodadas**: ao adicionar uma prop opcional a um
+componente local já existente (não um novo), sempre rodar
+`typecheck:ratchet` ANTES de aceitar, mesmo quando `lint`/`test`
+passam — nenhum dos dois pega esse tipo de regressão.
+
+### Testes
+
+`Alerts.test.jsx` (já existia): 2 casos novos — botão de filtro "Range
+Filter" focável com tooltip (vs. "Todas Fontes" sem); badge do card
+"Range Filter" (2 instâncias visíveis — botão de filtro + badge — as 2
+focáveis). `ComparePanel.test.jsx` (novo — arquivo não tinha teste
+antes): 1 caso confirmando que "RSI (1h)"/"MACD Hist"/"EMA Trend" (2
+instâncias cada, colunas A/B) são focáveis com tooltip, e "RF Valor
+(4h)"/"Score" continuam sem. Falha de cada teste reproduzida via `git
+stash` do arquivo de produção correspondente antes de aceitar.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2117 testes, 0 falhas; teto de typecheck em
+13 — só depois do fix de JSDoc acima, inicialmente regrediu pra 16).
+`git diff --stat` só em `Alerts.jsx`/`Alerts.test.jsx`/
+`ComparePanel.jsx` (+ `ComparePanel.test.jsx` novo) — nenhuma mudança
+em `backend.`/lógica de negócio.
+
+### M-17 restante após esta rodada
+
+1 arquivo (+ 1 de baixa prioridade opcional): `TradeHistory.jsx` +
+`Backtest.jsx` (+ `PerformanceMetricsBar.jsx`, baixa prioridade) —
+plano completo já escrito em
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`. Última
+sub-rodada planejada — fecha M-17 (17/17 do backlog Alta+Média já
+revisitados, contando M-9).
