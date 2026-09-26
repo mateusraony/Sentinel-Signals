@@ -13,8 +13,8 @@
 // os testes de A-5 acima só cobrem os 5 CORE agora — os 7 MORE têm
 // describe próprio abaixo.
 import React from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup, fireEvent, within, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Sidebar from './Sidebar.jsx';
 
@@ -22,6 +22,17 @@ vi.mock('@/api/entities', () => ({
   backend: { entities: { SystemLog: { deleteMany: async () => {} } } },
 }));
 
+// Achado do Codex review no PR #436: MobileBottomNav passou a chamar
+// `window.matchMedia` (pra fechar o sheet "Mais" ao cruzar o breakpoint
+// desktop) — jsdom não implementa matchMedia por padrão, então todo teste
+// deste arquivo precisa do mock, não só o que testa esse comportamento
+// específico. `mediaQueryList` fica acessível pros testes que precisam
+// simular a mudança de breakpoint.
+let mediaQueryList;
+beforeEach(() => {
+  mediaQueryList = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+  window.matchMedia = vi.fn(() => mediaQueryList);
+});
 afterEach(() => cleanup());
 
 const CORE_LABELS = ['Dashboard', 'Trades', 'Ativos', 'Alertas', 'Histórico'];
@@ -125,5 +136,54 @@ describe('Sidebar — menu "Mais" na nav mobile (achado M-10)', () => {
     );
     const active = screen.getAllByRole('link', { name: 'Ajustes', current: 'page' });
     if (active.length !== 1) throw new Error(`esperava 1 link "Ajustes" com aria-current="page" (só desktop, sheet fechado), achei ${active.length}`);
+  });
+
+  // Achado do Codex review no PR #436: em rota secundária, o desktop
+  // sidebar fica `hidden` (invisível/inacessível) em viewport mobile — o
+  // botão "Mais" é o único controle de navegação visível representando a
+  // seção atual, mas não tinha nenhuma indicação de estado ativo pra
+  // leitor de tela (só cor do ícone). Corrigido com aria-current="page" no
+  // próprio botão quando um item secundário está ativo.
+  it('REGRESSÃO: botão "Mais" tem aria-current="page" quando a rota ativa é secundária', () => {
+    render(
+      <MemoryRouter initialEntries={['/settings']}>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    const button = screen.getByRole('button', { name: 'Mais opções de navegação' });
+    expect(button.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('botão "Mais" NÃO tem aria-current quando a rota ativa é core', () => {
+    render(
+      <MemoryRouter initialEntries={['/trades']}>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    const button = screen.getByRole('button', { name: 'Mais opções de navegação' });
+    expect(button.getAttribute('aria-current')).toBeNull();
+  });
+
+  // Achado do Codex review no PR #436: nada fechava o sheet "Mais" se a
+  // viewport cruzasse o breakpoint desktop (768px) enquanto ele estava
+  // aberto (ex.: rotação de tela) — o overlay full-screen do Radix ficava
+  // preso, com a UI desktop inerte atrás dele e sem controles visíveis
+  // (só o conteúdo do sheet tinha `md:hidden`, não o overlay). Corrigido
+  // fechando o sheet via listener de `matchMedia('(min-width: 768px)')`.
+  it('REGRESSÃO: sheet "Mais" fecha automaticamente ao cruzar o breakpoint desktop', () => {
+    render(
+      <MemoryRouter initialEntries={['/trades']}>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Mais opções de navegação' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
+
+    expect(mediaQueryList.addEventListener).toHaveBeenCalledWith('change', expect.any(Function));
+    const handleChange = mediaQueryList.addEventListener.mock.calls[0][1];
+    mediaQueryList.matches = true;
+    act(() => handleChange());
+
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

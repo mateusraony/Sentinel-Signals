@@ -1134,6 +1134,13 @@ manualmente antes de aceitar a asserção errada; corrigido pra usar
 typecheck:ratchet` limpos (2135 testes, teto de typecheck em 13, sem
 mudança). Detalhe completo em `docs/known-risks.md` item 238.
 
+**Addendum (mesmo dia)**: o PR #436 foi mesclado automaticamente
+segundos antes da revisão do Codex terminar — 2 achados reais chegaram
+num PR já fechado (aria-current ausente no botão "Mais" quando a rota
+ativa é secundária; sheet não fechava ao cruzar o breakpoint desktop,
+deixando o overlay preso). Corrigidos numa rodada separada, PR próprio
+— ver `docs/known-risks.md` item 239.
+
 **Fecha M-10 e todo o backlog de Média Prioridade do Raio-X de UI/UX —
 nenhum item pendente.**
 
