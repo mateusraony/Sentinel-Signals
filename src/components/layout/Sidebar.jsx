@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Coins, Bell, ScrollText, Zap, Target, BookOpen, Code2, Bot, FileText, Trash2, FilterX, Loader2, ArrowLeftRight, SlidersHorizontal, FlaskConical, ClipboardCheck } from 'lucide-react';
+import { LayoutDashboard, Coins, Bell, ScrollText, Zap, Target, BookOpen, Code2, Bot, FileText, Trash2, FilterX, Loader2, ArrowLeftRight, SlidersHorizontal, FlaskConical, ClipboardCheck, MoreHorizontal } from 'lucide-react';
 import { backend } from '@/api/entities';
 import { logError } from '@/lib/logger';
 import { toast } from '@/components/ui/use-toast';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 
 const NAV_ITEMS = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -19,6 +20,13 @@ const NAV_ITEMS = [
   { path: '/reviewer', icon: Bot, label: 'Revisor' },
   { path: '/monthly-report', icon: FileText, label: 'Relatório' },
 ];
+
+// Achado M-10 do Raio-X de UI/UX: os 12 itens de NAV_ITEMS na barra
+// mobile (64px, sem padding) davam ~32,5px de alvo de toque em telas de
+// ~390px. Só estes 5 (rotas de monitoramento/ação do dia a dia) ficam
+// sempre visíveis na barra — o resto vai pro botão "Mais" (bottom
+// sheet), o que dobra o alvo de toque pra ~65px sem remover nenhuma rota.
+const CORE_MOBILE_PATHS = ['/', '/trades', '/assets', '/alerts', '/history'];
 
 // Desktop sidebar (icon-only, left)
 function DesktopSidebar() {
@@ -193,44 +201,104 @@ function ClearLogsButton() {
 // Mobile bottom nav
 function MobileBottomNav() {
   const location = useLocation();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const coreItems = NAV_ITEMS.filter(item => CORE_MOBILE_PATHS.includes(item.path));
+  const moreItems = NAV_ITEMS.filter(item => !CORE_MOBILE_PATHS.includes(item.path));
+  const isMoreActive = moreItems.some(item => item.path === location.pathname);
 
   return (
-    <nav
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around h-16"
-      style={{
-        background: 'rgba(6, 8, 15, 0.92)',
-        backdropFilter: 'blur(24px)',
-        borderTop: '1px solid rgba(255,255,255,0.06)',
-      }}
-    >
-      {NAV_ITEMS.map(item => {
-        const isActive = location.pathname === item.path;
-        return (
-          <Link
-            key={item.path}
-            to={item.path}
-            aria-label={item.label}
-            aria-current={isActive ? 'page' : undefined}
-            className="flex items-center justify-center flex-1 h-full transition-all duration-200 relative"
-          >
-            {isActive && (
-              <span
-                className="absolute top-0 left-1/2 -translate-x-1/2 rounded-b-full"
-                style={{ width: 24, height: 2, background: '#00ff80', boxShadow: '0 0 8px rgba(0,255,128,0.8)' }}
+    <>
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around h-16"
+        style={{
+          background: 'rgba(6, 8, 15, 0.92)',
+          backdropFilter: 'blur(24px)',
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+        }}
+      >
+        {coreItems.map(item => {
+          const isActive = location.pathname === item.path;
+          return (
+            <Link
+              key={item.path}
+              to={item.path}
+              aria-label={item.label}
+              aria-current={isActive ? 'page' : undefined}
+              className="flex items-center justify-center flex-1 h-full transition-all duration-200 relative"
+            >
+              {isActive && (
+                <span
+                  className="absolute top-0 left-1/2 -translate-x-1/2 rounded-b-full"
+                  style={{ width: 24, height: 2, background: '#00ff80', boxShadow: '0 0 8px rgba(0,255,128,0.8)' }}
+                />
+              )}
+              <item.icon
+                className="w-[22px] h-[22px]"
+                style={{
+                  color: isActive ? '#00ff80' : 'rgba(255,255,255,0.3)',
+                  filter: isActive ? 'drop-shadow(0 0 5px rgba(0,255,128,0.6))' : 'none',
+                  transition: 'color 0.18s, filter 0.18s',
+                }}
               />
-            )}
-            <item.icon
-              className="w-[22px] h-[22px]"
-              style={{
-                color: isActive ? '#00ff80' : 'rgba(255,255,255,0.3)',
-                filter: isActive ? 'drop-shadow(0 0 5px rgba(0,255,128,0.6))' : 'none',
-                transition: 'color 0.18s, filter 0.18s',
-              }}
-            />
-          </Link>
-        );
-      })}
-    </nav>
+            </Link>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setMoreOpen(true)}
+          aria-label="Mais opções de navegação"
+          className="flex items-center justify-center flex-1 h-full transition-all duration-200 relative"
+        >
+          <MoreHorizontal
+            className="w-[22px] h-[22px]"
+            style={{
+              color: isMoreActive ? '#00ff80' : 'rgba(255,255,255,0.3)',
+              filter: isMoreActive ? 'drop-shadow(0 0 5px rgba(0,255,128,0.6))' : 'none',
+              transition: 'color 0.18s, filter 0.18s',
+            }}
+          />
+        </button>
+      </nav>
+
+      <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+        <SheetContent
+          side="bottom"
+          className="md:hidden p-0"
+          style={{ background: 'rgba(8,10,18,0.97)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(24px)' }}
+        >
+          <SheetHeader className="px-5 py-4 text-left" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <SheetTitle className="font-bold text-base text-foreground">Mais opções</SheetTitle>
+          </SheetHeader>
+          <div className="grid grid-cols-4 gap-2 p-4">
+            {moreItems.map(item => {
+              const isActive = location.pathname === item.path;
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  aria-label={item.label}
+                  aria-current={isActive ? 'page' : undefined}
+                  onClick={() => setMoreOpen(false)}
+                  className="flex flex-col items-center justify-center gap-1.5 py-3 rounded-lg transition-all duration-200"
+                  style={{ background: isActive ? 'rgba(0,255,128,0.07)' : 'transparent' }}
+                >
+                  <item.icon
+                    className="w-[22px] h-[22px]"
+                    style={{
+                      color: isActive ? '#00ff80' : 'rgba(255,255,255,0.5)',
+                      filter: isActive ? 'drop-shadow(0 0 5px rgba(0,255,128,0.6))' : 'none',
+                    }}
+                  />
+                  <span className="text-9px font-mono text-center leading-tight" style={{ color: isActive ? '#00ff80' : 'rgba(255,255,255,0.5)' }}>
+                    {item.label}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 

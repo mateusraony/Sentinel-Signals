@@ -28297,3 +28297,83 @@ completo de expandir+colapsar. Reproduzido falhando sem o fix via
 identidade do nó). `npm run lint && npm test && npm run build && npm
 run typecheck:ratchet` limpos após o fix (2130 testes, teto de
 typecheck em 13, sem mudança).
+
+## 238. M-10 — menu "Mais" na nav mobile (`Sidebar.jsx`), fecha M-10 e todo o backlog Média Prioridade
+
+Com a reorganização do Dashboard fechada (itens 236/237), M-10 era o
+único item restante do backlog de Média Prioridade. Confirmado por
+investigação anterior: M-10 é sobre `src/components/layout/
+Sidebar.jsx` (`MobileBottomNav`), não sobre `Dashboard.jsx`. Rodei um
+agente Explore (confirmou os números + zero precedente de mínimo de
+toque no projeto + zero proposta de solução em qualquer doc + `Sheet`/
+`side="bottom"` já suportado e usado em produção via `AssetDrawer.jsx`)
+e um agente Plan (desenhou o mecanismo). Usuário escolheu, via
+`AskUserQuestion`, o agrupamento recomendado: 5 itens sempre visíveis +
+botão "Mais" (não 6 com Verificação, não 4 mais compacto).
+
+**Números confirmados**: `NAV_ITEMS` (Sidebar.jsx:8-21) tem 12 itens,
+compartilhados entre `DesktopSidebar` e `MobileBottomNav`. A barra
+mobile (`h-16` = 64px, sem padding horizontal) dividia a largura
+igualmente entre os 12 (`flex-1 h-full` por item, sem `width`/`min-width`
+explícito) — em 390px (iPhone comum), ~32,5px de largura por alvo de
+toque. Nenhum precedente de mínimo de toque (24×24/44×44) em nenhum
+lugar do código/`tailwind.config.js`; nenhuma proposta de solução em
+nenhum doc vivo antes desta rodada.
+
+### Fix
+
+`Sidebar.jsx`: `CORE_MOBILE_PATHS = ['/', '/trades', '/assets', '/alerts', '/history']`
+define os 5 itens que continuam como `<Link>` direto na barra
+(Dashboard/Trades/Ativos/Alertas/Histórico — rotas de monitoramento/
+ação do dia a dia). Os outros 7 (Verificação/Logs/Pine Script/
+Backtest/Ajustes/Revisor/Relatório) saem da barra e entram num botão
+"Mais" (`aria-label="Mais opções de navegação"`, ícone `MoreHorizontal`)
+que abre um `<Sheet side="bottom">` — reaproveitando 1:1 o padrão já em
+produção em `AssetDrawer.jsx` (`Sheet`/`SheetContent`/`SheetHeader`/
+`SheetTitle` de `@/components/ui/sheet`; `side="bottom"` já suportado
+nativamente pelo primitivo Radix, só nunca exercitado em produção antes
+desta mudança). `NAV_ITEMS` continua a única fonte de verdade — o
+`DesktopSidebar` não mudou, `MobileBottomNav` só filtra
+`CORE_MOBILE_PATHS.includes(item.path)` pra decidir barra vs. sheet.
+
+Com 5 core + 1 botão "Mais" = 6 slots, `flex-1` dá **65px de largura
+por item** em 390px (dobra o alvo de toque atual), mantendo os 64px de
+altura — resolve o achado sem precisar de padding/gap adicional.
+
+### Testes
+
+`Sidebar.test.jsx` tinha 2 testes (achado A-5) que esperavam **12**
+labels com 2 instâncias cada — ajustados pra só os **5 labels core**
+(a garantia original de A-5 continua intacta pra eles). Novo describe
+"menu 'Mais' na nav mobile (achado M-10)": os 7 labels secundários têm
+só 1 instância (desktop) com o sheet fechado; botão "Mais" tem nome
+acessível próprio; abrir o sheet expõe os 7 labels como link dentro de
+um `role="dialog"`; clicar num link secundário fecha o sheet; rota
+secundária ativa tem `aria-current="page"` só no desktop com o sheet
+fechado.
+
+**Achado de investigação durante os testes**: a asserção inicial
+("2 instâncias — desktop + sheet — quando aberto") estava ERRADA. O
+Radix `Dialog` por trás do `Sheet` marca o resto da árvore (`aria-hidden`)
+enquanto o modal está aberto — trap de foco padrão, mesmo mecanismo que
+`AssetDrawer.jsx` já usa em produção. Isso torna o link do desktop
+temporariamente inacessível pra `getByRole` enquanto o sheet está aberto
+(comportamento correto de acessibilidade, não bug). Corrigido pra usar
+`within(dialog).getByRole(...)`, que verifica a existência do link
+dentro do dialog aberto sem depender de contagem de instâncias sujeita
+a esse comportamento do Radix — descoberto rodando `screen.debug()`
+manualmente antes de aceitar a asserção original.
+
+Reproduzido falhando sem o fix via `git stash` (5 dos 7 testes falham
+sem `Sidebar.jsx`). `npm run lint && npm test && npm run build && npm
+run typecheck:ratchet` limpos após o fix (2135 testes, teto de
+typecheck em 13, sem mudança). `git diff` grepado por
+`backend\.|scanner|firestore|postgres|mutation|useQuery\(` → vazio —
+só apresentação.
+
+### Fecha M-10 e todo o backlog de Média Prioridade
+
+Com este item, M-10 fica fechado — junto com M-1 a M-9 e M-11 a M-17
+(todos já fechados em rodadas anteriores) e a reorganização do
+Dashboard (itens 236/237), **não resta nenhum item do backlog de Média
+Prioridade do Raio-X de UI/UX**.

@@ -796,10 +796,12 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
   operacional + seção "Desempenho" colapsada por padrão. Ver item 237.**
 - [x] M-15 — Status do Telegram na 4ª posição, competindo com sinais
   reais. **Corrigido — movido para o fim da página. Ver item 237.**
-- [ ] M-10 — Nav mobile com 12 itens numa barra de 64px (~32px por
-  alvo de toque). **Não é sobre `Dashboard.jsx`, é `Sidebar.jsx` —
-  confirmado por investigação (item 236), item separado ainda não
-  escopado.**
+- [x] M-10 — Nav mobile com 12 itens numa barra de 64px (~32px por
+  alvo de toque). **Corrigido — 5 itens sempre visíveis
+  (Dashboard/Trades/Ativos/Alertas/Histórico) + botão "Mais" (bottom
+  sheet, reaproveitando o `Sheet` já usado em `AssetDrawer.jsx`) para
+  os outros 7. Alvo de toque dobra pra ~65px. Ver
+  `docs/known-risks.md` item 238.**
 - [ ] Refinamentos (seção E do relatório) — nada iniciado.
 
 ## Como continuar
@@ -823,17 +825,16 @@ reorganização do Dashboard (seção L) e fechado no PR 1 dessa leva
 (item 236) — toggle "Detalhes técnicos" reaproveitando o padrão do
 `TradeCard.jsx`.
 
-**Backlog de Média prioridade em andamento (1ª rodada, item 220 —
+**Backlog de Média prioridade — 100% fechado (1ª rodada, item 220 —
 M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
 M-5/M-6/M-8/M-12; M-9 fechado em 3 sub-rodadas, itens 223/225/226/227;
 M-17 fechado em 4 sub-rodadas, itens 229/230/232/234 (+ fixes de review
 231/233); M-11 fechado numa rodada única, item 235; M-7 descoberto já
 corrigido; M-4/M-13/M-15 fechados no PR 2 da reorganização do
-Dashboard, item 237).** A reorganização do Dashboard (seção L) está
-completa: PR 1 (item 236, A-15) + PR 2 (item 237, M-4/M-13/M-15/resto
-de A-14). **Único item de Média prioridade ainda pendente: M-10 — não
-é sobre `Dashboard.jsx`, é `Sidebar.jsx` (nav mobile), item separado,
-ainda não escopado.** A-1 (RecentAlertsList sem onClick) e C-2 (4
+Dashboard, item 237; M-10 fechado no item 238).** A reorganização do
+Dashboard (seção L) está completa: PR 1 (item 236, A-15) + PR 2 (item
+237, M-4/M-13/M-15/resto de A-14). **Nenhum item de Média Prioridade
+pendente.** A-1 (RecentAlertsList sem onClick) e C-2 (4
 cards de performance com amostras diferentes) já estavam corrigidos em
 rodadas anteriores desta mesma sessão — achado da investigação do item
 236, não itens novos.
@@ -1099,6 +1100,42 @@ typecheck em 13 — checado logo após o código desta vez, lição do item
 2 fixes de review do Codex (itens 231/233), em 4 sub-rodadas (itens
 229/230/232/234). `PerformanceMetricsBar.jsx` deliberadamente fora de
 escopo (baixa prioridade, ver acima).
+
+## M-10 (2026-09-26): menu "Mais" na nav mobile — fecha M-10 e todo o backlog Média Prioridade
+
+Com a reorganização do Dashboard fechada (PRs #434/#435), M-10 era o
+único item restante do backlog de Média Prioridade — confirmado como
+sendo sobre `src/components/layout/Sidebar.jsx` (`MobileBottomNav`),
+não `Dashboard.jsx`. Rodei um agente Explore (confirmou os números:
+12 itens, barra de 64px, ~32,5px de alvo de toque em 390px; zero
+precedente de mínimo de toque no projeto; `Sheet`/`side="bottom"` já
+suportado e usado em produção via `AssetDrawer.jsx`) e um agente Plan
+(desenhou o mecanismo). Usuária escolheu, via `AskUserQuestion`, o
+agrupamento: 5 itens sempre visíveis (Dashboard/Trades/Ativos/Alertas/
+Histórico) + botão "Mais" pros outros 7 (Verificação/Logs/Pine
+Script/Backtest/Ajustes/Revisor/Relatório).
+
+**Fix**: botão "Mais" (`aria-label="Mais opções de navegação"`) abre
+um `<Sheet side="bottom">` — reaproveitando 1:1 o padrão já em
+produção em `AssetDrawer.jsx`. Com 5 core + 1 botão = 6 slots, o alvo
+de toque dobra de ~32,5px pra ~65px, sem remover nenhuma rota.
+
+**Achado durante os testes**: a primeira versão do teste assumia "2
+instâncias (desktop + sheet) quando o menu abre" — errado. O Radix
+`Dialog` por trás do `Sheet` marca o resto da árvore como `aria-hidden`
+enquanto o modal está aberto (trap de foco padrão), então o link do
+desktop fica temporariamente inacessível pra `getByRole` — comportamento
+correto de acessibilidade, não bug. Descoberto rodando `screen.debug()`
+manualmente antes de aceitar a asserção errada; corrigido pra usar
+`within(dialog).getByRole(...)`.
+
+5 dos 7 testes de `Sidebar.test.jsx` falham sem o fix (reproduzido via
+`git stash`). `npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2135 testes, teto de typecheck em 13, sem
+mudança). Detalhe completo em `docs/known-risks.md` item 238.
+
+**Fecha M-10 e todo o backlog de Média Prioridade do Raio-X de UI/UX —
+nenhum item pendente.**
 
 ## Reorganização do Dashboard — PR 2/2 (2026-09-26): M-4/M-13/M-15/A-14 fechados
 
