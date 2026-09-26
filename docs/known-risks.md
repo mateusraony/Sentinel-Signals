@@ -28433,3 +28433,65 @@ typecheck:ratchet` limpos (2138 testes, 0 falhas, 58 pulados; teto de
 typecheck em 13, sem mudança). `git diff` grepado por
 `backend\.|scanner|firestore|postgres|mutation|useQuery\(` → vazio —
 só apresentação/acessibilidade, mesmo escopo do item 238.
+
+## 240. Colisão entre `DebugLogButton` e o botão "Mais" da nav mobile (regressão do M-10)
+
+Usuário relatou pelo celular que não conseguia acessar "outras abas" —
+via `AskUserQuestion`, esclareceu que era o ícone de log/erro flutuante
+por cima do botão "Mais". Rodei um agente Explore que confirmou
+geometricamente o problema, li o arquivo pra validar antes de corrigir.
+
+**Causa raiz**: `src/components/layout/DebugLogButton.jsx` — botão
+flutuante `fixed bottom-5 right-5` (20px do fundo/direita), 40×40px,
+`z-index: 50`. A barra mobile (`Sidebar.jsx`, `fixed bottom-0 ... h-16`)
+tem `z-index: 40` — menor, então o botão de debug fica visualmente por
+cima e intercepta o toque antes de chegar na nav.
+
+O botão **já colidia um pouco antes do M-10** (item 238): com 12 itens
+de ~32,5px cada, o último ocupava só 357,5-390px, cruzando ~12,5px com
+o botão de debug (330-370px) — colisão parcial, de borda. O M-10
+alargou o item mais à direita ("Mais") pra ~65px (faixa 325-390px), o
+que passou a cobrir os 40px inteiros do botão de debug — colisão
+total, ~62% da área do "Mais" tomada por cima. É uma regressão de
+severidade introduzida pelo M-10 sobre um bug de posicionamento
+pré-existente, não um bug 100% novo — e não é um item do Raio-X
+original, é um efeito colateral da própria correção do M-10.
+
+**Achado secundário** (mesmo arquivo, não relatado pelo usuário, achado
+na investigação): o painel expandido usava `bottom-18` — classe que
+**não existe** na escala padrão do Tailwind nem foi customizada em
+`tailwind.config.js`, não gerando nenhum posicionamento vertical.
+Corrigido junto, mesma causa (posicionamento fixo mal calculado).
+
+### Fix
+
+Só `DebugLogButton.jsx`, reaproveitando o padrão de reposicionamento
+por breakpoint já usado no projeto (`AppLayout.jsx`, `pb-16 md:pb-0` —
+compensa a altura da nav mobile; `src/components/ui/toast.jsx`, que já
+muda a posição de um elemento `fixed` por breakpoint Tailwind):
+
+- Botão: `bottom-5 right-5` → `bottom-20 right-5 md:bottom-5` — sobe
+  pra 80px do fundo em mobile (16px de vão acima dos 64px da nav),
+  volta pra 20px a partir de `md:` (768px, sem nav inferior).
+- Painel: `bottom-18` (inválido) → `bottom-32 right-5 md:bottom-20` —
+  acompanha o botão em cada breakpoint.
+
+Não usei drag-and-drop (sugestão inicial do usuário) — exigiria estado
+persistido e lógica de arraste nova, sem precedente no projeto; a
+colisão se resolve inteiramente com reposicionamento por breakpoint,
+padrão já usado 2x no código pra esse tipo de problema.
+
+### Testes
+
+`DebugLogButton.test.jsx` (já existia, cobre wiring do backend e A-6)
+ganhou 2 testes novos: classe do botão contém `bottom-20`/`md:bottom-5`;
+classe do painel (aberto) contém `bottom-32`/`md:bottom-20`, não mais
+`bottom-18`. Ambos falham sem o fix (reproduzido via `git stash`).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2140 testes, 0 falhas, 58 pulados; teto de
+typecheck em 13, sem mudança). `git diff` grepado por
+`backend\.|scanner|firestore|postgres|mutation|useQuery\(` → vazio —
+só CSS de posicionamento.

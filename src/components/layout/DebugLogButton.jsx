@@ -36,13 +36,21 @@ export default function DebugLogButton() {
 
   return (
     <>
+      {/* Achado pós-M-10 (docs/known-risks.md): a barra mobile ganhou um
+          item "Mais" mais largo (~65px) que passou a cobrir por completo
+          este botão fixo (antes a barra tinha 12 itens estreitos e a
+          colisão era só parcial, na borda). `bottom-20`/`md:bottom-5`
+          sobe o botão acima dos 64px da nav em mobile, volta à posição
+          original a partir do breakpoint desktop (sem nav inferior),
+          mesmo padrão já usado em AppLayout.jsx (`pb-16 md:pb-0`) e no
+          Toast do shadcn/ui (posição por breakpoint). */}
       {/* Floating button */}
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             onClick={() => setOpen(!open)}
             aria-label="Debug Log"
-            className="fixed bottom-5 right-5 z-50 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110"
+            className="fixed bottom-20 right-5 md:bottom-5 z-50 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-110"
             style={{
               background: anomalies.length > 0 ? 'rgba(255,20,120,0.15)' : 'rgba(10,13,22,0.9)',
               border: anomalies.length > 0 ? '1px solid rgba(255,20,120,0.4)' : '1px solid rgba(255,255,255,0.1)',
@@ -62,9 +70,12 @@ export default function DebugLogButton() {
         </TooltipContent>
       </Tooltip>
 
-      {/* Panel */}
+      {/* Panel — bottom-32/md:bottom-20 acompanha o botão acima (mesmo
+          achado pós-M-10); a classe anterior (`bottom-18`) não existe na
+          escala padrão do Tailwind nem foi customizada em
+          tailwind.config.js — não gerava nenhum posicionamento vertical. */}
       {open && (
-        <div className="fixed bottom-18 right-5 z-50 w-96 max-w-[95vw] rounded-2xl overflow-hidden"
+        <div className="fixed bottom-32 right-5 md:bottom-20 z-50 w-96 max-w-[95vw] rounded-2xl overflow-hidden"
           style={{ background: 'rgba(8,10,18,0.97)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 40px rgba(0,0,0,0.6)', backdropFilter: 'blur(20px)' }}>
 
           {/* Header */}
