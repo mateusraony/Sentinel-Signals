@@ -421,7 +421,16 @@ export default function Dashboard() {
                 padrão (achado M-4/M-13 do Raio-X): os 4 cards de
                 performance quase-sinônimos (M-4) + correlação, agora sob 1
                 heading em vez de blocos soltos. Todos os 5 já se
-                auto-escondem quando não há dado suficiente. */}
+                auto-escondem quando não há dado suficiente.
+                Achado do Codex review no PR #435: CorrelationWidget
+                mantém seleção própria de símbolos (state local); colapsar
+                com render condicional desmontaria o widget e perderia
+                essa seleção ao reabrir. Por isso o conteúdo fica sempre
+                montado, só escondido via CSS (`hidden`), não
+                condicionalmente renderizado — diferente do toggle
+                "Detalhes técnicos" do AssetCard/TradeCard, que pode
+                desmontar porque os blocos que ele esconde não têm state
+                próprio. */}
             <div>
               <button
                 type="button"
@@ -431,25 +440,23 @@ export default function Dashboard() {
                 {showPerformance ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 Desempenho
               </button>
-              {showPerformance && (
-                <div className="space-y-5 mt-3">
-                  <WeeklySummary />
-                  {/* Real performance metrics — busca sua própria amostra
-                      (500 ops fechadas), a mesma de
-                      VirtualAccountCard/LiveConfidenceCard, não o tradeOps
-                      de 100 (recentes, qualquer status) usado acima para
-                      prioridade/atividade */}
-                  <PerformanceMetricsBar activeOpsCount={activeOpsCount} />
-                  {/* Consolidated performance chart — appears only when there's history */}
-                  <PerformanceOverview />
-                  {/* Conta virtual real (capital+drawdown compostos, position sizing por risco) */}
-                  <VirtualAccountCard />
-                  {/* Confiança ao vivo — mesmo IC/gate de amostra do backtest, sobre operações reais */}
-                  <LiveConfidenceCard />
-                  {/* Cross-asset price correlation */}
-                  <CorrelationWidget />
-                </div>
-              )}
+              <div className={`space-y-5 mt-3 ${showPerformance ? '' : 'hidden'}`}>
+                <WeeklySummary />
+                {/* Real performance metrics — busca sua própria amostra
+                    (500 ops fechadas), a mesma de
+                    VirtualAccountCard/LiveConfidenceCard, não o tradeOps
+                    de 100 (recentes, qualquer status) usado acima para
+                    prioridade/atividade */}
+                <PerformanceMetricsBar activeOpsCount={activeOpsCount} />
+                {/* Consolidated performance chart — appears only when there's history */}
+                <PerformanceOverview />
+                {/* Conta virtual real (capital+drawdown compostos, position sizing por risco) */}
+                <VirtualAccountCard />
+                {/* Confiança ao vivo — mesmo IC/gate de amostra do backtest, sobre operações reais */}
+                <LiveConfidenceCard />
+                {/* Cross-asset price correlation */}
+                <CorrelationWidget />
+              </div>
             </div>
 
             {/* Telegram status — achado M-15 do Raio-X: é config/meta, não

@@ -107,18 +107,41 @@ describe('Dashboard — cor do StatsCard "Alta Prioridade" reflete a contagem (a
 // Aguardando) vem antes da grade de "Ativos"; TelegramStatusBanner sai da
 // 4ª posição e vai para o fim da página.
 describe('Dashboard — reorganização em grupos (achados M-4/M-13/M-15)', () => {
-  it('REGRESSÃO: a seção "Desempenho" fica colapsada por padrão e expande ao clicar', async () => {
+  it('REGRESSÃO: a seção "Desempenho" fica escondida por padrão (CSS `hidden`) e revela ao clicar', async () => {
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
 
     await screen.findByText('Ativos');
-    expect(screen.queryByText('Resumo da Semana')).toBeNull();
-
     const toggle = screen.getByRole('button', { name: /desempenho/i });
+    // Achado do Codex review no PR #435: o conteúdo fica sempre MONTADO
+    // (só escondido via classe `hidden`), não desmontado por render
+    // condicional — CorrelationWidget tem state próprio (símbolos
+    // selecionados) que se perderia a cada desmonte/remonte.
+    const contentWrapper = toggle.nextElementSibling;
+    expect(contentWrapper.className).toMatch(/\bhidden\b/);
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(contentWrapper.className).not.toMatch(/\bhidden\b/);
     await screen.findByText('Resumo da Semana');
+  });
+
+  it('REGRESSÃO: colapsar/expandir "Desempenho" NÃO desmonta o CorrelationWidget (achado do Codex review no PR #435)', async () => {
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+
+    await screen.findByText('Ativos');
+    const correlationHeadingBefore = await screen.findByText('Correlação de Preço');
+    const toggle = screen.getByRole('button', { name: /desempenho/i });
+
+    fireEvent.click(toggle); // expande
+    fireEvent.click(toggle); // colapsa de novo
+
+    const correlationHeadingAfter = screen.getByText('Correlação de Preço');
+    // Mesmo nó de DOM antes/depois — nunca foi desmontado, então o state
+    // interno do CorrelationWidget (símbolos selecionados) não se perde.
+    expect(correlationHeadingAfter).toBe(correlationHeadingBefore);
   });
 
   it('REGRESSÃO: "Atenção" vem depois de "Agora" e antes de "Ativos" no DOM', async () => {
