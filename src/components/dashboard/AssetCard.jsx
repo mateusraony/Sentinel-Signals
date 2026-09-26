@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { TrendingUp, TrendingDown, Zap } from 'lucide-react';
+import { TrendingUp, TrendingDown, Zap, ChevronDown, ChevronUp } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { fetch24hStats } from '@/lib/marketDataProvider';
 import { activateSignalManually } from '@/lib/scanner';
@@ -167,11 +167,46 @@ function TFTrendRow({ states }) {
   );
 }
 
-export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeOpsUnavailable = false, onClick }) {
+// Achado A-15 do Raio-X de UI/UX: o card mostrava ~20+ blocos de
+// informação de uma vez, bem acima da faixa de 5-9 elementos já validada
+// (com pesquisa) pro TradeCard.jsx — card de operação, referência de
+// qualidade do projeto. Tendência multi-TF, funding rate e os dots de
+// indicador (RF/MACD/EMA/RSI) são legítimos, mas não essenciais pro
+// primeiro olhar (nenhum é lido por outro componente) — ficam atrás de um
+// toggle "Detalhes técnicos", mesmo padrão de divulgação progressiva já
+// usado em TradeCard.jsx (useState local + render condicional, sem CSS
+// hidden).
+function Details({ states, fundingRate, nextFundingTime, primaryState }) {
+  return (
+    <div className="mb-2.5">
+      <div className="mb-1.5">
+        <TFTrendRow states={states} />
+      </div>
+      {fundingRate !== null && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="text-8px font-mono mb-1.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+              Fund.: <span style={{ color: fundingRate >= 0 ? '#00ff80' : '#ff1478' }}>{formatSignedPct(fundingRate * 100, 4)}</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+            {`Funding rate (Futures): taxa paga entre posições compradas e vendidas a cada 8h. Só informativo — não influencia nenhum sinal ou operação.${nextFundingTime ? ` Próximo: ${moment(nextFundingTime).utcOffset(-3).format('DD/MM HH:mm')} BRT.` : ''}`}
+          </TooltipContent>
+        </Tooltip>
+      )}
+      <div className="mb-1.5" style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
+      <IndicatorDots state={primaryState} />
+    </div>
+  );
+}
+
+export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeOpsUnavailable = false, onClick, expandAll = false }) {
   const queryClient = useQueryClient();
   const availableTfs = states?.map(s => s.timeframe).filter(Boolean) || [];
   const defaultTf = availableTfs.includes('1h') ? '1h' : availableTfs[0] || '1h';
   const [selectedTf, setSelectedTf] = useState(defaultTf);
+  const [open, setOpen] = useState(expandAll);
+  useEffect(() => { setOpen(expandAll); }, [expandAll]);
   const state1h = states?.find(s => s.timeframe === '1h');
   const state4h = states?.find(s => s.timeframe === '4h');
   const primaryState = states?.find(s => s.timeframe === selectedTf) || state1h || state4h || states?.[0];
@@ -391,10 +426,6 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
                 </Tooltip>
               )}
             </div>
-            {/* TF Trend row — always visible, subtle */}
-            <div className="mt-1">
-              <TFTrendRow states={states} />
-            </div>
             {candleCloseTime && (
               <div className="text-8px font-mono text-muted-foreground mt-0.5">🕐 {candleOpen} → {candleClose} BRT</div>
             )}
@@ -420,18 +451,6 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
                 Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
               </TooltipContent>
             </Tooltip>
-            {fundingRate !== null && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="text-8px font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
-                    Fund.: <span style={{ color: fundingRate >= 0 ? '#00ff80' : '#ff1478' }}>{formatSignedPct(fundingRate * 100, 4)}</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                  {`Funding rate (Futures): taxa paga entre posições compradas e vendidas a cada 8h. Só informativo — não influencia nenhum sinal ou operação.${nextFundingTime ? ` Próximo: ${moment(nextFundingTime).utcOffset(-3).format('DD/MM HH:mm')} BRT.` : ''}`}
-                </TooltipContent>
-              </Tooltip>
-            )}
           </div>
         </div>
 
@@ -497,7 +516,18 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
         )}
 
         <div className="mb-2.5" style={{ height: 1, background: 'rgba(255,255,255,0.05)' }} />
-        <div className="mb-2.5"><IndicatorDots state={primaryState} /></div>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+          aria-expanded={open}
+          className="flex items-center gap-1 text-8px font-mono mb-2.5 transition-colors hover:text-foreground"
+          style={{ color: 'rgba(255,255,255,0.35)' }}>
+          {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+          {open ? 'Menos detalhes' : 'Detalhes técnicos'}
+        </button>
+        {open && (
+          <Details states={states} fundingRate={fundingRate} nextFundingTime={nextFundingTime} primaryState={primaryState} />
+        )}
 
         {/* Price grid — responsive, scrollable on very small screens */}
         <div className="grid grid-cols-5 gap-1 mb-2.5 overflow-x-auto">

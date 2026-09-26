@@ -767,9 +767,12 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] A-12 — Modal de edição em Trades sem acessibilidade (Esc, foco). **Corrigido, ver seção acima.**
 - [x] A-13 — Gráfico do RFHistoryChart sem eixos visíveis. **Corrigido, ver seção acima.**
 - [x] A-14 — Feed de "o que aconteceu" efêmero/no fim do Dashboard. **Corrigido, ver seção acima.**
-- [ ] A-15 — AssetCard com ~20 blocos de informação, sem divulgação
-  progressiva. **Investigado, deliberadamente adiado pra junto da
-  reorganização do Dashboard (seção L) — ver 7ª rodada acima.**
+- [x] A-15 — AssetCard com ~20 blocos de informação (22 confirmados),
+  sem divulgação progressiva. **Corrigido — toggle "Detalhes técnicos"
+  reaproveitando 1:1 o padrão já validado do `TradeCard.jsx`
+  (`useState`/`expandAll` + render condicional), movendo TFTrendRow/
+  Fund./IndicatorDots pra Camada 2. Ver `docs/known-risks.md` item
+  236.**
 - [x] M-3 — WeeklySummary: rótulo de dia colide em "S" (1ª letra só). **Corrigido, ver seção "Backlog Média prioridade" abaixo.**
 - [x] M-7 — TradeHistory: badge "ambíguo" via `title=` nativo. **Já
   estava corrigido incidentalmente na 12ª rodada de A-6 — não foi uma
@@ -791,10 +794,10 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 
 ## Como continuar
 
-**A-1 a A-14 estão todos corrigidos (14 de 15 itens de Alta
+**A-1 a A-15 estão todos corrigidos (15 de 15 itens de Alta
 prioridade) — A-6 e A-7 fechados 100% (19ª e 20ª rodadas, itens 217 e
-218).** Só resta A-15 do bloco de Alta prioridade, e é deliberadamente
-adiado (ver abaixo).
+218); A-15 fechado no PR 1 da reorganização do Dashboard (item 236).**
+Nenhum item de Alta prioridade pendente.
 
 A-7 (foco de teclado invisível) teve varredura fresca completa (item
 214, 24 ocorrências reais em ~11 arquivos) resolvida em 5 sub-rodadas:
@@ -805,19 +808,23 @@ A-7 (foco de teclado invisível) teve varredura fresca completa (item
 `OwnerKeySettings.jsx`/`TelegramSettings.jsx` — migrados pro `Dialog`
 do Radix, mesmo componente já usado em `Trades.jsx`/`Assets.jsx`).
 
-A-15 (AssetCard sem divulgação progressiva) fica deliberadamente pra
-junto da reorganização completa do Dashboard (seção L), não como item
-isolado.
+A-15 (AssetCard sem divulgação progressiva) foi escopado junto da
+reorganização do Dashboard (seção L) e fechado no PR 1 dessa leva
+(item 236) — toggle "Detalhes técnicos" reaproveitando o padrão do
+`TradeCard.jsx`.
 
 **Backlog de Média prioridade em andamento (1ª rodada, item 220 —
 M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
 M-5/M-6/M-8/M-12; M-9 fechado em 3 sub-rodadas, itens 223/225/226/227;
 M-17 fechado em 4 sub-rodadas, itens 229/230/232/234 (+ fixes de review
 231/233); M-11 fechado numa rodada única, item 235; M-7 descoberto já
-corrigido).** Restam 4 dos 17 itens M inteiros: M-4, M-10, M-13, M-15 —
-todos se sobrepõem à reorganização do Dashboard (seção L, que também
-inclui A-15) — decisão de produto maior, não mexer sem alinhamento
-explícito.
+corrigido).** Restam 3 dos 17 itens M inteiros: M-4, M-13, M-15 — os 3
+fazem parte do PR 2 da reorganização do Dashboard (mesmo plano do item
+236), já escopado e em implementação. **M-10 não é sobre `Dashboard.jsx`
+— é `Sidebar.jsx` (nav mobile), item separado, ainda não escopado.**
+A-1 (RecentAlertsList sem onClick) e C-2 (4 cards de performance com
+amostras diferentes) já estavam corrigidos em rodadas anteriores desta
+mesma sessão — achado da investigação do item 236, não itens novos.
 
 ## Backlog M-9 — 1ª sub-rodada (2026-09-25): 4 widgets do Dashboard
 
@@ -1080,6 +1087,50 @@ typecheck em 13 — checado logo após o código desta vez, lição do item
 2 fixes de review do Codex (itens 231/233), em 4 sub-rodadas (itens
 229/230/232/234). `PerformanceMetricsBar.jsx` deliberadamente fora de
 escopo (baixa prioridade, ver acima).
+
+## Reorganização do Dashboard — PR 1/2 (2026-09-26): A-15 fechado (AssetCard)
+
+Com M-9/M-11/M-17 fechados, só restava do backlog de Média prioridade
+o que depende da reorganização do Dashboard (seção L do relatório —
+M-4/M-10/M-13/M-15) + A-15 (AssetCard sobrecarregado). Usuário pediu
+explicitamente escopar essa reorganização antes de implementar. Reli a
+seção L completa (só tinha visto o final numa leitura anterior), rodei
+2 agentes Explore em paralelo (mapear `Dashboard.jsx` bloco a bloco;
+mapear os blocos reais de `AssetCard.jsx` + o mecanismo de divulgação
+progressiva já validado em `TradeCard.jsx`) e 1 agente Plan pra
+desenhar a implementação. Plano completo em
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.
+
+**Achado da investigação**: 3 itens que a auditoria original listava
+como pendentes já tinham sido corrigidos em rodadas anteriores desta
+sessão, sem atualização do relatório — A-1 (`RecentAlertsList` sem
+`onClick`), C-2 (4 cards de performance com amostras diferentes) e
+A-14 parcialmente (RecentAlertsList já movido pra cima, só faltava
+reagrupar o banner efêmero). M-10 confirmado como não sendo sobre
+`Dashboard.jsx` (é `Sidebar.jsx`, nav mobile) — fora de escopo desta
+leva.
+
+**PR 1 (este) — A-15**: `AssetCard.jsx` tinha 22 blocos visuais (não
+~20). Toggle "Detalhes técnicos" reaproveitando 1:1 o padrão já
+validado do `TradeCard.jsx` (`useState(expandAll)` + `useEffect` +
+render condicional) movendo `TFTrendRow` (tendência multi-TF), badge
+"Fund." (funding rate) e `IndicatorDots` (RF/MACD/EMA/RSI) pra Camada
+2. Candle window BRT e grade de preços TP1/TP2 **não** movem — a
+auditoria citava a janela do candle como candidata, mas 3 testes de
+regressão do achado A-2 dependem dela visível sem interação, e o
+`TFTrendRow` sozinho já cobre o que a auditoria queria esconder.
+
+Decisão do usuário via `AskUserQuestion`: o timeout de 15s do
+`SignalAlertBanner` **não muda** nesta leva (regra de notificação, não
+layout) — fica registrado como item separado pra decisão futura.
+
+2 testes existentes precisaram de `expandAll: true` (badge "Fund." e
+IndicatorDots RF/MACD/EMA/RSI — achado novo desta investigação, não
+estava previsto). 4 testes novos de divulgação progressiva. `npm run
+lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2126 testes, teto de typecheck em 13, sem mudança). Detalhe
+completo em `docs/known-risks.md` item 236. **PR 2 (Dashboard reorg —
+M-4/M-13/M-15/A-14 resto) vem em item separado.**
 
 ## Backlog M-11 (2026-09-26): tokens de tamanho de fonte formalizados — fecha M-11
 

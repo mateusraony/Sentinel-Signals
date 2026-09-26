@@ -187,13 +187,57 @@ describe('AssetCard — badges usam Tooltip em vez de title= nativo (achado A-6)
 
   it('REGRESSÃO: badge "Fund." (funding rate) não tem title= nativo, vira gatilho focável', async () => {
     fetchMarkPriceMock.mockResolvedValue({ markPrice: 60000, lastFundingRate: 0.0001, nextFundingTime: null });
-    renderCard({});
+    // Achado A-15: Fund. mudou pra Camada 2 (atrás do toggle "Detalhes
+    // técnicos") — precisa de expandAll pra aparecer sem simular clique.
+    renderCard({ expandAll: true });
     const badge = await waitFor(() => {
       const el = screen.getByText(/Fund\.:/);
       expect(el.getAttribute('tabindex')).toBe('0');
       return el;
     });
     expect(badge.getAttribute('title')).toBeNull();
+  });
+});
+
+// Achado A-15 do Raio-X de UI/UX: o card mostrava ~20+ blocos de
+// informação de uma vez. TFTrendRow/Fund./IndicatorDots (legítimos, mas
+// não essenciais pro primeiro olhar — nenhum é lido por outro componente)
+// foram movidos pra Camada 2, atrás de um toggle "Detalhes técnicos",
+// mesmo padrão de divulgação progressiva já validado em TradeCard.jsx
+// (useState local + render condicional + prop `expandAll`).
+describe('AssetCard — divulgação progressiva (achado A-15)', () => {
+  it('Camada 2 (RF/MACD/EMA/RSI) fica ausente do DOM por padrão', () => {
+    renderCard({
+      states: [{ timeframe: '1h', rf_direction: 1, macd_histogram: 0.5, trend_ema: 'bullish', rsi_zone: 'neutral', rsi_value: 55, last_close: 60000 }],
+    });
+    expect(screen.queryByText('RF')).toBeNull();
+    expect(screen.getByRole('button', { name: /detalhes técnicos/i }).getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('clicar em "Detalhes técnicos" revela a Camada 2 e alterna aria-expanded', () => {
+    renderCard({
+      states: [{ timeframe: '1h', rf_direction: 1, macd_histogram: 0.5, trend_ema: 'bullish', rsi_zone: 'neutral', rsi_value: 55, last_close: 60000 }],
+    });
+    const toggle = screen.getByRole('button', { name: /detalhes técnicos/i });
+    fireEvent.click(toggle);
+    expect(screen.getByText('RF')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /menos detalhes/i }).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('clicar no toggle não dispara o onClick do card (mesma guarda já usada no TF Quick Switcher)', () => {
+    const onClick = vi.fn();
+    renderCard({ onClick });
+    fireEvent.click(screen.getByRole('button', { name: /detalhes técnicos/i }));
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('prop expandAll força a Camada 2 aberta sem nenhum clique', () => {
+    renderCard({
+      expandAll: true,
+      states: [{ timeframe: '1h', rf_direction: 1, macd_histogram: 0.5, trend_ema: 'bullish', rsi_zone: 'neutral', rsi_value: 55, last_close: 60000 }],
+    });
+    expect(screen.getByText('RF')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /menos detalhes/i }).getAttribute('aria-expanded')).toBe('true');
   });
 });
 
@@ -218,7 +262,10 @@ describe('AssetCard — indicadores RF/MACD/EMA/RSI e colunas TP1/TP2 têm toolt
   // já que só o novo wrapper do achado M-17 usa essa classe (o card usa
   // `cursor-pointer`).
   it('REGRESSÃO: RF/MACD/EMA/RSI (IndicatorDots) são focáveis e têm tooltip próprio', () => {
+    // Achado A-15: IndicatorDots mudou pra Camada 2 — precisa de
+    // expandAll pra aparecer sem simular clique no toggle.
     renderCard({
+      expandAll: true,
       states: [{ timeframe: '1h', rf_direction: 1, macd_histogram: 0.5, trend_ema: 'bullish', rsi_zone: 'neutral', rsi_value: 55, last_close: 60000 }],
     });
     const rf = screen.getByText('RF').closest('.cursor-help');

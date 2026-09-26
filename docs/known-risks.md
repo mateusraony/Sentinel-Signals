@@ -28108,3 +28108,84 @@ transformação é determinística e idêntica em todo lugar — o risco
 mora inteiro na definição do token no `tailwind.config.js`
 (sistêmico), não em arquivo individual, então dividir por arquivo não
 reduziria risco.
+
+## 236. A-15 (PR 1/2) — divulgação progressiva no `AssetCard.jsx`
+
+Com M-9/M-11/M-17 fechados, só restavam do backlog de Média Prioridade
+os itens que dependem da reorganização do Dashboard (seção L do
+Raio-X — M-4/M-10/M-13/M-15) e A-15 (AssetCard sobrecarregado). O
+usuário pediu explicitamente para escopar essa reorganização antes de
+implementar (`AskUserQuestion`: "Escopar a reorganização do
+Dashboard"). Rodei 2 agentes Explore em paralelo (mapear
+`Dashboard.jsx` bloco a bloco; mapear os blocos reais de
+`AssetCard.jsx` + o mecanismo de divulgação progressiva já validado em
+`TradeCard.jsx`) e depois um agente Plan pra desenhar a implementação
+concreta — plano completo em
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md` (topo do
+arquivo). Este item é o PR 1 (AssetCard, isolado); o PR 2 (Dashboard)
+vem em item separado.
+
+**Achado**: `AssetCard.jsx` tinha **22 blocos visuais** hoje (a
+auditoria original citava "~20" — já tinha andado um pouco, pra pior).
+Confirmado por leitura completa: nenhum dos blocos "de detalhe" é lido
+por outro componente (só props/hooks locais) — seguro mover qualquer
+um sem tocar lógica de outro lugar. Única exceção são as funções puras
+já exportadas `getTp1Tooltip`/`getTp2Tooltip` (item 231), que são só
+geradores de texto de tooltip, não o bloco JSX da grade de preços em
+si — não afetadas por esta mudança.
+
+### Fix
+
+Reaproveitado 1:1 o mecanismo já validado (e testado) do
+`TradeCard.jsx` (`useState(expandAll)` +
+`useEffect(() => setOpen(expandAll), [expandAll])` +
+botão com `ChevronDown`/`ChevronUp`/`aria-expanded` +
+`{open && <Details .../>}` como render condicional puro, nunca CSS
+`hidden` — `TradeCard.jsx:541-543,653-660`). Em `AssetCard.jsx`:
+
+- Nova prop opcional `expandAll = false` na assinatura do componente.
+- Nova função local `Details({ states, fundingRate, nextFundingTime, primaryState })`
+  (não exportada), consolidando a Camada 2: `TFTrendRow` (tendência
+  multi-TF), badge "Fund." (funding rate) e `IndicatorDots`
+  (RF/MACD/EMA/RSI) — os 3 blocos que a auditoria já citava como
+  "legítimos, mas não essenciais pro primeiro olhar".
+- Botão "Detalhes técnicos"/"Menos detalhes" no lugar onde antes só
+  havia o divisor + `IndicatorDots` incondicional, com
+  `onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}` — mesma
+  guarda já usada no TF Quick Switcher (`AssetCard.jsx:448` antes desta
+  mudança) pra não disparar o `onClick` do card que abre o
+  `AssetDrawer` (achado A-8, já corrigido em rodada anterior).
+- **Decisão: janela do candle BRT NÃO move** para a Camada 2, apesar de
+  a auditoria citar como candidata — 3 testes de regressão do achado
+  A-2 (`AssetCard.test.jsx:47-70`) verificam esse texto sem interação,
+  e o `TFTrendRow` sozinho já cobre o que a auditoria queria esconder.
+  Grade de preços Entrada/Stop/TP1/TP2/Stop+ também não move —
+  continua em Camada 1, comportamento inalterado (já renderiza
+  incondicionalmente hoje, só com "—" quando não há operação).
+
+### Testes
+
+- 2 testes existentes precisaram de `expandAll: true` (achado desta
+  investigação, não estava na lista prévia de riscos): o de badge
+  "Fund." (`AssetCard.test.jsx`, achado A-6) e o de RF/MACD/EMA/RSI
+  (achado M-17) — ambos buscavam o texto sem simular clique, e os
+  blocos agora ficam ocultos por padrão.
+- Novo describe "divulgação progressiva (achado A-15)": Camada 2
+  ausente do DOM por padrão + `aria-expanded="false"`; clique no
+  toggle revela a Camada 2 e alterna pra `aria-expanded="true"`; clique
+  no toggle não dispara o `onClick` do card (mesma guarda do TF
+  Switcher); prop `expandAll` força aberto sem nenhum clique (mesmo
+  padrão de `TradeCard.test.jsx:57`).
+- Reproduzido falhando antes do fix via `git stash push -- AssetCard.jsx`
+  (4 testes falham: os 3 novos + o de `expandAll` — confirma que a prop
+  não existia) → `git stash pop` → 25/25 verdes.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2126 testes, 0 falhas, 58 pulados — mesmo
+baseline; teto de typecheck em 13, sem mudança). `git diff --stat`: só
+`AssetCard.jsx` (68 linhas, +48/-20) e `AssetCard.test.jsx` (+49/-0) —
+toda linha do componente é reorganização JSX (mover bloco, novo
+`useState`/toggle), nenhuma mudança em `backend.`/lógica de
+trading/scanner.
