@@ -407,7 +407,8 @@ export default function MonthlyReport() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2 rounded-xl p-4 space-y-2" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <h2 className="text-sm font-bold text-foreground">Evolução de P&L (acumulado + diário)</h2>
-              <div style={{ height: 240 }}>
+              <div style={{ height: 240 }} role="img"
+                aria-label={`Gráfico combinado de barras e linha da evolução de P&L diário e acumulado no mês, ${dailyPnlData.length} dias, ${fmtPct(metrics.totalPnl)} acumulado no total`}>
                 <ResponsiveContainer width="100%" height="100%">
                   <ComposedChart data={dailyPnlData} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
@@ -428,7 +429,8 @@ export default function MonthlyReport() {
             </div>
             <div className="rounded-xl p-4 space-y-2" style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
               <h2 className="text-sm font-bold text-foreground">Taxa de acerto</h2>
-              <div style={{ height: 110 }}>
+              <div style={{ height: 110 }} role="img"
+                aria-label={`Gráfico de pizza da taxa de acerto do mês: ${outcomePie.map(d => `${d.name} ${d.value}`).join(', ')}`}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={outcomePie} dataKey="value" nameKey="name" innerRadius={26} outerRadius={45} paddingAngle={2}>
@@ -439,7 +441,8 @@ export default function MonthlyReport() {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div style={{ height: 110 }}>
+              <div style={{ height: 110 }} role="img"
+                aria-label={`Gráfico de pizza da distribuição de status das operações fechadas no mês: ${statusDistribution.map(d => `${d.name} ${d.value}`).join(', ')}`}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie data={statusDistribution} dataKey="value" nameKey="name" innerRadius={26} outerRadius={45} paddingAngle={2}>

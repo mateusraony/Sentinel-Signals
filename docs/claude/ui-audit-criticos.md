@@ -782,9 +782,9 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] M-6 — PerformanceReport (Trades): cards de métrica sem tooltip. **Corrigido (só Profit Factor, único com texto já validado) — ver 3ª rodada abaixo.**
 - [x] M-8 — Verificação: RSI/MACD/EMA sem cor de zona. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-12 — Settings/Pine Script sem link cruzado. **Corrigido, ver 3ª rodada abaixo.**
-- [~] M-9 — 17 gráficos Recharts sem role="img"/aria-label em 10 arquivos. **1ª de ~3 sub-rodadas feita (4/10 arquivos) — ver seção própria abaixo.**
+- [~] M-9 — 17 gráficos Recharts sem role="img"/aria-label em 10 arquivos. **2ª de ~3 sub-rodadas feita (7/10 arquivos, 13/17 instâncias) — ver seção própria abaixo.**
 - [ ] Demais itens de Média prioridade (M-4, M-10, M-11, M-13, M-15,
-  M-17 — 6 de 17, mais 6 dos 10 arquivos de M-9), Refinamentos e a
+  M-17 — 6 de 17, mais 3 dos 10 arquivos de M-9), Refinamentos e a
   reorganização completa do Dashboard (seção L do relatório) — nada
   iniciado.
 
@@ -810,9 +810,9 @@ isolado.
 
 **Backlog de Média prioridade em andamento (1ª rodada, item 220 —
 M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
-M-5/M-6/M-8/M-12; M-9 em sub-rodadas, item 223 — 1ª feita; M-7
-descoberto já corrigido).** Restam 6 dos 17 itens M inteiros (M-4,
-M-10, M-11, M-13, M-15, M-17) + 6 dos 10 arquivos de M-9. M-4/M-10/
+M-5/M-6/M-8/M-12; M-9 em sub-rodadas, itens 223/225 — 2 de ~3 feitas;
+M-7 descoberto já corrigido).** Restam 6 dos 17 itens M inteiros (M-4,
+M-10, M-11, M-13, M-15, M-17) + 3 dos 10 arquivos de M-9. M-4/M-10/
 M-13/M-15 se sobrepõem à reorganização do Dashboard (seção L, que
 também inclui A-15) — decisão de produto maior, não mexer sem
 alinhamento explícito. M-11 (632 ocorrências de fonte arbitrária em 51
@@ -855,6 +855,30 @@ tinha `role="img"` escondendo o dado de cada faixa de score (label/
 winRate/n) da árvore de acessibilidade — o `aria-label` só citava a
 contagem de faixas. Ambos corrigidos num PR de acompanhamento pequeno
 (o original já estava fechado).
+
+## Backlog M-9 — 2ª sub-rodada (2026-09-26): Backtest.jsx + MonthlyReport.jsx
+
+Continuação da 1ª sub-rodada (item 223). Esta cobre os 7 gráficos dos
+2 relatórios de performance: `Backtest.jsx` (4 — curva ingênua,
+distribuição de resultados, curva de capital real, funil de rejeição
+de entrada) e `MonthlyReport.jsx` (3 — evolução de P&L, taxa de
+acerto, distribuição de status). Mesmo padrão de fix da 1ª sub-rodada
+(`role="img"` + `aria-label` no `<div>` wrapper do
+`ResponsiveContainer`), aplicando desde o início a lição do achado do
+Codex review na 1ª sub-rodada (item 224): todo `aria-label` cita o
+dado subjacente completo (valores/rótulos de cada série/fatia), não
+só uma contagem genérica.
+
+2 testes novos (`Backtest.test.jsx` já existia, ganhou um `describe`
+novo; `MonthlyReport.test.jsx` já existia, ganhou um `describe` novo +
+mock de `TradeOperation.filter` refatorado pra ser controlável por
+teste, mesmo padrão de `PredictiveAnalysis.test.jsx`). `npm run lint
+&& npm test && npm run build && npm run typecheck:ratchet` limpos
+(2095 testes, teto de typecheck em 13, sem mudança). Detalhe completo
+em `docs/known-risks.md` item 225. Restam 4 das 17 instâncias (4
+arquivos, 1 cada): `RFHistoryChart.jsx`, `TradeEntryMarkers.jsx`,
+`PnLChart.jsx`, `PortfolioVsMarket.jsx` — candidato a sub-rodada final,
+fechando M-9 por completo (17/17).
 
 ## Backlog Média prioridade — 3ª rodada (2026-09-25): M-5, M-6, M-8, M-12 corrigidos
 

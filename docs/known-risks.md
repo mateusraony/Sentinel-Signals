@@ -27400,3 +27400,65 @@ de produção juntos.
 typecheck:ratchet` limpos (2093 testes, teto de typecheck em 13, sem
 mudança). `git diff --stat` só nos 2 arquivos de produção + 2 de
 teste — nenhuma mudança em `backend.`/lógica de negócio.
+
+## 225. M-9 (2ª sub-rodada): `role="img"`/`aria-label` em `Backtest.jsx` (4) + `MonthlyReport.jsx` (3)
+
+Continuação do mapeamento do item 222/223 (17 instâncias/10 arquivos,
+sub-rodada A fechou os 4 widgets do Dashboard). Esta rodada fecha os 7
+instâncias dos 2 relatórios de performance — mesmo padrão (wrapper
+`<div>` em volta de `ResponsiveContainer` carregando `role="img"` +
+`aria-label`, já que `ResponsiveContainer` não repassa esses atributos
+pro `<div>` interno), aplicando desde o início a lição do item 224
+(Codex review, sub-rodada A): todo `aria-label` cita o dado
+subjacente completo (valores/rótulos de cada série/fatia), não só uma
+contagem ou resumo genérico.
+
+### `Backtest.jsx` (4 instâncias, todas em `ReportBody`)
+
+1. **Curva ingênua** (`equityCurve`, LineChart) — `aria-label` cita o
+   nº de operações e o total acumulado (`fmtPct` do último ponto).
+2. **Distribuição de resultados** (`outcomePie`, PieChart) — cita
+   nome+valor de cada fatia (Vitórias/Derrotas/Empate).
+3. **Curva de capital real** (`realEquityChart`, LineChart) — cita
+   capital final (`fmtUsd`) e retorno total (`fmtPct`) de `equitySim`.
+4. **Funil de rejeição de entrada** (`entryFunnelData`, BarChart
+   vertical) — cita cada motivo com a contagem nas 2 cascatas
+   (4h→15m e 1h→5m).
+
+### `MonthlyReport.jsx` (3 instâncias)
+
+1. **Evolução de P&L** (`dailyPnlData`, ComposedChart) — cita o nº de
+   dias e o P&L acumulado do mês (`metrics.totalPnl`).
+2. **Taxa de acerto** (`outcomePie`, PieChart) — mesmo padrão do
+   Backtest, nome+valor de cada fatia.
+3. **Distribuição de status** (`statusDistribution`, PieChart) — cita
+   nome+valor de cada status (🏆 TP2, 🛑 Stop etc.).
+
+### Testes novos
+
+`Backtest.test.jsx`: novo caso com relatório colado incluindo `curve`
+(2 operações) e `entryFunnel` populados — confirma que os 4
+`role="img"` existem e cada `aria-label` contém o dado esperado
+(nº de operações, fatias da pizza, capital final, motivos do funil).
+`MonthlyReport.test.jsx`: refatorado o mock de `TradeOperation.filter`
+pra ser controlável por teste (mesmo padrão já usado em
+`PredictiveAnalysis.test.jsx`, item 223) — novo caso com 2 operações
+fechadas (1 TP2_HIT, 1 STOP_HIT) confirma os 3 `role="img"` com dado
+correto. Falha de cada um reproduzida via `git stash` do arquivo de
+produção correspondente antes de aceitar (confirmado: ambos falham
+sem o fix, com `findAllByRole('img')` não encontrando nada).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2095 testes, 0 falhas; teto de typecheck em
+13, sem mudança). `git diff --stat` só nos 2 arquivos de produção + 2
+de teste; toda linha adicionada nos 2 arquivos de produção é
+`role="img"` ou `aria-label` — nenhuma mudança em `backend.`/lógica de
+negócio/cálculo de métricas.
+
+### M-9 restante após esta rodada
+
+4 instâncias em 4 arquivos (1 cada): `RFHistoryChart.jsx`,
+`TradeEntryMarkers.jsx`, `PnLChart.jsx`, `PortfolioVsMarket.jsx` —
+candidato a 1 sub-rodada final, fechando M-9 por completo (17/17).
