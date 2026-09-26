@@ -28262,3 +28262,38 @@ Com este PR, a reorganização do Dashboard (seção L do Raio-X) está
 completa — os 2 PRs (item 236 + este) cobrem A-15 + M-4 + M-13 + M-15 +
 o resto de A-14. Fica pendente só M-10 (nav mobile, `Sidebar.jsx`),
 item separado, ainda não escopado.
+
+### Achado do Codex review no PR #435: colapsar "Desempenho" desmontava o `CorrelationWidget`
+
+O toggle "Desempenho" (`showPerformance && (...)`) desmontava o
+subtree inteiro ao colapsar — mas `CorrelationWidget` mantém `symbols`
+como `useState` local (seleção de pares pra correlação, com
+`DEFAULT_SYMBOLS` só no mount inicial). Colapsar e reabrir recriava o
+componente do zero, perdendo qualquer seleção customizada do usuário
+sem aviso — regressão real introduzida por este PR, não um problema
+pré-existente.
+
+**Fix**: trocado render condicional (`{cond && <div>...}`) por CSS
+`hidden` (`className={... ${showPerformance ? '' : 'hidden'}}`) —
+mesmo conteúdo, sempre montado, só escondido visualmente. Diferente do
+toggle "Detalhes técnicos" do AssetCard/TradeCard (item 236), que PODE
+desmontar porque os blocos que esconde (`TFTrendRow`/`IndicatorDots`/
+etc.) não têm state próprio — a escolha do mecanismo (render
+condicional vs. CSS hidden) depende de o conteúdo escondido ter state
+local a preservar, não é uma regra única pra todo toggle do projeto.
+
+**Trade-off aceito**: com CSS hidden, as 6 queries dos componentes de
+"Desempenho" continuam rodando em background mesmo colapsado — mas é
+o MESMO comportamento de antes desta rodada (todos sempre montados,
+sempre buscando dados); só a exibição visual mudou. Não é regressão de
+performance, é reversão ao comportamento anterior nesse aspecto
+específico.
+
+Teste de regressão: `Dashboard.test.jsx` confirma que o mesmo nó de
+DOM (heading "Correlação de Preço") persiste — identidade de
+referência, não só igualdade de texto — antes e depois de um ciclo
+completo de expandir+colapsar. Reproduzido falhando sem o fix via
+`git stash` (2 testes falham: a checagem de `hidden` no wrapper e a
+identidade do nó). `npm run lint && npm test && npm run build && npm
+run typecheck:ratchet` limpos após o fix (2130 testes, teto de
+typecheck em 13, sem mudança).
