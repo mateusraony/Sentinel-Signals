@@ -16,12 +16,15 @@ const SIGNAL_TYPES = [
   { id: 'BUY', label: '🟢 BUY', desc: 'Sinais de compra' },
   { id: 'SELL', label: '🔴 SELL', desc: 'Sinais de venda' },
 ];
+// Achado M-17 do Raio-X de UI/UX (docs/known-risks.md item 230): texto
+// reaproveitado do glossário da auditoria (seção I) — MultiToggle já sabe
+// renderizar o Tooltip quando o campo `tooltip` existe numa opção.
 const SOURCE_OPTIONS = [
-  { id: 'range_filter', label: 'RF' },
-  { id: 'smc_structure', label: 'SMC' },
-  { id: 'macd', label: 'MACD' },
-  { id: 'ema_cross', label: 'EMA Cross' },
-  { id: 'rsi', label: 'RSI' },
+  { id: 'range_filter', label: 'RF', tooltip: 'Range Filter: indicador que filtra o ruído do preço e define uma banda de tendência — o sistema só considera um movimento válido quando o preço rompe essa banda de forma consistente.' },
+  { id: 'smc_structure', label: 'SMC', tooltip: 'Smart Money Concepts: análise de topos/fundos e zonas de rompimento, usada como fonte alternativa de sinal além do Range Filter.' },
+  { id: 'macd', label: 'MACD', tooltip: 'MACD: compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.' },
+  { id: 'ema_cross', label: 'EMA Cross', tooltip: 'EMA: médias móveis exponenciais curta/longa — quando a curta cruza a longa, é sinal de mudança de tendência.' },
+  { id: 'rsi', label: 'RSI', tooltip: 'RSI (Índice de Força Relativa): mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100).' },
 ];
 const DEFAULT_SOURCES = SOURCE_OPTIONS.map(s => s.id);
 const EVENT_OPTIONS = [

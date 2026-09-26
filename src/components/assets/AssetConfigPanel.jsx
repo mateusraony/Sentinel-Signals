@@ -9,15 +9,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import MultiToggle from '@/components/ui/multi-toggle';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { logError } from '@/lib/logger';
 
+// Achado M-17 do Raio-X de UI/UX (docs/known-risks.md item 230): texto
+// reaproveitado do glossário da auditoria (seção I) — MultiToggle já sabe
+// renderizar o Tooltip quando o campo `tooltip` existe numa opção.
 const NOTIFY_SOURCE_OPTIONS = [
-  { id: 'range_filter', label: 'RF' },
-  { id: 'smc_structure', label: 'SMC' },
-  { id: 'macd', label: 'MACD' },
-  { id: 'ema_cross', label: 'EMA Cross' },
-  { id: 'rsi', label: 'RSI' },
+  { id: 'range_filter', label: 'RF', tooltip: 'Range Filter: indicador que filtra o ruído do preço e define uma banda de tendência — o sistema só considera um movimento válido quando o preço rompe essa banda de forma consistente.' },
+  { id: 'smc_structure', label: 'SMC', tooltip: 'Smart Money Concepts: análise de topos/fundos e zonas de rompimento, usada como fonte alternativa de sinal além do Range Filter.' },
+  { id: 'macd', label: 'MACD', tooltip: 'MACD: compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.' },
+  { id: 'ema_cross', label: 'EMA Cross', tooltip: 'EMA: médias móveis exponenciais curta/longa — quando a curta cruza a longa, é sinal de mudança de tendência.' },
+  { id: 'rsi', label: 'RSI', tooltip: 'RSI (Índice de Força Relativa): mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100).' },
 ];
 const NOTIFY_SIDE_OPTIONS = [
   { id: 'BUY', label: '🟢 BUY' },
@@ -141,7 +145,14 @@ export default function AssetConfigPanel({ asset, onSave }) {
 
       {/* RSI */}
       <div>
-        <Label className="text-sm font-medium mb-2 block">RSI</Label>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Label className="text-sm font-medium mb-2 block cursor-help" tabIndex={0}>RSI</Label>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            RSI (Índice de Força Relativa): mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100).
+          </TooltipContent>
+        </Tooltip>
         <div className="grid grid-cols-3 gap-3">
           <div>
             <Label className="text-xs text-muted-foreground">Período</Label>
@@ -160,7 +171,14 @@ export default function AssetConfigPanel({ asset, onSave }) {
 
       {/* MACD */}
       <div>
-        <Label className="text-sm font-medium mb-2 block">MACD</Label>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Label className="text-sm font-medium mb-2 block cursor-help" tabIndex={0}>MACD</Label>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            MACD: compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.
+          </TooltipContent>
+        </Tooltip>
         <div className="grid grid-cols-3 gap-3">
           <div>
             <Label className="text-xs text-muted-foreground">Fast</Label>

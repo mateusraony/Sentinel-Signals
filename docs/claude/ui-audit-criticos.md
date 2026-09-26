@@ -783,7 +783,7 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] M-8 — Verificação: RSI/MACD/EMA sem cor de zona. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-12 — Settings/Pine Script sem link cruzado. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-9 — 17 gráficos Recharts sem role="img"/aria-label em 10 arquivos. **Fechado: 3 sub-rodadas, 17/17 instâncias — ver seção própria abaixo.**
-- [~] M-17 — termos técnicos sem explicação (glossário, seção I). **1ª de ~4 sub-rodadas feita (2/8 arquivos-alvo) — ver seção própria abaixo.**
+- [~] M-17 — termos técnicos sem explicação (glossário, seção I). **2ª de ~4 sub-rodadas feita (4/8 arquivos-alvo) — ver seção própria abaixo.**
 - [ ] Demais itens de Média prioridade (M-4, M-10, M-11, M-13, M-15),
   Refinamentos e a reorganização completa do Dashboard (seção L do
   relatório) — nada iniciado.
@@ -811,9 +811,9 @@ isolado.
 **Backlog de Média prioridade em andamento (1ª rodada, item 220 —
 M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
 M-5/M-6/M-8/M-12; M-9 fechado em 3 sub-rodadas, itens 223/225/226/227;
-M-17 em sub-rodadas, item 229 — 1ª feita; M-7 descoberto já
+M-17 em sub-rodadas, itens 229/230 — 2 de ~4 feitas; M-7 descoberto já
 corrigido).** Restam 5 dos 17 itens M inteiros (M-4, M-10, M-11, M-13,
-M-15) + 6 dos 8 arquivos-alvo de M-17. M-4/M-10/M-13/M-15 se
+M-15) + 4 dos 8 arquivos-alvo de M-17. M-4/M-10/M-13/M-15 se
 sobrepõem à reorganização do Dashboard (seção L, que também inclui
 A-15) — decisão de produto maior, não mexer sem alinhamento explícito.
 M-11 (632 ocorrências de fonte arbitrária em 51 arquivos) é varredura
@@ -958,6 +958,35 @@ mudança). Detalhe completo em `docs/known-risks.md` item 229. Restam
 6 arquivos-alvo (+ 1 de baixa prioridade): `AssetConfigPanel.jsx`,
 `TelegramSettings.jsx`, `Alerts.jsx`, `ComparePanel.jsx`,
 `TradeHistory.jsx`, `Backtest.jsx` (+ `PerformanceMetricsBar.jsx`).
+
+## Backlog M-17 — 2ª sub-rodada (2026-09-26): `AssetConfigPanel.jsx` + `TelegramSettings.jsx`
+
+Continuação da 1ª sub-rodada (item 229). `AssetConfigPanel.jsx` e
+`TelegramSettings.jsx` compartilham o mesmo array de badges (RF/SMC/
+MACD/EMA Cross/RSI) renderizado pelo componente **compartilhado**
+`src/components/ui/multi-toggle.jsx` — o fix foi feito uma vez ali
+(campo opcional `tooltip` por opção) e resolveu os 2 arquivos ao
+mesmo tempo, sem duplicar lógica. `AssetConfigPanel.jsx` também
+ganhou tooltip nas labels de seção "RSI"/"MACD" do form de parâmetros
+(fora do MultiToggle).
+
+**Achado durante a implementação**: o teste de `TelegramSettings.jsx`
+lançou "`Tooltip` must be used within `TooltipProvider`" — o Radix
+desta versão exige um `TooltipProvider` ancestor pra `Tooltip`
+funcionar (em produção vem de `App.jsx`, que envolve todo o app; o
+teste renderiza o componente isolado). Corrigido envolvendo o
+`renderModal` helper existente num `TooltipProvider`.
+
+2 arquivos de teste (`TelegramSettings.test.jsx` já existia, ganhou 1
+caso novo; `AssetConfigPanel.test.jsx` é novo — arquivo não tinha
+teste dedicado antes). `npm run lint && npm test && npm run build &&
+npm run typecheck:ratchet` limpos (2110 testes, teto de typecheck em
+13, sem mudança). Detalhe completo em `docs/known-risks.md` item 230.
+Restam 4 arquivos-alvo (+ 1 de baixa prioridade): `Alerts.jsx`,
+`ComparePanel.jsx`, `TradeHistory.jsx`, `Backtest.jsx` (+
+`PerformanceMetricsBar.jsx`) — plano completo das 2 sub-rodadas
+restantes já escrito em
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.
 
 ## Backlog Média prioridade — 3ª rodada (2026-09-25): M-5, M-6, M-8, M-12 corrigidos
 

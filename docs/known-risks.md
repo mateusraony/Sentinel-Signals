@@ -27711,3 +27711,59 @@ em `backend.`/lógica de negócio/cálculo de indicador.
 (+ `PerformanceMetricsBar.jsx`, baixa prioridade) — candidatos a 3
 sub-rodadas subsequentes, mapa completo já levantado por agente
 Explore nesta rodada.
+
+## 230. M-17 (2ª sub-rodada): tooltips em `AssetConfigPanel.jsx` + `TelegramSettings.jsx` — fix compartilhado em `MultiToggle.jsx`
+
+Continuação do backlog M-17 (item 229 — 1ª sub-rodada). `AssetConfigPanel.jsx`
+e `TelegramSettings.jsx` compartilham o mesmo array de badges (RF/SMC/
+MACD/EMA Cross/RSI) renderizado pelo componente **compartilhado**
+`src/components/ui/multi-toggle.jsx` — corrigir uma vez ali resolveu os
+2 arquivos ao mesmo tempo, sem duplicar lógica (mesmo padrão de "fix
+uma vez no componente compartilhado" já usado em M-9/item 226-227 pra
+`ResponsiveContainer`).
+
+- **`MultiToggle.jsx`**: campo opcional `tooltip` por item de `options`
+  — quando presente, envolve o `<button>` existente num `Tooltip`/
+  `TooltipTrigger asChild` do Radix (`cursor-help` + `tabIndex={0}`),
+  sem mudar `onClick`/seleção/estilo. Opções sem `tooltip` continuam
+  exatamente como antes (`PRIORITY_OPTIONS`/`SIGNAL_TYPES`/timeframes
+  não usam o campo nesta rodada — BUY/SELL/1H/4H/1D não são termos do
+  glossário).
+- **`AssetConfigPanel.jsx`**: `NOTIFY_SOURCE_OPTIONS` ganhou `tooltip`
+  em RF/SMC/MACD/EMA Cross/RSI (texto do glossário da auditoria);
+  `<Label>` de seção "RSI"/"MACD" (fora do MultiToggle, no form de
+  parâmetros) também ganharam `Tooltip` própria.
+- **`TelegramSettings.jsx`**: `SOURCE_OPTIONS` (idêntico array) ganhou
+  os mesmos 5 `tooltip`.
+
+### Testes novos
+
+`TelegramSettings.test.jsx` (já existia): caso novo confirmando que os
+5 badges de "Origem do sinal" (dentro de "Filtros Avançados") ficam
+focáveis, e que Timeframes/tipos de sinal continuam sem — precisou
+também envolver o `renderModal` helper existente num `TooltipProvider`
+(achado durante a implementação: o Radix desta versão exige um
+`TooltipProvider` ancestor — sem ele, `Tooltip` lança exceção; em
+produção vem de `App.jsx`, mas o teste renderiza o componente isolado).
+`AssetConfigPanel.test.jsx` (novo — arquivo não tinha teste dedicado
+antes): 2 casos confirmando o mesmo padrão nas labels de seção e nos
+badges do MultiToggle.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2110 testes, 0 falhas; teto de typecheck em
+13, sem mudança). Falha de cada teste reproduzida via `git stash` dos
+3 arquivos de produção juntos (`multi-toggle.jsx` +
+`AssetConfigPanel.jsx` + `TelegramSettings.jsx`) — confirmado: os 3
+casos novos falham sem o fix. `git diff` nos 3 arquivos mostra só o
+campo `tooltip=`/wrapper `Tooltip`/`TooltipTrigger`/`TooltipContent` —
+nenhuma mudança em `backend.`/lógica de negócio (`MultiToggle.jsx` é
+componente de UI puro, sem tocar `onChange`/seleção).
+
+### M-17 restante após esta rodada
+
+4 arquivos: `Alerts.jsx`, `ComparePanel.jsx`, `TradeHistory.jsx`,
+`Backtest.jsx` (+ `PerformanceMetricsBar.jsx`, baixa prioridade) —
+candidatos a 2 sub-rodadas subsequentes (plano completo já escrito em
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`).
