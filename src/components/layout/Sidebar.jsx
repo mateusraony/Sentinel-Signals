@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Coins, Bell, ScrollText, Zap, Target, BookOpen, Code2, Bot, FileText, Trash2, FilterX, Loader2, ArrowLeftRight, SlidersHorizontal, FlaskConical, ClipboardCheck, MoreHorizontal } from 'lucide-react';
 import { backend } from '@/api/entities';
@@ -206,6 +206,21 @@ function MobileBottomNav() {
   const moreItems = NAV_ITEMS.filter(item => !CORE_MOBILE_PATHS.includes(item.path));
   const isMoreActive = moreItems.some(item => item.path === location.pathname);
 
+  // Achado do Codex review no PR #436: o sheet só podia ser aberto a
+  // partir da barra mobile (`md:hidden`), mas nada o fechava se a
+  // viewport cruzasse o breakpoint desktop enquanto ele já estava
+  // aberto (ex.: rotação de tela) — o overlay full-screen do Radix não
+  // tinha `md:hidden` (só o conteúdo tinha), deixando a UI desktop
+  // inerte atrás de um overlay sem controles visíveis. Fecha o sheet
+  // automaticamente ao cruzar o breakpoint, em vez de depender de CSS
+  // pra escondê-lo parcialmente.
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const handleChange = () => { if (mq.matches) setMoreOpen(false); };
+    mq.addEventListener('change', handleChange);
+    return () => mq.removeEventListener('change', handleChange);
+  }, []);
+
   return (
     <>
       <nav
@@ -247,6 +262,7 @@ function MobileBottomNav() {
           type="button"
           onClick={() => setMoreOpen(true)}
           aria-label="Mais opções de navegação"
+          aria-current={isMoreActive ? 'page' : undefined}
           className="flex items-center justify-center flex-1 h-full transition-all duration-200 relative"
         >
           <MoreHorizontal
@@ -263,7 +279,7 @@ function MobileBottomNav() {
       <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
         <SheetContent
           side="bottom"
-          className="md:hidden p-0"
+          className="p-0"
           style={{ background: 'rgba(8,10,18,0.97)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(24px)' }}
         >
           <SheetHeader className="px-5 py-4 text-left" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>

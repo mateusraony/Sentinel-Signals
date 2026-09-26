@@ -28377,3 +28377,59 @@ Com este item, M-10 fica fechado — junto com M-1 a M-9 e M-11 a M-17
 (todos já fechados em rodadas anteriores) e a reorganização do
 Dashboard (itens 236/237), **não resta nenhum item do backlog de Média
 Prioridade do Raio-X de UI/UX**.
+
+## 239. Corrigir 2 achados do Codex review no PR #436 (menu "Mais" da nav mobile)
+
+O PR #436 (item 238, M-10) foi mesclado automaticamente segundos antes
+da revisão assíncrona do Codex terminar — os 2 achados chegaram como
+comentários num PR já fechado. Ambos eram bugs reais introduzidos pelo
+próprio fix, não nits: corrigidos numa rodada separada.
+
+**1. Botão "Mais" sem estado ativo acessível** (P2): em rota secundária
+(ex. `/settings`), `DesktopSidebar` fica `hidden` em viewport mobile —
+o botão "Mais" é o ÚNICO controle de navegação visível representando a
+seção atual, mas só indicava isso pela cor do ícone (`#00ff80`), sem
+nenhum atributo ARIA. Leitor de tela perdia a informação de "página
+atual" que existia antes do M-10 (cada rota tinha seu próprio link com
+`aria-current`). **Fix**: `aria-current={isMoreActive ? 'page' : undefined}`
+no próprio botão, mesmo padrão já usado nos links.
+
+**2. Sheet não fechava ao cruzar o breakpoint desktop** (P2): o
+`SheetContent` tinha `className="md:hidden p-0"` — mas o
+`SheetOverlay` (fundo escuro full-screen, renderizado internamente por
+`sheet.jsx` junto com `SheetContent`) **não** tinha essa classe. Se o
+usuário rotacionasse o celular para paisagem com o sheet aberto e a
+largura cruzasse 768px, o conteúdo do sheet desaparecia (CSS) mas o
+overlay continuava lá, com a UI desktop inerte atrás dele (Radix ainda
+trata o dialog como modal — `aria-hidden` no resto da árvore) e sem
+nenhum controle visível pra fechar (embora Esc/clique-fora no overlay
+ainda funcionassem, já que o Radix trata isso no nível do Dialog, não
+do conteúdo). **Fix**: removido o `md:hidden` do `SheetContent` (era a
+causa da assimetria); adicionado um `useEffect` com
+`window.matchMedia('(min-width: 768px)').addEventListener('change', ...)`
+que fecha o sheet (`setMoreOpen(false)`) sempre que a viewport cruza o
+breakpoint — mais robusto que depender de CSS pra estado que precisa
+de lógica (fechar o modal), não só aparência.
+
+### Testes
+
+`Sidebar.test.jsx` ganhou um mock global de `window.matchMedia`
+(`beforeEach`, jsdom não implementa por padrão — necessário porque
+TODO teste do arquivo agora monta `MobileBottomNav`, que chama
+`matchMedia` no efeito, não só o teste que testa esse comportamento
+específico) com `mediaQueryList` exposto pros testes que precisam
+simular a mudança de breakpoint. 3 testes novos: `aria-current="page"`
+no botão "Mais" quando a rota ativa é secundária (e ausência dele
+quando é core); sheet fecha automaticamente ao disparar manualmente o
+handler de `change` do `matchMedia` com `matches: true`. Reproduzido
+falhando sem o fix via `git stash` (2 dos 3 testes novos falham — o
+terceiro, ausência de `aria-current` em rota core, já passava por ser
+o comportamento padrão sem o atributo).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2138 testes, 0 falhas, 58 pulados; teto de
+typecheck em 13, sem mudança). `git diff` grepado por
+`backend\.|scanner|firestore|postgres|mutation|useQuery\(` → vazio —
+só apresentação/acessibilidade, mesmo escopo do item 238.
