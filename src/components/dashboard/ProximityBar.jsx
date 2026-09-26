@@ -85,11 +85,11 @@ export default function ProximityBar({ state }) {
         style={{ background: cfg.bg, border: `1px solid ${cfg.border}` }}
       >
         <div className="flex items-center justify-between mb-1">
-          <span className="flex items-center gap-1 text-[10px] font-mono font-bold" style={{ color: cfg.color }}>
+          <span className="flex items-center gap-1 text-10px font-mono font-bold" style={{ color: cfg.color }}>
             <Crosshair className="w-3 h-3" />
             {cfg.icon} {cfg.label}
           </span>
-          <span className="flex items-center gap-1.5 text-[10px] font-mono">
+          <span className="flex items-center gap-1.5 text-10px font-mono">
             <span style={{ color: sideColor }}>{side === 'BUY' ? '↑' : '↓'} {side}</span>
             <span style={{ color: 'rgba(255,255,255,0.35)' }}>{distance.toFixed(2)}%</span>
           </span>

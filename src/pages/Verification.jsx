@@ -85,7 +85,7 @@ function NotesField({ task, onSave }) {
       onBlur={() => { if (value !== (task.notes || '')) onSave(value); }}
       placeholder="Anotações sobre esta revisão..."
       rows={2}
-      className="w-full px-2.5 py-1.5 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+      className="w-full px-2.5 py-1.5 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
       style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }}
     />
   );
@@ -105,7 +105,7 @@ function ContextGrid({ ctx }) {
   ].filter(([, v]) => v !== undefined);
   if (items.length === 0) return null;
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1 text-[10px] font-mono">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1 text-10px font-mono">
       {items.map(([label, value, color]) => (
         <div key={label} className="flex items-center justify-between gap-1">
           <span className="text-muted-foreground">{label}</span>
@@ -216,17 +216,17 @@ export default function Verification() {
   return (
     <div className="space-y-5 max-w-5xl mx-auto">
       <div>
-        <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Revisão de Sinais</p>
+        <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Revisão de Sinais</p>
         <div className="flex items-center gap-2">
           <ClipboardCheck className="w-6 h-6" style={{ color: '#ffd166' }} />
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Verificação</h1>
           {pendingCountUnknown ? (
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full"
+            <span className="text-11px font-mono px-2 py-0.5 rounded-full"
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.4)' }}>
               pendentes: não verificado
             </span>
           ) : pendingCount > 0 && (
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded-full"
+            <span className="text-11px font-mono px-2 py-0.5 rounded-full"
               style={{ background: 'rgba(255,209,102,0.1)', border: '1px solid rgba(255,209,102,0.25)', color: '#ffd166' }}>
               {pendingCount} pendente{pendingCount === 1 ? '' : 's'}
             </span>
@@ -238,7 +238,7 @@ export default function Verification() {
       </div>
 
       {assetsError && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-lg text-[10px] font-mono"
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg text-10px font-mono"
           style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
           <span>Não foi possível carregar os ativos monitorados agora — o "Reenviar" foi desativado (o filtro por ativo do Telegram não pode ser confirmado) até a próxima atualização.</span>
@@ -254,7 +254,7 @@ export default function Verification() {
             placeholder="Buscar símbolo..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-7 pr-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="w-full pl-7 pr-3 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}
           />
         </div>
@@ -262,7 +262,7 @@ export default function Verification() {
         <div className="flex items-center gap-1.5 flex-wrap">
           {STATUS_FILTERS.map(f => (
             <button key={f.id} onClick={() => setStatusFilter(f.id)}
-              className="text-[9px] font-mono px-2 py-1 rounded-md transition-all"
+              className="text-9px font-mono px-2 py-1 rounded-md transition-all"
               style={statusFilter === f.id
                 ? { background: 'rgba(0,229,255,0.15)', border: '1px solid rgba(0,229,255,0.4)', color: '#00e5ff' }
                 : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
@@ -272,7 +272,7 @@ export default function Verification() {
           <div className="w-px h-4 mx-0.5" style={{ background: 'rgba(255,255,255,0.08)' }} />
           {PRIORITY_FILTERS.map(f => (
             <button key={f.id} onClick={() => setPriorityFilter(f.id)}
-              className="text-[9px] font-mono px-2 py-1 rounded-md transition-all"
+              className="text-9px font-mono px-2 py-1 rounded-md transition-all"
               style={priorityFilter === f.id
                 ? { background: 'rgba(255,159,67,0.15)', border: '1px solid rgba(255,159,67,0.4)', color: '#ff9f43' }
                 : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
@@ -285,7 +285,7 @@ export default function Verification() {
           <ArrowUpDown className="w-3 h-3 text-muted-foreground shrink-0" />
           {[{ id: 'date', label: 'Data' }, { id: 'score', label: 'Score ↓' }].map(s => (
             <button key={s.id} onClick={() => setSortBy(s.id)}
-              className="text-[9px] font-mono px-2 py-1 rounded-md transition-all"
+              className="text-9px font-mono px-2 py-1 rounded-md transition-all"
               style={sortBy === s.id
                 ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
                 : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
@@ -320,26 +320,26 @@ export default function Verification() {
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-bold text-foreground">{task.symbol?.replace('USDT', '/USDT')}</span>
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)' }}>
+                      <span className="text-9px font-mono px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)' }}>
                         {task.timeframe?.toUpperCase()}
                       </span>
-                      <span className="text-[10px] font-mono font-bold" style={{ color: task.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>
+                      <span className="text-10px font-mono font-bold" style={{ color: task.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>
                         {task.signal_type === 'BUY' ? '↑ BUY' : '↓ SELL'}
                       </span>
                       {Number.isFinite(task.score) && (
-                        <span className="text-[10px] font-mono" style={{ color: task.score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                        <span className="text-10px font-mono" style={{ color: task.score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
                           🔥 Score {task.score}/100
                         </span>
                       )}
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-full" style={{ background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
+                      <span className="text-9px font-mono px-1.5 py-0.5 rounded-full" style={{ background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>
                         {badge.label}
                       </span>
-                      <span className="text-[9px] font-mono" style={{ color: task.status === 'pending' ? ageColor(task.created_date) : 'rgba(255,255,255,0.35)' }}>
+                      <span className="text-9px font-mono" style={{ color: task.status === 'pending' ? ageColor(task.created_date) : 'rgba(255,255,255,0.35)' }}>
                         {moment(task.created_date).fromNow()}
                       </span>
                     </div>
 
-                    {task.reason && <p className="text-[11px] text-muted-foreground">{task.reason}</p>}
+                    {task.reason && <p className="text-11px text-muted-foreground">{task.reason}</p>}
 
                     <ContextGrid ctx={task.signal_context} />
 
@@ -363,7 +363,7 @@ export default function Verification() {
                             <Check className="w-4 h-4" style={{ color: '#00ff80' }} />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                           Marcar como revisado (OK)
                         </TooltipContent>
                       </Tooltip>
@@ -376,7 +376,7 @@ export default function Verification() {
                             <XIcon className="w-4 h-4 text-muted-foreground" />
                           </button>
                         </TooltipTrigger>
-                        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                           Pular
                         </TooltipContent>
                       </Tooltip>
@@ -389,7 +389,7 @@ export default function Verification() {
                       const resendButton = (
                         <button onClick={() => resend(task)}
                           disabled={resendDisabled}
-                          className="flex items-center gap-1 text-[9px] font-mono px-2 py-1 rounded-md transition-all disabled:opacity-40"
+                          className="flex items-center gap-1 text-9px font-mono px-2 py-1 rounded-md transition-all disabled:opacity-40"
                           style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)', color: '#00e5ff' }}>
                           {resendingId === task.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                           Reenviar
@@ -403,14 +403,14 @@ export default function Verification() {
                           <TooltipTrigger asChild>
                             {resendDisabled ? <span tabIndex={0} className="inline-block">{resendButton}</span> : resendButton}
                           </TooltipTrigger>
-                          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                             {resendTooltip}
                           </TooltipContent>
                         </Tooltip>
                       );
                     })()}
                     {task.telegram_notified_at && (
-                      <span className="text-[8px] font-mono text-muted-foreground">
+                      <span className="text-8px font-mono text-muted-foreground">
                         Enviado {moment(task.telegram_notified_at).fromNow()}
                       </span>
                     )}

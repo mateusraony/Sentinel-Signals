@@ -24,19 +24,19 @@ function MetricCard({ icon: Icon, label, value, sublabel, color, glowColor, tool
         <Icon className="w-4 h-4" style={{ color }} />
         {tooltip ? (
           <Tooltip>
-            <TooltipTrigger type="button" className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
+            <TooltipTrigger type="button" className="text-10px font-mono uppercase tracking-wider text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
               {label}
             </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
               {tooltip}
             </TooltipContent>
           </Tooltip>
         ) : (
-          <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
+          <span className="text-10px font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
         )}
       </div>
       <div className="text-2xl font-bold font-mono" style={{ color }}>{value}</div>
-      {sublabel && <div className="text-[9px] font-mono text-muted-foreground mt-1">{sublabel}</div>}
+      {sublabel && <div className="text-9px font-mono text-muted-foreground mt-1">{sublabel}</div>}
     </div>
   );
 }
@@ -81,11 +81,11 @@ export default function PerformanceReport({ trades }) {
       <div className="flex items-center gap-2">
         <Award className="w-4 h-4" style={{ color: '#00e5ff' }} />
         <h2 className="text-base font-bold text-foreground/80">Relatório de Performance</h2>
-        <span className="text-[10px] font-mono text-muted-foreground">({metrics.totalTrades} trades fechados)</span>
+        <span className="text-10px font-mono text-muted-foreground">({metrics.totalTrades} trades fechados)</span>
       </div>
       {/* Legenda única (não repetida por card, que quebrava o grid — achado
           da revisão pós-PR #396, docs/claude/ui-audit-criticos.md) */}
-      <p className="text-[9px] font-mono text-muted-foreground/70">
+      <p className="text-9px font-mono text-muted-foreground/70">
         PnL Acumulado é soma % simples, não composta.
       </p>
 

@@ -57,19 +57,19 @@ function SummaryCard({ icon: Icon, label, value, sublabel = undefined, color, gl
         <Icon className="w-4 h-4" style={{ color }} />
         {tooltip ? (
           <InfoTooltip>
-            <TooltipTrigger type="button" className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
+            <TooltipTrigger type="button" className="text-10px font-mono uppercase tracking-wider text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
               {label}
             </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
               {tooltip}
             </TooltipContent>
           </InfoTooltip>
         ) : (
-          <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
+          <span className="text-10px font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
         )}
       </div>
       <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
-      {sublabel && <div className="text-[9px] font-mono text-muted-foreground mt-1">{sublabel}</div>}
+      {sublabel && <div className="text-9px font-mono text-muted-foreground mt-1">{sublabel}</div>}
     </div>
   );
 }
@@ -211,7 +211,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
   return (
     <div className="space-y-5">
       {!costs.conclusive && (
-        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-mono" style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.3)', color: '#ff9f43' }}>
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-11px font-mono" style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.3)', color: '#ff9f43' }}>
           <AlertTriangle className="w-4 h-4 shrink-0" />
           RESULTADO INCONCLUSIVO — {inconclusiveLabel}. Win rate e profit factor abaixo são ruído nesta amostra — inclui a curva de capital real mais abaixo.
         </div>
@@ -290,7 +290,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
 
       {equitySim && (
         <Section title="Curva de capital real (composta, position sizing por risco)">
-          <p className="text-[9px] font-mono text-muted-foreground/70 -mt-1 mb-1">
+          <p className="text-9px font-mono text-muted-foreground/70 -mt-1 mb-1">
             Dimensiona cada operação como {riskPct}% do capital CORRENTE (não do inicial) sobre o risco da
             entrada — diferente da curva ingênua acima, aqui o capital efetivamente compõe ao longo da série.
             Simplificação: assume um único pool de capital disputado sequencialmente por ordem de fechamento,
@@ -298,21 +298,21 @@ function ReportBody({ report, hideCascadeTable = false }) {
           </p>
           <div className="flex flex-wrap items-end gap-4 mb-2">
             <div>
-              <label className="text-[9px] font-mono text-muted-foreground block mb-1">Capital inicial</label>
+              <label className="text-9px font-mono text-muted-foreground block mb-1">Capital inicial</label>
               <input type="number" min={1} step={100} value={initialCapital}
                 onChange={e => setInitialCapital(Math.max(1, Number(e.target.value) || DEFAULT_INITIAL_CAPITAL))}
-                className="w-28 px-3 py-1.5 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="w-28 px-3 py-1.5 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }} />
             </div>
             <div className="w-40">
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[9px] font-mono text-muted-foreground">Risco por operação</span>
+                <span className="text-9px font-mono text-muted-foreground">Risco por operação</span>
                 <span className="text-xs font-mono font-bold" style={{ color: '#ffd166' }}>{riskPct}%</span>
               </div>
               <Slider value={[riskPct]} min={0.1} max={5} step={0.1} onValueChange={([v]) => setRiskPct(v)} />
             </div>
             {equitySim.accountBlown && (
-              <span className="px-2.5 py-1 rounded-md text-[10px] font-mono font-bold"
+              <span className="px-2.5 py-1 rounded-md text-10px font-mono font-bold"
                 style={{ background: 'rgba(255,20,120,0.15)', border: '1px solid rgba(255,20,120,0.4)', color: '#ff1478' }}>
                 CONTA ZERADA
               </span>
@@ -369,7 +369,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
       {!hideCascadeTable && cascadeRows.length > 0 && (
         <Section title="Por cascata (4h→15m RF vs 1h→5m SMC)">
           <div className="overflow-x-auto">
-            <table className="w-full text-[10px] font-mono">
+            <table className="w-full text-10px font-mono">
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
                   <th className="text-left px-3 py-2 text-muted-foreground font-medium">Cascata</th>
@@ -380,7 +380,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
                       <TooltipTrigger asChild>
                         <span tabIndex={0} className="cursor-help underline decoration-dotted underline-offset-2">Expectância</span>
                       </TooltipTrigger>
-                      <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                      <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                         Média de R (resultado ÷ risco inicial) por operação
                       </TooltipContent>
                     </InfoTooltip>
@@ -390,7 +390,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
                       <TooltipTrigger asChild>
                         <span tabIndex={0} className="cursor-help underline decoration-dotted underline-offset-2">Profit Factor</span>
                       </TooltipTrigger>
-                      <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                      <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                         Soma dos ganhos ÷ soma das perdas — acima de 1 significa que os ganhos superam as perdas no total
                       </TooltipContent>
                     </InfoTooltip>
@@ -451,7 +451,7 @@ function SimulatedTradesTable({ ops }) {
   return (
     <Section title="Operações Simuladas">
       <div className="overflow-x-auto">
-        <table className="w-full text-[10px] font-mono">
+        <table className="w-full text-10px font-mono">
           <thead>
             <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
               <th className="text-left px-3 py-2 text-muted-foreground font-medium">Entrada</th>
@@ -578,20 +578,20 @@ function QuickBacktestTab() {
         )}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
-            <label className="text-[9px] font-mono text-muted-foreground block mb-1">Ativo</label>
+            <label className="text-9px font-mono text-muted-foreground block mb-1">Ativo</label>
             <select value={assetId} onChange={e => setAssetId(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="w-full px-3 py-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
               <option value="">Selecione...</option>
               {assets.map(a => <option key={a.id} value={a.id}>{a.display_name || a.symbol}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-[9px] font-mono text-muted-foreground block mb-1">Timeframe</label>
+            <label className="text-9px font-mono text-muted-foreground block mb-1">Timeframe</label>
             <div className="flex items-center gap-1.5">
               {QBT_TIMEFRAMES.map(tf => (
                 <button key={tf.id} onClick={() => setTimeframe(tf.id)}
-                  className="flex-1 px-3 py-2 rounded-lg text-[11px] font-mono font-bold transition-all"
+                  className="flex-1 px-3 py-2 rounded-lg text-11px font-mono font-bold transition-all"
                   style={timeframe === tf.id
                     ? { background: 'rgba(0,229,255,0.15)', border: '1px solid rgba(0,229,255,0.4)', color: '#00e5ff' }
                     : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.4)' }}>
@@ -599,12 +599,12 @@ function QuickBacktestTab() {
                 </button>
               ))}
             </div>
-            <p className="text-[8px] font-mono text-muted-foreground/60 mt-1">~{approxDays} dias</p>
+            <p className="text-8px font-mono text-muted-foreground/60 mt-1">~{approxDays} dias</p>
           </div>
           <div>
-            <label className="text-[9px] font-mono text-muted-foreground block mb-1">Período (candles)</label>
+            <label className="text-9px font-mono text-muted-foreground block mb-1">Período (candles)</label>
             <select value={candleCount} onChange={e => setCandleCount(Number(e.target.value))}
-              className="w-full px-3 py-2 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="w-full px-3 py-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
               {QBT_CANDLE_OPTIONS.map(n => <option key={n} value={n}>{n} candles</option>)}
             </select>
@@ -614,10 +614,10 @@ function QuickBacktestTab() {
         <div className="pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
           <div className="flex items-center gap-1.5 mb-1">
             <Sparkles className="w-3.5 h-3.5" style={{ color: '#ffd166' }} />
-            <span className="text-[10px] font-mono font-bold" style={{ color: '#ffd166' }}>AJUSTE FINO (WHAT-IF)</span>
-            <span className="text-[9px] font-mono text-muted-foreground">— altere para testar cenários sem afetar o scanner</span>
+            <span className="text-10px font-mono font-bold" style={{ color: '#ffd166' }}>AJUSTE FINO (WHAT-IF)</span>
+            <span className="text-9px font-mono text-muted-foreground">— altere para testar cenários sem afetar o scanner</span>
           </div>
-          <p className="text-[9px] font-mono text-muted-foreground/70 mb-3">
+          <p className="text-9px font-mono text-muted-foreground/70 mb-3">
             Simulação simplificada de 1 ativo/1 timeframe por vez — não reproduz a cascata completa
             (múltiplos prazos + SMC) que o scanner real usa. Bom pra explorar rápido, não é o resultado exato do motor de verdade.
           </p>
@@ -625,7 +625,7 @@ function QuickBacktestTab() {
             {QBT_SLIDERS.map(s => (
               <div key={s.key} className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[9px] font-mono text-muted-foreground">{s.label}</span>
+                  <span className="text-9px font-mono text-muted-foreground">{s.label}</span>
                   <span className="text-xs font-mono font-bold" style={{ color: s.color }}>{sliders[s.key]}</span>
                 </div>
                 <Slider value={[sliders[s.key]]} min={s.min} max={s.max} step={s.step}
@@ -637,20 +637,20 @@ function QuickBacktestTab() {
 
         <div className="flex items-center gap-3 pt-1">
           <button onClick={handleRun} disabled={!asset || status === 'running'}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-[11px] font-mono font-bold transition-all disabled:opacity-40"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-11px font-mono font-bold transition-all disabled:opacity-40"
             style={{ background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }}>
             {status === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
             {status === 'running' ? 'Simulando...' : 'Executar Backtest'}
           </button>
           {asset && (
-            <span className="text-[9px] font-mono text-muted-foreground">
+            <span className="text-9px font-mono text-muted-foreground">
               {asset.symbol} · {timeframe.toUpperCase()} · {candleCount} candles
             </span>
           )}
         </div>
 
         {status === 'error' && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-mono" style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-10px font-mono" style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{errorMsg}
           </div>
         )}
@@ -658,7 +658,7 @@ function QuickBacktestTab() {
 
       {result && (
         <>
-          <p className="text-[9px] font-mono text-muted-foreground">
+          <p className="text-9px font-mono text-muted-foreground">
             📅 {moment(result.from).format('DD/MM/YYYY')} → {moment(result.to).format('DD/MM/YYYY')}
             &nbsp;&nbsp;{result.candleCount} candles processados
             &nbsp;&nbsp;RF {sliders.rfPeriod}/{sliders.rfMult} · ATR {sliders.atrMult}x · TP1 {sliders.tp1R}R
@@ -735,7 +735,7 @@ function RealPeriodTab() {
         <Calendar className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         {PERIOD_PRESETS.map(p => (
           <button key={p.id} onClick={() => setPreset(p.id)}
-            className="text-[10px] font-mono px-2.5 py-1 rounded-md transition-all"
+            className="text-10px font-mono px-2.5 py-1 rounded-md transition-all"
             style={preset === p.id
               ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
               : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
@@ -745,7 +745,7 @@ function RealPeriodTab() {
       </div>
 
       {!isLoading && allOps.length === REAL_OPS_LIMIT && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-mono" style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.3)', color: '#ff9f43' }}>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-10px font-mono" style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.3)', color: '#ff9f43' }}>
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           Mostrando só as {REAL_OPS_LIMIT} operações mais recentes — pode haver operações mais antigas fora deste limite,
           então períodos longos ("Tudo", "Ano") podem estar incompletos.
@@ -790,7 +790,7 @@ function UploadPanel({ onLoad, error }) {
         <div className="text-center space-y-1">
           <FlaskConical className="w-8 h-8 mx-auto text-muted-foreground opacity-30" />
           <h2 className="text-base font-bold text-foreground">Ou carregue um relatório já gerado</h2>
-          <p className="text-[10px] font-mono text-muted-foreground">
+          <p className="text-10px font-mono text-muted-foreground">
             Baixe o artifact <code>backtest-report.json</code> de um run anterior do GitHub Actions (aba Actions → Backtest
             → o run desejado), ou rode <code>npm run backtest</code> localmente. Depois, carregue o arquivo ou cole o
             conteúdo abaixo.
@@ -798,29 +798,29 @@ function UploadPanel({ onLoad, error }) {
         </div>
 
         <button onClick={() => fileRef.current?.click()}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-[11px] font-mono font-bold transition-all"
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-11px font-mono font-bold transition-all"
           style={{ background: 'rgba(0,229,255,0.08)', border: '1px dashed rgba(0,229,255,0.3)', color: '#00e5ff' }}>
           <Upload className="w-4 h-4" />Selecionar backtest-report.json
         </button>
         <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={handleFile} />
 
-        <div className="text-center text-[9px] font-mono text-muted-foreground">— ou cole o JSON —</div>
+        <div className="text-center text-9px font-mono text-muted-foreground">— ou cole o JSON —</div>
         <textarea
           value={pasted}
           onChange={(e) => setPasted(e.target.value)}
           placeholder="{ &quot;range&quot;: ..., &quot;overall&quot;: ... }"
           rows={5}
-          className="w-full rounded-lg p-3 text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+          className="w-full rounded-lg p-3 text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
           style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }}
         />
         <button onClick={() => onLoad(pasted)} disabled={!pasted.trim()}
-          className="w-full px-4 py-2 rounded-lg text-[10px] font-mono font-bold transition-all disabled:opacity-40"
+          className="w-full px-4 py-2 rounded-lg text-10px font-mono font-bold transition-all disabled:opacity-40"
           style={{ background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }}>
           Analisar relatório colado
         </button>
 
         {error && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-mono" style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-10px font-mono" style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
             <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{error}
           </div>
         )}
@@ -892,21 +892,21 @@ function JsonReportTab() {
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between flex-wrap gap-3">
-        <p className="text-[10px] font-mono text-muted-foreground">
+        <p className="text-10px font-mono text-muted-foreground">
           {report.trialLabel ? `Trial: ${report.trialLabel} · ` : ''}
           {new Date(report.range.from).toLocaleDateString('pt-BR')} – {new Date(report.range.to).toLocaleDateString('pt-BR')}
           {report.reproducibility?.commitSha && ` · commit ${report.reproducibility.commitSha.slice(0, 7)}`}
         </p>
         <div className="flex items-center gap-2">
           <button onClick={() => setReport(null)}
-            className="px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all"
+            className="px-3 py-1.5 rounded-lg text-10px font-mono transition-all"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.6)' }}>
             Carregar outro relatório
           </button>
           {(() => {
             const applyButton = (
               <button onClick={handleApplyToScanner} disabled={!report.reproducibility?.pineConfig || applyStatus === 'applying'}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all disabled:opacity-40"
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-10px font-mono font-bold transition-all disabled:opacity-40"
                 style={{
                   background: applyStatus === 'applied' ? 'rgba(0,255,128,0.15)' : 'rgba(0,255,128,0.08)',
                   border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80',
@@ -924,7 +924,7 @@ function JsonReportTab() {
                 <TooltipTrigger asChild>
                   <span tabIndex={0} className="inline-block">{applyButton}</span>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                   Relatório sem reproducibility.pineConfig — rode com run-backtest.mjs mais recente
                 </TooltipContent>
               </InfoTooltip>
@@ -950,13 +950,13 @@ export default function Backtest() {
     <div className="space-y-5 max-w-7xl mx-auto">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Estratégia</p>
+          <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Estratégia</p>
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Backtest</h1>
         </div>
         <div className="flex items-center gap-1">
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
-              className="flex items-center gap-1.5 text-[10px] font-mono px-3 py-2 rounded-lg transition-all"
+              className="flex items-center gap-1.5 text-10px font-mono px-3 py-2 rounded-lg transition-all"
               style={tab === t.id
                 ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
                 : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' }}>

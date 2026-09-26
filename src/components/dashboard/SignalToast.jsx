@@ -90,21 +90,21 @@ export default function SignalToast({ signals = [] }) {
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="font-bold text-xs text-foreground">{symbol}</span>
-                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+                    <span className="text-9px font-mono px-1.5 py-0.5 rounded"
                       style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.4)' }}>
                       {sig.timeframe?.toUpperCase()}
                     </span>
-                    <span className="text-[9px] font-mono font-bold" style={{ color: textColor }}>
+                    <span className="text-9px font-mono font-bold" style={{ color: textColor }}>
                       {sig.signal_type}
                     </span>
                   </div>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <div className="text-[9px] font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                      <div className="text-9px font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
                         Score {score}/100 · Sinal Confirmado
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                    <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                       Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
                     </TooltipContent>
                   </Tooltip>

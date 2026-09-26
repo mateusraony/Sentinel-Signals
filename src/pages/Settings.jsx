@@ -177,7 +177,7 @@ export default function Settings() {
   if (!values) {
     return (
       <div className="flex justify-center py-20">
-        <div className="text-[11px] font-mono text-muted-foreground animate-pulse">Carregando configuração...</div>
+        <div className="text-11px font-mono text-muted-foreground animate-pulse">Carregando configuração...</div>
       </div>
     );
   }
@@ -186,13 +186,13 @@ export default function Settings() {
     <div className="space-y-5 max-w-6xl mx-auto">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
-          <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Configuração</p>
+          <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Configuração</p>
           <h1 className="text-3xl font-bold text-foreground tracking-tight">Ajuste Fino</h1>
-          <p className="text-[10px] font-mono text-muted-foreground mt-1">
+          <p className="text-10px font-mono text-muted-foreground mt-1">
             Altere multiplicadores de ATR, alvos de lucro e parâmetros do Range Filter sem tocar no código.
           </p>
         </div>
-        <div className="flex items-center gap-1.5 text-[9px] font-mono px-2.5 py-1.5 rounded-lg"
+        <div className="flex items-center gap-1.5 text-9px font-mono px-2.5 py-1.5 rounded-lg"
           style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
           <SlidersHorizontal className="w-3 h-3" />Aplicado instantaneamente no próximo scan
         </div>
@@ -204,17 +204,17 @@ export default function Settings() {
             <SlidersHorizontal className="w-4 h-4" style={{ color: '#00e5ff' }} />
             <div>
               <h2 className="text-sm font-bold text-foreground">Ajuste Fino de Parâmetros</h2>
-              <p className="text-[9px] font-mono text-muted-foreground">Otimize o motor para diferentes níveis de risco</p>
+              <p className="text-9px font-mono text-muted-foreground">Otimize o motor para diferentes níveis de risco</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={handleReset}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-mono transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all"
               style={{ background: 'rgba(255,159,67,0.07)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
               <RotateCcw className="w-3 h-3" />Restaurar
             </button>
             <button onClick={handleSave} disabled={saveStatus === 'saving'}
-              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[10px] font-mono font-bold transition-all disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-10px font-mono font-bold transition-all disabled:opacity-50"
               style={{
                 background: saveStatus === 'saved' ? 'rgba(0,255,128,0.15)' : 'rgba(0,255,128,0.08)',
                 border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80',
@@ -225,7 +225,7 @@ export default function Settings() {
           </div>
         </div>
 
-        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-[10px] font-mono" style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-10px font-mono" style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span>
             Alterações são aplicadas instantaneamente ao scanner no próximo scan. Use o{' '}
@@ -241,12 +241,12 @@ export default function Settings() {
             <div key={group.id} className="rounded-xl p-4 space-y-4" style={{ background: 'rgba(255,255,255,0.02)', border: `1px solid ${group.color}25` }}>
               <div className="flex items-center gap-1.5">
                 <group.icon className="w-3.5 h-3.5" style={{ color: group.color }} />
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider" style={{ color: group.color }}>{group.label}</span>
+                <span className="text-10px font-mono font-bold uppercase tracking-wider" style={{ color: group.color }}>{group.label}</span>
               </div>
               {group.fields.map(field => (
                 <div key={field.key} className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-mono text-muted-foreground">{field.label}</span>
+                    <span className="text-10px font-mono text-muted-foreground">{field.label}</span>
                     <span className="text-xs font-mono font-bold" style={{ color: group.color }}>
                       {fmtValue(values[field.key], field.suffix)}
                     </span>
@@ -259,11 +259,11 @@ export default function Settings() {
                     aria-label={field.label}
                     onValueChange={([v]) => { setValues(prev => ({ ...prev, [field.key]: v })); markDirty(field.key); }}
                   />
-                  <div className="flex items-center justify-between text-[8px] font-mono text-muted-foreground/50">
+                  <div className="flex items-center justify-between text-8px font-mono text-muted-foreground/50">
                     <span>{field.min}</span><span>{field.max}</span>
                   </div>
                   {field.help && (
-                    <p className="text-[9px] font-mono text-muted-foreground/70 leading-snug">{field.help}</p>
+                    <p className="text-9px font-mono text-muted-foreground/70 leading-snug">{field.help}</p>
                   )}
                 </div>
               ))}
@@ -276,8 +276,8 @@ export default function Settings() {
             <div key={field.key} className="flex items-center justify-between gap-4 rounded-xl p-4"
               style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,209,102,0.2)' }}>
               <div className="space-y-0.5">
-                <p className="text-[10px] font-mono font-bold text-foreground">{field.label}</p>
-                <p className="text-[9px] font-mono text-muted-foreground">{field.help}</p>
+                <p className="text-10px font-mono font-bold text-foreground">{field.label}</p>
+                <p className="text-9px font-mono text-muted-foreground">{field.help}</p>
               </div>
               <Switch
                 checked={!!values[field.key]}
@@ -289,10 +289,10 @@ export default function Settings() {
         </div>
 
         <div className="pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-          <p className="text-[9px] font-mono text-muted-foreground mb-2">Configuração Ativa (lida pelo scanner):</p>
+          <p className="text-9px font-mono text-muted-foreground mb-2">Configuração Ativa (lida pelo scanner):</p>
           <div className="flex items-center gap-2 flex-wrap">
             {ACTIVE_CONFIG_PILLS.map(p => (
-              <span key={p.key} className="text-[9px] font-mono px-2.5 py-1 rounded-md"
+              <span key={p.key} className="text-9px font-mono px-2.5 py-1 rounded-md"
                 style={{ background: 'rgba(0,255,128,0.06)', border: '1px solid rgba(0,255,128,0.2)', color: '#00ff80' }}>
                 {p.label}: {fmtValue(values[p.key], '')}
               </span>

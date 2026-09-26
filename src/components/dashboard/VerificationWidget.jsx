@@ -51,10 +51,10 @@ export default function VerificationWidget() {
   if (tasks.length === 0 && isError) {
     return (
       <div className="glass-card rounded-xl p-4">
-        <div className="flex items-center gap-2 text-[11px] font-mono" style={{ color: '#ff9f43' }}>
+        <div className="flex items-center gap-2 text-11px font-mono" style={{ color: '#ff9f43' }}>
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>Não foi possível carregar a Verificação de Sinais agora.</span>
-          <button onClick={() => refetch()} className="ml-auto text-[10px] px-2 py-1 rounded-md hover:bg-white/[0.08] transition-colors"
+          <button onClick={() => refetch()} className="ml-auto text-10px px-2 py-1 rounded-md hover:bg-white/[0.08] transition-colors"
             style={{ border: '1px solid rgba(255,159,67,0.3)' }}>
             Tentar de novo
           </button>
@@ -75,13 +75,13 @@ export default function VerificationWidget() {
           <ClipboardCheck className="w-4 h-4" style={{ color: '#ffd166' }} />
           <h2 className="text-sm font-bold text-foreground tracking-tight">Verificação de Sinais</h2>
           {pending.length > 0 && (
-            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+            <span className="text-9px font-mono px-1.5 py-0.5 rounded"
               style={{ background: 'rgba(255,209,102,0.1)', border: '1px solid rgba(255,209,102,0.25)', color: '#ffd166' }}>
               {pending.length} pendente{pending.length === 1 ? '' : 's'}
             </span>
           )}
         </div>
-        <Link to="/verification" className="flex items-center gap-0.5 text-[10px] font-mono text-muted-foreground hover:text-foreground transition-colors">
+        <Link to="/verification" className="flex items-center gap-0.5 text-10px font-mono text-muted-foreground hover:text-foreground transition-colors">
           Ver todas <ChevronRight className="w-3 h-3" />
         </Link>
       </div>
@@ -91,7 +91,7 @@ export default function VerificationWidget() {
       </div>
 
       {pending.length === 0 ? (
-        <p className="text-[11px] text-muted-foreground py-1">Tudo revisado — nenhum sinal de alta prioridade pendente.</p>
+        <p className="text-11px text-muted-foreground py-1">Tudo revisado — nenhum sinal de alta prioridade pendente.</p>
       ) : (
         <div className="space-y-1.5">
           {pending.slice(0, 5).map(task => (
@@ -101,11 +101,11 @@ export default function VerificationWidget() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-semibold text-foreground">{task.symbol?.replace('USDT', '/USDT')}</span>
-                  <span className="text-[9px] font-mono text-muted-foreground">{task.timeframe?.toUpperCase()}</span>
-                  <span className="text-[9px] font-mono" style={{ color: task.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>
+                  <span className="text-9px font-mono text-muted-foreground">{task.timeframe?.toUpperCase()}</span>
+                  <span className="text-9px font-mono" style={{ color: task.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>
                     {task.signal_type === 'BUY' ? '↑ BUY' : '↓ SELL'}
                   </span>
-                  <span className="text-[9px] font-mono" style={{ color: ageColor(task.created_date) }}>
+                  <span className="text-9px font-mono" style={{ color: ageColor(task.created_date) }}>
                     {moment(task.created_date).fromNow()}
                   </span>
                 </div>
@@ -118,7 +118,7 @@ export default function VerificationWidget() {
                     <Check className="w-3.5 h-3.5" style={{ color: '#00ff80' }} />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                   Marcar como revisado (OK)
                 </TooltipContent>
               </Tooltip>
@@ -130,7 +130,7 @@ export default function VerificationWidget() {
                     <XIcon className="w-3.5 h-3.5 text-muted-foreground" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                   Pular
                 </TooltipContent>
               </Tooltip>

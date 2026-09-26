@@ -26,25 +26,25 @@ function ConfidenceRow({ label, summary, divergenceWarning = false }) {
   return (
     <div className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[8px] font-mono uppercase text-muted-foreground">{label}</span>
+        <span className="text-8px font-mono uppercase text-muted-foreground">{label}</span>
         <div className="flex items-center gap-1">
           {divergenceWarning && (
             <Tooltip>
-              <TooltipTrigger type="button" className="flex items-center gap-0.5 text-[8px] font-mono px-1.5 py-0.5 rounded cursor-help"
+              <TooltipTrigger type="button" className="flex items-center gap-0.5 text-8px font-mono px-1.5 py-0.5 rounded cursor-help"
                 style={{ background: 'rgba(255,159,67,0.1)', border: '1px solid rgba(255,159,67,0.35)', color: '#ff9f43' }}>
                 <AlertTriangle className="w-2.5 h-2.5" />DIVERGENTE
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                 BUY e SELL têm expectância (R por operação) em direções opostas — uma positiva, outra negativa. &quot;Geral&quot; mistura os dois numa média só, o que pode esconder essa discordância; prefira olhar as linhas BUY/SELL separadas.
               </TooltipContent>
             </Tooltip>
           )}
           <Tooltip>
-            <TooltipTrigger type="button" className="text-[8px] font-mono px-1.5 py-0.5 rounded cursor-help"
+            <TooltipTrigger type="button" className="text-8px font-mono px-1.5 py-0.5 rounded cursor-help"
               style={{ background: `${badgeColor}18`, border: `1px solid ${badgeColor}40`, color: badgeColor }}>
               {badgeLabel}
             </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
               {summary.conclusive
                 ? 'CONCLUSIVO: o intervalo de confiança de 95% da expectância não cruza zero — a amostra já descarta "sem edge nenhum" nesse sentido (não prova o tamanho do edge).'
                 : 'INCONCLUSIVO: amostra pequena demais ou o intervalo de confiança de 95% da expectância ainda cruza zero — não dá para descartar "sem edge nenhum" com esta amostra.'}
@@ -56,14 +56,14 @@ function ConfidenceRow({ label, summary, divergenceWarning = false }) {
         style={{ color: hasSamples ? (positive ? '#00ff80' : '#ff1478') : 'rgba(255,255,255,0.3)' }}>
         {hasSamples ? `${positive ? '+' : ''}${summary.expectancyR.toFixed(3)}R` : '—'}
       </div>
-      <div className="text-[8px] font-mono text-muted-foreground mt-0.5">
+      <div className="text-8px font-mono text-muted-foreground mt-0.5">
         {summary.counted}/{summary.minTrades} operações
         {ci ? (
           <Tooltip>
             <TooltipTrigger type="button" className="cursor-help underline decoration-dotted underline-offset-2">
               {` · IC [${ci[0].toFixed(3)}; ${ci[1].toFixed(3)}]`}
             </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
               Intervalo de confiança de 95% da expectância (R por operação). "Que vantagem esta amostra já descarta?" — quanto mais estreito, mais essa amostra restringe o edge real, exista ele ou não.
             </TooltipContent>
           </Tooltip>
@@ -151,13 +151,13 @@ export default function LiveConfidenceCard() {
       style={{ background: 'rgba(6,8,15,0.7)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(20px)' }}>
       <div className="flex items-center gap-2 mb-3">
         <Gauge className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
-        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Confiança ao Vivo (amostra real)</span>
-        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+        <span className="text-10px font-mono uppercase tracking-widest text-muted-foreground">Confiança ao Vivo (amostra real)</span>
+        <span className="text-9px font-mono px-1.5 py-0.5 rounded"
           style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
           cresce a cada operação fechada
         </span>
         <button onClick={handleCopy} type="button"
-          className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-mono transition-all"
+          className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded text-9px font-mono transition-all"
           style={copied
             ? { background: 'rgba(0,255,128,0.08)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }
             : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
@@ -173,13 +173,13 @@ export default function LiveConfidenceCard() {
       {sourceRows.length > 0 && (
         <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <div className="flex items-center gap-2 mb-2.5">
-            <span className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground">Por fonte de dado</span>
+            <span className="text-9px font-mono uppercase tracking-widest text-muted-foreground">Por fonte de dado</span>
             <Tooltip>
-              <TooltipTrigger type="button" className="text-[8px] font-mono px-1.5 py-0.5 rounded cursor-help"
+              <TooltipTrigger type="button" className="text-8px font-mono px-1.5 py-0.5 rounded cursor-help"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)' }}>
                 Spot × Futures
               </TooltipTrigger>
-              <TooltipContent className="max-w-[280px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[280px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                 Eixo diferente do BUY/SELL acima — aqui é de onde veio o preço da operação (cron 24h = Spot, painel aberto no navegador = Futures, item 4/178). Nunca combine com BUY/SELL no mesmo IC. &quot;Sem registro&quot; são operações de antes de 2026-09-14, quando esse campo passou a existir.
               </TooltipContent>
             </Tooltip>

@@ -50,14 +50,14 @@ export default function DebugLogButton() {
             }}>
             <Bug className="w-4 h-4" style={{ color: anomalies.length > 0 ? '#ff1478' : 'rgba(255,255,255,0.4)' }} />
             {anomalies.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-[8px] font-mono font-bold flex items-center justify-center"
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full text-8px font-mono font-bold flex items-center justify-center"
                 style={{ background: '#ff1478', color: '#fff' }}>
                 {anomalies.length > 9 ? '9+' : anomalies.length}
               </span>
             )}
           </button>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
           Debug Log
         </TooltipContent>
       </Tooltip>
@@ -72,9 +72,9 @@ export default function DebugLogButton() {
             style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="flex items-center gap-2">
               <Bug className="w-3.5 h-3.5" style={{ color: '#ff1478' }} />
-              <span className="text-[11px] font-mono font-bold text-foreground">Debug Log</span>
+              <span className="text-11px font-mono font-bold text-foreground">Debug Log</span>
               {anomalies.length > 0 && (
-                <span className="text-[8px] font-mono px-1.5 py-0.5 rounded"
+                <span className="text-8px font-mono px-1.5 py-0.5 rounded"
                   style={{ background: 'rgba(255,20,120,0.12)', color: '#ff1478', border: '1px solid rgba(255,20,120,0.25)' }}>
                   {anomalies.length} anomalias
                 </span>
@@ -91,7 +91,7 @@ export default function DebugLogButton() {
               const cfg = LEVEL_CONFIG[lvl] || { color: '#00e5ff', label: 'ALL' };
               return (
                 <button key={lvl} onClick={() => setFilter(lvl)}
-                  className="text-[8px] font-mono px-2 py-1 rounded transition-all"
+                  className="text-8px font-mono px-2 py-1 rounded transition-all"
                   style={filter === lvl
                     ? { background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color }
                     : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.3)' }}>
@@ -105,32 +105,32 @@ export default function DebugLogButton() {
           <div className="overflow-y-auto font-mono" style={{ maxHeight: '50vh' }}>
             {filtered.length === 0 ? (
               <div className="px-4 py-8 text-center">
-                <p className="text-[10px] font-mono text-muted-foreground">Nenhuma anomalia registrada ✓</p>
+                <p className="text-10px font-mono text-muted-foreground">Nenhuma anomalia registrada ✓</p>
               </div>
             ) : filtered.map((log, i) => {
               const cfg = LEVEL_CONFIG[log.level] || LEVEL_CONFIG.info;
               return (
                 <div key={log.id} className="group flex items-start gap-2 px-3 py-2 hover:bg-white/[0.012] transition-colors"
                   style={{ borderTop: i > 0 ? '1px solid rgba(255,255,255,0.03)' : 'none' }}>
-                  <span className="text-[8px] px-1 py-0.5 rounded shrink-0 mt-0.5"
+                  <span className="text-8px px-1 py-0.5 rounded shrink-0 mt-0.5"
                     style={{ background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color }}>
                     {cfg.label}
                   </span>
                   <div className="min-w-0 flex-1">
-                    {log.module && <span className="text-[8px] text-muted-foreground">[{log.module}] </span>}
-                    {log.symbol && <span className="text-[8px]" style={{ color: 'rgba(0,229,255,0.5)' }}>{log.symbol} </span>}
-                    <span className="text-[9px] text-foreground/70 break-words">{log.message}</span>
+                    {log.module && <span className="text-8px text-muted-foreground">[{log.module}] </span>}
+                    {log.symbol && <span className="text-8px" style={{ color: 'rgba(0,229,255,0.5)' }}>{log.symbol} </span>}
+                    <span className="text-9px text-foreground/70 break-words">{log.message}</span>
                     {log.details && (
                       <details className="mt-1">
-                        <summary className="text-[8px] cursor-pointer" style={{ color: 'rgba(255,255,255,0.2)' }}>detalhes</summary>
-                        <pre className="text-[8px] overflow-x-auto mt-0.5" style={{ color: 'rgba(0,255,128,0.5)' }}>
+                        <summary className="text-8px cursor-pointer" style={{ color: 'rgba(255,255,255,0.2)' }}>detalhes</summary>
+                        <pre className="text-8px overflow-x-auto mt-0.5" style={{ color: 'rgba(0,255,128,0.5)' }}>
                           {JSON.stringify(log.details, null, 2)}
                         </pre>
                       </details>
                     )}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className="text-[8px]" style={{ color: 'rgba(255,255,255,0.2)' }}>
+                    <span className="text-8px" style={{ color: 'rgba(255,255,255,0.2)' }}>
                       {moment(log.created_date).format('HH:mm')}
                     </span>
                     <button onClick={() => deleteLog.mutate(log.id)}
@@ -144,7 +144,7 @@ export default function DebugLogButton() {
           </div>
 
           {anomalies.length === 0 && (
-            <div className="px-4 py-2.5 text-[9px] font-mono flex items-center gap-1.5"
+            <div className="px-4 py-2.5 text-9px font-mono flex items-center gap-1.5"
               style={{ borderTop: '1px solid rgba(255,255,255,0.04)', color: '#00ff80' }}>
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
               Sistema operando normalmente

@@ -167,16 +167,16 @@ export default function Dashboard() {
         {/* Header */}
         <div className="flex items-end justify-between">
           <div>
-            <p className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Sistema de Monitoramento</p>
+            <p className="text-11px font-mono uppercase tracking-[0.2em] text-muted-foreground mb-1">Sistema de Monitoramento</p>
             <h1 className="text-3xl font-bold text-foreground tracking-tight">Dashboard</h1>
           </div>
           <div className="flex items-center gap-3">
             <Tooltip>
-              <TooltipTrigger type="button" className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground cursor-help">
+              <TooltipTrigger type="button" className="flex items-center gap-2 text-11px font-mono text-muted-foreground cursor-help">
                 <div className="live-dot" style={{ width: 6, height: 6 }} />
                 <span>Dados em tempo real</span>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                 Preços e indicadores vêm da última leitura salva no banco — normalmente do
                 scan automático (a cada ~5min, via Binance Spot). Se esta aba ficar aberta
                 por mais de 1h, o próprio navegador também roda um scan (Binance Futures)
@@ -191,7 +191,7 @@ export default function Dashboard() {
               }
               setCompareMode(!compareMode);
             }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-mono transition-all hover:opacity-80"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-11px font-mono transition-all hover:opacity-80"
               style={compareMode
                 ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
                 : { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
@@ -231,14 +231,14 @@ export default function Dashboard() {
               <div className="space-y-3">
                 <div className="flex items-center gap-3 flex-wrap">
                   <select value={compareAId || ''} onChange={e => setCompareAId(e.target.value)}
-                    className="px-3 py-2 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="px-3 py-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
                     <option value="">Selecione Ativo A...</option>
                     {assets.map(a => <option key={a.id} value={a.id}>{a.display_name}</option>)}
                   </select>
                   <span className="text-muted-foreground text-xs font-mono">vs</span>
                   <select value={compareBId || ''} onChange={e => setCompareBId(e.target.value)}
-                    className="px-3 py-2 rounded-lg text-[11px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    className="px-3 py-2 rounded-lg text-11px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.8)' }}>
                     <option value="">Selecione Ativo B...</option>
                     {assets.map(a => <option key={a.id} value={a.id}>{a.display_name}</option>)}
@@ -303,7 +303,7 @@ export default function Dashboard() {
                     placeholder="Buscar ativo..."
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="w-full pl-7 pr-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring transition-all"
+                    className="w-full pl-7 pr-3 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring transition-all"
                     style={{
                       background: 'rgba(255,255,255,0.04)',
                       border: '1px solid rgba(255,255,255,0.08)',
@@ -321,7 +321,7 @@ export default function Dashboard() {
                     { id: 'high', label: '★ Alta Prio', color: '#ff9f43' },
                   ].map(f => (
                     <button key={f.id} onClick={() => setFilterSignal(f.id)}
-                      className="text-[9px] font-mono px-2 py-1 rounded-md transition-all"
+                      className="text-9px font-mono px-2 py-1 rounded-md transition-all"
                       style={filterSignal === f.id
                         ? { background: `${f.color}18`, border: `1px solid ${f.color}50`, color: f.color }
                         : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
@@ -333,7 +333,7 @@ export default function Dashboard() {
                   <div className="w-px h-4 mx-0.5" style={{ background: 'rgba(255,255,255,0.08)' }} />
                   {['all', '1h', '4h', '1d'].map(tf => (
                     <button key={tf} onClick={() => setFilterTf(tf)}
-                      className="text-[9px] font-mono px-2 py-1 rounded-md transition-all"
+                      className="text-9px font-mono px-2 py-1 rounded-md transition-all"
                       style={filterTf === tf
                         ? { background: 'rgba(0,229,255,0.15)', border: '1px solid rgba(0,229,255,0.4)', color: '#00e5ff' }
                         : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
@@ -348,7 +348,7 @@ export default function Dashboard() {
                   <div className="flex items-center gap-1">
                     {SORT_OPTS.map(s => (
                       <button key={s.id} onClick={() => setSortBy(s.id)}
-                        className="text-[9px] font-mono px-2 py-1 rounded-md transition-all"
+                        className="text-9px font-mono px-2 py-1 rounded-md transition-all"
                         style={sortBy === s.id
                           ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: 'rgba(0,229,255,0.9)' }
                           : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.3)' }}>
@@ -363,7 +363,7 @@ export default function Dashboard() {
               <div className="flex items-center gap-2 mb-2">
                 <Coins className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
                 <h2 className="text-sm font-bold text-foreground tracking-tight">Ativos</h2>
-                <span className="text-[9px] font-mono text-muted-foreground">({displayAssets.length})</span>
+                <span className="text-9px font-mono text-muted-foreground">({displayAssets.length})</span>
               </div>
 
               {loadingAssets ? (

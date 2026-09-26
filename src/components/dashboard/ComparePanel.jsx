@@ -49,16 +49,16 @@ function MetricRow({ label, value, color, tooltip }) {
       {tooltip ? (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider cursor-help" tabIndex={0}>{label}</span>
+            <span className="text-9px font-mono text-muted-foreground uppercase tracking-wider cursor-help" tabIndex={0}>{label}</span>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             {tooltip}
           </TooltipContent>
         </Tooltip>
       ) : (
-        <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">{label}</span>
+        <span className="text-9px font-mono text-muted-foreground uppercase tracking-wider">{label}</span>
       )}
-      <span className="text-[10px] font-mono font-semibold" style={{ color: color || 'rgba(255,255,255,0.7)' }}>
+      <span className="text-10px font-mono font-semibold" style={{ color: color || 'rgba(255,255,255,0.7)' }}>
         {value}
       </span>
     </div>
@@ -84,13 +84,13 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
         <div className="absolute top-0 right-0 px-2.5 py-1 rounded-bl-lg flex items-center gap-1"
           style={{ background: 'rgba(0,255,128,0.12)', borderLeft: '1px solid rgba(0,255,128,0.25)', borderBottom: '1px solid rgba(0,255,128,0.25)' }}>
           <Crown className="w-3 h-3" style={{ color: '#00ff80' }} />
-          <span className="text-[9px] font-mono font-bold" style={{ color: '#00ff80' }}>Melhor</span>
+          <span className="text-9px font-mono font-bold" style={{ color: '#00ff80' }}>Melhor</span>
         </div>
       )}
 
       {/* Header */}
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+        <span className="text-9px font-mono px-1.5 py-0.5 rounded"
           style={{ background: 'rgba(0,229,255,0.1)', color: '#00e5ff', border: '1px solid rgba(0,229,255,0.2)' }}>
           {label}
         </span>
@@ -102,7 +102,7 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
         <div>
           <div className="text-lg font-bold font-mono text-foreground">${formatPrice(price)}</div>
           {change !== undefined && (
-            <div className="text-[11px] font-mono" style={{ color: change >= 0 ? '#00ff80' : '#ff1478' }}>
+            <div className="text-11px font-mono" style={{ color: change >= 0 ? '#00ff80' : '#ff1478' }}>
               {change >= 0 ? '+' : ''}{change.toFixed(2)}% 24h
             </div>
           )}
@@ -120,7 +120,7 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
 
       {/* TF Alignment */}
       <div className="mb-3">
-        <div className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider mb-1.5">Tendência Multi-TF</div>
+        <div className="text-9px font-mono text-muted-foreground uppercase tracking-wider mb-1.5">Tendência Multi-TF</div>
         <div className="flex items-center gap-2">
           {['1h', '4h', '1d'].map(tf => {
             const s = states.find(st => st.timeframe === tf);
@@ -128,9 +128,9 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
             return (
               <div key={tf} className="flex-1 text-center rounded-lg py-2"
                 style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                <div className="text-[8px] font-mono text-muted-foreground">{tf.toUpperCase()}</div>
+                <div className="text-8px font-mono text-muted-foreground">{tf.toUpperCase()}</div>
                 <div className="text-sm font-mono font-bold" style={{ color: d.color }}>{d.icon}</div>
-                <div className="text-[8px] font-mono" style={{ color: d.color }}>{d.label}</div>
+                <div className="text-8px font-mono" style={{ color: d.color }}>{d.label}</div>
               </div>
             );
           })}
@@ -170,7 +170,7 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
       {/* Opportunity score */}
       <div className="rounded-lg px-3 py-2.5" style={{ background: isWinner ? 'rgba(0,255,128,0.06)' : 'rgba(255,255,255,0.02)', border: `1px solid ${isWinner ? 'rgba(0,255,128,0.15)' : 'rgba(255,255,255,0.04)'}` }}>
         <div className="flex items-center justify-between mb-1">
-          <span className="text-[9px] font-mono text-muted-foreground uppercase tracking-wider">Oportunidade</span>
+          <span className="text-9px font-mono text-muted-foreground uppercase tracking-wider">Oportunidade</span>
           <span className="text-lg font-bold font-mono" style={{ color: opp.score >= 50 ? '#00ff80' : opp.score >= 25 ? '#ffd166' : '#64748b' }}>
             {opp.score}
           </span>
@@ -178,7 +178,7 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
         {opp.reasons.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
             {opp.reasons.map((r, i) => (
-              <span key={i} className="text-[8px] font-mono px-1.5 py-0.5 rounded"
+              <span key={i} className="text-8px font-mono px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(0,255,128,0.08)', color: 'rgba(0,255,128,0.7)', border: '1px solid rgba(0,255,128,0.12)' }}>
                 {r}
               </span>
@@ -213,7 +213,7 @@ export default function ComparePanel({ assetA, assetB, statesA, statesB, signalA
         <Swords className="w-4 h-4" style={{ color: '#00e5ff' }} />
         <h2 className="text-base font-bold text-foreground">Comparação Lado-a-Lado</h2>
         {winner && (
-          <span className="text-[10px] font-mono px-2.5 py-1 rounded-lg flex items-center gap-1"
+          <span className="text-10px font-mono px-2.5 py-1 rounded-lg flex items-center gap-1"
             style={{ background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.25)', color: '#00ff80' }}>
             <Crown className="w-3 h-3" />
             {winner === 'A' ? assetA.display_name : assetB.display_name}

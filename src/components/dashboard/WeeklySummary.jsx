@@ -75,8 +75,8 @@ export default function WeeklySummary() {
       style={{ background: 'rgba(6,8,15,0.7)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(20px)' }}>
       <div className="flex items-center gap-2 mb-3">
         <CalendarDays className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
-        <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Resumo da Semana</span>
-        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+        <span className="text-10px font-mono uppercase tracking-widest text-muted-foreground">Resumo da Semana</span>
+        <span className="text-9px font-mono px-1.5 py-0.5 rounded"
           style={{ background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.2)', color: '#00e5ff' }}>
           {data.weekRangeLabel}
         </span>
@@ -87,39 +87,39 @@ export default function WeeklySummary() {
           <div className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="flex items-center gap-1.5 mb-1">
               {data.totalPnl >= 0 ? <TrendingUp className="w-3 h-3" style={{ color: pnlColor }} /> : <TrendingDown className="w-3 h-3" style={{ color: pnlColor }} />}
-              <span className="text-[8px] font-mono uppercase text-muted-foreground">P&L Semana</span>
+              <span className="text-8px font-mono uppercase text-muted-foreground">P&L Semana</span>
             </div>
             <div className="text-base font-bold font-mono" style={{ color: isLoading ? 'rgba(255,255,255,0.3)' : pnlColor }}>
               {isLoading ? '···' : `${data.totalPnl >= 0 ? '+' : ''}${data.totalPnl.toFixed(2)}%`}
             </div>
-            <div className="text-[8px] font-mono text-muted-foreground mt-0.5">{data.wins}W · {data.be}BE · {data.losses}L</div>
+            <div className="text-8px font-mono text-muted-foreground mt-0.5">{data.wins}W · {data.be}BE · {data.losses}L</div>
           </div>
           <div className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="flex items-center gap-1.5 mb-1">
               <Target className="w-3 h-3" style={{ color: '#ffd166' }} />
-              <span className="text-[8px] font-mono uppercase text-muted-foreground">Taxa de Acerto</span>
+              <span className="text-8px font-mono uppercase text-muted-foreground">Taxa de Acerto</span>
             </div>
             <div className="text-base font-bold font-mono" style={{ color: isLoading ? 'rgba(255,255,255,0.3)' : '#ffd166' }}>
               {isLoading ? '···' : (data.winRate !== null ? `${data.winRate}%` : '—')}
             </div>
-            <div className="text-[8px] font-mono text-muted-foreground mt-0.5">
+            <div className="text-8px font-mono text-muted-foreground mt-0.5">
               {isLoading ? 'carregando…' : (data.counted > 0 ? `${data.counted} trades fechados` : 'sem trades ainda')}
             </div>
           </div>
           <div className="rounded-xl px-3 py-2.5" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="flex items-center gap-1.5 mb-1">
               <Zap className="w-3 h-3" style={{ color: '#00e5ff' }} />
-              <span className="text-[8px] font-mono uppercase text-muted-foreground">Sinais Processados</span>
+              <span className="text-8px font-mono uppercase text-muted-foreground">Sinais Processados</span>
             </div>
             <div className="text-base font-bold font-mono" style={{ color: isLoading ? 'rgba(255,255,255,0.3)' : '#00e5ff' }}>
               {isLoading ? '···' : data.signalsThisWeek}
             </div>
-            <div className="text-[8px] font-mono text-muted-foreground mt-0.5">desde segunda-feira</div>
+            <div className="text-8px font-mono text-muted-foreground mt-0.5">desde segunda-feira</div>
           </div>
         </div>
 
         <div className="rounded-xl px-3 py-2" style={{ background: 'rgba(10,13,22,0.85)', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <div className="text-[8px] font-mono uppercase text-muted-foreground mb-1">P&L por dia</div>
+          <div className="text-8px font-mono uppercase text-muted-foreground mb-1">P&L por dia</div>
           <div style={{ height: 64 }} role="img"
             aria-label={isLoading
               ? 'Gráfico de barras do P&L por dia da semana — carregando'
@@ -140,7 +140,7 @@ export default function WeeklySummary() {
             </ResponsiveContainer>
           </div>
           <div className="grid grid-cols-7 gap-0 text-center mt-0.5">
-            {WEEKDAY_LABELS.map(l => <span key={l} className="text-[7px] font-mono text-muted-foreground">{l}</span>)}
+            {WEEKDAY_LABELS.map(l => <span key={l} className="text-7px font-mono text-muted-foreground">{l}</span>)}
           </div>
         </div>
       </div>

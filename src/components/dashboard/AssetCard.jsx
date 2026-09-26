@@ -92,11 +92,11 @@ function IndicatorDots({ state }) {
         <TooltipTrigger asChild>
           <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
             <Dot color={rfColor} />
-            <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>RF</span>
-            <span className="text-[10px] font-mono font-semibold" style={{ color: rfColor }}>{rfLabel}</span>
+            <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>RF</span>
+            <span className="text-10px font-mono font-semibold" style={{ color: rfColor }}>{rfLabel}</span>
           </span>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
           Range Filter: indicador que filtra o ruído do preço e define uma banda de tendência — o sistema só considera um movimento válido quando o preço rompe essa banda de forma consistente.
         </TooltipContent>
       </Tooltip>
@@ -104,11 +104,11 @@ function IndicatorDots({ state }) {
         <TooltipTrigger asChild>
           <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
             <Dot color={macdColor} />
-            <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>MACD</span>
-            <span className="text-[10px] font-mono" style={{ color: macdColor }}>{macdH > 0 ? '▲' : macdH < 0 ? '▼' : '—'}</span>
+            <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>MACD</span>
+            <span className="text-10px font-mono" style={{ color: macdColor }}>{macdH > 0 ? '▲' : macdH < 0 ? '▼' : '—'}</span>
           </span>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
           MACD: compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.
         </TooltipContent>
       </Tooltip>
@@ -116,11 +116,11 @@ function IndicatorDots({ state }) {
         <TooltipTrigger asChild>
           <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
             <Dot color={emaColor} />
-            <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>EMA</span>
-            <span className="text-[10px] font-mono" style={{ color: emaColor }}>{emaTrend === 'bullish' ? '▲' : emaTrend === 'bearish' ? '▼' : '—'}</span>
+            <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>EMA</span>
+            <span className="text-10px font-mono" style={{ color: emaColor }}>{emaTrend === 'bullish' ? '▲' : emaTrend === 'bearish' ? '▼' : '—'}</span>
           </span>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
           EMA: média móvel exponencial — reage mais rápido a mudanças recentes que uma média comum. Quando uma EMA curta cruza uma longa, é sinal de mudança de tendência.
         </TooltipContent>
       </Tooltip>
@@ -128,11 +128,11 @@ function IndicatorDots({ state }) {
         <TooltipTrigger asChild>
           <span className="flex items-center gap-1 cursor-help" tabIndex={0}>
             <Dot color={rsiColor} filled={rsiZone !== 'neutral'} />
-            <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>RSI</span>
-            <span className="text-[10px] font-mono" style={{ color: rsiColor }}>{rsiVal}</span>
+            <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>RSI</span>
+            <span className="text-10px font-mono" style={{ color: rsiColor }}>{rsiVal}</span>
           </span>
         </TooltipTrigger>
-        <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+        <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
           RSI (Índice de Força Relativa): mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100) — aqui, só confirmação, nunca sinal sozinho.
         </TooltipContent>
       </Tooltip>
@@ -148,7 +148,7 @@ function TFTrendRow({ states }) {
       {tfs.map(tf => {
         const s = states?.find(st => st.timeframe === tf);
         if (!s) return (
-          <span key={tf} className="text-[9px] font-mono" style={{ color: 'rgba(255,255,255,0.18)' }}>
+          <span key={tf} className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.18)' }}>
             {tf.toUpperCase()} —
           </span>
         );
@@ -157,7 +157,7 @@ function TFTrendRow({ states }) {
         const arrow = dir === 1 ? '▲' : dir === -1 ? '▼' : '—';
         const label = dir === 1 ? 'Bull' : dir === -1 ? 'Bear' : 'Neu';
         return (
-          <span key={tf} className="flex items-center gap-0.5 text-[9px] font-mono">
+          <span key={tf} className="flex items-center gap-0.5 text-9px font-mono">
             <span style={{ color: 'rgba(255,255,255,0.3)' }}>{tf.toUpperCase()}</span>
             <span style={{ color }}>{arrow}{label}</span>
           </span>
@@ -372,20 +372,20 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="font-bold text-sm text-foreground tracking-tight">{asset.display_name}</span>
-              <span className="text-[8px] font-mono text-muted-foreground">{asset.exchange?.toUpperCase() || 'BINANCE'}</span>
+              <span className="text-8px font-mono text-muted-foreground">{asset.exchange?.toUpperCase() || 'BINANCE'}</span>
               <span className="flex items-center gap-0.5">
                 <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: isStale ? staleMeta.color : '#00ff80', boxShadow: isStale ? 'none' : '0 0 5px #00ff80' }} />
-                <span className="text-[8px] font-mono" style={{ color: isStale ? staleMeta.color : '#00ff80' }}>{isStale ? staleMeta.shortLabel : 'LIVE'}</span>
+                <span className="text-8px font-mono" style={{ color: isStale ? staleMeta.color : '#00ff80' }}>{isStale ? staleMeta.shortLabel : 'LIVE'}</span>
               </span>
               {tradeOpsUnavailable && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span className="flex items-center gap-0.5 cursor-help" tabIndex={0}>
                       <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: '#ff9f43' }} />
-                      <span className="text-[8px] font-mono" style={{ color: '#ff9f43' }}>OP?</span>
+                      <span className="text-8px font-mono" style={{ color: '#ff9f43' }}>OP?</span>
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                     Não foi possível confirmar operações ativas agora — o status abaixo pode estar desatualizado.
                   </TooltipContent>
                 </Tooltip>
@@ -396,7 +396,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
               <TFTrendRow states={states} />
             </div>
             {candleCloseTime && (
-              <div className="text-[8px] font-mono text-muted-foreground mt-0.5">🕐 {candleOpen} → {candleClose} BRT</div>
+              <div className="text-8px font-mono text-muted-foreground mt-0.5">🕐 {candleOpen} → {candleClose} BRT</div>
             )}
           </div>
           <div className="text-right shrink-0 ml-2">
@@ -404,7 +404,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
               <>
                 <div className="font-bold font-mono text-sm text-foreground">${formatPrice(lastPrice)}</div>
                 {priceChange !== undefined && priceChange !== null && (
-                  <div className="text-[10px] font-mono" style={{ color: priceChange >= 0 ? '#00ff80' : '#ff1478' }}>
+                  <div className="text-10px font-mono" style={{ color: priceChange >= 0 ? '#00ff80' : '#ff1478' }}>
                     {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
                   </div>
                 )}
@@ -412,22 +412,22 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
             ) : <span className="text-xs text-muted-foreground">—</span>}
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="text-[8px] font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                <div className="text-8px font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
                   Confl.: <span style={{ color: score >= 85 ? '#00ff80' : score >= 65 ? '#ffd166' : '#ff9f43' }}>{score}</span>
                 </div>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                 Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
               </TooltipContent>
             </Tooltip>
             {fundingRate !== null && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="text-[8px] font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                  <div className="text-8px font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
                     Fund.: <span style={{ color: fundingRate >= 0 ? '#00ff80' : '#ff1478' }}>{formatSignedPct(fundingRate * 100, 4)}</span>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                   {`Funding rate (Futures): taxa paga entre posições compradas e vendidas a cada 8h. Só informativo — não influencia nenhum sinal ou operação.${nextFundingTime ? ` Próximo: ${moment(nextFundingTime).utcOffset(-3).format('DD/MM HH:mm')} BRT.` : ''}`}
                 </TooltipContent>
               </Tooltip>
@@ -471,14 +471,14 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
               </span>
             )}
             {latestSignal && !hasActiveOp && (
-              <span className="text-[10px] font-mono px-2 py-1 rounded"
+              <span className="text-10px font-mono px-2 py-1 rounded"
                 style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.08)' }}>
                 {strengthLabel}
               </span>
             )}
           </div>
           {statusLabel && (
-            <span className="text-[10px] font-mono font-semibold text-right" style={{ color: statusColor }}>{statusLabel}</span>
+            <span className="text-10px font-mono font-semibold text-right" style={{ color: statusColor }}>{statusLabel}</span>
           )}
         </div>
 
@@ -491,7 +491,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
 
         {/* Candle status */}
         {hasActiveOp && (
-          <div className="text-[8px] font-mono mb-2" style={{ color: candleStatus === 'OPEN' ? '#ff9f43' : 'rgba(255,255,255,0.3)' }}>
+          <div className="text-8px font-mono mb-2" style={{ color: candleStatus === 'OPEN' ? '#ff9f43' : 'rgba(255,255,255,0.3)' }}>
             {candleStatus === 'OPEN' ? '⏳ Candle aberto — aguardando fechamento' : '✅ Candle fechado'}
           </div>
         )}
@@ -507,16 +507,16 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
               {priceColTooltips[col] ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <div className="text-[8px] font-mono text-muted-foreground mb-0.5 leading-tight truncate cursor-help" tabIndex={0}>{col}</div>
+                    <div className="text-8px font-mono text-muted-foreground mb-0.5 leading-tight truncate cursor-help" tabIndex={0}>{col}</div>
                   </TooltipTrigger>
-                  <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                  <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                     {priceColTooltips[col]}
                   </TooltipContent>
                 </Tooltip>
               ) : (
-                <div className="text-[8px] font-mono text-muted-foreground mb-0.5 leading-tight truncate">{col}</div>
+                <div className="text-8px font-mono text-muted-foreground mb-0.5 leading-tight truncate">{col}</div>
               )}
-              <div className="text-[10px] font-mono font-semibold" style={{ color: priceVals[i] ? priceColColors[i] : 'rgba(255,255,255,0.15)' }}>
+              <div className="text-10px font-mono font-semibold" style={{ color: priceVals[i] ? priceColColors[i] : 'rgba(255,255,255,0.15)' }}>
                 {formatPrice(priceVals[i])}
               </div>
             </div>
@@ -526,7 +526,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
         {/* Runner progress */}
         {hasActiveOp && tradeOp.status === 'RUNNER_ACTIVE' && (
           <div className="rounded-lg px-3 py-2 mb-2.5" style={{ background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.15)' }}>
-            <div className="flex items-center justify-between text-[9px] font-mono">
+            <div className="flex items-center justify-between text-9px font-mono">
               <span style={{ color: '#00ff80' }}>✅ TP1 + {tradeOp.partial_percent || 50}% realizados</span>
               <span style={{ color: '#ffd166' }}>⚡ {tradeOp.runner_percent || 50}% em runner</span>
             </div>
@@ -550,7 +550,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
               )) activateMutation.mutate(latestSignal);
             }}
             disabled={activateMutation.isPending}
-            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-mono font-bold mt-1 transition-all"
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-11px font-mono font-bold mt-1 transition-all"
             style={sigSide === 'BUY'
               ? { background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }
               : { background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
@@ -560,7 +560,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
         )}
 
         {/* Click hint */}
-        <div className="absolute bottom-1.5 right-2.5 text-[7px] font-mono opacity-0 hover:opacity-100 transition-opacity" style={{ color: 'rgba(255,255,255,0.15)' }}>
+        <div className="absolute bottom-1.5 right-2.5 text-7px font-mono opacity-0 hover:opacity-100 transition-opacity" style={{ color: 'rgba(255,255,255,0.15)' }}>
           detalhes →
         </div>
       </div>

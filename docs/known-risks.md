@@ -28014,3 +28014,97 @@ Todos os 8 arquivos-alvo do levantamento original cobertos:
 review do Codex (itens 231/233). `PerformanceMetricsBar.jsx` (baixa
 prioridade) deliberadamente não feito, ver acima. Marcar `[x]` fechado
 em `docs/claude/ui-audit-criticos.md`.
+
+## 235. M-11 — formalizar os 5 tamanhos de fonte arbitrários (`text-[Npx]`) como tokens do Tailwind, fecha M-11
+
+M-11 do Raio-X de UI/UX dizia "632 ocorrências de tamanho de fonte
+arbitrário em 51 arquivos". Rodei um agente Explore pra mapear o item
+(mesmo tratamento de M-9/M-17 — varredura própria antes de implementar)
+e depois um agente Plan pra desenhar a implementação, com base numa
+decisão do usuário via pergunta direta: **manter os 5 tamanhos
+distintos como tokens separados** (não consolidar pra 3-4) — o
+objetivo é formalizar a escala que já existia de fato, com **zero
+mudança visual**, não redesenhar.
+
+**Números verificados (2x, reconciliados)**: os 632/51 originais já
+tinham andado — o número real era **676 ocorrências em 54 arquivos**.
+Só existiam **5 valores de pixel em todo o código**: 7px (15
+ocorrências, 100% com `font-mono`), 8px (74, 88%), 9px (244, 94%),
+10px (286, 95%), 11px (57, 91%) — não é "632 escolhas arbitrárias", é
+uma escala de facto nunca formalizada (o `font-mono` já vinha
+pareado na maioria, confirmando um estilo repetido de "micro-label",
+não drift de copy-paste). `tailwind.config.js` não tinha nenhuma
+chave `fontSize` customizada — o menor passo do Tailwind padrão é
+`text-xs` (12px). 3 ocorrências de `text-[0.8rem]` (unidade
+diferente) existem só nos primitivos shadcn vendorizados
+(`src/components/ui/form.jsx`/`calendar.jsx`) — fora de escopo,
+nunca tocadas (confirmado, o regex de `px` nunca as encontra).
+`src/components/ui/multi-toggle.jsx` (2 ocorrências) foi incluído —
+é componente autoral do projeto (extraído de `TelegramSettings.jsx`
+no item 230), só mora na mesma pasta dos primitivos vendorizados por
+convenção de import.
+
+### Nomenclatura
+
+Chaves literais por pixel em `theme.extend.fontSize`: `'7px': '7px'`,
+`'8px': '8px'`, `'9px': '9px'`, `'10px': '10px'`, `'11px': '11px'` →
+classes `text-7px`…`text-11px`. Rejeitada escada relativa
+(`2xs`/`3xs`/…): Tailwind não tem convenção aceita pra 5 degraus
+abaixo de `xs`; nome literal é autoexplicativo e torna o diff do
+codemod trivial de auditar (`text-[9px]` → `text-9px`, mesmos
+dígitos). **Sem line-height** (string plana, não tupla
+`[size, {lineHeight}]`) — decisão deliberada: a maioria das 676
+ocorrências não tinha `leading-*` explícito, herdando do contexto
+ambiente; embutir um line-height no token mudaria esse herdado
+silenciosamente em qualquer lugar sem `leading-*` própria, violando
+"zero mudança visual".
+
+### Implementação
+
+1. `tailwind.config.js`: `fontSize` adicionado como chave-irmã de
+   `fontFamily` em `theme.extend`, com as 5 entradas acima.
+2. Codemod mecânico de uma execução
+   (`scripts/codemods/m11-fontsize-tokens.mjs`, descartável — script
+   simples, sem ferramenta AST, porque as 676 ocorrências são sempre a
+   substring estática exata `text-[Npx]`, nunca `` text-[${var}px] ``
+   dinâmico nem prefixo responsivo/de estado): regex
+   `/text-\[(7|8|9|10|11)px\]/g` → `` `text-${n}px` ``, sobre
+   `src/**/*.{js,jsx}`. Rodado primeiro em modo dry-run (contagem por
+   arquivo comparada contra a tabela de referência do agente Explore),
+   só então de verdade.
+
+### Testes / verificação
+
+Não existe infra de regressão visual no projeto (sem playwright/percy/
+chromatic/pixelmatch/jest-image-snapshot no `package.json`) —
+confirmado. Verificação específica desta mudança:
+
+1. `grep -rEo "text-\[(7|8|9|10|11)px\]" src` → **zero matches** depois
+   do codemod (cobertura completa).
+2. `grep -rn "text-\[0.8rem\]" src` → ainda exatamente 3 matches,
+   intactos (primitivos shadcn não tocados).
+3. **Prova de identidade de pixel**: CSS gerado pelo build
+   (`npm run build`) pra cada um dos 5 tokens — `.text-7px{font-size:7px}`,
+   `.text-8px{font-size:8px}`, `.text-9px{font-size:9px}`,
+   `.text-10px{font-size:10px}`, `.text-11px{font-size:11px}` — regra
+   de uma propriedade só, idêntica ao valor arbitrário anterior, sem
+   `line-height` adicionado. Prova o requisito de "mesmo valor exato
+   de px", não aproximação.
+4. `git diff --stat -- src`: **676 insertions(+), 676 deletions(-) em
+   54 arquivos** — confirma renome 1:1 puro. `git diff` skimado por
+   `grep -vE 'text-(\[)?(7|8|9|10|11)px(\])?'` retorna vazio — toda
+   linha alterada é só o renome, nada mais.
+5. `grep -rn "text-\[" --include="*.test.*" src` → zero matches — não
+   havia teste dependente da string literal da classe, nenhum
+   precisou de atualização.
+6. `npm run lint && npm test && npm run build && npm run
+   typecheck:ratchet` limpos (2122 testes, 0 falhas; teto de typecheck
+   em 13, sem mudança).
+
+### M-11 fechado
+
+Rodada única (não dividida em sub-rodadas como M-9/M-17): a
+transformação é determinística e idêntica em todo lugar — o risco
+mora inteiro na definição do token no `tailwind.config.js`
+(sistêmico), não em arquivo individual, então dividir por arquivo não
+reduziria risco.

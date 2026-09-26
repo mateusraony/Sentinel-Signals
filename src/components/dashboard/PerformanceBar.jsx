@@ -58,9 +58,9 @@ export default function PerformanceBar({ assets, tradeOps, recentSignals }) {
             <s.icon className="w-3.5 h-3.5" style={{ color: s.color }} />
           </div>
           <div>
-            <div className="text-[10px] font-mono text-muted-foreground leading-none mb-0.5">{s.label}</div>
+            <div className="text-10px font-mono text-muted-foreground leading-none mb-0.5">{s.label}</div>
             <div className="font-bold font-mono text-base leading-none" style={{ color: s.color }}>{s.value}</div>
-            <div className="text-[9px] font-mono text-muted-foreground mt-0.5">{s.sub}</div>
+            <div className="text-9px font-mono text-muted-foreground mt-0.5">{s.sub}</div>
           </div>
         </div>
       ))}

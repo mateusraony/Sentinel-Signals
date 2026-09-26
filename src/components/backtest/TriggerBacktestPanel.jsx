@@ -189,7 +189,7 @@ export default function TriggerBacktestPanel({ onReportReady }) {
         <Rocket className="w-4 h-4" style={{ color: '#00e5ff' }} />
         <h2 className="text-base font-bold text-foreground">Disparar novo backtest</h2>
       </div>
-      <p className="text-[10px] font-mono text-muted-foreground">
+      <p className="text-10px font-mono text-muted-foreground">
         Roda o workflow <code>backtest.yml</code> direto no GitHub Actions (mesmo motor isolado de sempre — sem gravar nada
         em produção, sem Telegram real) e carrega o relatório aqui sozinho quando terminar — inclusive se você fechar e
         reabrir esta página no meio do caminho.
@@ -197,57 +197,57 @@ export default function TriggerBacktestPanel({ onReportReady }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
-          <label className="text-[9px] font-mono text-muted-foreground block mb-1">Rótulo do teste (obrigatório)</label>
+          <label className="text-9px font-mono text-muted-foreground block mb-1">Rótulo do teste (obrigatório)</label>
           <input value={trialLabel} onChange={e => setTrialLabel(e.target.value)} placeholder="ex.: bull-baseline"
             disabled={isBusy}
-            className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+            className="w-full px-3 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="text-[9px] font-mono text-muted-foreground block mb-1">De (opcional)</label>
+            <label className="text-9px font-mono text-muted-foreground block mb-1">De (opcional)</label>
             <input type="date" value={from} onChange={e => setFrom(e.target.value)} disabled={isBusy}
-              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+              className="w-full px-3 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
           </div>
           <div>
-            <label className="text-[9px] font-mono text-muted-foreground block mb-1">Até (opcional)</label>
+            <label className="text-9px font-mono text-muted-foreground block mb-1">Até (opcional)</label>
             <input type="date" value={to} onChange={e => setTo(e.target.value)} disabled={isBusy}
-              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+              className="w-full px-3 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
           </div>
         </div>
       </div>
-      <p className="text-[8px] font-mono text-muted-foreground/60">Vazio = padrão do workflow (12 meses até agora).</p>
+      <p className="text-8px font-mono text-muted-foreground/60">Vazio = padrão do workflow (12 meses até agora).</p>
 
-      <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-1 text-[9px] font-mono text-muted-foreground">
+      <button onClick={() => setExpanded(v => !v)} className="flex items-center gap-1 text-9px font-mono text-muted-foreground">
         {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}Avançado
       </button>
       {expanded && (
         <div className="space-y-2 pl-1">
           <div>
-            <label className="text-[9px] font-mono text-muted-foreground block mb-1">Símbolos (vazio = padrão do workflow)</label>
+            <label className="text-9px font-mono text-muted-foreground block mb-1">Símbolos (vazio = padrão do workflow)</label>
             <input value={symbols} onChange={e => setSymbols(e.target.value)} placeholder="BTCUSDT,ETHUSDT,..." disabled={isBusy}
-              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+              className="w-full px-3 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
           </div>
           <div className="grid grid-cols-2 gap-2 items-end">
             <div>
-              <label className="text-[9px] font-mono text-muted-foreground block mb-1">Mínimo de operações</label>
+              <label className="text-9px font-mono text-muted-foreground block mb-1">Mínimo de operações</label>
               <input value={minTrades} onChange={e => setMinTrades(e.target.value)} placeholder="30" disabled={isBusy}
-                className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+                className="w-full px-3 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
             </div>
-            <label className="flex items-center gap-1.5 text-[9px] font-mono text-muted-foreground pb-1.5">
+            <label className="flex items-center gap-1.5 text-9px font-mono text-muted-foreground pb-1.5">
               <input type="checkbox" checked={noCosts} onChange={e => setNoCosts(e.target.checked)} disabled={isBusy} />
               Rodar sem custos (taxa/slippage/funding)
             </label>
           </div>
           <div>
-            <label className="text-[9px] font-mono text-muted-foreground block mb-1">Overrides de pineConfig (JSON, opcional)</label>
+            <label className="text-9px font-mono text-muted-foreground block mb-1">Overrides de pineConfig (JSON, opcional)</label>
             <textarea value={pineConfigText} onChange={e => setPineConfigText(e.target.value)} rows={2} disabled={isBusy}
               placeholder='{"minScore":80}'
-              className="w-full px-3 py-1.5 rounded-lg text-[10px] font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none disabled:opacity-50"
+              className="w-full px-3 py-1.5 rounded-lg text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none disabled:opacity-50"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
           </div>
         </div>
@@ -255,7 +255,7 @@ export default function TriggerBacktestPanel({ onReportReady }) {
 
       <div className="flex items-center gap-2">
         <button onClick={handleTrigger} disabled={isBusy}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-[11px] font-mono font-bold transition-all disabled:opacity-50"
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-11px font-mono font-bold transition-all disabled:opacity-50"
           style={{ background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }}>
           {isBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
           {isBusy ? STATUS_LABELS[status] : 'Disparar backtest'}
@@ -265,12 +265,12 @@ export default function TriggerBacktestPanel({ onReportReady }) {
             <TooltipTrigger asChild>
               <button onClick={handleCancelTracking}
                 aria-label="Parar de acompanhar este run (não cancela o run no GitHub)"
-                className="shrink-0 px-3 py-2.5 rounded-lg text-[10px] font-mono transition-all"
+                className="shrink-0 px-3 py-2.5 rounded-lg text-10px font-mono transition-all"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.5)' }}>
                 <XCircle className="w-4 h-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
               Parar de acompanhar este run (não cancela o run no GitHub)
             </TooltipContent>
           </Tooltip>
@@ -278,17 +278,17 @@ export default function TriggerBacktestPanel({ onReportReady }) {
       </div>
 
       {status === 'success' && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-mono" style={{ background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }}>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-10px font-mono" style={{ background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }}>
           <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />Relatório carregado abaixo.
         </div>
       )}
       {(status === 'failure' || status === 'error') && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-[10px] font-mono" style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-10px font-mono" style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{errorMsg}
         </div>
       )}
       {htmlUrl && isBusy && (
-        <a href={htmlUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[9px] font-mono" style={{ color: '#00e5ff' }}>
+        <a href={htmlUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-9px font-mono" style={{ color: '#00e5ff' }}>
           <ExternalLink className="w-3 h-3" />Acompanhar no GitHub
         </a>
       )}

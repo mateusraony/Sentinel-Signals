@@ -60,11 +60,11 @@ export function ErrorFallback({
 
           {diagnosticText != null && (
             <div className="text-left rounded-lg border border-white/10 bg-black/30 p-3 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+              <div className="flex items-center gap-1.5 text-10px font-mono uppercase tracking-wider text-muted-foreground">
                 <AlertTriangle className="w-3 h-3" style={{ color: '#ff1478' }} />
                 {diagnosticLabel || 'Diagnóstico'}
               </div>
-              <p className="text-[11px] font-mono text-muted-foreground/90 break-words line-clamp-3">
+              <p className="text-11px font-mono text-muted-foreground/90 break-words line-clamp-3">
                 {diagnosticText}
               </p>
             </div>
@@ -90,7 +90,7 @@ export function ErrorFallback({
           </div>
 
           {onCopy && (
-            <p className="text-[10px] text-muted-foreground/70">
+            <p className="text-10px text-muted-foreground/70">
               Cole o diagnóstico numa conversa com o Claude Code pra pedir a correção.
             </p>
           )}

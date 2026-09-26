@@ -177,13 +177,13 @@ function LevelRail({ op, price, isStale }) {
             <>
               <div className="flex items-center gap-1 mb-0.5">
                 <span className="w-1 h-1 rounded-full shrink-0" style={{ background: color }} />
-                <span className="text-[8px] font-mono uppercase tracking-wide truncate"
+                <span className="text-8px font-mono uppercase tracking-wide truncate"
                   style={{ color: 'rgba(255,255,255,0.4)' }}>{levelLabel(level.key, op)}</span>
               </div>
-              <div className="text-[11px] font-mono font-semibold truncate leading-tight" style={{ color }}>
+              <div className="text-11px font-mono font-semibold truncate leading-tight" style={{ color }}>
                 {formatPrice(level.price)}
               </div>
-              <div className="text-[9px] font-mono truncate leading-tight"
+              <div className="text-9px font-mono truncate leading-tight"
                 style={{ color: level.isNearest ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)' }}>
                 {level.pct === null
                   ? '—'
@@ -199,7 +199,7 @@ function LevelRail({ op, price, isStale }) {
               <TooltipTrigger asChild>
                 <div className="min-w-0 cursor-help" tabIndex={0}>{cellBody}</div>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                 {`O preço precisa andar ${formatSignedPct(level.pct)} para chegar em ${levelLabel(level.key, op)}.`}
               </TooltipContent>
             </Tooltip>
@@ -226,7 +226,7 @@ function MilestoneLine({ op, price, isStale }) {
       : 'até o stop';
 
   return (
-    <div className="flex items-center gap-1.5 text-[11px] font-mono rounded-lg px-2.5 py-1.5"
+    <div className="flex items-center gap-1.5 text-11px font-mono rounded-lg px-2.5 py-1.5"
       style={{ background: `${color}0f`, border: `1px solid ${color}26` }}>
       <span aria-hidden="true">{isRisk ? (posture === 'locked' ? '🔒' : '🛑') : '🎯'}</span>
       <span style={{ color: 'rgba(255,255,255,0.6)' }}>
@@ -239,11 +239,11 @@ function MilestoneLine({ op, price, isStale }) {
       {isStale && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="ml-auto text-[9px] shrink-0 cursor-help" tabIndex={0} style={{ color: '#ff9f43' }}>
+            <span className="ml-auto text-9px shrink-0 cursor-help" tabIndex={0} style={{ color: '#ff9f43' }}>
               ⚠️
             </span>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             Calculado sobre a última cotação recebida.
           </TooltipContent>
         </Tooltip>
@@ -264,7 +264,7 @@ function BackfillBanner({ op }) {
     <div className="rounded-lg px-3 py-2 flex items-start gap-2"
       style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.25)' }}>
       <History className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: '#00e5ff' }} />
-      <p className="text-[10px] font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
+      <p className="text-10px font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
         Detectada retroativamente{lag ? ` — entrada real foi há ${lag}` : ''}. Não foi pega ao vivo: o ativo foi adicionado/reativado depois, e o Sentinel reconstruiu a operação a partir do histórico.
       </p>
     </div>
@@ -280,7 +280,7 @@ function AmbiguousExitBanner({ op }) {
   if (!op.exit_ambiguous) return null;
   return (
     <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.25)' }}>
-      <p className="text-[10px] font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
+      <p className="text-10px font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
         ℹ️ Nessa vela, o preço tocou o stop e o take ao mesmo tempo — o gráfico não mostra qual foi primeiro de verdade. Por segurança, o sistema sempre considera que o stop aconteceu primeiro nesses casos raros. Essa operação já foi encerrada com esse resultado.
       </p>
     </div>
@@ -299,10 +299,10 @@ export function ScoreBar({ score }) {
         <div className="flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
           <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color, boxShadow: `0 0 6px ${color}60` }} />
         </div>
-        <span className="text-[10px] font-mono font-bold" style={{ color }}>{pct}/100</span>
-        <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>{label}</span>
+        <span className="text-10px font-mono font-bold" style={{ color }}>{pct}/100</span>
+        <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>{label}</span>
       </div>
-      <p className="text-[8px] font-mono leading-tight" style={{ color: 'rgba(255,255,255,0.25)' }}>
+      <p className="text-8px font-mono leading-tight" style={{ color: 'rgba(255,255,255,0.25)' }}>
         Confluência de indicadores alinhados — não é uma probabilidade de acerto.
       </p>
     </div>
@@ -325,7 +325,7 @@ function TFTrendRow({ op }) {
         const icon = dir === 1 ? '▲' : dir === -1 ? '▼' : '—';
         const label = dir === 1 ? 'Bull' : dir === -1 ? 'Bear' : 'Neu';
         return (
-          <span key={tf} className="flex items-center gap-1 text-[9px] font-mono">
+          <span key={tf} className="flex items-center gap-1 text-9px font-mono">
             <span style={{ color: 'rgba(255,255,255,0.3)' }}>{tf.toUpperCase()}</span>
             <span style={{ color }}>{icon} {label}</span>
           </span>
@@ -389,7 +389,7 @@ function StatusBanner({ op }) {
   if (!b) return null;
   return (
     <div className="rounded-lg px-3 py-2" style={{ background: b.bg, border: `1px solid ${b.color}22` }}>
-      <p className="text-[10px] font-mono leading-relaxed" style={{ color: b.color }}>{b.text}</p>
+      <p className="text-10px font-mono leading-relaxed" style={{ color: b.color }}>{b.text}</p>
     </div>
   );
 }
@@ -419,7 +419,7 @@ function OperationDecisionNote({ op }) {
   const { evidence } = explainOperationDecision(op);
   if (!evidence) return null;
   return (
-    <div className="text-[9px] font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.12)', color: 'rgba(255,255,255,0.5)' }}>
+    <div className="text-9px font-mono px-3 py-2 rounded-lg leading-relaxed" style={{ background: 'rgba(0,229,255,0.04)', border: '1px solid rgba(0,229,255,0.12)', color: 'rgba(255,255,255,0.5)' }}>
       📐 {evidence}
     </div>
   );
@@ -434,7 +434,7 @@ function OperationWhySummary({ op }) {
   if (!OPEN_STATUSES.has(op.status) && snapshot.decision !== 'EXIT') return null;
   const { headline, why } = explainOperationDecision(op);
   return (
-    <p className="text-[10px] font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
+    <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>
       💡 <span className="font-semibold" style={{ color: 'rgba(0,229,255,0.8)' }}>{headline}</span>
       {why ? ` — ${why}` : ''}
     </p>
@@ -459,17 +459,17 @@ function Details({ op }) {
       {op.tier && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="text-[9px] font-mono cursor-help" tabIndex={0} style={{ color: 'rgba(0,229,255,0.7)' }}>
+            <div className="text-9px font-mono cursor-help" tabIndex={0} style={{ color: 'rgba(0,229,255,0.7)' }}>
               🎚 Tier {op.tier}
             </div>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             Tier de volatilidade (ATR%) classificado na entrada — ver Pine v13.2 Grupo 03
           </TooltipContent>
         </Tooltip>
       )}
 
-      <div className="flex items-center justify-between text-[9px] font-mono flex-wrap gap-2">
+      <div className="flex items-center justify-between text-9px font-mono flex-wrap gap-2">
         <div className="flex items-center gap-1.5 text-muted-foreground">
           <Clock className="w-3 h-3" />
           <span>{fmtBRT(op.candle_open_time)} → {fmtBRT(op.candle_close_time)} BRT</span>
@@ -486,7 +486,7 @@ function Details({ op }) {
                   · {marketSourceLabel}
                 </span>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                 De qual mercado da Binance vieram os dados desta operação (item 4, docs/known-risks.md — divergência Spot×Futures aceita como limitação do projeto gratuito).
               </TooltipContent>
             </Tooltip>
@@ -494,7 +494,7 @@ function Details({ op }) {
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-[9px] font-mono text-muted-foreground gap-2 flex-wrap">
+      <div className="flex items-center justify-between text-9px font-mono text-muted-foreground gap-2 flex-wrap">
         <span>📊 {op.partial_percent}% TP1 · {op.runner_percent}% runner</span>
         <span style={{ color: 'rgba(0,229,255,0.7)' }}>{exitModeLabel}</span>
       </div>
@@ -505,7 +505,7 @@ function Details({ op }) {
       {(Number.isFinite(op.mfe_r) || Number.isFinite(op.mae_r)) && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground cursor-help" tabIndex={0}>
+            <div className="flex items-center gap-3 text-9px font-mono text-muted-foreground cursor-help" tabIndex={0}>
               {Number.isFinite(op.mfe_r) && (
                 <span>📈 MFE <span style={{ color: '#00ff80' }}>{op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R</span></span>
               )}
@@ -514,7 +514,7 @@ function Details({ op }) {
               )}
             </div>
           </TooltipTrigger>
-          <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+          <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
             MFE: maior lucro flutuante já visto nesta operação. MAE: maior perda flutuante já vista. Ambos em múltiplos do risco inicial (R).
           </TooltipContent>
         </Tooltip>
@@ -522,11 +522,11 @@ function Details({ op }) {
 
       {reasons.length > 0 && (
         <div className="space-y-1">
-          <div className="text-[9px] font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.35)' }}>
+          <div className="text-9px font-mono uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.35)' }}>
             🔍 Motivos técnicos ({reasons.length})
           </div>
           {reasons.map((r, i) => (
-            <div key={i} className="text-[10px] font-mono text-muted-foreground flex items-start gap-1.5">
+            <div key={i} className="text-10px font-mono text-muted-foreground flex items-start gap-1.5">
               <span style={{ color: '#00ff80', marginTop: 1 }}>·</span> {r}
             </div>
           ))}
@@ -566,35 +566,35 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <span className="font-bold text-base text-foreground">{op.symbol?.replace('USDT', '/USDT')}</span>
-            <span className="flex items-center gap-0.5 text-[10px] font-mono px-1.5 py-0.5 rounded font-bold"
+            <span className="flex items-center gap-0.5 text-10px font-mono px-1.5 py-0.5 rounded font-bold"
               style={{ background: `${sideColor}1f`, color: sideColor, border: `1px solid ${sideColor}4d` }}>
               {isBuy ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
               {op.side}
             </span>
-            <span className="text-[10px] font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
               {op.timeframe?.toUpperCase()}
             </span>
             {/* Horário absoluto de abertura já na camada 1: é o âncora de
                 qualquer comparação posterior (item 161). */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="text-[9px] font-mono cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.25)' }}>
+                <span className="text-9px font-mono cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.25)' }}>
                   aberta {fmtBRT(op.created_date)}
                 </span>
               </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                 Quando esta operação foi aberta (horário de Brasília)
               </TooltipContent>
             </Tooltip>
           </div>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded shrink-0 font-semibold cursor-help" tabIndex={0}
+              <span className="text-10px font-mono px-2 py-0.5 rounded shrink-0 font-semibold cursor-help" tabIndex={0}
                 style={{ background: status.bg, color: status.color, border: `1px solid ${status.border}` }}>
                 {status.short}
               </span>
             </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
               {status.desc}
             </TooltipContent>
           </Tooltip>
@@ -615,7 +615,7 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
                   background: price === null ? 'rgba(255,255,255,0.3)' : isStale ? '#ff9f43' : '#00e5ff',
                   boxShadow: price !== null && !isStale ? '0 0 5px #00e5ff' : 'none',
                 }} />
-              <span className="text-[9px] font-mono uppercase tracking-widest"
+              <span className="text-9px font-mono uppercase tracking-widest"
                 style={{ color: isStale ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>
                 {isStale ? `Desatualizado${ageLabel ? ` há ${ageLabel}` : ''}` : price !== null ? 'Ao vivo' : 'Sem cotação'}
               </span>
@@ -628,11 +628,11 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
               </div>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="text-[8px] font-mono uppercase tracking-widest mt-1 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                  <div className="text-8px font-mono uppercase tracking-widest mt-1 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
                     em aberto · bruto
                   </div>
                 </TooltipTrigger>
-                <TooltipContent className="max-w-[260px] text-[10px] font-mono normal-case tracking-normal leading-relaxed">
+                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                   Resultado em aberto sobre a entrada, sem descontar taxas nem funding.
                 </TooltipContent>
               </Tooltip>
@@ -652,7 +652,7 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
         {/* 5 · O porquê completo (evidência numérica), a um clique */}
         <button onClick={() => setOpen(!open)}
           aria-expanded={open}
-          className="flex items-center gap-1 text-[10px] font-mono transition-colors hover:text-foreground/70"
+          className="flex items-center gap-1 text-10px font-mono transition-colors hover:text-foreground/70"
           style={{ color: 'rgba(255,255,255,0.4)' }}>
           {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           {open ? 'Menos detalhes' : 'Detalhes técnicos'}

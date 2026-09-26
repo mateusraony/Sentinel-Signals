@@ -784,7 +784,8 @@ Alta prioridade (rótulos A-1 a A-15 no relatório):
 - [x] M-12 — Settings/Pine Script sem link cruzado. **Corrigido, ver 3ª rodada abaixo.**
 - [x] M-9 — 17 gráficos Recharts sem role="img"/aria-label em 10 arquivos. **Fechado: 3 sub-rodadas, 17/17 instâncias — ver seção própria abaixo.**
 - [x] M-17 — termos técnicos sem explicação (glossário, seção I). **Fechado: 4 sub-rodadas, 8/8 arquivos-alvo (+ 2 fixes de review do Codex) — ver seção própria abaixo.**
-- [ ] Demais itens de Média prioridade (M-4, M-10, M-11, M-13, M-15),
+- [x] M-11 — 632 ocorrências de tamanho de fonte arbitrário em 51 arquivos. **Fechado: número real era 676/54, formalizado como tokens do Tailwind numa rodada única — ver seção própria abaixo.**
+- [ ] Demais itens de Média prioridade (M-4, M-10, M-13, M-15),
   Refinamentos e a reorganização completa do Dashboard (seção L do
   relatório) — nada iniciado.
 
@@ -812,12 +813,11 @@ isolado.
 M-3/M-14/M-16; 2ª rodada, item 221 — M-1/M-2; 3ª rodada, item 222 —
 M-5/M-6/M-8/M-12; M-9 fechado em 3 sub-rodadas, itens 223/225/226/227;
 M-17 fechado em 4 sub-rodadas, itens 229/230/232/234 (+ fixes de review
-231/233); M-7 descoberto já corrigido).** Restam 5 dos 17 itens M
-inteiros: M-4, M-10, M-11, M-13, M-15. M-4/M-10/M-13/M-15 se
-sobrepõem à reorganização do Dashboard (seção L, que também inclui
-A-15) — decisão de produto maior, não mexer sem alinhamento explícito.
-M-11 (632 ocorrências de fonte arbitrária em 51 arquivos) é varredura
-grande, merece rodada própria.
+231/233); M-11 fechado numa rodada única, item 235; M-7 descoberto já
+corrigido).** Restam 4 dos 17 itens M inteiros: M-4, M-10, M-13, M-15 —
+todos se sobrepõem à reorganização do Dashboard (seção L, que também
+inclui A-15) — decisão de produto maior, não mexer sem alinhamento
+explícito.
 
 ## Backlog M-9 — 1ª sub-rodada (2026-09-25): 4 widgets do Dashboard
 
@@ -1080,6 +1080,39 @@ typecheck em 13 — checado logo após o código desta vez, lição do item
 2 fixes de review do Codex (itens 231/233), em 4 sub-rodadas (itens
 229/230/232/234). `PerformanceMetricsBar.jsx` deliberadamente fora de
 escopo (baixa prioridade, ver acima).
+
+## Backlog M-11 (2026-09-26): tokens de tamanho de fonte formalizados — fecha M-11
+
+M-11 dizia "632 ocorrências de tamanho de fonte arbitrário em 51
+arquivos". Agente Explore mapeou o item (mesmo tratamento de M-9/M-17
+— varredura própria antes de implementar): o número real era **676
+ocorrências em 54 arquivos**, e só existiam **5 valores de pixel em
+todo o código** (7/8/9/10/11px, 91% já pareados com `font-mono`) — não
+era "632 escolhas arbitrárias", era uma escala de facto nunca
+formalizada em `tailwind.config.js` (que não tinha nenhuma chave
+`fontSize` customizada). Perguntei ao usuário se preferia manter os 5
+tamanhos distintos ou consolidar pra 3-4 — escolheu manter os 5, com
+**zero mudança visual** como requisito explícito (formalizar
+nomenclatura, não redesenhar). Agente Plan desenhou a implementação em
+cima dessa decisão.
+
+**Fix**: `tailwind.config.js` ganhou `fontSize` com 5 chaves literais
+(`'7px'`…`'11px'`, strings planas, sem line-height — de propósito, pra
+garantir CSS byte-idêntico ao valor arbitrário anterior). Codemod
+mecânico de uma execução (`scripts/codemods/m11-fontsize-tokens.mjs`)
+substituiu `text-[Npx]` por `text-Npx` nos 54 arquivos — 676
+substituições, confirmadas por `git diff --stat` (676 insertions, 676
+deletions, nada além do renome). Verificação incluiu comparar o CSS
+gerado pelo build antes/depois pra cada um dos 5 tokens (regra de uma
+propriedade só, `font-size` idêntico, sem `line-height` adicionado) —
+prova de identidade de pixel, não só aparência aproximada.
+
+Rodada única, não dividida em sub-rodadas como M-9/M-17: a
+transformação é determinística e idêntica em todo lugar, o risco mora
+no `tailwind.config.js` (sistêmico), não em arquivo individual.
+`npm run lint && npm test && npm run build && npm run typecheck:ratchet`
+limpos (2122 testes, teto de typecheck em 13, sem mudança). Detalhe
+completo em `docs/known-risks.md` item 235.
 
 ## Backlog Média prioridade — 3ª rodada (2026-09-25): M-5, M-6, M-8, M-12 corrigidos
 

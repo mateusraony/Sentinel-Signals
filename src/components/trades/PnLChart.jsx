@@ -11,16 +11,16 @@ const CustomTooltip = ({ active, payload, label }) => {
   return (
     <div className="rounded-lg px-3 py-2"
       style={{ background: 'rgba(8,10,18,0.95)', border: '1px solid rgba(255,255,255,0.08)', minWidth: 140 }}>
-      <div className="text-[9px] font-mono text-muted-foreground mb-1">{label}</div>
-      <div className="text-[11px] font-mono font-bold" style={{ color: isWin ? '#00ff80' : '#ff1478' }}>
+      <div className="text-9px font-mono text-muted-foreground mb-1">{label}</div>
+      <div className="text-11px font-mono font-bold" style={{ color: isWin ? '#00ff80' : '#ff1478' }}>
         {d.pnl >= 0 ? '+' : ''}{d.pnl?.toFixed(2)}%
       </div>
-      <div className="text-[9px] font-mono text-muted-foreground">
+      <div className="text-9px font-mono text-muted-foreground">
         Acum: <span style={{ color: d.cumulative >= 0 ? '#00ff80' : '#ff1478' }}>
           {d.cumulative >= 0 ? '+' : ''}{d.cumulative?.toFixed(2)}%
         </span>
       </div>
-      <div className="text-[9px] font-mono text-muted-foreground mt-0.5">{d.symbol} {d.side} {d.tf}</div>
+      <div className="text-9px font-mono text-muted-foreground mt-0.5">{d.symbol} {d.side} {d.tf}</div>
     </div>
   );
 };
@@ -57,7 +57,7 @@ export default function PnLChart({ history }) {
     return (
       <div className="flex items-center justify-center h-32 rounded-xl"
         style={{ background: 'rgba(12,15,26,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
-        <p className="text-[10px] font-mono text-muted-foreground">Sem histórico suficiente para o gráfico.</p>
+        <p className="text-10px font-mono text-muted-foreground">Sem histórico suficiente para o gráfico.</p>
       </div>
     );
   }
@@ -71,14 +71,14 @@ export default function PnLChart({ history }) {
       style={{ background: 'rgba(12,15,26,0.7)', border: '1px solid rgba(255,255,255,0.06)', backdropFilter: 'blur(12px)' }}>
       <div className="flex items-center justify-between mb-3">
         <div>
-          <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Performance Acumulada</div>
+          <div className="text-10px font-mono text-muted-foreground uppercase tracking-widest">Performance Acumulada</div>
           <div className="text-xl font-bold font-mono mt-0.5" style={{ color: isPositive ? '#00ff80' : '#ff1478' }}>
             {finalCum >= 0 ? '+' : ''}{finalCum.toFixed(2)}%
           </div>
         </div>
         <div className="text-right">
-          <div className="text-[9px] font-mono text-muted-foreground">{data.length} trades</div>
-          <div className="text-[9px] font-mono mt-0.5">
+          <div className="text-9px font-mono text-muted-foreground">{data.length} trades</div>
+          <div className="text-9px font-mono mt-0.5">
             <span style={{ color: '#00ff80' }}>✓ {wins} win</span>
             <span className="text-muted-foreground mx-1">·</span>
             <span style={{ color: '#ff1478' }}>✗ {losses} loss</span>

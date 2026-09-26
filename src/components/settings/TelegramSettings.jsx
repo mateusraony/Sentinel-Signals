@@ -106,7 +106,7 @@ export default function TelegramSettings({ open, onClose }) {
             <BellRing className="w-5 h-5" style={{ color: '#00e5ff' }} />
             <DialogTitle className="font-bold text-foreground text-base">Alertas Telegram</DialogTitle>
             {isTelegramConfigured() && (
-              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+              <span className="text-9px font-mono px-1.5 py-0.5 rounded"
                 style={{ background: 'rgba(0,255,128,0.1)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.2)' }}>
                 ● ATIVO
               </span>
@@ -121,12 +121,12 @@ export default function TelegramSettings({ open, onClose }) {
         <div className="max-h-[70vh] overflow-y-auto pr-1 space-y-5">
         {/* Instructions */}
         <div className="rounded-xl p-3 space-y-1.5" style={{ background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.1)' }}>
-          <p className="text-[10px] font-mono font-bold" style={{ color: '#00e5ff' }}>COMO CONFIGURAR:</p>
-          <ol className="text-[10px] text-muted-foreground space-y-1 list-decimal list-inside leading-relaxed">
+          <p className="text-10px font-mono font-bold" style={{ color: '#00e5ff' }}>COMO CONFIGURAR:</p>
+          <ol className="text-10px text-muted-foreground space-y-1 list-decimal list-inside leading-relaxed">
             <li>Telegram → <b className="text-foreground/70">@BotFather</b> → <code className="px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)' }}>/newbot</code> → copie o <b className="text-foreground/70">Token</b></li>
             <li><b className="text-foreground/70">@userinfobot</b> → envie qualquer mensagem → copie o <b className="text-foreground/70">Chat ID</b></li>
           </ol>
-          <p className="text-[9px] text-muted-foreground/70 leading-relaxed pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <p className="text-9px text-muted-foreground/70 leading-relaxed pt-1" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             Isto liga os avisos <b>só enquanto esta aba fica aberta</b>. Os avisos automáticos 24h (que rodam mesmo com o navegador fechado) usam o mesmo Token/Chat ID, mas configurados separadamente como segredo no GitHub Actions.
           </p>
         </div>
@@ -134,14 +134,14 @@ export default function TelegramSettings({ open, onClose }) {
         {/* Connection fields */}
         <div className="space-y-3">
           <div>
-            <label className="text-[10px] font-mono text-muted-foreground mb-1 block">BOT TOKEN</label>
+            <label className="text-10px font-mono text-muted-foreground mb-1 block">BOT TOKEN</label>
             <Input placeholder="1234567890:ABCdefGHI..." value={cfg.botToken || ''}
               onChange={e => setCfg(c => ({ ...c, botToken: e.target.value }))}
               className="font-mono text-xs h-9"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.8)' }} />
           </div>
           <div>
-            <label className="text-[10px] font-mono text-muted-foreground mb-1 block">CHAT ID</label>
+            <label className="text-10px font-mono text-muted-foreground mb-1 block">CHAT ID</label>
             <Input placeholder="123456789" value={cfg.chatId || ''}
               onChange={e => setCfg(c => ({ ...c, chatId: e.target.value }))}
               className="font-mono text-xs h-9"
@@ -154,8 +154,8 @@ export default function TelegramSettings({ open, onClose }) {
           className="flex items-center gap-2 w-full py-2 px-3 rounded-lg transition-all"
           style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)' }}>
           {showAdvanced ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          <span className="text-[11px] font-mono">⚙️ Filtros Avançados de Notificação</span>
-          <span className="ml-auto text-[9px] font-mono" style={{ color: '#00e5ff' }}>
+          <span className="text-11px font-mono">⚙️ Filtros Avançados de Notificação</span>
+          <span className="ml-auto text-9px font-mono" style={{ color: '#00e5ff' }}>
             {filters.timeframes.length} TF · {filters.events.length} eventos
           </span>
         </button>
@@ -165,7 +165,7 @@ export default function TelegramSettings({ open, onClose }) {
 
             {/* Timeframes */}
             <div>
-              <p className="text-[10px] font-mono text-muted-foreground mb-2">📊 TIMEFRAMES A MONITORAR</p>
+              <p className="text-10px font-mono text-muted-foreground mb-2">📊 TIMEFRAMES A MONITORAR</p>
               <MultiToggle
                 options={TF_OPTIONS.map(t => ({ id: t, label: t.toUpperCase() }))}
                 selected={filters.timeframes}
@@ -175,7 +175,7 @@ export default function TelegramSettings({ open, onClose }) {
 
             {/* Signal types */}
             <div>
-              <p className="text-[10px] font-mono text-muted-foreground mb-2">🎯 TIPOS DE SINAL</p>
+              <p className="text-10px font-mono text-muted-foreground mb-2">🎯 TIPOS DE SINAL</p>
               <MultiToggle
                 options={SIGNAL_TYPES}
                 selected={filters.signal_types}
@@ -185,20 +185,20 @@ export default function TelegramSettings({ open, onClose }) {
 
             {/* Signal source */}
             <div>
-              <p className="text-[10px] font-mono text-muted-foreground mb-2">🔍 ORIGEM DO SINAL</p>
+              <p className="text-10px font-mono text-muted-foreground mb-2">🔍 ORIGEM DO SINAL</p>
               <MultiToggle
                 options={SOURCE_OPTIONS}
                 selected={filters.sources ?? DEFAULT_SOURCES}
                 onChange={v => setF('sources', v)}
               />
-              <p className="text-[9px] font-mono text-muted-foreground mt-1">
+              <p className="text-9px font-mono text-muted-foreground mt-1">
                 Vale para os dois canais — ao vivo e o automático 24h.
               </p>
             </div>
 
             {/* Min priority */}
             <div>
-              <p className="text-[10px] font-mono text-muted-foreground mb-2">⚡ PRIORIDADE MÍNIMA</p>
+              <p className="text-10px font-mono text-muted-foreground mb-2">⚡ PRIORIDADE MÍNIMA</p>
               <div className="space-y-1.5">
                 {PRIORITY_OPTIONS.map(p => (
                   <button key={p.id} onClick={() => setF('min_priority', p.id)}
@@ -206,11 +206,11 @@ export default function TelegramSettings({ open, onClose }) {
                     style={filters.min_priority === p.id
                       ? { background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)' }
                       : { background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="text-[10px] font-mono font-bold" style={{ color: filters.min_priority === p.id ? '#00e5ff' : 'rgba(255,255,255,0.4)' }}>
+                    <span className="text-10px font-mono font-bold" style={{ color: filters.min_priority === p.id ? '#00e5ff' : 'rgba(255,255,255,0.4)' }}>
                       {p.label}
                     </span>
-                    <span className="text-[9px] font-mono text-muted-foreground">{p.desc}</span>
-                    {filters.min_priority === p.id && <span className="ml-auto text-[9px]" style={{ color: '#00e5ff' }}>✓</span>}
+                    <span className="text-9px font-mono text-muted-foreground">{p.desc}</span>
+                    {filters.min_priority === p.id && <span className="ml-auto text-9px" style={{ color: '#00e5ff' }}>✓</span>}
                   </button>
                 ))}
               </div>
@@ -218,14 +218,14 @@ export default function TelegramSettings({ open, onClose }) {
 
             {/* Events */}
             <div>
-              <p className="text-[10px] font-mono text-muted-foreground mb-2">🔔 EVENTOS PARA NOTIFICAR</p>
+              <p className="text-10px font-mono text-muted-foreground mb-2">🔔 EVENTOS PARA NOTIFICAR</p>
               <div className="space-y-1.5">
                 {EVENT_OPTIONS.map(e => (
                   <div key={e.id} className="flex items-center justify-between gap-3 px-2 py-1.5 rounded-lg"
                     style={{ background: 'rgba(255,255,255,0.02)' }}>
                     <div className="min-w-0">
-                      <div className="text-[10px] font-mono" style={{ color: filters.events.includes(e.id) ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.35)' }}>{e.label}</div>
-                      <div className="text-[9px] font-mono text-muted-foreground">{e.desc}</div>
+                      <div className="text-10px font-mono" style={{ color: filters.events.includes(e.id) ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.35)' }}>{e.label}</div>
+                      <div className="text-9px font-mono text-muted-foreground">{e.desc}</div>
                     </div>
                     <Toggle
                       checked={filters.events.includes(e.id)}
@@ -241,7 +241,7 @@ export default function TelegramSettings({ open, onClose }) {
 
             {/* Score threshold */}
             <div>
-              <p className="text-[10px] font-mono text-muted-foreground mb-2">🔥 SCORE MÍNIMO PARA ALERTAR</p>
+              <p className="text-10px font-mono text-muted-foreground mb-2">🔥 SCORE MÍNIMO PARA ALERTAR</p>
               <div className="flex items-center gap-3">
                 <input type="range" min="0" max="100" step="5"
                   value={filters.min_score ?? 0}
@@ -249,12 +249,12 @@ export default function TelegramSettings({ open, onClose }) {
                   className="flex-1 h-1.5 rounded-full appearance-none"
                   style={{ background: `linear-gradient(to right, #00ff80 ${filters.min_score ?? 0}%, rgba(255,255,255,0.08) ${filters.min_score ?? 0}%)` }}
                 />
-                <span className="text-[11px] font-mono font-bold min-w-[40px] text-right"
+                <span className="text-11px font-mono font-bold min-w-[40px] text-right"
                   style={{ color: (filters.min_score ?? 0) >= 85 ? '#00ff80' : (filters.min_score ?? 0) >= 65 ? '#ffd166' : '#ff9f43' }}>
                   {filters.min_score ?? 0}/100
                 </span>
               </div>
-              <p className="text-[9px] font-mono text-muted-foreground mt-1">
+              <p className="text-9px font-mono text-muted-foreground mt-1">
                 {(filters.min_score ?? 0) === 0 ? 'Todos os scores' : `Somente sinais com score ≥ ${filters.min_score}`}
               </p>
             </div>
