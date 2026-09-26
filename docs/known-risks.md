@@ -28189,3 +28189,111 @@ baseline; teto de typecheck em 13, sem mudança). `git diff --stat`: só
 toda linha do componente é reorganização JSX (mover bloco, novo
 `useState`/toggle), nenhuma mudança em `backend.`/lógica de
 trading/scanner.
+
+## 237. M-4/M-13/M-15/A-14 (PR 2/2) — reagrupamento de `Dashboard.jsx`
+
+PR 2 da reorganização do Dashboard (item 236 foi o 1/2 — AssetCard/
+A-15). Plano completo em
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.
+
+**Ordem atual (antes do fix)**: WeeklySummary → SignalAlertBanner →
+VerificationWidget → TelegramStatusBanner → RecentAlertsList → Compare
+→ PerformanceMetricsBar → PerformanceOverview → VirtualAccountCard →
+LiveConfidenceCard → CorrelationWidget → grade de 6 StatsCard → busca/
+filtro/sort → grade de AssetCard.
+
+**Nova ordem**: "Agora" (`SignalAlertBanner` + `RecentAlertsList`, sob 1
+heading) → "Atenção" (`VerificationWidget` + StatsCard "Alta
+Prioridade"/"Aguardando", `grid-cols-2`) → núcleo operacional (Compare
++ faixa de 4 StatsCard "visão rápida" — Monitorados/Operações Ativas/
+Sinais BUY/Sinais SELL — + busca/filtro/sort + grade de `AssetCard`) →
+"Desempenho" colapsado por padrão (toggle `useState`+chevron, mesmo
+padrão do toggle "Detalhes técnicos" do `AssetCard`/`TradeCard` — item
+236: `WeeklySummary` + `PerformanceMetricsBar` + `PerformanceOverview`
++ `VirtualAccountCard` + `LiveConfidenceCard` + `CorrelationWidget`) →
+`TelegramStatusBanner` (fim da página).
+
+**Não fundidos**: `SignalAlertBanner` (timeout 15s, janela 5min,
+dedup) e `RecentAlertsList` (sem timeout, `.slice(0,8)`) continuam com
+regras de filtro próprias — fundir seria mudar lógica de notificação,
+fora de escopo de tarefa de UI. Usuária confirmou via
+`AskUserQuestion`: o timeout de 15s do banner **não muda** nesta leva.
+
+**Achado da investigação** (não corrigido aqui, já estava certo): A-1
+(`RecentAlertsList` sem `onClick`) e C-2 (4 cards de performance com
+amostras diferentes) já tinham sido corrigidos em rodadas anteriores
+desta sessão — o relatório original nunca foi atualizado. M-10 (nav
+mobile) confirmado como não sendo sobre `Dashboard.jsx` — é
+`Sidebar.jsx`, fora de escopo.
+
+**`StatsCard.jsx` não foi tocado** — só reparticionado de onde cada
+`<StatsCard>` é montado em `Dashboard.jsx` (6 num grid só → 2 grids,
+2+4). `VerificationWidget.jsx` ganhou só atualização de comentário
+(linha 23-27, dizia "right after SignalAlertBanner" — hoje falso,
+Verification mudou de grupo).
+
+### Testes
+
+3 testes novos em `Dashboard.test.jsx`: seção "Desempenho" colapsada
+por padrão + expande ao clicar (`aria-expanded`); "Atenção" vem depois
+de "Agora" e antes de "Ativos" no DOM; `TelegramStatusBanner` aparece
+depois da grade de "Ativos" (achado M-15). Os 3 testes existentes
+(ordem "Alertas Recentes"/"Ativos", cor condicional do StatsCard "Alta
+Prioridade") continuam passando sem alteração — a relação que eles
+verificam (RecentAlertsList antes de Ativos; cor no `nextElementSibling`
+do label) não muda com o reagrupamento.
+
+Reproduzido falhando antes do fix via
+`git stash push -- Dashboard.jsx VerificationWidget.jsx` (3 testes
+falham: os 3 novos) → `git stash pop` → 6/6 verdes.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2129 testes, 0 falhas, 58 pulados — mesmo
+baseline + 3 novos; teto de typecheck em 13, sem mudança). `git diff`
+grepado por `backend\.|scanner|firestore|postgres|mutation|useQuery\(`
+→ vazio — nenhuma linha alterada toca busca de dado/lógica, só JSX de
+apresentação (mover bloco, novo heading, novo toggle de seção).
+
+### Fecha M-4/M-13/M-15/A-14 e a reorganização do Dashboard (seção L)
+
+Com este PR, a reorganização do Dashboard (seção L do Raio-X) está
+completa — os 2 PRs (item 236 + este) cobrem A-15 + M-4 + M-13 + M-15 +
+o resto de A-14. Fica pendente só M-10 (nav mobile, `Sidebar.jsx`),
+item separado, ainda não escopado.
+
+### Achado do Codex review no PR #435: colapsar "Desempenho" desmontava o `CorrelationWidget`
+
+O toggle "Desempenho" (`showPerformance && (...)`) desmontava o
+subtree inteiro ao colapsar — mas `CorrelationWidget` mantém `symbols`
+como `useState` local (seleção de pares pra correlação, com
+`DEFAULT_SYMBOLS` só no mount inicial). Colapsar e reabrir recriava o
+componente do zero, perdendo qualquer seleção customizada do usuário
+sem aviso — regressão real introduzida por este PR, não um problema
+pré-existente.
+
+**Fix**: trocado render condicional (`{cond && <div>...}`) por CSS
+`hidden` (`className={... ${showPerformance ? '' : 'hidden'}}`) —
+mesmo conteúdo, sempre montado, só escondido visualmente. Diferente do
+toggle "Detalhes técnicos" do AssetCard/TradeCard (item 236), que PODE
+desmontar porque os blocos que esconde (`TFTrendRow`/`IndicatorDots`/
+etc.) não têm state próprio — a escolha do mecanismo (render
+condicional vs. CSS hidden) depende de o conteúdo escondido ter state
+local a preservar, não é uma regra única pra todo toggle do projeto.
+
+**Trade-off aceito**: com CSS hidden, as 6 queries dos componentes de
+"Desempenho" continuam rodando em background mesmo colapsado — mas é
+o MESMO comportamento de antes desta rodada (todos sempre montados,
+sempre buscando dados); só a exibição visual mudou. Não é regressão de
+performance, é reversão ao comportamento anterior nesse aspecto
+específico.
+
+Teste de regressão: `Dashboard.test.jsx` confirma que o mesmo nó de
+DOM (heading "Correlação de Preço") persiste — identidade de
+referência, não só igualdade de texto — antes e depois de um ciclo
+completo de expandir+colapsar. Reproduzido falhando sem o fix via
+`git stash` (2 testes falham: a checagem de `hidden` no wrapper e a
+identidade do nó). `npm run lint && npm test && npm run build && npm
+run typecheck:ratchet` limpos após o fix (2130 testes, teto de
+typecheck em 13, sem mudança).

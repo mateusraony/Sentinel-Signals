@@ -20,10 +20,12 @@ function ageColor(createdDate) {
   return 'rgba(255,255,255,0.4)';
 }
 
-// Fixed panel shown on the Dashboard's "Visão Geral" tab, right after
-// SignalAlertBanner — surfaces VerificationTasks (created automatically by
-// scanner.js for every high-priority signal) so a strong signal never goes
-// unreviewed just because nobody had the dashboard open when it fired.
+// Fixed panel shown on the Dashboard's "Visão Geral" tab, no grupo
+// "Atenção" (achado M-13 do Raio-X de UI/UX — reorganização do Dashboard,
+// ver docs/known-risks.md item 236) — surfaces VerificationTasks (created
+// automatically by scanner.js for every high-priority signal) so a strong
+// signal never goes unreviewed just because nobody had the dashboard open
+// when it fired.
 export default function VerificationWidget() {
   const queryClient = useQueryClient();
 
