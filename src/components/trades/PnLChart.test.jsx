@@ -4,7 +4,8 @@
 // gráfico de performance acumulada não tinha role="img"/aria-label. Como o
 // nº de trades não tem teto, o fix usa a técnica validada em Backtest.jsx
 // (item 226): aria-label como resumo curto + tabela `sr-only` linkada via
-// aria-describedby carregando o dado ponto a ponto.
+// aria-details (não aria-describedby — achado do Codex review no PR #429,
+// item 228) carregando o dado ponto a ponto.
 import React from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -38,7 +39,7 @@ describe('PnLChart — gráfico tem role="img"/aria-label com resumo e tabela sr
     expect(label).toMatch(/1W/);
     expect(label).toMatch(/1L/);
 
-    const tableId = img.getAttribute('aria-describedby');
+    const tableId = img.getAttribute('aria-details');
     expect(tableId).toBeTruthy();
     const table = document.getElementById(tableId);
     expect(table).toBeTruthy();

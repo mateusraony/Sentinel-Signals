@@ -266,8 +266,10 @@ describe('Backtest — gráficos Recharts têm role="img"/aria-label descrevendo
   // enumerar tudo no aria-label seria impraticável — o dado ponto a ponto
   // (operação/símbolo/resultado/capital) vai numa tabela `sr-only` (oculta
   // visualmente, presente na árvore de acessibilidade) linkada via
-  // aria-describedby, mantendo o aria-label como resumo curto.
-  it('REGRESSÃO: curva ingênua e curva de capital real têm tabela sr-only com dado ponto a ponto, linkada via aria-describedby', async () => {
+  // aria-details (não aria-describedby — achado do Codex review no PR #429,
+  // item 228: aria-describedby colapsaria a tabela num texto único),
+  // mantendo o aria-label como resumo curto.
+  it('REGRESSÃO: curva ingênua e curva de capital real têm tabela sr-only com dado ponto a ponto, linkada via aria-details', async () => {
     renderPage(<Backtest />);
     fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
     const textarea = await screen.findByPlaceholderText(/"range":/);
@@ -281,8 +283,8 @@ describe('Backtest — gráficos Recharts têm role="img"/aria-label descrevendo
     expect(equityCurveImg).toBeTruthy();
     expect(realEquityImg).toBeTruthy();
 
-    const equityCurveTableId = equityCurveImg.getAttribute('aria-describedby');
-    const realEquityTableId = realEquityImg.getAttribute('aria-describedby');
+    const equityCurveTableId = equityCurveImg.getAttribute('aria-details');
+    const realEquityTableId = realEquityImg.getAttribute('aria-details');
     expect(equityCurveTableId).toBeTruthy();
     expect(realEquityTableId).toBeTruthy();
 

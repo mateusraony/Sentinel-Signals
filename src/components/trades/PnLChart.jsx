@@ -28,7 +28,11 @@ const CustomTooltip = ({ active, payload, label }) => {
 export default function PnLChart({ history }) {
   // Achado M-9 do Raio-X: nº de trades não tem teto — mesma técnica do fix
   // em Backtest.jsx (item 226): aria-label vira resumo curto, tabela
-  // `sr-only` linkada via aria-describedby carrega o dado ponto a ponto.
+  // `sr-only` linkada via aria-details carrega o dado ponto a ponto.
+  // Achado do Codex review no PR #429 (item 228): `aria-describedby`
+  // colapsaria a tabela inteira num texto único, lido de uma vez só e
+  // perdendo a navegação por célula/linha — `aria-details` (ARIA 1.2)
+  // preserva a estrutura, deixando a tabela navegável por conta própria.
   const tableId = useId();
   const { data, wins, losses } = useMemo(() => {
     const s = summarizeOps(history);
@@ -82,7 +86,7 @@ export default function PnLChart({ history }) {
         </div>
       </div>
 
-      <div role="img" aria-describedby={tableId}
+      <div role="img" aria-details={tableId}
         aria-label={`Gráfico de área da performance acumulada, ${data.length} trades (${wins}W ${losses}L), ${finalCum >= 0 ? '+' : ''}${finalCum.toFixed(2)}% acumulado`}>
         <ResponsiveContainer width="100%" height={140}>
           <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>

@@ -27592,3 +27592,54 @@ si só teve reindentação, sem mudança de lógica) — nenhuma mudança em
 
 **M-9 fechado: 17 de 17 instâncias corrigidas**, em 3 sub-rodadas
 (itens 223/225/226/227) — nenhuma instância restante.
+
+## 228. Corrigir 1 achado do Codex review no PR #429 (M-9, 3ª sub-rodada) — `aria-describedby` → `aria-details` em 6 instâncias
+
+O Codex review pegou um achado real (P2) na técnica de tabela `sr-only`
+introduzida no item 226 e reaplicada no item 227: `aria-describedby`
+não preserva a estrutura do elemento referenciado — o navegador
+computa a "descrição acessível" concatenando todo o texto da tabela
+numa única string plana, que o leitor de tela anuncia de uma vez só
+(perdendo a navegação célula a célula/linha a linha que uma
+`<table>` de verdade oferece) — e, como a tabela continua no DOM
+como elemento próprio, ela seria "encontrada" DUAS vezes: uma vez
+como bloco de texto plano (via `aria-describedby`) e outra como
+tabela navegável (na leitura linear normal da página). Pra tabelas
+grandes (curva de capital com centenas de operações, ou os 60 candles
+do RF), isso significa uma leitura serializada de todas as células
+antes do controle voltar pro usuário — o oposto do que a tabela
+`sr-only` deveria resolver.
+
+**Fix:** trocado `aria-describedby` por `aria-details` (ARIA 1.2) nas
+6 instâncias que usavam esse padrão — as 4 desta sub-rodada
+(`RFHistoryChart.jsx`, `TradeEntryMarkers.jsx`, `PnLChart.jsx`,
+`PortfolioVsMarket.jsx`) e, proativamente, as 2 já mescladas no item
+226 (`Backtest.jsx`, curva ingênua e curva de capital real) — mesmo
+defeito, mesma origem, não fazia sentido corrigir só onde o bot
+apontou e deixar o gêmeo já em produção. `aria-details` é o
+mecanismo ARIA 1.2 desenhado exatamente pra esse caso (associar um
+elemento a um bloco de detalhe ESTRUTURADO — tabela, lista — sem
+achatar em texto), diferente de `aria-describedby` (sempre texto
+plano). Suporte de leitor de tela é razoável mas não universal
+(NVDA/JAWS ok, VoiceOver mais limitado) — ainda assim estritamente
+melhor que o `aria-describedby` anterior, que tinha o problema
+descrito acima em qualquer leitor de tela.
+
+### Testes ajustados
+
+`Backtest.test.jsx`, `RFHistoryChart.test.jsx`,
+`TradeEntryMarkers.test.jsx`, `PnLChart.test.jsx`,
+`PortfolioVsMarket.test.jsx`: as asserções que liam
+`getAttribute('aria-describedby')` passaram a ler
+`getAttribute('aria-details')` — mesma cobertura, só o nome do
+atributo mudou. Não precisou de teste novo (a mudança é 1:1 no nome
+do atributo, o comportamento coberto pelos testes já existentes —
+`role=img` + tabela `sr-only` com o dado — continua o mesmo).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2103 testes, 0 falhas; teto de typecheck em
+13, sem mudança). `git diff` nos 5 arquivos de produção mostra só a
+troca do nome do atributo + comentários explicando a troca — nenhuma
+mudança em `backend.`/lógica de negócio.

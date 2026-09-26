@@ -97,7 +97,10 @@ const CustomTooltip = ({ active, payload }) => {
 export default function TradeEntryMarkers({ history }) {
   // Achado M-9 do Raio-X: nº de operações não tem teto — mesma técnica do
   // fix em Backtest.jsx (item 226): aria-label vira resumo curto, tabela
-  // `sr-only` linkada via aria-describedby carrega o dado ponto a ponto.
+  // `sr-only` linkada via aria-details carrega o dado ponto a ponto.
+  // Achado do Codex review no PR #429 (item 228): `aria-describedby`
+  // colapsaria a tabela inteira num texto único — `aria-details` (ARIA
+  // 1.2) preserva a estrutura, deixando a tabela navegável por conta própria.
   const tableId = useId();
   const { chartData, finalCum, wins, losses } = useMemo(() => {
     const valid = history
@@ -186,7 +189,7 @@ export default function TradeEntryMarkers({ history }) {
       </div>
 
       {/* Chart */}
-      <div style={{ height: 260 }} role="img" aria-describedby={tableId}
+      <div style={{ height: 260 }} role="img" aria-details={tableId}
         aria-label={`Gráfico de área da curva de capital com marcadores de entrada/saída, ${wins}W ${losses}L, ${finalCum >= 0 ? '+' : ''}${finalCum.toFixed(2)}% acumulado (soma simples)`}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={chartData} margin={{ top: 10, right: 8, left: -20, bottom: 0 }}>

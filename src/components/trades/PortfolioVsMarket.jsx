@@ -96,7 +96,10 @@ function CustomTooltip({ active, payload, marketLabel }) {
 export default function PortfolioVsMarket({ trades }) {
   // Achado M-9 do Raio-X: nº de trades não tem teto — mesma técnica do fix
   // em Backtest.jsx (item 226): aria-label vira resumo curto, tabela
-  // `sr-only` linkada via aria-describedby carrega o dado ponto a ponto.
+  // `sr-only` linkada via aria-details carrega o dado ponto a ponto.
+  // Achado do Codex review no PR #429 (item 228): `aria-describedby`
+  // colapsaria a tabela inteira num texto único — `aria-details` (ARIA
+  // 1.2) preserva a estrutura, deixando a tabela navegável por conta própria.
   const tableId = useId();
   const [benchmarkKey, setBenchmarkKey] = useState('BTC');
   const benchmarkOption = BENCHMARK_OPTIONS.find((o) => o.key === benchmarkKey) ?? BENCHMARK_OPTIONS[0];
@@ -212,7 +215,7 @@ export default function PortfolioVsMarket({ trades }) {
       </div>
 
       {/* Chart */}
-      <div role="img" aria-describedby={tableId}
+      <div role="img" aria-details={tableId}
         aria-label={`Gráfico de área e linha comparando carteira vs ${benchmarkOption.label}, ${portfolioCurve.length} trades fechados, carteira ${fmtPct(finalPnl)}${hasMarketData ? `, ${benchmarkOption.label} ${fmtPct(finalMarket)}` : ''}`}>
         <ResponsiveContainer width="100%" height={280}>
           <ComposedChart data={mergedData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>

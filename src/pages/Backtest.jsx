@@ -135,8 +135,12 @@ function ReportBody({ report, hideCascadeTable = false }) {
   // poucas categorias fixas), enumerar tudo no aria-label seria uma string
   // gigante lida ponto a ponto — em vez disso, o aria-label continua um
   // resumo curto e uma tabela `sr-only` (oculta visualmente, presente na
-  // árvore de acessibilidade) linkada via aria-describedby carrega o dado
-  // ponto a ponto.
+  // árvore de acessibilidade) linkada via aria-details carrega o dado
+  // ponto a ponto. Achado do Codex review no PR #429 (item 228, mesmo
+  // padrão introduzido aqui): `aria-describedby` colapsaria a tabela
+  // inteira num texto único, lido de uma vez só pelo leitor de tela —
+  // `aria-details` (ARIA 1.2) preserva a estrutura, deixando a tabela
+  // navegável por conta própria.
   const equityCurveTableId = useId();
   const realEquityTableId = useId();
 
@@ -236,7 +240,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2">
           <Section title="Curva ingênua (soma % simples, NÃO composta — ver curva de capital real abaixo)">
-            <div style={{ height: 260 }} role="img" aria-describedby={equityCurve.length > 0 ? equityCurveTableId : undefined}
+            <div style={{ height: 260 }} role="img" aria-details={equityCurve.length > 0 ? equityCurveTableId : undefined}
               aria-label={`Gráfico de linha da curva ingênua de PnL acumulado (soma simples), ${equityCurve.length} operações${equityCurve.length > 0 ? `, ${fmtPct(equityCurve[equityCurve.length - 1].cumulativePct)} no total` : ''}`}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={equityCurve} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
@@ -330,7 +334,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
               color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
           </div>
 
-          <div style={{ height: 220 }} role="img" aria-describedby={realEquityChart.length > 0 ? realEquityTableId : undefined}
+          <div style={{ height: 220 }} role="img" aria-details={realEquityChart.length > 0 ? realEquityTableId : undefined}
             aria-label={`Gráfico de linha da curva de capital real, capital final ${fmtUsd(equitySim.finalCapital)} (${fmtPct(equitySim.totalReturnPct)})`}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={realEquityChart} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>

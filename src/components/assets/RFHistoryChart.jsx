@@ -33,7 +33,10 @@ export default function RFHistoryChart({ asset }) {
   // — mesma lição do achado do Codex review em Backtest.jsx (item 226):
   // aria-label vira resumo curto usando as métricas já calculadas (bias/
   // estabilidade/volatilidade/flips), e uma tabela `sr-only` linkada via
-  // aria-describedby carrega o dado candle a candle.
+  // aria-details carrega o dado candle a candle. Achado do Codex review no
+  // PR #429 (item 228): `aria-describedby` colapsaria a tabela inteira num
+  // texto único — `aria-details` (ARIA 1.2) preserva a estrutura, deixando
+  // a tabela navegável por conta própria.
   const rfHistoryTableId = useId();
 
   const { data: candles, isLoading, error } = useQuery({
@@ -182,7 +185,7 @@ export default function RFHistoryChart({ asset }) {
           </div>
 
           {/* Price + RF + bands chart */}
-          <div style={{ height: 180 }} role="img" aria-describedby={analysis.chartData.length > 0 ? rfHistoryTableId : undefined}
+          <div style={{ height: 180 }} role="img" aria-details={analysis.chartData.length > 0 ? rfHistoryTableId : undefined}
             aria-label={`Gráfico de linha de preço e Range Filter em ${timeframe.toUpperCase()}, últimos ${analysis.chartData.length} candles — bias ${analysis.bias}, RF ${analysis.rfChangePct >= 0 ? '+' : ''}${analysis.rfChangePct.toFixed(2)}%, estabilidade ${analysis.stability}, volatilidade ${analysis.volatilityPct.toFixed(2)}%, ${analysis.flips} flips de direção`}>
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={analysis.chartData} margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
