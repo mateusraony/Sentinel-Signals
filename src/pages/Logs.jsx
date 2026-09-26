@@ -226,9 +226,14 @@ export default function Logs() {
                     {log.executor && <span className="text-9px px-1 rounded" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)' }}>{log.executor}</span>}
                   </div>
                   <p className="text-11px text-foreground/80 mt-0.5 leading-relaxed">{log.message}</p>
+                  {/* Achado do Codex review no PR #439 (aplicado aqui pela
+                      mesma causa raiz, mesmo padrão original desta linha):
+                      0.25 dava ~2.3:1 de contraste, abaixo do 4.5:1 exigido
+                      pra texto pequeno — único controle visível pra revelar
+                      o payload. */}
                   {log.details && (
                     <details className="mt-1">
-                      <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.25)' }}>ver payload →</summary>
+                      <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.45)' }}>ver payload →</summary>
                       <pre className="mt-1 text-10px overflow-x-auto py-1 rounded" style={{ color: 'rgba(0,255,128,0.6)', background: 'rgba(0,0,0,0.3)', padding: '4px 8px' }}>
                         {JSON.stringify(log.details, null, 2)}
                       </pre>

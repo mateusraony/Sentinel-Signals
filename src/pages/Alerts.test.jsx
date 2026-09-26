@@ -104,6 +104,20 @@ describe('Alerts — JSON de "Contexto Técnico" fica dentro de <details>, fecha
     fireEvent.click(summary);
     await screen.findByText(/"rf_value": 60000/);
   });
+
+  // Achado do Codex review no PR #439: 0.25 dava ~2.3:1 de contraste sobre
+  // o fundo escuro do dialog, abaixo do 4.5:1 exigido pra texto pequeno —
+  // e este é o único controle visível pra revelar o payload.
+  it('REGRESSÃO: "ver payload →" tem contraste suficiente (0.45, não 0.25)', async () => {
+    estadoBackend.populated = true;
+    renderPage(<Alerts />);
+    const row = (await screen.findByText('BTC/USDT')).closest('[tabindex]');
+    fireEvent.keyDown(row, { key: 'Enter' });
+    await screen.findByRole('dialog');
+
+    const summary = await screen.findByText('ver payload →');
+    expect(summary.style.color).toBe('rgba(255, 255, 255, 0.45)');
+  });
 });
 
 // Refinamentos (seção E do Raio-X): campo de busca (`w-32`) mais estreito
