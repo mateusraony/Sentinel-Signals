@@ -20,6 +20,10 @@ import { runQuickBacktest } from '@/lib/quickBacktest';
 import { Slider } from '@/components/ui/slider';
 import TriggerBacktestPanel from '@/components/backtest/TriggerBacktestPanel';
 import { QueryErrorState } from '@/components/QueryErrorState';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 
 function fmtPct(v, digits = 2) {
   if (v === null || v === undefined || Number.isNaN(v)) return '—';
@@ -843,6 +847,9 @@ function JsonReportTab() {
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
   const [applyStatus, setApplyStatus] = useState(null); // null | 'applying' | 'applied' | 'error'
+  const [confirmingApply, setConfirmingApply] = useState(false);
+  const pineConfig = report?.reproducibility?.pineConfig;
+  const trialLabel = report?.trialLabel || 'sem rótulo';
 
   const handleLoad = (raw) => {
     try {
@@ -858,15 +865,12 @@ function JsonReportTab() {
     }
   };
 
-  const handleApplyToScanner = async () => {
-    const pineConfig = report?.reproducibility?.pineConfig;
+  const handleApplyToScanner = () => {
     if (!pineConfig) return;
-    const trialLabel = report.trialLabel || 'sem rótulo';
-    if (!window.confirm(
-      `Aplicar a configuração do trial "${trialLabel}" ao scanner AO VIVO?\n\n` +
-      `Isso grava em strategyConfig/current e afeta o próximo scan real (browser + cron).`
-    )) return;
+    setConfirmingApply(true);
+  };
 
+  const doApply = async () => {
     setApplyStatus('applying');
     try {
       const payload = {};
@@ -943,6 +947,25 @@ function JsonReportTab() {
         </div>
       </div>
       <ReportBody report={report} />
+
+      {/* Achado da varredura pós-Raio-X, Round 2 (2026-09-27): confirm()
+          nativo quebrava o tema escuro — migrado pro AlertDialog já
+          existente e nunca usado. Texto mantido igual (já explicava a
+          consequência) — só troca de container. */}
+      <AlertDialog open={confirmingApply} onOpenChange={setConfirmingApply}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{`Aplicar a configuração do trial "${trialLabel}" ao scanner AO VIVO?`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Isso grava em strategyConfig/current e afeta o próximo scan real (browser + cron).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={doApply}>Aplicar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

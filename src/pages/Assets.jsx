@@ -5,6 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Plus, Trash2, Loader2, CheckCircle2, XCircle, MinusCircle, History, Settings2, Coins, Clock, Activity, Search, ChevronDown, ChevronUp, TrendingUp, Crosshair } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import AddAssetForm from '@/components/assets/AddAssetForm';
 import AssetConfigPanel from '@/components/assets/AssetConfigPanel';
@@ -28,6 +32,7 @@ const STALE_REASON_META = {
 export default function Assets() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [configAsset, setConfigAsset] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [expandedId, setExpandedId] = useState(null);
@@ -394,7 +399,7 @@ export default function Assets() {
                       className="flex items-center gap-1 px-3 py-2 rounded-lg text-10px font-mono font-semibold transition-all hover:opacity-80"
                       style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}
                       disabled={deleteMutation.isPending}
-                      onClick={() => { if (confirm(`Remover ${asset.display_name}?`)) deleteMutation.mutate(asset.id); }}>
+                      onClick={() => setPendingDelete(asset)}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -420,6 +425,30 @@ export default function Assets() {
           {configAsset && <AssetConfigPanel asset={configAsset} onSave={() => { setConfigAsset(null); queryClient.invalidateQueries({ queryKey: ['all-assets'] }); }} />}
         </DialogContent>
       </Dialog>
+
+      {/* Achado da varredura pós-Raio-X, Round 2 (2026-09-27): confirm()
+          nativo quebrava o tema escuro — migrado pro AlertDialog já
+          existente e nunca usado. Texto agora explica que sinais/operações
+          desse ativo são preservados (o próprio deleteMutation acima só
+          apaga MonitoredAsset + AssetState). */}
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover ativo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remover {pendingDelete?.display_name}? Os sinais e operações já registrados para
+              este ativo são preservados (histórico) — só o ativo monitorado é apagado, e essa
+              ação não pode ser desfeita pela interface.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => deleteMutation.mutate(pendingDelete.id)}>
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

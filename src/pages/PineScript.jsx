@@ -3,6 +3,10 @@ import { Link } from 'react-router-dom';
 import { backend } from '@/api/entities';
 import { Save, Copy, RotateCcw, Code2, AlertTriangle, CheckCircle2, Info, Layers, Zap } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 import { savePineConfig, getLocalPineConfig, getPineConfig, syncPineToAssets } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
 
@@ -1026,6 +1030,7 @@ export default function PineScript() {
   const [activeTab, setActiveTab] = useState('editor');
   const [syncStatus, setSyncStatus] = useState(null); // null | 'syncing' | 'synced' | 'error'
   const [parsedConfig, setParsedConfig] = useState(() => getLocalPineConfig());
+  const [confirmingReset, setConfirmingReset] = useState(false);
 
   // Refresh with the Firestore-synced business params (minScore/tp1R/...)
   // once on mount, since getPineConfig() is async (reads strategyConfig).
@@ -1104,11 +1109,11 @@ export default function PineScript() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleReset = () => {
-    if (confirm('Restaurar o NE RF v13.2 padrão? Isso vai sobrescrever as edições.')) {
-      setCode(DEFAULT_PINE);
-      localStorage.setItem('pine_script_code_v12', DEFAULT_PINE);
-    }
+  const handleReset = () => setConfirmingReset(true);
+
+  const doReset = () => {
+    setCode(DEFAULT_PINE);
+    localStorage.setItem('pine_script_code_v12', DEFAULT_PINE);
   };
 
   useEffect(() => {
@@ -1333,6 +1338,25 @@ export default function PineScript() {
           )}
         </div>
       )}
+
+      {/* Achado da varredura pós-Raio-X, Round 2 (2026-09-27): confirm()
+          nativo quebrava o tema escuro — migrado pro AlertDialog já
+          existente e nunca usado. Texto mantido igual (já explicava a
+          consequência) — só troca de container. */}
+      <AlertDialog open={confirmingReset} onOpenChange={setConfirmingReset}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Restaurar padrão?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Restaurar o NE RF v13.2 padrão? Isso vai sobrescrever as edições.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={doReset}>Restaurar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

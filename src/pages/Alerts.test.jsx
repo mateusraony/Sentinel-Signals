@@ -7,7 +7,7 @@
 // dedicado antes.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup, fireEvent } from '@testing-library/react';
+import { screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 import Alerts from './Alerts.jsx';
 
@@ -142,5 +142,43 @@ describe('Alerts — timestamp do card tem contraste maior (Refinamentos)', () =
     await screen.findByText('BTC/USDT');
     const timestamp = screen.getByText(/^\d{2}\/\d{2} \d{2}:\d{2}$/);
     expect(timestamp.style.color).toBe('rgba(255, 255, 255, 0.45)');
+  });
+});
+
+// Achado da varredura pós-Raio-X, Round 2 (2026-09-27): "Descartar todos"
+// usava confirm() nativo (quebra o tema escuro) — migrado pro AlertDialog já
+// existente e nunca usado. Mock próprio (não `makeFakeBackendModule`, cujo
+// `update` não é espionável) pra poder confirmar chamada/não-chamada.
+describe('Alerts — "Descartar todos" usa AlertDialog em vez de confirm() nativo (Round 2 pós-Raio-X)', () => {
+  afterEach(() => {
+    vi.doUnmock('@/api/entities');
+    vi.resetModules();
+  });
+
+  it('REGRESSÃO: diálogo mostra a contagem; Cancelar não chama update; confirmar dispensa todos os visíveis', async () => {
+    const updateMock = vi.fn(async (id, data) => ({ id, ...data }));
+    const signals = [
+      { id: 'e1', asset_id: 'a1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter', price_at_signal: 60000, created_date: new Date().toISOString() },
+      { id: 'e2', asset_id: 'a1', symbol: 'ETHUSDT', timeframe: '1h', signal_type: 'SELL', source: 'range_filter', price_at_signal: 3000, created_date: new Date().toISOString() },
+    ];
+    vi.doMock('@/api/entities', () => ({
+      backend: { entities: { SignalEvent: { list: async () => signals, update: updateMock } } },
+    }));
+    vi.resetModules();
+    const { default: AlertsFresh } = await import('./Alerts.jsx');
+    renderPage(<AlertsFresh />);
+
+    fireEvent.click(await screen.findByText('Descartar todos'));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/2 alertas/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByText('Cancelar'));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(updateMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('Descartar todos'));
+    const dialog2 = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog2).getByText('Descartar todos'));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
   });
 });

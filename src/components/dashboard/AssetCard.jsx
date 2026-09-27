@@ -2,6 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TrendingUp, TrendingDown, Zap, ChevronDown, ChevronUp } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 import { fetch24hStats } from '@/lib/marketDataProvider';
 import { activateSignalManually } from '@/lib/scanner';
 import { logError } from '@/lib/logger';
@@ -206,6 +210,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   const defaultTf = availableTfs.includes('1h') ? '1h' : availableTfs[0] || '1h';
   const [selectedTf, setSelectedTf] = useState(defaultTf);
   const [open, setOpen] = useState(expandAll);
+  const [confirmingActivate, setConfirmingActivate] = useState(false);
   useEffect(() => { setOpen(expandAll); }, [expandAll]);
   const state1h = states?.find(s => s.timeframe === '1h');
   const state4h = states?.find(s => s.timeframe === '4h');
@@ -568,16 +573,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           <button
             onClick={(e) => {
               e.stopPropagation();
-              // O aviso diz a verdade sobre a gestão: qualquer que seja o
-              // sinal que motivou o clique, a operação é gerida pelas regras
-              // da cascata RF 4h (stop ATR×tier do 4h, Time Stop em barras de
-              // 4h) — é a única gestão que o motor sabe aplicar a partir de um
-              // clique. Ver known-risks item 46.5.
-              if (window.confirm(
-                `Ativar operação ${sigSide} em ${asset.display_name}?\n\n`
-                + 'A entrada usa o preço ATUAL de mercado, e a operação será gerida '
-                + 'pelas regras da cascata 4h (stop por ATR/tier, TP1/TP2 e Time Stop).'
-              )) activateMutation.mutate(latestSignal);
+              setConfirmingActivate(true);
             }}
             disabled={activateMutation.isPending}
             className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-11px font-mono font-bold mt-1 transition-all"
@@ -597,6 +593,31 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           detalhes →
         </div>
       </div>
+
+      {/* Achado da varredura pós-Raio-X, Round 2 (2026-09-27): confirm()
+          nativo quebrava o tema escuro — migrado pro AlertDialog já
+          existente e nunca usado. Texto mantido igual (já explicava a
+          consequência) — só troca de container. `onClick` na
+          AlertDialogContent é defensivo (o Portal do Radix já isola o
+          diálogo da árvore DOM do card, então cliques dentro não
+          borbulhariam pro onClick do card mesmo sem isso). */}
+      <AlertDialog open={confirmingActivate} onOpenChange={setConfirmingActivate}>
+        <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{`Ativar operação ${sigSide} em ${asset.display_name}?`}</AlertDialogTitle>
+            <AlertDialogDescription>
+              A entrada usa o preço ATUAL de mercado, e a operação será gerida pelas regras da
+              cascata 4h (stop por ATR/tier, TP1/TP2 e Time Stop).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => activateMutation.mutate(latestSignal)}>
+              {`Ativar ${sigSide}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

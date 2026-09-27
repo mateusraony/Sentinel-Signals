@@ -9,7 +9,7 @@
 // `src/lib/assetHealthcheck.test.js` — aqui só confirmamos a integração/UI.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 import Assets from './Assets.jsx';
 
@@ -158,7 +158,6 @@ describe('Assets — toggle e "Remover" ficam desabilitados durante a mutação 
     let resolveDelete;
     monitoredAssetDeleteMock.mockImplementation(() => new Promise((res) => { resolveDelete = res; }));
     assetStateDeleteManyMock.mockResolvedValue(undefined);
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     const { container } = renderPage(<Assets />);
     await screen.findByText('BTC/USDT');
@@ -166,11 +165,33 @@ describe('Assets — toggle e "Remover" ficam desabilitados durante a mutação 
     expect(removeBtn).not.toBeNull();
 
     fireEvent.click(removeBtn);
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByText('Remover'));
     await waitFor(() => expect(monitoredAssetDeleteMock).toHaveBeenCalledWith('a1'));
     expect(removeBtn.disabled).toBe(true);
 
     resolveDelete({});
     await waitFor(() => expect(removeBtn.disabled).toBe(false));
-    confirmSpy.mockRestore();
+  });
+
+  // Achado da varredura pós-Raio-X, Round 2 (2026-09-27): confirm() nativo
+  // quebrava o tema escuro — migrado pro AlertDialog já existente e nunca
+  // usado (src/components/ui/alert-dialog.jsx).
+  it('REGRESSÃO: "Remover" abre AlertDialog explicando preservação de histórico; Cancelar não chama a mutação', async () => {
+    monitoredAssetListMock.mockResolvedValue([
+      { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN() },
+    ]);
+
+    const { container } = renderPage(<Assets />);
+    await screen.findByText('BTC/USDT');
+    const removeBtn = container.querySelector('button svg.lucide-trash2')?.closest('button');
+
+    fireEvent.click(removeBtn);
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/preservados/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByText('Cancelar'));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(monitoredAssetDeleteMock).not.toHaveBeenCalled();
   });
 });

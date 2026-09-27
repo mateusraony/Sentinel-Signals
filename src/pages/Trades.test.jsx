@@ -15,7 +15,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { screen, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { screen, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -40,7 +40,7 @@ const ACTIVE_OP = {
   created_date: '2026-09-13T09:05:00.000Z',
 };
 
-function mockBackend({ operations, signals }) {
+function mockBackend({ operations, signals, transitionTradeOp }) {
   vi.doMock('@/api/entities', () => ({
     backend: {
       entities: {
@@ -51,7 +51,7 @@ function mockBackend({ operations, signals }) {
           update: async (id, data) => ({ id, ...data }),
         },
       },
-      tradeOps: { transitionTradeOp: async () => ({ applied: false }) },
+      tradeOps: { transitionTradeOp: transitionTradeOp || (async () => ({ applied: false })) },
     },
   }));
   vi.doMock('@/lib/marketDataProvider', () => ({
@@ -330,6 +330,67 @@ describe('Trades — modal de edição (EditModal) usa Dialog acessível (achado
 
     fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+});
+
+// Achado da varredura pós-Raio-X, Round 2 (2026-09-27): Invalidar/Encerrar
+// usavam window.confirm() nativo (quebra o tema escuro) — migrados pro
+// AlertDialog já existente e nunca usado (src/components/ui/alert-dialog.jsx).
+// 1 diálogo compartilhado entre os 2 botões (estado { op, action }) — o
+// 3º teste guarda contra um bug de estado obsoleto (abrir um, cancelar,
+// abrir o outro, texto tem que atualizar).
+describe('Trades — Invalidar/Encerrar usam AlertDialog em vez de confirm() nativo (Round 2 pós-Raio-X)', () => {
+  it('REGRESSÃO: Invalidar abre AlertDialog; Cancelar não chama transitionTradeOp; confirmar chama com INVALIDATED', async () => {
+    const transitionTradeOp = vi.fn(async () => ({ applied: true }));
+    mockBackend({ operations: [ACTIVE_OP], signals: [], transitionTradeOp });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Invalidar' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/mantido como histórico/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByText('Cancelar'));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(transitionTradeOp).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Invalidar' }));
+    const dialog2 = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog2).getByText('Invalidar'));
+    await waitFor(() => expect(transitionTradeOp).toHaveBeenCalledWith(
+      ACTIVE_OP.id, ACTIVE_OP.status, expect.objectContaining({ status: 'INVALIDATED' }), expect.anything()
+    ));
+  });
+
+  it('REGRESSÃO: Encerrar chama transitionTradeOp com CLOSED', async () => {
+    const transitionTradeOp = vi.fn(async () => ({ applied: true }));
+    mockBackend({ operations: [ACTIVE_OP], signals: [], transitionTradeOp });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Encerrar' }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByText('Encerrar'));
+    await waitFor(() => expect(transitionTradeOp).toHaveBeenCalledWith(
+      ACTIVE_OP.id, ACTIVE_OP.status, expect.objectContaining({ status: 'CLOSED' }), expect.anything()
+    ));
+  });
+
+  it('REGRESSÃO: abrir Invalidar, cancelar, abrir Encerrar mostra o texto de Encerrar (sem estado obsoleto)', async () => {
+    mockBackend({ operations: [ACTIVE_OP], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Invalidar' }));
+    let dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/INVALIDATED/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByText('Cancelar'));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Encerrar' }));
+    dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/CLOSED/)).toBeTruthy();
+    expect(within(dialog).queryByText(/INVALIDATED/)).toBeNull();
   });
 });
 

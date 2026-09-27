@@ -8,7 +8,7 @@
 // subtraída agora depende do timeframe do estado exibido.
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -24,9 +24,17 @@ vi.mock('@/lib/marketDataProvider', () => ({
 }));
 vi.mock('@/lib/firebaseClient', () => ({ db: {}, auth: {}, rtdb: null, app: {} }));
 
+// Round 2 pós-Raio-X (2026-09-27): activateMutation chama activateSignalManually
+// direto (não backend.entities) — precisa de mock próprio pra espionar a
+// chamada no teste do botão "Ativar" abaixo.
+const { activateSignalManuallyMock } = vi.hoisted(() => ({ activateSignalManuallyMock: vi.fn() }));
+vi.mock('@/lib/scanner', () => ({ activateSignalManually: activateSignalManuallyMock }));
+
 beforeEach(() => {
   fetchMarkPriceMock.mockReset();
   fetchMarkPriceMock.mockResolvedValue({ markPrice: null, lastFundingRate: null, nextFundingTime: null });
+  activateSignalManuallyMock.mockReset();
+  activateSignalManuallyMock.mockResolvedValue({ created: true });
 });
 afterEach(() => cleanup());
 
@@ -115,6 +123,32 @@ describe('AssetCard — badge LIVE/STALE reflete o dead-man\'s-switch real (acha
       latestSignal,
     });
     screen.getByText(/Ativar BUY agora/i);
+  });
+});
+
+// Achado da varredura pós-Raio-X, Round 2 (2026-09-27): o botão "Ativar"
+// usava window.confirm() nativo (quebra o tema escuro) — migrado pro
+// AlertDialog já existente e nunca usado. Texto mantido igual.
+describe('AssetCard — botão "Ativar" usa AlertDialog em vez de confirm() nativo (Round 2 pós-Raio-X)', () => {
+  it('REGRESSÃO: abre diálogo com o texto da cascata; Cancelar não chama activateSignalManually; confirmar chama', async () => {
+    const latestSignal = { id: 'sig1', signal_type: 'BUY' };
+    renderCard({
+      asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN() },
+      latestSignal,
+    });
+
+    fireEvent.click(screen.getByText(/Ativar BUY agora/i));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/cascata 4h/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByText('Cancelar'));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(activateSignalManuallyMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText(/Ativar BUY agora/i));
+    const dialog2 = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog2).getByText('Ativar BUY'));
+    await waitFor(() => expect(activateSignalManuallyMock).toHaveBeenCalledWith(latestSignal, expect.objectContaining({ id: 'a1' })));
   });
 });
 
