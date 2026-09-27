@@ -6,7 +6,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
  * In-app visual notification for new signals.
  * Appears as a floating toast when a new range_filter signal arrives (< 3min).
  */
-export default function SignalToast({ signals = [] }) {
+export default function SignalToast({ signals = [], assets = [], onSelectAsset }) {
   const [queue, setQueue] = useState([]);
   const seenIds = useRef(new Set());
   // Achado M-5 do Raio-X: a barra de progresso abaixo usa `style` inline
@@ -59,7 +59,11 @@ export default function SignalToast({ signals = [] }) {
   if (!queue.length) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"
+    // Round 5 pós-Raio-X: top-24 (não top-4) pra não sobrepor os botões do
+    // TopBar — TickerBar (40px, em fluxo normal, acima do header) + TopBar
+    // (h-14 = 56px) somam 96px = 6rem no pior caso (scrollY=0 com ticker
+    // populado); TopBar não tem breakpoint que dispense a folga.
+    <div className="fixed top-24 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"
       style={{ maxWidth: 320 }}>
       {queue.map(sig => {
         const isBuy = sig.signal_type === 'BUY';
@@ -68,16 +72,26 @@ export default function SignalToast({ signals = [] }) {
         const borderColor = isBuy ? 'rgba(0,255,128,0.5)' : 'rgba(255,20,120,0.5)';
         const glowColor = isBuy ? 'rgba(0,255,128,0.15)' : 'rgba(255,20,120,0.15)';
         const textColor = isBuy ? '#00ff80' : '#ff1478';
+        const asset = assets.find(a => a.id === sig.asset_id);
 
         return (
           <div key={sig._toastId}
-            className="rounded-xl px-4 py-3 pointer-events-auto animate-in slide-in-from-right-4 fade-in duration-300 motion-reduce:animate-none"
+            className={`rounded-xl px-4 py-3 pointer-events-auto animate-in slide-in-from-right-4 fade-in duration-300 motion-reduce:animate-none${asset ? ' cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring' : ''}`}
             style={{
               background: 'rgba(8,10,18,0.97)',
               border: `1px solid ${borderColor}`,
               boxShadow: `0 0 24px ${glowColor}, 0 4px 20px rgba(0,0,0,0.5)`,
               backdropFilter: 'blur(20px)',
-            }}>
+            }}
+            onClick={() => asset && onSelectAsset?.(asset)}
+            {...(asset ? {
+              tabIndex: 0,
+              'aria-label': `${symbol} — abrir ativo`,
+              onKeyDown: (e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectAsset?.(asset); }
+              },
+            } : {})}>
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <div className="flex items-center justify-center w-7 h-7 rounded-lg shrink-0"
@@ -110,7 +124,7 @@ export default function SignalToast({ signals = [] }) {
                   </Tooltip>
                 </div>
               </div>
-              <button onClick={() => dismiss(sig._toastId)}
+              <button onClick={(e) => { e.stopPropagation(); dismiss(sig._toastId); }}
                 className="shrink-0 p-0.5 rounded hover:bg-white/10 transition-colors">
                 <X className="w-3 h-3 text-muted-foreground" />
               </button>

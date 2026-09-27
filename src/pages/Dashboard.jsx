@@ -157,7 +157,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <SignalToast signals={recentSignals} />
+      <SignalToast signals={recentSignals} assets={assets} onSelectAsset={setSelectedAsset} />
 
       {selectedAsset && (
         <AssetDrawer
