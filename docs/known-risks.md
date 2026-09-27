@@ -29004,5 +29004,94 @@ suite de testes de acessibilidade (`role=img`/`aria-label`/tabela
 `sr-only`) confirmando que a troca de `LineChart` pra `AreaChart` não
 quebrou nada estrutural.
 
-Pendente: Round 5 (`SignalToast` sem `onClick`, sobreposição com
-`TopBar`) — ver `/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.
+Round 5 (último dos 5) implementado a seguir — ver item 246.
+
+## 246. Nova varredura pós-Raio-X (Round 5/5, último): `SignalToast` sem onClick + sobreposição com `TopBar`
+
+Continuação do item 245 (Round 4 mesclado, PR #444) — **fecha os 5 rounds
+da nova varredura pós-Raio-X**. Escopo original (2 achados):
+
+1. `SignalToast` (toast flutuante de sinal novo, canto superior direito,
+   ~7s de vida) não tinha nenhuma forma de abrir o `AssetDrawer` do ativo
+   do sinal — mesma lacuna que A-1 já corrigiu em `RecentAlertsList`,
+   nunca estendida ao toast.
+2. Posição (`top-4 right-4`) sobrepunha os botões do `TopBar.jsx`
+   (Telegram, Chave de Acesso) durante a vida do toast.
+
+1 agente Explore confirmou os 2 achados contra o código atual + 1 agente
+Plan desenhou a implementação. Achado que corrigiu o rascunho original:
+o cálculo de "limpar os 56px do header" estava incompleto —
+`AppLayout.jsx` renderiza `<TickerBar />` **acima** de `<TopBar />` em
+fluxo normal (não fixo); `TickerBar.jsx` (`h-8 my-1` = 40px) só retorna
+`null` quando nenhum ativo tem estado de 1h. Com `scrollY=0` e o ticker
+populado (cenário mais comum — Dashboard recém-carregado, única página
+onde `SignalToast` é montado), a banda ocupada por ticker+header é
+**96px**, não 56px. `TopBar` é `sticky top-0` (some ao rolar), mas um
+toast pode aparecer em qualquer scroll, inclusive logo após o load — o
+pior caso (96px) é o que importa pro fix.
+
+### Implementação
+
+1. **`src/pages/Dashboard.jsx`** (1 linha): `<SignalToast signals={recentSignals} assets={assets} onSelectAsset={setSelectedAsset} />`
+   — reusa exatamente o mesmo par `assets`/`setSelectedAsset` já em
+   escopo pra `RecentAlertsList` (`onSelectAsset={setSelectedAsset}`).
+2. **`src/components/dashboard/SignalToast.jsx`**:
+   - Assinatura ganha `assets = []`/`onSelectAsset`; resolve
+     `const asset = assets.find(a => a.id === sig.asset_id)` por toast.
+   - **Sem `role="button"` na linha do card** — diferente de
+     `RecentAlertsList` (sem elemento interativo interno), este card TEM
+     um `<button>` real (X de dispensar). Mesmo raciocínio já aplicado
+     (revisão do Codex) em `Alerts.jsx`: um role de widget na linha
+     tornaria o botão filho "presentational" pra árvore de
+     acessibilidade. Em vez disso: `onClick={() => asset && onSelectAsset?.(asset)}`
+     sempre presente (no-op sem `asset`), e `tabIndex`/`aria-label`/
+     `onKeyDown` (com guard `e.target !== e.currentTarget` contra
+     bubbling do botão filho) só quando `asset` existe — mesmo guard já
+     usado em `RecentAlertsList`/`Alerts.jsx`.
+   - Botão de dispensar (X) ganha `e.stopPropagation()` no `onClick` pra
+     não abrir o ativo ao dispensar o toast.
+   - Wrapper fixo: `top-4` → `top-24` (6rem = 96px, valor padrão da
+     escala do Tailwind, sem bracket arbitrário) — cobre o pior caso
+     ticker+header. **Sem variante de breakpoint** (diferente do fix do
+     `DebugLogButton`, que precisava de `md:` porque a nav mobile só
+     existe `<md`): o header do `TopBar` é igual em todo breakpoint, uma
+     única classe basta. `z-[9999]` não muda — uma vez eliminada a
+     sobreposição espacial, a ordem de z-index deixa de importar pra
+     essa colisão especificamente.
+   - Decisões de comportamento fixadas: clicar na linha só abre o ativo,
+     **não dispensa** o toast (mesmo padrão de `RecentAlertsList` —
+     nunca remove o próprio item ao clicar); quando `asset` não resolve,
+     a linha fica silenciosamente não-clicável.
+
+### Testes (`SignalToast.test.jsx`, 5 casos novos)
+
+Clique no card chama `onSelectAsset` com o ativo resolvido; card não é
+clicável quando `asset_id` não resolve nenhum ativo carregado (`tabindex`
+nulo, `onSelectAsset` não chamado); clique no X não abre o ativo
+(`stopPropagation`) e ainda dispensa o toast; Enter no card focado abre
+o ativo, mas Enter borbulhando do botão X não dispara 2x; wrapper `.fixed`
+usa `top-24` (não mais `top-4`), preservando `right-4`/`z-[9999]`. Os 3
+casos que dependiam do fix (clique abre ativo, Enter abre ativo, posição)
+foram reproduzidos falhando via `git stash` da mudança de produção antes
+de aceitar — confirmados falhando contra o código pré-fix, depois
+passando com o fix restaurado.
+
+### Verificação
+
+`npm run lint` limpo; `npm test` 2222 passed, 58 skipped, 0 failed (era
+2215 antes desta rodada); `npm run build` ok; `npm run typecheck:ratchet`
+13 erros, teto mantido (não subiu). Revisão cética do diff: só
+`SignalToast.jsx` + `SignalToast.test.jsx` + `Dashboard.jsx` (1 linha)
+tocados; `grep -E "backend\.|scanner|firestore|postgres|useQuery\(|useMutation\("`
+no diff não achou nada novo — mudança 100% presentation/prop-passing.
+Nenhuma mudança em `RecentAlertsList.jsx`, `AssetDrawer.jsx`,
+`TopBar.jsx`, `TickerBar.jsx` ou `AppLayout.jsx`.
+
+Fora de escopo (deliberado, não tocado): reconciliar `SignalToast` com o
+sistema de toast nativo do shadcn (`toast.jsx`); a divergência
+`max-w-6xl`/`max-w-7xl` de outras páginas.
+
+**Fecha os 5 rounds da "nova varredura pós-Raio-X" (visualização +
+humanização) por completo** — Round 1 (item 242, PR #441), Round 2 (item
+243, PR #442), Round 3 (item 244, PR #443), Round 4 (item 245, PR #444),
+Round 5 (este item, PR a abrir).

@@ -920,16 +920,26 @@ completo de cada round em `docs/known-risks.md` item 242 em diante.
   do usuário). Os 2 gráficos de equity de `Backtest.jsx` ganharam
   Area+gradiente+cor-por-sinal+`ReferenceLine`, replicando o padrão já
   em produção de `PnLChart.jsx`. Ver `docs/known-risks.md` item 245.
-- [ ] **Round 5 (pequeno) — pendente.** `SignalToast.jsx` sem `onClick`
-  pra abrir o `AssetDrawer` (mesma lacuna que A-1 corrigiu em
-  `RecentAlertsList`) + reposicionar pra não sobrepor os botões do
-  `TopBar.jsx`.
+- [x] **Round 5 (pequeno, último dos 5) — fechado.** `SignalToast.jsx`
+  ganhou `onClick`/`onSelectAsset` pra abrir o `AssetDrawer` (mesma
+  lacuna que A-1 corrigiu em `RecentAlertsList`) — reusa `assets`/
+  `setSelectedAsset` já em escopo em `Dashboard.jsx`; sem `role="button"`
+  na linha (tem um `<button>` real de dispensar dentro, mesmo raciocínio
+  já aplicado em `Alerts.jsx`). Wrapper reposicionado de `top-4` pra
+  `top-24` — achado da investigação: o cálculo original ("limpar os 56px
+  do header") estava incompleto, `TickerBar.jsx` (40px) fica acima do
+  `TopBar.jsx` (56px) em fluxo normal, pior caso real é 96px. Ver
+  `docs/known-risks.md` item 246.
 
 **Fora de escopo, não corrigir sem confirmação explícita do usuário**:
 reconciliar os 2 sistemas de toast independentes (shadcn `toast.jsx` vs.
 `SignalToast.jsx` customizado) — decisão de arquitetura, não polimento;
 `max-w-6xl`/`max-w-5xl` em `Settings.jsx`/`Verification.jsx` vs.
 `max-w-7xl` no resto — pode ser intencional (formulário de coluna única).
+
+**Os 5 rounds da "nova varredura pós-Raio-X" (visualização + humanização)
+estão fechados por completo** — Round 1 (PR #441), Round 2 (PR #442),
+Round 3 (PR #443), Round 4 (PR #444), Round 5 (PR a abrir).
 
 ## Refinamentos (seção E, 2026-09-26): último bloco do Raio-X — fecha o relatório original por completo
 
