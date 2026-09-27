@@ -52,3 +52,21 @@ describe('AssetDrawer — "Sinais Recentes" tem rótulos inline (Refinamentos)',
     expect(screen.getByText(/Confluência de RF \+ estrutura SMC/)).toBeTruthy();
   });
 });
+
+// Achado da varredura pós-Raio-X, Round 3 (2026-09-27): "Nenhuma operação
+// registrada."/"Nenhum sinal registrado." não diziam quando algo apareceria
+// — beco sem saída (é uma gaveta por-ativo, sem filtro pra limpar nem outra
+// tela pra linkar, então a ação certa é reassurance textual).
+describe('AssetDrawer — empty states de Operações/Sinais explicam quando algo vai aparecer (Round 3 pós-Raio-X)', () => {
+  it('REGRESSÃO: sem operações, mostra reassurance em vez de só "Nenhuma operação registrada."', async () => {
+    renderDrawer({ signals: [], tradeOps: [] });
+    await screen.findByText('BTC/USDT');
+    expect(screen.getByText(/Nenhuma operação registrada ainda — abre aqui quando o motor confirmar um sinal/)).toBeTruthy();
+  });
+
+  it('REGRESSÃO: sem sinais, mostra reassurance em vez de só "Nenhum sinal registrado."', async () => {
+    renderDrawer({ signals: [], tradeOps: [] });
+    await screen.findByText('BTC/USDT');
+    expect(screen.getByText(/Nenhum sinal registrado ainda — aparece aqui quando o scan encontrar uma oportunidade/)).toBeTruthy();
+  });
+});

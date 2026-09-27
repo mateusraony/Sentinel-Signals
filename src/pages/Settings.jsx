@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { getPineConfig, getLocalPineConfig } from '@/lib/pineParser';
-import { logInfo } from '@/lib/logger';
+import { logInfo, logError } from '@/lib/logger';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { SlidersHorizontal, Save, CheckCircle2, RotateCcw, AlertTriangle, BarChart3, ShieldAlert, Zap } from 'lucide-react';
@@ -158,6 +158,7 @@ export default function Settings() {
       setDirty(new Set());
       setSaveStatus('saved');
     } catch (e) {
+      logError('Settings', 'Falha ao salvar ajustes finos', { error: e.message });
       setSaveStatus('error');
     } finally {
       setTimeout(() => setSaveStatus(null), 3000);
@@ -214,6 +215,15 @@ export default function Settings() {
             </button>
           </div>
         </div>
+
+        {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): o erro
+            desaparecia em 3s sem dizer por quê nem o que fazer — mesmo
+            padrão de causa/reassurance já usado em QueryErrorState.jsx. */}
+        {saveStatus === 'error' && (
+          <p className="text-9px font-mono -mt-1" style={{ color: '#ff9f43' }}>
+            Não foi possível salvar — verifique sua conexão e tente de novo.
+          </p>
+        )}
 
         <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg text-10px font-mono" style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />

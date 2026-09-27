@@ -61,7 +61,9 @@ export default function AssetDrawer({ asset, signals, tradeOps, tradeOpsUnavaila
             {assetOps.length === 0 && tradeOpsUnavailable ? (
               <p className="text-10px font-mono" style={{ color: '#ff9f43' }}>Não foi possível carregar as operações agora — falha ao atualizar.</p>
             ) : assetOps.length === 0 ? (
-              <p className="text-10px font-mono text-muted-foreground">Nenhuma operação registrada.</p>
+              <p className="text-10px font-mono text-muted-foreground">
+                Nenhuma operação registrada ainda — abre aqui quando o motor confirmar um sinal para este ativo.
+              </p>
             ) : (
               <div className="space-y-2">
                 {assetOps.map(op => {
@@ -120,7 +122,9 @@ export default function AssetDrawer({ asset, signals, tradeOps, tradeOpsUnavaila
             {assetSignals.length === 0 && signalsUnavailable ? (
               <p className="text-10px font-mono" style={{ color: '#ff9f43' }}>Não foi possível carregar os sinais agora — falha ao atualizar.</p>
             ) : assetSignals.length === 0 ? (
-              <p className="text-10px font-mono text-muted-foreground">Nenhum sinal registrado.</p>
+              <p className="text-10px font-mono text-muted-foreground">
+                Nenhum sinal registrado ainda — aparece aqui quando o scan encontrar uma oportunidade neste ativo.
+              </p>
             ) : (
               <div className="space-y-1.5">
                 {assetSignals.map(sig => {

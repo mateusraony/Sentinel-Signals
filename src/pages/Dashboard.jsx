@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { backend } from '@/api/entities';
 import { Bell, Coins, TrendingUp, TrendingDown, Target, Clock, Search, ArrowUpDown, Swords, ChevronDown, ChevronUp } from 'lucide-react';
 import AssetCard from '@/components/dashboard/AssetCard';
@@ -383,7 +384,14 @@ export default function Dashboard() {
                 <div className="glass-card rounded-xl p-12 text-center">
                   <Coins className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
                   <p className="text-muted-foreground text-sm">Nenhum ativo monitorado.</p>
-                  <p className="text-xs text-muted-foreground mt-1">Vá em "Ativos" para adicionar pares.</p>
+                  {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27):
+                      beco sem saída real — arquivo não tinha nenhum Link,
+                      só texto dizendo pra "ir em Ativos" sem link nenhum.
+                      Texto do link não pode ser "Ativos" puro — colide com
+                      o <h2>Ativos</h2> do cabeçalho da seção mais abaixo. */}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    <Link to="/assets" className="text-foreground underline hover:no-underline">Ir para Ativos →</Link> para adicionar pares.
+                  </p>
                 </div>
               ) : displayAssets.length === 0 ? (
                 statesUnavailable && filterTf !== 'all' ? (

@@ -39,7 +39,7 @@ export default function AddAssetForm({ onSuccess }) {
       else setError(`"${symbol}" não encontrado na Binance`);
     } catch (err) {
       logError('AddAssetForm', `Falha ao validar símbolo ${symbol}`, { error: err.message });
-      setError('Falha ao validar símbolo — tente novamente.');
+      setError('Falha ao validar símbolo — verifique sua conexão e tente de novo.');
     } finally {
       setValidating(false);
     }
@@ -74,7 +74,7 @@ export default function AddAssetForm({ onSuccess }) {
       onSuccess();
     } catch (err) {
       logError('AddAssetForm', `Falha ao adicionar ativo ${sym}`, { error: err.message });
-      setError('Falha ao adicionar ativo — tente novamente.');
+      setError('Falha ao adicionar ativo — verifique sua conexão e tente de novo.');
     } finally {
       setSaving(false);
     }

@@ -21,6 +21,11 @@ import Sidebar from './Sidebar.jsx';
 // `deleteMany` precisa ser vi.fn() (não uma arrow plana) pra poder ser
 // espionado nos testes de "Limpar Logs" abaixo (Round 2 pós-Raio-X).
 const deleteManyMock = vi.fn(async () => {});
+// Espiona toast() pro teste do fallback de mensagem (Round 3 pós-Raio-X) —
+// sem precedente no projeto pra renderizar <Toaster/> de verdade, então
+// verificamos os args da chamada em vez do DOM.
+const toastMock = vi.fn();
+vi.mock('@/components/ui/use-toast', () => ({ toast: (...args) => toastMock(...args) }));
 vi.mock('@/api/entities', () => ({
   backend: { entities: { SystemLog: { deleteMany: (...args) => deleteManyMock(...args) } } },
 }));
@@ -36,7 +41,7 @@ beforeEach(() => {
   mediaQueryList = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() };
   window.matchMedia = vi.fn(() => mediaQueryList);
 });
-afterEach(() => { cleanup(); deleteManyMock.mockClear(); });
+afterEach(() => { cleanup(); deleteManyMock.mockClear(); toastMock.mockClear(); });
 
 const CORE_LABELS = ['Dashboard', 'Trades', 'Ativos', 'Alertas', 'Histórico'];
 const MORE_LABELS = ['Verificação', 'Logs', 'Pine Script', 'Backtest', 'Ajustes', 'Revisor', 'Relatório'];
@@ -216,5 +221,29 @@ describe('Sidebar — "Limpar Logs" usa AlertDialog em vez de confirm() nativo (
     const dialog2 = screen.getByRole('alertdialog');
     fireEvent.click(within(dialog2).getByText('Limpar logs'));
     expect(deleteManyMock).toHaveBeenCalledWith({});
+  });
+});
+
+// Achado da varredura pós-Raio-X, Round 3 (2026-09-27): o fallback do toast
+// de erro dizia "Falha inesperada — tente novamente." sem explicar causa
+// provável — mesmo padrão de causa/reassurance já usado em
+// QueryErrorState.jsx.
+describe('Sidebar — toast de erro do "Limpar Logs" explica causa provável (Round 3 pós-Raio-X)', () => {
+  it('REGRESSÃO: sem e.message, o toast usa "verifique sua conexão e tente de novo"', async () => {
+    deleteManyMock.mockRejectedValueOnce(new Error());
+    const { container } = render(
+      <MemoryRouter initialEntries={['/trades']}>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    const clearBtn = container.querySelector('button svg.lucide-trash2')?.closest('button');
+
+    fireEvent.click(clearBtn);
+    const dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByText('Limpar logs'));
+
+    await vi.waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
+      description: 'Não foi possível limpar os logs — verifique sua conexão e tente de novo.',
+    })));
   });
 });

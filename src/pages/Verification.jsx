@@ -308,6 +308,18 @@ export default function Verification() {
         <div className="glass-card rounded-xl p-12 text-center">
           <ClipboardCheck className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm">Nenhuma tarefa de verificação encontrada.</p>
+          {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): filtro
+              vazio sem NENHUM mecanismo de limpar em todo o arquivo — pior
+              que TradeHistory/Alerts, que ao menos já tinham um botão em
+              outro lugar da tela. `statusFilter` começa em 'pending' (não
+              'all'), então já conta como filtro ativo por padrão. */}
+          {(search || statusFilter !== 'all' || priorityFilter !== 'all') && (
+            <button onClick={() => { setSearch(''); setStatusFilter('all'); setPriorityFilter('all'); }}
+              className="mt-3 text-9px font-mono px-2.5 py-1.5 rounded-lg transition-all"
+              style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
+              ✕ Limpar filtros
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-3">

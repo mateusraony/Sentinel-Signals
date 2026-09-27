@@ -175,7 +175,7 @@ function ClearLogsButton() {
       await backend.entities.SystemLog.deleteMany({});
     } catch (e) {
       logError('Sidebar', 'Falha ao limpar logs', { error: e.message });
-      toast({ title: 'Erro ao limpar logs', description: e.message || 'Falha inesperada — tente novamente.', variant: 'destructive' });
+      toast({ title: 'Erro ao limpar logs', description: e.message || 'Não foi possível limpar os logs — verifique sua conexão e tente de novo.', variant: 'destructive' });
     } finally {
       setClearing(false);
     }

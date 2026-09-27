@@ -887,10 +887,20 @@ completo de cada round em `docs/known-risks.md` item 242 em diante.
   o próprio `alert-dialog.jsx` causou regressão de typecheck (13→68)
   por faltar anotações JSDoc que `dialog.jsx` já tinha — corrigido no
   mesmo PR. Ver `docs/known-risks.md` item 243.
-- [ ] **Round 3 (médio) — pendente.** Mensagens de erro genéricas sem
-  causa/próximo passo (padrão `QueryErrorState.jsx`) + empty states sem
-  ação seguinte (padrão `RecentAlertsList.jsx`) + filtro-vazio sem
-  botão "limpar filtro" visível.
+- [x] **Round 3 (médio) — fechado.** Mensagens de erro genéricas sem
+  causa/próximo passo (padrão `QueryErrorState.jsx`): `Settings.jsx`
+  (+ `logError`), `Sidebar.jsx`/`AddAssetForm.jsx`/
+  `AssetConfigPanel.jsx` (texto unificado "verifique sua conexão e
+  tente de novo"). Empty states sem ação seguinte (padrão
+  `RecentAlertsList.jsx`): `Dashboard.jsx` ganhou `<Link>` pra
+  `/assets` (cuidado: texto do link não pode ser "Ativos" nu — colide
+  com o `<h2>` da seção mais abaixo); `AssetDrawer.jsx` ganhou
+  reassurance textual nos 2 empty states por ativo (sem filtro/link
+  aplicável). Filtro-vazio sem botão "limpar filtro" visível:
+  `TradeHistory.jsx`/`Alerts.jsx` ganharam botão inline reusando o
+  handler já existente; `Verification.jsx` foi achado NOVO (não tinha
+  NENHUM mecanismo de limpar filtro, pior que os outros 2) e recebeu o
+  mesmo tratamento. Ver `docs/known-risks.md` item 244.
 - [ ] **Round 4 (maior/mais arriscado) — pendente.** Extrair
   `SummaryCard`/`MetricCard` (5 cópias quase idênticas em 5 arquivos)
   num componente único; unificar faixas de cor de Win Rate/Drawdown/
