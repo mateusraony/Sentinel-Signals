@@ -231,3 +231,22 @@ describe('Alerts — "Descartar todos" usa AlertDialog em vez de confirm() nativ
     expect(updateMock).not.toHaveBeenCalledWith('e3', expect.anything());
   });
 });
+
+// Achado da varredura pós-Raio-X, Round 3 (2026-09-27): o botão "Limpar" já
+// existia no topo, mas não bem perto do texto do empty state filtrado. Fix:
+// versão inline dentro do próprio empty state, reusando o mesmo handler.
+describe('Alerts — "Limpar filtros" aparece junto do empty state filtrado (Round 3 pós-Raio-X)', () => {
+  it('REGRESSÃO: com filtro ativo e lista vazia, botão de limpar aparece perto do texto e limpa a busca', async () => {
+    estadoBackend.populated = true;
+    renderPage(<Alerts />);
+
+    const search = await screen.findByPlaceholderText('Buscar símbolo...');
+    fireEvent.change(search, { target: { value: 'NADAQUEEXISTA' } });
+
+    await screen.findByText('Nenhum alerta com esses filtros.');
+    fireEvent.click(screen.getByText('Limpar filtros'));
+
+    await waitFor(() => expect(screen.queryByText('Nenhum alerta com esses filtros.')).toBeNull());
+    expect(search.value).toBe('');
+  });
+});

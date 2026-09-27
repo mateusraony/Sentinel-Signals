@@ -679,6 +679,17 @@ export default function TradeHistory() {
         <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.6)', border: '1px solid rgba(255,255,255,0.05)' }}>
           <History className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm">Nenhum trade encontrado com esses filtros.</p>
+          {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): o botão
+              "✕ Limpar" já existia, mas 49 linhas/2 blocos de JSX longe
+              deste texto — fácil de não notar. Botão inline reusa o mesmo
+              handler, só aparece quando há filtro ativo de verdade. */}
+          {(search || filterTf !== 'all' || filterSide !== 'all' || filterResult !== 'all' || filterDateFrom || filterDateTo || filterMinPnl || filterMaxPnl) && (
+            <button onClick={() => { setSearch(''); setFilterTf('all'); setFilterSide('all'); setFilterResult('all'); setFilterDateFrom(''); setFilterDateTo(''); setFilterMinPnl(''); setFilterMaxPnl(''); }}
+              className="mt-3 text-9px font-mono px-2.5 py-1.5 rounded-lg transition-all"
+              style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
+              ✕ Limpar filtros
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-2">

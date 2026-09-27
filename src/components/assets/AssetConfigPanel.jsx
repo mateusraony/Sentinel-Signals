@@ -97,7 +97,7 @@ export default function AssetConfigPanel({ asset, onSave }) {
       onSave();
     } catch (err) {
       logError('AssetConfigPanel', `Falha ao salvar configuração do ativo ${asset.id}`, { error: err.message });
-      setErrors(['Falha ao salvar configuração — tente novamente.']);
+      setErrors(['Falha ao salvar configuração — verifique sua conexão e tente de novo.']);
     } finally {
       setSaving(false);
     }

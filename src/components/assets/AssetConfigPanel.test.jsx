@@ -6,7 +6,7 @@
 // explicando o termo. Componente não tinha teste dedicado antes.
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { afterEach } from 'vitest';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient, makeFakeBackendModule } from '@/pages/__fixtures__/renderPage.jsx';
@@ -54,5 +54,31 @@ describe('AssetConfigPanel — RSI/MACD e badges RF/SMC/MACD/EMA Cross/RSI têm 
     expect(macdBadge?.getAttribute('tabindex')).toBe('0');
     expect(rsiBadge?.getAttribute('tabindex')).toBe('0');
     expect(screen.getByText('🟢 BUY').closest('button')?.getAttribute('tabindex')).toBeNull();
+  });
+});
+
+// Achado da varredura pós-Raio-X, Round 3 (2026-09-27): erro genérico
+// "tente novamente" sem explicar causa provável — mesmo padrão de
+// causa/reassurance já usado em QueryErrorState.jsx.
+describe('AssetConfigPanel — erro ao salvar explica causa provável (Round 3 pós-Raio-X)', () => {
+  afterEach(() => { vi.doUnmock('@/api/entities'); vi.resetModules(); });
+
+  it('REGRESSÃO: mostra "verifique sua conexão e tente de novo" quando o save falha', async () => {
+    vi.doMock('@/api/entities', () => ({
+      backend: { entities: { MonitoredAsset: { update: vi.fn(async () => { throw new Error('network down'); }) } } },
+    }));
+    vi.resetModules();
+    const { default: AssetConfigPanelFresh } = await import('./AssetConfigPanel.jsx');
+    const client = makeTestQueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <AssetConfigPanelFresh asset={ASSET} onSave={vi.fn()} />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByText('Salvar Configurações'));
+    await waitFor(() => expect(screen.getByText(/verifique sua conexão e tente de novo/)).toBeTruthy());
   });
 });

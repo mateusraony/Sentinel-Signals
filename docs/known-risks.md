@@ -28824,3 +28824,84 @@ Pendente: Rounds 3 (mensagens de erro/empty states mais humanos), 4
 (maior/mais arriscado — unificar `SummaryCard`/cores de métrica) e 5
 (`SignalToast` sem `onClick`, sobreposição com `TopBar`) — ver
 `/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.
+
+## 244. Nova varredura pós-Raio-X (Round 3/5): mensagens de erro e empty states mais humanos
+
+Continuação do item 243 (Round 2 mesclado). Round 3, do mesmo plano:
+duas sub-categorias do mesmo problema (falta de causa provável ou de
+próximo passo), resolvidas reaproveitando padrões já validados no
+app (`QueryErrorState.jsx`, `RecentAlertsList.jsx`). 2 agentes Explore
+re-verificaram os ~13 sites originalmente listados no plano contra o
+código ATUAL antes de implementar (várias linhas tinham mudado desde
+o levantamento por causa das rodadas anteriores) — `MonthlyReport.jsx`
+e `Backtest.jsx` foram confirmados **já adequados** (guidance text +
+seletor visível por perto) e ficaram fora do escopo.
+
+### Erros genéricos sem causa/reassurance
+
+- **`Settings.jsx`** — erro de salvar sumia em 3s sem dizer o quê
+  fazer. Adicionado `logError` (`@/lib/logger`) no catch + texto
+  "Não foi possível salvar — verifique sua conexão e tente de novo."
+  abaixo do botão.
+- **`Sidebar.jsx`** (toast do "Limpar Logs"), **`AddAssetForm.jsx`**
+  (2 sites: validar símbolo + salvar) e **`AssetConfigPanel.jsx`** —
+  os 4 repetiam literalmente "Falha ao X — tente novamente" sem causa
+  provável; unificados para "...— verifique sua conexão e tente de
+  novo." (mesmo texto nos 4, mesma causa mais provável de falha numa
+  chamada de rede). `AddAssetForm.jsx` não tinha nenhum teste
+  dedicado — criado `AddAssetForm.test.jsx` novo.
+
+### Empty states sem próxima ação
+
+- **`Dashboard.jsx`** — tela que um usuário novo vê primeiro; o empty
+  state de "Nenhum ativo monitorado" era um beco sem saída, sem link
+  pra `/assets`. Adicionado `<Link to="/assets">`. **Cuidado
+  descoberto durante a implementação**: o texto do link não pode ser
+  a palavra nua "Ativos" — colide com o `<h2>Ativos</h2>` do
+  cabeçalho de seção mais abaixo na mesma página, e ~4 testes
+  pré-existentes usam `getByText('Ativos')`/`findByText('Ativos')`
+  (que lança em caso de múltiplos matches). Texto final: "Ir para
+  Ativos →", e o teste novo usa
+  `getByRole('link', { name: /Ir para Ativos/ })` para não repetir o
+  risco de colisão no futuro.
+- **`AssetDrawer.jsx`** — os 2 empty states por ativo (Operações e
+  Sinais) diziam só "Nenhuma operação/sinal registrada(o)." sem dizer
+  quando algo apareceria. Sem filtro pra limpar nem outra página pra
+  linkar (é um painel de detalhe por ativo) — fix foi só reassurance
+  textual: "...abre aqui quando o motor confirmar um sinal para este
+  ativo." / "...aparece aqui quando o scan encontrar uma oportunidade
+  neste ativo."
+- **`TradeHistory.jsx`** e **`Alerts.jsx`** — o filtro que zera a
+  lista já tinha um botão "Limpar"/"✕ Limpar" existente, mas longe do
+  texto do empty state (topo da página). Adicionado um botão inline
+  "✕ Limpar filtros"/"Limpar filtros" dentro do próprio bloco de
+  empty state, reusando o mesmo handler já existente (nenhuma lógica
+  nova), condicionado à mesma checagem de "algum filtro ativo" já
+  usada pelo botão distante.
+- **`Verification.jsx`** — achado NOVO, fora da lista original do
+  plano: o arquivo não tinha **nenhum** mecanismo de limpar filtro em
+  lugar nenhum (pior que `TradeHistory.jsx`/`Alerts.jsx`, que ao menos
+  já tinham um botão distante). Como `statusFilter` tem default
+  `'pending'` (não `'all'`), a condição "há filtro ativo" já é
+  verdadeira por padrão ao carregar a página — o botão aparece sempre
+  que a busca/`statusFilter`/`priorityFilter` não estiverem todos no
+  estado neutro. Mesmo padrão dos 2 itens acima: botão inline dentro
+  do bloco de empty state, handler novo (`setSearch('')` +
+  `setStatusFilter('all')` + `setPriorityFilter('all')`), sem tocar em
+  lógica de negócio.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2189 testes, 0 falhas, 58 pulados; teto de
+typecheck em 13, sem mudança). `git diff --stat` só nos 9 arquivos de
+produção + 9 de teste + 1 teste novo esperados. Grep do diff por
+`backend\.entities\.\w+\.(create|update|delete|set)\(` e por
+`useQuery\(|useMutation\(` em linhas novas (`^\+`) → ambos vazios,
+confirmando que a rodada ficou 100% em texto/JSX de apresentação, sem
+nenhuma mutação ou query nova.
+
+Pendente: Rounds 4 (maior/mais arriscado — unificar
+`SummaryCard`/cores de métrica) e 5 (`SignalToast` sem `onClick`,
+sobreposição com `TopBar`) — ver
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.

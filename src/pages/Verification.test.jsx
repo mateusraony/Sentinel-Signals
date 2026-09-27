@@ -298,3 +298,25 @@ describe('Verification — botões OK/Pular ficam desabilitados durante a mutaç
     await waitFor(() => expect(okButton.disabled).toBe(false));
   });
 });
+
+// Achado da varredura pós-Raio-X, Round 3 (2026-09-27): filtro vazio sem
+// NENHUM mecanismo de limpar em todo o arquivo — pior que TradeHistory/
+// Alerts, que ao menos já tinham um botão em outro lugar da tela.
+describe('Verification — "Limpar filtros" aparece junto do empty state filtrado (Round 3 pós-Raio-X)', () => {
+  it('REGRESSÃO: com busca sem resultado, botão de limpar aparece perto do texto e limpa a busca', async () => {
+    verificationTaskFilterMock.mockResolvedValue([TASK]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+
+    renderPage(<Verification />);
+
+    const search = await screen.findByPlaceholderText('Buscar símbolo...');
+    fireEvent.change(search, { target: { value: 'NADAQUEEXISTA' } });
+
+    await screen.findByText('Nenhuma tarefa de verificação encontrada.');
+    fireEvent.click(screen.getByText('✕ Limpar filtros'));
+
+    await waitFor(() => expect(screen.queryByText('Nenhuma tarefa de verificação encontrada.')).toBeNull());
+    expect(search.value).toBe('');
+  });
+});

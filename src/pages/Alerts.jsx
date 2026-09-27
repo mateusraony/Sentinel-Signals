@@ -210,6 +210,16 @@ export default function Alerts() {
         <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <Bell className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-20" />
           <p className="text-muted-foreground text-sm">Nenhum alerta com esses filtros.</p>
+          {/* Achado da varredura pós-Raio-X, Round 3 (2026-09-27): botão
+              "Limpar" já existia no topo, mas não bem perto deste texto —
+              versão inline reusa o mesmo handler. */}
+          {hasActiveFilters && (
+            <button onClick={() => { setSearch(''); setFilterSource('all'); setFilterPriority('all'); setFilterType('all'); }}
+              className="mt-3 text-9px font-mono px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 transition-all"
+              style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
+              <X className="w-3 h-3" />Limpar filtros
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-1.5">

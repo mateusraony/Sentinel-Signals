@@ -8,7 +8,7 @@
 // Componente não tinha teste dedicado antes.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, cleanup } from '@testing-library/react';
+import { screen, cleanup, fireEvent } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 import Settings from './Settings.jsx';
 
@@ -22,13 +22,20 @@ vi.mock('@/lib/pineParser', () => ({
   getLocalPineConfig: () => CONFIG,
 }));
 
+const strategyConfigSetMock = vi.fn(async () => undefined);
 vi.mock('@/api/entities', () => ({
   backend: {
     entities: {
       MonitoredAsset: { list: vi.fn(async () => []) },
-      StrategyConfig: { set: vi.fn(async () => undefined) },
+      StrategyConfig: { set: (...args) => strategyConfigSetMock(...args) },
     },
   },
+}));
+
+const logErrorMock = vi.fn();
+vi.mock('@/lib/logger', () => ({
+  logInfo: vi.fn(),
+  logError: (...args) => logErrorMock(...args),
 }));
 
 // O slider do Radix (@radix-ui/react-use-size) exige ResizeObserver em
@@ -37,7 +44,7 @@ beforeEach(() => {
   globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
 });
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); strategyConfigSetMock.mockClear(); logErrorMock.mockClear(); });
 
 describe('Settings — aviso de alterações instantâneas linka pro Pine Script (achado M-12)', () => {
   it('REGRESSÃO: o aviso tem um link pra /pine, além do já existente pro Backtest', async () => {
@@ -60,5 +67,22 @@ describe('Settings — seção "Configuração Ativa" removida (Refinamentos)', 
 
     await screen.findByRole('link', { name: 'Pine Script' });
     expect(screen.queryByText('Configuração Ativa (lida pelo scanner):')).toBeNull();
+  });
+});
+
+// Achado da varredura pós-Raio-X, Round 3 (2026-09-27): o erro de salvar
+// desaparecia em 3s sem dizer por quê nem o que fazer, e sem nenhum log
+// (arquivo não importava logError). Fix: causa provável + reassurance
+// (mesmo padrão de QueryErrorState.jsx) + logError.
+describe('Settings — erro ao salvar explica causa provável e é logado (Round 3 pós-Raio-X)', () => {
+  it('REGRESSÃO: mostra "verifique sua conexão" e chama logError quando o save falha', async () => {
+    strategyConfigSetMock.mockRejectedValueOnce(new Error('network down'));
+    renderPage(<Settings />);
+
+    fireEvent.click(await screen.findByText('Restaurar'));
+    fireEvent.click(screen.getByText('Salvar & Sincronizar'));
+
+    await screen.findByText(/verifique sua conexão e tente de novo/);
+    expect(logErrorMock).toHaveBeenCalledWith('Settings', 'Falha ao salvar ajustes finos', { error: 'network down' });
   });
 });

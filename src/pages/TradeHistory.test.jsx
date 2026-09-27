@@ -13,7 +13,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup, fireEvent } from '@testing-library/react';
+import { screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 
 // PnLChart (Recharts ResponsiveContainer) renderiza sempre que houver >1
@@ -273,5 +273,25 @@ describe('TradeHistory — campo de busca não corta o placeholder e está em po
     expect(search.className).not.toMatch(/\bw-28\b/);
     expect(search.className).toMatch(/\bw-40\b/);
     expect(screen.queryByPlaceholderText('Symbol...')).toBeNull();
+  });
+});
+
+// Achado da varredura pós-Raio-X, Round 3 (2026-09-27): o botão "✕ Limpar"
+// já existia, mas 49 linhas/2 blocos de JSX longe do texto de empty state
+// filtrado — fácil de não notar. Fix: versão inline no próprio empty state.
+describe('TradeHistory — "Limpar filtros" aparece junto do empty state filtrado (Round 3 pós-Raio-X)', () => {
+  it('REGRESSÃO: com filtro ativo e lista vazia, botão de limpar aparece perto do texto e limpa a busca', async () => {
+    mockBackend([OP_COM_SNAPSHOT]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+
+    const search = await screen.findByPlaceholderText('Buscar ativo...');
+    fireEvent.change(search, { target: { value: 'NADAQUEEXISTA' } });
+
+    await screen.findByText('Nenhum trade encontrado com esses filtros.');
+    fireEvent.click(screen.getByText('✕ Limpar filtros'));
+
+    await waitFor(() => expect(screen.queryByText('Nenhum trade encontrado com esses filtros.')).toBeNull());
+    expect(search.value).toBe('');
   });
 });

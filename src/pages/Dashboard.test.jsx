@@ -169,3 +169,18 @@ describe('Dashboard — reorganização em grupos (achados M-4/M-13/M-15)', () =
     }
   });
 });
+
+// Achado da varredura pós-Raio-X, Round 3 (2026-09-27): com zero ativos
+// monitorados, o empty state só tinha texto ("Vá em 'Ativos'...") sem
+// nenhum link — arquivo inteiro não importava Link. Componente não tinha
+// teste dedicado a esse empty state antes.
+describe('Dashboard — empty state de "Nenhum ativo monitorado" tem link pra /assets (Round 3 pós-Raio-X)', () => {
+  it('REGRESSÃO: "Ativos" dentro do texto do empty state é um link pra /assets', async () => {
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+
+    await screen.findByText('Nenhum ativo monitorado.');
+    const link = screen.getByRole('link', { name: /Ir para Ativos/ });
+    expect(link.getAttribute('href')).toBe('/assets');
+  });
+});
