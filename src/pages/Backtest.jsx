@@ -280,7 +280,17 @@ function ReportBody({ report, hideCascadeTable = false }) {
                 <Pie data={outcomePie} dataKey="value" nameKey="name" innerRadius={45} outerRadius={80} paddingAngle={2}>
                   {outcomePie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                 </Pie>
-                <Tooltip contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }} />
+                {/* Achado da varredura pós-Raio-X (2026-09-27): tooltip de
+                    pizza mostrava só a contagem bruta, sem % do total —
+                    justamente o dado que mais importa numa pizza. */}
+                <Tooltip
+                  contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
+                  formatter={(value, name) => {
+                    const total = outcomePie.reduce((s, d) => s + d.value, 0);
+                    const numValue = Number(value);
+                    return [`${value} (${total > 0 ? Math.round(numValue / total * 100) : 0}%)`, name];
+                  }}
+                />
                 <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'monospace' }} />
               </PieChart>
             </ResponsiveContainer>

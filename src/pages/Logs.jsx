@@ -233,7 +233,7 @@ export default function Logs() {
                       o payload. */}
                   {log.details && (
                     <details className="mt-1">
-                      <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.45)' }}>ver payload →</summary>
+                      <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.45)' }}>ver detalhes →</summary>
                       <pre className="mt-1 text-10px overflow-x-auto py-1 rounded" style={{ color: 'rgba(0,255,128,0.6)', background: 'rgba(0,0,0,0.3)', padding: '4px 8px' }}>
                         {JSON.stringify(log.details, null, 2)}
                       </pre>

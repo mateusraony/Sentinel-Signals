@@ -408,7 +408,14 @@ function DaySummary({ ops }) {
           { label: '🏆 Win', value: wins, color: '#00ff80' },
           { label: '🔄 BE', value: be, color: '#ffd166' },
           { label: '🛑 Loss', value: losses, color: '#ff1478' },
-          { label: 'Win Rate', value: `${wr}%`, color: wr >= 50 ? '#00ff80' : '#ff9f43' },
+          // Achado da varredura pós-Raio-X (2026-09-27): mesma classe de bug
+          // do M-16 (docs/known-risks.md) — "0%" por falta de operação
+          // fechada no dia não é o mesmo que "0% de acerto", mas usava a
+          // cor de atenção (laranja) igual a um resultado ruim de verdade.
+          // Neutro (mesmo `#00e5ff` já usado em Dashboard.jsx pro card
+          // "Alta Prioridade" quando a contagem é 0) até haver operação
+          // contada.
+          { label: 'Win Rate', value: `${wr}%`, color: counted === 0 ? '#00e5ff' : wr >= 50 ? '#00ff80' : '#ff9f43' },
         ].map(({ label, value, color }) => (
           <div key={label} className="text-center rounded-lg py-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
             <div className="text-9px font-mono text-muted-foreground mb-1">{label}</div>
@@ -556,8 +563,8 @@ export default function TradeHistory() {
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <input type="text" placeholder="Symbol..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-6 pr-3 py-1.5 rounded-lg w-28 text-10px" style={inputStyle} />
+            <input type="text" placeholder="Buscar ativo..." value={search} onChange={e => setSearch(e.target.value)}
+              className="pl-6 pr-3 py-1.5 rounded-lg w-40 text-10px" style={inputStyle} />
           </div>
 
           {/* Timeframe */}
@@ -637,7 +644,10 @@ export default function TradeHistory() {
           <span style={{ color: '#00ff80' }}>🏆 {wins} win</span>
           <span style={{ color: '#ffd166' }}>🔄 {be} BE</span>
           <span style={{ color: '#ff1478' }}>🛑 {losses} loss</span>
-          <span style={{ color: wr >= 50 ? '#00ff80' : '#ff9f43' }}>WR {wr}%</span>
+          {/* Achado da varredura pós-Raio-X (2026-09-27): mesma classe de
+              bug do M-16 — "0%" sem nenhuma operação contada (ex.: filtro só
+              acha operações abertas/invalidadas) não é "resultado ruim". */}
+          <span style={{ color: counted === 0 ? '#00e5ff' : wr >= 50 ? '#00ff80' : '#ff9f43' }}>WR {wr}%</span>
           {ambiguousCount > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>

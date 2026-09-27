@@ -358,7 +358,7 @@ export default function Alerts() {
                       corrigido pro timestamp nesta mesma rodada, aqui é o
                       único controle visível pra revelar o payload. */}
                   <details>
-                    <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.45)' }}>ver payload →</summary>
+                    <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.45)' }}>ver contexto técnico →</summary>
                     <pre className="mt-1 text-10px font-mono overflow-x-auto" style={{ color: 'rgba(0,255,128,0.7)' }}>
                       {JSON.stringify(selectedSignal.context, null, 2)}
                     </pre>

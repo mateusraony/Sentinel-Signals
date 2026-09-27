@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { ChevronDown, ChevronRight, Bot, User } from 'lucide-react';
+import { ChevronDown, ChevronUp, Bot, User } from 'lucide-react';
 
 function FunctionDisplay({ toolCall }) {
   const [expanded, setExpanded] = useState(false);
@@ -48,7 +48,11 @@ function FunctionDisplay({ toolCall }) {
       <button onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-1.5 text-10px font-mono transition-all"
         style={{ color: statusColor }}>
-        {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        {/* Achado da varredura pós-Raio-X (2026-09-27): era o único lugar do
+            app com a direção invertida (ChevronRight→ChevronDown); o resto
+            usa ChevronDown→ChevronUp (AssetCard.jsx, TradeCard.jsx,
+            SignalChecklist.jsx, TradeHistory.jsx). */}
+        {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
         <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor }} />
         {displayLabel} — {statusText}
       </button>

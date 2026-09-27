@@ -587,7 +587,7 @@ export default function Trades() {
         />
       )}
 
-      <div className="space-y-6 max-w-7xl mx-auto">
+      <div className="space-y-5 max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex items-end justify-between flex-wrap gap-3">
           <div>

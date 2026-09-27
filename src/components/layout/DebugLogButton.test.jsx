@@ -117,3 +117,39 @@ describe('DebugLogButton — não colide com a barra de navegação mobile (acha
     expect(panelRoot.className).not.toMatch(/\bbottom-18\b/);
   });
 });
+
+// Achado da varredura pós-Raio-X (2026-09-27): o ícone de deletar só
+// aparecia em :hover (nunca em touch — mesma classe do Refinamento #1,
+// nunca aplicada aqui) e não tinha feedback de isPending durante a mutação.
+describe('DebugLogButton — botão de deletar log é visível em touch e fica desabilitado durante a mutação (achado pós-Raio-X)', () => {
+  it('REGRESSÃO: a classe do botão não depende só de group-hover (opacidade fixa baixa em telas pequenas)', async () => {
+    systemLogListMock.mockResolvedValue([
+      { id: 'l1', level: 'error', module: 'scanner', message: 'BTCUSDT falhou', created_date: new Date().toISOString() },
+    ]);
+    renderButton();
+    fireEvent.click(screen.getByRole('button', { name: 'Debug Log' }));
+    const trashButton = await screen.findByText('BTCUSDT falhou').then((el) => el.closest('.group').querySelector('button:last-child'));
+    expect(trashButton.className).not.toMatch(/^opacity-0\b/);
+    expect(trashButton.className).toMatch(/\bsm:opacity-0\b/);
+  });
+
+  it('REGRESSÃO: o botão de deletar fica disabled enquanto deleteLog está pendente', async () => {
+    systemLogListMock.mockResolvedValue([
+      { id: 'l1', level: 'error', module: 'scanner', message: 'BTCUSDT falhou', created_date: new Date().toISOString() },
+    ]);
+    let resolveDelete;
+    systemLogDeleteMock.mockImplementation(() => new Promise((res) => { resolveDelete = res; }));
+    renderButton();
+    fireEvent.click(screen.getByRole('button', { name: 'Debug Log' }));
+    const trashButton = await screen.findByText('BTCUSDT falhou').then((el) => el.closest('.group').querySelector('button:last-child'));
+    expect(trashButton.disabled).toBe(false);
+
+    fireEvent.click(trashButton);
+    await vi.waitFor(() => expect(systemLogDeleteMock).toHaveBeenCalledWith('l1'));
+    await vi.waitFor(() => expect(trashButton.disabled).toBe(true));
+
+    resolveDelete(undefined);
+    await vi.waitFor(() => expect(trashButton.disabled).toBe(false));
+    systemLogDeleteMock.mockReset().mockResolvedValue(undefined);
+  });
+});

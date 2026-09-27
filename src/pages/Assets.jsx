@@ -269,7 +269,7 @@ export default function Assets() {
                 style={zoneStyle}>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0 flex-1">
-                    <Switch checked={asset.is_active} onCheckedChange={(checked) => toggleMutation.mutate({ id: asset.id, is_active: checked })} />
+                    <Switch checked={asset.is_active} disabled={toggleMutation.isPending} onCheckedChange={(checked) => toggleMutation.mutate({ id: asset.id, is_active: checked })} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-sm text-foreground">{asset.display_name}</span>
@@ -393,6 +393,7 @@ export default function Assets() {
                     <button
                       className="flex items-center gap-1 px-3 py-2 rounded-lg text-10px font-mono font-semibold transition-all hover:opacity-80"
                       style={{ background: 'rgba(255,20,120,0.08)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}
+                      disabled={deleteMutation.isPending}
                       onClick={() => { if (confirm(`Remover ${asset.display_name}?`)) deleteMutation.mutate(asset.id); }}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>

@@ -183,6 +183,13 @@ export default function TradeEntryMarkers({ history }) {
             <svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="none" stroke="#ff1478" strokeWidth="1.5" /><line x1="3" y1="6" x2="9" y2="6" stroke="#ff1478" strokeWidth="1.5" /></svg>
             <span style={{ color: 'rgba(255,255,255,0.5)' }}>Saída Stop</span>
           </span>
+          {/* Achado da varredura pós-Raio-X (2026-09-27): o marcador
+              laranja (exitDotColor, status INVALIDATED) aparecia no
+              gráfico sem nenhum item de legenda correspondente. */}
+          <span className="flex items-center gap-1.5">
+            <svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="none" stroke="#ff9f43" strokeWidth="1.5" /><line x1="3" y1="6" x2="9" y2="6" stroke="#ff9f43" strokeWidth="1.5" /></svg>
+            <span style={{ color: 'rgba(255,255,255,0.5)' }}>Saída Invalidada</span>
+          </span>
           <span style={{ color: '#00ff80' }}>✓ {wins}W</span>
           <span style={{ color: '#ff1478' }}>✗ {losses}L</span>
         </div>

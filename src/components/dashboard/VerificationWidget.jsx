@@ -116,6 +116,7 @@ export default function VerificationWidget() {
                 <TooltipTrigger asChild>
                   <button onClick={() => reviewMutation.mutate({ id: task.id, status: 'reviewed' })}
                     aria-label="Marcar como revisado (OK)"
+                    disabled={reviewMutation.isPending}
                     className="shrink-0 p-1.5 rounded-md hover:bg-white/[0.08] transition-colors">
                     <Check className="w-3.5 h-3.5" style={{ color: '#00ff80' }} />
                   </button>
@@ -128,6 +129,7 @@ export default function VerificationWidget() {
                 <TooltipTrigger asChild>
                   <button onClick={() => reviewMutation.mutate({ id: task.id, status: 'skipped' })}
                     aria-label="Pular"
+                    disabled={reviewMutation.isPending}
                     className="shrink-0 p-1.5 rounded-md hover:bg-white/[0.08] transition-colors">
                     <XIcon className="w-3.5 h-3.5 text-muted-foreground" />
                   </button>

@@ -358,6 +358,7 @@ export default function Verification() {
                         <TooltipTrigger asChild>
                           <button onClick={() => setStatus(task, 'reviewed')}
                             aria-label="Marcar como revisado (OK)"
+                            disabled={updateMutation.isPending}
                             className="p-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
                             style={{ background: task.status === 'reviewed' ? 'rgba(0,255,128,0.1)' : 'transparent' }}>
                             <Check className="w-4 h-4" style={{ color: '#00ff80' }} />
@@ -371,6 +372,7 @@ export default function Verification() {
                         <TooltipTrigger asChild>
                           <button onClick={() => setStatus(task, 'skipped')}
                             aria-label="Pular"
+                            disabled={updateMutation.isPending}
                             className="p-1.5 rounded-md hover:bg-white/[0.08] transition-colors"
                             style={{ background: task.status === 'skipped' ? 'rgba(255,255,255,0.08)' : 'transparent' }}>
                             <XIcon className="w-4 h-4 text-muted-foreground" />

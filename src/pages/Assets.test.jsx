@@ -9,17 +9,24 @@
 // `src/lib/assetHealthcheck.test.js` — aqui só confirmamos a integração/UI.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup } from '@testing-library/react';
+import { screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 import Assets from './Assets.jsx';
 
 const monitoredAssetListMock = vi.fn();
+const monitoredAssetUpdateMock = vi.fn();
+const monitoredAssetDeleteMock = vi.fn();
+const assetStateDeleteManyMock = vi.fn();
 
 vi.mock('@/api/entities', () => ({
   backend: {
     entities: {
-      MonitoredAsset: { list: (...args) => monitoredAssetListMock(...args) },
-      AssetState: { list: async () => [] },
+      MonitoredAsset: {
+        list: (...args) => monitoredAssetListMock(...args),
+        update: (...args) => monitoredAssetUpdateMock(...args),
+        delete: (...args) => monitoredAssetDeleteMock(...args),
+      },
+      AssetState: { list: async () => [], deleteMany: (...args) => assetStateDeleteManyMock(...args) },
       SignalEvent: { list: async () => [] },
       TradeOperation: { list: async () => [] },
     },
@@ -29,6 +36,9 @@ vi.mock('@/api/entities', () => ({
 afterEach(() => {
   cleanup();
   monitoredAssetListMock.mockReset();
+  monitoredAssetUpdateMock.mockReset();
+  monitoredAssetDeleteMock.mockReset();
+  assetStateDeleteManyMock.mockReset();
 });
 
 const OLD_40MIN = () => new Date(Date.now() - 40 * 60000).toISOString();
@@ -114,5 +124,53 @@ describe('Assets — ícones de status de scan usam Tooltip em vez de title= nat
     const trigger = container.querySelector('[tabindex="0"]');
     expect(trigger).not.toBeNull();
     expect(trigger.querySelector('svg').getAttribute('title')).toBeNull();
+  });
+});
+
+// Achado da varredura pós-Raio-X (2026-09-27): o toggle ativo/inativo e o
+// botão "Remover" não davam nenhum feedback visual durante a mutação —
+// mesmo padrão já usado em Trades.jsx/Alerts.jsx (disabled={mutation.isPending}).
+describe('Assets — toggle e "Remover" ficam desabilitados durante a mutação (achado pós-Raio-X)', () => {
+  it('REGRESSÃO: o Switch fica disabled enquanto toggleMutation está pendente', async () => {
+    monitoredAssetListMock.mockResolvedValue([
+      { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN() },
+    ]);
+    let resolveUpdate;
+    monitoredAssetUpdateMock.mockImplementation(() => new Promise((res) => { resolveUpdate = res; }));
+
+    renderPage(<Assets />);
+    await screen.findByText('BTC/USDT');
+    const toggle = screen.getByRole('switch');
+    expect(toggle.getAttribute('aria-disabled')).not.toBe('true');
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(monitoredAssetUpdateMock).toHaveBeenCalled());
+    expect(toggle.getAttribute('data-disabled')).toBe('');
+
+    resolveUpdate({});
+    await waitFor(() => expect(toggle.getAttribute('data-disabled')).toBeNull());
+  });
+
+  it('REGRESSÃO: o botão "Remover" fica disabled enquanto deleteMutation está pendente', async () => {
+    monitoredAssetListMock.mockResolvedValue([
+      { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN() },
+    ]);
+    let resolveDelete;
+    monitoredAssetDeleteMock.mockImplementation(() => new Promise((res) => { resolveDelete = res; }));
+    assetStateDeleteManyMock.mockResolvedValue(undefined);
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const { container } = renderPage(<Assets />);
+    await screen.findByText('BTC/USDT');
+    const removeBtn = container.querySelector('button svg.lucide-trash2')?.closest('button');
+    expect(removeBtn).not.toBeNull();
+
+    fireEvent.click(removeBtn);
+    await waitFor(() => expect(monitoredAssetDeleteMock).toHaveBeenCalledWith('a1'));
+    expect(removeBtn.disabled).toBe(true);
+
+    resolveDelete({});
+    await waitFor(() => expect(removeBtn.disabled).toBe(false));
+    confirmSpy.mockRestore();
   });
 });

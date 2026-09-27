@@ -9,7 +9,7 @@
 // Codex review no PR #429, item 228) carregando o dado ponto a ponto.
 import React from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import TradeEntryMarkers from './TradeEntryMarkers.jsx';
 
 afterEach(cleanup);
@@ -56,5 +56,17 @@ describe('TradeEntryMarkers — gráfico tem role="img"/aria-label com resumo e 
     const { container } = render(<TradeEntryMarkers history={[]} />);
     expect(container.querySelector('[role="img"]')).toBeNull();
     expect(container.firstChild).toBeNull();
+  });
+});
+
+// Achado da varredura pós-Raio-X (2026-09-27): o marcador laranja
+// (exitDotColor, status INVALIDATED) aparecia no gráfico sem nenhum item
+// de legenda correspondente — só BUY/SELL/TP2/Stop tinham legenda.
+describe('TradeEntryMarkers — legenda inclui o marcador de saída Invalidada (achado pós-Raio-X)', () => {
+  it('REGRESSÃO: a legenda mostra "Saída Invalidada" ao lado de "Saída TP2"/"Saída Stop"', () => {
+    render(<TradeEntryMarkers history={CLOSED_OPS} />);
+    expect(screen.getByText('Saída Invalidada')).toBeTruthy();
+    expect(screen.getByText('Saída TP2')).toBeTruthy();
+    expect(screen.getByText('Saída Stop')).toBeTruthy();
   });
 });
