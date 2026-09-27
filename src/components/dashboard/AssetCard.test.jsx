@@ -150,6 +150,41 @@ describe('AssetCard — botão "Ativar" usa AlertDialog em vez de confirm() nati
     fireEvent.click(within(dialog2).getByText('Ativar BUY'));
     await waitFor(() => expect(activateSignalManuallyMock).toHaveBeenCalledWith(latestSignal, expect.objectContaining({ id: 'a1' })));
   });
+
+  // Achado do Codex review no PR #442 (P1): o confirm() nativo bloqueava a
+  // UI, então nada podia repintar entre o clique e a mutação. Com o
+  // AlertDialog, o polling do Dashboard pode trocar `latestSignal` (ex.:
+  // sinal oposto chegou) enquanto o diálogo está aberto — sem snapshot, a
+  // confirmação ativaria o sinal NOVO, nunca revisado pelo usuário.
+  it('REGRESSÃO (Codex): confirmar usa o sinal snapshotado na abertura, não um latestSignal mais novo chegado via polling', async () => {
+    const originalSignal = { id: 'sig-orig', signal_type: 'BUY' };
+    const newerSignal = { id: 'sig-new', signal_type: 'SELL' };
+    const asset = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN() };
+    const client = makeTestQueryClient();
+    const { rerender } = render(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <AssetCard asset={asset} latestSignal={originalSignal} />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByText(/Ativar BUY agora/i));
+    await screen.findByRole('alertdialog');
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <AssetCard asset={asset} latestSignal={newerSignal} />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+
+    const dialog = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Ativar /}));
+    await waitFor(() => expect(activateSignalManuallyMock).toHaveBeenCalledWith(originalSignal, expect.objectContaining({ id: 'a1' })));
+    expect(activateSignalManuallyMock).not.toHaveBeenCalledWith(newerSignal, expect.anything());
+  });
 });
 
 // Achado A-8 do Raio-X de UI/UX: o card só abria por clique de mouse — sem

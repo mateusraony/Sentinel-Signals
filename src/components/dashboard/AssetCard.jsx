@@ -210,7 +210,11 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   const defaultTf = availableTfs.includes('1h') ? '1h' : availableTfs[0] || '1h';
   const [selectedTf, setSelectedTf] = useState(defaultTf);
   const [open, setOpen] = useState(expandAll);
-  const [confirmingActivate, setConfirmingActivate] = useState(false);
+  // Guarda o SINAL clicado, não um boolean — o Dashboard reconsulta em
+  // polling (achado do Codex review no PR #442) e `latestSignal` pode virar
+  // outro sinal (ex.: lado oposto) enquanto o diálogo está aberto; sem o
+  // snapshot, confirmar ativaria o sinal NOVO, não o que o usuário revisou.
+  const [confirmingActivate, setConfirmingActivate] = useState(null);
   useEffect(() => { setOpen(expandAll); }, [expandAll]);
   const state1h = states?.find(s => s.timeframe === '1h');
   const state4h = states?.find(s => s.timeframe === '4h');
@@ -573,7 +577,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           <button
             onClick={(e) => {
               e.stopPropagation();
-              setConfirmingActivate(true);
+              setConfirmingActivate(latestSignal);
             }}
             disabled={activateMutation.isPending}
             className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-11px font-mono font-bold mt-1 transition-all"
@@ -601,10 +605,10 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           AlertDialogContent é defensivo (o Portal do Radix já isola o
           diálogo da árvore DOM do card, então cliques dentro não
           borbulhariam pro onClick do card mesmo sem isso). */}
-      <AlertDialog open={confirmingActivate} onOpenChange={setConfirmingActivate}>
+      <AlertDialog open={!!confirmingActivate} onOpenChange={(open) => !open && setConfirmingActivate(null)}>
         <AlertDialogContent onClick={(e) => e.stopPropagation()}>
           <AlertDialogHeader>
-            <AlertDialogTitle>{`Ativar operação ${sigSide} em ${asset.display_name}?`}</AlertDialogTitle>
+            <AlertDialogTitle>{`Ativar operação ${confirmingActivate?.signal_type} em ${asset.display_name}?`}</AlertDialogTitle>
             <AlertDialogDescription>
               A entrada usa o preço ATUAL de mercado, e a operação será gerida pelas regras da
               cascata 4h (stop por ATR/tier, TP1/TP2 e Time Stop).
@@ -612,8 +616,8 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => activateMutation.mutate(latestSignal)}>
-              {`Ativar ${sigSide}`}
+            <AlertDialogAction onClick={() => activateMutation.mutate(confirmingActivate)}>
+              {`Ativar ${confirmingActivate?.signal_type}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

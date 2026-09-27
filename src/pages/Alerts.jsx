@@ -46,7 +46,11 @@ export default function Alerts() {
   const [filterType, setFilterType] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedSignal, setSelectedSignal] = useState(null);
-  const [confirmingDismissAll, setConfirmingDismissAll] = useState(false);
+  // Guarda os IDs visíveis no momento do clique, não um boolean — a query
+  // `all-signals` faz polling (achado do Codex review no PR #442) e
+  // `filtered` pode ganhar alertas novos enquanto o diálogo está aberto;
+  // sem o snapshot, confirmar dispensaria alertas que o usuário nunca viu.
+  const [confirmingDismissAll, setConfirmingDismissAll] = useState(null);
   const queryClient = useQueryClient();
 
   const { data: signals = [], isLoading, isError, refetch } = useQuery({
@@ -90,7 +94,7 @@ export default function Alerts() {
           </div>
           {filtered.length > 0 && (
             <button
-              onClick={() => setConfirmingDismissAll(true)}
+              onClick={() => setConfirmingDismissAll(filtered.map(s => s.id))}
               disabled={dismissMutation.isPending}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-80"
               style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
@@ -380,18 +384,18 @@ export default function Alerts() {
           existente e nunca usado. Texto agora diz quantos alertas serão
           afetados e que não há undo na UI (é só flag is_dismissed, sem
           controle de reverter). */}
-      <AlertDialog open={confirmingDismissAll} onOpenChange={setConfirmingDismissAll}>
+      <AlertDialog open={!!confirmingDismissAll} onOpenChange={(open) => !open && setConfirmingDismissAll(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Descartar todos os alertas visíveis?</AlertDialogTitle>
             <AlertDialogDescription>
-              Descartar os {filtered.length} alertas visíveis agora? Eles saem da lista
-              (marcados como dispensados) — não há como reverter isso pela interface.
+              Descartar os {confirmingDismissAll?.length} alertas visíveis agora? Eles saem da
+              lista (marcados como dispensados) — não há como reverter isso pela interface.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={() => filtered.forEach(s => dismissMutation.mutate(s.id))}>
+            <AlertDialogAction onClick={() => confirmingDismissAll?.forEach(id => dismissMutation.mutate(id))}>
               Descartar todos
             </AlertDialogAction>
           </AlertDialogFooter>
