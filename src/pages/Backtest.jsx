@@ -2,7 +2,7 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import moment from 'moment';
 import {
-  LineChart, Line, PieChart, Pie, Cell, BarChart, Bar,
+  AreaChart, Area, ReferenceLine, PieChart, Pie, Cell, BarChart, Bar,
   ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import {
@@ -14,6 +14,9 @@ import { Tooltip as InfoTooltip, TooltipTrigger, TooltipContent } from '@/compon
 import { SYNCED_STRATEGY_KEYS, DEFAULTS as PINE_DEFAULTS, getPineConfig } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
 import { isClosedOp, getClosedAt, summarizeOps, calcRealizedPnlPct, getExitPrice, classifyOutcome } from '@/lib/tradeMetrics';
+import { outcomeColor } from '@/lib/outcomeColor';
+import { MetricSummaryCard } from '@/components/MetricSummaryCard';
+import { drawdownColor, winRateColor, profitFactorColor, profitFactorLabel, metricGlow } from '@/lib/metricColorRanges';
 import { simulateEquityCurve, DEFAULT_INITIAL_CAPITAL, DEFAULT_RISK_PCT } from '@/lib/equityCurve';
 import { fetchCandles } from '@/lib/marketDataProvider';
 import { runQuickBacktest } from '@/lib/quickBacktest';
@@ -50,33 +53,6 @@ const CAGR_UNAVAILABLE_LABEL = {
 };
 
 const OUTCOME_COLORS = { WIN: '#00ff80', LOSS: '#ff1478', BE: '#64748b' };
-
-function SummaryCard({ icon: Icon, label, value, sublabel = undefined, color, glowColor, tooltip = undefined }) {
-  return (
-    <div className="rounded-xl p-4 relative overflow-hidden"
-      style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
-      <div className="absolute top-0 right-0 w-24 h-24 rounded-full opacity-10"
-        style={{ background: `radial-gradient(circle, ${glowColor}, transparent 70%)`, transform: 'translate(30%, -30%)' }} />
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className="w-4 h-4" style={{ color }} />
-        {tooltip ? (
-          <InfoTooltip>
-            <TooltipTrigger type="button" className="text-10px font-mono uppercase tracking-wider text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
-              {label}
-            </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-              {tooltip}
-            </TooltipContent>
-          </InfoTooltip>
-        ) : (
-          <span className="text-10px font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
-        )}
-      </div>
-      <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
-      {sublabel && <div className="text-9px font-mono text-muted-foreground mt-1">{sublabel}</div>}
-    </div>
-  );
-}
 
 function Section({ title, children }) {
   return (
@@ -160,6 +136,10 @@ function ReportBody({ report, hideCascadeTable = false }) {
       }));
   }, [overall]);
 
+  // Round 4 da nova varredura pós-Raio-X (2026-09-27): cor por sinal do
+  // total acumulado — mesma fórmula de src/components/trades/PnLChart.jsx.
+  const naiveGradColor = equityCurve.length > 0 && equityCurve[equityCurve.length - 1].cumulativePct >= 0 ? '#00ff80' : '#ff1478';
+
   // Operações reais (mesma fonte que opsFromReport usa em backtestAnalysis.js
   // — não muda a forma de overall.curve) alimentando a curva de capital REAL
   // (composta, position sizing por risco) — ver src/lib/equityCurve.js.
@@ -177,6 +157,10 @@ function ReportBody({ report, hideCascadeTable = false }) {
       symbol: p.op?.symbol,
     }));
   }, [equitySim]);
+
+  // Round 4 da nova varredura pós-Raio-X (2026-09-27): cor por sinal do
+  // retorno total (já calculado em equitySim, usado no card "Capital final").
+  const realGradColor = equitySim?.totalReturnPct >= 0 ? '#00ff80' : '#ff1478';
 
   const outcomePie = useMemo(() => {
     if (!overall) return [];
@@ -222,22 +206,22 @@ function ReportBody({ report, hideCascadeTable = false }) {
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        <SummaryCard icon={overall.expectancyR >= 0 ? TrendingUp : TrendingDown} label="Expectância líquida"
+        <MetricSummaryCard icon={overall.expectancyR >= 0 ? TrendingUp : TrendingDown} label="Expectância líquida"
           value={fmtR(overall.expectancyR)} sublabel={`bruta: ${fmtR(overall.grossExpectancyR)}`}
           color={overall.expectancyR >= 0 ? '#00ff80' : '#ff1478'} glowColor={overall.expectancyR >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'}
           tooltip="R = resultado da operação dividido pelo risco inicial (distância entre entrada e stop). Expectância líquida é a média de R por operação, já descontando taxa/slippage/funding (ver 'Custo médio' ao lado); 'bruta' é sem esses custos." />
-        <SummaryCard icon={Target} label="Taxa de acerto" value={`${overall.winRate.toFixed(1)}%`}
+        <MetricSummaryCard icon={Target} label="Taxa de acerto" value={`${overall.winRate.toFixed(1)}%`}
           sublabel={`${overall.wins}W · ${overall.be}BE · ${overall.losses}L`}
-          color={overall.winRate >= 50 ? '#00ff80' : '#ff9f43'} glowColor="rgba(0,229,255,0.4)" />
-        <SummaryCard icon={Award} label="Profit Factor" value={overall.profitFactor === null ? '∞' : overall.profitFactor.toFixed(2)}
-          sublabel={overall.profitFactor === null || overall.profitFactor >= 1.5 ? '✓ Saudável' : '⚠ Baixo'}
-          color={overall.profitFactor === null || overall.profitFactor >= 1.5 ? '#00ff80' : '#ff9f43'} glowColor="rgba(0,255,128,0.4)"
+          color={winRateColor(overall.winRate)} glowColor={metricGlow(winRateColor(overall.winRate))} />
+        <MetricSummaryCard icon={Award} label="Profit Factor" value={overall.profitFactor === null ? '∞' : overall.profitFactor.toFixed(2)}
+          sublabel={profitFactorLabel(overall.profitFactor, overall.wins > 0)}
+          color={profitFactorColor(overall.profitFactor, overall.wins > 0)} glowColor={metricGlow(profitFactorColor(overall.profitFactor, overall.wins > 0))}
           tooltip="Soma dos ganhos ÷ soma das perdas (valor absoluto). Acima de 1 = ganhos superam perdas no total; ≥ 1,5 é o piso considerado saudável aqui. '∞' quando não houve nenhuma perda na amostra." />
-        <SummaryCard icon={TrendingDown} label="Máx. Drawdown" value={fmtPct(-overall.maxDrawdownPct)}
-          color="#ff1478" glowColor="rgba(255,20,120,0.4)" />
-        <SummaryCard icon={FlaskConical} label="Operações" value={`${overall.counted}`}
+        <MetricSummaryCard icon={TrendingDown} label="Máx. Drawdown" value={fmtPct(-overall.maxDrawdownPct)}
+          color={drawdownColor(overall.maxDrawdownPct)} glowColor={metricGlow(drawdownColor(overall.maxDrawdownPct))} />
+        <MetricSummaryCard icon={FlaskConical} label="Operações" value={`${overall.counted}`}
           sublabel={`${report.totalOps} total · ${report.stillOpenAtCutoff} em aberto`} color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
-        <SummaryCard icon={AlertTriangle} label="Custo médio" value={fmtR(costs.avgCostR)}
+        <MetricSummaryCard icon={AlertTriangle} label="Custo médio" value={fmtR(costs.avgCostR)}
           sublabel={`${costs.totalCostPct?.toFixed(2)}% do capital`} color="#ff9f43" glowColor="rgba(255,159,67,0.4)" />
       </div>
 
@@ -245,18 +229,32 @@ function ReportBody({ report, hideCascadeTable = false }) {
         <div className="lg:col-span-2">
           <Section title="Curva ingênua (soma % simples, NÃO composta — ver curva de capital real abaixo)">
             <div style={{ height: 260 }} role="img" aria-details={equityCurve.length > 0 ? equityCurveTableId : undefined}
-              aria-label={`Gráfico de linha da curva ingênua de PnL acumulado (soma simples), ${equityCurve.length} operações${equityCurve.length > 0 ? `, ${fmtPct(equityCurve[equityCurve.length - 1].cumulativePct)} no total` : ''}`}>
+              aria-label={`Gráfico de área da curva ingênua de PnL acumulado (soma simples), ${equityCurve.length} operações${equityCurve.length > 0 ? `, ${fmtPct(equityCurve[equityCurve.length - 1].cumulativePct)} no total` : ''}`}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={equityCurve} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
+                <AreaChart data={equityCurve} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
+                  {/* Round 4 da nova varredura pós-Raio-X (2026-09-27): cor
+                      por sinal do total acumulado + gradiente + ReferenceLine
+                      em y=0 — mesmo padrão já em produção em
+                      src/components/trades/PnLChart.jsx, que este gráfico
+                      (mesmo conceito, cascata em vez de trades reais) não
+                      seguia. */}
+                  <defs>
+                    <linearGradient id="naiveEquityGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={naiveGradColor} stopOpacity={0.3} />
+                      <stop offset="95%" stopColor={naiveGradColor} stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                   <XAxis dataKey="trade" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
                   <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
+                  <ReferenceLine y={0} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
                   <Tooltip
                     contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                     formatter={(value, name, props) => [`${value}%`, props.payload.symbol || 'cumulativePct']}
                   />
-                  <Line type="monotone" dataKey="cumulativePct" stroke="#00e5ff" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
-                </LineChart>
+                  <Area type="monotone" dataKey="cumulativePct" stroke={naiveGradColor} strokeWidth={1.5}
+                    fill="url(#naiveEquityGrad)" dot={false} activeDot={{ r: 3, fill: naiveGradColor }} />
+                </AreaChart>
               </ResponsiveContainer>
             </div>
             {equityCurve.length > 0 && (
@@ -334,34 +332,47 @@ function ReportBody({ report, hideCascadeTable = false }) {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-            <SummaryCard icon={equitySim.totalReturnPct >= 0 ? TrendingUp : TrendingDown} label="Capital final"
+            <MetricSummaryCard icon={equitySim.totalReturnPct >= 0 ? TrendingUp : TrendingDown} label="Capital final"
               value={fmtUsd(equitySim.finalCapital)} sublabel={fmtPct(equitySim.totalReturnPct)}
               color={equitySim.totalReturnPct >= 0 ? '#00ff80' : '#ff1478'} glowColor="rgba(0,229,255,0.4)" />
-            <SummaryCard icon={TrendingDown} label="Drawdown real" value={fmtPct(-equitySim.maxDrawdownPct)}
-              sublabel={fmtUsd(-equitySim.maxDrawdownAbs)} color="#ff1478" glowColor="rgba(255,20,120,0.4)" />
-            <SummaryCard icon={Award} label="CAGR"
+            <MetricSummaryCard icon={TrendingDown} label="Drawdown real" value={fmtPct(-equitySim.maxDrawdownPct)}
+              sublabel={fmtUsd(-equitySim.maxDrawdownAbs)} color={drawdownColor(equitySim.maxDrawdownPct)} glowColor={metricGlow(drawdownColor(equitySim.maxDrawdownPct))} />
+            <MetricSummaryCard icon={Award} label="CAGR"
               value={equitySim.cagrPct === null ? 'N/A' : fmtPct(equitySim.cagrPct)}
               sublabel={equitySim.cagrPct === null ? (CAGR_UNAVAILABLE_LABEL[equitySim.cagrUnavailableReason] || equitySim.cagrUnavailableReason) : `~${equitySim.years?.toFixed(2)} anos`}
               color="#00e5ff" glowColor="rgba(0,229,255,0.4)"
               tooltip="Taxa de crescimento anual composta, extrapolada a partir do período coberto pela simulação — não é garantia de retorno futuro." />
-            <SummaryCard icon={FlaskConical} label="Operações dimensionadas" value={`${equitySim.sized}/${equitySim.total}`}
+            <MetricSummaryCard icon={FlaskConical} label="Operações dimensionadas" value={`${equitySim.sized}/${equitySim.total}`}
               sublabel={equitySim.unsized > 0 ? `${equitySim.unsized} sem risco definido` : 'todas dimensionadas'}
               color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
           </div>
 
           <div style={{ height: 220 }} role="img" aria-details={realEquityChart.length > 0 ? realEquityTableId : undefined}
-            aria-label={`Gráfico de linha da curva de capital real, capital final ${fmtUsd(equitySim.finalCapital)} (${fmtPct(equitySim.totalReturnPct)})`}>
+            aria-label={`Gráfico de área da curva de capital real, capital final ${fmtUsd(equitySim.finalCapital)} (${fmtPct(equitySim.totalReturnPct)})`}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={realEquityChart} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
+              <AreaChart data={realEquityChart} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
+                {/* Round 4 da nova varredura pós-Raio-X (2026-09-27): mesmo
+                    padrão do gráfico acima — cor por sinal do retorno total
+                    + gradiente + ReferenceLine. Aqui a referência é o
+                    CAPITAL INICIAL, não zero — o eixo é capital em $, não
+                    PnL/%, então y=0 nunca é um valor plausível no gráfico. */}
+                <defs>
+                  <linearGradient id="realEquityGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={realGradColor} stopOpacity={0.3} />
+                    <stop offset="95%" stopColor={realGradColor} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                 <XAxis dataKey="trade" tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} />
                 <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} tickFormatter={v => fmtUsd(v, 0)} />
+                <ReferenceLine y={initialCapital} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
                 <Tooltip
                   contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}
                   formatter={(value, name, props) => [fmtUsd(value), props.payload.symbol || 'capital']}
                 />
-                <Line type="monotone" dataKey="capitalAfter" stroke="#ffd166" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
-              </LineChart>
+                <Area type="monotone" dataKey="capitalAfter" stroke={realGradColor} strokeWidth={1.5}
+                  fill="url(#realEquityGrad)" dot={false} activeDot={{ r: 3, fill: realGradColor }} />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
           {realEquityChart.length > 0 && (
@@ -484,9 +495,17 @@ function SimulatedTradesTable({ ops }) {
               const pnl = calcRealizedPnlPct(op);
               const exitPrice = getExitPrice(op);
               const outcome = classifyOutcome(op);
+              // Round 4 da nova varredura pós-Raio-X (2026-09-27): a cor do
+              // caso "não-BE" agora vem de outcomeColor (src/lib/outcomeColor.js)
+              // em vez do mapa fixo local — mesma correção já aplicada em
+              // TradeHistory.jsx/MonthlyReport.jsx (STOP_HIT com outcome WIN
+              // fica verde, não mais preso ao fallback vermelho de
+              // STATUS_ICON_COLOR). O caso BE continua tratado à parte, cinza
+              // uniforme independente do status — design já existente aqui,
+              // fora do escopo desta rodada.
               const [label, color] = outcome === 'BE'
                 ? ['🛡️ BE', '#64748b']
-                : (STATUS_ICON_COLOR[op.status] || [op.status, '#64748b']);
+                : [STATUS_ICON_COLOR[op.status]?.[0] || op.status, outcomeColor(op.status, outcome)];
               const isBuy = op.side === 'BUY';
               return (
                 <tr key={op.id} style={{ background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)', borderTop: '1px solid rgba(255,255,255,0.03)' }}>

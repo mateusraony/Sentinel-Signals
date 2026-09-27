@@ -381,3 +381,85 @@ describe('Backtest — "Aplicar ao Scanner" usa AlertDialog em vez de confirm() 
     await screen.findByText('Aplicado!');
   });
 });
+
+// Round 4 da nova varredura pós-Raio-X (2026-09-27): faixas de cor de Win
+// Rate/Drawdown/Profit Factor passaram a vir de src/lib/metricColorRanges.js
+// em vez de expressões inline por arquivo — inclui 2 correções reais: o
+// glow do card "Taxa de acerto" era fixo ciano (não acompanhava a cor do
+// valor) e o Profit Factor ganhou o estado "Marginal" (antes só existia em
+// PerformanceReport.jsx).
+const REPORT_JSON_COR_FAIXAS = JSON.stringify({
+  range: { from: '2026-01-01T00:00:00.000Z', to: '2026-06-01T00:00:00.000Z' },
+  overall: {
+    ...CASCADE_STATS, total: 10, counted: 10, wins: 4, losses: 6,
+    winRate: 40, profitFactor: 1.2, maxDrawdownPct: 20,
+  },
+  byCascade: { '4h_15m': CASCADE_STATS },
+  costs: { model: {} },
+});
+
+describe('Backtest — Win Rate/Drawdown/Profit Factor com cor compartilhada (Round 4 pós-Raio-X)', () => {
+  it('REGRESSÃO: Win Rate 40% (abaixo de 50%) tem glow laranja, não mais o glow ciano fixo', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    fireEvent.change(textarea, { target: { value: REPORT_JSON_COR_FAIXAS } });
+    fireEvent.click(screen.getByText(/Analisar relatório colado/i));
+    await screen.findByText('Expectância');
+
+    const wrLabel = screen.getAllByText('Taxa de acerto').find(el => el.tagName === 'SPAN');
+    const wrCard = wrLabel.closest('.relative.overflow-hidden');
+    const glow = wrCard.querySelector('.absolute.top-0.right-0');
+    expect(glow.style.background).toMatch(/rgba\(255,159,67/);
+  });
+
+  it('REGRESSÃO: Profit Factor 1.2 mostra "⚠ Marginal" em laranja (não mais "⚠ Baixo" dividindo cor com Baixo)', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    fireEvent.change(textarea, { target: { value: REPORT_JSON_COR_FAIXAS } });
+    fireEvent.click(screen.getByText(/Analisar relatório colado/i));
+    await screen.findByText('Expectância');
+
+    expect(screen.getByText('⚠ Marginal')).toBeTruthy();
+    expect(screen.queryByText('⚠ Baixo')).toBeNull();
+  });
+
+  it('REGRESSÃO: Máx. Drawdown 20% (acima de 15%) fica vermelho, mesma faixa de PerformanceMetricsBar.jsx', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    fireEvent.change(textarea, { target: { value: REPORT_JSON_COR_FAIXAS } });
+    fireEvent.click(screen.getByText(/Analisar relatório colado/i));
+    await screen.findByText('Expectância');
+
+    const ddValue = screen.getByText('-20.00%');
+    expect(ddValue.style.color).toBe('rgb(255, 20, 120)');
+  });
+});
+
+// Round 4 da nova varredura pós-Raio-X (2026-09-27): os 2 gráficos de
+// equity (curva ingênua + curva de capital real) ganharam o mesmo padrão
+// já em produção em src/components/trades/PnLChart.jsx — Area + gradiente
+// + ReferenceLine — que antes não tinham (LineChart simples, cor fixa).
+// jsdom não mede o ResponsiveContainer (fica 0x0 mesmo com o polyfill de
+// ResizeObserver — confirmado, mesma limitação de PnLChart.test.jsx, que
+// por isso nunca testa o SVG interno do gráfico, só role="img"/aria-label/
+// tabela sr-only) — o teste abaixo confirma que o markup de acessibilidade
+// continua intacto após a troca de LineChart pra AreaChart; a prova visual
+// do gradiente/ReferenceLine em si é feita rodando a página real (ver
+// verificação final da rodada).
+describe('Backtest — gráficos de equity mantêm acessibilidade após virar Area+gradiente+ReferenceLine (Round 4 pós-Raio-X)', () => {
+  it('REGRESSÃO: role=img/aria-label/tabela sr-only dos 2 gráficos continuam intactos', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    fireEvent.change(textarea, { target: { value: REPORT_JSON_COM_CURVE } });
+    fireEvent.click(screen.getByText(/Analisar relatório colado/i));
+    await screen.findByText('Expectância');
+
+    const images = screen.getAllByRole('img');
+    expect(images.some(img => img.getAttribute('aria-label')?.includes('Gráfico de área da curva ingênua'))).toBe(true);
+    expect(images.some(img => img.getAttribute('aria-label')?.includes('Gráfico de área da curva de capital real'))).toBe(true);
+  });
+});

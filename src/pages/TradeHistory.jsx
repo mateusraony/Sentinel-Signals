@@ -23,6 +23,8 @@ import { closedReasonLabel } from '@/lib/eventTimeline';
 import { explainOperationDecision, legacyClosedOperationText } from '@/lib/decisionExplanation';
 import { useCopyToClipboard, formatTradeOpLine } from '@/lib/clipboardText';
 import { QueryErrorState } from '@/components/QueryErrorState';
+import { outcomeColor } from '@/lib/outcomeColor';
+import { winRateColor } from '@/lib/metricColorRanges';
 
 // Planned risk/reward of the setup — always against the INITIAL stop. The old
 // version divided by current_stop, which post-TP1 is already breakeven and
@@ -67,10 +69,14 @@ function HistoryCard({ op }) {
   // (que agora só acrescenta a evidência numérica, sem repetir o texto).
   const decisionOut = op.decision_snapshot?.decision === 'EXIT' ? explainOperationDecision(op) : null;
   const whyText = decisionOut?.why ?? legacyClosedOperationText(op, pnl, outcome, closedReasonLabel(op));
-  // BE reclassifica cor E label juntos — antes só o label mudava, deixando o
-  // badge rosa (cor de STOP_HIT) ao lado de um P&L amarelo (neutro) no mesmo
-  // card. Mesmo padrão que Trades.jsx:226 já usa pro caso equivalente.
-  const badgeColor = isBE ? '#ffd166' : s.color;
+  // Round 4 da nova varredura pós-Raio-X (2026-09-27): badgeColor passou a
+  // vir de outcomeColor (src/lib/outcomeColor.js) em vez de `s.color` fixo
+  // por status — corrige um bug real que STATUS_MAP não cobria: um Stop
+  // atingido com outcome WIN (trailing travou lucro real antes de reverter)
+  // aparecia com o mesmo rosa de um Stop perdedor, já que STATUS_MAP só
+  // tratava BE à parte. Mesmo raciocínio que TradeEntryMarkers.jsx (mesma
+  // tela de gráfico) já corrigia via `exitDotColor`/`classifyOutcome`.
+  const badgeColor = outcomeColor(op.status, outcome);
 
   const exitPrice = getExitPrice(op);
   const closedAt = getClosedAt(op);
@@ -415,7 +421,7 @@ function DaySummary({ ops }) {
           // Neutro (mesmo `#00e5ff` já usado em Dashboard.jsx pro card
           // "Alta Prioridade" quando a contagem é 0) até haver operação
           // contada.
-          { label: 'Win Rate', value: `${wr}%`, color: counted === 0 ? '#00e5ff' : wr >= 50 ? '#00ff80' : '#ff9f43' },
+          { label: 'Win Rate', value: `${wr}%`, color: counted === 0 ? '#00e5ff' : winRateColor(wr) },
         ].map(({ label, value, color }) => (
           <div key={label} className="text-center rounded-lg py-2.5" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
             <div className="text-9px font-mono text-muted-foreground mb-1">{label}</div>
@@ -647,7 +653,7 @@ export default function TradeHistory() {
           {/* Achado da varredura pós-Raio-X (2026-09-27): mesma classe de
               bug do M-16 — "0%" sem nenhuma operação contada (ex.: filtro só
               acha operações abertas/invalidadas) não é "resultado ruim". */}
-          <span style={{ color: counted === 0 ? '#00e5ff' : wr >= 50 ? '#00ff80' : '#ff9f43' }}>WR {wr}%</span>
+          <span style={{ color: counted === 0 ? '#00e5ff' : winRateColor(wr) }}>WR {wr}%</span>
           {ambiguousCount > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>

@@ -91,3 +91,56 @@ describe('MonthlyReport — gráficos Recharts têm role="img"/aria-label descre
     expect(labels.some(l => l.includes('distribuição de status') && l.includes('🏆 TP2 1') && l.includes('🛑 Stop 1'))).toBe(true);
   });
 });
+
+// Round 4 da nova varredura pós-Raio-X (2026-09-27): statusColor(op) passou
+// a chamar outcomeColor (src/lib/outcomeColor.js) em vez de reimplementar a
+// lógica localmente — teste de regressão confirmando que a cor por status na
+// tabela de detalhe (incluindo o caso ambíguo STOP_HIT+WIN) continua igual.
+const CLOSED_OPS_STATUS_COLOR = [
+  {
+    id: 'op1', asset_id: 'a1', symbol: 'BTCUSDT', side: 'BUY',
+    status: 'STOP_HIT', entry_price: 60000, initial_stop: 59000, current_stop: 60500,
+    exit_price: 61000, // stop travou lucro real (outcome WIN apesar de STOP_HIT)
+    closed_at: moment().toISOString(),
+    created_date: moment().subtract(1, 'day').toISOString(),
+  },
+];
+
+describe('MonthlyReport — cor de status por operação reflete o outcome real (Round 4 pós-Raio-X)', () => {
+  it('REGRESSÃO: STOP_HIT com outcome WIN aparece verde na tabela de detalhe, não vermelho', async () => {
+    tradeOperationFilterMock.mockImplementation(async () => CLOSED_OPS_STATUS_COLOR);
+    const { container } = renderPage(<MonthlyReport />);
+    await screen.findByText('✅ Stop (lucro)');
+    const statusCell = [...container.querySelectorAll('td')].find(td => td.textContent === '✅ Stop (lucro)');
+    expect(statusCell.style.color).toBe('rgb(0, 255, 128)');
+  });
+});
+
+// Round 4 da nova varredura pós-Raio-X (2026-09-27): Profit Factor ganhou o
+// estado "Marginal" (antes só existia em PerformanceReport.jsx) — teste de
+// regressão confirmando o novo texto/cor de 3 estados.
+const OPS_PROFIT_FACTOR_MARGINAL = [
+  {
+    id: 'opw', asset_id: 'a1', symbol: 'BTCUSDT', side: 'BUY',
+    status: 'TP2_HIT', entry_price: 100, initial_stop: 90, current_stop: 90,
+    tp1: 110, tp2: 120, exit_price: 112, closed_at: moment().toISOString(),
+    created_date: moment().subtract(1, 'day').toISOString(),
+  },
+  {
+    id: 'opl', asset_id: 'a2', symbol: 'ETHUSDT', side: 'BUY',
+    status: 'STOP_HIT', entry_price: 100, initial_stop: 90, current_stop: 90,
+    tp1: 110, tp2: 120, exit_price: 90, closed_at: moment().toISOString(),
+    created_date: moment().subtract(1, 'day').toISOString(),
+  },
+];
+
+describe('MonthlyReport — Profit Factor com estado "Marginal" (Round 4 pós-Raio-X)', () => {
+  it('REGRESSÃO: pf~1.17 (Marginal) mostra "⚠ Marginal" em laranja, não mais "⚠ Baixo"', async () => {
+    tradeOperationFilterMock.mockImplementation(async () => OPS_PROFIT_FACTOR_MARGINAL);
+    renderPage(<MonthlyReport />);
+    const pfValue = await screen.findByText('1.17');
+    expect(screen.getByText('⚠ Marginal')).toBeTruthy();
+    expect(screen.queryByText('⚠ Baixo')).toBeNull();
+    expect(pfValue.style.color).toBe('rgb(255, 159, 67)');
+  });
+});
