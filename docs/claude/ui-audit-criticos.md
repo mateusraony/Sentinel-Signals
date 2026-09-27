@@ -848,7 +848,58 @@ em 7 arquivos, ver seção própria abaixo.
 **Com isto, o Raio-X de UI/UX (Críticos + Alta Prioridade + Média
 Prioridade + Refinamentos — relatório original completo) está 100%
 fechado.** Qualquer trabalho de UI/UX futuro é achado novo, fora do
-escopo do relatório de 2026-09-23.
+escopo do relatório de 2026-09-23 — ver seção "Nova varredura pós-Raio-X"
+abaixo para o que está em andamento.
+
+## Nova varredura pós-Raio-X (2026-09-27): visualização + humanização — FORA do relatório original
+
+Com o relatório original 100% fechado, o usuário pediu explicitamente
+uma varredura nova, em 2 frentes: melhorar a **visualização**
+(gráficos, cor, hierarquia de dados) e tornar a UI **mais humanizada**
+(tom de texto, mensagens de erro/confirmação). 3 agentes Explore em
+paralelo consolidaram ~48 achados brutos em ~35 itens únicos,
+organizados em 5 rounds por risco crescente (plano completo em
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`). Detalhe
+completo de cada round em `docs/known-risks.md` item 242 em diante.
+
+- [x] **Round 1 (mecânico, 12 fixes, baixo risco) — fechado.** Eixo X
+  escondido em `PerformanceOverview.jsx`/`CorrelationWidget.jsx`
+  (recorrência de A-13); Win Rate "0%" falso-laranja em
+  `TradeHistory.jsx` (recorrência de M-16); feedback de `isPending`
+  ausente em `Assets.jsx`/`Verification.jsx`/`VerificationWidget.jsx`/
+  `DebugLogButton.jsx`; ícone de deletar só em hover em
+  `DebugLogButton.jsx` (recorrência do Refinamento #1); campo de busca
+  estreito + placeholder em inglês em `TradeHistory.jsx`; ícones
+  inconsistentes (`PineScript.jsx`/`MessageBubble.jsx`); legenda
+  incompleta em `TradeEntryMarkers.jsx`; tooltip de pizza sem % em
+  `Backtest.jsx`/`MonthlyReport.jsx`; jargão "ver payload"/"Erro sync"
+  em `Alerts.jsx`/`Logs.jsx`/`PineScript.jsx`; `space-y-6` divergente em
+  `Trades.jsx`. Ver `docs/known-risks.md` item 242.
+- [ ] **Round 2 (médio) — pendente.** Migrar 8 `confirm()`/
+  `window.confirm()` nativos pro componente `AlertDialog` já existente
+  e nunca usado (`src/components/ui/alert-dialog.jsx`) + escrever texto
+  de consequência onde falta.
+- [ ] **Round 3 (médio) — pendente.** Mensagens de erro genéricas sem
+  causa/próximo passo (padrão `QueryErrorState.jsx`) + empty states sem
+  ação seguinte (padrão `RecentAlertsList.jsx`) + filtro-vazio sem
+  botão "limpar filtro" visível.
+- [ ] **Round 4 (maior/mais arriscado) — pendente.** Extrair
+  `SummaryCard`/`MetricCard` (5 cópias quase idênticas em 5 arquivos)
+  num componente único; unificar faixas de cor de Win Rate/Drawdown/
+  Profit Factor entre telas; resolver a cor `#ff9f43` com 3 sentidos
+  incompatíveis; extrair `outcomeColor(status)` único (4 cópias
+  duplicadas); adicionar cor-por-resultado + `ReferenceLine` às 2 curvas
+  de equity de `Backtest.jsx`.
+- [ ] **Round 5 (pequeno) — pendente.** `SignalToast.jsx` sem `onClick`
+  pra abrir o `AssetDrawer` (mesma lacuna que A-1 corrigiu em
+  `RecentAlertsList`) + reposicionar pra não sobrepor os botões do
+  `TopBar.jsx`.
+
+**Fora de escopo, não corrigir sem confirmação explícita do usuário**:
+reconciliar os 2 sistemas de toast independentes (shadcn `toast.jsx` vs.
+`SignalToast.jsx` customizado) — decisão de arquitetura, não polimento;
+`max-w-6xl`/`max-w-5xl` em `Settings.jsx`/`Verification.jsx` vs.
+`max-w-7xl` no resto — pode ser intencional (formulário de coluna única).
 
 ## Refinamentos (seção E, 2026-09-26): último bloco do Raio-X — fecha o relatório original por completo
 

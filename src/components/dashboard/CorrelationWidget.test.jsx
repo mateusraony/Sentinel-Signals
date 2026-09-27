@@ -36,7 +36,7 @@ afterEach(cleanup);
 // 3 candles fechados por símbolo, valores distintos — suficiente pra
 // `analysis` (CorrelationWidget.jsx) ficar não-nulo e o gráfico renderizar.
 function closedCandles(closes) {
-  return closes.map((close, i) => ({ close, isClosed: true, time: i }));
+  return closes.map((close, i) => ({ close, isClosed: true, openTime: Date.UTC(2026, 8, 26, i, 0, 0) }));
 }
 
 function renderWidget() {
@@ -68,5 +68,30 @@ describe('CorrelationWidget — gráfico de correlação tem role="img"/aria-lab
       return el;
     });
     expect(chart.getAttribute('aria-label')).toMatch(/Gráfico de linha.*BTC.*ETH.*SOL/);
+  });
+});
+
+// Achado da varredura pós-Raio-X (2026-09-27): eixo X escondido
+// (`<XAxis dataKey="i" hide />`) tirava qualquer referência temporal do
+// gráfico — mesmo defeito que A-13 já corrigiu em RFHistoryChart.jsx.
+describe('CorrelationWidget — eixo X do gráfico não está mais escondido (achado pós-Raio-X)', () => {
+  it('REGRESSÃO: o eixo X renderiza (não usa mais hide) — mesmo mock de dimensão de RFHistoryChart.test.jsx', async () => {
+    fetchCandlesMock.mockResolvedValue(closedCandles([100, 101, 102]));
+    const realGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    // eslint-disable-next-line func-names -- precisa de `this` (o elemento) pra decidir a dimensão
+    Element.prototype.getBoundingClientRect = function () {
+      return { width: 400, height: 160, top: 0, left: 0, bottom: 160, right: 400, x: 0, y: 0, toJSON() {} };
+    };
+    try {
+      const { container } = renderWidget();
+      await waitFor(() => {
+        expect(container.querySelector('[role="img"]')).not.toBeNull();
+      });
+      await waitFor(() => {
+        expect(container.querySelector('.recharts-xAxis')).not.toBeNull();
+      });
+    } finally {
+      Element.prototype.getBoundingClientRect = realGetBoundingClientRect;
+    }
   });
 });

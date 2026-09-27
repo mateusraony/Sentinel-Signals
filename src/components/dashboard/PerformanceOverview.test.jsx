@@ -58,3 +58,29 @@ describe('PerformanceOverview — gráfico "Evolução do Saldo Acumulado" tem r
     expect(chart.getAttribute('aria-label')).toMatch(/Gráfico de área da evolução do saldo acumulado/);
   });
 });
+
+// Achado da varredura pós-Raio-X (2026-09-27): eixo X escondido
+// (`<XAxis dataKey="label" hide />`) tirava qualquer referência temporal do
+// gráfico — mesmo defeito que A-13 já corrigiu em RFHistoryChart.jsx. Mesmo
+// mock de dimensão de RFHistoryChart.test.jsx/CorrelationWidget.test.jsx —
+// jsdom não faz layout real, o ResponsiveContainer do recharts não
+// desenha o eixo sem uma dimensão explícita via getBoundingClientRect.
+describe('PerformanceOverview — eixo X do gráfico não está mais escondido (achado pós-Raio-X)', () => {
+  it('REGRESSÃO: o eixo X renderiza (não usa mais hide)', async () => {
+    listMock.mockResolvedValue(CLOSED_OPS);
+    const realGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+    // eslint-disable-next-line func-names -- precisa de `this` (o elemento) pra decidir a dimensão
+    Element.prototype.getBoundingClientRect = function () {
+      return { width: 400, height: 140, top: 0, left: 0, bottom: 140, right: 400, x: 0, y: 0, toJSON() {} };
+    };
+    try {
+      const { container } = renderOverview();
+      await screen.findByText('Performance Consolidada');
+      await vi.waitFor(() => {
+        expect(container.querySelector('.recharts-xAxis')).not.toBeNull();
+      });
+    } finally {
+      Element.prototype.getBoundingClientRect = realGetBoundingClientRect;
+    }
+  });
+});

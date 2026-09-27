@@ -26,13 +26,14 @@ const verificationTaskFilterMock = vi.fn();
 const monitoredAssetListMock = vi.fn();
 const tradeOperationListMock = vi.fn();
 const signalEventGetMock = vi.fn();
+const verificationTaskUpdateMock = vi.fn(async (id, data) => ({ id, ...data }));
 
 vi.mock('@/api/entities', () => ({
   backend: {
     entities: {
       VerificationTask: {
         filter: (...args) => verificationTaskFilterMock(...args),
-        update: vi.fn(async (id, data) => ({ id, ...data })),
+        update: (...args) => verificationTaskUpdateMock(...args),
       },
       MonitoredAsset: { list: (...args) => monitoredAssetListMock(...args) },
       TradeOperation: { list: (...args) => tradeOperationListMock(...args) },
@@ -67,6 +68,8 @@ afterEach(() => {
   monitoredAssetListMock.mockReset();
   tradeOperationListMock.mockReset();
   signalEventGetMock.mockReset();
+  verificationTaskUpdateMock.mockReset();
+  verificationTaskUpdateMock.mockImplementation(async (id, data) => ({ id, ...data }));
 });
 
 describe('Verification — reenvio desativado quando ativos monitorados não podem ser confirmados', () => {
@@ -265,5 +268,33 @@ describe('Verification — RSI/MACD/EMA com cor de zona no ContextGrid (achado M
     await renderWithContext({ ema_short: 95, ema_long: 100 });
     expect(screen.getByText('95.0000').style.color).toBe(RED);
     expect(screen.getByText('100.0000').style.color).toBe(RED);
+  });
+});
+
+// Achado da varredura pós-Raio-X (2026-09-27): os botões OK/Pular não
+// davam nenhum feedback visual durante a mutação — mesma classe de bug já
+// corrigida pro botão "Reenviar" (achado A-6/A-9) no próprio arquivo, nunca
+// estendida a estes dois.
+describe('Verification — botões OK/Pular ficam desabilitados durante a mutação (achado pós-Raio-X)', () => {
+  it('REGRESSÃO: "OK" e "Pular" ficam disabled enquanto updateMutation está pendente', async () => {
+    verificationTaskFilterMock.mockResolvedValue([TASK]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+    let resolveUpdate;
+    verificationTaskUpdateMock.mockImplementation(() => new Promise((res) => { resolveUpdate = res; }));
+
+    renderPage(<Verification />);
+    const okButton = await screen.findByRole('button', { name: 'Marcar como revisado (OK)' });
+    const skipButton = screen.getByRole('button', { name: 'Pular' });
+    expect(okButton.disabled).toBe(false);
+    expect(skipButton.disabled).toBe(false);
+
+    fireEvent.click(okButton);
+    await waitFor(() => expect(verificationTaskUpdateMock).toHaveBeenCalled());
+    expect(okButton.disabled).toBe(true);
+    expect(skipButton.disabled).toBe(true);
+
+    resolveUpdate({});
+    await waitFor(() => expect(okButton.disabled).toBe(false));
   });
 });

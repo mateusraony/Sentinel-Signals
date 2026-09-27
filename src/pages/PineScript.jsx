@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { backend } from '@/api/entities';
-import { Save, Copy, RefreshCw, Code2, AlertTriangle, CheckCircle2, Info, Layers, Zap } from 'lucide-react';
+import { Save, Copy, RotateCcw, Code2, AlertTriangle, CheckCircle2, Info, Layers, Zap } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { savePineConfig, getLocalPineConfig, getPineConfig, syncPineToAssets } from '@/lib/pineParser';
 import { logInfo } from '@/lib/logger';
@@ -1148,7 +1148,7 @@ export default function PineScript() {
             <span style={{
               color: syncStatus === 'syncing' ? '#00e5ff' : syncStatus === 'synced' ? '#00ff80' : syncStatus === 'error' ? '#ff1478' : 'rgba(0,229,255,0.5)',
             }}>
-              {syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? '✓ Auto-sync OK' : syncStatus === 'error' ? 'Erro sync' : 'Auto-sync ativo'}
+              {syncStatus === 'syncing' ? 'Sincronizando...' : syncStatus === 'synced' ? '✓ Auto-sync OK' : syncStatus === 'error' ? 'Erro na sincronização' : 'Auto-sync ativo'}
             </span>
           </div>
         </div>
@@ -1193,7 +1193,7 @@ export default function PineScript() {
             <button onClick={handleReset}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all"
               style={{ background: 'rgba(255,159,67,0.07)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
-              <RefreshCw className="w-3 h-3" />Restaurar v13.2
+              <RotateCcw className="w-3 h-3" />Restaurar v13.2
             </button>
             <span className="text-9px font-mono text-muted-foreground ml-auto">Auto-salvo · {code.split('\n').length} linhas</span>
           </div>

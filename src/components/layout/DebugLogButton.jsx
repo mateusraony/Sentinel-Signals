@@ -144,8 +144,13 @@ export default function DebugLogButton() {
                     <span className="text-8px" style={{ color: 'rgba(255,255,255,0.2)' }}>
                       {moment(log.created_date).format('HH:mm')}
                     </span>
+                    {/* Achado da varredura pós-Raio-X (2026-09-27): ícone só
+                        em :hover nunca aparecia em touch (mesma classe do
+                        Refinamento #1, nunca aplicada aqui) + sem feedback
+                        de isPending durante a mutação. */}
                     <button onClick={() => deleteLog.mutate(log.id)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      disabled={deleteLog.isPending}
+                      className="opacity-40 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                       <Trash2 className="w-2.5 h-2.5 text-muted-foreground hover:text-rose-400" />
                     </button>
                   </div>

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import moment from 'moment';
 import { backend } from '@/api/entities';
 import { fetchCandles } from '@/lib/marketDataProvider';
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
@@ -67,11 +68,13 @@ export default function CorrelationWidget() {
     // tendência comum, retornos são a prática padrão).
     const normalized = {};
     const returns = {};
+    const closedBySymbol = {};
     let minLen = Infinity;
     for (const sym of symbols) {
       const candles = candlesBySymbol[sym];
       if (!candles || candles.length < 2) continue;
       const closed = candles.filter(c => c.isClosed);
+      closedBySymbol[sym] = closed;
       minLen = Math.min(minLen, closed.length);
       const base = closed[0].close;
       normalized[sym] = closed.map(c => ((c.close - base) / base) * 100);
@@ -84,9 +87,17 @@ export default function CorrelationWidget() {
     // Mesmo alinhamento pela janela mais recente usado em pearsonCorrelation
     // — evita misturar candles antigos de um símbolo com candles recentes de
     // outro quando o histórico fetchado tem tamanhos diferentes.
+    const refCandles = closedBySymbol[validSymbols[0]];
+    const refOffset = refCandles.length - minLen;
     const chartData = [];
     for (let i = 0; i < minLen; i++) {
-      const point = { i };
+      // Achado da varredura pós-Raio-X (2026-09-27): eixo escondido tirava
+      // qualquer referência temporal do gráfico de correlação (mesmo defeito
+      // que A-13 corrigiu em RFHistoryChart.jsx). `time` vem do candle 1h de
+      // referência (`validSymbols[0]`) no mesmo índice alinhado — os
+      // símbolos estão sincronizados pela janela mais recente acima, então
+      // qualquer um serve como relógio comum.
+      const point = { i, time: refCandles[refOffset + i].openTime };
       for (const sym of validSymbols) {
         const series = normalized[sym];
         point[sym] = +series[series.length - minLen + i].toFixed(2);
@@ -180,7 +191,13 @@ export default function CorrelationWidget() {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={analysis.chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                <XAxis dataKey="i" hide />
+                <XAxis dataKey="time"
+                  tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 9, fontFamily: 'monospace' }}
+                  tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                  axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                  tickFormatter={t => moment(t).format('DD/MM HH:mm')}
+                  minTickGap={50}
+                />
                 <YAxis tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.4)' }} unit="%" width={38} />
                 <Tooltip
                   contentStyle={{ background: 'rgba(10,13,22,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 10, fontFamily: 'monospace' }}

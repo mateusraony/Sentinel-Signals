@@ -50,6 +50,7 @@ export default function PerformanceOverview() {
         };
         return {
           label: `${op.symbol?.replace('USDT', '/USDT')} ${op.timeframe?.toUpperCase()} · ${moment(op.created_date).format('DD/MM HH:mm')}`,
+          date: moment(op.created_date).format('DD/MM'),
           pnl: parseFloat(pnlPct.toFixed(2)),
           cumulative: parseFloat(cumulativePct.toFixed(2)),
           status: STATUS_LABELS[op.status] || op.status,
@@ -129,7 +130,15 @@ export default function PerformanceOverview() {
                     <stop offset="95%" stopColor={pnlColor} stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="label" hide />
+                {/* Achado da varredura pós-Raio-X (2026-09-27): eixo escondido
+                    tirava qualquer referência temporal do gráfico (mesmo
+                    defeito que A-13 corrigiu em RFHistoryChart.jsx) — usa
+                    `date` (curto) em vez de `label` (texto completo,
+                    usado só no tooltip), mesmo padrão de
+                    TradeEntryMarkers.jsx. */}
+                <XAxis dataKey="date"
+                  tick={{ fill: 'rgba(255,255,255,0.45)', fontSize: 9, fontFamily: 'monospace' }}
+                  axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={30} />
                 <YAxis
                   tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.45)', fontFamily: 'monospace' }}
                   tickLine={false} axisLine={false}

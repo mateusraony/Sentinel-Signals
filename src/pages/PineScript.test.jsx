@@ -77,3 +77,19 @@ describe('PineScript — aviso de sincronização linka pra Ajuste Fino (achado 
     expect(link.getAttribute('href')).toBe('/settings');
   });
 });
+
+// Achado da varredura pós-Raio-X (2026-09-27): o badge de erro de
+// auto-sync mostrava "Erro sync" — abreviação/jargão que quebrava o
+// próprio padrão do badge (as outras 3 frases são completas, em
+// português: "Sincronizando...", "✓ Auto-sync OK", "Auto-sync ativo").
+describe('PineScript — badge de erro de auto-sync com texto completo (achado pós-Raio-X)', () => {
+  it('REGRESSÃO: badge mostra "Erro na sincronização", não mais "Erro sync"', async () => {
+    const { syncPineToAssets } = await import('@/lib/pineParser');
+    syncPineToAssets.mockRejectedValueOnce(new Error('network'));
+    renderPage(<PineScript />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Salvar$/ }));
+    await screen.findByText('Erro na sincronização');
+    expect(screen.queryByText('Erro sync')).toBeNull();
+  });
+});

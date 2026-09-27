@@ -90,6 +90,38 @@ describe('TradeHistory — "por quê" visível sem precisar expandir', () => {
   });
 });
 
+// Achado da varredura pós-Raio-X (2026-09-27): mesma classe de bug do M-16
+// (docs/known-risks.md) — "0%" por falta de operação CONTADA (nenhum
+// entry_price/initial_stop, outcome UNKNOWN em classifyOutcome) usava a
+// mesma cor de atenção (laranja) de um resultado de fato ruim, tanto no
+// "Resumo do Dia" quanto na "Summary strip" de baixo.
+const OP_SEM_DADO_SUFICIENTE = {
+  id: 'op_nodata', asset_id: 'a9', symbol: 'SOLUSDT', side: 'BUY',
+  status: 'INVALIDATED', closed_at: new Date().toISOString(),
+  created_date: new Date().toISOString(),
+};
+
+describe('TradeHistory — Win Rate "0%" sem operação contada não usa mais cor de atenção (achado pós-Raio-X)', () => {
+  it('REGRESSÃO: "Resumo do Dia" mostra Win Rate 0% em cor neutra quando não há operação contada hoje', async () => {
+    mockBackend([OP_SEM_DADO_SUFICIENTE]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+
+    await screen.findByText('Resumo do Dia', { exact: false });
+    const wrValue = screen.getByText('0%');
+    expect(wrValue.style.color).toBe('rgb(0, 229, 255)');
+  });
+
+  it('REGRESSÃO: a "Summary strip" mostra "WR 0%" em cor neutra quando não há operação contada', async () => {
+    mockBackend([OP_SEM_DADO_SUFICIENTE]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+
+    const wr = await screen.findByText('WR 0%');
+    expect(wr.style.color).toBe('rgb(0, 229, 255)');
+  });
+});
+
 // Achado A-6 do Raio-X de UI/UX (5ª sub-rodada): 5 ocorrências de title=
 // nativo em TradeHistory.jsx (Tier, "Situação rara", resumo de ambíguos,
 // MFE, MAE) — todas em <span> não focável com texto visível ao lado.
@@ -224,5 +256,22 @@ describe('TradeHistory — TP1/TP2/R:R/RF têm tooltip explicando o termo (achad
     const rfChip = screen.getByText(/Saída: RF$/);
     expect(rfAtrChip.closest('.cursor-help')).toBeNull();
     expect(rfChip.closest('.cursor-help')?.getAttribute('tabindex')).toBe('0');
+  });
+});
+
+// Achado da varredura pós-Raio-X (2026-09-27): campo de busca mais estreito
+// (`w-28`) que o próprio placeholder, e único ainda em inglês ("Symbol...")
+// — mesma classe de achado já corrigida em Alerts.jsx/Logs.jsx nas
+// Refinamentos (seção E do Raio-X).
+describe('TradeHistory — campo de busca não corta o placeholder e está em português (achado pós-Raio-X)', () => {
+  it('REGRESSÃO: placeholder em português e input não usa mais w-28', async () => {
+    mockBackend([]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+
+    const search = await screen.findByPlaceholderText('Buscar ativo...');
+    expect(search.className).not.toMatch(/\bw-28\b/);
+    expect(search.className).toMatch(/\bw-40\b/);
+    expect(screen.queryByPlaceholderText('Symbol...')).toBeNull();
   });
 });

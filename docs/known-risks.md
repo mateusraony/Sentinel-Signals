@@ -28601,3 +28601,123 @@ fixes tocam só apresentação/texto/prop, sem tocar `backend.entities`,
 **Com esta rodada, o Raio-X de UI/UX (relatório original completo —
 Alta Prioridade, Média Prioridade e Refinamentos) está fechado por
 completo.**
+
+## 242. Nova varredura pós-Raio-X (Round 1/5): visualização + humanização — achados FORA do relatório original de 2026-09-23
+
+Com o Raio-X original 100% fechado (item 241), o usuário pediu
+explicitamente uma **varredura nova**, separada do relatório original,
+em 2 frentes: melhorar a **visualização** (gráficos, cor, hierarquia
+de dados) e tornar a UI **mais humanizada** (tom de texto, mensagens
+de erro/confirmação). Rodei 3 agentes Explore em paralelo (cada um
+instruído a ler `docs/claude/ui-audit-criticos.md` primeiro e não
+repetir nada já fechado), consolidando ~48 achados brutos em ~35 itens
+únicos, organizados em 5 rounds por risco crescente (plano completo em
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`, seção "Nova
+varredura pós-Raio-X"). Este item cobre só o **Round 1** (mecânico, 12
+fixes, baixo risco) — Rounds 2-5 ficam pendentes, registrados no plano.
+
+Achados estruturais confirmados por leitura/grep direto antes de
+planejar (não corrigidos nesta rodada, ver Rounds 2 e 4 do plano):
+`src/components/ui/alert-dialog.jsx` (Radix `AlertDialog`, temático)
+existe e nunca é importado em `src/` — 8 `confirm()`/`window.confirm()`
+nativos espalhados usam o diálogo do browser em vez dele, quebrando o
+tema escuro; `SummaryCard`/`MetricCard` existem como 5 cópias quase
+idênticas em 5 arquivos diferentes (`Backtest.jsx`, `MonthlyReport.jsx`,
+`PerformanceMetricsBar.jsx`, `VirtualAccountCard.jsx`,
+`PerformanceReport.jsx`), causa raiz de inconsistências de cor
+(Win Rate, drawdown, Profit Factor) entre telas.
+
+### Corrigidos (12 fixes, Round 1, 14 arquivos de produção + 1 teste novo)
+
+1. **`PerformanceOverview.jsx` — eixo X escondido no gráfico.**
+   `<XAxis dataKey="label" hide />` tirava qualquer referência temporal
+   — mesmo defeito que A-13 já tinha corrigido em `RFHistoryChart.jsx`,
+   nunca replicado aqui. Fix: novo campo curto `date` (`DD/MM`) só para
+   o eixo, distinto do `label` completo usado no tooltip (mesmo padrão
+   de `TradeEntryMarkers.jsx`).
+2. **`CorrelationWidget.jsx` — mesmo defeito, `<XAxis dataKey="i" hide />`.**
+   Fix: eixo passa a usar `time` (timestamp real do candle de
+   referência, formatado `DD/MM HH:mm`), em vez do índice numérico
+   escondido.
+3. **`TradeHistory.jsx` — Win Rate "0%" em laranja quando não há
+   operação contabilizada no dia** (2 pontos: resumo do dia e a faixa
+   de resumo geral) — mesma classe de bug que M-16 já tinha corrigido
+   em `Dashboard.jsx`, recorrente num componente que aquela rodada não
+   tocou. Fix: cor neutra (`#00e5ff`) quando `counted === 0`, reusando
+   o padrão já estabelecido.
+4. **Feedback de `isPending` ausente em botões de mutação**:
+   `Assets.jsx` (toggle de monitoramento + "Remover"),
+   `Verification.jsx` + `VerificationWidget.jsx` (botões OK/Pular),
+   `DebugLogButton.jsx` (deletar log) — nenhum desabilitava durante a
+   chamada em andamento, permitindo cliques duplicados. Fix: `disabled={mutation.isPending}`
+   em cada um.
+5. **`DebugLogButton.jsx` — ícone de deletar só visível em `:hover`**,
+   nunca aparecia em touch — mesma classe do Refinamento #1 (item 241),
+   nunca aplicada aqui. Fix: `opacity-40 sm:opacity-0
+   sm:group-hover:opacity-100` (visível por padrão em telas touch, hover
+   só a partir de `sm:`).
+6. **`TradeHistory.jsx` — campo de busca mais estreito que o
+   placeholder** (`w-28` para "Symbol...", em inglês). Fix: `w-40` +
+   placeholder "Buscar ativo..." (português, consistente com o resto
+   do app).
+7. **Ícones inconsistentes pro mesmo conceito**: `PineScript.jsx` usava
+   `RefreshCw` para "restaurar padrão" onde `Settings.jsx` já usa
+   `RotateCcw`; `MessageBubble.jsx` era o único lugar do app com a
+   direção de expansão invertida (`ChevronRight→ChevronDown` em vez de
+   `ChevronDown→ChevronUp`, usado em `AssetCard.jsx`/`TradeCard.jsx`/
+   `SignalChecklist.jsx`/`TradeHistory.jsx`). Fix: uniformizados.
+8. **`TradeEntryMarkers.jsx` — legenda do gráfico sem o marcador
+   `INVALIDATED`** (laranja), que aparecia no gráfico sem explicação.
+   Fix: novo item de legenda "Saída Invalidada".
+9. **Tooltip de gráfico de pizza sem percentual** (`Backtest.jsx`,
+   `MonthlyReport.jsx` — 2 pizzas). Fix: `formatter` mostrando valor
+   absoluto + `%` do total (com `Number(value)` explícito — o tipo
+   `ValueType` do Recharts é uma union, não garante `number`, e a
+   divisão direta quebrava `tsc`).
+10. **"ver payload →" (jargão técnico)** em `Alerts.jsx`/`Logs.jsx` →
+    "ver contexto técnico →" / "ver detalhes →" (termo já usado acima,
+    no próprio card).
+11. **`PineScript.jsx` — badge "Erro sync" (abreviação)** → "Erro na
+    sincronização" (texto completo, mesmo padrão dos outros estados do
+    badge).
+12. **`Trades.jsx` — única página com `space-y-6`**, as outras 9 usam
+    `space-y-5`. Fix: uniformizado.
+
+### Testes
+
+Cada fix ganhou (ou já tinha) teste de regressão dedicado, reproduzido
+falhando via `git stash` das mudanças de produção antes de aceitar:
+`PerformanceOverview.test.jsx`/`CorrelationWidget.test.jsx` (mock de
+`Element.prototype.getBoundingClientRect`, padrão já usado em
+`RFHistoryChart.test.jsx`, pra contornar a limitação do jsdom com
+`ResponsiveContainer` do Recharts — assert em `.recharts-xAxis`, não em
+ticks individuais); `TradeHistory.test.jsx` (fixture com operação sem
+dado suficiente, `counted=0`); `Assets.test.jsx`/`Verification.test.jsx`/
+`VerificationWidget.test.jsx`/`DebugLogButton.test.jsx` (mutação mock
+convertida para controlável via `mockImplementation` + Promise resolvida
+manualmente, assert de `disabled` com `await vi.waitFor(...)` — não
+síncrono, depois de um flake real detectado em `DebugLogButton`);
+`MessageBubble.test.jsx` (novo — componente não tinha teste antes);
+`TradeEntryMarkers.test.jsx`/`Alerts.test.jsx`/`Logs.test.jsx` (ajustes
+pontuais). Pie-chart tooltip `%` e a classe `space-y-5` ficaram sem
+teste dedicado — zero precedente no projeto pra testar tooltip de hover
+do Recharts ou classes Tailwind de espaçamento isoladas.
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2167 testes, 0 falhas, 58 pulados; teto de
+typecheck em 13, sem mudança — a correção do `Number(value)` no
+formatter das pizzas evitou 3 regressões novas que o fix teria
+introduzido). `git diff` grepado por
+`backend\.|scanner|firestore|postgres|transitionTradeOp` → vazio; grepado
+por `useQuery\(|useMutation\(` só em linhas novas (`^\+`) → vazio (todos
+os fixes reusam mutações/queries já existentes). Os 12 fixes tocam só
+apresentação/gráfico/texto, sem tocar `backend.entities`, `scanner.js`
+ou qualquer regra de negócio.
+
+Pendente: Rounds 2 (migrar 8 `confirm()` nativos para `AlertDialog`),
+3 (mensagens de erro/empty states mais humanos), 4 (maior/mais
+arriscado — unificar `SummaryCard`/cores de métrica) e 5 (`SignalToast`
+sem `onClick`, sobreposição com `TopBar`) do plano — ver
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.
