@@ -18,8 +18,11 @@ import { render, screen, cleanup, fireEvent, within, act } from '@testing-librar
 import { MemoryRouter } from 'react-router-dom';
 import Sidebar from './Sidebar.jsx';
 
+// `deleteMany` precisa ser vi.fn() (não uma arrow plana) pra poder ser
+// espionado nos testes de "Limpar Logs" abaixo (Round 2 pós-Raio-X).
+const deleteManyMock = vi.fn(async () => {});
 vi.mock('@/api/entities', () => ({
-  backend: { entities: { SystemLog: { deleteMany: async () => {} } } },
+  backend: { entities: { SystemLog: { deleteMany: (...args) => deleteManyMock(...args) } } },
 }));
 
 // Achado do Codex review no PR #436: MobileBottomNav passou a chamar
@@ -33,7 +36,7 @@ beforeEach(() => {
   mediaQueryList = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() };
   window.matchMedia = vi.fn(() => mediaQueryList);
 });
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); deleteManyMock.mockClear(); });
 
 const CORE_LABELS = ['Dashboard', 'Trades', 'Ativos', 'Alertas', 'Histórico'];
 const MORE_LABELS = ['Verificação', 'Logs', 'Pine Script', 'Backtest', 'Ajustes', 'Revisor', 'Relatório'];
@@ -185,5 +188,33 @@ describe('Sidebar — menu "Mais" na nav mobile (achado M-10)', () => {
     act(() => handleChange());
 
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+// Achado da varredura pós-Raio-X, Round 2 (2026-09-27): "Limpar Logs" usava
+// window.confirm() nativo (quebra o tema escuro) — migrado pro AlertDialog
+// já existente e nunca usado.
+describe('Sidebar — "Limpar Logs" usa AlertDialog em vez de confirm() nativo (Round 2 pós-Raio-X)', () => {
+  it('REGRESSÃO: abre diálogo explicando o apagamento; Cancelar não chama deleteMany; confirmar chama', () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={['/trades']}>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+    const clearBtn = container.querySelector('button svg.lucide-trash2')?.closest('button');
+    expect(clearBtn).not.toBeNull();
+
+    fireEvent.click(clearBtn);
+    const dialog = screen.getByRole('alertdialog');
+    expect(within(dialog).getByText(/não afeta ativos, sinais ou operações de trading/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByText('Cancelar'));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(deleteManyMock).not.toHaveBeenCalled();
+
+    fireEvent.click(clearBtn);
+    const dialog2 = screen.getByRole('alertdialog');
+    fireEvent.click(within(dialog2).getByText('Limpar logs'));
+    expect(deleteManyMock).toHaveBeenCalledWith({});
   });
 });

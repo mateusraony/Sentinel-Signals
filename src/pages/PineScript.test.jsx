@@ -10,7 +10,7 @@
 // default, a aba Sincronização mostra os valores CUSTOM, não os antigos.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup, fireEvent } from '@testing-library/react';
+import { screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 import PineScript from './PineScript.jsx';
 
@@ -91,5 +91,31 @@ describe('PineScript — badge de erro de auto-sync com texto completo (achado p
     fireEvent.click(await screen.findByRole('button', { name: /^Salvar$/ }));
     await screen.findByText('Erro na sincronização');
     expect(screen.queryByText('Erro sync')).toBeNull();
+  });
+});
+
+// Achado da varredura pós-Raio-X, Round 2 (2026-09-27): "Restaurar v13.2"
+// usava confirm() nativo (quebra o tema escuro) — migrado pro AlertDialog
+// já existente e nunca usado.
+describe('PineScript — "Restaurar v13.2" usa AlertDialog em vez de confirm() nativo (Round 2 pós-Raio-X)', () => {
+  it('REGRESSÃO: Cancelar não reseta o código; confirmar restaura o padrão e grava no localStorage', async () => {
+    renderPage(<PineScript />);
+    const editor = await screen.findByRole('textbox');
+    fireEvent.change(editor, { target: { value: '// edição do usuário' } });
+    expect(editor.value).toBe('// edição do usuário');
+
+    fireEvent.click(screen.getByRole('button', { name: /Restaurar v13.2/i }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/sobrescrever as edições/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByText('Cancelar'));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(editor.value).toBe('// edição do usuário');
+
+    fireEvent.click(screen.getByRole('button', { name: /Restaurar v13.2/i }));
+    const dialog2 = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog2).getByText('Restaurar'));
+    await waitFor(() => expect(editor.value).not.toBe('// edição do usuário'));
+    expect(localStorage.getItem('pine_script_code_v12')).toBe(editor.value);
   });
 });

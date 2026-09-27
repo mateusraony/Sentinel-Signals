@@ -3,6 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { Bell, Filter, Trash2, TrendingUp, TrendingDown, Search, X, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { QueryErrorState } from '@/components/QueryErrorState';
 import moment from 'moment';
@@ -42,6 +46,11 @@ export default function Alerts() {
   const [filterType, setFilterType] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedSignal, setSelectedSignal] = useState(null);
+  // Guarda os IDs visíveis no momento do clique, não um boolean — a query
+  // `all-signals` faz polling (achado do Codex review no PR #442) e
+  // `filtered` pode ganhar alertas novos enquanto o diálogo está aberto;
+  // sem o snapshot, confirmar dispensaria alertas que o usuário nunca viu.
+  const [confirmingDismissAll, setConfirmingDismissAll] = useState(null);
   const queryClient = useQueryClient();
 
   const { data: signals = [], isLoading, isError, refetch } = useQuery({
@@ -85,7 +94,7 @@ export default function Alerts() {
           </div>
           {filtered.length > 0 && (
             <button
-              onClick={() => { if (confirm('Descartar todos os alertas visíveis?')) filtered.forEach(s => dismissMutation.mutate(s.id)); }}
+              onClick={() => setConfirmingDismissAll(filtered.map(s => s.id))}
               disabled={dismissMutation.isPending}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-80"
               style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
@@ -369,6 +378,29 @@ export default function Alerts() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Achado da varredura pós-Raio-X, Round 2 (2026-09-27): confirm()
+          nativo quebrava o tema escuro — migrado pro AlertDialog já
+          existente e nunca usado. Texto agora diz quantos alertas serão
+          afetados e que não há undo na UI (é só flag is_dismissed, sem
+          controle de reverter). */}
+      <AlertDialog open={!!confirmingDismissAll} onOpenChange={(open) => !open && setConfirmingDismissAll(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Descartar todos os alertas visíveis?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Descartar os {confirmingDismissAll?.length} alertas visíveis agora? Eles saem da
+              lista (marcados como dispensados) — não há como reverter isso pela interface.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => confirmingDismissAll?.forEach(id => dismissMutation.mutate(id))}>
+              Descartar todos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

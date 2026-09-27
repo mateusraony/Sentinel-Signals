@@ -28721,3 +28721,106 @@ Pendente: Rounds 2 (migrar 8 `confirm()` nativos para `AlertDialog`),
 arriscado — unificar `SummaryCard`/cores de métrica) e 5 (`SignalToast`
 sem `onClick`, sobreposição com `TopBar`) do plano — ver
 `/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.
+
+## 243. Nova varredura pós-Raio-X (Round 2/5): migrar 8 `confirm()` nativos para `AlertDialog`
+
+Continuação do item 242 (Round 1 mesclado, PR #441). Round 2, já
+esboçado no plano: migrar todos os `confirm()`/`window.confirm()`
+nativos (quebram o tema escuro, renderizando o dialog padrão do
+browser) pro componente `AlertDialog`
+(`src/components/ui/alert-dialog.jsx`) — um wrapper Radix já temático,
+já em `package.json` (`@radix-ui/react-alert-dialog`), mas **nunca
+importado em lugar nenhum de `src/` até agora**. Junto, reescrito o
+texto de 4 dos 8 sites que não explicavam a consequência da ação
+(achado confirmado por leitura direta do código atual, não só do
+levantamento anterior — 2 números de linha tinham mudado desde o
+levantamento original: `Assets.jsx` 396→397, `Backtest.jsx` 855→865).
+
+Achado de comportamento confirmado por leitura do código-fonte do
+Radix antes de implementar: `AlertDialogAction` por baixo usa o mesmo
+mecanismo `Close` do `Dialog` — o `onClick` do consumidor roda
+primeiro (chamando `.mutate()`, fire-and-forget), DEPOIS o diálogo
+fecha sozinho. Isso é idêntico ao comportamento atual de
+`if (confirm()) mutate()` — sem regressão em nenhum dos 8 sites.
+
+### Os 8 sites migrados
+
+1. **`Trades.jsx` — Invalidar/Encerrar**, 1 `AlertDialog` compartilhado
+   (estado `{ op, action }`, mesmo padrão de "item pendente" já usado
+   por `EditModal`/`editingOp` no mesmo arquivo). Textos novos: ambos
+   agora dizem que o registro é preservado como histórico (status só
+   muda pra INVALIDATED/CLOSED via `manualTransition`/
+   `transitionTradeOp`, nunca delete) e que é definitivo pela UI.
+2. **`Assets.jsx` — Remover.** Texto novo menciona que sinais/operações
+   já registrados pra aquele ativo são preservados (só `MonitoredAsset`
+   + `AssetState` são apagados — confirmado no próprio código do
+   `deleteMutation`). Teste existente (`Assets.test.jsx`) que fazia
+   `vi.spyOn(window, 'confirm')` e esperava a mutação disparar no
+   primeiro clique precisou ser **reescrito** (fluxo de diálogo, não
+   clique único) — sem isso a CI quebraria.
+3. **`Alerts.jsx` — Descartar todos.** Texto novo usa
+   `filtered.length` pra dizer quantos alertas serão afetados e que
+   não há undo na UI (é só flag `is_dismissed`).
+4. **`Sidebar.jsx` — Limpar Logs** (`ClearLogsButton`). Texto novo diz
+   que é delete permanente e irrestrito de todo o `SystemLog` e que
+   não afeta trading.
+5. **`AssetCard.jsx` — Ativar** (só troca de container — texto já
+   explicava bem a consequência).
+6. **`PineScript.jsx` — Restaurar v13.2** (só troca de container).
+7. **`Backtest.jsx` — Aplicar ao Scanner** (só troca de container;
+   `pineConfig`/`trialLabel`, antes locais a `handleApplyToScanner`,
+   foram promovidos a `const` no corpo do componente — refactor puro,
+   `report` continua a única fonte de verdade).
+
+### Achado durante a verificação: regressão de typecheck causada pelo próprio `alert-dialog.jsx`
+
+`npm run typecheck:ratchet` subiu de 13 pra **68 erros** depois dos 7
+fixes — não no código novo, e sim porque `alert-dialog.jsx` (nunca
+importado antes, então nunca exercitado pelo `tsc`) não tinha as
+anotações JSDoc que o `dialog.jsx` irmão já tem em cada componente
+(`/** @param {React.ComponentPropsWithoutRef<typeof
+X.Primitive>} */`) — sem elas, o TS não conseguia inferir
+`children`/`onClick`/`className` nos componentes consumidores. Fix:
+adicionadas as mesmas anotações, espelhando 1:1 o padrão já usado em
+`dialog.jsx` pra cada componente equivalente
+(`AlertDialogOverlay`/`Content`/`Title`/`Description`/`Action`/
+`Cancel` via `React.forwardRef` + JSDoc; `AlertDialogHeader`/`Footer`
+via JSDoc simples) — teto de volta a 13, sem nenhuma mudança de
+comportamento (o arquivo é excluído do typecheck via
+`jsconfig.json`, então isso nunca teria sido pego sem essa rodada
+exercitar o import).
+
+### Testes
+
+Cada site ganhou (ou teve reescrito) teste de regressão, reproduzido
+falhando via `git stash` das mudanças de produção antes de aceitar:
+`Trades.test.jsx` (3 casos — Invalidar, Encerrar, e um caso específico
+pra estado obsoleto: abrir Invalidar, cancelar, abrir Encerrar, o
+texto tem que trocar); `Assets.test.jsx` (1 reescrito + 1 novo);
+`Alerts.test.jsx` (mock próprio via `vi.doMock`, já que
+`makeFakeBackendModule` da fixture compartilhada não tem `update`
+espionável); `Sidebar.test.jsx` (mock de `deleteMany` convertido de
+arrow plana pra `vi.fn()`); `AssetCard.test.jsx` (novo mock de
+`@/lib/scanner`, arquivo não mockava antes); `PineScript.test.jsx`;
+`Backtest.test.jsx` (mock próprio via `vi.doMock`, já que a fixture
+não tem `StrategyConfig.set`).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2176 testes, 0 falhas, 58 pulados; teto de
+typecheck em 13, sem mudança líquida — subiu pra 68 e voltou pro fix
+do `alert-dialog.jsx` acima). `git diff` grepado por
+`backend\.entities\.\w+\.(create|update|delete|set)\(` em linhas NOVAS
+(`^\+`) → vazio (nenhuma mutação nova, todos os 8 sites reusam
+mutações já existentes, só trocando o gatilho de UI); grepado por
+`useQuery\(|useMutation\(` em linhas novas → vazio. Confirmado
+manualmente também: `AlertDialogContent` do Radix bloqueia clique-fora
+(`onPointerDownOutside`/`onInteractOutside` chamam `preventDefault`
+incondicionalmente) — comportamento intencional pra ação destrutiva,
+igual ao modal nativo de `confirm()`, não é bug.
+
+Pendente: Rounds 3 (mensagens de erro/empty states mais humanos), 4
+(maior/mais arriscado — unificar `SummaryCard`/cores de métrica) e 5
+(`SignalToast` sem `onClick`, sobreposição com `TopBar`) — ver
+`/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.

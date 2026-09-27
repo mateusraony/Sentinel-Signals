@@ -6,6 +6,10 @@ import {
   BarChart2, Edit3, X, Search, Calendar, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import TradeCard, { ScoreBar } from '@/components/dashboard/TradeCard';
 import TradeEntryMarkers from '@/components/trades/TradeEntryMarkers';
@@ -425,6 +429,8 @@ export default function Trades() {
   const [search, setSearch] = useState('');
   const [datePreset, setDatePreset] = useState('all');
   const [editingOp, setEditingOp] = useState(null);
+  /** @type {[{ op: object, action: 'invalidate' | 'close' } | null, Function]} */
+  const [confirmingOp, setConfirmingOp] = useState(null);
   const queryClient = useQueryClient();
 
   // Reset filters on global event
@@ -586,6 +592,35 @@ export default function Trades() {
           onSave={(data) => editMutation.mutate({ op: editingOp, data })}
         />
       )}
+
+      {/* Achado da varredura pós-Raio-X, Round 2 (2026-09-27): confirm()
+          nativo quebrava o tema escuro — migrado pro AlertDialog já
+          existente e nunca usado. 1 diálogo compartilhado entre
+          Invalidar/Encerrar (mesma forma de op, muda só o verbo/mutação). */}
+      <AlertDialog open={!!confirmingOp} onOpenChange={(open) => !open && setConfirmingOp(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmingOp?.action === 'invalidate' ? 'Invalidar operação?' : 'Encerrar operação?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmingOp?.action === 'invalidate'
+                ? `Invalidar ${confirmingOp?.op.symbol} ${confirmingOp?.op.side}? O registro é mantido como histórico (status muda para INVALIDATED) — esta ação não pode ser desfeita pela interface.`
+                : `Encerrar ${confirmingOp?.op.symbol} ${confirmingOp?.op.side}? O registro é mantido como histórico (status muda para CLOSED) — esta ação não pode ser desfeita pela interface.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmingOp?.action === 'invalidate') invalidateMutation.mutate(confirmingOp.op);
+                else if (confirmingOp?.action === 'close') closeMutation.mutate(confirmingOp.op);
+              }}>
+              {confirmingOp?.action === 'invalidate' ? 'Invalidar' : 'Encerrar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <div className="space-y-5 max-w-7xl mx-auto">
         {/* Header */}
@@ -827,9 +862,7 @@ export default function Trades() {
                         Editar
                       </button>
                       <button
-                        onClick={() => {
-                          if (window.confirm(`Invalidar ${op.symbol} ${op.side}?`)) invalidateMutation.mutate(op);
-                        }}
+                        onClick={() => setConfirmingOp({ op, action: 'invalidate' })}
                         disabled={invalidateMutation.isPending}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-90"
                         style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
@@ -837,9 +870,7 @@ export default function Trades() {
                         Invalidar
                       </button>
                       <button
-                        onClick={() => {
-                          if (window.confirm(`Encerrar ${op.symbol} ${op.side}?`)) closeMutation.mutate(op);
-                        }}
+                        onClick={() => setConfirmingOp({ op, action: 'close' })}
                         disabled={closeMutation.isPending}
                         className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-10px font-mono ml-auto transition-all hover:opacity-90"
                         style={{ background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.25)', color: '#ff1478' }}>

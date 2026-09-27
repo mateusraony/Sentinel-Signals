@@ -875,10 +875,18 @@ completo de cada round em `docs/known-risks.md` item 242 em diante.
   `Backtest.jsx`/`MonthlyReport.jsx`; jargão "ver payload"/"Erro sync"
   em `Alerts.jsx`/`Logs.jsx`/`PineScript.jsx`; `space-y-6` divergente em
   `Trades.jsx`. Ver `docs/known-risks.md` item 242.
-- [ ] **Round 2 (médio) — pendente.** Migrar 8 `confirm()`/
-  `window.confirm()` nativos pro componente `AlertDialog` já existente
-  e nunca usado (`src/components/ui/alert-dialog.jsx`) + escrever texto
-  de consequência onde falta.
+- [x] **Round 2 (médio) — fechado.** 8 `confirm()`/`window.confirm()`
+  nativos migrados pro `AlertDialog` já existente e nunca usado
+  (`src/components/ui/alert-dialog.jsx`): `Trades.jsx`
+  (Invalidar/Encerrar, 1 diálogo compartilhado), `Assets.jsx`
+  (Remover), `Alerts.jsx` (Descartar todos), `Sidebar.jsx` (Limpar
+  Logs), `AssetCard.jsx` (Ativar), `PineScript.jsx` (Restaurar v13.2),
+  `Backtest.jsx` (Aplicar ao Scanner) — 4 ganharam texto novo
+  explicando a consequência (preservação de histórico/quantidade
+  afetada/irreversibilidade), 3 só trocaram o container. Achado extra:
+  o próprio `alert-dialog.jsx` causou regressão de typecheck (13→68)
+  por faltar anotações JSDoc que `dialog.jsx` já tinha — corrigido no
+  mesmo PR. Ver `docs/known-risks.md` item 243.
 - [ ] **Round 3 (médio) — pendente.** Mensagens de erro genéricas sem
   causa/próximo passo (padrão `QueryErrorState.jsx`) + empty states sem
   ação seguinte (padrão `RecentAlertsList.jsx`) + filtro-vazio sem

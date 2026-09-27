@@ -11,7 +11,7 @@
 // focável em volta pra carregar o tooltip.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup, fireEvent } from '@testing-library/react';
+import { screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import { renderPage, makeFakeBackendModule } from './__fixtures__/renderPage.jsx';
 import Backtest from './Backtest.jsx';
 
@@ -323,5 +323,61 @@ describe('Backtest — gráficos Recharts têm role="img"/aria-label descrevendo
     expect(equityCurveTable.textContent).toMatch(/ETHUSDT/);
     expect(realEquityTable.textContent).toMatch(/BTCUSDT/);
     expect(realEquityTable.textContent).toMatch(/ETHUSDT/);
+  });
+});
+
+// Relatório COM reproducibility.pineConfig — habilita o botão "Aplicar ao
+// Scanner" (o REPORT_JSON padrão deste arquivo omite de propósito, pro
+// caso do botão desabilitado do describe A-6 acima).
+const REPORT_JSON_COM_PINECONFIG = JSON.stringify({
+  range: { from: '2026-01-01T00:00:00.000Z', to: '2026-06-01T00:00:00.000Z' },
+  overall: { ...CASCADE_STATS, total: 10, counted: 10, wins: 6, losses: 4 },
+  byCascade: { '4h_15m': CASCADE_STATS },
+  costs: { model: {} },
+  trialLabel: 'trial-teste',
+  reproducibility: { pineConfig: { minScore: 80 }, configHash: 'abc123' },
+});
+
+// Achado da varredura pós-Raio-X, Round 2 (2026-09-27): "Aplicar ao
+// Scanner" usava window.confirm() nativo (quebra o tema escuro) — migrado
+// pro AlertDialog já existente e nunca usado. Mock próprio (a fixture
+// compartilhada `makeFakeBackendModule` não tem `StrategyConfig.set`) pra
+// poder confirmar chamada/não-chamada e o estado "Aplicado!" pós-confirmação.
+describe('Backtest — "Aplicar ao Scanner" usa AlertDialog em vez de confirm() nativo (Round 2 pós-Raio-X)', () => {
+  afterEach(() => {
+    vi.doUnmock('@/api/entities');
+    vi.resetModules();
+  });
+
+  it('REGRESSÃO: diálogo mostra o trial; Cancelar não chama StrategyConfig.set; confirmar aplica e mostra "Aplicado!"', async () => {
+    const setMock = vi.fn(async (id, data) => ({ id, ...data }));
+    vi.doMock('@/api/entities', async () => {
+      const { makeFakeBackendModule } = await import('./__fixtures__/renderPage.jsx');
+      const base = makeFakeBackendModule({ populated: false }).backend;
+      return { backend: { ...base, entities: { ...base.entities, StrategyConfig: { ...base.entities.StrategyConfig, set: setMock } } } };
+    });
+    vi.resetModules();
+    const { default: BacktestFresh } = await import('./Backtest.jsx');
+    renderPage(<BacktestFresh />);
+
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    fireEvent.change(textarea, { target: { value: REPORT_JSON_COM_PINECONFIG } });
+    fireEvent.click(screen.getByText(/Analisar relatório colado/i));
+    await screen.findByText('Expectância');
+
+    fireEvent.click(screen.getByText('Aplicar ao Scanner'));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/trial-teste/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByText('Cancelar'));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(setMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('Aplicar ao Scanner'));
+    const dialog2 = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog2).getByText('Aplicar'));
+    await waitFor(() => expect(setMock).toHaveBeenCalledWith('current', expect.objectContaining({ minScore: 80 })));
+    await screen.findByText('Aplicado!');
   });
 });

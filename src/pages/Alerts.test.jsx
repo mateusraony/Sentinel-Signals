@@ -7,8 +7,11 @@
 // dedicado antes.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup, fireEvent } from '@testing-library/react';
-import { renderPage } from './__fixtures__/renderPage.jsx';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { renderPage, makeTestQueryClient } from './__fixtures__/renderPage.jsx';
 import Alerts from './Alerts.jsx';
 
 // `populated` precisa ser trocável por describe (o teste de A-7 abaixo
@@ -142,5 +145,89 @@ describe('Alerts — timestamp do card tem contraste maior (Refinamentos)', () =
     await screen.findByText('BTC/USDT');
     const timestamp = screen.getByText(/^\d{2}\/\d{2} \d{2}:\d{2}$/);
     expect(timestamp.style.color).toBe('rgba(255, 255, 255, 0.45)');
+  });
+});
+
+// Achado da varredura pós-Raio-X, Round 2 (2026-09-27): "Descartar todos"
+// usava confirm() nativo (quebra o tema escuro) — migrado pro AlertDialog já
+// existente e nunca usado. Mock próprio (não `makeFakeBackendModule`, cujo
+// `update` não é espionável) pra poder confirmar chamada/não-chamada.
+describe('Alerts — "Descartar todos" usa AlertDialog em vez de confirm() nativo (Round 2 pós-Raio-X)', () => {
+  afterEach(() => {
+    vi.doUnmock('@/api/entities');
+    vi.resetModules();
+  });
+
+  it('REGRESSÃO: diálogo mostra a contagem; Cancelar não chama update; confirmar dispensa todos os visíveis', async () => {
+    const updateMock = vi.fn(async (id, data) => ({ id, ...data }));
+    const signals = [
+      { id: 'e1', asset_id: 'a1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter', price_at_signal: 60000, created_date: new Date().toISOString() },
+      { id: 'e2', asset_id: 'a1', symbol: 'ETHUSDT', timeframe: '1h', signal_type: 'SELL', source: 'range_filter', price_at_signal: 3000, created_date: new Date().toISOString() },
+    ];
+    vi.doMock('@/api/entities', () => ({
+      backend: { entities: { SignalEvent: { list: async () => signals, update: updateMock } } },
+    }));
+    vi.resetModules();
+    const { default: AlertsFresh } = await import('./Alerts.jsx');
+    renderPage(<AlertsFresh />);
+
+    fireEvent.click(await screen.findByText('Descartar todos'));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/2 alertas/)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByText('Cancelar'));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(updateMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('Descartar todos'));
+    const dialog2 = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog2).getByText('Descartar todos'));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
+  });
+
+  // Achado do Codex review no PR #442 (P2): o confirm() nativo bloqueava a
+  // UI, então a query `all-signals` (refetchInterval) não podia repintar
+  // entre o clique e a confirmação. Com o AlertDialog, um alerta novo pode
+  // chegar via polling enquanto o diálogo está aberto — sem snapshot dos
+  // IDs visíveis na abertura, confirmar dispensaria também o alerta novo,
+  // que o usuário nunca viu quando clicou "Descartar todos".
+  it('REGRESSÃO (Codex): confirmar dispensa só os alertas visíveis na abertura, não os que chegaram via polling depois', async () => {
+    const updateMock = vi.fn(async (id, data) => ({ id, ...data }));
+    const initialSignals = [
+      { id: 'e1', asset_id: 'a1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter', price_at_signal: 60000, created_date: new Date().toISOString() },
+      { id: 'e2', asset_id: 'a1', symbol: 'ETHUSDT', timeframe: '1h', signal_type: 'SELL', source: 'range_filter', price_at_signal: 3000, created_date: new Date().toISOString() },
+    ];
+    vi.doMock('@/api/entities', () => ({
+      backend: { entities: { SignalEvent: { list: async () => initialSignals, update: updateMock } } },
+    }));
+    vi.resetModules();
+    const { default: AlertsFresh } = await import('./Alerts.jsx');
+
+    const client = makeTestQueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <TooltipProvider>
+          <MemoryRouter><AlertsFresh /></MemoryRouter>
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByText('Descartar todos'));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/2 alertas/)).toBeTruthy();
+
+    // Simula o polling trazendo um 3º alerta enquanto o diálogo está aberto.
+    // Espera o header (fora do diálogo, sempre ao vivo) refletir os 3
+    // sinais antes de clicar — garante que o re-render já aconteceu, senão
+    // o clique poderia acontecer antes de React processar o novo estado e
+    // mascarar o bug (closure antiga ainda com 2 itens por acidente de
+    // timing, não porque o snapshot funcionou).
+    const newSignal = { id: 'e3', asset_id: 'a1', symbol: 'SOLUSDT', timeframe: '1h', signal_type: 'BUY', source: 'range_filter', price_at_signal: 100, created_date: new Date().toISOString() };
+    client.setQueryData(['all-signals'], [...initialSignals, newSignal]);
+    await screen.findByText('3 alertas');
+
+    fireEvent.click(within(dialog).getByText('Descartar todos'));
+    await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
+    expect(updateMock).not.toHaveBeenCalledWith('e3', expect.anything());
   });
 });

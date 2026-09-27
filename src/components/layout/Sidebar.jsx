@@ -5,6 +5,10 @@ import { backend } from '@/api/entities';
 import { logError } from '@/lib/logger';
 import { toast } from '@/components/ui/use-toast';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogAction, AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 
 const NAV_ITEMS = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -164,8 +168,8 @@ function QuickActionButton({ title, onClick, children }) {
 
 function ClearLogsButton() {
   const [clearing, setClearing] = useState(false);
-  const handleClear = async () => {
-    if (!window.confirm('Limpar TODOS os logs do sistema?')) return;
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const doClear = async () => {
     setClearing(true);
     try {
       await backend.entities.SystemLog.deleteMany({});
@@ -179,7 +183,7 @@ function ClearLogsButton() {
   return (
     <div className="relative w-full group">
       <button
-        onClick={handleClear}
+        onClick={() => setConfirmingClear(true)}
         disabled={clearing}
         className="flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200"
         style={{ background: 'transparent', border: '1px solid transparent' }}
@@ -194,6 +198,26 @@ function ClearLogsButton() {
         style={{ background: 'rgba(10,13,24,0.95)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }}>
         Limpar Logs
       </span>
+
+      {/* Achado da varredura pós-Raio-X, Round 2 (2026-09-27): confirm()
+          nativo quebrava o tema escuro — migrado pro AlertDialog já
+          existente e nunca usado. Texto agora diz que é apagar irrestrito
+          (deleteMany({}), sem filtro) e que não afeta trading. */}
+      <AlertDialog open={confirmingClear} onOpenChange={setConfirmingClear}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Limpar todos os logs?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Limpar TODOS os logs do sistema? Isso apaga permanentemente todo o SystemLog (não
+              afeta ativos, sinais ou operações de trading) — não há como desfazer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={doClear}>Limpar logs</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
