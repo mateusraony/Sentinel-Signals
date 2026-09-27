@@ -360,7 +360,7 @@ export default function MonthlyReport() {
             <MetricSummaryCard icon={FileText} label="Total de Trades" value={`${metrics.totalTrades}`} sublabel="operações fechadas" color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
             <MetricSummaryCard icon={TrendingUp} label="Vitórias" value={`${metrics.wins}`} sublabel="trades lucrativos" color="#00ff80" glowColor="rgba(0,255,128,0.4)" />
             <MetricSummaryCard icon={TrendingDown} label="Derrotas" value={`${metrics.losses}`} sublabel="trades em perda" color="#ff1478" glowColor="rgba(255,20,120,0.4)" />
-            <MetricSummaryCard icon={Award} label="Profit Factor" value={metrics.profitFactor === null ? '∞' : metrics.profitFactor.toFixed(2)} sublabel={profitFactorLabel(metrics.profitFactor, metrics.wins > 0)} color={profitFactorColor(metrics.profitFactor, metrics.wins > 0)} glowColor={metricGlow(profitFactorColor(metrics.profitFactor, metrics.wins > 0))}
+            <MetricSummaryCard icon={Award} label="Profit Factor" value={metrics.profitFactor === null ? (metrics.wins > 0 ? '∞' : '—') : metrics.profitFactor.toFixed(2)} sublabel={profitFactorLabel(metrics.profitFactor, metrics.wins > 0)} color={profitFactorColor(metrics.profitFactor, metrics.wins > 0)} glowColor={metricGlow(profitFactorColor(metrics.profitFactor, metrics.wins > 0))}
               tooltip="Soma dos ganhos ÷ soma das perdas (valor absoluto). Acima de 1 = ganhos superam perdas no total; ≥ 1,5 é o piso considerado saudável aqui. '∞' quando não houve nenhuma perda no mês." />
           </div>
 

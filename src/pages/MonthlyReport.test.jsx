@@ -8,7 +8,7 @@
 import React from 'react';
 import moment from 'moment';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, cleanup } from '@testing-library/react';
+import { screen, cleanup, within } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 import MonthlyReport from './MonthlyReport.jsx';
 
@@ -142,5 +142,43 @@ describe('MonthlyReport — Profit Factor com estado "Marginal" (Round 4 pós-Ra
     expect(screen.getByText('⚠ Marginal')).toBeTruthy();
     expect(screen.queryByText('⚠ Baixo')).toBeNull();
     expect(pfValue.style.color).toBe('rgb(255, 159, 67)');
+  });
+});
+
+// Achado do Codex review no PR #444: amostra só com empates (BE) — sem
+// vitória nenhuma — deixava profitFactor null e o texto mostrava "∞", mas a
+// cor/label já corretamente indicavam "✗ Baixo" (vermelho). Card
+// contraditório: "∞" (deveria significar "excelente") junto de vermelho.
+const AGORA_SO_BE = moment().toISOString();
+const OPS_SO_BE = [
+  {
+    id: 'opbe1', asset_id: 'a1', symbol: 'BTCUSDT', side: 'BUY',
+    // exit_price escolhido empiricamente: pnlPct líquido (pós-custo) fica
+    // levemente positivo mas dentro do epsilon de BE de classifyOutcome —
+    // grossLoss fica em 0 (nenhum pnlPct negativo), então profitFactor vira
+    // null com wins=0 (nem WIN nem LOSS, só BE). `created_date`===`closed_at`
+    // (duração zero) evita que o custo de funding por tempo em posição
+    // empurre o pnlPct pro lado negativo e mude o bucket.
+    status: 'STOP_HIT', entry_price: 100, initial_stop: 90, current_stop: 90,
+    tp1: 110, tp2: 120, exit_price: 100.15,
+    closed_at: AGORA_SO_BE, created_date: AGORA_SO_BE,
+  },
+  {
+    id: 'opbe2', asset_id: 'a2', symbol: 'ETHUSDT', side: 'BUY',
+    status: 'STOP_HIT', entry_price: 100, initial_stop: 90, current_stop: 90,
+    tp1: 110, tp2: 120, exit_price: 100.15,
+    closed_at: AGORA_SO_BE, created_date: AGORA_SO_BE,
+  },
+];
+
+describe('MonthlyReport — Profit Factor não mostra "∞" contraditório quando não há vitória nenhuma (achado Codex PR #444)', () => {
+  it('REGRESSÃO: amostra só com BE (profitFactor null, wins 0) mostra "—", não "∞"', async () => {
+    tradeOperationFilterMock.mockImplementation(async () => OPS_SO_BE);
+    renderPage(<MonthlyReport />);
+    await screen.findByText('✗ Baixo');
+    const pfLabel = screen.getAllByText('Profit Factor').find(el => el.closest('.relative.overflow-hidden'));
+    const pfCard = pfLabel.closest('.relative.overflow-hidden');
+    expect(within(pfCard).getByText('—')).toBeTruthy();
+    expect(within(pfCard).queryByText('∞')).toBeNull();
   });
 });

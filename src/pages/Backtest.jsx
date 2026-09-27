@@ -213,7 +213,7 @@ function ReportBody({ report, hideCascadeTable = false }) {
         <MetricSummaryCard icon={Target} label="Taxa de acerto" value={`${overall.winRate.toFixed(1)}%`}
           sublabel={`${overall.wins}W · ${overall.be}BE · ${overall.losses}L`}
           color={winRateColor(overall.winRate)} glowColor={metricGlow(winRateColor(overall.winRate))} />
-        <MetricSummaryCard icon={Award} label="Profit Factor" value={overall.profitFactor === null ? '∞' : overall.profitFactor.toFixed(2)}
+        <MetricSummaryCard icon={Award} label="Profit Factor" value={overall.profitFactor === null ? (overall.wins > 0 ? '∞' : '—') : overall.profitFactor.toFixed(2)}
           sublabel={profitFactorLabel(overall.profitFactor, overall.wins > 0)}
           color={profitFactorColor(overall.profitFactor, overall.wins > 0)} glowColor={metricGlow(profitFactorColor(overall.profitFactor, overall.wins > 0))}
           tooltip="Soma dos ganhos ÷ soma das perdas (valor absoluto). Acima de 1 = ganhos superam perdas no total; ≥ 1,5 é o piso considerado saudável aqui. '∞' quando não houve nenhuma perda na amostra." />

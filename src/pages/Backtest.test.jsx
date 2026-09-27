@@ -438,6 +438,41 @@ describe('Backtest — Win Rate/Drawdown/Profit Factor com cor compartilhada (Ro
   });
 });
 
+// Achado do Codex review no PR #444: quando a amostra só tem empates (BE) —
+// nenhuma vitória, nenhuma perda — `profitFactor` fica null e o texto virava
+// "∞" (infinito), mas a cor/label (via profitFactorColor/Label) já corretamente
+// mostravam "✗ Baixo" (vermelho) por não haver vitória nenhuma. Card
+// contraditório: "∞" + vermelho/Baixo ao mesmo tempo. PerformanceReport.jsx já
+// tratava esse caso certo (mostra "—" em vez de "∞" quando wins === 0).
+const REPORT_JSON_SO_BE = JSON.stringify({
+  range: { from: '2026-01-01T00:00:00.000Z', to: '2026-06-01T00:00:00.000Z' },
+  overall: {
+    ...CASCADE_STATS, total: 5, counted: 5, wins: 0, losses: 0, be: 5,
+    winRate: 0, profitFactor: null, maxDrawdownPct: 0,
+  },
+  byCascade: { '4h_15m': CASCADE_STATS },
+  costs: { model: {} },
+});
+
+describe('Backtest — Profit Factor não mostra "∞" contraditório quando não há vitória nenhuma (achado Codex PR #444)', () => {
+  it('REGRESSÃO: amostra só com BE (profitFactor null, wins 0) mostra "—", não "∞"', async () => {
+    renderPage(<Backtest />);
+    fireEvent.click(await screen.findByText(/Simulação \(GitHub\)/i));
+    const textarea = await screen.findByPlaceholderText(/"range":/);
+    fireEvent.change(textarea, { target: { value: REPORT_JSON_SO_BE } });
+    fireEvent.click(screen.getByText(/Analisar relatório colado/i));
+    await screen.findByText('Expectância');
+
+    expect(screen.getByText('✗ Baixo')).toBeTruthy();
+    // "Profit Factor" também aparece como cabeçalho da tabela "Por
+    // cascata" (span com tooltip, fora do card) — filtra só o do card.
+    const pfLabel = screen.getAllByText('Profit Factor').find(el => el.closest('.relative.overflow-hidden'));
+    const pfCard = pfLabel.closest('.relative.overflow-hidden');
+    expect(within(pfCard).getByText('—')).toBeTruthy();
+    expect(within(pfCard).queryByText('∞')).toBeNull();
+  });
+});
+
 // Round 4 da nova varredura pós-Raio-X (2026-09-27): os 2 gráficos de
 // equity (curva ingênua + curva de capital real) ganharam o mesmo padrão
 // já em produção em src/components/trades/PnLChart.jsx — Area + gradiente
