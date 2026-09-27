@@ -8,7 +8,9 @@ import {
   ResponsiveContainer, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import { isClosedOp, getExitPrice, getClosedAt, calcRealizedPnlPct, classifyOutcome, summarizeOps } from '@/lib/tradeMetrics';
-import { Tooltip as InfoTooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { outcomeColor } from '@/lib/outcomeColor';
+import { MetricSummaryCard } from '@/components/MetricSummaryCard';
+import { winRateColor, profitFactorColor, profitFactorLabel, metricGlow } from '@/lib/metricColorRanges';
 import { formatPrice } from '@/lib/priceProximity';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 import { useCopyToClipboard, formatTradeOpLine } from '@/lib/clipboardText';
@@ -26,13 +28,6 @@ const STATUS_LABELS = {
   CLOSED: '✖ Encerrado',
 };
 
-const STATUS_COLORS = {
-  TP2_HIT: '#00ff80',
-  STOP_HIT: '#ff1478',
-  INVALIDATED: '#ff9f43',
-  CLOSED: '#64748b',
-};
-
 // STOP_HIT sozinho não diz se foi lucro protegido (trailing pré-TP1 levou o
 // stop positivo antes de reverter) ou prejuízo real. classifyOutcome (fonte
 // única, tradeMetrics.js) já resolve isso pelo R/PnL realizado — mesmo
@@ -48,40 +43,14 @@ function statusLabel(op) {
   return STATUS_LABELS[op.status] || op.status;
 }
 
+// Round 4 da nova varredura pós-Raio-X (2026-09-27): a cor por status
+// virou uma chamada direta a outcomeColor (src/lib/outcomeColor.js) — a
+// função compartilhada já cobre exatamente os mesmos 6 casos que este
+// arquivo reimplementava localmente (STOP_HIT×WIN/BE/LOSS, TP2_HIT,
+// INVALIDATED, fallback cinza), então o antigo STATUS_COLORS/if-chain
+// virou duplicação pura.
 function statusColor(op) {
-  if (op.status === 'STOP_HIT') {
-    const outcome = classifyOutcome(op);
-    if (outcome === 'WIN') return '#00ff80';
-    if (outcome === 'BE') return '#ffd166';
-  }
-  return STATUS_COLORS[op.status] || '#64748b';
-}
-
-function SummaryCard({ icon: Icon, label, value, sublabel, color, glowColor, tooltip = undefined }) {
-  return (
-    <div className="rounded-xl p-4 relative overflow-hidden"
-      style={{ background: 'rgba(10,13,22,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
-      <div className="absolute top-0 right-0 w-24 h-24 rounded-full opacity-10"
-        style={{ background: `radial-gradient(circle, ${glowColor}, transparent 70%)`, transform: 'translate(30%, -30%)' }} />
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className="w-4 h-4" style={{ color }} />
-        {tooltip ? (
-          <InfoTooltip>
-            <TooltipTrigger type="button" className="text-10px font-mono uppercase tracking-wider text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">
-              {label}
-            </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-              {tooltip}
-            </TooltipContent>
-          </InfoTooltip>
-        ) : (
-          <span className="text-10px font-mono uppercase tracking-wider text-muted-foreground">{label}</span>
-        )}
-      </div>
-      <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
-      {sublabel && <div className="text-9px font-mono text-muted-foreground mt-1">{sublabel}</div>}
-    </div>
-  );
+  return outcomeColor(op.status, classifyOutcome(op));
 }
 
 function MiniMetric({ label, value, color }) {
@@ -172,7 +141,7 @@ export default function MonthlyReport() {
     return Object.entries(counts).map(([status, value]) => ({
       name: STATUS_LABELS[status] || status,
       value,
-      color: STATUS_COLORS[status] || '#64748b',
+      color: outcomeColor(status),
     }));
   }, [monthOps]);
 
@@ -386,12 +355,12 @@ export default function MonthlyReport() {
         <>
           {/* Summary metrics */}
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-            <SummaryCard icon={TrendingUp} label="P&L Acumulado" value={fmtPct(metrics.totalPnl)} sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`} color={metrics.totalPnl >= 0 ? '#00ff80' : '#ff1478'} glowColor={metrics.totalPnl >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'} />
-            <SummaryCard icon={Target} label="Taxa de Acerto" value={`${metrics.winRate.toFixed(1)}%`} sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`} color={metrics.winRate >= 50 ? '#00ff80' : '#ff9f43'} glowColor={metrics.winRate >= 50 ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'} />
-            <SummaryCard icon={FileText} label="Total de Trades" value={`${metrics.totalTrades}`} sublabel="operações fechadas" color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
-            <SummaryCard icon={TrendingUp} label="Vitórias" value={`${metrics.wins}`} sublabel="trades lucrativos" color="#00ff80" glowColor="rgba(0,255,128,0.4)" />
-            <SummaryCard icon={TrendingDown} label="Derrotas" value={`${metrics.losses}`} sublabel="trades em perda" color="#ff1478" glowColor="rgba(255,20,120,0.4)" />
-            <SummaryCard icon={Award} label="Profit Factor" value={metrics.profitFactor === null ? '∞' : metrics.profitFactor.toFixed(2)} sublabel={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? '✓ Saudável' : '⚠ Baixo'} color={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? '#00ff80' : '#ff9f43'} glowColor={metrics.profitFactor === null || metrics.profitFactor >= 1.5 ? 'rgba(0,255,128,0.4)' : 'rgba(255,159,67,0.4)'}
+            <MetricSummaryCard icon={TrendingUp} label="P&L Acumulado" value={fmtPct(metrics.totalPnl)} sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`} color={metrics.totalPnl >= 0 ? '#00ff80' : '#ff1478'} glowColor={metrics.totalPnl >= 0 ? 'rgba(0,255,128,0.4)' : 'rgba(255,20,120,0.4)'} />
+            <MetricSummaryCard icon={Target} label="Taxa de Acerto" value={`${metrics.winRate.toFixed(1)}%`} sublabel={`${metrics.wins}W · ${metrics.be}BE · ${metrics.losses}L`} color={winRateColor(metrics.winRate)} glowColor={metricGlow(winRateColor(metrics.winRate))} />
+            <MetricSummaryCard icon={FileText} label="Total de Trades" value={`${metrics.totalTrades}`} sublabel="operações fechadas" color="#00e5ff" glowColor="rgba(0,229,255,0.4)" />
+            <MetricSummaryCard icon={TrendingUp} label="Vitórias" value={`${metrics.wins}`} sublabel="trades lucrativos" color="#00ff80" glowColor="rgba(0,255,128,0.4)" />
+            <MetricSummaryCard icon={TrendingDown} label="Derrotas" value={`${metrics.losses}`} sublabel="trades em perda" color="#ff1478" glowColor="rgba(255,20,120,0.4)" />
+            <MetricSummaryCard icon={Award} label="Profit Factor" value={metrics.profitFactor === null ? (metrics.wins > 0 ? '∞' : '—') : metrics.profitFactor.toFixed(2)} sublabel={profitFactorLabel(metrics.profitFactor, metrics.wins > 0)} color={profitFactorColor(metrics.profitFactor, metrics.wins > 0)} glowColor={metricGlow(profitFactorColor(metrics.profitFactor, metrics.wins > 0))}
               tooltip="Soma dos ganhos ÷ soma das perdas (valor absoluto). Acima de 1 = ganhos superam perdas no total; ≥ 1,5 é o piso considerado saudável aqui. '∞' quando não houve nenhuma perda no mês." />
           </div>
 

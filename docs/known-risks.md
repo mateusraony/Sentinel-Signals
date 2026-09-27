@@ -28905,3 +28905,104 @@ Pendente: Rounds 4 (maior/mais arriscado — unificar
 `SummaryCard`/cores de métrica) e 5 (`SignalToast` sem `onClick`,
 sobreposição com `TopBar`) — ver
 `/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.
+
+## 245. Nova varredura pós-Raio-X (Round 4/5): unificação de componente/cor de métrica
+
+Continuação do item 244 (Round 3 mesclado, PR #443). Round 4 — o mais
+arriscado/estrutural dos 5, planejado em modo de planejamento explícito
+(`AskUserQuestion` pra 5 decisões de produto antes de implementar, ver
+abaixo). 2 agentes Explore + 1 Plan investigaram o código atual antes de
+qualquer mudança — o rascunho original do round (escrito antes desta
+investigação) tinha várias imprecisões só visíveis na leitura direta do
+código:
+
+- Não são "5 cópias quase idênticas" de UM componente `SummaryCard`/
+  `MetricCard` — são **2 famílias visuais distintas**: "glow card" (glow
+  radial decorativo, ícone+label+tooltip opcional, valor grande abaixo) em
+  `Backtest.jsx`/`MonthlyReport.jsx`/`PerformanceReport.jsx`, e "box icon
+  card" (ícone em caixa colorida à esquerda, `boxShadow`) em
+  `PerformanceMetricsBar.jsx`/`VirtualAccountCard.jsx` (idênticas
+  byte-a-byte entre si).
+- A lógica de Win Rate em "3 níveis (45/60%)" que o rascunho atribuía a
+  `Dashboard.jsx` na verdade estava em `PerformanceMetricsBar.jsx`
+  (`Dashboard.jsx` nem tem card de Win Rate).
+- `#ff9f43` não tinha "3 sentidos incompatíveis" — é majoritariamente 1
+  sentido semântico consistente ("atenção/risco") + poucos usos
+  decorativos que nunca colidem na mesma tela. Descartado como sub-item
+  (decisão do usuário).
+
+### Decisões do usuário (`AskUserQuestion`, 2026-09-27)
+
+1. **2 componentes** de métrica (não 1 unificado) — zero mudança visual.
+2. **Win Rate**: 2 níveis/50% vira o padrão canônico (não os 3 níveis que
+   só existiam em `PerformanceMetricsBar.jsx`).
+3. **Profit Factor**: estado "Marginal" estendido a `Backtest.jsx` e
+   `MonthlyReport.jsx` (antes só existia em `PerformanceReport.jsx`).
+4. **Bug STOP_HIT+WIN em `TradeHistory.jsx`**: corrigir junto (mesma
+   classe de bug que `TradeEntryMarkers.jsx` já resolvia).
+5. **`#ff9f43` decorativo**: descartado — sem colisão real comprovada.
+
+### Implementação (ordem: mais isolado → mais arriscado)
+
+1. **`src/lib/outcomeColor.js`** — função `outcomeColor(status, outcome)`
+   migrada de `exitDotColor` (`TradeEntryMarkers.jsx`), já a versão mais
+   correta (trata STOP_HIT×WIN/BE/LOSS, TP2_HIT, INVALIDATED, fallback).
+   4 consumidores migrados: `TradeEntryMarkers.jsx` (import direto),
+   `MonthlyReport.jsx` (`STATUS_COLORS` eliminado por completo — os
+   valores já batiam 1:1 com `outcomeColor`), `TradeHistory.jsx`
+   (`badgeColor` passou a chamar `outcomeColor` — **corrige o bug real**:
+   um Stop atingido com outcome WIN, trailing travando lucro antes de
+   reverter, aparecia com o mesmo rosa de um Stop perdedor, já que
+   `STATUS_MAP` só tratava BE à parte), `Backtest.jsx`
+   (`STATUS_ICON_COLOR`, só no caso não-BE — o caso BE continua cinza
+   uniforme independente do status, design pré-existente fora de escopo).
+   `Backtest.jsx`'s `OUTCOME_COLORS` (chave=outcome puro, usado só na
+   pizza) **não é duplicata** — fica como está.
+2. **`src/components/MetricSummaryCard.jsx` + `MetricBoxCard.jsx`** —
+   extraídos das 2 famílias visuais, cut-paste exato (zero mudança de
+   pixel). `valueClassName` opcional preserva a única divergência real
+   (`text-2xl` em `PerformanceReport.jsx` vs `text-xl` nos outros 2).
+   `MiniMetric` de `MonthlyReport.jsx` fica fora de escopo (3ª variante
+   menor, não é duplicata real).
+3. **`src/lib/metricColorRanges.js`** — `drawdownColor`, `winRateColor`,
+   `profitFactorColor`/`profitFactorLabel`, `metricGlow` (glow 0.4-alpha
+   pareado com as 3 cores, corrige a mesma classe de bug do Win Rate de
+   `Backtest.jsx`: glow fixo ciano que não acompanhava a cor real do
+   valor). Migrados: Drawdown em `PerformanceReport.jsx`/`Backtest.jsx`
+   (2 cards)/`PerformanceMetricsBar.jsx`/`VirtualAccountCard.jsx` (fixo→
+   escalonado por magnitude nos 2 primeiros); Win Rate em todos os 4+1
+   consumidores (`PerformanceMetricsBar.jsx` perde os 3 níveis próprios;
+   `TradeHistory.jsx` preserva o guard `counted === 0` como caso neutro à
+   parte, decisão intencional de rodada anterior); Profit Factor com o
+   novo estado "Marginal" estendido a `Backtest.jsx`/`MonthlyReport.jsx`.
+4. **Gráficos de equity do `Backtest.jsx`** — os 2 gráficos (`LineChart`
+   simples) viraram `AreaChart`/`Area` com gradiente + cor por sinal do
+   total + `ReferenceLine`, replicando o padrão já em produção em
+   `src/components/trades/PnLChart.jsx`. Gráfico A (curva ingênua,
+   `ReferenceLine y={0}`, é %/PnL) e Gráfico B (curva de capital real,
+   `ReferenceLine y={initialCapital}` — não `y={0}`, já que o eixo é
+   capital em $, onde zero nunca é um valor plausível).
+
+### Verificação
+
+`npm run lint && npm test && npm run build && npm run
+typecheck:ratchet` limpos (2215 testes, 0 falhas, 58 pulados; teto de
+typecheck em 13, sem mudança). `git diff --stat` nos 18 arquivos
+esperados (6 de produção nova/migrada + 5 de teste + 5 novos arquivos
+`src/lib`/`src/components` + `PerformanceMetricsBar.test.jsx` novo).
+Grep do diff por `backend\.entities\.\w+\.(create|update|delete|set)\(`
+e `useQuery\(|useMutation\(` em linhas novas → ambos vazios. Cada fix
+com correção de bug real (STOP_HIT+WIN em `TradeHistory.jsx`, glow de
+Win Rate em `Backtest.jsx`) teve teste reproduzido falhando via
+`git stash` antes de aceitar. Verificação visual dos 2 gráficos de
+equity **não foi possível** neste ambiente sandboxed (sem credenciais
+Firebase reais configuradas — só `.env.example` — a app trava no
+estado já documentado de C-1 antes de alcançar a tela de Backtest);
+substituída por leitura manual cuidadosa do JSX final comparado
+lado-a-lado com `PnLChart.jsx` (padrão já provado em produção) +
+suite de testes de acessibilidade (`role=img`/`aria-label`/tabela
+`sr-only`) confirmando que a troca de `LineChart` pra `AreaChart` não
+quebrou nada estrutural.
+
+Pendente: Round 5 (`SignalToast` sem `onClick`, sobreposição com
+`TopBar`) — ver `/root/.claude/plans/quero-melhorar-a-ui-ux-lazy-anchor.md`.

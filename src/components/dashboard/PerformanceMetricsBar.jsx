@@ -4,28 +4,8 @@ import { TrendingUp, TrendingDown, Target, Shield, BarChart2, Zap } from 'lucide
 import { backend } from '@/api/entities';
 import { summarizeOps } from '@/lib/tradeMetrics';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
-
-function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefined }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl px-4 py-3 flex-1 min-w-0"
-      style={{
-        background: 'rgba(10,13,22,0.85)',
-        border: `1px solid ${glowColor ?? 'rgba(255,255,255,0.06)'}`,
-        boxShadow: glowColor ? `0 0 20px ${glowColor}` : 'none',
-        backdropFilter: 'blur(16px)',
-      }}>
-      <div className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
-        style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
-        <Icon className="w-4 h-4" style={{ color }} />
-      </div>
-      <div className="min-w-0">
-        <div className="text-9px font-mono uppercase tracking-widest text-muted-foreground leading-none mb-1">{label}</div>
-        <div className="text-lg font-bold font-mono leading-none truncate" style={{ color }}>{value}</div>
-        {sub && <div className="text-9px font-mono mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.3)' }}>{sub}</div>}
-      </div>
-    </div>
-  );
-}
+import { MetricBoxCard } from '@/components/MetricBoxCard';
+import { drawdownColor, winRateColor } from '@/lib/metricColorRanges';
 
 // Mesma queryKey/teto de VirtualAccountCard.jsx e LiveConfidenceCard.jsx —
 // os 4 cards de performance do Dashboard precisam concordar sobre a mesma
@@ -76,8 +56,11 @@ export default function PerformanceMetricsBar({ activeOpsCount = 0 }) {
 
   const pnlColor = totalPnl >= 0 ? '#00ff80' : '#ff1478';
   const pnlGlow = totalPnl >= 0 ? 'rgba(0,255,128,0.06)' : 'rgba(255,20,120,0.06)';
-  const wrColor = winRate >= 60 ? '#00ff80' : winRate >= 45 ? '#ffd166' : '#ff1478';
-  const ddColor = maxDrawdown > 15 ? '#ff1478' : maxDrawdown > 8 ? '#ff9f43' : '#00ff80';
+  // Round 4 da nova varredura pós-Raio-X (2026-09-27): Win Rate passou a usar
+  // a mesma faixa de 2 níveis/50% do resto do app (decisão do usuário) —
+  // perdeu o nível intermediário próprio que só existia aqui (45/60%).
+  const wrColor = winRateColor(winRate);
+  const ddColor = drawdownColor(maxDrawdown);
 
   return (
     <div className="rounded-2xl p-4"
@@ -100,7 +83,7 @@ export default function PerformanceMetricsBar({ activeOpsCount = 0 }) {
 
       {/* Metric grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        <MetricCard
+        <MetricBoxCard
           icon={totalPnl >= 0 ? TrendingUp : TrendingDown}
           label="P&L Acumulado"
           value={`${totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}%`}
@@ -108,7 +91,7 @@ export default function PerformanceMetricsBar({ activeOpsCount = 0 }) {
           color={pnlColor}
           glowColor={pnlGlow}
         />
-        <MetricCard
+        <MetricBoxCard
           icon={Target}
           label="Win Rate"
           value={`${winRate}%`}
@@ -116,9 +99,9 @@ export default function PerformanceMetricsBar({ activeOpsCount = 0 }) {
             ? `Expectância ${expectancyR >= 0 ? '+' : ''}${expectancyR.toFixed(2)}R · +${avgWin.toFixed(1)}%/-${avgLoss.toFixed(1)}%`
             : `Avg win +${avgWin.toFixed(1)}% / loss -${avgLoss.toFixed(1)}%`}
           color={wrColor}
-          glowColor={winRate >= 60 ? 'rgba(0,255,128,0.05)' : undefined}
+          glowColor={winRate >= 50 ? 'rgba(0,255,128,0.05)' : undefined}
         />
-        <MetricCard
+        <MetricBoxCard
           icon={Shield}
           label="Max Drawdown"
           value={`-${maxDrawdown.toFixed(2)}%`}
@@ -126,7 +109,7 @@ export default function PerformanceMetricsBar({ activeOpsCount = 0 }) {
           color={ddColor}
           glowColor={maxDrawdown > 15 ? 'rgba(255,20,120,0.06)' : undefined}
         />
-        <MetricCard
+        <MetricBoxCard
           icon={BarChart2}
           label="Risk/Reward"
           value={rr !== null ? `${rr.toFixed(2)}:1` : '—'}

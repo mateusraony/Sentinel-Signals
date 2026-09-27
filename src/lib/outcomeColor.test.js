@@ -6,28 +6,32 @@
 // TP1: um runner pode travar lucro real, e "tp1_hit" sozinho não distingue
 // isso de um breakeven exato. Os dois widgets podiam discordar sobre o
 // mesmo trade.
+//
+// Round 4 da nova varredura pós-Raio-X (2026-09-27): estes casos migraram
+// de TradeEntryMarkers.test.js (onde a função nasceu como `exitDotColor`)
+// pra testar a função pura onde ela mora agora.
 import { describe, it, expect } from 'vitest';
-import { exitDotColor } from './TradeEntryMarkers.jsx';
+import { outcomeColor } from './outcomeColor.js';
 
-describe('exitDotColor', () => {
+describe('outcomeColor', () => {
   it('STOP_HIT com outcome WIN (stop travou lucro real) é verde, não vermelho/amarelo', () => {
-    expect(exitDotColor('STOP_HIT', 'WIN')).toBe('#00ff80');
+    expect(outcomeColor('STOP_HIT', 'WIN')).toBe('#00ff80');
   });
 
   it('STOP_HIT com outcome BE (empate real) é amarelo', () => {
-    expect(exitDotColor('STOP_HIT', 'BE')).toBe('#ffd166');
+    expect(outcomeColor('STOP_HIT', 'BE')).toBe('#ffd166');
   });
 
   it('STOP_HIT com outcome LOSS é vermelho', () => {
-    expect(exitDotColor('STOP_HIT', 'LOSS')).toBe('#ff1478');
+    expect(outcomeColor('STOP_HIT', 'LOSS')).toBe('#ff1478');
   });
 
   it('TP2_HIT é sempre verde, independente do outcome', () => {
-    expect(exitDotColor('TP2_HIT', 'WIN')).toBe('#00ff80');
+    expect(outcomeColor('TP2_HIT', 'WIN')).toBe('#00ff80');
   });
 
   it('INVALIDATED é laranja; qualquer outro status cai no cinza neutro', () => {
-    expect(exitDotColor('INVALIDATED', 'LOSS')).toBe('#ff9f43');
-    expect(exitDotColor('CLOSED', 'BE')).toBe('#64748b');
+    expect(outcomeColor('INVALIDATED', 'LOSS')).toBe('#ff9f43');
+    expect(outcomeColor('CLOSED', 'BE')).toBe('#64748b');
   });
 });

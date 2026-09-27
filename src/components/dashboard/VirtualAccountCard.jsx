@@ -4,28 +4,8 @@ import { Wallet, TrendingUp, TrendingDown, Shield } from 'lucide-react';
 import { backend } from '@/api/entities';
 import { simulateEquityCurve, DEFAULT_INITIAL_CAPITAL, DEFAULT_RISK_PCT } from '@/lib/equityCurve';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
-
-function MetricCard({ icon: Icon, label, value, sub, color, glowColor = undefined }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl px-4 py-3 flex-1 min-w-0"
-      style={{
-        background: 'rgba(10,13,22,0.85)',
-        border: `1px solid ${glowColor ?? 'rgba(255,255,255,0.06)'}`,
-        boxShadow: glowColor ? `0 0 20px ${glowColor}` : 'none',
-        backdropFilter: 'blur(16px)',
-      }}>
-      <div className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center"
-        style={{ background: `${color}18`, border: `1px solid ${color}30` }}>
-        <Icon className="w-4 h-4" style={{ color }} />
-      </div>
-      <div className="min-w-0">
-        <div className="text-9px font-mono uppercase tracking-widest text-muted-foreground leading-none mb-1">{label}</div>
-        <div className="text-lg font-bold font-mono leading-none truncate" style={{ color }}>{value}</div>
-        {sub && <div className="text-9px font-mono mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.3)' }}>{sub}</div>}
-      </div>
-    </div>
-  );
-}
+import { MetricBoxCard } from '@/components/MetricBoxCard';
+import { drawdownColor } from '@/lib/metricColorRanges';
 
 // Conta virtual (capital+drawdown reais, compostos) sobre TODAS as operações
 // fechadas. Mesma queryKey usada por LiveConfidenceCard.jsx e (desde o
@@ -56,7 +36,7 @@ export default function VirtualAccountCard() {
 
   const { finalCapital, totalReturnPct, maxDrawdownPct, accountBlown, unsized, total } = sim;
   const returnColor = totalReturnPct >= 0 ? '#00ff80' : '#ff1478';
-  const ddColor = maxDrawdownPct > 15 ? '#ff1478' : maxDrawdownPct > 8 ? '#ff9f43' : '#00ff80';
+  const ddColor = drawdownColor(maxDrawdownPct);
 
   return (
     <div className="rounded-2xl p-4"
@@ -77,7 +57,7 @@ export default function VirtualAccountCard() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">
-        <MetricCard
+        <MetricBoxCard
           icon={totalReturnPct >= 0 ? TrendingUp : TrendingDown}
           label="Capital Atual"
           value={`$${finalCapital.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -85,14 +65,14 @@ export default function VirtualAccountCard() {
           color={returnColor}
           glowColor={totalReturnPct >= 0 ? 'rgba(0,255,128,0.06)' : 'rgba(255,20,120,0.06)'}
         />
-        <MetricCard
+        <MetricBoxCard
           icon={totalReturnPct >= 0 ? TrendingUp : TrendingDown}
           label="Retorno Total"
           value={`${totalReturnPct >= 0 ? '+' : ''}${totalReturnPct.toFixed(2)}%`}
           sub={unsized > 0 ? `${unsized} sem risco definido` : 'todas dimensionadas'}
           color={returnColor}
         />
-        <MetricCard
+        <MetricBoxCard
           icon={Shield}
           label="Drawdown Real"
           value={`-${maxDrawdownPct.toFixed(2)}%`}

@@ -295,3 +295,30 @@ describe('TradeHistory — "Limpar filtros" aparece junto do empty state filtrad
     expect(search.value).toBe('');
   });
 });
+
+// Round 4 da nova varredura pós-Raio-X (2026-09-27): badgeColor passou a vir
+// de outcomeColor (src/lib/outcomeColor.js) em vez de `s.color` fixo por
+// status — STATUS_MAP só tratava BE à parte, então um Stop atingido com
+// outcome WIN (trailing travou lucro real antes de reverter) aparecia com o
+// mesmo rosa de um Stop perdedor. Correção de bug real, aceita
+// explicitamente pelo usuário (mesmo raciocínio já aplicado em
+// TradeEntryMarkers.jsx/exitDotColor pra este exato cenário).
+const OP_STOP_HIT_COM_LUCRO = {
+  id: 'op_stopwin', asset_id: 'a10', symbol: 'BTCUSDT', side: 'BUY',
+  status: 'STOP_HIT', entry_price: 60000, initial_stop: 59000,
+  current_stop: 60500, exit_price: 61000, // trailing travou lucro antes de reverter
+  stop_hit_at: '2026-09-18T12:00:00.000Z', closed_at: '2026-09-18T12:00:00.000Z',
+  created_date: '2026-09-17T12:00:00.000Z',
+};
+
+describe('TradeHistory — badge de Stop com outcome WIN aparece verde, não vermelho (Round 4 pós-Raio-X)', () => {
+  it('REGRESSÃO: STOP_HIT com lucro real (trailing) tem badgeColor verde, não a cor fixa de perda', async () => {
+    mockBackend([OP_STOP_HIT_COM_LUCRO]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+
+    await screen.findByText('BTC/USDT');
+    const badge = screen.getByText('🛑 Stop');
+    expect(badge.style.color).toBe('rgb(0, 255, 128)');
+  });
+});

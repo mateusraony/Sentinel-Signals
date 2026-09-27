@@ -901,13 +901,25 @@ completo de cada round em `docs/known-risks.md` item 242 em diante.
   handler já existente; `Verification.jsx` foi achado NOVO (não tinha
   NENHUM mecanismo de limpar filtro, pior que os outros 2) e recebeu o
   mesmo tratamento. Ver `docs/known-risks.md` item 244.
-- [ ] **Round 4 (maior/mais arriscado) — pendente.** Extrair
-  `SummaryCard`/`MetricCard` (5 cópias quase idênticas em 5 arquivos)
-  num componente único; unificar faixas de cor de Win Rate/Drawdown/
-  Profit Factor entre telas; resolver a cor `#ff9f43` com 3 sentidos
-  incompatíveis; extrair `outcomeColor(status)` único (4 cópias
-  duplicadas); adicionar cor-por-resultado + `ReferenceLine` às 2 curvas
-  de equity de `Backtest.jsx`.
+- [x] **Round 4 (maior/mais arriscado) — fechado.** Investigação prévia
+  (2 agentes Explore + 1 Plan) corrigiu o rascunho original: não são
+  5 cópias de 1 componente, são **2 famílias visuais** distintas ("glow
+  card": Backtest/MonthlyReport/PerformanceReport; "box icon card":
+  PerformanceMetricsBar/VirtualAccountCard, idênticas entre si) —
+  extraídas em `MetricSummaryCard.jsx`/`MetricBoxCard.jsx` (decisão do
+  usuário: 2 componentes, zero mudança visual). `outcomeColor(status,
+  outcome)` único em `src/lib/`, migrado de `exitDotColor`
+  (TradeEntryMarkers.jsx) — corrigiu um bug real em `TradeHistory.jsx`
+  (Stop com outcome WIN aparecia vermelho). Faixas de cor unificadas em
+  `src/lib/metricColorRanges.js` (Win Rate 2 níveis/50% vira canônico,
+  não os 3 níveis que só existiam em PerformanceMetricsBar.jsx —
+  correção: o rascunho original atribuía isso a Dashboard.jsx por
+  engano; Profit Factor ganhou o estado "Marginal" estendido a
+  Backtest.jsx/MonthlyReport.jsx). `#ff9f43` "3 sentidos incompatíveis"
+  não se sustentou na investigação — descartado como sub-item (decisão
+  do usuário). Os 2 gráficos de equity de `Backtest.jsx` ganharam
+  Area+gradiente+cor-por-sinal+`ReferenceLine`, replicando o padrão já
+  em produção de `PnLChart.jsx`. Ver `docs/known-risks.md` item 245.
 - [ ] **Round 5 (pequeno) — pendente.** `SignalToast.jsx` sem `onClick`
   pra abrir o `AssetDrawer` (mesma lacuna que A-1 corrigiu em
   `RecentAlertsList`) + reposicionar pra não sobrepor os botões do
