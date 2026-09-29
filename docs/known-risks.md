@@ -29178,3 +29178,94 @@ fechamento" do plano.
 "Sinal Confirmado" do toast (ambíguo com execução), breakeven como
 categoria própria, anatomia fixa de mensagem, notificação nova de "sinal
 cancelado" pré-entrada, arquitetura unificada `NotificationEvent`.
+
+## 248. Auditoria do Telegram — Fase 2 (padronização de linguagem e mensagens) (2026-09-29)
+
+**Contexto**: segunda fase do plano de 5 fases (item 247 acima) — padronizar
+vocabulário e reescrever a anatomia das mensagens do Telegram, sem tocar
+`scanner.js`/máquina de estados. Plano completo em
+`/root/.claude/plans/auditoria-do-telegram-sentinel-snug-zephyr.md`.
+
+**Implementado**:
+1. `src/lib/notificationVocabulary.js` (novo) — vocabulário único do ciclo
+   de vida (13 estágios, 1 emoji = 1 rótulo), consumido pelos templates do
+   Telegram nesta fase e reservado pra Fase 4 (arquitetura unificada)
+   importar em vez de redefinir.
+2. `SignalToast.jsx`: "Sinal Confirmado" → "Sinal Detectado" (era ambíguo
+   com entrada executada) — alinhado com `SignalAlertBanner.jsx` e com o
+   próprio Telegram, que já dizia "aguardando confirmação".
+3. **Breakeven no Telegram** — `notifyStopHit` (`telegram.js`/
+   `adminTelegram.js`) agora reusa `classifyOutcome()` (`tradeMetrics.js`,
+   a MESMA função que `TradeCard.jsx`/`TradeHistory.jsx` já usam) pra
+   escolher entre 3 cabeçalhos: 🛑 Stop Atingido (perda), 🟡 Encerrada no
+   Breakeven, 💰 Stop Travou Lucro.
+4. **Cor de erro de sistema separada de SELL/direção** — escopo bem menor
+   que o item original da auditoria (ver achado abaixo): só
+   `LEVEL_CONFIG.error` (`Logs.jsx`) e `STALE_REASON_META.persistent_error`
+   (`Assets.jsx`, `AssetCard.jsx`) trocaram de `#ff1478` (rosa/magenta,
+   usado em SELL/perda) para `#ef4444` (vermelho puro).
+5. **Anatomia fixa de mensagem** — as 9 funções `notify*` de sinal/trade
+   (`telegram.js`/`adminTelegram.js`) reescritas seguindo O que → Onde →
+   Situação → Por quê → Números → Próximo passo → Fonte → Link, incluindo
+   `closureSummary()` (novo, compartilhado pelos 5 tipos de encerramento):
+   resultado (%/R) via `calcRealizedR`/`calcRealizedPnlPct`
+   (`tradeMetrics.js`, nunca recalculado no template), duração (reusa
+   `formatBackfillLag`) e checklist TP1/TP2. Link real pro painel
+   (`PANEL_URL = 'https://sentinel-signals.onrender.com'`, já público via
+   `render.yaml` `ALLOWED_ORIGIN`) — aponta pra página geral (`/alerts`,
+   `/verification`, `/trades`), não pra uma operação específica (isso é a
+   Fase 5, "deep link exato pro contexto", não implementada aqui).
+6. Invalidação pré/pós-TP1 — já estava correta desde a Fase 1, nenhuma
+   mudança.
+7. `VerificationWidget.jsx` — `score`/`source`/`reason` agora exibidos no
+   card (já vinham gravados no `VerificationTask` desde a criação, zero
+   mudança de schema/backend).
+8. `Alerts.jsx` — `src/lib/signalContextTranslation.js` (novo, puro) traduz
+   `SignalEvent.context` (direções RF/1h/4h/1d, RSI+zona, MACD, estrutura/
+   zona SMC) em linhas humanas ANTES do JSON bruto, que continua existindo
+   atrás de "ver dados técnicos" (renomeado de "ver contexto técnico").
+9. Testes golden dos 8 templates + os 3 casos de breakeven, cobrindo
+   BUY/fonte sem score/campo ausente/escape — protegem a reescrita do
+   item 5 contra regressão de wording futura.
+10. Auditoria de badges dependentes só de cor: confirmado que toda
+    ocorrência de `#ff1478`/`#00ff80` revisada vem acompanhada de
+    ícone/texto — nenhuma mudança além do item 4.
+11. `src/lib/signalSourceLabels.js` (novo) — fonte única dos pares
+    id→rótulo de origem do sinal, antes duplicada em `telegram.js`,
+    `adminTelegram.js` e `Alerts.jsx` (grafias diferentes preservadas:
+    Telegram usa sigla, Alertas usa nome longo).
+
+**Achados durante a implementação (fato, não hipótese) — estreitam 2 itens
+do plano original**:
+- **Breakeven já era categoria visual própria** em `TradeCard.jsx`
+  (`STOP_HIT_BANNER` com casos WIN/BE) e `TradeHistory.jsx` (`isBE`, rótulo
+  "🔄 Breakeven"), ambos já usando `classifyOutcome()` — só o Telegram
+  ainda faltava. O item do plano previa mexer nos 3 lugares; só um
+  precisava.
+- **Separar cor de direção×severidade em escala completa não valia a
+  pena**: `#ff1478` aparece em 30+ pontos (SELL, RSI sobrecomprado, MACD
+  negativo, erro), sempre acompanhado de ícone/rótulo — reescrever tudo
+  contrariaria a convenção padrão (vermelho=queda/ruim) que qualquer
+  trader já espera, por um ganho não demonstrado. Reduzido à única
+  sobreposição sem propósito real (erro de sistema reusando a cor de
+  SELL).
+
+**Testes**: `notificationVocabulary.test.js`, `signalContextTranslation.test.js`
+(novos, puros); `telegram.test.js`/`adminTelegram.test.js` — describe novo
+"3 cabeçalhos distintos por resultado" (WIN/BE/LOSS) + asserções de wording
+atualizadas nos testes pré-existentes que a reescrita do item 5 invalidou;
+`VerificationWidget.test.jsx`/`SignalToast.test.jsx`/`Alerts.test.jsx`
+ajustados/estendidos.
+
+**Verificação**: `npm run lint` limpo; `npm test` 2268 passed, 58 skipped, 0
+failed (era 2237 antes desta rodada); `npm run build` ok. Confirmado sem
+impacto em `scripts/backtestTelegram.js` (no-op mirror, mesmos nomes de
+função exportados), `AssetConfigPanel.jsx` (overrides por ativo não tocam
+nada mudado aqui), `RecentAlertsList.jsx` (sem dependência de texto
+alterado). **Não verificado**: envio real de mensagem pro Telegram — mesma
+pendência do item 247, sem bot configurado neste ambiente.
+
+**Fora de escopo desta fase** (fica para as Fases 3-5): notificação nova de
+"sinal cancelado" pré-entrada (Fase 3), arquitetura unificada
+`NotificationEvent`/saúde real do Telegram/timeline (Fase 4), deep link por
+operação específica/animações/modo silencioso (Fase 5).

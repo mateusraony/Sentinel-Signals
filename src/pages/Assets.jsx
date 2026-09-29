@@ -24,8 +24,12 @@ import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 // threshold de 2h fixo estar errado). O CÁLCULO (a parte que importa não
 // divergir) agora vem de `assetHealthcheckReason`, a mesma função pura nos
 // 2 arquivos — só o texto/cor de apresentação é local a cada um.
+// Auditoria do Telegram (2026-09-29), Fase 2 item 2.4 — mesmo raciocínio de
+// Logs.jsx (comentário completo lá): erro de sistema com cor própria
+// (#ef4444), distinta do rosa/magenta (#ff1478) usado pra SELL/direção
+// nas demais telas.
 const STALE_REASON_META = {
-  persistent_error: { label: 'ERRO', color: '#ff1478' },
+  persistent_error: { label: 'ERRO', color: '#ef4444' },
   silent: { label: 'STALE', color: '#ff9f43' },
 };
 

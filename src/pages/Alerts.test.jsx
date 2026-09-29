@@ -92,14 +92,14 @@ describe('Alerts — botões de filtro "Fonte" e badge do card têm tooltip expl
 // modal ficava sempre visível — mesmo padrão de <details> já usado em
 // Logs.jsx pra payload técnico.
 describe('Alerts — JSON de "Contexto Técnico" fica dentro de <details>, fechado por padrão (Refinamentos)', () => {
-  it('REGRESSÃO: o payload não aparece até clicar em "ver contexto técnico →"', async () => {
+  it('REGRESSÃO: o payload não aparece até clicar em "ver dados técnicos →"', async () => {
     estadoBackend.populated = true;
     renderPage(<Alerts />);
     const row = (await screen.findByText('BTC/USDT')).closest('[tabindex]');
     fireEvent.keyDown(row, { key: 'Enter' });
     await screen.findByRole('dialog');
 
-    const summary = await screen.findByText('ver contexto técnico →');
+    const summary = await screen.findByText('ver dados técnicos →');
     const details = summary.closest('details');
     expect(details).toBeTruthy();
     expect(details.hasAttribute('open')).toBe(false);
@@ -111,14 +111,14 @@ describe('Alerts — JSON de "Contexto Técnico" fica dentro de <details>, fecha
   // Achado do Codex review no PR #439: 0.25 dava ~2.3:1 de contraste sobre
   // o fundo escuro do dialog, abaixo do 4.5:1 exigido pra texto pequeno —
   // e este é o único controle visível pra revelar o payload.
-  it('REGRESSÃO: "ver contexto técnico →" tem contraste suficiente (0.45, não 0.25)', async () => {
+  it('REGRESSÃO: "ver dados técnicos →" tem contraste suficiente (0.45, não 0.25)', async () => {
     estadoBackend.populated = true;
     renderPage(<Alerts />);
     const row = (await screen.findByText('BTC/USDT')).closest('[tabindex]');
     fireEvent.keyDown(row, { key: 'Enter' });
     await screen.findByRole('dialog');
 
-    const summary = await screen.findByText('ver contexto técnico →');
+    const summary = await screen.findByText('ver dados técnicos →');
     expect(summary.style.color).toBe('rgba(255, 255, 255, 0.45)');
   });
 });

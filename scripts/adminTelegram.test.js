@@ -194,8 +194,10 @@ describe('adminTelegram — escape de HTML e fallback de fonte desconhecida (Aud
     await notifyNewSignal(baseSignal({ source: 'um_source_futuro_que_ainda_nao_existe' }));
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
-    expect(text).toContain('Novo Sinal Outra fonte Detectado');
-    expect(text).not.toContain('Novo Sinal RF Detectado');
+    // Auditoria do Telegram (2026-09-29), Fase 2 item 2.5 — cabeçalho fixo
+    // "🔔 Sinal Detectado" (notificationVocabulary.js) + fonte à parte.
+    expect(text).toContain('Sinal Detectado — Outra fonte');
+    expect(text).not.toContain('Sinal Detectado — RF');
   });
 });
 
@@ -264,6 +266,42 @@ describe('notifyStopHit — nota de ambiguidade stop/TP na mesma vela (item 140)
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
     expect(text).not.toContain('tocou o stop e o take ao mesmo tempo');
+  });
+});
+
+// Auditoria do Telegram (2026-09-29), Fase 2 item 2.3/2.9 — espelho do
+// describe de mesmo nome em src/lib/telegram.test.js (comentário completo
+// lá): notifyStopHit reusa classifyOutcome pra 3 cabeçalhos distintos.
+describe('notifyStopHit — 3 cabeçalhos distintos por resultado (Auditoria do Telegram, item 2.3)', () => {
+  function baseOp(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h', status: 'STOP_HIT',
+      entry_price: 100, initial_stop: 90, tp1_hit: false,
+      ...overrides,
+    };
+  }
+
+  it('perda real (stop abaixo da entrada) mostra "🛑 Stop Atingido"', async () => {
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    await notifyStopHit(baseOp({ current_stop: 95 }), 95);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('<b>Stop Atingido</b>');
+    expect(text).not.toContain('Breakeven');
+    expect(text).not.toContain('Travou Lucro');
+  });
+
+  it('breakeven (stop na entrada) mostra "🟡 Encerrada no Breakeven"', async () => {
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    await notifyStopHit(baseOp({ current_stop: 100, tp1_hit: true }), 100);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('<b>Encerrada no Breakeven</b>');
+  });
+
+  it('lucro travado no stop (stop acima da entrada) mostra "💰 Stop Travou Lucro"', async () => {
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    await notifyStopHit(baseOp({ current_stop: 108, tp1_hit: true }), 108);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('<b>Stop Travou Lucro</b>');
   });
 });
 

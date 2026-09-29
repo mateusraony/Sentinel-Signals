@@ -144,7 +144,10 @@ describe('notifyVerificationTask', () => {
     await notifyVerificationTask(baseSignal());
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
-    expect(text).toContain('Tarefa de Verificação Criada');
+    // Auditoria do Telegram (2026-09-29), Fase 2 item 2.1/2.5 — cabeçalho
+    // vem do vocabulário único (notificationVocabulary.js), não mais um
+    // texto solto por função.
+    expect(text).toContain('Verificação Necessária');
     expect(text).toContain('BTC/USDT');
     expect(text).toContain('COMPRA');
     expect(text).toContain('Score: 88/100');
@@ -225,23 +228,26 @@ describe('notifyNewSignal — source-aware label and score (Codex review, PR #65
     return JSON.parse(global.fetch.mock.calls[before][1].body).text;
   }
 
+  // Auditoria do Telegram (2026-09-29), Fase 2 item 2.5 — cabeçalho fixo
+  // "🔔 Sinal Detectado" (notificationVocabulary.js) + fonte à parte
+  // ("— RF"/"— SMC"/...), não mais "Novo Sinal RF Detectado" por extenso.
   it('labels a range_filter signal as RF and shows its real score', async () => {
     const text = await sentText(baseSignal({ source: 'range_filter', strength: 'strong', context: { score: 82 } }));
-    expect(text).toContain('Novo Sinal RF Detectado');
+    expect(text).toContain('Sinal Detectado — RF');
     expect(text).toContain('Score: 82/100');
   });
 
   it('labels an smc_structure signal as SMC and never shows a fake 0/100 score', async () => {
     const text = await sentText(baseSignal({ source: 'smc_structure', strength: 'medium', context: { structure_type: 'BOS', pd_zone: 'discount' } }));
-    expect(text).toContain('Novo Sinal SMC Detectado');
-    expect(text).not.toContain('RF Detectado');
+    expect(text).toContain('Sinal Detectado — SMC');
+    expect(text).not.toContain('— RF');
     expect(text).not.toContain('Score: 0/100');
   });
 
   it('labels macd/ema_cross/rsi signals with their own source instead of RF', async () => {
-    expect(await sentText(baseSignal({ source: 'macd' }))).toContain('Novo Sinal MACD Detectado');
-    expect(await sentText(baseSignal({ source: 'ema_cross' }))).toContain('Novo Sinal EMA Detectado');
-    expect(await sentText(baseSignal({ source: 'rsi' }))).toContain('Novo Sinal RSI Detectado');
+    expect(await sentText(baseSignal({ source: 'macd' }))).toContain('Sinal Detectado — MACD');
+    expect(await sentText(baseSignal({ source: 'ema_cross' }))).toContain('Sinal Detectado — EMA');
+    expect(await sentText(baseSignal({ source: 'rsi' }))).toContain('Sinal Detectado — RSI');
   });
 
   // Auditoria do Telegram (2026-09-29), item 1.4 — o fallback antigo
@@ -251,8 +257,8 @@ describe('notifyNewSignal — source-aware label and score (Codex review, PR #65
   // continua fail-open só no ENVIO — este teste é só sobre o RÓTULO exibido).
   it('rotula uma origem desconhecida/futura como "Outra fonte" em vez de mentir que é RF', async () => {
     const text = await sentText(baseSignal({ source: 'something_new' }));
-    expect(text).toContain('Novo Sinal Outra fonte Detectado');
-    expect(text).not.toContain('Novo Sinal RF Detectado');
+    expect(text).toContain('Sinal Detectado — Outra fonte');
+    expect(text).not.toContain('Sinal Detectado — RF');
   });
 });
 
@@ -482,6 +488,59 @@ describe('notifyStopHit — nota de ambiguidade stop/TP na mesma vela (item 140)
     expect(global.fetch).toHaveBeenCalledTimes(1);
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
     expect(text).not.toContain('tocou o stop e o take ao mesmo tempo');
+  });
+});
+
+// Auditoria do Telegram (2026-09-29), Fase 2 item 2.3/2.9 — notifyStopHit
+// reusa classifyOutcome (tradeMetrics.js, a MESMA função que TradeCard.jsx/
+// TradeHistory.jsx já usam) pra escolher entre 3 cabeçalhos distintos. Testes
+// golden dos 3 casos — pré-requisito do item 2.5 (reescrita da anatomia)
+// travado ANTES da reescrita.
+describe('notifyStopHit — 3 cabeçalhos distintos por resultado (Auditoria do Telegram, item 2.3)', () => {
+  beforeEach(() => {
+    localStorage.setItem('cryptoradar_telegram_cfg', JSON.stringify({ botToken: 'x', chatId: 'y' }));
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+  });
+
+  function baseOp(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h', status: 'STOP_HIT',
+      entry_price: 100, initial_stop: 90, tp1_hit: false,
+      ...overrides,
+    };
+  }
+
+  it('perda real (stop abaixo da entrada) mostra "🛑 Stop Atingido"', async () => {
+    const op = baseOp({ current_stop: 95 }); // BUY, stop < entrada = perda
+    await notifyStopHit(op, 95);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('<b>Stop Atingido</b>');
+    expect(text).not.toContain('Breakeven');
+    expect(text).not.toContain('Travou Lucro');
+    expect(text).toMatch(/Resultado: -/);
+  });
+
+  it('breakeven (stop na entrada) mostra "🟡 Encerrada no Breakeven"', async () => {
+    const op = baseOp({ current_stop: 100, tp1_hit: true }); // BUY, stop == entrada
+    await notifyStopHit(op, 100);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('<b>Encerrada no Breakeven</b>');
+    expect(text).toContain('sem prejuízo');
+  });
+
+  it('lucro travado no stop (stop acima da entrada) mostra "💰 Stop Travou Lucro"', async () => {
+    const op = baseOp({ current_stop: 108, tp1_hit: true }); // BUY, stop > entrada
+    await notifyStopHit(op, 108);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('<b>Stop Travou Lucro</b>');
+    expect(text).toMatch(/Resultado: \+/);
+  });
+
+  it('a notificação nunca inventa resultado — sem entry_price/initial_stop, omite a linha "Resultado" em vez de calcular na hora', async () => {
+    const op = { symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h', status: 'STOP_HIT', current_stop: 95 };
+    await notifyStopHit(op, 95);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).not.toContain('Resultado:');
   });
 });
 

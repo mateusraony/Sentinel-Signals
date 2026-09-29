@@ -55,20 +55,20 @@ describe('SignalToast — badge de score usa Tooltip em vez de title= nativo (ac
 // de verdade. Guard defensivo, não um bug hoje demonstravelmente alcançável
 // pela UI — mesmo raciocínio de robustez já aplicado em Alerts.jsx.
 describe('SignalToast — badge de score omite "Score .../100" quando context.score está ausente (Auditoria do Telegram, item 1.11)', () => {
-  it('REGRESSÃO: sinal range_filter sem context.score mostra só "Sinal Confirmado", sem "Score 0/100"', async () => {
+  it('REGRESSÃO: sinal range_filter sem context.score mostra só "Sinal Detectado", sem "Score 0/100"', async () => {
     const signalSemScore = {
       id: 'sig2', symbol: 'ETHUSDT', timeframe: '4h', signal_type: 'BUY',
       source: 'range_filter', created_date: new Date().toISOString(),
       context: {}, asset_id: 'a2',
     };
     renderToast([signalSemScore]);
-    const badge = await screen.findByText('Sinal Confirmado');
+    const badge = await screen.findByText('Sinal Detectado');
     expect(badge.textContent).not.toMatch(/Score 0\/100/);
   });
 
-  it('sinal com score real continua mostrando "Score X/100 · Sinal Confirmado"', async () => {
+  it('sinal com score real continua mostrando "Score X/100 · Sinal Detectado"', async () => {
     renderToast([FRESH_SIGNAL]);
-    expect(await screen.findByText(/Score 90\/100 · Sinal Confirmado/)).toBeTruthy();
+    expect(await screen.findByText(/Score 90\/100 · Sinal Detectado/)).toBeTruthy();
   });
 });
 

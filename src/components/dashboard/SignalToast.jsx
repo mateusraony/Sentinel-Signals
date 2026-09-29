@@ -118,10 +118,13 @@ export default function SignalToast({ signals = [], assets = [], onSelectAsset }
                         {/* Auditoria do Telegram (2026-09-29), item 1.11 — só
                             RF carrega score real; sem o guard, fontes
                             SMC/MACD/EMA/RSI mostravam "Score 0/100" como se
-                            fosse um sinal fraco medido. O wording "Sinal
-                            Confirmado" (ambíguo com entrada executada) é
-                            escopo da Fase 2, não mexido aqui. */}
-                        {score > 0 ? `Score ${score}/100 · ` : ''}Sinal Confirmado
+                            fosse um sinal fraco medido. Fase 2 item 2.2:
+                            "Sinal Confirmado" lia como entrada executada
+                            (ambíguo com SignalToast.jsx/notifyTradeCreated) —
+                            trocado por "Sinal Detectado", alinhado com
+                            SignalAlertBanner.jsx ("🆕 SINAL") e com o
+                            Telegram (que já dizia "aguardando confirmação"). */}
+                        {score > 0 ? `Score ${score}/100 · ` : ''}Sinal Detectado
                       </div>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
