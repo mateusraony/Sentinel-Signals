@@ -782,6 +782,34 @@ describe('persistScanResults — notifiedOp passado pro Telegram tem status term
   });
 });
 
+// Codex review (PR #448) — o describe acima só exercitava
+// persistScanResults; priceCheckActiveOpsInner tem o MESMO bug/fix num
+// segundo ponto de construção de notifiedOp (scanner.js ~linha 4540), e
+// ficou sem cobertura própria — achado real: o registro em
+// docs/known-risks.md item 248 afirmava os "dois pontos" cobertos quando só
+// um estava. Fecha a lacuna com o mesmo padrão, via priceCheckActiveOps.
+describe('priceCheckActiveOps — notifiedOp passado pro Telegram tem status terminal (Codex review, PR #448)', () => {
+  it('REGRESSÃO: notifyStopHit recebe status: "STOP_HIT", não o status pré-transição', async () => {
+    isTelegramConfigured.mockReturnValue(true);
+    backend._seed('TradeOperation', makeOp());
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(97);
+    await priceCheckActiveOps();
+    expect(notifyStopHit).toHaveBeenCalledTimes(1);
+    const notifiedOp = notifyStopHit.mock.calls[0][0];
+    expect(notifiedOp.status).toBe('STOP_HIT');
+  });
+
+  it('REGRESSÃO: notifyTP2Hit recebe status: "TP2_HIT", não o status pré-transição', async () => {
+    isTelegramConfigured.mockReturnValue(true);
+    backend._seed('TradeOperation', makeOp({ status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100 }));
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(107);
+    await priceCheckActiveOps();
+    expect(notifyTP2Hit).toHaveBeenCalledTimes(1);
+    const notifiedOp = notifyTP2Hit.mock.calls[0][0];
+    expect(notifiedOp.status).toBe('TP2_HIT');
+  });
+});
+
 describe('persistScanResults — candle-based transitions (pre-TP1)', () => {
   it('STOP_HIT when the candle low crosses the stop before TP1', () => {
     backend._seed('TradeOperation', makeOp());
