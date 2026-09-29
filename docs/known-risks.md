@@ -29280,7 +29280,12 @@ commit `8ba7077`:
    adicionando `status: newStatus` nos dois pontos. Regressão nova (exercita
    as funções REAIS de `scanner.js`, não uma fixture manual):
    `scannerStateMachine.test.js`, describe "notifiedOp passado pro Telegram
-   tem status terminal".
+   tem status terminal". **Addendum 2026-09-29 (2ª rodada, Codex review no
+   PR #448)**: a primeira leitura desta entrada afirmava os "dois pontos"
+   cobertos, mas o describe só exercitava `persistScanResults` —
+   `priceCheckActiveOpsInner` ficou sem teste próprio. Corrigido com um
+   segundo describe espelhado via `priceCheckActiveOps` — agora os dois call
+   sites têm regressão real.
 2. **Linha "Saída" usava o `price` bruto de detecção**, não o preço
    persistido (`getExitPrice(op)`, já a mesma fonte que `closureSummary()`
    usa pro Resultado) — podia mostrar uma Saída que contradiz o Resultado
