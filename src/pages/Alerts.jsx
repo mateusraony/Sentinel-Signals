@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
-import { Bell, Filter, Trash2, TrendingUp, TrendingDown, Search, X, AlertTriangle } from 'lucide-react';
+import { Bell, Filter, Archive, TrendingUp, TrendingDown, Search, X, AlertTriangle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
@@ -98,7 +98,7 @@ export default function Alerts() {
               disabled={dismissMutation.isPending}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-10px font-mono transition-all hover:opacity-80"
               style={{ background: 'rgba(255,159,67,0.08)', border: '1px solid rgba(255,159,67,0.2)', color: '#ff9f43' }}>
-              <X className="w-3 h-3" />Descartar todos
+              <X className="w-3 h-3" />Arquivar todos
             </button>
           )}
         </div>
@@ -324,7 +324,7 @@ export default function Alerts() {
                   <button
                     className="p-2 rounded-lg transition-all hover:bg-rose-500/10"
                     onClick={(e) => { e.stopPropagation(); dismissMutation.mutate(signal.id); }}>
-                    <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-rose-400 transition-colors" />
+                    <Archive className="w-3.5 h-3.5 text-muted-foreground hover:text-rose-400 transition-colors" />
                   </button>
                 </div>
               </div>
@@ -351,8 +351,14 @@ export default function Alerts() {
                   ['Fonte', SOURCE_LABELS[selectedSignal.source] || selectedSignal.source],
                   ['Preço', `$${selectedSignal.price_at_signal?.toLocaleString(undefined, { maximumFractionDigits: 6 })}`],
                   ['Horário', moment(selectedSignal.created_date).format('DD/MM/YYYY HH:mm:ss')],
-                  ['Score', `${selectedSignal.context?.score || 0}/100`],
-                ].map(([label, val]) => (
+                  // Auditoria do Telegram (2026-09-29), item 1.2 — só RF carrega
+                  // score real (0-100); SMC/MACD/EMA/RSI não têm essa métrica, e
+                  // `|| 0` mostrava "Score: 0/100" como se fosse um sinal fraco
+                  // real. Mesmo guard `> 0` já usado no card da lista (abaixo).
+                  selectedSignal.context?.score > 0
+                    ? ['Score', `${selectedSignal.context.score}/100`]
+                    : null,
+                ].filter(Boolean).map(([label, val]) => (
                   <div key={label} className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
                     <p className="text-9px font-mono text-muted-foreground uppercase tracking-wider">{label}</p>
                     <p className="text-sm font-mono font-semibold text-foreground mt-0.5">{val}</p>
@@ -397,16 +403,16 @@ export default function Alerts() {
       <AlertDialog open={!!confirmingDismissAll} onOpenChange={(open) => !open && setConfirmingDismissAll(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Descartar todos os alertas visíveis?</AlertDialogTitle>
+            <AlertDialogTitle>Arquivar todos os alertas visíveis?</AlertDialogTitle>
             <AlertDialogDescription>
-              Descartar os {confirmingDismissAll?.length} alertas visíveis agora? Eles saem da
-              lista (marcados como dispensados) — não há como reverter isso pela interface.
+              Arquivar os {confirmingDismissAll?.length} alertas visíveis agora? Eles saem da
+              lista (marcados como arquivados) — não há como reverter isso pela interface.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => confirmingDismissAll?.forEach(id => dismissMutation.mutate(id))}>
-              Descartar todos
+              Arquivar todos
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

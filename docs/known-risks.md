@@ -29095,3 +29095,86 @@ sistema de toast nativo do shadcn (`toast.jsx`); a divergência
 humanização) por completo** — Round 1 (item 242, PR #441), Round 2 (item
 243, PR #442), Round 3 (item 244, PR #443), Round 4 (item 245, PR #444),
 Round 5 (este item, PR a abrir).
+
+## 247. Auditoria do Telegram — Fase 1 (correções pontuais de baixo risco) (2026-09-29)
+
+**Contexto**: usuário colou uma auditoria externa sobre o sistema de
+notificações (Telegram, toast, banner, Alertas), pedindo veredito
+fundamentado + plano faseado. 3 agentes de exploração verificaram cada
+alegação técnica arquivo:linha contra o código real (plano completo em
+`/root/.claude/plans/auditoria-do-telegram-sentinel-snug-zephyr.md`). A
+maioria bateu; esta é a Fase 1 do plano de 5 fases — correções pontuais,
+sem tocar `scanner.js`/máquina de estados.
+
+**Implementado**:
+1. `verification_task_created` exposto em `EVENT_OPTIONS`
+   (`TelegramSettings.jsx`) — já estava em `DEFAULT_FILTERS.events`
+   (`telegram.js`) e ligado por padrão desde 2026-08-10, mas invisível na
+   UI. Teste-guarda novo (`TelegramSettings.test.jsx`) falha se um evento
+   futuro repetir essa divergência.
+2. "Score 0/100" falso corrigido no modal de detalhe de `Alerts.jsx`
+   (linha ~354) — mesmo guard `> 0` já usado no card da lista.
+3. Escape de HTML (`escaparHtml`, `&`/`<`/`>`) aplicado em `signal.reason`/
+   `symbol`/`why`/`evidence` de todas as `notify*` de sinal/trade em
+   `src/lib/telegram.js` (não tinha nenhum) e `scripts/adminTelegram.js`
+   (tinha a função, só usada no health-audit). Tags de template (`<b>`,
+   `<i>`) continuam cruas. Revisado via skill `sentinel-security-review`:
+   blast radius é cosmético (pior caso, `&lt;` literal na mensagem), sem
+   secret tocado, rollback trivial.
+4. Fallback de fonte desconhecida trocado de `'RF'` (mentia a origem) para
+   `'Outra fonte'`, nos dois arquivos.
+5. Descrição do evento "Novo sinal detectado" atualizada para citar as 5
+   fontes (RF/SMC/MACD/EMA/RSI), não só RF.
+6. Rebranding "CryptoRadar" → "Sentinel Signals" em todo texto visível:
+   `telegram.js` (9x), `adminTelegram.js` (15x), `TelegramSettings.jsx`,
+   `App.jsx`, `MonthlyReport.jsx`. Chave `cryptoradar_telegram_cfg`/
+   `cryptoradar_pine_config` (localStorage) deliberadamente não tocada —
+   interna, sem migração nesta rodada. Tripwire novo
+   (`telegramBrandingTripwire.test.js`) falha se "CryptoRadar" reaparecer
+   nesses 5 arquivos.
+7. "Descartar" → "Arquivar" na página Alertas (texto + ícone `Trash2` →
+   `Archive`) — é soft-delete (`is_dismissed`), nunca exclusão real;
+   lixeira insinuava o contrário.
+8-11. Extras de mesmo risco: teste-guarda `EVENT_OPTIONS`×
+   `DEFAULT_FILTERS.events` (item 1), teste-guarda de rebranding (item 6),
+   confirmado zero uso perigoso de `dangerouslySetInnerHTML` fora do
+   boilerplate padrão do `chart.jsx` (shadcn/ui, cores estáticas de
+   config, não dado externo), e auditoria do padrão `context?.score || 0`
+   em outros componentes.
+
+**Achado durante a implementação (fato, não hipótese) — estreita o escopo
+do item 1.11**: o padrão "Score 0/100 falso" só é um bug hoje
+*visivelmente alcançável* na página Alertas (`Alerts.jsx`, que lista TODO
+`SignalEvent` sem filtro de origem). Em `SignalToast.jsx`
+(`source !== 'range_filter'` descarta na linha ~25), `Dashboard.jsx`
+(passa `latestSignal` só com `source === 'range_filter'` pro `AssetCard`,
+linha ~410) e `Trades.jsx` (`monitoringMap` só aceita
+`s.source === 'range_filter'`, linha ~557), a UI já é RF-only por
+construção — SMC/MACD/EMA/RSI nunca chegam nesses três componentes. Os
+guards `score > 0` adicionados ali (`SignalToast.jsx`, `AssetCard.jsx`,
+`Trades.jsx`) continuam corretos e testados, mas são defensivos (protegem
+contra um `context.score` ausente/malformado em um registro RF), não a
+correção de um bug hoje visível para essas 3 telas.
+
+**Testes novos**: `TelegramSettings.test.jsx` (guard de evento),
+`telegramBrandingTripwire.test.js` (guard de marca), escape HTML em
+`telegram.test.js`/`adminTelegram.test.js` (caractere malicioso em
+`reason`), fallback de fonte em ambos, `SignalToast.test.jsx`/
+`AssetCard.test.jsx`/`Trades.test.jsx` (score ausente). Testes
+pré-existentes ajustados para não quebrar com os 2 comportamentos que
+mudaram de propósito: `Alerts.test.jsx` ("Descartar todos" →
+"Arquivar todos", 6 ocorrências) e `telegram.test.js` (fallback de fonte
+desconhecida, de "RF" para "Outra fonte").
+
+**Verificação**: `npm run lint` limpo; `npm test` 2237 passed, 58 skipped,
+0 failed (era 2222 antes desta rodada); `npm run build` ok (warning de
+chunk grande pré-existente, não relacionado). **Não verificado**: envio
+real de mensagem pro Telegram (sem bot configurado neste ambiente) — o
+usuário precisa confirmar visualmente no app/Telegram real antes de
+considerar a Fase 1 100% fechada, conforme o checklist de "Revisão de
+fechamento" do plano.
+
+**Fora de escopo desta fase** (fica para as Fases 2-5 do plano): wording
+"Sinal Confirmado" do toast (ambíguo com execução), breakeven como
+categoria própria, anatomia fixa de mensagem, notificação nova de "sinal
+cancelado" pré-entrada, arquitetura unificada `NotificationEvent`.

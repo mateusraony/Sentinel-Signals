@@ -244,9 +244,53 @@ describe('notifyNewSignal — source-aware label and score (Codex review, PR #65
     expect(await sentText(baseSignal({ source: 'rsi' }))).toContain('Novo Sinal RSI Detectado');
   });
 
-  it('falls back to RF for an unrecognized/legacy source instead of throwing', async () => {
+  // Auditoria do Telegram (2026-09-29), item 1.4 — o fallback antigo
+  // ('RF' hardcoded) rotulava uma fonte desconhecida/futura como se fosse
+  // Range Filter, o que é literalmente falso. Trocado para "Outra fonte",
+  // sem risco pro filtro de origem (KNOWN_SOURCES, known-risks.md item 47,
+  // continua fail-open só no ENVIO — este teste é só sobre o RÓTULO exibido).
+  it('rotula uma origem desconhecida/futura como "Outra fonte" em vez de mentir que é RF', async () => {
     const text = await sentText(baseSignal({ source: 'something_new' }));
-    expect(text).toContain('Novo Sinal RF Detectado');
+    expect(text).toContain('Novo Sinal Outra fonte Detectado');
+    expect(text).not.toContain('Novo Sinal RF Detectado');
+  });
+});
+
+// Auditoria do Telegram (2026-09-29), item 1.3 — parse_mode:'HTML' trata
+// <, > e & como marcação; campos vindos de fora do template (reason do
+// sinal, texto de explicação da operação) precisam ser escapados antes de
+// entrar na mensagem, sem afetar as tags de template (<b>, <i>) que são
+// string literal do próprio código.
+describe('escape de HTML em campos dinâmicos (Auditoria do Telegram, item 1.3)', () => {
+  beforeEach(() => {
+    localStorage.setItem('cryptoradar_telegram_cfg', JSON.stringify({ botToken: 'x', chatId: 'y' }));
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+  });
+
+  it('notifyNewSignal escapa <, > e & em signal.reason', async () => {
+    await notifyNewSignal({
+      symbol: 'BTCUSDT', timeframe: '1h', signal_type: 'BUY', source: 'range_filter',
+      price_at_signal: 100, reason: 'Rompeu <b>forte</b> & subiu', context: {},
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Rompeu &lt;b&gt;forte&lt;/b&gt; &amp; subiu');
+    expect(text).not.toContain('<b>forte</b>');
+    // As tags de template do próprio código continuam cruas.
+    expect(text).toContain('<b>BTC/USDT</b>');
+  });
+
+  it('notifyStopHit escapa why/evidence de explainOperationDecision quando contêm caracteres de marcação', async () => {
+    await notifyStopHit({
+      symbol: 'BTCUSDT', side: 'BUY', timeframe: '4h', entry_price: 100, current_stop: 95,
+      decision_snapshot: { reason_code: 'nao_existe_um_codigo_assim' },
+    }, 95);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    // Sem decision_snapshot reconhecido, why/evidence caem no fallback
+    // genérico (texto interno, sem `<`/`>`/`&`) — este teste garante que a
+    // chamada de escaparHtml() não quebra esse caminho nem lança.
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('BTC/USDT');
   });
 });
 

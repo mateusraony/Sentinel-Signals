@@ -148,11 +148,11 @@ describe('Alerts — timestamp do card tem contraste maior (Refinamentos)', () =
   });
 });
 
-// Achado da varredura pós-Raio-X, Round 2 (2026-09-27): "Descartar todos"
+// Achado da varredura pós-Raio-X, Round 2 (2026-09-27): "Arquivar todos"
 // usava confirm() nativo (quebra o tema escuro) — migrado pro AlertDialog já
 // existente e nunca usado. Mock próprio (não `makeFakeBackendModule`, cujo
 // `update` não é espionável) pra poder confirmar chamada/não-chamada.
-describe('Alerts — "Descartar todos" usa AlertDialog em vez de confirm() nativo (Round 2 pós-Raio-X)', () => {
+describe('Alerts — "Arquivar todos" usa AlertDialog em vez de confirm() nativo (Round 2 pós-Raio-X)', () => {
   afterEach(() => {
     vi.doUnmock('@/api/entities');
     vi.resetModules();
@@ -171,7 +171,7 @@ describe('Alerts — "Descartar todos" usa AlertDialog em vez de confirm() nativ
     const { default: AlertsFresh } = await import('./Alerts.jsx');
     renderPage(<AlertsFresh />);
 
-    fireEvent.click(await screen.findByText('Descartar todos'));
+    fireEvent.click(await screen.findByText('Arquivar todos'));
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText(/2 alertas/)).toBeTruthy();
 
@@ -179,9 +179,9 @@ describe('Alerts — "Descartar todos" usa AlertDialog em vez de confirm() nativ
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(updateMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText('Descartar todos'));
+    fireEvent.click(screen.getByText('Arquivar todos'));
     const dialog2 = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog2).getByText('Descartar todos'));
+    fireEvent.click(within(dialog2).getByText('Arquivar todos'));
     await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
   });
 
@@ -190,7 +190,7 @@ describe('Alerts — "Descartar todos" usa AlertDialog em vez de confirm() nativ
   // entre o clique e a confirmação. Com o AlertDialog, um alerta novo pode
   // chegar via polling enquanto o diálogo está aberto — sem snapshot dos
   // IDs visíveis na abertura, confirmar dispensaria também o alerta novo,
-  // que o usuário nunca viu quando clicou "Descartar todos".
+  // que o usuário nunca viu quando clicou "Arquivar todos".
   it('REGRESSÃO (Codex): confirmar dispensa só os alertas visíveis na abertura, não os que chegaram via polling depois', async () => {
     const updateMock = vi.fn(async (id, data) => ({ id, ...data }));
     const initialSignals = [
@@ -212,7 +212,7 @@ describe('Alerts — "Descartar todos" usa AlertDialog em vez de confirm() nativ
       </QueryClientProvider>,
     );
 
-    fireEvent.click(await screen.findByText('Descartar todos'));
+    fireEvent.click(await screen.findByText('Arquivar todos'));
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByText(/2 alertas/)).toBeTruthy();
 
@@ -226,7 +226,7 @@ describe('Alerts — "Descartar todos" usa AlertDialog em vez de confirm() nativ
     client.setQueryData(['all-signals'], [...initialSignals, newSignal]);
     await screen.findByText('3 alertas');
 
-    fireEvent.click(within(dialog).getByText('Descartar todos'));
+    fireEvent.click(within(dialog).getByText('Arquivar todos'));
     await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(2));
     expect(updateMock).not.toHaveBeenCalledWith('e3', expect.anything());
   });

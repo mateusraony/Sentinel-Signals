@@ -47,6 +47,31 @@ describe('SignalToast — badge de score usa Tooltip em vez de title= nativo (ac
   });
 });
 
+// Auditoria do Telegram (2026-09-29), item 1.11 — este toast só mostra
+// sinais 'range_filter' (filtro no próprio componente, linha ~25), que
+// normalmente sempre carregam score — mas "Score {score}/100" com o
+// fallback `|| 0` ainda mostraria "Score 0/100" se um registro malformado/
+// legado chegasse sem `context.score`, como se fosse um sinal fraco medido
+// de verdade. Guard defensivo, não um bug hoje demonstravelmente alcançável
+// pela UI — mesmo raciocínio de robustez já aplicado em Alerts.jsx.
+describe('SignalToast — badge de score omite "Score .../100" quando context.score está ausente (Auditoria do Telegram, item 1.11)', () => {
+  it('REGRESSÃO: sinal range_filter sem context.score mostra só "Sinal Confirmado", sem "Score 0/100"', async () => {
+    const signalSemScore = {
+      id: 'sig2', symbol: 'ETHUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', created_date: new Date().toISOString(),
+      context: {}, asset_id: 'a2',
+    };
+    renderToast([signalSemScore]);
+    const badge = await screen.findByText('Sinal Confirmado');
+    expect(badge.textContent).not.toMatch(/Score 0\/100/);
+  });
+
+  it('sinal com score real continua mostrando "Score X/100 · Sinal Confirmado"', async () => {
+    renderToast([FRESH_SIGNAL]);
+    expect(await screen.findByText(/Score 90\/100 · Sinal Confirmado/)).toBeTruthy();
+  });
+});
+
 describe('SignalToast — animações respeitam prefers-reduced-motion (achado M-5)', () => {
   it('REGRESSÃO: a entrada do toast tem motion-reduce:animate-none na className', async () => {
     const { container } = renderToast([FRESH_SIGNAL]);

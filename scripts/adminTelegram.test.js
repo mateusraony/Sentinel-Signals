@@ -173,6 +173,32 @@ describe('adminTelegram — filtro de origem do sinal (lido de TelegramFilters/c
   });
 });
 
+// Auditoria do Telegram (2026-09-29), item 1.3/1.4 — mesmos dois bugs do
+// canal navegador (src/lib/telegram.test.js), aqui no espelho cron.
+describe('adminTelegram — escape de HTML e fallback de fonte desconhecida (Auditoria do Telegram, item 1.3/1.4)', () => {
+  beforeEach(() => {
+    telegramFiltersGetMock.mockResolvedValue(doc(undefined)); // fail-open, sem filtro salvo
+  });
+
+  it('escapa <, > e & em signal.reason antes de enviar (parse_mode: HTML)', async () => {
+    const { notifyNewSignal } = await import('./adminTelegram.js');
+    await notifyNewSignal(baseSignal({ source: 'range_filter', reason: 'Rompeu <b>forte</b> & subiu' }));
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Rompeu &lt;b&gt;forte&lt;/b&gt; &amp; subiu');
+    expect(text).not.toContain('<b>forte</b>');
+  });
+
+  it('rotula uma origem desconhecida/futura como "Outra fonte" em vez de mentir que é RF', async () => {
+    const { notifyNewSignal } = await import('./adminTelegram.js');
+    await notifyNewSignal(baseSignal({ source: 'um_source_futuro_que_ainda_nao_existe' }));
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Novo Sinal Outra fonte Detectado');
+    expect(text).not.toContain('Novo Sinal RF Detectado');
+  });
+});
+
 describe('adminTelegram — override por ativo (known-risks item 47)', () => {
   it('asset.notify_sources SUBSTITUI o filtro global, e evita ler o backend', async () => {
     telegramFiltersGetMock.mockResolvedValue(doc(['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi'])); // global libera tudo

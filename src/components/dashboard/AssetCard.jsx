@@ -450,16 +450,22 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
                 )}
               </>
             ) : <span className="text-xs text-muted-foreground">—</span>}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="text-8px font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
-                  Confl.: <span style={{ color: score >= 85 ? '#00ff80' : score >= 65 ? '#ffd166' : '#ff9f43' }}>{score}</span>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
-              </TooltipContent>
-            </Tooltip>
+            {/* Auditoria do Telegram (2026-09-29), item 1.11 — só RF/operações
+                reais carregam score; sem isso, `|| 0` mostrava "Confl.: 0"
+                como se fosse uma confluência real e fraca, sem sinal/operação
+                nenhuma por trás. Mesmo guard `> 0` do resto do app. */}
+            {score > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="text-8px font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: 'rgba(255,255,255,0.3)' }}>
+                    Confl.: <span style={{ color: score >= 85 ? '#00ff80' : score >= 65 ? '#ffd166' : '#ff9f43' }}>{score}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
+                  Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </div>
 

@@ -345,7 +345,11 @@ function MonitoringCard({ signal, onDismiss, isDismissing, expandAll = false }) 
             Gráfico de {signal.timeframe?.toUpperCase()}
           </div>
           <EventTimeline events={signalTimeline(signal)} />
-          <ScoreBar score={signal.context?.score || 0} />
+          {/* Auditoria do Telegram (2026-09-29), item 1.11 — só RF carrega
+              score real; sem esse guard, um sinal SMC/MACD/EMA/RSI mostrava
+              a barra em "〰 Fraco" como se tivesse confluência baixa medida,
+              quando na verdade essa fonte não usa score. */}
+          {signal.context?.score > 0 && <ScoreBar score={signal.context.score} />}
           {signal.reason && (
             <p className="text-9px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.35)' }}>
               {signal.reason}

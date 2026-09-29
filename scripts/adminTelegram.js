@@ -242,17 +242,17 @@ export async function notifyNewSignal(signal, asset) {
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
   const strength = { strong: '💪 Forte', medium: '📊 Médio', moderate: '📊 Moderado', weak: '🔹 Fraco' }[signal.strength] || '';
-  const sourceLabel = SOURCE_LABELS[signal.source] || 'RF';
+  const sourceLabel = SOURCE_LABELS[signal.source] || 'Outra fonte';
   const scoreLine = Number.isFinite(signal.context?.score)
     ? `📊 Score: ${signal.context.score}/100 ${strength}\n`
     : (strength ? `📊 Força: ${strength}\n` : '');
   return send(
     `${emoji} <b>Novo Sinal ${sourceLabel} Detectado</b>\n\n` +
-    `<b>${signal.symbol?.replace('USDT', '/USDT')}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
+    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
     `💰 Preço: $${fmtP(signal.price_at_signal)}\n` +
     scoreLine +
-    `📝 ${signal.reason || ''}\n\n` +
-    `<i>⏳ Aguardando confirmação de entrada — CryptoRadar</i>`
+    `📝 ${escaparHtml(signal.reason) || ''}\n\n` +
+    `<i>⏳ Aguardando confirmação de entrada — Sentinel Signals</i>`
   );
 }
 
@@ -263,17 +263,17 @@ export async function notifyVerificationTask(signal, asset) {
   if (!(await shouldSend('verification_task_created', signal, asset))) return false;
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
-  const sourceLabel = SOURCE_LABELS[signal.source] || 'RF';
+  const sourceLabel = SOURCE_LABELS[signal.source] || 'Outra fonte';
   const scoreLine = Number.isFinite(signal.context?.score)
     ? `📊 Score: ${signal.context.score}/100\n`
     : '';
   return send(
     `✅ ${emoji} <b>Tarefa de Verificação Criada — ${sourceLabel}</b>\n\n` +
-    `<b>${signal.symbol?.replace('USDT', '/USDT')}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
+    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
     `⭐ Prioridade: ALTA\n` +
     scoreLine +
-    `📝 ${signal.reason || ''}\n\n` +
-    `<i>🔎 Revise em /verification — CryptoRadar</i>`
+    `📝 ${escaparHtml(signal.reason) || ''}\n\n` +
+    `<i>🔎 Revise em /verification — Sentinel Signals</i>`
   );
 }
 
@@ -295,14 +295,14 @@ export async function notifyTradeCreated(op) {
   return send(
     backfillPrefix(op) +
     `${emoji} <b>Entrada Confirmada — ${dir}</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${tfLabel}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${tfLabel}\n` +
     realTimeLine(getEntryReferenceTime(op)) +
     `📍 Entrada: $${fmtP(op.entry_price)}\n` +
     `🛑 Stop: $${fmtP(op.initial_stop)}\n` +
     `🎯 TP1: $${fmtP(op.tp1)}  |  TP2: $${fmtP(op.tp2)}\n` +
     `📊 Score: ${op.score}/100\n` +
     `🔒 Gestão: ${op.partial_percent ?? 50}% no TP1, runner ${op.runner_percent ?? 50}%\n\n` +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -315,7 +315,7 @@ export async function notifyTP1Hit(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `🎯 <b>TP1 Atingido!</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.tp1_hit_real_time, true) +
     `💰 Preço atual: $${fmtP(price)}\n` +
     (closesFullyAtTp1(op)
@@ -323,9 +323,9 @@ export async function notifyTP1Hit(op, price) {
       : `✅ ${op.partial_percent ?? 50}% da posição realizada\n`
         + `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n`
         + `🏃 Runner ${op.runner_percent ?? 50}% ativo — aguardando TP2: $${fmtP(op.tp2)}\n`) +
-    `\n<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `\n<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -334,13 +334,13 @@ export async function notifyTP2Hit(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `🏆 <b>TP2 Atingido — Operação Completa!</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.tp2_hit_real_time, true) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)} → TP2: $${fmtP(op.tp2)}\n\n` +
-    `<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -358,14 +358,14 @@ export async function notifyAssetStale(asset, reason) {
       `<b>${label}</b>\n` +
       `🔁 Erro desde: ${asset.scan_error_since || '—'}\n` +
       `📝 ${asset.scan_error || '—'}\n\n` +
-      `<i>⚡ CryptoRadar — verifique o ativo/Debug Log</i>`
+      `<i>⚡ Sentinel Signals — verifique o ativo/Debug Log</i>`
     );
   }
   return send(
     `⚠️ <b>Ativo sem atualização</b>\n\n` +
     `<b>${label}</b>\n` +
     `🔇 Último scan: ${asset.last_scan_at || '—'}\n\n` +
-    `<i>⚡ CryptoRadar — verifique se o ativo segue ativo no painel</i>`
+    `<i>⚡ Sentinel Signals — verifique se o ativo segue ativo no painel</i>`
   );
 }
 
@@ -539,7 +539,7 @@ export async function notifyFirestoreQuotaExhausted(errMessage) {
     `O scan ao vivo está falhando com <code>RESOURCE_EXHAUSTED</code> — nenhuma ` +
     `operação nova pode ser aberta/atualizada enquanto isso durar.\n\n` +
     `📝 ${errMessage || 'Quota exceeded.'}\n\n` +
-    `<i>⚡ CryptoRadar — aviso o momento em que voltar ao normal. Cota reseta ~meia-noite Pacific (~07:00 UTC)</i>`
+    `<i>⚡ Sentinel Signals — aviso o momento em que voltar ao normal. Cota reseta ~meia-noite Pacific (~07:00 UTC)</i>`
   );
   if (delivered) {
     const nowIso = new Date().toISOString();
@@ -590,7 +590,7 @@ export async function notifyFirestoreQuotaRecovered() {
     `✅ <b>Cota do Firestore normalizada</b>\n\n` +
     `O scan voltou a rodar${duracao ? ` — ficou ${duracao} sem conseguir` : ''}. ` +
     `Operações voltam a ser abertas e atualizadas normalmente.\n\n` +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>⚡ Sentinel Signals</i>`
   );
   if (delivered) {
     try {
@@ -635,7 +635,7 @@ export async function notifyStepTimeout(step, ms) {
     + `O sistema parou de esperar por ${describeStep(step)}`
     + `${duracao ? ` — não respondeu em ${duracao}` : ''}. `
     + `Ele tenta de novo sozinho no próximo ciclo.\n\n`
-    + `<i>⚡ CryptoRadar — quando a causa for falta de cota, o aviso é outro e diz isso.</i>`
+    + `<i>⚡ Sentinel Signals — quando a causa for falta de cota, o aviso é outro e diz isso.</i>`
   );
   if (delivered) {
     try {
@@ -682,7 +682,7 @@ export async function notifyHealthAudit(titulo, linhas, url) {
   return send(
     `🩺 <b>${escaparHtml(titulo)}</b>\n\n${corpo}\n\n`
     + (url ? `<a href="${escaparHtml(url)}">Ver o relatório completo</a>\n\n` : '')
-    + `<i>⚡ CryptoRadar — auditoria diária. Silêncio aqui significa que ela rodou e não achou nada.</i>`
+    + `<i>⚡ Sentinel Signals — auditoria diária. Silêncio aqui significa que ela rodou e não achou nada.</i>`
   ).catch((e) => {
     console.warn('[adminTelegram] Falha ao notificar auditoria (não crítico):', e.message);
     return false;
@@ -695,14 +695,14 @@ export async function notifyStopHit(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `🛑 <b>Stop Atingido ${beMsg}</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.stop_hit_real_time, true) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Stop em: $${fmtP(op.current_stop)}\n` +
     (op.exit_ambiguous ? AMBIGUOUS_EXIT_NOTE : '\n') +
-    `<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -712,13 +712,13 @@ export async function notifyInvalidated(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `⚠️ <b>Sinal Invalidado ${stageMsg}</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -727,13 +727,13 @@ export async function notifyTimeStop(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `⏱️ <b>Time Stop — Operação Encerrada</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -742,12 +742,12 @@ export async function notifyChopExit(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `🌊 <b>Chop Exit — Operação Encerrada</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }

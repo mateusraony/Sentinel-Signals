@@ -201,6 +201,55 @@ describe('Trades — toggle "Compacto/Detalhado" também abre os cards de "Aviso
   });
 });
 
+// Auditoria do Telegram (2026-09-29), item 1.11 — `<ScoreBar score={signal.
+// context?.score || 0} />` renderizava a barra em "〰 Fraco"/"0/100" pra
+// qualquer sinal sem context.score, como se fosse uma confluência real e
+// baixa medida, em vez de simplesmente não se aplicar. "Avisos em análise"
+// só lista sinais `source === 'range_filter'` (Trades.jsx:557 — SMC/MACD/
+// EMA/RSI nunca chegam aqui, achado durante a implementação deste item), e
+// RF normalmente sempre carrega score — guard defensivo pra um
+// context.score ausente/malformado, mesma categoria de robustez já aplicada
+// em Alerts.jsx/AssetCard.jsx. Timeframe 4h (não 1h) porque só a cascata 4h
+// alimenta a fila "acionável" (Trades.jsx:564-567) — um sinal 1h cai no
+// acordeão "Sinais informativos", fechado por padrão.
+describe('Trades — ScoreBar de "Avisos em análise" omite score falso quando context.score está ausente (Auditoria do Telegram, item 1.11)', () => {
+  it('REGRESSÃO: sinal sem context.score não mostra ScoreBar nenhuma nos detalhes técnicos', async () => {
+    const SIGNAL_SEM_SCORE = {
+      id: 'sig_smc1', asset_id: 'a6', symbol: 'LINKUSDT', timeframe: '4h',
+      signal_type: 'BUY', source: 'range_filter', dedup_key: 'sig_smc1',
+      price_at_signal: 15.0, candle_time: new Date().toISOString(),
+      created_date: new Date().toISOString(), context: {},
+    };
+    mockBackend({ operations: [], signals: [SIGNAL_SEM_SCORE] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    await screen.findByText('LINK/USDT');
+    fireEvent.click(screen.getByText('Compacto')); // expande "Detalhes técnicos" de todos os cards
+
+    await screen.findByText((_, el) => el.textContent === 'Gráfico de 4H');
+    expect(screen.queryByText('〰 Fraco')).toBeNull();
+    expect(screen.queryByText('0/100')).toBeNull();
+  });
+
+  it('sinal com score real continua mostrando a ScoreBar', async () => {
+    const SIGNAL_RF_COM_SCORE = {
+      id: 'sig_rf1', asset_id: 'a7', symbol: 'AVAXUSDT', timeframe: '4h',
+      signal_type: 'BUY', source: 'range_filter', dedup_key: 'sig_rf1',
+      price_at_signal: 20.0, candle_time: new Date().toISOString(),
+      created_date: new Date().toISOString(), context: { score: 72 },
+    };
+    mockBackend({ operations: [], signals: [SIGNAL_RF_COM_SCORE] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    await screen.findByText('AVAX/USDT');
+    fireEvent.click(screen.getByText('Compacto'));
+
+    await screen.findByText('72/100');
+  });
+});
+
 describe('Trades — "Histórico Completo" (HistoryRow) mostra o "por quê" sem precisar de hover', () => {
   it('REGRESSÃO: o texto de explicação aparece direto na linha, não só num title= (tooltip)', async () => {
     mockBackend({ operations: [CLOSED_OP_COM_SNAPSHOT], signals: [] });

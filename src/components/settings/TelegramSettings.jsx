@@ -28,7 +28,7 @@ const SOURCE_OPTIONS = [
 ];
 const DEFAULT_SOURCES = SOURCE_OPTIONS.map(s => s.id);
 const EVENT_OPTIONS = [
-  { id: 'signal_detected', label: '🔔 Novo sinal detectado', desc: 'Quando RF gera um novo sinal' },
+  { id: 'signal_detected', label: '🔔 Novo sinal detectado', desc: 'Quando uma das fontes habilitadas (RF, SMC, MACD, EMA, RSI) gera um novo sinal' },
   { id: 'entry_confirmed', label: '✅ Entrada confirmada', desc: 'Quando candle fecha confirmando entrada' },
   { id: 'tp1_hit', label: '🎯 TP1 atingido', desc: 'Quando preço toca o primeiro alvo' },
   { id: 'tp2_hit', label: '🏆 TP2 atingido', desc: 'Quando preço toca o alvo final' },
@@ -36,6 +36,10 @@ const EVENT_OPTIONS = [
   { id: 'invalidated', label: '⚠️ Sinal invalidado', desc: 'Quando estrutura/tendência reverte contra a operação' },
   { id: 'time_stop', label: '⏱️ Time Stop', desc: 'Quando o prazo máximo sem atingir TP1 expira' },
   { id: 'chop_exit', label: '🌊 Chop Exit', desc: 'Quando o mercado fica lateralizado (choppiness alto)' },
+  // Auditoria do Telegram (2026-09-29), item 1.1 — este evento já existia em
+  // DEFAULT_FILTERS.events (src/lib/telegram.js) e vinha ligado por padrão,
+  // mas não tinha toggle nesta tela: o usuário não conseguia ver nem desligar.
+  { id: 'verification_task_created', label: '🔎 Tarefa de verificação criada', desc: 'Quando um sinal de alta prioridade precisa de confirmação manual antes de virar operação' },
 ];
 
 // Filters are now stored/managed centrally in telegram.js — imported above
@@ -83,7 +87,7 @@ export default function TelegramSettings({ open, onClose }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: cfg.chatId,
-          text: `✅ <b>CryptoRadar conectado!</b>\n\n📊 <b>Timeframes:</b> ${tfStr}\n⚡ <b>Prioridade mínima:</b> ${filters.min_priority}\n📋 <b>Eventos ativos:</b>\n• ${evStr}\n\n<i>⚡ Sistema de monitoramento ativo</i>`,
+          text: `✅ <b>Sentinel Signals conectado!</b>\n\n📊 <b>Timeframes:</b> ${tfStr}\n⚡ <b>Prioridade mínima:</b> ${filters.min_priority}\n📋 <b>Eventos ativos:</b>\n• ${evStr}\n\n<i>⚡ Sistema de monitoramento ativo</i>`,
           parse_mode: 'HTML',
         }),
       });
