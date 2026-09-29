@@ -10,7 +10,7 @@ import { formatBackfillLag } from './backfillDetection';
 import { explainOperationDecision } from './decisionExplanation';
 import { shortSourceLabel } from './signalSourceLabels';
 import { NOTIFICATION_STAGES, stageHeader } from './notificationVocabulary';
-import { classifyOutcome, calcRealizedR, calcRealizedPnlPct } from './tradeMetrics';
+import { classifyOutcome, calcRealizedR, calcRealizedPnlPct, getExitPrice } from './tradeMetrics';
 
 const STORAGE_KEY = 'cryptoradar_telegram_cfg';
 const FILTERS_KEY = 'tg_filters';
@@ -421,7 +421,7 @@ export async function notifyTP2Hit(op, price) {
     `📝 Por quê: ${escaparHtml(why)}\n` +
     (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.tp2_hit_real_time, true) +
-    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(price)}\n` +
+    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
     `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
     `${panelLink('/trades')}\n\n` +
@@ -466,7 +466,7 @@ export async function notifyStopHit(op, price) {
     `📝 Por quê: ${escaparHtml(why)}\n` +
     (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.stop_hit_real_time, true) +
-    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(price)} (stop em $${fmtP(op.current_stop)})\n` +
+    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)} (stop em $${fmtP(op.current_stop)})\n` +
     closureSummary(op) +
     (op.exit_ambiguous ? AMBIGUOUS_EXIT_NOTE : '') + '\n' +
     `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
@@ -486,7 +486,7 @@ export async function notifyInvalidated(op, price) {
     `📝 Por quê: ${escaparHtml(why)}\n` +
     (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.closed_at_real_time) +
-    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(price)}\n` +
+    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
     `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
     `${panelLink('/trades')}\n\n` +
@@ -504,7 +504,7 @@ export async function notifyTimeStop(op, price) {
     `📝 Por quê: ${escaparHtml(why)}\n` +
     (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.closed_at_real_time) +
-    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(price)}\n` +
+    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
     `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
     `${panelLink('/trades')}\n\n` +
@@ -522,7 +522,7 @@ export async function notifyChopExit(op, price) {
     `📝 Por quê: ${escaparHtml(why)}\n` +
     (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.closed_at_real_time) +
-    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(price)}\n` +
+    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
     `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
     `${panelLink('/trades')}\n\n` +

@@ -48,7 +48,11 @@ export function translateSignalContext(context) {
     const zona = rsiZoneLabel(context.rsi);
     rows.push({ label: 'RSI', value: zona ? `${context.rsi.toFixed(0)} — ${zona}` : context.rsi.toFixed(0) });
   }
-  if (Number.isFinite(context.macd_histogram)) {
+  // Codex review (PR #447) — histograma exatamente 0 (raro, ponto de
+  // cruzamento) não é nem positivo nem negativo; mesmo raciocínio de
+  // "omitir em vez de inventar" já usado nos campos de direção acima
+  // (rf_direction/tf_x_direction === 0 também não vira linha nenhuma).
+  if (Number.isFinite(context.macd_histogram) && context.macd_histogram !== 0) {
     const positivo = context.macd_histogram > 0;
     rows.push({ label: 'MACD', value: positivo ? 'positivo' : 'negativo', direction: positivo ? 1 : -1 });
   }

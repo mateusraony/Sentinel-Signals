@@ -4178,7 +4178,16 @@ export async function persistScanResults(scanResult) {
       // wall-clock detection time (docs/known-risks.md: horário real do
       // alerta vs. horário em que o scan detectou).
       if (applied && isTelegramConfigured()) {
-        const notifiedOp = { ...op, ...updatePayload, tp1_hit: tp1Hit, tp2_hit: tp2Hit };
+        // Codex review (PR #447) — este merge omitia `status`, então
+        // classifyOutcome()/getExitPrice() (tradeMetrics.js, usados pelos
+        // templates de notificação desde a Fase 2 da auditoria do Telegram)
+        // liam o status ANTIGO (não-terminal) e nunca reconheciam a
+        // operação como fechada: breakeven/lucro travado no stop caíam
+        // sempre no rótulo genérico de perda, e a linha de Resultado nunca
+        // aparecia. `status: newStatus` precisa vir DEPOIS do spread de
+        // `updatePayload` pra não ser sobrescrito (updatePayload nunca
+        // carrega `status`, mas a ordem importa se isso mudar).
+        const notifiedOp = { ...op, ...updatePayload, status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit };
         if (newStatus === 'STOP_HIT' && op.status !== 'STOP_HIT') notifyStopHit(notifiedOp, closePrice).catch(() => {});
         else if (newStatus === 'TP2_HIT') notifyTP2Hit(notifiedOp, closePrice).catch(() => {});
         else if (newStatus === 'INVALIDATED') notifyInvalidated(notifiedOp, closePrice).catch(() => {});
@@ -4525,7 +4534,10 @@ async function priceCheckActiveOpsInner() {
         // left absent, so notify* falls back to the wall-clock *_at, which
         // IS the real time at this loop's resolution (continuous price
         // ticks, not a 4h/1h candle boundary).
-        const notifiedOp = { ...op, ...updatePayload, tp1_hit: tp1Hit, tp2_hit: tp2Hit };
+        // Codex review (PR #447) — mesmo fix do outro loop acima
+        // (persistScanResults): sem `status: newStatus`, classifyOutcome()/
+        // getExitPrice() nunca viam a operação como fechada.
+        const notifiedOp = { ...op, ...updatePayload, status: newStatus, tp1_hit: tp1Hit, tp2_hit: tp2Hit };
         if (newStatus === 'STOP_HIT') notifyStopHit(notifiedOp, price).catch(() => {});
         else if (newStatus === 'TP2_HIT') notifyTP2Hit(notifiedOp, price).catch(() => {});
         else if (tp1Hit && !op.tp1_hit) notifyTP1Hit(notifiedOp, price).catch(() => {});

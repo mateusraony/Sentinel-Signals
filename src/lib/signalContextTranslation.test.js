@@ -32,6 +32,15 @@ describe('translateSignalContext', () => {
     expect(translateSignalContext({ macd_histogram: -0.5 })).toContainEqual({ label: 'MACD', value: 'negativo', direction: -1 });
   });
 
+  // Codex review (PR #447) — histograma exatamente 0 estava sendo rotulado
+  // "negativo" (fallback do ternário), contradizendo a própria regra do
+  // módulo de omitir em vez de inventar (mesmo tratamento já dado a
+  // rf_direction/tf_x_direction === 0).
+  it('REGRESSÃO: MACD exatamente 0 é omitido, nunca rotulado negativo', () => {
+    const rows = translateSignalContext({ macd_histogram: 0 });
+    expect(rows.find((r) => r.label === 'MACD')).toBeUndefined();
+  });
+
   it('campos só de SMC (structure_type/pd_zone) aparecem quando presentes', () => {
     const rows = translateSignalContext({ structure_type: 'BOS', pd_zone: 'discount' });
     expect(rows).toContainEqual({ label: 'Estrutura', value: 'rompimento de estrutura (BOS)' });

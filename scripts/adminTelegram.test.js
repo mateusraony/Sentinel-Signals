@@ -303,6 +303,17 @@ describe('notifyStopHit — 3 cabeçalhos distintos por resultado (Auditoria do 
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
     expect(text).toContain('<b>Stop Travou Lucro</b>');
   });
+
+  // Codex review (PR #447) — espelho do teste de mesmo nome em
+  // src/lib/telegram.test.js: "Saída" tem que refletir o preço persistido
+  // (current_stop), nunca o `price` bruto de detecção quando os dois divergem.
+  it('REGRESSÃO: "Saída" reflete o preço persistido (current_stop), não o `price` bruto passado quando divergem', async () => {
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    await notifyStopHit(baseOp({ current_stop: 95 }), 93);
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Saída: $95.0000');
+    expect(text).not.toContain('Saída: $93.0000');
+  });
 });
 
 // Fase 4 — Explainability V2 (EXIT). Espelho do describe de mesmo nome em

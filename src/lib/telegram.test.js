@@ -542,6 +542,21 @@ describe('notifyStopHit — 3 cabeçalhos distintos por resultado (Auditoria do 
     const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
     expect(text).not.toContain('Resultado:');
   });
+
+  // Codex review (PR #447) — a linha "Saída" mostrava o parâmetro `price`
+  // (preço de detecção, passado por scanner.js) cru, enquanto closureSummary()
+  // calcula o Resultado a partir de current_stop já persistido — se os dois
+  // divergirem (ex.: price-check tocou o preço fora do candle usado pra
+  // fechar a op), a mensagem exibia uma Saída que contradizia o Resultado.
+  // getExitPrice(op) (tradeMetrics.js) já é a fonte única usada pra calcular
+  // o Resultado — reusada aqui em vez do `price` bruto.
+  it('REGRESSÃO: "Saída" reflete o preço persistido (current_stop), não o `price` bruto passado quando divergem', async () => {
+    const op = baseOp({ current_stop: 95 }); // BUY, stop < entrada = perda
+    await notifyStopHit(op, 93); // price de detecção diferente do current_stop persistido
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Saída: $95.0000');
+    expect(text).not.toContain('Saída: $93.0000');
+  });
 });
 
 // Fase 4 — Explainability V2 (EXIT). notify* de fechamento passam a usar
