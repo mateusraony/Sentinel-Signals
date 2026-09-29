@@ -115,7 +115,13 @@ export default function SignalToast({ signals = [], assets = [], onSelectAsset }
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div className="text-9px font-mono mt-0.5 cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
-                        Score {score}/100 · Sinal Confirmado
+                        {/* Auditoria do Telegram (2026-09-29), item 1.11 — só
+                            RF carrega score real; sem o guard, fontes
+                            SMC/MACD/EMA/RSI mostravam "Score 0/100" como se
+                            fosse um sinal fraco medido. O wording "Sinal
+                            Confirmado" (ambíguo com entrada executada) é
+                            escopo da Fase 2, não mexido aqui. */}
+                        {score > 0 ? `Score ${score}/100 · ` : ''}Sinal Confirmado
                       </div>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">

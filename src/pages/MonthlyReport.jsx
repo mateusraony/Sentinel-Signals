@@ -281,7 +281,7 @@ export default function MonthlyReport() {
         doc.setPage(i);
         doc.setFontSize(7);
         doc.setTextColor(150, 150, 150);
-        doc.text(`CryptoRadar — Página ${i} de ${totalPages}`, pageWidth / 2, 290, { align: 'center' });
+        doc.text(`Sentinel Signals — Página ${i} de ${totalPages}`, pageWidth / 2, 290, { align: 'center' });
       }
 
       doc.save(`relatorio-mensal-${selectedMonth}.pdf`);

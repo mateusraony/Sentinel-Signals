@@ -254,6 +254,18 @@ describe('AssetCard — badges usam Tooltip em vez de title= nativo (achado A-6)
     expect(badge.getAttribute('title')).toBeNull();
   });
 
+  // Auditoria do Telegram (2026-09-29), item 1.11 — `score = tradeOp?.score
+  // || latestSignal?.context?.score || 0` mostrava "Confl.: 0" pra um card
+  // sem nenhum sinal/operação com score real. Dashboard.jsx só passa sinais
+  // `source === 'range_filter'` como `latestSignal` (achado durante a
+  // implementação deste item — SMC/MACD/EMA/RSI nunca chegam aqui), então na
+  // prática isso é um guard defensivo (context.score ausente/malformado),
+  // não um caso hoje visivelmente alcançável por outra fonte.
+  it('REGRESSÃO: sem sinal/operação com score real, o badge "Confl." não aparece (nunca mostra "Confl.: 0")', () => {
+    renderCard({ latestSignal: { context: {} } }); // context.score ausente
+    expect(screen.queryByText(/Confl\.:/)).toBeNull();
+  });
+
   it('REGRESSÃO: badge "Fund." (funding rate) não tem title= nativo, vira gatilho focável', async () => {
     fetchMarkPriceMock.mockResolvedValue({ markPrice: 60000, lastFundingRate: 0.0001, nextFundingTime: null });
     // Achado A-15: Fund. mudou pra Camada 2 (atrás do toggle "Detalhes

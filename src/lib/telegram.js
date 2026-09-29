@@ -266,22 +266,38 @@ const SOURCE_LABELS = {
   rsi: 'RSI',
 };
 
+// Auditoria do Telegram (2026-09-29), item 1.3 — parse_mode:'HTML' (ver
+// `send()` abaixo) trata `<`/`>`/`&` como marcação. Campos que vêm de fora do
+// template (reason do sinal, texto de explicação da operação) nunca eram
+// escapados aqui, ao contrário do canal cron (`scripts/adminTelegram.js`, que
+// já tinha `escaparHtml()` mas só a aplicava nas mensagens de auditoria de
+// saúde). Mesma implementação nos dois arquivos, de propósito — são
+// espelhados manualmente. Escapa só os três caracteres que o Telegram trata
+// como marcação; as tags de template (`<b>`, `<i>`) continuam cruas porque
+// são string literal do próprio código, nunca passam por aqui.
+function escaparHtml(texto) {
+  return String(texto ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 export async function notifyNewSignal(signal, asset) {
   if (!shouldSend('signal_detected', signal, asset)) return;
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
   const strength = { strong: '💪 Forte', medium: '📊 Médio', moderate: '📊 Moderado', weak: '🔹 Fraco' }[signal.strength] || '';
-  const sourceLabel = SOURCE_LABELS[signal.source] || 'RF';
+  const sourceLabel = SOURCE_LABELS[signal.source] || 'Outra fonte';
   const scoreLine = Number.isFinite(signal.context?.score)
     ? `📊 Score: ${signal.context.score}/100 ${strength}\n`
     : (strength ? `📊 Força: ${strength}\n` : '');
   return send(
     `${emoji} <b>Novo Sinal ${sourceLabel} Detectado</b>\n\n` +
-    `<b>${signal.symbol?.replace('USDT', '/USDT')}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
+    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
     `💰 Preço: $${fmtP(signal.price_at_signal)}\n` +
     scoreLine +
-    `📝 ${signal.reason || ''}\n\n` +
-    `<i>⏳ Aguardando confirmação de entrada — CryptoRadar</i>`
+    `📝 ${escaparHtml(signal.reason) || ''}\n\n` +
+    `<i>⏳ Aguardando confirmação de entrada — Sentinel Signals</i>`
   );
 }
 
@@ -292,17 +308,17 @@ export async function notifyVerificationTask(signal, asset) {
   if (!shouldSend('verification_task_created', signal, asset)) return false;
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
-  const sourceLabel = SOURCE_LABELS[signal.source] || 'RF';
+  const sourceLabel = SOURCE_LABELS[signal.source] || 'Outra fonte';
   const scoreLine = Number.isFinite(signal.context?.score)
     ? `📊 Score: ${signal.context.score}/100\n`
     : '';
   return send(
     `✅ ${emoji} <b>Tarefa de Verificação Criada — ${sourceLabel}</b>\n\n` +
-    `<b>${signal.symbol?.replace('USDT', '/USDT')}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
+    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
     `⭐ Prioridade: ALTA\n` +
     scoreLine +
-    `📝 ${signal.reason || ''}\n\n` +
-    `<i>🔎 Revise em /verification — CryptoRadar</i>`
+    `📝 ${escaparHtml(signal.reason) || ''}\n\n` +
+    `<i>🔎 Revise em /verification — Sentinel Signals</i>`
   );
 }
 
@@ -325,14 +341,14 @@ export async function notifyTradeCreated(op) {
   return send(
     backfillPrefix(op) +
     `${emoji} <b>Entrada Confirmada — ${dir}</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${tfLabel}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${tfLabel}\n` +
     realTimeLine(getEntryReferenceTime(op)) +
     `📍 Entrada: $${fmtP(op.entry_price)}\n` +
     `🛑 Stop: $${fmtP(op.initial_stop)}\n` +
     `🎯 TP1: $${fmtP(op.tp1)}  |  TP2: $${fmtP(op.tp2)}\n` +
     `📊 Score: ${op.score}/100\n` +
     `🔒 Gestão: ${op.partial_percent ?? 50}% no TP1, runner ${op.runner_percent ?? 50}%\n\n` +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -345,7 +361,7 @@ export async function notifyTP1Hit(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `🎯 <b>TP1 Atingido!</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.tp1_hit_real_time, true) +
     `💰 Preço atual: $${fmtP(price)}\n` +
     // Sem runner (known-risks item 46) o TP1 é saída TERMINAL — anunciar
@@ -355,9 +371,9 @@ export async function notifyTP1Hit(op, price) {
       : `✅ ${op.partial_percent ?? 50}% da posição realizada\n`
         + `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n`
         + `🏃 Runner ${op.runner_percent ?? 50}% ativo — aguardando TP2: $${fmtP(op.tp2)}\n`) +
-    `\n<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `\n<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -366,13 +382,13 @@ export async function notifyTP2Hit(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `🏆 <b>TP2 Atingido — Operação Completa!</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.tp2_hit_real_time, true) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)} → TP2: $${fmtP(op.tp2)}\n\n` +
-    `<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -394,14 +410,14 @@ export async function notifyStopHit(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `🛑 <b>Stop Atingido ${beMsg}</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.stop_hit_real_time, true) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Stop em: $${fmtP(op.current_stop)}\n` +
     (op.exit_ambiguous ? AMBIGUOUS_EXIT_NOTE : '\n') +
-    `<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -411,13 +427,13 @@ export async function notifyInvalidated(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `⚠️ <b>Sinal Invalidado ${stageMsg}</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -426,13 +442,13 @@ export async function notifyTimeStop(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `⏱️ <b>Time Stop — Operação Encerrada</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -441,12 +457,12 @@ export async function notifyChopExit(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return send(
     `🌊 <b>Chop Exit — Operação Encerrada</b>\n\n` +
-    `<b>${op.symbol?.replace('USDT', '/USDT')}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
     realTimeLine(op.closed_at_real_time) +
     `💰 Preço: $${fmtP(price)}\n` +
     `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>${why}</i>\n` +
-    (evidence ? `<i>${evidence}</i>\n\n` : '\n') +
-    `<i>⚡ CryptoRadar</i>`
+    `<i>${escaparHtml(why)}</i>\n` +
+    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
