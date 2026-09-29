@@ -29,8 +29,11 @@ const TF_DURATION_HOURS = { '1h': 1, '4h': 4, '1d': 24 };
 // já testado, já usado pelo cron pra alertar no Telegram). Texto/cor por
 // motivo — 'persistent_error' (o ativo falha toda passada) é mais grave que
 // 'silent' (só parou de ser tocado).
+// Auditoria do Telegram (2026-09-29), Fase 2 item 2.4 — erro de sistema com
+// cor própria (#ef4444), distinta do rosa/magenta (#ff1478) usado pra
+// SELL/direção nas demais telas (mesmo ajuste em Logs.jsx/Assets.jsx).
 const STALE_REASON_META = {
-  persistent_error: { label: '⚠️ Falha persistente', shortLabel: 'ERRO', color: '#ff1478' },
+  persistent_error: { label: '⚠️ Falha persistente', shortLabel: 'ERRO', color: '#ef4444' },
   silent: { label: '⚠️ STALE', shortLabel: 'STALE', color: '#ff9f43' },
 };
 

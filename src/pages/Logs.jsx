@@ -6,10 +6,17 @@ import { QueryErrorState } from '@/components/QueryErrorState';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 
+// Auditoria do Telegram (2026-09-29), Fase 2 item 2.4 — erro de sistema
+// reaproveitava a MESMA cor (#ff1478, rosa/magenta) usada pra SELL/direção
+// em outras telas, sem nenhuma relação entre os dois conceitos. Escopo
+// reduzido do item original da auditoria (ver plano): não uma reescrita
+// completa de 2 escalas de cor — só este ponto específico de sobreposição
+// sem propósito. #ef4444 é um vermelho "puro", visualmente distinto do
+// rosa/magenta de SELL/loss.
 const LEVEL_CONFIG = {
   info:  { icon: Info,          color: 'rgba(0,229,255,0.8)',   bg: 'rgba(0,229,255,0.08)',   border: 'rgba(0,229,255,0.2)',   label: 'INFO' },
   warn:  { icon: AlertTriangle, color: '#ff9f43',               bg: 'rgba(255,159,67,0.08)',  border: 'rgba(255,159,67,0.25)', label: 'WARN' },
-  error: { icon: AlertCircle,   color: '#ff1478',               bg: 'rgba(255,20,120,0.08)',  border: 'rgba(255,20,120,0.25)', label: 'ERR'  },
+  error: { icon: AlertCircle,   color: '#ef4444',               bg: 'rgba(239,68,68,0.08)',   border: 'rgba(239,68,68,0.25)',  label: 'ERR'  },
   debug: { icon: Bug,           color: 'rgba(255,255,255,0.3)', bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.07)',label: 'DBG'  },
 };
 
@@ -105,7 +112,7 @@ export default function Logs() {
       <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
         {[
           { label: 'Total', value: logs.length, color: '#00e5ff', icon: ScrollText },
-          { label: 'Erros', value: errorCount, color: '#ff1478', icon: AlertCircle },
+          { label: 'Erros', value: errorCount, color: '#ef4444', icon: AlertCircle },
           { label: 'Warnings', value: warnCount, color: '#ff9f43', icon: AlertTriangle },
           { label: 'Info', value: logs.filter(l => l.level === 'info').length, color: 'rgba(0,229,255,0.7)', icon: Info },
         ].map(({ label, value, color, icon: Icon }) => (

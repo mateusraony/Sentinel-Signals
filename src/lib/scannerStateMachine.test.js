@@ -42,7 +42,7 @@ vi.mock('./marketDataProvider', () => ({
 
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice, fetchCandles } from './marketDataProvider';
-import { isTelegramConfigured, notifyNewSignal, notifyVerificationTask, notifyInvalidated, notifyTimeStop, notifyChopExit } from './telegram';
+import { isTelegramConfigured, notifyNewSignal, notifyVerificationTask, notifyInvalidated, notifyTimeStop, notifyChopExit, notifyStopHit, notifyTP2Hit } from './telegram';
 import { persistScanResults, priceCheckActiveOps, activateSignalManually, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, resolveRangeFilterParams, firstPositive, firstPositiveInteger } from './scanner.js';
 import { calculateSmcSignalStrength } from './indicators/smcConfluence.js';
 import { ARBITRATION_VERSION } from './signalArbitration.js';
@@ -745,6 +745,40 @@ describe('resolveRangeFilterParams', () => {
 
   it('multiplier fracionário É válido (RF usa como constante de suavização, não índice)', () => {
     expect(resolveRangeFilterParams({ rf_multiplier: 2.75 }).multiplier).toBe(2.75);
+  });
+});
+
+// Codex review (PR #447) — os dois pontos de persistScanResults/
+// priceCheckActiveOpsInner que constroem `notifiedOp` (o objeto passado pra
+// notify*) omitiam `status: newStatus`, então classifyOutcome()/
+// getExitPrice() (tradeMetrics.js, usados pelos templates de notificação
+// desde a Fase 2 da auditoria do Telegram) liam o status ANTIGO
+// (não-terminal) — isClosedOp() nunca reconhecia a operação como fechada.
+// Nenhum teste aqui nunca exercitava esse caminho (isTelegramConfigured
+// sempre mockado `false`) — é exatamente o buraco que deixou o bug passar
+// pelos próprios testes da Fase 2 (que setavam `status` manualmente na
+// fixture, sem refletir como scanner.js realmente monta o objeto).
+describe('persistScanResults — notifiedOp passado pro Telegram tem status terminal (Codex review, PR #447)', () => {
+  it('REGRESSÃO: notifyStopHit recebe status: "STOP_HIT", não o status pré-transição', () => {
+    isTelegramConfigured.mockReturnValue(true);
+    backend._seed('TradeOperation', makeOp());
+    const results = { '4h': makeTfData({ lastCandleLow: 97, lastCandleHigh: 99, lastClose: 98 }) };
+    return persistScanResults(makeScanResult({ results })).then(() => {
+      expect(notifyStopHit).toHaveBeenCalledTimes(1);
+      const notifiedOp = notifyStopHit.mock.calls[0][0];
+      expect(notifiedOp.status).toBe('STOP_HIT');
+    });
+  });
+
+  it('REGRESSÃO: notifyTP2Hit recebe status: "TP2_HIT", não o status pré-transição', () => {
+    isTelegramConfigured.mockReturnValue(true);
+    backend._seed('TradeOperation', makeOp({ status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100 }));
+    const results = { '4h': makeTfData({ lastCandleHigh: 107, lastCandleLow: 105, lastClose: 106 }) };
+    return persistScanResults(makeScanResult({ results })).then(() => {
+      expect(notifyTP2Hit).toHaveBeenCalledTimes(1);
+      const notifiedOp = notifyTP2Hit.mock.calls[0][0];
+      expect(notifiedOp.status).toBe('TP2_HIT');
+    });
   });
 });
 

@@ -6,6 +6,7 @@ import { ClipboardCheck, Check, X as XIcon, ChevronRight, AlertTriangle } from '
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { shortSourceLabel } from '@/lib/signalSourceLabels';
 
 // Age thresholds for the visual "don't forget this one" cue — a sinal de
 // alta prioridade perde relevância com o tempo (mesmo raciocínio do Time
@@ -107,10 +108,30 @@ export default function VerificationWidget() {
                   <span className="text-9px font-mono" style={{ color: task.signal_type === 'BUY' ? '#00ff80' : '#ff1478' }}>
                     {task.signal_type === 'BUY' ? '↑ BUY' : '↓ SELL'}
                   </span>
+                  {/* Auditoria do Telegram (2026-09-29), Fase 2 item 2.7 —
+                      score/fonte já vêm gravados no VerificationTask desde a
+                      criação (copiados do SignalEvent que a gerou,
+                      docs/schema-reference/VerificationTask.jsonc), só não
+                      eram exibidos aqui. */}
+                  {task.score > 0 && (
+                    <span className="text-9px font-mono" style={{ color: task.score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
+                      🔥 {task.score}/100
+                    </span>
+                  )}
+                  {task.source && (
+                    <span className="text-9px font-mono px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.5)' }}>
+                      {shortSourceLabel(task.source)}
+                    </span>
+                  )}
                   <span className="text-9px font-mono" style={{ color: ageColor(task.created_date) }}>
                     {moment(task.created_date).fromNow()}
                   </span>
                 </div>
+                {/* "Por que preciso verificar isto?" — sem isso, quem não viu
+                    o alerta original não tinha nenhuma pista aqui. */}
+                {task.reason && (
+                  <p className="text-9px font-mono text-muted-foreground mt-0.5 truncate">{task.reason}</p>
+                )}
               </div>
               <Tooltip>
                 <TooltipTrigger asChild>

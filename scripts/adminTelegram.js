@@ -14,6 +14,9 @@
 import { closesFullyAtTp1, getEntryReferenceTime } from '../src/lib/opExitRules.js';
 import { formatBackfillLag } from '../src/lib/backfillDetection.js';
 import { explainOperationDecision } from '../src/lib/decisionExplanation.js';
+import { shortSourceLabel } from '../src/lib/signalSourceLabels.js';
+import { NOTIFICATION_STAGES, stageHeader } from '../src/lib/notificationVocabulary.js';
+import { classifyOutcome, calcRealizedR, calcRealizedPnlPct, getExitPrice } from '../src/lib/tradeMetrics.js';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { withTimeout } from './scanTimeout.mjs';
@@ -221,38 +224,34 @@ function realTimeLine(iso, isBound = false) {
   return isBound ? `🕐 Vela (candle): ${formatted}\n` : `🕐 Horário real: ${formatted}\n`;
 }
 
-// Codex review (PR #65): this used to hardcode "RF" and `context.score` for
-// EVERY signal source — harmless while smc_structure/macd/ema_cross/rsi
-// signals rarely reached here, but enabling the SMC cascade by default
-// (known-risks.md item 9) makes source_structure signals a normal,
-// frequent occurrence. Only 'range_filter' actually carries a real 0-100
-// score (see scanner.js); the others don't, so `|| 0` was silently showing
-// a fake "Score: 0/100" on a real, valid signal — reads as "this is a bad
-// signal" when it's really just a different, non-scored signal type.
-const SOURCE_LABELS = {
-  range_filter: 'RF',
-  smc_structure: 'SMC',
-  macd: 'MACD',
-  ema_cross: 'EMA',
-  rsi: 'RSI',
-};
+// Auditoria do Telegram (2026-09-29), Fase 2 item 2.5 — link real pro
+// painel, mesmo raciocínio de src/lib/telegram.js (comentário completo lá).
+const PANEL_URL = 'https://sentinel-signals.onrender.com';
+
+function panelLink(path) {
+  return `<a href="${PANEL_URL}${path}">Abrir no Sentinel</a>`;
+}
 
 export async function notifyNewSignal(signal, asset) {
   if (!(await shouldSend('signal_detected', signal, asset))) return;
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
   const strength = { strong: '💪 Forte', medium: '📊 Médio', moderate: '📊 Moderado', weak: '🔹 Fraco' }[signal.strength] || '';
-  const sourceLabel = SOURCE_LABELS[signal.source] || 'Outra fonte';
+  const sourceLabel = shortSourceLabel(signal.source);
   const scoreLine = Number.isFinite(signal.context?.score)
     ? `📊 Score: ${signal.context.score}/100 ${strength}\n`
     : (strength ? `📊 Força: ${strength}\n` : '');
   return send(
-    `${emoji} <b>Novo Sinal ${sourceLabel} Detectado</b>\n\n` +
-    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
-    `💰 Preço: $${fmtP(signal.price_at_signal)}\n` +
-    scoreLine +
-    `📝 ${escaparHtml(signal.reason) || ''}\n\n` +
-    `<i>⏳ Aguardando confirmação de entrada — Sentinel Signals</i>`
+    `${stageHeader('SIGNAL_DETECTED')} — ${sourceLabel}\n\n` +
+    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n\n` +
+    `${NOTIFICATION_STAGES.AWAITING_ENTRY.emoji} Situação: aguardando confirmação de entrada — nenhuma operação foi aberta ainda.\n\n` +
+    `📝 Por quê: ${escaparHtml(signal.reason) || 'não informado'}\n\n` +
+    `💰 Preço no sinal: $${fmtP(signal.price_at_signal)}\n` +
+    scoreLine + '\n' +
+    `➡️ Próximo passo: aguardar a confirmação de entrada pelo motor.\n` +
+    `📡 Fonte: ${sourceLabel}\n\n` +
+    `${panelLink('/alerts')}\n\n` +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -263,17 +262,21 @@ export async function notifyVerificationTask(signal, asset) {
   if (!(await shouldSend('verification_task_created', signal, asset))) return false;
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
-  const sourceLabel = SOURCE_LABELS[signal.source] || 'Outra fonte';
+  const sourceLabel = shortSourceLabel(signal.source);
   const scoreLine = Number.isFinite(signal.context?.score)
     ? `📊 Score: ${signal.context.score}/100\n`
     : '';
   return send(
-    `✅ ${emoji} <b>Tarefa de Verificação Criada — ${sourceLabel}</b>\n\n` +
-    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n` +
+    `${stageHeader('VERIFICATION_NEEDED')} — ${sourceLabel}\n\n` +
+    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n\n` +
+    `${emoji} Situação: sinal de alta prioridade aguardando sua revisão manual antes de virar operação.\n\n` +
     `⭐ Prioridade: ALTA\n` +
     scoreLine +
-    `📝 ${escaparHtml(signal.reason) || ''}\n\n` +
-    `<i>🔎 Revise em /verification — Sentinel Signals</i>`
+    `📝 Por quê: ${escaparHtml(signal.reason) || 'não informado'}\n\n` +
+    `➡️ Próximo passo: revisar e marcar OK/Pular no painel.\n` +
+    `📡 Fonte: ${sourceLabel}\n\n` +
+    `${panelLink('/verification')}\n\n` +
+    `<i>⚡ Sentinel Signals</i>`
   );
 }
 
@@ -294,16 +297,36 @@ export async function notifyTradeCreated(op) {
   const tfLabel = op.timeframe === '15m' ? '15m (entrada 4h)' : op.timeframe?.toUpperCase();
   return send(
     backfillPrefix(op) +
-    `${emoji} <b>Entrada Confirmada — ${dir}</b>\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${tfLabel}\n` +
+    `${stageHeader('ENTRY_CONFIRMED')} — ${dir}\n\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${tfLabel}\n\n` +
+    `${emoji} Situação: operação aberta, gerenciada automaticamente pelo Sentinel.\n\n` +
     realTimeLine(getEntryReferenceTime(op)) +
     `📍 Entrada: $${fmtP(op.entry_price)}\n` +
     `🛑 Stop: $${fmtP(op.initial_stop)}\n` +
     `🎯 TP1: $${fmtP(op.tp1)}  |  TP2: $${fmtP(op.tp2)}\n` +
-    `📊 Score: ${op.score}/100\n` +
+    `📊 Score: ${op.score}/100\n\n` +
+    `➡️ Próximo passo: aguardar o preço avançar para o TP1.\n` +
     `🔒 Gestão: ${op.partial_percent ?? 50}% no TP1, runner ${op.runner_percent ?? 50}%\n\n` +
+    `${panelLink('/trades')}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
+}
+
+// Auditoria do Telegram (2026-09-29), Fase 2 item 2.5/2.6 — mesmo raciocínio
+// de src/lib/telegram.js's closureSummary (comentário completo lá): resultado
+// já CALCULADO por tradeMetrics.js, nunca recomputado aqui.
+function closureSummary(op) {
+  const r = calcRealizedR(op);
+  const pct = calcRealizedPnlPct(op);
+  const resultLine = r !== null
+    ? `📐 Resultado: ${r >= 0 ? '+' : ''}${r.toFixed(2)}R` + (pct !== null ? ` (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)` : '') + '\n'
+    : '';
+  const entryRef = getEntryReferenceTime(op);
+  const closedAt = op.closed_at_real_time || op.stop_hit_real_time || op.tp2_hit_real_time || op.closed_at;
+  const durationMs = entryRef && closedAt ? new Date(closedAt).getTime() - new Date(entryRef).getTime() : null;
+  const durationLine = Number.isFinite(durationMs) && durationMs >= 0 ? `⏳ Duração: ${formatBackfillLag(durationMs)}\n` : '';
+  const checklist = [op.tp1_hit ? '✅ TP1' : null, op.status === 'TP2_HIT' ? '✅ TP2' : null].filter(Boolean).join('  ');
+  return resultLine + durationLine + (checklist ? `${checklist}\n` : '');
 }
 
 export async function notifyTP1Hit(op, price) {
@@ -313,18 +336,20 @@ export async function notifyTP1Hit(op, price) {
   // tp1_full_close da Fase 4) — explainOperationDecision resolve o texto
   // certo em qualquer um dos três, agnóstica de qual fase o criou.
   const { why, evidence } = explainOperationDecision(op);
+  const fullClose = closesFullyAtTp1(op);
   return send(
-    `🎯 <b>TP1 Atingido!</b>\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `${stageHeader('TP1_HIT')}!\n\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
+    (fullClose
+      ? `${NOTIFICATION_STAGES.TP1_HIT.emoji} Situação: posição encerrada 100% no TP1.\n\n`
+      : `${NOTIFICATION_STAGES.RUNNER_ACTIVE.emoji} Situação: ${op.partial_percent ?? 50}% da posição realizada, runner ${op.runner_percent ?? 50}% segue aberto.\n\n`) +
+    `📝 Por quê: ${escaparHtml(why)}\n` +
+    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.tp1_hit_real_time, true) +
     `💰 Preço atual: $${fmtP(price)}\n` +
-    (closesFullyAtTp1(op)
-      ? `✅ Posição encerrada 100% no TP1\n`
-      : `✅ ${op.partial_percent ?? 50}% da posição realizada\n`
-        + `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n`
-        + `🏃 Runner ${op.runner_percent ?? 50}% ativo — aguardando TP2: $${fmtP(op.tp2)}\n`) +
-    `\n<i>${escaparHtml(why)}</i>\n` +
-    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    (fullClose ? closureSummary(op) : `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n`) + '\n' +
+    `➡️ Próximo passo: ${fullClose ? 'nenhum — operação encerrada.' : `aguardar o preço avançar para o TP2: $${fmtP(op.tp2)}.`}\n\n` +
+    `${panelLink('/trades')}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -333,13 +358,16 @@ export async function notifyTP2Hit(op, price) {
   if (!(await shouldSend('tp2_hit', op))) return;
   const { why, evidence } = explainOperationDecision(op);
   return send(
-    `🏆 <b>TP2 Atingido — Operação Completa!</b>\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `${stageHeader('TP2_HIT')}!\n\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
+    `🏁 Situação: operação encerrada — alvo final atingido.\n\n` +
+    `📝 Por quê: ${escaparHtml(why)}\n` +
+    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.tp2_hit_real_time, true) +
-    `💰 Preço: $${fmtP(price)}\n` +
-    `📍 Entrada: $${fmtP(op.entry_price)} → TP2: $${fmtP(op.tp2)}\n\n` +
-    `<i>${escaparHtml(why)}</i>\n` +
-    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
+    closureSummary(op) + '\n' +
+    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
+    `${panelLink('/trades')}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -689,19 +717,33 @@ export async function notifyHealthAudit(titulo, linhas, url) {
   });
 }
 
+// Auditoria do Telegram (2026-09-29), Fase 2 item 2.3 — mesmo raciocínio de
+// src/lib/telegram.js (comentário completo lá): reusa classifyOutcome
+// (tradeMetrics.js), a MESMA função que TradeCard.jsx/TradeHistory.jsx já
+// usam pra distinguir breakeven de perda real, em vez do `op.tp1_hit`
+// isolado de antes.
+const STOP_HIT_STAGE = {
+  WIN: NOTIFICATION_STAGES.STOP_LOCKED_PROFIT,
+  BE: NOTIFICATION_STAGES.STOP_BREAKEVEN,
+};
+
 export async function notifyStopHit(op, price) {
   if (!(await shouldSend('stop_hit', op))) return;
-  const beMsg = op.tp1_hit ? '(breakeven — sem prejuízo)' : '(stop inicial)';
+  const outcome = classifyOutcome(op);
+  const stage = STOP_HIT_STAGE[outcome] ?? NOTIFICATION_STAGES.STOP_LOSS;
   const { why, evidence } = explainOperationDecision(op);
   return send(
-    `🛑 <b>Stop Atingido ${beMsg}</b>\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `${stage.emoji} <b>${stage.label}</b>\n\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
+    `${stage.emoji} Situação: operação encerrada pelo stop` + (outcome === 'BE' ? ', sem prejuízo.' : outcome === 'WIN' ? ', com lucro já travado.' : '.') + '\n\n' +
+    `📝 Por quê: ${escaparHtml(why)}\n` +
+    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.stop_hit_real_time, true) +
-    `💰 Preço: $${fmtP(price)}\n` +
-    `📍 Stop em: $${fmtP(op.current_stop)}\n` +
-    (op.exit_ambiguous ? AMBIGUOUS_EXIT_NOTE : '\n') +
-    `<i>${escaparHtml(why)}</i>\n` +
-    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)} (stop em $${fmtP(op.current_stop)})\n` +
+    closureSummary(op) +
+    (op.exit_ambiguous ? AMBIGUOUS_EXIT_NOTE : '') + '\n' +
+    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
+    `${panelLink('/trades')}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -711,13 +753,16 @@ export async function notifyInvalidated(op, price) {
   const stageMsg = op.tp1_hit ? '(após TP1 — parcial já realizada)' : '(pré-TP1)';
   const { why, evidence } = explainOperationDecision(op);
   return send(
-    `⚠️ <b>Sinal Invalidado ${stageMsg}</b>\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `${stageHeader('INVALIDATED')} ${stageMsg}\n\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
+    `⚠️ Situação: operação encerrada — a condição que sustentava a entrada deixou de ser válida.\n\n` +
+    `📝 Por quê: ${escaparHtml(why)}\n` +
+    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.closed_at_real_time) +
-    `💰 Preço: $${fmtP(price)}\n` +
-    `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>${escaparHtml(why)}</i>\n` +
-    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
+    closureSummary(op) + '\n' +
+    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
+    `${panelLink('/trades')}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -726,13 +771,16 @@ export async function notifyTimeStop(op, price) {
   if (!(await shouldSend('time_stop', op))) return;
   const { why, evidence } = explainOperationDecision(op);
   return send(
-    `⏱️ <b>Time Stop — Operação Encerrada</b>\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `${stageHeader('TIME_STOP')}\n\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
+    `⏱️ Situação: operação encerrada — prazo máximo sem atingir TP1 expirou.\n\n` +
+    `📝 Por quê: ${escaparHtml(why)}\n` +
+    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.closed_at_real_time) +
-    `💰 Preço: $${fmtP(price)}\n` +
-    `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>${escaparHtml(why)}</i>\n` +
-    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
+    closureSummary(op) + '\n' +
+    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
+    `${panelLink('/trades')}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -741,13 +789,16 @@ export async function notifyChopExit(op, price) {
   if (!(await shouldSend('chop_exit', op))) return;
   const { why, evidence } = explainOperationDecision(op);
   return send(
-    `🌊 <b>Chop Exit — Operação Encerrada</b>\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n` +
+    `${stageHeader('CHOP_EXIT')}\n\n` +
+    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
+    `🌊 Situação: operação encerrada — mercado ficou lateralizado (choppiness alto).\n\n` +
+    `📝 Por quê: ${escaparHtml(why)}\n` +
+    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.closed_at_real_time) +
-    `💰 Preço: $${fmtP(price)}\n` +
-    `📍 Entrada: $${fmtP(op.entry_price)}\n\n` +
-    `<i>${escaparHtml(why)}</i>\n` +
-    (evidence ? `<i>${escaparHtml(evidence)}</i>\n\n` : '\n') +
+    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
+    closureSummary(op) + '\n' +
+    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
+    `${panelLink('/trades')}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }

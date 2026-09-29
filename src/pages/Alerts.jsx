@@ -11,28 +11,12 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { QueryErrorState } from '@/components/QueryErrorState';
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
-
-const SOURCE_LABELS = {
-  range_filter: 'Range Filter',
-  smc_structure: 'SMC Structure',
-  rsi: 'RSI',
-  macd: 'MACD',
-  ema_cross: 'EMA Cross',
-  confluence: 'Confluência',
-};
-
-// Achado M-17 do Raio-X de UI/UX: os nomes de fonte de sinal (botões de
-// filtro + badge do card) eram siglas/termos técnicos "nus". Texto
-// reaproveitado do glossário da auditoria (seção I) — mesmas chaves de
-// SOURCE_LABELS.
-const SOURCE_TOOLTIPS = {
-  range_filter: 'Indicador que filtra o ruído do preço e define uma banda de tendência: o sistema só considera um movimento válido quando o preço rompe essa banda de forma consistente.',
-  smc_structure: 'Smart Money Concepts: análise de topos/fundos e zonas de rompimento, usada como fonte alternativa de sinal além do Range Filter.',
-  rsi: 'Índice de Força Relativa: mede se o ativo está sendo comprado ou vendido com força incomum (0 a 100) — aqui vira alerta próprio, de prioridade baixa, quando entra em sobrecompra/sobrevenda.',
-  macd: 'Compara duas médias de preço pra indicar se a força do movimento está aumentando ou diminuindo.',
-  ema_cross: 'Média móvel exponencial — reage mais rápido a mudanças recentes que uma média comum. Quando uma EMA curta cruza uma longa, é sinal de mudança de tendência.',
-  confluence: 'Pontuação de 0 a 100 somando quantos indicadores concordam na mesma direção ao mesmo tempo. Quanto mais alto, mais confirmações.',
-};
+// Auditoria do Telegram (2026-09-29), Fase 2 item 2.11 — fonte única dos
+// pares id→rótulo de origem do sinal, antes duplicada aqui e em
+// telegram.js/adminTelegram.js. Mesmos textos de antes (achado M-17 do
+// Raio-X de UI/UX), só a fonte dos dados virou uma.
+import { SIGNAL_SOURCES, longSourceLabel } from '@/lib/signalSourceLabels';
+import { translateSignalContext } from '@/lib/signalContextTranslation';
 
 const PRIORITY_CONFIG = {
   high:   { color: '#ff9f43', bg: 'rgba(255,159,67,0.12)', border: 'rgba(255,159,67,0.3)', label: '⚡ Alta' },
@@ -173,7 +157,7 @@ export default function Alerts() {
                 style={filterSource === src
                   ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
                   : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
-                {src === 'all' ? 'Todas Fontes' : SOURCE_LABELS[src]}
+                {src === 'all' ? 'Todas Fontes' : longSourceLabel(src)}
               </button>
             );
             if (src === 'all') return button;
@@ -181,7 +165,7 @@ export default function Alerts() {
               <Tooltip key={src}>
                 <TooltipTrigger asChild>{button}</TooltipTrigger>
                 <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                  {SOURCE_TOOLTIPS[src]}
+                  {SIGNAL_SOURCES[src]?.tooltip}
                 </TooltipContent>
               </Tooltip>
             );
@@ -278,22 +262,22 @@ export default function Alerts() {
                       style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.4)', border: '1px solid rgba(255,255,255,0.07)' }}>
                       {signal.timeframe?.toUpperCase()}
                     </span>
-                    {SOURCE_TOOLTIPS[signal.source] ? (
+                    {SIGNAL_SOURCES[signal.source]?.tooltip ? (
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className="text-8px font-mono px-1.5 py-0.5 rounded cursor-help" tabIndex={0}
                             style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.5)', border: '1px solid rgba(0,229,255,0.12)' }}>
-                            {SOURCE_LABELS[signal.source] || signal.source}
+                            {longSourceLabel(signal.source)}
                           </span>
                         </TooltipTrigger>
                         <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                          {SOURCE_TOOLTIPS[signal.source]}
+                          {SIGNAL_SOURCES[signal.source]?.tooltip}
                         </TooltipContent>
                       </Tooltip>
                     ) : (
                       <span className="text-8px font-mono px-1.5 py-0.5 rounded"
                         style={{ background: 'rgba(0,229,255,0.06)', color: 'rgba(0,229,255,0.5)', border: '1px solid rgba(0,229,255,0.12)' }}>
-                        {SOURCE_LABELS[signal.source] || signal.source}
+                        {longSourceLabel(signal.source)}
                       </span>
                     )}
                     <span className="text-8px font-mono px-1.5 py-0.5 rounded"
@@ -348,7 +332,7 @@ export default function Alerts() {
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  ['Fonte', SOURCE_LABELS[selectedSignal.source] || selectedSignal.source],
+                  ['Fonte', longSourceLabel(selectedSignal.source)],
                   ['Preço', `$${selectedSignal.price_at_signal?.toLocaleString(undefined, { maximumFractionDigits: 6 })}`],
                   ['Horário', moment(selectedSignal.created_date).format('DD/MM/YYYY HH:mm:ss')],
                   // Auditoria do Telegram (2026-09-29), item 1.2 — só RF carrega
@@ -373,7 +357,29 @@ export default function Alerts() {
               )}
               {selectedSignal.context && (
                 <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                  <p className="text-9px font-mono text-muted-foreground uppercase tracking-wider mb-2">Contexto Técnico</p>
+                  <p className="text-9px font-mono text-muted-foreground uppercase tracking-wider mb-2">Por que este alerta apareceu?</p>
+                  {/* Auditoria do Telegram (2026-09-29), Fase 2 item 2.8 —
+                      antes só havia o JSON bruto aqui; tradução humana das
+                      chaves conhecidas do context entra ANTES dele, que
+                      continua existindo atrás de "ver dados técnicos". */}
+                  {(() => {
+                    const rows = translateSignalContext(selectedSignal.context);
+                    return rows.length > 0 ? (
+                      <div className="space-y-1 mb-2">
+                        {rows.map((row) => (
+                          <div key={row.label} className="flex items-center gap-2 text-xs">
+                            {Number.isFinite(row.direction) ? (
+                              <span style={{ color: row.direction === 1 ? '#00ff80' : '#ff1478' }}>
+                                {row.direction === 1 ? '↑' : '↓'}
+                              </span>
+                            ) : null}
+                            <span className="text-muted-foreground">{row.label}:</span>
+                            <span className="text-foreground/80">{row.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
                   {/* Refinamentos (seção E): JSON cru ficava sempre visível
                       no modal — mesmo padrão de <details> já usado em
                       Logs.jsx pra payload técnico, fechado por padrão.
@@ -383,7 +389,7 @@ export default function Alerts() {
                       corrigido pro timestamp nesta mesma rodada, aqui é o
                       único controle visível pra revelar o payload. */}
                   <details>
-                    <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.45)' }}>ver contexto técnico →</summary>
+                    <summary className="text-9px cursor-pointer select-none" style={{ color: 'rgba(255,255,255,0.45)' }}>ver dados técnicos →</summary>
                     <pre className="mt-1 text-10px font-mono overflow-x-auto" style={{ color: 'rgba(0,255,128,0.7)' }}>
                       {JSON.stringify(selectedSignal.context, null, 2)}
                     </pre>

@@ -44,6 +44,16 @@ const TASK = {
   signal_type: 'BUY', status: 'pending', created_date: new Date().toISOString(),
 };
 
+// Auditoria do Telegram (2026-09-29), Fase 2 item 2.7 — score/reason/source
+// já vinham gravados no VerificationTask desde a criação (copiados do
+// SignalEvent que a gerou), só não eram exibidos aqui — "por que preciso
+// verificar isto?" ficava sem resposta no widget.
+const TASK_COM_MOTIVO = {
+  ...TASK,
+  id: 'v2', source: 'range_filter', score: 88,
+  reason: 'RF + EMA alinhados, confluência de 88/100',
+};
+
 describe('VerificationWidget — botões de ação usam Tooltip em vez de title= nativo (achado A-6)', () => {
   it('REGRESSÃO: "Marcar como revisado"/"Pular" não têm title= nativo, mantêm nome acessível', async () => {
     listMock.mockResolvedValue([TASK]);
@@ -53,6 +63,26 @@ describe('VerificationWidget — botões de ação usam Tooltip em vez de title=
     const skipButton = screen.getByRole('button', { name: 'Pular' });
     expect(reviewButton.getAttribute('title')).toBeNull();
     expect(skipButton.getAttribute('title')).toBeNull();
+  });
+});
+
+describe('VerificationWidget — mostra o "por quê" (Auditoria do Telegram, Fase 2 item 2.7)', () => {
+  it('REGRESSÃO: score, fonte e motivo aparecem no card quando presentes no VerificationTask', async () => {
+    listMock.mockResolvedValue([TASK_COM_MOTIVO]);
+    renderWidget();
+
+    await screen.findByText('BTC/USDT');
+    expect(screen.getByText('🔥 88/100')).toBeTruthy();
+    expect(screen.getByText('RF')).toBeTruthy();
+    expect(screen.getByText('RF + EMA alinhados, confluência de 88/100')).toBeTruthy();
+  });
+
+  it('sem score/reason (task legada), o card renderiza normalmente sem essas linhas', async () => {
+    listMock.mockResolvedValue([TASK]);
+    renderWidget();
+
+    await screen.findByText('BTC/USDT');
+    expect(screen.queryByText(/\/100/)).toBeNull();
   });
 });
 
