@@ -29265,6 +29265,40 @@ nada mudado aqui), `RecentAlertsList.jsx` (sem dependência de texto
 alterado). **Não verificado**: envio real de mensagem pro Telegram — mesma
 pendência do item 247, sem bot configurado neste ambiente.
 
+**Addendum 2026-09-29 — 3 achados reais do Codex review (PR #447), corrigidos
+antes do merge**: a revisão automatizada do PR encontrou 3 bugs concretos
+introduzidos por esta fase, todos verificados contra o código e corrigidos no
+commit `8ba7077`:
+1. **`notifiedOp` sem status terminal** (`scanner.js`, `persistScanResults`
+   ~linha 4181 e `priceCheckActiveOpsInner` ~linha 4528) — os dois pontos que
+   constroem o objeto passado pra `notify*` omitiam `status: newStatus`, então
+   `classifyOutcome()`/`getExitPrice()` (item 3/5 acima) sempre liam o status
+   ANTIGO (não-terminal): o breakeven/lucro-travado do item 3 e o resultado/
+   checklist do item 5 nunca teriam funcionado em produção, apesar dos testes
+   da própria fase passarem — os testes setavam `status` manualmente na
+   fixture, sem refletir como `scanner.js` de fato monta o objeto. Corrigido
+   adicionando `status: newStatus` nos dois pontos. Regressão nova (exercita
+   as funções REAIS de `scanner.js`, não uma fixture manual):
+   `scannerStateMachine.test.js`, describe "notifiedOp passado pro Telegram
+   tem status terminal".
+2. **Linha "Saída" usava o `price` bruto de detecção**, não o preço
+   persistido (`getExitPrice(op)`, já a mesma fonte que `closureSummary()`
+   usa pro Resultado) — podia mostrar uma Saída que contradiz o Resultado
+   calculado, especialmente quando o toque intrabar e o close do candle
+   divergem. Corrigido nas 5 linhas de fechamento (TP2/Stop/Invalidação/Time
+   Stop/Chop Exit) em `telegram.js` e no espelho `adminTelegram.js`. Regressão
+   em ambos os arquivos de teste.
+3. **`macd_histogram === 0` rotulado "negativo"** (`signalContextTranslation.js`)
+   em vez de omitido — contrariava a própria convenção do módulo (campo
+   neutro/desconhecido nunca é inventado, mesmo tratamento já dado a
+   `rf_direction`/`tf_x_direction === 0`). Corrigido. Regressão em
+   `signalContextTranslation.test.js`.
+
+Os 3 achados foram genuínos (não "otimistas"/estilo) — nenhum foi descartado
+como não-aplicável. `npm test` subiu para 2273 passed (era 2268), lint e build
+seguem verdes. PR mesclado em `ec5d440` após os 3 threads respondidos e
+resolvidos.
+
 **Fora de escopo desta fase** (fica para as Fases 3-5): notificação nova de
 "sinal cancelado" pré-entrada (Fase 3), arquitetura unificada
 `NotificationEvent`/saúde real do Telegram/timeline (Fase 4), deep link por
