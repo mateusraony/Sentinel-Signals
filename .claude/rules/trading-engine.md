@@ -454,8 +454,11 @@ nunca deve receber nova transição.**
   novos aditivos (`stop_hit_real_time`/`tp1_hit_real_time`/
   `tp2_hit_real_time`/`closed_at_real_time`) gravam um horário real ao lado
   do `_at` existente, sem substituí-lo — `TradeHistory.jsx` e os templates
-  do Telegram (`src/lib/telegram.js` + `scripts/adminTelegram.js`, mesmo
-  espelho manual de sempre) preferem o `_real_time` quando presente. Os
+  do Telegram (`src/lib/notificationTemplates.js`, compartilhado por
+  `src/lib/telegram.js`/`scripts/adminTelegram.js` desde a Fase 4 da
+  auditoria do Telegram, item 250 — só `shouldSend`/`send`/credencial
+  continuam por arquivo, de propósito) preferem o `_real_time` quando
+  presente. Os
   dois pontos de `notify*` em `scanner.js` passam o `op` mesclado com o
   `updatePayload` recém-escrito (não mais o `op` pré-transição) — sem isso
   os campos novos nunca chegariam à notificação. **Precisão varia por

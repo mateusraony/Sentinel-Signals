@@ -301,6 +301,22 @@ export function rejectionCopy(signal, phase) {
   };
 }
 
+// Auditoria do Telegram, Fase 4 (2026-10-02) — achado: o rótulo de
+// prioridade (alta/média/baixa) estava duplicado em 3 lugares
+// independentes com grafias ligeiramente diferentes (SignalAlertBanner.jsx
+// com ternário próprio, Alerts.jsx's PRIORITY_CONFIG, StrengthBadge.jsx's
+// PriorityBadge) — mesma classe de duplicação que a auditoria já vinha
+// corrigindo pros outros vocabulários. StrengthBadge.jsx não foi tocado
+// (componente visual já compartilhado, com convenção própria sem emoji —
+// mudar isso seria alterar algo que já funciona sem pedido); os outros 2
+// pontos (texto solto, sem componente por trás) passaram a usar esta
+// função.
+const PRIORITY_LABEL = Object.freeze({ high: '⚡ Alta', medium: 'Média', low: 'Baixa' });
+
+export function priorityLabel(priority) {
+  return PRIORITY_LABEL[priority] ?? PRIORITY_LABEL.low;
+}
+
 /**
  * "faltam 1h47" — contagem curta. A hora do relógio quem formata é o
  * componente, que tem o fuso do usuário; aqui fica só a parte pura.

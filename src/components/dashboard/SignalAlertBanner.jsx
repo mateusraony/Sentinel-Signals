@@ -2,6 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, Bell } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import moment from 'moment';
+// Auditoria do Telegram, Fase 4 (2026-10-02) — emoji do estágio e rótulo de
+// prioridade vêm da MESMA fonte que telegram.js/adminTelegram.js (e, pro
+// priorityLabel, Alerts.jsx) já usam, em vez de literais duplicados aqui.
+import { NOTIFICATION_STAGES } from '@/lib/notificationVocabulary';
+import { priorityLabel } from '@/lib/signalStatus';
 
 /**
  * Banner that appears at the top of the Dashboard when a new RF signal is confirmed.
@@ -59,7 +64,7 @@ export default function SignalAlertBanner({ signals = [] }) {
             <Bell className="w-3.5 h-3.5 shrink-0 animate-pulse" style={{ color: textColor }} />
             <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
               <span className="text-10px font-mono font-bold" style={{ color: textColor }}>
-                🆕 SINAL {sig.signal_type}
+                {NOTIFICATION_STAGES.SIGNAL_DETECTED.emoji} SINAL {sig.signal_type}
               </span>
               <span className="font-bold text-xs text-foreground">{symbol}</span>
               <span className="text-9px font-mono px-1.5 py-0.5 rounded"
@@ -80,7 +85,7 @@ export default function SignalAlertBanner({ signals = [] }) {
               )}
               {sig.priority && (
                 <span className="text-9px font-mono" style={{ color: sig.priority === 'high' ? '#ff9f43' : 'rgba(255,255,255,0.35)' }}>
-                  {sig.priority === 'high' ? '⚡ Alta' : sig.priority === 'medium' ? 'Média' : 'Baixa'} prioridade
+                  {priorityLabel(sig.priority)} prioridade
                 </span>
               )}
               <span className="text-9px font-mono text-muted-foreground">{moment(sig.created_date).fromNow()}</span>

@@ -13,6 +13,20 @@
 // arquivo) continua Firestore/RTDB, fora desta migração — mockado via
 // `firebase-admin/firestore` como antes.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+// Auditoria do Telegram, Fase 4 — import estático do canal navegador só
+// pra comparação de paridade no describe no fim deste arquivo. telegram.js
+// importa logWarn de ./logger.js, que por sua vez importa @/api/entities
+// (cliente Firestore do navegador, não mockado neste arquivo — só
+// ./adminEntities.js, o lado Postgres do cron, é mockado acima) — sem este
+// mock, carregar telegram.js aqui tentaria inicializar o Firebase Auth real
+// e quebraria a coleta de testes (auth/invalid-api-key). Mesmo mock de
+// src/lib/telegram.test.js.
+vi.mock('../src/lib/logger.js', () => ({
+  logInfo: vi.fn(),
+  logWarn: vi.fn(),
+  logError: vi.fn(),
+}));
+import * as telegramBrowser from '../src/lib/telegram.js';
 
 const { firestoreGetMock, firestoreSetMock, getFirestoreMock } = vi.hoisted(() => {
   const firestoreGetMock = vi.fn();
@@ -573,5 +587,91 @@ describe('marcador de dedup (RTDB) — reinicializa o Firebase Admin quando nece
 
     expect(initializeAppMock).not.toHaveBeenCalled();
     expect(certMock).not.toHaveBeenCalled();
+  });
+});
+
+// Auditoria do Telegram, Fase 4 (2026-10-02) — a extração de notificationTemplates.js
+// (telegram.js/adminTelegram.js compartilhando os mesmos build*Message) torna
+// trivial provar uma propriedade que NENHUM teste anterior provava: os dois
+// canais produzem o MESMO texto pro MESMO evento. Antes da extração, os
+// describes "3 cabeçalhos distintos" de cada arquivo só afirmavam fragmentos
+// (`toContain`) contra o próprio módulo — nunca comparavam um arquivo com o
+// outro. Esta é a prova de que a Fase 4 realmente eliminou o risco de drift
+// entre canais, não só o código duplicado.
+describe('Paridade canal navegador × canal cron (Auditoria do Telegram, Fase 4)', () => {
+  function makeLocalStorage() {
+    const store = new Map();
+    return {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+      clear: () => store.clear(),
+    };
+  }
+
+  beforeEach(() => {
+    globalThis.localStorage = makeLocalStorage();
+    localStorage.setItem('cryptoradar_telegram_cfg', JSON.stringify({ botToken: 'x', chatId: 'y' }));
+    telegramFiltersGetMock.mockResolvedValue(doc(['range_filter', 'smc_structure', 'macd', 'ema_cross', 'rsi']));
+  });
+
+  async function sentTexts(callBrowser, callAdmin) {
+    global.fetch.mockClear();
+    await callBrowser();
+    const browserText = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    global.fetch.mockClear();
+    await callAdmin();
+    const adminText = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    return { browserText, adminText };
+  }
+
+  const baseSignal = {
+    symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter',
+    price_at_signal: 100, reason: 'Teste', context: { score: 82 },
+  };
+  const baseOp = {
+    symbol: 'BTCUSDT', side: 'BUY', timeframe: '15m', signal_timeframe: '4h',
+    entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 103, tp2: 106,
+    score: 82, tp1_hit: false, tp2_hit: false, partial_percent: 50, runner_percent: 50,
+  };
+
+  it('notifyNewSignal produz texto idêntico nos dois canais', async () => {
+    const { notifyNewSignal } = await import('./adminTelegram.js');
+    const { browserText, adminText } = await sentTexts(
+      () => telegramBrowser.notifyNewSignal(baseSignal),
+      () => notifyNewSignal(baseSignal),
+    );
+    expect(adminText).toBe(browserText);
+  });
+
+  it('notifyTradeCreated produz texto idêntico nos dois canais', async () => {
+    const { notifyTradeCreated } = await import('./adminTelegram.js');
+    const { browserText, adminText } = await sentTexts(
+      () => telegramBrowser.notifyTradeCreated(baseOp),
+      () => notifyTradeCreated(baseOp),
+    );
+    expect(adminText).toBe(browserText);
+  });
+
+  it('notifyStopHit produz texto idêntico nos dois canais, nas 3 classificações (WIN/BE/LOSS)', async () => {
+    const { notifyStopHit } = await import('./adminTelegram.js');
+    for (const current_stop of [108, 100, 95]) { // WIN, BE, LOSS (entry_price=100)
+      const op = { ...baseOp, status: 'STOP_HIT', tp1_hit: true, current_stop };
+      const { browserText, adminText } = await sentTexts(
+        () => telegramBrowser.notifyStopHit(op, current_stop),
+        () => notifyStopHit(op, current_stop),
+      );
+      expect(adminText).toBe(browserText);
+    }
+  });
+
+  it('notifySignalCanceled produz texto idêntico nos dois canais (reusa rejectionCopy nos dois)', async () => {
+    const { notifySignalCanceled } = await import('./adminTelegram.js');
+    const signal = { ...baseSignal, created_date: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), last_rejection_reason: 'regime_rejected', last_rejection_detail: 'adx' };
+    const { browserText, adminText } = await sentTexts(
+      () => telegramBrowser.notifySignalCanceled(signal),
+      () => notifySignalCanceled(signal),
+    );
+    expect(adminText).toBe(browserText);
   });
 });

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   SIGNAL_PHASE, REASON_KIND, REJECTION_COPY, CONFIRMATION_WINDOW_MS,
   classifySignal, isConfirmationEligible, phaseCopy, rejectionCopy,
-  reasonIcon, formatTimeLeft,
+  reasonIcon, formatTimeLeft, priorityLabel,
 } from './signalStatus';
 
 const NOW = Date.parse('2026-09-05T12:00:00.000Z');
@@ -170,5 +170,21 @@ describe('formatTimeLeft', () => {
 
   it('devolve null quando não há prazo', () => {
     for (const bad of [0, -1, null, undefined, NaN]) expect(formatTimeLeft(bad)).toBeNull();
+  });
+});
+
+// Auditoria do Telegram, Fase 4 (2026-10-02) — fonte única extraída de 3
+// lugares que repetiam o mesmo rótulo (SignalAlertBanner.jsx, Alerts.jsx's
+// PRIORITY_CONFIG, e implicitamente StrengthBadge.jsx, não tocado).
+describe('priorityLabel', () => {
+  it('traduz high/medium/low pro rótulo em português', () => {
+    expect(priorityLabel('high')).toBe('⚡ Alta');
+    expect(priorityLabel('medium')).toBe('Média');
+    expect(priorityLabel('low')).toBe('Baixa');
+  });
+
+  it('prioridade desconhecida/ausente cai no fallback "Baixa", nunca undefined', () => {
+    expect(priorityLabel('algo_novo')).toBe('Baixa');
+    expect(priorityLabel(undefined)).toBe('Baixa');
   });
 });

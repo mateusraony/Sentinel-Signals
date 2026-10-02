@@ -29417,3 +29417,117 @@ Corrigido adicionando `!sig.is_dismissed` à condição de disparo nos 2 pontos
 continua rodando normalmente, só a notificação mudou. Regressão nova pros 2
 caminhos em `scannerStateMachine.test.js`. `npm test` em 2292 passed (era
 2290), lint e build seguem verdes. PR mesclado em `713b37f`.
+
+## 250. Auditoria do Telegram — Fase 4 (centralizar templates + migrar UI pro vocabulário existente) (2026-10-02)
+
+**Contexto**: quarta fase do plano de 5 fases (itens 247-249 acima). Antes de
+programar, rodei `sentinel-council-review` (5 papéis independentes, local —
+Arquiteto, Trading, Concorrência, Segurança, Testes), exigido pelo próprio
+plano por esta fase tocar `telegram.js`/`adminTelegram.js`/3 componentes de
+UI ao mesmo tempo. Plano completo e o veredito do conselho em
+`/root/.claude/plans/auditoria-do-telegram-sentinel-snug-zephyr.md`.
+
+**Achado central do conselho (unânime, fato confirmado arquivo:linha por
+cada papel independentemente)**: o draft original desta fase (tipo
+`NotificationEvent` canônico + timeline + "saúde real" do Telegram) foi
+desenhado ANTES das Fases 1-3 existirem — a "camada de vocabulário único"
+que ele pedia **já existia e já estava em produção**
+(`notificationVocabulary.js`, `signalSourceLabels.js`,
+`signalContextTranslation.js`, `signalStatus.js`, `tradeMetrics.js`).
+Introduzir um tipo novo agora seria inventar uma camada sobre um
+vocabulário já centralizado. A duplicação real e cara que restava: os
+CORPOS das 10 funções `notify*` e ~7 helpers, copiados à mão, byte a byte,
+entre `src/lib/telegram.js` (584 linhas) e `scripts/adminTelegram.js` (839
+linhas) — e 2 de 3 componentes de UI (`SignalToast.jsx`/
+`SignalAlertBanner.jsx`) reimplementando rótulo de estágio/prioridade por
+conta própria.
+
+**Implementado**:
+1. **`src/lib/notificationTemplates.js` (novo)** — os 10 `build*Message()` +
+   7 helpers (`fmtP`, `realTimeLine`, `escaparHtml`, `panelLink`,
+   `backfillPrefix`, `closureSummary`, `STOP_HIT_STAGE`/`AMBIGUOUS_EXIT_NOTE`)
+   extraídos de `telegram.js`, agora consumidos por `telegram.js` E
+   `adminTelegram.js`. **Regra travada pelo papel de Segurança do
+   conselho**: módulo é texto puro — nunca lê/recebe credencial. `send()`,
+   `shouldSend()` e a leitura de credencial (localStorage vs. env var)
+   continuam cada um no seu arquivo — **não unificados de propósito**: o
+   canal cron usa `loadTelegramSources()` assíncrono e PREGUIÇOSO (só lê o
+   Firestore quando o evento realmente precisa); forçar os dois `shouldSend`
+   numa função só eliminaria essa leitura preguiçosa e geraria 1 leitura
+   extra de Firestore por notificação — regressão de cota, não limpeza.
+2. **`telegram.js`/`adminTelegram.js` reduzidos** — os 10 `notify*` viraram
+   wrappers de 2-3 linhas (`if (!shouldSend(...)) return; return
+   send(buildXMessage(...));`). `adminTelegram.js` perdeu ~230 linhas de
+   duplicação; as funções admin-only (`notifyAssetStale`,
+   `notifyFirestoreQuotaExhausted/Recovered`, `notifyStepTimeout`,
+   `notifyHealthAudit`, o dedup RTDB/Firestore) ficaram intocadas —
+   `escaparHtml` continua exportado de `adminTelegram.js` (re-export), API
+   pública inalterada.
+3. **Prova de paridade, não só de não-regressão** — novo describe em
+   `scripts/adminTelegram.test.js` importa `telegram.js` E `adminTelegram.js`
+   e afirma texto BYTE-IDÊNTICO pro mesmo evento (`notifyNewSignal`,
+   `notifyTradeCreated`, as 3 classificações de `notifyStopHit`,
+   `notifySignalCanceled`) — achado do especialista em testes do conselho:
+   nenhum teste anterior comparava os dois arquivos entre si, só afirmava
+   fragmentos (`toContain`) contra cada um isoladamente.
+4. **Migração de UI, escopo reduzido por achado real**: `SignalToast.jsx` e
+   `SignalAlertBanner.jsx` (ambos RF-only por construção, mesmo achado do
+   item 1.11) passaram a importar `NOTIFICATION_STAGES.SIGNAL_DETECTED`
+   (`notificationVocabulary.js`) em vez de literais duplicados.
+   `RecentAlertsList.jsx` **não foi tocado** — achado: não mostra rótulo de
+   estágio nem fonte, só `SignalBadge`/`PriorityBadge` (componentes já
+   compartilhados) — não há vocabulário duplicado ali pra migrar.
+5. **`priorityLabel()` novo em `signalStatus.js`** — achado durante a
+   migração: o rótulo de prioridade (Alta/Média/Baixa) estava duplicado em
+   3 lugares (`SignalAlertBanner.jsx` com ternário próprio, `Alerts.jsx`'s
+   `PRIORITY_CONFIG`, `StrengthBadge.jsx`'s `PriorityBadge`). Unificados os
+   2 primeiros (texto solto, sem componente por trás); `StrengthBadge.jsx`
+   **não foi tocado** — já é um componente visual compartilhado, com
+   convenção própria (sem emoji), funcionando — mudar isso sem pedido
+   violaria "não altere o que já funciona".
+
+**Dois itens do draft original, DEFERIDOS com razão (divergência real entre
+papéis do conselho, decisão minha após ponderar)**:
+- **Timeline por sinal/operação**: não existe campo `signal_id`/
+  `operation_id` cruzando `SignalEvent`↔`TradeOperation` — o link real já
+  existe via `dedup_key` (base do id determinístico `trade_${dedup_key}`),
+  só não exposto como campo consultável. Concorrência confirmou que expor
+  isso é seguro (aditivo, write-once, fora do CAS — mesmo padrão de
+  `backfill_entry_lag_ms`, item 137); Trading recomendou fazer já. Arquiteto
+  discordou: sem timeline nenhuma pra consumir, é campo morto. Decisão:
+  seguir o Arquiteto — adiados os dois juntos, sem consumidor real hoje.
+- **"Saúde real do Telegram"**: `isTelegramConfigured()` só verifica
+  credencial. Achado que resolve a motivação original: `send()` já loga
+  toda falha via `logWarn('telegram', ...)` pro `SystemLog`, e
+  `scripts/health-audit.mjs` (diário) já agrega esses erros e avisa no
+  Telegram quando acha algo — a lacuna de visibilidade já está coberta,
+  só não tem badge 🟢/🟡/🔴 na tela de Configurações. Decisão: não construir
+  mecanismo novo de rastreio; um badge de UI lendo (sem escrever) o
+  `SystemLog` recente fica disponível como melhoria futura, não feita aqui.
+
+**Testes**: `notificationTemplates.test.js` (novo, 17 testes — helpers +
+1 caso por `build*Message`); 4 testes de paridade byte-a-byte em
+`adminTelegram.test.js`; `signalSourceLabels.test.js` (novo — achado do
+especialista em testes: módulo nunca tinha teste próprio, só era
+exercitado indiretamente); `priorityLabel()` testado em
+`signalStatus.test.js`. Todos os testes pré-existentes de
+`telegram.test.js`/`adminTelegram.test.js`/`SignalToast.test.jsx`/
+`SignalAlertBanner.test.jsx`/`Alerts.test.jsx` continuam passando
+INALTERADOS — a prova de que a extração não mudou nenhuma palavra já em
+produção.
+
+**Verificação**: `npm run lint` limpo; `npm test` 2320 passed, 58 skipped, 0
+failed (era 2292 antes desta rodada); `npm run build` ok; os 4 bundles
+esbuild (`build-scan`/`build-backtest`/`build-scan-shadow`/`build-backfill`)
+rodados manualmente, resolvem sem erro — confirma que o novo
+`notificationTemplates.js` não quebrou nenhum dos 4 redirecionamentos de
+`./telegram`. Achado "quem mais consome": `scripts/backtestTelegram.js` e
+`scripts/adminTelegramShadow.js` (os outros 2 redirecionamentos) não
+precisaram de nenhuma mudança — continuam no-op, nunca importam
+`notificationTemplates.js`. **Não verificado**: envio real de mensagem pro
+Telegram — mesma pendência das Fases 1-3, sem bot configurado neste
+ambiente.
+
+**Fora de escopo** (fica pra Fase 5, se e quando pedido): deep link exato
+pro contexto, animações, modo silencioso, timeline por sinal/operação e
+badge de saúde do Telegram (os 2 itens deferidos acima).
