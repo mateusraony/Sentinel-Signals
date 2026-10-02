@@ -1,6 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { TrendingUp, TrendingDown, X } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+// Auditoria do Telegram, Fase 4 (2026-10-02) — rótulo do estágio vem da
+// MESMA fonte que telegram.js/adminTelegram.js já usam, em vez de um
+// literal duplicado aqui.
+import { NOTIFICATION_STAGES } from '@/lib/notificationVocabulary';
 
 /**
  * In-app visual notification for new signals.
@@ -122,9 +126,11 @@ export default function SignalToast({ signals = [], assets = [], onSelectAsset }
                             "Sinal Confirmado" lia como entrada executada
                             (ambíguo com SignalToast.jsx/notifyTradeCreated) —
                             trocado por "Sinal Detectado", alinhado com
-                            SignalAlertBanner.jsx ("🆕 SINAL") e com o
-                            Telegram (que já dizia "aguardando confirmação"). */}
-                        {score > 0 ? `Score ${score}/100 · ` : ''}Sinal Detectado
+                            SignalAlertBanner.jsx e com o Telegram (que já
+                            dizia "aguardando confirmação"). Fase 4: o rótulo
+                            agora vem de notificationVocabulary.js — se o
+                            texto mudar lá, muda aqui de graça. */}
+                        {score > 0 ? `Score ${score}/100 · ` : ''}{NOTIFICATION_STAGES.SIGNAL_DETECTED.label}
                       </div>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">

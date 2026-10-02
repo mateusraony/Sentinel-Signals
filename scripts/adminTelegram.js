@@ -6,18 +6,22 @@
 // EXCEPT signal source, which the user CAN configure from the browser
 // Settings screen — see loadTelegramSources below.
 //
-// Imports deste espelho: a regra pura que decide se o TP1 encerra a posição
-// (compartilhada com telegram.js de propósito — se cada canal decidisse por
-// conta, o do navegador e o das 24h anunciariam gestões diferentes para a
-// MESMA operação; opExitRules já está no bundle do scan) e o cliente
-// firebase-admin, mesmo padrão de scripts/adminPineConfig.js.
-import { closesFullyAtTp1, getEntryReferenceTime } from '../src/lib/opExitRules.js';
+// Auditoria do Telegram, Fase 4 (2026-10-02) — o corpo de cada mensagem
+// (os `build*Message`) mora em src/lib/notificationTemplates.js,
+// compartilhado com src/lib/telegram.js — antes eram 10 funções + ~7
+// helpers copiados à mão entre os dois arquivos. Este arquivo continua
+// decidindo SE envia (shouldSend, lido de env/Firestore) e COMO envia
+// (send, credencial via env var). Ver docs/known-risks.md item 250.
 import { formatBackfillLag } from '../src/lib/backfillDetection.js';
-import { explainOperationDecision } from '../src/lib/decisionExplanation.js';
-import { shortSourceLabel } from '../src/lib/signalSourceLabels.js';
-import { NOTIFICATION_STAGES, stageHeader } from '../src/lib/notificationVocabulary.js';
-import { classifyOutcome, calcRealizedR, calcRealizedPnlPct, getExitPrice } from '../src/lib/tradeMetrics.js';
-import { rejectionCopy, SIGNAL_PHASE } from '../src/lib/signalStatus.js';
+import {
+  buildSignalDetectedMessage, buildVerificationTaskMessage, buildSignalCanceledMessage,
+  buildTradeCreatedMessage, buildTp1HitMessage, buildTp2HitMessage, buildStopHitMessage,
+  buildInvalidatedMessage, buildTimeStopMessage, buildChopExitMessage,
+  escaparHtml,
+} from '../src/lib/notificationTemplates.js';
+// Re-exportado — scripts/adminTelegramStepTimeout.test.js importa escaparHtml
+// direto deste módulo; mantém a API pública inalterada após a extração.
+export { escaparHtml };
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { withTimeout } from './scanTimeout.mjs';
@@ -200,62 +204,9 @@ async function send(html) {
   }
 }
 
-function fmtP(p) {
-  if (!p && p !== 0) return '—';
-  if (p >= 10000) return p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (p >= 1) return p.toFixed(4);
-  return p.toFixed(6);
-}
-
-// Mirrors src/lib/telegram.js's fmtBRT/realTimeLine — BRT (UTC-3), same
-// convention already used in TradeHistory.jsx's candle display.
-function fmtBRT(iso) {
-  if (!iso) return null;
-  const d = new Date(new Date(iso).getTime() - 3 * 60 * 60 * 1000);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} BRT`;
-}
-
-// isBound=true for stop_hit_real_time/tp1_hit_real_time/tp2_hit_real_time —
-// they're the candle CLOSE that confirmed an intrabar high/low touch, an
-// upper bound not the exact cross (Codex review, PR #213 — see
-// TradeOperation.jsonc). closed_at_real_time varies by reason; callers pass
-// isBound only where it applies.
-function realTimeLine(iso, isBound = false) {
-  const formatted = fmtBRT(iso);
-  if (!formatted) return '';
-  return isBound ? `🕐 Vela (candle): ${formatted}\n` : `🕐 Horário real: ${formatted}\n`;
-}
-
-// Auditoria do Telegram (2026-09-29), Fase 2 item 2.5 — link real pro
-// painel, mesmo raciocínio de src/lib/telegram.js (comentário completo lá).
-const PANEL_URL = 'https://sentinel-signals.onrender.com';
-
-function panelLink(path) {
-  return `<a href="${PANEL_URL}${path}">Abrir no Sentinel</a>`;
-}
-
 export async function notifyNewSignal(signal, asset) {
   if (!(await shouldSend('signal_detected', signal, asset))) return;
-  const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
-  const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
-  const strength = { strong: '💪 Forte', medium: '📊 Médio', moderate: '📊 Moderado', weak: '🔹 Fraco' }[signal.strength] || '';
-  const sourceLabel = shortSourceLabel(signal.source);
-  const scoreLine = Number.isFinite(signal.context?.score)
-    ? `📊 Score: ${signal.context.score}/100 ${strength}\n`
-    : (strength ? `📊 Força: ${strength}\n` : '');
-  return send(
-    `${stageHeader('SIGNAL_DETECTED')} — ${sourceLabel}\n\n` +
-    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n\n` +
-    `${NOTIFICATION_STAGES.AWAITING_ENTRY.emoji} Situação: aguardando confirmação de entrada — nenhuma operação foi aberta ainda.\n\n` +
-    `📝 Por quê: ${escaparHtml(signal.reason) || 'não informado'}\n\n` +
-    `💰 Preço no sinal: $${fmtP(signal.price_at_signal)}\n` +
-    scoreLine + '\n' +
-    `➡️ Próximo passo: aguardar a confirmação de entrada pelo motor.\n` +
-    `📡 Fonte: ${sourceLabel}\n\n` +
-    `${panelLink('/alerts')}\n\n` +
-    `<i>⚡ Sentinel Signals</i>`
-  );
+  return send(buildSignalDetectedMessage(signal));
 }
 
 // Mirrors src/lib/telegram.js's notifyVerificationTask — signal is the
@@ -263,148 +214,29 @@ export async function notifyNewSignal(signal, asset) {
 // receives above).
 export async function notifyVerificationTask(signal, asset) {
   if (!(await shouldSend('verification_task_created', signal, asset))) return false;
-  const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
-  const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
-  const sourceLabel = shortSourceLabel(signal.source);
-  const scoreLine = Number.isFinite(signal.context?.score)
-    ? `📊 Score: ${signal.context.score}/100\n`
-    : '';
-  return send(
-    `${stageHeader('VERIFICATION_NEEDED')} — ${sourceLabel}\n\n` +
-    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n\n` +
-    `${emoji} Situação: sinal de alta prioridade aguardando sua revisão manual antes de virar operação.\n\n` +
-    `⭐ Prioridade: ALTA\n` +
-    scoreLine +
-    `📝 Por quê: ${escaparHtml(signal.reason) || 'não informado'}\n\n` +
-    `➡️ Próximo passo: revisar e marcar OK/Pular no painel.\n` +
-    `📡 Fonte: ${sourceLabel}\n\n` +
-    `${panelLink('/verification')}\n\n` +
-    `<i>⚡ Sentinel Signals</i>`
-  );
+  return send(buildVerificationTaskMessage(signal));
 }
 
 // Mirrors src/lib/telegram.js's notifySignalCanceled — Fase 3 da auditoria
-// do Telegram (2026-10-02, docs/known-risks.md item 117). Sinal que
-// expirou sem NUNCA confirmar entrada; "Por quê" reusa rejectionCopy()
-// (src/lib/signalStatus.js), a MESMA tradução já usada no Dashboard.
+// do Telegram (2026-10-02, docs/known-risks.md item 117).
 export async function notifySignalCanceled(signal, asset) {
   if (!(await shouldSend('signal_canceled', signal, asset))) return;
-  const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
-  const sourceLabel = shortSourceLabel(signal.source);
-  const scoreLine = Number.isFinite(signal.context?.score)
-    ? `📊 Score no sinal: ${signal.context.score}/100\n`
-    : '';
-  const { detail } = rejectionCopy(signal, SIGNAL_PHASE.EXPIRED);
-  const createdMs = new Date(signal.created_date).getTime();
-  const durationMs = Number.isFinite(createdMs) ? Date.now() - createdMs : null;
-  const durationLine = Number.isFinite(durationMs) && durationMs >= 0
-    ? `⏳ Esperou: ${formatBackfillLag(durationMs)}\n`
-    : '';
-  return send(
-    `${stageHeader('SIGNAL_CANCELED')} — ${sourceLabel}\n\n` +
-    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n\n` +
-    `🚫 Situação: este aviso expirou sem nunca confirmar entrada — nenhuma operação foi aberta.\n\n` +
-    `📝 Por quê: ${escaparHtml(detail)}\n\n` +
-    `💰 Preço no sinal: $${fmtP(signal.price_at_signal)}\n` +
-    scoreLine +
-    durationLine + '\n' +
-    `➡️ Próximo passo: nenhum — este aviso não abriu operação.\n` +
-    `📡 Fonte: ${sourceLabel}\n\n` +
-    `${panelLink('/alerts')}\n\n` +
-    `<i>⚡ Sentinel Signals</i>`
-  );
-}
-
-// docs/known-risks.md item 137 — mesmo raciocínio/mirror manual de
-// src/lib/telegram.js: uma operação criada pela checagem retroativa
-// (scripts/run-backfill-check.mjs, tag source:'backfill') precisa deixar
-// isso claro NA notificação também, não só no painel.
-function backfillPrefix(op) {
-  if (op.source !== 'backfill') return '';
-  const lag = formatBackfillLag(op.backfill_entry_lag_ms);
-  return `⏱ <b>Detectada retroativamente</b> — entrada real foi há ${lag ?? 'algum tempo'}, o Sentinel só a encontrou agora ao adicionar/atualizar o ativo (não foi pega ao vivo).\n\n`;
+  return send(buildSignalCanceledMessage(signal));
 }
 
 export async function notifyTradeCreated(op) {
   if (!(await shouldSend('entry_confirmed', op))) return;
-  const emoji = op.side === 'BUY' ? '✅🟢' : '✅🔴';
-  const dir = op.side === 'BUY' ? 'COMPRA' : 'VENDA';
-  const tfLabel = op.timeframe === '15m' ? '15m (entrada 4h)' : op.timeframe?.toUpperCase();
-  return send(
-    backfillPrefix(op) +
-    `${stageHeader('ENTRY_CONFIRMED')} — ${dir}\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${tfLabel}\n\n` +
-    `${emoji} Situação: operação aberta, gerenciada automaticamente pelo Sentinel.\n\n` +
-    realTimeLine(getEntryReferenceTime(op)) +
-    `📍 Entrada: $${fmtP(op.entry_price)}\n` +
-    `🛑 Stop: $${fmtP(op.initial_stop)}\n` +
-    `🎯 TP1: $${fmtP(op.tp1)}  |  TP2: $${fmtP(op.tp2)}\n` +
-    `📊 Score: ${op.score}/100\n\n` +
-    `➡️ Próximo passo: aguardar o preço avançar para o TP1.\n` +
-    `🔒 Gestão: ${op.partial_percent ?? 50}% no TP1, runner ${op.runner_percent ?? 50}%\n\n` +
-    `${panelLink('/trades')}\n\n` +
-    `<i>⚡ Sentinel Signals</i>`
-  );
-}
-
-// Auditoria do Telegram (2026-09-29), Fase 2 item 2.5/2.6 — mesmo raciocínio
-// de src/lib/telegram.js's closureSummary (comentário completo lá): resultado
-// já CALCULADO por tradeMetrics.js, nunca recomputado aqui.
-function closureSummary(op) {
-  const r = calcRealizedR(op);
-  const pct = calcRealizedPnlPct(op);
-  const resultLine = r !== null
-    ? `📐 Resultado: ${r >= 0 ? '+' : ''}${r.toFixed(2)}R` + (pct !== null ? ` (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)` : '') + '\n'
-    : '';
-  const entryRef = getEntryReferenceTime(op);
-  const closedAt = op.closed_at_real_time || op.stop_hit_real_time || op.tp2_hit_real_time || op.closed_at;
-  const durationMs = entryRef && closedAt ? new Date(closedAt).getTime() - new Date(entryRef).getTime() : null;
-  const durationLine = Number.isFinite(durationMs) && durationMs >= 0 ? `⏳ Duração: ${formatBackfillLag(durationMs)}\n` : '';
-  const checklist = [op.tp1_hit ? '✅ TP1' : null, op.status === 'TP2_HIT' ? '✅ TP2' : null].filter(Boolean).join('  ');
-  return resultLine + durationLine + (checklist ? `${checklist}\n` : '');
+  return send(buildTradeCreatedMessage(op));
 }
 
 export async function notifyTP1Hit(op, price) {
   if (!(await shouldSend('tp1_hit', op))) return;
-  // op.decision_snapshot chega aqui em um de 3 reason_code possíveis
-  // (tp1_hit_stop_to_breakeven/tp1_hit_stop_unchanged da Fase 3,
-  // tp1_full_close da Fase 4) — explainOperationDecision resolve o texto
-  // certo em qualquer um dos três, agnóstica de qual fase o criou.
-  const { why, evidence } = explainOperationDecision(op);
-  const fullClose = closesFullyAtTp1(op);
-  return send(
-    `${stageHeader('TP1_HIT')}!\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
-    (fullClose
-      ? `${NOTIFICATION_STAGES.TP1_HIT.emoji} Situação: posição encerrada 100% no TP1.\n\n`
-      : `${NOTIFICATION_STAGES.RUNNER_ACTIVE.emoji} Situação: ${op.partial_percent ?? 50}% da posição realizada, runner ${op.runner_percent ?? 50}% segue aberto.\n\n`) +
-    `📝 Por quê: ${escaparHtml(why)}\n` +
-    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
-    realTimeLine(op.tp1_hit_real_time, true) +
-    `💰 Preço atual: $${fmtP(price)}\n` +
-    (fullClose ? closureSummary(op) : `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n`) + '\n' +
-    `➡️ Próximo passo: ${fullClose ? 'nenhum — operação encerrada.' : `aguardar o preço avançar para o TP2: $${fmtP(op.tp2)}.`}\n\n` +
-    `${panelLink('/trades')}\n\n` +
-    `<i>⚡ Sentinel Signals</i>`
-  );
+  return send(buildTp1HitMessage(op, price));
 }
 
 export async function notifyTP2Hit(op, price) {
   if (!(await shouldSend('tp2_hit', op))) return;
-  const { why, evidence } = explainOperationDecision(op);
-  return send(
-    `${stageHeader('TP2_HIT')}!\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
-    `🏁 Situação: operação encerrada — alvo final atingido.\n\n` +
-    `📝 Por quê: ${escaparHtml(why)}\n` +
-    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
-    realTimeLine(op.tp2_hit_real_time, true) +
-    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
-    closureSummary(op) + '\n' +
-    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
-    `${panelLink('/trades')}\n\n` +
-    `<i>⚡ Sentinel Signals</i>`
-  );
+  return send(buildTp2HitMessage(op, price));
 }
 
 // System alert (per-asset healthcheck, scripts/run-scan.mjs) — bypasses
@@ -447,18 +279,6 @@ export async function notifyAssetStale(asset, reason) {
 // alerts on every pass instead of risking silence during the exact outage
 // it exists to report — same fail-open spirit as loadTelegramSources above.
 const QUOTA_ALERT_COOLDOWN_MS = 60 * 60 * 1000;
-
-// Pedido do usuário (2026-09-01): quando um candle fecha tocando stop E TP no
-// mesmo intervalo, o motor já decide sozinho e imediatamente ("stop vence",
-// TradeOperation.exit_ambiguous — .claude/rules/trading-engine.md, seção
-// "Ambiguidade stop/TP no mesmo candle") — a operação já está encerrada
-// quando isso é detectado, então não existe "continuar ou sair" real pra
-// perguntar (ver docs/known-risks.md, conselho de revisão 2026-08-31). O que
-// falta é só deixar isso visível em linguagem simples, sem jargão — este
-// texto é acrescentado à notificação de stop já existente, nunca muda a
-// decisão nem atrasa o envio.
-const AMBIGUOUS_EXIT_NOTE =
-  `\nℹ️ <b>Nessa vela, o preço tocou o stop e o take ao mesmo tempo</b> — o gráfico não mostra qual foi primeiro de verdade. Por segurança, o sistema sempre considera que o stop aconteceu primeiro nesses casos raros. Essa operação já foi encerrada com esse resultado.\n`;
 
 // docs/known-risks.md item 142 addendum — o get()/set() do dedup abaixo são
 // chamadas Firestore reais no MESMO cliente admin que pode ficar preso em
@@ -711,26 +531,6 @@ export async function notifyStepTimeout(step, ms) {
 }
 
 /**
- * Escapa texto para o `parse_mode: 'HTML'` do Telegram (item 167).
- *
- * Achado do Codex (PR #311), verificado: `normalizarMensagem` da auditoria
- * troca o símbolo do ativo por `<ativo>`. Esse texto entrava CRU na mensagem
- * HTML, o Telegram rejeitava a tag desconhecida com 400, `send()` devolvia
- * `false` — e a auditoria ignorava o retorno. Resultado: execução verde e
- * **alerta não entregue**. Exatamente a falha silenciosa que a auditoria
- * existe para caçar, dentro dela mesma.
- *
- * Escapa só os três caracteres que o Telegram trata como marcação; o texto
- * segue legível para o usuário.
- */
-export function escaparHtml(texto) {
-  return String(texto ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-/**
  * Resultado da auditoria de saúde (item 165) — só quando há o que dizer.
  *
  * Sem dedup nem cooldown de propósito: a auditoria roda 1×/dia e já decide
@@ -752,88 +552,22 @@ export async function notifyHealthAudit(titulo, linhas, url) {
   });
 }
 
-// Auditoria do Telegram (2026-09-29), Fase 2 item 2.3 — mesmo raciocínio de
-// src/lib/telegram.js (comentário completo lá): reusa classifyOutcome
-// (tradeMetrics.js), a MESMA função que TradeCard.jsx/TradeHistory.jsx já
-// usam pra distinguir breakeven de perda real, em vez do `op.tp1_hit`
-// isolado de antes.
-const STOP_HIT_STAGE = {
-  WIN: NOTIFICATION_STAGES.STOP_LOCKED_PROFIT,
-  BE: NOTIFICATION_STAGES.STOP_BREAKEVEN,
-};
-
 export async function notifyStopHit(op, price) {
   if (!(await shouldSend('stop_hit', op))) return;
-  const outcome = classifyOutcome(op);
-  const stage = STOP_HIT_STAGE[outcome] ?? NOTIFICATION_STAGES.STOP_LOSS;
-  const { why, evidence } = explainOperationDecision(op);
-  return send(
-    `${stage.emoji} <b>${stage.label}</b>\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
-    `${stage.emoji} Situação: operação encerrada pelo stop` + (outcome === 'BE' ? ', sem prejuízo.' : outcome === 'WIN' ? ', com lucro já travado.' : '.') + '\n\n' +
-    `📝 Por quê: ${escaparHtml(why)}\n` +
-    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
-    realTimeLine(op.stop_hit_real_time, true) +
-    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)} (stop em $${fmtP(op.current_stop)})\n` +
-    closureSummary(op) +
-    (op.exit_ambiguous ? AMBIGUOUS_EXIT_NOTE : '') + '\n' +
-    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
-    `${panelLink('/trades')}\n\n` +
-    `<i>⚡ Sentinel Signals</i>`
-  );
+  return send(buildStopHitMessage(op, price));
 }
 
 export async function notifyInvalidated(op, price) {
   if (!(await shouldSend('invalidated', op))) return;
-  const stageMsg = op.tp1_hit ? '(após TP1 — parcial já realizada)' : '(pré-TP1)';
-  const { why, evidence } = explainOperationDecision(op);
-  return send(
-    `${stageHeader('INVALIDATED')} ${stageMsg}\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
-    `⚠️ Situação: operação encerrada — a condição que sustentava a entrada deixou de ser válida.\n\n` +
-    `📝 Por quê: ${escaparHtml(why)}\n` +
-    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
-    realTimeLine(op.closed_at_real_time) +
-    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
-    closureSummary(op) + '\n' +
-    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
-    `${panelLink('/trades')}\n\n` +
-    `<i>⚡ Sentinel Signals</i>`
-  );
+  return send(buildInvalidatedMessage(op, price));
 }
 
 export async function notifyTimeStop(op, price) {
   if (!(await shouldSend('time_stop', op))) return;
-  const { why, evidence } = explainOperationDecision(op);
-  return send(
-    `${stageHeader('TIME_STOP')}\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
-    `⏱️ Situação: operação encerrada — prazo máximo sem atingir TP1 expirou.\n\n` +
-    `📝 Por quê: ${escaparHtml(why)}\n` +
-    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
-    realTimeLine(op.closed_at_real_time) +
-    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
-    closureSummary(op) + '\n' +
-    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
-    `${panelLink('/trades')}\n\n` +
-    `<i>⚡ Sentinel Signals</i>`
-  );
+  return send(buildTimeStopMessage(op, price));
 }
 
 export async function notifyChopExit(op, price) {
   if (!(await shouldSend('chop_exit', op))) return;
-  const { why, evidence } = explainOperationDecision(op);
-  return send(
-    `${stageHeader('CHOP_EXIT')}\n\n` +
-    `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
-    `🌊 Situação: operação encerrada — mercado ficou lateralizado (choppiness alto).\n\n` +
-    `📝 Por quê: ${escaparHtml(why)}\n` +
-    (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
-    realTimeLine(op.closed_at_real_time) +
-    `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
-    closureSummary(op) + '\n' +
-    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
-    `${panelLink('/trades')}\n\n` +
-    `<i>⚡ Sentinel Signals</i>`
-  );
+  return send(buildChopExitMessage(op, price));
 }

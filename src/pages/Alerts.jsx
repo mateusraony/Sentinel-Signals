@@ -17,11 +17,16 @@ import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 // Raio-X de UI/UX), só a fonte dos dados virou uma.
 import { SIGNAL_SOURCES, longSourceLabel } from '@/lib/signalSourceLabels';
 import { translateSignalContext } from '@/lib/signalContextTranslation';
+// Auditoria do Telegram, Fase 4 (2026-10-02) — mesma fonte de rótulo de
+// prioridade que SignalAlertBanner.jsx agora usa (antes, 3 lugares
+// independentes repetiam "⚡ Alta"/"Média"/"Baixa" com grafias ligeiramente
+// diferentes). Mesmo texto de antes — só a fonte virou uma.
+import { priorityLabel } from '@/lib/signalStatus';
 
 const PRIORITY_CONFIG = {
-  high:   { color: '#ff9f43', bg: 'rgba(255,159,67,0.12)', border: 'rgba(255,159,67,0.3)', label: '⚡ Alta' },
-  medium: { color: 'rgba(255,255,255,0.5)', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', label: 'Média' },
-  low:    { color: 'rgba(255,255,255,0.3)', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.07)', label: 'Baixa' },
+  high:   { color: '#ff9f43', bg: 'rgba(255,159,67,0.12)', border: 'rgba(255,159,67,0.3)', label: priorityLabel('high') },
+  medium: { color: 'rgba(255,255,255,0.5)', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.1)', label: priorityLabel('medium') },
+  low:    { color: 'rgba(255,255,255,0.3)', bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.07)', label: priorityLabel('low') },
 };
 
 export default function Alerts() {
