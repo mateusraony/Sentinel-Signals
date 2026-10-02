@@ -23,13 +23,13 @@
  * preguiçosa do cron e geraria uma leitura extra do Firestore por
  * notificação — regressão de cota, não limpeza.
  */
-import { closesFullyAtTp1, getEntryReferenceTime } from './opExitRules';
-import { formatBackfillLag } from './backfillDetection';
-import { explainOperationDecision } from './decisionExplanation';
-import { shortSourceLabel } from './signalSourceLabels';
-import { NOTIFICATION_STAGES, stageHeader } from './notificationVocabulary';
-import { classifyOutcome, calcRealizedR, calcRealizedPnlPct, getExitPrice } from './tradeMetrics';
-import { rejectionCopy, SIGNAL_PHASE } from './signalStatus';
+import { closesFullyAtTp1, getEntryReferenceTime } from './opExitRules.js';
+import { formatBackfillLag } from './backfillDetection.js';
+import { explainOperationDecision } from './decisionExplanation.js';
+import { shortSourceLabel } from './signalSourceLabels.js';
+import { NOTIFICATION_STAGES, stageHeader } from './notificationVocabulary.js';
+import { classifyOutcome, calcRealizedR, calcRealizedPnlPct, getExitPrice } from './tradeMetrics.js';
+import { rejectionCopy, SIGNAL_PHASE } from './signalStatus.js';
 
 export function fmtP(p) {
   if (!p && p !== 0) return '—';

@@ -29531,3 +29531,27 @@ ambiente.
 **Fora de escopo** (fica pra Fase 5, se e quando pedido): deep link exato
 pro contexto, animações, modo silencioso, timeline por sinal/operação e
 badge de saúde do Telegram (os 2 itens deferidos acima).
+
+**Addendum (Codex review, PR #453) — 1 achado real, corrigido**: os 7 imports
+relativos de `notificationTemplates.js` (`./opExitRules`, `./backfillDetection`,
+`./decisionExplanation`, `./signalSourceLabels`, `./notificationVocabulary`,
+`./tradeMetrics`, `./signalStatus`) foram escritos sem extensão `.js` —
+funcionam no browser (Vite) e nos 4 bundles esbuild (que resolvem extensão
+sozinhos), mas `scripts/health-audit.mjs` roda via `node` puro, sem bundler
+(`.github/workflows/health-audit.yml`: `node scripts/health-audit.mjs`
+direto) e importa `adminTelegram.js`, que agora importa
+`notificationTemplates.js` — o resolvedor ESM nativo do Node NÃO completa
+extensão em import relativo, então o job quebraria com
+`ERR_MODULE_NOT_FOUND` na próxima execução diária (04:40 UTC), silenciando
+justamente o alerta de saúde/cota que o item 164/165 existe pra garantir.
+Todo o resto do código já seguia a convenção de `.js` explícito nos imports
+relativos por este exato motivo (`backfillDetection.js`,
+`decisionExplanation.js`, `tradeMetrics.js`) — só o arquivo novo desta fase
+quebrou o padrão. Reproduzido antes de corrigir (`node --input-type=module -e
+"import('.../notificationTemplates.js')"` numa cópia com os imports sem
+extensão → `ERR_MODULE_NOT_FOUND` confirmado) e confirmado resolvido depois
+do fix (mesmo comando, `IMPORT OK`, mais `import('./scripts/adminTelegram.js')`
+direto — a cadeia real que `health-audit.mjs` percorre). Corrigido só
+adicionando `.js` nos 7 imports — nenhuma mudança de comportamento. Re-rodado
+`npm run lint && npm test && npm run build` (2320 passed, igual) + os 4
+bundles esbuild.
