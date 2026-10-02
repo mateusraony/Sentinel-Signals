@@ -4023,6 +4023,27 @@ describe('persistScanResults — notifySignalCanceled na expiração de sinal (A
     expect(notifySignalCanceled).not.toHaveBeenCalled(); // mas não notifica
   });
 
+  // Codex review (PR #450) — is_dismissed só era checado DEPOIS do bloco de
+  // expiração (branch `continue`s antes de chegar lá), então um sinal que o
+  // usuário já tinha arquivado manualmente ainda disparava "Sinal Cancelado"
+  // horas depois, ao expirar — reabrindo no Telegram um aviso que ele já
+  // tinha dito que não queria ver mais.
+  it('REGRESSÃO: NÃO dispara notifySignalCanceled num sinal já arquivado (is_dismissed), mesmo notificado e expirado', async () => {
+    isTelegramConfigured.mockReturnValue(true);
+    backend._seed('SignalEvent', {
+      id: 'sig_stale_dismissed', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_stale_dismissed', notified: true, is_dismissed: true,
+      created_date: '2026-07-16T07:00:00.000Z',
+    });
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults(makeScanResult({ results, pineConfig }));
+    const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_stale_dismissed' });
+    expect(stored[0].expired_logged).toBe(true); // bookkeeping continua acontecendo
+    expect(notifySignalCanceled).not.toHaveBeenCalled(); // mas não notifica — usuário já arquivou
+  });
+
   it('REGRESSÃO: dispara notifySignalCanceled quando um sinal SMC notificado expira sem confirmar', async () => {
     isTelegramConfigured.mockReturnValue(true);
     const asset = makeAsset({ smc_enabled: true });
@@ -4037,6 +4058,22 @@ describe('persistScanResults — notifySignalCanceled na expiração de sinal (A
     await persistScanResults(makeScanResult({ asset, results, pineConfig }));
     expect(notifySignalCanceled).toHaveBeenCalledTimes(1);
     expect(notifySignalCanceled.mock.calls[0][0].dedup_key).toBe('sig_smc_stale_notified');
+  });
+
+  // Codex review (PR #450) — mesma correção, caminho SMC.
+  it('REGRESSÃO: NÃO dispara notifySignalCanceled num sinal SMC já arquivado (is_dismissed), mesmo notificado e expirado', async () => {
+    isTelegramConfigured.mockReturnValue(true);
+    const asset = makeAsset({ smc_enabled: true });
+    backend._seed('SignalEvent', {
+      id: 'sig_smc_stale_dismissed', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '1h', signal_type: 'BUY',
+      source: 'smc_structure', dedup_key: 'sig_smc_stale_dismissed', notified: true, is_dismissed: true,
+      created_date: '2026-07-16T07:00:00.000Z',
+    });
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '1h': makeTfData() };
+
+    await persistScanResults(makeScanResult({ asset, results, pineConfig }));
+    expect(notifySignalCanceled).not.toHaveBeenCalled();
   });
 
   // Estrutural, não só comportamental: Time Stop fecha uma TradeOperation já
