@@ -29308,3 +29308,100 @@ resolvidos.
 "sinal cancelado" pré-entrada (Fase 3), arquitetura unificada
 `NotificationEvent`/saúde real do Telegram/timeline (Fase 4), deep link por
 operação específica/animações/modo silencioso (Fase 5).
+
+## 249. Auditoria do Telegram — Fase 3 (notificação "Sinal Cancelado") (2026-10-02)
+
+**Contexto**: terceira fase do plano de 5 fases (itens 247/248 acima). Fecha
+o incidente real registrado no item 117 (ENAUSDT, 2026-08-22): o usuário via
+o próprio Pine dar BUY no TradingView enquanto o Sentinel ficava "em
+monitoramento", sem nenhum aviso de que aquele sinal específico não ia virar
+operação. Plano completo em
+`/root/.claude/plans/auditoria-do-telegram-sentinel-snug-zephyr.md`.
+
+**Investigação de código antes de implementar reduziu o escopo original em
+3 pontos, todos fato, não hipótese**:
+1. Dos 4 pontos de `scanner.js` onde um `SignalEvent` expira sem confirmar
+   entrada, só 2 são caminho de PRODUÇÃO real: a cascata nativa RF 4h→15m
+   (`~scanner.js:2991`, após o `SignalEvent.update(expired_logged: true)`) e
+   a cascata SMC 1h→5m (`~scanner.js:3434`, opt-in por
+   `MonitoredAsset.smc_enabled`). Os outros 2 (`RF_1H_COND_CASCADE`/
+   `RF_1H_UNCOND_CASCADE`) são backtest-only, atrás de
+   `pineConfig.rf1hCondEnabled`/`rf1hUncondEnabled` (desligados por padrão),
+   parte do modo sombra pausado desde 2026-09-21 (item 185) — não tocados.
+2. O lado de UI já existia e já está em produção:
+   `src/lib/signalStatus.js` (item 156/163) já traduz esse estado
+   (`SIGNAL_PHASE.EXPIRED`, badge "Já passou", `rejectionCopy()` para o
+   motivo) no Dashboard (`Trades.jsx`/`SignalChecklist.jsx`). Esta fase não
+   tocou Dashboard/Alertas/`RecentAlertsList.jsx` — só o canal Telegram.
+3. **`rejectionCopy()` (`signalStatus.js`) foi reusada tal como está** para o
+   "Por quê" da mensagem, em vez de um texto novo — é a mesma tradução de
+   `last_rejection_reason`/`last_rejection_detail` já testada e em produção,
+   reescrita a pedido do próprio usuário no item 163 pra não ficar "vazio
+   sem sentido nenhum".
+
+**Implementado**:
+1. `src/lib/notificationVocabulary.js` — novo estágio `SIGNAL_CANCELED`
+   (🚫 Sinal Cancelado), emoji distinto de `INVALIDATED`/`TIME_STOP`/
+   `CHOP_EXIT` (que fecham uma operação já ABERTA — categoria diferente).
+2. Novo evento `signal_canceled` em `DEFAULT_FILTERS.events`
+   (`src/lib/telegram.js`) + migração `NEW_EVENTS_2026_10_02`/
+   `MIGRATION_FLAG_3` (mesmo mecanismo do item 1.1) + toggle em
+   `EVENT_OPTIONS` (`TelegramSettings.jsx`) — o teste-guarda do item 1.8
+   (`EXPECTED_LABELS`) cobre a sincronização automaticamente.
+3. **Gate específico, fora do filtro de evento**: só notifica quando
+   `signal.notified === true` (campo já existente,
+   `docs/schema-reference/SignalEvent.jsonc`, escrito em
+   `scanner.js:buildTradeOpData`-adjacente na criação do sinal) — evita
+   avisar sobre o cancelamento de um sinal que o usuário nunca chegou a ser
+   avisado que existia (Telegram em cooldown/desconfigurado na hora).
+4. **Decisão que estende o filtro de origem existente**: `shouldSend()`
+   (`telegram.js`/`adminTelegram.js`) tratava o filtro de `sources`
+   (RF/SMC/MACD/EMA/RSI) como exclusivo de `signal_detected` — estendido
+   para também valer em `signal_canceled`, já que o payload é o MESMO
+   `SignalEvent` com o mesmo vocabulário de `source` (nunca colide com o
+   enum de `TradeOperation.source`, que é o motivo original da restrição).
+   Mesma extensão aplicada ao filtro de `signal_types`/`notify_signal_types`
+   por-ativo (`AssetConfigPanel.jsx` não precisou de nenhuma mudança — já é
+   agnóstico de evento).
+5. Nova função `notifySignalCanceled(signal, asset)` em `telegram.js` +
+   espelho `adminTelegram.js`, mesma anatomia fixa da Fase 2 — sem nenhuma
+   linha de Resultado/R (não houve operação); duração via
+   `formatBackfillLag` (mesmo helper de `closureSummary()`).
+6. Wiring em `scanner.js`: a chamada fica DENTRO do mesmo bloco write-once
+   que já protege o `SystemLog` de duplicata por passada de retry
+   (`!sig.expired_logged`) — herda essa proteção de graça. No máximo 1
+   mensagem por sinal que de fato expira, nunca por tick de ~5min.
+7. `scripts/backtestTelegram.js` e `scripts/adminTelegramShadow.js` (os 2
+   outros redirecionamentos de `./telegram` além do cron real, pro backtest
+   e pro modo sombra pausado) ganharam o no-op `notifySignalCanceled` —
+   achado durante a revisão "quem mais consome": sem isso, o import
+   nomeado em `scanner.js` ficaria órfão nesses 2 bundles esbuild. Os 4
+   bundles (`build-scan.mjs`/`build-backtest.mjs`/`build-scan-shadow.mjs`/
+   `build-backfill.mjs`) foram rodados manualmente pra confirmar que
+   resolvem sem erro.
+
+**Testes**: `scannerStateMachine.test.js` — 4 regressões novas (dispara uma
+vez por sinal RF/SMC notificado que expira, não dispara se `notified` for
+false/ausente, não conflita com Time Stop na mesma passada);
+`telegram.test.js`/`adminTelegram.test.js` — describe novo cobrindo
+cabeçalho, reuso de `rejectionCopy()`, ausência de linha de Resultado,
+duração, filtro de evento (só no canal navegador — o cron não tem UI pra
+isso) e a extensão do filtro de origem; `TelegramSettings.test.jsx` —
+`EXPECTED_LABELS` estendido (teste-guarda do item 1.8 cobre o resto
+automaticamente). Um teste pré-existente
+(`getTelegramFilters > merges the new default events...`) precisou isolar-se
+da nova migração (`_migratedEvents20261002: true`) pra manter sua asserção
+de contagem exata — mesma convenção já usada pras migrações anteriores.
+
+**Verificação**: `npm run lint` limpo; `npm test` 2290 passed, 58 skipped, 0
+failed (era 2275 antes desta rodada); `npm run build` ok. Confirmado sem
+impacto em `RecentAlertsList.jsx`/`MonthlyReport.jsx` (sem referência ao
+evento novo) e em `AssetConfigPanel.jsx` (filtro por-ativo já agnóstico de
+evento, cobre `signal_canceled` de graça). **Não verificado**: envio real de
+mensagem pro Telegram — mesma pendência das Fases 1/2, sem bot configurado
+neste ambiente.
+
+**Fora de escopo desta fase** (fica para as Fases 4-5): arquitetura
+unificada `NotificationEvent`/saúde real do Telegram/timeline por sinal
+(Fase 4), deep link por operação específica/animações/modo silencioso
+(Fase 5).

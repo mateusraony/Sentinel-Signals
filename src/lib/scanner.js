@@ -57,6 +57,7 @@ import {
   notifyInvalidated,
   notifyTimeStop,
   notifyChopExit,
+  notifySignalCanceled,
 } from './telegram';
 
 const TIMEFRAMES = ['1h', '4h', '1d'];
@@ -2997,6 +2998,14 @@ export async function persistScanResults(scanResult) {
           timeframe: '4h',
           details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '4h_15m', last_rejection_reason: sig.last_rejection_reason ?? null, last_rejection_detail: sig.last_rejection_detail ?? null, last_rejection_at: sig.last_rejection_at ?? null },
         });
+        // Auditoria do Telegram (2026-10-02), Fase 3, docs/known-risks.md
+        // item 117 — dentro do MESMO bloco write-once do log acima, então
+        // herda a mesma proteção contra duplicata por passada de retry
+        // (nunca dispara de novo pro mesmo sinal). `sig.notified === true`
+        // evita avisar sobre o cancelamento de um sinal que o usuário nunca
+        // chegou a ser avisado que existia (Telegram em cooldown/desconfigurado
+        // na hora da criação).
+        if (sig.notified === true && isTelegramConfigured()) notifySignalCanceled(sig, asset).catch(() => {});
       }
       continue; // stale, skip
     }
@@ -3431,6 +3440,10 @@ export async function persistScanResults(scanResult) {
             timeframe: '1h',
             details: { dedup_key: sig.dedup_key, signal_created_at: sig.created_date, cascade: '1h_5m', last_rejection_reason: sig.last_rejection_reason ?? null, last_rejection_detail: sig.last_rejection_detail ?? null, last_rejection_at: sig.last_rejection_at ?? null },
           });
+          // Auditoria do Telegram (2026-10-02), Fase 3 — mesmo fix/raciocínio
+          // do retry RF acima (dentro do bloco write-once, gate por
+          // sig.notified).
+          if (sig.notified === true && isTelegramConfigured()) notifySignalCanceled(sig, asset).catch(() => {});
         }
         continue; // stale, skip
       }
