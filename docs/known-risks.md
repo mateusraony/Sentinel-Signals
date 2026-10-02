@@ -29405,3 +29405,15 @@ neste ambiente.
 unificada `NotificationEvent`/saúde real do Telegram/timeline por sinal
 (Fase 4), deep link por operação específica/animações/modo silencioso
 (Fase 5).
+
+**Addendum 2026-10-02 — 1 achado real do Codex review (PR #450, pós-merge),
+corrigido no PR #451**: `sig.is_dismissed` só era checado DEPOIS do bloco de
+expiração em `scanner.js` (o branch `continue`s antes de chegar lá) — um
+sinal que o usuário já tinha arquivado manualmente ("Arquivar", item 1.7)
+ainda disparava "Sinal Cancelado" no Telegram horas depois, ao expirar,
+reabrindo um aviso que o usuário já tinha dito que não queria ver mais.
+Corrigido adicionando `!sig.is_dismissed` à condição de disparo nos 2 pontos
+(RF 4h→15m e SMC 1h→5m) — o bookkeeping (`expired_logged`/`SystemLog`)
+continua rodando normalmente, só a notificação mudou. Regressão nova pros 2
+caminhos em `scannerStateMachine.test.js`. `npm test` em 2292 passed (era
+2290), lint e build seguem verdes. PR mesclado em `713b37f`.
