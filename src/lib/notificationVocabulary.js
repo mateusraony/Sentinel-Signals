@@ -29,6 +29,10 @@ export const NOTIFICATION_STAGES = {
   INVALIDATED: { emoji: '⚠️', label: 'Sinal Invalidado' },
   TIME_STOP: { emoji: '⏱️', label: 'Time Stop' },
   CHOP_EXIT: { emoji: '🌊', label: 'Chop Exit' },
+  // Fase 3 (2026-10-02) — sinal que expira sem NUNCA ter virado operação
+  // (categoria diferente de INVALIDATED/TIME_STOP/CHOP_EXIT, que fecham uma
+  // operação já ABERTA). Emoji distinto de propósito, ver regra acima.
+  SIGNAL_CANCELED: { emoji: '🚫', label: 'Sinal Cancelado' },
 };
 
 /** `${emoji} ${label}` pronto pra usar num cabeçalho de mensagem. */

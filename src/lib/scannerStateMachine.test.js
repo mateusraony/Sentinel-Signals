@@ -26,6 +26,7 @@ vi.mock('./telegram', () => ({
   notifyInvalidated: vi.fn().mockResolvedValue(undefined),
   notifyTimeStop: vi.fn().mockResolvedValue(undefined),
   notifyChopExit: vi.fn().mockResolvedValue(undefined),
+  notifySignalCanceled: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('./logger', () => ({
   logInfo: vi.fn(),
@@ -42,7 +43,7 @@ vi.mock('./marketDataProvider', () => ({
 
 import * as entitiesModule from '@/api/entities';
 import { fetchCurrentPrice, fetchCandles } from './marketDataProvider';
-import { isTelegramConfigured, notifyNewSignal, notifyVerificationTask, notifyInvalidated, notifyTimeStop, notifyChopExit, notifyStopHit, notifyTP2Hit } from './telegram';
+import { isTelegramConfigured, notifyNewSignal, notifyVerificationTask, notifyInvalidated, notifyTimeStop, notifyChopExit, notifyStopHit, notifyTP2Hit, notifySignalCanceled } from './telegram';
 import { persistScanResults, priceCheckActiveOps, activateSignalManually, hasActiveTradeOps, buildTradeOpData, buildSmcTradeOpData, resolveIndicatorParams, resolveRsiZoneThresholds, resolveRangeFilterParams, firstPositive, firstPositiveInteger } from './scanner.js';
 import { calculateSmcSignalStrength } from './indicators/smcConfluence.js';
 import { ARBITRATION_VERSION } from './signalArbitration.js';
@@ -3977,6 +3978,87 @@ describe('persistScanResults — expiração silenciosa de sinal (item 47.2)', (
     expect(stored[0].expired_logged).toBeFalsy();
     const logs = await backend.entities.SystemLog.filter({});
     expect(logs.some((l) => l.message?.includes('sinal expirou sem nunca confirmar entrada'))).toBe(false);
+  });
+});
+
+// Auditoria do Telegram (2026-10-02), Fase 3 — docs/known-risks.md item
+// 117 (caso real do ENAUSDT: usuário viu o próprio Pine dar BUY sem nenhum
+// aviso de que o sinal não ia virar operação). notifySignalCanceled agora
+// dispara junto com o log de expiração acima, nos 2 pontos de PRODUÇÃO
+// (RF 4h→15m nativa e SMC 1h→5m) — nunca nas 2 cascatas RF_1H_COND/UNCOND
+// (backtest-only, modo sombra pausado).
+describe('persistScanResults — notifySignalCanceled na expiração de sinal (Auditoria do Telegram, Fase 3)', () => {
+  it('REGRESSÃO: dispara notifySignalCanceled quando um sinal RF notificado expira sem confirmar, e não repete no scan seguinte', async () => {
+    isTelegramConfigured.mockReturnValue(true);
+    backend._seed('SignalEvent', {
+      id: 'sig_stale_notified', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_stale_notified', notified: true,
+      created_date: '2026-07-16T07:00:00.000Z', // 5h antes do "now" congelado (12:00)
+    });
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults(makeScanResult({ results, pineConfig }));
+    expect(notifySignalCanceled).toHaveBeenCalledTimes(1);
+    expect(notifySignalCanceled.mock.calls[0][0].dedup_key).toBe('sig_stale_notified');
+
+    // Segunda passada — expired_logged já é true, não deve disparar de novo.
+    await persistScanResults(makeScanResult({ results, pineConfig }));
+    expect(notifySignalCanceled).toHaveBeenCalledTimes(1);
+  });
+
+  it('REGRESSÃO: NÃO dispara notifySignalCanceled quando o sinal nunca foi notificado (notified: false/ausente)', async () => {
+    isTelegramConfigured.mockReturnValue(true);
+    backend._seed('SignalEvent', {
+      id: 'sig_stale_unnotified', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_stale_unnotified', // notified ausente
+      created_date: '2026-07-16T07:00:00.000Z',
+    });
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '4h': makeTfData() };
+
+    await persistScanResults(makeScanResult({ results, pineConfig }));
+    const stored = await backend.entities.SignalEvent.filter({ dedup_key: 'sig_stale_unnotified' });
+    expect(stored[0].expired_logged).toBe(true); // log continua acontecendo
+    expect(notifySignalCanceled).not.toHaveBeenCalled(); // mas não notifica
+  });
+
+  it('REGRESSÃO: dispara notifySignalCanceled quando um sinal SMC notificado expira sem confirmar', async () => {
+    isTelegramConfigured.mockReturnValue(true);
+    const asset = makeAsset({ smc_enabled: true });
+    backend._seed('SignalEvent', {
+      id: 'sig_smc_stale_notified', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '1h', signal_type: 'BUY',
+      source: 'smc_structure', dedup_key: 'sig_smc_stale_notified', notified: true,
+      created_date: '2026-07-16T07:00:00.000Z',
+    });
+    const pineConfig = makePineConfig({ useADX: false, useChop: false });
+    const results = { '1h': makeTfData() };
+
+    await persistScanResults(makeScanResult({ asset, results, pineConfig }));
+    expect(notifySignalCanceled).toHaveBeenCalledTimes(1);
+    expect(notifySignalCanceled.mock.calls[0][0].dedup_key).toBe('sig_smc_stale_notified');
+  });
+
+  // Estrutural, não só comportamental: Time Stop fecha uma TradeOperation já
+  // ABERTA; notifySignalCanceled dispara num SignalEvent SEM TradeOperation
+  // nenhuma — confirma que os 2 disparam de forma independente na MESMA
+  // passada pro mesmo ativo, sem um pisar no outro (item 3.6 do plano).
+  it('NÃO conflita com Time Stop — os dois disparam independentes na mesma passada', async () => {
+    isTelegramConfigured.mockReturnValue(true);
+    backend._seed('TradeOperation', makeOp({ candle_close_time: '2026-07-01T00:00:00.000Z' })); // far in the past, triggers Time Stop
+    backend._seed('SignalEvent', {
+      id: 'sig_stale_notified_2', asset_id: 'asset1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+      source: 'range_filter', dedup_key: 'sig_stale_notified_2', notified: true, // different dedup_key from op1 — never "owns" it
+      created_date: '2026-07-16T07:00:00.000Z',
+    });
+    const pineConfig = makePineConfig({ useTimeStop: true });
+    const results = { '4h': makeTfData({ lastCandleHigh: 101, lastCandleLow: 99 }) }; // no stop/TP1 hit on op1
+
+    await persistScanResults(makeScanResult({ results, pineConfig }));
+
+    expect(notifyTimeStop).toHaveBeenCalledTimes(1);
+    expect(notifySignalCanceled).toHaveBeenCalledTimes(1);
+    expect(notifySignalCanceled.mock.calls[0][0].dedup_key).toBe('sig_stale_notified_2');
   });
 });
 

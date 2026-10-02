@@ -17,6 +17,7 @@ import { explainOperationDecision } from '../src/lib/decisionExplanation.js';
 import { shortSourceLabel } from '../src/lib/signalSourceLabels.js';
 import { NOTIFICATION_STAGES, stageHeader } from '../src/lib/notificationVocabulary.js';
 import { classifyOutcome, calcRealizedR, calcRealizedPnlPct, getExitPrice } from '../src/lib/tradeMetrics.js';
+import { rejectionCopy, SIGNAL_PHASE } from '../src/lib/signalStatus.js';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { withTimeout } from './scanTimeout.mjs';
@@ -50,7 +51,7 @@ const DEFAULT_FILTERS = {
   timeframes: ['1h', '4h', '1d'],
   min_priority: 'low',
   signal_types: ['BUY', 'SELL'],
-  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit', 'verification_task_created'],
+  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit', 'verification_task_created', 'signal_canceled'],
   min_score: 0,
 };
 
@@ -98,14 +99,16 @@ async function shouldSend(event, data, asset) {
   if (f.events && !f.events.includes(event)) return false;
 
   // Signal-source filter — mesmo guard de evento de src/lib/telegram.js: só
-  // signal_detected usa este vocabulário de `source` (RF/SMC/MACD/EMA/RSI);
-  // os demais eventos carregam uma TradeOperation, cujo `source` é um enum
-  // não relacionado (scanner/scanner_smc/tradingview_webhook/manual).
+  // signal_detected/signal_canceled usam este vocabulário de `source`
+  // (RF/SMC/MACD/EMA/RSI) — os demais eventos carregam uma TradeOperation,
+  // cujo `source` é um enum não relacionado (scanner/scanner_smc/
+  // tradingview_webhook/manual). signal_canceled (Fase 3, 2026-10-02)
+  // compartilha o mesmo payload SignalEvent de signal_detected.
   //
   // asset.notify_sources, quando definido, SUBSTITUI o filtro global (não
   // combina) — mesma convenção de rsi_overbought/oversold. Só lê o
   // Firestore (loadTelegramSources) quando não há override por-ativo.
-  if (event === 'signal_detected' && KNOWN_SOURCES.includes(data.source)) {
+  if ((event === 'signal_detected' || event === 'signal_canceled') && KNOWN_SOURCES.includes(data.source)) {
     const sources = asset?.notify_sources ?? await loadTelegramSources();
     if (!sources.includes(data.source)) return false;
   }
@@ -115,7 +118,7 @@ async function shouldSend(event, data, asset) {
   if (f.timeframes && tf && !f.timeframes.includes(tf)) return false;
 
   const side = data.signal_type || data.side;
-  const signalTypes = (event === 'signal_detected' && asset?.notify_signal_types) || f.signal_types;
+  const signalTypes = ((event === 'signal_detected' || event === 'signal_canceled') && asset?.notify_signal_types) || f.signal_types;
   if (signalTypes && side && !signalTypes.includes(side)) return false;
 
   if (f.min_priority && f.min_priority !== 'low') {
@@ -276,6 +279,38 @@ export async function notifyVerificationTask(signal, asset) {
     `➡️ Próximo passo: revisar e marcar OK/Pular no painel.\n` +
     `📡 Fonte: ${sourceLabel}\n\n` +
     `${panelLink('/verification')}\n\n` +
+    `<i>⚡ Sentinel Signals</i>`
+  );
+}
+
+// Mirrors src/lib/telegram.js's notifySignalCanceled — Fase 3 da auditoria
+// do Telegram (2026-10-02, docs/known-risks.md item 117). Sinal que
+// expirou sem NUNCA confirmar entrada; "Por quê" reusa rejectionCopy()
+// (src/lib/signalStatus.js), a MESMA tradução já usada no Dashboard.
+export async function notifySignalCanceled(signal, asset) {
+  if (!(await shouldSend('signal_canceled', signal, asset))) return;
+  const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
+  const sourceLabel = shortSourceLabel(signal.source);
+  const scoreLine = Number.isFinite(signal.context?.score)
+    ? `📊 Score no sinal: ${signal.context.score}/100\n`
+    : '';
+  const { detail } = rejectionCopy(signal, SIGNAL_PHASE.EXPIRED);
+  const createdMs = new Date(signal.created_date).getTime();
+  const durationMs = Number.isFinite(createdMs) ? Date.now() - createdMs : null;
+  const durationLine = Number.isFinite(durationMs) && durationMs >= 0
+    ? `⏳ Esperou: ${formatBackfillLag(durationMs)}\n`
+    : '';
+  return send(
+    `${stageHeader('SIGNAL_CANCELED')} — ${sourceLabel}\n\n` +
+    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n\n` +
+    `🚫 Situação: este aviso expirou sem nunca confirmar entrada — nenhuma operação foi aberta.\n\n` +
+    `📝 Por quê: ${escaparHtml(detail)}\n\n` +
+    `💰 Preço no sinal: $${fmtP(signal.price_at_signal)}\n` +
+    scoreLine +
+    durationLine + '\n' +
+    `➡️ Próximo passo: nenhum — este aviso não abriu operação.\n` +
+    `📡 Fonte: ${sourceLabel}\n\n` +
+    `${panelLink('/alerts')}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }

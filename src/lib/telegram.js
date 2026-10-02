@@ -11,6 +11,7 @@ import { explainOperationDecision } from './decisionExplanation';
 import { shortSourceLabel } from './signalSourceLabels';
 import { NOTIFICATION_STAGES, stageHeader } from './notificationVocabulary';
 import { classifyOutcome, calcRealizedR, calcRealizedPnlPct, getExitPrice } from './tradeMetrics';
+import { rejectionCopy, SIGNAL_PHASE } from './signalStatus';
 
 const STORAGE_KEY = 'cryptoradar_telegram_cfg';
 const FILTERS_KEY = 'tg_filters';
@@ -40,7 +41,7 @@ const DEFAULT_FILTERS = {
   // invalidated/time_stop/chop_exit added 2026-07-18 (known-risks.md item
   // 29) — a closed/invalidated operation is at least as informative to the
   // user as a stop hit, so on by default like the other closure events.
-  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit', 'verification_task_created'],
+  events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit', 'invalidated', 'time_stop', 'chop_exit', 'verification_task_created', 'signal_canceled'],
   min_score: 0,
   // Signal SOURCE (as opposed to the events above, which are trade-lifecycle
   // moments). Only matters for signal_detected — see shouldSend. No migration
@@ -68,6 +69,11 @@ const MIGRATION_FLAG = '_migratedEvents20260718';
 const NEW_EVENTS_2026_08_10 = ['verification_task_created'];
 const MIGRATION_FLAG_2 = '_migratedEvents20260810';
 
+// Fase 3 da auditoria do Telegram (2026-10-02) — mesmo mecanismo, para quem
+// já salvou filtro antes de "signal_canceled" existir.
+const NEW_EVENTS_2026_10_02 = ['signal_canceled'];
+const MIGRATION_FLAG_3 = '_migratedEvents20261002';
+
 export function getTelegramFilters() {
   try {
     const stored = JSON.parse(localStorage.getItem(FILTERS_KEY));
@@ -82,6 +88,11 @@ export function getTelegramFilters() {
     if (!result[MIGRATION_FLAG_2] && Array.isArray(result.events)) {
       const missing = NEW_EVENTS_2026_08_10.filter((e) => !result.events.includes(e));
       result = { ...result, events: [...result.events, ...missing], [MIGRATION_FLAG_2]: true };
+      changed = true;
+    }
+    if (!result[MIGRATION_FLAG_3] && Array.isArray(result.events)) {
+      const missing = NEW_EVENTS_2026_10_02.filter((e) => !result.events.includes(e));
+      result = { ...result, events: [...result.events, ...missing], [MIGRATION_FLAG_3]: true };
       changed = true;
     }
     if (changed) setTelegramFilters(result);
@@ -132,19 +143,21 @@ function shouldSend(event, data, asset) {
   if (f.events && !f.events.includes(event)) return false;
 
   // Signal-source filter (RF/SMC/MACD/EMA Cross/RSI) — gated to
-  // signal_detected on purpose. That's the only event whose payload is a
-  // SignalEvent using this source vocabulary; every other event's payload is
-  // a TradeOperation, whose OWN `source` field is a different, unrelated
-  // enum (scanner/scanner_smc/tradingview_webhook/manual — see
-  // docs/schema-reference/TradeOperation.jsonc). Checking data.source
-  // unconditionally would collide with that field and silently drop every
-  // entry/TP/stop notification.
+  // signal_detected/signal_canceled on purpose. Those are the only events
+  // whose payload is a SignalEvent using this source vocabulary; every other
+  // event's payload is a TradeOperation, whose OWN `source` field is a
+  // different, unrelated enum (scanner/scanner_smc/tradingview_webhook/
+  // manual — see docs/schema-reference/TradeOperation.jsonc). Checking
+  // data.source unconditionally would collide with that field and silently
+  // drop every entry/TP/stop notification. signal_canceled (Fase 3, 2026-
+  // 10-02) shares signal_detected's exact payload shape — same SignalEvent,
+  // same source field — so it belongs in the same exception, not a new one.
   //
   // Per-asset override (known-risks item 47): asset.notify_sources, when
   // set, REPLACES the global f.sources for this asset entirely (not
   // intersected) — same "explicit per-asset value wins" convention already
   // used by rsi_overbought/rsi_oversold. Absent = inherit the global filter.
-  if (event === 'signal_detected') {
+  if (event === 'signal_detected' || event === 'signal_canceled') {
     const sources = asset?.notify_sources ?? f.sources;
     if (sources && KNOWN_SOURCES.includes(data.source) && !sources.includes(data.source)) return false;
   }
@@ -153,16 +166,18 @@ function shouldSend(event, data, asset) {
   // what the UI lets the user pick from. data.timeframe alone would be the
   // ENTRY-confirmation candle (15m/5m) for trade-lifecycle events, which
   // never matches any configured filter and silently drops every
-  // entry/TP/stop notification (only signal_detected has a matching value).
+  // entry/TP/stop notification (only signal_detected/signal_canceled have a
+  // matching value — same SignalEvent payload shape, see source filter above).
   const tf = data.signal_timeframe || data.timeframe;
   if (f.timeframes && tf && !f.timeframes.includes(tf)) return false;
 
-  // Signal type filter (BUY/SELL). Per-asset override, signal_detected only
-  // — same reasoning and precedence as the source filter above: a muted
-  // side for THIS asset's new-signal alerts must never also silence a
-  // legitimately open position's TP/stop notifications on that same asset.
+  // Signal type filter (BUY/SELL). Per-asset override, signal_detected/
+  // signal_canceled only — same reasoning and precedence as the source
+  // filter above: a muted side for THIS asset's new-signal alerts must never
+  // also silence a legitimately open position's TP/stop notifications on
+  // that same asset.
   const side = data.signal_type || data.side;
-  const signalTypes = (event === 'signal_detected' && asset?.notify_signal_types) || f.signal_types;
+  const signalTypes = ((event === 'signal_detected' || event === 'signal_canceled') && asset?.notify_signal_types) || f.signal_types;
   if (signalTypes && side && !signalTypes.includes(side)) return false;
 
   // Priority filter
@@ -327,6 +342,44 @@ export async function notifyVerificationTask(signal, asset) {
     `➡️ Próximo passo: revisar e marcar OK/Pular no painel.\n` +
     `📡 Fonte: ${sourceLabel}\n\n` +
     `${panelLink('/verification')}\n\n` +
+    `<i>⚡ Sentinel Signals</i>`
+  );
+}
+
+// Fase 3 da auditoria do Telegram (2026-10-02, docs/known-risks.md item
+// 117) — sinal que expirou sem NUNCA confirmar entrada (nenhuma
+// TradeOperation foi criada). Categoria diferente de invalidated/time_stop/
+// chop_exit, que fecham uma operação já ABERTA — aqui não existe operação,
+// então não há linha de Resultado/R.
+//
+// "Por quê" reusa rejectionCopy() (src/lib/signalStatus.js, item 163) — a
+// MESMA tradução de last_rejection_reason/last_rejection_detail que já
+// aparece no Dashboard (Trades.jsx/SignalChecklist.jsx) — em vez de
+// inventar um texto novo só pro Telegram.
+export async function notifySignalCanceled(signal, asset) {
+  if (!shouldSend('signal_canceled', signal, asset)) return;
+  const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
+  const sourceLabel = shortSourceLabel(signal.source);
+  const scoreLine = Number.isFinite(signal.context?.score)
+    ? `📊 Score no sinal: ${signal.context.score}/100\n`
+    : '';
+  const { detail } = rejectionCopy(signal, SIGNAL_PHASE.EXPIRED);
+  const createdMs = new Date(signal.created_date).getTime();
+  const durationMs = Number.isFinite(createdMs) ? Date.now() - createdMs : null;
+  const durationLine = Number.isFinite(durationMs) && durationMs >= 0
+    ? `⏳ Esperou: ${formatBackfillLag(durationMs)}\n`
+    : '';
+  return send(
+    `${stageHeader('SIGNAL_CANCELED')} — ${sourceLabel}\n\n` +
+    `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n\n` +
+    `🚫 Situação: este aviso expirou sem nunca confirmar entrada — nenhuma operação foi aberta.\n\n` +
+    `📝 Por quê: ${escaparHtml(detail)}\n\n` +
+    `💰 Preço no sinal: $${fmtP(signal.price_at_signal)}\n` +
+    scoreLine +
+    durationLine + '\n' +
+    `➡️ Próximo passo: nenhum — este aviso não abriu operação.\n` +
+    `📡 Fonte: ${sourceLabel}\n\n` +
+    `${panelLink('/alerts')}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }

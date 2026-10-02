@@ -173,6 +173,59 @@ describe('adminTelegram — filtro de origem do sinal (lido de TelegramFilters/c
   });
 });
 
+// Auditoria do Telegram (2026-10-02), Fase 3 — espelho cron de
+// notifySignalCanceled (src/lib/telegram.test.js, mesmo comentário completo
+// lá). DEFAULT_FILTERS.events deste arquivo é estático (sem migração/
+// localStorage — "não perder nada" por design), então não há teste de
+// "evento desligado" aqui; o filtro de ORIGEM continua configurável via
+// TelegramFilters/current, igual ao canal navegador.
+describe('adminTelegram — notifySignalCanceled (Auditoria do Telegram, Fase 3)', () => {
+  function baseExpiredSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter',
+      price_at_signal: 100, dedup_key: 'sig1',
+      created_date: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2h ago
+      ...overrides,
+    };
+  }
+
+  it('usa o cabeçalho "Sinal Cancelado", sem nenhuma linha de Resultado', async () => {
+    telegramFiltersGetMock.mockResolvedValue(doc(['range_filter']));
+    const { notifySignalCanceled } = await import('./adminTelegram.js');
+    await notifySignalCanceled(baseExpiredSignal());
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Sinal Cancelado');
+    expect(text).toContain('nenhuma operação foi aberta');
+    expect(text).not.toContain('Resultado:');
+  });
+
+  it('"Por quê" reusa rejectionCopy() — motivo conhecido traduz pra linguagem simples, não o código cru', async () => {
+    telegramFiltersGetMock.mockResolvedValue(doc(['range_filter']));
+    const { notifySignalCanceled } = await import('./adminTelegram.js');
+    await notifySignalCanceled(baseExpiredSignal({ last_rejection_reason: 'regime_rejected', last_rejection_detail: 'adx' }));
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Movimento sem força');
+    expect(text).not.toContain('regime_rejected');
+  });
+
+  it('mostra a duração desde o sinal', async () => {
+    telegramFiltersGetMock.mockResolvedValue(doc(['range_filter']));
+    const { notifySignalCanceled } = await import('./adminTelegram.js');
+    await notifySignalCanceled(baseExpiredSignal());
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Esperou: 2h');
+  });
+
+  // Achado/decisão da Fase 3: o filtro de ORIGEM, antes só aplicado a
+  // signal_detected, agora também vale pra signal_canceled.
+  it('respeita o filtro de ORIGEM — mesmo mecanismo de signal_detected, agora estendido aqui', async () => {
+    telegramFiltersGetMock.mockResolvedValue(doc(['smc_structure'])); // só SMC liberado
+    const { notifySignalCanceled } = await import('./adminTelegram.js');
+    await notifySignalCanceled(baseExpiredSignal({ source: 'range_filter' }));
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
 // Auditoria do Telegram (2026-09-29), item 1.3/1.4 — mesmos dois bugs do
 // canal navegador (src/lib/telegram.test.js), aqui no espelho cron.
 describe('adminTelegram — escape de HTML e fallback de fonte desconhecida (Auditoria do Telegram, item 1.3/1.4)', () => {

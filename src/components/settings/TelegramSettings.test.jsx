@@ -106,6 +106,7 @@ describe('TelegramSettings — todo evento de DEFAULT_FILTERS.events tem um togg
     time_stop: 'Time Stop',
     chop_exit: 'Chop Exit',
     verification_task_created: 'Tarefa de verificação criada',
+    signal_canceled: 'Sinal cancelado',
   };
 
   it('renderiza um toggle com rótulo reconhecível para cada evento ligado por padrão', async () => {

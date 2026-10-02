@@ -20,7 +20,7 @@ vi.mock('@/api/entities', () => ({
   backend: { entities: { TelegramFilters: { set: telegramFiltersSetMock } } },
 }));
 
-import { getTelegramFilters, notifyNewSignal, notifyVerificationTask, notifyTradeCreated, notifyStopHit, notifyInvalidated, setTelegramFilters } from './telegram.js';
+import { getTelegramFilters, notifyNewSignal, notifyVerificationTask, notifyTradeCreated, notifyStopHit, notifyInvalidated, notifySignalCanceled, setTelegramFilters } from './telegram.js';
 import { logWarn } from './logger';
 
 function makeLocalStorage() {
@@ -53,6 +53,7 @@ describe('getTelegramFilters', () => {
       events: ['signal_detected', 'entry_confirmed', 'tp1_hit', 'tp2_hit', 'stop_hit'], // pre-2026-07-18 shape
       min_score: 0,
       _migratedEvents20260810: true, // isolates this test to the 07-18 migration only
+      _migratedEvents20261002: true, // idem — isolates from the Fase 3 (signal_canceled) migration
     }));
 
     const filters = getTelegramFilters();
@@ -259,6 +260,88 @@ describe('notifyNewSignal — source-aware label and score (Codex review, PR #65
     const text = await sentText(baseSignal({ source: 'something_new' }));
     expect(text).toContain('Sinal Detectado — Outra fonte');
     expect(text).not.toContain('Sinal Detectado — RF');
+  });
+});
+
+// Auditoria do Telegram (2026-10-02), Fase 3 — docs/known-risks.md item 117
+// (caso real do ENAUSDT). notifySignalCanceled dispara quando um sinal
+// expira sem nunca confirmar entrada; "Por quê" reusa rejectionCopy()
+// (src/lib/signalStatus.js) em vez de um texto novo.
+describe('notifySignalCanceled (Auditoria do Telegram, Fase 3)', () => {
+  beforeEach(() => {
+    localStorage.setItem('cryptoradar_telegram_cfg', JSON.stringify({ botToken: 'x', chatId: 'y' }));
+    localStorage.setItem('tg_filters', JSON.stringify({
+      timeframes: ['1h', '4h', '1d'], min_priority: 'low', signal_types: ['BUY', 'SELL'],
+      events: ['signal_detected', 'signal_canceled'], min_score: 0,
+    }));
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' });
+  });
+
+  function baseSignal(overrides = {}) {
+    return {
+      symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter',
+      price_at_signal: 100, dedup_key: 'sig1',
+      created_date: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2h ago
+      ...overrides,
+    };
+  }
+
+  it('usa o cabeçalho "Sinal Cancelado", sem nenhuma linha de Resultado', async () => {
+    await notifySignalCanceled(baseSignal());
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Sinal Cancelado');
+    expect(text).toContain('nenhuma operação foi aberta');
+    expect(text).not.toContain('Resultado:');
+  });
+
+  it('"Por quê" reusa rejectionCopy() — motivo conhecido traduz pra linguagem simples, não o código cru', async () => {
+    await notifySignalCanceled(baseSignal({ last_rejection_reason: 'regime_rejected', last_rejection_detail: 'adx' }));
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Movimento sem força');
+    expect(text).not.toContain('regime_rejected'); // nunca o código técnico cru
+  });
+
+  it('sem last_rejection_reason salvo, cai no fallback "não guardou o motivo", nunca em texto vazio', async () => {
+    await notifySignalCanceled(baseSignal());
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('não guardou o motivo técnico exato');
+  });
+
+  it('mostra a duração desde o sinal', async () => {
+    await notifySignalCanceled(baseSignal());
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).toContain('Esperou: 2h');
+  });
+
+  it('respeita o filtro de evento — não envia quando "signal_canceled" está desligado', async () => {
+    // Flags de migração marcadas como já rodadas — senão getTelegramFilters()
+    // re-adiciona signal_canceled de volta (é o comportamento CORRETO pra
+    // quem salvou filtro antes da Fase 3 existir; aqui simulamos alguém que
+    // já leu o filtro migrado e DESLIGOU o toggle deliberadamente).
+    localStorage.setItem('tg_filters', JSON.stringify({
+      events: ['signal_detected'],
+      _migratedEvents20260718: true, _migratedEvents20260810: true, _migratedEvents20261002: true,
+    }));
+    await notifySignalCanceled(baseSignal());
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  // Achado/decisão da Fase 3: o filtro de ORIGEM (sources), antes só
+  // aplicado a signal_detected, agora também vale pra signal_canceled —
+  // o payload é o MESMO SignalEvent, com o mesmo vocabulário de `source`.
+  it('respeita o filtro de ORIGEM — mesmo mecanismo de signal_detected, agora estendido aqui', async () => {
+    localStorage.setItem('tg_filters', JSON.stringify({
+      events: ['signal_canceled'], sources: ['smc_structure'], // só SMC liberado
+    }));
+    await notifySignalCanceled(baseSignal({ source: 'range_filter' }));
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('escapa HTML em campos dinâmicos, igual aos demais notify*', async () => {
+    await notifySignalCanceled(baseSignal({ symbol: '<b>EVIL</b>USDT' }));
+    const text = JSON.parse(global.fetch.mock.calls[0][1].body).text;
+    expect(text).not.toContain('<b>EVIL</b>');
+    expect(text).toContain('&lt;b&gt;EVIL&lt;/b&gt;');
   });
 });
 

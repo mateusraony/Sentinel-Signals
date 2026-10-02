@@ -40,6 +40,10 @@ const EVENT_OPTIONS = [
   // DEFAULT_FILTERS.events (src/lib/telegram.js) e vinha ligado por padrão,
   // mas não tinha toggle nesta tela: o usuário não conseguia ver nem desligar.
   { id: 'verification_task_created', label: '🔎 Tarefa de verificação criada', desc: 'Quando um sinal de alta prioridade precisa de confirmação manual antes de virar operação' },
+  // Auditoria do Telegram (2026-10-02), Fase 3 — docs/known-risks.md item
+  // 117 (caso real do ENAUSDT: usuário via o Pine dar BUY no TradingView
+  // sem nenhum aviso de que aquele sinal específico não ia virar operação).
+  { id: 'signal_canceled', label: '🚫 Sinal cancelado', desc: 'Quando um sinal expira sem nunca confirmar entrada — nenhuma operação foi aberta' },
 ];
 
 // Filters are now stored/managed centrally in telegram.js — imported above
