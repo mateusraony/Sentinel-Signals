@@ -82,13 +82,17 @@ export function escaparHtml(texto) {
 // Auditoria do Telegram (2026-09-29), Fase 2 item 2.5 — link real pro
 // painel, fechando a última seção da anatomia fixa de mensagem. URL
 // pública do site estático (render.yaml `ALLOWED_ORIGIN`/serviço
-// `sentinel-signals`) — não é secret, já está commitada no repo. Só a
-// página geral (ex. `/trades`), não um deep link pra uma operação
-// específica — isso é a Fase 5 do plano, não implementada aqui.
+// `sentinel-signals`) — não é secret, já está commitada no repo.
 const PANEL_URL = 'https://sentinel-signals.onrender.com';
 
-export function panelLink(path) {
-  return `<a href="${PANEL_URL}${path}">Abrir no Sentinel</a>`;
+// Fase 5 da auditoria do Telegram (2026-10-02, item 5.4) — `id` opcional
+// vira `?id=` na URL, deep link pro item exato em vez de só a lista
+// genérica. As páginas-alvo (Alerts.jsx/Trades.jsx/Verification.jsx) leem
+// esse parâmetro e abrem/realçam o item correspondente; sem `id`,
+// comportamento idêntico ao de antes desta fase.
+export function panelLink(path, id) {
+  const query = id ? `?id=${encodeURIComponent(id)}` : '';
+  return `<a href="${PANEL_URL}${path}${query}">Abrir no Sentinel</a>`;
 }
 
 // docs/known-risks.md item 137 — pedido explícito do usuário: uma operação
@@ -154,7 +158,7 @@ export function buildSignalDetectedMessage(signal) {
     scoreLine + '\n' +
     `➡️ Próximo passo: aguardar a confirmação de entrada pelo motor.\n` +
     `📡 Fonte: ${sourceLabel}\n\n` +
-    `${panelLink('/alerts')}\n\n` +
+    `${panelLink('/alerts', signal.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -162,6 +166,9 @@ export function buildSignalDetectedMessage(signal) {
 // signal here is the SignalEvent that triggered the VerificationTask (same
 // shape buildSignalDetectedMessage receives) — used both on automatic
 // creation (scanner.js) and on manual resend from the Verification page.
+// `signal.id` is the SignalEvent id, not the VerificationTask's own id —
+// Verification.jsx matches it against `task.signal_event_id` (the field
+// that already links the two), not `task.id`.
 export function buildVerificationTaskMessage(signal) {
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
@@ -178,7 +185,7 @@ export function buildVerificationTaskMessage(signal) {
     `📝 Por quê: ${escaparHtml(signal.reason) || 'não informado'}\n\n` +
     `➡️ Próximo passo: revisar e marcar OK/Pular no painel.\n` +
     `📡 Fonte: ${sourceLabel}\n\n` +
-    `${panelLink('/verification')}\n\n` +
+    `${panelLink('/verification', signal.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -214,7 +221,7 @@ export function buildSignalCanceledMessage(signal) {
     durationLine + '\n' +
     `➡️ Próximo passo: nenhum — este aviso não abriu operação.\n` +
     `📡 Fonte: ${sourceLabel}\n\n` +
-    `${panelLink('/alerts')}\n\n` +
+    `${panelLink('/alerts', signal.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -235,7 +242,7 @@ export function buildTradeCreatedMessage(op) {
     `📊 Score: ${op.score}/100\n\n` +
     `➡️ Próximo passo: aguardar o preço avançar para o TP1.\n` +
     `🔒 Gestão: ${op.partial_percent ?? 50}% no TP1, runner ${op.runner_percent ?? 50}%\n\n` +
-    `${panelLink('/trades')}\n\n` +
+    `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -261,7 +268,7 @@ export function buildTp1HitMessage(op, price) {
     `💰 Preço atual: $${fmtP(price)}\n` +
     (fullClose ? closureSummary(op) : `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n`) + '\n' +
     `➡️ Próximo passo: ${fullClose ? 'nenhum — operação encerrada.' : `aguardar o preço avançar para o TP2: $${fmtP(op.tp2)}.`}\n\n` +
-    `${panelLink('/trades')}\n\n` +
+    `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -278,7 +285,7 @@ export function buildTp2HitMessage(op, price) {
     `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
     `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
-    `${panelLink('/trades')}\n\n` +
+    `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -298,7 +305,7 @@ export function buildStopHitMessage(op, price) {
     closureSummary(op) +
     (op.exit_ambiguous ? AMBIGUOUS_EXIT_NOTE : '') + '\n' +
     `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
-    `${panelLink('/trades')}\n\n` +
+    `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -316,7 +323,7 @@ export function buildInvalidatedMessage(op, price) {
     `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
     `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
-    `${panelLink('/trades')}\n\n` +
+    `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -333,7 +340,7 @@ export function buildTimeStopMessage(op, price) {
     `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
     `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
-    `${panelLink('/trades')}\n\n` +
+    `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }
@@ -350,7 +357,7 @@ export function buildChopExitMessage(op, price) {
     `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
     `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
-    `${panelLink('/trades')}\n\n` +
+    `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
 }

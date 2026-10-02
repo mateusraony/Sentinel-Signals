@@ -320,3 +320,54 @@ describe('Verification — "Limpar filtros" aparece junto do empty state filtrad
     expect(search.value).toBe('');
   });
 });
+
+// Fase 5 da auditoria do Telegram (2026-10-02), item 5.4 — a mensagem do
+// Telegram agora linka `?id=<SignalEvent.id>` (não `task.id` — é o id do
+// SignalEvent que gerou a tarefa, ver comentário em notificationTemplates.js).
+// Esta página não tem dialog de detalhe por item — scroll+highlight
+// temporário no card correspondente é a ação equivalente.
+// `window.history.pushState` (não `route` de `renderPage`) — a leitura é via
+// `window.location.search` direto, mesmo padrão de Assets.jsx.
+describe('Verification — deep link ?id= realça a tarefa exata (item 5.4)', () => {
+  afterEach(() => window.history.pushState({}, '', '/'));
+
+  it('REGRESSÃO: ?id=<SignalEvent.id> força o filtro "Todas" e realça o card via signal_event_id', async () => {
+    verificationTaskFilterMock.mockResolvedValue([{ ...TASK, status: 'reviewed' }]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+    window.history.pushState({}, '', '/verification?id=sig1');
+
+    renderPage(<Verification />);
+
+    // status 'reviewed' ficaria escondido pelo filtro padrão ('pending') —
+    // o deep link precisa forçar "Todas" pra achar a tarefa.
+    const card = await screen.findByText('BTC/USDT');
+    await waitFor(() => {
+      expect(document.getElementById('verification-task-task1').style.boxShadow).not.toBe('');
+    });
+    expect(card).toBeTruthy();
+  });
+
+  it('?id= sem correspondência não quebra a página nem realça nada', async () => {
+    verificationTaskFilterMock.mockResolvedValue([TASK]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+    window.history.pushState({}, '', '/verification?id=nao_existe');
+
+    renderPage(<Verification />);
+
+    await screen.findByText('BTC/USDT');
+    expect(document.getElementById('verification-task-task1').style.boxShadow).toBe('');
+  });
+
+  it('sem ?id= na URL, comportamento inalterado — nenhum realce aplicado', async () => {
+    verificationTaskFilterMock.mockResolvedValue([TASK]);
+    monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
+    tradeOperationListMock.mockResolvedValue([]);
+
+    renderPage(<Verification />);
+
+    await screen.findByText('BTC/USDT');
+    expect(document.getElementById('verification-task-task1').style.boxShadow).toBe('');
+  });
+});

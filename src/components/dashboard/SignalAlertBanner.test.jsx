@@ -34,3 +34,16 @@ describe('SignalAlertBanner — badge de score usa Tooltip em vez de title= nati
     expect(badge.getAttribute('tabindex')).toBe('0');
   });
 });
+
+// Fase 5 da auditoria do Telegram (2026-10-02), item 5.2 — achado real:
+// único animate-pulse do Dashboard sem o guard motion-reduce que
+// AssetCard.jsx/SignalToast.jsx/TradeCard.jsx/index.css já têm.
+describe('SignalAlertBanner — ícone de sino respeita prefers-reduced-motion (item 5.2)', () => {
+  it('REGRESSÃO: o ícone de sino tem motion-reduce:animate-none na className', async () => {
+    const { container } = renderBanner([FRESH_SIGNAL]);
+    await screen.findByText(/Score 90\/100/);
+    const bell = container.querySelector('.animate-pulse');
+    expect(bell).not.toBeNull();
+    expect(bell.getAttribute('class')).toMatch(/motion-reduce:animate-none/);
+  });
+});

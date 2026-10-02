@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { notifyVerificationTask, isTelegramConfigured } from '@/lib/telegram';
@@ -123,6 +123,16 @@ export default function Verification() {
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState('date'); // 'date' | 'score'
   const [resendingId, setResendingId] = useState(null);
+  // Fase 5 da auditoria do Telegram (2026-10-02), item 5.4 — realça a
+  // tarefa que a mensagem do Telegram apontou (`?id=`, o id do SignalEvent
+  // que GEROU a tarefa — notifyVerificationTask só recebe esse objeto, não
+  // a VerificationTask). Combina com `signal_event_id`, o campo que já liga
+  // os dois (não `task.id`). Esta página não tem dialog de detalhe por
+  // item (diferente de Alerts.jsx/Trades.jsx) — scroll+highlight temporário
+  // é a ação equivalente, sem criar um modal novo só pra isso.
+  const [highlightedTaskId, setHighlightedTaskId] = useState(null);
+  const deepLinkSignalId = useRef(new URLSearchParams(window.location.search).get('id'));
+  const appliedDeepLink = useRef(false);
 
   // Filtra status/prioridade no SERVIDOR (não só no cliente) — com mais de
   // 200 tarefas no total, um `.list()` sem filtro cortaria nas mais recentes
@@ -139,6 +149,35 @@ export default function Verification() {
     }, '-created_date', 200),
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
+
+  // Força "Todas" quando há deep link — a tarefa apontada pode já ter sido
+  // revisada/pulada, e o filtro padrão ('pending') a esconderia da lista
+  // carregada antes mesmo de tentarmos encontrá-la.
+  useEffect(() => {
+    if (deepLinkSignalId.current) setStatusFilter('all');
+  }, []);
+
+  // Só tenta casar DEPOIS que o filtro virou 'all' E a query carregou —
+  // uma tentativa com a lista ainda filtrada por 'pending' (ou ainda
+  // carregando) daria falso negativo e desistiria pra sempre (appliedDeepLink
+  // marca de propósito só uma vez). Roda uma única vez por carregamento da
+  // página, com ou sem match — mesmo guard de Alerts.jsx/Trades.jsx.
+  useEffect(() => {
+    if (appliedDeepLink.current || !deepLinkSignalId.current) return;
+    if (statusFilter !== 'all' || isLoading) return;
+    const match = tasks.find(t => t.signal_event_id === deepLinkSignalId.current);
+    if (match) {
+      setHighlightedTaskId(match.id);
+      requestAnimationFrame(() => {
+        const el = document.getElementById(`verification-task-${match.id}`);
+        // jsdom (testes) não implementa scrollIntoView — guard de função,
+        // não só de elemento, pra não quebrar a suíte.
+        if (typeof el?.scrollIntoView === 'function') el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+      setTimeout(() => setHighlightedTaskId(null), 2500);
+    }
+    appliedDeepLink.current = true;
+  }, [tasks, statusFilter, isLoading]);
 
   // Contagem do badge do cabeçalho é independente do filtro ativo — sem isso,
   // trocar para a aba "Revisadas"/"Puladas" faria o número de pendentes
@@ -327,7 +366,8 @@ export default function Verification() {
             const badge = STATUS_BADGE[task.status] || STATUS_BADGE.pending;
             const asset = assets.find(a => a.id === task.asset_id);
             return (
-              <div key={task.id} className="glass-card rounded-xl p-4">
+              <div key={task.id} id={`verification-task-${task.id}`} className="glass-card rounded-xl p-4 transition-shadow duration-500"
+                style={highlightedTaskId === task.id ? { boxShadow: '0 0 0 2px rgba(0,229,255,0.5)' } : undefined}>
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">

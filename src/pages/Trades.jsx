@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import {
@@ -465,6 +465,22 @@ export default function Trades() {
     queryFn: () => backend.entities.TradeOperation.list('-created_date', 100),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
+
+  // Fase 5 da auditoria do Telegram (2026-10-02), item 5.4 — abre direto a
+  // operação que a mensagem do Telegram apontou (`?id=`), em vez de só a
+  // lista genérica. Mesmo guard de 1x-por-carregamento de Alerts.jsx — sem
+  // ele, o polling de `operations` (POLL_OPERATIONAL_MS) reabriria o modal
+  // sempre que o usuário o fechasse manualmente.
+  const appliedDeepLink = useRef(false);
+  useEffect(() => {
+    if (appliedDeepLink.current) return;
+    const id = new URLSearchParams(window.location.search).get('id');
+    if (!id) { appliedDeepLink.current = true; return; }
+    if (operations.length === 0) return;
+    const match = operations.find(op => op.id === id);
+    if (match) setEditingOp(match);
+    appliedDeepLink.current = true;
+  }, [operations]);
 
   const { data: recentSignals = [], isError: signalsError, refetch: refetchSignals } = useQuery({
     queryKey: ['recent-signals'],
