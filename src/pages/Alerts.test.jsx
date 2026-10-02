@@ -250,3 +250,36 @@ describe('Alerts — "Limpar filtros" aparece junto do empty state filtrado (Rou
     expect(search.value).toBe('');
   });
 });
+
+// Fase 5 da auditoria do Telegram (2026-10-02), item 5.4 — a mensagem do
+// Telegram agora linka `?id=<SignalEvent.id>`; esta página precisa abrir o
+// dialog de detalhe desse sinal sozinha, sem o usuário precisar procurar na
+// lista. `window.history.pushState` (não a prop `route` de `renderPage`)
+// porque a leitura é via `window.location.search` direto, mesmo padrão já
+// usado em Assets.jsx — `MemoryRouter` não reflete no DOM real.
+describe('Alerts — deep link ?id= abre o sinal exato (item 5.4)', () => {
+  afterEach(() => window.history.pushState({}, '', '/'));
+
+  it('REGRESSÃO: ?id=<id válido> abre o dialog de detalhe desse sinal', async () => {
+    estadoBackend.populated = true;
+    window.history.pushState({}, '', '/alerts?id=e1');
+    renderPage(<Alerts />);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/BTC\/USDT/)).toBeTruthy();
+  });
+
+  it('?id= sem correspondência na lista carregada não abre dialog nem quebra a página', async () => {
+    estadoBackend.populated = true;
+    window.history.pushState({}, '', '/alerts?id=nao_existe');
+    renderPage(<Alerts />);
+    await screen.findByText('BTC/USDT');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('sem ?id= na URL, comportamento inalterado — nenhum dialog abre sozinho', async () => {
+    estadoBackend.populated = true;
+    renderPage(<Alerts />);
+    await screen.findByText('BTC/USDT');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});

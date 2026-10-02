@@ -61,7 +61,11 @@ export default function SignalAlertBanner({ signals = [] }) {
           <div key={sig.id}
             className="flex items-center gap-3 px-4 py-2.5 rounded-xl"
             style={{ background: bgColor, border: `1px solid ${borderColor}`, boxShadow: `0 0 16px ${isBuy ? 'rgba(0,255,128,0.08)' : 'rgba(255,20,120,0.08)'}` }}>
-            <Bell className="w-3.5 h-3.5 shrink-0 animate-pulse" style={{ color: textColor }} />
+            {/* Fase 5 da auditoria do Telegram (2026-10-02), item 5.2 — achado
+                real de acessibilidade: único animate-pulse do Dashboard sem o
+                guard motion-reduce que AssetCard.jsx/SignalToast.jsx/
+                TradeCard.jsx/index.css já têm. */}
+            <Bell className="w-3.5 h-3.5 shrink-0 animate-pulse motion-reduce:animate-none" style={{ color: textColor }} />
             <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
               <span className="text-10px font-mono font-bold" style={{ color: textColor }}>
                 {NOTIFICATION_STAGES.SIGNAL_DETECTED.emoji} SINAL {sig.signal_type}

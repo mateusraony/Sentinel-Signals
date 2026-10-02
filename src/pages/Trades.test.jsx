@@ -522,3 +522,41 @@ describe('Trades — filtro "Buscar operação..." tem foco visível (achado A-7
     expect(search.className).toMatch(/focus-visible:ring-1 focus-visible:ring-ring/);
   });
 });
+
+// Fase 5 da auditoria do Telegram (2026-10-02), item 5.4 — a mensagem do
+// Telegram agora linka `?id=<TradeOperation.id>`; esta página precisa abrir
+// o EditModal dessa operação sozinha. `window.history.pushState` (não
+// `route` de `renderPage`) — a leitura é via `window.location.search`
+// direto, mesmo padrão de Assets.jsx; `MemoryRouter` não reflete no DOM real.
+describe('Trades — deep link ?id= abre a operação exata (item 5.4)', () => {
+  afterEach(() => window.history.pushState({}, '', '/'));
+
+  it('REGRESSÃO: ?id=<id válido> abre o EditModal dessa operação', async () => {
+    mockBackend({ operations: [ACTIVE_OP], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    window.history.pushState({}, '', '/trades?id=trade_sig1');
+    renderPage(<Trades />);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/PENDLE\/USDT/)).toBeTruthy();
+  });
+
+  it('?id= sem correspondência na lista carregada não abre modal nem quebra a página', async () => {
+    mockBackend({ operations: [ACTIVE_OP], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    window.history.pushState({}, '', '/trades?id=nao_existe');
+    renderPage(<Trades />);
+
+    await screen.findByText('PENDLE/USDT');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('sem ?id= na URL, comportamento inalterado — nenhum modal abre sozinho', async () => {
+    mockBackend({ operations: [ACTIVE_OP], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+
+    await screen.findByText('PENDLE/USDT');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});

@@ -56,6 +56,14 @@ describe('panelLink', () => {
   it('monta um link <a> absoluto pro painel público', () => {
     expect(panelLink('/trades')).toBe('<a href="https://sentinel-signals.onrender.com/trades">Abrir no Sentinel</a>');
   });
+
+  // Fase 5 da auditoria do Telegram (2026-10-02), item 5.4 — deep link.
+  it('com id, acrescenta ?id= (codificado) — sem id, comportamento idêntico ao de antes', () => {
+    expect(panelLink('/trades', 'trade_abc123')).toBe(
+      '<a href="https://sentinel-signals.onrender.com/trades?id=trade_abc123">Abrir no Sentinel</a>',
+    );
+    expect(panelLink('/trades', undefined)).toBe('<a href="https://sentinel-signals.onrender.com/trades">Abrir no Sentinel</a>');
+  });
 });
 
 // Um caso representativo por build*Message — confirma que cada função
@@ -66,11 +74,11 @@ describe('panelLink', () => {
 // mesmas funções indiretamente através de notifyNewSignal/notifyStopHit/etc.
 describe('build*Message — uma mensagem completa, não-vazia, por tipo', () => {
   const baseSignal = {
-    symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter',
+    id: 'sig_abc', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter',
     price_at_signal: 100, reason: 'Teste', context: { score: 82 },
   };
   const baseOp = {
-    symbol: 'BTCUSDT', side: 'BUY', timeframe: '15m', signal_timeframe: '4h',
+    id: 'trade_xyz', symbol: 'BTCUSDT', side: 'BUY', timeframe: '15m', signal_timeframe: '4h',
     entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 103, tp2: 106,
     score: 82, tp1_hit: false, tp2_hit: false, partial_percent: 50, runner_percent: 50,
   };
@@ -92,5 +100,25 @@ describe('build*Message — uma mensagem completa, não-vazia, por tipo', () => 
     expect(text.length).toBeGreaterThan(0);
     expect(text).toContain('BTC/USDT');
     expect(text).toContain('Abrir no Sentinel');
+  });
+
+  // Fase 5 da auditoria do Telegram (2026-10-02), item 5.4 — cada tipo de
+  // mensagem linka pro item EXATO (signal.id ou op.id), não só a rota
+  // genérica. `buildVerificationTaskMessage` usa signal.id de propósito
+  // (é o id do SignalEvent, não da VerificationTask — ver comentário em
+  // notificationTemplates.js).
+  it.each([
+    ['buildSignalDetectedMessage', () => buildSignalDetectedMessage(baseSignal), 'sig_abc'],
+    ['buildVerificationTaskMessage', () => buildVerificationTaskMessage(baseSignal), 'sig_abc'],
+    ['buildSignalCanceledMessage', () => buildSignalCanceledMessage({ ...baseSignal, created_date: new Date().toISOString() }), 'sig_abc'],
+    ['buildTradeCreatedMessage', () => buildTradeCreatedMessage(baseOp), 'trade_xyz'],
+    ['buildTp1HitMessage', () => buildTp1HitMessage(baseOp, 103), 'trade_xyz'],
+    ['buildTp2HitMessage', () => buildTp2HitMessage({ ...baseOp, status: 'TP2_HIT', exit_price: 106 }, 106), 'trade_xyz'],
+    ['buildStopHitMessage', () => buildStopHitMessage({ ...baseOp, status: 'STOP_HIT' }, 95), 'trade_xyz'],
+    ['buildInvalidatedMessage', () => buildInvalidatedMessage({ ...baseOp, status: 'INVALIDATED' }, 98), 'trade_xyz'],
+    ['buildTimeStopMessage', () => buildTimeStopMessage({ ...baseOp, status: 'CLOSED' }, 98), 'trade_xyz'],
+    ['buildChopExitMessage', () => buildChopExitMessage({ ...baseOp, status: 'CLOSED' }, 98), 'trade_xyz'],
+  ])('%s linka pro item exato via ?id=%s', (_name, build, expectedId) => {
+    expect(build()).toContain(`?id=${expectedId}`);
   });
 });

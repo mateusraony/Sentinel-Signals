@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { Bell, Filter, Archive, TrendingUp, TrendingDown, Search, X, AlertTriangle } from 'lucide-react';
@@ -47,6 +47,24 @@ export default function Alerts() {
     queryFn: () => backend.entities.SignalEvent.list('-created_date', 200),
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
+
+  // Fase 5 da auditoria do Telegram (2026-10-02), item 5.4 — abre direto o
+  // sinal que a mensagem do Telegram apontou (`?id=`), em vez de só a lista
+  // genérica. `appliedDeepLink` garante que isso só roda UMA VEZ por
+  // carregamento da página — sem o guard, o polling de `signals`
+  // (POLL_DIAGNOSTIC_MS) reabriria o diálogo sempre que o usuário o
+  // fechasse manualmente. Busca em `signals` (lista completa), não
+  // `filtered` — um sinal já arquivado ainda deve abrir via deep link.
+  const appliedDeepLink = useRef(false);
+  useEffect(() => {
+    if (appliedDeepLink.current) return;
+    const id = new URLSearchParams(window.location.search).get('id');
+    if (!id) { appliedDeepLink.current = true; return; }
+    if (signals.length === 0) return;
+    const match = signals.find(s => s.id === id);
+    if (match) setSelectedSignal(match);
+    appliedDeepLink.current = true;
+  }, [signals]);
 
   const dismissMutation = useMutation({
     mutationFn: (id) => backend.entities.SignalEvent.update(id, { is_dismissed: true }),

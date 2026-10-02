@@ -29555,3 +29555,95 @@ direto — a cadeia real que `health-audit.mjs` percorre). Corrigido só
 adicionando `.js` nos 7 imports — nenhuma mudança de comportamento. Re-rodado
 `npm run lint && npm test && npm run build` (2320 passed, igual) + os 4
 bundles esbuild.
+
+## 251. Auditoria do Telegram — Fase 5 (Acabamento) (2026-10-02)
+
+**Contexto**: quinta e última fase do plano de 5 fases (itens 247-250
+acima). Investigação de código feita antes da implementação (3 agentes
+Explore em paralelo — deep link/rotas, animações/estados visuais,
+cooldown+modo silencioso+catálogo de vocabulário) ajustou/reduziu os 4
+itens do draft original por achado real, não por economia. Plano completo
+em `/root/.claude/plans/auditoria-do-telegram-sentinel-snug-zephyr.md`,
+seção Fase 5.
+
+**5.1 — Vocabulário visual documentado**: novo `docs/notification-vocabulary.md`
+cataloga as 14 entradas de `NOTIFICATION_STAGES` (`src/lib/
+notificationVocabulary.js`, já existente desde a Fase 2) + os 2 outros
+vocabulários de emoji do projeto (prioridade, direção BUY/SELL), deixando
+explícito que são domínios separados, não conflitantes. Só documentação,
+zero mudança de código.
+
+**5.2 — Animações discretas — escopo reduzido por achado real**: já existiam
+animações discretas cobrindo os casos relevantes (entrada do toast, pulso de
+preço ao vivo, flash de sinal), diferenciadas por cor+ícone+texto — mesmo
+padrão que a Fase 2 (item 2.4) já validou como suficiente. Construir um
+"sistema de animação" novo seria redundante. Achado real (não hipótese):
+`SignalAlertBanner.jsx` tinha `animate-pulse` no ícone de sino **sem** o
+guard `motion-reduce:animate-none` que os outros 4 componentes com
+animação já têm (lacuna do achado "M-5" anterior, que cobriu os outros 4
+mas não este). Corrigido com 1 classe adicionada; teste de regressão novo
+em `SignalAlertBanner.test.jsx` **provado contra o próprio bug** (removido
+o guard manualmente, teste falhou com a mensagem exata esperada, guard
+restaurado, teste voltou a passar — mesma disciplina do item 166/
+`testing.md`).
+
+**5.3 — Modo silencioso/horário de descanso — DEFERIDO (decisão do
+usuário)**: não existe mecanismo de horário hoje (o cooldown do item 28 é
+por sinal repetido, não por hora do dia). Seria funcionalidade nova, não
+"acabamento", sem sinal real de demanda. Perguntado via AskUserQuestion com
+recomendação de não construir agora — usuário confirmou. Fica fora do
+escopo; reavaliar só se pedido explicitamente no futuro.
+
+**5.4 — Deep link exato pro contexto**: implementado, reusando 100% da
+infraestrutura de Dialog/modal já existente (sem criar componente novo):
+- `panelLink(path, id)` em `src/lib/notificationTemplates.js` ganhou 2º
+  parâmetro opcional → `?id=` quando presente; retrocompatível (sem id,
+  comportamento idêntico ao de antes da fase). As 10 `build*Message` passam
+  o id que já têm em mãos (`signal.id` para `buildSignalDetectedMessage`/
+  `buildVerificationTaskMessage`/`buildSignalCanceledMessage`; `op.id` para
+  as 6 funções de operação) — todo documento do backend já carrega `.id`
+  (Firestore doc id / id determinístico Postgres), sem precisar expor campo
+  novo.
+- `Alerts.jsx`/`Trades.jsx`: 1 `useEffect` novo lendo `?id=` de
+  `window.location.search` (mesmo padrão já usado em `Assets.jsx`, não
+  trouxe `useSearchParams` nem API nova) após a lista carregar — abre o
+  `Dialog`/`EditModal` já existente quando o id bate com um item carregado.
+  Guard "1x por carregamento" (`useRef`) evita que o polling de
+  `signals`/`operations` reabra o diálogo depois que o usuário o fecha.
+- `Verification.jsx` (sem dialog de detalhe por item hoje): o id linkado é
+  o do `SignalEvent` que gerou a tarefa (`notifyVerificationTask` só recebe
+  esse objeto, não a `VerificationTask`) — casado contra
+  `task.signal_event_id`, não `task.id`. Força o filtro "Todas" quando há
+  deep link (senão o filtro padrão "Pendentes" esconderia uma tarefa já
+  revisada) e aplica scroll+highlight temporário (2,5s) no card
+  correspondente, em vez de criar um modal novo só pra isso.
+- **Achado durante a implementação**: `scrollIntoView` não existe no jsdom
+  (ambiente de teste) — chamada direta quebrava a suíte inteira com
+  exceção não tratada assíncrona (só aparecia na rodada completa de testes,
+  não isolando o arquivo). Corrigido com guard de função
+  (`typeof el?.scrollIntoView === 'function'`), não só de elemento — mais
+  seguro que assumir que o método sempre existe.
+- Testes: `notificationTemplates.test.js` ganhou asserção de `?id=<id
+  correto>` por tipo de mensagem (10 casos) + 1 caso pra `panelLink`
+  com/sem id; `Alerts.test.jsx`/`Trades.test.jsx`/`Verification.test.jsx`
+  ganharam cada um 3 casos (id válido abre o item certo; id sem
+  correspondência não quebra nem abre nada; sem id, comportamento
+  inalterado).
+
+**Verificação**: `npm run lint` limpo; `npm test` 2341 passed, 58 skipped, 0
+failed, 0 erros não tratados (era 2320 antes desta rodada — 21 testes
+novos); `npm run build` ok; os 4 bundles esbuild rodados manualmente
+(`notificationTemplates.js` é consumido por `telegram.js`/`adminTelegram.js`,
+que os 4 scripts redirecionam); confirmado que a cadeia `node
+scripts/adminTelegram.js` puro (sem bundler, mesma que `health-audit.mjs`
+percorre) continua resolvendo sem erro após o `panelLink`/import ganharem
+parâmetro novo. Nenhuma mudança em `scanner.js`, `firestore.rules`,
+`server/`, ou schema de qualquer entidade — escopo isolado de UI + 1 módulo
+de texto puro, conforme `.claude/rules/frontend-ui.md`.
+
+**Pendente, não feito por mim**: teste end-to-end real no Telegram (link
+`?id=` clicado de verdade a partir de uma mensagem real) — mesma pendência
+de todas as fases anteriores, sem bot configurado neste ambiente.
+
+**Com esta fase, o plano de 5 fases da Auditoria do Telegram está
+completo.**
