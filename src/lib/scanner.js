@@ -3005,7 +3005,15 @@ export async function persistScanResults(scanResult) {
         // evita avisar sobre o cancelamento de um sinal que o usuário nunca
         // chegou a ser avisado que existia (Telegram em cooldown/desconfigurado
         // na hora da criação).
-        if (sig.notified === true && isTelegramConfigured()) notifySignalCanceled(sig, asset).catch(() => {});
+        //
+        // Codex review (PR #450) — `sig.is_dismissed` só é checado DEPOIS
+        // deste bloco (branch `continue`s antes de chegar lá), então um
+        // sinal que o usuário já arquivou manualmente ainda disparava
+        // "Sinal Cancelado" horas depois, ao expirar — reabrindo na tela do
+        // Telegram um aviso que ele já tinha dito que não queria ver mais.
+        // O bookkeeping (expired_logged/SystemLog acima) continua rodando
+        // normalmente; só a notificação checa `!sig.is_dismissed`.
+        if (sig.notified === true && !sig.is_dismissed && isTelegramConfigured()) notifySignalCanceled(sig, asset).catch(() => {});
       }
       continue; // stale, skip
     }
@@ -3442,8 +3450,8 @@ export async function persistScanResults(scanResult) {
           });
           // Auditoria do Telegram (2026-10-02), Fase 3 — mesmo fix/raciocínio
           // do retry RF acima (dentro do bloco write-once, gate por
-          // sig.notified).
-          if (sig.notified === true && isTelegramConfigured()) notifySignalCanceled(sig, asset).catch(() => {});
+          // sig.notified e, desde o Codex review no PR #450, !sig.is_dismissed).
+          if (sig.notified === true && !sig.is_dismissed && isTelegramConfigured()) notifySignalCanceled(sig, asset).catch(() => {});
         }
         continue; // stale, skip
       }
