@@ -56,6 +56,14 @@ export function classifyError(input) {
   if (err.name === 'AbortError' || err.name === 'TimeoutError' || TIMEOUT_CODES.has(code)) {
     return ERROR_CLASS.TIMEOUT;
   }
+  // Firebase Auth (auth.currentUser.getIdToken() em callBackend rejeita ANTES
+  // de qualquer HTTP, então não há err.status): code "auth/...".
+  if (typeof code === 'string' && code.startsWith('auth/')) {
+    if (code === 'auth/network-request-failed') return ERROR_CLASS.NETWORK;
+    if (code === 'auth/timeout') return ERROR_CLASS.TIMEOUT;
+    if (code === 'auth/too-many-requests') return ERROR_CLASS.RATE_LIMIT;
+    return ERROR_CLASS.AUTH; // user-token-expired, id-token-expired, invalid-user-token, user-disabled...
+  }
   if (typeof code === 'string' && PG_CODE.test(code)) return ERROR_CLASS.DATABASE;
   if (DATABASE_MESSAGE.test(err.message ?? '')) return ERROR_CLASS.DATABASE;
   if (NETWORK_CODES.has(code) || NETWORK_MESSAGE.test(err.message ?? '')) return ERROR_CLASS.NETWORK;

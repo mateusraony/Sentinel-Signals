@@ -31,6 +31,14 @@ describe('classifyError', () => {
     expect(classifyError(new Error('Request failed with status 503'))).toBe(ERROR_CLASS.HTTP_5XX);
   });
 
+  it('erros do Firebase Auth (getIdToken rejeita antes do HTTP, sem status) — Codex review PR #456', () => {
+    expect(classifyError(withProps(new Error('x'), { code: 'auth/network-request-failed' }))).toBe(ERROR_CLASS.NETWORK);
+    expect(classifyError(withProps(new Error('x'), { code: 'auth/timeout' }))).toBe(ERROR_CLASS.TIMEOUT);
+    expect(classifyError(withProps(new Error('x'), { code: 'auth/too-many-requests' }))).toBe(ERROR_CLASS.RATE_LIMIT);
+    expect(classifyError(withProps(new Error('x'), { code: 'auth/user-token-expired' }))).toBe(ERROR_CLASS.AUTH);
+    expect(classifyError(withProps(new Error('x'), { code: 'auth/id-token-expired' }))).toBe(ERROR_CLASS.AUTH);
+  });
+
   it('erros do driver pg (SQLSTATE 08/53/57 e mensagens de conexão) são DATABASE', () => {
     expect(classifyError(withProps(new Error('x'), { code: '57P01' }))).toBe(ERROR_CLASS.DATABASE);
     expect(classifyError(withProps(new Error('x'), { code: '08006' }))).toBe(ERROR_CLASS.DATABASE);
