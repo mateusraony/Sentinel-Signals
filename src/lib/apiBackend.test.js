@@ -126,6 +126,17 @@ describe('callBackend', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it('erro HTTP carrega err.status (usado por classifyError) sem alterar a mensagem', async () => {
+    getIdTokenMock.mockResolvedValue('token-bom');
+    global.fetch.mockResolvedValue({ ok: false, status: 500, json: async () => ({ error: 'Erro interno.' }) });
+
+    const { callBackend } = await import('./apiBackend');
+    const err = await callBackend('/api/trade-ops/x', { a: 1 }).catch((e) => e);
+
+    expect(err.message).toBe('Erro interno.');
+    expect(err.status).toBe(500);
+  });
+
   it('toda chamada inclui o header X-Owner-Key (requireOwner no server)', async () => {
     getIdTokenMock.mockResolvedValueOnce('token-bom');
     global.fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 'a1' }) });

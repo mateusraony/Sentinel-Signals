@@ -83,7 +83,11 @@ describe('tryAcquireScanLock — retry curto antes do fail-open', () => {
     expect(logError).toHaveBeenCalledWith(
       'scanner',
       expect.stringContaining('Falha ao adquirir lock "price-check"'),
-      expect.objectContaining({ executor: 'browser' })
+      expect.objectContaining({
+        executor: 'browser',
+        error_class: 'NETWORK',
+        scan_id: expect.stringMatching(/^price-check_/), // holder, único por execução
+      })
     );
     expect(notifyLockDegraded).toHaveBeenCalledTimes(1);
     expect(notifyLockDegraded).toHaveBeenCalledWith('price-check', 'browser', 'Failed to fetch');

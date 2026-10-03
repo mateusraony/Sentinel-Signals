@@ -45,6 +45,7 @@ import {
   buildStopHitPriceCheckSnapshot, buildTp2HitPriceCheckSnapshot, buildTp1FullClosePriceCheckSnapshot,
 } from './decisionSnapshot';
 import { logInfo, logWarn, logError } from './logger';
+import { classifyError } from './errorClass';
 import { backend } from '@/api/entities';
 import {
   isTelegramConfigured,
@@ -320,7 +321,10 @@ async function tryAcquireScanLock(lockName, ttlMs, holder) {
       if (attempt < LOCK_RETRY_DELAYS_MS.length) await sleep(LOCK_RETRY_DELAYS_MS[attempt]);
     }
   }
-  logError('scanner', `Falha ao adquirir lock "${lockName}" — prosseguindo sem lock (risco de execução concorrente)`, { error: lastErr.message, executor: EXECUTOR });
+  // scan_id = holder (já único por execução) — liga este log aos demais da
+  // MESMA passada; fica em details, nunca na message (o dedup de SystemLog
+  // é chaveado pela mensagem).
+  logError('scanner', `Falha ao adquirir lock "${lockName}" — prosseguindo sem lock (risco de execução concorrente)`, { error: lastErr.message, error_class: classifyError(lastErr), scan_id: holder, executor: EXECUTOR });
   maybeAlertLockDegraded(lockName, lastErr.message); // fire-and-forget — nunca atrasa o scan
   return true;
 }
@@ -336,7 +340,7 @@ async function tryReleaseScanLock(lockName, holder) {
       if (attempt < LOCK_RETRY_DELAYS_MS.length) await sleep(LOCK_RETRY_DELAYS_MS[attempt]);
     }
   }
-  logWarn('scanner', `Falha ao liberar lock "${lockName}"`, { error: lastErr.message, executor: EXECUTOR });
+  logWarn('scanner', `Falha ao liberar lock "${lockName}"`, { error: lastErr.message, error_class: classifyError(lastErr), scan_id: holder, executor: EXECUTOR });
 }
 
 /**
@@ -4664,7 +4668,7 @@ export async function scanAllAssets(onProgress) {
   }
 
   try {
-    return await scanAllAssetsInner(onProgress);
+    return await scanAllAssetsInner(onProgress, holder);
   } finally {
     await tryReleaseScanLock('full-scan', holder);
   }
@@ -4688,7 +4692,7 @@ function describeErrorCause(cause) {
   };
 }
 
-async function scanAllAssetsInner(onProgress) {
+async function scanAllAssetsInner(onProgress, scanId = null) {
   const assets = await backend.entities.MonitoredAsset.filter({ is_active: true });
 
   if (assets.length === 0) {
@@ -4768,6 +4772,8 @@ async function scanAllAssetsInner(onProgress) {
         details: {
           error_name: err.name ?? null,
           error_cause: describeErrorCause(err.cause),
+          error_class: classifyError(err),
+          scan_id: scanId,
         },
       });
     }

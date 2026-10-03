@@ -9,6 +9,7 @@
  */
 
 import { logWarn } from './logger';
+import { classifyError } from './errorClass';
 
 const PINE_CONFIG_KEY = 'cryptoradar_pine_config';
 
@@ -493,7 +494,7 @@ export async function getPineConfig() {
     writeSyncedConfigCache({ values: syncedValues, version, hash });
     lastConfigStatus = { source: 'postgres', version, hash, degraded: false };
   } catch (e) {
-    logWarn('pineParser', 'Falha ao ler strategyConfig do Postgres/Neon, usando localStorage/defaults', { error: e.message });
+    logWarn('pineParser', 'Falha ao ler strategyConfig do Postgres/Neon, usando localStorage/defaults', { error: e.message, error_class: classifyError(e) });
     const cache = readSyncedConfigCache();
     if (cache) {
       // Cache de uma leitura CONFIRMADA anterior — melhor que localStorage

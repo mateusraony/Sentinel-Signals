@@ -24,6 +24,7 @@
 // parameter added there must be added here too.
 import { backend } from './adminEntities.js';
 import { logWarn } from '../src/lib/logger.js';
+import { classifyError } from '../src/lib/errorClass.js';
 
 const DEFAULTS = {
   rng_per: 20,
@@ -196,7 +197,7 @@ export async function getPineConfig() {
         // Antes era console.warn — invisível na tela Logs quando quem falha é
         // o cron (o lado navegador, src/lib/pineParser.js, já gravava via
         // logWarn). Equipara os dois lados, mesma mensagem.
-        logWarn('pineParser', 'Falha ao ler strategyConfig do Postgres/Neon, usando localStorage/defaults', { error: e.message, executor: 'cron' });
+        logWarn('pineParser', 'Falha ao ler strategyConfig do Postgres/Neon, usando localStorage/defaults', { error: e.message, error_class: classifyError(e), executor: 'cron' });
         lastConfigStatus = { source: 'defaults', version: null, hash: null, degraded: true };
       }
       return config;
