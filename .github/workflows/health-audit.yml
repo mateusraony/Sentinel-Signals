@@ -17,8 +17,21 @@ on:
   # desativado após ~60 dias sem push no repo (known-risks 12/18/134). Para um
   # diagnóstico diário isso é aceitável — um atraso de minutos não muda o
   # veredito, e o disparo manual continua disponível.
+  #
+  # 2ª execução, 00:07 UTC = 21:07 em Brasília (pedido do usuário, 2026-10-03):
+  # "dupla checagem" durante o dia enquanto o "Failed to fetch" recorrente
+  # (itens 192/197/252/253) não está resolvido — sem ela, um erro das 08h só
+  # chegaria ao Telegram na madrugada seguinte. Minuto 07, não 00: o GitHub
+  # congestiona/descarta agendamentos no minuto cheio (mesma razão do
+  # scan.yml, `7 * * * *`). O motivo da cota (parágrafo acima) deixou de valer
+  # desde o cutover para Postgres/Neon (sem teto diário); os dois horários
+  # são só cadência de aviso. Custo: leitura de no máximo 770 documentos por
+  # execução, ~1-2 min de Actions. O filtro de recência (24h, healthAuditFormat
+  # `ocorreuRecentemente`) pode fazer o MESMO erro ainda recente avisar nas
+  # duas execuções do dia — aceito, é a dupla checagem.
   schedule:
     - cron: "40 4 * * *"
+    - cron: "7 0 * * *"
   workflow_dispatch: {}
 
 permissions:

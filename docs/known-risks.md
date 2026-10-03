@@ -29902,3 +29902,45 @@ Estender é trivial se os logs mostrarem que falta.
 (teto 13) por 6 erros de `checkJs` no `errorClass.js` recém-criado
 (`unknown` sem propriedades) — corrigido com um tipo estrutural
 (`ErrorLike`), volta a 13. Não subi o teto.
+
+## 254. Auditoria de saúde: 2ª execução às 21:07 BRT + origem do erro no relatório (2026-10-03)
+
+**Contexto**: o aviso "erro em 6 ativos ao mesmo tempo: scanner · Erro no scan
+de <ativo>: Failed to fetch" chegou da auditoria diária, e o usuário perguntou
+por que só recebe de manhã, se ela é pesada e se valia uma 2ª checagem à noite.
+
+**Achados**: (1) o horário (04:40 UTC = **01:40 BRT**, lida de manhã) foi
+escolhido na era Firestore para cair no fim do ciclo da cota diária — motivo
+que deixou de valer no cutover para Postgres/Neon (sem teto diário); ficou por
+inércia. (2) Custo baixo: leitura pura, no máximo 770 documentos por execução,
+job com `timeout-minutes: 5`, Telegram só quando acha algo. (3) O relatório
+agrupava só por módulo+mensagem — não dizia `executor` nem `error_class`,
+justamente o que o "Failed to fetch" recorrente (itens 192/197/252/253)
+precisava para separar cron de navegador.
+
+**Feito**: `health-audit.yml` ganhou `cron: "7 0 * * *"` (21:07 BRT; minuto 07,
+não 00, pelo mesmo motivo do `scan.yml`) além do de 04:40 UTC. `agrupar`
+(`healthAuditFormat.mjs`) agora coleta `executores`/`classes` por grupo;
+novas funções puras `descreverOrigem`/`sufixoOrigem`; o relatório ganhou a
+coluna **Origem** (erros, erros fora da janela e avisos) e a mensagem de
+achado (Telegram) ganha o sufixo `(origem: browser · NETWORK)` quando há dado.
+Logs anteriores ao item 252/253 não têm `error_class` (e os de lock não tinham
+`executor`): mostram "—", e a mensagem de achado fica idêntica à de antes.
+
+**Limitação aceita**: o filtro de recência de 24h
+(`ocorreuRecentemente`) faz o MESMO erro ainda recente avisar nas duas
+execuções do dia — é a "dupla checagem" pedida, não duplicidade acidental.
+Se virar ruído, dá para encurtar a janela só para a execução noturna.
+
+**Verificação**: `healthAuditFormat.test.js` +3 casos (coleta, os três
+formatos de origem, sufixo vazio sem dado); `node --check` do
+`health-audit.mjs`. O script em si exige `DATABASE_URL`, então o relatório
+completo só roda no Actions — conferir o Job Summary da próxima execução.
+
+**Addendum (Codex review, PR #457)**: o `executor` tem dois formatos reais no
+`SystemLog` — nível de cima no erro de scan por ativo (`createUnique`) e
+dentro de `details` nos logs de lock/config (3º argumento de
+`logError`/`logWarn`). A 1ª versão de `agrupar` só lia o nível de cima, então
+lock e fallback de config mostrariam só a classe, sem cron×navegador.
+Corrigido (`r.executor ?? r.details?.executor`, nível de cima com
+precedência), com testes no formato persistido de cada caso.

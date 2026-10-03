@@ -41,10 +41,20 @@ export function agrupar(registros) {
     const chave = `${r.module ?? '?'} · ${normalizarMensagem(r.message)}`;
     const g = grupos.get(chave) ?? {
       chave, total: 0, ativos: new Set(),
+      // Quem gerou (cron/browser) e a classe do erro (item 252/253) — o que
+      // responde "de onde veio?" sem abrir a tela Logs. Logs antigos não têm
+      // os campos: o Set fica vazio e a coluna mostra "—".
+      executores: new Set(), classes: new Set(),
       primeiro: null, ultimo: null, exemplo: r.message,
     };
     g.total += 1;
     if (r.symbol) g.ativos.add(r.symbol);
+    // Dois formatos reais: o erro de scan por ativo grava `executor` no nível
+    // de cima (SystemLog.createUnique); os logs de lock/config passam por
+    // logError/logWarn, cujo 3º argumento é persistido em `details`.
+    const executor = r.executor ?? r.details?.executor;
+    if (executor) g.executores.add(executor);
+    if (r.details?.error_class) g.classes.add(r.details.error_class);
     const t = r.created_date;
     if (t) {
       if (!g.primeiro || t < g.primeiro) g.primeiro = t;
@@ -53,6 +63,22 @@ export function agrupar(registros) {
     grupos.set(chave, g);
   }
   return [...grupos.values()].sort((a, b) => b.total - a.total);
+}
+
+/**
+ * "browser · NETWORK" / "browser/cron · NETWORK/TIMEOUT" / "—". Mais de um
+ * executor no mesmo grupo é informação por si só (o problema aparece nos dois
+ * lados, o que aponta para a infraestrutura em comum, não para um deles).
+ */
+export function descreverOrigem(g) {
+  const partes = [[...(g.executores ?? [])].sort().join('/'), [...(g.classes ?? [])].sort().join('/')].filter(Boolean);
+  return partes.length ? partes.join(' · ') : '—';
+}
+
+/** Sufixo para a mensagem de achado (Telegram): vazio quando não há origem. */
+export function sufixoOrigem(g) {
+  const o = descreverOrigem(g);
+  return o === '—' ? '' : ` (origem: ${o})`;
 }
 
 /** "há 3h" / "há 2.1d" — o relatório é lido por humano, não por parser. */

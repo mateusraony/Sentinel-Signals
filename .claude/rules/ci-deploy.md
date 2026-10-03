@@ -140,8 +140,11 @@ paths:
   pena destravar o 1h como cascata de entrada? — `docs/known-risks.md` item
   56, "Retomada 2026-08-03"), não é diagnóstico de rotina nem toca nenhuma
   operação.
-- `health-audit.yml` — auditoria de saúde: **diária às 04:40 UTC**
-  (`schedule`) + `workflow_dispatch`. `scripts/health-audit.mjs` responde "o
+- `health-audit.yml` — auditoria de saúde: **duas vezes por dia, 04:40 UTC
+  (01:40 BRT) e 00:07 UTC (21:07 BRT, item 254)** (`schedule`) +
+  `workflow_dispatch`. O relatório e o aviso do Telegram mostram a **origem**
+  do erro (`executor` cron/browser + `error_class`), quando o log tem os
+  campos. `scripts/health-audit.mjs` responde "o
   que está falhando e ninguém viu?" (`docs/known-risks.md` itens 164/165) —
   erros/avisos agrupados, operações presas, funil de entrada e o estado do
   episódio de cota, tudo no Job Summary. **Avisa no Telegram só quando acha
@@ -149,7 +152,8 @@ paths:
   treina o hábito de ignorar o aviso). **Read-only por contrato**: o job FALHA
   se o script escrever no Firestore. Teto explícito de 570 documentos lidos
   (~1% da cota diária).
-  **⏰ O horário 04:40 UTC não é arbitrário** — é quando as duas falhas reais
+  **⏰ [Histórico — vale só para a era Firestore; ver item 254] O horário
+  04:40 UTC não é arbitrário** — é quando as duas falhas reais
   de cota aconteceram (04/09 04:43 e 05/09 04:36 UTC), ~21h30 dentro do ciclo
   diário que zera às ~07:00 UTC. Rodar de manhã diria "tudo bem" mesmo num dia
   em que a cota estourou de madrugada, que foi como isso passou dois dias
