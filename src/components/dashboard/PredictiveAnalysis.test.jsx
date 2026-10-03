@@ -72,6 +72,17 @@ describe('PredictiveAnalysis — não exibe taxa de acerto/gauge sem amostra hon
     expect(screen.queryByText(/taxa de acerto histórica/)).toBeNull();
   });
 
+  it('REGRESSÃO (Codex, PR #459): 30 operações sem initial_stop (sem R calculável) não passam o gate — o denominador é rCounted, não counted', async () => {
+    const semStop = (i) => ({ ...LOSS_OP(i), initial_stop: undefined });
+    tradeOperationFilterMock.mockResolvedValue(Array.from({ length: 30 }, (_, i) => semStop(i)));
+    renderPredictive();
+    // Espera os dados carregarem — antes disso o card já mostra "0/30" (lista
+    // vazia) e a asserção passaria sem provar nada.
+    expect(await screen.findByText(/30 operações similares/)).toBeTruthy();
+    expect(screen.getByText(/Amostra insuficiente \(0\/30/)).toBeTruthy();
+    expect(screen.queryByText(/expectância histórica/)).toBeNull();
+  });
+
   it('REGRESSÃO: com 30 operações e IC cruzando zero mostra expectância com selo INCONCLUSIVO, sem gauge de %', async () => {
     const ops = [
       ...Array.from({ length: 18 }, (_, i) => LOSS_OP(i)),

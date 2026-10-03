@@ -131,7 +131,10 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
   }
 
   const minTrades = headline?.minTrades ?? 30;
-  const enoughSample = Boolean(headline) && headline.counted >= minTrades && headline.rCounted > 0;
+  // Gate e denominador exibido usam rCounted (ops com R calculável): é de
+  // quantas a expectância e o IC são de fato calculados — `counted` inclui
+  // ops legadas classificadas só por PnL, sem initial_stop.
+  const enoughSample = Boolean(headline) && headline.rCounted >= minTrades;
   const ci = headline?.expectancyRCI95;
   const conclusive = Boolean(headline?.conclusive);
   const signColor = headline?.expectancyR >= 0 ? '#00ff80' : '#ff1478';
@@ -178,7 +181,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
             {!enoughSample ? (
               <div className="flex items-center gap-2 py-3 text-11px font-mono" style={{ color: 'rgba(255,209,102,0.85)' }}>
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                Amostra insuficiente ({headline?.counted ?? 0}/{minTrades} operações fechadas com direção, timeframe
+                Amostra insuficiente ({headline?.rCounted ?? 0}/{minTrades} operações fechadas com R calculável, direção, timeframe
                 {Number.isFinite(selected.context?.tf_4h_direction) ? ', alinhamento 4h' : ''} e score ±{SCORE_TOLERANCE} similares) —
                 não há dado suficiente para uma estimativa confiável.
               </div>
@@ -195,7 +198,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
                   </span>
                 </div>
                 <p className="text-10px font-mono text-muted-foreground mb-3">
-                  {headline.counted} operações{ci ? ` · IC95 [${ci[0].toFixed(3)}; ${ci[1].toFixed(3)}]` : ''} · taxa de acerto {headline.winRate.toFixed(0)}%
+                  {headline.rCounted} operações{ci ? ` · IC95 [${ci[0].toFixed(3)}; ${ci[1].toFixed(3)}]` : ''} · taxa de acerto {headline.winRate.toFixed(0)}%
                   {' '}(taxa de acerto não é expectância — com TP1 parcial ela pode ser alta com R líquido negativo)
                 </p>
               </>
