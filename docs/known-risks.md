@@ -29944,3 +29944,49 @@ dentro de `details` nos logs de lock/config (3º argumento de
 lock e fallback de config mostrariam só a classe, sem cron×navegador.
 Corrigido (`r.executor ?? r.details?.executor`, nível de cima com
 precedência), com testes no formato persistido de cada caso.
+
+## 255. "Failed to fetch" é do NAVEGADOR (dado real) + aviso só-navegador + `schedule:` da auditoria atrasa ~6h (2026-10-03)
+
+**Contexto**: a auditoria de 03/10 voltou a avisar "erro em 6 ativos ao mesmo
+tempo: Failed to fetch". Usuário esperava que os itens 252–254 resolvessem.
+**Esclarecimento honesto**: 252/253/254 foram resiliência do backend +
+**diagnóstico** — nenhum tocava a busca de candles na Binance, que é de onde
+vem esse erro. O que eles entregaram foi a resposta de "de onde vem?".
+
+**Dado real** (log do job `health-audit` run 32, lido via API do Actions):
+9 ocorrências em 6 ativos, `executor: browser` em TODAS; o cron teve zero.
+Última há 16h — ANTES do deploy dos campos `error_class`/`scan_id`, por isso a
+coluna Origem mostrou só "browser". Os de lock (`—`) também são anteriores.
+Conclusão firme: não é o cron, e portanto **não afeta o relógio de trading**
+(`scan.yml`); é o painel aberto num aparelho. Conclusão que NÃO dá para tirar
+ainda: a causa. Hipóteses abertas (sem prova): rede caída/volta de suspensão
+do aparelho, aba em segundo plano congelada pelo navegador, resposta de erro
+da Binance sem CORS (429/418 aparecem como "Failed to fetch" no browser).
+
+**Feito**:
+1. **Auditoria**: grupo cujos registros vieram TODOS do navegador continua
+   listado no relatório (com a nota "só navegador, o cron não falhou") mas
+   **não vira achado/Telegram** (`soNavegador`/`notaSoNavegador`,
+   `healthAuditFormat.mjs`). Grupo misto (browser+cron) ou sem `executor`
+   (logs antigos) continua avisando como sempre — nada foi silenciado sem
+   evidência de origem. Trade-off aceito: um problema persistente só do painel
+   (ex.: Binance Futures bloqueada para o aparelho) deixa de gerar push;
+   segue visível no relatório e na tela Logs.
+2. **Diagnóstico**: o erro de scan do navegador agora grava `online`
+   (`navigator.onLine`) e `visibility` (`document.visibilityState`) em
+   `details` (`browserContext()`, `scanner.js`; vazio no cron). A próxima
+   ocorrência separa rede caída × aba em segundo plano com dado, não
+   hipótese.
+
+**Achado novo — `schedule:` do GitHub atrasa ~6h**: o `health-audit.yml` pede
+04:40 UTC mas as 5 últimas execuções começaram às 10:01/10:42/11:08/10:42/
+10:52 UTC. Ou seja, o "01:40 BRT" na prática chega ~07:40 BRT, e a 2ª
+execução do item 254 (00:07 UTC) provavelmente também atrasa. É o mesmo
+problema já documentado em `docs/claude/external-cron-setup.md`/item 18 (o
+`scan.yml` só é pontual por causa do cron-job.org). Correção possível, **passo
+manual do usuário**: um job no cron-job.org chamando
+`.../workflows/health-audit.yml/dispatches` (o workflow já tem
+`workflow_dispatch`), mesmo PAT do `scan.yml`.
+
+**Verificação**: testes novos em `healthAuditFormat.test.js` (3) e
+`scanErrorBrowserContext.test.js` (1).

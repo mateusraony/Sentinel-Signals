@@ -75,6 +75,23 @@ export function descreverOrigem(g) {
   return partes.length ? partes.join(' · ') : '—';
 }
 
+/**
+ * Grupo cujos registros vieram TODOS do navegador. O relógio de trading é o
+ * cron (scan.yml); um erro que só o navegador teve não é falha do sistema —
+ * é do painel aberto naquele aparelho (rede, aba em segundo plano, suspensão).
+ * Sem `executor` (logs antigos) ou com cron no meio, NÃO é "só navegador" e
+ * continua virando achado como sempre.
+ */
+export function soNavegador(g) {
+  const ex = [...(g.executores ?? [])];
+  return ex.length > 0 && ex.every((e) => e === 'browser');
+}
+
+/** Nota para o corpo do relatório: explica por que um grupo não avisa. */
+export function notaSoNavegador(g) {
+  return soNavegador(g) ? ' — **só navegador, o cron não falhou: listado, mas não gera aviso**' : '';
+}
+
 /** Sufixo para a mensagem de achado (Telegram): vazio quando não há origem. */
 export function sufixoOrigem(g) {
   const o = descreverOrigem(g);

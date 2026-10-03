@@ -110,7 +110,7 @@ describe('consultas da auditoria de saúde', () => {
     });
 
     it('os dois blocos iteram os grupos listados (mesmo .slice(0, 5) do corpo) antes de empurrar achado', () => {
-      const matches = [...SRC.matchAll(/for \(const g of (sistemicos(?:Fora)?)\.slice\(0, 5\)(?:\.filter\(\(g\) => ocorreuRecentemente\(g\)\))?\) \{\s*achados\.push/g)];
+      const matches = [...SRC.matchAll(/for \(const g of (sistemicos(?:Fora)?)\.slice\(0, 5\)(?:\.filter\(\(g\) => ocorreuRecentemente\(g\) && !soNavegador\(g\)\))?\) \{\s*achados\.push/g)];
       expect(matches.length).toBe(2);
     });
   });
@@ -123,12 +123,17 @@ describe('consultas da auditoria de saúde', () => {
   // aparece no corpo do relatório, que continua mostrando o histórico
   // completo pra quem abrir o relatório.
   describe('achados de falha sistêmica só disparam Telegram se ainda recentes', () => {
+    // item 255 — grupo só-navegador não avisa; também vem da parte pura.
+    it('importa soNavegador da parte pura (grupo só do navegador não vira aviso)', () => {
+      expect(SRC).toMatch(/import \{[^}]*\bsoNavegador\b[^}]*\} from '\.\/healthAuditFormat\.mjs';/);
+    });
+
     it('importa ocorreuRecentemente da parte pura, não reimplementa a regra aqui', () => {
       expect(SRC).toMatch(/import \{[^}]*\bocorreuRecentemente\b[^}]*\} from '\.\/healthAuditFormat\.mjs';/);
     });
 
     it('os dois blocos de achado filtram por recência antes de empurrar pro Telegram', () => {
-      const matches = [...SRC.matchAll(/\.slice\(0, 5\)\.filter\(\(g\) => ocorreuRecentemente\(g\)\)\) \{\s*achados\.push/g)];
+      const matches = [...SRC.matchAll(/\.slice\(0, 5\)\.filter\(\(g\) => ocorreuRecentemente\(g\) && !soNavegador\(g\)\)\) \{\s*achados\.push/g)];
       expect(matches.length).toBe(2);
     });
 

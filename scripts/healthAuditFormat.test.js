@@ -2,7 +2,7 @@
 // legível. Sem agrupamento ela devolve o log cru com outro nome, e um
 // relatório que ninguém lê é exatamente o estado que ela existe para consertar.
 import { describe, it, expect } from 'vitest';
-import { agrupar, celula, descreverOrigem, haQuantoTempo, normalizarMensagem, ocorreuRecentemente, sufixoOrigem } from './healthAuditFormat.mjs';
+import { agrupar, celula, descreverOrigem, haQuantoTempo, normalizarMensagem, notaSoNavegador, ocorreuRecentemente, soNavegador, sufixoOrigem } from './healthAuditFormat.mjs';
 
 describe('normalizarMensagem', () => {
   it('junta o mesmo problema em ativos diferentes', () => {
@@ -171,5 +171,26 @@ describe('origem do erro (executor + error_class)', () => {
     expect(sufixoOrigem(agrupar([log()])[0])).toBe('');
     expect(sufixoOrigem(agrupar([log({ executor: 'browser', details: { error_class: 'NETWORK' } })])[0]))
       .toBe(' (origem: browser · NETWORK)');
+  });
+});
+
+// item 255 — erro que SÓ o navegador teve não é falha do sistema (o cron é o
+// relógio de trading): continua no relatório, mas não vira aviso.
+describe('soNavegador', () => {
+  const log = (over = {}) => ({ module: 'scanner', message: 'Erro no scan de BTCUSDT: Failed to fetch', created_date: '2026-10-03T10:00:00.000Z', ...over });
+
+  it('verdadeiro só quando TODOS os registros vieram do navegador', () => {
+    expect(soNavegador(agrupar([log({ executor: 'browser' }), log({ executor: 'browser' })])[0])).toBe(true);
+    expect(notaSoNavegador(agrupar([log({ executor: 'browser' })])[0])).toContain('não gera aviso');
+  });
+
+  it('falso com cron no meio, ou sem executor (logs antigos) — continua virando achado', () => {
+    expect(soNavegador(agrupar([log({ executor: 'browser' }), log({ executor: 'cron' })])[0])).toBe(false);
+    expect(soNavegador(agrupar([log()])[0])).toBe(false);
+    expect(notaSoNavegador(agrupar([log()])[0])).toBe('');
+  });
+
+  it('reconhece executor também em details (formato de logError/logWarn)', () => {
+    expect(soNavegador(agrupar([log({ details: { executor: 'browser' } })])[0])).toBe(true);
   });
 });
