@@ -259,8 +259,15 @@ describe.skipIf(!TEST_DATABASE_URL)('db/pgEntitiesCore.mjs', () => {
     it('só um chamador adquire por vez; libera corretamente', async () => {
       expect(await backend.locks.acquireScanLock('scan', 60_000, 'holder-a')).toBe(true);
       expect(await backend.locks.acquireScanLock('scan', 60_000, 'holder-b')).toBe(false);
-      await backend.locks.releaseScanLock('scan', 'holder-a');
+      expect(await backend.locks.releaseScanLock('scan', 'holder-a')).toEqual({ released: true });
       expect(await backend.locks.acquireScanLock('scan', 60_000, 'holder-b')).toBe(true);
+    });
+
+    it('releaseScanLock com holder errado não libera nem afeta o lock atual', async () => {
+      await backend.locks.acquireScanLock('scan', 60_000, 'holder-a');
+      expect(await backend.locks.releaseScanLock('scan', 'holder-errado')).toEqual({ released: false });
+      // Lock continua com holder-a — outro chamador ainda não consegue adquirir.
+      expect(await backend.locks.acquireScanLock('scan', 60_000, 'holder-b')).toBe(false);
     });
   });
 

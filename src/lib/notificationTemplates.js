@@ -226,6 +226,26 @@ export function buildSignalCanceledMessage(signal) {
   );
 }
 
+// Lock fail-open (src/lib/scanner.js's tryAcquireScanLock) — alerta de
+// sistema, não de sinal/operação: dispara quando o lock "price-check"/
+// "full-scan" não pôde ser adquirido mesmo após o retry curto, e o scan
+// prossegue mesmo assim (risco de execução concorrente, mitigado pelo CAS
+// por-operação — ver .claude/rules/trading-engine.md — mas sem a proteção
+// contra trabalho duplicado que o lock normalmente dá). `executor`
+// distingue cron×navegador (mesmo campo já gravado no SystemLog).
+export function buildLockDegradedMessage({ lockName, executor, errMessage }) {
+  return (
+    `⚠️ <b>Lock do scanner degradado</b>\n\n` +
+    `O lock <code>${escaparHtml(lockName)}</code> não pôde ser adquirido ` +
+    `(executor: ${escaparHtml(executor || 'desconhecido')}) — o scan prosseguiu ` +
+    `sem ele. Risco: execução concorrente (trabalho duplicado), não corrupção ` +
+    `de dados — o CAS por-operação protege isso independentemente do lock.\n\n` +
+    `📝 ${escaparHtml(errMessage || 'erro desconhecido')}\n\n` +
+    `${panelLink('/logs')}\n\n` +
+    `<i>⚡ Sentinel Signals — próximo aviso só depois de um tempo, para não repetir</i>`
+  );
+}
+
 export function buildTradeCreatedMessage(op) {
   const emoji = op.side === 'BUY' ? '✅🟢' : '✅🔴';
   const dir = op.side === 'BUY' ? 'COMPRA' : 'VENDA';

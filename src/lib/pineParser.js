@@ -12,6 +12,70 @@ import { logWarn } from './logger';
 
 const PINE_CONFIG_KEY = 'cryptoradar_pine_config';
 
+// Cache do ÚLTIMO StrategyConfig lido com sucesso do Postgres/Neon — distinto
+// de PINE_CONFIG_KEY (que é o rascunho Pine do usuário, só os campos NÃO
+// sincronizados). Existe para degradar com segurança: se o Postgres cair,
+// usar este cache (versionado, confirmado em algum momento) em vez de
+// silenciosamente usar PINE_CONFIG_KEY — que pode estar dias desatualizado
+// nesta aba específica — ou os DEFAULTS. Ver getPineConfigStatus() abaixo.
+const SYNCED_CONFIG_CACHE_KEY = 'cryptoradar_pine_synced_cache';
+
+// FNV-1a — determinístico, sem dependência (mesmo algoritmo já usado em
+// src/lib/rtdbMirror.js para outro propósito: detectar divergência, não
+// segurança). JSON.stringify(obj, arrayDeChaves) serializa só essas chaves,
+// NA ORDEM dada — truque usado abaixo para um JSON canônico (ordem de chave
+// não deveria mudar o hash).
+function fnv1aHash(str) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+export function hashSyncedConfig(payload) {
+  return fnv1aHash(JSON.stringify(payload, Object.keys(payload).sort()));
+}
+
+function readSyncedConfigCache() {
+  try {
+    const stored = localStorage.getItem(SYNCED_CONFIG_CACHE_KEY);
+    return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSyncedConfigCache(cache) {
+  try {
+    localStorage.setItem(SYNCED_CONFIG_CACHE_KEY, JSON.stringify({ ...cache, cachedAt: new Date().toISOString() }));
+  } catch {
+    // localStorage indisponível (modo privado/cota) — cache não é crítico,
+    // a próxima leitura bem-sucedida tenta gravar de novo.
+  }
+}
+
+// Status da ÚLTIMA chamada a getPineConfig() — módulo-level de propósito,
+// consumido por scanner.js via getPineConfigStatus() logo em seguida (mesmo
+// padrão de "capturar imediatamente" que pineConfig em si já usa, ver o
+// comentário em scanAsset). Nunca usado para decidir o QUE está no config
+// (isso é sempre o retorno de getPineConfig()) — só para decidir SE essa
+// leitura é confiável o bastante pra abrir operação nova.
+let lastConfigStatus = { source: 'defaults', version: null, hash: null, degraded: true };
+
+/**
+ * `{ source: 'postgres'|'cache'|'defaults', version, hash, degraded }` da
+ * ÚLTIMA chamada a getPineConfig(). `degraded: true` só quando a leitura ao
+ * Postgres falhou E não existe nenhum cache versionado anterior confiável —
+ * scanner.js usa isto para suspender a abertura de operação NOVA (nunca o
+ * price-check de operações já abertas, que usa o config congelado na
+ * própria operação).
+ */
+export function getPineConfigStatus() {
+  return lastConfigStatus;
+}
+
 // Exported so callers reconstructing a COMPLETE config from a partial one
 // (e.g. Backtest.jsx's "apply trial to live scanner", applying an old
 // report generated before a key existed) can fall back to the value that
@@ -417,13 +481,29 @@ export async function getPineConfig() {
   try {
     const { backend } = await import('@/api/entities');
     const current = await backend.entities.StrategyConfig.get('current');
+    const syncedValues = {};
     if (current) {
       for (const key of SYNCED_STRATEGY_KEYS) {
-        if (current[key] !== undefined) config[key] = current[key];
+        if (current[key] !== undefined) syncedValues[key] = current[key];
       }
     }
+    config = { ...config, ...syncedValues };
+    const version = current?.configVersion ?? null;
+    const hash = current?.configHash ?? null;
+    writeSyncedConfigCache({ values: syncedValues, version, hash });
+    lastConfigStatus = { source: 'postgres', version, hash, degraded: false };
   } catch (e) {
     logWarn('pineParser', 'Falha ao ler strategyConfig do Postgres/Neon, usando localStorage/defaults', { error: e.message });
+    const cache = readSyncedConfigCache();
+    if (cache) {
+      // Cache de uma leitura CONFIRMADA anterior — melhor que localStorage
+      // (PINE_CONFIG_KEY) sozinho ou DEFAULTS: sabemos que esses valores
+      // foram realmente o StrategyConfig oficial em algum momento.
+      config = { ...config, ...cache.values };
+      lastConfigStatus = { source: 'cache', version: cache.version, hash: cache.hash, degraded: false };
+    } else {
+      lastConfigStatus = { source: 'defaults', version: null, hash: null, degraded: true };
+    }
   }
 
   return config;
@@ -459,9 +539,21 @@ export async function syncPineToAssets() {
       if (NON_PINE_SYNCED_KEYS.has(key)) continue;
       syncedPayload[key] = config[key];
     }
+    // configVersion/configHash (docs/known-risks.md) — permitem ao painel/cron
+    // degradar com segurança (cache versionado) em vez de defaults silenciosos
+    // quando o Postgres cair depois. Cobertura PARCIAL por desenho: só esta
+    // rota de escrita (Pine Script salvo, o caminho principal de produção)
+    // incrementa a versão — uma escrita direta a StrategyConfig por outro
+    // caminho (ex.: "aplicar trial do backtest ao scanner ao vivo") não passa
+    // por aqui e não teria a versão/hash atualizados; aceitável nesta rodada.
+    const previous = await backend.entities.StrategyConfig.get('current');
+    const configVersion = (Number.isFinite(previous?.configVersion) ? previous.configVersion : 0) + 1;
+    const configHash = hashSyncedConfig(syncedPayload);
     await backend.entities.StrategyConfig.set('current', {
       ...syncedPayload,
       updated_at: new Date().toISOString(),
+      configVersion,
+      configHash,
     });
   } catch (e) {
     logWarn('pineParser', 'Falha ao sincronizar strategyConfig com o Postgres/Neon', { error: e.message });

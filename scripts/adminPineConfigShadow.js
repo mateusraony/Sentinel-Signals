@@ -10,9 +10,14 @@
 // adminPineConfig.js (cron) never define it (see rf1hCondTripwire.test.js),
 // so this override can never collide with, or be confused for, a real
 // strategyConfig/current value.
-import { getPineConfig as getRealPineConfig } from './adminPineConfig.js';
+import { getPineConfig as getRealPineConfig, getPineConfigStatus } from './adminPineConfig.js';
 
 export async function getPineConfig() {
   const real = await getRealPineConfig();
   return { ...real, rf1hCondEnabled: true };
 }
+
+// Reexportado sem modificação — scanner.js importa os dois nomes de
+// './pineParser' incondicionalmente, e o status (degraded/versão) não muda
+// com o override de rf1hCondEnabled acima.
+export { getPineConfigStatus };

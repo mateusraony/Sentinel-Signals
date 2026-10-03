@@ -30,7 +30,7 @@ import { detectFvg } from './indicators/fvg';
 import { detectOrderBlock } from './indicators/orderBlock';
 import { detectEngulfing, detectPinBar, detectMarubozu } from './indicators/candlePatterns';
 import { planSignalArbitration, ARBITRATION_VERSION } from './signalArbitration';
-import { getPineConfig } from './pineParser';
+import { getPineConfig, getPineConfigStatus } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, advancePreTp1Trailing, favorableExtremeFromMfe, advanceToBreakevenOnSiblingOpen, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
 import { groupActiveOpsByAsset, isTerminalStatus, shouldSkipCrossSourceManagement } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
@@ -58,6 +58,7 @@ import {
   notifyTimeStop,
   notifyChopExit,
   notifySignalCanceled,
+  notifyLockDegraded,
 } from './telegram';
 
 const TIMEFRAMES = ['1h', '4h', '1d'];
@@ -270,27 +271,72 @@ const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 // the `signal_timeframe` field (all of which came from the 4h/15m cascade).
 const SIGNAL_TF_MS = { '4h': FOUR_HOURS_MS, '1h': ONE_HOUR_MS };
 
+// Retry curto (não o orçamento de ~15s da Binance, httpRetry.js — o scan tem
+// janelas de tempo apertadas, ver scripts/scanTimeout.mjs/SCAN_STEP_TIMEOUT_MS)
+// antes de desistir e cair no fail-open abaixo. Sobrevive a um blip de rede
+// de menos de ~1s sem precisar do fail-open de jeito nenhum — a maioria dos
+// "Failed to fetch" vistos em produção contra este backend são exatamente
+// isso (docs/known-risks.md).
+const LOCK_RETRY_DELAYS_MS = [300, 800];
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Cooldown do alerta Telegram abaixo — em memória, por processo. Suficiente
+// nos dois executores: no cron cada processo já vive só alguns minutos (o
+// limite natural é a duração do próprio job), no navegador a aba pode ficar
+// aberta horas, então o cooldown evita 1 alerta a cada ~5min de uma
+// instabilidade prolongada.
+const LOCK_ALERT_COOLDOWN_MS = 30 * 60 * 1000;
+let lastLockAlertAt = 0;
+
+async function maybeAlertLockDegraded(lockName, errMessage) {
+  if (Date.now() - lastLockAlertAt < LOCK_ALERT_COOLDOWN_MS) return;
+  lastLockAlertAt = Date.now();
+  try {
+    await notifyLockDegraded(lockName, EXECUTOR, errMessage);
+  } catch (e) {
+    logWarn('scanner', 'Falha ao notificar lock degradado no Telegram', { error: e.message });
+  }
+}
+
 // Fail-open: if the lock itself can't be acquired/released (permission
 // error, network blip), we still let the scan run rather than going
 // silently dark — losing the concurrency guard for one run is a much
 // smaller risk than the scanner never running signals/price checks again.
 // The failure is logged loudly (SystemLog, visible in the app's Debug Log)
-// instead of only console.warn, so it doesn't go unnoticed.
+// instead of only console.warn, so it doesn't go unnoticed. A short retry
+// (LOCK_RETRY_DELAYS_MS) runs first — most occurrences are a transient
+// network blip, not a real outage, and surviving those means the
+// concurrency guard stays intact instead of reaching fail-open at all.
 async function tryAcquireScanLock(lockName, ttlMs, holder) {
-  try {
-    return await backend.locks.acquireScanLock(lockName, ttlMs, holder);
-  } catch (err) {
-    logError('scanner', `Falha ao adquirir lock "${lockName}" — prosseguindo sem lock (risco de execução concorrente)`, { error: err.message });
-    return true;
+  let lastErr;
+  for (let attempt = 0; attempt <= LOCK_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      return await backend.locks.acquireScanLock(lockName, ttlMs, holder);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < LOCK_RETRY_DELAYS_MS.length) await sleep(LOCK_RETRY_DELAYS_MS[attempt]);
+    }
   }
+  logError('scanner', `Falha ao adquirir lock "${lockName}" — prosseguindo sem lock (risco de execução concorrente)`, { error: lastErr.message, executor: EXECUTOR });
+  maybeAlertLockDegraded(lockName, lastErr.message); // fire-and-forget — nunca atrasa o scan
+  return true;
 }
 
 async function tryReleaseScanLock(lockName, holder) {
-  try {
-    await backend.locks.releaseScanLock(lockName, holder);
-  } catch (err) {
-    logWarn('scanner', `Falha ao liberar lock "${lockName}"`, { error: err.message });
+  let lastErr;
+  for (let attempt = 0; attempt <= LOCK_RETRY_DELAYS_MS.length; attempt++) {
+    try {
+      await backend.locks.releaseScanLock(lockName, holder);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < LOCK_RETRY_DELAYS_MS.length) await sleep(LOCK_RETRY_DELAYS_MS[attempt]);
+    }
   }
+  logWarn('scanner', `Falha ao liberar lock "${lockName}"`, { error: lastErr.message, executor: EXECUTOR });
 }
 
 /**
@@ -1316,6 +1362,10 @@ export async function scanAsset(asset) {
 
   // Read Pine config — parameters auto-synced from Pine Script editor
   const pineConfig = await getPineConfig();
+  // Capturado imediatamente após — reflete a leitura ACIMA, não uma leitura
+  // concorrente de outro ativo (o scan varre os ativos sequencialmente, mas
+  // isto não depende disso: é só o status do getPineConfig() desta linha).
+  const pineConfigStatus = getPineConfigStatus();
   const indicatorParams = resolveIndicatorParams(asset, pineConfig);
   const rsiZoneThresholds = resolveRsiZoneThresholds(asset);
 
@@ -1833,6 +1883,14 @@ export async function scanAsset(asset) {
     errors,
     duration,
     pineConfig,
+    // Capturado logo após o getPineConfig() acima (não re-lido aqui) —
+    // persistScanResults usa isso pra decidir se pode abrir operação NOVA
+    // (ver CONFIG_DEGRADED logo no início daquela função). Explícito via
+    // scanResult, não lido de getPineConfigStatus() de novo em
+    // persistScanResults, porque entre os dois pode já ter rodado o
+    // scanAsset de OUTRO ativo (mesmo risco que motivou pineConfig já ser
+    // passado assim).
+    pineConfigStatus,
   };
 }
 
@@ -1845,7 +1903,21 @@ export async function persistScanResults(scanResult) {
   // result, so a second read of the same strategyConfig doc is pure waste
   // (Firestore quota is billed per read, and this runs for every asset on
   // every 5-minute pass — see docs/known-risks.md item 13).
-  const { asset, results, newSignals, errors, duration, pineConfig } = scanResult;
+  const { asset, results, newSignals, errors, duration, pineConfig, pineConfigStatus } = scanResult;
+
+  // CONFIG_DEGRADED: StrategyConfig não pôde ser confirmado no Postgres/Neon
+  // nesta passada E não há cache versionado de uma leitura anterior bem-
+  // sucedida (getPineConfigStatus() em src/lib/pineParser.js — ver
+  // docs/known-risks.md). Só bloqueia abrir operação NOVA
+  // (createTradeOpIfNoneActiveCapped abaixo) — detecção de sinal (acima),
+  // AssetState e o price-check de operações já abertas continuam normais
+  // (os dois não dependem de pineConfig ao vivo: a gestão de stop/TP usa o
+  // config CONGELADO na criação da própria operação, mesmo racional já
+  // documentado para runnerEnabled/preTp1StopProtectionEnabled em
+  // .claude/rules/trading-engine.md).
+  if (pineConfigStatus?.degraded) {
+    logWarn('scanner', `${asset.symbol}: StrategyConfig não confirmado (sem cache válido) — criação de operação nova suspensa até a próxima leitura bem-sucedida`, { source: pineConfigStatus.source }, { symbol: asset.symbol });
+  }
 
   // Update or create asset states
   for (const [tf, data] of Object.entries(results)) {
@@ -2075,6 +2147,13 @@ export async function persistScanResults(scanResult) {
    * explícita do usuário no painel, não uma decisão do motor.
    */
   const createTradeOpIfNoneActiveCapped = async (assetId, tradeOpId, opData, cascade) => {
+    // CONFIG_DEGRADED (ver o início desta função) — bloqueia só a criação
+    // automática daqui; createManualTradeOp (entrada explícita do usuário)
+    // não passa por este closure de propósito, mesma exceção que o teto de
+    // exposição de carteira já tem.
+    if (pineConfigStatus?.degraded) {
+      return { created: false, blockedByConfigDegraded: true };
+    }
     const side = opData?.side;
     if (portfolioSideCap != null && (side === 'BUY' || side === 'SELL')
         && openSideCounts[side] >= portfolioSideCap) {

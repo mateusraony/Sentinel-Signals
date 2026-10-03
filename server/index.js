@@ -17,6 +17,7 @@ const { createAssetStatesRouter } = require('./routes/assetStates');
 const { createMeRouter } = require('./routes/me');
 const { getPgCore } = require('./pgCoreLoader');
 const { requireOwner } = require('./requireOwner');
+const { checkDatabaseReady } = require('./readyCheck');
 
 // Fail fast with a clear message instead of an opaque JSON.parse crash if
 // this ever gets deployed without its secrets configured. OWNER_ACCESS_KEY
@@ -64,6 +65,22 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
+});
+
+// Aditivo — /health continua simples de propósito (é o alvo do keep-warm.yml
+// e deve responder rápido mesmo sob um Postgres lento/indisponível). /ready
+// checa se a API consegue de fato falar com o banco, sem verificar locks/
+// scanner/config (fica para uma rodada futura, se precisar).
+const READY_DB_TIMEOUT_MS = 5000;
+
+app.get('/ready', async (req, res) => {
+  if (!process.env.DATABASE_URL) {
+    return res.status(503).json({ status: 'error', database: 'not_configured' });
+  }
+  const { getPool } = await getPgCore();
+  const result = await checkDatabaseReady(getPool(), READY_DB_TIMEOUT_MS);
+  if (result.status !== 'ok') console.error('GET /ready: banco indisponível:', result.error);
+  res.status(result.status === 'ok' ? 200 : 503).json(result);
 });
 
 async function requireAuth(req, res, next) {

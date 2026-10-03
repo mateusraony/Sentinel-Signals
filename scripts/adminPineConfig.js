@@ -23,6 +23,7 @@
 // browser file uses browser-only APIs like localStorage), so any new synced
 // parameter added there must be added here too.
 import { backend } from './adminEntities.js';
+import { logWarn } from '../src/lib/logger.js';
 
 const DEFAULTS = {
   rng_per: 20,
@@ -168,6 +169,16 @@ const SYNCED_STRATEGY_KEYS = [
 // por processo. Cacheia a PROMISE (não só o valor resolvido) para também
 // deduplicar chamadas concorrentes (scanAllAssets roda vários ativos em
 // paralelo).
+// Espelha getPineConfigStatus() de src/lib/pineParser.js, mas sem a camada
+// de cache versionado entre processos: cada `npm run scan` é um processo
+// curto e novo (sem localStorage, sem estado sobrevivendo entre execuções),
+// então "cache de uma leitura anterior confirmada" não existe aqui — só
+// 'postgres' (leu agora) ou 'defaults' (falhou, sem nada pra comparar).
+let lastConfigStatus = { source: 'defaults', version: null, hash: null, degraded: true };
+export function getPineConfigStatus() {
+  return lastConfigStatus;
+}
+
 let configPromise = null;
 export async function getPineConfig() {
   if (!configPromise) {
@@ -180,8 +191,13 @@ export async function getPineConfig() {
             if (doc[key] !== undefined) config[key] = doc[key];
           }
         }
+        lastConfigStatus = { source: 'postgres', version: doc?.configVersion ?? null, hash: doc?.configHash ?? null, degraded: false };
       } catch (e) {
-        console.warn('[adminPineConfig] Falha ao ler strategyConfig, usando defaults:', e.message);
+        // Antes era console.warn — invisível na tela Logs quando quem falha é
+        // o cron (o lado navegador, src/lib/pineParser.js, já gravava via
+        // logWarn). Equipara os dois lados, mesma mensagem.
+        logWarn('pineParser', 'Falha ao ler strategyConfig do Postgres/Neon, usando localStorage/defaults', { error: e.message, executor: 'cron' });
+        lastConfigStatus = { source: 'defaults', version: null, hash: null, degraded: true };
       }
       return config;
     })();

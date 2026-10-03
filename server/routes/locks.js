@@ -28,8 +28,14 @@ function createLocksRouter({ requireAuth, requireOwner }) {
     if (typeof holder !== 'string' || !holder) return res.status(400).json({ error: 'holder é obrigatório.' });
     try {
       const { backend } = await getPgCore();
-      await backend.locks.releaseScanLock(lockName, holder);
-      res.json({ ok: true });
+      const { released } = await backend.locks.releaseScanLock(lockName, holder);
+      if (!released) {
+        // Não é erro (TTL cobre), mas vale saber se isso acontece com
+        // frequência real — holder não bateu (outro processo já assumiu o
+        // lock, ou corrida rara entre expirar e liberar).
+        console.warn(`POST /api/locks/release: "${lockName}" não foi liberado (holder "${holder}" não bate com o atual).`);
+      }
+      res.json({ ok: true, released });
     } catch (e) {
       console.error('POST /api/locks/release failed:', e.message);
       res.status(500).json({ error: 'Erro interno.' });

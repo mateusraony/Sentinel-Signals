@@ -15,7 +15,7 @@ import { logWarn } from './logger';
 import {
   buildSignalDetectedMessage, buildVerificationTaskMessage, buildSignalCanceledMessage,
   buildTradeCreatedMessage, buildTp1HitMessage, buildTp2HitMessage, buildStopHitMessage,
-  buildInvalidatedMessage, buildTimeStopMessage, buildChopExitMessage,
+  buildInvalidatedMessage, buildTimeStopMessage, buildChopExitMessage, buildLockDegradedMessage,
 } from './notificationTemplates';
 
 const STORAGE_KEY = 'cryptoradar_telegram_cfg';
@@ -249,6 +249,14 @@ export async function notifyVerificationTask(signal, asset) {
 export async function notifySignalCanceled(signal, asset) {
   if (!shouldSend('signal_canceled', signal, asset)) return;
   return send(buildSignalCanceledMessage(signal));
+}
+
+// Alerta de sistema (lock fail-open) — fora do sistema de filtro por
+// evento/ativo (shouldSend), igual ao alerta de cota do Firestore no lado
+// cron (scripts/adminTelegram.js). O cooldown é decidido pelo chamador
+// (src/lib/scanner.js), não aqui — este módulo só decide COMO enviar.
+export async function notifyLockDegraded(lockName, executor, errMessage) {
+  return send(buildLockDegradedMessage({ lockName, executor, errMessage }));
 }
 
 export async function notifyTradeCreated(op) {

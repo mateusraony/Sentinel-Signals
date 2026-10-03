@@ -371,3 +371,13 @@ export function setPineConfigOverrides(next = {}) {
 export async function getPineConfig() {
   return { ...DEFAULTS, ...overrides };
 }
+
+// CONFIG_DEGRADED (docs/known-risks.md, espelha src/lib/pineParser.js/
+// scripts/adminPineConfig.js) não se aplica ao backtest — o replay nunca lê
+// StrategyConfig do Postgres ao vivo, então nunca há "config não
+// confirmado" aqui. Export necessário só porque scanner.js (bundlado sem
+// modificação também para o backtest, scripts/build-backtest.mjs) importa
+// os dois nomes de './pineParser' incondicionalmente.
+export function getPineConfigStatus() {
+  return { source: 'postgres', version: null, hash: null, degraded: false };
+}

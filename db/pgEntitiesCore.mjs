@@ -503,10 +503,14 @@ async function acquireScanLock(lockName, ttlMs, holder) {
 }
 
 async function releaseScanLock(lockName, holder) {
-  await getPool().query(
+  // rowCount 0 significa que o holder não bate (TTL já expirou e outro
+  // processo assumiu, ou corrida rara) — não é erro, mas quem chama pode
+  // querer saber que a liberação não teve efeito (ver server/routes/locks.js).
+  const { rowCount } = await getPool().query(
     'UPDATE scanner_locks SET locked_by = NULL, locked_at = NULL, expires_at = 0 WHERE id = $1 AND locked_by = $2',
     [lockName, holder]
   );
+  return { released: rowCount > 0 };
 }
 
 // --- tradeOps (o CAS redesenhado — ver a seção "Redesenho do CAS em

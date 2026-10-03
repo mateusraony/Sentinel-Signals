@@ -11,6 +11,7 @@ vi.mock('@/api/entities', () => ({ backend: {} }));
 vi.mock('./telegram', () => ({
   isTelegramConfigured: vi.fn(() => false),
   notifyAssetStale: vi.fn().mockResolvedValue(undefined),
+  notifyLockDegraded: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('./logger', () => ({
   logInfo: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('./marketDataProvider', () => ({
 // nunca chegam lá).
 vi.mock('./pineParser', () => ({
   getPineConfig: vi.fn(),
+  getPineConfigStatus: vi.fn(() => ({ source: 'postgres', version: null, hash: null, degraded: false })),
 }));
 
 import * as entitiesModule from '@/api/entities';
