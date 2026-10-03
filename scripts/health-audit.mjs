@@ -79,7 +79,7 @@
 // removido na decomissão, fase 11).
 import { backend } from './adminEntities.js';
 import { rtdb } from './adminEntitiesFirestoreLegacy.js';
-import { agrupar, celula, descreverOrigem, haQuantoTempo, ocorreuRecentemente, sufixoOrigem } from './healthAuditFormat.mjs';
+import { agrupar, celula, descreverOrigem, haQuantoTempo, notaSoNavegador, ocorreuRecentemente, soNavegador, sufixoOrigem } from './healthAuditFormat.mjs';
 import { classifyFailure } from './failureClassification.mjs';
 import { isTelegramConfigured, notifyHealthAudit } from './adminTelegram.js';
 
@@ -200,7 +200,7 @@ async function checarLogs() {
       p('🚨 **Suspeita de falha sistêmica** (mesmo erro em 3+ ativos — a assinatura do item 136,');
       p('que parou toda criação de operação por ~2 semanas sem derrubar nenhum job):');
       for (const g of sistemicos.slice(0, 5)) {
-        p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}${sufixoOrigem(g)}`);
+        p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}${sufixoOrigem(g)}${notaSoNavegador(g)}`);
         p(`  - exemplo: \`${String(g.exemplo).slice(0, 200)}\``);
       }
       // Achado real (auditoria externa, 2026-09-15): só o 1º grupo virava
@@ -210,7 +210,7 @@ async function checarLogs() {
       // Recência (2026-09-16): só quem ainda ocorreu nas últimas
       // ACHADO_SISTEMICO_RECENCIA_HORAS vira achado — ver `ocorreuRecentemente`
       // em ./healthAuditFormat.mjs.
-      for (const g of sistemicos.slice(0, 5).filter((g) => ocorreuRecentemente(g))) {
+      for (const g of sistemicos.slice(0, 5).filter((g) => ocorreuRecentemente(g) && !soNavegador(g))) {
         achados.push(`erro em ${g.ativos.size} ativos ao mesmo tempo: ${g.chave}${sufixoOrigem(g)}`);
       }
     }
@@ -239,12 +239,12 @@ async function checarLogs() {
       p('');
       p('🚨 **Falha sistêmica fora da janela recente** (3+ ativos):');
       for (const g of sistemicosFora.slice(0, 5)) {
-        p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}${sufixoOrigem(g)}`);
+        p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}${sufixoOrigem(g)}${notaSoNavegador(g)}`);
       }
       // Mesma correção do bloco acima — um achado por grupo listado, não só
       // o 1º — e o mesmo filtro de recência (`ocorreuRecentemente`, ver
       // ./healthAuditFormat.mjs).
-      for (const g of sistemicosFora.slice(0, 5).filter((g) => ocorreuRecentemente(g))) {
+      for (const g of sistemicosFora.slice(0, 5).filter((g) => ocorreuRecentemente(g) && !soNavegador(g))) {
         achados.push(`erro em ${g.ativos.size} ativos (fora da janela recente): ${g.chave}${sufixoOrigem(g)}`);
       }
     }

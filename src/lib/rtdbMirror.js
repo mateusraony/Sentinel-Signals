@@ -95,7 +95,7 @@ function shortHash(str) {
 // targets the real Firestore document, never the sanitized key.
 //
 // SystemLog's scan-error dedup key (scanner.js:
-// `scan_error::${asset.id}::${today}::${err.message}`) is the one id shape
+// `scan_error::${EXECUTOR}::${asset.id}::${today}::${err.message}`) is the one id shape
 // in this codebase that can blow past RTDB_KEY_MAX_BYTES — err.message is
 // unbounded free text (item 169 round-3 proposal flagged this as the
 // blocker for mirroring SystemLog). When the sanitized id is too long, it's

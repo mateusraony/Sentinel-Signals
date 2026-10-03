@@ -4681,6 +4681,18 @@ export async function scanAllAssets(onProgress) {
 // pra distinguir os dois depois do fato (docs/known-risks.md item 57
 // addendum, 2026-09-22/23). err.cause do undici é um objeto simples
 // (errno/code/syscall), nunca assuma que é uma instância de Error.
+// Só no navegador: estado da aba/rede no momento do erro. Existe para decidir
+// com DADO (item 255) entre as hipóteses do "Failed to fetch" que só o
+// navegador tem — rede caída (online:false), aba em segundo plano
+// (visibility:'hidden') ou aparelho voltando de suspensão. No cron devolve {}.
+function browserContext() {
+  if (EXECUTOR !== 'browser' || typeof navigator === 'undefined') return {};
+  return {
+    online: navigator.onLine,
+    visibility: typeof document !== 'undefined' ? document.visibilityState : null,
+  };
+}
+
 function describeErrorCause(cause) {
   if (cause == null) return null;
   if (typeof cause !== 'object') return String(cause);
@@ -4762,7 +4774,12 @@ async function scanAllAssetsInner(onProgress, scanId = null) {
       // fresh log entry even if the same outage recurs tomorrow, preserving
       // visibility instead of silencing it after the first occurrence ever.
       const today = new Date().toISOString().slice(0, 10);
-      const scanErrorDedupKey = `scan_error::${asset.id}::${today}::${err.message}`;
+      // O executor entra na chave (item 255, Codex review PR #458, P1): sem
+      // ele, o navegador logando primeiro no dia fazia o createUnique DESCARTAR
+      // a mesma falha do cron — e a auditoria, vendo só `browser`, suprimia o
+      // aviso mesmo com o cron falhando. Agora cron e navegador não se
+      // escondem (no máximo 1 log/dia por executor, ativo e mensagem).
+      const scanErrorDedupKey = `scan_error::${EXECUTOR}::${asset.id}::${today}::${err.message}`;
       await backend.entities.SystemLog.createUnique(scanErrorDedupKey, {
         level: 'error',
         module: 'scanner',
@@ -4774,6 +4791,11 @@ async function scanAllAssetsInner(onProgress, scanId = null) {
           error_cause: describeErrorCause(err.cause),
           error_class: classifyError(err),
           scan_id: scanId,
+          // Marca que ESTE registro foi deduplicado por executor. A auditoria
+          // só trata um grupo como "só navegador" se todos os registros
+          // tiverem isto — logs antigos (chave executor-cega) nunca suprimem.
+          dedup_scope: 'executor',
+          ...browserContext(),
         },
       });
     }

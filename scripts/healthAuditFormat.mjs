@@ -45,6 +45,9 @@ export function agrupar(registros) {
       // responde "de onde veio?" sem abrir a tela Logs. Logs antigos não têm
       // os campos: o Set fica vazio e a coluna mostra "—".
       executores: new Set(), classes: new Set(),
+      // true enquanto TODOS os registros do grupo foram deduplicados por
+      // executor (details.dedup_scope) — pré-requisito de `soNavegador`.
+      dedupPorExecutor: true,
       primeiro: null, ultimo: null, exemplo: r.message,
     };
     g.total += 1;
@@ -54,6 +57,7 @@ export function agrupar(registros) {
     // logError/logWarn, cujo 3º argumento é persistido em `details`.
     const executor = r.executor ?? r.details?.executor;
     if (executor) g.executores.add(executor);
+    if (r.details?.dedup_scope !== 'executor') g.dedupPorExecutor = false;
     if (r.details?.error_class) g.classes.add(r.details.error_class);
     const t = r.created_date;
     if (t) {
@@ -73,6 +77,27 @@ export function agrupar(registros) {
 export function descreverOrigem(g) {
   const partes = [[...(g.executores ?? [])].sort().join('/'), [...(g.classes ?? [])].sort().join('/')].filter(Boolean);
   return partes.length ? partes.join(' · ') : '—';
+}
+
+/**
+ * Grupo cujos registros vieram TODOS do navegador. O relógio de trading é o
+ * cron (scan.yml); um erro que só o navegador teve não é falha do sistema —
+ * é do painel aberto naquele aparelho (rede, aba em segundo plano, suspensão).
+ * Sem `executor` ou sem `dedup_scope` (logs antigos, deduplicados sem olhar o
+ * executor) ou com cron no meio, NÃO é "só navegador" e continua virando
+ * achado como sempre.
+ */
+export function soNavegador(g) {
+  const ex = [...(g.executores ?? [])];
+  // Sem dedup por executor (logs gravados antes do item 255) um `browser`
+  // pode estar escondendo uma falha idêntica do cron — não dá para afirmar
+  // "só navegador", então continua avisando.
+  return g.dedupPorExecutor === true && ex.length > 0 && ex.every((e) => e === 'browser');
+}
+
+/** Nota para o corpo do relatório: explica por que um grupo não avisa. */
+export function notaSoNavegador(g) {
+  return soNavegador(g) ? ' — **só navegador, o cron não falhou: listado, mas não gera aviso**' : '';
 }
 
 /** Sufixo para a mensagem de achado (Telegram): vazio quando não há origem. */

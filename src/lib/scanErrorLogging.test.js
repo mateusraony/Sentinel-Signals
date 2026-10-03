@@ -97,7 +97,7 @@ describe('scanAllAssets — SystemLog de erro grava executor + detalhe do erro (
     expect(entry.details.scan_id).toMatch(/^full-scan_/);
   });
 
-  it('dedupKey continua chaveado só por err.message (contrato do item 39.1 intocado)', async () => {
+  it('dedupKey continua chaveado por (executor, ativo, dia, err.message) — item 39.1 + executor do item 255', async () => {
     backend._seed('MonitoredAsset', {
       id: 'asset_3',
       symbol: 'BTCUSDT',
@@ -108,7 +108,41 @@ describe('scanAllAssets — SystemLog de erro grava executor + detalhe do erro (
 
     await scanAllAssets();
     const today = new Date().toISOString().slice(0, 10);
-    const dedupKey = `scan_error::asset_3::${today}::Failed to fetch`;
+    const dedupKey = `scan_error::cron::asset_3::${today}::Failed to fetch`;
     expect(backend._get('SystemLog', dedupKey)).toBeDefined();
+  });
+});
+
+// item 255 — Codex review (PR #458, P1). Sem o executor na chave, o navegador
+// logando primeiro no dia fazia createUnique DESCARTAR a mesma falha do cron;
+// a auditoria via só `browser` e suprimia o aviso com o cron falhando.
+describe('scanAllAssets — dedup por executor (item 255)', () => {
+  it('REGRESSÃO: falha idêntica já logada pelo NAVEGADOR no dia NÃO impede o registro do cron', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    backend._seed('MonitoredAsset', { id: 'asset_4', symbol: 'ARBUSDT', is_active: true, scan_status: 'ok' });
+    backend._seed('SystemLog', {
+      id: `scan_error::browser::asset_4::${today}::Failed to fetch`,
+      level: 'error', module: 'scanner', symbol: 'ARBUSDT', executor: 'browser',
+      message: 'Erro no scan de ARBUSDT: Failed to fetch',
+    });
+    getPineConfig.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    await scanAllAssets(); // EXECUTOR mockado = 'cron'
+
+    const cron = backend._get('SystemLog', `scan_error::cron::asset_4::${today}::Failed to fetch`);
+    expect(cron).toBeDefined();
+    expect(cron.executor).toBe('cron');
+    expect(cron.details.dedup_scope).toBe('executor');
+  });
+
+  it('o mesmo executor continua deduplicado (1 registro por dia, ativo e mensagem)', async () => {
+    backend._seed('MonitoredAsset', { id: 'asset_5', symbol: 'FETUSDT', is_active: true, scan_status: 'ok' });
+    getPineConfig.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    await scanAllAssets();
+    await scanAllAssets();
+
+    const logs = (await backend.entities.SystemLog.list('-created_date', 20)).filter((l) => l.symbol === 'FETUSDT');
+    expect(logs).toHaveLength(1);
   });
 });
