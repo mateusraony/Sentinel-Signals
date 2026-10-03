@@ -481,9 +481,18 @@ async function acquireScanLock(lockName, ttlMs, holder) {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
-    const { rows } = await client.query('SELECT expires_at FROM scanner_locks WHERE id = $1 FOR UPDATE', [lockName]);
+    const { rows } = await client.query('SELECT locked_by, expires_at FROM scanner_locks WHERE id = $1 FOR UPDATE', [lockName]);
     const now = Date.now();
-    if (rows[0] && Number(rows[0].expires_at) > now) {
+    // Codex review (PR #455): sem o check de locked_by, um retry do MESMO
+    // holder (src/lib/scanner.js's tryAcquireScanLock, item 252 — reage a um
+    // acquire cujo COMMIT teve sucesso mas a resposta HTTP se perdeu) via
+    // uma linha ainda não expirada contava como "ocupado por outro worker" —
+    // o caller via false, pulava o scan SEM passar pelo finally que libera o
+    // lock, prendendo full-scan por até 10min / price-check por até 3min
+    // exatamente na falha transitória que o retry deveria tolerar.
+    // Reaquisição pelo MESMO holder é sempre idempotente (refresca o TTL);
+    // só um holder DIFERENTE com lock ainda válido é contenção de verdade.
+    if (rows[0] && Number(rows[0].expires_at) > now && rows[0].locked_by !== holder) {
       await client.query('ROLLBACK');
       return false;
     }
