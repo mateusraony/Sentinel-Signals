@@ -104,6 +104,34 @@ describe('estado — sinal sem operação', () => {
     expect(card.state.label).toMatch(/^Já passou/);
   });
 
+  it('REGRESSÃO (Codex, PR #460): evento informativo 4h (MACD/EMA/RSI) nunca é "aguardando confirmação"', () => {
+    for (const source of ['macd', 'ema_cross', 'rsi']) {
+      const card = build({ signals: [signal({ source, timeframe: '4h' })] });
+      expect(card.state.label).toMatch(/^Só informação/);
+      expect(card.state.label).not.toMatch(/Aguardando/);
+      expect(card.action.headline).toBe('Só informação');
+      expect(card.action.why).not.toMatch(/vendo se vale abrir/);
+    }
+  });
+
+  it('REGRESSÃO (Codex, PR #460): evento informativo mais novo não esconde um aviso de entrada pendente', () => {
+    const entrada = signal({ id: 'rf', source: 'range_filter', created_date: iso(2 * HOUR) });
+    const info = signal({ id: 'macd', source: 'macd', signal_type: 'SELL', created_date: iso(5 * MIN) });
+    const card = build({ signals: [info, entrada] });
+    expect(card.state.label).toBe('Aguardando confirmação · BUY');
+    expect(card.state.side).toBe('BUY');
+  });
+
+  it('cascata SMC (smc_structure 1h) é candidata de entrada mas segue a regra da janela: 1h = só informação', () => {
+    const card = build({ signals: [signal({ source: 'smc_structure', timeframe: '1h' })] });
+    expect(card.state.label).toMatch(/^Só informação/);
+  });
+
+  it('motivo de rejeição WORSE não entra no CONTRA de evento informativo', () => {
+    const card = build({ signals: [signal({ source: 'macd', context: {}, last_rejection_reason: 'regime_rejected' })] });
+    expect(card.why.cons.map((c) => c.code)).not.toContain('rejection_worse');
+  });
+
   it('escolhe o sinal mais recente e não muta a lista recebida', () => {
     const velho = signal({ id: 'velho', created_date: iso(3 * HOUR), signal_type: 'SELL' });
     const novo = signal({ id: 'novo', created_date: iso(10 * MIN) });
@@ -221,10 +249,15 @@ describe('CONTRA — derivação determinística, sem recalcular', () => {
     expect(card.consStatus).toBe('not_recorded');
   });
 
-  it('alinhamento against_trend no contexto do sinal', () => {
-    const card = build({ signals: [signal({ context: { ...signal().context, alignment: 'against_trend' } })] });
+  it('alinhamento against_trend gravado no nível de cima do SignalEvent', () => {
+    const card = build({ signals: [signal({ alignment: 'against_trend' })] });
     expect(card.why.cons.map((c) => c.code)).toContain('against_trend');
     expect(card.consStatus).toBe('derived');
+  });
+
+  it('REGRESSÃO (Codex, PR #460): `alignment` dentro de context NÃO é onde o motor grava — não conta', () => {
+    const card = build({ signals: [signal({ context: { ...signal().context, alignment: 'against_trend' } })] });
+    expect(card.why.cons.map((c) => c.code)).not.toContain('against_trend');
   });
 
   it('1D contrário: BUY com 1D baixa e SELL com 1D alta; escopo "signal" vs "entry"', () => {
@@ -258,6 +291,25 @@ describe('CONTRA — derivação determinística, sem recalcular', () => {
       assetStates: [st('4h', { rsi_zone: 'oversold', macd_histogram: 0, trend_ema: 'neutral' })],
     });
     expect(card.why.cons).toEqual([]);
+  });
+
+  it('REGRESSÃO (Codex, PR #460): operação legada sem signal_timeframe usa 4h (não o 15m de confirmação)', () => {
+    const card = build({
+      tradeOps: [op({ signal_timeframe: undefined, timeframe: '15m' })],
+      assetStates: [st('4h', { rsi_zone: 'overbought', last_candle_time: '2026-10-03T16:00:00.000Z' }), st('15m', { rsi_zone: 'neutral' })],
+    });
+    expect(card.state.timeframe).toBe('4h');
+    expect(card.why.cons.map((c) => c.code)).toContain('rsi_extreme');
+    expect(card.quality.lastCandleTime).toBe('2026-10-03T16:00:00.000Z');
+  });
+
+  it('operação da cascata SMC (signal_timeframe 1h) usa o AssetState de 1h', () => {
+    const card = build({
+      tradeOps: [op({ signal_timeframe: '1h', timeframe: '5m', cascade: '1h_5m' })],
+      assetStates: [st('1h', { rsi_zone: 'overbought' }), st('4h', { rsi_zone: 'neutral' })],
+    });
+    expect(card.state.timeframe).toBe('1h');
+    expect(card.why.cons.map((c) => c.code)).toContain('rsi_extreme');
   });
 
   it('usa o AssetState do TF do SINAL (4h), não o do timeframe de execução da operação (15m)', () => {
@@ -342,7 +394,23 @@ describe('pureza e contrato de campos', () => {
     const confluence = readFileSync(new URL('./indicators/confluence.js', import.meta.url), 'utf8');
     expect(confluence).toContain("'against_trend'");
     const scanner = readFileSync(new URL('./scanner.js', import.meta.url), 'utf8');
-    expect(scanner).toContain('alignment: strengthResult.alignment');
+    // `alignment` fica no nível de cima do sinal, antes de `context` (Codex, PR #460).
+    expect(scanner).toMatch(/source: 'range_filter',\s*strength: strengthResult\.strength,\s*alignment: strengthResult\.alignment,/);
     expect(scanner).toContain('tf_1d_direction: sig.context?.tf_1d_direction');
+    // Só estas duas fontes são candidatas de entrada no motor.
+    expect(scanner).toContain("signal.source === 'range_filter'");
+    expect(scanner).toContain("signal.source === 'smc_structure'");
+  });
+
+  it('contrato do schema: `alignment` é propriedade de nível superior do SignalEvent (e não de context) e aceita against_trend', () => {
+    const raw = readFileSync(new URL('../../docs/schema-reference/SignalEvent.jsonc', import.meta.url), 'utf8');
+    const schema = JSON.parse(raw.replace(/^\s*\/\/.*$/gm, ''));
+    expect(schema.properties.alignment.enum).toContain('against_trend');
+    expect(schema.properties.context.properties?.alignment).toBeUndefined();
+  });
+
+  it('contrato do schema: signal_timeframe ausente = operação legada 4h (TradeOperation.jsonc)', () => {
+    const raw = readFileSync(new URL('../../docs/schema-reference/TradeOperation.jsonc', import.meta.url), 'utf8');
+    expect(raw).toMatch(/treat missing as '4h'/);
   });
 });

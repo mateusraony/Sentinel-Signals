@@ -30078,7 +30078,8 @@ versão do motor; `AssetState` guarda flags por timeframe (`rsi_zone`,
 probabilidade"; `PerformanceBar.jsx` é código morto; `ProximityBar` sem teste.
 
 **Regra do CONTRA** (derivação determinística no presenter, 1 campo persistido →
-1 frase, nunca limiar novo): `context.alignment == 'against_trend'`, `tf_1d_direction`
+1 frase, nunca limiar novo): `alignment == 'against_trend'` (nível de cima do
+`SignalEvent`, não `context`), `tf_1d_direction`
 oposta ao lado, `rsi_zone`/`macd_histogram`/`trend_ema` do `AssetState` do TF do
 sinal (rotulados "agora"), `last_rejection_reason` do tipo WORSE. Sem regra que
 case = "não registrado", nunca "nenhum contra". Risco assumido: se o motor mudar
@@ -30102,3 +30103,24 @@ alcançam a Binance; conferir visualmente o card "Análise preditiva".
 **Fases futuras do Prompt Mestre que conflitam com decisões permanentes** (só por
 pedido explícito): dados de derivativos/multi-exchange (item 4, `roadmap.md:837`),
 conta read-only (`trading-safety.md`), Coach/Reviewer (`roadmap.md:844`).
+
+### Addendum (2026-10-03) — 3 achados do Codex no presenter (PR #460), todos confirmados
+1. **P1 — fontes informativas viravam "aguardando confirmação"**: o scanner também
+   grava `SignalEvent` 4h de `macd`/`ema_cross`/`rsi` (`scanner.js:1808-1876`), mas
+   só `range_filter` e `smc_structure` são candidatos de entrada (`scanner.js:2356,
+   2369, 2740`). O presenter escolhia o evento mais novo de qualquer fonte e o
+   rotulava pela janela de 4h; um evento informativo novo também escondia um aviso
+   de entrada pendente. Agora candidato de entrada tem prioridade e fonte não-entrada
+   é sempre fase "Só informação" (texto próprio, sem "o app está vendo se vale abrir
+   uma operação").
+2. **P2 — `signal_timeframe` ausente**: operação legada da cascata 4h/15m cai em
+   `'4h'` (`TradeOperation.jsonc`), não no `timeframe` de confirmação (15m/5m), que
+   não tem `AssetState`.
+3. **P2 — `alignment` no lugar errado**: é propriedade de nível superior do
+   `SignalEvent` (`scanner.js:1674,1818…`; `SignalEvent.jsonc` `properties.alignment`),
+   não de `context`. **Falha minha**: o teste de contrato só conferia que a string
+   `alignment: strengthResult.alignment` existia em `scanner.js` e a fixture usava o
+   formato errado, então a regra nunca teria casado com dado real. O contrato agora
+   verifica a POSIÇÃO (regex no `newSignals.push` + schema JSON com `alignment` fora
+   de `context`). Lição geral: teste de contrato precisa afirmar o lugar do campo,
+   não só o nome.

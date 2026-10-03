@@ -52,13 +52,29 @@ function directionOrNull(value) {
   return value === 1 || value === -1 || value === 0 ? value : null;
 }
 
+// Só estas fontes viram candidatas a entrada no motor (scanner.js: range_filter
+// e smc_structure). MACD/EMA/RSI também gravam SignalEvent em 4h, mas são
+// observação de mercado — nunca "aguardando confirmação".
+const ENTRY_SOURCES = new Set(['range_filter', 'smc_structure']);
+const isEntrySignal = (signal) => ENTRY_SOURCES.has(signal?.source);
+
 function pickSubject({ assetOps, assetSignals, now }) {
   const activeOp = [...assetOps].filter((op) => op && !isTerminalStatus(op.status)).sort(byCreatedDesc)[0] ?? null;
   if (activeOp) return { kind: 'op', op: activeOp, signal: null };
-  const signal = [...assetSignals].sort(byCreatedDesc)[0] ?? null;
-  if (signal) return { kind: 'signal', op: null, signal, phase: classifySignal(signal, now).phase };
+  // Candidato de entrada tem prioridade: um evento informativo mais novo não
+  // pode esconder um aviso de entrada ainda pendente.
+  const entrySignals = assetSignals.filter(isEntrySignal);
+  const signal = [...(entrySignals.length ? entrySignals : assetSignals)].sort(byCreatedDesc)[0] ?? null;
+  if (signal) {
+    const phase = isEntrySignal(signal) ? classifySignal(signal, now).phase : SIGNAL_PHASE.INFO;
+    return { kind: 'signal', op: null, signal, phase };
+  }
   return { kind: 'none', op: null, signal: null };
 }
+
+// TradeOperation.jsonc: `signal_timeframe` ausente = operação legada da
+// cascata 4h/15m → tratar como '4h'. `timeframe` é o candle de confirmação (15m/5m).
+const opSignalTimeframe = (op) => op?.signal_timeframe ?? '4h';
 
 function buildState({ subject, opsUnavailable, signalsUnavailable }) {
   if (subject.kind === 'op') {
@@ -68,7 +84,7 @@ function buildState({ subject, opsUnavailable, signalsUnavailable }) {
       kind: 'active_op',
       label: OP_STATE_LABEL[op.status] ?? String(op.status ?? NOT_RECORDED),
       side: op.side ?? null,
-      timeframe: op.signal_timeframe ?? op.timeframe ?? null,
+      timeframe: opSignalTimeframe(op),
     };
   }
   // Sem operação ativa conhecida: se as operações não carregaram, NÃO se pode
@@ -98,6 +114,12 @@ function buildAction({ subject, state, now }) {
   }
   if (subject.kind === 'signal') {
     const { headline, why, userAction } = explainDecision(subject.signal, { now });
+    // Fase INFO nunca vira operação: o texto de rejeição ("o app está vendo se
+    // vale abrir uma operação") seria falso para ela.
+    if (subject.phase === SIGNAL_PHASE.INFO) {
+      const copy = phaseCopy(SIGNAL_PHASE.INFO);
+      return { headline: copy.badge, why: copy.reassurance, userAction };
+    }
     return { headline, why, userAction };
   }
   return null;
@@ -165,7 +187,8 @@ function buildCons({ subject, side, signalTf, stateByTf, now }) {
   const frozen = subject.kind === 'op' ? subject.op : subject.signal?.context;
   const frozenSource = subject.kind === 'op' ? 'entry' : 'signal';
 
-  if (subject.signal?.context?.alignment === 'against_trend') {
+  // `alignment` é gravado no nível de cima do SignalEvent (scanner.js, newSignals.push), não em `context`.
+  if (subject.signal?.alignment === 'against_trend') {
     cons.push({ code: 'against_trend', scope: 'signal', text: 'Contra a tendência maior (alinhamento dos timeframes)' });
   }
   if (want !== null && directionOrNull(frozen?.tf_1d_direction) === -want) {
@@ -187,7 +210,7 @@ function buildCons({ subject, side, signalTf, stateByTf, now }) {
     }
   }
 
-  if (subject.kind === 'signal') {
+  if (subject.kind === 'signal' && isEntrySignal(subject.signal)) {
     const copy = rejectionCopy(subject.signal, subject.phase);
     if (copy.kind === REASON_KIND.WORSE) {
       const { evidence } = explainDecision(subject.signal, { now });
