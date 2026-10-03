@@ -49,7 +49,11 @@ export function agrupar(registros) {
     };
     g.total += 1;
     if (r.symbol) g.ativos.add(r.symbol);
-    if (r.executor) g.executores.add(r.executor);
+    // Dois formatos reais: o erro de scan por ativo grava `executor` no nível
+    // de cima (SystemLog.createUnique); os logs de lock/config passam por
+    // logError/logWarn, cujo 3º argumento é persistido em `details`.
+    const executor = r.executor ?? r.details?.executor;
+    if (executor) g.executores.add(executor);
     if (r.details?.error_class) g.classes.add(r.details.error_class);
     const t = r.created_date;
     if (t) {

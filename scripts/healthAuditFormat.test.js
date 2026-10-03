@@ -146,6 +146,19 @@ describe('origem do erro (executor + error_class)', () => {
     expect([...g.classes]).toEqual(['NETWORK']);
   });
 
+  it('lê executor também de details (formato de logError/logWarn: lock e fallback de config) — Codex review PR #457', () => {
+    const [g] = agrupar([
+      log({ message: 'Falha ao adquirir lock "price-check" — prosseguindo sem lock', details: { executor: 'browser', error_class: 'NETWORK', scan_id: 'price-check_1_a' } }),
+      log({ message: 'Falha ao adquirir lock "price-check" — prosseguindo sem lock', details: { executor: 'cron', error_class: 'NETWORK' } }),
+    ]);
+    expect(descreverOrigem(g)).toBe('browser/cron · NETWORK');
+  });
+
+  it('nível de cima tem precedência sobre details quando os dois existem', () => {
+    const [g] = agrupar([log({ executor: 'cron', details: { executor: 'browser' } })]);
+    expect([...g.executores]).toEqual(['cron']);
+  });
+
   it('descreverOrigem: um lado só, os dois lados, e logs antigos sem os campos', () => {
     expect(descreverOrigem(agrupar([log({ executor: 'browser', details: { error_class: 'NETWORK' } })])[0])).toBe('browser · NETWORK');
     expect(descreverOrigem(agrupar([

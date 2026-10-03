@@ -29936,3 +29936,11 @@ Se virar ruído, dá para encurtar a janela só para a execução noturna.
 formatos de origem, sufixo vazio sem dado); `node --check` do
 `health-audit.mjs`. O script em si exige `DATABASE_URL`, então o relatório
 completo só roda no Actions — conferir o Job Summary da próxima execução.
+
+**Addendum (Codex review, PR #457)**: o `executor` tem dois formatos reais no
+`SystemLog` — nível de cima no erro de scan por ativo (`createUnique`) e
+dentro de `details` nos logs de lock/config (3º argumento de
+`logError`/`logWarn`). A 1ª versão de `agrupar` só lia o nível de cima, então
+lock e fallback de config mostrariam só a classe, sem cron×navegador.
+Corrigido (`r.executor ?? r.details?.executor`, nível de cima com
+precedência), com testes no formato persistido de cada caso.
