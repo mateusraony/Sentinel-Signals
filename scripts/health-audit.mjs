@@ -79,7 +79,7 @@
 // removido na decomissão, fase 11).
 import { backend } from './adminEntities.js';
 import { rtdb } from './adminEntitiesFirestoreLegacy.js';
-import { agrupar, celula, haQuantoTempo, ocorreuRecentemente } from './healthAuditFormat.mjs';
+import { agrupar, celula, descreverOrigem, haQuantoTempo, ocorreuRecentemente, sufixoOrigem } from './healthAuditFormat.mjs';
 import { classifyFailure } from './failureClassification.mjs';
 import { isTelegramConfigured, notifyHealthAudit } from './adminTelegram.js';
 
@@ -186,10 +186,10 @@ async function checarLogs() {
     p('');
     p(`### Erros → ${grupos.length} problemas distintos`);
     p('');
-    p('| # | Módulo · problema | Ativos | Mais recente |');
-    p('|---|---|---|---|');
+    p('| # | Módulo · problema | Ativos | Origem | Mais recente |');
+    p('|---|---|---|---|---|');
     for (const g of grupos.slice(0, 15)) {
-      p(`| ${g.total} | ${celula(g.chave)} | ${g.ativos.size || '—'} | ${haQuantoTempo(g.ultimo)} |`);
+      p(`| ${g.total} | ${celula(g.chave)} | ${g.ativos.size || '—'} | ${celula(descreverOrigem(g))} | ${haQuantoTempo(g.ultimo)} |`);
     }
 
     // Um erro em MUITOS ativos ao mesmo tempo não é azar de um ativo — é falha
@@ -200,7 +200,7 @@ async function checarLogs() {
       p('🚨 **Suspeita de falha sistêmica** (mesmo erro em 3+ ativos — a assinatura do item 136,');
       p('que parou toda criação de operação por ~2 semanas sem derrubar nenhum job):');
       for (const g of sistemicos.slice(0, 5)) {
-        p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}`);
+        p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}${sufixoOrigem(g)}`);
         p(`  - exemplo: \`${String(g.exemplo).slice(0, 200)}\``);
       }
       // Achado real (auditoria externa, 2026-09-15): só o 1º grupo virava
@@ -211,7 +211,7 @@ async function checarLogs() {
       // ACHADO_SISTEMICO_RECENCIA_HORAS vira achado — ver `ocorreuRecentemente`
       // em ./healthAuditFormat.mjs.
       for (const g of sistemicos.slice(0, 5).filter((g) => ocorreuRecentemente(g))) {
-        achados.push(`erro em ${g.ativos.size} ativos ao mesmo tempo: ${g.chave}`);
+        achados.push(`erro em ${g.ativos.size} ativos ao mesmo tempo: ${g.chave}${sufixoOrigem(g)}`);
       }
     }
   }
@@ -229,23 +229,23 @@ async function checarLogs() {
     p('da madrugada de ser expulso por log rotineiro. Sem ordenação (evita índice');
     p('composto), então dentro dessa janela a ordem não é garantida.');
     p('');
-    p('| # | Módulo · problema | Ativos | Mais recente |');
-    p('|---|---|---|---|');
+    p('| # | Módulo · problema | Ativos | Origem | Mais recente |');
+    p('|---|---|---|---|---|');
     for (const g of grupos.slice(0, 10)) {
-      p(`| ${g.total} | ${celula(g.chave)} | ${g.ativos.size || '—'} | ${haQuantoTempo(g.ultimo)} |`);
+      p(`| ${g.total} | ${celula(g.chave)} | ${g.ativos.size || '—'} | ${celula(descreverOrigem(g))} | ${haQuantoTempo(g.ultimo)} |`);
     }
     const sistemicosFora = grupos.filter((g) => g.ativos.size >= 3);
     if (sistemicosFora.length) {
       p('');
       p('🚨 **Falha sistêmica fora da janela recente** (3+ ativos):');
       for (const g of sistemicosFora.slice(0, 5)) {
-        p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}`);
+        p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}${sufixoOrigem(g)}`);
       }
       // Mesma correção do bloco acima — um achado por grupo listado, não só
       // o 1º — e o mesmo filtro de recência (`ocorreuRecentemente`, ver
       // ./healthAuditFormat.mjs).
       for (const g of sistemicosFora.slice(0, 5).filter((g) => ocorreuRecentemente(g))) {
-        achados.push(`erro em ${g.ativos.size} ativos (fora da janela recente): ${g.chave}`);
+        achados.push(`erro em ${g.ativos.size} ativos (fora da janela recente): ${g.chave}${sufixoOrigem(g)}`);
       }
     }
   }
@@ -255,10 +255,10 @@ async function checarLogs() {
     p('');
     p(`### Avisos → ${grupos.length} distintos`);
     p('');
-    p('| # | Módulo · aviso | Mais recente |');
-    p('|---|---|---|');
+    p('| # | Módulo · aviso | Origem | Mais recente |');
+    p('|---|---|---|---|');
     for (const g of grupos.slice(0, 8)) {
-      p(`| ${g.total} | ${celula(g.chave)} | ${haQuantoTempo(g.ultimo)} |`);
+      p(`| ${g.total} | ${celula(g.chave)} | ${celula(descreverOrigem(g))} | ${haQuantoTempo(g.ultimo)} |`);
     }
     // O CAS descartando transição é o canal de observação do risco residual
     // documentado em .claude/rules/trading-engine.md.

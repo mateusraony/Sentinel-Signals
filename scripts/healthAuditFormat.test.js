@@ -2,7 +2,7 @@
 // legível. Sem agrupamento ela devolve o log cru com outro nome, e um
 // relatório que ninguém lê é exatamente o estado que ela existe para consertar.
 import { describe, it, expect } from 'vitest';
-import { agrupar, celula, haQuantoTempo, normalizarMensagem, ocorreuRecentemente } from './healthAuditFormat.mjs';
+import { agrupar, celula, descreverOrigem, haQuantoTempo, normalizarMensagem, ocorreuRecentemente, sufixoOrigem } from './healthAuditFormat.mjs';
 
 describe('normalizarMensagem', () => {
   it('junta o mesmo problema em ativos diferentes', () => {
@@ -129,5 +129,34 @@ describe('ocorreuRecentemente', () => {
   it('respeita o limite exato de 24h', () => {
     expect(ocorreuRecentemente(grupo('2026-09-15T12:00:00.000Z'), AGORA)).toBe(true);
     expect(ocorreuRecentemente(grupo('2026-09-15T11:59:59.000Z'), AGORA)).toBe(false);
+  });
+});
+
+// item 254 — a auditoria passa a mostrar DE ONDE veio o erro (executor +
+// error_class), que é o que o "Failed to fetch" recorrente precisava.
+describe('origem do erro (executor + error_class)', () => {
+  const log = (over = {}) => ({ module: 'scanner', message: 'Erro no scan de BTCUSDT: Failed to fetch', created_date: '2026-10-03T10:00:00.000Z', ...over });
+
+  it('agrupar coleta executores e classes distintos do grupo', () => {
+    const [g] = agrupar([
+      log({ symbol: 'BTCUSDT', executor: 'browser', details: { error_class: 'NETWORK' } }),
+      log({ symbol: 'ETHUSDT', message: 'Erro no scan de ETHUSDT: Failed to fetch', executor: 'cron', details: { error_class: 'NETWORK' } }),
+    ]);
+    expect([...g.executores].sort()).toEqual(['browser', 'cron']);
+    expect([...g.classes]).toEqual(['NETWORK']);
+  });
+
+  it('descreverOrigem: um lado só, os dois lados, e logs antigos sem os campos', () => {
+    expect(descreverOrigem(agrupar([log({ executor: 'browser', details: { error_class: 'NETWORK' } })])[0])).toBe('browser · NETWORK');
+    expect(descreverOrigem(agrupar([
+      log({ executor: 'browser' }), log({ executor: 'cron', details: { error_class: 'TIMEOUT' } }),
+    ])[0])).toBe('browser/cron · TIMEOUT');
+    expect(descreverOrigem(agrupar([log()])[0])).toBe('—');
+  });
+
+  it('sufixoOrigem: vazio sem origem (mensagem de achado inalterada), preenchido com origem', () => {
+    expect(sufixoOrigem(agrupar([log()])[0])).toBe('');
+    expect(sufixoOrigem(agrupar([log({ executor: 'browser', details: { error_class: 'NETWORK' } })])[0]))
+      .toBe(' (origem: browser · NETWORK)');
   });
 });
