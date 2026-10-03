@@ -175,22 +175,34 @@ describe('origem do erro (executor + error_class)', () => {
 });
 
 // item 255 — erro que SÓ o navegador teve não é falha do sistema (o cron é o
-// relógio de trading): continua no relatório, mas não vira aviso.
+// relógio de trading): continua no relatório, mas não vira aviso. Só vale se
+// o registro foi deduplicado POR EXECUTOR (details.dedup_scope) — senão um
+// `browser` pode estar escondendo a mesma falha do cron (Codex, PR #458, P1).
 describe('soNavegador', () => {
   const log = (over = {}) => ({ module: 'scanner', message: 'Erro no scan de BTCUSDT: Failed to fetch', created_date: '2026-10-03T10:00:00.000Z', ...over });
+  const novo = (over = {}) => log({ details: { dedup_scope: 'executor', ...(over.details ?? {}) }, ...over, ...(over.details ? { details: { dedup_scope: 'executor', ...over.details } } : {}) });
 
-  it('verdadeiro só quando TODOS os registros vieram do navegador', () => {
-    expect(soNavegador(agrupar([log({ executor: 'browser' }), log({ executor: 'browser' })])[0])).toBe(true);
-    expect(notaSoNavegador(agrupar([log({ executor: 'browser' })])[0])).toContain('não gera aviso');
+  it('verdadeiro só quando TODOS os registros vieram do navegador E foram deduplicados por executor', () => {
+    expect(soNavegador(agrupar([novo({ executor: 'browser' }), novo({ executor: 'browser' })])[0])).toBe(true);
+    expect(notaSoNavegador(agrupar([novo({ executor: 'browser' })])[0])).toContain('não gera aviso');
   });
 
-  it('falso com cron no meio, ou sem executor (logs antigos) — continua virando achado', () => {
-    expect(soNavegador(agrupar([log({ executor: 'browser' }), log({ executor: 'cron' })])[0])).toBe(false);
-    expect(soNavegador(agrupar([log()])[0])).toBe(false);
-    expect(notaSoNavegador(agrupar([log()])[0])).toBe('');
+  it('REGRESSÃO (Codex P1): log antigo (sem dedup_scope) NUNCA é "só navegador" — pode estar escondendo o cron', () => {
+    const antigo = agrupar([log({ executor: 'browser' }), log({ executor: 'browser' })])[0];
+    expect(soNavegador(antigo)).toBe(false);
+    expect(notaSoNavegador(antigo)).toBe('');
+  });
+
+  it('um único registro sem o marcador já desliga a supressão do grupo', () => {
+    expect(soNavegador(agrupar([novo({ executor: 'browser' }), log({ executor: 'browser' })])[0])).toBe(false);
+  });
+
+  it('falso com cron no meio, ou sem executor — continua virando achado', () => {
+    expect(soNavegador(agrupar([novo({ executor: 'browser' }), novo({ executor: 'cron' })])[0])).toBe(false);
+    expect(soNavegador(agrupar([novo()])[0])).toBe(false);
   });
 
   it('reconhece executor também em details (formato de logError/logWarn)', () => {
-    expect(soNavegador(agrupar([log({ details: { executor: 'browser' } })])[0])).toBe(true);
+    expect(soNavegador(agrupar([log({ details: { executor: 'browser', dedup_scope: 'executor' } })])[0])).toBe(true);
   });
 });

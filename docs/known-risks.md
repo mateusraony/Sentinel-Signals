@@ -29990,3 +29990,32 @@ manual do usuário**: um job no cron-job.org chamando
 
 **Verificação**: testes novos em `healthAuditFormat.test.js` (3) e
 `scanErrorBrowserContext.test.js` (1).
+
+### Addendum (2026-10-03) — Codex P1 (PR #458): a premissa "só navegador" era frágil
+
+**Achado (confirmado no código)**: o log de erro de scan era deduplicado por
+`scan_error::${asset.id}::${today}::${err.message}` **sem o executor**. Se o
+navegador logava primeiro no dia, o `createUnique` DESCARTAVA a mesma falha do
+cron — o grupo aparecia com só `browser` e o aviso era suprimido mesmo com o
+cron falhando. Isso também enfraquecia, para os logs já gravados, a conclusão
+"o cron teve zero erros" (que, por evidência independente — runs do `scan.yml`
+de 02/10: 18:00 UTC 10 ativos / 0 falhas; 18:25 UTC 0 ativos por lock ocupado —
+continua plausível, mas deixou de ser provada pelos logs).
+
+**Correção**:
+1. **Dedup por executor**: chave passou a
+   `scan_error::${EXECUTOR}::${asset.id}::${today}::${err.message}` — no máximo
+   1 log/dia por (executor, ativo, mensagem); cron e navegador não se escondem
+   mais. Custo: no dia do deploy pode haver 1 log extra por ativo/erro (chave
+   antiga ≠ nova).
+2. **Supressão só com prova**: registros novos gravam `details.dedup_scope:
+   'executor'`. `soNavegador(g)` exige executores ⊆ {browser} **e** todos os
+   registros do grupo com esse marcador (`dedupPorExecutor` em `agrupar`). Log
+   antigo (dedup cega ao executor) nunca é "só navegador" → continua avisando.
+   Na prática a supressão só passa a valer para logs gravados após o deploy
+   (a janela de 24h da auditoria precisa renovar).
+
+**Verificação**: regressão exata do Codex em `scanErrorLogging.test.js` (log do
+navegador já no dia NÃO impede o registro do cron; mesmo executor continua
+deduplicado) — provado reintroduzindo a chave sem executor: 2 testes falham.
+`healthAuditFormat.test.js` cobre log antigo × marcador × grupo misto.
