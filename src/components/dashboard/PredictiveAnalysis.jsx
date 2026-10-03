@@ -3,13 +3,12 @@ import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Sparkles, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
 import { backend } from '@/api/entities';
-import { classifyOutcome, calcRealizedR } from '@/lib/tradeMetrics';
+import { summarizeOps } from '@/lib/tradeMetrics';
 
-// Below this many historical matches, a win rate is noise, not signal — same
-// posture as tradeMetrics.summarizeOps'/indicatorAttribution.js's "conclusive"
-// gate: say INCONCLUSIVO instead of showing a number that looks more
-// confident than the sample actually supports.
-const MIN_SAMPLE = 8;
+// Mesmo gate de amostra/IC dos relatórios e do LiveConfidenceCard
+// (summarizeOps, minTrades=30 + IC95 da expectância). Abaixo disso a amostra
+// é ruído; e operações simultâneas são correlacionadas (N efetivo ≈ N/3,
+// docs/roadmap.md), então mesmo n≥30 costuma ser INCONCLUSIVO.
 const SCORE_TOLERANCE = 15;
 const SCORE_BUCKET_SIZE = 20;
 // Terminal TradeOperation statuses (.claude/rules/trading-engine.md) — the
@@ -38,25 +37,6 @@ function isSimilarShape(op, signal) {
 
 function scoreOf(op) {
   return Number.isFinite(op.entry_score) ? op.entry_score : (Number.isFinite(op.score) ? op.score : null);
-}
-
-function outcomeStats(ops) {
-  let wins = 0, losses = 0, be = 0, rSum = 0, rCount = 0;
-  for (const op of ops) {
-    const outcome = classifyOutcome(op);
-    if (outcome === 'WIN') wins++;
-    else if (outcome === 'LOSS') losses++;
-    else if (outcome === 'BE') be++;
-    else continue; // OPEN/UNKNOWN — no realized data to score
-    const r = calcRealizedR(op);
-    if (Number.isFinite(r)) { rSum += r; rCount++; }
-  }
-  const decided = wins + losses + be;
-  return {
-    wins, losses, be, decided,
-    winRate: decided > 0 ? (wins / decided) * 100 : null,
-    avgR: rCount > 0 ? rSum / rCount : null,
-  };
 }
 
 export default function PredictiveAnalysis({ recentSignals = [], signalsUnavailable = false }) {
@@ -109,7 +89,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
           return s !== null && Math.abs(s - selectedScore) <= SCORE_TOLERANCE;
         })
       : shape;
-    return { sameShape: shape, matches: scored, headline: outcomeStats(scored) };
+    return { sameShape: shape, matches: scored, headline: summarizeOps(scored) };
   }, [selected, historicalClosed]);
 
   const scoreBuckets = useMemo(() => {
@@ -125,8 +105,8 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
     return [...buckets.entries()]
       .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
       .map(([label, ops]) => {
-        const s = outcomeStats(ops);
-        return { label, winRate: s.winRate, n: s.decided };
+        const s = summarizeOps(ops);
+        return { label, winRate: s.counted > 0 ? s.winRate : null, n: s.counted, minTrades: s.minTrades };
       })
       .filter(b => b.n > 0);
   }, [sameShape]);
@@ -150,9 +130,16 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
     );
   }
 
-  const winRate = headline?.winRate;
-  const gaugeColor = winRate == null ? 'rgba(255,255,255,0.3)' : winRate >= 55 ? '#00ff80' : winRate >= 45 ? '#ffd166' : '#ff1478';
-  const conclusive = headline && headline.decided >= MIN_SAMPLE;
+  const minTrades = headline?.minTrades ?? 30;
+  // Gate e denominador exibido usam rCounted (ops com R calculável): é de
+  // quantas a expectância e o IC são de fato calculados — `counted` inclui
+  // ops legadas classificadas só por PnL, sem initial_stop.
+  const enoughSample = Boolean(headline) && headline.rCounted >= minTrades;
+  const ci = headline?.expectancyRCI95;
+  const conclusive = Boolean(headline?.conclusive);
+  const signColor = headline?.expectancyR >= 0 ? '#00ff80' : '#ff1478';
+  const badgeColor = conclusive ? signColor : '#ffd166';
+  const badgeLabel = conclusive ? (headline.expectancyR >= 0 ? 'CONCLUSIVO +' : 'CONCLUSIVO −') : 'INCONCLUSIVO';
 
   return (
     <div className="space-y-4">
@@ -191,22 +178,29 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
               </span>
             </div>
 
-            {!conclusive ? (
+            {!enoughSample ? (
               <div className="flex items-center gap-2 py-3 text-11px font-mono" style={{ color: 'rgba(255,209,102,0.85)' }}>
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                Amostra insuficiente ({headline?.decided ?? 0}/{MIN_SAMPLE} operações fechadas com direção, timeframe
+                Amostra insuficiente ({headline?.rCounted ?? 0}/{minTrades} operações fechadas com R calculável, direção, timeframe
                 {Number.isFinite(selected.context?.tf_4h_direction) ? ', alinhamento 4h' : ''} e score ±{SCORE_TOLERANCE} similares) —
-                não há dado suficiente para uma probabilidade confiável.
+                não há dado suficiente para uma estimativa confiável.
               </div>
             ) : (
               <>
-                <div className="flex items-baseline gap-2 mb-1.5">
-                  <span className="text-3xl font-bold" style={{ color: gaugeColor }}>{winRate.toFixed(0)}%</span>
-                  <span className="text-11px font-mono text-muted-foreground">taxa de acerto histórica em padrões similares</span>
+                <div className="flex items-baseline gap-2 mb-1.5 flex-wrap">
+                  <span className="text-3xl font-bold font-mono" style={{ color: conclusive ? signColor : 'rgba(255,255,255,0.85)' }}>
+                    {`${headline.expectancyR >= 0 ? '+' : ''}${headline.expectancyR.toFixed(3)}R`}
+                  </span>
+                  <span className="text-11px font-mono text-muted-foreground">expectância histórica em padrões similares</span>
+                  <span className="text-8px font-mono px-1.5 py-0.5 rounded"
+                    style={{ background: `${badgeColor}18`, border: `1px solid ${badgeColor}40`, color: badgeColor }}>
+                    {badgeLabel}
+                  </span>
                 </div>
-                <div className="w-full h-2.5 rounded-full overflow-hidden mb-4" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                  <div className="h-full rounded-full transition-all" style={{ width: `${winRate}%`, background: gaugeColor }} />
-                </div>
+                <p className="text-10px font-mono text-muted-foreground mb-3">
+                  {headline.rCounted} operações{ci ? ` · IC95 [${ci[0].toFixed(3)}; ${ci[1].toFixed(3)}]` : ''} · taxa de acerto {headline.winRate.toFixed(0)}%
+                  {' '}(taxa de acerto não é expectância — com TP1 parcial ela pode ser alta com R líquido negativo)
+                </p>
               </>
             )}
 
@@ -226,7 +220,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
               <div className="rounded-lg p-2.5" style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.15)' }}>
                 <div className="text-9px font-mono text-muted-foreground mb-0.5">R médio</div>
                 <div className="text-base font-bold" style={{ color: '#00e5ff' }}>
-                  {Number.isFinite(headline?.avgR) ? `${headline.avgR >= 0 ? '+' : ''}${headline.avgR.toFixed(2)}R` : '—'}
+                  {Number.isFinite(headline?.expectancyR) ? `${headline.expectancyR >= 0 ? '+' : ''}${headline.expectancyR.toFixed(2)}R` : '—'}
                 </div>
               </div>
             </div>
@@ -247,7 +241,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
                     />
                     <Bar dataKey="winRate" radius={[4, 4, 0, 0]}>
                       {scoreBuckets.map((b, i) => (
-                        <Cell key={i} fill={b.winRate >= 55 ? '#00ff80' : b.winRate >= 45 ? '#ffd166' : '#ff1478'} />
+                        <Cell key={i} fill="#00e5ff" fillOpacity={b.n >= b.minTrades ? 0.85 : 0.3} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -255,6 +249,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
               </div>
               <p className="text-10px font-mono text-muted-foreground mt-1">
                 Cada barra é uma faixa de score de {SCORE_BUCKET_SIZE} pontos, entre operações fechadas com a mesma direção/timeframe do sinal selecionado.
+                Barras apagadas têm menos de {scoreBuckets[0]?.minTrades ?? 30} operações — indicativo, não conclusivo.
               </p>
             </div>
           )}

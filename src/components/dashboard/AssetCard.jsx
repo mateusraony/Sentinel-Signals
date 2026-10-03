@@ -320,7 +320,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
     else if (opSide === 'BUY') { statusLabel = '🟢 Compra Ativa'; statusColor = '#00ff80'; }
     else { statusLabel = '🔴 Venda Ativa'; statusColor = '#ff1478'; }
   } else if (latestSignal) {
-    statusLabel = sigSide === 'BUY' ? '👀 Observando BUY' : '👀 Observando SELL';
+    statusLabel = sigSide === 'BUY' ? '🔔 Aviso pendente BUY' : '🔔 Aviso pendente SELL';
     statusColor = sigSide === 'BUY' ? 'rgba(0,255,128,0.65)' : 'rgba(255,20,120,0.65)';
   }
 

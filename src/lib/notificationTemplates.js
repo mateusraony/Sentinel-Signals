@@ -246,6 +246,31 @@ export function buildLockDegradedMessage({ lockName, executor, errMessage }) {
   );
 }
 
+// Distância do stop inicial até a entrada, em % — só aritmética sobre campos
+// que a operação já grava na criação; omitido se faltar qualquer um.
+function stopRiskSuffix(op) {
+  const { entry_price: entry, initial_stop: stop } = op;
+  if (!Number.isFinite(entry) || !Number.isFinite(stop) || entry <= 0) return '';
+  return ` (risco ${((Math.abs(entry - stop) / entry) * 100).toFixed(2)}%)`;
+}
+
+// Direção por timeframe gravada na criação (tf_*_direction: 1 alta, -1 baixa,
+// 0 neutro; null/ausente = não informado → omite o timeframe).
+function mtfTrendLine(op) {
+  const arrow = (d) => (d === 1 ? '▲' : d === -1 ? '▼' : '—');
+  const parts = [['1D', op.tf_1d_direction], ['4H', op.tf_4h_direction], ['1H', op.tf_1h_direction]]
+    .filter(([, d]) => Number.isFinite(d))
+    .map(([tf, d]) => `${tf} ${arrow(d)}`);
+  return parts.length ? `🧭 Tendência: ${parts.join(' · ')}\n` : '';
+}
+
+// Motivos que o próprio motor gravou em signal_reasons (mesmos textos do
+// card do painel) — nada é recalculado aqui. Máx. 3, como generateSignalDescription.
+function entryReasonsLine(op) {
+  const reasons = Array.isArray(op.signal_reasons) ? op.signal_reasons.filter((r) => typeof r === 'string' && r) : [];
+  return reasons.length ? `📝 Por quê: ${escaparHtml(reasons.slice(0, 3).join('; '))}\n` : '';
+}
+
 export function buildTradeCreatedMessage(op) {
   const emoji = op.side === 'BUY' ? '✅🟢' : '✅🔴';
   const dir = op.side === 'BUY' ? 'COMPRA' : 'VENDA';
@@ -257,9 +282,11 @@ export function buildTradeCreatedMessage(op) {
     `${emoji} Situação: operação aberta, gerenciada automaticamente pelo Sentinel.\n\n` +
     realTimeLine(getEntryReferenceTime(op)) +
     `📍 Entrada: $${fmtP(op.entry_price)}\n` +
-    `🛑 Stop: $${fmtP(op.initial_stop)}\n` +
+    `🛑 Stop: $${fmtP(op.initial_stop)}${stopRiskSuffix(op)}\n` +
     `🎯 TP1: $${fmtP(op.tp1)}  |  TP2: $${fmtP(op.tp2)}\n` +
-    `📊 Score: ${op.score}/100\n\n` +
+    `📊 Score: ${op.score}/100\n` +
+    mtfTrendLine(op) +
+    entryReasonsLine(op) + '\n' +
     `➡️ Próximo passo: aguardar o preço avançar para o TP1.\n` +
     `🔒 Gestão: ${op.partial_percent ?? 50}% no TP1, runner ${op.runner_percent ?? 50}%\n\n` +
     `${panelLink('/trades', op.id)}\n\n` +

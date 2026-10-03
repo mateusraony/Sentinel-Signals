@@ -60,6 +60,43 @@ const CLOSED_OP_SIMILAR_SHAPE = {
   partial_percent: 50, created_date: new Date().toISOString(), entry_score: 75,
 };
 
+const LOSS_OP = (i) => ({ ...CLOSED_OP_SIMILAR_SHAPE, id: `loss${i}` });
+const WIN_OP = (i) => ({ ...CLOSED_OP_SIMILAR_SHAPE, id: `win${i}`, status: 'TP2_HIT', exit_price: 120, current_stop: 100 });
+
+describe('PredictiveAnalysis — não exibe taxa de acerto/gauge sem amostra honesta (summarizeOps, minTrades=30)', () => {
+  it('REGRESSÃO: com 8 operações similares mostra "amostra insuficiente" e nenhum gauge/expectância', async () => {
+    tradeOperationFilterMock.mockResolvedValue(Array.from({ length: 8 }, (_, i) => LOSS_OP(i)));
+    renderPredictive();
+    expect(await screen.findByText(/Amostra insuficiente \(8\/30/)).toBeTruthy();
+    expect(screen.queryByText(/expectância histórica/)).toBeNull();
+    expect(screen.queryByText(/taxa de acerto histórica/)).toBeNull();
+  });
+
+  it('REGRESSÃO (Codex, PR #459): 30 operações sem initial_stop (sem R calculável) não passam o gate — o denominador é rCounted, não counted', async () => {
+    const semStop = (i) => ({ ...LOSS_OP(i), initial_stop: undefined });
+    tradeOperationFilterMock.mockResolvedValue(Array.from({ length: 30 }, (_, i) => semStop(i)));
+    renderPredictive();
+    // Espera os dados carregarem — antes disso o card já mostra "0/30" (lista
+    // vazia) e a asserção passaria sem provar nada.
+    expect(await screen.findByText(/30 operações similares/)).toBeTruthy();
+    expect(screen.getByText(/Amostra insuficiente \(0\/30/)).toBeTruthy();
+    expect(screen.queryByText(/expectância histórica/)).toBeNull();
+  });
+
+  it('REGRESSÃO: com 30 operações e IC cruzando zero mostra expectância com selo INCONCLUSIVO, sem gauge de %', async () => {
+    const ops = [
+      ...Array.from({ length: 18 }, (_, i) => LOSS_OP(i)),
+      ...Array.from({ length: 12 }, (_, i) => WIN_OP(i)),
+    ];
+    tradeOperationFilterMock.mockResolvedValue(ops);
+    renderPredictive();
+    expect(await screen.findByText(/expectância histórica em padrões similares/)).toBeTruthy();
+    expect(screen.getByText('INCONCLUSIVO')).toBeTruthy();
+    expect(screen.queryByText(/taxa de acerto histórica/)).toBeNull();
+    expect(screen.getByText(/IC95 \[/)).toBeTruthy();
+  });
+});
+
 describe('PredictiveAnalysis — gráfico "Taxa de acerto por faixa de score" tem role="img"/aria-label (achado M-9)', () => {
   it('REGRESSÃO: o wrapper do BarChart tem role="img" e aria-label descritivo', async () => {
     tradeOperationFilterMock.mockResolvedValue([CLOSED_OP_SIMILAR_SHAPE]);

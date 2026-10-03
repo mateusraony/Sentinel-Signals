@@ -434,6 +434,37 @@ describe('runBacktest — no-look-ahead (4h Range Filter flip)', () => {
     expect(report.indicatorAttribution).toEqual(expect.objectContaining({ totalRawSignals: 0, resolvedOutcomes: 0 }));
   });
 
+  // Anti-leakage (guarda de scanner.js `candles.filter(c => c.isClosed)`): o
+  // provider real devolve também o candle ATUAL, ainda em formação
+  // (`isClosed: false`). Nada dele pode entrar no snapshot de decisão — se
+  // entrasse, o snapshot em T dependeria de preço que ainda não existe. Mesmo
+  // método do teste série×prefixo de goldenParity.test.js, mas no nível do
+  // snapshot do scanner: com ou sem candles em formação absurdos, idêntico.
+  it('rawSignalSnapshots e sinais em T independem de candles ainda em formação (isClosed:false)', async () => {
+    getPineConfig.mockResolvedValue(basePineConfig());
+    const closed = build4hCandles().slice(0, 103); // termina exatamente no flip (barra 102)
+    const last = closed[closed.length - 1];
+
+    fetchCandles.mockImplementation(async () => closed);
+    const withoutForming = await scanAsset(makeAsset());
+    // Guarda contra teste vacuoso: o flip precisa ter gerado snapshot de verdade.
+    expect(withoutForming.rawSignalSnapshots).toHaveLength(1);
+
+    const forming = [
+      { ...mkCandle(last.close, last.close * 50, last.close * 0.01, last.close * 0.02, last.closeTime, last.closeTime + FOUR_H), isClosed: false },
+      { ...mkCandle(last.close * 0.02, last.close * 80, last.close * 0.01, last.close * 70, last.closeTime + FOUR_H, last.closeTime + 2 * FOUR_H), isClosed: false },
+    ];
+    fetchCandles.mockImplementation(async () => [...closed, ...forming]);
+    const withForming = await scanAsset(makeAsset());
+
+    expect(withForming.rawSignalSnapshots).toEqual(withoutForming.rawSignalSnapshots);
+    const shape = (res) => res.newSignals.map(s => ({
+      source: s.source, signal_type: s.signal_type, timeframe: s.timeframe,
+      price_at_signal: s.price_at_signal, score: s.context?.score,
+    }));
+    expect(shape(withForming)).toEqual(shape(withoutForming));
+  });
+
   it('running well past the last available candle does not crash or duplicate the op', async () => {
     // Dedicated short-tail series: the 4h data ends AT the flip bar itself
     // (only 3 uptrend bars — the minimum needed for the flip to occur inside
