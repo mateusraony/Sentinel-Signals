@@ -102,6 +102,44 @@ describe('build*Message — uma mensagem completa, não-vazia, por tipo', () => 
     expect(text).toContain('Abrir no Sentinel');
   });
 
+  describe('buildTradeCreatedMessage — risco do stop, tendência por timeframe e motivos', () => {
+    it('mostra risco do stop em %, tendência 1D/4H/1H e os motivos gravados na operação', () => {
+      const text = buildTradeCreatedMessage({
+        ...baseOp,
+        tf_1d_direction: 1, tf_4h_direction: 1, tf_1h_direction: -1,
+        signal_reasons: ['MACD hist positivo (+20)', 'EMA tendência bullish (+20)'],
+      });
+      expect(text).toContain('Stop: $95.0000 (risco 5.00%)');
+      expect(text).toContain('Tendência: 1D ▲ · 4H ▲ · 1H ▼');
+      expect(text).toContain('Por quê: MACD hist positivo (+20); EMA tendência bullish (+20)');
+    });
+
+    it('operação sem esses campos (legada/manual) omite as linhas — nunca "undefined"/"null"/"NaN"', () => {
+      const text = buildTradeCreatedMessage({ ...baseOp, tf_1d_direction: null, signal_reasons: undefined });
+      expect(text).not.toContain('Tendência');
+      expect(text).not.toContain('Por quê');
+      expect(text).not.toMatch(/undefined|null|NaN/);
+      expect(text).toContain('Stop: $95.0000 (risco 5.00%)');
+    });
+
+    it('timeframe sem dado é omitido; direção 0 vira travessão', () => {
+      const text = buildTradeCreatedMessage({ ...baseOp, tf_1d_direction: null, tf_4h_direction: 0, tf_1h_direction: 1 });
+      expect(text).toContain('Tendência: 4H — · 1H ▲');
+      expect(text).not.toContain('1D');
+    });
+
+    it('entrada/stop inválidos não geram "risco NaN%"', () => {
+      const text = buildTradeCreatedMessage({ ...baseOp, initial_stop: null });
+      expect(text).not.toContain('risco');
+      expect(text).not.toContain('NaN');
+    });
+
+    it('escapa HTML dos motivos (parse_mode HTML do Telegram)', () => {
+      const text = buildTradeCreatedMessage({ ...baseOp, signal_reasons: ['RSI <50 & caindo'] });
+      expect(text).toContain('RSI &lt;50 &amp; caindo');
+    });
+  });
+
   // Fase 5 da auditoria do Telegram (2026-10-02), item 5.4 — cada tipo de
   // mensagem linka pro item EXATO (signal.id ou op.id), não só a rota
   // genérica. `buildVerificationTaskMessage` usa signal.id de propósito

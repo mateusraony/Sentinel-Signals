@@ -9,7 +9,7 @@ import { Crosshair } from 'lucide-react';
  * Proximity levels:
  *   < 1%  → "MUITO PRÓXIMO" (very close, pulse)
  *   < 2%  → "PRÓXIMO" (close)
- *   < 3%  → "Observando" (watching)
+ *   < 3%  → "Perto do gatilho" (watching)
  *   ≥ 3%  → null (not close enough to show)
  */
 export function calcProximity(state) {
@@ -55,12 +55,12 @@ export default function ProximityBar({ state }) {
       icon: '⚡',
     },
     watching: {
-      label: 'Observando',
+      label: 'Perto do gatilho',
       bg: 'rgba(255,209,102,0.05)',
       border: 'rgba(255,209,102,0.15)',
       color: 'rgba(255,209,102,0.6)',
       pulse: false,
-      icon: '👀',
+      icon: '🎯',
     },
   };
 
