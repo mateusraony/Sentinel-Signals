@@ -42,7 +42,14 @@ export default function Logs() {
   const filtered = logs.filter(log => {
     if (filterLevel !== 'all' && log.level !== filterLevel) return false;
     if (filterModule !== 'all' && log.module !== filterModule) return false;
-    if (search && !log.message?.toLowerCase().includes(search.toLowerCase()) && !log.symbol?.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      // Também casa scan_id/error_class (item 253) — colar um scan_id aqui
+      // mostra todos os logs daquela passada.
+      const q = search.toLowerCase();
+      const hit = [log.message, log.symbol, log.details?.scan_id, log.details?.error_class]
+        .some(v => typeof v === 'string' && v.toLowerCase().includes(q));
+      if (!hit) return false;
+    }
     return true;
   });
 
@@ -134,7 +141,7 @@ export default function Logs() {
 
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
-            <input type="text" placeholder="Buscar na mensagem..." value={search} onChange={e => setSearch(e.target.value)}
+            <input type="text" placeholder="Buscar na mensagem..." title="Também busca por ativo, scan_id e classe do erro" value={search} onChange={e => setSearch(e.target.value)}
               className="pl-6 pr-3 py-1.5 rounded-lg w-44 text-10px font-mono outline-none focus-visible:ring-1 focus-visible:ring-ring"
               style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)' }} />
           </div>
@@ -231,6 +238,12 @@ export default function Logs() {
                         aparecia na tela — a peça que faltava pra decidir cron×
                         navegador sem inferência indireta. */}
                     {log.executor && <span className="text-9px px-1 rounded" style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.35)' }}>{log.executor}</span>}
+                    {/* item 253 — classe do erro e id da passada (details). O
+                        scan_id aparece abreviado; o valor inteiro está no
+                        title e na busca acima. Contraste >= 4.5:1 (mesma
+                        exigência do achado do PR #439). */}
+                    {log.details?.error_class && <span className="text-9px px-1 rounded" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.6)' }}>{log.details.error_class}</span>}
+                    {log.details?.scan_id && <span className="text-9px font-mono" title={log.details.scan_id} style={{ color: 'rgba(255,255,255,0.55)' }}>#{String(log.details.scan_id).slice(-6)}</span>}
                   </div>
                   <p className="text-11px text-foreground/80 mt-0.5 leading-relaxed">{log.message}</p>
                   {/* Achado do Codex review no PR #439 (aplicado aqui pela

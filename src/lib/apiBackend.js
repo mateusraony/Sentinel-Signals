@@ -75,7 +75,9 @@ export async function callBackend(path, body, { method, allow404 } = {}) {
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data.error || `Request failed with status ${response.status}`);
+    // `status` é aditivo (a mensagem não muda) — permite a classifyError
+    // (src/lib/errorClass.js) distinguir 401/429/5xx sem parsear texto.
+    throw Object.assign(new Error(data.error || `Request failed with status ${response.status}`), { status: response.status });
   }
   return data;
 }

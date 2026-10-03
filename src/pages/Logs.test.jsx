@@ -6,7 +6,7 @@
 // dedicado antes.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from './__fixtures__/renderPage.jsx';
 import Logs from './Logs.jsx';
@@ -67,5 +67,33 @@ describe('Logs — "ver detalhes →" tem contraste suficiente (achado do Codex,
     renderLogs();
     const summary = await screen.findByText('ver detalhes →');
     expect(summary.style.color).toBe('rgba(255, 255, 255, 0.45)');
+  });
+});
+
+// item 253 — error_class/scan_id (details) viram tags na linha e a busca
+// também casa scan_id, pra isolar todos os logs de uma mesma passada.
+describe('Logs — error_class e scan_id (item 253)', () => {
+  const logs = [
+    { id: 'l1', level: 'error', module: 'scanner', message: 'Falha ao adquirir lock "price-check"', created_date: '2026-10-03T10:00:00.000Z',
+      details: { error_class: 'NETWORK', scan_id: 'price-check_1790000000000_abc123' } },
+    { id: 'l2', level: 'error', module: 'scanner', message: 'Erro no scan de ETHUSDT: x', created_date: '2026-10-03T10:01:00.000Z',
+      details: { error_class: 'TIMEOUT', scan_id: 'full-scan_1790000000999_zzz999' } },
+  ];
+
+  it('mostra a classe do erro e o scan_id abreviado como tags', async () => {
+    systemLogListMock.mockResolvedValue(logs);
+    renderLogs();
+    expect(await screen.findByText('NETWORK')).toBeTruthy();
+    expect(screen.getByText('TIMEOUT')).toBeTruthy();
+    expect(screen.getByText('#abc123')).toBeTruthy();
+  });
+
+  it('buscar por scan_id isola só os logs daquela passada', async () => {
+    systemLogListMock.mockResolvedValue(logs);
+    renderLogs();
+    const search = await screen.findByPlaceholderText('Buscar na mensagem...');
+    fireEvent.change(search, { target: { value: 'full-scan_1790000000999' } });
+    expect(screen.queryByText(/Falha ao adquirir lock/)).toBeNull();
+    expect(screen.getByText(/Erro no scan de ETHUSDT/)).toBeTruthy();
   });
 });

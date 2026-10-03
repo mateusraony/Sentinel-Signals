@@ -29845,3 +29845,60 @@ painel do `cron-job.org` apontando pra `/health` (ou `/ready`) a cada ~5min,
 mantendo o `keep-warm.yml` do GitHub Actions como redundância. Regra do
 projeto (`operating-principles.md`): isto não conta como concluído até o
 usuário confirmar que rodou.
+
+## 253. `scan_id` + `error_class` nos logs — diagnóstico do "Failed to fetch" (2026-10-03)
+
+**Contexto**: sobrou da rodada do item 252 (PR #455): circuit breaker,
+`scan_id`/correlation ID e taxonomia de erro, marcados "fora de escopo".
+Usuário pediu para avaliar se valia fazer agora. Recomendação (aceita):
+**`scan_id` + taxonomia enxuta sim; circuit breaker não ainda.**
+
+**Por que o circuit breaker ficou de fora (decisão registrada, não esquecimento)**:
+é estado global com janelas de tempo e pode PIORAR as coisas — um breaker
+aberto por engano bloqueia leituras legítimas do painel; só cobriria o
+navegador (o cron fala direto com o Postgres, sem HTTP); e não há evidência
+de "tempestade de requests". O retry de leitura gasta ~3,5s, bem menos que
+um cold start do Render (30–60s) — o que resolve isso é o keep-alive
+(`keep-warm.yml` + job do `cron-job.org`, item 252), não um breaker.
+**Reavaliar só se**, depois de alguns dias com `scan_id`/`error_class` nos
+logs, aparecer um padrão real de rajada de falhas.
+
+**O que foi feito**:
+- `src/lib/errorClass.js` (novo, função PURA): `classifyError(err)` →
+  `NETWORK`/`TIMEOUT`/`AUTH`/`RATE_LIMIT`/`HTTP_5XX`/`HTTP_4XX`/`DATABASE`/
+  `UNKNOWN`. Nunca lança, nunca muda fluxo — só uma etiqueta. Reconhece
+  "Failed to fetch"/"fetch failed", códigos de rede em `err.cause` (undici),
+  `AbortError` (timeout por tentativa de `httpRetry.js`), erros do driver pg
+  (SQLSTATE 08/53/57 e mensagens de conexão) e status HTTP.
+- `callBackend` (`apiBackend.js`) agora anexa `err.status` ao erro HTTP
+  (aditivo — a mensagem não mudou), pra a classificação não depender de
+  parsear texto.
+- `scan_id` = o `holder` do lock (já único por execução:
+  `full-scan_<ts>_<rand>`/`price-check_<ts>_<rand>`) — nenhum gerador novo.
+  Vai nos logs de lock (acquire/release) e no erro de scan por ativo
+  (`scanAllAssets` → `scanAllAssetsInner(onProgress, scanId)`, passado
+  explicitamente, não por variável de módulo: navegador pode rodar
+  full-scan e price-check ao mesmo tempo, estado compartilhado seria
+  corrida). **Fica em `details`, NUNCA na `message`**: o dedup de
+  `SystemLog` (`scanErrorDedupKey`, e `dedupKey` em `logger.js`) é chaveado
+  pela mensagem — um ID ali quebraria a deduplicação (teste existente
+  `scanErrorLogging.test.js` continua provando o contrato do item 39.1).
+- `error_class` também no fallback de config (`pineParser.js` e
+  `adminPineConfig.js`) — lá sem `scan_id` (não conhecem a passada).
+- Tela Logs: `error_class` e `scan_id` (abreviado, completo no `title`)
+  viram tags ao lado do `executor`; a busca agora também casa `scan_id` e
+  `error_class` — colar um `scan_id` isola todos os logs daquela passada.
+
+**Limitação aceita**: `scan_id` não está nos logs internos de
+`persistScanResults`/`scanAsset` nem no price-check por operação — só nos 3
+pontos que reportam falha de infraestrutura (lock, scan por ativo, config).
+Estender é trivial se os logs mostrarem que falta.
+
+**Verificação**: `npm run lint` limpo; `npm test` 2377 passed, 60 skipped
+(+10 testes novos: `errorClass.test.js` ×7, `Logs.test.jsx` ×2,
+`apiBackend.test.js` ×1; asserções novas em `scannerLockRetry.test.js` e
+`scanErrorLogging.test.js`); `npm run build` ok; 4 bundles esbuild limpos.
+**Achado na própria verificação**: o `typecheck:ratchet` subiu para 19
+(teto 13) por 6 erros de `checkJs` no `errorClass.js` recém-criado
+(`unknown` sem propriedades) — corrigido com um tipo estrutural
+(`ErrorLike`), volta a 13. Não subi o teto.

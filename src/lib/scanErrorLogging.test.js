@@ -92,6 +92,9 @@ describe('scanAllAssets — SystemLog de erro grava executor + detalhe do erro (
     expect(entry.executor).toBe('cron');
     expect(entry.details.error_name).toBe('TypeError');
     expect(entry.details.error_cause).toBeNull();
+    // item 253 — classe do erro + id da passada (= holder do lock full-scan).
+    expect(entry.details.error_class).toBe('NETWORK');
+    expect(entry.details.scan_id).toMatch(/^full-scan_/);
   });
 
   it('dedupKey continua chaveado só por err.message (contrato do item 39.1 intocado)', async () => {
