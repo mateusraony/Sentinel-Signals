@@ -16,7 +16,7 @@ import { formatBackfillLag } from '../src/lib/backfillDetection.js';
 import {
   buildSignalDetectedMessage, buildVerificationTaskMessage, buildSignalCanceledMessage,
   buildTradeCreatedMessage, buildTp1HitMessage, buildTp2HitMessage, buildStopHitMessage,
-  buildInvalidatedMessage, buildTimeStopMessage, buildChopExitMessage,
+  buildInvalidatedMessage, buildTimeStopMessage, buildChopExitMessage, buildLockDegradedMessage,
   escaparHtml,
 } from '../src/lib/notificationTemplates.js';
 // Re-exportado — scripts/adminTelegramStepTimeout.test.js importa escaparHtml
@@ -227,6 +227,13 @@ export async function notifySignalCanceled(signal, asset) {
 export async function notifyTradeCreated(op) {
   if (!(await shouldSend('entry_confirmed', op))) return;
   return send(buildTradeCreatedMessage(op));
+}
+
+// Mirrors src/lib/telegram.js's notifyLockDegraded — alerta de sistema (lock
+// fail-open), fora do filtro por evento/ativo. Cooldown decidido pelo
+// chamador (src/lib/scanner.js), não aqui.
+export async function notifyLockDegraded(lockName, executor, errMessage) {
+  return send(buildLockDegradedMessage({ lockName, executor, errMessage }));
 }
 
 export async function notifyTP1Hit(op, price) {

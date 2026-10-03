@@ -30,6 +30,7 @@ vi.mock('./telegram', () => ({
   notifyInvalidated: vi.fn().mockResolvedValue(undefined),
   notifyTimeStop: vi.fn().mockResolvedValue(undefined),
   notifyChopExit: vi.fn().mockResolvedValue(undefined),
+  notifyLockDegraded: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('./logger', () => ({
   logInfo: vi.fn(),
@@ -45,6 +46,11 @@ vi.mock('./marketDataProvider', () => ({
 }));
 vi.mock('./pineParser', () => ({
   getPineConfig: vi.fn(),
+  // CONFIG_DEGRADED (docs/known-risks.md) não se aplica ao backtest — o
+  // replay histórico não lê StrategyConfig do Postgres ao vivo (pineConfig
+  // vem de getPineConfig.mockResolvedValue acima, injetado por teste), então
+  // nunca deveria aparecer como degradado.
+  getPineConfigStatus: vi.fn(() => ({ source: 'postgres', version: null, hash: null, degraded: false })),
 }));
 
 import * as entitiesModule from '@/api/entities';

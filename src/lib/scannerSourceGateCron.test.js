@@ -22,6 +22,7 @@ vi.mock('./telegram', () => ({
   notifyInvalidated: vi.fn().mockResolvedValue(undefined),
   notifyTimeStop: vi.fn().mockResolvedValue(undefined),
   notifyChopExit: vi.fn().mockResolvedValue(undefined),
+  notifyLockDegraded: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('./logger', () => ({
   logInfo: vi.fn(),

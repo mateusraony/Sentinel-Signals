@@ -75,6 +75,57 @@ describe('callBackend', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  // docs/known-risks.md — "Failed to fetch" visto em produção contra este
+  // backend (lock/StrategyConfig), não só contra a Binance. GET agora passa
+  // por fetchWithRetry (src/lib/httpRetry.js, mesmo módulo da Binance) —
+  // sobrevive a um blip de rede transitório sem precisar do 401-retry.
+  it('GET sobrevive a um "Failed to fetch" transitório via retry de rede (fetchWithRetry)', async () => {
+    vi.useFakeTimers();
+    try {
+      getIdTokenMock.mockResolvedValueOnce('token-bom');
+      global.fetch
+        .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+        .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 'a1' }) });
+
+      const { callBackend } = await import('./apiBackend');
+      const promise = callBackend('/api/entities/MonitoredAsset');
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
+
+      expect(result).toEqual({ id: 'a1' });
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(getIdTokenMock).toHaveBeenCalledTimes(1); // não é retry de 401 — mesmo token, sem refresh
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('GET esgota o retry de rede e propaga o erro de rede (não mascara falha persistente)', async () => {
+    vi.useFakeTimers();
+    try {
+      getIdTokenMock.mockResolvedValue('token-bom');
+      global.fetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+      const { callBackend } = await import('./apiBackend');
+      const promise = callBackend('/api/entities/MonitoredAsset');
+      const assertion = expect(promise).rejects.toThrow('Failed to fetch');
+      await vi.advanceTimersByTimeAsync(20_000);
+      await assertion;
+      expect(global.fetch).toHaveBeenCalledTimes(4); // 1 tentativa inicial + 3 retries (GET_RETRY_OPTIONS.maxRetries)
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('POST (mutante) não usa o retry de rede — uma falha de rede propaga na hora', async () => {
+    getIdTokenMock.mockResolvedValueOnce('token-bom');
+    global.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    const { callBackend } = await import('./apiBackend');
+    await expect(callBackend('/api/trade-ops/create-if-none-active', { assetId: 'a1' })).rejects.toThrow('Failed to fetch');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('toda chamada inclui o header X-Owner-Key (requireOwner no server)', async () => {
     getIdTokenMock.mockResolvedValueOnce('token-bom');
     global.fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 'a1' }) });

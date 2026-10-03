@@ -481,9 +481,18 @@ async function acquireScanLock(lockName, ttlMs, holder) {
   const client = await getPool().connect();
   try {
     await client.query('BEGIN');
-    const { rows } = await client.query('SELECT expires_at FROM scanner_locks WHERE id = $1 FOR UPDATE', [lockName]);
+    const { rows } = await client.query('SELECT locked_by, expires_at FROM scanner_locks WHERE id = $1 FOR UPDATE', [lockName]);
     const now = Date.now();
-    if (rows[0] && Number(rows[0].expires_at) > now) {
+    // Codex review (PR #455): sem o check de locked_by, um retry do MESMO
+    // holder (src/lib/scanner.js's tryAcquireScanLock, item 252 — reage a um
+    // acquire cujo COMMIT teve sucesso mas a resposta HTTP se perdeu) via
+    // uma linha ainda não expirada contava como "ocupado por outro worker" —
+    // o caller via false, pulava o scan SEM passar pelo finally que libera o
+    // lock, prendendo full-scan por até 10min / price-check por até 3min
+    // exatamente na falha transitória que o retry deveria tolerar.
+    // Reaquisição pelo MESMO holder é sempre idempotente (refresca o TTL);
+    // só um holder DIFERENTE com lock ainda válido é contenção de verdade.
+    if (rows[0] && Number(rows[0].expires_at) > now && rows[0].locked_by !== holder) {
       await client.query('ROLLBACK');
       return false;
     }
@@ -503,10 +512,14 @@ async function acquireScanLock(lockName, ttlMs, holder) {
 }
 
 async function releaseScanLock(lockName, holder) {
-  await getPool().query(
+  // rowCount 0 significa que o holder não bate (TTL já expirou e outro
+  // processo assumiu, ou corrida rara) — não é erro, mas quem chama pode
+  // querer saber que a liberação não teve efeito (ver server/routes/locks.js).
+  const { rowCount } = await getPool().query(
     'UPDATE scanner_locks SET locked_by = NULL, locked_at = NULL, expires_at = 0 WHERE id = $1 AND locked_by = $2',
     [lockName, holder]
   );
+  return { released: rowCount > 0 };
 }
 
 // --- tradeOps (o CAS redesenhado — ver a seção "Redesenho do CAS em

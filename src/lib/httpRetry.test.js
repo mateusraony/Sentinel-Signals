@@ -59,6 +59,25 @@ describe('fetchWithRetry', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3); // 1 tentativa inicial + 2 retries
   });
 
+  // src/lib/apiBackend.js precisa mandar method/headers (Authorization,
+  // X-Owner-Key) — antes desta opção, fetchWithRetry só chamava fetch(url)
+  // sem nenhum 2º argumento além do signal, inutilizável para um backend
+  // autenticado.
+  it('passa fetchOptions (method/headers) direto pro fetch nativo, junto com o signal do timeout', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse({ ok: true, status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchWithRetry('https://example.test', {
+      fetchOptions: { method: 'GET', headers: { Authorization: 'Bearer tok' } },
+    });
+
+    const [url, opts] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://example.test');
+    expect(opts.method).toBe('GET');
+    expect(opts.headers).toEqual({ Authorization: 'Bearer tok' });
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
+  });
+
   it('does NOT retry a non-retryable 4xx (404) — fails on the first try', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse({ ok: false, status: 404 }));
     vi.stubGlobal('fetch', fetchMock);

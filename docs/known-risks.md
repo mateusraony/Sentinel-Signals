@@ -29647,3 +29647,201 @@ de todas as fases anteriores, sem bot configurado neste ambiente.
 
 **Com esta fase, o plano de 5 fases da Auditoria do Telegram está
 completo.**
+
+## 252. Blindagem de resiliência — locks, retry de rede, config versionada (2026-10-03)
+
+**Contexto**: usuário colou uma análise de logs feita por outra IA (conversa
+externa, não deste projeto) apontando `"Failed to fetch"` recorrente em
+locks/scanner/`pineParser`, com 12 melhorias propostas. Pedido: confirmar
+linha a linha no código real, decidir o que vale a pena, perguntar se houver
+dúvida, blindar. Investigação com 3 agentes Explore em paralelo + leitura
+direta de `docs/known-risks.md`/`.claude/rules/*` antes de qualquer edição.
+
+### O que a análise externa acertou (confirmado no código real)
+
+`/health` é só `{status:'ok'}` sem checar Postgres (`server/index.js`);
+`tryAcquireScanLock`/`tryReleaseScanLock` eram fail-open em erro de rede
+(`scanner.js`); `apiBackend.js`'s `callBackend` só tinha retry de 401, nenhum
+de rede; `httpRetry.js` só era usado para Binance; `pineParser.js` caía
+silenciosamente pra localStorage/defaults se o Postgres falhasse; `keep-
+warm.yml` bate no minuto cheio (`*/10`); não existiam `/ready`,
+`configVersion`/hash nem `scan_id`.
+
+### Onde a análise externa errou — mudou a priorização
+
+1. **Tratava o lock fail-open como risco P0 nº1** ("pode corromper
+   dados/duplicar operação"), sem saber que `.claude/rules/trading-
+   engine.md` já documenta uma camada SEPARADA — `transitionTradeOp` (CAS
+   transacional por operação) — que protege contra escrita concorrente
+   **independente do lock**; notificação só dispara quando a transação
+   vence (`applied===true`). O lock evita trabalho duplicado, não
+   corrupção. Rebaixado de P0-correção-de-correção para P1-redução-de-
+   frequência-e-alerta (decisão do usuário, ver abaixo).
+2. **Implicava que o scanner real sofre do problema do minuto cheio** — na
+   verdade só o `keep-warm.yml` sofre; `scan.yml` (o scan de 5min de
+   verdade) já usa `cron: "7 * * * *"`, deliberadamente fora do minuto
+   cheio, com o disparo real vindo do `cron-job.org` externo (fora do
+   GitHub Actions) — o próprio `.claude/rules/ci-deploy.md` já documentava
+   isso, a análise externa não tinha essa visibilidade.
+3. **Não viu dois gaps reais que o histórico deste projeto já tinha
+   quase resolvido em outro lugar**: `tryAcquireScanLock`/
+   `tryReleaseScanLock` eram o ÚNICO ponto de `scanner.js` sem o campo
+   `executor` no log (todo o resto do arquivo já grava isso desde o item
+   192/197, numa investigação cron×navegador do "Failed to fetch" que
+   ficou **em aberto**); e `scripts/adminPineConfig.js` usava
+   `console.warn` (invisível na tela Logs) onde o lado navegador já usava
+   `logWarn` — o fallback de config do CRON era menos visível que o do
+   navegador, o oposto do que a análise assumiu.
+
+**Achado relevante para o item 197 (em aberto)**: os logs que o usuário
+colou já mostravam `(scanner ARBUSDT browser)` etc. explicitamente — ou
+seja, o campo `executor` introduzido pelo PR #393 está funcionando e esses
+5 erros de `"Failed to fetch"` em scan de candle são confirmadamente do
+NAVEGADOR, não do cron. Isso não fecha a contradição do item 197 (que era
+sobre uma ocorrência sem nenhum dispositivo aberto), mas é evidência a
+favor do navegador ser a fonte dominante do padrão geral.
+
+### Decisões do usuário (AskUserQuestion, antes de implementar)
+
+- Lock: manter fail-open (CAS já protege correção), reduzir frequência com
+  retry curto + alertar no Telegram quando persistir.
+- Keep-alive: reaproveitar `cron-job.org` (já usado pelo projeto) em vez de
+  criar conta nova em UptimeRobot/Better Stack.
+- Config fallback: construir o mecanismo completo de versão/hash +
+  degradação (não só consertar a visibilidade).
+- Retry de rede: aplicar em TODAS as leituras GET de `apiBackend.js`, não
+  só nos 3 pontos que aparecem nos logs.
+
+### O que foi implementado
+
+**A — Observabilidade** (`scanner.js`, `adminPineConfig.js`,
+`server/routes/locks.js`): `executor` no log do lock (igualando ao resto do
+arquivo); `console.warn`→`logWarn` no fallback cron de config (agora visível
+na tela Logs, mesma mensagem dos dois lados); release de lock devolve
+`released: boolean` real (baseado no `rowCount` do `UPDATE`) em vez de
+`{ok:true}` sempre, com log server-side quando não libera (holder não bate).
+
+**B — Retry de rede no backend** (`src/lib/apiBackend.js` +
+`src/lib/httpRetry.js`): `fetchWithRetry` ganhou um parâmetro `fetchOptions`
+(method/headers/body, repassado pro `fetch()` nativo junto do `signal` do
+timeout) — aditivo, nenhum chamador existente (Binance) usava isso antes.
+`callBackend` agora envolve GET com `fetchWithRetry` (orçamento menor que o
+da Binance — 3 tentativas, não 5 — por ser leitura interativa do navegador,
+não um scan de cron a cada ~5min). POST/DELETE continuam sem retry de rede
+automático (não comprovadamente idempotentes na camada HTTP genérica).
+
+**C — Lock fail-open: retry curto + alerta com cooldown** (`scanner.js`,
+`notificationTemplates.js`, `telegram.js`, `adminTelegram.js`): 2 tentativas
+extras (300ms/800ms) antes de desistir — sobrevive a um blip de rede sem
+nunca chegar no fail-open. Se mesmo assim falhar, loga `ERROR` (como antes)
+e dispara `notifyLockDegraded` no Telegram, com cooldown de 30min em memória
+por processo. **Correção de design durante a implementação**: a ideia
+original de "N falhas CONSECUTIVAS" não funciona para o cron — cada
+`npm run scan` é um processo novo, então um contador em memória nunca
+acumularia entre execuções (reseta a cada ~5min). Trocado por cooldown
+baseado em tempo (reaproveita o espírito do `shouldAlertQuota` de
+`adminTelegram.js`, mas SEM o marcador persistido em Postgres/RTDB daquele
+mecanismo — desproporcional para este alerta; o cooldown em memória já
+funciona nos dois executores pelo motivo oposto: no cron, o processo curto
+já limita naturalmente a 1 alerta por execução; no navegador, a aba longa
+precisa do cooldown de verdade). `tryReleaseScanLock` ganhou o mesmo retry
+curto, sem alerta (TTL já cobre, severidade menor).
+
+**D — `/ready`** (`server/index.js` + `server/readyCheck.js` novo): `SELECT
+1` no pool Postgres com timeout próprio de 5s, lógica extraída pra
+`readyCheck.js` pra ser testável sem credencial do firebase-admin (mesmo
+padrão de `rateLimit.js`/`requireOwner.js`). `/health` continua idêntico
+(alvo do keep-warm, precisa responder rápido mesmo com Postgres lento).
+
+**F — `StrategyConfig` versionado + modo degradado** (`pineParser.js`,
+`adminPineConfig.js`, `adminPineConfigShadow.js`, `backtestPineConfig.js`,
+`PineScript.jsx`'s `syncPineToAssets`, `scanner.js`): `configVersion`
+(incremento) + `configHash` (FNV-1a determinístico, mesmo algoritmo já
+usado em `rtdbMirror.js` para outro fim) gravados no `data` JSONB de
+`strategy_config` a cada save do Pine Script — **sem migração de schema**
+(a coluna já é JSONB livre). `getPineConfig()` manteve seu contrato de
+retorno INTOCADO (evita quebrar ~15 call sites/tripwires que travam o
+shape) — um acessor NOVO e separado, `getPineConfigStatus()`, devolve
+`{source, version, hash, degraded}`. No navegador, um cache versionado
+próprio (`localStorage`, chave nova, distinta do rascunho Pine do usuário)
+grava a última leitura CONFIRMADA do Postgres; se a leitura falhar, usa
+esse cache (`source:'cache'`, não degradado) em vez de cair direto pro
+rascunho Pine desta aba (que pode estar dias desatualizado) ou DEFAULTS. Só
+quando não existe cache nenhum é que fica `degraded:true`. No cron
+(processo curto, sem persistência entre execuções), só existem
+`'postgres'`/`'defaults'` — não há "cache de execução anterior" que faça
+sentido implementar aqui.
+
+`scanner.js`: `scanAsset` captura `getPineConfigStatus()` logo após o
+`getPineConfig()` (explícito via `scanResult.pineConfigStatus`, não lido de
+novo em `persistScanResults` — mesmo motivo de `pineConfig` já ser passado
+assim: evita depender de timing entre ativos). `persistScanResults` bloqueia
+só a criação de operação NOVA quando `degraded:true` — um único gate dentro
+do closure `createTradeOpIfNoneActiveCapped` (cobre os ~8 pontos de chamada
+dentro da função com 1 edição, mesmo padrão de early-return já usado pelo
+teto de exposição de carteira) — nunca a detecção de sinal/`AssetState`
+(continuam normais) nem o price-check de operações já abertas (usa o config
+CONGELADO na própria operação, nunca `pineConfig` ao vivo — mesmo racional
+já documentado para `runnerEnabled`/`preTp1StopProtectionEnabled`).
+`createManualTradeOp` (entrada explícita do usuário) fica de fora de
+propósito, mesma exceção que o teto de carteira já tem.
+
+**Limitação aceita, documentada no código**: só a rota de escrita via Pine
+Script salvo (`syncPineToAssets`) incrementa `configVersion`/`configHash`.
+`Settings.jsx` escreve direto em `StrategyConfig.set('current', ...)` para
+os campos NON_PINE_SYNCED_KEYS (arbEnabled, minRR, pesos SMC etc.) sem
+passar por `syncPineToAssets` — uma mudança só por ali não bumpa a versão.
+Cobertura completa (todo writer bumpando versão) ficaria pra uma rodada
+futura se o usuário pedir; não bloqueia o mecanismo (o cache ainda reflete
+a última leitura confirmada, só não detecta uma mudança feita exclusivamente
+pela tela Settings enquanto o Postgres está fora do ar).
+
+### Bugs reais achados só na verificação de build (não pegos por nenhum teste unitário)
+
+A regra "revisão final obrigatória" do projeto mandou rodar os 4 bundles
+esbuild manualmente (não só `npm test`) — e isso achou 2 quebras reais que
+nenhum teste unitário cobria, porque nenhum teste exercita o bundling:
+`notifyLockDegraded` (parte C) não existia em `scripts/backtestTelegram.js`
+nem `scripts/adminTelegramShadow.js` (os redirects de `./telegram` para
+backtest/backfill e shadow) — `node scripts/build-backtest.mjs`/
+`build-backfill.mjs`/`build-scan-shadow.mjs` falhavam com "No matching
+export". Corrigido adicionando o `noop` nos dois arquivos. Também achado
+(antes de rodar o build, revendo os 4 redirects de `./pineParser`):
+`scripts/backtestPineConfig.js` e `scripts/adminPineConfigShadow.js` não
+exportavam `getPineConfigStatus` — corrigido com um export trivial
+(`degraded:false` sempre, já que backtest/shadow nunca leem StrategyConfig
+ao vivo do jeito que o navegador/cron real leem). Sem rodar os 4 builds,
+essas 2 quebras só apareceriam na próxima vez que `npm run backtest`/
+`backfill-check`/`scan:shadow` rodasse de verdade.
+
+Separadamente, 2 arquivos de teste (`backtestEngine.test.js`,
+`scanErrorLogging.test.js`) mockavam `./pineParser` só com `getPineConfig`
+— `scanAsset`'s nova chamada a `getPineConfigStatus()` quebrava esses 22
+testes com `TypeError: getPineConfigStatus is not a function`. Corrigido
+adicionando o mock que falta nos dois (achado pela suíte de testes, não
+pelo build).
+
+### Verificação
+
+`npm run lint` limpo; `npm test` 2367 passed, 59 skipped, 0 failed (suíte
+inteira, não só os arquivos tocados); `npm run build` ok (mesmos avisos
+pré-existentes de chunk grande, nada novo); `npm run typecheck:ratchet` 13
+erros (dentro do teto); os 4 bundles esbuild (`build-scan`/`build-backtest`/
+`build-backfill`/`build-scan-shadow`) rodados manualmente e confirmados
+limpos depois das correções acima. Testes novos: `scannerLockRetry.test.js`
+(retry curto, fail-open, cooldown do alerta — com `vi.resetModules()` por
+teste, já que o cooldown é estado module-level que vazaria entre testes do
+mesmo arquivo), `scannerConfigDegraded.test.js` (degraded bloqueia só
+criação nova, AssetState/op existente intocados), `pineParser.test.js`
+(hash determinístico, os 3 `source`, cache corrompido tratado como
+ausente), `scripts/adminPineConfig.test.js` (espelho do lado cron),
+`server/readyCheck.test.js` (ok/error/timeout). `db/pgEntitiesCore.test.js`
+ganhou 1 caso novo pro `released` do release (gated por `TEST_DATABASE_URL`
+— não roda nesta sessão sem Postgres real, mas segue o mesmo padrão dos
+demais testes desse arquivo).
+
+**Pendente, não feito por mim**: passo manual do usuário — criar o job no
+painel do `cron-job.org` apontando pra `/health` (ou `/ready`) a cada ~5min,
+mantendo o `keep-warm.yml` do GitHub Actions como redundância. Regra do
+projeto (`operating-principles.md`): isto não conta como concluído até o
+usuário confirmar que rodou.

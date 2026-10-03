@@ -21,3 +21,4 @@ export const notifyTimeStop = noop;
 export const notifyChopExit = noop;
 export const notifyVerificationTask = noop;
 export const notifySignalCanceled = noop;
+export const notifyLockDegraded = noop;

@@ -6,8 +6,18 @@
  */
 import { auth } from '@/lib/firebaseClient';
 import { getOwnerKey } from '@/lib/ownerKey';
+import { fetchWithRetry } from '@/lib/httpRetry';
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL;
+
+// Orçamento de retry menor que o usado para Binance (docs/known-risks.md
+// item 57, 5 tentativas / ~15,5s): essas são leituras INTERATIVAS do
+// navegador (dashboard esperando a tela carregar), não um scan de cron a
+// cada ~5min — 3 tentativas (~3,5s de espera entre elas) cobre o blip de
+// rede transitório ("Failed to fetch" contra o backend, visto em produção
+// em lock/StrategyConfig) sem deixar a UI travada por muito tempo numa
+// falha persistente.
+const GET_RETRY_OPTIONS = { maxRetries: 3 };
 
 // method defaults to GET when no body is passed, POST otherwise — existing
 // callers (all POST-with-body) keep working unchanged; new GET-only callers
@@ -26,7 +36,8 @@ export async function callBackend(path, body, { method, allow404 } = {}) {
   const httpMethod = method || (body !== undefined ? 'POST' : 'GET');
   const doFetch = async (forceRefresh) => {
     const idToken = await auth.currentUser.getIdToken(forceRefresh);
-    return fetch(`${BASE_URL}${path}`, {
+    const url = `${BASE_URL}${path}`;
+    const fetchOptions = {
       method: httpMethod,
       headers: {
         'Content-Type': 'application/json',
@@ -36,7 +47,16 @@ export async function callBackend(path, body, { method, allow404 } = {}) {
         'X-Owner-Key': getOwnerKey(),
       },
       ...(httpMethod === 'GET' || httpMethod === 'DELETE' ? {} : { body: JSON.stringify(body || {}) }),
-    });
+    };
+    // Retry de rede só em GET (leitura) — POST/DELETE mutantes (criar
+    // operação, adquirir/liberar lock, etc.) não têm garantia de idempotência
+    // na camada HTTP genérica aqui, então continuam com uma única tentativa
+    // (quem precisa de retry num caminho específico, como o lock em
+    // scanner.js, implementa o próprio retry curto perto da semântica dele).
+    if (httpMethod === 'GET') {
+      return fetchWithRetry(url, { context: path, fetchOptions, ...GET_RETRY_OPTIONS });
+    }
+    return fetch(url, fetchOptions);
   };
 
   let response = await doFetch(false);

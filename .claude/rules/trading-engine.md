@@ -39,6 +39,35 @@ nunca deve receber nova transição.**
   separados: o CAS por-op protege independentemente do lock (que é fail-open), e
   serializar os dois atrasaria o price-check leve, que é o caminho rápido de
   segurança.
+- **[ENDURECIDO — item 252] Lock fail-open ganhou retry curto + alerta com
+  cooldown, sem mudar a decisão final.** `tryAcquireScanLock`/
+  `tryReleaseScanLock` tentam mais 2x (300ms/800ms) antes de desistir —
+  sobrevive à maioria dos blips de rede sem nunca chegar no fail-open. Se
+  mesmo assim falhar, o comportamento final é o MESMO de sempre (fail-open,
+  loga `ERROR`), mas agora também dispara `notifyLockDegraded` no Telegram
+  (cooldown de 30min em memória, por processo — não é contador de falhas
+  consecutivas, que não funcionaria para o cron: cada `npm run scan` é um
+  processo novo). Ver `docs/known-risks.md` item 252 para o porquê de não
+  virar fail-closed (CAS já cobre correção; fail-closed pararia o
+  price-check de operações ativas durante uma instabilidade, pior que o
+  risco residual de trabalho duplicado que o lock evita).
+- **[NOVO — item 252] `CONFIG_DEGRADED` bloqueia só criação de operação
+  NOVA, nunca gestão de operação existente.** `getPineConfigStatus()`
+  (`src/lib/pineParser.js`/`scripts/adminPineConfig.js`) reporta
+  `degraded:true` quando `StrategyConfig` não pôde ser lido do Postgres/Neon
+  NESTA passada E não há cache versionado de uma leitura anterior
+  confirmada. `scanAsset` captura o status logo após `getPineConfig()`
+  (via `scanResult.pineConfigStatus`, não relido depois — mesmo motivo de
+  `pineConfig` já ser passado assim: não depender de timing entre ativos).
+  `persistScanResults` usa isso num único gate dentro do closure
+  `createTradeOpIfNoneActiveCapped` (cobre as ~8 chamadas de cascata dentro
+  da função) — nunca em `priceCheckActiveOpsInner` (gestão de stop/TP usa o
+  config CONGELADO na própria operação, nunca `pineConfig` ao vivo, mesmo
+  racional de `runnerEnabled`) nem em `createManualTradeOp` (entrada
+  explícita do usuário, mesma exceção que o teto de exposição de carteira
+  já tem). **Cobertura parcial aceita**: só `syncPineToAssets` (Pine Script
+  salvo) incrementa `configVersion`/`configHash`; uma escrita direta via
+  `Settings.jsx` (campos NON_PINE_SYNCED_KEYS) não bumpa a versão.
 - **[CORRIGIDO — P0-c] Candle de entrada retroativo.** `persistScanResults` só
   avalia stop/TP por high/low quando o candle avaliado fechou ESTRITAMENTE
   depois do candle de sinal (`isCandleUsableForExits` em

@@ -259,8 +259,30 @@ describe.skipIf(!TEST_DATABASE_URL)('db/pgEntitiesCore.mjs', () => {
     it('só um chamador adquire por vez; libera corretamente', async () => {
       expect(await backend.locks.acquireScanLock('scan', 60_000, 'holder-a')).toBe(true);
       expect(await backend.locks.acquireScanLock('scan', 60_000, 'holder-b')).toBe(false);
-      await backend.locks.releaseScanLock('scan', 'holder-a');
+      expect(await backend.locks.releaseScanLock('scan', 'holder-a')).toEqual({ released: true });
       expect(await backend.locks.acquireScanLock('scan', 60_000, 'holder-b')).toBe(true);
+    });
+
+    it('releaseScanLock com holder errado não libera nem afeta o lock atual', async () => {
+      await backend.locks.acquireScanLock('scan', 60_000, 'holder-a');
+      expect(await backend.locks.releaseScanLock('scan', 'holder-errado')).toEqual({ released: false });
+      // Lock continua com holder-a — outro chamador ainda não consegue adquirir.
+      expect(await backend.locks.acquireScanLock('scan', 60_000, 'holder-b')).toBe(false);
+    });
+
+    // Codex review (PR #455) — reaquisição pelo MESMO holder precisa ser
+    // idempotente: o retry curto de tryAcquireScanLock (src/lib/scanner.js,
+    // item 252) reage a um acquire cujo COMMIT teve sucesso mas a resposta
+    // HTTP se perdeu, retentando com o MESMO holder. Sem este
+    // comportamento, a 2a chamada veria a linha ainda não expirada e
+    // devolveria false (achando que é outro worker), bloqueando o lock até
+    // o TTL (10min full-scan / 3min price-check) na exata falha transitória
+    // que o retry deveria tolerar.
+    it('reaquisição pelo MESMO holder é idempotente (não é tratada como contenção)', async () => {
+      expect(await backend.locks.acquireScanLock('scan', 60_000, 'holder-a')).toBe(true);
+      expect(await backend.locks.acquireScanLock('scan', 60_000, 'holder-a')).toBe(true);
+      // Holder DIFERENTE continua barrado normalmente enquanto válido.
+      expect(await backend.locks.acquireScanLock('scan', 60_000, 'holder-b')).toBe(false);
     });
   });
 

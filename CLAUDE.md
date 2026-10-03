@@ -32,8 +32,10 @@ reintroduza `@base44/*`, `base44.com` nem nada do ecossistema Base44.
 - **`server/`** (Express + `firebase-admin` + `pg`): **está deployado** no
   Render como `sentinel-signals-api` — API de entidades sobre Postgres/Neon
   (ver acima) + `POST /webhook/tradingview` (só loga + notifica Telegram,
-  **nunca envia ordem**), `GET /health`, `POST /api/telegram-notify` (não
-  usado pelo frontend hoje). Secrets via env do Render (nunca no repo).
+  **nunca envia ordem**), `GET /health` (keep-warm, não checa dependências),
+  `GET /ready` (checa Postgres de verdade, item 252), `POST
+  /api/telegram-notify` (não usado pelo frontend hoje). Secrets via env do
+  Render (nunca no repo).
 
 ## Arquitetura de dados
 

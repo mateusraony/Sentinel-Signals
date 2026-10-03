@@ -63,12 +63,12 @@ const BODY_READ_METHODS = ['json', 'text', 'arrayBuffer', 'blob', 'formData'];
  * padrão do Fetch/undici), então o abort continua funcionando mesmo depois
  * que esta função já retornou a Response para o chamador.
  */
-async function fetchComTimeout(url, timeoutMs) {
+async function fetchComTimeout(url, timeoutMs, fetchOptions) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try {
-    res = await fetch(url, { signal: controller.signal });
+    res = await fetch(url, { ...fetchOptions, signal: controller.signal });
   } catch (err) {
     clearTimeout(timer);
     throw err;
@@ -134,12 +134,17 @@ export async function fetchWithRetry(url, {
   baseDelayMs = DEFAULT_BASE_DELAY_MS,
   maxRetryAfterMs = DEFAULT_MAX_RETRY_AFTER_MS,
   attemptTimeoutMs = DEFAULT_ATTEMPT_TIMEOUT_MS,
+  // Opções passadas direto pro fetch() nativo (method/headers/body/...) —
+  // aditivo: nenhum chamador existente (Binance, sempre GET público sem
+  // headers) usava isto antes de src/lib/apiBackend.js precisar mandar
+  // Authorization/X-Owner-Key.
+  fetchOptions = {},
 } = {}) {
   let ultimoErro;
   for (let tentativa = 0; tentativa <= maxRetries; tentativa++) {
     let res;
     try {
-      res = await fetchComTimeout(url, attemptTimeoutMs);
+      res = await fetchComTimeout(url, attemptTimeoutMs, fetchOptions);
     } catch (err) {
       ultimoErro = err;
       if (tentativa === maxRetries) break;
