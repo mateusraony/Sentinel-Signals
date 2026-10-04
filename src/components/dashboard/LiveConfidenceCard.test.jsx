@@ -147,3 +147,12 @@ describe('LiveConfidenceCard — seção "Por fonte de dado" (item 186/187)', ()
     expect(screen.queryByText('Futures')).toBeNull();
   });
 });
+
+// Passo 5 (item 256): nome mantido ("Confiança ao Vivo"), subtítulo reforçado.
+describe('LiveConfidenceCard — subtítulo "evidência histórica, não probabilidade" (passo 5)', () => {
+  it('REGRESSÃO: mantém o nome e diz que é evidência histórica, não probabilidade', async () => {
+    renderCard([makeOp({ id: 'b1' })]);
+    await screen.findByText('Confiança ao Vivo (amostra real)');
+    expect(screen.getByText(/Evidência histórica das operações reais já fechadas — não é probabilidade de acerto futuro/)).toBeTruthy();
+  });
+});

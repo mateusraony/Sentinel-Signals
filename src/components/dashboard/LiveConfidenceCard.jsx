@@ -165,6 +165,9 @@ export default function LiveConfidenceCard() {
           {copied ? 'Copiado!' : 'Copiar'}
         </button>
       </div>
+      <p className="text-9px font-mono text-muted-foreground mb-3">
+        Evidência histórica das operações reais já fechadas — não é probabilidade de acerto futuro.
+      </p>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
         <ConfidenceRow label="Geral" summary={all} divergenceWarning={divergentGeral} />
         <ConfidenceRow label="BUY" summary={buy} />

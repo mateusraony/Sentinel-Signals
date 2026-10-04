@@ -255,7 +255,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
           )}
 
           <p className="text-10px font-mono text-muted-foreground">
-            Estimativa baseada em confluência de indicadores e desempenho histórico de padrões similares — não é garantia de resultado.
+            Estimativa baseada em confluência de indicadores e desempenho histórico de padrões similares — não é garantia de resultado. Histórico, não calibrado: mostra o que já aconteceu em casos parecidos, não uma probabilidade calibrada.
           </p>
         </>
       )}

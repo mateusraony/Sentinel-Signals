@@ -161,6 +161,11 @@ export default function VerificationWidget() {
               </Tooltip>
             </div>
           ))}
+          {pending.slice(0, 5).some(task => task.score > 0) && (
+            <p className="text-8px font-mono text-muted-foreground/70 px-1">
+              🔥 = score técnico (concordância das regras atuais) — não é probabilidade de acerto.
+            </p>
+          )}
         </div>
       )}
     </div>

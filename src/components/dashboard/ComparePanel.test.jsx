@@ -46,3 +46,12 @@ describe('ComparePanel — RSI/MACD/EMA têm tooltip explicando o termo (achado 
     }
   });
 });
+
+// Passo 5 (item 256): "Score" e "Oportunidade" são pontuações das regras, não probabilidade.
+describe('ComparePanel — ressalva "score não é probabilidade" (passo 5)', () => {
+  it('REGRESSÃO: cada coluna avisa que Score/Oportunidade não são probabilidade de acerto', () => {
+    renderPanel({});
+    const notes = screen.getAllByText(/Score e Oportunidade são pontuações das regras atuais — não são probabilidade de acerto/);
+    expect(notes).toHaveLength(2); // uma por ativo comparado
+  });
+});
