@@ -134,6 +134,8 @@ const TF_ORDER = ['1h', '4h', '1d'];
 const DIRECTION_VIEW = {
   1: { arrow: '↑', word: 'compra', color: 'rgba(0,255,128,0.85)' },
   [-1]: { arrow: '↓', word: 'venda', color: 'rgba(255,20,120,0.85)' },
+  // 0 = neutro CONHECIDO (o motor gravou "sem direção"); diferente de dado ausente (null → "?").
+  0: { arrow: '→', word: 'neutro', color: 'rgba(255,255,255,0.6)' },
 };
 
 function Tag({ scope }) {
@@ -188,7 +190,10 @@ function WhySection({ why, consStatus }) {
           {cons.length > 0 ? (
             <ul className="space-y-0.5">
               {cons.map(c => (
-                <li key={c.code} className={textCls}>• {c.text}<Tag scope={c.scope} /></li>
+                <li key={c.code} className={textCls}>
+                  • {c.text}<Tag scope={c.scope} />
+                  {c.evidence && <div className="ml-3 text-8px text-muted-foreground">{c.evidence}</div>}
+                </li>
               ))}
             </ul>
           ) : (
@@ -224,7 +229,7 @@ function WhySection({ why, consStatus }) {
               );
             })}
           </ul>
-          <p className="text-7px font-mono text-muted-foreground/70">↑ compra · ↓ venda · ? sem dado</p>
+          <p className="text-7px font-mono text-muted-foreground/70">↑ compra · ↓ venda · → neutro · ? sem dado</p>
         </WhyBlock>
       </div>
     </section>

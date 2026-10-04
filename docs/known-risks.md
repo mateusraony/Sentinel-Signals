@@ -30221,3 +30221,8 @@ como "Aguardando" por engano.
 **Recomendação (não implementada, aguarda OK)**: tornar a query de ativas permanente (não só com o
 painel aberto) e usá-la nessas contagens/cards — 1 leitura leve (≤ ~10 linhas) a cada 60 s, mesmo
 padrão de `scanner.js`. PR próprio, com teste do cenário "ativa fora das 100".
+**Codex no #463 (2 achados P2, ambos confirmados e corrigidos)**: (1) `buildMultiTf` preserva a
+direção `0` (neutro conhecido), mas a UI só tinha visão para `1`/`-1` e mostrava "?"/"sem dado" —
+tratava leitura neutra como ausente; agora `0` → "→ neutro" e só `null` vira "?". (2) o item "contra"
+de rejeição pior carrega `c.evidence` (medida + "medido às HH:MM BRT") que a seção descartava; agora
+aparece sob o item. 2 testes novos, ambos falham sem a correção.

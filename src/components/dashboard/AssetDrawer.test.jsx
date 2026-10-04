@@ -327,6 +327,32 @@ describe('AssetDrawer N2 — seção "Por quê?"', () => {
     expect(why().getByText('?')).toBeTruthy();
   });
 
+  it('REGRESSÃO (Codex #463): direção 0 é NEUTRO conhecido — não "sem dado"', () => {
+    renderN1({
+      signals: [{ ...SIGNAL_WITH_REASONS, context: { ...SIGNAL_WITH_REASONS.context, tf_1d_direction: 0 } }],
+      assetStates: [STATE_4H],
+    });
+    const labels = why().getAllByRole('listitem').map(li => li.getAttribute('aria-label')).filter(Boolean);
+    expect(labels).toContain('1d: neutro (no sinal)');
+    expect(labels).toContain('1h: sem dado'); // o que realmente falta continua "sem dado"
+    expect(why().getByText('neutro', { exact: false })).toBeTruthy();
+  });
+
+  it('REGRESSÃO (Codex #463): a evidência numérica do "contra" (rejeição pior) aparece junto do item', () => {
+    const rejected = {
+      ...SIGNAL_WITH_REASONS, last_rejection_reason: 'regime_rejected',
+      decision_snapshot: {
+        reason_code: 'regime_rejected', data_status: 'LIVE',
+        evaluated_at: '2026-10-03T17:50:00.000Z', facts: { adx: 18, adx_min: 22 },
+      },
+    };
+    renderN1({ signals: [rejected] });
+    const items = why().getAllByRole('listitem');
+    const withEvidence = items.find(li => /ADX/.test(li.textContent));
+    expect(withEvidence, 'nenhum item mostra a evidência (ADX …)').toBeTruthy();
+    expect(withEvidence.textContent).toMatch(/medido às/);
+  });
+
   it('sem sinal, com erro ou carregando: a seção nem aparece (nada de afirmar sem dado)', () => {
     renderN1({ signals: [], tradeOps: [] });
     expect(screen.queryByRole('button', { name: 'Por quê?' })).toBeNull();
