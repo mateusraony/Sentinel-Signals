@@ -4,7 +4,8 @@ import moment from 'moment';
 import SignalChecklist from './SignalChecklist';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { formatPrice } from '@/lib/priceProximity';
-import { buildDecisionCard } from '@/lib/decisionCardPresenter';
+import { buildDecisionCard, NOT_RECORDED } from '@/lib/decisionCardPresenter';
+import FundingLine from './FundingLine';
 import { QueryErrorState } from '@/components/QueryErrorState';
 
 // Frescor REAL do ativo (assetHealthcheckReason via presenter) — antes o
@@ -236,6 +237,60 @@ function WhySection({ why, consStatus }) {
   );
 }
 
+// Passo 4: "Dados técnicos" e "Histórico" — recolhidos por padrão, conteúdo do
+// Histórico sempre montado (escondido por CSS, item 237); só o funding busca
+// dado, e apenas depois de aberto.
+const SOURCE_LABEL = { spot: 'Binance Spot', futures: 'Binance Futures' };
+const EXECUTOR_LABEL = { browser: 'este navegador', cron: 'o scan agendado (cron)' };
+
+function Collapsible({ id, title, hint = null, forceMount = true, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section aria-label={title} className="rounded-xl"
+      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="text-10px font-mono font-bold text-foreground/90">
+          {title}{hint && <span className="ml-2 font-normal text-muted-foreground">{hint}</span>}
+        </span>
+        <span aria-hidden="true" className="text-10px font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
+      </button>
+      <div id={id} className={`${open ? '' : 'hidden'} px-4 pb-4 space-y-4`}>
+        {(open || forceMount) && children}
+      </div>
+    </section>
+  );
+}
+
+function TechSection({ card, symbol }) {
+  const { source, evaluatedAt } = card.quality;
+  const textCls = 'text-9px font-mono text-foreground/80 leading-snug';
+  return (
+    <Collapsible id="decision-tech-content" title="Dados técnicos" forceMount={false}>
+      <WhyBlock title="Funding (só informação)">
+        <FundingLine symbol={symbol} />
+      </WhyBlock>
+      <WhyBlock title="De onde vêm os dados">
+        <ul className="space-y-0.5">
+          <li className={textCls}>Preços: {SOURCE_LABEL[source.marketSource] ?? NOT_RECORDED}</li>
+          <li className={textCls}>Lido por: {EXECUTOR_LABEL[source.executor] ?? NOT_RECORDED}</li>
+          <li className={textCls}>Avaliação do motor: {formatBrt(evaluatedAt) ?? NOT_RECORDED}</li>
+        </ul>
+      </WhyBlock>
+      <WhyBlock title="Probabilidade">
+        <p className="text-9px font-mono text-muted-foreground leading-snug">
+          Indisponível — score e histórico não são probabilidade calibrada.
+        </p>
+      </WhyBlock>
+    </Collapsible>
+  );
+}
+
 const STATUS_CFG = {
   SIGNAL_CONFIRMED: { label: 'Entrada Confirmada', color: '#00ff80' },
   RUNNER_ACTIVE:    { label: 'Runner Ativo',        color: '#ffd166' },
@@ -305,118 +360,126 @@ export default function AssetDrawer({
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           <DecisionSummary card={card} statesUnavailable={statesUnavailable} />
           {card.why && <WhySection why={card.why} consStatus={card.consStatus} />}
+          <TechSection card={card} symbol={asset.symbol} />
 
-          {/* Trade Operations */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <Activity className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
-              <span className="text-xs font-bold text-foreground">Operações</span>
-              <span className="text-9px font-mono text-muted-foreground">({assetOps.length})</span>
-            </div>
-            {assetOps.length === 0 && tradeOpsUnavailable ? (
-              <p className="text-10px font-mono" style={{ color: '#ff9f43' }}>Não foi possível carregar as operações agora — falha ao atualizar.</p>
-            ) : assetOps.length === 0 ? (
-              <p className="text-10px font-mono text-muted-foreground">
-                Nenhuma operação registrada ainda — abre aqui quando o motor confirmar um sinal para este ativo.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {assetOps.map(op => {
-                  const cfg = STATUS_CFG[op.status] || { label: op.status, color: '#64748b' };
-                  const isBuy = op.side === 'BUY';
-                  return (
-                    <div key={op.id} className="rounded-lg px-3 py-2.5"
-                      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-10px font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>
-                            {isBuy ? <TrendingUp className="inline w-3 h-3 mr-0.5" /> : <TrendingDown className="inline w-3 h-3 mr-0.5" />}
-                            {op.side}
-                          </span>
-                          <span className="text-9px font-mono text-muted-foreground">{op.timeframe?.toUpperCase()}</span>
-                        </div>
-                        <span className="text-9px font-mono" style={{ color: cfg.color }}>{cfg.label}</span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {[
-                          { l: 'Entrada', v: op.entry_price },
-                          { l: 'TP1', v: op.tp1 },
-                          { l: 'TP2', v: op.tp2 },
-                        ].map(({ l, v }) => (
-                          <div key={l}>
-                            <div className="text-8px font-mono text-muted-foreground">{l}</div>
-                            <div className="text-10px font-mono text-foreground/70">${formatPrice(v)}</div>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="text-8px font-mono text-muted-foreground mt-1.5 flex items-center gap-1">
-                        <Clock className="w-2.5 h-2.5" />
-                        {moment(op.created_date).format('DD/MM/YY HH:mm')}
-                      </div>
-                    </div>
-                  );
-                })}
+          <Collapsible id="decision-history-content" title="Histórico deste ativo" hint={`(${assetOps.length} operações · ${assetSignals.length} sinais)`}>
+
+            {/* Trade Operations */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Activity className="w-3.5 h-3.5" style={{ color: '#00e5ff' }} />
+                <span className="text-xs font-bold text-foreground">Operações</span>
+                <span className="text-9px font-mono text-muted-foreground">({assetOps.length})</span>
               </div>
-            )}
-          </div>
-
-          {/* Signals */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-3.5 h-3.5 flex items-center justify-center">
-                <span className="w-2 h-2 rounded-full" style={{ background: '#ffd166', boxShadow: '0 0 4px #ffd166', display: 'inline-block' }} />
-              </span>
-              <span className="text-xs font-bold text-foreground">Sinais Recentes</span>
-              <span className="text-9px font-mono text-muted-foreground">({assetSignals.length})</span>
-            </div>
-            {assetSignals.length > 0 && (
-              <p className="text-8px font-mono mb-2" style={{ color: 'rgba(255,255,255,0.3)' }}>
-                "Confl." = confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
-              </p>
-            )}
-            {assetSignals.length === 0 && signalsUnavailable ? (
-              <p className="text-10px font-mono" style={{ color: '#ff9f43' }}>Não foi possível carregar os sinais agora — falha ao atualizar.</p>
-            ) : assetSignals.length === 0 ? (
-              <p className="text-10px font-mono text-muted-foreground">
-                Nenhum sinal registrado ainda — aparece aqui quando o scan encontrar uma oportunidade neste ativo.
-              </p>
-            ) : (
-              <div className="space-y-1.5">
-                {assetSignals.map(sig => {
-                  const isBuy = sig.signal_type === 'BUY';
-                  return (
-                    <div key={sig.id} className="flex items-start gap-2 px-3 py-2 rounded-lg"
-                      style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                      <span className="mt-0.5 shrink-0 text-10px font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>
-                        {isBuy ? '↑' : '↓'} {sig.signal_type}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-8px font-mono text-muted-foreground/60 uppercase tracking-wider">TF</span>
-                          <span className="text-9px font-mono text-muted-foreground">{sig.timeframe?.toUpperCase()}</span>
-                          <span className="text-9px font-mono text-foreground/60">${formatPrice(sig.price_at_signal)}</span>
-                          {sig.context?.score && (
-                            <span className="text-8px font-mono" style={{ color: '#ffd166' }}>
-                              Confl. {sig.context.score}
+              {assetOps.length === 0 && tradeOpsUnavailable ? (
+                <p className="text-10px font-mono" style={{ color: '#ff9f43' }}>Não foi possível carregar as operações agora — falha ao atualizar.</p>
+              ) : assetOps.length === 0 ? (
+                <p className="text-10px font-mono text-muted-foreground">
+                  Nenhuma operação registrada ainda — abre aqui quando o motor confirmar um sinal para este ativo.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {assetOps.map(op => {
+                    const cfg = STATUS_CFG[op.status] || { label: op.status, color: '#64748b' };
+                    const isBuy = op.side === 'BUY';
+                    return (
+                      <div key={op.id} className="rounded-lg px-3 py-2.5"
+                        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-10px font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>
+                              {isBuy ? <TrendingUp className="inline w-3 h-3 mr-0.5" /> : <TrendingDown className="inline w-3 h-3 mr-0.5" />}
+                              {op.side}
                             </span>
-                          )}
+                            <span className="text-9px font-mono text-muted-foreground">{op.timeframe?.toUpperCase()}</span>
+                          </div>
+                          <span className="text-9px font-mono" style={{ color: cfg.color }}>{cfg.label}</span>
                         </div>
-                        <p className="text-8px font-mono text-muted-foreground mt-0.5 leading-tight line-clamp-2">
-                          <span className="text-muted-foreground/60 uppercase tracking-wider">Motivo: </span>
-                          {sig.reason}
-                        </p>
-                        <div className="text-8px font-mono text-muted-foreground/60 mt-0.5">
-                          <span className="uppercase tracking-wider">Quando: </span>
-                          {moment(sig.created_date).fromNow()}
+                        {card.levels && (op.status === 'SIGNAL_CONFIRMED' || op.status === 'RUNNER_ACTIVE') ? (
+                          <p className="text-9px font-mono text-muted-foreground">Níveis no resumo, acima.</p>
+                        ) : (
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {[
+                            { l: 'Entrada', v: op.entry_price },
+                            { l: 'TP1', v: op.tp1 },
+                            { l: 'TP2', v: op.tp2 },
+                          ].map(({ l, v }) => (
+                            <div key={l}>
+                              <div className="text-8px font-mono text-muted-foreground">{l}</div>
+                              <div className="text-10px font-mono text-foreground/70">${formatPrice(v)}</div>
+                            </div>
+                          ))}
                         </div>
-                        <SignalChecklist signal={sig} tradeOps={tradeOps} tradeOpsUnavailable={tradeOpsUnavailable} />
+                        )}
+                        <div className="text-8px font-mono text-muted-foreground mt-1.5 flex items-center gap-1">
+                          <Clock className="w-2.5 h-2.5" />
+                          {moment(op.created_date).format('DD/MM/YY HH:mm')}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Signals */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="w-3.5 h-3.5 flex items-center justify-center">
+                  <span className="w-2 h-2 rounded-full" style={{ background: '#ffd166', boxShadow: '0 0 4px #ffd166', display: 'inline-block' }} />
+                </span>
+                <span className="text-xs font-bold text-foreground">Sinais Recentes</span>
+                <span className="text-9px font-mono text-muted-foreground">({assetSignals.length})</span>
               </div>
-            )}
-          </div>
+              {assetSignals.length > 0 && (
+                <p className="text-8px font-mono mb-2" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                  "Confl." = confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
+                </p>
+              )}
+              {assetSignals.length === 0 && signalsUnavailable ? (
+                <p className="text-10px font-mono" style={{ color: '#ff9f43' }}>Não foi possível carregar os sinais agora — falha ao atualizar.</p>
+              ) : assetSignals.length === 0 ? (
+                <p className="text-10px font-mono text-muted-foreground">
+                  Nenhum sinal registrado ainda — aparece aqui quando o scan encontrar uma oportunidade neste ativo.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {assetSignals.map(sig => {
+                    const isBuy = sig.signal_type === 'BUY';
+                    return (
+                      <div key={sig.id} className="flex items-start gap-2 px-3 py-2 rounded-lg"
+                        style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                        <span className="mt-0.5 shrink-0 text-10px font-mono font-bold" style={{ color: isBuy ? '#00ff80' : '#ff1478' }}>
+                          {isBuy ? '↑' : '↓'} {sig.signal_type}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-8px font-mono text-muted-foreground/60 uppercase tracking-wider">TF</span>
+                            <span className="text-9px font-mono text-muted-foreground">{sig.timeframe?.toUpperCase()}</span>
+                            <span className="text-9px font-mono text-foreground/60">${formatPrice(sig.price_at_signal)}</span>
+                            {sig.context?.score && (
+                              <span className="text-8px font-mono" style={{ color: '#ffd166' }}>
+                                Confl. {sig.context.score}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-8px font-mono text-muted-foreground mt-0.5 leading-tight line-clamp-2">
+                            <span className="text-muted-foreground/60 uppercase tracking-wider">Motivo: </span>
+                            {sig.reason}
+                          </p>
+                          <div className="text-8px font-mono text-muted-foreground/60 mt-0.5">
+                            <span className="uppercase tracking-wider">Quando: </span>
+                            {moment(sig.created_date).fromNow()}
+                          </div>
+                          <SignalChecklist signal={sig} tradeOps={tradeOps} tradeOpsUnavailable={tradeOpsUnavailable} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Collapsible>
         </div>
       </SheetContent>
     </Sheet>

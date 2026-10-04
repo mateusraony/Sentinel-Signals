@@ -30238,3 +30238,20 @@ errado). Custo: 1 leitura leve (≤ ~10 linhas) a cada 60 s. **O teste "com o pa
 query não dispara" foi invertido de propósito** (agora: "roda sempre"). Provas: 3 testes
 novos falham no código anterior (contagem com op ativa fora das 100, fail-closed, query
 sempre ativa). Não toca motor, schema nem workflows.
+### Addendum (2026-10-04) — Fase 1, passo 4 (Entrega B): "Dados técnicos" e "Histórico deste ativo"
+Plano em linguagem simples aprovado pelo usuário. **Feito**: o painel do ativo ficou
+Resumo → "Por quê?" → **"Dados técnicos"** → **"Histórico deste ativo"**, os três últimos
+recolhidos por padrão (`aria-expanded`/`aria-controls`, CSS `hidden`).
+- *Dados técnicos*: funding via `FundingLine.jsx` (mesmo hook/queryKey do `AssetCard`; **só é
+  montado — e só busca — depois de aberto**; "Informativo, não influencia o sinal"; sem dado =
+  "indisponível agora"), "De onde vêm os dados" (`market_source` → Binance Spot/Futures,
+  `executor` → navegador/cron, hora da avaliação; ausente = "não registrado") e
+  **Probabilidade: sempre "indisponível — score e histórico não são probabilidade calibrada"**
+  (nenhum número).
+- *Histórico*: as listas "Operações" e "Sinais Recentes" de antes, **conteúdo intacto** e sempre
+  montado; a única mudança é que a operação ativa (cujos níveis já estão no Resumo) mostra
+  "Níveis no resumo, acima." em vez de repetir Entrada/TP1/TP2 (item 154). Operações encerradas
+  continuam com a grade.
+- `AssetDrawer.jsx` segue sem buscar dado (tripwire intacto): só o `FundingLine` usa o hook.
+**Provas**: 7 testes novos falham sem a mudança; capturas Chromium 390px/1280px. Não toca motor,
+schema, workflows ou dependências.
