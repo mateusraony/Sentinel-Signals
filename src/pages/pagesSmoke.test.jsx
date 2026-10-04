@@ -34,6 +34,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 
 // Um mock só cobre TODO o acesso a dados — o dividendo do adaptador `backend`
@@ -93,6 +94,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Sem `globals`, o RTL não desmonta sozinho: as páginas dos testes anteriores
+  // ficavam montadas (medido: 98→228 nós do DOM em 6 testes) e seus timers
+  // (ex.: debounce de 1 s em PineScript.jsx) disparavam depois do teardown do
+  // jsdom — `localStorage is not defined` intermitente no CI (item 256).
+  cleanup();
   spyErro?.mockRestore();
   vi.clearAllMocks();
 });

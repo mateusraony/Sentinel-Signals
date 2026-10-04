@@ -30182,3 +30182,12 @@ autorização, em PR separado.
 `Dashboard.jsx`). Corrigido com defaults (`note = null`, `now = null`): volta a 13/13.
 Lição: o passo 2 só rodei `lint`/`test`/`build` localmente — **`typecheck:ratchet` também
 faz parte do gate do CI** e deve entrar na verificação de qualquer mudança em `src/`.
+
+### Addendum (2026-10-04) — conserto da corrida intermitente do `pagesSmoke.test.jsx`
+Autorizado pelo usuário. Causa-raiz **medida**: o arquivo não chamava `cleanup()` (o RTL só
+desmonta sozinho com `globals`, que o projeto não usa), então as páginas de testes anteriores
+continuavam montadas — contagem de nós do DOM por teste sem cleanup: 98, 110, 143, 169,
+197, 228; com cleanup: 98, 14, 33, 27, 28, 32. Timers dessas páginas (debounce de 1 s em
+`PineScript.jsx:1119-1127`, com cleanup correto no desmonte — que nunca acontecia) disparavam
+depois do teardown do jsdom → `localStorage is not defined` intermitente no CI (visto no
+#461). Correção: `cleanup()` no `afterEach`. Só teste; nenhum código de produção.
