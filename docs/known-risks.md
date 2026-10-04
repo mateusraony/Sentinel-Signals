@@ -30191,3 +30191,18 @@ continuavam montadas — contagem de nós do DOM por teste sem cleanup: 98, 110,
 `PineScript.jsx:1119-1127`, com cleanup correto no desmonte — que nunca acontecia) disparavam
 depois do teardown do jsdom → `localStorage is not defined` intermitente no CI (visto no
 #461). Correção: `cleanup()` no `afterEach`. Só teste; nenhum código de produção.
+### Addendum (2026-10-04) — Fase 1, passo 3: seção "Por quê?" no painel do ativo
+Plano em linguagem simples, aprovado pelo usuário. **Feito**: `AssetDrawer` ganhou `WhySection`
+(fechada por padrão, `aria-expanded`/`aria-controls`, conteúdo montado e escondido por CSS
+`hidden`, item 237) com 5 blocos lidos só de `card.why`: em uma frase, o que ajuda, o que
+atrapalha, o que anularia a ideia, os gráficos concordam (1h/4h/1d). Cada item do "atrapalha"
+e cada seta do multi-TF leva a etiqueta de quando é (`[agora]`, `[na entrada]`, `[no sinal]`).
+Fail-closed: sem contra registrado → "Nada registrado — isso não garante que não exista
+risco" (nunca "sem risco"); sem dado no multi-TF → "?" neutro; sem sinal/erro/carregando a
+seção nem aparece. O presenter só teve **textos** reescritos em linguagem comum (ex.: "O preço
+já subiu muito (RSI sobrecomprado) agora no 4h"); nenhuma regra, limiar ou código de motivo mudou.
+**Provas**: 8 testes novos falham sem a mudança (o 9º, "seção não aparece sem dado", é guarda
+e passa nos dois por desenho); capturas Chromium 390px/1280px. O motivo do sinal agora aparece
+também na lista "Sinais Recentes" (repetição conhecida, sai no passo 4 junto com "Operações").
+**Detalhe conhecido**: os itens de "O que ajuda" vêm de `signal_reasons` do motor e trazem os
+pontos do score ("(+20)") — não alterado aqui (texto do motor, não do presenter).

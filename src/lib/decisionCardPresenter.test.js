@@ -318,6 +318,30 @@ describe('CONTRA — derivação determinística, sem recalcular', () => {
     expect(card.why.cons.map((c) => c.code)).toEqual(['rsi_extreme', 'macd_against', 'ema_against']);
   });
 
+  it('textos do "contra" em linguagem simples (sigla só entre parênteses, depois da explicação)', () => {
+    const buy = build({
+      signals: [signal({ alignment: 'against_trend', context: { tf_1d_direction: -1 } })],
+      assetStates: [st('4h', { rsi_zone: 'overbought', macd_histogram: -1, trend_ema: 'bearish' })],
+    });
+    expect(buy.why.cons.map((c) => c.text)).toEqual([
+      'Vai contra a tendência maior (os gráficos de prazo maior apontam para o outro lado)',
+      'O gráfico de 1 dia aponta para o lado oposto',
+      'O preço já subiu muito (RSI sobrecomprado) agora no 4h',
+      'O impulso do preço (MACD) está contra agora no 4h',
+      'A tendência das médias (EMA) está contra agora no 4h',
+    ]);
+    const sell = build({
+      signals: [signal({ signal_type: 'SELL', context: {} })],
+      assetStates: [st('4h', { rsi_zone: 'oversold' })],
+    });
+    expect(sell.why.cons[0].text).toBe('O preço já caiu muito (RSI sobrevendido) agora no 4h');
+  });
+
+  it('invalidação: textos simples (stop atual / ainda não definido)', () => {
+    expect(build({ tradeOps: [op()] }).why.invalidation.text).toBe('Stop atual da operação');
+    expect(build({ signals: [signal()] }).why.invalidation.text).toBe('Ainda não definido — a operação ainda não existe');
+  });
+
   it('estado a favor, neutro ou MACD exatamente 0 não geram "contra"', () => {
     const card = build({
       signals: [signal({ context: {} })],
