@@ -70,6 +70,31 @@ describe('estado — fail-closed', () => {
     expect(card.state.label).not.toMatch(/Sem sinal/);
   });
 
+  it('REGRESSÃO (Codex #461): operações ativas ainda carregando + sinal existente → "loading", nunca "aguardando"', () => {
+    const card = build({ signals: [signal()], tradeOpsLoading: true });
+    expect(card.state.kind).toBe('loading');
+    expect(card.state.label).toBe('Carregando operações…');
+    expect(card.state.label).not.toMatch(/Aguardando/);
+    expect(card.action).toBeNull();
+    expect(card.why).toBeNull();
+    expect(card.score).toBeNull();
+  });
+
+  it('carregando + sem nada: também "loading", nunca "Sem sinal nem operação"', () => {
+    const card = build({ tradeOpsLoading: true });
+    expect(card.state.kind).toBe('loading');
+  });
+
+  it('operação já conhecida vence o "carregando" (não esconde stop/alvos por causa do refetch)', () => {
+    const card = build({ tradeOps: [op()], tradeOpsLoading: true });
+    expect(card.state.kind).toBe('active_op');
+  });
+
+  it('erro vence o "carregando"', () => {
+    const card = build({ signals: [signal()], tradeOpsLoading: true, tradeOpsUnavailable: true });
+    expect(card.state.kind).toBe('unavailable');
+  });
+
   it('operação vinda do cache continua válida mesmo com a query de operações em falha', () => {
     const card = build({ tradeOps: [op()], tradeOpsUnavailable: true });
     expect(card.state.kind).toBe('active_op');
@@ -233,6 +258,14 @@ describe('qualidade dos dados — frescor real, nunca "LIVE" fixo', () => {
     expect(semFonte.quality.lastCandleTime).toBe('2026-10-03T16:00:00.000Z');
     const comFonte = build({ tradeOps: [op({ market_source: 'spot', data_exchange: 'binance', executor: 'cron' })] });
     expect(comFonte.quality.source).toEqual({ marketSource: 'spot', dataExchange: 'binance', executor: 'cron' });
+  });
+
+  it('último fechamento vem do AssetState do TF do sinal; ausente ou inválido = null (nunca 0)', () => {
+    const ok = build({ signals: [signal()], assetStates: [st('4h', { last_close: 68200 })] });
+    expect(ok.quality.lastClose).toBe(68200);
+    expect(build({ signals: [signal()], assetStates: [st('4h', { last_close: undefined })] }).quality.lastClose).toBeNull();
+    expect(build({ signals: [signal()], assetStates: [st('4h', { last_close: 0 })] }).quality.lastClose).toBeNull();
+    expect(build({ signals: [signal()], assetStates: [st('1h', { last_close: 5 })] }).quality.lastClose).toBeNull();
   });
 
   it('snapshot defasado: mostra evaluated_at em vez de fingir que é de agora', () => {

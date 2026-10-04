@@ -74,6 +74,20 @@ export default function Dashboard() {
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
+  // `tradeOps` acima traz só as 100 operações mais recentes do sistema inteiro:
+  // uma operação ATIVA mais antiga que isso não aparece, e o painel lateral
+  // diria "aguardando confirmação"/"sem operação" escondendo stop e alvos
+  // (Codex, PR #461). As ativas são poucas — busca-se o conjunto completo, mas
+  // só enquanto o painel está aberto (custo zero com ele fechado).
+  const { data: activeOps = [], isPending: activeOpsPending, isError: activeOpsError } = useQuery({
+    queryKey: ['trade-operations-active'],
+    queryFn: () => backend.entities.TradeOperation.filter({ status: ACTIVE_STATUSES }),
+    enabled: Boolean(selectedAsset),
+    refetchInterval: POLL_OPERATIONAL_MS,
+  });
+  const activeOpsLoading = activeOpsPending && !activeOpsError;
+  const activeOpsUnavailable = activeOpsError && activeOps.length === 0;
+
   // Achado da varredura sistemática (item 196): estas 3 queries secundárias
   // nunca tinham `isError` lido — uma falha zerava o array (mesmo efeito de
   // "confirmado, não há dado") e vazava em cascata para StatsCard,
@@ -146,6 +160,19 @@ export default function Dashboard() {
     return list;
   }, [assets, recentSignals, tradeOps, states, filterSignal, filterTf, search, sortBy]);
 
+  // Operações do painel = as 100 recentes + todas as ativas (a versão da query
+  // de ativas prevalece em caso de mesmo id).
+  const drawerTradeOps = useMemo(() => {
+    const byId = new Map(tradeOps.map(o => [o.id, o]));
+    for (const op of activeOps) byId.set(op.id, op);
+    return [...byId.values()];
+  }, [tradeOps, activeOps]);
+
+  // `selectedAsset` é o retrato de quando o card foi clicado; o poll de
+  // `monitored-assets` (60 s) renova `last_scan_at`/`scan_error_since`/`is_active`
+  // — sem re-resolver, o frescor mostrado no painel congelava (Codex, PR #461).
+  const drawerAsset = selectedAsset ? (assets.find(a => a.id === selectedAsset.id) ?? selectedAsset) : null;
+
   const compareA = assets.find(a => a.id === compareAId);
   const compareB = assets.find(a => a.id === compareBId);
 
@@ -159,12 +186,15 @@ export default function Dashboard() {
     <>
       <SignalToast signals={recentSignals} assets={assets} onSelectAsset={setSelectedAsset} />
 
-      {selectedAsset && (
+      {drawerAsset && (
         <AssetDrawer
-          asset={selectedAsset}
+          asset={drawerAsset}
           signals={recentSignals}
-          tradeOps={tradeOps}
-          tradeOpsUnavailable={tradeOpsUnavailable}
+          tradeOps={drawerTradeOps}
+          assetStates={states}
+          statesUnavailable={statesUnavailable}
+          tradeOpsUnavailable={tradeOpsUnavailable || activeOpsUnavailable}
+          tradeOpsLoading={activeOpsLoading}
           signalsUnavailable={signalsUnavailable}
           onClose={() => setSelectedAsset(null)}
         />

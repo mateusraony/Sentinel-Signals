@@ -1,9 +1,129 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { TrendingUp, TrendingDown, Clock, Activity } from 'lucide-react';
 import moment from 'moment';
 import SignalChecklist from './SignalChecklist';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { formatPrice } from '@/lib/priceProximity';
+import { buildDecisionCard } from '@/lib/decisionCardPresenter';
+import { QueryErrorState } from '@/components/QueryErrorState';
+
+// Frescor REAL do ativo (assetHealthcheckReason via presenter) — antes o
+// cabeçalho mostrava "LIVE" verde fixo mesmo com o ativo parado. Texto sempre
+// acompanha a cor (a11y); dado sem leitura nunca vira "LIVE".
+const QUALITY_BADGE = {
+  ok: { label: 'LIVE', color: '#00ff80' },
+  stale: { label: 'STALE', color: '#ff9f43' },
+  error: { label: 'ERRO', color: '#ef4444' },
+  inactive: { label: 'OFF', color: '#64748b' },
+  unknown: { label: 'SEM LEITURA', color: '#64748b' },
+};
+
+const STATE_COLOR = {
+  active_op: '#00e5ff',
+  waiting: '#ffd166',
+  expired: '#64748b',
+  info: '#60a5fa',
+  unavailable: '#ff9f43',
+  none: 'rgba(255,255,255,0.5)',
+};
+
+// O frescor é função do relógio: sem este tick, um drawer aberto com dados que
+// não mudam ficaria "LIVE" para sempre depois que o scan parasse (Codex, PR #461).
+const NOW_TICK_MS = 30 * 1000;
+
+const POSTURE_NOTE = { breakeven: 'breakeven', locked: 'lucro protegido', risk: 'em risco' };
+
+function formatBrt(iso) {
+  return iso ? `${moment(iso).utcOffset(-3).format('DD/MM HH:mm')} BRT` : null;
+}
+
+function Level({ label, value, note = null }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-8px font-mono text-muted-foreground">{label}</div>
+      <div className="text-10px font-mono text-foreground/80">{value === null ? '—' : `$${formatPrice(value)}`}</div>
+      {note && <div className="text-7px font-mono text-muted-foreground/70">{note}</div>}
+    </div>
+  );
+}
+
+// N1 do Decision Card (plano da Fase 1, known-risks item 256): decisão e ação
+// num olhar. Só renderiza o que `buildDecisionCard` devolve — nada é
+// recalculado aqui; dado ausente aparece como "—"/"indisponível", nunca favorável.
+function DecisionSummary({ card, statesUnavailable }) {
+  const { state, levels, action, score, quality } = card;
+
+  if (state.kind === 'loading') {
+    return (
+      <section aria-label="Resumo da decisão" className="rounded-xl p-4"
+        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="text-8px font-mono uppercase tracking-wider text-muted-foreground">Estado</div>
+        <div role="status" className="text-sm font-bold text-muted-foreground">{state.label}</div>
+      </section>
+    );
+  }
+
+  if (state.kind === 'unavailable') {
+    return (
+      <section aria-label="Resumo da decisão" className="rounded-xl"
+        style={{ background: 'rgba(255,159,67,0.05)', border: '1px solid rgba(255,159,67,0.2)' }}>
+        <QueryErrorState message={`${state.label} — por isso o estado desta decisão não pode ser afirmado agora.`} />
+      </section>
+    );
+  }
+
+  const stateColor = STATE_COLOR[state.kind] ?? STATE_COLOR.none;
+  const closeAt = formatBrt(quality.lastCandleTime);
+  const sideTf = [state.side, state.timeframe].filter(Boolean).join(' · ');
+
+  return (
+    <section aria-label="Resumo da decisão" className="rounded-xl p-4 space-y-3"
+      style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${stateColor}33` }}>
+      <div>
+        <div className="text-8px font-mono uppercase tracking-wider text-muted-foreground">Estado</div>
+        <div className="text-sm font-bold" style={{ color: stateColor }}>{state.label}</div>
+        {sideTf && <div className="text-9px font-mono text-muted-foreground">{sideTf}</div>}
+      </div>
+
+      <div className="text-9px font-mono text-muted-foreground">
+        {statesUnavailable
+          ? 'Último fechamento: não foi possível carregar agora.'
+          : quality.lastClose !== null
+            ? <>Último fechamento <span className="text-foreground/80">${formatPrice(quality.lastClose)}</span>{closeAt ? ` · candle ${closeAt}` : ''}</>
+            : 'Último fechamento: indisponível.'}
+      </div>
+
+      {levels ? (
+        <div className="grid grid-cols-5 gap-1.5">
+          <Level label="Stop" value={levels.stop} note={POSTURE_NOTE[levels.stopPosture]} />
+          <Level label="Entrada" value={levels.entry} />
+          <Level label="TP1" value={levels.tp1} />
+          <Level label="TP2" value={levels.tp2} />
+          <div className="min-w-0">
+            <div className="text-8px font-mono text-muted-foreground">R:R</div>
+            <div className="text-10px font-mono text-foreground/80">{levels.rr === null ? '—' : `1 : ${Number(levels.rr.toFixed(2))}`}</div>
+          </div>
+        </div>
+      ) : (
+        <p className="text-9px font-mono text-muted-foreground">Níveis: ainda não definidos — a operação ainda não existe.</p>
+      )}
+
+      {action && (
+        <div className="space-y-0.5">
+          <div className="text-10px font-mono font-bold text-foreground/90">{action.headline}</div>
+          <p className="text-9px font-mono text-muted-foreground leading-snug">{action.why}</p>
+          <p className="text-9px font-mono leading-snug" style={{ color: 'rgba(0,229,255,0.75)' }}>{action.userAction}</p>
+        </div>
+      )}
+
+      {score && (
+        <p className="text-8px font-mono text-muted-foreground/80">
+          <span className="text-foreground/70">Score técnico {score.value}/100</span> — {score.note}
+        </p>
+      )}
+    </section>
+  );
+}
 
 const STATUS_CFG = {
   SIGNAL_CONFIRMED: { label: 'Entrada Confirmada', color: '#00ff80' },
@@ -14,8 +134,26 @@ const STATUS_CFG = {
   CLOSED:           { label: 'Encerrado',           color: '#64748b' },
 };
 
-export default function AssetDrawer({ asset, signals, tradeOps, tradeOpsUnavailable = false, signalsUnavailable = false, onClose }) {
+export default function AssetDrawer({
+  asset, signals, tradeOps, assetStates = [], statesUnavailable = false,
+  tradeOpsUnavailable = false, tradeOpsLoading = false, signalsUnavailable = false, now: nowProp = null, onClose,
+}) {
+  // Hooks antes do return antecipado (regra dos hooks). `now` injetado (testes)
+  // desliga o intervalo.
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (nowProp != null) return undefined;
+    const id = setInterval(() => setTick(Date.now()), NOW_TICK_MS);
+    return () => clearInterval(id);
+  }, [nowProp]);
+
   if (!asset) return null;
+
+  const card = buildDecisionCard({
+    asset, assetStates, signals, tradeOps, signalsUnavailable, tradeOpsUnavailable, tradeOpsLoading,
+    now: nowProp ?? tick,
+  });
+  const badge = QUALITY_BADGE[card.quality.status] ?? QUALITY_BADGE.unknown;
 
   const assetSignals = signals
     .filter(s => s.asset_id === asset.id)
@@ -30,7 +168,7 @@ export default function AssetDrawer({ asset, signals, tradeOps, tradeOpsUnavaila
     <Sheet open onOpenChange={(open) => { if (!open) onClose(); }}>
       <SheetContent
         side="right"
-        className="w-full max-w-sm p-0 flex flex-col gap-0"
+        className="w-full sm:max-w-md p-0 flex flex-col gap-0"
         style={{ background: 'rgba(8,10,18,0.97)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(24px)' }}
       >
         {/* Header */}
@@ -43,14 +181,19 @@ export default function AssetDrawer({ asset, signals, tradeOps, tradeOpsUnavaila
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-9px font-mono text-muted-foreground">{asset.exchange?.toUpperCase()}</span>
               <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#00ff80', boxShadow: '0 0 4px #00ff80', display: 'inline-block' }} />
-                <span className="text-9px font-mono" style={{ color: '#00ff80' }}>LIVE</span>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: badge.color, boxShadow: `0 0 4px ${badge.color}`, display: 'inline-block' }} />
+                <span className="text-9px font-mono" style={{ color: badge.color }}>{badge.label}</span>
+                {card.quality.ageMin !== null && (
+                  <span className="text-8px font-mono text-muted-foreground">· scan há {card.quality.ageMin} min</span>
+                )}
               </span>
             </div>
           </div>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          <DecisionSummary card={card} statesUnavailable={statesUnavailable} />
+
           {/* Trade Operations */}
           <div>
             <div className="flex items-center gap-2 mb-3">

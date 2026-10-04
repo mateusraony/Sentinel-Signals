@@ -23,7 +23,7 @@ import { explainDecision, explainOperationDecision } from './decisionExplanation
 import { usablePrice, stopPosture } from './priceProximity.js';
 import { assetHealthcheckReason } from './assetHealthcheck.js';
 
-export const SCORE_NOTE = 'Score técnico: concordância das regras atuais — não é probabilidade de acerto.';
+export const SCORE_NOTE = 'concordância das regras atuais — não é probabilidade de acerto.';
 
 export const PROBABILITY_NOT_CALIBRATED = Object.freeze({ available: false, reason: 'not_calibrated' });
 
@@ -76,7 +76,7 @@ function pickSubject({ assetOps, assetSignals, now }) {
 // cascata 4h/15m → tratar como '4h'. `timeframe` é o candle de confirmação (15m/5m).
 const opSignalTimeframe = (op) => op?.signal_timeframe ?? '4h';
 
-function buildState({ subject, opsUnavailable, signalsUnavailable }) {
+function buildState({ subject, opsUnavailable, opsLoading, signalsUnavailable }) {
   if (subject.kind === 'op') {
     const { op } = subject;
     return {
@@ -91,6 +91,12 @@ function buildState({ subject, opsUnavailable, signalsUnavailable }) {
   // afirmar "aguardando confirmação"/"sem operação" (item 193-196).
   if (opsUnavailable) {
     return { code: 'ops_unavailable', kind: 'unavailable', label: 'Não foi possível carregar as operações agora', side: null, timeframe: null };
+  }
+  // Operações ativas ainda carregando: a lista recebida pode não conter a
+  // operação ativa (a do Dashboard só traz as 100 mais recentes), então também
+  // não se afirma nada até confirmar (Codex, PR #461).
+  if (opsLoading) {
+    return { code: 'ops_loading', kind: 'loading', label: 'Carregando operações…', side: null, timeframe: null };
   }
   if (subject.kind === 'signal') {
     const { signal, phase } = subject;
@@ -107,7 +113,7 @@ function buildState({ subject, opsUnavailable, signalsUnavailable }) {
 }
 
 function buildAction({ subject, state, now }) {
-  if (state.kind === 'unavailable') return null;
+  if (state.kind === 'unavailable' || state.kind === 'loading') return null;
   if (subject.kind === 'op') {
     const { headline, why, userAction } = explainOperationDecision(subject.op);
     return { headline, why, userAction };
@@ -251,6 +257,7 @@ function buildQuality({ asset, subject, signalTf, stateByTf, now }) {
     ageMin: nowMs !== null && lastScanMs !== null ? Math.max(0, Math.floor((nowMs - lastScanMs) / 60000)) : null,
     lastScanAt: asset?.last_scan_at ?? null,
     lastCandleTime: stateByTf.get(signalTf)?.last_candle_time ?? null,
+    lastClose: usablePrice(stateByTf.get(signalTf)?.last_close),
     source: {
       marketSource: origin?.market_source ?? null,
       dataExchange: origin?.data_exchange ?? null,
@@ -263,7 +270,7 @@ function buildQuality({ asset, subject, signalTf, stateByTf, now }) {
 /**
  * @param {{
  *   asset: object, assetStates?: object[], signals?: object[], tradeOps?: object[],
- *   signalsUnavailable?: boolean, tradeOpsUnavailable?: boolean,
+ *   signalsUnavailable?: boolean, tradeOpsUnavailable?: boolean, tradeOpsLoading?: boolean,
  *   now: number, funding?: { rate: number, nextFundingTime?: number } | null,
  * }} input
  */
@@ -274,6 +281,7 @@ export function buildDecisionCard({
   tradeOps = [],
   signalsUnavailable = false,
   tradeOpsUnavailable = false,
+  tradeOpsLoading = false,
   now,
   funding = null,
 }) {
@@ -282,10 +290,10 @@ export function buildDecisionCard({
   const stateByTf = new Map((assetStates ?? []).filter((s) => s && s.asset_id === asset?.id).map((s) => [s.timeframe, s]));
 
   const subject = pickSubject({ assetOps, assetSignals, now });
-  const state = buildState({ subject, opsUnavailable: tradeOpsUnavailable, signalsUnavailable });
+  const state = buildState({ subject, opsUnavailable: tradeOpsUnavailable, opsLoading: tradeOpsLoading, signalsUnavailable });
   const signalTf = state.timeframe ?? '4h';
   const levels = buildLevels(subject.op);
-  const decided = state.kind !== 'unavailable' && subject.kind !== 'none';
+  const decided = state.kind !== 'unavailable' && state.kind !== 'loading' && subject.kind !== 'none';
   const cons = decided ? buildCons({ subject, side: state.side, signalTf, stateByTf, now }) : [];
 
   return {
