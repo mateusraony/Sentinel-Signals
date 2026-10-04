@@ -225,8 +225,8 @@ describe('Dashboard — painel lateral do ativo (Codex #461)', () => {
   async function openDrawer() {
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
-    fireEvent.click(await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ }));
-    return screen.findByRole('region', { name: 'Resumo da decisão' });
+    fireEvent.click(await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ }, { timeout: 5000 }));
+    return screen.findByRole('region', { name: 'Resumo da decisão' }, { timeout: 5000 });
   }
 
   it('REGRESSÃO (P1): operação ativa fora das 100 mais recentes aparece com stop e alvos', async () => {
@@ -237,7 +237,7 @@ describe('Dashboard — painel lateral do ativo (Codex #461)', () => {
       activeOps: [OLD_ACTIVE_OP],
     };
     const region = await openDrawer();
-    await waitFor(() => expect(within(region).getByText('Runner ativo (TP1 atingido)')).toBeTruthy());
+    await waitFor(() => expect(within(region).getByText('Runner ativo (TP1 atingido)')).toBeTruthy(), { timeout: 5000 });
     expect(within(region).queryByText(/Aguardando/)).toBeNull();
     expect(within(region).getByText(/98[.,]5/)).toBeTruthy(); // stop atual
     expect(within(region).getByText(/112[.,]5/)).toBeTruthy(); // TP2
@@ -252,13 +252,13 @@ describe('Dashboard — painel lateral do ativo (Codex #461)', () => {
     };
     const { default: Dashboard } = await import('./Dashboard.jsx');
     const { queryClient } = renderPage(<Dashboard />);
-    fireEvent.click(await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ }));
-    const dialog = await screen.findByRole('dialog');
-    await waitFor(() => expect(within(dialog).getByText('STALE')).toBeTruthy());
+    fireEvent.click(await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ }, { timeout: 5000 }));
+    const dialog = await screen.findByRole('dialog', undefined, { timeout: 5000 });
+    await waitFor(() => expect(within(dialog).getByText('STALE')).toBeTruthy(), { timeout: 5000 });
 
     lastScan = iso(1 * MIN); // o scan voltou: o próximo poll traz last_scan_at novo
     await queryClient.invalidateQueries({ queryKey: ['monitored-assets'] });
-    await waitFor(() => expect(within(dialog).getByText('LIVE')).toBeTruthy());
+    await waitFor(() => expect(within(dialog).getByText('LIVE')).toBeTruthy(), { timeout: 5000 });
     expect(within(dialog).queryByText('STALE')).toBeNull();
   });
 
@@ -269,7 +269,7 @@ describe('Dashboard — painel lateral do ativo (Codex #461)', () => {
       activeOpsError: true,
     };
     const region = await openDrawer();
-    await waitFor(() => expect(within(region).getByText(/Não foi possível carregar as operações agora/)).toBeTruthy());
+    await waitFor(() => expect(within(region).getByText(/Não foi possível carregar as operações agora/)).toBeTruthy(), { timeout: 5000 });
     expect(within(region).queryByText(/Aguardando/)).toBeNull();
   });
 
@@ -281,8 +281,8 @@ describe('Dashboard — painel lateral do ativo (Codex #461)', () => {
     };
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
-    await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ });
-    await waitFor(() => expect(activeOpsCalls.length).toBeGreaterThan(0));
+    await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ }, { timeout: 5000 });
+    await waitFor(() => expect(activeOpsCalls.length).toBeGreaterThan(0), { timeout: 5000 });
   });
 });
 
@@ -306,7 +306,7 @@ describe('Dashboard — contagens com operação ativa fora das 100 mais recente
     drawerScenario = { assets: () => [ASSET], signals: [RF_SIGNAL], recentOps: [], activeOps: [OLD_ACTIVE_OP] };
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
-    await waitFor(async () => expect((await valueOf('Operações Ativas')).textContent).toBe('1'));
+    await waitFor(() => expect(screen.getByText('Operações Ativas').nextElementSibling.textContent).toBe('1'), { timeout: 5000 });
     expect((await valueOf('Aguardando')).textContent).toBe('0');
     // score 90 ≥ 85 → também entra em "Alta Prioridade"
     expect((await valueOf('Alta Prioridade')).textContent).toBe('1');
@@ -316,7 +316,7 @@ describe('Dashboard — contagens com operação ativa fora das 100 mais recente
     drawerScenario = { assets: () => [ASSET], signals: [RF_SIGNAL], recentOps: [], activeOpsError: true };
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
-    await waitFor(async () => expect((await valueOf('Operações Ativas')).textContent).toBe('—'));
+    await waitFor(() => expect(screen.getByText('Operações Ativas').nextElementSibling.textContent).toBe('—'), { timeout: 5000 });
     expect((await valueOf('Aguardando')).textContent).toBe('—');
   });
 });

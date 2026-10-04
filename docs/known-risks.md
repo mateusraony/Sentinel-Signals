@@ -30255,3 +30255,8 @@ recolhidos por padrão (`aria-expanded`/`aria-controls`, CSS `hidden`).
 - `AssetDrawer.jsx` segue sem buscar dado (tripwire intacto): só o `FundingLine` usa o hook.
 **Provas**: 7 testes novos falham sem a mudança; capturas Chromium 390px/1280px. Não toca motor,
 schema, workflows ou dependências.
+**Endurecimento de testes (2026-10-04)**: um dos testes novos do Dashboard (Entrega A, "Operações Ativas
+conta a operação antiga") falhou **uma vez** num `npm test` completo sob carga (passava isolado e no CI
+do #464) — `waitFor`/`findBy*` com o timeout padrão de 1 s num componente pesado. Causa: timeout
+curto demais, não a lógica. Correção só nos testes do Dashboard escritos neste fluxo (#461/#464):
+`{ timeout: 5000 }` e callbacks síncronos; 3 execuções completas seguidas passam.
