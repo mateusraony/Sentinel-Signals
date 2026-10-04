@@ -15,6 +15,9 @@ import { join } from 'node:path';
 import AssetDrawer from './AssetDrawer.jsx';
 
 vi.mock('@/lib/firebaseClient', () => ({ db: {}, auth: {}, rtdb: null, app: {} }));
+// Funding só é buscado pelo FundingLine, depois de "Dados técnicos" aberto.
+const fetchMarkPriceMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/marketDataProvider', () => ({ fetchMarkPrice: (...args) => fetchMarkPriceMock(...args) }));
 
 const ASSET = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', exchange: 'binance' };
 
@@ -362,5 +365,97 @@ describe('AssetDrawer N2 — seção "Por quê?"', () => {
     cleanup();
     renderN1({ tradeOpsLoading: true });
     expect(screen.queryByRole('button', { name: 'Por quê?' })).toBeNull();
+  });
+});
+
+// Passo 4 (item 256): "Dados técnicos" e "Histórico deste ativo", recolhidos por padrão.
+describe('AssetDrawer N3 — "Dados técnicos" e "Histórico deste ativo"', () => {
+  const techToggle = () => screen.getByRole('button', { name: /Dados técnicos/ });
+  const techContent = () => document.getElementById('decision-tech-content');
+  const historyToggle = () => screen.getByRole('button', { name: /Histórico deste ativo/ });
+  const historyContent = () => document.getElementById('decision-history-content');
+  const openTech = () => fireEvent.click(techToggle());
+
+  beforeEach(() => { fetchMarkPriceMock.mockReset(); fetchMarkPriceMock.mockResolvedValue({ lastFundingRate: 0.0001, nextFundingTime: Date.parse('2026-10-03T24:00:00.000Z') }); });
+
+  it('"Dados técnicos" vem fechado e NÃO busca funding até ser aberto', async () => {
+    renderN1();
+    expect(techToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(techContent().className).toMatch(/\bhidden\b/);
+    await act(async () => { await Promise.resolve(); });
+    expect(fetchMarkPriceMock).not.toHaveBeenCalled();
+    openTech();
+    expect(techToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(techContent().className).not.toMatch(/\bhidden\b/);
+    await screen.findByText(/Funding: \+0\.0100%/);
+    expect(fetchMarkPriceMock).toHaveBeenCalledWith('BTCUSDT');
+    expect(within(techContent()).getByText(/Informativo, não influencia o sinal/)).toBeTruthy();
+  });
+
+  it('funding indisponível: diz "indisponível", nunca um número', async () => {
+    fetchMarkPriceMock.mockResolvedValue({ lastFundingRate: null, nextFundingTime: null });
+    renderN1();
+    openTech();
+    await screen.findByText(/Funding: indisponível agora/);
+    expect(screen.queryByText(/Funding: [+-]/)).toBeNull();
+  });
+
+  it('fonte dos dados: rótulos legíveis quando gravados; "não registrado" quando faltam', async () => {
+    renderN1({
+      tradeOps: [{ ...ACTIVE_OP, market_source: 'futures', executor: 'browser', decision_snapshot: { evaluated_at: '2026-10-03T16:00:00.000Z' } }],
+    });
+    openTech();
+    let box = within(techContent());
+    expect(box.getByText('Preços: Binance Futures')).toBeTruthy();
+    expect(box.getByText('Lido por: este navegador')).toBeTruthy();
+    expect(box.getByText(/Avaliação do motor: 03\/10 13:00 BRT/)).toBeTruthy();
+    cleanup();
+    renderN1();
+    openTech();
+    box = within(techContent());
+    expect(box.getByText('Preços: não registrado')).toBeTruthy();
+    expect(box.getByText('Lido por: não registrado')).toBeTruthy();
+    expect(box.getByText('Avaliação do motor: não registrado')).toBeTruthy();
+  });
+
+  it('probabilidade: sempre "indisponível", sem nenhum número', () => {
+    renderN1();
+    openTech();
+    expect(within(techContent()).getByText('Indisponível — score e histórico não são probabilidade calibrada.')).toBeTruthy();
+    expect(techContent().textContent).not.toMatch(/\d+\s?%.*probab|probab.*\d+\s?%/i);
+  });
+
+  it('"Histórico deste ativo" vem fechado, com o contador, e mantém as listas montadas', () => {
+    renderN1({ tradeOps: [ACTIVE_OP] });
+    expect(historyToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(historyToggle().textContent).toMatch(/1 operações · 1 sinais/);
+    expect(historyContent().className).toMatch(/\bhidden\b/);
+    expect(within(historyContent()).getByText('Operações')).toBeTruthy();
+    expect(within(historyContent()).getByText('Sinais Recentes')).toBeTruthy();
+    fireEvent.click(historyToggle());
+    expect(historyContent().className).not.toMatch(/\bhidden\b/);
+  });
+
+  it('a operação ativa não repete entrada/TP1/TP2 no histórico; operação encerrada continua mostrando', () => {
+    renderN1({ tradeOps: [ACTIVE_OP, { ...ACTIVE_OP, id: 'op0', status: 'STOP_HIT', created_date: iso(48 * 60 * MIN) }] });
+    const hist = within(historyContent());
+    expect(hist.getAllByText('Níveis no resumo, acima.')).toHaveLength(1);
+    // só a operação encerrada exibe a grade (Entrada/TP1/TP2)
+    expect(hist.getAllByText('Entrada')).toHaveLength(1);
+  });
+
+  it('REGRESSÃO (Codex #465): duas pernas ativas no mesmo ativo — só a do resumo perde a grade; a outra mantém seus níveis', () => {
+    const other = { ...ACTIVE_OP, id: 'op-smc', cascade: '1h_5m', signal_timeframe: '1h', entry_price: 61000, tp1: 62000, tp2: 63000, created_date: iso(5 * 60 * MIN) };
+    renderN1({ tradeOps: [ACTIVE_OP, other] }); // ACTIVE_OP é a mais nova → é a do resumo
+    const hist = within(historyContent());
+    expect(hist.getAllByText('Níveis no resumo, acima.')).toHaveLength(1);
+    expect(hist.getAllByText('Entrada')).toHaveLength(1); // a perna mais antiga ainda mostra Entrada/TP1/TP2
+    expect(hist.getByText('$61,000.00')).toBeTruthy();
+  });
+
+  it('sem operação ativa, nada some do histórico', () => {
+    renderN1({ tradeOps: [{ ...ACTIVE_OP, status: 'STOP_HIT' }] });
+    expect(within(historyContent()).queryByText('Níveis no resumo, acima.')).toBeNull();
+    expect(within(historyContent()).getByText('Entrada')).toBeTruthy();
   });
 });
