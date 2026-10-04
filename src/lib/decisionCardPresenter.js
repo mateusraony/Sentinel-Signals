@@ -195,23 +195,25 @@ function buildCons({ subject, side, signalTf, stateByTf, now }) {
 
   // `alignment` é gravado no nível de cima do SignalEvent (scanner.js, newSignals.push), não em `context`.
   if (subject.signal?.alignment === 'against_trend') {
-    cons.push({ code: 'against_trend', scope: 'signal', text: 'Contra a tendência maior (alinhamento dos timeframes)' });
+    cons.push({ code: 'against_trend', scope: 'signal', text: 'Vai contra a tendência maior (os gráficos de prazo maior apontam para o outro lado)' });
   }
   if (want !== null && directionOrNull(frozen?.tf_1d_direction) === -want) {
-    cons.push({ code: 'tf_1d_against', scope: frozenSource, text: '1D contrário ao lado da operação' });
+    cons.push({ code: 'tf_1d_against', scope: frozenSource, text: 'O gráfico de 1 dia aponta para o lado oposto' });
   }
 
   const current = stateByTf.get(signalTf);
   if (want !== null && current) {
     if ((want === 1 && current.rsi_zone === 'overbought') || (want === -1 && current.rsi_zone === 'oversold')) {
-      cons.push({ code: 'rsi_extreme', scope: 'now', text: `RSI ${current.rsi_zone === 'overbought' ? 'sobrecomprado' : 'sobrevendido'} agora no ${signalTf}` });
+      cons.push({ code: 'rsi_extreme', scope: 'now', text: current.rsi_zone === 'overbought'
+          ? `O preço já subiu muito (RSI sobrecomprado) agora no ${signalTf}`
+          : `O preço já caiu muito (RSI sobrevendido) agora no ${signalTf}` });
     }
     if (Number.isFinite(current.macd_histogram) && current.macd_histogram !== 0 && Math.sign(current.macd_histogram) === -want) {
-      cons.push({ code: 'macd_against', scope: 'now', text: `MACD contra agora no ${signalTf}` });
+      cons.push({ code: 'macd_against', scope: 'now', text: `O impulso do preço (MACD) está contra agora no ${signalTf}` });
     }
     if (current.trend_ema === 'bullish' || current.trend_ema === 'bearish') {
       if ((current.trend_ema === 'bullish' ? 1 : -1) === -want) {
-        cons.push({ code: 'ema_against', scope: 'now', text: `Tendência das médias (EMA) contra agora no ${signalTf}` });
+        cons.push({ code: 'ema_against', scope: 'now', text: `A tendência das médias (EMA) está contra agora no ${signalTf}` });
       }
     }
   }
@@ -229,9 +231,9 @@ function buildCons({ subject, side, signalTf, stateByTf, now }) {
 
 function buildInvalidation(subject, levels) {
   if (subject.kind === 'op' && Number.isFinite(levels?.stop)) {
-    return { kind: 'stop', stop: levels.stop, text: 'Stop atual da operação (as saídas automáticas seguem as regras do motor)' };
+    return { kind: 'stop', stop: levels.stop, text: 'Stop atual da operação' };
   }
-  return { kind: 'not_defined', stop: null, text: 'Ainda não definida — a operação ainda não existe' };
+  return { kind: 'not_defined', stop: null, text: 'Ainda não definido — a operação ainda não existe' };
 }
 
 const HEALTH_LABEL = Object.freeze({

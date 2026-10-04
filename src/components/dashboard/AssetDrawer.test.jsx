@@ -7,7 +7,7 @@
 // teste dedicado antes.
 import React from 'react';
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { render, screen, cleanup, within, act } from '@testing-library/react';
+import { render, screen, cleanup, within, act, fireEvent } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import { readFileSync } from 'node:fs';
@@ -51,7 +51,8 @@ describe('AssetDrawer — "Sinais Recentes" tem rótulos inline (Refinamentos)',
     expect(screen.getByText(/Quando:/)).toBeTruthy();
     // O conteúdo original continua presente, só ganhou o prefixo.
     expect(screen.getByText('4H')).toBeTruthy();
-    expect(screen.getByText(/Confluência de RF \+ estrutura SMC/)).toBeTruthy();
+    // A tese também aparece na seção "Por quê?" (fechada); o motivo da lista fica ao lado do rótulo.
+    expect(screen.getByText(/Motivo:/).parentElement.textContent).toMatch(/Confluência de RF \+ estrutura SMC/);
   });
 });
 
@@ -257,5 +258,109 @@ describe('AssetDrawer — relógio próprio (Codex #461: badge não pode congela
     renderDrawer({ asset: FRESH_ASSET, signals: [FRESH_SIGNAL], assetStates: [STATE_4H], now: NOW, tradeOpsLoading: true });
     expect(summary().getByRole('status').textContent).toBe('Carregando operações…');
     expect(summary().queryByText(/Aguardando/)).toBeNull();
+  });
+});
+
+// Passo 3 (item 256): seção "Por quê?" em português simples. O presenter já
+// entrega o conteúdo; o painel só mostra, fechado por padrão.
+describe('AssetDrawer N2 — seção "Por quê?"', () => {
+  const why = () => within(screen.getByRole('region', { name: 'Por quê' }));
+  const toggle = () => screen.getByRole('button', { name: 'Por quê?' });
+  const content = () => document.getElementById('decision-why-content');
+  const SIGNAL_WITH_REASONS = {
+    ...FRESH_SIGNAL, reason: 'BTC — compra no 4h', context: { score: 82, reasons: ['MACD hist positivo (+20)'] },
+  };
+
+  it('vem fechada por padrão (conteúdo escondido por CSS, mas montado) e abre ao tocar', () => {
+    renderN1({ signals: [SIGNAL_WITH_REASONS] });
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(content().className).toMatch(/\bhidden\b/);
+    fireEvent.click(toggle());
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(content().className).not.toMatch(/\bhidden\b/);
+    fireEvent.click(toggle());
+    expect(content().className).toMatch(/\bhidden\b/);
+  });
+
+  it('mostra tese e o que ajuda', () => {
+    renderN1({ signals: [SIGNAL_WITH_REASONS] });
+    expect(why().getByText('BTC — compra no 4h')).toBeTruthy();
+    expect(why().getByText(/MACD hist positivo/)).toBeTruthy();
+  });
+
+  it('REGRESSÃO: sem nenhum "contra" registrado, diz "Nada registrado" e NUNCA sugere ausência de risco', () => {
+    renderN1({ signals: [SIGNAL_WITH_REASONS] });
+    expect(why().getByText('Nada registrado — isso não garante que não exista risco.')).toBeTruthy();
+    expect(screen.queryByText(/nenhum risco|sem risco|tudo certo/i)).toBeNull();
+  });
+
+  it('o que atrapalha vem em linguagem simples, com a etiqueta de quando é (agora / no sinal)', () => {
+    renderN1({
+      signals: [{ ...SIGNAL_WITH_REASONS, context: { ...SIGNAL_WITH_REASONS.context, tf_1d_direction: -1 } }],
+      assetStates: [{ ...STATE_4H, rsi_zone: 'overbought' }],
+    });
+    const li1 = why().getByText(/O preço já subiu muito \(RSI sobrecomprado\) agora no 4h/).closest('li');
+    expect(li1.textContent).toMatch(/\[agora\]/);
+    const li2 = why().getByText(/O gráfico de 1 dia aponta para o lado oposto/).closest('li');
+    expect(li2.textContent).toMatch(/\[no sinal\]/);
+    expect(why().queryByText(/Nada registrado — isso não garante/)).toBeNull();
+  });
+
+  it('o que anularia a ideia: "ainda não definido" sem operação; stop atual com operação', () => {
+    renderN1({ signals: [SIGNAL_WITH_REASONS] });
+    expect(why().getByText(/Ainda não definido — a operação ainda não existe/)).toBeTruthy();
+    cleanup();
+    renderN1({ signals: [], tradeOps: [ACTIVE_OP] });
+    expect(why().getByText(/Stop atual: \$100/)).toBeTruthy();
+    expect(why().queryByText(/Ainda não definido/)).toBeNull();
+  });
+
+  it('os gráficos concordam?: seta com texto acessível, "?" quando falta dado e etiqueta de origem', () => {
+    renderN1({
+      signals: [{ ...SIGNAL_WITH_REASONS, context: { ...SIGNAL_WITH_REASONS.context, tf_1d_direction: -1 } }],
+      assetStates: [STATE_4H], // rf_direction 1 no 4h, nada no 1h
+    });
+    const items = why().getAllByRole('listitem').filter(li => li.getAttribute('aria-label'));
+    expect(items.map(li => li.getAttribute('aria-label'))).toEqual([
+      '1h: sem dado', '4h: compra (agora)', '1d: venda (no sinal)',
+    ]);
+    expect(why().getByText('?')).toBeTruthy();
+  });
+
+  it('REGRESSÃO (Codex #463): direção 0 é NEUTRO conhecido — não "sem dado"', () => {
+    renderN1({
+      signals: [{ ...SIGNAL_WITH_REASONS, context: { ...SIGNAL_WITH_REASONS.context, tf_1d_direction: 0 } }],
+      assetStates: [STATE_4H],
+    });
+    const labels = why().getAllByRole('listitem').map(li => li.getAttribute('aria-label')).filter(Boolean);
+    expect(labels).toContain('1d: neutro (no sinal)');
+    expect(labels).toContain('1h: sem dado'); // o que realmente falta continua "sem dado"
+    expect(why().getByText('neutro', { exact: false })).toBeTruthy();
+  });
+
+  it('REGRESSÃO (Codex #463): a evidência numérica do "contra" (rejeição pior) aparece junto do item', () => {
+    const rejected = {
+      ...SIGNAL_WITH_REASONS, last_rejection_reason: 'regime_rejected',
+      decision_snapshot: {
+        reason_code: 'regime_rejected', data_status: 'LIVE',
+        evaluated_at: '2026-10-03T17:50:00.000Z', facts: { adx: 18, adx_min: 22 },
+      },
+    };
+    renderN1({ signals: [rejected] });
+    const items = why().getAllByRole('listitem');
+    const withEvidence = items.find(li => /ADX/.test(li.textContent));
+    expect(withEvidence, 'nenhum item mostra a evidência (ADX …)').toBeTruthy();
+    expect(withEvidence.textContent).toMatch(/medido às/);
+  });
+
+  it('sem sinal, com erro ou carregando: a seção nem aparece (nada de afirmar sem dado)', () => {
+    renderN1({ signals: [], tradeOps: [] });
+    expect(screen.queryByRole('button', { name: 'Por quê?' })).toBeNull();
+    cleanup();
+    renderN1({ tradeOpsUnavailable: true });
+    expect(screen.queryByRole('button', { name: 'Por quê?' })).toBeNull();
+    cleanup();
+    renderN1({ tradeOpsLoading: true });
+    expect(screen.queryByRole('button', { name: 'Por quê?' })).toBeNull();
   });
 });

@@ -125,6 +125,117 @@ function DecisionSummary({ card, statesUnavailable }) {
   );
 }
 
+// Passo 3 do Decision Card: o PORQUÊ, em português simples. Só lê `card.why`
+// (o presenter já entrega pronto); nada é calculado aqui. Fechado por padrão;
+// o conteúdo fica sempre montado e é escondido por CSS (`hidden`), como nos
+// outros toggles do painel (item 237).
+const SCOPE_TAG = { now: 'agora', entry: 'na entrada', signal: 'no sinal' };
+const TF_ORDER = ['1h', '4h', '1d'];
+const DIRECTION_VIEW = {
+  1: { arrow: '↑', word: 'compra', color: 'rgba(0,255,128,0.85)' },
+  [-1]: { arrow: '↓', word: 'venda', color: 'rgba(255,20,120,0.85)' },
+  // 0 = neutro CONHECIDO (o motor gravou "sem direção"); diferente de dado ausente (null → "?").
+  0: { arrow: '→', word: 'neutro', color: 'rgba(255,255,255,0.6)' },
+};
+
+function Tag({ scope }) {
+  const text = SCOPE_TAG[scope];
+  if (!text) return null;
+  return <span className="ml-1 text-7px font-mono text-muted-foreground/70">[{text}]</span>;
+}
+
+function WhyBlock({ title, children }) {
+  return (
+    <div className="space-y-1">
+      <div className="text-8px font-mono uppercase tracking-wider text-muted-foreground">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function WhySection({ why, consStatus }) {
+  const [open, setOpen] = useState(false);
+  const { thesis, pros, cons, invalidation, multiTf } = why;
+  const textCls = 'text-9px font-mono text-foreground/80 leading-snug';
+  const emptyCls = 'text-9px font-mono text-muted-foreground leading-snug';
+
+  return (
+    <section aria-label="Por quê" className="rounded-xl"
+      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls="decision-why-content"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="text-10px font-mono font-bold text-foreground/90">Por quê?</span>
+        <span aria-hidden="true" className="text-10px font-mono text-muted-foreground">{open ? '▾' : '▸'}</span>
+      </button>
+
+      <div id="decision-why-content" className={`${open ? '' : 'hidden'} px-4 pb-4 space-y-3`}>
+        <WhyBlock title="Em uma frase">
+          <p className={thesis ? textCls : emptyCls}>{thesis ?? 'Não registrado.'}</p>
+        </WhyBlock>
+
+        <WhyBlock title="O que ajuda ✅">
+          {pros.length > 0 ? (
+            <ul className="space-y-0.5">{pros.map((t, i) => <li key={i} className={textCls}>• {t}</li>)}</ul>
+          ) : (
+            <p className={emptyCls}>Nada registrado.</p>
+          )}
+        </WhyBlock>
+
+        <WhyBlock title="O que atrapalha ⚠️">
+          {cons.length > 0 ? (
+            <ul className="space-y-0.5">
+              {cons.map(c => (
+                <li key={c.code} className={textCls}>
+                  • {c.text}<Tag scope={c.scope} />
+                  {c.evidence && <div className="ml-3 text-8px text-muted-foreground">{c.evidence}</div>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            consStatus === 'not_recorded' && (
+              <p className={emptyCls}>Nada registrado — isso não garante que não exista risco.</p>
+            )
+          )}
+        </WhyBlock>
+
+        <WhyBlock title="O que anularia a ideia">
+          {invalidation.kind === 'stop' ? (
+            <p className={textCls}>
+              Stop atual: ${formatPrice(invalidation.stop)} — se o preço chegar aí, a operação é encerrada.
+            </p>
+          ) : (
+            <p className={emptyCls}>{invalidation.text}</p>
+          )}
+        </WhyBlock>
+
+        <WhyBlock title="Os gráficos concordam?">
+          <ul className="flex flex-wrap gap-x-4 gap-y-1">
+            {TF_ORDER.map(tf => {
+              const entry = multiTf.find(m => m.tf === tf);
+              const view = DIRECTION_VIEW[entry?.direction];
+              const tag = SCOPE_TAG[entry?.source];
+              return (
+                <li key={tf} className="text-9px font-mono"
+                  aria-label={`${tf}: ${view ? view.word : 'sem dado'}${tag ? ` (${tag})` : ''}`}>
+                  <span className="text-muted-foreground">{tf} </span>
+                  <span style={{ color: view ? view.color : 'rgba(255,255,255,0.5)' }}>{view ? view.arrow : '?'}</span>
+                  {view && tag && <span className="ml-0.5 text-7px text-muted-foreground/70">[{tag}]</span>}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-7px font-mono text-muted-foreground/70">↑ compra · ↓ venda · → neutro · ? sem dado</p>
+        </WhyBlock>
+      </div>
+    </section>
+  );
+}
+
 const STATUS_CFG = {
   SIGNAL_CONFIRMED: { label: 'Entrada Confirmada', color: '#00ff80' },
   RUNNER_ACTIVE:    { label: 'Runner Ativo',        color: '#ffd166' },
@@ -193,6 +304,7 @@ export default function AssetDrawer({
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           <DecisionSummary card={card} statesUnavailable={statesUnavailable} />
+          {card.why && <WhySection why={card.why} consStatus={card.consStatus} />}
 
           {/* Trade Operations */}
           <div>

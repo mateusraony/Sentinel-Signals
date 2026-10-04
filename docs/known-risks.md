@@ -30191,3 +30191,38 @@ continuavam montadas — contagem de nós do DOM por teste sem cleanup: 98, 110,
 `PineScript.jsx:1119-1127`, com cleanup correto no desmonte — que nunca acontecia) disparavam
 depois do teardown do jsdom → `localStorage is not defined` intermitente no CI (visto no
 #461). Correção: `cleanup()` no `afterEach`. Só teste; nenhum código de produção.
+### Addendum (2026-10-04) — Fase 1, passo 3: seção "Por quê?" no painel do ativo
+Plano em linguagem simples, aprovado pelo usuário. **Feito**: `AssetDrawer` ganhou `WhySection`
+(fechada por padrão, `aria-expanded`/`aria-controls`, conteúdo montado e escondido por CSS
+`hidden`, item 237) com 5 blocos lidos só de `card.why`: em uma frase, o que ajuda, o que
+atrapalha, o que anularia a ideia, os gráficos concordam (1h/4h/1d). Cada item do "atrapalha"
+e cada seta do multi-TF leva a etiqueta de quando é (`[agora]`, `[na entrada]`, `[no sinal]`).
+Fail-closed: sem contra registrado → "Nada registrado — isso não garante que não exista
+risco" (nunca "sem risco"); sem dado no multi-TF → "?" neutro; sem sinal/erro/carregando a
+seção nem aparece. O presenter só teve **textos** reescritos em linguagem comum (ex.: "O preço
+já subiu muito (RSI sobrecomprado) agora no 4h"); nenhuma regra, limiar ou código de motivo mudou.
+**Provas**: 8 testes novos falham sem a mudança (o 9º, "seção não aparece sem dado", é guarda
+e passa nos dois por desenho); capturas Chromium 390px/1280px. O motivo do sinal agora aparece
+também na lista "Sinais Recentes" (repetição conhecida, sai no passo 4 junto com "Operações").
+**Detalhe conhecido**: os itens de "O que ajuda" vêm de `signal_reasons` do motor e trazem os
+pontos do score ("(+20)") — não alterado aqui (texto do motor, não do presenter).
+
+### Achado (2026-10-04) — o teto de 100 operações do Dashboard afeta mais que o painel do ativo
+**Fato (lido no código, `Dashboard.jsx`)**: a query `['trade-operations-dashboard']` traz só as 100
+operações mais recentes do sistema (`list('-created_date', 100)`), e **tudo** abaixo decide
+"tem operação ativa?" a partir dela: `activeOpsCount` (card "Operações Ativas"), `waitingCount`
+("Aguardando"), `assetsWithActiveTrade`, o `activeOp` entregue a cada `AssetCard` e as `opA`/`opB`
+do ComparePanel, e a contagem de "Alta Prioridade" (score ≥ 85). O #461 corrigiu só o painel
+lateral (query própria de ativas, com o painel aberto).
+**Hipótese (não medida)**: o erro só aparece quando existem ≥ 100 operações criadas DEPOIS de uma
+operação ainda ativa — depende do volume real em produção (sem acesso ao banco nesta sessão).
+Efeito se ocorrer: card sem a operação ativa, "Operações Ativas" menor que o real, ativo contado
+como "Aguardando" por engano.
+**Recomendação (não implementada, aguarda OK)**: tornar a query de ativas permanente (não só com o
+painel aberto) e usá-la nessas contagens/cards — 1 leitura leve (≤ ~10 linhas) a cada 60 s, mesmo
+padrão de `scanner.js`. PR próprio, com teste do cenário "ativa fora das 100".
+**Codex no #463 (2 achados P2, ambos confirmados e corrigidos)**: (1) `buildMultiTf` preserva a
+direção `0` (neutro conhecido), mas a UI só tinha visão para `1`/`-1` e mostrava "?"/"sem dado" —
+tratava leitura neutra como ausente; agora `0` → "→ neutro" e só `null` vira "?". (2) o item "contra"
+de rejeição pior carrega `c.evidence` (medida + "medido às HH:MM BRT") que a seção descartava; agora
+aparece sob o item. 2 testes novos, ambos falham sem a correção.
