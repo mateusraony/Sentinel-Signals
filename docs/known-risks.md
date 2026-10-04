@@ -4917,7 +4917,9 @@ passo abaixo, não fechada nesta rodada.
 
 #### O que realmente prende um sinal em "Observando"
 
-`👀 Observando BUY/SELL` no `AssetCard.jsx:198-200` significa que **já
+`👀 Observando BUY/SELL` no `AssetCard.jsx:198-200` (rótulo renomeado em
+2026-10-03 para `🔔 Aviso pendente BUY/SELL`, item 256 — o significado abaixo
+continua valendo) significa que **já
 existe um `SignalEvent` real** (já passou no `minScore`) sem
 `TradeOperation` ativa ainda — não "esperando pontuação". A causa
 dominante de um sinal ficar preso aí, já medida com dado real duas vezes
@@ -30019,3 +30021,106 @@ continua plausível, mas deixou de ser provada pelos logs).
 navegador já no dia NÃO impede o registro do cron; mesmo executor continua
 deduplicado) — provado reintroduzindo a chave sem executor: 2 testes falham.
 `healthAuditFormat.test.js` cobre log antigo × marcador × grupo misto.
+
+## 256. Análise externa (UpsideGPT/GetTrade → "Sentinel 2.0"): veredito, PR #459 e plano da Fase 1 — Decision Card (2026-10-03)
+
+**Contexto**: o usuário trouxe um documento (conversa com ChatGPT, ~6000 linhas)
+comparando o Sentinel com UpsideGPT e GetTrade.ai e propondo um "Sentinel 2.0",
+mais um "Prompt Mestre" (Fase 0 reauditoria somente leitura → Fase 1 UI de
+decisão → fases de dados/probabilidade/coach). **Falha de processo registrada**:
+a 1ª passada leu só as 2000 primeiras linhas (arquivo truncado) e tratou o
+recorte estatístico como se fosse o pedido inteiro; a UX que o usuário
+ressaltou, suas 3 perguntas e o Prompt Mestre ficaram de fora até ele cobrar.
+Corrigido nesta rodada.
+
+**Veredito sobre a análise** (agentes com papéis opostos — cético estatístico,
+defensor de UX, guardião de escopo — + árbitro; fatos conferidos no código):
+- **Confere**: tudo que ela afirma sobre o código interno (score RF 25/20/20/15/10/10
+  gate 75, OB/FVG em peso 0, `indicatorAttribution`, `decisionSnapshot`/
+  `decisionExplanation` fail-closed, N efetivo ≈ N/3) e as afirmações sobre a UI
+  (Dashboard "Agora/Atenção/Desempenho", AssetCard simplificado A-15, `AssetDrawer`,
+  `VerificationWidget`, funding informativo, `LiveConfidenceCard`). Exceção:
+  "Oportunidades/Operações" é só comentário; o título visível é "Ativos".
+- **Não se sustenta hoje**: Probability Engine calibrado (109 operações reais,
+  expectância líquida −0,103R com IC cruzando zero, N efetivo ≈ 36; logística
+  aguenta ~1–4 parâmetros, isotônica pede ≫1000 amostras) → **ADIADO até ≥300
+  operações reais**; OI/liquidações/CVD/order book e Bybit/OKX (451 da Binance,
+  `roadmap.md` "fora de escopo permanente"); Strategy Reviewer com LLM (exige
+  backend pago); conta Binance read-only (`trading-safety.md`); Coach fatiado
+  (todo bucket com n<30). Os números de exemplo do documento (N=1842, WR 64,8%)
+  são ilustrativos. Afirmações sobre UpsideGPT/GetTrade/repositórios externos
+  **não foram verificadas por nós**.
+
+**Feito**: PR #459 — gauge do `PredictiveAnalysis` (era "XX% taxa de acerto" com
+8 operações, sem IC) virou expectância + IC95 + INCONCLUSIVO via `summarizeOps`
+(n≥30 sobre `rCounted`, achado do Codex); Telegram `ENTRY_CONFIRMED` com risco
+do stop %, tendência 1D/4H/1H e motivos (só campos já gravados); "Observando"
+(2 significados) → "Aviso pendente"/"Perto do gatilho"; teste anti-leakage
+(candle `isClosed:false` não vaza para `rawSignalSnapshots`, provado removendo
+a guarda de `scanner.js`). **Fase 1, passo 1** — `src/lib/decisionCardPresenter.js`
+(+ testes): presenter puro do Decision Card, sem UI.
+
+**Decisões do usuário (Fase 1)**: o Decision Card **estende o `AssetDrawer`**
+(largo no desktop, tela cheia no mobile); INVALIDAÇÃO só **stop atual +
+"ainda não definida"** (regras reais exigiriam gravar config na criação =
+motor); rótulo derivado **"Aguardando confirmação · BUY/SELL"** sem criar estado
+no motor; **manter "Confiança ao Vivo"** e reforçar o subtítulo.
+
+**Achados novos na reauditoria** (não estavam no documento): `AssetDrawer.jsx`
+mostra "LIVE" verde fixo mesmo com dado desatualizado (o `AssetCard` tem lógica
+STALE); o drawer não mostra stop/R:R/estado/frescor; `op.data_status` é gravado
+fixo `'LIVE'` e `op.invalidates_if` é texto estático que não reflete a regra real
+(ambos **ignorados** pelo presenter); `decision_snapshot` de sinal só existe para
+`regime_rejected`/`trend_reversed` e não há snapshot na criação da operação nem
+versão do motor; `AssetState` guarda flags por timeframe (`rsi_zone`,
+`macd_histogram`, `trend_ema`, `rf_direction`) mas não ADX/Chop/ATR/tier;
+`VerificationWidget`/`ComparePanel` não trazem a ressalva "score não é
+probabilidade"; `PerformanceBar.jsx` é código morto; `ProximityBar` sem teste.
+
+**Regra do CONTRA** (derivação determinística no presenter, 1 campo persistido →
+1 frase, nunca limiar novo): `alignment == 'against_trend'` (nível de cima do
+`SignalEvent`, não `context`), `tf_1d_direction`
+oposta ao lado, `rsi_zone`/`macd_histogram`/`trend_ema` do `AssetState` do TF do
+sinal (rotulados "agora"), `last_rejection_reason` do tipo WORSE. Sem regra que
+case = "não registrado", nunca "nenhum contra". Risco assumido: se o motor mudar
+o significado desses campos o presenter erra em silêncio — travado por teste de
+contrato (nomes/valores no schema e no motor) e revisão contra o antipadrão dos
+itens 168/180.
+
+**Próximos passos (1 PR cada, com revisão do usuário entre eles)**: 2) drawer N1
+(estado, níveis, ação, frescor real no lugar do "LIVE" fixo, `QueryErrorState`);
+3) drawer N2 (por quê, com CONTRA); 4) N3 + slot de probabilidade indisponível;
+5) ressalvas de honestidade (`VerificationWidget`, `ComparePanel`, subtítulo do
+`LiveConfidenceCard`, "histórico, não calibrado" no `PredictiveAnalysis`);
+6) limpezas (`PerformanceBar.jsx`, teste do `ProximityBar`). Backtest A/B **não se
+aplica** à Fase 1 (a UI não altera o motor); a guarda é o tripwire de imports do
+presenter + `git diff` sem arquivos de motor.
+
+**Pendente do usuário**: rodar o `backtest.yml` e analisar os registros de
+`indicatorAttribution` (ADX/Chop/tier com N, N efetivo e IC) — as sessões não
+alcançam a Binance; conferir visualmente o card "Análise preditiva".
+
+**Fases futuras do Prompt Mestre que conflitam com decisões permanentes** (só por
+pedido explícito): dados de derivativos/multi-exchange (item 4, `roadmap.md:837`),
+conta read-only (`trading-safety.md`), Coach/Reviewer (`roadmap.md:844`).
+
+### Addendum (2026-10-03) — 3 achados do Codex no presenter (PR #460), todos confirmados
+1. **P1 — fontes informativas viravam "aguardando confirmação"**: o scanner também
+   grava `SignalEvent` 4h de `macd`/`ema_cross`/`rsi` (`scanner.js:1808-1876`), mas
+   só `range_filter` e `smc_structure` são candidatos de entrada (`scanner.js:2356,
+   2369, 2740`). O presenter escolhia o evento mais novo de qualquer fonte e o
+   rotulava pela janela de 4h; um evento informativo novo também escondia um aviso
+   de entrada pendente. Agora candidato de entrada tem prioridade e fonte não-entrada
+   é sempre fase "Só informação" (texto próprio, sem "o app está vendo se vale abrir
+   uma operação").
+2. **P2 — `signal_timeframe` ausente**: operação legada da cascata 4h/15m cai em
+   `'4h'` (`TradeOperation.jsonc`), não no `timeframe` de confirmação (15m/5m), que
+   não tem `AssetState`.
+3. **P2 — `alignment` no lugar errado**: é propriedade de nível superior do
+   `SignalEvent` (`scanner.js:1674,1818…`; `SignalEvent.jsonc` `properties.alignment`),
+   não de `context`. **Falha minha**: o teste de contrato só conferia que a string
+   `alignment: strengthResult.alignment` existia em `scanner.js` e a fixture usava o
+   formato errado, então a regra nunca teria casado com dado real. O contrato agora
+   verifica a POSIÇÃO (regex no `newSignals.push` + schema JSON com `alignment` fora
+   de `context`). Lição geral: teste de contrato precisa afirmar o lugar do campo,
+   não só o nome.
