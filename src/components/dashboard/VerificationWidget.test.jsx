@@ -108,3 +108,20 @@ describe('VerificationWidget — botões OK/Pular ficam desabilitados durante a 
     await waitFor(() => expect(reviewButton.disabled).toBe(false));
   });
 });
+
+// Passo 5 (item 256): o score exibido aqui é "concordância das regras", não probabilidade.
+describe('VerificationWidget — ressalva "score não é probabilidade" (passo 5)', () => {
+  it('REGRESSÃO: com score exibido, a ressalva aparece', async () => {
+    listMock.mockResolvedValue([TASK_COM_MOTIVO]);
+    renderWidget();
+    await screen.findByText('BTC/USDT');
+    expect(screen.getByText(/score técnico \(concordância das regras atuais\) — não é probabilidade de acerto/)).toBeTruthy();
+  });
+
+  it('sem nenhum score na lista, não há ressalva solta', async () => {
+    listMock.mockResolvedValue([TASK]);
+    renderWidget();
+    await screen.findByText('BTC/USDT');
+    expect(screen.queryByText(/não é probabilidade de acerto/)).toBeNull();
+  });
+});

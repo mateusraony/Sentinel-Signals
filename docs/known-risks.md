@@ -30266,3 +30266,19 @@ ativas simultâneas do mesmo ativo (cascatas hierárquicas, `opTransition.js` â
 `opExitRules.js` acoplamento de risco). Premissa errada minha ("1 ativa por ativo"). Agora o presenter
 expõe `levels.opId` e o painel só troca a grade da operação que o resumo de fato representa; as outras
 pernas ativas mantêm Entrada/TP1/TP2 no histórico. 2 testes novos, ambos falham sem a correção.
+### Addendum (2026-10-04) — Fase 1, passos 5 e 6 (Entrega C): textos de honestidade + limpezas
+Plano em linguagem simples aprovado pelo usuário. **Textos (só palavras, nenhuma conta)**:
+`VerificationWidget` ("🔥 = score técnico (concordância das regras atuais) — não é probabilidade
+de acerto", só quando algum score é exibido) e `ComparePanel` ("Score e Oportunidade são pontuações
+das regras atuais — não são probabilidade de acerto", 1 por coluna) ganharam a ressalva que já
+existia em outras telas; `LiveConfidenceCard` manteve o nome e ganhou o subtítulo "Evidência
+histórica das operações reais já fechadas — não é probabilidade de acerto futuro";
+`PredictiveAnalysis` acrescentou "Histórico, não calibrado: …" ao rodapé (texto antigo preservado).
+**Limpezas**: `PerformanceBar.jsx` removido (código morto — nenhuma importação em `src`,
+`scripts`, workflows ou config; só aparecia em `docs/known-risks.md`, histórico); `ProximityBar`
+ganhou teste (`calcProximity`: nulls, faixas <1%/<2%/<3,5%/≥3,5%, lado e distância absoluta;
+componente: rótulo, pulso só em "muito próximo"). Nota: o comentário de `ProximityBar.jsx` dizia
+"≥ 3% → null" mas o código sempre cortou em **3,5%** — o teste documenta o código e só o
+comentário foi corrigido (comportamento intacto).
+**Provas**: os 4 testes de texto falham sem a mudança; os de `ProximityBar` são de caracterização
+(passam no código atual, travam o comportamento). Nenhum arquivo de motor tocado.

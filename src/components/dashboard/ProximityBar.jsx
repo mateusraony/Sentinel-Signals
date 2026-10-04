@@ -9,8 +9,8 @@ import { Crosshair } from 'lucide-react';
  * Proximity levels:
  *   < 1%  → "MUITO PRÓXIMO" (very close, pulse)
  *   < 2%  → "PRÓXIMO" (close)
- *   < 3%  → "Perto do gatilho" (watching)
- *   ≥ 3%  → null (not close enough to show)
+ *   < 3,5% → "Perto do gatilho" (watching)
+ *   ≥ 3,5% → null (not close enough to show)
  */
 export function calcProximity(state) {
   if (!state || !state.rf_filter_value || !state.last_close) return null;

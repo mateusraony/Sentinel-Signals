@@ -122,3 +122,13 @@ describe('PredictiveAnalysis — gráfico "Taxa de acerto por faixa de score" te
     expect(label).toMatch(/1 operação/);
   });
 });
+
+// Passo 5 (item 256): o texto do rodapé também diz "histórico, não calibrado".
+describe('PredictiveAnalysis — "histórico, não calibrado" (passo 5)', () => {
+  it('REGRESSÃO: o rodapé diz que é histórico e não calibrado', async () => {
+    tradeOperationFilterMock.mockResolvedValue([CLOSED_OP_SIMILAR_SHAPE]);
+    renderPredictive();
+    expect(await screen.findByText(/Histórico, não calibrado/)).toBeTruthy();
+    expect(screen.getByText(/não é garantia de resultado/)).toBeTruthy(); // texto antigo preservado
+  });
+});

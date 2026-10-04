@@ -185,6 +185,9 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
             ))}
           </div>
         )}
+        <p className="text-7px font-mono text-muted-foreground/70 mt-1.5">
+          Score e Oportunidade são pontuações das regras atuais — não são probabilidade de acerto.
+        </p>
       </div>
     </div>
   );
