@@ -30226,3 +30226,15 @@ direção `0` (neutro conhecido), mas a UI só tinha visão para `1`/`-1` e most
 tratava leitura neutra como ausente; agora `0` → "→ neutro" e só `null` vira "?". (2) o item "contra"
 de rejeição pior carrega `c.evidence` (medida + "medido às HH:MM BRT") que a seção descartava; agora
 aparece sob o item. 2 testes novos, ambos falham sem a correção.
+
+### Addendum (2026-10-04) — Entrega A: contagens do Dashboard sem o teto de 100 operações
+Corrige o achado acima (autorizado pelo usuário). A query `['trade-operations-active']`
+(`filter` por status ativo) passou a rodar **sempre** (antes só com o painel do ativo
+aberto) e o conjunto `allOps` = 100 recentes + ativas (ativa prevalece por `id`) alimenta
+"Operações Ativas", "Aguardando", "Alta Prioridade", o `activeOp` de cada `AssetCard`,
+`opA`/`opB` do Comparar, a ordenação por score e o painel lateral. Falha da consulta de
+ativas sem cache → `tradeOpsUnavailable` (cards mostram "—", nunca um número possivelmente
+errado). Custo: 1 leitura leve (≤ ~10 linhas) a cada 60 s. **O teste "com o painel fechado a
+query não dispara" foi invertido de propósito** (agora: "roda sempre"). Provas: 3 testes
+novos falham no código anterior (contagem com op ativa fora das 100, fail-closed, query
+sempre ativa). Não toca motor, schema nem workflows.

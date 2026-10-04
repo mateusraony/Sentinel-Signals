@@ -75,14 +75,13 @@ export default function Dashboard() {
   });
 
   // `tradeOps` acima traz só as 100 operações mais recentes do sistema inteiro:
-  // uma operação ATIVA mais antiga que isso não aparece, e o painel lateral
-  // diria "aguardando confirmação"/"sem operação" escondendo stop e alvos
-  // (Codex, PR #461). As ativas são poucas — busca-se o conjunto completo, mas
-  // só enquanto o painel está aberto (custo zero com ele fechado).
+  // uma operação ATIVA mais antiga que isso não aparece. Tudo que decide "tem
+  // operação ativa?" (cards "Operações Ativas"/"Aguardando"/"Alta Prioridade", card
+  // do ativo, Comparar, painel lateral) usa o conjunto completo de ativas — poucas
+  // linhas, 1 leitura leve por poll (Codex #461 + achado do item 256).
   const { data: activeOps = [], isPending: activeOpsPending, isError: activeOpsError } = useQuery({
     queryKey: ['trade-operations-active'],
     queryFn: () => backend.entities.TradeOperation.filter({ status: ACTIVE_STATUSES }),
-    enabled: Boolean(selectedAsset),
     refetchInterval: POLL_OPERATIONAL_MS,
   });
   const activeOpsLoading = activeOpsPending && !activeOpsError;
@@ -97,7 +96,17 @@ export default function Dashboard() {
   // não sobrou NENHUM dado em cache (mesmo critério do item 194).
   const statesUnavailable = statesError && states.length === 0;
   const signalsUnavailable = recentSignalsError && recentSignals.length === 0;
-  const tradeOpsUnavailable = tradeOpsError && tradeOps.length === 0;
+  // Falha numa das duas consultas de operações sem nenhum dado em cache = não dá
+  // para afirmar contagem/estado (fail-closed, item 193-196).
+  const tradeOpsUnavailable = (tradeOpsError && tradeOps.length === 0) || activeOpsUnavailable;
+
+  // Operações = as 100 recentes + todas as ativas (a versão da query de ativas
+  // prevalece em caso de mesmo id).
+  const allOps = useMemo(() => {
+    const byId = new Map(tradeOps.map(o => [o.id, o]));
+    for (const op of activeOps) byId.set(op.id, op);
+    return [...byId.values()];
+  }, [tradeOps, activeOps]);
 
   // Browser + in-app notifications
   useBrowserNotifications(recentSignals);
@@ -105,13 +114,13 @@ export default function Dashboard() {
   // Alta prioridade: sinais RF com prioridade high OU operações ativas com score >= 85
   const highPriorityCount = new Set([
     ...recentSignals.filter(s => s.priority === 'high' && s.source === 'range_filter').map(s => s.asset_id),
-    ...tradeOps.filter(o => o.score >= 85 && ACTIVE_STATUSES.includes(o.status)).map(o => o.asset_id),
+    ...allOps.filter(o => o.score >= 85 && ACTIVE_STATUSES.includes(o.status)).map(o => o.asset_id),
   ]).size;
   const buySignals = recentSignals.filter(s => s.signal_type === 'BUY' && s.source === 'range_filter').length;
   const sellSignals = recentSignals.filter(s => s.signal_type === 'SELL' && s.source === 'range_filter').length;
-  const activeOpsCount = tradeOps.filter(o => ACTIVE_STATUSES.includes(o.status)).length;
+  const activeOpsCount = allOps.filter(o => ACTIVE_STATUSES.includes(o.status)).length;
   const assetsWithSignal = new Set(recentSignals.filter(s => s.source === 'range_filter').map(s => s.asset_id));
-  const assetsWithActiveTrade = new Set(tradeOps.filter(o => ACTIVE_STATUSES.includes(o.status)).map(o => o.asset_id));
+  const assetsWithActiveTrade = new Set(allOps.filter(o => ACTIVE_STATUSES.includes(o.status)).map(o => o.asset_id));
   const waitingCount = [...assetsWithSignal].filter(id => !assetsWithActiveTrade.has(id)).length;
 
   // Build filtered + sorted assets
@@ -131,7 +140,7 @@ export default function Dashboard() {
       // Signal filter
       if (filterSignal !== 'all') {
         const sig = recentSignals.find(s => s.asset_id === asset.id && s.source === 'range_filter');
-        const op = tradeOps.find(o => o.asset_id === asset.id && ACTIVE_STATUSES.includes(o.status));
+        const op = allOps.find(o => o.asset_id === asset.id && ACTIVE_STATUSES.includes(o.status));
         if (filterSignal === 'high') return sig?.priority === 'high' || (op?.score >= 85);
         const side = op?.side || sig?.signal_type;
         return side === filterSignal;
@@ -142,9 +151,9 @@ export default function Dashboard() {
     // Sort
     if (sortBy === 'score') {
       list = [...list].sort((a, b) => {
-        const scoreA = tradeOps.find(o => o.asset_id === a.id)?.score
+        const scoreA = allOps.find(o => o.asset_id === a.id)?.score
           || recentSignals.find(s => s.asset_id === a.id)?.context?.score || 0;
-        const scoreB = tradeOps.find(o => o.asset_id === b.id)?.score
+        const scoreB = allOps.find(o => o.asset_id === b.id)?.score
           || recentSignals.find(s => s.asset_id === b.id)?.context?.score || 0;
         return scoreB - scoreA;
       });
@@ -158,15 +167,7 @@ export default function Dashboard() {
     }
 
     return list;
-  }, [assets, recentSignals, tradeOps, states, filterSignal, filterTf, search, sortBy]);
-
-  // Operações do painel = as 100 recentes + todas as ativas (a versão da query
-  // de ativas prevalece em caso de mesmo id).
-  const drawerTradeOps = useMemo(() => {
-    const byId = new Map(tradeOps.map(o => [o.id, o]));
-    for (const op of activeOps) byId.set(op.id, op);
-    return [...byId.values()];
-  }, [tradeOps, activeOps]);
+  }, [assets, recentSignals, allOps, states, filterSignal, filterTf, search, sortBy]);
 
   // `selectedAsset` é o retrato de quando o card foi clicado; o poll de
   // `monitored-assets` (60 s) renova `last_scan_at`/`scan_error_since`/`is_active`
@@ -190,10 +191,10 @@ export default function Dashboard() {
         <AssetDrawer
           asset={drawerAsset}
           signals={recentSignals}
-          tradeOps={drawerTradeOps}
+          tradeOps={allOps}
           assetStates={states}
           statesUnavailable={statesUnavailable}
-          tradeOpsUnavailable={tradeOpsUnavailable || activeOpsUnavailable}
+          tradeOpsUnavailable={tradeOpsUnavailable}
           tradeOpsLoading={activeOpsLoading}
           signalsUnavailable={signalsUnavailable}
           onClose={() => setSelectedAsset(null)}
@@ -310,8 +311,8 @@ export default function Dashboard() {
                     statesB={states.filter(s => s.asset_id === compareB.id)}
                     signalA={recentSignals.find(s => s.asset_id === compareA.id && s.source === 'range_filter')}
                     signalB={recentSignals.find(s => s.asset_id === compareB.id && s.source === 'range_filter')}
-                    opA={tradeOps.find(o => o.asset_id === compareA.id && ACTIVE_STATUSES.includes(o.status))}
-                    opB={tradeOps.find(o => o.asset_id === compareB.id && ACTIVE_STATUSES.includes(o.status))}
+                    opA={allOps.find(o => o.asset_id === compareA.id && ACTIVE_STATUSES.includes(o.status))}
+                    opB={allOps.find(o => o.asset_id === compareB.id && ACTIVE_STATUSES.includes(o.status))}
                     dataUnavailable={signalsUnavailable || tradeOpsUnavailable}
                   />
                 )}
@@ -438,7 +439,7 @@ export default function Dashboard() {
                   {displayAssets.map(asset => {
                     const assetStates = states.filter(s => s.asset_id === asset.id);
                     const latestSignal = recentSignals.find(s => s.asset_id === asset.id && s.source === 'range_filter');
-                    const activeOp = tradeOps.find(o => o.asset_id === asset.id && ACTIVE_STATUSES.includes(o.status));
+                    const activeOp = allOps.find(o => o.asset_id === asset.id && ACTIVE_STATUSES.includes(o.status));
                     return (
                       <AssetCard
                         key={asset.id}

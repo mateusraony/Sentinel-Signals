@@ -273,7 +273,7 @@ describe('Dashboard — painel lateral do ativo (Codex #461)', () => {
     expect(within(region).queryByText(/Aguardando/)).toBeNull();
   });
 
-  it('drawer fechado → a query de ativas NÃO dispara; ao abrir, dispara', async () => {
+  it('a query de ativas roda sempre (com o painel fechado também) — as contagens dependem dela', async () => {
     drawerScenario = {
       assets: () => [{ ...ASSET, last_scan_at: iso(5 * MIN) }],
       signals: [FRESH_SIGNAL],
@@ -281,10 +281,42 @@ describe('Dashboard — painel lateral do ativo (Codex #461)', () => {
     };
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
-    const card = await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ });
-    await new Promise((r) => setTimeout(r, 50));
-    expect(activeOpsCalls.length).toBe(0);
-    fireEvent.click(card);
+    await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ });
     await waitFor(() => expect(activeOpsCalls.length).toBeGreaterThan(0));
+  });
+});
+
+// Achado do item 256 (2026-10-04): as contagens do Dashboard decidiam "tem operação
+// ativa?" só pelas 100 operações mais recentes. Uma ativa mais antiga sumia.
+describe('Dashboard — contagens com operação ativa fora das 100 mais recentes (item 256)', () => {
+  const iso = (msAgo) => new Date(Date.now() - msAgo).toISOString();
+  const ASSET = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', exchange: 'binance', is_active: true, last_scan_at: iso(5 * 60 * 1000) };
+  const RF_SIGNAL = {
+    id: 'sig1', asset_id: 'a1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+    source: 'range_filter', created_date: iso(30 * 60 * 1000),
+  };
+  const OLD_ACTIVE_OP = {
+    id: 'op-antiga', asset_id: 'a1', symbol: 'BTCUSDT', side: 'BUY', timeframe: '15m', signal_timeframe: '4h',
+    status: 'RUNNER_ACTIVE', entry_price: 100, initial_stop: 95, current_stop: 98.5,
+    tp1: 105, tp2: 112.5, rr_at_entry: 1.5, score: 90, created_date: '2026-01-01T00:00:00.000Z',
+  };
+  const valueOf = async (label) => (await screen.findByText(label)).nextElementSibling;
+
+  it('REGRESSÃO: "Operações Ativas" conta a operação antiga e "Aguardando" não conta o ativo', async () => {
+    drawerScenario = { assets: () => [ASSET], signals: [RF_SIGNAL], recentOps: [], activeOps: [OLD_ACTIVE_OP] };
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+    await waitFor(async () => expect((await valueOf('Operações Ativas')).textContent).toBe('1'));
+    expect((await valueOf('Aguardando')).textContent).toBe('0');
+    // score 90 ≥ 85 → também entra em "Alta Prioridade"
+    expect((await valueOf('Alta Prioridade')).textContent).toBe('1');
+  });
+
+  it('falha na consulta de ativas: os números não afirmam nada (fail-closed)', async () => {
+    drawerScenario = { assets: () => [ASSET], signals: [RF_SIGNAL], recentOps: [], activeOpsError: true };
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+    await waitFor(async () => expect((await valueOf('Operações Ativas')).textContent).toBe('—'));
+    expect((await valueOf('Aguardando')).textContent).toBe('—');
   });
 });
