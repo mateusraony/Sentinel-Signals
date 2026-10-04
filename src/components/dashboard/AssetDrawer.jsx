@@ -37,7 +37,7 @@ function formatBrt(iso) {
   return iso ? `${moment(iso).utcOffset(-3).format('DD/MM HH:mm')} BRT` : null;
 }
 
-function Level({ label, value, note }) {
+function Level({ label, value, note = null }) {
   return (
     <div className="min-w-0">
       <div className="text-8px font-mono text-muted-foreground">{label}</div>
@@ -136,7 +136,7 @@ const STATUS_CFG = {
 
 export default function AssetDrawer({
   asset, signals, tradeOps, assetStates = [], statesUnavailable = false,
-  tradeOpsUnavailable = false, tradeOpsLoading = false, signalsUnavailable = false, now: nowProp, onClose,
+  tradeOpsUnavailable = false, tradeOpsLoading = false, signalsUnavailable = false, now: nowProp = null, onClose,
 }) {
   // Hooks antes do return antecipado (regra dos hooks). `now` injetado (testes)
   // desliga o intervalo.

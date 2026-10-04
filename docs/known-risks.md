@@ -30176,3 +30176,9 @@ afeta `AssetCard` e as contagens do Dashboard (`hasActiveOp`, `waitingCount`,
 `PineScript.jsx` via `pagesSmoke.test.jsx`, sem `cleanup` no `afterEach`) é uma corrida
 intermitente de higiene de teste, não deste diff; conserto de 2 linhas aguarda
 autorização, em PR separado.
+**CI do #461 (2026-10-04, segundo push)**: o job `build` falhou na catraca do typecheck
+(`npm run typecheck:ratchet`: 17 erros, teto 13) — 4 erros **meus**: `note` obrigatório em
+`Level` (3×) e `now` obrigatório nas props do `AssetDrawer` (1×, apontado em
+`Dashboard.jsx`). Corrigido com defaults (`note = null`, `now = null`): volta a 13/13.
+Lição: o passo 2 só rodei `lint`/`test`/`build` localmente — **`typecheck:ratchet` também
+faz parte do gate do CI** e deve entrar na verificação de qualquer mudança em `src/`.
