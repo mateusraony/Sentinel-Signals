@@ -50,13 +50,15 @@ export function makeTestQueryClient() {
 /** Envolve nos MESMOS provedores que `App.jsx` usa de verdade. */
 export function renderPage(ui, { route = '/' } = {}) {
   const client = makeTestQueryClient();
-  return render(
+  const result = render(
     <QueryClientProvider client={client}>
       <TooltipProvider>
         <MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>
       </TooltipProvider>
     </QueryClientProvider>,
   );
+  // `queryClient` exposto p/ testes que simulam um poll (invalidateQueries).
+  return { ...result, queryClient: client };
 }
 
 const AGORA = '2026-09-05T12:00:00.000Z';

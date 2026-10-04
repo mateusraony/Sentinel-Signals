@@ -13,10 +13,14 @@
 // teste controlar `SignalEvent`/`TradeOperation` sem afetar os demais.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
+import { screen, cleanup, waitFor, fireEvent, within } from '@testing-library/react';
 import { renderPage } from './__fixtures__/renderPage.jsx';
 
 let priorityOverride = null;
+// Cenário do painel lateral (Codex #461): sobrescreve ativos/estados/sinais/ops e
+// registra as chamadas de `TradeOperation.filter` com status ativo.
+let drawerScenario = null;
+const activeOpsCalls = [];
 
 vi.mock('@/api/entities', async () => {
   const { makeFakeBackendModule } = await import('./__fixtures__/renderPage.jsx');
@@ -26,6 +30,21 @@ vi.mock('@/api/entities', async () => {
       if (priorityOverride) {
         fake.entities.SignalEvent.list = async () => priorityOverride.signalEvents ?? [];
         fake.entities.TradeOperation.list = async () => priorityOverride.tradeOps ?? [];
+      }
+      if (drawerScenario) {
+        const sc = drawerScenario;
+        fake.entities.MonitoredAsset.filter = async () => sc.assets();
+        fake.entities.AssetState.list = async () => sc.states ?? [];
+        fake.entities.SignalEvent.list = async () => sc.signals ?? [];
+        fake.entities.TradeOperation.list = async () => sc.recentOps ?? [];
+        fake.entities.TradeOperation.filter = async (q) => {
+          if (Array.isArray(q?.status) && q.status.includes('RUNNER_ACTIVE')) {
+            activeOpsCalls.push(q);
+            if (sc.activeOpsError) throw new Error('falha simulada');
+            return sc.activeOps ?? [];
+          }
+          return [];
+        };
       }
       return fake;
     },
@@ -54,6 +73,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   priorityOverride = null;
+  drawerScenario = null;
+  activeOpsCalls.length = 0;
 });
 
 describe('Dashboard — "Alertas Recentes" aparece antes do grid de Ativos (achado A-14)', () => {
@@ -182,5 +203,88 @@ describe('Dashboard — empty state de "Nenhum ativo monitorado" tem link pra /a
     await screen.findByText('Nenhum ativo monitorado.');
     const link = screen.getByRole('link', { name: /Ir para Ativos/ });
     expect(link.getAttribute('href')).toBe('/assets');
+  });
+});
+
+// Codex no PR #461 (docs/known-risks.md item 256): o painel lateral recebia só as
+// 100 operações mais recentes, um retrato do ativo e um relógio parado.
+describe('Dashboard — painel lateral do ativo (Codex #461)', () => {
+  const MIN = 60 * 1000;
+  const iso = (msAgo) => new Date(Date.now() - msAgo).toISOString();
+  const ASSET = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', exchange: 'binance', is_active: true };
+  const OLD_ACTIVE_OP = {
+    id: 'op-antiga', asset_id: 'a1', symbol: 'BTCUSDT', side: 'BUY', timeframe: '15m', signal_timeframe: '4h',
+    status: 'RUNNER_ACTIVE', entry_price: 100, initial_stop: 95, current_stop: 98.5,
+    tp1: 105, tp2: 112.5, rr_at_entry: 1.5, score: 80, created_date: '2026-01-01T00:00:00.000Z',
+  };
+  const FRESH_SIGNAL = {
+    id: 'sig1', asset_id: 'a1', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY',
+    source: 'range_filter', created_date: iso(30 * MIN),
+  };
+
+  async function openDrawer() {
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ }));
+    return screen.findByRole('region', { name: 'Resumo da decisão' });
+  }
+
+  it('REGRESSÃO (P1): operação ativa fora das 100 mais recentes aparece com stop e alvos', async () => {
+    drawerScenario = {
+      assets: () => [{ ...ASSET, last_scan_at: iso(5 * MIN) }],
+      signals: [FRESH_SIGNAL],
+      recentOps: [], // a lista de 100 NÃO contém a op ativa
+      activeOps: [OLD_ACTIVE_OP],
+    };
+    const region = await openDrawer();
+    await waitFor(() => expect(within(region).getByText('Runner ativo (TP1 atingido)')).toBeTruthy());
+    expect(within(region).queryByText(/Aguardando/)).toBeNull();
+    expect(within(region).getByText(/98[.,]5/)).toBeTruthy(); // stop atual
+    expect(within(region).getByText(/112[.,]5/)).toBeTruthy(); // TP2
+  });
+
+  it('REGRESSÃO (P2): monitored-assets renovado com o painel aberto muda o badge', async () => {
+    let lastScan = iso(45 * MIN); // começa parado → STALE
+    drawerScenario = {
+      assets: () => [{ ...ASSET, last_scan_at: lastScan }],
+      signals: [FRESH_SIGNAL],
+      activeOps: [],
+    };
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    const { queryClient } = renderPage(<Dashboard />);
+    fireEvent.click(await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ }));
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(within(dialog).getByText('STALE')).toBeTruthy());
+
+    lastScan = iso(1 * MIN); // o scan voltou: o próximo poll traz last_scan_at novo
+    await queryClient.invalidateQueries({ queryKey: ['monitored-assets'] });
+    await waitFor(() => expect(within(dialog).getByText('LIVE')).toBeTruthy());
+    expect(within(dialog).queryByText('STALE')).toBeNull();
+  });
+
+  it('REGRESSÃO: falha na query de ativas → mensagem fail-closed, nunca "aguardando"', async () => {
+    drawerScenario = {
+      assets: () => [{ ...ASSET, last_scan_at: iso(5 * MIN) }],
+      signals: [FRESH_SIGNAL],
+      activeOpsError: true,
+    };
+    const region = await openDrawer();
+    await waitFor(() => expect(within(region).getByText(/Não foi possível carregar as operações agora/)).toBeTruthy());
+    expect(within(region).queryByText(/Aguardando/)).toBeNull();
+  });
+
+  it('drawer fechado → a query de ativas NÃO dispara; ao abrir, dispara', async () => {
+    drawerScenario = {
+      assets: () => [{ ...ASSET, last_scan_at: iso(5 * MIN) }],
+      signals: [FRESH_SIGNAL],
+      activeOps: [],
+    };
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+    const card = await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(activeOpsCalls.length).toBe(0);
+    fireEvent.click(card);
+    await waitFor(() => expect(activeOpsCalls.length).toBeGreaterThan(0));
   });
 });

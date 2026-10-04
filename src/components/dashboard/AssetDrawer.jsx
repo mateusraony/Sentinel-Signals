@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { TrendingUp, TrendingDown, Clock, Activity } from 'lucide-react';
 import moment from 'moment';
 import SignalChecklist from './SignalChecklist';
@@ -27,6 +27,10 @@ const STATE_COLOR = {
   none: 'rgba(255,255,255,0.5)',
 };
 
+// O frescor é função do relógio: sem este tick, um drawer aberto com dados que
+// não mudam ficaria "LIVE" para sempre depois que o scan parasse (Codex, PR #461).
+const NOW_TICK_MS = 30 * 1000;
+
 const POSTURE_NOTE = { breakeven: 'breakeven', locked: 'lucro protegido', risk: 'em risco' };
 
 function formatBrt(iso) {
@@ -48,6 +52,16 @@ function Level({ label, value, note }) {
 // recalculado aqui; dado ausente aparece como "—"/"indisponível", nunca favorável.
 function DecisionSummary({ card, statesUnavailable }) {
   const { state, levels, action, score, quality } = card;
+
+  if (state.kind === 'loading') {
+    return (
+      <section aria-label="Resumo da decisão" className="rounded-xl p-4"
+        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+        <div className="text-8px font-mono uppercase tracking-wider text-muted-foreground">Estado</div>
+        <div role="status" className="text-sm font-bold text-muted-foreground">{state.label}</div>
+      </section>
+    );
+  }
 
   if (state.kind === 'unavailable') {
     return (
@@ -122,13 +136,22 @@ const STATUS_CFG = {
 
 export default function AssetDrawer({
   asset, signals, tradeOps, assetStates = [], statesUnavailable = false,
-  tradeOpsUnavailable = false, signalsUnavailable = false, now: nowProp, onClose,
+  tradeOpsUnavailable = false, tradeOpsLoading = false, signalsUnavailable = false, now: nowProp, onClose,
 }) {
+  // Hooks antes do return antecipado (regra dos hooks). `now` injetado (testes)
+  // desliga o intervalo.
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (nowProp != null) return undefined;
+    const id = setInterval(() => setTick(Date.now()), NOW_TICK_MS);
+    return () => clearInterval(id);
+  }, [nowProp]);
+
   if (!asset) return null;
 
   const card = buildDecisionCard({
-    asset, assetStates, signals, tradeOps, signalsUnavailable, tradeOpsUnavailable,
-    now: nowProp ?? Date.now(),
+    asset, assetStates, signals, tradeOps, signalsUnavailable, tradeOpsUnavailable, tradeOpsLoading,
+    now: nowProp ?? tick,
   });
   const badge = QUALITY_BADGE[card.quality.status] ?? QUALITY_BADGE.unknown;
 

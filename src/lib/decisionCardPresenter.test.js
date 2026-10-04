@@ -70,6 +70,31 @@ describe('estado — fail-closed', () => {
     expect(card.state.label).not.toMatch(/Sem sinal/);
   });
 
+  it('REGRESSÃO (Codex #461): operações ativas ainda carregando + sinal existente → "loading", nunca "aguardando"', () => {
+    const card = build({ signals: [signal()], tradeOpsLoading: true });
+    expect(card.state.kind).toBe('loading');
+    expect(card.state.label).toBe('Carregando operações…');
+    expect(card.state.label).not.toMatch(/Aguardando/);
+    expect(card.action).toBeNull();
+    expect(card.why).toBeNull();
+    expect(card.score).toBeNull();
+  });
+
+  it('carregando + sem nada: também "loading", nunca "Sem sinal nem operação"', () => {
+    const card = build({ tradeOpsLoading: true });
+    expect(card.state.kind).toBe('loading');
+  });
+
+  it('operação já conhecida vence o "carregando" (não esconde stop/alvos por causa do refetch)', () => {
+    const card = build({ tradeOps: [op()], tradeOpsLoading: true });
+    expect(card.state.kind).toBe('active_op');
+  });
+
+  it('erro vence o "carregando"', () => {
+    const card = build({ signals: [signal()], tradeOpsLoading: true, tradeOpsUnavailable: true });
+    expect(card.state.kind).toBe('unavailable');
+  });
+
   it('operação vinda do cache continua válida mesmo com a query de operações em falha', () => {
     const card = build({ tradeOps: [op()], tradeOpsUnavailable: true });
     expect(card.state.kind).toBe('active_op');

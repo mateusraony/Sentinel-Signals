@@ -6,8 +6,8 @@
 // eram autoexplicativos, por isso ficaram de fora). Componente não tinha
 // teste dedicado antes.
 import React from 'react';
-import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { render, screen, cleanup, within, act } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import { readFileSync } from 'node:fs';
@@ -218,5 +218,44 @@ describe('AssetDrawer N1 — layout e pureza', () => {
     const src = readFileSync(join(process.cwd(), 'src/components/dashboard/AssetDrawer.jsx'), 'utf8');
     expect(src).not.toMatch(/useQuery|useFundingRate|@\/api\/entities|fetch\(/);
     expect(src).toMatch(/buildDecisionCard/);
+  });
+});
+
+describe('AssetDrawer — relógio próprio (Codex #461: badge não pode congelar em LIVE)', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(NOW); });
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
+
+  it('REGRESSÃO: sem mudar nenhuma prop, o badge passa de LIVE para STALE com o tempo', () => {
+    // Sem `now` injetado: o drawer usa o próprio relógio.
+    renderDrawer({ asset: FRESH_ASSET, signals: [FRESH_SIGNAL], assetStates: [STATE_4H] });
+    expect(screen.getByText('LIVE')).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(31 * MIN); });
+    expect(screen.getByText('STALE')).toBeTruthy();
+    expect(screen.queryByText('LIVE')).toBeNull();
+  });
+
+  // React Query/Radix também agendam timers: conta só os intervalos de 30 s do drawer.
+  const tickIntervals = (spy) => spy.mock.calls.filter(([, ms]) => ms === 30 * 1000).length;
+
+  it('o intervalo de 30 s é criado e limpo no desmonte', () => {
+    const setSpy = vi.spyOn(globalThis, 'setInterval');
+    const clearSpy = vi.spyOn(globalThis, 'clearInterval');
+    const { unmount } = renderDrawer({ asset: FRESH_ASSET, signals: [FRESH_SIGNAL], assetStates: [STATE_4H] });
+    expect(tickIntervals(setSpy)).toBe(1);
+    const id = setSpy.mock.results.find((_, k) => setSpy.mock.calls[k][1] === 30 * 1000).value;
+    unmount();
+    expect(clearSpy).toHaveBeenCalledWith(id);
+  });
+
+  it('com `now` injetado não cria intervalo', () => {
+    const setSpy = vi.spyOn(globalThis, 'setInterval');
+    renderDrawer({ asset: FRESH_ASSET, signals: [FRESH_SIGNAL], assetStates: [STATE_4H], now: NOW });
+    expect(tickIntervals(setSpy)).toBe(0);
+  });
+
+  it('operações carregando: mensagem discreta, nunca "Aguardando confirmação"', () => {
+    renderDrawer({ asset: FRESH_ASSET, signals: [FRESH_SIGNAL], assetStates: [STATE_4H], now: NOW, tradeOpsLoading: true });
+    expect(summary().getByRole('status').textContent).toBe('Carregando operações…');
+    expect(summary().queryByText(/Aguardando/)).toBeNull();
   });
 });

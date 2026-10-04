@@ -30146,3 +30146,33 @@ entrada/TP1/TP2 (item 154: "cada número uma vez só") — sai para o N3 colaps�
 passo 4; N2 (tese, a favor, contra, invalidação, multi-TF) é o passo 3. Texto
 "Aviso recém-chegado…" para sinal sem motivo de rejeição vem de `rejectionCopy`
 (existente) e pode soar velho em sinal de 30 min — não alterado aqui.
+
+### Addendum (2026-10-04) — PR #461: 3 achados do Codex, todos confirmados e corrigidos
+Reproduzidos no código antes de corrigir; a frase "nenhum fetch novo" do addendum
+acima ficou **errada** e passa a ser: **1 query de ativas, só com o painel aberto**.
+- **P1 — operação ativa antiga sumia.** `Dashboard.jsx` passava ao painel a lista
+  `TradeOperation.list('-created_date', 100)` (as 100 mais recentes do sistema) como se
+  fosse completa; uma op ativa mais velha fazia o card dizer "aguardando confirmação"/
+  "sem operação" e esconder stop e alvos. Correção: query `['trade-operations-active']`
+  (`filter({ status: ACTIVE_STATUSES })`, o mesmo padrão do scanner), `enabled` só com o
+  painel aberto, `refetchInterval` 60 s; as ops do painel = 100 recentes + ativas (a
+  versão da query de ativas prevalece por `id`). Enquanto carrega, o presenter devolve
+  `state.kind: 'loading'` ("Carregando operações…") — fail-closed, igual ao erro.
+- **P2 — ativo selecionado era um retrato.** `selectedAsset` guardava o objeto do clique;
+  o poll de `monitored-assets` não chegava ao painel. Correção: `drawerAsset` re-resolvido
+  de `assets` a cada render (cai no retrato se o ativo saiu da lista).
+- **P2 — relógio congelado.** `Date.now()` só era lido num re-render. Correção: `tick`
+  em estado com `setInterval` de 30 s (desligado quando o `now` é injetado, `clearInterval`
+  no desmonte).
+**Provas** (mutação — os 9 testes novos que exercitam o defeito falham no código antigo
+e passam no novo; 4 testes de guarda do presenter/Dashboard passam nos dois por
+desenho): presenter (`tradeOpsLoading`), drawer com fake timers (LIVE→STALE sem mudar
+props; intervalo criado/limpo; sem intervalo com `now` injetado) e Dashboard
+(op fora das 100; badge muda após poll; erro da query de ativas; query não dispara com
+o painel fechado). `renderPage` passou a devolver `queryClient` (aditivo).
+**Fora de escopo, ainda aberto (provável, não verificado a fundo)**: o mesmo teto de 100
+afeta `AssetCard` e as contagens do Dashboard (`hasActiveOp`, `waitingCount`,
+`activeOpsCount`). **CI do #461**: a falha anterior (`localStorage is not defined` em
+`PineScript.jsx` via `pagesSmoke.test.jsx`, sem `cleanup` no `afterEach`) é uma corrida
+intermitente de higiene de teste, não deste diff; conserto de 2 linhas aguarda
+autorização, em PR separado.
