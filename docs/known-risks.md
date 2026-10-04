@@ -30206,3 +30206,18 @@ e passa nos dois por desenho); capturas Chromium 390px/1280px. O motivo do sinal
 também na lista "Sinais Recentes" (repetição conhecida, sai no passo 4 junto com "Operações").
 **Detalhe conhecido**: os itens de "O que ajuda" vêm de `signal_reasons` do motor e trazem os
 pontos do score ("(+20)") — não alterado aqui (texto do motor, não do presenter).
+
+### Achado (2026-10-04) — o teto de 100 operações do Dashboard afeta mais que o painel do ativo
+**Fato (lido no código, `Dashboard.jsx`)**: a query `['trade-operations-dashboard']` traz só as 100
+operações mais recentes do sistema (`list('-created_date', 100)`), e **tudo** abaixo decide
+"tem operação ativa?" a partir dela: `activeOpsCount` (card "Operações Ativas"), `waitingCount`
+("Aguardando"), `assetsWithActiveTrade`, o `activeOp` entregue a cada `AssetCard` e as `opA`/`opB`
+do ComparePanel, e a contagem de "Alta Prioridade" (score ≥ 85). O #461 corrigiu só o painel
+lateral (query própria de ativas, com o painel aberto).
+**Hipótese (não medida)**: o erro só aparece quando existem ≥ 100 operações criadas DEPOIS de uma
+operação ainda ativa — depende do volume real em produção (sem acesso ao banco nesta sessão).
+Efeito se ocorrer: card sem a operação ativa, "Operações Ativas" menor que o real, ativo contado
+como "Aguardando" por engano.
+**Recomendação (não implementada, aguarda OK)**: tornar a query de ativas permanente (não só com o
+painel aberto) e usá-la nessas contagens/cards — 1 leitura leve (≤ ~10 linhas) a cada 60 s, mesmo
+padrão de `scanner.js`. PR próprio, com teste do cenário "ativa fora das 100".
