@@ -377,6 +377,13 @@ describe('CONTRA — derivação determinística, sem recalcular', () => {
     expect(card.why.cons.map((c) => c.code)).toContain('rsi_extreme');
   });
 
+  it('levels.opId identifica a operação mostrada (a mais nova entre várias ativas)', () => {
+    const older = op({ id: 'op-velha', created_date: iso(5 * HOUR) });
+    const newer = op({ id: 'op-nova', created_date: iso(1 * HOUR) });
+    expect(build({ tradeOps: [older, newer] }).levels.opId).toBe('op-nova');
+    expect(build({ signals: [signal()] }).levels).toBeNull();
+  });
+
   it('motivo de rejeição "WORSE" entra com a frase e a evidência numérica; "WAITING" não entra', () => {
     const snap = { reason_code: 'regime_rejected', data_status: 'LIVE', evaluated_at: iso(HOUR), facts: { adx: 18, adx_min: 22 } };
     const worse = build({ signals: [signal({ context: {}, last_rejection_reason: 'regime_rejected', decision_snapshot: snap })] });

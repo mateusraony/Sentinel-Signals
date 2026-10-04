@@ -444,6 +444,15 @@ describe('AssetDrawer N3 — "Dados técnicos" e "Histórico deste ativo"', () =
     expect(hist.getAllByText('Entrada')).toHaveLength(1);
   });
 
+  it('REGRESSÃO (Codex #465): duas pernas ativas no mesmo ativo — só a do resumo perde a grade; a outra mantém seus níveis', () => {
+    const other = { ...ACTIVE_OP, id: 'op-smc', cascade: '1h_5m', signal_timeframe: '1h', entry_price: 61000, tp1: 62000, tp2: 63000, created_date: iso(5 * 60 * MIN) };
+    renderN1({ tradeOps: [ACTIVE_OP, other] }); // ACTIVE_OP é a mais nova → é a do resumo
+    const hist = within(historyContent());
+    expect(hist.getAllByText('Níveis no resumo, acima.')).toHaveLength(1);
+    expect(hist.getAllByText('Entrada')).toHaveLength(1); // a perna mais antiga ainda mostra Entrada/TP1/TP2
+    expect(hist.getByText('$61,000.00')).toBeTruthy();
+  });
+
   it('sem operação ativa, nada some do histórico', () => {
     renderN1({ tradeOps: [{ ...ACTIVE_OP, status: 'STOP_HIT' }] });
     expect(within(historyContent()).queryByText('Níveis no resumo, acima.')).toBeNull();

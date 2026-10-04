@@ -30260,3 +30260,9 @@ conta a operação antiga") falhou **uma vez** num `npm test` completo sob carga
 do #464) — `waitFor`/`findBy*` com o timeout padrão de 1 s num componente pesado. Causa: timeout
 curto demais, não a lógica. Correção só nos testes do Dashboard escritos neste fluxo (#461/#464):
 `{ timeout: 5000 }` e callbacks síncronos; 3 execuções completas seguidas passam.
+**Codex no #465 (P2, confirmado e corrigido)**: a troca "Níveis no resumo, acima." valia para **toda**
+operação `SIGNAL_CONFIRMED`/`RUNNER_ACTIVE`, mas o resumo mostra só a mais nova — e o motor suporta pernas
+ativas simultâneas do mesmo ativo (cascatas hierárquicas, `opTransition.js` âncoras por cascata;
+`opExitRules.js` acoplamento de risco). Premissa errada minha ("1 ativa por ativo"). Agora o presenter
+expõe `levels.opId` e o painel só troca a grade da operação que o resumo de fato representa; as outras
+pernas ativas mantêm Entrada/TP1/TP2 no histórico. 2 testes novos, ambos falham sem a correção.

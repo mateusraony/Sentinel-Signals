@@ -135,6 +135,7 @@ function buildLevels(op) {
   if (!op) return null;
   const rr = Number.isFinite(op.rr_at_entry) ? op.rr_at_entry : null;
   return {
+    opId: op.id ?? null,
     side: op.side ?? null,
     entry: usablePrice(op.entry_price),
     initialStop: usablePrice(op.initial_stop),

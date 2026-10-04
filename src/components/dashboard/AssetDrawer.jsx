@@ -395,7 +395,7 @@ export default function AssetDrawer({
                           </div>
                           <span className="text-9px font-mono" style={{ color: cfg.color }}>{cfg.label}</span>
                         </div>
-                        {card.levels && (op.status === 'SIGNAL_CONFIRMED' || op.status === 'RUNNER_ACTIVE') ? (
+                        {card.levels && card.levels.opId !== null && card.levels.opId === op.id ? (
                           <p className="text-9px font-mono text-muted-foreground">Níveis no resumo, acima.</p>
                         ) : (
                         <div className="grid grid-cols-3 gap-1.5">
