@@ -23,7 +23,7 @@ import { explainDecision, explainOperationDecision } from './decisionExplanation
 import { usablePrice, stopPosture } from './priceProximity.js';
 import { assetHealthcheckReason } from './assetHealthcheck.js';
 
-export const SCORE_NOTE = 'Score técnico: concordância das regras atuais — não é probabilidade de acerto.';
+export const SCORE_NOTE = 'concordância das regras atuais — não é probabilidade de acerto.';
 
 export const PROBABILITY_NOT_CALIBRATED = Object.freeze({ available: false, reason: 'not_calibrated' });
 
@@ -251,6 +251,7 @@ function buildQuality({ asset, subject, signalTf, stateByTf, now }) {
     ageMin: nowMs !== null && lastScanMs !== null ? Math.max(0, Math.floor((nowMs - lastScanMs) / 60000)) : null,
     lastScanAt: asset?.last_scan_at ?? null,
     lastCandleTime: stateByTf.get(signalTf)?.last_candle_time ?? null,
+    lastClose: usablePrice(stateByTf.get(signalTf)?.last_close),
     source: {
       marketSource: origin?.market_source ?? null,
       dataExchange: origin?.data_exchange ?? null,

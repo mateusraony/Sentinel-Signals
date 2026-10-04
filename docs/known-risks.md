@@ -30124,3 +30124,25 @@ conta read-only (`trading-safety.md`), Coach/Reviewer (`roadmap.md:844`).
    verifica a POSIÇÃO (regex no `newSignals.push` + schema JSON com `alignment` fora
    de `context`). Lição geral: teste de contrato precisa afirmar o lugar do campo,
    não só o nome.
+
+### Addendum (2026-10-04) — Fase 1, passo 2: `AssetDrawer` N1 (estado, níveis, ação, frescor real)
+**Feito**: o painel lateral do ativo ganhou o bloco N1 do Decision Card, alimentado só
+por `buildDecisionCard` (props + presenter; sem `useQuery`, sem entidades, sem
+funding — travado por teste). O "LIVE" verde fixo do cabeçalho foi trocado pelo
+frescor real (`LIVE`/`STALE`/`ERRO`/`OFF`/`SEM LEITURA` + "scan há X min"); ativo sem
+`last_scan_at` nunca aparece como LIVE. O bloco mostra estado derivado, último
+fechamento (do `AssetState` do TF do sinal, com o horário do candle em BRT), níveis
+(stop com a postura, entrada, TP1, TP2, R:R — só com operação), ação e o score com a
+ressalva "não é probabilidade". Erro de carregamento de operações/sinais vira
+`QueryErrorState` e nunca "aguardando confirmação"/"sem sinal". Largura: tela cheia no
+celular e `sm:max-w-md` no desktop (antes `max-w-sm`). O presenter ganhou
+`quality.lastClose`. `Dashboard.jsx` passa `assetStates`/`statesUnavailable` (a query
+`['asset-states']` já existia — nenhum fetch novo).
+**Verificação visual** (Chromium headless, página descartável fora do commit, dados
+fictícios): sinal sem operação, operação ativa, ativo parado (STALE) e erro de
+operações no celular (390px) + sinal e operação no desktop (1280px).
+**Pendências conhecidas, por plano**: a lista "Operações" abaixo do N1 repete
+entrada/TP1/TP2 (item 154: "cada número uma vez só") — sai para o N3 colapsável no
+passo 4; N2 (tese, a favor, contra, invalidação, multi-TF) é o passo 3. Texto
+"Aviso recém-chegado…" para sinal sem motivo de rejeição vem de `rejectionCopy`
+(existente) e pode soar velho em sinal de 30 min — não alterado aqui.

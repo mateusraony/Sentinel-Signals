@@ -235,6 +235,14 @@ describe('qualidade dos dados — frescor real, nunca "LIVE" fixo', () => {
     expect(comFonte.quality.source).toEqual({ marketSource: 'spot', dataExchange: 'binance', executor: 'cron' });
   });
 
+  it('último fechamento vem do AssetState do TF do sinal; ausente ou inválido = null (nunca 0)', () => {
+    const ok = build({ signals: [signal()], assetStates: [st('4h', { last_close: 68200 })] });
+    expect(ok.quality.lastClose).toBe(68200);
+    expect(build({ signals: [signal()], assetStates: [st('4h', { last_close: undefined })] }).quality.lastClose).toBeNull();
+    expect(build({ signals: [signal()], assetStates: [st('4h', { last_close: 0 })] }).quality.lastClose).toBeNull();
+    expect(build({ signals: [signal()], assetStates: [st('1h', { last_close: 5 })] }).quality.lastClose).toBeNull();
+  });
+
   it('snapshot defasado: mostra evaluated_at em vez de fingir que é de agora', () => {
     const snap = { reason_code: 'regime_rejected', data_status: 'LIVE', evaluated_at: iso(6 * HOUR), facts: { adx: 18, adx_min: 22 } };
     const card = build({ signals: [signal({ last_rejection_reason: 'regime_rejected', decision_snapshot: snap })] });

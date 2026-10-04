@@ -164,6 +164,8 @@ export default function Dashboard() {
           asset={selectedAsset}
           signals={recentSignals}
           tradeOps={tradeOps}
+          assetStates={states}
+          statesUnavailable={statesUnavailable}
           tradeOpsUnavailable={tradeOpsUnavailable}
           signalsUnavailable={signalsUnavailable}
           onClose={() => setSelectedAsset(null)}
