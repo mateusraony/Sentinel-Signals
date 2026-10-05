@@ -30282,3 +30282,32 @@ componente: rótulo, pulso só em "muito próximo"). Nota: o comentário de `Pro
 comentário foi corrigido (comportamento intacto).
 **Provas**: os 4 testes de texto falham sem a mudança; os de `ProximityBar` são de caracterização
 (passam no código atual, travam o comportamento). Nenhum arquivo de motor tocado.
+
+### Análise (2026-10-05) — backtest `Teste_05102026` + operações reais (39) — nada a mudar no motor
+Pedido do usuário: ler `backtest-report` (12 meses, 7 símbolos, commit `5198ac2`, `configHash 8334c2d471fb771d`,
+config de produção sem override) e comparar com o Histórico real. **Baseline de monitoramento, sem hipótese
+nova — não registrado no ledger** (`docs/backtest-trial-registry.json`); só vira família se alguém propuser uma.
+**Fatos**
+- **Backtest**: 114 operações fechadas (+1 aberta no corte), win rate 42,1% (48 W / 58 L / 8 BE), expectância
+  líquida **−0,041R** (bruta −0,006R; custo médio 0,035R/op), IC95 [−0,186; +0,104] → **INCONCLUSIVO**
+  (`ci_straddles_zero`), profit factor 0,83, N efetivo ≈ 114/3 ≈ 38. Equity simulada (1% de risco, US$ 1.000):
+  −4,9%, drawdown máx 9,1%. Funil: 201 avaliações de regime RF, 74 barradas (69 `adx_weak`); cascata SMC: 0 operações
+  (conhecido, item 125). Só a cascata 4h/15m opera.
+- **Real (Histórico)**: 39 operações — 12 W / 2 BE / 25 L, win rate 30,8% (Wilson 95%: 18,6–46,4%). O win rate do
+  backtest (42,1%; Wilson 33,4–51,3%) está **dentro** do intervalo do real: sem evidência de divergência, mas 39 é
+  amostra pequena demais para concluir qualquer coisa. Total de operações (39) < 100 → o teto de 100 do Dashboard
+  (corrigido no #464) **ainda não podia estar ocorrendo**.
+- **Atribuição por indicador** (351 sinais brutos resolvidos, R bruto, IC ingênuo; N efetivo ≈ 117): **nenhum**
+  indicador separa vencedores de perdedores com significância — `volume_above_ma` concorda +0,109R (n=261) vs
+  discorda −0,120R (n=90); `ema` +0,138 (n=120) vs +0,004 (n=231); `macd` +0,049 (n=329) vs +0,065 (n=22);
+  `rsi` −0,006 (n=127) vs +0,082 (n=224); todos com IC95 cruzando zero. Sinais que passam o gate real (score ≥ 75):
+  +0,091R (n=197) vs reprovados −0,002R (n=154) — direção favorável ao gate, diferença 0,09R, inconclusiva.
+- **Cortes exploratórios** (~40 buckets: símbolo, mês, tier, ADX, Chop, score): o único com IC acima de zero foi
+  Chop 30–40 (+0,38R, n=64, IC [0,06; 0,70]) — com ~40 cortes espera-se ~2 falsos positivos a 5%, então é
+  **hipótese post-hoc**, não achado. ZROUSDT +0,35R (n=45, IC [−0,004; 0,71]); ETH −0,12R; os meses oscilam de
+  −0,40R a +0,46R (ruído). Saídas (TP2 em 32/351 a +2,25R; stops −0,23R de média por causa do trailing) são
+  condicionadas ao desfecho — descritivas, não preditivas.
+**Interpretação**: coerente com o histórico do projeto (edge ≈ 0 após custo, IC largo). **Não prova edge e não
+prova ausência de edge.** Gargalo = tamanho de amostra, não ajuste de parâmetro. Registro de que **nenhuma mudança
+de score/pesos/limiar é recomendada** com estes dados; qualquer hipótese (ex.: Chop 30–40, volume) exige
+pré-registro + família no ledger antes de novo run.
