@@ -30311,3 +30311,22 @@ nova — não registrado no ledger** (`docs/backtest-trial-registry.json`); só 
 prova ausência de edge.** Gargalo = tamanho de amostra, não ajuste de parâmetro. Registro de que **nenhuma mudança
 de score/pesos/limiar é recomendada** com estes dados; qualquer hipótese (ex.: Chop 30–40, volume) exige
 pré-registro + família no ledger antes de novo run.
+**Correção do método (2026-10-05, Codex no #467)**: a frase "nenhum indicador separa vencedores de perdedores" foi
+escrita comparando o IC de cada grupo com zero — **teste errado**: dois ICs cruzando zero não dizem se os grupos
+diferem entre si. Refeito com a **diferença entre grupos** (agree − disagree, erro-padrão de Welch; versão
+"dependência" multiplica o erro por √3, N efetivo ≈ N/3 — sinais vizinhos se sobrepõem; Bonferroni ×4):
+| indicador | n (agree/disagree) | diferença | IC95 ingênuo | IC95 c/ dependência | p ingênuo / c/ dep. / Bonf×4 (ingênuo) |
+|---|---|---|---|---|---|
+| `volume_above_ma` | 261 / 90 | **+0,229R** | [−0,051; +0,509] | [−0,256; +0,713] | 0,109 / 0,355 / 0,436 |
+| `ema` | 120 / 231 | +0,134R | [−0,137; +0,405] | [−0,335; +0,603] | 0,332 / 0,576 / 1,0 |
+| `rsi` | 127 / 224 | −0,088R | [−0,350; +0,175] | [−0,542; +0,367] | 0,512 / 0,705 / 1,0 |
+| `macd` | 329 / 22 | −0,016R | [−0,488; +0,457] | [−0,835; +0,803] | 0,948 / 0,970 / 1,0 |
+| passou o gate real | 197 / 154 | +0,094R | [−0,164; +0,351] | [−0,353; +0,540] | 0,476 / 0,681 / — |
+
+**Resultado**: a conclusão **se mantém**, agora com o teste certo — nenhuma diferença entre grupos é
+estatisticamente distinguível de zero, nem sem correção. `volume_above_ma` é o mais próximo (+0,229R, p=0,109 ingênuo)
+e **não** sobrevive à dependência nem a Bonferroni: segue **hipótese**, não achado (exigiria pré-registro + família
+no ledger + amostra maior antes de qualquer ação). Lição: para comparar grupos, testar a diferença, nunca ler
+"IC1 cruza zero e IC2 cruza zero" como "sem diferença".
+**Processo**: o #467 foi mesclado ~2,5 min após abrir, antes do review do Codex (que chega em ~3 min neste repo);
+daqui em diante espero a revisão do Codex (ou 4 min) antes de mesclar, mesmo em PR só de docs.
