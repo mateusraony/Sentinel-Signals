@@ -30311,22 +30311,29 @@ nova — não registrado no ledger** (`docs/backtest-trial-registry.json`); só 
 prova ausência de edge.** Gargalo = tamanho de amostra, não ajuste de parâmetro. Registro de que **nenhuma mudança
 de score/pesos/limiar é recomendada** com estes dados; qualquer hipótese (ex.: Chop 30–40, volume) exige
 pré-registro + família no ledger antes de novo run.
-**Correção do método (2026-10-05, Codex no #467)**: a frase "nenhum indicador separa vencedores de perdedores" foi
-escrita comparando o IC de cada grupo com zero — **teste errado**: dois ICs cruzando zero não dizem se os grupos
-diferem entre si. Refeito com a **diferença entre grupos** (agree − disagree, erro-padrão de Welch; versão
-"dependência" multiplica o erro por √3, N efetivo ≈ N/3 — sinais vizinhos se sobrepõem; Bonferroni ×4):
-| indicador | n (agree/disagree) | diferença | IC95 ingênuo | IC95 c/ dependência | p ingênuo / c/ dep. / Bonf×4 (ingênuo) |
+**Correção do método (2026-10-05, Codex no #467 e #468)**: a frase "nenhum indicador separa vencedores de perdedores"
+foi escrita comparando o IC de cada grupo com zero — **teste errado**: dois ICs cruzando zero não dizem se os grupos
+diferem entre si. Refeito com a **diferença entre grupos** (agree − disagree) por regressão de R sobre o indicador, com
+erro-padrão **robusto a agrupamento medido nos próprios 351 registros** (CR1; clusters = semana ISO, G=50, e
+símbolo×mês, G=84 — captura sobreposição temporal e correlação entre ativos). Uma 1ª versão deste addendum multiplicava o
+erro por √3 (N efetivo ≈ N/3, medido em **operações reais**, item 110) — o Codex apontou, com razão, que isso não vale
+para os sinais-fantasma de `indicatorAttribution` (sem a restrição de 1 operação ativa); **descartado**. O efeito de
+desenho medido aqui (variância robusta ÷ variância ingênua) ficou entre **0,55 e 1,23** nas diferenças (média geral: 1,69
+por semana, 0,76 por símbolo×mês) — ou seja, **perto de 1**, não 3.
+| indicador | n (agree/disagree) | diferença | IC95 (cluster semana) | p semana / p símbolo×mês | deff semana / símbolo×mês |
 |---|---|---|---|---|---|
-| `volume_above_ma` | 261 / 90 | **+0,229R** | [−0,051; +0,509] | [−0,256; +0,713] | 0,109 / 0,355 / 0,436 |
-| `ema` | 120 / 231 | +0,134R | [−0,137; +0,405] | [−0,335; +0,603] | 0,332 / 0,576 / 1,0 |
-| `rsi` | 127 / 224 | −0,088R | [−0,350; +0,175] | [−0,542; +0,367] | 0,512 / 0,705 / 1,0 |
-| `macd` | 329 / 22 | −0,016R | [−0,488; +0,457] | [−0,835; +0,803] | 0,948 / 0,970 / 1,0 |
-| passou o gate real | 197 / 154 | +0,094R | [−0,164; +0,351] | [−0,353; +0,540] | 0,476 / 0,681 / — |
-
-**Resultado**: a conclusão **se mantém**, agora com o teste certo — nenhuma diferença entre grupos é
-estatisticamente distinguível de zero, nem sem correção. `volume_above_ma` é o mais próximo (+0,229R, p=0,109 ingênuo)
-e **não** sobrevive à dependência nem a Bonferroni: segue **hipótese**, não achado (exigiria pré-registro + família
-no ledger + amostra maior antes de qualquer ação). Lição: para comparar grupos, testar a diferença, nunca ler
-"IC1 cruza zero e IC2 cruza zero" como "sem diferença".
+| `volume_above_ma` | 261 / 90 | **+0,229R** | [−0,055; +0,512] | 0,113 / 0,096 | 0,94 / 0,85 |
+| `ema` | 120 / 231 | +0,134R | [−0,136; +0,404] | 0,331 / 0,380 | 1,01 / 1,23 |
+| `rsi` | 127 / 224 | −0,088R | [−0,336; +0,160] | 0,488 / 0,478 | 0,87 / 0,83 |
+| `macd` | 329 / 22 | −0,016R | [−0,536; +0,504] | 0,953 / 0,937 | 0,97 / 0,55 |
+| passou o gate real | 197 / 154 | +0,094R | [−0,179; +0,367] | 0,501 / 0,485 | 1,13 / 1,04 |
+**Resultado**: a conclusão **se mantém**, agora com o teste certo e a dependência medida — nenhuma diferença é
+estatisticamente distinguível de zero. `volume_above_ma` é o mais próximo (+0,229R, p≈0,10–0,11) e, com Bonferroni ×4
+(p≈0,38–0,45), **não** é achado: segue **hipótese** (exigiria pré-registro + família no ledger + amostra maior antes
+de qualquer ação). **Limites**: o erro robusto com G=50–84 clusters é aproximado (usei normal, não t com G−1 gl, o que
+afrouxa um pouco o p); posições-fantasma duram até 96 barras de 4h (≈16 dias), então a sobreposição pode ultrapassar
+os clusters escolhidos — direção do viés: subestimar o erro (conclusão "sem diferença" fica ainda mais segura, não
+menos). Lição: para comparar grupos, testar a **diferença**, nunca ler "IC1 cruza zero e IC2 cruza zero" como "sem
+diferença"; e fator de dependência só vale para a série em que foi medido.
 **Processo**: o #467 foi mesclado ~2,5 min após abrir, antes do review do Codex (que chega em ~3 min neste repo);
 daqui em diante espero a revisão do Codex (ou 4 min) antes de mesclar, mesmo em PR só de docs.
