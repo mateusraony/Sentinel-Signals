@@ -30346,13 +30346,15 @@ do run; o histórico do git é a prova de ordem. **Nada aqui muda motor, flag, s
 - **H1 (volume)**: o R médio é MAIOR nos sinais com `volume_above_ma` verdadeiro (diferença > 0).
 - **H2 (chop)**: o R CAI conforme `chop_value` sobe (inclinação < 0, teste de tendência único — não o "bloco 30–40", que foi
   escolhido a dedo entre ~40 cortes).
-Referência (dados de **descoberta**, só para calibrar expectativa — **não** é confirmação): com o MESMO método fixo,
+Referência (dados de **descoberta**, rodada com `--unofficial`, só para calibrar expectativa — **não** é confirmação): com o MESMO método fixo,
 H1 = +0,229R, IC95 semana [−0,062; +0,519] / símbolo×mês [−0,045; +0,502] → **não passa nem na descoberta**; H2 = −0,020R por
 ponto de Chop, IC95 semana [−0,043; +0,002] / símbolo×mês [−0,036; −0,004] → **divergente nem na descoberta**.
 
 **Dado:** `backtest.yml` com os 7 ativos padrão (preferência permanente do usuário), **Início 2024-10-05, Fim 2025-10-05**, todo o
-resto no padrão (Spot, custos padrão, sem `pine_config`), commit atual de `main`; rótulo `PreReg_VolChop_OOT_20241005`. Sanidade:
-`reproducibility.configHash` deve ser `8334c2d471fb771d` (o mesmo do run de descoberta) — se diferir, o run não vale como réplica.
+resto no padrão (Spot, custos padrão, sem `pine_config`), commit atual de `main`; rótulo `PreReg_VolChop_OOT_20241005`. O script **rejeita**
+(`RELATORIO_INVALIDO`, nenhuma hipótese calculada) qualquer relatório cujos `range`, `trialLabel`, ativos (`trialArgs`) e
+`reproducibility.configHash` (`8334c2d471fb771d`, o mesmo do run de descoberta) não confiram com o pré-registro (achado do Codex no #469);
+`--unofficial` existe só para referência e marca o resultado `NÃO OFICIAL`, nunca vale como confirmação.
 **Divulgação de contaminação**: (a) esta janela **não** foi usada para olhar volume/chop, mas runs anteriores do projeto cobriram
 janelas que se sobrepõem a ela (ex.: `2024-07-27→2025-07-27`, `2024-08-10→2025-08-10`) com perguntas **agregadas**; não consegui
 confirmar que a atribuição por indicador nunca rodou lá. (b) O run de descoberta (2025-10-05→2026-10-05) se sobrepõe ~10 meses ao

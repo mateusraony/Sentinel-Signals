@@ -7,6 +7,9 @@ import {
   evaluateHypothesis,
   verdictFrom,
   analyzeReport,
+  validateReportMetadata,
+  formatText,
+  PREREG_RUN,
 } from './analyze-preregistered-volume-chop.mjs';
 import { mulberry32 } from './backtest-correlation-check.mjs';
 
@@ -151,6 +154,66 @@ describe('evaluateHypothesis', () => {
   });
 });
 
+// Metadados de um relatório que É o run pré-registrado.
+function validMeta(over = {}) {
+  return {
+    range: { from: '2024-10-05T00:00:00.000Z', to: '2025-10-05T00:00:00.000Z' },
+    trialLabel: PREREG_RUN.trialLabel,
+    trialArgs: `--symbols ${PREREG_RUN.symbols.join(',')} --from 2024-10-05T00:00:00Z --to 2025-10-05T00:00:00Z --out backtest-report.json --trial-label ${PREREG_RUN.trialLabel}`,
+    reproducibility: { configHash: PREREG_RUN.configHash, commitSha: 'abc' },
+    ...over,
+  };
+}
+
+describe('validateReportMetadata / relatório fora do pré-registro (Codex, PR #469)', () => {
+  const strongRecords = (() => {
+    const noise = makeNoise(11);
+    const rand = mulberry32(12);
+    return Array.from({ length: 600 }, (_, i) => {
+      const vol = rand() < 0.5;
+      return {
+        snapshot: { symbol: `S${i % 7}`, candle_time: `2025-${String(1 + (i % 12)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}T08:00:00Z`, volume_above_ma: vol, chop_value: 30 + rand() * 30 },
+        outcome: { rResult: (vol ? 0.9 : 0) + 0.5 * noise() },
+      };
+    });
+  })();
+  const report = (meta) => ({ ...meta, indicatorAttribution: { records: strongRecords } });
+
+  it('metadados corretos → sem problemas e análise OFICIAL', () => {
+    expect(validateReportMetadata(validMeta())).toEqual([]);
+    expect(analyzeReport(report(validMeta())).official).toBe(true);
+  });
+
+  it.each([
+    ['janela diferente (from)', { range: { from: '2025-10-05T00:00:00.000Z', to: '2025-10-05T00:00:00.000Z' } }],
+    ['janela diferente (to)', { range: { from: '2024-10-05T00:00:00.000Z', to: '2026-10-05T00:00:00.000Z' } }],
+    ['rótulo diferente', { trialLabel: 'Teste_05102026' }],
+    ['configHash diferente', { reproducibility: { configHash: 'deadbeefdeadbeef' } }],
+    ['ativos diferentes', { trialArgs: '--symbols BTCUSDT,ETHUSDT --from 2024-10-05T00:00:00Z' }],
+    ['sem trialArgs', { trialArgs: undefined }],
+  ])('REJEITA relatório com %s — nenhuma hipótese é calculada', (_nome, over) => {
+    const res = analyzeReport(report(validMeta(over)));
+    expect(res.status).toBe('RELATORIO_INVALIDO');
+    expect(res.official).toBe(false);
+    expect(res.problems.length).toBeGreaterThan(0);
+    expect(res.H1_volume).toBeUndefined(); // nem calculou
+    expect(formatText(res)).toMatch(/REJEITADO/);
+  });
+
+  it('relatório sem NENHUM metadado (como o de descoberta sem label) é rejeitado, mesmo com efeito enorme', () => {
+    const res = analyzeReport({ indicatorAttribution: { records: strongRecords } });
+    expect(res.status).toBe('RELATORIO_INVALIDO');
+  });
+
+  it('modo não oficial (--unofficial) analisa mas NUNCA se apresenta como oficial', () => {
+    const res = analyzeReport(report(validMeta({ trialLabel: 'outro' })), { enforceMetadata: false });
+    expect(res.official).toBe(false);
+    expect(res.status).toBe('NAO_OFICIAL_METADADOS_NAO_CONFEREM');
+    expect(res.H1_volume.verdict).toBe('CONFIRMADA'); // calcula…
+    expect(formatText(res)).toMatch(/NÃO OFICIAL/); // …mas marcado no topo
+  });
+});
+
 describe('analyzeReport (ponta a ponta)', () => {
   it('monta H1 e H2 a partir de um relatório', () => {
     const noise = makeNoise(3);
@@ -171,7 +234,9 @@ describe('analyzeReport (ponta a ponta)', () => {
         outcome: { rResult: (vol ? 0.7 : 0) - 0.05 * (chop - 45) + 0.8 * noise() },
       });
     }
-    const result = analyzeReport({ indicatorAttribution: { records } });
+    const result = analyzeReport({ ...validMeta(), indicatorAttribution: { records } });
+    expect(result.official).toBe(true);
+    expect(result.status).toBe('OFICIAL');
     expect(result.usedRecords).toBe(600);
     expect(result.droppedRecords).toBe(0);
     expect(result.H1_volume.verdict).toBe('CONFIRMADA');

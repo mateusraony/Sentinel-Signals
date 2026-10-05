@@ -14,10 +14,22 @@
 // α=0,025 por hipótese, já com Bonferroni m=2), nas DUAS partições de cluster
 // (semana ISO e símbolo×mês), com G ≥ 20 e n ≥ 300. Nada além disso conta.
 //
-// Uso:  node scripts/analyze-preregistered-volume-chop.mjs <report.json> [--json]
+// Uso:  node scripts/analyze-preregistered-volume-chop.mjs <report.json> [--json] [--unofficial]
+//   (--unofficial só para referência: analisa mesmo com metadados divergentes e marca NÃO OFICIAL)
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { studentTCritical95 } from './backtest-correlation-check.mjs';
+
+// O ÚNICO run que vale como teste: qualquer outro relatório (descoberta, outras datas/ativos/config)
+// é rejeitado ANTES de qualquer cálculo (Codex, PR #469) — sem isso o script poderia imprimir um
+// "CONFIRMADA" de aparência oficial sobre dado que nunca foi o pré-registrado.
+export const PREREG_RUN = Object.freeze({
+  from: '2024-10-05',
+  to: '2025-10-05',
+  trialLabel: 'PreReg_VolChop_OOT_20241005',
+  configHash: '8334c2d471fb771d',
+  symbols: Object.freeze(['BTCUSDT', 'ETHUSDT', 'FETUSDT', 'PENDLEUSDT', 'ZROUSDT', 'DYDXUSDT', 'PAXGUSDT']),
+});
 
 export const PREREG = Object.freeze({
   minRecords: 300,
@@ -120,9 +132,41 @@ export function verdictFrom(reliable, confirmedFlags) {
   return 'NAO_CONFIRMADA';
 }
 
-export function analyzeReport(report) {
+// Símbolos do run, lidos de `trialArgs` ("--symbols A,B,C --from ...").
+function symbolsFromTrialArgs(trialArgs) {
+  const m = /--symbols\s+(\S+)/.exec(String(trialArgs ?? ''));
+  return m ? m[1].split(',').map((x) => x.trim()).filter(Boolean) : null;
+}
+
+// Devolve a lista de divergências entre o relatório e o run pré-registrado (vazia = confere).
+export function validateReportMetadata(report) {
+  const problems = [];
+  const day = (v) => (typeof v === 'string' ? v.slice(0, 10) : null);
+  if (day(report?.range?.from) !== PREREG_RUN.from) problems.push(`range.from=${report?.range?.from ?? 'ausente'} (esperado ${PREREG_RUN.from})`);
+  if (day(report?.range?.to) !== PREREG_RUN.to) problems.push(`range.to=${report?.range?.to ?? 'ausente'} (esperado ${PREREG_RUN.to})`);
+  if (report?.trialLabel !== PREREG_RUN.trialLabel) problems.push(`trialLabel=${report?.trialLabel ?? 'ausente'} (esperado ${PREREG_RUN.trialLabel})`);
+  if (report?.reproducibility?.configHash !== PREREG_RUN.configHash) problems.push(`configHash=${report?.reproducibility?.configHash ?? 'ausente'} (esperado ${PREREG_RUN.configHash})`);
+  const symbols = symbolsFromTrialArgs(report?.trialArgs);
+  if (!symbols) problems.push('símbolos não encontrados em trialArgs');
+  else if (symbols.length !== PREREG_RUN.symbols.length || !PREREG_RUN.symbols.every((x) => symbols.includes(x))) {
+    problems.push(`símbolos=${symbols.join(',')} (esperado ${PREREG_RUN.symbols.join(',')})`);
+  }
+  return problems;
+}
+
+// `enforceMetadata` (padrão true): relatório que não é o do pré-registro NÃO é analisado
+// (status RELATORIO_INVALIDO). `false` só para desenvolvimento/referência e marca o resultado
+// como NÃO OFICIAL — nunca vale como confirmação.
+export function analyzeReport(report, { enforceMetadata = true } = {}) {
+  const problems = validateReportMetadata(report);
+  if (enforceMetadata && problems.length > 0) {
+    return { official: false, status: 'RELATORIO_INVALIDO', problems };
+  }
   const { records, dropped, total } = extractRecords(report);
   return {
+    official: problems.length === 0,
+    status: problems.length === 0 ? 'OFICIAL' : 'NAO_OFICIAL_METADADOS_NAO_CONFEREM',
+    problems,
     totalRecords: total,
     usedRecords: records.length,
     droppedRecords: dropped,
@@ -134,7 +178,16 @@ export function analyzeReport(report) {
 const fmt = (v, d = 3) => (v === null || v === undefined ? '—' : (v >= 0 ? '+' : '') + v.toFixed(d));
 
 export function formatText(result) {
+  if (result.status === 'RELATORIO_INVALIDO') {
+    return ['RELATÓRIO REJEITADO — não é o run do pré-registro; nenhuma hipótese foi calculada.',
+      ...result.problems.map((p) => `  - ${p}`)].join('\n');
+  }
   const lines = [];
+  if (!result.official) {
+    lines.push('*** NÃO OFICIAL — os metadados do relatório NÃO conferem com o pré-registro; vale só como referência, nunca como confirmação ***');
+    for (const p of result.problems) lines.push(`  - ${p}`);
+    lines.push('');
+  }
   lines.push('ANÁLISE PRÉ-REGISTRADA — H1 (volume) e H2 (chop)  [veredito primeiro, números depois]');
   lines.push(`Registros: ${result.usedRecords} usados de ${result.totalRecords} (${result.droppedRecords} descartados por dado ausente)`);
   lines.push('');
@@ -158,6 +211,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.error('Uso: node scripts/analyze-preregistered-volume-chop.mjs <report.json> [--json]');
     process.exit(2);
   }
-  const result = analyzeReport(JSON.parse(fs.readFileSync(file, 'utf8')));
+  const result = analyzeReport(JSON.parse(fs.readFileSync(file, 'utf8')), { enforceMetadata: !args.includes('--unofficial') });
   console.log(args.includes('--json') ? JSON.stringify(result, null, 2) : formatText(result));
 }
