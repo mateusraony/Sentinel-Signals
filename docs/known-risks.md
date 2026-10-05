@@ -30382,3 +30382,26 @@ observado na descoberta, o poder é ≈ 30% (H1) e ≈ 40% (H2); se for metade (
 (`backtest-trial-registry.mjs`, família `attribution-volume-chop-oot`); (3) `CONFIRMADA` **não** muda produção: abre-se uma proposta
 separada de A/B CONTROLE×CANDIDATO de motor, com novo pré-registro e `sentinel-council-review`; qualquer outro veredito fecha a hipótese
 nesta janela e **não se repete** neste período.
+
+### Resultado do pré-registro H1/H2 (2026-10-05) — **NÃO CONFIRMADAS; hipóteses encerradas nesta janela**
+Run `PreReg_VolChop_OOT_20241005` (7 ativos padrão, 2024-10-05→2025-10-05, `commitSha 320123e` — **posterior** à mesclagem do
+pré-registro, #469 —, `configHash 8334c2d471fb771d` idêntico ao da descoberta). O script fixo
+(`scripts/analyze-preregistered-volume-chop.mjs`) aceitou os metadados (`OFICIAL`) e usou 344 de 349 registros (5 sem dado, descartados e contados).
+| hipótese | veredito | inclinação | IC95 semana (G=51) | IC95 símbolo×mês (G=83) |
+|---|---|---|---|---|
+| H1 volume (R maior com volume acima da média) | **NAO_CONFIRMADA** | −0,045R (sentido contrário ao previsto) | [−0,331; +0,241] | [−0,370; +0,280] |
+| H2 chop (R cai com o Chop) | **NAO_CONFIRMADA** | −0,0035R por ponto (descoberta: −0,020) | [−0,024; +0,017] | [−0,022; +0,015] |
+**Leitura**: o "+0,23R" do volume e a queda do R com o Chop **não se repetiram** em dado novo — o efeito de H2 encolheu ~6× e o de H1
+inverteu de sinal; é o padrão de achado por acaso previsto no pré-registro (poder 12–40%) e coerente com as medições antigas (itens
+69/110/111: volume plano/invertido). **Decisão pré-registrada aplicada: hipóteses encerradas nesta janela, nenhuma ação em produção,
+sem repetição neste período.** Nada de motor, score, pesos ou flags foi tocado.
+**Contexto descritivo do run novo (fora do veredito)**: 123 operações, win rate 45,5%, expectância líquida **+0,078R** (bruta +0,117R, custo
+0,039R/op), IC95 [−0,071; +0,227] → **INCONCLUSIVO**, profit factor 1,07; carteira simulada (1% de risco, US$ 1.000) +9,6%, drawdown
+máx 8,7%. O run de descoberta (2025-10-05→2026-10-05) segue reportado **à parte**: 114 operações, −0,041R líquido, IC95 [−0,186; +0,104], também
+inconclusivo. **Os dois períodos NÃO são somados nem comparados com inferência** — o pré-registro proíbe somar a descoberta ao teste
+(correção do Codex no #470, que apontou que uma versão anterior deste parágrafo fazia exatamente isso).
+**Observação NÃO pré-registrada (não conta como teste, não vira hipótese)**: neste run RSI/EMA/MACD ficaram "a favor" (agree > disagree) e o
+volume não (+0,140R vs +0,185R); no run de descoberta o RSI estava invertido — mais uma troca de sinal do mesmo indicador, igual ao padrão
+"ruído recorrente" do item 111. Trial registrado no ledger (`docs/backtest-trial-registry.json`, família `attribution-volume-chop-oot`).
+**Lição**: o processo funcionou como desenhado — hipótese post-hoc → pré-registro com regra fixa, dado novo e script com teste → veredito
+sem espaço para reinterpretar. O custo foi ~2 cliques do usuário; o valor foi evitar mexer no score por causa de um corte que era ruído.
