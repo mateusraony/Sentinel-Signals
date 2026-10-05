@@ -30397,7 +30397,9 @@ inverteu de sinal; é o padrão de achado por acaso previsto no pré-registro (p
 sem repetição neste período.** Nada de motor, score, pesos ou flags foi tocado.
 **Contexto descritivo do run novo (fora do veredito)**: 123 operações, win rate 45,5%, expectância líquida **+0,078R** (bruta +0,117R, custo
 0,039R/op), IC95 [−0,071; +0,227] → **INCONCLUSIVO**, profit factor 1,07; carteira simulada (1% de risco, US$ 1.000) +9,6%, drawdown
-máx 8,7%. Somando ao run de descoberta (114 operações, −0,041R) dá ≈ **+0,02R em 237 operações**, inconclusivo: edge ≈ 0 em 2 anos, sem ajuste a fazer.
+máx 8,7%. O run de descoberta (2025-10-05→2026-10-05) segue reportado **à parte**: 114 operações, −0,041R líquido, IC95 [−0,186; +0,104], também
+inconclusivo. **Os dois períodos NÃO são somados nem comparados com inferência** — o pré-registro proíbe somar a descoberta ao teste
+(correção do Codex no #470, que apontou que uma versão anterior deste parágrafo fazia exatamente isso).
 **Observação NÃO pré-registrada (não conta como teste, não vira hipótese)**: neste run RSI/EMA/MACD ficaram "a favor" (agree > disagree) e o
 volume não (+0,140R vs +0,185R); no run de descoberta o RSI estava invertido — mais uma troca de sinal do mesmo indicador, igual ao padrão
 "ruído recorrente" do item 111. Trial registrado no ledger (`docs/backtest-trial-registry.json`, família `attribution-volume-chop-oot`).
