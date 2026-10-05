@@ -30337,3 +30337,46 @@ menos). Lição: para comparar grupos, testar a **diferença**, nunca ler "IC1 c
 diferença"; e fator de dependência só vale para a série em que foi medido.
 **Processo**: o #467 foi mesclado ~2,5 min após abrir, antes do review do Codex (que chega em ~3 min neste repo);
 daqui em diante espero a revisão do Codex (ou 4 min) antes de mesclar, mesmo em PR só de docs.
+
+### Pré-registro (2026-10-05) — H1 (volume) e H2 (chop), teste out-of-time — ANTES de qualquer run
+Aprovado pelo usuário. Este addendum, `scripts/analyze-preregistered-volume-chop.mjs` e seu teste são mesclados **antes**
+do run; o histórico do git é a prova de ordem. **Nada aqui muda motor, flag, score ou peso.**
+
+**Hipóteses (nasceram de olhar `Teste_05102026`, por isso exigem dado novo):**
+- **H1 (volume)**: o R médio é MAIOR nos sinais com `volume_above_ma` verdadeiro (diferença > 0).
+- **H2 (chop)**: o R CAI conforme `chop_value` sobe (inclinação < 0, teste de tendência único — não o "bloco 30–40", que foi
+  escolhido a dedo entre ~40 cortes).
+Referência (dados de **descoberta**, só para calibrar expectativa — **não** é confirmação): com o MESMO método fixo,
+H1 = +0,229R, IC95 semana [−0,062; +0,519] / símbolo×mês [−0,045; +0,502] → **não passa nem na descoberta**; H2 = −0,020R por
+ponto de Chop, IC95 semana [−0,043; +0,002] / símbolo×mês [−0,036; −0,004] → **divergente nem na descoberta**.
+
+**Dado:** `backtest.yml` com os 7 ativos padrão (preferência permanente do usuário), **Início 2024-10-05, Fim 2025-10-05**, todo o
+resto no padrão (Spot, custos padrão, sem `pine_config`), commit atual de `main`; rótulo `PreReg_VolChop_OOT_20241005`. Sanidade:
+`reproducibility.configHash` deve ser `8334c2d471fb771d` (o mesmo do run de descoberta) — se diferir, o run não vale como réplica.
+**Divulgação de contaminação**: (a) esta janela **não** foi usada para olhar volume/chop, mas runs anteriores do projeto cobriram
+janelas que se sobrepõem a ela (ex.: `2024-07-27→2025-07-27`, `2024-08-10→2025-08-10`) com perguntas **agregadas**; não consegui
+confirmar que a atribuição por indicador nunca rodou lá. (b) O run de descoberta (2025-10-05→2026-10-05) se sobrepõe ~10 meses ao
+run 1 de 2026-08-09 (2025-08-09→2026-08-09, item 69), cujo padrão era o mesmo (volume +0,118R vs −0,017R; EMA +0,194R vs +0,024R;
+RSI invertido) — **não é uma réplica independente, é a mesma amostra quase inteira.**
+
+**Evidência anterior que reduz a probabilidade a priori de H1 (registrada para não ser esquecida)**: no item 110/111 a mineração dos
+4 componentes sobre 1.893 sinais brutos (20 símbolos) e 42 símbolos novos achou "RSI único que se comporta como desenhado; os outros 3
+(MACD/EMA/**Volume**) planos ou invertidos" e o RSI mudou de veredito a cada medição. Ou seja, o efeito de volume já teve mais de uma
+chance de aparecer em amostras maiores e **não apareceu de forma estável** — o "+0,229R" atual é compatível com ruído. A família real
+de comparações é bem maior que as 4 do relatório (4 indicadores × todas as medições anteriores).
+
+**Análise (fixa — `scripts/analyze-preregistered-volume-chop.mjs`):** regressão de R sobre o regressor (volume 0/1; chop contínuo) com
+erro-padrão robusto a agrupamento (CR1) e t de Student com G−1 gl, em **duas partições** (semana ISO; símbolo×mês). Critério por
+hipótese: IC95 bicaudal exclui zero **na direção prevista** (= unilateral α=0,025, Bonferroni m=2 já embutido) **nas duas partições**,
+com **G ≥ 20** e **n ≥ 300** registros. Veredito: `CONFIRMADA` (as duas partições passam), `DIVERGENTE_NAO_CONFIRMADA` (só uma passa — **não
+conta**), `NAO_CONFIRMADA`, `INCONCLUSIVA_AMOSTRA` (n<300 ou G<20). Nada além disso conta como achado.
+**Proibido depois de ver o relatório novo** (invalida o pré-registro): trocar janela, ativos, partições, limiares ou direção; "rodar de novo
+com outros ativos até dar"; somar a descoberta ao teste; olhar outro corte e chamá-lo de confirmação (hipótese nova = família nova, novo
+pré-registro). Os 5 registros sem dado ausente são descartados e contados, nunca viram 0.
+**Poder (aproximado, honesto):** com ~350 sinais o erro-padrão de H1 fica ~0,15R e o de H2 ~0,011R/ponto; se o efeito verdadeiro for o
+observado na descoberta, o poder é ≈ 30% (H1) e ≈ 40% (H2); se for metade (o esperado, por seleção do melhor corte), ≈ 12% e ≈ 14%.
+**O resultado mais provável é `NAO_CONFIRMADA`/inconclusivo — isso encerra a hipótese, não é fracasso.**
+**Depois do run:** (1) eu rodo o script no relatório e reporto o veredito, qualquer que seja; (2) registro o trial no ledger
+(`backtest-trial-registry.mjs`, família `attribution-volume-chop-oot`); (3) `CONFIRMADA` **não** muda produção: abre-se uma proposta
+separada de A/B CONTROLE×CANDIDATO de motor, com novo pré-registro e `sentinel-council-review`; qualquer outro veredito fecha a hipótese
+nesta janela e **não se repete** neste período.
