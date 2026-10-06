@@ -30468,3 +30468,43 @@ do full-scan, que um passe lento pode segurar). Só avaliar depois que o context
 acima estiver agregado em alguns incidentes reais. **Para conferir**: o próximo
 Job Summary do `health-audit.yml` (21:07 BRT) deve trazer a linha "estado do
 navegador" e, se só o navegador falhou nas últimas 24h, nenhum aviso no Telegram.
+
+### Addendum (2026-10-06, tarde) — auditoria manual confirma e a causa vira correção
+
+**Fato (run 44 do `health-audit.yml`, já com o código do PR #471)**: o grupo
+"Failed to fetch" saiu como "só navegador, o cron não falhou nas últimas 24h:
+listado, mas não gera aviso" e o relatório fechou em "✅ Nada a reportar" — a
+correção do item 257 funcionou. A linha nova "estado do navegador nos erros"
+deu **aba oculta 7×, sem dado 5×, offline 0×**: todos os erros recentes (os
+únicos com dado) aconteceram com a aba do painel escondida; os 5 "sem dado" são
+os registros antigos, anteriores ao diagnóstico — bate com a inferência de que o
+grupo de 12 era ~7 novos + antigos saindo da janela.
+
+**Ressalva (hipótese × fato)**: `visibility:'hidden'` também vale para tela
+bloqueada/aparelho dormindo, e 7 registros (dedup de 1/dia por ativo) são poucos
+incidentes. O fato é "nunca offline, sempre escondida"; "aba em segundo plano
+congelada pelo navegador" é a explicação mais provável, não provada em relação a
+suspensão do aparelho.
+
+**Feito (a "decisão adiada" do item 257 passou a decidida, com dado e aprovação
+do usuário)**: `useAutoScan.js` não roda o **full scan** (a cada 60min) enquanto
+`document.visibilityState === 'hidden'`. Ao voltar a ficar visível,
+`lastFullScan` não avançou e o próximo tick (≤2min) roda o scan atrasado. O
+**price-check** (stop/TP por preço, caminho de segurança) NÃO é pulado, nem o
+scan manual do TopBar (clique do usuário = aba visível). Scanner, locks, retry,
+cron e auditoria intocados. Testes novos em `useAutoScan.test.jsx` (2; falham
+sem o guard).
+
+**Resíduo aceito (Codex review, PR #472, P2 — procede em parte)**: a visibilidade
+é lida só no início do tick. Um scan que COMEÇA com a aba visível e é escondido
+no meio continua até o fim (sequencial por ativo). Caminho real, mas estreito:
+um full scan dura dezenas de segundos e o navegador só throttla/congela uma aba
+depois de minutos escondida — os erros medidos vieram de ticks disparados por
+timer numa aba JÁ escondida há tempo, que é o que o guard fecha. Abortar no meio
+exigiria mexer no loop de `scanner.js` (código compartilhado com o cron) ou
+introduzir cancelamento, custo desproporcional ao ganho. Se a auditoria seguir
+mostrando "aba oculta" com o guard no ar, esse é o próximo suspeito.
+
+**Para conferir**: nas próximas auditorias a linha "estado do navegador" não deve
+acumular "aba oculta" novos; se acumular com `visível`/`offline`, a hipótese está
+errada e a investigação reabre.

@@ -49,7 +49,17 @@ export function useAutoScan({ queryClient, onActivity } = {}) {
       // ficasse aberta). Removido o `return`: o full scan (quando devido)
       // sempre cai no price-check logo abaixo, na mesma passada — os dois
       // deixam de ser mutuamente exclusivos por tick.
-      if (now - lastFullScan.current >= FULL_SCAN_INTERVAL) {
+      //
+      // Aba ESCONDIDA não faz full scan (item 257): na auditoria de 06/10/2026
+      // todos os "Failed to fetch" recentes do navegador vieram com
+      // `visibility: 'hidden'` (7 de 7 com dado, 0 offline) — o navegador
+      // throttla/congela a aba em segundo plano e o scan sequencial falha em
+      // rajada, marcando ativos como "erro" e segurando o lock de 10min. O cron
+      // cobre o scan; ao voltar a ficar visível, `lastFullScan` não avançou e o
+      // próximo tick (≤2min) roda o scan atrasado. O price-check abaixo
+      // (stop/TP por preço) NÃO é pulado — é o caminho de segurança.
+      const tabHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      if (!tabHidden && now - lastFullScan.current >= FULL_SCAN_INTERVAL) {
         try {
           const { results } = await scanAllAssets();
           const failed = (results || []).filter((r) => !r.success);
