@@ -30405,3 +30405,60 @@ volume não (+0,140R vs +0,185R); no run de descoberta o RSI estava invertido �
 "ruído recorrente" do item 111. Trial registrado no ledger (`docs/backtest-trial-registry.json`, família `attribution-volume-chop-oot`).
 **Lição**: o processo funcionou como desenhado — hipótese post-hoc → pré-registro com regra fixa, dado novo e script com teste → veredito
 sem espaço para reinterpretar. O custo foi ~2 cliques do usuário; o valor foi evitar mexer no score por causa de um corte que era ruído.
+
+## 257. Auditoria de saúde: "Failed to fetch" continuava avisando — a supressão "só navegador" olhava logs velhos demais (2026-10-06)
+
+**Contexto**: as 3 auditorias de 06/10 (00:07, 06:11 e 11:28 UTC) passaram, mas as
+três mandaram o mesmo aviso ("erro em 8–9 ativos: Failed to fetch — origem:
+browser · NETWORK"). O item 255 já tinha decidido que erro só do navegador não
+vira aviso. Usuário pediu investigação a fundo.
+
+**Fato (evidência)**:
+- Cron saudável: `scan.yml` com 30 execuções seguidas `success` a cada 5 min
+  (runs 24350–24379, 13:00–15:25 UTC de 06/10); 39 operações lidas, 0 ativas,
+  nenhuma presa. O erro **não** é do relógio de trading.
+- Em todas as 3 auditorias a coluna Origem diz só `browser · NETWORK`.
+- Causa de o aviso persistir: `soNavegador` (`scripts/healthAuditFormat.mjs`)
+  exige `details.dedup_scope:'executor'` em **todos** os registros do grupo, e
+  `agrupar` olhava a janela inteira dos 300 últimos logs (≈ 01/10 em diante). O
+  marcador só existe desde o PR #458 (03/10 10:17 BRT) — os 9 erros de 03/10 do
+  item 255 são anteriores a ele. O aviso, por outro lado, só olha as últimas 24h
+  (`ocorreuRecentemente`). Um critério olhando 5 dias e o outro 24h: um registro
+  velho, fora do recorte do aviso, mantinha a supressão desligada.
+- Consistência dos números: grupo constante de 12 erros nas 3 execuções (≈ 9
+  velhos + ~3 novos de 23:27 UTC de 05/10 e ~09:30 UTC de 06/10) e ativos caindo
+  de 9 para 8 quando um velho saiu da janela.
+
+**Hipótese (NÃO provada)**: esta sessão não alcança a API/Postgres (proxy 403),
+então os `SystemLog` brutos não foram lidos — a explicação acima vem da
+cronologia + código, não do dado. Uma alternativa que não dá para descartar:
+aba aberta com bundle antigo (sem o marcador), gravando erro sem `dedup_scope`
+mesmo depois do deploy. A **causa do "Failed to fetch" em si** (rede caída,
+aparelho voltando de suspensão, aba em segundo plano) segue sem prova: um passe
+que falha em 8–9 ativos em sequência, com ~15 s de retry por busca
+(`httpRetry.js`), indica rede fora por 10+ s — mas `online`/`visibility` já eram
+gravados desde o item 255 e **a auditoria nunca os mostrava**.
+
+**Feito** (só auditoria; scanner/motor/locks/retry/cron intocados):
+1. `agrupar(registros, agora)` calcula também `executoresRecentes` /
+   `dedupPorExecutorRecente` sobre as últimas 24h; `soNavegador` decide por esse
+   recorte (registro sem `created_date` conta como recente; sem nenhum registro
+   recente o critério cai para a janela inteira, comportamento do item 255).
+   Continua conservador: registro recente sem marcador, ou do cron, mantém o
+   aviso. Falha ANTIGA do cron (fora das 24h) não segura mais o aviso de hoje.
+2. `descreverContextoNavegador(g)` + linha "estado do navegador nos erros: aba
+   oculta N×, aba visível N×, offline N×, sem dado N×" nas falhas sistêmicas do
+   relatório (janela recente e fora da janela). Não muda o que vira achado —
+   é o dado que faltava para decidir a causa do erro com evidência.
+
+**Verificação**: 10 testes novos em `healthAuditFormat.test.js` (6 falhavam no
+código anterior: regressão do caso de hoje, falha antiga do cron, contexto);
+simulação do cenário de hoje (9 velhos sem marcador + 3 novos marcados): antes
+`soNavegador:false` (avisa), depois `true` (só relatório).
+
+**Decisão adiada (com motivo)**: pular o scan do navegador quando offline/aba
+oculta mudaria o comportamento do `useAutoScan`/`scanner.js` (e o lock de 10 min
+do full-scan, que um passe lento pode segurar). Só avaliar depois que o contexto
+acima estiver agregado em alguns incidentes reais. **Para conferir**: o próximo
+Job Summary do `health-audit.yml` (21:07 BRT) deve trazer a linha "estado do
+navegador" e, se só o navegador falhou nas últimas 24h, nenhum aviso no Telegram.

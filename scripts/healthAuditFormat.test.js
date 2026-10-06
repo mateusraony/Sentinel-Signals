@@ -2,7 +2,7 @@
 // legível. Sem agrupamento ela devolve o log cru com outro nome, e um
 // relatório que ninguém lê é exatamente o estado que ela existe para consertar.
 import { describe, it, expect } from 'vitest';
-import { agrupar, celula, descreverOrigem, haQuantoTempo, normalizarMensagem, notaSoNavegador, ocorreuRecentemente, soNavegador, sufixoOrigem } from './healthAuditFormat.mjs';
+import { agrupar, celula, descreverContextoNavegador, descreverOrigem, haQuantoTempo, normalizarMensagem, notaSoNavegador, ocorreuRecentemente, soNavegador, sufixoOrigem } from './healthAuditFormat.mjs';
 
 describe('normalizarMensagem', () => {
   it('junta o mesmo problema em ativos diferentes', () => {
@@ -204,5 +204,87 @@ describe('soNavegador', () => {
 
   it('reconhece executor também em details (formato de logError/logWarn)', () => {
     expect(soNavegador(agrupar([log({ details: { executor: 'browser', dedup_scope: 'executor' } })])[0])).toBe(true);
+  });
+});
+
+// item 257 — achado real (auditoria de 06/10/2026): o aviso "Failed to fetch em
+// 8-9 ativos (browser · NETWORK)" continuou chegando 3x no dia mesmo com a regra
+// "só navegador" do item 255. Causa: `soNavegador` olhava a janela INTEIRA de logs
+// (≈ 5 dias) e exigia `dedup_scope` em TODOS os registros; os erros de 03/10
+// (anteriores ao marcador, PR #458) mantinham a supressão desligada, mesmo com
+// todo erro das últimas 24h já marcado. O aviso só olha as últimas 24h
+// (`ocorreuRecentemente`), então a supressão também só pode olhar elas.
+describe('soNavegador decide pelas últimas 24h (item 257)', () => {
+  const AGORA = Date.parse('2026-10-06T12:00:00.000Z');
+  const RECENTE = '2026-10-06T09:30:00.000Z';
+  const ANTIGO = '2026-10-03T08:00:00.000Z'; // dias antes, ANTES do marcador
+  const log = (over = {}) => ({ module: 'scanner', message: 'Erro no scan de BTCUSDT: Failed to fetch', symbol: 'BTCUSDT', ...over });
+  const antigoSemMarcador = (over = {}) => log({ executor: 'browser', created_date: ANTIGO, ...over });
+  const recenteMarcado = (over = {}) => log({ executor: 'browser', created_date: RECENTE, details: { dedup_scope: 'executor' }, ...over });
+
+  it('REGRESSÃO: erro antigo sem marcador NÃO mantém o aviso quando tudo das últimas 24h é navegador marcado', () => {
+    const [g] = agrupar([antigoSemMarcador(), antigoSemMarcador({ symbol: 'ETHUSDT' }), recenteMarcado()], AGORA);
+    expect(soNavegador(g)).toBe(true);
+    expect(notaSoNavegador(g)).toContain('não gera aviso');
+  });
+
+  it('continua avisando se um registro RECENTE não tem o marcador (pode esconder o cron)', () => {
+    const [g] = agrupar([antigoSemMarcador(), recenteMarcado(), recenteMarcado({ details: {} })], AGORA);
+    expect(soNavegador(g)).toBe(false);
+  });
+
+  it('continua avisando se o cron falhou nas últimas 24h', () => {
+    const [g] = agrupar([antigoSemMarcador(), recenteMarcado(), recenteMarcado({ executor: 'cron' })], AGORA);
+    expect(soNavegador(g)).toBe(false);
+  });
+
+  it('falha ANTIGA do cron (fora das 24h) não segura o aviso de hoje', () => {
+    const [g] = agrupar([antigoSemMarcador({ executor: 'cron' }), recenteMarcado()], AGORA);
+    expect(soNavegador(g)).toBe(true);
+  });
+
+  it('sem nenhum registro recente o grupo nem vira achado; o critério cai para a janela inteira (comportamento do item 255)', () => {
+    const [g] = agrupar([antigoSemMarcador()], AGORA);
+    expect(ocorreuRecentemente(g, AGORA)).toBe(false);
+    expect(soNavegador(g)).toBe(false);
+  });
+
+  it('registro sem created_date conta como recente (não dá para provar que é antigo)', () => {
+    const [g] = agrupar([recenteMarcado(), log({ executor: 'browser', details: {} })], AGORA);
+    expect(soNavegador(g)).toBe(false);
+  });
+});
+
+// item 257 — a auditoria passou a gravar `online`/`visibility` do navegador
+// (item 255) mas nunca os mostrava: sem isso a causa do "Failed to fetch"
+// (rede caída × aba em segundo plano × aparelho acordando) seguia hipótese.
+describe('descreverContextoNavegador (item 257)', () => {
+  const browser = (details, over = {}) => ({ module: 'scanner', message: 'Erro no scan de BTCUSDT: Failed to fetch', symbol: 'BTCUSDT', executor: 'browser', created_date: '2026-10-06T09:30:00.000Z', details, ...over });
+
+  it('conta aba oculta, visível, offline e sem dado', () => {
+    const [g] = agrupar([
+      browser({ online: true, visibility: 'hidden' }),
+      browser({ online: true, visibility: 'hidden' }),
+      browser({ online: true, visibility: 'visible' }),
+      browser({ online: false, visibility: 'visible' }),
+      browser({}),
+      browser(undefined),
+    ]);
+    expect(descreverContextoNavegador(g)).toBe('aba oculta 2×, aba visível 2×, offline 1×, sem dado 2×');
+  });
+
+  it('só mostra o que ocorreu', () => {
+    const [g] = agrupar([browser({ online: true, visibility: 'hidden' })]);
+    expect(descreverContextoNavegador(g)).toBe('aba oculta 1×');
+  });
+
+  it('vazio quando não há registro do navegador (cron nunca tem esse contexto)', () => {
+    const [g] = agrupar([browser({}, { executor: 'cron' })]);
+    expect(descreverContextoNavegador(g)).toBe('');
+  });
+
+  it('ignora o contexto de registros do cron no meio do grupo', () => {
+    const [g] = agrupar([browser({ online: true, visibility: 'hidden' }), browser({ online: false, visibility: 'visible' }, { executor: 'cron' })]);
+    expect(descreverContextoNavegador(g)).toBe('aba oculta 1×');
   });
 });
