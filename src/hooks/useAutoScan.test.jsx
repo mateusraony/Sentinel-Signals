@@ -125,3 +125,50 @@ describe('useAutoScan — full scan não distingue tentativa de sucesso', () => 
     expect(priceCheckActiveOpsMock).toHaveBeenCalledTimes(3);
   });
 });
+
+// Item 257 (desdobramento) — auditoria de saúde de 06/10: todos os erros
+// recentes de "Failed to fetch" do navegador vieram com a aba ESCONDIDA
+// (`details.visibility: 'hidden'`, 7 de 7 com dado, 0 offline). O full scan de
+// uma aba em segundo plano falha em rajada e ainda segura o lock de 10 min. O
+// price-check (stop/TP por preço, caminho de segurança) NÃO é pulado.
+describe('useAutoScan — aba escondida não faz full scan (item 257)', () => {
+  const setVisibility = (state) => {
+    Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    scanAllAssetsMock.mockReset().mockResolvedValue({ total: 1, results: [{ success: true }] });
+    priceCheckActiveOpsMock.mockReset().mockResolvedValue(undefined);
+    hasActiveTradeOpsMock.mockReset().mockResolvedValue(true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete document.visibilityState; // volta ao getter do jsdom
+  });
+
+  it('com a aba escondida NÃO chama o full scan em nenhum tick, mas o price-check continua', async () => {
+    setVisibility('hidden');
+    renderHook(() => useAutoScan());
+
+    await vi.advanceTimersByTimeAsync(90 * 1000);
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+
+    expect(scanAllAssetsMock).not.toHaveBeenCalled();
+    expect(priceCheckActiveOpsMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('ao voltar a ficar visível, o full scan atrasado roda no tick seguinte (não espera 60 min)', async () => {
+    setVisibility('hidden');
+    renderHook(() => useAutoScan());
+
+    await vi.advanceTimersByTimeAsync(90 * 1000);
+    expect(scanAllAssetsMock).not.toHaveBeenCalled();
+
+    setVisibility('visible');
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+    expect(scanAllAssetsMock).toHaveBeenCalledTimes(1);
+  });
+});
