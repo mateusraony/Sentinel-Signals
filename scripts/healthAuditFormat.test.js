@@ -243,6 +243,12 @@ describe('soNavegador decide pelas últimas 24h (item 257)', () => {
     expect(soNavegador(g)).toBe(true);
   });
 
+  it('a nota qualifica o recorte: com falha antiga do cron no grupo, não afirma "o cron não falhou" sem limite de tempo (Codex P2, PR #471)', () => {
+    const [g] = agrupar([antigoSemMarcador({ executor: 'cron' }), recenteMarcado()], AGORA);
+    expect(descreverOrigem(g)).toContain('browser/cron');
+    expect(notaSoNavegador(g)).toContain('nas últimas 24h');
+  });
+
   it('sem nenhum registro recente o grupo nem vira achado; o critério cai para a janela inteira (comportamento do item 255)', () => {
     const [g] = agrupar([antigoSemMarcador()], AGORA);
     expect(ocorreuRecentemente(g, AGORA)).toBe(false);

@@ -30451,6 +30451,12 @@ gravados desde o item 255 e **a auditoria nunca os mostrava**.
    relatório (janela recente e fora da janela). Não muda o que vira achado —
    é o dado que faltava para decidir a causa do erro com evidência.
 
+**Addendum (Codex review, PR #471, P2 — procede)**: com uma falha ANTIGA do cron
+no grupo, `soNavegador` fica verdadeiro (recorte de 24h) mas a coluna Origem
+ainda mostra `browser/cron` sobre a janela inteira, e a nota dizia "o cron não
+falhou" sem limite de tempo — linha contraditória. A nota agora diz "o cron não
+falhou nas últimas 24h"; teste cobre o caso (falha ao reverter o texto).
+
 **Verificação**: 10 testes novos em `healthAuditFormat.test.js` (6 falhavam no
 código anterior: regressão do caso de hoje, falha antiga do cron, contexto);
 simulação do cenário de hoje (9 velhos sem marcador + 3 novos marcados): antes

@@ -127,7 +127,9 @@ export function soNavegador(g) {
 
 /** Nota para o corpo do relatório: explica por que um grupo não avisa. */
 export function notaSoNavegador(g) {
-  return soNavegador(g) ? ' — **só navegador, o cron não falhou: listado, mas não gera aviso**' : '';
+  // "nas últimas 24h" porque `soNavegador` decide por esse recorte (item 257): o
+  // grupo pode ter uma falha ANTIGA do cron, que a coluna Origem ainda mostra.
+  return soNavegador(g) ? ' — **só navegador, o cron não falhou nas últimas 24h: listado, mas não gera aviso**' : '';
 }
 
 /** Sufixo para a mensagem de achado (Telegram): vazio quando não há origem. */
