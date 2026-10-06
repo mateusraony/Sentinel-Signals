@@ -35,7 +35,7 @@ export function normalizarMensagem(msg) {
  * é **em quantos ativos diferentes** — um erro que aparece em muitos ativos ao
  * mesmo tempo é falha sistêmica, não azar de um símbolo (item 136).
  */
-export function agrupar(registros) {
+export function agrupar(registros, agora = Date.now()) {
   const grupos = new Map();
   for (const r of registros ?? []) {
     const chave = `${r.module ?? '?'} · ${normalizarMensagem(r.message)}`;
@@ -48,6 +48,13 @@ export function agrupar(registros) {
       // true enquanto TODOS os registros do grupo foram deduplicados por
       // executor (details.dedup_scope) — pré-requisito de `soNavegador`.
       dedupPorExecutor: true,
+      // Mesmos dois campos, só sobre o que ocorreu nas últimas
+      // ACHADO_SISTEMICO_RECENCIA_HORAS (item 257): o aviso só olha esse
+      // recorte, então a supressão "só navegador" também só pode olhar ele.
+      executoresRecentes: new Set(), dedupPorExecutorRecente: true, temRecente: false,
+      // Estado do navegador no momento de cada erro (item 255 gravou
+      // `details.online`/`visibility`; item 257 passou a mostrar).
+      contextoNavegador: { oculta: 0, visivel: 0, offline: 0, semDado: 0, total: 0 },
       primeiro: null, ultimo: null, exemplo: r.message,
     };
     g.total += 1;
@@ -60,6 +67,23 @@ export function agrupar(registros) {
     if (r.details?.dedup_scope !== 'executor') g.dedupPorExecutor = false;
     if (r.details?.error_class) g.classes.add(r.details.error_class);
     const t = r.created_date;
+    // Sem created_date não dá para provar que é antigo → conta como recente
+    // (lado conservador: só pode manter o aviso, nunca suprimi-lo).
+    if (!t || (agora - new Date(t).getTime()) <= ACHADO_SISTEMICO_RECENCIA_HORAS * 60 * 60 * 1000) {
+      g.temRecente = true;
+      if (executor) g.executoresRecentes.add(executor);
+      if (r.details?.dedup_scope !== 'executor') g.dedupPorExecutorRecente = false;
+    }
+    if (executor === 'browser') {
+      const c = g.contextoNavegador;
+      const online = r.details?.online;
+      const vis = r.details?.visibility;
+      c.total += 1;
+      if (online === false) c.offline += 1;
+      if (vis === 'hidden') c.oculta += 1;
+      else if (vis === 'visible') c.visivel += 1;
+      if (online !== false && vis !== 'hidden' && vis !== 'visible') c.semDado += 1;
+    }
     if (t) {
       if (!g.primeiro || t < g.primeiro) g.primeiro = t;
       if (!g.ultimo || t > g.ultimo) g.ultimo = t;
@@ -88,22 +112,48 @@ export function descreverOrigem(g) {
  * achado como sempre.
  */
 export function soNavegador(g) {
-  const ex = [...(g.executores ?? [])];
+  // Decide pelas últimas 24h (item 257) — o mesmo recorte do aviso
+  // (`ocorreuRecentemente`). Sem nenhum registro recente o grupo nem vira
+  // achado; nesse caso o critério cai para a janela inteira, que é o
+  // comportamento do item 255.
+  const recorte = g.temRecente === true;
+  const ex = [...((recorte ? g.executoresRecentes : g.executores) ?? [])];
+  const dedup = recorte ? g.dedupPorExecutorRecente : g.dedupPorExecutor;
   // Sem dedup por executor (logs gravados antes do item 255) um `browser`
   // pode estar escondendo uma falha idêntica do cron — não dá para afirmar
   // "só navegador", então continua avisando.
-  return g.dedupPorExecutor === true && ex.length > 0 && ex.every((e) => e === 'browser');
+  return dedup === true && ex.length > 0 && ex.every((e) => e === 'browser');
 }
 
 /** Nota para o corpo do relatório: explica por que um grupo não avisa. */
 export function notaSoNavegador(g) {
-  return soNavegador(g) ? ' — **só navegador, o cron não falhou: listado, mas não gera aviso**' : '';
+  // "nas últimas 24h" porque `soNavegador` decide por esse recorte (item 257): o
+  // grupo pode ter uma falha ANTIGA do cron, que a coluna Origem ainda mostra.
+  return soNavegador(g) ? ' — **só navegador, o cron não falhou nas últimas 24h: listado, mas não gera aviso**' : '';
 }
 
 /** Sufixo para a mensagem de achado (Telegram): vazio quando não há origem. */
 export function sufixoOrigem(g) {
   const o = descreverOrigem(g);
   return o === '—' ? '' : ` (origem: ${o})`;
+}
+
+/**
+ * "aba oculta 3×, aba visível 1×, offline 2×, sem dado 8×" — o estado do
+ * navegador nos erros do grupo (item 257). Só conta registros do navegador;
+ * vazio quando não há nenhum. "sem dado" = log anterior ao item 255 (não
+ * gravava `online`/`visibility`). Um registro pode somar em mais de uma
+ * categoria (offline E aba oculta), então a soma pode passar do total.
+ */
+export function descreverContextoNavegador(g) {
+  const c = g.contextoNavegador;
+  if (!c || c.total === 0) return '';
+  return [
+    c.oculta && `aba oculta ${c.oculta}×`,
+    c.visivel && `aba visível ${c.visivel}×`,
+    c.offline && `offline ${c.offline}×`,
+    c.semDado && `sem dado ${c.semDado}×`,
+  ].filter(Boolean).join(', ');
 }
 
 /** "há 3h" / "há 2.1d" — o relatório é lido por humano, não por parser. */

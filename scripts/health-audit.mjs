@@ -79,7 +79,7 @@
 // removido na decomissão, fase 11).
 import { backend } from './adminEntities.js';
 import { rtdb } from './adminEntitiesFirestoreLegacy.js';
-import { agrupar, celula, descreverOrigem, haQuantoTempo, notaSoNavegador, ocorreuRecentemente, soNavegador, sufixoOrigem } from './healthAuditFormat.mjs';
+import { agrupar, celula, descreverContextoNavegador, descreverOrigem, haQuantoTempo, notaSoNavegador, ocorreuRecentemente, soNavegador, sufixoOrigem } from './healthAuditFormat.mjs';
 import { classifyFailure } from './failureClassification.mjs';
 import { isTelegramConfigured, notifyHealthAudit } from './adminTelegram.js';
 
@@ -202,6 +202,8 @@ async function checarLogs() {
       for (const g of sistemicos.slice(0, 5)) {
         p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}${sufixoOrigem(g)}${notaSoNavegador(g)}`);
         p(`  - exemplo: \`${String(g.exemplo).slice(0, 200)}\``);
+        const ctx = descreverContextoNavegador(g);
+        if (ctx) p(`  - estado do navegador nos erros: ${ctx}`);
       }
       // Achado real (auditoria externa, 2026-09-15): só o 1º grupo virava
       // achado (Telegram/resumo), mesmo quando o relatório listava até 5 —
@@ -240,6 +242,8 @@ async function checarLogs() {
       p('🚨 **Falha sistêmica fora da janela recente** (3+ ativos):');
       for (const g of sistemicosFora.slice(0, 5)) {
         p(`- \`${g.chave}\` — ${g.ativos.size} ativos, ${g.total}×, último ${haQuantoTempo(g.ultimo)}${sufixoOrigem(g)}${notaSoNavegador(g)}`);
+        const ctx = descreverContextoNavegador(g);
+        if (ctx) p(`  - estado do navegador nos erros: ${ctx}`);
       }
       // Mesma correção do bloco acima — um achado por grupo listado, não só
       // o 1º — e o mesmo filtro de recência (`ocorreuRecentemente`, ver
