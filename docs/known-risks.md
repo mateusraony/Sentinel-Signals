@@ -30495,6 +30495,16 @@ scan manual do TopBar (clique do usuário = aba visível). Scanner, locks, retry
 cron e auditoria intocados. Testes novos em `useAutoScan.test.jsx` (2; falham
 sem o guard).
 
+**Resíduo aceito (Codex review, PR #472, P2 — procede em parte)**: a visibilidade
+é lida só no início do tick. Um scan que COMEÇA com a aba visível e é escondido
+no meio continua até o fim (sequencial por ativo). Caminho real, mas estreito:
+um full scan dura dezenas de segundos e o navegador só throttla/congela uma aba
+depois de minutos escondida — os erros medidos vieram de ticks disparados por
+timer numa aba JÁ escondida há tempo, que é o que o guard fecha. Abortar no meio
+exigiria mexer no loop de `scanner.js` (código compartilhado com o cron) ou
+introduzir cancelamento, custo desproporcional ao ganho. Se a auditoria seguir
+mostrando "aba oculta" com o guard no ar, esse é o próximo suspeito.
+
 **Para conferir**: nas próximas auditorias a linha "estado do navegador" não deve
 acumular "aba oculta" novos; se acumular com `visível`/`offline`, a hipótese está
 errada e a investigação reabre.
