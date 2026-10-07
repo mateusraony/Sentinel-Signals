@@ -148,7 +148,7 @@ describe('notifyVerificationTask', () => {
     // Auditoria do Telegram (2026-09-29), Fase 2 item 2.1/2.5 — cabeçalho
     // vem do vocabulário único (notificationVocabulary.js), não mais um
     // texto solto por função.
-    expect(text).toContain('Verificação Necessária');
+    expect(text).toContain('Sinal para Conferir');
     expect(text).toContain('BTC/USDT');
     expect(text).toContain('COMPRA');
     expect(text).toContain('Score: 88/100');

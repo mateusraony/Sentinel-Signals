@@ -17,7 +17,9 @@
  */
 export const NOTIFICATION_STAGES = {
   SIGNAL_DETECTED: { emoji: '🔔', label: 'Sinal Detectado' },
-  VERIFICATION_NEEDED: { emoji: '🔎', label: 'Verificação Necessária' },
+  // "Sinal para Conferir", não "Verificação Necessária" (item 258): a tarefa é só
+  // um lembrete informativo — nada no motor depende de o usuário marcá-la.
+  VERIFICATION_NEEDED: { emoji: '🔎', label: 'Sinal para Conferir' },
   AWAITING_ENTRY: { emoji: '⏳', label: 'Aguardando Entrada' },
   ENTRY_CONFIRMED: { emoji: '✅', label: 'Entrada Confirmada' },
   TP1_HIT: { emoji: '🎯', label: 'TP1 Atingido' },

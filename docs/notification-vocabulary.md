@@ -12,7 +12,7 @@ Auditoria do Telegram, Fase 5 (2026-10-02), item 5.1.
 | Estágio (`stageId`) | Emoji | Rótulo |
 |---|---|---|
 | `SIGNAL_DETECTED` | 🔔 | Sinal Detectado |
-| `VERIFICATION_NEEDED` | 🔎 | Verificação Necessária |
+| `VERIFICATION_NEEDED` | 🔎 | Sinal para Conferir |
 | `AWAITING_ENTRY` | ⏳ | Aguardando Entrada |
 | `ENTRY_CONFIRMED` | ✅ | Entrada Confirmada |
 | `TP1_HIT` | 🎯 | TP1 Atingido |

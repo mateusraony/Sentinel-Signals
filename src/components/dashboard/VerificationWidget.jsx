@@ -89,6 +89,12 @@ export default function VerificationWidget() {
         </Link>
       </div>
 
+      {/* Item 258: a Verificação é só um lembrete — sem esta legenda parecia uma
+          fila de aprovação de operações. */}
+      <p className="text-9px font-mono text-muted-foreground mb-2">
+        Só lembrete: marcar OK/Pular não muda nenhuma operação.
+      </p>
+
       <div className="w-full h-1.5 rounded-full overflow-hidden mb-3" style={{ background: 'rgba(255,255,255,0.06)' }}>
         <div className="h-full rounded-full transition-all" style={{ width: `${progressPct}%`, background: '#00ff80' }} />
       </div>
@@ -143,7 +149,7 @@ export default function VerificationWidget() {
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                  Marcar como revisado (OK)
+                  Marcar como revisado (OK) — só organiza a sua lista, não aprova operação
                 </TooltipContent>
               </Tooltip>
               <Tooltip>
@@ -156,7 +162,7 @@ export default function VerificationWidget() {
                   </button>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                  Pular
+                  Pular — só organiza a sua lista, não bloqueia operação
                 </TooltipContent>
               </Tooltip>
             </div>

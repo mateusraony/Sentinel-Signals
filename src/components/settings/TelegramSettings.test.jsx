@@ -105,7 +105,7 @@ describe('TelegramSettings — todo evento de DEFAULT_FILTERS.events tem um togg
     invalidated: 'Sinal invalidado',
     time_stop: 'Time Stop',
     chop_exit: 'Chop Exit',
-    verification_task_created: 'Tarefa de verificação criada',
+    verification_task_created: 'Sinal de alta prioridade para conferir',
     signal_canceled: 'Sinal cancelado',
   };
 

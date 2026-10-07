@@ -160,3 +160,45 @@ describe('build*Message — uma mensagem completa, não-vazia, por tipo', () => 
     expect(build()).toContain(`?id=${expectedId}`);
   });
 });
+
+// Item 258 — o aviso "Verificação Necessária … aguardando sua revisão manual
+// antes de virar operação" fazia parecer que marcar OK/Pular na aba
+// Verificação era uma aprovação. Não é: a `VerificationTask` é só lembrete
+// (nada no motor lê o status dela) e sinal fora do 4h nunca vira operação.
+describe('buildVerificationTaskMessage — nunca sugere que a verificação é uma aprovação (item 258)', () => {
+  const sinal = (over = {}) => ({
+    id: 'sig_abc', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter',
+    price_at_signal: 100, reason: 'Teste', context: { score: 85 }, ...over,
+  });
+  const PROIBIDAS = [/antes de virar operação/i, /aguardando sua revisão/i, /revisão manual/i, /Necessária/, /revisar e marcar/i];
+
+  it.each([['4h'], ['1h'], ['1d']])('timeframe %s: sem nenhuma frase de aprovação/obrigação', (tf) => {
+    const text = buildVerificationTaskMessage(sinal({ timeframe: tf }));
+    for (const re of PROIBIDAS) expect(text).not.toMatch(re);
+    expect(text).toContain('Sinal para Conferir');
+    expect(text).toContain('não altera nenhuma operação');
+  });
+
+  it('4h: diz que não precisa aprovar e que a operação depende da confirmação de entrada do app', () => {
+    const text = buildVerificationTaskMessage(sinal({ timeframe: '4h' }));
+    expect(text).toContain('Você não precisa aprovar nada');
+    expect(text).toContain('confirmação de entrada');
+  });
+
+  it('fora do 4h (ex.: BTC 1H): diz que é só informação e que nunca vira operação, com ou sem OK', () => {
+    const text = buildVerificationTaskMessage(sinal({ timeframe: '1h' }));
+    expect(text).toContain('1H');
+    expect(text).toContain('só informação');
+    expect(text).toContain('nunca viram operação');
+    expect(text).not.toContain('Você não precisa aprovar nada');
+  });
+
+  it('SMC 1H PODE virar operação (cascata 1H→5m): não afirma "nunca viram operação"', () => {
+    const text = buildVerificationTaskMessage(sinal({ timeframe: '1h', source: 'smc_structure' }));
+    expect(text).toContain('Você não precisa aprovar nada');
+    expect(text).toContain('1H→5m');
+    expect(text).not.toContain('nunca viram operação');
+    for (const re of PROIBIDAS) expect(text).not.toMatch(re);
+  });
+});
+

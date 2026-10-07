@@ -28,6 +28,7 @@ import { formatBackfillLag } from './backfillDetection.js';
 import { explainOperationDecision } from './decisionExplanation.js';
 import { shortSourceLabel } from './signalSourceLabels.js';
 import { NOTIFICATION_STAGES, stageHeader } from './notificationVocabulary.js';
+import { isConfirmationEligible } from './signalStatus.js';
 import { classifyOutcome, calcRealizedR, calcRealizedPnlPct, getExitPrice } from './tradeMetrics.js';
 import { rejectionCopy, SIGNAL_PHASE } from './signalStatus.js';
 
@@ -169,6 +170,11 @@ export function buildSignalDetectedMessage(signal) {
 // `signal.id` is the SignalEvent id, not the VerificationTask's own id —
 // Verification.jsx matches it against `task.signal_event_id` (the field
 // that already links the two), not `task.id`.
+//
+// Item 258: a `VerificationTask` é só um LEMBRETE — nada no motor lê o status
+// dela, então marcar OK/Pular nunca aprova nem bloqueia uma operação. A frase
+// de "Situação" distingue os dois casos reais (mesma regra de
+// `isConfirmationEligible`, fonte única do "só o 4h vira operação").
 export function buildVerificationTaskMessage(signal) {
   const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
   const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
@@ -176,14 +182,21 @@ export function buildVerificationTaskMessage(signal) {
   const scoreLine = Number.isFinite(signal.context?.score)
     ? `📊 Score: ${signal.context.score}/100\n`
     : '';
+  // 3 casos reais: cascata RF 4h→15m; SMC 1h→5m (opt-in por ativo, pode virar
+  // operação mesmo fora do 4h); e o resto (RF 1h/1d), que nunca vira operação.
+  const situacao = isConfirmationEligible(signal)
+    ? 'sinal de alta prioridade — só para você conferir. Você não precisa aprovar nada: o app só abre a operação se a confirmação de entrada dele passar.'
+    : signal.source === 'smc_structure'
+      ? 'sinal de alta prioridade do SMC — só para você conferir. Você não precisa aprovar nada: a operação só abre se a confirmação de entrada do app (cascata 1H→5m, quando ligada para este ativo) passar.'
+      : `sinal de alta prioridade de ${String(signal.timeframe ?? '').toUpperCase()} — só informação. Sinais do Range Filter fora do gráfico de 4 horas nunca viram operação, com ou sem OK.`;
   return (
     `${stageHeader('VERIFICATION_NEEDED')} — ${sourceLabel}\n\n` +
     `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n\n` +
-    `${emoji} Situação: sinal de alta prioridade aguardando sua revisão manual antes de virar operação.\n\n` +
+    `${emoji} Situação: ${situacao}\n\n` +
     `⭐ Prioridade: ALTA\n` +
     scoreLine +
     `📝 Por quê: ${escaparHtml(signal.reason) || 'não informado'}\n\n` +
-    `➡️ Próximo passo: revisar e marcar OK/Pular no painel.\n` +
+    `➡️ Próximo passo: opcional — marcar OK/Pular no painel só organiza a sua lista, não altera nenhuma operação.\n` +
     `📡 Fonte: ${sourceLabel}\n\n` +
     `${panelLink('/verification', signal.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`

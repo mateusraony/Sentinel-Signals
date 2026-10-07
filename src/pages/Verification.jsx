@@ -272,7 +272,10 @@ export default function Verification() {
           )}
         </div>
         <p className="text-xs text-muted-foreground mt-1">
-          Tarefas criadas automaticamente para todo sinal de alta prioridade — inclusive pelo scan agendado, sem precisar do navegador aberto.
+          Lista de conferência opcional: criada automaticamente para todo sinal de alta prioridade, inclusive pelo scan agendado, sem precisar do navegador aberto.
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Marcar OK ou Pular só organiza a sua lista — não aprova nem bloqueia nenhuma operação. O app abre operações sozinho, e só a partir de sinais de 4 horas que passam na confirmação de entrada.
         </p>
       </div>
 
@@ -417,7 +420,7 @@ export default function Verification() {
                           </button>
                         </TooltipTrigger>
                         <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                          Marcar como revisado (OK)
+                          Marcar como revisado (OK) — só organiza a sua lista, não aprova operação
                         </TooltipContent>
                       </Tooltip>
                       <Tooltip>
@@ -431,7 +434,7 @@ export default function Verification() {
                           </button>
                         </TooltipTrigger>
                         <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                          Pular
+                          Pular — só organiza a sua lista, não bloqueia operação
                         </TooltipContent>
                       </Tooltip>
                     </div>
