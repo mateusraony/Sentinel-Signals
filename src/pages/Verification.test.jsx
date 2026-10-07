@@ -383,6 +383,10 @@ describe('Verification — explica que OK/Pular só organiza a lista (item 258)'
 
     await screen.findByRole('button', { name: 'Marcar como revisado (OK)' });
     expect(screen.getByText(/não aprova nem bloqueia nenhuma operação/)).toBeTruthy();
+    // Codex P2 (PR #473): nunca afirmar que só o 4h abre operação — a cascata SMC 1h→5m também pode.
+    expect(screen.getByText(/cascata principal/)).toBeTruthy();
+    expect(screen.getByText(/cascata SMC/)).toBeTruthy();
+    expect(screen.queryByText(/só a partir de sinais de 4 horas/)).toBeNull();
   });
 });
 

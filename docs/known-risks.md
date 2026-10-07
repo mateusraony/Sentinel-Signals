@@ -30562,3 +30562,9 @@ na mensagem do Telegram; para SMC 1H num ativo com `smc_enabled` isso também é
 impreciso. Mexer ali muda copy de `Trades.jsx`/`AssetDrawer`/`SignalChecklist` e vários
 testes, fora do pedido (Verificação); fica registrado como follow-up.
 
+**Addendum (Codex review, PR #473, P2 — procede)**: o parágrafo novo da aba Verificação
+dizia "o app abre operações… só a partir de sinais de 4 horas" — a MESMA imprecisão que
+eu tinha corrigido no Telegram (SMC 1h→5m, `scanner.js:2737-2742`/`2856-2873`, também abre
+operação nos ativos com `smc_enabled`). Agora descreve as duas cascatas; a frase antiga
+entrou na guarda `verificationWordingGuard.test.js`.
+

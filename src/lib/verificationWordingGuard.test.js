@@ -33,6 +33,7 @@ const FRASES_PROIBIDAS = [
   /revisão manual/i,
   /confirmação manual/i,
   /Verificação Necessária/,
+  /só a partir de sinais de 4 horas/i, // falso para a cascata SMC 1h→5m (Codex P2, PR #473)
 ];
 
 describe('texto do usuário nunca sugere que a Verificação aprova uma operação (item 258)', () => {

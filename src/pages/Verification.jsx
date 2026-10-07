@@ -275,7 +275,7 @@ export default function Verification() {
           Lista de conferência opcional: criada automaticamente para todo sinal de alta prioridade, inclusive pelo scan agendado, sem precisar do navegador aberto.
         </p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Marcar OK ou Pular só organiza a sua lista — não aprova nem bloqueia nenhuma operação. O app abre operações sozinho, e só a partir de sinais de 4 horas que passam na confirmação de entrada.
+          Marcar OK ou Pular só organiza a sua lista — não aprova nem bloqueia nenhuma operação. O app abre operações sozinho, pelas regras dele: a cascata principal (gráfico de 4 horas → confirmação no 15m) e, nos ativos em que o SMC está ligado, a cascata SMC (1 hora → confirmação no 5m).
         </p>
       </div>
 
