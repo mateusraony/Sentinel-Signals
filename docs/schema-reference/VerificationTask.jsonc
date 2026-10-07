@@ -59,7 +59,7 @@
       "type": "string",
       "enum": ["pending", "reviewed", "skipped", "superseded"],
       "default": "pending",
-      "description": "pending = aguardando revisão humana. reviewed = usuário conferiu e marcou OK. skipped = usuário decidiu pular/ignorar este sinal. superseded = marcado automaticamente pelo scanner (persistScanResults) quando um sinal MAIS NOVO do mesmo asset_id+timeframe nasceu — a tarefa antiga não reflete mais o estado atual do ativo (docs/known-risks.md item 76)."
+      "description": "Lembrete INFORMATIVO — nada no motor (scanner.js) lê este status; marcar reviewed/skipped só organiza a lista do usuário e nunca aprova nem bloqueia uma TradeOperation (item 258). pending = ainda não conferida pelo usuário. reviewed = usuário conferiu e marcou OK. skipped = usuário decidiu pular/ignorar este sinal. superseded = marcado automaticamente pelo scanner (persistScanResults) quando um sinal MAIS NOVO do mesmo asset_id+timeframe nasceu — a tarefa antiga não reflete mais o estado atual do ativo (docs/known-risks.md item 76)."
     },
     "reviewed_at": {
       "type": ["string", "null"],

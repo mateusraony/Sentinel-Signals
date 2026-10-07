@@ -125,3 +125,17 @@ describe('VerificationWidget — ressalva "score não é probabilidade" (passo 5
     expect(screen.queryByText(/não é probabilidade de acerto/)).toBeNull();
   });
 });
+
+// Item 258 — a Verificação é só um lembrete; OK/Pular não aprova nem bloqueia
+// nenhuma operação. O widget precisa dizer isso, senão parece uma fila de aprovação.
+describe('VerificationWidget — deixa claro que OK/Pular não muda operação (item 258)', () => {
+  it('mostra a legenda "só lembrete" junto das tarefas', async () => {
+    listMock.mockResolvedValue([TASK]);
+    renderWidget();
+
+    await screen.findByText('BTC/USDT');
+    expect(screen.getByText(/Só lembrete/)).toBeTruthy();
+    expect(screen.getByText(/não muda nenhuma operação/)).toBeTruthy();
+  });
+});
+

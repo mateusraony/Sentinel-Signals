@@ -30508,3 +30508,63 @@ mostrando "aba oculta" com o guard no ar, esse é o próximo suspeito.
 **Para conferir**: nas próximas auditorias a linha "estado do navegador" não deve
 acumular "aba oculta" novos; se acumular com `visível`/`offline`, a hipótese está
 errada e a investigação reabre.
+
+## 258. "Verificação" parecia uma aprovação de operação — textos corrigidos em todo o projeto (2026-10-07)
+
+**Contexto**: o usuário recebeu no Telegram "🔎 Verificação Necessária — BTC/USDT 1H
+COMPRA … aguardando sua revisão manual antes de virar operação … Próximo passo:
+revisar e marcar OK/Pular no painel" e perguntou se, sem o OK na aba Verificação,
+não vira operação.
+
+**Fato (código, `main` em 07/10)**: **não**. `VerificationTask` é só um lembrete
+(`scanner.js:2273-2340` cria a tarefa e dispara o Telegram; as 7 ocorrências de
+`VerificationTask` em `scanner.js` estão todas nesse bloco — nada lê o status dela
+para decidir entrada). Pior: este sinal era **1H**, e sinal fora do 4h nunca vira
+operação (`scanner.js:2492`, log "entrada bloqueada (requer tendência 4H
+confirmada)"; `isConfirmationEligible`, `signalStatus.js`; o modo que liberaria o 1H,
+`rf1hCondEnabled`, é backtest-only). O texto da mensagem estava errado nos dois
+sentidos: sugeria uma trava que não existe e prometia uma operação que, para 1H, nunca
+existiria. Não foi lido o `SystemLog` desse sinal específico (sem acesso ao banco
+daqui) — a conclusão vem do código.
+
+**Levantamento** (varredura de frases de "aprovação/obrigação" em `src/`, docs e
+schema; `SignalChecklist.jsx` e `signalStatus.js` já estavam corretos e não mudaram):
+mensagem do Telegram (`buildVerificationTaskMessage`), rótulo do estágio
+("Verificação Necessária"), descrição do evento em `TelegramSettings.jsx` ("confirmação
+manual antes de virar operação"), subtítulo e tooltips de `Verification.jsx`, widget do
+Dashboard (`VerificationWidget.jsx`), `VerificationTask.jsonc` e
+`docs/notification-vocabulary.md`.
+
+**Feito (só texto; motor, nomes de campo/rota/evento e `aria-label` intocados)**:
+- Telegram: cabeçalho "Sinal para Conferir"; para 4h diz "você não precisa aprovar
+  nada: o app só abre a operação se a confirmação de entrada dele passar"; RF fora do
+  4h diz "só informação… nunca viram operação, com ou sem OK" (regra reaproveitada de
+  `isConfirmationEligible`, sem duplicar); **SMC 1H é um 3º caso** (achado na revisão
+  adversarial do próprio texto — "fora do 4h nunca vira operação" seria falso: a
+  cascata SMC 1h→5m, opt-in por ativo, pode abrir operação), com frase própria; "Próximo passo" agora é opcional e diz que
+  OK/Pular só organiza a lista.
+- Ajustes: "🔎 Sinal de alta prioridade para conferir — aviso informativo, não é
+  aprovação". Verificação: dois parágrafos de explicação + tooltips. Dashboard: legenda
+  "Só lembrete: marcar OK/Pular não muda nenhuma operação".
+- Docs: `VerificationTask.jsonc` e `notification-vocabulary.md`.
+- Guarda: `src/lib/verificationWordingGuard.test.js` falha se qualquer texto visível
+  de `src/` voltar a dizer "antes de virar operação"/"revisão manual"/"confirmação
+  manual"/"Verificação Necessária"/"aguardando sua revisão" (comentários ficam de
+  fora; provada reintroduzindo a frase).
+
+**Verificação**: testes novos em `notificationTemplates.test.js` (4h, 1h, 1d),
+`Verification.test.jsx`, `VerificationWidget.test.jsx`; 8 falhavam no texto antigo.
+
+**Visto e NÃO alterado (decisão do usuário pendente)**: o card de monitoramento
+(`signalStatus.js`, fase INFO) diz "nunca vira operação… só a partir dos avisos do
+gráfico de 4 horas" para QUALQUER sinal fora do 4h — o mesmo simplificado que corrigi
+na mensagem do Telegram; para SMC 1H num ativo com `smc_enabled` isso também é
+impreciso. Mexer ali muda copy de `Trades.jsx`/`AssetDrawer`/`SignalChecklist` e vários
+testes, fora do pedido (Verificação); fica registrado como follow-up.
+
+**Addendum (Codex review, PR #473, P2 — procede)**: o parágrafo novo da aba Verificação
+dizia "o app abre operações… só a partir de sinais de 4 horas" — a MESMA imprecisão que
+eu tinha corrigido no Telegram (SMC 1h→5m, `scanner.js:2737-2742`/`2856-2873`, também abre
+operação nos ativos com `smc_enabled`). Agora descreve as duas cascatas; a frase antiga
+entrou na guarda `verificationWordingGuard.test.js`.
+
