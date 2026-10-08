@@ -30568,3 +30568,46 @@ eu tinha corrigido no Telegram (SMC 1h→5m, `scanner.js:2737-2742`/`2856-2873`,
 operação nos ativos com `smc_enabled`). Agora descreve as duas cascatas; a frase antiga
 entrou na guarda `verificationWordingGuard.test.js`.
 
+## 259. Auditoria de saúde de 08/10: silêncio = tudo bem; "estado de erro" é reflexo do "Failed to fetch" do navegador (2026-10-08)
+
+**Contexto**: o usuário não recebeu mensagem de saúde em 08/10 e perguntou se podia
+confiar no sistema. Depois colou logs do painel e perguntou se o aviso "em estado de
+erro" de ~35h justificava investigação. Análise somente leitura (API do Actions); nenhuma
+mudança de código.
+
+**Fato** (run `health-audit` 37770994887 e execuções de `scan.yml`/`keep-warm.yml`/
+`backup-postgres.yml`):
+- A auditoria só avisa quando acha algo (desenho do `health-audit.yml`). Rodou 3× em
+  08/10 (00:07 dispatch, 05:53 e 11:35 UTC schedule), todas `success`; o log das 11:35
+  termina em "✅ Nada a reportar… Nenhuma mensagem foi enviada". Silêncio = nada a avisar.
+- `scan.yml`: 100 execuções de 06:30 a 14:40 UTC, 100 `success`, maior intervalo 5,2 min.
+  Keep-warm e `backup-postgres` (10:52 UTC) também `success`.
+- 39 operações lidas, 0 ativas, nenhuma presa; sem episódio de cota aberto (último
+  alerta em 12/09).
+- O aviso "em estado de erro" há 35h é o **ARBUSDT** (06/10 21:19 BRT; antes, BTCUSDT em
+  06/10 04:42 BRT), com `scan_error: "Failed to fetch"` — reflexo do mesmo erro do
+  scanner, não uma falha separada. Os horários dos logs do painel estão em BRT.
+- Os 3 erros do scanner colados (FETUSDT 05/10 11:44 e 06/10 06:48, ENAUSDT 05/10 20:27
+  BRT): `executor` browser, `online:true`, `visibility:hidden`, `error_class:NETWORK`,
+  `error_name:TypeError`.
+- Na auditoria das 11:35 UTC, o último "Failed to fetch" estava com 2,1 dias e aparece
+  como "só navegador, o cron não falhou nas últimas 24h: listado, mas não gera aviso".
+
+**Hipótese (NÃO provada)**: aba escondida limitada/congelada pelo navegador (item 257);
+`hidden` também vale para tela bloqueada ou aparelho dormindo. Os erros colados são
+anteriores ao guard do PR #472 (mesclado em 07/10). O aviso de 06/10 21:19 BRT (00:19 UTC
+de 07/10) caiu perto do deploy e pode vir de uma aba aberta com o bundle antigo — plausível,
+não confirmado. Dois dias sem erro novo é sinal bom, não prova.
+
+**Não verificado**: entrega real das mensagens do Telegram; `/ready` da API no Render; o
+painel no navegador; o `SystemLog` bruto (esta sessão não alcança o banco).
+
+**Decisão**: não investigar a fundo agora — o problema é conhecido (itens 192/197/252/253/
+255/257), o cron está saudável e o guard do #472 já está no ar. Recomendação: recarregar
+(Ctrl+Shift+R) o painel em todo aparelho onde ele fica aberto, para pegar o bundle com o guard.
+
+**Para conferir (gatilho para reabrir)**: um novo `Failed to fetch` com `visibility:visible`
+ou `online:false` (o resíduo aceito do item 257, scan que começa visível e é escondido no
+meio, é o próximo suspeito); qualquer erro de origem `cron`; ou o Telegram voltar a avisar
+por esse erro. Sem isso, o "há X d" no relatório só cresce e o assunto se encerra.
+
