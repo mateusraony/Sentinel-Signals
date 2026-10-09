@@ -180,8 +180,11 @@ export function buildPreTp1BreakevenSnapshot({
 // re-testar o critério interno. `favorableExtreme === null` (ainda sem MFE
 // utilizável) é um estado genuíno, não dado ausente — `data_status` continua
 // LIVE, só `facts.favorable_move` fica `null`.
+// `cappedAtClose` (item 262) vem PRONTO do chamador (scanner.js compara o
+// trail com e sem o limite do fechamento) — o builder só o registra.
 export function buildPreTp1TrailingSnapshot({
   isBuy, entry, stopBefore, stopAfter, favorableExtreme, atrValue, startAtrMult, trailAtrMult,
+  closePrice = null, cappedAtClose = false,
   executor = null, marketTime = null, evaluatedAt = new Date().toISOString(),
 }) {
   const advanced = stopAfter !== stopBefore;
@@ -195,6 +198,8 @@ export function buildPreTp1TrailingSnapshot({
       atr: Number.isFinite(atrValue) ? atrValue : null,
       start_atr_mult: startAtrMult ?? null, trail_atr_mult: trailAtrMult ?? null,
       stop_before: stopBefore, stop_after: stopAfter,
+      close_price: Number.isFinite(closePrice) ? closePrice : null,
+      capped_at_close: cappedAtClose === true,
     },
     evaluatedAt,
     marketTime,

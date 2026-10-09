@@ -30838,3 +30838,80 @@ preço (cripto 24/7 abre perto do fechamento anterior) e mais de stop posto alé
    com pacote próprio. Se o `expectancyRDeltaIfFilledAtOpen` for desprezível perto da
    meia-largura do IC (item 133), a recomendação é **não** mexer.
 
+## 262. 1º backtest real com o diagnóstico de gap: o trailing pré-TP1 punha o stop além do mercado — corrigido (2026-10-09)
+
+**Contexto**: depois dos pacotes 1 e 2 (itens 260/261), o usuário rodou o `backtest.yml`
+padrão uma vez. Trial `teste0910206`: 12 meses (2025-10-09 → 2026-10-09), 7 símbolos,
+Spot, commit `4bcf367`, `--allow-late-start`.
+
+**Fato — o relatório**:
+- **Integridade:** `dataIntegrity.valid: true`, nenhum problema de série,
+  `insufficientHistory` vazio. Isso confirma em produção o download com 500 velas de
+  aquecimento do item 260, que a sessão não conseguia testar.
+- **Resultado:**
+  - 115 operações: 111 `STOP_HIT` e 4 `TP2_HIT`.
+  - Expectância líquida −0,033R, IC95 [−0,176; +0,110] (±0,143R), INCONCLUSIVO.
+  - PF 0,83, win rate 40,9%, curva com 1% de risco −4,1%.
+  - 74 das 115 saíram no stop trilhado pré-TP1.
+- **`stopGapDiagnostic`:**
+  - 7 de 111 saídas por stop abriram além do stop; somando 1,78R, a expectância cai
+    **0,0155R/op** (−0,033 → −0,048), cerca de 11% da meia-largura do IC.
+  - 6 dos 7 são pré-TP1 (ZRO, PAXG, PENDLE, 2× FET, DYDX), com gap de 0,03 a 0,57R.
+  - O 7º é um runner com 0,0003R.
+
+**Fato — a causa (comprovada no dado, não suposta)**:
+- Nas 6 saídas pré-TP1 com gap, `pre_tp1_stop_advanced_candle_time` é exatamente o
+  candle anterior ao candle de saída (fechamento − 4h).
+- Em todas, `prevCloseBeyondStop` = verdadeiro: o stop foi avançado para um nível além
+  do fechamento daquele candle.
+- `advancePreTp1Trailing` calcula `pico − 2,5×ATR` e nunca compara com o preço atual.
+  Quando o candle faz o pico e devolve mais do que isso, o stop de venda vai para cima do
+  mercado.
+- Numa corretora isso é execução imediata a mercado (≈ fechamento). O motor gravava a
+  saída no stop, um preço que já não existia, e isso valia para o backtest e para o
+  painel ao vivo (o loop de preço também grava `exit_price = current_stop`).
+
+**Pesquisa de comunidade**: a regra de um Chandelier Exit é ficar abaixo do preço numa
+posição comprada ("assert `stop < close` for every open long on every bar"), e uma
+ordem stop real posta além do mercado executa no próximo preço disponível. Não achei
+fonte tratando especificamente este caso de pico seguido de devolução no mesmo candle.
+Fontes:
+[StockCharts — Chandelier Exit](https://articles.stockcharts.com/article/articles-arthurhill-2016-12-systemtrader---testing-a-mean-reverion-system-with-the-chandelier-exit-spy-qqq-ijr---rsi5/),
+[MQL5 — Chandelier Exit](https://www.mql5.com/pt/market/product/185703).
+
+**Decisão do usuário**: corrigir a causa, e não trocar o preenchimento genérico de todo
+stop pela abertura. O dado mostrou que o problema era só este mecanismo.
+
+**Mudança** (mínima, motor ao vivo e backtest):
+- `advancePreTp1Trailing` recebe `closePrice` e limita o trail a ele: BUY
+  `min(trail, close)`, SELL `max`, depois a monotonicidade de sempre. `closePrice`
+  ausente mantém o comportamento anterior.
+- O chamador único (`scanner.js`, ramo pré-TP1 de `persistScanResults`) passa o
+  `closePrice` que já tinha em escopo e registra `capped_at_close` e `close_price` no
+  `decision_snapshot`. O texto do painel diz quando o limite agiu.
+- Breakeven, trailing pós-TP1 (que já fica abaixo do close por construção), TP e loop de
+  preço não mudam.
+- Sem look-ahead: o limite usa o fechamento do candle já fechado, e o stop novo só
+  protege a partir do candle seguinte, como antes (P0-d).
+
+**Verificação**:
+- 5 testes novos em `opExitRules.test.js` e 2 em `scannerStateMachine.test.js`
+  reproduzem o caso real: pico 110 e close 103 → o stop fica em 103, não em 105; a saída
+  seguinte é gravada em 103. Os 5 que afirmam o comportamento novo falharam no código
+  anterior.
+- Mais testes de snapshot e de explicação.
+- Os testes do item 132 e de caracterização do item 261 continuam passando.
+- CLI sintético antes/depois: resultado idêntico quando o limite não age. A série
+  sintética não gera o caso, que é coberto pelo teste de estado.
+- `lint`, `test`, `build`, `build:scan` e `typecheck:ratchet` verdes.
+
+**Consequências (fato)**:
+- Relatórios anteriores a esta correção superestimam levemente o trailing pré-TP1. A
+  medição do item 132 (sd(R) −35%, drawdown pela metade) incluía essa folga.
+- Operações vivas em modo trailing passam a usar o limite no próximo avanço. Só reduz
+  quanto o stop sobe nesse caso extremo, nunca o abaixa.
+
+**Para conferir (pedido ao usuário)**: rodar de novo o `backtest.yml` com as mesmas
+opções e um trial label novo. Esperado: `prevCloseBeyondStop` ≈ 0, `withGap` ≈ 1 e
+expectância ≈ −0,048R. É o número honesto, não uma melhora.
+

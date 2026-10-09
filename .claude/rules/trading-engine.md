@@ -430,6 +430,13 @@ nunca deve receber nova transição.**
   não o gera. Ver `docs/known-risks.md` item 132 pra decomposição completa,
   inclusive a correção pós-review do Codex (aceleração real é 1,85×, não
   os 2,8× da 1ª leitura, e a config B ficou inconclusiva, não "morta").
+  **[CORRIGIDO — item 262] O trail nunca passa do fechamento.** Ancorado no
+  pico, ele ficava além do mercado quando o candle fazia o pico e devolvia
+  mais de `trail×ATR`; o candle seguinte abria além do stop e a saída era
+  gravada num preço inexistente (6 de 6 gaps relevantes no 1º backtest real
+  com `stopGapDiagnostic`). `advancePreTp1Trailing` recebe `closePrice` e
+  limita o stop a ele; `decision_snapshot.facts.capped_at_close` diz quando
+  o limite agiu. Relatórios anteriores superestimam levemente o trailing.
 - **Retry na busca de candle ao vivo** (`src/lib/httpRetry.js`,
   `fetchWithRetry`) — item 57. Causa raiz confirmada do volume baixo de
   operações ao vivo: `src/lib/marketDataProvider.js` (browser) e

@@ -443,6 +443,35 @@ describe('advancePreTp1Trailing (opt-in, item 132)', () => {
       expect(advancePreTp1Trailing({ ...base, currentStop: 94, favorableExtreme: 110, ...bad })).toBe(94);
     }
   });
+  // docs/known-risks.md item 262 — o primeiro backtest real com o diagnóstico
+  // do item 261 achou 6 saídas em que o trail (ancorado no PICO) foi posto
+  // ACIMA do fechamento do candle: candle fez o pico e devolveu mais de
+  // trail×ATR. Stop de venda acima do mercado não existe numa corretora; o
+  // motor registrava a saída nesse preço inexistente. O trail agora nunca
+  // passa do fechamento.
+  it('item 262: BUY — nunca coloca o stop ACIMA do fechamento (pico 110, close 103 → 103, não 105)', () => {
+    expect(advancePreTp1Trailing({ ...base, currentStop: 94, favorableExtreme: 110, closePrice: 103 })).toBe(103);
+  });
+
+  it('item 262: SELL espelhado — nunca coloca o stop ABAIXO do fechamento (vale 90, close 97 → 97, não 95)', () => {
+    expect(advancePreTp1Trailing({
+      ...base, isBuy: false, currentStop: 106, favorableExtreme: 90, closePrice: 97,
+    })).toBe(97);
+  });
+
+  it('item 262: trail já abaixo do fechamento não muda nada', () => {
+    expect(advancePreTp1Trailing({ ...base, currentStop: 94, favorableExtreme: 110, closePrice: 109 })).toBe(105);
+  });
+
+  it('item 262: o limite nunca faz o stop regredir (monotonicidade vence)', () => {
+    expect(advancePreTp1Trailing({ ...base, currentStop: 104, favorableExtreme: 110, closePrice: 103 })).toBe(104);
+  });
+
+  it('item 262: fechamento inválido = sem limite (comportamento anterior), sem lançar', () => {
+    for (const closePrice of [undefined, null, NaN]) {
+      expect(advancePreTp1Trailing({ ...base, currentStop: 94, favorableExtreme: 110, closePrice })).toBe(105);
+    }
+  });
 });
 
 describe('favorableExtremeFromMfe (item 132)', () => {

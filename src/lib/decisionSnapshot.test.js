@@ -183,6 +183,17 @@ describe('buildPreTp1TrailingSnapshot', () => {
     const snap = buildPreTp1TrailingSnapshot({ ...common, atrValue: null, favorableExtreme: 105, stopBefore: 95, stopAfter: 95 });
     expect(snap.data_status).toBe(DATA_STATUS.UNKNOWN);
   });
+  it('item 262: registra o fechamento e se o limite agiu (vem pronto do chamador)', () => {
+    const capped = buildPreTp1TrailingSnapshot({
+      ...common, favorableExtreme: 110, stopBefore: 94, stopAfter: 103, closePrice: 103, cappedAtClose: true,
+    });
+    expect(capped.facts.close_price).toBe(103);
+    expect(capped.facts.capped_at_close).toBe(true);
+    // Chamador antigo (sem os campos novos) continua válido.
+    const legacy = buildPreTp1TrailingSnapshot({ ...common, favorableExtreme: 105, stopBefore: 95, stopAfter: 100 });
+    expect(legacy.facts.close_price).toBeNull();
+    expect(legacy.facts.capped_at_close).toBe(false);
+  });
 });
 
 describe('buildRunnerTrailingSnapshot', () => {

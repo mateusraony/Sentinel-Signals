@@ -298,6 +298,16 @@ describe('explainOperationDecision — pré-TP1 trailing', () => {
     });
     expect(out.evidence).toBe('Medido: movimento favorável 5.0000, gatilho da trilha em 2.0000. Stop foi de 95.0000 para 100.00.');
   });
+  it('avançado e limitado ao fechamento (item 262) — a explicação diz que o limite agiu', () => {
+    const out = explainOperationDecision({
+      decision_snapshot: {
+        decision: 'PROTECTED', reason_code: 'pre_tp1_trailing_advanced',
+        facts: { favorable_move: 10, required_move: 2, stop_before: 94, stop_after: 103, capped_at_close: true }, data_status: 'LIVE',
+      },
+    });
+    expect(out.evidence).toBe('Medido: movimento favorável 10.0000, gatilho da trilha em 2.0000. Stop foi de 94.0000 para 103.00.'
+      + ' Limitado ao fechamento do candle: o preço já tinha devolvido o ganho além do nível da trilha.');
+  });
 });
 
 describe('explainOperationDecision — runner pós-TP1', () => {

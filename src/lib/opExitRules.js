@@ -119,8 +119,18 @@ export function advancePreTp1StopProtection({ isBuy, currentStop, entry, closePr
 // before calling this — the advance only protects from the next candle on
 // (P0-d), and repeated passes over the same unclosed candle are excluded by
 // the caller's `*_advanced_candle_time` marker.
+//
+// docs/known-risks.md item 262 — `closePrice` LIMITA o trail: o stop nunca
+// passa do fechamento do candle que o avançou. Ancorado no pico, o trail
+// ficava ACIMA do mercado (BUY) quando o candle fazia o pico e devolvia mais
+// de trailAtrMult×ATR; o candle seguinte abria além do stop e a saída era
+// gravada num preço que não existia mais. Medido no 1º backtest real com o
+// diagnóstico do item 261: 6 de 6 gaps relevantes eram exatamente isso. Uma
+// ordem stop real posta além do mercado executa imediatamente a mercado
+// (≈ o fechamento), que é o que o limite reproduz. `closePrice` inválido =
+// sem limite (comportamento anterior).
 export function advancePreTp1Trailing({
-  isBuy, currentStop, entry, favorableExtreme, atrValue, startAtrMult, trailAtrMult,
+  isBuy, currentStop, entry, favorableExtreme, atrValue, startAtrMult, trailAtrMult, closePrice = null,
 }) {
   if (!Number.isFinite(currentStop) || !Number.isFinite(entry)
     || !Number.isFinite(favorableExtreme) || !Number.isFinite(atrValue) || atrValue <= 0
@@ -129,9 +139,12 @@ export function advancePreTp1Trailing({
   }
   const favorableMove = isBuy ? favorableExtreme - entry : entry - favorableExtreme;
   if (favorableMove < atrValue * startAtrMult) return currentStop;
-  const trailStop = isBuy
+  const rawTrailStop = isBuy
     ? favorableExtreme - atrValue * trailAtrMult
     : favorableExtreme + atrValue * trailAtrMult;
+  const trailStop = !Number.isFinite(closePrice)
+    ? rawTrailStop
+    : (isBuy ? Math.min(rawTrailStop, closePrice) : Math.max(rawTrailStop, closePrice));
   return isBuy ? Math.max(currentStop, trailStop) : Math.min(currentStop, trailStop);
 }
 

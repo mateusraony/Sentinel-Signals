@@ -4033,8 +4033,13 @@ export async function persistScanResults(scanResult) {
             ...op,
             mfe_r: updatePayload.mfe_r ?? op.mfe_r,
           });
+          // docs/known-risks.md item 262 — o trail é limitado ao fechamento
+          // (`closePrice`): nunca põe o stop além do mercado. `cappedAtClose`
+          // compara com o mesmo cálculo SEM o limite, só para a explicação
+          // dizer quando o limite agiu (sem re-implementar a regra aqui).
+          let cappedAtClose = false;
           if (favorableExtreme !== null) {
-            newCurrentStop = advancePreTp1Trailing({
+            const trailingArgs = {
               isBuy,
               currentStop: newCurrentStop,
               entry: op.entry_price,
@@ -4042,12 +4047,16 @@ export async function persistScanResults(scanResult) {
               atrValue: tfData.atrValue,
               startAtrMult: op.pre_tp1_trail_start_atr_mult ?? 1.0,
               trailAtrMult: op.pre_tp1_trail_atr_mult ?? 2.5,
-            });
+            };
+            const uncappedStop = advancePreTp1Trailing(trailingArgs);
+            newCurrentStop = advancePreTp1Trailing({ ...trailingArgs, closePrice });
+            cappedAtClose = newCurrentStop !== uncappedStop;
           }
           updatePayload.decision_snapshot = buildPreTp1TrailingSnapshot({
             isBuy, entry: op.entry_price, stopBefore: stopBeforeProtection, stopAfter: newCurrentStop,
             favorableExtreme, atrValue: tfData.atrValue,
             startAtrMult: op.pre_tp1_trail_start_atr_mult ?? 1.0, trailAtrMult: op.pre_tp1_trail_atr_mult ?? 2.5,
+            closePrice, cappedAtClose,
             executor: EXECUTOR, marketTime: tfData.lastCandleTime ?? null, evaluatedAt: nowIso,
           });
         } else {

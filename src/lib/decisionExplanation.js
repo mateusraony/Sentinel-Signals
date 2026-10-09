@@ -346,7 +346,13 @@ function formatOperationEvidence(snapshot) {
     if (reasonCode === 'pre_tp1_trailing_advanced') {
       const before = formatPriceNum(facts.stop_before);
       const after = formatPriceNum(facts.stop_after);
-      return before != null && after != null ? `${base} Stop foi de ${before} para ${after}.` : base;
+      if (before == null || after == null) return base;
+      // item 262 — o stop subiu menos do que a trilha pedia porque o preço já
+      // tinha devolvido o ganho: ele para no fechamento, nunca além do mercado.
+      const capped = facts.capped_at_close === true
+        ? ' Limitado ao fechamento do candle: o preço já tinha devolvido o ganho além do nível da trilha.'
+        : '';
+      return `${base} Stop foi de ${before} para ${after}.${capped}`;
     }
     return base;
   }

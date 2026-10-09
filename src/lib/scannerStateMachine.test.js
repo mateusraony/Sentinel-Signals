@@ -1326,6 +1326,42 @@ describe('persistScanResults — trailing pré-TP1 (opt-in, item 132)', () => {
     expect(stored.current_stop).toBe(105);
   });
 
+  // docs/known-risks.md item 262 — reproduz o caso real do backtest (ZRO,
+  // PENDLE, FET, DYDX, PAXG): o candle faz o pico e devolve mais de 2,5×ATR.
+  // Antes, o trail ia para 105 (pico 110 − 5), ACIMA do fechamento 103: o
+  // próximo candle abria abaixo do stop e a saída era gravada em 105, um preço
+  // que o mercado não oferecia mais.
+  it('item 262: candle de pico e queda — o trail para no FECHAMENTO, não acima dele', async () => {
+    backend._seed('TradeOperation', trailingOp({ tp1: 130 }));
+    await persistScanResults(makeScanResult({ results: { '4h': makeTfData({
+      lastCandleHigh: 110, lastCandleLow: 102, lastClose: 103,
+    }) } }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.status).toBe('SIGNAL_CONFIRMED');
+    expect(stored.current_stop).toBe(103);
+    expect(stored.decision_snapshot.facts.capped_at_close).toBe(true);
+
+    // Candle seguinte abre abaixo (gap): a saída sai no stop, que agora é um
+    // preço que existiu (o fechamento anterior), e não 105.
+    await persistScanResults(makeScanResult({ results: { '4h': makeTfData({
+      lastCandleTime: '2026-07-16T16:00:00.000Z', lastCandleOpenTime: '2026-07-16T12:00:00.000Z',
+      lastCandleHigh: 102.5, lastCandleLow: 100, lastClose: 101,
+    }) } }));
+    const exited = backend._get('TradeOperation', 'op1');
+    expect(exited.status).toBe('STOP_HIT');
+    expect(exited.exit_price).toBe(103);
+  });
+
+  it('item 262: sem o limite agir, o snapshot diz capped_at_close: false', async () => {
+    backend._seed('TradeOperation', trailingOp({ tp1: 130 }));
+    await persistScanResults(makeScanResult({ results: { '4h': makeTfData({
+      lastCandleHigh: 110, lastCandleLow: 99, lastClose: 109,
+    }) } }));
+    const stored = backend._get('TradeOperation', 'op1');
+    expect(stored.current_stop).toBe(105);
+    expect(stored.decision_snapshot.facts.capped_at_close).toBe(false);
+  });
+
   it('uma reversão posterior encerra no stop trilhado, não na perda cheia', async () => {
     backend._seed('TradeOperation', trailingOp({ tp1: 130 }));
     await persistScanResults(makeScanResult({ results: { '4h': makeTfData({
