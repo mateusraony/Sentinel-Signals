@@ -39,6 +39,16 @@ export function getSeriesIntegrityIssues() {
   return [...integrityIssues.values()].flat();
 }
 
+// Toda série lida até agora (inclusive as que só o replay pediu) — para
+// run-backtest.mjs checar a cobertura da janela de TODAS, não só da lista
+// verificada antes do replay.
+export function getLoadedSeries() {
+  return [...cache.entries()].map(([key, series]) => {
+    const [symbol, timeframe] = key.split(':');
+    return { symbol, timeframe, series };
+  });
+}
+
 // Exportado (docs/known-risks.md item 69) para o simulador de operação-
 // fantasma (src/lib/indicatorAttribution.js, invocado só por
 // backtestEngine.js) andar para a FRENTE no tempo a partir de um sinal —
@@ -54,19 +64,24 @@ export function loadSeries(symbol, timeframe) {
   let series = [];
   let issues;
   if (fs.existsSync(file)) {
+    let parsed;
     try {
-      series = JSON.parse(fs.readFileSync(file, 'utf-8'));
-      issues = validateCandleSeries(series, { symbol, timeframe });
-      // Série que não é lista não pode seguir adiante: sliceClosedAsOf
-      // quebraria a cada passo. O problema já está registrado em `issues`.
-      if (!Array.isArray(series)) series = [];
+      parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
     } catch (err) {
       // Antes: o erro de parse estourava a cada passo do replay (o cache só
       // era preenchido depois do parse) e era engolido pelo try/catch por
       // timeframe do scanAsset — run inteiro sem aquele dado, sem sinal no
       // relatório. Agora vira problema registrado, uma vez só.
-      series = [];
       issues = [{ severity: 'error', type: 'invalid_json', symbol, timeframe, count: 1, samples: [{ at: null, detail: err.message }] }];
+    }
+    if (!issues) {
+      // Fora do try do parse de propósito (revisão do pacote 1): um defeito
+      // do validador não pode ser relatado como "JSON inválido" — mandaria o
+      // usuário baixar de novo um arquivo que está certo.
+      issues = validateCandleSeries(parsed, { symbol, timeframe });
+      // Série que não é lista não pode seguir adiante: sliceClosedAsOf
+      // quebraria a cada passo. O problema já está registrado em `issues`.
+      if (Array.isArray(parsed)) series = parsed;
     }
   } else {
     console.warn(`[backtestMarketDataProvider] sem dado para ${symbol} ${timeframe} (esperado em ${file}) — rode scripts/fetch-backtest-data.mjs`);

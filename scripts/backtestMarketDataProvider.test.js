@@ -13,7 +13,16 @@ vi.mock('../src/lib/backtestEngine.js', () => ({
   simNow: () => 0,
 }));
 
-const { loadSeries, getSeriesIntegrityIssues } = await import('./backtestMarketDataProvider.js');
+// Validador real por padrão; um teste troca a implementação para provar que
+// erro do VALIDADOR não é relatado como JSON inválido (revisão do pacote 1).
+const realIntegrity = await vi.importActual('./backtestDataIntegrity.js');
+const validateSpy = vi.fn(realIntegrity.validateCandleSeries);
+vi.mock('./backtestDataIntegrity.js', async (importOriginal) => ({
+  ...(await importOriginal()),
+  validateCandleSeries: (...args) => validateSpy(...args),
+}));
+
+const { loadSeries, getSeriesIntegrityIssues, getLoadedSeries } = await import('./backtestMarketDataProvider.js');
 
 const H = 60 * 60 * 1000;
 function bar(openTime) {
@@ -29,6 +38,7 @@ beforeAll(() => {
   fs.writeFileSync(path.join(dir, 'OKUSDT_1h.json'), JSON.stringify([bar(0), bar(H), bar(2 * H)]));
   fs.writeFileSync(path.join(dir, 'DUPUSDT_1h.json'), JSON.stringify([bar(0), bar(H), bar(H)]));
   fs.writeFileSync(path.join(dir, 'BADJSON_1h.json'), '[{"openTime": 0,');
+  fs.writeFileSync(path.join(dir, 'VALIDBUG_1h.json'), JSON.stringify([bar(0)]));
 });
 afterAll(() => {
   if (previousDataDir === undefined) delete process.env.BACKTEST_DATA_DIR;
@@ -62,5 +72,17 @@ describe('backtestMarketDataProvider.loadSeries — integridade (item 260)', () 
   it('problema estrutural de série existente (duplicata) é registrado', () => {
     loadSeries('DUPUSDT', '1h');
     expect(issuesFor('DUPUSDT').map((i) => `${i.severity}:${i.type}`)).toEqual(['error:duplicate']);
+  });
+
+  it('defeito do validador NÃO vira "JSON inválido" — estoura, em vez de mandar baixar de novo um arquivo certo', () => {
+    validateSpy.mockImplementationOnce(() => { throw new Error('bug no validador'); });
+    expect(() => loadSeries('VALIDBUG', '1h')).toThrow('bug no validador');
+    expect(issuesFor('VALIDBUG')).toEqual([]);
+  });
+
+  it('getLoadedSeries devolve toda série lida, para a checagem de cobertura pós-replay', () => {
+    loadSeries('OKUSDT', '1h');
+    const loaded = getLoadedSeries().find((e) => e.symbol === 'OKUSDT' && e.timeframe === '1h');
+    expect(loaded.series).toHaveLength(3);
   });
 });

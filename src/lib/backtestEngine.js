@@ -161,10 +161,15 @@ export function createReplayIntegrityTracker({ evalFromMs, evalToMs }) {
     recordScanErrors(t, symbol, errors) {
       for (const { timeframe, error } of (errors || [])) {
         if (INSUFFICIENT_HISTORY_RE.test(String(error))) {
-          const bucket = (insufficientHistory[timeframe] ||= { count: 0, inEvaluationWindow: 0, lastAt: null });
+          const bucket = (insufficientHistory[timeframe] ||= { count: 0, inEvaluationWindow: 0, lastAt: null, lastInWindowAt: null });
           bucket.count += 1;
-          if (t >= evalFromMs && t <= evalToMs) bucket.inEvaluationWindow += 1;
           bucket.lastAt = new Date(t).toISOString();
+          // Separado de lastAt (revisão do pacote 1): o aviso do CLI fala da
+          // janela AVALIADA e não pode citar um instante de fora dela.
+          if (t >= evalFromMs && t <= evalToMs) {
+            bucket.inEvaluationWindow += 1;
+            bucket.lastInWindowAt = bucket.lastAt;
+          }
           continue;
         }
         const key = `${symbol} ${timeframe}`;
