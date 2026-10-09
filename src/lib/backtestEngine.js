@@ -121,6 +121,69 @@ export function sliceClosedAsOf(candles, asOfMs, limit) {
   return candles.slice(start, end).map(c => ({ ...c, isClosed: true }));
 }
 
+// docs/known-risks.md item 260 — falhas DURANTE o replay. Antes, a exceção
+// por ativo (try/catch do laço abaixo) só chegava ao `onStep`, e os erros por
+// timeframe que scanAsset devolve em `result.errors` não chegavam a lugar
+// nenhum: o relatório saía com aparência normal mesmo com um ativo falhando
+// em todo passo. Três baldes, porque não são a mesma coisa:
+//   - replayFailures: exceção que abortou o passo de um ativo → INVALIDA.
+//   - scanErrors: erro de um timeframe que não é falta de histórico (busca de
+//     candle ou cálculo que estourou) → INVALIDA.
+//   - insufficientHistory: falta de velas para aquecer — esperado no começo
+//     de todo replay enquanto o histórico ainda não tem o mínimo (o 1d leva
+//     ~50 DIAS) → NÃO invalida, mas é contado e separado do que caiu dentro
+//     da janela avaliada, porque nesse trecho o sinal é calculado sem aquele
+//     timeframe (ex.: alinhamento multi-TF vira 'unknown' sem 1d).
+// Duas origens com o mesmo significado: o piso de 50 velas do próprio
+// scanAsset ("Apenas N candles fechados disponíveis") e o mínimo de cada
+// indicador ("Candles insuficientes para EMA: 50, mínimo: 52" — EMA/MACD/
+// RSI/Range Filter, src/lib/indicators/*.js), que passa do piso de 50 quando
+// o período configurado é maior. Se alguma dessas mensagens mudar, os testes
+// "falta de histórico" em backtestEngine.test.js quebram — é a trava para a
+// regex não deixar de casar em silêncio (o aquecimento normal passaria a
+// invalidar todo run).
+const INSUFFICIENT_HISTORY_RE = /^(Apenas \d+ candles fechados disponíveis|Candles insuficientes( para \w+)?: \d+, mínimo: \d+)$/;
+const MAX_INTEGRITY_SAMPLES = 10;
+
+export function createReplayIntegrityTracker({ evalFromMs, evalToMs }) {
+  const replayFailures = { count: 0, byAsset: {}, samples: [] };
+  const scanErrors = { count: 0, byAssetTimeframe: {}, samples: [] };
+  const insufficientHistory = {};
+  const addSample = (bucket, entry) => {
+    if (bucket.samples.length < MAX_INTEGRITY_SAMPLES) bucket.samples.push(entry);
+  };
+  return {
+    recordFailure(t, symbol, message) {
+      replayFailures.count += 1;
+      replayFailures.byAsset[symbol] = (replayFailures.byAsset[symbol] || 0) + 1;
+      addSample(replayFailures, { at: new Date(t).toISOString(), asset: symbol, error: message });
+    },
+    recordScanErrors(t, symbol, errors) {
+      for (const { timeframe, error } of (errors || [])) {
+        if (INSUFFICIENT_HISTORY_RE.test(String(error))) {
+          const bucket = (insufficientHistory[timeframe] ||= { count: 0, inEvaluationWindow: 0, lastAt: null });
+          bucket.count += 1;
+          if (t >= evalFromMs && t <= evalToMs) bucket.inEvaluationWindow += 1;
+          bucket.lastAt = new Date(t).toISOString();
+          continue;
+        }
+        const key = `${symbol} ${timeframe}`;
+        scanErrors.count += 1;
+        scanErrors.byAssetTimeframe[key] = (scanErrors.byAssetTimeframe[key] || 0) + 1;
+        addSample(scanErrors, { at: new Date(t).toISOString(), asset: symbol, timeframe, error });
+      }
+    },
+    summary() {
+      return {
+        valid: replayFailures.count === 0 && scanErrors.count === 0,
+        replayFailures,
+        scanErrors,
+        insufficientHistory,
+      };
+    },
+  };
+}
+
 // Finest enabled timeframe across all assets decides the replay cadence:
 // between closes of that timeframe, fetchCandles for every OTHER timeframe
 // returns an identical "last N closed candles" result (nothing scanAsset
@@ -339,6 +402,8 @@ export async function runBacktest({
     ? [...assets].sort((a, b) => String(a.symbol).localeCompare(String(b.symbol)))
     : assets;
 
+  const replayIntegrity = createReplayIntegrityTracker({ evalFromMs, evalToMs });
+
   installSimClock(fromMs);
   try {
     let tickIndex = 0;
@@ -355,6 +420,7 @@ export async function runBacktest({
         // whole replay or contaminate other assets' results.
         try {
           const result = await scanAsset(asset);
+          replayIntegrity.recordScanErrors(t, asset.symbol, result.errors);
           for (const sig of (result.newSignals || [])) {
             if (sig.source === 'smc_structure') smcConfirmedSignalKeys.add(sig.dedup_key);
           }
@@ -434,6 +500,7 @@ export async function runBacktest({
             }
           }
         } catch (err) {
+          replayIntegrity.recordFailure(t, asset.symbol, err.message);
           if (onStep) onStep(t, { asset: asset.symbol, error: err.message });
         }
       }
@@ -487,6 +554,7 @@ export async function runBacktest({
     ),
     costModel,
     minTrades,
+    dataIntegrity: replayIntegrity.summary(),
   });
 }
 
@@ -722,6 +790,7 @@ function resolveReportCostModel(costModel) {
  * @property {object} [attemptStats]
  * @property {object} [costModel]
  * @property {number} [minTrades]
+ * @property {object} [dataIntegrity]
  */
 
 /** @param {Array<object>} ops @param {BuildReportOptions} options */
@@ -734,6 +803,7 @@ export function buildReport(ops, {
   portfolioCapOutcomes = [], portfolioCapConfigured = null,
   indicatorAttributionRecords = [],
   entryFunnelCounts = { '4h_15m': {}, '1h_5m': {} }, attemptStats = {}, costModel, minTrades,
+  dataIntegrity = null,
 } = {}) {
   const attemptsOf = (name) => attemptStats[name] ?? { ...EMPTY_ATTEMPTS };
   const stillOpen = ops.filter(op => !isTerminalStatus(op.status));
@@ -765,6 +835,12 @@ export function buildReport(ops, {
     // relógio simulado efetivamente percorreu) é exatamente o buffer de
     // aquecimento.
     dataRangeMs,
+    // docs/known-risks.md item 260 — `valid: false` = o replay teve falha que
+    // torna os números abaixo não confiáveis (ver createReplayIntegrityTracker).
+    // run-backtest.mjs acrescenta `seriesIssues` (integridade dos arquivos de
+    // candle) e recalcula `valid`. null só quando buildReport é chamado fora
+    // do runBacktest.
+    dataIntegrity,
     totalOps: ops.length,
     stillOpenAtCutoff: stillOpen.length,
     overall: overallSummary,

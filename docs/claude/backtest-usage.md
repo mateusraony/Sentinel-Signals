@@ -664,6 +664,31 @@ onde cada operação vive. Na **Opção B** isso já vem pronto: o workflow publ
 o diagnóstico no próprio job, na seção "Diagnóstico — de onde vem o
 resultado", sem precisar baixar nada.
 
+## Integridade dos dados (`report.dataIntegrity`, known-risks item 260)
+
+Antes do replay, o CLI confere os arquivos de candle de cada símbolo (1h, 4h,
+1d, 15m — e 5m com `--smc`): arquivo ausente, JSON inválido, candle fora de
+ordem, duplicado, desalinhado, com preço inválido ou com `closeTime` fora da
+própria vela, buraco de 24h ou mais, ou
+série que não cobre `--from`/`--to`. Qualquer um desses **recusa o run em
+segundos** (exit 1, nada é replayado). Buraco curto (menos de 24h, possível
+parada da exchange) só gera AVISO.
+
+Depois do replay, `report.dataIntegrity` diz se o resultado é confiável:
+
+- `valid: false` → **relatório inválido**. Houve exceção no passo de algum
+  ativo (`replayFailures`), erro de busca/cálculo num timeframe
+  (`scanErrors`) ou problema num arquivo lido durante o replay
+  (`seriesIssues`). O JSON é gravado mesmo assim (as amostras de erro ficam
+  nele), mas o processo sai com exit 1, o resumo do workflow mostra
+  "❌ RELATÓRIO INVÁLIDO" (sem veredito de amostra) e o registro de tentativas
+  recusa o relatório.
+- `insufficientHistory` → aquecimento dos indicadores (timeframe ainda sem o
+  mínimo de velas). Não invalida. Se cair **dentro** da janela avaliada, o
+  console avisa: nesse trecho o sinal foi calculado sem aquele timeframe. Com
+  dados baixados a partir do próprio `--from`, o 1d leva ~50 dias para ter
+  histórico — baixe antes do `--from` e use `--evaluation-from` para evitar.
+
 ## O que o replay NÃO cobre (por design, não é lacuna)
 
 - **Preço em tempo real (`priceCheckActiveOps`)** — não há dado de tick num

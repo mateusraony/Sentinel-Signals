@@ -54,7 +54,16 @@ import { analyzeReport } from '../src/lib/backtestAnalysis.js';
 import { ZERO_COST, tradesForCIHalfWidth } from '../src/lib/tradeMetrics.js';
 import { backend } from '@/api/entities';
 import { setPineConfigOverrides, getPineConfig } from './backtestPineConfig.js';
-import { loadSeries } from './backtestMarketDataProvider.js';
+import { loadSeries, getSeriesIntegrityIssues } from './backtestMarketDataProvider.js';
+import { checkWindowCoverage, describeIssue, requiredTimeframes } from './backtestDataIntegrity.js';
+
+function printIssues(issues) {
+  for (const issue of issues) {
+    const line = `[backtest] ${issue.severity === 'error' ? 'ERRO' : 'AVISO'} de dado: ${describeIssue(issue)}`;
+    if (issue.severity === 'error') console.error(line);
+    else console.warn(line);
+  }
+}
 
 function parseArgs(argv) {
   const args = {};
@@ -244,6 +253,33 @@ async function main() {
   }
   const effectivePineConfig = await getPineConfig();
 
+  // Integridade dos candles (docs/known-risks.md item 260) — mesma postura da
+  // checagem de funding real acima: recusar o run inteiro em segundos é melhor
+  // do que publicar, depois do replay todo, um relatório de aparência normal
+  // calculado sobre série ausente, corrompida ou que não cobre a janela.
+  // Buraco curto é só AVISO (pode ser parada real da exchange) e segue para o
+  // relatório.
+  const coverageIssues = [];
+  for (const symbol of symbols) {
+    for (const timeframe of requiredTimeframes(symbol, { smcSymbols, pineConfig: effectivePineConfig })) {
+      const series = loadSeries(symbol, timeframe);
+      coverageIssues.push(...checkWindowCoverage(series, { symbol, timeframe, fromMs, toMs }));
+    }
+  }
+  const preflightIssues = [...getSeriesIntegrityIssues(), ...coverageIssues];
+  printIssues(preflightIssues);
+  if (preflightIssues.some((issue) => issue.severity === 'error')) {
+    console.error(
+      '[backtest] ERRO: dado de candles inválido ou incompleto (detalhes acima) — o replay NÃO foi executado. '
+      + 'Baixe de novo com scripts/fetch-backtest-data.mjs (ou fetch-backtest-data-futures.mjs) para os MESMOS '
+      + 'símbolos, timeframes e período antes de rodar. Se o erro for "série termina antes do fim da janela" com '
+      + 'dado de Futures, o arquivo diário da Binance do último dia pode ainda não ter sido publicado: encurte o '
+      + '--to até onde o dado existe.',
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   // performance.now(), NÃO Date.now(): runBacktest instala um relógio simulado
   // (installSimClock troca o `Date` global) antes de chamar onStep, então
   // `Date.now()` DENTRO do callback devolve o cursor do replay, não a hora de
@@ -337,6 +373,17 @@ async function main() {
   }
   report.signalExpiry = signalExpiry;
 
+  // Item 260 — junta a integridade dos ARQUIVOS (inclui séries que só foram
+  // lidas durante o replay, fora da lista de requiredTimeframes) à do REPLAY
+  // (runBacktest) numa seção só; `valid` passa a cobrir as duas.
+  const seriesIssues = [...getSeriesIntegrityIssues(), ...coverageIssues];
+  const replayIntegrity = report.dataIntegrity || { valid: true };
+  report.dataIntegrity = {
+    ...replayIntegrity,
+    valid: replayIntegrity.valid && !seriesIssues.some((issue) => issue.severity === 'error'),
+    seriesIssues,
+  };
+
   console.log(`[backtest] concluído em ${((performance.now() - started) / 1000).toFixed(1)}s`);
   console.log(`[backtest] total de operações: ${report.totalOps} (ainda abertas no corte: ${report.stillOpenAtCutoff})`);
   console.log('[backtest] signalExpiry (sinais distintos que expiraram sem nunca confirmar):', report.signalExpiry);
@@ -356,10 +403,43 @@ async function main() {
   console.log('[backtest] entryFunnel 1h_5m:', report.entryFunnel['1h_5m']);
   console.log('[backtest] custos:', report.costs);
 
+  // Item 260 — falta de histórico DENTRO da janela avaliada não invalida (é o
+  // aquecimento normal quando o download começa no próprio --from), mas
+  // muda o cálculo: sem 1d, o alinhamento multi-timeframe vira 'unknown' e
+  // pesa no score de entrada. Dito alto para não passar despercebido.
+  for (const [timeframe, info] of Object.entries(report.dataIntegrity.insufficientHistory || {})) {
+    if (info.inEvaluationWindow > 0) {
+      console.warn(
+        `[backtest] AVISO: ${timeframe} sem histórico mínimo de velas em ${info.inEvaluationWindow} avaliação(ões) DENTRO da `
+        + `janela avaliada (última em ${info.lastAt}) — sinais desse trecho foram calculados sem esse timeframe. `
+        + 'Baixe dados começando antes do --from (ou use --evaluation-from) para dar aquecimento.',
+      );
+    }
+  }
+
+  // O veredito de integridade vem ANTES do de amostra: um relatório inválido
+  // não deveria nem ser lido como "inconclusivo" — os números dele podem
+  // simplesmente estar errados.
+  if (!report.dataIntegrity.valid) {
+    const { replayFailures, scanErrors } = report.dataIntegrity;
+    console.error('');
+    console.error('  ❌ RELATÓRIO INVÁLIDO — houve falha de dado ou de execução no replay.');
+    if (replayFailures?.count) console.error(`      ${replayFailures.count} passo(s) de ativo abortado(s) por exceção: ${JSON.stringify(replayFailures.byAsset)}`);
+    if (scanErrors?.count) console.error(`      ${scanErrors.count} erro(s) de timeframe no scan: ${JSON.stringify(scanErrors.byAssetTimeframe)}`);
+    printIssues(report.dataIntegrity.seriesIssues.filter((issue) => issue.severity === 'error'));
+    console.error('      Detalhes e amostras em report.dataIntegrity. Não compare este relatório com nenhum outro.');
+    console.error('');
+  }
+
   // O veredito de amostra fica DEPOIS de tudo e em destaque de propósito: um
   // relatório com poucas operações produz win rate e profit factor de aparência
   // perfeitamente normal, e é exatamente aí que uma decisão errada nasce.
-  if (!report.costs.conclusive) {
+  // Codex review (PR #475, P2): relatório inválido não ganha veredito de
+  // amostra nem "poder de descarte" — um "✅ amostra suficiente" logo abaixo
+  // do aviso de inválido daria peso estatístico a números que não valem.
+  if (!report.dataIntegrity.valid) {
+    console.log('[backtest] veredito de amostra e poder de descarte omitidos: relatório inválido (ver acima).');
+  } else if (!report.costs.conclusive) {
     const { countedTrades, minTrades: min, inconclusiveReason, expectancyRCI95 } = report.costs;
     const motivo = inconclusiveReason === 'sample_too_small'
       ? `amostra pequena demais (${countedTrades} operações fechadas, mínimo ${min})`
@@ -376,14 +456,14 @@ async function main() {
   }
 
   // docs/known-risks.md item 133 — ALVO DECLARADO: estreitar o IC, não
-  // provar edge. Impresso SEMPRE (conclusivo ou não), porque é a única
+  // provar edge. Impresso sempre que o relatório é válido (conclusivo ou não), porque é a única
   // métrica aqui que progride monotonicamente com amostra e responde a
   // pergunta acionável: "que tamanho de vantagem esta amostra já descarta?".
   // "Inconclusivo" continua sendo verdade e continua sendo impresso acima —
   // o que muda é que ele deixa de ser o fim da leitura.
   const meiaLargura = report.costs.expectancyRCI95HalfWidth;
   const sdPorOp = report.costs.expectancyRSd;
-  if (Number.isFinite(meiaLargura) && Number.isFinite(sdPorOp) && sdPorOp > 0) {
+  if (report.dataIntegrity.valid && Number.isFinite(meiaLargura) && Number.isFinite(sdPorOp) && sdPorOp > 0) {
     console.log('');
     console.log(`  📏 PODER DE DESCARTE (alvo do item 133) — meia-largura do IC95: ±${meiaLargura.toFixed(3)}R`);
     // O limite de descarte é o EXTREMO SUPERIOR do IC, não a meia-largura
@@ -437,6 +517,11 @@ async function main() {
   };
   fs.writeFileSync(outPath, JSON.stringify(enriched, null, 2));
   console.log(`[backtest] relatório completo salvo em ${outPath}`);
+
+  // Item 260 — o relatório é gravado mesmo inválido (as amostras de erro
+  // ficam nele para diagnóstico), mas o processo sai com erro: um run com
+  // falha não pode aparecer verde no GitHub Actions.
+  if (!enriched.dataIntegrity.valid) process.exitCode = 1;
 
   // Trava final do funding real (item 131). As checagens de cobertura acima
   // olham a SÉRIE; esta olha o RESULTADO — quantas operações de fato casaram

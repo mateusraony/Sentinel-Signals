@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { sliceClosedAsOf, simNow } from '../src/lib/backtestEngine.js';
+import { validateCandleSeries } from './backtestDataIntegrity.js';
 
 // Provenance stamped onto every TradeOperation/SignalEvent created during a
 // backtest run — mirrors the cron's Spot/binance path (the historical data
@@ -27,6 +28,16 @@ function getDataDir() {
   return process.env.BACKTEST_DATA_DIR || path.join('scripts', '__fixtures__', 'backtest');
 }
 const cache = new Map();
+// docs/known-risks.md item 260 — problemas ESTRUTURAIS de cada série
+// carregada (arquivo ausente, JSON inválido, ordem, duplicata, buraco),
+// registrados uma vez por símbolo/timeframe junto com o cache acima.
+// run-backtest.mjs lê isto antes do replay (recusa o run) e depois dele
+// (série carregada só durante o replay também entra no relatório).
+const integrityIssues = new Map();
+
+export function getSeriesIntegrityIssues() {
+  return [...integrityIssues.values()].flat();
+}
 
 // Exportado (docs/known-risks.md item 69) para o simulador de operação-
 // fantasma (src/lib/indicatorAttribution.js, invocado só por
@@ -41,11 +52,27 @@ export function loadSeries(symbol, timeframe) {
   if (cache.has(key)) return cache.get(key);
   const file = path.join(getDataDir(), `${symbol}_${timeframe}.json`);
   let series = [];
+  let issues;
   if (fs.existsSync(file)) {
-    series = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    try {
+      series = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      issues = validateCandleSeries(series, { symbol, timeframe });
+      // Série que não é lista não pode seguir adiante: sliceClosedAsOf
+      // quebraria a cada passo. O problema já está registrado em `issues`.
+      if (!Array.isArray(series)) series = [];
+    } catch (err) {
+      // Antes: o erro de parse estourava a cada passo do replay (o cache só
+      // era preenchido depois do parse) e era engolido pelo try/catch por
+      // timeframe do scanAsset — run inteiro sem aquele dado, sem sinal no
+      // relatório. Agora vira problema registrado, uma vez só.
+      series = [];
+      issues = [{ severity: 'error', type: 'invalid_json', symbol, timeframe, count: 1, samples: [{ at: null, detail: err.message }] }];
+    }
   } else {
     console.warn(`[backtestMarketDataProvider] sem dado para ${symbol} ${timeframe} (esperado em ${file}) — rode scripts/fetch-backtest-data.mjs`);
+    issues = [{ severity: 'error', type: 'missing_file', symbol, timeframe, count: 1, samples: [{ at: null, file }] }];
   }
+  integrityIssues.set(key, issues);
   cache.set(key, series);
   return series;
 }

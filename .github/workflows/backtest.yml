@@ -282,7 +282,23 @@ jobs:
               node -e "
                 const r = JSON.parse(require('fs').readFileSync('backtest-report.json', 'utf-8'));
                 const c = r.costs || {};
-                if (c.conclusive === false) {
+                // docs/known-risks.md item 260 — integridade vem antes até do
+                // veredito de amostra: relatório inválido pode ter números
+                // simplesmente errados, não só ruidosos.
+                const di = r.dataIntegrity;
+                if (di && di.valid === false) {
+                  console.log('> ### ❌ RELATÓRIO INVÁLIDO — falha de dado ou de execução no replay');
+                  console.log('> **Não compare este relatório com nenhum outro.** Falhas por exceção: ' + (di.replayFailures?.count ?? 0)
+                    + ' · erros de timeframe no scan: ' + (di.scanErrors?.count ?? 0)
+                    + ' · problemas nos arquivos de candle: ' + (di.seriesIssues || []).filter((i) => i.severity === 'error').length
+                    + '. Detalhes em dataIntegrity, no artifact.');
+                  console.log('');
+                }
+                // Codex review (PR #475, P2): inválido não ganha veredito de
+                // amostra — nem INCONCLUSIVO, muito menos ✅ suficiente.
+                if (di && di.valid === false) {
+                  // veredito de amostra omitido de propósito
+                } else if (c.conclusive === false) {
                   const motivo = c.inconclusiveReason === 'sample_too_small'
                     ? \`amostra pequena demais (\${c.countedTrades} operações, mínimo \${c.minTrades})\`
                     : c.inconclusiveReason === 'ci_straddles_zero'
@@ -302,6 +318,7 @@ jobs:
                 const strip = (s) => s && ({ ...s, curve: undefined });
                 console.log(JSON.stringify({
                   range: r.range,
+                  dataIntegrity: r.dataIntegrity,
                   totalOps: r.totalOps,
                   stillOpenAtCutoff: r.stillOpenAtCutoff,
                   trialLabel: r.trialLabel,
