@@ -672,6 +672,40 @@ onde cada operação vive. Na **Opção B** isso já vem pronto: o workflow publ
 o diagnóstico no próprio job, na seção "Diagnóstico — de onde vem o
 resultado", sem precisar baixar nada.
 
+## Passo 4 — comparar dois runs (controle × variante, known-risks item 263)
+
+```bash
+node scripts/compare-backtest-reports.mjs \
+  --control ./controle.json --variant ./variante.json \
+  [--family-size 3] [--allow-commit-mismatch] [--seed N] [--json saida.json]
+```
+
+O script recebe os dois JSON completos, o mesmo artifact `backtest-report`
+do Passo 3. Ele imprime duas leituras:
+
+- **Pareada.** Casa as operações pelo `op.id` e mede o ΔR de cada uma. O IC
+  usa t(G−1) com erro robusto a cluster. É a leitura certa quando a variante
+  só muda **como** uma operação termina.
+- **Não pareada.** Compara a expectância de cada braço,
+  `z = Δ/√(SE₁²+SE₂²)`. É a leitura certa quando a variante muda **quais**
+  operações existem; nesse caso o script avisa. Também mostra o sd(R) e o
+  drawdown da conta simulada de cada braço.
+
+`--family-size` aplica Bonferroni: use o número de comparações pré-registradas
+na família. O veredito só diz "diferença significativa" quando o IC exclui zero
+**e** há G ≥ 20 clusters.
+
+O script **recusa** (exit 1, sem número nenhum) nestes casos:
+
+- algum relatório tem `dataIntegrity.valid` diferente de `true`;
+- as janelas ou os símbolos são diferentes;
+- há `op.id` duplicado;
+- os commits são diferentes.
+
+`--allow-commit-mismatch` libera o último caso, mas só quando a mudança de
+código é exatamente o que você está comparando (ex.: antes/depois de uma
+correção, item 262).
+
 ## Integridade dos dados (`report.dataIntegrity`, known-risks item 260)
 
 Antes do replay, o CLI confere os arquivos de candle de cada símbolo (1h, 4h,

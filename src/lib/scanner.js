@@ -4192,7 +4192,15 @@ export async function persistScanResults(scanResult) {
           });
         }
       } else if (rfFilt && op.exit_mode !== 'ATR_TRAILING') {
-        const rfInval = isBuy ? (rfDir === -1 && closePrice < rfFilt) : (rfDir === 1 && closePrice > rfFilt);
+        // docs/known-risks.md item 263 — `rfExitCloseOnlyEnabled` é chave SÓ
+        // de backtest (scripts/backtestPineConfig.js; tripwire em
+        // rfExitCloseOnlyTripwire.test.js) para MEDIR a diferença para o Pine
+        // real, que sai quando o fechamento cruza o filtro sem exigir a
+        // direção virada. Desligada (padrão e produção), a condição é a de
+        // sempre.
+        const rfInval = pineConfig.rfExitCloseOnlyEnabled === true
+          ? (isBuy ? closePrice < rfFilt : closePrice > rfFilt)
+          : (isBuy ? (rfDir === -1 && closePrice < rfFilt) : (rfDir === 1 && closePrice > rfFilt));
         if (rfInval) {
           newStatus = 'INVALIDATED';
           updatePayload.closed_reason = 'INVALIDATION';

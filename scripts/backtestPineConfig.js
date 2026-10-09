@@ -347,6 +347,14 @@ const DEFAULTS = {
   // skip15mConfirmationEnabled, item 120/121) — Espelha src/lib/
   // pineParser.js/scripts/adminPineConfig.js.
   disableTp2CapEnabled: false,
+  // docs/known-risks.md item 263 (pacote 4) — BACKTEST-ONLY, tripwire em
+  // src/lib/rfExitCloseOnlyTripwire.test.js. Saída por Range Filter do
+  // runner no estilo do Pine real: basta o fechamento cruzar o filtro
+  // (`close < filt` na compra), sem exigir que a direção do RF já tenha
+  // virado (`rfDir === -1`), que é o que o motor faz hoje. Existe para MEDIR
+  // quanto essa diferença muda o resultado — não é proposta de mudança de
+  // produção. OFF = byte-idêntico a hoje.
+  rfExitCloseOnlyEnabled: false,
 };
 
 let overrides = {};

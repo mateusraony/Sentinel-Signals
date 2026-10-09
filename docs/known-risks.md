@@ -30915,3 +30915,116 @@ stop pela abertura. O dado mostrou que o problema era só este mecanismo.
 opções e um trial label novo. Esperado: `prevCloseBeyondStop` ≈ 0, `withGap` ≈ 1 e
 expectância ≈ −0,048R. É o número honesto, não uma melhora.
 
+
+**Addendum — confirmado no dado real (2026-10-09)**: o usuário rodou de novo com as
+mesmas opções (trial `teste0910206-fix`, commit `5d49eab`). Comparação feita com
+`scripts/compare-backtest-reports.mjs` (item 263), usando `--allow-commit-mismatch`
+porque a mudança de código é justamente o que se compara:
+- **Só as 6 operações previstas mudaram.** São as mesmas 6 do diagnóstico (ZRO, PAXG,
+  PENDLE, 2× FET, DYDX), todas ainda `STOP_HIT` e mais negativas. As outras 109 têm
+  R idêntico, e nenhuma operação apareceu ou sumiu.
+- **ΔR médio pareado:** −0,0154R por operação, IC t(55) robusto a cluster
+  [−0,0315; +0,0008]. Era a folga otimista que o diagnóstico tinha estimado
+  (−0,0155R), agora tirada do resultado.
+- **Expectância líquida:** −0,048R, IC95 [−0,193; +0,096] (±0,145R), INCONCLUSIVO.
+- **Outras métricas:** PF 0,77; win rate 40,9% (igual); conta com 1% de risco −5,7%;
+  drawdown 8,7% (antes 7,9%).
+- **`stopGapDiagnostic`:** `prevCloseBeyondStop` 0 (era 6). Restaram 5 saídas com gap,
+  todas ≤ 0,0044R, somando 0,012R. São gaps de virada de candle comuns, não stop
+  colocado além do mercado.
+
+A estratégia não mostra vantagem nesta janela: o IC vai de −0,19R a +0,10R.
+
+## 263. Pacote 4 — medir quanto cada diferença de saída entre o Pine e o JS muda o resultado (pré-registro, 2026-10-09)
+
+**Por quê**: a pergunta é quanto do resultado (−0,048R, item 262) vem da estratégia do
+usuário e quanto vem de regras que o JS tem e o Pine real ("NEW ERA - Range Filter
+Strategy v13.2") não tem. Este pacote **mede, sem mudar produção**. Mudar o motor depois
+é decisão separada do usuário.
+
+**Divergências de saída mapeadas no código**:
+
+| | Pine real | JS hoje | Como imitar o Pine no backtest |
+|---|---|---|---|
+| **A** proteção pré-TP1 | stop fixo até o TP1 | trailing pré-TP1 ligado (item 132); 74 de 115 operações saíram por ele | `preTp1StopProtectionEnabled:false` (já existia) |
+| **B** TP2 | não existe | TP2 = 2×TP1, saída terminal | `disableTp2CapEnabled:true` (já existia; item 115: +0,015R, não significativo) |
+| **C** saída por Range Filter do runner | sai com `close < filtro` (BUY), sem olhar a direção do filtro | exige também `rfDir === -1` (subconjunto) | `rfExitCloseOnlyEnabled:true` (**novo, este item**) |
+| **G** sinal oposto | reverte a posição | só reduz a confiança | `arbInvalidateOnOppositeSameTf:true` (já existia; ~7 eventos no run) |
+
+**Fica de fora (resíduo documentado, não medido)**:
+- **D** Time Stop por tempo decorrido × contador de barras do Pine, e **E** trailing
+  pós-TP1: equivalentes no replay de 4h.
+- O Pine pode sair pelo Range Filter **no próprio candle do TP1**; o JS só avalia no
+  candle seguinte. Imitar isso exigiria uma transição nova no ramo do TP1, ou seja,
+  mexer no motor, e isso está fora deste pacote.
+
+**Mudança de código (só backtest)**:
+- `rfExitCloseOnlyEnabled` em `scripts/backtestPineConfig.js` (padrão `false`).
+- Uma condição em `scanner.js`, na saída por Range Filter do runner, atrás da chave.
+  Desligada, a condição é byte a byte a de sempre.
+- Tripwire `src/lib/rfExitCloseOnlyTripwire.test.js`: falha se a chave aparecer em
+  `pineParser.js` ou `adminPineConfig.js` (produção). Validado reintroduzindo a chave
+  em `pineParser.js`: o teste falhou.
+- 4 testes em `scannerStateMachine.test.js`: com `close` abaixo do filtro e `rfDir`
+  ainda +1, o runner só sai com a chave ligada; SELL espelhado; `close` do lado certo
+  não sai.
+- Replay sintético (CLI): com a chave desligada, o relatório é idêntico ao do `main`
+  campo a campo, fora `reproducibility`/`trialArgs`. O `configHash` muda porque o
+  config efetivo ganhou uma chave; hash diferente de runs antigos não significa
+  comportamento diferente.
+- A saída por Range Filter do runner não depende de `useInvalidation` (que está
+  `false`). Só pula operações `ATR_TRAILING`, e os 15 runners do run real são todos
+  `HYBRID_RF_ATR`, então a variante C alcança todos.
+
+**Ferramenta nova — `scripts/compare-backtest-reports.mjs`**: os itens 103, 104, 115 e
+132 compararam runs com scripts avulsos, nunca commitados. Agora a comparação está
+versionada (parte pura em `scripts/compareBacktestReports.mjs`, com testes):
+- **Pareado:** casa operações por `op.id` e mede o ΔR por operação. O IC usa t(G−1)
+  robusto a cluster, com clusters de sobreposição dos dois braços, mais um sign-flip
+  por cluster como complemento.
+- **Não pareado:** compara a expectância de cada braço, `z = Δ/√(SE₁²+SE₂²)`. É a
+  leitura principal quando a variante muda quais operações existem. É conservador,
+  porque os braços dividem o mesmo mercado.
+- **Recusa:** relatório inválido, janela ou símbolos diferentes, `op.id` duplicado e
+  commits diferentes (este último só passa com `--allow-commit-mismatch`).
+- **Validado contra resultado conhecido:** `teste0910206` × `teste0910206-fix` deu
+  115 casadas, 109 iguais, 6 diferentes e ΔR −0,0154, exatamente o que o item 262
+  previa.
+
+**Pré-registro (escrito ANTES de qualquer run)**:
+- **Família no ledger:** `pine-parity-exits-2026-10`.
+- **Runs:** mesmos 7 símbolos (BTC, ETH, FET, PENDLE, ZRO, DYDX, PAXG), Spot, janela
+  2025-10-09 → 2026-10-09, `--allow-late-start` e o mesmo commit (o do merge deste
+  item) nos 4.
+
+| Label | `pine_config` |
+|---|---|
+| `PineParity_R0` | (vazio — controle) |
+| `PineParity_A` | `{"preTp1StopProtectionEnabled":false}` |
+| `PineParity_C` | `{"rfExitCloseOnlyEnabled":true}` |
+| `PineParity_PINE` | `{"preTp1StopProtectionEnabled":false,"disableTp2CapEnabled":true,"rfExitCloseOnlyEnabled":true,"arbInvalidateOnOppositeSameTf":true}` |
+
+- **B e G não ganham run isolado:** B já foi medido (item 115) e G afeta ~7 eventos.
+  Os dois entram juntos no `PINE`.
+- **Comparações:** 3 (A, C e PINE contra R0), com Bonferroni m=3:
+  `--family-size 3` no comparador.
+- **Pergunta:** quanto cada divergência muda a expectância e o risco (sd(R) e drawdown
+  da conta simulada) em relação ao controle.
+- **Previsões (hipóteses, registradas antes):**
+  - **A** é a maior alavanca. Desligar o trailing pré-TP1 deve aumentar sd(R) e o
+    drawdown, como no item 132 ao contrário, sem mudar a expectância de forma
+    significativa.
+  - **C** mexe pouco: só os runners (15 de 115 no controle) podem mudar. ΔR pareado
+    pequeno e indistinguível do ruído.
+  - **PINE** deve ficar perto de A, já que A domina.
+- **Regra de leitura:** uma diferença só conta se o IC do comparador, já no alpha de
+  Bonferroni, excluir zero **e** G ≥ 20. Sem isso, o resultado é "indistinguível do
+  ruído", que também é um resultado válido.
+  - Quando a variante muda quais operações existem (A e PINE), a leitura principal é a
+    não pareada.
+  - Para C, que só muda como os runners terminam, a leitura principal é a pareada.
+- **Proibido depois de ver os dados:** trocar janela, símbolos ou métrica, ou
+  acrescentar uma variante sem registrá-la aqui antes.
+- **Nenhuma decisão de produção sai deste item.**
+
+**Resultado**: pendente. O usuário dispara os 4 runs e envia os relatórios.

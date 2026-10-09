@@ -437,6 +437,11 @@ nunca deve receber nova transição.**
   com `stopGapDiagnostic`). `advancePreTp1Trailing` recebe `closePrice` e
   limita o stop a ele; `decision_snapshot.facts.capped_at_close` diz quando
   o limite agiu. Relatórios anteriores superestimam levemente o trailing.
+- **Saída por RF do runner no estilo Pine** (`pineConfig.rfExitCloseOnlyEnabled`,
+  item 263) — **BACKTEST-ONLY, `false` por padrão**, com tripwire
+  (`src/lib/rfExitCloseOnlyTripwire.test.js`). Ligada, o runner sai com o close
+  além do filtro sem exigir `rfDir` contrário (como o Pine real). Serve só para
+  MEDIR a divergência; desligada, a condição é a de sempre.
 - **Retry na busca de candle ao vivo** (`src/lib/httpRetry.js`,
   `fetchWithRetry`) — item 57. Causa raiz confirmada do volume baixo de
   operações ao vivo: `src/lib/marketDataProvider.js` (browser) e
