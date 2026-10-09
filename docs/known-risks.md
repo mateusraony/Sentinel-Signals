@@ -30611,3 +30611,95 @@ ou `online:false` (o resíduo aceito do item 257, scan que começa visível e é
 meio, é o próximo suspeito); qualquer erro de origem `cron`; ou o Telegram voltar a avisar
 por esse erro. Sem isso, o "há X d" no relatório só cresce e o assunto se encerra.
 
+
+## 260. Backtest com dado ausente/corrompido ou falha no replay saía "normal" — agora invalida (2026-10-09)
+
+**Contexto**: uma auditoria externa propôs revisar o motor de ponta a ponta. Três
+agentes conferiram as 6 afirmações dela contra o código (somente leitura) antes de
+qualquer mudança. Resultado da verificação:
+
+| Afirmação | Veredito | Onde já estava |
+|---|---|---|
+| Arquivo de candles ausente vira série `[]` sem invalidar o backtest | **Confirmada, inédita** | — (corrigida aqui) |
+| Exceção por ativo no replay é engolida | **Confirmada, inédita** | só o scan ao vivo (itens 5/136) |
+| TP2 fixo (2×TP1) no JS, ausente no Pine | Confirmada, já tratada | itens 114/115 (TP2 em ~5% das ops; +0,015R, p=0,69) |
+| Slippage: 1 tick no Pine × 1 bp no JS | Confirmada, impacto desprezível (~7% de um custo de ~0,04R) | unidade não documentada; o comentário de `tradeMetrics.js:34-37` sugere equivalência que não existe |
+| Lock fail-open | Decisão intencional | item 252 (mesma alegação já rebatida; índice único no Postgres barra duplicata) |
+| ADX/Chop aprova quando falta dado | Ramo existe (`scanner.js` `evaluateRegime`), mas é inalcançável no 4h em produção | item 42 |
+
+Achados novos da mesma verificação, **ainda não tratados** (pacotes seguintes do plano):
+saída por gap grava `exit_price = current_stop` mesmo quando o preço furou o stop
+(P&L otimista, sem teste); proteção/trailing pré-TP1 (ligada por padrão no JS) e a
+condição de saída por RF nunca foram medidas contra o Pine; faltam testes de
+determinismo (mesmo histórico 2×) e de causalidade ponta a ponta;
+`docs/roadmap.md` diz `disableTp2CapEnabled` "ATIVADO EM PRODUÇÃO" e o item 130 diz
+desligado — o valor real está em `strategyConfig/current`, que o repo não vê.
+
+**Fato (antes desta mudança)**:
+- `scripts/backtestMarketDataProvider.js` `loadSeries`: arquivo ausente → `console.warn`
+  e `[]`; JSON corrompido estourava a cada passo (o cache só era preenchido depois do
+  parse) e caía no try/catch por timeframe do `scanAsset`.
+- `scanAsset` devolve erro por timeframe em `result.errors`; `runBacktest` nunca lia.
+- Exceção que abortava o passo de um ativo (`backtestEngine.js`, try/catch do laço) só
+  chegava ao `onStep`, que só fazia `console.warn`.
+- Nada checava ordem, duplicata ou buraco — e `sliceClosedAsOf` faz busca binária que
+  **depende** de série ordenada sem repetição.
+- Em todos os casos o relatório era gravado com a mesma cara de um run limpo e o processo
+  saía com 0 (verde no GitHub Actions).
+
+**Pesquisa de comunidade** (o que decidiu a política): guias de qualidade OHLC para
+backtest e o validador do RustyBT tratam ordem, duplicata, valor nulo/negativo e
+high/low incoerente como ERRO que impede o uso do dado; buraco como aviso, porque pode
+ser fechamento/parada real. Cripto opera 24/7, mas manutenção da exchange produz janela
+sem candle que o scan ao vivo também veria. Fontes:
+[RustyBT — data validation](https://rustybt.readthedocs.io/en/latest/guides/data-validation/),
+[Backtrex — OHLC data quality](https://backtrex.com/en/blog/ohlc-data-quality-validation-backtesting-guide),
+[ohlcv (crate Rust, Binance)](https://docs.rs/crate/ohlcv/0.0.3) (reprova par com buraco
+acima de N velas). Não achei documentação da Binance sobre buracos nos klines por
+manutenção — o limite abaixo é escolha deste projeto, não padrão citado.
+
+**Mudança**:
+- `scripts/backtestDataIntegrity.js` (puro, novo): `validateCandleSeries` (ordem,
+  duplicata, desalinhamento, barra inválida → erro; buraco < 24h → aviso; ≥ 24h → erro — inclusivo
+  porque o download de Futures pula em silêncio um arquivo diário inexistente, o que deixa
+  um buraco de exatamente 24h),
+  `checkWindowCoverage` (série precisa cobrir `--from`/`--to`, folga de 1 intervalo em
+  cada ponta), `requiredTimeframes`.
+- `loadSeries` registra os problemas de cada série (ausente, JSON inválido, estrutura)
+  uma vez; continua devolvendo `[]` para não mudar o contrato.
+- `run-backtest.mjs`: checa 1h/4h/1d + 15m (+5m com SMC) **antes** do replay e recusa
+  o run com exit 1 se houver erro — mesma postura da checagem de funding real (item 131).
+- `runBacktest` (`createReplayIntegrityTracker`) devolve `report.dataIntegrity`:
+  `replayFailures` (exceção por ativo) e `scanErrors` (erro de timeframe) **invalidam**;
+  `insufficientHistory` (aquecimento — "Apenas N candles" do `scanAsset` e o mínimo de
+  EMA/MACD/RSI/RF) **não invalida**, é contado à parte do que caiu na janela avaliada.
+  O CLI soma `seriesIssues`, grava o relatório mesmo inválido (amostras para
+  diagnóstico) e sai com exit 1.
+- `backtest.yml` mostra "❌ RELATÓRIO INVÁLIDO" no topo do resumo;
+  `backtest-trial-registry.mjs` recusa registrar relatório inválido.
+- `run-backfill-check.mjs` também usa `runBacktest` e recebe o campo novo, mas **não**
+  passou a usá-lo — continua decidindo "incompleto" só por `hasFetchFailure()`. Fora
+  de escopo desta rodada.
+
+**Achado colateral (fato, medido no teste ponta a ponta com dado sintético)**: o
+`backtest.yml` baixa candles a partir do próprio `--from` do replay. Então todo run
+começa sem histórico: ~2 dias sem 1h, ~8 dias sem 4h e **~50 dias sem 1d**. Sem 1d,
+`analyzeAlignment` devolve `'unknown'`, e o alinhamento pesa no score de entrada
+(`calculateSignalStrength`). Num run padrão de 12 meses, o primeiro ~1,7 mês é avaliado
+com um score diferente do que o painel ao vivo (sempre com 150 velas de 1d) calcularia.
+Agora isso aparece como AVISO no console (`insufficientHistory.inEvaluationWindow`), não
+como erro. **Não corrigido**: a correção natural (baixar dados antes do `--from` e usar
+`--evaluation-from`) muda a janela de todos os relatórios e é decisão separada.
+
+**Verificação**: 10 testes novos falham contra o código anterior e passam com a mudança
+(`backtestEngine.test.js` "report.dataIntegrity", `backtestMarketDataProvider.test.js`);
+28 testes puros em `backtestDataIntegrity.test.js`; CLI rodado de ponta a ponta com dado
+sintético em 7 cenários (limpo → exit 0; 1d ausente, 4h duplicado, JSON corrompido,
+janela além dos dados → recusado antes do replay, exit 1; buraco de 2h → aviso, exit 0;
+replay começando no início dos dados → avisos de aquecimento, exit 0). A regex de
+aquecimento tem trava: se a mensagem do `scanAsset` ou dos indicadores mudar, os testes
+de "falta de histórico" quebram.
+
+**Para conferir (gatilho para reabrir)**: um run real do `backtest.yml` recusado por
+buraco ≥ 24h numa série baixada da Binance — aí o limite precisa ser revisto contra o
+buraco real, e não a série ser "consertada".

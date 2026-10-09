@@ -100,6 +100,13 @@ describe('recordFromReport', () => {
   it('lança erro quando trialLabel está ausente (relatório incompleto)', () => {
     expect(() => recordFromReport({ costs: {} }, 'x')).toThrow(/trialLabel/);
   });
+
+  it('recusa relatório marcado inválido (item 260) e aceita o antigo, sem a seção', () => {
+    expect(() => recordFromReport({ trialLabel: 't', costs: {}, dataIntegrity: { valid: false } }, 'x'))
+      .toThrow(/inválido/);
+    expect(() => recordFromReport({ trialLabel: 't', costs: {}, dataIntegrity: { valid: true } }, 'x')).not.toThrow();
+    expect(() => recordFromReport({ trialLabel: 't', costs: {} }, 'x')).not.toThrow();
+  });
 });
 
 describe('createSeedRecord', () => {

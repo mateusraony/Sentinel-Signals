@@ -103,6 +103,14 @@ export function recordFromReport(report, family) {
   if (!report.trialLabel) {
     throw new Error('report.trialLabel ausente — backtest.yml exige trial_label; relatório parece incompleto.');
   }
+  // docs/known-risks.md item 260 — relatório marcado inválido (falha de dado
+  // ou de execução no replay) tem expectância possivelmente errada, não só
+  // ruidosa: registrá-lo poria um número falso na família. Rode de novo com
+  // dado íntegro e registre ESSE. Relatório antigo, sem a seção, passa (não
+  // dá para saber).
+  if (report.dataIntegrity?.valid === false) {
+    throw new Error('report.dataIntegrity.valid é false — relatório inválido não entra no registro de tentativas.');
+  }
   const costs = report.costs || {};
   const expectancyR = costs.netExpectancyR ?? null;
   return {

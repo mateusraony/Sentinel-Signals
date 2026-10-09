@@ -1795,3 +1795,126 @@ describe('buildReport — expectancyRSd/expectancyRCI95HalfWidth chegam ao repor
       .toBeCloseTo(report.costs.netExpectancyR + report.costs.expectancyRCI95HalfWidth, 10);
   });
 });
+
+// docs/known-risks.md item 260 — antes desta seção existir, nenhuma falha do
+// replay chegava ao relatório: exceção por ativo ia só para o `onStep`, erro
+// por timeframe ficava em `result.errors` sem ninguém ler, e o relatório saía
+// com a mesma cara de um run limpo. Cada teste abaixo falha contra o motor
+// anterior (report.dataIntegrity não existia).
+describe('runBacktest — report.dataIntegrity (item 260)', () => {
+  const START = new Date('2026-01-01T00:00:00.000Z').getTime();
+
+  function setSeries(candles4h) {
+    fetchCandles.mockImplementation(async (sym, tf, limit) =>
+      sliceClosedAsOf(tf === '4h' ? candles4h : [], simNow(), limit)
+    );
+  }
+
+  beforeEach(() => {
+    getPineConfig.mockResolvedValue(basePineConfig());
+  });
+
+  it('run limpo: valid true, sem falha, sem erro de scan', async () => {
+    setSeries(downtrendCandles(120, 300, 1, START, FOUR_H));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const report = await runBacktest({
+      assets: [makeAsset()], backend,
+      fromMs: START + 60 * FOUR_H, toMs: START + 62 * FOUR_H, stepMs: FOUR_H,
+    });
+
+    expect(report.dataIntegrity.valid).toBe(true);
+    expect(report.dataIntegrity.replayFailures.count).toBe(0);
+    expect(report.dataIntegrity.scanErrors.count).toBe(0);
+    expect(report.dataIntegrity.insufficientHistory).toEqual({});
+  });
+
+  it('classifica falta de histórico (aquecimento) sem invalidar — trava da regex contra a mensagem real do scanAsset', async () => {
+    setSeries(downtrendCandles(120, 300, 1, START, FOUR_H));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    // De 10 a 60 velas fechadas: as primeiras passadas têm < 50 (aquecimento),
+    // e a janela AVALIADA começa só depois disso.
+    const report = await runBacktest({
+      assets: [makeAsset()], backend,
+      fromMs: START + 10 * FOUR_H, toMs: START + 60 * FOUR_H,
+      evaluationFromMs: START + 55 * FOUR_H,
+      stepMs: FOUR_H,
+    });
+
+    const info = report.dataIntegrity.insufficientHistory['4h'];
+    // Se a mensagem de scanAsset mudar, isto cai para undefined e a falta de
+    // histórico passaria a contar como erro de scan (invalidando todo run).
+    expect(info).toBeDefined();
+    // velas fechadas 10..51: 10..49 pelo piso de 50 do scanAsset, 50..51 pelo
+    // mínimo da EMA (longPeriod 50 + 2) — as duas mensagens contam como aquecimento.
+    expect(info.count).toBe(42);
+    expect(info.inEvaluationWindow).toBe(0);
+    expect(report.dataIntegrity.scanErrors.count).toBe(0);
+    expect(report.dataIntegrity.valid).toBe(true);
+  });
+
+  it('falta de histórico DENTRO da janela avaliada é contada à parte', async () => {
+    setSeries(downtrendCandles(120, 300, 1, START, FOUR_H));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const report = await runBacktest({
+      assets: [makeAsset()], backend,
+      fromMs: START + 40 * FOUR_H, toMs: START + 60 * FOUR_H, stepMs: FOUR_H,
+    });
+
+    expect(report.dataIntegrity.insufficientHistory['4h'].inEvaluationWindow).toBe(12); // velas 40..51
+    expect(report.dataIntegrity.valid).toBe(true);
+  });
+
+  it('erro de busca/cálculo num timeframe INVALIDA o relatório (antes: engolido em result.errors)', async () => {
+    fetchCandles.mockImplementation(async () => { throw new Error('arquivo corrompido'); });
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const report = await runBacktest({
+      assets: [makeAsset()], backend,
+      fromMs: START, toMs: START + 2 * FOUR_H, stepMs: FOUR_H,
+    });
+
+    expect(report.dataIntegrity.valid).toBe(false);
+    expect(report.dataIntegrity.scanErrors.count).toBe(3);
+    expect(report.dataIntegrity.scanErrors.byAssetTimeframe).toEqual({ 'TESTUSDT 4h': 3 });
+    expect(report.dataIntegrity.scanErrors.samples[0]).toMatchObject({ asset: 'TESTUSDT', timeframe: '4h', error: 'arquivo corrompido' });
+  });
+
+  it('exceção que aborta o passo de um ativo INVALIDA o relatório (antes: só chegava ao onStep)', async () => {
+    setSeries(downtrendCandles(120, 300, 1, START, FOUR_H));
+    // Mesmo backend incompleto do teste "restoreClock() runs even when an
+    // asset callback keeps throwing": persistScanResults estoura.
+    const backend = { entities: { TradeOperation: { filter: async () => [] } } };
+    Object.assign(entitiesModule.backend, backend);
+
+    const report = await runBacktest({
+      assets: [makeAsset({ symbol: 'BAD' })], backend,
+      fromMs: START + 60 * FOUR_H, toMs: START + 61 * FOUR_H, stepMs: FOUR_H,
+    });
+
+    expect(report.dataIntegrity.valid).toBe(false);
+    expect(report.dataIntegrity.replayFailures.count).toBe(2);
+    expect(report.dataIntegrity.replayFailures.byAsset).toEqual({ BAD: 2 });
+    expect(report.dataIntegrity.replayFailures.samples).toHaveLength(2);
+  });
+
+  it('amostras são limitadas, contagem não', async () => {
+    fetchCandles.mockImplementation(async () => { throw new Error('boom'); });
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    const report = await runBacktest({
+      assets: [makeAsset()], backend,
+      fromMs: START, toMs: START + 29 * FOUR_H, stepMs: FOUR_H,
+    });
+
+    expect(report.dataIntegrity.scanErrors.count).toBe(30);
+    expect(report.dataIntegrity.scanErrors.samples).toHaveLength(10);
+  });
+});
