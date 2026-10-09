@@ -55,7 +55,8 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { runBacktest } from '../src/lib/backtestEngine.js';
-import { analyzeReport } from '../src/lib/backtestAnalysis.js';
+import { analyzeReport, opsFromReport } from '../src/lib/backtestAnalysis.js';
+import { diagnoseStopGaps } from '../src/lib/stopGapDiagnostic.js';
 import { ZERO_COST, tradesForCIHalfWidth } from '../src/lib/tradeMetrics.js';
 import { backend } from '@/api/entities';
 import { setPineConfigOverrides, getPineConfig } from './backtestPineConfig.js';
@@ -415,6 +416,16 @@ async function main() {
     seriesIssues,
   };
 
+  // docs/known-risks.md item 261 — quanto o stop furado por gap distorce o
+  // resultado. Só MEDE: o motor continua preenchendo todo stop no próprio stop.
+  // Relatório inválido não ganha diagnóstico (mesma regra do item 260).
+  report.stopGapDiagnostic = report.dataIntegrity.valid
+    ? diagnoseStopGaps(opsFromReport(report), {
+      seriesFor: (symbol, timeframe) => loadSeries(symbol, timeframe),
+      countedOps: report.costs?.countedTrades,
+    })
+    : null;
+
   console.log(`[backtest] concluído em ${((performance.now() - started) / 1000).toFixed(1)}s`);
   console.log(`[backtest] total de operações: ${report.totalOps} (ainda abertas no corte: ${report.stillOpenAtCutoff})`);
   console.log('[backtest] signalExpiry (sinais distintos que expiraram sem nunca confirmar):', report.signalExpiry);
@@ -433,6 +444,13 @@ async function main() {
   console.log('[backtest] entryFunnel 4h_15m:', report.entryFunnel['4h_15m']);
   console.log('[backtest] entryFunnel 1h_5m:', report.entryFunnel['1h_5m']);
   console.log('[backtest] custos:', report.costs);
+  if (report.stopGapDiagnostic) {
+    const g = report.stopGapDiagnostic;
+    console.log(`[backtest] stop furado por gap (item 261): ${g.withGap} de ${g.resolved} saídas por stop abriram além do stop`
+      + ` — ${g.totalGapR}R a menos no total se preenchidas na abertura`
+      + (g.expectancyRDeltaIfFilledAtOpen !== null ? ` (expectância ${g.expectancyRDeltaIfFilledAtOpen}R/op)` : '')
+      + '. É um PISO (só gap na virada do candle) e R bruto. Detalhes em report.stopGapDiagnostic.');
+  }
 
   // Item 260 — falta de histórico DENTRO da janela avaliada não invalida, mas
   // muda o cálculo: sem 1d, o alinhamento multi-timeframe vira 'unknown' e

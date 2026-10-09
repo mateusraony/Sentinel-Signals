@@ -64,6 +64,18 @@ futuro) e — de quebra — a **cascata de confirmação 15m atrasada**
 (`check15mConfirmation` via o loop de retry de `persistScanResults`), que
 fecha a lacuna descrita abaixo.
 
+Desde o item 261 o mesmo arquivo também prova duas propriedades do replay
+INTEIRO (não só de função isolada): **determinismo** (o mesmo histórico duas
+vezes dá relatório e registros idênticos) e **causalidade ponta a ponta**
+(alterar candles que fecham depois de T não muda nada decidido até T — sinal,
+operação e a transição do TP1). Os dois têm checagem de não-vacuidade (o
+replay chega a estado terminal; as variantes divergem depois de T) e foram
+validados reintroduzindo o bug (aleatoriedade no relatório; look-ahead de 1
+vela em `sliceClosedAsOf`). `scannerStateMachine.test.js` ganhou testes de
+**caracterização** do stop furado por gap: fixam o preenchimento ATUAL (no
+stop) de propósito — se quebrarem, é porque alguém mudou o preenchimento, o
+que é decisão do usuário (itens 192/260/261).
+
 ## Camada de tela — smoke test de renderização (item 166)
 
 `src/pages/pagesSmoke.test.jsx` monta TODA página em jsdom com os mesmos

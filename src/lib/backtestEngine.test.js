@@ -1937,3 +1937,128 @@ describe('runBacktest — report.dataIntegrity (item 260)', () => {
     expect(report.dataIntegrity.scanErrors.samples).toHaveLength(10);
   });
 });
+
+// docs/known-risks.md item 261 (pacote 2 da auditoria) — propriedades do
+// replay INTEIRO, não de uma função isolada. Antes, determinismo nunca tinha
+// sido testado e causalidade só existia no nível de indicador (goldenParity)
+// e de sliceClosedAsOf. Fixture: o mesmo flip 4h do describe "no-look-ahead"
+// acima; medido rodando (não chutado): com stepMs 4h a operação nasce no
+// FLIP, bate TP1 em FLIP+4h e TP2 em FLIP+8h — ou seja, chega a estado
+// terminal, o que nenhum teste de runBacktest exercitava.
+describe('runBacktest — determinismo e causalidade ponta a ponta (item 261)', () => {
+  const START_4H = new Date('2026-01-01T00:00:00.000Z').getTime();
+  const FLIP = new Date('2026-01-18T04:00:00.000Z').getTime();
+  const FROM = FLIP - 2 * FOUR_H;
+  const TO = FLIP + 20 * FOUR_H;
+
+  function base4h() {
+    const down = downtrendCandles(100, 300, 1, START_4H, FOUR_H);
+    const up = uptrendCandles(60, down[down.length - 1].close, 3, START_4H + 100 * FOUR_H, FOUR_H);
+    return [...down, ...up];
+  }
+  function base15m() {
+    return uptrendCandles(100, 100, 0.5, FLIP - 100 * FIFTEEN_M, FIFTEEN_M);
+  }
+  // "Futuro alterado": toda vela 4h que FECHA depois de T vira um tombo bem
+  // abaixo de qualquer stop. Vela que fecha exatamente em T faz parte da
+  // decisão em T (sliceClosedAsOf usa closeTime <= cursor) e fica intacta.
+  function crashAfter(series, tMs) {
+    return series.map((c) => (c.closeTime > tMs
+      ? { ...c, open: 120, high: 125, low: 100, close: 110 }
+      : c));
+  }
+
+  async function runVariant(candles4h) {
+    const candles15m = base15m();
+    fetchCandles.mockImplementation(async (sym, tf, limit) =>
+      sliceClosedAsOf(tf === '4h' ? candles4h : tf === '15m' ? candles15m : [], simNow(), limit)
+    );
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+    const report = await runBacktest({
+      assets: [makeAsset()], backend, fromMs: FROM, toMs: TO, stepMs: FOUR_H,
+      pineConfig: basePineConfig(),
+      // Cobre também a seção que lê candles futuros por desenho
+      // (indicatorAttribution) — precisa ser determinística igual.
+      getFutureCandles: async (symbol, timeframe, afterMs) =>
+        (timeframe === '4h' ? candles4h.filter((c) => c.closeTime > afterMs) : []),
+    });
+    // structuredClone: o fake devolve os objetos guardados por referência.
+    const signals = structuredClone(await backend.entities.SignalEvent.filter({}));
+    const ops = structuredClone(await backend.entities.TradeOperation.filter({}));
+    return { report, signals, ops };
+  }
+
+  const OP_CREATION_FIELDS = [
+    'id', 'side', 'cascade', 'entry_price', 'initial_stop', 'tp1', 'tp2',
+    'candle_close_time', 'entry_candle_time_15m', 'partial_percent', 'created_date',
+  ];
+  const SIGNAL_CREATION_FIELDS = ['id', 'source', 'signal_type', 'timeframe', 'candle_time', 'price_at_signal', 'created_date'];
+  const pick = (obj, fields) => Object.fromEntries(fields.map((f) => [f, obj[f]]));
+  const createdBy = (items, tMs) => items.filter((x) => Date.parse(x.created_date) <= tMs);
+  // Todo instante de decisão (*_at / *_real_time) que caiu em ou antes de T.
+  function decisionTimesUpTo(op, tMs) {
+    return Object.fromEntries(Object.entries(op)
+      .filter(([k, v]) => /(_at|_real_time)$/.test(k) && typeof v === 'string' && Date.parse(v) <= tMs)
+      .sort(([a], [b]) => a.localeCompare(b)));
+  }
+
+  beforeEach(() => {
+    getPineConfig.mockResolvedValue(basePineConfig());
+  });
+
+  it('determinismo: o mesmo histórico rodado duas vezes dá o MESMO relatório e os mesmos registros', async () => {
+    const a = await runVariant(base4h());
+    const b = await runVariant(base4h());
+
+    // Não-vacuidade: o replay chegou a estado terminal — senão "igual" seria
+    // trivial (duas execuções que não fizeram nada).
+    expect(a.ops.some((op) => op.status === 'TP2_HIT')).toBe(true);
+    expect(a.report.totalOps).toBeGreaterThan(0);
+
+    expect(b.report).toEqual(a.report);
+    expect(b.ops).toEqual(a.ops);
+    expect(b.signals).toEqual(a.signals);
+  });
+
+  it('causalidade (T = flip): alterar candles DEPOIS de T não muda o sinal nem a operação criados até T', async () => {
+    const T = FLIP;
+    const original = await runVariant(base4h());
+    const altered = await runVariant(crashAfter(base4h(), T));
+
+    const opsA = createdBy(original.ops, T);
+    const opsB = createdBy(altered.ops, T);
+    expect(opsA).toHaveLength(1);
+    expect(opsB.map((op) => pick(op, OP_CREATION_FIELDS))).toEqual(opsA.map((op) => pick(op, OP_CREATION_FIELDS)));
+    expect(createdBy(altered.signals, T).map((s) => pick(s, SIGNAL_CREATION_FIELDS)))
+      .toEqual(createdBy(original.signals, T).map((s) => pick(s, SIGNAL_CREATION_FIELDS)));
+
+    // Não-vacuidade: a alteração TEVE efeito depois de T. Sem isso o teste
+    // passaria mesmo se o tombo nunca chegasse ao motor.
+    const finalA = original.ops.find((op) => op.id === opsA[0].id);
+    const finalB = altered.ops.find((op) => op.id === opsA[0].id);
+    expect(finalA.status).toBe('TP2_HIT');
+    expect(finalB.status).toBe('STOP_HIT');
+  });
+
+  it('causalidade (T = depois do TP1): a transição do TP1 já decidida não muda; o desfecho do runner, sim', async () => {
+    const T = FLIP + FOUR_H; // TP1 acontece exatamente aqui
+    const original = await runVariant(base4h());
+    const altered = await runVariant(crashAfter(base4h(), T));
+
+    const id = createdBy(original.ops, FLIP)[0].id;
+    const opA = original.ops.find((op) => op.id === id);
+    const opB = altered.ops.find((op) => op.id === id);
+
+    // Tudo que foi decidido até T é idêntico — inclusive o TP1.
+    expect(opA.tp1_hit_at).toBe(new Date(T).toISOString());
+    expect(decisionTimesUpTo(opB, T)).toEqual(decisionTimesUpTo(opA, T));
+    expect(opB.tp1_hit).toBe(true);
+    expect(opB.tp1_hit_real_time).toBe(opA.tp1_hit_real_time);
+
+    // Não-vacuidade: depois de T as variantes divergem (TP2 × stop no breakeven).
+    expect(opA.status).toBe('TP2_HIT');
+    expect(opB.status).toBe('STOP_HIT');
+    expect(opB.exit_price).toBe(opB.entry_price); // stop movido para a entrada no TP1
+  });
+});
