@@ -668,7 +668,8 @@ resultado", sem precisar baixar nada.
 
 Antes do replay, o CLI confere os arquivos de candle de cada símbolo (1h, 4h,
 1d, 15m — e 5m com `--smc`): arquivo ausente, JSON inválido, candle fora de
-ordem, duplicado, desalinhado ou com preço inválido, buraco de 24h ou mais, ou
+ordem, duplicado, desalinhado, com preço inválido ou com `closeTime` fora da
+própria vela, buraco de 24h ou mais, ou
 série que não cobre `--from`/`--to`. Qualquer um desses **recusa o run em
 segundos** (exit 1, nada é replayado). Buraco curto (menos de 24h, possível
 parada da exchange) só gera AVISO.
@@ -680,7 +681,8 @@ Depois do replay, `report.dataIntegrity` diz se o resultado é confiável:
   (`scanErrors`) ou problema num arquivo lido durante o replay
   (`seriesIssues`). O JSON é gravado mesmo assim (as amostras de erro ficam
   nele), mas o processo sai com exit 1, o resumo do workflow mostra
-  "❌ RELATÓRIO INVÁLIDO" e o registro de tentativas recusa o relatório.
+  "❌ RELATÓRIO INVÁLIDO" (sem veredito de amostra) e o registro de tentativas
+  recusa o relatório.
 - `insufficientHistory` → aquecimento dos indicadores (timeframe ainda sem o
   mínimo de velas). Não invalida. Se cair **dentro** da janela avaliada, o
   console avisa: nesse trecho o sinal foi calculado sem aquele timeframe. Com

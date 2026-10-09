@@ -30660,7 +30660,9 @@ manutenção — o limite abaixo é escolha deste projeto, não padrão citado.
 
 **Mudança**:
 - `scripts/backtestDataIntegrity.js` (puro, novo): `validateCandleSeries` (ordem,
-  duplicata, desalinhamento, barra inválida → erro; buraco < 24h → aviso; ≥ 24h → erro — inclusivo
+  duplicata, desalinhamento, barra inválida, `closeTime` fora da própria vela ou fora de
+  ordem → erro — o `closeTime` entrou por review do Codex no PR #475: é por ele que
+  `sliceClosedAsOf` faz a busca binária; buraco < 24h → aviso; ≥ 24h → erro — inclusivo
   porque o download de Futures pula em silêncio um arquivo diário inexistente, o que deixa
   um buraco de exatamente 24h),
   `checkWindowCoverage` (série precisa cobrir `--from`/`--to`, folga de 1 intervalo em
@@ -30675,7 +30677,8 @@ manutenção — o limite abaixo é escolha deste projeto, não padrão citado.
   EMA/MACD/RSI/RF) **não invalida**, é contado à parte do que caiu na janela avaliada.
   O CLI soma `seriesIssues`, grava o relatório mesmo inválido (amostras para
   diagnóstico) e sai com exit 1.
-- `backtest.yml` mostra "❌ RELATÓRIO INVÁLIDO" no topo do resumo;
+- `backtest.yml` mostra "❌ RELATÓRIO INVÁLIDO" no topo do resumo e, nesse caso, omite o
+  veredito de amostra (console e resumo — review do Codex, PR #475);
   `backtest-trial-registry.mjs` recusa registrar relatório inválido.
 - `run-backfill-check.mjs` também usa `runBacktest` e recebe o campo novo, mas **não**
   passou a usá-lo — continua decidindo "incompleto" só por `hasFetchFailure()`. Fora
@@ -30693,7 +30696,7 @@ como erro. **Não corrigido**: a correção natural (baixar dados antes do `--fr
 
 **Verificação**: 10 testes novos falham contra o código anterior e passam com a mudança
 (`backtestEngine.test.js` "report.dataIntegrity", `backtestMarketDataProvider.test.js`);
-28 testes puros em `backtestDataIntegrity.test.js`; CLI rodado de ponta a ponta com dado
+32 testes puros em `backtestDataIntegrity.test.js`; CLI rodado de ponta a ponta com dado
 sintético em 7 cenários (limpo → exit 0; 1d ausente, 4h duplicado, JSON corrompido,
 janela além dos dados → recusado antes do replay, exit 1; buraco de 2h → aviso, exit 0;
 replay começando no início dos dados → avisos de aquecimento, exit 0). A regex de

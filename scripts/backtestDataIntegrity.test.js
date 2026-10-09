@@ -60,6 +60,38 @@ describe('validateCandleSeries', () => {
     expect(types(validateCandleSeries(s, meta))).toContain('error:not_sorted');
   });
 
+  // Codex review (PR #475, P1): sliceClosedAsOf busca por closeTime.
+  it('closeTime de outro intervalo é erro, mesmo com openTime em ordem', () => {
+    const s = series(5);
+    s[2] = { ...s[2], closeTime: s[2].openTime + 4 * H - 1 };
+    // O close de 4h também passa o das velas seguintes — os dois erros são reais.
+    expect(types(validateCandleSeries(s, meta))).toEqual(['error:close_time_mismatch', 'error:close_time_not_sorted']);
+  });
+
+  it('closeTime fora de ordem é erro, mesmo com openTime em ordem', () => {
+    // Com intervalo conhecido isso já sai como close_time_mismatch (o close
+    // teria de invadir a vela seguinte); a checagem de ordem é o que cobre
+    // intervalo sem duração fixa ('1M'), onde o teto não pode ser calculado.
+    const monthly = { symbol: 'BTCUSDT', timeframe: '1M' };
+    const s = [
+      bar(T0, 31 * 24 * H),
+      { ...bar(T0 + 31 * 24 * H, 28 * 24 * H), closeTime: T0 + 31 * 24 * H + 1 },
+    ];
+    s[0] = { ...s[0], closeTime: T0 + 40 * 24 * H };
+    expect(types(validateCandleSeries(s, monthly))).toEqual(['error:close_time_not_sorted']);
+  });
+
+  it('close que invade a vela seguinte é pego com intervalo conhecido', () => {
+    const s = series(5);
+    s[2] = { ...s[2], closeTime: s[3].closeTime };
+    expect(types(validateCandleSeries(s, meta))).toEqual(['error:close_time_mismatch', 'error:close_time_not_sorted']);
+  });
+
+  it('closeTime = openTime + intervalo exato (CSV em microssegundos arredondado) é aceito', () => {
+    const s = series(5).map((c) => ({ ...c, closeTime: c.openTime + H }));
+    expect(validateCandleSeries(s, meta)).toEqual([]);
+  });
+
   it('candle desalinhado do intervalo é erro', () => {
     const s = series(3);
     s.push(bar(s[2].openTime + H + 30 * 60 * 1000));

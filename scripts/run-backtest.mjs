@@ -434,7 +434,12 @@ async function main() {
   // O veredito de amostra fica DEPOIS de tudo e em destaque de propósito: um
   // relatório com poucas operações produz win rate e profit factor de aparência
   // perfeitamente normal, e é exatamente aí que uma decisão errada nasce.
-  if (!report.costs.conclusive) {
+  // Codex review (PR #475, P2): relatório inválido não ganha veredito de
+  // amostra nem "poder de descarte" — um "✅ amostra suficiente" logo abaixo
+  // do aviso de inválido daria peso estatístico a números que não valem.
+  if (!report.dataIntegrity.valid) {
+    console.log('[backtest] veredito de amostra e poder de descarte omitidos: relatório inválido (ver acima).');
+  } else if (!report.costs.conclusive) {
     const { countedTrades, minTrades: min, inconclusiveReason, expectancyRCI95 } = report.costs;
     const motivo = inconclusiveReason === 'sample_too_small'
       ? `amostra pequena demais (${countedTrades} operações fechadas, mínimo ${min})`
@@ -451,14 +456,14 @@ async function main() {
   }
 
   // docs/known-risks.md item 133 — ALVO DECLARADO: estreitar o IC, não
-  // provar edge. Impresso SEMPRE (conclusivo ou não), porque é a única
+  // provar edge. Impresso sempre que o relatório é válido (conclusivo ou não), porque é a única
   // métrica aqui que progride monotonicamente com amostra e responde a
   // pergunta acionável: "que tamanho de vantagem esta amostra já descarta?".
   // "Inconclusivo" continua sendo verdade e continua sendo impresso acima —
   // o que muda é que ele deixa de ser o fim da leitura.
   const meiaLargura = report.costs.expectancyRCI95HalfWidth;
   const sdPorOp = report.costs.expectancyRSd;
-  if (Number.isFinite(meiaLargura) && Number.isFinite(sdPorOp) && sdPorOp > 0) {
+  if (report.dataIntegrity.valid && Number.isFinite(meiaLargura) && Number.isFinite(sdPorOp) && sdPorOp > 0) {
     console.log('');
     console.log(`  📏 PODER DE DESCARTE (alvo do item 133) — meia-largura do IC95: ±${meiaLargura.toFixed(3)}R`);
     // O limite de descarte é o EXTREMO SUPERIOR do IC, não a meia-largura

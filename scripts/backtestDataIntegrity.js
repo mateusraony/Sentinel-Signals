@@ -86,10 +86,25 @@ export function validateCandleSeries(series, { symbol, timeframe }) {
   for (let i = 0; i < series.length; i++) {
     const c = series[i];
     if (!isValidBar(c)) out.add('error', 'invalid_bar', c?.openTime, { index: i });
+    // Codex review (PR #475, P1): sliceClosedAsOf faz a busca binária por
+    // closeTime, não por openTime — validar só a ordem do openTime deixava
+    // passar um closeTime corrompido ou de outro intervalo. closeTime tem de
+    // cair dentro da própria vela: (openTime, openTime + intervalo]. O teto é
+    // inclusivo porque o CSV de Futures em microssegundos, arredondado para
+    // ms (binanceArchive.js normalizeTimestamp), dá openTime + intervalo em
+    // vez do "+ intervalo − 1" da API.
+    else if (intervalMs && c.closeTime - c.openTime > intervalMs) {
+      out.add('error', 'close_time_mismatch', c.openTime, { closeTime: iso(c.closeTime) });
+    }
     if (i === 0) continue;
     const prev = series[i - 1];
     const diff = c?.openTime - prev?.openTime;
     if (!Number.isFinite(diff)) continue; // já contado como invalid_bar
+    // Só quando o openTime já está em ordem — fora de ordem/duplicata já é
+    // reportado abaixo e não precisa aparecer duas vezes.
+    if (diff > 0 && c.closeTime <= prev.closeTime) {
+      out.add('error', 'close_time_not_sorted', c.openTime, { closeTime: iso(c.closeTime), previousCloseTime: iso(prev.closeTime) });
+    }
     if (diff < 0) out.add('error', 'not_sorted', c.openTime, { previous: iso(prev.openTime) });
     else if (diff === 0) out.add('error', 'duplicate', c.openTime, {});
     else if (intervalMs && diff % intervalMs !== 0) out.add('error', 'misaligned', c.openTime, { previous: iso(prev.openTime) });
@@ -149,6 +164,8 @@ export function describeIssue(issue) {
     empty_series: 'série vazia',
     invalid_bar: 'candle com valor inválido (NaN, preço ≤ 0, high/low incoerente)',
     not_sorted: 'candles fora de ordem',
+    close_time_mismatch: 'closeTime fora da própria vela (corrompido ou de outro intervalo)',
+    close_time_not_sorted: 'closeTime fora de ordem',
     duplicate: 'candle duplicado',
     misaligned: 'candle desalinhado do intervalo',
     gap_too_large: `buraco de ${MAX_TOLERATED_GAP_MS / 3600000}h ou mais`,

@@ -294,7 +294,11 @@ jobs:
                     + '. Detalhes em dataIntegrity, no artifact.');
                   console.log('');
                 }
-                if (c.conclusive === false) {
+                // Codex review (PR #475, P2): inválido não ganha veredito de
+                // amostra — nem INCONCLUSIVO, muito menos ✅ suficiente.
+                if (di && di.valid === false) {
+                  // veredito de amostra omitido de propósito
+                } else if (c.conclusive === false) {
                   const motivo = c.inconclusiveReason === 'sample_too_small'
                     ? \`amostra pequena demais (\${c.countedTrades} operações, mínimo \${c.minTrades})\`
                     : c.inconclusiveReason === 'ci_straddles_zero'
