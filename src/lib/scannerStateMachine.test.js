@@ -6135,3 +6135,64 @@ describe('stop furado por gap — comportamento atual (caracterização, itens 1
     expect(op.stop_hit_price).toBe(92);
   });
 });
+
+// docs/known-risks.md item 263 (pacote 4, medição Pine × JS) — chave SÓ de
+// backtest `rfExitCloseOnlyEnabled`. O Pine real sai do runner quando o
+// fechamento cruza o filtro (`close < filt`, PineScript.jsx ~626-630), sem
+// olhar a direção do Range Filter; o JS exige também a direção já virada
+// (`rfDir === -1`), um subconjunto. A chave existe para MEDIR essa diferença;
+// desligada (padrão e produção), nada muda.
+describe('saída por RF do runner — chave de medição rfExitCloseOnlyEnabled (item 263)', () => {
+  function makeRunner(overrides = {}) {
+    return makeOp({ status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 99, ...overrides });
+  }
+  // Fechamento ABAIXO do filtro, mas a direção do RF ainda é de alta (+1).
+  const closeBelowFilterRfStillUp = () => makeTfData({
+    rf: { filterValue: 100.5, direction: 1, signal: 'none', highBand: 105, lowBand: 95, condIni: false },
+    lastCandleHigh: 101, lastCandleLow: 99.5, lastClose: 100,
+  });
+
+  it('padrão (chave desligada): direção ainda +1 → o JS NÃO sai, como hoje', async () => {
+    backend._seed('TradeOperation', makeRunner());
+    await persistScanResults(makeScanResult({ results: { '4h': closeBelowFilterRfStillUp() } }));
+    expect(backend._get('TradeOperation', 'op1').status).toBe('RUNNER_ACTIVE');
+  });
+
+  it('chave ligada: fechamento abaixo do filtro já basta → INVALIDATED no fechamento (como o Pine)', async () => {
+    backend._seed('TradeOperation', makeRunner());
+    await persistScanResults(makeScanResult({
+      results: { '4h': closeBelowFilterRfStillUp() },
+      pineConfig: makePineConfig({ rfExitCloseOnlyEnabled: true }),
+    }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('INVALIDATED');
+    expect(op.closed_reason).toBe('INVALIDATION');
+    expect(op.exit_price).toBe(100);
+  });
+
+  it('chave ligada, SELL espelhado: fechamento acima do filtro com direção ainda −1 → INVALIDATED', async () => {
+    backend._seed('TradeOperation', makeRunner({
+      side: 'SELL', entry_price: 100, initial_stop: 102, current_stop: 101, tp1: 97, tp2: 94,
+    }));
+    await persistScanResults(makeScanResult({
+      results: { '4h': makeTfData({
+        rf: { filterValue: 99.5, direction: -1, signal: 'none', highBand: 105, lowBand: 95, condIni: false },
+        lastCandleHigh: 100.5, lastCandleLow: 99, lastClose: 100,
+      }) },
+      pineConfig: makePineConfig({ rfExitCloseOnlyEnabled: true }),
+    }));
+    expect(backend._get('TradeOperation', 'op1').status).toBe('INVALIDATED');
+  });
+
+  it('chave ligada, fechamento ACIMA do filtro → continua no runner', async () => {
+    backend._seed('TradeOperation', makeRunner());
+    await persistScanResults(makeScanResult({
+      results: { '4h': makeTfData({
+        rf: { filterValue: 99.8, direction: 1, signal: 'none', highBand: 105, lowBand: 95, condIni: false },
+        lastCandleHigh: 101, lastCandleLow: 99.5, lastClose: 100,
+      }) },
+      pineConfig: makePineConfig({ rfExitCloseOnlyEnabled: true }),
+    }));
+    expect(backend._get('TradeOperation', 'op1').status).toBe('RUNNER_ACTIVE');
+  });
+});
