@@ -30760,3 +30760,81 @@ sintético: dado com aquecimento → sem aviso; sem aquecimento → avisos com
 válido e inválido. **Não verificado**: download real com `--warmup-candles` — esta sessão
 não alcança a Binance; conferido só o cálculo da data inicial por timeframe (log do
 script) e a validação do argumento. O 1º run real do `backtest.yml` é a confirmação.
+
+## 261. Pacote 2 da auditoria — determinismo, causalidade ponta a ponta e o stop furado por gap medido (2026-10-09)
+
+**Contexto**: segundo pacote do plano de auditoria do item 260. O objetivo é cobrir os
+testes que podem invalidar uma conclusão financeira e que ainda não existiam. Dois agentes
+mapearam o código (somente leitura) antes do plano. **Nenhuma regra de saída ou entrada
+mudou**: `scanner.js` e `opExitRules.js` não foram tocados.
+
+**Fato — stop furado por gap (já listado nos itens 192/260 como não tratado)**:
+- As três saídas por stop gravam `exit_price = op.current_stop`, mesmo com o candle
+  inteiro do outro lado do stop: pré-TP1 (`scanner.js` ~3917), runner (~4140) e loop de
+  preço (~4573/4602). O loop de candle nem guarda a abertura do candle; o snapshot só tem
+  close/high/low.
+- Do lado do TP é o contrário: conservador. O TP é preenchido no próprio TP mesmo quando o
+  candle abre acima dele (teste existente em `scannerStateMachine.test.js`). A assimetria
+  joga contra o trader no TP e a favor no stop.
+- `stop_hit_price` no loop de candle também é o nível do stop. O schema dizia "preço
+  exato" e foi corrigido. Só o loop de preço guarda o preço observado ali.
+
+**O que foi feito**:
+1. **Caracterização do stop furado** (`scannerStateMachine.test.js`): pré-TP1, runner,
+   SELL e loop de preço, com o candle inteiro além do stop. Os testes fixam o
+   preenchimento **atual** de propósito; quebraram quando o preenchimento pré-TP1 foi
+   trocado temporariamente.
+2. **Determinismo** (`backtestEngine.test.js`): o mesmo histórico duas vezes dá relatório,
+   operações e sinais idênticos, com o replay chegando a `TP2_HIT`. Quebra se entrar
+   aleatoriedade no relatório (validado).
+3. **Causalidade ponta a ponta**: candles 4h que fecham depois de T viram um tombo abaixo
+   de qualquer stop.
+   - T = flip: sinal e operação criados iguais.
+   - T = TP1: a transição do TP1 é igual.
+   - Nos dois casos as variantes divergem depois de T (TP2 × STOP_HIT), checagem de que o
+     teste não é vazio.
+   - Quebra com look-ahead de 1 vela em `sliceClosedAsOf` (validado).
+   - Medido rodando, não suposto: com `stepMs` 4h a operação da fixture nasce no flip, bate
+     TP1 em +4h e TP2 em +8h. Foi o primeiro teste de `runBacktest` a chegar a estado
+     terminal.
+4. **Diagnóstico `report.stopGapDiagnostic`** (`src/lib/stopGapDiagnostic.js`, chamado por
+   `run-backtest.mjs` só em relatório válido):
+   - Para cada `STOP_HIT`, acha o candle de saída pelo `stop_hit_real_time` na série do
+     `signal_timeframe`.
+   - Se a abertura já estava além do preço de saída, soma o gap em R, ponderado pela fração
+     que saiu no stop (runner = `1 − partial`).
+   - Devolve `withGap`/`gapRate`/`totalGapR`/`expectancyRDeltaIfFilledAtOpen`, por fase
+     (pré-TP1 × runner), e `prevCloseBeyondStop`: o stop já estava além do fechamento
+     anterior, ou seja, foi posto onde o preço não estava, causa diferente de um salto na
+     virada do candle.
+   - Candle não encontrado vai para `unresolved`, nunca é adivinhado.
+
+**Limites do diagnóstico (fato, por construção)**:
+- É um **piso**: só vê o gap na virada do candle. Um gap dentro do candle não aparece no
+  OHLC.
+- É **R bruto**: não refaz o custo de saída, que muda um pouco com o preço novo.
+
+**Hipótese (dos agentes, não medida)**: os gaps relevantes devem nascer menos de salto do
+preço (cripto 24/7 abre perto do fechamento anterior) e mais de stop posto além do preço:
+- o stop vai para a entrada no TP1 sem comparar com o close;
+- o trailing pré-TP1 ancora no extremo favorável;
+- o primeiro candle utilizável depois da entrada.
+
+`prevCloseBeyondStop` existe para separar essas causas no dado real.
+
+**Verificação**:
+- 4 testes de caracterização, 3 de determinismo/causalidade e 10 do diagnóstico.
+- Cada guarda testado contra o próprio bug.
+- CLI de ponta a ponta com dado sintético: forçar a abertura do candle de saída além do
+  stop deixou as operações **idênticas** (o motor não lê a abertura) e o diagnóstico
+  acusou exatamente aquela saída.
+- `lint`, `test`, `build` e `typecheck:ratchet` verdes.
+
+**Pendente — decisão do usuário (não implementado)**:
+1. Rodar o `backtest.yml` padrão uma vez. Isso confirma o download com aquecimento do
+   item 260 e dá o `stopGapDiagnostic` real.
+2. Com o número em mãos, decidir se o preenchimento do stop passa a usar a abertura do
+   candle quando ela já estiver além do stop. Seria mudança no motor (ao vivo e backtest),
+   com pacote próprio. Se o `expectancyRDeltaIfFilledAtOpen` for desprezível perto da
+   meia-largura do IC (item 133), a recomendação é **não** mexer.
+

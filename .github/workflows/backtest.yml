@@ -345,6 +345,9 @@ jobs:
                   // direto com netExpectancyR, e grossExpectancyR ao lado
                   // mostrando quanto do resultado era só ausência de custo.
                   costs: r.costs,
+                  // item 261 — quanto o stop furado por gap distorce o
+                  // resultado (só medição; piso, R bruto).
+                  stopGapDiagnostic: r.stopGapDiagnostic && { ...r.stopGapDiagnostic, samples: undefined },
                   // overall.maxDrawdownPct soma pnlPct bruto por operação
                   // (sem posição dimensionada, sem compor capital) — pode
                   // mostrar um "drawdown" de 90%+ que nenhuma conta com risco

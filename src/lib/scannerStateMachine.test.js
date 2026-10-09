@@ -6042,3 +6042,60 @@ describe('persistScanResults — allActiveOps reaproveita activeOpsAtStart quand
     expect(activeOpsCalls).toHaveLength(2);
   });
 });
+
+// docs/known-risks.md itens 192/260/261 — CARACTERIZAÇÃO, não especificação.
+// Quando o candle inteiro fica do outro lado do stop (gap: o preço "furou" o
+// stop sem negociar nele), o motor hoje registra a saída NO STOP — nunca no
+// preço que o mercado de fato ofereceu. Isso é otimista e está registrado
+// como não tratado. Estes testes fixam o comportamento ATUAL de propósito:
+// se alguém mudar o preenchimento, eles quebram e a decisão aparece na
+// revisão, em vez de passar sem ninguém ver. Mudar o preenchimento é decisão
+// do usuário, depois de medir o efeito (report.stopGapDiagnostic, item 261).
+describe('stop furado por gap — comportamento atual (caracterização, itens 192/260/261)', () => {
+  // BUY: entrada 100, stop 95. O candle inteiro fica ABAIXO do stop (high 93).
+  const gapDownCandle = { lastCandleHigh: 93, lastCandleLow: 90, lastClose: 92 };
+
+  it('pré-TP1: candle inteiro abaixo do stop → exit_price e stop_hit_price gravados NO STOP (95), não no preço do candle', async () => {
+    backend._seed('TradeOperation', makeOp({ initial_stop: 95, current_stop: 95, tp1: 107.5, tp2: 115 }));
+    const results = { '4h': makeTfData(gapDownCandle) };
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('STOP_HIT');
+    expect(op.exit_price).toBe(95);
+    expect(op.stop_hit_price).toBe(95);
+    // O fechamento do candle de saída fica registrado — é por ele que o
+    // diagnóstico de gap acha o candle e lê a abertura.
+    expect(op.stop_hit_real_time).toBe(results['4h'].lastCandleTime);
+  });
+
+  it('runner (pós-TP1): candle inteiro abaixo do stop de breakeven → saída gravada no stop (100)', async () => {
+    backend._seed('TradeOperation', makeOp({ status: 'RUNNER_ACTIVE', tp1_hit: true, current_stop: 100 }));
+    const results = { '4h': makeTfData({ lastCandleHigh: 97, lastCandleLow: 94, lastClose: 95 }) };
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('STOP_HIT');
+    expect(op.exit_price).toBe(100);
+    expect(op.stop_hit_price).toBe(100);
+  });
+
+  it('SELL espelhado: candle inteiro ACIMA do stop → saída gravada no stop (105)', async () => {
+    backend._seed('TradeOperation', makeOp({
+      side: 'SELL', entry_price: 100, initial_stop: 105, current_stop: 105, tp1: 92.5, tp2: 85,
+    }));
+    const results = { '4h': makeTfData({ lastCandleHigh: 110, lastCandleLow: 107, lastClose: 108 }) };
+    await persistScanResults(makeScanResult({ results }));
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('STOP_HIT');
+    expect(op.exit_price).toBe(105);
+  });
+
+  it('loop de preço: preço observado além do stop → exit_price no stop, mas stop_hit_price guarda o preço observado', async () => {
+    backend._seed('TradeOperation', makeOp({ initial_stop: 95, current_stop: 95, tp1: 107.5, tp2: 115 }));
+    vi.mocked(fetchCurrentPrice).mockResolvedValue(92);
+    await priceCheckActiveOps();
+    const op = backend._get('TradeOperation', 'op1');
+    expect(op.status).toBe('STOP_HIT');
+    expect(op.exit_price).toBe(95);
+    expect(op.stop_hit_price).toBe(92);
+  });
+});
