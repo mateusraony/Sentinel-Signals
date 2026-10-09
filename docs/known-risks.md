@@ -30982,9 +30982,19 @@ versionada (parte pura em `scripts/compareBacktestReports.mjs`, com testes):
 - **Pareado:** casa operações por `op.id` e mede o ΔR por operação. O IC usa t(G−1)
   robusto a cluster, com clusters de sobreposição dos dois braços, mais um sign-flip
   por cluster como complemento.
-- **Não pareado:** compara a expectância de cada braço, `z = Δ/√(SE₁²+SE₂²)`. É a
-  leitura principal quando a variante muda quais operações existem. É conservador,
-  porque os braços dividem o mesmo mercado.
+- **Não pareado:** compara a expectância de cada braço. É a leitura principal quando
+  a variante muda quais operações existem. O erro da diferença usa **clusters
+  conjuntos** dos dois braços: operações que coexistiram em qualquer braço, e a
+  mesma operação nos dois, ficam no mesmo cluster. Assim a covariância entre os
+  braços entra na conta, seja qual for o sinal. O IC usa t(G−1).
+  - Primeira versão: `z = Δ/√(SE₁²+SE₂²)`, que eu chamei de "conservadora". O Codex
+    (PR #479) mostrou que isso só vale com covariância positiva; com covariância
+    negativa (um braço ocupando a vaga do ativo em outro momento), o IC sairia
+    estreito demais. Corrigido.
+  - No par real do item 262 (mesmas operações nos dois braços), o erro conjunto
+    (0,0081) reproduz exatamente o IC pareado. Supor independência daria 0,1214.
+  - Também recusa modelos de custo diferentes (Codex, PR #479), porque cada `r` já
+    vem líquido do custo do próprio run.
 - **Recusa:** relatório inválido, janela ou símbolos diferentes, `op.id` duplicado e
   commits diferentes (este último só passa com `--allow-commit-mismatch`).
 - **Validado contra resultado conhecido:** `teste0910206` × `teste0910206-fix` deu

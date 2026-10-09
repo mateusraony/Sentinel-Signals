@@ -17,14 +17,19 @@
 // 2. NÃO PAREADO (item 132): quando a variante muda QUAIS operações existem
 //    (ex.: desligar o trailing pré-TP1 libera o ativo em outro momento), o
 //    pareado só cobre as casadas. Aí a comparação é entre as expectâncias de
-//    cada braço, cada uma com seu erro-padrão em cluster:
-//    z = Δ / √(SE₁² + SE₂²). Trata os braços como independentes — como os
-//    dois rodam sobre o MESMO mercado, a covariância real é positiva e este
-//    z é CONSERVADOR (subestima a significância, nunca superestima).
+//    cada braço. O erro-padrão da DIFERENÇA não supõe braços independentes
+//    (review do Codex, PR #479: os dois braços dividem o calendário e a
+//    covariância pode ter qualquer sinal — negativa quando um braço ocupa a
+//    vaga do ativo em outro momento — e omitir −2Cov podia estreitar o IC).
+//    Os clusters são CONJUNTOS: operações que coexistiram no tempo, em
+//    qualquer braço, e a mesma operação nos dois braços caem no mesmo
+//    cluster, e o CR1 da diferença das médias soma as contribuições dos dois
+//    braços DENTRO de cada cluster — a covariância entra na conta.
 //
 // O que este módulo recusa (nunca compara "por cima"): relatório com
 // `dataIntegrity.valid !== true`, janelas diferentes, símbolos diferentes,
-// IDs de operação duplicados num mesmo relatório e — salvo
+// modelos de custo diferentes (cada `r` já é líquido do custo do próprio
+// run), IDs de operação duplicados num mesmo relatório e — salvo
 // `allowCommitMismatch` — commits diferentes (o motor mudou entre os runs, a
 // diferença deixa de ser só a da variante).
 import {
@@ -79,6 +84,18 @@ export function checkComparable(control, variant, { allowCommitMismatch = false 
     warnings.push('lista de símbolos não verificável (trialArgs sem --symbols em pelo menos um relatório)');
   }
 
+  // Review do Codex (PR #479): `r` de cada operação já vem LÍQUIDO do custo
+  // escolhido naquele run (`--no-costs`, `--fee-bps`, `--real-funding`...).
+  // Modelos diferentes fariam a diferença de custo aparecer como efeito da
+  // variante.
+  const mc = control.costs?.model;
+  const mv = variant.costs?.model;
+  if (!mc || !mv) {
+    warnings.push('modelo de custo não verificável (costs.model ausente em pelo menos um relatório)');
+  } else if (JSON.stringify(mc) !== JSON.stringify(mv)) {
+    errors.push(`modelos de custo diferentes: controle ${JSON.stringify(mc)}, variante ${JSON.stringify(mv)}`);
+  }
+
   const cc = control.reproducibility?.commitSha ?? null;
   const cv = variant.reproducibility?.commitSha ?? null;
   if (!cc || !cv) {
@@ -113,13 +130,16 @@ function sampleSd(xs) {
 // Clusters de sobreposição de UM braço, em índices do array `entries`. Uma
 // entrada sem intervalo calculável (sem abertura/fechamento) vira cluster
 // unitário — contada à parte em `withoutInterval`, nunca descartada (sumir
-// com ela mudaria a média).
-function clustersForEntries(entries) {
+// com ela mudaria a média). `tagOf(i)` prefixa o símbolo: com entradas dos
+// DOIS braços, o mesmo símbolo em braços diferentes precisa poder se ligar
+// (`findOverlapClusters` só liga símbolos diferentes, porque dentro de um
+// braço o mesmo ativo nunca tem duas operações ao mesmo tempo).
+function clustersForEntries(entries, tagOf = () => '') {
   const idx = [];
   const intervals = [];
   entries.forEach((e, i) => {
     const iv = buildTradeIntervals([e])[0];
-    if (iv) { idx.push(i); intervals.push(iv); }
+    if (iv) { idx.push(i); intervals.push({ ...iv, symbol: `${tagOf(i)}${iv.symbol}` }); }
   });
   const clusters = findOverlapClusters(intervals).map((c) => c.map((k) => idx[k]));
   const covered = new Set(idx);
@@ -238,6 +258,37 @@ function armStats(report) {
   };
 }
 
+// Erro-padrão (CR1) da diferença das médias `mean(B) − mean(A)` com
+// clusters CONJUNTOS dos dois braços — review do Codex, PR #479. A diferença
+// é linear nas observações: cada operação de A contribui −(r − média A)/nA e
+// cada uma de B contribui +(r − média B)/nB; somar as contribuições DENTRO de
+// cada cluster conjunto antes de elevar ao quadrado é o que faz a
+// covariância entre os braços (de qualquer sinal) entrar na variância. Com
+// todo cluster unitário, reduz a √(sA²/nA + sB²/nB) (mais o fator G/(G−1)).
+export function jointDiffStdErr(entriesA, entriesB) {
+  const nA = entriesA.length;
+  const nB = entriesB.length;
+  if (nA < 1 || nB < 1) return null;
+  const all = [...entriesA, ...entriesB];
+  const { clusters: byTime } = clustersForEntries(all, (i) => (i < nA ? 'A:' : 'B:'));
+  // A mesma operação nos dois braços é, por definição, a mesma exposição.
+  const indexInA = new Map(entriesA.map((e, i) => [e.op.id, i]));
+  const sameOp = entriesB
+    .map((e, j) => (indexInA.has(e.op.id) ? [indexInA.get(e.op.id), nA + j] : null))
+    .filter(Boolean);
+  const clusters = mergeClusterings(nA + nB, byTime, sameOp);
+  const g = clusters.length;
+  if (g < 2) return null;
+  const meanA = mean(entriesA.map((e) => e.r));
+  const meanB = mean(entriesB.map((e) => e.r));
+  const contribution = (i) => (i < nA ? -(all[i].r - meanA) / nA : (all[i].r - meanB) / nB);
+  const sumSq = clusters.reduce((acc, c) => {
+    const s = c.reduce((x, i) => x + contribution(i), 0);
+    return acc + s * s;
+  }, 0);
+  return { se: Math.sqrt((g / (g - 1)) * sumSq), g };
+}
+
 export function unpairedComparison(control, variant, { familySize = 1 } = {}) {
   const a = armStats(control);
   const b = armStats(variant);
@@ -246,18 +297,26 @@ export function unpairedComparison(control, variant, { familySize = 1 } = {}) {
     return { ...base, insufficientData: true };
   }
   const deltaR = b.meanR - a.meanR;
-  const seDiff = Math.sqrt(a.clusteredSE ** 2 + b.clusteredSE ** 2);
-  const zCritical = bonferroniZ(familySize);
-  const ci = [deltaR - zCritical * seDiff, deltaR + zCritical * seDiff];
+  const joint = jointDiffStdErr(scoredEntries(control), scoredEntries(variant));
+  if (!joint) return { ...base, insufficientData: true };
+  const seDiff = joint.se;
+  const tCritical = studentTCritical95(joint.g - 1, 0.05 / familySize);
+  const ci = [deltaR - tCritical * seDiff, deltaR + tCritical * seDiff];
   return {
     ...base,
     deltaR,
     seDiff,
-    z: seDiff > 0 ? deltaR / seDiff : null,
-    zCritical,
+    // Só para referência: o que daria supondo braços independentes. A
+    // distância entre os dois é o peso da covariância entre os braços.
+    seDiffIfIndependent: Math.sqrt(a.clusteredSE ** 2 + b.clusteredSE ** 2),
+    gJoint: joint.g,
+    t: seDiff > 0 ? deltaR / seDiff : null,
+    tCritical,
+    // Comparativo (não decide nada): o z de Bonferroni da família.
+    zCritical: bonferroniZ(familySize),
     ci,
     sdRatio: a.sdR ? b.sdR / a.sdR : null,
-    verdict: verdictFor(ci, Math.min(a.g, b.g)),
+    verdict: verdictFor(ci, joint.g),
   };
 }
 
@@ -330,11 +389,13 @@ export function formatComparisonMarkdown(result) {
     lines.push('Dados insuficientes para a comparação não pareada.', '');
   } else {
     lines.push(
-      `Δ expectância: **${f(u.deltaR)}R**, z=${f(u.z, 3)} (crítico ${f(u.zCritical, 3)}), IC ${fci(u.ci)}`,
+      `Δ expectância: **${f(u.deltaR)}R**, t=${f(u.t, 3)} (crítico ${f(u.tCritical, 3)}, G conjunto−1=${u.gJoint - 1}), IC ${fci(u.ci)}`
+        + (u.gJoint < 20 ? ' — **G < 20**' : ''),
       `sd(R) variante/controle: ${f(u.sdRatio, 3)}×`,
       `Veredito: ${VERDICT_TEXT[u.verdict]}`,
       '',
-      'Os braços são tratados como independentes; como rodam sobre o mesmo mercado, este z é conservador.', '',
+      `Erro da diferença com clusters conjuntos dos dois braços (inclui a covariância entre eles): ${f(u.seDiff)}; `
+        + `supondo braços independentes seria ${f(u.seDiffIfIndependent)}.`, '',
     );
   }
   return lines.join('\n');

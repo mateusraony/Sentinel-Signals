@@ -686,10 +686,12 @@ do Passo 3. Ele imprime duas leituras:
 - **Pareada.** Casa as operações pelo `op.id` e mede o ΔR de cada uma. O IC
   usa t(G−1) com erro robusto a cluster. É a leitura certa quando a variante
   só muda **como** uma operação termina.
-- **Não pareada.** Compara a expectância de cada braço,
-  `z = Δ/√(SE₁²+SE₂²)`. É a leitura certa quando a variante muda **quais**
-  operações existem; nesse caso o script avisa. Também mostra o sd(R) e o
-  drawdown da conta simulada de cada braço.
+- **Não pareada.** Compara a expectância de cada braço. É a leitura certa
+  quando a variante muda **quais** operações existem; nesse caso o script
+  avisa. O erro da diferença usa clusters conjuntos dos dois braços, então a
+  covariância entre eles entra na conta (supor independência erraria para
+  qualquer lado). Também mostra o sd(R) e o drawdown da conta simulada de
+  cada braço.
 
 `--family-size` aplica Bonferroni: use o número de comparações pré-registradas
 na família. O veredito só diz "diferença significativa" quando o IC exclui zero
@@ -698,7 +700,7 @@ na família. O veredito só diz "diferença significativa" quando o IC exclui ze
 O script **recusa** (exit 1, sem número nenhum) nestes casos:
 
 - algum relatório tem `dataIntegrity.valid` diferente de `true`;
-- as janelas ou os símbolos são diferentes;
+- as janelas, os símbolos ou o modelo de custo são diferentes;
 - há `op.id` duplicado;
 - os commits são diferentes.
 

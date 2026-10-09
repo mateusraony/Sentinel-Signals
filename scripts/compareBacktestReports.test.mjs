@@ -9,11 +9,12 @@ import {
   mergeClusterings,
   pairedComparison,
   unpairedComparison,
+  jointDiffStdErr,
   compareReports,
   formatComparisonMarkdown,
 } from './compareBacktestReports.mjs';
 import { bonferroniZ } from './backtest-trial-registry.mjs';
-import { mulberry32 } from './backtest-correlation-check.mjs';
+import { mulberry32, studentTCritical95 } from './backtest-correlation-check.mjs';
 
 const DAY = 24 * 60 * 60 * 1000;
 const T0 = Date.parse('2026-01-01T00:00:00.000Z');
@@ -32,13 +33,16 @@ function op(i, r, { symbol = SYMBOLS[i % SYMBOLS.length], closeDay = 2 * i + 1, 
   };
 }
 
-function report(curve, { label = 'x', commit = 'a'.repeat(40), symbols = SYMBOLS, valid = true, fromMs = T0, toMs = T0 + 400 * DAY } = {}) {
+const COSTS = { feeBpsEntry: 5, feeBpsExit: 5, slippageBpsPerSide: 1, fundingBpsPer8h: 1, fundingSeries: null, applied: true };
+
+function report(curve, { label = 'x', commit = 'a'.repeat(40), symbols = SYMBOLS, valid = true, fromMs = T0, toMs = T0 + 400 * DAY, costModel = COSTS } = {}) {
   return {
     trialLabel: label,
     trialArgs: `--symbols ${symbols.join(',')} --from x --to y --trial-label ${label}`,
     range: { fromMs, toMs },
     dataIntegrity: { valid },
     reproducibility: { commitSha: commit },
+    costs: { model: costModel },
     overall: { curve, expectancyR: null, winRate: 50, profitFactor: 1 },
     equityCurve: { riskPct: 1, maxDrawdownPct: 3, totalReturnPct: -1 },
   };
@@ -95,15 +99,41 @@ describe('pairedComparison', () => {
 });
 
 describe('unpairedComparison', () => {
-  it('z = Δ / √(SE₁² + SE₂²) com o z de Bonferroni da família', () => {
+  it('erro da diferença com clusters CONJUNTOS (à mão) e t(G−1) no alpha de Bonferroni', () => {
     const control = report([op(0, -1), op(1, 1), op(2, -1), op(3, 1)]);
     const variant = report([op(0, -1), op(1, 2), op(2, -1), op(3, 1)]);
     const u = unpairedComparison(control, variant, { familySize: 3 });
     expect(u.deltaR).toBeCloseTo(0.25, 12);
-    expect(u.seDiff).toBeCloseTo(Math.sqrt(u.control.clusteredSE ** 2 + u.variant.clusteredSE ** 2), 12);
-    expect(u.z).toBeCloseTo(u.deltaR / u.seDiff, 12);
+    // Mesma operação nos dois braços → 4 clusters conjuntos de 2. Médias
+    // A=0, B=0,25; contribuição por cluster (b−0,25)/4 − (a−0)/4:
+    // −0,0625; 0,1875; −0,0625; −0,0625 → Σ² = 0,046875 → ×4/3 = 0,0625.
+    expect(u.gJoint).toBe(4);
+    expect(u.seDiff).toBeCloseTo(0.25, 12);
+    expect(u.t).toBeCloseTo(1, 12);
+    expect(u.tCritical).toBeCloseTo(studentTCritical95(3, 0.05 / 3), 12);
     expect(u.zCritical).toBeCloseTo(bonferroniZ(3), 12);
     expect(u.control).toMatchObject({ n: 4, g: 4, equityMaxDrawdownPct: 3, equityRiskPct: 1 });
+    // Mesmas operações nos dois braços: o erro conjunto É o do pareado.
+    expect(u.seDiff).toBeCloseTo(pairedComparison(control, variant, opts).clusteredSE, 12);
+  });
+
+  // Review do Codex (PR #479): supor braços independentes omite −2Cov. Aqui
+  // cada braço tem, no MESMO período, uma operação de símbolo diferente com
+  // resultado oposto (covariância negativa): o erro conjunto tem que sair
+  // MAIOR que o "independente" — que estreitaria o IC indevidamente.
+  it('covariância negativa entre os braços alarga o erro (independência o subestimaria)', () => {
+    const n = 24;
+    const a = Array.from({ length: n }, (_, i) => op(i, i % 2 ? 1 : -1, { symbol: 'AAAUSDT', id: `a${i}` }));
+    const b = Array.from({ length: n }, (_, i) => op(i, i % 2 ? -1 : 1, { symbol: 'BBBUSDT', id: `b${i}` }));
+    const u = unpairedComparison(report(a), report(b));
+    expect(u.gJoint).toBe(n);
+    // Por cluster: (b − 0)/n − (a − 0)/n = ±2/n → Σ² = 4/n → ×n/(n−1).
+    expect(u.seDiff).toBeCloseTo(Math.sqrt((n / (n - 1)) * (4 / n)), 12);
+    expect(u.seDiff).toBeGreaterThan(u.seDiffIfIndependent * 1.3);
+  });
+
+  it('jointDiffStdErr devolve null com menos de 2 clusters', () => {
+    expect(jointDiffStdErr([op(0, 1)], [op(0, 2)])).toBeNull();
   });
 });
 
@@ -124,6 +154,12 @@ describe('compareReports — recusas', () => {
   it('símbolos diferentes', () => {
     const r = compareReports(report(base), report(base, { symbols: ['AAAUSDT'] }), opts);
     expect(r.errors.join(' ')).toMatch(/símbolos diferentes/);
+  });
+
+  it('modelos de custo diferentes (ex.: um run --no-costs)', () => {
+    const r = compareReports(report(base), report(base, { costModel: { ...COSTS, applied: false, feeBpsEntry: 0 } }), opts);
+    expect(r.comparable).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/modelos de custo diferentes/);
   });
 
   it('commits diferentes: recusa por padrão, aceita com allowCommitMismatch (como aviso)', () => {
