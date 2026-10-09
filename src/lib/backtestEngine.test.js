@@ -1870,6 +1870,25 @@ describe('runBacktest — report.dataIntegrity (item 260)', () => {
     expect(report.dataIntegrity.valid).toBe(true);
   });
 
+  it('lastInWindowAt só cita instante DENTRO da janela avaliada (revisão do pacote 1)', async () => {
+    setSeries(downtrendCandles(120, 300, 1, START, FOUR_H));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+
+    // Falta histórico de 40 a 51 velas; a janela avaliada acaba na vela 45.
+    const report = await runBacktest({
+      assets: [makeAsset()], backend,
+      fromMs: START + 40 * FOUR_H, toMs: START + 60 * FOUR_H,
+      evaluationToMs: START + 45 * FOUR_H,
+      stepMs: FOUR_H,
+    });
+
+    const info = report.dataIntegrity.insufficientHistory['4h'];
+    expect(info.lastAt).toBe(new Date(START + 51 * FOUR_H).toISOString());
+    expect(info.lastInWindowAt).toBe(new Date(START + 45 * FOUR_H).toISOString());
+    expect(info.inEvaluationWindow).toBe(6); // velas 40..45
+  });
+
   it('erro de busca/cálculo num timeframe INVALIDA o relatório (antes: engolido em result.errors)', async () => {
     fetchCandles.mockImplementation(async () => { throw new Error('arquivo corrompido'); });
     const backend = createFakeBackend();

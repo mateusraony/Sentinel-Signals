@@ -54,7 +54,7 @@ import { analyzeReport } from '../src/lib/backtestAnalysis.js';
 import { ZERO_COST, tradesForCIHalfWidth } from '../src/lib/tradeMetrics.js';
 import { backend } from '@/api/entities';
 import { setPineConfigOverrides, getPineConfig } from './backtestPineConfig.js';
-import { loadSeries, getSeriesIntegrityIssues } from './backtestMarketDataProvider.js';
+import { loadSeries, getSeriesIntegrityIssues, getLoadedSeries } from './backtestMarketDataProvider.js';
 import { checkWindowCoverage, describeIssue, requiredTimeframes } from './backtestDataIntegrity.js';
 
 function printIssues(issues) {
@@ -257,24 +257,22 @@ async function main() {
   // checagem de funding real acima: recusar o run inteiro em segundos é melhor
   // do que publicar, depois do replay todo, um relatório de aparência normal
   // calculado sobre série ausente, corrompida ou que não cobre a janela.
-  // Buraco curto é só AVISO (pode ser parada real da exchange) e segue para o
-  // relatório.
-  const coverageIssues = [];
-  for (const symbol of symbols) {
-    for (const timeframe of requiredTimeframes(symbol, { smcSymbols, pineConfig: effectivePineConfig })) {
-      const series = loadSeries(symbol, timeframe);
-      coverageIssues.push(...checkWindowCoverage(series, { symbol, timeframe, fromMs, toMs }));
+  // Buraco curto, símbolo listado no meio da janela e fim de série pouco antes
+  // do --to são só AVISO e seguem para o relatório.
+  const coverageOf = (loaded) => loaded.flatMap(({ symbol, timeframe, series }) =>
+    checkWindowCoverage(series, { symbol, timeframe, fromMs, toMs }));
+  for (const asset of assets) {
+    for (const timeframe of requiredTimeframes(asset, { pineConfig: effectivePineConfig })) {
+      loadSeries(asset.symbol, timeframe);
     }
   }
-  const preflightIssues = [...getSeriesIntegrityIssues(), ...coverageIssues];
+  const preflightIssues = [...getSeriesIntegrityIssues(), ...coverageOf(getLoadedSeries())];
   printIssues(preflightIssues);
   if (preflightIssues.some((issue) => issue.severity === 'error')) {
     console.error(
       '[backtest] ERRO: dado de candles inválido ou incompleto (detalhes acima) — o replay NÃO foi executado. '
       + 'Baixe de novo com scripts/fetch-backtest-data.mjs (ou fetch-backtest-data-futures.mjs) para os MESMOS '
-      + 'símbolos, timeframes e período antes de rodar. Se o erro for "série termina antes do fim da janela" com '
-      + 'dado de Futures, o arquivo diário da Binance do último dia pode ainda não ter sido publicado: encurte o '
-      + '--to até onde o dado existe.',
+      + 'símbolos, timeframes e período antes de rodar (ou encurte o --to até onde o dado existe).',
     );
     process.exitCode = 1;
     return;
@@ -373,10 +371,11 @@ async function main() {
   }
   report.signalExpiry = signalExpiry;
 
-  // Item 260 — junta a integridade dos ARQUIVOS (inclui séries que só foram
-  // lidas durante o replay, fora da lista de requiredTimeframes) à do REPLAY
-  // (runBacktest) numa seção só; `valid` passa a cobrir as duas.
-  const seriesIssues = [...getSeriesIntegrityIssues(), ...coverageIssues];
+  // Item 260 — junta a integridade dos ARQUIVOS à do REPLAY (runBacktest)
+  // numa seção só; `valid` passa a cobrir as duas. getLoadedSeries inclui as
+  // séries que só o replay pediu (fora de requiredTimeframes) — estrutura E
+  // cobertura da janela checadas para todas (revisão do pacote 1).
+  const seriesIssues = [...getSeriesIntegrityIssues(), ...coverageOf(getLoadedSeries())];
   const replayIntegrity = report.dataIntegrity || { valid: true };
   report.dataIntegrity = {
     ...replayIntegrity,
@@ -403,23 +402,27 @@ async function main() {
   console.log('[backtest] entryFunnel 1h_5m:', report.entryFunnel['1h_5m']);
   console.log('[backtest] custos:', report.costs);
 
-  // Item 260 — falta de histórico DENTRO da janela avaliada não invalida (é o
-  // aquecimento normal quando o download começa no próprio --from), mas
+  // Item 260 — falta de histórico DENTRO da janela avaliada não invalida, mas
   // muda o cálculo: sem 1d, o alinhamento multi-timeframe vira 'unknown' e
-  // pesa no score de entrada. Dito alto para não passar despercebido.
+  // pesa no score de entrada. Com o aquecimento do download
+  // (--warmup-candles, backtest.yml) isso só deve sobrar para símbolo listado
+  // no meio da janela. Dito alto para não passar despercebido.
   for (const [timeframe, info] of Object.entries(report.dataIntegrity.insufficientHistory || {})) {
     if (info.inEvaluationWindow > 0) {
       console.warn(
         `[backtest] AVISO: ${timeframe} sem histórico mínimo de velas em ${info.inEvaluationWindow} avaliação(ões) DENTRO da `
-        + `janela avaliada (última em ${info.lastAt}) — sinais desse trecho foram calculados sem esse timeframe. `
-        + 'Baixe dados começando antes do --from (ou use --evaluation-from) para dar aquecimento.',
+        + `janela avaliada (última em ${info.lastInWindowAt}) — sinais desse trecho foram calculados sem esse timeframe. `
+        + 'Baixe os dados com --warmup-candles 500 (ou use --evaluation-from) para dar aquecimento.',
       );
     }
   }
 
-  // O veredito de integridade vem ANTES do de amostra: um relatório inválido
-  // não deveria nem ser lido como "inconclusivo" — os números dele podem
-  // simplesmente estar errados.
+  // O veredito de integridade vem ANTES do de amostra, numa cadeia só: um
+  // relatório inválido não deveria nem ser lido como "inconclusivo" — os
+  // números dele podem simplesmente estar errados. Codex review (PR #475,
+  // P2): por isso inválido também não ganha veredito de amostra nem "poder de
+  // descarte" — um "✅ amostra suficiente" logo abaixo do aviso daria peso
+  // estatístico a números que não valem.
   if (!report.dataIntegrity.valid) {
     const { replayFailures, scanErrors } = report.dataIntegrity;
     console.error('');
@@ -428,17 +431,8 @@ async function main() {
     if (scanErrors?.count) console.error(`      ${scanErrors.count} erro(s) de timeframe no scan: ${JSON.stringify(scanErrors.byAssetTimeframe)}`);
     printIssues(report.dataIntegrity.seriesIssues.filter((issue) => issue.severity === 'error'));
     console.error('      Detalhes e amostras em report.dataIntegrity. Não compare este relatório com nenhum outro.');
+    console.error('      Veredito de amostra e poder de descarte omitidos.');
     console.error('');
-  }
-
-  // O veredito de amostra fica DEPOIS de tudo e em destaque de propósito: um
-  // relatório com poucas operações produz win rate e profit factor de aparência
-  // perfeitamente normal, e é exatamente aí que uma decisão errada nasce.
-  // Codex review (PR #475, P2): relatório inválido não ganha veredito de
-  // amostra nem "poder de descarte" — um "✅ amostra suficiente" logo abaixo
-  // do aviso de inválido daria peso estatístico a números que não valem.
-  if (!report.dataIntegrity.valid) {
-    console.log('[backtest] veredito de amostra e poder de descarte omitidos: relatório inválido (ver acima).');
   } else if (!report.costs.conclusive) {
     const { countedTrades, minTrades: min, inconclusiveReason, expectancyRCI95 } = report.costs;
     const motivo = inconclusiveReason === 'sample_too_small'

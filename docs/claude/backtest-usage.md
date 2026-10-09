@@ -53,7 +53,8 @@ carteira completa monitorada.
 node scripts/fetch-backtest-data.mjs \
   --symbols BTCUSDT,ETHUSDT \
   --from 2025-01-01 --to 2026-01-01 \
-  --timeframes 1h,4h,1d,15m
+  --timeframes 1h,4h,1d,15m \
+  --warmup-candles 500
 ```
 
 Baixa da Binance Spot (`data-api.binance.vision` — a mesma fonte do cron
@@ -67,6 +68,12 @@ Timeframes: inclua sempre `15m` se algum ativo usar a cascata padrão
 (4h→15m); inclua `5m` também se algum ativo tiver `smc_enabled` (cascata
 1h→5m).
 
+`--warmup-candles 500` baixa 500 velas de cada timeframe ANTES do `--from`
+(500 dias de 1d, ~83 dias de 4h, ~5 dias de 15m…). Use sempre — é o que o
+workflow faz: o replay continua começando no `--from`, mas já com o mesmo
+histórico que o scan ao vivo enxerga. Sem isso, o primeiro ~1,7 mês de todo
+run é calculado sem 1d (known-risks item 260).
+
 ### Fonte alternativa: Futures USDⓈ-M real (`docs/known-risks.md` item 122)
 
 Se você opera Futures/Perpétuo de verdade no TradingView (não Spot), o
@@ -79,7 +86,8 @@ acima (mesmos argumentos, mesmo formato de saída — só troca a fonte):
 node scripts/fetch-backtest-data-futures.mjs \
   --symbols BTCUSDT,ETHUSDT \
   --from 2025-01-01 --to 2026-01-01 \
-  --timeframes 1h,4h,1d,15m
+  --timeframes 1h,4h,1d,15m \
+  --warmup-candles 500
 ```
 
 Baixa de `data.binance.vision` (arquivo em lote/CDN — serviço DIFERENTE da
@@ -669,10 +677,12 @@ resultado", sem precisar baixar nada.
 Antes do replay, o CLI confere os arquivos de candle de cada símbolo (1h, 4h,
 1d, 15m — e 5m com `--smc`): arquivo ausente, JSON inválido, candle fora de
 ordem, duplicado, desalinhado, com preço inválido ou com `closeTime` fora da
-própria vela, buraco de 24h ou mais, ou
-série que não cobre `--from`/`--to`. Qualquer um desses **recusa o run em
-segundos** (exit 1, nada é replayado). Buraco curto (menos de 24h, possível
-parada da exchange) só gera AVISO.
+própria vela, buraco de 24h ou mais, ou série que termina mais de 48h antes
+do `--to`. Qualquer um desses **recusa o run em segundos** (exit 1, nada é
+replayado). Só geram AVISO: buraco curto (menos de 24h, possível parada da
+exchange), série que começa depois do `--from` (símbolo listado no meio da
+janela) e série que termina até 48h antes do `--to` (arquivo diário de
+Futures do último dia ainda não publicado).
 
 Depois do replay, `report.dataIntegrity` diz se o resultado é confiável:
 
@@ -686,8 +696,11 @@ Depois do replay, `report.dataIntegrity` diz se o resultado é confiável:
 - `insufficientHistory` → aquecimento dos indicadores (timeframe ainda sem o
   mínimo de velas). Não invalida. Se cair **dentro** da janela avaliada, o
   console avisa: nesse trecho o sinal foi calculado sem aquele timeframe. Com
-  dados baixados a partir do próprio `--from`, o 1d leva ~50 dias para ter
-  histórico — baixe antes do `--from` e use `--evaluation-from` para evitar.
+  `--warmup-candles 500` no download isso só sobra para símbolo listado no
+  meio da janela.
+- Com relatório inválido, o workflow também pula "Publicar diagnóstico" e
+  "Publicar correlação em cluster" — nenhuma estatística é publicada sobre
+  números que não valem.
 
 ## O que o replay NÃO cobre (por design, não é lacuna)
 

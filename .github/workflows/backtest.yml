@@ -196,10 +196,17 @@ jobs:
           SYMBOLS: ${{ inputs.symbols }}
           TIMEFRAMES: ${{ inputs.timeframes }}
         run: |
+          # --warmup-candles 500 (item 260, revisão do pacote 1): baixa 500
+          # velas de cada timeframe ANTES do --from, para o replay já começar
+          # com o mesmo histórico que o scan ao vivo enxerga (ele busca até 500
+          # velas de 1h/4h e 150 das demais). Sem isso, todo run começava ~50
+          # dias sem 1d e o alinhamento multi-timeframe saía 'unknown'. O replay
+          # e a janela avaliada continuam começando no --from.
           node scripts/fetch-backtest-data.mjs \
             --symbols "$SYMBOLS" \
             --from "$FROM" --to "$TO" \
-            --timeframes "$TIMEFRAMES"
+            --timeframes "$TIMEFRAMES" \
+            --warmup-candles 500
 
       - name: Baixar histórico real (Binance Futures USDⓈ-M)
         if: ${{ inputs.futures_data == true }}
@@ -207,10 +214,17 @@ jobs:
           SYMBOLS: ${{ inputs.symbols }}
           TIMEFRAMES: ${{ inputs.timeframes }}
         run: |
+          # --warmup-candles 500 (item 260, revisão do pacote 1): baixa 500
+          # velas de cada timeframe ANTES do --from, para o replay já começar
+          # com o mesmo histórico que o scan ao vivo enxerga (ele busca até 500
+          # velas de 1h/4h e 150 das demais). Sem isso, todo run começava ~50
+          # dias sem 1d e o alinhamento multi-timeframe saía 'unknown'. O replay
+          # e a janela avaliada continuam começando no --from.
           node scripts/fetch-backtest-data-futures.mjs \
             --symbols "$SYMBOLS" \
             --from "$FROM" --to "$TO" \
-            --timeframes "$TIMEFRAMES"
+            --timeframes "$TIMEFRAMES" \
+            --warmup-candles 500
 
       - name: Baixar funding real (Binance Futures USDⓈ-M)
         # docs/known-risks.md item 131. Só roda com futures_data ligado —
@@ -283,21 +297,17 @@ jobs:
                 const r = JSON.parse(require('fs').readFileSync('backtest-report.json', 'utf-8'));
                 const c = r.costs || {};
                 // docs/known-risks.md item 260 — integridade vem antes até do
-                // veredito de amostra: relatório inválido pode ter números
-                // simplesmente errados, não só ruidosos.
+                // veredito de amostra, na MESMA cadeia: relatório inválido
+                // pode ter números simplesmente errados, não só ruidosos, e
+                // por isso não ganha veredito de amostra nenhum — nem
+                // INCONCLUSIVO, muito menos ✅ suficiente (Codex, PR #475).
                 const di = r.dataIntegrity;
                 if (di && di.valid === false) {
                   console.log('> ### ❌ RELATÓRIO INVÁLIDO — falha de dado ou de execução no replay');
                   console.log('> **Não compare este relatório com nenhum outro.** Falhas por exceção: ' + (di.replayFailures?.count ?? 0)
                     + ' · erros de timeframe no scan: ' + (di.scanErrors?.count ?? 0)
                     + ' · problemas nos arquivos de candle: ' + (di.seriesIssues || []).filter((i) => i.severity === 'error').length
-                    + '. Detalhes em dataIntegrity, no artifact.');
-                  console.log('');
-                }
-                // Codex review (PR #475, P2): inválido não ganha veredito de
-                // amostra — nem INCONCLUSIVO, muito menos ✅ suficiente.
-                if (di && di.valid === false) {
-                  // veredito de amostra omitido de propósito
+                    + '. Detalhes em dataIntegrity, no artifact. Veredito de amostra omitido.');
                 } else if (c.conclusive === false) {
                   const motivo = c.inconclusiveReason === 'sample_too_small'
                     ? \`amostra pequena demais (\${c.countedTrades} operações, mínimo \${c.minTrades})\`
@@ -363,7 +373,9 @@ jobs:
         # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12).
         run: |
           set -o pipefail
-          if [ -f backtest-report.json ]; then
+          # Item 260 (revisão do pacote 1): relatório inválido não ganha
+          # diagnóstico estatístico — mesmo motivo do veredito omitido no resumo.
+          if [ -f backtest-report.json ] && node -e "process.exit(JSON.parse(require('fs').readFileSync('backtest-report.json','utf-8')).dataIntegrity?.valid === false ? 1 : 0)"; then
             {
               echo "## Diagnóstico — de onde vem o resultado"
               echo '```'
@@ -389,7 +401,8 @@ jobs:
         # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12).
         run: |
           set -o pipefail
-          if [ -f backtest-report.json ]; then
+          # Item 260 (revisão do pacote 1): sem IC/p-valor para relatório inválido.
+          if [ -f backtest-report.json ] && node -e "process.exit(JSON.parse(require('fs').readFileSync('backtest-report.json','utf-8')).dataIntegrity?.valid === false ? 1 : 0)"; then
             {
               # Sem cerca de código: formatMarkdown() (scripts/backtest-correlation-check.mjs)
               # já emite Markdown de verdade (## headings, **negrito**, tabela) — ao

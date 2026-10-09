@@ -23,6 +23,14 @@
 
 export const MAX_TOLERATED_GAP_MS = 24 * 60 * 60 * 1000;
 
+// Quanto a série pode terminar antes do `--to` e ainda ser só AVISO (revisão do
+// pacote 1, 2026-10-09): o arquivo DIÁRIO da Binance Futures do último dia só
+// é publicado no dia seguinte, e o `to` padrão do backtest.yml é "hoje 00:00".
+// Rodado logo depois da meia-noite UTC, toda série termina ~24h antes — antes
+// deste módulo o run seguia com um dia a menos; recusá-lo por isso tornaria o
+// default dependente da hora. Acima disso já é download incompleto: ERRO.
+export const MAX_TOLERATED_END_SHORTFALL_MS = 48 * 60 * 60 * 1000;
+
 // Quantas ocorrências de cada tipo de problema vão para o relatório como
 // amostra — a contagem total vai sempre inteira, a lista não (um arquivo
 // inteiro fora de ordem geraria milhares de entradas idênticas).
@@ -39,8 +47,20 @@ export function timeframeToMs(timeframe) {
   return Number(match[1]) * UNIT_MS[match[2]];
 }
 
+// Início do download de um timeframe com N velas de aquecimento antes do
+// --from (fetch-backtest-data*.mjs --warmup-candles, item 260). Por timeframe
+// porque N velas de 1d são N dias e N velas de 5m são N×5 min. Intervalo sem
+// duração fixa (ex.: '1M') não ganha aquecimento — fica no --from.
+export function warmupStartMs(fromMs, timeframe, warmupCandles) {
+  const intervalMs = timeframeToMs(timeframe);
+  return intervalMs ? fromMs - warmupCandles * intervalMs : fromMs;
+}
+
+// null quando não há instante válido (elemento que não é candle, arquivo
+// ausente) — describeIssue então omite a "1ª ocorrência" em vez de imprimir
+// "undefined".
 function iso(ms) {
-  return Number.isFinite(ms) ? new Date(ms).toISOString() : String(ms);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
 }
 
 function isValidBar(c) {
@@ -88,12 +108,14 @@ export function validateCandleSeries(series, { symbol, timeframe }) {
     if (!isValidBar(c)) out.add('error', 'invalid_bar', c?.openTime, { index: i });
     // Codex review (PR #475, P1): sliceClosedAsOf faz a busca binária por
     // closeTime, não por openTime — validar só a ordem do openTime deixava
-    // passar um closeTime corrompido ou de outro intervalo. closeTime tem de
-    // cair dentro da própria vela: (openTime, openTime + intervalo]. O teto é
-    // inclusivo porque o CSV de Futures em microssegundos, arredondado para
-    // ms (binanceArchive.js normalizeTimestamp), dá openTime + intervalo em
-    // vez do "+ intervalo − 1" da API.
-    else if (intervalMs && c.closeTime - c.openTime > intervalMs) {
+    // passar um closeTime corrompido ou de outro intervalo. A duração da vela
+    // tem de ser a do intervalo: `intervalo − 1` (convenção da API klines) ou
+    // `intervalo` exato (CSV de Futures em microssegundos, arredondado para ms
+    // em binanceArchive.js normalizeTimestamp). Revisão do pacote 1: o LIMITE
+    // INFERIOR é o que importa para look-ahead — um closeTime CEDO demais
+    // (ex.: o de uma vela de 15m num arquivo de 1h) faz sliceClosedAsOf expor
+    // o candle inteiro, com high/low/close finais, antes de ele fechar.
+    else if (intervalMs && (c.closeTime - c.openTime < intervalMs - 1 || c.closeTime - c.openTime > intervalMs)) {
       out.add('error', 'close_time_mismatch', c.openTime, { closeTime: iso(c.closeTime) });
     }
     if (i === 0) continue;
@@ -123,8 +145,15 @@ export function validateCandleSeries(series, { symbol, timeframe }) {
  * cada ponta: o download começa no primeiro candle alinhado a partir de
  * `--from` e descarta o candle ainda em formação no fim (fetch-backtest-data*
  * .mjs), então até um intervalo de folga é o comportamento normal, não falta
- * de dado. Mesmo princípio da checagem de cobertura do funding real
- * (run-backtest.mjs, item 131): a janela precisa estar COBERTA, não só densa.
+ * de dado.
+ *
+ * Severidade (revisão do pacote 1, 2026-10-09):
+ * - Começar DEPOIS do `--from` é AVISO: os dois downloads paginam a partir do
+ *   início pedido, então série que começa tarde é, na prática, símbolo listado
+ *   no meio da janela — a estratégia simplesmente não podia operá-lo antes, e
+ *   recusar o run inteiro barraria todo backtest longo de carteira.
+ * - Terminar antes do `--to` é AVISO até MAX_TOLERATED_END_SHORTFALL_MS
+ *   (arquivo diário de Futures ainda não publicado) e ERRO acima.
  */
 export function checkWindowCoverage(series, { symbol, timeframe, fromMs, toMs }) {
   const out = makeCollector(symbol, timeframe);
@@ -132,26 +161,43 @@ export function checkWindowCoverage(series, { symbol, timeframe, fromMs, toMs })
   if (!Array.isArray(series) || series.length === 0 || !intervalMs) return out.issues();
   const first = series[0];
   const last = series[series.length - 1];
-  if (first.openTime - fromMs > intervalMs) {
-    out.add('error', 'starts_after_window', first.openTime, { windowFrom: iso(fromMs) });
+  // Elemento que não é candle (ex.: `null`) já sai como invalid_bar em
+  // validateCandleSeries; aqui só não pode derrubar o preflight com TypeError.
+  if (Number.isFinite(first?.openTime) && first.openTime - fromMs > intervalMs) {
+    out.add('warning', 'starts_after_window', first.openTime, { windowFrom: iso(fromMs) });
   }
-  if (toMs - last.closeTime > intervalMs) {
-    out.add('error', 'ends_before_window', last.closeTime, { windowTo: iso(toMs) });
+  if (Number.isFinite(last?.closeTime) && toMs - last.closeTime > intervalMs) {
+    const shortfallMs = toMs - last.closeTime;
+    if (shortfallMs > MAX_TOLERATED_END_SHORTFALL_MS) {
+      out.add('error', 'ends_before_window', last.closeTime, { windowTo: iso(toMs) });
+    } else {
+      out.add('warning', 'ends_slightly_before_window', last.closeTime, { windowTo: iso(toMs) });
+    }
   }
   return out.issues();
 }
 
-// Timeframes que o replay SEMPRE lê para um símbolo (run-backtest.mjs): os 3
-// de scanAsset (makeAsset liga 1h/4h/1d), o 15m da confirmação RF (salvo com
-// a confirmação 15m desligada no pineConfig) e o 5m da cascata SMC quando o
-// símbolo a tem. Qualquer outro que o replay venha a ler também é checado
-// (getSeriesIntegrityIssues depois do run) — esta lista só decide o que é
-// verificado ANTES, para falhar em segundos e não depois de ~28 min de replay.
-export function requiredTimeframes(symbol, { smcSymbols, pineConfig }) {
+// scanAsset (scanner.js) usa TIMEFRAMES = 1h/4h/1d quando o ativo não traz
+// `timeframes_enabled` — só o fallback desse caso; o normal é ler do ativo.
+const SCAN_ASSET_DEFAULT_TIMEFRAMES = ['1h', '4h', '1d'];
+
+// Timeframes que o replay SEMPRE lê para um ativo (run-backtest.mjs):
+// os ligados em `asset.timeframes_enabled` (mesma regra do scanAsset:
+// `!== false` liga — derivado do ativo, não copiado, para não divergir de
+// makeAsset), o 15m da confirmação RF (salvo com a confirmação 15m desligada
+// no pineConfig) e o 5m da cascata SMC quando o ativo a tem. Esta lista só
+// decide o que é verificado ANTES do replay, para falhar em segundos; toda
+// série que o replay vier a ler a mais também é checada depois
+// (run-backtest.mjs, getLoadedSeries).
+export function requiredTimeframes(asset, { pineConfig } = {}) {
+  const enabled = asset?.timeframes_enabled;
+  const scanTimeframes = enabled
+    ? Object.keys(enabled).filter((tf) => enabled[tf] !== false)
+    : SCAN_ASSET_DEFAULT_TIMEFRAMES;
   return [
-    '1h', '4h', '1d',
+    ...scanTimeframes,
     ...(pineConfig?.skip15mConfirmationEnabled ? [] : ['15m']),
-    ...(smcSymbols?.has(symbol) ? ['5m'] : []),
+    ...(asset?.smc_enabled ? ['5m'] : []),
   ];
 }
 
@@ -170,10 +216,11 @@ export function describeIssue(issue) {
     misaligned: 'candle desalinhado do intervalo',
     gap_too_large: `buraco de ${MAX_TOLERATED_GAP_MS / 3600000}h ou mais`,
     gap: 'buraco curto (possível parada da exchange)',
-    starts_after_window: 'série começa depois do início da janela',
-    ends_before_window: 'série termina antes do fim da janela',
+    starts_after_window: 'série começa depois do início da janela (símbolo listado no meio dela?) — sem dado nesse trecho',
+    ends_before_window: `série termina mais de ${MAX_TOLERATED_END_SHORTFALL_MS / 3600000}h antes do fim da janela`,
+    ends_slightly_before_window: 'série termina pouco antes do fim da janela (último arquivo diário ainda não publicado?)',
   };
   const first = issue.samples?.[0];
-  const where = first?.at && first.at !== 'null' ? ` — 1ª ocorrência em ${first.at}` : '';
+  const where = first?.at ? ` — 1ª ocorrência em ${first.at}` : '';
   return `${issue.symbol} ${issue.timeframe}: ${labels[issue.type] || issue.type} (${issue.count}x)${where}`;
 }

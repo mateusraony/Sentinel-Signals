@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   timeframeToMs, validateCandleSeries, checkWindowCoverage, requiredTimeframes,
-  describeIssue, MAX_TOLERATED_GAP_MS,
+  describeIssue, warmupStartMs, MAX_TOLERATED_GAP_MS, MAX_TOLERATED_END_SHORTFALL_MS,
 } from './backtestDataIntegrity.js';
 
 const H = 60 * 60 * 1000;
@@ -87,6 +87,16 @@ describe('validateCandleSeries', () => {
     expect(types(validateCandleSeries(s, meta))).toEqual(['error:close_time_mismatch', 'error:close_time_not_sorted']);
   });
 
+  // Revisão do pacote 1: o limite INFERIOR é o que causa look-ahead — com
+  // closeTime cedo demais, sliceClosedAsOf expõe a vela inteira antes de ela
+  // fechar.
+  it('closeTime CEDO demais (ex.: de 15m num arquivo de 1h) é erro — look-ahead', () => {
+    const s = series(5).map((c) => ({ ...c, closeTime: c.openTime + 15 * 60 * 1000 - 1 }));
+    const issues = validateCandleSeries(s, meta);
+    expect(types(issues)).toEqual(['error:close_time_mismatch']);
+    expect(issues[0].count).toBe(5);
+  });
+
   it('closeTime = openTime + intervalo exato (CSV em microssegundos arredondado) é aceito', () => {
     const s = series(5).map((c) => ({ ...c, closeTime: c.openTime + H }));
     expect(validateCandleSeries(s, meta)).toEqual([]);
@@ -153,14 +163,26 @@ describe('checkWindowCoverage', () => {
     expect(checkWindowCoverage(s, { ...meta, fromMs: T0 - H + 1, toMs: T0 + 49 * H - 1 })).toEqual([]);
   });
 
-  it('série que começa depois do início da janela é erro', () => {
+  it('série que começa depois do início da janela é só AVISO (símbolo listado no meio dela)', () => {
     expect(types(checkWindowCoverage(s, { ...meta, fromMs: T0 - 2 * H, toMs: T0 + 48 * H })))
-      .toEqual(['error:starts_after_window']);
+      .toEqual(['warning:starts_after_window']);
   });
 
-  it('série que termina antes do fim da janela é erro', () => {
-    expect(types(checkWindowCoverage(s, { ...meta, fromMs: T0, toMs: T0 + 60 * H })))
+  it('série que termina pouco antes do fim (até o limite) é AVISO — arquivo diário ainda não publicado', () => {
+    const lastClose = s[s.length - 1].closeTime;
+    expect(types(checkWindowCoverage(s, { ...meta, fromMs: T0, toMs: lastClose + MAX_TOLERATED_END_SHORTFALL_MS })))
+      .toEqual(['warning:ends_slightly_before_window']);
+  });
+
+  it('série que termina muito antes do fim da janela é ERRO', () => {
+    const lastClose = s[s.length - 1].closeTime;
+    expect(types(checkWindowCoverage(s, { ...meta, fromMs: T0, toMs: lastClose + MAX_TOLERATED_END_SHORTFALL_MS + 1 })))
       .toEqual(['error:ends_before_window']);
+  });
+
+  it('elemento que não é candle nas pontas não derruba a checagem (o erro já sai em validateCandleSeries)', () => {
+    expect(() => checkWindowCoverage([null, ...s, null], { ...meta, fromMs: T0, toMs: T0 + 48 * H })).not.toThrow();
+    expect(checkWindowCoverage([null, ...s, null], { ...meta, fromMs: T0, toMs: T0 + 48 * H })).toEqual([]);
   });
 
   it('dados além da janela (diretório reaproveitado) não são problema', () => {
@@ -173,24 +195,56 @@ describe('checkWindowCoverage', () => {
 });
 
 describe('requiredTimeframes', () => {
-  it('sempre 1h/4h/1d + 15m da confirmação RF', () => {
-    expect(requiredTimeframes('BTCUSDT', { smcSymbols: new Set(), pineConfig: {} }))
-      .toEqual(['1h', '4h', '1d', '15m']);
+  // Mesmo formato do makeAsset de run-backtest.mjs.
+  const asset = (overrides = {}) => ({
+    symbol: 'BTCUSDT', timeframes_enabled: { '1h': true, '4h': true, '1d': true }, smc_enabled: false, ...overrides,
+  });
+
+  it('timeframes ligados no ativo + 15m da confirmação RF', () => {
+    expect(requiredTimeframes(asset(), { pineConfig: {} })).toEqual(['1h', '4h', '1d', '15m']);
+  });
+
+  it('derivado do ativo (revisão do pacote 1): timeframe ligado a mais entra, desligado sai — mesma regra `!== false` do scanAsset', () => {
+    expect(requiredTimeframes(asset({ timeframes_enabled: { '1h': true, '4h': true, '1d': false, '2h': true } }), {}))
+      .toEqual(['1h', '4h', '2h', '15m']);
+  });
+
+  it('sem timeframes_enabled cai no padrão do scanAsset (1h/4h/1d)', () => {
+    expect(requiredTimeframes({ symbol: 'X' }, {})).toEqual(['1h', '4h', '1d', '15m']);
   });
 
   it('sem 15m quando a confirmação 15m está desligada', () => {
-    expect(requiredTimeframes('BTCUSDT', { smcSymbols: new Set(), pineConfig: { skip15mConfirmationEnabled: true } }))
+    expect(requiredTimeframes(asset(), { pineConfig: { skip15mConfirmationEnabled: true } }))
       .toEqual(['1h', '4h', '1d']);
   });
 
-  it('5m só para símbolo com a cascata SMC', () => {
-    const smcSymbols = new Set(['ETHUSDT']);
-    expect(requiredTimeframes('ETHUSDT', { smcSymbols, pineConfig: {} })).toContain('5m');
-    expect(requiredTimeframes('BTCUSDT', { smcSymbols, pineConfig: {} })).not.toContain('5m');
+  it('5m só para ativo com a cascata SMC', () => {
+    expect(requiredTimeframes(asset({ smc_enabled: true }), {})).toContain('5m');
+    expect(requiredTimeframes(asset(), {})).not.toContain('5m');
+  });
+});
+
+describe('warmupStartMs (--warmup-candles)', () => {
+  it('recua N velas DO PRÓPRIO timeframe a partir do --from', () => {
+    expect(warmupStartMs(T0, '1d', 500)).toBe(T0 - 500 * 24 * H);
+    expect(warmupStartMs(T0, '5m', 500)).toBe(T0 - 500 * 5 * 60 * 1000);
+  });
+
+  it('0 velas = sem aquecimento (comportamento anterior)', () => {
+    expect(warmupStartMs(T0, '4h', 0)).toBe(T0);
+  });
+
+  it('intervalo sem duração fixa não recua', () => {
+    expect(warmupStartMs(T0, '1M', 500)).toBe(T0);
   });
 });
 
 describe('describeIssue', () => {
+  it('elemento sem instante (null) não imprime "undefined" como 1ª ocorrência', () => {
+    const [issue] = validateCandleSeries([...series(3), null], meta);
+    expect(describeIssue(issue)).toBe('BTCUSDT 1h: candle com valor inválido (NaN, preço ≤ 0, high/low incoerente) (1x)');
+  });
+
   it('gera uma linha legível com símbolo, timeframe, contagem e 1ª ocorrência', () => {
     const [issue] = validateCandleSeries([], meta);
     expect(describeIssue(issue)).toBe('BTCUSDT 1h: série vazia (1x)');

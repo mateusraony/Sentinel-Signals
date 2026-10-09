@@ -39,6 +39,7 @@ import {
   assertArchiveSizeWithinLimit,
 } from './binanceArchive.js';
 import { writeJsonAtomic } from './writeJsonAtomic.mjs';
+import { warmupStartMs } from './backtestDataIntegrity.js';
 
 function parseArgs(argv) {
   const args = {};
@@ -111,7 +112,7 @@ async function fetchFuturesArchive(symbol, interval, fromMs, toMs) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.symbols || !args.from || !args.to) {
-    console.error('Uso: fetch-backtest-data-futures.mjs --symbols SYM1,SYM2 --from DATA --to DATA [--timeframes 1h,4h,1d,15m] [--out DIR]');
+    console.error('Uso: fetch-backtest-data-futures.mjs --symbols SYM1,SYM2 --from DATA --to DATA [--timeframes 1h,4h,1d,15m] [--out DIR] [--warmup-candles N]');
     process.exitCode = 1;
     return;
   }
@@ -128,10 +129,25 @@ async function main() {
   const outDir = args.out || path.join('scripts', '__fixtures__', 'backtest');
   fs.mkdirSync(outDir, { recursive: true });
 
+  // --warmup-candles N (docs/known-risks.md item 260, revisão do pacote 1):
+  // baixa N velas de CADA timeframe antes do --from, para o replay — que
+  // continua começando no --from — já ter o histórico que o scan ao vivo
+  // enxerga desde o primeiro passo. Sem isso o 1d levava ~50 dias para ter as
+  // velas mínimas e o alinhamento multi-timeframe saía 'unknown' nesse trecho.
+  // Por timeframe porque N velas de 1d são 500 dias e N velas de 5m são 41h.
+  // Default 0 = comportamento anterior.
+  const warmupCandles = args['warmup-candles'] !== undefined ? Number(args['warmup-candles']) : 0;
+  if (!Number.isInteger(warmupCandles) || warmupCandles < 0) {
+    console.error('--warmup-candles precisa ser um inteiro >= 0');
+    process.exitCode = 1;
+    return;
+  }
+
   for (const symbol of symbols) {
     for (const tf of timeframes) {
-      console.log(`[fetch-backtest-data-futures] ${symbol} ${tf}: baixando ${args.from} → ${args.to} (Futures USDⓈ-M)...`);
-      const candles = await fetchFuturesArchive(symbol, tf, fromMs, toMs);
+      const startMs = warmupStartMs(fromMs, tf, warmupCandles);
+      console.log(`[fetch-backtest-data-futures] ${symbol} ${tf}: baixando ${new Date(startMs).toISOString()} → ${args.to} (Futures USDⓈ-M)${warmupCandles ? ` (inclui ${warmupCandles} velas de aquecimento antes de ${args.from})` : ''}...`);
+      const candles = await fetchFuturesArchive(symbol, tf, startMs, toMs);
       const outFile = path.join(outDir, `${symbol}_${tf}.json`);
       writeJsonAtomic(outFile, candles);
       console.log(`[fetch-backtest-data-futures] ${symbol} ${tf}: ${candles.length} candles → ${outFile}`);
