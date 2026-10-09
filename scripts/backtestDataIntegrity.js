@@ -23,13 +23,13 @@
 
 export const MAX_TOLERATED_GAP_MS = 24 * 60 * 60 * 1000;
 
-// Quanto a série pode terminar antes do `--to` e ainda ser só AVISO (revisão do
-// pacote 1, 2026-10-09): o arquivo DIÁRIO da Binance Futures do último dia só
-// é publicado no dia seguinte, e o `to` padrão do backtest.yml é "hoje 00:00".
-// Rodado logo depois da meia-noite UTC, toda série termina ~24h antes — antes
-// deste módulo o run seguia com um dia a menos; recusá-lo por isso tornaria o
-// default dependente da hora. Acima disso já é download incompleto: ERRO.
-export const MAX_TOLERATED_END_SHORTFALL_MS = 48 * 60 * 60 * 1000;
+// Folga de fim de série que o backtest.yml concede a dado de FUTURES recém-
+// baixado (--max-end-shortfall-hours 48): o arquivo DIÁRIO da Binance
+// Futures do último dia só é publicado no dia seguinte, e o `to` padrão do
+// workflow é "hoje 00:00" — rodado logo depois da meia-noite UTC, toda série
+// termina ~24h antes. Só o chamador sabe a origem do dado, por isso a folga é
+// OPT-IN e o padrão continua estrito (review do Codex, PR #476).
+export const FUTURES_ARCHIVE_LAG_MS = 48 * 60 * 60 * 1000;
 
 // Quantas ocorrências de cada tipo de problema vão para o relatório como
 // amostra — a contagem total vai sempre inteira, a lista não (um arquivo
@@ -147,15 +147,20 @@ export function validateCandleSeries(series, { symbol, timeframe }) {
  * .mjs), então até um intervalo de folga é o comportamento normal, não falta
  * de dado.
  *
- * Severidade (revisão do pacote 1, 2026-10-09):
- * - Começar DEPOIS do `--from` é AVISO: os dois downloads paginam a partir do
- *   início pedido, então série que começa tarde é, na prática, símbolo listado
- *   no meio da janela — a estratégia simplesmente não podia operá-lo antes, e
- *   recusar o run inteiro barraria todo backtest longo de carteira.
- * - Terminar antes do `--to` é AVISO até MAX_TOLERATED_END_SHORTFALL_MS
- *   (arquivo diário de Futures ainda não publicado) e ERRO acima.
+ * Severidade — ERRO por padrão nas duas pontas; as folgas são OPT-IN porque
+ * só quem baixou o dado sabe de onde ele veio (review do Codex, PR #476: um
+ * diretório reaproveitado de um período mais curto, ou um arquivo truncado,
+ * é indistinguível de um símbolo recém-listado olhando só a série):
+ * - `allowLateStart`: começar DEPOIS do `--from` vira AVISO. Seguro quando o
+ *   dado acabou de ser baixado para esta janela (os dois downloads paginam a
+ *   partir do início pedido, então começo tardio = símbolo listado no meio da
+ *   janela) — é o que o backtest.yml declara.
+ * - `maxEndShortfallMs`: terminar antes do `--to` até esse tanto vira AVISO
+ *   (backtest.yml: FUTURES_ARCHIVE_LAG_MS, só com dado de Futures).
  */
-export function checkWindowCoverage(series, { symbol, timeframe, fromMs, toMs }) {
+export function checkWindowCoverage(series, {
+  symbol, timeframe, fromMs, toMs, allowLateStart = false, maxEndShortfallMs = 0,
+}) {
   const out = makeCollector(symbol, timeframe);
   const intervalMs = timeframeToMs(timeframe);
   if (!Array.isArray(series) || series.length === 0 || !intervalMs) return out.issues();
@@ -164,14 +169,14 @@ export function checkWindowCoverage(series, { symbol, timeframe, fromMs, toMs })
   // Elemento que não é candle (ex.: `null`) já sai como invalid_bar em
   // validateCandleSeries; aqui só não pode derrubar o preflight com TypeError.
   if (Number.isFinite(first?.openTime) && first.openTime - fromMs > intervalMs) {
-    out.add('warning', 'starts_after_window', first.openTime, { windowFrom: iso(fromMs) });
+    out.add(allowLateStart ? 'warning' : 'error', 'starts_after_window', first.openTime, { windowFrom: iso(fromMs) });
   }
   if (Number.isFinite(last?.closeTime) && toMs - last.closeTime > intervalMs) {
     const shortfallMs = toMs - last.closeTime;
-    if (shortfallMs > MAX_TOLERATED_END_SHORTFALL_MS) {
-      out.add('error', 'ends_before_window', last.closeTime, { windowTo: iso(toMs) });
-    } else {
+    if (shortfallMs <= maxEndShortfallMs) {
       out.add('warning', 'ends_slightly_before_window', last.closeTime, { windowTo: iso(toMs) });
+    } else {
+      out.add('error', 'ends_before_window', last.closeTime, { windowTo: iso(toMs) });
     }
   }
   return out.issues();
@@ -216,9 +221,9 @@ export function describeIssue(issue) {
     misaligned: 'candle desalinhado do intervalo',
     gap_too_large: `buraco de ${MAX_TOLERATED_GAP_MS / 3600000}h ou mais`,
     gap: 'buraco curto (possível parada da exchange)',
-    starts_after_window: 'série começa depois do início da janela (símbolo listado no meio dela?) — sem dado nesse trecho',
-    ends_before_window: `série termina mais de ${MAX_TOLERATED_END_SHORTFALL_MS / 3600000}h antes do fim da janela`,
-    ends_slightly_before_window: 'série termina pouco antes do fim da janela (último arquivo diário ainda não publicado?)',
+    starts_after_window: 'série começa depois do início da janela — sem dado nesse trecho',
+    ends_before_window: 'série termina antes do fim da janela',
+    ends_slightly_before_window: 'série termina pouco antes do fim da janela, dentro da folga pedida (último arquivo diário ainda não publicado?)',
   };
   const first = issue.samples?.[0];
   const where = first?.at ? ` — 1ª ocorrência em ${first.at}` : '';

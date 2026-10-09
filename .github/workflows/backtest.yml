@@ -259,10 +259,19 @@ jobs:
           SLIPPAGE_BPS: ${{ inputs.slippage_bps }}
           FUNDING_BPS: ${{ inputs.funding_bps }}
           REAL_FUNDING: ${{ inputs.real_funding }}
+          FUTURES_DATA: ${{ inputs.futures_data }}
           MIN_TRADES: ${{ inputs.min_trades }}
           TRIAL_LABEL: ${{ inputs.trial_label }}
         run: |
           ARGS=(--symbols "$SYMBOLS" --from "$FROM" --to "$TO" --out backtest-report.json)
+          # Folgas de cobertura dos candles (item 260), OPT-IN no CLI porque só
+          # quem baixou o dado sabe que ele é novo para esta janela — e aqui ele
+          # acabou de ser baixado nos passos acima: série que começa depois do
+          # --from é símbolo listado no meio da janela. A folga de fim (48h) só
+          # vale para Futures, cujo arquivo DIÁRIO do último dia sai no dia
+          # seguinte; o Spot vem da API e não tem esse atraso.
+          ARGS+=(--allow-late-start)
+          if [ "$FUTURES_DATA" = "true" ]; then ARGS+=(--max-end-shortfall-hours 48); fi
           if [ -n "$SMC" ]; then ARGS+=(--smc "$SMC"); fi
           if [ -n "$SMC_CONFIRM" ]; then ARGS+=(--smc-confirm "$SMC_CONFIRM"); fi
           if [ "$HAS_PINE_CONFIG" = "true" ]; then ARGS+=(--pine-config pine-config-overrides.json); fi

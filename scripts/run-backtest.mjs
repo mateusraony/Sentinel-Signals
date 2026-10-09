@@ -14,7 +14,12 @@
 //     [--pine-config ./my-pine-overrides.json] \
 //     [--step-ms 900000] [--out ./backtest-report.json] \
 //     [--no-costs] [--fee-bps 5] [--slippage-bps 1] [--funding-bps 1] \
-//     [--real-funding] [--min-trades 30] [--trial-label "ob-weight-7"]
+//     [--real-funding] [--min-trades 30] [--trial-label "ob-weight-7"] \
+//     [--allow-late-start] [--max-end-shortfall-hours 48]
+//
+// --allow-late-start / --max-end-shortfall-hours (docs/known-risks.md item
+// 260): folgas da checagem de cobertura dos candles, OPT-IN — ver o bloco de
+// integridade em main().
 //
 // --real-funding (docs/known-risks.md item 131): cobra funding pela taxa REAL
 // publicada, com sinal e por lado (vendido RECEBE quando a taxa é positiva),
@@ -102,7 +107,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   if (!args.symbols || !args.from || !args.to) {
-    console.error('Uso: run-backtest.mjs --symbols SYM1,SYM2 --from ISO --to ISO [--evaluation-from ISO] [--evaluation-to ISO] [--data-dir DIR] [--smc SYM1,SYM2] [--smc-confirm SYM1,SYM2] [--pine-config FILE] [--step-ms N] [--out FILE] [--no-costs] [--fee-bps N] [--slippage-bps N] [--funding-bps N] [--real-funding] [--min-trades N] [--trial-label TXT]');
+    console.error('Uso: run-backtest.mjs --symbols SYM1,SYM2 --from ISO --to ISO [--evaluation-from ISO] [--evaluation-to ISO] [--data-dir DIR] [--smc SYM1,SYM2] [--smc-confirm SYM1,SYM2] [--pine-config FILE] [--step-ms N] [--out FILE] [--no-costs] [--fee-bps N] [--slippage-bps N] [--funding-bps N] [--real-funding] [--min-trades N] [--trial-label TXT] [--allow-late-start] [--max-end-shortfall-hours N]');
     process.exitCode = 1;
     return;
   }
@@ -259,8 +264,26 @@ async function main() {
   // calculado sobre série ausente, corrompida ou que não cobre a janela.
   // Buraco curto, símbolo listado no meio da janela e fim de série pouco antes
   // do --to são só AVISO e seguem para o relatório.
+  //
+  // Folgas de cobertura são OPT-IN (review do Codex, PR #476): só quem baixou o
+  // dado sabe se ele é novo para esta janela. --allow-late-start: série que
+  // começa depois do --from é símbolo listado no meio da janela, não arquivo
+  // reaproveitado/truncado. --max-end-shortfall-hours N: série até N horas
+  // curta no fim é atraso de publicação do arquivo diário de Futures. O
+  // backtest.yml declara as duas (a 2ª só com futures_data); rodando à mão
+  // sobre um diretório antigo, o padrão estrito recusa.
+  const allowLateStart = Boolean(args['allow-late-start']);
+  const maxEndShortfallHours = args['max-end-shortfall-hours'] !== undefined ? Number(args['max-end-shortfall-hours']) : 0;
+  if (!Number.isFinite(maxEndShortfallHours) || maxEndShortfallHours < 0) {
+    console.error('[backtest] --max-end-shortfall-hours precisa ser um número >= 0');
+    process.exitCode = 1;
+    return;
+  }
+  const coveragePolicy = { allowLateStart, maxEndShortfallHours };
   const coverageOf = (loaded) => loaded.flatMap(({ symbol, timeframe, series }) =>
-    checkWindowCoverage(series, { symbol, timeframe, fromMs, toMs }));
+    checkWindowCoverage(series, {
+      symbol, timeframe, fromMs, toMs, allowLateStart, maxEndShortfallMs: maxEndShortfallHours * 60 * 60 * 1000,
+    }));
   for (const asset of assets) {
     for (const timeframe of requiredTimeframes(asset, { pineConfig: effectivePineConfig })) {
       loadSeries(asset.symbol, timeframe);
@@ -274,6 +297,14 @@ async function main() {
       + 'Baixe de novo com scripts/fetch-backtest-data.mjs (ou fetch-backtest-data-futures.mjs) para os MESMOS '
       + 'símbolos, timeframes e período antes de rodar (ou encurte o --to até onde o dado existe).',
     );
+    if (preflightIssues.some((issue) => issue.severity === 'error' && issue.type === 'starts_after_window')) {
+      console.error('[backtest] Se o dado acabou de ser baixado para esta janela e o símbolo foi listado depois do --from, '
+        + 'rode com --allow-late-start.');
+    }
+    if (preflightIssues.some((issue) => issue.severity === 'error' && issue.type === 'ends_before_window')) {
+      console.error('[backtest] Se é dado de Futures recém-baixado e falta só o último dia (arquivo diário ainda não '
+        + 'publicado), rode com --max-end-shortfall-hours 48.');
+    }
     process.exitCode = 1;
     return;
   }
@@ -379,6 +410,7 @@ async function main() {
   const replayIntegrity = report.dataIntegrity || { valid: true };
   report.dataIntegrity = {
     ...replayIntegrity,
+    coveragePolicy,
     valid: replayIntegrity.valid && !seriesIssues.some((issue) => issue.severity === 'error'),
     seriesIssues,
   };

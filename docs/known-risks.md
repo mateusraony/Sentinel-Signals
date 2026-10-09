@@ -30714,8 +30714,8 @@ do PR #475). Cada achado foi conferido contra o código antes de agir:
 | # | Achado | Veredito | O que mudou |
 |---|---|---|---|
 | 1 | `closeTime` só tinha limite SUPERIOR; um `closeTime` cedo demais (ex.: de 15m num arquivo de 1h) passava — e é esse o caso que gera look-ahead em `sliceClosedAsOf` | **Procede (o mais grave)** | duração da vela tem de ser `intervalo − 1` ou `intervalo` |
-| 2 | `starts_after_window` como ERRO barrava todo backtest longo de carteira com símbolo listado no meio da janela (ZRO, PENDLE…) — regressão | Procede | vira AVISO (os dois downloads paginam a partir do início pedido, então começo tardio = listagem) |
-| 3 | `ends_before_window` como ERRO recusava o default de Futures rodado logo após 00:00 UTC (arquivo diário do último dia ainda não publicado) — regressão dependente da hora | Procede | AVISO até 48h de falta (`MAX_TOLERATED_END_SHORTFALL_MS`), ERRO acima |
+| 2 | `starts_after_window` como ERRO barrava todo backtest longo de carteira com símbolo listado no meio da janela (ZRO, PENDLE…) — regressão | Procede | folga OPT-IN `--allow-late-start` (vira AVISO); o `backtest.yml` declara — ver correção do Codex abaixo |
+| 3 | `ends_before_window` como ERRO recusava o default de Futures rodado logo após 00:00 UTC (arquivo diário do último dia ainda não publicado) — regressão dependente da hora | Procede | folga OPT-IN `--max-end-shortfall-hours N` (AVISO até N horas); o `backtest.yml` passa 48 só com `futures_data` |
 | 4 | "Publicar diagnóstico" e "Publicar correlação em cluster" seguiam publicando IC/p-valor de relatório inválido | Procede | os dois passos são pulados quando `dataIntegrity.valid === false` |
 | 5 | Classificação de aquecimento por regex sobre mensagens em português é frágil | **Não alterado** | a falha possível é para o lado SEGURO: mensagem reescrita → conta como erro → relatório INVÁLIDO, e os testes "falta de histórico" quebram no CI antes do merge. Tipar o erro exigiria mexer em `scanner.js` + 4 indicadores (motor de produção) para proteger só o backtest |
 | 6 | `[..., null]` derrubava o preflight com TypeError em `checkWindowCoverage` | Procede | guarda; o erro limpo `invalid_bar` aparece |
@@ -30723,6 +30723,17 @@ do PR #475). Cada achado foi conferido contra o código antes de agir:
 | 8 | `requiredTimeframes` duplicava `makeAsset`; série lida só no replay não tinha cobertura checada | Procede | derivado de `asset.timeframes_enabled`; cobertura checada para TODA série lida (`getLoadedSeries`) |
 | 9 | Condição de inválido escrita duas vezes (CLI e workflow) | Procede (manutenção) | uma cadeia só |
 | 10 | Aviso citava `lastAt` como "dentro da janela avaliada" mesmo quando era de fora | Procede | `lastInWindowAt` separado |
+
+**Review do Codex no PR #476 (P1/P2), aceito**: a 1ª versão das linhas 2 e 3 rebaixava
+os dois casos para AVISO **sempre**. Isso abria o buraco oposto: um diretório
+reaproveitado de um período mais curto (ou um arquivo truncado) é indistinguível de um
+símbolo recém-listado olhando só a série, e 48h de folga no fim valia para Spot e para
+qualquer timeframe. Como só quem BAIXOU o dado sabe que ele é novo para a janela e de qual
+fonte veio, o CLI ficou estrito por padrão e as duas folgas viraram declaração explícita
+do chamador. O `backtest.yml` baixa o dado no mesmo job, então declara `--allow-late-start`
+sempre e `--max-end-shortfall-hours 48` só com `futures_data`. A política usada vai para
+`report.dataIntegrity.coveragePolicy`. Rodando à mão sobre um diretório antigo, o run é
+recusado com a dica da flag certa.
 
 **Correção do aquecimento (achado colateral acima)**: `fetch-backtest-data.mjs` e
 `fetch-backtest-data-futures.mjs` ganharam `--warmup-candles N` (default 0 = como

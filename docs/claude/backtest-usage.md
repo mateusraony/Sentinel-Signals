@@ -677,12 +677,24 @@ resultado", sem precisar baixar nada.
 Antes do replay, o CLI confere os arquivos de candle de cada símbolo (1h, 4h,
 1d, 15m — e 5m com `--smc`): arquivo ausente, JSON inválido, candle fora de
 ordem, duplicado, desalinhado, com preço inválido ou com `closeTime` fora da
-própria vela, buraco de 24h ou mais, ou série que termina mais de 48h antes
-do `--to`. Qualquer um desses **recusa o run em segundos** (exit 1, nada é
-replayado). Só geram AVISO: buraco curto (menos de 24h, possível parada da
-exchange), série que começa depois do `--from` (símbolo listado no meio da
-janela) e série que termina até 48h antes do `--to` (arquivo diário de
-Futures do último dia ainda não publicado).
+própria vela, buraco de 24h ou mais, ou série que não cobre `--from`/`--to`.
+Qualquer um desses **recusa o run em segundos** (exit 1, nada é replayado).
+Buraco curto (menos de 24h, possível parada da exchange) só gera AVISO.
+
+Duas folgas de cobertura existem, mas são **declaradas por você** — o CLI não
+tem como distinguir um símbolo recém-listado de um diretório reaproveitado de
+um período mais curto:
+
+- `--allow-late-start` — série que começa depois do `--from` vira AVISO. Use só
+  com dado que você ACABOU de baixar para esta janela (aí começo tardio é
+  símbolo listado no meio dela).
+- `--max-end-shortfall-hours 48` — série até 48h curta no fim vira AVISO. Use
+  só com dado de Futures recém-baixado (o arquivo diário do último dia só sai
+  no dia seguinte).
+
+O workflow (Opção B) declara as duas sozinho, porque baixa o dado no mesmo
+job; a segunda, só com `futures_data`. A política usada fica em
+`report.dataIntegrity.coveragePolicy`.
 
 Depois do replay, `report.dataIntegrity` diz se o resultado é confiável:
 

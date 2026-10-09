@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   timeframeToMs, validateCandleSeries, checkWindowCoverage, requiredTimeframes,
-  describeIssue, warmupStartMs, MAX_TOLERATED_GAP_MS, MAX_TOLERATED_END_SHORTFALL_MS,
+  describeIssue, warmupStartMs, MAX_TOLERATED_GAP_MS, FUTURES_ARCHIVE_LAG_MS,
 } from './backtestDataIntegrity.js';
 
 const H = 60 * 60 * 1000;
@@ -163,20 +163,31 @@ describe('checkWindowCoverage', () => {
     expect(checkWindowCoverage(s, { ...meta, fromMs: T0 - H + 1, toMs: T0 + 49 * H - 1 })).toEqual([]);
   });
 
-  it('série que começa depois do início da janela é só AVISO (símbolo listado no meio dela)', () => {
+  // Review do Codex (PR #476): diretório reaproveitado/arquivo truncado é
+  // indistinguível de símbolo recém-listado olhando só a série — por isso o
+  // padrão é ERRO e a folga é declarada por quem baixou o dado.
+  it('série que começa depois do início da janela é ERRO por padrão', () => {
     expect(types(checkWindowCoverage(s, { ...meta, fromMs: T0 - 2 * H, toMs: T0 + 48 * H })))
+      .toEqual(['error:starts_after_window']);
+  });
+
+  it('com allowLateStart (dado recém-baixado: símbolo listado no meio da janela) vira AVISO', () => {
+    expect(types(checkWindowCoverage(s, { ...meta, fromMs: T0 - 2 * H, toMs: T0 + 48 * H, allowLateStart: true })))
       .toEqual(['warning:starts_after_window']);
   });
 
-  it('série que termina pouco antes do fim (até o limite) é AVISO — arquivo diário ainda não publicado', () => {
+  it('série que termina antes do fim da janela é ERRO por padrão, mesmo por pouco', () => {
     const lastClose = s[s.length - 1].closeTime;
-    expect(types(checkWindowCoverage(s, { ...meta, fromMs: T0, toMs: lastClose + MAX_TOLERATED_END_SHORTFALL_MS })))
-      .toEqual(['warning:ends_slightly_before_window']);
+    expect(types(checkWindowCoverage(s, { ...meta, fromMs: T0, toMs: lastClose + 2 * H })))
+      .toEqual(['error:ends_before_window']);
   });
 
-  it('série que termina muito antes do fim da janela é ERRO', () => {
+  it('com maxEndShortfallMs (Futures, arquivo diário não publicado) vira AVISO até o limite e ERRO acima', () => {
     const lastClose = s[s.length - 1].closeTime;
-    expect(types(checkWindowCoverage(s, { ...meta, fromMs: T0, toMs: lastClose + MAX_TOLERATED_END_SHORTFALL_MS + 1 })))
+    const opts = { ...meta, fromMs: T0, maxEndShortfallMs: FUTURES_ARCHIVE_LAG_MS };
+    expect(types(checkWindowCoverage(s, { ...opts, toMs: lastClose + FUTURES_ARCHIVE_LAG_MS })))
+      .toEqual(['warning:ends_slightly_before_window']);
+    expect(types(checkWindowCoverage(s, { ...opts, toMs: lastClose + FUTURES_ARCHIVE_LAG_MS + 1 })))
       .toEqual(['error:ends_before_window']);
   });
 
