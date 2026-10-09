@@ -106,6 +106,21 @@ describe('diagnoseStopGaps', () => {
     expect(asked).toEqual(['BTCUSDT:1h', 'BTCUSDT:4h']);
   });
 
+  // Review do Codex (PR #477): somar gaps já arredondados divergia do total
+  // por fase. Dois gaps de 0,00006R: total certo 0,00012 → 0,0001 nas duas.
+  it('agrega valores CRUS e arredonda só no fim — total geral bate com o total por fase', () => {
+    const risk = 5;
+    const series = [candle(0, { open: 95 - 0.00006 * risk }), candle(1, { open: 95 - 0.00006 * risk })];
+    const r = diagnoseStopGaps([
+      stopOp({ id: 'a', stop_hit_real_time: closeIso(series[0]) }),
+      stopOp({ id: 'b', stop_hit_real_time: closeIso(series[1]) }),
+    ], { seriesFor: () => series, countedOps: 2 });
+    expect(r.withGap).toBe(2);
+    expect(r.totalGapR).toBe(r.byPhase.pre_tp1.totalGapR);
+    expect(r.totalGapR).toBe(0.0001);
+    expect(r.avgGapR).toBe(0.0001); // 0,00006 arredondado, não 0,0001/2 de valores arredondados
+  });
+
   it('amostras ordenadas pelo maior gap', () => {
     const series = [candle(0, { open: 90 }), candle(1, { open: 94 })];
     const r = diagnoseStopGaps([

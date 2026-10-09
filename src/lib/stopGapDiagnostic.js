@@ -95,11 +95,14 @@ export function diagnoseStopGaps(ops, { seriesFor, countedOps } = {}) {
 
     byPhase[phase].withGap += 1;
     byPhase[phase].totalGapR += gapR;
+    // gapR fica CRU aqui; o arredondamento é só na saída (review do Codex,
+    // PR #477: somar valores já arredondados fazia o total geral divergir do
+    // total por fase e enviesava a média e o delta de expectância).
     gapped.push({
       id: op.id, symbol: op.symbol, side: op.side, phase, timeframe,
       exitCandleCloseTime: op.stop_hit_real_time,
       exitPriceRecorded: exit, exitCandleOpen: found.candle.open,
-      gapR: round(gapR), stopWasBeyondPrevClose,
+      gapR, stopWasBeyondPrevClose,
     });
   }
 
@@ -115,7 +118,7 @@ export function diagnoseStopGaps(ops, { seriesFor, countedOps } = {}) {
     gapRate: resolved > 0 ? round(gapped.length / resolved) : null,
     totalGapR: round(totalGapR),
     avgGapR: gapped.length > 0 ? round(totalGapR / gapped.length) : null,
-    maxGapR: gapped.length > 0 ? Math.max(...gapped.map((g) => g.gapR)) : null,
+    maxGapR: gapped.length > 0 ? round(Math.max(...gapped.map((g) => g.gapR))) : null,
     // Quanto a expectância (R por operação contada) cairia se toda saída com
     // gap fosse preenchida na abertura do candle — PISO, bruto, ver o topo.
     expectancyRDeltaIfFilledAtOpen: counted ? round(-totalGapR / counted) : null,
@@ -125,6 +128,7 @@ export function diagnoseStopGaps(ops, { seriesFor, countedOps } = {}) {
     prevCloseBeyondStop,
     byPhase,
     unresolved,
-    samples: [...gapped].sort((a, b) => b.gapR - a.gapR).slice(0, MAX_SAMPLES),
+    samples: [...gapped].sort((a, b) => b.gapR - a.gapR).slice(0, MAX_SAMPLES)
+      .map((g) => ({ ...g, gapR: round(g.gapR) })),
   };
 }
