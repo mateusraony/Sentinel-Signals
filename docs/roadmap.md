@@ -280,7 +280,9 @@ plano de sessão morre com a sessão.
 > da RF ficou indistinguível do acaso (item 264). O usuário aceitou (item 265):
 > produção igual e ajuste de entrada só com teste pré-registrado. Em paralelo
 > foi aberto um laboratório de padrões com dados de "smart money" nunca usados
-> (item 266), com regra de parada se nada passar.
+> (item 266), com regra de parada se nada passar. **Resultado (mesmo dia):
+> nenhum padrão sobreviveu à validação; laboratório encerrado** pela regra
+> combinada. Reabre só com ≥ 12 meses de dado novo ou um tipo de dado novo.
 
 ## A regra que ordena tudo: amostra
 

@@ -31424,5 +31424,51 @@ inclusive o comportamento do "smart money". Se nada aparecer, o usuário concord
   painel seria outra decisão, depois.
 - **Nenhuma decisão de produção sai deste item.**
 
-**Resultado**: pendente. O usuário dispara o workflow "Laboratório de padrões" uma vez e
-envia o artifact `resumo-pattern-lab`.
+**Resultado (2026-10-10): `FAILED_VALIDATION` — nenhum padrão sobreviveu. Laboratório
+encerrado.**
+- **Rastro:**
+  - run `38056792825` do workflow `pattern-lab.yml`;
+  - commit `b4e0cc7`;
+  - pré-registro sha256 `7ec77ef30c62ea9f…`;
+  - `untested` vazio, ou seja, todos os 22 testes tiveram dado.
+  - Recalculado na sessão com os dados alinhados do run: mesmo veredito, diferença 0 em
+    t e IC.
+- **Cobertura:**
+  - descoberta: 5 moedas elegíveis (BTC, ETH, FET, PENDLE, DYDX). ZRO (800 velas) e PAXG
+    (0) foram listadas tarde demais, como esperado;
+  - validação: 6 moedas.
+- **Único sobrevivente da descoberta:** variação de contratos em aberto em 4h → retorno
+  das 24h seguintes (`F5@6`).
+  - Na descoberta: IC −0,025, t −3,22, Holm 0,024, 5/5 moedas no mesmo sentido e
+    meia-diferença −15 bps.
+  - Na validação **inverteu**: IC +0,005, t unicaudal −0,61 e só 2 de 6 moedas no
+    sentido da descoberta. É o comportamento típico de acaso.
+- **Efeito real, mas pequeno demais para pagar custo:** reversão de 24h → próxima vela
+  (`F10@1`, um controle).
+  - IC −0,042, t −5,0, Holm 1e-5, 5/5 moedas.
+  - Meia-diferença de só −5,6 bps, quando são precisos ≥ 12.
+  - É o efeito conhecido de "o que subiu forte em 24h devolve um pouco" e não paga ida e
+    volta.
+  - Fluxo agressor 4h/24h (`F1@1`, `F2@1`) e contratos 24h (`F6@1`) deram o mesmo
+    retrato: t≈3, mas 0,2–6 bps.
+- **Quase passou:** `F6@6` (contratos em 24h → 24h), com Holm 0,054 e t −2,95.
+  - Pela regra, a validação dele **não** foi calculada nem será: calcular agora seria
+    olhar de novo depois do resultado.
+  - O irmão dele (`F5@6`), da mesma família de sinal, inverteu na validação.
+- **Sem nada:** funding, prêmio dos futuros, grandes traders (posição) e grandes traders ×
+  multidão, todos com |t| < 1,3 nos dois horizontes.
+- **Ressalvas honestas:**
+  - 5 moedas na descoberta;
+  - só horizontes de 4h e 24h;
+  - só Binance;
+  - IC linear por postos (não testa regras condicionais nem combinações, de propósito).
+  - Não prova que smart money "não existe". Prova que estes 9 sinais grátis de
+    posicionamento e fluxo, mais 2 controles, não preveem o retorno de 4h a 24h destas
+    moedas de forma que sobreviva a dado novo e pague custo.
+- **Decisão (regra de parada pré-registrada, combinada com o usuário):** o laboratório
+  termina.
+  - Nada de sinal, horizonte, moeda ou limiar novo sobre estes dados.
+  - Reabre só com ≥ 12 meses de dado novo (validação nova a partir de 2026-10, e o período
+    lacrado continua intacto) ou com um tipo de dado novo, sempre com pré-registro novo.
+    O workflow `pattern-lab.yml` fica no repositório para isso.
+- **Produção:** nada muda, como o item já previa.
