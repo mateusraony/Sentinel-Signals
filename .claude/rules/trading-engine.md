@@ -442,6 +442,12 @@ nunca deve receber nova transição.**
   (`src/lib/rfExitCloseOnlyTripwire.test.js`). Ligada, o runner sai com o close
   além do filtro sem exigir `rfDir` contrário (como o Pine real). Serve só para
   MEDIR a divergência; desligada, a condição é a de sempre.
+- **Entrada aleatória** (`pineConfig.randomEntryEnabled`/`randomEntrySeed`/
+  `randomEntryProb`, item 264) — **BACKTEST-ONLY, desligada por padrão**, com
+  tripwire (`src/lib/randomEntryTripwire.test.js`). Ligada, o sinal 4h da RF
+  vira uma moeda determinística (`src/lib/seededRandom.js`, causal e
+  reproduzível) e o gate `trend_reversed` não filtra o lado sorteado. É a
+  referência "mesmas saídas, entradas aleatórias"; desligada, nada muda.
 - **Retry na busca de candle ao vivo** (`src/lib/httpRetry.js`,
   `fetchWithRetry`) — item 57. Causa raiz confirmada do volume baixo de
   operações ao vivo: `src/lib/marketDataProvider.js` (browser) e

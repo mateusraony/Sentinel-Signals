@@ -31105,3 +31105,109 @@ Expectância por braço (líquida, IC95 do relatório):
 - O trailing pré-TP1 do JS não cria vantagem nem a destrói. Ele reduz o risco por
   operação (sd e drawdown), como o item 132 já tinha medido.
 - **Nenhuma decisão de produção sai deste item**, como foi pré-registrado.
+
+## 264. Pacote 5 — a entrada da Range Filter vale mais que entrar ao acaso? Referência externa padrão (pré-registro, 2026-10-10)
+
+**Pergunta do usuário**: existe um método padrão melhor que o atual, para comparar, e isso
+já foi verificado com cuidado?
+
+**Fato: nunca foi verificado.**
+- Todo "controle" deste projeto (itens 48 a 263) é a própria estratégia com uma chave a
+  menos.
+- `marketBenchmarks.js` compara a carteira ao vivo com o BTC só no painel, nunca em
+  backtest.
+- O único resultado conclusivo positivo da história (+0,294R na janela de alta
+  2024-07→2025-07, itens 48 e 124) nunca foi testado contra entradas aleatórias com as
+  mesmas saídas.
+- Ao todo: 70 tentativas em 24 famílias.
+
+**Pesquisa (literatura e prática quant; fontes no PR):**
+- **Referência padrão nº 1: "mesmas saídas, entradas aleatórias"** (Monte Carlo de Tom
+  Basso relatado por Van Tharp; detrending e testes de permutação de Aronson, *Evidence-
+  Based Technical Analysis*). Responde se a entrada acrescenta algo além das saídas e da
+  deriva do mercado.
+  - O teste de Basso mostra que entradas aleatórias com stop ATR trilhado e 1% de risco
+    **lucram em mercado de tendência**. Por isso o +0,29R da janela de alta pode vir do
+    mercado e das saídas, sem mérito da entrada.
+- **Referência nº 2: comprar e segurar** o mesmo cesto. É contexto, em retorno de carteira.
+- **Estratégias simples com evidência em cripto:** momentum de série temporal / tendência
+  (média móvel, Donchian), em barras **diárias ou semanais**.
+  - Liu & Tsyvinski 2021 (RFS) e Detzel et al. 2021 (Financial Management).
+  - Hudson & Urquhart 2021: resultado misto, sem previsibilidade fora da amostra no BTC.
+  - Não achei estudo sério em 4h, nem teste rigoroso da Range Filter, que na prática é um
+    filtro de tendência suavizado, da família da média móvel.
+- **Tamanho de amostra:** detectar 0,1R entre estratégias exige ~1.000–2.000 operações por
+  braço. Com ~100 por ano só aparecem diferenças de ~0,25–0,3R. O percentil contra
+  entradas aleatórias é o teste mais informativo para este tamanho.
+- **Conclusão para o usuário:** não há "método melhor" comprovado para trocar. Faltava o
+  teste-padrão que diz se a entrada atual vale alguma coisa, e é isso que este item faz.
+
+**Mudança de código (só backtest):**
+- **Chaves:** `randomEntryEnabled` / `randomEntrySeed` / `randomEntryProb` em
+  `scripts/backtestPineConfig.js`, desligadas por padrão.
+- **Tripwire:** `src/lib/randomEntryTripwire.test.js`, validado colocando
+  `randomEntryProb` em `pineParser.js`: o teste falhou.
+- **No `scanAsset`:** com a chave ligada, o sinal 4h da RF é trocado por uma moeda
+  determinística (`src/lib/seededRandom.js`). É um hash de seed + símbolo + horário da
+  vela passado no mulberry32: causal por construção e reproduzível. O gate de score sai.
+- **Gate de tendência:** a direção da RF 4h (`trend_reversed`) não filtra o lado sorteado,
+  nem no 1º passo nem no retry. Sem isso, a informação da RF vazaria para o braço
+  aleatório.
+- **Resto da entrada desligado com chaves existentes:** `skip15mConfirmationEnabled:true`,
+  `useADX:false`, `useChop:false`.
+- **As saídas são idênticas,** conferido no código:
+  - o tier (multiplicador do stop e Time Stop) é calculado à parte;
+  - `useADX`/`useChop` só ligam o **gate** de regime (`evaluateRegime`);
+  - a arbitragem por sinal oposto só mexe em `current_confidence_score`, que nenhuma
+    saída lê.
+- **Testes:**
+  - no replay inteiro, os sinais são exatamente os da moeda (vela e lado), não os da RF;
+  - a mesma seed reproduz relatório e operações; seeds diferentes dão sinais diferentes;
+  - testes de estado da dispensa do gate de tendência;
+  - taxa e equilíbrio de lados da moeda;
+  - os 4 que afirmam o comportamento novo falharam sem a implementação.
+- **Chave desligada:** replay sintético idêntico ao do `main`.
+- **Ferramentas novas:**
+  - `.github/workflows/backtest-random-baseline.yml`: baixa os candles uma vez e roda
+    R0 + N seeds em matriz.
+  - `scripts/random-baseline-summary.mjs`: percentil do R0, p empírico, distribuição e
+    comprar-e-segurar descritivo. Recusa relatórios incomparáveis e seeds repetidas.
+
+**Pré-registro (escrito ANTES de qualquer run):**
+- **Família no ledger:** `random-entry-baseline-2026-10`.
+- **Janelas** (Spot, mesmos 7 símbolos: BTC, ETH, FET, PENDLE, ZRO, DYDX, PAXG), com as
+  datas preenchidas à mão no workflow:
+  - **W1:** 2025-10-10 → 2026-10-10 (a do item 263);
+  - **W2:** 2024-07-27 → 2025-07-27 (a janela de alta dos itens 48 e 124).
+- **Braços em cada janela:** R0 (entrada da RF, `pine_config` vazio) e seeds 1..40 com
+  `{"randomEntryEnabled":true,"randomEntrySeed":<k>,"randomEntryProb":0.0075,"skip15mConfirmationEnabled":true,"useADX":false,"useChop":false}`.
+  - `0,0075 ≈ 115 operações / (7 × 2190 velas de 4h)`, a mesma ordem de grandeza do
+    controle.
+  - O workflow gera esse JSON sozinho; os rótulos das famílias são `RandomBaseline_W1` e
+    `RandomBaseline_W2`.
+- **Por que 40 seeds, e não as 30 do primeiro rascunho do plano:** o menor p empírico
+  possível é `1/(N+1)`. Com 30 seeds ele seria 0,032, acima do limiar, e a regra nunca
+  poderia dar positivo. Corrigido antes de qualquer run; o resumo e o workflow recusam
+  menos de 39 seeds.
+- **Hipótese nula:** a entrada da RF não é melhor que entrar ao acaso com as mesmas saídas.
+- **Regra de leitura:**
+  - "A entrada tem informação" só se o p empírico unicaudal da expectância do R0,
+    `(1 + nº de seeds ≥ R0)/(N+1)`, for **≤ 0,025 nas duas janelas** (Bonferroni m=2).
+    Com 40 seeds, isso significa o R0 acima de **todas** as seeds.
+  - "Pior que aleatória" se o R0 ficar abaixo do percentil 2,5.
+  - Senão: indistinguível de aleatória nesta amostra.
+  - sd(R) e drawdown da conta saem como descritivos.
+- **Previsões:**
+  - W1: R0 dentro da distribuição aleatória.
+  - W2: o braço aleatório **também** sai positivo em média (tendência de alta + saídas), e
+    o R0 **não** passa do limiar. Ou seja, o +0,29R vinha principalmente do mercado e das
+    saídas.
+- **Proibido depois de ver os dados:** trocar janela, `p`, seeds, símbolos ou métrica, ou
+  acrescentar braço sem registrar aqui antes.
+- **Nenhuma decisão de produção sai deste item.**
+- **Fora deste item** (só com pedido do usuário depois): uma regra de tendência diária
+  padrão (média móvel / Donchian) como terceiro braço. Seria uma entrada nova no motor, e
+  o item 102 registrou "não trocar de estratégia".
+
+**Resultado**: pendente. O usuário dispara o workflow uma vez por janela e envia o
+artifact agregado.

@@ -1,0 +1,234 @@
+name: Backtest — referência de entrada aleatória (Sentinel Signals)
+
+# docs/known-risks.md item 264 — referência externa padrão "mesmas saídas,
+# entradas aleatórias": roda o controle (entrada da Range Filter, R0) e N
+# seeds de entrada aleatória (chave só de backtest `randomEntryEnabled`,
+# scripts/backtestPineConfig.js) sobre o MESMO dado, e publica em que
+# percentil da distribuição aleatória o controle cai
+# (scripts/random-baseline-summary.mjs).
+#
+# Mesma natureza do backtest.yml: NÃO usa secret nenhum (backend fake em
+# memória, Telegram no-op), só lê candles públicos da Binance Spot e devolve
+# artifacts. Repo público = minutos de Actions gratuitos.
+#
+# Estrutura: 1 job baixa os candles UMA vez e sobe como artifact; a matriz
+# roda R0 + seeds em paralelo (cada job = 1 replay, ~30 min para 12 meses e
+# 7 símbolos); o último job agrega. Os passos de download/replay seguem o
+# backtest.yml, que não foi alterado.
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        # Obrigatório e sem padrão vazio de propósito: no item 263 o campo
+        # vazio calculou "12 meses atrás" no dia do run e a janela saiu um
+        # dia diferente da pré-registrada.
+        description: "Início da janela, OBRIGATÓRIO (YYYY-MM-DD) — use a data pré-registrada"
+        required: true
+        type: string
+      to:
+        description: "Fim da janela, OBRIGATÓRIO (YYYY-MM-DD) — use a data pré-registrada"
+        required: true
+        type: string
+      symbols:
+        description: "Símbolos separados por vírgula (Binance Spot)"
+        default: "BTCUSDT,ETHUSDT,FETUSDT,PENDLEUSDT,ZROUSDT,DYDXUSDT,PAXGUSDT"
+        type: string
+      n_seeds:
+        # O limiar pré-registrado (p ≤ 0,025) exige pelo menos 39 seeds: o
+        # menor p empírico possível é 1/(N+1).
+        description: "Número de seeds aleatórias (mínimo 39; pré-registrado: 40)"
+        default: "40"
+        type: string
+      random_prob:
+        description: "Probabilidade de entrada por vela 4h (pré-registrado: 0.0075)"
+        default: "0.0075"
+        type: string
+      family:
+        description: "Rótulo da família, OBRIGATÓRIO (ex.: RandomBaseline_W1) — vira prefixo do rótulo de cada run"
+        required: true
+        type: string
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      arms: ${{ steps.matrix.outputs.arms }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Todo input passa por env: (nunca interpolado no corpo do script),
+      # mesmo cuidado do backtest.yml/golden-fixture.yml contra injeção.
+      - name: Validar entradas e montar a matriz
+        id: matrix
+        env:
+          FROM_INPUT: ${{ inputs.from }}
+          TO_INPUT: ${{ inputs.to }}
+          N_SEEDS: ${{ inputs.n_seeds }}
+          RANDOM_PROB: ${{ inputs.random_prob }}
+          FAMILY: ${{ inputs.family }}
+        run: |
+          node -e "
+            const { FROM_INPUT, TO_INPUT, N_SEEDS, RANDOM_PROB, FAMILY } = process.env;
+            const fail = (m) => { console.error('::error::' + m); process.exit(1); };
+            for (const [k, v] of [['from', FROM_INPUT], ['to', TO_INPUT]]) {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '') || Number.isNaN(Date.parse(v))) fail(k + ' precisa ser uma data YYYY-MM-DD, recebeu: ' + v);
+            }
+            if (Date.parse(FROM_INPUT) >= Date.parse(TO_INPUT)) fail('from precisa ser antes de to');
+            const n = Number(N_SEEDS);
+            if (!Number.isInteger(n) || n < 39 || n > 200) fail('n_seeds precisa ser inteiro entre 39 e 200 (o limiar 0,025 exige ≥ 39), recebeu: ' + N_SEEDS);
+            const p = Number(RANDOM_PROB);
+            if (!(p > 0 && p < 1)) fail('random_prob precisa estar entre 0 e 1, recebeu: ' + RANDOM_PROB);
+            if (!/^[A-Za-z0-9_.-]{1,60}$/.test(FAMILY || '')) fail('family: só letras, números, _ . - (até 60), recebeu: ' + FAMILY);
+            const arms = ['R0', ...Array.from({ length: n }, (_, i) => String(i + 1))];
+            require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'arms=' + JSON.stringify(arms) + '\n');
+            console.log('Braços:', arms.length, '(R0 + ' + n + ' seeds)');
+          "
+
+      - name: Baixar histórico real (Binance Spot)
+        env:
+          SYMBOLS: ${{ inputs.symbols }}
+          FROM_INPUT: ${{ inputs.from }}
+          TO_INPUT: ${{ inputs.to }}
+        run: |
+          # 15m/1h/4h/1d: o que a cascata RF lê. Sem 5m — este workflow não
+          # liga a cascata SMC. --warmup-candles 500 pelo mesmo motivo do
+          # backtest.yml (item 260).
+          node scripts/fetch-backtest-data.mjs \
+            --symbols "$SYMBOLS" \
+            --from "${FROM_INPUT}T00:00:00Z" --to "${TO_INPUT}T00:00:00Z" \
+            --timeframes "15m,1h,4h,1d" \
+            --warmup-candles 500 \
+            --out candles
+
+      - name: Upload dos candles
+        uses: actions/upload-artifact@v4
+        with:
+          name: candles
+          path: candles
+          retention-days: 7
+          if-no-files-found: error
+
+  replay:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        arm: ${{ fromJSON(needs.prepare.outputs.arms) }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Baixar os candles do job de preparo
+        uses: actions/download-artifact@v4
+        with:
+          name: candles
+          path: candles
+
+      - name: Rodar o replay
+        env:
+          ARM: ${{ matrix.arm }}
+          SYMBOLS: ${{ inputs.symbols }}
+          FROM_INPUT: ${{ inputs.from }}
+          TO_INPUT: ${{ inputs.to }}
+          RANDOM_PROB: ${{ inputs.random_prob }}
+          FAMILY: ${{ inputs.family }}
+        run: |
+          ARGS=(--symbols "$SYMBOLS" --from "${FROM_INPUT}T00:00:00Z" --to "${TO_INPUT}T00:00:00Z" \
+            --data-dir candles --out "report-${ARM}.json" --allow-late-start --trial-label "${FAMILY}_${ARM}")
+          if [ "$ARM" != "R0" ]; then
+            # Braço aleatório (item 264): a entrada INTEIRA vira sorteio —
+            # moeda no lugar do sinal da RF, sem confirmação 15m e sem gate de
+            # regime. As saídas não mudam.
+            node -e "
+              const { ARM, RANDOM_PROB } = process.env;
+              require('fs').writeFileSync('pine-config-overrides.json', JSON.stringify({
+                randomEntryEnabled: true, randomEntrySeed: Number(ARM), randomEntryProb: Number(RANDOM_PROB),
+                skip15mConfirmationEnabled: true, useADX: false, useChop: false,
+              }));
+            "
+            ARGS+=(--pine-config pine-config-overrides.json)
+          fi
+          npm run backtest -- "${ARGS[@]}"
+
+      - name: Upload do relatório
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.arm }}
+          path: report-${{ matrix.arm }}.json
+          retention-days: 30
+          if-no-files-found: warn
+
+  aggregate:
+    needs: replay
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Baixar todos os relatórios
+        uses: actions/download-artifact@v4
+        with:
+          pattern: report-*
+          path: reports
+          merge-multiple: true
+
+      - name: Baixar os candles (comprar e segurar)
+        uses: actions/download-artifact@v4
+        with:
+          name: candles
+          path: candles
+
+      - name: Resumo — entrada da RF × entradas aleatórias
+        # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12).
+        run: |
+          set -o pipefail
+          mkdir -p random
+          for f in reports/report-*.json; do
+            [ "$f" = "reports/report-R0.json" ] || cp "$f" random/
+          done
+          echo "Relatórios aleatórios encontrados: $(ls random | wc -l)"
+          {
+            node scripts/random-baseline-summary.mjs \
+              --control reports/report-R0.json \
+              --random-dir random \
+              --data-dir candles \
+              --json random-baseline-summary.json
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload do pacote completo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: random-baseline-${{ inputs.family }}
+          path: |
+            reports
+            random-baseline-summary.json
+          retention-days: 30
+          if-no-files-found: warn

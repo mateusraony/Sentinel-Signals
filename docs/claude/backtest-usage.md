@@ -708,6 +708,44 @@ O script **recusa** (exit 1, sem número nenhum) nestes casos:
 código é exatamente o que você está comparando (ex.: antes/depois de uma
 correção, item 262).
 
+## Passo 5 — a entrada vale mais que o acaso? (known-risks item 264)
+
+Este passo usa o workflow **"Backtest — referência de entrada aleatória"**
+(`backtest-random-baseline.yml`), no GitHub → Actions → **Run workflow**.
+
+- **O que ele roda:** a estratégia normal (R0) e N seeds de **entrada
+  aleatória** com as **mesmas saídas**, sobre os mesmos candles, todos em
+  paralelo.
+- **O que ele responde:** em que percentil da distribuição aleatória o R0 cai.
+  É o teste-padrão da literatura (Basso/Van Tharp, Aronson) para saber se a
+  entrada acrescenta algo além das saídas e da deriva do mercado.
+- **Campos:**
+  - as datas de início e fim são obrigatórias; não há preenchimento automático;
+  - o número de seeds tem mínimo de 39, porque o menor p possível é 1/(N+1);
+  - a probabilidade de entrada por vela é pré-registrada;
+  - o rótulo da família é obrigatório.
+- **Resultado:** sai no resumo do job. O artifact
+  `random-baseline-<família>` traz todos os relatórios e o
+  `random-baseline-summary.json`.
+
+Também dá para rodar o resumo localmente sobre relatórios já baixados:
+
+```bash
+node scripts/random-baseline-summary.mjs --control report-R0.json \
+  --random-dir ./aleatorios [--data-dir ./candles] [--json resumo.json]
+```
+
+O resumo recusa (exit 1) nestes casos:
+
+- algum relatório é incomparável (commit, janela, símbolos ou custo);
+- uma seed se repete;
+- um braço aleatório está sem a chave ligada;
+- o controle está com a chave ligada;
+- há poucas seeds para o limiar.
+
+O "comprar e segurar" é só contexto: retorno de carteira com 100% investido
+não se compara diretamente com a conta simulada de 1% de risco por operação.
+
 ## Integridade dos dados (`report.dataIntegrity`, known-risks item 260)
 
 Antes do replay, o CLI confere os arquivos de candle de cada símbolo (1h, 4h,

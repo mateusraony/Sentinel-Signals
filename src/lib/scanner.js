@@ -34,6 +34,7 @@ import { getPineConfig, getPineConfigStatus } from './pineParser';
 import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, advancePreTp1StopProtection, advancePreTp1Trailing, favorableExtremeFromMfe, advanceToBreakevenOnSiblingOpen, nextRfReverseCount, computeStructuralStop, resolveCandleExit, passesRiskReward, closesFullyAtTp1 } from './opExitRules';
 import { groupActiveOpsByAsset, isTerminalStatus, shouldSkipCrossSourceManagement } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
+import { randomEntryDecision } from './seededRandom';
 import { rejectionPatch, regimeDetail, trendReversedDetail } from './signalRejection';
 import {
   buildRegimeSnapshot, buildTrendReversedSnapshot, buildAwaitingTp1Snapshot,
@@ -1624,15 +1625,32 @@ export async function scanAsset(asset) {
       });
     }
 
+    // docs/known-risks.md item 264 — `randomEntryEnabled` é chave SÓ de
+    // backtest (scripts/backtestPineConfig.js; tripwire em
+    // randomEntryTripwire.test.js). Ligada, o sinal 4h da RF é trocado por
+    // uma moeda determinística (seededRandom.js) e o gate de score é
+    // dispensado: mede se a entrada da RF vale mais que entrar ao acaso com
+    // as MESMAS saídas. Desligada (padrão e produção), nada muda aqui.
+    const randomEntry = tf === '4h' && pineConfig.randomEntryEnabled === true;
+    const entrySignal = randomEntry
+      ? randomEntryDecision({
+          seed: pineConfig.randomEntrySeed ?? 1,
+          symbol: asset.symbol,
+          candleTime: r.lastCandleTime,
+          prob: pineConfig.randomEntryProb ?? 0,
+        })
+      : r.confirmed.confirmedSignal;
+    const entryPassed = randomEntry ? true : strengthResult.passed;
+
     // Check for Range Filter BUY/SELL signal — only emit if score passes.
     // Uses the CONFIRMED signal (confirmBars), not the raw flip — at the
     // default confirmBars=1 these are identical (see rangeFilterConfirmation.js).
     // Every other reader of r.rf.signal/.direction (AssetState diagnostics,
     // regime checks, check15mConfirmation, retry loop) is intentionally
     // untouched — this block only.
-    if ((r.confirmed.confirmedSignal === 'BUY' || r.confirmed.confirmedSignal === 'SELL') && strengthResult.passed) {
+    if ((entrySignal === 'BUY' || entrySignal === 'SELL') && entryPassed) {
       const reason = generateSignalDescription(
-        asset.symbol, tf, r.confirmed.confirmedSignal,
+        asset.symbol, tf, entrySignal,
         strengthResult.strength, strengthResult.alignment, strengthResult.reasons
       );
 
@@ -1668,7 +1686,7 @@ export async function scanAsset(asset) {
         asset_id: asset.id,
         symbol: asset.symbol,
         timeframe: tf,
-        signal_type: r.confirmed.confirmedSignal,
+        signal_type: entrySignal,
         source: 'range_filter',
         strength: strengthResult.strength,
         alignment: strengthResult.alignment,
@@ -1691,7 +1709,7 @@ export async function scanAsset(asset) {
           smc_align_leg_high: smcAlignLeg.legHigh,
           smc_align_leg_low: smcAlignLeg.legLow,
         },
-        dedup_key: `${asset.symbol}_${tf}_${r.confirmed.confirmedSignal}_range_filter_${r.lastCandleTime}`,
+        dedup_key: `${asset.symbol}_${tf}_${entrySignal}_range_filter_${r.lastCandleTime}`,
       });
     }
 
@@ -2541,7 +2559,10 @@ export async function persistScanResults(scanResult) {
           const tf4hDir = tf4hData.rf.direction;
           const sigDir = signal.signal_type === 'BUY' ? 1 : -1;
 
-          if (tf4hDir !== sigDir) {
+          // item 264 — na entrada aleatória a direção da RF 4h não pode
+          // filtrar o lado sorteado (seria a informação da RF vazando para o
+          // braço que deveria ser aleatório).
+          if (tf4hDir !== sigDir && pineConfig.randomEntryEnabled !== true) {
             // 4H trend not aligned with signal direction — block entry
             entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'trend_reversed' });
             await backend.entities.SystemLog.create({
@@ -3164,7 +3185,8 @@ export async function persistScanResults(scanResult) {
     }
     const tf4hDir = tfData4h.rf.direction;
     const sigDir = sig.signal_type === 'BUY' ? 1 : -1;
-    if (tf4hDir !== sigDir) {
+    // item 264 — mesmo motivo do 1º passo: a RF não filtra o lado sorteado.
+    if (tf4hDir !== sigDir && pineConfig.randomEntryEnabled !== true) {
       const trendDetail = trendReversedDetail(tf4hDir);
       const trendSnapshot = buildTrendReversedSnapshot({
         currentDirection: tf4hDir, signalDirection: sigDir, detail: trendDetail,
