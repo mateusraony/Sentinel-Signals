@@ -62,6 +62,7 @@ import {
   summarizeAttempts, EMPTY_ATTEMPTS,
 } from './backtestEngine.js';
 import { scanAsset } from './scanner.js';
+import { randomEntryDecision } from './seededRandom.js';
 import { ZERO_COST } from './tradeMetrics.js';
 import { goldenCandles } from './indicators/__fixtures__/candles.js';
 
@@ -2060,5 +2061,77 @@ describe('runBacktest — determinismo e causalidade ponta a ponta (item 261)', 
     expect(opA.status).toBe('TP2_HIT');
     expect(opB.status).toBe('STOP_HIT');
     expect(opB.exit_price).toBe(opB.entry_price); // stop movido para a entrada no TP1
+  });
+});
+
+// docs/known-risks.md item 264 — entrada aleatória (chave só de backtest).
+// Prova, no replay INTEIRO, que com `randomEntryEnabled` quem decide a entrada
+// é a moeda determinística (seededRandom.js), não a RF: os sinais 4h nascem
+// exatamente nas velas em que randomEntryDecision dispara, com o lado dela;
+// a mesma seed reproduz tudo; seeds diferentes dão sinais diferentes.
+describe('runBacktest — entrada aleatória (randomEntryEnabled, item 264)', () => {
+  const START_4H = new Date('2026-01-01T00:00:00.000Z').getTime();
+  const FLIP = new Date('2026-01-18T04:00:00.000Z').getTime();
+  const FROM = FLIP - 2 * FOUR_H;
+  const TO = FLIP + 20 * FOUR_H;
+  const PROB = 0.4;
+
+  function base4h() {
+    const down = downtrendCandles(100, 300, 1, START_4H, FOUR_H);
+    const up = uptrendCandles(60, down[down.length - 1].close, 3, START_4H + 100 * FOUR_H, FOUR_H);
+    return [...down, ...up];
+  }
+  const randomConfig = (seed) => basePineConfig({
+    randomEntryEnabled: true, randomEntrySeed: seed, randomEntryProb: PROB, skip15mConfirmationEnabled: true,
+  });
+
+  async function runSeed(seed, candles4h = base4h()) {
+    const pineConfig = randomConfig(seed);
+    getPineConfig.mockResolvedValue(pineConfig);
+    fetchCandles.mockImplementation(async (sym, tf, limit) =>
+      sliceClosedAsOf(tf === '4h' ? candles4h : [], simNow(), limit)
+    );
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+    const report = await runBacktest({ assets: [makeAsset()], backend, fromMs: FROM, toMs: TO, stepMs: FOUR_H, pineConfig });
+    const signals = structuredClone(await backend.entities.SignalEvent.filter({}))
+      // Só a fonte que abre operação; RSI/MACD/EMA também nascem no 4h, mas
+      // são sinais informativos.
+      .filter((s) => s.timeframe === '4h' && s.source === 'range_filter')
+      .map((s) => ({ candle_time: s.candle_time, signal_type: s.signal_type }))
+      .sort((a, b) => a.candle_time.localeCompare(b.candle_time));
+    const ops = structuredClone(await backend.entities.TradeOperation.filter({}));
+    return { report, signals, ops };
+  }
+
+  // O que a moeda pura diz para cada vela 4h fechada da janela.
+  function expectedSignals(seed) {
+    return base4h()
+      .filter((c) => c.closeTime >= FROM && c.closeTime <= TO)
+      .map((c) => {
+        const candleTime = new Date(c.closeTime).toISOString();
+        return { candle_time: candleTime, signal_type: randomEntryDecision({ seed, symbol: makeAsset().symbol, candleTime, prob: PROB }) };
+      })
+      .filter((s) => s.signal_type);
+  }
+
+  it('os sinais 4h são exatamente os da moeda (vela e lado), não os da RF', async () => {
+    const { signals, ops } = await runSeed(1);
+    const expected = expectedSignals(1);
+    // Não-vacuidade: a moeda disparou mais de uma vez, com os dois lados, e
+    // abriu operação.
+    expect(expected.length).toBeGreaterThan(3);
+    expect(new Set(expected.map((s) => s.signal_type))).toEqual(new Set(['BUY', 'SELL']));
+    expect(signals).toEqual(expected);
+    expect(ops.length).toBeGreaterThan(0);
+  });
+
+  it('mesma seed reproduz relatório e operações; seed diferente dá sinais diferentes', async () => {
+    const a = await runSeed(1);
+    const b = await runSeed(1);
+    const c = await runSeed(2);
+    expect(b.report).toEqual(a.report);
+    expect(b.ops).toEqual(a.ops);
+    expect(c.signals).not.toEqual(a.signals);
   });
 });

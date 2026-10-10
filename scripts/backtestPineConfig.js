@@ -355,6 +355,19 @@ const DEFAULTS = {
   // quanto essa diferença muda o resultado — não é proposta de mudança de
   // produção. OFF = byte-idêntico a hoje.
   rfExitCloseOnlyEnabled: false,
+  // docs/known-risks.md item 264 (pacote 5) — BACKTEST-ONLY, tripwire em
+  // src/lib/randomEntryTripwire.test.js. Referência externa padrão
+  // ("mesmas saídas, entradas aleatórias"): ligada, o sinal 4h da RF é
+  // trocado por uma moeda determinística (src/lib/seededRandom.js — hash de
+  // seed + símbolo + horário da vela) que dispara com probabilidade
+  // `randomEntryProb` por vela, lado BUY/SELL a 50%, sem gate de score nem
+  // de direção da RF. Combinar com skip15mConfirmationEnabled/useADX/useChop
+  // desligados para a entrada inteira ser aleatória; as saídas não mudam.
+  // Existe só para MEDIR se a entrada da RF vale mais que o acaso. OFF =
+  // byte-idêntico a hoje.
+  randomEntryEnabled: false,
+  randomEntrySeed: 1,
+  randomEntryProb: 0.0075,
 };
 
 let overrides = {};

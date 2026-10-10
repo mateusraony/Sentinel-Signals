@@ -199,6 +199,16 @@ paths:
   o mês vira, então pedir até o mês corrente trunca a série — o run recusa em
   vez de medir uma mistura.
 
+- `backtest-random-baseline.yml` — disparo **manual** da referência
+  "mesmas saídas, entradas aleatórias" (`docs/known-risks.md` item 264).
+  - **Etapas:** um job baixa os candles uma vez; a matriz roda R0 + N seeds
+    (`max-parallel` 20); o último job agrega com
+    `scripts/random-baseline-summary.mjs`.
+  - **Mesma natureza do `backtest.yml`:** sem secret, backend fake e
+    Telegram no-op.
+  - **Campos:** as datas são obrigatórias, sem padrão vazio (lição do desvio
+    do item 263). São no mínimo 39 seeds.
+
 ## Deploy
 
 - **Frontend**: Render Static Site (`render.yaml` `sentinel-signals`), automático

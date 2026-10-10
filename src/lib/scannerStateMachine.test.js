@@ -6196,3 +6196,59 @@ describe('saída por RF do runner — chave de medição rfExitCloseOnlyEnabled 
     expect(backend._get('TradeOperation', 'op1').status).toBe('RUNNER_ACTIVE');
   });
 });
+
+// docs/known-risks.md item 264 — no braço de entrada aleatória a direção da RF
+// 4h não pode filtrar o lado sorteado (seria informação da RF vazando para o
+// braço que deveria ser aleatório). Com a chave desligada, o gate de sempre
+// (trend_reversed) continua barrando.
+describe('entrada aleatória — gate de tendência dispensado (randomEntryEnabled, item 264)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  const baseConfig = (overrides = {}) => makePineConfig({ useADX: false, useChop: false, skip15mConfirmationEnabled: true, ...overrides });
+  // A RF 4h está em ALTA (makeTfData: direction 1); o sinal é de VENDA.
+  const sellSignal = () => ({
+    symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'SELL',
+    timeframe: '4h', source: 'range_filter', dedup_key: 'sig_random',
+    price_at_signal: 100, candle_time: '2026-07-16T08:00:00.000Z',
+    context: { score: 0 },
+  });
+  const seedSellSignal = () => backend._seed('SignalEvent', {
+    id: 'sig_random', ...sellSignal(), created_date: '2026-07-16T09:00:00.000Z',
+  });
+
+  it('1º passo, chave desligada: venda contra a RF em alta é barrada (trend_reversed)', async () => {
+    await persistScanResults({ ...makeScanResult({ results: { '4h': makeTfData() }, pineConfig: baseConfig() }), newSignals: [sellSignal()] });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+  });
+
+  it('1º passo, chave ligada: a venda sorteada abre mesmo com a RF em alta', async () => {
+    await persistScanResults({
+      ...makeScanResult({ results: { '4h': makeTfData() }, pineConfig: baseConfig({ randomEntryEnabled: true }) }),
+      newSignals: [sellSignal()],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].side).toBe('SELL');
+    // Saída calculada do jeito de sempre (ATR × tier), do lado da venda.
+    expect(ops[0].initial_stop).toBeGreaterThan(ops[0].entry_price);
+  });
+
+  it('retry, chave desligada: barrada (trend_reversed)', async () => {
+    seedSellSignal();
+    await persistScanResults({ ...makeScanResult({ results: { '4h': makeTfData() }, pineConfig: baseConfig() }), newSignals: [] });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+    const [sig] = await backend.entities.SignalEvent.filter({});
+    expect(sig.last_rejection_reason).toBe('trend_reversed');
+  });
+
+  it('retry, chave ligada: abre a venda', async () => {
+    seedSellSignal();
+    await persistScanResults({
+      ...makeScanResult({ results: { '4h': makeTfData() }, pineConfig: baseConfig({ randomEntryEnabled: true }) }),
+      newSignals: [],
+    });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    expect(ops[0].side).toBe('SELL');
+  });
+});
