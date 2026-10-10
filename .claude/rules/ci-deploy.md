@@ -208,6 +208,10 @@ paths:
     Telegram no-op.
   - **Campos:** as datas são obrigatórias, sem padrão vazio (lição do desvio
     do item 263). São no mínimo 39 seeds.
+  - **Caixa "Fibonacci 15m"** (`fib_entry`, item 267): liga `fibEntryEnabled` em
+    TODOS os braços, R0 incluído. Desmarcada, o comportamento é o do item 264.
+  - **Comparação pareada:** `scripts/compare-random-baselines.mjs` compara
+    os resumos com e sem a caixa marcada.
 
 - `pattern-lab.yml` — disparo **manual**, sem campos: laboratório de padrões
   (`docs/known-risks.md` item 266).

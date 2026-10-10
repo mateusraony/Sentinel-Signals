@@ -158,3 +158,36 @@ describe('summarizeRandomBaseline', () => {
     expect(md).not.toMatch(/<details>/);
   });
 });
+
+describe('summarizeRandomBaseline — modo Fibonacci em todos os braços (item 267)', () => {
+  const withFib = (rep, n) => ({
+    ...rep,
+    reproducibility: { ...rep.reproducibility, pineConfig: { ...rep.reproducibility.pineConfig, fibEntryEnabled: true } },
+    costs: { ...rep.costs, ...(n != null ? { countedTrades: n } : {}) },
+  });
+  const seeds40 = () => Array.from({ length: 40 }, (_, i) => -0.2 + i * 0.01);
+
+  it('a chave em todos os braços passa, aparece no resumo e no texto', () => {
+    const s = summarizeRandomBaseline(withFib(report(0)), seedsWith(seeds40()).map((r) => withFib(r)));
+    expect(s.comparable).toBe(true);
+    expect(s.fibEntry).toBe(true);
+    // Entradas efetivas guardadas para a comparação pareada.
+    expect(s.symbols).toEqual(SYMBOLS);
+    expect(s.randomEntryProb).toBe(0.0075);
+    expect(s.costModel).toEqual(COSTS);
+    expect(formatRandomBaselineMarkdown(s)).toMatch(/Modo Fibonacci 15m ligado em todos os braços/);
+  });
+
+  it('a chave só no controle (ou só nas seeds) é recusada: as saídas não seriam as mesmas', () => {
+    expect(summarizeRandomBaseline(withFib(report(0)), seedsWith(seeds40())).comparable).toBe(false);
+    expect(summarizeRandomBaseline(report(0), seedsWith(seeds40()).map((r) => withFib(r))).comparable).toBe(false);
+  });
+
+  it('avisa quando a mediana de operações das seeds foge de ±30% do controle', () => {
+    const s = summarizeRandomBaseline(withFib(report(0), 100), seedsWith(seeds40()).map((r) => withFib(r, 40)));
+    expect(s.comparable).toBe(true);
+    expect(s.warnings.some((w) => /fora de ±30%/.test(w))).toBe(true);
+    const ok = summarizeRandomBaseline(withFib(report(0), 100), seedsWith(seeds40()).map((r) => withFib(r, 90)));
+    expect(ok.warnings.some((w) => /fora de ±30%/.test(w))).toBe(false);
+  });
+});

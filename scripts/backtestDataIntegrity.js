@@ -201,7 +201,9 @@ export function requiredTimeframes(asset, { pineConfig } = {}) {
     : SCAN_ASSET_DEFAULT_TIMEFRAMES;
   return [
     ...scanTimeframes,
-    ...(pineConfig?.skip15mConfirmationEnabled ? [] : ['15m']),
+    // fibEntryEnabled (item 267) precisa do 15m mesmo com a confirmação
+    // pulada: a entrada e a gestão da operação vivem nele.
+    ...(pineConfig?.fibEntryEnabled || !pineConfig?.skip15mConfirmationEnabled ? ['15m'] : []),
     ...(asset?.smc_enabled ? ['5m'] : []),
   ];
 }

@@ -283,6 +283,8 @@ plano de sessão morre com a sessão.
 > (item 266), com regra de parada se nada passar. **Resultado (mesmo dia):
 > nenhum padrão sobreviveu à validação; laboratório encerrado** pela regra
 > combinada. Reabre só com ≥ 12 meses de dado novo ou um tipo de dado novo.
+> **Item 267 (2026-10-10):** teste pré-registrado da entrada/saída por
+> Fibonacci no 15m (pedido do usuário), só backtest — resultado pendente.
 
 ## A regra que ordena tudo: amostra
 

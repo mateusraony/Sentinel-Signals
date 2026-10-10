@@ -2135,3 +2135,81 @@ describe('runBacktest — entrada aleatória (randomEntryEnabled, item 264)', ()
     expect(c.signals).not.toEqual(a.signals);
   });
 });
+
+// docs/known-risks.md item 267 — modo Fibonacci 15m no replay INTEIRO, com a
+// entrada aleatória gerando muitos sinais (para exercitar a mecânica sem
+// depender da RF). Prova: toda operação nasce FIB_FIXED, o preenchimento é a
+// vela real do recuo (a mínima passou o nível), a gestão chega a estado
+// terminal pelas velas de 15m, nada falha no replay e o resultado é
+// determinístico.
+describe('runBacktest — Fibonacci 15m (fibEntryEnabled, item 267)', () => {
+  const M15 = 15 * 60 * 1000;
+  const START = new Date('2026-01-01T00:00:00.000Z').getTime();
+  const N15 = 40 * 96; // 40 dias de velas de 15m
+  const FROM = START + 30 * 24 * 60 * 60 * 1000;
+  const TO = START + 40 * 24 * 60 * 60 * 1000 - 1;
+
+  // Passeio aleatório determinístico (mulberry32 local) com ondas, para ter pernas e recuos.
+  function series15m() {
+    let a = 12345;
+    const rand = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    let price = 100;
+    const out = [];
+    for (let i = 0; i < N15; i += 1) {
+      const open = price;
+      price *= Math.exp(0.004 * Math.sin(i / 40) + (rand() - 0.5) * 0.012);
+      const close = price;
+      const high = Math.max(open, close) * (1 + rand() * 0.003);
+      const low = Math.min(open, close) * (1 - rand() * 0.003);
+      out.push({ openTime: START + i * M15, closeTime: START + (i + 1) * M15 - 1, open, high, low, close, volume: 100 });
+    }
+    return out;
+  }
+  function aggregate4h(c15) {
+    const out = [];
+    for (let i = 0; i + 16 <= c15.length; i += 16) {
+      const g = c15.slice(i, i + 16);
+      out.push({ openTime: g[0].openTime, closeTime: g[15].closeTime, open: g[0].open, close: g[15].close,
+        high: Math.max(...g.map((c) => c.high)), low: Math.min(...g.map((c) => c.low)), volume: 1600 });
+    }
+    return out;
+  }
+
+  async function run() {
+    const c15 = series15m();
+    const c4h = aggregate4h(c15);
+    const pineConfig = basePineConfig({
+      randomEntryEnabled: true, randomEntrySeed: 7, randomEntryProb: 0.5,
+      skip15mConfirmationEnabled: true, fibEntryEnabled: true,
+    });
+    getPineConfig.mockResolvedValue(pineConfig);
+    fetchCandles.mockImplementation(async (sym, tf, limit) =>
+      sliceClosedAsOf(tf === '4h' ? c4h : tf === '15m' ? c15 : [], simNow(), limit));
+    const backend = createFakeBackend();
+    Object.assign(entitiesModule.backend, backend);
+    const report = await runBacktest({ assets: [makeAsset()], backend, fromMs: FROM, toMs: TO, stepMs: M15, pineConfig });
+    const ops = structuredClone(await backend.entities.TradeOperation.filter({}));
+    return { report, ops, c15 };
+  }
+
+  it('operações FIB_FIXED com preenchimento real, gestão em 15m até o fim, replay válido e determinístico', async () => {
+    const a = await run();
+    expect(a.report.dataIntegrity?.valid ?? true).toBe(true);
+    expect(a.ops.length).toBeGreaterThan(0);
+    expect(a.ops.every((op) => op.exit_mode === 'FIB_FIXED')).toBe(true);
+    const byOpen = new Map(a.c15.map((c) => [c.openTime, c]));
+    for (const op of a.ops) {
+      const fill = byOpen.get(op.fib_fill_candle_open_ms);
+      expect(fill).toBeTruthy();
+      const penetration = 0.02 * op.fib_atr_15m;
+      if (op.side === 'BUY') expect(fill.low).toBeLessThanOrEqual(op.fib_planned_entry - penetration + 1e-9);
+      else expect(fill.high).toBeGreaterThanOrEqual(op.fib_planned_entry + penetration - 1e-9);
+      // Risco no lado certo e alvos além da extremidade da perna.
+      if (op.side === 'BUY') { expect(op.initial_stop).toBeLessThan(op.entry_price); expect(op.tp1).toBeGreaterThan(op.fib_leg_extreme); }
+      else { expect(op.initial_stop).toBeGreaterThan(op.entry_price); expect(op.tp1).toBeLessThan(op.fib_leg_extreme); }
+    }
+    expect(a.ops.some((op) => ['STOP_HIT', 'TP2_HIT', 'CLOSED'].includes(op.status))).toBe(true);
+    const b = await run();
+    expect(b.ops).toEqual(a.ops);
+  }, 60000);
+});
