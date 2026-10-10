@@ -209,6 +209,14 @@ paths:
   - **Campos:** as datas são obrigatórias, sem padrão vazio (lição do desvio
     do item 263). São no mínimo 39 seeds.
 
+- `pattern-lab.yml` — disparo **manual**, sem campos: laboratório de padrões
+  (`docs/known-risks.md` item 266).
+  - **Download:** baixa de `data.binance.vision` só até o fim pré-registrado
+    (`docs/experiments/pattern-lab-prereg.json`).
+  - **Análise:** roda `scripts/pattern-lab.mjs` e publica `resumo-pattern-lab`
+    (~30 KB).
+  - **Sem secret.** O período final fica lacrado, e o dado dele nem é baixado.
+
 ## Deploy
 
 - **Frontend**: Render Static Site (`render.yaml` `sentinel-signals`), automático

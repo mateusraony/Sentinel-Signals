@@ -1,0 +1,28 @@
+{
+  "name": "pattern-lab-b1",
+  "item": "docs/known-risks.md item 266",
+  "registeredAt": "2026-10-10",
+  "note": "Pré-registro congelado ANTES de qualquer dado ser baixado. Mudar qualquer campo depois de ver resultado invalida o experimento; o teste scripts/patternLab.test.mjs trava estes valores.",
+  "symbols": ["BTCUSDT", "ETHUSDT", "FETUSDT", "PENDLEUSDT", "ZROUSDT", "DYDXUSDT", "PAXGUSDT"],
+  "barMinutes": 240,
+  "dataStart": "2021-09-01",
+  "dataEnd": "2025-10-02",
+  "splits": {
+    "discovery": { "from": "2021-12-01", "to": "2024-11-01" },
+    "validation": { "from": "2024-11-08", "to": "2025-10-01" },
+    "holdout": { "from": "2025-10-08", "to": "2026-10-01", "sealed": true }
+  },
+  "features": ["F1_flow4h", "F2_flow24h", "F3_funding", "F4_basis", "F5_oiChange4h", "F6_oiChange24h", "F7_topTraderPosition", "F8_topVsCrowd", "F9_oiPriceDivergence", "F10_reversal24h", "F11_trend20d"],
+  "horizonsBars": [1, 6],
+  "normalization": { "percentileWindowBars": 540, "percentileMinBars": 270 },
+  "target": { "volWindowBars": 180 },
+  "metrics": { "maxRowLagMinutes": 5, "maxStaleMinutes": 60 },
+  "stats": {
+    "bootstrapReps": 2000,
+    "seed": 20261010,
+    "minRowsPerSymbol": 1000,
+    "minEligibleSymbols": 4,
+    "discovery": { "holmAlpha": 0.05, "minAbsT": 3, "minSameSignShare": 0.8, "minHalfSpreadBps": 12 },
+    "validation": { "minIcRatio": 0.5, "minOneSidedT": 2, "minSameSignShare": 0.6667 }
+  }
+}

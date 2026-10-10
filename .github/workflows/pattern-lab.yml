@@ -1,0 +1,61 @@
+name: Laboratório de padrões (Sentinel Signals)
+
+# docs/known-risks.md item 266 — fase B1 do laboratório de padrões: testa se
+# algum de 11 sinais pré-registrados (fluxo agressor, funding, prêmio,
+# contratos em aberto, proporções de comprados/vendidos e dois controles)
+# prevê o retorno das próximas 4h/24h nos 7 pares, com descoberta +
+# validação. O período final (holdout) fica LACRADO: o dado nem é baixado.
+#
+# Sem campos para preencher: tudo vem do pré-registro
+# (docs/experiments/pattern-lab-prereg.json), de propósito — nada pode ser
+# ajustado depois de ver resultado. Sem secret nenhum: só baixa dado público
+# de data.binance.vision e devolve um resumo. Repo público = minutos grátis.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pattern-lab:
+    runs-on: ubuntu-latest
+    # ~6.800 arquivos diários de metrics + ~1.000 mensais, 6 downloads por vez.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Baixar os dados (só até o fim pré-registrado)
+        run: node scripts/fetch-pattern-lab-data.mjs --out lab-data
+
+      - name: Rodar o laboratório
+        # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12).
+        run: |
+          set -o pipefail
+          node scripts/pattern-lab.mjs --data-dir lab-data --json pattern-lab-summary.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # O arquivo para ENVIAR: um JSON só, ~30 KB. O GitHub baixa como .zip
+      # (um zip pequeno com o JSON dentro).
+      - name: Upload do resumo (arquivo único, leve)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resumo-pattern-lab
+          path: pattern-lab-summary.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Os dados alinhados (~20 MB) ficam alguns dias só para reprodução.
+      - name: Upload dos dados alinhados (reprodução)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dados-pattern-lab
+          path: lab-data
+          retention-days: 7
+          if-no-files-found: warn

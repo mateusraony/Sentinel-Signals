@@ -31303,3 +31303,126 @@ não achar nada que sobreviva a dados novos.
 
 **Fora deste item**: a tela do painel não muda; o usuário não pediu. O laboratório de
 padrões é o item 266.
+
+## 266. Laboratório de padrões, fase B1 — sinais de "smart money" nunca usados (pré-registro, 2026-10-10)
+
+**Pedido do usuário**: depois do item 264 (a entrada não ganha do acaso), testar em
+paralelo outra abordagem, de um jeito que o assistente leia os dados e procure um padrão,
+inclusive o comportamento do "smart money". Se nada aparecer, o usuário concorda em parar.
+
+**Em linguagem simples**:
+- Pegamos 11 sinais que tentam captar o que o "dinheiro grande" faz e perguntamos se algum
+  deles avisa, com antecedência, para onde o preço vai nas próximas 4 ou 24 horas.
+- Os dados são separados em três períodos:
+  - um para procurar (descoberta);
+  - um para conferir (validação);
+  - um que fica trancado e nem é baixado nesta fase.
+- Um sinal só "passa" se aparecer forte, nas várias moedas, se sustentar no período de
+  conferência e for grande o bastante para pagar o custo de operar.
+
+**Pesquisa (4 agentes, consenso)**:
+- **ICT/SMC:** não há estudo sério que comprove. O projeto já testou e o gatilho quase
+  nunca dispara (itens 75, 108, 189).
+- **Fluxo agressor** (quem compra ou vende "a mercado"): a melhor evidência para 4h–12h,
+  num pré-print de 2026 (Kim & Hansen). Moderada.
+- **Funding e prêmio:** evidência forte, mas para risco de queda em horizonte mensal (BIS
+  WP 1087), não para escolher a hora de entrar.
+- **Contratos em aberto e proporções de comprados/vendidos:** evidência fraca.
+- **Dado grátis, conferido no arquivo público da Binance:**
+  - o volume agressor vem em toda vela;
+  - fundingRate e premiumIndexKlines têm arquivos mensais;
+  - os "metrics" diários trazem linhas de 5 em 5 minutos, desde 2020-09 no BTC.
+  - Não há liquidações para USDⓈ-M.
+- **Nunca testados no projeto.** O item 190 concluiu "não há padrão" só nos dados já
+  usados.
+- **Método** (literatura de mineração de dados): lista fechada antes de olhar, períodos
+  separados em ordem de tempo, régua alta (t ≥ 3 com correção por múltiplos testes), sem
+  machine learning neste tamanho de amostra, e parar se nada passar.
+- **Chance honesta** (estimada pelo agente cético): ~3–5% de sair algo que dê lucro depois
+  dos custos.
+
+**Mudança de código (nada existente muda)**:
+- Arquivos novos:
+  - `scripts/patternLabArchive.js`: parsers e URLs, com alinhamento sem olhar o futuro;
+  - `scripts/fetch-pattern-lab-data.mjs`: download, só até `dataEnd`;
+  - `scripts/patternLab.mjs` e `scripts/pattern-lab.mjs`: análise e CLI;
+  - `docs/experiments/pattern-lab-prereg.json`: parâmetros congelados;
+  - `.github/workflows/pattern-lab.yml`.
+- Motor, `scanner.js`, `binanceArchive.js`, `backtest.yml` e config de produção: intocados.
+- **Testes:**
+  - Um pico plantado na linha de metrics exatamente no fechamento não entra.
+  - Funding liquidado depois do fechamento não entra.
+  - Os 11 sinais da barra i são iguais com a série inteira ou só até i.
+  - Mudar barras depois de i muda o alvo de i, mas nenhum sinal de i.
+  - Vela faltando anula o que depende dela.
+  - Os cortes dos períodos funcionam.
+  - Bootstrap determinístico; Spearman e Holm conferem com valores feitos à mão.
+  - **Um padrão plantado no fluxo 4h é achado e passa nas duas fases; ruído puro não
+    passa.**
+  - O pré-registro está travado.
+  - O período final lança `HOLDOUT_SEALED`.
+  - Cada guarda foi validada reintroduzindo o erro.
+- **Simulação local** em tamanho real (7 moedas × ~9 mil velas): 13 s de análise, resumo
+  de ~29 KB.
+  - Um padrão plantado fraco (t = 29, mas meia-diferença de 11,9 bps) foi **reprovado
+    pelo corte de custo**, como deve: real, mas pequeno demais para pagar a operação.
+  - Um sinal de puro ruído chegou a t = 2,79 e foi barrado pela correção de Holm.
+
+**Pré-registro (ANTES de qualquer dado ser baixado)**:
+- **Fonte única dos parâmetros:** `docs/experiments/pattern-lab-prereg.json`. O sha256
+  dele sai no resumo.
+- **Moedas:** BTC, ETH, FET, PENDLE, ZRO, DYDX, PAXG (Futures USDⓈ-M, velas de 4h).
+- **11 sinais × 2 horizontes (4h e 24h) = 22 testes gastos.**
+  - F1 e F2: fluxo agressor em 4h e em 24h, `2·takerBuy/vol − 1`.
+  - F3: funding por hora vigente no fechamento.
+  - F4: prêmio dos futuros.
+  - F5 e F6: variação dos contratos em aberto em 4h e em 24h.
+  - F7: comprados/vendidos dos grandes traders (posição).
+  - F8: grandes traders × multidão.
+  - F9: divergência contratos × preço em 24h.
+  - F10: controle, retorno das últimas 24h.
+  - F11: controle, tendência de 20 dias.
+- **Sem olhar o futuro:**
+  - linha de metrics só vale se `time ≤ fechamento − 5 min`, e vira null se tiver mais de
+    60 min;
+  - funding só se `calcTime ≤ fechamento`, normalizado pelas horas do intervalo, e vira
+    null se tiver mais de 24 h.
+- **Normalização:** percentil causal por moeda nas últimas 540 velas, com mínimo de 270.
+  O alvo é o retorno log das próximas h velas dividido pela volatilidade das últimas 180.
+- **Períodos:**
+  - descoberta: 2021-12-01 → 2024-11-01;
+  - validação: 2024-11-08 → 2025-10-01;
+  - lacrado: 2025-10-08 → 2026-10-01.
+  - O dado só é baixado até 2025-10-02. Uma linha só entra se o alvo não atravessar o fim
+    do período.
+- **Estatística:**
+  - IC de Spearman por moeda; IC do teste é a média simples das moedas com ≥ 1.000
+    linhas;
+  - erro-padrão por bootstrap de semanas do calendário, a mesma semana para todas as
+    moedas (2.000 repetições, seed 20261010);
+  - Holm sobre os 22 testes.
+- **Passa na descoberta:** Holm p < 0,05, |t| ≥ 3, mesmo sentido em ≥ 80% das moedas e
+  meia-diferença entre o quintil de cima e o de baixo ≥ 12 bps no mesmo sentido do IC.
+- **Passa na validação** (só quem passou na descoberta): mesmo sentido, IC ≥ metade do da
+  descoberta, t unicaudal ≥ 2 e mesmo sentido em ≥ 2/3 das moedas.
+- **Cobertura mínima (resultado INCOMPLETE):** todo teste precisa de ≥ 4 moedas com
+  ≥ 1.000 linhas, na descoberta e, para quem passou, na validação.
+  - Se algum teste não tiver, a rodada inteira é inválida: veredito `INCOMPLETE` e o job
+    fica vermelho. Isso vale mesmo que algo tenha passado, porque com testes a menos o
+    Holm fica mais frouxo que o pré-registrado.
+  - `INCOMPLETE` **não** é "não achei padrão" e **não** dispara a regra de parada.
+  - Motivo: o download trata 404 como ausência, então um dataset inteiro pode faltar sem
+    erro (achado do Codex no PR #484, corrigido antes de qualquer execução real).
+- **Ressalva registrada:** o período lacrado coincide com a janela W1 do item 264, que já
+  foi vista.
+- **Regra de parada:** se nada passar na descoberta ou na validação (com cobertura completa), o laboratório termina.
+  - Nada de sinais, horizontes ou moedas novos nesses dados.
+  - Só reabre com ≥ 12 meses de dado novo ou um tipo de dado novo, com pré-registro.
+  - Conforme combinado com o usuário: parar.
+- **Se algo passar:** a fase B2, separada e só com aprovação, testa UMA regra simples, uma
+  única vez, no período lacrado, com custos e contra 40 entradas aleatórias. Levar ao
+  painel seria outra decisão, depois.
+- **Nenhuma decisão de produção sai deste item.**
+
+**Resultado**: pendente. O usuário dispara o workflow "Laboratório de padrões" uma vez e
+envia o artifact `resumo-pattern-lab`.
