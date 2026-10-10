@@ -112,29 +112,68 @@ export function buyAndHold(seriesBySymbol, { fromMs, toMs }) {
   };
 }
 
+// Overrides que o braço aleatório TEM que ter (pré-registro do item 264): a
+// entrada inteira vira sorteio. São também as únicas chaves em que o controle
+// pode diferir dos braços aleatórios — qualquer outra diferença (saídas,
+// custos de config, gates) mudaria mais do que a entrada.
+export const RANDOM_ARM_OVERRIDES = { randomEntryEnabled: true, skip15mConfirmationEnabled: true, useADX: false, useChop: false };
+const ENTRY_ONLY_KEYS = new Set([...Object.keys(RANDOM_ARM_OVERRIDES), 'randomEntrySeed', 'randomEntryProb']);
+
+const stableJson = (obj) => JSON.stringify(Object.keys(obj).sort().reduce((acc, k) => { acc[k] = obj[k]; return acc; }, {}));
+const withoutKeys = (obj, keys) => Object.fromEntries(Object.entries(obj || {}).filter(([k]) => !keys.has(k)));
+
 /**
  * @param {object} control relatório R0 (entrada da RF)
  * @param {object[]} randoms relatórios do braço aleatório (uma seed cada)
- * @param {{ alpha?: number, seriesBySymbol?: Record<string, Array<object>> }} [options]
+ * @param {{ alpha?: number, expectedSeeds?: number, seriesBySymbol?: Record<string, Array<object>> }} [options]
+ *   `expectedSeeds`: quantas seeds foram pedidas — com ele, exige exatamente as
+ *   seeds 1..N (uma seed perdida poderia mudar o veredito; review do Codex, PR #481).
  */
-export function summarizeRandomBaseline(control, randoms, { alpha = 0.025, seriesBySymbol } = {}) {
+export function summarizeRandomBaseline(control, randoms, { alpha = 0.025, expectedSeeds, seriesBySymbol } = {}) {
   const errors = [];
   const warnings = [];
   if (control?.reproducibility?.pineConfig?.randomEntryEnabled === true) {
     errors.push('o controle tem randomEntryEnabled ligado — o R0 tem que ser a entrada da RF');
   }
+  // Review do Codex (PR #481): relatório sem expectância finita (nenhuma
+  // operação com R) sumiria da distribuição sem aviso, mudando o denominador.
+  const finiteExpectancy = (rep) => Number.isFinite(rep?.costs?.netExpectancyR ?? rep?.overall?.expectancyR);
+  if (!finiteExpectancy(control)) errors.push('o controle não tem expectância finita (nenhuma operação com R calculado)');
   const seeds = new Set();
+  // Review do Codex (PR #481): mesma distribuição nula só com a MESMA config
+  // efetiva — os braços aleatórios só podem diferir na seed, e o controle só
+  // pode diferir deles nas chaves da entrada.
+  const controlRest = stableJson(withoutKeys(control?.reproducibility?.pineConfig, ENTRY_ONLY_KEYS));
+  let referenceArm = null;
   randoms.forEach((r, i) => {
     const pc = r?.reproducibility?.pineConfig;
     const label = r?.trialLabel ?? `relatório aleatório #${i + 1}`;
-    if (pc?.randomEntryEnabled !== true) errors.push(`${label}: randomEntryEnabled não está ligado`);
+    for (const [key, value] of Object.entries(RANDOM_ARM_OVERRIDES)) {
+      if (pc?.[key] !== value) errors.push(`${label}: ${key} precisa ser ${value} no braço aleatório`);
+    }
+    if (!(pc?.randomEntryProb > 0)) errors.push(`${label}: randomEntryProb ausente ou não positivo`);
     if (pc && seeds.has(pc.randomEntrySeed)) errors.push(`${label}: seed ${pc.randomEntrySeed} repetida`);
     if (pc) seeds.add(pc.randomEntrySeed);
+    const armRest = stableJson(withoutKeys(pc, new Set(['randomEntrySeed'])));
+    if (referenceArm == null) referenceArm = armRest;
+    else if (armRest !== referenceArm) errors.push(`${label}: configuração efetiva diferente dos outros braços aleatórios (além da seed)`);
+    if (stableJson(withoutKeys(pc, ENTRY_ONLY_KEYS)) !== controlRest) {
+      errors.push(`${label}: configuração difere do controle fora das chaves de entrada — as saídas não seriam as mesmas`);
+    }
+    if (!finiteExpectancy(r)) errors.push(`${label}: sem expectância finita (nenhuma operação com R calculado)`);
     const { errors: e, warnings: w } = checkComparable(control, r);
     errors.push(...e.map((m) => `${label}: ${m}`));
     warnings.push(...w.map((m) => `${label}: ${m}`));
   });
   if (randoms.length < 2) errors.push('são necessárias pelo menos 2 seeds aleatórias');
+  if (expectedSeeds != null) {
+    const missing = Array.from({ length: expectedSeeds }, (_, i) => i + 1).filter((k) => !seeds.has(k));
+    if (randoms.length !== expectedSeeds || missing.length) {
+      errors.push(`foram pedidas ${expectedSeeds} seeds (1..${expectedSeeds}), chegaram ${randoms.length}`
+        + (missing.length ? `; faltam: ${missing.slice(0, 10).join(', ')}${missing.length > 10 ? '…' : ''}` : '')
+        + ' — uma seed perdida poderia mudar o veredito');
+    }
+  }
   const minPossibleP = 1 / (randoms.length + 1);
   if (randoms.length >= 2 && minPossibleP > alpha) {
     errors.push(`com ${randoms.length} seeds o menor p possível é ${minPossibleP.toFixed(4)}, acima do limiar ${alpha} — a regra nunca poderia dar positivo; use pelo menos ${Math.ceil(1 / alpha - 1)} seeds`);

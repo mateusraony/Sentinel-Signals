@@ -207,6 +207,11 @@ jobs:
 
       - name: Resumo — entrada da RF × entradas aleatórias
         # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12).
+        # --expected-seeds (review do Codex, PR #481): se algum job da matriz
+        # falhou, o resumo RECUSA em vez de dar veredito sobre as seeds que
+        # sobraram — a que faltou poderia mudar o resultado.
+        env:
+          N_SEEDS: ${{ inputs.n_seeds }}
         run: |
           set -o pipefail
           mkdir -p random
@@ -218,6 +223,7 @@ jobs:
             node scripts/random-baseline-summary.mjs \
               --control reports/report-R0.json \
               --random-dir random \
+              --expected-seeds "$N_SEEDS" \
               --data-dir candles \
               --json random-baseline-summary.json
           } | tee -a "$GITHUB_STEP_SUMMARY"

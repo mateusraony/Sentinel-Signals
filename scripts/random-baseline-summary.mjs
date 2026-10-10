@@ -5,9 +5,10 @@
 //
 // Uso:
 //   node scripts/random-baseline-summary.mjs --control R0.json --random-dir ./aleatorios \
-//     [--data-dir ./backtest-data] [--alpha 0.025] [--json saida.json]
+//     [--expected-seeds 40] [--data-dir ./backtest-data] [--alpha 0.025] [--json saida.json]
 //
 // --random-dir: todos os *.json do diretório são relatórios do braço aleatório.
+// --expected-seeds: exige exatamente as seeds 1..N (o workflow sempre passa).
 // --data-dir: candles já baixados (SIMBOLO_4h.json) — só para o "comprar e
 // segurar" descritivo; sem ele, essa linha não sai.
 // Sai com código 1 quando o resumo é recusado (relatórios incomparáveis, seeds
@@ -34,7 +35,7 @@ const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.control || !args['random-dir']) {
-    console.error('Uso: node scripts/random-baseline-summary.mjs --control R0.json --random-dir DIR [--data-dir DIR] [--alpha 0.025] [--json FILE]');
+    console.error('Uso: node scripts/random-baseline-summary.mjs --control R0.json --random-dir DIR [--expected-seeds N] [--data-dir DIR] [--alpha 0.025] [--json FILE]');
     process.exitCode = 1;
     return;
   }
@@ -57,6 +58,7 @@ function main() {
 
   const summary = summarizeRandomBaseline(control, randoms, {
     alpha: args.alpha ? Number(args.alpha) : 0.025,
+    expectedSeeds: args['expected-seeds'] ? Number(args['expected-seeds']) : undefined,
     seriesBySymbol,
   });
   console.log(formatRandomBaselineMarkdown(summary));

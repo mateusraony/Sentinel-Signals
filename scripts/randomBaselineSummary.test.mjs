@@ -22,7 +22,12 @@ function report(expectancyR, { seed = null, commit = 'a'.repeat(40), label } = {
     trialArgs: `--symbols ${SYMBOLS.join(',')} --from x --to y`,
     range: { fromMs: T0, toMs: T0 + 10 * DAY, from: '2026-01-01', to: '2026-01-11' },
     dataIntegrity: { valid: true },
-    reproducibility: { commitSha: commit, pineConfig: seed == null ? {} : { randomEntryEnabled: true, randomEntrySeed: seed } },
+    reproducibility: {
+      commitSha: commit,
+      pineConfig: seed == null
+        ? { tp1R: 1.5 }
+        : { tp1R: 1.5, randomEntryEnabled: true, randomEntrySeed: seed, randomEntryProb: 0.0075, skip15mConfirmationEnabled: true, useADX: false, useChop: false },
+    },
     costs: { model: COSTS, netExpectancyR: expectancyR, countedTrades: 100 },
     overall: { curve: [{ r: expectancyR, op: { id: `op_${seed ?? 'r0'}` } }], expectancyR, expectancyRSd: 1, profitFactor: 1, winRate: 40 },
     equityCurve: { totalReturnPct: 0, maxDrawdownPct: 10 },
@@ -104,9 +109,37 @@ describe('summarizeRandomBaseline', () => {
     const msg = s.errors.join(' | ');
     expect(s.comparable).toBe(false);
     expect(msg).toMatch(/seed 1 repetida/);
-    expect(msg).toMatch(/randomEntryEnabled não está ligado/);
+    expect(msg).toMatch(/randomEntryEnabled precisa ser true/);
     expect(msg).toMatch(/controle tem randomEntryEnabled ligado/);
     expect(msg).toMatch(/commits diferentes/);
+  });
+
+  // Review do Codex (PR #481) — os 3 casos abaixo davam veredito errado.
+  it('recusa braço aleatório com config efetiva diferente (além da seed) e braço que difere do controle nas saídas', () => {
+    const randoms = seedsWith(Array.from({ length: 40 }, () => 0));
+    randoms[5].reproducibility.pineConfig.randomEntryProb = 0.02; // outra distribuição nula
+    randoms[6].reproducibility.pineConfig.tp1R = 2; // outra saída
+    const msg = summarizeRandomBaseline(report(0), randoms).errors.join(' | ');
+    expect(msg).toMatch(/rand_6: configuração efetiva diferente/);
+    expect(msg).toMatch(/rand_7: configuração difere do controle fora das chaves de entrada/);
+  });
+
+  it('com expectedSeeds, recusa quando falta seed (39 de 40 chegaram)', () => {
+    const randoms = seedsWith(Array.from({ length: 40 }, () => 0)).filter((r) => r.reproducibility.pineConfig.randomEntrySeed !== 17);
+    const s = summarizeRandomBaseline(report(1), randoms, { expectedSeeds: 40 });
+    expect(s.comparable).toBe(false);
+    expect(s.errors.join(' ')).toMatch(/chegaram 39; faltam: 17/);
+    expect(summarizeRandomBaseline(report(1), seedsWith(Array.from({ length: 40 }, () => 0)), { expectedSeeds: 40 }).comparable).toBe(true);
+  });
+
+  it('recusa controle ou seed sem expectância finita (nenhuma operação com R)', () => {
+    const randoms = seedsWith(Array.from({ length: 40 }, () => 0));
+    randoms[0].costs.netExpectancyR = null;
+    randoms[0].overall.expectancyR = null;
+    const control = report(null);
+    const msg = summarizeRandomBaseline(control, randoms).errors.join(' | ');
+    expect(msg).toMatch(/o controle não tem expectância finita/);
+    expect(msg).toMatch(/rand_1: sem expectância finita/);
   });
 
   it('o texto mostra percentil e veredito; recusado não traz número de resultado', () => {
