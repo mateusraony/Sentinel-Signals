@@ -729,7 +729,7 @@ Este passo usa o workflow **"Backtest — referência de entrada aleatória"**
     zip pequeno (~13 KB) com o `random-baseline-summary.json` dentro.
   - O artifact `random-baseline-<família>` é o pacote completo, com todos os
     relatórios (~4 MB). Só é necessário para reanalisar operação a operação.
-  - Os `report-*` são intermediários e somem em 1 dia.
+  - Os `report-*` são intermediários e somem em 3 dias.
 
 Também dá para rodar o resumo localmente sobre relatórios já baixados:
 

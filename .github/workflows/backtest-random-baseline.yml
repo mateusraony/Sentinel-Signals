@@ -175,9 +175,11 @@ jobs:
           name: report-${{ matrix.arm }}
           path: report-${{ matrix.arm }}.json
           # Intermediário: só serve para o job de agregação, que junta todos
-          # no pacote completo abaixo (30 dias). 1 dia para não poluir a lista
-          # de downloads do run.
-          retention-days: 1
+          # no pacote completo abaixo (30 dias). 3 dias, não 1 (review do
+          # Codex, PR #482): o pior caso permitido — 200 seeds em levas de 20,
+          # cada job até 240 min — passa de 40 h até o aggregate começar, e os
+          # relatórios das primeiras levas não podem expirar antes disso.
+          retention-days: 3
           if-no-files-found: warn
 
   aggregate:

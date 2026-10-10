@@ -31270,4 +31270,5 @@ entrada da RF, isto é, a pilha inteira (RF + score + regime + confirmação 15m
 zipado, e era pesado de enviar. O workflow passou a publicar também o artifact
 **`resumo-<família>`**. Ele traz só o `random-baseline-summary.json`, ~13 KB: R0, todas as
 seeds, distribuição e comprar-e-segurar. O resumo do job também lista cada seed num bloco
-recolhível. Os intermediários `report-*` ficam 1 dia.
+recolhível. Os intermediários `report-*` ficam 3 dias, o que cobre o pior caso
+permitido da matriz (achado do Codex no PR #482; 1 dia podia expirar antes da agregação).
