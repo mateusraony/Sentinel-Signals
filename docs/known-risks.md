@@ -31512,7 +31512,11 @@ assim, contra a minha recomendação):**
   - TP1 = L + 1,272Δ;
   - TP2 = L + 1,618Δ.
 - **Preenchimento (ordem limitada):**
-  - uma vela posterior com mínima ≤ E − 0,02×ATR, ao preço min(abertura, E);
+  - uma vela posterior com mínima ≤ E − 0,02×ATR, sempre ao preço E. É conservador e
+    mantém a geometria de risco;
+  - se a vela abrir já além do stop, não há operação (`gap_through_stop`);
+  - as duas regras foram corrigidas pela review do Codex no PR #486, **antes** de qualquer
+    rodada;
   - só vale se for a **última vela fechada** naquela passada, senão `fill_missed`
     (nunca abre operação datada no passado).
 - **Cancela:**
@@ -31542,7 +31546,9 @@ assim, contra a minha recomendação):**
   - Com < 30 operações em alguma janela, o resultado é **INCONCLUSIVO** (o recuo quase
     nunca acontece), e isso já é resposta.
 - **Secundário — "as saídas Fib são melhores que as atuais?" (a pergunta do stop):**
-  - sorteio-Fib × sorteio-atual, pareado por seed (`scripts/compare-random-baselines.mjs`);
+  - sorteio-Fib × sorteio-atual, pareado por seed (`scripts/compare-random-baselines.mjs`).
+    Ele recusa se os dois resumos não tiverem o mesmo commit, janela, moedas,
+    probabilidade de sorteio, modelo de custo e seeds;
   - teste do sinal bicaudal com α 0,05 em cada janela, em R líquido; R bruto é
     reportado ao lado.
 - **Ressalvas registradas:**

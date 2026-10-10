@@ -51,7 +51,7 @@ describe('planFibEntry — perna, níveis e statuses', () => {
     expect(r.atr).toBeGreaterThan(0);
   });
 
-  it('preenche quando a ÚLTIMA vela fechada passa E − 0,02×ATR, ao preço min(abertura, E)', () => {
+  it('preenche quando a ÚLTIMA vela fechada passa E − 0,02×ATR, sempre ao preço E', () => {
     const hist = buyHistory();
     const base = plan(hist, SIGNAL_CLOSE);
     const fill = candle(33, [108, 108.2, base.entry - 0.05, 104.5]);
@@ -59,9 +59,18 @@ describe('planFibEntry — perna, níveis e statuses', () => {
     expect(r.status).toBe('filled');
     expect(r.entry).toBeCloseTo(base.entry, 10);
     expect(r.fillCandleOpenMs).toBe(fill.openTime);
-    // Abertura já abaixo de E (gap): preço da abertura.
+    // Abertura entre E e o stop (gap): continua E — conservador, mantém a geometria de risco.
     const gapFill = candle(33, [103.5, 104, 103, 103.8]);
-    expect(plan([...hist, gapFill], gapFill.closeTime).entry).toBe(103.5);
+    expect(plan([...hist, gapFill], gapFill.closeTime).entry).toBeCloseTo(base.entry, 10);
+  });
+
+  it('abertura já além do stop → gap_through_stop, sem operação (nunca stop do lado errado)', () => {
+    const hist = buyHistory();
+    const base = plan(hist, SIGNAL_CLOSE);
+    const through = candle(33, [base.stop - 0.5, base.stop - 0.2, base.stop - 1, base.stop - 0.4]);
+    const r = plan([...hist, through], through.closeTime);
+    expect(r.status).toBe('gap_through_stop');
+    expect(r.fillCandleOpenMs).toBeUndefined();
   });
 
   it('toque sem penetração não preenche', () => {

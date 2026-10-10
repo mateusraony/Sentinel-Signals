@@ -2,11 +2,15 @@
 import { describe, it, expect } from 'vitest';
 import { signTestP, compareRandomBaselines, formatComparisonMarkdown } from './compareRandomBaselines.mjs';
 
-const summary = (values, { fib = false, commit = 'c'.repeat(40), from = '2025-10-10' } = {}) => ({
+const COST = { feeBpsEntry: 5, feeBpsExit: 5, slippageBpsPerSide: 1, fundingBpsPer8h: 1 };
+const summary = (values, { fib = false, commit = 'c'.repeat(40), from = '2025-10-10', symbols = ['BTCUSDT', 'ETHUSDT'], prob = 0.0075, cost = COST } = {}) => ({
   comparable: true,
   fibEntry: fib,
   commitSha: commit,
   window: { from, to: '2026-10-10' },
+  symbols,
+  randomEntryProb: prob,
+  costModel: cost,
   seeds: values.map((v, i) => ({ seed: i + 1, n: 30, expectancyR: v, grossExpectancyR: v + 0.05 })),
 });
 
@@ -42,5 +46,14 @@ describe('compareRandomBaselines', () => {
     expect(compareRandomBaselines(summary(base), summary(base, { fib: true, commit: 'd'.repeat(40) })).comparable).toBe(false);
     expect(compareRandomBaselines(summary(base), summary(base.slice(1), { fib: true })).comparable).toBe(false);
     expect(compareRandomBaselines({ comparable: false }, summary(base, { fib: true })).comparable).toBe(false);
+  });
+
+  it('recusa moedas, probabilidade de sorteio ou custo diferentes (mesmas seeds não seriam os mesmos sinais)', () => {
+    expect(compareRandomBaselines(summary(base), summary(base, { fib: true, symbols: ['BTCUSDT'] })).comparable).toBe(false);
+    expect(compareRandomBaselines(summary(base), summary(base, { fib: true, prob: 0.01 })).comparable).toBe(false);
+    expect(compareRandomBaselines(summary(base), summary(base, { fib: true, cost: { ...COST, feeBpsEntry: 2 } })).comparable).toBe(false);
+    expect(compareRandomBaselines(summary(base), summary(base, { fib: true, symbols: null })).comparable).toBe(false);
+    // Ordem das moedas não importa.
+    expect(compareRandomBaselines(summary(base), summary(base, { fib: true, symbols: ['ETHUSDT', 'BTCUSDT'] })).comparable).toBe(true);
   });
 });

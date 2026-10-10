@@ -102,9 +102,16 @@ export function planFibEntry({ candles15m, direction, signalCloseMs, nowMs }) {
       // Só entra se a vela do preenchimento for a ÚLTIMA fechada agora —
       // nunca abrir uma operação datada no passado (passada perdida).
       if (k !== post.length - 1) return { status: 'fill_missed', ...levels, barsWaited: k + 1 };
-      const fillPrice = isBuy ? Math.min(c.open, entry) : Math.max(c.open, entry);
+      // Abertura já além do stop: a vela atravessou a zona inteira e o stop
+      // num salto. Sem operação (review do Codex, PR #486): preencher na
+      // abertura criaria um stop do lado errado da entrada.
+      if (isBuy ? c.open <= stop : c.open >= stop) return { status: 'gap_through_stop', ...levels, barsWaited: k + 1 };
+      // Preço sempre E, mesmo quando a vela abre entre E e o stop (o real
+      // seria a abertura, melhor): conservador, e mantém a geometria de risco
+      // pré-registrada — preencher na abertura encolheria o risco e inflaria o
+      // R dos alvos.
       return {
-        status: 'filled', ...levels, entry: fillPrice, plannedEntry: entry,
+        status: 'filled', ...levels, entry, plannedEntry: entry,
         fillCandleOpenMs: c.openTime, fillCandleCloseMs: c.closeTime, barsWaited: k + 1,
       };
     }

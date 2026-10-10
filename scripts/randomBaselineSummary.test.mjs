@@ -171,6 +171,10 @@ describe('summarizeRandomBaseline — modo Fibonacci em todos os braços (item 2
     const s = summarizeRandomBaseline(withFib(report(0)), seedsWith(seeds40()).map((r) => withFib(r)));
     expect(s.comparable).toBe(true);
     expect(s.fibEntry).toBe(true);
+    // Entradas efetivas guardadas para a comparação pareada.
+    expect(s.symbols).toEqual(SYMBOLS);
+    expect(s.randomEntryProb).toBe(0.0075);
+    expect(s.costModel).toEqual(COSTS);
     expect(formatRandomBaselineMarkdown(s)).toMatch(/Modo Fibonacci 15m ligado em todos os braços/);
   });
 

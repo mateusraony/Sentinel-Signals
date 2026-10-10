@@ -68,6 +68,13 @@ export function compareRandomBaselines(current, fib, { alpha = 0.05 } = {}) {
   if (!current.commitSha || current.commitSha !== fib.commitSha) {
     errors.push(`commits diferentes ou ausentes (${current.commitSha ?? '?'} × ${fib.commitSha ?? '?'}) — rode os dois no mesmo commit`);
   }
+  // As mesmas seeds só sorteiam os mesmos sinais com as mesmas entradas da
+  // rodada (review do Codex, PR #486). Campo ausente = resumo antigo, recusa.
+  const same = (a, b) => a != null && b != null && JSON.stringify(a) === JSON.stringify(b);
+  const symbolsOf = (x) => (Array.isArray(x.symbols) ? [...x.symbols].sort() : null);
+  if (!same(symbolsOf(current), symbolsOf(fib))) errors.push(`moedas diferentes ou ausentes: ${current.symbols ?? '?'} × ${fib.symbols ?? '?'}`);
+  if (!same(current.randomEntryProb, fib.randomEntryProb)) errors.push(`probabilidade de sorteio diferente ou ausente: ${current.randomEntryProb ?? '?'} × ${fib.randomEntryProb ?? '?'}`);
+  if (!same(current.costModel, fib.costModel)) errors.push('modelo de custo diferente ou ausente nos dois resumos');
   const seedsA = current.seeds.map((x) => x.seed).sort((a, b) => a - b).join(',');
   const seedsB = fib.seeds.map((x) => x.seed).sort((a, b) => a - b).join(',');
   if (seedsA !== seedsB) errors.push('os dois resumos não têm as mesmas seeds');
