@@ -31037,4 +31037,71 @@ versionada (parte pura em `scripts/compareBacktestReports.mjs`, com testes):
   acrescentar uma variante sem registrá-la aqui antes.
 - **Nenhuma decisão de produção sai deste item.**
 
-**Resultado**: pendente. O usuário dispara os 4 runs e envia os relatórios.
+**Resultado (2026-10-10)**: os 4 relatórios vêm do commit `6a166d0` (merge do PR #479).
+
+- **Integridade:** todos `dataIntegrity.valid: true`.
+- **Iguais nos 4:** símbolos, modelo de custo (5/5 bps de taxa, 1 de slippage, 1 de
+  funding) e `--allow-late-start`.
+- **Chaves:** cada uma conferida no `reproducibility.pineConfig` do próprio relatório.
+- **Família no ledger:** registrada (`pine-parity-exits-2026-10`, N=4). Nenhum braço é
+  conclusivo, antes ou depois da correção.
+
+**Desvio do pré-registro (registrado, não escolhido):**
+
+- **O que houve:** a janela saiu **2025-10-10 → 2026-10-10**, e não 09 → 09. O campo de
+  datas foi deixado vazio e calculou "12 meses atrás" no dia do run.
+- **Por que não pesa:**
+  - os 4 usam a mesma janela, então a comparação entre eles vale;
+  - o R0 reproduz exatamente o `teste0910206-fix` (115 operações, −0,0483R, PF 0,773,
+    conta −5,74%);
+  - o desvio não dependeu de ver dado nenhum.
+
+Comparador com `--family-size 3 --seed 263 --iterations 20000` (reproduzível):
+
+| Variante × R0 | Leitura principal | Δ expectância | IC (Bonferroni m=3, t, cluster) | Veredito | Risco |
+|---|---|---|---|---|---|
+| **A** sem proteção pré-TP1 | não pareada (102 × 115 operações) | **+0,024R** | [−0,173; +0,221], G conjunto 24 | indistinguível do ruído | sd(R) ×1,52; drawdown 8,7% → 11,4% |
+| **C** saída por RF estilo Pine | pareada (mesmas 115) | **+0,0026R** | [−0,0009; +0,0062], G 56 | indistinguível do ruído | igual |
+| **PINE** A+B+C+G | não pareada (112 × 115) | **−0,052R** | [−0,239; +0,134], G conjunto 24 | indistinguível do ruído | sd(R) ×1,46; conta −11,3%; drawdown 13,6% |
+
+Expectância por braço (líquida, IC95 do relatório):
+
+| Braço | Expectância | IC95 |
+|---|---|---|
+| R0 | −0,048R | [−0,193; +0,096] |
+| A | −0,024R | [−0,257; +0,209] |
+| C | −0,046R | [−0,191; +0,100] |
+| PINE | −0,101R | [−0,314; +0,113] |
+
+**Previsão × resultado**:
+- **A — acertou.** Sem o trailing pré-TP1, sd(R) subiu 52% e o drawdown subiu 2,7 pp.
+  A expectância não mudou de forma distinguível. É o espelho do item 132.
+  - Saem 13 operações a menos, porque as posições duram mais e ocupam o ativo.
+  - Os runners vão de 15 para 37.
+- **C — acertou.** Só 4 dos 15 runners mudaram. Saíram pelo Range Filter antes do stop
+  trilhado, todos um pouco melhor (+0,02 a +0,11R cada). Efeito médio: +0,0026R.
+- **PINE "perto de A" — errou em parte.** O PINE ficou 0,077R abaixo do A, ainda dentro
+  do ruído contra o R0.
+  - A pré-hipótese "G afeta ~7 eventos" estava errada. Os 7 eram avisos da arbitragem no
+    R0, com o trailing ligado.
+  - Sem o trailing, as posições duram mais e recebem mais sinais opostos. No PINE, a
+    arbitragem **fechou 24 operações antes do TP1** por sinal oposto
+    (`same_cascade_opposite_direction_invalidate`), com média de −0,81R e soma de −19,5R.
+  - No A, os mesmos ~22 avisos chegaram, mas sem fechar nada.
+
+**Exploratório — NÃO pré-registrado, fora da regra de decisão**:
+- **PINE × A pareado** (102 operações casadas): −0,058R, IC95 sem Bonferroni
+  [−0,098; −0,017].
+- **PINE × A não pareado:** −0,077R, IC inclui zero.
+- **Leitura:** sugere que fechar no sinal oposto (G) custou expectância nesta janela.
+  Mas B e C entram juntos nessa diferença, e a comparação foi escolhida depois de ver
+  os dados. Serve de hipótese para um pré-registro futuro, nunca de conclusão.
+
+**Conclusão**:
+- Nenhuma das divergências de saída Pine×JS medidas muda a expectância de forma
+  distinguível do ruído.
+- A estratégia segue sem vantagem demonstrável com qualquer conjunto de saídas: o IC de
+  todos os braços inclui zero.
+- O trailing pré-TP1 do JS não cria vantagem nem a destrói. Ele reduz o risco por
+  operação (sd e drawdown), como o item 132 já tinha medido.
+- **Nenhuma decisão de produção sai deste item**, como foi pré-registrado.
