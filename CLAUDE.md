@@ -160,7 +160,8 @@ Skills em `.claude/skills/`, regras em `.claude/rules/` (carregam pelos
 - **A entrada da estratégia não tem vantagem comprovada sobre entrar ao acaso**
   com as mesmas saídas (`docs/known-risks.md` item 264). Decisão aceita no item
   265: produção igual, ajuste de entrada só com teste pré-registrado. O valor
-  medido é controle de risco (trailing pré-TP1, itens 132/263), não edge.
+  medido é controle de risco (trailing pré-TP1, itens 132/263), não edge. O
+  laboratório de dados de "smart money" (item 266) também não achou padrão.
 
 - `npm run typecheck` roda no CI **como catraca**, não exigindo zero
   (`npm run typecheck:ratchet`, item 166): o teto é o passivo atual (16 erros
