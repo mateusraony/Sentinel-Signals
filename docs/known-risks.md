@@ -31286,10 +31286,15 @@ não achar nada que sobreviva a dados novos.
   confirmação 15m) **não tem vantagem comprovada sobre entrar ao acaso** com as mesmas
   saídas (item 264, duas janelas, 40 sementes cada).
   - O valor real medido do sistema é **controle de risco**: o trailing pré-TP1 reduz o
-    sd(R) em 35% e corta o drawdown pela metade (item 132).
+    sd(R) em ~34% (0,79 contra 1,20) e o drawdown da conta de 11,4% para 8,7% (item 263,
+    braço A contra R0, já com a correção do item 262).
+    - O "drawdown pela metade" do item 132 incluía a folga otimista corrigida no item 262.
+      Não citar mais esse número como atual (achado do Codex, PR #483).
   - A expectativa honesta por operação é ≈ 0 ± 0,1R.
-- **Congelamento:** nenhum ajuste de entrada ou parâmetro de estratégia nos 7 ativos atuais
-  sem teste pré-registrado antes.
+- **Congelamento:** nenhum ajuste de entrada ou parâmetro de estratégia sem teste
+  pré-registrado antes. Vale para **todos os ativos monitorados no painel** (hoje 10), porque
+  os parâmetros da estratégia são globais. O teste do item 264 foi feito na cesta padrão de
+  7 ativos do backtest (achado do Codex, PR #483).
   - Correção de bug continua normal.
   - A métrica de progresso segue sendo a meia-largura do IC (item 133), não "achar edge".
 - **Revisão futura:** repetir o teste do item 264 numa janela nova (W3) quando houver ~12
