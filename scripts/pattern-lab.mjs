@@ -8,8 +8,10 @@
 //
 // Lê SIMBOLO_lab.json (gerados por scripts/fetch-pattern-lab-data.mjs), roda
 // descoberta + validação e grava um resumo pequeno (~15 KB). O veredito é um
-// RESULTADO, não erro: "nenhum padrão" sai com código 0. Código 1 só para
-// entrada faltando ou inválida.
+// RESULTADO, não erro: "nenhum padrão" sai com código 0. Código 1 para
+// entrada faltando/inválida E para INCOMPLETE (algum sinal pré-registrado
+// ficou sem dado — o job tem que aparecer vermelho, não "terminou bem"; o
+// resumo é gravado antes, para dar para ver o que faltou).
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -60,6 +62,10 @@ function main() {
   };
   console.log(formatPatternLabMarkdown(result, { preregSha256, commitSha }));
   if (args.json) fs.writeFileSync(args.json, `${JSON.stringify(summary, null, 2)}\n`);
+  if (result.verdict === 'INCOMPLETE') {
+    console.error(`[pattern-lab] INCOMPLETE: ${result.untested.length} teste(s) sem dado suficiente — rodada inválida`);
+    process.exitCode = 1;
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {

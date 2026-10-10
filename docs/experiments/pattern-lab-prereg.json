@@ -21,6 +21,7 @@
     "bootstrapReps": 2000,
     "seed": 20261010,
     "minRowsPerSymbol": 1000,
+    "minEligibleSymbols": 4,
     "discovery": { "holmAlpha": 0.05, "minAbsT": 3, "minSameSignShare": 0.8, "minHalfSpreadBps": 12 },
     "validation": { "minIcRatio": 0.5, "minOneSidedT": 2, "minSameSignShare": 0.6667 }
   }

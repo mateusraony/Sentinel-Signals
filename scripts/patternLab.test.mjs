@@ -121,20 +121,28 @@ describe('evaluateTest', () => {
 
 // Laboratório inteiro sobre 7 moedas sintéticas no calendário real do
 // pré-registro. `beta` > 0 planta: o retorno da próxima vela depende do fluxo
-// agressor da vela atual.
-function synthDataset(beta, seed) {
+// agressor da vela atual. Todos os campos vêm preenchidos (ruído), exceto
+// quando `derivatives` é falso — aí funding/prêmio/metrics ficam nulos, como
+// num arquivo que a Binance não publicou (o downloader trata 404 como ausência).
+function synthDataset(beta, seed, { derivatives = true } = {}) {
   const start = Date.parse(`${PREREG.dataStart}T04:00:00Z`);
   const end = Date.parse(`${PREREG.dataEnd}T00:00:00Z`);
   const n = Math.floor((end - start) / H4) + 1;
   return PREREG.symbols.map((symbol, s) => {
     const rand = mulberry32(seed + s);
     let close = 100;
+    const noise = mulberry32(seed + 1000 + s);
     let prevFlow = 0;
+    let oi = 1000;
     const bars = [];
     for (let i = 0; i < n; i += 1) {
       close *= Math.exp(beta * prevFlow * 0.01 + (rand() - 0.5) * 0.02);
       const flow = rand() * 2 - 1;
-      bars.push({ t: start + i * H4, close, volume: 100, takerBuyVolume: 50 * (flow + 1), premium: null, fundingPerHour: null, openInterest: null, topPositionLS: null, globalAccountLS: null });
+      oi *= Math.exp((noise() - 0.5) * 0.02);
+      const deriv = derivatives
+        ? { premium: (noise() - 0.5) * 1e-3, fundingPerHour: (noise() - 0.5) * 1e-5, openInterest: oi, topPositionLS: 0.5 + noise(), globalAccountLS: 0.5 + noise() }
+        : { premium: null, fundingPerHour: null, openInterest: null, topPositionLS: null, globalAccountLS: null };
+      bars.push({ t: start + i * H4, close, volume: 100, takerBuyVolume: 50 * (flow + 1), ...deriv });
       prevFlow = flow;
     }
     return { symbol, bars };
@@ -150,14 +158,47 @@ describe('runPatternLab — o laboratório acha o que existe e não inventa o qu
     const f1 = r.tests.find((x) => x.feature === 'F1_flow4h' && x.horizonBars === 1);
     expect(f1.discovery.ic).toBeGreaterThan(0);
     expect(f1.discovery.eligibleSymbols).toBe(7);
-    // Sinais sem dado (metrics/funding nulos) não passam nem quebram.
-    expect(r.tests.find((x) => x.feature === 'F3_funding').discovery.reasons).toEqual(['sem ativos com dado suficiente']);
+    expect(r.untested).toEqual([]);
     expect(formatPatternLabMarkdown(r)).toMatch(/Achei um candidato/);
+  });
+
+  it('sinal pré-registrado sem dado invalida a rodada (INCOMPLETE), mesmo com o padrão plantado achado', () => {
+    const r = runPatternLab(synthDataset(0.6, 100, { derivatives: false }), FAST);
+    expect(r.verdict).toBe('INCOMPLETE');
+    // F3–F9 (funding, prêmio, contratos em aberto, proporções) × 2 horizontes.
+    expect(r.untested.map((u) => u.test).sort()).toEqual(
+      ['F3_funding', 'F4_basis', 'F5_oiChange4h', 'F6_oiChange24h', 'F7_topTraderPosition', 'F8_topVsCrowd', 'F9_oiPriceDivergence']
+        .flatMap((f) => [`${f}@1`, `${f}@6`]).sort(),
+    );
+    expect(r.tests.find((x) => x.feature === 'F3_funding').discovery.reasons).toEqual(['sem ativos com dado suficiente']);
+    const md = formatPatternLabMarkdown(r);
+    expect(md).toMatch(/Resultado inválido/);
+    expect(md).not.toMatch(/Não achei padrão|Achei um candidato/);
+  });
+
+  it('dado em poucas moedas (abaixo do mínimo pré-registrado) também é INCOMPLETE, não "não achei"', () => {
+    const data = synthDataset(0, 200);
+    for (const d of data.slice(PREREG.stats.minEligibleSymbols - 1)) {
+      for (const b of d.bars) { b.openInterest = null; b.topPositionLS = null; b.globalAccountLS = null; }
+    }
+    const r = runPatternLab(data, FAST);
+    expect(r.verdict).toBe('INCOMPLETE');
+    const f5 = r.tests.find((x) => x.feature === 'F5_oiChange4h' && x.horizonBars === 1);
+    expect(f5.discovery.eligibleSymbols).toBe(PREREG.stats.minEligibleSymbols - 1);
+    expect(f5.discovery.pass).toBe(false);
+    expect(r.untested).toContainEqual({ test: 'F5_oiChange4h@1', phase: 'discovery', eligibleSymbols: PREREG.stats.minEligibleSymbols - 1 });
+  });
+
+  it('pré-registro sem o mínimo de moedas é recusado (senão a guarda some em silêncio)', () => {
+    const { minEligibleSymbols, ...stats } = FAST.stats;
+    expect(minEligibleSymbols).toBe(4);
+    expect(() => runPatternLab(synthDataset(0, 1), { ...FAST, stats })).toThrow(/minEligibleSymbols/);
   });
 
   it('ruído puro: nenhum sinal passa', () => {
     const r = runPatternLab(synthDataset(0, 200), FAST);
     expect(r.verdict).toBe('NO_SURVIVOR');
+    expect(r.untested).toEqual([]);
     expect(r.discoverySurvivors).toEqual([]);
     expect(r.testsSpent).toBe(22);
     expect(formatPatternLabMarkdown(r)).toMatch(/Não achei padrão/);
@@ -177,7 +218,7 @@ describe('pré-registro travado (mudar exige mudar este teste, à vista no PR)',
       holdout: { from: '2025-10-08', to: '2026-10-01', sealed: true },
     });
     expect(PREREG.stats).toEqual({
-      bootstrapReps: 2000, seed: 20261010, minRowsPerSymbol: 1000,
+      bootstrapReps: 2000, seed: 20261010, minRowsPerSymbol: 1000, minEligibleSymbols: 4,
       discovery: { holmAlpha: 0.05, minAbsT: 3, minSameSignShare: 0.8, minHalfSpreadBps: 12 },
       validation: { minIcRatio: 0.5, minOneSidedT: 2, minSameSignShare: 0.6667 },
     });

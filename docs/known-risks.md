@@ -31405,9 +31405,17 @@ inclusive o comportamento do "smart money". Se nada aparecer, o usuário concord
   meia-diferença entre o quintil de cima e o de baixo ≥ 12 bps no mesmo sentido do IC.
 - **Passa na validação** (só quem passou na descoberta): mesmo sentido, IC ≥ metade do da
   descoberta, t unicaudal ≥ 2 e mesmo sentido em ≥ 2/3 das moedas.
+- **Cobertura mínima (resultado INCOMPLETE):** todo teste precisa de ≥ 4 moedas com
+  ≥ 1.000 linhas, na descoberta e, para quem passou, na validação.
+  - Se algum teste não tiver, a rodada inteira é inválida: veredito `INCOMPLETE` e o job
+    fica vermelho. Isso vale mesmo que algo tenha passado, porque com testes a menos o
+    Holm fica mais frouxo que o pré-registrado.
+  - `INCOMPLETE` **não** é "não achei padrão" e **não** dispara a regra de parada.
+  - Motivo: o download trata 404 como ausência, então um dataset inteiro pode faltar sem
+    erro (achado do Codex no PR #484, corrigido antes de qualquer execução real).
 - **Ressalva registrada:** o período lacrado coincide com a janela W1 do item 264, que já
   foi vista.
-- **Regra de parada:** se nada passar na descoberta ou na validação, o laboratório termina.
+- **Regra de parada:** se nada passar na descoberta ou na validação (com cobertura completa), o laboratório termina.
   - Nada de sinais, horizontes ou moedas novos nesses dados.
   - Só reabre com ≥ 12 meses de dado novo ou um tipo de dado novo, com pré-registro.
   - Conforme combinado com o usuário: parar.

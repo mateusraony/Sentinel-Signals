@@ -306,6 +306,9 @@ const dayMs = (iso) => Date.parse(`${iso}T00:00:00Z`);
 export function runPatternLab(datasets, prereg) {
   const barMs = prereg.barMinutes * 60 * 1000;
   const S = prereg.stats;
+  if (!Number.isInteger(S.minEligibleSymbols) || S.minEligibleSymbols < 1) {
+    throw new Error('pré-registro sem stats.minEligibleSymbols (inteiro ≥ 1) — sem ele um sinal sem dado passaria como "testado"');
+  }
   const split = (name) => ({ fromMs: dayMs(prereg.splits[name].from), toMs: dayMs(prereg.splits[name].to), barMs });
   const prepared = datasets.map((d) => ({
     symbol: d.symbol,
@@ -338,6 +341,7 @@ export function runPatternLab(datasets, prereg) {
     d.holmP = holm[k];
     const reasons = [];
     if (d.ic == null) reasons.push('sem ativos com dado suficiente');
+    else if (d.eligibleSymbols < S.minEligibleSymbols) reasons.push(`só ${d.eligibleSymbols} ativo(s) com dado suficiente (mínimo ${S.minEligibleSymbols})`);
     else {
       if (!(d.holmP < D.holmAlpha)) reasons.push(`Holm p ${d.holmP?.toFixed(3)} ≥ ${D.holmAlpha}`);
       if (!(Math.abs(d.t) >= D.minAbsT)) reasons.push(`|t| ${Math.abs(d.t ?? 0).toFixed(2)} < ${D.minAbsT}`);
@@ -357,6 +361,7 @@ export function runPatternLab(datasets, prereg) {
     const dir = Math.sign(x.discovery.ic);
     const reasons = [];
     if (v.ic == null) reasons.push('sem ativos com dado suficiente');
+    else if (v.eligibleSymbols < S.minEligibleSymbols) reasons.push(`só ${v.eligibleSymbols} ativo(s) com dado suficiente (mínimo ${S.minEligibleSymbols})`);
     else {
       if (Math.sign(v.ic) !== dir) reasons.push('sinal invertido');
       if (!(Math.abs(v.ic) >= V.minIcRatio * Math.abs(x.discovery.ic))) reasons.push('IC caiu para menos da metade');
@@ -372,12 +377,25 @@ export function runPatternLab(datasets, prereg) {
 
   const discoverySurvivors = tests.filter((x) => x.discovery.pass);
   const validated = discoverySurvivors.filter((x) => x.validation?.pass);
+  // Teste pré-registrado sem cobertura mínima NÃO foi testado — não pode
+  // virar "não achei padrão" (o downloader trata 404 como ausência, então
+  // um dataset inteiro pode faltar sem erro). Isso invalida a rodada
+  // inteira, inclusive um VALIDATED: com testes a menos, a correção de Holm
+  // também fica mais frouxa do que a pré-registrada.
+  const lacks = (r) => r.ic == null || r.eligibleSymbols < S.minEligibleSymbols;
+  const untested = [
+    ...tests.filter((x) => lacks(x.discovery)).map((x) => ({ test: `${x.feature}@${x.horizonBars}`, phase: 'discovery', eligibleSymbols: x.discovery.eligibleSymbols })),
+    ...tests.filter((x) => x.validation && lacks(x.validation)).map((x) => ({ test: `${x.feature}@${x.horizonBars}`, phase: 'validation', eligibleSymbols: x.validation.eligibleSymbols })),
+  ];
   let verdict = 'NO_SURVIVOR';
-  if (validated.length) verdict = 'VALIDATED';
+  if (untested.length) verdict = 'INCOMPLETE';
+  else if (validated.length) verdict = 'VALIDATED';
   else if (discoverySurvivors.length) verdict = 'FAILED_VALIDATION';
 
   return {
     verdict,
+    untested,
+    minEligibleSymbols: S.minEligibleSymbols,
     validated: validated.map((x) => `${x.feature}@${x.horizonBars}`),
     discoverySurvivors: discoverySurvivors.map((x) => `${x.feature}@${x.horizonBars}`),
     testsSpent: tests.length,
@@ -412,6 +430,7 @@ export function assertHoldoutSealed({ openHoldout, ruleFileSha256 } = {}) {
 // ---------- texto para o resumo do job (português simples) ----------
 
 const VERDICT_TEXT = {
+  INCOMPLETE: '**Resultado inválido — faltou dado.** Algum sinal pré-registrado não teve moedas suficientes com dado para ser testado (lista abaixo). Isso NÃO conta como "não achei padrão" e NÃO vale como motivo para parar: a rodada precisa ser refeita depois de entender por que o dado faltou.',
   NO_SURVIVOR: '**Não achei padrão.** Nenhum dos sinais passou na régua da primeira fase. Pela regra combinada, o laboratório termina aqui.',
   FAILED_VALIDATION: '**Não achei padrão que se sustente.** Algum sinal passou na primeira fase, mas sumiu no período seguinte — sinal típico de acaso. Pela regra combinada, o laboratório termina aqui.',
   VALIDATED: '**Achei um candidato.** Pelo menos um sinal passou nas duas fases. Próximo passo (B2, só com sua aprovação): testar UMA regra simples com ele, uma única vez, no período lacrado, com custos e contra entradas aleatórias.',
@@ -425,6 +444,10 @@ export function formatPatternLabMarkdown(result, { preregSha256 = null, commitSh
     '',
     VERDICT_TEXT[result.verdict],
     '',
+    ...(result.untested?.length
+      ? [`Sem dado suficiente (mínimo ${result.minEligibleSymbols ?? '?'} moedas): `
+        + result.untested.map((u) => `${u.test} na ${u.phase === 'discovery' ? 'descoberta' : 'validação'} (${u.eligibleSymbols} moeda(s))`).join(' · '), '']
+      : []),
     `Testes gastos: ${result.testsSpent} (11 sinais × 2 horizontes).`
       + (commitSha ? ` Commit ${commitSha.slice(0, 7)}.` : '')
       + (preregSha256 ? ` Pré-registro sha256 ${preregSha256.slice(0, 12)}….` : ''),
