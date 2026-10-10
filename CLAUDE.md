@@ -157,6 +157,11 @@ Skills em `.claude/skills/`, regras em `.claude/rules/` (carregam pelos
 
 ## Limitações conhecidas (não são regressões)
 
+- **A entrada da estratégia não tem vantagem comprovada sobre entrar ao acaso**
+  com as mesmas saídas (`docs/known-risks.md` item 264). Decisão aceita no item
+  265: produção igual, ajuste de entrada só com teste pré-registrado. O valor
+  medido é controle de risco (item 132), não edge.
+
 - `npm run typecheck` roda no CI **como catraca**, não exigindo zero
   (`npm run typecheck:ratchet`, item 166): o teto é o passivo atual (16 erros
   de atrito de tipagem, medidos em 2026-09-05) e **só pode descer**. Zerado em

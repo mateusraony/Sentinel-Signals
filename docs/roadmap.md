@@ -275,6 +275,13 @@ plano de sessão morre com a sessão.
 > a janela de calendário livre de sobreposição (~2027-08-10). Detalhe
 > completo: item 133.
 
+> **Atualização 2026-10-10 (itens 264/265/266): a entrada não ganha do acaso.**
+> Contra 40 entradas aleatórias com as mesmas saídas, em duas janelas, a entrada
+> da RF ficou indistinguível do acaso (item 264). O usuário aceitou (item 265):
+> produção igual e ajuste de entrada só com teste pré-registrado. Em paralelo
+> foi aberto um laboratório de padrões com dados de "smart money" nunca usados
+> (item 266), com regra de parada se nada passar.
+
 ## A regra que ordena tudo: amostra
 
 Toda pendência abaixo é uma decisão de "ligar ou não ligar X". Nenhuma dessas
