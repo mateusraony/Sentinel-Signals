@@ -31273,6 +31273,37 @@ seeds, distribuição e comprar-e-segurar. O resumo do job também lista cada se
 recolhível. Os intermediários `report-*` ficam 3 dias, o que cobre o pior caso
 permitido da matriz (achado do Codex no PR #482; 1 dia podia expirar antes da agregação).
 
+## 265. Cartão de decisão — aceitar o resultado do item 264 na produção (2026-10-10)
+
+**Decisão do usuário**: aceitar o resultado do item 264 e, em paralelo, montar um
+"laboratório de padrões" (item 266). O usuário concordou em parar a busca se o laboratório
+não achar nada que sobreviva a dados novos.
+
+**O que fica decidido**:
+- **A produção continua exatamente igual.** Nenhum código, flag ou parâmetro muda por
+  causa do item 264. O painel segue como painel de sinalização, com TP e stop virtuais.
+- **Leitura oficial do resultado:** a entrada da Range Filter (RF + score + regime +
+  confirmação 15m) **não tem vantagem comprovada sobre entrar ao acaso** com as mesmas
+  saídas (item 264, duas janelas, 40 sementes cada).
+  - O valor real medido do sistema é **controle de risco**: o trailing pré-TP1 reduz o
+    sd(R) em ~34% (0,79 contra 1,20) e o drawdown da conta de 11,4% para 8,7% (item 263,
+    braço A contra R0, já com a correção do item 262).
+    - O "drawdown pela metade" do item 132 incluía a folga otimista corrigida no item 262.
+      Não citar mais esse número como atual (achado do Codex, PR #483).
+  - A expectativa honesta por operação é ≈ 0 ± 0,1R.
+- **Congelamento:** nenhum ajuste de entrada ou parâmetro de estratégia sem teste
+  pré-registrado antes. Vale para **todos os ativos monitorados no painel** (hoje 10), porque
+  os parâmetros da estratégia são globais. O teste do item 264 foi feito na cesta padrão de
+  7 ativos do backtest (achado do Codex, PR #483).
+  - Correção de bug continua normal.
+  - A métrica de progresso segue sendo a meia-largura do IC (item 133), não "achar edge".
+- **Revisão futura:** repetir o teste do item 264 numa janela nova (W3) quando houver ~12
+  meses de dado novo, por volta de 2027-10. Fica registrado aqui como lembrete, não como
+  compromisso automático.
+
+**Fora deste item**: a tela do painel não muda; o usuário não pediu. O laboratório de
+padrões é o item 266.
+
 ## 266. Laboratório de padrões, fase B1 — sinais de "smart money" nunca usados (pré-registro, 2026-10-10)
 
 **Pedido do usuário**: depois do item 264 (a entrada não ganha do acaso), testar em
