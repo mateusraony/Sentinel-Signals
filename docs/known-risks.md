@@ -31209,5 +31209,66 @@ já foi verificado com cuidado?
   padrão (média móvel / Donchian) como terceiro braço. Seria uma entrada nova no motor, e
   o item 102 registrou "não trocar de estratégia".
 
-**Resultado**: pendente. O usuário dispara o workflow uma vez por janela e envia o
-artifact agregado.
+**Resultado (2026-10-10)**: os dois runs (W1 = run 38017617651, W2 = run 38017651706)
+saíram do commit `dea5a4f` (merge do PR #481). Os dois fecharam 43/43 jobs com sucesso, e
+a agregação encontrou as 40 seeds em cada janela. Os números abaixo vêm do log do job de
+agregação, conferido contra o que o usuário colou. No ledger, família
+`random-entry-baseline-2026-10`, entraram os R0 das duas janelas como seed (IC não estava
+no resumo).
+
+| | W1 2025-10-10→2026-10-10 | W2 2024-07-27→2025-07-27 |
+|---|---|---|
+| Expectância do R0 (entrada da RF) | −0,048R (115 operações) | +0,054R (119 operações) |
+| Aleatórias: média / mediana | −0,026 / −0,006 | −0,032 / −0,029 |
+| Aleatórias: p5 / p95 | −0,177 / +0,103 | −0,146 / +0,068 |
+| **Percentil do R0 · p empírico** | **30% · 0,707** | **92,5% · 0,098** |
+| sd(R): R0 / média aleatória | 0,791 / 0,818 | 0,910 / 0,827 |
+| Drawdown da conta: R0 / mediana aleatória | 8,7% / 8,0% | 8,3% / 9,6% |
+| Comprar e segurar (cesto dos 7, peso igual) | −38,3% (drawdown 56%) | −0,7% (drawdown 57%) |
+
+**Regra pré-registrada** (p ≤ 0,025 nas duas janelas): **não atendida em nenhuma.** A
+entrada da RF, isto é, a pilha inteira (RF + score + regime + confirmação 15m), é
+**indistinguível de entrar ao acaso com as mesmas saídas**, nas duas janelas.
+
+**Previsão × resultado**:
+- **W1, R0 dentro da distribuição — acertou.** O R0 ficou abaixo da mediana aleatória.
+- **W2, R0 não passa do limiar — acertou.**
+  - W2 é a que mais se aproxima de um sinal (p=0,098). Ainda está longe do limiar.
+  - Combinar as duas janelas depois de ver os dados não foi pré-registrado e não será
+    feito.
+- **W2, "o braço aleatório também sai positivo" — errou.** A média aleatória deu −0,03R.
+  - O cesto dos 7 em peso igual ficou praticamente parado na janela (−0,7%), com 57% de
+    drawdown no caminho.
+  - Para esta carteira, a janela "de alta" dos itens 48 e 124 não foi de alta: só o BTC
+    subiu muito.
+  - Logo, a premissa da previsão (o mercado entregando tendência para qualquer entrada)
+    não existiu aqui.
+
+**Achados laterais (fato × hipótese)**:
+- **Fato:** o motor atual, em Spot e com os 7 símbolos, dá **+0,054R** na W2. Antes, a
+  mesma janela tinha dado **+0,294R** no item 48 (20 símbolos, motor de julho) e
+  **+0,278R** no item 124 (Futures, 7 símbolos). O item 124 foi medido antes do trailing
+  pré-TP1 (item 132) e da correção do item 262. Portanto, o único resultado "conclusivo
+  positivo" da história **não se reproduz** no motor atual.
+- **Hipótese, não medida:** a fonte (Spot × Futures) e as mudanças nas saídas explicam a
+  diferença. Medir isso exigiria runs próprios. Não é pedido deste item.
+- **Fato:** o drawdown da RF fica dentro da faixa das entradas aleatórias. A entrada também
+  não mostra vantagem de risco.
+- **Poder do teste:** o p95 aleatório fica ~0,10–0,13R acima da média aleatória.
+  - Só uma vantagem de entrada dessa ordem apareceria aqui.
+  - Uma vantagem menor **não está descartada**; ela só não é detectável com ~110 operações
+    por janela.
+
+**Conclusão**:
+- Nesta amostra, quem determina o resultado são as saídas e o mercado, não a entrada da RF.
+- Não há vantagem de entrada mensurável sobre o acaso, em nenhuma das duas janelas.
+- Isso não prova que a entrada é inútil: uma vantagem pequena (< ~0,1R) caberia no ruído.
+  Mas nada nos dados sustenta otimizar a entrada.
+- **Nenhuma decisão de produção sai deste item.**
+
+**Ferramenta (pedido do usuário, mesmo dia)**: o pacote completo tem 42 arquivos, ~4,4 MB
+zipado, e era pesado de enviar. O workflow passou a publicar também o artifact
+**`resumo-<família>`**. Ele traz só o `random-baseline-summary.json`, ~13 KB: R0, todas as
+seeds, distribuição e comprar-e-segurar. O resumo do job também lista cada seed num bloco
+recolhível. Os intermediários `report-*` ficam 3 dias, o que cobre o pior caso
+permitido da matriz (achado do Codex no PR #482; 1 dia podia expirar antes da agregação).

@@ -174,7 +174,12 @@ jobs:
         with:
           name: report-${{ matrix.arm }}
           path: report-${{ matrix.arm }}.json
-          retention-days: 30
+          # Intermediário: só serve para o job de agregação, que junta todos
+          # no pacote completo abaixo (30 dias). 3 dias, não 1 (review do
+          # Codex, PR #482): o pior caso permitido — 200 seeds em levas de 20,
+          # cada job até 240 min — passa de 40 h até o aggregate começar, e os
+          # relatórios das primeiras levas não podem expirar antes disso.
+          retention-days: 3
           if-no-files-found: warn
 
   aggregate:
@@ -227,6 +232,19 @@ jobs:
               --data-dir candles \
               --json random-baseline-summary.json
           } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # O arquivo para ENVIAR (pedido do usuário, item 264): só o resumo em
+      # JSON — R0, todas as seeds, distribuição, comprar-e-segurar —, poucos
+      # KB, sem as curvas de operação. O GitHub sempre baixa artifact como
+      # .zip; este vira um zip pequeno com um único JSON dentro.
+      - name: Upload do resumo (arquivo único, leve)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resumo-${{ inputs.family }}
+          path: random-baseline-summary.json
+          retention-days: 30
+          if-no-files-found: warn
 
       - name: Upload do pacote completo
         if: always()

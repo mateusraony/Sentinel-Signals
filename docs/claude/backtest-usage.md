@@ -724,9 +724,12 @@ Este passo usa o workflow **"Backtest — referência de entrada aleatória"**
   - o número de seeds tem mínimo de 39, porque o menor p possível é 1/(N+1);
   - a probabilidade de entrada por vela é pré-registrada;
   - o rótulo da família é obrigatório.
-- **Resultado:** sai no resumo do job. O artifact
-  `random-baseline-<família>` traz todos os relatórios e o
-  `random-baseline-summary.json`.
+- **Resultado:** sai no resumo do job, com cada seed num bloco recolhível.
+  - Para **enviar ou guardar**, baixe só o artifact **`resumo-<família>`**: um
+    zip pequeno (~13 KB) com o `random-baseline-summary.json` dentro.
+  - O artifact `random-baseline-<família>` é o pacote completo, com todos os
+    relatórios (~4 MB). Só é necessário para reanalisar operação a operação.
+  - Os `report-*` são intermediários e somem em 3 dias.
 
 Também dá para rodar o resumo localmente sobre relatórios já baixados:
 

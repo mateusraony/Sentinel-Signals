@@ -5399,5 +5399,41 @@
       0.11253929867410147
     ],
     "conclusiveAtN1": false
+  },
+  {
+    "family": "random-entry-baseline-2026-10",
+    "trialLabel": "RandomBaseline_W1_R0",
+    "recordedAt": "2026-10-10T12:38:56.391Z",
+    "source": "seed",
+    "seedSource": "known-risks.md item 264",
+    "seedNote": "R0 (entrada da RF) contra 40 seeds de entrada aleatoria com as mesmas saidas, 2025-10-10->2026-10-10, 7 simbolos Spot: percentil 30%, p empirico 0,707 — indistinguivel do acaso. Run 38017617651.",
+    "runStartedAt": null,
+    "commitSha": null,
+    "configHash": null,
+    "pineConfigOverride": null,
+    "n": 115,
+    "minTrades": null,
+    "expectancyR": -0.0483,
+    "expectancyRStdErr": null,
+    "expectancyRCI95": null,
+    "conclusiveAtN1": null
+  },
+  {
+    "family": "random-entry-baseline-2026-10",
+    "trialLabel": "RandomBaseline_W2_R0",
+    "recordedAt": "2026-10-10T12:38:56.445Z",
+    "source": "seed",
+    "seedSource": "known-risks.md item 264",
+    "seedNote": "R0 (entrada da RF) contra 40 seeds de entrada aleatoria com as mesmas saidas, 2024-07-27->2025-07-27, 7 simbolos Spot: percentil 92,5%, p empirico 0,098 — indistinguivel do acaso (limiar 0,025). Run 38017651706.",
+    "runStartedAt": null,
+    "commitSha": null,
+    "configHash": null,
+    "pineConfigOverride": null,
+    "n": 119,
+    "minTrades": null,
+    "expectancyR": 0.054,
+    "expectancyRStdErr": null,
+    "expectancyRCI95": null,
+    "conclusiveAtN1": null
   }
 ]
