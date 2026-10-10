@@ -31472,3 +31472,87 @@ encerrado.**
     lacrado continua intacto) ou com um tipo de dado novo, sempre com pré-registro novo.
     O workflow `pattern-lab.yml` fica no repositório para isso.
 - **Produção:** nada muda, como o item já previa.
+
+## 267. Fibonacci no 15m para entrada, stop e alvos — teste pré-registrado (2026-10-10)
+
+**Pergunta do usuário**: depois do sinal de 4h, descer ao 15m e entrar no recuo de
+Fibonacci, com stop na origem da perna e TP1/TP2 nas extensões. "O que dá ruim é o stop,
+não a entrada?"
+
+**O que já se sabia antes do teste (análise registrada; o usuário escolheu testar mesmo
+assim, contra a minha recomendação):**
+- **O stop atual já é largo:** 2,0–3,0 × ATR de 4h (`src/lib/indicators/tier.js:13-15`).
+  - Custo médio: 0,035R por operação (relatório PineParity_R0).
+  - Um stop no 15m fica cerca de 3–7× mais curto, então o custo em R sobe na mesma
+    proporção (~0,12–0,25R).
+- **Esperar recuo já foi testado** (gate de reteste, itens 90 e 94): só 2,4–6,4% dos
+  sinais recuaram.
+- **A zona OTE 0,618–0,786 já existe na cascata SMC** (`buildOteLeg`, item 38). Ela gera
+  cerca de 0 operações reais (item 75).
+- **Item 264:** com o MESMO stop e os MESMOS alvos, a entrada da RF empatou com o sorteio.
+  Se a entrada fosse boa e só o stop ruim, ela teria ganhado.
+- **"Ficou positivo e depois estopou" é o padrão do acaso:** num mercado sem direção, com
+  stop em −1R, a chance de tocar +0,5R antes é ≈ 67%.
+- **Evidência externa mista e fraca.** Shanaev & Gibson (SSRN, ações e câmbio) a favor; o
+  estudo da City University achou razões de Fibonacci menos que o acaso. Nenhum estudo
+  rigoroso em cripto.
+
+**Pré-registro (regras fechadas ANTES de rodar; constantes travadas por
+`src/lib/indicators/fibEntry.test.js`):**
+- **Escopo:** chave só de backtest `fibEntryEnabled` (`scripts/backtestPineConfig.js`;
+  tripwire `src/lib/fibEntryTripwire.test.js`). Vale só para a cascata nativa 4h_15m.
+- **Perna (compra; venda é o espelho):**
+  - as 32 velas fechadas de 15m até o fechamento do sinal de 4h;
+  - L é a primeira mínima mais baixa; H é a máxima mais alta **estritamente depois** de L;
+  - exige H−L ≥ 1×ATR (média simples do true range de 14 velas, fatia fixa no sinal);
+  - exige que o nível ainda não tenha sido negociado entre H e o sinal.
+- **Níveis** (Δ = H−L):
+  - entrada E = H − 0,618Δ;
+  - stop = L − 0,1×ATR;
+  - TP1 = L + 1,272Δ;
+  - TP2 = L + 1,618Δ.
+- **Preenchimento (ordem limitada):**
+  - uma vela posterior com mínima ≤ E − 0,02×ATR, ao preço min(abertura, E);
+  - só vale se for a **última vela fechada** naquela passada, senão `fill_missed`
+    (nunca abre operação datada no passado).
+- **Cancela:**
+  - se a máxima chegar ao TP1 antes do preenchimento; mesma vela também cancela
+    (`ran_away`);
+  - ou depois de 15 velas (`expired`).
+- **Gestão vela a vela de 15m** (`exit_mode: 'FIB_FIXED'`, `stepFibExit`):
+  - stop vence empate;
+  - a vela do preenchimento só checa o stop;
+  - abertura além do stop sai pela abertura;
+  - no TP1 sai 50% e o stop vai para a entrada a partir da vela seguinte;
+  - TP2 só a partir da vela seguinte ao TP1;
+  - time stop do tier só antes do TP1;
+  - sem trailing, sem saída por RF, sem chop e sem invalidação;
+  - buraco nas velas derruba o replay (`FIB_EXIT_GAP`) em vez de pular vela.
+- **Custos:** o modelo atual, congelado (taxa de taker na entrada limitada — conservador).
+- **Rodadas** (workflow "Backtest — referência de entrada aleatória", 40 seeds, mesmo
+  commit):
+  - W1 2025-10-10 → 2026-10-10 com a caixa "Fibonacci 15m" marcada e sem;
+  - W2 2024-07-27 → 2025-07-27 com e sem.
+  - Quatro resumos no total.
+- **Primário — "Fibonacci tem vantagem":** em **cada** janela, as três condições abaixo.
+  - R0-Fib (RF + Fibonacci) com p empírico ≤ 0,025 contra os 40 sorteios-Fib (sorteio +
+    a mesma Fibonacci). Na prática, ganhar dos 40 nas duas janelas.
+  - Expectância líquida > 0.
+  - ≥ 30 operações.
+  - Com < 30 operações em alguma janela, o resultado é **INCONCLUSIVO** (o recuo quase
+    nunca acontece), e isso já é resposta.
+- **Secundário — "as saídas Fib são melhores que as atuais?" (a pergunta do stop):**
+  - sorteio-Fib × sorteio-atual, pareado por seed (`scripts/compare-random-baselines.mjs`);
+  - teste do sinal bicaudal com α 0,05 em cada janela, em R líquido; R bruto é
+    reportado ao lado.
+- **Ressalvas registradas:**
+  - as janelas já foram usadas nos itens 263 e 264;
+  - a W1 termina no dia do registro, então pode faltar o último dia;
+  - a regra de recuo também filtra a direção do sorteio, então a hipótese nula é
+    "sorteio filtrado por perna recente", não sorteio puro;
+  - número de operações muito diferente entre R0 e seeds gera aviso no resumo.
+- **Ledger:** família `fib-entry-2026-10`, registrada junto com o resultado.
+- **Produção intocada.** Nenhuma chave entra em `pineParser.js`/`adminPineConfig.js`.
+  Operação FIB_FIXED só nasce no backtest.
+
+**Resultado**: pendente — o usuário roda as 4 rodadas e envia os 4 `resumo-*`.

@@ -35,6 +35,7 @@ import { isCandleUsableForExits, getEntryReferenceTime, advanceTrailingStop, adv
 import { groupActiveOpsByAsset, isTerminalStatus, shouldSkipCrossSourceManagement } from './opTransition';
 import { hasAssetStateChanged } from './assetStateDiff';
 import { randomEntryDecision } from './seededRandom';
+import { planFibEntry, stepFibExit } from './indicators/fibEntry';
 import { rejectionPatch, regimeDetail, trendReversedDetail } from './signalRejection';
 import {
   buildRegimeSnapshot, buildTrendReversedSnapshot, buildAwaitingTp1Snapshot,
@@ -671,6 +672,98 @@ async function check15mConfirmation(symbol, direction, asset) {
  *   still same-direction as the signal (trend_reversed guard) before calling
  *   this, so it's a safe, causal substitute.
  */
+// docs/known-risks.md item 267 — BACKTEST-ONLY (`fibEntryEnabled` existe só
+// em scripts/backtestPineConfig.js; tripwire em fibEntryTripwire.test.js).
+// Substitui a confirmação 15m SÓ na cascata nativa 4h_15m: espera o recuo
+// de Fibonacci da perna de 15m (planFibEntry, puro e causal). Não confirmado
+// = `rejectionReason` próprio (fib_pending, fib_expired, ...), gravado pelo
+// mesmo recordRejection dos outros motivos.
+async function resolveFibEntry15m({ symbol, direction, signalCandleTime }) {
+  let candles;
+  try {
+    candles = await fetchCandles(symbol, TF_15M, 100);
+  } catch (err) {
+    return { confirmed: false, entryPrice: null, entryCandleTime: null, reason: err?.message ?? 'fetch_error', rejectionReason: 'fib_fetch_error', fib: null };
+  }
+  const plan = planFibEntry({
+    candles15m: candles, direction, signalCloseMs: new Date(signalCandleTime).getTime(), nowMs: Date.now(),
+  });
+  if (plan.status !== 'filled') {
+    return { confirmed: false, entryPrice: null, entryCandleTime: null, reason: plan.reason ?? null, rejectionReason: `fib_${plan.status}`, fib: plan };
+  }
+  return {
+    confirmed: true, entryPrice: plan.entry, entryCandleTime: new Date(plan.fillCandleCloseMs).toISOString(),
+    reason: null, fib: plan,
+  };
+}
+
+/**
+ * @param {Record<string, any>} params
+ * @returns {Promise<Record<string, any>>} confirmação 15m de sempre, ou a de Fibonacci (com `fib` e `rejectionReason`)
+ */
+function resolveEntry4h15m({ signalCandleTime, ...args }) {
+  if (args.pineConfig.fibEntryEnabled === true) {
+    return resolveFibEntry15m({ symbol: args.symbol, direction: args.direction, signalCandleTime });
+  }
+  return resolveEntryConfirmation15m(/** @type {any} */ (args));
+}
+
+// Níveis e regras de saída Fibonacci congelados na operação (item 267). O
+// loop de saída reconhece `exit_mode: 'FIB_FIXED'` e gere a operação em
+// velas de 15m (stepFibExit), sem trailing, saída por RF, chop ou invalidação.
+export function applyFibOverrides(opData, fib) {
+  return Object.assign(opData, {
+    entry_price: fib.entry,
+    initial_stop: fib.stop,
+    current_stop: fib.stop,
+    initial_stop_basis: 'fib_leg_origin',
+    tp1: fib.tp1,
+    tp2: fib.tp2,
+    tp2_cap_disabled: false,
+    partial_percent: 50,
+    runner_percent: 50,
+    exit_mode: 'FIB_FIXED',
+    exit_eval_timeframe: '15m',
+    pre_tp1_stop_protection_enabled: false,
+    fib_planned_entry: fib.plannedEntry ?? fib.entry,
+    fib_leg_origin: fib.leg?.origin ?? null,
+    fib_leg_extreme: fib.leg?.extreme ?? null,
+    fib_leg_delta: fib.leg?.delta ?? null,
+    fib_atr_15m: fib.atr ?? null,
+    fib_bars_waited: fib.barsWaited ?? null,
+    fib_fill_candle_open_ms: fib.fillCandleOpenMs,
+    fib_fill_candle_close_ms: fib.fillCandleCloseMs,
+    fib_last_exit_candle_open_ms: null,
+    fib_tp1_candle_open_ms: null,
+  });
+}
+
+// Gestão de uma operação FIB_FIXED (item 267). Mesmo caminho de mutação de
+// sempre (transitionTradeOp, CAS), uma escrita por passada. Buraco nas velas
+// de 15m LANÇA de propósito: no backtest vira falha de replay e invalida o
+// relatório, em vez de pular uma vela em silêncio. Sem notificação Telegram:
+// esse modo só existe no backtest.
+async function manageFibOp(op, symbol) {
+  const candles = await fetchCandles(symbol, TF_15M, 100);
+  const step = stepFibExit(op, candles, { nowMs: Date.now() });
+  if (step.gap) {
+    throw new Error(`FIB_EXIT_GAP: op ${op.id} esperava a vela de 15m que abre em ${new Date(step.expectedOpenMs).toISOString()}, veio ${new Date(step.gotOpenMs).toISOString()}`);
+  }
+  if (!step.patch) return;
+  const nowIso = new Date().toISOString();
+  const patch = { ...step.patch };
+  if (patch.tp1_hit && !op.tp1_hit) patch.tp1_hit_at = nowIso;
+  if (isTerminalStatus(patch.status)) {
+    patch.closed_at = nowIso;
+    if (patch.status === 'STOP_HIT') patch.stop_hit_at = nowIso;
+    if (patch.status === 'TP2_HIT') patch.tp2_hit_at = nowIso;
+  }
+  const { applied, currentStatus } = await backend.tradeOps.transitionTradeOp(op.id, op.status, patch, { assetId: op.asset_id });
+  if (!applied) {
+    logWarn('scanner', `Transição descartada pelo CAS: op ${op.id} (${op.symbol}) ${op.status}→${patch.status}; status atual ${currentStatus}`, { op_id: op.id, from: op.status, attempted: patch.status, current: currentStatus }, { symbol: op.symbol });
+  }
+}
+
 function resolveEntryConfirmation15m({ symbol, direction, asset, pineConfig, entryPrice, entryCandleTime }) {
   if (pineConfig.skip15mConfirmationEnabled === true) {
     // `reason: null` mantém o shape do retorno igual ao de check15mConfirmation
@@ -1300,7 +1393,9 @@ async function handleActiveOpArbitration({ signal, candidateCascade, activeOp, r
     patch.current_confidence_score = Math.min(100, Math.max(0, base - decision.scorePenalty));
     patch.confidence_penalty_total = (activeOp.confidence_penalty_total ?? 0) + decision.scorePenalty;
     patch.last_opposing_signal_at = now;
-  } else if (decision.action === 'invalidate') {
+  } else if (decision.action === 'invalidate' && activeOp.exit_mode !== 'FIB_FIXED') {
+    // Operação Fibonacci (item 267, backtest-only) só sai pelas próprias
+    // regras de 15m — sinal oposto nunca a invalida.
     patch.status = 'INVALIDATED';
     patch.closed_reason = 'INVALIDATION';
     patch.closed_at = now;
@@ -2663,13 +2758,15 @@ export async function persistScanResults(scanResult) {
               } else {
               // 15m confirmation required — no entry without it (unless
               // pineConfig.skip15mConfirmationEnabled, item 67, bypasses it)
-              const confirmed15m = await resolveEntryConfirmation15m({
+              const confirmed15m = await resolveEntry4h15m({
                 symbol: asset.symbol, direction: signal.signal_type, asset, pineConfig,
                 entryPrice: signal.price_at_signal, entryCandleTime: signal.candle_time,
+                signalCandleTime: signal.candle_time,
               });
 
               if (confirmed15m.confirmed) {
                 const opData = buildTradeOpData(signal, tf4hData, pineConfig, confirmed15m);
+                if (confirmed15m.fib) applyFibOverrides(opData, confirmed15m.fib);
                 if (pineConfig.smcAlignmentScoreEnabled) {
                   opData.smc_alignment_at_entry = computeSmcAlignmentAtEntry(signal.signal_type, tf4hData.smc, signal.context?.smc_align_leg_high, signal.context?.smc_align_leg_low, opData.entry_price);
                 }
@@ -2716,7 +2813,7 @@ export async function persistScanResults(scanResult) {
                 }
               } else {
                 // 15m not aligned — log and wait for retry on next scan
-                entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: 'confirmation_15m_not_aligned' });
+                entryFunnelOutcomes.push({ dedup_key: signal.dedup_key, cascade: '4h_15m', reason: confirmed15m.rejectionReason ?? 'confirmation_15m_not_aligned' });
                 await backend.entities.SystemLog.create({
                   level: 'info',
                   module: 'scanner',
@@ -3264,13 +3361,15 @@ export async function persistScanResults(scanResult) {
     // signal at this point (the trend_reversed guard above already checked
     // it), so it's a safe, causal substitute — same pattern already used by
     // the promotion confirmation above (tf4h.lastClose/lastCandleTime).
-    const confirmed = await resolveEntryConfirmation15m({
+    const confirmed = await resolveEntry4h15m({
       symbol: sig.symbol, direction: sig.signal_type, asset, pineConfig,
       entryPrice: tfData4h.lastClose, entryCandleTime: tfData4h.lastCandleTime,
+      signalCandleTime: sig.candle_time,
     });
-    if (!confirmed.confirmed) { await recordRejection(sig, '4h_15m', 'confirmation_15m_not_aligned', entryFunnelOutcomes, confirmed.reason ?? null); continue; }
+    if (!confirmed.confirmed) { await recordRejection(sig, '4h_15m', confirmed.rejectionReason ?? 'confirmation_15m_not_aligned', entryFunnelOutcomes, confirmed.reason ?? null); continue; }
 
     const opData = buildTradeOpData(sig, tfData4h, pineConfig, confirmed);
+    if (confirmed.fib) applyFibOverrides(opData, confirmed.fib);
     if (pineConfig.smcAlignmentScoreEnabled) {
       opData.smc_alignment_at_entry = computeSmcAlignmentAtEntry(sig.signal_type, tfData4h.smc, sig.context?.smc_align_leg_high, sig.context?.smc_align_leg_low, opData.entry_price);
     }
@@ -3767,6 +3866,13 @@ export async function persistScanResults(scanResult) {
     // this loop needs (RF, ATR, tier) live on the SIGNAL timeframe instead.
     // signal_timeframe is set on every op created from this point forward;
     // legacy ops (pre-dating the field) all came from the 4h/15m cascade.
+    // docs/known-risks.md item 267 — operação Fibonacci (backtest-only):
+    // gerida vela a vela de 15m por stepFibExit, ANTES de qualquer regra da
+    // vela de 4h (trailing, saída por RF, chop, invalidação nunca se aplicam).
+    if (op.exit_mode === 'FIB_FIXED') {
+      await manageFibOp(op, asset.symbol);
+      continue;
+    }
     const tfData = results[op.signal_timeframe || '4h'];
     if (!tfData) continue;
     // Isolated per-operation: a failure updating one op's stop/TP status

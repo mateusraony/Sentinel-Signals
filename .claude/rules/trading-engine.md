@@ -448,6 +448,14 @@ nunca deve receber nova transição.**
   vira uma moeda determinística (`src/lib/seededRandom.js`, causal e
   reproduzível) e o gate `trend_reversed` não filtra o lado sorteado. É a
   referência "mesmas saídas, entradas aleatórias"; desligada, nada muda.
+- **Fibonacci 15m** (`pineConfig.fibEntryEnabled`, item 267) — **BACKTEST-ONLY,
+  desligada por padrão**, com tripwire (`src/lib/fibEntryTripwire.test.js`).
+  - **Entrada:** na cascata 4h_15m, troca a confirmação 15m pelo recuo de
+    Fibonacci da perna de 15m (`src/lib/indicators/fibEntry.js`, puro e causal).
+  - **Saída:** a operação nasce `exit_mode: 'FIB_FIXED'` e é gerida vela a vela de
+    15m por `manageFibOp`, ANTES das regras da vela de 4h. Usa o mesmo
+    `transitionTradeOp`, sem terceiro caminho de mutação.
+  - Desligada, nada muda.
 - **Retry na busca de candle ao vivo** (`src/lib/httpRetry.js`,
   `fetchWithRetry`) — item 57. Causa raiz confirmada do volume baixo de
   operações ao vivo: `src/lib/marketDataProvider.js` (browser) e

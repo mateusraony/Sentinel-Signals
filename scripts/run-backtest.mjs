@@ -57,6 +57,7 @@ import { createHash } from 'node:crypto';
 import { runBacktest } from '../src/lib/backtestEngine.js';
 import { analyzeReport, opsFromReport } from '../src/lib/backtestAnalysis.js';
 import { diagnoseStopGaps } from '../src/lib/stopGapDiagnostic.js';
+import { summarizeFibEntry } from '../src/lib/fibEntryReport.js';
 import { ZERO_COST, tradesForCIHalfWidth } from '../src/lib/tradeMetrics.js';
 import { backend } from '@/api/entities';
 import { setPineConfigOverrides, getPineConfig } from './backtestPineConfig.js';
@@ -402,6 +403,18 @@ async function main() {
     bucket.byReason[reason] = (bucket.byReason[reason] || 0) + 1;
   }
   report.signalExpiry = signalExpiry;
+
+  // docs/known-risks.md item 267 — só com o modo Fibonacci ligado: quantos
+  // sinais preencheram, por que os outros não, e como as operações saíram.
+  if (effectivePineConfig.fibEntryEnabled === true) {
+    report.fibEntry = summarizeFibEntry({
+      signals: await backend.entities.SignalEvent.filter({}),
+      ops: await backend.entities.TradeOperation.filter({}),
+      fromMs: signalExpiryFromMs,
+      toMs: signalExpiryToMs,
+    });
+    console.log('[backtest] fibEntry (item 267):', report.fibEntry);
+  }
 
   // Item 260 — junta a integridade dos ARQUIVOS à do REPLAY (runBacktest)
   // numa seção só; `valid` passa a cobrir as duas. getLoadedSeries inclui as

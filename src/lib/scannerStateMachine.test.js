@@ -6252,3 +6252,132 @@ describe('entrada aleatória — gate de tendência dispensado (randomEntryEnabl
     expect(ops[0].side).toBe('SELL');
   });
 });
+
+// docs/known-risks.md item 267 — modo Fibonacci 15m (backtest-only). Contra as
+// funções REAIS do scanner: a 1ª passada fica pendente, o retry preenche só na
+// vela em que o recuo acontece, a operação nasce FIB_FIXED com os níveis da
+// perna e é gerida vela a vela de 15m. Chave desligada = caminho de sempre.
+describe('Fibonacci 15m — entrada no recuo e gestão em 15m (fibEntryEnabled, item 267)', () => {
+  afterEach(() => { fetchCandles.mockReset(); });
+
+  const M15 = 15 * 60 * 1000;
+  const SIGNAL_CLOSE_ISO = '2026-07-16T07:59:59.999Z';
+  const SIGNAL_CLOSE = Date.parse(SIGNAL_CLOSE_ISO);
+  const FIRST_PRE_OPEN = SIGNAL_CLOSE + 1 - 33 * M15;
+  const bar = (openMs, [o, h, l, c]) => ({ openTime: openMs, closeTime: openMs + M15 - 1, open: o, high: h, low: l, close: c, isClosed: true });
+  // Perna de compra: mínima 100 (vela 5), máxima 110 (vela 30), topo acima de E depois.
+  const preCandles = () => Array.from({ length: 33 }, (_, i) => {
+    let mid = i <= 5 ? 104 - i * 0.7 : 100.5 + ((i - 6) * 8.5) / 23;
+    if (i > 30) mid = 109.5;
+    if (i === 5) return bar(FIRST_PRE_OPEN + i * M15, [100.5, 101, 100, 100.5]);
+    if (i === 30) return bar(FIRST_PRE_OPEN + i * M15, [109.5, 110, 109, 109.5]);
+    return bar(FIRST_PRE_OPEN + i * M15, [mid, mid + 0.3, mid - 0.3, mid]);
+  });
+  const post = (k, ohlc) => bar(SIGNAL_CLOSE + 1 + k * M15, ohlc);
+  // E = 110 − 0,618×10 = 103,82.
+  const FILL = [108, 108.2, 103.5, 104.5];
+  // O mock devolve só velas FECHADAS até o relógio (como sliceClosedAsOf no backtest).
+  const serve = (candles) => fetchCandles.mockImplementation(async () => candles.filter((c) => c.closeTime <= Date.now()));
+  const cfg = (overrides = {}) => makePineConfig({ useADX: false, useChop: false, fibEntryEnabled: true, ...overrides });
+  const buySignal = () => ({
+    symbol: 'BTCUSDT', asset_id: 'asset1', signal_type: 'BUY',
+    timeframe: '4h', source: 'range_filter', dedup_key: 'sig_fib',
+    price_at_signal: 109.5, candle_time: SIGNAL_CLOSE_ISO, context: { score: 0 },
+  });
+  const seedSignal = () => backend._seed('SignalEvent', { id: 'sig_fib', ...buySignal(), created_date: '2026-07-16T08:00:00.000Z' });
+
+  it('1ª passada: sem vela depois do sinal → pendente, nenhuma operação', async () => {
+    vi.setSystemTime(new Date(SIGNAL_CLOSE + 1));
+    serve(preCandles());
+    const out = await persistScanResults({ ...makeScanResult({ results: { '4h': makeTfData() }, pineConfig: cfg() }), newSignals: [buySignal()] });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+    expect(out.entryFunnelOutcomes.map((o) => o.reason)).toContain('fib_pending');
+  });
+
+  it('retry: preenche na vela do recuo → operação FIB_FIXED com os níveis da perna', async () => {
+    seedSignal();
+    const fill = post(0, FILL);
+    vi.setSystemTime(new Date(fill.closeTime + 1));
+    serve([...preCandles(), fill]);
+    await persistScanResults({ ...makeScanResult({ results: { '4h': makeTfData() }, pineConfig: cfg() }), newSignals: [] });
+    const ops = await backend.entities.TradeOperation.filter({});
+    expect(ops).toHaveLength(1);
+    const op = ops[0];
+    expect(op.exit_mode).toBe('FIB_FIXED');
+    expect(op.exit_eval_timeframe).toBe('15m');
+    expect(op.entry_price).toBeCloseTo(103.82, 10);
+    expect(op.tp1).toBeCloseTo(112.72, 10);
+    expect(op.tp2).toBeCloseTo(116.18, 10);
+    expect(op.initial_stop).toBeLessThan(100);
+    expect(op.partial_percent).toBe(50);
+    expect(op.pre_tp1_stop_protection_enabled).toBe(false);
+    expect(op.entry_candle_time_15m).toBe(new Date(fill.closeTime).toISOString());
+    expect(op.fib_fill_candle_open_ms).toBe(fill.openTime);
+  });
+
+  it('retry depois de uma passada perdida: fill_missed, nunca entra no passado', async () => {
+    seedSignal();
+    const after = post(1, [104.5, 105, 104, 104.8]);
+    vi.setSystemTime(new Date(after.closeTime + 1));
+    serve([...preCandles(), post(0, FILL), after]);
+    await persistScanResults({ ...makeScanResult({ results: { '4h': makeTfData() }, pineConfig: cfg() }), newSignals: [] });
+    expect(await backend.entities.TradeOperation.filter({})).toHaveLength(0);
+    const [sig] = await backend.entities.SignalEvent.filter({});
+    expect(sig.last_rejection_reason).toBe('fib_fill_missed');
+  });
+
+  it('chave desligada: o mesmo retry confirma pelo caminho de sempre (sem campos Fib)', async () => {
+    seedSignal();
+    vi.setSystemTime(new Date(post(0, FILL).closeTime + 1));
+    await persistScanResults({ ...makeScanResult({ results: { '4h': makeTfData() }, pineConfig: cfg({ fibEntryEnabled: false, skip15mConfirmationEnabled: true }) }), newSignals: [] });
+    const [op] = await backend.entities.TradeOperation.filter({});
+    expect(op.exit_mode).toBe('HYBRID_RF_ATR');
+    expect(op.fib_fill_candle_open_ms).toBeUndefined();
+    expect(fetchCandles).not.toHaveBeenCalled();
+  });
+
+  const seedFibOp = (over = {}) => backend._seed('TradeOperation', {
+    id: 'op_fib', symbol: 'BTCUSDT', asset_id: 'asset1', side: 'BUY', status: 'SIGNAL_CONFIRMED',
+    signal_timeframe: '4h', cascade: '4h_15m', exit_mode: 'FIB_FIXED', exit_eval_timeframe: '15m',
+    entry_price: 103.82, initial_stop: 99.9, current_stop: 99.9, tp1: 112.72, tp2: 116.18,
+    tp1_hit: false, tp2_hit: false, tp2_cap_disabled: false, partial_percent: 50, runner_percent: 50,
+    pre_tp1_stop_protection_enabled: false, tier_time_stop_bars: 48,
+    fib_fill_candle_open_ms: SIGNAL_CLOSE + 1, fib_fill_candle_close_ms: SIGNAL_CLOSE + M15,
+    fib_last_exit_candle_open_ms: SIGNAL_CLOSE + 1, fib_tp1_candle_open_ms: null,
+    entry_candle_time_15m: new Date(SIGNAL_CLOSE + M15).toISOString(), candle_close_time: SIGNAL_CLOSE_ISO,
+    ...over,
+  });
+
+  it('gestão em 15m: TP1 → runner com stop na entrada (sem trailing de 4h); depois breakeven', async () => {
+    seedFibOp();
+    const tp1Bar = post(1, [105, 113, 104.5, 112]);
+    vi.setSystemTime(new Date(tp1Bar.closeTime + 1));
+    serve([post(0, FILL), tp1Bar]);
+    // A vela de 4h diria stop (mínima 50) — operação Fib não usa a vela de 4h.
+    const tf = makeTfData({ lastCandleHigh: 200, lastCandleLow: 50, lastClose: 150 });
+    await persistScanResults({ ...makeScanResult({ results: { '4h': tf }, pineConfig: cfg() }), newSignals: [] });
+    let op = backend._get('TradeOperation', 'op_fib');
+    expect(op.status).toBe('RUNNER_ACTIVE');
+    expect(op.current_stop).toBe(103.82);
+    expect(op.tp1_hit).toBe(true);
+    expect(op.fib_last_exit_candle_open_ms).toBe(tp1Bar.openTime);
+
+    const beBar = post(2, [112, 112.5, 103.5, 104]);
+    vi.setSystemTime(new Date(beBar.closeTime + 1));
+    serve([post(0, FILL), tp1Bar, beBar]);
+    await persistScanResults({ ...makeScanResult({ results: { '4h': tf }, pineConfig: cfg() }), newSignals: [] });
+    op = backend._get('TradeOperation', 'op_fib');
+    expect(op.status).toBe('STOP_HIT');
+    expect(op.exit_price).toBe(103.82);
+    expect(op.stop_hit_at).toBeTruthy();
+  });
+
+  it('buraco nas velas de 15m derruba a passada (FIB_EXIT_GAP), nunca pula vela em silêncio', async () => {
+    seedFibOp();
+    const late = post(3, [105, 106, 104.5, 105]);
+    vi.setSystemTime(new Date(late.closeTime + 1));
+    serve([post(0, FILL), late]);
+    await expect(persistScanResults({ ...makeScanResult({ results: { '4h': makeTfData() }, pineConfig: cfg() }), newSignals: [] }))
+      .rejects.toThrow(/FIB_EXIT_GAP/);
+  });
+});

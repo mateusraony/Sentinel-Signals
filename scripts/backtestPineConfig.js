@@ -368,6 +368,14 @@ const DEFAULTS = {
   randomEntryEnabled: false,
   randomEntrySeed: 1,
   randomEntryProb: 0.0075,
+  // docs/known-risks.md item 267 — BACKTEST-ONLY, tripwire em
+  // src/lib/fibEntryTripwire.test.js. Ligada, a cascata nativa 4h_15m troca a
+  // confirmação 15m por uma entrada no recuo de Fibonacci da perna de 15m
+  // (src/lib/indicators/fibEntry.js: entrada 0,618, stop além da origem,
+  // TP1 1,272, TP2 1,618), e a operação passa a ser gerida vela a vela de 15m
+  // (exit_mode 'FIB_FIXED'). Regras pré-registradas no item 267. Existe só
+  // para MEDIR; OFF = byte-idêntico a hoje.
+  fibEntryEnabled: false,
 };
 
 let overrides = {};

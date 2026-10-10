@@ -61,6 +61,7 @@ function metricsOf(report) {
     seed: report.reproducibility?.pineConfig?.randomEntrySeed ?? null,
     n: report.costs?.countedTrades ?? o.counted ?? null,
     expectancyR: report.costs?.netExpectancyR ?? o.expectancyR ?? null,
+    grossExpectancyR: report.costs?.grossExpectancyR ?? o.grossExpectancyR ?? null,
     sdR: o.expectancyRSd ?? null,
     profitFactor: o.profitFactor ?? null,
     winRate: o.winRate ?? null,
@@ -183,6 +184,13 @@ export function summarizeRandomBaseline(control, randoms, { alpha = 0.025, expec
 
   const c = metricsOf(control);
   const rs = randoms.map(metricsOf);
+  // Item 267 — com a Fibonacci ligada, a regra de recuo filtra entradas dos
+  // dois lados, e o número de operações pode divergir muito entre o controle
+  // e as seeds; isso muda a dispersão da distribuição. Aviso, não recusa.
+  const medianSeedN = distribution(rs.map((r) => r.n)).p50;
+  if (Number.isFinite(c.n) && c.n > 0 && Number.isFinite(medianSeedN) && Math.abs(medianSeedN - c.n) / c.n > 0.3) {
+    uniqueWarnings.push(`mediana de operações das seeds (${medianSeedN}) fora de ±30% do controle (${c.n}) — compare com cuidado`);
+  }
   const expectancy = rankAgainst(c.expectancyR, rs.map((r) => r.expectancyR));
   let verdict;
   if (!expectancy) verdict = 'nao_calculavel';
@@ -197,6 +205,10 @@ export function summarizeRandomBaseline(control, randoms, { alpha = 0.025, expec
     warnings: uniqueWarnings,
     alpha,
     window: { from: range.from ?? null, to: range.to ?? null },
+    commitSha: control.reproducibility?.commitSha ?? null,
+    // Item 267: modo Fibonacci 15m ligado em TODOS os braços (a checagem de
+    // config acima já garante que controle e seeds concordam).
+    fibEntry: control.reproducibility?.pineConfig?.fibEntryEnabled === true,
     control: c,
     randomSeeds: rs.length,
     random: {
@@ -212,7 +224,7 @@ export function summarizeRandomBaseline(control, randoms, { alpha = 0.025, expec
     },
     verdict,
     buyAndHold: seriesBySymbol ? buyAndHold(seriesBySymbol, { fromMs: range.fromMs, toMs: range.toMs }) : null,
-    seeds: rs.map((r) => ({ seed: r.seed, n: r.n, expectancyR: r.expectancyR, sdR: r.sdR, equityMaxDrawdownPct: r.equityMaxDrawdownPct }))
+    seeds: rs.map((r) => ({ seed: r.seed, n: r.n, expectancyR: r.expectancyR, grossExpectancyR: r.grossExpectancyR, sdR: r.sdR, equityMaxDrawdownPct: r.equityMaxDrawdownPct }))
       .sort((a, b) => a.seed - b.seed),
   };
 }
@@ -230,6 +242,9 @@ export function formatRandomBaselineMarkdown(s) {
   if (!s.comparable) {
     lines.push('**Resumo recusado:**', '', ...s.errors.map((e) => `- ${e}`), '');
     return lines.join('\n');
+  }
+  if (s.fibEntry) {
+    lines.push('**Modo Fibonacci 15m ligado em todos os braços (item 267):** o controle é a RF + Fibonacci; as seeds são sorteio + Fibonacci (mesma entrada no recuo, mesmo stop e mesmos alvos).', '');
   }
   if (s.warnings.length) lines.push('Avisos:', '', ...s.warnings.map((w) => `- ${w}`), '');
   const d = s.random.expectancyR;

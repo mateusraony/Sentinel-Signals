@@ -75,7 +75,8 @@ export function diagnoseStopGaps(ops, { seriesFor, countedOps } = {}) {
     if (!Number.isFinite(risk) || risk <= 0) { markUnresolved('no_initial_risk'); continue; }
     const exit = getExitPrice(op);
     if (!Number.isFinite(exit)) { markUnresolved('no_exit_price'); continue; }
-    const timeframe = op.signal_timeframe || '4h';
+    // Operação Fibonacci (item 267) sai em vela de 15m, não na do sinal.
+    const timeframe = op.exit_eval_timeframe || op.signal_timeframe || '4h';
     const found = findCandleByCloseTime(seriesFor?.(op.symbol, timeframe), closeMs);
     if (!found || !Number.isFinite(found.candle.open)) { markUnresolved('candle_not_found'); continue; }
 
