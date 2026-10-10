@@ -212,7 +212,8 @@ export function summarizeRandomBaseline(control, randoms, { alpha = 0.025, expec
     },
     verdict,
     buyAndHold: seriesBySymbol ? buyAndHold(seriesBySymbol, { fromMs: range.fromMs, toMs: range.toMs }) : null,
-    seeds: rs.map((r) => ({ seed: r.seed, n: r.n, expectancyR: r.expectancyR })).sort((a, b) => a.seed - b.seed),
+    seeds: rs.map((r) => ({ seed: r.seed, n: r.n, expectancyR: r.expectancyR, sdR: r.sdR, equityMaxDrawdownPct: r.equityMaxDrawdownPct }))
+      .sort((a, b) => a.seed - b.seed),
   };
 }
 
@@ -253,6 +254,20 @@ export function formatRandomBaselineMarkdown(s) {
         + (s.buyAndHold.lateSymbols.length ? ` — começaram depois do início: ${s.buyAndHold.lateSymbols.join(', ')}` : ''),
       `Conta simulada do controle: retorno ${f(s.control.equityReturnPct, 2)}%, drawdown ${f(s.control.equityMaxDrawdownPct, 2)}%. `
         + 'Exposições diferentes (100% investido × 1% de risco por operação) — não compare os números diretamente.',
+      '',
+    );
+  }
+  // Todas as seeds no próprio resumo do job (recolhível): dá para conferir a
+  // distribuição inteira sem baixar artifact nenhum.
+  if (s.seeds?.length) {
+    lines.push(
+      '<details><summary>Cada seed aleatória (expectância, sd, drawdown da conta, operações)</summary>',
+      '',
+      '| Seed | Expectância (R) | sd(R) | Drawdown (%) | Operações |',
+      '|---|---|---|---|---|',
+      ...s.seeds.map((x) => `| ${x.seed} | ${f(x.expectancyR)} | ${f(x.sdR)} | ${f(x.equityMaxDrawdownPct, 2)} | ${x.n ?? '—'} |`),
+      '',
+      '</details>',
       '',
     );
   }

@@ -144,10 +144,17 @@ describe('summarizeRandomBaseline', () => {
 
   it('o texto mostra percentil e veredito; recusado não traz número de resultado', () => {
     const ok = summarizeRandomBaseline(report(0), seedsWith(Array.from({ length: 40 }, (_, i) => i * 0.01)));
-    expect(formatRandomBaselineMarkdown(ok)).toMatch(/Percentil do controle/);
+    const okMd = formatRandomBaselineMarkdown(ok);
+    expect(okMd).toMatch(/Percentil do controle/);
+    // Todas as seeds no bloco recolhível, em ordem (40 linhas de tabela).
+    expect(okMd).toMatch(/<details><summary>Cada seed aleatória/);
+    expect(okMd).toMatch(/\| 1 \| 0\.0000 \| 1\.0000 \| 10\.00 \| 100 \|/);
+    expect(okMd).toMatch(/\| 40 \| 0\.3900 \|/);
+    expect(ok.seeds).toHaveLength(40);
     const refused = summarizeRandomBaseline(report(0), seedsWith([0, 0]));
     const md = formatRandomBaselineMarkdown(refused);
     expect(md).toMatch(/Resumo recusado/);
     expect(md).not.toMatch(/Percentil/);
+    expect(md).not.toMatch(/<details>/);
   });
 });
