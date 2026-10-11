@@ -285,8 +285,8 @@ plano de sessão morre com a sessão.
 > combinada. Reabre só com ≥ 12 meses de dado novo ou um tipo de dado novo.
 > **Item 267 (2026-10-10):** teste pré-registrado da entrada/saída por
 > Fibonacci no 15m (pedido do usuário), só backtest. **Encerrado (2026-10-11):
-> as saídas Fib foram piores que as atuais nas duas janelas — o stop não era o
-> problema.**
+> o pacote Fibonacci foi pior que a gestão atual nas duas janelas. O efeito
+> isolado do stop não foi testado.**
 
 ## A regra que ordena tudo: amostra
 

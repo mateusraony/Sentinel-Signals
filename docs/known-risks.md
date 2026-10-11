@@ -31561,8 +31561,8 @@ assim, contra a minha recomendação):**
 - **Produção intocada.** Nenhuma chave entra em `pineParser.js`/`adminPineConfig.js`.
   Operação FIB_FIXED só nasce no backtest.
 
-**Resultado (2026-10-11): saídas por Fibonacci PIORES que as atuais; o primário ficou
-INCONCLUSIVO por amostra. Fibonacci encerrada.**
+**Resultado (2026-10-11): o pacote Fibonacci (entrada no recuo + stop curto + alvos) foi
+PIOR que a gestão atual; o primário ficou INCONCLUSIVO por amostra. Fibonacci encerrada.**
 - **Rastro:**
   - 4 resumos do workflow "Backtest — referência de entrada aleatória", commit `fe4d4bb`;
   - famílias `FibTest_W1_atual`, `FibTest_W1_fib`, `FibTest_W2_atual` e `FibTest_W2_fib`;
@@ -31579,8 +31579,9 @@ INCONCLUSIVO por amostra. Fibonacci encerrada.**
   - Uma janela muito boa e outra muito ruim, com n minúsculo, é o retrato do ruído.
   - O R0-Fib entra pouco porque os gates de regime da RF seguem ligados no R0 e o recuo
     nem sempre vem. Os sorteios-Fib fizeram ~28 operações por janela.
-- **Secundário — as saídas Fib são PIORES, nas duas janelas** (sorteio-Fib ×
-  sorteio-atual, pareado por seed, teste do sinal):
+- **Secundário — o pacote Fib é PIOR, nas duas janelas** (sorteio-Fib × sorteio-atual,
+  pareado por seed, teste do sinal; as seeds igualam os sinais candidatos, não as
+  operações executadas):
 
   | Janela | Líquido: Fib pior em | Diferença mediana | p | Bruto: Fib pior em | p bruto |
   |---|---|---|---|---|---|
@@ -31592,8 +31593,17 @@ INCONCLUSIVO por amostra. Fibonacci encerrada.**
   - A diferença entre bruto e líquido vai de ~0,045R por operação, com as saídas atuais,
     para ~0,2–0,3R com a Fib.
   - Mesmo antes do custo, a Fib não é melhor: empata em W1 e perde em W2.
-- **Resposta à pergunta do usuário ("o problema é o stop?"):** não. Apertar o stop com a
-  Fibonacci piorou o resultado. Com as mesmas entradas, o stop largo atual rende mais.
+- **Resposta à pergunta do usuário ("o problema é o stop?") — com a ressalva certa:**
+  - O que o teste mostra: o **pacote** Fibonacci inteiro foi pior que o atual. O pacote é
+    entrada adiada até o recuo, sinais descartados quando o recuo não vem, preço de
+    entrada diferente, stop curto e alvos nas extensões.
+  - O teste **não isola o stop**. Parear as seeds só iguala os sinais candidatos; as
+    operações executadas diferem entre os braços (review do Codex, PR #487).
+  - "O stop largo é melhor que o curto **para as mesmas entradas**" continua **não
+    testado**. Só um teste que mude apenas a saída responderia isso.
+  - O que aponta para o stop curto como causa principal é indício, não prova isolada: o
+    custo em R ~5× maior, com o bruto empatando (W1) ou perdendo (W2).
+  - Responde com segurança: trocar a gestão atual pela Fibonacci 15m não resolve; piora.
 - **Decisão:** Fibonacci encerrada; nada vai para a produção.
   - Não reabrir com outros níveis (0,5/0,786), outro tempo gráfico (5m) ou outros alvos
     sobre estes dados. Seria buscar parâmetro depois de ver o resultado.
