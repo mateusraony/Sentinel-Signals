@@ -1,0 +1,21 @@
+{
+  "name": "vol-sizing-269",
+  "item": "docs/known-risks.md item 269",
+  "registeredAt": "2026-10-11",
+  "note": "Pré-registro congelado ANTES de qualquer rodada real. Mudar qualquer campo depois de ver resultado invalida o experimento; scripts/volSizing.test.mjs trava estes valores.",
+  "windows": [
+    { "label": "W1", "from": "2025-10-10", "to": "2026-10-10" },
+    { "label": "W2", "from": "2024-07-27", "to": "2025-07-27" }
+  ],
+  "symbols": ["BTCUSDT", "ETHUSDT", "FETUSDT", "PENDLEUSDT", "ZROUSDT", "DYDXUSDT", "PAXGUSDT"],
+  "nSeeds": 40,
+  "randomProb": 0.0075,
+  "lookbackDays": 20,
+  "refDays": 365,
+  "minRefDays": 180,
+  "weightClamp": [0.5, 2],
+  "clusterBy": "entryMonthUTC",
+  "alpha": 0.025,
+  "minEffectR": 0.05,
+  "predictedSdRatio": 1.06
+}

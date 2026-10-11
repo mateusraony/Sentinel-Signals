@@ -291,6 +291,9 @@ plano de sessão morre com a sessão.
 > Liu & Tsyvinski), fora da amostra do paper. **Encerrado (2026-10-11): indício
 > na direção do paper (carteira p 0,041, menor queda), mas não passou no Holm
 > (limiar 0,0125).** Depois: tamanho de posição pela volatilidade (item 269).
+> **Item 269 (2026-10-11):** teste pré-registrado de tamanho de posição pela
+> volatilidade sobre a estratégia atual (só análise de backtest; chance
+> honesta baixa) — resultado pendente.
 
 ## A regra que ordena tudo: amostra
 

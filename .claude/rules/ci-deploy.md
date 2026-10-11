@@ -212,6 +212,10 @@ paths:
     TODOS os braços, R0 incluído. Desmarcada, o comportamento é o do item 264.
   - **Comparação pareada:** `scripts/compare-random-baselines.mjs` compara
     os resumos com e sem a caixa marcada.
+  - **Caixa "Tamanho pela volatilidade"** (`vol_sizing`, item 269): não muda
+    nenhum braço. Só acrescenta, no job de resumo, `scripts/vol-sizing.mjs`
+    sobre os mesmos relatórios, e publica `resumo-vol-sizing-<família>`. Não pode
+    ser marcada junto com a Fibonacci.
 
 - `pattern-lab.yml` — disparo **manual**, sem campos: laboratório de padrões
   (`docs/known-risks.md` item 266).
