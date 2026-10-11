@@ -56,6 +56,14 @@ on:
         description: "Fibonacci 15m em TODOS os braços (item 267) — marque só no teste da Fibonacci"
         type: boolean
         default: false
+      vol_sizing:
+        # docs/known-risks.md item 269 — NÃO muda nenhum braço: só acrescenta,
+        # no fim, a análise do tamanho de posição pela volatilidade sobre os
+        # mesmos relatórios (scripts/vol-sizing.mjs) e o arquivo
+        # resumo-vol-sizing-<família>. Desmarcado = exatamente o de antes.
+        description: "Tamanho pela volatilidade (item 269) — marque só no teste do tamanho"
+        type: boolean
+        default: false
 
 jobs:
   prepare:
@@ -84,9 +92,10 @@ jobs:
           RANDOM_PROB: ${{ inputs.random_prob }}
           FAMILY: ${{ inputs.family }}
           FIB_ENTRY: ${{ inputs.fib_entry }}
+          VOL_SIZING: ${{ inputs.vol_sizing }}
         run: |
           node -e "
-            const { FROM_INPUT, TO_INPUT, N_SEEDS, RANDOM_PROB, FAMILY, FIB_ENTRY } = process.env;
+            const { FROM_INPUT, TO_INPUT, N_SEEDS, RANDOM_PROB, FAMILY, FIB_ENTRY, VOL_SIZING } = process.env;
             const fail = (m) => { console.error('::error::' + m); process.exit(1); };
             for (const [k, v] of [['from', FROM_INPUT], ['to', TO_INPUT]]) {
               if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '') || Number.isNaN(Date.parse(v))) fail(k + ' precisa ser uma data YYYY-MM-DD, recebeu: ' + v);
@@ -98,7 +107,9 @@ jobs:
             if (!(p > 0 && p < 1)) fail('random_prob precisa estar entre 0 e 1, recebeu: ' + RANDOM_PROB);
             if (!/^[A-Za-z0-9_.-]{1,60}$/.test(FAMILY || '')) fail('family: só letras, números, _ . - (até 60), recebeu: ' + FAMILY);
             if (FIB_ENTRY !== 'true' && FIB_ENTRY !== 'false') fail('fib_entry precisa ser true ou false, recebeu: ' + FIB_ENTRY);
-            console.log('Fibonacci 15m em todos os braços:', FIB_ENTRY);
+            if (VOL_SIZING !== 'true' && VOL_SIZING !== 'false') fail('vol_sizing precisa ser true ou false, recebeu: ' + VOL_SIZING);
+            if (VOL_SIZING === 'true' && FIB_ENTRY === 'true') fail('vol_sizing mede a estratégia ATUAL — desmarque a Fibonacci');
+            console.log('Fibonacci 15m em todos os braços:', FIB_ENTRY, '· tamanho pela volatilidade:', VOL_SIZING);
             const arms = ['R0', ...Array.from({ length: n }, (_, i) => String(i + 1))];
             require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'arms=' + JSON.stringify(arms) + '\n');
             console.log('Braços:', arms.length, '(R0 + ' + n + ' seeds)');
@@ -250,6 +261,24 @@ jobs:
               --data-dir candles \
               --json random-baseline-summary.json
           } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Item 269 — roda mesmo se o resumo acima recusar: a análise faz a
+      # própria checagem de comparabilidade e diz INCOMPLETE em vez de calar.
+      - name: Tamanho pela volatilidade (item 269)
+        if: ${{ !cancelled() && inputs.vol_sizing }}
+        run: |
+          set -o pipefail
+          node scripts/vol-sizing.mjs --reports reports --candles candles --json vol-sizing-summary.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload do resumo do tamanho pela volatilidade
+        if: ${{ always() && inputs.vol_sizing }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: resumo-vol-sizing-${{ inputs.family }}
+          path: vol-sizing-summary.json
+          retention-days: 30
+          if-no-files-found: warn
 
       # O arquivo para ENVIAR (pedido do usuário, item 264): só o resumo em
       # JSON — R0, todas as seeds, distribuição, comprar-e-segurar —, poucos

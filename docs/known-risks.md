@@ -31743,3 +31743,91 @@ teste faltando.
 - **Ledger:** não se aplica. `backtest-trial-registry` exige expectância em R, mesmo caso do
   item 266.
 - **Próximo:** fase 2, tamanho de posição pela volatilidade (item 269).
+
+## 269. Tamanho de posição pela volatilidade — teste pré-registrado (2026-10-11)
+
+**Por quê:**
+- Fase 2 do pedido do usuário ("os dois, um depois do outro"), depois do item 268.
+- Pergunta: aumentar a mão quando o mercado está calmo e diminuir quando está agitado
+  melhora a estratégia atual?
+- Nada aqui toca o motor ou a produção. É uma análise sobre os relatórios do workflow de
+  entradas aleatórias.
+
+**O que a pesquisa e a revisão crítica mudaram ANTES de codar:**
+- **O sistema já dimensiona pela volatilidade.** Risco fixo de 1% (`src/lib/equityCurve.js`)
+  com stop de 2–3 × ATR(4h) significa posição ∝ 1/volatilidade de curto prazo, que é o
+  "volatility targeting" de Harvey et al. 2018. O que sobra testar é só o **timing de
+  regime**: σ de 20 dias contra a de 1 ano. Isso equivale a ponderar pela variância
+  (Moreira & Muir 2017).
+- Cederburg et al. (JFE 2020) mostraram que a ponderação pela variância **não bate** a
+  carteira original fora da amostra em 103 estratégias. **Chance honesta: baixa.**
+- **Com expectância ≈ 0, mudar o tamanho não cria dinheiro.** Só ganha se as operações em
+  regime calmo tiverem R melhor.
+- **Previsão mecânica, registrada antes:** com risco médio igual, o desvio por operação
+  sobe ~6% (razão ~1,06), não cai. O stop em ATR já iguala o tamanho do R.
+- **As 40 seeds não são replicações independentes:** atravessam o mesmo caminho de preço.
+  Um teste do sinal entre seeds aprovaria por acaso ~25% das vezes.
+- **A nula de deslocamento circular (a do item 268) foi medida aqui e reprovada.** Com
+  regimes de volatilidade de 1–3 meses há poucos deslocamentos efetivamente diferentes, e
+  ela deu p ≤ 0,025 em 7,2% das rodadas de puro ruído (200 simulações; deveria ser 2,5%).
+  Substituída pelo teste abaixo.
+
+**Pré-registro** (`docs/experiments/vol-sizing-prereg.json`, travado por
+`scripts/volSizing.test.mjs`):
+- **Peso por operação:**
+  - w = clamp(σ_ref / σ_20d, 0,5, 2);
+  - σ_20d é o desvio dos últimos 20 retornos diários fechados **antes** do dia da entrada;
+  - σ_ref é a mediana de σ_20d nos 365 dias anteriores. Com menos de 180 dias de
+    referência (moeda nova), w = 1.
+  - Os pesos são normalizados para média 1 em cada braço, para o risco médio ser igual.
+- **Estatística:** T = média(w̃·R) − média(R), em R por operação, média entre o R0 e as 40
+  seeds.
+  - Como Σ(w̃ − 1) = 0 em cada braço, sob a hipótese nula E[T] = 0, qualquer que seja o R
+    médio.
+- **Inferência:** t de Student unicaudal sobre as **somas mensais** das contribuições
+  (mês da entrada; todos os braços e moedas juntos). São ~26 meses nas duas janelas, com
+  G − 1 graus de liberdade (`studentTCritical95`, reaproveitada de
+  `backtest-correlation-check.mjs`).
+- **Janelas:** W1 2025-10-10→2026-10-10 e W2 2024-07-27→2025-07-27, as mesmas dos itens
+  263–267 (ressalva: já vistas). Moedas, 40 seeds e probabilidade 0,0075 iguais ao item 264.
+- **Passa (`VOLSIZING_EDGE`) só com as quatro condições:**
+  1. t ≥ limiar (unicaudal 2,5%);
+  2. T ≥ +0,05R por operação, ~+5% ao ano com 1% de risco;
+  3. T > 0 em cada janela;
+  4. T do R0 > 0 em cada janela.
+- **Caso contrário:** `NO_VOLSIZING_EDGE`. Vira `INCOMPLETE` com seed faltando, janela fora
+  do pré-registro, moeda negociada sem vela diária, buraco nas velas no dia da entrada,
+  Fibonacci ligada ou outra probabilidade.
+- **Descritivo, sem decidir nada:**
+  - razão de desvio e de perda nos 5% piores (CVaR), com peso e sem peso;
+  - queda máxima do R0 em R;
+  - operações abertas ao mesmo tempo × soma dos pesos;
+  - peso por moeda.
+
+**Erro e poder, medidos antes em dado sintético** (`scripts/__fixtures__/volSizingSynth.mjs`:
+regimes de volatilidade de 30–90 dias, 41 braços × ~100 operações por janela):
+
+| Cenário | Só a parte do t | Regra completa |
+|---|---|---|
+| Ruído puro | 5/200 (2,5%) | 0/200 |
+| Ruído + meses bons/ruins comuns a todos (±0,4R, blocos de 20–80 dias) | 13/200 | 0/200 |
+| Idem com ±0,8R | 20/200 | 0/200 |
+| Idem com ±0,4R + 80% do resultado comum às seeds na mesma moeda e bloco de 3 dias | 8/200 | 0/200 |
+| Efeito plantado, T ≈ 0,03R | 100/100 | 0/100 (abaixo do piso, por desenho) |
+| Efeito plantado, T ≈ 0,06R | 100/100 | 74/100 (63/100 com os adversários) |
+| Efeito plantado, T ≈ 0,09R | 100/100 | 97/100 |
+| Efeito plantado, T ≈ 0,16R | 100/100 | 100/100 |
+
+- **Leitura honesta:**
+  - Quando os resultados têm meses bons e ruins persistentes, o t sozinho é otimista
+    (até 10% de alarme falso no cenário extremo).
+  - Quem segura o erro da regra completa é o piso de 0,05R junto com a consistência nas
+    duas janelas e no R0: 0 alarme falso em 800 rodadas adversárias.
+  - O teste só enxerga efeitos de ~0,06R por operação ou mais.
+
+**Como rodar:** workflow "Backtest — referência de entrada aleatória", com a caixa
+"Tamanho pela volatilidade" marcada, uma vez para cada janela, mais as datas e a família.
+Cada rodada publica `resumo-vol-sizing-<família>`. O veredito sai juntando os dois:
+`node scripts/vol-sizing.mjs --combine W1.json W2.json`.
+
+**Resultado:** pendente.
