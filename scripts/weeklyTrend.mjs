@@ -7,9 +7,11 @@
 // se não, fica de fora. Custo por lado a cada troca.
 //
 // Hipótese nula: deslocamento circular COMUM k das posições em relação aos
-// retornos (k mod janela de cada moeda). Preserva exposição e número de trocas
-// — o custo fica igual — e quebra só o momento. Todo k em [mín, n−mín] é
-// enumerado: p exato, sem seed.
+// retornos — o MESMO k para todas as moedas do teste (review do Codex, PR
+// #488), por isso k vai de mín a (n da série mais curta − mín). Todo k nesse
+// intervalo é enumerado: p exato, sem seed. O custo é contado de forma
+// circular (a 1ª semana compara com a última), o que deixa o número de trocas
+// — e o custo — idêntico em toda rotação; só o momento muda.
 import { distribution } from './randomBaselineSummary.mjs';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -69,11 +71,12 @@ export function symbolSeries(weeks, { startMs, endMs, lookbackWeeks, excludeWeek
   return out;
 }
 
-const shiftFor = (k, n, minShift) => minShift + ((k - minShift) % (n - 2 * minShift + 1));
-
 // Retorno líquido semanal de uma moeda; `posOf(j)` dá a posição usada na semana j.
+// Custo circular: a semana 0 compara com a última (n−1). Assim toda rotação
+// das posições paga exatamente o mesmo custo (review do Codex, PR #488); na
+// série real a diferença é no máximo uma troca em ~400 semanas.
 function netSeries(entries, posOf, costPerSide) {
-  let prev = 0;
+  let prev = entries.length ? posOf(entries.length - 1) : 0;
   return entries.map((e, j) => {
     const pos = posOf(j);
     const net = pos * e.ret - costPerSide * Math.abs(pos - prev);
@@ -127,16 +130,17 @@ export function evaluateTiming(series, { minShift, costPerSide, transform = (p) 
   const statFor = (k) => {
     const nets = usable.map((s) => {
       const n = s.entries.length;
-      const shift = k == null ? 0 : shiftFor(k, n, minShift);
-      return netSeries(s.entries, (j) => transform(s.entries[(j + shift) % n].pos), costPerSide);
+      return netSeries(s.entries, (j) => transform(s.entries[(j + k) % n].pos), costPerSide);
     });
     return portfolioWeekly(nets);
   };
-  const observedWeekly = statFor(null);
+  const observedWeekly = statFor(0);
   const observed = mean(observedWeekly.map((w) => w.ret));
-  const nMax = Math.max(...usable.map((s) => s.entries.length));
+  // Mesmo k para todas: limitado pela série mais curta, para nenhuma precisar
+  // "dar a volta" num deslocamento diferente.
+  const nMin = Math.min(...usable.map((s) => s.entries.length));
   const nullStats = [];
-  for (let k = minShift; k <= nMax - minShift; k += 1) nullStats.push(mean(statFor(k).map((w) => w.ret)));
+  for (let k = minShift; k <= nMin - minShift; k += 1) nullStats.push(mean(statFor(k).map((w) => w.ret)));
   const atLeast = nullStats.filter((v) => v >= observed).length;
   const nullDist = distribution(nullStats);
   return {
@@ -185,13 +189,30 @@ export function runWeeklyTrend(dailyBySymbol, prereg) {
     }), range.from, range.to),
   });
 
-  // Dado faltando invalida a rodada (não vira "não achei").
-  const missing = prereg.primarySymbols.filter((s) => !dailyBySymbol[s]?.length);
-  const btcWeeks = seriesOf(prereg.coPrimarySymbol, prereg.lookbackWeeks).entries.length;
-  const untested = [
-    ...missing.map((s) => `${s}: sem dado`),
-    ...(btcWeeks < prereg.minCoPrimaryWeeks ? [`${prereg.coPrimarySymbol}: ${btcWeeks} semanas (mínimo ${prereg.minCoPrimaryWeeks})`] : []),
-  ];
+  // Dado faltando ou cortado invalida a rodada (não vira "não achei") —
+  // review do Codex, PR #488: arquivo não vazio mas truncado também conta.
+  const expectedLastWeek = Math.floor((endMs + 1 - WEEK - startMs) / WEEK) * WEEK + startMs;
+  const coverage = {};
+  const untested = [];
+  for (const symbol of prereg.primarySymbols) {
+    if (!dailyBySymbol[symbol]?.length) { untested.push(`${symbol}: sem dado`); continue; }
+    const entries = seriesOf(symbol, prereg.lookbackWeeks).entries;
+    const first = entries[0]?.weekStart ?? null;
+    const last = entries.at(-1)?.weekStart ?? null;
+    // Semanas de calendário incompletas (falta alguma vela diária) entre a
+    // primeira e a última semana usada. Um dia faltando conta 1 aqui, embora
+    // tire até 3 semanas da série (a própria e as duas que a usam como sinal).
+    const present = new Set(buildWeeks(dailyBySymbol[symbol], { endMs }).map((w) => w.weekStart));
+    let missingWeeks = 0;
+    if (first != null) for (let w = first; w <= last; w += WEEK) if (!present.has(w)) missingWeeks += 1;
+    coverage[symbol] = { weeks: entries.length, first: first && new Date(first).toISOString(), last: last && new Date(last).toISOString(), missingWeeks };
+    if (entries.length < 2 * prereg.minShiftWeeks + 2) untested.push(`${symbol}: só ${entries.length} semanas utilizáveis`);
+    else if (last !== expectedLastWeek) untested.push(`${symbol}: termina em ${new Date(last).toISOString().slice(0, 10)}, antes do fim pré-registrado`);
+    else if (missingWeeks > prereg.maxMissingWeeks) untested.push(`${symbol}: ${missingWeeks} semanas faltando no meio (máximo ${prereg.maxMissingWeeks})`);
+  }
+  const btc = coverage[prereg.coPrimarySymbol];
+  if (btc && btc.weeks < prereg.minCoPrimaryWeeks) untested.push(`${prereg.coPrimarySymbol}: ${btc.weeks} semanas (mínimo ${prereg.minCoPrimaryWeeks})`);
+  if (btc && btc.first !== new Date(startMs).toISOString()) untested.push(`${prereg.coPrimarySymbol}: começa em ${btc.first?.slice(0, 10)}, depois do início pré-registrado`);
 
   const halves = prereg.halves.map((h) => ({ from: Date.parse(h.from), to: Date.parse(h.to) }));
   const coPrimaries = [
@@ -243,6 +264,7 @@ export function runWeeklyTrend(dailyBySymbol, prereg) {
   return {
     verdict,
     untested,
+    coverage,
     tests: tests.map((t) => ({ name: t.name, symbols: t.symbols, full: strip(t.full), byHalf: t.byHalf, holm: t.holm, halvesPass: t.halvesPass, effectPass: t.effectPass, pass: t.pass })),
     descriptive: {
       strategy: { sharpe: sharpe(strategyWeekly), maxDrawdown: maxDrawdown(strategyWeekly), meanWeekly: mean(strategyWeekly.map((w) => w.ret)), exposure: mean(strategyWeekly.map((w) => w.exposure)) },

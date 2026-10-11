@@ -27,13 +27,12 @@ jobs:
       - run: npm ci
 
       - name: Baixar as velas diárias (até o fim pré-registrado)
+        # Lidos do pré-registro no MESMO passo (valor gravado em GITHUB_ENV só
+        # aparece no passo seguinte — review do Codex, PR #488).
         run: |
-          node -e "
-            const p = require('./docs/experiments/weekly-trend-prereg.json');
-            const fs = require('fs');
-            fs.appendFileSync(process.env.GITHUB_ENV, 'SYMBOLS=' + [...p.primarySymbols, ...p.descriptiveSymbols].join(',') + '\n');
-            fs.appendFileSync(process.env.GITHUB_ENV, 'FETCH_FROM=' + p.fetchFrom + '\n');
-          "
+          SYMBOLS=$(node -p "const p = require('./docs/experiments/weekly-trend-prereg.json'); [...p.primarySymbols, ...p.descriptiveSymbols].join(',')")
+          FETCH_FROM=$(node -p "require('./docs/experiments/weekly-trend-prereg.json').fetchFrom")
+          echo "Símbolos: $SYMBOLS · desde $FETCH_FROM"
           # Fim exclusivo um dia depois do último domingo pré-registrado; o
           # corte exato (closeTime <= fim) é feito de novo na análise.
           node scripts/fetch-backtest-data.mjs \

@@ -31642,7 +31642,14 @@ PIOR que a gestão atual; o primário ficou INCONCLUSIVO por amostra. Fibonacci 
 - **Hipótese nula:** deslocamento circular **comum** das posições em relação aos
   retornos.
   - Preserva tempo comprado e número de trocas; o custo fica igual e só o momento muda.
-  - Todo deslocamento de 8 a n−8 semanas é enumerado: p exato, sem seed.
+  - O **mesmo** deslocamento k vale para todas as moedas da carteira, e k vai de 8 até
+    (semanas da moeda mais curta − 8). Todo k nesse intervalo é enumerado: p exato,
+    sem seed.
+  - O custo é contado em círculo (a 1ª semana compara com a última), para toda rotação
+    pagar exatamente o mesmo número de trocas.
+- **Dado completo é obrigatório** (senão `INCOMPLETE`): cada moeda primária precisa ir até
+  a última semana pré-registrada e ter no máximo 2 semanas de calendário incompletas no
+  meio (`maxMissingWeeks`); o BTC precisa começar em 2019-01-07 e ter ≥ 300 semanas.
 - **Passa, por co-primário, só com as três condições:**
   1. p ≤ limiar de Holm entre carteira e BTC, α da família 0,025;
   2. em cada metade (2019→2022 e 2023→2026), média acima da mediana embaralhada daquela
@@ -31663,10 +31670,25 @@ reais; o real tem cauda gorda e regimes, então o poder real é menor):
 
 | Efeito plantado (desvio da média semanal após semana de alta/baixa) | Aprovou |
 |---|---|
-| nenhum (ruído puro) | 5 de 200 (2,5% — bate com o α) |
-| ±0,4% por semana (0,05σ, σ = 8%) | 78 de 200 (39%) |
-| ±0,8% por semana (0,1σ) | 36 de 40 (90%) |
+| nenhum (ruído puro) | 4 de 200 (2% — bate com o α de 2,5%) |
+| ±0,4% por semana (0,05σ, σ = 8%) | 65 de 200 (33%) |
+| ±0,8% por semana (0,1σ) | 182 de 200 (91%) |
 | ±1,6% por semana ou mais | 40 de 40 |
+
+(Medido de novo depois das correções do Codex abaixo; a 1ª medição, com a nula antiga,
+deu 5/200, 78/200 e 36/40.)
+
+**Correções antes de rodar (review do Codex, PR #488)** — 4 achados reais, corrigidos
+antes de baixar qualquer dado:
+1. O workflow lia as variáveis de download antes de elas existirem (`GITHUB_ENV` só vale
+   no passo seguinte). Agora elas são calculadas no mesmo passo.
+2. Arquivo de moeda cortado no fim ou com buracos passava como dado bom. Agora vira
+   `INCOMPLETE` (regras acima).
+3. O custo da série deslocada não fechava o círculo, então uma rotação podia pagar uma
+   troca a mais ou a menos que a real. Agora o custo é circular e idêntico em toda
+   rotação.
+4. Na carteira, cada moeda "dava a volta" num deslocamento diferente (k mod n). Agora o
+   k é um só, limitado pela moeda mais curta.
 
 O efeito do paper (BTC 2011–2018) era bem maior que isso. Se tiver sobrado ~1/5 dele, o
 teste deve ver.

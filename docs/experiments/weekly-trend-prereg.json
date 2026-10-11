@@ -20,5 +20,6 @@
   "costBpsPerSide": 6,
   "alphaFamily": 0.025,
   "minAnnualExcess": 0.02,
-  "minCoPrimaryWeeks": 300
+  "minCoPrimaryWeeks": 300,
+  "maxMissingWeeks": 2
 }

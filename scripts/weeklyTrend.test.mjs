@@ -55,7 +55,7 @@ describe('pré-registro travado (mudar exige mudar este teste, à vista no PR)',
       { from: '2023-01-02T00:00:00.000Z', to: '2026-10-04T23:59:59.999Z' },
     ]);
     expect([PREREG.lookbackWeeks, PREREG.secondaryLookbackWeeks, PREREG.excludeWeeksAfterListing, PREREG.minShiftWeeks]).toEqual([1, 4, 8, 8]);
-    expect([PREREG.costBpsPerSide, PREREG.alphaFamily, PREREG.minAnnualExcess, PREREG.minCoPrimaryWeeks]).toEqual([6, 0.025, 0.02, 300]);
+    expect([PREREG.costBpsPerSide, PREREG.alphaFamily, PREREG.minAnnualExcess, PREREG.minCoPrimaryWeeks, PREREG.maxMissingWeeks]).toEqual([6, 0.025, 0.02, 300, 2]);
     expect(new Date(PREREG.start).getUTCDay()).toBe(1);
     expect(new Date(Date.parse(PREREG.end) - DAY + 1).getUTCDay()).toBe(0);
   });
@@ -92,12 +92,13 @@ describe('semanas, sinal e causalidade', () => {
 });
 
 describe('nula de deslocamento comum', () => {
-  it('custo: 6 bps por troca; a nula preserva exposição; comprado/vendido tem o mesmo p', () => {
+  it('custo: 6 bps por troca, contado em círculo; comprado/vendido tem o mesmo p', () => {
     const entries = [{ pos: 1, ret: 0.1 }, { pos: 1, ret: -0.05 }, { pos: 0, ret: 0.2 }, { pos: 1, ret: 0.03 }]
       .map((e, i) => ({ ...e, weekStart: MON + i * WEEK }));
     const r = evaluateTiming([{ symbol: 'X', entries }], { minShift: 1, costPerSide: 0.0006 });
-    // 0,1−0,0006 ; −0,05 ; 0−0,0006 ; 0,03−0,0006 → média
-    expect(r.observed).toBeCloseTo((0.0994 - 0.05 - 0.0006 + 0.0294) / 4, 12);
+    // A 1ª semana compara com a última (comprado → comprado: sem custo).
+    // 0,1 ; −0,05 ; 0−0,0006 ; 0,03−0,0006 → média
+    expect(r.observed).toBeCloseTo((0.1 - 0.05 - 0.0006 + 0.0294) / 4, 12);
     const series = Object.entries(datasetFor(0.3, 10)).slice(0, 2).map(([symbol, d]) => ({
       symbol, entries: symbolSeries(buildWeeks(d, { endMs: Infinity }), { startMs: MON, endMs: Infinity, lookbackWeeks: 1, excludeWeeks: 0 }),
     }));
@@ -105,6 +106,22 @@ describe('nula de deslocamento comum', () => {
     const ls = evaluateTiming(series, { minShift: 8, costPerSide: 0.0006, transform: (p) => 2 * p - 1 });
     expect(ls.p).toBeCloseTo(lf.p, 12);
     expect(lf.shifts).toBeGreaterThan(300);
+  });
+
+  it('toda rotação paga o mesmo custo (retorno zero → toda a nula é igual ao observado)', () => {
+    const rand = mulberry32(7);
+    const entries = Array.from({ length: 60 }, (_, i) => ({ weekStart: MON + i * WEEK, pos: rand() < 0.5 ? 1 : 0, ret: 0 }));
+    const r = evaluateTiming([{ symbol: 'X', entries }], { minShift: 8, costPerSide: 0.0006 });
+    expect(r.observed).toBeLessThan(0);
+    expect(r.nullDistribution.min).toBeCloseTo(r.observed, 15);
+    expect(r.nullDistribution.max).toBeCloseTo(r.observed, 15);
+  });
+
+  it('o mesmo k vale para todas as moedas: k vai até (série mais curta − mín)', () => {
+    const rand = mulberry32(8);
+    const mk = (n, offset) => Array.from({ length: n }, (_, i) => ({ weekStart: MON + (offset + i) * WEEK, pos: rand() < 0.5 ? 1 : 0, ret: rand() - 0.5 }));
+    const r = evaluateTiming([{ symbol: 'A', entries: mk(40, 0) }, { symbol: 'B', entries: mk(30, 10) }], { minShift: 8, costPerSide: 0 });
+    expect(r.shifts).toBe(30 - 2 * 8 + 1);
   });
 
   it('Holm de livro', () => {
@@ -135,5 +152,35 @@ describe('runWeeklyTrend — acha o que existe, não inventa o que não existe',
     const short = datasetFor(0, 301);
     short.BTCUSDT = short.BTCUSDT.slice(-100 * 7);
     expect(runWeeklyTrend(short, PREREG).verdict).toBe('INCOMPLETE');
+  });
+
+  it('histórico cortado no fim, BTC começando tarde ou semanas faltando → INCOMPLETE', () => {
+    const lastDay = Date.parse(PREREG.end) - DAY + 1;
+    const truncated = datasetFor(0, 400);
+    truncated.ETHUSDT = truncated.ETHUSDT.filter((c) => c.openTime < lastDay - 20 * WEEK);
+    const rt = runWeeklyTrend(truncated, PREREG);
+    expect(rt.verdict).toBe('INCOMPLETE');
+    expect(rt.untested.join(' ')).toMatch(/ETHUSDT: termina/);
+
+    const late = datasetFor(0, 401);
+    late.BTCUSDT = late.BTCUSDT.filter((c) => c.openTime >= Date.parse('2019-03-04T00:00:00Z'));
+    const rl = runWeeklyTrend(late, PREREG);
+    expect(rl.coverage.BTCUSDT.weeks).toBeGreaterThanOrEqual(PREREG.minCoPrimaryWeeks);
+    expect(rl.verdict).toBe('INCOMPLETE');
+    expect(rl.untested.join(' ')).toMatch(/BTCUSDT: começa/);
+
+    // Um dia faltando = 1 semana incompleta (tolerado até 2); três = INCOMPLETE.
+    const holes = (n) => {
+      const d = datasetFor(0, 402);
+      const drop = new Set(Array.from({ length: n }, (_, i) => Date.parse('2021-03-03T00:00:00Z') + i * 10 * WEEK));
+      d.FETUSDT = d.FETUSDT.filter((c) => !drop.has(c.openTime));
+      return runWeeklyTrend(d, PREREG);
+    };
+    expect(holes(1).coverage.FETUSDT.missingWeeks).toBe(1);
+    expect(holes(1).verdict).not.toBe('INCOMPLETE');
+    const r3 = holes(3);
+    expect(r3.coverage.FETUSDT.missingWeeks).toBe(3);
+    expect(r3.verdict).toBe('INCOMPLETE');
+    expect(r3.untested.join(' ')).toMatch(/FETUSDT: 3 semanas faltando/);
   });
 }, 60000);
