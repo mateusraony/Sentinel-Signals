@@ -36,7 +36,7 @@ function main() {
   const preregSha256 = crypto.createHash('sha256').update(preregRaw).digest('hex');
 
   if (args.combine) {
-    const result = combineWindows(args._.map(readJson), prereg);
+    const result = combineWindows(args._.map(readJson), prereg, { preregSha256 });
     console.log(formatCombinedMarkdown(result));
     if (args.json) fs.writeFileSync(args.json, `${JSON.stringify({ lab: prereg.name, preregSha256, ...result }, null, 2)}\n`);
     if (result.verdict === 'INCOMPLETE') process.exitCode = 1;

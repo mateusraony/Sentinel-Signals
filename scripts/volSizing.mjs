@@ -70,8 +70,10 @@ export function weightSeries(sigmaByDay, { fromMs, toMs, refDays, minRefDays, cl
   const out = [];
   for (let d = dayStart(fromMs); d < toMs; d += DAY) {
     const sigma = sigmaByDay.get(d);
+    // Referência = os `refDays` dias ANTERIORES (sem o próprio dia — review do
+    // Codex, PR #490: incluir o σ do dia puxava a mediana para o denominador).
     const ref = [];
-    for (let k = 0; k < refDays; k += 1) {
+    for (let k = 1; k <= refDays; k += 1) {
       const s = sigmaByDay.get(d - k * DAY);
       if (Number.isFinite(s)) ref.push(s);
     }
@@ -206,6 +208,7 @@ export function runVolSizingWindow({ control, randoms, candlesBySymbol, prereg }
     errors: [],
     warnings: base.warnings,
     window: window.label,
+    reportCommitSha: control?.reproducibility?.commitSha ?? null,
     from: window.from,
     to: window.to,
     days: n,
@@ -238,15 +241,23 @@ export function runVolSizingWindow({ control, randoms, candlesBySymbol, prereg }
   };
 }
 
-/** Veredito final: junta as duas janelas pré-registradas. */
-export function combineWindows(summaries, prereg) {
+/**
+ * Veredito final: junta as duas janelas pré-registradas.
+ * `preregSha256` = hash do pré-registro ATUAL; cada janela tem que ter sido
+ * calculada com ele (review do Codex, PR #490).
+ */
+export function combineWindows(summaries, prereg, { preregSha256 } = {}) {
   const errors = [];
   const labels = summaries.map((s) => s?.window);
   for (const w of prereg.windows) if (!labels.includes(w.label)) errors.push(`falta a janela ${w.label}`);
   if (summaries.length !== prereg.windows.length || new Set(labels).size !== labels.length) errors.push('são precisas exatamente as duas janelas, uma de cada');
   for (const s of summaries) if (s?.verdict !== 'WINDOW_DONE') errors.push(`janela ${s?.window ?? '?'}: ${s?.verdict ?? 'sem resumo'} — ${(s?.errors || []).join('; ')}`);
-  const shas = new Set(summaries.map((s) => s?.preregSha256));
-  if (shas.size !== 1) errors.push('as duas janelas não usaram o mesmo pré-registro');
+  if (!preregSha256) errors.push('falta o hash do pré-registro atual para conferir as janelas');
+  else if (summaries.some((s) => s?.preregSha256 !== preregSha256)) errors.push('alguma janela foi calculada com um pré-registro diferente do atual');
+  // Mesmo código nas duas janelas (review do Codex, PR #490): senão seriam duas
+  // estratégias diferentes, não uma replicação.
+  const commits = new Set(summaries.map((s) => s?.reportCommitSha ?? null));
+  if (commits.size !== 1 || commits.has(null)) errors.push('as duas janelas não rodaram no mesmo commit');
   if (errors.length) return { verdict: 'INCOMPLETE', errors };
 
   const [a, b] = prereg.windows.map((w) => summaries.find((s) => s.window === w.label));

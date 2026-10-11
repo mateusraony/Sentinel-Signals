@@ -14,6 +14,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const D0 = Date.parse('2026-01-01T00:00:00Z');
 const candles = (closes, start = D0) => closes.map((close, i) => ({ openTime: start + i * DAY, closeTime: start + (i + 1) * DAY - 1, open: close, close }));
 const run = (opts) => runVolSizingWindow({ ...synthWindow({ prereg: PREREG, ...opts }), prereg: PREREG });
+const SHA = { preregSha256: 'x' };
 const both = (opts) => PREREG.windows.map((w) => ({ ...run({ ...opts, windowLabel: w.label }), preregSha256: 'x' }));
 
 describe('pré-registro travado (mudar exige mudar este teste, à vista no PR)', () => {
@@ -64,6 +65,10 @@ describe('volatilidade e peso — só o que já fechou', () => {
     expect(ws.every((x) => !x.flat)).toBe(true);
     const early = weightSeries(sigma, { fromMs: D0 + 100 * DAY, toMs: D0 + 101 * DAY, refDays: 365, minRefDays: 180, clamp: [0.5, 2] });
     expect(early[0]).toMatchObject({ w: 1, flat: true });
+    // A referência é só dos dias ANTERIORES: o dia 179 tem 179 dias antes dele
+    // (plano); o dia 180 tem 180 (já pesa).
+    const edge = weightSeries(sigma, { fromMs: D0 + 179 * DAY, toMs: D0 + 181 * DAY, refDays: 365, minRefDays: 180, clamp: [0.5, 2] });
+    expect(edge.map((x) => x.flat)).toEqual([true, false]);
   });
 });
 
@@ -99,7 +104,7 @@ describe('estatística', () => {
 
 describe('veredito — acha o que existe, não inventa o que não existe', () => {
   it('ruído puro → NO_VOLSIZING_EDGE', () => {
-    const c = combineWindows(both({ seed: 21 }), PREREG);
+    const c = combineWindows(both({ seed: 21 }), PREREG, SHA);
     expect(c.verdict).toBe('NO_VOLSIZING_EDGE');
     expect(formatCombinedMarkdown(c)).toMatch(/não melhorou/);
   });
@@ -107,14 +112,14 @@ describe('veredito — acha o que existe, não inventa o que não existe', () =>
   it('efeito forte plantado (operação em mercado calmo rende mais) → VOLSIZING_EDGE', () => {
     const windows = both({ seed: 22, beta: 1 });
     expect(formatWindowMarkdown(windows[0])).toMatch(/janela W1/);
-    const c = combineWindows(windows, PREREG);
+    const c = combineWindows(windows, PREREG, SHA);
     expect(c.verdict).toBe('VOLSIZING_EDGE');
     expect(c.observed).toBeGreaterThan(PREREG.minEffectR);
     expect(formatCombinedMarkdown(c)).toMatch(/melhorou o resultado/);
   });
 
   it('efeito pequeno demais (abaixo de 0,05R) não passa mesmo sendo significativo', () => {
-    const c = combineWindows(both({ seed: 23, beta: 0.2 }), PREREG);
+    const c = combineWindows(both({ seed: 23, beta: 0.2 }), PREREG, SHA);
     expect(c.checks.significance).toBe(true);
     expect(c.checks.effect).toBe(false);
     expect(c.verdict).toBe('NO_VOLSIZING_EDGE');
@@ -147,10 +152,14 @@ describe('INCOMPLETE — rodada que não bate com o pré-registro não vira resp
 
   it('combinar exige as duas janelas, completas, com o mesmo pré-registro', () => {
     const [w1, w2] = both({ seed: 32 });
-    expect(combineWindows([w1], PREREG).verdict).toBe('INCOMPLETE');
-    expect(combineWindows([w1, w1], PREREG).verdict).toBe('INCOMPLETE');
-    expect(combineWindows([w1, { ...w2, preregSha256: 'y' }], PREREG).verdict).toBe('INCOMPLETE');
-    expect(combineWindows([w1, { verdict: 'INCOMPLETE', window: 'W2', errors: ['faltou'], preregSha256: 'x' }], PREREG).verdict).toBe('INCOMPLETE');
-    expect(combineWindows([w2, w1], PREREG).verdict).not.toBe('INCOMPLETE');
+    expect(combineWindows([w1], PREREG, SHA).verdict).toBe('INCOMPLETE');
+    expect(combineWindows([w1, w1], PREREG, SHA).verdict).toBe('INCOMPLETE');
+    expect(combineWindows([w1, { ...w2, preregSha256: 'y' }], PREREG, SHA).verdict).toBe('INCOMPLETE');
+    // As duas com o mesmo hash, mas diferente do pré-registro atual.
+    expect(combineWindows([{ ...w1, preregSha256: 'y' }, { ...w2, preregSha256: 'y' }], PREREG, SHA).verdict).toBe('INCOMPLETE');
+    expect(combineWindows([w1, w2], PREREG).verdict).toBe('INCOMPLETE');
+    expect(combineWindows([w1, { ...w2, reportCommitSha: 'b'.repeat(40) }], PREREG, SHA).errors.join(' ')).toMatch(/mesmo commit/);
+    expect(combineWindows([w1, { verdict: 'INCOMPLETE', window: 'W2', errors: ['faltou'], preregSha256: 'x' }], PREREG, SHA).verdict).toBe('INCOMPLETE');
+    expect(combineWindows([w2, w1], PREREG, SHA).verdict).not.toBe('INCOMPLETE');
   });
 }, 60000);

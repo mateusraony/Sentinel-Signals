@@ -31818,12 +31818,23 @@ regimes de volatilidade de 30–90 dias, 41 braços × ~100 operações por jane
 | Efeito plantado, T ≈ 0,09R | 100/100 | 97/100 |
 | Efeito plantado, T ≈ 0,16R | 100/100 | 100/100 |
 
+Remedido depois das correções do Codex abaixo, em 100 rodadas: ruído puro deu 4/100 só no
+t e 0/100 na regra completa; efeito de T ≈ 0,06R foi aprovado em 82/100.
+
 - **Leitura honesta:**
   - Quando os resultados têm meses bons e ruins persistentes, o t sozinho é otimista
     (até 10% de alarme falso no cenário extremo).
   - Quem segura o erro da regra completa é o piso de 0,05R junto com a consistência nas
     duas janelas e no R0: 0 alarme falso em 800 rodadas adversárias.
   - O teste só enxerga efeitos de ~0,06R por operação ou mais.
+
+**Correções antes de rodar (review do Codex, PR #490)** — 3 achados reais:
+1. A referência σ_ref incluía o σ do próprio dia. Agora usa só os 365 dias anteriores,
+   como estava registrado.
+2. Juntar as janelas aceitava dois resumos com o mesmo pré-registro **antigo**. Agora cada
+   resumo precisa ter o hash do pré-registro atual.
+3. Juntar as janelas aceitava W1 e W2 rodadas em commits diferentes, o que seriam duas
+   estratégias diferentes. Agora exige o mesmo commit.
 
 **Como rodar:** workflow "Backtest — referência de entrada aleatória", com a caixa
 "Tamanho pela volatilidade" marcada, uma vez para cada janela, mais as datas e a família.
