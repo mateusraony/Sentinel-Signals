@@ -31561,4 +31561,41 @@ assim, contra a minha recomendação):**
 - **Produção intocada.** Nenhuma chave entra em `pineParser.js`/`adminPineConfig.js`.
   Operação FIB_FIXED só nasce no backtest.
 
-**Resultado**: pendente — o usuário roda as 4 rodadas e envia os 4 `resumo-*`.
+**Resultado (2026-10-11): saídas por Fibonacci PIORES que as atuais; o primário ficou
+INCONCLUSIVO por amostra. Fibonacci encerrada.**
+- **Rastro:**
+  - 4 resumos do workflow "Backtest — referência de entrada aleatória", commit `fe4d4bb`;
+  - famílias `FibTest_W1_atual`, `FibTest_W1_fib`, `FibTest_W2_atual` e `FibTest_W2_fib`;
+  - mesmos 7 símbolos, probabilidade 0,0075, mesmo modelo de custo e 40 seeds.
+  - O comparador pareado foi rodado na sessão sobre os 4 resumos.
+- **Primário — INCONCLUSIVO, não passa:** as duas janelas ficaram abaixo do piso de 30
+  operações.
+
+  | Janela | R0-Fib: operações | Expectância líquida | Contra os 40 sorteios-Fib |
+  |---|---|---|---|
+  | W1 2025-10→2026-10 | 12 | +0,260R | ganhou de todos (p = 0,024) |
+  | W2 2024-07→2025-07 | 7 | −0,509R | percentil 35% (meio) |
+
+  - Uma janela muito boa e outra muito ruim, com n minúsculo, é o retrato do ruído.
+  - O R0-Fib entra pouco porque os gates de regime da RF seguem ligados no R0 e o recuo
+    nem sempre vem. Os sorteios-Fib fizeram ~28 operações por janela.
+- **Secundário — as saídas Fib são PIORES, nas duas janelas** (sorteio-Fib ×
+  sorteio-atual, pareado por seed, teste do sinal):
+
+  | Janela | Líquido: Fib pior em | Diferença mediana | p | Bruto: Fib pior em | p bruto |
+  |---|---|---|---|---|---|
+  | W1 | 36 de 40 | −0,291R | 1,9e-7 | 20 de 40 | 1,0 (empate) |
+  | W2 | 35 de 40 | −0,357R | 1,4e-6 | 28 de 40 | 0,017 |
+
+- **Mecanismo, que confirma a previsão do pré-registro:** o stop curto multiplica o custo
+  em R.
+  - A diferença entre bruto e líquido vai de ~0,045R por operação, com as saídas atuais,
+    para ~0,2–0,3R com a Fib.
+  - Mesmo antes do custo, a Fib não é melhor: empata em W1 e perde em W2.
+- **Resposta à pergunta do usuário ("o problema é o stop?"):** não. Apertar o stop com a
+  Fibonacci piorou o resultado. Com as mesmas entradas, o stop largo atual rende mais.
+- **Decisão:** Fibonacci encerrada; nada vai para a produção.
+  - Não reabrir com outros níveis (0,5/0,786), outro tempo gráfico (5m) ou outros alvos
+    sobre estes dados. Seria buscar parâmetro depois de ver o resultado.
+  - A chave `fibEntryEnabled` e a caixa do workflow ficam, só para reprodução.
+- **Ledger:** família `fib-entry-2026-10` (`FibTest_W1_fib_R0`, `FibTest_W2_fib_R0`).
