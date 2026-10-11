@@ -284,7 +284,9 @@ plano de sessão morre com a sessão.
 > nenhum padrão sobreviveu à validação; laboratório encerrado** pela regra
 > combinada. Reabre só com ≥ 12 meses de dado novo ou um tipo de dado novo.
 > **Item 267 (2026-10-10):** teste pré-registrado da entrada/saída por
-> Fibonacci no 15m (pedido do usuário), só backtest — resultado pendente.
+> Fibonacci no 15m (pedido do usuário), só backtest. **Encerrado (2026-10-11):
+> o pacote Fibonacci foi pior que a gestão atual nas duas janelas. O efeito
+> isolado do stop não foi testado.**
 
 ## A regra que ordena tudo: amostra
 

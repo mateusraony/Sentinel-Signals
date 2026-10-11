@@ -5435,5 +5435,41 @@
     "expectancyRStdErr": null,
     "expectancyRCI95": null,
     "conclusiveAtN1": null
+  },
+  {
+    "family": "fib-entry-2026-10",
+    "trialLabel": "FibTest_W1_fib_R0",
+    "recordedAt": "2026-10-11T12:55:38.843Z",
+    "source": "seed",
+    "seedSource": "known-risks.md item 267",
+    "seedNote": "R0 (RF + Fibonacci 15m) contra 40 seeds sorteio + mesma Fibonacci, 2025-10-10->2026-10-10, 7 simbolos Spot: p empirico 0,024 mas so 12 operacoes (piso pre-registrado 30) — INCONCLUSIVO. Commit fe4d4bb.",
+    "runStartedAt": null,
+    "commitSha": null,
+    "configHash": null,
+    "pineConfigOverride": null,
+    "n": 12,
+    "minTrades": null,
+    "expectancyR": 0.2603,
+    "expectancyRStdErr": null,
+    "expectancyRCI95": null,
+    "conclusiveAtN1": null
+  },
+  {
+    "family": "fib-entry-2026-10",
+    "trialLabel": "FibTest_W2_fib_R0",
+    "recordedAt": "2026-10-11T12:55:38.912Z",
+    "source": "seed",
+    "seedSource": "known-risks.md item 267",
+    "seedNote": "R0 (RF + Fibonacci 15m) contra 40 seeds sorteio + mesma Fibonacci, 2024-07-27->2025-07-27: percentil 35%, so 7 operacoes — INCONCLUSIVO e negativo. Commit fe4d4bb.",
+    "runStartedAt": null,
+    "commitSha": null,
+    "configHash": null,
+    "pineConfigOverride": null,
+    "n": 7,
+    "minTrades": null,
+    "expectancyR": -0.509,
+    "expectancyRStdErr": null,
+    "expectancyRCI95": null,
+    "conclusiveAtN1": null
   }
 ]
