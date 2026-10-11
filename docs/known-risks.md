@@ -31705,5 +31705,41 @@ teste deve ver.
 passar:** a tendência semanal fica encerrada nestes dados, e segue a fase 2 (tamanho pela
 volatilidade).
 
-**Resultado**: pendente — o usuário roda o workflow "Tendência semanal" uma vez e envia
-`resumo-weekly-trend`.
+**Resultado (2026-10-11)** — run 38144816652, commit `a0f49f4`, pré-registro sha256
+`50f49687…`. Cobertura completa (as 6 moedas até 2026-09-28, 0 semanas faltando), sem
+teste faltando.
+
+- **Veredito `NO_TREND_EDGE`:** nenhum co-primário passou no Holm.
+
+| Teste | Semanas | Regra/semana | Mediana embaralhada | Excesso ao ano | p | Limiar Holm | Metades | Efeito ≥ 2% |
+|---|---|---|---|---|---|---|---|---|
+| Carteira | 404 | +1,08% | +0,64% | +22,9% | 0,041 | 0,0125 | sim / sim | sim |
+| BTC | 404 | +0,73% | +0,53% | +10,1% | 0,195 | 0,025 | sim / sim | sim |
+
+- **A carteira falhou só na significância.** Só 3 dos 96 deslocamentos ficaram ≥ ao
+  observado. A nula tem 96 deslocamentos porque o k comum é limitado pelo ZRO, com 111
+  semanas; o menor p possível era 0,0103, abaixo do limiar, então o teste podia passar.
+- **Descritivo (não decide nada):**
+  - Sharpe da regra 1,05 contra 0,85 de comprar e segurar; queda máxima 53% contra 83%;
+    51% do tempo comprado.
+  - O retorno médio da regra é **menor** que comprar e segurar (1,08% contra 1,37% por
+    semana): ela ganha em risco, não em retorno.
+  - Por moeda, p: ETH 0,077; FET 0,056; PENDLE 0,135; BTC 0,195; DYDX 0,43; ZRO 0,78
+    (único abaixo da mediana). PAXG 0,22, só descritivo.
+  - Lookback de 4 semanas: p = 0,0103, o menor possível. **Não vale como achado:** foi
+    visto depois do resultado, e promovê-lo agora seria escolher a variante vencedora nos
+    mesmos dados.
+  - Comprado/vendido: p 0,041, idêntico por linearidade, como previsto.
+- **Leitura:**
+  - Há indício na direção do paper (as duas metades positivas, 5 de 6 moedas), mas p = 0,04
+    com duas tentativas não descarta o acaso na régua combinada.
+  - O ganho visível é **controle de queda**, não retorno a mais. É o mesmo tipo de valor já
+    medido no trailing pré-TP1 (item 132).
+- **Decisão (pré-registrada):**
+  - Tendência semanal encerrada nestes dados. Nada de reabrir com lookback de 4 semanas,
+    outras moedas ou outro custo.
+  - Reabertura só com dado novo (semanas a partir de 2026-10-05): uma única regra escolhida
+    ANTES, avaliada com ≥ 104 semanas novas. Nada é construído agora.
+- **Ledger:** não se aplica. `backtest-trial-registry` exige expectância em R, mesmo caso do
+  item 266.
+- **Próximo:** fase 2, tamanho de posição pela volatilidade (item 269).
