@@ -221,6 +221,14 @@ paths:
     (~30 KB).
   - **Sem secret.** O período final fica lacrado, e o dado dele nem é baixado.
 
+- `weekly-trend.yml` — disparo **manual**, sem campos: teste de tendência
+  semanal (`docs/known-risks.md` item 268).
+  - **Download:** velas diárias Spot até o fim pré-registrado
+    (`docs/experiments/weekly-trend-prereg.json`).
+  - **Análise:** roda `scripts/weekly-trend.mjs` e publica `resumo-weekly-trend`
+    (~6 KB).
+  - **Sem secret.**
+
 ## Deploy
 
 - **Frontend**: Render Static Site (`render.yaml` `sentinel-signals`), automático

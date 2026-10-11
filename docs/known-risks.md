@@ -31609,3 +31609,79 @@ PIOR que a gestão atual; o primário ficou INCONCLUSIVO por amostra. Fibonacci 
     sobre estes dados. Seria buscar parâmetro depois de ver o resultado.
   - A chave `fibEntryEnabled` e a caixa do workflow ficam, só para reprodução.
 - **Ledger:** família `fib-entry-2026-10` (`FibTest_W1_fib_R0`, `FibTest_W2_fib_R0`).
+
+## 268. Tendência semanal — teste pré-registrado, fora da amostra do paper (2026-10-11)
+
+**Por quê**:
+- O usuário não aceita parar depois dos itens 264–267 e escolheu testar os dois
+  caminhos com evidência séria ainda não testados: este primeiro, depois o tamanho de
+  posição pela volatilidade.
+- Tudo o que testamos antes previa **4h a 24h**.
+- O efeito mais documentado em cripto é **momentum semanal**: Liu & Tsyvinski, Review of
+  Financial Studies 2021, dados 2011–2018. Nossos dados (2019→2026) estão fora da amostra
+  do paper.
+- Nada aqui toca o motor ou a produção. É um script puro sobre velas diárias.
+
+**Pré-registro** (`docs/experiments/weekly-trend-prereg.json`, travado por
+`scripts/weeklyTrend.test.mjs`; revisado por agente crítico antes de codar):
+- **Regra (uma só):**
+  - na segunda 00:00 UTC, se a semana anterior subiu (fechamento de domingo ÷ fechamento
+    do domingo anterior > 1), fica comprado da abertura de segunda ao fechamento de
+    domingo; se não, fica de fora;
+  - custo de 6 bps por lado a cada troca.
+- **Dados:**
+  - velas diárias Binance Spot, indexadas por `openTime`;
+  - semana só conta com as 7 velas;
+  - início 2019-01-07; fim travado em 2026-10-04T23:59:59.999Z;
+  - excluídas as 8 primeiras semanas após cada listagem.
+- **Universo:**
+  - primário: carteira de peso igual com BTC, ETH, FET, DYDX, PENDLE e ZRO;
+  - co-primário: BTC sozinho;
+  - PAXG (ouro) só descritivo.
+- **Estatística:** retorno líquido médio semanal.
+- **Hipótese nula:** deslocamento circular **comum** das posições em relação aos
+  retornos.
+  - Preserva tempo comprado e número de trocas; o custo fica igual e só o momento muda.
+  - Todo deslocamento de 8 a n−8 semanas é enumerado: p exato, sem seed.
+- **Passa, por co-primário, só com as três condições:**
+  1. p ≤ limiar de Holm entre carteira e BTC, α da família 0,025;
+  2. em cada metade (2019→2022 e 2023→2026), média acima da mediana embaralhada daquela
+     metade. É checagem de consistência, fraca de propósito;
+  3. excesso ≥ 2% ao ano sobre a mediana embaralhada, já líquido.
+- **Veredito:**
+  - `TREND_FOUND` se algum co-primário passa;
+  - `NO_TREND_EDGE` se nenhum passa;
+  - `INCOMPLETE` se faltar dado: o job fica vermelho e a rodada não vale como resposta.
+- **Descritivo, sem decidir nada:**
+  - Sharpe e queda máxima contra comprar e segurar;
+  - tempo comprado; resultado por moeda; PAXG;
+  - lookback de 4 semanas;
+  - comprado/vendido (p idêntico por linearidade).
+
+**Poder, medido antes em dado sintético** (gaussiano, 404 semanas, listagens como as
+reais; o real tem cauda gorda e regimes, então o poder real é menor):
+
+| Efeito plantado (desvio da média semanal após semana de alta/baixa) | Aprovou |
+|---|---|
+| nenhum (ruído puro) | 5 de 200 (2,5% — bate com o α) |
+| ±0,4% por semana (0,05σ, σ = 8%) | 78 de 200 (39%) |
+| ±0,8% por semana (0,1σ) | 36 de 40 (90%) |
+| ±1,6% por semana ou mais | 40 de 40 |
+
+O efeito do paper (BTC 2011–2018) era bem maior que isso. Se tiver sobrado ~1/5 dele, o
+teste deve ver.
+
+**Ressalvas pré-registradas:**
+- As moedas foram escolhidas sabendo que sobreviveram até hoje, o que favorece um pouco a
+  tendência. O teste é fora da amostra no tempo, não no universo.
+- As mesmas moedas já foram usadas nos itens 263–267.
+- A hipótese nula assume que o mercado se comporta de forma parecida ao longo do tempo,
+  o que os regimes de cripto quebram.
+- `data-api.binance.vision` não devolve pares deslistados.
+
+**Se passar:** decidir com o usuário como mostrar no painel (decisão separada). **Se não
+passar:** a tendência semanal fica encerrada nestes dados, e segue a fase 2 (tamanho pela
+volatilidade).
+
+**Resultado**: pendente — o usuário roda o workflow "Tendência semanal" uma vez e envia
+`resumo-weekly-trend`.

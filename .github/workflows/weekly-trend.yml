@@ -1,0 +1,59 @@
+name: Tendência semanal (Sentinel Signals)
+
+# docs/known-risks.md item 268 — teste pré-registrado de tendência semanal:
+# "se a moeda subiu na semana passada, fica comprado esta semana" contra o
+# mesmo tempo comprado em semanas embaralhadas (deslocamento circular comum).
+# Regras em docs/experiments/weekly-trend-prereg.json; nada é escolhido na
+# hora do disparo, de propósito.
+#
+# Sem campos e sem secret: só baixa velas diárias públicas da Binance Spot e
+# devolve um resumo. Repo público = minutos grátis.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  weekly-trend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Baixar as velas diárias (até o fim pré-registrado)
+        run: |
+          node -e "
+            const p = require('./docs/experiments/weekly-trend-prereg.json');
+            const fs = require('fs');
+            fs.appendFileSync(process.env.GITHUB_ENV, 'SYMBOLS=' + [...p.primarySymbols, ...p.descriptiveSymbols].join(',') + '\n');
+            fs.appendFileSync(process.env.GITHUB_ENV, 'FETCH_FROM=' + p.fetchFrom + '\n');
+          "
+          # Fim exclusivo um dia depois do último domingo pré-registrado; o
+          # corte exato (closeTime <= fim) é feito de novo na análise.
+          node scripts/fetch-backtest-data.mjs \
+            --symbols "$SYMBOLS" \
+            --from "${FETCH_FROM}T00:00:00Z" --to "2026-10-05T00:00:00Z" \
+            --timeframes 1d \
+            --out candles
+
+      - name: Rodar o teste
+        # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12).
+        run: |
+          set -o pipefail
+          node scripts/weekly-trend.mjs --data-dir candles --json weekly-trend-summary.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload do resumo (arquivo único, leve)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resumo-weekly-trend
+          path: weekly-trend-summary.json
+          retention-days: 30
+          if-no-files-found: warn

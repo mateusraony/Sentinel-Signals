@@ -287,6 +287,9 @@ plano de sessão morre com a sessão.
 > Fibonacci no 15m (pedido do usuário), só backtest. **Encerrado (2026-10-11):
 > o pacote Fibonacci foi pior que a gestão atual nas duas janelas. O efeito
 > isolado do stop não foi testado.**
+> **Item 268 (2026-10-11):** teste pré-registrado de tendência semanal (momentum,
+> Liu & Tsyvinski), fora da amostra do paper — resultado pendente. Depois:
+> tamanho de posição pela volatilidade.
 
 ## A regra que ordena tudo: amostra
 
