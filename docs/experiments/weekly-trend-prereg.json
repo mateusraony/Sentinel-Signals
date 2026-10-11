@@ -1,0 +1,25 @@
+{
+  "name": "weekly-trend-268",
+  "item": "docs/known-risks.md item 268",
+  "registeredAt": "2026-10-11",
+  "note": "Pré-registro congelado ANTES de qualquer dado ser baixado. Mudar qualquer campo depois de ver resultado invalida o experimento; scripts/weeklyTrend.test.mjs trava estes valores.",
+  "primarySymbols": ["BTCUSDT", "ETHUSDT", "FETUSDT", "DYDXUSDT", "PENDLEUSDT", "ZROUSDT"],
+  "coPrimarySymbol": "BTCUSDT",
+  "descriptiveSymbols": ["PAXGUSDT"],
+  "fetchFrom": "2018-10-01",
+  "start": "2019-01-07T00:00:00.000Z",
+  "end": "2026-10-04T23:59:59.999Z",
+  "halves": [
+    { "from": "2019-01-07T00:00:00.000Z", "to": "2022-12-25T23:59:59.999Z" },
+    { "from": "2023-01-02T00:00:00.000Z", "to": "2026-10-04T23:59:59.999Z" }
+  ],
+  "lookbackWeeks": 1,
+  "secondaryLookbackWeeks": 4,
+  "excludeWeeksAfterListing": 8,
+  "minShiftWeeks": 8,
+  "costBpsPerSide": 6,
+  "alphaFamily": 0.025,
+  "minAnnualExcess": 0.02,
+  "minCoPrimaryWeeks": 300,
+  "maxMissingWeeks": 2
+}
