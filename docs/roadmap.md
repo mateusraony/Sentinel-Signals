@@ -288,8 +288,9 @@ plano de sessão morre com a sessão.
 > o pacote Fibonacci foi pior que a gestão atual nas duas janelas. O efeito
 > isolado do stop não foi testado.**
 > **Item 268 (2026-10-11):** teste pré-registrado de tendência semanal (momentum,
-> Liu & Tsyvinski), fora da amostra do paper — resultado pendente. Depois:
-> tamanho de posição pela volatilidade.
+> Liu & Tsyvinski), fora da amostra do paper. **Encerrado (2026-10-11): indício
+> na direção do paper (carteira p 0,041, menor queda), mas não passou no Holm
+> (limiar 0,0125).** Depois: tamanho de posição pela volatilidade (item 269).
 
 ## A regra que ordena tudo: amostra
 
