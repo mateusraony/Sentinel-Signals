@@ -147,25 +147,32 @@ export function runVolSizingWindow({ control, randoms, candlesBySymbol, prereg }
 
   const fromMs = Date.parse(`${window.from}T00:00:00Z`);
   const toMsWin = Date.parse(`${window.to}T00:00:00Z`);
-  const n = Math.round((toMsWin - fromMs) / DAY);
+  // Borda da janela (achado na rodada real da W2, item 269): a 1ª passada da
+  // janela (00:00 do 1º dia) decide com a vela que fechou 1 ms antes, e é esse
+  // horário que a operação carrega. Ela pertence à janela e recebe o peso do
+  // dia anterior, pela mesma regra causal. Por isso a série começa um dia
+  // antes (índice 0 = dia −1) e o dia da operação é deslocado em +1.
+  const seriesFromMs = fromMs - DAY;
+  const n = Math.round((toMsWin - seriesFromMs) / DAY);
   const weightsBySymbol = {};
   const weightInfo = {};
   for (const s of prereg.symbols) {
     if (!candlesBySymbol[s]?.length) continue;
     const ws = weightSeries(dailySigma(candlesBySymbol[s], prereg.lookbackDays), {
-      fromMs, toMs: toMsWin, refDays: prereg.refDays, minRefDays: prereg.minRefDays, clamp: prereg.weightClamp,
+      fromMs: seriesFromMs, toMs: toMsWin, refDays: prereg.refDays, minRefDays: prereg.minRefDays, clamp: prereg.weightClamp,
     });
     weightsBySymbol[s] = ws;
-    const live = ws.filter((x) => !x.flat).map((x) => x.w);
-    weightInfo[s] = { flatDays: ws.length - live.length, meanW: mean(live), minW: live.length ? Math.min(...live) : null, maxW: live.length ? Math.max(...live) : null };
+    // Descritivo só dos dias da janela (o dia −1 existe só para a borda).
+    const live = ws.slice(1).filter((x) => !x.flat).map((x) => x.w);
+    weightInfo[s] = { flatDays: ws.length - 1 - live.length, meanW: mean(live), minW: live.length ? Math.min(...live) : null, maxW: live.length ? Math.max(...live) : null };
   }
 
   const arms = [{ arm: 'R0', report: control }, ...randoms.map((r) => ({ arm: String(r.reproducibility?.pineConfig?.randomEntrySeed), report: r }))]
     .map(({ arm, report }) => {
-      const ops = opsFromReport(report).map((o) => ({ ...o, idx: Math.floor((dayStart(o.openedMs) - fromMs) / DAY) }));
+      const ops = opsFromReport(report).map((o) => ({ ...o, idx: Math.floor((dayStart(o.openedMs) - seriesFromMs) / DAY) }));
       for (const o of ops) {
         if (!weightsBySymbol[o.symbol]) errors.push(`braço ${arm}: operação em ${o.symbol} sem velas diárias`);
-        else if (!(o.idx >= 0 && o.idx < n)) errors.push(`braço ${arm}: operação de ${o.symbol} aberta fora da janela`);
+        else if (!(o.openedMs >= fromMs - 1 && o.openedMs < toMsWin)) errors.push(`braço ${arm}: operação de ${o.symbol} aberta fora da janela`);
         else if (weightsBySymbol[o.symbol][o.idx].flat && weightsBySymbol[o.symbol][o.idx].sigma == null
           && candlesBySymbol[o.symbol].some((c) => c.openTime < o.openedMs - prereg.lookbackDays * DAY)) {
           // Moeda já listada há mais de 20 dias e mesmo assim sem σ = buraco nas velas.
@@ -211,7 +218,7 @@ export function runVolSizingWindow({ control, randoms, candlesBySymbol, prereg }
     reportCommitSha: control?.reproducibility?.commitSha ?? null,
     from: window.from,
     to: window.to,
-    days: n,
+    days: n - 1,
     arms: arms.length,
     observed,
     observedR0: perArm[0].T,

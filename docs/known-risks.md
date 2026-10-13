@@ -31841,4 +31841,26 @@ t e 0/100 na regra completa; efeito de T ≈ 0,06R foi aprovado em 82/100.
 Cada rodada publica `resumo-vol-sizing-<família>`. O veredito sai juntando os dois:
 `node scripts/vol-sizing.mjs --combine W1.json W2.json`.
 
+**Addendum 2026-10-13 — W2 deu `INCOMPLETE` na borda da janela (erro do script, não do dado):**
+- **Fato:**
+  - W1 (run 38276849383, commit `132ca00`) passou: `WINDOW_DONE`, T = +0,0102R, T só do
+    R0 = +0,061R, t = 3,32 em 13 meses. Só uma janela não decide nada; está registrado aqui
+    porque já foi visto.
+  - W2 (run 38276940363, mesmo commit) rodou o backtest inteiro, mas a análise recusou:
+    "operação aberta fora da janela" nos braços 28, 31 e 39.
+- **Causa:** nas seeds, o horário da entrada é o fechamento da vela de 4h do sinal
+  (`entry_candle_time_4h`, `scanner.js:525`/`:1642`).
+  - A 1ª passada da janela (00:00 do 1º dia) decide com a vela que fechou 1 ms antes.
+  - `volSizing.mjs` contava essas operações como do dia −1, ou seja, fora da janela.
+  - Esperado ≈ 0,0075 × 7 × 40 ≈ 2 por janela; vieram 3 na W2 e 0 na W1.
+- **Correção mínima:** a operação com entrada em `início − 1 ms` pertence à janela e recebe
+  o peso do dia anterior, pela mesma regra causal.
+  - Nenhuma operação já aceita muda de dia. Em 3 janelas sintéticas, o resultado com e sem a
+    correção é idêntico byte a byte.
+  - O pré-registro (JSON e sha) não mudou.
+  - Teste de regressão em `volSizing.test.mjs`, que falha sem a correção.
+- **Rodada nova das duas janelas, no mesmo commit:** a regra "mesmo commit" recusaria
+  juntar o W1 antigo com um W2 novo. O backtest é determinístico, então o W1 novo tem que
+  repetir T = +0,0102R.
+
 **Resultado:** pendente.
