@@ -161,8 +161,8 @@ Skills em `.claude/skills/`, regras em `.claude/rules/` (carregam pelos
   com as mesmas saídas (`docs/known-risks.md` item 264). Decisão aceita no item
   265: produção igual, ajuste de entrada só com teste pré-registrado. O valor
   medido é controle de risco (trailing pré-TP1, itens 132/263), não edge. O
-  laboratório de "smart money" (266), a Fibonacci 15m (267) e a tendência
-  semanal (268) também não passaram na régua pré-registrada.
+  laboratório de "smart money" (266), a Fibonacci 15m (267), a tendência semanal
+  (268) e o tamanho pela volatilidade (269) não passaram na régua pré-registrada.
 
 - `npm run typecheck` roda no CI **como catraca**, não exigindo zero
   (`npm run typecheck:ratchet`, item 166): o teto é o passivo atual (16 erros

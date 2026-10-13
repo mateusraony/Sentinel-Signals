@@ -31863,4 +31863,44 @@ Cada rodada publica `resumo-vol-sizing-<família>`. O veredito sai juntando os d
   juntar o W1 antigo com um W2 novo. O backtest é determinístico, então o W1 novo tem que
   repetir T = +0,0102R.
 
-**Resultado:** pendente.
+**Resultado (2026-10-13)** — runs 38331376770 (W1b) e 38331468046 (W2b), os dois no
+commit `e466a70`, pré-registro sha256 `f40eac74…` (igual ao arquivo atual). `node
+scripts/vol-sizing.mjs --combine` foi rodado na sessão.
+
+- **Veredito `NO_VOLSIZING_EDGE`.**
+
+| Condição | Resultado | Precisava |
+|---|---|---|
+| t das somas mensais (26 meses) | 2,50 | ≥ 2,06 — **passou** |
+| T médio das duas janelas | **+0,0072R/op** | ≥ +0,05R — **não** |
+| T > 0 em cada janela | W1 +0,0102, W2 +0,0041 | sim — **passou** |
+| T do R0 > 0 em cada janela | W1 +0,061, W2 −0,009 | sim — **não** |
+
+- **Reprodutibilidade:** o W1b repetiu o W1 do commit anterior exatamente, com o mesmo T,
+  o mesmo t e todas as somas mensais iguais. O backtest é determinístico e a correção de
+  borda (addendum acima) não mudou nenhuma operação já aceita, como previsto.
+- **Risco (descritivo):**
+  - Desvio com peso ÷ sem peso: 1,08 (W1) e 1,07 (W2). A previsão registrada antes era
+    ~1,06: **confirmada**.
+  - Perda nos 5% piores com peso ÷ sem peso: 1,37 e 1,30. A cauda fica pior.
+  - Queda máxima do R0: W1 8,95R → 5,95R (melhor); W2 8,53R → 9,96R (pior).
+  - Soma máxima dos pesos abertos ao mesmo tempo: 6,27, com 6 operações.
+- **Leitura:**
+  - O t passou, mas ele é sabidamente otimista com meses bons e ruins persistentes (até
+    ~10% de alarme falso, medido antes).
+  - O efeito de +0,007R por operação vale ~0,8% ao ano com 1% de risco. Não paga a cauda
+    pior, e o R0 nem é positivo nas duas janelas.
+  - Bate com Cederburg et al. (JFE 2020): dimensionar pelo regime de volatilidade não
+    melhora fora da amostra.
+- **Decisão (pré-registrada):** encerrado. Nada vai para a produção. Nada de reabrir com
+  outro lookback, outro limite ou outra referência nestes dados.
+- **Ledger:** não se aplica, porque a estatística não é expectância em R por trial (mesmo
+  caso dos itens 266 e 268).
+
+**Fechamento do ciclo 264–269:**
+- A entrada da RF ≈ acaso (264).
+- Smart money (266), Fibonacci 15m (267), tendência semanal (268) e tamanho pela
+  volatilidade (269) não passaram na régua pré-registrada.
+- O valor medido continua sendo **controle de risco** (trailing pré-TP1, itens 132/263),
+  não edge.
+- Reabertura só com dado novo (12–24 meses), uma regra pré-registrada por vez.
