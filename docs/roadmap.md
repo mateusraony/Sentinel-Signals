@@ -293,7 +293,8 @@ plano de sessão morre com a sessão.
 > (limiar 0,0125).** Depois: tamanho de posição pela volatilidade (item 269).
 > **Item 269 (2026-10-11):** teste pré-registrado de tamanho de posição pela
 > volatilidade sobre a estratégia atual (só análise de backtest; chance
-> honesta baixa) — resultado pendente.
+> honesta baixa). **Encerrado (2026-10-13): +0,007R/op, 7× abaixo do mínimo de
+> 0,05R, R0 negativo na W2 e cauda de perda pior — não ajuda.**
 
 ## A regra que ordena tudo: amostra
 
