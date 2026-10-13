@@ -150,6 +150,28 @@ describe('INCOMPLETE — rodada que não bate com o pré-registro não vira resp
     expect(r.errors.join(' ')).toMatch(/ETHUSDT sem σ no dia da entrada/);
   });
 
+  it('borda: a vela que fecha 1 ms antes da janela é da 1ª passada e usa o peso do dia anterior', () => {
+    // Achado na rodada real da W2 (item 269): 3 seeds entraram na 1ª passada.
+    const base = synthWindow({ prereg: PREREG, seed: 33 });
+    const fromMs = Date.parse(`${PREREG.windows[0].from}T00:00:00Z`);
+    const toMs = Date.parse(`${PREREG.windows[0].to}T00:00:00Z`);
+    const at = (ms) => ({ ...base.control, overall: { ...base.control.overall, curve: base.control.overall.curve.map((c, i) => (i === 0 ? { ...c, op: { ...c.op, entry_candle_time_15m: new Date(ms).toISOString() } } : c)) } });
+    const r = runVolSizingWindow({ ...base, control: at(fromMs - 1), prereg: PREREG });
+    expect(r.verdict).toBe('WINDOW_DONE');
+    // Conferência à mão: o peso da operação de borda é o do dia −1.
+    const opts = { fromMs: fromMs - DAY, toMs, refDays: 365, minRefDays: 180, clamp: [0.5, 2] };
+    const weights = Object.fromEntries(PREREG.symbols.map((s) => [s, weightSeries(dailySigma(base.candlesBySymbol[s], 20), opts)]));
+    const ops = opsFromReport(at(fromMs - 1));
+    const ws = ops.map((o) => weights[o.symbol][Math.floor((Math.floor(o.openedMs / DAY) * DAY - (fromMs - DAY)) / DAY)].w);
+    expect(ws[0]).toBe(weights[ops[0].symbol][0].w);
+    const mw = ws.reduce((a, b) => a + b, 0) / ws.length;
+    const manual = ops.reduce((a, o, i) => a + (ws[i] / mw) * o.r, 0) / ops.length - ops.reduce((a, o) => a + o.r, 0) / ops.length;
+    expect(r.observedR0).toBeCloseTo(manual, 12);
+    // Antes disso continua fora da janela.
+    expect(runVolSizingWindow({ ...base, control: at(fromMs - 2 * DAY), prereg: PREREG }).errors.join(' ')).toMatch(/fora da janela/);
+    expect(runVolSizingWindow({ ...base, control: at(toMs), prereg: PREREG }).errors.join(' ')).toMatch(/fora da janela/);
+  });
+
   it('combinar exige as duas janelas, completas, com o mesmo pré-registro', () => {
     const [w1, w2] = both({ seed: 32 });
     expect(combineWindows([w1], PREREG, SHA).verdict).toBe('INCOMPLETE');
