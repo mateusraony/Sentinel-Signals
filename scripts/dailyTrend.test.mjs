@@ -1,0 +1,165 @@
+// docs/known-risks.md item 271 — teste de tendência diária EMA 10/21 +
+// Supertrend(10,3). Dados sintéticos com a resposta conhecida: tendência
+// plantada tem que ser achada; ruído não; dado faltando invalida a rodada.
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import { buildDays, supertrend, dailySignals, symbolDailySeries, runDailyTrend, formatDailyTrendMarkdown } from './dailyTrend.mjs';
+import { evaluateTiming } from './weeklyTrend.mjs';
+import { synthMarket } from './__fixtures__/dailyTrendSynth.mjs';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PREREG = JSON.parse(readFileSync(resolve(__dirname, '../docs/experiments/daily-ema-supertrend-prereg.json'), 'utf8'));
+const DAY = 24 * 60 * 60 * 1000;
+
+// Versão encurtada SÓ para os testes rodarem rápido (mesmas regras, janela de
+// ~3,8 anos). O pré-registro real fica travado no 1º describe.
+const FAST = {
+  ...PREREG,
+  start: '2023-01-02T00:00:00.000Z',
+  halves: [
+    { from: '2023-01-02T00:00:00.000Z', to: '2024-12-29T23:59:59.999Z' },
+    { from: '2024-12-30T00:00:00.000Z', to: '2026-10-04T23:59:59.999Z' },
+  ],
+  minCoPrimaryDays: 1000,
+};
+const marketFor = (seed, scenario, drift) => synthMarket({ seed, scenario, drift, prereg: FAST, symbols: FAST.primarySymbols });
+
+const candle = (i, o, h, l, c) => ({ openTime: i * DAY, closeTime: (i + 1) * DAY - 1, open: o, high: h, low: l, close: c });
+
+describe('pré-registro travado (mudar exige mudar este teste, à vista no PR)', () => {
+  it('universo, datas, regra, nula e régua congelados', () => {
+    expect(PREREG.primarySymbols).toEqual(['BTCUSDT', 'ETHUSDT', 'FETUSDT', 'DYDXUSDT', 'PENDLEUSDT', 'ZROUSDT']);
+    expect(PREREG.coPrimarySymbol).toBe('BTCUSDT');
+    expect(PREREG.descriptiveSymbols).toEqual(['PAXGUSDT']);
+    expect([PREREG.fetchFrom, PREREG.start, PREREG.end]).toEqual(['2018-06-01', '2019-01-07T00:00:00.000Z', '2026-10-04T23:59:59.999Z']);
+    expect(PREREG.halves).toEqual([
+      { from: '2019-01-07T00:00:00.000Z', to: '2022-12-25T23:59:59.999Z' },
+      { from: '2023-01-02T00:00:00.000Z', to: '2026-10-04T23:59:59.999Z' },
+    ]);
+    expect([PREREG.emaFast, PREREG.emaSlow, PREREG.stAtrPeriod, PREREG.stFactor]).toEqual([10, 21, 10, 3]);
+    expect([PREREG.warmupDaysAfterListing, PREREG.minShiftDays, PREREG.costBpsPerSide]).toEqual([126, 56, 6]);
+    // Metade do α do item 268: 2ª tentativa da família de tendência nos mesmos dados.
+    expect([PREREG.alphaFamily, PREREG.minAnnualExcess]).toEqual([0.0125, 0.02]);
+    expect([PREREG.minCoPrimaryDays, PREREG.maxMissingDays]).toEqual([2500, 3]);
+    expect(PREREG.robustness.map((v) => v.label)).toEqual(['EMA 8/21', 'EMA 12/26', 'Supertrend fator 2,5', 'Supertrend fator 3,5']);
+  });
+});
+
+describe('Supertrend no padrão do ta.supertrend do Pine', () => {
+  it('caso calculado à mão (ATR 2, fator 1)', () => {
+    const c = [candle(0, 10, 11, 9, 10), candle(1, 10, 12, 10, 11), candle(2, 11, 14, 12, 13.5), candle(3, 13.5, 13, 11, 11.5), candle(4, 11.5, 11, 9, 10)];
+    const st = supertrend(c, { atrPeriod: 2, factor: 1 });
+    // 1ª vela com ATR começa de baixa (linha = banda de cima); vira de alta ao
+    // fechar acima da banda de cima; a banda de baixo segura com a catraca; vira
+    // de baixa ao fechar abaixo dela.
+    expect(st.up).toEqual([null, false, true, true, false]);
+    expect(st.line).toEqual([null, 13, 10.5, 10.5, 12.5]);
+  });
+
+  it('causal: o valor da vela i é o mesmo com a série inteira ou só até i', () => {
+    const days = buildDays(marketFor(5, 'adverse').ETHUSDT, { endMs: Date.parse(FAST.end) }).slice(0, 400);
+    const full = supertrend(days, { atrPeriod: 10, factor: 3 });
+    const fullSig = dailySignals(days, FAST);
+    // Começa em 10: um prefixo de exatamente 10 velas fica abaixo do mínimo de
+    // calculateATRSeries (período + 1) e volta vazio; na série inteira o
+    // índice 9 já tem valor, mas só com as velas 0..9 (não é olhar à frente).
+    expect(full.up[9]).not.toBeNull();
+    for (const i of [10, 11, 25, 120, 250, 399]) {
+      const pre = supertrend(days.slice(0, i + 1), { atrPeriod: 10, factor: 3 });
+      expect(pre.up[i]).toBe(full.up[i]);
+      expect(pre.line[i]).toBe(full.line[i]);
+      expect(dailySignals(days.slice(0, i + 1), FAST)[i]).toBe(fullSig[i]);
+    }
+  });
+});
+
+describe('posição, retorno e janela', () => {
+  it('o dia j usa o sinal do fechamento de j−1 e o retorno abertura → fechamento de j', () => {
+    const days = buildDays(marketFor(6, 'iid').BTCUSDT, { endMs: Date.parse(FAST.end) });
+    const signals = dailySignals(days, FAST);
+    const entries = symbolDailySeries(days, signals, { startMs: Date.parse(FAST.start), endMs: Date.parse(FAST.end), warmupDays: 126 });
+    const idx = new Map(days.map((d, i) => [d.openTime, i]));
+    for (const e of entries.slice(0, 50)) {
+      const j = idx.get(e.weekStart);
+      expect(e.pos).toBe(signals[j - 1]);
+      expect(e.ret).toBeCloseTo(days[j].close / days[j].open - 1, 12);
+    }
+    expect(entries[0].weekStart).toBe(Date.parse(FAST.start));
+    expect(entries.at(-1).weekStart).toBe(Date.parse(FAST.end) + 1 - DAY);
+  });
+
+  it('mudar o futuro não muda a posição de hoje (sem olhar à frente)', () => {
+    const days = buildDays(marketFor(7, 'adverse').FETUSDT, { endMs: Date.parse(FAST.end) });
+    const cut = 900;
+    const tampered = days.map((d, i) => (i > cut ? { ...d, close: d.close * 3, high: d.high * 3, low: d.low * 0.2 } : d));
+    const a = dailySignals(days, FAST);
+    const b = dailySignals(tampered, FAST);
+    expect(b.slice(0, cut + 1)).toEqual(a.slice(0, cut + 1));
+  });
+
+  it('dia sem o dia anterior não entra; aquecimento após a listagem é respeitado', () => {
+    const days = buildDays(marketFor(8, 'iid').ZROUSDT, { endMs: Date.parse(FAST.end) });
+    const signals = dailySignals(days, FAST);
+    const holed = days.filter((_, i) => i !== 500);
+    const holedSignals = dailySignals(holed, FAST);
+    const opts = { startMs: Date.parse(FAST.start), endMs: Date.parse(FAST.end), warmupDays: 126 };
+    const entries = symbolDailySeries(holed, holedSignals, opts);
+    expect(entries.some((e) => e.weekStart === days[501].openTime)).toBe(false);
+    expect(symbolDailySeries(days, signals, opts)[0].weekStart).toBe(days[126].openTime);
+  });
+
+  it('excesso ao ano usa 365 períodos no diário', () => {
+    const entries = Array.from({ length: 300 }, (_, i) => ({ weekStart: i * DAY, pos: i % 40 < 20 ? 1 : 0, ret: i % 40 < 20 ? 0.001 : -0.001 }));
+    const r = evaluateTiming([{ symbol: 'X', entries }], { minShift: 56, costPerSide: 0, periodsPerYear: 365 });
+    expect(r.excessAnnual).toBeCloseTo((r.observed - r.nullMedian) * 365, 12);
+    const weekly = evaluateTiming([{ symbol: 'X', entries }], { minShift: 56, costPerSide: 0 });
+    expect(weekly.excessAnnual).toBeCloseTo((weekly.observed - weekly.nullMedian) * 52, 12);
+  });
+});
+
+describe('runDailyTrend — acha o que existe, não inventa o que não existe', () => {
+  it('tendência forte plantada → TREND_FOUND', () => {
+    const r = runDailyTrend(marketFor(11, 'trend', 0.006), FAST, { descriptive: false });
+    expect(r.verdict).toBe('TREND_FOUND');
+    expect(formatDailyTrendMarkdown(r)).toMatch(/Achei tendência diária/);
+  });
+
+  it('ruído com cauda gorda, volatilidade em blocos e deriva → NO_TREND_EDGE, com a parte descritiva', () => {
+    const r = runDailyTrend(marketFor(12, 'adverse'), FAST);
+    expect(r.verdict).toBe('NO_TREND_EDGE');
+    expect(r.descriptive.robustness).toHaveLength(4);
+    expect(formatDailyTrendMarkdown(r)).toMatch(/Não achei vantagem/);
+  });
+
+  it('moeda primária sem dado, cortada no fim, com buracos ou BTC tardio → INCOMPLETE', () => {
+    const missing = marketFor(13, 'iid');
+    delete missing.ETHUSDT;
+    expect(runDailyTrend(missing, FAST, { descriptive: false }).untested.join(' ')).toMatch(/ETHUSDT: sem dado/);
+
+    const truncated = marketFor(14, 'iid');
+    truncated.FETUSDT = truncated.FETUSDT.filter((c) => c.openTime < Date.parse(FAST.end) - 30 * DAY);
+    const rt = runDailyTrend(truncated, FAST, { descriptive: false });
+    expect(rt.verdict).toBe('INCOMPLETE');
+    expect(rt.untested.join(' ')).toMatch(/FETUSDT: termina/);
+
+    const holes = (n) => {
+      const d = marketFor(15, 'iid');
+      const drop = new Set(Array.from({ length: n }, (_, i) => Date.parse('2024-03-01T00:00:00Z') + i * 40 * DAY));
+      d.ETHUSDT = d.ETHUSDT.filter((c) => !drop.has(c.openTime));
+      return runDailyTrend(d, FAST, { descriptive: false });
+    };
+    expect(holes(3).coverage.ETHUSDT.missingDays).toBe(3);
+    expect(holes(3).verdict).not.toBe('INCOMPLETE');
+    const r4 = holes(4);
+    expect(r4.verdict).toBe('INCOMPLETE');
+    expect(r4.untested.join(' ')).toMatch(/ETHUSDT: 4 dias faltando/);
+
+    const late = marketFor(16, 'iid');
+    late.BTCUSDT = late.BTCUSDT.filter((c) => c.openTime >= Date.parse('2023-01-01T00:00:00Z'));
+    const rl = runDailyTrend(late, FAST, { descriptive: false });
+    expect(rl.verdict).toBe('INCOMPLETE');
+    expect(rl.untested.join(' ')).toMatch(/BTCUSDT: começa/);
+  });
+}, 120000);

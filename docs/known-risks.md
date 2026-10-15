@@ -31904,3 +31904,67 @@ scripts/vol-sizing.mjs --combine` foi rodado na sessão.
 - O valor medido continua sendo **controle de risco** (trailing pré-TP1, itens 132/263),
   não edge.
 - Reabertura só com dado novo (12–24 meses), uma regra pré-registrada por vez.
+
+## 270. Saídas nunca medidas e filtro ADX — Fases A e B pré-registradas (2026-10-14/15)
+
+**Por quê:**
+- Auditoria quantitativa pedida pelo usuário: o que ainda não foi testado e roda sem código
+  (só `pine_config`).
+- Depois do item 264 (entrada ≈ acaso), o valor medido está nas saídas, então as perguntas
+  abertas eram de saída, mais uma de "velocidade de medição".
+- Nada de motor ou produção foi tocado. Todos os runs usaram `backtest.yml`, commit `dcaad1d`,
+  Spot, 7 símbolos, custos padrão e janelas W1 2025-10-10→2026-10-10 e W2
+  2024-07-27→2025-07-27.
+- O R0 de cada janela reproduziu exatamente os controles dos itens 263 (115 ops, −0,0483R) e
+  264 (119 ops, +0,054R): o motor é determinístico.
+
+**Fase A — saídas (família `exits-2026-10b`, m=3, Bonferroni; leitura não pareada como primária):**
+
+| Comparação | W1 Δ [IC] | W2 Δ [IC] | Veredito |
+|---|---|---|---|
+| X1: stop 3,0× contra 2,0× ATR (tier forçado; ADX/Chop desligados e prazo 64 nos dois braços) | −0,018R [−0,127; +0,091] | −0,037R [−0,131; +0,057] | ruído |
+| X2: Chop Exit (`useChopExit:true`) contra R0 | −0,013R [−0,082; +0,057] | +0,025R [−0,044; +0,095] | ruído, direções opostas |
+| X3: prazo 96 velas para todos os tiers contra R0 | 0,000R | +0,0003R (1 op mudou) | inerte |
+
+- **X1 responde à pergunta aberta do item 267** ("o problema é o stop?"): para as mesmas
+  entradas, stop largo e curto têm a mesma expectância.
+  - Descritivo consistente nas duas janelas: o stop largo reduz sd(R) (×0,76/×0,77), o drawdown
+    (9,3→7,9% e 8,1→7,5%) e o custo em R (0,053→0,038R e 0,052→0,040R).
+  - O stop curto chega 3× mais ao TP2 (15/5 e 27/9), mas leva mais perdas cheias.
+- **X3, fato novo:** o Time Stop praticamente não age com o trailing pré-TP1 ligado.
+  - Foi 0 de 115 na W1 e 1 de 119 na W2; a operação mais longa durou 172h/248h, menos que o
+    menor prazo (48 velas).
+  - O "time stop 24 velas" do ledger foi medido antes do trailing (item 132).
+- **Veredito pré-registrado:** nenhuma mudança de saída aprovada.
+
+**Fase B — sem filtro ADX (`{"useADX":false}`, família `regime-adx-ablation`, m=1):**
+- **Regra:** "acelera a medição" se `(EP_R0/EP_M1)²` em cluster (`backtest-correlation-check.mjs`)
+  for ≥ 1,3× nas duas janelas, com a diferença de expectância dentro do ruído.
+
+| | W1 R0 → M1 | W2 R0 → M1 |
+|---|---|---|
+| Operações | 115 → 188 | 119 → 169 |
+| Expectância líquida | −0,048 → +0,005R (Δ +0,053, IC [−0,047; +0,154]) | +0,054 → +0,080R (Δ +0,026, IC [−0,090; +0,143]) |
+| EP em cluster | 0,0864 → 0,0766 (**1,27×**) | 0,1218 → 0,0948 (**1,65×**) |
+| Conta (1% de risco) / drawdown | −5,7% / 8,7% → +0,3% / 8,6% | +6,1% / 8,3% → +13,7% / 7,6% |
+
+- **Veredito: NÃO PASSOU.** Ficou por pouco na W1 (1,27×). Encerrado, sem reinterpretação.
+- **Descritivo:** as operações que o ADX barraria (ADX mediano ≈ 16) renderam +0,077R (73 ops,
+  W1) e +0,123R (50 ops, W2), ou seja, não foram piores que as aprovadas.
+  - Não há evidência de que o filtro ADX melhore a seleção, nem de que tirá-lo ajude: tudo
+    dentro do ruído, coerente com o item 264.
+  - Reabrir só com uma janela nova de 12 meses.
+
+**Defeitos de leitura confirmados na auditoria (não afetam o motor; não corrigidos aqui):**
+- **`backtestAnalysis.js` `largestBucket`:** passa `contributionR` (já dividido por N) para
+  `shareOfTotal` (que divide pela soma), então a % de "Maior contribuição" do `analyze-backtest`
+  sai N vezes menor. Use `contributionR ÷ expectancyR`.
+- **`mfe_r` do candle de saída:** é atualizado antes do teste de stop (`scanner.js`), então o MFE
+  pode incluir preço posterior ao stop. Separe `bars_to_mfe === bars_to_stop`.
+- **`backtestMarketDataProvider.js`:** fixa `MARKET_SOURCE='spot'` mesmo com dado Futures.
+- **`setPineConfigOverrides`:** aceita chave desconhecida calada, então um erro de digitação roda o
+  controle disfarçado. Confira sempre `reproducibility.pineConfig`.
+
+**Ledger:** os 12 relatórios (`backtest-report_86..97`) foram registrados com
+`backtest-trial-registry.mjs`: família `exits-2026-10b` (10 trials, incluindo os dois R0) e
+`regime-adx-ablation` (2 trials, comparados contra os mesmos R0).
