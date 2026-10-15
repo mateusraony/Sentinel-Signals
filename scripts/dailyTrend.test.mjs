@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { buildDays, supertrend, dailySignals, symbolDailySeries, runDailyTrend, formatDailyTrendMarkdown } from './dailyTrend.mjs';
 import { evaluateTiming } from './weeklyTrend.mjs';
-import { synthMarket } from './__fixtures__/dailyTrendSynth.mjs';
+import { synthMarket, REPLICATION_PREREG } from './__fixtures__/dailyTrendSynth.mjs';
+import { mulberry32 } from '../src/lib/seededRandom.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PREREG = JSON.parse(readFileSync(resolve(__dirname, '../docs/experiments/daily-ema-supertrend-prereg.json'), 'utf8'));
@@ -167,5 +168,95 @@ describe('runDailyTrend — acha o que existe, não inventa o que não existe', 
     const rl = runDailyTrend(late, FAST, { descriptive: false });
     expect(rl.verdict).toBe('INCOMPLETE');
     expect(rl.untested.join(' ')).toMatch(/BTCUSDT: começa/);
+  });
+}, 120000);
+
+// Item 272 — replicação em 13 moedas novas: mesma regra, sem co-primário.
+const FAST_REP = { ...REPLICATION_PREREG, start: FAST.start, halves: FAST.halves };
+const repMarketFor = (seed, scenario, drift) => synthMarket({ seed, scenario, drift, prereg: FAST_REP, symbols: FAST_REP.primarySymbols });
+
+describe('replicação (item 272)', () => {
+  it('universo = carteira de referência de 20 (docs/roadmap.md) menos as 7 do item 271; regra idêntica', () => {
+    const reference20 = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT', 'SOLUSDT', 'AVAXUSDT', 'LINKUSDT',
+      'DOTUSDT', 'ARBUSDT', 'OPUSDT', 'SUIUSDT', 'NEARUSDT', 'AAVEUSDT', 'ONDOUSDT', 'FETUSDT',
+      'PENDLEUSDT', 'ZROUSDT', 'DYDXUSDT', 'PAXGUSDT'];
+    const used271 = [...PREREG.primarySymbols, ...PREREG.descriptiveSymbols];
+    expect(REPLICATION_PREREG.primarySymbols).toEqual(reference20.filter((s) => !used271.includes(s)));
+    expect(REPLICATION_PREREG.coPrimarySymbol).toBeNull();
+    expect(REPLICATION_PREREG.descriptiveSymbols).toEqual([]);
+    for (const k of ['fetchFrom', 'start', 'end', 'halves', 'emaFast', 'emaSlow', 'stAtrPeriod', 'stFactor',
+      'warmupDaysAfterListing', 'minShiftDays', 'costBpsPerSide', 'minAnnualExcess', 'maxMissingDays', 'robustness']) {
+      expect(REPLICATION_PREREG[k]).toEqual(PREREG[k]);
+    }
+    // Um teste só, confirmatório: α 0,025 sem divisão de família.
+    expect(REPLICATION_PREREG.alphaFamily).toBe(0.025);
+    expect(REPLICATION_PREREG.costSensitivityBps).toEqual([10, 20]);
+  });
+
+  it('sem co-primário: um teste só (a carteira), com o α inteiro', () => {
+    const r = runDailyTrend(repMarketFor(21, 'adverse'), FAST_REP, { descriptive: false });
+    expect(r.tests.map((t) => t.name)).toEqual(['carteira']);
+    expect(r.tests[0].holm.threshold).toBe(0.025);
+    expect(r.verdict).not.toBe('INCOMPLETE');
+    expect(r.title).toBe('replicação em 13 moedas novas');
+  });
+
+  it('carteira cujo dado mais antigo começa depois do início → INCOMPLETE', () => {
+    const d = repMarketFor(22, 'iid');
+    for (const s of Object.keys(d)) d[s] = d[s].filter((c) => c.openTime >= Date.parse('2023-01-01T00:00:00Z'));
+    const r = runDailyTrend(d, FAST_REP, { descriptive: false });
+    expect(r.verdict).toBe('INCOMPLETE');
+    expect(r.untested.join(' ')).toMatch(/carteira: a moeda mais antiga começa/);
+  });
+
+  it('descritivos: trocas, composto e custo maior (com excesso e p recalculados)', () => {
+    const r = runDailyTrend(repMarketFor(23, 'trend', 0.006), FAST_REP);
+    const d = r.descriptive;
+    expect(d.perSymbol.every((x) => Number.isInteger(x.switches) && x.switches > 0)).toBe(true);
+    expect(d.switchesPerSymbolYear).toBeGreaterThan(0);
+    expect(Number.isFinite(d.strategy.cagr) && Number.isFinite(d.buyAndHold.cagr)).toBe(true);
+    expect(d.costSensitivity.map((c) => c.bpsPerSide)).toEqual([10, 20]);
+    expect(d.costSensitivity[0].meanDaily).toBeLessThan(r.tests[0].full.observed);
+    expect(d.costSensitivity[1].meanDaily).toBeLessThan(d.costSensitivity[0].meanDaily);
+    expect(d.costSensitivity.every((c) => Number.isFinite(c.excessAnnual) && c.p > 0 && c.p <= 1)).toBe(true);
+    const md = formatDailyTrendMarkdown(r);
+    expect(md).toMatch(/Trocas de posição: .* por moeda por ano/);
+    expect(md).toMatch(/10 bps\/lado → líquido .*, excesso .*\/ano \(p /);
+    expect(md).not.toMatch(/não muda com o custo/);
+  });
+
+  it('custo do descritivo no valor pré-registrado reproduz o teste que decide', () => {
+    const r = runDailyTrend(repMarketFor(24, 'adverse'), { ...FAST_REP, costSensitivityBps: [FAST_REP.costBpsPerSide] });
+    const [c] = r.descriptive.costSensitivity;
+    expect(c.meanDaily).toBe(r.tests[0].full.observed);
+    expect(c.excessAnnual).toBe(r.tests[0].full.excessAnnual);
+    expect(c.p).toBe(r.tests[0].full.p);
+  });
+
+  // Custo circular: por moeda, toda rotação paga o mesmo número de trocas.
+  const posSeries = (symbol, n, seed, offsetDays = 0) => {
+    const rand = mulberry32(seed);
+    let pos = 0;
+    return { symbol, entries: Array.from({ length: n }, (_, i) => {
+      if (rand() < 0.15) pos = 1 - pos;
+      return { weekStart: (offsetDays + i) * DAY, pos, ret: 0.02 * (rand() - 0.5) };
+    }) };
+  };
+
+  it('uma moeda: custo maior baixa o líquido e deixa o excesso igual', () => {
+    const series = [posSeries('X', 240, 7)];
+    const cheap = evaluateTiming(series, { minShift: 10, costPerSide: 0.0006, periodsPerYear: 365 });
+    const dear = evaluateTiming(series, { minShift: 10, costPerSide: 0.002, periodsPerYear: 365 });
+    expect(dear.observed).toBeLessThan(cheap.observed);
+    expect(dear.excessAnnual).toBeCloseTo(cheap.excessAnnual, 10);
+  });
+
+  it('carteira com entradas em datas diferentes: o excesso MUDA com o custo (por isso é recalculado)', () => {
+    // A tem 240 dias; B entra no dia 120. Antes disso A pesa 1, depois 1/2:
+    // deslocar as trocas de A entre os dois trechos muda o custo da nula.
+    const series = [posSeries('A', 240, 7), posSeries('B', 120, 8, 120)];
+    const cheap = evaluateTiming(series, { minShift: 10, costPerSide: 0.0006, periodsPerYear: 365 });
+    const dear = evaluateTiming(series, { minShift: 10, costPerSide: 0.002, periodsPerYear: 365 });
+    expect(Math.abs(dear.excessAnnual - cheap.excessAnnual)).toBeGreaterThan(1e-4);
   });
 }, 120000);

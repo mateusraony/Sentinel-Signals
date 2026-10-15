@@ -1,0 +1,78 @@
+name: Tendência diária EMA + Supertrend — replicação (Sentinel Signals)
+
+# docs/known-risks.md item 272 — replicação pré-registrada do item 271: MESMA
+# regra, mesmos parâmetros, mesmo período e mesmo custo, em 13 moedas que
+# nunca entraram no teste (carteira de referência de 20 símbolos menos as 7 do
+# 271). Regras em docs/experiments/daily-ema-supertrend-replication-prereg.json;
+# nada é escolhido na hora do disparo, de propósito.
+#
+# Depois, reexecuta o item 271 SÓ para o descritivo que ficou em aberto lá
+# (curva composta, trocas e custo de 10/20 bps). O veredito do 271 já está
+# registrado e não muda; o determinismo do script faz a reexecução repetir os
+# mesmos números de decisão.
+#
+# Sem campos e sem secret: só baixa velas diárias públicas da Binance Spot.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  replication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Baixar as velas diárias (até o fim pré-registrado)
+        # Lidos dos pré-registros no MESMO passo (valor gravado em GITHUB_ENV
+        # só aparece no passo seguinte — review do Codex, PR #488).
+        run: |
+          SYMBOLS=$(node -p "const a = require('./docs/experiments/daily-ema-supertrend-replication-prereg.json'); const b = require('./docs/experiments/daily-ema-supertrend-prereg.json'); [...new Set([...a.primarySymbols, ...b.primarySymbols, ...b.descriptiveSymbols])].join(',')")
+          FETCH_FROM=$(node -p "require('./docs/experiments/daily-ema-supertrend-replication-prereg.json').fetchFrom")
+          echo "Símbolos: $SYMBOLS · desde $FETCH_FROM"
+          node scripts/fetch-backtest-data.mjs \
+            --symbols "$SYMBOLS" \
+            --from "${FETCH_FROM}T00:00:00Z" --to "2026-10-05T00:00:00Z" \
+            --timeframes 1d \
+            --out candles
+
+      - name: Replicação (decide — item 272)
+        run: |
+          set -o pipefail
+          node scripts/daily-ema-supertrend.mjs --data-dir candles \
+            --prereg docs/experiments/daily-ema-supertrend-replication-prereg.json \
+            --json daily-ema-supertrend-replication-summary.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Reexecução do item 271 (só descritivo — o veredito do 271 já está registrado)
+        if: always()
+        run: |
+          set -o pipefail
+          {
+            echo ""
+            echo "---"
+            echo "### Reexecução do item 271 — só descritivo (curva composta, trocas e custo de 10/20 bps). O veredito do 271 já está registrado e não muda."
+          } >> "$GITHUB_STEP_SUMMARY"
+          node scripts/daily-ema-supertrend.mjs --data-dir candles \
+            --prereg docs/experiments/daily-ema-supertrend-prereg.json \
+            --extra-cost-bps 10,20 \
+            --json daily-ema-supertrend-271-rerun-summary.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload dos resumos (arquivos leves)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resumo-daily-ema-supertrend-replicacao
+          path: |
+            daily-ema-supertrend-replication-summary.json
+            daily-ema-supertrend-271-rerun-summary.json
+          retention-days: 30
+          if-no-files-found: warn

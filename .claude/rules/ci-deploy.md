@@ -241,6 +241,14 @@ paths:
     `resumo-daily-ema-supertrend`.
   - **Sem secret.** Mesmo molde do `weekly-trend.yml`.
 
+- `daily-ema-supertrend-replication.yml` — disparo **manual**, sem campos:
+  replicação pré-registrada do item 271 em 13 moedas novas (`docs/known-risks.md`
+  item 272; `docs/experiments/daily-ema-supertrend-replication-prereg.json`).
+  - **Depois da replicação:** reexecuta o item 271 só para o descritivo (curva
+    composta, trocas e custo de 10/20 bps).
+  - **Artifact:** `resumo-daily-ema-supertrend-replicacao`, com os dois JSONs.
+  - **Sem secret.**
+
 ## Deploy
 
 - **Frontend**: Render Static Site (`render.yaml` `sentinel-signals`), automático
