@@ -55,7 +55,10 @@ export function regimeLookup(candles1d, rule) {
     }
     if (idx < 0) return { state: null, reason: 'sem vela diária antes da entrada' };
     if (days[idx].closeTime < tMs - DAY) return { state: null, reason: 'vela diária velha (buraco)' };
-    if (idx < rule.warmupDays || signals[idx] === null) return { state: null, reason: 'aquecimento' };
+    // Mesmo corte do item 271 (`symbolDailySeries`): o dia de índice
+    // `warmupDays` já opera com o sinal do fechamento da vela anterior
+    // (review do Codex, PR #497 — antes ficava um dia atrasado).
+    if (idx < rule.warmupDays - 1 || signals[idx] === null) return { state: null, reason: 'aquecimento' };
     return { state: signals[idx], reason: null };
   };
   return { at, gapDays, firstOpen: days[0]?.openTime ?? null };

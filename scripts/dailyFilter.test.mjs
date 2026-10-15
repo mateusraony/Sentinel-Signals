@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { regimeLookup, sidedOpsFromReport, armContributions, runDailyFilterWindow, combineWindows, formatWindowMarkdown, formatCombinedMarkdown } from './dailyFilter.mjs';
-import { buildDays, dailySignals } from './dailyTrend.mjs';
+import { buildDays, dailySignals, symbolDailySeries } from './dailyTrend.mjs';
 import { synthFilterWindow, PREREG } from './__fixtures__/dailyFilterSynth.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -62,6 +62,18 @@ describe('regra diária no horário da entrada — só vela fechada', () => {
       expect(regimeLookup(cut, RULE).at(tk).state).toBe(regimeLookup(c, RULE).at(tk).state);
     }
     expect(regimeLookup(changed, RULE).at(t).state).toBe(regimeLookup(c, RULE).at(t).state);
+  });
+
+  it('mesma posição do item 271 em todo dia, inclusive o 1º depois do aquecimento (review do Codex, PR #497)', () => {
+    const c = candles(wave(300));
+    const lk = regimeLookup(c, RULE);
+    const days = buildDays(c, { endMs: Infinity });
+    const series = symbolDailySeries(days, dailySignals(days, RULE), { startMs: 0, endMs: Infinity, warmupDays: RULE.warmupDays });
+    // O 271 começa no dia de índice 126 com o sinal do fechamento da vela 125.
+    expect(series[0].weekStart).toBe(c[RULE.warmupDays].openTime);
+    for (const d of series) expect(lk.at(d.weekStart + 6 * 60 * 60 * 1000).state).toBe(d.pos);
+    // Um dia antes ainda é aquecimento.
+    expect(lk.at(c[RULE.warmupDays - 1].openTime + 6 * 60 * 60 * 1000).state).toBeNull();
   });
 
   it('antes do aquecimento (126 velas) não há regra; buraco recente é detectado', () => {

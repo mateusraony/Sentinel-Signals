@@ -32384,6 +32384,15 @@ Signals)"** → *Run workflow* (sem campos). O resumo sai na página do job, e o
 - **O R sintético é aproximação.** A retenção de 1 a 3 dias e o stop de 1,25 σ diário são
   suposições minhas, não medidas do Sentinel.
 
+**Correção antes de rodar (review do Codex, PR #497):**
+- A regra só valia **um dia depois** do que no item 271.
+- No 271, o dia de índice 126 já opera com o sinal da vela 125 (`symbolDailySeries`). O filtro
+  esperava a vela 126.
+- Isso afetava o 1º dia depois do aquecimento de moedas recém-listadas, como ZRO na W2.
+- Corrigido, com um teste que compara dia a dia com o código do 271 e falhava antes da correção.
+- A calibração foi refeita e saiu idêntica (0/200; 4, 12 e 60 de 100).
+- O pré-registro (JSON e sha) não mudou.
+
 **Previsão (registrada antes):** `NO_FILTER_EDGE`, com T positivo e pequeno (de 0 a +0,04R).
 - O efeito diário é real, mas é pequeno no horizonte de uma operação de 4h.
 - O teste tem pouco poder.
