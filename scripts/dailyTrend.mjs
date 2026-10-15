@@ -3,9 +3,11 @@
 // scripts/daily-ema-supertrend.mjs.
 //
 // Regra (uma só, pré-registrada): no fechamento da vela diária t (UTC), fica
-// comprado no dia t+1 (abertura → fechamento) se EMA10(close) > EMA21(close)
-// E a Supertrend(10, 3) está de alta; senão fica de fora. Custo por lado a
-// cada troca. Sem add-back, sem parciais, sem alvo fixo.
+// comprado durante o dia t+1 se EMA10(close) > EMA21(close) E a
+// Supertrend(10, 3) está de alta; senão fica de fora. Retorno do dia t+1 =
+// fechamento t → fechamento t+1 (posição mantida sem interrupção; em mercado
+// 24/7 a abertura de t+1 ≈ fechamento de t — review do Codex, PR #493). Custo
+// por lado a cada troca. Sem add-back, sem parciais, sem alvo fixo.
 //
 // Hipótese nula e régua: as mesmas do item 268 (scripts/weeklyTrend.mjs) —
 // deslocamento circular COMUM das posições contra os retornos, p exato, Holm
@@ -88,7 +90,11 @@ export function dailySignals(days, { emaFast, emaSlow, stAtrPeriod, stFactor }) 
 /**
  * Posição e retorno de cada dia elegível de uma moeda. O dia j usa o sinal do
  * fechamento do dia anterior (j−1, que tem de existir e ser o dia de
- * calendário anterior) e o retorno abertura → fechamento do próprio dia.
+ * calendário anterior) e o retorno fechamento de j−1 → fechamento de j.
+ * Fechamento a fechamento, e não abertura → fechamento (review do Codex, PR
+ * #493): com a posição mantida vários dias, só abertura → fechamento perderia
+ * o trecho entre o fechamento e a abertura seguinte sem cobrar saída e
+ * reentrada — uma estratégia híbrida impossível.
  * `weekStart` é a chave do período esperada por evaluateTiming (aqui, o
  * início do dia).
  */
@@ -99,7 +105,7 @@ export function symbolDailySeries(days, signals, { startMs, endMs, warmupDays })
     const prev = days[j - 1];
     if (d.openTime < startMs || d.closeTime > endMs) continue;
     if (prev.openTime !== d.openTime - DAY || signals[j - 1] === null) continue;
-    out.push({ weekStart: d.openTime, pos: signals[j - 1], ret: d.close / d.open - 1 });
+    out.push({ weekStart: d.openTime, pos: signals[j - 1], ret: d.close / prev.close - 1 });
   }
   return out;
 }

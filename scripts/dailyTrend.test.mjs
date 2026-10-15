@@ -76,7 +76,7 @@ describe('Supertrend no padrão do ta.supertrend do Pine', () => {
 });
 
 describe('posição, retorno e janela', () => {
-  it('o dia j usa o sinal do fechamento de j−1 e o retorno abertura → fechamento de j', () => {
+  it('o dia j usa o sinal do fechamento de j−1 e o retorno fechamento de j−1 → fechamento de j', () => {
     const days = buildDays(marketFor(6, 'iid').BTCUSDT, { endMs: Date.parse(FAST.end) });
     const signals = dailySignals(days, FAST);
     const entries = symbolDailySeries(days, signals, { startMs: Date.parse(FAST.start), endMs: Date.parse(FAST.end), warmupDays: 126 });
@@ -84,10 +84,16 @@ describe('posição, retorno e janela', () => {
     for (const e of entries.slice(0, 50)) {
       const j = idx.get(e.weekStart);
       expect(e.pos).toBe(signals[j - 1]);
-      expect(e.ret).toBeCloseTo(days[j].close / days[j].open - 1, 12);
+      expect(e.ret).toBeCloseTo(days[j].close / days[j - 1].close - 1, 12);
     }
     expect(entries[0].weekStart).toBe(Date.parse(FAST.start));
     expect(entries.at(-1).weekStart).toBe(Date.parse(FAST.end) + 1 - DAY);
+  });
+
+  it('retorno inclui o salto entre o fechamento de ontem e a abertura de hoje (posição mantida)', () => {
+    const days = [candle(0, 100, 101, 99, 100), candle(1, 104, 106, 103, 105)];
+    const [e] = symbolDailySeries(days, [1, 1], { startMs: 0, endMs: 2 * DAY, warmupDays: 0 });
+    expect(e.ret).toBeCloseTo(0.05, 12); // 100 → 105, não 104 → 105
   });
 
   it('mudar o futuro não muda a posição de hoje (sem olhar à frente)', () => {

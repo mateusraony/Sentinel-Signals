@@ -31991,9 +31991,15 @@ scripts/vol-sizing.mjs --combine` foi rodado na sessão.
 
 **Pré-registro** (`docs/experiments/daily-ema-supertrend-prereg.json`, travado por
 `scripts/dailyTrend.test.mjs`):
-- **Regra (uma só):** no fechamento da vela diária t (UTC), comprado no dia t+1 (abertura →
-  fechamento) se `EMA10(close) > EMA21(close)` **e** a Supertrend(10, 3) está de alta; senão,
-  fora. Sai quando qualquer das duas vira.
+- **Regra (uma só):** no fechamento da vela diária t (UTC), comprado durante o dia t+1 se
+  `EMA10(close) > EMA21(close)` **e** a Supertrend(10, 3) está de alta; senão, fora. Sai quando
+  qualquer das duas vira.
+  - Retorno do dia: fechamento t → fechamento t+1, com a posição mantida sem interrupção.
+  - A 1ª versão usava abertura → fechamento. O Codex (PR #493) apontou, antes de qualquer run
+    real, que isso cria uma estratégia híbrida impossível: não ganha o trecho fechamento →
+    abertura seguinte e também não cobra a saída e a reentrada.
+  - Em mercado 24/7 a diferença é quase nula. A calibração abaixo não muda, porque no dado
+    sintético a abertura é igual ao fechamento anterior.
   - Sem add-back, parciais, alvo 4R ou regras discricionárias.
   - Custo de 6 bps por lado a cada troca.
 - **Supertrend:** padrão do `ta.supertrend` do Pine (hl2 ± 3·ATR(10) Wilder, bandas com
