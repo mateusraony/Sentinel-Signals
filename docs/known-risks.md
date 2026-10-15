@@ -31968,3 +31968,96 @@ scripts/vol-sizing.mjs --combine` foi rodado na sessão.
 **Ledger:** os 12 relatórios (`backtest-report_86..97`) foram registrados com
 `backtest-trial-registry.mjs`: família `exits-2026-10b` (10 trials, incluindo os dois R0) e
 `regime-adx-ablation` (2 trials, comparados contra os mesmos R0).
+
+## 271. Tendência diária EMA 10/21 + Supertrend (10,3) — teste pré-registrado (2026-10-15)
+
+**Por quê:**
+- O usuário trouxe uma estratégia popular ("10/21 EMA + Supertrend (10,3)": imagem com 8 regras
+  de entrada, saída parcial e add-back de 25%, gráfico diário, só compra) e pediu um teste de
+  verdade.
+- **Análise antes de construir:** é a mesma família da RF (filtro de tendência, item 264), da
+  tendência semanal (268) e do trailing ATR já medido (`trailAtrMult` 3,0 ≈ Supertrend fator 3:
+  empate no ledger).
+  - A imagem não traz número nenhum, e as regras subjetivas ("range de 3–5 dias", "pivô",
+    "price action confirma") viram parâmetros livres.
+  - Por isso se testa só o **núcleo mecânico mínimo**, no **diário**, que é onde a literatura
+    acha tendência em cripto. Em 4h seria repetir o item 264.
+- **Decisões do usuário (15/10):**
+  1. Testar nos MESMOS dados do item 268, declarando isso. A regra de parada do 268 encerrou a
+     tendência semanal "nestes dados", e esta é uma regra diferente da mesma família.
+  2. Usar uma régua mais dura: α da família 0,0125, metade da do 268, por ser a 2ª tentativa
+     da família nestes dados.
+- Nada aqui toca o motor ou a produção: é um script puro sobre velas diárias.
+
+**Pré-registro** (`docs/experiments/daily-ema-supertrend-prereg.json`, travado por
+`scripts/dailyTrend.test.mjs`):
+- **Regra (uma só):** no fechamento da vela diária t (UTC), comprado no dia t+1 (abertura →
+  fechamento) se `EMA10(close) > EMA21(close)` **e** a Supertrend(10, 3) está de alta; senão,
+  fora. Sai quando qualquer das duas vira.
+  - Sem add-back, parciais, alvo 4R ou regras discricionárias.
+  - Custo de 6 bps por lado a cada troca.
+- **Supertrend:** padrão do `ta.supertrend` do Pine (hl2 ± 3·ATR(10) Wilder, bandas com
+  catraca pelo close anterior). Caso calculado à mão e causalidade série×prefixo nos testes.
+- **Dados:**
+  - velas diárias Binance Spot de 2018-06-01 (aquecimento) até 2026-10-04T23:59:59.999Z;
+  - avaliação a partir de 2019-01-07;
+  - excluídos os primeiros 126 dias após cada listagem (~6× o período, regra de `pine-parity.md`);
+  - mesmas moedas e metades do item 268.
+- **Universo:**
+  - primário: carteira de peso igual BTC, ETH, FET, DYDX, PENDLE e ZRO;
+  - co-primário: BTC sozinho;
+  - PAXG só descritivo.
+- **Nula:** deslocamento circular comum das posições contra os retornos, k ≥ 56 dias (o mesmo k
+  para todas as moedas, limitado pela série mais curta). p exato, sem seed. Reuso do
+  `evaluateTiming` do item 268, que ganhou `periodsPerYear`; o padrão 52 é byte-idêntico para o 268.
+- **Passa (por co-primário) só com as três condições:**
+  1. p ≤ limiar de Holm, α da família 0,0125;
+  2. as duas metades acima da mediana embaralhada;
+  3. excesso ≥ 2% ao ano, líquido.
+- **Veredito:** `TREND_FOUND` / `NO_TREND_EDGE` / `INCOMPLETE`. `INCOMPLETE` sai com dado faltando,
+  série cortada no fim, mais de 3 dias faltando no meio, ou BTC curto ou tardio; o job fica
+  vermelho e não conta como resposta.
+- **Descritivo, sem decidir nada:** Sharpe e queda máxima contra comprar e segurar, tempo comprado,
+  resultado por moeda, PAXG, comprado/vendido e vizinhos de robustez (EMA 8/21 e 12/26;
+  Supertrend fator 2,5 e 3,5). Vizinho com p baixo **não** vira achado: seria escolher variante
+  depois de ver.
+
+**Erro e poder, medidos ANTES do run** (`scripts/__fixtures__/dailyTrendSynth.mjs`, tamanho real,
+listagens como as reais, regra completa):
+
+| Cenário | Rodadas | Aprovou (`TREND_FOUND`) | p carteira ≤ 0,05 |
+|---|---|---|---|
+| Ruído gaussiano limpo (σ 4%/dia) | 200 | 2 (1,0%) | 4,0% |
+| **Nula hostil:** cauda gorda (t 4 gl), volatilidade em blocos de 30–90 dias, fator de mercado comum ρ 0,5, deriva +0,1%/dia | 200 | **0 (0%)** | 3,0% |
+| Tendência plantada: regimes comuns de ±0,1%/dia (duração média de 60 dias) | 100 | 0 | 5% |
+| Idem ±0,2%/dia | 100 | 2 | 15% |
+| Idem ±0,4%/dia | 100 | 55 | 75% |
+
+- **Leitura honesta:**
+  - O alarme falso está controlado (≤ α), inclusive no cenário hostil que derrubou a nula do
+    item 269.
+  - O **poder é baixo**: o teste só enxerga tendência forte e persistente (regimes de ±0,4%/dia,
+    ~±24% em dois meses, sobre o ruído).
+  - Uma vantagem pequena, do tamanho do indício do item 268, provavelmente **não** passa.
+  - `NO_TREND_EDGE` significa "não há tendência diária grande o bastante para esta régua", não
+    "tendência não existe".
+- **Previsão (registrada antes):** `NO_TREND_EDGE`, com a regra reduzindo a queda máxima contra
+  comprar e segurar (como no item 268: 53% contra 83%), sem retorno extra demonstrável.
+
+**Proibido depois de ver o resultado:** trocar períodos, fator, moedas, datas, custo ou régua;
+promover um vizinho de robustez; reabrir nestes dados.
+
+**Depois do run:**
+- `TREND_FOUND` → a Etapa 2 (filtro diário de direção nas 40 entradas aleatórias do
+  `backtest-random-baseline.yml`, comparação pareada por semente, como no item 267) vira proposta
+  separada, com pré-registro novo e aprovação do usuário.
+- `NO_TREND_EDGE` → a família de tendência diária/semanal fica encerrada nestes dados. Reabre só
+  com ≥ 104 semanas novas e uma única regra escolhida antes.
+- `INCOMPLETE` → refazer.
+- **Nada vai para a produção** em nenhum caso, sem decisão separada.
+
+**Como rodar:** GitHub → Actions → **"Tendência diária EMA + Supertrend (Sentinel Signals)"** →
+*Run workflow* (sem campos). O resumo sai na página do job e no artifact
+`resumo-daily-ema-supertrend`.
+
+**Ledger:** não se aplica (a estatística não é expectância em R), mesmo caso dos itens 266/268/269.
