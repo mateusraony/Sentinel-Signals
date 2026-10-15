@@ -32248,12 +32248,21 @@ Signals)"** → *Run workflow* (sem campos). O resumo sai na página do job, e o
   parâmetros, 13 moedas nunca testadas: passou com folga.
 - **Continua em aberto:**
   1. **Período.**
-     - As 19 moedas atravessam os mesmos ciclos.
-     - O efeito ficou concentrado em 2019–2022 (excesso de +62% ao ano) e caiu em 2023–2026
-       (+21% ao ano). Essa metade, sozinha, teria p 0,033, e o mesmo padrão aparece no 271
-       (+50% → +30%).
-     - Isso é consistente com um efeito que enfraquece com o tempo, mas não prova.
-     - Só tempo novo responde.
+     - A replicação trocou as moedas, não o tempo. O calendário é o mesmo do 271 (2019–2026).
+     - **As metades NÃO comparam o mesmo universo** (correção do review do Codex, PR #496).
+       - O excesso foi de +62% ao ano em 2019–2022 e +21% em 2023–2026; no 271, +50% e +30%.
+       - Mas a 1ª metade do 272 tem só 9 moedas, 5 delas apenas a partir de 2020-12/2021-02.
+         OP tem menos dias que o mínimo e fica de fora; ARB, SUI e ONDO não existiam.
+       - A 2ª metade tem as 13.
+       - No 271 acontece o mesmo: 4 moedas na 1ª metade e 6 na 2ª.
+       - Portanto a queda mistura tempo com composição da carteira e **não sustenta**, sozinha,
+         a leitura de "efeito enfraquecendo".
+     - **Único corte de universo fixo disponível:** o BTC sozinho (271), com +23,1% ao ano na
+       1ª metade (p 0,092) e +15,5% na 2ª (p 0,12). Também é menor, mas é ruído demais para
+       concluir.
+     - Separar tempo de composição exige um subconjunto fixo de moedas nas duas metades. Isso
+       não estava pré-registrado; se for feito, é descritivo.
+     - Só tempo novo responde se o efeito continua.
   2. **Sobrevivência.**
      - As 13 também estão na carteira de 2026 porque sobreviveram.
      - A nula usa os retornos da própria moeda, então ter escolhido moedas que subiram não
