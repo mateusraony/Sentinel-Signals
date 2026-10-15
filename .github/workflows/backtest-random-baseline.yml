@@ -64,6 +64,14 @@ on:
         description: "Tamanho pela volatilidade (item 269) — marque só no teste do tamanho"
         type: boolean
         default: false
+      daily_filter:
+        # docs/known-risks.md item 273 — NÃO muda nenhum braço: só acrescenta,
+        # no fim, a análise do filtro de tendência diária (regra dos itens
+        # 271/272) sobre os mesmos relatórios (scripts/daily-filter.mjs) e o
+        # arquivo resumo-daily-filter-<família>. Desmarcado = exatamente o de antes.
+        description: "Filtro de tendência diária (item 273) — marque só no teste do filtro"
+        type: boolean
+        default: false
 
 jobs:
   prepare:
@@ -93,9 +101,10 @@ jobs:
           FAMILY: ${{ inputs.family }}
           FIB_ENTRY: ${{ inputs.fib_entry }}
           VOL_SIZING: ${{ inputs.vol_sizing }}
+          DAILY_FILTER: ${{ inputs.daily_filter }}
         run: |
           node -e "
-            const { FROM_INPUT, TO_INPUT, N_SEEDS, RANDOM_PROB, FAMILY, FIB_ENTRY, VOL_SIZING } = process.env;
+            const { FROM_INPUT, TO_INPUT, N_SEEDS, RANDOM_PROB, FAMILY, FIB_ENTRY, VOL_SIZING, DAILY_FILTER } = process.env;
             const fail = (m) => { console.error('::error::' + m); process.exit(1); };
             for (const [k, v] of [['from', FROM_INPUT], ['to', TO_INPUT]]) {
               if (!/^\d{4}-\d{2}-\d{2}$/.test(v || '') || Number.isNaN(Date.parse(v))) fail(k + ' precisa ser uma data YYYY-MM-DD, recebeu: ' + v);
@@ -109,7 +118,9 @@ jobs:
             if (FIB_ENTRY !== 'true' && FIB_ENTRY !== 'false') fail('fib_entry precisa ser true ou false, recebeu: ' + FIB_ENTRY);
             if (VOL_SIZING !== 'true' && VOL_SIZING !== 'false') fail('vol_sizing precisa ser true ou false, recebeu: ' + VOL_SIZING);
             if (VOL_SIZING === 'true' && FIB_ENTRY === 'true') fail('vol_sizing mede a estratégia ATUAL — desmarque a Fibonacci');
-            console.log('Fibonacci 15m em todos os braços:', FIB_ENTRY, '· tamanho pela volatilidade:', VOL_SIZING);
+            if (DAILY_FILTER !== 'true' && DAILY_FILTER !== 'false') fail('daily_filter precisa ser true ou false, recebeu: ' + DAILY_FILTER);
+            if (DAILY_FILTER === 'true' && FIB_ENTRY === 'true') fail('daily_filter mede a estratégia ATUAL — desmarque a Fibonacci');
+            console.log('Fibonacci 15m em todos os braços:', FIB_ENTRY, '· tamanho pela volatilidade:', VOL_SIZING, '· filtro diário:', DAILY_FILTER);
             const arms = ['R0', ...Array.from({ length: n }, (_, i) => String(i + 1))];
             require('fs').appendFileSync(process.env.GITHUB_OUTPUT, 'arms=' + JSON.stringify(arms) + '\n');
             console.log('Braços:', arms.length, '(R0 + ' + n + ' seeds)');
@@ -277,6 +288,24 @@ jobs:
         with:
           name: resumo-vol-sizing-${{ inputs.family }}
           path: vol-sizing-summary.json
+          retention-days: 30
+          if-no-files-found: warn
+
+      # Item 273 — mesma ideia do 269: roda mesmo se o resumo acima recusar; a
+      # análise faz a própria checagem e diz INCOMPLETE em vez de calar.
+      - name: Filtro de tendência diária (item 273)
+        if: ${{ !cancelled() && inputs.daily_filter }}
+        run: |
+          set -o pipefail
+          node scripts/daily-filter.mjs --reports reports --candles candles --json daily-filter-summary.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload do resumo do filtro de tendência diária
+        if: ${{ always() && inputs.daily_filter }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: resumo-daily-filter-${{ inputs.family }}
+          path: daily-filter-summary.json
           retention-days: 30
           if-no-files-found: warn
 

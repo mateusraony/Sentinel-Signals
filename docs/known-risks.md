@@ -32288,3 +32288,130 @@ Signals)"** → *Run workflow* (sem campos). O resumo sai na página do job, e o
   - indicação no painel.
 - **Tempo novo:** acompanhamento a partir de 2026-10-05, com um pré-registro novo só de datas
   (mesma regra e mesmos parâmetros).
+
+## 273. Etapa 2 — o filtro de tendência diária melhora as entradas do Sentinel? Teste pré-registrado (2026-10-15)
+
+**Por quê:**
+- A regra diária passou no item 271 e replicou no 272. Entre as integrações possíveis, o usuário
+  escolheu a Etapa 2: testar se ela combina com o Sentinel.
+- **Pergunta:** uma operação de 4h aberta a favor da regra diária rende mais R que a média?
+- Nada aqui toca o motor ou a produção. É uma análise sobre os relatórios do workflow de entradas
+  aleatórias, no molde do item 269.
+
+**O que a pesquisa e a revisão mudaram ANTES de codar:**
+- **Pesquisa:**
+  - "Filtrar pela tendência do tempo gráfico maior" é heurística de praticante: o Triple Screen
+    de Elder, e a Quantpedia com MACD diário e entradas de 1h.
+  - Não achei teste revisado por pares disso em cripto. **Chance honesta: moderada a baixa.**
+  - O que a pesquisa traz de concreto é a armadilha clássica: o filtro precisa usar a vela maior
+    **fechada**. Se usar a vela em formação, o backtest sai melhor que a realidade. Aqui a regra
+    lê só a última vela diária fechada até a entrada, e um teste de causalidade garante isso.
+- **Sem código no motor.** Ao apresentar a Etapa 2, eu tinha falado em código só de backtest no
+  motor. Isso mudou:
+  - Como as entradas da RF se comportam como entrar ao acaso (item 264), as 40 seeds já são a
+    amostra certa.
+  - Separar as operações delas pela regra diária responde a pergunta sem tocar em `scanner.js`.
+  - **Ressalva:** um filtro de verdade também muda quais operações existem (o ativo fica livre
+    para outra entrada). Esse efeito é de 2ª ordem e fica para a confirmação, se o teste passar.
+- **Armadilha da mistura de lados** (achada no desenho):
+  - O filtro mantém o BUY quando a regra está comprada e o SELL quando está fora.
+  - Se a janela subiu, todo BUY rende mais que todo SELL. Um filtro que só mudasse a proporção
+    entre BUY e SELL pareceria informativo sem ser.
+  - Por isso a estatística compara **dentro de cada lado**. Um teste prova que, quando o R
+    depende só do lado, T = 0.
+- **O R0 não decide** (diferente do item 269): na calibração, exigir T do R0 > 0 nas duas janelas
+  derrubou o poder de 60% para 39%, sem mudar o alarme falso (0 em 200 nos dois casos). Fica
+  descritivo.
+
+**Pré-registro** (`docs/experiments/daily-filter-prereg.json`, travado por
+`scripts/dailyFilter.test.mjs`):
+- **Regra diária:** a dos itens 271/272, com os mesmos parâmetros. O teste confere contra o
+  pré-registro do 271.
+- **Quem passa no filtro:**
+  - BUY com a regra comprada;
+  - SELL com a regra fora;
+  - a regra é a da última vela diária fechada até a entrada;
+  - sem regra conhecida, a operação passa. Isso acontece no aquecimento de 126 dias depois da
+    listagem, por exemplo com ZRO no começo da W2.
+- **Estatística:** T = Σ_lado (n_lado/n)·[R̄(lado, passa) − R̄(lado)], calculado por braço e
+  depois feita a média entre o R0 e as 40 seeds.
+  - Sob a hipótese nula, E[T] = 0.
+- **Inferência:** t de Student unicaudal sobre as somas mensais, igual ao item 269 (26 meses).
+- **Janelas, moedas, 40 seeds e probabilidade 0,0075:** iguais aos itens 264/269 (ressalva: são
+  janelas já vistas).
+- **Passa (`FILTER_EDGE`) só com as três condições:**
+  1. t ≥ limiar (unicaudal 2,5%);
+  2. T ≥ +0,05R por operação;
+  3. T > 0 em cada janela.
+- **Caso contrário:** `NO_FILTER_EDGE`.
+- **Vira `INCOMPLETE` com qualquer um destes problemas:**
+  - seed faltando ou janela fora do pré-registro;
+  - moeda negociada sem vela diária;
+  - buraco nas velas diárias a partir de 252 dias antes da janela;
+  - operação sem lado;
+  - Fibonacci ligada ou outra probabilidade.
+- **Descritivo, sem decidir nada:**
+  - T do R0;
+  - % de operações mantidas;
+  - R médio e soma de R com e sem filtro. Aqui a mistura de lados entra, porque é o que o filtro
+    faria de verdade;
+  - BUY e SELL a favor e contra;
+  - resultado por moeda.
+
+**Erro e poder, medidos antes** (`scripts/__fixtures__/dailyFilterSynth.mjs`):
+- **Como o R sintético é gerado:** sai do próprio caminho de preço. É lado × retorno de 1 a 3
+  dias ÷ stop de 1,25 σ20, cortado em [−1; 3].
+- **Tamanho:** 41 braços × 110 operações por janela.
+
+| Cenário de preço | Rodadas | Aprovou | Diferença diária comprado − fora (mediana) | T médio |
+|---|---|---|---|---|
+| Nula hostil (cauda gorda, volatilidade em blocos, fator comum, deriva +0,1%/dia) | 200 | 0 (só o t: 2) | −0,05%/dia | −0,005R |
+| Tendência ±0,3%/dia | 100 | 4 | +0,06%/dia | +0,017R |
+| Tendência ±0,4%/dia | 100 | 12 | +0,16%/dia | +0,034R |
+| Tendência ±0,6%/dia | 100 | 60 | +0,38%/dia | +0,079R |
+
+- **Alarme falso:** 0 em 200.
+- **Poder baixo para efeito médio.**
+  - Referência: nos itens 271/272, a diferença diária entre comprado e fora foi de ~0,38–0,50%
+    por dia no período todo. Ela é calculada do excesso e do tempo comprado.
+  - Em 2023–2026 foi de ~0,24–0,34% por dia, com a ressalva de composição do item 272.
+  - As janelas do Sentinel caem em 2024–2026.
+  - Com efeito desse tamanho, a chance de o teste aprovar fica em algo como **30–60%**.
+- **Consequência:**
+  - `FILTER_EDGE` vale muito (0 alarme falso em 200).
+  - `NO_FILTER_EDGE` é fraco. Não prova que o filtro não ajuda; mostra só que não ajudou com folga
+    nestas duas janelas.
+- **O R sintético é aproximação.** A retenção de 1 a 3 dias e o stop de 1,25 σ diário são
+  suposições minhas, não medidas do Sentinel.
+
+**Previsão (registrada antes):** `NO_FILTER_EDGE`, com T positivo e pequeno (de 0 a +0,04R).
+- O efeito diário é real, mas é pequeno no horizonte de uma operação de 4h.
+- O teste tem pouco poder.
+
+**Proibido depois de ver o resultado:**
+- trocar janela, moedas, regra, definição de "a favor", piso ou condições;
+- usar só BUY ou só SELL como resultado principal;
+- promover o R0 a condição decisiva ou rebaixar outra condição para descritiva.
+
+**Depois do run:**
+- **`FILTER_EDGE`:** o próximo passo é confirmar com o filtro rodando de verdade no motor de
+  backtest. A chave seria só de backtest, desligada em produção, e mediria também o efeito nas
+  operações que deixam de existir. Produção, só com decisão separada.
+- **`NO_FILTER_EDGE`:** o filtro diário fica sem evidência para o Sentinel nestas janelas. A
+  regra diária continua valendo sozinha (itens 271/272).
+- **`INCOMPLETE`:** refazer.
+
+**Como rodar** (2 disparos, ~30–60 min cada): GitHub → Actions → **"Backtest — referência de
+entrada aleatória (Sentinel Signals)"** → *Run workflow*.
+- **W1:**
+  - "Início da janela": 2025-10-10;
+  - "Fim da janela": 2026-10-10;
+  - "Rótulo da família": `DailyFilter_W1`;
+  - caixa **"Filtro de tendência diária (item 273)"** marcada;
+  - o resto no padrão.
+- **W2:** o mesmo, com 2024-07-27 → 2025-07-27 e `DailyFilter_W2`.
+- **Os dois no mesmo commit:** não pode haver merge entre os disparos.
+- **Saída e veredito:** cada disparo publica `resumo-daily-filter-<família>`. O veredito sai
+  juntando os dois na sessão, com `node scripts/daily-filter.mjs --combine W1.json W2.json`.
+
+**Ledger:** não se aplica (a estatística não é expectância em R por trial), mesmo caso do item 269.
