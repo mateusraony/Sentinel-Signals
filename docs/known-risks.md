@@ -32110,3 +32110,75 @@ promover um vizinho de robustez; reabrir nestes dados.
   - a Etapa 2 vira proposta separada, com pré-registro novo e aprovação do usuário.
 - **Reabertura da família:** a regra de parada do item 268 (tendência semanal) continua valendo
   para a regra semanal. Esta regra diária fica registrada como **passou**.
+
+## 272. Replicação do item 271 em 13 moedas novas — teste pré-registrado (2026-10-15)
+
+**Por quê:**
+- O item 271 passou, mas com duas fraquezas sérias: os mesmos dados do item 268 e moedas
+  escolhidas sabendo que sobreviveram.
+- O usuário escolheu replicar antes de qualquer integração com o Sentinel (Etapa 2) ou com o
+  painel.
+- Nada aqui toca o motor ou a produção.
+
+**Pré-registro** (`docs/experiments/daily-ema-supertrend-replication-prereg.json`, travado por
+`scripts/dailyTrend.test.mjs`):
+- **Universo, por regra mecânica e não pelo resultado:** a carteira de referência de 20 símbolos
+  (`docs/roadmap.md`, definida em 2026-08 para outro fim) menos as 7 do item 271.
+  - As moedas são BNB, ADA, XRP, SOL, AVAX, LINK, DOT, ARB, OP, SUI, NEAR, AAVE e ONDO.
+  - Nenhuma entrou em qualquer teste de tendência diária ou semanal deste projeto.
+- **Regra, parâmetros, período, metades, custo (6 bps) e nula:** idênticos ao 271, e o teste
+  confere campo a campo.
+- **Um teste só, confirmatório:** carteira de peso igual das 13, sem co-primário, α = 0,025
+  unicaudal sem divisão de família (é a confirmação de UMA hipótese já declarada).
+- **Passa** com as mesmas três condições do 271: p ≤ 0,025, as duas metades acima da mediana
+  embaralhada e excesso ≥ 2% ao ano.
+- **Mudanças no script (nenhuma altera a decisão do 271):**
+  - pré-registro sem co-primário passa a exigir que a moeda mais antiga cubra o início;
+  - descritivos novos: retorno composto ao ano, trocas por moeda por ano e retorno líquido com
+    custo de 10 e 20 bps por lado.
+  - O excesso sobre o embaralhado **não muda com o custo** por construção: toda rotação paga as
+    mesmas trocas. Quem mostra o efeito do custo é o retorno absoluto.
+- **O mesmo workflow reexecuta o 271** só para esses descritivos, que ficaram em aberto lá (curva
+  composta e custo de ~10 bps do Spot). O sha256 do pré-registro do 271 não muda.
+
+**Erro e poder, medidos ANTES do run** (dado sintético com as listagens aproximadas das 13 moedas,
+regra completa):
+
+| Cenário | Rodadas | Aprovou | p ≤ 0,05 |
+|---|---|---|---|
+| Nula hostil (cauda gorda, volatilidade em blocos, fator comum, deriva +0,1%/dia) | 200 | 1 (0,5%) | 2,0% |
+| Tendência plantada ±0,2%/dia | 100 | 10 | 16% |
+| Tendência plantada ±0,4%/dia | 100 | 72 | 85% |
+
+- **Alarme falso:** abaixo do α.
+- **Poder:** maior que no 271 (72% contra 55% com tendência forte), por ter mais moedas e o α
+  inteiro.
+
+**O que a replicação responde e o que NÃO responde:**
+- **Responde:** "o efeito do 271 dependia daquelas 6 moedas escolhidas?"
+- **Não responde:** "o período 2019–2026 é que foi bom para tendência?" As 13 moedas atravessam os
+  mesmos ciclos (alta de 2021, baixa de 2022) e andam juntas com o BTC. Esse lado só é resolvido
+  com tempo novo: acompanhamento a partir de 2026-10-05 ou reabertura com ≥ 104 semanas novas.
+
+**Previsão (registrada antes):** `TREND_FOUND`, com excesso **menor** que os +44% ao ano do 271
+(maldição do vencedor: o primeiro teste a passar tende a superestimar o efeito). Retorno composto
+de comprar e segurar provavelmente maior que o da regra em moedas com alta forte; queda máxima da
+regra bem menor.
+
+**Proibido depois de ver o resultado:** trocar moedas, datas, parâmetros, custo ou régua; tirar uma
+moeda "problemática"; promover vizinho de robustez.
+
+**Depois do run:**
+- `TREND_FOUND`: o efeito vale fora das 6 moedas originais. As integrações (Etapa 2: filtro diário
+  nas 40 entradas aleatórias; ou indicação no painel) viram propostas separadas, cada uma com sua
+  decisão.
+- `NO_TREND_EDGE`: o 271 fica marcado como **não replicado**. É indício de que o resultado
+  dependia das moedas escolhidas, e nada avança para integração nestes dados.
+- `INCOMPLETE`: refazer.
+- Nada vai para a produção em nenhum caso sem decisão separada.
+
+**Como rodar:** GitHub → Actions → **"Tendência diária EMA + Supertrend — replicação (Sentinel
+Signals)"** → *Run workflow* (sem campos). O resumo sai na página do job, e o artifact
+`resumo-daily-ema-supertrend-replicacao` traz os dois JSONs.
+
+**Ledger:** não se aplica, mesmo caso do item 271.
