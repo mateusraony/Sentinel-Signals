@@ -163,10 +163,10 @@ Skills em `.claude/skills/`, regras em `.claude/rules/` (carregam pelos
   medido é controle de risco (trailing pré-TP1, itens 132/263), não edge. O
   laboratório de "smart money" (266), a Fibonacci 15m (267), a tendência semanal
   (268) e o tamanho pela volatilidade (269) não passaram na régua pré-registrada.
-  **Exceção (item 271):** a regra diária comprado/fora "EMA10 > EMA21 e Supertrend
-  (10,3) de alta", testada isolada (fora do motor), **passou** na carteira das 6
-  moedas (não no BTC sozinho). É a 1ª regra pré-registrada a passar; não está no
-  motor nem na produção. Ganho de risco, não de retorno bruto.
+  **Exceção (itens 271/272):** a regra diária comprado/fora "EMA10 > EMA21 e Supertrend
+  (10,3) de alta", testada isolada (fora do motor), **passou** na carteira de 6 moedas
+  e **replicou** em 13 moedas novas (BTC sozinho não passa). Não está no motor nem na
+  produção. Ganho de risco e de momento, não de retorno médio bruto.
 
 - `npm run typecheck` roda no CI **como catraca**, não exigindo zero
   (`npm run typecheck:ratchet`, item 166): o teto é o passivo atual (16 erros

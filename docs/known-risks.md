@@ -32110,6 +32110,10 @@ promover um vizinho de robustez; reabrir nestes dados.
   - a Etapa 2 vira proposta separada, com pré-registro novo e aprovação do usuário.
 - **Reabertura da família:** a regra de parada do item 268 (tendência semanal) continua valendo
   para a regra semanal. Esta regra diária fica registrada como **passou**.
+- **Atualização (item 272):**
+  - a regra **replicou** em 13 moedas novas, o que responde em parte à ressalva 2;
+  - as ressalvas 4 (curva composta) e 5 (custo e trocas) foram medidas;
+  - detalhes no item 272.
 
 ## 272. Replicação do item 271 em 13 moedas novas — teste pré-registrado (2026-10-15)
 
@@ -32188,3 +32192,90 @@ Signals)"** → *Run workflow* (sem campos). O resumo sai na página do job, e o
 `resumo-daily-ema-supertrend-replicacao` traz os dois JSONs.
 
 **Ledger:** não se aplica, mesmo caso do item 271.
+
+**Resultado (2026-10-15): `TREND_FOUND`. Replicou: a regra passou nas 13 moedas novas.**
+- **Rastro:**
+  - run `38775537227` do workflow `daily-ema-supertrend-replication.yml`, commit `86a43cd` (merge
+    do PR #495);
+  - pré-registro sha256 `1efcbd00…`, igual ao arquivo mesclado;
+  - cobertura completa nas 13 moedas, com 0 dias faltando;
+  - ONDO só tem dado utilizável a partir de 2025-08-15 (416 dias). Por isso a nula tem 305
+    deslocamentos, e o menor p possível é 1/306 = 0,0033.
+
+| Teste | Dias | Regra/dia | Mediana embaralhada | Excesso ao ano | p | Limiar | Metades | Passou? |
+|---|---|---|---|---|---|---|---|---|
+| Carteira (13) | 2828 | +0,194% | +0,102% | +33,6% | **0,0033** (o menor possível: ganhou dos 305 deslocamentos) | 0,025 | sim / sim (p 0,002 e 0,033) | **sim** |
+
+- **As três condições foram cumpridas:**
+  - p 0,0033 ≤ 0,025;
+  - as duas metades ficaram acima da mediana embaralhada;
+  - excesso de 33,6% ≥ 2% ao ano.
+- **Previsão registrada antes:**
+  - **Acertou:** passou com excesso menor que o do 271 (+33,6% contra +44,2%), como na maldição do
+    vencedor.
+  - **Errou:** comprar e segurar **não** teve retorno composto maior. A regra fez 81% ao ano
+    contra 63%.
+    - A média diária de comprar e segurar é maior (+0,235% contra +0,194%).
+    - Mas as quedas de 83% custam mais no composto do que a regra perde ficando fora
+      (arrasto de volatilidade).
+  - **Acertou:** queda máxima bem menor (50% contra 83%).
+- **Descritivo da carteira (não decide):**
+  - comprada 42% do tempo;
+  - Sharpe 1,48 contra 1,01;
+  - 11 trocas por moeda por ano.
+- **Consistência por moeda:**
+  - As 13 ficaram acima da própria mediana embaralhada, mas LINK e AAVE quase em cima (+1,6% e
+    +0,3% ao ano).
+  - Seis passam p ≤ 0,05 sozinhas: DOT, AVAX, SOL, BNB, SUI e ADA.
+  - O resultado não depende de uma moeda só.
+- **Vizinhos de robustez:** excesso de +30,9% a +34,3% ao ano, todos no p mínimo.
+- **Custo:**
+  - Com 10 bps por lado, composto de 80,3% ao ano; com 20 bps, 78,3%.
+  - O excesso fica em 33,60% e 33,59%. A variação existe, como o Codex apontou, mas é desprezível.
+  - Com 11 trocas por moeda por ano, o custo não é o problema.
+
+**Descritivos do item 271 que estavam em aberto** (mesmo run, reexecução do pré-registro do 271):
+- **Decisão idêntica:** os números de decisão saíram iguais aos do run `38770931675`. É a 3ª
+  execução idêntica.
+- **Composto:** 79,8% ao ano na regra, contra 49,9% de comprar e segurar.
+- **Trocas:** 10,6 por moeda por ano.
+- **Custo:** com 10 bps, 79,1% ao ano; com 20 bps, 77,3%.
+- **Excesso:** 44,18% e 44,17%.
+- **Ressalvas 4 e 5 do item 271** (curva composta e custo) ficam respondidas.
+
+**O que o resultado quer dizer:**
+- **Respondido:** o efeito do 271 não dependia das 6 moedas escolhidas. Mesma regra, mesmos
+  parâmetros, 13 moedas nunca testadas: passou com folga.
+- **Continua em aberto:**
+  1. **Período.**
+     - As 19 moedas atravessam os mesmos ciclos.
+     - O efeito ficou concentrado em 2019–2022 (excesso de +62% ao ano) e caiu em 2023–2026
+       (+21% ao ano). Essa metade, sozinha, teria p 0,033, e o mesmo padrão aparece no 271
+       (+50% → +30%).
+     - Isso é consistente com um efeito que enfraquece com o tempo, mas não prova.
+     - Só tempo novo responde.
+  2. **Sobrevivência.**
+     - As 13 também estão na carteira de 2026 porque sobreviveram.
+     - A nula usa os retornos da própria moeda, então ter escolhido moedas que subiram não
+       explica o excesso sozinho. Mas moedas sobreviventes podem ser justamente as de tendências
+       mais longas.
+     - Moedas que morreram (LUNA, FTT etc.) não entram.
+     - A direção do viés sobre o excesso é incerta.
+  3. **Os números compostos não são expectativa.**
+     - A carteira tem peso igual, rebalanceada todo dia e sem custo de rebalanceamento. Isso vale
+       igualmente para a regra e para comprar e segurar.
+     - Os 81% ao ano vêm sobretudo de 2019–2021.
+  4. **As moedas andam juntas.** 13 moedas não são 13 replicações independentes. O deslocamento
+     comum da nula já leva isso em conta no p.
+  5. **Só compra, só Spot, execução no fechamento diário** (00:00 UTC). O custo de 10–20 bps cobre
+     a taxa e um deslize razoável.
+
+**Decisão pré-registrada aplicada:**
+- O efeito vale fora das 6 moedas originais. Somado ao 271, é a evidência mais forte que o projeto
+  já produziu: dois testes pré-registrados, moedas diferentes e p no mínimo possível nos dois.
+- **Nada vai para a produção.** As integrações viram propostas separadas, cada uma com decisão
+  própria:
+  - Etapa 2: filtro diário sobre as 40 entradas aleatórias do item 264;
+  - indicação no painel.
+- **Tempo novo:** acompanhamento a partir de 2026-10-05, com um pré-registro novo só de datas
+  (mesma regra e mesmos parâmetros).
