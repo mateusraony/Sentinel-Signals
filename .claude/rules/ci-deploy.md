@@ -233,6 +233,14 @@ paths:
     (~6 KB).
   - **Sem secret.**
 
+- `daily-ema-supertrend.yml` — disparo **manual**, sem campos: teste de
+  tendência diária EMA 10/21 + Supertrend(10,3) (`docs/known-risks.md` item 271).
+  - **Download:** velas diárias Spot até o fim pré-registrado
+    (`docs/experiments/daily-ema-supertrend-prereg.json`).
+  - **Análise:** roda `scripts/daily-ema-supertrend.mjs` e publica
+    `resumo-daily-ema-supertrend`.
+  - **Sem secret.** Mesmo molde do `weekly-trend.yml`.
+
 ## Deploy
 
 - **Frontend**: Render Static Site (`render.yaml` `sentinel-signals`), automático

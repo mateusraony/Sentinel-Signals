@@ -1,0 +1,59 @@
+name: Tendência diária EMA + Supertrend (Sentinel Signals)
+
+# docs/known-risks.md item 271 — teste pré-registrado de tendência diária:
+# "comprado no dia seguinte quando EMA10 > EMA21 e a Supertrend(10,3) está de
+# alta" contra o mesmo tempo comprado em dias embaralhados (deslocamento
+# circular comum). Regras em docs/experiments/daily-ema-supertrend-prereg.json;
+# nada é escolhido na hora do disparo, de propósito. Mesmo molde do
+# weekly-trend.yml (item 268).
+#
+# Sem campos e sem secret: só baixa velas diárias públicas da Binance Spot e
+# devolve um resumo. Repo público = minutos grátis.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  daily-ema-supertrend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Baixar as velas diárias (até o fim pré-registrado)
+        # Lidos do pré-registro no MESMO passo (valor gravado em GITHUB_ENV só
+        # aparece no passo seguinte — review do Codex, PR #488).
+        run: |
+          SYMBOLS=$(node -p "const p = require('./docs/experiments/daily-ema-supertrend-prereg.json'); [...p.primarySymbols, ...p.descriptiveSymbols].join(',')")
+          FETCH_FROM=$(node -p "require('./docs/experiments/daily-ema-supertrend-prereg.json').fetchFrom")
+          echo "Símbolos: $SYMBOLS · desde $FETCH_FROM"
+          # Fim exclusivo um dia depois do último dia pré-registrado; o corte
+          # exato (closeTime <= fim) é feito de novo na análise.
+          node scripts/fetch-backtest-data.mjs \
+            --symbols "$SYMBOLS" \
+            --from "${FETCH_FROM}T00:00:00Z" --to "2026-10-05T00:00:00Z" \
+            --timeframes 1d \
+            --out candles
+
+      - name: Rodar o teste
+        # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12).
+        run: |
+          set -o pipefail
+          node scripts/daily-ema-supertrend.mjs --data-dir candles --json daily-ema-supertrend-summary.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload do resumo (arquivo único, leve)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resumo-daily-ema-supertrend
+          path: daily-ema-supertrend-summary.json
+          retention-days: 30
+          if-no-files-found: warn

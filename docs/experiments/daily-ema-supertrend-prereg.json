@@ -1,0 +1,33 @@
+{
+  "name": "daily-ema-supertrend-271",
+  "item": "docs/known-risks.md item 271",
+  "registeredAt": "2026-10-15",
+  "note": "Pré-registro congelado ANTES de qualquer dado ser baixado. Mesmo universo e mesmas datas do item 268 (2ª tentativa da família de tendência nestes dados — por isso alphaFamily é metade da do 268). Mudar qualquer campo depois de ver resultado invalida o experimento; scripts/dailyTrend.test.mjs trava estes valores.",
+  "primarySymbols": ["BTCUSDT", "ETHUSDT", "FETUSDT", "DYDXUSDT", "PENDLEUSDT", "ZROUSDT"],
+  "coPrimarySymbol": "BTCUSDT",
+  "descriptiveSymbols": ["PAXGUSDT"],
+  "fetchFrom": "2018-06-01",
+  "start": "2019-01-07T00:00:00.000Z",
+  "end": "2026-10-04T23:59:59.999Z",
+  "halves": [
+    { "from": "2019-01-07T00:00:00.000Z", "to": "2022-12-25T23:59:59.999Z" },
+    { "from": "2023-01-02T00:00:00.000Z", "to": "2026-10-04T23:59:59.999Z" }
+  ],
+  "emaFast": 10,
+  "emaSlow": 21,
+  "stAtrPeriod": 10,
+  "stFactor": 3,
+  "warmupDaysAfterListing": 126,
+  "minShiftDays": 56,
+  "costBpsPerSide": 6,
+  "alphaFamily": 0.0125,
+  "minAnnualExcess": 0.02,
+  "minCoPrimaryDays": 2500,
+  "maxMissingDays": 3,
+  "robustness": [
+    { "label": "EMA 8/21", "emaFast": 8, "emaSlow": 21 },
+    { "label": "EMA 12/26", "emaFast": 12, "emaSlow": 26 },
+    { "label": "Supertrend fator 2,5", "stFactor": 2.5 },
+    { "label": "Supertrend fator 3,5", "stFactor": 3.5 }
+  ]
+}

@@ -1,0 +1,288 @@
+// Teste pré-registrado de tendência diária EMA 10/21 + Supertrend(10,3) —
+// docs/known-risks.md item 271. Parte pura (sem rede, sem Date.now); a CLI é
+// scripts/daily-ema-supertrend.mjs.
+//
+// Regra (uma só, pré-registrada): no fechamento da vela diária t (UTC), fica
+// comprado durante o dia t+1 se EMA10(close) > EMA21(close) E a
+// Supertrend(10, 3) está de alta; senão fica de fora. Retorno do dia t+1 =
+// fechamento t → fechamento t+1 (posição mantida sem interrupção; em mercado
+// 24/7 a abertura de t+1 ≈ fechamento de t — review do Codex, PR #493). Custo
+// por lado a cada troca. Sem add-back, sem parciais, sem alvo fixo.
+//
+// Hipótese nula e régua: as mesmas do item 268 (scripts/weeklyTrend.mjs) —
+// deslocamento circular COMUM das posições contra os retornos, p exato, Holm
+// entre carteira e BTC —, com alphaFamily pela metade porque é a 2ª tentativa
+// da família de tendência nos mesmos dados.
+import { ema } from '../src/lib/indicators/movingAverages.js';
+import { calculateATRSeries } from '../src/lib/indicators/atr.js';
+import { evaluateTiming, holmThresholds } from './weeklyTrend.mjs';
+
+const DAY = 24 * 60 * 60 * 1000;
+const DAYS_PER_YEAR = 365;
+
+/**
+ * Velas diárias fechadas até endMs, ordenadas e sem repetição de openTime.
+ * @param {{ openTime: number, closeTime: number, open: number, high: number, low: number, close: number }[]} daily
+ */
+export function buildDays(daily, { endMs }) {
+  const byOpen = new Map();
+  for (const c of daily || []) {
+    if (Number.isFinite(c?.openTime) && Number.isFinite(c?.closeTime) && c.closeTime <= endMs
+      && [c.open, c.high, c.low, c.close].every(Number.isFinite)) byOpen.set(c.openTime, c);
+  }
+  return [...byOpen.keys()].sort((a, b) => a - b).map((t) => byOpen.get(t));
+}
+
+/**
+ * Supertrend no padrão do `ta.supertrend` do Pine: hl2 ± fator·ATR (Wilder,
+ * `calculateATRSeries`), bandas com "catraca" pelo close anterior e direção
+ * decidida pela banda que a Supertrend ocupava na vela anterior. Na 1ª vela
+ * com ATR a direção começa de baixa, como no Pine (`na(atr[1])`).
+ * Causal: o valor da vela i só usa velas 0..i.
+ * @returns {{ up: (boolean|null)[], line: (number|null)[] }} up = true quando de alta
+ */
+export function supertrend(candles, { atrPeriod, factor }) {
+  const n = candles.length;
+  const up = new Array(n).fill(null);
+  const line = new Array(n).fill(null);
+  const atr = calculateATRSeries(candles, atrPeriod);
+  if (!atr.length) return { up, line };
+  let upper = null;
+  let lower = null;
+  let prevLine = null;
+  for (let i = atrPeriod - 1; i < n; i += 1) {
+    const c = candles[i];
+    const src = (c.high + c.low) / 2;
+    const rawUpper = src + factor * atr[i];
+    const rawLower = src - factor * atr[i];
+    let isUp;
+    if (upper === null) {
+      upper = rawUpper;
+      lower = rawLower;
+      isUp = false;
+    } else {
+      const prevClose = candles[i - 1].close;
+      const prevUpper = upper;
+      const prevLower = lower;
+      lower = rawLower > prevLower || prevClose < prevLower ? rawLower : prevLower;
+      upper = rawUpper < prevUpper || prevClose > prevUpper ? rawUpper : prevUpper;
+      isUp = prevLine === prevUpper ? c.close > upper : !(c.close < lower);
+    }
+    line[i] = isUp ? lower : upper;
+    up[i] = isUp;
+    prevLine = line[i];
+  }
+  return { up, line };
+}
+
+/**
+ * Sinal no fechamento de cada vela: 1 = comprado no dia seguinte, 0 = fora,
+ * null = indicadores ainda sem dado.
+ */
+export function dailySignals(days, { emaFast, emaSlow, stAtrPeriod, stFactor }) {
+  const closes = days.map((d) => d.close);
+  const fast = ema(closes, emaFast);
+  const slow = ema(closes, emaSlow);
+  const st = supertrend(days, { atrPeriod: stAtrPeriod, factor: stFactor });
+  return days.map((_, i) => (st.up[i] === null ? null : (fast[i] > slow[i] && st.up[i] ? 1 : 0)));
+}
+
+/**
+ * Posição e retorno de cada dia elegível de uma moeda. O dia j usa o sinal do
+ * fechamento do dia anterior (j−1, que tem de existir e ser o dia de
+ * calendário anterior) e o retorno fechamento de j−1 → fechamento de j.
+ * Fechamento a fechamento, e não abertura → fechamento (review do Codex, PR
+ * #493): com a posição mantida vários dias, só abertura → fechamento perderia
+ * o trecho entre o fechamento e a abertura seguinte sem cobrar saída e
+ * reentrada — uma estratégia híbrida impossível.
+ * `weekStart` é a chave do período esperada por evaluateTiming (aqui, o
+ * início do dia).
+ */
+export function symbolDailySeries(days, signals, { startMs, endMs, warmupDays }) {
+  const out = [];
+  for (let j = Math.max(1, warmupDays); j < days.length; j += 1) {
+    const d = days[j];
+    const prev = days[j - 1];
+    if (d.openTime < startMs || d.closeTime > endMs) continue;
+    if (prev.openTime !== d.openTime - DAY || signals[j - 1] === null) continue;
+    out.push({ weekStart: d.openTime, pos: signals[j - 1], ret: d.close / prev.close - 1 });
+  }
+  return out;
+}
+
+const inRange = (entries, from, to) => entries.filter((e) => e.weekStart >= from && e.weekStart + DAY - 1 <= to);
+const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+
+function sharpe(daily) {
+  const xs = daily.map((d) => d.ret);
+  if (xs.length < 2) return null;
+  const m = mean(xs);
+  const sd = Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / (xs.length - 1));
+  return sd > 0 ? (m / sd) * Math.sqrt(DAYS_PER_YEAR) : null;
+}
+
+function maxDrawdown(daily) {
+  let equity = 1; let peak = 1; let dd = 0;
+  for (const d of daily) {
+    equity *= 1 + d.ret;
+    peak = Math.max(peak, equity);
+    dd = Math.max(dd, (peak - equity) / peak);
+  }
+  return dd;
+}
+
+/**
+ * @param {Record<string, object[]>} dailyBySymbol velas diárias por símbolo
+ * @param {object} prereg docs/experiments/daily-ema-supertrend-prereg.json
+ * @param {{ descriptive?: boolean }} [options] descriptive:false pula a parte
+ *   descritiva (só a calibração sintética usa, para rodar mais rápido)
+ */
+export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}) {
+  const startMs = Date.parse(prereg.start);
+  const endMs = Date.parse(prereg.end);
+  const costPerSide = prereg.costBpsPerSide / 10000;
+  const opts = { minShift: prereg.minShiftDays, costPerSide, periodsPerYear: DAYS_PER_YEAR };
+  const baseParams = { emaFast: prereg.emaFast, emaSlow: prereg.emaSlow, stAtrPeriod: prereg.stAtrPeriod, stFactor: prereg.stFactor };
+  const daysCache = new Map();
+  const daysOf = (symbol) => {
+    if (!daysCache.has(symbol)) daysCache.set(symbol, buildDays(dailyBySymbol[symbol], { endMs }));
+    return daysCache.get(symbol);
+  };
+  const entriesCache = new Map();
+  const entriesOf = (symbol, params) => {
+    const key = `${symbol}|${JSON.stringify(params)}`;
+    if (!entriesCache.has(key)) {
+      const days = daysOf(symbol);
+      entriesCache.set(key, symbolDailySeries(days, dailySignals(days, params), { startMs, endMs, warmupDays: prereg.warmupDaysAfterListing }));
+    }
+    return entriesCache.get(key);
+  };
+  const has = (s) => dailyBySymbol[s]?.length > 0;
+  const seriesOf = (symbol, params = baseParams, range = { from: startMs, to: endMs }) => ({
+    symbol, entries: inRange(entriesOf(symbol, params), range.from, range.to),
+  });
+
+  // Dado faltando ou cortado invalida a rodada (não vira "não achei"), como no 268.
+  const expectedLastDay = endMs + 1 - DAY;
+  const coverage = {};
+  const untested = [];
+  for (const symbol of prereg.primarySymbols) {
+    if (!has(symbol)) { untested.push(`${symbol}: sem dado`); continue; }
+    const entries = seriesOf(symbol).entries;
+    const first = entries[0]?.weekStart ?? null;
+    const last = entries.at(-1)?.weekStart ?? null;
+    const present = new Set(daysOf(symbol).map((d) => d.openTime));
+    let missingDays = 0;
+    if (first != null) for (let t = first; t <= last; t += DAY) if (!present.has(t)) missingDays += 1;
+    coverage[symbol] = { days: entries.length, first: first && new Date(first).toISOString(), last: last && new Date(last).toISOString(), missingDays };
+    if (entries.length < 2 * prereg.minShiftDays + 2) untested.push(`${symbol}: só ${entries.length} dias utilizáveis`);
+    else if (last !== expectedLastDay) untested.push(`${symbol}: termina em ${new Date(last).toISOString().slice(0, 10)}, antes do fim pré-registrado`);
+    else if (missingDays > prereg.maxMissingDays) untested.push(`${symbol}: ${missingDays} dias faltando no meio (máximo ${prereg.maxMissingDays})`);
+  }
+  const btc = coverage[prereg.coPrimarySymbol];
+  if (btc && btc.days < prereg.minCoPrimaryDays) untested.push(`${prereg.coPrimarySymbol}: ${btc.days} dias (mínimo ${prereg.minCoPrimaryDays})`);
+  if (btc && btc.first !== new Date(startMs).toISOString()) untested.push(`${prereg.coPrimarySymbol}: começa em ${btc.first?.slice(0, 10)}, depois do início pré-registrado`);
+
+  const halves = prereg.halves.map((h) => ({ from: Date.parse(h.from), to: Date.parse(h.to) }));
+  const coPrimaries = [
+    { name: 'carteira', symbols: prereg.primarySymbols },
+    { name: prereg.coPrimarySymbol, symbols: [prereg.coPrimarySymbol] },
+  ];
+  const tests = coPrimaries.map((cp) => {
+    const symbols = cp.symbols.filter(has);
+    const full = evaluateTiming(symbols.map((s) => seriesOf(s)), opts);
+    const byHalf = halves.map((h) => {
+      const r = evaluateTiming(symbols.map((s) => seriesOf(s, baseParams, h)), opts);
+      return { from: new Date(h.from).toISOString(), to: new Date(h.to).toISOString(), observed: r.observed, nullMedian: r.nullMedian ?? null, p: r.p ?? null, days: r.weeks ?? 0, beatsNullMedian: r.observed != null && r.observed > r.nullMedian };
+    });
+    return { ...cp, full, byHalf };
+  });
+  const holm = holmThresholds(tests.map((t) => t.full.p ?? 1), prereg.alphaFamily);
+  for (const [i, t] of tests.entries()) {
+    t.holm = holm[i];
+    t.halvesPass = t.byHalf.every((h) => h.beatsNullMedian);
+    t.effectPass = Number.isFinite(t.full.excessAnnual) && t.full.excessAnnual >= prereg.minAnnualExcess;
+    t.pass = t.holm.pass && t.halvesPass && t.effectPass;
+  }
+
+  let verdict = 'NO_TREND_EDGE';
+  if (untested.length) verdict = 'INCOMPLETE';
+  else if (tests.some((t) => t.pass)) verdict = 'TREND_FOUND';
+
+  const strip = ({ observedWeekly, weeks, ...rest }) => ({ ...rest, days: weeks });
+  const result = {
+    verdict,
+    untested,
+    coverage,
+    tests: tests.map((t) => ({ name: t.name, symbols: t.symbols, full: strip(t.full), byHalf: t.byHalf, holm: t.holm, halvesPass: t.halvesPass, effectPass: t.effectPass, pass: t.pass })),
+  };
+  if (!descriptive) return result;
+
+  // Descritivo (não decide nada).
+  const portfolioSymbols = prereg.primarySymbols.filter(has);
+  const portfolioSeries = portfolioSymbols.map((s) => seriesOf(s));
+  const strategyDaily = tests[0].full.observedWeekly || [];
+  const buyHoldDaily = evaluateTiming(portfolioSeries, { ...opts, transform: () => 1 }).observedWeekly || [];
+  const longShort = evaluateTiming(portfolioSeries, { ...opts, transform: (p) => 2 * p - 1 });
+  const robustness = (prereg.robustness || []).map((v) => {
+    const { label, ...overrides } = v;
+    const params = { ...baseParams, ...overrides };
+    const r = evaluateTiming(portfolioSymbols.map((s) => seriesOf(s, params)), opts);
+    return { label, params, observed: r.observed, nullMedian: r.nullMedian ?? null, excessAnnual: r.excessAnnual ?? null, p: r.p ?? null };
+  });
+  const perSymbol = [...prereg.primarySymbols, ...prereg.descriptiveSymbols].filter(has).map((symbol) => {
+    const s = seriesOf(symbol);
+    const r = evaluateTiming([s], opts);
+    return {
+      symbol,
+      days: s.entries.length,
+      exposure: s.entries.length ? mean(s.entries.map((e) => e.pos)) : null,
+      observed: r.observed,
+      nullMedian: r.nullMedian ?? null,
+      p: r.p ?? null,
+      buyHoldMean: s.entries.length ? mean(s.entries.map((e) => e.ret)) : null,
+      descriptiveOnly: prereg.descriptiveSymbols.includes(symbol),
+    };
+  });
+  result.descriptive = {
+    strategy: { sharpe: sharpe(strategyDaily), maxDrawdown: maxDrawdown(strategyDaily), meanDaily: mean(strategyDaily.map((d) => d.ret)), exposure: mean(strategyDaily.map((d) => d.exposure)) },
+    buyAndHold: { sharpe: sharpe(buyHoldDaily), maxDrawdown: maxDrawdown(buyHoldDaily), meanDaily: mean(buyHoldDaily.map((d) => d.ret)) },
+    longShort: { observed: longShort.observed, p: longShort.p ?? null },
+    robustness,
+    perSymbol,
+  };
+  return result;
+}
+
+const VERDICT_TEXT = {
+  TREND_FOUND: '**Achei tendência diária (EMA 10/21 + Supertrend) que sobrevive à régua pré-registrada.** Próximo passo (só com sua aprovação): a Etapa 2, filtro diário nas 40 entradas aleatórias, com pré-registro novo.',
+  NO_TREND_EDGE: '**Não achei vantagem na tendência diária EMA 10/21 + Supertrend.** A regra não ganhou do mesmo tempo comprado em dias embaralhados, com folga e nas duas metades.',
+  INCOMPLETE: '**Resultado inválido — faltou dado.** Não conta como resposta; a rodada precisa ser refeita.',
+};
+
+export function formatDailyTrendMarkdown(r) {
+  const pct = (v, d = 3) => (v == null || !Number.isFinite(v) ? '—' : `${(v * 100).toFixed(d)}%`);
+  const f = (v, d = 3) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(d));
+  const lines = ['', '## Tendência diária EMA 10/21 + Supertrend (10,3) — resultado', '', VERDICT_TEXT[r.verdict], ''];
+  if (r.untested.length) lines.push(`Faltou: ${r.untested.join(' · ')}`, '');
+  lines.push(
+    '| Teste | Dias | Retorno líquido médio/dia | Mediana embaralhada | Excesso ao ano | p | Limiar (Holm) | Metades | Passou? |',
+    '|---|---|---|---|---|---|---|---|---|',
+    ...r.tests.map((t) => `| ${t.name} | ${t.full.days ?? '—'} | ${pct(t.full.observed, 4)} | ${pct(t.full.nullMedian, 4)} | ${pct(t.full.excessAnnual, 1)} | ${f(t.full.p, 4)} | ${f(t.holm.threshold, 4)} | ${t.byHalf.map((h) => (h.beatsNullMedian ? 'sim' : 'não')).join(' / ')} | ${t.pass ? '**sim**' : 'não'} |`),
+    '',
+  );
+  if (r.descriptive) {
+    const d = r.descriptive;
+    lines.push(
+      `Carteira (descritivo): Sharpe da regra ${f(d.strategy.sharpe, 2)} × comprar e segurar ${f(d.buyAndHold.sharpe, 2)}; `
+        + `queda máxima ${pct(d.strategy.maxDrawdown, 1)} × ${pct(d.buyAndHold.maxDrawdown, 1)}; tempo comprado ${pct(d.strategy.exposure, 0)}.`,
+      `Comprado/vendido (descritivo): p ${f(d.longShort.p, 4)}.`,
+      '',
+      'Vizinhos de robustez (descritivo, não decidem nada): ' + d.robustness.map((v) => `${v.label}: excesso ${pct(v.excessAnnual, 1)}/ano (p ${f(v.p, 3)})`).join(' · '),
+      '',
+      'Por moeda: ' + d.perSymbol.map((s) => `${s.symbol}${s.descriptiveOnly ? ' (só descritivo)' : ''} ${pct(s.observed, 4)} × ${pct(s.nullMedian, 4)} (p ${f(s.p, 3)}, ${s.days} dias)`).join(' · '),
+      '',
+    );
+  }
+  return lines.join('\n');
+}

@@ -31904,3 +31904,166 @@ scripts/vol-sizing.mjs --combine` foi rodado na sessão.
 - O valor medido continua sendo **controle de risco** (trailing pré-TP1, itens 132/263),
   não edge.
 - Reabertura só com dado novo (12–24 meses), uma regra pré-registrada por vez.
+
+## 270. Saídas nunca medidas e filtro ADX — Fases A e B pré-registradas (2026-10-14/15)
+
+**Por quê:**
+- Auditoria quantitativa pedida pelo usuário: o que ainda não foi testado e roda sem código
+  (só `pine_config`).
+- Depois do item 264 (entrada ≈ acaso), o valor medido está nas saídas, então as perguntas
+  abertas eram de saída, mais uma de "velocidade de medição".
+- Nada de motor ou produção foi tocado. Todos os runs usaram `backtest.yml`, commit `dcaad1d`,
+  Spot, 7 símbolos, custos padrão e janelas W1 2025-10-10→2026-10-10 e W2
+  2024-07-27→2025-07-27.
+- O R0 de cada janela reproduziu exatamente os controles dos itens 263 (115 ops, −0,0483R) e
+  264 (119 ops, +0,054R): o motor é determinístico.
+
+**Fase A — saídas (família `exits-2026-10b`, m=3, Bonferroni; leitura não pareada como primária):**
+
+| Comparação | W1 Δ [IC] | W2 Δ [IC] | Veredito |
+|---|---|---|---|
+| X1: stop 3,0× contra 2,0× ATR (tier forçado; ADX/Chop desligados e prazo 64 nos dois braços) | −0,018R [−0,127; +0,091] | −0,037R [−0,131; +0,057] | ruído |
+| X2: Chop Exit (`useChopExit:true`) contra R0 | −0,013R [−0,082; +0,057] | +0,025R [−0,044; +0,095] | ruído, direções opostas |
+| X3: prazo 96 velas para todos os tiers contra R0 | 0,000R | +0,0003R (1 op mudou) | inerte |
+
+- **X1 responde à pergunta aberta do item 267** ("o problema é o stop?"): para as mesmas
+  entradas, stop largo e curto têm a mesma expectância.
+  - Descritivo consistente nas duas janelas: o stop largo reduz sd(R) (×0,76/×0,77), o drawdown
+    (9,3→7,9% e 8,1→7,5%) e o custo em R (0,053→0,038R e 0,052→0,040R).
+  - O stop curto chega 3× mais ao TP2 (15/5 e 27/9), mas leva mais perdas cheias.
+- **X3, fato novo:** o Time Stop praticamente não age com o trailing pré-TP1 ligado.
+  - Foi 0 de 115 na W1 e 1 de 119 na W2; a operação mais longa durou 172h/248h, menos que o
+    menor prazo (48 velas).
+  - O "time stop 24 velas" do ledger foi medido antes do trailing (item 132).
+- **Veredito pré-registrado:** nenhuma mudança de saída aprovada.
+
+**Fase B — sem filtro ADX (`{"useADX":false}`, família `regime-adx-ablation`, m=1):**
+- **Regra:** "acelera a medição" se `(EP_R0/EP_M1)²` em cluster (`backtest-correlation-check.mjs`)
+  for ≥ 1,3× nas duas janelas, com a diferença de expectância dentro do ruído.
+
+| | W1 R0 → M1 | W2 R0 → M1 |
+|---|---|---|
+| Operações | 115 → 188 | 119 → 169 |
+| Expectância líquida | −0,048 → +0,005R (Δ +0,053, IC [−0,047; +0,154]) | +0,054 → +0,080R (Δ +0,026, IC [−0,090; +0,143]) |
+| EP em cluster | 0,0864 → 0,0766 (**1,27×**) | 0,1218 → 0,0948 (**1,65×**) |
+| Conta (1% de risco) / drawdown | −5,7% / 8,7% → +0,3% / 8,6% | +6,1% / 8,3% → +13,7% / 7,6% |
+
+- **Veredito: NÃO PASSOU.** Ficou por pouco na W1 (1,27×). Encerrado, sem reinterpretação.
+- **Descritivo:** as operações que o ADX barraria (ADX mediano ≈ 16) renderam +0,077R (73 ops,
+  W1) e +0,123R (50 ops, W2), ou seja, não foram piores que as aprovadas.
+  - Não há evidência de que o filtro ADX melhore a seleção, nem de que tirá-lo ajude: tudo
+    dentro do ruído, coerente com o item 264.
+  - Reabrir só com uma janela nova de 12 meses.
+
+**Defeitos de leitura confirmados na auditoria (não afetam o motor; não corrigidos aqui):**
+- **`backtestAnalysis.js` `largestBucket`:** passa `contributionR` (já dividido por N) para
+  `shareOfTotal` (que divide pela soma), então a % de "Maior contribuição" do `analyze-backtest`
+  sai N vezes menor. Use `contributionR ÷ expectancyR`.
+- **`mfe_r` do candle de saída:** é atualizado antes do teste de stop (`scanner.js`), então o MFE
+  pode incluir preço posterior ao stop. Separe `bars_to_mfe === bars_to_stop`.
+- **`backtestMarketDataProvider.js`:** fixa `MARKET_SOURCE='spot'` mesmo com dado Futures.
+- **`setPineConfigOverrides`:** aceita chave desconhecida calada, então um erro de digitação roda o
+  controle disfarçado. Confira sempre `reproducibility.pineConfig`.
+
+**Ledger:** os 12 relatórios (`backtest-report_86..97`) foram registrados com
+`backtest-trial-registry.mjs`: família `exits-2026-10b` (10 trials, incluindo os dois R0) e
+`regime-adx-ablation` (2 trials, comparados contra os mesmos R0).
+
+## 271. Tendência diária EMA 10/21 + Supertrend (10,3) — teste pré-registrado (2026-10-15)
+
+**Por quê:**
+- O usuário trouxe uma estratégia popular ("10/21 EMA + Supertrend (10,3)": imagem com 8 regras
+  de entrada, saída parcial e add-back de 25%, gráfico diário, só compra) e pediu um teste de
+  verdade.
+- **Análise antes de construir:** é a mesma família da RF (filtro de tendência, item 264), da
+  tendência semanal (268) e do trailing ATR já medido (`trailAtrMult` 3,0 ≈ Supertrend fator 3:
+  empate no ledger).
+  - A imagem não traz número nenhum, e as regras subjetivas ("range de 3–5 dias", "pivô",
+    "price action confirma") viram parâmetros livres.
+  - Por isso se testa só o **núcleo mecânico mínimo**, no **diário**, que é onde a literatura
+    acha tendência em cripto. Em 4h seria repetir o item 264.
+- **Decisões do usuário (15/10):**
+  1. Testar nos MESMOS dados do item 268, declarando isso. A regra de parada do 268 encerrou a
+     tendência semanal "nestes dados", e esta é uma regra diferente da mesma família.
+  2. Usar uma régua mais dura: α da família 0,0125, metade da do 268, por ser a 2ª tentativa
+     da família nestes dados.
+- Nada aqui toca o motor ou a produção: é um script puro sobre velas diárias.
+
+**Pré-registro** (`docs/experiments/daily-ema-supertrend-prereg.json`, travado por
+`scripts/dailyTrend.test.mjs`):
+- **Regra (uma só):** no fechamento da vela diária t (UTC), comprado durante o dia t+1 se
+  `EMA10(close) > EMA21(close)` **e** a Supertrend(10, 3) está de alta; senão, fora. Sai quando
+  qualquer das duas vira.
+  - Retorno do dia: fechamento t → fechamento t+1, com a posição mantida sem interrupção.
+  - A 1ª versão usava abertura → fechamento. O Codex (PR #493) apontou, antes de qualquer run
+    real, que isso cria uma estratégia híbrida impossível: não ganha o trecho fechamento →
+    abertura seguinte e também não cobra a saída e a reentrada.
+  - Em mercado 24/7 a diferença é quase nula. A calibração abaixo não muda, porque no dado
+    sintético a abertura é igual ao fechamento anterior.
+  - Sem add-back, parciais, alvo 4R ou regras discricionárias.
+  - Custo de 6 bps por lado a cada troca.
+- **Supertrend:** padrão do `ta.supertrend` do Pine (hl2 ± 3·ATR(10) Wilder, bandas com
+  catraca pelo close anterior). Caso calculado à mão e causalidade série×prefixo nos testes.
+- **Dados:**
+  - velas diárias Binance Spot de 2018-06-01 (aquecimento) até 2026-10-04T23:59:59.999Z;
+  - avaliação a partir de 2019-01-07;
+  - excluídos os primeiros 126 dias após cada listagem (~6× o período, regra de `pine-parity.md`);
+  - mesmas moedas e metades do item 268.
+- **Universo:**
+  - primário: carteira de peso igual BTC, ETH, FET, DYDX, PENDLE e ZRO;
+  - co-primário: BTC sozinho;
+  - PAXG só descritivo.
+- **Nula:** deslocamento circular comum das posições contra os retornos, k ≥ 56 dias (o mesmo k
+  para todas as moedas, limitado pela série mais curta). p exato, sem seed. Reuso do
+  `evaluateTiming` do item 268, que ganhou `periodsPerYear`; o padrão 52 é byte-idêntico para o 268.
+- **Passa (por co-primário) só com as três condições:**
+  1. p ≤ limiar de Holm, α da família 0,0125;
+  2. as duas metades acima da mediana embaralhada;
+  3. excesso ≥ 2% ao ano, líquido.
+- **Veredito:** `TREND_FOUND` / `NO_TREND_EDGE` / `INCOMPLETE`. `INCOMPLETE` sai com dado faltando,
+  série cortada no fim, mais de 3 dias faltando no meio, ou BTC curto ou tardio; o job fica
+  vermelho e não conta como resposta.
+- **Descritivo, sem decidir nada:** Sharpe e queda máxima contra comprar e segurar, tempo comprado,
+  resultado por moeda, PAXG, comprado/vendido e vizinhos de robustez (EMA 8/21 e 12/26;
+  Supertrend fator 2,5 e 3,5). Vizinho com p baixo **não** vira achado: seria escolher variante
+  depois de ver.
+
+**Erro e poder, medidos ANTES do run** (`scripts/__fixtures__/dailyTrendSynth.mjs`, tamanho real,
+listagens como as reais, regra completa):
+
+| Cenário | Rodadas | Aprovou (`TREND_FOUND`) | p carteira ≤ 0,05 |
+|---|---|---|---|
+| Ruído gaussiano limpo (σ 4%/dia) | 200 | 2 (1,0%) | 4,0% |
+| **Nula hostil:** cauda gorda (t 4 gl), volatilidade em blocos de 30–90 dias, fator de mercado comum ρ 0,5, deriva +0,1%/dia | 200 | **0 (0%)** | 3,0% |
+| Tendência plantada: regimes comuns de ±0,1%/dia (duração média de 60 dias) | 100 | 0 | 5% |
+| Idem ±0,2%/dia | 100 | 2 | 15% |
+| Idem ±0,4%/dia | 100 | 55 | 75% |
+
+- **Leitura honesta:**
+  - O alarme falso está controlado (≤ α), inclusive no cenário hostil que derrubou a nula do
+    item 269.
+  - O **poder é baixo**: o teste só enxerga tendência forte e persistente (regimes de ±0,4%/dia,
+    ~±24% em dois meses, sobre o ruído).
+  - Uma vantagem pequena, do tamanho do indício do item 268, provavelmente **não** passa.
+  - `NO_TREND_EDGE` significa "não há tendência diária grande o bastante para esta régua", não
+    "tendência não existe".
+- **Previsão (registrada antes):** `NO_TREND_EDGE`, com a regra reduzindo a queda máxima contra
+  comprar e segurar (como no item 268: 53% contra 83%), sem retorno extra demonstrável.
+
+**Proibido depois de ver o resultado:** trocar períodos, fator, moedas, datas, custo ou régua;
+promover um vizinho de robustez; reabrir nestes dados.
+
+**Depois do run:**
+- `TREND_FOUND` → a Etapa 2 (filtro diário de direção nas 40 entradas aleatórias do
+  `backtest-random-baseline.yml`, comparação pareada por semente, como no item 267) vira proposta
+  separada, com pré-registro novo e aprovação do usuário.
+- `NO_TREND_EDGE` → a família de tendência diária/semanal fica encerrada nestes dados. Reabre só
+  com ≥ 104 semanas novas e uma única regra escolhida antes.
+- `INCOMPLETE` → refazer.
+- **Nada vai para a produção** em nenhum caso, sem decisão separada.
+
+**Como rodar:** GitHub → Actions → **"Tendência diária EMA + Supertrend (Sentinel Signals)"** →
+*Run workflow* (sem campos). O resumo sai na página do job e no artifact
+`resumo-daily-ema-supertrend`.
+
+**Ledger:** não se aplica (a estatística não é expectância em R), mesmo caso dos itens 266/268/269.

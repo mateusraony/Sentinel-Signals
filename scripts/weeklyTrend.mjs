@@ -121,9 +121,11 @@ function maxDrawdown(weekly) {
 
 /**
  * Estatística observada × nula de deslocamento circular comum.
+ * `weekStart` é só a chave do período: o teste diário do item 271
+ * (scripts/dailyTrend.mjs) passa o início do dia e `periodsPerYear: 365`.
  * @param {{ symbol: string, entries: { weekStart: number, pos: number, ret: number }[] }[]} series
  */
-export function evaluateTiming(series, { minShift, costPerSide, transform = (p) => p }) {
+export function evaluateTiming(series, { minShift, costPerSide, transform = (p) => p, periodsPerYear = 52 }) {
   const usable = series.filter((s) => s.entries.length >= 2 * minShift + 2);
   const dropped = series.filter((s) => s.entries.length < 2 * minShift + 2).map((s) => s.symbol);
   if (!usable.length) return { usable: [], dropped, observed: null };
@@ -152,7 +154,7 @@ export function evaluateTiming(series, { minShift, costPerSide, transform = (p) 
     nullDistribution: nullDist,
     shifts: nullStats.length,
     p: (1 + atLeast) / (1 + nullStats.length),
-    excessAnnual: (observed - nullDist.p50) * 52,
+    excessAnnual: (observed - nullDist.p50) * periodsPerYear,
     observedWeekly,
   };
 }
