@@ -249,12 +249,14 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
   const buyHoldDaily = evaluateTiming(portfolioSeries, { ...opts, transform: () => 1 }).observedWeekly || [];
   const longShort = evaluateTiming(portfolioSeries, { ...opts, transform: (p) => 2 * p - 1 });
   // Custo maior que o pré-registrado (a taxa de taker do Spot é ~10 bps por lado).
-  // Só o retorno ABSOLUTO líquido e o composto: o excesso sobre a nula não muda
-  // com o custo, porque toda rotação paga o mesmo número de trocas (custo
-  // circular de evaluateTiming) — o custo não entra na pergunta de "momento".
+  // Recalcula também o excesso e o p: por moeda, toda rotação paga o mesmo
+  // número de trocas (custo circular de evaluateTiming), mas na carteira as
+  // moedas entram em datas diferentes e o peso de cada dia muda (1/moedas
+  // ativas) — deslocar as trocas entre dias de peso diferente muda o custo da
+  // nula (review do Codex, PR #495). Não decide nada.
   const costSensitivity = (prereg.costSensitivityBps || []).map((bps) => {
     const r = evaluateTiming(portfolioSeries, { ...opts, costPerSide: bps / 10000 });
-    return { bpsPerSide: bps, meanDaily: r.observed, cagr: cagr(r.observedWeekly || []) };
+    return { bpsPerSide: bps, meanDaily: r.observed, cagr: cagr(r.observedWeekly || []), nullMedian: r.nullMedian ?? null, excessAnnual: r.excessAnnual ?? null, p: r.p ?? null };
   });
   const years = (endMs + 1 - startMs) / (DAYS_PER_YEAR * DAY);
   const robustness = (prereg.robustness || []).map((v) => {
@@ -319,7 +321,7 @@ export function formatDailyTrendMarkdown(r) {
         + `queda máxima ${pct(d.strategy.maxDrawdown, 1)} × ${pct(d.buyAndHold.maxDrawdown, 1)}; tempo comprado ${pct(d.strategy.exposure, 0)}; `
         + `retorno composto ao ano ${pct(d.strategy.cagr, 1)} × ${pct(d.buyAndHold.cagr, 1)}.`,
       `Trocas de posição: ${f(d.switchesPerSymbolYear, 1)} por moeda por ano.`
-        + (d.costSensitivity.length ? ' Com custo maior (descritivo; o excesso sobre o embaralhado não muda com o custo): ' + d.costSensitivity.map((c) => `${c.bpsPerSide} bps/lado → líquido ${pct(c.meanDaily, 4)}/dia, composto ${pct(c.cagr, 1)}/ano`).join(' · ') : ''),
+        + (d.costSensitivity.length ? ' Com custo maior (descritivo, não decide): ' + d.costSensitivity.map((c) => `${c.bpsPerSide} bps/lado → líquido ${pct(c.meanDaily, 4)}/dia, composto ${pct(c.cagr, 1)}/ano, excesso ${pct(c.excessAnnual, 1)}/ano (p ${f(c.p, 4)})`).join(' · ') : ''),
       `Comprado/vendido (descritivo): p ${f(d.longShort.p, 4)}.`,
       '',
       'Vizinhos de robustez (descritivo, não decidem nada): ' + d.robustness.map((v) => `${v.label}: excesso ${pct(v.excessAnnual, 1)}/ano (p ${f(v.p, 3)})`).join(' · '),

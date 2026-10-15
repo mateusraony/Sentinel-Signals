@@ -32134,10 +32134,16 @@ promover um vizinho de robustez; reabrir nestes dados.
   embaralhada e excesso ≥ 2% ao ano.
 - **Mudanças no script (nenhuma altera a decisão do 271):**
   - pré-registro sem co-primário passa a exigir que a moeda mais antiga cubra o início;
-  - descritivos novos: retorno composto ao ano, trocas por moeda por ano e retorno líquido com
-    custo de 10 e 20 bps por lado.
-  - O excesso sobre o embaralhado **não muda com o custo** por construção: toda rotação paga as
-    mesmas trocas. Quem mostra o efeito do custo é o retorno absoluto.
+  - descritivos novos: retorno composto ao ano, trocas por moeda por ano e, com custo de 10 e
+    20 bps por lado, retorno líquido, excesso sobre o embaralhado e p recalculados.
+  - **Correção (review do Codex, PR #495):** a 1ª versão dizia que o excesso não muda com o custo.
+    Isso só vale **por moeda**: toda rotação paga o mesmo número de trocas. Na carteira, as moedas
+    entram em datas diferentes e o peso de cada dia muda (1/moedas ativas). Deslocar as trocas
+    entre dias de peso diferente muda o custo da nula, e o excesso pode mudar com o custo.
+    - Por isso o excesso e o p são recalculados em cada custo.
+    - A decisão não muda: a nula de cada deslocamento paga os mesmos 6 bps pré-registrados.
+    - Vale também para a nota de custo dos itens 268 e 271: "o custo fica igual" é exato por
+      moeda e aproximado na carteira.
 - **O mesmo workflow reexecuta o 271** só para esses descritivos, que ficaram em aberto lá (curva
   composta e custo de ~10 bps do Spot). O sha256 do pré-registro do 271 não muda.
 

@@ -8,6 +8,7 @@ import { dirname, resolve } from 'node:path';
 import { buildDays, supertrend, dailySignals, symbolDailySeries, runDailyTrend, formatDailyTrendMarkdown } from './dailyTrend.mjs';
 import { evaluateTiming } from './weeklyTrend.mjs';
 import { synthMarket, REPLICATION_PREREG } from './__fixtures__/dailyTrendSynth.mjs';
+import { mulberry32 } from '../src/lib/seededRandom.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PREREG = JSON.parse(readFileSync(resolve(__dirname, '../docs/experiments/daily-ema-supertrend-prereg.json'), 'utf8'));
@@ -208,7 +209,7 @@ describe('replicação (item 272)', () => {
     expect(r.untested.join(' ')).toMatch(/carteira: a moeda mais antiga começa/);
   });
 
-  it('descritivos: trocas, composto e custo maior (o excesso sobre o embaralhado não muda com o custo)', () => {
+  it('descritivos: trocas, composto e custo maior (com excesso e p recalculados)', () => {
     const r = runDailyTrend(repMarketFor(23, 'trend', 0.006), FAST_REP);
     const d = r.descriptive;
     expect(d.perSymbol.every((x) => Number.isInteger(x.switches) && x.switches > 0)).toBe(true);
@@ -217,15 +218,45 @@ describe('replicação (item 272)', () => {
     expect(d.costSensitivity.map((c) => c.bpsPerSide)).toEqual([10, 20]);
     expect(d.costSensitivity[0].meanDaily).toBeLessThan(r.tests[0].full.observed);
     expect(d.costSensitivity[1].meanDaily).toBeLessThan(d.costSensitivity[0].meanDaily);
-    expect(formatDailyTrendMarkdown(r)).toMatch(/Trocas de posição: .* por moeda por ano/);
+    expect(d.costSensitivity.every((c) => Number.isFinite(c.excessAnnual) && c.p > 0 && c.p <= 1)).toBe(true);
+    const md = formatDailyTrendMarkdown(r);
+    expect(md).toMatch(/Trocas de posição: .* por moeda por ano/);
+    expect(md).toMatch(/10 bps\/lado → líquido .*, excesso .*\/ano \(p /);
+    expect(md).not.toMatch(/não muda com o custo/);
   });
 
-  it('custo circular: custo maior baixa o líquido, mas deixa o excesso sobre o embaralhado igual', () => {
-    const entries = [0, 1, 1, 0, 1, 1, 1, 0].map((pos, i) => ({ weekStart: i * DAY, pos, ret: 0.01 * (i % 3 - 1) }));
-    const series = [{ symbol: 'X', entries: Array.from({ length: 30 }, (_, k) => entries.map((e) => ({ ...e, weekStart: e.weekStart + k * 8 * DAY }))).flat() }];
-    const cheap = evaluateTiming(series, { minShift: 5, costPerSide: 0.0006, periodsPerYear: 365 });
-    const dear = evaluateTiming(series, { minShift: 5, costPerSide: 0.002, periodsPerYear: 365 });
+  it('custo do descritivo no valor pré-registrado reproduz o teste que decide', () => {
+    const r = runDailyTrend(repMarketFor(24, 'adverse'), { ...FAST_REP, costSensitivityBps: [FAST_REP.costBpsPerSide] });
+    const [c] = r.descriptive.costSensitivity;
+    expect(c.meanDaily).toBe(r.tests[0].full.observed);
+    expect(c.excessAnnual).toBe(r.tests[0].full.excessAnnual);
+    expect(c.p).toBe(r.tests[0].full.p);
+  });
+
+  // Custo circular: por moeda, toda rotação paga o mesmo número de trocas.
+  const posSeries = (symbol, n, seed, offsetDays = 0) => {
+    const rand = mulberry32(seed);
+    let pos = 0;
+    return { symbol, entries: Array.from({ length: n }, (_, i) => {
+      if (rand() < 0.15) pos = 1 - pos;
+      return { weekStart: (offsetDays + i) * DAY, pos, ret: 0.02 * (rand() - 0.5) };
+    }) };
+  };
+
+  it('uma moeda: custo maior baixa o líquido e deixa o excesso igual', () => {
+    const series = [posSeries('X', 240, 7)];
+    const cheap = evaluateTiming(series, { minShift: 10, costPerSide: 0.0006, periodsPerYear: 365 });
+    const dear = evaluateTiming(series, { minShift: 10, costPerSide: 0.002, periodsPerYear: 365 });
     expect(dear.observed).toBeLessThan(cheap.observed);
     expect(dear.excessAnnual).toBeCloseTo(cheap.excessAnnual, 10);
+  });
+
+  it('carteira com entradas em datas diferentes: o excesso MUDA com o custo (por isso é recalculado)', () => {
+    // A tem 240 dias; B entra no dia 120. Antes disso A pesa 1, depois 1/2:
+    // deslocar as trocas de A entre os dois trechos muda o custo da nula.
+    const series = [posSeries('A', 240, 7), posSeries('B', 120, 8, 120)];
+    const cheap = evaluateTiming(series, { minShift: 10, costPerSide: 0.0006, periodsPerYear: 365 });
+    const dear = evaluateTiming(series, { minShift: 10, costPerSide: 0.002, periodsPerYear: 365 });
+    expect(Math.abs(dear.excessAnnual - cheap.excessAnnual)).toBeGreaterThan(1e-4);
   });
 }, 120000);
