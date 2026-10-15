@@ -1,0 +1,22 @@
+{
+  "name": "daily-filter-273",
+  "item": "docs/known-risks.md item 273",
+  "registeredAt": "2026-10-15",
+  "note": "Pré-registro congelado ANTES de qualquer rodada real. Mudar qualquer campo depois de ver resultado invalida o experimento; scripts/dailyFilter.test.mjs trava estes valores. A regra diária é a dos itens 271/272, com os mesmos parâmetros.",
+  "windows": [
+    { "label": "W1", "from": "2025-10-10", "to": "2026-10-10" },
+    { "label": "W2", "from": "2024-07-27", "to": "2025-07-27" }
+  ],
+  "symbols": ["BTCUSDT", "ETHUSDT", "FETUSDT", "PENDLEUSDT", "ZROUSDT", "DYDXUSDT", "PAXGUSDT"],
+  "nSeeds": 40,
+  "randomProb": 0.0075,
+  "rule": { "emaFast": 10, "emaSlow": 21, "stAtrPeriod": 10, "stFactor": 3, "warmupDays": 126 },
+  "alignment": "BUY passa com a regra diária comprada; SELL passa com a regra diária fora. Regra lida da última vela diária fechada até o horário da entrada.",
+  "unknownRegime": "kept",
+  "normalization": "withinArmSide",
+  "clusterBy": "entryMonthUTC",
+  "alpha": 0.025,
+  "minEffectR": 0.05,
+  "decisive": ["significance", "effect", "eachWindow"],
+  "r0Role": "descriptive"
+}

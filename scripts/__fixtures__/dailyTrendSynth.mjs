@@ -73,7 +73,9 @@ export function synthMarket({ seed, scenario = 'iid', drift = 0.002, prereg = PR
     const rand = mulberry32(seed * 104729 + i * 31 + 1);
     const g = gaussFrom(rand);
     const t4 = student4From(rand, g);
-    const start = LATE_START[symbol] ? Date.parse(`${LATE_START[symbol]}T00:00:00Z`) : fromMs;
+    // Listagem antes do início do dado sintético (uso do item 273, janelas
+    // recentes) começa no início; nos itens 271/272 nada muda.
+    const start = Math.max(fromMs, LATE_START[symbol] ? Date.parse(`${LATE_START[symbol]}T00:00:00Z`) : fromMs);
     const candles = [];
     let price = 100;
     let vol = 0.03;

@@ -216,6 +216,10 @@ paths:
     nenhum braço. Só acrescenta, no job de resumo, `scripts/vol-sizing.mjs`
     sobre os mesmos relatórios, e publica `resumo-vol-sizing-<família>`. Não pode
     ser marcada junto com a Fibonacci.
+  - **Caixa "Filtro de tendência diária"** (`daily_filter`, item 273): também não
+    muda nenhum braço. Só acrescenta `scripts/daily-filter.mjs` no job de resumo e
+    publica `resumo-daily-filter-<família>`. Não pode ser marcada junto com a
+    Fibonacci.
 
 - `pattern-lab.yml` — disparo **manual**, sem campos: laboratório de padrões
   (`docs/known-risks.md` item 266).
