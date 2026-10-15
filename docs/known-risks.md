@@ -32067,3 +32067,46 @@ promover um vizinho de robustez; reabrir nestes dados.
 `resumo-daily-ema-supertrend`.
 
 **Ledger:** não se aplica (a estatística não é expectância em R), mesmo caso dos itens 266/268/269.
+
+**Resultado (2026-10-15): `TREND_FOUND`. A regra passou na carteira, contra a minha previsão.**
+- **Rastro:**
+  - run `38770931675` do workflow `daily-ema-supertrend.yml`, commit `5397255` (merge do
+    PR #493, já com a correção de fechamento a fechamento);
+  - pré-registro sha256 `48eca109…`, igual ao arquivo mesclado;
+  - cobertura completa: 0 dias faltando; FET a partir de 2019-07-04, depois do aquecimento após a
+    listagem.
+
+| Teste | Dias | Regra/dia | Mediana embaralhada | Excesso ao ano | p | Limiar Holm | Metades | Passou? |
+|---|---|---|---|---|---|---|---|---|
+| Carteira | 2828 | +0,192% | +0,071% | +44,2% | **0,0017** (o menor possível: ganhou dos 600 deslocamentos) | 0,0063 | sim / sim (p 0,004 e 0,005) | **sim** |
+| BTC | 2828 | +0,119% | +0,069% | +18,0% | 0,079 | 0,0125 | sim / sim | não |
+
+- **O que o "excesso" mede:** a regra contra **o mesmo tempo comprado em dias sorteados**. Não é
+  contra comprar e segurar.
+  - **Descritivo da carteira:** a regra fica comprada 43% do tempo e rende +0,192% ao dia, contra
+    +0,207% ao dia de comprar e segurar 100% do tempo. A média bruta é praticamente a mesma.
+  - **Risco:** volatilidade diária 2,5% contra 4,3%, Sharpe 1,47 contra 0,91, queda máxima 45%
+    contra 84%.
+  - **Em resumo:** quase o mesmo retorno médio com menos da metade do tempo exposto e metade da
+    queda. O ganho é de **risco e momento**, não de retorno bruto acima do mercado.
+- **Consistência (descritivo, não decide):**
+  - As 6 moedas ficaram acima da própria mediana embaralhada. FET p 0,007, ETH 0,019 e PENDLE 0,040;
+    BTC 0,079; DYDX e ZRO ≈ 0,37.
+  - PAXG (ouro, controle) p 0,55, sem efeito, como esperado para um ativo que não é cripto.
+  - Os 4 vizinhos de robustez (EMA 8/21 e 12/26; Supertrend 2,5 e 3,5) deram excesso de
+    +44–45% ao ano, todos no p mínimo: o resultado não depende de um número exato.
+- **Ressalvas que continuam valendo:**
+  1. **Mesmos dados do item 268** (2ª tentativa da família; a régua foi endurecida por isso).
+  2. **Sobrevivência:** moedas escolhidas sabendo que existem hoje.
+  3. **Só compra** e só Spot. Comprado/vendido tem o mesmo p por linearidade, então não é
+     evidência independente do lado vendido.
+  4. **Médias aritméticas:** a curva composta não foi calculada neste teste.
+  5. **Custo de 6 bps por lado:** a taxa de taker do Spot é ~10 bps. O número de trocas não está
+     no resumo. O excesso (~0,12% ao dia) é muito maior que qualquer custo plausível por troca,
+     mas isso fica como hipótese até ser medido.
+  6. O efeito é de **carteira**: no BTC sozinho não passou.
+- **Decisão pré-registrada aplicada:**
+  - nada vai para a produção;
+  - a Etapa 2 vira proposta separada, com pré-registro novo e aprovação do usuário.
+- **Reabertura da família:** a regra de parada do item 268 (tendência semanal) continua valendo
+  para a regra semanal. Esta regra diária fica registrada como **passou**.
