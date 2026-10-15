@@ -5,7 +5,8 @@
 //
 // Uso:
 //   node scripts/daily-ema-supertrend.mjs [--data-dir candles] \
-//     [--prereg docs/experiments/daily-ema-supertrend-prereg.json] [--json daily-ema-supertrend-summary.json]
+//     [--prereg docs/experiments/daily-ema-supertrend-prereg.json] [--json daily-ema-supertrend-summary.json] \
+//     [--extra-cost-bps 10,20]
 //
 // Lê SIMBOLO_1d.json (gerados por scripts/fetch-backtest-data.mjs). O
 // veredito é um RESULTADO: "não achei" sai com código 0. Código 1 para
@@ -42,6 +43,12 @@ function main() {
     if (fs.existsSync(file)) dailyBySymbol[symbol] = JSON.parse(fs.readFileSync(file, 'utf8'));
   }
 
+  // --extra-cost-bps 10,20: só acrescenta o descritivo de custo maior a um
+  // pré-registro que não o tinha (reexecução do 271 no workflow do 272). Não
+  // muda o arquivo nem o sha256, nem nenhuma regra de decisão.
+  if (args['extra-cost-bps'] && !prereg.costSensitivityBps) {
+    prereg.costSensitivityBps = String(args['extra-cost-bps']).split(',').map(Number).filter(Number.isFinite);
+  }
   const result = runDailyTrend(dailyBySymbol, prereg);
   const commitSha = process.env.GITHUB_SHA || null;
   const summary = { lab: prereg.name, item: prereg.item, preregSha256, commitSha, runId: process.env.GITHUB_RUN_ID || null, ...result };

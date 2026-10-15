@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { buildDays, supertrend, dailySignals, symbolDailySeries, runDailyTrend, formatDailyTrendMarkdown } from './dailyTrend.mjs';
 import { evaluateTiming } from './weeklyTrend.mjs';
-import { synthMarket } from './__fixtures__/dailyTrendSynth.mjs';
+import { synthMarket, REPLICATION_PREREG } from './__fixtures__/dailyTrendSynth.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PREREG = JSON.parse(readFileSync(resolve(__dirname, '../docs/experiments/daily-ema-supertrend-prereg.json'), 'utf8'));
@@ -167,5 +167,65 @@ describe('runDailyTrend — acha o que existe, não inventa o que não existe', 
     const rl = runDailyTrend(late, FAST, { descriptive: false });
     expect(rl.verdict).toBe('INCOMPLETE');
     expect(rl.untested.join(' ')).toMatch(/BTCUSDT: começa/);
+  });
+}, 120000);
+
+// Item 272 — replicação em 13 moedas novas: mesma regra, sem co-primário.
+const FAST_REP = { ...REPLICATION_PREREG, start: FAST.start, halves: FAST.halves };
+const repMarketFor = (seed, scenario, drift) => synthMarket({ seed, scenario, drift, prereg: FAST_REP, symbols: FAST_REP.primarySymbols });
+
+describe('replicação (item 272)', () => {
+  it('universo = carteira de referência de 20 (docs/roadmap.md) menos as 7 do item 271; regra idêntica', () => {
+    const reference20 = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT', 'SOLUSDT', 'AVAXUSDT', 'LINKUSDT',
+      'DOTUSDT', 'ARBUSDT', 'OPUSDT', 'SUIUSDT', 'NEARUSDT', 'AAVEUSDT', 'ONDOUSDT', 'FETUSDT',
+      'PENDLEUSDT', 'ZROUSDT', 'DYDXUSDT', 'PAXGUSDT'];
+    const used271 = [...PREREG.primarySymbols, ...PREREG.descriptiveSymbols];
+    expect(REPLICATION_PREREG.primarySymbols).toEqual(reference20.filter((s) => !used271.includes(s)));
+    expect(REPLICATION_PREREG.coPrimarySymbol).toBeNull();
+    expect(REPLICATION_PREREG.descriptiveSymbols).toEqual([]);
+    for (const k of ['fetchFrom', 'start', 'end', 'halves', 'emaFast', 'emaSlow', 'stAtrPeriod', 'stFactor',
+      'warmupDaysAfterListing', 'minShiftDays', 'costBpsPerSide', 'minAnnualExcess', 'maxMissingDays', 'robustness']) {
+      expect(REPLICATION_PREREG[k]).toEqual(PREREG[k]);
+    }
+    // Um teste só, confirmatório: α 0,025 sem divisão de família.
+    expect(REPLICATION_PREREG.alphaFamily).toBe(0.025);
+    expect(REPLICATION_PREREG.costSensitivityBps).toEqual([10, 20]);
+  });
+
+  it('sem co-primário: um teste só (a carteira), com o α inteiro', () => {
+    const r = runDailyTrend(repMarketFor(21, 'adverse'), FAST_REP, { descriptive: false });
+    expect(r.tests.map((t) => t.name)).toEqual(['carteira']);
+    expect(r.tests[0].holm.threshold).toBe(0.025);
+    expect(r.verdict).not.toBe('INCOMPLETE');
+    expect(r.title).toBe('replicação em 13 moedas novas');
+  });
+
+  it('carteira cujo dado mais antigo começa depois do início → INCOMPLETE', () => {
+    const d = repMarketFor(22, 'iid');
+    for (const s of Object.keys(d)) d[s] = d[s].filter((c) => c.openTime >= Date.parse('2023-01-01T00:00:00Z'));
+    const r = runDailyTrend(d, FAST_REP, { descriptive: false });
+    expect(r.verdict).toBe('INCOMPLETE');
+    expect(r.untested.join(' ')).toMatch(/carteira: a moeda mais antiga começa/);
+  });
+
+  it('descritivos: trocas, composto e custo maior (o excesso sobre o embaralhado não muda com o custo)', () => {
+    const r = runDailyTrend(repMarketFor(23, 'trend', 0.006), FAST_REP);
+    const d = r.descriptive;
+    expect(d.perSymbol.every((x) => Number.isInteger(x.switches) && x.switches > 0)).toBe(true);
+    expect(d.switchesPerSymbolYear).toBeGreaterThan(0);
+    expect(Number.isFinite(d.strategy.cagr) && Number.isFinite(d.buyAndHold.cagr)).toBe(true);
+    expect(d.costSensitivity.map((c) => c.bpsPerSide)).toEqual([10, 20]);
+    expect(d.costSensitivity[0].meanDaily).toBeLessThan(r.tests[0].full.observed);
+    expect(d.costSensitivity[1].meanDaily).toBeLessThan(d.costSensitivity[0].meanDaily);
+    expect(formatDailyTrendMarkdown(r)).toMatch(/Trocas de posição: .* por moeda por ano/);
+  });
+
+  it('custo circular: custo maior baixa o líquido, mas deixa o excesso sobre o embaralhado igual', () => {
+    const entries = [0, 1, 1, 0, 1, 1, 1, 0].map((pos, i) => ({ weekStart: i * DAY, pos, ret: 0.01 * (i % 3 - 1) }));
+    const series = [{ symbol: 'X', entries: Array.from({ length: 30 }, (_, k) => entries.map((e) => ({ ...e, weekStart: e.weekStart + k * 8 * DAY }))).flat() }];
+    const cheap = evaluateTiming(series, { minShift: 5, costPerSide: 0.0006, periodsPerYear: 365 });
+    const dear = evaluateTiming(series, { minShift: 5, costPerSide: 0.002, periodsPerYear: 365 });
+    expect(dear.observed).toBeLessThan(cheap.observed);
+    expect(dear.excessAnnual).toBeCloseTo(cheap.excessAnnual, 10);
   });
 }, 120000);

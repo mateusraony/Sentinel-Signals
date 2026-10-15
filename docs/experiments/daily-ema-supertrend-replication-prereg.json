@@ -1,0 +1,34 @@
+{
+  "name": "daily-ema-supertrend-replication-272",
+  "item": "docs/known-risks.md item 272",
+  "title": "replicação em 13 moedas novas",
+  "registeredAt": "2026-10-15",
+  "note": "Replicação do item 271 com a MESMA regra, os MESMOS parâmetros, o mesmo período e o mesmo custo, em moedas que nunca entraram no teste. Universo escolhido por regra mecânica, não pelo resultado: a carteira de referência de 20 símbolos (docs/roadmap.md, definida em 2026-08 para outro fim) menos as 7 do item 271. Congelado ANTES de qualquer dado ser baixado; scripts/dailyTrend.test.mjs trava estes valores.",
+  "primarySymbols": ["BNBUSDT", "ADAUSDT", "XRPUSDT", "SOLUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT", "ARBUSDT", "OPUSDT", "SUIUSDT", "NEARUSDT", "AAVEUSDT", "ONDOUSDT"],
+  "coPrimarySymbol": null,
+  "descriptiveSymbols": [],
+  "fetchFrom": "2018-06-01",
+  "start": "2019-01-07T00:00:00.000Z",
+  "end": "2026-10-04T23:59:59.999Z",
+  "halves": [
+    { "from": "2019-01-07T00:00:00.000Z", "to": "2022-12-25T23:59:59.999Z" },
+    { "from": "2023-01-02T00:00:00.000Z", "to": "2026-10-04T23:59:59.999Z" }
+  ],
+  "emaFast": 10,
+  "emaSlow": 21,
+  "stAtrPeriod": 10,
+  "stFactor": 3,
+  "warmupDaysAfterListing": 126,
+  "minShiftDays": 56,
+  "costBpsPerSide": 6,
+  "costSensitivityBps": [10, 20],
+  "alphaFamily": 0.025,
+  "minAnnualExcess": 0.02,
+  "maxMissingDays": 3,
+  "robustness": [
+    { "label": "EMA 8/21", "emaFast": 8, "emaSlow": 21 },
+    { "label": "EMA 12/26", "emaFast": 12, "emaSlow": 26 },
+    { "label": "Supertrend fator 2,5", "stFactor": 2.5 },
+    { "label": "Supertrend fator 3,5", "stFactor": 3.5 }
+  ]
+}

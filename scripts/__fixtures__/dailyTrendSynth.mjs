@@ -13,7 +13,8 @@
 //               do 'adverse' sem a deriva fixa.
 //
 // Uso como CLI (calibração; imprime JSON):
-//   node scripts/__fixtures__/dailyTrendSynth.mjs --scenario adverse --n 50 --seed-offset 0 [--drift 0.002]
+//   node scripts/__fixtures__/dailyTrendSynth.mjs --scenario adverse --n 50 --seed-offset 0 [--drift 0.002] \
+//     [--prereg docs/experiments/daily-ema-supertrend-replication-prereg.json]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,9 +24,17 @@ import { runDailyTrend } from '../dailyTrend.mjs';
 const DAY = 24 * 60 * 60 * 1000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const PREREG = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../docs/experiments/daily-ema-supertrend-prereg.json'), 'utf8'));
+export const REPLICATION_PREREG = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../docs/experiments/daily-ema-supertrend-replication-prereg.json'), 'utf8'));
 
-// Listagens tardias aproximadas das reais (as outras moedas começam no fetchFrom).
-export const LATE_START = { DYDXUSDT: '2021-09-08', PENDLEUSDT: '2023-07-03', ZROUSDT: '2024-06-20', PAXGUSDT: '2020-09-04' };
+// Listagens tardias aproximadas das reais no Spot da Binance (as outras moedas
+// começam no fetchFrom). As do item 272 (replicação) são aproximadas; só
+// servem para o dado sintético ter a mesma forma da carteira real.
+export const LATE_START = {
+  DYDXUSDT: '2021-09-08', PENDLEUSDT: '2023-07-03', ZROUSDT: '2024-06-20', PAXGUSDT: '2020-09-04',
+  LINKUSDT: '2019-01-16', SOLUSDT: '2020-08-11', DOTUSDT: '2020-08-18', AVAXUSDT: '2020-09-22',
+  NEARUSDT: '2020-10-14', AAVEUSDT: '2020-10-15', OPUSDT: '2022-06-01', ARBUSDT: '2023-03-23',
+  SUIUSDT: '2023-05-03', ONDOUSDT: '2025-01-17',
+};
 
 function gaussFrom(rand) {
   return () => { const u = Math.max(rand(), 1e-12); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rand()); };
@@ -106,10 +115,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.a
   const n = Number(args.n || 50);
   const offset = Number(args['seed-offset'] || 0);
   const drift = Number(args.drift || 0.002);
+  const prereg = args.prereg ? JSON.parse(fs.readFileSync(args.prereg, 'utf8')) : PREREG;
   const rows = [];
   for (let k = 0; k < n; k += 1) {
-    const r = runDailyTrend(synthMarket({ seed: offset + k + 1, scenario, drift, symbols: PREREG.primarySymbols }), PREREG, { descriptive: false });
-    rows.push({ seed: offset + k + 1, verdict: r.verdict, pPortfolio: r.tests[0].full.p, pBtc: r.tests[1].full.p, pass: r.tests.map((t) => t.pass) });
+    const r = runDailyTrend(synthMarket({ seed: offset + k + 1, scenario, drift, prereg, symbols: prereg.primarySymbols }), prereg, { descriptive: false });
+    rows.push({ seed: offset + k + 1, verdict: r.verdict, pPortfolio: r.tests[0].full.p, pBtc: r.tests[1]?.full.p ?? null, pass: r.tests.map((t) => t.pass) });
   }
-  console.log(JSON.stringify({ scenario, drift: scenario === 'trend' ? drift : null, n, offset, rows }));
+  console.log(JSON.stringify({ prereg: prereg.name, scenario, drift: scenario === 'trend' ? drift : null, n, offset, rows }));
 }
