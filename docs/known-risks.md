@@ -32424,3 +32424,52 @@ entrada aleatória (Sentinel Signals)"** → *Run workflow*.
   juntando os dois na sessão, com `node scripts/daily-filter.mjs --combine W1.json W2.json`.
 
 **Ledger:** não se aplica (a estatística não é expectância em R por trial), mesmo caso do item 269.
+
+**Resultado (2026-10-16): `NO_FILTER_EDGE`. O filtro diário não melhorou as entradas.**
+- **Rastro:**
+  - W1: run `38800460945`;
+  - W2: run `38800641381`;
+  - os dois no commit `6935a9b` (merge do PR #497);
+  - pré-registro sha256 `6f7e780f…`, igual ao arquivo mesclado;
+  - 41 braços por janela, `WINDOW_DONE`, sem erro e sem aviso.
+- O veredito saiu juntando as duas janelas na sessão, com
+  `node scripts/daily-filter.mjs --combine`.
+
+| Condição | Resultado | Precisava |
+|---|---|---|
+| t das somas mensais (26 meses) | 0,34 | ≥ 2,06 — **não** |
+| T médio das duas janelas | **+0,0070R por operação** | ≥ +0,05R — **não** |
+| T > 0 em cada janela | W1 +0,017 · W2 −0,003 | sim nas duas — **não** |
+| Descritivo: T do R0 | W1 −0,070 · W2 −0,046 | (não decide) |
+
+- **Intervalo de 95% do T:** [−0,036; +0,050]R por operação.
+  - Ganho de +0,05R ou mais por operação fica descartado, no limite do intervalo.
+  - Ganho de ~0,02–0,03R não fica descartado.
+- **Previsão registrada antes:** `NO_FILTER_EDGE`, com T entre 0 e +0,04R. **Acertou.**
+- **Descritivo das seeds, por lado:**
+  - SELL a favor da regra (regra fora) rendeu mais que SELL contra nas duas janelas: +0,036R e
+    +0,061R.
+  - BUY a favor da regra rendeu mais na W1 (+0,049R) e **menos** na W2 (−0,077R).
+  - No agregado, os lados se anularam.
+  - O filtro manteria ~50% das operações. O R médio das seeds (mediana) foi de −0,006 para +0,001
+    na W1 e de −0,028 para −0,048 na W2.
+- **Descritivo do R0 (entrada real da RF), com 16 a 43 operações por célula:**
+  - BUY a favor da regra rendeu **menos** que BUY contra nas duas janelas: −0,34R e −0,44R.
+  - SELL a favor rendeu mais: +0,08R e +0,42R.
+  - É um padrão achado **depois** de ver o dado, com amostra pequena. Fica só como hipótese, sem
+    nenhuma ação. Testá-lo exigiria dado novo e pré-registro próprio.
+
+**O que o resultado quer dizer:**
+- A regra diária tem valor no horizonte dela, de dias (itens 271/272). Esse valor **não chega**
+  ao R das operações de 4h do Sentinel, com as saídas atuais, em tamanho detectável.
+- **Hipótese, não testada:** o trailing pré-TP1 encerra as operações cedo. A diferença diária de
+  ~0,3% entre comprado e fora vira uma fração pequena de R.
+- O teste tinha poder de ~30–60% para o efeito esperado. Por isso o resultado não prova que o
+  filtro é inútil. Ele mostra que não ajudou com folga nestas duas janelas e descarta ganhos de
+  0,05R ou mais por operação.
+
+**Decisão pré-registrada aplicada:**
+- O filtro diário fica **sem evidência** para o Sentinel nestas janelas.
+- A confirmação no motor (prevista só para `FILTER_EDGE`) **não** é disparada.
+- A regra diária continua valendo **sozinha** (itens 271/272).
+- Nada vai para a produção.
