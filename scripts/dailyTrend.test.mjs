@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { buildDays, supertrend, dailySignals, symbolDailySeries, runDailyTrend, formatDailyTrendMarkdown } from './dailyTrend.mjs';
+import { buildDays, supertrend, dailySignals, dailyShortSignals, symbolDailySeries, runDailyTrend, formatDailyTrendMarkdown } from './dailyTrend.mjs';
 import { evaluateTiming } from './weeklyTrend.mjs';
 import { synthMarket, REPLICATION_PREREG } from './__fixtures__/dailyTrendSynth.mjs';
 import { mulberry32 } from '../src/lib/seededRandom.js';
@@ -260,3 +260,60 @@ describe('replicação (item 272)', () => {
     expect(Math.abs(dear.excessAnnual - cheap.excessAnnual)).toBeGreaterThan(1e-4);
   });
 }, 120000);
+
+// Item 274 — venda espelhada: vendido quando EMA10 < EMA21 E Supertrend de baixa.
+describe('venda espelhada (item 274)', () => {
+  const SHORT = { ...FAST_REP, side: 'short', requirePositiveNet: true };
+  const shortMarket = (seed, scenario, drift) => synthMarket({ seed, scenario, drift, prereg: SHORT, symbols: SHORT.primarySymbols });
+
+  it('sinal: −1 só com EMA rápida abaixo da lenta E Supertrend de baixa; nunca junto com o comprado', () => {
+    const closes = Array.from({ length: 400 }, (_, i) => 100 * Math.exp(0.25 * Math.sin(i / 30) + 0.0003 * i));
+    const days = closes.map((c, i) => candle(i, c, c * 1.01, c * 0.99, c));
+    const long = dailySignals(days, FAST);
+    const short = dailyShortSignals(days, FAST);
+    expect(new Set(short.filter((x) => x !== null))).toEqual(new Set([-1, 0]));
+    for (let i = 0; i < days.length; i += 1) {
+      if (short[i] === -1) expect(long[i]).toBe(0);
+      expect(short[i] === null).toBe(long[i] === null);
+    }
+    // "Fora" da compra não é "vendido": há dias neutros (nem 1 nem −1).
+    expect(long.some((x, i) => x === 0 && short[i] === 0)).toBe(true);
+    // Causal: a série completa é igual ao cálculo só com o prefixo.
+    for (const i of [150, 250, 399]) expect(dailyShortSignals(days.slice(0, i + 1), FAST)[i]).toBe(short[i]);
+  });
+
+  it('tendência plantada (±0,6%/dia) → a venda passa, com retorno líquido positivo', () => {
+    const r = runDailyTrend(shortMarket(31, 'trend', 0.006), SHORT);
+    expect(r.side).toBe('short');
+    expect(r.verdict).toBe('TREND_FOUND');
+    expect(r.tests[0].netPass).toBe(true);
+    expect(r.descriptive.longShort).toBeNull();
+    expect(Number.isFinite(r.descriptive.shortAndHold.cagr)).toBe(true);
+    const md = formatDailyTrendMarkdown(r);
+    expect(md).toMatch(/Venda espelhada diária/);
+    expect(md).toMatch(/Retorno líquido positivo \(exigido para a venda\): carteira sim/);
+    expect(md).not.toMatch(/Comprado\/vendido/);
+  });
+
+  it('ganhar do sorteio não basta: timing que passa mas perde dinheiro → NO_TREND_EDGE', () => {
+    const r = runDailyTrend(shortMarket(36, 'trend', 0.006), SHORT, { descriptive: false });
+    const t = r.tests[0];
+    expect(t.holm.pass && t.halvesPass && t.effectPass).toBe(true);
+    expect(t.full.observed).toBeLessThan(0);
+    expect(t.netPass).toBe(false);
+    expect(r.verdict).toBe('NO_TREND_EDGE');
+  });
+
+  it('mercado que só sobe (nula hostil, deriva +0,1%/dia) → a venda não passa', () => {
+    const r = runDailyTrend(shortMarket(31, 'adverse'), SHORT, { descriptive: false });
+    expect(r.tests[0].netPass).toBe(false);
+    expect(r.verdict).toBe('NO_TREND_EDGE');
+  });
+
+  it('sem `side`, nada muda: a regra de compra não ganha `side` nem `netPass` na saída', () => {
+    const r = runDailyTrend(repMarketFor(37, 'trend', 0.006), FAST_REP, { descriptive: false });
+    expect(r.side).toBeUndefined();
+    expect('netPass' in r.tests[0]).toBe(false);
+  });
+}, 120000);
+

@@ -88,6 +88,20 @@ export function dailySignals(days, { emaFast, emaSlow, stAtrPeriod, stFactor }) 
 }
 
 /**
+ * Regra espelhada de VENDA (item 274): −1 = vendido no dia seguinte quando
+ * EMA10 < EMA21 E a Supertrend está de baixa; 0 = fora; null = sem dado.
+ * Não é o "fora" da regra de compra: fora inclui os dias em que só uma das
+ * duas condições virou (item 274 explica por que isso importa).
+ */
+export function dailyShortSignals(days, { emaFast, emaSlow, stAtrPeriod, stFactor }) {
+  const closes = days.map((d) => d.close);
+  const fast = ema(closes, emaFast);
+  const slow = ema(closes, emaSlow);
+  const st = supertrend(days, { atrPeriod: stAtrPeriod, factor: stFactor });
+  return days.map((_, i) => (st.up[i] === null ? null : (fast[i] < slow[i] && !st.up[i] ? -1 : 0)));
+}
+
+/**
  * Posição e retorno de cada dia elegível de uma moeda. O dia j usa o sinal do
  * fechamento do dia anterior (j−1, que tem de existir e ser o dia de
  * calendário anterior) e o retorno fechamento de j−1 → fechamento de j.
@@ -153,6 +167,10 @@ function maxDrawdown(daily) {
  *   descritiva (só a calibração sintética usa, para rodar mais rápido)
  */
 export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}) {
+  // `side: 'short'` (item 274) troca só a regra de posição; sem o campo, é a
+  // regra de compra dos itens 271/272, byte a byte.
+  const short = prereg.side === 'short';
+  const signalsOf = short ? dailyShortSignals : dailySignals;
   const startMs = Date.parse(prereg.start);
   const endMs = Date.parse(prereg.end);
   const costPerSide = prereg.costBpsPerSide / 10000;
@@ -168,7 +186,7 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
     const key = `${symbol}|${JSON.stringify(params)}`;
     if (!entriesCache.has(key)) {
       const days = daysOf(symbol);
-      entriesCache.set(key, symbolDailySeries(days, dailySignals(days, params), { startMs, endMs, warmupDays: prereg.warmupDaysAfterListing }));
+      entriesCache.set(key, symbolDailySeries(days, signalsOf(days, params), { startMs, endMs, warmupDays: prereg.warmupDaysAfterListing }));
     }
     return entriesCache.get(key);
   };
@@ -225,7 +243,10 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
     t.holm = holm[i];
     t.halvesPass = t.byHalf.every((h) => h.beatsNullMedian);
     t.effectPass = Number.isFinite(t.full.excessAnnual) && t.full.excessAnnual >= prereg.minAnnualExcess;
-    t.pass = t.holm.pass && t.halvesPass && t.effectPass;
+    // Item 274 (venda): ganhar de vender em dias sorteados não basta — num
+    // mercado que sobe, a venda pode bater o sorteio e ainda perder dinheiro.
+    if (prereg.requirePositiveNet) t.netPass = Number.isFinite(t.full.observed) && t.full.observed > 0;
+    t.pass = t.holm.pass && t.halvesPass && t.effectPass && t.netPass !== false;
   }
 
   let verdict = 'NO_TREND_EDGE';
@@ -235,10 +256,11 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
   const strip = ({ observedWeekly, weeks, ...rest }) => ({ ...rest, days: weeks });
   const result = {
     title: prereg.title ?? null,
+    ...(short ? { side: 'short' } : {}),
     verdict,
     untested,
     coverage,
-    tests: tests.map((t) => ({ name: t.name, symbols: t.symbols, full: strip(t.full), byHalf: t.byHalf, holm: t.holm, halvesPass: t.halvesPass, effectPass: t.effectPass, pass: t.pass })),
+    tests: tests.map((t) => ({ name: t.name, symbols: t.symbols, full: strip(t.full), byHalf: t.byHalf, holm: t.holm, halvesPass: t.halvesPass, effectPass: t.effectPass, ...(t.netPass !== undefined ? { netPass: t.netPass } : {}), pass: t.pass })),
   };
   if (!descriptive) return result;
 
@@ -247,7 +269,9 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
   const portfolioSeries = portfolioSymbols.map((s) => seriesOf(s));
   const strategyDaily = tests[0].full.observedWeekly || [];
   const buyHoldDaily = evaluateTiming(portfolioSeries, { ...opts, transform: () => 1 }).observedWeekly || [];
-  const longShort = evaluateTiming(portfolioSeries, { ...opts, transform: (p) => 2 * p - 1 });
+  // Comprado/vendido só faz sentido para a regra de compra (0/1 → −1/+1).
+  const longShort = short ? null : evaluateTiming(portfolioSeries, { ...opts, transform: (p) => 2 * p - 1 });
+  const shortHoldDaily = short ? evaluateTiming(portfolioSeries, { ...opts, transform: () => -1 }).observedWeekly || [] : null;
   // Custo maior que o pré-registrado (a taxa de taker do Spot é ~10 bps por lado).
   // Recalcula também o excesso e o p: por moeda, toda rotação paga o mesmo
   // número de trocas (custo circular de evaluateTiming), mas na carteira as
@@ -271,7 +295,7 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
     return {
       symbol,
       days: s.entries.length,
-      exposure: s.entries.length ? mean(s.entries.map((e) => e.pos)) : null,
+      exposure: s.entries.length ? mean(s.entries.map((e) => Math.abs(e.pos))) : null,
       switches: switchesOf(s.entries),
       observed: r.observed,
       nullMedian: r.nullMedian ?? null,
@@ -289,7 +313,8 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
     years,
     strategy: { sharpe: sharpe(strategyDaily), maxDrawdown: maxDrawdown(strategyDaily), meanDaily: mean(strategyDaily.map((d) => d.ret)), exposure: mean(strategyDaily.map((d) => d.exposure)), cagr: cagr(strategyDaily) },
     buyAndHold: { sharpe: sharpe(buyHoldDaily), maxDrawdown: maxDrawdown(buyHoldDaily), meanDaily: mean(buyHoldDaily.map((d) => d.ret)), cagr: cagr(buyHoldDaily) },
-    longShort: { observed: longShort.observed, p: longShort.p ?? null },
+    longShort: longShort ? { observed: longShort.observed, p: longShort.p ?? null } : null,
+    ...(short ? { shortAndHold: { sharpe: sharpe(shortHoldDaily), maxDrawdown: maxDrawdown(shortHoldDaily), meanDaily: mean(shortHoldDaily.map((d) => d.ret)), cagr: cagr(shortHoldDaily) } } : {}),
     costSensitivity,
     robustness,
     perSymbol,
@@ -303,10 +328,18 @@ const VERDICT_TEXT = {
   INCOMPLETE: '**Resultado inválido — faltou dado.** Não conta como resposta; a rodada precisa ser refeita.',
 };
 
+const VERDICT_TEXT_SHORT = {
+  TREND_FOUND: '**A venda espelhada passou na régua pré-registrada:** vender nos dias de tendência de baixa ganhou de vender em dias sorteados, com folga e nas duas metades, e deu retorno líquido positivo. Ressalva: sem o custo de funding de Futuros. O próximo passo é decisão do usuário.',
+  NO_TREND_EDGE: '**A venda espelhada não passou.** Vender nos dias de tendência de baixa não ganhou de vender em dias sorteados com folga e nas duas metades, ou não deu retorno líquido positivo.',
+  INCOMPLETE: VERDICT_TEXT.INCOMPLETE,
+};
+
 export function formatDailyTrendMarkdown(r) {
   const pct = (v, d = 3) => (v == null || !Number.isFinite(v) ? '—' : `${(v * 100).toFixed(d)}%`);
   const f = (v, d = 3) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(d));
-  const lines = ['', `## Tendência diária EMA 10/21 + Supertrend (10,3)${r.title ? ` — ${r.title}` : ''} — resultado`, '', VERDICT_TEXT[r.verdict], ''];
+  const short = r.side === 'short';
+  const heading = short ? 'Venda espelhada diária (EMA10 < EMA21 e Supertrend de baixa)' : 'Tendência diária EMA 10/21 + Supertrend (10,3)';
+  const lines = ['', `## ${heading}${r.title ? ` — ${r.title}` : ''} — resultado`, '', (short ? VERDICT_TEXT_SHORT : VERDICT_TEXT)[r.verdict], ''];
   if (r.untested.length) lines.push(`Faltou: ${r.untested.join(' · ')}`, '');
   lines.push(
     '| Teste | Dias | Retorno líquido médio/dia | Mediana embaralhada | Excesso ao ano | p | Limiar (Holm) | Metades | Passou? |',
@@ -314,15 +347,18 @@ export function formatDailyTrendMarkdown(r) {
     ...r.tests.map((t) => `| ${t.name} | ${t.full.days ?? '—'} | ${pct(t.full.observed, 4)} | ${pct(t.full.nullMedian, 4)} | ${pct(t.full.excessAnnual, 1)} | ${f(t.full.p, 4)} | ${f(t.holm.threshold, 4)} | ${t.byHalf.map((h) => (h.beatsNullMedian ? 'sim' : 'não')).join(' / ')} | ${t.pass ? '**sim**' : 'não'} |`),
     '',
   );
+  if (r.tests.some((t) => t.netPass !== undefined)) lines.push(`Retorno líquido positivo (exigido para a venda): ${r.tests.map((t) => `${t.name} ${t.netPass ? 'sim' : 'não'}`).join(' · ')}.`, '');
   if (r.descriptive) {
     const d = r.descriptive;
+    const ref = short ? d.shortAndHold : d.buyAndHold;
     lines.push(
-      `Carteira (descritivo): Sharpe da regra ${f(d.strategy.sharpe, 2)} × comprar e segurar ${f(d.buyAndHold.sharpe, 2)}; `
-        + `queda máxima ${pct(d.strategy.maxDrawdown, 1)} × ${pct(d.buyAndHold.maxDrawdown, 1)}; tempo comprado ${pct(d.strategy.exposure, 0)}; `
-        + `retorno composto ao ano ${pct(d.strategy.cagr, 1)} × ${pct(d.buyAndHold.cagr, 1)}.`,
+      `Carteira (descritivo): Sharpe da regra ${f(d.strategy.sharpe, 2)} × ${short ? 'vender e segurar' : 'comprar e segurar'} ${f(ref.sharpe, 2)}; `
+        + `queda máxima ${pct(d.strategy.maxDrawdown, 1)} × ${pct(ref.maxDrawdown, 1)}; tempo ${short ? 'vendido' : 'comprado'} ${pct(d.strategy.exposure, 0)}; `
+        + `retorno composto ao ano ${pct(d.strategy.cagr, 1)} × ${pct(ref.cagr, 1)}.`
+        + (short ? ` Comprar e segurar no mesmo período: composto ${pct(d.buyAndHold.cagr, 1)}/ano.` : ''),
       `Trocas de posição: ${f(d.switchesPerSymbolYear, 1)} por moeda por ano.`
         + (d.costSensitivity.length ? ' Com custo maior (descritivo, não decide): ' + d.costSensitivity.map((c) => `${c.bpsPerSide} bps/lado → líquido ${pct(c.meanDaily, 4)}/dia, composto ${pct(c.cagr, 1)}/ano, excesso ${pct(c.excessAnnual, 1)}/ano (p ${f(c.p, 4)})`).join(' · ') : ''),
-      `Comprado/vendido (descritivo): p ${f(d.longShort.p, 4)}.`,
+      ...(d.longShort ? [`Comprado/vendido (descritivo): p ${f(d.longShort.p, 4)}.`] : []),
       '',
       'Vizinhos de robustez (descritivo, não decidem nada): ' + d.robustness.map((v) => `${v.label}: excesso ${pct(v.excessAnnual, 1)}/ano (p ${f(v.p, 3)})`).join(' · '),
       '',
