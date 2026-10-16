@@ -76,8 +76,11 @@ export function buildDailyRuleReport(dailyBySymbol, prereg, { nowMs }) {
     const signals = dailySignals(days, params);
     const state = signals.at(-1);
     if (state === null) return { ...base, status: 'warming' };
-    // Troca só entre dois dias de calendário seguidos com sinal.
-    const prev = days.length > 1 && days.at(-2).openTime === lastOpen - DAY ? signals.at(-2) : null;
+    // Troca só entre dois dias de calendário seguidos com sinal, e só se a
+    // vela de ontem chegou: com velas paradas (deslistada, resposta cortada),
+    // uma troca antiga se repetiria como "de hoje" todo dia (review do Codex,
+    // PR #501).
+    const prev = !base.stale && days.length > 1 && days.at(-2).openTime === lastOpen - DAY ? signals.at(-2) : null;
     series.push({ symbol, entries: symbolDailySeries(days, signals, { startMs, endMs, warmupDays: prereg.warmupDaysAfterListing }) });
     return { ...base, status: 'ok', state, changed: prev !== null && prev !== state };
   });

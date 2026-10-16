@@ -83,6 +83,20 @@ describe('mesma regra do pré-registro do tempo novo (item 274)', () => {
   });
 });
 
+describe('vela atrasada não vira troca de hoje (review do Codex, PR #501)', () => {
+  it('se as velas param logo depois de uma troca, a troca não se repete nos dias seguintes', () => {
+    const candles = walk(7, FROM, 400);
+    const signals = dailySignals(candles, PARAMS);
+    const flip = signals.findIndex((s, i) => i > 200 && s !== null && signals[i - 1] !== null && s !== signals[i - 1]);
+    const stopped = candles.slice(0, flip + 1); // ex.: moeda deslistada logo depois da troca
+    const dayAfter = candles[flip].closeTime + 1 + DAY + 23 * 60 * 1000;
+    const r = buildDailyRuleReport({ BTCUSDT: stopped }, PREREG, { nowMs: dayAfter });
+    expect(r.stale).toEqual(['BTCUSDT']);
+    expect(r.coins.find((c) => c.symbol === 'BTCUSDT').changed).toBe(false);
+    expect([...r.entered, ...r.exited]).toEqual([]);
+  });
+});
+
 describe('avisos', () => {
   it('sem dado, vela de ontem faltando e histórico curto', () => {
     const nowMs = at('2026-11-20');

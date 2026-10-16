@@ -32662,10 +32662,12 @@ entrada aleatória (Sentinel Signals)"** → *Run workflow*.
 - Sobrevivência: as moedas foram escolhidas em 2026 (itens 271 e 272).
 
 **Verificação:**
-- `scripts/dailyRuleReport.test.mjs`, 9 testes:
+- `scripts/dailyRuleReport.test.mjs`, 10 testes:
   - a mesma regra do pré-registro;
   - vela aberta ignorada;
   - troca detectada no dia certo;
+  - vela atrasada não repete uma troca antiga como "de hoje" (correção do review do Codex,
+    PR #501);
   - avisos de sem dado, vela atrasada e histórico curto;
   - andamento antes e depois do início;
   - conta calculada à mão;
