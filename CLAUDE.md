@@ -165,8 +165,8 @@ Skills em `.claude/skills/`, regras em `.claude/rules/` (carregam pelos
   (268) e o tamanho pela volatilidade (269) não passaram na régua pré-registrada.
   **Exceção (itens 271/272):** a regra diária comprado/fora "EMA10 > EMA21 e Supertrend
   (10,3) de alta", testada isolada (fora do motor), **passou** na carteira de 6 moedas
-  e **replicou** em 13 moedas novas (BTC sozinho não passa). Não está no motor nem na
-  produção. Ganho de risco e de momento, não de retorno médio bruto.
+  e **replicou** em 13 moedas novas (BTC sozinho não passa); como filtro das entradas do
+  Sentinel **não** passou (273). Fora do motor e da produção. Ganho de risco e momento.
 
 - `npm run typecheck` roda no CI **como catraca**, não exigindo zero
   (`npm run typecheck:ratchet`, item 166): o teto é o passivo atual (16 erros
