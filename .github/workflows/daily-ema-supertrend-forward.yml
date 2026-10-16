@@ -2,7 +2,7 @@ name: Tendência diária EMA + Supertrend — tempo novo (Sentinel Signals)
 
 # docs/known-risks.md item 274 — acompanhamento em TEMPO NOVO dos itens 271/272:
 # a MESMA regra de compra (comprado/fora) nas 19 moedas dos dois testes, só com
-# dias a partir de 2026-10-05 (nenhum deles visto antes), e a regra espelhada
+# dias a partir de 2026-10-17 (o 1º dia inteiro depois do registro), e a regra espelhada
 # de VENDA como teste próprio, com veredito separado. Regras em
 # docs/experiments/daily-ema-supertrend-forward-prereg.json (compra) e
 # daily-ema-supertrend-forward-short-prereg.json (venda); nada é escolhido na

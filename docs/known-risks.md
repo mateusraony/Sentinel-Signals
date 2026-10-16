@@ -32508,8 +32508,12 @@ entrada aleatória (Sentinel Signals)"** → *Run workflow*.
 - **Compra** (`docs/experiments/daily-ema-supertrend-forward-prereg.json`):
   - Regra, parâmetros, custo (6 bps) e nula: os mesmos do item 271, conferidos campo a campo.
   - Moedas: as 19 dos itens 271/272 (as 6 do 271 mais as 13 do 272). PAXG só descritivo.
-  - Período: **2026-10-05 → 2028-10-04**. Começa no dia seguinte ao último dia visto (conferido
-    pelo teste). Cada ano é uma metade.
+  - Período: **2026-10-17 → 2028-10-16**. Começa no 1º dia UTC inteiro depois do registro
+    (2026-10-16), conferido pelo teste. Cada ano é uma metade.
+    - **Correção do review do Codex (PR #499):** a 1ª versão começava em 2026-10-05, o dia
+      seguinte ao último dia dos itens 271/272. Só que, no dia do registro, 11 velas desse
+      período já existiam. Eu não as olhei, mas o teste deixaria de ser prospectivo de fato.
+      Os dias de 2026-10-05 a 2026-10-16 ficam fora de todos os testes.
   - Passa com: p ≤ **0,0125**; as duas metades acima da mediana embaralhada; excesso ≥ 2% ao ano.
 - **Venda** (`docs/experiments/daily-ema-supertrend-forward-short-prereg.json`):
   - Regra: vendido no dia seguinte quando EMA10 < EMA21 **e** a Supertrend(10,3) está de baixa;
@@ -32521,11 +32525,17 @@ entrada aleatória (Sentinel Signals)"** → *Run workflow*.
   - Uma moeda que parar de ser negociada antes do fim sai da carteira **inteira**, até 3 moedas
     (`maxDelisted`).
   - Com mais de 3 deslistadas, a rodada vira `INCOMPLETE`.
+  - **Só conta como deslistada se as velas brutas pararem antes do último dia**, sem buraco antes
+    da parada (correção do review do Codex, PR #499). Um buraco perto do fim, com a última vela
+    presente, continua invalidando a rodada, como nos itens 271/272.
+  - A parada tem de bater com o **anúncio oficial da Binance**. O relatório mostra a data da última
+    vela de cada moeda tirada. Se a moeda continuar listada, o download foi cortado: a rodada é
+    `INCOMPLETE` e o download é refeito.
 - **Código** (`scripts/dailyTrend.mjs`):
   - `dailyShortSignals`, `side: 'short'`, `requirePositiveNet` e `maxDelisted`, todos opcionais.
   - Sem esses campos, a saída dos itens 271/272 é **idêntica byte a byte**. Comparei JSON e texto
     em 6 casos sintéticos, contra o código anterior.
-- **O workflow recusa rodar antes de 2028-10-05 01:00 UTC.**
+- **O workflow recusa rodar antes de 2028-10-17 01:00 UTC.**
 
 **Erro e poder, medidos antes** (dado sintético com as 19 moedas):
 - Nula hostil: 200 rodadas. Tendência plantada: 100 rodadas por força.
@@ -32576,7 +32586,7 @@ entrada aleatória (Sentinel Signals)"** → *Run workflow*.
 - promover um vizinho de robustez;
 - tirar uma moeda que não foi deslistada.
 
-**Como rodar** (a partir de **2028-10-05 01:00 UTC**):
+**Como rodar** (a partir de **2028-10-17 01:00 UTC**):
 - GitHub → Actions → **"Tendência diária EMA + Supertrend — tempo novo (Sentinel Signals)"** →
   *Run workflow* (sem campos).
 - Saída: o artifact `resumo-daily-ema-supertrend-tempo-novo`, com os dois JSONs (compra e venda).

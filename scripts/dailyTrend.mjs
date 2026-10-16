@@ -202,7 +202,9 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
   // Item 274 (tempo novo, 2 anos): moeda que para de ser negociada antes do
   // fim sai da carteira inteira (não só do pedaço depois da deslistagem), até
   // `maxDelisted` moedas. Sem o campo, terminar antes do fim invalida a rodada,
-  // como nos itens 271/272.
+  // como nos itens 271/272. Deslistada = as VELAS BRUTAS param antes do último
+  // dia, sem buraco antes disso (review do Codex, PR #499): buraco perto do fim
+  // com a última vela presente não é deslistagem e continua invalidando.
   const delistRule = Number.isInteger(prereg.maxDelisted);
   const delisted = [];
   for (const symbol of prereg.primarySymbols) {
@@ -214,8 +216,16 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
     let missingDays = 0;
     if (first != null) for (let t = first; t <= last; t += DAY) if (!present.has(t)) missingDays += 1;
     coverage[symbol] = { days: entries.length, first: first && new Date(first).toISOString(), last: last && new Date(last).toISOString(), missingDays };
-    if (delistRule && last != null && last < expectedLastDay) delisted.push(symbol);
-    else if (entries.length < 2 * prereg.minShiftDays + 2) untested.push(`${symbol}: só ${entries.length} dias utilizáveis`);
+    const rawLast = daysOf(symbol).at(-1)?.openTime ?? null;
+    if (delistRule && rawLast != null && rawLast < expectedLastDay) {
+      let rawMissing = 0;
+      if (first != null) for (let t = first; t <= rawLast; t += DAY) if (!present.has(t)) rawMissing += 1;
+      if (rawMissing > prereg.maxMissingDays) untested.push(`${symbol}: velas param em ${new Date(rawLast).toISOString().slice(0, 10)} com ${rawMissing} dias faltando antes (máximo ${prereg.maxMissingDays})`);
+      else {
+        delisted.push(symbol);
+        coverage[symbol].lastCandle = new Date(rawLast).toISOString();
+      }
+    } else if (entries.length < 2 * prereg.minShiftDays + 2) untested.push(`${symbol}: só ${entries.length} dias utilizáveis`);
     else if (last !== expectedLastDay) untested.push(`${symbol}: termina em ${new Date(last).toISOString().slice(0, 10)}, antes do fim pré-registrado`);
     else if (missingDays > prereg.maxMissingDays) untested.push(`${symbol}: ${missingDays} dias faltando no meio (máximo ${prereg.maxMissingDays})`);
   }
@@ -353,7 +363,7 @@ export function formatDailyTrendMarkdown(r) {
   const heading = short ? 'Venda espelhada diária (EMA10 < EMA21 e Supertrend de baixa)' : 'Tendência diária EMA 10/21 + Supertrend (10,3)';
   const lines = ['', `## ${heading}${r.title ? ` — ${r.title}` : ''} — resultado`, '', (short ? VERDICT_TEXT_SHORT : VERDICT_TEXT)[r.verdict], ''];
   if (r.untested.length) lines.push(`Faltou: ${r.untested.join(' · ')}`, '');
-  if (r.delisted?.length) lines.push(`Deslistadas antes do fim (fora da carteira inteira, regra pré-registrada): ${r.delisted.join(', ')}.`, '');
+  if (r.delisted?.length) lines.push(`Deslistadas antes do fim (fora da carteira inteira, regra pré-registrada; conferir com o anúncio oficial da Binance): ${r.delisted.map((s) => `${s} (última vela ${r.coverage?.[s]?.lastCandle?.slice(0, 10) ?? '?'})`).join(', ')}.`, '');
   lines.push(
     '| Teste | Dias | Retorno líquido médio/dia | Mediana embaralhada | Excesso ao ano | p | Limiar (Holm) | Metades | Passou? |',
     '|---|---|---|---|---|---|---|---|---|',

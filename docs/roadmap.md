@@ -853,7 +853,7 @@ justificativa nova para reabrir isso com o resultado acima.
 
 ## Bloco 6 — teste agendado no tempo (não dá para adiantar)
 
-- **A partir de 2028-10-05 (UTC): rodar a regra diária em tempo novo** (`docs/known-risks.md`
+- **A partir de 2028-10-17 (UTC): rodar a regra diária em tempo novo** (`docs/known-risks.md`
   item 274).
   - Actions → "Tendência diária EMA + Supertrend — tempo novo (Sentinel Signals)", sem
     campos. O workflow recusa antes dessa data.

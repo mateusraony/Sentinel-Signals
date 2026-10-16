@@ -254,7 +254,7 @@ paths:
   - **Sem secret.**
 
 - `daily-ema-supertrend-forward.yml` — disparo **manual**, sem campos, só a partir de
-  **2028-10-05**: a regra diária em tempo novo (`docs/known-risks.md` item 274).
+  **2028-10-17**: a regra diária em tempo novo (`docs/known-risks.md` item 274).
   - **Testes:** compra (acompanhamento) e venda espelhada (teste próprio), cada um com o
     seu pré-registro (`docs/experiments/daily-ema-supertrend-forward*-prereg.json`).
   - **Recusa** rodar antes do fim pré-registrado, de propósito.

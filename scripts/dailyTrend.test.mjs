@@ -330,13 +330,15 @@ describe('tempo novo (item 274) — pré-registros travados', () => {
     expect(LONG.primarySymbols).toEqual([...PREREG.primarySymbols, ...REPLICATION_PREREG.primarySymbols]);
     expect(LONG.descriptiveSymbols).toEqual(PREREG.descriptiveSymbols);
     expect(LONG.coPrimarySymbol).toBeNull();
-    // Começa no dia seguinte ao último dia visto nos itens 271/272.
-    expect(Date.parse(LONG.start)).toBe(Date.parse(PREREG.end) + 1);
-    expect(Date.parse(LONG.start)).toBe(Date.parse(REPLICATION_PREREG.end) + 1);
-    expect([LONG.start, LONG.end]).toEqual(['2026-10-05T00:00:00.000Z', '2028-10-04T23:59:59.999Z']);
+    // Prospectivo de verdade (review do Codex, PR #499): começa no 1º dia UTC
+    // inteiro DEPOIS do registro — nenhuma vela do período existia ao congelar.
+    expect(Date.parse(LONG.start)).toBeGreaterThanOrEqual(Date.parse(`${LONG.registeredAt}T00:00:00Z`) + DAY);
+    expect(Date.parse(LONG.start)).toBeGreaterThan(Date.parse(PREREG.end));
+    expect([LONG.registeredAt, LONG.start, LONG.end]).toEqual(['2026-10-16', '2026-10-17T00:00:00.000Z', '2028-10-16T23:59:59.999Z']);
+    expect((Date.parse(LONG.end) + 1 - Date.parse(LONG.start)) / DAY).toBe(731); // 2 anos, o horizonte calibrado
     expect(LONG.halves).toEqual([
-      { from: '2026-10-05T00:00:00.000Z', to: '2027-10-04T23:59:59.999Z' },
-      { from: '2027-10-05T00:00:00.000Z', to: '2028-10-04T23:59:59.999Z' },
+      { from: '2026-10-17T00:00:00.000Z', to: '2027-10-16T23:59:59.999Z' },
+      { from: '2027-10-17T00:00:00.000Z', to: '2028-10-16T23:59:59.999Z' },
     ]);
     // Calibração: com 2 anos, α 0,025 dava 2,5% de alarme falso, sem folga.
     expect(LONG.alphaFamily).toBe(0.0125);
@@ -373,13 +375,34 @@ describe('tempo novo (item 274) — pré-registros travados', () => {
     expect(r1.verdict).not.toBe('INCOMPLETE');
     expect(r1.tests[0].full.usable).not.toContain('ZROUSDT');
     expect(r1.tests[0].full.usable).toHaveLength(18);
-    expect(formatDailyTrendMarkdown(r1)).toMatch(/Deslistadas antes do fim .*: ZROUSDT/);
+    expect(formatDailyTrendMarkdown(r1)).toMatch(/Deslistadas antes do fim .*: ZROUSDT \(última vela 2027-06-30\)/);
 
     const four = market();
     for (const s of ['ZROUSDT', 'DYDXUSDT', 'ONDOUSDT', 'ARBUSDT']) four[s] = four[s].filter((c) => c.openTime <= cut);
     const r4 = runDailyTrend(four, fast, { descriptive: false });
     expect(r4.verdict).toBe('INCOMPLETE');
     expect(r4.untested.join(' ')).toMatch(/4 moedas terminam antes do fim pré-registrado \(máximo 3\)/);
+  });
+
+  it('buraco perto do fim NÃO é deslistagem (review do Codex, PR #499): última vela presente → INCOMPLETE', () => {
+    const fast = { ...LONG, fetchFrom: '2025-06-01' };
+    const m = synthMarket({ seed: 43, scenario: 'iid', prereg: fast, symbols: fast.primarySymbols });
+    // Falta só a penúltima vela: o dado não parou, tem buraco.
+    const penult = Date.parse(fast.end) + 1 - 2 * DAY;
+    m.ZROUSDT = m.ZROUSDT.filter((c) => c.openTime !== penult);
+    const r = runDailyTrend(m, fast, { descriptive: false });
+    expect(r.delisted).toEqual([]);
+    expect(r.verdict).toBe('INCOMPLETE');
+    expect(r.untested.join(' ')).toMatch(/ZROUSDT: termina em .*, antes do fim pré-registrado/);
+
+    // Dado que para cedo mas com buraco grande antes da parada também não conta como deslistagem.
+    const g = synthMarket({ seed: 43, scenario: 'iid', prereg: fast, symbols: fast.primarySymbols });
+    const cut = Date.parse('2027-06-30T00:00:00Z');
+    g.ZROUSDT = g.ZROUSDT.filter((c) => c.openTime <= cut && (c.openTime < cut - 20 * DAY || c.openTime > cut - 10 * DAY));
+    const rg = runDailyTrend(g, fast, { descriptive: false });
+    expect(rg.delisted).toEqual([]);
+    expect(rg.verdict).toBe('INCOMPLETE');
+    expect(rg.untested.join(' ')).toMatch(/ZROUSDT: velas param em 2027-06-30 com \d+ dias faltando antes/);
   });
 }, 120000);
 
