@@ -1,0 +1,35 @@
+{
+  "name": "daily-ema-supertrend-forward-274",
+  "item": "docs/known-risks.md item 274",
+  "title": "tempo novo, comprado/fora (19 moedas)",
+  "registeredAt": "2026-10-16",
+  "note": "Acompanhamento em TEMPO NOVO dos itens 271/272: a MESMA regra de compra, os MESMOS parâmetros e o mesmo custo, nas 19 moedas dos dois testes, só com dias a partir de 2026-10-05 (o dia seguinte ao último dia visto). Congelado ANTES de existir qualquer dia do período; scripts/dailyTrend.test.mjs trava estes valores. alphaFamily 0,0125 (e não 0,025) por causa da calibração: com 2 anos de dado, 0,025 dava 2,5% de alarme falso, sem folga.",
+  "primarySymbols": ["BTCUSDT", "ETHUSDT", "FETUSDT", "DYDXUSDT", "PENDLEUSDT", "ZROUSDT", "BNBUSDT", "ADAUSDT", "XRPUSDT", "SOLUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT", "ARBUSDT", "OPUSDT", "SUIUSDT", "NEARUSDT", "AAVEUSDT", "ONDOUSDT"],
+  "coPrimarySymbol": null,
+  "descriptiveSymbols": ["PAXGUSDT"],
+  "fetchFrom": "2018-06-01",
+  "start": "2026-10-05T00:00:00.000Z",
+  "end": "2028-10-04T23:59:59.999Z",
+  "halves": [
+    { "from": "2026-10-05T00:00:00.000Z", "to": "2027-10-04T23:59:59.999Z" },
+    { "from": "2027-10-05T00:00:00.000Z", "to": "2028-10-04T23:59:59.999Z" }
+  ],
+  "emaFast": 10,
+  "emaSlow": 21,
+  "stAtrPeriod": 10,
+  "stFactor": 3,
+  "warmupDaysAfterListing": 126,
+  "minShiftDays": 56,
+  "costBpsPerSide": 6,
+  "costSensitivityBps": [10, 20],
+  "alphaFamily": 0.0125,
+  "minAnnualExcess": 0.02,
+  "maxMissingDays": 3,
+  "maxDelisted": 3,
+  "robustness": [
+    { "label": "EMA 8/21", "emaFast": 8, "emaSlow": 21 },
+    { "label": "EMA 12/26", "emaFast": 12, "emaSlow": 26 },
+    { "label": "Supertrend fator 2,5", "stFactor": 2.5 },
+    { "label": "Supertrend fator 3,5", "stFactor": 3.5 }
+  ]
+}

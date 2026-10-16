@@ -253,6 +253,14 @@ paths:
   - **Artifact:** `resumo-daily-ema-supertrend-replicacao`, com os dois JSONs.
   - **Sem secret.**
 
+- `daily-ema-supertrend-forward.yml` — disparo **manual**, sem campos, só a partir de
+  **2028-10-05**: a regra diária em tempo novo (`docs/known-risks.md` item 274).
+  - **Testes:** compra (acompanhamento) e venda espelhada (teste próprio), cada um com o
+    seu pré-registro (`docs/experiments/daily-ema-supertrend-forward*-prereg.json`).
+  - **Recusa** rodar antes do fim pré-registrado, de propósito.
+  - **Artifact:** `resumo-daily-ema-supertrend-tempo-novo`, com os dois JSONs.
+  - **Sem secret.**
+
 ## Deploy
 
 - **Frontend**: Render Static Site (`render.yaml` `sentinel-signals`), automático

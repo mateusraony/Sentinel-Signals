@@ -317,3 +317,69 @@ describe('venda espelhada (item 274)', () => {
   });
 }, 120000);
 
+// Item 274 — acompanhamento em tempo novo: pré-registros congelados ANTES do período.
+describe('tempo novo (item 274) — pré-registros travados', () => {
+  const read = (f) => JSON.parse(readFileSync(resolve(__dirname, `../docs/experiments/${f}`), 'utf8'));
+  const LONG = read('daily-ema-supertrend-forward-prereg.json');
+  const SHORT_FWD = read('daily-ema-supertrend-forward-short-prereg.json');
+  const SAME = ['fetchFrom', 'emaFast', 'emaSlow', 'stAtrPeriod', 'stFactor', 'warmupDaysAfterListing', 'minShiftDays',
+    'costBpsPerSide', 'minAnnualExcess', 'maxMissingDays', 'robustness'];
+
+  it('compra: mesma regra do 271, as 19 moedas dos itens 271/272 e só dias nunca vistos', () => {
+    for (const k of SAME) expect(LONG[k]).toEqual(PREREG[k]);
+    expect(LONG.primarySymbols).toEqual([...PREREG.primarySymbols, ...REPLICATION_PREREG.primarySymbols]);
+    expect(LONG.descriptiveSymbols).toEqual(PREREG.descriptiveSymbols);
+    expect(LONG.coPrimarySymbol).toBeNull();
+    // Começa no dia seguinte ao último dia visto nos itens 271/272.
+    expect(Date.parse(LONG.start)).toBe(Date.parse(PREREG.end) + 1);
+    expect(Date.parse(LONG.start)).toBe(Date.parse(REPLICATION_PREREG.end) + 1);
+    expect([LONG.start, LONG.end]).toEqual(['2026-10-05T00:00:00.000Z', '2028-10-04T23:59:59.999Z']);
+    expect(LONG.halves).toEqual([
+      { from: '2026-10-05T00:00:00.000Z', to: '2027-10-04T23:59:59.999Z' },
+      { from: '2027-10-05T00:00:00.000Z', to: '2028-10-04T23:59:59.999Z' },
+    ]);
+    // Calibração: com 2 anos, α 0,025 dava 2,5% de alarme falso, sem folga.
+    expect(LONG.alphaFamily).toBe(0.0125);
+    expect(LONG.costSensitivityBps).toEqual([10, 20]);
+    expect(LONG.side).toBeUndefined();
+  });
+
+  it('venda: teste próprio, igual à compra exceto o lado, o retorno positivo exigido e o α', () => {
+    const { name, title, note, side, requirePositiveNet, alphaFamily, ...rest } = SHORT_FWD;
+    const { name: n2, title: t2, note: o2, alphaFamily: a2, ...restLong } = LONG;
+    expect(rest).toEqual(restLong);
+    expect([side, requirePositiveNet, alphaFamily]).toEqual(['short', true, 0.025]);
+    expect([name, n2]).toEqual(['daily-ema-supertrend-forward-short-274', 'daily-ema-supertrend-forward-274']);
+    expect([title, t2, note, o2].every((x) => typeof x === 'string' && x.length > 0)).toBe(true);
+  });
+
+  it('rodar antes do fim pré-registrado → INCOMPLETE (o dado termina antes)', () => {
+    const early = { ...LONG, fetchFrom: '2025-06-01' };
+    const m = synthMarket({ seed: 41, scenario: 'iid', prereg: { ...early, end: '2027-04-30T23:59:59.999Z' }, symbols: early.primarySymbols });
+    const r = runDailyTrend(m, early, { descriptive: false });
+    expect(r.verdict).toBe('INCOMPLETE');
+    expect(r.untested.join(' ')).toMatch(/19 moedas terminam antes do fim pré-registrado \(máximo 3\)/);
+  });
+
+  it('moeda deslistada antes do fim sai da carteira inteira (até 3); mais que isso → INCOMPLETE', () => {
+    expect([LONG.maxDelisted, SHORT_FWD.maxDelisted]).toEqual([3, 3]);
+    const fast = { ...LONG, fetchFrom: '2025-06-01' };
+    const market = () => synthMarket({ seed: 42, scenario: 'iid', prereg: fast, symbols: fast.primarySymbols });
+    const cut = Date.parse('2027-06-30T00:00:00Z');
+    const one = market();
+    one.ZROUSDT = one.ZROUSDT.filter((c) => c.openTime <= cut);
+    const r1 = runDailyTrend(one, fast, { descriptive: false });
+    expect(r1.delisted).toEqual(['ZROUSDT']);
+    expect(r1.verdict).not.toBe('INCOMPLETE');
+    expect(r1.tests[0].full.usable).not.toContain('ZROUSDT');
+    expect(r1.tests[0].full.usable).toHaveLength(18);
+    expect(formatDailyTrendMarkdown(r1)).toMatch(/Deslistadas antes do fim .*: ZROUSDT/);
+
+    const four = market();
+    for (const s of ['ZROUSDT', 'DYDXUSDT', 'ONDOUSDT', 'ARBUSDT']) four[s] = four[s].filter((c) => c.openTime <= cut);
+    const r4 = runDailyTrend(four, fast, { descriptive: false });
+    expect(r4.verdict).toBe('INCOMPLETE');
+    expect(r4.untested.join(' ')).toMatch(/4 moedas terminam antes do fim pré-registrado \(máximo 3\)/);
+  });
+}, 120000);
+

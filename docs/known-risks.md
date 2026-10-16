@@ -32473,3 +32473,113 @@ entrada aleatória (Sentinel Signals)"** → *Run workflow*.
 - A confirmação no motor (prevista só para `FILTER_EDGE`) **não** é disparada.
 - A regra diária continua valendo **sozinha** (itens 271/272).
 - Nada vai para a produção.
+
+## 274. Regra diária em tempo novo: compra (acompanhamento) e venda espelhada (teste próprio) — pré-registro (2026-10-16)
+
+**Por quê:**
+- A regra passou no item 271 e replicou no 272, mas sempre nos mesmos anos (2019–2026). A
+  fraqueza que sobrou é o **período**, e só tempo novo responde a ela.
+- No item 273, a regra não funcionou como filtro do Sentinel.
+- O usuário escolheu acompanhar a regra em tempo novo e perguntou: "isso também foi testado em
+  venda?". Ele pediu que a venda entre **como teste próprio**.
+- Nada aqui toca o motor ou a produção.
+
+**Resposta à pergunta sobre venda (fato, antes deste item):**
+- Não, a venda não foi testada.
+- O "comprado/vendido" dos itens 271/272 é o **mesmo teste** da regra de compra (por
+  linearidade, o p sai idêntico). Não é evidência independente.
+- Nos dias "fora", as moedas ainda subiram em média: +0,03%/dia nas 6 moedas e +0,07%/dia nas 13.
+  Vender nesses dias teria **perdido** dinheiro, antes de custo e funding.
+- A regra espelhada (EMA10 < EMA21 **e** Supertrend de baixa) nunca foi testada. Ela é diferente
+  de "fora": fora inclui os dias em que só uma das duas condições virou.
+
+**O que a pesquisa mudou:**
+- A evidência acadêmica de momento de série temporal em cripto é mais forte no lado comprado.
+  - Uma tese de 2018 (Erasmus) achou retorno significativo em 85% das carteiras só compradas e em
+    nenhuma das compradas/vendidas.
+  - Um preprint de 2026 usa 70/30 comprado/vendido justamente pela deriva positiva da cripto.
+  - Nenhuma das fontes mede funding ou aluguel.
+- Isso levou a duas decisões:
+  1. a venda só passa se também der **retorno líquido positivo** (`requirePositiveNet`), e não
+     apenas ganhar de vender em dias sorteados;
+  2. a expectativa para a venda é baixa.
+
+**Pré-registros** (travados por `scripts/dailyTrend.test.mjs`):
+- **Compra** (`docs/experiments/daily-ema-supertrend-forward-prereg.json`):
+  - Regra, parâmetros, custo (6 bps) e nula: os mesmos do item 271, conferidos campo a campo.
+  - Moedas: as 19 dos itens 271/272 (as 6 do 271 mais as 13 do 272). PAXG só descritivo.
+  - Período: **2026-10-05 → 2028-10-04**. Começa no dia seguinte ao último dia visto (conferido
+    pelo teste). Cada ano é uma metade.
+  - Passa com: p ≤ **0,0125**; as duas metades acima da mediana embaralhada; excesso ≥ 2% ao ano.
+- **Venda** (`docs/experiments/daily-ema-supertrend-forward-short-prereg.json`):
+  - Regra: vendido no dia seguinte quando EMA10 < EMA21 **e** a Supertrend(10,3) está de baixa;
+    senão, fora.
+  - Moedas, datas, parâmetros e custo: os mesmos da compra.
+  - **Veredito próprio**, com α 0,025.
+  - Passa com as mesmas três condições **e** com retorno líquido médio positivo.
+- **Deslistagem** (decidida agora, para não virar escolha depois de ver o dado):
+  - Uma moeda que parar de ser negociada antes do fim sai da carteira **inteira**, até 3 moedas
+    (`maxDelisted`).
+  - Com mais de 3 deslistadas, a rodada vira `INCOMPLETE`.
+- **Código** (`scripts/dailyTrend.mjs`):
+  - `dailyShortSignals`, `side: 'short'`, `requirePositiveNet` e `maxDelisted`, todos opcionais.
+  - Sem esses campos, a saída dos itens 271/272 é **idêntica byte a byte**. Comparei JSON e texto
+    em 6 casos sintéticos, contra o código anterior.
+- **O workflow recusa rodar antes de 2028-10-05 01:00 UTC.**
+
+**Erro e poder, medidos antes** (dado sintético com as 19 moedas):
+- Nula hostil: 200 rodadas. Tendência plantada: 100 rodadas por força.
+- Para agilizar, o aquecimento sintético começa 500 dias antes do período; a regra é a mesma.
+
+| Teste | Horizonte | α | Alarme falso (nula hostil) | Poder com tendência ±0,3 / ±0,4 / ±0,6%/dia |
+|---|---|---|---|---|
+| Compra | 1 ano | 0,025 | 9/200 (4,5%) | 8 / 21 / 43 |
+| Compra | 2 anos | 0,025 | 5/200 (2,5%) | 22 / 39 / 70 |
+| **Compra** | **2 anos** | **0,0125** | **4/200 (2,0%)** | **18 / 31 / 64** |
+| Compra | 3 anos | 0,0125 | 5/200 (2,5%) | 13 / 29 / 84 |
+| Venda | 1 ano | 0,025 | 2/200 (1,0%) | 7 / 11 / 37 |
+| **Venda** | **2 anos** | **0,025** | **2/200 (1,0%)** | **16 / 29 / 62** |
+| Venda | 3 anos | 0,025 | 2/200 (1,0%) | 11 / 31 / 80 |
+
+- **Escala da tendência:**
+  - ±0,4%/dia dá excesso mediano de ~22% ao ano. É parecido com 2023–2026 no item 272 (com a
+    ressalva de composição).
+  - ±0,6%/dia dá ~43% ao ano. É parecido com o período todo dos itens 271/272.
+- **Por que 2 anos:**
+  - Com pouco tempo de dado, a nula por deslocamento fica otimista: 4,5% de alarme falso com 1
+    ano, contra 0,5% com os 7,7 anos do item 272.
+  - Endurecer o α não elimina um resto de ~2% de alarme falso.
+  - 2 anos é o menor horizonte com alarme falso ≤ 2,5%.
+  - 3 anos quase não melhora o poder para um efeito do tamanho de 2023–2026 (31% → 29%).
+- **Poder honesto:**
+  - Na compra: ~30% se o efeito for do tamanho de 2023–2026; ~64% se for do tamanho do período
+    todo.
+  - `TREND_FOUND` em 2028 será forte; `NO_TREND_EDGE` será fraco.
+- **Venda:** a tendência sintética sobe e desce por igual. A cripto real tem deriva positiva,
+  então o poder real da venda deve ser **menor** que o da tabela.
+
+**Previsão (registrada antes):**
+- **Compra:** excesso positivo, menor que o de 2019–2026. O veredito é incerto, com ~40–50% de
+  chance de `TREND_FOUND`.
+- **Venda:** `NO_TREND_EDGE`. Retorno líquido perto de zero ou negativo, pela deriva positiva da
+  cripto.
+
+**Ressalvas que já se sabem:**
+- **Sobrevivência:** as 19 moedas foram escolhidas em 2026.
+- **Venda sem funding:** o Spot não vende a descoberto. Uma venda real exigiria Futuros, cujo
+  funding não está modelado. Futuros também é limitação aceita do projeto (item 4).
+- **Peso da janela:** 2 anos é pouco tempo de mercado. Um único regime pode dominar.
+
+**Proibido depois de ver qualquer dado do período:**
+- mudar datas, moedas, régua, α ou a regra de venda;
+- rodar antes do fim ou olhar resultado parcial;
+- promover um vizinho de robustez;
+- tirar uma moeda que não foi deslistada.
+
+**Como rodar** (a partir de **2028-10-05 01:00 UTC**):
+- GitHub → Actions → **"Tendência diária EMA + Supertrend — tempo novo (Sentinel Signals)"** →
+  *Run workflow* (sem campos).
+- Saída: o artifact `resumo-daily-ema-supertrend-tempo-novo`, com os dois JSONs (compra e venda).
+- O lembrete fica em `docs/roadmap.md`.
+
+**Ledger:** não se aplica, mesmo caso dos itens 271/272.

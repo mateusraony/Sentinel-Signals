@@ -199,6 +199,12 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
   const expectedLastDay = endMs + 1 - DAY;
   const coverage = {};
   const untested = [];
+  // Item 274 (tempo novo, 2 anos): moeda que para de ser negociada antes do
+  // fim sai da carteira inteira (não só do pedaço depois da deslistagem), até
+  // `maxDelisted` moedas. Sem o campo, terminar antes do fim invalida a rodada,
+  // como nos itens 271/272.
+  const delistRule = Number.isInteger(prereg.maxDelisted);
+  const delisted = [];
   for (const symbol of prereg.primarySymbols) {
     if (!has(symbol)) { untested.push(`${symbol}: sem dado`); continue; }
     const entries = seriesOf(symbol).entries;
@@ -208,10 +214,15 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
     let missingDays = 0;
     if (first != null) for (let t = first; t <= last; t += DAY) if (!present.has(t)) missingDays += 1;
     coverage[symbol] = { days: entries.length, first: first && new Date(first).toISOString(), last: last && new Date(last).toISOString(), missingDays };
-    if (entries.length < 2 * prereg.minShiftDays + 2) untested.push(`${symbol}: só ${entries.length} dias utilizáveis`);
+    if (delistRule && last != null && last < expectedLastDay) delisted.push(symbol);
+    else if (entries.length < 2 * prereg.minShiftDays + 2) untested.push(`${symbol}: só ${entries.length} dias utilizáveis`);
     else if (last !== expectedLastDay) untested.push(`${symbol}: termina em ${new Date(last).toISOString().slice(0, 10)}, antes do fim pré-registrado`);
     else if (missingDays > prereg.maxMissingDays) untested.push(`${symbol}: ${missingDays} dias faltando no meio (máximo ${prereg.maxMissingDays})`);
   }
+  if (delisted.length > (prereg.maxDelisted ?? 0)) {
+    untested.push(`${delisted.length} moedas terminam antes do fim pré-registrado (máximo ${prereg.maxDelisted}): ${delisted.join(', ')}`);
+  }
+  const active = (s) => has(s) && !delisted.includes(s);
   const startIso = new Date(startMs).toISOString();
   if (prereg.coPrimarySymbol) {
     const btc = coverage[prereg.coPrimarySymbol];
@@ -230,7 +241,7 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
     ...(prereg.coPrimarySymbol ? [{ name: prereg.coPrimarySymbol, symbols: [prereg.coPrimarySymbol] }] : []),
   ];
   const tests = coPrimaries.map((cp) => {
-    const symbols = cp.symbols.filter(has);
+    const symbols = cp.symbols.filter(active);
     const full = evaluateTiming(symbols.map((s) => seriesOf(s)), opts);
     const byHalf = halves.map((h) => {
       const r = evaluateTiming(symbols.map((s) => seriesOf(s, baseParams, h)), opts);
@@ -257,6 +268,7 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
   const result = {
     title: prereg.title ?? null,
     ...(short ? { side: 'short' } : {}),
+    ...(delistRule ? { delisted } : {}),
     verdict,
     untested,
     coverage,
@@ -265,7 +277,7 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
   if (!descriptive) return result;
 
   // Descritivo (não decide nada).
-  const portfolioSymbols = prereg.primarySymbols.filter(has);
+  const portfolioSymbols = prereg.primarySymbols.filter(active);
   const portfolioSeries = portfolioSymbols.map((s) => seriesOf(s));
   const strategyDaily = tests[0].full.observedWeekly || [];
   const buyHoldDaily = evaluateTiming(portfolioSeries, { ...opts, transform: () => 1 }).observedWeekly || [];
@@ -289,7 +301,7 @@ export function runDailyTrend(dailyBySymbol, prereg, { descriptive = true } = {}
     const r = evaluateTiming(portfolioSymbols.map((s) => seriesOf(s, params)), opts);
     return { label, params, observed: r.observed, nullMedian: r.nullMedian ?? null, excessAnnual: r.excessAnnual ?? null, p: r.p ?? null };
   });
-  const perSymbol = [...prereg.primarySymbols, ...prereg.descriptiveSymbols].filter(has).map((symbol) => {
+  const perSymbol = [...prereg.primarySymbols, ...prereg.descriptiveSymbols].filter(active).map((symbol) => {
     const s = seriesOf(symbol);
     const r = evaluateTiming([s], opts);
     return {
@@ -341,6 +353,7 @@ export function formatDailyTrendMarkdown(r) {
   const heading = short ? 'Venda espelhada diária (EMA10 < EMA21 e Supertrend de baixa)' : 'Tendência diária EMA 10/21 + Supertrend (10,3)';
   const lines = ['', `## ${heading}${r.title ? ` — ${r.title}` : ''} — resultado`, '', (short ? VERDICT_TEXT_SHORT : VERDICT_TEXT)[r.verdict], ''];
   if (r.untested.length) lines.push(`Faltou: ${r.untested.join(' · ')}`, '');
+  if (r.delisted?.length) lines.push(`Deslistadas antes do fim (fora da carteira inteira, regra pré-registrada): ${r.delisted.join(', ')}.`, '');
   lines.push(
     '| Teste | Dias | Retorno líquido médio/dia | Mediana embaralhada | Excesso ao ano | p | Limiar (Holm) | Metades | Passou? |',
     '|---|---|---|---|---|---|---|---|---|',
