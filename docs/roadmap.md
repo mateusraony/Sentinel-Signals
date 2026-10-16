@@ -851,6 +851,18 @@ justificativa nova para reabrir isso com o resultado acima.
 
 ---
 
+## Bloco 6 — teste agendado no tempo (não dá para adiantar)
+
+- **A partir de 2028-10-17 (UTC): rodar a regra diária em tempo novo** (`docs/known-risks.md`
+  item 274).
+  - Actions → "Tendência diária EMA + Supertrend — tempo novo (Sentinel Signals)", sem
+    campos. O workflow recusa antes dessa data.
+  - Responde se a regra de compra dos itens 271/272 continua valendo em dias nunca vistos
+    e se a venda espelhada funciona.
+  - Os dois pré-registros estão congelados desde 2026-10-16. Não mexer neles.
+
+---
+
 ## Fora de escopo permanente (não são pendências)
 
 Não reabrir sem pedido explícito — cada um tem decisão registrada:

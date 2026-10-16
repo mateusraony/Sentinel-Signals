@@ -1,0 +1,82 @@
+{
+  "name": "daily-ema-supertrend-forward-short-274",
+  "item": "docs/known-risks.md item 274",
+  "title": "tempo novo, venda espelhada (19 moedas)",
+  "side": "short",
+  "requirePositiveNet": true,
+  "registeredAt": "2026-10-16",
+  "note": "Teste PRÓPRIO da regra espelhada de VENDA (item 274), pedido do usuário: vendido no dia seguinte quando EMA10 < EMA21 E a Supertrend(10,3) está de baixa; senão fora. Mesmas moedas, datas, parâmetros e custo do teste de compra em tempo novo, com veredito separado. Exige também retorno líquido positivo (requirePositiveNet): num mercado que sobe, vender pode ganhar de vender em dias sorteados e ainda perder dinheiro. Sem funding de Futuros (Spot não vende a descoberto). Congelado ANTES de existir qualquer dia do período; scripts/dailyTrend.test.mjs trava estes valores.",
+  "primarySymbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "FETUSDT",
+    "DYDXUSDT",
+    "PENDLEUSDT",
+    "ZROUSDT",
+    "BNBUSDT",
+    "ADAUSDT",
+    "XRPUSDT",
+    "SOLUSDT",
+    "AVAXUSDT",
+    "LINKUSDT",
+    "DOTUSDT",
+    "ARBUSDT",
+    "OPUSDT",
+    "SUIUSDT",
+    "NEARUSDT",
+    "AAVEUSDT",
+    "ONDOUSDT"
+  ],
+  "coPrimarySymbol": null,
+  "descriptiveSymbols": [
+    "PAXGUSDT"
+  ],
+  "fetchFrom": "2018-06-01",
+  "start": "2026-10-17T00:00:00.000Z",
+  "end": "2028-10-16T23:59:59.999Z",
+  "halves": [
+    {
+      "from": "2026-10-17T00:00:00.000Z",
+      "to": "2027-10-16T23:59:59.999Z"
+    },
+    {
+      "from": "2027-10-17T00:00:00.000Z",
+      "to": "2028-10-16T23:59:59.999Z"
+    }
+  ],
+  "emaFast": 10,
+  "emaSlow": 21,
+  "stAtrPeriod": 10,
+  "stFactor": 3,
+  "warmupDaysAfterListing": 126,
+  "minShiftDays": 56,
+  "costBpsPerSide": 6,
+  "costSensitivityBps": [
+    10,
+    20
+  ],
+  "alphaFamily": 0.025,
+  "minAnnualExcess": 0.02,
+  "maxMissingDays": 3,
+  "maxDelisted": 3,
+  "robustness": [
+    {
+      "label": "EMA 8/21",
+      "emaFast": 8,
+      "emaSlow": 21
+    },
+    {
+      "label": "EMA 12/26",
+      "emaFast": 12,
+      "emaSlow": 26
+    },
+    {
+      "label": "Supertrend fator 2,5",
+      "stFactor": 2.5
+    },
+    {
+      "label": "Supertrend fator 3,5",
+      "stFactor": 3.5
+    }
+  ]
+}

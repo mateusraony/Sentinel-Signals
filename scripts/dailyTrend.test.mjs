@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { buildDays, supertrend, dailySignals, symbolDailySeries, runDailyTrend, formatDailyTrendMarkdown } from './dailyTrend.mjs';
+import { buildDays, supertrend, dailySignals, dailyShortSignals, symbolDailySeries, runDailyTrend, formatDailyTrendMarkdown } from './dailyTrend.mjs';
 import { evaluateTiming } from './weeklyTrend.mjs';
 import { synthMarket, REPLICATION_PREREG } from './__fixtures__/dailyTrendSynth.mjs';
 import { mulberry32 } from '../src/lib/seededRandom.js';
@@ -260,3 +260,149 @@ describe('replicação (item 272)', () => {
     expect(Math.abs(dear.excessAnnual - cheap.excessAnnual)).toBeGreaterThan(1e-4);
   });
 }, 120000);
+
+// Item 274 — venda espelhada: vendido quando EMA10 < EMA21 E Supertrend de baixa.
+describe('venda espelhada (item 274)', () => {
+  const SHORT = { ...FAST_REP, side: 'short', requirePositiveNet: true };
+  const shortMarket = (seed, scenario, drift) => synthMarket({ seed, scenario, drift, prereg: SHORT, symbols: SHORT.primarySymbols });
+
+  it('sinal: −1 só com EMA rápida abaixo da lenta E Supertrend de baixa; nunca junto com o comprado', () => {
+    const closes = Array.from({ length: 400 }, (_, i) => 100 * Math.exp(0.25 * Math.sin(i / 30) + 0.0003 * i));
+    const days = closes.map((c, i) => candle(i, c, c * 1.01, c * 0.99, c));
+    const long = dailySignals(days, FAST);
+    const short = dailyShortSignals(days, FAST);
+    expect(new Set(short.filter((x) => x !== null))).toEqual(new Set([-1, 0]));
+    for (let i = 0; i < days.length; i += 1) {
+      if (short[i] === -1) expect(long[i]).toBe(0);
+      expect(short[i] === null).toBe(long[i] === null);
+    }
+    // "Fora" da compra não é "vendido": há dias neutros (nem 1 nem −1).
+    expect(long.some((x, i) => x === 0 && short[i] === 0)).toBe(true);
+    // Causal: a série completa é igual ao cálculo só com o prefixo.
+    for (const i of [150, 250, 399]) expect(dailyShortSignals(days.slice(0, i + 1), FAST)[i]).toBe(short[i]);
+  });
+
+  it('tendência plantada (±0,6%/dia) → a venda passa, com retorno líquido positivo', () => {
+    const r = runDailyTrend(shortMarket(31, 'trend', 0.006), SHORT);
+    expect(r.side).toBe('short');
+    expect(r.verdict).toBe('TREND_FOUND');
+    expect(r.tests[0].netPass).toBe(true);
+    expect(r.descriptive.longShort).toBeNull();
+    expect(Number.isFinite(r.descriptive.shortAndHold.cagr)).toBe(true);
+    const md = formatDailyTrendMarkdown(r);
+    expect(md).toMatch(/Venda espelhada diária/);
+    expect(md).toMatch(/Retorno líquido positivo \(exigido para a venda\): carteira sim/);
+    expect(md).not.toMatch(/Comprado\/vendido/);
+  });
+
+  it('ganhar do sorteio não basta: timing que passa mas perde dinheiro → NO_TREND_EDGE', () => {
+    const r = runDailyTrend(shortMarket(36, 'trend', 0.006), SHORT, { descriptive: false });
+    const t = r.tests[0];
+    expect(t.holm.pass && t.halvesPass && t.effectPass).toBe(true);
+    expect(t.full.observed).toBeLessThan(0);
+    expect(t.netPass).toBe(false);
+    expect(r.verdict).toBe('NO_TREND_EDGE');
+  });
+
+  it('mercado que só sobe (nula hostil, deriva +0,1%/dia) → a venda não passa', () => {
+    const r = runDailyTrend(shortMarket(31, 'adverse'), SHORT, { descriptive: false });
+    expect(r.tests[0].netPass).toBe(false);
+    expect(r.verdict).toBe('NO_TREND_EDGE');
+  });
+
+  it('sem `side`, nada muda: a regra de compra não ganha `side` nem `netPass` na saída', () => {
+    const r = runDailyTrend(repMarketFor(37, 'trend', 0.006), FAST_REP, { descriptive: false });
+    expect(r.side).toBeUndefined();
+    expect('netPass' in r.tests[0]).toBe(false);
+  });
+}, 120000);
+
+// Item 274 — acompanhamento em tempo novo: pré-registros congelados ANTES do período.
+describe('tempo novo (item 274) — pré-registros travados', () => {
+  const read = (f) => JSON.parse(readFileSync(resolve(__dirname, `../docs/experiments/${f}`), 'utf8'));
+  const LONG = read('daily-ema-supertrend-forward-prereg.json');
+  const SHORT_FWD = read('daily-ema-supertrend-forward-short-prereg.json');
+  const SAME = ['fetchFrom', 'emaFast', 'emaSlow', 'stAtrPeriod', 'stFactor', 'warmupDaysAfterListing', 'minShiftDays',
+    'costBpsPerSide', 'minAnnualExcess', 'maxMissingDays', 'robustness'];
+
+  it('compra: mesma regra do 271, as 19 moedas dos itens 271/272 e só dias nunca vistos', () => {
+    for (const k of SAME) expect(LONG[k]).toEqual(PREREG[k]);
+    expect(LONG.primarySymbols).toEqual([...PREREG.primarySymbols, ...REPLICATION_PREREG.primarySymbols]);
+    expect(LONG.descriptiveSymbols).toEqual(PREREG.descriptiveSymbols);
+    expect(LONG.coPrimarySymbol).toBeNull();
+    // Prospectivo de verdade (review do Codex, PR #499): começa no 1º dia UTC
+    // inteiro DEPOIS do registro — nenhuma vela do período existia ao congelar.
+    expect(Date.parse(LONG.start)).toBeGreaterThanOrEqual(Date.parse(`${LONG.registeredAt}T00:00:00Z`) + DAY);
+    expect(Date.parse(LONG.start)).toBeGreaterThan(Date.parse(PREREG.end));
+    expect([LONG.registeredAt, LONG.start, LONG.end]).toEqual(['2026-10-16', '2026-10-17T00:00:00.000Z', '2028-10-16T23:59:59.999Z']);
+    expect((Date.parse(LONG.end) + 1 - Date.parse(LONG.start)) / DAY).toBe(731); // 2 anos, o horizonte calibrado
+    expect(LONG.halves).toEqual([
+      { from: '2026-10-17T00:00:00.000Z', to: '2027-10-16T23:59:59.999Z' },
+      { from: '2027-10-17T00:00:00.000Z', to: '2028-10-16T23:59:59.999Z' },
+    ]);
+    // Calibração: com 2 anos, α 0,025 dava 2,5% de alarme falso, sem folga.
+    expect(LONG.alphaFamily).toBe(0.0125);
+    expect(LONG.costSensitivityBps).toEqual([10, 20]);
+    expect(LONG.side).toBeUndefined();
+  });
+
+  it('venda: teste próprio, igual à compra exceto o lado, o retorno positivo exigido e o α', () => {
+    const { name, title, note, side, requirePositiveNet, alphaFamily, ...rest } = SHORT_FWD;
+    const { name: n2, title: t2, note: o2, alphaFamily: a2, ...restLong } = LONG;
+    expect(rest).toEqual(restLong);
+    expect([side, requirePositiveNet, alphaFamily]).toEqual(['short', true, 0.025]);
+    expect([name, n2]).toEqual(['daily-ema-supertrend-forward-short-274', 'daily-ema-supertrend-forward-274']);
+    expect([title, t2, note, o2].every((x) => typeof x === 'string' && x.length > 0)).toBe(true);
+  });
+
+  it('rodar antes do fim pré-registrado → INCOMPLETE (o dado termina antes)', () => {
+    const early = { ...LONG, fetchFrom: '2025-06-01' };
+    const m = synthMarket({ seed: 41, scenario: 'iid', prereg: { ...early, end: '2027-04-30T23:59:59.999Z' }, symbols: early.primarySymbols });
+    const r = runDailyTrend(m, early, { descriptive: false });
+    expect(r.verdict).toBe('INCOMPLETE');
+    expect(r.untested.join(' ')).toMatch(/19 moedas terminam antes do fim pré-registrado \(máximo 3\)/);
+  });
+
+  it('moeda deslistada antes do fim sai da carteira inteira (até 3); mais que isso → INCOMPLETE', () => {
+    expect([LONG.maxDelisted, SHORT_FWD.maxDelisted]).toEqual([3, 3]);
+    const fast = { ...LONG, fetchFrom: '2025-06-01' };
+    const market = () => synthMarket({ seed: 42, scenario: 'iid', prereg: fast, symbols: fast.primarySymbols });
+    const cut = Date.parse('2027-06-30T00:00:00Z');
+    const one = market();
+    one.ZROUSDT = one.ZROUSDT.filter((c) => c.openTime <= cut);
+    const r1 = runDailyTrend(one, fast, { descriptive: false });
+    expect(r1.delisted).toEqual(['ZROUSDT']);
+    expect(r1.verdict).not.toBe('INCOMPLETE');
+    expect(r1.tests[0].full.usable).not.toContain('ZROUSDT');
+    expect(r1.tests[0].full.usable).toHaveLength(18);
+    expect(formatDailyTrendMarkdown(r1)).toMatch(/Deslistadas antes do fim .*: ZROUSDT \(última vela 2027-06-30\)/);
+
+    const four = market();
+    for (const s of ['ZROUSDT', 'DYDXUSDT', 'ONDOUSDT', 'ARBUSDT']) four[s] = four[s].filter((c) => c.openTime <= cut);
+    const r4 = runDailyTrend(four, fast, { descriptive: false });
+    expect(r4.verdict).toBe('INCOMPLETE');
+    expect(r4.untested.join(' ')).toMatch(/4 moedas terminam antes do fim pré-registrado \(máximo 3\)/);
+  });
+
+  it('buraco perto do fim NÃO é deslistagem (review do Codex, PR #499): última vela presente → INCOMPLETE', () => {
+    const fast = { ...LONG, fetchFrom: '2025-06-01' };
+    const m = synthMarket({ seed: 43, scenario: 'iid', prereg: fast, symbols: fast.primarySymbols });
+    // Falta só a penúltima vela: o dado não parou, tem buraco.
+    const penult = Date.parse(fast.end) + 1 - 2 * DAY;
+    m.ZROUSDT = m.ZROUSDT.filter((c) => c.openTime !== penult);
+    const r = runDailyTrend(m, fast, { descriptive: false });
+    expect(r.delisted).toEqual([]);
+    expect(r.verdict).toBe('INCOMPLETE');
+    expect(r.untested.join(' ')).toMatch(/ZROUSDT: termina em .*, antes do fim pré-registrado/);
+
+    // Dado que para cedo mas com buraco grande antes da parada também não conta como deslistagem.
+    const g = synthMarket({ seed: 43, scenario: 'iid', prereg: fast, symbols: fast.primarySymbols });
+    const cut = Date.parse('2027-06-30T00:00:00Z');
+    g.ZROUSDT = g.ZROUSDT.filter((c) => c.openTime <= cut && (c.openTime < cut - 20 * DAY || c.openTime > cut - 10 * DAY));
+    const rg = runDailyTrend(g, fast, { descriptive: false });
+    expect(rg.delisted).toEqual([]);
+    expect(rg.verdict).toBe('INCOMPLETE');
+    expect(rg.untested.join(' ')).toMatch(/ZROUSDT: velas param em 2027-06-30 com \d+ dias faltando antes/);
+  });
+}, 120000);
+

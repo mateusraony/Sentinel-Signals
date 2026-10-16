@@ -1,0 +1,88 @@
+name: Tendência diária EMA + Supertrend — tempo novo (Sentinel Signals)
+
+# docs/known-risks.md item 274 — acompanhamento em TEMPO NOVO dos itens 271/272:
+# a MESMA regra de compra (comprado/fora) nas 19 moedas dos dois testes, só com
+# dias a partir de 2026-10-17 (o 1º dia inteiro depois do registro), e a regra espelhada
+# de VENDA como teste próprio, com veredito separado. Regras em
+# docs/experiments/daily-ema-supertrend-forward-prereg.json (compra) e
+# daily-ema-supertrend-forward-short-prereg.json (venda); nada é escolhido na
+# hora do disparo, de propósito.
+#
+# A data final está nos pré-registros. Antes dela o workflow RECUSA (rodar
+# antes seria olhar o resultado no meio do caminho).
+#
+# Sem campos e sem secret: só baixa velas diárias públicas da Binance Spot.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  forward:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Conferir a data (só depois do fim pré-registrado)
+        run: |
+          node -e "
+            const long = require('./docs/experiments/daily-ema-supertrend-forward-prereg.json');
+            const short = require('./docs/experiments/daily-ema-supertrend-forward-short-prereg.json');
+            const fail = (m) => { console.error('::error::' + m); process.exit(1); };
+            if (long.end !== short.end || long.start !== short.start) fail('os dois pré-registros têm datas diferentes');
+            // A última vela diária fecha às 23:59:59.999 do fim; 1 hora de folga.
+            const ready = Date.parse(long.end) + 1 + 60 * 60 * 1000;
+            if (Date.now() < ready) fail('Ainda não: este teste só pode rodar a partir de ' + new Date(ready).toISOString().replace('T', ' ').slice(0, 16) + ' UTC (fim pré-registrado ' + long.end.slice(0, 10) + ').');
+            console.log('Período pré-registrado:', long.start.slice(0, 10), '→', long.end.slice(0, 10));
+          "
+
+      - name: Baixar as velas diárias (até o fim pré-registrado)
+        # Lidos dos pré-registros no MESMO passo (valor gravado em GITHUB_ENV
+        # só aparece no passo seguinte — review do Codex, PR #488).
+        run: |
+          SYMBOLS=$(node -p "const a = require('./docs/experiments/daily-ema-supertrend-forward-prereg.json'); const b = require('./docs/experiments/daily-ema-supertrend-forward-short-prereg.json'); [...new Set([...a.primarySymbols, ...a.descriptiveSymbols, ...b.primarySymbols, ...b.descriptiveSymbols])].join(',')")
+          FETCH_FROM=$(node -p "require('./docs/experiments/daily-ema-supertrend-forward-prereg.json').fetchFrom")
+          TO=$(node -p "new Date(Date.parse(require('./docs/experiments/daily-ema-supertrend-forward-prereg.json').end) + 1).toISOString()")
+          echo "Símbolos: $SYMBOLS · de $FETCH_FROM até $TO"
+          node scripts/fetch-backtest-data.mjs \
+            --symbols "$SYMBOLS" \
+            --from "${FETCH_FROM}T00:00:00Z" --to "$TO" \
+            --timeframes 1d \
+            --out candles
+
+      - name: Compra em tempo novo (decide)
+        run: |
+          set -o pipefail
+          node scripts/daily-ema-supertrend.mjs --data-dir candles \
+            --prereg docs/experiments/daily-ema-supertrend-forward-prereg.json \
+            --json daily-ema-supertrend-forward-summary.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Venda espelhada em tempo novo (decide, teste próprio)
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "---" >> "$GITHUB_STEP_SUMMARY"
+          node scripts/daily-ema-supertrend.mjs --data-dir candles \
+            --prereg docs/experiments/daily-ema-supertrend-forward-short-prereg.json \
+            --json daily-ema-supertrend-forward-short-summary.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload dos resumos (arquivos leves)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resumo-daily-ema-supertrend-tempo-novo
+          path: |
+            daily-ema-supertrend-forward-summary.json
+            daily-ema-supertrend-forward-short-summary.json
+          retention-days: 30
+          if-no-files-found: warn
