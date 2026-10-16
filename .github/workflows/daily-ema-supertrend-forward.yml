@@ -44,6 +44,7 @@ jobs:
           "
 
       - name: Baixar as velas diárias (até o fim pré-registrado)
+        id: download
         # Lidos dos pré-registros no MESMO passo (valor gravado em GITHUB_ENV
         # só aparece no passo seguinte — review do Codex, PR #488).
         run: |
@@ -66,7 +67,10 @@ jobs:
             | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Venda espelhada em tempo novo (decide, teste próprio)
-        if: ${{ !cancelled() }}
+        # Roda mesmo se a compra falhar, mas só com as velas baixadas: antes da
+        # data a trava falha, o download é pulado e a venda também (run
+        # 38882812312, docs/known-risks.md item 274).
+        if: ${{ !cancelled() && steps.download.outcome == 'success' }}
         run: |
           set -o pipefail
           echo "" >> "$GITHUB_STEP_SUMMARY"

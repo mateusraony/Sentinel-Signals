@@ -32592,4 +32592,11 @@ entrada aleatória (Sentinel Signals)"** → *Run workflow*.
 - Saída: o artifact `resumo-daily-ema-supertrend-tempo-novo`, com os dois JSONs (compra e venda).
 - O lembrete fica em `docs/roadmap.md`.
 
+**Disparo antecipado (2026-10-16, run 38882812312, commit `93a1cdd`):**
+- A trava funcionou: "Ainda não: este teste só pode rodar a partir de 2028-10-17 01:00 UTC".
+- O download foi pulado e **nenhuma vela foi baixada**. Não conta como olhar antes.
+- Defeito do workflow: o passo da venda (`if: !cancelled()`) rodou sem dado. Ele deu um 2º erro
+  ("faltou dado" nas 19 moedas) e subiu um JSON INCOMPLETE vazio.
+- Corrigido: a venda só roda se o download deu certo. Continua rodando se a compra falhar.
+
 **Ledger:** não se aplica, mesmo caso dos itens 271/272.
