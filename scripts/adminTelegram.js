@@ -559,6 +559,16 @@ export async function notifyHealthAudit(titulo, linhas, url) {
   });
 }
 
+// Relatório diário da regra EMA 10/21 + Supertrend (docs/known-risks.md item
+// 275, scripts/daily-rule-report.mjs). O corpo já chega pronto e escapado de
+// scripts/dailyRuleReport.mjs; aqui só o envio, pelo mesmo send() do canal 24h.
+export async function notifyDailyRuleReport(html) {
+  return send(html).catch((e) => {
+    console.warn('[adminTelegram] Falha ao enviar o relatório diário da regra:', e.message);
+    return false;
+  });
+}
+
 export async function notifyStopHit(op, price) {
   if (!(await shouldSend('stop_hit', op))) return;
   return send(buildStopHitMessage(op, price));
