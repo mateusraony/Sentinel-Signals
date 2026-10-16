@@ -261,6 +261,17 @@ paths:
   - **Artifact:** `resumo-daily-ema-supertrend-tempo-novo`, com os dois JSONs.
   - **Sem secret.**
 
+- `daily-rule-report.yml` — relatório diário da regra EMA 10/21 + Supertrend no Telegram
+  (`docs/known-risks.md` item 275). Roda às **00:23 UTC** (`schedule`) e também por
+  `workflow_dispatch`.
+  - **Download:** velas diárias Spot das 19 moedas, uma por vez. Uma falha vira "sem dado" no
+    relatório, sem derrubar as outras.
+  - **Análise:** `scripts/daily-rule-report.mjs --send` mostra comprado/fora, as trocas do dia e
+    o andamento desde 2026-10-17. Só acompanha, não decide.
+  - **Fonte única:** regra e moedas vêm do pré-registro de compra do item 274.
+  - **Secrets:** só `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`. Nenhuma ordem, nenhum banco,
+    `contents: read`.
+
 ## Deploy
 
 - **Frontend**: Render Static Site (`render.yaml` `sentinel-signals`), automático

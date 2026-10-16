@@ -1,0 +1,63 @@
+name: Relatório diário — regra EMA + Supertrend (Sentinel Signals)
+
+# docs/known-risks.md item 275 — todo dia, depois do fechamento diário (00:00
+# UTC), manda pelo bot do canal 24h o estado da regra de compra dos itens
+# 271/272 (EMA10 > EMA21 e Supertrend(10,3) de alta) nas 19 moedas: quem está
+# comprado, quem está fora, quem trocou hoje, e o andamento desde 2026-10-17
+# (só acompanha, não decide). Regra e moedas vêm do pré-registro do tempo novo
+# (docs/experiments/daily-ema-supertrend-forward-prereg.json, item 274) — o
+# relatório não tem cópia própria dos parâmetros.
+#
+# Só leitura: velas públicas da Binance Spot + Telegram. Nenhuma ordem, nenhum
+# banco. Secrets: só TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID (os do scan.yml).
+
+on:
+  schedule:
+    # 00:23 UTC (21:23 em Brasília): a vela diária fecha às 00:00 UTC.
+    - cron: "23 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-rule-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Baixar as velas diárias das 19 moedas
+        # Uma moeda por vez: se uma falhar (ex.: deslistada), as outras seguem e
+        # o relatório marca essa como "sem dado" em vez de não sair.
+        run: |
+          PREREG=docs/experiments/daily-ema-supertrend-forward-prereg.json
+          SYMBOLS=$(node -p "require('./$PREREG').primarySymbols.join(' ')")
+          FETCH_FROM=$(node -p "require('./$PREREG').fetchFrom")
+          TO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          for S in $SYMBOLS; do
+            node scripts/fetch-backtest-data.mjs --symbols "$S" \
+              --from "${FETCH_FROM}T00:00:00Z" --to "$TO" \
+              --timeframes 1d --out candles \
+              || echo "::warning::$S: falhou ao baixar as velas — o relatório marca como sem dado"
+          done
+
+      - name: Montar e enviar o relatório
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -o pipefail
+          node scripts/daily-rule-report.mjs --data-dir candles --send \
+            | tee -a "$GITHUB_STEP_SUMMARY"

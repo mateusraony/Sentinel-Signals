@@ -32582,7 +32582,8 @@ entrada aleatória (Sentinel Signals)"** → *Run workflow*.
 
 **Proibido depois de ver qualquer dado do período:**
 - mudar datas, moedas, régua, α ou a regra de venda;
-- rodar antes do fim ou olhar resultado parcial;
+- rodar antes do fim ou parar o teste antes do fim (olhar o andamento descritivo da compra
+  passou a ser permitido no item 275, por decisão do usuário em 2026-10-16);
 - promover um vizinho de robustez;
 - tirar uma moeda que não foi deslistada.
 
@@ -32600,3 +32601,78 @@ entrada aleatória (Sentinel Signals)"** → *Run workflow*.
 - Corrigido: a venda só roda se o download deu certo. Continua rodando se a compra falhar.
 
 **Ledger:** não se aplica, mesmo caso dos itens 271/272.
+
+## 275. Relatório diário da regra EMA 10/21 + Supertrend no Telegram — acompanhamento, não decisão (2026-10-16)
+
+**Por que existe:**
+- O usuário disparou o workflow do tempo novo (item 274) 3 vezes e viu a trava vermelha.
+  - Runs: 38882812312, 38896893037 e 38911811057.
+  - Nos dois últimos, já com a correção do PR #500, só a trava ficou vermelha.
+- A objeção dele: "não faz sentido esperar 2028 pra ter uma decisão... vou perder tempo e
+  dinheiro".
+- **Ele tem razão num ponto:** a decisão não depende de 2028. Os anos que já passaram foram
+  testados nos itens 271 e 272, e a regra passou nos dois.
+  - O tempo novo é um seguro extra para a única ressalva aberta, o período. Ele não bloqueia nada
+    e não custa nada.
+  - Eu tinha comunicado mal ao chamar 2028 de "próximo passo".
+- **Escolha do usuário:**
+  - acompanhar todo dia pelo Telegram;
+  - **manter** o teste de 2028 como está, sem mudar o pré-registro (o sha256 continua igual).
+
+**O que o relatório faz:**
+- Roda no workflow `daily-rule-report.yml`, todo dia às 00:23 UTC (21:23 em Brasília), e também
+  pode ser disparado à mão.
+- Baixa as velas diárias Spot das 19 moedas do item 274.
+- Manda pelo bot do canal 24h:
+  - quem está **comprado** e quem está **fora**;
+  - quem **trocou** hoje;
+  - o **andamento desde 2026-10-17**: retorno acumulado da regra contra comprar e segurar, na
+    carteira de peso igual, com custo de 6 bps por lado, e o tempo comprado.
+- O markdown completo, com uma tabela por moeda, fica no resumo do job.
+
+**Garantias:**
+- **A mesma regra do teste:**
+  - lê os parâmetros e as moedas do pré-registro de compra do item 274, sem cópia própria;
+  - reusa `buildDays`, `dailySignals` e `symbolDailySeries` de `scripts/dailyTrend.mjs`;
+  - só usa vela fechada: uma vela ainda aberta é ignorada, e há teste para isso.
+- **Só leitura:**
+  - nenhuma ordem, nenhum banco;
+  - secrets: só `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`;
+  - `permissions: contents: read`.
+- **Falha à vista:** o job fica vermelho quando nenhuma moeda tem dado ou o Telegram não confirma
+  a entrega. Uma moeda que falhar ao baixar aparece como "sem dado"; as outras seguem.
+
+**O que o andamento NÃO é:**
+- Não é a decisão. A decisão formal do tempo novo continua em 2028-10-17, com as regras
+  congeladas do item 274.
+- Diferenças de conta em relação ao teste:
+  - o andamento cobra a entrada no 1º dia (parte de "fora");
+  - o teste usa o custo circular, necessário para a nula;
+  - a diferença é de no máximo uma troca por moeda.
+- **Mudança consciente no item 274:**
+  - antes, olhar o resultado parcial era proibido; agora o andamento fica visível todo dia;
+  - em estatística, olhar não estraga o teste. Estraga **agir** pelo que se viu: parar quando
+    está bom ou ruim, ou trocar a regra, as moedas ou as datas. Isso continua proibido;
+  - o risco que sobra é de comportamento, não de cálculo.
+
+**Ressalvas para quem for usar a regra (o sistema não envia ordem; operar é decisão do usuário):**
+- O efeito é de **carteira**: o BTC sozinho não passou (item 271).
+- O teste foi só do lado comprado e só no Spot.
+- Boa parte do composto vem de 2019–2021.
+- Sobrevivência: as moedas foram escolhidas em 2026 (itens 271 e 272).
+
+**Verificação:**
+- `scripts/dailyRuleReport.test.mjs`, 9 testes:
+  - a mesma regra do pré-registro;
+  - vela aberta ignorada;
+  - troca detectada no dia certo;
+  - avisos de sem dado, vela atrasada e histórico curto;
+  - andamento antes e depois do início;
+  - conta calculada à mão;
+  - limite de 4.096 caracteres do Telegram;
+  - CLI com códigos de saída.
+- **A sessão não alcança a Binance nem o Telegram.** O 1º disparo real é do usuário: GitHub →
+  Actions → **"Relatório diário — regra EMA + Supertrend (Sentinel Signals)"** → *Run workflow*.
+  Depois disso, conferir se a mensagem chegou.
+
+**Ledger:** não se aplica (não é teste nem expectância em R).
