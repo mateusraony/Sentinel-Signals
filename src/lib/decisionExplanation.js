@@ -151,7 +151,7 @@ function warningsFor(snapshot) {
  * }}
  */
 export function explainDecision(signal, ctx = {}) {
-  const phase = classifySignal(signal, ctx.now ?? Date.now()).phase;
+  const phase = classifySignal(signal, ctx.now ?? Date.now(), ctx.asset ?? null).phase;
   const copy = rejectionCopy(signal, phase);
   const snapshot = signal?.decision_snapshot ?? null;
   return {

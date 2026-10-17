@@ -24,17 +24,39 @@ export const SIGNAL_PHASE = Object.freeze({
 export const CONFIRMATION_WINDOW_MS = 4 * 60 * 60 * 1000;
 
 /**
- * Só a cascata nativa 4h→15m entra numa fila de confirmação de verdade. A
- * Range Filter também dispara em 1h/1d por ativo, mas esses nunca viram
- * operação por este mecanismo — tratar os dois como a mesma coisa é o que
- * gerava a confusão relatada pelo usuário.
+ * Só duas cascatas entram numa fila de confirmação de verdade (espelho do que
+ * `scanner.js` leva ao motor de entrada):
+ *   - Range Filter de 4h (cascata 4h→15m);
+ *   - SMC de 1h (cascata 1h→5m) — o SignalEvent `smc_structure` só é emitido
+ *     em ativo com `smc_enabled`. O motor reconfere o flag ATUAL do ativo na
+ *     1ª passada e no retry, então, quando o ativo é conhecido (`asset`), um
+ *     SMC emitido antes de o usuário desligar a cascata deixa de ser elegível.
+ * Range Filter 1h/1d e MACD/EMA/RSI (que também gravam SignalEvent em 4h)
+ * nunca viram operação. Item 276: antes só o timeframe era olhado, então o
+ * SMC 1h aparecia como "nunca vira operação" e o MACD 4h como "aguardando".
+ * SignalEvent sem `source` NÃO é elegível: o motor exige
+ * `source === 'range_filter'` na 1ª passada e na busca do retry.
+ * Espelho manual de `persistScanResults` (scanner.js) — ao mudar o roteamento
+ * de entrada lá, mude aqui e a tabela-verdade de signalStatus.test.js.
  */
-export function isConfirmationEligible(signal) {
-  return signal?.timeframe === '4h';
+export function isConfirmationEligible(signal, asset = null) {
+  // Ativo inativo não é escaneado (o motor só percorre `is_active`), e um
+  // timeframe desligado no ativo não é buscado (`enabledTimeframes`,
+  // scanner.js) — nos dois casos o retry nunca confirma.
+  // `is_active` presente e não verdadeiro (false/NULL) = fora do scan (o motor
+  // filtra `is_active: true`); objeto parcial sem o campo não decide nada.
+  if (asset && Object.prototype.hasOwnProperty.call(asset, 'is_active') && asset.is_active !== true) return false;
+  if (asset?.timeframes_enabled && asset.timeframes_enabled[signal?.timeframe] === false) return false;
+  const source = signal?.source;
+  // Mesma regra do motor (`if (asset.smc_enabled)`, scanner.js): com o ativo
+  // conhecido, vale o mesmo teste de "verdadeiro" — NULL/ausente não processa
+  // SMC. Sem o ativo, vale a emissão (SMC só é emitido com a cascata ligada).
+  if (source === 'smc_structure') return signal?.timeframe === '1h' && (asset == null || Boolean(asset.smc_enabled));
+  return source === 'range_filter' && signal?.timeframe === '4h';
 }
 
-export function classifySignal(signal, now = Date.now()) {
-  if (!isConfirmationEligible(signal)) {
+export function classifySignal(signal, now = Date.now(), asset = null) {
+  if (!isConfirmationEligible(signal, asset)) {
     return { phase: SIGNAL_PHASE.INFO, msLeft: null, expiresAt: null };
   }
   const createdAt = new Date(signal?.created_date).getTime();
@@ -68,7 +90,7 @@ const PHASE_COPY = Object.freeze({
     badge: 'Só informação',
     icon: 'ℹ',
     color: '#60a5fa',
-    reassurance: 'Isto é só uma observação de mercado — nunca vira operação. O app só abre operação a partir dos avisos do gráfico de 4 horas. Pode ignorar.',
+    reassurance: 'Isto é só uma observação de mercado — este aviso não vira operação. Operações nascem só dos avisos do Range Filter de 4 horas e, nos ativos com a cascata SMC ligada, dos avisos SMC de 1 hora. Pode ignorar.',
   }),
 });
 
@@ -85,12 +107,14 @@ export const REASON_KIND = Object.freeze({
   WAITING: 'waiting',   // ⏳ falta acontecer algo no mercado
   WORSE: 'worse',       // ⚠ o cenário piorou contra o sinal
   APP: 'app',           // ↻ problema do app, ele se resolve sozinho
+  INFO: 'info',         // ℹ️ só informação — este aviso não vira operação
 });
 
 const KIND_ICON = Object.freeze({
   [REASON_KIND.WAITING]: '⏳',
   [REASON_KIND.WORSE]: '⚠',
   [REASON_KIND.APP]: '↻',
+  [REASON_KIND.INFO]: 'ℹ️',
 });
 
 export function reasonIcon(kind) {
@@ -127,14 +151,19 @@ export const REJECTION_COPY = Object.freeze({
   trend_reversed: {
     kind: REASON_KIND.WORSE, chip: 'Tendência virou',
     detail: 'A linha de tendência do gráfico de 4 horas — a mesma que gerou este aviso — virou para o lado contrário depois que ele apareceu. O app não entra contra a própria tendência que ele usa para decidir.',
+    // Item 276: na cascata SMC o `trend_reversed` vem da estrutura do gráfico
+    // de 1 hora (scanner.js, retry SMC) — `smcDetail` é a variante declarada.
+    smcDetail: 'A estrutura do gráfico de 1 hora (SMC) — a mesma que gerou este aviso — virou para o lado contrário depois que ele apareceu. O app não entra contra a própria estrutura que ele usa para decidir.',
     by: {
       now_down: {
         chipBuy: 'Tendência virou p/ baixo', chipSell: 'Tendência virou p/ baixo',
         detail: 'A linha de tendência do gráfico de 4 horas aponta para BAIXO agora. Enquanto ela apontar para baixo, um aviso de compra não vira operação — seria comprar contra a maré.',
+        smcDetail: 'A estrutura do gráfico de 1 hora (SMC) aponta para BAIXO agora. Enquanto ela apontar para baixo, um aviso de compra não vira operação — seria comprar contra a maré.',
       },
       now_up: {
         chipBuy: 'Tendência virou p/ cima', chipSell: 'Tendência virou p/ cima',
         detail: 'A linha de tendência do gráfico de 4 horas aponta para CIMA agora. Enquanto ela apontar para cima, um aviso de venda não vira operação — seria vender contra a maré.',
+        smcDetail: 'A estrutura do gráfico de 1 hora (SMC) aponta para CIMA agora. Enquanto ela apontar para cima, um aviso de venda não vira operação — seria vender contra a maré.',
       },
     },
   },
@@ -253,10 +282,21 @@ const NO_REASON_EXPIRED = Object.freeze({
 });
 
 /**
+ * Mesma lógica para um aviso que NÃO vira operação (fase INFO, item 276):
+ * o motor nunca avalia entrada para ele, então "recém-chegado, refaz a conta
+ * a cada 5 minutos" seria falso (achado do Codex, review do PR #502).
+ */
+const NO_REASON_INFO = Object.freeze({
+  kind: REASON_KIND.INFO,
+  chip: 'Só informação',
+  detail: `Este tipo de aviso não vira operação, então o app não fica checando entrada para ele. ${NOTHING_TO_DO}`,
+});
+
+/**
  * Resolve o motivo em chip + frase, já com o fecho "nada a fazer".
  * Chave desconhecida nunca vira tela em branco nem código cru sem contexto.
  * `phase` (opcional, de `classifySignal`) só muda a resposta quando NÃO há
- * `last_rejection_reason` — ver `NO_REASON_EXPIRED` acima.
+ * `last_rejection_reason` — ver `NO_REASON_EXPIRED`/`NO_REASON_INFO` acima.
  */
 export function rejectionCopy(signal, phase) {
   const key = signal?.last_rejection_reason;
@@ -265,6 +305,9 @@ export function rejectionCopy(signal, phase) {
   if (!key) {
     if (phase === SIGNAL_PHASE.EXPIRED) {
       return { ...NO_REASON_EXPIRED, icon: reasonIcon(NO_REASON_EXPIRED.kind) };
+    }
+    if (phase === SIGNAL_PHASE.INFO) {
+      return { ...NO_REASON_INFO, icon: reasonIcon(NO_REASON_INFO.kind) };
     }
     return {
       kind: REASON_KIND.WAITING,
@@ -293,11 +336,15 @@ export function rejectionCopy(signal, phase) {
     ?? variant.chip
     ?? (isBuy ? entry.chipBuy : entry.chipSell)
     ?? entry.chip;
+  // Item 276: entradas com `smcDetail` têm texto próprio para a cascata SMC.
+  const isSmc = signal?.source === 'smc_structure';
+  const detail = (isSmc ? variant.smcDetail : null) ?? variant.detail
+    ?? (isSmc ? entry.smcDetail : null) ?? entry.detail;
   return {
     kind,
     icon: reasonIcon(kind),
     chip,
-    detail: `${variant.detail ?? entry.detail} ${NOTHING_TO_DO}`,
+    detail: `${detail} ${NOTHING_TO_DO}`,
   };
 }
 

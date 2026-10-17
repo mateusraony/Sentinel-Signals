@@ -235,7 +235,7 @@ async function send(html) {
 
 export async function notifyNewSignal(signal, asset) {
   if (!shouldSend('signal_detected', signal, asset)) return;
-  return send(buildSignalDetectedMessage(signal));
+  return send(buildSignalDetectedMessage(signal, asset));
 }
 
 // signal here is the SignalEvent that triggered the VerificationTask (same
@@ -243,7 +243,7 @@ export async function notifyNewSignal(signal, asset) {
 // (scanner.js) and on manual resend from the dedicated Verification page.
 export async function notifyVerificationTask(signal, asset) {
   if (!shouldSend('verification_task_created', signal, asset)) return false;
-  return send(buildVerificationTaskMessage(signal));
+  return send(buildVerificationTaskMessage(signal, asset));
 }
 
 export async function notifySignalCanceled(signal, asset) {

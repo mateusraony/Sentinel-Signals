@@ -40,10 +40,11 @@ const ACTIVE_OP = {
   created_date: '2026-09-13T09:05:00.000Z',
 };
 
-function mockBackend({ operations, signals, transitionTradeOp }) {
+function mockBackend({ operations, signals, transitionTradeOp, assets = [] }) {
   vi.doMock('@/api/entities', () => ({
     backend: {
       entities: {
+        MonitoredAsset: { list: async () => assets, filter: async () => assets },
         TradeOperation: { list: async () => operations, filter: async () => operations },
         SignalEvent: {
           list: async () => signals,
@@ -558,5 +559,76 @@ describe('Trades — deep link ?id= abre a operação exata (item 5.4)', () => {
 
     await screen.findByText('PENDLE/USDT');
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+
+// Item 276 — a fila de "Avisos em análise" segue a mesma regra de "pode virar
+// operação" do resto do app (Range Filter 4h e SMC 1h com a cascata ligada) e
+// separa as fontes: um aviso de uma cascata não esconde o da outra.
+describe('Trades — fila de avisos separa as cascatas (item 276)', () => {
+  const recente = () => new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const maisRecente = () => new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const SMC_1H = () => ({
+    id: 'smc1', asset_id: 'a1', symbol: 'ETHUSDT', timeframe: '1h', signal_type: 'BUY',
+    source: 'smc_structure', price_at_signal: 2000, created_date: recente(),
+  });
+  const RF_1H = () => ({
+    id: 'rf1h', asset_id: 'a1', symbol: 'ETHUSDT', timeframe: '1h', signal_type: 'SELL',
+    source: 'range_filter', price_at_signal: 2000, created_date: maisRecente(),
+  });
+
+  it('um Range Filter 1h mais novo não esconde um SMC 1h ainda esperando', async () => {
+    mockBackend({
+      operations: [], signals: [RF_1H(), SMC_1H()],
+      assets: [{ id: 'a1', symbol: 'ETHUSDT', is_active: true, smc_enabled: true }],
+    });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+    await screen.findByText('Avisos em análise');
+    await screen.findByText(/1 observações de mercado/);
+  });
+
+  it('SMC 1h de ativo com a cascata desligada vai para "observações de mercado", não para "em análise"', async () => {
+    mockBackend({
+      operations: [], signals: [SMC_1H()],
+      assets: [{ id: 'a1', symbol: 'ETHUSDT', is_active: true, smc_enabled: false }],
+    });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+    await screen.findByText(/1 observações de mercado/);
+    expect(screen.queryByText('Avisos em análise')).toBeNull();
+  });
+
+  // Achado do Codex (review do PR #502): o card "Só informação" caía no texto
+  // genérico de "sem motivo salvo" — "Aviso recém-chegado... refaz a conta a
+  // cada 5 minutos" — contradizendo o próprio badge de que não vira operação.
+  it('card de observação sem motivo salvo não diz que o app está checando entrada', async () => {
+    mockBackend({
+      operations: [], signals: [SMC_1H()],
+      assets: [{ id: 'a1', symbol: 'ETHUSDT', is_active: true, smc_enabled: false }],
+    });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+    fireEvent.click(await screen.findByText(/1 observações de mercado/));
+    await screen.findByText('ETH/USDT');
+    expect(screen.queryByText(/rec[ée]m-chegado|a cada 5 minutos/i)).toBeNull();
+    expect(screen.queryByText(/Checando agora/)).toBeNull();
+  });
+
+  it('uma operação SMC 1h ativa não esconde um aviso Range Filter 1h do mesmo ativo', async () => {
+    const smcOp = {
+      id: 'trade_smc_x', asset_id: 'a1', symbol: 'ETHUSDT', side: 'BUY', status: 'SIGNAL_CONFIRMED',
+      timeframe: '5m', signal_timeframe: '1h', cascade: '1h_5m', entry_price: 2000, initial_stop: 1900,
+      current_stop: 1900, tp1: 2150, tp2: 2300, tp1_hit: false, partial_percent: 50, created_date: recente(),
+    };
+    mockBackend({
+      operations: [smcOp], signals: [RF_1H()],
+      assets: [{ id: 'a1', symbol: 'ETHUSDT', is_active: true, smc_enabled: true }],
+    });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+    await screen.findByText('Operações Ativas');
+    await screen.findByText(/1 observações de mercado/);
   });
 });

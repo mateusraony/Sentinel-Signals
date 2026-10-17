@@ -35,7 +35,7 @@ function renderChecklist(props) {
 }
 
 const baseSignal = {
-  id: 'sig1', asset_id: 'asset1', symbol: 'BTCUSDT', signal_type: 'BUY', timeframe: '4h',
+  id: 'sig1', asset_id: 'asset1', symbol: 'BTCUSDT', signal_type: 'BUY', source: 'range_filter', timeframe: '4h',
   created_date: new Date().toISOString(),
 };
 
@@ -84,7 +84,9 @@ describe('SignalChecklist — achado do Codex (PR #369): timeframe fora de 4h n�
     fireEvent.click(screen.getByText(/Por que ainda não virou operação\?/i));
     expect(screen.queryByText(/ENTRADA LIBERADA/i)).toBeNull();
     expect(screen.queryByText(/BLOQUEADA/i)).toBeNull();
-    screen.getByText(/nunca vira operação/i);
+    screen.getByText(/não vira operação/i);
+    // Review do PR #502: nada de "recém-chegado, refaz a conta a cada 5 minutos".
+    expect(screen.queryByText(/rec[ée]m-chegado|a cada 5 minutos/i)).toBeNull();
   });
 
   it('sinal 1h sem motivo, mas com operação ativa, ainda mostra BLOQUEADA — fato universal, independe do timeframe', () => {

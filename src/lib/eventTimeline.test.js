@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  opTimeline, signalTimeline, closedReasonLabel, CONFIRMATION_WINDOW_MS, decisionSnapshotEvent,
+  opTimeline, signalTimeline, closedReasonLabel, decisionSnapshotEvent,
 } from './eventTimeline';
+import { CONFIRMATION_WINDOW_MS } from './signalStatus.js';
 
 const T = (h, m = 0) => `2026-09-05T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
 
@@ -116,14 +117,14 @@ describe('closedReasonLabel', () => {
 
 describe('signalTimeline', () => {
   it('num aviso de 4h, mostra quando apareceu e quando o prazo fecha', () => {
-    const events = signalTimeline({ timeframe: '4h', created_date: T(8) }, { now: Date.parse(T(9)) });
+    const events = signalTimeline({ source: 'range_filter', timeframe: '4h', created_date: T(8) }, { now: Date.parse(T(9)) });
     expect(events.map(e => e.key)).toEqual(['appeared', 'deadline']);
     expect(events[1].label).toBe('Prazo fecha');
     expect(Date.parse(events[1].at) - Date.parse(T(8))).toBe(CONFIRMATION_WINDOW_MS);
   });
 
   it('fala no passado depois que o prazo passou', () => {
-    const events = signalTimeline({ timeframe: '4h', created_date: T(8) }, { now: Date.parse(T(20)) });
+    const events = signalTimeline({ source: 'range_filter', timeframe: '4h', created_date: T(8) }, { now: Date.parse(T(20)) });
     expect(events[1].label).toBe('Prazo fechou');
   });
 
@@ -131,6 +132,14 @@ describe('signalTimeline', () => {
     for (const tf of ['1h', '1d']) {
       expect(signalTimeline({ timeframe: tf, created_date: T(8) }).map(e => e.key)).toEqual(['appeared']);
     }
+  });
+
+  // Item 276 — prazo segue a mesma regra de "pode virar operação" do resto do app.
+  it('SMC 1h (cascata ligada) tem prazo; MACD 4h não tem', () => {
+    const smc = signalTimeline({ source: 'smc_structure', timeframe: '1h', created_date: T(8) }, { asset: { smc_enabled: true } });
+    expect(smc.map(e => e.key)).toContain('deadline');
+    const macd = signalTimeline({ source: 'macd', timeframe: '4h', created_date: T(8) });
+    expect(macd.map(e => e.key)).toEqual(['appeared']);
   });
 
   it('degrada sem lançar', () => {
@@ -145,7 +154,7 @@ describe('signalTimeline', () => {
   it('nunca inventa um horário de rejeição — motivo sem carimbo não vira linha', () => {
     // Sinal anterior ao item 163: tem o motivo, não tem o horário.
     const events = signalTimeline({
-      timeframe: '4h', created_date: T(8), last_rejection_reason: 'trend_reversed',
+      source: 'range_filter', timeframe: '4h', created_date: T(8), last_rejection_reason: 'trend_reversed',
     }, { now: Date.parse(T(9)) });
     expect(events.some(e => e.key.includes('reject'))).toBe(false);
   });
@@ -153,7 +162,7 @@ describe('signalTimeline', () => {
   // docs/known-risks.md item 163 — o motor passou a gravar last_rejection_at.
   it('mostra o horário da recusa quando o motor o gravou', () => {
     const events = signalTimeline({
-      timeframe: '4h', created_date: T(8),
+      source: 'range_filter', timeframe: '4h', created_date: T(8),
       last_rejection_reason: 'regime_rejected', last_rejection_detail: 'chop',
       last_rejection_at: T(9),
     }, { now: Date.parse(T(10)) });
@@ -168,7 +177,7 @@ describe('signalTimeline', () => {
 
   it('a recusa entra na ordem cronológica certa, entre o aviso e o prazo', () => {
     const events = signalTimeline({
-      timeframe: '4h', created_date: T(8), last_rejection_at: T(9),
+      source: 'range_filter', timeframe: '4h', created_date: T(8), last_rejection_at: T(9),
     }, { now: Date.parse(T(10)) });
     expect(events.map(e => e.key)).toEqual(['appeared', 'rejected', 'deadline']);
   });

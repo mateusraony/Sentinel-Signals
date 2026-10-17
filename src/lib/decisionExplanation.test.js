@@ -7,7 +7,7 @@ import { explainDecision, explainOperationDecision } from './decisionExplanation
 
 describe('explainDecision — fail-closed (sem decision_snapshot)', () => {
   it('sinal recém-chegado sem nenhum motivo salvo', () => {
-    const out = explainDecision({ timeframe: '4h', created_date: new Date().toISOString() });
+    const out = explainDecision({ source: 'range_filter', timeframe: '4h', created_date: new Date().toISOString() });
     expect(out.headline).toBe('Checando agora');
     expect(out.evidence).toBeNull();
     expect(out.technical).toBeNull();
@@ -33,7 +33,7 @@ describe('explainDecision — fail-closed (sem decision_snapshot)', () => {
 
   it('sinal expirado sem motivo salvo usa o fallback dedicado, não o genérico', () => {
     const oldIso = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
-    const out = explainDecision({ timeframe: '4h', created_date: oldIso });
+    const out = explainDecision({ source: 'range_filter', timeframe: '4h', created_date: oldIso });
     expect(out.headline).toBe('Sem detalhe salvo');
   });
 });

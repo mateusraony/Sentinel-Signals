@@ -206,7 +206,7 @@ async function send(html) {
 
 export async function notifyNewSignal(signal, asset) {
   if (!(await shouldSend('signal_detected', signal, asset))) return;
-  return send(buildSignalDetectedMessage(signal));
+  return send(buildSignalDetectedMessage(signal, asset));
 }
 
 // Mirrors src/lib/telegram.js's notifyVerificationTask — signal is the
@@ -214,7 +214,7 @@ export async function notifyNewSignal(signal, asset) {
 // receives above).
 export async function notifyVerificationTask(signal, asset) {
   if (!(await shouldSend('verification_task_created', signal, asset))) return false;
-  return send(buildVerificationTaskMessage(signal));
+  return send(buildVerificationTaskMessage(signal, asset));
 }
 
 // Mirrors src/lib/telegram.js's notifySignalCanceled — Fase 3 da auditoria

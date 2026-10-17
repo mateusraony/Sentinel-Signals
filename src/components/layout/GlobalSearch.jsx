@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { backend } from '@/api/entities';
 import { Search, Coins, Bell, History } from 'lucide-react';
+import { useAllMonitoredAssets } from '@/hooks/useAllMonitoredAssets';
 
 export default function GlobalSearch() {
   const [search, setSearch] = useState('');
@@ -11,11 +12,9 @@ export default function GlobalSearch() {
   const navigate = useNavigate();
   const containerRef = useRef(null);
 
-  const { data: allAssets = [] } = useQuery({
-    queryKey: ['monitored-assets'],
-    queryFn: () => backend.entities.MonitoredAsset.list(),
-    staleTime: 60000,
-  });
+  // Item 276: consulta compartilhada — a chave antiga `['monitored-assets']`
+  // colidia com a do Dashboard (que filtra só ativos ativos).
+  const { data: allAssets = [] } = useAllMonitoredAssets();
 
   const { data: allSignals = [] } = useQuery({
     queryKey: ['recent-signals'],

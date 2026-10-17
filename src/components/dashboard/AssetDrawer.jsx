@@ -471,7 +471,7 @@ export default function AssetDrawer({
                             <span className="uppercase tracking-wider">Quando: </span>
                             {moment(sig.created_date).fromNow()}
                           </div>
-                          <SignalChecklist signal={sig} tradeOps={tradeOps} tradeOpsUnavailable={tradeOpsUnavailable} />
+                          <SignalChecklist signal={sig} tradeOps={tradeOps} tradeOpsUnavailable={tradeOpsUnavailable} asset={asset} />
                         </div>
                       </div>
                     );

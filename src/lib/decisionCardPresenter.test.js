@@ -147,8 +147,42 @@ describe('estado — sinal sem operação', () => {
     expect(card.state.side).toBe('BUY');
   });
 
-  it('cascata SMC (smc_structure 1h) é candidata de entrada mas segue a regra da janela: 1h = só informação', () => {
-    const card = build({ signals: [signal({ source: 'smc_structure', timeframe: '1h' })] });
+  // Item 276 (decisão do usuário sobre o item 258): o card dizia "Só informação
+  // … nunca vira operação" para o SMC 1h, mas o motor abre operação por essa
+  // cascata (scanner.js, smc_structure só é emitido com smc_enabled).
+  it('cascata SMC (smc_structure 1h) dentro da janela: "Aguardando confirmação", nunca "Só informação"', () => {
+    const card = build({ asset: asset({ smc_enabled: true }), signals: [signal({ source: 'smc_structure', timeframe: '1h' })] });
+    expect(card.state.label).toBe('Aguardando confirmação · BUY');
+    expect(card.action.headline).not.toBe('Só informação');
+    expect(card.action.why).not.toMatch(/(não|nunca) vira operação/);
+  });
+
+  it('cascata SMC (smc_structure 1h) além do prazo de 4h: "Já passou"', () => {
+    const card = build({ asset: asset({ smc_enabled: true }), signals: [signal({ source: 'smc_structure', timeframe: '1h', created_date: iso(5 * HOUR) })] });
+    expect(card.state.label).toMatch(/^Já passou/);
+  });
+
+  it('REGRESSÃO (review item 276): RF 1h mais novo não esconde um SMC 1h ainda pendente', () => {
+    const smc = signal({ id: 'smc', source: 'smc_structure', timeframe: '1h', created_date: iso(2 * HOUR) });
+    const rf1h = signal({ id: 'rf1h', source: 'range_filter', timeframe: '1h', signal_type: 'SELL', created_date: iso(5 * MIN) });
+    const card = build({ asset: asset({ smc_enabled: true }), signals: [rf1h, smc] });
+    expect(card.state.label).toBe('Aguardando confirmação · BUY');
+  });
+
+  it('SignalEvent sem source em 4h: só informação (o motor só processa source === range_filter)', () => {
+    const card = build({ signals: [signal({ source: undefined })] });
+    expect(card.state.label).toMatch(/^Só informação/);
+  });
+
+  it('SMC 1h num ativo com a cascata desligada (ou NULL, como o motor lê): só informação', () => {
+    for (const smc_enabled of [false, null, undefined]) {
+      const card = build({ asset: asset({ smc_enabled }), signals: [signal({ source: 'smc_structure', timeframe: '1h' })] });
+      expect(card.state.label).toMatch(/^Só informação/);
+    }
+  });
+
+  it('Range Filter 1h continua só informação', () => {
+    const card = build({ signals: [signal({ source: 'range_filter', timeframe: '1h' })] });
     expect(card.state.label).toMatch(/^Só informação/);
   });
 
