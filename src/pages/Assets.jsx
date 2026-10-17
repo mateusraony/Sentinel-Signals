@@ -19,6 +19,15 @@ import { assetHealthcheckReason } from '@/lib/assetHealthcheck';
 import moment from 'moment';
 import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 
+// Item 276: além da lista desta página (`['all-assets']`), invalida o prefixo
+// `['monitored-assets']` — Dashboard, Trades, Verificação e a busca global usam
+// o ativo para decidir se um aviso ainda pode virar operação (smc_enabled,
+// is_active, timeframes ligados) e não podem ficar com o valor antigo.
+function invalidateAssetLists(queryClient) {
+  queryClient.invalidateQueries({ queryKey: ['all-assets'] });
+  queryClient.invalidateQueries({ queryKey: ['monitored-assets'] });
+}
+
 // Achado A-9 do Raio-X de UI/UX — mesmo mapeamento de
 // src/components/dashboard/AssetCard.jsx (ver comentário lá pro porquê do
 // threshold de 2h fixo estar errado). O CÁLCULO (a parte que importa não
@@ -96,7 +105,7 @@ export default function Assets() {
       // false→true — desativar não deve disparar nada.
       ...(is_active ? { backfill_check_status: 'pending' } : {}),
     }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['all-assets'] }),
+    onSuccess: () => invalidateAssetLists(queryClient),
   });
 
   const deleteMutation = useMutation({
@@ -110,7 +119,7 @@ export default function Assets() {
       await backend.entities.AssetState.deleteMany({ asset_id: id });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['all-assets'] });
+      invalidateAssetLists(queryClient);
       queryClient.invalidateQueries({ queryKey: ['asset-states'] });
     },
   });
@@ -178,7 +187,7 @@ export default function Assets() {
             </DialogTrigger>
             <DialogContent style={{ background: 'rgba(14,17,28,0.97)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(24px)' }}>
               <DialogHeader><DialogTitle className="font-mono">Adicionar Ativo</DialogTitle></DialogHeader>
-              <AddAssetForm onSuccess={() => { setShowAddDialog(false); queryClient.invalidateQueries({ queryKey: ['all-assets'] }); }} />
+              <AddAssetForm onSuccess={() => { setShowAddDialog(false); invalidateAssetLists(queryClient); }} />
             </DialogContent>
           </Dialog>
         </div>
@@ -426,7 +435,7 @@ export default function Assets() {
       <Dialog open={!!configAsset} onOpenChange={(open) => !open && setConfigAsset(null)}>
         <DialogContent style={{ background: 'rgba(14,17,28,0.97)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(24px)' }} className="max-w-lg">
           <DialogHeader><DialogTitle className="font-mono">Config — {configAsset?.display_name}</DialogTitle></DialogHeader>
-          {configAsset && <AssetConfigPanel asset={configAsset} onSave={() => { setConfigAsset(null); queryClient.invalidateQueries({ queryKey: ['all-assets'] }); }} />}
+          {configAsset && <AssetConfigPanel asset={configAsset} onSave={() => { setConfigAsset(null); invalidateAssetLists(queryClient); }} />}
         </DialogContent>
       </Dialog>
 

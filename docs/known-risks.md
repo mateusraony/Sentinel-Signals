@@ -32678,3 +32678,112 @@ entrada aleatória (Sentinel Signals)"** → *Run workflow*.
   Depois disso, conferir se a mensagem chegou.
 
 **Ledger:** não se aplica (não é teste nem expectância em R).
+
+## 276. PR-A + E1 — Telegram e painel só prometem confirmação ao que pode virar operação; emojis do Telegram com significado único (2026-10-17)
+
+**Origem:** auditoria estratégica (conselho de 7 agentes, comparação ChartBeyond × Sentinel,
+2026-10-16/17). Achados confirmados no código:
+- **Telegram (ativo hoje):** `buildSignalDetectedMessage` dizia "⏳ Situação: aguardando confirmação de
+  entrada" e "➡️ Próximo passo: aguardar a confirmação de entrada pelo motor" para TODA fonte e
+  timeframe — inclusive MACD/EMA/RSI e Range Filter 1h/1d, que nunca viram operação. Os filtros padrão
+  dos dois canais enviam todas as fontes (`telegram.js:55`, `adminTelegram.js:62`).
+- **Painel (latente):** `isConfirmationEligible` só olhava `timeframe==='4h'`, então o SMC 1h aparecia
+  como "Só informação … nunca vira operação. O app só abre operação a partir dos avisos do gráfico de 4
+  horas", quando o motor abre operação por essa cascata (`scanner.js:1827` só emite `smc_structure` em
+  ativo com `smc_enabled`; criação em `:2858`/`:3621`). Hoje é latente: os 10 ativos estão com
+  `smc_enabled:false` desde 2026-08-20 (item ~12135). Registrado como pendente no item 258; **decisão do
+  usuário em 2026-10-17: pode mudar**. O mesmo predicado também deixava um MACD 4h como "aguardando".
+- **Guard contornado:** a regex de `verificationWordingGuard.test.js` proibia "só a partir de sinais de 4
+  horas", e a mesma afirmação voltou por paráfrase em `signalStatus.js:71`.
+
+**Mudança (só texto/apresentação — motor intocado):**
+- `isConfirmationEligible` olha a fonte: Range Filter em 4h, ou `smc_structure`
+  em 1h. Mesma janela de 4h para as duas cascatas (`CONFIRMATION_WINDOW_MS`).
+- Texto INFO reescrito: "este aviso não vira operação. Operações nascem só dos avisos do Range Filter de 4
+  horas e, nos ativos com a cascata SMC ligada, dos avisos SMC de 1 hora."
+- `buildSignalDetectedMessage`: "Situação"/"Próximo passo" condicionados ao mesmo predicado; não elegível
+  vira "ℹ️ Situação: Só informação — este aviso não abre operação / 👉 Próximo passo: nenhum".
+- **E1 (pedido do usuário: aprimorar emojis, não remover):** lado 🟢 COMPRA/🔴 VENDA (antes 📈/📉 — ficam
+  reservados para movimento de preço no PR-D); 👉 Próximo passo (antes ➡️); 🏷️ Preço (antes 💰, agora só
+  "Stop Travou Lucro"); 🧩 "Regras alinhadas N/100 (não é chance de acerto)" (antes 📊 Score + 💪/📊/🔹);
+  🛡️ "Stop protegido: no preço de entrada ou melhor — sem prejuízo, exceto taxas/slippage/funding" (antes 🔄); entrada "operação
+  virtual aberta — nenhuma ordem é enviada à corretora". Tabela em `docs/notification-vocabulary.md`.
+
+**Verificação:**
+- Testes novos falhavam antes da correção (21) e passam depois: tabela-verdade fonte × timeframe (inclui
+  legado sem `source`) em `signalStatus.test.js`; SMC 1h dentro/fora da janela em
+  `decisionCardPresenter.test.js`; negativos MACD/EMA/RSI/RF 1h/1d e vocabulário E1 em
+  `notificationTemplates.test.js`.
+- Guard semântico (texto INFO não pode afirmar exclusividade do 4h sem citar o SMC) + regex da paráfrase
+  conhecida — os dois provados reintroduzindo o texto antigo (falham) e restaurando (passam).
+- Testes antigos reescritos de propósito: `decisionCardPresenter.test.js` (SMC 1h era "Só informação"),
+  `signalStatus.test.js` (RF 1h/1d), 3 asserções de texto (`telegram.test.js` score; verificação "nunca vira
+  operação").
+- Diff vazio em `scanner.js`, `indicators/**`, `opExitRules.js`, `opTransition.js`,
+  `signalArbitration.js`, `pineParser.js`, `adminPineConfig.js`, `db/**`, `server/**`. `signalStatus.js` e
+  `notificationTemplates.js` entram no bundle do cron só pelo Telegram; nenhuma decisão de trading os lê.
+
+**Revisão de código antes do PR (9 achados, todos corrigidos):**
+- Verificação do SMC 1h elegível usava ℹ️ (= "nunca abre operação") → ⏳ de `AWAITING_ENTRY`, sem emoji
+  fixo no código.
+- O guard semântico não casava "só": `\b` do JS é só ASCII e "ó"+espaço não forma fronteira → regex
+  refeita, com teste que prova que ela pega a frase antiga e a paráfrase "Só os avisos de 4h…".
+- `decisionCardPresenter.pickSubject` mantinha um conjunto próprio de fontes de entrada (qualquer
+  timeframe) → passou a usar `isConfirmationEligible`; um RF 1h mais novo não esconde mais um SMC 1h
+  pendente.
+- TP1: o stop pode já estar além da entrada (trailing pré-TP1 + `clampMonotonicStop`) → texto "no preço
+  de entrada ($X) ou melhor".
+- SMC emitido antes de o usuário desligar a cascata: `isConfirmationEligible(signal, asset)` aceita o
+  ativo e devolve falso com `smc_enabled:false` (o motor reconfere o flag). O Decision Card passa o ativo.
+  Na 2ª revisão a regra passou a valer em todo lugar que mostra o aviso: `SignalChecklist` (drawer e
+  Verificação recebem o ativo), `Trades.jsx` (consulta `['monitored-assets']`, mesma queryKey/queryFn do
+  Dashboard — cache compartilhado), `signalTimeline` (prazo) e Telegram (o scanner já passava o ativo para
+  `notify*`; agora chega aos templates). Ativo com `smc_enabled` NULL/ausente = não elegível, igual ao
+  motor (`if (asset.smc_enabled)`); sem o ativo, vale a emissão.
+- `AMBIGUOUS_EXIT_NOTE` usava ℹ️ → 📌; "⏳ Duração/Esperou" → ⌛ (⏳ fica só para aguardando entrada).
+- `Trades.jsx` só listava Range Filter na fila de monitoramento → inclui `smc_structure` (o card e o
+  Telegram já diziam "aguardando").
+- Sinal sem score numérico (MACD/EMA/RSI) perdia a força no Telegram → "🧩 Regras alinhadas: concordância
+  forte (não é chance de acerto)".
+
+**2ª revisão de código (achados corrigidos):** chave da fila de `Trades.jsx` inclui `source` (RF 1h não
+esconde SMC 1h pendente); a fila usa `isConfirmationEligible` em vez de lista própria de fontes (legado sem
+`source` aparece); aviso elegível de ativo que já tem operação ativa sai de "em análise" (1 operação por
+ativo); `signalTimeline` usa a mesma regra para o prazo (SMC 1h ganha prazo, MACD 4h perde);
+`trend_reversed` do SMC cita "estrutura do gráfico de 1 hora (SMC)" em vez da linha de 4 horas; import
+duplicado de `signalStatus.js` unificado em `notificationTemplates.js`.
+
+**3ª a 5ª revisões de código (estado final, depois de simplificar):**
+- **Regra única "pode virar operação"** (`isConfirmationEligible(signal, asset)`), espelho manual de
+  `persistScanResults`: Range Filter 4h ou SMC 1h; com o ativo conhecido, falso se o ativo está inativo
+  (`is_active` presente e não verdadeiro — o motor só escaneia `is_active: true`), se o timeframe do aviso está desligado (`timeframes_enabled[tf] ===
+  false`, o motor nem busca) ou, no SMC, se `smc_enabled` não é verdadeiro (`Boolean(...)`, igual ao `if` do
+  motor). SignalEvent sem `source` NÃO é elegível (o motor exige `source === 'range_filter'` na 1ª passada,
+  `scanner.js:2482`, e no retry, `:3169`); fixtures de teste sem `source` passaram a declarar a fonte. Sem
+  o ativo, vale a emissão. A mesma regra vale no Decision Card, `SignalChecklist` (drawer e Verificação),
+  `Trades.jsx`, `signalTimeline` (prazo) e Telegram (o ativo da passada já chegava a `notify*`).
+- **Consulta única de "todos os ativos"** (`src/hooks/useAllMonitoredAssets.js`, chave
+  `['monitored-assets', 'all']`, `list()`, sem polling) para Trades, Verificação e GlobalSearch — fecha a
+  colisão pré-existente em que o GlobalSearch (`list()`) e o Dashboard (`filter({is_active:true})`)
+  dividiam a chave exata `['monitored-assets']` e se sobrescreviam. Hierárquica: invalidar
+  `['monitored-assets']` também a atualiza — e `Assets.jsx` passou a invalidar esse prefixo ao salvar,
+  adicionar ou remover ativo (antes só `['all-assets']`), para a regra não usar `smc_enabled`/`is_active`
+  antigos. Reenvio manual da Verificação: tarefa antiga sem `source` é tratada como Range Filter (todas
+  eram).
+- **Fila de Trades:** só avisos das cascatas (Range Filter e SMC); MACD/EMA/RSI e avisos sem fonte fora; chave da
+  fila e das operações ativas incluem a fonte (uma operação SMC 1h não esconde mais avisos RF 1h, e um RF
+  1h não esconde um SMC 1h pendente); fase calculada uma vez por aviso. Uma regra intermediária que
+  escondia avisos de ativo com operação ativa foi **retirada** (fazia aviso sumir sem explicação; a
+  arbitragem entre cascatas ainda avalia esses avisos).
+- **Textos:** `trend_reversed` do SMC tem variante declarada (`smcDetail`) citando a estrutura de 1 hora;
+  teste trava que nenhuma variante SMC cite "4 horas". `explainDecision` recebe o ativo. INFO e Telegram
+  dizem "este aviso não vira/abre operação" (verdadeiro também para SMC com a cascata desligada).
+  `CONFIRMATION_WINDOW_MS` com fonte única (`eventTimeline.js` reexporta de `signalStatus.js`). Import
+  duplicado unificado.
+- **Não feito, de propósito:** o motor usar o mesmo predicado — tocaria `scanner.js`, fora do escopo
+  combinado (motor intocado). Trava de deriva: tabela-verdade + comentário "espelho manual" no predicado.
+  **Resíduo aceito:** enquanto a lista de ativos carrega (ou se falhar), Trades usa a regra da emissão.
+
+**Próximos (mesma auditoria):** PR-B (ProximityBar 📏, 🧩 no painel, 📡 qualidade do dado, chip de
+saúde), PR-C (🧪 simular entrada + estatística sem operações manuais/editadas), PR-D (preço e 📈/📉 24h do
+mesmo instante), PR-E2/E3 (emojis no painel + teste "1 emoji = 1 significado").

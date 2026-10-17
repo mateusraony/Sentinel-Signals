@@ -34,6 +34,12 @@ const FRASES_PROIBIDAS = [
   /confirmação manual/i,
   /Verificação Necessária/,
   /só a partir de sinais de 4 horas/i, // falso para a cascata SMC 1h→5m (Codex P2, PR #473)
+  // Item 276 — a mesma afirmação falsa voltou por paráfrase em signalStatus.js
+  // ("O app só abre operação a partir dos avisos do gráfico de 4 horas") e
+  // passou pela regex acima. O guard semântico de verdade fica em
+  // signalStatus.test.js (tabela-verdade + texto INFO); esta linha só fecha a
+  // paráfrase conhecida.
+  /só abre operação a partir d[aeo]s? (avisos|sinais)/i,
 ];
 
 describe('texto do usuário nunca sugere que a Verificação aprova uma operação (item 258)', () => {

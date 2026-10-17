@@ -38,8 +38,24 @@ não estágio do ciclo de vida.
 
 | Domínio | Valores | Onde |
 |---|---|---|
-| Prioridade do sinal | ⚡ Alta · Média · Baixa | `priorityLabel()` em `src/lib/signalStatus.js`, usado por `SignalAlertBanner.jsx`/`Alerts.jsx` |
-| Direção BUY/SELL | 🟢/▲ compra · 🔴/▼ venda | cor (`#00ff80`/`#ff1478`) + seta, em `Alerts.jsx`/`Trades.jsx`/vários componentes de Dashboard |
+| Prioridade do sinal | ⚡ Alta · Média · Baixa (painel) · ⭐ Prioridade: ALTA (Telegram) | `priorityLabel()` em `src/lib/signalStatus.js`, usado por `SignalAlertBanner.jsx`/`Alerts.jsx`; Telegram em `buildVerificationTaskMessage`. Unificação em ⭐ prevista no PR-E2 (item 276) |
+| Direção BUY/SELL | 🟢/▲ compra · 🔴/▼ venda | cor (`#00ff80`/`#ff1478`) + seta, em `Alerts.jsx`/`Trades.jsx`/vários componentes de Dashboard; **no Telegram desde o item 276** (`sideLabel()` em `notificationTemplates.js` — antes era 📈/📉) |
+
+### Linhas auxiliares do Telegram (item 276)
+
+Pedido do usuário: aprimorar os emojis, não removê-los — cada um com um único
+significado, sempre acompanhado de texto.
+
+| Emoji | Significado único | Onde |
+|---|---|---|
+| ℹ️ | Só informação — este aviso não abre operação | "Situação" de sinais não elegíveis (`isConfirmationEligible` falso) |
+| 👉 | Próximo passo (o que o usuário faz — quase sempre "nada") | todas as mensagens (antes era ➡️) |
+| 🏷️ | Preço de referência (no sinal / atual) | sinal detectado, cancelado, TP1 (antes 💰, que agora é só `STOP_LOCKED_PROFIT`) |
+| 🧩 | Regras alinhadas N/100 — concordância das regras, **não é chance de acerto** | linha de score (antes 📊 Score + 💪 Forte/📊 Médio/🔹 Fraco) |
+| 🛡️ | Stop protegido: no preço de entrada ou melhor — sem prejuízo, exceto taxas/slippage/funding | TP1 com runner (antes 🔄 "Stop movido para breakeven") |
+| 📈 / 📉 | **Reservados para movimento de preço** (subiu/caiu no período mostrado) | painel, a partir do PR-D — não usar para lado do sinal |
+| ⌛ | Duração / tempo de espera | resumo de encerramento e sinal cancelado (antes ⏳, que é só `AWAITING_ENTRY`) |
+| 📌 | Nota explicativa sobre um encerramento já ocorrido (stop e take na mesma vela) | `AMBIGUOUS_EXIT_NOTE` (antes ℹ️) |
 
 ## Regra ao adicionar um estágio novo
 

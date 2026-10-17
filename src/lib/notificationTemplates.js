@@ -28,9 +28,8 @@ import { formatBackfillLag } from './backfillDetection.js';
 import { explainOperationDecision } from './decisionExplanation.js';
 import { shortSourceLabel } from './signalSourceLabels.js';
 import { NOTIFICATION_STAGES, stageHeader } from './notificationVocabulary.js';
-import { isConfirmationEligible } from './signalStatus.js';
+import { isConfirmationEligible, rejectionCopy, SIGNAL_PHASE } from './signalStatus.js';
 import { classifyOutcome, calcRealizedR, calcRealizedPnlPct, getExitPrice } from './tradeMetrics.js';
-import { rejectionCopy, SIGNAL_PHASE } from './signalStatus.js';
 
 export function fmtP(p) {
   if (!p && p !== 0) return '—';
@@ -120,7 +119,7 @@ function closureSummary(op) {
   const entryRef = getEntryReferenceTime(op);
   const closedAt = op.closed_at_real_time || op.stop_hit_real_time || op.tp2_hit_real_time || op.closed_at;
   const durationMs = entryRef && closedAt ? new Date(closedAt).getTime() - new Date(entryRef).getTime() : null;
-  const durationLine = Number.isFinite(durationMs) && durationMs >= 0 ? `⏳ Duração: ${formatBackfillLag(durationMs)}\n` : '';
+  const durationLine = Number.isFinite(durationMs) && durationMs >= 0 ? `⌛ Duração: ${formatBackfillLag(durationMs)}\n` : '';
   const checklist = [op.tp1_hit ? '✅ TP1' : null, op.status === 'TP2_HIT' ? '✅ TP2' : null].filter(Boolean).join('  ');
   return resultLine + durationLine + (checklist ? `${checklist}\n` : '');
 }
@@ -132,7 +131,7 @@ function closureSummary(op) {
 // quando isso é detectado, então não existe "continuar ou sair" real pra
 // perguntar. O que falta é só deixar isso visível em linguagem simples.
 const AMBIGUOUS_EXIT_NOTE =
-  `\nℹ️ <b>Nessa vela, o preço tocou o stop e o take ao mesmo tempo</b> — o gráfico não mostra qual foi primeiro de verdade. Por segurança, o sistema sempre considera que o stop aconteceu primeiro nesses casos raros. Essa operação já foi encerrada com esse resultado.\n`;
+  `\n📌 <b>Nessa vela, o preço tocou o stop e o take ao mesmo tempo</b> — o gráfico não mostra qual foi primeiro de verdade. Por segurança, o sistema sempre considera que o stop aconteceu primeiro nesses casos raros. Essa operação já foi encerrada com esse resultado.\n`;
 
 // Auditoria do Telegram (2026-09-29), Fase 2 item 2.3 — achado: TradeCard.jsx
 // (STOP_HIT_BANNER) e TradeHistory.jsx (isBE) JÁ tratam breakeven como
@@ -143,21 +142,43 @@ const STOP_HIT_STAGE = {
   BE: NOTIFICATION_STAGES.STOP_BREAKEVEN,
 };
 
-export function buildSignalDetectedMessage(signal) {
-  const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
-  const strength = { strong: '💪 Forte', medium: '📊 Médio', moderate: '📊 Moderado', weak: '🔹 Fraco' }[signal.strength] || '';
+// Item 276 (E1) — lado do sinal = 🟢/🔴 (mesmo de docs/notification-
+// vocabulary.md). 📈/📉 ficam reservados para movimento de preço.
+function sideLabel(signalType) {
+  return signalType === 'BUY' ? '🟢 COMPRA' : '🔴 VENDA';
+}
+
+// Item 276 (E1) — score de confluência = concordância das regras, nunca
+// chance de acerto (substitui "💪 Forte/📊 Médio/🔹 Fraco" e "📊 Score").
+// Sem score numérico (MACD/EMA/RSI), mantém a força em palavra — antes saía
+// "📊 Força: 💪 Forte" e a informação não pode simplesmente sumir.
+const STRENGTH_WORD = { strong: 'forte', medium: 'média', moderate: 'moderada', weak: 'fraca' };
+function scoreAgreementLine(score, prefix = 'Regras alinhadas', strength = null) {
+  if (Number.isFinite(score)) return `🧩 ${prefix}: ${score}/100 (não é chance de acerto)\n`;
+  const word = STRENGTH_WORD[strength];
+  return word ? `🧩 ${prefix}: concordância ${word} (não é chance de acerto)\n` : '';
+}
+
+export function buildSignalDetectedMessage(signal, asset = null) {
+  const dir = sideLabel(signal.signal_type);
   const sourceLabel = shortSourceLabel(signal.source);
-  const scoreLine = Number.isFinite(signal.context?.score)
-    ? `📊 Score: ${signal.context.score}/100 ${strength}\n`
-    : (strength ? `📊 Força: ${strength}\n` : '');
+  // Item 276 — só o que pode virar operação "aguarda confirmação" (mesmo
+  // predicado do painel). MACD/EMA/RSI e Range Filter 1h/1d são só informação.
+  const eligible = isConfirmationEligible(signal, asset);
+  const situacao = eligible
+    ? `${NOTIFICATION_STAGES.AWAITING_ENTRY.emoji} Situação: aguardando confirmação de entrada — nenhuma operação foi aberta ainda.\n\n`
+    : 'ℹ️ Situação: Só informação — este aviso não abre operação.\n\n';
+  const proximoPasso = eligible
+    ? '👉 Próximo passo: aguardar a confirmação de entrada pelo motor. Você não precisa fazer nada.\n'
+    : '👉 Próximo passo: nenhum — é só uma observação de mercado.\n';
   return (
     `${stageHeader('SIGNAL_DETECTED')} — ${sourceLabel}\n\n` +
     `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n\n` +
-    `${NOTIFICATION_STAGES.AWAITING_ENTRY.emoji} Situação: aguardando confirmação de entrada — nenhuma operação foi aberta ainda.\n\n` +
+    situacao +
     `📝 Por quê: ${escaparHtml(signal.reason) || 'não informado'}\n\n` +
-    `💰 Preço no sinal: $${fmtP(signal.price_at_signal)}\n` +
-    scoreLine + '\n' +
-    `➡️ Próximo passo: aguardar a confirmação de entrada pelo motor.\n` +
+    `🏷️ Preço no sinal: $${fmtP(signal.price_at_signal)}\n` +
+    scoreAgreementLine(signal.context?.score, 'Regras alinhadas', signal.strength) + '\n' +
+    proximoPasso +
     `📡 Fonte: ${sourceLabel}\n\n` +
     `${panelLink('/alerts', signal.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
@@ -174,29 +195,28 @@ export function buildSignalDetectedMessage(signal) {
 // Item 258: a `VerificationTask` é só um LEMBRETE — nada no motor lê o status
 // dela, então marcar OK/Pular nunca aprova nem bloqueia uma operação. A frase
 // de "Situação" distingue os dois casos reais (mesma regra de
-// `isConfirmationEligible`, fonte única do "só o 4h vira operação").
-export function buildVerificationTaskMessage(signal) {
-  const emoji = signal.signal_type === 'BUY' ? '🟢' : '🔴';
-  const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
+// `isConfirmationEligible`, fonte única de "o que pode virar operação" — item 276).
+export function buildVerificationTaskMessage(signal, asset = null) {
+  const dir = sideLabel(signal.signal_type);
   const sourceLabel = shortSourceLabel(signal.source);
-  const scoreLine = Number.isFinite(signal.context?.score)
-    ? `📊 Score: ${signal.context.score}/100\n`
-    : '';
-  // 3 casos reais: cascata RF 4h→15m; SMC 1h→5m (opt-in por ativo, pode virar
-  // operação mesmo fora do 4h); e o resto (RF 1h/1d), que nunca vira operação.
-  const situacao = isConfirmationEligible(signal)
-    ? 'sinal de alta prioridade — só para você conferir. Você não precisa aprovar nada: o app só abre a operação se a confirmação de entrada dele passar.'
-    : signal.source === 'smc_structure'
-      ? 'sinal de alta prioridade do SMC — só para você conferir. Você não precisa aprovar nada: a operação só abre se a confirmação de entrada do app (cascata 1H→5m, quando ligada para este ativo) passar.'
-      : `sinal de alta prioridade de ${String(signal.timeframe ?? '').toUpperCase()} — só informação. Sinais do Range Filter fora do gráfico de 4 horas nunca viram operação, com ou sem OK.`;
+  const scoreLine = scoreAgreementLine(signal.context?.score);
+  // 3 casos reais (mesmo predicado `isConfirmationEligible`): cascata RF
+  // 4h→15m; SMC 1h→5m (só emitido em ativo com a cascata ligada); e o resto
+  // (RF 1h/1d, MACD/EMA/RSI), que nunca vira operação.
+  const eligible = isConfirmationEligible(signal, asset);
+  const situacao = eligible && signal.source === 'smc_structure'
+    ? `${NOTIFICATION_STAGES.AWAITING_ENTRY.emoji} Situação: sinal de alta prioridade do SMC — só para você conferir. Você não precisa aprovar nada: a operação só abre se a confirmação de entrada do app (cascata 1H→5m, quando ligada para este ativo) passar.`
+    : eligible
+      ? `${NOTIFICATION_STAGES.AWAITING_ENTRY.emoji} Situação: sinal de alta prioridade — só para você conferir. Você não precisa aprovar nada: o app só abre a operação se a confirmação de entrada dele passar.`
+      : `ℹ️ Situação: sinal de alta prioridade de ${String(signal.timeframe ?? '').toUpperCase()} — só informação. Este aviso não vira operação, com ou sem OK.`;
   return (
     `${stageHeader('VERIFICATION_NEEDED')} — ${sourceLabel}\n\n` +
     `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n\n` +
-    `${emoji} Situação: ${situacao}\n\n` +
+    `${situacao}\n\n` +
     `⭐ Prioridade: ALTA\n` +
     scoreLine +
     `📝 Por quê: ${escaparHtml(signal.reason) || 'não informado'}\n\n` +
-    `➡️ Próximo passo: opcional — marcar OK/Pular no painel só organiza a sua lista, não altera nenhuma operação.\n` +
+    `👉 Próximo passo: opcional — marcar OK/Pular no painel só organiza a sua lista, não altera nenhuma operação.\n` +
     `📡 Fonte: ${sourceLabel}\n\n` +
     `${panelLink('/verification', signal.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
@@ -213,26 +233,24 @@ export function buildVerificationTaskMessage(signal) {
 // MESMA tradução de last_rejection_reason/last_rejection_detail que já
 // aparece no Dashboard (Trades.jsx/SignalChecklist.jsx).
 export function buildSignalCanceledMessage(signal) {
-  const dir = signal.signal_type === 'BUY' ? '📈 COMPRA' : '📉 VENDA';
+  const dir = sideLabel(signal.signal_type);
   const sourceLabel = shortSourceLabel(signal.source);
-  const scoreLine = Number.isFinite(signal.context?.score)
-    ? `📊 Score no sinal: ${signal.context.score}/100\n`
-    : '';
+  const scoreLine = scoreAgreementLine(signal.context?.score, 'Regras alinhadas no sinal');
   const { detail } = rejectionCopy(signal, SIGNAL_PHASE.EXPIRED);
   const createdMs = new Date(signal.created_date).getTime();
   const durationMs = Number.isFinite(createdMs) ? Date.now() - createdMs : null;
   const durationLine = Number.isFinite(durationMs) && durationMs >= 0
-    ? `⏳ Esperou: ${formatBackfillLag(durationMs)}\n`
+    ? `⌛ Esperou: ${formatBackfillLag(durationMs)}\n`
     : '';
   return (
     `${stageHeader('SIGNAL_CANCELED')} — ${sourceLabel}\n\n` +
     `<b>${escaparHtml(signal.symbol?.replace('USDT', '/USDT'))}</b> | ${signal.timeframe?.toUpperCase()} | ${dir}\n\n` +
     `🚫 Situação: este aviso expirou sem nunca confirmar entrada — nenhuma operação foi aberta.\n\n` +
     `📝 Por quê: ${escaparHtml(detail)}\n\n` +
-    `💰 Preço no sinal: $${fmtP(signal.price_at_signal)}\n` +
+    `🏷️ Preço no sinal: $${fmtP(signal.price_at_signal)}\n` +
     scoreLine +
     durationLine + '\n' +
-    `➡️ Próximo passo: nenhum — este aviso não abriu operação.\n` +
+    `👉 Próximo passo: nenhum — este aviso não abriu operação.\n` +
     `📡 Fonte: ${sourceLabel}\n\n` +
     `${panelLink('/alerts', signal.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
@@ -292,15 +310,15 @@ export function buildTradeCreatedMessage(op) {
     backfillPrefix(op) +
     `${stageHeader('ENTRY_CONFIRMED')} — ${dir}\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${tfLabel}\n\n` +
-    `${emoji} Situação: operação aberta, gerenciada automaticamente pelo Sentinel.\n\n` +
+    `${emoji} Situação: operação virtual aberta — nenhuma ordem é enviada à corretora. O Sentinel acompanha sozinho.\n\n` +
     realTimeLine(getEntryReferenceTime(op)) +
     `📍 Entrada: $${fmtP(op.entry_price)}\n` +
     `🛑 Stop: $${fmtP(op.initial_stop)}${stopRiskSuffix(op)}\n` +
     `🎯 TP1: $${fmtP(op.tp1)}  |  TP2: $${fmtP(op.tp2)}\n` +
-    `📊 Score: ${op.score}/100\n` +
+    scoreAgreementLine(op.score) +
     mtfTrendLine(op) +
     entryReasonsLine(op) + '\n' +
-    `➡️ Próximo passo: aguardar o preço avançar para o TP1.\n` +
+    `👉 Próximo passo: aguardar o preço avançar para o TP1.\n` +
     `🔒 Gestão: ${op.partial_percent ?? 50}% no TP1, runner ${op.runner_percent ?? 50}%\n\n` +
     `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
@@ -325,9 +343,11 @@ export function buildTp1HitMessage(op, price) {
     `📝 Por quê: ${escaparHtml(why)}\n` +
     (evidence ? `📐 ${escaparHtml(evidence)}\n` : '') + '\n' +
     realTimeLine(op.tp1_hit_real_time, true) +
-    `💰 Preço atual: $${fmtP(price)}\n` +
-    (fullClose ? closureSummary(op) : `🔄 Stop movido para breakeven: $${fmtP(op.entry_price)}\n`) + '\n' +
-    `➡️ Próximo passo: ${fullClose ? 'nenhum — operação encerrada.' : `aguardar o preço avançar para o TP2: $${fmtP(op.tp2)}.`}\n\n` +
+    `🏷️ Preço atual: $${fmtP(price)}\n` +
+    // O stop vai para o preço de entrada OU fica onde está se o trailing pré-TP1
+    // já o tinha levado além (clampMonotonicStop na transação) — por isso "ou melhor".
+    (fullClose ? closureSummary(op) : `🛡️ Stop protegido: no preço de entrada ($${fmtP(op.entry_price)}) ou melhor — sem prejuízo, exceto taxas/slippage/funding\n`) + '\n' +
+    `👉 Próximo passo: ${fullClose ? 'nenhum — operação encerrada.' : `aguardar o preço avançar para o TP2: $${fmtP(op.tp2)}.`}\n\n` +
     `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
@@ -344,7 +364,7 @@ export function buildTp2HitMessage(op, price) {
     realTimeLine(op.tp2_hit_real_time, true) +
     `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
-    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
+    `👉 Próximo passo: nenhum — operação encerrada.\n\n` +
     `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
@@ -364,7 +384,7 @@ export function buildStopHitMessage(op, price) {
     `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)} (stop em $${fmtP(op.current_stop)})\n` +
     closureSummary(op) +
     (op.exit_ambiguous ? AMBIGUOUS_EXIT_NOTE : '') + '\n' +
-    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
+    `👉 Próximo passo: nenhum — operação encerrada.\n\n` +
     `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
@@ -382,7 +402,7 @@ export function buildInvalidatedMessage(op, price) {
     realTimeLine(op.closed_at_real_time) +
     `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
-    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
+    `👉 Próximo passo: nenhum — operação encerrada.\n\n` +
     `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
@@ -399,7 +419,7 @@ export function buildTimeStopMessage(op, price) {
     realTimeLine(op.closed_at_real_time) +
     `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
-    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
+    `👉 Próximo passo: nenhum — operação encerrada.\n\n` +
     `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );
@@ -416,7 +436,7 @@ export function buildChopExitMessage(op, price) {
     realTimeLine(op.closed_at_real_time) +
     `📍 Entrada: $${fmtP(op.entry_price)} → Saída: $${fmtP(getExitPrice(op) ?? price)}\n` +
     closureSummary(op) + '\n' +
-    `➡️ Próximo passo: nenhum — operação encerrada.\n\n` +
+    `👉 Próximo passo: nenhum — operação encerrada.\n\n` +
     `${panelLink('/trades', op.id)}\n\n` +
     `<i>⚡ Sentinel Signals</i>`
   );

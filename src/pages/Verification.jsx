@@ -9,6 +9,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import moment from 'moment';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 import { getRSIZone } from '@/lib/indicators/rsi';
+import { useAllMonitoredAssets } from '@/hooks/useAllMonitoredAssets';
 
 // Achado M-8 do Raio-X: cor de zona pra RSI/MACD/EMA, mesma paleta e
 // mesma lógica já usadas no detalhe do ativo
@@ -188,10 +189,7 @@ export default function Verification() {
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
-  const { data: assets = [], isError: assetsError } = useQuery({
-    queryKey: ['monitored-assets-verification'],
-    queryFn: () => backend.entities.MonitoredAsset.list(),
-  });
+  const { data: assets = [], isError: assetsError } = useAllMonitoredAssets();
 
   const { data: tradeOps = [], isError: tradeOpsError } = useQuery({
     queryKey: ['trade-operations-verification'],
@@ -237,7 +235,9 @@ export default function Verification() {
   const resend = async (task) => {
     setResendingId(task.id);
     try {
-      const signal = { symbol: task.symbol, timeframe: task.timeframe, signal_type: task.signal_type, source: task.source, reason: task.reason, context: task.signal_context };
+      // Tarefa antiga sem `source` gravado: todas eram do Range Filter (item 276 —
+      // a regra de "pode virar operação" exige a fonte).
+      const signal = { symbol: task.symbol, timeframe: task.timeframe, signal_type: task.signal_type, source: task.source ?? 'range_filter', reason: task.reason, context: task.signal_context };
       const asset = assets.find(a => a.id === task.asset_id);
       const delivered = await notifyVerificationTask(signal, asset);
       // Só grava "enviado" quando send() de fato confirmou 2xx do Telegram —
@@ -402,6 +402,7 @@ export default function Verification() {
 
                     <SignalChecklist
                       signalEventId={task.signal_event_id}
+                      asset={asset ?? null}
                       tradeOps={tradeOps}
                       tradeOpsUnavailable={tradeOpsUnavailable}
                     />

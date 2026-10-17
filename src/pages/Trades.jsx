@@ -27,6 +27,7 @@ import { logError } from '@/lib/logger';
 import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 import { buildManualCloseSnapshot } from '@/lib/decisionSnapshot';
 import { explainDecision, explainOperationDecision, legacyClosedOperationText } from '@/lib/decisionExplanation';
+import { useAllMonitoredAssets } from '@/hooks/useAllMonitoredAssets';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
@@ -142,7 +143,7 @@ function EditModal({ op, onClose, onSave }) {
  *     morre no toque) → rótulos na tela, e o score reusa a ScoreBar do card
  *     de operação, que já carrega a ressalva "não é probabilidade de acerto".
  */
-function MonitoringCard({ signal, onDismiss, isDismissing, expandAll = false }) {
+function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandAll = false }) {
   const [showDetails, setShowDetails] = useState(expandAll);
   // Refinamentos (seção E): mesmo padrão de sincronização já usado em
   // TradeCard.jsx (open/expandAll) — sem isso, o toggle Compacto/Detalhado
@@ -150,7 +151,7 @@ function MonitoringCard({ signal, onDismiss, isDismissing, expandAll = false }) 
   useEffect(() => { setShowDetails(expandAll); }, [expandAll]);
   const { price, isStale } = useLivePrice(signal.symbol);
 
-  const { phase, msLeft, expiresAt } = classifySignal(signal);
+  const { phase, msLeft, expiresAt } = classifySignal(signal, Date.now(), asset);
   const copy = phaseCopy(phase);
   const reason = rejectionCopy(signal, phase);
   // Achado de clareza (pedido do usuário, 2026-09-18): esta seção só usava
@@ -160,7 +161,7 @@ function MonitoringCard({ signal, onDismiss, isDismissing, expandAll = false }) 
   // decision_snapshot.facts em "ADX 18 — mínimo exigido 22"; nada novo é
   // medido, só reconectado aqui. Fail-closed: evidence fica null quando o
   // snapshot não descreve o motivo ATUAL (ver decisionExplanation.js).
-  const evidence = explainDecision(signal).evidence;
+  const evidence = explainDecision(signal, { asset }).evidence;
   const isBuy = signal.signal_type === 'BUY';
   const timeLeft = formatTimeLeft(msLeft);
 
@@ -209,7 +210,7 @@ function MonitoringCard({ signal, onDismiss, isDismissing, expandAll = false }) 
             )}
           </div>
 
-          <EventTimeline events={signalTimeline(signal)} title={null} />
+          <EventTimeline events={signalTimeline(signal, { asset })} title={null} />
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -344,7 +345,7 @@ function MonitoringCard({ signal, onDismiss, isDismissing, expandAll = false }) 
           <div className="text-9px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>
             Gráfico de {signal.timeframe?.toUpperCase()}
           </div>
-          <EventTimeline events={signalTimeline(signal)} />
+          <EventTimeline events={signalTimeline(signal, { asset })} />
           {/* Auditoria do Telegram (2026-09-29), item 1.11 — só RF carrega
               score real; sem esse guard, um sinal SMC/MACD/EMA/RSI mostrava
               a barra em "〰 Fraco" como se tivesse confluência baixa medida,
@@ -488,6 +489,12 @@ export default function Trades() {
     refetchInterval: POLL_OPERATIONAL_MS,
   });
 
+  // Item 276 — o ativo decide se um aviso ainda pode virar operação (o motor
+  // reconfere `smc_enabled`, os timeframes ligados e só escaneia ativo ativo).
+  // Enquanto a lista carrega ou se ela falhar, a regra cai no padrão da emissão.
+  const { data: monitoredAssets = [] } = useAllMonitoredAssets();
+  const assetById = useMemo(() => new Map(monitoredAssets.map(a => [a.id, a])), [monitoredAssets]);
+
   // As 3 mutações abaixo passam pela MESMA CAS transacional
   // (backend.tradeOps.transitionTradeOp) usada pelos dois loops do scanner —
   // nunca backend.entities.TradeOperation.update() direto, que sobrescreveria
@@ -565,23 +572,36 @@ export default function Trades() {
   // fazia essa chave nunca bater para nenhuma operação da cascata nativa —
   // o aviso "em análise" do sinal que abriu a operação nunca era escondido,
   // mesmo com a operação ativa (docs/known-risks.md item 174 addendum).
-  const activeKey = new Set(active.map(o => `${o.symbol}_${o.signal_timeframe ?? o.timeframe}`));
+  // Item 276: a chave inclui a fonte (cascata 1h_5m = SMC), senão uma operação
+  // SMC 1h escondia todo aviso Range Filter 1h do mesmo ativo.
+  const opSource = (o) => (o.cascade === '1h_5m' ? 'smc_structure' : 'range_filter');
+  const activeKey = new Set(active.map(o => `${o.symbol}_${o.signal_timeframe ?? o.timeframe}_${opSource(o)}`));
   const monitoringMap = new Map();
   recentSignals
     // is_dismissed ja e respeitado pelo scanner e pela pagina Alerts; so esta
     // lista o ignorava, entao um aviso dispensado voltava a aparecer aqui.
-    .filter(s => s.source === 'range_filter' && !s.is_dismissed && !activeKey.has(`${s.symbol}_${s.timeframe}`))
+    // Item 276: só avisos das cascatas (Range Filter e SMC); MACD/EMA/RSI e
+    // avisos sem fonte ficam fora. A fase decide "em análise" × acordeão abaixo.
+    .filter(s => !s.is_dismissed && !activeKey.has(`${s.symbol}_${s.timeframe}_${s.source}`)
+      && (s.source === 'range_filter' || s.source === 'smc_structure'))
     .forEach(s => {
-      const key = `${s.symbol}_${s.timeframe}`;
+      // `source` na chave: um RF 1h mais novo não pode esconder um SMC 1h pendente.
+      const key = `${s.symbol}_${s.timeframe}_${s.source}`;
       if (!monitoringMap.has(key) || new Date(s.created_date) > new Date(monitoringMap.get(key).created_date))
         monitoringMap.set(key, s);
     });
   const monitoringList = [...monitoringMap.values()];
-  // Sinais de 1h/1d nunca viram operacao (so a cascata 4h alimenta a fila).
+  // Range Filter 1h/1d nunca vira operacao (so RF 4h e SMC 1h alimentam a fila).
   // Misturados na lista principal eles eram ruido com peso de conteudo — vao
   // para um acordeao fechado. Ver docs/known-risks.md item 156.
-  const monitoringActionable = monitoringList.filter(s => classifySignal(s).phase !== SIGNAL_PHASE.INFO);
-  const monitoringInfoOnly = monitoringList.filter(s => classifySignal(s).phase === SIGNAL_PHASE.INFO);
+  const nowMs = Date.now();
+  const monitoringActionable = [];
+  const monitoringInfoOnly = [];
+  for (const s of monitoringList) {
+    // Uma única classificação por aviso (mesma regra do resto do app).
+    const phase = classifySignal(s, nowMs, assetById.get(s.asset_id) ?? null).phase;
+    (phase === SIGNAL_PHASE.INFO ? monitoringInfoOnly : monitoringActionable).push(s);
+  }
 
   const applyFilters = (list) => list
     .filter(o => filterTf === 'all' || o.timeframe === filterTf)
@@ -797,6 +817,7 @@ export default function Trades() {
                 <MonitoringCard
                   key={signal.id}
                   signal={signal}
+                  asset={assetById.get(signal.asset_id) ?? null}
                   onDismiss={(sig) => dismissSignalMutation.mutate(sig)}
                   isDismissing={dismissSignalMutation.isPending}
                   expandAll={showDetails}
@@ -824,6 +845,7 @@ export default function Trades() {
                   <MonitoringCard
                     key={signal.id}
                     signal={signal}
+                    asset={assetById.get(signal.asset_id) ?? null}
                     onDismiss={(sig) => dismissSignalMutation.mutate(sig)}
                     isDismissing={dismissSignalMutation.isPending}
                     expandAll={showDetails}

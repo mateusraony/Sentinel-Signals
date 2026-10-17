@@ -92,7 +92,7 @@ describe('Verification — SignalChecklist nunca afirma ENTRADA LIBERADA quando 
     monitoredAssetListMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }]);
     tradeOperationListMock.mockRejectedValue(new Error('network'));
     signalEventGetMock.mockResolvedValue({
-      id: 'sig1', asset_id: 'a1', symbol: 'BTCUSDT', signal_type: 'BUY', timeframe: '4h',
+      id: 'sig1', asset_id: 'a1', symbol: 'BTCUSDT', signal_type: 'BUY', source: 'range_filter', timeframe: '4h',
       created_date: new Date().toISOString(),
     });
 

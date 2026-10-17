@@ -151,7 +151,7 @@ describe('notifyVerificationTask', () => {
     expect(text).toContain('Sinal para Conferir');
     expect(text).toContain('BTC/USDT');
     expect(text).toContain('COMPRA');
-    expect(text).toContain('Score: 88/100');
+    expect(text).toContain('Regras alinhadas: 88/100');
   });
 
   it('não envia quando o Telegram não está configurado', async () => {
@@ -235,7 +235,7 @@ describe('notifyNewSignal — source-aware label and score (Codex review, PR #65
   it('labels a range_filter signal as RF and shows its real score', async () => {
     const text = await sentText(baseSignal({ source: 'range_filter', strength: 'strong', context: { score: 82 } }));
     expect(text).toContain('Sinal Detectado — RF');
-    expect(text).toContain('Score: 82/100');
+    expect(text).toContain('Regras alinhadas: 82/100');
   });
 
   it('labels an smc_structure signal as SMC and never shows a fake 0/100 score', async () => {

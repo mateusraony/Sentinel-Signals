@@ -185,20 +185,169 @@ describe('buildVerificationTaskMessage — nunca sugere que a verificação é u
     expect(text).toContain('confirmação de entrada');
   });
 
-  it('fora do 4h (ex.: BTC 1H): diz que é só informação e que nunca vira operação, com ou sem OK', () => {
+  it('fora do 4h (ex.: BTC 1H): diz que é só informação e que não vira operação, com ou sem OK', () => {
     const text = buildVerificationTaskMessage(sinal({ timeframe: '1h' }));
     expect(text).toContain('1H');
     expect(text).toContain('só informação');
-    expect(text).toContain('nunca viram operação');
+    expect(text).toContain('não vira operação');
     expect(text).not.toContain('Você não precisa aprovar nada');
   });
 
-  it('SMC 1H PODE virar operação (cascata 1H→5m): não afirma "nunca viram operação"', () => {
+  it('SMC 1H com a cascata desligada no ativo (ativo conhecido): só informação, sem prometer confirmação', () => {
+    const text = buildVerificationTaskMessage(sinal({ timeframe: '1h', source: 'smc_structure' }), { smc_enabled: false });
+    expect(text).toContain('não vira operação');
+    expect(text).not.toContain('Você não precisa aprovar nada');
+    const detected = buildSignalDetectedMessage(sinal({ timeframe: '1h', source: 'smc_structure' }), { smc_enabled: false });
+    expect(detected).toContain('ℹ️ Situação: Só informação');
+  });
+
+  it('SMC 1H PODE virar operação (cascata 1H→5m): não afirma "não vira operação"', () => {
     const text = buildVerificationTaskMessage(sinal({ timeframe: '1h', source: 'smc_structure' }));
     expect(text).toContain('Você não precisa aprovar nada');
     expect(text).toContain('1H→5m');
-    expect(text).not.toContain('nunca viram operação');
+    expect(text).not.toContain('não vira operação');
     for (const re of PROIBIDAS) expect(text).not.toMatch(re);
   });
 });
 
+
+// Item 276 (PR-A) — "Situação"/"Próximo passo" do sinal detectado diziam
+// "aguardando confirmação de entrada" para TODA fonte, inclusive MACD/EMA/RSI
+// e Range Filter 1h/1d, que nunca viram operação. Mesmo predicado do painel
+// (`isConfirmationEligible`, src/lib/signalStatus.js) — fonte única.
+describe('buildSignalDetectedMessage — só promete confirmação para o que pode virar operação (item 276)', () => {
+  const sinal = (over = {}) => ({
+    id: 'sig_abc', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter',
+    price_at_signal: 100, reason: 'Teste', context: { score: 85 }, strength: 'strong', ...over,
+  });
+
+  it.each([
+    ['range_filter', '4h'],
+    ['smc_structure', '1h'],
+  ])('%s %s: aguardando confirmação de entrada pelo motor', (source, timeframe) => {
+    const text = buildSignalDetectedMessage(sinal({ source, timeframe }));
+    expect(text).toContain('aguardando confirmação de entrada');
+    expect(text).not.toContain('Só informação');
+  });
+
+  it.each([
+    ['macd', '4h'], ['ema_cross', '4h'], ['rsi', '4h'], ['range_filter', '1h'], ['range_filter', '1d'],
+  ])('%s %s: só informação — nunca "aguardando confirmação"', (source, timeframe) => {
+    const text = buildSignalDetectedMessage(sinal({ source, timeframe }));
+    expect(text).not.toMatch(/aguardando confirmação/i);
+    expect(text).not.toMatch(/aguardar a confirmação/i);
+    expect(text).toContain('ℹ️ Situação: Só informação');
+    expect(text).toContain('Próximo passo: nenhum');
+  });
+});
+
+// Item 276 (E1) — padrão "1 emoji = 1 significado" no Telegram (pedido do
+// usuário: aprimorar os emojis, não removê-los). 📈/📉 ficam reservados para
+// movimento de preço; lado do sinal = 🟢/🔴 (mesmo de docs/notification-
+// vocabulary.md); 💰 só "Stop Travou Lucro"; ➡️ sai de "Próximo passo" (👉);
+// 🛡️ = stop no preço de entrada ou melhor; 🧩 = concordância de regras.
+describe('Telegram — vocabulário de emojis E1 (item 276)', () => {
+  const sinal = {
+    id: 'sig_abc', symbol: 'BTCUSDT', timeframe: '4h', signal_type: 'BUY', source: 'range_filter',
+    price_at_signal: 100, reason: 'Teste', context: { score: 85 }, strength: 'strong',
+    created_date: new Date().toISOString(),
+  };
+  const op = {
+    id: 'trade_xyz', symbol: 'BTCUSDT', side: 'BUY', timeframe: '15m', signal_timeframe: '4h',
+    entry_price: 100, initial_stop: 95, current_stop: 95, tp1: 103, tp2: 106,
+    score: 85, tp1_hit: false, tp2_hit: false, partial_percent: 50, runner_percent: 50,
+  };
+  const todas = () => [
+    buildSignalDetectedMessage(sinal),
+    buildSignalDetectedMessage({ ...sinal, signal_type: 'SELL' }),
+    buildVerificationTaskMessage(sinal),
+    buildSignalCanceledMessage(sinal),
+    buildTradeCreatedMessage(op),
+    buildTp1HitMessage(op, 103),
+    buildTp2HitMessage({ ...op, status: 'TP2_HIT', exit_price: 106 }, 106),
+    buildStopHitMessage({ ...op, status: 'STOP_HIT' }, 95),
+    buildInvalidatedMessage({ ...op, status: 'INVALIDATED' }, 98),
+    buildTimeStopMessage({ ...op, status: 'CLOSED' }, 98),
+    buildChopExitMessage({ ...op, status: 'CLOSED' }, 98),
+  ];
+
+  it('lado do sinal é 🟢 COMPRA / 🔴 VENDA — 📈/📉 nunca significam lado', () => {
+    expect(buildSignalDetectedMessage(sinal)).toContain('🟢 COMPRA');
+    expect(buildSignalDetectedMessage({ ...sinal, signal_type: 'SELL' })).toContain('🔴 VENDA');
+    for (const text of todas()) expect(text).not.toMatch(/📈|📉/);
+  });
+
+  it('a mensagem de verificação não repete o lado com dois emojis', () => {
+    const text = buildVerificationTaskMessage(sinal);
+    expect(text.match(/🟢/g)).toHaveLength(1);
+  });
+
+  it('"Próximo passo" usa 👉 e ➡️ sai de todas as mensagens', () => {
+    for (const text of todas()) {
+      expect(text).not.toContain('➡️');
+      expect(text).toContain('👉 Próximo passo');
+    }
+  });
+
+  it('preço do sinal usa 🏷️; 💰 não aparece fora de "Stop Travou Lucro"', () => {
+    expect(buildSignalDetectedMessage(sinal)).toContain('🏷️ Preço no sinal');
+    for (const text of todas()) expect(text).not.toContain('💰');
+  });
+
+  it('score vira 🧩 regras alinhadas, com aviso de que não é chance de acerto — sem 💪/📊 de força', () => {
+    const text = buildSignalDetectedMessage(sinal);
+    expect(text).toContain('🧩 Regras alinhadas: 85/100');
+    expect(text).toContain('não é chance de acerto');
+    for (const t of todas()) expect(t).not.toMatch(/💪|🔹|📊 (Score|Força)/);
+  });
+
+  it('ℹ️ só aparece para aviso que nunca abre operação; ⏳ só para aguardando entrada', () => {
+    const smcVerif = buildVerificationTaskMessage({ ...sinal, source: 'smc_structure', timeframe: '1h' });
+    expect(smcVerif).not.toContain('ℹ️');
+    expect(smcVerif).toContain('⏳ Situação');
+    const ambiguo = buildStopHitMessage({ ...op, status: 'STOP_HIT', exit_ambiguous: true }, 95);
+    expect(ambiguo).not.toContain('ℹ️');
+    for (const text of [...todas(), smcVerif, ambiguo]) {
+      expect(text).not.toMatch(/⏳ (Duração|Esperou)/);
+      if (text.includes('ℹ️')) expect(text).toMatch(/ℹ️ Situação: (Só informação|sinal de alta prioridade de)/);
+    }
+    expect(buildVerificationTaskMessage({ ...sinal, timeframe: '1h' })).toContain('ℹ️ Situação');
+  });
+
+  it('sinal sem score numérico (MACD) mantém a força em palavra, sem virar chance', () => {
+    const text = buildSignalDetectedMessage({ ...sinal, source: 'macd', context: {}, strength: 'strong' });
+    expect(text).toContain('🧩 Regras alinhadas: concordância forte (não é chance de acerto)');
+  });
+
+  it('entrada diz que a operação é virtual e que nenhuma ordem é enviada', () => {
+    const text = buildTradeCreatedMessage(op);
+    expect(text).toContain('virtual');
+    expect(text).toContain('nenhuma ordem é enviada à corretora');
+  });
+
+  it('TP1 com runner: 🛡️ stop no preço de entrada ou melhor, com ressalva de custos — sem 🔄', () => {
+    const text = buildTp1HitMessage(op, 103);
+    expect(text).toContain('🛡️ Stop protegido: no preço de entrada');
+    expect(text).toContain('ou melhor');
+    expect(text).toContain('exceto taxas');
+    expect(text).not.toContain('🔄');
+  });
+});
+
+// Item 276 (2ª revisão) — o motivo `trend_reversed` da cascata SMC vem da
+// estrutura de 1 hora, não da linha de tendência de 4 horas.
+describe('buildSignalCanceledMessage — trend_reversed fala da cascata certa (item 276)', () => {
+  const base = {
+    id: 'sig_abc', symbol: 'BTCUSDT', signal_type: 'BUY', price_at_signal: 100, reason: 'Teste',
+    context: { score: 80 }, created_date: new Date().toISOString(), last_rejection_reason: 'trend_reversed',
+  };
+  it('SMC 1h cita o gráfico de 1 hora, nunca o de 4 horas', () => {
+    const text = buildSignalCanceledMessage({ ...base, source: 'smc_structure', timeframe: '1h' });
+    expect(text).toContain('estrutura do gráfico de 1 hora (SMC)');
+    expect(text).not.toContain('gráfico de 4 horas');
+  });
+  it('Range Filter 4h continua citando a linha de tendência de 4 horas', () => {
+    const text = buildSignalCanceledMessage({ ...base, source: 'range_filter', timeframe: '4h' });
+    expect(text).toContain('linha de tendência do gráfico de 4 horas');
+  });
+});

@@ -18,7 +18,7 @@
  *    histórico não são probabilidade calibrada.
  */
 import { isTerminalStatus } from './opTransition.js';
-import { classifySignal, phaseCopy, rejectionCopy, REASON_KIND, SIGNAL_PHASE } from './signalStatus.js';
+import { classifySignal, isConfirmationEligible, phaseCopy, rejectionCopy, REASON_KIND, SIGNAL_PHASE } from './signalStatus.js';
 import { explainDecision, explainOperationDecision } from './decisionExplanation.js';
 import { usablePrice, stopPosture } from './priceProximity.js';
 import { assetHealthcheckReason } from './assetHealthcheck.js';
@@ -52,13 +52,12 @@ function directionOrNull(value) {
   return value === 1 || value === -1 || value === 0 ? value : null;
 }
 
-// Só estas fontes viram candidatas a entrada no motor (scanner.js: range_filter
-// e smc_structure). MACD/EMA/RSI também gravam SignalEvent em 4h, mas são
+// Candidato a entrada = o que pode virar operação, com a MESMA regra do resto do
+// app (`isConfirmationEligible`, item 276): Range Filter 4h e SMC 1h com a
+// cascata ligada (sem `source` não é elegível — o motor exige a fonte). MACD/EMA/RSI e RF 1h/1d são
 // observação de mercado — nunca "aguardando confirmação".
-const ENTRY_SOURCES = new Set(['range_filter', 'smc_structure']);
-const isEntrySignal = (signal) => ENTRY_SOURCES.has(signal?.source);
-
-function pickSubject({ assetOps, assetSignals, now }) {
+function pickSubject({ asset, assetOps, assetSignals, now }) {
+  const isEntrySignal = (signal) => isConfirmationEligible(signal, asset);
   const activeOp = [...assetOps].filter((op) => op && !isTerminalStatus(op.status)).sort(byCreatedDesc)[0] ?? null;
   if (activeOp) return { kind: 'op', op: activeOp, signal: null };
   // Candidato de entrada tem prioridade: um evento informativo mais novo não
@@ -66,8 +65,8 @@ function pickSubject({ assetOps, assetSignals, now }) {
   const entrySignals = assetSignals.filter(isEntrySignal);
   const signal = [...(entrySignals.length ? entrySignals : assetSignals)].sort(byCreatedDesc)[0] ?? null;
   if (signal) {
-    const phase = isEntrySignal(signal) ? classifySignal(signal, now).phase : SIGNAL_PHASE.INFO;
-    return { kind: 'signal', op: null, signal, phase };
+    const phase = classifySignal(signal, now, asset).phase;
+    return { kind: 'signal', op: null, signal, phase, asset };
   }
   return { kind: 'none', op: null, signal: null };
 }
@@ -119,7 +118,7 @@ function buildAction({ subject, state, now }) {
     return { headline, why, userAction };
   }
   if (subject.kind === 'signal') {
-    const { headline, why, userAction } = explainDecision(subject.signal, { now });
+    const { headline, why, userAction } = explainDecision(subject.signal, { now, asset: subject.asset });
     // Fase INFO nunca vira operação: o texto de rejeição ("o app está vendo se
     // vale abrir uma operação") seria falso para ela.
     if (subject.phase === SIGNAL_PHASE.INFO) {
@@ -219,10 +218,12 @@ function buildCons({ subject, side, signalTf, stateByTf, now }) {
     }
   }
 
-  if (subject.kind === 'signal' && isEntrySignal(subject.signal)) {
+  // Só sinal que pode virar operação (fase ≠ INFO) tem motivo de rejeição do
+  // motor de entrada — MACD/EMA/RSI e RF 1h/1d nunca passam por ele.
+  if (subject.kind === 'signal' && subject.phase !== SIGNAL_PHASE.INFO) {
     const copy = rejectionCopy(subject.signal, subject.phase);
     if (copy.kind === REASON_KIND.WORSE) {
-      const { evidence } = explainDecision(subject.signal, { now });
+      const { evidence } = explainDecision(subject.signal, { now, asset: subject.asset });
       cons.push({ code: 'rejection_worse', scope: 'now', text: copy.detail, evidence: evidence ?? null });
     }
   }
@@ -292,7 +293,7 @@ export function buildDecisionCard({
   const assetSignals = (signals ?? []).filter((s) => s && s.asset_id === asset?.id);
   const stateByTf = new Map((assetStates ?? []).filter((s) => s && s.asset_id === asset?.id).map((s) => [s.timeframe, s]));
 
-  const subject = pickSubject({ assetOps, assetSignals, now });
+  const subject = pickSubject({ asset, assetOps, assetSignals, now });
   const state = buildState({ subject, opsUnavailable: tradeOpsUnavailable, opsLoading: tradeOpsLoading, signalsUnavailable });
   const signalTf = state.timeframe ?? '4h';
   const levels = buildLevels(subject.op);

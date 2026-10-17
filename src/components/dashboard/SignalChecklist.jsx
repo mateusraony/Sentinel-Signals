@@ -57,7 +57,7 @@ const OPEN_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
  * este componente é o único do painel que emite um veredito operacional
  * explícito ("libera"/"bloqueia" a entrada).
  */
-export default function SignalChecklist({ signal = null, signalEventId = null, tradeOps = [], tradeOpsUnavailable = false }) {
+export default function SignalChecklist({ signal = null, signalEventId = null, tradeOps = [], tradeOpsUnavailable = false, asset = null }) {
   const [expanded, setExpanded] = useState(false);
   const needsFetch = !signal && !!signalEventId;
 
@@ -76,7 +76,7 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
 
   let phase = null, copy = null, reason = null, evidence = null;
   if (effectiveSignal) {
-    phase = classifySignal(effectiveSignal).phase;
+    phase = classifySignal(effectiveSignal, Date.now(), asset).phase;
     copy = phaseCopy(phase);
     reason = rejectionCopy(effectiveSignal, phase);
     // Fase 1 — Explainability V2. Ao lado do motivo categórico acima
@@ -85,11 +85,12 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
     // rejected/trend_reversed nas cascatas de produção); ausente em sinal
     // legado ou rejeitado por outro motivo ainda não instrumentado — null é
     // o caso normal, não erro.
-    evidence = explainDecision(effectiveSignal, { now: Date.now() }).evidence;
+    evidence = explainDecision(effectiveSignal, { now: Date.now(), asset }).evidence;
   }
 
-  // Achado do Codex (review do PR #369): classifySignal() devolve INFO pra
-  // QUALQUER timeframe fora de 4h (isConfirmationEligible só aceita '4h') —
+  // Achado do Codex (review do PR #369): na época, classifySignal() devolvia
+  // INFO pra QUALQUER timeframe fora de 4h (desde o item 276 o SMC 1h também
+  // é elegível, mas RF 1h/1d continua INFO) —
   // com `blocked` derivado só da FASE, um sinal 1h/1d rejeitado (com
   // last_rejection_reason já mostrado acima) caía no "senão" e mostrava
   // ENTRADA LIBERADA verde, contradizendo o próprio motivo exibido. A

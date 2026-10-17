@@ -35,9 +35,8 @@
  */
 
 import { explainOperationDecision } from './decisionExplanation';
+import { isConfirmationEligible, CONFIRMATION_WINDOW_MS } from './signalStatus.js';
 
-/** Janela de confirmação de um sinal (scanner.js FOUR_HOURS_MS). */
-export const CONFIRMATION_WINDOW_MS = 4 * 60 * 60 * 1000;
 
 function iso(value) {
   if (!value) return null;
@@ -154,7 +153,7 @@ export function opTimeline(op) {
  *
  * @returns {TimelineEvent[]}
  */
-export function signalTimeline(signal, { now = Date.now() } = {}) {
+export function signalTimeline(signal, { now = Date.now(), asset = null } = {}) {
   if (!signal) return [];
   const appeared = event('appeared', 'Aviso apareceu', null, signal.created_date);
   if (!appeared) return [];
@@ -162,8 +161,9 @@ export function signalTimeline(signal, { now = Date.now() } = {}) {
   const events = [appeared];
   const rejected = event('rejected', 'Barrado desde', null, signal.last_rejection_at);
   if (rejected) events.push(rejected);
-  // Só a cascata de 4h tem prazo de verdade; 1h/1d nunca confirmam nem expiram.
-  if (signal.timeframe === '4h') {
+  // Só o que pode virar operação tem prazo (RF 4h e SMC 1h — mesma regra de
+  // `isConfirmationEligible`, item 276); o resto nunca confirma nem expira.
+  if (isConfirmationEligible(signal, asset)) {
     const deadline = new Date(appeared.at).getTime() + CONFIRMATION_WINDOW_MS;
     events.push({
       key: 'deadline',
