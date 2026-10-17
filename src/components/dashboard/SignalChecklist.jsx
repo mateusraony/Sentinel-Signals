@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { backend } from '@/api/entities';
-import { classifySignal, phaseCopy, rejectionCopy, SIGNAL_PHASE } from '@/lib/signalStatus';
+import { classifySignal, phaseCopy, rejectionCopy, REASON_KIND, SIGNAL_PHASE } from '@/lib/signalStatus';
 import { explainDecision } from '@/lib/decisionExplanation';
 
 const OPEN_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
@@ -79,6 +79,9 @@ export default function SignalChecklist({ signal = null, signalEventId = null, t
     phase = classifySignal(effectiveSignal, Date.now(), asset).phase;
     copy = phaseCopy(phase);
     reason = rejectionCopy(effectiveSignal, phase);
+    // Aviso INFO sem motivo salvo: a ressalva do rodapé já diz que ele não
+    // vira operação — repetir o mesmo texto no bloco de motivo é ruído.
+    if (reason.kind === REASON_KIND.INFO) reason = null;
     // Fase 1 — Explainability V2. Ao lado do motivo categórico acima
     // (rejectionCopy), os números reais que embasaram a última reavaliação —
     // só existe quando SignalEvent.decision_snapshot foi gravado (regime_

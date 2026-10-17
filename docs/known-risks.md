@@ -32784,6 +32784,13 @@ duplicado de `signalStatus.js` unificado em `notificationTemplates.js`.
   combinado (motor intocado). Trava de deriva: tabela-verdade + comentário "espelho manual" no predicado.
   **Resíduo aceito:** enquanto a lista de ativos carrega (ou se falhar), Trades usa a regra da emissão.
 
+**Review do Codex no PR #502 (corrigido):** o card "Só informação" sem motivo salvo caía no texto genérico
+"Aviso recém-chegado… refaz a conta a cada 5 minutos" — falso, o motor nunca avalia entrada para esse
+aviso (vale para SMC com a cascata desligada e para RF 1h/1d). `rejectionCopy` ganhou o ramo INFO
+(`REASON_KIND.INFO`, ℹ️ "Só informação"); `MonitoringCard` e `SignalChecklist` omitem o bloco de motivo
+nesse caso, porque a ressalva do card já diz que o aviso não vira operação. Testes de regressão em
+`signalStatus.test.js`, `Trades.test.jsx` e `SignalChecklist.test.jsx` (os dois primeiros falhavam antes).
+
 **Próximos (mesma auditoria):** PR-B (ProximityBar 📏, 🧩 no painel, 📡 qualidade do dado, chip de
 saúde), PR-C (🧪 simular entrada + estatística sem operações manuais/editadas), PR-D (preço e 📈/📉 24h do
 mesmo instante), PR-E2/E3 (emojis no painel + teste "1 emoji = 1 significado").

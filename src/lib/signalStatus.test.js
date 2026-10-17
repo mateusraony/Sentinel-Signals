@@ -235,6 +235,19 @@ describe('rejectionCopy', () => {
     expect(copy.kind).toBe(REASON_KIND.APP);
   });
 
+  // Achado do Codex (review do PR #502): aviso que não vira operação (fase
+  // INFO) sem motivo salvo herdava a frase de "recém-chegado, refaz a conta a
+  // cada 5 minutos" — o motor nunca avalia entrada para ele.
+  it('sem motivo registrado E fase INFO, não promete checagem de entrada', () => {
+    const copy = rejectionCopy({ signal_type: 'BUY' }, SIGNAL_PHASE.INFO);
+    expect(copy.chip).not.toBe('Checando agora');
+    expect(copy.detail).not.toMatch(/rec[ée]m-chegado|a cada 5 minutos|abrir uma opera/i);
+    expect(copy.detail).toMatch(/não vira operação/);
+    expect(copy.detail).toMatch(/Nada a fazer\.$/);
+    expect(copy.kind).toBe(REASON_KIND.INFO);
+    expect(copy.icon).toBe('ℹ️');
+  });
+
   it('chave desconhecida não vira tela vazia nem código cru sem contexto', () => {
     const copy = rejectionCopy({ last_rejection_reason: 'motivo_inventado', signal_type: 'BUY' });
     expect(copy.detail).toContain('motivo_inventado');

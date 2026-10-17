@@ -107,12 +107,14 @@ export const REASON_KIND = Object.freeze({
   WAITING: 'waiting',   // ⏳ falta acontecer algo no mercado
   WORSE: 'worse',       // ⚠ o cenário piorou contra o sinal
   APP: 'app',           // ↻ problema do app, ele se resolve sozinho
+  INFO: 'info',         // ℹ️ só informação — este aviso não vira operação
 });
 
 const KIND_ICON = Object.freeze({
   [REASON_KIND.WAITING]: '⏳',
   [REASON_KIND.WORSE]: '⚠',
   [REASON_KIND.APP]: '↻',
+  [REASON_KIND.INFO]: 'ℹ️',
 });
 
 export function reasonIcon(kind) {
@@ -280,10 +282,21 @@ const NO_REASON_EXPIRED = Object.freeze({
 });
 
 /**
+ * Mesma lógica para um aviso que NÃO vira operação (fase INFO, item 276):
+ * o motor nunca avalia entrada para ele, então "recém-chegado, refaz a conta
+ * a cada 5 minutos" seria falso (achado do Codex, review do PR #502).
+ */
+const NO_REASON_INFO = Object.freeze({
+  kind: REASON_KIND.INFO,
+  chip: 'Só informação',
+  detail: `Este tipo de aviso não vira operação, então o app não fica checando entrada para ele. ${NOTHING_TO_DO}`,
+});
+
+/**
  * Resolve o motivo em chip + frase, já com o fecho "nada a fazer".
  * Chave desconhecida nunca vira tela em branco nem código cru sem contexto.
  * `phase` (opcional, de `classifySignal`) só muda a resposta quando NÃO há
- * `last_rejection_reason` — ver `NO_REASON_EXPIRED` acima.
+ * `last_rejection_reason` — ver `NO_REASON_EXPIRED`/`NO_REASON_INFO` acima.
  */
 export function rejectionCopy(signal, phase) {
   const key = signal?.last_rejection_reason;
@@ -292,6 +305,9 @@ export function rejectionCopy(signal, phase) {
   if (!key) {
     if (phase === SIGNAL_PHASE.EXPIRED) {
       return { ...NO_REASON_EXPIRED, icon: reasonIcon(NO_REASON_EXPIRED.kind) };
+    }
+    if (phase === SIGNAL_PHASE.INFO) {
+      return { ...NO_REASON_INFO, icon: reasonIcon(NO_REASON_INFO.kind) };
     }
     return {
       kind: REASON_KIND.WAITING,

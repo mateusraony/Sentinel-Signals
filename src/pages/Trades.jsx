@@ -16,7 +16,7 @@ import TradeEntryMarkers from '@/components/trades/TradeEntryMarkers';
 import PortfolioVsMarket from '@/components/trades/PortfolioVsMarket';
 import PerformanceReport from '@/components/trades/PerformanceReport';
 import { describeProximity, formatPrice, formatSignedPct } from '@/lib/priceProximity';
-import { classifySignal, phaseCopy, rejectionCopy, formatTimeLeft, SIGNAL_PHASE } from '@/lib/signalStatus';
+import { classifySignal, phaseCopy, rejectionCopy, formatTimeLeft, REASON_KIND, SIGNAL_PHASE } from '@/lib/signalStatus';
 import { signalTimeline, opTimeline, closedReasonLabel } from '@/lib/eventTimeline';
 import { EventTimeline, fmtBRT } from '@/components/dashboard/EventTimeline';
 import { QueryErrorState } from '@/components/QueryErrorState';
@@ -277,7 +277,10 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
         </div>
       </div>
 
-      {/* 3 · O que falta — chip curto + frase que termina em "nada a fazer" */}
+      {/* 3 · O que falta — chip curto + frase que termina em "nada a fazer".
+          Omitido no aviso INFO sem motivo salvo: a linha 4 já diz que ele
+          não vira operação (achado do Codex, review do PR #502). */}
+      {reason.kind !== REASON_KIND.INFO && (
       <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
         <div className="flex items-baseline justify-between gap-2 mb-1">
           <div className="text-10px font-mono font-semibold" style={{ color: copy.color }}>
@@ -308,6 +311,7 @@ function MonitoringCard({ signal, asset = null, onDismiss, isDismissing, expandA
           </p>
         )}
       </div>
+      )}
 
       {/* 4 · Quem age, e até quando */}
       <p className="text-10px font-mono leading-relaxed" style={{ color: 'rgba(255,255,255,0.45)' }}>

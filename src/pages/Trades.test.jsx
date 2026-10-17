@@ -600,6 +600,22 @@ describe('Trades — fila de avisos separa as cascatas (item 276)', () => {
     expect(screen.queryByText('Avisos em análise')).toBeNull();
   });
 
+  // Achado do Codex (review do PR #502): o card "Só informação" caía no texto
+  // genérico de "sem motivo salvo" — "Aviso recém-chegado... refaz a conta a
+  // cada 5 minutos" — contradizendo o próprio badge de que não vira operação.
+  it('card de observação sem motivo salvo não diz que o app está checando entrada', async () => {
+    mockBackend({
+      operations: [], signals: [SMC_1H()],
+      assets: [{ id: 'a1', symbol: 'ETHUSDT', is_active: true, smc_enabled: false }],
+    });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+    fireEvent.click(await screen.findByText(/1 observações de mercado/));
+    await screen.findByText('ETH/USDT');
+    expect(screen.queryByText(/rec[ée]m-chegado|a cada 5 minutos/i)).toBeNull();
+    expect(screen.queryByText(/Checando agora/)).toBeNull();
+  });
+
   it('uma operação SMC 1h ativa não esconde um aviso Range Filter 1h do mesmo ativo', async () => {
     const smcOp = {
       id: 'trade_smc_x', asset_id: 'a1', symbol: 'ETHUSDT', side: 'BUY', status: 'SIGNAL_CONFIRMED',
