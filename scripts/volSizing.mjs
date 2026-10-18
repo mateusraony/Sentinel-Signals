@@ -143,6 +143,8 @@ export function runVolSizingWindow({ control, randoms, candlesBySymbol, prereg }
   const prob = randoms[0]?.reproducibility?.pineConfig?.randomEntryProb;
   if (prob !== prereg.randomProb) errors.push(`randomEntryProb ${prob} diferente do pré-registrado (${prereg.randomProb})`);
   if (control?.reproducibility?.pineConfig?.fibEntryEnabled === true) errors.push('Fibonacci 15m ligada — este teste é sobre a estratégia atual');
+  const targetMode = control?.reproducibility?.pineConfig?.targetMode;
+  if (targetMode != null && targetMode !== 'r_multiple') errors.push(`alvo estrutural (${targetMode}) ligado — este teste é sobre a estratégia atual`);
   if (errors.length) return { verdict: 'INCOMPLETE', errors: [...new Set(errors)].slice(0, 20), window: window?.label ?? null };
 
   const fromMs = Date.parse(`${window.from}T00:00:00Z`);

@@ -1,0 +1,138 @@
+{
+  "name": "targets-281",
+  "item": "docs/known-risks.md item 281",
+  "registeredAt": "2026-10-18",
+  "note": "Pré-registro congelado ANTES de qualquer rodada real. Mudar qualquer campo depois de ver resultado invalida o experimento; src/lib/targetsPrereg.test.js trava estes valores contra src/lib/indicators/structuralTargets.js.",
+  "question": "Mantendo a entrada (sinal RF 4h + confirmação 15m) e o stop (2-3x ATR 4h) de hoje, trocar só o TP1/TP2 por alvos estruturais muda a expectância líquida?",
+  "family": "targets-2026-10",
+  "workflow": ".github/workflows/backtest.yml no commit do merge do PR de implementação",
+  "control": {
+    "targetMode": "r_multiple"
+  },
+  "arms": [
+    {
+      "label": "fib_literal",
+      "targetMode": "fib_ext_15m",
+      "targetNearPolicy": "literal"
+    },
+    {
+      "label": "fib_minr",
+      "targetMode": "fib_ext_15m",
+      "targetNearPolicy": "min_r_fallback"
+    },
+    {
+      "label": "fib_next",
+      "targetMode": "fib_ext_15m",
+      "targetNearPolicy": "next_level"
+    },
+    {
+      "label": "swing_literal",
+      "targetMode": "swing_4h",
+      "targetNearPolicy": "literal"
+    },
+    {
+      "label": "swing_minr",
+      "targetMode": "swing_4h",
+      "targetNearPolicy": "min_r_fallback"
+    },
+    {
+      "label": "swing_next",
+      "targetMode": "swing_4h",
+      "targetNearPolicy": "next_level"
+    }
+  ],
+  "windows": [
+    {
+      "label": "W1",
+      "role": "decide",
+      "from": "2025-10-10",
+      "to": "2026-10-10",
+      "symbols": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "FETUSDT",
+        "PENDLEUSDT",
+        "ZROUSDT",
+        "DYDXUSDT",
+        "PAXGUSDT"
+      ]
+    },
+    {
+      "label": "W2",
+      "role": "decide",
+      "from": "2024-07-27",
+      "to": "2025-07-27",
+      "symbols": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "FETUSDT",
+        "PENDLEUSDT",
+        "ZROUSDT",
+        "DYDXUSDT",
+        "PAXGUSDT"
+      ]
+    },
+    {
+      "label": "W0",
+      "role": "replicate",
+      "from": "2021-07-27",
+      "to": "2022-07-27",
+      "symbols": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "FETUSDT",
+        "PAXGUSDT"
+      ]
+    }
+  ],
+  "controlReproduction": {
+    "W1": {
+      "ops": 115,
+      "expectancyR": -0.0483
+    },
+    "W2": {
+      "ops": 119,
+      "expectancyR": 0.054
+    },
+    "tolerance": "exata: mesmo número de operações e expectancyR igual em 4 casas (o motor é determinístico, item 270)"
+  },
+  "rules": {
+    "minTargetR": 0.5,
+    "fibLadder": [
+      1.272,
+      1.618,
+      2.0,
+      2.618
+    ],
+    "swingPivotBars": 5,
+    "swingLookback4h": 150,
+    "tp2FallbackMult": 2
+  },
+  "analysis": {
+    "primary": "unpaired (cluster-robust) via scripts/compare-backtest-reports.mjs, control x arm, per window",
+    "familySize": 6,
+    "alphaPerComparison": 0.008333,
+    "approve": "Δ expectância líquida > 0 com IC (alpha 0,05/6) excluindo zero e veredito 'diferenca_significativa' (G ≥ 20 clusters) em W1 E W2, e Δ > 0 (ponto) em W0",
+    "worse": "espelho do approve (Δ < 0)",
+    "inconclusiveByFallback": "braço-janela com mais de 50% das operações da cascata 4h_15m em R_MULTIPLE_FALLBACK (report.targets.fallbackRate) é INCONCLUSIVO; com smc vazio, todas as operações são 4h_15m",
+    "stopIf": "o controle (pine_config vazio) não reproduz o item 270 com a tolerância acima -> parar antes de ler qualquer braço",
+    "production": "nothing changes in production without an explicit user decision after the result",
+    "comparisons": "só controle × braço, por janela; braços não são comparados entre si (a perna da Fibonacci é medida no fechamento do sinal, como no item 267, e os pivôs no instante da entrada — informação não simétrica)",
+    "fewClusters": "veredito 'inconclusivo_poucos_clusters' (G < 20) conta como INCONCLUSIVO, nunca como aprovado/pior",
+    "sameRulesNote": "as regras de gestão são as mesmas em todos os braços; o momento em que cada uma age (TP1 -> stop na entrada -> runner) segue o alvo, e com 1 operação por ativo o conjunto de operações diverge — por isso a leitura é não pareada",
+    "provenanceCheck": "antes de comparar cada par controle × braço, checkArmProvenance (src/lib/targetModeReport.js) tem que passar: config igual fora de targetMode/targetNearPolicy e smc vazio; falhou -> refazer a rodada, nunca comparar",
+    "dataProblems": "vela faltando para medir o alvo (busca falha, histórico curto ou desalinhado) invalida o relatório; nunca vira fallback"
+  },
+  "runConfig": {
+    "pine_config_control": "",
+    "pine_config_arm": "{\"targetMode\":\"<modo>\",\"targetNearPolicy\":\"<política>\"} e nada mais",
+    "smc": "",
+    "smc_confirm": "",
+    "timeframes": "5m,15m,1h,4h,1d (padrão)",
+    "costs": "padrão (no_costs false, fee/slippage/funding vazios)",
+    "real_funding": false,
+    "futures_data": false,
+    "min_trades": "padrão",
+    "trial_label": "TargetTest_<janela>_<braço>"
+  }
+}

@@ -36,6 +36,7 @@ import { groupActiveOpsByAsset, isTerminalStatus, shouldSkipCrossSourceManagemen
 import { hasAssetStateChanged } from './assetStateDiff';
 import { randomEntryDecision } from './seededRandom';
 import { planFibEntry, stepFibExit } from './indicators/fibEntry';
+import { TARGET_RULES, fibLevels, swingLevels, resolveTarget } from './indicators/structuralTargets';
 import { rejectionPatch, regimeDetail, trendReversedDetail } from './signalRejection';
 import {
   buildRegimeSnapshot, buildTrendReversedSnapshot, buildAwaitingTp1Snapshot,
@@ -735,6 +736,55 @@ export function applyFibOverrides(opData, fib) {
     fib_fill_candle_close_ms: fib.fillCandleCloseMs,
     fib_last_exit_candle_open_ms: null,
     fib_tp1_candle_open_ms: null,
+  });
+}
+
+// docs/known-risks.md item 281 — BACKTEST-ONLY (`targetMode`/`targetNearPolicy`
+// existem só em scripts/backtestPineConfig.js; tripwire em targetModeTripwire.test.js).
+// (Custo aceito: busca as velas antes de saber se a criação vai ser recusada
+// por vaga/teto — só existe no backtest, em memória.)
+// Troca SÓ o TP1/TP2 da cascata nativa 4h_15m, depois do gate R:R (que segue
+// medindo o alvo do controle, então não barra nenhum sinal a mais em nenhum
+// braço). Entrada, stop e as regras de gestão continuam as de sempre — o
+// momento em que cada uma age (TP1 → stop na entrada → runner) segue o alvo.
+// Com uma operação por ativo, a duração diferente muda quais sinais seguintes
+// viram operação: a comparação é não pareada. Alvo inválido cai no alvo do
+// controle, com o motivo gravado na operação. Falha ao buscar velas LANÇA (como
+// manageFibOp): no backtest invalida o relatório, em vez de virar fallback em
+// silêncio. Sem a chave (produção), devolve null sem buscar nada.
+async function resolveTargetMode({ opData, symbol, direction, signalCandleTime, pineConfig }) {
+  const mode = pineConfig.targetMode;
+  if (mode == null || mode === 'r_multiple') return null;
+  if (!TARGET_RULES.modes.includes(mode)) throw new Error(`targetMode inválido: ${JSON.stringify(mode)}`);
+  const policy = pineConfig.targetNearPolicy;
+  if (!TARGET_RULES.nearPolicies.includes(policy)) throw new Error(`targetNearPolicy inválido: ${JSON.stringify(policy)}`);
+  if (pineConfig.fibEntryEnabled === true) throw new Error('targetMode não combina com fibEntryEnabled (a Fibonacci do item 267 já troca os alvos)');
+  let candidate;
+  if (mode === 'fib_ext_15m') {
+    const candles = await fetchCandles(symbol, TF_15M, TARGET_RULES.fibFetch15m);
+    candidate = fibLevels({ candles15m: candles, direction, signalCloseMs: new Date(signalCandleTime).getTime() });
+  } else {
+    const candles = await fetchCandles(symbol, '4h', TARGET_RULES.swingFetch4h);
+    candidate = swingLevels({ candles4h: candles, direction, nowMs: Date.now() });
+  }
+  // Falta de vela (histórico curto ou desalinhado) é problema de DADO, não de
+  // mercado: invalida o replay em vez de diluir o braço com fallback.
+  if (candidate.dataProblem) throw new Error(`TARGET_DATA: ${symbol} ${mode} sem velas suficientes (${candidate.reason})`);
+  return { mode, policy, ...resolveTarget({ mode, policy, direction, entry: opData.entry_price, stop: opData.initial_stop, candidate }) };
+}
+
+// `rr_at_entry`/`rr_gate_mode`/`rr_target_basis` continuam descrevendo o que o
+// gate R:R mediu (o alvo do controle); o alvo usado vai em `target_basis`.
+export function applyTargetOverrides(opData, target) {
+  if (!target) return opData;
+  return Object.assign(opData, {
+    ...(target.ok ? { tp1: target.tp1, tp2: target.tp2 } : {}),
+    target_mode: target.mode,
+    target_near_policy: target.policy,
+    target_basis: target.basis,
+    target_fallback_reason: target.reason,
+    rr_at_entry_target: target.rrTarget,
+    target_first_level_r: target.firstLevelR,
   });
 }
 
@@ -2787,6 +2837,7 @@ export async function persistScanResults(scanResult) {
                   opData.rr_at_entry = rr.rr1;
                   opData.rr_gate_mode = RR_GATE_MODE;
                   opData.rr_target_basis = RR_TARGET_BASIS;
+                  applyTargetOverrides(opData, await resolveTargetMode({ opData, symbol: asset.symbol, direction: signal.signal_type, signalCandleTime: signal.candle_time, pineConfig }));
                   // docs/known-risks.md item 37 (Bloco 4 Fase 1) — stamped
                   // on the op itself, read back by groupActiveOpsByAsset.
                   if (pineConfig.hierarchicalCascadesEnabled) opData.hierarchical_cascade = true;
@@ -3391,6 +3442,7 @@ export async function persistScanResults(scanResult) {
     opData.rr_at_entry = rr.rr1;
     opData.rr_gate_mode = RR_GATE_MODE;
     opData.rr_target_basis = RR_TARGET_BASIS;
+    applyTargetOverrides(opData, await resolveTargetMode({ opData, symbol: sig.symbol, direction: sig.signal_type, signalCandleTime: sig.candle_time, pineConfig }));
     // docs/known-risks.md item 37 (Bloco 4 Fase 1) — stamped on the op
     // itself, read back by groupActiveOpsByAsset.
     if (pineConfig.hierarchicalCascadesEnabled) opData.hierarchical_cascade = true;

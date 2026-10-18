@@ -24,7 +24,7 @@ export const FIB_RULES = Object.freeze({
   maxWaitBars: 15, // dentro da janela de retry de 4h do sinal RF
 });
 
-const closedAsOf = (candles, nowMs) => (Array.isArray(candles) ? candles : [])
+export const closedAsOf = (candles, nowMs) => (Array.isArray(candles) ? candles : [])
   .filter((c) => c && c.isClosed !== false && Number.isFinite(c.closeTime) && c.closeTime <= nowMs)
   .sort((a, b) => a.openTime - b.openTime);
 

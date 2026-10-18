@@ -234,6 +234,13 @@ describe('requiredTimeframes', () => {
       .toEqual(['1h', '4h', '1d', '15m']);
   });
 
+  it('alvo de Fibonacci (item 281) exige o 15m mesmo com a confirmação 15m pulada', () => {
+    expect(requiredTimeframes(asset(), { pineConfig: { skip15mConfirmationEnabled: true, targetMode: 'fib_ext_15m' } }))
+      .toEqual(['1h', '4h', '1d', '15m']);
+    expect(requiredTimeframes(asset(), { pineConfig: { skip15mConfirmationEnabled: true, targetMode: 'swing_4h' } }))
+      .toEqual(['1h', '4h', '1d']);
+  });
+
   it('5m só para ativo com a cascata SMC', () => {
     expect(requiredTimeframes(asset({ smc_enabled: true }), {})).toContain('5m');
     expect(requiredTimeframes(asset(), {})).not.toContain('5m');
