@@ -12,9 +12,10 @@ import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import ComparePanel from './ComparePanel.jsx';
 
-vi.mock('@/lib/marketDataProvider', () => ({ fetch24hStats: async () => null }));
+const { fetch24hStatsMock } = vi.hoisted(() => ({ fetch24hStatsMock: vi.fn(async () => null) }));
+vi.mock('@/lib/marketDataProvider', () => ({ fetch24hStats: (...a) => fetch24hStatsMock(...a) }));
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); fetch24hStatsMock.mockReset(); fetch24hStatsMock.mockResolvedValue(null); });
 
 const ASSET_A = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' };
 const ASSET_B = { id: 'a2', symbol: 'ETHUSDT', display_name: 'ETH/USDT' };
@@ -53,5 +54,23 @@ describe('ComparePanel — ressalva "score não é probabilidade" (passo 5)', ()
     renderPanel({});
     const notes = screen.getAllByText(/Score e Oportunidade são pontuações das regras atuais — não são probabilidade de acerto/);
     expect(notes).toHaveLength(2); // uma por ativo comparado
+  });
+});
+
+
+// Item 279 (PR-D): a variação de 24h tem rótulo e fonte, e dado ausente não
+// vira "NaN%" nem quebra a coluna.
+describe('ComparePanel — variação de 24h com rótulo (item 279)', () => {
+  it('mostra "📈 +x% em 24h · Futures" quando há dado', async () => {
+    fetch24hStatsMock.mockResolvedValue({ priceChangePercent: 1.5, lastPrice: 101, closeTime: Date.now() });
+    renderPanel();
+    expect((await screen.findAllByText('📈 +1.50% em 24h · Futures')).length).toBe(2);
+  });
+
+  it('dado sem variação válida: "% 24h indisponível", nunca NaN', async () => {
+    fetch24hStatsMock.mockResolvedValue({ priceChangePercent: null });
+    renderPanel();
+    expect((await screen.findAllByText('% 24h indisponível')).length).toBe(2);
+    expect(screen.queryByText(/NaN/)).toBeNull();
   });
 });

@@ -323,7 +323,7 @@ function HistoryCard({ op }) {
                 <TooltipTrigger asChild>
                   <span className="px-2 py-1 rounded cursor-help" tabIndex={0}
                     style={{ background: 'rgba(0,255,128,0.06)', color: '#00ff80', border: '1px solid rgba(0,255,128,0.15)' }}>
-                    📈 MFE {op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R
+                    ⬆️ Máx. a favor (MFE) {op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R
                   </span>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
@@ -336,7 +336,7 @@ function HistoryCard({ op }) {
                 <TooltipTrigger asChild>
                   <span className="px-2 py-1 rounded cursor-help" tabIndex={0}
                     style={{ background: 'rgba(255,20,120,0.06)', color: '#ff1478', border: '1px solid rgba(255,20,120,0.15)' }}>
-                    📉 MAE {op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R
+                    ⬇️ Máx. contra (MAE) {op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R
                   </span>
                 </TooltipTrigger>
                 <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">

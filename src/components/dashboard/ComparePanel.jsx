@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Crown, Swords, TrendingUp, TrendingDown } from 'lucide-react';
 import { fetch24hStats } from '@/lib/marketDataProvider';
 import { formatPrice } from '@/lib/priceProximity';
+import { describeChange24h, resolvePriceDisplay, queryChangeOptions, CHANGE_TONE_COLOR } from '@/lib/priceChange24h';
+import { useNow } from '@/hooks/useNow';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 
 function dirCfg(dir) {
@@ -65,11 +67,12 @@ function MetricRow({ label, value, color, tooltip }) {
   );
 }
 
-function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, label, dataUnavailable }) {
+function CompareColumn({ asset, states, signal, tradeOp, statsQuery, now, opp, isWinner, label, dataUnavailable }) {
   const TERMINAL = ['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'];
   const hasActive = tradeOp && !TERMINAL.includes(tradeOp.status);
-  const price = states.find(s => s.timeframe === '1h')?.last_close || states[0]?.last_close;
-  const change = stats?.priceChangePercent;
+  const candleClose = states.find(s => s.timeframe === '1h')?.last_close || states[0]?.last_close;
+  // Item 279: mesma regra do cartão (resolvePriceDisplay).
+  const priceView = resolvePriceDisplay(describeChange24h(statsQuery?.data, now, queryChangeOptions(statsQuery)), candleClose);
   const score = signal?.context?.score || tradeOp?.score || 0;
   const sigSide = signal?.signal_type || tradeOp?.side;
 
@@ -100,12 +103,14 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
       {/* Price + 24h */}
       <div className="flex items-end justify-between mb-3">
         <div>
-          <div className="text-lg font-bold font-mono text-foreground">${formatPrice(price)}</div>
-          {change !== undefined && (
-            <div className="text-11px font-mono" style={{ color: change >= 0 ? '#00ff80' : '#ff1478' }}>
-              {change >= 0 ? '+' : ''}{change.toFixed(2)}% 24h
-            </div>
-          )}
+          <div className="text-lg font-bold font-mono text-foreground">
+            ${formatPrice(priceView.price)}
+            {priceView.isCandle && <span className="text-9px font-normal text-muted-foreground"> fech. 1h</span>}
+          </div>
+          {/* Item 279: rótulo e fonte; sem dado, "% 24h indisponível" (nunca NaN). */}
+          <div className="text-11px font-mono" style={{ color: CHANGE_TONE_COLOR[priceView.tone] }}>
+            {priceView.pctText}
+          </div>
         </div>
         {sigSide && (
           <span className="flex items-center gap-1 text-xs font-mono font-bold px-3 py-1.5 rounded-lg"
@@ -194,12 +199,16 @@ function CompareColumn({ asset, states, signal, tradeOp, stats, opp, isWinner, l
 }
 
 export default function ComparePanel({ assetA, assetB, statesA, statesB, signalA, signalB, opA, opB, dataUnavailable = false }) {
-  const { data: statsA } = useQuery({
+  // Item 279: relógio próprio para o frescor. Sem intervalo de busca aqui: os
+  // cartões já atualizam a mesma chave a cada 60 s (um 2º intervalo dobraria as
+  // chamadas à Binance); sem cartão montado, a coluna se marca desatualizada.
+  const now = useNow();
+  const statsAQuery = useQuery({
     queryKey: ['24h-stats', assetA.symbol],
     queryFn: () => fetch24hStats(assetA.symbol),
     staleTime: 30000,
   });
-  const { data: statsB } = useQuery({
+  const statsBQuery = useQuery({
     queryKey: ['24h-stats', assetB.symbol],
     queryFn: () => fetch24hStats(assetB.symbol),
     staleTime: 30000,
@@ -226,8 +235,8 @@ export default function ComparePanel({ assetA, assetB, statesA, statesB, signalA
 
       {/* Columns */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <CompareColumn asset={assetA} states={statesA} signal={signalA} tradeOp={opA} stats={statsA} opp={oppA} isWinner={winner === 'A'} label="A" dataUnavailable={dataUnavailable} />
-        <CompareColumn asset={assetB} states={statesB} signal={signalB} tradeOp={opB} stats={statsB} opp={oppB} isWinner={winner === 'B'} label="B" dataUnavailable={dataUnavailable} />
+        <CompareColumn asset={assetA} states={statesA} signal={signalA} tradeOp={opA} statsQuery={statsAQuery} now={now} opp={oppA} isWinner={winner === 'A'} label="A" dataUnavailable={dataUnavailable} />
+        <CompareColumn asset={assetB} states={statesB} signal={signalB} tradeOp={opB} statsQuery={statsBQuery} now={now} opp={oppB} isWinner={winner === 'B'} label="B" dataUnavailable={dataUnavailable} />
       </div>
     </div>
   );

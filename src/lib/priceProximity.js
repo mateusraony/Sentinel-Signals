@@ -17,7 +17,7 @@
  */
 
 /** Coerção defensiva: RTDB pode devolver número serializado como string. */
-function num(value) {
+export function num(value) {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'string' && value.trim() !== '') {
     const parsed = Number(value);

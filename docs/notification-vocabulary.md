@@ -53,7 +53,7 @@ significado, sempre acompanhado de texto.
 | 🏷️ | Preço de referência (no sinal / atual) | sinal detectado, cancelado, TP1 (antes 💰, que agora é só `STOP_LOCKED_PROFIT`) |
 | 🧩 | Regras alinhadas N/100 — concordância das regras, **não é chance de acerto** | linha de score (antes 📊 Score + 💪 Forte/📊 Médio/🔹 Fraco) |
 | 🛡️ | Stop protegido: no preço de entrada ou melhor — sem prejuízo, exceto taxas/slippage/funding | TP1 com runner (antes 🔄 "Stop movido para breakeven") |
-| 📈 / 📉 | **Reservados para movimento de preço** (subiu/caiu no período mostrado) | painel, a partir do PR-D — não usar para lado do sinal |
+| 📈 / 📉 | **Reservados para movimento de preço** (subiu/caiu no período mostrado) | painel desde o item 279: só via `describeChange24h` (`src/lib/priceChange24h.js`) — "📈 +x% em 24h · Futures"; nunca para lado do sinal nem MFE/MAE (⬆️/⬇️) |
 | ⌛ | Duração / tempo de espera | resumo de encerramento e sinal cancelado (antes ⏳, que é só `AWAITING_ENTRY`) |
 | 📌 | Nota explicativa sobre um encerramento já ocorrido (stop e take na mesma vela) | `AMBIGUOUS_EXIT_NOTE` (antes ℹ️) |
 
