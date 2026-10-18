@@ -32867,3 +32867,74 @@ lista de Ativos é a coluna de resultado por passada (par do ✓), mantido.
 **Fora deste PR, de propósito:** "Score técnico N/100" do drawer, do toast e do comparador (sem emoji
 enganoso, já com a ressalva) e o "⚠️ STALE" da linha de status do cartão ficam para o PR-E2/E3 (registro
 "1 emoji = 1 significado").
+
+## 278. PR-C — "🧪 Simular entrada (virtual)" e estatística só com o que o motor decidiu (2026-10-18)
+
+**Origem:** auditoria comparativa (item 276). Três problemas de integridade no painel:
+
+- **"Ativar BUY agora"** aparecia no cartão do ativo para o aviso mais recente do Range Filter em
+  **qualquer** timeframe e **qualquer** idade (inclusive 1h/1d ou já expirado) e soava como ordem real.
+  O motor (`activateSignalManually`) usa a cascata 4h (ATR do 4h) para stop/alvos — para um aviso 1h/1d
+  a operação nascia com regras de outro timeframe. Erros saíam em `window.alert`; um aviso já simulado
+  respondia "já existe operação ativa" (o id `trade_manual_<id>` é determinístico e a op antiga podia
+  estar encerrada).
+- **Estatística misturada:** "Confiança ao Vivo" e a "Análise preditiva" contavam junto operações que o
+  motor não decidiu — simulação manual (`source: 'manual'`), retroativa (`source: 'backfill'`, item 137)
+  e operação **encerrada à mão** pelo painel (Trades: edição, Encerrar, Invalidar).
+- O diálogo de edição de Trades não avisava que muda o registro e a estatística.
+
+**Mudança (só painel; motor intocado):**
+
+- Botão "🧪 Simular entrada (virtual)" só para aviso **Range Filter 4h ainda aguardando** (mesma fase de
+  `classifySignal`), sem operação ativa e com dado confiável (📡). Diálogo: "Iniciar simulação de COMPRA
+  em X?", "Nenhuma ordem é enviada à corretora… operação virtual… pula os filtros do motor (R:R, regime,
+  tendência) e fica fora das estatísticas". Antes de chamar o motor, a UI consulta
+  `TradeOperation.get('trade_manual_<id>')` → "Este aviso já foi simulado". Avisos por `toast`.
+- `src/lib/operationProvenance.js`: `operationProvenance` (engine/manual/backfill/edited),
+  `splitByProvenance`, `provenanceExclusionText` e as marcas `MANUAL_*_REASON` (Trades.jsx passou a
+  importá-las — fonte única). `LiveConfidenceCard` e `PredictiveAnalysis` só contam operações do motor e
+  mostram "Fora da conta: N simulações manuais · N retroativas · N encerradas à mão".
+- Marca visível: banner "🧪 Simulação manual" / "✏️ Encerrada à mão" no TradeCard e selo no Histórico.
+- Aviso no diálogo de edição de Trades.
+- Tripwire `src/lib/noOrderExecutionTripwire.test.js`: nenhum endpoint de ordem da Binance,
+  `X-MBX-APIKEY`, ccxt, `createOrder` ou `LIVE_EXECUTION` ligado em `src`, `scripts`, `server`,
+  `functions` — provado plantando um arquivo com `fapi/v1/order`.
+
+**Achado durante a implementação (fora do plano, incluído):** Encerrar e Invalidar pelo painel também
+são encerramento manual (`closed_reason` "Encerrado/Invalidado manualmente") — entram como "encerrada à
+mão", não só o "Alterado manualmente" do diálogo de edição.
+
+**Limites conhecidos:** editar status/stop/alvo sem encerrar não deixa marca na operação (exigiria
+campo novo no schema — fora do escopo; o diálogo de edição agora diz isso). A exclusão vale só para a
+**medição do motor** (Confiança ao Vivo e comparação com o histórico) — os textos dizem exatamente isso.
+As métricas de desempenho do Dashboard (`PerformanceMetricsBar`, `PerformanceOverview`), o resumo
+semanal, o relatório mensal, a conta virtual e o Histórico continuam somando todas as operações (extrato
+do que aconteceu).
+
+**Revisão de código (achados corrigidos):** textos diziam "fora das estatísticas" quando só a medição do
+motor exclui (corrigidos para "fora da medição do motor (Confiança ao Vivo e comparação com o
+histórico)"); a contagem "Fora da conta" só considera operações fechadas; botão escondido quando as
+operações ativas não puderam ser confirmadas (`tradeOpsUnavailable`); o formato do id
+`trade_manual_<id>` copiado do motor é travado por `manualSimulationId.test.js`; o tripwire cobre também
+alavancagem/margem, saque/transferência, `orderList` e "/order" concatenado; selo do Histórico sem
+duplicação. **2ª revisão (achados corrigidos):** o Telegram mandava a simulação como "Entrada Confirmada" igual à
+do motor — agora abre com "🧪 Simulação manual — sem os filtros do motor" (`manualPrefix` em
+`notificationTemplates.js`, compartilhado pelos dois canais); o clique reconfere o prazo (diálogo aberto
+além das 4h não simula), recusa quando o motor já abriu a operação deste aviso (`trade_<dedup_key>`,
+mesmo formato travado no teste) e o botão some para aviso arquivado; "encerrada à mão" também lê a marca
+estruturada `decision_snapshot.executor: 'manual'` de Encerrar/Invalidar; rótulos 🧪/✏️ com fonte única
+(`PROVENANCE_LABEL`); tripwire cobre Portfolio Margin (`/papi/`) e `${base}/order`; doc de vocabulário
+diz "fora da medição do motor". **Não feito:** devolver `already_simulated` de dentro do motor (exigiria
+mexer no `scanner.js`, fora do escopo deste PR).
+**3ª revisão (achados corrigidos):** a marca 🧪 vai em TODA mensagem do Telegram da simulação (TP1,
+TP2, stop, invalidação, time stop, chop), não só na entrada — o canal 24h só vê as de gestão, porque a
+simulação nasce no navegador; na análise preditiva, "Fora da conta" conta só o que teria entrado pela
+faixa de score (mesmo conjunto do número mostrado); se só há operações excluídas, a Confiança ao Vivo
+aparece com a linha explicando, em vez de sumir; as duas consultas de id rodam em paralelo; o tripwire não
+acusa rotas como `/order-history`; o lado no diálogo não "pisca" ao fechar. **Não feito, registrado:**
+filtro de proveniência nas demais métricas do Dashboard (seletor comum) — decisão de escopo, ver limites.
+**Decisão a levar ao usuário (não implementada):** a simulação ocupa a única vaga de
+operação do ativo — enquanto aberta, o motor não abre a operação dele, inclusive a do próprio aviso se
+ele confirmar depois. Mudar isso exige mexer no motor; por ora o diálogo avisa explicitamente. **Não
+feito:** o botão olha só o aviso RF mais recente do ativo (um RF 1h mais novo esconde um 4h ainda no
+prazo) — falha para o lado seguro.

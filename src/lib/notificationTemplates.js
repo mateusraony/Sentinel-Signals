@@ -107,6 +107,15 @@ function backfillPrefix(op) {
   return `⏱ <b>Detectada retroativamente</b> — entrada real foi há ${lag ?? 'algum tempo'}, o Sentinel só a encontrou agora ao adicionar/atualizar o ativo (não foi pega ao vivo).\n\n`;
 }
 
+// Item 278: "🧪 Simular entrada" no painel (`source: 'manual'`) — não é uma
+// entrada decidida pelo motor e não pode chegar ao Telegram igual a uma. Vai
+// em TODA mensagem da operação (entrada, TP1/TP2, stop, saídas): o canal 24h
+// só vê as de gestão, porque a simulação nasce no navegador.
+function manualPrefix(op) {
+  if (op.source !== 'manual') return '';
+  return `🧪 <b>Simulação manual</b> — entrada criada no painel, sem os filtros do motor. Fica fora da medição do motor.\n\n`;
+}
+
 // Auditoria do Telegram (2026-09-29), Fase 2 item 2.5/2.6 — "resultado final
 // legível em encerramentos": entrada, saída, resultado já CALCULADO por
 // tradeMetrics.js (nunca recomputado aqui — regra inegociável do plano),
@@ -307,6 +316,7 @@ export function buildTradeCreatedMessage(op) {
   const dir = op.side === 'BUY' ? 'COMPRA' : 'VENDA';
   const tfLabel = op.timeframe === '15m' ? '15m (entrada 4h)' : op.timeframe?.toUpperCase();
   return (
+    manualPrefix(op) +
     backfillPrefix(op) +
     `${stageHeader('ENTRY_CONFIRMED')} — ${dir}\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${tfLabel}\n\n` +
@@ -333,6 +343,7 @@ export function buildTp1HitMessage(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   const fullClose = closesFullyAtTp1(op);
   return (
+    manualPrefix(op) +
     `${stageHeader('TP1_HIT')}!\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     // Sem runner (known-risks item 46) o TP1 é saída TERMINAL — anunciar
@@ -356,6 +367,7 @@ export function buildTp1HitMessage(op, price) {
 export function buildTp2HitMessage(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return (
+    manualPrefix(op) +
     `${stageHeader('TP2_HIT')}!\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     `🏁 Situação: operação encerrada — alvo final atingido.\n\n` +
@@ -375,6 +387,7 @@ export function buildStopHitMessage(op, price) {
   const stage = STOP_HIT_STAGE[outcome] ?? NOTIFICATION_STAGES.STOP_LOSS;
   const { why, evidence } = explainOperationDecision(op);
   return (
+    manualPrefix(op) +
     `${stage.emoji} <b>${stage.label}</b>\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     `${stage.emoji} Situação: operação encerrada pelo stop` + (outcome === 'BE' ? ', sem prejuízo.' : outcome === 'WIN' ? ', com lucro já travado.' : '.') + '\n\n' +
@@ -394,6 +407,7 @@ export function buildInvalidatedMessage(op, price) {
   const stageMsg = op.tp1_hit ? '(após TP1 — parcial já realizada)' : '(pré-TP1)';
   const { why, evidence } = explainOperationDecision(op);
   return (
+    manualPrefix(op) +
     `${stageHeader('INVALIDATED')} ${stageMsg}\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     `⚠️ Situação: operação encerrada — a condição que sustentava a entrada deixou de ser válida.\n\n` +
@@ -411,6 +425,7 @@ export function buildInvalidatedMessage(op, price) {
 export function buildTimeStopMessage(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return (
+    manualPrefix(op) +
     `${stageHeader('TIME_STOP')}\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     `⏱️ Situação: operação encerrada — prazo máximo sem atingir TP1 expirou.\n\n` +
@@ -428,6 +443,7 @@ export function buildTimeStopMessage(op, price) {
 export function buildChopExitMessage(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return (
+    manualPrefix(op) +
     `${stageHeader('CHOP_EXIT')}\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     `🌊 Situação: operação encerrada — mercado ficou lateralizado (choppiness alto).\n\n` +

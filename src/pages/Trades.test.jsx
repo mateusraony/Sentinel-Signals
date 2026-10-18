@@ -381,6 +381,19 @@ describe('Trades — modal de edição (EditModal) usa Dialog acessível (achado
     fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
+
+  // Item 278 (PR-C): editar altera o registro, e encerrar por aqui tira a
+  // operação das estatísticas — o diálogo avisa antes de salvar.
+  it('avisa que altera o registro e que encerrar por aqui tira das estatísticas', async () => {
+    mockBackend({ operations: [ACTIVE_OP], signals: [] });
+    const { default: Trades } = await import('./Trades.jsx');
+    renderPage(<Trades />);
+    fireEvent.click(await screen.findByText('Editar'));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toMatch(/altera o registro desta operação/);
+    expect(dialog.textContent).toMatch(/sai da medição do motor/);
+    expect(dialog.textContent).toMatch(/sem encerrar não deixa marca/);
+  });
 });
 
 // Achado da varredura pós-Raio-X, Round 2 (2026-09-27): Invalidar/Encerrar

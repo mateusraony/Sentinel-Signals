@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { operationProvenance, PROVENANCE_LABEL } from '@/lib/operationProvenance';
 import { useQuery } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { History, Filter, BarChart2, ChevronDown, ChevronUp, Search, Copy, Check } from 'lucide-react';
@@ -60,6 +61,8 @@ function HistoryCard({ op }) {
   const outcome = classifyOutcome(op);
   const isWin = outcome === 'WIN';
   const isBE = outcome === 'BE';
+  // Item 278: selo de operação fora da medição do motor (simulação / encerrada à mão).
+  const provenanceTag = PROVENANCE_LABEL[operationProvenance(op)]?.tag;
   // Achado de revisão de clareza (pedido do usuário, 2026-09-18 — precedente
   // em docs/known-risks.md item 175): a explicação de "por quê" (Fase 4,
   // explainOperationDecision) só aparecia dentro do bloco expandido, ÚLTIMO
@@ -135,6 +138,13 @@ function HistoryCard({ op }) {
               style={{ background: `${badgeColor}15`, color: badgeColor, border: `1px solid ${badgeColor}30` }}>
               {isBE ? '🔄 Breakeven' : s.label}
             </span>
+            {/* Item 278: fora das estatísticas — simulação manual ou encerrada à mão. */}
+            {provenanceTag && (
+              <span className="text-9px font-mono font-semibold px-2 py-0.5 rounded"
+                style={{ background: 'rgba(167,139,250,0.1)', color: '#c4b5fd', border: '1px solid rgba(167,139,250,0.3)' }}>
+                {provenanceTag}
+              </span>
+            )}
             {op.source === 'backfill' && (
               <span className="text-9px font-mono font-semibold px-2 py-0.5 rounded flex items-center gap-1"
                 style={{ background: 'rgba(0,229,255,0.1)', color: '#00e5ff', border: '1px solid rgba(0,229,255,0.3)' }}>

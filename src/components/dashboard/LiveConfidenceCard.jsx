@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { Gauge, Copy, Check, AlertTriangle } from 'lucide-react';
 import { backend } from '@/api/entities';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
-import { summarizeOps } from '@/lib/tradeMetrics';
+import { summarizeOps, isClosedOp } from '@/lib/tradeMetrics';
+import { splitByProvenance, provenanceExclusionText } from '@/lib/operationProvenance';
 import { POLL_DIAGNOSTIC_MS } from '@/lib/pollingIntervals';
 import { useCopyToClipboard } from '@/lib/clipboardText';
 
@@ -81,13 +82,18 @@ function ConfidenceRow({ label, summary, divergenceWarning = false }) {
 // separados porque são hipóteses estatísticas distintas desde o item 88;
 // nunca combine os dois num IC só.
 export default function LiveConfidenceCard() {
-  const { data: operations = [] } = useQuery({
+  const { data: rawOperations = [] } = useQuery({
     queryKey: ['trade-operations-closed-all'],
     queryFn: () => backend.entities.TradeOperation.list('-created_date', OPS_LIMIT),
     refetchInterval: POLL_DIAGNOSTIC_MS,
   });
 
-  const { all, buy, sell, spot, futures, semFonte, divergentGeral } = useMemo(() => {
+  const { all, buy, sell, spot, futures, semFonte, divergentGeral, exclusionText } = useMemo(() => {
+    // Item 278: só o que o motor decidiu entra na conta — simulação manual,
+    // retroativa e operação encerrada à mão ficam fora (contadas à parte).
+    // Só operações fechadas: as abertas nunca entram em summarizeOps, e a
+    // contagem "fora da conta" não deve citá-las.
+    const { engine: operations, excluded } = splitByProvenance(rawOperations.filter(isClosedOp));
     const buySummary = summarizeOps(operations.filter(op => op.side === 'BUY'));
     const sellSummary = summarizeOps(operations.filter(op => op.side === 'SELL'));
     // Achado A-10 do Raio-X de UI/UX: "Geral" mistura BUY/SELL numa média
@@ -112,14 +118,17 @@ export default function LiveConfidenceCard() {
       futures: summarizeOps(operations.filter(op => op.market_source === 'futures')),
       semFonte: summarizeOps(operations.filter(op => op.market_source == null)),
       divergentGeral: buySign !== 0 && sellSign !== 0 && buySign !== sellSign,
+      exclusionText: provenanceExclusionText(excluded),
     };
-  }, [operations]);
+  }, [rawOperations]);
 
   // Hook antes do early return abaixo — regra de hooks do React não permite
   // chamada condicional.
   const { copied, copy } = useCopyToClipboard();
 
-  if (all.total === 0) return null;
+  // Sem nada do motor E nada excluído: some. Só excluídas: mostra o card com a
+  // linha "Fora da conta" (explica por que os números estão vazios).
+  if (all.total === 0 && !exclusionText) return null;
 
   // Só mostra a seção "por fonte" quando há pelo menos uma operação com (ou
   // sem) o campo — evita 3 linhas vazias enquanto a amostra ainda é pequena.
@@ -142,6 +151,7 @@ export default function LiveConfidenceCard() {
       'Confiança ao Vivo (amostra real)',
       fmtRow('Geral', all), fmtRow('BUY', buy), fmtRow('SELL', sell),
       ...sourceRows.map(r => fmtRow(r.label, r.summary)),
+      ...(exclusionText ? [exclusionText] : []),
     ];
     copy(lines.join('\n'));
   };
@@ -168,6 +178,11 @@ export default function LiveConfidenceCard() {
       <p className="text-9px font-mono text-muted-foreground mb-3">
         Evidência histórica das operações reais já fechadas — não é probabilidade de acerto futuro.
       </p>
+      {exclusionText && (
+        <p className="text-9px font-mono mb-3" style={{ color: 'rgba(255,255,255,0.45)' }}>
+          {exclusionText}
+        </p>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
         <ConfidenceRow label="Geral" summary={all} divergenceWarning={divergentGeral} />
         <ConfidenceRow label="BUY" summary={buy} />

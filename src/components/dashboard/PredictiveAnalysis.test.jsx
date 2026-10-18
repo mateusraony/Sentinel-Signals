@@ -132,3 +132,29 @@ describe('PredictiveAnalysis — "histórico, não calibrado" (passo 5)', () => 
     expect(screen.getByText(/não é garantia de resultado/)).toBeTruthy(); // texto antigo preservado
   });
 });
+
+// Item 278 (PR-C): o histórico comparável só usa operações decididas pelo
+// motor — simulação manual, retroativa e encerrada à mão ficam fora.
+describe('PredictiveAnalysis — só operações do motor no histórico (item 278)', () => {
+  it('não conta manual, retroativa nem encerrada à mão, e diz quantas ficaram fora', async () => {
+    tradeOperationFilterMock.mockResolvedValue([
+      LOSS_OP(1), LOSS_OP(2),
+      { ...LOSS_OP(3), source: 'manual' },
+      { ...LOSS_OP(4), source: 'backfill' },
+      { ...LOSS_OP(5), closed_reason: 'Alterado manualmente' },
+    ]);
+    renderPredictive();
+    expect(await screen.findByText(/2 operações similares/)).toBeTruthy();
+    expect(screen.getByText(/Fora da conta: 1 simulação manual · 1 retroativa · 1 encerrada à mão/)).toBeTruthy();
+  });
+
+  it('REGRESSÃO (review do PR-C): só conta como "fora" o que teria entrado pela faixa de score', async () => {
+    tradeOperationFilterMock.mockResolvedValue([
+      LOSS_OP(1), LOSS_OP(2),
+      { ...LOSS_OP(3), source: 'manual', entry_score: 5 }, // score longe: nunca seria "similar"
+    ]);
+    renderPredictive();
+    expect(await screen.findByText(/2 operações similares/)).toBeTruthy();
+    expect(screen.queryByText(/Fora da conta/)).toBeNull();
+  });
+});

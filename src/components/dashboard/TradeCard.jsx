@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { operationProvenance, PROVENANCE_LABEL } from '@/lib/operationProvenance';
 import { agreementLabel, AGREEMENT_HINT } from '@/lib/ruleAgreement';
 import moment from 'moment';
 import { Clock, TrendingUp, TrendingDown, ChevronDown, ChevronUp, History } from 'lucide-react';
@@ -261,6 +262,19 @@ function BackfillBanner({ op }) {
       <p className="text-10px font-mono leading-relaxed" style={{ color: '#00e5ff' }}>
         Detectada retroativamente{lag ? ` — entrada real foi há ${lag}` : ''}. Não foi pega ao vivo: o ativo foi adicionado/reativado depois, e o Sentinel reconstruiu a operação a partir do histórico.
       </p>
+    </div>
+  );
+}
+
+// Item 278 (PR-C): operação que não foi decidida pelo motor — simulação
+// criada no painel ou encerrada à mão pelo painel — fica fora das
+// estatísticas (src/lib/operationProvenance.js) e diz isso aqui.
+function ProvenanceBanner({ op }) {
+  const text = PROVENANCE_LABEL[operationProvenance(op)]?.banner;
+  if (!text) return null;
+  return (
+    <div className="rounded-lg px-3 py-2" style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.3)' }}>
+      <p className="text-10px font-mono leading-relaxed" style={{ color: '#c4b5fd' }}>{text}</p>
     </div>
   );
 }
@@ -597,6 +611,7 @@ export default function TradeCard({ operation: op, actions = null, expandAll = f
         </div>
 
         <BackfillBanner op={op} />
+        <ProvenanceBanner op={op} />
         <AmbiguousExitBanner op={op} />
 
         {/* 2 · Número herói: preço agora e como está a operação */}

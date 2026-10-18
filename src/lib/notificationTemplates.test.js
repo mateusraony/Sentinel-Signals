@@ -351,3 +351,26 @@ describe('buildSignalCanceledMessage — trend_reversed fala da cascata certa (i
     expect(text).toContain('linha de tendência do gráfico de 4 horas');
   });
 });
+
+// Item 278 (review do PR-C): a simulação manual ("🧪 Simular entrada" no
+// painel) mandava ao Telegram a mesma "Entrada Confirmada" de uma entrada do
+// motor. Agora vem marcada.
+describe('buildTradeCreatedMessage — simulação manual marcada (item 278)', () => {
+  const op = { id: 'trade_manual_s1', symbol: 'BTCUSDT', side: 'BUY', timeframe: '15m', entry_price: 100, initial_stop: 95, tp1: 107.5, tp2: 115 };
+  it('operação manual abre com 🧪 e diz que pulou os filtros do motor', () => {
+    const msg = buildTradeCreatedMessage({ ...op, source: 'manual' });
+    expect(msg).toMatch(/^🧪 <b>Simulação manual<\/b>/);
+    expect(msg).toMatch(/sem os filtros do motor/);
+  });
+  it('operação do motor não ganha a marca', () => {
+    expect(buildTradeCreatedMessage(op)).not.toMatch(/🧪/);
+  });
+
+  it('REGRESSÃO (review do PR-C): toda mensagem de gestão da simulação também vem marcada', () => {
+    const manual = { ...op, source: 'manual', tp1_hit: true, current_stop: 100, exit_price: 95, status: 'STOP_HIT' };
+    for (const build of [buildTp1HitMessage, buildTp2HitMessage, buildStopHitMessage, buildInvalidatedMessage, buildTimeStopMessage, buildChopExitMessage]) {
+      expect(build(manual, 101)).toMatch(/^🧪 <b>Simulação manual<\/b>/);
+      expect(build({ ...manual, source: undefined }, 101)).not.toMatch(/🧪/);
+    }
+  });
+});

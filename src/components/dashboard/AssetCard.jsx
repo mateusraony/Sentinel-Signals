@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { agreementLabel } from '@/lib/ruleAgreement';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { TrendingUp, TrendingDown, Zap, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
@@ -9,6 +9,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { fetch24hStats } from '@/lib/marketDataProvider';
 import { activateSignalManually } from '@/lib/scanner';
+import { backend } from '@/api/entities';
+import { toast } from '@/components/ui/use-toast';
+import { classifySignal, SIGNAL_PHASE } from '@/lib/signalStatus';
 import { logError } from '@/lib/logger';
 import moment from 'moment';
 import ProximityBar, { calcProximity } from '@/components/dashboard/ProximityBar';
@@ -209,6 +212,17 @@ function Details({ states, fundingRate, nextFundingTime, primaryState }) {
   );
 }
 
+const sideWord = (side) => (side === 'SELL' ? 'VENDA' : 'COMPRA');
+
+// Item 278: por que a simulação não foi criada (toast).
+const SIMULATION_REFUSAL = Object.freeze({
+  already_simulated: 'Este aviso já foi simulado — veja a operação em Trades.',
+  engine_already_opened: 'O motor já abriu uma operação para este aviso — veja em Trades.',
+  no_longer_waiting: 'O prazo deste aviso terminou enquanto o diálogo estava aberto.',
+  no_4h_atr: 'Sem dados de ATR no 4h para calcular o stop.',
+  active_op_exists: 'Já existe uma operação ativa neste ativo.',
+});
+
 export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeOpsUnavailable = false, onClick, expandAll = false }) {
   const queryClient = useQueryClient();
   const availableTfs = states?.map(s => s.timeframe).filter(Boolean) || [];
@@ -222,6 +236,11 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   // outro sinal (ex.: lado oposto) enquanto o diálogo está aberto; sem o
   // snapshot, confirmar ativaria o sinal NOVO, não o que o usuário revisou.
   const [confirmingActivate, setConfirmingActivate] = useState(null);
+  // Rótulos do diálogo usam o último aviso aberto: durante a animação de
+  // fechamento `confirmingActivate` já é null e o lado "piscaria" para COMPRA.
+  const lastDialogSignal = useRef(null);
+  if (confirmingActivate) lastDialogSignal.current = confirmingActivate;
+  const dialogSide = sideWord(lastDialogSignal.current?.signal_type);
   useEffect(() => { setOpen(expandAll); }, [expandAll]);
   const state1h = states?.find(s => s.timeframe === '1h');
   const state4h = states?.find(s => s.timeframe === '4h');
@@ -246,24 +265,44 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   //
   // Regra desta pasta: componente não implementa lógica de trading. O motor
   // calcula stop/alvo/tier e cria pelo caminho transacional único.
+  //
+  // Item 278 (PR-C): virou "🧪 Simular entrada (virtual)". O motor grava
+  // `source: 'manual'`, e a operação fica fora da medição do motor
+  // (src/lib/operationProvenance.js). Avisos por toast, não window.alert.
   const activateMutation = useMutation({
-    mutationFn: (sig) => activateSignalManually(sig, asset),
+    mutationFn: async (/** @type {any} */ sig) => {
+      // O diálogo pode ficar aberto: reconfere o prazo na hora de confirmar.
+      if (classifySignal(sig, Date.now(), asset).phase !== SIGNAL_PHASE.WAITING) {
+        return { created: false, reason: 'no_longer_waiting' };
+      }
+      // Mesmos ids determinísticos do motor (scanner.js — formato travado por
+      // manualSimulationId.test.js): `trade_<dedup_key>` (o motor já abriu,
+      // e talvez encerrou, a operação deste aviso) e `trade_manual_<id>` (já
+      // simulado). Sem isto o motor responderia "já existe operação ativa",
+      // o que confunde quando ela já encerrou.
+      const engineKey = sig.dedup_key || sig.id;
+      const key = sig.id || sig.dedup_key;
+      const [engineOp, manualOp] = await Promise.all([
+        engineKey ? backend.entities.TradeOperation.get(`trade_${engineKey}`) : null,
+        key ? backend.entities.TradeOperation.get(`trade_manual_${key}`) : null,
+      ]);
+      if (engineOp) return { created: false, reason: 'engine_already_opened' };
+      if (manualOp) return { created: false, reason: 'already_simulated' };
+      return activateSignalManually(sig, asset);
+    },
     onSuccess: (res) => {
       if (!res?.created) {
-        const msg = res?.reason === 'no_4h_atr'
-          ? 'Não foi possível ativar: sem dados de ATR no 4h para calcular o stop.'
-          : res?.reason === 'active_op_exists'
-            ? 'Não foi possível ativar: já existe uma operação ativa neste ativo.'
-            : 'Não foi possível ativar a operação.';
-        window.alert(msg);
+        const msg = SIMULATION_REFUSAL[res?.reason] ?? 'Não foi possível criar a simulação.';
+        toast({ title: 'Simulação não iniciada', description: msg, variant: 'destructive' });
         return;
       }
+      toast({ title: '🧪 Simulação iniciada', description: 'Operação virtual criada — nenhuma ordem foi enviada à corretora.' });
       queryClient.invalidateQueries({ queryKey: ['trade-operations'] });
       queryClient.invalidateQueries({ queryKey: ['trade-operations-dashboard'] });
     },
     onError: (err) => {
-      logError('AssetCard', `Falha ao ativar operação manual em ${asset.symbol}`, { error: err.message });
-      window.alert('Falha ao ativar a operação. Veja o Debug Log.');
+      logError('AssetCard', `Falha ao simular operação manual em ${asset.symbol}`, { error: err.message });
+      toast({ title: 'Simulação não iniciada', description: 'Falha ao criar a simulação. Veja o Debug Log.', variant: 'destructive' });
     },
   });
 
@@ -282,6 +321,12 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
 
   const TERMINAL = ['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'];
   const hasActiveOp = tradeOp && !TERMINAL.includes(tradeOp.status);
+  // Item 278: só aviso Range Filter 4h ainda aguardando confirmação (mesma
+  // regra de fase do resto do painel) pode ser simulado.
+  const canSimulate = Boolean(latestSignal) && !hasActiveOp && !tradeOpsUnavailable && !dataUnreliable
+    && !latestSignal.is_dismissed
+    && latestSignal.source === 'range_filter' && latestSignal.timeframe === '4h'
+    && classifySignal(latestSignal, now, asset).phase === SIGNAL_PHASE.WAITING;
   const opSide = tradeOp?.side;
   const sigSide = latestSignal?.signal_type;
   const isBuy = (opSide || sigSide) === 'BUY';
@@ -588,8 +633,11 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           </div>
         )}
 
-        {/* Activate button — only for signals without active op */}
-        {latestSignal && !hasActiveOp && !dataUnreliable && (
+        {/* Simular entrada — só para aviso que pode virar operação e ainda está
+            no prazo (Range Filter 4h aguardando), sem operação ativa e com dado
+            confiável. O motor usa a cascata 4h (ATR do 4h) para stop/alvos,
+            então 1h/1d/SMC não entram (item 278). */}
+        {canSimulate && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -600,8 +648,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
             style={sigSide === 'BUY'
               ? { background: 'rgba(0,255,128,0.1)', border: '1px solid rgba(0,255,128,0.3)', color: '#00ff80' }
               : { background: 'rgba(255,20,120,0.1)', border: '1px solid rgba(255,20,120,0.3)', color: '#ff1478' }}>
-            <Zap className="w-3 h-3" />
-            {activateMutation.isPending ? 'Ativando...' : `Ativar ${sigSide} agora`}
+            {activateMutation.isPending ? 'Simulando...' : '🧪 Simular entrada (virtual)'}
           </button>
         )}
 
@@ -624,16 +671,20 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
       <AlertDialog open={!!confirmingActivate} onOpenChange={(open) => !open && setConfirmingActivate(null)}>
         <AlertDialogContent onClick={(e) => e.stopPropagation()}>
           <AlertDialogHeader>
-            <AlertDialogTitle>{`Ativar operação ${confirmingActivate?.signal_type} em ${asset.display_name}?`}</AlertDialogTitle>
+            <AlertDialogTitle>{`Iniciar simulação de ${dialogSide} em ${asset.display_name}?`}</AlertDialogTitle>
             <AlertDialogDescription>
-              A entrada usa o preço ATUAL de mercado, e a operação será gerida pelas regras da
-              cascata 4h (stop por ATR/tier, TP1/TP2 e Time Stop).
+              Nenhuma ordem é enviada à corretora. O Sentinel cria uma operação virtual com o preço
+              ATUAL de mercado e a acompanha pelas regras da cascata 4h (stop por ATR/tier, TP1/TP2 e
+              Time Stop). Esta entrada manual pula os filtros do motor (R:R, regime, tendência), fica
+              marcada como simulação e fora da medição do motor (Confiança ao Vivo e comparação com o
+              histórico). Enquanto ela estiver aberta, o motor não abre outra operação neste ativo —
+              inclusive a deste aviso, se ele confirmar depois.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => activateMutation.mutate(confirmingActivate)}>
-              {`Ativar ${confirmingActivate?.signal_type}`}
+              {`Simular ${dialogSide}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
