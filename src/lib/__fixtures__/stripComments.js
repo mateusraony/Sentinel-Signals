@@ -13,7 +13,9 @@ import ts from 'typescript';
  * @param {string} [fileName]
  */
 export function stripComments(source, fileName = 'x.jsx') {
-  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JSX);
+  // .ts sem JSX (`<T>x` é cast); .tsx com JSX; JS/JSX/MJS como JSX.
+  const kind = /\.tsx$/.test(fileName) ? ts.ScriptKind.TSX : /\.ts$/.test(fileName) ? ts.ScriptKind.TS : ts.ScriptKind.JSX;
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind);
   const ranges = new Map();
   const jsxText = [];
   const collect = (list) => { for (const r of list ?? []) ranges.set(r.pos, r.end); };

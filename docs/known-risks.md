@@ -33107,3 +33107,7 @@ para o futuro, todas com prova:
 - "⏳ Aberto" (vela aberta, TradeCard/Histórico/cartão) usava o glifo de "Aguardando Entrada" → 🕯️;
   ⏳ ganhou regra de contexto.
 - A guarda antiga (`panelVocabularyGuard`) analisava cada arquivo 3 vezes — agora 1 (cache).
+
+**Achado do Codex (P2, PR #506, corrigido):** a varredura lia só `.js/.jsx/.mjs` — `.ts/.tsx` (já existe
+`src/utils/index.ts`) ficavam de fora. Agora entram, cada um analisado com o modo certo do TypeScript (`.ts`
+sem JSX, `.tsx` com JSX); o teste exige `src/utils/index.ts` na lista e prova os dois modos.

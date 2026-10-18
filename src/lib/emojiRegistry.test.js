@@ -16,7 +16,8 @@ function arquivos(dir) {
       if (!['__fixtures__', 'dist', 'node_modules'].includes(nome)) out.push(...arquivos(caminho));
       continue;
     }
-    if (!/\.(js|jsx|mjs)$/.test(nome) || /\.test\.(js|jsx|mjs)$/.test(nome)) continue;
+    // Achado do Codex (PR #506): .ts/.tsx ficavam de fora (já existe src/utils/index.ts).
+    if (!/\.(js|jsx|mjs|ts|tsx)$/.test(nome) || /\.test\.(js|jsx|mjs|ts|tsx)$/.test(nome)) continue;
     out.push(caminho);
   }
   return out;
@@ -55,6 +56,7 @@ describe('varredura: nenhum glifo fora do sentido registrado', () => {
     expect(ALVOS.length).toBeGreaterThan(200); // não-vacuidade
     expect(ALVOS).toContain('scripts/adminTelegram.js');
     expect(ALVOS).toContain('server/index.js');
+    expect(ALVOS).toContain('src/utils/index.ts');
     const achados = ALVOS.flatMap(rel => violacoes(rel, readFileSync(join(RAIZ, rel), 'utf8')));
     expect(achados).toEqual([]);
   });
@@ -149,6 +151,12 @@ describe('prova do guard (usos antigos voltando)', () => {
     ["const o = ['🛡️ BE (entrada)'];"],
   ])('não escapa: %s', (codigo) => {
     expect(pega(codigo)).toBe(true);
+  });
+
+  it('arquivos TypeScript também são lidos (cast em .ts, JSX em .tsx)', () => {
+    expect(pega("const a = <number>x; const l = '🚀 Runner';", 'src/utils/x.ts')).toBe(true);
+    expect(pega("const X = () => <p>⚡ Sinais</p>;", 'src/components/X.tsx')).toBe(true);
+    expect(pega("// 🚀 em comentário\nconst a = <number>x;", 'src/utils/x.ts')).toBe(false);
   });
 
   it('remover comentários preserva a numeração das linhas', () => {

@@ -75,7 +75,7 @@ significado, sempre acompanhado de texto.
 ### Registro "1 emoji = 1 significado" (item 280, PR-E2/E3)
 
 Fonte única: `src/lib/emojiRegistry.js` (`EMOJI_REGISTRY`, glifo → significado).
-`src/lib/emojiRegistry.test.js` varre `src/**`, `scripts/**` e `server/**` (todos os
+`src/lib/emojiRegistry.test.js` varre `src/**`, `scripts/**` e `server/**` (`.js/.jsx/.mjs/.ts/.tsx`; todos os
 canais do Telegram: `adminTelegram.js`, relatório diário, auditoria, webhook do
 TradingView) e falha quando um glifo controlado aparece fora do sentido
 registrado. A regra olha o texto logo depois do glifo (até fechar a string ou a
