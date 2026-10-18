@@ -109,7 +109,7 @@
     "tp2FallbackMult": 2
   },
   "analysis": {
-    "primary": "unpaired (cluster-robust) via scripts/compare-backtest-reports.mjs, control x arm, per window",
+    "primary": "não pareada (cluster-robusta) via scripts/compare-backtest-reports.mjs --family-size 6 --target-arm, controle × braço, por janela",
     "familySize": 6,
     "alphaPerComparison": 0.008333,
     "approve": "Δ expectância líquida > 0 com IC (alpha 0,05/6) excluindo zero e veredito 'diferenca_significativa' (G ≥ 20 clusters) em W1 E W2, e Δ > 0 (ponto) em W0",
@@ -120,7 +120,7 @@
     "comparisons": "só controle × braço, por janela; braços não são comparados entre si (a perna da Fibonacci é medida no fechamento do sinal, como no item 267, e os pivôs no instante da entrada — informação não simétrica)",
     "fewClusters": "veredito 'inconclusivo_poucos_clusters' (G < 20) conta como INCONCLUSIVO, nunca como aprovado/pior",
     "sameRulesNote": "as regras de gestão são as mesmas em todos os braços; o momento em que cada uma age (TP1 -> stop na entrada -> runner) segue o alvo, e com 1 operação por ativo o conjunto de operações diverge — por isso a leitura é não pareada",
-    "provenanceCheck": "antes de comparar cada par controle × braço, checkArmProvenance (src/lib/targetModeReport.js) tem que passar: config igual fora de targetMode/targetNearPolicy e smc vazio; falhou -> refazer a rodada, nunca comparar",
+    "provenanceCheck": "--target-arm faz o comparador recusar (sem números) o par em que o braço difere do controle fora de targetMode/targetNearPolicy — config da estratégia E argumentos da rodada (ex.: --rf-period), fora de --out/--trial-label/--pine-config — ou com smc ligado; recusou -> refazer a rodada, nunca comparar",
     "dataProblems": "vela faltando para medir o alvo (busca falha, histórico curto ou desalinhado) invalida o relatório; nunca vira fallback"
   },
   "runConfig": {

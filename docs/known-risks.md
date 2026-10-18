@@ -33159,7 +33159,7 @@ alvo de hoje. O usuário escolheu medir as três formas.
   2021-07-27→2022-07-27 (BTC, ETH, FET, PAXG — os que existiam na janela inteira) replica.
   7 braços × 3 janelas = 21 rodadas no `backtest.yml`, configuração fixada no JSON (`smc`/`smc_confirm`
   vazios, timeframes e custos padrão, `pine_config` do controle vazio e do braço só com as duas chaves).
-- **Leitura:** não pareada (cluster-robusta), `scripts/compare-backtest-reports.mjs --family-size 6`,
+- **Leitura:** não pareada (cluster-robusta), `scripts/compare-backtest-reports.mjs --family-size 6 --target-arm`,
   controle × braço por janela (família `targets-2026-10`, Bonferroni α = 0,05/6).
   - **Aprova** só com Δ expectância líquida > 0, IC acima de zero e veredito "diferença significativa"
     (G ≥ 20 clusters) em W1 **e** W2, e Δ > 0 em W0. **Pior** é o espelho. O resto é ruído.
@@ -33202,6 +33202,11 @@ nenhum campo novo; em cada braço, mesma entrada e stop, e TP1/TP2 recalculados 
 - Relatório: usa `getExitPrice`/`isClosedOp` (stop sem `exit_price` cai no stop do trailing) e avisa que
   `indicatorAttribution` simula os rejeitados com o alvo do controle.
 - Regra do motor reescrita sem "gestão igual".
+**Achados do Codex (P1, PR #507, corrigidos):** a checagem de procedência existia mas o comparador não a
+chamava, e ela não olhava os parâmetros do ativo (`--rf-period`/`--rf-multiplier` não ficam no
+`pineConfig`). Agora `compare-backtest-reports.mjs --target-arm` recusa o par (sem imprimir números) se o
+braço diferir do controle fora das chaves de alvo — config da estratégia E argumentos da rodada, fora de
+`--out`/`--trial-label`/`--pine-config`. Testes nos dois arquivos; sem a opção, o comparador segue igual.
 **Não feito, com motivo:** a busca de velas acontece antes de saber se a criação vai ser recusada por
 vaga/teto — custo pequeno, só no backtest em memória. Validação em três camadas (config antes do replay, motor lança, função pura
 cai no controle) — cada uma protege um caminho diferente; juntar as três esconderia erro de config como

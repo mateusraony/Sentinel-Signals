@@ -72,12 +72,30 @@ export function summarizeTargets({ ops = [], targetMode, targetNearPolicy, fromM
 
 const TARGET_KEYS = new Set(['targetMode', 'targetNearPolicy']);
 const hasSmcArg = (trialArgs) => /--smc(-confirm)?\s+(?!--)\S/.test(String(trialArgs ?? ''));
+// Opções que só nomeiam arquivo ou rótulo da rodada — legitimamente diferentes
+// entre controle e braço. Todo o resto (moedas, janela, --rf-period,
+// --rf-multiplier, custos, --smc...) tem que ser igual.
+const LABEL_ONLY_ARGS = new Set(['--out', '--trial-label', '--pine-config']);
+function runArgs(trialArgs) {
+  const tokens = String(trialArgs ?? '').split(/\s+/).filter(Boolean);
+  const out = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    if (LABEL_ONLY_ARGS.has(tokens[i])) {
+      if (tokens[i + 1] && !tokens[i + 1].startsWith('--')) i += 1;
+      continue;
+    }
+    out.push(tokens[i]);
+  }
+  return out.join(' ');
+}
 
 /**
  * Procedência de um par controle × braço antes da comparação (item 281):
  * o compare-backtest-reports.mjs confere janela, moedas, commit e custos, mas
  * não a config da estratégia. Aqui: controle com o alvo de hoje, braço com um
- * alvo estrutural, e as duas configs IGUAIS fora das duas chaves de alvo; sem
+ * alvo estrutural, e as duas configs IGUAIS fora das duas chaves de alvo; os
+ * argumentos da rodada iguais fora de arquivo/rótulo (os parâmetros do ativo,
+ * como --rf-period, não ficam no pineConfig — achado do Codex, PR #507); sem
  * cascata SMC em nenhum dos dois (pré-registro, runConfig).
  * @returns {{ ok: boolean, errors: string[] }}
  */
@@ -93,6 +111,7 @@ export function checkArmProvenance(control, arm) {
     if (TARGET_KEYS.has(k)) continue;
     if (JSON.stringify(cc[k]) !== JSON.stringify(ac[k])) errors.push(`config difere fora das chaves de alvo: ${k}`);
   }
+  if (runArgs(control?.trialArgs) !== runArgs(arm?.trialArgs)) errors.push('argumentos da rodada diferem fora de --out/--trial-label/--pine-config');
   if (hasSmcArg(control?.trialArgs) || hasSmcArg(arm?.trialArgs)) errors.push('cascata SMC ligada (o pré-registro fixa smc vazio)');
   return { ok: errors.length === 0, errors };
 }

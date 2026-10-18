@@ -66,12 +66,26 @@ describe('checkArmProvenance (item 281)', () => {
       'controle com targetMode fib_ext_15m',
       'braço com targetMode r_multiple',
       'config difere fora das chaves de alvo: tp1R',
+      'argumentos da rodada diferem fora de --out/--trial-label/--pine-config',
       'cascata SMC ligada (o pré-registro fixa smc vazio)',
     ]);
   });
 
+  // Achado do Codex (P1, PR #507): parâmetros do ativo (--rf-period etc.) não
+  // ficam no pineConfig; os argumentos da rodada têm que ser iguais, fora dos
+  // que só nomeiam arquivo/rótulo.
+  it('recusa argumentos da rodada diferentes (ex.: --rf-period), aceita só rótulo/arquivos diferentes', () => {
+    const ctl = '--symbols BTCUSDT --from a --to b --out c.json --trial-label T_ctl';
+    const arm = (extra) => `--symbols BTCUSDT --from a --to b ${extra} --out d.json --trial-label T_arm --pine-config p.json`;
+    const armCfg = { ...base, targetMode: 'swing_4h' };
+    expect(checkArmProvenance(report(base, ctl), report(armCfg, arm(''))).ok).toBe(true);
+    const r = checkArmProvenance(report(base, ctl), report(armCfg, arm('--rf-period 30')));
+    expect(r.ok).toBe(false);
+    expect(r.errors).toEqual(['argumentos da rodada diferem fora de --out/--trial-label/--pine-config']);
+  });
+
   it('--smc vazio não conta como ligado; relatório sem config é recusado', () => {
-    expect(checkArmProvenance(report(base, '--smc --from a'), report({ ...base, targetMode: 'swing_4h' })).ok).toBe(true);
+    expect(checkArmProvenance(report(base, '--smc --from a'), report({ ...base, targetMode: 'swing_4h' }, '--smc --from a')).ok).toBe(true);
     expect(checkArmProvenance({}, report(base)).ok).toBe(false);
   });
 });
