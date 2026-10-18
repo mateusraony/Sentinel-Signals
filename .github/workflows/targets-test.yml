@@ -1,0 +1,252 @@
+name: Teste dos alvos — item 281 (Sentinel Signals)
+
+# docs/known-risks.md item 281 — teste pré-registrado "só os alvos mudam"
+# (Fibonacci 15m × topo/fundo 4h × alvo de hoje). Disparo MANUAL, SEM campos:
+# janelas, moedas, braços e regras vêm de docs/experiments/targets-prereg.json,
+# o mesmo arquivo travado por src/lib/targetsPrereg.test.js. Um clique roda as
+# 21 combinações, EM ETAPAS, para cumprir "parar antes de ler qualquer braço":
+#   1. controles das 3 janelas;
+#   2. check-control: o controle tem que reproduzir o item 270 — senão o
+#      workflow para aqui e os braços NEM RODAM (nenhum número de braço existe);
+#   3. os 18 braços;
+#   4. resumo pelo critério pré-registrado (scripts/targets-summary.mjs).
+#
+# Sem secret, sem banco, sem Telegram: backend falso em memória, como o
+# backtest.yml. Nenhuma ordem, nada muda na produção.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: targets-test
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      windows: ${{ steps.plan.outputs.windows }}
+      controls: ${{ steps.plan.outputs.controls }}
+      arms: ${{ steps.plan.outputs.arms }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: plan
+        name: Ler o pré-registro
+        run: |
+          node -e "
+            const p = JSON.parse(require('fs').readFileSync('docs/experiments/targets-prereg.json', 'utf-8'));
+            const windows = p.windows.map((w) => ({ label: w.label, from: w.from, to: w.to, symbols: w.symbols.join(',') }));
+            const armSpecs = p.arms.map((a) => ({ label: a.label, pine: JSON.stringify({ targetMode: a.targetMode, targetNearPolicy: a.targetNearPolicy }) }));
+            const controls = windows.map((w) => ({ ...w, arm: 'atual', pine: '' }));
+            const arms = windows.flatMap((w) => armSpecs.map((a) => ({ ...w, arm: a.label, pine: a.pine })));
+            const out = require('fs');
+            out.appendFileSync(process.env.GITHUB_OUTPUT, 'windows=' + JSON.stringify(windows) + '\n');
+            out.appendFileSync(process.env.GITHUB_OUTPUT, 'controls=' + JSON.stringify(controls) + '\n');
+            out.appendFileSync(process.env.GITHUB_OUTPUT, 'arms=' + JSON.stringify(arms) + '\n');
+            console.log('Janelas:', windows.length, '· controles:', controls.length, '· braços:', arms.length);
+          "
+
+  fetch:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        window: ${{ fromJSON(needs.plan.outputs.windows) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Baixar histórico real (Binance Spot) desta janela
+        env:
+          SYMBOLS: ${{ matrix.window.symbols }}
+          FROM_INPUT: ${{ matrix.window.from }}
+          TO_INPUT: ${{ matrix.window.to }}
+        run: |
+          node scripts/fetch-backtest-data.mjs \
+            --symbols "$SYMBOLS" \
+            --from "${FROM_INPUT}T00:00:00Z" --to "${TO_INPUT}T00:00:00Z" \
+            --timeframes "15m,1h,4h,1d" \
+            --warmup-candles 500 \
+            --out candles
+      - name: Upload dos candles
+        uses: actions/upload-artifact@v4
+        with:
+          name: candles-${{ matrix.window.label }}
+          path: candles
+          retention-days: 7
+          if-no-files-found: error
+
+  replay-control:
+    needs: [plan, fetch]
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        run: ${{ fromJSON(needs.plan.outputs.controls) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Baixar os candles da janela
+        uses: actions/download-artifact@v4
+        with:
+          name: candles-${{ matrix.run.label }}
+          path: candles
+      - name: Rodar o replay
+        env:
+          WINDOW: ${{ matrix.run.label }}
+          ARM: ${{ matrix.run.arm }}
+          SYMBOLS: ${{ matrix.run.symbols }}
+          FROM_INPUT: ${{ matrix.run.from }}
+          TO_INPUT: ${{ matrix.run.to }}
+          PINE: ${{ matrix.run.pine }}
+        run: |
+          ARGS=(--symbols "$SYMBOLS" --from "${FROM_INPUT}T00:00:00Z" --to "${TO_INPUT}T00:00:00Z" \
+            --data-dir candles --out "report-${WINDOW}-${ARM}.json" --allow-late-start \
+            --trial-label "TargetTest_${WINDOW}_${ARM}")
+          # Controle sem pine_config (comportamento de hoje); braço só com as duas chaves de alvo.
+          if [ -n "$PINE" ]; then
+            printf '%s' "$PINE" > pine-config-overrides.json
+            ARGS+=(--pine-config pine-config-overrides.json)
+          fi
+          npm run backtest -- "${ARGS[@]}"
+      - name: Upload do relatório
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.run.label }}-${{ matrix.run.arm }}
+          path: report-${{ matrix.run.label }}-${{ matrix.run.arm }}.json
+          retention-days: 7
+          if-no-files-found: warn
+
+  check-control:
+    needs: replay-control
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Baixar os relatórios do controle
+        uses: actions/download-artifact@v4
+        with:
+          pattern: report-*-atual
+          path: reports
+          merge-multiple: true
+      - name: Controle reproduz o item 270? (senão os braços não rodam)
+        run: |
+          set -o pipefail
+          node scripts/targets-summary.mjs \
+            --prereg docs/experiments/targets-prereg.json \
+            --reports reports --controls-only \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+  replay-arms:
+    needs: [plan, check-control]
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix:
+        run: ${{ fromJSON(needs.plan.outputs.arms) }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Baixar os candles da janela
+        uses: actions/download-artifact@v4
+        with:
+          name: candles-${{ matrix.run.label }}
+          path: candles
+      - name: Rodar o replay
+        env:
+          WINDOW: ${{ matrix.run.label }}
+          ARM: ${{ matrix.run.arm }}
+          SYMBOLS: ${{ matrix.run.symbols }}
+          FROM_INPUT: ${{ matrix.run.from }}
+          TO_INPUT: ${{ matrix.run.to }}
+          PINE: ${{ matrix.run.pine }}
+        run: |
+          ARGS=(--symbols "$SYMBOLS" --from "${FROM_INPUT}T00:00:00Z" --to "${TO_INPUT}T00:00:00Z" \
+            --data-dir candles --out "report-${WINDOW}-${ARM}.json" --allow-late-start \
+            --trial-label "TargetTest_${WINDOW}_${ARM}")
+          # Controle sem pine_config (comportamento de hoje); braço só com as duas chaves de alvo.
+          if [ -n "$PINE" ]; then
+            printf '%s' "$PINE" > pine-config-overrides.json
+            ARGS+=(--pine-config pine-config-overrides.json)
+          fi
+          npm run backtest -- "${ARGS[@]}"
+      - name: Upload do relatório
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.run.label }}-${{ matrix.run.arm }}
+          path: report-${{ matrix.run.label }}-${{ matrix.run.arm }}.json
+          retention-days: 7
+          if-no-files-found: warn
+
+  summary:
+    needs: [check-control, replay-arms]
+    # Não roda se você cancelar, nem se o controle não passou (os braços nem rodaram).
+    if: ${{ !cancelled() && needs.check-control.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Baixar todos os relatórios
+        uses: actions/download-artifact@v4
+        with:
+          pattern: report-*
+          path: reports
+          merge-multiple: true
+      - name: Resumo pelo critério pré-registrado
+        run: |
+          set -o pipefail
+          echo "Relatórios encontrados: $(ls reports | wc -l)"
+          node scripts/targets-summary.mjs \
+            --prereg docs/experiments/targets-prereg.json \
+            --reports reports \
+            --json targets-summary.json \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Upload do resumo
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resumo-targets-test
+          path: targets-summary.json
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Upload dos relatórios (para conferência)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorios-targets-test
+          path: reports
+          retention-days: 30
+          if-no-files-found: warn

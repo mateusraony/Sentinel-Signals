@@ -33157,8 +33157,9 @@ alvo de hoje. O usuário escolheu medir as três formas.
     motivo gravado (`target_basis`, `target_fallback_reason`).
 - **Janelas:** W1 2025-10-10→2026-10-10 e W2 2024-07-27→2025-07-27 (7 símbolos) decidem; W0
   2021-07-27→2022-07-27 (BTC, ETH, FET, PAXG — os que existiam na janela inteira) replica.
-  7 braços × 3 janelas = 21 rodadas no `backtest.yml`, configuração fixada no JSON (`smc`/`smc_confirm`
-  vazios, timeframes e custos padrão, `pine_config` do controle vazio e do braço só com as duas chaves).
+  7 braços × 3 janelas = 21 rodadas, todas num clique só pelo workflow `targets-test.yml` (sem campos;
+  lê o JSON do pré-registro): controle sem `pine_config`, braço só com as duas chaves, sem SMC, custos
+  padrão. O resumo no fim (`scripts/targets-summary.mjs`) aplica o critério abaixo sozinho.
 - **Leitura:** não pareada (cluster-robusta), `scripts/compare-backtest-reports.mjs --family-size 6 --target-arm`,
   controle × braço por janela (família `targets-2026-10`, Bonferroni α = 0,05/6).
   - **Aprova** só com Δ expectância líquida > 0, IC acima de zero e veredito "diferença significativa"
@@ -33212,4 +33213,31 @@ vaga/teto — custo pequeno, só no backtest em memória. Validação em três c
 cai no controle) — cada uma protege um caminho diferente; juntar as três esconderia erro de config como
 fallback.
 
-**Resultado:** pendente (PR seguinte, depois das 21 rodadas).
+**Como roda (PR #508):** a sessão não tem permissão para disparar workflow (403 "Resource not accessible
+by integration"), e 21 disparos à mão no `backtest.yml` seriam fonte de erro de digitação. Por isso um
+workflow próprio, sem campos (mesmo molde dos itens 266–272): baixa cada janela uma vez, roda as 21
+combinações em matriz e termina com o resumo pelo critério pré-registrado — controle reproduzindo o item
+270 (senão PARADO, sem número de braço), procedência de cada par, fallback > 50% = inconclusivo, e o
+veredito por braço (`scripts/targetsSummary.mjs`, testado).
+
+**Revisão do workflow e do resumo (achados corrigidos):**
+- Os braços rodavam junto com o controle: com o controle falhando, os números dos braços já estariam nos
+  artifacts e logs — furava "parar antes de ler qualquer braço". Agora em etapas: controles →
+  `check-control` (falhou = workflow para, braços nem rodam) → braços → resumo.
+- A reprodução comparava W2 em 4 casas, mas o item 270 registrou +0,054 (3 casas): uma reprodução correta
+  daria PARADO falso. Agora compara na precisão registrada.
+- W0 sem dado utilizável virava "não replicou"; agora é INCONCLUSIVO. Braço sem operação na janela era
+  lido como fallback; agora é "não calculável". Relatório de controle ausente/inválido virou "falha de
+  execução" (refazer), separado de PARADO. O arquivo de um braço tem que conter a config daquele braço, e
+  todo relatório a janela e as moedas pré-registradas. O resumo não roda se o workflow for cancelado.
+- Pré-registro: campo de timeframes alinhado ao que roda (15m/1h/4h/1d; o 5m só serve à SMC, desligada).
+**Achado do Codex (P2, PR #508), em parte não corrigível agora:** a reprodução do controle confere
+contagem e expectância, não QUAIS operações. O item 270 só registrou esses dois números (os relatórios não
+ficam no repositório), então não há lista para comparar hoje; trocar operações mantendo exatamente a mesma
+contagem e a mesma média na precisão registrada é improvável, e o teste de ponta a ponta já prova que a
+chave desligada gera operações idênticas. Feito: o resumo imprime um hash dos ids das operações de cada
+controle, e o resultado do item 281 vai gravá-lo — as próximas reproduções comparam as mesmas operações.
+**Não feito, com motivo:** `npm ci` e o bundle do backtest em cada job da matriz (mesmo padrão dos
+workflows dos itens 264–272; custo de minutos de runner, não de resultado).
+
+**Resultado:** pendente (depois do disparo do `targets-test.yml`).
