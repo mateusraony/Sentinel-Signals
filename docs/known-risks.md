@@ -32933,6 +32933,13 @@ faixa de score (mesmo conjunto do número mostrado); se só há operações excl
 aparece com a linha explicando, em vez de sumir; as duas consultas de id rodam em paralelo; o tripwire não
 acusa rotas como `/order-history`; o lado no diálogo não "pisca" ao fechar. **Não feito, registrado:**
 filtro de proveniência nas demais métricas do Dashboard (seletor comum) — decisão de escopo, ver limites.
+**Codex (PR #504, P2) — não corrigido, com motivo:** com mais de 500 operações no total, as
+excluídas recentes ocupam vagas do teto de 500 e a amostra do motor fica menor (as operações do motor
+entre as 500 mais recentes). Não é seleção por resultado — é uma janela por data, encolhida pelo número
+de excluídas (simulações são raras). Corrigir exigiria filtrar no servidor (`server/`/`db`, fora do
+escopo destes PRs) ou mudar a consulta compartilhada com a conta virtual
+(`['trade-operations-closed-all']`, mesmo teto) — alteraria os números dela ou dobraria o polling a
+cada 2 min no Render/Neon gratuitos. Decisão registrada para o usuário.
 **Decisão a levar ao usuário (não implementada):** a simulação ocupa a única vaga de
 operação do ativo — enquanto aberta, o motor não abre a operação dele, inclusive a do próprio aviso se
 ele confirmar depois. Mudar isso exige mexer no motor; por ora o diálogo avisa explicitamente. **Não
