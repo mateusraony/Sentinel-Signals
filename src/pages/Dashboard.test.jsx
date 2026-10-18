@@ -206,6 +206,28 @@ describe('Dashboard — empty state de "Nenhum ativo monitorado" tem link pra /a
   });
 });
 
+// Item 277 (PR-B): o cabeçalho dizia "Dados em tempo real" fixo, mesmo com o
+// scan parado. Agora mostra a saúde real dos ativos ligados.
+describe('Dashboard — chip de saúde no lugar de "Dados em tempo real" (item 277)', () => {
+  afterEach(() => { drawerScenario = null; });
+
+  it('sem ativos: "Nenhum ativo ligado" e nada de "tempo real"', async () => {
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+    await screen.findByText('📡 Nenhum ativo ligado', undefined, { timeout: 5000 });
+    expect(screen.queryByText(/Dados em tempo real/)).toBeNull();
+  });
+
+  it('com ativo atrasado: conta o problema', async () => {
+    drawerScenario = {
+      assets: () => [{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: new Date(Date.now() - 50 * 60000).toISOString() }],
+    };
+    const { default: Dashboard } = await import('./Dashboard.jsx');
+    renderPage(<Dashboard />);
+    await screen.findByText(/^📡 Último scan há \d+ min · 1 ativo com problema$/, undefined, { timeout: 5000 });
+  }, 15000);
+});
+
 // Codex no PR #461 (docs/known-risks.md item 256): o painel lateral recebia só as
 // 100 operações mais recentes, um retrato do ativo e um relógio parado.
 describe('Dashboard — painel lateral do ativo (Codex #461)', () => {
@@ -254,12 +276,12 @@ describe('Dashboard — painel lateral do ativo (Codex #461)', () => {
     const { queryClient } = renderPage(<Dashboard />);
     fireEvent.click(await screen.findByRole('button', { name: /BTC\/USDT — abrir detalhes/ }, { timeout: 5000 }));
     const dialog = await screen.findByRole('dialog', undefined, { timeout: 5000 });
-    await waitFor(() => expect(within(dialog).getByText('STALE')).toBeTruthy(), { timeout: 5000 });
+    await waitFor(() => expect(within(dialog).getByText(/^📡 Atrasado/)).toBeTruthy(), { timeout: 5000 });
 
     lastScan = iso(1 * MIN); // o scan voltou: o próximo poll traz last_scan_at novo
     await queryClient.invalidateQueries({ queryKey: ['monitored-assets'] });
-    await waitFor(() => expect(within(dialog).getByText('LIVE')).toBeTruthy(), { timeout: 5000 });
-    expect(within(dialog).queryByText('STALE')).toBeNull();
+    await waitFor(() => expect(within(dialog).getByText(/^📡 Atualizado/)).toBeTruthy(), { timeout: 5000 });
+    expect(within(dialog).queryByText(/^📡 Atrasado/)).toBeNull();
   });
 
   it('REGRESSÃO: falha na query de ativas → mensagem fail-closed, nunca "aguardando"', async () => {

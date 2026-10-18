@@ -44,20 +44,23 @@ afterEach(() => {
 const OLD_40MIN = () => new Date(Date.now() - 40 * 60000).toISOString();
 const RECENT_5MIN = () => new Date(Date.now() - 5 * 60000).toISOString();
 
-describe('Assets — badge LIVE/STALE reflete o dead-man\'s-switch real (achado A-9)', () => {
-  it('mostra LIVE, STALE e ERRO corretamente por ativo, na mesma lista', async () => {
+describe('Assets — badge 📡 reflete o dead-man\'s-switch real (achado A-9, item 277)', () => {
+  it('mostra atualizado, atrasado, falha e sem leitura corretamente por ativo, na mesma lista', async () => {
     monitoredAssetListMock.mockResolvedValue([
       { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN() },
       { id: 'a2', symbol: 'ETHUSDT', display_name: 'ETH/USDT', is_active: true, last_scan_at: OLD_40MIN() },
       { id: 'a3', symbol: 'SOLUSDT', display_name: 'SOL/USDT', is_active: true, last_scan_at: RECENT_5MIN(), scan_error_since: OLD_40MIN() },
+      { id: 'a4', symbol: 'XRPUSDT', display_name: 'XRP/USDT', is_active: true },
     ]);
 
     renderPage(<Assets />);
 
     await screen.findByText('BTC/USDT');
-    screen.getByText('LIVE');
-    screen.getByText('STALE');
-    screen.getByText('ERRO');
+    screen.getByText('📡 Atualizado há 5 min');
+    screen.getByText(/^📡 Atrasado/);
+    screen.getByText(/^📡 Falha de leitura/);
+    screen.getByText('📡 Sem leitura'); // nunca lido: antes aparecia "LIVE"
+    expect(screen.queryByText('LIVE')).toBeNull();
   });
 });
 

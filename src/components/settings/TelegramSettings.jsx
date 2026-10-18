@@ -249,7 +249,7 @@ export default function TelegramSettings({ open, onClose }) {
 
             {/* Score threshold */}
             <div>
-              <p className="text-10px font-mono text-muted-foreground mb-2">🔥 SCORE MÍNIMO PARA ALERTAR</p>
+              <p className="text-10px font-mono text-muted-foreground mb-2">🧩 MÍNIMO DE REGRAS ALINHADAS PARA ALERTAR</p>
               <div className="flex items-center gap-3">
                 <input type="range" min="0" max="100" step="5"
                   value={filters.min_score ?? 0}

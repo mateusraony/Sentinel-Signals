@@ -72,7 +72,7 @@ describe('VerificationWidget — mostra o "por quê" (Auditoria do Telegram, Fas
     renderWidget();
 
     await screen.findByText('BTC/USDT');
-    expect(screen.getByText('🔥 88/100')).toBeTruthy();
+    expect(screen.getByText('🧩 88/100')).toBeTruthy();
     expect(screen.getByText('RF')).toBeTruthy();
     expect(screen.getByText('RF + EMA alinhados, confluência de 88/100')).toBeTruthy();
   });
@@ -115,7 +115,7 @@ describe('VerificationWidget — ressalva "score não é probabilidade" (passo 5
     listMock.mockResolvedValue([TASK_COM_MOTIVO]);
     renderWidget();
     await screen.findByText('BTC/USDT');
-    expect(screen.getByText(/score técnico \(concordância das regras atuais\) — não é probabilidade de acerto/)).toBeTruthy();
+    expect(screen.getByText(/regras alinhadas com o aviso \(concordância das regras atuais\) — não é chance de acerto/)).toBeTruthy();
   });
 
   it('sem nenhum score na lista, não há ressalva solta', async () => {

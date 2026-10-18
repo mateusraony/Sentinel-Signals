@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { agreementLabel, AGREEMENT_HINT } from '@/lib/ruleAgreement';
 import { X, Bell } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import moment from 'moment';
@@ -52,7 +53,7 @@ export default function SignalAlertBanner({ signals = [] }) {
       {alerts.map(sig => {
         const isBuy = sig.signal_type === 'BUY';
         const symbol = sig.symbol?.replace('USDT', '/USDT') || sig.symbol;
-        const score = sig.context?.score || 0;
+        const score = Number.isFinite(sig.context?.score) ? sig.context.score : 0;
         const borderColor = isBuy ? 'rgba(0,255,128,0.45)' : 'rgba(255,20,120,0.45)';
         const bgColor = isBuy ? 'rgba(0,255,128,0.06)' : 'rgba(255,20,120,0.06)';
         const textColor = isBuy ? '#00ff80' : '#ff1478';
@@ -79,11 +80,11 @@ export default function SignalAlertBanner({ signals = [] }) {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span className="text-9px font-mono cursor-help" tabIndex={0} style={{ color: score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
-                      🔥 Score {score}/100
+                      {agreementLabel({ score })}
                     </span>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                    Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
+                    {AGREEMENT_HINT}
                   </TooltipContent>
                 </Tooltip>
               )}

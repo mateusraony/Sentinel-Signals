@@ -3,6 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Coins, Bell, ScrollText, Zap, Target, BookOpen, Code2, Bot, FileText, Trash2, FilterX, Loader2, ArrowLeftRight, SlidersHorizontal, FlaskConical, ClipboardCheck, MoreHorizontal } from 'lucide-react';
 import { backend } from '@/api/entities';
 import { logError } from '@/lib/logger';
+import { useAllMonitoredAssets } from '@/hooks/useAllMonitoredAssets';
+import { SCAN_CADENCE_MS } from '@/lib/pollingIntervals';
+import DataHealthChip from '@/components/layout/DataHealthChip';
 import { toast } from '@/components/ui/use-toast';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import {
@@ -112,15 +115,21 @@ function DesktopSidebar() {
         <ClearLogsButton />
       </div>
 
-      {/* Live dot */}
+      {/* Saúde dos dados (item 277): antes um ponto verde pulsando sempre,
+          mesmo com o scan parado. Agora a mesma leitura do chip do Dashboard. */}
       <div className="pb-4">
-        <div className="relative flex items-center justify-center" style={{ width: 6, height: 6 }}>
-          <span className="block rounded-full" style={{ width: 6, height: 6, background: '#00ff80', boxShadow: '0 0 6px #00ff80' }} />
-          <span className="absolute inset-0 rounded-full" style={{ background: 'rgba(0,255,128,0.3)', animation: 'ping 1.8s ease-in-out infinite' }} />
-        </div>
+        <SidebarHealthDot />
       </div>
     </aside>
   );
+}
+
+function SidebarHealthDot() {
+  // Com polling na cadência do scan (o dado só muda a cada scan, ~5 min): o
+  // ponto mostra a idade do último scan, que precisa renovar. O TanStack não
+  // faz polling com a aba em segundo plano.
+  const { data: assets = [], isLoading, isError } = useAllMonitoredAssets({ refetchInterval: SCAN_CADENCE_MS });
+  return <DataHealthChip variant="dot" assets={assets} isLoading={isLoading} isError={isError} />;
 }
 
 function QuickToggleButton() {
@@ -133,6 +142,7 @@ function QuickToggleButton() {
     <div className="relative w-full group">
       <button
         onClick={() => navigate(target)}
+        aria-label={`Ir para ${label}`}
         className="flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200"
         style={{ background: 'rgba(0,229,255,0.06)', border: '1px solid rgba(0,229,255,0.12)' }}
       >
@@ -151,6 +161,7 @@ function QuickActionButton({ title, onClick, children }) {
     <div className="relative w-full group">
       <button
         onClick={onClick}
+        aria-label={title}
         className="flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200"
         style={{ background: 'transparent', border: '1px solid transparent' }}
         onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.border = '1px solid rgba(255,255,255,0.06)'; }}
@@ -185,6 +196,7 @@ function ClearLogsButton() {
       <button
         onClick={() => setConfirmingClear(true)}
         disabled={clearing}
+        aria-label="Limpar Logs"
         className="flex items-center justify-center w-full h-10 rounded-lg transition-all duration-200"
         style={{ background: 'transparent', border: '1px solid transparent' }}
         onMouseEnter={(e) => { if (!clearing) { e.currentTarget.style.background = 'rgba(255,159,67,0.06)'; e.currentTarget.style.border = '1px solid rgba(255,159,67,0.12)'; } }}

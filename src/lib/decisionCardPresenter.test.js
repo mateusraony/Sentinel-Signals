@@ -269,7 +269,7 @@ describe('qualidade dos dados — frescor real, nunca "LIVE" fixo', () => {
   it('erro persistente de leitura = error', () => {
     const card = build({ asset: asset({ scan_error_since: iso(40 * MIN) }) });
     expect(card.quality.status).toBe('error');
-    expect(card.quality.label).toBe('Falha persistente de leitura');
+    expect(card.quality.label).toMatch(/^📡 Falha de leitura/);
   });
 
   it('sem last_scan_at: UNKNOWN, nunca "ok"; ativo desligado: inactive', () => {

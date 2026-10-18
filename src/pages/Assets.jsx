@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Plus, Trash2, Loader2, CheckCircle2, XCircle, MinusCircle, History, Settings2, Coins, Clock, Activity, Search, ChevronDown, ChevronUp, TrendingUp, Crosshair } from 'lucide-react';
+import { Plus, Trash2, Loader2, CheckCircle2, XCircle, MinusCircle, History, Settings2, Coins, Clock, Activity, Search, ChevronDown, ChevronUp, TrendingUp } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogFooter,
@@ -15,7 +15,8 @@ import AssetConfigPanel from '@/components/assets/AssetConfigPanel';
 import AssetDetailPanel from '@/components/assets/AssetDetailPanel';
 import { calcProximity } from '@/components/dashboard/ProximityBar';
 import { QueryErrorState } from '@/components/QueryErrorState';
-import { assetHealthcheckReason } from '@/lib/assetHealthcheck';
+import { assetDataQuality, qualityBadge } from '@/lib/assetDataQuality';
+import { useNow } from '@/hooks/useNow';
 import moment from 'moment';
 import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
 
@@ -28,21 +29,13 @@ function invalidateAssetLists(queryClient) {
   queryClient.invalidateQueries({ queryKey: ['monitored-assets'] });
 }
 
-// Achado A-9 do Raio-X de UI/UX — mesmo mapeamento de
-// src/components/dashboard/AssetCard.jsx (ver comentário lá pro porquê do
-// threshold de 2h fixo estar errado). O CÁLCULO (a parte que importa não
-// divergir) agora vem de `assetHealthcheckReason`, a mesma função pura nos
-// 2 arquivos — só o texto/cor de apresentação é local a cada um.
-// Auditoria do Telegram (2026-09-29), Fase 2 item 2.4 — mesmo raciocínio de
-// Logs.jsx (comentário completo lá): erro de sistema com cor própria
-// (#ef4444), distinta do rosa/magenta (#ff1478) usado pra SELL/direção
-// nas demais telas.
-const STALE_REASON_META = {
-  persistent_error: { label: 'ERRO', color: '#ef4444' },
-  silent: { label: 'STALE', color: '#ff9f43' },
-};
+// Achado A-9 do Raio-X de UI/UX — frescor pela mesma função pura do cartão e
+// do drawer. Item 277: cálculo E texto agora vêm de `assetDataQuality`/
+// `qualityBadge` (📡), em vez de um mapa LIVE/STALE/ERRO local.
 
 export default function Assets() {
+  // Item 277: o rótulo 📡 mostra a idade do scan — precisa andar com o relógio.
+  const now = useNow();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [configAsset, setConfigAsset] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -137,9 +130,9 @@ export default function Assets() {
   );
 
   // Mapa id → proximidade mais próxima entre os timeframes do ativo (não só
-  // um Set de presença) — usado tanto pelo filtro "🎯 Próximos" quanto pelo
-  // glow vibrante da linha (a cor/intensidade do glow depende do nível e do
-  // lado BUY/SELL retornados por calcProximity).
+  // um Set de presença) — usado pelo filtro "📏 Perto da linha do filtro" e
+  // pelo contorno neutro da linha (item 277: sem cor de lado nem pulsação —
+  // a distância até o filtro não indica sinal próximo).
   const PROXIMITY_RANK = { very_close: 0, close: 1, watching: 2 };
   const assetsNearEntry = useMemo(() => {
     const nearMap = new Map();
@@ -222,7 +215,7 @@ export default function Assets() {
         </div>
         {[{ id: 'all', label: 'Todos' }, { id: 'active', label: '● Ativos' }, { id: 'inactive', label: '○ Inativos' },
           { id: 'signals', label: '⚡ Sinais' },
-          { id: 'proximity', label: '🎯 Próximos' },
+          { id: 'proximity', label: '📏 Perto da linha do filtro' },
         ].map(f => (
           <button key={f.id} onClick={() => setFilterStatus(f.id)}
             className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all flex items-center gap-1"
@@ -230,7 +223,6 @@ export default function Assets() {
               ? { background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)', color: '#00e5ff' }
               : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.35)' }}>
             {f.id === 'signals' && <TrendingUp className="w-3 h-3" />}
-            {f.id === 'proximity' && <Crosshair className="w-3 h-3" />}
             {f.label}
           </button>
         ))}
@@ -245,7 +237,7 @@ export default function Assets() {
         </div>
       ) : filtered.length === 0 && filterStatus === 'proximity' && statesUnavailable ? (
         <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <QueryErrorState message="Não foi possível carregar os indicadores agora — o filtro 'Próximos' pode estar escondendo ativos incorretamente." />
+          <QueryErrorState message="Não foi possível carregar os indicadores agora — o filtro 'Perto da linha do filtro' pode estar escondendo ativos incorretamente." />
         </div>
       ) : filtered.length === 0 && filterStatus === 'signals' && signalsFilterUnavailable ? (
         <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -266,24 +258,19 @@ export default function Assets() {
         <div className="space-y-2">
           {filtered.map(asset => {
             const assetStates = states.filter(s => s.asset_id === asset.id);
-            const healthReason = assetHealthcheckReason(asset); // 'persistent_error' | 'silent' | null
-            const isStale = Boolean(healthReason);
-            const staleMeta = healthReason ? STALE_REASON_META[healthReason] : null;
-            const liveColor = isStale ? staleMeta.color : asset.is_active ? '#00ff80' : '#64748b';
-            const liveLabel = isStale ? staleMeta.label : asset.is_active ? 'LIVE' : 'OFF';
+            const quality = assetDataQuality(asset, now);
+            const { label: liveLabel, color: liveColor } = qualityBadge(quality);
             const proximity = assetsNearEntry.get(asset.id);
-            const zoneColor = proximity?.side === 'SELL' ? '#ff1478' : '#00ff80';
             const zoneStyle = proximity
               ? {
                 background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)',
-                border: `1px solid ${zoneColor}55`,
-                ...(proximity.level === 'very_close' ? { '--zone-glow-color': `${zoneColor}80` } : {}),
+                border: '1px solid rgba(96,165,250,0.35)',
               }
               : { background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)', border: asset.is_active ? '1px solid rgba(0,255,128,0.1)' : '1px solid rgba(255,255,255,0.05)' };
 
             return (
               <div key={asset.id}
-                className={`rounded-xl px-4 py-3.5 transition-all duration-300 group hover:scale-[1.005] ${proximity?.level === 'very_close' ? 'signal-zone-pulse' : ''}`}
+                className="rounded-xl px-4 py-3.5 transition-all duration-300 group hover:scale-[1.005]"
                 style={zoneStyle}>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -297,7 +284,7 @@ export default function Assets() {
                           {asset.exchange || 'binance'}
                         </span>
                         <span className="flex items-center gap-0.5">
-                          <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: liveColor, boxShadow: asset.is_active && !isStale ? `0 0 5px ${liveColor}` : 'none' }} />
+                          <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: liveColor, boxShadow: quality.status === 'ok' ? `0 0 5px ${liveColor}` : 'none' }} />
                           <span className="text-8px font-mono" style={{ color: liveColor }}>{liveLabel}</span>
                         </span>
                         {asset.scan_status === 'error' && (

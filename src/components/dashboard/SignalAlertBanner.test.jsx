@@ -29,7 +29,7 @@ const FRESH_SIGNAL = {
 describe('SignalAlertBanner — badge de score usa Tooltip em vez de title= nativo (achado A-6)', () => {
   it('REGRESSÃO: badge "🔥 Score .../100" não tem title= nativo, vira gatilho focável', async () => {
     renderBanner([FRESH_SIGNAL]);
-    const badge = await screen.findByText(/Score 90\/100/);
+    const badge = await screen.findByText(/🧩 90\/100/);
     expect(badge.getAttribute('title')).toBeNull();
     expect(badge.getAttribute('tabindex')).toBe('0');
   });
@@ -41,7 +41,7 @@ describe('SignalAlertBanner — badge de score usa Tooltip em vez de title= nati
 describe('SignalAlertBanner — ícone de sino respeita prefers-reduced-motion (item 5.2)', () => {
   it('REGRESSÃO: o ícone de sino tem motion-reduce:animate-none na className', async () => {
     const { container } = renderBanner([FRESH_SIGNAL]);
-    await screen.findByText(/Score 90\/100/);
+    await screen.findByText(/🧩 90\/100/);
     const bell = container.querySelector('.animate-pulse');
     expect(bell).not.toBeNull();
     expect(bell.getAttribute('class')).toMatch(/motion-reduce:animate-none/);

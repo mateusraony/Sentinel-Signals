@@ -24,6 +24,7 @@ import { useBrowserNotifications } from '@/hooks/useBrowserNotifications';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
+import DataHealthChip from '@/components/layout/DataHealthChip';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
 
@@ -210,16 +211,17 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center gap-3">
             <Tooltip>
-              <TooltipTrigger type="button" className="flex items-center gap-2 text-11px font-mono text-muted-foreground cursor-help">
-                <div className="live-dot" style={{ width: 6, height: 6 }} />
-                <span>Dados em tempo real</span>
+              <TooltipTrigger type="button" className="text-11px font-mono text-muted-foreground cursor-help">
+                {/* Item 277: saúde real dos ativos no lugar do "Dados em tempo real" fixo. */}
+                <DataHealthChip assets={assets} isLoading={loadingAssets} isError={assetsError} />
               </TooltipTrigger>
               <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                 Preços e indicadores vêm da última leitura salva no banco — normalmente do
                 scan automático (a cada ~5min, via Binance Spot). Se esta aba ficar aberta
                 por mais de 1h, o próprio navegador também roda um scan (Binance Futures)
                 que pode atualizar por último. As duas fontes costumam ficar bem próximas,
-                mas podem divergir um pouco.
+                mas podem divergir um pouco. "Com problema" = ativo atrasado (mais de
+                30 min sem leitura), com falha de leitura ou ainda nunca lido.
               </TooltipContent>
             </Tooltip>
             <button onClick={() => {
