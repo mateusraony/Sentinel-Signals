@@ -33,7 +33,7 @@ function renderPanel(props) {
 }
 
 describe('ComparePanel — RSI/MACD/EMA têm tooltip explicando o termo (achado M-17)', () => {
-  it('REGRESSÃO: labels "RSI (1h)"/"MACD Hist"/"EMA Trend" são focáveis (têm tooltip); "RF Valor (4h)" e "Score" continuam sem', () => {
+  it('REGRESSÃO: labels "RSI (1h)"/"MACD Hist"/"EMA Trend" são focáveis (têm tooltip); "RF Valor (4h)" e "Regras" continuam sem', () => {
     renderPanel();
     for (const label of ['RSI (1h)', 'MACD Hist', 'EMA Trend']) {
       // 2 colunas (A/B) — cada uma tem sua própria instância do label.
@@ -41,7 +41,7 @@ describe('ComparePanel — RSI/MACD/EMA têm tooltip explicando o termo (achado 
       expect(instancias.every(el => el?.getAttribute('tabindex') === '0')).toBe(true);
       expect(instancias.length).toBe(2);
     }
-    for (const label of ['RF Valor (4h)', 'Score']) {
+    for (const label of ['RF Valor (4h)', 'Regras']) {
       const instancias = screen.getAllByText(label).map(el => el.closest('.cursor-help'));
       expect(instancias.every(el => el === null)).toBe(true);
     }
@@ -52,7 +52,7 @@ describe('ComparePanel — RSI/MACD/EMA têm tooltip explicando o termo (achado 
 describe('ComparePanel — ressalva "score não é probabilidade" (passo 5)', () => {
   it('REGRESSÃO: cada coluna avisa que Score/Oportunidade não são probabilidade de acerto', () => {
     renderPanel({});
-    const notes = screen.getAllByText(/Score e Oportunidade são pontuações das regras atuais — não são probabilidade de acerto/);
+    const notes = screen.getAllByText(/Regras alinhadas e Oportunidade são pontuações das regras atuais — não são probabilidade de acerto/);
     expect(notes).toHaveLength(2); // uma por ativo comparado
   });
 });

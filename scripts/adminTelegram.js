@@ -521,7 +521,7 @@ export async function notifyStepTimeout(step, ms) {
 
   const duracao = formatStepDuration(ms);
   const delivered = await send(
-    `⏱️ <b>Uma etapa travou</b>\n\n`
+    `🚨 <b>Uma etapa travou</b>\n\n`
     + `O sistema parou de esperar por ${describeStep(step)}`
     + `${duracao ? ` — não respondeu em ${duracao}` : ''}. `
     + `Ele tenta de novo sozinho no próximo ciclo.\n\n`

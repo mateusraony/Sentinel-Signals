@@ -360,7 +360,7 @@ function TFTrendRow({ op }) {
 // caso.
 const STOP_HIT_BANNER = {
   WIN: { text: '💰 Stop travou lucro — encerrado no lucro', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
-  BE:  { text: '🔄 Stop no breakeven — sem prejuízo', color: LEVEL_COLOR.stopBe, bg: 'rgba(255,209,102,0.06)' },
+  BE:  { text: '🟡 Stop no breakeven — sem prejuízo', color: LEVEL_COLOR.stopBe, bg: 'rgba(255,209,102,0.06)' },
 };
 const STOP_HIT_BANNER_DEFAULT = { text: '🛑 Stop atingido — operação encerrada pela proteção inicial', color: LEVEL_COLOR.stop, bg: 'rgba(255,20,120,0.06)' };
 // Achado da varredura geral (2026-09-18): quando classifyOutcome cai em
@@ -389,7 +389,7 @@ function closedBanner(op) {
 function StatusBanner({ op }) {
   const banners = {
     SIGNAL_CONFIRMED: { text: '👀 Monitorando — aguardar preço avançar para TP1', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
-    RUNNER_ACTIVE:    { text: '🚀 Runner ativo — 50% realizado no TP1, deixar correr', color: '#ffd166', bg: 'rgba(255,209,102,0.06)' },
+    RUNNER_ACTIVE:    { text: '🏃 Runner ativo — 50% realizado no TP1, deixar correr', color: '#ffd166', bg: 'rgba(255,209,102,0.06)' },
     TP2_HIT:          { text: '🏆 Encerrado no TP2 — alvo final atingido', color: '#00ff80', bg: 'rgba(0,255,128,0.06)' },
     STOP_HIT:         STOP_HIT_BANNER[classifyOutcome(op)] ?? (op.tp1_hit ? STOP_HIT_BANNER_DEFAULT_POST_TP1 : STOP_HIT_BANNER_DEFAULT),
     INVALIDATED:      { text: '⚠️ Sinal invalidado — não operar agora', color: '#ff9f43', bg: 'rgba(255,159,67,0.06)' },
@@ -453,7 +453,7 @@ function OperationWhySummary({ op }) {
 
 function Details({ op }) {
   const marketSourceLabel = MARKET_SOURCE_LABEL[op.market_source];
-  const exitModeLabel = { RANGE_FILTER: '🔵 RF', ATR_TRAILING: '🟡 ATR Trail', HYBRID_RF_ATR: '🟣 RF+ATR' }[op.exit_mode] || op.exit_mode;
+  const exitModeLabel = { RANGE_FILTER: '🔵 RF', ATR_TRAILING: '🟠 ATR Trail', HYBRID_RF_ATR: '🟣 RF+ATR' }[op.exit_mode] || op.exit_mode;
   const reasons = op.signal_reasons || [];
 
   return (
@@ -484,7 +484,7 @@ function Details({ op }) {
         </div>
         <div className="flex items-center gap-2">
           <span style={{ color: op.candle_status === 'CLOSED' ? '#00ff80' : '#ff9f43' }}>
-            {op.candle_status === 'CLOSED' ? '✅ Fechado' : '⏳ Aberto'}
+            {op.candle_status === 'CLOSED' ? '✅ Fechado' : '🕯️ Aberto'}
           </span>
           {/* Item 277: o badge "🔴 LIVE" lia op.data_status, gravado sempre
               como 'LIVE' pelo motor — nunca mudava. Frescor real fica no

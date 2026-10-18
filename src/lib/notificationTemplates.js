@@ -104,7 +104,7 @@ export function panelLink(path, id) {
 function backfillPrefix(op) {
   if (op.source !== 'backfill') return '';
   const lag = formatBackfillLag(op.backfill_entry_lag_ms);
-  return `⏱ <b>Detectada retroativamente</b> — entrada real foi há ${lag ?? 'algum tempo'}, o Sentinel só a encontrou agora ao adicionar/atualizar o ativo (não foi pega ao vivo).\n\n`;
+  return `⌛ <b>Detectada retroativamente</b> — entrada real foi há ${lag ?? 'algum tempo'}, o Sentinel só a encontrou agora ao adicionar/atualizar o ativo (não foi pega ao vivo).\n\n`;
 }
 
 // Item 278: "🧪 Simular entrada" no painel (`source: 'manual'`) — não é uma

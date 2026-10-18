@@ -140,6 +140,12 @@ describe('phaseCopy', () => {
   it('fase desconhecida degrada sem quebrar', () => {
     expect(phaseCopy('inexistente').badge).toBeTruthy();
   });
+
+  // Item 280: "Já passou" usava ✓, que lê como "deu certo". O prazo acabou sem
+  // operação — mesmo evento que o Telegram chama de 🚫 Sinal Cancelado.
+  it('aviso que já passou usa 🚫 (cancelado), não ✓', () => {
+    expect(phaseCopy(SIGNAL_PHASE.EXPIRED).icon).toBe('🚫');
+  });
 });
 
 describe('rejectionCopy', () => {
@@ -278,7 +284,7 @@ describe('formatTimeLeft', () => {
 // PRIORITY_CONFIG, e implicitamente StrengthBadge.jsx, não tocado).
 describe('priorityLabel', () => {
   it('traduz high/medium/low pro rótulo em português', () => {
-    expect(priorityLabel('high')).toBe('⚡ Alta');
+    expect(priorityLabel('high')).toBe('⭐ Alta'); // item 280: ⚡ é só a marca
     expect(priorityLabel('medium')).toBe('Média');
     expect(priorityLabel('low')).toBe('Baixa');
   });

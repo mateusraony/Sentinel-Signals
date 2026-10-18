@@ -522,7 +522,7 @@ async function main() {
   const sdPorOp = report.costs.expectancyRSd;
   if (report.dataIntegrity.valid && Number.isFinite(meiaLargura) && Number.isFinite(sdPorOp) && sdPorOp > 0) {
     console.log('');
-    console.log(`  📏 PODER DE DESCARTE (alvo do item 133) — meia-largura do IC95: ±${meiaLargura.toFixed(3)}R`);
+    console.log(`  📐 PODER DE DESCARTE (alvo do item 133) — meia-largura do IC95: ±${meiaLargura.toFixed(3)}R`);
     // O limite de descarte é o EXTREMO SUPERIOR do IC, não a meia-largura
     // (achado do Codex, PR #260). A meia-largura só coincide com o limite
     // quando a expectância é exatamente zero: com +0,20R ± 0,10R o IC é

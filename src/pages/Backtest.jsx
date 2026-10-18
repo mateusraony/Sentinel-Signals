@@ -504,7 +504,7 @@ function SimulatedTradesTable({ ops }) {
               // uniforme independente do status — design já existente aqui,
               // fora do escopo desta rodada.
               const [label, color] = outcome === 'BE'
-                ? ['🛡️ BE', '#64748b']
+                ? ['🟡 BE', '#64748b']
                 : [STATUS_ICON_COLOR[op.status]?.[0] || op.status, outcomeColor(op.status, outcome)];
               const isBuy = op.side === 'BUY';
               return (

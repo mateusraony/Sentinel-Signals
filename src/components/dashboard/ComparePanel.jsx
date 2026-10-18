@@ -6,6 +6,7 @@ import { formatPrice } from '@/lib/priceProximity';
 import { describeChange24h, resolvePriceDisplay, queryChangeOptions, CHANGE_TONE_COLOR } from '@/lib/priceChange24h';
 import { useNow } from '@/hooks/useNow';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { agreementLabel } from '@/lib/ruleAgreement';
 
 function dirCfg(dir) {
   if (dir === 1) return { icon: '▲', color: '#00ff80', label: 'Bull' };
@@ -25,7 +26,7 @@ function computeOpportunity(states, signal, tradeOp) {
   if (signal) { score += 30; reasons.push('Sinal RF ativo'); }
 
   const sigScore = signal?.context?.score || tradeOp?.score || 0;
-  if (sigScore >= 85) { score += 15; reasons.push(`Score ${sigScore}`); }
+  if (sigScore >= 85) { score += 15; reasons.push(agreementLabel({ score: sigScore })); }
   else if (sigScore >= 75) { score += 8; }
 
   const TERMINAL = ['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'];
@@ -159,7 +160,7 @@ function CompareColumn({ asset, states, signal, tradeOp, statsQuery, now, opp, i
               <MetricRow label="EMA Trend" value={s1h?.trend_ema === 'bullish' ? '▲ Bull' : s1h?.trend_ema === 'bearish' ? '▼ Bear' : '— Neu'}
                 color={s1h?.trend_ema === 'bullish' ? '#00ff80' : s1h?.trend_ema === 'bearish' ? '#ff1478' : '#64748b'}
                 tooltip="Média móvel exponencial — reage mais rápido a mudanças recentes que uma média comum. Quando uma EMA curta cruza uma longa, é sinal de mudança de tendência." />
-              <MetricRow label="Score" value={score > 0 ? `${score}/100` : '—'}
+              <MetricRow label="Regras" value={score > 0 ? agreementLabel({ score }) : '—'}
                 color={score >= 85 ? '#00ff80' : score >= 75 ? '#ffd166' : 'rgba(255,255,255,0.5)'} />
               <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }} />
               <MetricRow
@@ -191,7 +192,7 @@ function CompareColumn({ asset, states, signal, tradeOp, statsQuery, now, opp, i
           </div>
         )}
         <p className="text-7px font-mono text-muted-foreground/70 mt-1.5">
-          Score e Oportunidade são pontuações das regras atuais — não são probabilidade de acerto.
+          Regras alinhadas e Oportunidade são pontuações das regras atuais — não são probabilidade de acerto.
         </p>
       </div>
     </div>

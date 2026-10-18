@@ -70,6 +70,15 @@ function baseOp(overrides = {}) {
   };
 }
 
+// Item 280: 1 emoji = 1 significado — runner é 🏃 (antes 🚀 aqui e ⚡ no cartão do ativo).
+describe('TradeCard — emojis do banner (item 280)', () => {
+  it('runner ativo usa 🏃, nunca 🚀', () => {
+    const { container } = renderCard(baseOp({ status: 'RUNNER_ACTIVE', current_stop: 60000 }));
+    screen.getByText(/🏃 Runner ativo/);
+    expect(container.textContent).not.toMatch(/🚀/);
+  });
+});
+
 describe('TradeCard — StatusBanner do STOP_HIT usa classifyOutcome(op), não a postura geométrica do stop', () => {
   it('stop travado bem além da entrada, com TP1 já bancado, é um ganho real', () => {
     // getByText lança se não achar — a própria chamada já é a asserção
@@ -99,7 +108,7 @@ describe('TradeCard — StatusBanner do STOP_HIT usa classifyOutcome(op), não a
     // resultado realizado é breakeven. entry 60000 / stop 60070 rende
     // pnlPct ≈ -0,003% com o modelo de custo padrão — dentro do epsilon.
     renderCard(baseOp({ tp1_hit: false, tp1_hit_at: null, current_stop: 60070 }));
-    screen.getByText(/Stop no breakeven — sem prejuízo/i);
+    screen.getByText(/🟡 Stop no breakeven — sem prejuízo/i); // item 280: 🟡 = breakeven (antes 🔄)
   });
 
   it('stop original (nunca avançou, sem TP1) continua mostrando o texto de risco', () => {

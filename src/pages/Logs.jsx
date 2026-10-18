@@ -154,7 +154,7 @@ export default function Logs() {
           <button onClick={() => { setSearch('Failed to fetch'); setFilterLevel('error'); setFilterModule('scanner'); }}
             className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all"
             style={{ background: 'rgba(255,20,120,0.06)', border: '1px solid rgba(255,20,120,0.2)', color: '#ff1478' }}>
-            ⚡ Failed to fetch
+            📡 Falhas de rede (Failed to fetch)
           </button>
 
           <div className="w-px h-4" style={{ background: 'rgba(255,255,255,0.08)' }} />

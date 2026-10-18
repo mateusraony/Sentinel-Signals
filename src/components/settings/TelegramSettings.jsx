@@ -4,13 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import MultiToggle from '@/components/ui/multi-toggle';
+import { priorityLabel } from '@/lib/signalStatus';
 import { BellRing, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 
 const TF_OPTIONS = ['1h', '4h', '1d'];
+// Item 280: mesmo rótulo de prioridade do painel (⭐ só na alta). Antes 🟡/🟠/🔴
+// — 🟡 é "encerrada no breakeven" e 🔴 é "venda" (docs/notification-vocabulary.md).
 const PRIORITY_OPTIONS = [
-  { id: 'low', label: '🟡 Baixa', desc: 'Todos os sinais, incluindo fracos' },
-  { id: 'medium', label: '🟠 Média', desc: 'Sinais moderados e fortes' },
-  { id: 'high', label: '🔴 Alta', desc: 'Somente sinais de alta prioridade (score ≥ 85)' },
+  { id: 'low', label: priorityLabel('low'), desc: 'Todos os sinais, incluindo fracos' },
+  { id: 'medium', label: priorityLabel('medium'), desc: 'Sinais moderados e fortes' },
+  { id: 'high', label: priorityLabel('high'), desc: 'Somente sinais de alta prioridade (score ≥ 85)' },
 ];
 const SIGNAL_TYPES = [
   { id: 'BUY', label: '🟢 BUY', desc: 'Sinais de compra' },
@@ -91,7 +94,7 @@ export default function TelegramSettings({ open, onClose }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: cfg.chatId,
-          text: `✅ <b>Sentinel Signals conectado!</b>\n\n📊 <b>Timeframes:</b> ${tfStr}\n⚡ <b>Prioridade mínima:</b> ${filters.min_priority}\n📋 <b>Eventos ativos:</b>\n• ${evStr}\n\n<i>⚡ Sistema de monitoramento ativo</i>`,
+          text: `✅ <b>Sentinel Signals conectado!</b>\n\n📊 <b>Timeframes:</b> ${tfStr}\n⚙️ <b>Prioridade mínima:</b> ${priorityLabel(filters.min_priority)}\n📋 <b>Eventos ativos:</b>\n• ${evStr}\n\n<i>⚡ Sentinel Signals — monitoramento ativo</i>`,
           parse_mode: 'HTML',
         }),
       });
@@ -183,7 +186,7 @@ export default function TelegramSettings({ open, onClose }) {
 
             {/* Signal types */}
             <div>
-              <p className="text-10px font-mono text-muted-foreground mb-2">🎯 TIPOS DE SINAL</p>
+              <p className="text-10px font-mono text-muted-foreground mb-2">🟢🔴 TIPOS DE SINAL</p>
               <MultiToggle
                 options={SIGNAL_TYPES}
                 selected={filters.signal_types}
@@ -206,7 +209,7 @@ export default function TelegramSettings({ open, onClose }) {
 
             {/* Min priority */}
             <div>
-              <p className="text-10px font-mono text-muted-foreground mb-2">⚡ PRIORIDADE MÍNIMA</p>
+              <p className="text-10px font-mono text-muted-foreground mb-2">⚙️ PRIORIDADE MÍNIMA</p>
               <div className="space-y-1.5">
                 {PRIORITY_OPTIONS.map(p => (
                   <button key={p.id} onClick={() => setF('min_priority', p.id)}

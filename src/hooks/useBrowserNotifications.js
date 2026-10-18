@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { logWarn } from '@/lib/logger';
+import { agreementLabel } from '@/lib/ruleAgreement';
 
 /**
  * Solicita permissão de notificação do navegador e dispara alertas
@@ -46,7 +47,8 @@ export function useBrowserNotifications(signals = []) {
         const n = new Notification(
           `${isBuy ? '🟢 COMPRA' : '🔴 VENDA'} — ${symbol}`,
           {
-            body: `${sig.timeframe?.toUpperCase()} · Score ${score}/100\n${sig.reason || ''}`,
+            // Item 280: mesmo rótulo 🧩 do toast; sem score real, nada (nunca "0/100").
+            body: `${sig.timeframe?.toUpperCase()}${score > 0 ? ` · ${agreementLabel({ score })}` : ''}\n${sig.reason || ''}`,
             icon: '/favicon.ico',
             tag: sig.id, // Evita duplicatas no OS
             silent: false,

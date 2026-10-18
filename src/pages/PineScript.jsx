@@ -1053,7 +1053,7 @@ export default function PineScript() {
   // DEFAULTS/SYNCED_STRATEGY_KEYS — não é editável, não há "valor atual"
   // pra sincronizar.
   const syncNotes = useMemo(() => [
-    { id: 'rf', icon: '🔄', label: 'rng_per / rng_qty (RF Period / Multiplier)',
+    { id: 'rf', icon: '⚙️', label: 'rng_per / rng_qty (RF Period / Multiplier)',
       desc: `Sincronizado com MonitoredAsset.rf_period e rf_multiplier — padrão ${parsedConfig.rng_per} / ${parsedConfig.rng_qty}` },
     { id: 'regime', icon: '📊', label: 'ADX + Choppiness (Filtros de Regime)',
       desc: 'ADX mín e Chop máx são auto-ajustados pelo Tier do ativo (ATR%)' },
@@ -1061,15 +1061,15 @@ export default function PineScript() {
       desc: `T1 Blue chip ATR%<${parsedConfig.tier2Threshold} → stop 2x | T2 Mid cap → 2.5x | T3 Altcoin → 3x` },
     { id: 'mtf', icon: '🧭', label: 'Filtro MTF 4h (mtfTF = "240")',
       desc: 'Scanner valida direção 4h antes de emitir sinal — só entra a favor do 4h' },
-    { id: 'entry', icon: '⏱️', label: 'Entrada em 15m após sinal 4h',
+    { id: 'entry', icon: '⏳', label: 'Entrada em 15m após sinal 4h',
       desc: 'Scanner detecta sinal 4h e aguarda confirmação no 15m para entrada precisa' },
-    { id: 'score', icon: '⚡', label: `Score 0–100 (minScore = ${parsedConfig.minScore})`,
+    { id: 'score', icon: '🧩', label: `Score 0–100 (minScore = ${parsedConfig.minScore})`,
       desc: `BuyScore/SellScore calculados via RF+MACD+EMA+RSI+Volume — mínimo ${parsedConfig.minScore} para entrar` },
     { id: 'tp1', icon: '🎯', label: `TP1 em ${parsedConfig.tp1R}R + Runner`,
       desc: `TP1 = entry ± (atr * atrStopMult) * ${parsedConfig.tp1R} | Runner com trailing ATR ou RF exit` },
     { id: 'stop', icon: '🛑', label: 'Stop = entry ± atr * atrStopMult',
       desc: 'Stop dinâmico por Tier: 2x / 2.5x / 3x ATR — move para BE após TP1' },
-    { id: 'timestop', icon: '⏰', label: 'Time Stop por Tier',
+    { id: 'timestop', icon: '⏱️', label: 'Time Stop por Tier',
       desc: `T1: ${parsedConfig.timeStopT1} candles | T2: ${parsedConfig.timeStopT2} candles | T3: ${parsedConfig.timeStopT3} candles sem TP1 → fecha posição` },
   ], [parsedConfig]);
 

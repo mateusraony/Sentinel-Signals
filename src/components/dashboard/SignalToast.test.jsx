@@ -41,7 +41,7 @@ const ASSET_A1 = { id: 'a1', display_name: 'BTC/USDT', symbol: 'BTCUSDT' };
 describe('SignalToast — badge de score usa Tooltip em vez de title= nativo (achado A-6)', () => {
   it('REGRESSÃO: badge "Score .../100" não tem title= nativo, vira gatilho focável', async () => {
     renderToast([FRESH_SIGNAL]);
-    const badge = await screen.findByText(/Score 90\/100/);
+    const badge = await screen.findByText(/🧩 90\/100/);
     expect(badge.getAttribute('title')).toBeNull();
     expect(badge.getAttribute('tabindex')).toBe('0');
   });
@@ -66,16 +66,16 @@ describe('SignalToast — badge de score omite "Score .../100" quando context.sc
     expect(badge.textContent).not.toMatch(/Score 0\/100/);
   });
 
-  it('sinal com score real continua mostrando "Score X/100 · Sinal Detectado"', async () => {
+  it('sinal com score real mostra "🧩 X/100 · Sinal Detectado" (item 280: mesmo rótulo do resto do painel)', async () => {
     renderToast([FRESH_SIGNAL]);
-    expect(await screen.findByText(/Score 90\/100 · Sinal Detectado/)).toBeTruthy();
+    expect(await screen.findByText(/🧩 90\/100 · Sinal Detectado/)).toBeTruthy();
   });
 });
 
 describe('SignalToast — animações respeitam prefers-reduced-motion (achado M-5)', () => {
   it('REGRESSÃO: a entrada do toast tem motion-reduce:animate-none na className', async () => {
     const { container } = renderToast([FRESH_SIGNAL]);
-    await screen.findByText(/Score 90\/100/);
+    await screen.findByText(/🧩 90\/100/);
     const toast = container.querySelector('.animate-in');
     expect(toast).not.toBeNull();
     expect(toast.className).toMatch(/motion-reduce:animate-none/);
@@ -84,7 +84,7 @@ describe('SignalToast — animações respeitam prefers-reduced-motion (achado M
   it('REGRESSÃO: com prefers-reduced-motion ativo, a barra de progresso não anima', async () => {
     mockMatchMedia(true);
     const { container } = renderToast([FRESH_SIGNAL]);
-    await screen.findByText(/Score 90\/100/);
+    await screen.findByText(/🧩 90\/100/);
     // A barra é o único filho dentro do wrapper "mt-2 h-0.5..."
     const wrapper = container.querySelector('.mt-2.h-0\\.5');
     const progressBar = wrapper.firstElementChild;
@@ -93,7 +93,7 @@ describe('SignalToast — animações respeitam prefers-reduced-motion (achado M
 
   it('sem prefers-reduced-motion, a barra de progresso anima normalmente', async () => {
     const { container } = renderToast([FRESH_SIGNAL]);
-    await screen.findByText(/Score 90\/100/);
+    await screen.findByText(/🧩 90\/100/);
     const wrapper = container.querySelector('.mt-2.h-0\\.5');
     const progressBar = wrapper.firstElementChild;
     expect(progressBar.style.animation).toMatch(/shrink-progress/);
@@ -120,7 +120,7 @@ describe('SignalToast — clique na linha abre o ativo do sinal (Round 5 pós-Ra
   it('REGRESSÃO: card não é clicável quando asset_id não resolve nenhum ativo carregado', async () => {
     const onSelectAsset = vi.fn();
     const { container } = renderToast([FRESH_SIGNAL], { assets: [], onSelectAsset });
-    await screen.findByText(/Score 90\/100/);
+    await screen.findByText(/🧩 90\/100/);
     const card = container.querySelector('.animate-in');
     expect(card.getAttribute('tabindex')).toBeNull();
     fireEvent.click(card);

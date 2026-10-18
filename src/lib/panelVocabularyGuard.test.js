@@ -8,10 +8,11 @@
 // 3) Item 279 (PR-D): 📈/📉 são só movimento de preço e vêm de um lugar
 //    (`describeChange24h`, src/lib/priceChange24h.js). O painel não escreve o
 //    glifo à mão (MFE/MAE viraram ⬆️/⬇️; o filtro MTF do Pine virou 🧭 — 🕐 já é "horário").
-// O registro completo "1 emoji = 1 significado" chega no PR-E3.
+// O registro completo "1 emoji = 1 significado" está em src/lib/emojiRegistry.js (item 280).
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { stripComments } from './__fixtures__/stripComments.js';
 
 const PASTAS = ['components', 'pages'].map(p => join(process.cwd(), 'src', p));
 
@@ -26,13 +27,16 @@ function arquivos(dir) {
   return out;
 }
 
-// Comentários podem citar o rótulo antigo para explicar a troca.
-function semComentarios(codigo) {
-  return codigo
-    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1');
-}
+// Comentários podem citar o rótulo antigo para explicar a troca. Item 280:
+// mesmo removedor da varredura de emojis (parser do TypeScript) — o regex
+// antigo confundia `/*` dentro de comentário de linha/string e escondia código.
+const semComentarios = (codigo) => stripComments(codigo);
+// Cada arquivo é lido e analisado uma vez para as três guardas abaixo.
+const cache = new Map();
+const lerSemComentarios = (caminho) => {
+  if (!cache.has(caminho)) cache.set(caminho, semComentarios(readFileSync(caminho, 'utf8')));
+  return cache.get(caminho);
+};
 
 const PROIBIDOS = [/🔥/u, /〰/u];
 const LE_DATA_STATUS_DA_OP = /\bop\??\.data_status\b/;
@@ -40,7 +44,7 @@ const LE_DATA_STATUS_DA_OP = /\bop\??\.data_status\b/;
 function achados(arquivosLista) {
   const out = [];
   for (const caminho of arquivosLista) {
-    const texto = semComentarios(readFileSync(caminho, 'utf8'));
+    const texto = lerSemComentarios(caminho);
     for (const re of PROIBIDOS) if (re.test(texto)) out.push(`${caminho}: ${re}`);
   }
   return out;
@@ -63,7 +67,7 @@ describe('guarda: 🔥/〰 não voltam como rótulo de força no painel', () => 
 describe('guarda: o painel não lê op.data_status (constante LIVE no motor)', () => {
   it('nenhum arquivo do painel lê op.data_status', () => {
     const lista = PASTAS.flatMap(arquivos);
-    const leitores = lista.filter(c => LE_DATA_STATUS_DA_OP.test(semComentarios(readFileSync(c, 'utf8'))));
+    const leitores = lista.filter(c => LE_DATA_STATUS_DA_OP.test(lerSemComentarios(c)));
     expect(leitores).toEqual([]);
   });
 
@@ -77,7 +81,7 @@ describe('guarda: o painel não lê op.data_status (constante LIVE no motor)', (
 describe('guarda: 📈/📉 só via describeChange24h (item 279)', () => {
   it('nenhum arquivo do painel escreve 📈/📉 à mão', () => {
     const lista = PASTAS.flatMap(arquivos);
-    const comGlifo = lista.filter(c => /📈|📉/u.test(semComentarios(readFileSync(c, 'utf8'))));
+    const comGlifo = lista.filter(c => /📈|📉/u.test(lerSemComentarios(c)));
     expect(comGlifo).toEqual([]);
   });
 

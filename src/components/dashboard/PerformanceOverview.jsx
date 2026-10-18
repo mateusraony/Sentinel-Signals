@@ -45,7 +45,7 @@ export default function PerformanceOverview() {
       .filter(p => p.pnlPct !== null)
       .map(({ op, pnlPct, cumulativePct, outcome }) => {
         const STATUS_LABELS = {
-          TP2_HIT: '🏆 TP2', STOP_HIT: outcome === 'BE' ? '🔄 BE' : '🛑 Stop',
+          TP2_HIT: '🏆 TP2', STOP_HIT: outcome === 'BE' ? '🟡 BE' : '🛑 Stop',
           INVALIDATED: '⚠️ Inv.', CLOSED: '✖ Enc.'
         };
         return {

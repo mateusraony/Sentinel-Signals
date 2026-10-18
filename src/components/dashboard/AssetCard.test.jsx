@@ -70,6 +70,31 @@ function renderCard(props) {
 // conferir de cabeça depois de aplicar utcOffset(-3) (BRT).
 const CLOSE_4H_UTC = '2026-09-24T16:00:00.000Z'; // 13:00 BRT
 
+// Item 280: ativo atrasado mostra o mesmo 📡 do badge, não "⚠️ STALE"
+// (⚠️ é "Sinal Invalidado" no registro de emojis).
+describe('AssetCard — status de dado atrasado usa 📡 (item 280)', () => {
+  it('scan parado há 2h: "📡 Atrasado…" na linha de status, sem ⚠️ STALE', () => {
+    const { container } = renderCard({
+      asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: new Date(Date.now() - 2 * 3600_000).toISOString() },
+    });
+    expect(screen.getAllByText(/📡 Atrasado/).length).toBeGreaterThan(0);
+    expect(container.textContent).not.toMatch(/STALE|⚠️ Falha persistente/);
+  });
+});
+
+// Item 280: runner é 🏃 no painel inteiro (⚡ ficou só para a marca).
+describe('AssetCard — runner usa 🏃 (item 280)', () => {
+  it('status e linha de runner com 🏃, sem ⚡', () => {
+    const { container } = renderCard({
+      asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: new Date().toISOString() },
+      tradeOp: { id: 'op1', status: 'RUNNER_ACTIVE', side: 'BUY', entry_price: 100, current_stop: 100, tp1: 110, tp2: 120, tp1_hit: true, runner_percent: 50 },
+      expandAll: true,
+    });
+    screen.getByText('🏃 Runner Ativo');
+    expect(container.textContent).not.toMatch(/⚡/);
+  });
+});
+
 describe('AssetCard — horário de abertura do candle (achado A-2)', () => {
   it('candle 4h: abertura é fechamento - 4h, não - 1h', () => {
     renderCard({

@@ -110,8 +110,8 @@ describe('MonthlyReport — cor de status por operação reflete o outcome real 
   it('REGRESSÃO: STOP_HIT com outcome WIN aparece verde na tabela de detalhe, não vermelho', async () => {
     tradeOperationFilterMock.mockImplementation(async () => CLOSED_OPS_STATUS_COLOR);
     const { container } = renderPage(<MonthlyReport />);
-    await screen.findByText('✅ Stop (lucro)');
-    const statusCell = [...container.querySelectorAll('td')].find(td => td.textContent === '✅ Stop (lucro)');
+    await screen.findByText('💰 Stop (lucro)');
+    const statusCell = [...container.querySelectorAll('td')].find(td => td.textContent === '💰 Stop (lucro)');
     expect(statusCell.style.color).toBe('rgb(0, 255, 128)');
   });
 });

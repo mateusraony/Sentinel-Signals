@@ -140,7 +140,7 @@ describe('AssetDrawer N1 — sinal sem operação', () => {
     expect(s.getByText(/\$68,200\.00/)).toBeTruthy();
     expect(s.getByText(/candle 03\/10 13:00 BRT/)).toBeTruthy();
     expect(s.getByText(/Níveis: ainda não definidos/)).toBeTruthy();
-    expect(s.getByText(/Score técnico 82\/100/)).toBeTruthy();
+    expect(s.getByText('🧩 82/100')).toBeTruthy();
     expect(s.getByText(/não é probabilidade/)).toBeTruthy();
   });
 
@@ -196,7 +196,7 @@ describe('AssetDrawer N1 — erro de carregamento é fail-closed (itens 193-196)
     await screen.findByText('BTC/USDT');
     expect(summary().getByText(/Não foi possível carregar as operações agora — por isso/)).toBeTruthy();
     expect(summary().queryByText(/Aguardando/)).toBeNull();
-    expect(summary().queryByText(/Score técnico/)).toBeNull();
+    expect(summary().queryByText(/🧩/)).toBeNull();
   });
 
   it('sinais indisponíveis e nenhuma operação: não afirma "sem sinal"', async () => {

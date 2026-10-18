@@ -5,6 +5,7 @@ import { Sparkles, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide
 import { backend } from '@/api/entities';
 import { summarizeOps } from '@/lib/tradeMetrics';
 import { splitByProvenance, provenanceExclusionText } from '@/lib/operationProvenance';
+import { agreementLabel } from '@/lib/ruleAgreement';
 
 // Mesmo gate de amostra/IC dos relatórios e do LiveConfidenceCard
 // (summarizeOps, minTrades=30 + IC95 da expectância). Abaixo disso a amostra
@@ -161,7 +162,7 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
           style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(0,229,255,0.2)', color: 'rgba(255,255,255,0.85)' }}>
           {candidates.map(c => (
             <option key={c.id} value={c.id}>
-              {c.symbol?.replace('USDT', '/USDT')} · {c.timeframe?.toUpperCase()} · {c.signal_type} · Score {c.context?.score ?? '—'}
+              {c.symbol?.replace('USDT', '/USDT')} · {c.timeframe?.toUpperCase()} · {c.signal_type} · {agreementLabel({ score: c.context?.score }) ?? '🧩 —/100'}
             </option>
           ))}
         </select>

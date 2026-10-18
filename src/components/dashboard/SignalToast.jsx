@@ -5,6 +5,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 // MESMA fonte que telegram.js/adminTelegram.js já usam, em vez de um
 // literal duplicado aqui.
 import { NOTIFICATION_STAGES } from '@/lib/notificationVocabulary';
+import { agreementLabel, AGREEMENT_HINT } from '@/lib/ruleAgreement';
 
 /**
  * In-app visual notification for new signals.
@@ -130,11 +131,11 @@ export default function SignalToast({ signals = [], assets = [], onSelectAsset }
                             dizia "aguardando confirmação"). Fase 4: o rótulo
                             agora vem de notificationVocabulary.js — se o
                             texto mudar lá, muda aqui de graça. */}
-                        {score > 0 ? `Score ${score}/100 · ` : ''}{NOTIFICATION_STAGES.SIGNAL_DETECTED.label}
+                        {score > 0 ? `${agreementLabel({ score })} · ` : ''}{NOTIFICATION_STAGES.SIGNAL_DETECTED.label}
                       </div>
                     </TooltipTrigger>
                     <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
-                      Confluência de indicadores técnicos alinhados — não é uma probabilidade de acerto do trade.
+                      {AGREEMENT_HINT}
                     </TooltipContent>
                   </Tooltip>
                 </div>

@@ -33007,3 +33007,107 @@ utilizável para considerar fresco; sem ele a % vira "% 24h indisponível" (test
 `priceChange24h.test.js`, falhava antes).
 
 **Fora deste PR:** a "faixa" de preço (➡️) fica para a F2.
+
+## 280. PR-E2/E3 — emojis do painel com um sentido só, e um teste que varre o código (2026-10-18)
+
+Pedido do usuário: "aprimorar os emojis e não removê-los" — 1 emoji = 1 significado, sempre com texto.
+Último PR da sequência aprovada (PR-A+E1 → B → C → D → E2/E3, itens 276-280).
+
+**Fato (antes):** o mesmo glifo tinha sentidos diferentes conforme a tela:
+- ⚡ era prioridade alta, runner, o filtro "Sinais", o atalho "Failed to fetch" dos Logs e o score do Pine — e também a marca.
+- 🔄 era breakeven em 6 telas e "sincronização" no Pine; o Backtest usava 🛡️ para BE (🛡️ é stop protegido em operação viva).
+- 🟡 era breakeven (Telegram) e também "prioridade baixa" e "ATR Trail".
+- O banner de runner usava 🚀; a fase "Já passou" usava ✓, que lê como "deu certo".
+- ⏱️ era Time Stop e também duração, linha do tempo, "Entrada em 15m" e "Uma etapa travou".
+
+**O que mudou (E2):** ver a tabela "Registro" em `docs/notification-vocabulary.md`.
+Prioridade unificada em `priorityLabel()` (⭐ Alta · Média · Baixa), também nas configurações do Telegram;
+"Score técnico"/"Score N/100" do painel lateral, aviso flutuante e comparador viraram o mesmo `agreementLabel()` (🧩 N/100).
+
+**Registro (E3):** `src/lib/emojiRegistry.js` é a fonte única glifo → significado. `emojiRegistry.test.js`:
+- confere que cada estágio de `NOTIFICATION_STAGES` está no registro com o mesmo rótulo;
+- varre `src/**` + `scripts/**` + `server/**` e falha quando um glifo controlado aparece fora do sentido
+  (texto ao lado do glifo sem as palavras do sentido, fora dos arquivos donos do vocabulário) — regra final
+  depois das 3 revisões abaixo;
+- prova do guard: cada uso antigo reintroduzido é pego, usos certos passam, o glifo sem U+FE0F não escapa,
+  comentário não conta, e cada brecha achada nas revisões tem o seu caso ("linha com a palavra certa em
+  outro lugar", "não escapa").
+O teste falhou com 34 usos no código antes das trocas (3 deles não estavam no levantamento inicial:
+⏱ de duração/linha do tempo no Histórico, ⏱ de "Detectada retroativamente" no Telegram, 📡 "Fonte").
+
+**Pesquisa:** guias de acessibilidade (BrowserStack, emojifyi) convergem em "rótulo é texto, emoji
+acompanha" — leitor de tela anuncia emoji de forma irregular. Confirma a regra "sempre com texto"; não mudou
+nada no plano.
+
+**Não feito, com motivo:**
+- 🧪 no Backtest (estava no plano antes do PR-C): 🧪 passou a significar "simulação manual, fora da medição"
+  (item 278) — usá-lo no Backtest daria dois sentidos ao glifo.
+- Cores por faixa de score (85/65) no cartão e no TradeCard: não são emoji; medem intensidade da
+  concordância e já ficam ao lado da ressalva "não é chance de acerto". Mudar a paleta é decisão visual à parte.
+- "Confl." do cartão e do painel lateral: texto sem emoji, já com a mesma ressalva.
+- 🔒 (stop já trava lucro, na trilha de níveis do TradeCard) e 🎯 (alvo mais próximo, pode ser TP2): ficam
+  como referência no registro, sem checagem automática.
+
+**1ª revisão de código (achados corrigidos):**
+- O removedor de comentários da varredura escondia código real: `/*` dentro de um comentário de linha
+  (ex.: "/api/backtest/*." no `entities.js`, 59 linhas) ou de string abria um falso comentário de bloco, e
+  `//` dentro de string/regex cortava o resto da linha. Virou um leitor que reconhece string, template e
+  regex; conferido em todos os arquivos (mesma contagem de linhas; só some prosa de comentário). Provas
+  novas para cada caso.
+- Contextos frouxos: `sync` casava `async`; "alta" casava "em alta"; "prazo" e "entrada" eram genéricos.
+  Estreitados (`\bsync\b`, "⭐ Alta", "time stop/prazo máximo", "stop … entrada/protegid"), com provas.
+- ⭐ também marcava o CAMPO "Prioridade mínima" (qualquer valor) → 🎚️ (parâmetro ajustável, mesmo do
+  RF Period/Multiplier do Pine). ⚠️ do "Uma etapa travou" era o glifo de "Sinal Invalidado" → 🚨, o mesmo
+  do alerta de cota (alerta de sistema).
+- Chips de prioridade dos Alertas passaram a usar `priorityLabel()` (eram cópia à mão).
+- "📡 Falhas de rede" prometia todas as falhas de rede, mas o atalho filtra só o texto "Failed to fetch" →
+  "📡 Falhas de rede (Failed to fetch)".
+- A varredura cobria só `adminTelegram.js` entre os scripts; o relatório diário (`dailyRuleReport.mjs`)
+  mandava 📈 no título → 🧭. Agora varre `scripts/**` (o 📏 do console do backtest virou 📐).
+**Não feito, com motivo:** ⌛ (duração) e ⏳ (aguardando entrada) são parecidos, mas os dois sentidos já
+estavam registrados desde o item 276 e sempre vêm com texto; ⚠️ segue nos alertas antigos de ativo do canal
+24h ("Ativo falhando/sem atualização", antes deste PR) — ⚠️ fica sem checagem automática por ser uso amplo.
+
+**2ª revisão de código (achados corrigidos):**
+- A regra olhava a linha inteira: a linha antiga do TelegramSettings ("⚡ Prioridade mínima … ⚡ Sentinel
+  Signals") passava pela palavra da marca no fim. Agora olha só o texto logo depois do glifo (até fechar a
+  string ou a tag; ícone isolado de tabela usa o resto da linha; `<b>`/`<i>` do Telegram não cortam).
+- O leitor caseiro de comentários ainda errava com template aninhado (`${a ? `//x` : ''}`), regex depois de
+  `)`/`else` e texto JSX com `/*`, `//` ou crase. Trocado pelo parser do TypeScript (já devDependency, é o
+  `npm run typecheck`), em `src/lib/__fixtures__/stripComments.js` (só teste); a guarda antiga
+  `panelVocabularyGuard` passou a usar o mesmo. Provas para cada caso.
+- `server/**` entra na varredura (só leitura — o webhook manda "📡 TradingView" no mesmo chat; 📡 cobre
+  "fonte" do dado, registrado).
+- "⚠️ STALE"/"⚠️ Falha persistente" na linha de status do cartão (pendente desde o item 277) → mesmo rótulo
+  📡 do badge (`qualityBadge`, mesmas cores). Teste de regressão (falha com o código antigo).
+- Filtro "🔔 Com sinal" também mostra ativo só com operação → "🔔 Com sinal ou operação"; mensagem de erro
+  ainda dizia "filtro 'Sinais'".
+- "Score N/100" que sobrou: notificação do navegador (também não mostra mais "0/100") e Análise Preditiva →
+  🧩.
+- 🎚 já era "Tier" no TradeCard → a configuração usa ⚙️ (como já era em "Filtros Avançados"/"Parâmetros
+  Ativos"); ⏰ do Time Stop no Pine → ⏱️ (⏰ proibido); 📐 registrado como evidência numérica (já era o uso).
+- Mensagem de teste do Telegram mostrava a chave interna ("high") → `priorityLabel()` ("⭐ Alta").
+
+**Motor intocado:** diff vazio em `scanner.js`, `indicators/**`, `opExitRules.js`, `opTransition.js`,
+`signalArbitration.js`, `pineParser.js`, `scripts/adminPineConfig.js`, `db/**`, `server/**`.
+Telegram (canal 24h e templates compartilhados): só o emoji de 3 linhas (⌛ "Detectada retroativamente",
+🚨 "Uma etapa travou", 🧭 título do relatório diário); a notificação do navegador mostra "🧩 N/100" (e nada
+sem score). Canal "ao vivo" (navegador): a mensagem de teste das Configurações mostra a prioridade pelo
+rótulo ("⭐ Alta", antes a chave "high"), "⚙️ Prioridade mínima" e o rodapé "⚡ Sentinel Signals —
+monitoramento ativo".
+
+**3ª revisão de código (achados corrigidos):** nenhum uso errado passava na árvore atual; eram brechas
+para o futuro, todas com prova:
+- `//` ou `/*` em texto JSX logo depois de um `{expr}` ainda virava comentário (o TypeScript lê o texto cru
+  nessa posição) — trechos dentro de texto JSX nunca são comentário agora.
+- A janela do texto não parava em `\n` escrito dentro da string nem no próximo emoji ("⚡ Prioridade
+  mínima … ⚡ Sentinel Signals" na mesma string passava); ícone isolado lia até o objeto seguinte — agora
+  lê só até fechar o próprio objeto/tag.
+- ⭐ recusava "⭐ Prioridade alta" (exigia dois-pontos).
+- "⏳ Aberto" (vela aberta, TradeCard/Histórico/cartão) usava o glifo de "Aguardando Entrada" → 🕯️;
+  ⏳ ganhou regra de contexto.
+- A guarda antiga (`panelVocabularyGuard`) analisava cada arquivo 3 vezes — agora 1 (cache).
+
+**Achado do Codex (P2, PR #506, corrigido):** a varredura lia só `.js/.jsx/.mjs` — `.ts/.tsx` (já existe
+`src/utils/index.ts`) ficavam de fora. Agora entram, cada um analisado com o modo certo do TypeScript (`.ts`
+sem JSX, `.tsx` com JSX); o teste exige `src/utils/index.ts` na lista e prova os dois modos.
