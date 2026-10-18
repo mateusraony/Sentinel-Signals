@@ -21,6 +21,7 @@
  */
 
 import { fetchWithRetry } from './httpRetry';
+import { parse24hStats } from './ticker24h.js';
 
 const BINANCE_BASE_URL = 'https://fapi.binance.com/fapi/v1';
 
@@ -132,15 +133,9 @@ export async function fetch24hStats(symbol) {
 
   if (!response.ok) return null;
 
-  const data = await response.json();
-  return {
-    priceChange: parseFloat(data.priceChange),
-    priceChangePercent: parseFloat(data.priceChangePercent),
-    highPrice: parseFloat(data.highPrice),
-    lowPrice: parseFloat(data.lowPrice),
-    volume: parseFloat(data.volume),
-    quoteVolume: parseFloat(data.quoteVolume),
-  };
+  // Item 279: inclui `lastPrice`/`closeTime` da mesma resposta (preço e % do
+  // mesmo instante); campo inválido vira null, nunca NaN.
+  return parse24hStats(await response.json());
 }
 
 /**

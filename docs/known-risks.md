@@ -32940,8 +32940,64 @@ de excluídas (simulações são raras). Corrigir exigiria filtrar no servidor (
 escopo destes PRs) ou mudar a consulta compartilhada com a conta virtual
 (`['trade-operations-closed-all']`, mesmo teto) — alteraria os números dela ou dobraria o polling a
 cada 2 min no Render/Neon gratuitos. Decisão registrada para o usuário.
-**Decisão a levar ao usuário (não implementada):** a simulação ocupa a única vaga de
+**Decisão do usuário (2026-10-18): manter como está** — o diálogo já avisa; nada muda no motor.
+**Decisão levada ao usuário:** a simulação ocupa a única vaga de
 operação do ativo — enquanto aberta, o motor não abre a operação dele, inclusive a do próprio aviso se
 ele confirmar depois. Mudar isso exige mexer no motor; por ora o diálogo avisa explicitamente. **Não
 feito:** o botão olha só o aviso RF mais recente do ativo (um RF 1h mais novo esconde um 4h ainda no
 prazo) — falha para o lado seguro.
+
+## 279. PR-D — preço e "📈 +x% em 24h · Futures" do mesmo instante; 📈/📉 só para movimento de preço (2026-10-18)
+
+**Origem:** auditoria comparativa (item 276). O cartão do ativo mostrava o **fechamento da vela**
+(`AssetState.last_close`, gravado pelo scan) ao lado de uma **variação de 24h** de outra fonte e de outro
+instante (ticker 24h da Binance Futures), sem rótulo; falha do ticker fazia a % sumir sem aviso, e o
+comparador podia mostrar "NaN%". 📈/📉 também apareciam com outros sentidos (MFE/MAE, filtro MTF do Pine) e
+a faixa do topo dizia "Live" (ponto pulsando) ao lado do fechamento da vela de 1h, com setas seguindo a
+direção do Range Filter, não o preço.
+
+**Pré-requisito confirmado pelo usuário (2026-10-18):** `/fapi/v1/ticker/24hr` traz `lastPrice`,
+`priceChangePercent` e `closeTime` na mesma resposta (a rede da sessão bloqueia a Binance; o usuário colou a
+resposta do navegador).
+
+**Mudança (só painel; motor intocado):**
+
+- `src/lib/priceChange24h.js` + `src/lib/ticker24h.js`: `parse24hStats` (campo inválido vira `null`, nunca NaN) e
+  `describeChange24h` ("📈 +2.10% em 24h · Futures", 📉 na queda, sem seta no zero, "% 24h indisponível"
+  sem dado, desatualizado após 3 min). `fetch24hStats` (browser) passa a devolver também
+  `lastPrice`/`closeTime` (leitura em `ticker24h.js`) — mesma chamada, zero requisição nova.
+- Cartão do ativo: preço do ticker + % do mesmo instante; "Fech. 1h $X" à parte; sem ticker, o fechamento
+  da vela marcado ("fech. 1h") com "% 24h indisponível". Comparador com o mesmo rótulo (corrige o "NaN%").
+- Faixa do topo: "Preços" no lugar de "Live"; preço e 📈/📉 pela variação de 24h **só do cache** dos
+  cartões (`enabled: false`, nunca busca — aparece em todas as páginas); setas do Range Filter removidas.
+- MFE/MAE → "⬆️ Máx. a favor (MFE)" / "⬇️ Máx. contra (MAE)"; filtro MTF do Pine: 📈 → 🧭 (mesmo sentido
+  do "🧭 Tendência" do Telegram — tendência do timeframe maior).
+- Guard: o painel não escreve 📈/📉 à mão (`panelVocabularyGuard.test.js`).
+
+**Revisão de código (achados corrigidos):** frescor medido pela hora da busca (`dataUpdatedAt`), não pelo
+`closeTime` da Binance contra o relógio do PC (PC adiantado marcaria tudo como desatualizado); preço do
+ticker velho nunca substitui o fechamento da vela; comparador com o mesmo critério de preço e marca de
+desatualizado; faixa do topo com relógio próprio, rótulo "24h" e preço em cor neutra (antes seguia a direção
+do Range Filter, que podia contradizer a %); cores e sinal vêm do helper (`CHANGE_TONE_COLOR`, `signed`);
+ícone do MTF trocado de 🕐 (já é "horário") para 🧭.
+
+**2ª revisão (achados corrigidos):** preço 0 (contrato encerrado) não é usado (`usablePrice`); busca que
+falhou conta como desatualizado mesmo dentro dos 3 min (padrão do `useLivePrice`); "carregando" tem texto
+próprio ("% 24h carregando…") e não se confunde com falha; comparador com relógio e atualização de 60 s
+(mesma chave do cartão); faixa do topo mostra o preço do ticker (mesmo instante da %) quando fresco, e
+"fech. 1h" junto do preço quando cai no fechamento da vela — rótulo do topo virou "Preços"; a fonte
+("Futures") é parâmetro do helper; o helper devolve `staleSuffix`/`dim` prontos e reusa
+`formatSignedPct`/`usablePrice` de `priceProximity.js`.
+
+**3ª revisão (achados corrigidos):** regra única de exibição `resolvePriceDisplay` (cartão, comparador e
+faixa): quando o ticker não está fresco, o preço é o fechamento da vela **marcado** ("fech. 1h") e a % antiga
+vira "% 24h desatualizado" — nunca preço e % de instantes diferentes lado a lado; a leitura crua do ticker
+mudou para `src/lib/ticker24h.js`, para o provider de mercado (que o motor importa) não puxar código de
+exibição; a mudança no `scripts/adminMarketDataProvider.js` foi **revertida** (nada no cron consome
+`fetch24hStats`); o comparador não tem mais um 2º intervalo de busca (dobraria as chamadas à Binance — os
+cartões já atualizam a mesma chave); faixa do topo formata com `formatPrice` (moeda de centavos não vira
+"$0"); rótulo do timeframe em minúsculas ("fech. 1h", "15m" não lê como "15 meses"). **Não feito:** a barra
+"📏 distância até a linha do filtro" continua medindo o fechamento da vela — o filtro é calculado sobre o
+fechamento, por desenho.
+
+**Fora deste PR:** a "faixa" de preço (➡️) fica para a F2.

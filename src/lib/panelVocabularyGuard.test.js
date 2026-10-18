@@ -5,6 +5,9 @@
 // 2) O TradeCard mostrava "🔴 LIVE" lendo `op.data_status`, que o motor grava
 //    sempre como 'LIVE' (scanner.js, criação da operação) — o badge nunca
 //    mudava. Frescor vem de `assetDataQuality`; o painel não lê esse campo.
+// 3) Item 279 (PR-D): 📈/📉 são só movimento de preço e vêm de um lugar
+//    (`describeChange24h`, src/lib/priceChange24h.js). O painel não escreve o
+//    glifo à mão (MFE/MAE viraram ⬆️/⬇️; o filtro MTF do Pine virou 🧭 — 🕐 já é "horário").
 // O registro completo "1 emoji = 1 significado" chega no PR-E3.
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -68,5 +71,18 @@ describe('guarda: o painel não lê op.data_status (constante LIVE no motor)', (
     expect(LE_DATA_STATUS_DA_OP.test('const dataStatus = DATA_STATUS[op.data_status] || DATA_STATUS.LIVE;')).toBe(true);
     expect(LE_DATA_STATUS_DA_OP.test('op?.data_status')).toBe(true);
     expect(LE_DATA_STATUS_DA_OP.test('snapshot.data_status')).toBe(false);
+  });
+});
+
+describe('guarda: 📈/📉 só via describeChange24h (item 279)', () => {
+  it('nenhum arquivo do painel escreve 📈/📉 à mão', () => {
+    const lista = PASTAS.flatMap(arquivos);
+    const comGlifo = lista.filter(c => /📈|📉/u.test(semComentarios(readFileSync(c, 'utf8'))));
+    expect(comGlifo).toEqual([]);
+  });
+
+  it('pega o uso antigo se ele voltar (prova do guard)', () => {
+    expect(/📈|📉/u.test(semComentarios('<span>📈 MFE</span>'))).toBe(true);
+    expect(/📈|📉/u.test(semComentarios('// 📈 em comentário'))).toBe(false);
   });
 });

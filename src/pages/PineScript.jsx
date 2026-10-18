@@ -1059,7 +1059,7 @@ export default function PineScript() {
       desc: 'ADX mín e Chop máx são auto-ajustados pelo Tier do ativo (ATR%)' },
     { id: 'tier', icon: '🏗️', label: 'Auto-Tier: T1 / T2 / T3',
       desc: `T1 Blue chip ATR%<${parsedConfig.tier2Threshold} → stop 2x | T2 Mid cap → 2.5x | T3 Altcoin → 3x` },
-    { id: 'mtf', icon: '📈', label: 'Filtro MTF 4h (mtfTF = "240")',
+    { id: 'mtf', icon: '🧭', label: 'Filtro MTF 4h (mtfTF = "240")',
       desc: 'Scanner valida direção 4h antes de emitir sinal — só entra a favor do 4h' },
     { id: 'entry', icon: '⏱️', label: 'Entrada em 15m após sinal 4h',
       desc: 'Scanner detecta sinal 4h e aguarda confirmação no 15m para entrada precisa' },

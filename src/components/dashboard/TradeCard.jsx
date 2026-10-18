@@ -517,10 +517,10 @@ function Details({ op }) {
           <TooltipTrigger asChild>
             <div className="flex items-center gap-3 text-9px font-mono text-muted-foreground cursor-help" tabIndex={0}>
               {Number.isFinite(op.mfe_r) && (
-                <span>📈 MFE <span style={{ color: '#00ff80' }}>{op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R</span></span>
+                <span>⬆️ Máx. a favor (MFE) <span style={{ color: '#00ff80' }}>{op.mfe_r >= 0 ? '+' : ''}{op.mfe_r.toFixed(2)}R</span></span>
               )}
               {Number.isFinite(op.mae_r) && (
-                <span>📉 MAE <span style={{ color: '#ff1478' }}>{op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R</span></span>
+                <span>⬇️ Máx. contra (MAE) <span style={{ color: '#ff1478' }}>{op.mae_r >= 0 ? '+' : ''}{op.mae_r.toFixed(2)}R</span></span>
               )}
             </div>
           </TooltipTrigger>

@@ -16,6 +16,7 @@ import { logError } from '@/lib/logger';
 import moment from 'moment';
 import ProximityBar, { calcProximity } from '@/components/dashboard/ProximityBar';
 import { formatPrice, formatSignedPct } from '@/lib/priceProximity';
+import { describeChange24h, resolvePriceDisplay, CHANGE_TONE_COLOR } from '@/lib/priceChange24h';
 import { useFundingRate } from '@/hooks/useFundingRate';
 import { assetDataQuality, qualityBadge } from '@/lib/assetDataQuality';
 import { useNow } from '@/hooks/useNow';
@@ -246,7 +247,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   const state4h = states?.find(s => s.timeframe === '4h');
   const primaryState = states?.find(s => s.timeframe === selectedTf) || state1h || state4h || states?.[0];
 
-  const { data: stats24h } = useQuery({
+  const { data: stats24h, dataUpdatedAt: stats24hAt, isError: stats24hError, isPending: stats24hPending } = useQuery({
     queryKey: ['24h-stats', asset.symbol],
     queryFn: () => fetch24hStats(asset.symbol),
     refetchInterval: 60000,
@@ -307,7 +308,11 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   });
 
   const lastPrice = primaryState?.last_close;
-  const priceChange = stats24h?.priceChangePercent;
+  // Item 279: preço e variação de 24h da MESMA resposta do ticker (Futures);
+  // sem ticker, cai no fechamento da vela e diz "% 24h indisponível".
+  const change24h = describeChange24h(stats24h, now, { fetchedAt: stats24hAt, isError: stats24hError, isLoading: stats24hPending });
+  const priceView = resolvePriceDisplay(change24h, lastPrice);
+  const tfLabel = primaryState?.timeframe?.toLowerCase();
 
   // Item 277: frescor pela fonte única (mesmo do drawer e do chip de saúde).
   const quality = assetDataQuality(asset, now);
@@ -495,14 +500,20 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
             )}
           </div>
           <div className="text-right shrink-0 ml-2">
-            {lastPrice ? (
+            {priceView.price ? (
               <>
-                <div className="font-bold font-mono text-sm text-foreground">${formatPrice(lastPrice)}</div>
-                {priceChange !== undefined && priceChange !== null && (
-                  <div className="text-10px font-mono" style={{ color: priceChange >= 0 ? '#00ff80' : '#ff1478' }}>
-                    {priceChange >= 0 ? '+' : ''}{priceChange.toFixed(2)}%
+                <div className="font-bold font-mono text-sm text-foreground">
+                  ${formatPrice(priceView.price)}
+                  {priceView.isCandle && <span className="text-8px font-normal text-muted-foreground"> fech. {tfLabel}</span>}
+                </div>
+                <div className="text-10px font-mono" style={{ color: CHANGE_TONE_COLOR[priceView.tone] }}>
+                  {priceView.pctText}
+                </div>
+                {!priceView.isCandle && lastPrice ? (
+                  <div className="text-8px font-mono text-muted-foreground">
+                    Fech. {tfLabel} ${formatPrice(lastPrice)}
                   </div>
-                )}
+                ) : null}
               </>
             ) : <span className="text-xs text-muted-foreground">—</span>}
             {/* Auditoria do Telegram (2026-09-29), item 1.11 — só RF/operações

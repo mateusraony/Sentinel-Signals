@@ -17,9 +17,9 @@ import AssetCard, { getTp1Tooltip, getTp2Tooltip } from './AssetCard.jsx';
 // fetchMarkPrice precisa ser controlável por teste (achado A-6, badge
 // "Fund." só vira Tooltip focável quando fundingRate !== null) — mesmo
 // padrão vi.hoisted já usado em src/hooks/useLivePrice.test.jsx.
-const { fetchMarkPriceMock } = vi.hoisted(() => ({ fetchMarkPriceMock: vi.fn() }));
+const { fetchMarkPriceMock, fetch24hStatsMock } = vi.hoisted(() => ({ fetchMarkPriceMock: vi.fn(), fetch24hStatsMock: vi.fn() }));
 vi.mock('@/lib/marketDataProvider', () => ({
-  fetch24hStats: async () => null,
+  fetch24hStats: (...a) => fetch24hStatsMock(...a),
   fetchMarkPrice: fetchMarkPriceMock,
 }));
 vi.mock('@/lib/firebaseClient', () => ({ db: {}, auth: {}, rtdb: null, app: {} }));
@@ -44,6 +44,8 @@ const RF4H = (overrides = {}) => ({
 
 beforeEach(() => {
   fetchMarkPriceMock.mockReset();
+  fetch24hStatsMock.mockReset();
+  fetch24hStatsMock.mockResolvedValue(null);
   fetchMarkPriceMock.mockResolvedValue({ markPrice: null, lastFundingRate: null, nextFundingTime: null });
   activateSignalManuallyMock.mockReset();
   activateSignalManuallyMock.mockResolvedValue({ created: true });
@@ -574,5 +576,52 @@ describe('AssetCard — 🧪 Simular entrada (virtual) (item 278)', () => {
     fireEvent.click(within(await screen.findByRole('alertdialog')).getByText('Simular COMPRA'));
     await waitFor(() => expect(toastMock).toHaveBeenCalled());
     expect(toastMock.mock.calls[0][0].description).toMatch(/nenhuma ordem/i);
+  });
+});
+
+
+// Item 279 (PR-D): preço e variação de 24h vêm da MESMA resposta do ticker da
+// Futures, com rótulo; o fechamento da vela aparece à parte, identificado.
+describe('AssetCard — preço e "📈 +x% em 24h · Futures" do mesmo instante (item 279)', () => {
+  const STATE_1H = { timeframe: '1h', last_close: 100, last_candle_time: '2026-10-18T12:00:00.000Z' };
+
+  it('com ticker: preço do ticker, % rotulada e fechamento da vela à parte', async () => {
+    fetch24hStatsMock.mockResolvedValue({ lastPrice: 102.5, priceChangePercent: 2.1, closeTime: Date.now() });
+    renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }, states: [STATE_1H] });
+    await screen.findByText('📈 +2.10% em 24h · Futures');
+    screen.getByText('$102.50');
+    screen.getByText(/Fech\. 1h \$100/);
+  });
+
+  it('queda usa 📉', async () => {
+    fetch24hStatsMock.mockResolvedValue({ lastPrice: 99, priceChangePercent: -0.5, closeTime: Date.now() });
+    renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }, states: [STATE_1H] });
+    await screen.findByText('📉 -0.50% em 24h · Futures');
+  });
+
+  it('REGRESSÃO (review do PR-D): ticker velho não substitui o fechamento da vela', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    try {
+      vi.setSystemTime(Date.parse('2026-10-18T12:00:00Z'));
+      fetch24hStatsMock.mockResolvedValueOnce({ lastPrice: 102.5, priceChangePercent: 2.1, closeTime: Date.now() });
+      // As buscas seguintes falham — o dado em cache fica de verdade velho.
+      fetch24hStatsMock.mockRejectedValue(new Error('rede'));
+      renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }, states: [STATE_1H] });
+      await vi.waitFor(() => screen.getByText('$102.50'));
+      await act(async () => { vi.advanceTimersByTime(5 * 60_000); });
+      await vi.waitFor(() => screen.getByText('% 24h desatualizado'));
+      screen.getByText(/fech\. 1h/); // o preço agora é o fechamento da vela, marcado
+      expect(screen.queryByText('$102.50')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ticker falhou: mostra o fechamento da vela e "% 24h indisponível" (nunca some, nunca NaN)', async () => {
+    fetch24hStatsMock.mockRejectedValue(new Error('rede'));
+    renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }, states: [STATE_1H] });
+    await screen.findByText('% 24h indisponível');
+    screen.getByText(/fech\. 1h/);
+    expect(screen.queryByText(/NaN/)).toBeNull();
   });
 });

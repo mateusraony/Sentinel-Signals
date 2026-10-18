@@ -13,7 +13,7 @@
 // `backend.entities`.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, act } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import TickerBar from './TickerBar.jsx';
@@ -28,6 +28,10 @@ vi.mock('@/api/entities', () => ({
     },
   },
 }));
+
+// Item 279: a faixa só LÊ a variação de 24h do cache — nunca busca.
+const { fetch24hStatsMock } = vi.hoisted(() => ({ fetch24hStatsMock: vi.fn(async () => null) }));
+vi.mock('@/lib/marketDataProvider', () => ({ fetch24hStats: (...a) => fetch24hStatsMock(...a) }));
 
 afterEach(cleanup);
 
@@ -72,5 +76,39 @@ describe('TickerBar — AssetState/MonitoredAsset lidos via backend.entities (ro
     // O item aparece 2x no DOM de propósito (`doubled`, loop visual sem costura).
     await vi.waitFor(async () => expect((await screen.findAllByText('BTCUSDT')).length).toBe(2));
     expect(screen.getAllByText((_, el) => el.textContent === '$60,123.45').length).toBeGreaterThan(0);
+  });
+});
+
+// Item 279 (PR-D): a faixa dizia "Live" (com ponto pulsando) ao lado do
+// fechamento da vela de 1h, e a seta TrendingUp/Down seguia a direção do Range
+// Filter — não o movimento do preço. Agora: rótulo do que é, e 📈/📉 só pela
+// variação de 24h já carregada (cache dos cartões, sem chamada nova à Binance).
+describe('TickerBar — rótulo honesto e 📈/📉 pela variação de 24h (item 279)', () => {
+  it('sem "Live" fixo; usa a variação de 24h do cache e não chama a Binance', async () => {
+    assetStateListMock.mockResolvedValue([{ asset_id: 'a1', timeframe: '1h', last_close: 100, rf_direction: -1 }]);
+    monitoredAssetFilterMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT' }]);
+    const client = makeTestQueryClient();
+    render(<QueryClientProvider client={client}><TickerBar /></QueryClientProvider>);
+    // Semeia o cache DEPOIS de montar (gcTime 0 no cliente de teste descartaria
+    // um dado sem observador) — no app, os cartões mantêm essa chave viva.
+    await screen.findAllByText('BTCUSDT');
+    act(() => { client.setQueryData(['24h-stats', 'BTCUSDT'], { priceChangePercent: 1.2, lastPrice: 101, closeTime: Date.now() }); });
+    expect((await screen.findAllByText('📈 +1.20% 24h')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Live')).toBeNull();
+    // Preço do mesmo instante da %, não o fechamento da vela.
+    expect(screen.getAllByText('$101.00').length).toBeGreaterThan(0);
+    expect(screen.queryByText('fech. 1h')).toBeNull();
+    expect(fetch24hStatsMock).not.toHaveBeenCalled();
+  });
+
+  it('sem variação no cache: só o preço, sem seta nenhuma', async () => {
+    assetStateListMock.mockResolvedValue([{ asset_id: 'a1', timeframe: '1h', last_close: 100, rf_direction: 1 }]);
+    monitoredAssetFilterMock.mockResolvedValue([{ id: 'a1', symbol: 'BTCUSDT' }]);
+    const { container } = renderTicker();
+    await screen.findAllByText('BTCUSDT');
+    expect(container.textContent).not.toMatch(/📈|📉/);
+    // Sem ticker: o fechamento da vela, identificado como tal.
+    expect(screen.getAllByText('fech. 1h').length).toBeGreaterThan(0);
+    expect(container.querySelector('svg')).toBeNull(); // sem TrendingUp/Down do Range Filter
   });
 });
