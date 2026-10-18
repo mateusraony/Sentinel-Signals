@@ -2,7 +2,7 @@
 // Relatórios sintéticos no formato que o compareReports lê.
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { summarizeTargetsExperiment, formatTargetsMarkdown, checkControls, formatControlsMarkdown } from './targetsSummary.mjs';
+import { summarizeTargetsExperiment, formatTargetsMarkdown, checkControls, formatControlsMarkdown, opIdsHash } from './targetsSummary.mjs';
 import { mulberry32 } from './backtest-correlation-check.mjs';
 
 const prereg = JSON.parse(readFileSync(new URL('../docs/experiments/targets-prereg.json', import.meta.url), 'utf-8'));
@@ -156,5 +156,18 @@ describe('checkControls e casos da revisão (item 281)', () => {
     const cell = run(reports).arms.find((a) => a.label === 'fib_literal').cells.W2;
     expect(cell.outcome).toBe('recusado');
     expect(cell.errors[0]).toMatch(/não é do braço fib_literal/);
+  });
+});
+
+describe('opIdsHash (achado do Codex, PR #508)', () => {
+  it('mesmas operações em qualquer ordem = mesmo hash; uma operação trocada muda o hash; sem operação = null', () => {
+    const a = report({ w: 'W1' });
+    const shuffled = { ...a, overall: { ...a.overall, curve: [...a.overall.curve].reverse() } };
+    expect(opIdsHash(shuffled)).toBe(opIdsHash(a));
+    const swapped = structuredClone(a);
+    swapped.overall.curve[3].op.id = 'outra';
+    expect(opIdsHash(swapped)).not.toBe(opIdsHash(a));
+    expect(opIdsHash({ overall: { curve: [] } })).toBeNull();
+    expect(formatControlsMarkdown(checkControls({ prereg, controls: { W1: a } }))).toMatch(/hash das operações [0-9a-f]{16}/);
   });
 });

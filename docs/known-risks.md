@@ -33231,6 +33231,12 @@ veredito por braço (`scripts/targetsSummary.mjs`, testado).
   execução" (refazer), separado de PARADO. O arquivo de um braço tem que conter a config daquele braço, e
   todo relatório a janela e as moedas pré-registradas. O resumo não roda se o workflow for cancelado.
 - Pré-registro: campo de timeframes alinhado ao que roda (15m/1h/4h/1d; o 5m só serve à SMC, desligada).
+**Achado do Codex (P2, PR #508), em parte não corrigível agora:** a reprodução do controle confere
+contagem e expectância, não QUAIS operações. O item 270 só registrou esses dois números (os relatórios não
+ficam no repositório), então não há lista para comparar hoje; trocar operações mantendo exatamente a mesma
+contagem e a mesma média na precisão registrada é improvável, e o teste de ponta a ponta já prova que a
+chave desligada gera operações idênticas. Feito: o resumo imprime um hash dos ids das operações de cada
+controle, e o resultado do item 281 vai gravá-lo — as próximas reproduções comparam as mesmas operações.
 **Não feito, com motivo:** `npm ci` e o bundle do backtest em cada job da matriz (mesmo padrão dos
 workflows dos itens 264–272; custo de minutos de runner, não de resultado).
 

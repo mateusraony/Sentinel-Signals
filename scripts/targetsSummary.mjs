@@ -16,6 +16,7 @@
 //    mesmo sentido em todas as janelas que decidem e o mesmo sinal na janela
 //    de replicação.
 
+import { createHash } from 'node:crypto';
 import { compareReports } from './compareBacktestReports.mjs';
 
 // Compara na precisão em que o número foi registrado (W1 −0,0483 tem 4 casas;
@@ -25,8 +26,17 @@ const decimalsOf = (x) => (String(x).split('.')[1] ?? '').length;
 const matchesRecorded = (value, recorded) => Number.isFinite(value)
   && Math.abs(value - recorded) <= 0.5 * 10 ** -decimalsOf(recorded) + 1e-12;
 
+// Impressão digital das operações do controle (ids ordenados). O item 270 só
+// registrou contagem e expectância, então hoje não há com o que comparar; o
+// resultado do item 281 grava este hash para as próximas reproduções
+// compararem as MESMAS operações (achado do Codex, PR #508).
+export function opIdsHash(report) {
+  const ids = (report?.overall?.curve ?? []).map((e) => e?.op?.id).filter(Boolean).sort();
+  return ids.length ? createHash('sha256').update(ids.join('\n')).digest('hex').slice(0, 16) : null;
+}
+
 function controlMetrics(report) {
-  return { n: report?.costs?.countedTrades ?? null, expectancyR: report?.costs?.netExpectancyR ?? null };
+  return { n: report?.costs?.countedTrades ?? null, expectancyR: report?.costs?.netExpectancyR ?? null, opIdsHash: opIdsHash(report) };
 }
 
 const dayMs = (iso) => Date.parse(`${iso}T00:00:00Z`);
@@ -158,7 +168,7 @@ export function formatControlsMarkdown(check) {
   if (check.status === 'PARADO') lines.push('### ⛔ PARADO: o controle não reproduziu o item 270 (regra do pré-registro). Os braços NÃO rodam.', '');
   else if (check.status === 'FALHA_DE_EXECUCAO') lines.push('### ⚠️ Falha de execução: relatório do controle ausente, inválido ou de outra janela. Os braços NÃO rodam — refazer o workflow.', '');
   else lines.push('### ✅ Controle reproduziu o item 270 — os braços podem rodar.', '');
-  for (const c of check.controls) lines.push(`- ${c.window} (${c.role}): ${c.n ?? 'n/d'} ops, ${Number.isFinite(c.expectancyR) ? c.expectancyR.toFixed(4) : 'n/d'}R${c.problem ? ` — ${c.problem}` : ''}`);
+  for (const c of check.controls) lines.push(`- ${c.window} (${c.role}): ${c.n ?? 'n/d'} ops, ${Number.isFinite(c.expectancyR) ? c.expectancyR.toFixed(4) : 'n/d'}R, hash das operações ${c.opIdsHash ?? 'n/d'}${c.problem ? ` — ${c.problem}` : ''}`);
   return lines.join('\n');
 }
 
@@ -172,7 +182,7 @@ export function formatTargetsMarkdown(summary, prereg) {
     return lines.join('\n');
   }
   lines.push('Controle (alvo de hoje):', '');
-  for (const c of summary.controls) lines.push(`- ${c.window} (${c.role}): ${c.n} ops, expectância líquida ${f(c.expectancyR, 4)}R${c.expected ? ' — reproduziu o item 270' : ''}`);
+  for (const c of summary.controls) lines.push(`- ${c.window} (${c.role}): ${c.n} ops, expectância líquida ${f(c.expectancyR, 4)}R, hash das operações ${c.opIdsHash ?? 'n/d'}${c.expected ? ' — reproduziu o item 270' : ''}`);
   lines.push('', `Família de ${prereg.analysis.familySize} comparações (Bonferroni, alpha por comparação ${f(0.05 / prereg.analysis.familySize, 4)}). Leitura não pareada, controle × braço.`, '');
   lines.push('| Braço | Janela | Δ expectância (R) | IC | Veredito da janela | ops (controle → braço) | fallback | TP1 mediano (R) |');
   lines.push('|---|---|---|---|---|---|---|---|');
