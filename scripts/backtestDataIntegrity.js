@@ -140,6 +140,34 @@ export function validateCandleSeries(series, { symbol, timeframe }) {
   return out.issues();
 }
 
+// Quanto o closeTime de duas velas encurtadas (timeframes diferentes da
+// mesma moeda) pode diferir para contar como o MESMO instante de parada.
+export const HALT_CORROBORATION_TOLERANCE_MS = 60 * 1000;
+
+/**
+ * Candidatas a vela fechada CEDO por parada da exchange: closeTime antes do
+ * fim normal, as DUAS vizinhas presentes e com duração normal, e a seguinte
+ * começando só depois do fim desta. Arquivo inteiro com closeTime curto (de
+ * outro intervalo) nunca tem vizinha normal, então não entra.
+ * @returns {number[]} índices na série
+ */
+export function findTruncatedCandles(series, timeframe) {
+  const intervalMs = timeframeToMs(timeframe);
+  if (!Array.isArray(series) || !intervalMs) return [];
+  const duration = (c) => (c && Number.isFinite(c.openTime) && Number.isFinite(c.closeTime) ? c.closeTime - c.openTime : NaN);
+  const isNormal = (c) => duration(c) >= intervalMs - 1 && duration(c) <= intervalMs;
+  const found = [];
+  for (let i = 1; i < series.length - 1; i++) {
+    const c = series[i];
+    const d = duration(c);
+    if (!(d > 0 && d < intervalMs - 1)) continue;
+    if (!isNormal(series[i - 1]) || !isNormal(series[i + 1])) continue;
+    if (!(series[i + 1].openTime >= c.openTime + intervalMs)) continue;
+    found.push(i);
+  }
+  return found;
+}
+
 /**
  * Vela fechada CEDO por parada da exchange (item 281, 1ª execução do
  * targets-test.yml): quando a Binance para, a vela em andamento sai com o
@@ -147,32 +175,28 @@ export function validateCandleSeries(series, { symbol, timeframe }) {
  * binance-public-data issue #77). Em 2021-08-13 isso aconteceu na mesma hora
  * em todas as moedas, em 15m/1h/4h, e o validador recusava a janela inteira.
  *
+ * Só conserta com PROVA independente (review do Codex, PR #509): isolamento
+ * sozinho não distingue uma parada de uma vela parcial inserida por engano.
+ * `isCorroborated(candle)` diz se OUTRO timeframe da mesma moeda tem uma vela
+ * encurtada no mesmo instante — sem ele, nada é consertado e a vela continua
+ * ERRO em validateCandleSeries.
+ *
  * Conserto CONSERVADOR: o closeTime volta para o fim normal da vela
  * (`openTime + intervalo − 1`), então o replay só a enxerga quando enxergaria
- * uma vela normal — nunca antes, sem olhar o futuro. Só vale para vela
- * ISOLADA (vizinhas com duração normal ou ausentes): um arquivo inteiro com
- * closeTime curto é de outro intervalo e continua ERRO em
- * validateCandleSeries. Vela mais LONGA que o intervalo nunca é tocada.
- * Série sem nada a consertar volta como a MESMA referência.
+ * uma vela normal — nunca antes, sem olhar o futuro. Vela mais LONGA que o
+ * intervalo nunca é tocada. Série sem nada a consertar volta como a MESMA
+ * referência.
+ * @param {unknown} series
+ * @param {{ symbol: string, timeframe: string, isCorroborated?: (candle: any) => boolean }} meta
  * @returns {{ series: unknown, issues: Array<object> }}
  */
-export function repairTruncatedCloseTimes(series, { symbol, timeframe }) {
+export function repairTruncatedCloseTimes(series, { symbol, timeframe, isCorroborated = () => false }) {
   const out = makeCollector(symbol, timeframe);
   const intervalMs = timeframeToMs(timeframe);
-  if (!Array.isArray(series) || !intervalMs) return { series, issues: [] };
-  const duration = (c) => (c && Number.isFinite(c.openTime) && Number.isFinite(c.closeTime) ? c.closeTime - c.openTime : NaN);
-  const isNormal = (c) => c === undefined || (duration(c) >= intervalMs - 1 && duration(c) <= intervalMs);
   let repaired = null;
-  for (let i = 0; i < series.length; i++) {
+  for (const i of findTruncatedCandles(series, timeframe)) {
     const c = series[i];
-    const d = duration(c);
-    if (!(d > 0 && d < intervalMs - 1)) continue;
-    const prev = series[i - 1];
-    const next = series[i + 1];
-    if (!isNormal(prev) || !isNormal(next)) continue;
-    // A vela seguinte não pode começar dentro do intervalo desta (aí não é
-    // parada, é série desalinhada — fica para o validador).
-    if (next !== undefined && !(next.openTime >= c.openTime + intervalMs)) continue;
+    if (!isCorroborated(c)) continue;
     if (!repaired) repaired = series.slice();
     repaired[i] = { ...c, closeTime: c.openTime + intervalMs - 1 };
     out.add('warning', 'close_time_truncated_repaired', c.openTime, { closeTime: iso(c.closeTime), repairedTo: iso(repaired[i].closeTime) });

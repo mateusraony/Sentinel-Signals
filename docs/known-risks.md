@@ -30761,7 +30761,7 @@ válido e inválido. **Não verificado**: download real com `--warmup-candles` �
 não alcança a Binance; conferido só o cálculo da data inicial por timeframe (log do
 script) e a validação do argumento. O 1º run real do `backtest.yml` é a confirmação.
 
-**Exceção conservadora (2026-10-18, item 281):** vela isolada fechada CEDO por parada da exchange (2021-08-13 na Binance Spot) tem o closeTime levado ao fim normal e vira AVISO, não erro (`repairTruncatedCloseTimes`). Vela longa e arquivo de outro intervalo continuam ERRO.
+**Exceção conservadora (2026-10-18, item 281):** vela isolada fechada CEDO por parada da exchange (2021-08-13 na Binance Spot), confirmada por outro timeframe da mesma moeda no mesmo instante, tem o closeTime levado ao fim normal e vira AVISO, não erro (`repairTruncatedCloseTimes`). Vela longa e arquivo de outro intervalo continuam ERRO.
 
 ## 261. Pacote 2 da auditoria — determinismo, causalidade ponta a ponta e o stop furado por gap medido (2026-10-09)
 
@@ -33263,6 +33263,12 @@ workflows dos itens 264–272; custo de minutos de runner, não de resultado).
   - **O que faz:** uma vela isolada com closeTime antes do fim normal tem o closeTime levado a
     `openTime + intervalo − 1`, e o conserto entra no relatório como AVISO
     `close_time_truncated_repaired`.
+  - **Exige prova cruzada** (review do Codex, PR #509, P1): só conserta se OUTRO timeframe da mesma
+    moeda tiver uma vela encurtada no mesmo instante (±60 s). Uma parada real encurta a vela em
+    andamento de todos os timeframes juntos; uma vela parcial inserida por engano, não. Sem a prova, a
+    vela continua ERRO.
+  - **Arquivo inteiro:** um arquivo inteiro com closeTime curto e uma vela na ponta da série nunca são
+    candidatos.
   - **É conservador:** a vela só fica visível quando uma vela normal ficaria. Nunca antes, então não há
     look-ahead.
   - **O que continua ERRO:** arquivo inteiro com closeTime curto (de outro intervalo) e vela mais longa

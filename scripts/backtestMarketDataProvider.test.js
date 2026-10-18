@@ -39,8 +39,16 @@ beforeAll(() => {
   fs.writeFileSync(path.join(dir, 'DUPUSDT_1h.json'), JSON.stringify([bar(0), bar(H), bar(H)]));
   fs.writeFileSync(path.join(dir, 'BADJSON_1h.json'), '[{"openTime": 0,');
   fs.writeFileSync(path.join(dir, 'VALIDBUG_1h.json'), JSON.stringify([bar(0)]));
-  // Parada da exchange (item 281): vela de 1h fechada 50 min depois de abrir, e buraco.
-  fs.writeFileSync(path.join(dir, 'HALTUSDT_1h.json'), JSON.stringify([bar(0), { ...bar(H), closeTime: H + 50 * 60 * 1000 }, bar(4 * H)]));
+  // Parada da exchange (item 281): a vela de 1h e a de 15m em andamento
+  // fecham no MESMO instante (H + 50 min), e há buraco depois.
+  const HALT_AT = H + 50 * 60 * 1000;
+  const M15 = 15 * 60 * 1000;
+  const bar15 = (t) => ({ ...bar(t), closeTime: t + M15 - 1 });
+  fs.writeFileSync(path.join(dir, 'HALTUSDT_1h.json'), JSON.stringify([bar(0), { ...bar(H), closeTime: HALT_AT }, bar(4 * H)]));
+  fs.writeFileSync(path.join(dir, 'HALTUSDT_15m.json'), JSON.stringify([bar15(H + M15), bar15(H + 2 * M15), { ...bar15(H + 3 * M15), closeTime: HALT_AT }, bar15(4 * H)]));
+  // Vela parcial isolada SEM o 15m confirmando o mesmo instante: não é parada.
+  fs.writeFileSync(path.join(dir, 'LONEUSDT_1h.json'), JSON.stringify([bar(0), { ...bar(H), closeTime: HALT_AT }, bar(2 * H)]));
+  fs.writeFileSync(path.join(dir, 'LONEUSDT_15m.json'), JSON.stringify([bar15(H), bar15(H + M15), bar15(H + 2 * M15)]));
 });
 afterAll(() => {
   if (previousDataDir === undefined) delete process.env.BACKTEST_DATA_DIR;
@@ -82,10 +90,17 @@ describe('backtestMarketDataProvider.loadSeries — integridade (item 260)', () 
     expect(issuesFor('VALIDBUG')).toEqual([]);
   });
 
-  it('vela fechada cedo por parada da exchange: carrega consertada, só com AVISO (item 281)', () => {
-    const loaded = loadSeries('HALTUSDT', '1h');
-    expect(loaded[1].closeTime).toBe(2 * H - 1);
-    expect(issuesFor('HALTUSDT').map((i) => `${i.severity}:${i.type}`)).toEqual(['warning:close_time_truncated_repaired', 'warning:gap']);
+  it('parada da exchange confirmada pelo 15m: 1h e 15m carregam consertadas, só com AVISO (item 281)', () => {
+    expect(loadSeries('HALTUSDT', '1h')[1].closeTime).toBe(2 * H - 1);
+    expect(loadSeries('HALTUSDT', '15m')[2].closeTime).toBe(2 * H - 1);
+    const kinds = (tf) => issuesFor('HALTUSDT').filter((i) => i.timeframe === tf).map((i) => `${i.severity}:${i.type}`);
+    expect(kinds('1h')).toEqual(['warning:close_time_truncated_repaired', 'warning:gap']);
+    expect(kinds('15m')).toEqual(['warning:close_time_truncated_repaired', 'warning:gap']);
+  });
+
+  it('vela curta SEM outro timeframe parando no mesmo instante continua ERRO (review do Codex, PR #509)', () => {
+    expect(loadSeries('LONEUSDT', '1h')[1].closeTime).toBe(H + 50 * 60 * 1000);
+    expect(issuesFor('LONEUSDT').map((i) => `${i.severity}:${i.type}`)).toEqual(['error:close_time_mismatch']);
   });
 
   it('getLoadedSeries devolve toda série lida, para a checagem de cobertura pós-replay', () => {

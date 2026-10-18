@@ -10,7 +10,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { sliceClosedAsOf, simNow } from '../src/lib/backtestEngine.js';
-import { validateCandleSeries, repairTruncatedCloseTimes } from './backtestDataIntegrity.js';
+import {
+  validateCandleSeries, repairTruncatedCloseTimes, findTruncatedCandles, HALT_CORROBORATION_TOLERANCE_MS,
+} from './backtestDataIntegrity.js';
 
 // Provenance stamped onto every TradeOperation/SignalEvent created during a
 // backtest run — mirrors the cron's Spot/binance path (the historical data
@@ -57,6 +59,41 @@ export function getLoadedSeries() {
 // exclusivo de scripts/build-backtest.mjs — build-scan.mjs (scanner ao vivo)
 // nunca o importa, então expor a série inteira não vaza look-ahead pro
 // caminho de produção.
+// closeTime das velas encurtadas (candidatas a parada da exchange) de cada
+// arquivo, para a prova cruzada entre timeframes da mesma moeda (item 281).
+const truncatedCloseTimesCache = new Map();
+function truncatedCloseTimes(symbol, timeframe) {
+  const key = `${symbol}:${timeframe}`;
+  if (truncatedCloseTimesCache.has(key)) return truncatedCloseTimesCache.get(key);
+  let times = [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(getDataDir(), `${symbol}_${timeframe}.json`), 'utf-8'));
+    times = findTruncatedCandles(parsed, timeframe).map((i) => parsed[i].closeTime);
+  } catch {
+    // Arquivo ausente/ilegível só não serve de prova; o problema dele é
+    // registrado quando (e se) o replay o carregar.
+  }
+  truncatedCloseTimesCache.set(key, times);
+  return times;
+}
+
+// Uma parada real da exchange encurta a vela em andamento de TODOS os
+// timeframes no mesmo instante; uma vela parcial inserida por engano, não.
+function haltCorroboratedBy(symbol, timeframe) {
+  let others;
+  return (candle) => {
+    if (!others) {
+      const prefix = `${symbol}_`;
+      others = fs.readdirSync(getDataDir())
+        .filter((f) => f.startsWith(prefix) && f.endsWith('.json'))
+        .map((f) => f.slice(prefix.length, -'.json'.length))
+        .filter((tf) => tf !== timeframe)
+        .flatMap((tf) => truncatedCloseTimes(symbol, tf));
+    }
+    return others.some((t) => Math.abs(t - candle.closeTime) <= HALT_CORROBORATION_TOLERANCE_MS);
+  };
+}
+
 export function loadSeries(symbol, timeframe) {
   const key = `${symbol}:${timeframe}`;
   if (cache.has(key)) return cache.get(key);
@@ -78,9 +115,10 @@ export function loadSeries(symbol, timeframe) {
       // Fora do try do parse de propósito (revisão do pacote 1): um defeito
       // do validador não pode ser relatado como "JSON inválido" — mandaria o
       // usuário baixar de novo um arquivo que está certo.
-      // Vela fechada cedo por parada da exchange: conserto conservador antes
-      // de validar (item 281, backtestDataIntegrity.js).
-      const repair = repairTruncatedCloseTimes(parsed, { symbol, timeframe });
+      // Vela fechada cedo por parada da exchange, confirmada por outro
+      // timeframe da mesma moeda: conserto conservador antes de validar
+      // (item 281, backtestDataIntegrity.js).
+      const repair = repairTruncatedCloseTimes(parsed, { symbol, timeframe, isCorroborated: haltCorroboratedBy(symbol, timeframe) });
       issues = [...repair.issues, ...validateCandleSeries(repair.series, { symbol, timeframe })];
       // Série que não é lista não pode seguir adiante: sliceClosedAsOf
       // quebraria a cada passo. O problema já está registrado em `issues`.
