@@ -120,4 +120,14 @@ describe('resolvePriceDisplay', () => {
     const semPreco = describeChange24h({ priceChangePercent: 1, lastPrice: 0, closeTime: NOW }, NOW, { fetchedAt: NOW });
     expect(resolvePriceDisplay(semPreco, 100)).toMatchObject({ price: 100, isCandle: true });
   });
+
+  // Achado do Codex (P2, PR #505): com % válida e `lastPrice` ausente/zero, o
+  // fechamento da vela aparecia ao lado da % do ticker, colorida e "fresca" —
+  // preço e variação de instantes diferentes de novo.
+  it('ticker sem preço válido: a % não acompanha o fechamento da vela', () => {
+    for (const lastPrice of [0, undefined, 'abc']) {
+      const semPreco = describeChange24h({ priceChangePercent: 1, lastPrice, closeTime: NOW }, NOW, { fetchedAt: NOW });
+      expect(resolvePriceDisplay(semPreco, 100)).toMatchObject({ pctText: '% 24h indisponível', tone: 'none', fresh: false });
+    }
+  });
 });

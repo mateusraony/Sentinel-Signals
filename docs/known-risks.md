@@ -33000,4 +33000,10 @@ cartões já atualizam a mesma chave); faixa do topo formata com `formatPrice` (
 "📏 distância até a linha do filtro" continua medindo o fechamento da vela — o filtro é calculado sobre o
 fechamento, por desenho.
 
+**Achado do Codex (P2, PR #505, corrigido):** ticker com `priceChangePercent` válido mas `lastPrice`
+ausente/inválido/zero continuava "fresco": o painel caía no fechamento da vela e mantinha a % do ticker
+colorida ao lado — preço e variação de instantes diferentes de novo. `resolvePriceDisplay` agora exige preço
+utilizável para considerar fresco; sem ele a % vira "% 24h indisponível" (teste de regressão em
+`priceChange24h.test.js`, falhava antes).
+
 **Fora deste PR:** a "faixa" de preço (➡️) fica para a F2.

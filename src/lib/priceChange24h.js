@@ -63,15 +63,19 @@ export function queryChangeOptions(query) {
  * Regra única de exibição (cartão, comparador, faixa do topo): preço do ticker
  * só quando fresco — mesmo instante da %; senão o fechamento da vela, marcado
  * como tal (`isCandle`), e a % antiga vira "% 24h desatualizado" em vez de
- * aparecer ao lado de um preço de outro instante.
+ * aparecer ao lado de um preço de outro instante. Ticker com % mas sem preço
+ * utilizável também não é "fresco": a % não tem um preço do mesmo instante para
+ * acompanhar (achado do Codex, PR #505).
  */
 export function resolvePriceDisplay(change, candleClose) {
-  const fresh = change.available && !change.stale;
+  const fresh = change.available && !change.stale && change.price !== null;
   const tickerPrice = fresh ? change.price : null;
+  let pctText = change.text;
+  if (change.available && !fresh) pctText = change.stale ? '% 24h desatualizado' : '% 24h indisponível';
   return {
     price: tickerPrice ?? usablePrice(candleClose),
     isCandle: tickerPrice === null,
-    pctText: change.available && !fresh ? '% 24h desatualizado' : change.text,
+    pctText,
     tone: fresh ? change.tone : 'none',
     fresh,
   };
