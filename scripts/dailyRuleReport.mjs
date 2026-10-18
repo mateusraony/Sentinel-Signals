@@ -130,7 +130,7 @@ export function formatDailyRuleTelegram(r) {
     : 'Nenhuma troca hoje.';
   const warn = warnings(r);
   return [
-    '📈 <b>Regra diária EMA 10/21 + Supertrend</b>',
+    '🧭 <b>Regra diária EMA 10/21 + Supertrend</b>',
     `Fechamento de ${brDay(asOfMs)} (UTC) · vale para ${brDay(asOfMs + DAY)}`,
     '',
     '<b>Trocas</b>',

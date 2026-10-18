@@ -37,8 +37,8 @@ const STATUS_LABELS = {
 function statusLabel(op) {
   if (op.status === 'STOP_HIT') {
     const outcome = classifyOutcome(op);
-    if (outcome === 'WIN') return '✅ Stop (lucro)';
-    if (outcome === 'BE') return '🔄 Stop (BE)';
+    if (outcome === 'WIN') return '💰 Stop (lucro)';
+    if (outcome === 'BE') return '🟡 Stop (BE)';
   }
   return STATUS_LABELS[op.status] || op.status;
 }

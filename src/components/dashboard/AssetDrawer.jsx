@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { formatPrice } from '@/lib/priceProximity';
 import { buildDecisionCard, NOT_RECORDED } from '@/lib/decisionCardPresenter';
 import { qualityBadge } from '@/lib/assetDataQuality';
+import { agreementLabel } from '@/lib/ruleAgreement';
 import FundingLine from './FundingLine';
 import { QueryErrorState } from '@/components/QueryErrorState';
 
@@ -114,7 +115,7 @@ function DecisionSummary({ card, statesUnavailable }) {
 
       {score && (
         <p className="text-8px font-mono text-muted-foreground/80">
-          <span className="text-foreground/70">Score técnico {score.value}/100</span> — {score.note}
+          <span className="text-foreground/70">{agreementLabel({ score: score.value })}</span> — {score.note}
         </p>
       )}
     </section>
@@ -174,7 +175,7 @@ function WhySection({ why, consStatus }) {
           <p className={thesis ? textCls : emptyCls}>{thesis ?? 'Não registrado.'}</p>
         </WhyBlock>
 
-        <WhyBlock title="O que ajuda ✅">
+        <WhyBlock title="👍 O que ajuda">
           {pros.length > 0 ? (
             <ul className="space-y-0.5">{pros.map((t, i) => <li key={i} className={textCls}>• {t}</li>)}</ul>
           ) : (
@@ -182,7 +183,7 @@ function WhySection({ why, consStatus }) {
           )}
         </WhyBlock>
 
-        <WhyBlock title="O que atrapalha ⚠️">
+        <WhyBlock title="👎 O que atrapalha">
           {cons.length > 0 ? (
             <ul className="space-y-0.5">
               {cons.map(c => (

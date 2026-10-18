@@ -136,7 +136,7 @@ function HistoryCard({ op }) {
             </span>
             <span className="text-9px font-mono font-semibold px-2 py-0.5 rounded"
               style={{ background: `${badgeColor}15`, color: badgeColor, border: `1px solid ${badgeColor}30` }}>
-              {isBE ? '🔄 Breakeven' : s.label}
+              {isBE ? '🟡 Breakeven' : s.label}
             </span>
             {/* Item 278: fora das estatísticas — simulação manual ou encerrada à mão. */}
             {provenanceTag && (
@@ -185,7 +185,7 @@ function HistoryCard({ op }) {
                 </TooltipContent>
               </Tooltip>
             )}
-            {duration && <span>⏱ {duration}</span>}
+            {duration && <span>⌛ {duration}</span>}
             <span>🕐 Sinal: {moment(op.created_date).format('DD/MM/YY HH:mm')}</span>
             {closedAt && closedAt !== op.created_date && (
               <span>🔒 Enc.: {moment(closedAt).format('DD/MM/YY HH:mm')}</span>
@@ -348,7 +348,7 @@ function HistoryCard({ op }) {
 
           {/* Timestamps detalhados */}
           <div className="rounded-lg px-3 py-2.5 space-y-1.5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <div className="text-9px font-mono text-muted-foreground mb-1">⏱ Linha do Tempo</div>
+            <div className="text-9px font-mono text-muted-foreground mb-1">🕐 Linha do Tempo</div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-9px font-mono">
               <span className="text-muted-foreground">🟢 Sinal gerado: <span className="text-foreground/60">{moment(op.created_date).format('DD/MM/YY HH:mm:ss')}</span></span>
               {op.tp1_hit_at && (
@@ -365,7 +365,7 @@ function HistoryCard({ op }) {
               )}
             </div>
             <div className="text-8px font-mono text-muted-foreground mt-1">
-              🕐 Candle: {op.candle_open_time ? moment(op.candle_open_time).utcOffset(-3).format('DD/MM HH:mm') : '—'} → {op.candle_close_time ? moment(op.candle_close_time).utcOffset(-3).format('HH:mm') : '—'} BRT · {op.candle_status === 'CLOSED' ? '✅ Fechado' : '⏳ Aberto'}
+              🕐 Candle: {op.candle_open_time ? moment(op.candle_open_time).utcOffset(-3).format('DD/MM HH:mm') : '—'} → {op.candle_close_time ? moment(op.candle_close_time).utcOffset(-3).format('HH:mm') : '—'} BRT · {op.candle_status === 'CLOSED' ? '✅ Fechado' : '🕯️ Aberto'}
             </div>
           </div>
 
@@ -422,7 +422,7 @@ function DaySummary({ ops }) {
         {[
           { label: 'Total', value: todayOps.length, color: '#00e5ff' },
           { label: '🏆 Win', value: wins, color: '#00ff80' },
-          { label: '🔄 BE', value: be, color: '#ffd166' },
+          { label: '🟡 BE', value: be, color: '#ffd166' },
           { label: '🛑 Loss', value: losses, color: '#ff1478' },
           // Achado da varredura pós-Raio-X (2026-09-27): mesma classe de bug
           // do M-16 (docs/known-risks.md) — "0%" por falta de operação
@@ -608,7 +608,7 @@ export default function TradeHistory() {
           <div className="w-px h-6 self-center" style={{ background: 'rgba(255,255,255,0.07)' }} />
 
           {/* Result */}
-          {[{ id: 'all', label: 'Todos' }, { id: 'win', label: '🏆 Win' }, { id: 'be', label: '🔄 BE' }, { id: 'loss', label: '🛑 Loss' }].map(r => (
+          {[{ id: 'all', label: 'Todos' }, { id: 'win', label: '🏆 Win' }, { id: 'be', label: '🟡 BE' }, { id: 'loss', label: '🛑 Loss' }].map(r => (
             <button key={r.id} onClick={() => setFilterResult(r.id)}
               className="text-10px font-mono px-2 py-1.5 rounded-lg transition-all"
               style={filterBtnStyle(filterResult === r.id)}>
@@ -658,7 +658,7 @@ export default function TradeHistory() {
           style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
           <span className="text-muted-foreground">{filtered.length} trades</span>
           <span style={{ color: '#00ff80' }}>🏆 {wins} win</span>
-          <span style={{ color: '#ffd166' }}>🔄 {be} BE</span>
+          <span style={{ color: '#ffd166' }}>🟡 {be} BE</span>
           <span style={{ color: '#ff1478' }}>🛑 {losses} loss</span>
           {/* Achado da varredura pós-Raio-X (2026-09-27): mesma classe de
               bug do M-16 — "0%" sem nenhuma operação contada (ex.: filtro só

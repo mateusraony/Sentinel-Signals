@@ -214,7 +214,7 @@ export default function Assets() {
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.75)' }} />
         </div>
         {[{ id: 'all', label: 'Todos' }, { id: 'active', label: '● Ativos' }, { id: 'inactive', label: '○ Inativos' },
-          { id: 'signals', label: '⚡ Sinais' },
+          { id: 'signals', label: '🔔 Com sinal ou operação' },
           { id: 'proximity', label: '📏 Perto da linha do filtro' },
         ].map(f => (
           <button key={f.id} onClick={() => setFilterStatus(f.id)}
@@ -241,7 +241,7 @@ export default function Assets() {
         </div>
       ) : filtered.length === 0 && filterStatus === 'signals' && signalsFilterUnavailable ? (
         <div className="rounded-xl p-8" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>
-          <QueryErrorState message="Não foi possível carregar sinais/operações agora — o filtro 'Sinais' pode estar escondendo ativos incorretamente." />
+          <QueryErrorState message="Não foi possível carregar sinais/operações agora — o filtro 'Com sinal ou operação' pode estar escondendo ativos incorretamente." />
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl p-12 text-center" style={{ background: 'rgba(10,13,22,0.7)', border: '1px solid rgba(255,255,255,0.06)' }}>

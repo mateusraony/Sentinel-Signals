@@ -82,7 +82,7 @@ const PHASE_COPY = Object.freeze({
   }),
   [SIGNAL_PHASE.EXPIRED]: Object.freeze({
     badge: 'Já passou',
-    icon: '✓',
+    icon: '🚫',
     color: '#64748b',
     reassurance: 'O prazo acabou e nenhuma operação foi aberta. Você não perdeu dinheiro nem perdeu nada — o app só não achou seguro entrar.',
   }),
@@ -358,7 +358,7 @@ export function rejectionCopy(signal, phase) {
 // mudar isso seria alterar algo que já funciona sem pedido); os outros 2
 // pontos (texto solto, sem componente por trás) passaram a usar esta
 // função.
-const PRIORITY_LABEL = Object.freeze({ high: '⚡ Alta', medium: 'Média', low: 'Baixa' });
+const PRIORITY_LABEL = Object.freeze({ high: '⭐ Alta', medium: 'Média', low: 'Baixa' });
 
 export function priorityLabel(priority) {
   return PRIORITY_LABEL[priority] ?? PRIORITY_LABEL.low;

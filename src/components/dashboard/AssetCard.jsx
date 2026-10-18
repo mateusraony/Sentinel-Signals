@@ -34,14 +34,10 @@ const TF_DURATION_HOURS = { '1h': 1, '4h': 4, '1d': 24 };
 // (`assetHealthcheckReason`, `src/lib/assetHealthcheck.js`, graceMs=30min,
 // já testado, já usado pelo cron pra alertar no Telegram). Texto/cor por
 // motivo — 'persistent_error' (o ativo falha toda passada) é mais grave que
-// 'silent' (só parou de ser tocado).
-// Auditoria do Telegram (2026-09-29), Fase 2 item 2.4 — erro de sistema com
-// cor própria (#ef4444), distinta do rosa/magenta (#ff1478) usado pra
-// SELL/direção nas demais telas (mesmo ajuste em Logs.jsx/Assets.jsx).
-const STALE_REASON_META = {
-  persistent_error: { label: '⚠️ Falha persistente', color: '#ef4444' },
-  silent: { label: '⚠️ STALE', color: '#ff9f43' },
-};
+// 'silent' (só parou de ser tocado). Item 280: a linha de status usa o mesmo
+// rótulo 📡 do badge (`qualityBadge`, mesmas cores — o vermelho de erro de
+// sistema #ef4444 da Auditoria do Telegram, item 2.4) em vez de "⚠️ STALE" /
+// "⚠️ Falha persistente": ⚠️ é "Sinal Invalidado" no registro de emojis.
 
 // Achado M-17 do Raio-X de UI/UX: coluna do grid de preços — só TP1/TP2
 // precisam de explicação (Entrada/Stop/Stop+ já são autoexplicativos em
@@ -319,7 +315,6 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   const qBadge = qualityBadge(quality);
   const healthReason = quality.reason; // 'persistent_error' | 'silent' | null
   const isStale = Boolean(healthReason);
-  const staleMeta = healthReason ? STALE_REASON_META[healthReason] : null;
   // Sem leitura, atrasado ou com falha (inclusive falha recente, < 30 min):
   // não oferece "Ativar" sobre um dado que o próprio cartão marca como ruim.
   const dataUnreliable = ['unknown', 'stale', 'error'].includes(quality.status);
@@ -374,9 +369,9 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   let statusLabel = null;
   let statusColor = '#64748b';
   if (isStale) {
-    statusLabel = staleMeta.label; statusColor = staleMeta.color;
+    statusLabel = qBadge.label; statusColor = qBadge.color;
   } else if (hasActiveOp) {
-    if (tradeOp.status === 'RUNNER_ACTIVE') { statusLabel = '⚡ Runner Ativo'; statusColor = '#00e5ff'; }
+    if (tradeOp.status === 'RUNNER_ACTIVE') { statusLabel = '🏃 Runner Ativo'; statusColor = '#00e5ff'; }
     else if (opSide === 'BUY') { statusLabel = '🟢 Compra Ativa'; statusColor = '#00ff80'; }
     else { statusLabel = '🔴 Venda Ativa'; statusColor = '#ff1478'; }
   } else if (latestSignal) {
@@ -592,7 +587,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
         {/* Candle status */}
         {hasActiveOp && (
           <div className="text-8px font-mono mb-2" style={{ color: candleStatus === 'OPEN' ? '#ff9f43' : 'rgba(255,255,255,0.3)' }}>
-            {candleStatus === 'OPEN' ? '⏳ Candle aberto — aguardando fechamento' : '✅ Candle fechado'}
+            {candleStatus === 'OPEN' ? '🕯️ Candle aberto — aguardando fechamento' : '✅ Candle fechado'}
           </div>
         )}
 
@@ -639,7 +634,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           <div className="rounded-lg px-3 py-2 mb-2.5" style={{ background: 'rgba(0,229,255,0.05)', border: '1px solid rgba(0,229,255,0.15)' }}>
             <div className="flex items-center justify-between text-9px font-mono">
               <span style={{ color: '#00ff80' }}>✅ TP1 + {tradeOp.partial_percent || 50}% realizados</span>
-              <span style={{ color: '#ffd166' }}>⚡ {tradeOp.runner_percent || 50}% em runner</span>
+              <span style={{ color: '#ffd166' }}>🏃 {tradeOp.runner_percent || 50}% em runner</span>
             </div>
           </div>
         )}

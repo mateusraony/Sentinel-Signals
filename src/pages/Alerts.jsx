@@ -20,8 +20,8 @@ import { SIGNAL_SOURCES, longSourceLabel } from '@/lib/signalSourceLabels';
 import { translateSignalContext } from '@/lib/signalContextTranslation';
 // Auditoria do Telegram, Fase 4 (2026-10-02) — mesma fonte de rótulo de
 // prioridade que SignalAlertBanner.jsx agora usa (antes, 3 lugares
-// independentes repetiam "⚡ Alta"/"Média"/"Baixa" com grafias ligeiramente
-// diferentes). Mesmo texto de antes — só a fonte virou uma.
+// independentes repetiam "Alta"/"Média"/"Baixa" com grafias ligeiramente
+// diferentes). Os chips do filtro usam a mesma função (item 280: ⭐ Alta).
 import { priorityLabel } from '@/lib/signalStatus';
 
 const PRIORITY_CONFIG = {
@@ -160,7 +160,7 @@ export default function Alerts() {
           <div className="w-px h-4" style={{ background: 'rgba(255,255,255,0.08)' }} />
 
           {/* Prioridade */}
-          {[{ id: 'all', label: 'Todas' }, { id: 'high', label: '⚡ Alta' }, { id: 'medium', label: 'Média' }, { id: 'low', label: 'Baixa' }].map(f => (
+          {[{ id: 'all', label: 'Todas' }, { id: 'high', label: priorityLabel('high') }, { id: 'medium', label: priorityLabel('medium') }, { id: 'low', label: priorityLabel('low') }].map(f => (
             <button key={f.id} onClick={() => setFilterPriority(f.id)}
               className="text-9px font-mono px-2 py-1.5 rounded-lg transition-all"
               style={filterPriority === f.id

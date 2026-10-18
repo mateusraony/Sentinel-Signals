@@ -384,7 +384,7 @@ function HistoryRow({ op }) {
 
   const STATUS_MAP = {
     TP2_HIT:     { label: '🏆 TP2', color: '#00ff80' },
-    STOP_HIT:    { label: isBE ? '🔄 BE' : '🛑 Stop', color: isBE ? '#ffd166' : '#ff1478' },
+    STOP_HIT:    { label: isBE ? '🟡 BE' : '🛑 Stop', color: isBE ? '#ffd166' : '#ff1478' },
     INVALIDATED: { label: '⚠ Inv.', color: '#ff9f43' },
     CLOSED:      { label: '✗ Enc.', color: '#64748b' },
   };
