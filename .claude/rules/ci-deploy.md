@@ -261,6 +261,14 @@ paths:
   - **Artifact:** `resumo-daily-ema-supertrend-tempo-novo`, com os dois JSONs.
   - **Sem secret.**
 
+- `targets-test.yml` — disparo **manual**, sem campos: teste pré-registrado "só os alvos mudam"
+  (`docs/known-risks.md` item 281; `docs/experiments/targets-prereg.json`).
+  - **Plano:** lê o pré-registro e monta 3 janelas × (controle + 6 braços) = 21 rodadas.
+  - **Download:** uma vez por janela (Spot); a matriz de replays usa esses candles.
+  - **Resumo:** `scripts/targets-summary.mjs` aplica o critério (controle reproduzindo o item 270,
+    procedência `--target-arm`, Bonferroni m=6) e publica `resumo-targets-test`.
+  - **Sem secret.**
+
 - `daily-rule-report.yml` — relatório diário da regra EMA 10/21 + Supertrend no Telegram
   (`docs/known-risks.md` item 275). Roda às **00:23 UTC** (`schedule`) e também por
   `workflow_dispatch`.

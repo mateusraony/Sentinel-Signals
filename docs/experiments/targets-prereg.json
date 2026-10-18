@@ -5,7 +5,7 @@
   "note": "Pré-registro congelado ANTES de qualquer rodada real. Mudar qualquer campo depois de ver resultado invalida o experimento; src/lib/targetsPrereg.test.js trava estes valores contra src/lib/indicators/structuralTargets.js.",
   "question": "Mantendo a entrada (sinal RF 4h + confirmação 15m) e o stop (2-3x ATR 4h) de hoje, trocar só o TP1/TP2 por alvos estruturais muda a expectância líquida?",
   "family": "targets-2026-10",
-  "workflow": ".github/workflows/backtest.yml no commit do merge do PR de implementação",
+  "workflow": ".github/workflows/targets-test.yml (disparo manual, sem campos; lê este arquivo) no commit do main com este workflow",
   "control": {
     "targetMode": "r_multiple"
   },
@@ -94,7 +94,7 @@
       "ops": 119,
       "expectancyR": 0.054
     },
-    "tolerance": "exata: mesmo número de operações e expectancyR igual em 4 casas (o motor é determinístico, item 270)"
+    "tolerance": "mesmo número de operações e expectancyR igual na precisão em que foi registrado (W1 −0,0483: 4 casas; W2 +0,054: 3 casas) — o motor é determinístico, item 270"
   },
   "rules": {
     "minTargetR": 0.5,
@@ -115,24 +115,27 @@
     "approve": "Δ expectância líquida > 0 com IC (alpha 0,05/6) excluindo zero e veredito 'diferenca_significativa' (G ≥ 20 clusters) em W1 E W2, e Δ > 0 (ponto) em W0",
     "worse": "espelho do approve (Δ < 0)",
     "inconclusiveByFallback": "braço-janela com mais de 50% das operações da cascata 4h_15m em R_MULTIPLE_FALLBACK (report.targets.fallbackRate) é INCONCLUSIVO; com smc vazio, todas as operações são 4h_15m",
-    "stopIf": "o controle (pine_config vazio) não reproduz o item 270 com a tolerância acima -> parar antes de ler qualquer braço",
+    "stopIf": "o controle (pine_config vazio) não reproduz o item 270 com a tolerância acima -> PARADO; o workflow só roda os braços depois dessa checagem (etapa check-control), então nenhum número de braço existe nesse caso. Relatório de controle ausente/inválido = falha de execução (refazer), não PARADO",
     "production": "nothing changes in production without an explicit user decision after the result",
     "comparisons": "só controle × braço, por janela; braços não são comparados entre si (a perna da Fibonacci é medida no fechamento do sinal, como no item 267, e os pivôs no instante da entrada — informação não simétrica)",
     "fewClusters": "veredito 'inconclusivo_poucos_clusters' (G < 20) conta como INCONCLUSIVO, nunca como aprovado/pior",
     "sameRulesNote": "as regras de gestão são as mesmas em todos os braços; o momento em que cada uma age (TP1 -> stop na entrada -> runner) segue o alvo, e com 1 operação por ativo o conjunto de operações diverge — por isso a leitura é não pareada",
     "provenanceCheck": "--target-arm faz o comparador recusar (sem números) o par em que o braço difere do controle fora de targetMode/targetNearPolicy — config da estratégia E argumentos da rodada (ex.: --rf-period), fora de --out/--trial-label/--pine-config — ou com smc ligado; recusou -> refazer a rodada, nunca comparar",
-    "dataProblems": "vela faltando para medir o alvo (busca falha, histórico curto ou desalinhado) invalida o relatório; nunca vira fallback"
+    "dataProblems": "vela faltando para medir o alvo (busca falha, histórico curto ou desalinhado) invalida o relatório; nunca vira fallback",
+    "summary": "scripts/targets-summary.mjs aplica este critério sozinho no fim do workflow (Job Summary + artifact resumo-targets-test)",
+    "replicate": "em W0 vale o sinal do ponto (Δ > 0 para aprovar; Δ < 0 para pior); W0 sem dado utilizável (ausente, inválido, recusado, fallback > 50%, sem operação) = INCONCLUSIVO, não 'não replicou'"
   },
   "runConfig": {
     "pine_config_control": "",
     "pine_config_arm": "{\"targetMode\":\"<modo>\",\"targetNearPolicy\":\"<política>\"} e nada mais",
     "smc": "",
     "smc_confirm": "",
-    "timeframes": "5m,15m,1h,4h,1d (padrão)",
+    "timeframes": "15m,1h,4h,1d (o 5m só serve à cascata SMC, desligada; corrigido antes de qualquer rodada)",
     "costs": "padrão (no_costs false, fee/slippage/funding vazios)",
     "real_funding": false,
     "futures_data": false,
     "min_trades": "padrão",
-    "trial_label": "TargetTest_<janela>_<braço>"
+    "trial_label": "TargetTest_<janela>_<braço>",
+    "note": "o workflow monta controle (sem pine_config) e braços (só as duas chaves) a partir deste arquivo; mesmos argumentos de rodada para todos (--data-dir, --allow-late-start)"
   }
 }
