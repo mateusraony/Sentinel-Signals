@@ -30761,6 +30761,8 @@ válido e inválido. **Não verificado**: download real com `--warmup-candles` �
 não alcança a Binance; conferido só o cálculo da data inicial por timeframe (log do
 script) e a validação do argumento. O 1º run real do `backtest.yml` é a confirmação.
 
+**Exceção conservadora (2026-10-18, item 281):** vela isolada fechada CEDO por parada da exchange (2021-08-13 na Binance Spot) tem o closeTime levado ao fim normal e vira AVISO, não erro (`repairTruncatedCloseTimes`). Vela longa e arquivo de outro intervalo continuam ERRO.
+
 ## 261. Pacote 2 da auditoria — determinismo, causalidade ponta a ponta e o stop furado por gap medido (2026-10-09)
 
 **Contexto**: segundo pacote do plano de auditoria do item 260. O objetivo é cobrir os
@@ -33240,4 +33242,35 @@ controle, e o resultado do item 281 vai gravá-lo — as próximas reproduções
 **Não feito, com motivo:** `npm ci` e o bundle do backtest em cada job da matriz (mesmo padrão dos
 workflows dos itens 264–272; custo de minutos de runner, não de resultado).
 
-**Resultado:** pendente (depois do disparo do `targets-test.yml`).
+**1ª execução (run 39173619066, 2026-10-18, commit fac321d) — falhou antes de qualquer braço:**
+- **O que rodou:** o download das 3 janelas e os controles de W1 e W2 rodaram até o fim. Os relatórios
+  não foram lidos.
+- **Onde parou:** o controle de W0 (2021-07-27→2022-07-27) parou em 1 s. O validador do item 260 acusou
+  ERRO `close_time_mismatch` (2x por série) em 15m/1h/4h dos 4 símbolos.
+  - 1ª ocorrência em **2021-08-13**: 4h 00:00, 1h 01:00, 15m 01:45.
+  - "Buraco curto" logo depois.
+- **Por que nada mais rodou:** `check-control` foi pulado. Braços e resumo não rodaram, como desenhado.
+- **Causa (fato + hipótese):** é um evento da própria Binance.
+  - **Fato:** acontece no mesmo instante em todas as moedas e vem junto com buraco: é a assinatura de
+    uma parada da exchange.
+  - **Hipótese:** as três velas "encurtadas" contêm o mesmo instante (~01:5x). Isso bate com o padrão
+    público de a vela em andamento sair com closeTime no momento da parada
+    ([binance-public-data #77](https://github.com/binance/binance-public-data/issues/77)).
+  - **Limite:** o valor exato não foi visto. A rede da sessão bloqueia a Binance e o armazenamento de
+    artifacts.
+- **Conserto:** `repairTruncatedCloseTimes` (`scripts/backtestDataIntegrity.js`), aplicado no
+  `loadSeries` do backtest antes de validar.
+  - **O que faz:** uma vela isolada com closeTime antes do fim normal tem o closeTime levado a
+    `openTime + intervalo − 1`, e o conserto entra no relatório como AVISO
+    `close_time_truncated_repaired`.
+  - **É conservador:** a vela só fica visível quando uma vela normal ficaria. Nunca antes, então não há
+    look-ahead.
+  - **O que continua ERRO:** arquivo inteiro com closeTime curto (de outro intervalo) e vela mais longa
+    que o intervalo.
+  - **O que não muda:** série limpa volta como a mesma referência. W1/W2, que já passavam, não mudam um
+    byte, e a reprodução do item 270 fica intacta.
+  - **Mensagem:** a linha do erro agora mostra o closeTime real. Se o padrão for outro, o próximo log diz
+    qual.
+- **Pré-registro:** janelas, braços e critério não mudam. Nenhum braço tinha rodado.
+
+**Resultado:** pendente (depois do novo disparo do `targets-test.yml`).

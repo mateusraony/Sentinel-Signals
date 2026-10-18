@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { sliceClosedAsOf, simNow } from '../src/lib/backtestEngine.js';
-import { validateCandleSeries } from './backtestDataIntegrity.js';
+import { validateCandleSeries, repairTruncatedCloseTimes } from './backtestDataIntegrity.js';
 
 // Provenance stamped onto every TradeOperation/SignalEvent created during a
 // backtest run — mirrors the cron's Spot/binance path (the historical data
@@ -78,10 +78,13 @@ export function loadSeries(symbol, timeframe) {
       // Fora do try do parse de propósito (revisão do pacote 1): um defeito
       // do validador não pode ser relatado como "JSON inválido" — mandaria o
       // usuário baixar de novo um arquivo que está certo.
-      issues = validateCandleSeries(parsed, { symbol, timeframe });
+      // Vela fechada cedo por parada da exchange: conserto conservador antes
+      // de validar (item 281, backtestDataIntegrity.js).
+      const repair = repairTruncatedCloseTimes(parsed, { symbol, timeframe });
+      issues = [...repair.issues, ...validateCandleSeries(repair.series, { symbol, timeframe })];
       // Série que não é lista não pode seguir adiante: sliceClosedAsOf
       // quebraria a cada passo. O problema já está registrado em `issues`.
-      if (Array.isArray(parsed)) series = parsed;
+      if (Array.isArray(repair.series)) series = repair.series;
     }
   } else {
     console.warn(`[backtestMarketDataProvider] sem dado para ${symbol} ${timeframe} (esperado em ${file}) — rode scripts/fetch-backtest-data.mjs`);

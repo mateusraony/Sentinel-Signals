@@ -141,6 +141,46 @@ export function validateCandleSeries(series, { symbol, timeframe }) {
 }
 
 /**
+ * Vela fechada CEDO por parada da exchange (item 281, 1ª execução do
+ * targets-test.yml): quando a Binance para, a vela em andamento sai com o
+ * closeTime no instante da parada, antes do fim normal (padrão público,
+ * binance-public-data issue #77). Em 2021-08-13 isso aconteceu na mesma hora
+ * em todas as moedas, em 15m/1h/4h, e o validador recusava a janela inteira.
+ *
+ * Conserto CONSERVADOR: o closeTime volta para o fim normal da vela
+ * (`openTime + intervalo − 1`), então o replay só a enxerga quando enxergaria
+ * uma vela normal — nunca antes, sem olhar o futuro. Só vale para vela
+ * ISOLADA (vizinhas com duração normal ou ausentes): um arquivo inteiro com
+ * closeTime curto é de outro intervalo e continua ERRO em
+ * validateCandleSeries. Vela mais LONGA que o intervalo nunca é tocada.
+ * Série sem nada a consertar volta como a MESMA referência.
+ * @returns {{ series: unknown, issues: Array<object> }}
+ */
+export function repairTruncatedCloseTimes(series, { symbol, timeframe }) {
+  const out = makeCollector(symbol, timeframe);
+  const intervalMs = timeframeToMs(timeframe);
+  if (!Array.isArray(series) || !intervalMs) return { series, issues: [] };
+  const duration = (c) => (c && Number.isFinite(c.openTime) && Number.isFinite(c.closeTime) ? c.closeTime - c.openTime : NaN);
+  const isNormal = (c) => c === undefined || (duration(c) >= intervalMs - 1 && duration(c) <= intervalMs);
+  let repaired = null;
+  for (let i = 0; i < series.length; i++) {
+    const c = series[i];
+    const d = duration(c);
+    if (!(d > 0 && d < intervalMs - 1)) continue;
+    const prev = series[i - 1];
+    const next = series[i + 1];
+    if (!isNormal(prev) || !isNormal(next)) continue;
+    // A vela seguinte não pode começar dentro do intervalo desta (aí não é
+    // parada, é série desalinhada — fica para o validador).
+    if (next !== undefined && !(next.openTime >= c.openTime + intervalMs)) continue;
+    if (!repaired) repaired = series.slice();
+    repaired[i] = { ...c, closeTime: c.openTime + intervalMs - 1 };
+    out.add('warning', 'close_time_truncated_repaired', c.openTime, { closeTime: iso(c.closeTime), repairedTo: iso(repaired[i].closeTime) });
+  }
+  return { series: repaired || series, issues: out.issues() };
+}
+
+/**
  * A série cobre a janela [fromMs, toMs] do run? Tolerância de UM intervalo em
  * cada ponta: o download começa no primeiro candle alinhado a partir de
  * `--from` e descarta o candle ainda em formação no fim (fetch-backtest-data*
@@ -224,11 +264,15 @@ export function describeIssue(issue) {
     misaligned: 'candle desalinhado do intervalo',
     gap_too_large: `buraco de ${MAX_TOLERATED_GAP_MS / 3600000}h ou mais`,
     gap: 'buraco curto (possível parada da exchange)',
+    close_time_truncated_repaired: 'vela fechada cedo (parada da exchange) — closeTime levado ao fim normal da vela, sem olhar o futuro',
     starts_after_window: 'série começa depois do início da janela — sem dado nesse trecho',
     ends_before_window: 'série termina antes do fim da janela',
     ends_slightly_before_window: 'série termina pouco antes do fim da janela, dentro da folga pedida (último arquivo diário ainda não publicado?)',
   };
   const first = issue.samples?.[0];
   const where = first?.at ? ` — 1ª ocorrência em ${first.at}` : '';
-  return `${issue.symbol} ${issue.timeframe}: ${labels[issue.type] || issue.type} (${issue.count}x)${where}`;
+  // O closeTime real vai junto: sem ele, uma falha no runner do GitHub não
+  // diz que tipo de vela é (a rede das sessões não alcança a Binance).
+  const close = first?.closeTime ? ` (closeTime ${first.closeTime})` : '';
+  return `${issue.symbol} ${issue.timeframe}: ${labels[issue.type] || issue.type} (${issue.count}x)${where}${close}`;
 }

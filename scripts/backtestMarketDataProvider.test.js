@@ -39,6 +39,8 @@ beforeAll(() => {
   fs.writeFileSync(path.join(dir, 'DUPUSDT_1h.json'), JSON.stringify([bar(0), bar(H), bar(H)]));
   fs.writeFileSync(path.join(dir, 'BADJSON_1h.json'), '[{"openTime": 0,');
   fs.writeFileSync(path.join(dir, 'VALIDBUG_1h.json'), JSON.stringify([bar(0)]));
+  // Parada da exchange (item 281): vela de 1h fechada 50 min depois de abrir, e buraco.
+  fs.writeFileSync(path.join(dir, 'HALTUSDT_1h.json'), JSON.stringify([bar(0), { ...bar(H), closeTime: H + 50 * 60 * 1000 }, bar(4 * H)]));
 });
 afterAll(() => {
   if (previousDataDir === undefined) delete process.env.BACKTEST_DATA_DIR;
@@ -78,6 +80,12 @@ describe('backtestMarketDataProvider.loadSeries — integridade (item 260)', () 
     validateSpy.mockImplementationOnce(() => { throw new Error('bug no validador'); });
     expect(() => loadSeries('VALIDBUG', '1h')).toThrow('bug no validador');
     expect(issuesFor('VALIDBUG')).toEqual([]);
+  });
+
+  it('vela fechada cedo por parada da exchange: carrega consertada, só com AVISO (item 281)', () => {
+    const loaded = loadSeries('HALTUSDT', '1h');
+    expect(loaded[1].closeTime).toBe(2 * H - 1);
+    expect(issuesFor('HALTUSDT').map((i) => `${i.severity}:${i.type}`)).toEqual(['warning:close_time_truncated_repaired', 'warning:gap']);
   });
 
   it('getLoadedSeries devolve toda série lida, para a checagem de cobertura pós-replay', () => {
