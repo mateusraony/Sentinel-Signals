@@ -7,7 +7,7 @@
 // prova que ela não regride Geral/BUY/SELL, que já existiam sem teste algum.
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -154,5 +154,39 @@ describe('LiveConfidenceCard — subtítulo "evidência histórica, não probabi
     renderCard([makeOp({ id: 'b1' })]);
     await screen.findByText('Confiança ao Vivo (amostra real)');
     expect(screen.getByText(/Evidência histórica das operações reais já fechadas — não é probabilidade de acerto futuro/)).toBeTruthy();
+  });
+});
+
+// Item 278 (PR-C): simulação manual, operação retroativa e operação encerrada
+// à mão não são decisão do motor — ficam fora da conta, com uma linha dizendo
+// quantas e por quê.
+describe('LiveConfidenceCard — só conta operações do motor (item 278)', () => {
+  it('exclui manual, retroativa e encerrada à mão, e diz quantas ficaram fora', async () => {
+    renderCard([
+      makeOp({ id: 'm1' }), makeOp({ id: 'm2' }),
+      makeOp({ id: 'x1', source: 'manual' }),
+      makeOp({ id: 'x2', source: 'backfill' }),
+      makeOp({ id: 'x3', closed_reason: 'Alterado manualmente' }),
+      // Aberta: não entra na conta de qualquer forma, então não conta como "fora".
+      makeOp({ id: 'x4', source: 'manual', status: 'SIGNAL_CONFIRMED', closed_at: undefined }),
+    ]);
+    await screen.findByText('Geral');
+    expect(screen.getAllByText(/\b2\/\d+ operações/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/\b5\/\d+ operações/)).toHaveLength(0);
+    screen.getByText('Fora da conta: 1 simulação manual · 1 retroativa · 1 encerrada à mão');
+  });
+
+  it('só operações fora da conta: o card aparece explicando por que não há números', async () => {
+    renderCard([makeOp({ id: 'x1', source: 'manual' })]);
+    await screen.findByText('Fora da conta: 1 simulação manual');
+  });
+
+  it('só operações abertas: o card continua sumindo (nada fechado para medir)', async () => {
+    const { container } = renderCard([makeOp({ id: 'x1', source: 'manual', status: 'SIGNAL_CONFIRMED', closed_at: undefined })]);
+    // Espera a query resolver de verdade — sem isso o teste passaria só porque
+    // o card ainda não carregou.
+    await waitFor(() => expect(listMock).toHaveBeenCalled());
+    await act(async () => { await new Promise(r => setTimeout(r, 30)); });
+    expect(container.firstChild).toBeNull();
   });
 });

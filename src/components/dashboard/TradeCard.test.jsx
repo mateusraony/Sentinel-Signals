@@ -352,3 +352,27 @@ describe('ScoreBar — sem score numérico, nada', () => {
     expect(screen.getByText('🧩 72/100')).toBeTruthy();
   });
 });
+
+// Item 278 (PR-C): operação que não veio do motor tem marca visível — e diz
+// que fica fora das estatísticas.
+describe('TradeCard — marca de simulação manual e de encerramento à mão (item 278)', () => {
+  it('🧪 SIMULAÇÃO em operação criada pelo painel', () => {
+    renderCard(baseOp({ source: 'manual' }));
+    expect(screen.getByText(/🧪 Simulação manual/)).toBeTruthy();
+    expect(screen.getByText(/nenhuma ordem foi enviada/i)).toBeTruthy();
+    expect(screen.getAllByText(/fora da medição do motor/).length).toBeGreaterThan(0);
+  });
+
+  it('✏️ encerrada à mão (edição, Encerrar ou Invalidar pelo painel)', () => {
+    for (const closed_reason of ['Alterado manualmente', 'Encerrado manualmente', 'Invalidado manualmente']) {
+      const { unmount } = renderCard(baseOp({ closed_reason }));
+      expect(screen.getByText(/✏️ Encerrada à mão/)).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it('operação do motor não ganha marca', () => {
+    renderCard(baseOp());
+    expect(screen.queryByText(/🧪 Simulação manual|✏️ Encerrada à mão/)).toBeNull();
+  });
+});

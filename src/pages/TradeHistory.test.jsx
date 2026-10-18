@@ -322,3 +322,19 @@ describe('TradeHistory — badge de Stop com outcome WIN aparece verde, não ver
     expect(badge.style.color).toBe('rgb(0, 255, 128)');
   });
 });
+
+// Item 278 (PR-C): no histórico, simulação manual e operação encerrada à mão
+// aparecem marcadas (como já acontecia com "Retroativa").
+describe('TradeHistory — marca de simulação e de encerramento à mão (item 278)', () => {
+  it('mostra "🧪 Simulação" e "✏️ Encerrada à mão" nas linhas certas', async () => {
+    mockBackend([
+      { ...OP_COM_SNAPSHOT, id: 'm1', symbol: 'SOLUSDT', source: 'manual' },
+      { ...OP_LEGADA_BE_SEM_TP1, id: 'e1', symbol: 'XRPUSDT', closed_reason: 'Alterado manualmente' },
+    ]);
+    const { default: TradeHistory } = await import('./TradeHistory.jsx');
+    renderPage(<TradeHistory />);
+    await screen.findAllByText('SOL/USDT'); // também aparece no filtro de ativo
+    expect(screen.getByText('🧪 Simulação')).toBeTruthy();
+    expect(screen.getByText('✏️ Encerrada à mão')).toBeTruthy();
+  });
+});

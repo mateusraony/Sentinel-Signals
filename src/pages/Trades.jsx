@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { MANUAL_EDIT_REASON, MANUAL_CLOSE_REASON, MANUAL_INVALIDATE_REASON } from '@/lib/operationProvenance';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import {
@@ -94,6 +95,13 @@ function EditModal({ op, onClose, onSave }) {
           ))}
         </div>
 
+        {/* Item 278 (PR-C): editar não passa pelo motor. */}
+        <p className="text-9px font-mono leading-relaxed" style={{ color: '#ffd166' }}>
+          Salvar altera o registro desta operação, e o motor passa a usar os valores novos. Só o
+          encerramento por aqui deixa a marca &quot;encerrada à mão&quot; (sai da medição do motor); mudar
+          status, stop ou alvos sem encerrar não deixa marca.
+        </p>
+
         <div className="flex gap-2 pt-1">
           <button onClick={onClose}
             className="flex-1 py-2 rounded-lg text-10px font-mono transition-all"
@@ -112,7 +120,7 @@ function EditModal({ op, onClose, onSave }) {
               if (exitPrice) data.exit_price = parseFloat(exitPrice);
               if (['TP2_HIT','STOP_HIT','INVALIDATED','CLOSED'].includes(status)) {
                 data.closed_at = new Date().toISOString();
-                data.closed_reason = 'Alterado manualmente';
+                data.closed_reason = MANUAL_EDIT_REASON;
               }
               if (status === 'RUNNER_ACTIVE') data.tp1_hit = true;
               onSave(data);
@@ -531,7 +539,7 @@ export default function Trades() {
   const closeMutation = useMutation({
     /** @param {object} op */
     mutationFn: (op) => manualTransition(op, {
-      status: 'CLOSED', closed_reason: 'Encerrado manualmente',
+      status: 'CLOSED', closed_reason: MANUAL_CLOSE_REASON,
       decision_snapshot: buildManualCloseSnapshot({ status: 'CLOSED' }),
     }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trade-operations'] }),
@@ -544,7 +552,7 @@ export default function Trades() {
   const invalidateMutation = useMutation({
     /** @param {object} op */
     mutationFn: (op) => manualTransition(op, {
-      status: 'INVALIDATED', closed_reason: 'Invalidado manualmente',
+      status: 'INVALIDATED', closed_reason: MANUAL_INVALIDATE_REASON,
       decision_snapshot: buildManualCloseSnapshot({ status: 'INVALIDATED' }),
     }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trade-operations'] }),

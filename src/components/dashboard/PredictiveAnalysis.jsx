@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { Sparkles, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
 import { backend } from '@/api/entities';
 import { summarizeOps } from '@/lib/tradeMetrics';
+import { splitByProvenance, provenanceExclusionText } from '@/lib/operationProvenance';
 
 // Mesmo gate de amostra/IC dos relatórios e do LiveConfidenceCard
 // (summarizeOps, minTrades=30 + IC95 da expectância). Abaixo disso a amostra
@@ -79,17 +80,23 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
     })[0] || null;
   }, [candidates, selectedId]);
 
-  const { sameShape, matches, headline } = useMemo(() => {
-    if (!selected) return { sameShape: [], matches: [], headline: null };
-    const shape = historicalClosed.filter(op => isSimilarShape(op, selected));
+  const { sameShape, matches, headline, exclusionText } = useMemo(() => {
+    if (!selected) return { sameShape: [], matches: [], headline: null, exclusionText: null };
+    // Item 278: só operações decididas pelo motor entram na comparação —
+    // simulação manual, retroativa e encerrada à mão ficam fora (contadas).
+    const shapeAll = historicalClosed.filter(op => isSimilarShape(op, selected));
     const selectedScore = selected.context?.score;
-    const scored = Number.isFinite(selectedScore)
-      ? shape.filter(op => {
+    const scoredAll = Number.isFinite(selectedScore)
+      ? shapeAll.filter(op => {
           const s = scoreOf(op);
           return s !== null && Math.abs(s - selectedScore) <= SCORE_TOLERANCE;
         })
-      : shape;
-    return { sameShape: shape, matches: scored, headline: summarizeOps(scored) };
+      : shapeAll;
+    // A contagem "fora da conta" descreve o MESMO conjunto do número de
+    // "operações similares" mostrado ao lado (já filtrado por score).
+    const { engine: scored, excluded } = splitByProvenance(scoredAll);
+    const shape = splitByProvenance(shapeAll).engine;
+    return { sameShape: shape, matches: scored, headline: summarizeOps(scored), exclusionText: provenanceExclusionText(excluded) };
   }, [selected, historicalClosed]);
 
   const scoreBuckets = useMemo(() => {
@@ -177,6 +184,9 @@ export default function PredictiveAnalysis({ recentSignals = [], signalsUnavaila
                 {matches.length} operaç{matches.length === 1 ? 'ão' : 'ões'} similar{matches.length === 1 ? '' : 'es'}
               </span>
             </div>
+            {exclusionText && (
+              <p className="text-9px font-mono text-muted-foreground">{exclusionText}</p>
+            )}
 
             {!enoughSample ? (
               <div className="flex items-center gap-2 py-3 text-11px font-mono" style={{ color: 'rgba(255,209,102,0.85)' }}>

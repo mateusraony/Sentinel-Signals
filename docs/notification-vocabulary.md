@@ -65,6 +65,13 @@ significado, sempre acompanhado de texto.
 | 🧩 | Regras alinhadas N/100 — não é chance de acerto (mesmo do Telegram) | `agreementLabel()` em `src/lib/ruleAgreement.js` (antes 🔥 Forte/⚡ Moderado/〰 Fraco) |
 | 📡 | Frescor do dado: atualizado há N min / atrasado / falha / desligado / sem leitura | `qualityBadge()`/`healthChip()` em `src/lib/assetDataQuality.js` (antes "LIVE" fixo) |
 
+### Origem da operação (item 278, PR-C)
+
+| Emoji | Significado único | Onde |
+|---|---|---|
+| 🧪 | Simulação manual — operação virtual criada no painel ("Simular entrada"), fora da medição do motor (Confiança ao Vivo e comparação com o histórico) | botão do cartão do ativo, banner do TradeCard, selo do Histórico |
+| ✏️ | Encerrada à mão pelo painel (edição, Encerrar, Invalidar) — fora da medição do motor | banner do TradeCard, selo do Histórico |
+
 ## Regra ao adicionar um estágio novo
 
 1. Adicione a entrada em `NOTIFICATION_STAGES` (`src/lib/notificationVocabulary.js`)

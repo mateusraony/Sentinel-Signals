@@ -30,11 +30,26 @@ vi.mock('@/lib/firebaseClient', () => ({ db: {}, auth: {}, rtdb: null, app: {} }
 const { activateSignalManuallyMock } = vi.hoisted(() => ({ activateSignalManuallyMock: vi.fn() }));
 vi.mock('@/lib/scanner', () => ({ activateSignalManually: activateSignalManuallyMock }));
 
+// Item 278 (PR-C): antes de simular, o cartão confere se este aviso já foi
+// simulado (id determinístico `trade_manual_<id>`), e os avisos saem por toast.
+const { tradeOpGetMock, toastMock } = vi.hoisted(() => ({ tradeOpGetMock: vi.fn(), toastMock: vi.fn() }));
+vi.mock('@/api/entities', () => ({ backend: { entities: { TradeOperation: { get: (...a) => tradeOpGetMock(...a) } } } }));
+vi.mock('@/components/ui/use-toast', () => ({ toast: (...a) => toastMock(...a) }));
+
+// Aviso que PODE virar operação e ainda está no prazo: Range Filter 4h recente.
+const RF4H = (overrides = {}) => ({
+  id: 'sig1', signal_type: 'BUY', source: 'range_filter', timeframe: '4h',
+  created_date: new Date(Date.now() - 20 * 60000).toISOString(), ...overrides,
+});
+
 beforeEach(() => {
   fetchMarkPriceMock.mockReset();
   fetchMarkPriceMock.mockResolvedValue({ markPrice: null, lastFundingRate: null, nextFundingTime: null });
   activateSignalManuallyMock.mockReset();
   activateSignalManuallyMock.mockResolvedValue({ created: true });
+  tradeOpGetMock.mockReset();
+  tradeOpGetMock.mockResolvedValue(null);
+  toastMock.mockReset();
 });
 afterEach(() => cleanup());
 
@@ -123,15 +138,15 @@ describe('AssetCard — badge 📡 reflete o dead-man\'s-switch real (achado A-9
   it('REGRESSÃO (review do PR-B): falha recente (< 30 min) também esconde o botão "Ativar"', () => {
     renderCard({
       asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN(), scan_status: 'error', scan_error_since: RECENT_5MIN() },
-      latestSignal: { id: 'sig1', signal_type: 'BUY' },
+      latestSignal: RF4H(),
     });
     screen.getByText('📡 Falha');
-    expect(screen.queryByText(/Ativar BUY agora/i)).toBeNull();
+    expect(screen.queryByText(/Simular entrada \(virtual\)/i)).toBeNull();
   });
 
   it('REGRESSÃO: sem leitura também esconde o botão "Ativar" (mesmo com sinal pendente)', () => {
-    renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }, latestSignal: { id: 'sig1', signal_type: 'BUY' } });
-    expect(screen.queryByText(/Ativar BUY agora/i)).toBeNull();
+    renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }, latestSignal: RF4H() });
+    expect(screen.queryByText(/Simular entrada \(virtual\)/i)).toBeNull();
   });
 
   it('ERRO (persistent_error) quando scan_error_since está velho — motivo mais grave que silent', () => {
@@ -145,20 +160,20 @@ describe('AssetCard — badge 📡 reflete o dead-man\'s-switch real (achado A-9
   });
 
   it('esconde o botão "Ativar" quando stale, mostra quando live (mesmo sinal pendente)', () => {
-    const latestSignal = { id: 'sig1', signal_type: 'BUY' };
+    const latestSignal = RF4H();
 
     const { unmount } = renderCard({
       asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: OLD_40MIN() },
       latestSignal,
     });
-    if (screen.queryByText(/Ativar BUY agora/i)) throw new Error('botão "Ativar" não deveria aparecer com o ativo stale');
+    if (screen.queryByText(/Simular entrada \(virtual\)/i)) throw new Error('botão "Simular" não deveria aparecer com o ativo stale');
     unmount();
 
     renderCard({
       asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN() },
       latestSignal,
     });
-    screen.getByText(/Ativar BUY agora/i);
+    screen.getByText(/Simular entrada \(virtual\)/i);
   });
 });
 
@@ -167,23 +182,23 @@ describe('AssetCard — badge 📡 reflete o dead-man\'s-switch real (achado A-9
 // AlertDialog já existente e nunca usado. Texto mantido igual.
 describe('AssetCard — botão "Ativar" usa AlertDialog em vez de confirm() nativo (Round 2 pós-Raio-X)', () => {
   it('REGRESSÃO: abre diálogo com o texto da cascata; Cancelar não chama activateSignalManually; confirmar chama', async () => {
-    const latestSignal = { id: 'sig1', signal_type: 'BUY' };
+    const latestSignal = RF4H();
     renderCard({
       asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN() },
       latestSignal,
     });
 
-    fireEvent.click(screen.getByText(/Ativar BUY agora/i));
+    fireEvent.click(screen.getByText(/Simular entrada \(virtual\)/i));
     const dialog = await screen.findByRole('alertdialog');
-    expect(within(dialog).getByText(/cascata 4h/)).toBeTruthy();
+    expect(within(dialog).getByText(/Nenhuma ordem é enviada à corretora/)).toBeTruthy();
 
     fireEvent.click(within(dialog).getByText('Cancelar'));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(activateSignalManuallyMock).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText(/Ativar BUY agora/i));
+    fireEvent.click(screen.getByText(/Simular entrada \(virtual\)/i));
     const dialog2 = await screen.findByRole('alertdialog');
-    fireEvent.click(within(dialog2).getByText('Ativar BUY'));
+    fireEvent.click(within(dialog2).getByText('Simular COMPRA'));
     await waitFor(() => expect(activateSignalManuallyMock).toHaveBeenCalledWith(latestSignal, expect.objectContaining({ id: 'a1' })));
   });
 
@@ -193,8 +208,8 @@ describe('AssetCard — botão "Ativar" usa AlertDialog em vez de confirm() nati
   // sinal oposto chegou) enquanto o diálogo está aberto — sem snapshot, a
   // confirmação ativaria o sinal NOVO, nunca revisado pelo usuário.
   it('REGRESSÃO (Codex): confirmar usa o sinal snapshotado na abertura, não um latestSignal mais novo chegado via polling', async () => {
-    const originalSignal = { id: 'sig-orig', signal_type: 'BUY' };
-    const newerSignal = { id: 'sig-new', signal_type: 'SELL' };
+    const originalSignal = RF4H({ id: 'sig-orig' });
+    const newerSignal = RF4H({ id: 'sig-new', signal_type: 'SELL' });
     const asset = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN() };
     const client = makeTestQueryClient();
     const { rerender } = render(
@@ -205,7 +220,7 @@ describe('AssetCard — botão "Ativar" usa AlertDialog em vez de confirm() nati
       </QueryClientProvider>,
     );
 
-    fireEvent.click(screen.getByText(/Ativar BUY agora/i));
+    fireEvent.click(screen.getByText(/Simular entrada \(virtual\)/i));
     await screen.findByRole('alertdialog');
 
     rerender(
@@ -217,7 +232,7 @@ describe('AssetCard — botão "Ativar" usa AlertDialog em vez de confirm() nati
     );
 
     const dialog = screen.getByRole('alertdialog');
-    fireEvent.click(within(dialog).getByRole('button', { name: /^Ativar /}));
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Simular /}));
     await waitFor(() => expect(activateSignalManuallyMock).toHaveBeenCalledWith(originalSignal, expect.objectContaining({ id: 'a1' })));
     expect(activateSignalManuallyMock).not.toHaveBeenCalledWith(newerSignal, expect.anything());
   });
@@ -451,5 +466,113 @@ describe('AssetCard — hint "detalhes →" sempre visível, não só em :hover 
     const hint = screen.getByText('detalhes →');
     expect(hint.className).not.toMatch(/opacity-0/);
     expect(hint.className).not.toMatch(/hover:opacity-100/);
+  });
+});
+
+// Item 278 (PR-C): "Ativar BUY agora" aparecia para qualquer aviso do Range
+// Filter (1h/1d, ou já expirado) e soava como ordem real. Agora é uma
+// simulação virtual, só para aviso que pode virar operação e ainda está no
+// prazo, com diálogo honesto e avisos por toast (sem window.alert).
+describe('AssetCard — 🧪 Simular entrada (virtual) (item 278)', () => {
+  const ASSET = { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN() };
+  const simButton = () => screen.queryByRole('button', { name: /Simular entrada \(virtual\)/i });
+
+  it('aparece só para Range Filter 4h ainda no prazo', () => {
+    const cases = [
+      [RF4H(), true],
+      [RF4H({ timeframe: '1h' }), false],
+      [RF4H({ timeframe: '1d' }), false],
+      [RF4H({ created_date: new Date(Date.now() - 5 * 3600000).toISOString() }), false], // expirado
+      [RF4H({ source: 'smc_structure', timeframe: '1h' }), false], // cascata própria, não 4h
+    ];
+    for (const [latestSignal, visible] of cases) {
+      const { unmount } = renderCard({ asset: ASSET, latestSignal });
+      expect(Boolean(simButton())).toBe(visible);
+      unmount();
+    }
+  });
+
+  it('diálogo diz que é virtual, que nenhuma ordem é enviada e que pula os filtros do motor', async () => {
+    renderCard({ asset: ASSET, latestSignal: RF4H() });
+    fireEvent.click(simButton());
+    const dialog = await screen.findByRole('alertdialog');
+    within(dialog).getByText('Iniciar simulação de COMPRA em BTC/USDT?');
+    expect(dialog.textContent).toMatch(/operação virtual/);
+    expect(dialog.textContent).toMatch(/Nenhuma ordem é enviada à corretora/);
+    expect(dialog.textContent).toMatch(/pula os filtros do motor/);
+    expect(dialog.textContent).toMatch(/fora da medição do motor/);
+    // Review do PR-C: a simulação ocupa a vaga do ativo — o diálogo diz isso.
+    expect(dialog.textContent).toMatch(/o motor não abre outra operação neste ativo/);
+  });
+
+  it('REGRESSÃO (review do PR-C): sem confirmar as operações ativas, o botão não aparece', () => {
+    renderCard({ asset: ASSET, latestSignal: RF4H(), tradeOpsUnavailable: true });
+    expect(simButton()).toBeNull();
+  });
+
+  it('REGRESSÃO (review do PR-C): aviso arquivado não oferece simulação', () => {
+    renderCard({ asset: ASSET, latestSignal: RF4H({ is_dismissed: true }) });
+    expect(simButton()).toBeNull();
+  });
+
+  it('REGRESSÃO (review do PR-C): o motor já abriu a operação deste aviso → não simula', async () => {
+    tradeOpGetMock.mockImplementation(async (id) => (id === 'trade_dk1' ? { id, status: 'STOP_HIT' } : null));
+    renderCard({ asset: ASSET, latestSignal: RF4H({ dedup_key: 'dk1' }) });
+    fireEvent.click(simButton());
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByText('Simular COMPRA'));
+    await waitFor(() => expect(toastMock).toHaveBeenCalled());
+    expect(activateSignalManuallyMock).not.toHaveBeenCalled();
+    expect(toastMock.mock.calls[0][0].description).toMatch(/motor já abriu/);
+  });
+
+  it('REGRESSÃO (review do PR-C): prazo vencido com o diálogo aberto → não simula', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.parse('2026-10-18T12:00:00Z'));
+      const sig = RF4H({ created_date: '2026-10-18T08:30:00Z' }); // 3h30 de idade: ainda no prazo
+      // last_scan_at relativo ao relógio falso (senão o cartão acha o dado atrasado).
+      renderCard({ asset: { ...ASSET, last_scan_at: '2026-10-18T11:58:00Z' }, latestSignal: sig });
+      fireEvent.click(simButton());
+      const dialog = await screen.findByRole('alertdialog');
+      vi.setSystemTime(Date.parse('2026-10-18T12:45:00Z')); // passou das 4h
+      fireEvent.click(within(dialog).getByText('Simular COMPRA'));
+      await waitFor(() => expect(toastMock).toHaveBeenCalled());
+      expect(activateSignalManuallyMock).not.toHaveBeenCalled();
+      expect(toastMock.mock.calls[0][0].description).toMatch(/prazo deste aviso terminou/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('aviso já simulado: não chama o motor e avisa por toast', async () => {
+    tradeOpGetMock.mockImplementation(async (id) => (id === 'trade_manual_sig1' ? { id, status: 'STOP_HIT' } : null));
+    renderCard({ asset: ASSET, latestSignal: RF4H() });
+    fireEvent.click(simButton());
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByText('Simular COMPRA'));
+    await waitFor(() => expect(toastMock).toHaveBeenCalled());
+    expect(tradeOpGetMock).toHaveBeenCalledWith('trade_manual_sig1');
+    expect(activateSignalManuallyMock).not.toHaveBeenCalled();
+    expect(toastMock.mock.calls[0][0].description).toMatch(/já foi simulado/);
+  });
+
+  it('falha do motor vira toast, nunca window.alert', async () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    activateSignalManuallyMock.mockResolvedValue({ created: false, reason: 'no_4h_atr' });
+    renderCard({ asset: ASSET, latestSignal: RF4H() });
+    fireEvent.click(simButton());
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByText('Simular COMPRA'));
+    await waitFor(() => expect(toastMock).toHaveBeenCalled());
+    expect(toastMock.mock.calls[0][0]).toMatchObject({ variant: 'destructive' });
+    expect(toastMock.mock.calls[0][0].description).toMatch(/ATR/);
+    expect(alertSpy).not.toHaveBeenCalled();
+    alertSpy.mockRestore();
+  });
+
+  it('sucesso: toast confirma que é virtual', async () => {
+    renderCard({ asset: ASSET, latestSignal: RF4H() });
+    fireEvent.click(simButton());
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByText('Simular COMPRA'));
+    await waitFor(() => expect(toastMock).toHaveBeenCalled());
+    expect(toastMock.mock.calls[0][0].description).toMatch(/nenhuma ordem/i);
   });
 });
