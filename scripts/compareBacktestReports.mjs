@@ -41,6 +41,7 @@ import {
   clusterSignFlipTest,
 } from './backtest-correlation-check.mjs';
 import { bonferroniZ } from './backtest-trial-registry.mjs';
+import { checkArmProvenance } from '../src/lib/targetModeReport.js';
 
 const EPS = 1e-12;
 const MAX_CHANGED_SAMPLES = 10;
@@ -320,11 +321,15 @@ export function unpairedComparison(control, variant, { familySize = 1 } = {}) {
   };
 }
 
-export function compareReports(control, variant, { familySize = 1, allowCommitMismatch = false, iterations = 5000, rand = Math.random } = {}) {
+// `targetArm` (item 281): o par é controle × braço do teste dos alvos, e a
+// variante só pode diferir nas chaves de alvo (checkArmProvenance — config da
+// estratégia e argumentos da rodada). Desligado, nada muda para os outros usos.
+export function compareReports(control, variant, { familySize = 1, allowCommitMismatch = false, iterations = 5000, rand = Math.random, targetArm = false } = {}) {
   if (!Number.isInteger(familySize) || familySize < 1) {
     throw new RangeError(`familySize deve ser inteiro >= 1, recebeu ${familySize}`);
   }
   const { errors, warnings } = checkComparable(control, variant, { allowCommitMismatch });
+  if (targetArm) errors.push(...checkArmProvenance(control, variant).errors.map((e) => `procedência do teste dos alvos: ${e}`));
   const labels = { control: control?.trialLabel ?? null, variant: variant?.trialLabel ?? null };
   if (errors.length) return { comparable: false, errors, warnings, labels, familySize };
   const paired = pairedComparison(control, variant, { familySize, iterations, rand });

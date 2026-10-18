@@ -13,6 +13,8 @@
 // other). Extracting a shared source is a separate, lower-risk cleanup
 // (tracked, not part of this change — see the PR description's "fora de
 // escopo" section).
+import { TARGET_RULES } from '../src/lib/indicators/structuralTargets.js';
+
 const DEFAULTS = {
   rng_per: 20,
   rng_qty: 3.5,
@@ -376,7 +378,20 @@ const DEFAULTS = {
   // (exit_mode 'FIB_FIXED'). Regras pré-registradas no item 267. Existe só
   // para MEDIR; OFF = byte-idêntico a hoje.
   fibEntryEnabled: false,
+  // docs/known-risks.md item 281 — BACKTEST-ONLY, tripwire em
+  // src/lib/targetModeTripwire.test.js. Troca SÓ o TP1/TP2 da cascata nativa
+  // 4h_15m, mantendo a entrada e o stop de sempre:
+  // 'r_multiple' (hoje: 1,5R/3R), 'fib_ext_15m' (escada 1,272/1,618/2,0/2,618
+  // da perna de 15m do item 267) ou 'swing_4h' (pivôs de 4h confirmados).
+  // `targetNearPolicy` decide o alvo perto da entrada: 'literal' (primeiro
+  // nível além da entrada), 'min_r_fallback' (< 0,5R → alvo de hoje) ou
+  // 'next_level' (primeiro nível ≥ 0,5R). src/lib/indicators/structuralTargets.js.
+  // Existe só para MEDIR; 'r_multiple' = byte-idêntico a hoje.
+  targetMode: 'r_multiple',
+  targetNearPolicy: 'literal',
 };
+
+const TARGET_MODES = TARGET_RULES.modes;
 
 let overrides = {};
 
@@ -393,6 +408,20 @@ export function setPineConfigOverrides(next = {}) {
   // Falha CEDO e alto, antes do replay começar, em vez de silenciosamente.
   if (next.allowedSide != null && next.allowedSide !== 'BUY' && next.allowedSide !== 'SELL') {
     throw new Error(`setPineConfigOverrides: allowedSide inválido (${JSON.stringify(next.allowedSide)}) — só aceita 'BUY', 'SELL' ou ausente/null`);
+  }
+  // Item 281: valor fora da lista ou combinado com a Fibonacci do item 267
+  // (que já troca os alvos) falha antes do replay, não no meio dele.
+  if (next.targetMode !== undefined && !TARGET_MODES.includes(next.targetMode)) {
+    throw new Error(`setPineConfigOverrides: targetMode inválido (${JSON.stringify(next.targetMode)}) — só aceita ${TARGET_MODES.join(', ')}`);
+  }
+  if (next.targetNearPolicy !== undefined && !TARGET_RULES.nearPolicies.includes(next.targetNearPolicy)) {
+    throw new Error(`setPineConfigOverrides: targetNearPolicy inválido (${JSON.stringify(next.targetNearPolicy)}) — só aceita ${TARGET_RULES.nearPolicies.join(', ')}`);
+  }
+  if (next.targetNearPolicy !== undefined && (next.targetMode === undefined || next.targetMode === 'r_multiple')) {
+    throw new Error('setPineConfigOverrides: targetNearPolicy sem targetMode estrutural (fib_ext_15m/swing_4h) — o braço rodaria igual ao controle');
+  }
+  if (next.targetMode !== undefined && next.targetMode !== 'r_multiple' && next.fibEntryEnabled === true) {
+    throw new Error('setPineConfigOverrides: targetMode não combina com fibEntryEnabled (a Fibonacci do item 267 já troca os alvos)');
   }
   overrides = { ...next };
 }

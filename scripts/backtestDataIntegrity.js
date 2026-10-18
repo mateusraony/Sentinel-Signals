@@ -203,7 +203,8 @@ export function requiredTimeframes(asset, { pineConfig } = {}) {
     ...scanTimeframes,
     // fibEntryEnabled (item 267) precisa do 15m mesmo com a confirmação
     // pulada: a entrada e a gestão da operação vivem nele.
-    ...(pineConfig?.fibEntryEnabled || !pineConfig?.skip15mConfirmationEnabled ? ['15m'] : []),
+    // O alvo de Fibonacci do item 281 também mede a perna no 15m.
+    ...(pineConfig?.fibEntryEnabled || pineConfig?.targetMode === 'fib_ext_15m' || !pineConfig?.skip15mConfirmationEnabled ? ['15m'] : []),
     ...(asset?.smc_enabled ? ['5m'] : []),
   ];
 }

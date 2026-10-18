@@ -140,6 +140,21 @@ describe('unpairedComparison', () => {
 describe('compareReports — recusas', () => {
   const base = [op(0, -1), op(1, 1)];
 
+  // Achado do Codex (P1, PR #507): a checagem de procedência do teste dos
+  // alvos tem que valer no CLI que o pré-registro usa, não só existir.
+  it('targetArm: recusa variante que muda algo além das chaves de alvo; aceita a que só muda o alvo', () => {
+    const withCfg = (r, pineConfig) => ({ ...r, reproducibility: { ...r.reproducibility, pineConfig } });
+    const ctl = withCfg(report(base), { tp1R: 1.5, targetMode: 'r_multiple', targetNearPolicy: 'literal' });
+    const good = withCfg(report(base), { tp1R: 1.5, targetMode: 'swing_4h', targetNearPolicy: 'next_level' });
+    const bad = withCfg(report(base), { tp1R: 2, targetMode: 'swing_4h', targetNearPolicy: 'next_level' });
+    expect(compareReports(ctl, good, { ...opts, targetArm: true }).comparable).toBe(true);
+    const r = compareReports(ctl, bad, { ...opts, targetArm: true });
+    expect(r.comparable).toBe(false);
+    expect(r.errors.join(' ')).toMatch(/procedência do teste dos alvos: config difere fora das chaves de alvo: tp1R/);
+    // sem a opção, o comparador genérico segue como antes
+    expect(compareReports(ctl, bad, opts).comparable).toBe(true);
+  });
+
   it('relatório com dataIntegrity inválida', () => {
     const r = compareReports(report(base), report(base, { valid: false }), opts);
     expect(r.comparable).toBe(false);

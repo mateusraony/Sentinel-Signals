@@ -33111,3 +33111,105 @@ para o futuro, todas com prova:
 **Achado do Codex (P2, PR #506, corrigido):** a varredura lia só `.js/.jsx/.mjs` — `.ts/.tsx` (já existe
 `src/utils/index.ts`) ficavam de fora. Agora entram, cada um analisado com o modo certo do TypeScript (`.ts`
 sem JSX, `.tsx` com JSX); o teste exige `src/utils/index.ts` na lista e prova os dois modos.
+
+## 281. Só os alvos mudam — Fibonacci 15m × topo/fundo 4h × alvo de hoje (pré-registro, 2026-10-18)
+
+**Pergunta do usuário:** mantendo a entrada de hoje (sinal do RF 4h + confirmação 15m) e o stop de hoje
+(2–3× ATR 4h), trocar só o alvo — extensão de Fibonacci da perna de 15m ou topo/fundo anterior do 4h —
+teria dado mais resultado?
+
+**O que já se sabia:**
+- Nunca testado isolado. O item 267 mudou entrada, stop e alvos juntos (pacote pior). O item 270 (X1)
+  isolou só o stop (mesma expectância). O próprio 267 deixou "só um teste que mude apenas a saída
+  responderia isso".
+- Hoje o alvo é múltiplo do risco (TP1 1,5R com 50%, TP2 3R), não olha o gráfico
+  (`rr_target_basis: 'R_MULTIPLE'`).
+- **Pesquisa (2026-10-18):** nenhum estudo sério compara alvo por múltiplo de R, por estrutura e por
+  Fibonacci; só anedota e material de venda. Não mudou o desenho, só reforça medir aqui.
+- **Ressalva:** o 267 registrou "não reabrir com outros alvos sobre estes dados". Este teste é outro
+  desenho (entrada e stop fixos, a pergunta que o 267 deixou aberta) e usa os mesmos níveis 1,272/1,618.
+  Para não depender só de W1/W2, há uma janela nunca usada no motor (W0, decisão do usuário).
+
+**Achado antes de qualquer dado real (motivou as três políticas):** no teste do motor com velas
+sintéticas, com o stop largo do 4h, o primeiro alvo estrutural ficou quase sempre a menos de 0,5R da
+entrada (6/7 Fibonacci, 6/8 topo). Uma regra única de "mínimo 0,5R" faria o braço cair quase todo no
+alvo de hoje. O usuário escolheu medir as três formas.
+
+**Pré-registro** (`docs/experiments/targets-prereg.json`, travado por `src/lib/targetsPrereg.test.js` e
+`src/lib/indicators/structuralTargets.test.js`):
+- **Chaves só de backtest:** `targetMode` e `targetNearPolicy` em `scripts/backtestPineConfig.js`
+  (`'r_multiple'`/`'literal'` = hoje), fora da produção (tripwire `src/lib/targetModeTripwire.test.js`).
+- **Mesmas regras, só TP1/TP2 mudam:** entrada, stop, gate R:R (continua medindo o alvo de hoje, então
+  não barra nenhum sinal a mais em nenhum braço), parcial de 50% no TP1, stop na entrada depois, trailing
+  pré-TP1, runner, TP2 como saída, time stop. **Ressalva honesta:** o momento em que cada regra age segue
+  o alvo — um TP1 mais perto põe o stop na entrada e passa para o runner mais cedo. Isso faz parte do
+  efeito de trocar o alvo neste sistema. E, com uma operação por ativo, a duração diferente muda quais
+  sinais seguintes viram operação; por isso a leitura é não pareada.
+- **Níveis:**
+  - Fibonacci: a MESMA perna do item 267 (32 velas de 15m até o fechamento do sinal), escada
+    1,272 / 1,618 / 2,0 / 2,618 medida da origem.
+  - Topo/fundo 4h: pivôs confirmados (5 velas fechadas de cada lado), últimas 150 velas de 4h.
+- **Políticas para alvo perto:** sempre a partir do primeiro nível além da entrada.
+  - `literal`: esse nível, a qualquer distância.
+  - `min_r_fallback`: esse nível; a menos de 0,5R → alvo de hoje.
+  - `next_level`: o primeiro nível a pelo menos 0,5R.
+  - TP2 = o nível seguinte; sem ele, entrada + 2×(TP1 − entrada). Sem nível válido → alvo de hoje, com o
+    motivo gravado (`target_basis`, `target_fallback_reason`).
+- **Janelas:** W1 2025-10-10→2026-10-10 e W2 2024-07-27→2025-07-27 (7 símbolos) decidem; W0
+  2021-07-27→2022-07-27 (BTC, ETH, FET, PAXG — os que existiam na janela inteira) replica.
+  7 braços × 3 janelas = 21 rodadas no `backtest.yml`, configuração fixada no JSON (`smc`/`smc_confirm`
+  vazios, timeframes e custos padrão, `pine_config` do controle vazio e do braço só com as duas chaves).
+- **Leitura:** não pareada (cluster-robusta), `scripts/compare-backtest-reports.mjs --family-size 6 --target-arm`,
+  controle × braço por janela (família `targets-2026-10`, Bonferroni α = 0,05/6).
+  - **Aprova** só com Δ expectância líquida > 0, IC acima de zero e veredito "diferença significativa"
+    (G ≥ 20 clusters) em W1 **e** W2, e Δ > 0 em W0. **Pior** é o espelho. O resto é ruído.
+    "Inconclusivo por poucos clusters" (G < 20) conta como INCONCLUSIVO.
+  - Só controle × braço; os braços não são comparados entre si (a perna da Fibonacci é medida no
+    fechamento do sinal, como no 267, e os pivôs no instante da entrada — informação não simétrica).
+  - Braço com mais de 50% das operações da cascata 4h_15m no alvo de hoje numa janela = **INCONCLUSIVO**
+    ali (`report.targets.fallbackRate`).
+  - **Parar antes de ler qualquer braço** se o controle não reproduzir o item 270 **exatamente** (W1 115
+    ops / −0,0483R; W2 119 ops / +0,054R; mesmas operações e expectância igual em 4 casas).
+  - Mesmo aprovado, nada muda na produção sem decisão do usuário.
+
+**Implementação:** `src/lib/indicators/structuralTargets.js` (puro e causal; reusa `planFibEntry` sem
+mudá-lo), gancho em `src/lib/scanner.js` só atrás da chave, nos 2 pontos da cascata 4h_15m, depois do
+gate R:R (`resolveTargetMode`/`applyTargetOverrides`); seção `report.targets`
+(`src/lib/targetModeReport.js`: base do alvo, taxa de fallback, distância mediana do TP1 em R, saídas).
+Teste de ponta a ponta (`src/lib/targetModeBacktest.test.js`): chave ausente = operações idênticas e
+nenhum campo novo; em cada braço, mesma entrada e stop, e TP1/TP2 recalculados das mesmas velas.
+
+**Revisão do motor e 1ª revisão de código (achados corrigidos):**
+- Falha ao buscar as velas do alvo virava "alvo de hoje" em silêncio (diluía o braço e inflava o fallback);
+  agora lança e invalida o relatório, como `manageFibOp` (teste novo).
+- `rr_target_basis` era sobrescrito com a base do alvo novo e contradizia `rr_at_entry` (que descreve o
+  gate). Agora os campos `rr_*` seguem descrevendo o gate; o alvo usado vai em `target_basis`.
+- `null` explícito em `targetMode`/`targetNearPolicy` passava pela validação e quebrava no meio do replay.
+- Pré-registro com decisões em aberto: tolerância da reprodução do controle, veredito de poucos
+  clusters, configuração da rodada e denominador do fallback — todos fixados acima e no JSON.
+- Redação "tudo igual" e "mesmos sinais" corrigida (ver ressalva acima).
+- Relatório: stop antes do TP1 separado em perda × lucro (trailing pré-TP1); limiar vem de
+  `TARGET_RULES`; `closedAsOf` reaproveitado de `fibEntry.js`.
+**2ª revisão de código (achados corrigidos):**
+- Vela faltando para medir o nível (histórico curto ou desalinhado) também virava fallback em silêncio;
+  agora invalida o relatório, como a falha de busca. O motivo do "sem perna" ficou detalhado
+  (`fib_no_leg:leg_below_min_atr` etc.). Teste também para a falha de busca do topo 4h.
+- `targetNearPolicy` sem `targetMode` estrutural passava e o braço rodava igual ao controle — agora falha
+  antes do replay.
+- Nada conferia a procedência dos relatórios: `checkArmProvenance` (config igual fora das duas chaves,
+  sem SMC) entra no procedimento antes de cada comparação. `daily-filter`/`vol-sizing` recusam relatório
+  com alvo estrutural como "estratégia atual" (como já faziam com a Fibonacci).
+- Relatório: usa `getExitPrice`/`isClosedOp` (stop sem `exit_price` cai no stop do trailing) e avisa que
+  `indicatorAttribution` simula os rejeitados com o alvo do controle.
+- Regra do motor reescrita sem "gestão igual".
+**Achados do Codex (P1, PR #507, corrigidos):** a checagem de procedência existia mas o comparador não a
+chamava, e ela não olhava os parâmetros do ativo (`--rf-period`/`--rf-multiplier` não ficam no
+`pineConfig`). Agora `compare-backtest-reports.mjs --target-arm` recusa o par (sem imprimir números) se o
+braço diferir do controle fora das chaves de alvo — config da estratégia E argumentos da rodada, fora de
+`--out`/`--trial-label`/`--pine-config`. Testes nos dois arquivos; sem a opção, o comparador segue igual.
+**Não feito, com motivo:** a busca de velas acontece antes de saber se a criação vai ser recusada por
+vaga/teto — custo pequeno, só no backtest em memória. Validação em três camadas (config antes do replay, motor lança, função pura
+cai no controle) — cada uma protege um caminho diferente; juntar as três esconderia erro de config como
+fallback.
+
+**Resultado:** pendente (PR seguinte, depois das 21 rodadas).

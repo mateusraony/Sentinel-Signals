@@ -456,6 +456,14 @@ nunca deve receber nova transição.**
     15m por `manageFibOp`, ANTES das regras da vela de 4h. Usa o mesmo
     `transitionTradeOp`, sem terceiro caminho de mutação.
   - Desligada, nada muda.
+- **Alvo estrutural** (`pineConfig.targetMode`/`targetNearPolicy`, item 281) —
+  **BACKTEST-ONLY, `'r_multiple'` por padrão**, com tripwire
+  (`src/lib/targetModeTripwire.test.js`). Na cascata 4h_15m troca SÓ o TP1/TP2
+  (extensões de Fibonacci da perna de 15m ou pivôs de 4h,
+  `src/lib/indicators/structuralTargets.js`), depois do gate R:R. Entrada, stop e
+  regras de gestão iguais — o momento em que cada uma age segue o alvo, e com 1
+  op por ativo o conjunto de operações diverge (leitura não pareada). Desligada,
+  nada muda.
 - **Retry na busca de candle ao vivo** (`src/lib/httpRetry.js`,
   `fetchWithRetry`) — item 57. Causa raiz confirmada do volume baixo de
   operações ao vivo: `src/lib/marketDataProvider.js` (browser) e

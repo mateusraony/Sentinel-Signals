@@ -6,6 +6,7 @@
 // Uso:
 //   node scripts/compare-backtest-reports.mjs --control A.json --variant B.json \
 //     [--family-size 3] [--allow-commit-mismatch] [--iterations 5000] [--seed N] [--json saida.json]
+//     [--target-arm]   (item 281: recusa se a variante diferir do controle fora das chaves de alvo)
 //
 // Sai com código 1 quando a comparação é recusada (relatório inválido,
 // janela/símbolos/commit diferentes) — nunca imprime números nesse caso.
@@ -30,7 +31,7 @@ function parseArgs(argv) {
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.control || !args.variant) {
-    console.error('Uso: node scripts/compare-backtest-reports.mjs --control A.json --variant B.json [--family-size N] [--allow-commit-mismatch] [--iterations N] [--seed N] [--json FILE]');
+    console.error('Uso: node scripts/compare-backtest-reports.mjs --control A.json --variant B.json [--family-size N] [--allow-commit-mismatch] [--iterations N] [--seed N] [--json FILE] [--target-arm]');
     process.exitCode = 1;
     return;
   }
@@ -44,6 +45,7 @@ function main() {
   const result = compareReports(control, variant, {
     familySize,
     allowCommitMismatch: args['allow-commit-mismatch'] === true,
+    targetArm: args['target-arm'] === true,
     iterations,
     rand: mulberry32(seed),
   });

@@ -58,6 +58,7 @@ import { runBacktest } from '../src/lib/backtestEngine.js';
 import { analyzeReport, opsFromReport } from '../src/lib/backtestAnalysis.js';
 import { diagnoseStopGaps } from '../src/lib/stopGapDiagnostic.js';
 import { summarizeFibEntry } from '../src/lib/fibEntryReport.js';
+import { summarizeTargets } from '../src/lib/targetModeReport.js';
 import { ZERO_COST, tradesForCIHalfWidth } from '../src/lib/tradeMetrics.js';
 import { backend } from '@/api/entities';
 import { setPineConfigOverrides, getPineConfig } from './backtestPineConfig.js';
@@ -414,6 +415,19 @@ async function main() {
       toMs: signalExpiryToMs,
     });
     console.log('[backtest] fibEntry (item 267):', report.fibEntry);
+  }
+
+  // docs/known-risks.md item 281 — só com um braço de alvo estrutural: quantas
+  // operações ficaram com o alvo novo, quantas caíram no do controle e por quê.
+  if (effectivePineConfig.targetMode && effectivePineConfig.targetMode !== 'r_multiple') {
+    report.targets = summarizeTargets({
+      ops: await backend.entities.TradeOperation.filter({}),
+      targetMode: effectivePineConfig.targetMode,
+      targetNearPolicy: effectivePineConfig.targetNearPolicy,
+      fromMs: signalExpiryFromMs,
+      toMs: signalExpiryToMs,
+    });
+    console.log('[backtest] targets (item 281):', report.targets);
   }
 
   // Item 260 — junta a integridade dos ARQUIVOS à do REPLAY (runBacktest)
