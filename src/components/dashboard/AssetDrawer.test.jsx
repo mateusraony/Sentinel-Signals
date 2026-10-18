@@ -107,28 +107,27 @@ describe('AssetDrawer N1 — frescor real no lugar do "LIVE" fixo', () => {
   it('REGRESSÃO: ativo sem leitura nunca aparece como LIVE', async () => {
     renderN1({ asset: ASSET });
     await screen.findByText('BTC/USDT');
-    expect(screen.getByText('SEM LEITURA')).toBeTruthy();
-    expect(screen.queryByText('LIVE')).toBeNull();
+    expect(screen.getByText('📡 Sem leitura')).toBeTruthy();
+    expect(screen.queryByText(/LIVE|^📡 Atualizado/)).toBeNull();
   });
 
-  it('ativo com scan recente = LIVE + idade do scan', async () => {
+  it('ativo com scan recente = atualizado + idade do scan', async () => {
     renderN1();
     await screen.findByText('BTC/USDT');
-    expect(screen.getByText('LIVE')).toBeTruthy();
-    expect(screen.getByText(/scan há 5 min/)).toBeTruthy();
+    expect(screen.getByText('📡 Atualizado há 5 min')).toBeTruthy();
   });
 
   it('REGRESSÃO: ativo parado há 45 min = STALE (e não LIVE)', async () => {
     renderN1({ asset: { ...FRESH_ASSET, last_scan_at: iso(45 * MIN) } });
     await screen.findByText('BTC/USDT');
-    expect(screen.getByText('STALE')).toBeTruthy();
-    expect(screen.queryByText('LIVE')).toBeNull();
+    expect(screen.getByText(/^📡 Atrasado/)).toBeTruthy();
+    expect(screen.queryByText(/LIVE|^📡 Atualizado/)).toBeNull();
   });
 
   it('erro persistente de leitura = ERRO', async () => {
     renderN1({ asset: { ...FRESH_ASSET, scan_error_since: iso(40 * MIN) } });
     await screen.findByText('BTC/USDT');
-    expect(screen.getByText('ERRO')).toBeTruthy();
+    expect(screen.getByText(/^📡 Falha de leitura \(último scan há \d+ min\)$/)).toBeTruthy();
   });
 });
 
@@ -232,10 +231,10 @@ describe('AssetDrawer — relógio próprio (Codex #461: badge não pode congela
   it('REGRESSÃO: sem mudar nenhuma prop, o badge passa de LIVE para STALE com o tempo', () => {
     // Sem `now` injetado: o drawer usa o próprio relógio.
     renderDrawer({ asset: FRESH_ASSET, signals: [FRESH_SIGNAL], assetStates: [STATE_4H] });
-    expect(screen.getByText('LIVE')).toBeTruthy();
+    expect(screen.getByText(/^📡 Atualizado/)).toBeTruthy();
     act(() => { vi.advanceTimersByTime(31 * MIN); });
-    expect(screen.getByText('STALE')).toBeTruthy();
-    expect(screen.queryByText('LIVE')).toBeNull();
+    expect(screen.getByText(/^📡 Atrasado/)).toBeTruthy();
+    expect(screen.queryByText(/LIVE|^📡 Atualizado/)).toBeNull();
   });
 
   // React Query/Radix também agendam timers: conta só os intervalos de 30 s do drawer.

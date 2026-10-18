@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { agreementLabel } from '@/lib/ruleAgreement';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { notifyVerificationTask, isTelegramConfigured } from '@/lib/telegram';
@@ -383,7 +384,7 @@ export default function Verification() {
                       </span>
                       {Number.isFinite(task.score) && (
                         <span className="text-10px font-mono" style={{ color: task.score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
-                          🔥 Score {task.score}/100
+                          {agreementLabel({ score: task.score })}
                         </span>
                       )}
                       <span className="text-9px font-mono px-1.5 py-0.5 rounded-full" style={{ background: badge.bg, border: `1px solid ${badge.border}`, color: badge.color }}>

@@ -42,28 +42,42 @@ describe('calcProximity', () => {
   });
 });
 
+// Item 277 (PR-B): a barra dizia "🔥 MUITO PRÓXIMO ↑ BUY" pulsando — soava como
+// sinal de compra iminente. Ela só mede a distância do preço até a linha do
+// Range Filter; o lado e o "quase lá" eram leitura nossa, não do motor.
 describe('ProximityBar', () => {
   it('não renderiza nada quando não há proximidade', () => {
     const { container } = render(<ProximityBar state={state(5)} />);
     expect(container.firstChild).toBeNull();
   });
 
-  it('mostra rótulo, lado e distância', () => {
+  it('mostra só a distância até a linha do filtro, com 📏', () => {
     render(<ProximityBar state={state(0.5)} />);
-    expect(screen.getByText(/MUITO PRÓXIMO/)).toBeTruthy();
-    expect(screen.getByText(/BUY/)).toBeTruthy();
+    expect(screen.getByText(/📏 Distância até a linha do filtro/)).toBeTruthy();
     expect(screen.getByText('0.50%')).toBeTruthy();
+    expect(screen.getByText(/não indica sinal próximo/i)).toBeTruthy();
   });
 
-  it('só "muito próximo" pulsa; "próximo" e "perto do gatilho" não', () => {
-    const pulse = (d) => { const { container, unmount } = render(<ProximityBar state={state(d)} />); const has = Boolean(container.querySelector('.prox-pulse')); unmount(); return has; };
-    expect(pulse(0.5)).toBe(true);
-    expect(pulse(1.5)).toBe(false);
-    expect(pulse(2.5)).toBe(false);
+  it('não mostra lado, urgência nem emojis de "quase lá" em nenhuma faixa', () => {
+    for (const d of [0.5, 1.5, 2.5]) {
+      for (const dir of [1, -1]) {
+        const { container, unmount } = render(<ProximityBar state={state(d, { rf_direction: dir })} />);
+        const text = container.textContent;
+        expect(text).not.toMatch(/BUY|SELL|COMPRA|VENDA|↑|↓/);
+        expect(text).not.toMatch(/🔥|⚡|🎯/);
+        expect(text).not.toMatch(/PRÓXIMO/); // rótulos antigos em caixa alta
+        expect(text).not.toMatch(/gatilho/i);
+        unmount();
+      }
+    }
   });
 
-  it('"Perto do gatilho" aparece no rótulo da faixa mais fraca', () => {
-    render(<ProximityBar state={state(2.5)} />);
-    expect(screen.getByText(/Perto do gatilho/)).toBeTruthy();
+  it('nenhuma faixa pulsa', () => {
+    for (const d of [0.5, 1.5, 2.5]) {
+      const { container, unmount } = render(<ProximityBar state={state(d)} />);
+      expect(container.querySelector('.prox-pulse')).toBeNull();
+      expect(container.innerHTML).not.toMatch(/animation/);
+      unmount();
+    }
   });
 });

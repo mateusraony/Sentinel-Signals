@@ -629,7 +629,7 @@ export default function TradeHistory() {
             <option value="date_asc">📅 Mais antigo</option>
             <option value="pnl_desc">💹 Maior P&L</option>
             <option value="pnl_asc">💹 Menor P&L</option>
-            <option value="score">🔥 Score</option>
+            <option value="score">🧩 Regras alinhadas</option>
           </select>
 
           {(search || filterTf !== 'all' || filterSide !== 'all' || filterResult !== 'all' || filterDateFrom || filterDateTo || filterMinPnl || filterMaxPnl) && (

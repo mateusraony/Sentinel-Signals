@@ -32794,3 +32794,76 @@ nesse caso, porque a ressalva do card já diz que o aviso não vira operação. 
 **Próximos (mesma auditoria):** PR-B (ProximityBar 📏, 🧩 no painel, 📡 qualidade do dado, chip de
 saúde), PR-C (🧪 simular entrada + estatística sem operações manuais/editadas), PR-D (preço e 📈/📉 24h do
 mesmo instante), PR-E2/E3 (emojis no painel + teste "1 emoji = 1 significado").
+
+## 277. PR-B — painel sem "quase sinal", sem "chance de acerto" e sem "LIVE" fixo: 📏, 🧩 e 📡 (2026-10-17)
+
+**Origem:** auditoria comparativa (conselho de agentes, item 276). Três sinais visuais do painel diziam
+mais do que o dado sustenta:
+
+- **Barra de proximidade** ("🔥 MUITO PRÓXIMO ↑ BUY", pulsando, e o cartão brilhando na cor do lado):
+  soava como compra/venda iminente. Ela só mede a distância do preço até a linha do Range Filter
+  (`calcProximity`); o lado e a urgência eram leitura nossa, não do motor.
+- **Força** ("🔥 Forte / ⚡ Moderado / 〰 Fraco", "🔥 Score N/100"): soava como chance de acerto, com
+  limiares próprios por tela (TradeCard usava 85/65 fixos; AssetCard caía em "⚡ Mod." sem dado). O score
+  conta regras que concordam — a entrada não tem vantagem comprovada (item 264).
+- **"LIVE" fixo:** o cartão do ativo mostrava "LIVE" verde sempre que o healthcheck não acusava problema,
+  inclusive num ativo **nunca lido** (sem `last_scan_at`); o TradeCard mostrava "🔴 LIVE" lendo
+  `op.data_status`, que o motor grava sempre como `'LIVE'` (`scanner.js`, criação da operação); o
+  Dashboard dizia "Dados em tempo real" e a Sidebar tinha um ponto verde pulsando — os dois fixos.
+
+**Mudança (só painel; motor intocado):**
+
+- 📏 `ProximityBar`: "📏 Distância até a linha do filtro: X%" + "não indica sinal próximo"; cor neutra,
+  sem lado, sem pulsação. Filtro "📏 Perto da linha do filtro" (mesma regra). Brilho neutro e parado no
+  cartão e na lista de Ativos; CSS `signal-zone-pulse` removido (sem outro uso).
+- 🧩 `src/lib/ruleAgreement.js` (`agreementLabel`): "🧩 85/100" ou "🧩 concordância forte" (sem dado,
+  nada). Aplicado em AssetCard, TradeCard (`ScoreBar`), banner de sinal, widget e página de Verificação,
+  Alertas, ordenação do Histórico e ajuste de score mínimo do Telegram. `STRENGTH_WORD` é o mesmo do
+  Telegram (`notificationTemplates.js` passou a importá-lo daqui).
+- 📡 `src/lib/assetDataQuality.js`: `assetDataQuality` (status ok/stale/error/inactive/unknown sobre o
+  mesmo `assetHealthcheckReason` do cron; "ok" exige leitura real) + `qualityBadge` (rótulos 📡). Fonte
+  única para o presenter do drawer (`buildQuality`, saída idêntica), AssetDrawer, AssetCard e lista de
+  Ativos. "Sem leitura" também esconde o botão "Ativar". "🔴 LIVE" saiu do TradeCard.
+- Chip de saúde (`DataHealthChip`, `summarizeDataHealth`/`healthChip`): "📡 Último scan há N min · K ativos
+  com problema" (atrasado, falha ou nunca lido) no Dashboard e como ponto acessível na Sidebar (via
+  `useAllMonitoredAssets`, sem query nova no Dashboard). Carregando/erro nunca dizem "tudo em dia".
+- `aria-label` nos 3 botões de ação rápida da Sidebar (item 219).
+
+**Verificação:** testes novos falhavam antes da mudança (barra, cartão "Sem leitura", Sidebar);
+`panelVocabularyGuard.test.js` proíbe 🔥/〰 e a leitura de `op.data_status` no painel, provado
+reintroduzindo o código antigo. Diff vazio em `scanner.js`, `indicators/**`, `opExitRules.js`,
+`opTransition.js`, `signalArbitration.js`, `pineParser.js`, `adminPineConfig.js`, `db/**`, `server/**`.
+
+**1ª revisão de código (achados corrigidos):** o ponto da Sidebar lia a lista de ativos sem polling —
+com a aba aberta, a idade crescia com o relógio e virava "com problema" em 30 min com o scan normal
+(agora `refetchInterval` de 60 s); cartão e lista de Ativos ganharam relógio (`src/hooks/useNow.js`) —
+sem ele "📡 Atualizado agora" congelava com o scan parado; `ScoreBar` sem score numérico não mostra mais
+"🧩 0/100"; "📡 Falha de leitura" volta a dizer a idade do último scan (rodando-e-falhando × parado);
+`role="img"` no ponto (região viva anunciaria a cada minuto); guardas de score exigem número; o tooltip
+do banner usa `AGREEMENT_HINT`; `buildQuality.label` usa o mesmo texto 📡 (um só conjunto de rótulos).
+**Não feito, com motivo:** unificar a linha de status "⚠️ STALE" do cartão com o 📡 (PR-E2, junto dos
+demais emojis do painel); mover `toMs` para módulo comum (o parse de `last_scan_at` é equivalente e
+testado; ganho não paga o diff).
+
+**2ª revisão de código (achados corrigidos):** falha de leitura recente (menos de 30 min) aparecia como
+"📡 Atualizado agora" verde — o motor renova `last_scan_at` também na falha; agora `scan_status: 'error'`
+/`scan_error_since` vira "📡 Falha de leitura" na tela e conta como problema no chip (o alerta do Telegram
+continua esperando os 30 min do healthcheck, sem mudança). Ponto da Sidebar passa a renovar na cadência
+do scan (5 min, não 60 s — custo do Render/Neon gratuito; o TanStack não faz polling em aba de fundo).
+Cartão não mostra "🧩 0/100" (como as demais telas). "📡 Desligado" mostra a idade do último scan.
+**Não feito, com motivo:** um relógio por cartão (~10 ativos, custo desprezível); cores por faixa de
+score (85/65) e o texto `SCORE_NOTE` do drawer — mesma ressalva, wording diferente, ficam para o PR-E2/E3;
+drawer mantém o próprio relógio (o `now` injetado desliga o intervalo, comportamento que `useNow` não
+tem); esconder "Ativar" sem leitura estava no plano aprovado e está registrado acima.
+
+**3ª revisão de código (achados corrigidos):** "Ativar" some também com falha recente (o cartão já
+mostrava "📡 Falha"); idades legíveis (`formatAge`: "3 h", "14 dias" — nunca "20160 min");
+`buildQuality.label` cobre a falha recente; variável morta no `Details` do TradeCard.
+**Não feito, com motivo:** dois indicadores de saúde no Dashboard com fontes diferentes (chip: lista
+ativa a cada 60 s; ponto: lista completa a cada 5 min) — podem divergir por alguns minutos perto do
+limite de 30 min; aceitar é mais barato que acoplar a Sidebar à página. O ícone ✗ "Último scan falhou" da
+lista de Ativos é a coluna de resultado por passada (par do ✓), mantido.
+
+**Fora deste PR, de propósito:** "Score técnico N/100" do drawer, do toast e do comparador (sem emoji
+enganoso, já com a ressalva) e o "⚠️ STALE" da linha de status do cartão ficam para o PR-E2/E3 (registro
+"1 emoji = 1 significado").

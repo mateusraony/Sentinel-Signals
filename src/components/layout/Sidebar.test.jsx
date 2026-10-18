@@ -30,6 +30,13 @@ vi.mock('@/api/entities', () => ({
   backend: { entities: { SystemLog: { deleteMany: (...args) => deleteManyMock(...args) } } },
 }));
 
+// Item 277: o ponto de saúde da Sidebar lê a lista de ativos pelo hook
+// compartilhado. Mockado aqui para os testes renderizarem sem QueryClient
+// (no app, a Sidebar já fica dentro do QueryClientProvider de App.jsx).
+let healthState = { data: [], isLoading: false, isError: false };
+const healthHookCalls = [];
+vi.mock('@/hooks/useAllMonitoredAssets', () => ({ useAllMonitoredAssets: (opts) => { healthHookCalls.push(opts); return healthState; } }));
+
 // Achado do Codex review no PR #436: MobileBottomNav passou a chamar
 // `window.matchMedia` (pra fechar o sheet "Mais" ao cruzar o breakpoint
 // desktop) — jsdom não implementa matchMedia por padrão, então todo teste
@@ -245,5 +252,38 @@ describe('Sidebar — toast de erro do "Limpar Logs" explica causa provável (Ro
     await vi.waitFor(() => expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({
       description: 'Não foi possível limpar os logs — verifique sua conexão e tente de novo.',
     })));
+  });
+});
+
+
+// Item 277 (PR-B): o ponto verde pulsava sempre, mesmo com o scan parado; e os
+// 3 botões de ação rápida (ícone-só) não tinham nome acessível (item 219).
+describe('Sidebar — saúde real e nome acessível nas ações rápidas (item 277)', () => {
+  afterEach(() => { healthState = { data: [], isLoading: false, isError: false }; });
+
+  it('os 3 botões de ação rápida têm nome acessível', () => {
+    render(<MemoryRouter initialEntries={['/']}><Sidebar /></MemoryRouter>);
+    expect(screen.getByRole('button', { name: 'Ir para Trades' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Redefinir Filtros' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Limpar Logs' })).toBeTruthy();
+  });
+
+  it('o ponto de saúde descreve o estado real, sem animação de "ping"', () => {
+    healthState = { data: [{ is_active: true, last_scan_at: new Date(Date.now() - 50 * 60000).toISOString() }], isLoading: false, isError: false };
+    const { container } = render(<MemoryRouter initialEntries={['/']}><Sidebar /></MemoryRouter>);
+    expect(screen.getByRole('img', { name: /1 ativo com problema/ })).toBeTruthy();
+    expect(container.innerHTML).not.toMatch(/animation: ping/);
+  });
+
+  it('REGRESSÃO (review do PR-B): o ponto pede polling — sem ele a idade cresce e o dado nunca renova', () => {
+    healthHookCalls.length = 0;
+    render(<MemoryRouter initialEntries={['/']}><Sidebar /></MemoryRouter>);
+    expect(healthHookCalls.some(o => Number.isFinite(o?.refetchInterval) && o.refetchInterval > 0)).toBe(true);
+  });
+
+  it('erro ao ler os ativos: "Saúde indisponível", nunca verde', () => {
+    healthState = { data: [], isLoading: false, isError: true };
+    render(<MemoryRouter initialEntries={['/']}><Sidebar /></MemoryRouter>);
+    expect(screen.getByRole('img', { name: '📡 Saúde indisponível' })).toBeTruthy();
   });
 });

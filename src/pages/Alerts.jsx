@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { agreementLabel } from '@/lib/ruleAgreement';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
 import { Bell, Filter, Archive, TrendingUp, TrendingDown, Search, X, AlertTriangle } from 'lucide-react';
@@ -307,9 +308,9 @@ export default function Alerts() {
                       style={{ background: prio.bg, color: prio.color, border: `1px solid ${prio.border}` }}>
                       {prio.label}
                     </span>
-                    {signal.context?.score > 0 && (
+                    {Number.isFinite(signal.context?.score) && signal.context.score > 0 && (
                       <span className="text-8px font-mono" style={{ color: signal.context.score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.3)' }}>
-                        🔥 {signal.context.score}/100
+                        {agreementLabel({ score: signal.context.score })}
                       </span>
                     )}
                   </div>

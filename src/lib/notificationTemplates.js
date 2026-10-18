@@ -29,6 +29,7 @@ import { explainOperationDecision } from './decisionExplanation.js';
 import { shortSourceLabel } from './signalSourceLabels.js';
 import { NOTIFICATION_STAGES, stageHeader } from './notificationVocabulary.js';
 import { isConfirmationEligible, rejectionCopy, SIGNAL_PHASE } from './signalStatus.js';
+import { STRENGTH_WORD } from './ruleAgreement.js';
 import { classifyOutcome, calcRealizedR, calcRealizedPnlPct, getExitPrice } from './tradeMetrics.js';
 
 export function fmtP(p) {
@@ -152,7 +153,6 @@ function sideLabel(signalType) {
 // chance de acerto (substitui "💪 Forte/📊 Médio/🔹 Fraco" e "📊 Score").
 // Sem score numérico (MACD/EMA/RSI), mantém a força em palavra — antes saía
 // "📊 Força: 💪 Forte" e a informação não pode simplesmente sumir.
-const STRENGTH_WORD = { strong: 'forte', medium: 'média', moderate: 'moderada', weak: 'fraca' };
 function scoreAgreementLine(score, prefix = 'Regras alinhadas', strength = null) {
   if (Number.isFinite(score)) return `🧩 ${prefix}: ${score}/100 (não é chance de acerto)\n`;
   const word = STRENGTH_WORD[strength];

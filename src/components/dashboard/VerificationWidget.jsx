@@ -1,4 +1,5 @@
 import React from 'react';
+import { agreementLabel } from '@/lib/ruleAgreement';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backend } from '@/api/entities';
@@ -119,9 +120,9 @@ export default function VerificationWidget() {
                       criação (copiados do SignalEvent que a gerou,
                       docs/schema-reference/VerificationTask.jsonc), só não
                       eram exibidos aqui. */}
-                  {task.score > 0 && (
+                  {Number.isFinite(task.score) && task.score > 0 && (
                     <span className="text-9px font-mono" style={{ color: task.score >= 85 ? '#ffd166' : 'rgba(255,255,255,0.4)' }}>
-                      🔥 {task.score}/100
+                      {agreementLabel({ score: task.score })}
                     </span>
                   )}
                   {task.source && (
@@ -167,9 +168,9 @@ export default function VerificationWidget() {
               </Tooltip>
             </div>
           ))}
-          {pending.slice(0, 5).some(task => task.score > 0) && (
+          {pending.slice(0, 5).some(task => Number.isFinite(task.score) && task.score > 0) && (
             <p className="text-8px font-mono text-muted-foreground/70 px-1">
-              🔥 = score técnico (concordância das regras atuais) — não é probabilidade de acerto.
+              🧩 = regras alinhadas com o aviso (concordância das regras atuais) — não é chance de acerto.
             </p>
           )}
         </div>

@@ -8,7 +8,7 @@
 // subtraída agora depende do timeframe do estado exibido.
 import React from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -87,15 +87,51 @@ describe('AssetCard — horário de abertura do candle (achado A-2)', () => {
 const OLD_40MIN = () => new Date(Date.now() - 40 * 60000).toISOString();
 const RECENT_5MIN = () => new Date(Date.now() - 5 * 60000).toISOString();
 
-describe('AssetCard — badge LIVE/STALE reflete o dead-man\'s-switch real (achado A-9)', () => {
-  it('LIVE quando last_scan_at é recente (< 30min)', () => {
+// Item 277 (PR-B): o badge passou a 📡 (mesmos rótulos do drawer e do chip de
+// saúde); "LIVE" verde fixo saiu de vez.
+describe('AssetCard — badge 📡 reflete o dead-man\'s-switch real (achado A-9, item 277)', () => {
+  it('📡 há N min quando last_scan_at é recente (< 30min)', () => {
     renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN() } });
-    screen.getByText('LIVE');
+    screen.getByText('📡 há 5 min');
+    expect(screen.queryByText('LIVE')).toBeNull();
   });
 
-  it('STALE quando last_scan_at está velho (> 30min), motivo silent', () => {
+  it('📡 Atrasado quando last_scan_at está velho (> 30min), motivo silent', () => {
     renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: OLD_40MIN() } });
-    screen.getByText('STALE');
+    screen.getByText('📡 Atrasado');
+  });
+
+  it('REGRESSÃO: ativo nunca lido (sem last_scan_at) mostra 📡 Sem leitura, nunca LIVE', () => {
+    renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' } });
+    screen.getByText('📡 Sem leitura');
+    expect(screen.queryByText('LIVE')).toBeNull();
+  });
+
+  it('REGRESSÃO (review do PR-B): o badge envelhece com o relógio, sem nova prop', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    try {
+      vi.setSystemTime(Date.parse('2026-10-17T12:00:00Z'));
+      renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: '2026-10-17T11:59:00Z' } });
+      screen.getByText('📡 há 1 min');
+      act(() => { vi.advanceTimersByTime(40 * 60000); });
+      screen.getByText('📡 Atrasado');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('REGRESSÃO (review do PR-B): falha recente (< 30 min) também esconde o botão "Ativar"', () => {
+    renderCard({
+      asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN(), scan_status: 'error', scan_error_since: RECENT_5MIN() },
+      latestSignal: { id: 'sig1', signal_type: 'BUY' },
+    });
+    screen.getByText('📡 Falha');
+    expect(screen.queryByText(/Ativar BUY agora/i)).toBeNull();
+  });
+
+  it('REGRESSÃO: sem leitura também esconde o botão "Ativar" (mesmo com sinal pendente)', () => {
+    renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT' }, latestSignal: { id: 'sig1', signal_type: 'BUY' } });
+    expect(screen.queryByText(/Ativar BUY agora/i)).toBeNull();
   });
 
   it('ERRO (persistent_error) quando scan_error_since está velho — motivo mais grave que silent', () => {
@@ -105,7 +141,7 @@ describe('AssetCard — badge LIVE/STALE reflete o dead-man\'s-switch real (acha
         last_scan_at: RECENT_5MIN(), scan_error_since: OLD_40MIN(),
       },
     });
-    screen.getByText('ERRO');
+    screen.getByText('📡 Falha');
   });
 
   it('esconde o botão "Ativar" quando stale, mostra quando live (mesmo sinal pendente)', () => {

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { agreementLabel } from '@/lib/ruleAgreement';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TrendingUp, TrendingDown, Zap, ChevronDown, ChevronUp } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
@@ -13,7 +14,8 @@ import moment from 'moment';
 import ProximityBar, { calcProximity } from '@/components/dashboard/ProximityBar';
 import { formatPrice, formatSignedPct } from '@/lib/priceProximity';
 import { useFundingRate } from '@/hooks/useFundingRate';
-import { assetHealthcheckReason } from '@/lib/assetHealthcheck';
+import { assetDataQuality, qualityBadge } from '@/lib/assetDataQuality';
+import { useNow } from '@/hooks/useNow';
 import { closesFullyAtTp1 } from '@/lib/opExitRules';
 
 // Duração de cada timeframe suportado (states só existem pra 1h/4h/1d —
@@ -22,7 +24,7 @@ import { closesFullyAtTp1 } from '@/lib/opExitRules';
 // (`last_candle_time`), que o backend só grava o fechamento.
 const TF_DURATION_HOURS = { '1h': 1, '4h': 4, '1d': 24 };
 
-// Achado A-9 do Raio-X de UI/UX: o badge LIVE/STALE usava um threshold de
+// Achado A-9 do Raio-X de UI/UX (badge hoje em 📡, item 277): o badge LIVE/STALE usava um threshold de
 // 2h fixo, arbitrário (24x maior que a cadência real de scan, ~5min) e sem
 // relação com o dead-man's-switch OFICIAL do sistema
 // (`assetHealthcheckReason`, `src/lib/assetHealthcheck.js`, graceMs=30min,
@@ -33,8 +35,8 @@ const TF_DURATION_HOURS = { '1h': 1, '4h': 4, '1d': 24 };
 // cor própria (#ef4444), distinta do rosa/magenta (#ff1478) usado pra
 // SELL/direção nas demais telas (mesmo ajuste em Logs.jsx/Assets.jsx).
 const STALE_REASON_META = {
-  persistent_error: { label: '⚠️ Falha persistente', shortLabel: 'ERRO', color: '#ef4444' },
-  silent: { label: '⚠️ STALE', shortLabel: 'STALE', color: '#ff9f43' },
+  persistent_error: { label: '⚠️ Falha persistente', color: '#ef4444' },
+  silent: { label: '⚠️ STALE', color: '#ff9f43' },
 };
 
 // Achado M-17 do Raio-X de UI/UX: coluna do grid de preços — só TP1/TP2
@@ -211,6 +213,8 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   const queryClient = useQueryClient();
   const availableTfs = states?.map(s => s.timeframe).filter(Boolean) || [];
   const defaultTf = availableTfs.includes('1h') ? '1h' : availableTfs[0] || '1h';
+  // Item 277: o badge 📡 mostra a idade do scan — precisa andar com o relógio.
+  const now = useNow();
   const [selectedTf, setSelectedTf] = useState(defaultTf);
   const [open, setOpen] = useState(expandAll);
   // Guarda o SINAL clicado, não um boolean — o Dashboard reconsulta em
@@ -266,9 +270,15 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   const lastPrice = primaryState?.last_close;
   const priceChange = stats24h?.priceChangePercent;
 
-  const healthReason = assetHealthcheckReason(asset); // 'persistent_error' | 'silent' | null
+  // Item 277: frescor pela fonte única (mesmo do drawer e do chip de saúde).
+  const quality = assetDataQuality(asset, now);
+  const qBadge = qualityBadge(quality);
+  const healthReason = quality.reason; // 'persistent_error' | 'silent' | null
   const isStale = Boolean(healthReason);
   const staleMeta = healthReason ? STALE_REASON_META[healthReason] : null;
+  // Sem leitura, atrasado ou com falha (inclusive falha recente, < 30 min):
+  // não oferece "Ativar" sobre um dado que o próprio cartão marca como ruim.
+  const dataUnreliable = ['unknown', 'stale', 'error'].includes(quality.status);
 
   const TERMINAL = ['STOP_HIT', 'TP2_HIT', 'INVALIDATED', 'CLOSED'];
   const hasActiveOp = tradeOp && !TERMINAL.includes(tradeOp.status);
@@ -330,8 +340,10 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   const proximity = !hasActiveOp && primaryState ? calcProximity(primaryState) : null;
 
   const showBadge = hasActiveOp ? opSide : (latestSignal ? sigSide : null);
-  const strengthMap = { strong: '🔥 Forte', moderate: '⚡ Mod.', weak: '〰 Fraco' };
-  const strengthLabel = strengthMap[latestSignal?.strength] || '⚡ Mod.';
+  // Item 277: mesmo rótulo 🧩 do resto do app; sem score nem força, nada (antes
+  // caía em "⚡ Mod." inventado).
+  const sigScore = latestSignal?.context?.score;
+  const strengthLabel = agreementLabel({ score: sigScore > 0 ? sigScore : undefined, strength: latestSignal?.strength });
 
   const candleCloseTime = primaryState?.last_candle_time;
   // Achado A-2 do Raio-X de UI/UX: subtraía 1h fixo do fechamento pra achar
@@ -345,21 +357,16 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
   let cardBorder = 'rgba(255,255,255,0.06)';
   let cardGlow = 'none';
   let flashStyle = '';
-  let zonePulseVars = {};
   if (flashing || sigFlashing) {
     const fc = isBuy ? '#00ff80' : '#ff1478';
     cardBorder = fc;
     cardGlow = `0 0 30px ${fc}60, 0 0 60px ${fc}30`;
     flashStyle = isBuy ? 'flash-buy' : 'flash-sell';
   } else if (proximity?.level === 'very_close') {
-    // Marcador vibrante: ativo entrando na zona de sinal do Range Filter
-    // (preço a <1% do filtro) — mesma cor do lado (BUY/SELL) que a
-    // ProximityBar já usa, via signal-zone-pulse (src/index.css).
-    const zc = proximity.side === 'BUY' ? '#00ff80' : '#ff1478';
-    cardBorder = `${zc}55`;
-    cardGlow = `0 0 16px ${zc}25`;
-    flashStyle = 'signal-zone-pulse';
-    zonePulseVars = { '--zone-glow-color': `${zc}70` };
+    // Preço a <1% da linha do Range Filter. Item 277: contorno neutro e
+    // parado — antes pulsava na cor do lado (BUY/SELL), como se um sinal
+    // fosse sair; a distância não diz isso (ver ProximityBar).
+    cardBorder = 'rgba(96,165,250,0.4)';
   } else if (hasActiveOp && isBuy) {
     cardBorder = 'rgba(0,255,128,0.22)'; cardGlow = '0 0 20px rgba(0,255,128,0.07)';
   } else if (hasActiveOp && isSell) {
@@ -412,7 +419,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
           if (e.target !== e.currentTarget) return;
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); }
         }}
-        style={{ background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)', border: `1px solid ${cardBorder}`, boxShadow: cardGlow, ...zonePulseVars }}>
+        style={{ background: 'rgba(10,13,22,0.82)', backdropFilter: 'blur(20px)', border: `1px solid ${cardBorder}`, boxShadow: cardGlow }}>
 
         {/* Row 1: Symbol + Price */}
         <div className="flex items-start justify-between mb-2">
@@ -421,8 +428,8 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
               <span className="font-bold text-sm text-foreground tracking-tight">{asset.display_name}</span>
               <span className="text-8px font-mono text-muted-foreground">{asset.exchange?.toUpperCase() || 'BINANCE'}</span>
               <span className="flex items-center gap-0.5">
-                <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: isStale ? staleMeta.color : '#00ff80', boxShadow: isStale ? 'none' : '0 0 5px #00ff80' }} />
-                <span className="text-8px font-mono" style={{ color: isStale ? staleMeta.color : '#00ff80' }}>{isStale ? staleMeta.shortLabel : 'LIVE'}</span>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: qBadge.color, boxShadow: quality.status === 'ok' ? `0 0 5px ${qBadge.color}` : 'none' }} />
+                <span className="text-8px font-mono" style={{ color: qBadge.color }}>{qBadge.short}</span>
               </span>
               {tradeOpsUnavailable && (
                 <Tooltip>
@@ -507,7 +514,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
                 {showBadge}
               </span>
             )}
-            {latestSignal && !hasActiveOp && (
+            {latestSignal && !hasActiveOp && strengthLabel && (
               <span className="text-10px font-mono px-2 py-1 rounded"
                 style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(255,255,255,0.45)', border: '1px solid rgba(255,255,255,0.08)' }}>
                 {strengthLabel}
@@ -582,7 +589,7 @@ export default function AssetCard({ asset, states, latestSignal, tradeOp, tradeO
         )}
 
         {/* Activate button — only for signals without active op */}
-        {latestSignal && !hasActiveOp && !isStale && (
+        {latestSignal && !hasActiveOp && !dataUnreliable && (
           <button
             onClick={(e) => {
               e.stopPropagation();

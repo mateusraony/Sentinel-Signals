@@ -5,19 +5,14 @@ import SignalChecklist from './SignalChecklist';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { formatPrice } from '@/lib/priceProximity';
 import { buildDecisionCard, NOT_RECORDED } from '@/lib/decisionCardPresenter';
+import { qualityBadge } from '@/lib/assetDataQuality';
 import FundingLine from './FundingLine';
 import { QueryErrorState } from '@/components/QueryErrorState';
 
-// Frescor REAL do ativo (assetHealthcheckReason via presenter) — antes o
-// cabeçalho mostrava "LIVE" verde fixo mesmo com o ativo parado. Texto sempre
-// acompanha a cor (a11y); dado sem leitura nunca vira "LIVE".
-const QUALITY_BADGE = {
-  ok: { label: 'LIVE', color: '#00ff80' },
-  stale: { label: 'STALE', color: '#ff9f43' },
-  error: { label: 'ERRO', color: '#ef4444' },
-  inactive: { label: 'OFF', color: '#64748b' },
-  unknown: { label: 'SEM LEITURA', color: '#64748b' },
-};
+// Frescor REAL do ativo (assetDataQuality via presenter) — antes o cabeçalho
+// mostrava "LIVE" verde fixo mesmo com o ativo parado. Texto sempre acompanha a
+// cor (a11y); dado sem leitura nunca vira "atualizado". Rótulos 📡 iguais aos do
+// cartão e do chip de saúde (item 277).
 
 const STATE_COLOR = {
   active_op: '#00e5ff',
@@ -29,7 +24,7 @@ const STATE_COLOR = {
 };
 
 // O frescor é função do relógio: sem este tick, um drawer aberto com dados que
-// não mudam ficaria "LIVE" para sempre depois que o scan parasse (Codex, PR #461).
+// não mudam ficaria "atualizado" para sempre depois que o scan parasse (Codex, PR #461).
 const NOW_TICK_MS = 30 * 1000;
 
 const POSTURE_NOTE = { breakeven: 'breakeven', locked: 'lucro protegido', risk: 'em risco' };
@@ -319,7 +314,7 @@ export default function AssetDrawer({
     asset, assetStates, signals, tradeOps, signalsUnavailable, tradeOpsUnavailable, tradeOpsLoading,
     now: nowProp ?? tick,
   });
-  const badge = QUALITY_BADGE[card.quality.status] ?? QUALITY_BADGE.unknown;
+  const badge = qualityBadge(card.quality);
 
   const assetSignals = signals
     .filter(s => s.asset_id === asset.id)
@@ -349,9 +344,6 @@ export default function AssetDrawer({
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: badge.color, boxShadow: `0 0 4px ${badge.color}`, display: 'inline-block' }} />
                 <span className="text-9px font-mono" style={{ color: badge.color }}>{badge.label}</span>
-                {card.quality.ageMin !== null && (
-                  <span className="text-8px font-mono text-muted-foreground">· scan há {card.quality.ageMin} min</span>
-                )}
               </span>
             </div>
           </div>

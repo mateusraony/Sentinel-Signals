@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { agreementLabel, AGREEMENT_HINT } from '@/lib/ruleAgreement';
 import moment from 'moment';
 import { Clock, TrendingUp, TrendingDown, ChevronDown, ChevronUp, History } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
@@ -62,13 +63,6 @@ const STATUS_CONFIG = {
     desc: 'Encerrado manualmente',
     color: '#64748b', bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.2)',
   },
-};
-
-const DATA_STATUS = {
-  LIVE:    { label: '🔴 LIVE',    color: '#00ff80' },
-  STALE:   { label: '⚠️ STALE',  color: '#ff9f43' },
-  OFFLINE: { label: '⛔ OFFLINE', color: '#ff1478' },
-  ERROR:   { label: '❌ ERROR',   color: '#ff1478' },
 };
 
 // Qual mercado da Binance gerou os dados desta operação — 'futures' quando
@@ -290,20 +284,22 @@ function AmbiguousExitBanner({ op }) {
 /* ────────────────────────── Camada 2 — o porquê ─────────────────────────── */
 
 export function ScoreBar({ score }) {
-  const pct = Math.max(0, Math.min(100, score || 0));
+  // Item 277: sem score numérico (operação de MACD/EMA/RSI/SMC), nada — antes
+  // virava "0/100" inventado.
+  if (!Number.isFinite(score)) return null;
+  const pct = Math.max(0, Math.min(100, score));
   const color = pct >= 85 ? '#00ff80' : pct >= 65 ? '#ffd166' : '#ff9f43';
-  const label = pct >= 85 ? '🔥 Forte' : pct >= 65 ? '⚡ Moderado' : '〰 Fraco';
   return (
     <div className="space-y-0.5">
       <div className="flex items-center gap-2">
         <div className="flex-1 h-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.06)' }}>
           <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color, boxShadow: `0 0 6px ${color}60` }} />
         </div>
-        <span className="text-10px font-mono font-bold" style={{ color }}>{pct}/100</span>
-        <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>{label}</span>
+        <span className="text-10px font-mono font-bold" style={{ color }}>{agreementLabel({ score: pct })}</span>
+        <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.35)' }}>regras alinhadas</span>
       </div>
       <p className="text-8px font-mono leading-tight" style={{ color: 'rgba(255,255,255,0.25)' }}>
-        Confluência de indicadores alinhados — não é uma probabilidade de acerto.
+        {AGREEMENT_HINT}
       </p>
     </div>
   );
@@ -442,8 +438,6 @@ function OperationWhySummary({ op }) {
 }
 
 function Details({ op }) {
-  const status = STATUS_CONFIG[op.status] || STATUS_CONFIG.CLOSED;
-  const dataStatus = DATA_STATUS[op.data_status] || DATA_STATUS.LIVE;
   const marketSourceLabel = MARKET_SOURCE_LABEL[op.market_source];
   const exitModeLabel = { RANGE_FILTER: '🔵 RF', ATR_TRAILING: '🟡 ATR Trail', HYBRID_RF_ATR: '🟣 RF+ATR' }[op.exit_mode] || op.exit_mode;
   const reasons = op.signal_reasons || [];
@@ -478,7 +472,9 @@ function Details({ op }) {
           <span style={{ color: op.candle_status === 'CLOSED' ? '#00ff80' : '#ff9f43' }}>
             {op.candle_status === 'CLOSED' ? '✅ Fechado' : '⏳ Aberto'}
           </span>
-          <span style={{ color: dataStatus.color }}>{dataStatus.label}</span>
+          {/* Item 277: o badge "🔴 LIVE" lia op.data_status, gravado sempre
+              como 'LIVE' pelo motor — nunca mudava. Frescor real fica no
+              cartão do ativo (📡). */}
           {marketSourceLabel && (
             <Tooltip>
               <TooltipTrigger asChild>

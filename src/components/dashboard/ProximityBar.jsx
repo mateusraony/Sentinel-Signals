@@ -1,15 +1,14 @@
 import React from 'react';
-import { Crosshair } from 'lucide-react';
 
 /**
  * Calculates how close the current price is to triggering an RF signal.
  * Uses rf_filter_value, last_close, rf_direction from AssetState.
  * Returns null if insufficient data or already has active signal.
  *
- * Proximity levels:
- *   < 1%  → "MUITO PRÓXIMO" (very close, pulse)
- *   < 2%  → "PRÓXIMO" (close)
- *   < 3,5% → "Perto do gatilho" (watching)
+ * Proximity levels (só mudam a intensidade do contorno na barra, item 277):
+ *   < 1%  → very_close
+ *   < 2%  → close
+ *   < 3,5% → watching
  *   ≥ 3,5% → null (not close enough to show)
  */
 export function calcProximity(state) {
@@ -30,82 +29,43 @@ export function calcProximity(state) {
   return { distance, side, level };
 }
 
+// Item 277 (PR-B): a barra mostrava "🔥 MUITO PRÓXIMO ↑ BUY" pulsando, o que
+// soava como compra iminente. Ela só mede a distância do preço até a linha do
+// Range Filter — não diz se haverá aviso nem para que lado. Cor neutra única,
+// sem lado e sem animação; o nível só muda a intensidade do contorno.
+const NEUTRAL = '96,165,250'; // azul informativo (mesmo tom de "observação" no painel)
+const LEVEL_ALPHA = { very_close: 0.45, close: 0.3, watching: 0.18 };
+
 export default function ProximityBar({ state }) {
   const prox = calcProximity(state);
   if (!prox) return null;
 
-  const { distance, side, level } = prox;
-  const sideColor = side === 'BUY' ? '#00ff80' : '#ff1478';
+  const { distance, level } = prox;
+  const alpha = LEVEL_ALPHA[level];
 
-  const config = {
-    very_close: {
-      label: 'MUITO PRÓXIMO',
-      bg: 'rgba(255,209,102,0.15)',
-      border: 'rgba(255,209,102,0.45)',
-      color: '#ffd166',
-      pulse: true,
-      icon: '🔥',
-    },
-    close: {
-      label: 'PRÓXIMO',
-      bg: 'rgba(255,209,102,0.1)',
-      border: 'rgba(255,209,102,0.3)',
-      color: '#ffd166',
-      pulse: false,
-      icon: '⚡',
-    },
-    watching: {
-      label: 'Perto do gatilho',
-      bg: 'rgba(255,209,102,0.05)',
-      border: 'rgba(255,209,102,0.15)',
-      color: 'rgba(255,209,102,0.6)',
-      pulse: false,
-      icon: '🎯',
-    },
-  };
-
-  const cfg = config[level];
-
-  // Progress bar: 0% distance = full bar (at filter), 3.5% = empty
+  // Barra: 0% de distância = cheia (preço na linha), 3,5% = vazia
   const progress = Math.max(0, Math.min(100, ((3.5 - distance) / 3.5) * 100));
 
   return (
-    <>
-      {cfg.pulse && (
-        <style>{`
-          @keyframes prox-pulse {
-            0%,100% { box-shadow: 0 0 6px rgba(255,209,102,0.2); }
-            50% { box-shadow: 0 0 16px rgba(255,209,102,0.5), 0 0 32px rgba(255,209,102,0.15); }
-          }
-          .prox-pulse { animation: prox-pulse 1.5s ease-in-out infinite; }
-        `}</style>
-      )}
-      <div
-        className={`rounded-lg px-3 py-2 mb-2.5 ${cfg.pulse ? 'prox-pulse' : ''}`}
-        style={{ background: cfg.bg, border: `1px solid ${cfg.border}` }}
-      >
-        <div className="flex items-center justify-between mb-1">
-          <span className="flex items-center gap-1 text-10px font-mono font-bold" style={{ color: cfg.color }}>
-            <Crosshair className="w-3 h-3" />
-            {cfg.icon} {cfg.label}
-          </span>
-          <span className="flex items-center gap-1.5 text-10px font-mono">
-            <span style={{ color: sideColor }}>{side === 'BUY' ? '↑' : '↓'} {side}</span>
-            <span style={{ color: 'rgba(255,255,255,0.35)' }}>{distance.toFixed(2)}%</span>
-          </span>
-        </div>
-        {/* Progress bar showing proximity to filter */}
-        <div className="relative h-1.5 w-full rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
-          <div
-            className="absolute h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${progress}%`,
-              background: `linear-gradient(90deg, ${sideColor}80, #ffd166)`,
-              boxShadow: level === 'very_close' ? '0 0 6px rgba(255,209,102,0.6)' : 'none',
-            }}
-          />
-        </div>
+    <div
+      className="rounded-lg px-3 py-2 mb-2.5"
+      style={{ background: `rgba(${NEUTRAL},0.06)`, border: `1px solid rgba(${NEUTRAL},${alpha})` }}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-10px font-mono font-semibold" style={{ color: `rgba(${NEUTRAL},0.9)` }}>
+          📏 Distância até a linha do filtro
+        </span>
+        <span className="text-10px font-mono" style={{ color: 'rgba(255,255,255,0.55)' }}>{distance.toFixed(2)}%</span>
       </div>
-    </>
+      <div className="relative h-1.5 w-full rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.05)' }}>
+        <div
+          className="absolute h-full rounded-full"
+          style={{ width: `${progress}%`, background: `rgba(${NEUTRAL},0.6)` }}
+        />
+      </div>
+      <p className="text-8px font-mono mt-1" style={{ color: 'rgba(255,255,255,0.3)' }}>
+        Só mostra o quanto o preço está perto da linha — não indica sinal próximo.
+      </p>
+    </div>
   );
 }

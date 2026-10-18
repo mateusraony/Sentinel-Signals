@@ -247,7 +247,7 @@ describe('Trades — ScoreBar de "Avisos em análise" omite score falso quando c
     await screen.findByText('AVAX/USDT');
     fireEvent.click(screen.getByText('Compacto'));
 
-    await screen.findByText('72/100');
+    await screen.findByText('🧩 72/100');
   });
 });
 

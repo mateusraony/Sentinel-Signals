@@ -17,7 +17,7 @@ import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { makeTestQueryClient } from '@/pages/__fixtures__/renderPage.jsx';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import TradeCard from './TradeCard.jsx';
+import TradeCard, { ScoreBar } from './TradeCard.jsx';
 
 // useLivePrice (via TradeCard) passou a logar falha de cotação com
 // src/lib/logger.js (achado "SEM COTAÇÃO", 2026-09-18), que importa
@@ -335,5 +335,20 @@ describe('TradeCard — elementos usam Tooltip em vez de title= nativo (achado A
       expect(rail.querySelector('[title]')).toBeNull();
       expect(rail.getAttribute('aria-label')).toMatch(/Stop \$.*entrada \$.*TP1 \$.*TP2 \$/);
     });
+  });
+});
+
+
+// Item 277 (review do PR-B): operação sem score numérico (MACD/EMA/RSI/SMC) não
+// mostra "🧩 0/100" inventado.
+describe('ScoreBar — sem score numérico, nada', () => {
+  it('não renderiza sem score e mostra 🧩 com score', () => {
+    for (const score of [undefined, null, NaN, '85']) {
+      const { container, unmount } = render(<ScoreBar score={score} />);
+      expect(container.firstChild).toBeNull();
+      unmount();
+    }
+    render(<ScoreBar score={72} />);
+    expect(screen.getByText('🧩 72/100')).toBeTruthy();
   });
 });

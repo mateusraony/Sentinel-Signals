@@ -57,6 +57,14 @@ significado, sempre acompanhado de texto.
 | ⌛ | Duração / tempo de espera | resumo de encerramento e sinal cancelado (antes ⏳, que é só `AWAITING_ENTRY`) |
 | 📌 | Nota explicativa sobre um encerramento já ocorrido (stop e take na mesma vela) | `AMBIGUOUS_EXIT_NOTE` (antes ℹ️) |
 
+### Painel (item 277, PR-B)
+
+| Emoji | Significado único | Onde |
+|---|---|---|
+| 📏 | Distância do preço até a linha do Range Filter — **não indica sinal próximo** | `ProximityBar`, filtro "Perto da linha do filtro" (antes 🔥/⚡/🎯 "MUITO PRÓXIMO") |
+| 🧩 | Regras alinhadas N/100 — não é chance de acerto (mesmo do Telegram) | `agreementLabel()` em `src/lib/ruleAgreement.js` (antes 🔥 Forte/⚡ Moderado/〰 Fraco) |
+| 📡 | Frescor do dado: atualizado há N min / atrasado / falha / desligado / sem leitura | `qualityBadge()`/`healthChip()` em `src/lib/assetDataQuality.js` (antes "LIVE" fixo) |
+
 ## Regra ao adicionar um estágio novo
 
 1. Adicione a entrada em `NOTIFICATION_STAGES` (`src/lib/notificationVocabulary.js`)

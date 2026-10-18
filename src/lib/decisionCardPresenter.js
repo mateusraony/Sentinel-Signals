@@ -9,7 +9,7 @@
  *  - Nada é recalculado: nem score, nem R, nem stop/TP, nem direção. Só
  *    escolhe o campo persistido e reaproveita os presenters existentes
  *    (`explainDecision`, `explainOperationDecision`, `rejectionCopy`,
- *    `classifySignal`, `stopPosture`, `assetHealthcheckReason`).
+ *    `classifySignal`, `stopPosture`, `assetDataQuality`).
  *  - Fail-closed: dado ausente vira `null`/UNKNOWN, nunca valor favorável;
  *    erro de carregamento nunca vira "sem operação"/"sem sinal".
  *  - `op.invalidates_if` (texto fixo, não reflete a regra real) e
@@ -21,7 +21,7 @@ import { isTerminalStatus } from './opTransition.js';
 import { classifySignal, isConfirmationEligible, phaseCopy, rejectionCopy, REASON_KIND, SIGNAL_PHASE } from './signalStatus.js';
 import { explainDecision, explainOperationDecision } from './decisionExplanation.js';
 import { usablePrice, stopPosture } from './priceProximity.js';
-import { assetHealthcheckReason } from './assetHealthcheck.js';
+import { assetDataQuality, qualityBadge } from './assetDataQuality.js';
 
 export const SCORE_NOTE = 'concordância das regras atuais — não é probabilidade de acerto.';
 
@@ -238,27 +238,18 @@ function buildInvalidation(subject, levels) {
   return { kind: 'not_defined', stop: null, text: 'Ainda não definido — a operação ainda não existe' };
 }
 
-const HEALTH_LABEL = Object.freeze({
-  persistent_error: 'Falha persistente de leitura',
-  silent: 'Sem atualização recente',
-});
-
 function buildQuality({ asset, subject, signalTf, stateByTf, now }) {
   const origin = subject.op ?? subject.signal ?? null;
-  const nowMs = Number.isFinite(now) ? now : null;
-  const reason = asset && nowMs !== null ? assetHealthcheckReason(asset, { now: nowMs }) : null;
-  const lastScanMs = toMs(asset?.last_scan_at);
-
-  let status = 'unknown';
-  if (asset?.is_active === false) status = 'inactive';
-  else if (reason === 'persistent_error') status = 'error';
-  else if (reason === 'silent') status = 'stale';
-  else if (nowMs !== null && lastScanMs !== null) status = 'ok';
+  // Item 277: o status de frescor é o mesmo do cartão e do chip de saúde.
+  const quality = assetDataQuality(asset, now);
+  const { status, ageMin } = quality;
 
   return {
     status,
-    label: reason ? HEALTH_LABEL[reason] : null,
-    ageMin: nowMs !== null && lastScanMs !== null ? Math.max(0, Math.floor((nowMs - lastScanMs) / 60000)) : null,
+    // Mesmo texto 📡 do cabeçalho (antes um segundo conjunto de rótulos); só
+    // quando há problema (atrasado ou falha, inclusive falha recente).
+    label: status === 'stale' || status === 'error' ? qualityBadge(quality).label : null,
+    ageMin,
     lastScanAt: asset?.last_scan_at ?? null,
     lastCandleTime: stateByTf.get(signalTf)?.last_candle_time ?? null,
     lastClose: usablePrice(stateByTf.get(signalTf)?.last_close),
