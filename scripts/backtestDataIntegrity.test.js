@@ -3,7 +3,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   timeframeToMs, validateCandleSeries, checkWindowCoverage, requiredTimeframes,
-  describeIssue, warmupStartMs, MAX_TOLERATED_GAP_MS, FUTURES_ARCHIVE_LAG_MS,
+  describeIssue, warmupStartMs, MAX_TOLERATED_GAP_MS, FUTURES_ARCHIVE_LAG_MS, repairTruncatedCloseTimes,
+  findTruncatedCandles,
 } from './backtestDataIntegrity.js';
 
 const H = 60 * 60 * 1000;
@@ -275,5 +276,98 @@ describe('describeIssue', () => {
     s.push({ ...s[2] });
     const [dup] = validateCandleSeries(s, meta);
     expect(describeIssue(dup)).toBe(`BTCUSDT 1h: candle duplicado (1x) — 1ª ocorrência em ${new Date(s[2].openTime).toISOString()}`);
+  });
+});
+
+// Item 281, 1ª execução do targets-test.yml: em 2021-08-13 a Binance parou e a
+// vela em andamento saiu com closeTime no instante da parada (antes do fim
+// normal), na mesma hora em todas as moedas — o validador recusava a janela W0.
+describe('repairTruncatedCloseTimes — vela fechada cedo por parada da exchange', () => {
+  const HALT = 50 * 60 * 1000; // parada 50 min depois da abertura da vela
+  const halted = (n, intervalMs, at, { gapAfter = 0 } = {}) => {
+    const s = series(n, intervalMs);
+    s[at] = { ...s[at], closeTime: s[at].openTime + HALT };
+    if (gapAfter) for (let i = at + 1; i < s.length; i++) s[i] = bar(s[i].openTime + gapAfter * intervalMs, intervalMs);
+    return s;
+  };
+  // Prova cruzada: outro timeframe da mesma moeda parou no mesmo instante.
+  const confirmed = { ...meta, isCorroborated: () => true };
+
+  it('reproduz a falha: sem conserto, a vela encurtada é ERRO no validador', () => {
+    expect(types(validateCandleSeries(halted(6, H, 2, { gapAfter: 2 }), meta))).toEqual(['error:close_time_mismatch', 'warning:gap']);
+  });
+
+  it('1h com parada confirmada + buraco: closeTime volta ao fim normal, sobra só AVISO', () => {
+    const raw = halted(6, H, 2, { gapAfter: 2 });
+    const { series: fixed, issues } = repairTruncatedCloseTimes(raw, confirmed);
+    expect(fixed[2].closeTime).toBe(raw[2].openTime + H - 1);
+    expect(raw[2].closeTime).toBe(raw[2].openTime + HALT); // não muta a entrada
+    expect(types(issues)).toEqual(['warning:close_time_truncated_repaired']);
+    expect(issues[0].samples[0]).toMatchObject({ closeTime: new Date(raw[2].openTime + HALT).toISOString() });
+    expect(types(validateCandleSeries(fixed, meta))).toEqual(['warning:gap']);
+  });
+
+  // Review do Codex (PR #509, P1): isolamento sozinho não prova parada.
+  it('sem prova cruzada NADA é consertado — vela parcial isolada continua ERRO', () => {
+    const raw = halted(6, H, 2, { gapAfter: 2 });
+    const { series: out, issues } = repairTruncatedCloseTimes(raw, meta);
+    expect(out).toBe(raw);
+    expect(issues).toEqual([]);
+    const refused = repairTruncatedCloseTimes(raw, { ...meta, isCorroborated: () => false });
+    expect(refused.series).toBe(raw);
+  });
+
+  it('4h sem buraco (a negociação voltou antes da vela seguinte) também é consertada com prova', () => {
+    const m4 = { symbol: 'BTCUSDT', timeframe: '4h' };
+    const { series: fixed, issues } = repairTruncatedCloseTimes(halted(6, 4 * H, 3), { ...m4, isCorroborated: () => true });
+    expect(types(issues)).toEqual(['warning:close_time_truncated_repaired']);
+    expect(validateCandleSeries(fixed, m4)).toEqual([]);
+  });
+
+  it('nunca adianta a vela: o closeTime consertado é >= o original (conservador, sem look-ahead)', () => {
+    const raw = halted(6, H, 2, { gapAfter: 1 });
+    const { series: fixed } = repairTruncatedCloseTimes(raw, confirmed);
+    fixed.forEach((c, i) => expect(c.closeTime).toBeGreaterThanOrEqual(raw[i].closeTime));
+  });
+
+  it('série limpa volta como a MESMA referência (dado que já passava não muda um byte)', () => {
+    const clean = series(10);
+    const { series: out, issues } = repairTruncatedCloseTimes(clean, confirmed);
+    expect(out).toBe(clean);
+    expect(issues).toEqual([]);
+  });
+
+  it('arquivo inteiro com closeTime curto (de outro intervalo) não é candidato — continua ERRO', () => {
+    const wrong = series(5).map((c) => ({ ...c, closeTime: c.openTime + 15 * 60 * 1000 - 1 }));
+    expect(findTruncatedCandles(wrong, '1h')).toEqual([]);
+    const { series: out } = repairTruncatedCloseTimes(wrong, confirmed);
+    expect(out).toBe(wrong);
+    expect(types(validateCandleSeries(out, meta))).toEqual(['error:close_time_mismatch']);
+  });
+
+  it('vela na ponta da série (sem uma das vizinhas) não é candidata', () => {
+    expect(findTruncatedCandles(halted(4, H, 0), '1h')).toEqual([]);
+    expect(findTruncatedCandles(halted(4, H, 3), '1h')).toEqual([]);
+    expect(findTruncatedCandles(halted(4, H, 1), '1h')).toEqual([1]);
+  });
+
+  it('vela mais LONGA que o intervalo nunca é tocada (aí sim olharia o futuro)', () => {
+    const s = series(5);
+    s[2] = { ...s[2], closeTime: s[2].openTime + 2 * H - 1 };
+    expect(repairTruncatedCloseTimes(s, confirmed).series).toBe(s);
+  });
+
+  it('vela seguinte começando dentro do intervalo não é tratada como parada', () => {
+    const s = series(3);
+    s[1] = { ...s[1], closeTime: s[1].openTime + HALT };
+    s.splice(2, 0, bar(s[1].openTime + 30 * 60 * 1000));
+    expect(repairTruncatedCloseTimes(s, confirmed).series).toBe(s);
+  });
+
+  it('describeIssue mostra o closeTime real da 1ª ocorrência (diagnóstico pelo log do runner)', () => {
+    const s = series(5);
+    s[2] = { ...s[2], closeTime: s[2].openTime + 2 * H - 1 };
+    const [issue] = validateCandleSeries(s, meta).filter((i) => i.type === 'close_time_mismatch');
+    expect(describeIssue(issue)).toContain(`closeTime ${new Date(s[2].closeTime).toISOString()}`);
   });
 });
