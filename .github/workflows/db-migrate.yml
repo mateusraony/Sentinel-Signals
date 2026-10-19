@@ -29,6 +29,9 @@ jobs:
       - name: Aplicar db/schema.sql
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Certificado da autoridade do banco (item 282): só precisa existir se o
+          # provedor assina com CA própria (Supabase). Vazio = comportamento de sempre.
+          DATABASE_SSL_CA: ${{ secrets.DATABASE_SSL_CA }}
         # set -o pipefail — mesmo achado de migrate-postgres.yml (2026-09-12):
         # sem isso, o job reporta "success" mesmo se node db/migrate.mjs
         # falhar (ex.: erro de SQL), porque o shell (só -e) avalia o código

@@ -18,6 +18,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
+import { pgConnectionConfig } from './pgSsl.mjs';
 
 const SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), 'schema.sql');
 
@@ -56,7 +57,7 @@ export async function applySchema(databaseUrl, schemaPath = SCHEMA_PATH) {
     throw new Error('DATABASE_URL não está setada — nada a fazer.');
   }
   const sql = await readFile(schemaPath, 'utf8');
-  const client = new pg.Client({ connectionString: databaseUrl });
+  const client = new pg.Client(pgConnectionConfig(databaseUrl));
   await client.connect();
   try {
     await client.query('BEGIN');

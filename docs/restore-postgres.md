@@ -87,3 +87,42 @@ precisam voltar. Se o projeto inteiro precisar ser recriado do zero:
    `scanner_locks`) também exista, vazia, prontas pro app escrever de novo.
 3. Atualize o secret `DATABASE_URL` (GitHub Actions e Render).
 4. Siga os passos 1-5 acima normalmente.
+
+## Trocar de provedor: restaurar num banco NOVO (Supabase) — item 282
+
+Quando o Neon gratuito estoura a cota, ele recusa tudo até o mês renovar. O caminho sem pagar é
+restaurar o último backup diário num Postgres novo e só então trocar o `DATABASE_URL`.
+**Perde-se o que foi gravado depois do backup usado** (operações virtuais, sinais, logs).
+Nada é apagado no Neon.
+
+### Você faz (nomes como aparecem na tela; o painel do Supabase pode mudar um rótulo de lugar)
+
+1. **Supabase → New project.** Nome `sentinel-signals`, escolha uma senha forte e guarde. Região nos
+   EUA (o Render e o GitHub rodam nos EUA; perto = mais rápido). Crie um projeto **só do Sentinel**:
+   não use o banco de outro app seu. O plano gratuito permite 2 projetos ativos.
+2. **Baixar o certificado:** Project Settings → Database → *SSL Configuration* → *Download certificate*.
+   Abra o arquivo `.crt` no bloco de notas e copie o texto inteiro (de `-----BEGIN CERTIFICATE-----` até
+   `-----END CERTIFICATE-----`). O certificado é público.
+3. **Copiar a conexão:** botão *Connect* no topo do projeto → aba *Connection string* → método
+   **Session pooler** → copie. Troque `[YOUR-PASSWORD]` pela senha e **acrescente `?sslmode=require` no
+   fim**. Tem que ser *Session pooler*: a "Direct connection" só funciona por IPv6, que o Render e o
+   GitHub não usam no plano gratuito.
+4. **GitHub → Settings → Secrets and variables → Actions → New repository secret**, dois secrets:
+   - `RESTORE_DATABASE_URL` = a conexão do passo 3;
+   - `DATABASE_SSL_CA` = o texto do certificado do passo 2.
+5. **GitHub → Actions → "Restaurar backup no banco novo (Sentinel Signals)" → Run workflow.** Deixe
+   "Apagar o que já existe…" desmarcado. No fim, abra o resumo do job: ele mostra qual backup foi usado,
+   as linhas por tabela e o tamanho do banco contra os 500 MB do plano gratuito.
+6. Só depois de conferir o resumo, troque a conexão viva:
+   - GitHub: edite o secret `DATABASE_URL` com a mesma conexão do passo 3 (Session pooler + `?sslmode=require`);
+   - Render → serviço `sentinel-signals-api` → Environment: `DATABASE_URL` com a mesma conexão e
+     `DATABASE_SSL_CA` com o certificado;
+   - espere o Render reiniciar e dispare o workflow "Scheduled scan" uma vez: o log deve mostrar a linha
+     "leitura do banco" e nenhum erro.
+
+### Por que é seguro
+
+- O workflow só escreve em `RESTORE_DATABASE_URL` e se recusa a rodar se for igual ao `DATABASE_URL` vivo.
+- Restaura só os dados, numa transação: se falhar, nada fica pela metade. O schema vem de `db/schema.sql`.
+- Se o certificado estiver errado, o passo "Conferir a conexão" falha cedo e diz isso.
+- Deu errado no meio e quer refazer: rode de novo marcando "Apagar o que já existe".

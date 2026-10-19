@@ -127,6 +127,8 @@ mantém o banco acordado 24 h (~180 CU-horas/mês a 0,25 CU), então a computaç
 plano gratuito. O cron avisa com "🛑 Banco de dados sem cota (Neon)" (`classifyFailure` → `db_quota`) e
 imprime "leitura do banco" no fim de cada scan (`getAndResetReadUsage`). Qual cota estourou só o painel
 do Neon diz — não chute. Detalhe e opções em `docs/known-risks.md` item 282.
+`DATABASE_SSL_CA` (PEM ou base64, `db/pgSsl.mjs`) dá ao driver a CA pública de provedores que assinam o TLS com
+CA própria (Supabase), mantendo a verificação ligada. Restaurar num banco novo: `restore-postgres.yml`.
 
 ## Regras ao mexer aqui
 

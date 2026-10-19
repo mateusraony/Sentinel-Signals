@@ -88,6 +88,10 @@ services:
       # secrets acima.
       - key: DATABASE_URL
         sync: false
+      # Certificado público da autoridade do banco (item 282) — só se o provedor
+      # assinar com CA própria (Supabase: arquivo .crt do painel, em texto ou base64).
+      - key: DATABASE_SSL_CA
+        sync: false
       - key: ALLOWED_ORIGIN
         value: https://sentinel-signals.onrender.com
       # Achado P0 do sentinel-security-review (2026-09-14): requireAuth

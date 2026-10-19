@@ -20,6 +20,7 @@
 // de verdade; `src/api/entitiesFirestoreLegacy.js` preserva a versão
 // Firestore só como referência de rollback.
 import pg from 'pg';
+import { pgConnectionConfig } from './pgSsl.mjs';
 import {
   canApplyTransition,
   clampMonotonicStop,
@@ -114,9 +115,8 @@ const POOL_TIMEOUTS = Object.freeze({
 // `prefer`/`require`/`verify-ca` viram alias de `verify-full` hoje, mas
 // deixariam de ser em versões futuras do pacote `pg`) — não muda
 // comportamento de quem não pediu SSL nenhum.
-function sslOptionsFor(databaseUrl) {
-  return databaseUrl.includes('sslmode=') ? { rejectUnauthorized: true } : undefined;
-}
+// A regra (e o `DATABASE_SSL_CA` para provedores com CA própria, item 282) vive
+// em db/pgSsl.mjs, compartilhada com db/migrate.mjs.
 
 // Lazy + reset-able (não um singleton fixo no top-level): os testes de
 // integração trocam TEST_DATABASE_URL por execução; um pool cacheado cedo
@@ -127,8 +127,7 @@ export function getPool(databaseUrl = process.env.DATABASE_URL) {
   }
   if (!pool || pool.__connectionString !== databaseUrl) {
     pool = new pg.Pool({
-      connectionString: databaseUrl,
-      ssl: sslOptionsFor(databaseUrl),
+      ...pgConnectionConfig(databaseUrl),
       ...POOL_TIMEOUTS,
     });
     pool.__connectionString = databaseUrl;

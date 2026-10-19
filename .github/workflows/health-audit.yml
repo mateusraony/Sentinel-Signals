@@ -64,6 +64,9 @@ jobs:
           # health-audit.mjs lê o backend AO VIVO (scripts/adminEntities.js,
           # agora Postgres) para os dados de negócio.
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Certificado da autoridade do banco (item 282): só precisa existir se o
+          # provedor assina com CA própria (Supabase). Vazio = comportamento de sempre.
+          DATABASE_SSL_CA: ${{ secrets.DATABASE_SSL_CA }}
           # Item 179 — role Postgres com só GRANT SELECT, criada manualmente
           # no Neon (esta sessão não alcança o Neon). Se ausente, o script
           # cai de volta pra DATABASE_URL acima (read-write) e avisa alto —

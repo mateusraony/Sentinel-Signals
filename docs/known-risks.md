@@ -33420,3 +33420,36 @@ armazenamento, e a sessão não alcança o Neon. O usuário não conseguiu ver o
   restaura do último backup diário), ou espaçar o scan para ~15 min. Eu tinha dito "US$5 a 10" para o
   Neon Launch sem fonte; estava errado.
 - **Armazenamento:** poda de `system_logs`.
+
+**Adendo (2026-10-19, depois do #512): caminho escolhido e o que foi preparado.**
+- **Contexto:** o painel passou a "carregar para sempre" (o servidor também consulta o Neon, que recusa
+  tudo). Os dados não foram perdidos: seguem no Neon, bloqueados até a cota renovar, e há backup diário.
+  O último backup bom é o de 2026-10-18 ~08:17 UTC; o de 19/10 falhou pela mesma cota.
+- **Google Drive como banco ao vivo: descartado.** O motor depende de atomicidade (compare-and-set do
+  status da operação, lock do scan, 1 operação ativa por ativo) e o Drive não tem transações (pelo que
+  sei; não confirmei na documentação oficial). Serve como cópia extra do backup, não como banco.
+- **Escolha do usuário:** migrar para Supabase gratuito (conta dele já existe; uso atual 0,156/0,5 GB de
+  banco e 0,042/5 GB de saída, de outro projeto).
+  - **Fontes de terceiros:** 500 MB de banco por projeto, 5 GB de saída por mês, 2 projetos ativos,
+    pausa após 1 semana sem uso; não achei teto de horas de computação.
+  - **Tamanho do nosso banco: desconhecido.** O `pg_dump` de 18/10 levou ~6 s. O relatório da
+    restauração mostra o tamanho real contra os 500 MB.
+- **Preparado (sem ligar nada):**
+  - **TLS:** `db/pgSsl.mjs` aceita a CA pública do provedor pela env `DATABASE_SSL_CA` e mantém a
+    verificação do certificado ligada. O Supabase assina com CA própria e o Node recusaria com
+    "self-signed certificate in certificate chain" (relatos de terceiros; não testei contra o Supabase
+    real). Sem a env, o comportamento é o de antes.
+  - **Restauração:** `.github/workflows/restore-postgres.yml` (manual, uma caixa opcional). Restaura o
+    backup mais recente só nos dados, numa transação, em `RESTORE_DATABASE_URL` (separado do
+    `DATABASE_URL` vivo, com recusa se forem iguais), e imprime linhas por tabela e tamanho do banco.
+  - **Conexão:** `scan.yml`, `backfill.yml`, `health-audit.yml`, `db-migrate.yml` e o `render.yaml`
+    passam `DATABASE_SSL_CA`. Vazio = nada muda.
+  - **Passo a passo para o usuário:** `docs/restore-postgres.md`, seção "Trocar de provedor".
+- **Ainda não feito (de propósito):**
+  - **Cortes de leitura da transferência.** Medir primeiro com a linha "leitura do banco" que o scan
+    agora imprime; os polls do painel já têm regra e tripwire próprios (`src/lib/pollingIntervals.js`),
+    e o bloco "Desempenho" montado mas escondido é decisão registrada no `Dashboard.jsx`.
+  - **Poda de `system_logs`** (maior crescimento; só com ok do usuário, porque apaga histórico).
+  - **Cópia diária do backup no Google Drive** (pedida). Uma conta de serviço do Google não tem cota
+    própria e costuma receber `storageQuotaExceeded` ao subir para um "Meu Drive" pessoal (relato
+    comum, a confirmar); o caminho provável é OAuth da própria conta. PR separado, depois do sistema no ar.
