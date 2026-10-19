@@ -162,7 +162,7 @@ Skills em `.claude/skills/`, regras em `.claude/rules/` (carregam pelos
   265: produção igual, ajuste de entrada só com teste pré-registrado. O valor
   medido é controle de risco (trailing pré-TP1, itens 132/263), não edge. O
   laboratório de "smart money" (266), a Fibonacci 15m (267), a tendência semanal
-  (268) e o tamanho pela volatilidade (269) não passaram na régua pré-registrada.
+  (268), o tamanho pela volatilidade (269) e o alvo estrutural Fibonacci/topo 4h (281) não passaram na régua pré-registrada.
   **Exceção (itens 271/272):** a regra diária comprado/fora "EMA10 > EMA21 e Supertrend
   (10,3) de alta", testada isolada (fora do motor), **passou** na carteira de 6 moedas
   e **replicou** em 13 moedas novas (BTC sozinho não passa); como filtro das entradas do
