@@ -118,6 +118,22 @@ describe('tryAcquireScanLock — retry curto antes do fail-open', () => {
   });
 });
 
+describe('tryAcquireScanLock — banco sem cota (Neon, item 282)', () => {
+  it('não alerta "lock degradado": o cron tem alerta próprio e este repetiria o sintoma a cada passada', async () => {
+    backend.locks.acquireScanLock = vi.fn().mockRejectedValue(
+      Object.assign(new Error('Your account or project has exceeded the quota. Upgrade your plan to increase limits.'), { code: '53000' }),
+    );
+
+    const promise = priceCheckActiveOps();
+    await vi.advanceTimersByTimeAsync(5000);
+    await promise;
+
+    // Fail-open e log continuam (o scan não pode ficar mudo) — só o Telegram de lock não.
+    expect(logError).toHaveBeenCalledWith('scanner', expect.stringContaining('Falha ao adquirir lock'), expect.any(Object));
+    expect(notifyLockDegraded).not.toHaveBeenCalled();
+  });
+});
+
 describe('tryReleaseScanLock — retry curto, sem alerta', () => {
   it('esgota o retry e loga WARN (não ERROR), sem notificar Telegram', async () => {
     backend.locks.releaseScanLock = vi.fn().mockRejectedValue(new Error('Failed to fetch'));

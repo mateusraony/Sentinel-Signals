@@ -119,6 +119,15 @@ final do schema contra o projeto Neon de produção é um passo manual do
 usuário (ou de um `workflow_dispatch` que rode no runner do GitHub, que
 tem rede irrestrita).
 
+## Cota do Neon (plano gratuito) — item 282
+
+Cota estourada = o Neon recusa TODA consulta (SQLSTATE `53000`, "exceeded the quota"), sem dizer qual
+(computação 100 CU-horas/mês, transferência 5 GB/mês ou armazenamento 0,5 GB). O scan a cada 5 min
+mantém o banco acordado 24 h (~180 CU-horas/mês a 0,25 CU), então a computação sozinha já estoura o
+plano gratuito. O cron avisa com "🛑 Banco de dados sem cota (Neon)" (`classifyFailure` → `db_quota`) e
+imprime "leitura do banco" no fim de cada scan (`getAndResetReadUsage`). Qual cota estourou só o painel
+do Neon diz — não chute. Detalhe e opções em `docs/known-risks.md` item 282.
+
 ## Regras ao mexer aqui
 
 - Nunca commitar uma `DATABASE_URL`/connection string real — só o nome da

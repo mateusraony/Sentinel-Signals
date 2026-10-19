@@ -141,6 +141,8 @@ async function checar(titulo, fn) {
     const { kind } = classifyFailure(e.message);
     const explicacao = {
       quota: '**Cota do Firestore esgotada.** Este é um achado real, não um defeito do relatório.',
+      db_quota: '**Cota do banco (Neon) esgotada.** Achado real: o banco recusa toda consulta até a cota renovar. '
+        + 'O painel do Neon diz qual cota (computação, transferência ou armazenamento) e quando renova.',
       missing_index: '**Falta um índice composto no Firestore** — problema de consulta, não de dado. '
         + 'Nenhuma consulta desta auditoria deveria precisar de índice (ver o cabeçalho do arquivo): '
         + 'se apareceu, alguém combinou filtro com ordenação em campo diferente.',

@@ -7,9 +7,10 @@ import { assetHealthcheckReason, shouldAlertStale, shouldClearStaleAlert } from 
 import {
   isTelegramConfigured, notifyAssetStale, notifyStepTimeout,
   notifyFirestoreQuotaExhausted, notifyFirestoreQuotaRecovered,
+  notifyDatabaseQuotaExhausted, notifyDatabaseQuotaRecovered,
 } from './adminTelegram.js';
 import { withTimeout, forceExit } from './scanTimeout.mjs';
-import { classifyFailure, isFirestoreQuotaExhausted } from './failureClassification.mjs';
+import { classifyFailure, isFirestoreQuotaExhausted, isDatabaseQuotaExhausted } from './failureClassification.mjs';
 import { pathToFileURL } from 'node:url';
 
 // docs/known-risks.md item 142/191 — uma passada limpa termina em ~15-18s.
@@ -44,6 +45,8 @@ const SCAN_STEP_TIMEOUT_MS = 200 * 1000;
 // avisar "voltou ao normal" no meio de uma queda parcial seria pior que não
 // avisar nada.
 let sawQuotaFailure = false;
+// Idem para a cota do BANCO (Neon, item 282): episódio próprio, aviso de volta próprio.
+let sawDbQuotaFailure = false;
 
 /**
  * Avisa o usuário do que REALMENTE aconteceu (docs/known-risks.md item 162).
@@ -65,6 +68,13 @@ async function alertOnFailure(message) {
     );
     return;
   }
+  if (kind === 'db_quota') {
+    sawDbQuotaFailure = true;
+    await notifyDatabaseQuotaExhausted(message).catch((e) =>
+      console.warn('[scan] Falha ao notificar cota do banco (não crítico):', e.message)
+    );
+    return;
+  }
   if (kind === 'timeout') {
     await notifyStepTimeout(step, ms).catch((e) =>
       console.warn('[scan] Falha ao notificar etapa travada (não crítico):', e.message)
@@ -81,10 +91,17 @@ async function alertOnFailure(message) {
  * no RTDB e nenhuma mensagem: só envia se havia episódio aberto.
  */
 async function announceQuotaRecoveryIfClean() {
-  if (sawQuotaFailure || !isTelegramConfigured()) return;
-  await notifyFirestoreQuotaRecovered().catch((e) =>
-    console.warn('[scan] Falha ao notificar recuperação de cota (não crítico):', e.message)
-  );
+  if (!isTelegramConfigured()) return;
+  if (!sawQuotaFailure) {
+    await notifyFirestoreQuotaRecovered().catch((e) =>
+      console.warn('[scan] Falha ao notificar recuperação de cota (não crítico):', e.message)
+    );
+  }
+  if (!sawDbQuotaFailure) {
+    await notifyDatabaseQuotaRecovered().catch((e) =>
+      console.warn('[scan] Falha ao notificar recuperação do banco (não crítico):', e.message)
+    );
+  }
 }
 
 // Per-asset dead-man's-switch (docs/known-risks.md item 12): the
@@ -157,11 +174,15 @@ async function main() {
   failed.forEach((r) => console.error(`[scan]   ${r.symbol}: ${r.error}`));
   const quotaFailure = failed.find((r) => isFirestoreQuotaExhausted(r.error));
   if (quotaFailure) await alertOnFailure(quotaFailure.error);
+  const dbQuotaFailure = failed.find((r) => isDatabaseQuotaExhausted(r.error));
+  if (dbQuotaFailure) await alertOnFailure(dbQuotaFailure.error);
 
   const { errors: priceCheckErrors } = await withTimeout(priceCheckActiveOps(), SCAN_STEP_TIMEOUT_MS, 'priceCheckActiveOps');
   console.log('[scan] priceCheckActiveOps done');
   const priceCheckQuotaFailure = priceCheckErrors.find((e) => isFirestoreQuotaExhausted(e.error));
   if (priceCheckQuotaFailure) await alertOnFailure(priceCheckQuotaFailure.error);
+  const priceCheckDbQuotaFailure = priceCheckErrors.find((e) => isDatabaseQuotaExhausted(e.error));
+  if (priceCheckDbQuotaFailure) await alertOnFailure(priceCheckDbQuotaFailure.error);
 
   try {
     await withTimeout(checkAssetHealthchecks(assets), SCAN_STEP_TIMEOUT_MS, 'checkAssetHealthchecks');
@@ -171,6 +192,12 @@ async function main() {
   }
 
   console.log(`[scan] finished in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  // Item 282: quanto o scan leu do banco nesta passada (ordem de grandeza da
+  // transferência de rede do Neon). `backend.usage` só existe no adaptador Postgres.
+  const readUsage = backend.usage?.getAndResetReadUsage?.();
+  if (readUsage) {
+    console.log(`[scan] leitura do banco: ${readUsage.queries} consulta(s), ${readUsage.rows} linha(s), ~${(readUsage.bytes / 1024).toFixed(1)} KB`);
+  }
   await announceQuotaRecoveryIfClean();
   await pingHealthcheck();
 

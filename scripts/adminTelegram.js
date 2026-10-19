@@ -317,6 +317,9 @@ const QUOTA_MARKER_DOC = 'firestoreQuota';
 // etapa travada zerar o episódio de cota (e vice-versa), fazendo o aviso de
 // "voltou ao normal" mentir.
 const STEP_TIMEOUT_MARKER_DOC = 'stepTimeout';
+// Marcador PRÓPRIO do alerta de cota do BANCO (Neon, item 282) — outro episódio,
+// outra causa, outro texto: nunca compartilha o de cota do Firestore.
+const DB_QUOTA_MARKER_DOC = 'dbQuota';
 
 /**
  * Item 175 addendum (2026-09-13) — desde a Fase 10 (`adminEntities.js` virou
@@ -487,6 +490,85 @@ export async function notifyFirestoreQuotaRecovered() {
       await writeQuotaMarker({ ...marker, alert_active: false });
     } catch (e) {
       console.warn('[adminTelegram] Falha ao limpar marcador de cota (não crítico):', e.message);
+    }
+  }
+  return delivered;
+}
+
+/**
+ * Cota do BANCO (Neon) esgotada — alerta próprio, item 282.
+ *
+ * O Neon recusa toda consulta quando o projeto estoura uma cota do plano
+ * gratuito, e a mensagem é igual para computação, transferência de rede e
+ * armazenamento. O texto NÃO chuta qual foi: manda olhar o painel do Neon.
+ *
+ * Antes deste alerta o usuário só via "Lock do scanner degradado" a CADA
+ * passada (~5 min): o cooldown daquele alerta é em memória e o cron é um
+ * processo novo por passada. Aqui o cooldown vive num marcador (1 h), no mesmo
+ * lugar do alerta de cota do Firestore, e o fim do episódio é anunciado.
+ */
+export async function notifyDatabaseQuotaExhausted(errMessage) {
+  let marker = {};
+  try {
+    marker = await readAlertMarker(DB_QUOTA_MARKER_DOC);
+  } catch (e) {
+    console.warn('[adminTelegram] Falha ao checar dedup de cota do banco, alertando mesmo assim:', e.message);
+  }
+  if (!shouldAlertQuota(marker.last_alert_at)) return false;
+
+  const delivered = await send(
+    `🛑 <b>Banco de dados sem cota (Neon)</b>\n\n` +
+    `O scan não consegue ler nem gravar no banco. Enquanto durar, nenhuma ` +
+    `operação nova abre e as abertas ficam sem acompanhamento.\n\n` +
+    `📝 ${escaparHtml(errMessage || 'Your account or project has exceeded the quota.')}\n\n` +
+    `👉 O que fazer: abra console.neon.tech, entre no projeto e veja em Billing/Usage ` +
+    `qual cota estourou (Compute, Network transfer ou Storage) e a data de renovação.\n\n` +
+    `<i>⚡ Sentinel Signals — próximo aviso só daqui a 1 hora; aviso quando voltar ao normal</i>`
+  );
+  if (delivered) {
+    const nowIso = new Date().toISOString();
+    try {
+      await writeAlertMarker(DB_QUOTA_MARKER_DOC, {
+        last_alert_at: nowIso,
+        alert_active: true,
+        alert_started_at: marker.alert_active && marker.alert_started_at ? marker.alert_started_at : nowIso,
+      });
+    } catch (e) {
+      console.warn('[adminTelegram] Falha ao gravar dedup de cota do banco (não crítico):', e.message);
+    }
+  }
+  return delivered;
+}
+
+/**
+ * Avisa que o banco voltou (item 282). Chamada em TODA passada limpa, mas só
+ * envia quando havia episódio aberto; nunca lança (mesmo contrato do aviso de
+ * recuperação do Firestore, item 160).
+ */
+export async function notifyDatabaseQuotaRecovered() {
+  let marker;
+  try {
+    marker = await readAlertMarker(DB_QUOTA_MARKER_DOC);
+  } catch (e) {
+    console.warn('[adminTelegram] Falha ao checar recuperação do banco (não crítico):', e.message);
+    return false;
+  }
+  if (!marker.alert_active) return false;
+
+  const startedAt = marker.alert_started_at ? new Date(marker.alert_started_at).getTime() : null;
+  const duracao = Number.isFinite(startedAt) ? formatBackfillLag(Date.now() - startedAt) : null;
+
+  const delivered = await send(
+    `✅ <b>Banco de dados voltou (Neon)</b>\n\n` +
+    `O scan voltou a ler e gravar${duracao ? ` — ficou ${duracao} sem conseguir` : ''}. ` +
+    `Operações voltam a ser abertas e acompanhadas normalmente.\n\n` +
+    `<i>⚡ Sentinel Signals</i>`
+  );
+  if (delivered) {
+    try {
+      await writeAlertMarker(DB_QUOTA_MARKER_DOC, { ...marker, alert_active: false });
+    } catch (e) {
+      console.warn('[adminTelegram] Falha ao limpar marcador do banco (não crítico):', e.message);
     }
   }
   return delivered;

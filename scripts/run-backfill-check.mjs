@@ -27,7 +27,7 @@ import { backend, getAndResetOpCounts } from '@/api/entities';
 import { getPineConfig } from './adminPineConfig.js';
 import { setBackfillWindow, hasFetchFailure } from './backfillMarketDataProvider.js';
 import {
-  notifyTradeCreated, notifyFirestoreQuotaExhausted, notifyStepTimeout, isTelegramConfigured,
+  notifyTradeCreated, notifyFirestoreQuotaExhausted, notifyDatabaseQuotaExhausted, notifyStepTimeout, isTelegramConfigured,
 } from './adminTelegram.js';
 import { backfillLookbackWindow, buildBackfillTags, formatBackfillLag } from '../src/lib/backfillDetection.js';
 import { withTimeout, forceExit } from './scanTimeout.mjs';
@@ -71,6 +71,13 @@ async function alertOnFailure(message) {
   if (kind === 'quota') {
     await notifyFirestoreQuotaExhausted(message).catch((e) =>
       console.warn('[backfill] Falha ao notificar cota do Firestore (não crítico):', e.message)
+    );
+    return;
+  }
+  if (kind === 'db_quota') {
+    // Mesmo marcador do scan ao vivo (item 282): não spamma se ele já alertou na última hora.
+    await notifyDatabaseQuotaExhausted(message).catch((e) =>
+      console.warn('[backfill] Falha ao notificar cota do banco (não crítico):', e.message)
     );
     return;
   }

@@ -29,6 +29,13 @@
  * Módulo puro: sem I/O, sem dependência de Firestore. Só lê uma string.
  */
 
+import { isDatabaseQuotaExhausted } from '../src/lib/dbQuotaError.js';
+
+// Cota do Neon (Postgres) esgotada — item 282. A regra vive em src/lib/dbQuotaError.js
+// (src/lib/scanner.js também precisa dela); aqui só se reexporta para os pontos de
+// entrada, que classificam falha SÓ por este módulo (failureClassificationTripwire).
+export { isDatabaseQuotaExhausted };
+
 /** Assinatura REAL do erro do Firestore, não a suposição de quem deu timeout. */
 const REAL_QUOTA_RE = /Quota exceeded|\b\d+\s+RESOURCE_EXHAUSTED\b/i;
 
@@ -90,13 +97,19 @@ export function isMissingIndex(message) {
  * todas cobertas por `firestore.indexes.json`, então um índice faltando ali
  * seria bug de deploy, não condição de runtime a alertar.
  *
- * @returns {{ kind: 'quota'|'timeout'|'missing_index'|'other', step: string|null, ms: number|null }}
+ * `db_quota` (item 282) é a cota do BANCO Neon, distinta de `quota` (Firestore):
+ * os pontos de entrada a anunciam com alerta próprio.
+ *
+ * @returns {{ kind: 'quota'|'db_quota'|'timeout'|'missing_index'|'other', step: string|null, ms: number|null }}
  */
 export function classifyFailure(message) {
   // Cota real vence: um timeout CAUSADO por cota traz a assinatura de
   // verdade junto e deve ser tratado como cota.
   if (isFirestoreQuotaExhausted(message)) {
     return { kind: 'quota', step: parseStepTimeout(message)?.step ?? null, ms: null };
+  }
+  if (isDatabaseQuotaExhausted(message)) {
+    return { kind: 'db_quota', step: parseStepTimeout(message)?.step ?? null, ms: null };
   }
   const timeout = parseStepTimeout(message);
   if (timeout) return { kind: 'timeout', step: timeout.step, ms: timeout.ms };

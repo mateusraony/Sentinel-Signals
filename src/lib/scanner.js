@@ -49,6 +49,7 @@ import {
 } from './decisionSnapshot';
 import { logInfo, logWarn, logError } from './logger';
 import { classifyError } from './errorClass';
+import { isDatabaseQuotaExhausted } from './dbQuotaError';
 import { backend } from '@/api/entities';
 import {
   isTelegramConfigured,
@@ -296,6 +297,11 @@ const LOCK_ALERT_COOLDOWN_MS = 30 * 60 * 1000;
 let lastLockAlertAt = 0;
 
 async function maybeAlertLockDegraded(lockName, errMessage) {
+  // Cota do BANCO esgotada (Neon, item 282): o lock falhou porque o banco inteiro
+  // recusa consultas, e o cron tem alerta próprio para isso (cooldown de 1 h num
+  // marcador). Este alerta em memória repetiria o mesmo sintoma a cada passada
+  // (cada passada do cron é um processo novo, então o cooldown abaixo não vale).
+  if (isDatabaseQuotaExhausted(errMessage)) return;
   if (Date.now() - lastLockAlertAt < LOCK_ALERT_COOLDOWN_MS) return;
   lastLockAlertAt = Date.now();
   try {
