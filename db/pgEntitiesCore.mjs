@@ -63,6 +63,33 @@ export const ENTITY_TABLES = Object.freeze({
   TelegramFilters: { table: 'telegram_filters', columns: ['updated_at'] },
 });
 
+// Medição de leitura por processo (docs/known-risks.md item 282): o Neon gratuito
+// limita a transferência de rede (5 GB/mês) e o log do erro de cota não diz qual
+// cota estourou. Conta consultas de LEITURA genéricas (filter/list/get) e estima o
+// volume pelo tamanho do JSON de cada linha (≈ bytes do jsonb na rede; subestima o
+// protocolo, serve para ordem de grandeza e para comparar antes/depois). Só
+// aritmética em memória, nenhuma consulta extra. O scan imprime o total no fim.
+let readUsage = { queries: 0, rows: 0, bytes: 0 };
+
+export function estimateRowsBytes(rows) {
+  let bytes = 0;
+  for (const row of rows) bytes += JSON.stringify(row?.data ?? null).length + String(row?.id ?? '').length;
+  return bytes;
+}
+
+function trackRead(rows) {
+  readUsage.queries += 1;
+  readUsage.rows += rows.length;
+  readUsage.bytes += estimateRowsBytes(rows);
+}
+
+/** Devolve o uso de leitura acumulado e zera. Sempre existe, mesmo sem leituras. */
+export function getAndResetReadUsage() {
+  const usage = readUsage;
+  readUsage = { queries: 0, rows: 0, bytes: 0 };
+  return usage;
+}
+
 const TERMINAL_STATUSES_SQL = "('STOP_HIT','TP2_HIT','INVALIDATED','CLOSED')";
 
 let pool = null;
@@ -209,6 +236,7 @@ function createEntity(entityName) {
       + buildOrderClause(columns, sort)
       + (limitCount ? ` LIMIT ${Number(limitCount)}` : '');
     const { rows } = await getPool().query(sql, params);
+    trackRead(rows);
     return rows.map(docFromRow);
   }
 
@@ -218,6 +246,7 @@ function createEntity(entityName) {
 
   async function get(id) {
     const { rows } = await getPool().query(`SELECT id, data FROM ${table} WHERE id = $1`, [id]);
+    trackRead(rows);
     return rows[0] ? docFromRow(rows[0]) : null;
   }
 
@@ -716,4 +745,5 @@ export const backend = {
   tradeOps: { createTradeOpIfNoneActive, clearActiveOp, transitionTradeOp },
   assetStates: { upsert: upsertAssetState },
   quota: { getAndResetOpCounts },
+  usage: { getAndResetReadUsage },
 };

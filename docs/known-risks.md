@@ -33353,3 +33353,70 @@ workflows dos itens 264–272; custo de minutos de runner, não de resultado).
   (`docs/backtest-trial-registry.json`, família `targets-2026-10`, como `seed`: o relatório completo
   está no artifact `relatorios-targets-test`, que a sessão não alcança; expectância do braço =
   controle + ΔR, sem IC próprio).
+
+## 282. Banco Neon sem cota: o sistema ficou cego e o aviso dizia "lock degradado" (2026-10-19)
+
+**O que o usuário viu:** avisos no Telegram "⚠️ Lock do scanner degradado … Your account or project
+has exceeded the quota. Upgrade your plan to increase limits."
+
+**Fatos (logs do `scan.yml`, run 39233620754 e todos os anteriores desde pelo menos 09:20 UTC):**
+- Toda passada do scan falha com `error: Your account or project has exceeded the quota` (SQLSTATE
+  `53000`), já na primeira leitura (`Object.filter` em `scanAllAssets`). Com o Neon recusando tudo, o
+  sistema não escaneia e não acompanha as operações (que são virtuais).
+- O alerta que chegava era o de lock, repetido a cada passada: o cooldown dele é em memória e o cron
+  é um processo novo por passada (`LOCK_ALERT_COOLDOWN_MS`, `src/lib/scanner.js`). O rodapé "próximo
+  aviso só depois de um tempo" não valia para o cron. E o texto não dizia que o banco inteiro estava sem
+  cota. O erro caía em `classifyFailure` como `other`, então nenhum alerta de cota saía.
+
+**O que NÃO se sabe:** qual cota estourou. O texto é o mesmo para computação, transferência de rede e
+armazenamento, e a sessão não alcança o Neon. O usuário não conseguiu ver o painel.
+
+**Limites do plano gratuito do Neon (fontes de terceiros, a confirmar em neon.com/pricing):**
+- 100 CU-horas de computação por projeto por mês;
+- 5 GB de transferência de rede pública por mês;
+- 0,5 GB de armazenamento;
+- o banco dorme após 5 min sem uso, e isso não dá para desligar.
+- Estourou uma cota, o Neon recusa tudo até o mês renovar.
+
+**Duas hipóteses que cabem nos números (nenhuma confirmada):**
+- **Computação:** o scan a cada 5 min (288 por dia mais o cron horário) impede o banco de dormir.
+  Ligado 24 h a 0,25 CU são ~180 CU-horas por mês, contra 100 de cota: acabaria em ~17 dias.
+  **Aritmética, não bug:** no plano gratuito não dá para manter o banco ligado 24 h. Só caberia com scan
+  espaçado (~15 min, ~72 CU-horas), o que perde oportunidade.
+- **Transferência** (levantamento estático do código, sem medição real; tamanhos de linha assumidos):
+  - **Cron:** cerca de 110 KB por passada, ~1 GB por mês no caso típico (11 ativos); no limite
+    superior, ~600 KB por passada, ~5,6 GB por mês.
+  - **Painel aberto:** é o maior risco. Uma aba visível custa ~27 MB por hora, e o `TradeOperation`
+    com limites 100 e 500 chega a ~130 MB por hora. A 2 h por dia são ~1,6 GB por mês, e a 8 h por dia
+    ~6,5 GB.
+  - **Bloco de desempenho do Dashboard:** é só escondido por CSS (`Dashboard.jsx:484`, classe
+    `hidden`), então continua montado e consultando (500 operações e 300 sinais).
+  - **Backup:** o `pg_dump` diário puxa as tabelas inteiras (palpite de 0,3 a 0,9 GB por mês, cresce,
+    e nada poda `system_logs`).
+
+**O que mudou (código, sem mexer na estratégia):**
+- `src/lib/dbQuotaError.js` reconhece a cota do Neon; `classifyFailure` ganhou `db_quota`
+  (`scripts/failureClassification.mjs`), distinta de `quota` (Firestore).
+- Alerta próprio "🛑 Banco de dados sem cota (Neon)" (`notifyDatabaseQuotaExhausted`,
+  `scripts/adminTelegram.js`): manda olhar o painel do Neon (Compute / Network transfer / Storage e a data
+  de renovação), com cooldown de 1 h num marcador (`systemAlerts/dbQuota`), e aviso "✅ voltou"
+  quando uma passada limpa fecha o episódio. Ligado no scan, no backfill e na auditoria de saúde.
+- `maybeAlertLockDegraded` não alerta quando o erro é cota do banco (o alerta acima cobre; os logs de
+  fail-open continuam).
+- Medição: o scan imprime no fim "leitura do banco: N consulta(s), N linha(s), ~X KB"
+  (`getAndResetReadUsage`, `db/pgEntitiesCore.mjs`). Estimativa do tamanho do JSON, serve para ordem de
+  grandeza. Com ela, a transferência real por dia deixa de ser chute.
+
+**Pendente (decisão depende do painel do Neon):**
+- **Transferência:** reduzir leitura sem mudar a cadência. Candidatas do levantamento, nenhuma feita:
+  1. renderizar o bloco de desempenho só quando aberto (`Dashboard.jsx:484-499`);
+  2. polls do painel de 60 s para 120–300 s;
+  3. cache de GET no `server/routes/entities.js` por 30–60 s e teto de `limit`;
+  4. `pg_dump` sem os dados de `system_logs` e retenção de 30 dias;
+  5. pré-carregar `AssetState` numa consulta só (33 → 1 consulta; mesmos bytes);
+  6. projeção de colunas no `filter`/`get` (`SELECT id, data`).
+- **Computação:** as saídas são pagar o Neon Launch (~US$19 por mês com o banco ligado 24 h a 0,25 CU,
+  US$0,106 por CU-hora, sem mínimo), trocar para outro Postgres gratuito sem teto de horas (Supabase;
+  restaura do último backup diário), ou espaçar o scan para ~15 min. Eu tinha dito "US$5 a 10" para o
+  Neon Launch sem fonte; estava errado.
+- **Armazenamento:** poda de `system_logs`.

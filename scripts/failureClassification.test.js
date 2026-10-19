@@ -67,6 +67,17 @@ describe('classifyFailure', () => {
   it('qualquer outra falha não vira nem cota nem timeout', () => {
     expect(classifyFailure('Failed to fetch')).toEqual({ kind: 'other', step: null, ms: null });
   });
+
+  // Item 282: o texto real do log do scan de 2026-10-19 (SQLSTATE 53000) caía em 'other'
+  // e o único aviso que chegava ao usuário era "Lock do scanner degradado", a cada passada.
+  it('cota do BANCO (Neon) é db_quota — distinta da cota do Firestore', () => {
+    expect(classifyFailure('error: Your account or project has exceeded the quota. Upgrade your plan to increase limits.'))
+      .toEqual({ kind: 'db_quota', step: null, ms: null });
+    expect(classifyFailure('Timeout: scanAllAssets não retornou em 200000ms\nCaused by: Your project has exceeded the data transfer quota'))
+      .toEqual({ kind: 'db_quota', step: 'scanAllAssets', ms: null });
+    // E a do Firestore continua sendo 'quota'.
+    expect(classifyFailure('8 RESOURCE_EXHAUSTED: Quota exceeded.').kind).toBe('quota');
+  });
 });
 
 describe('describeStep', () => {
