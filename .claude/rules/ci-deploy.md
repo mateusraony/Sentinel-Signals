@@ -269,6 +269,16 @@ paths:
     procedência `--target-arm`, Bonferroni m=6) e publica `resumo-targets-test`.
   - **Sem secret.**
 
+- `restore-postgres.yml` — disparo **manual** (`workflow_dispatch`, uma caixa opcional "Apagar o que já
+  existe…"): restaura o backup diário mais recente (branch `backups-postgres` do repo privado de backups,
+  via `BACKUP_DEPLOY_KEY`) num banco NOVO (`docs/known-risks.md` item 282).
+  - **Destino:** sempre o secret `RESTORE_DATABASE_URL`, nunca o `DATABASE_URL` vivo; recusa rodar se
+    forem iguais.
+  - **Como restaura:** só os dados (`pg_restore --data-only --single-transaction`), com o schema de
+    `db/schema.sql`. Termina com linhas por tabela e tamanho do banco no Job Summary.
+  - **TLS:** `DATABASE_SSL_CA` (CA pública do provedor) quando ele assina com CA própria, como o Supabase.
+  - **Procedimento completo:** `docs/restore-postgres.md`.
+
 - `daily-rule-report.yml` — relatório diário da regra EMA 10/21 + Supertrend no Telegram
   (`docs/known-risks.md` item 275). Roda às **00:23 UTC** (`schedule`) e também por
   `workflow_dispatch`.
