@@ -168,6 +168,57 @@ export function findTruncatedCandles(series, timeframe) {
   return found;
 }
 
+const PRICE_REL_TOLERANCE = 1e-9;
+const VOLUME_REL_TOLERANCE = 1e-6;
+const nearRel = (a, b, rel) => Math.abs(a - b) <= rel * Math.max(Math.abs(a), Math.abs(b), Number.MIN_VALUE);
+
+function aggregateBars(bars) {
+  return {
+    n: bars.length,
+    open: bars[0].open,
+    close: bars[bars.length - 1].close,
+    high: Math.max(...bars.map((b) => b.high)),
+    low: Math.min(...bars.map((b) => b.low)),
+    volume: bars.reduce((sum, b) => sum + b.volume, 0),
+  };
+}
+
+const fmt = (v) => (Number.isFinite(v) ? String(Number(v.toPrecision(10))) : String(v));
+const describeOhlcv = (o) => `open ${fmt(o.open)} high ${fmt(o.high)} low ${fmt(o.low)} close ${fmt(o.close)} vol ${fmt(o.volume)}`;
+
+/**
+ * Prova por CONTEÚDO (item 281, 2ª execução do targets-test.yml): o OHLCV da
+ * vela encurtada bate com o agregado das velas de um timeframe MENOR da mesma
+ * moeda? Cobre a parada da exchange em que o timeframe menor não tem vela
+ * encurtada (29/09/2021: o 4h foi cortado às 07:00 e o 1h/15m só têm buraco).
+ *
+ * O agregado usa TODAS as velas menores que ABREM em `[open, open + intervalo)`.
+ * Se existir vela menor depois do fechamento declarado, ela entra no agregado e
+ * o OHLCV da vela encurtada deixa de bater: a vela omitiria negociação real, e
+ * estender o closeTime a faria passar por completa (review do Codex, PR #510).
+ * Só passa quando o resto do intervalo está de fato AUSENTE (a parada).
+ * Preço: tolerância relativa 1e-9; volume: 1e-6 (soma de floats). Sem nenhuma
+ * vela menor no intervalo, não há o que comparar e não verifica.
+ * @param {{ openTime: number, closeTime: number, open: number, high: number, low: number, close: number, volume: number }} candle
+ * @param {Array<object>} subBars velas do timeframe menor, em ordem
+ * @param {number} intervalMs duração do timeframe da vela
+ * @returns {{ ok: boolean, subBars: number, detail: string }}
+ */
+export function candleMatchesSubBars(candle, subBars, intervalMs) {
+  if (!Array.isArray(subBars) || !candle) return { ok: false, subBars: 0, detail: 'sem velas menores' };
+  const bars = subBars.filter((b) => b && Number.isFinite(b.openTime) && Number.isFinite(b.closeTime)
+    && b.openTime >= candle.openTime && b.openTime < candle.openTime + intervalMs);
+  if (bars.length === 0) return { ok: false, subBars: 0, detail: 'nenhuma vela menor no intervalo' };
+  const agg = aggregateBars(bars);
+  const ok = nearRel(agg.open, candle.open, PRICE_REL_TOLERANCE)
+    && nearRel(agg.high, candle.high, PRICE_REL_TOLERANCE)
+    && nearRel(agg.low, candle.low, PRICE_REL_TOLERANCE)
+    && nearRel(agg.close, candle.close, PRICE_REL_TOLERANCE)
+    && nearRel(agg.volume, candle.volume, VOLUME_REL_TOLERANCE);
+  if (ok) return { ok: true, subBars: agg.n, detail: `bate com ${agg.n} vela(s) menor(es)` };
+  return { ok: false, subBars: agg.n, detail: `vela: ${describeOhlcv(candle)} · agregado de ${agg.n} vela(s) menor(es): ${describeOhlcv(agg)}` };
+}
+
 /**
  * Vela fechada CEDO por parada da exchange (item 281, 1ª execução do
  * targets-test.yml): quando a Binance para, a vela em andamento sai com o
@@ -177,9 +228,10 @@ export function findTruncatedCandles(series, timeframe) {
  *
  * Só conserta com PROVA independente (review do Codex, PR #509): isolamento
  * sozinho não distingue uma parada de uma vela parcial inserida por engano.
- * `isCorroborated(candle)` diz se OUTRO timeframe da mesma moeda tem uma vela
- * encurtada no mesmo instante — sem ele, nada é consertado e a vela continua
- * ERRO em validateCandleSeries.
+ * `isCorroborated(candle)` diz se há prova: OUTRO timeframe da mesma moeda
+ * encurtado no mesmo instante, ou o conteúdo batendo com o agregado de um
+ * timeframe menor (candleMatchesSubBars) — sem ela, nada é consertado e a
+ * vela continua ERRO em validateCandleSeries.
  *
  * Conserto CONSERVADOR: o closeTime volta para o fim normal da vela
  * (`openTime + intervalo − 1`), então o replay só a enxerga quando enxergaria
@@ -187,7 +239,7 @@ export function findTruncatedCandles(series, timeframe) {
  * intervalo nunca é tocada. Série sem nada a consertar volta como a MESMA
  * referência.
  * @param {unknown} series
- * @param {{ symbol: string, timeframe: string, isCorroborated?: (candle: any) => boolean }} meta
+ * @param {{ symbol: string, timeframe: string, isCorroborated?: (candle: any) => boolean | { ok: boolean, via?: string, detail?: string } }} meta
  * @returns {{ series: unknown, issues: Array<object> }}
  */
 export function repairTruncatedCloseTimes(series, { symbol, timeframe, isCorroborated = () => false }) {
@@ -196,10 +248,19 @@ export function repairTruncatedCloseTimes(series, { symbol, timeframe, isCorrobo
   let repaired = null;
   for (const i of findTruncatedCandles(series, timeframe)) {
     const c = series[i];
-    if (!isCorroborated(c)) continue;
+    // A prova devolve boolean ou { ok, via, detail } (via/detail só explicam).
+    const proof = isCorroborated(c);
+    const ok = typeof proof === 'object' && proof !== null ? Boolean(proof.ok) : Boolean(proof);
+    const via = typeof proof === 'object' && proof !== null ? proof.via : undefined;
+    const detail = typeof proof === 'object' && proof !== null ? proof.detail : undefined;
+    if (!ok) {
+      // Continua ERRO em validateCandleSeries; o aviso só diz POR QUE a prova falhou.
+      if (detail) out.add('warning', 'close_time_truncated_unverified', c.openTime, { closeTime: iso(c.closeTime), detail });
+      continue;
+    }
     if (!repaired) repaired = series.slice();
     repaired[i] = { ...c, closeTime: c.openTime + intervalMs - 1 };
-    out.add('warning', 'close_time_truncated_repaired', c.openTime, { closeTime: iso(c.closeTime), repairedTo: iso(repaired[i].closeTime) });
+    out.add('warning', 'close_time_truncated_repaired', c.openTime, { closeTime: iso(c.closeTime), repairedTo: iso(repaired[i].closeTime), ...(via ? { via } : {}) });
   }
   return { series: repaired || series, issues: out.issues() };
 }
@@ -289,6 +350,7 @@ export function describeIssue(issue) {
     gap_too_large: `buraco de ${MAX_TOLERATED_GAP_MS / 3600000}h ou mais`,
     gap: 'buraco curto (possível parada da exchange)',
     close_time_truncated_repaired: 'vela fechada cedo (parada da exchange) — closeTime levado ao fim normal da vela, sem olhar o futuro',
+    close_time_truncated_unverified: 'vela curta SEM prova de parada (nenhum timeframe confirma) — continua erro',
     starts_after_window: 'série começa depois do início da janela — sem dado nesse trecho',
     ends_before_window: 'série termina antes do fim da janela',
     ends_slightly_before_window: 'série termina pouco antes do fim da janela, dentro da folga pedida (último arquivo diário ainda não publicado?)',
@@ -298,5 +360,6 @@ export function describeIssue(issue) {
   // O closeTime real vai junto: sem ele, uma falha no runner do GitHub não
   // diz que tipo de vela é (a rede das sessões não alcança a Binance).
   const close = first?.closeTime ? ` (closeTime ${first.closeTime})` : '';
-  return `${issue.symbol} ${issue.timeframe}: ${labels[issue.type] || issue.type} (${issue.count}x)${where}${close}`;
+  const why = issue.type === 'close_time_truncated_unverified' && first?.detail ? ` — ${first.detail}` : '';
+  return `${issue.symbol} ${issue.timeframe}: ${labels[issue.type] || issue.type} (${issue.count}x)${where}${close}${why}`;
 }
