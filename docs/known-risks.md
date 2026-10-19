@@ -33310,4 +33310,46 @@ workflows dos itens 264–272; custo de minutos de runner, não de resultado).
 - **O que não muda:** série limpa volta como a mesma referência (W1/W2 e a reprodução do item 270
   intactas), o pré-registro e o scan ao vivo. Nenhum braço rodou.
 
-**Resultado:** pendente (depois do novo disparo do `targets-test.yml`).
+**Resultado (3ª execução do `targets-test.yml`, 2026-10-19, `main` em 44cf3d0): nenhum braço aprovado.**
+- **Execução:** status OK. A 3ª rodada passou pelas duas correções de dado (itens 260/281) e rodou as 21 combinações.
+- **Controle reproduziu o item 270:**
+
+| Janela | Operações | Expectância | Registrado no item 270 | Hash dos ids |
+|---|---|---|---|---|
+| W1 (2025-10→2026-10) | 115 | −0,0483R | 115 / −0,0483R | `b4f50dce8e7c77a3` |
+| W2 (2024-07→2025-07) | 119 | +0,0540R | 119 / +0,054R | `daaf01afcac4fc0d` |
+| W0 (2021-07→2022-07, 4 moedas) | 81 | −0,0151R | não havia | `aa33db398e4bab65` |
+
+- **ΔR do braço contra o controle** (leitura não pareada, cluster-robusta; entre colchetes o IC no nível
+  corrigido por Bonferroni, m = 6). Depois, o % de operações que voltou ao alvo de hoje e a distância
+  mediana do TP1, em R, por janela W1/W2/W0:
+
+| Braço | W1 | W2 | W0 | Voltou ao alvo de hoje | TP1 mediano (R) | Veredito |
+|---|---|---|---|---|---|---|
+| `fib_literal` | -0.046 [-0.22; +0.12] | -0.140 [-0.33; +0.05] | -0.109 [-0.30; +0.08] | 0%/0%/0% | 0.35/0.33/0.30 | SEM_DIFERENCA |
+| `fib_minr` | -0.016 [-0.07; +0.04] | -0.052 [-0.14; +0.04] | -0.041 [-0.11; +0.03] | 84%/81%/90% | 0.59/0.64/0.60 | INCONCLUSIVO |
+| `fib_next` | -0.010 [-0.13; +0.11] | -0.086 [-0.23; +0.06] | -0.044 [-0.17; +0.08] | 0%/3%/1% | 0.64/0.66/0.65 | SEM_DIFERENCA |
+| `swing_literal` | -0.050 [-0.23; +0.13] | -0.145 [-0.37; +0.08] | -0.007 [-0.22; +0.21] | 11%/5%/5% | 0.22/0.22/0.23 | SEM_DIFERENCA |
+| `swing_minr` | -0.011 [-0.06; +0.04] | -0.016 [-0.07; +0.04] | -0.003 [-0.03; +0.02] | 84%/72%/77% | 0.90/0.84/0.97 | INCONCLUSIVO |
+| `swing_next` | +0.003 [-0.07; +0.07] | -0.055 [-0.16; +0.05] | +0.002 [-0.05; +0.05] | 28%/18%/27% | 0.73/0.72/0.79 | SEM_DIFERENCA |
+
+- **Veredito pré-registrado:** APROVADO = 0. Quatro braços ficaram em SEM_DIFERENCA e dois
+  (`fib_minr`, `swing_minr`) em INCONCLUSIVO, porque 72% a 90% das operações voltaram ao alvo de hoje
+  e o braço mal difere do controle. Nenhum braço chegou a PIOR: todos os ICs incluem zero.
+- **Leitura honesta (fato × hipótese):**
+  - **Fato:** 16 das 18 caixas têm ΔR negativo, e nenhuma é positiva de forma distinguível do ruído. Nem
+    em W1+W2 (decisão) nem em W0 (replicação) algum braço superou o alvo de hoje.
+  - **Fato:** com o stop largo do 4h, o alvo estrutural fica perto da entrada (mediana de TP1 em 0,2 a
+    0,35R nos braços `literal`). Eles acertam o TP1 mais vezes (cerca de 67% a 70%), mas ganham pouco
+    por acerto, e o saldo não melhora.
+  - **Fato:** `next_level` (TP1 em 0,6 a 0,8R) ficou mais perto do zero, ainda assim não positivo.
+  - **Limite do teste:** a meia-largura do IC vai de cerca de ±0,03R (`minr`, quase igual ao controle) a
+    ±0,23R (`literal`). Um ganho pequeno, abaixo disso, não apareceria. Mas também não há nenhum sinal
+    de ganho a perseguir.
+  - **Hipótese, sem teste:** o que limita o resultado é a entrada, que não tem vantagem comprovada sobre
+    entrar ao acaso (item 264), e não o alvo.
+- **Decisão:** a produção continua igual. Não vale testar outros alvos sobre estes dados (o item 267 já
+  proibia, e esta rodada fechou a pergunta que ele deixou aberta). Os 18 ensaios entram no livro
+  (`docs/backtest-trial-registry.json`, família `targets-2026-10`, como `seed`: o relatório completo
+  está no artifact `relatorios-targets-test`, que a sessão não alcança; expectância do braço =
+  controle + ΔR, sem IC próprio).

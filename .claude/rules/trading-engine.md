@@ -463,7 +463,8 @@ nunca deve receber nova transição.**
   `src/lib/indicators/structuralTargets.js`), depois do gate R:R. Entrada, stop e
   regras de gestão iguais — o momento em que cada uma age segue o alvo, e com 1
   op por ativo o conjunto de operações diverge (leitura não pareada). Desligada,
-  nada muda.
+  nada muda. **MEDIDO (2026-10-19): nenhum braço aprovado** — 16 das 18 caixas com ΔR
+  negativo, todas dentro do ruído; a produção segue com 1,5R/3R (item 281).
 - **Retry na busca de candle ao vivo** (`src/lib/httpRetry.js`,
   `fetchWithRetry`) — item 57. Causa raiz confirmada do volume baixo de
   operações ao vivo: `src/lib/marketDataProvider.js` (browser) e
