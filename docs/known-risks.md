@@ -30761,7 +30761,7 @@ válido e inválido. **Não verificado**: download real com `--warmup-candles` �
 não alcança a Binance; conferido só o cálculo da data inicial por timeframe (log do
 script) e a validação do argumento. O 1º run real do `backtest.yml` é a confirmação.
 
-**Exceção conservadora (2026-10-18, item 281):** vela isolada fechada CEDO por parada da exchange (2021-08-13 na Binance Spot), confirmada por outro timeframe da mesma moeda no mesmo instante, tem o closeTime levado ao fim normal e vira AVISO, não erro (`repairTruncatedCloseTimes`). Vela longa e arquivo de outro intervalo continuam ERRO.
+**Exceção conservadora (2026-10-18/19, item 281):** vela isolada fechada CEDO por parada da exchange (2021-08-13 e 2021-09-29 na Binance Spot) tem o closeTime levado ao fim normal e vira AVISO, não erro (`repairTruncatedCloseTimes`), só com prova: outro timeframe da mesma moeda encurtado no mesmo instante, ou o OHLCV igual ao agregado de um timeframe menor (`candleMatchesSubBars`). Vela longa, arquivo de outro intervalo e vela sem prova continuam ERRO.
 
 ## 261. Pacote 2 da auditoria — determinismo, causalidade ponta a ponta e o stop furado por gap medido (2026-10-09)
 
@@ -33278,5 +33278,36 @@ workflows dos itens 264–272; custo de minutos de runner, não de resultado).
   - **Mensagem:** a linha do erro agora mostra o closeTime real. Se o padrão for outro, o próximo log diz
     qual.
 - **Pré-registro:** janelas, braços e critério não mudam. Nenhum braço tinha rodado.
+
+**2ª execução (run 39180508640, 2026-10-19, commit b4f703f) — falhou de novo no controle de W0:**
+- **O que o conserto da 1ª execução fez:** funcionou. As velas de 13/08/2021 (15m/1h/4h, 4 moedas)
+  viraram AVISO, com o closeTime real impresso (`2021-08-13T01:59:59.000Z`).
+- **O que sobrou:** 1 erro por moeda, só no 4h. A vela de 2021-09-29 04:00 tem closeTime
+  `2021-09-29T06:59:59.999Z` (3 h em vez de 4 h). Nas duas execuções o 4h contou "2x": 13/08 e 29/09.
+- **Por que a prova da 1ª rodada não pegou:** ela exigia outro timeframe com vela encurtada no mesmo
+  instante, e em 29/09 o 1h e o 15m não têm vela encurtada.
+- **Hipótese (não confirmada, o dado real não é visível da sessão):** uma segunda parada da Binance,
+  às 07:00. O 4h foi cortado ali e o 1h e o 15m só têm buraco (os "2x" de buraco). Nenhuma fonte
+  pública achada para essa data.
+- **Correção:** `candleMatchesSubBars` (`scripts/backtestDataIntegrity.js`), uma segunda prova, mais
+  forte e independente.
+  - **O que compara:** o OHLCV da vela encurtada contra o agregado das velas do timeframe menor da
+    mesma moeda (1h para um 4h, 15m para um 1h).
+  - **Recortes aceitos:**
+    - inteiro, as velas que abrem dentro do intervalo normal (a parada deixa de fora as que não
+      existem);
+    - declarado, as que fecham até o closeTime que a própria vela declara.
+  - **Tolerância:** 1e-9 relativo no preço e 1e-6 no volume.
+  - **Como entra:** `scripts/backtestMarketDataProvider.js` aceita a vela se uma das duas provas
+    valer (encurtada junto em outro timeframe, ou conteúdo igual ao agregado). O aviso de conserto
+    registra qual prova valeu.
+  - **O que continua ERRO:** vela cujo conteúdo não bate (dado suspeito), sem timeframe menor
+    disponível, vela longa, arquivo inteiro de outro intervalo e vela na ponta da série.
+  - **Diagnóstico:** vela candidata sem prova ganha um aviso `close_time_truncated_unverified` com
+    o OHLCV dela e o agregado, para um próximo erro ser lido de uma vez só.
+- **Arrumação:** os helpers do PR #509 tinham ficado entre o comentário e o `export function
+  loadSeries`; voltaram para cima do comentário.
+- **O que não muda:** série limpa volta como a mesma referência (W1/W2 e a reprodução do item 270
+  intactas), o pré-registro e o scan ao vivo. Nenhum braço rodou.
 
 **Resultado:** pendente (depois do novo disparo do `targets-test.yml`).

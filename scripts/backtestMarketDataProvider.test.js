@@ -46,6 +46,15 @@ beforeAll(() => {
   const bar15 = (t) => ({ ...bar(t), closeTime: t + M15 - 1 });
   fs.writeFileSync(path.join(dir, 'HALTUSDT_1h.json'), JSON.stringify([bar(0), { ...bar(H), closeTime: HALT_AT }, bar(4 * H)]));
   fs.writeFileSync(path.join(dir, 'HALTUSDT_15m.json'), JSON.stringify([bar15(H + M15), bar15(H + 2 * M15), { ...bar15(H + 3 * M15), closeTime: HALT_AT }, bar15(4 * H)]));
+  // 29/09/2021: o 4h foi cortado às 07:00 (3 h) e o 1h só tem buraco — a prova é o conteúdo.
+  const hourlyBar = (i) => ({ openTime: i * H, closeTime: i * H + H - 1, open: 100 + i, high: 102 + i, low: 98 + i, close: 101 + i, volume: 10 });
+  const bar4h = (openTime) => ({ ...bar(openTime), closeTime: openTime + 4 * H - 1 });
+  const cut4h = { openTime: 4 * H, closeTime: 7 * H - 1, open: 104, high: 108, low: 102, close: 107, volume: 30 }; // = 1h de 4, 5 e 6
+  fs.writeFileSync(path.join(dir, 'CUT4H_4h.json'), JSON.stringify([bar4h(0), cut4h, bar4h(8 * H)]));
+  fs.writeFileSync(path.join(dir, 'CUT4H_1h.json'), JSON.stringify([4, 5, 6, 8].map(hourlyBar)));
+  // Mesmo 4h cortado, mas o conteúdo NÃO bate com o 1h: é dado suspeito, continua erro.
+  fs.writeFileSync(path.join(dir, 'BAD4H_4h.json'), JSON.stringify([bar4h(0), { ...cut4h, high: 150 }, bar4h(8 * H)]));
+  fs.writeFileSync(path.join(dir, 'BAD4H_1h.json'), JSON.stringify([4, 5, 6, 8].map(hourlyBar)));
   // Vela parcial isolada SEM o 15m confirmando o mesmo instante: não é parada.
   fs.writeFileSync(path.join(dir, 'LONEUSDT_1h.json'), JSON.stringify([bar(0), { ...bar(H), closeTime: HALT_AT }, bar(2 * H)]));
   fs.writeFileSync(path.join(dir, 'LONEUSDT_15m.json'), JSON.stringify([bar15(H), bar15(H + M15), bar15(H + 2 * M15)]));
@@ -98,9 +107,24 @@ describe('backtestMarketDataProvider.loadSeries — integridade (item 260)', () 
     expect(kinds('15m')).toEqual(['warning:close_time_truncated_repaired', 'warning:gap']);
   });
 
+  it('4h cortado às 07:00 com 1h só com buraco: conteúdo = agregado do 1h, carrega consertado (item 281, 2ª execução)', () => {
+    expect(loadSeries('CUT4H', '4h')[1].closeTime).toBe(8 * H - 1);
+    const issues = issuesFor('CUT4H').filter((i) => i.timeframe === '4h');
+    expect(issues.map((i) => `${i.severity}:${i.type}`)).toEqual(['warning:close_time_truncated_repaired']);
+    expect(issues[0].samples[0].via).toContain('agregado de 1h');
+  });
+
+  it('4h cortado cujo conteúdo NÃO bate com o 1h continua ERRO, com o diagnóstico no aviso', () => {
+    expect(loadSeries('BAD4H', '4h')[1].closeTime).toBe(7 * H - 1);
+    const kinds = issuesFor('BAD4H').filter((i) => i.timeframe === '4h').map((i) => `${i.severity}:${i.type}`);
+    expect(kinds).toEqual(['warning:close_time_truncated_unverified', 'error:close_time_mismatch']);
+    expect(issuesFor('BAD4H')[0].samples[0].detail).toContain('high 150');
+  });
+
   it('vela curta SEM outro timeframe parando no mesmo instante continua ERRO (review do Codex, PR #509)', () => {
     expect(loadSeries('LONEUSDT', '1h')[1].closeTime).toBe(H + 50 * 60 * 1000);
-    expect(issuesFor('LONEUSDT').map((i) => `${i.severity}:${i.type}`)).toEqual(['error:close_time_mismatch']);
+    // O erro continua; o aviso de diagnóstico (item 281) só explica por que a prova falhou.
+    expect(issuesFor('LONEUSDT').map((i) => `${i.severity}:${i.type}`)).toEqual(['warning:close_time_truncated_unverified', 'error:close_time_mismatch']);
   });
 
   it('getLoadedSeries devolve toda série lida, para a checagem de cobertura pós-replay', () => {

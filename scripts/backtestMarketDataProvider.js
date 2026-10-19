@@ -11,7 +11,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sliceClosedAsOf, simNow } from '../src/lib/backtestEngine.js';
 import {
-  validateCandleSeries, repairTruncatedCloseTimes, findTruncatedCandles, HALT_CORROBORATION_TOLERANCE_MS,
+  validateCandleSeries, repairTruncatedCloseTimes, findTruncatedCandles, candleMatchesSubBars,
+  timeframeToMs, HALT_CORROBORATION_TOLERANCE_MS,
 } from './backtestDataIntegrity.js';
 
 // Provenance stamped onto every TradeOperation/SignalEvent created during a
@@ -51,6 +52,66 @@ export function getLoadedSeries() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Prova de que uma vela fechada CEDO é parada da exchange e não dado corrompido
+// (item 281; repairTruncatedCloseTimes em backtestDataIntegrity.js). Duas
+// provas, qualquer uma serve:
+// 1. OUTRO timeframe da mesma moeda tem vela encurtada no mesmo instante;
+// 2. o OHLCV da vela bate com o agregado de um timeframe MENOR da mesma moeda.
+// Lê o JSON cru dos outros timeframes (sem validar): arquivo ausente/ilegível
+// só não serve de prova — o problema dele é registrado quando o replay o carrega.
+// ---------------------------------------------------------------------------
+const rawSeriesCache = new Map();
+function rawSeries(symbol, timeframe) {
+  const key = `${symbol}:${timeframe}`;
+  if (rawSeriesCache.has(key)) return rawSeriesCache.get(key);
+  let parsed = null;
+  try {
+    const value = JSON.parse(fs.readFileSync(path.join(getDataDir(), `${symbol}_${timeframe}.json`), 'utf-8'));
+    if (Array.isArray(value)) parsed = value;
+  } catch {
+    // ver comentário acima
+  }
+  rawSeriesCache.set(key, parsed);
+  return parsed;
+}
+
+function otherTimeframes(symbol, timeframe) {
+  const prefix = `${symbol}_`;
+  return fs.readdirSync(getDataDir())
+    .filter((f) => f.startsWith(prefix) && f.endsWith('.json'))
+    .map((f) => f.slice(prefix.length, -'.json'.length))
+    .filter((tf) => tf !== timeframe && timeframeToMs(tf));
+}
+
+function haltProofFor(symbol, timeframe) {
+  const intervalMs = timeframeToMs(timeframe);
+  let others;
+  let smaller;
+  return (candle) => {
+    if (!others) {
+      others = otherTimeframes(symbol, timeframe);
+      // Do maior para o menor: o 1h antes do 15m para uma vela de 4h.
+      smaller = others.filter((tf) => timeframeToMs(tf) < intervalMs).sort((a, b) => timeframeToMs(b) - timeframeToMs(a));
+    }
+    // Prova 1: parada vista em outro timeframe no mesmo instante.
+    for (const tf of others) {
+      const series = rawSeries(symbol, tf);
+      if (series && findTruncatedCandles(series, tf).some((i) => Math.abs(series[i].closeTime - candle.closeTime) <= HALT_CORROBORATION_TOLERANCE_MS)) {
+        return { ok: true, via: `${tf} encurtado no mesmo instante` };
+      }
+    }
+    // Prova 2: o conteúdo bate com o agregado de um timeframe menor.
+    const details = [];
+    for (const tf of smaller) {
+      const result = candleMatchesSubBars(candle, rawSeries(symbol, tf), intervalMs);
+      if (result.ok) return { ok: true, via: `conteúdo = agregado de ${tf} (${result.detail})` };
+      details.push(`${tf}: ${result.detail}`);
+    }
+    return { ok: false, detail: details.length ? details.join(' | ') : 'nenhum timeframe menor disponível para conferir o conteúdo' };
+  };
+}
+
 // Exportado (docs/known-risks.md item 69) para o simulador de operação-
 // fantasma (src/lib/indicatorAttribution.js, invocado só por
 // backtestEngine.js) andar para a FRENTE no tempo a partir de um sinal —
@@ -59,41 +120,6 @@ export function getLoadedSeries() {
 // exclusivo de scripts/build-backtest.mjs — build-scan.mjs (scanner ao vivo)
 // nunca o importa, então expor a série inteira não vaza look-ahead pro
 // caminho de produção.
-// closeTime das velas encurtadas (candidatas a parada da exchange) de cada
-// arquivo, para a prova cruzada entre timeframes da mesma moeda (item 281).
-const truncatedCloseTimesCache = new Map();
-function truncatedCloseTimes(symbol, timeframe) {
-  const key = `${symbol}:${timeframe}`;
-  if (truncatedCloseTimesCache.has(key)) return truncatedCloseTimesCache.get(key);
-  let times = [];
-  try {
-    const parsed = JSON.parse(fs.readFileSync(path.join(getDataDir(), `${symbol}_${timeframe}.json`), 'utf-8'));
-    times = findTruncatedCandles(parsed, timeframe).map((i) => parsed[i].closeTime);
-  } catch {
-    // Arquivo ausente/ilegível só não serve de prova; o problema dele é
-    // registrado quando (e se) o replay o carregar.
-  }
-  truncatedCloseTimesCache.set(key, times);
-  return times;
-}
-
-// Uma parada real da exchange encurta a vela em andamento de TODOS os
-// timeframes no mesmo instante; uma vela parcial inserida por engano, não.
-function haltCorroboratedBy(symbol, timeframe) {
-  let others;
-  return (candle) => {
-    if (!others) {
-      const prefix = `${symbol}_`;
-      others = fs.readdirSync(getDataDir())
-        .filter((f) => f.startsWith(prefix) && f.endsWith('.json'))
-        .map((f) => f.slice(prefix.length, -'.json'.length))
-        .filter((tf) => tf !== timeframe)
-        .flatMap((tf) => truncatedCloseTimes(symbol, tf));
-    }
-    return others.some((t) => Math.abs(t - candle.closeTime) <= HALT_CORROBORATION_TOLERANCE_MS);
-  };
-}
-
 export function loadSeries(symbol, timeframe) {
   const key = `${symbol}:${timeframe}`;
   if (cache.has(key)) return cache.get(key);
@@ -115,10 +141,10 @@ export function loadSeries(symbol, timeframe) {
       // Fora do try do parse de propósito (revisão do pacote 1): um defeito
       // do validador não pode ser relatado como "JSON inválido" — mandaria o
       // usuário baixar de novo um arquivo que está certo.
-      // Vela fechada cedo por parada da exchange, confirmada por outro
-      // timeframe da mesma moeda: conserto conservador antes de validar
-      // (item 281, backtestDataIntegrity.js).
-      const repair = repairTruncatedCloseTimes(parsed, { symbol, timeframe, isCorroborated: haltCorroboratedBy(symbol, timeframe) });
+      // Vela fechada cedo por parada da exchange, com prova de outro timeframe
+      // da mesma moeda (encurtado junto ou conteúdo igual ao agregado):
+      // conserto conservador antes de validar (item 281, backtestDataIntegrity.js).
+      const repair = repairTruncatedCloseTimes(parsed, { symbol, timeframe, isCorroborated: haltProofFor(symbol, timeframe) });
       issues = [...repair.issues, ...validateCandleSeries(repair.series, { symbol, timeframe })];
       // Série que não é lista não pode seguir adiante: sliceClosedAsOf
       // quebraria a cada passo. O problema já está registrado em `issues`.

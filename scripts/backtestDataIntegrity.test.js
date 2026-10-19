@@ -4,7 +4,7 @@ import { describe, it, expect } from 'vitest';
 import {
   timeframeToMs, validateCandleSeries, checkWindowCoverage, requiredTimeframes,
   describeIssue, warmupStartMs, MAX_TOLERATED_GAP_MS, FUTURES_ARCHIVE_LAG_MS, repairTruncatedCloseTimes,
-  findTruncatedCandles,
+  findTruncatedCandles, candleMatchesSubBars,
 } from './backtestDataIntegrity.js';
 
 const H = 60 * 60 * 1000;
@@ -369,5 +369,79 @@ describe('repairTruncatedCloseTimes — vela fechada cedo por parada da exchange
     s[2] = { ...s[2], closeTime: s[2].openTime + 2 * H - 1 };
     const [issue] = validateCandleSeries(s, meta).filter((i) => i.type === 'close_time_mismatch');
     expect(describeIssue(issue)).toContain(`closeTime ${new Date(s[2].closeTime).toISOString()}`);
+  });
+});
+
+// Item 281, 2ª execução do targets-test.yml: em 2021-09-29 o 4h das 04:00 saiu
+// com closeTime 06:59:59.999 (3 h) — o 1h e o 15m não têm vela encurtada ali,
+// só buraco. A prova passa a ser o CONTEÚDO contra o agregado do timeframe menor.
+describe('candleMatchesSubBars — prova por conteúdo (4h cortado às 07:00)', () => {
+  const H4 = 4 * H;
+  // 1h com valores distintos: o agregado de 0,1,2 é open 100 / high 104 / low 98 / close 103 / vol 30.
+  const hourly = (n) => Array.from({ length: n }, (_, i) => bar(T0 + i * H, H, { open: 100 + i, high: 102 + i, low: 98 + i, close: 101 + i, volume: 10 }));
+  const cut4h = (overrides = {}) => ({
+    openTime: T0, closeTime: T0 + 3 * H - 1, open: 100, high: 104, low: 98, close: 103, volume: 30, ...overrides,
+  });
+  const m4 = { symbol: 'BTCUSDT', timeframe: '4h' };
+  const around = (candle) => [bar(T0 - H4, H4), candle, bar(T0 + H4, H4)];
+
+  it('reproduz a falha: sem prova nenhuma, o 4h de 3 h é ERRO (o que travou o W0)', () => {
+    expect(types(validateCandleSeries(around(cut4h()), m4))).toEqual(['error:close_time_mismatch']);
+  });
+
+  it('recorte inteiro: 1h de 07:00 ausente (parada), agregado = 04, 05, 06', () => {
+    const r = candleMatchesSubBars(cut4h(), hourly(3), H4);
+    expect(r).toMatchObject({ ok: true, span: 'inteiro', subBars: 3 });
+  });
+
+  it('recorte declarado: o 1h de 07:00 existe com outro conteúdo, mas o 4h bate até onde declara fechar', () => {
+    const r = candleMatchesSubBars(cut4h(), hourly(4), H4);
+    expect(r).toMatchObject({ ok: true, span: 'declarado', subBars: 3 });
+  });
+
+  it('conteúdo que não bate com nenhum recorte NÃO é verificado e o detalhe mostra os dois lados', () => {
+    const r = candleMatchesSubBars(cut4h({ high: 110 }), hourly(4), H4);
+    expect(r.ok).toBe(false);
+    expect(r.detail).toContain('high 110');
+    expect(r.detail).toContain('recorte inteiro');
+    expect(r.detail).toContain('recorte declarado');
+  });
+
+  it('sem velas menores no recorte, não há o que comparar — não verifica', () => {
+    expect(candleMatchesSubBars(cut4h(), [], H4)).toMatchObject({ ok: false });
+    expect(candleMatchesSubBars(cut4h(), [bar(T0 + 10 * H, H)], H4)).toMatchObject({ ok: false });
+    expect(candleMatchesSubBars(cut4h(), null, H4)).toMatchObject({ ok: false });
+  });
+
+  it('tolerância: diferença de 1e-12 relativo passa; de 1e-3 não', () => {
+    expect(candleMatchesSubBars(cut4h({ high: 104 * (1 + 1e-12) }), hourly(3), H4).ok).toBe(true);
+    expect(candleMatchesSubBars(cut4h({ high: 104 * (1 + 1e-3) }), hourly(3), H4).ok).toBe(false);
+    expect(candleMatchesSubBars(cut4h({ volume: 30 * (1 + 1e-3) }), hourly(3), H4).ok).toBe(false);
+  });
+
+  it('com a prova, repairTruncatedCloseTimes conserta e registra COMO foi provado', () => {
+    const raw = around(cut4h());
+    const proof = (c) => candleMatchesSubBars(c, hourly(3), H4);
+    const { series: fixed, issues } = repairTruncatedCloseTimes(raw, { ...m4, isCorroborated: (c) => ({ ...proof(c), via: 'conteúdo = agregado de 1h' }) });
+    expect(types(issues)).toEqual(['warning:close_time_truncated_repaired']);
+    expect(issues[0].samples[0]).toMatchObject({ via: 'conteúdo = agregado de 1h' });
+    expect(fixed[1].closeTime).toBe(T0 + H4 - 1);
+    expect(validateCandleSeries(fixed, m4)).toEqual([]);
+  });
+
+  it('prova que falha vira aviso de DIAGNÓSTICO e a vela continua ERRO', () => {
+    const raw = around(cut4h({ high: 110 }));
+    const proof = (c) => candleMatchesSubBars(c, hourly(4), H4);
+    const { series: out, issues } = repairTruncatedCloseTimes(raw, { ...m4, isCorroborated: proof });
+    expect(out).toBe(raw);
+    expect(types(issues)).toEqual(['warning:close_time_truncated_unverified']);
+    expect(describeIssue(issues[0])).toContain('SEM prova');
+    expect(describeIssue(issues[0])).toContain('high 110');
+    expect(types(validateCandleSeries(out, m4))).toEqual(['error:close_time_mismatch']);
+  });
+
+  it('prova booleana sem detalhe (contrato antigo) não gera aviso de diagnóstico', () => {
+    const raw = around(cut4h());
+    expect(repairTruncatedCloseTimes(raw, { ...m4, isCorroborated: () => false }).issues).toEqual([]);
   });
 });
