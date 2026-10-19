@@ -389,22 +389,23 @@ describe('candleMatchesSubBars — prova por conteúdo (4h cortado às 07:00)', 
     expect(types(validateCandleSeries(around(cut4h()), m4))).toEqual(['error:close_time_mismatch']);
   });
 
-  it('recorte inteiro: 1h de 07:00 ausente (parada), agregado = 04, 05, 06', () => {
-    const r = candleMatchesSubBars(cut4h(), hourly(3), H4);
-    expect(r).toMatchObject({ ok: true, span: 'inteiro', subBars: 3 });
+  it('1h de 07:00 ausente (parada): o agregado de 04, 05 e 06 bate', () => {
+    expect(candleMatchesSubBars(cut4h(), hourly(3), H4)).toMatchObject({ ok: true, subBars: 3 });
   });
 
-  it('recorte declarado: o 1h de 07:00 existe com outro conteúdo, mas o 4h bate até onde declara fechar', () => {
+  // Review do Codex (PR #510, P1): se o 1h das 07:00 existe, o 4h cortado omite
+  // negociação real; estender o closeTime o faria passar por completo.
+  it('1h de 07:00 EXISTE: o 4h cortado NÃO é verificado (omitiria a negociação das 07:00)', () => {
     const r = candleMatchesSubBars(cut4h(), hourly(4), H4);
-    expect(r).toMatchObject({ ok: true, span: 'declarado', subBars: 3 });
+    expect(r).toMatchObject({ ok: false, subBars: 4 });
+    expect(r.detail).toContain('agregado de 4 vela(s)');
   });
 
-  it('conteúdo que não bate com nenhum recorte NÃO é verificado e o detalhe mostra os dois lados', () => {
-    const r = candleMatchesSubBars(cut4h({ high: 110 }), hourly(4), H4);
+  it('conteúdo que não bate NÃO é verificado e o detalhe mostra os dois lados', () => {
+    const r = candleMatchesSubBars(cut4h({ high: 110 }), hourly(3), H4);
     expect(r.ok).toBe(false);
     expect(r.detail).toContain('high 110');
-    expect(r.detail).toContain('recorte inteiro');
-    expect(r.detail).toContain('recorte declarado');
+    expect(r.detail).toContain('high 104');
   });
 
   it('sem velas menores no recorte, não há o que comparar — não verifica', () => {
@@ -431,7 +432,7 @@ describe('candleMatchesSubBars — prova por conteúdo (4h cortado às 07:00)', 
 
   it('prova que falha vira aviso de DIAGNÓSTICO e a vela continua ERRO', () => {
     const raw = around(cut4h({ high: 110 }));
-    const proof = (c) => candleMatchesSubBars(c, hourly(4), H4);
+    const proof = (c) => candleMatchesSubBars(c, hourly(3), H4);
     const { series: out, issues } = repairTruncatedCloseTimes(raw, { ...m4, isCorroborated: proof });
     expect(out).toBe(raw);
     expect(types(issues)).toEqual(['warning:close_time_truncated_unverified']);

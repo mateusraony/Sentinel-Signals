@@ -55,6 +55,9 @@ beforeAll(() => {
   // Mesmo 4h cortado, mas o conteúdo NÃO bate com o 1h: é dado suspeito, continua erro.
   fs.writeFileSync(path.join(dir, 'BAD4H_4h.json'), JSON.stringify([bar4h(0), { ...cut4h, high: 150 }, bar4h(8 * H)]));
   fs.writeFileSync(path.join(dir, 'BAD4H_1h.json'), JSON.stringify([4, 5, 6, 8].map(hourlyBar)));
+  // 4h cortado às 07:00, mas o 1h das 07:00 EXISTE: o 4h omitiria negociação real (review do Codex, PR #510).
+  fs.writeFileSync(path.join(dir, 'LATE4H_4h.json'), JSON.stringify([bar4h(0), cut4h, bar4h(8 * H)]));
+  fs.writeFileSync(path.join(dir, 'LATE4H_1h.json'), JSON.stringify([4, 5, 6, 7, 8].map(hourlyBar)));
   // Vela parcial isolada SEM o 15m confirmando o mesmo instante: não é parada.
   fs.writeFileSync(path.join(dir, 'LONEUSDT_1h.json'), JSON.stringify([bar(0), { ...bar(H), closeTime: HALT_AT }, bar(2 * H)]));
   fs.writeFileSync(path.join(dir, 'LONEUSDT_15m.json'), JSON.stringify([bar15(H), bar15(H + M15), bar15(H + 2 * M15)]));
@@ -119,6 +122,12 @@ describe('backtestMarketDataProvider.loadSeries — integridade (item 260)', () 
     const kinds = issuesFor('BAD4H').filter((i) => i.timeframe === '4h').map((i) => `${i.severity}:${i.type}`);
     expect(kinds).toEqual(['warning:close_time_truncated_unverified', 'error:close_time_mismatch']);
     expect(issuesFor('BAD4H')[0].samples[0].detail).toContain('high 150');
+  });
+
+  it('4h cortado com o 1h das 07:00 existindo continua ERRO — não estende para completo (review do Codex, PR #510)', () => {
+    expect(loadSeries('LATE4H', '4h')[1].closeTime).toBe(7 * H - 1);
+    const kinds = issuesFor('LATE4H').filter((i) => i.timeframe === '4h').map((i) => `${i.severity}:${i.type}`);
+    expect(kinds).toEqual(['warning:close_time_truncated_unverified', 'error:close_time_mismatch']);
   });
 
   it('vela curta SEM outro timeframe parando no mesmo instante continua ERRO (review do Codex, PR #509)', () => {

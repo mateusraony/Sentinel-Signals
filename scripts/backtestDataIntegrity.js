@@ -192,38 +192,31 @@ const describeOhlcv = (o) => `open ${fmt(o.open)} high ${fmt(o.high)} low ${fmt(
  * moeda? Cobre a parada da exchange em que o timeframe menor não tem vela
  * encurtada (29/09/2021: o 4h foi cortado às 07:00 e o 1h/15m só têm buraco).
  *
- * Dois recortes das velas menores, qualquer um serve:
- * - inteiro: as que ABREM em `[open, open + intervalo)` (a parada deixa de
- *   fora as velas que não existem);
- * - declarado: as que FECHAM até o closeTime que a própria vela declara.
- * Preço: tolerância relativa 1e-9; volume: 1e-6 (soma de floats).
- * Sem nenhuma vela menor no recorte, não há o que comparar e não verifica.
+ * O agregado usa TODAS as velas menores que ABREM em `[open, open + intervalo)`.
+ * Se existir vela menor depois do fechamento declarado, ela entra no agregado e
+ * o OHLCV da vela encurtada deixa de bater: a vela omitiria negociação real, e
+ * estender o closeTime a faria passar por completa (review do Codex, PR #510).
+ * Só passa quando o resto do intervalo está de fato AUSENTE (a parada).
+ * Preço: tolerância relativa 1e-9; volume: 1e-6 (soma de floats). Sem nenhuma
+ * vela menor no intervalo, não há o que comparar e não verifica.
  * @param {{ openTime: number, closeTime: number, open: number, high: number, low: number, close: number, volume: number }} candle
  * @param {Array<object>} subBars velas do timeframe menor, em ordem
  * @param {number} intervalMs duração do timeframe da vela
- * @returns {{ ok: boolean, span?: 'inteiro'|'declarado', subBars: number, detail: string }}
+ * @returns {{ ok: boolean, subBars: number, detail: string }}
  */
 export function candleMatchesSubBars(candle, subBars, intervalMs) {
   if (!Array.isArray(subBars) || !candle) return { ok: false, subBars: 0, detail: 'sem velas menores' };
-  const spans = [
-    ['inteiro', (b) => b.openTime >= candle.openTime && b.openTime < candle.openTime + intervalMs],
-    ['declarado', (b) => b.openTime >= candle.openTime && b.closeTime <= candle.closeTime],
-  ];
-  const tried = [];
-  for (const [span, inSpan] of spans) {
-    const bars = subBars.filter((b) => b && Number.isFinite(b.openTime) && Number.isFinite(b.closeTime) && inSpan(b));
-    if (bars.length === 0) continue;
-    const agg = aggregateBars(bars);
-    const ok = nearRel(agg.open, candle.open, PRICE_REL_TOLERANCE)
-      && nearRel(agg.high, candle.high, PRICE_REL_TOLERANCE)
-      && nearRel(agg.low, candle.low, PRICE_REL_TOLERANCE)
-      && nearRel(agg.close, candle.close, PRICE_REL_TOLERANCE)
-      && nearRel(agg.volume, candle.volume, VOLUME_REL_TOLERANCE);
-    if (ok) return { ok: true, span, subBars: agg.n, detail: `bate com ${agg.n} vela(s) menor(es), recorte ${span}` };
-    tried.push(`recorte ${span} (${agg.n} vela(s)): ${describeOhlcv(agg)}`);
-  }
-  if (tried.length === 0) return { ok: false, subBars: 0, detail: 'nenhuma vela menor no recorte' };
-  return { ok: false, subBars: 0, detail: `vela: ${describeOhlcv(candle)} · agregado ${tried.join(' · ')}` };
+  const bars = subBars.filter((b) => b && Number.isFinite(b.openTime) && Number.isFinite(b.closeTime)
+    && b.openTime >= candle.openTime && b.openTime < candle.openTime + intervalMs);
+  if (bars.length === 0) return { ok: false, subBars: 0, detail: 'nenhuma vela menor no intervalo' };
+  const agg = aggregateBars(bars);
+  const ok = nearRel(agg.open, candle.open, PRICE_REL_TOLERANCE)
+    && nearRel(agg.high, candle.high, PRICE_REL_TOLERANCE)
+    && nearRel(agg.low, candle.low, PRICE_REL_TOLERANCE)
+    && nearRel(agg.close, candle.close, PRICE_REL_TOLERANCE)
+    && nearRel(agg.volume, candle.volume, VOLUME_REL_TOLERANCE);
+  if (ok) return { ok: true, subBars: agg.n, detail: `bate com ${agg.n} vela(s) menor(es)` };
+  return { ok: false, subBars: agg.n, detail: `vela: ${describeOhlcv(candle)} · agregado de ${agg.n} vela(s) menor(es): ${describeOhlcv(agg)}` };
 }
 
 /**

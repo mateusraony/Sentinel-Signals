@@ -33293,10 +33293,10 @@ workflows dos itens 264–272; custo de minutos de runner, não de resultado).
   forte e independente.
   - **O que compara:** o OHLCV da vela encurtada contra o agregado das velas do timeframe menor da
     mesma moeda (1h para um 4h, 15m para um 1h).
-  - **Recortes aceitos:**
-    - inteiro, as velas que abrem dentro do intervalo normal (a parada deixa de fora as que não
-      existem);
-    - declarado, as que fecham até o closeTime que a própria vela declara.
+  - **Recorte:** todas as velas menores que abrem dentro do intervalo normal. Se existir vela menor
+    depois do fechamento declarado, ela entra no agregado e a prova falha: o 4h omitiria negociação
+    real e estender o closeTime o faria passar por completo (review do Codex, PR #510, P1). Um
+    segundo recorte "até o closeTime declarado", que eu tinha incluído, foi removido por isso.
   - **Tolerância:** 1e-9 relativo no preço e 1e-6 no volume.
   - **Como entra:** `scripts/backtestMarketDataProvider.js` aceita a vela se uma das duas provas
     valer (encurtada junto em outro timeframe, ou conteúdo igual ao agregado). O aviso de conserto
