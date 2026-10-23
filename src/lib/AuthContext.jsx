@@ -58,7 +58,8 @@ export const AuthProvider = ({ children }) => {
         setIsAuthenticated(true);
       } catch (error) {
         console.error('Auth state resolution failed:', error);
-        setAuthError({ type: 'unknown', message: error.message || 'Failed to resolve authentication' });
+        // `code` (ex.: `db_quota`) deixa o App explicar a causa em vez de um "sem conexão" genérico.
+        setAuthError({ type: 'unknown', message: error.message || 'Failed to resolve authentication', code: error.code });
         setUser(null);
         setIsAuthenticated(false);
       } finally {

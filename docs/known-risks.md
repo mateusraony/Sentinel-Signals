@@ -33535,3 +33535,16 @@ workflow `restore-postgres.yml` só escreve em `RESTORE_DATABASE_URL`.
     `secrets.DATABASE_SSL_CA`).
   - **P2 — "banco vazio" ignorava `users`/`scanner_locks`.** Um destino com só perfis ou locks passava como
     vazio (e podia ser o vivo por outro endereço). `nonEmptyTables` agora conta qualquer tabela com linha.
+- **2ª revisão do Codex no PR #514 (2 achados, ambos reais e meus, corrigidos):**
+  - **P2 — o aviso nunca aparecia ao recarregar a página.** Com o banco sem cota, `AuthContext` chama
+    `/api/me`, que falha com `db_quota`; `AuthenticatedApp` devolvia a tela cheia genérica "Sem conexão com o
+    servidor" **antes** de montar o `AppLayout` (onde mora o `DbQuotaBanner`). Ou seja, no cenário principal
+    (recarregar/abrir o painel) o aviso novo não existia. Agora o `code` chega até `authError`
+    (`AuthContext.jsx`) e `authErrorFallbackProps` (`src/lib/authErrorView.js`) dá à tela cheia o título e o
+    texto de "Banco de dados sem cota". Travado por teste de ponta a ponta (`src/App.dbQuota.test.jsx`);
+    provado que falha sem a correção.
+  - **P2 — texto afirmava "limite do mês".** O detector não distingue computação, transferência e
+    armazenamento, e nem toda cota renova no mês. O texto virou neutro e único para banner e tela cheia
+    (`DB_QUOTA_USER_MESSAGE`, `src/lib/dbQuotaError.js`): não promete renovação nem culpa uma cota específica.
+  - **Observação:** a tela genérica de erro de autenticação continua dizendo "Seus dados estão salvos e
+    seguros" — texto anterior a este PR, não alterado.

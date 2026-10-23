@@ -22,6 +22,14 @@ describe('DbQuotaBanner', () => {
     expect(screen.getByRole('alert').textContent).toMatch(/último dado carregado às 12:30/);
   });
 
+  it('texto neutro: não afirma que o limite é mensal nem qual cota estourou (achado do Codex)', () => {
+    render(<DbQuotaBanner />);
+    act(() => reportDbQuotaExhausted());
+    const text = screen.getByRole('alert').textContent;
+    expect(text).not.toMatch(/\bmês\b|mensal|renov/i);
+    expect(text).toMatch(/computação, transferência ou espaço/);
+  });
+
   it('sem resposta boa anterior não inventa horário', () => {
     render(<DbQuotaBanner />);
     act(() => reportDbQuotaExhausted());

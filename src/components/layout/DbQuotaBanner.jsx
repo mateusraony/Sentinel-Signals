@@ -2,13 +2,14 @@ import React, { useSyncExternalStore } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Alert } from '@/components/ui/alert';
 import { getDbStatus, subscribeDbStatus } from '@/lib/dbStatus';
+import { DB_QUOTA_USER_MESSAGE, DB_QUOTA_USER_TITLE } from '@/lib/dbQuotaError';
 
 /**
  * Aviso global de "banco sem cota" (docs/known-risks.md item 282): quando a API
  * responde 503 `db_quota`, o painel diz o que está acontecendo em vez de ficar
  * carregando. Some sozinho na primeira resposta boa do banco. Não afirma nada
- * sobre os dados guardados — só que a leitura/gravação está recusada e que o
- * que aparece na tela pode estar velho.
+ * sobre os dados guardados nem sobre qual cota estourou ou quando renova — só que a
+ * leitura/gravação está recusada e que o que aparece na tela pode estar velho.
  */
 export default function DbQuotaBanner() {
   const status = useSyncExternalStore(subscribeDbStatus, getDbStatus, getDbStatus);
@@ -22,11 +23,10 @@ export default function DbQuotaBanner() {
     <Alert variant="destructive" className="mb-4">
       <AlertTriangle className="h-4 w-4" aria-hidden="true" />
       <div>
-        <p className="font-semibold">Banco de dados sem cota</p>
+        <p className="font-semibold">{DB_QUOTA_USER_TITLE}</p>
         <p>
-          O plano gratuito do banco atingiu o limite do mês, então o painel não consegue ler nem gravar
-          e o scan agendado fica parado. O que aparece na tela pode estar desatualizado
-          {lastOk ? ` (último dado carregado às ${lastOk})` : ''}. O Telegram avisa quando o banco voltar.
+          {DB_QUOTA_USER_MESSAGE} O que aparece na tela pode estar desatualizado
+          {lastOk ? ` (último dado carregado às ${lastOk})` : ''}.
         </p>
       </div>
     </Alert>
