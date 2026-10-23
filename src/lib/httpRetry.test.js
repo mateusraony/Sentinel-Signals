@@ -283,4 +283,27 @@ describe('fetchWithRetry', () => {
     expect(res.ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+  it('skipRetryWhen devolve a resposta !ok na hora, sem retentar (ex.: 503 de banco sem cota)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse({ ok: false, status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await fetchWithRetry('https://example.test', { skipRetryWhen: async () => true });
+
+    expect(res.status).toBe(503);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('skipRetryWhen que devolve false mantém o retry de sempre', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse({ ok: false, status: 503 }))
+      .mockResolvedValueOnce(mockResponse({ ok: true, status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const promise = fetchWithRetry('https://example.test', { skipRetryWhen: async () => false });
+    await vi.advanceTimersByTimeAsync(5000);
+    const res = await promise;
+
+    expect(res.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

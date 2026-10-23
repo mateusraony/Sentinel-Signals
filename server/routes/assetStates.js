@@ -5,6 +5,7 @@
 // não por id) não é a de nenhum dos métodos genéricos já expostos ali.
 const express = require('express');
 const { getPgCore, requireDatabaseUrl } = require('../pgCoreLoader');
+const { sendDbError } = require('../dbErrorResponse');
 
 function createAssetStatesRouter({ requireAuth, requireOwner }) {
   const router = express.Router();
@@ -27,7 +28,7 @@ function createAssetStatesRouter({ requireAuth, requireOwner }) {
       res.json(result);
     } catch (e) {
       console.error('POST /api/asset-states/upsert failed:', e.message);
-      res.status(400).json({ error: e.message });
+      await sendDbError(res, e, { status: 400, error: e.message });
     }
   });
 

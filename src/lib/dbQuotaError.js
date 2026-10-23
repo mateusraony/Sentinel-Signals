@@ -16,6 +16,13 @@
 // Módulo puro: só lê uma string. Usado pelo cron (alerta + classificação) e
 // por src/lib/scanner.js (o alerta de lock não deve repetir o mesmo sintoma).
 
+/**
+ * Código que a API devolve no corpo do 503 quando o banco está sem cota
+ * (server/dbErrorResponse.js) e que o navegador lê (src/lib/apiBackend.js).
+ * Uma só constante para os dois lados não divergirem.
+ */
+export const DB_QUOTA_CODE = 'db_quota';
+
 const DB_QUOTA_RE = /exceeded the (?:[a-z ]{0,30})?quota/i;
 
 /**

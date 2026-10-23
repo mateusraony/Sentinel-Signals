@@ -1,5 +1,15 @@
 import { QueryClient } from '@tanstack/react-query';
 import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
+import { DB_QUOTA_CODE } from '@/lib/dbQuotaError';
+
+/**
+ * Uma tentativa extra, exceto com o banco sem cota (item 282): a recusa se
+ * repete até o mês renovar, e retentar só atrasa o aviso na tela.
+ * @param {number} failureCount @param {Error & { code?: string }} error
+ */
+export function shouldRetryQuery(failureCount, error) {
+  return error?.code !== DB_QUOTA_CODE && failureCount < 1;
+}
 
 /**
  * Defaults do TanStack Query (docs/known-risks.md item 155).
@@ -19,7 +29,7 @@ export const queryClientInstance = new QueryClient({
     queries: {
       refetchOnWindowFocus: true,
       staleTime: POLL_OPERATIONAL_MS,
-      retry: 1,
+      retry: shouldRetryQuery,
     },
   },
 });

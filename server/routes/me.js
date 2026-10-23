@@ -8,6 +8,7 @@
 // corrida entre "ler que não existe" e "escrever" que o original tinha.
 const express = require('express');
 const { getPgCore, requireDatabaseUrl } = require('../pgCoreLoader');
+const { sendDbError } = require('../dbErrorResponse');
 
 function createMeRouter({ requireAuth }) {
   const router = express.Router();
@@ -25,7 +26,7 @@ function createMeRouter({ requireAuth }) {
       res.json({ uid: req.uid, ...profile, email: req.userEmail ?? profile.email });
     } catch (e) {
       console.error('GET /api/me failed:', e.message);
-      res.status(500).json({ error: 'Erro interno.' });
+      await sendDbError(res, e, { status: 500, error: 'Erro interno.' });
     }
   });
 

@@ -33420,3 +33420,68 @@ armazenamento, e a sessão não alcança o Neon. O usuário não conseguiu ver o
   restaura do último backup diário), ou espaçar o scan para ~15 min. Eu tinha dito "US$5 a 10" para o
   Neon Launch sem fonte; estava errado.
 - **Armazenamento:** poda de `system_logs`.
+
+## 283. Revisão do "Plano Mestre de Eficiência, Continuidade, Dados e Recuperação" (2026-10-23)
+
+**Contexto.** O usuário trouxe um documento de planejamento (21/10, montado numa conversa externa) sobre a
+queda do Neon (item 282) e pediu: consistência, dúvidas, melhorias e plano. O documento **não é fonte
+canônica** (regra de verdade documental): o que vale dele está aqui e no item 282. Conferido contra o
+código em 2026-10-23.
+
+**Confirmado no código:** lock fail-open (`scanner.js:323-339`); `SELECT id, data` sem projeção
+(`db/pgEntitiesCore.mjs:234,248,404`); `500 "Erro interno."` nas rotas de banco (`server/routes/*.js`); bloco
+Desempenho só escondido por CSS (`Dashboard.jsx:484`); PR #512 na `main`; PR #513 aberto com os 5 achados do
+Codex sem resolução (TLS do `pg_restore`, `TRUNCATE` por comparação de texto, CA fora de workflows,
+`DATABASE_URL_READONLY`, encoding da senha); backup sem `users`/`scanner_locks`.
+
+**Decisões do usuário (2026-10-23):** Neon ainda bloqueado; **ficar no Neon e só otimizar** (contra a
+recomendação — ver "Consequência" abaixo); **manter o lock fail-open** (reafirma o item 252); modo de
+observação independente do banco **"completo"** (contra a recomendação de adiar).
+
+**Furos do documento (fato × inferência):**
+- **Observação sem estado não fecha** [inferência]: "candidato novo" e "ativo já tem operação" dependem de
+  `SignalEvent`/`assetActiveOps`, que estão no banco que caiu. Sem estado externo o Telegram repete o mesmo
+  candidato a cada 5 min. Também cria um segundo motor, quebrando "o mesmo `scanner.js` no navegador e no
+  cron". **Desenho do armazenamento de estado externo ainda não decidido** — pré-requisito para codar.
+- **"Lock desconhecido = escrita desautorizada" contradiz o item 252** [fato]: o CAS por operação cobre a
+  correção; com o banco sem cota nenhuma escrita acontece de qualquer jeito. O risco real é split-brain entre
+  dois bancos depois de uma migração — o lock não o resolve.
+- **Neon voltando com consumidor esquecido** [hipótese]: `health-audit`, `count-signals`, `backfill-rtdb` ou
+  um deploy com env antiga voltam a escrever no Neon quando a cota renovar. Mitigação: depois de extrair o
+  delta (só leitura), trocar a senha do usuário do Neon (sem apagar o projeto).
+- **Migrar sem tratar egress repete o problema** [inferência]: Supabase Free remove o teto de CU-horas mas
+  mantém 5 GB de egress. Pela aritmética do item 282 (0,25 CU × 24 h × 30 d = 180 CU-h contra 100), o Neon
+  Free provavelmente não sustenta scan de 5 min **mesmo sem problema de egress** — não medido; depende de qual
+  cota estourou (só o painel do Neon diz).
+- **O backup falha quando mais se precisa** [fato]: execução #44 falhou pela mesma cota, e o `pg_dump` consome
+  o egress do mesmo Neon. Janela presa no Neon: do backup de 18/10 até 19/10 ~09:20 UTC.
+- **Cache de indicadores por vela (FUN-19) não ajuda a cota** [inferência]: os ~97,9% são sobre recomputação
+  de CPU (GitHub Actions, grátis), não leitura/escrita de banco, e mexe na área P0 do motor. Tirar do plano.
+- **OAuth do Drive em modo Testing** expira o refresh token em 7 dias (documentação do Google): o backup morreria
+  em silêncio. Publicar o app em produção e alertar a idade do último backup. Cifra `age`: o risco de custódia
+  da chave pode pesar mais que o ganho (o dump não tem segredos).
+- **Limites de terceiros sem fonte oficial** [fato]: Neon 100 CU-h confirmado por várias fontes secundárias;
+  5 GB de egress e 1 GB de armazenamento (mudança de 05/10/2026) só em uma fonte cada; Supabase 500 MB, 2 projetos
+  ativos, pausa após 7 dias sem atividade. Confirmar nas páginas oficiais antes de decidir.
+- **Retratação — F6 era falso alarme:** apontei que restaurar sem `users` perderia o admin do
+  `/api/backtest/trigger`. `requireAdmin` lê o **Firestore** (`server/CLAUDE.md`, `index.js:299`), não o
+  Postgres — nada se perde.
+- **Contradição de doc:** o `CLAUDE.md` diz que `strategyConfig`/`telegramFilters` ficaram no Firebase, mas
+  `ENTITY_TABLES` (`pgEntitiesCore.mjs`) já tem `strategy_config`/`telegram_filters` e o item 252 lê
+  `StrategyConfig` do Postgres. Confirmar qual vale antes de desenhar qualquer snapshot de config.
+
+**Consequência da escolha "ficar no Neon" (registrada, não rediscutida):** com a cota estourada, mudar código
+não destrava o banco — o sistema segue cego até a renovação. E cortar leitura reduz egress, **não** CU-horas.
+Se a causa for computação, o problema volta no mês seguinte.
+
+**Implementado nesta rodada (PR-A, não toca motor nem estratégia):** a API passa a responder
+**`503` com `code: 'db_quota'`** quando o Neon recusa por cota (`server/dbErrorResponse.js`, reaproveita
+`src/lib/dbQuotaError.js`) em vez de `500` genérico, em todas as rotas de banco (`entities`, `trade-ops`,
+`locks`, `asset-states`, `me`). No navegador: o GET **não é retentado** nesse caso (`skipRetryWhen` em
+`httpRetry.js`; antes eram 4 tentativas contra o banco bloqueado), o React Query também não retenta
+(`shouldRetryQuery`), e um aviso global (`DbQuotaBanner`) diz que o banco está sem cota e a hora do último dado
+carregado, sumindo na primeira resposta boa de uma rota de banco. Um 503 comum continua sendo retentado.
+
+**Pendente:** diagnóstico do painel do Neon (Compute/Network/Storage + renovação) — **ação do usuário**;
+desenho do estado externo do modo de observação (decisão do usuário antes de codar); fechar o #513 se o
+caminho Supabase for retomado; cortes de leitura do item 282 (nenhum feito além deste PR).
