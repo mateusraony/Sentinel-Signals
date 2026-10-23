@@ -10,12 +10,23 @@ describe('quoteIdent', () => {
 });
 
 describe('nonEmptyTables', () => {
-  it('acusa tabelas com linhas e ignora users/scanner_locks', () => {
+  it('acusa qualquer tabela com linhas, inclusive users e scanner_locks (que o dump não traz)', () => {
     const counts = [
       { table: 'trade_operations', rows: 3 }, { table: 'asset_states', rows: 0 },
       { table: 'users', rows: 1 }, { table: 'scanner_locks', rows: 2 },
     ];
-    expect(nonEmptyTables(counts)).toEqual([{ table: 'trade_operations', rows: 3 }]);
+    expect(nonEmptyTables(counts)).toEqual([
+      { table: 'trade_operations', rows: 3 }, { table: 'users', rows: 1 }, { table: 'scanner_locks', rows: 2 },
+    ]);
+  });
+
+  it('só users com linha já basta para recusar (poderia ser o banco vivo por outro endereço)', () => {
+    expect(nonEmptyTables([{ table: 'users', rows: 1 }, { table: 'trade_operations', rows: 0 }])).toHaveLength(1);
+  });
+
+  it('tudo zerado (ou nenhuma tabela) é banco vazio', () => {
+    expect(nonEmptyTables([{ table: 'users', rows: 0 }])).toEqual([]);
+    expect(nonEmptyTables([])).toEqual([]);
   });
 });
 

@@ -112,17 +112,20 @@ Duas etapas, de propósito. **A etapa 1 não troca nada**: o Sentinel continua e
    não usam no plano gratuito.
 4. **GitHub → Settings → Secrets and variables → Actions → New repository secret**, dois secrets:
    - `RESTORE_DATABASE_URL` = a conexão do passo 3;
-   - `DATABASE_SSL_CA` = o texto do certificado do passo 2.
+   - `RESTORE_DATABASE_SSL_CA` = o texto do certificado do passo 2.
+   - **Não use o nome `DATABASE_SSL_CA` aqui.** Esse é o certificado do banco **vivo** (o `DATABASE_URL`):
+     com ele preenchido o sistema só confia naquela autoridade, e o scan perderia o Neon antes do corte.
 5. **GitHub → Actions → "Restaurar backup no banco novo (Sentinel Signals)" → Run workflow.** Não há caixa
    nenhuma para marcar. No fim, abra o resumo do job: ele mostra qual backup foi usado, as linhas por tabela e
    o tamanho do banco contra os 500 MB do plano gratuito.
 6. **Me mande o resultado** (verde ou o erro), e o resumo. Se algo falhar, nada foi trocado.
-   - O workflow **nunca apaga nada e nunca restaura por cima**: se o banco novo já tem dados, ele para.
+   - O workflow **nunca apaga nada e nunca restaura por cima**: se o banco novo tem dados em qualquer tabela
+     (até `users` ou `scanner_locks`), ele para.
      Para refazer depois de uma tentativa que falhou no meio dos dados, crie **outro projeto** novo e vazio
      (a restauração é numa transação só: ou entra tudo ou nada).
 
 Por que é seguro: o workflow só escreve em `RESTORE_DATABASE_URL`, recusa rodar se for igual ao
-`DATABASE_URL` vivo, exige o destino **vazio antes de qualquer escrita** (o banco vivo nunca está vazio) e
+`DATABASE_URL` vivo, exige o destino **vazio (nenhuma tabela com linha) antes de qualquer escrita** (o banco vivo nunca está vazio) e
 confere o servidor com `verify-full` também no `pg_restore`, não só na checagem de conexão.
 
 ### Etapa 2 — CORTE (só depois do teste verde e do seu aval)
@@ -136,7 +139,8 @@ Ordem importa: o objetivo é nunca ter dois bancos recebendo escrita.
    (o backup mais recente agora inclui o que o Neon gravou até ali). Pule se o Neon ainda está bloqueado:
    o que ele tem fica para depois.
 3. **Trocar a conexão viva** (a mesma do passo 3 da etapa 1):
-   - GitHub: edite o secret `DATABASE_URL`;
+   - GitHub: edite o secret `DATABASE_URL` **e crie o secret `DATABASE_SSL_CA`** com o certificado do
+     Supabase (é agora, no corte, que ele passa a valer para o banco vivo);
    - **GitHub: apague o secret `DATABASE_URL_READONLY`** (ou troque por uma role somente-leitura criada no
      Supabase). Esquecer isso deixa a auditoria de saúde lendo o Neon antigo em silêncio — o relatório
      avisa "DATABASE_URL_READONLY ausente" enquanto ele não existir, o que é o comportamento certo;

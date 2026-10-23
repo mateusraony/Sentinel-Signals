@@ -13,7 +13,9 @@ const SEM_CONEXAO_NODE = {
   // pg_dump/libpq direto: o libpq não lê DATABASE_SSL_CA (usa sslmode da própria URL).
   'backup-postgres.yml': 'pg_dump (libpq) — não lê DATABASE_SSL_CA',
   // só compara com o banco vivo para RECUSAR rodar; a conexão usa RESTORE_DATABASE_URL.
-  'restore-postgres.yml': 'DATABASE_URL só entra na comparação "destino ≠ banco vivo"',
+  // CA PRÓPRIA (RESTORE_DATABASE_SSL_CA): a do banco vivo (DATABASE_SSL_CA) não pode ser reaproveitada
+  // para o destino — o driver passa a confiar só nela e o scan perderia o Neon antes do corte.
+  'restore-postgres.yml': 'usa RESTORE_DATABASE_SSL_CA; DATABASE_URL só entra na comparação "destino ≠ banco vivo"',
 };
 
 const workflows = readdirSync(DIR).filter((f) => f.endsWith('.yml'));
@@ -31,5 +33,15 @@ describe('workflows que conectam no banco repassam DATABASE_SSL_CA', () => {
 
   it('a lista de exceções não esconde workflow que nem existe mais', () => {
     for (const f of Object.keys(SEM_CONEXAO_NODE)) expect(workflows).toContain(f);
+  });
+});
+
+// Achado do Codex no PR #514: a CA do restore NÃO pode ser o secret DATABASE_SSL_CA (que o scan usa).
+describe('restore-postgres.yml usa CA própria', () => {
+  const texto = readFileSync(join(DIR, 'restore-postgres.yml'), 'utf8');
+
+  it('lê RESTORE_DATABASE_SSL_CA e nunca o secret DATABASE_SSL_CA do banco vivo', () => {
+    expect(texto).toMatch(/secrets\.RESTORE_DATABASE_SSL_CA\b/);
+    expect(texto).not.toMatch(/secrets\.DATABASE_SSL_CA\b/);
   });
 });

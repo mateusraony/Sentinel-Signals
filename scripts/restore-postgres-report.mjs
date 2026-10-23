@@ -40,7 +40,7 @@ function writeLibpqEnv(url, envFile) {
   if (!envFile) throw new Error('Uso: restore-postgres-report.mjs --libpq-env <arquivo de ambiente do job>');
   const ca = readCaFromEnv(process.env.DATABASE_SSL_CA);
   if (!ca) {
-    throw new Error('DATABASE_SSL_CA não está setada. Sem ela o pg_restore não confere o servidor (sslmode=require só criptografa). Cole o texto do certificado .crt do painel do Supabase no secret DATABASE_SSL_CA.');
+    throw new Error('RESTORE_DATABASE_SSL_CA não está setada. Sem ela o pg_restore não confere o servidor (sslmode=require só criptografa). Cole o texto do certificado .crt do painel do Supabase no secret RESTORE_DATABASE_SSL_CA.');
   }
   const caPath = join(process.env.RUNNER_TEMP || tmpdir(), 'restore-db-ca.crt');
   writeFileSync(caPath, `${ca}\n`, { mode: 0o600 });

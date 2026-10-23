@@ -7,12 +7,13 @@ export function quoteIdent(name) {
   return `"${String(name).replace(/"/g, '""')}"`;
 }
 
-/** Tabelas que o dump NÃO traz (scripts/backup-postgres.mjs): nascem vazias no banco novo e o app as escreve sozinho. */
-export const TABLES_NOT_IN_DUMP = Object.freeze(['users', 'scanner_locks']);
-
-/** Banco novo já tem dados? Restaurar por cima de linhas existentes falharia no meio (chave repetida). */
+/**
+ * Banco novo já tem dados? QUALQUER tabela com linha conta — inclusive `users` e `scanner_locks`, que o
+ * dump não traz (achado do Codex no PR #514): um destino que só tem perfis ou locks não é um banco novo
+ * (pode ser o vivo por outro endereço) e a restauração preservaria esses dados alheios.
+ */
 export function nonEmptyTables(counts) {
-  return counts.filter((c) => c.rows > 0 && !TABLES_NOT_IN_DUMP.includes(c.table));
+  return counts.filter((c) => c.rows > 0);
 }
 
 const fmtBytes = (bytes) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${(bytes / 1024).toFixed(1)} KB`);

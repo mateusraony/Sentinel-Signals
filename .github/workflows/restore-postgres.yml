@@ -42,7 +42,12 @@ jobs:
     timeout-minutes: 30
     env:
       RESTORE_DATABASE_URL: ${{ secrets.RESTORE_DATABASE_URL }}
-      DATABASE_SSL_CA: ${{ secrets.DATABASE_SSL_CA }}
+      # CA PRÓPRIA do restore (item 283, achado do Codex no PR #514): o secret
+      # DATABASE_SSL_CA é do banco do DATABASE_URL (scan.yml etc.) e, com uma CA
+      # setada, o driver passa a confiar SÓ nela — pôr aqui o certificado do Supabase
+      # enquanto o DATABASE_URL ainda é o Neon derrubaria o scan antes do corte. O
+      # nome DATABASE_SSL_CA abaixo é só o que os scripts deste job leem.
+      DATABASE_SSL_CA: ${{ secrets.RESTORE_DATABASE_SSL_CA }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -61,7 +66,7 @@ jobs:
             exit 1
           fi
           if [ -z "$DATABASE_SSL_CA" ]; then
-            echo "::error::Secret DATABASE_SSL_CA não configurado (texto do certificado .crt do painel do Supabase). Sem ele o pg_restore não confere o servidor."
+            echo "::error::Secret RESTORE_DATABASE_SSL_CA não configurado (texto do certificado .crt do painel do Supabase). Sem ele o pg_restore não confere o servidor."
             exit 1
           fi
           if [ -z "$BACKUP_DEPLOY_KEY" ]; then

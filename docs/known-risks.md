@@ -33525,3 +33525,13 @@ workflow `restore-postgres.yml` só escreve em `RESTORE_DATABASE_URL`.
   criptografa mas não confere a identidade do servidor. Risco baixo; pendente se o caminho Supabase for adotado.
 - **Não testado:** nada disto rodou contra um Supabase real (a sessão não o alcança). O primeiro disparo do
   workflow é o teste de verdade; o passo de conexão falha cedo e claro.
+- **Achados do Codex na revisão do PR #514 (ambos reais, ambos meus, corrigidos):**
+  - **P1 — CA do restore reaproveitava o secret do banco vivo.** A etapa 1 mandava pôr o certificado do
+    Supabase em `DATABASE_SSL_CA` enquanto o `DATABASE_URL` ainda era o Neon. Com uma CA setada o driver
+    confia **só** nela (`pgConnectionConfig`), então o `scan.yml` perderia o Neon antes do corte — e
+    quebraria produção na renovação do dia 30. Agora o restore usa o secret **próprio**
+    `RESTORE_DATABASE_SSL_CA` (mapeado para a env `DATABASE_SSL_CA` só dentro do job), e `DATABASE_SSL_CA`
+    só é criado no corte. Travado em `db/workflowsDatabaseCa.test.js` (o restore nunca lê
+    `secrets.DATABASE_SSL_CA`).
+  - **P2 — "banco vazio" ignorava `users`/`scanner_locks`.** Um destino com só perfis ou locks passava como
+    vazio (e podia ser o vivo por outro endereço). `nonEmptyTables` agora conta qualquer tabela com linha.
