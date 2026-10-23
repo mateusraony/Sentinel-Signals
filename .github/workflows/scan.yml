@@ -46,6 +46,9 @@ jobs:
           # via '@/api/entities') precisa disto; sem, getPool() lança e todo
           # scan falha.
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Certificado da autoridade do banco (item 282): só precisa existir se o
+          # provedor assina com CA própria (Supabase). Vazio = comportamento de sempre.
+          DATABASE_SSL_CA: ${{ secrets.DATABASE_SSL_CA }}
           # Ainda necessário: o marcador de dedup de cota do alerta do
           # Telegram (RTDB/Firestore, fora desta migração — ver
           # docs/known-risks.md item 170 addendum) continua lido pelo bundle

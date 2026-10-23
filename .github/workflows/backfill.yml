@@ -50,6 +50,9 @@ jobs:
           # target, scripts/adminEntitiesBackfillCache.js, wraps
           # scripts/adminEntities.js's live backend).
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Certificado da autoridade do banco (item 282): só precisa existir se o
+          # provedor assina com CA própria (Supabase). Vazio = comportamento de sempre.
+          DATABASE_SSL_CA: ${{ secrets.DATABASE_SSL_CA }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           # RTDB read mirror (docs/known-risks.md item 152) — optional, same
           # guard as scan.yml above.

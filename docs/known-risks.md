@@ -33502,3 +33502,26 @@ Compute `SUSPENDED` há ~5 dias, plano Free, Postgres 18, faixa 0,25↔2 CU, His
   ritmo (~5,8 CU-h/dia), acaba de novo em ~17 dias (~16/11).
 - **Retenção de 6 h do histórico:** recuperação por ponto no tempo do Neon não alcança uma queda de dias; o
   delta pós-backup só sai depois da renovação (ou com o banco novo já no ar).
+
+**Etapa de TESTE da restauração no Supabase preparada (2026-10-23)** — retoma o conteúdo do PR #513 (aberto,
+5 achados do Codex sem resolver) nesta branch, com os achados corrigidos. **Nada é ligado nem trocado**: o
+workflow `restore-postgres.yml` só escreve em `RESTORE_DATABASE_URL`.
+- **MIG-01 (TLS do `pg_restore`)** — o libpq não lê `DATABASE_SSL_CA`, então `sslmode=require` só criptografava.
+  `--libpq-env` grava a CA em arquivo (0600) e refaz a URL com `sslmode=verify-full` + `sslrootcert`
+  (`libpqUrlWithCa`, `db/pgSsl.mjs`); a URL é mascarada no log. Roda no início do job para falhar cedo.
+- **MIG-02 (`TRUNCATE`)** — removidos o input `limpar_antes`, o modo `--truncate` e `buildTruncateSql`. A
+  proteção deixou de ser comparar texto de URL: o destino precisa estar **vazio antes de qualquer escrita** (nem o
+  schema), e o banco vivo nunca está. Refazer = projeto novo.
+- **MIG-03 (CA fora de workflows)** — `count-signals.yml` e `migrate-postgres.yml` passam a repassar
+  `DATABASE_SSL_CA`. O plano mestre também citava `backfill-rtdb.yml`, mas ele usa Firestore/RTDB, não o Postgres
+  (`FIREBASE_DATABASE_URL`) — não precisa. `db/workflowsDatabaseCa.test.js` trava a regra para os próximos
+  (exceções explícitas: `backup-postgres.yml` usa `pg_dump`, e `restore-postgres.yml` só compara).
+- **MIG-04 (`DATABASE_URL_READONLY` velho)** — o runbook manda apagar o secret no corte (o `health-audit` já
+  avisa alto quando ele falta; com ele apontando para o Neon antigo leria o banco errado em silêncio).
+- **MIG-05 (senha na URL)** — runbook manda senha só com letras e números; `libpqUrlWithCa` recusa, com mensagem
+  em português, `@` solto, `%` mal formado ou símbolo que corte a URL (o teste pegou um `@` solto que o parser do
+  Node aceitava e o libpq poderia ler diferente).
+- **Limite conhecido, não corrigido:** o backup diário (`pg_dump`, `sslmode=require` da própria URL)
+  criptografa mas não confere a identidade do servidor. Risco baixo; pendente se o caminho Supabase for adotado.
+- **Não testado:** nada disto rodou contra um Supabase real (a sessão não o alcança). O primeiro disparo do
+  workflow é o teste de verdade; o passo de conexão falha cedo e claro.
