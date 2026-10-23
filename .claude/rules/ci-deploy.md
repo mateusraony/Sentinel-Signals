@@ -269,6 +269,23 @@ paths:
     procedência `--target-arm`, Bonferroni m=6) e publica `resumo-targets-test`.
   - **Sem secret.**
 
+- `restore-postgres.yml` — disparo **manual** (`workflow_dispatch`, sem campos): restaura o backup diário
+  mais recente (branch `backups-postgres` do repo privado de backups, via `BACKUP_DEPLOY_KEY`) num banco NOVO
+  (`docs/known-risks.md` itens 282/283).
+  - **Destino:** sempre o secret `RESTORE_DATABASE_URL`, nunca o `DATABASE_URL` vivo; recusa rodar se
+    forem iguais **e exige o destino vazio (nenhuma tabela com linha, `users`/`scanner_locks` incluídas) antes de
+    qualquer escrita**. Não existe opção de apagar nada
+    (achado do Codex no PR #513) — refazer é num projeto novo.
+  - **Como restaura:** só os dados (`pg_restore --data-only --single-transaction`), com o schema de
+    `db/schema.sql`. Termina com linhas por tabela e tamanho do banco no Job Summary.
+  - **TLS:** CA **própria** no secret `RESTORE_DATABASE_SSL_CA` (mapeada para a env `DATABASE_SSL_CA` só
+    dentro deste job) — nunca o secret `DATABASE_SSL_CA`, que é do banco vivo (com uma CA setada o driver
+    confia só nela). Para o `pg_restore` (libpq, que não lê essa env) a URL é refeita com
+    `sslmode=verify-full` + a CA em arquivo (`scripts/restore-postgres-report.mjs --libpq-env`).
+  - **Todo workflow que conecta no banco repassa `DATABASE_SSL_CA`** — travado por
+    `db/workflowsDatabaseCa.test.js` (exceções explícitas e comentadas lá).
+  - **Procedimento completo:** `docs/restore-postgres.md`.
+
 - `daily-rule-report.yml` — relatório diário da regra EMA 10/21 + Supertrend no Telegram
   (`docs/known-risks.md` item 275). Roda às **00:23 UTC** (`schedule`) e também por
   `workflow_dispatch`.

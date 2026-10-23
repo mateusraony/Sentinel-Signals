@@ -16,6 +16,21 @@
 // Módulo puro: só lê uma string. Usado pelo cron (alerta + classificação) e
 // por src/lib/scanner.js (o alerta de lock não deve repetir o mesmo sintoma).
 
+/**
+ * Código que a API devolve no corpo do 503 quando o banco está sem cota
+ * (server/dbErrorResponse.js) e que o navegador lê (src/lib/apiBackend.js).
+ * Uma só constante para os dois lados não divergirem.
+ */
+export const DB_QUOTA_CODE = 'db_quota';
+
+/**
+ * Texto para o usuário. NEUTRO de propósito (achado do Codex no PR #514): o detector não distingue
+ * computação, transferência e armazenamento — só o painel do provedor diz qual — e nem toda cota
+ * renova no mês. Não prometer renovação, não culpar uma cota específica.
+ */
+export const DB_QUOTA_USER_TITLE = 'Banco de dados sem cota';
+export const DB_QUOTA_USER_MESSAGE = 'O plano gratuito do banco de dados atingiu um de seus limites (computação, transferência ou espaço — o painel do provedor mostra qual). Enquanto isso o painel não consegue ler nem gravar e o scan agendado fica parado. O Telegram avisa quando o banco voltar.';
+
 const DB_QUOTA_RE = /exceeded the (?:[a-z ]{0,30})?quota/i;
 
 /**

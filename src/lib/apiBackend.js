@@ -7,6 +7,8 @@
 import { auth } from '@/lib/firebaseClient';
 import { getOwnerKey } from '@/lib/ownerKey';
 import { fetchWithRetry } from '@/lib/httpRetry';
+import { DB_QUOTA_CODE } from '@/lib/dbQuotaError';
+import { reportDbQuotaExhausted, reportDbReachable } from '@/lib/dbStatus';
 
 const BASE_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -17,7 +19,17 @@ const BASE_URL = import.meta.env.VITE_BACKEND_URL;
 // rede transitório ("Failed to fetch" contra o backend, visto em produção
 // em lock/StrategyConfig) sem deixar a UI travada por muito tempo numa
 // falha persistente.
-const GET_RETRY_OPTIONS = { maxRetries: 3 };
+//
+// 503 `db_quota` (banco sem cota, item 282) NÃO é retentado: a recusa é a mesma
+// até o mês renovar, e cada tentativa só bate de novo no banco bloqueado.
+// Lê o corpo de um clone — a resposta original segue intacta para o caller.
+const isDbQuotaResponse = async (res) =>
+  res.status === 503 && (await res.clone().json().catch(() => null))?.code === DB_QUOTA_CODE;
+const GET_RETRY_OPTIONS = { maxRetries: 3, skipRetryWhen: isDbQuotaResponse };
+
+// Rotas que de fato passam pelo Postgres: só uma resposta delas prova que o
+// banco está de pé (ex.: telegram-notify e o disparo de backtest não provam).
+const DB_BACKED_PATH = /^\/api\/(entities|trade-ops|locks|asset-states|me)(?:[/?]|$)/;
 
 // method defaults to GET when no body is passed, POST otherwise — existing
 // callers (all POST-with-body) keep working unchanged; new GET-only callers
@@ -70,14 +82,19 @@ export async function callBackend(path, body, { method, allow404 } = {}) {
   if (response.status === 401) {
     response = await doFetch(true);
   }
+  const dbBacked = DB_BACKED_PATH.test(path);
   if (allow404 && response.status === 404) {
+    if (dbBacked) reportDbReachable();
     return null;
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (data.code === DB_QUOTA_CODE) reportDbQuotaExhausted();
     // `status` é aditivo (a mensagem não muda) — permite a classifyError
     // (src/lib/errorClass.js) distinguir 401/429/5xx sem parsear texto.
-    throw Object.assign(new Error(data.error || `Request failed with status ${response.status}`), { status: response.status });
+    // `code` (só quando a API manda um, ex.: `db_quota`) idem.
+    throw Object.assign(new Error(data.error || `Request failed with status ${response.status}`), { status: response.status, code: data.code });
   }
+  if (dbBacked) reportDbReachable();
   return data;
 }

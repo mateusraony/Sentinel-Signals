@@ -33420,3 +33420,131 @@ armazenamento, e a sessão não alcança o Neon. O usuário não conseguiu ver o
   restaura do último backup diário), ou espaçar o scan para ~15 min. Eu tinha dito "US$5 a 10" para o
   Neon Launch sem fonte; estava errado.
 - **Armazenamento:** poda de `system_logs`.
+
+## 283. Revisão do "Plano Mestre de Eficiência, Continuidade, Dados e Recuperação" (2026-10-23)
+
+**Contexto.** O usuário trouxe um documento de planejamento (21/10, montado numa conversa externa) sobre a
+queda do Neon (item 282) e pediu: consistência, dúvidas, melhorias e plano. O documento **não é fonte
+canônica** (regra de verdade documental): o que vale dele está aqui e no item 282. Conferido contra o
+código em 2026-10-23.
+
+**Confirmado no código:** lock fail-open (`scanner.js:323-339`); `SELECT id, data` sem projeção
+(`db/pgEntitiesCore.mjs:234,248,404`); `500 "Erro interno."` nas rotas de banco (`server/routes/*.js`); bloco
+Desempenho só escondido por CSS (`Dashboard.jsx:484`); PR #512 na `main`; PR #513 aberto com os 5 achados do
+Codex sem resolução (TLS do `pg_restore`, `TRUNCATE` por comparação de texto, CA fora de workflows,
+`DATABASE_URL_READONLY`, encoding da senha); backup sem `users`/`scanner_locks`.
+
+**Decisões do usuário (2026-10-23):** Neon ainda bloqueado; **ficar no Neon e só otimizar** (contra a
+recomendação — ver "Consequência" abaixo); **manter o lock fail-open** (reafirma o item 252); modo de
+observação independente do banco **"completo"** (contra a recomendação de adiar).
+
+**Furos do documento (fato × inferência):**
+- **Observação sem estado não fecha** [inferência]: "candidato novo" e "ativo já tem operação" dependem de
+  `SignalEvent`/`assetActiveOps`, que estão no banco que caiu. Sem estado externo o Telegram repete o mesmo
+  candidato a cada 5 min. Também cria um segundo motor, quebrando "o mesmo `scanner.js` no navegador e no
+  cron". **Desenho do armazenamento de estado externo ainda não decidido** — pré-requisito para codar.
+- **"Lock desconhecido = escrita desautorizada" contradiz o item 252** [fato]: o CAS por operação cobre a
+  correção; com o banco sem cota nenhuma escrita acontece de qualquer jeito. O risco real é split-brain entre
+  dois bancos depois de uma migração — o lock não o resolve.
+- **Neon voltando com consumidor esquecido** [hipótese]: `health-audit`, `count-signals`, `backfill-rtdb` ou
+  um deploy com env antiga voltam a escrever no Neon quando a cota renovar. Mitigação: depois de extrair o
+  delta (só leitura), trocar a senha do usuário do Neon (sem apagar o projeto).
+- **Migrar sem tratar egress repete o problema** [inferência]: Supabase Free remove o teto de CU-horas mas
+  mantém 5 GB de egress. Pela aritmética do item 282 (0,25 CU × 24 h × 30 d = 180 CU-h contra 100), o Neon
+  Free provavelmente não sustenta scan de 5 min **mesmo sem problema de egress** — não medido; depende de qual
+  cota estourou (só o painel do Neon diz).
+- **O backup falha quando mais se precisa** [fato]: execução #44 falhou pela mesma cota, e o `pg_dump` consome
+  o egress do mesmo Neon. Janela presa no Neon: do backup de 18/10 até 19/10 ~09:20 UTC.
+- **Cache de indicadores por vela (FUN-19) não ajuda a cota** [inferência]: os ~97,9% são sobre recomputação
+  de CPU (GitHub Actions, grátis), não leitura/escrita de banco, e mexe na área P0 do motor. Tirar do plano.
+- **OAuth do Drive em modo Testing** expira o refresh token em 7 dias (documentação do Google): o backup morreria
+  em silêncio. Publicar o app em produção e alertar a idade do último backup. Cifra `age`: o risco de custódia
+  da chave pode pesar mais que o ganho (o dump não tem segredos).
+- **Limites de terceiros sem fonte oficial** [fato]: Neon 100 CU-h confirmado por várias fontes secundárias;
+  5 GB de egress e 1 GB de armazenamento (mudança de 05/10/2026) só em uma fonte cada; Supabase 500 MB, 2 projetos
+  ativos, pausa após 7 dias sem atividade. Confirmar nas páginas oficiais antes de decidir.
+- **Retratação — F6 era falso alarme:** apontei que restaurar sem `users` perderia o admin do
+  `/api/backtest/trigger`. `requireAdmin` lê o **Firestore** (`server/CLAUDE.md`, `index.js:299`), não o
+  Postgres — nada se perde.
+- **Contradição de doc:** o `CLAUDE.md` diz que `strategyConfig`/`telegramFilters` ficaram no Firebase, mas
+  `ENTITY_TABLES` (`pgEntitiesCore.mjs`) já tem `strategy_config`/`telegram_filters` e o item 252 lê
+  `StrategyConfig` do Postgres. Confirmar qual vale antes de desenhar qualquer snapshot de config.
+
+**Consequência da escolha "ficar no Neon" (registrada, não rediscutida):** com a cota estourada, mudar código
+não destrava o banco — o sistema segue cego até a renovação. E cortar leitura reduz egress, **não** CU-horas.
+Se a causa for computação, o problema volta no mês seguinte.
+
+**Implementado nesta rodada (PR-A, não toca motor nem estratégia):** a API passa a responder
+**`503` com `code: 'db_quota'`** quando o Neon recusa por cota (`server/dbErrorResponse.js`, reaproveita
+`src/lib/dbQuotaError.js`) em vez de `500` genérico, em todas as rotas de banco (`entities`, `trade-ops`,
+`locks`, `asset-states`, `me`). No navegador: o GET **não é retentado** nesse caso (`skipRetryWhen` em
+`httpRetry.js`; antes eram 4 tentativas contra o banco bloqueado), o React Query também não retenta
+(`shouldRetryQuery`), e um aviso global (`DbQuotaBanner`) diz que o banco está sem cota e a hora do último dado
+carregado, sumindo na primeira resposta boa de uma rota de banco. Um 503 comum continua sendo retentado.
+
+**Pendente:** diagnóstico do painel do Neon (Compute/Network/Storage + renovação) — **ação do usuário**;
+desenho do estado externo do modo de observação (decisão do usuário antes de codar); fechar o #513 se o
+caminho Supabase for retomado; cortes de leitura do item 282 (nenhum feito além deste PR).
+
+**Addendum (2026-10-23) — causa confirmada pelo console do Neon (prints do usuário).** Banner "Limit
+reached — You've used all of your monthly compute allowance for this project". Aba Overview, Usage
+desde 30/09/2026: **Compute 110,33 CU-h**, Storage 69,91 MB, History 1,11 MB, **Network transfer 1,01 GB**.
+Compute `SUSPENDED` há ~5 dias, plano Free, Postgres 18, faixa 0,25↔2 CU, History retention 6 h.
+- **Fato:** a cota que estourou foi a de **computação**. Transferência (1,01 GB) e armazenamento (69,91 MB)
+  estão longe dos tetos de 5 GB e 0,5–1 GB.
+- **Inferência forte:** 110,33 CU-h ≈ 0,25 CU × ~18 dias × 24 h (≈108). O banco nunca dormiu — o scan de 5 min
+  o mantém ligado 24 h (o auto-suspend de 5 min coincide com o intervalo). Confirma a hipótese "Computação"
+  do item 282 e descarta a de transferência como causa.
+- **Consequências:** (1) os cortes de leitura do item 282 reduzem egress, **não** computação — não destravam
+  nem evitam a próxima queda; (2) o banco restaurado ocupa ~70 MB, cabe nos 500 MB do Supabase Free, e 1 GB/mês
+  de egress cabe nos 5 GB (resolve PD-02 do plano mestre); (3) o período parece começar no dia 30
+  ("Since Sep 30" — inferência; a página Billing confirma), então a cota renova por volta de 30/10 e, no mesmo
+  ritmo (~5,8 CU-h/dia), acaba de novo em ~17 dias (~16/11).
+- **Retenção de 6 h do histórico:** recuperação por ponto no tempo do Neon não alcança uma queda de dias; o
+  delta pós-backup só sai depois da renovação (ou com o banco novo já no ar).
+
+**Etapa de TESTE da restauração no Supabase preparada (2026-10-23)** — retoma o conteúdo do PR #513 (aberto,
+5 achados do Codex sem resolver) nesta branch, com os achados corrigidos. **Nada é ligado nem trocado**: o
+workflow `restore-postgres.yml` só escreve em `RESTORE_DATABASE_URL`.
+- **MIG-01 (TLS do `pg_restore`)** — o libpq não lê `DATABASE_SSL_CA`, então `sslmode=require` só criptografava.
+  `--libpq-env` grava a CA em arquivo (0600) e refaz a URL com `sslmode=verify-full` + `sslrootcert`
+  (`libpqUrlWithCa`, `db/pgSsl.mjs`); a URL é mascarada no log. Roda no início do job para falhar cedo.
+- **MIG-02 (`TRUNCATE`)** — removidos o input `limpar_antes`, o modo `--truncate` e `buildTruncateSql`. A
+  proteção deixou de ser comparar texto de URL: o destino precisa estar **vazio antes de qualquer escrita** (nem o
+  schema), e o banco vivo nunca está. Refazer = projeto novo.
+- **MIG-03 (CA fora de workflows)** — `count-signals.yml` e `migrate-postgres.yml` passam a repassar
+  `DATABASE_SSL_CA`. O plano mestre também citava `backfill-rtdb.yml`, mas ele usa Firestore/RTDB, não o Postgres
+  (`FIREBASE_DATABASE_URL`) — não precisa. `db/workflowsDatabaseCa.test.js` trava a regra para os próximos
+  (exceções explícitas: `backup-postgres.yml` usa `pg_dump`, e `restore-postgres.yml` só compara).
+- **MIG-04 (`DATABASE_URL_READONLY` velho)** — o runbook manda apagar o secret no corte (o `health-audit` já
+  avisa alto quando ele falta; com ele apontando para o Neon antigo leria o banco errado em silêncio).
+- **MIG-05 (senha na URL)** — runbook manda senha só com letras e números; `libpqUrlWithCa` recusa, com mensagem
+  em português, `@` solto, `%` mal formado ou símbolo que corte a URL (o teste pegou um `@` solto que o parser do
+  Node aceitava e o libpq poderia ler diferente).
+- **Limite conhecido, não corrigido:** o backup diário (`pg_dump`, `sslmode=require` da própria URL)
+  criptografa mas não confere a identidade do servidor. Risco baixo; pendente se o caminho Supabase for adotado.
+- **Não testado:** nada disto rodou contra um Supabase real (a sessão não o alcança). O primeiro disparo do
+  workflow é o teste de verdade; o passo de conexão falha cedo e claro.
+- **Achados do Codex na revisão do PR #514 (ambos reais, ambos meus, corrigidos):**
+  - **P1 — CA do restore reaproveitava o secret do banco vivo.** A etapa 1 mandava pôr o certificado do
+    Supabase em `DATABASE_SSL_CA` enquanto o `DATABASE_URL` ainda era o Neon. Com uma CA setada o driver
+    confia **só** nela (`pgConnectionConfig`), então o `scan.yml` perderia o Neon antes do corte — e
+    quebraria produção na renovação do dia 30. Agora o restore usa o secret **próprio**
+    `RESTORE_DATABASE_SSL_CA` (mapeado para a env `DATABASE_SSL_CA` só dentro do job), e `DATABASE_SSL_CA`
+    só é criado no corte. Travado em `db/workflowsDatabaseCa.test.js` (o restore nunca lê
+    `secrets.DATABASE_SSL_CA`).
+  - **P2 — "banco vazio" ignorava `users`/`scanner_locks`.** Um destino com só perfis ou locks passava como
+    vazio (e podia ser o vivo por outro endereço). `nonEmptyTables` agora conta qualquer tabela com linha.
+- **2ª revisão do Codex no PR #514 (2 achados, ambos reais e meus, corrigidos):**
+  - **P2 — o aviso nunca aparecia ao recarregar a página.** Com o banco sem cota, `AuthContext` chama
+    `/api/me`, que falha com `db_quota`; `AuthenticatedApp` devolvia a tela cheia genérica "Sem conexão com o
+    servidor" **antes** de montar o `AppLayout` (onde mora o `DbQuotaBanner`). Ou seja, no cenário principal
+    (recarregar/abrir o painel) o aviso novo não existia. Agora o `code` chega até `authError`
+    (`AuthContext.jsx`) e `authErrorFallbackProps` (`src/lib/authErrorView.js`) dá à tela cheia o título e o
+    texto de "Banco de dados sem cota". Travado por teste de ponta a ponta (`src/App.dbQuota.test.jsx`);
+    provado que falha sem a correção.
+  - **P2 — texto afirmava "limite do mês".** O detector não distingue computação, transferência e
+    armazenamento, e nem toda cota renova no mês. O texto virou neutro e único para banner e tela cheia
+    (`DB_QUOTA_USER_MESSAGE`, `src/lib/dbQuotaError.js`): não promete renovação nem culpa uma cota específica.
+  - **Observação:** a tela genérica de erro de autenticação continua dizendo "Seus dados estão salvos e
+    seguros" — texto anterior a este PR, não alterado.

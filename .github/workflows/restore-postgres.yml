@@ -1,0 +1,146 @@
+name: Restaurar backup no banco novo (Sentinel Signals)
+
+# Docs/known-risks.md item 282 — o Neon gratuito estourou a cota e o sistema
+# parou de ler e gravar. Este workflow restaura o BACKUP DIÁRIO MAIS RECENTE
+# (branch backups-postgres do repo privado de backups, o mesmo que
+# backup-postgres.yml alimenta) num banco NOVO, por exemplo um projeto Supabase.
+#
+# Segurança:
+# - O destino é SEMPRE o secret RESTORE_DATABASE_URL, nunca o DATABASE_URL vivo,
+#   e o job recusa rodar se os dois forem iguais. Trocar o DATABASE_URL é um
+#   passo SEPARADO, feito por você só depois de conferir o relatório.
+# - NÃO existe opção de apagar nada (item 283, achado do Codex no PR #513: uma
+#   limpeza protegida só por comparação de texto de URL pode apagar o banco
+#   vivo por um endereço alternativo). A proteção é outra: o destino precisa estar
+#   VAZIO antes de qualquer escrita — e o banco vivo nunca está. Refazer = projeto
+#   novo.
+# - TLS completo também no pg_restore: o libpq não lê DATABASE_SSL_CA, então a
+#   URL dele é refeita com sslmode=verify-full + a CA em arquivo (a conferência
+#   anterior só valia para a conexão do Node).
+# - Restaura só os DADOS: o schema vem de db/schema.sql (db/migrate.mjs), então
+#   não depende da versão do Postgres que gerou o dump.
+# - Tudo numa transação só: se algo falhar, nada fica pela metade.
+# - Nenhuma ordem, nenhum Telegram, nenhuma escrita no Neon.
+#
+# O dump nunca inclui `users` nem `scanner_locks` (scripts/backup-postgres.mjs):
+# as duas nascem vazias no banco novo e o app volta a escrevê-las sozinho.
+# Perde-se o que foi gravado depois do último backup bom.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: restore-postgres
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RESTORE_DATABASE_URL: ${{ secrets.RESTORE_DATABASE_URL }}
+      # CA PRÓPRIA do restore (item 283, achado do Codex no PR #514): o secret
+      # DATABASE_SSL_CA é do banco do DATABASE_URL (scan.yml etc.) e, com uma CA
+      # setada, o driver passa a confiar SÓ nela — pôr aqui o certificado do Supabase
+      # enquanto o DATABASE_URL ainda é o Neon derrubaria o scan antes do corte. O
+      # nome DATABASE_SSL_CA abaixo é só o que os scripts deste job leem.
+      DATABASE_SSL_CA: ${{ secrets.RESTORE_DATABASE_SSL_CA }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Conferir os secrets e que o destino NÃO é o banco vivo
+        env:
+          LIVE_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BACKUP_DEPLOY_KEY: ${{ secrets.BACKUP_DEPLOY_KEY }}
+        run: |
+          if [ -z "$RESTORE_DATABASE_URL" ]; then
+            echo "::error::Secret RESTORE_DATABASE_URL não configurado (Settings → Secrets and variables → Actions → New repository secret; valor = connection string 'Session pooler' do projeto novo, terminando em ?sslmode=require)."
+            exit 1
+          fi
+          if [ -z "$DATABASE_SSL_CA" ]; then
+            echo "::error::Secret RESTORE_DATABASE_SSL_CA não configurado (texto do certificado .crt do painel do Supabase). Sem ele o pg_restore não confere o servidor."
+            exit 1
+          fi
+          if [ -z "$BACKUP_DEPLOY_KEY" ]; then
+            echo "::error::Secret BACKUP_DEPLOY_KEY não configurado (é o mesmo que backup-postgres.yml usa)."
+            exit 1
+          fi
+          if [ "$RESTORE_DATABASE_URL" = "$LIVE_DATABASE_URL" ]; then
+            echo "::error::RESTORE_DATABASE_URL é igual ao DATABASE_URL vivo. Este workflow só restaura num banco NOVO."
+            exit 1
+          fi
+
+      # Cedo de propósito: senha com símbolo sem codificar ou CA ausente falham aqui, com mensagem clara.
+      # O pg_restore é o libpq, que ignora DATABASE_SSL_CA: grava a CA em arquivo e
+      # monta PG_RESTORE_URL com sslmode=verify-full (confere CA e nome do servidor).
+      - name: Preparar a conexão do pg_restore com verificação completa
+        run: node scripts/restore-postgres-report.mjs --libpq-env "$GITHUB_ENV"
+
+      - name: Conferir a conexão com o banco novo (inclui o certificado TLS)
+        run: node scripts/restore-postgres-report.mjs --check
+
+      # Antes de QUALQUER escrita (nem o schema): banco com dados = para aqui.
+      - name: Garantir que o banco novo está vazio
+        run: node scripts/restore-postgres-report.mjs --require-empty
+
+      - name: Instalar pg_restore 18 (mesma versão que gerou o dump)
+        run: |
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
+      - name: Baixar o backup mais recente (repo privado, via deploy key SSH)
+        env:
+          BACKUP_DEPLOY_KEY: ${{ secrets.BACKUP_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$BACKUP_DEPLOY_KEY" > ~/.ssh/backup_deploy_key
+          chmod 600 ~/.ssh/backup_deploy_key
+          # Chaves públicas do GitHub fixadas, não escaneadas (mesma justificativa de backup-postgres.yml).
+          cat <<'KNOWN_HOSTS' >> ~/.ssh/known_hosts
+          github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+          github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+          github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=
+          KNOWN_HOSTS
+          chmod 600 ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/backup_deploy_key -o IdentitiesOnly=yes"
+          git clone --depth 1 --branch backups-postgres git@github.com:mateusraony/sentinel-signals-backups.git /tmp/backups
+          DUMP=$(ls -1 /tmp/backups/postgres-backup-*.dump | sort | tail -n 1)
+          if [ -z "$DUMP" ]; then
+            echo "::error::Nenhum postgres-backup-*.dump na branch backups-postgres."
+            exit 1
+          fi
+          cp "$DUMP" /tmp/restore.dump
+          rm -f ~/.ssh/backup_deploy_key
+          {
+            echo "## Backup usado"
+            echo ""
+            echo "- Arquivo: \`$(basename "$DUMP")\`"
+            echo "- Tamanho: $(du -h /tmp/restore.dump | cut -f1)"
+            echo "- Tudo o que foi gravado depois dele não está neste backup."
+          } >> "$GITHUB_STEP_SUMMARY"
+          pg_restore --list /tmp/restore.dump | head -n 40
+
+      - name: Aplicar o schema (db/schema.sql) no banco novo
+        run: DATABASE_URL="$RESTORE_DATABASE_URL" node db/migrate.mjs
+
+      - name: Restaurar os dados (numa transação só)
+        run: |
+          set -o pipefail
+          pg_restore --data-only --single-transaction --exit-on-error \
+            --no-owner --no-privileges \
+            --dbname "$PG_RESTORE_URL" /tmp/restore.dump
+
+      - name: Relatório do banco novo
+        run: |
+          set -o pipefail
+          node scripts/restore-postgres-report.mjs --report | tee -a "$GITHUB_STEP_SUMMARY"

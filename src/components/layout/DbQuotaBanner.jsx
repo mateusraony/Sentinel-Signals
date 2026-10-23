@@ -1,0 +1,34 @@
+import React, { useSyncExternalStore } from 'react';
+import { AlertTriangle } from 'lucide-react';
+import { Alert } from '@/components/ui/alert';
+import { getDbStatus, subscribeDbStatus } from '@/lib/dbStatus';
+import { DB_QUOTA_USER_MESSAGE, DB_QUOTA_USER_TITLE } from '@/lib/dbQuotaError';
+
+/**
+ * Aviso global de "banco sem cota" (docs/known-risks.md item 282): quando a API
+ * responde 503 `db_quota`, o painel diz o que está acontecendo em vez de ficar
+ * carregando. Some sozinho na primeira resposta boa do banco. Não afirma nada
+ * sobre os dados guardados nem sobre qual cota estourou ou quando renova — só que a
+ * leitura/gravação está recusada e que o que aparece na tela pode estar velho.
+ */
+export default function DbQuotaBanner() {
+  const status = useSyncExternalStore(subscribeDbStatus, getDbStatus, getDbStatus);
+  if (!status.quotaExhausted) return null;
+
+  const lastOk = status.lastOkAt
+    ? new Date(status.lastOkAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    : null;
+
+  return (
+    <Alert variant="destructive" className="mb-4">
+      <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+      <div>
+        <p className="font-semibold">{DB_QUOTA_USER_TITLE}</p>
+        <p>
+          {DB_QUOTA_USER_MESSAGE} O que aparece na tela pode estar desatualizado
+          {lastOk ? ` (último dado carregado às ${lastOk})` : ''}.
+        </p>
+      </div>
+    </Alert>
+  );
+}

@@ -4,6 +4,7 @@
 // browser desde o cutover (2026-09-12).
 const express = require('express');
 const { getPgCore, requireDatabaseUrl } = require('../pgCoreLoader');
+const { sendDbError } = require('../dbErrorResponse');
 const { validateTradeOpPatch } = require('../tradeOpPatchGuard');
 
 function createTradeOpsRouter({ requireAuth, requireOwner }) {
@@ -30,7 +31,7 @@ function createTradeOpsRouter({ requireAuth, requireOwner }) {
       res.json(result);
     } catch (e) {
       console.error('POST /api/trade-ops/create-if-none-active failed:', e.message);
-      res.status(400).json({ error: e.message });
+      await sendDbError(res, e, { status: 400, error: e.message });
     }
   });
 
@@ -53,7 +54,7 @@ function createTradeOpsRouter({ requireAuth, requireOwner }) {
       res.json(result);
     } catch (e) {
       console.error(`POST /api/trade-ops/${id}/transition failed:`, e.message);
-      res.status(400).json({ error: e.message });
+      await sendDbError(res, e, { status: 400, error: e.message });
     }
   });
 
@@ -68,7 +69,7 @@ function createTradeOpsRouter({ requireAuth, requireOwner }) {
       res.json({ ok: true });
     } catch (e) {
       console.error('POST /api/trade-ops/clear-active failed:', e.message);
-      res.status(500).json({ error: 'Erro interno.' });
+      await sendDbError(res, e, { status: 500, error: 'Erro interno.' });
     }
   });
 

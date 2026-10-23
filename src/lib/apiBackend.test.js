@@ -137,6 +137,65 @@ describe('callBackend', () => {
     expect(err.status).toBe(500);
   });
 
+  // Item 282 — banco (Neon) sem cota: a API responde 503 com code `db_quota`.
+  // Retentar só repete a recusa, então o GET falha na 1a resposta; o erro leva
+  // `code` e o estado global de aviso liga. Uma resposta boa depois desliga.
+  describe('503 db_quota (banco sem cota)', () => {
+    const quotaResponse = () => {
+      const body = { error: 'Banco de dados sem cota.', code: 'db_quota' };
+      return { ok: false, status: 503, headers: { get: () => null }, json: async () => body, clone() { return quotaResponse(); } };
+    };
+
+    it('GET não é retentado, o erro carrega code e o aviso global liga', async () => {
+      getIdTokenMock.mockResolvedValue('token-bom');
+      global.fetch.mockResolvedValue(quotaResponse());
+
+      const { callBackend } = await import('./apiBackend');
+      const { getDbStatus } = await import('./dbStatus');
+      const err = await callBackend('/api/entities/MonitoredAsset').catch((e) => e);
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(err.status).toBe(503);
+      expect(err.code).toBe('db_quota');
+      expect(getDbStatus().quotaExhausted).toBe(true);
+    });
+
+    it('um 503 comum (sem code) continua sendo retentado como antes', async () => {
+      vi.useFakeTimers();
+      try {
+        getIdTokenMock.mockResolvedValue('token-bom');
+        const plain503 = () => ({ ok: false, status: 503, headers: { get: () => null }, json: async () => ({ error: 'indisponível' }), clone: plain503 });
+        global.fetch
+          .mockResolvedValueOnce(plain503())
+          .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 'a1' }) });
+
+        const { callBackend } = await import('./apiBackend');
+        const promise = callBackend('/api/entities/MonitoredAsset');
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        expect(await promise).toEqual({ id: 'a1' });
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('resposta boa de rota de banco desliga o aviso; rota que não usa o banco não desliga', async () => {
+      getIdTokenMock.mockResolvedValue('token-bom');
+      const { callBackend } = await import('./apiBackend');
+      const { getDbStatus, reportDbQuotaExhausted } = await import('./dbStatus');
+      reportDbQuotaExhausted();
+
+      global.fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ ok: true }) });
+      await callBackend('/api/telegram-notify', { text: 'oi' });
+      expect(getDbStatus().quotaExhausted).toBe(true);
+
+      global.fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ([]) });
+      await callBackend('/api/entities/MonitoredAsset');
+      expect(getDbStatus().quotaExhausted).toBe(false);
+    });
+  });
+
   it('toda chamada inclui o header X-Owner-Key (requireOwner no server)', async () => {
     getIdTokenMock.mockResolvedValueOnce('token-bom');
     global.fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: 'a1' }) });

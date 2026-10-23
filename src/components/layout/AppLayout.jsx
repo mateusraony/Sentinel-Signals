@@ -5,6 +5,7 @@ import TopBar from './TopBar';
 import TickerBar from './TickerBar';
 import AuroraBg from './AuroraBg';
 import DebugLogButton from './DebugLogButton';
+import DbQuotaBanner from './DbQuotaBanner';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useAutoScan } from '@/hooks/useAutoScan';
 import { useQueryClient } from '@tanstack/react-query';
@@ -28,6 +29,7 @@ export default function AppLayout() {
           <TickerBar />
           <TopBar />
           <main className="p-4 lg:p-6">
+            <DbQuotaBanner />
             {/* key={pathname} remounts the boundary on every route change,
                 so a page's crash doesn't stay "stuck" showing the fallback
                 after the user navigates away to a different, working page. */}

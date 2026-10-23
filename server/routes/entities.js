@@ -9,6 +9,7 @@
 // Chamada de verdade pelo browser desde o cutover (2026-09-12).
 const express = require('express');
 const { getPgCore, requireDatabaseUrl } = require('../pgCoreLoader');
+const { sendDbError } = require('../dbErrorResponse');
 const { checkCollectionAccess } = require('../entityCollectionGuard');
 
 function createEntitiesRouter({ requireAuth, requireOwner }) {
@@ -52,7 +53,7 @@ function createEntitiesRouter({ requireAuth, requireOwner }) {
       res.json(rows);
     } catch (e) {
       console.error(`GET /api/entities/${collection} failed:`, e.message);
-      res.status(500).json({ error: 'Erro interno.' });
+      await sendDbError(res, e, { status: 500, error: 'Erro interno.' });
     }
   });
 
@@ -66,7 +67,7 @@ function createEntitiesRouter({ requireAuth, requireOwner }) {
       res.json(doc);
     } catch (e) {
       console.error(`GET /api/entities/${collection}/${id} failed:`, e.message);
-      res.status(500).json({ error: 'Erro interno.' });
+      await sendDbError(res, e, { status: 500, error: 'Erro interno.' });
     }
   });
 
@@ -79,7 +80,7 @@ function createEntitiesRouter({ requireAuth, requireOwner }) {
       res.status(201).json(doc);
     } catch (e) {
       console.error(`POST /api/entities/${collection} failed:`, e.message);
-      res.status(400).json({ error: e.message });
+      await sendDbError(res, e, { status: 400, error: e.message });
     }
   });
 
@@ -94,7 +95,7 @@ function createEntitiesRouter({ requireAuth, requireOwner }) {
       res.status(201).json(docs);
     } catch (e) {
       console.error(`POST /api/entities/${collection}/bulk failed:`, e.message);
-      res.status(400).json({ error: e.message });
+      await sendDbError(res, e, { status: 400, error: e.message });
     }
   });
 
@@ -107,7 +108,7 @@ function createEntitiesRouter({ requireAuth, requireOwner }) {
       res.json(deleted);
     } catch (e) {
       console.error(`POST /api/entities/${collection}/delete-many failed:`, e.message);
-      res.status(500).json({ error: 'Erro interno.' });
+      await sendDbError(res, e, { status: 500, error: 'Erro interno.' });
     }
   });
 
@@ -120,7 +121,7 @@ function createEntitiesRouter({ requireAuth, requireOwner }) {
       res.json(result);
     } catch (e) {
       console.error(`POST /api/entities/${collection}/${id}/unique failed:`, e.message);
-      res.status(400).json({ error: e.message });
+      await sendDbError(res, e, { status: 400, error: e.message });
     }
   });
 
@@ -133,7 +134,7 @@ function createEntitiesRouter({ requireAuth, requireOwner }) {
       res.json(doc);
     } catch (e) {
       console.error(`POST /api/entities/${collection}/${id}/set failed:`, e.message);
-      res.status(400).json({ error: e.message });
+      await sendDbError(res, e, { status: 400, error: e.message });
     }
   });
 
@@ -146,7 +147,7 @@ function createEntitiesRouter({ requireAuth, requireOwner }) {
       res.json(doc);
     } catch (e) {
       console.error(`PATCH /api/entities/${collection}/${id} failed:`, e.message);
-      res.status(400).json({ error: e.message });
+      await sendDbError(res, e, { status: 400, error: e.message });
     }
   });
 
@@ -159,7 +160,7 @@ function createEntitiesRouter({ requireAuth, requireOwner }) {
       res.status(204).end();
     } catch (e) {
       console.error(`DELETE /api/entities/${collection}/${id} failed:`, e.message);
-      res.status(500).json({ error: 'Erro interno.' });
+      await sendDbError(res, e, { status: 500, error: 'Erro interno.' });
     }
   });
 

@@ -9,6 +9,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorFallback } from '@/components/ErrorFallback';
+import { authErrorFallbackProps } from '@/lib/authErrorView';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 
 import AppLayout from '@/components/layout/AppLayout';
@@ -62,8 +63,7 @@ const AuthenticatedApp = () => {
     return (
       <ErrorFallback
         fullPage
-        title="Sem conexão com o servidor"
-        message="Não conseguimos confirmar sua sessão agora. Seus dados estão salvos e seguros — isso costuma ser uma instabilidade temporária de conexão."
+        {...authErrorFallbackProps(authError)}
         diagnosticText={authError.message}
         diagnosticLabel="Diagnóstico"
         onReload={() => window.location.reload()}

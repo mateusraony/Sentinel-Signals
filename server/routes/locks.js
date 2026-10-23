@@ -2,6 +2,7 @@
 // verdade pelo browser desde o cutover (2026-09-12).
 const express = require('express');
 const { getPgCore, requireDatabaseUrl } = require('../pgCoreLoader');
+const { sendDbError } = require('../dbErrorResponse');
 
 function createLocksRouter({ requireAuth, requireOwner }) {
   const router = express.Router();
@@ -18,7 +19,7 @@ function createLocksRouter({ requireAuth, requireOwner }) {
       res.json({ acquired });
     } catch (e) {
       console.error('POST /api/locks/acquire failed:', e.message);
-      res.status(500).json({ error: 'Erro interno.' });
+      await sendDbError(res, e, { status: 500, error: 'Erro interno.' });
     }
   });
 
@@ -38,7 +39,7 @@ function createLocksRouter({ requireAuth, requireOwner }) {
       res.json({ ok: true, released });
     } catch (e) {
       console.error('POST /api/locks/release failed:', e.message);
-      res.status(500).json({ error: 'Erro interno.' });
+      await sendDbError(res, e, { status: 500, error: 'Erro interno.' });
     }
   });
 

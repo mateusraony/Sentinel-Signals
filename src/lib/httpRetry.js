@@ -139,6 +139,11 @@ export async function fetchWithRetry(url, {
   // headers) usava isto antes de src/lib/apiBackend.js precisar mandar
   // Authorization/X-Owner-Key.
   fetchOptions = {},
+  // Opcional: devolve true para uma resposta !ok que NÃO deve ser retentada
+  // mesmo com status "retentável" (ex.: 503 de banco sem cota — retentar só
+  // repete a mesma recusa). Pode ser async (lê o corpo via res.clone()). Sem
+  // ele, o comportamento é o de sempre.
+  skipRetryWhen = /** @type {((res: Response) => boolean | Promise<boolean>) | undefined} */ (undefined),
 } = {}) {
   let ultimoErro;
   for (let tentativa = 0; tentativa <= maxRetries; tentativa++) {
@@ -155,6 +160,7 @@ export async function fetchWithRetry(url, {
     if (!retryStatuses.has(res.status) || tentativa === maxRetries) {
       return res; // caller decide o que fazer com um !ok não-retentável
     }
+    if (skipRetryWhen && await skipRetryWhen(res)) return res;
     const espera = esperaAntesDeRetentar(res, tentativa, baseDelayMs, maxRetryAfterMs);
     console.warn(`[httpRetry] ${context}: HTTP ${res.status}, retentando em ${espera}ms (${tentativa + 1}/${maxRetries})`);
     await sleep(espera);

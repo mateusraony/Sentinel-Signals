@@ -87,3 +87,80 @@ precisam voltar. Se o projeto inteiro precisar ser recriado do zero:
    `scanner_locks`) também exista, vazia, prontas pro app escrever de novo.
 3. Atualize o secret `DATABASE_URL` (GitHub Actions e Render).
 4. Siga os passos 1-5 acima normalmente.
+
+## Trocar de provedor: restaurar num banco NOVO (Supabase) — itens 282/283
+
+Quando o Neon gratuito estoura a cota de computação, ele recusa tudo até o ciclo renovar (item 283: o banco
+nunca dormia, porque o scan de 5 min o mantém ligado). O caminho sem pagar é restaurar o último backup diário
+num Postgres novo. **Perde-se o que foi gravado depois do backup usado** (operações virtuais, sinais, logs);
+isso ainda existe no Neon e se recupera depois da renovação. Nada é apagado no Neon.
+
+Duas etapas, de propósito. **A etapa 1 não troca nada**: o Sentinel continua exatamente como está.
+
+### Etapa 1 — TESTE (não troca nada)
+
+1. **Supabase → New project.** Nome `sentinel-signals`. Região nos EUA (o Render e o GitHub rodam lá).
+   Projeto **só do Sentinel**: não use o banco de outro app seu (o limite de transferência é somado entre os
+   projetos da conta). **Senha: use só letras e números** (20 ou mais, sem espaço, sem `@ # ? / %`).
+   Senha com símbolo quebra a conexão — se não houver jeito, veja "Senha com símbolo" abaixo. Guarde a senha.
+2. **Baixar o certificado:** Project Settings → Database → *SSL Configuration* → *Download certificate*.
+   Abra o arquivo `.crt` no bloco de notas e copie o texto inteiro (de `-----BEGIN CERTIFICATE-----` até
+   `-----END CERTIFICATE-----`). O certificado é público, não é segredo.
+3. **Copiar a conexão:** botão *Connect* no topo do projeto → aba *Connection string* → método
+   **Session pooler** → copie. Troque `[YOUR-PASSWORD]` pela senha e **acrescente `?sslmode=require` no
+   fim**. Tem que ser *Session pooler*: a "Direct connection" só funciona por IPv6, que o Render e o GitHub
+   não usam no plano gratuito.
+4. **GitHub → Settings → Secrets and variables → Actions → New repository secret**, dois secrets:
+   - `RESTORE_DATABASE_URL` = a conexão do passo 3;
+   - `RESTORE_DATABASE_SSL_CA` = o texto do certificado do passo 2.
+   - **Não use o nome `DATABASE_SSL_CA` aqui.** Esse é o certificado do banco **vivo** (o `DATABASE_URL`):
+     com ele preenchido o sistema só confia naquela autoridade, e o scan perderia o Neon antes do corte.
+5. **GitHub → Actions → "Restaurar backup no banco novo (Sentinel Signals)" → Run workflow.** Não há caixa
+   nenhuma para marcar. No fim, abra o resumo do job: ele mostra qual backup foi usado, as linhas por tabela e
+   o tamanho do banco contra os 500 MB do plano gratuito.
+6. **Me mande o resultado** (verde ou o erro), e o resumo. Se algo falhar, nada foi trocado.
+   - O workflow **nunca apaga nada e nunca restaura por cima**: se o banco novo tem dados em qualquer tabela
+     (até `users` ou `scanner_locks`), ele para.
+     Para refazer depois de uma tentativa que falhou no meio dos dados, crie **outro projeto** novo e vazio
+     (a restauração é numa transação só: ou entra tudo ou nada).
+
+Por que é seguro: o workflow só escreve em `RESTORE_DATABASE_URL`, recusa rodar se for igual ao
+`DATABASE_URL` vivo, exige o destino **vazio (nenhuma tabela com linha) antes de qualquer escrita** (o banco vivo nunca está vazio) e
+confere o servidor com `verify-full` também no `pg_restore`, não só na checagem de conexão.
+
+### Etapa 2 — CORTE (só depois do teste verde e do seu aval)
+
+Ordem importa: o objetivo é nunca ter dois bancos recebendo escrita.
+
+1. **Pause o disparo externo:** cron-job.org → pause o job que dispara o scan (`docs/claude/external-cron-setup.md`).
+   O agendamento horário de reserva do GitHub pode rodar uma vez; tudo bem.
+2. **Se o Neon já renovou e você quer os dados mais novos**, antes de trocar: GitHub → Actions →
+   "Daily Postgres backup" → Run workflow, e rode de novo a etapa 1 num projeto Supabase novo e vazio
+   (o backup mais recente agora inclui o que o Neon gravou até ali). Pule se o Neon ainda está bloqueado:
+   o que ele tem fica para depois.
+3. **Trocar a conexão viva** (a mesma do passo 3 da etapa 1):
+   - GitHub: edite o secret `DATABASE_URL` **e crie o secret `DATABASE_SSL_CA`** com o certificado do
+     Supabase (é agora, no corte, que ele passa a valer para o banco vivo);
+   - **GitHub: apague o secret `DATABASE_URL_READONLY`** (ou troque por uma role somente-leitura criada no
+     Supabase). Esquecer isso deixa a auditoria de saúde lendo o Neon antigo em silêncio — o relatório
+     avisa "DATABASE_URL_READONLY ausente" enquanto ele não existir, o que é o comportamento certo;
+   - Render → serviço `sentinel-signals-api` → Environment: `DATABASE_URL` com a mesma conexão e
+     `DATABASE_SSL_CA` com o certificado. O Render reinicia sozinho.
+4. **Conferir:** abra `<endereço da API>/ready` (deve responder ok), dispare uma vez o workflow
+   "Scheduled scan" e confira que o log mostra "leitura do banco" e nenhum erro. Só então reative o job do
+   cron-job.org.
+5. **Voltar atrás** se algo estiver errado: repita o passo 3 com a conexão antiga do Neon (guarde-a antes de
+   trocar). Enquanto o Neon estiver sem cota isso não ajuda — por isso o teste vem antes.
+6. **Depois que o Neon renovar e você extrair o que quiser dele** (backup manual do passo 2): troque a senha
+   do usuário do Neon (Console Neon → Roles → reset password), **sem apagar o projeto**. Qualquer coisa que
+   tenha ficado apontando para o Neon passa a falhar com erro claro, em vez de gravar num banco esquecido.
+
+Observação (limite conhecido): o backup diário (`backup-postgres.yml`, `pg_dump`) usa `sslmode=require` da
+própria URL — criptografa, mas não confere a identidade do servidor, como o `pg_restore` agora faz. Risco baixo
+(runner do GitHub → Supabase), registrado no item 283.
+
+### Senha com símbolo
+
+Se a senha tem símbolo, ele precisa ser codificado na URL (e o job vai recusar com mensagem clara se não
+estiver): `&`→`%26`, `#`→`%23`, `?`→`%3F`, `/`→`%2F`, `@`→`%40`, `%`→`%25`, espaço→`%20`. É mais simples
+trocar a senha do projeto por uma só com letras e números.
