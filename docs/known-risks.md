@@ -33485,3 +33485,20 @@ carregado, sumindo na primeira resposta boa de uma rota de banco. Um 503 comum c
 **Pendente:** diagnóstico do painel do Neon (Compute/Network/Storage + renovação) — **ação do usuário**;
 desenho do estado externo do modo de observação (decisão do usuário antes de codar); fechar o #513 se o
 caminho Supabase for retomado; cortes de leitura do item 282 (nenhum feito além deste PR).
+
+**Addendum (2026-10-23) — causa confirmada pelo console do Neon (prints do usuário).** Banner "Limit
+reached — You've used all of your monthly compute allowance for this project". Aba Overview, Usage
+desde 30/09/2026: **Compute 110,33 CU-h**, Storage 69,91 MB, History 1,11 MB, **Network transfer 1,01 GB**.
+Compute `SUSPENDED` há ~5 dias, plano Free, Postgres 18, faixa 0,25↔2 CU, History retention 6 h.
+- **Fato:** a cota que estourou foi a de **computação**. Transferência (1,01 GB) e armazenamento (69,91 MB)
+  estão longe dos tetos de 5 GB e 0,5–1 GB.
+- **Inferência forte:** 110,33 CU-h ≈ 0,25 CU × ~18 dias × 24 h (≈108). O banco nunca dormiu — o scan de 5 min
+  o mantém ligado 24 h (o auto-suspend de 5 min coincide com o intervalo). Confirma a hipótese "Computação"
+  do item 282 e descarta a de transferência como causa.
+- **Consequências:** (1) os cortes de leitura do item 282 reduzem egress, **não** computação — não destravam
+  nem evitam a próxima queda; (2) o banco restaurado ocupa ~70 MB, cabe nos 500 MB do Supabase Free, e 1 GB/mês
+  de egress cabe nos 5 GB (resolve PD-02 do plano mestre); (3) o período parece começar no dia 30
+  ("Since Sep 30" — inferência; a página Billing confirma), então a cota renova por volta de 30/10 e, no mesmo
+  ritmo (~5,8 CU-h/dia), acaba de novo em ~17 dias (~16/11).
+- **Retenção de 6 h do histórico:** recuperação por ponto no tempo do Neon não alcança uma queda de dias; o
+  delta pós-backup só sai depois da renovação (ou com o banco novo já no ar).
