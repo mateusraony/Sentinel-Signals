@@ -7,8 +7,9 @@ multi-timeframe e gerencia o ciclo de vida de operações (entrada → TP1/TP2/s
 → fechamento), com alertas via Telegram. **É um painel de sinalização — nenhuma
 ordem é enviada à exchange (TP/Stop são virtuais).**
 
-Originado na plataforma no-code **Base44** e migrado para **Firebase**. Não
-reintroduza `@base44/*`, `base44.com` nem nada do ecossistema Base44.
+Originado na plataforma no-code **Base44**, migrado para **Firebase** e, em
+2026-09-12, para **Postgres/Neon** (dados de negócio). Não reintroduza
+`@base44/*`, `base44.com` nem nada do ecossistema Base44.
 
 > Detalhe por domínio vive em `.claude/rules/`; riscos em `docs/known-risks.md`;
 > **o que está pendente e em que ordem em `docs/roadmap.md`**.
@@ -19,12 +20,14 @@ reintroduza `@base44/*`, `base44.com` nem nada do ecossistema Base44.
 - **Frontend**: Vite + React 18 (JSX, não TS — `checkJs` é best-effort),
   Tailwind, shadcn/ui, TanStack Query, React Router. **Static Site gratuito no
   Render** (`render.yaml`, serviço `sentinel-signals`, deploy a cada push em `main`).
-- **Backend**: **Postgres/Neon** para as entidades de negócio (`TradeOperation`,
-  `SignalEvent`, `MonitoredAsset` etc. — cutover concluído 2026-09-12,
-  `docs/claude/postgres-cutover-runbook.md`) + **Firebase** para Auth e um
-  punhado de docs que não migraram (`strategyConfig`, `telegramFilters` — ver
-  `.claude/rules/firestore-concurrency.md`). `src/api/entities.js` é hoje um
-  cliente HTTP para `server/` (Postgres), não mais um SDK Firestore direto.
+- **Backend**: **Postgres/Neon** para **todas** as entidades de negócio
+  (`ENTITY_TABLES` em `db/pgEntitiesCore.mjs`, inclusive `StrategyConfig` e
+  `TelegramFilters`; cutover 2026-09-12, `docs/claude/postgres-cutover-runbook.md`)
+  + **Firebase** só para Auth e `users/{uid}.role` (`requireAdmin`,
+  `server/index.js:298`). `src/api/entities.js` é cliente HTTP de `server/`.
+  Código Firestore antigo = legado (`scripts/adminEntitiesFirestoreLegacy.js`).
+  **Neon free: o que estourou é COMPUTAÇÃO (100 CU-h/mês), não espaço** — o scan
+  de 5 min mantém o banco acordado (`docs/known-risks.md` itens 282/283).
   - **Auth**: anônima temporária (ver decisões abaixo).
   - **Sem Cloud Functions / sem Blaze** — restrição **permanente** (o usuário
     recusou cartão/custo). `functions/` existe mas nunca é deployado. Não sugira
@@ -39,32 +42,20 @@ reintroduza `@base44/*`, `base44.com` nem nada do ecossistema Base44.
 
 ## Arquitetura de dados
 
-`src/api/entities.js` exporta `backend`, um adaptador fino sobre o Firestore
-(`backend.entities.<Nome>.{list,filter,create,update,delete,bulkCreate,deleteMany}`,
-além de `backend.locks` e `backend.tradeOps`). ~20 arquivos consomem isso sem
-conhecer o Firestore direto. Ao adicionar entidade, use `createEntity('colecao')`
-— nunca chame `firebase/firestore` direto nos componentes.
+`src/api/entities.js` exporta `backend` (cliente HTTP → `server/` → Postgres):
+`backend.entities.<Nome>.{list,filter,create,update,delete,...}`, mais
+`backend.locks` e `backend.tradeOps`. O mesmo contrato roda no cron via
+`scripts/adminEntities.js` → `db/pgEntitiesCore.mjs`. Ao adicionar entidade,
+registre-a em `ENTITY_TABLES` — nunca chame banco direto nos componentes.
 
-| Schema de referência (`docs/schema-reference/*.jsonc`) | Coleção Firestore |
+| Schema de referência (`docs/schema-reference/*.jsonc`) | Tabela Postgres |
 |---|---|
-| `MonitoredAsset.jsonc` | `monitoredAssets` |
-| `AssetState.jsonc` | `assetStates` |
-| `SignalEvent.jsonc` | `signalEvents` |
-| `TradeOperation.jsonc` | `tradeOperations` |
-| `PriceAlert.jsonc` | `priceAlerts` |
-| `SystemLog.jsonc` | `systemLogs` |
-| `User.jsonc` | `users` (`{ role }`, chave = uid) |
-| `VerificationTask.jsonc` | `verificationTasks` |
-| `TradingviewWebhookEvent.jsonc` | `tradingviewWebhookEvents` (só `server/index.js`, Admin SDK — não passa por `backend.entities`) |
-
-Sem `.jsonc`: `scannerLocks` (lock de scan), `assetActiveOps/{assetId}` (garante
-1 op ativa por ativo via transação de doc único), `strategyConfig/current`
-(parâmetros de estratégia sincronizados painel↔cron), `agentConversations`
-(Strategy Reviewer, pausado), `telegramConfig/{uid}` (não usado — chat_id vive no
-`localStorage` hoje), `telegramFilters/current` (filtro de origem do sinal —
-RF/SMC/MACD/EMA/RSI — sincronizado painel↔cron, ver `docs/known-risks.md`
-item 47), `systemAlerts/firestoreQuota` (marcador de dedup do alerta Telegram
-de cota do Firestore esgotada, só cron, ver `docs/known-risks.md` item 138).
+| `MonitoredAsset` · `AssetState` · `SignalEvent` | `monitored_assets` · `asset_states` · `signal_events` |
+| `TradeOperation` | `trade_operations` (+ âncora `active_ops_anchor`: 1 op ativa por ativo) |
+| `PriceAlert` · `SystemLog` · `VerificationTask` | `price_alerts` · `system_logs` · `verification_tasks` |
+| `User` | `users` (`{ role }`; o `requireAdmin` ainda lê o **Firestore**) |
+| `TradingviewWebhookEvent` | `tradingview_webhook_events` (só `server/`) |
+| — | `scanner_locks`, `strategy_config` (painel↔cron), `telegram_filters` (item 47) |
 
 ## ⚠️ Decisões intencionais — não "corrija" sem pedido
 
@@ -79,18 +70,17 @@ Revertidas/pausadas de propósito a pedido do usuário (ver `docs/known-risks.md
    separado e usa o token com segurança, fora do browser.
 3. **Strategy Reviewer pausado.** `src/pages/StrategyReviewer.jsx` é placeholder;
    `src/api/agents.js` segue implementado mas desconectado.
-4. **Divergência Futures (painel) × Spot (cron) — aceita formalmente.**
-   Pesquisa de comunidade confirmou: não existe workaround gratuito e
-   confiável (proxy é bloqueado pela Binance, self-hosted fora dos EUA e VPN
-   pago violam as restrições do projeto). Ver `docs/known-risks.md` item 4.
-   Não é mais "risco pendente" — é limitação aceita enquanto o projeto for
-   100% gratuito. Trocar a fonte de Futures por outra exchange (Bybit/OKX via
-   ccxt) resolveria isso mas troca uma divergência por outra — é decisão de
-   produto separada, não implementada, não recomende sem pedido explícito.
+4. **Divergência Futures (painel) × Spot (cron) — aceita formalmente**
+   (`docs/known-risks.md` item 4): não há workaround gratuito (proxy bloqueado
+   pela Binance; self-hosted fora dos EUA e VPN pago violam as restrições).
+   Limitação aceita enquanto o projeto for 100% gratuito. Trocar por Bybit/OKX
+   é decisão de produto separada — não recomende sem pedido explícito.
 
 Outras decisões permanentes: **não** reintroduzir Base44; **não** usar Vercel/
 Netlify (manter GitHub + Render + Firebase); **não** habilitar trading real;
 **não** alterar algo funcional sem necessidade demonstrada.
+**Planejado, não implementado (item 284):** camada "Contexto de Mercado" (macro,
+sentimento) só informativa — nunca toca motor/score; sem Cloudflare, sem Neon.
 
 ## Scan agendado (GitHub Actions) — roda sem navegador
 
@@ -102,22 +92,27 @@ chama `scanAllAssets()` / `priceCheckActiveOps()` **de `src/lib/scanner.js` sem
 modificação** — mesma lógica no browser e no cron. `scripts/build-scan.mjs`
 empacota com esbuild e redireciona 4 imports para versões Node:
 
-- `@/api/entities` → `scripts/adminEntities.js` (firebase-admin, ignora rules)
+- `@/api/entities` → `scripts/adminEntities.js` (re-export de `db/pgEntitiesCore.mjs`, Postgres direto)
 - `./telegram` → `scripts/adminTelegram.js` (lê token/chat_id de env)
-- `./pineParser` → `scripts/adminPineConfig.js` (**lê `strategyConfig/current` do
-  Firestore** — o mesmo doc que a página Pine Script escreve via `syncPineToAssets`;
+- `./pineParser` → `scripts/adminPineConfig.js` (**lê `StrategyConfig/current` do
+  Postgres** — o mesmo registro que a página Pine Script escreve via `syncPineToAssets`;
   mantenha o par `DEFAULTS`/`SYNCED_STRATEGY_KEYS` espelhado com `src/lib/pineParser.js`).
 - `./marketDataProvider` → `scripts/adminMarketDataProvider.js` (Binance Spot —
   Futures dá 451 em datacenters US, ver decisão item 4 abaixo).
 
 Rodar local: `npm run scan`. Secrets do workflow (Settings → Secrets → Actions):
 `FIREBASE_SERVICE_ACCOUNT_JSON`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`,
-`HEALTHCHECKS_PING_URL` (opcional, watchdog). `scripts/dist/` é gitignored.
+`HEALTHCHECKS_PING_URL` (opcional, watchdog) e `DATABASE_URL` (Postgres).
+`scripts/dist/` é gitignored.
 
 **Outros workflows**: `ci.yml` (lint + `npm test` Vitest + build a cada PR/push),
-`backup.yml` (backup diário → branch `backups`), `keep-warm.yml` (ping `/health`
-a cada 10 min p/ não hibernar o Render free), `deploy-firestore.yml` (deploy
-manual de rules/índices).
+`backup.yml` (Firestore → repo privado de backups), `backup-postgres.yml`
+(backup diário do Neon; `restore-postgres.yml` é manual, ainda não testado),
+`keep-warm.yml` (ping `/health` a cada 10 min p/ não hibernar o Render free),
+`daily-rule-report.yml` (relatório diário EMA+Supertrend no Telegram),
+`health-audit.yml` (2x/dia), `db-migrate.yml` (**migração de schema manual**),
+`deploy-firestore.yml` (rules/índices, manual). Lista completa:
+`.github/workflows/`.
 
 ## Segurança — não regrida (detalhe em `.claude/rules/security.md`)
 

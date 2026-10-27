@@ -33548,3 +33548,86 @@ workflow `restore-postgres.yml` só escreve em `RESTORE_DATABASE_URL`.
     (`DB_QUOTA_USER_MESSAGE`, `src/lib/dbQuotaError.js`): não promete renovação nem culpa uma cota específica.
   - **Observação:** a tela genérica de erro de autenticação continua dizendo "Seus dados estão salvos e
     seguros" — texto anterior a este PR, não alterado.
+
+## 284. Auditoria do TXT "Cripto.ico × Sentinel" e plano da camada "Contexto de Mercado" (2026-10-27)
+
+**Contexto.** O usuário trouxe um TXT (~2.000 linhas, conversa com outra IA, 20-27/10) que compara o Sentinel
+com o Gênesis Labs (Cripto.ico) e propõe: derivativos, explicações, cenários Plano A/B, TP3 e uma camada de
+contexto (macro, calendário, sentimento, notícias, on-chain, avisos no Telegram). Pediu análise crítica, se é
+viável, o que melhorar e se a documentação/histórico do projeto está em dia. O TXT **não é fonte canônica**
+(regra de verdade documental): o que vale dele está aqui. Conferido contra o código em 2026-10-27 por 4
+agentes de leitura (auditoria do repo, mapa de interface/motor, validação de fontes, red team do desenho).
+
+**Confirmado no código [fato]:** pesos do score RF 25/20/20/15/10/10 e limiar 75 (`confluence.js:5-12,105`);
+OB/FVG com peso 0 de propósito (`smcConfluence.js:37-38`); funding só informativo (`useFundingRate.js:12-24`);
+existem `decisionExplanation/decisionSnapshot/decisionCardPresenter`, `backtestEngine`, `indicatorAttribution`,
+`targetModeReport`, `marketBenchmarks` (CDI/Selic/IPCA via BCB), `notificationTemplates`.
+
+**Erros/lacunas do TXT [fato]:**
+- **Neon:** o problema é **computação** (110,33 de 100 CU-h), não espaço (item 282). O TXT, escrito sem ler os
+  itens 282/283, trata como espaço.
+- **TP3 não existe** no motor (só TP1/TP2/runner; `tradeMetrics.js:355-382` assume 2 pernas). "TP3 no backtest"
+  é feature nova de pesquisa, não ajuste. Caminho barato: pós-processar com `mfe_r`, sem tocar o scanner.
+- **"Horário silencioso"** não existe no código (seria novo).
+- **CoinGecko:** o cenário de 77.760 chamadas/mês era exagerado; com `/global` + `/coins/markets?ids=` o uso real
+  é ~180 de 10.000/mês.
+- **FRED:** os termos proíbem cache/redistribuição/uso em IA → não usar (o projeto grava JSON em repo público).
+- **Cloudflare Workers/D1:** desnecessário, plataforma nova (conflita com a decisão GitHub+Render+Firebase/Neon;
+  Cloudflare já foi descartado como proxy da Binance) e o número "500 MB do D1" do TXT diverge das fontes (5 GB).
+- **Derivativos (OI/taker) 24h:** Binance Futures dá 451 em datacenter dos EUA (item 4, aceito) → só no navegador;
+  fora deste plano.
+
+**Documentação desatualizada encontrada e corrigida nesta rodada:** `README.md` (dizia Firestore como banco
+principal, typecheck "não roda no CI", scan "a cada 5 min" pelo workflow); `CLAUDE.md` (seção "Arquitetura de
+dados" descrevia Firestore; dizia que `strategyConfig`/`telegramFilters` ficaram no Firebase — **já estão no
+Postgres**, `ENTITY_TABLES` em `db/pgEntitiesCore.mjs` e `scripts/adminPineConfig.js:189`; lista de workflows;
+estava com 204 linhas); `docs/roadmap.md` (parado em 2026-08/10-16, sem Neon). Isto **resolve a "contradição de
+doc" registrada no item 283**. Não corrigido: `docs/claude/postgres-cutover-runbook.md` ainda marca "Status
+desta rodada (2026-09-09)".
+
+**Decisões do usuário (2026-10-27):** (1) ordem: **arrumar o que existe primeiro** (docs + pendências do Neon),
+só depois o Contexto; (2) v1 **em etapas, começando pequeno**; (3) Telegram: **os 3 resumos (07h/12h/21h BRT) +
+avisos de evento**, com chave liga/desliga por categoria (a recomendação era só o resumo da manhã + eventos de
+alta importância — registrada como risco de excesso de mensagens); (4) análise automática de print: **fora**.
+
+**Desenho aprovado [plano, nada implementado]:**
+- Coletor = workflow GitHub Actions disparado 3x/dia pelo cron-job.org (10:00, 15:00, 00:00 UTC; BRT é UTC-3, sem
+  horário de verão), `schedule` só de reserva fora do minuto :00. **Sem Neon**: o workflow não pode ter
+  `DATABASE_URL` (o `adminTelegram.js` grava `SystemLog` no banco quando o envio falha, `:165-170`).
+- Armazenamento = branch órfã pública `context-data` do próprio repo, só dados públicos (`status.json` com hora da
+  última checagem + hash por fonte; `events-AAAA-MM.json`). Só grava evento novo quando o hash muda; teste falha
+  se o JSON tiver chave fora de uma lista permitida (item 25 foi vazamento real em repo público).
+- Frontend lê por `fetch` (hook novo copiando `useFundingRate.js`), `staleTime` 5-10 min, falha em silêncio,
+  4 estados (atualizado / desatualizado / indisponível / não se aplica), chave de desligar. Sem CSP que bloqueie
+  (`index.html`, `render.yaml`).
+- Vínculo evento↔operação **calculado no navegador** (`contextOverlap.js`, janela
+  `[getEntryReferenceTime ?? created_date, closed_at_real_time ?? closed_at]`, só eventos com `firstSeenAt` ≤ o
+  instante — sem olhar o futuro). Nenhuma mudança em `TradeOperation`/Neon. Marcador na linha do tempo
+  (`TradeHistory.jsx:349-363`, `Trades.jsx:380-425`) como **correlação, nunca causa**; só eventos de alta
+  importância e perto do horário; emoji novo exige registro em `src/lib/emojiRegistry.js` (1 emoji = 1 significado,
+  testado) e em `docs/notification-vocabulary.md`.
+- Resumo do período = fatos + "leitura possível" em texto de modelo **rotulado como hipótese** (sem IA generativa;
+  comparação com expectativa de mercado exige fonte licenciada → só "resultado × anterior").
+- Fontes: BLS (`bls.ics`, exige User-Agent — testar), FOMC (8 datas/ano em lista fixa), Alternative.me
+  Medo&Ganância (crédito visível; é índice do Bitcoin), CoinGecko Demo (opcional), RSS do Fed, Binance Spot
+  (variação BTC/ETH). Depois: DefiLlama, mempool.space. Evitar: FRED. Sem fonte estável: delisting Binance.
+- **Isolamento:** `scanner.js`, `opExitRules.js`, `tradeMetrics.js` não importam nada de contexto — travado por
+  teste "tripwire" (modelo `noOrderExecutionTripwire.test.js`, `targetModeTripwire.test.js`).
+- Fuso: guardar tudo em UTC; o horário de verão dos EUA acaba em **01/11/2026** (CPI 08:30 ET = 12:30 UTC até
+  31/10, 13:30 UTC depois). Teste cobre 25/10→02/11.
+
+**Fases (cada uma um PR pequeno e desligável):** 0 docs (feita) → 1 sondas/calculadora/fuso → 2 coletor sem tela +
+2 semanas só coletando (≥95% das 42 coletas, 0 push perdido, 0 acesso ao Neon) → 3 faixa no Dashboard → 4 resumos
++ Telegram → 5 marcador nas operações (só se a simulação retroativa der ≤30% das ops com marcador) → 6 opcionais.
+
+**O que NÃO foi verificado [limite honesto]:** nenhuma fonte externa foi testada ao vivo — o ambiente da sessão
+bloqueou a saída de rede (`curl` recusado pelo proxy, `WebFetch` ENOTFOUND); tudo sobre BLS/CoinGecko/
+Alternative.me/Fed/`raw.githubusercontent.com` (CORS, cache ~5 min, 429) vem de documentação e pesquisa. Por isso
+a fase 1 é uma sonda manual **a partir do runner do GitHub**. Também não verificado: limites oficiais atuais do
+Cloudflare (irrelevante agora) e se commits automáticos na branch de dados contam como atividade para a regra de
+60 dias do `schedule` (por isso o disparo principal é o cron-job.org).
+
+**Pendências abertas hoje (resumo; fonte única em `docs/roadmap.md`, "Prioridades de hoje"):** Neon (cota de
+computação, estimada voltar a estourar ~16/11), PR #513 aberto desde 19/10 com 5 achados do Codex sem resolução,
+teste de restauração do backup nunca rodou, `system_logs` sem poda, desenho do estado externo do modo de
+observação aguardando decisão do usuário. **Passos manuais do usuário** estão no roadmap.

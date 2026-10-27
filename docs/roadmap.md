@@ -5,6 +5,35 @@ cada item aponta para a seção canônica em `docs/known-risks.md`. Existe porqu
 pendência estava espalhada em cinco itens numerados e num plano de sessão, e
 plano de sessão morre com a sessão.
 
+## Prioridades de hoje (2026-10-27) — leia isto primeiro
+
+Os blocos 0-6 abaixo são o **histórico do eixo "estratégia/amostra"** (parado
+desde meados de outubro: a entrada não tem vantagem comprovada, itens 264/265).
+O que manda agora é **continuidade do sistema**, depois a camada de contexto.
+
+| # | O que | Estado | Onde |
+|---|---|---|---|
+| 1 | **Neon sem cota de computação** (110,33 de 100 CU-h; espaço ok, 70 MB). Renovação ~30/10 e novo estouro ~16/11 são **estimativas** (item 282), a confirmar no painel do Neon | Aberto | itens 282/283 |
+| 2 | Modo de observação independente do banco ("completo", decisão 23/10) | **Aguarda sua decisão** sobre onde guardar o estado fora do banco | item 283 |
+| 3 | PR [#513](https://github.com/mateusraony/Sentinel-Signals/pull/513) — restaurar backup num banco novo (Supabase) + TLS | Aberto desde 19/10, 5 achados do Codex sem resolução; o teste de restauração **nunca rodou** | item 283 |
+| 4 | `system_logs` cresce sem limite (nada apaga) | Aberto, não é a causa de hoje | item 283 |
+| 5 | **Contexto de Mercado** (calendário macro, sentimento, resumos 07h/12h/21h, marcador nas operações, Telegram) | Plano aprovado em 2026-10-27, **nada implementado** | item 284 |
+
+**Passos manuais que dependem de você** (a regra do projeto é só considerar
+concluído depois que você confirmar):
+1. Abrir o painel do Neon → **Billing** e anotar a data de renovação e o uso de
+   computação.
+2. Escolher onde fica o estado do modo de observação fora do banco (item 283).
+3. Dizer se o PR #513 continua (corrigir os 5 achados) ou é descartado.
+
+**Contexto de Mercado — ordem das fases** (cada uma pequena e desligável; sem
+Neon, sem Cloudflare, nada no motor): 0 documentação (feita em 2026-10-27) →
+1 sondas das fontes + calculadora de orçamento + teste de fuso →
+2 coletor sem tela + **2 semanas só coletando** → 3 faixa no Dashboard →
+4 resumos + Telegram → 5 marcador nas operações (só se ≤30% das ops) →
+6 opcionais (on-chain, notícias RSS, horário silencioso). Detalhe e critérios:
+item 284.
+
 > **Estado em 2026-08-04.** TRÊS janelas do Bloco 0 já rodaram, mais 2
 > reprocessamentos controlados. Baixa (2025-07→2026-07, 344 ops, 20
 > símbolos): −0,076 R, INCONCLUSIVA. Alta (2024-07→2025-07, 288 ops, 20
