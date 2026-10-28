@@ -1,0 +1,52 @@
+name: Sonda das fontes — Contexto de Mercado (Sentinel Signals)
+
+# docs/known-risks.md itens 284/285 — Fase 1 do Contexto de Mercado. Testa, a
+# partir do servidor do GitHub (o mesmo lugar onde o coletor da Fase 2 vai
+# rodar), se cada fonte candidata responde, no formato esperado, sem bloqueio
+# nem limite: BLS, Medo e Ganância, RSS do Fed, Binance Spot e o CORS do
+# raw.githubusercontent.com. O resultado aparece na tabela do resumo do job.
+#
+# Só leitura de dados públicos: 1 requisição por fonte. NENHUM banco (sem
+# DATABASE_URL — não pode acordar o Neon), NENHUM Telegram, NENHUMA ordem.
+# Sem `npm ci`: o script usa só módulos nativos do Node.
+#
+# Disparo MANUAL, de propósito: a regra da fase é 3 execuções em horários
+# diferentes. Falha (job vermelho) = alguma fonte OBRIGATÓRIA reprovou.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: context-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Sondar as fontes
+        # COINGECKO_API_KEY é opcional (hoje não existe): sem ela o /global é pulado.
+        env:
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+        run: |
+          set -o pipefail
+          node scripts/context-probe.mjs --json probe-result.json | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar o resultado em JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: context-probe-result
+          path: probe-result.json
+          if-no-files-found: ignore
+          retention-days: 30

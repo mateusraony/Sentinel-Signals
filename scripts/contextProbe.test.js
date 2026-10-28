@@ -1,0 +1,224 @@
+// Item 285 — a sonda das fontes. Rede toda simulada: o que se prova aqui é que
+// a sonda NÃO aprova resposta ruim (página de erro com status 200, arquivo
+// cortado, 429, bloqueio regional, timeout) e que o portão da fase só abre
+// quando as fontes obrigatórias realmente respondem bem.
+import { describe, it, expect } from 'vitest';
+import {
+  SOURCES, USER_AGENT, SITE_ORIGIN, evaluateResponse, probeSource, summarize, formatProbeMarkdown,
+  validateIcs, validateFearGreed, validateRss, validateBinanceTicker, validateRawGithubCors,
+  validateDefillamaTvl, validateHtmlContains, extractRateLimit,
+} from './contextProbe.mjs';
+
+const src = (id) => SOURCES.find((s) => s.id === id);
+
+const ICS_OK = 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:CPI\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nSUMMARY:Jobs\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n';
+const RSS_OK = '<?xml version="1.0"?><rss version="2.0"><channel><item><title>x</title></item></channel></rss>';
+const FNG_OK = JSON.stringify({ data: [{ value: '34', value_classification: 'Fear', timestamp: '1788000000' }] });
+const TICKER_OK = JSON.stringify([{ symbol: 'BTCUSDT', price: '70000.10' }, { symbol: 'ETHUSDT', price: '3500.50' }]);
+const HTML_ERROR = '<!doctype html><html><body>Access Denied</body></html>';
+
+describe('validadores de formato', () => {
+  it('ICS: aceita o bom e reprova página de erro, arquivo cortado e calendário vazio', () => {
+    expect(validateIcs({ body: ICS_OK })).toEqual({ ok: true, detail: '2 eventos' });
+    expect(validateIcs({ body: HTML_ERROR }).ok).toBe(false);
+    expect(validateIcs({ body: ICS_OK.slice(0, 60) }).detail).toMatch(/cortado/);
+    expect(validateIcs({ body: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR' }).detail).toMatch(/sem nenhum evento/);
+  });
+
+  it('Medo e Ganância: exige valor 0..100 e timestamp', () => {
+    expect(validateFearGreed({ body: FNG_OK }).ok).toBe(true);
+    expect(validateFearGreed({ body: HTML_ERROR }).ok).toBe(false);
+    expect(validateFearGreed({ body: JSON.stringify({ data: [{ value: '250', timestamp: '1' }] }) }).ok).toBe(false);
+    expect(validateFearGreed({ body: JSON.stringify({ data: [] }) }).ok).toBe(false);
+    expect(validateFearGreed({ body: JSON.stringify({ data: [{ value: '34' }] }) }).ok).toBe(false);
+  });
+
+  it('RSS: reprova HTML, feed cortado e feed sem itens', () => {
+    expect(validateRss({ body: RSS_OK }).ok).toBe(true);
+    expect(validateRss({ body: HTML_ERROR }).ok).toBe(false);
+    expect(validateRss({ body: RSS_OK.slice(0, 50) }).detail).toMatch(/cortado/);
+    expect(validateRss({ body: '<?xml version="1.0"?><rss><channel></channel></rss>' }).detail).toMatch(/sem nenhum item/);
+  });
+
+  it('Binance: exige as duas moedas com preço positivo', () => {
+    expect(validateBinanceTicker({ body: TICKER_OK }).ok).toBe(true);
+    expect(validateBinanceTicker({ body: JSON.stringify([{ symbol: 'BTCUSDT', price: '1' }]) }).ok).toBe(false);
+    expect(validateBinanceTicker({ body: JSON.stringify([{ symbol: 'BTCUSDT', price: '0' }, { symbol: 'ETHUSDT', price: '1' }]) }).ok).toBe(false);
+    expect(validateBinanceTicker({ body: JSON.stringify({ code: -1121, msg: 'Invalid symbol.' }) }).ok).toBe(false);
+  });
+
+  it('CORS do GitHub raw: libera o site (ou *) e mostra o cache; sem cabeçalho reprova', () => {
+    expect(validateRawGithubCors({ headers: { 'access-control-allow-origin': '*', 'cache-control': 'max-age=300' } })).toEqual({ ok: true, detail: 'CORS *; max-age=300' });
+    expect(validateRawGithubCors({ headers: { 'access-control-allow-origin': SITE_ORIGIN } }).ok).toBe(true);
+    expect(validateRawGithubCors({ headers: {} }).ok).toBe(false);
+    expect(validateRawGithubCors({ headers: { 'access-control-allow-origin': 'https://outro.site' } }).ok).toBe(false);
+  });
+
+  it('DefiLlama e páginas: número positivo / texto esperado', () => {
+    expect(validateDefillamaTvl({ body: '65000000000' }).ok).toBe(true);
+    expect(validateDefillamaTvl({ body: 'erro' }).ok).toBe(false);
+    expect(validateHtmlContains('FOMC', '2026')({ body: 'FOMC calendar 2026' }).ok).toBe(true);
+    expect(validateHtmlContains('FOMC', '2026')({ body: 'nada' }).ok).toBe(false);
+  });
+});
+
+describe('evaluateResponse: o que a sonda NÃO aprova', () => {
+  const bls = src('bls-calendar');
+
+  it('200 com página de erro dentro reprova (o caso mais traiçoeiro)', () => {
+    const r = evaluateResponse(bls, { status: 200, headers: {}, body: HTML_ERROR });
+    expect(r.status).toBe('FALHOU');
+    expect(r.detail).toMatch(/formato inválido/);
+  });
+
+  it('429 diz que é limite de uso e mostra o Retry-After', () => {
+    const r = evaluateResponse(bls, { status: 429, headers: { 'retry-after': '60' }, body: '' });
+    expect(r.status).toBe('FALHOU');
+    expect(r.detail).toMatch(/429/);
+    expect(r.detail).toMatch(/60/);
+  });
+
+  it('451 e 403 são bloqueio da origem, não "erro de formato"', () => {
+    for (const status of [451, 403]) {
+      const r = evaluateResponse(bls, { status, headers: {}, body: '' });
+      expect(r.detail).toMatch(/bloqueado/);
+    }
+  });
+
+  it('500 reprova; 200 com conteúdo bom aprova', () => {
+    expect(evaluateResponse(bls, { status: 500, headers: {}, body: ICS_OK }).status).toBe('FALHOU');
+    expect(evaluateResponse(bls, { status: 200, headers: {}, body: ICS_OK }).status).toBe('OK');
+  });
+});
+
+describe('probeSource: rede injetada', () => {
+  const okFetch = (body, init = {}) => async () => new Response(body, { status: 200, ...init });
+
+  it('manda User-Agent identificado e devolve tempo e bytes', async () => {
+    let seen;
+    const fetchImpl = async (url, opts) => { seen = opts.headers; return new Response(ICS_OK, { status: 200 }); };
+    let t = 1000;
+    const r = await probeSource(src('bls-calendar'), { fetchImpl, now: () => (t += 25) });
+    expect(seen['User-Agent']).toBe(USER_AGENT);
+    expect(r.status).toBe('OK');
+    expect(r.latencyMs).toBe(25);
+    expect(r.bytes).toBe(Buffer.byteLength(ICS_OK));
+  });
+
+  it('o teste de CORS manda o Origin do site e lê o cabeçalho da resposta', async () => {
+    let seen;
+    const fetchImpl = async (url, opts) => {
+      seen = opts.headers;
+      return new Response('# Sentinel Signals', { status: 200, headers: { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'max-age=300' } });
+    };
+    const r = await probeSource(src('raw-github-cors'), { fetchImpl });
+    expect(seen.Origin).toBe(SITE_ORIGIN);
+    expect(r.status).toBe('OK');
+    expect(r.detail).toContain('max-age=300');
+  });
+
+  it('erro de rede vira linha FALHOU, nunca exceção', async () => {
+    const fetchImpl = async () => { const e = new TypeError('fetch failed'); e.cause = { code: 'ECONNREFUSED' }; throw e; };
+    const r = await probeSource(src('alternative-me-fng'), { fetchImpl });
+    expect(r.status).toBe('FALHOU');
+    expect(r.detail).toMatch(/ECONNREFUSED/);
+  });
+
+  it('sem resposta dentro do prazo vira timeout', async () => {
+    const fetchImpl = (url, { signal }) => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => { const e = new Error('aborted'); e.name = 'AbortError'; reject(e); });
+    });
+    const r = await probeSource(src('alternative-me-fng'), { fetchImpl, timeoutMs: 20 });
+    expect(r.status).toBe('FALHOU');
+    expect(r.detail).toMatch(/timeout/);
+  });
+
+  it('fonte opcional que precisa de chave é PULADA sem a chave, e usa o cabeçalho com ela', async () => {
+    const global = src('coingecko-global');
+    const semChave = await probeSource(global, { fetchImpl: okFetch('{}'), env: {} });
+    expect(semChave.status).toBe('PULADO');
+    let seen;
+    const fetchImpl = async (url, opts) => { seen = opts.headers; return new Response(JSON.stringify({ data: { total_market_cap: {}, market_cap_percentage: { btc: 58.2 } } }), { status: 200 }); };
+    const comChave = await probeSource(global, { fetchImpl, env: { COINGECKO_API_KEY: 'k' } });
+    expect(seen['x-cg-demo-api-key']).toBe('k');
+    expect(comChave.status).toBe('OK');
+  });
+
+  it('resposta gigante é recusada', async () => {
+    const r = await probeSource(src('bls-calendar'), { fetchImpl: okFetch('x'.repeat(2 * 1024 * 1024 + 1)) });
+    expect(r.status).toBe('FALHOU');
+    expect(r.detail).toMatch(/grande demais/);
+  });
+
+  it('registra sinais de limite dos cabeçalhos', async () => {
+    const r = await probeSource(src('bls-calendar'), { fetchImpl: okFetch(ICS_OK, { headers: { 'x-ratelimit-remaining': '99' } }) });
+    expect(r.rateLimit).toBe('x-ratelimit-remaining=99');
+    expect(extractRateLimit({ 'content-type': 'x' })).toBe('');
+  });
+});
+
+describe('portão da fase (summarize)', () => {
+  const row = (id, status, extra = {}) => ({ id, name: id, required: true, group: null, status, httpStatus: 200, latencyMs: 1, bytes: 1, rateLimit: '', detail: '', ...extra });
+
+  it('aprova quando toda obrigatória responde e cada grupo tem ao menos uma alternativa OK', () => {
+    const sum = summarize([
+      row('bls', 'OK'), row('fng', 'OK'),
+      row('fed-a', 'FALHOU', { group: 'fed-rss' }), row('fed-b', 'OK', { group: 'fed-rss' }),
+      row('bin-a', 'OK', { group: 'binance-spot' }), row('bin-b', 'FALHOU', { group: 'binance-spot' }),
+      row('cg', 'FALHOU', { required: false }),
+    ]);
+    expect(sum.gateOk).toBe(true);
+    expect(sum.optionalFailed).toEqual(['cg']);
+  });
+
+  it('reprova se uma obrigatória sem grupo falha', () => {
+    const sum = summarize([row('bls', 'FALHOU'), row('fng', 'OK')]);
+    expect(sum.gateOk).toBe(false);
+    expect(sum.failedRequired).toEqual(['bls']);
+  });
+
+  it('reprova se NENHUMA alternativa de um grupo responde', () => {
+    const sum = summarize([row('fed-a', 'FALHOU', { group: 'fed-rss' }), row('fed-b', 'FALHOU', { group: 'fed-rss' })]);
+    expect(sum.gateOk).toBe(false);
+    expect(sum.failedRequired[0]).toMatch(/fed-rss/);
+  });
+
+  it('fonte PULADA obrigatória não conta como OK', () => {
+    expect(summarize([row('bls', 'PULADO')]).gateOk).toBe(false);
+  });
+});
+
+describe('lista de fontes', () => {
+  it('ids únicos, https, validador presente e nenhuma chave dentro da URL', () => {
+    const ids = SOURCES.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const s of SOURCES) {
+      expect(s.url.startsWith('https://')).toBe(true);
+      expect(typeof s.validate).toBe('function');
+      expect(/key|token|secret/i.test(s.url)).toBe(false);
+    }
+  });
+
+  it('o portão cobre as 5 áreas do plano (BLS, Medo e Ganância, Fed, Binance Spot, CORS do raw)', () => {
+    const req = SOURCES.filter((s) => s.required);
+    const areas = new Set(req.map((s) => s.group || s.id));
+    expect(areas).toEqual(new Set(['bls-calendar', 'alternative-me-fng', 'fed-rss', 'binance-spot', 'raw-github-cors']));
+  });
+
+  it('só fontes públicas de leitura: nenhuma exige chave para ser obrigatória', () => {
+    expect(SOURCES.filter((s) => s.required && s.needsEnv)).toEqual([]);
+  });
+});
+
+describe('tabela em markdown', () => {
+  it('mostra o veredito e não usa emoji (regra do emojiRegistry)', () => {
+    const results = [
+      { id: 'a', name: 'A', required: true, group: null, status: 'FALHOU', httpStatus: 451, latencyMs: 12, bytes: 0, rateLimit: '', detail: 'acesso bloqueado desta origem (HTTP 451)' },
+    ];
+    const md = formatProbeMarkdown(results, { startedAt: '2026-10-28T12:00:00Z', runner: 'ambiente local — NÃO vale como teste do GitHub' });
+    expect(md).toContain('REPROVADO');
+    expect(md).toContain('2026-10-28T12:00:00Z');
+    expect(md).toContain('NÃO vale como teste do GitHub');
+    expect(/\p{Extended_Pictographic}/u.test(md)).toBe(false);
+  });
+});

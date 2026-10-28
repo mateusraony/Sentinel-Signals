@@ -33631,3 +33631,55 @@ Cloudflare (irrelevante agora) e se commits automáticos na branch de dados cont
 computação, estimada voltar a estourar ~16/11), PR #513 aberto desde 19/10 com 5 achados do Codex sem resolução,
 teste de restauração do backup nunca rodou, `system_logs` sem poda, desenho do estado externo do modo de
 observação aguardando decisão do usuário. **Passos manuais do usuário** estão no roadmap.
+
+## 285. Contexto de Mercado — Fase 1: sondas das fontes, orçamento e fuso (2026-10-28)
+
+**Contexto.** Primeira fase de código do plano do item 284. Objetivo: provar com teste real, **antes** de
+construir o coletor, se as fontes respondem do servidor do GitHub, se o consumo cabe com folga e se o horário
+de verão dos EUA (que acaba em 2026-11-01) é tratado certo. Nada disto grava dado, usa banco, Telegram ou toca o
+motor.
+
+**Entregue [fato — arquivos novos, nenhum arquivo de produto alterado]:**
+- `scripts/contextTime.mjs` (+ teste, 17 casos): hora de Nova York → UTC via `Intl`, nunca deslocamento fixo.
+  CPI 08:30 ET = 12:30Z até 31/10 e 13:30Z depois; FOMC 14:00 ET = 18:00Z em 28/10 e 19:00Z em 09/12; a diferença
+  Brasil×EUA vai de 1h para 2h em 01/11. Hora inexistente (pulo da primavera, ex. 2027-03-14 02:30) devolve
+  `null`; hora repetida (volta de outono) devolve a primeira e marca `ambiguous`. Coletas 07h/12h/21h BRT =
+  10:00/15:00/00:00 UTC.
+- `scripts/contextBudget.mjs` (+ teste, 11 casos): desenho de 3 coletas/dia dá CoinGecko **180 de 10.000
+  chamadas/mês (1,8%)**, Actions 270 min/mês (teto interno 600), branch de dados poucos MB/ano; em estresse 10×
+  nenhum limite do provedor é ultrapassado (CoinGecko 1.800). O cenário "cada card consulta a cada 5 min"
+  (77.760/mês) do TXT não é o desenho.
+- `scripts/contextProbe.mjs` + `scripts/context-probe.mjs` (+ teste, 25 casos) e `.github/workflows/context-probe.yml`
+  (manual): validadores de **formato** (ICS começa com `BEGIN:VCALENDAR` e termina em `END:VCALENDAR`; JSON com as
+  chaves certas; RSS fechado) — reprovam página de erro devolvida com status 200, arquivo cortado, 429 (mostra
+  `Retry-After`), 451/403 (bloqueio regional), timeout. Portão: toda fonte obrigatória OK; nos grupos de
+  alternativas (RSS do Fed ×2, Binance Spot ×2) basta uma.
+- `scripts/contextIsolationTripwire.test.js` (8 casos): o motor (`scanner`, `opExitRules`, `opTransition`,
+  `tradeMetrics`, `signalArbitration`, `backtestEngine`, `decisionSnapshot`, `decisionExplanation` e
+  `src/lib/indicators/*`) não importa nada de `context*`; `scripts/context*` e `context-*.yml` não citam banco,
+  Firebase, scanner nem `adminTelegram` (que grava log no Postgres quando o envio falha — acordaria o Neon).
+  **Quando a Fase 4 precisar de Telegram, o caminho é um remetente SEM banco; só então este teste é ajustado.**
+
+**Guards provados contra o defeito [verificado]:** importar `contextTime.mjs` dentro de `scanner.js` reprova o
+tripwire; pôr `DATABASE_URL` no workflow de contexto reprova o tripwire; trocar `nyToUtc` por deslocamento fixo
+(+4h) reprova 7 dos 17 testes de fuso. Cada mutação foi revertida (`scanner.js` ficou sem alteração).
+
+**Único dado real obtido até aqui [fato, ambiente da sessão — NÃO é o runner do GitHub]:** a execução local da
+sonda alcançou `raw.githubusercontent.com` e viu **HTTP 200, `Access-Control-Allow-Origin: *`,
+`Cache-Control: max-age=300`** — o que o site precisa para ler o JSON da branch `context-data`, e a janela de
+~5 min de atraso esperada. As demais fontes deram `ENOTFOUND` (a rede da sessão bloqueia a saída) e **não provam
+nada** sobre o GitHub.
+
+**Pendente — critério de aprovação da fase [hipótese até rodar]:** disparar `context-probe` **3 vezes em horários
+diferentes** pelo GitHub; aprovar se as 5 áreas obrigatórias (BLS, Medo e Ganância, RSS do Fed, Binance Spot,
+CORS do raw) ficarem OK nas 3. Se alguma falhar, a fonte é trocada ou sai do plano **antes** do coletor (Fase 2).
+Resultados reais entram aqui como addendum, inclusive o que falhar.
+
+**Armadilhas conhecidas que a sonda vai esclarecer:** o BLS costuma exigir `User-Agent` identificado (a sonda
+manda um); as duas URLs do RSS do Fed (`press_all.xml` e `press_other.xml`) são candidatas ainda não confirmadas;
+Binance Spot pode dar 451 no IP do runner (por isso testa `api.binance.com` e `data-api.binance.vision`);
+a página de anúncios da Binance (delisting) é opcional e provavelmente bloqueada.
+
+**Revisão final (regra do projeto):** só arquivos novos; o `noOrderExecutionTripwire` e o `emojiRegistry.test.js`
+varrem `scripts/` e continuam passando (nenhum emoji nem caminho de ordem nos arquivos novos); `CLAUDE.md` não
+muda (199 linhas). Nenhum consumidor de entidade, rota ou workflow existente foi tocado.

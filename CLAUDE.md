@@ -164,10 +164,10 @@ Skills em `.claude/skills/`, regras em `.claude/rules/` (carregam pelos
   Sentinel **não** passou (273). Fora do motor; só o relatório diário no Telegram (275). Ganho de risco e momento.
 
 - `npm run typecheck` roda no CI **como catraca**, não exigindo zero
-  (`npm run typecheck:ratchet`, item 166): o teto é o passivo atual (16 erros
-  de atrito de tipagem, medidos em 2026-09-05) e **só pode descer**. Zerado em
-  2026-08-13 e de volta a 16 justamente por não ter guarda nenhuma. Corrigiu
-  erros? `npm run typecheck:ratchet -- --update` baixa o teto.
+  (`npm run typecheck:ratchet`, item 166): o teto é o passivo atual (`TETO = 13`
+  em `scripts/typecheck-ratchet.mjs`, conferido em 2026-10-28) e **só pode
+  descer**. Zerado em 2026-08-13 e de volta a 16 justamente por não ter guarda
+  nenhuma. Corrigiu erros? `npm run typecheck:ratchet -- --update` baixa o teto.
 - **Cobertura** (`npm run test:coverage`, item 166): motor 86-99%, camada de
   tela ~30-55% desde o smoke test de páginas. Era 0,0% em `src/pages`,
   `src/components` e `src/hooks` até 2026-09-05.

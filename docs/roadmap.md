@@ -17,7 +17,7 @@ O que manda agora é **continuidade do sistema**, depois a camada de contexto.
 | 2 | Modo de observação independente do banco ("completo", decisão 23/10) | **Aguarda sua decisão** sobre onde guardar o estado fora do banco | item 283 |
 | 3 | PR [#513](https://github.com/mateusraony/Sentinel-Signals/pull/513) — restaurar backup num banco novo (Supabase) + TLS | Aberto desde 19/10, 5 achados do Codex sem resolução; o teste de restauração **nunca rodou** | item 283 |
 | 4 | `system_logs` cresce sem limite (nada apaga) | Aberto, não é a causa de hoje | item 283 |
-| 5 | **Contexto de Mercado** (calendário macro, sentimento, resumos 07h/12h/21h, marcador nas operações, Telegram) | Plano aprovado em 2026-10-27, **nada implementado** | item 284 |
+| 5 | **Contexto de Mercado** (calendário macro, sentimento, resumos 07h/12h/21h, marcador nas operações, Telegram) | Plano aprovado em 2026-10-27. **Fase 1 (sondas) escrita em 2026-10-28; falta rodar a sonda 3x no GitHub.** Nada de coleta/tela ainda | itens 284/285 |
 
 **Passos manuais que dependem de você** (a regra do projeto é só considerar
 concluído depois que você confirmar):
@@ -28,7 +28,7 @@ concluído depois que você confirmar):
 
 **Contexto de Mercado — ordem das fases** (cada uma pequena e desligável; sem
 Neon, sem Cloudflare, nada no motor): 0 documentação (feita em 2026-10-27) →
-1 sondas das fontes + calculadora de orçamento + teste de fuso →
+1 sondas das fontes + calculadora de orçamento + teste de fuso (**feita, aguardando 3 execuções**, item 285) →
 2 coletor sem tela + **2 semanas só coletando** → 3 faixa no Dashboard →
 4 resumos + Telegram → 5 marcador nas operações (só se ≤30% das ops) →
 6 opcionais (on-chain, notícias RSS, horário silencioso). Detalhe e critérios:

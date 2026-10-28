@@ -1,0 +1,241 @@
+// Contexto de Mercado (docs/known-risks.md item 284/285) — sonda das fontes.
+// Responde, com teste REAL feito a partir do servidor do GitHub: "a fonte
+// responde, no formato que o coletor espera, sem bloqueio nem limite?".
+// A CLI é scripts/context-probe.mjs; este módulo é a parte testável (a rede é
+// injetada, então os testes simulam resposta boa, página de erro com status 200,
+// 429, bloqueio por região, arquivo cortado e timeout).
+//
+// Só LEITURA e só dados públicos: 1 requisição por fonte, `User-Agent`
+// identificado, nenhum segredo obrigatório, nenhum banco, nenhum Telegram.
+// O que a sonda NÃO prova: estabilidade por semanas (isso é a coleta "sombra"
+// da Fase 2) nem os termos de uso — esses estão em docs/known-risks.md item 284.
+
+export const USER_AGENT = 'SentinelSignals-ContextProbe/1.0 (+https://github.com/mateusraony/Sentinel-Signals)';
+export const SITE_ORIGIN = 'https://sentinel-signals.onrender.com';
+export const MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+const TWO_SYMBOLS = encodeURIComponent('["BTCUSDT","ETHUSDT"]');
+
+const tryJson = (body) => { try { return { value: JSON.parse(body) }; } catch { return { error: true }; } };
+const fail = (detail) => ({ ok: false, detail });
+const pass = (detail) => ({ ok: true, detail });
+
+// --- validadores de formato: reprovam página de erro devolvida com status 200 ---
+
+export function validateIcs({ body }) {
+  const text = body.trim();
+  if (!text.startsWith('BEGIN:VCALENDAR')) return fail('não é um calendário .ics (não começa com BEGIN:VCALENDAR)');
+  if (!text.endsWith('END:VCALENDAR')) return fail('calendário .ics cortado (não termina com END:VCALENDAR)');
+  const events = (text.match(/BEGIN:VEVENT/g) || []).length;
+  if (events === 0) return fail('calendário .ics sem nenhum evento');
+  return pass(`${events} eventos`);
+}
+
+export function validateFearGreed({ body }) {
+  const j = tryJson(body);
+  if (j.error) return fail('resposta não é JSON');
+  const row = j.value?.data?.[0];
+  const value = Number(row?.value);
+  if (!row || !Number.isFinite(value) || value < 0 || value > 100) return fail('sem data[0].value entre 0 e 100');
+  if (!row.timestamp) return fail('sem data[0].timestamp');
+  return pass(`índice ${value} (${row.value_classification || 'sem classificação'})`);
+}
+
+export function validateRss({ body }) {
+  const text = body.trim();
+  if (!/^<\?xml|^<rss|^<feed/i.test(text)) return fail('não é XML/RSS');
+  if (!/<\/rss>\s*$|<\/feed>\s*$/i.test(text)) return fail('RSS cortado (sem fechamento)');
+  const items = (text.match(/<item[\s>]|<entry[\s>]/gi) || []).length;
+  if (items === 0) return fail('RSS sem nenhum item');
+  return pass(`${items} itens`);
+}
+
+export function validateBinanceTicker({ body }) {
+  const j = tryJson(body);
+  if (j.error) return fail('resposta não é JSON');
+  if (!Array.isArray(j.value) || j.value.length !== 2) return fail('esperado array com BTCUSDT e ETHUSDT');
+  const bad = j.value.find((r) => typeof r?.symbol !== 'string' || !(Number(r.price) > 0));
+  if (bad) return fail('item sem symbol/price válidos');
+  return pass(j.value.map((r) => `${r.symbol} ${Number(r.price).toFixed(2)}`).join(' · '));
+}
+
+export function validateRawGithubCors({ headers }) {
+  const allow = headers['access-control-allow-origin'];
+  if (!allow) return fail('sem cabeçalho Access-Control-Allow-Origin (o navegador bloquearia a leitura)');
+  if (allow !== '*' && allow !== SITE_ORIGIN) return fail(`CORS não libera o site (permitido: ${allow})`);
+  const cache = headers['cache-control'] || 'sem cache-control';
+  return pass(`CORS ${allow}; ${cache}`);
+}
+
+export function validateCoingeckoPing({ body }) {
+  const j = tryJson(body);
+  if (j.error || !j.value?.gecko_says) return fail('sem gecko_says');
+  return pass(String(j.value.gecko_says));
+}
+
+export function validateCoingeckoGlobal({ body }) {
+  const j = tryJson(body);
+  if (j.error || !j.value?.data?.total_market_cap) return fail('sem data.total_market_cap');
+  const dom = j.value.data.market_cap_percentage?.btc;
+  return pass(`dominância BTC ${Number.isFinite(dom) ? dom.toFixed(1) : '?'}%`);
+}
+
+export function validateDefillamaTvl({ body }) {
+  const n = Number(body.trim());
+  if (!Number.isFinite(n) || n <= 0) return fail('esperado um número (TVL) positivo');
+  return pass(`TVL ${(n / 1e9).toFixed(1)} bi`);
+}
+
+export function validateMempoolFees({ body }) {
+  const j = tryJson(body);
+  if (j.error || !(Number(j.value?.fastestFee) > 0)) return fail('sem fastestFee');
+  return pass(`taxa rápida ${j.value.fastestFee} sat/vB`);
+}
+
+export function validateHtmlContains(...needles) {
+  return ({ body }) => {
+    const missing = needles.filter((n) => !body.includes(n));
+    return missing.length ? fail(`página sem: ${missing.join(', ')}`) : pass('página esperada');
+  };
+}
+
+export function validateBinanceAnnouncements({ body }) {
+  const j = tryJson(body);
+  if (j.error || j.value?.success !== true) return fail('sem success=true');
+  return pass('resposta do CMS da Binance');
+}
+
+/**
+ * `required` entra no gate da fase. Fontes com o mesmo `group` são alternativas:
+ * basta UMA do grupo responder bem (ex.: duas URLs candidatas do RSS do Fed).
+ */
+export const SOURCES = Object.freeze([
+  { id: 'bls-calendar', name: 'BLS — calendário oficial (CPI, emprego, PPI)', url: 'https://www.bls.gov/schedule/news_release/bls.ics', required: true, validate: validateIcs },
+  { id: 'alternative-me-fng', name: 'Alternative.me — Medo e Ganância', url: 'https://api.alternative.me/fng/?limit=1', required: true, validate: validateFearGreed },
+  { id: 'fed-rss-press-all', name: 'Federal Reserve — RSS comunicados (todos)', url: 'https://www.federalreserve.gov/feeds/press_all.xml', required: true, group: 'fed-rss', validate: validateRss },
+  { id: 'fed-rss-press-other', name: 'Federal Reserve — RSS comunicados (outros)', url: 'https://www.federalreserve.gov/feeds/press_other.xml', required: true, group: 'fed-rss', validate: validateRss },
+  { id: 'binance-spot-api', name: 'Binance Spot — api.binance.com', url: `https://api.binance.com/api/v3/ticker/price?symbols=${TWO_SYMBOLS}`, required: true, group: 'binance-spot', validate: validateBinanceTicker },
+  { id: 'binance-spot-vision', name: 'Binance Spot — data-api.binance.vision', url: `https://data-api.binance.vision/api/v3/ticker/price?symbols=${TWO_SYMBOLS}`, required: true, group: 'binance-spot', validate: validateBinanceTicker },
+  {
+    id: 'raw-github-cors', name: 'GitHub raw — CORS e cache (como o site vai ler)',
+    url: 'https://raw.githubusercontent.com/mateusraony/Sentinel-Signals/main/README.md',
+    headers: { Origin: SITE_ORIGIN }, required: true,
+    validate: ({ status, body, headers }) => {
+      if (!body.includes('Sentinel Signals')) return fail('arquivo inesperado');
+      return validateRawGithubCors({ status, body, headers });
+    },
+  },
+  { id: 'coingecko-ping', name: 'CoinGecko — ping (sem chave)', url: 'https://api.coingecko.com/api/v3/ping', required: false, validate: validateCoingeckoPing },
+  { id: 'coingecko-global', name: 'CoinGecko — /global (precisa de chave Demo)', url: 'https://api.coingecko.com/api/v3/global', required: false, needsEnv: 'COINGECKO_API_KEY', headerFromEnv: { 'x-cg-demo-api-key': 'COINGECKO_API_KEY' }, validate: validateCoingeckoGlobal },
+  { id: 'defillama-tvl', name: 'DefiLlama — TVL Ethereum', url: 'https://api.llama.fi/tvl/ethereum', required: false, validate: validateDefillamaTvl },
+  { id: 'mempool-fees', name: 'mempool.space — taxas Bitcoin', url: 'https://mempool.space/api/v1/fees/recommended', required: false, validate: validateMempoolFees },
+  { id: 'fomc-calendar-page', name: 'Federal Reserve — página do calendário FOMC', url: 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm', required: false, validate: validateHtmlContains('FOMC', '2026') },
+  { id: 'binance-announcements', name: 'Binance — anúncios (delisting; esperado bloqueio)', url: 'https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&catalogId=161&pageNo=1&pageSize=5', required: false, validate: validateBinanceAnnouncements },
+]);
+
+const BLOCKED = new Set([403, 451]);
+
+/** Cabeçalhos que dizem algo sobre limite de uso (para a tabela). */
+export function extractRateLimit(headers) {
+  const parts = [];
+  for (const [k, v] of Object.entries(headers)) {
+    if (/ratelimit|retry-after|x-mbx-used|x-cg-/i.test(k)) parts.push(`${k}=${v}`);
+  }
+  return parts.join('; ');
+}
+
+/**
+ * Avalia UMA resposta já recebida. Não faz rede.
+ * @returns {{ status: 'OK'|'FALHOU', detail: string }}
+ */
+export function evaluateResponse(source, { status, headers = {}, body = '' }) {
+  if (status === 429) {
+    const retry = headers['retry-after'] ? ` (Retry-After ${headers['retry-after']}s)` : '';
+    return { status: 'FALHOU', detail: `limite de uso excedido (HTTP 429)${retry}` };
+  }
+  if (BLOCKED.has(status)) return { status: 'FALHOU', detail: `acesso bloqueado desta origem (HTTP ${status})` };
+  if (status < 200 || status >= 300) return { status: 'FALHOU', detail: `HTTP ${status}` };
+  const v = source.validate({ status, headers, body });
+  return { status: v.ok ? 'OK' : 'FALHOU', detail: v.ok ? v.detail : `formato inválido: ${v.detail}` };
+}
+
+/**
+ * Faz a requisição e avalia. `fetchImpl` e `now` são injetáveis (testes).
+ * Nunca lança: qualquer erro de rede vira uma linha FALHOU.
+ */
+export async function probeSource(source, { fetchImpl = fetch, now = Date.now, timeoutMs = 15000, env = {} } = {}) {
+  const base = { id: source.id, name: source.name, required: !!source.required, group: source.group || null, url: source.url };
+
+  if (source.needsEnv && !env[source.needsEnv]) {
+    return { ...base, status: 'PULADO', httpStatus: null, latencyMs: null, bytes: null, rateLimit: '', detail: `sem ${source.needsEnv} (opcional)` };
+  }
+
+  const headers = { 'User-Agent': USER_AGENT, Accept: '*/*', ...(source.headers || {}) };
+  for (const [header, envName] of Object.entries(source.headerFromEnv || {})) headers[header] = env[envName];
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const t0 = now();
+  try {
+    const res = await fetchImpl(source.url, { headers, signal: controller.signal, redirect: 'follow' });
+    const text = await res.text();
+    const latencyMs = now() - t0;
+    const bytes = Buffer.byteLength(text, 'utf8');
+    const resHeaders = {};
+    res.headers.forEach((v, k) => { resHeaders[k.toLowerCase()] = v; });
+    if (bytes > MAX_BODY_BYTES) {
+      return { ...base, status: 'FALHOU', httpStatus: res.status, latencyMs, bytes, rateLimit: extractRateLimit(resHeaders), detail: `resposta grande demais (${bytes} bytes)` };
+    }
+    const ev = evaluateResponse(source, { status: res.status, headers: resHeaders, body: text });
+    return { ...base, ...ev, httpStatus: res.status, latencyMs, bytes, rateLimit: extractRateLimit(resHeaders) };
+  } catch (err) {
+    const latencyMs = now() - t0;
+    const aborted = err?.name === 'AbortError';
+    const cause = err?.cause?.code || err?.cause?.message || err?.message || String(err);
+    return { ...base, status: 'FALHOU', httpStatus: null, latencyMs, bytes: null, rateLimit: '', detail: aborted ? `sem resposta em ${timeoutMs / 1000}s (timeout)` : `erro de rede: ${cause}` };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Gate da fase: toda fonte obrigatória sem grupo precisa estar OK; todo grupo
+ * obrigatório precisa de pelo menos UMA fonte OK.
+ */
+export function summarize(results) {
+  const required = results.filter((r) => r.required);
+  const failed = [];
+  for (const r of required.filter((x) => !x.group)) if (r.status !== 'OK') failed.push(r.id);
+  const groups = [...new Set(required.filter((x) => x.group).map((x) => x.group))];
+  for (const g of groups) {
+    const members = required.filter((x) => x.group === g);
+    if (!members.some((m) => m.status === 'OK')) failed.push(`${g} (nenhuma alternativa respondeu)`);
+  }
+  const optionalFailed = results.filter((r) => !r.required && r.status === 'FALHOU').map((r) => r.id);
+  return { gateOk: failed.length === 0, failedRequired: failed, optionalFailed };
+}
+
+const cell = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\s+/g, ' ');
+
+/** Tabela em markdown para o resumo do job. */
+export function formatProbeMarkdown(results, { startedAt = null, runner = null } = {}) {
+  const sum = summarize(results);
+  const lines = [];
+  lines.push('## Sonda das fontes do Contexto de Mercado');
+  if (startedAt) lines.push(`Executada em ${startedAt} (UTC)${runner ? ` — ${runner}` : ''}.`);
+  lines.push('');
+  lines.push('| Fonte | Tipo | Resultado | HTTP | Tempo | Bytes | Detalhe | Sinais de limite |');
+  lines.push('|---|---|---|---:|---:|---:|---|---|');
+  for (const r of results) {
+    const tipo = r.required ? (r.group ? `obrigatória (alternativa ${r.group})` : 'obrigatória') : 'opcional';
+    lines.push(`| ${cell(r.name)} | ${tipo} | ${r.status} | ${r.httpStatus ?? '—'} | ${r.latencyMs == null ? '—' : `${r.latencyMs} ms`} | ${r.bytes ?? '—'} | ${cell(r.detail)} | ${cell(r.rateLimit) || '—'} |`);
+  }
+  lines.push('');
+  lines.push(sum.gateOk
+    ? '**Resultado do portão: APROVADO** — todas as fontes obrigatórias responderam no formato esperado.'
+    : `**Resultado do portão: REPROVADO** — falharam: ${sum.failedRequired.join(', ')}.`);
+  if (sum.optionalFailed.length) lines.push(`Opcionais que falharam (só informativo): ${sum.optionalFailed.join(', ')}.`);
+  lines.push('');
+  lines.push('Uma execução não prova estabilidade: o critério da fase é 3 execuções em horários diferentes.');
+  return lines.join('\n');
+}
