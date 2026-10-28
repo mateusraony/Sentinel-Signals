@@ -297,6 +297,16 @@ paths:
   - **Secrets:** só `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`. Nenhuma ordem, nenhum banco,
     `contents: read`.
 
+- `context-probe.yml` — disparo **manual** (`workflow_dispatch` só), sem campos: sonda das fontes do
+  Contexto de Mercado (`docs/known-risks.md` itens 284/285, Fase 1).
+  - **O que faz:** `scripts/context-probe.mjs` faz 1 requisição por fonte (BLS, Medo e Ganância, RSS do Fed,
+    Binance Spot, CORS do `raw.githubusercontent.com` + opcionais) e imprime a tabela no Job Summary. Job
+    vermelho = alguma fonte **obrigatória** reprovou o portão da fase.
+  - **Regra da fase:** 3 execuções em horários diferentes, 5/5 obrigatórias OK.
+  - **Isolamento (travado por `scripts/contextIsolationTripwire.test.js`):** `contents: read`, **sem**
+    `DATABASE_URL` (não pode acordar o Neon), sem Telegram, sem Firebase, sem scanner. O motor não importa
+    nada de `context*`. Segredo opcional `COINGECKO_API_KEY` (sem ele o `/global` é pulado).
+
 ## Deploy
 
 - **Frontend**: Render Static Site (`render.yaml` `sentinel-signals`), automático
