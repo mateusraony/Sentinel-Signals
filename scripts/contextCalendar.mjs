@@ -154,3 +154,34 @@ export function staticCalendarProbeResult(list = US_RELEASES, nowMs = Date.now()
   const aviso = cov.warn ? ` — ATENÇÃO: só ${cov.daysLeft} dia(s) de cobertura, atualizar` : '';
   return { ...base, status: 'OK', detail: `${cov.futureConfirmed} data(s) confirmada(s) à frente (até ${cov.lastConfirmedUtc.slice(0, 10)}); ${pending} a confirmar; conferida em ${CALENDAR_CHECKED_AT}; fonte: terceiros, não oficial${aviso}` };
 }
+
+/**
+ * Compara as datas que uma fonte externa (financecalendar.com, FRED) devolveu com a
+ * lista fixa, para um tipo (CPI ou NFP). Só informa — nenhuma data da lista muda sozinha.
+ * - bate        : data da lista que a fonte também traz
+ * - ausenteNaFonte : data da lista que a fonte NÃO traz (dentro da janela da lista)
+ * - soNaFonte   : data que a fonte traz dentro da janela da lista e a lista não tem
+ * A janela é [primeira data da lista do tipo, última]: fora dela a lista não tem opinião.
+ * @param {'CPI'|'NFP'} kind
+ * @param {string[]} dates  AAAA-MM-DD
+ */
+export function compareWithFixedList(kind, dates, list = US_RELEASES) {
+  const mine = list.filter((e) => e.kind === kind).map((e) => e.date).sort();
+  if (!mine.length) return { bate: [], ausenteNaFonte: [], soNaFonte: [], semLista: true };
+  const src = new Set((dates || []).filter((d) => DATE_RE.test(d)));
+  const lo = mine[0];
+  const hi = mine[mine.length - 1];
+  return {
+    bate: mine.filter((d) => src.has(d)),
+    ausenteNaFonte: mine.filter((d) => !src.has(d)),
+    soNaFonte: [...src].filter((d) => d >= lo && d <= hi && !mine.includes(d)).sort(),
+    semLista: false,
+  };
+}
+
+/** Texto curto para o `detail` da sonda. */
+export function formatComparison(cmp) {
+  if (cmp.semLista) return 'sem datas desse tipo na lista fixa';
+  const part = (label, arr) => `${label}: ${arr.length ? arr.join(', ') : '—'}`;
+  return `vs lista fixa — ${part('bate', cmp.bate)}; ${part('ausente na fonte', cmp.ausenteNaFonte)}; ${part('só na fonte', cmp.soNaFonte)}`;
+}

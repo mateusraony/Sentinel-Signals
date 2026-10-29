@@ -10,6 +10,8 @@
 // O que a sonda NÃO prova: estabilidade por semanas (isso é a coleta "sombra"
 // da Fase 2) nem os termos de uso — esses estão em docs/known-risks.md item 284.
 
+import { compareWithFixedList, formatComparison } from './contextCalendar.mjs';
+
 export const USER_AGENT = 'SentinelSignals-ContextProbe/1.0 (+https://github.com/mateusraony/Sentinel-Signals)';
 
 // Só ASCII imprimível (0x21-0x7E): o fetch rejeita cabeçalho com não-Latin/controle, o que derrubaria toda requisição.
@@ -127,6 +129,73 @@ export function validateBinanceAnnouncements({ body }) {
   return pass('resposta do CMS da Binance');
 }
 
+/** Todas as datas AAAA-MM-DD que aparecem em strings de um JSON (sem repetir, em ordem). */
+export function collectIsoDates(value, limit = 5000) {
+  const found = new Set();
+  let visited = 0;
+  const walk = (v, depth) => {
+    if (visited++ > limit || depth > 8) return;
+    if (typeof v === 'string') {
+      // Limite por dígito (não \b): '2026-12-04T08:30' tem letra colada na data e \b não casaria.
+      const m = v.match(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g);
+      if (m) for (const d of m) found.add(d);
+    } else if (Array.isArray(v)) {
+      for (const x of v) walk(x, depth + 1);
+    } else if (v && typeof v === 'object') {
+      for (const x of Object.values(v)) walk(x, depth + 1);
+    }
+  };
+  walk(value, 0);
+  return [...found].sort();
+}
+
+/**
+ * financecalendar.com (terceiros, sem chave). O formato da resposta NÃO foi visto ainda
+ * (a rota veio de um resumo de busca): o validador é de propósito tolerante e informativo —
+ * exige JSON com pelo menos uma data e mostra as chaves de topo, para a 1ª execução real
+ * revelar o formato e só então se escrever um parser estrito.
+ * @param {'CPI'|'NFP'} kind
+ */
+export function validateFinanceCalendar(kind) {
+  return ({ body }) => {
+    const j = tryJson(body);
+    if (j.error) return fail('resposta não é JSON');
+    const dates = collectIsoDates(j.value);
+    if (!dates.length) return fail('JSON sem nenhuma data AAAA-MM-DD');
+    const top = Array.isArray(j.value) ? `lista de ${j.value.length}` : `chaves: ${Object.keys(j.value || {}).slice(0, 6).join(', ') || '—'}`;
+    return pass(`${top}; ${dates.length} data(s) (${dates[0]} a ${dates[dates.length - 1]}); ${formatComparison(compareWithFixedList(kind, dates))}`);
+  };
+}
+
+/** FRED: confirma que o release_id é o esperado pelo NOME (não confio num id que não vi na doc). */
+export function validateFredRelease(expectedName) {
+  return ({ body }) => {
+    const j = tryJson(body);
+    if (j.error) return fail('resposta não é JSON');
+    const row = j.value?.releases?.[0] ?? j.value?.release;
+    const name = String(row?.name ?? '');
+    if (!name) return fail('sem releases[0].name');
+    if (!name.includes(expectedName)) return fail(`release "${name}" (esperado conter "${expectedName}")`);
+    return pass(`release: ${name}`);
+  };
+}
+
+/** FRED: datas de divulgação (inclui futuras com include_release_dates_with_no_data=true). */
+export function validateFredDates(kind) {
+  return ({ body }) => {
+    const j = tryJson(body);
+    if (j.error) return fail('resposta não é JSON');
+    const rows = j.value?.release_dates;
+    if (!Array.isArray(rows) || !rows.length) return fail('sem release_dates');
+    const dates = collectIsoDates(rows.map((r) => r?.date));
+    if (!dates.length) return fail('release_dates sem datas');
+    return pass(`${dates.length} data(s) (${dates[0]} a ${dates[dates.length - 1]}); ${formatComparison(compareWithFixedList(kind, dates))}`);
+  };
+}
+
+const FRED_BASE = 'https://api.stlouisfed.org/fred';
+const FRED_KEY_PLACEHOLDER = '<FRED_API_KEY>';
+
 const BLS_HINT = 'a política do BLS pede um contato do robô (segredo CONTEXT_CONTACT_EMAIL)';
 
 /**
@@ -158,6 +227,15 @@ export const SOURCES = Object.freeze([
   { id: 'defillama-chains', name: 'DefiLlama — TVL por rede (/v2/chains)', url: 'https://api.llama.fi/v2/chains', required: false, validate: validateDefillamaChains },
   { id: 'mempool-fees', name: 'mempool.space — taxas Bitcoin', url: 'https://mempool.space/api/v1/fees/recommended', required: false, validate: validateMempoolFees },
   { id: 'fomc-calendar-page', name: 'Federal Reserve — página do calendário FOMC', url: 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm', required: false, validate: validateHtmlContains('FOMC', '2026') },
+  // Opcionais (item 285, addendum 3): alternativas ao BLS bloqueado. Fora do portão da fase.
+  // financecalendar.com: terceiros, sem chave; formato ainda desconhecido (validador tolerante).
+  { id: 'financecalendar-cpi', name: 'financecalendar.com — datas do CPI (terceiros)', url: 'https://www.financecalendar.com/wp-json/fc/v1/calendar?series=cpi', required: false, validate: validateFinanceCalendar('CPI') },
+  { id: 'financecalendar-nfp', name: 'financecalendar.com — datas do Payroll (terceiros)', url: 'https://www.financecalendar.com/wp-json/fc/v1/calendar?series=nfp', required: false, validate: validateFinanceCalendar('NFP') },
+  // FRED (Fed de St. Louis, oficial, chave grátis). A chave vai na URL: o resultado mostra só o molde.
+  { id: 'fred-release-cpi', name: 'FRED — release 10 é o CPI? (confere o nome)', url: `${FRED_BASE}/release?release_id=10&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredRelease('Consumer Price Index') },
+  { id: 'fred-dates-cpi', name: 'FRED — datas do CPI (oficial)', url: `${FRED_BASE}/release/dates?release_id=10&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredDates('CPI') },
+  { id: 'fred-release-nfp', name: 'FRED — release 50 é o Emprego? (confere o nome)', url: `${FRED_BASE}/release?release_id=50&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredRelease('Employment Situation') },
+  { id: 'fred-dates-nfp', name: 'FRED — datas do Payroll (oficial)', url: `${FRED_BASE}/release/dates?release_id=50&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredDates('NFP') },
   { id: 'binance-announcements', name: 'Binance — anúncios (delisting; esperado bloqueio)', url: 'https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&catalogId=161&pageNo=1&pageSize=5', required: false, validate: validateBinanceAnnouncements },
 ]);
 
@@ -204,26 +282,36 @@ export async function probeSource(source, { fetchImpl = fetch, now = Date.now, t
   const headers = { 'User-Agent': buildUserAgent(env), Accept: '*/*', ...(source.headers || {}) };
   for (const [header, envName] of Object.entries(source.headerFromEnv || {})) headers[header] = env[envName];
 
+  // Chave na URL (FRED): a URL real só existe aqui, na hora do fetch. `base.url` (que vai para a tabela
+  // e para o JSON do artifact) é sempre o molde SEM a chave, e o detail é limpo por `scrub` abaixo.
+  const secret = source.secretInUrl ? String(env[source.secretInUrl] ?? '') : '';
+  const fetchUrl = secret ? source.url.replace(`<${source.secretInUrl}>`, encodeURIComponent(secret)) : source.url;
+  const scrub = (r) => {
+    if (!secret) return r;
+    const clean = (t) => (typeof t === 'string' ? t.split(secret).join('***').split(encodeURIComponent(secret)).join('***') : t);
+    return { ...r, detail: clean(r.detail) };
+  };
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const t0 = now();
   try {
-    const res = await fetchImpl(source.url, { headers, signal: controller.signal, redirect: 'follow' });
+    const res = await fetchImpl(fetchUrl, { headers, signal: controller.signal, redirect: 'follow' });
     const text = await res.text();
     const latencyMs = now() - t0;
     const bytes = Buffer.byteLength(text, 'utf8');
     const resHeaders = {};
     res.headers.forEach((v, k) => { resHeaders[k.toLowerCase()] = v; });
     if (bytes > MAX_BODY_BYTES) {
-      return { ...base, status: 'FALHOU', httpStatus: res.status, latencyMs, bytes, rateLimit: extractRateLimit(resHeaders), detail: `resposta grande demais (${bytes} bytes)` };
+      return scrub({ ...base, status: 'FALHOU', httpStatus: res.status, latencyMs, bytes, rateLimit: extractRateLimit(resHeaders), detail: `resposta grande demais (${bytes} bytes)` });
     }
     const ev = evaluateResponse(source, { status: res.status, headers: resHeaders, body: text });
-    return { ...base, ...ev, httpStatus: res.status, latencyMs, bytes, rateLimit: extractRateLimit(resHeaders) };
+    return scrub({ ...base, ...ev, httpStatus: res.status, latencyMs, bytes, rateLimit: extractRateLimit(resHeaders) });
   } catch (err) {
     const latencyMs = now() - t0;
     const aborted = err?.name === 'AbortError';
     const cause = err?.cause?.code || err?.cause?.message || err?.message || String(err);
-    return { ...base, status: 'FALHOU', httpStatus: null, latencyMs, bytes: null, rateLimit: '', detail: aborted ? `sem resposta em ${timeoutMs / 1000}s (timeout)` : `erro de rede: ${cause}` };
+    return scrub({ ...base, status: 'FALHOU', httpStatus: null, latencyMs, bytes: null, rateLimit: '', detail: aborted ? `sem resposta em ${timeoutMs / 1000}s (timeout)` : `erro de rede: ${cause}` });
   } finally {
     clearTimeout(timer);
   }

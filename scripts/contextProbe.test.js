@@ -7,6 +7,7 @@ import {
   SOURCES, USER_AGENT, SITE_ORIGIN, evaluateResponse, probeSource, summarize, formatProbeMarkdown,
   validateIcs, validateFearGreed, validateRss, validateBinanceTicker, validateRawGithubCors,
   validateDefillamaChains, validateHtmlContains, extractRateLimit, contactEmail, buildUserAgent,
+  collectIsoDates, validateFinanceCalendar, validateFredRelease, validateFredDates,
 } from './contextProbe.mjs';
 
 const src = (id) => SOURCES.find((s) => s.id === id);
@@ -258,8 +259,22 @@ describe('lista de fontes', () => {
     for (const s of SOURCES) {
       expect(s.url.startsWith('https://')).toBe(true);
       expect(typeof s.validate).toBe('function');
-      expect(/key|token|secret/i.test(s.url)).toBe(false);
+      // Única exceção: o molde `<NOME>` de uma fonte que declara `secretInUrl` (FRED). Valor literal, nunca.
+      const visible = s.secretInUrl ? s.url.replace(`api_key=<${s.secretInUrl}>`, '') : s.url;
+      expect(/key|token|secret/i.test(visible), s.id).toBe(false);
+      if (s.secretInUrl) {
+        expect(s.url).toContain(`<${s.secretInUrl}>`);
+        expect(s.needsEnv).toBe(s.secretInUrl);
+      }
     }
+  });
+
+  it('as fontes novas (financecalendar, FRED) são opcionais: não mudam o portão da fase', () => {
+    const novas = SOURCES.filter((s) => /^(financecalendar|fred)-/.test(s.id));
+    expect(novas.map((s) => s.id).sort()).toEqual([
+      'financecalendar-cpi', 'financecalendar-nfp', 'fred-dates-cpi', 'fred-dates-nfp', 'fred-release-cpi', 'fred-release-nfp',
+    ]);
+    for (const s of novas) expect(s.required).toBe(false);
   });
 
   it('o portão cobre as 5 áreas do plano (BLS, Medo e Ganância, Fed, Binance Spot, CORS do raw)', () => {
@@ -283,5 +298,70 @@ describe('tabela em markdown', () => {
     expect(md).toContain('2026-10-28T12:00:00Z');
     expect(md).toContain('NÃO vale como teste do GitHub');
     expect(/\p{Extended_Pictographic}/u.test(md)).toBe(false);
+  });
+});
+
+describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
+  it('collectIsoDates acha datas em qualquer profundidade, sem repetir e em ordem', () => {
+    const v = { a: [{ release: '2026-12-04T08:30:00-05:00' }, { d: '2026-11-06' }], b: 'x 2026-11-06 y', c: 5 };
+    expect(collectIsoDates(v)).toEqual(['2026-11-06', '2026-12-04']);
+    expect(collectIsoDates({ nada: 'sem data', n: 1 })).toEqual([]);
+  });
+
+  it('financecalendar: aceita JSON com datas e compara com a lista fixa; reprova HTML e JSON sem data', () => {
+    const body = JSON.stringify({ events: [{ date: '2026-11-10', time: '08:30' }, { date: '2026-12-11' }] });
+    const v = validateFinanceCalendar('CPI')({ body });
+    expect(v.ok).toBe(true);
+    expect(v.detail).toMatch(/chaves: events/);
+    expect(v.detail).toMatch(/bate: 2026-11-10/);
+    expect(v.detail).toMatch(/só na fonte: 2026-12-11/); // a divergência 10×11/12 aparece
+    expect(v.detail).toMatch(/ausente na fonte: 2026-12-10, 2027-01-13/);
+    expect(validateFinanceCalendar('CPI')({ body: HTML_ERROR }).ok).toBe(false);
+    expect(validateFinanceCalendar('NFP')({ body: '{"ok":true}' }).detail).toMatch(/sem nenhuma data/);
+  });
+
+  it('FRED release: confere o NOME (um id errado não passa calado)', () => {
+    const ok = JSON.stringify({ releases: [{ id: 10, name: 'Consumer Price Index' }] });
+    expect(validateFredRelease('Consumer Price Index')({ body: ok })).toEqual({ ok: true, detail: 'release: Consumer Price Index' });
+    const errado = JSON.stringify({ releases: [{ id: 10, name: 'Producer Price Index' }] });
+    expect(validateFredRelease('Consumer Price Index')({ body: errado }).ok).toBe(false);
+    expect(validateFredRelease('X')({ body: '{}' }).detail).toMatch(/sem releases/);
+  });
+
+  it('FRED datas: lê release_dates e compara com a lista fixa', () => {
+    const body = JSON.stringify({ release_dates: [{ release_id: 50, date: '2027-01-08' }, { release_id: 50, date: '2026-12-04' }, { release_id: 50, date: '2026-11-06' }] });
+    const v = validateFredDates('NFP')({ body });
+    expect(v.ok).toBe(true);
+    expect(v.detail).toMatch(/3 data\(s\) \(2026-11-06 a 2027-01-08\)/);
+    expect(v.detail).toMatch(/bate: 2026-11-06, 2026-12-04, 2027-01-08/);
+    expect(validateFredDates('NFP')({ body: '{"release_dates":[]}' }).ok).toBe(false);
+  });
+
+  it('FRED sem chave → PULADO, sem nenhuma requisição', async () => {
+    let called = false;
+    const r = await probeSource(src('fred-dates-cpi'), { fetchImpl: async () => { called = true; return new Response('{}'); }, env: {} });
+    expect(r.status).toBe('PULADO');
+    expect(called).toBe(false);
+  });
+
+  it('a chave do FRED vai SÓ na URL da requisição: nunca no resultado, na tabela nem no JSON', async () => {
+    const KEY = 'abcdef0123456789abcdef0123456789';
+    let seenUrl;
+    const fetchImpl = async (url) => { seenUrl = url; return new Response(JSON.stringify({ release_dates: [{ date: '2026-11-10' }] }), { status: 200 }); };
+    const r = await probeSource(src('fred-dates-cpi'), { fetchImpl, env: { FRED_API_KEY: KEY } });
+    expect(r.status).toBe('OK');
+    expect(seenUrl).toContain(`api_key=${KEY}`);
+    expect(r.url).toContain('api_key=<FRED_API_KEY>');
+    expect(JSON.stringify(r)).not.toContain(KEY);
+    expect(formatProbeMarkdown([r], { startedAt: 'x', runner: 'y' })).not.toContain(KEY);
+  });
+
+  it('erro de rede que cita a URL (com a chave) é limpo antes de virar resultado', async () => {
+    const KEY = 'fedcba9876543210fedcba9876543210';
+    const fetchImpl = async (url) => { throw new Error(`falha ao abrir ${url}`); };
+    const r = await probeSource(src('fred-release-cpi'), { fetchImpl, env: { FRED_API_KEY: KEY } });
+    expect(r.status).toBe('FALHOU');
+    expect(r.detail).toMatch(/\*\*\*/);
+    expect(JSON.stringify(r)).not.toContain(KEY);
   });
 });

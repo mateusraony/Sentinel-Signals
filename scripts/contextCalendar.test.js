@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   US_RELEASES, STATUS, validateCalendar, calendarEvents, alertableEvents, calendarCoverage,
-  staticCalendarProbeResult, COVERAGE_WARN_DAYS,
+  staticCalendarProbeResult, COVERAGE_WARN_DAYS, compareWithFixedList, formatComparison,
 } from './contextCalendar.mjs';
 import { summarize } from './contextProbe.mjs';
 
@@ -128,5 +128,27 @@ describe('linha da sonda (grupo us-calendar)', () => {
   it('não-vacuidade: sem a lista fixa, o BLS bloqueado reprova o portão', () => {
     const bls = { id: 'bls', required: true, group: 'us-calendar', status: 'FALHOU' };
     expect(summarize([bls]).gateOk).toBe(false);
+  });
+});
+
+describe('comparação com fonte externa (só informa)', () => {
+  it('bate / ausente na fonte / só na fonte, dentro da janela da lista', () => {
+    const cmp = compareWithFixedList('CPI', ['2026-11-10', '2026-12-11', '2025-01-15', '2027-06-10']);
+    expect(cmp.bate).toEqual(['2026-11-10']);
+    expect(cmp.ausenteNaFonte).toEqual(['2026-12-10', '2027-01-13']);
+    expect(cmp.soNaFonte).toEqual(['2026-12-11']); // 2025 e 2027-06 estão fora da janela da lista
+    expect(formatComparison(cmp)).toBe('vs lista fixa — bate: 2026-11-10; ausente na fonte: 2026-12-10, 2027-01-13; só na fonte: 2026-12-11');
+  });
+
+  it('não muda a lista (é só leitura)', () => {
+    const antes = JSON.stringify(US_RELEASES);
+    compareWithFixedList('NFP', ['2026-11-06']);
+    expect(JSON.stringify(US_RELEASES)).toBe(antes);
+  });
+
+  it('tipo sem datas na lista → diz isso, sem inventar', () => {
+    const cmp = compareWithFixedList('NFP', ['2026-11-06'], []);
+    expect(cmp.semLista).toBe(true);
+    expect(formatComparison(cmp)).toMatch(/sem datas desse tipo/);
   });
 });

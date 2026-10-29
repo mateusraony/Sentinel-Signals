@@ -315,6 +315,9 @@ paths:
     aceita a linha `calendario-fixo` (`scripts/contextCalendar.mjs`, datas de terceiros: `confirmada` = 2+ fontes,
     senão `a_confirmar` sem alerta). A lista envelhece — a sonda avisa com <60 dias e reprova quando vence
     (item 285, addendum 2).
+    Opcionais fora do portão (addendum 3): `financecalendar-*` (sem chave) e `fred-*` (segredo opcional
+    `FRED_API_KEY`, sem ele "PULADO"). A chave vai **só na URL da requisição** — resultado/tabela/JSON mostram o
+    molde `<FRED_API_KEY>` (travado por teste em `scripts/contextProbe.test.js`).
 
 - **Orçamento de computação do Neon (item 286, travado por
   `scripts/neonComputeBudget.test.js`):** todo workflow com `schedule:` que
