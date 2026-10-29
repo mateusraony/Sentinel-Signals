@@ -33719,6 +33719,27 @@ muda (199 linhas). Nenhum consumidor de entidade, rota ou workflow existente foi
 - A sonda ganhou a linha `calendario-fixo` como alternativa do grupo `us-calendar`: o portão passa com o BLS
   bloqueado, mas imprime "fonte: terceiros, não oficial".
 
+**Addendum 3 (2026-10-29) — 4ª execução aprovada; sonda ganha alternativas ao BLS (opcionais).**
+- **Fato [run 4, GitHub]:** portão **APROVADO** com a linha `calendario-fixo` (BLS segue 403).
+- **Pesquisa (pedido do usuário: "outro site como o investing.com"):** Investing.com sem API/feed público e
+  termos não confirmados (descartado); Apify/EODHD/FMP pagos ou com restrição comercial; ForexFactory só semana
+  corrente; Census/BEA não têm CPI/emprego. Candidatos: **financecalendar.com** (JSON grátis, sem chave, pede link
+  de volta — termos não confirmados; já é uma das fontes da lista fixa, então concordância dele **não** é
+  independente) e **FRED** (Fed de St. Louis, oficial, chave grátis).
+- **Entregue:** 6 fontes **opcionais** (fora do portão): `financecalendar-cpi`/`-nfp`
+  (`/wp-json/fc/v1/calendar?series=…`, rota vista só em resumo de busca; validador tolerante que mostra as chaves
+  de topo para a 1ª execução revelar o formato) e FRED `release?release_id=10|50` (confere o **nome** —
+  "Consumer Price Index"/"Employment Situation" — porque não confirmei os ids) + `release/dates` com
+  `include_release_dates_with_no_data=true` (datas futuras). Cada linha compara com a lista fixa
+  (`compareWithFixedList`: bate / ausente na fonte / só na fonte) — **só informa, a lista não muda sozinha**.
+- **Segredo:** `FRED_API_KEY` vai **só na URL da requisição**; resultado, tabela e JSON do artifact mostram o
+  molde `<FRED_API_KEY>`, e mensagem de erro é limpa. Provado por mutação (gravar a URL real → 1 teste reprova;
+  tirar a limpeza → 1 teste reprova). Sem a chave as 4 linhas do FRED saem "PULADO".
+- **Bug achado pelo teste antes de ir para o ar:** a extração de datas usava `\b`, que não casa
+  `2026-12-04T08:30` (letra colada) — corrigido para limite por dígito.
+- **Pendente:** rodar a sonda e registrar o formato real do financecalendar e o resultado do FRED; se forem
+  exibidos no painel (Fase 2+), o financecalendar pede link de volta.
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 **Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,

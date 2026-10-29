@@ -12,7 +12,8 @@
 // 1 requisição por fonte, pausa entre elas, nenhum banco, nenhum Telegram,
 // nenhuma ordem. As únicas variáveis de ambiente lidas são COINGECKO_API_KEY
 // (opcional; sem ela o /global é pulado) e CONTEXT_CONTACT_EMAIL (opcional; contato
-// do robô exigido pelo BLS — só vai no cabeçalho, nunca é impresso).
+// do robô exigido pelo BLS — só vai no cabeçalho, nunca é impresso) e FRED_API_KEY (opcional;
+// vai só na URL da requisição do FRED, nunca na tabela nem no JSON).
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { SOURCES, probeSource, summarize, formatProbeMarkdown, contactEmail } from './contextProbe.mjs';
