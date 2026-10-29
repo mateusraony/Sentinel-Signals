@@ -28,10 +28,17 @@ export function clearSeries() {
   store.clear();
 }
 
-/** Impressão digital de todas as velas carregadas — o modo aplicar confere que usa as MESMAS. */
-export function seriesFingerprint() {
+/**
+ * Impressão digital das velas carregadas — o modo aplicar confere que as velas da janela aprovada
+ * são as MESMAS. `closedBy`: só entram velas já FECHADAS até esse instante (a vela ainda em
+ * formação muda a cada minuto e nunca é usada pelo replay).
+ */
+export function seriesFingerprint(closedBy = Infinity) {
   const entries = [...store.entries()].sort(([a], [b]) => a.localeCompare(b));
-  return fingerprint(entries.map(([k, s]) => [k, s.map((c) => [c.openTime, c.open, c.high, c.low, c.close])]));
+  // Todos os campos que o replay consome (achado do Codex no PR #523): volume entra no score e no
+  // gate de deslocamento; closeTime decide o corte causal.
+  return fingerprint(entries.map(([k, s]) => [k, s.filter((c) => c.closeTime <= closedBy)
+    .map((c) => [c.openTime, c.closeTime, c.open, c.high, c.low, c.close, c.volume])]));
 }
 
 export function exportSeries() {

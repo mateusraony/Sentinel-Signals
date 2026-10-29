@@ -33,11 +33,12 @@ import { runBacktest } from '../src/lib/backtestEngine.js';
 import { exportSnapshot } from '../src/lib/recovery/snapshotBackend.js';
 import { TIMEFRAME_MS } from '../src/lib/recovery/recoveryReplay.js';
 import * as recoveryMarket from './recoveryMarketDataProvider.js';
-import { preloadSeries, clearSeries } from './recoveryMarketDataProvider.js';
+import { preloadSeries, clearSeries, seriesFingerprint } from './recoveryMarketDataProvider.js';
 
 market.impl = recoveryMarket;
 import {
   runDryRun, formatDryRunMarkdown, formatAbortMarkdown, assertSignalsCover, RECOVERY_TIMEFRAMES, SIGNAL_SNAPSHOT_LIMIT,
+  readSnapshot,
 } from './recoveryDryRun.mjs';
 
 const FOUR_H = TIMEFRAME_MS['4h'];
@@ -157,6 +158,30 @@ describe('teste a seco ponta a ponta', () => {
     const b = await runDryRun(deps(live));
     expect(b.fingerprints).toEqual(a.fingerprints);
   }, 120000);
+});
+
+describe('impressões digitais estáveis (achados do Codex no PR #523)', () => {
+  it('a ordem em que o banco devolve as linhas não muda o retrato nem a impressão', async () => {
+    const live = await liveDb(FLIP + FIFTEEN_M);
+    const a = await readSnapshot(live);
+    // Mesmo banco devolvendo as linhas em ordem invertida (Postgres sem ORDER BY pode fazer isso).
+    const reversed = { ...live, entities: Object.fromEntries(Object.entries(live.entities).map(([n, api]) => [n, {
+      ...api, list: async (...x) => [...(await api.list(...x))].reverse(),
+    }])) };
+    const b = await readSnapshot(reversed);
+    expect(b).toEqual(a);
+  }, 120000);
+
+  it('volume e horário de fechamento entram na impressão das velas', async () => {
+    clearSeries();
+    const base = [mk(1, 2, 0.5, 1.5, 0, FIFTEEN_M), mk(1.5, 2, 1, 1.8, FIFTEEN_M, FIFTEEN_M)];
+    await preloadSeries('X', '15m', 0, 2 * FIFTEEN_M, async () => base);
+    const f0 = seriesFingerprint();
+    await preloadSeries('X', '15m', 0, 2 * FIFTEEN_M, async () => base.map((c, i) => (i === 1 ? { ...c, volume: 999 } : c)));
+    expect(seriesFingerprint()).not.toBe(f0);
+    await preloadSeries('X', '15m', 0, 2 * FIFTEEN_M, async () => base.map((c, i) => (i === 1 ? { ...c, closeTime: c.closeTime - 1 } : c)));
+    expect(seriesFingerprint()).not.toBe(f0);
+  });
 });
 
 describe('travas do teste a seco (param ANTES de simular)', () => {

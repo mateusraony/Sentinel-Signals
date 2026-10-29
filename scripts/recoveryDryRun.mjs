@@ -21,13 +21,21 @@ import { preloadSeries, clearSeries, seriesFingerprint } from './recoveryMarketD
 export const SNAPSHOT_FULL = Object.freeze(['MonitoredAsset', 'AssetState', 'TradeOperation', 'VerificationTask', 'StrategyConfig', 'TelegramFilters', 'PriceAlert']);
 export const SIGNAL_SNAPSHOT_LIMIT = 5000;
 export const RECOVERY_TIMEFRAMES = Object.freeze(['1d', '4h', '1h', '15m', '5m']);
+/** Versão do artefato do teste a seco (o modo aplicar só aceita esta). */
+export const RECOVERY_ARTIFACT_VERSION = 1;
 const DAY_MS = TIMEFRAME_MS['1d'];
+
+// Ordem canônica por id (achado do Codex no PR #523): o Postgres não garante a ordem das linhas
+// sem ORDER BY, e a ordem muda a impressão digital E a ordem dos ativos no replay. Sem isto, o
+// mesmo banco podia dar impressões diferentes e o modo aplicar recusaria à toa.
+const byIdStable = (rows) => [...(rows || [])].sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
 export async function readSnapshot(liveBackend) {
   const ro = readOnlyProxy(liveBackend);
   const snap = await exportSnapshot(ro, SNAPSHOT_FULL);
   snap.SignalEvent = await ro.entities.SignalEvent.list('-created_date', SIGNAL_SNAPSHOT_LIMIT);
   snap.SystemLog = [];
+  for (const k of Object.keys(snap)) snap[k] = byIdStable(snap[k]);
   return snap;
 }
 
@@ -41,32 +49,20 @@ export function assertSignalsCover(signals, minFromMs, limit = SIGNAL_SNAPSHOT_L
   }
 }
 
-const rowsForAsset = (snap, assetId) => ({
+export const rowsForAsset = (snap, assetId) => ({
   assetStates: snap.AssetState.filter((r) => r.asset_id === assetId),
   ops: snap.TradeOperation.filter((r) => r.asset_id === assetId),
   signals: snap.SignalEvent.filter((r) => r.asset_id === assetId),
   tasks: snap.VerificationTask.filter((r) => r.asset_id === assetId),
 });
 
-/**
- * @param {{ liveBackend: object, workflows: object[], entitiesTarget: object, getPineConfig: Function,
- *   getPineConfigStatus: Function, nowMs: number, runId: string, fetchSeries?: Function }} deps
- */
-export async function runDryRun({ liveBackend, workflows, entitiesTarget, getPineConfig, getPineConfigStatus, nowMs, runId, fetchSeries }) {
-  assertRealClock('o teste a seco');
-  assertLiveScanPaused(workflows);
-
-  const snapshot = await readSnapshot(liveBackend);
-  const configRow = snapshot.StrategyConfig.find((r) => r.id === 'current') ?? null;
-  const pineConfig = await getPineConfig();
-  assertStrategyConfigPresent({ row: configRow, status: getPineConfigStatus() });
-
+/** Ativos a recuperar e a janela de cada um (o mesmo cálculo no teste a seco e no aplicar). */
+export function planRecovery(snapshot, nowMs) {
   const active = snapshot.MonitoredAsset.filter((a) => a.is_active === true);
   // Ativo esperando a checagem retroativa fica de fora: ela cuida dele quando voltar a rodar.
   const pendingBackfill = active.filter((a) => a.backfill_check_status === 'pending');
   const assets = active.filter((a) => a.backfill_check_status !== 'pending');
   if (!assets.length) throw new RecoveryAbort('no_assets', 'nenhum ativo ativo para recuperar');
-
   const windows = {};
   const resume = {};
   for (const a of assets) {
@@ -78,9 +74,11 @@ export async function runDryRun({ liveBackend, workflows, entitiesTarget, getPin
   const live = Object.values(windows).filter((w) => !w.empty);
   const windowFromMs = live.length ? Math.min(...live.map((w) => w.fromMs)) : nowMs;
   const windowToMs = live.length ? Math.max(...live.map((w) => w.toMs)) : nowMs;
-  assertSignalsCover(snapshot.SignalEvent, windowFromMs);
+  return { assets, pendingBackfill, windows, resume, windowFromMs, windowToMs };
+}
 
-  // Velas: tudo baixado e conferido ANTES do relógio simulado.
+/** Baixa e confere TODAS as velas antes do relógio simulado. Vela faltando → para tudo. */
+export async function preloadAndValidate(assets, windows, fetchSeries) {
   clearSeries();
   const gaps = [];
   const warmupShort = [];
@@ -96,28 +94,51 @@ export async function runDryRun({ liveBackend, workflows, entitiesTarget, getPin
     }
   }
   if (gaps.length) throw new RecoveryAbort('candle_gaps', `velas faltando na Binance — nada foi simulado: ${gaps.slice(0, 5).join(' | ')}`, { gaps });
+  return { warmupShort };
+}
 
+/** O replay inteiro numa loja em memória semeada pelo retrato. Nada vai ao banco. */
+export async function simulateInMemory({ snapshot, plan, pineConfig, entitiesTarget }) {
   const { backend, journal } = createSnapshotBackend(snapshot);
   for (const k of Object.keys(entitiesTarget)) delete entitiesTarget[k];
   Object.assign(entitiesTarget, backend);
-
-  const perAsset = await runRecoveryReplay({ assets, windows, pineConfig });
+  const perAsset = await runRecoveryReplay({ assets: plan.assets, windows: plan.windows, pineConfig });
   const after = await exportSnapshot(backend);
-  const diff = buildRecoveryDiff(snapshot, after);
-  const tags = buildRecoveryTags({ diff, runId, detectedAtMs: nowMs });
+  return { perAsset, after, journal, diff: buildRecoveryDiff(snapshot, after) };
+}
+
+/**
+ * @param {{ liveBackend: object, workflows: object[], entitiesTarget: object, getPineConfig: Function,
+ *   getPineConfigStatus: Function, nowMs: number, runId: string, fetchSeries?: Function }} deps
+ */
+export async function runDryRun({ liveBackend, workflows, entitiesTarget, getPineConfig, getPineConfigStatus, nowMs, runId, fetchSeries }) {
+  assertRealClock('o teste a seco');
+  assertLiveScanPaused(workflows);
+
+  const snapshot = await readSnapshot(liveBackend);
+  const configRow = snapshot.StrategyConfig.find((r) => r.id === 'current') ?? null;
+  const pineConfig = await getPineConfig();
+  assertStrategyConfigPresent({ row: configRow, status: getPineConfigStatus() });
+
+  const plan = planRecovery(snapshot, nowMs);
+  assertSignalsCover(snapshot.SignalEvent, plan.windowFromMs);
+  const { warmupShort } = await preloadAndValidate(plan.assets, plan.windows, fetchSeries);
+
+  const sim = await simulateInMemory({ snapshot, plan, pineConfig, entitiesTarget });
+  const tags = buildRecoveryTags({ diff: sim.diff, runId, detectedAtMs: nowMs });
   const fingerprints = {
     snapshot: fingerprint(snapshot),
-    candles: seriesFingerprint(),
+    candles: seriesFingerprint(plan.windowToMs),
     config: fingerprint(configRow),
-    journal: fingerprint(journal),
+    journal: fingerprint(sim.journal),
   };
   return {
-    ok: true, mode: 'dry-run', runId, nowMs, windowFromMs, windowToMs,
-    assets: perAsset, windows, resume,
-    pendingBackfill: pendingBackfill.map((a) => a.symbol),
-    smcAssets: assets.filter((a) => a.smc_enabled).map((a) => a.symbol),
-    warmupShort, diff, tags, fingerprints, journal,
-    summary: formatRecoverySummary({ diff, windowFromMs, windowToMs, mode: 'teste a seco' }),
+    version: RECOVERY_ARTIFACT_VERSION, ok: true, mode: 'dry-run', runId, nowMs, windowFromMs: plan.windowFromMs, windowToMs: plan.windowToMs,
+    assets: sim.perAsset, windows: plan.windows, resume: plan.resume,
+    pendingBackfill: plan.pendingBackfill.map((a) => a.symbol),
+    smcAssets: plan.assets.filter((a) => a.smc_enabled).map((a) => a.symbol),
+    warmupShort, diff: sim.diff, tags, fingerprints, journal: sim.journal,
+    summary: formatRecoverySummary({ diff: sim.diff, windowFromMs: plan.windowFromMs, windowToMs: plan.windowToMs, mode: 'teste a seco' }),
   };
 }
 
