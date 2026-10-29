@@ -12,7 +12,8 @@
 
 export const USER_AGENT = 'SentinelSignals-ContextProbe/1.0 (+https://github.com/mateusraony/Sentinel-Signals)';
 
-const EMAIL_RE = /^[^\s@;()<>]+@[^\s@;()<>]+\.[^\s@;()<>]+$/;
+// Só ASCII imprimível (0x21-0x7E): o fetch rejeita cabeçalho com não-Latin/controle, o que derrubaria toda requisição.
+const EMAIL_RE = /^(?=[\x21-\x7E]+$)[^@;()<>]+@[^@;()<>]+\.[^@;()<>]+$/;
 
 /**
  * Contato do robô (item 286). A política de uso do BLS pede que robôs informem um

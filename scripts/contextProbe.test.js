@@ -174,7 +174,7 @@ describe('contato do robô (política do BLS, item 286)', () => {
   });
 
   it('valor malformado é ignorado em vez de derrubar a sonda ou vazar lixo no cabeçalho', () => {
-    for (const bad of ['', '   ', 'sem-arroba', 'a b@c.com', 'x@y', 'a@b.com; DROP', 'a@b.com\nX-Evil: 1']) {
+    for (const bad of ['', '   ', 'sem-arroba', 'a b@c.com', 'x@y', 'a@b.com; DROP', 'a@b.com\nX-Evil: 1', '机器人@example.com', 'a@b.com\u0000', 'a@b.cömé']) {
       expect(contactEmail({ CONTEXT_CONTACT_EMAIL: bad }), JSON.stringify(bad)).toBeNull();
       expect(buildUserAgent({ CONTEXT_CONTACT_EMAIL: bad })).toBe(USER_AGENT);
     }
