@@ -16,6 +16,10 @@
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { SOURCES, probeSource, summarize, formatProbeMarkdown, contactEmail } from './contextProbe.mjs';
+import { staticCalendarProbeResult } from './contextCalendar.mjs';
+
+// Alternativa sem rede ao BLS (que bloqueia o GitHub): a lista fixa de datas do repositório.
+const STATIC_CALENDAR_ID = 'calendario-fixo';
 
 function parseArgs(argv) {
   const args = {};
@@ -37,7 +41,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
 
   let sources = SOURCES;
   if (only) {
-    const unknown = [...only].filter((id) => !SOURCES.some((s) => s.id === id));
+    const unknown = [...only].filter((id) => id !== STATIC_CALENDAR_ID && !SOURCES.some((s) => s.id === id));
     if (unknown.length) {
       console.error(`[context-probe] fonte(s) desconhecida(s): ${unknown.join(', ')}`);
       return 1;
@@ -51,6 +55,8 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     results.push(await probeSource(sources[i], { env }));
     if (i < sources.length - 1 && pauseMs > 0) await sleep(pauseMs);
   }
+
+  if (!only || only.has(STATIC_CALENDAR_ID)) results.push(staticCalendarProbeResult(undefined, Date.now()));
 
   // Só a execução no GitHub Actions vale como teste do lugar onde o coletor vai rodar.
   const runner = env.GITHUB_ACTIONS === 'true'

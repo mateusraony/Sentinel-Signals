@@ -33700,6 +33700,25 @@ muda (199 linhas). Nenhum consumidor de entidade, rota ou workflow existente foi
   contato, plano B: lista fixa no repositório, só com datas conferidas na fonte oficial (nunca inventar datas;
   as de 2027 não estão confirmadas).
 
+**Addendum 2 (2026-10-29, 3ª execução da sonda, depois do PR #518) — BLS segue bloqueado; Plano B.**
+- **Fato [log do GitHub, run 3]:** com `CONTEXT_CONTACT_EMAIL` ativo, as 3 URLs do BLS (`bls.ics`, página do CPI,
+  página do Emprego) deram **HTTP 403 com a mesma página de bloqueio (1.325 bytes)**. O contato no identificador
+  **não resolve**: o BLS bloqueia o IP do servidor do GitHub. Todo o resto OK (DefiLlama `/v2/chains` agora
+  com 420 redes; `api.binance.com` 451 como esperado, `data-api.binance.vision` OK). Portão reprovou só por `us-calendar`.
+- **Decisão do usuário:** calendário dos EUA por **fonte de terceiros** (recomendação era copiar a tabela do
+  BLS; `www.bls.gov` não abre da sessão de desenvolvimento). Salvaguardas: `scripts/contextCalendar.mjs` guarda
+  só CPI e Payroll; `confirmada` exige 2+ fontes distintas, divergente/única/projeção vira `a_confirmar`
+  (aparece como "data a confirmar", **nunca** dispara alerta nem marca sobreposição); cada linha leva as fontes e
+  `conferido_em`; `oficial` fica reservado para quando o usuário colar a tabela do BLS (sobe de nível sem mudar código).
+- **Lista de 29/10 [hipótese até conferir no BLS]:** confirmadas — Payroll 06/11 e 04/12, CPI 10/11. A confirmar —
+  CPI 10/12 (um calendário diz 11/12), Payroll 08/01/2027 e CPI 13/01/2027 (BLS ainda não publicou 2027; fontes
+  divergem 13×14/01). Horário 08:30 ET → UTC pelo `Intl` (13:30Z depois de 01/11).
+- **Guardas [provados por mutação]:** alertar `a_confirmar` reprova 5 testes; contar `a_confirmar` como cobertura
+  reprova 4; aceitar `confirmada` com 1 fonte reprova 2. A lista **envelhece**: a sonda avisa com <60 dias e
+  reprova quando nenhuma data confirmada resta à frente (hoje: cobertura até 04/12/2026 — **atualizar antes**).
+- A sonda ganhou a linha `calendario-fixo` como alternativa do grupo `us-calendar`: o portão passa com o BLS
+  bloqueado, mas imprime "fonte: terceiros, não oficial".
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 **Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,
