@@ -33740,6 +33740,21 @@ muda (199 linhas). Nenhum consumidor de entidade, rota ou workflow existente foi
 - **Pendente:** rodar a sonda e registrar o formato real do financecalendar e o resultado do FRED; se forem
   exibidos no painel (Fase 2+), o financecalendar pede link de volta.
 
+**Addendum 4 (2026-10-29, run 5) — FRED e financecalendar funcionam do GitHub; calendário sobe para oficial.**
+- **FRED [fato]:** com `FRED_API_KEY` criada pelo usuário, release 10 = "Consumer Price Index" e release 50 =
+  "Employment Situation" (nomes conferidos, ids agora confirmados). Datas oficiais: CPI 10/11 e **10/12**,
+  Payroll 06/11 e 04/12 — **resolve a dúvida 10×11/12** (era um calendário de terceiros errado). O FRED ainda
+  não tem 2027 → CPI 13/01 e Payroll 08/01 seguem `a_confirmar`.
+- **Lista fixa:** as 4 datas viraram `oficial`. `oficial` agora exige uma fonte oficial (URL do BLS ou do FRED;
+  domínio parecido não engana — provado por mutação: aceitar qualquer fonte reprova 2 testes). Cobertura
+  oficial até 10/12/2026 (aviso <60 dias continua: atualizar quando o FRED publicar 2027).
+- **financecalendar.com [fato]:** formato `{ from, to, count, total, events, attribution }`; limite **2.000
+  chamadas/dia** sem chave (zera 00:00 UTC, cabeçalhos `x-ratelimit-*`); janela padrão curta (~3 semanas). O
+  "só na fonte: 2026-11-12" da run 5 era o campo `to` — o validador agora lê só `events` (provado por mutação).
+- **Recomendação para a Fase 2 (coletor):** FRED como fonte principal do calendário dos EUA (oficial, chave
+  grátis); lista fixa como reserva; financecalendar só como conferência (já é uma das fontes da lista).
+- **Portão:** runs 4 e 5 aprovadas (mesma noite) — falta 1 execução em outro horário para o critério da fase.
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 **Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,
@@ -33838,3 +33853,20 @@ contato, DefiLlama `/v2/chains`); medidor do Neon; replay de recuperação (prov
 continuidade C1/C2, hora real ao minuto e o Contexto de Mercado (item 284). **Não verificado:** páginas oficiais
 de Neon/Supabase/Google/Firebase (rede bloqueada na sessão; números vêm da documentação espelhada no GitHub e de
 pesquisa); a data exata de renovação; se o Free permite criar chave de API.
+
+## 287. O replay entrega 1 vela fechada a mais que o ao vivo (backtest, backfill e recuperação) (2026-10-29)
+
+**Achado [fato, verificado no código por agente durante o desenho do replay de recuperação]:** o ao vivo pede
+`limit` velas à Binance e a última vem ABERTA (`scripts/adminMarketDataProvider.js:41,67`), então calcula com
+**`limit − 1` fechadas**. O replay (`sliceClosedAsOf`, `src/lib/backtestEngine.js:120`) devolve **`limit`
+fechadas**. Indicadores com estado desde a 1ª barra (Range Filter, EMA, RMA) partem de um ponto 1 vela
+diferente.
+
+**Impacto [hipótese, não medido]:** após o aquecimento a diferença tende a sumir (mesmo argumento do item da
+semente da EMA em `.claude/rules/pine-parity.md`), mas um flip do Range Filter perto do limite pode mudar de
+vela. Vale para o backtest (itens 33/261), a checagem retroativa (item 137) e o replay de recuperação.
+
+**Decisão:** no replay de recuperação, servir `limit − 1` fechadas (igual ao ao vivo — `sliceLikeLive`). Para
+backtest/backfill, não muda nada agora; se um dia for medir, comparar os dois cortes no mesmo histórico antes
+de decidir.
+

@@ -1,4 +1,4 @@
-// Contexto de Mercado (docs/known-risks.md itens 284/285/287) — calendário fixo
+// Contexto de Mercado (docs/known-risks.md itens 284/285, addenda 2-4) — calendário fixo
 // dos EUA (CPI = inflação, Payroll = relatório de emprego).
 //
 // POR QUE EXISTE: o BLS bloqueia o servidor do GitHub (HTTP 403 nas 3 URLs
@@ -11,8 +11,10 @@
 // - 'a_confirmar'  : fontes divergem, só uma fonte, ou a data é projeção. Aparece
 //                    no painel como "data a confirmar" e NUNCA dispara alerta
 //                    nem marca sobreposição com operação.
-// - 'oficial'      : conferida na tabela do próprio BLS (o usuário cola a tabela
-//                    e a linha sobe de nível sem mudar código).
+// - 'oficial'      : conferida numa fonte oficial — a tabela do próprio BLS ou o
+//                    FRED (Fed de St. Louis, que republica o calendário do BLS;
+//                    lido pela sonda em 29/10, run 5). Exige uma fonte oficial
+//                    na lista de `fontes`.
 //
 // Parte pura: sem rede, sem Date.now implícito, sem banco. Horário de Nova York
 // → UTC sempre por `nyToUtc` (nunca deslocamento fixo; o horário de verão dos
@@ -42,20 +44,28 @@ const S_FINCAL_CPI = 'https://www.financecalendar.com/us-cpi-report/';
 const S_FINCAL_JOBS = 'https://www.financecalendar.com/us-jobs-report/';
 const S_THRIVE_CPI = 'https://thriveinmarkets.com/calendar/dates/cpi-2026/';
 const S_THRIVE_NFP = 'https://thriveinmarkets.com/calendar/dates/nfp-2026/';
+// FRED (sem a chave na URL; a chave só existe na requisição da sonda).
+const S_FRED_CPI = 'https://api.stlouisfed.org/fred/release/dates?release_id=10';
+const S_FRED_EMP = 'https://api.stlouisfed.org/fred/release/dates?release_id=50';
+
+/** Fontes que contam como oficiais (BLS ou FRED). */
+const OFFICIAL_SOURCE_RE = /^https:\/\/(www\.bls\.gov|api\.stlouisfed\.org|fred\.stlouisfed\.org)\//;
 
 /**
  * Lista fixa. `reference` = mês de referência do dado; `date` = dia da divulgação
  * (Nova York); `time` = hora em Nova York (as duas saem às 08:30 ET).
- * Montada em 2026-10-29 por busca na web — ver `fontes` de cada linha.
+ * Montada em 2026-10-29 por busca na web; as 4 primeiras viraram 'oficial' no mesmo dia,
+ * quando o FRED (sonda, run 5) confirmou as datas — ver `fontes` de cada linha.
  * Manter em ORDEM CRONOLÓGICA (o validateCalendar reprova fora de ordem).
  */
 export const US_RELEASES = Object.freeze([
-  { id: 'nfp-2026-10', kind: 'NFP', reference: '2026-10', date: '2026-11-06', time: '08:30', status: STATUS.CONFIRMADA, fontes: [S_BLS_EMP, S_FINCAL_JOBS, S_THRIVE_NFP] },
-  { id: 'cpi-2026-10', kind: 'CPI', reference: '2026-10', date: '2026-11-10', time: '08:30', status: STATUS.CONFIRMADA, fontes: [S_BLS_CPI, S_FINCAL_CPI, S_THRIVE_CPI] },
-  { id: 'nfp-2026-11', kind: 'NFP', reference: '2026-11', date: '2026-12-04', time: '08:30', status: STATUS.CONFIRMADA, fontes: [S_BLS_EMP, S_THRIVE_NFP] },
-  { id: 'cpi-2026-11', kind: 'CPI', reference: '2026-11', date: '2026-12-10', time: '08:30', status: STATUS.A_CONFIRMAR, fontes: [S_BLS_CPI, S_FINCAL_CPI], nota: 'um calendário de terceiros lista 11/12; o restante e o BLS (via busca) listam 10/12' },
-  { id: 'nfp-2026-12', kind: 'NFP', reference: '2026-12', date: '2027-01-08', time: '08:30', status: STATUS.A_CONFIRMAR, fontes: [S_BLS_EMP], nota: 'a outra fonte só aplica "primeira sexta"; o BLS não confirmou 2027' },
-  { id: 'cpi-2026-12', kind: 'CPI', reference: '2026-12', date: '2027-01-13', time: '08:30', status: STATUS.A_CONFIRMAR, fontes: [S_BLS_CPI], nota: 'projeção; fontes divergem entre 13 e 14/01 e o BLS ainda não confirmou 2027' },
+  { id: 'nfp-2026-10', kind: 'NFP', reference: '2026-10', date: '2026-11-06', time: '08:30', status: STATUS.OFICIAL, fontes: [S_FRED_EMP, S_BLS_EMP, S_FINCAL_JOBS, S_THRIVE_NFP] },
+  { id: 'cpi-2026-10', kind: 'CPI', reference: '2026-10', date: '2026-11-10', time: '08:30', status: STATUS.OFICIAL, fontes: [S_FRED_CPI, S_BLS_CPI, S_FINCAL_CPI, S_THRIVE_CPI] },
+  { id: 'nfp-2026-11', kind: 'NFP', reference: '2026-11', date: '2026-12-04', time: '08:30', status: STATUS.OFICIAL, fontes: [S_FRED_EMP, S_BLS_EMP, S_THRIVE_NFP] },
+  // A dúvida 10×11/12 (um calendário de terceiros dizia 11/12) foi resolvida pelo FRED: 10/12.
+  { id: 'cpi-2026-11', kind: 'CPI', reference: '2026-11', date: '2026-12-10', time: '08:30', status: STATUS.OFICIAL, fontes: [S_FRED_CPI, S_BLS_CPI, S_FINCAL_CPI] },
+  { id: 'nfp-2026-12', kind: 'NFP', reference: '2026-12', date: '2027-01-08', time: '08:30', status: STATUS.A_CONFIRMAR, fontes: [S_BLS_EMP], nota: 'a outra fonte só aplica "primeira sexta"; o FRED ainda não tem 2027 (29/10)' },
+  { id: 'cpi-2026-12', kind: 'CPI', reference: '2026-12', date: '2027-01-13', time: '08:30', status: STATUS.A_CONFIRMAR, fontes: [S_BLS_CPI], nota: 'projeção; fontes divergem entre 13 e 14/01 e o FRED ainda não tem 2027 (29/10)' },
 ]);
 
 const VALID_STATUS = new Set(Object.values(STATUS));
@@ -64,8 +74,8 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 /**
  * Valida a lista inteira. Devolve a lista de problemas (vazia = válida).
  * Regras: campos obrigatórios, tipo/status conhecidos, id único, ordem por
- * data, dia útil, horário existente em Nova York, 'confirmada'/'oficial' com
- * 2+ fontes (oficial aceita 1: o próprio BLS).
+ * data, dia útil, horário existente em Nova York, 'confirmada' com 2+ fontes
+ * distintas, 'oficial' com pelo menos uma fonte oficial (BLS ou FRED).
  */
 export function validateCalendar(list) {
   const problems = [];
@@ -95,7 +105,9 @@ export function validateCalendar(list) {
     }
     const nFontes = Array.isArray(e.fontes) ? new Set(e.fontes).size : 0;
     if (e.status === STATUS.CONFIRMADA && nFontes < 2) problems.push(`${tag}: 'confirmada' exige 2+ fontes distintas (tem ${nFontes})`);
-    if (e.status === STATUS.OFICIAL && nFontes < 1) problems.push(`${tag}: 'oficial' exige a fonte do BLS`);
+    if (e.status === STATUS.OFICIAL && !(Array.isArray(e.fontes) && e.fontes.some((f) => OFFICIAL_SOURCE_RE.test(f)))) {
+      problems.push(`${tag}: 'oficial' exige uma fonte oficial (BLS ou FRED)`);
+    }
     if (e.status === STATUS.A_CONFIRMAR && !e.nota) problems.push(`${tag}: 'a_confirmar' precisa de nota dizendo por quê`);
   }
   return problems;
@@ -145,14 +157,16 @@ export function calendarCoverage(list = US_RELEASES, nowMs = Date.now(), warnDay
  * OK só se a lista é válida E ainda há data confirmada à frente.
  */
 export function staticCalendarProbeResult(list = US_RELEASES, nowMs = Date.now()) {
-  const base = { id: 'calendario-fixo', name: 'Calendário fixo no repositório (CPI e Payroll, terceiros)', required: true, group: 'us-calendar', url: null, httpStatus: null, latencyMs: null, bytes: null, rateLimit: '' };
+  const base = { id: 'calendario-fixo', name: 'Calendário fixo no repositório (CPI e Payroll)', required: true, group: 'us-calendar', url: null, httpStatus: null, latencyMs: null, bytes: null, rateLimit: '' };
   const problems = validateCalendar(list);
   if (problems.length) return { ...base, status: 'FALHOU', detail: `lista inválida: ${problems.slice(0, 3).join('; ')}` };
   const cov = calendarCoverage(list, nowMs);
   if (cov.expired) return { ...base, status: 'FALHOU', detail: 'lista vencida: nenhuma data confirmada à frente — atualizar' };
   const pending = list.filter((e) => e.status === STATUS.A_CONFIRMAR).length;
+  const oficiais = list.filter((e) => e.status === STATUS.OFICIAL).length;
+  const terceiros = list.filter((e) => e.status === STATUS.CONFIRMADA).length;
   const aviso = cov.warn ? ` — ATENÇÃO: só ${cov.daysLeft} dia(s) de cobertura, atualizar` : '';
-  return { ...base, status: 'OK', detail: `${cov.futureConfirmed} data(s) confirmada(s) à frente (até ${cov.lastConfirmedUtc.slice(0, 10)}); ${pending} a confirmar; conferida em ${CALENDAR_CHECKED_AT}; fonte: terceiros, não oficial${aviso}` };
+  return { ...base, status: 'OK', detail: `${cov.futureConfirmed} data(s) confirmada(s) à frente (até ${cov.lastConfirmedUtc.slice(0, 10)}); ${oficiais} oficial(is) (BLS/FRED), ${terceiros} de terceiros, ${pending} a confirmar; conferida em ${CALENDAR_CHECKED_AT}${aviso}` };
 }
 
 /**

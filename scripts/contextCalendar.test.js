@@ -1,4 +1,4 @@
-// Item 287 — calendário fixo dos EUA (Plano B do BLS bloqueado). Prova que a
+// Item 285 (addenda 2-4) — calendário fixo dos EUA (Plano B do BLS bloqueado). Prova que a
 // lista nunca vira alerta com data duvidosa, que o fuso usa Intl (não −4h/−5h)
 // e que a sonda reprova lista inválida ou vencida.
 import { describe, it, expect } from 'vitest';
@@ -16,11 +16,11 @@ describe('lista fixa de datas', () => {
     expect(validateCalendar(US_RELEASES)).toEqual([]);
   });
 
-  it('só vira alerta o que tem 2+ fontes; data duvidosa fica "a confirmar" e muda', () => {
+  it('só vira alerta o que é oficial ou tem 2+ fontes; data duvidosa fica "a confirmar" e muda', () => {
     const ids = alertableEvents(US_RELEASES).map((e) => e.id);
-    expect(ids).toEqual(['nfp-2026-10', 'cpi-2026-10', 'nfp-2026-11']);
+    expect(ids).toEqual(['nfp-2026-10', 'cpi-2026-10', 'nfp-2026-11', 'cpi-2026-11']);
     const pend = calendarEvents(US_RELEASES).filter((e) => !e.confirmed).map((e) => e.id);
-    expect(pend).toEqual(['cpi-2026-11', 'nfp-2026-12', 'cpi-2026-12']);
+    expect(pend).toEqual(['nfp-2026-12', 'cpi-2026-12']);
     for (const e of calendarEvents(US_RELEASES).filter((x) => !x.confirmed)) expect(e.note).toBeTruthy();
   });
 
@@ -30,7 +30,7 @@ describe('lista fixa de datas', () => {
     expect(byId['nfp-2026-10'].startsAtUtc).toBe('2026-11-06T13:30:00.000Z');
     expect(byId['cpi-2026-10'].startsAtUtc).toBe('2026-11-10T13:30:00.000Z');
     // Um CPI de verão (fora da lista, só para provar que não é deslocamento fixo): UTC−4.
-    const verao = calendarEvents([{ id: 'x', kind: 'CPI', reference: '2026-06', date: '2026-07-14', time: '08:30', status: STATUS.OFICIAL, fontes: ['f'] }]);
+    const verao = calendarEvents([{ id: 'x', kind: 'CPI', reference: '2026-06', date: '2026-07-14', time: '08:30', status: STATUS.OFICIAL, fontes: ['https://api.stlouisfed.org/x'] }]);
     expect(verao[0].startsAtUtc).toBe('2026-07-14T12:30:00.000Z');
   });
 
@@ -57,14 +57,24 @@ describe('validateCalendar reprova defeitos', () => {
   });
 
   it("'confirmada' com 1 fonte (ou a mesma fonte repetida) é reprovada", () => {
-    const l = clone(); l[0].fontes = ['a'];
+    const l = clone(); l[0].status = STATUS.CONFIRMADA; l[0].fontes = ['a'];
     expect(validateCalendar(l).join('|')).toMatch(/exige 2\+ fontes/);
-    const r = clone(); r[0].fontes = ['a', 'a'];
+    const r = clone(); r[0].status = STATUS.CONFIRMADA; r[0].fontes = ['a', 'a'];
     expect(validateCalendar(r).join('|')).toMatch(/exige 2\+ fontes/);
   });
 
+  it("'oficial' sem fonte oficial (BLS ou FRED) é reprovada — terceiros não sobem de nível sozinhos", () => {
+    const l = clone(); l[0].fontes = ['https://www.financecalendar.com/us-jobs-report/', 'https://thriveinmarkets.com/x'];
+    expect(validateCalendar(l).join('|')).toMatch(/exige uma fonte oficial/);
+    const fred = clone(); fred[0].fontes = ['https://api.stlouisfed.org/fred/release/dates?release_id=50'];
+    expect(validateCalendar(fred)).toEqual([]);
+    // Domínio parecido não engana: só o começo exato da URL conta.
+    const falso = clone(); falso[0].fontes = ['https://www.bls.gov.example.com/x'];
+    expect(validateCalendar(falso).join('|')).toMatch(/exige uma fonte oficial/);
+  });
+
   it("'a_confirmar' sem nota, status/tipo desconhecidos e data inválida", () => {
-    const l = clone(); delete l.find((e) => e.id === 'cpi-2026-11').nota;
+    const l = clone(); delete l.find((e) => e.id === 'nfp-2026-12').nota;
     expect(validateCalendar(l).join('|')).toMatch(/precisa de nota/);
     const s = clone(); s[0].status = 'talvez';
     expect(validateCalendar(s).join('|')).toMatch(/status desconhecido/);
@@ -80,15 +90,15 @@ describe('cobertura (lista que envelhece)', () => {
   it('conta só datas CONFIRMADAS à frente e avisa antes de vencer', () => {
     const cov = calendarCoverage(US_RELEASES, NOW);
     expect(cov.expired).toBe(false);
-    expect(cov.futureConfirmed).toBe(3);
-    expect(cov.lastConfirmedUtc).toBe('2026-12-04T13:30:00.000Z');
-    expect(cov.daysLeft).toBe(35);
-    expect(cov.warn).toBe(35 < COVERAGE_WARN_DAYS); // < 60 dias: já avisa
+    expect(cov.futureConfirmed).toBe(4);
+    expect(cov.lastConfirmedUtc).toBe('2026-12-10T13:30:00.000Z');
+    expect(cov.daysLeft).toBe(41);
+    expect(cov.warn).toBe(41 < COVERAGE_WARN_DAYS); // < 60 dias: já avisa
     expect(cov.warn).toBe(true);
   });
 
   it('vence quando a última data confirmada passa', () => {
-    const cov = calendarCoverage(US_RELEASES, Date.UTC(2026, 11, 5));
+    const cov = calendarCoverage(US_RELEASES, Date.UTC(2026, 11, 11));
     expect(cov.expired).toBe(true);
     expect(cov.futureConfirmed).toBe(0);
   });
@@ -103,8 +113,8 @@ describe('linha da sonda (grupo us-calendar)', () => {
   it('lista válida e dentro do prazo → OK e o portão us-calendar abre mesmo com o BLS bloqueado', () => {
     const r = staticCalendarProbeResult(US_RELEASES, NOW);
     expect(r.status).toBe('OK');
-    expect(r.detail).toMatch(/terceiros, não oficial/);
-    expect(r.detail).toMatch(/ATENÇÃO: só 35 dia/);
+    expect(r.detail).toMatch(/4 oficial\(is\) \(BLS\/FRED\), 0 de terceiros, 2 a confirmar/);
+    expect(r.detail).toMatch(/ATENÇÃO: só 41 dia/);
     const bls = (id) => ({ id, required: true, group: 'us-calendar', status: 'FALHOU' });
     const sum = summarize([bls('bls-calendar'), bls('bls-cpi-page'), bls('bls-empsit-page'), r]);
     expect(sum.gateOk).toBe(true);

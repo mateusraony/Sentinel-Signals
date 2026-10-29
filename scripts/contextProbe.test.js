@@ -308,16 +308,28 @@ describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
     expect(collectIsoDates({ nada: 'sem data', n: 1 })).toEqual([]);
   });
 
-  it('financecalendar: aceita JSON com datas e compara com a lista fixa; reprova HTML e JSON sem data', () => {
-    const body = JSON.stringify({ events: [{ date: '2026-11-10', time: '08:30' }, { date: '2026-12-11' }] });
+  it('financecalendar: lê datas só de events (formato real de 29/10) e compara com a lista fixa', () => {
+    // Formato real (run 5): { from, to, count, total, events, attribution }. `to` = 12/11 era a
+    // falsa divergência "só na fonte" da 1ª versão do validador.
+    const body = JSON.stringify({
+      from: '2026-10-22', to: '2026-11-12', count: 2, total: 2, attribution: 'financecalendar.com',
+      events: [{ date: '2026-11-10', time: '08:30' }, { date: '2026-12-11' }],
+    });
     const v = validateFinanceCalendar('CPI')({ body });
     expect(v.ok).toBe(true);
-    expect(v.detail).toMatch(/chaves: events/);
+    expect(v.detail).toMatch(/2 evento\(s\) de 2 \(janela 2026-10-22 a 2026-11-12\)/);
     expect(v.detail).toMatch(/bate: 2026-11-10/);
-    expect(v.detail).toMatch(/só na fonte: 2026-12-11/); // a divergência 10×11/12 aparece
-    expect(v.detail).toMatch(/ausente na fonte: 2026-12-10, 2027-01-13/);
+    expect(v.detail).toMatch(/só na fonte: 2026-12-11/); // divergência real dentro de events aparece
+    expect(v.detail.split('só na fonte')[1]).not.toMatch(/2026-11-12/); // `to` não vira data de evento
     expect(validateFinanceCalendar('CPI')({ body: HTML_ERROR }).ok).toBe(false);
-    expect(validateFinanceCalendar('NFP')({ body: '{"ok":true}' }).detail).toMatch(/sem nenhuma data/);
+    expect(validateFinanceCalendar('NFP')({ body: '{"ok":true}' }).detail).toMatch(/sem a lista events/);
+    expect(validateFinanceCalendar('NFP')({ body: '{"events":[{"x":1}]}' }).detail).toMatch(/events sem nenhuma data/);
+  });
+
+  it('financecalendar: só a janela (from/to) sem evento na lista → nada de falsa divergência', () => {
+    const body = JSON.stringify({ from: '2026-10-22', to: '2026-11-12', count: 1, total: 1, events: [{ date: '2026-11-10' }] });
+    const v = validateFinanceCalendar('CPI')({ body });
+    expect(v.detail).toMatch(/só na fonte: —/);
   });
 
   it('FRED release: confere o NOME (um id errado não passa calado)', () => {
