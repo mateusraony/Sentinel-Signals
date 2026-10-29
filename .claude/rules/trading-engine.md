@@ -510,6 +510,20 @@ nunca deve receber nova transição.**
   `backfill_entry_lag_ms` (metadado aditivo via `update()`, nunca
   `transitionTradeOp`).
 
+- **Replay de recuperação depois de queda longa do banco** (item 288) —
+  `src/lib/recovery/` (`recoveryReplay.js` + `snapshotBackend.js`). O ao vivo só
+  olha a última vela: depois de dias parado fecharia Time Stop no preço de hoje
+  e perderia stops/alvos/sinais da pausa. O replay roda o MESMO motor
+  (`runBacktest` → `scanAsset`/`persistScanResults`, relógio simulado) vela a
+  vela, **começando no 1º passo estritamente depois do último processamento**
+  do ativo (`resolveResumePoint`) — reprocessar vela já vista com estado novo
+  gera STOP falso (provado em teste). Sem 3º caminho de mutação: o motor
+  escreve pelos caminhos de sempre; o teste a seco usa uma loja em memória
+  (`createSnapshotBackend`) que decide a criação como o Postgres
+  (`planTradeOpCreationSql`). Equivalência "sem parar ≡ queda + replay"
+  provada em `recoveryReplay.test.js`. **Lock só com relógio real**
+  (`assertRealClock`): o lock usa `Date.now()`.
+
 - **Horário real do evento vs. horário de detecção** (item 107) — todo
   `_at` de saída (`stop_hit_at`/`tp1_hit_at`/`tp2_hit_at`/`closed_at`) é o
   instante em que a PASSADA do scan detectou a condição, nunca o evento de

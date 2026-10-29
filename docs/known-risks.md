@@ -33870,3 +33870,50 @@ vela. Vale para o backtest (itens 33/261), a checagem retroativa (item 137) e o 
 backtest/backfill, não muda nada agora; se um dia for medir, comparar os dois cortes no mesmo histórico antes
 de decidir.
 
+## 288. Replay de recuperação depois de queda longa do banco — núcleo e provas (PR-R1, 2026-10-29)
+
+**Contexto.** O Neon ficou sem cota de computação de ~19/10 até a renovação (~01/11; item 286). Os dados estão
+intactos, mas o ao vivo só avalia a última vela fechada: na volta ele fecharia Time Stop pelo relógio no preço de
+hoje (`scanner.js` `barsOpen = Date.now() − entrada`), não veria stop/alvo tocados no meio da pausa e nunca
+criaria os sinais da pausa. Pesquisa (fóruns de bots, ex. Gainium/BotMarley): "no reinício, preencher as velas
+perdidas antes de operar"; saída disparada por estado velho no reinício é falha conhecida. Plano aprovado pelo
+usuário: teste a seco → relatório → aplicar só com o número do teste digitado por ele.
+
+**Entregue [fato] — sem tocar `scanner.js` nem `backtestEngine.js`:**
+- `src/lib/recovery/snapshotBackend.js`: loja em memória semeada por um retrato do banco. Fecha 6 lacunas do
+  backend falso frente ao Postgres, cada uma com teste que falha no falso cru: criação de operação decidida como
+  no Postgres (`planTradeOpCreationSql` sobre TODAS as operações vivas do ativo — o ponteiro do falso ficava vazio
+  para operações do retrato e deixava criar uma 2ª); `update` de id inexistente lança; leituras devolvem cópias;
+  `get`; diário de toda escrita; id novo nunca sobrescreve linha do retrato (o contador do falso recomeçava do
+  zero — achado pelo teste antes de ir para o ar). `readOnlyProxy` lança em qualquer escrita.
+- `src/lib/recovery/recoveryReplay.js`: `resolveResumePoint` (1º passo estritamente depois do último processamento
+  do MOTOR — o maior entre `last_scan_at` e `recovery_replayed_to`; aborta com carimbo no futuro ou pausa > 30 dias.
+  **Achado do Codex no PR #522:** a 1ª versão usava também todo carimbo das linhas do ativo, e um `reviewed_at`
+  gravado pelo painel depois da volta do banco empurraria o início para depois da pausa — pulando stops/alvos/sinais
+  em silêncio; corrigido e travado por teste com mutação), `computeReplayWindow` (aquecimento por timeframe), `sliceLikeLive` (limite − 1, item 287),
+  `validateSeriesContinuity`, travas (`assertLiveScanPaused` — exige "Scheduled scan" E "Backfill check"
+  desativados; `assertStrategyConfigPresent`; `assertRealClock`), `runRecoveryReplay` (1 `runBacktest` por ativo,
+  para tudo em falha de integridade), diferença, etiquetas (lista fechada de chaves, nunca status/stop/preço) e
+  resumo em português.
+
+**Provas [verificado — 40 testes; guardas provadas por mutação]:**
+- **Equivalência**: "rodar sem parar" ≡ "rodar até a queda + retrato + replay" — operações, sinais e tarefas
+  idênticos campo a campo, com a queda começando antes do sinal, entre criação e TP1, com stop no meio da pausa +
+  2ª operação aberta e andando dentro dela, depois do TP1 (runner com trailing), e com Time Stop vencendo na pausa.
+- **Não-vacuidade**: sem o replay (uma passada ao vivo na volta) o stop do meio não é visto, a operação aberta na
+  pausa não existe e o Time Stop fecha no preço de hoje.
+- **Guarda do início**: forçar o início antes do último processamento produz resultado diferente (STOP falso);
+  com a guarda, igual ao sem parar. Mutação "sem o +1 passo" reprova 8 testes.
+- Rodar de novo depois de terminar = zero escrita; cair no meio e retomar pelo cursor = mesmo fim; nada criado
+  antes do início; o teste a seco não toca o banco "real"; dois testes a seco = mesmo diário; falha de busca de
+  vela para tudo. Trava de inventário: toda entidade que o `scanner.js` usa precisa estar no retrato.
+- O resumo conta como abertas TODAS as operações abertas depois do replay, mexidas ou não (2º achado do Codex no
+  PR #522: antes contava só as que o replay tocou e subestimava a exposição).
+- **Defeito achado e corrigido**: `runBacktest` exige `toMs > fromMs`, mas uma pausa curta deixa 1 passo só →
+  `runBacktestTo` roda exatamente esse passo.
+
+**Limites [honesto]:** saídas na resolução da vela (sem price-check na pausa; stop vence quando a vela toca stop e
+alvo); usa a configuração ATUAL da estratégia; o "zero Telegram durante o replay" depende do redirecionamento do
+bundle (provado no PR-R2, não aqui). Pendente: PR-R2 (workflow do teste a seco, só leitura) e PR-R3 (aplicar,
+selo "Recuperada", 1 resumo no Telegram, roteiro).
+
