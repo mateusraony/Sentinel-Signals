@@ -3,7 +3,7 @@ import { assetHealthcheckReason } from './assetHealthcheck.js';
 /**
  * Frescor do dado de um ativo — fonte única (item 277, PR-B) para o cartão,
  * o drawer, a lista de Ativos e o chip de saúde global. Usa o mesmo
- * healthcheck do cron (`assetHealthcheckReason`, tolerância de 30 min).
+ * healthcheck do cron (`assetHealthcheckReason`, tolerância `ASSET_STALE_GRACE_MIN`).
  *
  * Antes o cartão mostrava "LIVE" verde sempre que o healthcheck não acusava
  * problema — inclusive num ativo nunca lido (sem `last_scan_at`), que o
@@ -26,10 +26,10 @@ export function assetDataQuality(asset, now) {
   if (asset?.is_active === false) status = 'inactive';
   else if (reason === 'persistent_error') status = 'error';
   else if (reason === 'silent') status = 'stale';
-  // Falha recente (dentro da tolerância de 30 min do healthcheck): o motor
+  // Falha recente (dentro da tolerância do healthcheck, `ASSET_STALE_GRACE_MIN`): o motor
   // renova `last_scan_at` mesmo quando a leitura falha, então "ok" aqui diria
   // "atualizado" sobre um dado que não veio (revisão do PR-B). O alerta do
-  // Telegram continua esperando os 30 min — isto é só o que a tela mostra.
+  // Telegram continua esperando a tolerância — isto é só o que a tela mostra.
   else if (asset?.scan_status === 'error' || asset?.scan_error_since) status = 'error';
   else if (nowMs !== null && hasScan) status = 'ok';
 

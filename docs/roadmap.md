@@ -13,18 +13,23 @@ O que manda agora é **continuidade do sistema**, depois a camada de contexto.
 
 | # | O que | Estado | Onde |
 |---|---|---|---|
-| 1 | **Neon sem cota de computação** (110,33 de 100 CU-h; espaço ok, 70 MB). Renovação ~30/10 e novo estouro ~16/11 são **estimativas** (item 282), a confirmar no painel do Neon | Aberto | itens 282/283 |
-| 2 | Modo de observação independente do banco ("completo", decisão 23/10) | **Aguarda sua decisão** sobre onde guardar o estado fora do banco | item 283 |
-| 3 | PR [#513](https://github.com/mateusraony/Sentinel-Signals/pull/513) — restaurar backup num banco novo (Supabase) + TLS | Aberto desde 19/10, 5 achados do Codex sem resolução; o teste de restauração **nunca rodou** | item 283 |
+| 1 | **Neon sem cota de computação** (110,33 de 100 CU-h; espaço ok, 70 MB). Causa: scan de 5 min = banco nunca dorme (~180 h/mês). Renovação provável **01/11** (a confirmar). **Scan passa a 15 min (item 286, PR-1)**; guarda de CI mantém o orçamento < 85 h (hoje 79,4 h, estimativa) | Em andamento — falta o usuário pausar o scan até a recuperação e religar a 15 min | itens 282/283/286 |
+| 2 | Modo de observação independente do banco ("completo", decisão 23/10) | Estado fora do banco = **Firebase RTDB** (Drive descartado p/ estado ao vivo). "Só o último dado" foi considerado pouco: desenho em camadas (ver o último dado bom, avisar stop/TP sem banco, reconciliar ao voltar). Nada implementado | itens 283/286 |
+| 3 | PR [#513](https://github.com/mateusraony/Sentinel-Signals/pull/513) — restaurar backup num banco novo (Supabase) + TLS | **Obsoleto**: o PR #514 (mesclado) já trouxe tudo com os 5 achados corrigidos; fechar sem mesclar. O teste de restauração **nunca rodou** (falta o Supabase do usuário) | itens 283/286 |
 | 4 | `system_logs` cresce sem limite (nada apaga) | Aberto, não é a causa de hoje | item 283 |
 | 5 | **Contexto de Mercado** (calendário macro, sentimento, resumos 07h/12h/21h, marcador nas operações, Telegram) | Plano aprovado em 2026-10-27. **Fase 1 (sondas) escrita em 2026-10-28; falta rodar a sonda 3x no GitHub.** Nada de coleta/tela ainda | itens 284/285 |
+| 6 | **Recuperação depois da queda** (replay do motor sobre a pausa: entradas que faltaram, saídas com hora real, Time Stop certo, 1 resumo no Telegram) | **Prioridade máxima**, nada implementado. Backup do Postgres falha desde 19/10 (último bom 18/10) | item 286 |
 
 **Passos manuais que dependem de você** (a regra do projeto é só considerar
 concluído depois que você confirmar):
-1. Abrir o painel do Neon → **Billing** e anotar a data de renovação e o uso de
-   computação.
-2. Escolher onde fica o estado do modo de observação fora do banco (item 283).
-3. Dizer se o PR #513 continua (corrigir os 5 achados) ou é descartado.
+1. **Pausar o scan até a recuperação** (obrigatório antes de o banco voltar): cron-job.org
+   (desligar o job) + GitHub *Actions → Scheduled scan → "..." → Disable workflow* + fechar
+   as abas do painel. Como e por quê: `docs/claude/external-cron-setup.md` (fim do arquivo).
+2. Ao religar: cron-job.org em `*/15` e healthchecks.io com período 15 min / carência 20–30 min.
+3. Quando o Neon voltar: *Actions → Daily Postgres backup → Run workflow* (último bom: 18/10).
+4. Ver/medir o uso do Neon: projeto → Overview → painel Usage (a página Billing da
+   organização não mostra uso no Free).
+5. Fechar o PR #513 sem mesclar (substituído pelo #514).
 
 **Contexto de Mercado — ordem das fases** (cada uma pequena e desligável; sem
 Neon, sem Cloudflare, nada no motor): 0 documentação (feita em 2026-10-27) →

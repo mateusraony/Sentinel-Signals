@@ -39,7 +39,7 @@ function calcRR(op) {
 }
 
 // Shows how long detection lagged behind the real market event (candle
-// close) — only when the gap is bigger than a normal scan cadence (~5min,
+// close) — only when the gap is bigger than a normal scan cadence (~15min,
 // generous margin for the hourly GitHub Actions fallback too), so routine
 // cron latency doesn't clutter every row. A large gap here is itself a
 // diagnostic signal (docs/known-risks.md item 106 — Firestore quota outage,

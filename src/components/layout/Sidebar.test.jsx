@@ -269,7 +269,7 @@ describe('Sidebar — saúde real e nome acessível nas ações rápidas (item 2
   });
 
   it('o ponto de saúde descreve o estado real, sem animação de "ping"', () => {
-    healthState = { data: [{ is_active: true, last_scan_at: new Date(Date.now() - 50 * 60000).toISOString() }], isLoading: false, isError: false };
+    healthState = { data: [{ is_active: true, last_scan_at: new Date(Date.now() - 90 * 60000).toISOString() }], isLoading: false, isError: false };
     const { container } = render(<MemoryRouter initialEntries={['/']}><Sidebar /></MemoryRouter>);
     expect(screen.getByRole('img', { name: /1 ativo com problema/ })).toBeTruthy();
     expect(container.innerHTML).not.toMatch(/animation: ping/);

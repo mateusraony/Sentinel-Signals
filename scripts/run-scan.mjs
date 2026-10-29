@@ -3,7 +3,7 @@
 // file for why a plain `node scripts/run-scan.mjs` won't work directly.
 import { scanAllAssets, priceCheckActiveOps } from '../src/lib/scanner.js';
 import { backend } from '@/api/entities';
-import { assetHealthcheckReason, shouldAlertStale, shouldClearStaleAlert } from '../src/lib/assetHealthcheck.js';
+import { assetHealthcheckReason, shouldAlertStale, shouldClearStaleAlert, ASSET_STALE_GRACE_MS } from '../src/lib/assetHealthcheck.js';
 import {
   isTelegramConfigured, notifyAssetStale, notifyStepTimeout,
   notifyFirestoreQuotaExhausted, notifyFirestoreQuotaRecovered,
@@ -107,12 +107,12 @@ async function announceQuotaRecoveryIfClean() {
 // Per-asset dead-man's-switch (docs/known-risks.md item 12): the
 // healthchecks.io ping below only reports the WHOLE scan pass as
 // failed/succeeded — an asset failing every single pass, or silently
-// dropping out entirely, never surfaces. 30 min = 6x this workflow's 5-min
-// cron cadence, matching the "cadence + margin" grace period recommended for
-// dead-man's-switch monitoring (avoids false positives from one transient
-// miss). Never allowed to throw or block the actual scan — see the try/catch
-// around its call in main().
-const ASSET_STALE_GRACE_MS = 30 * 60 * 1000;
+// dropping out entirely, never surfaces. The grace period (60 min since item
+// 286, see ASSET_STALE_GRACE_MIN in src/lib/assetHealthcheck.js — the single
+// source) is 4x the ~15-min dispatch cadence: the "cadence + margin" window
+// recommended for dead-man's-switch monitoring (avoids false positives from
+// one transient miss). Never allowed to throw or block the actual scan — see
+// the try/catch around its call in main().
 
 // docs/known-risks.md item 148: `assets` (when provided) is the post-scan
 // snapshot scanAllAssets() already fetched and updated a moment ago in this

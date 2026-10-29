@@ -12,6 +12,10 @@
  * Módulo puro: sem React, sem I/O, sem Firestore. Só descreve — não decide
  * nada sobre a operação (quem decide é `src/lib/scanner.js`).
  */
+import { SCAN_CADENCE_MIN } from './pollingIntervals.js';
+
+/** "~15 minutos": quanto o app leva para conferir de novo (item 286 — fonte única). */
+const RETRY_EVERY = `~${SCAN_CADENCE_MIN} minutos`;
 
 /** Fase do sinal, do ponto de vista de quem lê — não é o status do motor. */
 export const SIGNAL_PHASE = Object.freeze({
@@ -211,17 +215,17 @@ export const REJECTION_COPY = Object.freeze({
       },
       insufficient_data: {
         chip: 'Faltou histórico curto',
-        detail: 'Não chegou histórico de 15 minutos suficiente para o app conferir a direção curta. Sem essa conferência ele não entra — e tenta de novo na próxima checagem, em ~5 minutos.',
+        detail: `Não chegou histórico de 15 minutos suficiente para o app conferir a direção curta. Sem essa conferência ele não entra — e tenta de novo na próxima checagem, em ${RETRY_EVERY}.`,
       },
       fetch_error: {
         chip: 'Corretora não respondeu',
-        detail: 'A corretora não respondeu na hora de conferir o gráfico de 15 minutos. O app não entra às cegas; tenta de novo sozinho em ~5 minutos.',
+        detail: `A corretora não respondeu na hora de conferir o gráfico de 15 minutos. O app não entra às cegas; tenta de novo sozinho em ${RETRY_EVERY}.`,
       },
     },
   },
   insufficient_data: {
     kind: REASON_KIND.APP, chip: 'Faltam dados',
-    detail: 'Ainda não chegou histórico de preço suficiente para o app decidir. Ele tenta de novo em ~5 minutos.',
+    detail: `Ainda não chegou histórico de preço suficiente para o app decidir. Ele tenta de novo em ${RETRY_EVERY}.`,
   },
   no_trigger: {
     kind: REASON_KIND.WAITING, chip: 'Falta o gatilho',
@@ -248,7 +252,7 @@ export const REJECTION_COPY = Object.freeze({
   },
   fetch_error: {
     kind: REASON_KIND.APP, chip: 'Falha de conexão',
-    detail: 'O app não conseguiu falar com a corretora na última checagem. Ele tenta de novo em ~5 minutos, sozinho.',
+    detail: `O app não conseguiu falar com a corretora na última checagem. Ele tenta de novo em ${RETRY_EVERY}, sozinho.`,
   },
   rr_below_min: {
     kind: REASON_KIND.WORSE, chip: 'Não compensa o risco',
@@ -269,7 +273,7 @@ const NOTHING_TO_DO = 'Nada a fazer.';
 /**
  * Sem `phase` (ou fora de EXPIRED), a ausência de motivo é lida como "acabou
  * de chegar" — verdadeiro para um sinal jovem. Um sinal já EXPIRADO sem
- * motivo salvo é outra coisa: ele NÃO está mais sendo reavaliado a cada 5
+ * motivo salvo é outra coisa: ele NÃO está mais sendo reavaliado a cada ~15
  * minutos, então repetir essa frase (achado a partir de print real do
  * usuário, docs/known-risks.md item 175) é uma contradição direta com o
  * badge "Já passou" ao lado — o texto dizia "recém-chegado" e "refaz a conta"
@@ -284,7 +288,7 @@ const NO_REASON_EXPIRED = Object.freeze({
 /**
  * Mesma lógica para um aviso que NÃO vira operação (fase INFO, item 276):
  * o motor nunca avalia entrada para ele, então "recém-chegado, refaz a conta
- * a cada 5 minutos" seria falso (achado do Codex, review do PR #502).
+ * a cada N minutos" seria falso (achado do Codex, review do PR #502).
  */
 const NO_REASON_INFO = Object.freeze({
   kind: REASON_KIND.INFO,
@@ -313,7 +317,7 @@ export function rejectionCopy(signal, phase) {
       kind: REASON_KIND.WAITING,
       icon: reasonIcon(REASON_KIND.WAITING),
       chip: 'Checando agora',
-      detail: `Aviso recém-chegado. O app está vendo se vale abrir uma operação e refaz a conta a cada 5 minutos. ${NOTHING_TO_DO}`,
+      detail: `Aviso recém-chegado. O app está vendo se vale abrir uma operação e refaz a conta a cada ${SCAN_CADENCE_MIN} minutos. ${NOTHING_TO_DO}`,
     };
   }
 

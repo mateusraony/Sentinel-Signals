@@ -220,11 +220,11 @@ describe('Dashboard — chip de saúde no lugar de "Dados em tempo real" (item 2
 
   it('com ativo atrasado: conta o problema', async () => {
     drawerScenario = {
-      assets: () => [{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: new Date(Date.now() - 50 * 60000).toISOString() }],
+      assets: () => [{ id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: new Date(Date.now() - 90 * 60000).toISOString() }],
     };
     const { default: Dashboard } = await import('./Dashboard.jsx');
     renderPage(<Dashboard />);
-    await screen.findByText(/^📡 Último scan há \d+ min · 1 ativo com problema$/, undefined, { timeout: 5000 });
+    await screen.findByText(/^📡 Último scan há \d+ (min|h) · 1 ativo com problema$/, undefined, { timeout: 5000 });
   }, 15000);
 });
 
@@ -266,7 +266,7 @@ describe('Dashboard — painel lateral do ativo (Codex #461)', () => {
   });
 
   it('REGRESSÃO (P2): monitored-assets renovado com o painel aberto muda o badge', async () => {
-    let lastScan = iso(45 * MIN); // começa parado → STALE
+    let lastScan = iso(90 * MIN); // começa parado → STALE
     drawerScenario = {
       assets: () => [{ ...ASSET, last_scan_at: lastScan }],
       signals: [FRESH_SIGNAL],

@@ -33683,3 +33683,102 @@ a página de anúncios da Binance (delisting) é opcional e provavelmente bloque
 **Revisão final (regra do projeto):** só arquivos novos; o `noOrderExecutionTripwire` e o `emojiRegistry.test.js`
 varrem `scripts/` e continuam passando (nenhum emoji nem caminho de ordem nos arquivos novos); `CLAUDE.md` não
 muda (199 linhas). Nenhum consumidor de entidade, rota ou workflow existente foi tocado.
+
+## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
+
+**Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,
+100 horas de computação, autoscaling até 2 CU; oferta paga "Add for $10/month" = 250 h, recusada por exigir
+cartão) e pediu: dados e operações voltarem quando o banco voltar, "fechar toda lacuna" e dar a **hora real**
+de stop/alvo. Investigado com 6 agentes de leitura + pesquisa. Nenhum dado de produção foi lido (a sessão não
+alcança o Neon).
+
+**Decisões do usuário (2026-10-29):** (1) ficar no Neon e escanear a **cada 15 min** (contra a recomendação de
+migrar para Supabase — plano B mantido); (2) BLS com **e-mail dedicado** em segredo (`CONTEXT_CONTACT_EMAIL`,
+criado por ele); (3) o "modo de observação básico" é pouco — quer algo mais elaborado e perguntou do Google
+Drive; (4) PR #513: "corrigir se for importante" → **não é** (ver abaixo); (5) começar pelos itens "15 min" e
+"sonda".
+
+**Fatos [verificados no código / nos logs do GitHub]:**
+- **Por que estourou:** scan a cada 5 min ⇒ o compute (dorme após 5 min sem uso, fixo no Free) **nunca dorme**
+  ⇒ 0,25 CU × 24 h × 30 d = **180 h/mês** contra 100. Observado: 110,33 h em ~19 dias (0,25 × 24 × 19 = 114).
+  O modelo `scripts/neonComputeBudget.mjs` reproduz isso e vira guarda de CI.
+- **Estado em 29/10:** `backup-postgres.yml` falha **todo dia desde 19/10** (`pg_dump: ... exceeded the quota`;
+  último backup bom 18/10) e o scan falha a cada disparo pelo mesmo motivo. **Dado preservado:** "none of these
+  limits delete your data"; só o compute fica suspenso. Nada no código apaga/arquiva operação quando o scan
+  falha (grep em `scanner.js`/`run-scan.mjs`/workflows: só `delete` manual do usuário).
+- **Renovação:** a doc diz que a cota de computação zera "no início do período mensal de cobrança" (um
+  funcionário da Neon: "no dia 1º") ⇒ provável **01/11** (não 30/10 como o item 283 estimou); a data exata é o
+  campo `consumption_period_end` da API do Neon. Não há ação documentada para religar no Free (hipótese: volta
+  sozinho).
+- **O painel de uso** não está na página Billing da organização (só plano/faturas). Pela doc: projeto →
+  Overview → painel **Usage** (nomes de menu não confirmados). A API `GET /projects/{id}` traz
+  `compute_time_seconds`/`consumption_period_end` e **não acorda o compute**.
+- **Sonda (item 285), 2 execuções reais no GitHub** (28/10 22h07 e 29/10 09h45 BRT, resultado idêntico): OK —
+  Alternative.me, RSS do Fed (`press_all` 20 itens, `press_other` 15), Binance `data-api.binance.vision`,
+  GitHub raw (CORS `*`, `max-age=300`), CoinGecko ping, mempool.space, página FOMC, CMS de anúncios da Binance
+  (200!). **Falhou: BLS (`bls.ics`) HTTP 403** (a política do BLS exige contato do robô); `api.binance.com` 451;
+  DefiLlama `/tvl/ethereum` 200 com corpo vazio. O resultado vai no addendum do item 285 (PR da sonda).
+- **PR #513 está obsoleto:** conflita com a `main` e o PR #514 (mesclado) já trouxe tudo dele com os 5 achados
+  do Codex corrigidos (TLS do `pg_restore` com `verify-full` e CA em arquivo; sem `TRUNCATE`/`--require-empty`;
+  `DATABASE_SSL_CA` em todo workflow, travado por `db/workflowsDatabaseCa.test.js`; senha com símbolos recusada
+  em português; `DATABASE_URL_READONLY` no runbook). Mesclar o #513 faria regredir. O teste de restauração real
+  nunca rodou (falta o Supabase do usuário).
+
+**Lacunas da queda longa [auditoria do motor, FATO com arquivo:linha — nada disto foi corrigido ainda]:**
+1. **Só o último candle fechado é avaliado** (`scanAsset` expõe `lastCandleHigh/Low/Time`, `scanner.js:1695-1699`;
+   uso em `:3934-3948`). Pausa ≤ 4 h: nada se perde. Pausa > 4 h: stop/TP/trailing/MFE dos candles pulados nunca
+   são vistos — o stop fica defasado e um cruzamento que "voltou" não é percebido (P0/P1).
+2. **Time Stop usa relógio de parede** (`scanner.js:4055-4059`; prazos 8/10,7/16 dias, `tier.js:13-15`):
+   operações abertas antes da pausa estouram na 1ª passada e fecham **no preço de hoje** (`:4136-4143`),
+   com `closed_at_real_time` = o prazo; a ordem de decisão faz o Time Stop vencer um TP1 do mesmo candle. P1.
+3. **Entradas da pausa nunca nascem**: só o último candle fechado gera `SignalEvent` (`:1750-1865`). P1.
+4. **O que a 1ª passada ao vivo faz de irreversível** (estado terminal não volta): fecha por Time Stop/stop e
+   sobrescreve `last_scan_at`. Por isso a regra operacional: **não deixar o scan normal rodar antes da
+   recuperação** (pausar cron-job.org + desabilitar `scan.yml` + fechar abas do painel; o navegador também roda
+   price-check a cada 2 min mesmo escondido, `useAutoScan.js`).
+5. **Ruído na volta:** sem resumo de recuperação, cada fechamento manda a sua mensagem e os sinais RSI/MACD/EMA da
+   1ª passada notificam de uma vez (cooldown zerado). A mensagem "banco voltou" já existe e é única
+   (`notifyDatabaseQuotaRecovered`).
+6. **Cadência 15 min:** a tolerância de "ativo atrasado" de 30 min vira alarme falso (2 passadas) — **corrigida
+   neste PR** (60 min); o watchdog `HEALTHCHECKS_PING_URL` é externo (período 15 min, carência 20–30 min).
+7. **Configuração:** `strategy_config` ausente é tratado como "não degradado" com DEFAULTS
+   (`adminPineConfig.js:189-195`) — risco só se o banco for restaurado em outro lugar; a gestão de operação
+   existente lê o config AO VIVO (`useTimeStop`/`useChopExit`/`trailAtrMult`, `scanner.js:4059-4419`), contra o
+   que `trading-engine.md` diz. Não corrigidos.
+8. **Painel:** `Trades.jsx:478` só lê as 100 operações mais novas (uma ativa antiga some se houver >100 criadas
+   depois); `TickerBar.jsx:55-60` mostra fechamento de 1 h velho sem a idade. Não corrigidos.
+
+**Desenho aprovado para a recuperação [plano, nada implementado]:** reaproveitar o motor de "checagem
+retroativa" (item 137: `run-backfill-check.mjs`, `backfillMarketDataProvider.js`, `backtestEngine.runBacktest`
+com relógio simulado) como **replay de recuperação** sobre `[último scan bom, agora]`: reexecuta o MESMO motor
+passo a passo, então abre as entradas que faltaram, gerencia as operações já ativas candle a candle (stop, TP,
+trailing, Time Stop no momento certo) com hora real, sem duplicar (ID determinístico + âncora de 1 operação por
+ativo). Faltam 5 peças: (a) aquecimento de 60 dias desacoplado do `from` (`backfillMarketDataProvider.js:127,137`
+já são independentes), (b) tirar o guarda "tem operação ativa → pula" (`run-backfill-check.mjs:120-129`),
+(c) **dry-run em memória** + relatório antes do apply, com aborto se `degraded`/falha de candle/divergência,
+(d) `source:'recovery'` + texto próprio no painel + UM resumo no Telegram (o selo "Retroativa" diria "ativo
+adicionado depois", falso aqui), (e) pausa obrigatória do scan ao vivo. Provas: equivalência (contínuo × queda de
+2 dias + replay ⇒ operações idênticas), não-vacuidade (sem replay, 1 tick na volta perde o stop do meio),
+operação ativa pré-existente, idempotência, dry-run não escreve, 1 mensagem, aborto. O apply só com OK explícito
+do usuário depois de ler o dry-run.
+
+**Entregue neste PR (só preparação de cadência; nenhum desfecho de operação muda):** `SCAN_CADENCE_MIN = 15`
+(fonte única em `src/lib/pollingIntervals.js`; textos de `signalStatus.js` e do Dashboard derivam dela);
+`ASSET_STALE_GRACE_MIN = 60` (fonte única em `src/lib/assetHealthcheck.js`, usada por `run-scan.mjs`,
+`assetDataQuality` e pelo texto da tela) com teste de que cobre ≥ 3 passadas; `LAG_THRESHOLD_MS` 20 → 35 min;
+reserva do `scan.yml` de hora em hora → a cada 6 h; `backfill.yml` de hora em hora → a cada 6 h;
+`scripts/neonComputeBudget.mjs` + teste (descobre sozinho os agendamentos com `DATABASE_URL` e **reprova acima
+de 85 h/mês**; hoje **79,4 h**: 72 h só do scan + ~7 h dos demais; provado por mutação com reserva e backfill de
+hora em hora ⇒ 94–109 h). **Honestidade sobre a folga:** ~20 h/mês, não 25 — o modelo assume 1 min de job + 5 min
+de ociosidade por disparo e **não inclui o painel aberto** (uma aba visível consulta a cada 60 s e acorda o
+banco; o `useAutoScan` roda price-check a cada 2 min mesmo com a aba escondida — caminho de segurança
+deliberado, **não alterado**; fechar a aba quando não usar). Estimativa até o painel "Usage"/a API do Neon
+medirem.
+
+**Pendências (usuário):** pausar o scan (cron-job.org + `scan.yml`) até a recuperação; healthchecks.io
+15/20–30 min; rodar o backup assim que o Neon voltar; medir o uso do Neon (painel Usage ou medidor a criar,
+precisa de `NEON_API_KEY` + `NEON_PROJECT_ID`). **Pendências (código, em ordem):** sonda corrigida (BLS com
+contato, DefiLlama `/v2/chains`); medidor do Neon; replay de recuperação (provas → dry-run → apply); depois
+continuidade C1/C2, hora real ao minuto e o Contexto de Mercado (item 284). **Não verificado:** páginas oficiais
+de Neon/Supabase/Google/Firebase (rede bloqueada na sessão; números vêm da documentação espelhada no GitHub e de
+pesquisa); a data exata de renovação; se o Free permite criar chave de API.

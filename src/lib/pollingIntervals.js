@@ -2,7 +2,7 @@
  * Cadência de polling do painel (docs/known-risks.md item 155).
  *
  * O dado que estas telas leem só muda quando o scan agendado roda — a cada
- * ~5 minutos (`.github/workflows/scan.yml`, disparo externo). Pesquisar o
+ * ~15 minutos (`.github/workflows/scan.yml`, disparo externo). Pesquisar o
  * banco a cada 10s não deixa nada mais atual: relê 30 vezes o mesmo
  * documento entre duas atualizações reais.
  *
@@ -19,8 +19,17 @@
  * cotação continua viva mesmo com o banco sendo lido devagar.
  */
 
-/** Cadência real do dado: o scan agendado roda a cada ~5 minutos. */
-export const SCAN_CADENCE_MS = 5 * 60_000;
+/**
+ * Cadência real do dado: o scan agendado roda a cada ~15 minutos (item 286).
+ *
+ * Era ~5 min até 2026-10-29: com 5 min o banco Neon nunca dorme (o autosuspend
+ * do plano gratuito é de 5 min) e gasta ~180 h/mês de computação contra um
+ * limite de 100 h (itens 282/283). O disparo real mora FORA do repositório
+ * (cron-job.org) — este número só diz à TELA o que esperar; se o disparo
+ * mudar, mude aqui (e só aqui: textos e tolerâncias derivam dele).
+ */
+export const SCAN_CADENCE_MIN = 15;
+export const SCAN_CADENCE_MS = SCAN_CADENCE_MIN * 60_000;
 
 /**
  * Telas que o usuário acompanha enquanto opera (Dashboard, Trades, Assets,

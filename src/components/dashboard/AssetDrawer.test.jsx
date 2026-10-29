@@ -117,8 +117,8 @@ describe('AssetDrawer N1 — frescor real no lugar do "LIVE" fixo', () => {
     expect(screen.getByText('📡 Atualizado há 5 min')).toBeTruthy();
   });
 
-  it('REGRESSÃO: ativo parado há 45 min = STALE (e não LIVE)', async () => {
-    renderN1({ asset: { ...FRESH_ASSET, last_scan_at: iso(45 * MIN) } });
+  it('REGRESSÃO: ativo parado há 90 min = STALE (e não LIVE)', async () => {
+    renderN1({ asset: { ...FRESH_ASSET, last_scan_at: iso(90 * MIN) } });
     await screen.findByText('BTC/USDT');
     expect(screen.getByText(/^📡 Atrasado/)).toBeTruthy();
     expect(screen.queryByText(/LIVE|^📡 Atualizado/)).toBeNull();
@@ -232,7 +232,7 @@ describe('AssetDrawer — relógio próprio (Codex #461: badge não pode congela
     // Sem `now` injetado: o drawer usa o próprio relógio.
     renderDrawer({ asset: FRESH_ASSET, signals: [FRESH_SIGNAL], assetStates: [STATE_4H] });
     expect(screen.getByText(/^📡 Atualizado/)).toBeTruthy();
-    act(() => { vi.advanceTimersByTime(31 * MIN); });
+    act(() => { vi.advanceTimersByTime(61 * MIN); });
     expect(screen.getByText(/^📡 Atrasado/)).toBeTruthy();
     expect(screen.queryByText(/LIVE|^📡 Atualizado/)).toBeNull();
   });

@@ -41,15 +41,15 @@ afterEach(() => {
   assetStateDeleteManyMock.mockReset();
 });
 
-const OLD_40MIN = () => new Date(Date.now() - 40 * 60000).toISOString();
+const OLD_70MIN = () => new Date(Date.now() - 70 * 60000).toISOString();
 const RECENT_5MIN = () => new Date(Date.now() - 5 * 60000).toISOString();
 
 describe('Assets — badge 📡 reflete o dead-man\'s-switch real (achado A-9, item 277)', () => {
   it('mostra atualizado, atrasado, falha e sem leitura corretamente por ativo, na mesma lista', async () => {
     monitoredAssetListMock.mockResolvedValue([
       { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', is_active: true, last_scan_at: RECENT_5MIN() },
-      { id: 'a2', symbol: 'ETHUSDT', display_name: 'ETH/USDT', is_active: true, last_scan_at: OLD_40MIN() },
-      { id: 'a3', symbol: 'SOLUSDT', display_name: 'SOL/USDT', is_active: true, last_scan_at: RECENT_5MIN(), scan_error_since: OLD_40MIN() },
+      { id: 'a2', symbol: 'ETHUSDT', display_name: 'ETH/USDT', is_active: true, last_scan_at: OLD_70MIN() },
+      { id: 'a3', symbol: 'SOLUSDT', display_name: 'SOL/USDT', is_active: true, last_scan_at: RECENT_5MIN(), scan_error_since: OLD_70MIN() },
       { id: 'a4', symbol: 'XRPUSDT', display_name: 'XRP/USDT', is_active: true },
     ]);
 

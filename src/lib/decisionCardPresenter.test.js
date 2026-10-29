@@ -3,6 +3,7 @@
 // de carregamento nunca vira "sem operação", e o presenter fica puro. Os
 // campos `op.invalidates_if` e `op.data_status` são ignorados de propósito.
 import { describe, it, expect } from 'vitest';
+import { ASSET_STALE_GRACE_MIN } from './assetHealthcheck.js';
 import { readFileSync } from 'node:fs';
 import {
   buildDecisionCard, PROBABILITY_NOT_CALIBRATED, SCORE_NOTE,
@@ -261,9 +262,9 @@ describe('operação ativa — níveis e invalidação', () => {
 });
 
 describe('qualidade dos dados — frescor real, nunca "LIVE" fixo', () => {
-  it('31 min sem scan = stale; 29 min = ok', () => {
-    expect(build({ asset: asset({ last_scan_at: iso(31 * MIN) }) }).quality.status).toBe('stale');
-    expect(build({ asset: asset({ last_scan_at: iso(29 * MIN) }) }).quality.status).toBe('ok');
+  it('um minuto além da tolerância do healthcheck = stale; um minuto antes = ok', () => {
+    expect(build({ asset: asset({ last_scan_at: iso((ASSET_STALE_GRACE_MIN + 1) * MIN) }) }).quality.status).toBe('stale');
+    expect(build({ asset: asset({ last_scan_at: iso((ASSET_STALE_GRACE_MIN - 1) * MIN) }) }).quality.status).toBe('ok');
   });
 
   it('erro persistente de leitura = error', () => {

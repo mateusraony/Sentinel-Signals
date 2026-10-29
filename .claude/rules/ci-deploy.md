@@ -21,10 +21,11 @@ paths:
   arquivo de teste usa esse serviço.
 - `scan.yml` — `npm run scan`. **Relógio de
   trading**: o cadenciamento real de
-  ~5min vem de disparo **externo** (cron-job.org via `workflow_dispatch`,
+  ~15min (era 5 min até 2026-10-29, item 286: com 5 min o Neon nunca dorme e
+  estoura as 100 h/mês) vem de disparo **externo** (cron-job.org via `workflow_dispatch`,
   configurado e confirmado — ver `docs/claude/external-cron-setup.md`,
   configuração fora do repo, PAT pessoal do usuário); o `schedule:` interno
-  (`cron: "7 * * * *"`) é só um **fallback horário** — GitHub desativa
+  (`cron: "7 */6 * * *"`) é só um **fallback a cada 6 h** — GitHub desativa
   `schedule` após ~60 dias sem push, mitigado pelo watchdog externo
   `HEALTHCHECKS_PING_URL` (known-risks 12). Atraso sob carga do `schedule` do
   GitHub Actions em geral, e a medição real feita neste projeto antes do
@@ -46,7 +47,8 @@ paths:
   `persistScanResults`, resolvidos num cache em memória em
   `scripts/adminEntitiesBackfillCache.js`, sem tocar `scanner.js`) — ver o
   addendum de 2026-08-31 no item 137 para o relato completo. Cadência
-  própria de 1x/hora (`workflow_dispatch` também disponível) — ativo novo é
+  própria de 1x a cada 6 h (era de hora em hora até o item 286: cada execução
+  acorda o Neon por ~6 min; `workflow_dispatch` também disponível) — ativo novo é
   raro. `scripts/run-backfill-check.mjs` envolve os 3 pontos que tocam
   Firestore de verdade (leitura de pendentes, `getPineConfig`,
   `checkOneAsset` por ativo) num timeout de 5min + `process.exit()`
@@ -306,6 +308,14 @@ paths:
   - **Isolamento (travado por `scripts/contextIsolationTripwire.test.js`):** `contents: read`, **sem**
     `DATABASE_URL` (não pode acordar o Neon), sem Telegram, sem Firebase, sem scanner. O motor não importa
     nada de `context*`. Segredo opcional `COINGECKO_API_KEY` (sem ele o `/global` é pulado).
+
+- **Orçamento de computação do Neon (item 286, travado por
+  `scripts/neonComputeBudget.test.js`):** todo workflow com `schedule:` que
+  cita `DATABASE_URL` é descoberto sozinho e somado ao disparo externo
+  (`SCAN_CADENCE_MIN`). O modelo (compute dorme após 5 min; 0,25 CU) reproduz o
+  estouro real de 5 min (~180 h) e hoje dá ~79 h/mês com 15 min; o teste
+  **reprova acima de 85 h**. Ao criar/alterar um agendamento que toca o banco,
+  rode `npm test` e confira — cada disparo custa ~6 min de banco acordado.
 
 ## Deploy
 
