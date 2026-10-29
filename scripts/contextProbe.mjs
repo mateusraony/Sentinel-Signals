@@ -150,20 +150,22 @@ export function collectIsoDates(value, limit = 5000) {
 }
 
 /**
- * financecalendar.com (terceiros, sem chave). O formato da resposta NÃO foi visto ainda
- * (a rota veio de um resumo de busca): o validador é de propósito tolerante e informativo —
- * exige JSON com pelo menos uma data e mostra as chaves de topo, para a 1ª execução real
- * revelar o formato e só então se escrever um parser estrito.
+ * financecalendar.com (terceiros, sem chave; limite 2.000/dia, zera 00:00 UTC — visto nos
+ * cabeçalhos da 1ª execução real). Lê as datas só de `events`.
  * @param {'CPI'|'NFP'} kind
  */
 export function validateFinanceCalendar(kind) {
   return ({ body }) => {
     const j = tryJson(body);
     if (j.error) return fail('resposta não é JSON');
-    const dates = collectIsoDates(j.value);
-    if (!dates.length) return fail('JSON sem nenhuma data AAAA-MM-DD');
-    const top = Array.isArray(j.value) ? `lista de ${j.value.length}` : `chaves: ${Object.keys(j.value || {}).slice(0, 6).join(', ') || '—'}`;
-    return pass(`${top}; ${dates.length} data(s) (${dates[0]} a ${dates[dates.length - 1]}); ${formatComparison(compareWithFixedList(kind, dates))}`);
+    // Formato visto na 1ª execução real (29/10, run 5): { from, to, count, total, events, attribution }.
+    // As datas vêm SÓ de `events` — `from`/`to` são a janela da consulta e viravam falsa divergência.
+    const events = j.value?.events;
+    if (!Array.isArray(events)) return fail('sem a lista events');
+    const dates = collectIsoDates(events);
+    if (!dates.length) return fail('events sem nenhuma data AAAA-MM-DD');
+    const janela = j.value.from && j.value.to ? `janela ${String(j.value.from).slice(0, 10)} a ${String(j.value.to).slice(0, 10)}` : 'janela —';
+    return pass(`${events.length} evento(s) de ${j.value.total ?? '?'} (${janela}); ${dates.length} data(s); ${formatComparison(compareWithFixedList(kind, dates))}`);
   };
 }
 

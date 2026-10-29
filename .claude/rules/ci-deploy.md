@@ -312,12 +312,14 @@ paths:
     robô); nunca impresso. O calendário dos EUA é o grupo `us-calendar` (BLS `.ics` ou páginas do CPI /
     Employment Situation — qualquer uma serve).
     **Desde 29/10 o BLS segue 403 mesmo com contato** (bloqueia o IP do GitHub): o grupo `us-calendar` também
-    aceita a linha `calendario-fixo` (`scripts/contextCalendar.mjs`, datas de terceiros: `confirmada` = 2+ fontes,
-    senão `a_confirmar` sem alerta). A lista envelhece — a sonda avisa com <60 dias e reprova quando vence
+    aceita a linha `calendario-fixo` (`scripts/contextCalendar.mjs`: `oficial` = BLS/FRED, `confirmada` = 2+ fontes de
+    terceiros, senão `a_confirmar` sem alerta). A lista envelhece — a sonda avisa com <60 dias e reprova quando vence
     (item 285, addendum 2).
     Opcionais fora do portão (addendum 3): `financecalendar-*` (sem chave) e `fred-*` (segredo opcional
     `FRED_API_KEY`, sem ele "PULADO"). A chave vai **só na URL da requisição** — resultado/tabela/JSON mostram o
     molde `<FRED_API_KEY>` (travado por teste em `scripts/contextProbe.test.js`).
+    Desde a run 5 (addendum 4) o FRED confirmou 4 datas, que viraram `oficial` na lista fixa (`oficial` exige
+    URL do BLS ou do FRED). O financecalendar é lido só de `events[]` (limite 2.000/dia sem chave).
 
 - **Orçamento de computação do Neon (item 286, travado por
   `scripts/neonComputeBudget.test.js`):** todo workflow com `schedule:` que
