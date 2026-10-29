@@ -11,6 +11,26 @@
 // da Fase 2) nem os termos de uso — esses estão em docs/known-risks.md item 284.
 
 export const USER_AGENT = 'SentinelSignals-ContextProbe/1.0 (+https://github.com/mateusraony/Sentinel-Signals)';
+
+// Só ASCII imprimível (0x21-0x7E): o fetch rejeita cabeçalho com não-Latin/controle, o que derrubaria toda requisição.
+const EMAIL_RE = /^(?=[\x21-\x7E]+$)[^@;()<>]+@[^@;()<>]+\.[^@;()<>]+$/;
+
+/**
+ * Contato do robô (item 286). A política de uso do BLS pede que robôs informem um
+ * contato; sem ele o site responde 403 (visto nas 2 execuções reais de 28-29/10).
+ * O e-mail vem do segredo `CONTEXT_CONTACT_EMAIL` (dedicado, escolhido pelo usuário),
+ * só vai no cabeçalho `User-Agent` e **nunca** é impresso, gravado em arquivo ou posto
+ * na URL. Valor malformado é ignorado (não derruba a sonda).
+ */
+export function contactEmail(env = {}) {
+  const v = String(env.CONTEXT_CONTACT_EMAIL ?? '').trim();
+  return EMAIL_RE.test(v) ? v : null;
+}
+
+export function buildUserAgent(env = {}) {
+  const email = contactEmail(env);
+  return email ? `${USER_AGENT.slice(0, -1)}; contact: ${email})` : USER_AGENT;
+}
 export const SITE_ORIGIN = 'https://sentinel-signals.onrender.com';
 export const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -80,10 +100,12 @@ export function validateCoingeckoGlobal({ body }) {
   return pass(`dominância BTC ${Number.isFinite(dom) ? dom.toFixed(1) : '?'}%`);
 }
 
-export function validateDefillamaTvl({ body }) {
-  const n = Number(body.trim());
-  if (!Number.isFinite(n) || n <= 0) return fail('esperado um número (TVL) positivo');
-  return pass(`TVL ${(n / 1e9).toFixed(1)} bi`);
+export function validateDefillamaChains({ body }) {
+  const j = tryJson(body);
+  if (j.error || !Array.isArray(j.value)) return fail('esperado uma lista de redes');
+  const eth = j.value.find((c) => c?.name === 'Ethereum');
+  if (!eth || !(Number(eth.tvl) > 0)) return fail('sem a rede Ethereum com TVL positivo');
+  return pass(`${j.value.length} redes; Ethereum TVL ${(Number(eth.tvl) / 1e9).toFixed(1)} bi`);
 }
 
 export function validateMempoolFees({ body }) {
@@ -105,12 +127,18 @@ export function validateBinanceAnnouncements({ body }) {
   return pass('resposta do CMS da Binance');
 }
 
+const BLS_HINT = 'a política do BLS pede um contato do robô (segredo CONTEXT_CONTACT_EMAIL)';
+
 /**
  * `required` entra no gate da fase. Fontes com o mesmo `group` são alternativas:
  * basta UMA do grupo responder bem (ex.: duas URLs candidatas do RSS do Fed).
  */
 export const SOURCES = Object.freeze([
-  { id: 'bls-calendar', name: 'BLS — calendário oficial (CPI, emprego, PPI)', url: 'https://www.bls.gov/schedule/news_release/bls.ics', required: true, validate: validateIcs },
+  // Calendário dos EUA (CPI, emprego, PPI). O BLS bloqueou o robô sem contato (403) nas 2 execuções
+  // reais de 28-29/10: agora o identificador leva o e-mail dedicado e há 3 caminhos oficiais — basta UM.
+  { id: 'bls-calendar', name: 'BLS — calendário .ics (CPI, emprego, PPI)', url: 'https://www.bls.gov/schedule/news_release/bls.ics', required: true, group: 'us-calendar', blockHint: BLS_HINT, validate: validateIcs },
+  { id: 'bls-cpi-page', name: 'BLS — página de datas do CPI', url: 'https://www.bls.gov/schedule/news_release/cpi.htm', required: true, group: 'us-calendar', blockHint: BLS_HINT, validate: validateHtmlContains('Consumer Price Index') },
+  { id: 'bls-empsit-page', name: 'BLS — página de datas do Emprego (payroll)', url: 'https://www.bls.gov/schedule/news_release/empsit.htm', required: true, group: 'us-calendar', blockHint: BLS_HINT, validate: validateHtmlContains('Employment Situation') },
   { id: 'alternative-me-fng', name: 'Alternative.me — Medo e Ganância', url: 'https://api.alternative.me/fng/?limit=1', required: true, validate: validateFearGreed },
   { id: 'fed-rss-press-all', name: 'Federal Reserve — RSS comunicados (todos)', url: 'https://www.federalreserve.gov/feeds/press_all.xml', required: true, group: 'fed-rss', validate: validateRss },
   { id: 'fed-rss-press-other', name: 'Federal Reserve — RSS comunicados (outros)', url: 'https://www.federalreserve.gov/feeds/press_other.xml', required: true, group: 'fed-rss', validate: validateRss },
@@ -127,7 +155,7 @@ export const SOURCES = Object.freeze([
   },
   { id: 'coingecko-ping', name: 'CoinGecko — ping (sem chave)', url: 'https://api.coingecko.com/api/v3/ping', required: false, validate: validateCoingeckoPing },
   { id: 'coingecko-global', name: 'CoinGecko — /global (precisa de chave Demo)', url: 'https://api.coingecko.com/api/v3/global', required: false, needsEnv: 'COINGECKO_API_KEY', headerFromEnv: { 'x-cg-demo-api-key': 'COINGECKO_API_KEY' }, validate: validateCoingeckoGlobal },
-  { id: 'defillama-tvl', name: 'DefiLlama — TVL Ethereum', url: 'https://api.llama.fi/tvl/ethereum', required: false, validate: validateDefillamaTvl },
+  { id: 'defillama-chains', name: 'DefiLlama — TVL por rede (/v2/chains)', url: 'https://api.llama.fi/v2/chains', required: false, validate: validateDefillamaChains },
   { id: 'mempool-fees', name: 'mempool.space — taxas Bitcoin', url: 'https://mempool.space/api/v1/fees/recommended', required: false, validate: validateMempoolFees },
   { id: 'fomc-calendar-page', name: 'Federal Reserve — página do calendário FOMC', url: 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm', required: false, validate: validateHtmlContains('FOMC', '2026') },
   { id: 'binance-announcements', name: 'Binance — anúncios (delisting; esperado bloqueio)', url: 'https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&catalogId=161&pageNo=1&pageSize=5', required: false, validate: validateBinanceAnnouncements },
@@ -153,7 +181,10 @@ export function evaluateResponse(source, { status, headers = {}, body = '' }) {
     const retry = headers['retry-after'] ? ` (Retry-After ${headers['retry-after']}s)` : '';
     return { status: 'FALHOU', detail: `limite de uso excedido (HTTP 429)${retry}` };
   }
-  if (BLOCKED.has(status)) return { status: 'FALHOU', detail: `acesso bloqueado desta origem (HTTP ${status})` };
+  if (BLOCKED.has(status)) {
+    const hint = source.blockHint ? ` — ${source.blockHint}` : '';
+    return { status: 'FALHOU', detail: `acesso bloqueado desta origem (HTTP ${status})${hint}` };
+  }
   if (status < 200 || status >= 300) return { status: 'FALHOU', detail: `HTTP ${status}` };
   const v = source.validate({ status, headers, body });
   return { status: v.ok ? 'OK' : 'FALHOU', detail: v.ok ? v.detail : `formato inválido: ${v.detail}` };
@@ -170,7 +201,7 @@ export async function probeSource(source, { fetchImpl = fetch, now = Date.now, t
     return { ...base, status: 'PULADO', httpStatus: null, latencyMs: null, bytes: null, rateLimit: '', detail: `sem ${source.needsEnv} (opcional)` };
   }
 
-  const headers = { 'User-Agent': USER_AGENT, Accept: '*/*', ...(source.headers || {}) };
+  const headers = { 'User-Agent': buildUserAgent(env), Accept: '*/*', ...(source.headers || {}) };
   for (const [header, envName] of Object.entries(source.headerFromEnv || {})) headers[header] = env[envName];
 
   const controller = new AbortController();
@@ -218,11 +249,12 @@ export function summarize(results) {
 const cell = (s) => String(s ?? '').replace(/\|/g, '\\|').replace(/\s+/g, ' ');
 
 /** Tabela em markdown para o resumo do job. */
-export function formatProbeMarkdown(results, { startedAt = null, runner = null } = {}) {
+export function formatProbeMarkdown(results, { startedAt = null, runner = null, contactConfigured = null } = {}) {
   const sum = summarize(results);
   const lines = [];
   lines.push('## Sonda das fontes do Contexto de Mercado');
   if (startedAt) lines.push(`Executada em ${startedAt} (UTC)${runner ? ` — ${runner}` : ''}.`);
+  if (contactConfigured !== null) lines.push(`Contato do robô no identificador: ${contactConfigured ? 'informado (e-mail do segredo, não exibido)' : 'NÃO informado'}.`);
   lines.push('');
   lines.push('| Fonte | Tipo | Resultado | HTTP | Tempo | Bytes | Detalhe | Sinais de limite |');
   lines.push('|---|---|---|---:|---:|---:|---|---|');

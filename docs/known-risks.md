@@ -33684,6 +33684,22 @@ a página de anúncios da Binance (delisting) é opcional e provavelmente bloque
 varrem `scripts/` e continuam passando (nenhum emoji nem caminho de ordem nos arquivos novos); `CLAUDE.md` não
 muda (199 linhas). Nenhum consumidor de entidade, rota ou workflow existente foi tocado.
 
+**Addendum (2026-10-29) — resultado real da sonda (2 execuções no GitHub, idênticas) e correção.**
+- **OK nas 2 execuções [fato]:** Alternative.me (Medo e Ganância), RSS do Fed (`press_all` 20 itens e
+  `press_other` 15), Binance Spot por `data-api.binance.vision`, `raw.githubusercontent.com` (CORS `*`,
+  `max-age=300`), CoinGecko `/ping`, mempool.space, página do FOMC, CMS de anúncios da Binance.
+- **Falhou [fato]:** BLS (`bls.ics`) **HTTP 403**; `api.binance.com` **451** (esperado — por isso o grupo
+  Binance Spot aceita qualquer das duas URLs); DefiLlama `/tvl/ethereum` **200 com corpo vazio** (validador
+  reprovou, como deve).
+- **Correção (PR-2):** a sonda passa a mandar um contato do robô no `User-Agent` quando o segredo
+  `CONTEXT_CONTACT_EMAIL` existe (só no cabeçalho; nunca impresso nem gravado em resultado/URL — travado por
+  teste); testa 3 alternativas para o calendário dos EUA (`bls.ics`, página do CPI, página do Employment
+  Situation) como grupo "qualquer uma serve" (`us-calendar`); DefiLlama passa a `/v2/chains`. Quando o BLS
+  responde 403 a sonda diz em português que a política do BLS pede o contato do robô.
+- **Pendente [hipótese]:** rodar a sonda de novo (1x agora, 1x em outro horário). Se o BLS seguir 403 mesmo com
+  contato, plano B: lista fixa no repositório, só com datas conferidas na fonte oficial (nunca inventar datas;
+  as de 2027 não estão confirmadas).
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 **Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,

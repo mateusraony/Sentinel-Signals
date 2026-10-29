@@ -36,8 +36,11 @@ jobs:
 
       - name: Sondar as fontes
         # COINGECKO_API_KEY é opcional (hoje não existe): sem ela o /global é pulado.
+        # CONTEXT_CONTACT_EMAIL: e-mail dedicado que a política do BLS exige no identificador do
+        # robô (item 286). Só vai no cabeçalho User-Agent; o GitHub o mascara se aparecer no log.
         env:
           COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}
         run: |
           set -o pipefail
           node scripts/context-probe.mjs --json probe-result.json | tee -a "$GITHUB_STEP_SUMMARY"

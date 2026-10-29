@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   SOURCES, USER_AGENT, SITE_ORIGIN, evaluateResponse, probeSource, summarize, formatProbeMarkdown,
   validateIcs, validateFearGreed, validateRss, validateBinanceTicker, validateRawGithubCors,
-  validateDefillamaTvl, validateHtmlContains, extractRateLimit,
+  validateDefillamaChains, validateHtmlContains, extractRateLimit, contactEmail, buildUserAgent,
 } from './contextProbe.mjs';
 
 const src = (id) => SOURCES.find((s) => s.id === id);
@@ -55,8 +55,11 @@ describe('validadores de formato', () => {
   });
 
   it('DefiLlama e páginas: número positivo / texto esperado', () => {
-    expect(validateDefillamaTvl({ body: '65000000000' }).ok).toBe(true);
-    expect(validateDefillamaTvl({ body: 'erro' }).ok).toBe(false);
+    const chains = JSON.stringify([{ name: 'Solana', tvl: 9e9 }, { name: 'Ethereum', tvl: 65e9 }]);
+    expect(validateDefillamaChains({ body: chains }).ok).toBe(true);
+    expect(validateDefillamaChains({ body: '' }).ok).toBe(false); // o caso real: 200 com corpo vazio
+    expect(validateDefillamaChains({ body: JSON.stringify([{ name: 'Solana', tvl: 1 }]) }).ok).toBe(false);
+    expect(validateDefillamaChains({ body: JSON.stringify([{ name: 'Ethereum', tvl: 0 }]) }).ok).toBe(false);
     expect(validateHtmlContains('FOMC', '2026')({ body: 'FOMC calendar 2026' }).ok).toBe(true);
     expect(validateHtmlContains('FOMC', '2026')({ body: 'nada' }).ok).toBe(false);
   });
@@ -157,6 +160,66 @@ describe('probeSource: rede injetada', () => {
   });
 });
 
+
+describe('contato do robô (política do BLS, item 286)', () => {
+  const EMAIL = 'robo.dedicado@example.com';
+
+  it('sem segredo, o identificador é o de sempre; com segredo válido, leva o contato', () => {
+    expect(buildUserAgent({})).toBe(USER_AGENT);
+    expect(contactEmail({ CONTEXT_CONTACT_EMAIL: EMAIL })).toBe(EMAIL);
+    const ua = buildUserAgent({ CONTEXT_CONTACT_EMAIL: EMAIL });
+    expect(ua).toContain(EMAIL);
+    expect(ua.startsWith('SentinelSignals-ContextProbe/1.0 (+https://github.com/mateusraony/Sentinel-Signals;')).toBe(true);
+    expect(ua.endsWith(')')).toBe(true);
+  });
+
+  it('valor malformado é ignorado em vez de derrubar a sonda ou vazar lixo no cabeçalho', () => {
+    for (const bad of ['', '   ', 'sem-arroba', 'a b@c.com', 'x@y', 'a@b.com; DROP', 'a@b.com\nX-Evil: 1', '机器人@example.com', 'a@b.com\u0000', 'a@b.cömé']) {
+      expect(contactEmail({ CONTEXT_CONTACT_EMAIL: bad }), JSON.stringify(bad)).toBeNull();
+      expect(buildUserAgent({ CONTEXT_CONTACT_EMAIL: bad })).toBe(USER_AGENT);
+    }
+  });
+
+  it('o e-mail vai SÓ no cabeçalho User-Agent: nunca na URL, no resultado, na tabela nem no JSON', async () => {
+    let seenUrl; let seenHeaders;
+    const fetchImpl = async (url, opts) => { seenUrl = url; seenHeaders = opts.headers; return new Response(ICS_OK, { status: 200 }); };
+    const r = await probeSource(src('bls-calendar'), { fetchImpl, env: { CONTEXT_CONTACT_EMAIL: EMAIL } });
+    expect(seenHeaders['User-Agent']).toContain(EMAIL);
+    expect(seenUrl).not.toContain(EMAIL);
+    expect(JSON.stringify(r)).not.toContain(EMAIL);
+    const md = formatProbeMarkdown([r], { startedAt: 'x', runner: 'y', contactConfigured: true });
+    expect(md).not.toContain(EMAIL);
+    expect(md).toContain('Contato do robô no identificador: informado');
+    expect(formatProbeMarkdown([r], { contactConfigured: false })).toContain('NÃO informado');
+  });
+
+  it('BLS 403: a mensagem explica a causa e o que fazer (sem inventar que o formato é inválido)', () => {
+    const r = evaluateResponse(src('bls-calendar'), { status: 403, headers: {}, body: '<html>Access Denied</html>' });
+    expect(r.status).toBe('FALHOU');
+    expect(r.detail).toMatch(/403/);
+    expect(r.detail).toMatch(/CONTEXT_CONTACT_EMAIL/);
+    expect(r.detail).not.toMatch(/formato inválido/);
+  });
+
+  it('calendário dos EUA: 3 caminhos oficiais, todos do BLS e todos com dica; basta UM responder', () => {
+    const us = SOURCES.filter((s) => s.group === 'us-calendar');
+    expect(us.map((s) => s.id)).toEqual(['bls-calendar', 'bls-cpi-page', 'bls-empsit-page']);
+    for (const s of us) { expect(s.required).toBe(true); expect(s.blockHint).toBeTruthy(); }
+    const row = (id, status) => ({ id, name: id, required: true, group: 'us-calendar', status, httpStatus: 200, latencyMs: 1, bytes: 1, rateLimit: '', detail: '' });
+    expect(summarize([row('bls-calendar', 'FALHOU'), row('bls-cpi-page', 'OK'), row('bls-empsit-page', 'FALHOU')]).gateOk).toBe(true);
+    expect(summarize([row('bls-calendar', 'FALHOU'), row('bls-cpi-page', 'FALHOU'), row('bls-empsit-page', 'FALHOU')]).gateOk).toBe(false);
+  });
+
+  it('as páginas do BLS só passam com o conteúdo certo (200 com página de erro reprova)', () => {
+    const cpi = src('bls-cpi-page');
+    expect(evaluateResponse(cpi, { status: 200, headers: {}, body: '<h1>Consumer Price Index</h1> Release Schedule' }).status).toBe('OK');
+    expect(evaluateResponse(cpi, { status: 200, headers: {}, body: '<html>Access Denied</html>' }).status).toBe('FALHOU');
+    const emp = src('bls-empsit-page');
+    expect(evaluateResponse(emp, { status: 200, headers: {}, body: 'The Employment Situation' }).status).toBe('OK');
+    expect(evaluateResponse(emp, { status: 200, headers: {}, body: 'nada' }).status).toBe('FALHOU');
+  });
+});
+
 describe('portão da fase (summarize)', () => {
   const row = (id, status, extra = {}) => ({ id, name: id, required: true, group: null, status, httpStatus: 200, latencyMs: 1, bytes: 1, rateLimit: '', detail: '', ...extra });
 
@@ -202,7 +265,7 @@ describe('lista de fontes', () => {
   it('o portão cobre as 5 áreas do plano (BLS, Medo e Ganância, Fed, Binance Spot, CORS do raw)', () => {
     const req = SOURCES.filter((s) => s.required);
     const areas = new Set(req.map((s) => s.group || s.id));
-    expect(areas).toEqual(new Set(['bls-calendar', 'alternative-me-fng', 'fed-rss', 'binance-spot', 'raw-github-cors']));
+    expect(areas).toEqual(new Set(['us-calendar', 'alternative-me-fng', 'fed-rss', 'binance-spot', 'raw-github-cors']));
   });
 
   it('só fontes públicas de leitura: nenhuma exige chave para ser obrigatória', () => {
