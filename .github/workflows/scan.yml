@@ -1,7 +1,8 @@
 name: Scheduled scan
 
 on:
-  # Low-frequency fallback only — the primary 5-min cadence is driven by an
+  # Low-frequency fallback only — the primary ~15-min cadence (was 5 min until
+  # 2026-10-29, docs/known-risks.md item 286) is driven by an
   # external dispatch calling workflow_dispatch directly (see
   # docs/claude/external-cron-setup.md and docs/known-risks.md item 18):
   # measured over 48h, this schedule: trigger alone averaged ~100min between
@@ -17,8 +18,12 @@ on:
   # Given the severe drift already measured on this repo (see comment above),
   # targeting the least reliable minute for the only remaining trigger would
   # be counterproductive.
+  # Every 6h (was hourly) since item 286: each run wakes the Neon database for
+  # ~6 min (5 min autosuspend + the run), and the free plan only has 100
+  # compute-hours/month. The ~15-min external dispatch is the real clock; this
+  # is just the safety net if it dies (the healthchecks.io watchdog also warns).
   schedule:
-    - cron: "7 * * * *"
+    - cron: "7 */6 * * *"
   workflow_dispatch: {}
 
 concurrency:

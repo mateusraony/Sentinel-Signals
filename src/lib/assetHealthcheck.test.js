@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { assetHealthcheckReason, shouldAlertStale, shouldClearStaleAlert } from './assetHealthcheck.js';
+import { SCAN_CADENCE_MS } from './pollingIntervals.js';
+import { assetHealthcheckReason, shouldAlertStale, shouldClearStaleAlert, ASSET_STALE_GRACE_MS, ASSET_STALE_GRACE_MIN } from './assetHealthcheck.js';
 
 const NOW = Date.parse('2026-07-16T12:00:00.000Z');
-const GRACE = 30 * 60 * 1000; // 30 min, matches run-scan.mjs's default
+const GRACE = ASSET_STALE_GRACE_MS; // fonte única (item 286): 60 min, o mesmo default do cron e da tela
 
 function minutesAgo(mins) {
   return new Date(NOW - mins * 60 * 1000).toISOString();
@@ -26,12 +27,12 @@ describe('assetHealthcheckReason', () => {
 
   it('returns "persistent_error" when scan_error_since exceeds the grace period, even though last_scan_at stays recent', () => {
     // This is the core gap: last_scan_at refreshes every failing pass too.
-    const asset = { is_active: true, last_scan_at: minutesAgo(2), scan_status: 'error', scan_error_since: minutesAgo(45) };
+    const asset = { is_active: true, last_scan_at: minutesAgo(2), scan_status: 'error', scan_error_since: minutesAgo(90) };
     expect(assetHealthcheckReason(asset, { now: NOW, graceMs: GRACE })).toBe('persistent_error');
   });
 
   it('returns "silent" when last_scan_at itself is stale and there is no active error streak', () => {
-    const asset = { is_active: true, last_scan_at: minutesAgo(45), scan_status: 'success', scan_error_since: null };
+    const asset = { is_active: true, last_scan_at: minutesAgo(90), scan_status: 'success', scan_error_since: null };
     expect(assetHealthcheckReason(asset, { now: NOW, graceMs: GRACE })).toBe('silent');
   });
 
@@ -41,8 +42,25 @@ describe('assetHealthcheckReason', () => {
   });
 
   it('prioritizes persistent_error over silent when both would technically apply', () => {
-    const asset = { is_active: true, last_scan_at: minutesAgo(45), scan_status: 'error', scan_error_since: minutesAgo(50) };
+    const asset = { is_active: true, last_scan_at: minutesAgo(90), scan_status: 'error', scan_error_since: minutesAgo(100) };
     expect(assetHealthcheckReason(asset, { now: NOW, graceMs: GRACE })).toBe('persistent_error');
+  });
+});
+
+describe('tolerância única (item 286)', () => {
+  it('o padrão é 60 min: 59 min de idade ainda é saudável, 61 min é atrasado', () => {
+    expect(ASSET_STALE_GRACE_MIN).toBe(60);
+    const fresco = { is_active: true, last_scan_at: minutesAgo(59), scan_status: 'success', scan_error_since: null };
+    const velho = { is_active: true, last_scan_at: minutesAgo(61), scan_status: 'success', scan_error_since: null };
+    expect(assetHealthcheckReason(fresco, { now: NOW })).toBe(null);
+    expect(assetHealthcheckReason(velho, { now: NOW })).toBe('silent');
+  });
+
+  it('REGRESSÃO (cadência 5 -> 15 min): a tolerância cobre pelo menos 3 passadas do scan', () => {
+    // Com 30 min e scan de 15 min eram só 2 passadas: um disparo atrasado do GitHub
+    // viraria "Ativo sem atualização". Se alguém aumentar a cadência sem
+    // aumentar a tolerância, este teste quebra.
+    expect(ASSET_STALE_GRACE_MS).toBeGreaterThanOrEqual(3 * SCAN_CADENCE_MS);
   });
 });
 

@@ -17,7 +17,20 @@
 //     try/catch per asset in scanAllAssets, but is the direct
 //     dead-man's-switch case).
 
-export function assetHealthcheckReason(asset, { now = Date.now(), graceMs = 30 * 60 * 1000 } = {}) {
+/**
+ * Tolerância do dead-man's-switch por ativo: 60 min (item 286).
+ *
+ * Era 30 min com o scan a cada 5 min (6 passadas). Com ~15 min, 30 min são só
+ * 2 passadas — um único disparo atrasado do GitHub Actions viraria "Ativo sem
+ * atualização" e o alerta de erro persistente sairia na 3ª falha seguida.
+ * 60 min = 4 passadas, a mesma folga de "cadência + margem". Fonte única: o
+ * cron (`scripts/run-scan.mjs`), a tela (`assetDataQuality`) e o texto do
+ * Dashboard leem daqui.
+ */
+export const ASSET_STALE_GRACE_MIN = 60;
+export const ASSET_STALE_GRACE_MS = ASSET_STALE_GRACE_MIN * 60 * 1000;
+
+export function assetHealthcheckReason(asset, { now = Date.now(), graceMs = ASSET_STALE_GRACE_MS } = {}) {
   if (!asset || asset.is_active === false) return null;
   if (asset.scan_error_since) {
     const errorAge = now - new Date(asset.scan_error_since).getTime();

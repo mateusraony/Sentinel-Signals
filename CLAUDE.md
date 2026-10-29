@@ -26,8 +26,8 @@ Originado na plataforma no-code **Base44**, migrado para **Firebase** e, em
   + **Firebase** só para Auth e `users/{uid}.role` (`requireAdmin`,
   `server/index.js:298`). `src/api/entities.js` é cliente HTTP de `server/`.
   Código Firestore antigo = legado (`scripts/adminEntitiesFirestoreLegacy.js`).
-  **Neon free: o que estourou é COMPUTAÇÃO (100 CU-h/mês), não espaço** — o scan
-  de 5 min mantém o banco acordado (`docs/known-risks.md` itens 282/283).
+  **Neon free: o que estourou é COMPUTAÇÃO (100 CU-h/mês), não espaço** — scan de
+  5 min = banco sempre acordado (~180 h); por isso ~15 min (itens 282/283/286).
   - **Auth**: anônima temporária (ver decisões abaixo).
   - **Sem Cloud Functions / sem Blaze** — restrição **permanente** (o usuário
     recusou cartão/custo). `functions/` existe mas nunca é deployado. Não sugira
@@ -85,7 +85,7 @@ sentimento) só informativa — nunca toca motor/score; sem Cloudflare, sem Neon
 ## Scan agendado (GitHub Actions) — roda sem navegador
 
 `.github/workflows/scan.yml` roda `scripts/run-scan.mjs`; o `schedule:` interno
-(`7 * * * *`) é só fallback horário — o cadenciamento real de ~5min vem de
+(`7 */6 * * *`) é só fallback (6 h) — o cadenciamento real de ~15min vem de
 disparo externo (cron-job.org via `workflow_dispatch`), ver
 `.claude/rules/ci-deploy.md` e `docs/known-risks.md` item 18. `run-scan.mjs`
 chama `scanAllAssets()` / `priceCheckActiveOps()` **de `src/lib/scanner.js` sem

@@ -236,7 +236,7 @@ describe('rejectionCopy', () => {
   it('sem motivo registrado E sinal EXPIRADO, não finge que ainda está sendo checado', () => {
     const copy = rejectionCopy({ signal_type: 'BUY' }, SIGNAL_PHASE.EXPIRED);
     expect(copy.chip).not.toBe('Checando agora');
-    expect(copy.detail).not.toMatch(/rec[ée]m-chegado|a cada 5 minutos/i);
+    expect(copy.detail).not.toMatch(/rec[ée]m-chegado|a cada \d+ minutos/i);
     expect(copy.detail).toMatch(/Nada a fazer\.$/);
     expect(copy.kind).toBe(REASON_KIND.APP);
   });
@@ -247,7 +247,7 @@ describe('rejectionCopy', () => {
   it('sem motivo registrado E fase INFO, não promete checagem de entrada', () => {
     const copy = rejectionCopy({ signal_type: 'BUY' }, SIGNAL_PHASE.INFO);
     expect(copy.chip).not.toBe('Checando agora');
-    expect(copy.detail).not.toMatch(/rec[ée]m-chegado|a cada 5 minutos|abrir uma opera/i);
+    expect(copy.detail).not.toMatch(/rec[ée]m-chegado|a cada \d+ minutos|abrir uma opera/i);
     expect(copy.detail).toMatch(/não vira operação/);
     expect(copy.detail).toMatch(/Nada a fazer\.$/);
     expect(copy.kind).toBe(REASON_KIND.INFO);

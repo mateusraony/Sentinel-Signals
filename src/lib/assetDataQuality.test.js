@@ -18,22 +18,22 @@ describe('assetDataQuality', () => {
     expect(assetDataQuality({ is_active: true, last_scan_at: null }, NOW).ageMin).toBeNull();
   });
 
-  it('parado além da tolerância do healthcheck (30 min): atrasado', () => {
-    const q = assetDataQuality({ is_active: true, last_scan_at: minAgo(45) }, NOW);
-    expect(q).toEqual({ status: 'stale', reason: 'silent', ageMin: 45 });
+  it('parado além da tolerância do healthcheck (60 min): atrasado', () => {
+    const q = assetDataQuality({ is_active: true, last_scan_at: minAgo(90) }, NOW);
+    expect(q).toEqual({ status: 'stale', reason: 'silent', ageMin: 90 });
   });
 
   it('erro persistente vence o atraso', () => {
-    const q = assetDataQuality({ is_active: true, last_scan_at: minAgo(45), scan_error_since: minAgo(40) }, NOW);
+    const q = assetDataQuality({ is_active: true, last_scan_at: minAgo(90), scan_error_since: minAgo(80) }, NOW);
     expect(q.status).toBe('error');
     expect(q.reason).toBe('persistent_error');
   });
 
-  it('REGRESSÃO (review do PR-B): falha recente (< 30 min) não aparece como atualizado', () => {
+  it('REGRESSÃO (review do PR-B): falha recente (< 60 min) não aparece como atualizado', () => {
     const recente = { is_active: true, last_scan_at: minAgo(0), scan_status: 'error', scan_error_since: minAgo(5) };
     const q = assetDataQuality(recente, NOW);
     expect(q.status).toBe('error');
-    expect(q.reason).toBeNull(); // o healthcheck do cron ainda espera os 30 min
+    expect(q.reason).toBeNull(); // o healthcheck do cron ainda espera os 60 min
     expect(qualityBadge(q).label).toBe('📡 Falha de leitura (último scan agora)');
     expect(summarizeDataHealth([recente], NOW).problemCount).toBe(1);
   });
@@ -105,9 +105,9 @@ describe('summarizeDataHealth + healthChip (chip de saúde global, item 277)', (
   });
 
   it('1 e N ativos com problema (atrasado, falha ou sem leitura contam)', () => {
-    const um = summarizeDataHealth([ok(3), ok(45)], NOW);
+    const um = summarizeDataHealth([ok(3), ok(90)], NOW);
     expect(healthChip(um).label).toBe('📡 Último scan há 3 min · 1 ativo com problema');
-    const tres = summarizeDataHealth([ok(3), ok(45), { is_active: true }, { is_active: true, last_scan_at: minAgo(3), scan_error_since: minAgo(40) }], NOW);
+    const tres = summarizeDataHealth([ok(3), ok(90), { is_active: true }, { is_active: true, last_scan_at: minAgo(3), scan_error_since: minAgo(40) }], NOW);
     expect(tres.problemCount).toBe(3);
     expect(healthChip(tres).label).toBe('📡 Último scan há 3 min · 3 ativos com problema');
     expect(tres.status).toBe('warn');

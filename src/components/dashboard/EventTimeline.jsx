@@ -44,7 +44,10 @@ export function CandleBoundTag() {
 // É o sinal de diagnóstico que denuncia uma falha do cron ou uma queda de
 // cota (docs/known-risks.md item 106) — exatamente o que o usuário quer
 // poder comparar depois.
-const LAG_THRESHOLD_MS = 20 * 60 * 1000;
+// 35 min = 2 passadas do scan de ~15 min + folga (item 286). Era 20 min com o
+// scan a cada 5 min; com 15 min o "(detectado Xmin depois)" apareceria em
+// quase todo histórico e deixaria de ser um sinal de falha.
+const LAG_THRESHOLD_MS = 35 * 60 * 1000;
 
 export function DetectionLag({ realTime, detectedAt }) {
   if (!realTime || !detectedAt) return null;

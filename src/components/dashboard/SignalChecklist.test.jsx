@@ -86,7 +86,7 @@ describe('SignalChecklist — achado do Codex (PR #369): timeframe fora de 4h n�
     expect(screen.queryByText(/BLOQUEADA/i)).toBeNull();
     screen.getByText(/não vira operação/i);
     // Review do PR #502: nada de "recém-chegado, refaz a conta a cada 5 minutos".
-    expect(screen.queryByText(/rec[ée]m-chegado|a cada 5 minutos/i)).toBeNull();
+    expect(screen.queryByText(/rec[ée]m-chegado|a cada \d+ minutos/i)).toBeNull();
   });
 
   it('sinal 1h sem motivo, mas com operação ativa, ainda mostra BLOQUEADA — fato universal, independe do timeframe', () => {

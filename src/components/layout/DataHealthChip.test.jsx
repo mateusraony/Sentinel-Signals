@@ -31,8 +31,9 @@ describe('DataHealthChip', () => {
     vi.useFakeTimers(); vi.setSystemTime(NOW);
     render(<DataHealthChip assets={[{ is_active: true, last_scan_at: minAgo(1) }]} />);
     expect(screen.getByText('📡 Último scan há 1 min · tudo em dia')).toBeTruthy();
-    act(() => { vi.advanceTimersByTime(40 * 60000); });
-    expect(screen.getByText('📡 Último scan há 41 min · 1 ativo com problema')).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(70 * 60000); });
+    // 71 min: o `formatAge` passa a mostrar horas a partir de 60 min.
+    expect(screen.getByText('📡 Último scan há 1 h · 1 ativo com problema')).toBeTruthy();
   });
 
   it('variante "dot": só o ponto, com nome acessível e sem animação', () => {

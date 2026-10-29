@@ -22,7 +22,11 @@ on:
     # — cadência própria e baixa, independente do scan ao vivo, mesmo
     # espírito de scan-shadow.yml ter cadência própria em vez de herdar a
     # do scan real.
-    - cron: "23 * * * *"
+    # A cada 6 h (era de hora em hora) desde o item 286: cada execução acorda
+    # o banco Neon por ~6 min e o plano gratuito tem só 100 h de computação por
+    # mês. Ativo novo/reativado espera no máximo 6 h pela checagem retroativa
+    # (ou o usuário dispara na hora por workflow_dispatch).
+    - cron: "23 */6 * * *"
   workflow_dispatch: {}
 
 concurrency:

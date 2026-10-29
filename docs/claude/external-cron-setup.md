@@ -61,8 +61,8 @@ Criar uma conta gratuita e um novo cronjob:
   - `X-GitHub-Api-Version: 2022-11-28`
   - `Content-Type: application/json`
 - **Corpo (body)**: `{"ref":"main"}`
-- **Agendamento**: a cada 5 minutos (`*/5 * * * *`) — mesma cadência do
-  `schedule:` interno.
+- **Agendamento**: **a cada 15 minutos (`*/15 * * * *`) desde 2026-10-29** (era
+  `*/5` — veja a seção "Atualização 2026-10-29" no fim deste arquivo).
 
 > ⚠️ **Pegadinha comum (causa real de `401 Bad credentials` já vista aqui):**
 > `SEU_TOKEN_AQUI` acima é só um marcador de texto — no campo "Valor" do
@@ -170,3 +170,32 @@ cron-job.org em si é feita **fora do repositório** (conta pessoal do
 usuário + um PAT pessoal) — não há nada para commitar além deste documento.
 `docs/known-risks.md` item 18 registra a decisão e o dado real medido de
 drift antes da correção.
+
+
+## Atualização 2026-10-29 — scan a cada 15 min e como PAUSAR (item 286)
+
+**Por que 15 min.** O Neon gratuito dá 100 horas de computação por mês e dorme
+após 5 min sem uso. Com o scan a cada 5 min o banco **nunca dorme** (~180 h/mês) e a
+cota estourou (itens 282/283). Com ~15 min ele dorme entre as passadas (~6 min
+acordado a cada disparo ≈ 65 h/mês, estimativa — o consumo real se mede no painel
+do Neon). O texto acima descreve a história com `*/5`; vale o que está aqui.
+
+**O que mudou no repositório (item 286):** `schedule:` de reserva do `scan.yml` agora
+a cada 6 h (`7 */6 * * *`); `backfill.yml` a cada 6 h; tolerância de "ativo atrasado"
+60 min (`ASSET_STALE_GRACE_MIN`); aviso "(detectado X depois)" só acima de 35 min;
+textos da tela derivam de `SCAN_CADENCE_MIN` (`src/lib/pollingIntervals.js`).
+
+**O que continua FORA do repositório (você configura):**
+1. **cron-job.org**: intervalo `*/15`.
+2. **healthchecks.io** (watchdog `HEALTHCHECKS_PING_URL`, item 12): período **15 min**
+   e carência **20–30 min** (com 5/30 min ele alertaria "sem scan" falsamente).
+
+**Como PAUSAR o scan** (obrigatório antes de o banco voltar de uma queda longa — o scan
+normal, ao voltar, fecha operações antigas pelo Time Stop no preço de hoje e pula os
+stops/alvos da pausa; só a recuperação em modo "replay" os reconstrói com a hora certa):
+1. cron-job.org → o job do scan → desligar ("Enabled" → off).
+2. GitHub → *Actions → Scheduled scan →* menu "**...**" → **Disable workflow**
+   (desliga também o reserva de 6 em 6 h). Para religar: **Enable workflow**.
+3. Fechar as abas do painel: elas também rodam price-check a cada 2 min
+   (`src/hooks/useAutoScan.js`).
+O backup do Postgres (`backup-postgres.yml`) e o resto continuam ligados.

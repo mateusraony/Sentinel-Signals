@@ -121,25 +121,25 @@ describe('AssetCard — horário de abertura do candle (achado A-2)', () => {
 });
 
 // Achado A-9 do Raio-X de UI/UX: o badge LIVE/STALE usava um threshold de
-// 2h fixo (arbitrário, 24x maior que a cadência real de ~5min) em vez do
-// dead-man's-switch oficial (`assetHealthcheckReason`, graceMs=30min). Este
+// 2h fixo (arbitrário, 4x maior que a cadência real de ~15min) em vez do
+// dead-man's-switch oficial (`assetHealthcheckReason`, graceMs=60min (item 286)). Este
 // teste prova que o badge agora reflete os 2 motivos reais da função —
 // 'silent' (last_scan_at velho) e 'persistent_error' (scan_error_since
 // velho, mais grave) — em vez do booleano cru de antes.
-const OLD_40MIN = () => new Date(Date.now() - 40 * 60000).toISOString();
+const OLD_70MIN = () => new Date(Date.now() - 70 * 60000).toISOString();
 const RECENT_5MIN = () => new Date(Date.now() - 5 * 60000).toISOString();
 
 // Item 277 (PR-B): o badge passou a 📡 (mesmos rótulos do drawer e do chip de
 // saúde); "LIVE" verde fixo saiu de vez.
 describe('AssetCard — badge 📡 reflete o dead-man\'s-switch real (achado A-9, item 277)', () => {
-  it('📡 há N min quando last_scan_at é recente (< 30min)', () => {
+  it('📡 há N min quando last_scan_at é recente (< 60min)', () => {
     renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN() } });
     screen.getByText('📡 há 5 min');
     expect(screen.queryByText('LIVE')).toBeNull();
   });
 
-  it('📡 Atrasado quando last_scan_at está velho (> 30min), motivo silent', () => {
-    renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: OLD_40MIN() } });
+  it('📡 Atrasado quando last_scan_at está velho (> 60min), motivo silent', () => {
+    renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: OLD_70MIN() } });
     screen.getByText('📡 Atrasado');
   });
 
@@ -155,14 +155,14 @@ describe('AssetCard — badge 📡 reflete o dead-man\'s-switch real (achado A-9
       vi.setSystemTime(Date.parse('2026-10-17T12:00:00Z'));
       renderCard({ asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: '2026-10-17T11:59:00Z' } });
       screen.getByText('📡 há 1 min');
-      act(() => { vi.advanceTimersByTime(40 * 60000); });
+      act(() => { vi.advanceTimersByTime(70 * 60000); });
       screen.getByText('📡 Atrasado');
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('REGRESSÃO (review do PR-B): falha recente (< 30 min) também esconde o botão "Ativar"', () => {
+  it('REGRESSÃO (review do PR-B): falha recente (< 60 min) também esconde o botão "Ativar"', () => {
     renderCard({
       asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: RECENT_5MIN(), scan_status: 'error', scan_error_since: RECENT_5MIN() },
       latestSignal: RF4H(),
@@ -180,7 +180,7 @@ describe('AssetCard — badge 📡 reflete o dead-man\'s-switch real (achado A-9
     renderCard({
       asset: {
         id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT',
-        last_scan_at: RECENT_5MIN(), scan_error_since: OLD_40MIN(),
+        last_scan_at: RECENT_5MIN(), scan_error_since: OLD_70MIN(),
       },
     });
     screen.getByText('📡 Falha');
@@ -190,7 +190,7 @@ describe('AssetCard — badge 📡 reflete o dead-man\'s-switch real (achado A-9
     const latestSignal = RF4H();
 
     const { unmount } = renderCard({
-      asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: OLD_40MIN() },
+      asset: { id: 'a1', symbol: 'BTCUSDT', display_name: 'BTC/USDT', last_scan_at: OLD_70MIN() },
       latestSignal,
     });
     if (screen.queryByText(/Simular entrada \(virtual\)/i)) throw new Error('botão "Simular" não deveria aparecer com o ativo stale');

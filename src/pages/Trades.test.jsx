@@ -119,7 +119,7 @@ describe('Trades — "Avisos em análise" nunca contradiz "Operações Ativas"',
 
     await screen.findByText('PENDLE/USDT');
     expect(screen.queryByText(/rec[ée]m-chegado/i)).toBeNull();
-    expect(screen.queryByText(/a cada 5 minutos/i)).toBeNull();
+    expect(screen.queryByText(/a cada \d+ minutos/i)).toBeNull();
   });
 });
 
@@ -625,7 +625,7 @@ describe('Trades — fila de avisos separa as cascatas (item 276)', () => {
     renderPage(<Trades />);
     fireEvent.click(await screen.findByText(/1 observações de mercado/));
     await screen.findByText('ETH/USDT');
-    expect(screen.queryByText(/rec[ée]m-chegado|a cada 5 minutos/i)).toBeNull();
+    expect(screen.queryByText(/rec[ée]m-chegado|a cada \d+ minutos/i)).toBeNull();
     expect(screen.queryByText(/Checando agora/)).toBeNull();
   });
 

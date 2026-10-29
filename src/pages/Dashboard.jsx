@@ -23,7 +23,8 @@ import PredictiveAnalysis from '@/components/dashboard/PredictiveAnalysis';
 import { useBrowserNotifications } from '@/hooks/useBrowserNotifications';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { POLL_OPERATIONAL_MS } from '@/lib/pollingIntervals';
+import { POLL_OPERATIONAL_MS, SCAN_CADENCE_MIN } from '@/lib/pollingIntervals';
+import { ASSET_STALE_GRACE_MIN } from '@/lib/assetHealthcheck';
 import DataHealthChip from '@/components/layout/DataHealthChip';
 
 const ACTIVE_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
@@ -217,11 +218,11 @@ export default function Dashboard() {
               </TooltipTrigger>
               <TooltipContent className="max-w-[260px] text-10px font-mono normal-case tracking-normal leading-relaxed">
                 Preços e indicadores vêm da última leitura salva no banco — normalmente do
-                scan automático (a cada ~5min, via Binance Spot). Se esta aba ficar aberta
+                scan automático (a cada ~{SCAN_CADENCE_MIN} min, via Binance Spot). Se esta aba ficar aberta
                 por mais de 1h, o próprio navegador também roda um scan (Binance Futures)
                 que pode atualizar por último. As duas fontes costumam ficar bem próximas,
                 mas podem divergir um pouco. "Com problema" = ativo atrasado (mais de
-                30 min sem leitura), com falha de leitura ou ainda nunca lido.
+                {ASSET_STALE_GRACE_MIN} min sem leitura), com falha de leitura ou ainda nunca lido.
               </TooltipContent>
             </Tooltip>
             <button onClick={() => {
