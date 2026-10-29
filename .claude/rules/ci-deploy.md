@@ -321,6 +321,19 @@ paths:
     Desde a run 5 (addendum 4) o FRED confirmou 4 datas, que viraram `oficial` na lista fixa (`oficial` exige
     URL do BLS ou do FRED). O financecalendar é lido só de `events[]` (limite 2.000/dia sem chave).
 
+- `recovery.yml` — disparo **manual** (`workflow_dispatch` só), sem campos: **teste a seco** do replay de
+  recuperação depois de queda longa do banco (`docs/known-risks.md` item 288).
+  - **O que faz:** `npm run recovery -- --mode=dry-run` (`scripts/run-recovery.mjs` → `scripts/recoveryDryRun.mjs`)
+    lê o banco, reexecuta o motor vela a vela sobre a pausa numa loja em memória e publica o relatório em
+    português no Job Summary + artefato `recovery-dry-run`.
+  - **Nunca grava:** `DATABASE_URL_READONLY` quando existe + proxy que recusa escrita + loja em memória.
+  - **Nunca manda Telegram:** sem segredos do Telegram no job; o pacote (`scripts/build-recovery.mjs`, 7º alvo de
+    redirecionamento) silencia o scanner — travado por `scripts/recoveryTripwire.test.js`, que monta o pacote e
+    exige que não contenha `api.telegram.org`.
+  - **Para sozinho** se "Scheduled scan" ou "Backfill check" estiverem ligados (lê o estado pela API do GitHub,
+    `actions: read`), sem StrategyConfig, com vela faltando na Binance ou banco ainda sem cota.
+  - O modo de **aplicar** vem no PR-R3, só com o número do teste a seco digitado pelo usuário.
+
 - **Orçamento de computação do Neon (item 286, travado por
   `scripts/neonComputeBudget.test.js`):** todo workflow com `schedule:` que
   cita `DATABASE_URL` é descoberto sozinho e somado ao disparo externo

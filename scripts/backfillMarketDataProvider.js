@@ -57,7 +57,7 @@ function normalizeCandles(rawCandles) {
 // (~5760 candles) ultrapassa isso. O guard de 50 páginas é só uma rede de
 // segurança contra um bug de paginação que nunca convirja (a janela real é
 // sempre curta — BACKFILL_LOOKBACK_DAYS — nunca deveria chegar perto disso).
-async function fetchHistoricalCandles(symbol, timeframe, fromMs, toMs) {
+export async function fetchHistoricalCandles(symbol, timeframe, fromMs, toMs) {
   const interval = TIMEFRAME_MAP[timeframe];
   if (!interval) throw new Error(`Timeframe inválido: ${timeframe}. Válidos: ${Object.keys(TIMEFRAME_MAP).join(', ')}`);
 
