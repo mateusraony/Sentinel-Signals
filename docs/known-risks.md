@@ -33886,9 +33886,11 @@ usuário: teste a seco → relatório → aplicar só com o número do teste dig
   para operações do retrato e deixava criar uma 2ª); `update` de id inexistente lança; leituras devolvem cópias;
   `get`; diário de toda escrita; id novo nunca sobrescreve linha do retrato (o contador do falso recomeçava do
   zero — achado pelo teste antes de ir para o ar). `readOnlyProxy` lança em qualquer escrita.
-- `src/lib/recovery/recoveryReplay.js`: `resolveResumePoint` (1º passo estritamente depois do maior entre
-  `last_scan_at`, `recovery_replayed_to` e todo carimbo das linhas do ativo; aborta com carimbo no futuro ou pausa
-  > 30 dias), `computeReplayWindow` (aquecimento por timeframe), `sliceLikeLive` (limite − 1, item 287),
+- `src/lib/recovery/recoveryReplay.js`: `resolveResumePoint` (1º passo estritamente depois do último processamento
+  do MOTOR — o maior entre `last_scan_at` e `recovery_replayed_to`; aborta com carimbo no futuro ou pausa > 30 dias.
+  **Achado do Codex no PR #522:** a 1ª versão usava também todo carimbo das linhas do ativo, e um `reviewed_at`
+  gravado pelo painel depois da volta do banco empurraria o início para depois da pausa — pulando stops/alvos/sinais
+  em silêncio; corrigido e travado por teste com mutação), `computeReplayWindow` (aquecimento por timeframe), `sliceLikeLive` (limite − 1, item 287),
   `validateSeriesContinuity`, travas (`assertLiveScanPaused` — exige "Scheduled scan" E "Backfill check"
   desativados; `assertStrategyConfigPresent`; `assertRealClock`), `runRecoveryReplay` (1 `runBacktest` por ativo,
   para tudo em falha de integridade), diferença, etiquetas (lista fechada de chaves, nunca status/stop/preço) e
@@ -33905,6 +33907,8 @@ usuário: teste a seco → relatório → aplicar só com o número do teste dig
 - Rodar de novo depois de terminar = zero escrita; cair no meio e retomar pelo cursor = mesmo fim; nada criado
   antes do início; o teste a seco não toca o banco "real"; dois testes a seco = mesmo diário; falha de busca de
   vela para tudo. Trava de inventário: toda entidade que o `scanner.js` usa precisa estar no retrato.
+- O resumo conta como abertas TODAS as operações abertas depois do replay, mexidas ou não (2º achado do Codex no
+  PR #522: antes contava só as que o replay tocou e subestimava a exposição).
 - **Defeito achado e corrigido**: `runBacktest` exige `toMs > fromMs`, mas uma pausa curta deixa 1 passo só →
   `runBacktestTo` roda exatamente esse passo.
 

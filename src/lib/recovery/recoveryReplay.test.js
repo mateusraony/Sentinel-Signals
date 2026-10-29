@@ -305,15 +305,27 @@ describe('guardas do replay', () => {
 
 describe('resolveResumePoint', () => {
   const NOW = Date.parse('2026-11-01T12:00:00.000Z');
-  it('começa no 1º passo DEPOIS do maior carimbo (last_scan_at ou qualquer linha do ativo)', () => {
+  it('começa no 1º passo DEPOIS do último processamento do motor (last_scan_at / recovery_replayed_to)', () => {
     const asset = { id: 'a', symbol: 'X', last_scan_at: '2026-10-19T10:07:12.000Z' };
     expect(resolveResumePoint({ asset, nowMs: NOW, stepMs: FIFTEEN_M }).fromMs).toBe(Date.parse('2026-10-19T10:15:00.000Z'));
-    // Uma operação escrita depois do último scan (ex.: price-check) empurra o início.
-    const rows = { ops: [{ id: 'o', stop_hit_at: '2026-10-19T10:20:00.000Z' }] };
-    expect(resolveResumePoint({ asset, rows, nowMs: NOW, stepMs: FIFTEEN_M }).fromMs).toBe(Date.parse('2026-10-19T10:30:00.000Z'));
+    const replayed = { ...asset, recovery_replayed_to: '2026-10-25T00:00:00.000Z' };
+    expect(resolveResumePoint({ asset: replayed, nowMs: NOW, stepMs: FIFTEEN_M }).fromMs).toBe(Date.parse('2026-10-25T00:15:00.000Z'));
     // Em cima do passo exato: o passo seguinte (nunca reprocessa o mesmo).
     const exact = { id: 'a', last_scan_at: '2026-10-19T10:15:00.000Z' };
     expect(resolveResumePoint({ asset: exact, nowMs: NOW, stepMs: FIFTEEN_M }).fromMs).toBe(Date.parse('2026-10-19T10:30:00.000Z'));
+  });
+
+  it('carimbo escrito pelo PAINEL depois da volta do banco NÃO pula a pausa (achado do Codex, PR #522)', () => {
+    // Tarefa revisada no painel em 01/11 11:58 e um price-check logo depois do último scan:
+    // nenhum dos dois é processamento de velas — o início continua logo depois de 19/10.
+    const asset = { id: 'a', symbol: 'X', last_scan_at: '2026-10-19T10:07:12.000Z' };
+    const rows = {
+      tasks: [{ id: 't', reviewed_at: '2026-11-01T11:58:00.000Z' }],
+      ops: [{ id: 'o', stop_hit_at: '2026-10-19T10:08:00.000Z' }],
+    };
+    const rp = resolveResumePoint({ asset, rows, nowMs: NOW, stepMs: FIFTEEN_M });
+    expect(rp.fromMs).toBe(Date.parse('2026-10-19T10:15:00.000Z'));
+    expect(rp.latestRowWrite).toBe(Date.parse('2026-11-01T11:58:00.000Z')); // só informado
   });
 
   it('aborta: sem nenhum carimbo, carimbo no futuro, pausa longa demais', () => {
@@ -401,6 +413,14 @@ describe('diferença, etiquetas e resumo', () => {
     SignalEvent: [{ id: 's1' }], VerificationTask: [],
   };
 
+  it('operação aberta que o replay NÃO mexeu entra na conta de abertas (achado do Codex, PR #522)', () => {
+    const still = { TradeOperation: [{ id: 'x', symbol: 'SOLUSDT', status: 'SIGNAL_CONFIRMED' }], SignalEvent: [], VerificationTask: [] };
+    const d = buildRecoveryDiff(still, structuredClone(still));
+    expect(d.ops.created).toEqual([]);
+    expect(d.ops.changed).toEqual([]);
+    expect(formatRecoverySummary({ diff: d, windowFromMs: 0, windowToMs: 0 })).toMatch(/abertas depois da recuperação \(todas, mexidas ou não\): 1/);
+  });
+
   it('buildRecoveryDiff separa criadas e mudadas', () => {
     const d = buildRecoveryDiff(before, after);
     expect(d.ops.created.map((o) => o.id)).toEqual(['new']);
@@ -431,6 +451,6 @@ describe('diferença, etiquetas e resumo', () => {
     expect(text).toMatch(/Período reprocessado: 19\/10 07:15 a 01\/11 09:00/);
     expect(text).toMatch(/Operações novas \(deveriam ter aberto na pausa\): 1/);
     expect(text).toMatch(/BTCUSDT SIGNAL_CONFIRMED → STOP_HIT a 95 \(vela de 22\/10 09:00\)/);
-    expect(text).toMatch(/continuam abertas depois da recuperação: 1/);
+    expect(text).toMatch(/Operações abertas depois da recuperação \(todas, mexidas ou não\): 1/);
   });
 });

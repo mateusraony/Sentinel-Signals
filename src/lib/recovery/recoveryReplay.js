@@ -77,23 +77,26 @@ export function stepForAsset(asset) {
 
 /**
  * Onde o replay de um ativo começa. É o PRIMEIRO passo estritamente depois do último
- * processamento conhecido: o maior entre `last_scan_at`, `recovery_replayed_to` e todo
- * carimbo de tempo das linhas do ativo (estados, operações, sinais, tarefas).
+ * processamento do MOTOR: o maior entre `last_scan_at` (gravado por toda passada do scan,
+ * cron ou navegador) e `recovery_replayed_to` (gravado pela própria recuperação).
  * Começar ANTES disso é perigoso: reprocessar uma vela anterior ao último avanço de
  * stop pode gerar um STOP falso (a guarda do scanner é por igualdade de vela).
+ *
+ * Só marcadores do MOTOR contam (achado do Codex no PR #522): um carimbo escrito pelo
+ * painel — ex. `reviewed_at` de uma tarefa revisada depois da volta do banco — empurraria
+ * o início para depois da pausa e o replay pularia stops/alvos/sinais EM SILÊNCIO. Escritas
+ * do price-check logo depois do último scan também não empurram: o replay repete a mesma
+ * vela que o próximo scan ao vivo repetiria (mesmo comportamento do ao vivo).
+ * `rows` fica só para o relatório (último carimbo visto em cada tipo de linha).
  * @param {{ asset: object, rows?: { assetStates?: object[], ops?: object[], signals?: object[], tasks?: object[] },
  *   stepMs?: number, nowMs: number, maxGapDays?: number }} params
- * @returns {{ fromMs: number, lastProcessedMs: number }}
+ * @returns {{ fromMs: number, lastProcessedMs: number, latestRowWrite: number | null }}
  */
 export function resolveResumePoint({ asset, rows = {}, stepMs = stepForAsset(asset), nowMs, maxGapDays = MAX_GAP_DAYS }) {
   if (!Number.isFinite(nowMs)) throw new RecoveryAbort('bad_input', 'resolveResumePoint: nowMs obrigatório');
   const candidates = [
     parseMs(asset?.last_scan_at),
     parseMs(asset?.recovery_replayed_to),
-    latestTimestamp(rows.assetStates),
-    latestTimestamp(rows.ops),
-    latestTimestamp(rows.signals),
-    latestTimestamp(rows.tasks),
   ].filter((v) => v != null);
   if (!candidates.length) {
     throw new RecoveryAbort('no_resume_point', `${asset?.symbol ?? asset?.id}: sem nenhum registro de último processamento`);
@@ -107,7 +110,8 @@ export function resolveResumePoint({ asset, rows = {}, stepMs = stepForAsset(ass
     throw new RecoveryAbort('gap_too_long', `${asset?.symbol ?? asset?.id}: pausa de ${gapDays.toFixed(1)} dias (limite ${maxGapDays})`);
   }
   const fromMs = (Math.floor(lastProcessedMs / stepMs) + 1) * stepMs;
-  return { fromMs, lastProcessedMs };
+  const latestRowWrite = latestTimestamp([...(rows.ops || []), ...(rows.signals || []), ...(rows.tasks || []), ...(rows.assetStates || [])]);
+  return { fromMs, lastProcessedMs, latestRowWrite };
 }
 
 /**
@@ -250,9 +254,13 @@ function diffRows(before = [], after = []) {
 }
 
 /** O que o replay mudou, entre o retrato de antes e o estado de depois. */
+const OPEN_STATUSES = ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'];
+
 export function buildRecoveryDiff(before, after) {
   return {
-    ops: diffRows(before.TradeOperation, after.TradeOperation),
+    // `openAfter`: TODAS as operações abertas depois do replay (inclusive as que ele não mexeu)
+    // — o resumo fala da exposição real, não só do que mudou (achado do Codex no PR #522).
+    ops: { ...diffRows(before.TradeOperation, after.TradeOperation), openAfter: (after.TradeOperation || []).filter((op) => OPEN_STATUSES.includes(op.status)) },
     signals: diffRows(before.SignalEvent, after.SignalEvent),
     tasks: diffRows(before.VerificationTask, after.VerificationTask),
   };
@@ -309,12 +317,12 @@ export function formatRecoverySummary({ diff, windowFromMs, windowToMs, mode = '
   lines.push(`Período reprocessado: ${brt(windowFromMs)} a ${brt(windowToMs)} (horário de Brasília)`);
   const novas = diff.ops.created;
   const fechadas = diff.ops.changed.filter((c) => c.before.status !== c.after.status);
-  const abertas = [...novas, ...diff.ops.changed.map((c) => c.after)].filter((op) => ['SIGNAL_CONFIRMED', 'RUNNER_ACTIVE'].includes(op.status));
+  const abertas = diff.ops.openAfter ?? [];
   lines.push(`Operações novas (deveriam ter aberto na pausa): ${novas.length}`);
   for (const op of novas) lines.push(`• ${op.symbol} ${op.side} — entrada ${op.entry_price} em ${brt(op.created_date)} — agora: ${op.status}`);
   lines.push(`Operações antigas que mudaram de estado: ${fechadas.length}`);
   for (const c of fechadas) lines.push(`• ${c.after.symbol} ${c.before.status} → ${c.after.status}${c.after.exit_price != null ? ` a ${c.after.exit_price}` : ''}${realTimeOf(c.after) ? ` (vela de ${brt(realTimeOf(c.after))})` : ''}`);
-  lines.push(`Operações que continuam abertas depois da recuperação: ${abertas.length}`);
+  lines.push(`Operações abertas depois da recuperação (todas, mexidas ou não): ${abertas.length}`);
   lines.push(`Sinais novos: ${diff.signals.created.length}`);
   return lines.join('\n');
 }
