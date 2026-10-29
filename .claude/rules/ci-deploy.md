@@ -308,6 +308,9 @@ paths:
   - **Isolamento (travado por `scripts/contextIsolationTripwire.test.js`):** `contents: read`, **sem**
     `DATABASE_URL` (não pode acordar o Neon), sem Telegram, sem Firebase, sem scanner. O motor não importa
     nada de `context*`. Segredo opcional `COINGECKO_API_KEY` (sem ele o `/global` é pulado).
+    Segredo opcional `CONTEXT_CONTACT_EMAIL`: vai só no `User-Agent` (o BLS dá 403 sem contato do
+    robô); nunca impresso. O calendário dos EUA é o grupo `us-calendar` (BLS `.ics` ou páginas do CPI /
+    Employment Situation — qualquer uma serve).
 
 - **Orçamento de computação do Neon (item 286, travado por
   `scripts/neonComputeBudget.test.js`):** todo workflow com `schedule:` que

@@ -10,11 +10,12 @@
 // Código de saída 1 quando o portão da fase reprova (alguma fonte obrigatória
 // falhou) — o job fica vermelho, de propósito. Só leitura de dados públicos:
 // 1 requisição por fonte, pausa entre elas, nenhum banco, nenhum Telegram,
-// nenhuma ordem. A única variável de ambiente lida é COINGECKO_API_KEY
-// (opcional; sem ela o /global é pulado).
+// nenhuma ordem. As únicas variáveis de ambiente lidas são COINGECKO_API_KEY
+// (opcional; sem ela o /global é pulado) e CONTEXT_CONTACT_EMAIL (opcional; contato
+// do robô exigido pelo BLS — só vai no cabeçalho, nunca é impresso).
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { SOURCES, probeSource, summarize, formatProbeMarkdown } from './contextProbe.mjs';
+import { SOURCES, probeSource, summarize, formatProbeMarkdown, contactEmail } from './contextProbe.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -55,7 +56,7 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
   const runner = env.GITHUB_ACTIONS === 'true'
     ? 'servidor do GitHub Actions (o mesmo lugar onde o coletor vai rodar)'
     : 'ambiente local — NÃO vale como teste do GitHub';
-  console.log(formatProbeMarkdown(results, { startedAt, runner }));
+  console.log(formatProbeMarkdown(results, { startedAt, runner, contactConfigured: Boolean(contactEmail(env)) }));
   if (typeof args.json === 'string') {
     fs.writeFileSync(args.json, JSON.stringify({ startedAt, results, summary: summarize(results) }, null, 2));
   }
