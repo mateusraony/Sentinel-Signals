@@ -33754,6 +33754,11 @@ muda (199 linhas). Nenhum consumidor de entidade, rota ou workflow existente foi
 - **Recomendação para a Fase 2 (coletor):** FRED como fonte principal do calendário dos EUA (oficial, chave
   grátis); lista fixa como reserva; financecalendar só como conferência (já é uma das fontes da lista).
 - **Portão:** runs 4 e 5 aprovadas (mesma noite) — falta 1 execução em outro horário para o critério da fase.
+- **Run 6 (30/10, 01:57 UTC, versão antes do PR #525) [fato]: APROVADO** — igual às runs 4/5 (BLS 403, `api.binance.com`
+  451 esperado, `data-api.binance.vision` OK, FRED confere CPI 10/11 e 10/12 e Payroll 06/11 e 04/12, Medo e Ganância
+  30). **Critério da Fase 1 cumprido: 3 aprovações (19:39, 19:56 e 01:57 UTC)** — ressalva honesta: duas delas com 17 min
+  de diferença; a estabilidade por semanas é a coleta "sombra" da Fase 2. Aviso de cobertura: 41 dias (até 10/12), o
+  FRED ainda não publicou 2027.
 
 **Addendum 5 (2026-10-30) — avisos de evento: parecer do time, decisões do usuário e termos do FRED.**
 O usuário perguntou se receberia aviso antes e depois de cada evento "dizendo qual a probabilidade de alta ou
