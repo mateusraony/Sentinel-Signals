@@ -17,6 +17,15 @@ describe('operationProvenance', () => {
     expect(operationProvenance({ closed_reason: MANUAL_EDIT_REASON })).toBe(PROVENANCE.EDITED);
   });
 
+  it('recuperada após pausa do banco (item 288): nova fica fora; antiga que o replay só encerrou continua contando', () => {
+    expect(operationProvenance({ source: 'recovery', recovery_run_id: 'r1' })).toBe(PROVENANCE.RECOVERY);
+    expect(operationProvenance({ source: 'range_filter', recovery_run_id: 'r1' })).toBe(PROVENANCE.ENGINE);
+    const { engine, excluded } = splitByProvenance([{ id: 1, source: 'recovery' }, { id: 2, recovery_run_id: 'r1' }]);
+    expect(engine.map((o) => o.id)).toEqual([2]);
+    expect(excluded.recovery).toBe(1);
+    expect(provenanceExclusionText(excluded)).toBe('Fora da conta: 1 recuperada após pausa');
+  });
+
   it('precedência: manual > editada > retroativa', () => {
     expect(operationProvenance({ source: 'manual', closed_reason: MANUAL_EDIT_REASON })).toBe(PROVENANCE.MANUAL);
     expect(operationProvenance({ source: 'backfill', closed_reason: MANUAL_EDIT_REASON })).toBe(PROVENANCE.EDITED);
@@ -45,7 +54,7 @@ describe('splitByProvenance + provenanceExclusionText', () => {
   it('separa as do motor e conta as que ficam fora', () => {
     const { engine, excluded } = splitByProvenance(ops);
     expect(engine.map(o => o.id)).toEqual([1, 6]);
-    expect(excluded).toEqual({ manual: 2, backfill: 1, edited: 1, total: 4 });
+    expect(excluded).toEqual({ manual: 2, backfill: 1, recovery: 0, edited: 1, total: 4 });
   });
 
   it('texto em português, só com o que existe', () => {
@@ -57,7 +66,7 @@ describe('splitByProvenance + provenanceExclusionText', () => {
   });
 
   it('lista vazia ou ausente', () => {
-    expect(splitByProvenance([])).toEqual({ engine: [], excluded: { manual: 0, backfill: 0, edited: 0, total: 0 } });
+    expect(splitByProvenance([])).toEqual({ engine: [], excluded: { manual: 0, backfill: 0, recovery: 0, edited: 0, total: 0 } });
     expect(splitByProvenance(undefined).engine).toEqual([]);
   });
 });

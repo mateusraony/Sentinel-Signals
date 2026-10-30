@@ -33934,3 +33934,34 @@ selo "Recuperada", 1 resumo no Telegram, roteiro).
 - **Passos do usuário antes de rodar:** desativar "Backfill check" (o "Scheduled scan" já está desativado), manter o
   cron-job.org pausado e nenhuma aba do painel aberta; rodar só depois que o Neon voltar.
 
+**Addendum (PR-R3, 2026-10-29) — modo aplicar, selo "Recuperada" e roteiro.**
+- **Modo aplicar** (`scripts/recoveryApply.mjs`, job `apply` do `recovery.yml`, depois do job `backup` que chama
+  `backup-postgres.yml`). Para ANTES de gravar se: o número digitado não é o do artefato baixado ou o teste a seco
+  tem > 24 h; "Scheduled scan"/"Backfill check" ligados; o banco, a configuração ou as velas da janela aprovada
+  mudaram (impressões digitais); **política estrita** (decisão do usuário): refaz a simulação em memória até agora e
+  qualquer operação nova, mudança de estado ou sinal que o teste a seco não mostrou → para e pede novo teste;
+  lock `full-scan`/`price-check` ocupado. Depois: grava pelo MESMO motor (backend real, exceto AssetState em memória
+  e campos de status do scan — como a checagem retroativa), cursor `recovery_replayed_to` por ativo, relê o banco e
+  compara com a simulação (diferença → "parou NO MEIO", com instrução de não rodar de novo), etiqueta só metadado
+  e manda **1** mensagem no Telegram (sucesso ou falha).
+- **Procedência** (`src/lib/operationProvenance.js`): `source: 'recovery'` → tipo RECOVERY, selo "♻️ Recuperada" e
+  aviso no cartão; **fora das estatísticas ao vivo** (decisão do usuário, 29/10). Operação antiga que o replay só
+  encerrou continua contando. Mensagens futuras dessas operações no Telegram vêm marcadas (`recoveryPrefix`).
+- **Provas [verificado]:** aplicar o teste a seco aprovado deixa o banco igual a "rodar sem parar" (operações
+  idênticas fora as etiquetas); aplicar de novo é recusado sem gravar; cada trava para sem gravar (número errado,
+  teste velho, banco mexido, evento novo, lock ocupado); falha depois de gravar é dita com todas as letras; sempre 1
+  mensagem. Mutações: sem conferir o retrato (2 testes reprovam), sem política estrita (1), sem conferência
+  pós-gravação (1), scanner sem o Telegram no-op no pacote (1), aplicar sem backup (1).
+- **Achados do Codex no PR #523 (corrigidos):** o retrato agora é ordenado por id (o Postgres não garante a ordem e
+  o mesmo banco dava impressões diferentes → o aplicar recusaria à toa); a impressão das velas inclui volume e
+  `closeTime`.
+- **Achados do Codex no PR #524 (corrigidos, cada um com teste provado por mutação):** (1) o retrato era conferido
+  ANTES de pegar os locks — um scan do navegador podia gravar e soltar o lock nesse intervalo e a aplicação gravaria
+  sobre um estado não aprovado; agora o retrato é relido **já com os locks** (mudou → para sem gravar). (2) a
+  conferência pós-gravação lia os sinais tocados do retrato, que só traz os 5.000 mais recentes — um sinal antigo
+  tocado viraria um falso "parou no meio"; agora eles são lidos **pelo id**.
+- **Roteiro para o usuário:** `docs/claude/recovery-runbook.md`.
+- **Limites [honesto]:** um crash NO MEIO de um ativo deixa esse ativo sem cursor (o cursor é gravado ao fim de
+  cada ativo) — o roteiro manda NÃO rodar de novo e restaurar o backup; o timeout do job (170 min) mataria o
+  processo sem a mensagem (os locks vencem sozinhos em 40 min). Não há script de reversão dirigida (só o backup).
+

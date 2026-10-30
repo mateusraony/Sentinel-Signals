@@ -522,7 +522,9 @@ nunca deve receber nova transição.**
   (`createSnapshotBackend`) que decide a criação como o Postgres
   (`planTradeOpCreationSql`). Equivalência "sem parar ≡ queda + replay"
   provada em `recoveryReplay.test.js`. **Lock só com relógio real**
-  (`assertRealClock`): o lock usa `Date.now()`.
+  (`assertRealClock`): o lock usa `Date.now()`. Teste a seco e aplicar:
+  `scripts/recoveryDryRun.mjs`/`recoveryApply.mjs` (`recovery.yml`); roteiro
+  em `docs/claude/recovery-runbook.md`.
 
 - **Horário real do evento vs. horário de detecção** (item 107) — todo
   `_at` de saída (`stop_hit_at`/`tp1_hit_at`/`tp2_hit_at`/`closed_at`) é o

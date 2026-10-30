@@ -374,3 +374,17 @@ describe('buildTradeCreatedMessage — simulação manual marcada (item 278)', (
     }
   });
 });
+
+// Item 288: operação criada pelo replay de recuperação depois de uma queda longa do banco.
+// O replay em si não manda nada (só 1 resumo); mas as mensagens FUTURAS da operação
+// (TP1/TP2, stop, saídas, já com o scan ao vivo de volta) precisam dizer de onde ela veio.
+describe('mensagens de operação recuperada após pausa do banco (item 288)', () => {
+  const op = { id: 'trade_rec_1', symbol: 'ETHUSDT', side: 'SELL', timeframe: '4h', entry_price: 2400, initial_stop: 2450, tp1: 2325, tp2: 2250 };
+  it('toda mensagem de gestão da operação recuperada vem marcada; a do motor, não', () => {
+    const rec = { ...op, source: 'recovery', tp1_hit: true, current_stop: 2400, exit_price: 2450, status: 'STOP_HIT' };
+    for (const build of [buildTp1HitMessage, buildTp2HitMessage, buildStopHitMessage, buildInvalidatedMessage, buildTimeStopMessage, buildChopExitMessage]) {
+      expect(build(rec, 2401)).toMatch(/^♻️ <b>Recuperada após pausa do banco<\/b>/);
+      expect(build({ ...rec, source: undefined }, 2401)).not.toMatch(/♻️/);
+    }
+  });
+});

@@ -327,12 +327,19 @@ paths:
     lê o banco, reexecuta o motor vela a vela sobre a pausa numa loja em memória e publica o relatório em
     português no Job Summary + artefato `recovery-dry-run`.
   - **Nunca grava:** `DATABASE_URL_READONLY` quando existe + proxy que recusa escrita + loja em memória.
-  - **Nunca manda Telegram:** sem segredos do Telegram no job; o pacote (`scripts/build-recovery.mjs`, 7º alvo de
-    redirecionamento) silencia o scanner — travado por `scripts/recoveryTripwire.test.js`, que monta o pacote e
-    exige que não contenha `api.telegram.org`.
+  - **Teste a seco nunca manda Telegram:** sem segredos do Telegram nesse job; em qualquer modo o pacote
+    (`scripts/build-recovery.mjs`, 7º alvo de redirecionamento) põe o Telegram no-op no scanner — travado por
+    `scripts/recoveryTripwire.test.js`, que monta o pacote e confere o módulo empacotado.
   - **Para sozinho** se "Scheduled scan" ou "Backfill check" estiverem ligados (lê o estado pela API do GitHub,
     `actions: read`), sem StrategyConfig, com vela faltando na Binance ou banco ainda sem cota.
-  - O modo de **aplicar** vem no PR-R3, só com o número do teste a seco digitado pelo usuário.
+  - **Modo aplicar** (campo "O que fazer" = `aplicar` + número do teste a seco): job `backup`
+    (chama `backup-postgres.yml` via `workflow_call`) → job `apply` (`scripts/recoveryApply.mjs`): confere
+    aprovação (número = artefato baixado, ≤ 24 h), workflows pausados, retrato/configuração/velas iguais
+    aos do teste a seco e **política estrita** (refaz em memória até agora; evento novo → para sem gravar);
+    pega os locks `full-scan`/`price-check`; grava pelo mesmo motor; relê e compara; etiqueta; **1**
+    mensagem no Telegram (`notifyRecoverySummary`, sucesso ou falha). O número digitado só entra por
+    `env:`/`with:` e é validado (só dígitos) — nunca interpolado no shell.
+  - Roteiro para o usuário: `docs/claude/recovery-runbook.md`.
 
 - **Orçamento de computação do Neon (item 286, travado por
   `scripts/neonComputeBudget.test.js`):** todo workflow com `schedule:` que

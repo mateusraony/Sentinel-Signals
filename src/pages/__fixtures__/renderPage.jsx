@@ -117,6 +117,14 @@ export const LINHAS_EXEMPLO = {
       facts: { stop: 3100, stop_check_price: 3105 }, data_status: 'LIVE',
       evaluated_at: AGORA, market_time: AGORA, executor: 'cron',
     },
+  }, {
+    // Item 288: operação criada pelo replay de recuperação depois de uma queda do banco —
+    // exercita o selo "♻️ Recuperada" (TradeHistory) e o aviso no TradeCard.
+    id: 'op3', asset_id: 'a1', symbol: 'SOLUSDT', side: 'BUY',
+    status: 'SIGNAL_CONFIRMED', entry_price: 150, initial_stop: 145,
+    current_stop: 145, tp1: 157.5, tp2: 165, partial_percent: 50,
+    cascade: '4h_15m', created_date: HA_2H, candle_close_time: HA_2H,
+    source: 'recovery', recovery_run_id: '41000000000', recovery_detected_at: AGORA,
   }],
   PriceAlert: [{ id: 'p1', asset_id: 'a1', symbol: 'BTCUSDT', target_price: 65000, direction: 'above', is_active: true, created_date: HA_2H }],
   SystemLog: [{ id: 'l1', level: 'error', module: 'scanner', message: 'BTCUSDT falhou', symbol: 'BTCUSDT', created_date: HA_2H }],
