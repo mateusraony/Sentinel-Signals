@@ -33955,6 +33955,11 @@ selo "Recuperada", 1 resumo no Telegram, roteiro).
 - **Achados do Codex no PR #523 (corrigidos):** o retrato agora é ordenado por id (o Postgres não garante a ordem e
   o mesmo banco dava impressões diferentes → o aplicar recusaria à toa); a impressão das velas inclui volume e
   `closeTime`.
+- **Achados do Codex no PR #524 (corrigidos, cada um com teste provado por mutação):** (1) o retrato era conferido
+  ANTES de pegar os locks — um scan do navegador podia gravar e soltar o lock nesse intervalo e a aplicação gravaria
+  sobre um estado não aprovado; agora o retrato é relido **já com os locks** (mudou → para sem gravar). (2) a
+  conferência pós-gravação lia os sinais tocados do retrato, que só traz os 5.000 mais recentes — um sinal antigo
+  tocado viraria um falso "parou no meio"; agora eles são lidos **pelo id**.
 - **Roteiro para o usuário:** `docs/claude/recovery-runbook.md`.
 - **Limites [honesto]:** um crash NO MEIO de um ativo deixa esse ativo sem cursor (o cursor é gravado ao fim de
   cada ativo) — o roteiro manda NÃO rodar de novo e restaurar o backup; o timeout do job (170 min) mataria o

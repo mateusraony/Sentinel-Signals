@@ -246,6 +246,44 @@ describe('travas do modo aplicar (param ANTES de gravar)', () => {
   }, 180000);
 });
 
+describe('achados do Codex no PR #524', () => {
+  it('banco mexido ENTRE a 1ª conferência e os locks → para sem gravar nada da recuperação', async () => {
+    const live = await liveDb(FLIP + FIFTEEN_M);
+    const approved = await approve(live);
+    const [op] = await live.entities.TradeOperation.list();
+    // Um scan do navegador grava e solta o lock bem na hora em que a recuperação pega os locks.
+    let mexeu = false;
+    live.locks.acquireScanLock = async () => {
+      if (!mexeu) { mexeu = true; await live.entities.TradeOperation.update(op.id, { mfe_r: 9.99 }); }
+      return true;
+    };
+    const before = byId(await live.entities.TradeOperation.list());
+    const { deps: d, sent } = applyDeps(live, approved);
+    const out = await runApply(d);
+    expect(out).toMatchObject({ ok: false, code: 'snapshot_changed', wrote: false });
+    // Só a escrita do "scan" (mfe_r); nenhuma escrita da recuperação.
+    const onlyScan = before.map((o) => (o.id === op.id ? { ...o, mfe_r: 9.99 } : o));
+    expect(byId(await live.entities.TradeOperation.list())).toEqual(onlyScan);
+    expect(sent[0]).toMatch(/nada foi gravado/);
+  }, 180000);
+
+  it('sinal tocado fora dos 5.000 mais recentes não vira falsa "parou no meio" (lido pelo id)', async () => {
+    const live = await liveDb(FLIP + FIFTEEN_M);
+    const approved = await approve(live);
+    // Depois de gravar, a leitura "dos mais recentes" não traz os sinais novos (simula a janela de 5.000);
+    // a conferência precisa buscá-los pelo id.
+    const sig = live.entities.SignalEvent;
+    const rawList = sig.list;
+    let gravando = false;
+    const realTransition = live.tradeOps.transitionTradeOp;
+    live.tradeOps.transitionTradeOp = async (...a) => { gravando = true; return realTransition(...a); };
+    sig.list = async (...a) => (gravando && a.length ? [] : rawList(...a));
+    sig.get = async (id) => (await rawList()).find((r) => r.id === id) ?? null;
+    const out = await runApply(applyDeps(live, approved).deps);
+    expect(out.ok).toBe(true);
+  }, 180000);
+});
+
 describe('falha DEPOIS de começar a gravar', () => {
   it('a conferência pega o banco diferente da simulação e a mensagem diz "parou no meio"', async () => {
     const live = await liveDb(FLIP + FIFTEEN_M);

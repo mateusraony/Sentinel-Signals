@@ -80,6 +80,21 @@ export function createApplyBackend(real, snapshot) {
   return { backend: { entities, tradeOps, assetStates: mem.assetStates, locks: real.locks, quota: real.quota }, journal };
 }
 
+/** Linhas por id: usa `get` (Postgres) quando existe; senão uma leitura completa e filtra. */
+export async function fetchByIds(api, ids) {
+  if (!ids.length) return [];
+  if (typeof api.get === 'function') {
+    const rows = [];
+    for (const id of ids) {
+      const row = await api.get(id);
+      if (row) rows.push(row);
+    }
+    return rows;
+  }
+  const wanted = new Set(ids);
+  return (await api.list()).filter((r) => wanted.has(r.id));
+}
+
 function assertApproval({ approved, approvedRunId, nowMs }) {
   if (!approved || approved.version !== RECOVERY_ARTIFACT_VERSION || approved.mode !== 'dry-run' || approved.ok !== true) {
     throw new RecoveryAbort('approval_invalid', 'o resultado do teste a seco aprovado não foi encontrado ou está incompleto');
@@ -155,6 +170,12 @@ async function applyInner(deps, state) {
   const locks = liveBackend.locks;
   const held = await acquireLocks(locks, holder);
   try {
+    // Reconfere o banco JÁ COM os locks (achado do Codex no PR #524): entre a 1ª conferência e a
+    // tomada dos locks, um scan do navegador podia mudar o banco e soltar o lock — sem isto a
+    // aplicação gravaria sobre um estado não aprovado e só perceberia DEPOIS de gravar.
+    if (fingerprint(await readSnapshot(liveBackend)) !== approved.fingerprints.snapshot) {
+      throw new RecoveryAbort('snapshot_changed', 'o banco mudou enquanto a recuperação se preparava (scan ou painel aberto?) — nada foi gravado; rode um novo teste a seco');
+    }
     const apply = createApplyBackend(liveBackend, snapshot);
     for (const k of Object.keys(entitiesTarget)) delete entitiesTarget[k];
     Object.assign(entitiesTarget, apply.backend);
@@ -178,8 +199,10 @@ async function applyInner(deps, state) {
     const afterReal = await readSnapshot(liveBackend);
     const opsReal = byId(afterReal.TradeOperation);
     const opsSim = byId(sim.after.TradeOperation);
+    // Sinais tocados lidos PELO ID (achado do Codex no PR #524): o retrato só traz os 5.000 mais
+    // recentes, e um sinal tocado fora dessa janela viraria uma falsa "parou no meio".
     const touchedSignals = new Set([...sim.diff.signals.created, ...sim.diff.signals.changed.map((c) => c.after)].map((s) => s.id));
-    const sigReal = byId(afterReal.SignalEvent.filter((s) => touchedSignals.has(s.id)));
+    const sigReal = byId(await fetchByIds(liveBackend.entities.SignalEvent, [...touchedSignals]));
     const sigSim = byId(sim.after.SignalEvent.filter((s) => touchedSignals.has(s.id)));
     if (fingerprint(opsReal) !== fingerprint(opsSim) || fingerprint(sigReal) !== fingerprint(sigSim)) {
       const realById = new Map(opsReal.map((o) => [o.id, o]));
