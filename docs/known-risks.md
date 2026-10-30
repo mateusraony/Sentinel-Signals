@@ -33801,6 +33801,35 @@ baixa", e o que deixaria isso profissional.
   aviso T-60, vigia com aviso de depois em ~3-5 min, 2ª mensagem com o número, trava de texto contra
   "probabilidade/viés" (Fase 4).
 
+**Addendum 6 (2026-10-30, run 7) — as fontes novas respondem; o FRED é lento para o número; o `.ics` do BEA morreu.**
+- **Run 7 (10:46 UTC, versão `a17934b`) [fato]: APROVADO.** 4ª aprovação (19:39, 19:56, 01:57 e 10:46 UTC; a 1ª de manhã).
+  BLS `www` segue 403; `api.binance.com` 451 esperado; `data-api.binance.vision` OK; Medo e Ganância 30.
+- **FRED PPI/PCE [fato]:** release 46 = "Producer Price Index", 54 = "Personal Income and Outlays" (nomes batem).
+  Próximas datas oficiais: **PPI 13/11 e 15/12; PCE 25/11 e 23/12** (CPI 10/11 e 10/12; Payroll 06/11 e 04/12).
+- **Deribit DVOL [fato]:** `resolution=3600` funciona (a dúvida `resolution` × `vix_resolution` da doc acabou).
+  BTC 38,8 → ±0,41% em 1h, ±0,83% em 4h, ±2,03% em 24h; ETH 53,9 → ±0,58%, ±1,15%, ±2,82%.
+- **BEA [fato]:** o `.ics` do endereço antigo deu **404** e foi removido; a página do calendário responde e traz
+  "Personal Income and Outlays". Pesquisa não achou iCal oficial do BEA (só RSS e e-mail). Não há problema: o FRED já
+  dá as datas do PCE.
+- **Demora do FRED: as 4 linhas saíram "desconhecida" [fato] porque a âncora era a lista fixa, que só tem datas
+  futuras** (PPI/PCE nem entram nela). **Corrigido neste PR:** a âncora passa a ser a última data de `release/dates` do
+  próprio release (08:30 de Nova York, `nyToUtc` cuida de verão/inverno), lida numa 2ª requisição (`companion`) com a
+  mesma chave e o mesmo `scrub`; a lista fixa fica de reserva e a falha da 2ª requisição vira nota genérica (nunca
+  `err.message`, que cita a URL com a chave). Mais de 24 h continua "provavelmente revisão".
+- **Hipótese (NÃO é medição):** `last_updated` visto na run 7 foi PAYEMS 02/10 13:24 UTC, CPIAUCSL 14/10 13:08, PPIFIS
+  15/10 14:20 e PCEPI 29/10 12:43. **Se** essas foram as datas de divulgação (08:30 de Nova York = 12:30 UTC no horário
+  de verão), a demora do FRED seria ~54, ~38, ~110 e ~13 min. Se a próxima execução confirmar, o FRED **não** entrega o
+  número em 5 min: o aviso de "depois" fica só com preço (Binance) e operações, e o número oficial vai numa 2ª mensagem.
+- **BLS API [novo, a medir]:** fonte opcional `bls-api-v1-cpi` (`api.bls.gov/publicAPI/v1/...`, host diferente do
+  `www.bls.gov` que bloqueia o GitHub). Lê só o período mais recente (nunca o valor). A v1 não exige chave; o limite
+  diário de 25 consultas vem de fontes de terceiros — **não conferido na doc do BLS**, e a própria resposta avisa se
+  estourar. Pergunta que a execução responde: o host abre do GitHub? Rodar ~5 min e ~1 h depois do Payroll de 06/11
+  (08:30 em Nova York = 10:30 de Brasília) e do CPI de 10/11 mostra quando o período novo aparece. Se não servir, a
+  v2 (chave grátis) é a próxima opção; senão, aceitar a limitação.
+- **Provas:** 8 mutações, todas pegas por teste (âncora no dia do `last_updated`, horário de verão ignorado, data
+  futura como âncora, nota com `err.message`, 2ª requisição mesmo com a 1ª falha, 2ª requisição sem a chave, BLS
+  imprimindo o valor, BLS sem checar o status).
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 **Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,

@@ -8,7 +8,7 @@ import {
   validateIcs, validateFearGreed, validateRss, validateBinanceTicker, validateRawGithubCors,
   validateDefillamaChains, validateHtmlContains, extractRateLimit, contactEmail, buildUserAgent,
   collectIsoDates, validateFinanceCalendar, validateFredRelease, validateFredDates,
-  parseFredTimestamp, validateFredSeriesMeta, validateDeribitDvol, validateIcsWith,
+  parseFredTimestamp, fredReleaseInstants, validateFredSeriesMeta, validateDeribitDvol, validateBlsApi,
 } from './contextProbe.mjs';
 
 const src = (id) => SOURCES.find((s) => s.id === id);
@@ -267,13 +267,20 @@ describe('lista de fontes', () => {
         expect(s.url).toContain(`<${s.secretInUrl}>`);
         expect(s.needsEnv).toBe(s.secretInUrl);
       }
+      if (s.companion) {
+        // A 2ª requisição leva a chave do mesmo jeito: só o molde `<NOME>`, e só com `secretInUrl` declarado.
+        expect(s.companion.url.startsWith('https://')).toBe(true);
+        expect(s.secretInUrl, s.id).toBeTruthy();
+        expect(s.companion.url).toContain(`api_key=<${s.secretInUrl}>`);
+        expect(/key|token|secret/i.test(s.companion.url.replace(`api_key=<${s.secretInUrl}>`, '')), s.id).toBe(false);
+      }
     }
   });
 
-  it('as fontes novas (financecalendar, FRED, Deribit, BEA) são opcionais: não mudam o portão da fase', () => {
-    const novas = SOURCES.filter((s) => /^(financecalendar|fred|deribit|bea)-/.test(s.id));
+  it('as fontes novas (financecalendar, FRED, Deribit, BEA, BLS API) são opcionais: não mudam o portão da fase', () => {
+    const novas = SOURCES.filter((s) => /^(financecalendar|fred|deribit|bea|bls-api)-/.test(s.id));
     expect(novas.map((s) => s.id).sort()).toEqual([
-      'bea-calendar', 'bea-schedule-page', 'deribit-dvol-btc', 'deribit-dvol-eth',
+      'bea-schedule-page', 'bls-api-v1-cpi', 'deribit-dvol-btc', 'deribit-dvol-eth',
       'financecalendar-cpi', 'financecalendar-nfp',
       'fred-dates-cpi', 'fred-dates-nfp', 'fred-dates-pce', 'fred-dates-ppi',
       'fred-lag-cpi', 'fred-lag-nfp', 'fred-lag-pce', 'fred-lag-ppi',
@@ -416,6 +423,88 @@ describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
     expect(validateFredSeriesMeta('PAYEMS', 'NFP')({ body: JSON.stringify({ seriess: [{ id: 'PAYEMS', last_updated: 'ontem' }] }) }).ok).toBe(false);
   });
 
+  it('demora do FRED com as datas do próprio FRED: o caso real da run 7 (verão) e o inverno', () => {
+    const meta = (id, upd) => JSON.stringify({ seriess: [{ id, last_updated: upd, observation_end: '2026-09-01' }] });
+    const datas = (...d) => JSON.stringify({ release_dates: d.map((date) => ({ release_id: 1, date })) });
+    // Linhas reais da run 7 (30/10): last_updated em UTC-5 (horário de verão em St. Louis).
+    // 08:30 de Nova York em 02/10 = 12:30 UTC (EDT) → PAYEMS 13:24 UTC = 54 min.
+    const payems = validateFredSeriesMeta('PAYEMS', 'NFP')({ body: meta('PAYEMS', '2026-10-02 08:24:03-05'), companionBody: datas('2026-12-04', '2026-11-06', '2026-10-02', '2026-09-04') });
+    expect(payems.detail).toMatch(/54 min depois da divulgação de 2026-10-02 12:30 UTC \(datas do FRED\)/);
+    // PPI e PCE não estão na lista fixa: só as datas do FRED dão a âncora (110 e 13 min na run 7).
+    expect(validateFredSeriesMeta('PPIFIS', 'PPI')({ body: meta('PPIFIS', '2026-10-15 09:20:00-05'), companionBody: datas('2026-11-13', '2026-10-15') }).detail).toMatch(/110 min depois/);
+    expect(validateFredSeriesMeta('PCEPI', 'PCE')({ body: meta('PCEPI', '2026-10-29 07:43:00-05'), companionBody: datas('2026-11-25', '2026-10-29') }).detail).toMatch(/13 min depois da divulgação de 2026-10-29 12:30 UTC/);
+    // Inverno (depois de 01/11): 08:30 de Nova York = 13:30 UTC.
+    expect(validateFredSeriesMeta('PAYEMS', 'NFP')({ body: meta('PAYEMS', '2026-11-06 07:43:12-06'), companionBody: datas('2026-11-06') }).detail).toMatch(/13 min depois da divulgação de 2026-11-06 13:30 UTC/);
+    // Atualização no dia seguinte: a âncora segue sendo a divulgação (achado do Codex no #525).
+    expect(validateFredSeriesMeta('PAYEMS', 'NFP')({ body: meta('PAYEMS', '2026-11-07 07:35:00-06'), companionBody: datas('2026-11-06') }).detail).toMatch(/1445 min depois .* mais de 24 h/);
+    // Data FUTURA não é âncora: só existe divulgação marcada depois da atualização → desconhecida.
+    expect(validateFredSeriesMeta('PPIFIS', 'PPI')({ body: meta('PPIFIS', '2026-10-15 09:20:00-05'), companionBody: datas('2026-11-13') }).detail).toMatch(/demora: desconhecida/);
+  });
+
+  it('sem as datas do FRED: cai na lista fixa e diz por quê; datas inválidas não viram âncora', () => {
+    const meta = JSON.stringify({ seriess: [{ id: 'PAYEMS', last_updated: '2026-11-06 07:43:12-06', observation_end: '2026-10-01' }] });
+    const v = validateFredSeriesMeta('PAYEMS', 'NFP')({ body: meta, companionBody: null, companionNote: 'HTTP 503' });
+    expect(v.ok).toBe(true);
+    expect(v.detail).toMatch(/13 min depois da divulgação de 2026-11-06 13:30 UTC \(âncora do FRED indisponível: HTTP 503; usando a lista fixa\)/);
+    expect(fredReleaseInstants('{"release_dates":[{"date":"ontem"},{"date":"2026-13-45"},{}]}')).toBeNull();
+    expect(fredReleaseInstants('não é json')).toBeNull();
+    expect(fredReleaseInstants(null)).toBeNull();
+    expect(fredReleaseInstants(JSON.stringify({ release_dates: [{ date: '2026-11-06' }, { date: '2026-10-02' }] }))).toEqual([Date.parse('2026-10-02T12:30:00Z'), Date.parse('2026-11-06T13:30:00Z')]);
+  });
+
+  it('probeSource: a 2ª requisição (datas do FRED) leva a chave só na URL e nunca a deixa vazar', async () => {
+    const KEY = 'abcdef0123456789abcdef0123456789';
+    const seen = [];
+    const meta = JSON.stringify({ seriess: [{ id: 'PAYEMS', last_updated: '2026-10-02 08:24:03-05', observation_end: '2026-09-01' }] });
+    const datas = JSON.stringify({ release_dates: [{ date: '2026-10-02' }] });
+    const fetchImpl = async (url) => { seen.push(url); return new Response(url.includes('/release/dates') ? datas : meta, { status: 200 }); };
+    const r = await probeSource(src('fred-lag-nfp'), { fetchImpl, env: { FRED_API_KEY: KEY } });
+    expect(r.status).toBe('OK');
+    expect(r.detail).toMatch(/54 min depois da divulgação de 2026-10-02 12:30 UTC \(datas do FRED\)/);
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toContain('/series?series_id=PAYEMS');
+    expect(seen[1]).toContain('/release/dates?release_id=50');
+    for (const u of seen) expect(u).toContain(`api_key=${KEY}`);
+    expect(JSON.stringify(r)).not.toContain(KEY);
+    expect(formatProbeMarkdown([r], { startedAt: 'x', runner: 'y' })).not.toContain(KEY);
+  });
+
+  it('probeSource: 2ª requisição que falha com a chave na mensagem vira nota genérica; a linha continua OK', async () => {
+    const KEY = 'fedcba9876543210fedcba9876543210';
+    const meta = JSON.stringify({ seriess: [{ id: 'PAYEMS', last_updated: '2026-11-06 07:43:12-06', observation_end: '2026-10-01' }] });
+    const fetchImpl = async (url) => {
+      if (url.includes('/release/dates')) throw new Error(`falha ao abrir ${url}`);
+      return new Response(meta, { status: 200 });
+    };
+    const r = await probeSource(src('fred-lag-nfp'), { fetchImpl, env: { FRED_API_KEY: KEY } });
+    expect(r.status).toBe('OK');
+    expect(r.detail).toMatch(/âncora do FRED indisponível: erro de rede; usando a lista fixa/);
+    expect(JSON.stringify(r)).not.toContain(KEY);
+    // 1ª requisição com erro: nada de 2ª requisição.
+    const calls = [];
+    const r2 = await probeSource(src('fred-lag-nfp'), { fetchImpl: async (u) => { calls.push(u); return new Response('x', { status: 500 }); }, env: { FRED_API_KEY: KEY } });
+    expect(r2.status).toBe('FALHOU');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('BLS API: lê só o período mais recente (nunca o valor) e repassa a recusa do BLS', () => {
+    const ok = JSON.stringify({
+      status: 'REQUEST_SUCCEEDED', message: [],
+      Results: { series: [{ seriesID: 'CUSR0000SA0', data: [{ year: '2026', period: 'M09', periodName: 'September', latest: 'true', value: '123.456', footnotes: [{}] }, { year: '2026', period: 'M08', periodName: 'August', value: '122.0' }] }] },
+    });
+    const v = validateBlsApi('CUSR0000SA0')({ body: ok });
+    expect(v).toEqual({ ok: true, detail: 'CUSR0000SA0: período mais recente September 2026 (latest)' });
+    expect(v.detail).not.toContain('123.456');
+    const limite = JSON.stringify({ status: 'REQUEST_NOT_PROCESSED', message: ['Request could not be serviced, as the daily threshold for total number of requests allocated to the user has been reached.'], Results: {} });
+    expect(validateBlsApi('CUSR0000SA0')({ body: limite }).detail).toMatch(/BLS respondeu: Request could not be serviced.*daily threshold/);
+    expect(validateBlsApi('CUSR0000SA0')({ body: ok.replace('CUSR0000SA0', 'OUTRA') }).ok).toBe(false);
+    expect(validateBlsApi('CUSR0000SA0')({ body: JSON.stringify({ status: 'REQUEST_SUCCEEDED', Results: { series: [{ seriesID: 'CUSR0000SA0', data: [] }] } }) }).ok).toBe(false);
+    expect(validateBlsApi('CUSR0000SA0')({ body: HTML_ERROR }).ok).toBe(false);
+    // A fonte usa o host da API (não o www.bls.gov bloqueado) e é opcional.
+    expect(src('bls-api-v1-cpi').url).toMatch(/^https:\/\/api\.bls\.gov\/publicAPI\/v1\/timeseries\/data\/CUSR0000SA0$/);
+    expect(src('bls-api-v1-cpi').required).toBe(false);
+  });
+
   it('Deribit DVOL: último fechamento vira a faixa de 1 desvio em 1h/4h/24h', () => {
     const now = Date.parse('2026-10-30T12:10:00Z');
     const row = (ts, c) => [ts, c - 1, c + 1, c - 2, c];
@@ -440,13 +529,6 @@ describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
     expect(r.status).toBe('OK');
     expect(seenUrl).toContain(`start_timestamp=${now - 6 * 3600000}&end_timestamp=${now}`);
     expect(r.url).toContain('start_timestamp=<agora-6h>&end_timestamp=<agora>');
-  });
-
-  it('BEA .ics: só passa com evento do PCE (Personal Income)', () => {
-    const ics = (s) => `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:${s}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
-    expect(validateIcsWith('Personal Income')({ body: ics('Personal Income and Outlays, September 2026') })).toEqual({ ok: true, detail: '1 eventos; 1 com "Personal Income"' });
-    expect(validateIcsWith('Personal Income')({ body: ics('GDP (Advance Estimate)') }).ok).toBe(false);
-    expect(validateIcsWith('Personal Income')({ body: HTML_ERROR }).ok).toBe(false);
   });
 
   it('erro de rede que cita a URL (com a chave) é limpo antes de virar resultado', async () => {
