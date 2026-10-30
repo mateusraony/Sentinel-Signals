@@ -644,6 +644,13 @@ export async function notifyHealthAudit(titulo, linhas, url) {
 // Relatório diário da regra EMA 10/21 + Supertrend (docs/known-risks.md item
 // 275, scripts/daily-rule-report.mjs). O corpo já chega pronto e escapado de
 // scripts/dailyRuleReport.mjs; aqui só o envio, pelo mesmo send() do canal 24h.
+// Replay de recuperação (docs/known-risks.md item 288): a ÚNICA mensagem de uma aplicação —
+// com sucesso ou falha. O replay em si nunca notifica (o scanner fica mudo no pacote).
+// Texto simples (gerado por formatRecoverySummary), escapado e em bloco fixo.
+export async function notifyRecoverySummary(text) {
+  return send(`♻️ <b>Recuperação após pausa do banco</b>\n\n<pre>${escaparHtml(text)}</pre>`);
+}
+
 export async function notifyDailyRuleReport(html) {
   return send(html).catch((e) => {
     console.warn('[adminTelegram] Falha ao enviar o relatório diário da regra:', e.message);

@@ -1,24 +1,37 @@
-name: Recuperação após pausa do banco (teste a seco)
+name: Recuperação após pausa do banco
 
 # docs/known-risks.md item 288 — replay de recuperação depois de uma queda longa do banco.
 # O ao vivo só olha a última vela; depois de dias parado ele fecharia operações no preço de
 # hoje e perderia stops/alvos/sinais da pausa. Este workflow reexecuta o MESMO motor vela a
-# vela sobre a pausa.
+# vela sobre a pausa. Roteiro completo para o usuário: docs/claude/recovery-runbook.md.
 #
-# Modo TESTE A SECO (o único deste PR): lê o banco e simula tudo numa loja em memória.
-# NÃO grava no banco (DATABASE_URL_READONLY quando existe + proxy que recusa escrita) e NÃO
-# manda Telegram (sem os segredos do Telegram aqui; o bundle silencia o scanner).
-# Antes de rodar: "Scheduled scan" e "Backfill check" DESATIVADOS e nenhuma aba do painel
-# aberta — o próprio job confere os dois workflows e para se algum estiver ligado.
+# Modo "teste-a-seco": lê o banco e simula tudo numa loja em memória. NÃO grava (role só-leitura
+# + proxy que recusa escrita) e NÃO manda Telegram (sem os segredos do Telegram neste job).
+# Modo "aplicar": SÓ com o número de um teste a seco lido e aprovado. Faz backup antes, confere
+# que nada mudou desde o teste a seco, grava pelo mesmo motor e manda UMA mensagem no Telegram.
+# Os dois modos param sozinhos se "Scheduled scan" ou "Backfill check" estiverem ligados.
 #
-# Disparo só manual. Sem `schedule:` de propósito (cada execução acorda o Neon por minutos).
+# Disparo só manual. Sem `schedule:` de propósito (cada execução acorda o Neon).
 
 on:
   workflow_dispatch:
+    inputs:
+      modo:
+        description: "O que fazer: teste-a-seco (só simula, não grava nada) ou aplicar (grava — só depois de ler o relatório do teste a seco)"
+        type: choice
+        options:
+          - teste-a-seco
+          - aplicar
+        default: teste-a-seco
+      numero_teste:
+        description: "Só para aplicar: o número do teste a seco que você leu e aprovou (aparece no fim do relatório dele)"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
-  actions: read # ler o estado dos workflows (scan/backfill precisam estar desativados)
+  actions: read # ler o estado dos workflows e baixar o resultado do teste a seco aprovado
 
 concurrency:
   group: recovery
@@ -26,6 +39,7 @@ concurrency:
 
 jobs:
   dry-run:
+    if: inputs.modo == 'teste-a-seco'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -56,3 +70,58 @@ jobs:
           path: recovery-dry-run.json
           if-no-files-found: ignore
           retention-days: 30
+
+  # Backup do banco ANTES de aplicar (mesmo workflow do backup diário, no repo privado).
+  backup:
+    if: inputs.modo == 'aplicar'
+    uses: ./.github/workflows/backup-postgres.yml
+    secrets: inherit
+
+  apply:
+    if: inputs.modo == 'aplicar'
+    needs: backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Conferir o número do teste a seco
+        env:
+          NUMERO_TESTE: ${{ inputs.numero_teste }}
+        run: |
+          [[ "$NUMERO_TESTE" =~ ^[0-9]+$ ]] || { echo "::error::Digite o número do teste a seco aprovado (só números; está no fim do relatório dele)."; exit 1; }
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Baixar o resultado do teste a seco aprovado
+        uses: actions/download-artifact@v4
+        with:
+          name: recovery-dry-run
+          run-id: ${{ inputs.numero_teste }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: approved
+
+      - name: Aplicar a recuperação
+        run: npm run recovery -- --mode=apply --approved approved/recovery-dry-run.json --out recovery-apply.json
+        env:
+          NUMERO_TESTE: ${{ inputs.numero_teste }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_SSL_CA: ${{ secrets.DATABASE_SSL_CA }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Só o job de aplicar manda mensagem: UMA, com o resumo (sucesso ou falha).
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Guardar o resultado da aplicação
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery-apply
+          path: recovery-apply.json
+          if-no-files-found: ignore
+          retention-days: 90

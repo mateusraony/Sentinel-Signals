@@ -2,21 +2,26 @@
 // Replay de recuperação depois de queda longa do banco (docs/known-risks.md item 288).
 // Uso (no GitHub Actions, workflow .github/workflows/recovery.yml):
 //   node scripts/dist/run-recovery.mjs --mode=dry-run --out recovery-dry-run.json
+//   NUMERO_TESTE=<id> node scripts/dist/run-recovery.mjs --mode=apply --approved <arquivo> --out recovery-apply.json
 //
-// Modo `dry-run` (TESTE A SECO): lê o banco (DATABASE_URL_READONLY se existir), roda o
-// replay numa loja em memória e escreve o relatório no Job Summary + um JSON. NUNCA grava
-// no banco e NUNCA manda Telegram (o bundle redireciona o Telegram do scanner para no-op e
-// este arquivo não importa o remetente real). O modo de aplicar vem no PR-R3.
+// `dry-run` (TESTE A SECO): lê o banco (DATABASE_URL_READONLY se existir), roda o replay numa
+// loja em memória e escreve o relatório. NUNCA grava e NUNCA manda Telegram.
+// `apply` (APLICAR): só com o número do teste a seco aprovado pelo usuário (NUMERO_TESTE) e o
+// artefato dele. Confere que nada mudou, grava pelo mesmo motor e manda UMA mensagem no
+// Telegram (sucesso ou falha). O scanner fica mudo nos dois modos (pacote com backtestTelegram).
 import fs from 'node:fs';
 import { backend as liveBackend } from './adminEntities.js';
 import { getPineConfig, getPineConfigStatus } from './adminPineConfig.js';
+import { notifyRecoverySummary } from './adminTelegram.js';
 import { backend as entitiesTarget } from './recoveryEntities.js';
 import { runDryRun, formatDryRunMarkdown, formatAbortMarkdown } from './recoveryDryRun.mjs';
+import { runApply, formatApplyMarkdown } from './recoveryApply.mjs';
 import { exportSeries } from './recoveryMarketDataProvider.js';
 import { isDatabaseQuotaExhausted } from './failureClassification.mjs';
 import { withTimeout, forceExit } from './scanTimeout.mjs';
 
 const DRY_RUN_TIMEOUT_MS = 25 * 60 * 1000;
+const APPLY_TIMEOUT_MS = 170 * 60 * 1000;
 
 function parseArgs(argv) {
   const out = {};
@@ -46,17 +51,15 @@ function writeSummary(markdown) {
   if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${markdown}\n`);
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  if (args.mode !== 'dry-run') {
-    writeSummary(formatAbortMarkdown(new Error(`modo "${args.mode}" não existe ainda — só "dry-run" (teste a seco)`)));
-    return 1;
-  }
+const friendly = (err) => (isDatabaseQuotaExhausted(String(err?.message ?? err))
+  ? Object.assign(new Error('o banco (Neon) ainda está sem cota de computação — rode de novo depois da renovação do mês'), { code: 'db_quota' })
+  : err);
+
+async function dryRun(args) {
   // Contrato só-leitura (mesmo mecanismo de health-audit.mjs, item 179): getPool() lê
   // process.env.DATABASE_URL na 1ª consulta, então a troca vale para tudo daqui em diante.
   const readonly = Boolean(process.env.DATABASE_URL_READONLY);
   if (readonly) process.env.DATABASE_URL = process.env.DATABASE_URL_READONLY;
-
   try {
     const workflows = await fetchWorkflowStates();
     const result = await withTimeout(runDryRun({
@@ -66,19 +69,47 @@ async function main() {
     let md = formatDryRunMarkdown(result);
     if (!readonly) md += '\n\n> Aviso: rodou sem a credencial só-leitura (DATABASE_URL_READONLY). Mesmo assim nada foi gravado: o retrato foi lido por um proxy que recusa escrita.';
     writeSummary(md);
-    if (typeof args.out === 'string') {
-      const { journal, ...rest } = result;
-      fs.writeFileSync(args.out, JSON.stringify({ version: 1, ...rest, journal, candles: exportSeries() }));
-    }
+    if (typeof args.out === 'string') fs.writeFileSync(args.out, JSON.stringify({ ...result, candles: exportSeries() }));
     return 0;
   } catch (err) {
-    const message = String(err?.message ?? err);
-    const friendly = isDatabaseQuotaExhausted(message)
-      ? Object.assign(new Error('o banco (Neon) ainda está sem cota de computação — rode de novo depois da renovação do mês'), { code: 'db_quota' })
-      : err;
-    writeSummary(formatAbortMarkdown(friendly));
+    writeSummary(formatAbortMarkdown(friendly(err)));
     return 1;
   }
+}
+
+async function apply(args) {
+  const approvedRunId = String(process.env.NUMERO_TESTE ?? '').trim();
+  let approved = null;
+  try {
+    if (typeof args.approved === 'string') approved = JSON.parse(fs.readFileSync(args.approved, 'utf8'));
+  } catch { approved = null; }
+  let workflows = [];
+  try {
+    workflows = await fetchWorkflowStates();
+  } catch (err) {
+    workflows = []; // assertLiveScanPaused recusa lista vazia — a falha vira a mensagem única abaixo
+    console.error(err?.message ?? err);
+  }
+  const outcome = await withTimeout(runApply({
+    liveBackend, workflows, entitiesTarget, getPineConfig, getPineConfigStatus,
+    nowMs: Date.now(), runId: String(process.env.GITHUB_RUN_ID || `local-${Date.now()}`),
+    approved, approvedRunId,
+    sendSummary: notifyRecoverySummary,
+  }), APPLY_TIMEOUT_MS, 'aplicação da recuperação');
+  writeSummary(formatApplyMarkdown(outcome));
+  if (typeof args.out === 'string') {
+    const { error, ...rest } = outcome;
+    fs.writeFileSync(args.out, JSON.stringify({ ...rest, error: error ? { code: error.code ?? null, message: String(error.message ?? error) } : null }));
+  }
+  return outcome.ok ? 0 : 1;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.mode === 'dry-run') return dryRun(args);
+  if (args.mode === 'apply') return apply(args);
+  writeSummary(formatAbortMarkdown(new Error(`modo "${args.mode}" não existe — use "dry-run" (teste a seco) ou "apply" (aplicar)`)));
+  return 1;
 }
 
 main().then((code) => forceExit(code), (err) => { console.error(err); forceExit(1); });

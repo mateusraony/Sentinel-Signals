@@ -116,6 +116,14 @@ function manualPrefix(op) {
   return `🧪 <b>Simulação manual</b> — entrada criada no painel, sem os filtros do motor. Fica fora da medição do motor.\n\n`;
 }
 
+// Item 288: operação criada pelo replay de recuperação (`source: 'recovery'`) — o motor
+// decidiu, mas durante uma pausa do banco; ninguém recebeu o aviso na hora. Vai em TODA
+// mensagem futura da operação (TP1/TP2, stop, saídas), igual à simulação manual.
+function recoveryPrefix(op) {
+  if (op.source !== 'recovery') return '';
+  return `♻️ <b>Recuperada após pausa do banco</b> — reconstruída pelas mesmas regras do motor; fica fora da medição do motor.\n\n`;
+}
+
 // Auditoria do Telegram (2026-09-29), Fase 2 item 2.5/2.6 — "resultado final
 // legível em encerramentos": entrada, saída, resultado já CALCULADO por
 // tradeMetrics.js (nunca recomputado aqui — regra inegociável do plano),
@@ -316,7 +324,7 @@ export function buildTradeCreatedMessage(op) {
   const dir = op.side === 'BUY' ? 'COMPRA' : 'VENDA';
   const tfLabel = op.timeframe === '15m' ? '15m (entrada 4h)' : op.timeframe?.toUpperCase();
   return (
-    manualPrefix(op) +
+    manualPrefix(op) + recoveryPrefix(op) +
     backfillPrefix(op) +
     `${stageHeader('ENTRY_CONFIRMED')} — ${dir}\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${tfLabel}\n\n` +
@@ -343,7 +351,7 @@ export function buildTp1HitMessage(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   const fullClose = closesFullyAtTp1(op);
   return (
-    manualPrefix(op) +
+    manualPrefix(op) + recoveryPrefix(op) +
     `${stageHeader('TP1_HIT')}!\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     // Sem runner (known-risks item 46) o TP1 é saída TERMINAL — anunciar
@@ -367,7 +375,7 @@ export function buildTp1HitMessage(op, price) {
 export function buildTp2HitMessage(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return (
-    manualPrefix(op) +
+    manualPrefix(op) + recoveryPrefix(op) +
     `${stageHeader('TP2_HIT')}!\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     `🏁 Situação: operação encerrada — alvo final atingido.\n\n` +
@@ -387,7 +395,7 @@ export function buildStopHitMessage(op, price) {
   const stage = STOP_HIT_STAGE[outcome] ?? NOTIFICATION_STAGES.STOP_LOSS;
   const { why, evidence } = explainOperationDecision(op);
   return (
-    manualPrefix(op) +
+    manualPrefix(op) + recoveryPrefix(op) +
     `${stage.emoji} <b>${stage.label}</b>\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     `${stage.emoji} Situação: operação encerrada pelo stop` + (outcome === 'BE' ? ', sem prejuízo.' : outcome === 'WIN' ? ', com lucro já travado.' : '.') + '\n\n' +
@@ -407,7 +415,7 @@ export function buildInvalidatedMessage(op, price) {
   const stageMsg = op.tp1_hit ? '(após TP1 — parcial já realizada)' : '(pré-TP1)';
   const { why, evidence } = explainOperationDecision(op);
   return (
-    manualPrefix(op) +
+    manualPrefix(op) + recoveryPrefix(op) +
     `${stageHeader('INVALIDATED')} ${stageMsg}\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     `⚠️ Situação: operação encerrada — a condição que sustentava a entrada deixou de ser válida.\n\n` +
@@ -425,7 +433,7 @@ export function buildInvalidatedMessage(op, price) {
 export function buildTimeStopMessage(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return (
-    manualPrefix(op) +
+    manualPrefix(op) + recoveryPrefix(op) +
     `${stageHeader('TIME_STOP')}\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     `⏱️ Situação: operação encerrada — prazo máximo sem atingir TP1 expirou.\n\n` +
@@ -443,7 +451,7 @@ export function buildTimeStopMessage(op, price) {
 export function buildChopExitMessage(op, price) {
   const { why, evidence } = explainOperationDecision(op);
   return (
-    manualPrefix(op) +
+    manualPrefix(op) + recoveryPrefix(op) +
     `${stageHeader('CHOP_EXIT')}\n\n` +
     `<b>${escaparHtml(op.symbol?.replace('USDT', '/USDT'))}</b> | ${op.side} | ${op.timeframe?.toUpperCase()}\n\n` +
     `🌊 Situação: operação encerrada — mercado ficou lateralizado (choppiness alto).\n\n` +

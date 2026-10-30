@@ -6,6 +6,10 @@
  *    grava `source: 'manual'`) — pula os filtros de entrada do motor;
  *  - `backfill`: reconstruída do histórico ao adicionar/reativar o ativo
  *    (item 137) — não foi vivida em tempo real;
+ *  - `recovery`: criada pelo replay de recuperação depois de uma queda longa do
+ *    banco (item 288) — o motor decidiu, mas ninguém recebeu o aviso na hora
+ *    (decisão do usuário, 29/10: fica fora, como a retroativa). Operação ANTIGA
+ *    que o replay só encerrou continua contando (não ganha `source`);
  *  - `edited`: encerrada à mão pelo painel (Trades: diálogo de edição,
  *    botões Encerrar e Invalidar), que gravam um dos `MANUAL_CLOSE_REASONS`
  *    em `closed_reason` — o resultado não é do motor.
@@ -16,7 +20,7 @@ export const MANUAL_CLOSE_REASON = 'Encerrado manualmente';
 export const MANUAL_INVALIDATE_REASON = 'Invalidado manualmente';
 export const MANUAL_CLOSE_REASONS = Object.freeze([MANUAL_EDIT_REASON, MANUAL_CLOSE_REASON, MANUAL_INVALIDATE_REASON]);
 
-export const PROVENANCE = Object.freeze({ ENGINE: 'engine', MANUAL: 'manual', BACKFILL: 'backfill', EDITED: 'edited' });
+export const PROVENANCE = Object.freeze({ ENGINE: 'engine', MANUAL: 'manual', BACKFILL: 'backfill', RECOVERY: 'recovery', EDITED: 'edited' });
 
 export function operationProvenance(op) {
   if (op?.source === 'manual') return PROVENANCE.MANUAL;
@@ -24,6 +28,7 @@ export function operationProvenance(op) {
   // (decisionSnapshot.js) — marca estruturada, aceita junto do texto.
   if (MANUAL_CLOSE_REASONS.includes(op?.closed_reason) || op?.decision_snapshot?.executor === 'manual') return PROVENANCE.EDITED;
   if (op?.source === 'backfill') return PROVENANCE.BACKFILL;
+  if (op?.source === 'recovery') return PROVENANCE.RECOVERY;
   return PROVENANCE.ENGINE;
 }
 
@@ -33,16 +38,20 @@ export const PROVENANCE_LABEL = Object.freeze({
     tag: '🧪 Simulação',
     banner: '🧪 Simulação manual — entrada criada por você no painel, sem os filtros do motor. Operação virtual: nenhuma ordem foi enviada à corretora. Fica fora da medição do motor (Confiança ao Vivo e comparação com o histórico).',
   },
+  [PROVENANCE.RECOVERY]: {
+    tag: '♻️ Recuperada',
+    banner: '♻️ Recuperada após pausa do banco — o Sentinel ficou sem banco e, na volta, reprocessou as velas do período com as mesmas regras do motor. Esta operação deveria ter aberto durante a pausa; stop e alvo foram marcados no fechamento da vela. Você não recebeu o aviso na hora, por isso fica fora da medição do motor (Confiança ao Vivo e comparação com o histórico).',
+  },
   [PROVENANCE.EDITED]: {
     tag: '✏️ Encerrada à mão',
     banner: '✏️ Encerrada à mão — pelo painel (Encerrar, Invalidar ou edição); o resultado não é do motor. Fica fora da medição do motor (Confiança ao Vivo e comparação com o histórico).',
   },
 });
 
-/** `{ engine, excluded: { manual, backfill, edited, total } }` */
+/** `{ engine, excluded: { manual, backfill, recovery, edited, total } }` */
 export function splitByProvenance(ops) {
   const engine = [];
-  const excluded = { manual: 0, backfill: 0, edited: 0, total: 0 };
+  const excluded = { manual: 0, backfill: 0, recovery: 0, edited: 0, total: 0 };
   for (const op of ops ?? []) {
     const p = operationProvenance(op);
     if (p === PROVENANCE.ENGINE) { engine.push(op); continue; }
@@ -60,6 +69,7 @@ export function provenanceExclusionText(excluded) {
   const parts = [];
   if (excluded.manual) parts.push(plural(excluded.manual, 'simulação manual', 'simulações manuais'));
   if (excluded.backfill) parts.push(plural(excluded.backfill, 'retroativa', 'retroativas'));
+  if (excluded.recovery) parts.push(plural(excluded.recovery, 'recuperada após pausa', 'recuperadas após pausa'));
   if (excluded.edited) parts.push(plural(excluded.edited, 'encerrada à mão', 'encerradas à mão'));
   return `Fora da conta: ${parts.join(' · ')}`;
 }

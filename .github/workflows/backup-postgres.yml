@@ -37,6 +37,9 @@ on:
     # backup, não sobre o atraso do GitHub Actions em si).
     - cron: "37 3 * * *"
   workflow_dispatch: {}
+  # Chamado também pelo recovery.yml (modo aplicar, docs/known-risks.md item 288): backup
+  # logo ANTES de a recuperação gravar no banco. Mesmo job, mesmo destino (repo privado).
+  workflow_call: {}
 
 permissions:
   contents: read

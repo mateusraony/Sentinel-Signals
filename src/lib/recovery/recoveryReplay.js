@@ -198,9 +198,11 @@ export function runBacktestTo(window) {
 /**
  * Roda o replay ativo por ativo (um runBacktest por ativo, cada um com a sua janela).
  * Para tudo na primeira falha de integridade (falha de busca/erro de scan no meio do replay).
- * @param {{ assets: object[], windows: Record<string, object>, pineConfig?: object, onAsset?: Function, runBacktestImpl?: Function }} opts
+ * `onAsset`/`onAssetDone` rodam FORA do relógio simulado (antes/depois de cada runBacktest) —
+ * é onde o modo aplicar renova o lock e grava o cursor do ativo.
+ * @param {{ assets: object[], windows: Record<string, object>, pineConfig?: object, onAsset?: Function, onAssetDone?: Function, runBacktestImpl?: Function }} opts
  */
-export async function runRecoveryReplay({ assets, windows, pineConfig = {}, onAsset, runBacktestImpl = runBacktest }) {
+export async function runRecoveryReplay({ assets, windows, pineConfig = {}, onAsset, onAssetDone, runBacktestImpl = runBacktest }) {
   const results = [];
   for (const asset of assets) {
     const w = windows?.[asset.id];
@@ -216,7 +218,9 @@ export async function runRecoveryReplay({ assets, windows, pineConfig = {}, onAs
     if (integrity && integrity.valid === false) {
       throw new RecoveryAbort('replay_integrity', `${asset.symbol}: o replay teve falha de busca ou erro de scan — nada deve ser aplicado`, { assetId: asset.id, integrity });
     }
-    results.push({ assetId: asset.id, symbol: asset.symbol, fromMs: w.fromMs, toMs: w.toMs, ticks: w.ticks, integrity: integrity ?? null });
+    const done = { assetId: asset.id, symbol: asset.symbol, fromMs: w.fromMs, toMs: w.toMs, ticks: w.ticks, integrity: integrity ?? null };
+    results.push(done);
+    if (onAssetDone) await onAssetDone(asset, w, done);
   }
   return results;
 }
