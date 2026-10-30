@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const ler = (arquivo) => readFileSync(join(AQUI, arquivo), 'utf8');
 
-const PONTOS_DE_ENTRADA = ['run-scan.mjs', 'run-backfill-check.mjs'];
+const PONTOS_DE_ENTRADA = ['run-scan.mjs', 'run-backfill-check.mjs', 'run-recovery.mjs'];
 
 describe('classificação de falha centralizada', () => {
   it.each(PONTOS_DE_ENTRADA)('%s não classifica cota por conta própria', (arquivo) => {

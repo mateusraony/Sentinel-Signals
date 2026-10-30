@@ -22,6 +22,8 @@
     "backtest": "npm run build:backtest && node scripts/dist/run-backtest.mjs",
     "build:backfill": "node scripts/build-backfill.mjs",
     "backfill-check": "npm run build:backfill && node scripts/dist/run-backfill-check.mjs",
+    "build:recovery": "node scripts/build-recovery.mjs",
+    "recovery": "npm run build:recovery && node scripts/dist/run-recovery.mjs",
     "health-audit": "node scripts/health-audit.mjs",
     "test:coverage": "vitest run --coverage.enabled --coverage.provider=v8 --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.include='src/**/*.{js,jsx}' --coverage.include='scripts/**/*.{js,mjs}' --coverage.include='server/**/*.js' --coverage.exclude='**/*.test.*' --coverage.exclude='**/__fixtures__/**' --coverage.exclude='scripts/dist/**' --coverage.exclude='src/components/ui/**'",
     "typecheck:ratchet": "node scripts/typecheck-ratchet.mjs",

@@ -33917,3 +33917,20 @@ alvo); usa a configuração ATUAL da estratégia; o "zero Telegram durante o rep
 bundle (provado no PR-R2, não aqui). Pendente: PR-R2 (workflow do teste a seco, só leitura) e PR-R3 (aplicar,
 selo "Recuperada", 1 resumo no Telegram, roteiro).
 
+**Addendum (PR-R2, 2026-10-29) — workflow do teste a seco (só leitura).**
+- `.github/workflows/recovery.yml` (manual) → `scripts/run-recovery.mjs --mode=dry-run` → `scripts/recoveryDryRun.mjs`
+  (orquestração com dependências injetadas, testável sem rede/banco). Retrato: entidades inteiras, exceto
+  `SignalEvent` (5.000 mais recentes, com trava `assertSignalsCover`: precisam alcançar 1 dia antes do início) e
+  `SystemLog` (fora — logs não decidem nada). Velas: `scripts/recoveryMarketDataProvider.js` baixa TUDO antes do
+  relógio simulado (aquecimento por timeframe), confere buracos e entrega `limite − 1` fechadas como o ao vivo.
+  Ativo esperando a checagem retroativa fica de fora (avisado). Relatório em português + impressões digitais
+  (retrato, velas, configuração, resultado) para o modo aplicar conferir que nada mudou.
+- **Provas [verificado]:** teste ponta a ponta com o provedor REAL da recuperação: o teste a seco chega ao mesmo
+  resultado de rodar sem parar e não escreve nada no "banco"; para ANTES de ler o banco com o backfill ligado;
+  para sem StrategyConfig e com vela faltando; dois testes a seco = mesmas impressões digitais. O pacote montado não
+  contém `api.telegram.org` (mutação: tirar o silenciador do Telegram reprova o teste).
+- **Armadilha de teste achada:** importar o provedor real dentro da fábrica do `vi.mock` trava (dependência
+  circular backtestEngine → scanner → módulo mockado); resolvido com delegação preguiçosa (`vi.hoisted`).
+- **Passos do usuário antes de rodar:** desativar "Backfill check" (o "Scheduled scan" já está desativado), manter o
+  cron-job.org pausado e nenhuma aba do painel aberta; rodar só depois que o Neon voltar.
+

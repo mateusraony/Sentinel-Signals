@@ -1,0 +1,58 @@
+name: Recuperação após pausa do banco (teste a seco)
+
+# docs/known-risks.md item 288 — replay de recuperação depois de uma queda longa do banco.
+# O ao vivo só olha a última vela; depois de dias parado ele fecharia operações no preço de
+# hoje e perderia stops/alvos/sinais da pausa. Este workflow reexecuta o MESMO motor vela a
+# vela sobre a pausa.
+#
+# Modo TESTE A SECO (o único deste PR): lê o banco e simula tudo numa loja em memória.
+# NÃO grava no banco (DATABASE_URL_READONLY quando existe + proxy que recusa escrita) e NÃO
+# manda Telegram (sem os segredos do Telegram aqui; o bundle silencia o scanner).
+# Antes de rodar: "Scheduled scan" e "Backfill check" DESATIVADOS e nenhuma aba do painel
+# aberta — o próprio job confere os dois workflows e para se algum estiver ligado.
+#
+# Disparo só manual. Sem `schedule:` de propósito (cada execução acorda o Neon por minutos).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read # ler o estado dos workflows (scan/backfill precisam estar desativados)
+
+concurrency:
+  group: recovery
+  cancel-in-progress: false
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Teste a seco da recuperação
+        run: npm run recovery -- --mode=dry-run --out recovery-dry-run.json
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Role só com SELECT (item 179). Quando existe, vira a conexão do job inteiro.
+          DATABASE_URL_READONLY: ${{ secrets.DATABASE_URL_READONLY }}
+          # Certificado da autoridade do banco (item 282): vazio = comportamento de sempre.
+          DATABASE_SSL_CA: ${{ secrets.DATABASE_SSL_CA }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Guardar o resultado do teste a seco
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery-dry-run
+          path: recovery-dry-run.json
+          if-no-files-found: ignore
+          retention-days: 30
