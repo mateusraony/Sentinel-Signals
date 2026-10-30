@@ -11,6 +11,7 @@
 // da Fase 2) nem os termos de uso — esses estão em docs/known-risks.md item 284.
 
 import { compareWithFixedList, formatComparison, calendarEvents, US_RELEASES } from './contextCalendar.mjs';
+import { nyToUtc } from './contextTime.mjs';
 
 export const USER_AGENT = 'SentinelSignals-ContextProbe/1.0 (+https://github.com/mateusraony/Sentinel-Signals)';
 
@@ -208,17 +209,38 @@ export function parseFredTimestamp(text) {
 }
 
 /**
+ * Instantes de divulgação (UTC) a partir de `release/dates` do FRED: cada data às `releaseTimeNy`
+ * de Nova York (`nyToUtc` trata verão/inverno). Devolve em ordem crescente, ou null se o corpo
+ * não tem nenhuma data válida.
+ */
+export function fredReleaseInstants(body, releaseTimeNy = '08:30') {
+  const j = tryJson(body ?? '');
+  if (j.error) return null;
+  const rows = j.value?.release_dates;
+  if (!Array.isArray(rows)) return null;
+  const out = [];
+  for (const r of rows) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(r?.date ?? ''))) continue;
+    try { out.push(nyToUtc(r.date, releaseTimeNy).ms); } catch { /* data impossível: ignora */ }
+  }
+  return out.length ? out.sort((a, b) => a - b) : null;
+}
+
+/**
  * FRED: quando a série foi atualizada (metadado — nenhum valor da série é lido nem impresso;
  * os termos do FRED não permitem repassar os dados). Mede a DEMORA do FRED em relação à
- * divulgação oficial AGENDADA (lista fixa, só datas confirmadas): é o que decide se o número
- * oficial chega a tempo do aviso de "depois do evento" (item 285, addendum 5). Ancorar no dia do
- * próprio `last_updated` apagaria um atraso de um dia para o outro (achado do Codex no PR #525).
- * Sem divulgação agendada conhecida antes da atualização (ex.: PPI/PCE, fora da lista) → "desconhecida".
+ * divulgação oficial AGENDADA: é o que decide se o número oficial chega a tempo do aviso de
+ * "depois do evento" (item 285, addendum 5/6).
+ *
+ * Âncora = a última data de `release/dates` do mesmo release cujo instante (08:30 de Nova York) é
+ * <= `last_updated` (requisição `companion`). Ancorar no dia do próprio `last_updated` apagaria um
+ * atraso de um dia para o outro (achado do Codex no PR #525). Sem as datas do FRED, cai na lista
+ * fixa (só datas confirmadas); sem nenhuma âncora → "desconhecida".
  * @param {string} seriesId
- * @param {string} kind tipo na lista fixa (CPI, NFP, ...)
+ * @param {string} kind tipo na lista fixa (CPI, NFP, ...) — usado só na reserva
  */
-export function validateFredSeriesMeta(seriesId, kind, list = US_RELEASES) {
-  return ({ body }) => {
+export function validateFredSeriesMeta(seriesId, kind, list = US_RELEASES, releaseTimeNy = '08:30') {
+  return ({ body, companionBody, companionNote }) => {
     const j = tryJson(body);
     if (j.error) return fail('resposta não é JSON');
     const row = j.value?.seriess?.[0];
@@ -226,16 +248,49 @@ export function validateFredSeriesMeta(seriesId, kind, list = US_RELEASES) {
     const updatedMs = parseFredTimestamp(row.last_updated);
     if (updatedMs == null) return fail(`last_updated em formato inesperado: "${row.last_updated ?? ''}"`);
     const updatedIso = new Date(updatedMs).toISOString().slice(0, 16).replace('T', ' ');
-    const scheduled = calendarEvents(list).filter((e) => e.kind === kind && e.confirmed && e.startsAtMs <= updatedMs).pop();
-    let demora = `demora: desconhecida (nenhuma divulgação de ${kind} agendada na lista antes desta atualização)`;
-    if (scheduled) {
-      const minutes = Math.round((updatedMs - scheduled.startsAtMs) / 60000);
-      const quando = `da divulgação de ${scheduled.startsAtUtc.slice(0, 16).replace('T', ' ')} UTC`;
+
+    const fredInstants = fredReleaseInstants(companionBody, releaseTimeNy);
+    let anchorMs = null;
+    let fonte = '';
+    if (fredInstants) {
+      anchorMs = fredInstants.filter((t) => t <= updatedMs).pop() ?? null;
+      fonte = ' (datas do FRED)';
+    } else {
+      anchorMs = calendarEvents(list).filter((e) => e.kind === kind && e.confirmed && e.startsAtMs <= updatedMs).pop()?.startsAtMs ?? null;
+      if (companionNote) fonte = ` (âncora do FRED indisponível: ${companionNote}; usando a lista fixa)`;
+    }
+
+    let demora = `demora: desconhecida (nenhuma divulgação de ${kind} agendada antes desta atualização)`;
+    if (anchorMs != null) {
+      const minutes = Math.round((updatedMs - anchorMs) / 60000);
+      const quando = `da divulgação de ${new Date(anchorMs).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
       demora = minutes <= 24 * 60
-        ? `${minutes} min depois ${quando}`
+        ? `${minutes} min depois ${quando}${fonte}`
         : `${minutes} min depois ${quando} — mais de 24 h: provavelmente revisão, não a divulgação`;
     }
     return pass(`${seriesId}: última atualização ${updatedIso} UTC (${demora}); última observação ${row.observation_end ?? '—'}`);
+  };
+}
+
+/**
+ * API pública do BLS (host `api.bls.gov`, diferente do `www.bls.gov` que bloqueia o GitHub).
+ * Lê SÓ o período mais recente da série — nunca imprime o valor. A v1 não exige chave; sobre o
+ * limite diário só há fontes de terceiros (25/dia), e a própria resposta avisa quando estoura.
+ * Formato esperado: { status, message[], Results: { series: [{ seriesID, data: [{ year, period, periodName, latest }] }] } }.
+ */
+export function validateBlsApi(seriesId) {
+  return ({ body }) => {
+    const j = tryJson(body);
+    if (j.error) return fail('resposta não é JSON');
+    if (j.value?.status !== 'REQUEST_SUCCEEDED') {
+      const msg = String(j.value?.message?.[0] ?? j.value?.status ?? 'sem status').slice(0, 160);
+      return fail(`BLS respondeu: ${msg}`);
+    }
+    const serie = j.value?.Results?.series?.[0];
+    if (!serie || serie.seriesID !== seriesId) return fail(`sem a série ${seriesId}`);
+    const ultimo = serie.data?.[0];
+    if (!ultimo?.year || !ultimo?.periodName) return fail('série sem nenhum período');
+    return pass(`${seriesId}: período mais recente ${ultimo.periodName} ${ultimo.year}${ultimo.latest === 'true' ? ' (latest)' : ''}`);
   };
 }
 
@@ -262,17 +317,6 @@ export function validateDeribitDvol(currency) {
     if (Number.isFinite(nowMs) && nowMs - ts > 3 * HOUR_MS) return fail(`último valor velho (${new Date(ts).toISOString()})`);
     const band = (h) => (close * Math.sqrt(h / HOURS_PER_YEAR)).toFixed(2);
     return pass(`DVOL ${currency} ${close.toFixed(1)} (${new Date(ts).toISOString().slice(0, 16)} UTC, ${rows.length} vela(s)); faixa de 1 desvio: ±${band(1)}% em 1h, ±${band(4)}% em 4h, ±${band(24)}% em 24h`);
-  };
-}
-
-/** .ics válido E com pelo menos um evento cujo texto contém `needle` (ex.: o PCE no calendário do BEA). */
-export function validateIcsWith(needle) {
-  return (res) => {
-    const base = validateIcs(res);
-    if (!base.ok) return base;
-    const n = res.body.split('BEGIN:VEVENT').slice(1).filter((ev) => ev.includes(needle)).length;
-    if (!n) return fail(`nenhum evento com "${needle}"`);
-    return pass(`${base.detail}; ${n} com "${needle}"`);
   };
 }
 
@@ -328,16 +372,17 @@ export const SOURCES = Object.freeze([
   { id: 'fred-release-pce', name: 'FRED — release 54 é o PCE (Renda e Gastos Pessoais)? (confere o nome)', url: `${FRED_BASE}/release?release_id=54&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredRelease('Personal Income and Outlays') },
   { id: 'fred-dates-pce', name: 'FRED — datas do PCE (oficial)', url: `${FRED_BASE}/release/dates?release_id=54&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredDates('PCE') },
   // Demora do FRED: só o metadado `last_updated` de uma série de cada divulgação (nenhum valor).
-  { id: 'fred-lag-nfp', name: 'FRED — demora no Payroll (PAYEMS, só metadado)', url: `${FRED_BASE}/series?series_id=PAYEMS&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PAYEMS', 'NFP') },
-  { id: 'fred-lag-cpi', name: 'FRED — demora no CPI (CPIAUCSL, só metadado)', url: `${FRED_BASE}/series?series_id=CPIAUCSL&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('CPIAUCSL', 'CPI') },
-  { id: 'fred-lag-ppi', name: 'FRED — demora no PPI (PPIFIS, só metadado)', url: `${FRED_BASE}/series?series_id=PPIFIS&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PPIFIS', 'PPI') },
-  { id: 'fred-lag-pce', name: 'FRED — demora no PCE (PCEPI, só metadado)', url: `${FRED_BASE}/series?series_id=PCEPI&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PCEPI', 'PCE') },
+  { id: 'fred-lag-nfp', name: 'FRED — demora no Payroll (PAYEMS, só metadado)', url: `${FRED_BASE}/series?series_id=PAYEMS&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, companion: { url: `${FRED_BASE}/release/dates?release_id=50&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}` }, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PAYEMS', 'NFP') },
+  { id: 'fred-lag-cpi', name: 'FRED — demora no CPI (CPIAUCSL, só metadado)', url: `${FRED_BASE}/series?series_id=CPIAUCSL&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, companion: { url: `${FRED_BASE}/release/dates?release_id=10&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}` }, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('CPIAUCSL', 'CPI') },
+  { id: 'fred-lag-ppi', name: 'FRED — demora no PPI (PPIFIS, só metadado)', url: `${FRED_BASE}/series?series_id=PPIFIS&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, companion: { url: `${FRED_BASE}/release/dates?release_id=46&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}` }, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PPIFIS', 'PPI') },
+  { id: 'fred-lag-pce', name: 'FRED — demora no PCE (PCEPI, só metadado)', url: `${FRED_BASE}/series?series_id=PCEPI&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, companion: { url: `${FRED_BASE}/release/dates?release_id=54&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}` }, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PCEPI', 'PCE') },
   // Deribit DVOL (pública, sem chave). A janela depende da hora da execução: `urlAt` monta a URL real;
   // `url` é o molde que aparece na tabela.
   { id: 'deribit-dvol-btc', name: 'Deribit — DVOL do BTC (movimento esperado)', url: `${DERIBIT_DVOL}?currency=BTC&resolution=3600&start_timestamp=<agora-6h>&end_timestamp=<agora>`, urlAt: dvolUrl('BTC'), required: false, validate: validateDeribitDvol('BTC') },
   { id: 'deribit-dvol-eth', name: 'Deribit — DVOL do ETH (movimento esperado)', url: `${DERIBIT_DVOL}?currency=ETH&resolution=3600&start_timestamp=<agora-6h>&end_timestamp=<agora>`, urlAt: dvolUrl('ETH'), required: false, validate: validateDeribitDvol('ETH') },
-  // BEA (dono do PCE): calendário oficial. O endereço do .ics vem de páginas antigas do BEA — a sonda confirma.
-  { id: 'bea-calendar', name: 'BEA — calendário .ics (PCE)', url: 'https://www.bea.gov/newsreleases/general/iCal/bea_news_releases.ics', required: false, validate: validateIcsWith('Personal Income') },
+  // BEA (dono do PCE): o .ics antigo deu 404 na run 7 e não há iCal oficial; fica só a página do calendário (informativa).
+  // API pública do BLS (host diferente do www.bls.gov, que dá 403): responde do GitHub? e quanto depois da divulgação o período novo aparece?
+  { id: 'bls-api-v1-cpi', name: 'BLS — API pública v1 (CPI, só o período mais recente)', url: 'https://api.bls.gov/publicAPI/v1/timeseries/data/CUSR0000SA0', required: false, blockHint: BLS_HINT, validate: validateBlsApi('CUSR0000SA0') },
   { id: 'bea-schedule-page', name: 'BEA — página do calendário de divulgações', url: 'https://www.bea.gov/news/schedule', required: false, validate: validateHtmlContains('Personal Income and Outlays') },
   { id: 'binance-announcements', name: 'Binance — anúncios (delisting; esperado bloqueio)', url: 'https://www.binance.com/bapi/composite/v1/public/cms/article/list/query?type=1&catalogId=161&pageNo=1&pageSize=5', required: false, validate: validateBinanceAnnouncements },
 ]);
@@ -357,7 +402,7 @@ export function extractRateLimit(headers) {
  * Avalia UMA resposta já recebida. Não faz rede.
  * @returns {{ status: 'OK'|'FALHOU', detail: string }}
  */
-export function evaluateResponse(source, { status, headers = {}, body = '', nowMs = undefined }) {
+export function evaluateResponse(source, { status, headers = {}, body = '', nowMs = undefined, companionBody = null, companionNote = '' }) {
   if (status === 429) {
     const retry = headers['retry-after'] ? ` (Retry-After ${headers['retry-after']}s)` : '';
     return { status: 'FALHOU', detail: `limite de uso excedido (HTTP 429)${retry}` };
@@ -367,7 +412,7 @@ export function evaluateResponse(source, { status, headers = {}, body = '', nowM
     return { status: 'FALHOU', detail: `acesso bloqueado desta origem (HTTP ${status})${hint}` };
   }
   if (status < 200 || status >= 300) return { status: 'FALHOU', detail: `HTTP ${status}` };
-  const v = source.validate({ status, headers, body, nowMs });
+  const v = source.validate({ status, headers, body, nowMs, companionBody, companionNote });
   return { status: v.ok ? 'OK' : 'FALHOU', detail: v.ok ? v.detail : `formato inválido: ${v.detail}` };
 }
 
@@ -411,7 +456,21 @@ export async function probeSource(source, { fetchImpl = fetch, now = Date.now, t
     if (bytes > MAX_BODY_BYTES) {
       return scrub({ ...base, status: 'FALHOU', httpStatus: res.status, latencyMs, bytes, rateLimit: extractRateLimit(resHeaders), detail: `resposta grande demais (${bytes} bytes)` });
     }
-    const ev = evaluateResponse(source, { status: res.status, headers: resHeaders, body: text, nowMs: startMs });
+    // 2ª requisição (FRED: datas de divulgação do mesmo release). Só se a 1ª deu certo; qualquer falha vira
+    // uma nota curta e GENÉRICA — nunca err.message, que pode citar a URL com a chave.
+    let companionBody = null;
+    let companionNote = '';
+    if (source.companion?.url && res.status >= 200 && res.status < 300) {
+      const cUrl = secret ? source.companion.url.replace(`<${source.secretInUrl}>`, encodeURIComponent(secret)) : source.companion.url;
+      try {
+        const cres = await fetchImpl(cUrl, { headers, signal: controller.signal, redirect: 'follow' });
+        const ctext = await cres.text();
+        if (cres.status < 200 || cres.status >= 300) companionNote = `HTTP ${cres.status}`;
+        else if (Buffer.byteLength(ctext, 'utf8') > MAX_BODY_BYTES) companionNote = 'resposta grande demais';
+        else companionBody = ctext;
+      } catch { companionNote = 'erro de rede'; }
+    }
+    const ev = evaluateResponse(source, { status: res.status, headers: resHeaders, body: text, nowMs: startMs, companionBody, companionNote });
     return scrub({ ...base, ...ev, httpStatus: res.status, latencyMs, bytes, rateLimit: extractRateLimit(resHeaders) });
   } catch (err) {
     const latencyMs = now() - t0;
