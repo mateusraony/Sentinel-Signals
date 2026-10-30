@@ -320,6 +320,9 @@ paths:
     molde `<FRED_API_KEY>` (travado por teste em `scripts/contextProbe.test.js`).
     Desde a run 5 (addendum 4) o FRED confirmou 4 datas, que viraram `oficial` na lista fixa (`oficial` exige
     URL do BLS ou do FRED). O financecalendar é lido só de `events[]` (limite 2.000/dia sem chave).
+    Desde o addendum 5 (avisos de evento): FRED do PPI (46) e do PCE (54) conferidos pelo nome, demora do FRED
+    (só o metadado `last_updated`, nunca valor de série), DVOL da Deribit (sem chave; a janela é montada na hora
+    por `urlAt`, a tabela mostra o molde) e BEA (`.ics`/página) — todos opcionais.
 
 - `recovery.yml` — disparo **manual** (`workflow_dispatch` só), sem campos: **teste a seco** do replay de
   recuperação depois de queda longa do banco (`docs/known-risks.md` item 288).

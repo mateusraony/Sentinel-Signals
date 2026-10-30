@@ -8,6 +8,7 @@ import {
   validateIcs, validateFearGreed, validateRss, validateBinanceTicker, validateRawGithubCors,
   validateDefillamaChains, validateHtmlContains, extractRateLimit, contactEmail, buildUserAgent,
   collectIsoDates, validateFinanceCalendar, validateFredRelease, validateFredDates,
+  parseFredTimestamp, validateFredSeriesMeta, validateDeribitDvol, validateIcsWith,
 } from './contextProbe.mjs';
 
 const src = (id) => SOURCES.find((s) => s.id === id);
@@ -269,12 +270,26 @@ describe('lista de fontes', () => {
     }
   });
 
-  it('as fontes novas (financecalendar, FRED) são opcionais: não mudam o portão da fase', () => {
-    const novas = SOURCES.filter((s) => /^(financecalendar|fred)-/.test(s.id));
+  it('as fontes novas (financecalendar, FRED, Deribit, BEA) são opcionais: não mudam o portão da fase', () => {
+    const novas = SOURCES.filter((s) => /^(financecalendar|fred|deribit|bea)-/.test(s.id));
     expect(novas.map((s) => s.id).sort()).toEqual([
-      'financecalendar-cpi', 'financecalendar-nfp', 'fred-dates-cpi', 'fred-dates-nfp', 'fred-release-cpi', 'fred-release-nfp',
+      'bea-calendar', 'bea-schedule-page', 'deribit-dvol-btc', 'deribit-dvol-eth',
+      'financecalendar-cpi', 'financecalendar-nfp',
+      'fred-dates-cpi', 'fred-dates-nfp', 'fred-dates-pce', 'fred-dates-ppi',
+      'fred-lag-cpi', 'fred-lag-nfp', 'fred-lag-pce', 'fred-lag-ppi',
+      'fred-release-cpi', 'fred-release-nfp', 'fred-release-pce', 'fred-release-ppi',
     ]);
     for (const s of novas) expect(s.required).toBe(false);
+  });
+
+  it('PPI e PCE: o id do FRED só passa se o NOME bater', () => {
+    expect(src('fred-release-ppi').url).toContain('release_id=46');
+    expect(src('fred-release-pce').url).toContain('release_id=54');
+    const nome = (n) => JSON.stringify({ releases: [{ name: n }] });
+    expect(src('fred-release-ppi').validate({ body: nome('Producer Price Index') }).ok).toBe(true);
+    expect(src('fred-release-ppi').validate({ body: nome('Consumer Price Index') }).ok).toBe(false);
+    expect(src('fred-release-pce').validate({ body: nome('Personal Income and Outlays') }).ok).toBe(true);
+    expect(src('fred-release-pce').validate({ body: nome('Gross Domestic Product') }).ok).toBe(false);
   });
 
   it('o portão cobre as 5 áreas do plano (BLS, Medo e Ganância, Fed, Binance Spot, CORS do raw)', () => {
@@ -366,6 +381,66 @@ describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
     expect(r.url).toContain('api_key=<FRED_API_KEY>');
     expect(JSON.stringify(r)).not.toContain(KEY);
     expect(formatProbeMarkdown([r], { startedAt: 'x', runner: 'y' })).not.toContain(KEY);
+  });
+
+  it('FRED datas com a hora da execução: mostra as próximas (PPI/PCE não estão na lista fixa)', () => {
+    const body = JSON.stringify({ release_dates: [{ date: '2026-12-15' }, { date: '2026-11-13' }, { date: '2026-10-15' }] });
+    const v = validateFredDates('PPI')({ body, nowMs: Date.parse('2026-10-30T12:00:00Z') });
+    expect(v.ok).toBe(true);
+    expect(v.detail).toMatch(/próximas: 2026-11-13, 2026-12-15/);
+    expect(v.detail).toMatch(/sem datas desse tipo na lista fixa/);
+    const depois = validateFredDates('PPI')({ body, nowMs: Date.parse('2027-01-01T00:00:00Z') });
+    expect(depois.detail).toMatch(/próximas: nenhuma publicada ainda/);
+  });
+
+  it('demora do FRED: lê só o metadado last_updated e mede contra 08:30 de Nova York', () => {
+    // Novembro: St. Louis em UTC-6 e Nova York em UTC-5 (horário de verão já acabou em 01/11).
+    expect(new Date(parseFredTimestamp('2026-11-06 07:43:12-06')).toISOString()).toBe('2026-11-06T13:43:12.000Z');
+    expect(parseFredTimestamp('2026-11-06T07:43:12Z')).toBeNull();
+    const body = JSON.stringify({ seriess: [{ id: 'PAYEMS', last_updated: '2026-11-06 07:43:12-06', observation_end: '2026-10-01' }] });
+    const v = validateFredSeriesMeta('PAYEMS')({ body });
+    expect(v).toEqual({ ok: true, detail: 'PAYEMS: última atualização 2026-11-06 13:43 UTC (13 min depois das 08:30 de Nova York); última observação 2026-10-01' });
+    // Outubro (horário de verão): 08:30 ET = 12:30 UTC; 07:31-05 = 12:31 UTC.
+    const out = JSON.stringify({ seriess: [{ id: 'CPIAUCSL', last_updated: '2026-10-15 07:31:00-05', observation_end: '2026-09-01' }] });
+    expect(validateFredSeriesMeta('CPIAUCSL')({ body: out }).detail).toMatch(/1 min depois das 08:30/);
+    // Atualizada antes da divulgação (revisão noturna): não inventa demora.
+    const cedo = JSON.stringify({ seriess: [{ id: 'PAYEMS', last_updated: '2026-11-06 03:00:00-06', observation_end: '2026-10-01' }] });
+    expect(validateFredSeriesMeta('PAYEMS')({ body: cedo }).detail).toMatch(/fora do dia\/horário/);
+    expect(validateFredSeriesMeta('PAYEMS')({ body: JSON.stringify({ seriess: [{ id: 'CPIAUCSL' }] }) }).ok).toBe(false);
+    expect(validateFredSeriesMeta('PAYEMS')({ body: JSON.stringify({ seriess: [{ id: 'PAYEMS', last_updated: 'ontem' }] }) }).ok).toBe(false);
+  });
+
+  it('Deribit DVOL: último fechamento vira a faixa de 1 desvio em 1h/4h/24h', () => {
+    const now = Date.parse('2026-10-30T12:10:00Z');
+    const row = (ts, c) => [ts, c - 1, c + 1, c - 2, c];
+    const body = JSON.stringify({ result: { data: [row(now - 2 * 3600000, 48), row(now - 600000, 50)], continuation: null } });
+    const v = validateDeribitDvol('BTC')({ body, nowMs: now });
+    expect(v.ok).toBe(true);
+    // 50 × √(h/8760): 1h 0,534 · 4h 1,068 · 24h 2,617
+    expect(v.detail).toMatch(/DVOL BTC 50\.0 .*±0\.53% em 1h, ±1\.07% em 4h, ±2\.62% em 24h/);
+    expect(validateDeribitDvol('BTC')({ body: JSON.stringify({ error: { message: 'Invalid params' } }), nowMs: now }).detail).toMatch(/Invalid params/);
+    expect(validateDeribitDvol('BTC')({ body: JSON.stringify({ result: { data: [] } }), nowMs: now }).ok).toBe(false);
+    expect(validateDeribitDvol('BTC')({ body: JSON.stringify({ result: { data: [row(now, 900)] } }), nowMs: now }).ok).toBe(false);
+    const velho = JSON.stringify({ result: { data: [row(now - 5 * 3600000, 50)] } });
+    expect(validateDeribitDvol('BTC')({ body: velho, nowMs: now }).detail).toMatch(/velho/);
+    expect(validateDeribitDvol('BTC')({ body: HTML_ERROR, nowMs: now }).ok).toBe(false);
+  });
+
+  it('Deribit: a janela é montada na hora da execução; a tabela mostra o molde', async () => {
+    let seenUrl;
+    const now = Date.parse('2026-10-30T12:00:00Z');
+    const fetchImpl = async (url) => { seenUrl = url; return new Response(JSON.stringify({ result: { data: [[now - 60000, 49, 51, 48, 50]] } }), { status: 200 }); };
+    const r = await probeSource(src('deribit-dvol-btc'), { fetchImpl, now: () => now });
+    expect(r.status).toBe('OK');
+    expect(seenUrl).toContain(`start_timestamp=${now - 6 * 3600000}&end_timestamp=${now}`);
+    expect(r.url).toContain('start_timestamp=<agora-6h>&end_timestamp=<agora>');
+  });
+
+  it('BEA .ics: só passa com evento do PCE (Personal Income)', () => {
+    const ics = (s) => `BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:${s}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n`;
+    expect(validateIcsWith('Personal Income')({ body: ics('Personal Income and Outlays, September 2026') })).toEqual({ ok: true, detail: '1 eventos; 1 com "Personal Income"' });
+    expect(validateIcsWith('Personal Income')({ body: ics('GDP (Advance Estimate)') }).ok).toBe(false);
+    expect(validateIcsWith('Personal Income')({ body: HTML_ERROR }).ok).toBe(false);
   });
 
   it('erro de rede que cita a URL (com a chave) é limpo antes de virar resultado', async () => {

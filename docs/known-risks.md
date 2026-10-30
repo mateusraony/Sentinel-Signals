@@ -33755,6 +33755,45 @@ muda (199 linhas). Nenhum consumidor de entidade, rota ou workflow existente foi
   grátis); lista fixa como reserva; financecalendar só como conferência (já é uma das fontes da lista).
 - **Portão:** runs 4 e 5 aprovadas (mesma noite) — falta 1 execução em outro horário para o critério da fase.
 
+**Addendum 5 (2026-10-30) — avisos de evento: parecer do time, decisões do usuário e termos do FRED.**
+O usuário perguntou se receberia aviso antes e depois de cada evento "dizendo qual a probabilidade de alta ou
+baixa", e o que deixaria isso profissional.
+- **Sem "probabilidade de alta/baixa" [recomendação, aceita].** Para separar 55% de 50% com 95% de confiança e
+  80% de poder são precisos ~780 eventos (≈ 24 anos de CPI+Payroll+FOMC). A "surpresa" (resultado × consenso)
+  depende do consenso, que é dado pago. O regime muda, e um viés de direção contradiz os itens 264/265: a entrada não
+  tem vantagem medida. Mostrar uma porcentagem seria inventar precisão.
+- **Profissional = tamanho do movimento, não direção.** Antes: movimento esperado (DVOL da Deribit → faixa de 1
+  desvio em 1h/4h/24h = DVOL × √(h/8760); outras moedas: volatilidade realizada da Binance Spot) e as operações
+  abertas com stop dentro dessa faixa. Depois: movimento real × esperado e o que aconteceu com as operações.
+- **Cortado:** porcentagem/viés, aviso 24 h antes (o resumo das 21 h cobre), mensagem própria de +4 h, eventos
+  fracos (pedidos semanais de seguro-desemprego, PIB, discursos, manchetes), consenso raspado de Investing/ForexFactory.
+- **Decisões do usuário (30/10):** (1) o aviso de antes **lista as operações abertas** com stop dentro do movimento
+  esperado (leitura só-leitura do banco, poucas vezes por mês); (2) resumos das 12 h e 21 h **em silêncio quando nada
+  mudou** (07 h sempre); (3) **PPI e PCE também**, no painel e no Telegram, e o aviso de depois do resultado **em no
+  máximo ~5 minutos** ("pode ter muita volatilidade e se esperar 1 h perco o que está acontecendo").
+- **Como cumprir os ~5 min (desenho, a validar):** painel em tempo real no navegador (as datas já estão salvas; no
+  horário ele mesmo busca o preço e compara com a faixa). Telegram por um job "vigia do evento", disparado pelo
+  coletor de 15 min antes do evento. Ele fica rodando até T+5 e manda o aviso de depois por volta de T+3 a T+5. O
+  GitHub às vezes atrasa o início de um job (hipótese: 1-3 min; medir). O número oficial (ex.: CPI 0,3%) só sai pelo
+  FRED, com demora a medir: vem numa **2ª mensagem**, nunca inventado.
+- **Termos do FRED [contradição resolvida].** O item 284 dizia "não usar FRED" (os termos de 2024 proíbem
+  armazenar/repassar o conteúdo); o addendum 4 o recomendou como fonte principal. Resolução: o FRED é **consultado na
+  hora** pelo job; a branch pública guarda só **data/hora/tipo/status** de cada divulgação (fato de calendário); os
+  números vão só na mensagem privada do Telegram, sem gravação. A sonda lê só metadado (`last_updated`), nunca valor de
+  série. É interpretação, não parecer jurídico. Não consegui reabrir a página dos termos nesta sessão (rede
+  bloqueada).
+- **Sonda ampliada (este PR, opcionais fora do portão):** FRED release 46 (PPI) e 54 (PCE) conferidos pelo nome +
+  datas; demora do FRED pelo `last_updated` de PAYEMS/CPIAUCSL/PPIFIS/PCEPI contra 08:30 de Nova York (rodar depois do
+  Payroll de 06/11 e do CPI de 10/11 mede a demora real); DVOL do BTC e do ETH (Deribit, sem chave; o nome do
+  parâmetro de resolução diverge na própria doc, `resolution` × `vix_resolution` — a 1ª execução mostra o erro da
+  Deribit se estiver errado); BEA (`.ics` de endereço antigo e página do calendário). Cada trava nova provada por
+  mutação (fuso do FRED, faixa da DVOL, janela da Deribit, DVOL velha, BEA sem PCE). **Pendente:** os termos da
+  Deribit para guardar o valor da DVOL numa branch pública não foram conferidos — decidir antes da Fase 2.
+- **Próximas fases (nada toca o motor):** coletor (Fase 2, FRED como fonte das datas com remarcação) → faixa no
+  painel com contagem regressiva e movimento ao vivo (Fase 3) → Telegram: 07 h sempre + 12/21 h só com novidade,
+  aviso T-60, vigia com aviso de depois em ~3-5 min, 2ª mensagem com o número, trava de texto contra
+  "probabilidade/viés" (Fase 4).
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 **Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,
