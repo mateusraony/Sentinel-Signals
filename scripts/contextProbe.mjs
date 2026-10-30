@@ -10,8 +10,7 @@
 // O que a sonda NÃO prova: estabilidade por semanas (isso é a coleta "sombra"
 // da Fase 2) nem os termos de uso — esses estão em docs/known-risks.md item 284.
 
-import { compareWithFixedList, formatComparison } from './contextCalendar.mjs';
-import { nyToUtc } from './contextTime.mjs';
+import { compareWithFixedList, formatComparison, calendarEvents, US_RELEASES } from './contextCalendar.mjs';
 
 export const USER_AGENT = 'SentinelSignals-ContextProbe/1.0 (+https://github.com/mateusraony/Sentinel-Signals)';
 
@@ -211,12 +210,14 @@ export function parseFredTimestamp(text) {
 /**
  * FRED: quando a série foi atualizada (metadado — nenhum valor da série é lido nem impresso;
  * os termos do FRED não permitem repassar os dados). Mede a DEMORA do FRED em relação à
- * divulgação oficial (08:30 de Nova York do mesmo dia): é o que decide se o número oficial
- * chega a tempo do aviso de "depois do evento" (item 285, addendum 5).
+ * divulgação oficial AGENDADA (lista fixa, só datas confirmadas): é o que decide se o número
+ * oficial chega a tempo do aviso de "depois do evento" (item 285, addendum 5). Ancorar no dia do
+ * próprio `last_updated` apagaria um atraso de um dia para o outro (achado do Codex no PR #525).
+ * Sem divulgação agendada conhecida antes da atualização (ex.: PPI/PCE, fora da lista) → "desconhecida".
  * @param {string} seriesId
- * @param {string} releaseTimeNy hora oficial da divulgação em Nova York
+ * @param {string} kind tipo na lista fixa (CPI, NFP, ...)
  */
-export function validateFredSeriesMeta(seriesId, releaseTimeNy = '08:30') {
+export function validateFredSeriesMeta(seriesId, kind, list = US_RELEASES) {
   return ({ body }) => {
     const j = tryJson(body);
     if (j.error) return fail('resposta não é JSON');
@@ -225,13 +226,15 @@ export function validateFredSeriesMeta(seriesId, releaseTimeNy = '08:30') {
     const updatedMs = parseFredTimestamp(row.last_updated);
     if (updatedMs == null) return fail(`last_updated em formato inesperado: "${row.last_updated ?? ''}"`);
     const updatedIso = new Date(updatedMs).toISOString().slice(0, 16).replace('T', ' ');
-    const day = String(row.last_updated).slice(0, 10);
-    let demora = 'demora: —';
-    try {
-      const minutes = Math.round((updatedMs - nyToUtc(day, releaseTimeNy).ms) / 60000);
-      if (minutes >= 0 && minutes < 24 * 60) demora = `${minutes} min depois das ${releaseTimeNy} de Nova York`;
-      else demora = `atualizada fora do dia/horário da divulgação (${minutes} min)`;
-    } catch { /* data inválida: fica "—" */ }
+    const scheduled = calendarEvents(list).filter((e) => e.kind === kind && e.confirmed && e.startsAtMs <= updatedMs).pop();
+    let demora = `demora: desconhecida (nenhuma divulgação de ${kind} agendada na lista antes desta atualização)`;
+    if (scheduled) {
+      const minutes = Math.round((updatedMs - scheduled.startsAtMs) / 60000);
+      const quando = `da divulgação de ${scheduled.startsAtUtc.slice(0, 16).replace('T', ' ')} UTC`;
+      demora = minutes <= 24 * 60
+        ? `${minutes} min depois ${quando}`
+        : `${minutes} min depois ${quando} — mais de 24 h: provavelmente revisão, não a divulgação`;
+    }
     return pass(`${seriesId}: última atualização ${updatedIso} UTC (${demora}); última observação ${row.observation_end ?? '—'}`);
   };
 }
@@ -325,10 +328,10 @@ export const SOURCES = Object.freeze([
   { id: 'fred-release-pce', name: 'FRED — release 54 é o PCE (Renda e Gastos Pessoais)? (confere o nome)', url: `${FRED_BASE}/release?release_id=54&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredRelease('Personal Income and Outlays') },
   { id: 'fred-dates-pce', name: 'FRED — datas do PCE (oficial)', url: `${FRED_BASE}/release/dates?release_id=54&file_type=json&include_release_dates_with_no_data=true&sort_order=desc&limit=20&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredDates('PCE') },
   // Demora do FRED: só o metadado `last_updated` de uma série de cada divulgação (nenhum valor).
-  { id: 'fred-lag-nfp', name: 'FRED — demora no Payroll (PAYEMS, só metadado)', url: `${FRED_BASE}/series?series_id=PAYEMS&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PAYEMS') },
-  { id: 'fred-lag-cpi', name: 'FRED — demora no CPI (CPIAUCSL, só metadado)', url: `${FRED_BASE}/series?series_id=CPIAUCSL&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('CPIAUCSL') },
-  { id: 'fred-lag-ppi', name: 'FRED — demora no PPI (PPIFIS, só metadado)', url: `${FRED_BASE}/series?series_id=PPIFIS&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PPIFIS') },
-  { id: 'fred-lag-pce', name: 'FRED — demora no PCE (PCEPI, só metadado)', url: `${FRED_BASE}/series?series_id=PCEPI&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PCEPI') },
+  { id: 'fred-lag-nfp', name: 'FRED — demora no Payroll (PAYEMS, só metadado)', url: `${FRED_BASE}/series?series_id=PAYEMS&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PAYEMS', 'NFP') },
+  { id: 'fred-lag-cpi', name: 'FRED — demora no CPI (CPIAUCSL, só metadado)', url: `${FRED_BASE}/series?series_id=CPIAUCSL&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('CPIAUCSL', 'CPI') },
+  { id: 'fred-lag-ppi', name: 'FRED — demora no PPI (PPIFIS, só metadado)', url: `${FRED_BASE}/series?series_id=PPIFIS&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PPIFIS', 'PPI') },
+  { id: 'fred-lag-pce', name: 'FRED — demora no PCE (PCEPI, só metadado)', url: `${FRED_BASE}/series?series_id=PCEPI&file_type=json&api_key=${FRED_KEY_PLACEHOLDER}`, required: false, needsEnv: 'FRED_API_KEY', secretInUrl: 'FRED_API_KEY', validate: validateFredSeriesMeta('PCEPI', 'PCE') },
   // Deribit DVOL (pública, sem chave). A janela depende da hora da execução: `urlAt` monta a URL real;
   // `url` é o molde que aparece na tabela.
   { id: 'deribit-dvol-btc', name: 'Deribit — DVOL do BTC (movimento esperado)', url: `${DERIBIT_DVOL}?currency=BTC&resolution=3600&start_timestamp=<agora-6h>&end_timestamp=<agora>`, urlAt: dvolUrl('BTC'), required: false, validate: validateDeribitDvol('BTC') },

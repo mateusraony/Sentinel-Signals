@@ -393,21 +393,27 @@ describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
     expect(depois.detail).toMatch(/próximas: nenhuma publicada ainda/);
   });
 
-  it('demora do FRED: lê só o metadado last_updated e mede contra 08:30 de Nova York', () => {
-    // Novembro: St. Louis em UTC-6 e Nova York em UTC-5 (horário de verão já acabou em 01/11).
+  it('demora do FRED: lê só o metadado last_updated e mede contra a divulgação AGENDADA', () => {
+    // Novembro: St. Louis em UTC-6; o Payroll de 06/11 sai 08:30 de Nova York = 13:30 UTC.
     expect(new Date(parseFredTimestamp('2026-11-06 07:43:12-06')).toISOString()).toBe('2026-11-06T13:43:12.000Z');
     expect(parseFredTimestamp('2026-11-06T07:43:12Z')).toBeNull();
-    const body = JSON.stringify({ seriess: [{ id: 'PAYEMS', last_updated: '2026-11-06 07:43:12-06', observation_end: '2026-10-01' }] });
-    const v = validateFredSeriesMeta('PAYEMS')({ body });
-    expect(v).toEqual({ ok: true, detail: 'PAYEMS: última atualização 2026-11-06 13:43 UTC (13 min depois das 08:30 de Nova York); última observação 2026-10-01' });
-    // Outubro (horário de verão): 08:30 ET = 12:30 UTC; 07:31-05 = 12:31 UTC.
-    const out = JSON.stringify({ seriess: [{ id: 'CPIAUCSL', last_updated: '2026-10-15 07:31:00-05', observation_end: '2026-09-01' }] });
-    expect(validateFredSeriesMeta('CPIAUCSL')({ body: out }).detail).toMatch(/1 min depois das 08:30/);
-    // Atualizada antes da divulgação (revisão noturna): não inventa demora.
-    const cedo = JSON.stringify({ seriess: [{ id: 'PAYEMS', last_updated: '2026-11-06 03:00:00-06', observation_end: '2026-10-01' }] });
-    expect(validateFredSeriesMeta('PAYEMS')({ body: cedo }).detail).toMatch(/fora do dia\/horário/);
-    expect(validateFredSeriesMeta('PAYEMS')({ body: JSON.stringify({ seriess: [{ id: 'CPIAUCSL' }] }) }).ok).toBe(false);
-    expect(validateFredSeriesMeta('PAYEMS')({ body: JSON.stringify({ seriess: [{ id: 'PAYEMS', last_updated: 'ontem' }] }) }).ok).toBe(false);
+    const meta = (id, upd) => JSON.stringify({ seriess: [{ id, last_updated: upd, observation_end: '2026-10-01' }] });
+    expect(validateFredSeriesMeta('PAYEMS', 'NFP')({ body: meta('PAYEMS', '2026-11-06 07:43:12-06') })).toEqual({
+      ok: true,
+      detail: 'PAYEMS: última atualização 2026-11-06 13:43 UTC (13 min depois da divulgação de 2026-11-06 13:30 UTC); última observação 2026-10-01',
+    });
+    expect(validateFredSeriesMeta('CPIAUCSL', 'CPI')({ body: meta('CPIAUCSL', '2026-11-10 07:31:00-06') }).detail).toMatch(/\(1 min depois da divulgação de 2026-11-10 13:30 UTC\)/);
+    // Achado do Codex (#525): FRED só atualiza NO DIA SEGUINTE → 1.445 min, não "5 min".
+    const dia2 = validateFredSeriesMeta('PAYEMS', 'NFP')({ body: meta('PAYEMS', '2026-11-07 07:35:00-06') }).detail;
+    expect(dia2).toMatch(/1445 min depois da divulgação de 2026-11-06 13:30 UTC — mais de 24 h/);
+    // Atualizada antes da 1ª divulgação conhecida, ou tipo fora da lista (PPI/PCE): não inventa demora.
+    expect(validateFredSeriesMeta('PAYEMS', 'NFP')({ body: meta('PAYEMS', '2026-11-06 03:00:00-06') }).detail).toMatch(/demora: desconhecida/);
+    expect(validateFredSeriesMeta('PPIFIS', 'PPI')({ body: meta('PPIFIS', '2026-11-13 07:35:00-06') }).detail).toMatch(/demora: desconhecida/);
+    // Data "a confirmar" não serve de âncora.
+    const lista = [{ id: 'x', kind: 'NFP', reference: '2026-12', date: '2027-01-08', time: '08:30', status: 'a_confirmar', fontes: [] }];
+    expect(validateFredSeriesMeta('PAYEMS', 'NFP', lista)({ body: meta('PAYEMS', '2027-01-08 07:40:00-06') }).detail).toMatch(/demora: desconhecida/);
+    expect(validateFredSeriesMeta('PAYEMS', 'NFP')({ body: JSON.stringify({ seriess: [{ id: 'CPIAUCSL' }] }) }).ok).toBe(false);
+    expect(validateFredSeriesMeta('PAYEMS', 'NFP')({ body: JSON.stringify({ seriess: [{ id: 'PAYEMS', last_updated: 'ontem' }] }) }).ok).toBe(false);
   });
 
   it('Deribit DVOL: último fechamento vira a faixa de 1 desvio em 1h/4h/24h', () => {

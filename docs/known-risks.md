@@ -33783,8 +33783,10 @@ baixa", e o que deixaria isso profissional.
   série. É interpretação, não parecer jurídico. Não consegui reabrir a página dos termos nesta sessão (rede
   bloqueada).
 - **Sonda ampliada (este PR, opcionais fora do portão):** FRED release 46 (PPI) e 54 (PCE) conferidos pelo nome +
-  datas; demora do FRED pelo `last_updated` de PAYEMS/CPIAUCSL/PPIFIS/PCEPI contra 08:30 de Nova York (rodar depois do
-  Payroll de 06/11 e do CPI de 10/11 mede a demora real); DVOL do BTC e do ETH (Deribit, sem chave; o nome do
+  datas; demora do FRED pelo `last_updated` de PAYEMS/CPIAUCSL/PPIFIS/PCEPI contra a divulgação **agendada** da lista
+  fixa (só datas confirmadas; ancorar no dia do próprio `last_updated` apagava um atraso de um dia para o outro —
+  achado do Codex no PR #525). PPI/PCE saem "desconhecida" até entrarem na lista; rodar depois do Payroll de 06/11 e
+  do CPI de 10/11 mede a demora real. DVOL do BTC e do ETH (Deribit, sem chave; o nome do
   parâmetro de resolução diverge na própria doc, `resolution` × `vix_resolution` — a 1ª execução mostra o erro da
   Deribit se estiver errado); BEA (`.ics` de endereço antigo e página do calendário). Cada trava nova provada por
   mutação (fuso do FRED, faixa da DVOL, janela da Deribit, DVOL velha, BEA sem PCE). **Pendente:** os termos da
