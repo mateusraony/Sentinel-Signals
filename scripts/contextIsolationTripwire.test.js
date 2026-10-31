@@ -16,8 +16,10 @@
 // Padrão de modelo: src/lib/noOrderExecutionTripwire.test.js (inclui a prova de
 // que o guard pega o que deve pegar e não acusa o que é inocente).
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = process.cwd();
 
@@ -200,6 +202,69 @@ describe('tripwire: o coletor só escreve na branch context-data (item 285, adde
     expect(semPermissoes(real.replace(/^permissions:\n  contents: write\n/m, ''))).toBe(true);
     expect(semPermissoes(sonda.replace(/^permissions:[\s\S]*?\n(?=\S)/m, ''))).toBe(true);
     expect(semPermissoes('name: x\non: push\njobs:\n  a:\n    permissions:\n      contents: read\n')).toBe(true); // só dentro do job não vale
+  });
+});
+
+// Achado do Codex no PR #531: o GitHub roda `run:` com `bash -e {0}`; sem desligar o errexit, o código 2
+// do `git ls-remote --exit-code` (branch ainda inexistente = a 1ª coleta) encerrava o passo antes de criar a
+// branch. A simulação anterior rodava SEM `-e` e não via isso. Aqui o passo roda de verdade, como o GitHub
+// o roda, com um `git` de mentira no PATH.
+function passoAbrirBranch() {
+  const linhas = readFileSync(join(ROOT, COLETOR), 'utf8').split('\n');
+  const ini = linhas.findIndex((l) => /- name: Abrir a branch de dados/.test(l));
+  expect(ini).toBeGreaterThanOrEqual(0);
+  const runIdx = linhas.findIndex((l, i) => i > ini && /^\s+run: \|\s*$/.test(l));
+  const base = linhas[runIdx].search(/\S/) + 2;
+  const corpo = [];
+  for (let i = runIdx + 1; i < linhas.length; i += 1) {
+    if (linhas[i].trim() !== '' && linhas[i].search(/\S/) < base) break;
+    corpo.push(linhas[i].slice(base));
+  }
+  return corpo.join('\n');
+}
+
+function rodaPasso(script, lsRemoteRc) {
+  const dir = mkdtempSync(join(tmpdir(), 'ctx-step-'));
+  try {
+    writeFileSync(join(dir, 'git'), `#!/bin/bash\nif [ "$1" = "ls-remote" ]; then exit ${lsRemoteRc}; fi\necho "git $*" >> "${dir}/log"\n`);
+    chmodSync(join(dir, 'git'), 0o755);
+    writeFileSync(join(dir, 'passo.sh'), script);
+    const r = spawnSync('bash', ['-e', join(dir, 'passo.sh')], { env: { ...process.env, PATH: `${dir}:${process.env.PATH}` }, encoding: 'utf8' });
+    const log = existsSync(join(dir, 'log')) ? readFileSync(join(dir, 'log'), 'utf8') : '';
+    return { status: r.status, out: `${r.stdout}${r.stderr}`, log };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('passo "Abrir a branch de dados" do coletor, rodando como o GitHub roda (bash -e)', () => {
+  const passo = passoAbrirBranch();
+
+  it('branch existe (ls-remote 0): abre a última versão', () => {
+    const r = rodaPasso(passo, 0);
+    expect(r.status).toBe(0);
+    expect(r.log).toMatch(/git fetch --depth=1 origin context-data/);
+    expect(r.log).toMatch(/git worktree add data FETCH_HEAD/);
+    expect(r.log).not.toMatch(/--orphan/);
+  });
+
+  it('branch NÃO existe (ls-remote 2, a 1ª coleta): cria a branch órfã e segue (o errexit herdado não encerra o passo)', () => {
+    const r = rodaPasso(passo, 2);
+    expect(r.status).toBe(0);
+    expect(r.log).toMatch(/git worktree add --orphan -b context-data data/);
+  });
+
+  it('a consulta falhou (ls-remote 128): o job falha com a causa e NADA é criado', () => {
+    const r = rodaPasso(passo, 128);
+    expect(r.status).toBe(1);
+    expect(r.out).toMatch(/::error::.*código 128/);
+    expect(r.log).toBe('');
+  });
+
+  it('prova: sem o `set +e` o código 2 encerra o passo antes de criar a branch (o bug do Codex)', () => {
+    const r = rodaPasso(passo.replace('set +e\n', ''), 2);
+    expect(r.status).toBe(2);
+    expect(r.log).not.toMatch(/--orphan/);
   });
 });
 

@@ -43,7 +43,10 @@ jobs:
         # em si falha (rede, permissão): só o 2 autoriza criar a branch. Antes qualquer erro virava
         # "branch não existe" e o push tentaria criar uma branch nova por cima de uma existente.
         run: |
+          # O GitHub roda este passo com `bash -e`: sem desligar o errexit, o código 2 (branch ainda
+          # inexistente, o caso da 1ª coleta) encerraria o passo antes de chegar na criação da branch.
           set -uo pipefail
+          set +e
           git ls-remote --exit-code --heads origin context-data >/dev/null
           rc=$?
           set -e

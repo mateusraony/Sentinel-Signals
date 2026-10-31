@@ -33917,7 +33917,11 @@ Pedido do usuário ("confirme se tudo está perfeito… blindado"); revisão ind
   evento novo). `lastChangedAt` passou a considerar a mudança do mês de referência.
 - **Erro de rede virava "branch não existe" [fato].** `git ls-remote ... >/dev/null 2>&1` num `if`: qualquer falha caía no
   ramo que cria a branch órfã. **Agora:** só o código 2 do `--exit-code` (branch inexistente) cria; outro código falha o
-  job com a causa. Simulado com um `git` falso nos 3 códigos (0, 2, 128).
+  job com a causa. **Achado do Codex no PR #531 (P1, corrigido):** a 1ª versão da correção não desligava o `errexit` — o
+  GitHub roda `run:` com `bash -e {0}`, então o código 2 (a 1ª coleta, branch ainda inexistente) encerrava o passo antes
+  de criar a branch. Minha simulação rodava SEM `-e` e não via isso (**lição: simular o shell do jeito que o runner o
+  roda**). Agora o passo tem `set +e` em volta da consulta e um teste roda o passo real com `bash -e` e um `git` de
+  mentira nos 3 códigos (0, 2, 128); a mutação "sem `set +e`" reproduz o bug (sai com 2 sem criar a branch).
 - **Calendário** passou a recusar o mesmo tipo + data duas vezes (com ids diferentes viraria um evento só, sem aviso).
 - **Trava de isolamento (`contextIsolationTripwire.test.js`) tinha brechas [fato]:** `git -C . push` e `git -c x=y push`
   não eram vistos pelo regex `git\s+push`; segredo em minúsculas (`secrets.database_url`) e formas indiretas
