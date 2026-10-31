@@ -71,6 +71,7 @@ significado, sempre acompanhado de texto.
 |---|---|---|
 | 🧪 | Simulação manual — operação virtual criada no painel ("Simular entrada"), fora da medição do motor (Confiança ao Vivo e comparação com o histórico) | botão do cartão do ativo, banner do TradeCard, selo do Histórico |
 | ✏️ | Encerrada à mão pelo painel (edição, Encerrar, Invalidar) — fora da medição do motor | banner do TradeCard, selo do Histórico |
+| ♻️ | Recuperada após pausa do banco — operação reconstruída pelo replay de recuperação (item 288), fora da medição do motor | selo do Histórico, banner do TradeCard, aviso do Telegram e a mensagem única da recuperação |
 
 ### Registro "1 emoji = 1 significado" (item 280, PR-E2/E3)
 

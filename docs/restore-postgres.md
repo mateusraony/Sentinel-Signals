@@ -19,6 +19,11 @@ Firestore, branch SEPARADA — ver o comentário em
 (`postgres-backup-YYYY-MM-DD.dump`), gerado automaticamente todo dia de
 madrugada por esse workflow. Mantém os últimos 30 dias.
 
+Além do diário, a **recuperação após pausa do banco** (`recovery.yml`, modo aplicar) faz um backup logo antes de
+gravar, com nome próprio: `postgres-backup-YYYY-MM-DD-pre-recuperacao-NÚMERO.dump`. Ele **não** é sobrescrito pelo
+backup diário do mesmo dia e **não** entra na limpeza dos 30 mais recentes. O workflow "Restaurar backup no banco
+novo" aceita esse nome no campo "Arquivo do backup" (vazio = o diário mais recente).
+
 ```
 git clone --branch backups-postgres git@github.com:mateusraony/sentinel-signals-backups.git /tmp/sentinel-backups-pg
 cd /tmp/sentinel-backups-pg

@@ -27,7 +27,13 @@ name: Restaurar backup no banco novo (Sentinel Signals)
 # Perde-se o que foi gravado depois do último backup bom.
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      arquivo:
+        description: "Arquivo do backup (opcional — vazio = o backup diário mais recente). Para voltar ao estado de antes de uma recuperação: postgres-backup-AAAA-MM-DD-pre-recuperacao-NÚMERO.dump"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -98,9 +104,11 @@ jobs:
           sudo apt-get install -y postgresql-client-18
           echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
 
-      - name: Baixar o backup mais recente (repo privado, via deploy key SSH)
+      - name: Baixar o backup (repo privado, via deploy key SSH)
         env:
           BACKUP_DEPLOY_KEY: ${{ secrets.BACKUP_DEPLOY_KEY }}
+          # Entra por env e é conferido contra o formato exato (nunca interpolado no script).
+          ARQUIVO: ${{ inputs.arquivo }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "$BACKUP_DEPLOY_KEY" > ~/.ssh/backup_deploy_key
@@ -114,10 +122,17 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/backup_deploy_key -o IdentitiesOnly=yes"
           git clone --depth 1 --branch backups-postgres git@github.com:mateusraony/sentinel-signals-backups.git /tmp/backups
-          DUMP=$(ls -1 /tmp/backups/postgres-backup-*.dump | sort | tail -n 1)
-          if [ -z "$DUMP" ]; then
-            echo "::error::Nenhum postgres-backup-*.dump na branch backups-postgres."
-            exit 1
+          if [ -n "$ARQUIVO" ]; then
+            [[ "$ARQUIVO" =~ ^postgres-backup-[0-9]{4}-[0-9]{2}-[0-9]{2}(-pre-recuperacao-[0-9]+)?\.dump$ ]] || { echo "::error::Nome de arquivo inválido. Use o nome exato, por exemplo postgres-backup-2026-11-01.dump ou postgres-backup-2026-11-01-pre-recuperacao-123456.dump."; exit 1; }
+            DUMP="/tmp/backups/${ARQUIVO}"
+            [ -f "$DUMP" ] || { echo "::error::O arquivo ${ARQUIVO} não existe na branch backups-postgres."; exit 1; }
+          else
+            # Vazio: o backup DIÁRIO mais recente (nome só com a data; os -pre-recuperacao- só por escolha explícita).
+            DUMP=$(ls -1 /tmp/backups/postgres-backup-????-??-??.dump 2>/dev/null | sort | tail -n 1 || true)
+            if [ -z "$DUMP" ]; then
+              echo "::error::Nenhum backup diário (postgres-backup-AAAA-MM-DD.dump) na branch backups-postgres."
+              exit 1
+            fi
           fi
           cp "$DUMP" /tmp/restore.dump
           rm -f ~/.ssh/backup_deploy_key

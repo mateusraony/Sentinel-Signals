@@ -71,17 +71,35 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
-  # Backup do banco ANTES de aplicar (mesmo workflow do backup diário, no repo privado).
+  # O número digitado é conferido ANTES do backup (antes só era conferido depois dele: um número
+  # errado gastava o backup à toa). Só dígitos; nunca interpolado em script de shell.
+  validar:
+    if: inputs.modo == 'aplicar'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Conferir o número do teste a seco
+        env:
+          NUMERO_TESTE: ${{ inputs.numero_teste }}
+        run: |
+          [[ "$NUMERO_TESTE" =~ ^[0-9]+$ ]] || { echo "::error::Digite o número do teste a seco aprovado (só números; está no fim do relatório dele)."; exit 1; }
+
+  # Backup do banco ANTES de aplicar (mesmo workflow do backup diário, no repo privado), com NOME
+  # PRÓPRIO (-pre-recuperacao-<número>): o backup diário do mesmo dia não o sobrescreve nem o apaga
+  # na limpeza dos 30 mais recentes. Para desfazer, o restore-postgres.yml aceita esse nome.
   backup:
     if: inputs.modo == 'aplicar'
+    needs: validar
     uses: ./.github/workflows/backup-postgres.yml
+    with:
+      sufixo: -pre-recuperacao-${{ inputs.numero_teste }}
     secrets: inherit
 
   apply:
     if: inputs.modo == 'aplicar'
     needs: backup
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 190 # 170 min de aplicação + 5 de folga + preparo (npm ci, download)
     steps:
       - name: Conferir o número do teste a seco
         env:

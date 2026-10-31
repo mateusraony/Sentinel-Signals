@@ -74,7 +74,56 @@ describe('workflow recovery.yml', () => {
     expect(ap).toMatch(/TELEGRAM_BOT_TOKEN: \$\{\{ secrets\.TELEGRAM_BOT_TOKEN \}\}/);
   });
 
-  it('o backup diário aceita ser chamado pela recuperação (workflow_call)', () => {
-    expect(read('.github/workflows/backup-postgres.yml')).toMatch(/^\s+workflow_call: \{\}/m);
+  it('o número é validado ANTES do backup (um número errado não gasta backup)', () => {
+    const val = job('validar');
+    expect(val).toMatch(/\[\[ "\$NUMERO_TESTE" =~ \^\[0-9\]\+\$ \]\]/);
+    expect(val).toMatch(/NUMERO_TESTE: \$\{\{ inputs\.numero_teste \}\}/);
+    expect(job('backup')).toMatch(/needs: validar/);
+  });
+
+  it('o backup da recuperação tem nome próprio (-pre-recuperacao-<número>) passado por `with:`', () => {
+    const bk = job('backup');
+    expect(bk).toMatch(/sufixo: -pre-recuperacao-\$\{\{ inputs\.numero_teste \}\}/);
+    expect(bk).not.toMatch(/\brun:/); // chamada de workflow reutilizável: nada de shell aqui
+  });
+
+  it('o job aplicar tem folga sobre o prazo máximo da aplicação (170 min + 5 de último recurso)', () => {
+    expect(job('apply')).toMatch(/timeout-minutes: (19\d|2\d\d)/);
+  });
+});
+
+describe('backup-postgres.yml e restore-postgres.yml (nome próprio do backup da recuperação)', () => {
+  const strip = (t) => t.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+  const backup = strip(read('.github/workflows/backup-postgres.yml'));
+  const restore = strip(read('.github/workflows/restore-postgres.yml'));
+
+  it('o backup diário aceita ser chamado pela recuperação (workflow_call com o campo sufixo)', () => {
+    expect(backup).toMatch(/^\s+workflow_call:\s*\n\s+inputs:\s*\n\s+sufixo:/m);
+  });
+
+  it('o sufixo entra por env, só no formato exato, e nunca dentro de uma linha de shell', () => {
+    expect(backup).toMatch(/BACKUP_SUFFIX: \$\{\{ inputs\.sufixo \}\}/);
+    expect(backup).toMatch(/\[\[ "\$BACKUP_SUFFIX" =~ \^\(-pre-recuperacao-\[0-9\]\+\)\?\$ \]\]/);
+    const shellLines = backup.split('\n').filter((l) => !/^\s*[A-Z_]+: /.test(l));
+    for (const l of shellLines) expect(l).not.toMatch(/inputs\.sufixo/);
+  });
+
+  it('um backup por vez (o diário e o da recuperação empurram na mesma branch)', () => {
+    expect(backup).toMatch(/concurrency:\s*\n\s+group: backup-postgres\s*\n\s+cancel-in-progress: false/);
+  });
+
+  it('a limpeza dos 30 mais recentes NÃO apaga os backups -pre-recuperacao-', () => {
+    expect(backup).toMatch(/ls -1 postgres-backup-\?\?\?\?-\?\?-\?\?\.dump /);
+    expect(backup).not.toMatch(/ls -1 postgres-backup-\*\.dump/);
+    expect(backup).toMatch(/BACKUP_NAME=/);
+  });
+
+  it('a restauração aceita um arquivo escolhido (campo opcional, nome exato) e, vazio, usa o diário mais recente', () => {
+    expect(restore).toMatch(/workflow_dispatch:\s*\n\s+inputs:\s*\n\s+arquivo:/);
+    expect(restore).toMatch(/ARQUIVO: \$\{\{ inputs\.arquivo \}\}/);
+    expect(restore).toMatch(/postgres-backup-\[0-9\]\{4\}-\[0-9\]\{2\}-\[0-9\]\{2\}\(-pre-recuperacao-\[0-9\]\+\)\?\\\.dump/);
+    expect(restore).toMatch(/ls -1 \/tmp\/backups\/postgres-backup-\?\?\?\?-\?\?-\?\?\.dump/);
+    const shellLines = restore.split('\n').filter((l) => !/^\s*[A-Z_]+: /.test(l));
+    for (const l of shellLines) expect(l).not.toMatch(/inputs\.arquivo/);
   });
 });

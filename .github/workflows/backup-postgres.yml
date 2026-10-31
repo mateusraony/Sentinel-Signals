@@ -39,7 +39,13 @@ on:
   workflow_dispatch: {}
   # Chamado também pelo recovery.yml (modo aplicar, docs/known-risks.md item 288): backup
   # logo ANTES de a recuperação gravar no banco. Mesmo job, mesmo destino (repo privado).
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      # Só a recuperação usa: "-pre-recuperacao-<número>". Vazio = o backup diário de sempre.
+      sufixo:
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -48,6 +54,12 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Um backup por vez: o diário (03:37 UTC) e o da recuperação empurram na MESMA branch do repo
+    # privado, e dois pushes juntos dariam non-fast-forward. Fica no JOB (não no workflow) e com
+    # grupo próprio: no nível do workflow, chamado por outro, o grupo disputaria com o do chamador.
+    concurrency:
+      group: backup-postgres
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v5
 
@@ -102,14 +114,18 @@ jobs:
       - name: Gerar dump
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Entra por env (nunca interpolado no script) e é conferido: só o formato exato da recuperação.
+          BACKUP_SUFFIX: ${{ inputs.sufixo }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::Secret DATABASE_URL não configurado (mesmo secret usado por db-migrate.yml — Settings → Secrets and variables → Actions)."
             exit 1
           fi
+          [[ "$BACKUP_SUFFIX" =~ ^(-pre-recuperacao-[0-9]+)?$ ]] || { echo "::error::Sufixo de backup inválido."; exit 1; }
           DATE=$(date -u +%Y-%m-%d)
-          node scripts/backup-postgres.mjs "/tmp/postgres-backup-${DATE}.dump"
-          echo "BACKUP_DATE=${DATE}" >> "$GITHUB_ENV"
+          NAME="postgres-backup-${DATE}${BACKUP_SUFFIX}.dump"
+          node scripts/backup-postgres.mjs "/tmp/${NAME}"
+          echo "BACKUP_NAME=${NAME}" >> "$GITHUB_ENV"
 
       - name: Publicar na branch backups-postgres (repo privado, via deploy key SSH)
         env:
@@ -141,12 +157,13 @@ jobs:
             git rm -rf . >/dev/null 2>&1 || true
           fi
 
-          cp "/tmp/postgres-backup-${BACKUP_DATE}.dump" "./postgres-backup-${BACKUP_DATE}.dump"
-          git add "postgres-backup-${BACKUP_DATE}.dump"
-          git commit -m "Backup Postgres ${BACKUP_DATE}" --allow-empty
+          cp "/tmp/${BACKUP_NAME}" "./${BACKUP_NAME}"
+          git add "${BACKUP_NAME}"
+          git commit -m "Backup Postgres ${BACKUP_NAME}" --allow-empty
 
-          # Mantém só os últimos 30 snapshots diários
-          ls -1 postgres-backup-*.dump 2>/dev/null | sort | head -n -30 | xargs -r git rm -q --ignore-unmatch
+          # Mantém só os últimos 30 snapshots DIÁRIOS (nome só com a data). Os backups feitos antes de
+          # uma recuperação (-pre-recuperacao-<número>) ficam de fora da limpeza.
+          ls -1 postgres-backup-????-??-??.dump 2>/dev/null | sort | head -n -30 | xargs -r git rm -q --ignore-unmatch
           git diff --cached --quiet || git commit -m "Remove backups antigos (mantém últimos 30)"
 
           git push backup-repo backups-postgres

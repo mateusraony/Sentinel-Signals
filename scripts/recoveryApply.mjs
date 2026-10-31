@@ -16,7 +16,7 @@
 import { createSnapshotBackend } from '../src/lib/recovery/snapshotBackend.js';
 import {
   RecoveryAbort, assertRealClock, assertLiveScanPaused, assertStrategyConfigPresent, runRecoveryReplay,
-  buildRecoveryDiff, buildRecoveryTags, formatRecoverySummary, fingerprint,
+  buildRecoveryDiff, buildRecoveryTags, formatRecoverySummary, fingerprint, clipSummaryForTelegram,
 } from '../src/lib/recovery/recoveryReplay.js';
 import { readSnapshot, planRecovery, preloadAndValidate, simulateInMemory, assertSignalsCover, RECOVERY_ARTIFACT_VERSION } from './recoveryDryRun.mjs';
 import { seriesFingerprint } from './recoveryMarketDataProvider.js';
@@ -24,6 +24,10 @@ import { seriesFingerprint } from './recoveryMarketDataProvider.js';
 export const APPLY_LOCK_TTL_MS = 40 * 60 * 1000;
 export const MAX_APPROVAL_AGE_MS = 24 * 60 * 60 * 1000;
 export const LOCK_NAMES = Object.freeze(['full-scan', 'price-check']);
+/** Prazo para o envio do resumo ao Telegram (um fetch sem prazo travaria o fim do job). */
+export const SUMMARY_SEND_TIMEOUT_MS = 60 * 1000;
+/** Margem do prazo por ativo: o próximo só começa se o MAIOR tempo de ativo já medido (x1,5) ainda cabe. */
+const ASSET_TIME_MARGIN = 1.5;
 const SCAN_STATUS_KEYS = new Set(['last_scan_at', 'scan_status', 'scan_error', 'scan_error_since']);
 const WRITE_METHODS = ['create', 'createUnique', 'update', 'delete', 'set', 'bulkCreate', 'deleteMany'];
 const iso = (ms) => new Date(ms).toISOString();
@@ -43,9 +47,27 @@ export function diffEvents(diff) {
  * retrato — igual ao teste a seco e à checagem retroativa) e os campos de status do scan no
  * MonitoredAsset (o replay não é um scan ao vivo). O diário registra o que foi gravado.
  */
-export function createApplyBackend(real, snapshot) {
+/** Lançado por qualquer escrita (ou passo de escrita) depois que o prazo duro estourou. */
+export class ApplyAborted extends RecoveryAbort {
+  constructor(what = 'escrita') {
+    super('apply_timeout', `aplicação abortada por tempo — ${what} bloqueada`);
+    this.name = 'ApplyAborted';
+  }
+}
+
+/**
+ * `isAborted`: depois do prazo duro, o `Promise.race` de `runApply` já devolveu o resultado, mas o
+ * laço do replay continua vivo (JavaScript não cancela promessa). Sem esta trava ele podia voltar de
+ * uma leitura pendente e seguir gravando operações/cursor enquanto o relatório dizia "nada foi
+ * gravado" (achado do Codex no PR #530). Toda escrita do backend de aplicação passa por ela.
+ */
+export function createApplyBackend(real, snapshot, isAborted = () => false) {
+  const guard = (what) => { if (isAborted()) throw new ApplyAborted(what); };
   const { backend: mem } = createSnapshotBackend({ AssetState: snapshot.AssetState || [] });
   const journal = [];
+  // Tentativas de escrita (antes da chamada): se uma escrita falhar na rede o efeito é ambíguo,
+  // e o lado seguro é dizer "parou no meio". Escrita de SystemLog (log) não conta.
+  const stats = { attempted: 0 };
   const entities = {};
   for (const [name, api] of Object.entries(real.entities)) {
     if (name === 'AssetState') { entities[name] = mem.entities.AssetState; continue; }
@@ -54,9 +76,11 @@ export function createApplyBackend(real, snapshot) {
     for (const m of WRITE_METHODS) {
       if (typeof api[m] !== 'function') continue;
       wrapped[m] = async (...a) => {
+        guard(`escrita em ${name}`);
         if (name === 'MonitoredAsset' && m === 'update' && Object.keys(a[1] || {}).every((k) => SCAN_STATUS_KEYS.has(k))) {
           return { id: a[0], ...a[1] };
         }
+        if (name !== 'SystemLog') stats.attempted += 1;
         const out = await api[m](...a);
         if (name !== 'SystemLog') journal.push({ entity: name, op: m, id: typeof a[0] === 'string' ? a[0] : null });
         return out;
@@ -66,18 +90,22 @@ export function createApplyBackend(real, snapshot) {
   }
   const tradeOps = {
     async createTradeOpIfNoneActive(...a) {
+      guard('criação de operação');
+      stats.attempted += 1;
       const out = await real.tradeOps.createTradeOpIfNoneActive(...a);
       if (out?.created) journal.push({ entity: 'TradeOperation', op: 'create', id: a[1] });
       return out;
     },
-    clearActiveOp: (...a) => real.tradeOps.clearActiveOp(...a),
+    clearActiveOp: async (...a) => { guard('limpeza de ativo'); return real.tradeOps.clearActiveOp(...a); },
     async transitionTradeOp(...a) {
+      guard('transição de operação');
+      stats.attempted += 1;
       const out = await real.tradeOps.transitionTradeOp(...a);
       if (out?.applied) journal.push({ entity: 'TradeOperation', op: 'transition', id: a[0], to: a[2]?.status ?? null });
       return out;
     },
   };
-  return { backend: { entities, tradeOps, assetStates: mem.assetStates, locks: real.locks, quota: real.quota }, journal };
+  return { backend: { entities, tradeOps, assetStates: mem.assetStates, locks: real.locks, quota: real.quota }, journal, stats };
 }
 
 /** Linhas por id: usa `get` (Postgres) quando existe; senão uma leitura completa e filtra. */
@@ -109,14 +137,21 @@ function assertApproval({ approved, approvedRunId, nowMs }) {
 
 async function acquireLocks(locks, holder) {
   const got = [];
-  for (const name of LOCK_NAMES) {
-    assertRealClock('pegar o lock');
-    const ok = await locks.acquireScanLock(name, APPLY_LOCK_TTL_MS, holder);
-    if (!ok) {
-      await releaseLocks(locks, holder, got);
-      throw new RecoveryAbort('lock_busy', `o lock "${name}" está com outro processo (scan ao vivo ou painel aberto?) — nada foi gravado`);
+  try {
+    for (const name of LOCK_NAMES) {
+      assertRealClock('pegar o lock');
+      const ok = await locks.acquireScanLock(name, APPLY_LOCK_TTL_MS, holder);
+      if (!ok) {
+        await releaseLocks(locks, holder, got);
+        throw new RecoveryAbort('lock_busy', `o lock "${name}" está com outro processo (scan ao vivo ou painel aberto?) — nada foi gravado`);
+      }
+      got.push(name);
     }
-    got.push(name);
+  } catch (error) {
+    // Erro de rede na 2ª trava deixava a 1ª presa por 40 min (achado da auditoria de 31/10). Solta
+    // todas (soltar o que não é nosso é inofensivo: a liberação confere o dono).
+    if (!(error instanceof RecoveryAbort)) await releaseLocks(locks, holder, LOCK_NAMES);
+    throw error;
   }
   return got;
 }
@@ -127,10 +162,38 @@ async function releaseLocks(locks, holder, names) {
   }
 }
 
+const BRT = new Intl.DateTimeFormat('pt-BR', {
+  timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+const brt = (ms) => (Number.isFinite(ms) ? BRT.format(new Date(ms)).replace(',', '') : '—');
+
+/** Linha de aviso das operações abertas que ficaram FORA da recuperação (ativo desativado / checagem pendente). */
+export function formatOutOfScopeLine(list) {
+  if (!list?.length) return null;
+  const shown = list.slice(0, 8).map((o) => `${o.symbol} ${o.status} (${o.reason})`).join(', ');
+  const more = list.length > 8 ? ` e mais ${list.length - 8}` : '';
+  return `ATENÇÃO — ${list.length} operação(ões) ABERTA(S) ficaram FORA da recuperação e continuam paradas: ${shown}${more}.`;
+}
+
+/** Ids das duas pontas que divergem (lista da simulação + lista do banco real), sem repetir. */
+function divergentIds(simRows, realRows) {
+  const simById = new Map(simRows.map((r) => [r.id, r]));
+  const realById = new Map(realRows.map((r) => [r.id, r]));
+  const ids = new Set([...simById.keys(), ...realById.keys()]);
+  return [...ids].filter((id) => fingerprint(simById.get(id) ?? null) !== fingerprint(realById.get(id) ?? null)).sort();
+}
+
 async function applyInner(deps, state) {
-  const { liveBackend, workflows, entitiesTarget, getPineConfig, getPineConfigStatus, nowMs, runId, approved, approvedRunId, fetchSeries } = deps;
+  const { liveBackend, workflows, workflowsError, entitiesTarget, getPineConfig, getPineConfigStatus, nowMs, runId, approved, approvedRunId, fetchSeries } = deps;
+  const clock = deps.clock ?? Date.now;
+  const deadlineMs = Number.isFinite(deps.deadlineMs) ? deps.deadlineMs : Infinity;
   assertRealClock('aplicar a recuperação');
   assertApproval({ approved, approvedRunId, nowMs });
+  // Falha ao LER o estado dos workflows não é "o scan está ligado": mensagem própria (antes virava
+  // "desative o scan" com ele já desligado — achado da auditoria de 31/10).
+  if (workflowsError) {
+    throw new RecoveryAbort('github_api', `não consegui conferir se o "Scheduled scan" e o "Backfill check" estão desativados (${workflowsError}) — nada foi gravado; rode de novo`);
+  }
   assertLiveScanPaused(workflows);
 
   const snapshot = await readSnapshot(liveBackend);
@@ -176,107 +239,195 @@ async function applyInner(deps, state) {
     if (fingerprint(await readSnapshot(liveBackend)) !== approved.fingerprints.snapshot) {
       throw new RecoveryAbort('snapshot_changed', 'o banco mudou enquanto a recuperação se preparava (scan ou painel aberto?) — nada foi gravado; rode um novo teste a seco');
     }
-    const apply = createApplyBackend(liveBackend, snapshot);
+    const apply = createApplyBackend(liveBackend, snapshot, () => state.aborted);
     for (const k of Object.keys(entitiesTarget)) delete entitiesTarget[k];
     Object.assign(entitiesTarget, apply.backend);
-    state.wrote = true;
+    // "Gravou" = alguma escrita foi TENTADA (diário do backend) ou o cursor foi escrito. Antes era
+    // marcado aqui, antes de qualquer escrita, e uma falha logo no início dizia "parou no meio".
+    state.stats = apply.stats;
+    let startedMs = null;
+    let longestAssetMs = 0;
     const perAsset = await runRecoveryReplay({
       assets: plan.assets, windows: plan.windows, pineConfig,
-      onAsset: async () => {
+      // Prazo: só começa outro ativo se o maior tempo de ativo já medido (x1,5) ainda cabe.
+      shouldStop: () => state.aborted || clock() + longestAssetMs * ASSET_TIME_MARGIN > deadlineMs,
+      onAsset: async (asset) => {
+        if (state.aborted) throw new ApplyAborted('renovação de lock');
         assertRealClock('renovar o lock');
+        state.inFlight = asset.symbol;
+        startedMs = clock();
         for (const name of held) {
           if (!(await locks.acquireScanLock(name, APPLY_LOCK_TTL_MS, holder))) throw new RecoveryAbort('lock_lost', `o lock "${name}" foi perdido no meio da aplicação`);
         }
       },
       // Cursor por ativo: uma nova recuperação começa DEPOIS do que já foi aplicado.
       onAssetDone: async (asset, w) => {
+        if (state.aborted) throw new ApplyAborted('gravação do cursor');
         assertRealClock('gravar o cursor');
+        state.cursorWritten = true;
         await liveBackend.entities.MonitoredAsset.update(asset.id, { recovery_replayed_to: iso(w.toMs), recovery_run_id: runId });
+        longestAssetMs = Math.max(longestAssetMs, clock() - startedMs);
+        state.inFlight = null;
       },
     });
 
+    const pendingIds = new Set(perAsset.filter((r) => r.pending).map((r) => r.assetId));
+    const partial = pendingIds.size > 0;
+    const pendingSymbols = perAsset.filter((r) => r.pending).map((r) => r.symbol);
+    const symbolToId = new Map(plan.assets.map((a) => [a.symbol, a.id]));
+    const assetOf = (row) => row.asset_id ?? symbolToId.get(row.symbol);
+    // Parcial: só os ativos concluídos entram na conferência (os pendentes ainda não foram tocados).
+    const inScope = (row) => !partial || !pendingIds.has(assetOf(row));
+
     // Conferência: o banco real tem que ter ficado igual à simulação em memória.
     const afterReal = await readSnapshot(liveBackend);
-    const opsReal = byId(afterReal.TradeOperation);
-    const opsSim = byId(sim.after.TradeOperation);
+    const opsReal = byId(afterReal.TradeOperation.filter(inScope));
+    const opsSim = byId(sim.after.TradeOperation.filter(inScope));
     // Sinais tocados lidos PELO ID (achado do Codex no PR #524): o retrato só traz os 5.000 mais
     // recentes, e um sinal tocado fora dessa janela viraria uma falsa "parou no meio".
-    const touchedSignals = new Set([...sim.diff.signals.created, ...sim.diff.signals.changed.map((c) => c.after)].map((s) => s.id));
+    const touchedSignals = new Set([...sim.diff.signals.created, ...sim.diff.signals.changed.map((c) => c.after)].filter(inScope).map((s) => s.id));
     const sigReal = byId(await fetchByIds(liveBackend.entities.SignalEvent, [...touchedSignals]));
     const sigSim = byId(sim.after.SignalEvent.filter((s) => touchedSignals.has(s.id)));
     if (fingerprint(opsReal) !== fingerprint(opsSim) || fingerprint(sigReal) !== fingerprint(sigSim)) {
-      const realById = new Map(opsReal.map((o) => [o.id, o]));
-      const diverge = opsSim.filter((o) => fingerprint(o) !== fingerprint(realById.get(o.id) ?? null)).map((o) => o.id);
-      throw new RecoveryAbort('verify_mismatch', `o banco ficou diferente da simulação em ${diverge.length} operação(ões): ${diverge.slice(0, 5).join(', ')}`, { diverge });
+      // As duas pontas: operação/sinal que existe só no banco real também conta (antes só se olhava a simulação).
+      const diverge = divergentIds(opsSim, opsReal);
+      const divergeSignals = divergentIds(sigSim, sigReal);
+      const parts = [];
+      if (diverge.length) parts.push(`${diverge.length} operação(ões): ${diverge.slice(0, 5).join(', ')}`);
+      if (divergeSignals.length) parts.push(`${divergeSignals.length} sinal(is): ${divergeSignals.slice(0, 5).join(', ')}`);
+      throw new RecoveryAbort('verify_mismatch', `o banco ficou diferente da simulação em ${parts.join(' e ') || 'um ponto não identificado'}`, { diverge, divergeSignals });
     }
 
     const diffReal = buildRecoveryDiff(snapshot, afterReal);
     const tags = buildRecoveryTags({ diff: diffReal, runId, detectedAtMs: nowMs });
-    for (const t of tags) await liveBackend.entities.TradeOperation.update(t.id, t.patch);
+    // Banco gravado E conferido; se só a etiqueta falhar, o aviso é outro (os dados estão certos).
+    const tagFailures = [];
+    for (const t of tags) {
+      if (state.aborted) throw new ApplyAborted('etiquetagem');
+      try { await liveBackend.entities.TradeOperation.update(t.id, t.patch); } catch (e) { tagFailures.push(`${t.id}: ${e?.message ?? e}`); }
+    }
+    if (tagFailures.length) {
+      throw new RecoveryAbort('tag_failed', `a etiqueta "Recuperada" falhou em ${tagFailures.length} de ${tags.length} operação(ões): ${tagFailures.slice(0, 3).join(' | ')}`, { tagFailures });
+    }
+
+    const outOfScopeOpen = plan.outOfScopeOpen;
+    const lines = [];
+    if (partial) {
+      lines.push(`PARCIAL: o tempo da aplicação estava acabando, então ela parou ENTRE ativos. Concluídos: ${perAsset.filter((r) => !r.pending && !r.skipped).length}. Faltam (não foram tocados): ${pendingSymbols.join(', ')}.`);
+      lines.push('Para os que faltam: rode um NOVO teste a seco (ele recomeça de onde cada ativo parou), leia, e aplique de novo. NÃO religue o scan antes.');
+      lines.push('');
+    }
+    lines.push(formatRecoverySummary({ diff: diffReal, windowFromMs: plan.windowFromMs, windowToMs: plan.windowToMs, mode: partial ? 'APLICADO PARCIALMENTE no banco' : 'APLICADO no banco' }));
+    const outLine = formatOutOfScopeLine(outOfScopeOpen);
+    if (outLine) lines.push(outLine);
 
     return {
-      ok: true, mode: 'apply', runId, approvedRunId: String(approvedRunId), nowMs,
-      windowFromMs: plan.windowFromMs, windowToMs: plan.windowToMs, assets: perAsset,
+      ok: true, mode: 'apply', runId, approvedRunId: String(approvedRunId), nowMs, partial, pending: pendingSymbols,
+      windowFromMs: plan.windowFromMs, windowToMs: plan.windowToMs, assets: perAsset, outOfScopeOpen,
       diff: diffReal, tags, journal: apply.journal,
       before: snapshot.TradeOperation.filter((o) => diffReal.ops.changed.some((c) => c.id === o.id)),
-      summary: formatRecoverySummary({ diff: diffReal, windowFromMs: plan.windowFromMs, windowToMs: plan.windowToMs, mode: 'APLICADO no banco' }),
+      summary: lines.join('\n'),
     };
   } finally {
     await releaseLocks(locks, holder, held);
   }
 }
 
+const wroteSomething = (state) => Boolean(state.cursorWritten || (state.stats?.attempted ?? 0) > 0);
+
 /** Texto da falha para o relatório e para a única mensagem do Telegram. */
 export function formatApplyFailure(err, wrote) {
+  const msg = err?.message ?? String(err);
+  if (err?.code === 'tag_failed') {
+    return [
+      'A recuperação foi GRAVADA e CONFERIDA (o banco bate com a simulação), mas a etiqueta "Recuperada" falhou em parte das operações.',
+      `Motivo: ${msg}`,
+      'Os dados estão certos. NÃO rode de novo e NÃO religue o scan: sem a etiqueta, as operações recuperadas entrariam nas estatísticas ao vivo. Chame o Claude para só etiquetar.',
+    ].join('\n');
+  }
+  if (err?.code === 'apply_timeout') {
+    if (!wrote) return `Recuperação NÃO aplicada — o tempo esgotou ANTES de gravar qualquer coisa.\nMotivo: ${msg}\nNada foi gravado. Rode um novo teste a seco.`;
+    return [
+      'ATENÇÃO: o TEMPO ESGOTOU no meio da aplicação — parte já foi gravada no banco.',
+      `Motivo: ${msg}`,
+      'NÃO rode de novo e NÃO religue o scan. Chame o Claude. As travas (locks) se soltam sozinhas em até 40 min. O backup feito logo antes está no repositório privado de backups.',
+    ].join('\n');
+  }
   if (!wrote) {
-    return `Recuperação NÃO aplicada — nada foi gravado no banco.\nMotivo: ${err?.message ?? String(err)}`;
+    return `Recuperação NÃO aplicada — nada foi gravado no banco.\nMotivo: ${msg}`;
   }
   return [
     'ATENÇÃO: a recuperação parou NO MEIO — parte já foi gravada no banco.',
-    `Motivo: ${err?.message ?? String(err)}`,
+    `Motivo: ${msg}`,
     'NÃO rode de novo e NÃO religue o scan. O backup feito logo antes está no repositório privado de backups.',
   ].join('\n');
 }
 
+function raceTimeout(promise, ms, makeError) {
+  promise.catch(() => {}); // a promessa perdedora não pode virar rejeição sem dono
+  if (!Number.isFinite(ms)) return promise;
+  let timer;
+  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(makeError()), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 /**
- * @param {{ liveBackend: object, workflows: object[], entitiesTarget: object, getPineConfig: Function,
+ * @param {{ liveBackend: object, workflows: object[], workflowsError?: string, entitiesTarget: object, getPineConfig: Function,
  *   getPineConfigStatus: Function, nowMs: number, runId: string, approved: object, approvedRunId: string,
- *   fetchSeries?: Function, sendSummary: (text: string) => Promise<boolean> }} deps
+ *   fetchSeries?: Function, sendSummary: (text: string) => Promise<boolean>,
+ *   timeoutMs?: number, deadlineMs?: number, clock?: () => number }} deps
+ *   `deadlineMs`: instante em que NÃO se começa outro ativo (parada limpa). `timeoutMs`: tempo máximo
+ *   da aplicação inteira (parada dura, com mensagem e relatório).
  */
 export async function runApply(deps) {
-  const state = { wrote: false };
+  const state = { cursorWritten: false, stats: null, inFlight: null, aborted: false };
+  const clock = deps.clock ?? Date.now;
+  const startedMs = clock();
   let outcome;
   try {
-    outcome = await applyInner(deps, state);
+    outcome = await raceTimeout(applyInner(deps, state), deps.timeoutMs, () => {
+      state.aborted = true; // a partir daqui nada mais é gravado (ver createApplyBackend)
+      const min = Math.round((clock() - startedMs) / 60000);
+      const where = state.inFlight ? ` durante o ativo ${state.inFlight}` : '';
+      return Object.assign(new Error(`a aplicação passou do tempo máximo (${min} min)${where}`), { code: 'apply_timeout' });
+    });
   } catch (error) {
-    outcome = { ok: false, mode: 'apply', error, code: error?.code ?? null, wrote: state.wrote, summary: formatApplyFailure(error, state.wrote) };
+    const wrote = wroteSomething(state);
+    outcome = { ok: false, mode: 'apply', error, code: error?.code ?? null, wrote, summary: formatApplyFailure(error, wrote) };
   }
   try {
-    outcome.telegramSent = await deps.sendSummary(outcome.summary);
+    outcome.telegramSent = await raceTimeout(
+      Promise.resolve().then(() => deps.sendSummary(clipSummaryForTelegram(outcome.summary))),
+      SUMMARY_SEND_TIMEOUT_MS, () => new Error('envio ao Telegram passou do prazo'),
+    );
   } catch {
     outcome.telegramSent = false;
   }
   return outcome;
 }
 
-const BRT = new Intl.DateTimeFormat('pt-BR', {
-  timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-});
-const brt = (ms) => (Number.isFinite(ms) ? BRT.format(new Date(ms)).replace(',', '') : '—');
+/** Título e "próximo passo" do relatório, conforme o resultado. */
+function failureTitle(outcome) {
+  if (outcome.code === 'tag_failed') return '## Recuperação — GRAVADA E CONFERIDA, FALTA ETIQUETAR';
+  if (outcome.code === 'apply_timeout') return outcome.wrote ? '## Recuperação — TEMPO ESGOTADO NO MEIO' : '## Recuperação — NÃO APLICADA (tempo esgotado)';
+  return outcome.wrote ? '## Recuperação — PAROU NO MEIO' : '## Recuperação — NÃO APLICADA';
+}
 
 /** Relatório do modo aplicar (Job Summary). */
 export function formatApplyMarkdown(outcome) {
   const L = [];
   if (!outcome.ok) {
-    L.push(outcome.wrote ? '## Recuperação — PAROU NO MEIO' : '## Recuperação — NÃO APLICADA');
+    L.push(failureTitle(outcome));
     L.push('');
     L.push('```');
     L.push(outcome.summary);
     L.push('```');
     if (outcome.code) L.push(`Código: \`${outcome.code}\``);
+    L.push('');
+    L.push(`Mensagem no Telegram: ${telegramLine(outcome)}`);
     return L.join('\n');
   }
-  L.push('## Recuperação — APLICADA no banco');
+  L.push(outcome.partial ? '## Recuperação — APLICADA PARCIALMENTE' : '## Recuperação — APLICADA no banco');
   L.push('');
   L.push(`Teste a seco aprovado: \`${outcome.approvedRunId}\` · período ${brt(outcome.windowFromMs)} a ${brt(outcome.windowToMs)} (Brasília)`);
   L.push('');
@@ -284,8 +435,18 @@ export function formatApplyMarkdown(outcome) {
   L.push(outcome.summary);
   L.push('```');
   L.push('');
-  L.push(`Mensagem no Telegram: ${outcome.telegramSent ? 'enviada' : 'NÃO enviada (confira os segredos do Telegram)'}`);
+  L.push(`Mensagem no Telegram: ${telegramLine(outcome)}`);
   L.push('');
-  L.push('**Próximo passo:** religar o "Scheduled scan" e o cron-job.org (a cada 15 min), nesta ordem, logo depois — o roteiro está em `docs/claude/recovery-runbook.md`.');
+  if (outcome.partial) {
+    L.push(`**Próximo passo:** NÃO religue o scan ainda. Faltam: ${outcome.pending.join(', ')}. Rode um novo teste a seco, leia, e aplique de novo — o roteiro está em \`docs/claude/recovery-runbook.md\`.`);
+  } else {
+    L.push('**Próximo passo — religar logo, nesta ordem:** (1) o workflow "Scheduled scan", (2) o job do cron-job.org (a cada 15 min), (3) o workflow "Backfill check". As velas entre o fim desta aplicação e o 1º scan ao vivo não são reprocessadas, então não deixe passar horas. Roteiro: `docs/claude/recovery-runbook.md`.');
+  }
   return L.join('\n');
+}
+
+function telegramLine(outcome) {
+  return outcome.telegramSent
+    ? 'enviada'
+    : 'NÃO enviada (o envio falhou: segredos do Telegram ausentes, rede ou recusa do Telegram — veja o log do passo "Aplicar a recuperação"; o resumo completo está acima)';
 }

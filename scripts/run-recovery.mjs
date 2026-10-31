@@ -22,6 +22,10 @@ import { withTimeout, forceExit } from './scanTimeout.mjs';
 
 const DRY_RUN_TIMEOUT_MS = 25 * 60 * 1000;
 const APPLY_TIMEOUT_MS = 170 * 60 * 1000;
+// Parada limpa: depois disto NÃO se começa outro ativo (sobram ~15 min para terminar o atual, conferir e avisar).
+const APPLY_STOP_NEW_ASSET_MS = 150 * 60 * 1000;
+// Último recurso: folga para o envio do Telegram e a escrita do relatório depois do prazo da aplicação.
+const APPLY_LAST_RESORT_MS = 5 * 60 * 1000;
 
 function parseArgs(argv) {
   const out = {};
@@ -84,24 +88,39 @@ async function apply(args) {
     if (typeof args.approved === 'string') approved = JSON.parse(fs.readFileSync(args.approved, 'utf8'));
   } catch { approved = null; }
   let workflows = [];
+  let workflowsError = null;
   try {
     workflows = await fetchWorkflowStates();
   } catch (err) {
-    workflows = []; // assertLiveScanPaused recusa lista vazia — a falha vira a mensagem única abaixo
-    console.error(err?.message ?? err);
+    // Falha da API do GitHub NÃO é "o scan está ligado": a causa certa segue para a mensagem única.
+    workflowsError = String(err?.message ?? err);
+    console.error(workflowsError);
   }
-  const outcome = await withTimeout(runApply({
-    liveBackend, workflows, entitiesTarget, getPineConfig, getPineConfigStatus,
-    nowMs: Date.now(), runId: String(process.env.GITHUB_RUN_ID || `local-${Date.now()}`),
-    approved, approvedRunId,
-    sendSummary: notifyRecoverySummary,
-  }), APPLY_TIMEOUT_MS, 'aplicação da recuperação');
+  const startedMs = Date.now();
+  let outcome;
+  try {
+    // O prazo duro (timeoutMs) e a parada limpa entre ativos (deadlineMs) vivem DENTRO de runApply,
+    // que sempre devolve o resultado e manda a única mensagem do Telegram. O withTimeout de fora é
+    // só o último recurso (algo travou até no envio) e também gera relatório.
+    outcome = await withTimeout(runApply({
+      liveBackend, workflows, workflowsError, entitiesTarget, getPineConfig, getPineConfigStatus,
+      nowMs: startedMs, runId: String(process.env.GITHUB_RUN_ID || `local-${Date.now()}`),
+      approved, approvedRunId,
+      timeoutMs: APPLY_TIMEOUT_MS, deadlineMs: startedMs + APPLY_STOP_NEW_ASSET_MS,
+      sendSummary: notifyRecoverySummary,
+    }), APPLY_TIMEOUT_MS + APPLY_LAST_RESORT_MS, 'aplicação da recuperação');
+  } catch (error) {
+    outcome = {
+      ok: false, mode: 'apply', error, code: error?.code ?? 'apply_unexpected', wrote: true, telegramSent: false,
+      summary: 'ATENÇÃO: a aplicação terminou de forma inesperada (travou até no fim) — pode ter gravado parte.\nNÃO rode de novo e NÃO religue o scan. Chame o Claude. O backup feito logo antes está no repositório privado de backups.',
+    };
+  }
   writeSummary(formatApplyMarkdown(outcome));
   if (typeof args.out === 'string') {
     const { error, ...rest } = outcome;
     fs.writeFileSync(args.out, JSON.stringify({ ...rest, error: error ? { code: error.code ?? null, message: String(error.message ?? error) } : null }));
   }
-  return outcome.ok ? 0 : 1;
+  return outcome.ok && !outcome.partial ? 0 : 1;
 }
 
 async function main() {
