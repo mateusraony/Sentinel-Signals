@@ -1,0 +1,71 @@
+name: Coletor de contexto — datas dos eventos (Sentinel Signals)
+
+# docs/known-risks.md item 285, addendum 9 — Fase 2 do Contexto de Mercado. Lê as datas oficiais
+# de CPI, Payroll, PPI e PCE no FRED, junta com a lista fixa (FOMC só nela) e grava 2 arquivos
+# pequenos na branch pública `context-data`: events.json (tipo, data/hora, situação) e status.json
+# (quando checou, se o FRED respondeu, cobertura). Nada de chave, URL, mensagem de erro, valor de
+# série ou volatilidade — travado por scripts/contextCollect.test.js e pelo tripwire de isolamento.
+#
+# NENHUM banco (não pode acordar o Neon), NENHUM Telegram, NENHUMA ordem. Sem `npm ci`: o script
+# usa só módulos nativos do Node.
+#
+# Escrita: é o ÚNICO workflow de contexto com `contents: write`, e só dá push na branch
+# `context-data` (cria na 1ª vez, sem --force). Disparo principal: cron-job.org (07h, 12h e 21h de
+# Brasília, via workflow_dispatch — docs/claude/external-cron-setup.md). O `schedule` é só reserva
+# diária, fora do minuto :00 (o GitHub desliga `schedule` após 60 dias sem atividade no repositório).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 11 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: context-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Abrir a branch de dados
+        # Existe: abre a última versão. Não existe (1ª vez): cria vazia, sem histórico do código.
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --heads origin context-data >/dev/null 2>&1; then
+            git fetch --depth=1 origin context-data
+            git worktree add data FETCH_HEAD
+            git -C data checkout -q -B context-data
+          else
+            git worktree add --orphan -b context-data data
+          fi
+
+      - name: Coletar as datas
+        # FRED_API_KEY vai só na URL da requisição; CONTEXT_CONTACT_EMAIL só no User-Agent.
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          CONTEXT_CONTACT_EMAIL: ${{ secrets.CONTEXT_CONTACT_EMAIL }}
+        run: |
+          set -o pipefail
+          node scripts/context-collect.mjs --dir data | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar na branch context-data
+        run: |
+          set -euo pipefail
+          cd data
+          git add events.json status.json
+          if git diff --cached --quiet; then
+            echo "Nada mudou."
+            exit 0
+          fi
+          git -c user.name="sentinel-signals-bot" -c user.email="actions@users.noreply.github.com" commit -q -m "Coleta de contexto $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push origin HEAD:refs/heads/context-data

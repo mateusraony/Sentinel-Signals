@@ -332,6 +332,16 @@ paths:
     Addendum 8: a lista fixa (`scripts/contextCalendar.mjs`) cobre CPI, Payroll, PPI, PCE e FOMC; a hora de cada
     tipo é fixa em `KIND_TIMES` (08:30 de Nova York; FOMC 14:00) e a lista é reprovada se uma linha fugir dela.
 
+- `context-collect.yml` — **coletor das datas dos eventos** (Fase 2 do Contexto de Mercado, `docs/known-risks.md`
+  item 285, addendum 9). Disparo principal pelo cron-job.org (3x/dia: 10:00, 15:00 e 00:00 UTC, via
+  `workflow_dispatch`); `schedule` só de reserva (11:41 UTC).
+  - **O que faz:** `scripts/context-collect.mjs` lê as datas de CPI/Payroll/PPI/PCE no FRED, junta com a lista fixa
+    (FOMC só nela) e grava `events.json` e `status.json` na branch pública **`context-data`** (cria na 1ª vez).
+  - **Único workflow de contexto com `contents: write`**, e só dá push para `context-data`, sem reescrever histórico.
+    Segredos só `FRED_API_KEY` e `CONTEXT_CONTACT_EMAIL`. Sem banco (não acorda o Neon) e sem Telegram.
+  - **Conteúdo público travado** por `assertPublicShape` (lista fechada de campos; nada de URL, chave, erro, valor de
+    série ou volatilidade) e as regras do workflow por `scripts/contextIsolationTripwire.test.js`.
+
 - `recovery.yml` — disparo **manual** (`workflow_dispatch` só), sem campos: **teste a seco** do replay de
   recuperação depois de queda longa do banco (`docs/known-risks.md` item 288).
   - **O que faz:** `npm run recovery -- --mode=dry-run` (`scripts/run-recovery.mjs` → `scripts/recoveryDryRun.mjs`)

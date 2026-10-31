@@ -33870,6 +33870,34 @@ baixa", e o que deixaria isso profissional.
 - **Provas:** 4 mutações pegas por teste (sem a trava de hora, Fed/BEA fora da fonte oficial, domínio parecido aceito,
   FOMC na hora errada).
 
+**Addendum 9 (2026-10-31, PR-9) — Fase 2: o coletor das datas dos eventos.**
+- **O que faz:** `.github/workflows/context-collect.yml` → `scripts/context-collect.mjs` → `scripts/contextCollect.mjs`.
+  Lê as datas de CPI, Payroll, PPI e PCE no FRED (release/dates), junta com a lista fixa (FOMC só nela) e grava 2
+  arquivos na branch pública `context-data`: `events.json` (id = tipo + data, tipo, mês de referência quando a lista
+  sabe, hora em UTC, situação, primeira vez visto, última mudança) e `status.json` (hora da checagem, FRED
+  ok/parcial/falhou, quantos eventos, cobertura confirmada até, impressão digital dos eventos).
+- **Regras:** data do FRED → `oficial`; data da lista que o FRED não traz, dentro do período que ele já publicou →
+  `a_confirmar` (remarcação; não alerta); além desse período (ex.: 2027) fica como na lista; evento publicado que some
+  da fonte → `a_confirmar`, mas se a fonte daquele tipo falhou fica como estava (queda do FRED não apaga nada); só de
+  ontem em diante. Rodar de novo sem novidade não muda `events.json` (só o `status.json`, pela hora da checagem).
+- **Público e travado:** `assertPublicShape` aceita só a lista fechada de campos e o formato de cada valor (texto livre
+  não passa: nada de URL, chave, mensagem de erro, valor de série ou volatilidade). Se recusar, nada é gravado. A
+  busca no FRED transforma qualquer falha em "sem resposta", sem mensagem (uma mensagem pode citar a URL com a chave).
+- **Workflow:** único workflow de contexto com `contents: write`; push só para `context-data` (cria órfã na 1ª vez,
+  sem reescrever histórico); segredos só `FRED_API_KEY` e `CONTEXT_CONTACT_EMAIL`; sem banco e sem Telegram. Disparo
+  principal: cron-job.org 3x/dia (10:00, 15:00 e 00:00 UTC = 07h, 12h e 21h de Brasília); `schedule` de reserva 1x/dia
+  às 11:41 UTC. Travado por `scripts/contextIsolationTripwire.test.js` (regras do coletor + prova com 7 variantes
+  plantadas) e `scripts/contextCollect.test.js`.
+- **Mudança em relação ao desenho do item 284:** um `events.json` só, em vez de um por mês (são ~10-20 eventos à frente).
+  `scripts/contextBudget.mjs`: o BLS bloqueado saiu, o FRED do coletor entrou (4 chamadas por coleta).
+- **Provas:** 8 mutações pegas por teste (remarcação sem rebaixar a data antiga; evento sumido continuando a alertar;
+  queda do FRED rebaixando tudo; rebaixar além do período publicado; trava aceitando campo extra; falha virando mensagem
+  com a chave; evento passado publicado; push de reescrita no workflow).
+- **Não verificado [honesto]:** criar a branch órfã e dar push com o token do próprio workflow não está na
+  documentação do GitHub (prática comum); a 1ª execução manual prova. Se uma regra do repositório restringir
+  branches, o push falha e o job fica vermelho, sem gravar nada em outro lugar.
+- **Critério da Fase 2 (item 284):** 2 semanas só coletando, ≥95% das 42 coletas, 0 push perdido, 0 acesso ao Neon.
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 **Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,

@@ -20,7 +20,9 @@ export const DEFAULT_CONFIG = Object.freeze({
     // limitPerMonth: limite documentado (CoinGecko Demo = 10.000 créditos/mês). null = sem limite publicado.
     { id: 'coingecko', callsPerRun: 2, limitPerMonth: 10000, internalCapRatio: 0.5, note: '/global + /coins/markets?ids= (1 crédito cada, a confirmar)' },
     { id: 'alternative-me-fng', callsPerRun: 1, limitPerMonth: null, internalCapRatio: null, note: 'sem limite publicado' },
-    { id: 'bls-calendar', callsPerRun: 1, limitPerMonth: null, internalCapRatio: null, note: 'bls.ics; poderia ser 1x/dia' },
+    // O BLS bloqueia o GitHub (403, item 285): as datas vêm do FRED (coletor, addendum 9) — 1 chamada por
+    // tipo (CPI, Payroll, PPI, PCE). O FRED limita por minuto (120/min), não por mês.
+    { id: 'fred-release-dates', callsPerRun: 4, limitPerMonth: null, internalCapRatio: null, note: 'datas de CPI/Payroll/PPI/PCE (coletor)' },
     { id: 'fed-rss', callsPerRun: 1, limitPerMonth: null, internalCapRatio: null, note: 'RSS' },
     { id: 'binance-spot', callsPerRun: 1, limitPerMonth: null, internalCapRatio: null, note: 'ticker BTC/ETH (1 chamada com as duas)' },
     { id: 'defillama', callsPerRun: 1, limitPerMonth: null, internalCapRatio: null, note: 'opcional (Fase 6)' },

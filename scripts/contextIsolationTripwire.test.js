@@ -110,6 +110,60 @@ describe('tripwire: o Contexto não toca banco, scanner nem Telegram com banco (
   });
 });
 
+// Fase 2 (addendum 9): o coletor é o ÚNICO workflow de contexto que escreve no repositório, e só na
+// branch pública `context-data`. Sem push forçado, sem outra branch, sem segredo além do FRED e do contato.
+const COLETOR = '.github/workflows/context-collect.yml';
+const SEGREDOS_DO_COLETOR = new Set(['FRED_API_KEY', 'CONTEXT_CONTACT_EMAIL']);
+
+function problemasDoColetor(yml) {
+  const codigo = yml.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+  const p = [];
+  if (!/permissions:\s*\n\s*contents:\s*write\s*\n/.test(codigo)) p.push('permissões: esperado só `contents: write`');
+  if ((codigo.match(/:\s*write\b/g) || []).length !== 1) p.push('permissões: há escrita além de `contents`');
+  const pushes = codigo.split('\n').filter((l) => /\bgit\s+push\b/.test(l));
+  if (!pushes.length) p.push('nenhum git push (a regra abaixo ficaria vazia)');
+  for (const l of pushes) {
+    if (!/^\s*git push origin HEAD:refs\/heads\/context-data\s*$/.test(l)) p.push(`push fora do permitido: ${l.trim()}`);
+  }
+  if (/--force|\s-f\b|\+HEAD|\+refs\//.test(codigo)) p.push('push forçado');
+  for (const [, nome] of codigo.matchAll(/secrets\.([A-Z0-9_]+)/g)) if (!SEGREDOS_DO_COLETOR.has(nome)) p.push(`segredo não permitido: ${nome}`);
+  if (/TELEGRAM/.test(codigo)) p.push('Telegram (só na Fase 4, com remetente sem banco)');
+  if (!/workflow_dispatch/.test(codigo)) p.push('sem disparo manual (o cron-job.org usa workflow_dispatch)');
+  if (!/node scripts\/context-collect\.mjs/.test(codigo)) p.push('não roda o coletor');
+  return p;
+}
+
+describe('tripwire: o coletor só escreve na branch context-data (item 285, addendum 9)', () => {
+  it('context-collect.yml segue as regras', () => {
+    expect(problemasDoColetor(readFileSync(join(ROOT, COLETOR), 'utf8'))).toEqual([]);
+  });
+
+  it('nenhum outro workflow de contexto pede escrita', () => {
+    const outros = arquivosDoContexto().filter((rel) => rel.startsWith('.github/') && rel !== COLETOR);
+    expect(outros.length).toBeGreaterThanOrEqual(1); // não-vacuidade: a sonda
+    for (const rel of outros) {
+      const codigo = readFileSync(join(ROOT, rel), 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+      expect(codigo, rel).not.toMatch(/:\s*write\b/);
+    }
+  });
+
+  it('prova: pega push forçado, outra branch, segredo a mais, Telegram e permissão a mais', () => {
+    const real = readFileSync(join(ROOT, COLETOR), 'utf8');
+    const push = 'git push origin HEAD:refs/heads/context-data';
+    expect(real).toContain(push);
+    const plantados = [
+      real.replace(push, ['git push', '--force', 'origin HEAD:refs/heads/context-data'].join(' ')),
+      real.replace(push, 'git push origin +HEAD:refs/heads/context-data'),
+      real.replace(push, ['git push origin HEAD:refs/heads', 'outra'].join('/')),
+      real.replace(push, 'echo sem push'),
+      real.replace('contents: write', 'contents: write\n  pull-requests: write'),
+      real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ secrets.FRED_API_KEY }}\n          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}'),
+      real.replace('FRED_API_KEY: ${{ secrets.FRED_API_KEY }}', 'FRED_API_KEY: ${{ secrets.BLS_API_KEY }}'),
+    ];
+    for (const yml of plantados) expect(problemasDoColetor(yml).length, yml.slice(-200)).toBeGreaterThan(0);
+  });
+});
+
 describe('prova do guard: pega o que deve e não acusa o inocente', () => {
   it('pega import de contexto no motor', () => {
     const plantados = [
