@@ -33856,6 +33856,20 @@ baixa", e o que deixaria isso profissional.
 - **Provas do PR-7:** 6 mutações pegas por teste (DVOL imprimindo o valor, inclusive na falha; campos com valores;
   campos sem filtro de nome; BLS v2 sem exigir a chave; BLS v2 sem trocar o molde pela chave).
 
+**Addendum 8 (2026-10-31, PR-8) — calendário completo: PPI, PCE e FOMC na lista fixa.**
+- **O que entrou [fato, fontes já lidas]:** PPI 13/11 e 15/12 (FRED, release 46, runs 7-8); PCE 25/11 e 23/12 (FRED,
+  release 54, + página do BEA); FOMC 09/12/2026 às 14:00 de Nova York (calendário do Fed; não há reunião em
+  novembro/2026). Todas `oficial`. As reuniões do FOMC de 2027 ficam de fora até conferir no site do Fed (só datas
+  parciais, de fontes secundárias — decisão D do usuário, 31/10).
+- **"Oficial" passa a aceitar** o site do Fed e o do BEA, além de BLS e FRED (domínio parecido continua reprovado).
+- **Trava nova:** a hora de cada tipo é fixa em `KIND_TIMES` (CPI, Payroll, PPI e PCE às 08:30; FOMC às 14:00) e
+  `validateCalendar` reprova linha fora dela — um 08:30 trocado por 14:00 viraria alerta na hora errada. O coletor
+  (PR-9) usa a mesma tabela para as datas do FRED, que vêm sem hora.
+- **Efeitos:** a cobertura confirmada vai de 10/12 (41 dias) para 23/12 (54 dias; o aviso de "<60 dias" continua até
+  o FRED publicar 2027); a demora do FRED para PPI/PCE passa a ter âncora também na reserva (lista fixa).
+- **Provas:** 4 mutações pegas por teste (sem a trava de hora, Fed/BEA fora da fonte oficial, domínio parecido aceito,
+  FOMC na hora errada).
+
 ## 286. Neon: scan a cada 15 min, orçamento de computação e as lacunas da queda longa (2026-10-29)
 
 **Contexto.** O usuário respondeu às pendências do item 283, mandou a tela de Billing do Neon (plano Free: 1 GB,

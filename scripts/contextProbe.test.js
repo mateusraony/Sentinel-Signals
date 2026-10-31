@@ -408,12 +408,12 @@ describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
     expect(formatProbeMarkdown([r], { startedAt: 'x', runner: 'y' })).not.toContain(KEY);
   });
 
-  it('FRED datas com a hora da execução: mostra as próximas (PPI/PCE não estão na lista fixa)', () => {
+  it('FRED datas com a hora da execução: mostra as próximas e compara PPI com a lista fixa', () => {
     const body = JSON.stringify({ release_dates: [{ date: '2026-12-15' }, { date: '2026-11-13' }, { date: '2026-10-15' }] });
     const v = validateFredDates('PPI')({ body, nowMs: Date.parse('2026-10-30T12:00:00Z') });
     expect(v.ok).toBe(true);
     expect(v.detail).toMatch(/próximas: 2026-11-13, 2026-12-15/);
-    expect(v.detail).toMatch(/sem datas desse tipo na lista fixa/);
+    expect(v.detail).toMatch(/bate: 2026-11-13, 2026-12-15; ausente na fonte: —; só na fonte: —/);
     const depois = validateFredDates('PPI')({ body, nowMs: Date.parse('2027-01-01T00:00:00Z') });
     expect(depois.detail).toMatch(/próximas: nenhuma publicada ainda/);
   });
@@ -431,9 +431,11 @@ describe('fontes alternativas ao BLS (item 285, addendum 3)', () => {
     // Achado do Codex (#525): FRED só atualiza NO DIA SEGUINTE → 1.445 min, não "5 min".
     const dia2 = validateFredSeriesMeta('PAYEMS', 'NFP')({ body: meta('PAYEMS', '2026-11-07 07:35:00-06') }).detail;
     expect(dia2).toMatch(/1445 min depois da divulgação de 2026-11-06 13:30 UTC — mais de 24 h/);
-    // Atualizada antes da 1ª divulgação conhecida, ou tipo fora da lista (PPI/PCE): não inventa demora.
+    // Atualizada antes da 1ª divulgação conhecida, ou tipo sem datas na lista: não inventa demora.
     expect(validateFredSeriesMeta('PAYEMS', 'NFP')({ body: meta('PAYEMS', '2026-11-06 03:00:00-06') }).detail).toMatch(/demora: desconhecida/);
-    expect(validateFredSeriesMeta('PPIFIS', 'PPI')({ body: meta('PPIFIS', '2026-11-13 07:35:00-06') }).detail).toMatch(/demora: desconhecida/);
+    expect(validateFredSeriesMeta('PPIFIS', 'PPI', [])({ body: meta('PPIFIS', '2026-11-13 07:35:00-06') }).detail).toMatch(/demora: desconhecida/);
+    // Desde o PR-8 o PPI está na lista fixa: a reserva também ancora o PPI (13/11 08:30 NY = 13:30 UTC).
+    expect(validateFredSeriesMeta('PPIFIS', 'PPI')({ body: meta('PPIFIS', '2026-11-13 07:35:00-06') }).detail).toMatch(/\(5 min depois da divulgação de 2026-11-13 13:30 UTC\)/);
     // Data "a confirmar" não serve de âncora.
     const lista = [{ id: 'x', kind: 'NFP', reference: '2026-12', date: '2027-01-08', time: '08:30', status: 'a_confirmar', fontes: [] }];
     expect(validateFredSeriesMeta('PAYEMS', 'NFP', lista)({ body: meta('PAYEMS', '2027-01-08 07:40:00-06') }).detail).toMatch(/demora: desconhecida/);
